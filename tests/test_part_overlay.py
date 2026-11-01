@@ -4,7 +4,6 @@ import importlib
 import shutil
 import sys
 import tomllib
-import warnings
 from pathlib import Path
 
 import numpy as np
@@ -61,10 +60,8 @@ def folder(tmp_path):
 
 def edit(folder, text):
     (folder / "scrimmage-edits.toml").write_text(text)
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        part = load_part(folder)
-    return part, [str(x.message) for x in w]
+    part = load_part(folder)
+    return part, part.warnings
 
 
 def body(part, name):
@@ -150,7 +147,25 @@ def test_collision_without_a_mesh_warns_and_stays(folder):
 def test_collision_shaped_uses_convex_pieces(folder):
     part, w = edit(folder, '[body.arm]\ncollision = "shaped"\n')
     colliding = [g for g in body(part, "arm").geoms if g.collide]
-    assert w == [] and colliding and all(g.shape == "mesh" and Path(g.size).is_file() for g in colliding)
+    assert w == [] and colliding and all(g.shape == "mesh" and g.size.startswith("meshes/_overlay/")
+                                         and (folder / g.size).is_file() for g in colliding)
+    stamp = {p: p.stat().st_mtime_ns for p in (folder / "meshes" / "_overlay").iterdir()}
+    again = [g.size for g in body(load_part(folder), "arm").geoms if g.collide]      # reused, not split again
+    assert again == [g.size for g in colliding]
+    assert stamp == {p: p.stat().st_mtime_ns for p in (folder / "meshes" / "_overlay").iterdir()}
+
+
+def test_total_mass_with_every_body_set_is_ignored_with_a_note(folder):
+    _, w = edit(folder, "total_mass = 9.0\n[body.base]\nmass = 1\n[body.arm]\nmass = 1\n[body.wrist]\nmass = 1\n")
+    assert any("total_mass was ignored" in x for x in w)
+
+
+def test_overlay_notes_reach_world_warnings(folder, tmp_path):
+    from scrimmage.world import World
+    (folder / "scrimmage-edits.toml").write_text("[body.hook_B]\nmass = 1.0\n")
+    w = World({"part": [{"name": "arm", "path": "arm"}]}, folder.parent)
+    assert any("arm: scrimmage-edits.toml: body hook_B is no longer in the part; its edits were dropped" in x
+               for x in w.warnings)
 
 
 def test_bad_collision_word_is_a_part_error(folder):

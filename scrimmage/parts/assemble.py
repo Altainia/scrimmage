@@ -425,4 +425,5 @@ def assemble(cfg: dict, cfg_dir: Path) -> Built:
         for k, v in b.items():
             built.bindings[k].extend(v)
         built.warnings.extend(w)
+        built.warnings.extend(f"{inst.name}: {n}" for n in inst.part.warnings)
     return built

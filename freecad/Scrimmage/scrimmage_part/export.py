@@ -100,7 +100,11 @@ def _install(tmp, out_dir):
             old = os.path.join(os.path.dirname(out_dir), f".{os.path.basename(out_dir)}.old-{uuid.uuid4().hex[:8]}")
             kept = os.path.join(out_dir, OVERLAY)       # the plugin overlay survives a re-export
             if os.path.isfile(kept):
-                shutil.copyfile(kept, os.path.join(tmp, OVERLAY))
+                try:
+                    shutil.copyfile(kept, os.path.join(tmp, OVERLAY))
+                except OSError as e:
+                    raise ExportError([f"couldn't keep your edits file {kept} ({e.strerror or e}): copy it somewhere "
+                                       "safe, close anything using it and export again"]) from None
             os.rename(out_dir, old)
         try:
             os.rename(tmp, out_dir)

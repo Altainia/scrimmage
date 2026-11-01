@@ -141,6 +141,7 @@ class Part:
     gyros: list[GyroSlot] = field(default_factory=list)
     mounts: list[Mount] = field(default_factory=list)
     base_dir: Path | None = None                 # where mesh paths resolve
+    warnings: list[str] = field(default_factory=list)   # notes from loading (the plugin overlay); not in part.toml
 
     def slot_kinds(self) -> dict[str, str]:
         out = {s.slot: "motor" for s in self.motors}
@@ -619,7 +620,6 @@ def load_part(path: Path) -> Part:
     part = part_from_dict(raw, str(file), file.parent)
     edits = file.parent / "scrimmage-edits.toml"            # the plugin overlay (parts/overlay.py)
     if edits.is_file():
-        import warnings
         from .overlay import apply_overlay
         try:
             text = tomllib.loads(edits.read_text())
@@ -628,8 +628,7 @@ def load_part(path: Path) -> Part:
         except tomllib.TOMLDecodeError as e:
             raise PartError(f"{edits}: {e}") from None
         part, notes = apply_overlay(part, text, str(edits))
-        for n in notes:
-            warnings.warn(n, stacklevel=2)
+        part.warnings = notes
     return part
 
 

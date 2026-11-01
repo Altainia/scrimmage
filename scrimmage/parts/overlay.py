@@ -108,19 +108,7 @@ def _collision(b: dict, orig, mode: str, base_dir, warn: list[str]) -> None:
             warn.append(f"{OVERLAY}: body {orig.name} is set to touch things as a wheel, but a wheel needs a hinge "
                         "(it turns); it touches things as a simple box instead")
     elif mode == "shaped":
-        try:
-            pieces = convex_split(v, f)
-        except Exception as e:                  # BenchError: no coacd, an open mesh, no pieces
-            warn.append(f"{OVERLAY}: body {orig.name} can't touch things as shaped ({e}); it touches things as a "
-                        "simple box instead")
-        else:
-            from ..bench.cad import write_obj
-            for i, (pv, pf) in enumerate(pieces):
-                tag = hashlib.sha256(np.ascontiguousarray(pv).tobytes() + pf.tobytes()).hexdigest()[:16]
-                path = Path(_shaped_dir()) / f"{tag}.obj"
-                if not path.is_file():
-                    write_obj(path, pv, pf)
-                geoms.append({"mesh": path.as_posix()})
+        geoms = _shaped(orig.name, v, f, base_dir, warn)
     if not geoms:
         size, center, rpy = fit_box(v)
         g = {"box": size}
@@ -132,11 +120,41 @@ def _collision(b: dict, orig, mode: str, base_dir, warn: list[str]) -> None:
     b["geom"] = keep + geoms
 
 
-def _shaped_dir() -> Path:
-    from ..cad.fit import SHAPED_CACHE
-    d = SHAPED_CACHE / "overlay"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+def _shaped(name: str, v: np.ndarray, f: np.ndarray, base_dir, warn: list[str]) -> list[dict]:
+    """Convex-piece geoms for the mesh. The pieces live in <part folder>/meshes/_overlay/<hash>_NNN.obj (found there
+    again on the next load, so coacd doesn't re-run); a folder that can't be written falls back to the temp cache."""
+    from ..bench.cad import write_obj
+    tag = hashlib.sha256(np.ascontiguousarray(v).tobytes() + np.ascontiguousarray(f).tobytes()).hexdigest()[:16]
+    rel = Path("meshes") / "_overlay"
+    if base_dir is not None:
+        have = sorted((Path(base_dir) / rel).glob(f"{tag}_*.obj"))
+        if have:
+            return [{"mesh": (rel / p.name).as_posix()} for p in have]
+    try:
+        pieces = convex_split(v, f)
+    except Exception as e:                      # BenchError: no coacd, an open mesh, no pieces
+        warn.append(f"{OVERLAY}: body {name} can't touch things as shaped ({e}); it touches things as a simple box "
+                    "instead")
+        return []
+
+    def write(folder: Path) -> list[Path]:
+        folder.mkdir(parents=True, exist_ok=True)
+        out = []
+        for i, (pv, pf) in enumerate(pieces):
+            out.append(folder / f"{tag}_{i:03d}.obj")
+            write_obj(out[-1], pv, pf)
+        return out
+
+    try:
+        if base_dir is None:
+            raise OSError("no part folder")
+        write(Path(base_dir) / rel)
+        return [{"mesh": (rel / f"{tag}_{i:03d}.obj").as_posix()} for i in range(len(pieces))]
+    except OSError:
+        from ..cad.fit import SHAPED_CACHE
+        warn.append(f"{OVERLAY}: body {name}: the part folder can't be written, so its shaped collision pieces are "
+                    "kept in the temporary folder instead")
+        return [{"mesh": p.as_posix()} for p in write(SHAPED_CACHE / "overlay")]
 
 
 def apply_overlay(part: Part, edits: dict, source: str) -> tuple[Part, list[str]]:
@@ -177,7 +195,9 @@ def apply_overlay(part: Part, edits: dict, source: str) -> tuple[Part, list[str]
         free = [b for b in d["body"] if b["name"] not in fixed]
         left = total - sum(b["mass"] for b in d["body"] if b["name"] in fixed)
         old = sum(b["mass"] for b in free)
-        if free and old > 0:
+        if not free:
+            warns.append(f"{OVERLAY}: total_mass was ignored: every body has its own mass")
+        elif old > 0:
             if left <= 0:
                 raise _err(f"total_mass {total} kg is no more than the masses set on the bodies; raise it")
             for b in free:
