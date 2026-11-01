@@ -1,4 +1,4 @@
-"""The what's-left checklist: `checklist(imp, src, result, guessed=())` lists what the student still has to settle.
+"""The what's-left checklist: `checklist(imp, src, result, guessed=(), volumes=None)` lists what the student still has to settle.
 
 Each `Item` has a `level` ("todo" is work left, "check" is worth a look, "error" is a problem that makes the part
 wrong), a plain-words `text`, and a `target` the GUI selects when the item is clicked: `{"kind": "piece" | "body" |
@@ -8,11 +8,13 @@ bodies with no motor, an unconfirmed robot frame, then the build's own messages.
 
 Left-out pieces are never listed. "Guessed as aluminum" means no material chosen yet (`material` is None; picking aluminum explicitly settles it), with no typed weight on the piece or
 its body. `guessed` is the piece keys `reimport` matched by shape (its messages say "matched by shape; check it"); the
-checklist can't see those messages, so the caller passes the keys.
+checklist can't see those messages, so the caller passes the keys. `volumes` (piece key -> volume in cubic meters)
+is what the caller already worked out for each piece; without it the checklist works out each piece's volume itself,
+which is slow on a big assembly.
 """
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, Mapping
 
 from .build import BuildResult
 from .mass import mesh_inertial
@@ -52,9 +54,15 @@ def _target(imp: ImportFile, text: str) -> dict:
     return {"kind": "frame", "keys": []}
 
 
-def checklist(imp: ImportFile, src: Source, result: BuildResult, guessed: Iterable[str] = ()) -> list[Item]:
+def checklist(imp: ImportFile, src: Source, result: BuildResult, guessed: Iterable[str] = (),
+              volumes: Mapping[str, float] | None = None) -> list[Item]:
     items: list[Item] = []
     by_key = {p.key: p for p in src.pieces}
+
+    def volume(k: str) -> float:
+        if volumes is not None and k in volumes:
+            return volumes[k]
+        return mesh_inertial(by_key[k].v, by_key[k].f, 1.0).mass
     live = [(k, ps) for k, ps in imp.pieces.items() if not ps.left_out and ps.body in imp.bodies]
 
     # still guessed as aluminum, per body (a typed weight on the piece or its body settles it)
@@ -71,7 +79,7 @@ def checklist(imp: ImportFile, src: Source, result: BuildResult, guessed: Iterab
         if bs.mass:
             continue
         keys = [k for k, ps in live if ps.body == name and not ps.mass and k in by_key
-                and mesh_inertial(by_key[k].v, by_key[k].f, 2700.0).mass <= 0]
+                and volume(k) <= 0]
         if keys:
             one = len(keys) == 1
             items.append(Item("error", f"{_pieces(len(keys))} in {name} {'has' if one else 'have'} no volume: type a "

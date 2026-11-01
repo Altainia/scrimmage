@@ -89,6 +89,17 @@ def test_no_volume_is_an_error(imp, src):
     assert run(imp, open_src) == []
 
 
+def test_no_volume_uses_the_volumes_it_is_given(imp, src, monkeypatch):
+    """The session passes the volumes it already has, so the checklist doesn't work out every piece's mass again."""
+    import scrimmage.cad.checklist as cl
+    vols = {p.key: 1e-4 for p in src.pieces}
+    vols["Climber/arm_A"] = 0.0
+    monkeypatch.setattr(cl, "mesh_inertial", lambda *a: pytest.fail("worked out a volume it was given"))
+    items = checklist(imp, src, build_parts(imp, src), volumes=vols)
+    assert items[0] == Item("error", "1 piece in arm_A has no volume: type a weight or leave it out",
+                            {"kind": "piece", "keys": ["Climber/arm_A"]})
+
+
 def test_guessed_matches_are_checks(imp, src):
     items = run(imp, src, guessed=["Climber/arm_A", "Climber/bolt"])
     assert items == [Item("check", "Climber/arm_A was matched by shape after re-importing: check it",

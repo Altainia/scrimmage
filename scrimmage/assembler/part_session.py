@@ -526,7 +526,8 @@ class PartSession(_Session):
                                      "mass": float(b.mass) if b else None, "com": _floats(b.com) if b else None})
             if src is not None:
                 out["checklist"] = [dataclasses.asdict(i) for i in
-                                    checklist(imp, src, self._result or BuildResult(), self._guessed)]
+                                    checklist(imp, src, self._result or BuildResult(), self._guessed,
+                                              {k: v[0] for k, v in self._info.items()})]
             return out
 
     def view(self) -> dict:
