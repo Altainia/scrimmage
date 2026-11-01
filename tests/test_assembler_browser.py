@@ -590,6 +590,14 @@ def _screen_bench_editor(page, tmp_path):
     page.wait_for_function("__scrimmageBench.editor && __scrimmageBench.editor.instances.length > 0")
 
 
+def _screen_part(page, tmp_path):
+    page.wait_for_function("window.__scrimmagePart && __scrimmagePart.store.state && __scrimmagePart.scene"
+                           " && __scrimmagePart.scene.drawn.length > 0")
+    page.click('#part-tree [data-hardware="base_plate"]')
+    page.click('#part-tree [data-piece="Climber/arm_A"]')
+    page.wait_for_selector("#part-material")
+
+
 def _robot_with_program(folder: Path, mismatch: bool = False) -> Path:
     import json as _json
     from scrimmage.assembler import templates
@@ -621,6 +629,9 @@ def _open_for(screen: str, tmp_path: Path) -> Path | None:
         return scn
     if screen == "drive":
         return _robot_with_program(tmp_path, mismatch=True)
+    if screen == "part":
+        shutil.copy(REPO / "tests" / "data" / "cad" / "climber.step", tmp_path / "climber.step")
+        return tmp_path / "climber.step"
     # the bench: a session folder whose idea has a run on the stage
     import time as _time
     from scrimmage.bench import session
@@ -637,14 +648,15 @@ def _open_for(screen: str, tmp_path: Path) -> Path | None:
 
 
 SCREENS = {"start": _screen_start, "robot": _screen_robot, "scenario": _screen_scenario, "drive": _screen_drive,
-           "bench_stage": _screen_bench_stage, "bench_editor": _screen_bench_editor}
+           "bench_stage": _screen_bench_stage, "bench_editor": _screen_bench_editor, "part": _screen_part}
 
 
 @pytest.mark.parametrize("scheme", ["light", "dark"])
 @pytest.mark.parametrize("screen", list(SCREENS))
 def test_every_screen_meets_wcag_aa(browser, tmp_path, monkeypatch, screen, scheme):
     """Every piece of text on each screen (the start page, the Robot tab's 3D view, the Scenario tab with a run's
-    report, the Drive tab running with its device line, the Bench stage with a result and the Bench editor) has WCAG AA
+    report, the Drive tab running with its device line, the Bench stage with a result, the Bench editor and the Part tab
+    with a piece selected) has WCAG AA
     contrast, in the light and the dark theme."""
     monkeypatch.setenv("SCRIMMAGE_FOLDERS", str(tmp_path / "folders.json"))
     monkeypatch.setenv("SCRIMMAGE_NT_CONNECT_TIMEOUT", "0.5")

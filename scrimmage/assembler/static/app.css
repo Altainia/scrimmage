@@ -914,3 +914,65 @@ dialog.start-dialog { width: auto; max-width: 96vw; }
 .start-folder-browse:empty { display: none; }
 .start-folder-browse { border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 8px; }
 .start-folder-browse .start-list { max-height: 30vh; overflow: auto; }
+
+/* -- Part tab (part.js, part3d.js) ---------------------------------------------------------- */
+.layout-part { grid-template-columns: 300px minmax(0, 1fr) 340px; }
+.col-part-left { border-right: 1px solid var(--line); }
+.col-part-right { border-left: 1px solid var(--line); }
+#part-view { flex: 1; min-height: 0; position: relative; }
+.part-tree-wrap { flex: 1 1 60%; min-height: 0; display: flex; flex-direction: column; border-bottom: 1px solid var(--line); }
+.part-check-wrap { flex: 0 1 40%; min-height: 0; display: flex; flex-direction: column; }
+.part-tree-tools { padding: 8px 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.part-tree, .part-group { list-style: none; margin: 0; padding: 0; }
+.part-tree { padding: 4px 0; }
+.part-item { outline: none; }
+.part-row { display: flex; align-items: center; gap: 6px; padding: 3px 10px; cursor: pointer; border-left: 3px solid transparent; min-width: 0; }
+.part-body-row { padding-top: 6px; }
+.part-piece > .part-row { padding-left: 30px; font-family: var(--mono); font-size: 12.5px; }
+.part-item:focus-visible > .part-row { box-shadow: inset 0 0 0 2px var(--accent); }
+.part-row:hover { background: var(--subtle); }
+.part-item.selected > .part-row { background: var(--accent-soft); border-left-color: var(--accent-text); }
+.part-row.drop-here, .part-piece.drop-here > .part-row { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
+.part-piece[draggable="true"] > .part-row { cursor: grab; }
+.part-piece-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.part-piece.left-out .part-piece-name { text-decoration: line-through; color: var(--muted); }
+.part-tag { font-family: var(--font); font-size: 11px; color: var(--warn-text); background: var(--warn-soft); border-radius: 10px; padding: 0 7px; flex: none; }
+.part-mat { margin-left: auto; font-family: var(--font); font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.part-swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; border: 1px solid rgba(0, 0, 0, .25); }
+.part-hw { padding: 1px 10px 3px 30px; }
+.part-hw-btn { font-size: 12.5px; font-weight: 600; }
+.part-empty { padding: 0 10px 4px 30px; margin: 0; }
+.part-checklist { list-style: none; margin: 0; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; }
+.part-check-btn { display: flex; gap: 8px; align-items: baseline; width: 100%; text-align: left; font: inherit; font-size: 13px; color: var(--text);
+  background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--warn-mark); border-radius: var(--radius); padding: 5px 8px; cursor: pointer; }
+.part-check-btn:hover { background: var(--hover); }
+.part-check-check .part-check-btn { border-left-color: var(--accent); }
+.part-check-error .part-check-btn { border-left-color: var(--error); background: var(--error-tint); }
+.part-check-mark { flex: none; font-weight: 700; color: var(--muted); width: 1em; text-align: center; }
+.part-check-error .part-check-mark { color: var(--error); }
+.part-check-done { color: var(--ok); font-weight: 600; padding: 4px 6px; }
+.part-line { margin: 0 0 8px; font-size: 13px; }
+.part-line .mono, .hint.mono { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+#part-inspector select, #part-body-name, #part-part-name { width: 100%; }
+#part-body-name, #part-part-name { font-family: var(--mono); }
+.part-own .part-check-label { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
+.part-body-list { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.part-reimport { margin-left: auto; }
+.part-legend { position: absolute; left: 10px; bottom: 8px; margin: 0; z-index: 2; display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--text); background: var(--overlay); border-radius: var(--radius); padding: 2px 8px; pointer-events: none; }
+.part-cog-dot { width: 10px; height: 10px; border-radius: 50%; background: #e8590c; display: inline-block; }
+#tab-part { position: relative; }
+.part-drop { position: absolute; inset: 0; z-index: 30; display: grid; place-items: center; background: var(--overlay-90);
+  border: 3px dashed var(--accent); pointer-events: none; }
+.part-drop p { font-size: 18px; font-weight: 600; color: var(--accent-strong); margin: 0; }
+#tab-part.part-plugin .part-tree-tools { display: none; }
+.start-drop { border: 2px dashed var(--line-strong); border-radius: 10px; padding: 18px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.start-drop p { margin: 0; color: var(--muted); font-weight: 600; }
+.start-drop.drop-here { border-color: var(--accent); background: var(--accent-soft); }
+.start-drop.busy p { color: var(--accent-text); }
+.start-cad .start-folder-browse .start-list { max-height: 30vh; overflow: auto; }
+.visually-hidden { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+@media (max-width: 1100px) { .layout-part { grid-template-columns: 250px minmax(0, 1fr) 290px; } }
+#part-inspector .field-label { font-family: var(--font); }
+#tab-part.part-plugin #part-show-left-out { display: none; }
+#part-view-empty { pointer-events: none; padding: 0 24px; text-align: center; }

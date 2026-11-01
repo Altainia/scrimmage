@@ -8,7 +8,7 @@
 //   scrimmage:pick-mount   detail {active}    the Add dialog wants a mount clicked in 3D (active false = stop)
 //   scrimmage:mount-picked detail {name}      the 3D view reports a clicked mount "<instance>.<mount>"
 //   scrimmage:hover        detail {name, source}  an instance is hovered in the tree or the 3D view (null = none)
-//   scrimmage:tab          detail {tab}       the shown tab changed ("robot" | "scenario" | "drive" | "bench")
+//   scrimmage:tab          detail {tab}       the shown tab changed ("robot" | "scenario" | "drive" | "bench" | "part")
 //   scrimmage:code         detail {state}     the robot code panel loaded /api/robot/code (code.js)
 // The 3D view (view3d.js, loaded on its own so a WebGL failure can't break the page) selects a part with
 // select(name) and sets store.view3d once it is running.
@@ -85,7 +85,7 @@ export async function apiFile(path) {
 // -- tabs ----------------------------------------------------------------------------------------
 // The Robot tab is this file's; the Scenario tab (scenario.js) registers itself with registerTab when a
 // scenario is open, the Drive tab (drive.js) always: {renderTop(), undo(), redo(), onShow(), onHide()?}.
-const TABS = ["robot", "scenario", "drive", "bench"];
+const TABS = ["robot", "scenario", "drive", "bench", "part"];
 const tabHooks = {};
 let tab = "robot";
 
@@ -488,8 +488,8 @@ function onKey(e) {
 }
 
 // -- start page and modes ------------------------------------------------------------------------
-// The server holds one thing at a time: "robot" (today's tabs), "bench" (an idea session) or "start" (nothing; only
-// the start page). The "Start page" link shows the start page client-side; the server's mode only changes when
+// The server holds one thing at a time: "robot" (today's tabs), "bench" (an idea session), "part" (a CAD import or a
+// plugin part folder: the Part tab) or "start" (nothing; only the start page). The "Start page" link shows the start page client-side; the server's mode only changes when
 // something is opened or made there (the page then reloads).
 let startShown = false;
 async function showStartPage(canGoBack) {
@@ -523,6 +523,16 @@ function bootBench() {
   import("./bench.js").then((m) => m.initBench()).catch((e) => {
     console.error(e);
     notice(`The Bench tab failed to load: ${e.message || e}`, "error");
+  });
+}
+
+function bootPart() {
+  // like the Bench tab: shown at once, part.js registers its real hooks when it has loaded
+  registerTab("part", { renderTop() {}, undo() {}, redo() {}, onShow() {} });
+  setTab("part");
+  import("./part.js").then((m) => m.initPart()).catch((e) => {
+    console.error(e);
+    notice(`The Part tab failed to load: ${e.message || e}`, "error");
   });
 }
 
@@ -582,6 +592,11 @@ async function boot() {
     $("#tab-btn-drive").hidden = true;
     $("#start-link").hidden = false;
     bootBench();
+  } else if (mode === "part") {
+    $("#tab-btn-robot").hidden = true;
+    $("#tab-btn-drive").hidden = true;
+    $("#start-link").hidden = false;
+    bootPart();
   } else {
     $("#start-link").hidden = false;
     bootRobot();

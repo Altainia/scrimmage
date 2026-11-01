@@ -1,12 +1,28 @@
 // The start page: shown when `scrimmage edit` was run with no file, from the "Start page" link in the top bar, or
 // when the open robot names a team folder this computer hasn't set (it then asks where that folder is first). It
-// lists what was opened recently, browses folders, makes a new robot, scenario or idea session, and sets this
-// computer's team folders ({cad} and {code}). After an
+// lists what was opened recently, browses folders, makes a new robot, scenario, idea session or part from CAD (Browse
+// for a .step/.stl/.obj file or a folder of them, or drop one on the page), and sets this computer's team folders
+// ({cad} and {code}). After an
 // open or new the server has already swapped what it holds, so the page reloads itself (see /api/app/* in
 // scrimmage/assembler/server.py).
 import { api, h, notice, sessionToken } from "./app.js";
 
-const KIND = { robot: "Robot", scenario: "Scenario", session: "Idea session", bench: "Idea", folder: "Folder" };
+const KIND = { robot: "Robot", scenario: "Scenario", session: "Idea session", bench: "Idea", folder: "Folder", import: "Part", cad: "CAD file" };
+export const CAD_FILE = /\.(step|stp|stl|obj)$/i;
+
+// A CAD file sent to POST /api/part/upload: {status, data} (data is the part's state on 200). With a part open it
+// replaces that part's source; with none it makes a new import and opens it.
+export async function uploadCad(file) {
+  try {
+    const res = await fetch("/api/part/upload", { method: "POST", body: file, headers: {
+      "X-Scrimmage-Token": sessionToken(), "X-Filename": encodeURIComponent(file.name), "Content-Type": "application/octet-stream" } });
+    let data;
+    try { data = await res.json(); } catch { data = {}; }
+    return { status: res.status, data: data && typeof data === "object" ? data : {} };
+  } catch {
+    return { status: 0, data: { error: "can't reach the editor (is scrimmage edit still running?)" } };
+  }
+}
 const slash = (p) => p.replace(/\/+$/, "").lastIndexOf("/");
 const base = (p) => p.slice(slash(p) + 1);
 const dirOf = (p) => (slash(p) > 0 ? p.slice(0, slash(p)) : "/");
@@ -27,17 +43,18 @@ async function post(path, body) {
 const open = (path) => post("/api/app/open", { path });
 
 // A folder's listing from /api/app/browse in `box`: folders (a click goes in), then its .toml files when `onFile`
-// is given (a click calls it with the entry {name, path, kind}). `folderButton` {key, label, title, onclick} adds a
-// button beside each folder (data-<key> is the folder's name). Also used by the Bench tab's CAD part picker.
+// is given (a click calls it with the entry {name, path, kind}; `kinds` lists the kinds shown, default all).
+// `folderButton` {key, label, title, onclick} adds a button beside each folder (data-<key> is the folder's name).
+// Also used by the Bench tab's CAD part picker.
 export async function browseList(box, dir, opts = {}) {
-  const { onFile = null, folderButton = null, noticeId = "start" } = opts;
+  const { onFile = null, folderButton = null, noticeId = "start", kinds = null } = opts;
   const { status: st, data } = await api("GET", "/api/app/browse" + (dir ? `?dir=${encodeURIComponent(dir)}` : ""));
   if (st !== 200) { notice((data.errors && data.errors[0].message) || "Can't list that folder.", "error", noticeId); return null; }
   const list = h("ul", { class: "start-list" });
   if (data.parent) {
     list.append(h("li", {}, h("button", { type: "button", class: "start-item", dataset: { entry: ".." }, onclick: () => browseList(box, data.parent, opts) }, "↑ Up one folder")));
   }
-  const shown = data.entries.filter((e) => e.kind === "folder" || onFile);
+  const shown = data.entries.filter((e) => e.kind === "folder" || (onFile && (!kinds || kinds.includes(e.kind))));
   for (const e of shown) {
     const folder = e.kind === "folder";
     list.append(h("li", {},
@@ -46,7 +63,7 @@ export async function browseList(box, dir, opts = {}) {
         h("span", { class: "start-kind", text: folder ? "Folder" : KIND[e.kind] || e.kind }), h("strong", { text: e.name })),
       folder && folderButton ? h("button", { type: "button", class: "btn btn-small", dataset: { [folderButton.key]: e.name }, title: folderButton.title, onclick: () => folderButton.onclick(e) }, folderButton.label) : null));
   }
-  if (!shown.length) list.append(h("li", { class: "start-hint", text: onFile ? "No folders or .toml files here." : "No folders here." }));
+  if (!shown.length) list.append(h("li", { class: "start-hint", text: !onFile ? "No folders here." : kinds && kinds.includes("cad") ? "No folders or CAD files here." : "No folders or .toml files here." }));
   box.replaceChildren(h("p", { class: "start-hint", text: data.dir }), list);
   return data;
 }
@@ -78,6 +95,42 @@ export async function showStart(root, { canGoBack, onBack }) {
     if (st === 200) for (const e of data.entries) if (e.kind === "robot") out.set(e.path, e.name);
     for (const r of app.recent) if (r.kind === "robot" && !out.has(r.path)) out.set(r.path, `${base(r.path)}  (in ${dirOf(r.path)})`);
     return out;
+  }
+
+  // New part from CAD: Browse (the file is used where it is) or drop a file (it is copied in next to the import)
+  function cadForm() {
+    const list = h("div", { id: "start-cad-browse", class: "start-folder-browse" });
+    const pick = (path) => post("/api/app/new", { kind: "import", path });
+    const send = async (file) => {
+      if (!file) return;
+      if (!CAD_FILE.test(file.name)) { notice(`${file.name} isn't a CAD file: use a .step, .stp, .stl or .obj file.`, "error", "start"); return; }
+      drop.classList.add("busy");
+      drop.querySelector("p").textContent = `Reading ${file.name}…`;
+      const { status, data } = await uploadCad(file);
+      if (status === 200) { reload(); return; }
+      drop.classList.remove("busy");
+      drop.querySelector("p").textContent = dropText;
+      const why = (data.errors && data.errors[0] && data.errors[0].message) || data.error || `the server answered ${status}`;
+      notice(status === 409 ? `Can't switch right now: ${why}` : `Couldn't read ${file.name}: ${why}`, "error", "start");
+    };
+    const dropText = "Drop a .step, .stl or .obj file here";
+    const chooser = h("input", { type: "file", id: "start-cad-file", accept: ".step,.stp,.stl,.obj", hidden: true, "aria-label": "CAD file",
+      onchange: (e) => send(e.target.files[0]) });
+    const drop = h("div", { id: "start-drop", class: "start-drop" },
+      h("p", { text: dropText }),
+      h("button", { type: "button", class: "btn btn-small", onclick: () => chooser.click() }, "Choose a file…"), chooser);
+    drop.addEventListener("dragover", (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; drop.classList.add("drop-here"); });
+    drop.addEventListener("dragleave", () => drop.classList.remove("drop-here"));
+    drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("drop-here"); send(e.dataTransfer.files[0]); });
+    newBox.replaceChildren(h("div", { class: "start-form start-cad" },
+      h("p", { class: "start-hint", text: "Export your robot mechanism from your CAD program as a STEP file (or STL files), then pick it here. "
+        + "Scrimmage reads it, guesses what is what, and shows you what is left to check." }),
+      drop,
+      h("div", { class: "start-buttons" },
+        h("button", { type: "button", class: "btn", id: "start-cad-browse-btn", onclick: () => browseList(list, null, { onFile: (e) => (e.kind === "import" ? open(e.path) : pick(e.path)), kinds: ["cad", "import"],
+          folderButton: { key: "stl", label: "Use its STL files", title: "Make one part from the STL or OBJ files in this folder", onclick: (e) => pick(e.path) } }) }, "Browse…"),
+        h("button", { type: "button", class: "btn", onclick: () => newBox.replaceChildren() }, "Cancel")),
+      list));
   }
 
   async function newForm(kind) {
@@ -130,7 +183,8 @@ export async function showStart(root, { canGoBack, onBack }) {
       h("div", { class: "start-buttons" },
         h("button", { type: "button", class: "btn", dataset: { key: "new-robot" }, onclick: () => newForm("robot") }, "New robot"),
         h("button", { type: "button", class: "btn", dataset: { key: "new-scenario" }, onclick: () => newForm("scenario") }, "New scenario"),
-        h("button", { type: "button", class: "btn", dataset: { key: "new-session" }, onclick: () => newForm("session") }, "New idea session")),
+        h("button", { type: "button", class: "btn", dataset: { key: "new-session" }, onclick: () => newForm("session") }, "New idea session"),
+        h("button", { type: "button", class: "btn", dataset: { key: "new-part" }, onclick: () => cadForm() }, "New part from CAD")),
       newBox),
     h("section", { class: "start-card" }, h("h2", { text: "Open a file or folder" }),
       h("div", { class: "start-buttons" }, h("button", { type: "button", class: "btn", dataset: { key: "browse" }, onclick: () => browse(null) }, "Browse…")),
