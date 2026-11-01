@@ -70,7 +70,8 @@ def is_closed(f: np.ndarray) -> bool:
     if len(f) == 0:
         return False
     edges = np.sort(np.concatenate([f[:, [0, 1]], f[:, [1, 2]], f[:, [2, 0]]]), axis=1)
-    _, counts = np.unique(edges, axis=0, return_counts=True)
+    # One integer per edge: np.unique over rows is an order of magnitude slower.
+    _, counts = np.unique(edges[:, 0].astype(np.int64) * (int(edges.max()) + 1) + edges[:, 1], return_counts=True)
     return bool(np.all(counts == 2))
 
 

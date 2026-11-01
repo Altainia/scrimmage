@@ -1,5 +1,7 @@
 """Fingerprints and re-import matching: pieces keep their settings when the CAD file changes."""
 
+import os
+import time
 from pathlib import Path
 
 import numpy as np
@@ -87,6 +89,15 @@ def _turn(p, axis, deg):
     return Piece(p.key, p.name, p.group, p.v @ np.array(r).T, p.f)
 
 
+def _skew(p, deg):
+    """Turned `deg` degrees about the axis (1, 2, 3)."""
+    k = np.array([1.0, 2, 3]) / np.sqrt(14)
+    a = np.radians(deg)
+    kx = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
+    r = np.eye(3) + np.sin(a) * kx + (1 - np.cos(a)) * kx @ kx
+    return Piece(p.key, p.name, p.group, p.v @ r.T, p.f)
+
+
 def _cylinder(key, radius, length, n=48):
     t = np.linspace(0, 2 * np.pi, n, endpoint=False)
     ring = np.stack([radius * np.cos(t), radius * np.sin(t)], axis=1)
@@ -109,6 +120,8 @@ def test_extents_do_not_depend_on_turning(make):
             turned = _turn(base, axis, deg)
             assert fingerprint(turned)["extents"] == pytest.approx(ref, rel=0.02)
             assert match(records([base]), [turned]).pairs == {base.key: base.key}
+    skewed = _skew(base, 33)
+    assert fingerprint(skewed)["extents"] == pytest.approx(ref, rel=0.02)
 
 
 def test_open_mesh_does_not_crash_and_volume_is_not_negative():
@@ -120,3 +133,14 @@ def test_open_mesh_does_not_crash_and_volume_is_not_negative():
     assert fingerprint(Piece("A/flipped", "flipped", (), inside_out.v, inside_out.f[:, ::-1]))["volume"] == \
         pytest.approx(0.001)
     assert match(records([p]), [p]).pairs == {p.key: p.key}
+
+
+@pytest.mark.skipif(bool(os.environ.get("CI")), reason="timing is only meaningful on a quiet machine")
+def test_fingerprint_is_fast_for_a_dense_piece():
+    p = _cylinder("A/dense", 0.02, 0.1, n=1000)     # 2,002 vertices, 4,000 triangles
+    assert len(p.v) >= 2000
+    fingerprint(p)
+    start = time.perf_counter()
+    for _ in range(5):
+        fingerprint(p)
+    assert (time.perf_counter() - start) / 5 < 0.010
