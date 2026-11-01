@@ -135,7 +135,9 @@ ids = { pivot = "TalonFX:5", encoder = { channel_a = 0, counts_per_rev = 2048 } 
 Change the CAD, re-solve, save, open the panel and click Export again. The panel remembers the folder. Exporting
 into a folder that already holds a `part.toml` replaces that part folder (the new one is written next to it and
 swapped in, so a failed export leaves the old one intact). A folder that holds other files but no `part.toml` is
-refused. The panel reads the Assembly when it opens, so re-open it after editing the Assembly.
+refused. If the old folder holds a `scrimmage-edits.toml` (the edits you made to this part in the Part tab; see
+[the Part tab](part-tab.md#parts-made-by-a-cad-plugin)), it is copied into the new folder, so exporting again does not
+lose them. Edits about a body that is no longer in the Assembly come back as a warning when the part is loaded. The panel reads the Assembly when it opens, so re-open it after editing the Assembly.
 
 ## Command line
 

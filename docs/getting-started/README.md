@@ -11,6 +11,7 @@ want to do.
 |---|---|---|---|
 | Set it up on my computer | [Install Scrimmage](install.md) | everyone, once | no |
 | See whether a mechanism idea works: wheels, hoods, bars, ramps | [Try a mechanism idea](try-a-mechanism.md) | students, CAD designers, mentors | no |
+| Turn our CAD into parts with weights and joints | [Bring your CAD in](bring-your-cad-in.md) | CAD students, mentors | no |
 | Run our robot code on a simulated robot, and drive it | [Run your robot code](run-your-robot-code.md) | programmers | a little: you edit a text file |
 | Check automatically that our autos and mechanisms still work | [Test your robot code](test-your-robot-code.md) | programmers | a little |
 
@@ -38,6 +39,6 @@ works this way, with the Bench tab (`scrimmage edit`) beside it so the room sees
 
 The [main README](../../README.md) is the full reference: every command, option and file format. The topic guides go
 deeper: [the Bench tab](../bench-tab.md), [component bench](../bench.md), [launcher model](../launcher.md), [disc launcher](../disc.md), [robot parts](../parts.md),
-[FreeCAD export](../freecad.md), [the assembler](../assembler.md), [driving in the browser](../drive.md),
+[FreeCAD export](../freecad.md), [the assembler](../assembler.md), [the Part tab](../part-tab.md), [driving in the browser](../drive.md),
 [scenario editor](../scenario-editor.md), [fast mode for CTRE robots](../fast-mode.md), [REV robots](../rev.md),
 [test range](../test-range.md), [terrain](../terrain.md) and [climbing](../climbing.md).

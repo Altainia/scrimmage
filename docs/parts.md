@@ -25,6 +25,12 @@ A CAD exporter exists: the [FreeCAD add-on](freecad.md) turns an Assembly into a
 Units everywhere in a config and in `part.toml`: **meters, kilograms, seconds, degrees**. Joints rotate about
 their axis (degrees in files) or slide along it (meters). Coordinates are x forward, y left, z up.
 
+**From CAD.** You don't have to write a `part.toml` by hand. The Part tab (`scrimmage edit my_robot.step`; see
+[the Part tab](part-tab.md)) turns a STEP, STL or OBJ export into part folders in this format, and its choices are
+kept in a `<name>.import.toml` next to them. For a part folder made by a CAD plugin, edits made in the Part tab (weight,
+joint range, spring, damping, friction, collision, mounts) go in `scrimmage-edits.toml` inside the folder, never in
+`part.toml`. Scrimmage applies that file when it loads the part; `part.toml` stays format 1.
+
 ## Putting parts in a robot config
 
 A robot config lists its parts as `[[part]]` entries, next to the usual `[robot]`, `[battery]`,

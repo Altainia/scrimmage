@@ -713,6 +713,12 @@ errors, or hand-written MJCF robots, open read-only. See [docs/assembler.md](doc
 walkthrough, shortcuts and troubleshooting. Part folders changing on disk aren't watched: re-open the page or
 make an edit to refresh the library.
 
+**From CAD.** Install the CAD reader with `pip install -e ".[cad]"`, then `scrimmage edit my_robot.step` (or **Import CAD…**
+in the assembler's library) opens the Part tab: it reads a STEP file (or STL/OBJ files), guesses bodies, and lets you set
+materials, joints, motors, mounts and the robot frame in the browser, with the weight and center of gravity worked out.
+It writes part folders you can add to a robot, and keeps your settings when you import the CAD again. See
+[docs/part-tab.md](docs/part-tab.md), and [Bring your CAD in](docs/getting-started/bring-your-cad-in.md) for a first walkthrough.
+
 ## Editing and running scenarios in the browser
 
 ```bash
@@ -912,10 +918,12 @@ scrimmage/        bridge (asyncio WebSocket server + real-time loop), world, bin
 scrimmage/freecad_tools.py  FreeCAD add-on install/zip and headless export (scrimmage freecad)
 scrimmage/launcher/  hooded ball launcher model, presets, sweeps and reports (scrimmage launcher)
 scrimmage/bench/  the component bench: bench files, contact laws, runs, pictures, compare and gallery
+scrimmage/cad/    CAD to part: reading STEP/STL, bodies, mass, import files, building part folders (Part tab)
 scrimmage/parts/  part format (model.py), assembler (assemble.py), field, device IDs, stock/ parts library
 docs/getting-started/  first-steps guides: install, try a mechanism idea, run and test your robot code
 docs/usability-future-work.md  rough edges found writing those guides, as possible future work
 docs/parts.md      part.toml reference, [[part]] entries, stock parts
+docs/part-tab.md   the Part tab (scrimmage edit my.step): CAD file to part folders, frame, materials, joints, re-import
 docs/assembler.md  the browser assembler (scrimmage edit): walkthrough, shortcuts, troubleshooting
 docs/bench-tab.md  the Bench tab (scrimmage edit on a folder of ideas): stage, Change it, 3D editor, working with an agent
 docs/scenario-editor.md  the browser scenario editor: steps, pickers, running and reports, read-only cases
