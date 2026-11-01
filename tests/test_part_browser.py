@@ -519,3 +519,60 @@ def test_a_snapped_hinge_takes_a_typed_pivot_point(part_page):
     assert "all three" in page.inner_text('#part-inspector [data-field="pivot"] .error')
     page.wait_for_timeout(300)
     assert posts == []
+
+
+def test_plugin_part_shows_and_clears_what_was_changed_here(browser, tmp_path, monkeypatch):
+    """A copy of tests/parts/intake (a plugin-made folder): a typed weight and damping go in scrimmage-edits.toml and
+    show as changed here; emptying the weight box removes it again."""
+    monkeypatch.setenv("SCRIMMAGE_RECENT", str(tmp_path / "recent.json"))
+    monkeypatch.setenv("SCRIMMAGE_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("SCRIMMAGE_FOLDERS", str(tmp_path / "folders.json"))
+    folder = tmp_path / "intake"
+    shutil.copytree(Path(__file__).resolve().parent / "parts" / "intake", folder)
+    overlay = folder / "scrimmage-edits.toml"
+    srv = Server(folder, cwd=tmp_path)
+    ctx = browser.new_context(viewport={"width": 1500, "height": 950})
+    logs = []
+    try:
+        page = ctx.new_page()
+        page.set_default_timeout(30000)
+        page.on("pageerror", lambda e: logs.append(f"pageerror: {e}"))
+        page.goto(srv.url)
+        page.wait_for_function("window.__scrimmagePart && __scrimmagePart.store.state"
+                               " && __scrimmagePart.store.state.mode === 'plugin'")
+        _pick_body(page, "roller")
+        weight = page.locator('#part-inspector [data-field="kg"]')
+        weight.wait_for()
+        assert page.input_value("#part-body-weight") == ""
+        assert page.get_attribute("#part-body-weight", "placeholder") == "0.3"
+        assert weight.get_attribute("data-from") == "plugin"
+
+        _edit(page, lambda: _type(page, "#part-body-weight", "0.5"))
+        assert _body(page, "roller")["typed_mass"] == 0.5 and _body(page, "roller")["mass"] == pytest.approx(0.5)
+        assert tomllib.loads(overlay.read_text()) == {"body": {"roller": {"mass": 0.5}}}
+        page.wait_for_function("document.querySelector('#part-inspector [data-field=\"kg\"]').dataset.from === 'here'")
+        assert page.input_value("#part-body-weight") == "0.5"
+        assert "Changed here" in weight.inner_text()
+
+        page.click("#part-joint-more summary")
+        damping = page.locator('#part-inspector [data-field="damping"]')
+        assert damping.get_attribute("data-from") == "plugin"
+        assert page.locator('#part-inspector [data-field="range"]').get_attribute("data-from") == "plugin"
+        _edit(page, lambda: _type(page, "#part-damping", "0.01"))
+        assert _body(page, "roller")["changed"] == ["damping", "mass"]
+        page.wait_for_function("document.querySelector('#part-inspector [data-field=\"damping\"]').dataset.from === 'here'")
+        assert tomllib.loads(overlay.read_text())["body"]["roller"]["joint"] == {"damping": 0.01}
+
+        # emptying the weight box goes back to the plugin's weight
+        def empty():
+            page.click("#part-body-weight", click_count=3)
+            page.keyboard.press("Backspace")
+            page.keyboard.press("Enter")
+        _edit(page, empty)
+        assert _body(page, "roller")["typed_mass"] is None and _body(page, "roller")["mass"] == pytest.approx(0.3)
+        assert tomllib.loads(overlay.read_text()) == {"body": {"roller": {"joint": {"damping": 0.01}}}}
+        page.wait_for_function("document.querySelector('#part-inspector [data-field=\"kg\"]').dataset.from === 'plugin'")
+    finally:
+        ctx.close()
+        srv.stop()
+    assert not logs, f"browser errors: {logs}"

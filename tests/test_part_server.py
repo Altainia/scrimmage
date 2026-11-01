@@ -373,7 +373,10 @@ def test_plugin_folder_mode_edits_overlay(part_app, tmp_path):
     s, st = _edit(c, "set_mass", body="arm", kg=2.5)
     assert s == 200, st
     assert tomllib.loads((d / "scrimmage-edits.toml").read_text()) == {"body": {"arm": {"mass": 2.5}}}
-    assert next(b for b in st["bodies"] if b["name"] == "arm")["mass"] == pytest.approx(2.5)
+    arm = next(b for b in st["bodies"] if b["name"] == "arm")
+    assert arm["mass"] == pytest.approx(2.5) and arm["typed_mass"] == 2.5 and arm["changed"] == ["mass"]
+    base = next(b for b in st["bodies"] if b["name"] == "base")
+    assert base["typed_mass"] is None and base["changed"] == []
     assert load_part(d).bodies[1].mass == pytest.approx(2.5)
     s, st = _edit(c, "set_joint", body="arm", joint={"range": [-45, 45]})
     assert s == 200, st

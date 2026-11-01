@@ -6,6 +6,10 @@ limits, and the part's total weight. Piece edits are refused: the folder has no 
 merged them into. Each edit is checked by applying it to the part before it is written. A poll every 0.25 s picks up
 outside writes of part.toml or the overlay (a re-export, a hand edit); one that doesn't load makes the part read-only
 with the reason until it loads again. Versions, history and the 409 rule are part_session's.
+
+Each body in the state has `typed_mass` (the weight typed here, else None) and `changed` (the overlay's keys for it:
+"mass", "collision" and the joint's "range", "spring", "damping", "frictionloss"), so the page can show which values
+were changed here and which come from the plugin.
 """
 
 from __future__ import annotations
@@ -199,6 +203,9 @@ class PluginSession(_Session):
                 total, moment = total + b.mass, moment + b.mass * com
                 j = b.joint
                 joints = {j.name} if j else set()
+                be = bes.get(b.name, {})
+                # what was changed here (in the overlay), as the GUI's field names; the rest is the plugin's
+                changed = sorted({k for k in ("mass", "collision") if k in be} | set(be.get("joint", {})))
                 out["bodies"].append({
                     "name": b.name, "parent": b.parent, "part": p.name if b.parent is None else None,
                     "joint": None if j is None else {"kind": j.kind, "axis": _floats(R @ np.asarray(j.axis, float)),
@@ -208,7 +215,8 @@ class PluginSession(_Session):
                     "encoder": [e.slot for e in p.encoders if e.joint in joints],
                     "gyro": any(g.body == b.name for g in p.gyros),
                     "mounts": [m.name for m in p.mounts if m.body == b.name],
-                    "collision": bes.get(b.name, {}).get("collision"), "mass": float(b.mass), "com": _floats(com)})
+                    "collision": be.get("collision"), "mass": float(b.mass), "com": _floats(com),
+                    "typed_mass": be.get("mass"), "changed": changed})
             out["parts"] = [{"name": p.name, "folder": str(self.path), "total_mass": self.edits.get("total_mass"),
                              "mass": total, "com": _floats(moment / total) if total > 0 else None}]
             out["checklist"] = [{"level": "check", "text": w, "target": {"kind": "frame", "keys": []}}

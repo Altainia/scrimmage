@@ -175,8 +175,8 @@ addSection({
         const v = number(text, "kg");
         if (!Number.isNaN(v)) editOp("set_mass", { body: b.name, kg: v });
       });
-      rows.push(field("or type its weight", h("span", { class: "with-unit" }, w, h("span", { class: "unit", text: "kg" })), "kg",
-        c.plugin ? "Empty it to use the weight the CAD plugin wrote." : "A typed weight wins over its pieces' materials. Empty it to use them again."));
+      rows.push(origin(c, b, ["mass"], field("or type its weight", h("span", { class: "with-unit" }, w, h("span", { class: "unit", text: "kg" })), "kg",
+        c.plugin ? "A typed weight wins over the one the CAD plugin wrote." : "A typed weight wins over its pieces' materials. Empty it to use them again.")));
       rows[rows.length - 1].querySelector("label").htmlFor = "part-body-weight";
     }
     if (!c.plugin) {
@@ -251,6 +251,16 @@ const rt = () => toRobot(part.state.frame);
 const sentence = (m) => { const t = String(m || "").trim(); return t ? t[0].toUpperCase() + t.slice(1) : t; };
 const why = (data) => sentence((data.errors && data.errors[0] && data.errors[0].message) || data.error || "That didn't work");
 const fmtNum = (x, digits = 3) => (typeof x === "number" && isFinite(x) ? String(+x.toFixed(digits)) : "");
+// Plugin mode: say on a field whether its value was changed here (in scrimmage-edits.toml) or comes from the CAD
+// plugin (the state's body.changed lists the overlay's keys), as data-from="here" | "plugin" and a line.
+function origin(c, b, keys, row) {
+  if (!c.plugin) return row;
+  const here = keys.some((k) => (b.changed || []).includes(k));
+  row.dataset.from = here ? "here" : "plugin";
+  row.append(h("p", { class: "hint part-origin", text: here ? "Changed here. Empty it to go back to what the CAD plugin wrote."
+    : "From the CAD plugin." }));
+  return row;
+}
 const selSig = () => `${part.sel.kind}:${[...part.sel.keys].join("\n")}`;
 const AXIS_WORDS = ["x (forward)", "y (left)", "z (up)"];
 
@@ -535,14 +545,16 @@ function jointMore(c, b) {
     }));
     return { els, waiting: !!d };
   };
+  const rangeWait = plugin ? "Type the other end too, or empty both to go back to the CAD plugin's range."
+    : "Type the other end too, or empty both for no limit.";
   const range = pair("range", j.range, [["part-range-from", { placeholder: "no limit" }], ["part-range-to", { placeholder: "no limit", "aria-label": "Range to" }]],
     ([a, z]) => ((a === null) !== (z === null) ? null : patchJoint(b.name, { range: a === null ? null : [a, z] })),
-    "Type the other end too, or empty both for no limit.");
+    rangeWait);
   const rangeRow = field("Range: from", h("span", { class: "with-unit part-pair" }, range.els[0], h("span", { class: "unit", text: `${u.pos} to` }), range.els[1], h("span", { class: "unit", text: u.pos })), "range",
-    range.waiting ? "Type the other end too, or empty both for no limit."
+    range.waiting ? rangeWait
       : slide ? "How far it slides each way, in meters from where the CAD shows it." : "How far it turns each way, in degrees from where the CAD shows it.");
   rangeRow.querySelector("label").htmlFor = "part-range-from";
-  rows.push(rangeRow);
+  rows.push(origin(c, b, ["range"], rangeRow));
   const spring = pair("spring", j.spring, [["part-spring", { placeholder: "none" }], ["part-spring-rest", { placeholder: "0", "aria-label": `Spring rest (${u.pos})` }]],
     ([k, r]) => (k === null && r !== null ? null
       : patchJoint(b.name, { spring: k === null ? null : plugin ? { stiffness: k, rest: r || 0 } : [k, r || 0] })),
@@ -550,7 +562,7 @@ function jointMore(c, b) {
   const springRow = field("Spring", h("span", { class: "with-unit part-pair" }, spring.els[0], h("span", { class: "unit", text: `${u.k}, rest at` }), spring.els[1], h("span", { class: "unit", text: u.pos })), "spring",
     spring.waiting ? "Type the stiffness too." : "Pulls it back toward its rest position. Empty means no spring.");
   springRow.querySelector("label").htmlFor = "part-spring";
-  rows.push(springRow);
+  rows.push(origin(c, b, ["spring"], springRow));
   for (const [key, label, unitText, hint] of [["damping", "Damping", u.d, "Slows it more the faster it moves."], ["frictionloss", "Friction", u.f, "A steady drag that holds it until pushed hard enough."]]) {
     const el = box({ id: `part-${key}`, type: "text", inputmode: "decimal", value: j[key] ? fmtNum(j[key], 5) : "", placeholder: "0" }, (text) => {
       const v = number(text, key);
@@ -558,7 +570,7 @@ function jointMore(c, b) {
     });
     const row = field(label, h("span", { class: "with-unit" }, el, h("span", { class: "unit", text: unitText })), key, hint);
     row.querySelector("label").htmlFor = `part-${key}`;
-    rows.push(row);
+    rows.push(origin(c, b, [key], row));
   }
   return details("joint-more", "More: range, spring, damping, friction", rows,
     part.errors.some((e) => ["range", "spring", "damping", "frictionloss"].includes(e.field)));
@@ -851,6 +863,10 @@ addSection({
     sel.addEventListener("change", () => { if (live(sel) && sel.value) editOp("set_collision", { body: b.name, mode: sel.value }); });
     const rows = [h("h3", { text: "Touching things" }), field("How it touches things", sel, "mode",
       "Hooks and claws that grab need to touch things. A wheel needs a joint that turns.")];
+    if (c.plugin && b.collision) {
+      rows[1].dataset.from = "here";
+      rows[1].append(h("p", { class: "hint part-origin", text: "Changed here." }));
+    }
     const look = LOOKS.find(([re]) => re.test(b.name));
     const turns = !!b.joint && b.joint.kind === "hinge";
     if (look && (look[2] !== "wheel" || turns) && (b.collision || "none") === "none" && !c.ro) {

@@ -195,7 +195,8 @@ The FreeCAD add-on ([freecad.md](freecad.md)) writes part folders with their own
 `scrimmage edit parts/arm`. The tab still shows the bodies, but there are no pieces to move, the frame is whatever the
 plugin wrote, and the joints, slots and axes come from the plugin and cannot be changed here. What you can change is
 the weight, the joint's range, spring, damping and friction, how it touches things, and mounts. Those edits go in
-`scrimmage-edits.toml` inside the part folder, never in `part.toml`. The FreeCAD add-on keeps that file when you export
+`scrimmage-edits.toml` inside the part folder, never in `part.toml`. A value you changed here says **Changed here**;
+the rest say **From the CAD plugin**. Empty a changed box to go back to what the plugin wrote. The FreeCAD add-on keeps that file when you export
 again. If an edit is about a body that has since gone from the CAD, you get a warning and the edit is ignored.
 
 A known limit: parts made by a plugin get no **Try it** slider.
