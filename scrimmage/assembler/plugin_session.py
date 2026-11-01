@@ -187,7 +187,7 @@ class PluginSession(_Session):
     def state(self) -> dict:
         with self._lock:
             out = {"version": self.version, "mode": "plugin", "path": str(self.path),
-                   "name": self.part.name if self.part else self.path.name, "source": None, "units": "m",
+                   "name": self.part.name if self.part else self.path.name, "source": None, "source_copied": False, "units": "m",
                    "frame": None, "pieces": [], "bodies": [], "parts": [], "couplings": [], "loops": [],
                    "checklist": [],
                    "messages": list(self._messages), "build": {"state": "idle", "message": None},

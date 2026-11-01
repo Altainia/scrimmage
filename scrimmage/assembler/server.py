@@ -147,12 +147,14 @@ Bench (`/api/bench/*`; 404 unless an idea session is open). `file` is an idea's 
 Part (`/api/part/*`; 404 unless a part is open, except upload). Pieces are keyed as the CAD file's tree spells them
 ("Climber/hook_assy/hook", "#2" on repeats); points and axes the student picks are CAD coordinates (meters):
   GET  /api/part/state[?since=N]   -> {version, mode: import|plugin, path (the import file or part folder), name,
-        source (as the import file stores it; null in plugin mode), units, frame ({up, front, floor, center, skip,
+        source (as the import file stores it; null in plugin mode), source_copied (the source is a dropped or
+        chosen file's copy in parts/<name>.source/: Import again asks for the new export), units, frame ({up, front, floor, center, skip,
         confirmed}; null in plugin mode), pieces: [{key, name, group, body, material (null: not chosen yet, built as
         aluminum), infill, custom_density, mass (kg: the typed weight, else volume x density; null when the source
         can't be read), typed_mass, left_out, volume (m^3), hardware (the hardware guess)}], bodies: [{name, parent,
         joint, motor, encoder, gyro, mounts, collision, part, typed_mass, mass (its pieces left in, or its typed
-        weight), com (robot coordinates; null for no mass)}], parts: [{name, folder, mass, com (from the last
+        weight), com (robot coordinates; null for no mass); in plugin mode also changed (the scrimmage-edits.toml
+        keys set here: mass, collision, range, spring, damping, frictionloss)}], parts: [{name, folder, mass, com (from the last
         build; null before one), total_mass}], couplings: [{a, b, ratio}] and loops: [{body1, body2, point (CAD)}]
         (as the import file has them; [] in plugin mode), checklist: [{level: todo|check|error, text, target: {kind:
         piece|body|frame, keys}}], messages (what the last edit, undo or re-import dropped or guessed, plain words),
@@ -189,8 +191,12 @@ Part (`/api/part/*`; 404 unless a part is open, except upload). Pieces are keyed
         last path part is used, and it must end .step/.stp/.stl/.obj): saved into parts/<import name>.source/ next
         to the import file, which then points at it, and re-imported (a dropped file replaces the source). With no
         part open it makes parts/<stem>.import.toml (made unique) in the robot config's folder (robot mode) or the
-        working directory, its source in parts/<stem>.source/, and opens it (409 as for /api/app/open). 200 with the
-        state; 400 for a bad name or plugin mode, 413 over 512 MB.
+        working directory, its source in parts/<stem>.source/, and opens it (409 as for /api/app/open). Several
+        files at once: header X-Files (a %-encoded JSON list of {name, size}, in the order the body holds them) in
+        place of X-Filename; they must be STL or OBJ files (400 in one sentence for STEP files among them), and go
+        in parts/<name>.source/meshes/ (replacing it), read together as a folder of them. Header X-Import-Again: 1
+        is Import again on a copied source (state.source_copied): the new export keeps the settings as an ordinary
+        re-import does. 200 with the state; 400 for a bad name or plugin mode, 413 over 512 MB.
 
 Robot (`/api/robot/*`):
   GET  /api/robot/state[?since=N]  -> {version, path, display_path, read_only, read_only_reason, parts, errors,
@@ -913,20 +919,34 @@ class App:
             parts_dir = robot.parent / "parts"
         return self.open_path(str(p), kind="import", parts_dir=parts_dir)
 
-    def upload(self, stream, length: int, filename: str | None) -> tuple[int, dict]:
+    def upload(self, stream, length: int, filename: str | None, files: list | None = None,
+               again: bool = False) -> tuple[int, dict]:
         """A dropped CAD file: into the open import's parts/<name>.source/ (re-imported from there), or, with no
-        part open, a new import in parts/ (next to the robot config in robot mode, else the working directory)."""
+        part open, a new import in parts/ (next to the robot config in robot mode, else the working directory).
+        `files` ([(name, size)], more than one) is several STL or OBJ files sent one after another: they go in
+        .source/meshes/ and are read together, as a folder of them. `again` is Import again on a copied source:
+        the settings are kept as for an ordinary re-import."""
+        if files is not None and len(files) == 1:
+            filename, files = files[0][0], None
+
+        def save(folder: Path) -> Path:
+            if files is None:
+                return part_session.save_upload(stream, length, filename, folder)
+            return part_session.save_uploads(stream, length, files, folder)
         with self._lock:
             part, base = self.part, (self._base_dir() if self.mode == "robot" else self.cwd)
         if part is not None:
-            dest = part_session.save_upload(stream, length, filename, part.source_folder())
-            return part.replace_source(dest)
+            return part.replace_source(save(part.source_folder()), again)
         with self._lock:
             self._check_can_open()
-        name = sanitize(Path(unquote(filename or "x").replace("\\", "/")).stem)
+        if files is None:
+            name = sanitize(Path(part_session.upload_name(filename)).stem)
+        else:
+            names = [part_session.upload_name(n) for n, _ in files]
+            part_session.upload_set(names)
+            name = part_session.upload_stem(names)
         imp = part_session.free_import(base / "parts", name)
-        dest = part_session.save_upload(stream, length, filename,
-                                        imp.with_name(imp.name[:-len(part_session.SUFFIX)] + ".source"))
+        dest = save(imp.with_name(imp.name[:-len(part_session.SUFFIX)] + ".source"))
         with self._lock:
             self._check_can_open()
             with self.bench_jobs.gate():
@@ -2255,7 +2275,16 @@ class _Handler(BaseHTTPRequestHandler):
                 raise ApiError(400, "bad Content-Length") from None
             if n > part_session.MAX_UPLOAD:
                 raise ApiError(413, "that file is too large to upload (over 512 MB)")
-            return app.upload(self.rfile, n, self.headers.get("X-Filename"))
+            files = None
+            if self.headers.get("X-Files"):
+                try:
+                    files = [(f["name"], f["size"]) for f in json.loads(unquote(self.headers["X-Files"]))]
+                except (ValueError, TypeError, KeyError):
+                    raise ApiError(400, "X-Files must be a list of {name, size}") from None
+                if not files:
+                    raise ApiError(400, "no files were sent")
+            return app.upload(self.rfile, n, self.headers.get("X-Filename"), files,
+                              again=self.headers.get("X-Import-Again") == "1")
         if path.startswith("/api/part/"):
             return self._part_api(method, url, app.need_part())
         if path.startswith(("/api/robot/", "/api/scenario/", "/api/live/")):

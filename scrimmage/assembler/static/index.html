@@ -359,8 +359,9 @@
   <span id="part-build" class="stat" role="status"></span>
   <span id="part-total" class="stat"></span>
   <button type="button" id="part-reimport" class="btn btn-small part-reimport" title="Read the CAD file again (after you changed it in your CAD program)">Import again</button>
+  <input type="file" id="part-reimport-file" accept=".step,.stp,.stl,.obj" multiple hidden aria-label="The new export of the CAD file">
 </footer>
-<div id="part-drop" class="part-drop" hidden><p>Drop the CAD file to use it in place of this one</p></div>
+<div id="part-drop" class="part-drop" hidden><p>Drop the CAD file (or its STL files) to use in place of this one</p></div>
 </div>
 
 <dialog id="save-dialog" class="save-dialog" aria-labelledby="save-title">

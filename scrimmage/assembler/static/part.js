@@ -23,7 +23,7 @@
 // window.__scrimmagePart {store, screenPos(pieceKey, {along, across}), screenPoint(pieceKey), scene, toRobot(frame)}.
 
 import { $, h, api, notice, serial, registerTab, setTab, showPath } from "./app.js";
-import { uploadCad } from "./start.js";
+import { uploadCad, cadFilesProblem, filesName } from "./start.js";
 
 export const part = {
   state: null,        // /api/part/state
@@ -105,27 +105,40 @@ export function editOp(op, args) {
 const undo = () => serial(() => mutate("/api/part/undo", {}));
 const redo = () => serial(() => mutate("/api/part/redo", {}));
 
-async function reimport(file = null) {
+// Read the source again. With `files` (dropped or chosen) they replace it; `again` says they are the same source
+// exported again (Import again on a copied source), so the settings are kept as for an ordinary re-import.
+async function reimport(files = null, again = false) {
   if (!part.state) return;
-  working = file ? `Reading ${file.name}…` : "Reading the CAD file again…";
+  const what = files ? filesName(files) : null;
+  working = files ? `Reading ${what}…` : "Reading the CAD file again…";
   renderStatus();
   try {
-    const { status, data } = file ? await uploadCad(file)
+    const { status, data } = files ? await uploadCad(files, { again })
       : await api("POST", "/api/part/reimport", { version: part.state.version });
     if (status === 200 && data.version !== undefined) {
       part.errors = [];
       viewKey = null;   // the same path may hold new shapes
       applyState(data, true);
-      notice(file ? `Using ${file.name} now.` : "Read the CAD file again.", "info");
+      notice(again ? `Read the new export (${what}).` : files ? `Using ${what} now.` : "Read the CAD file again.", "info");
     } else {
       const why = (data.errors && data.errors[0] && data.errors[0].message) || data.error || `the server answered ${status}`;
-      notice(file ? `Couldn't use ${file.name}: ${why}` : `Couldn't read the CAD file again: ${why}`, "error");
+      notice(files ? `Couldn't use ${what}: ${why}` : `Couldn't read the CAD file again: ${why}`, "error");
       await refresh();
     }
   } finally {
     working = "";
     renderStatus();
   }
+}
+
+// Import again: a source that is a dropped or chosen file's copy (state.source_copied) would read the same copy
+// again, so it asks for the new export instead; a source opened from a path is read again from there.
+function importAgain() {
+  if (!part.state) return;
+  if (!part.state.source_copied) { reimport(); return; }
+  const chooser = $("#part-reimport-file");
+  chooser.value = "";
+  chooser.click();
 }
 
 // -- state --------------------------------------------------------------------------------------------
@@ -407,6 +420,8 @@ function renderStatus() {
   const total = s.parts.reduce((a, p) => a + (p.mass || 0), 0);
   $("#part-total").textContent = s.parts.length > 1 ? `${s.parts.length} parts · ${kg(total)}` : `Weight ${kg(total)}`;
   $("#part-reimport").hidden = plugin();
+  $("#part-reimport").title = s.source_copied ? "Choose the new export: this part was made from a copy of a dropped or chosen file"
+    : "Read the CAD file again (after you changed it in your CAD program)";
   renderTools();
 }
 
@@ -531,11 +546,11 @@ function initDrop() {
     e.preventDefault();
     depth = 0;
     cover.hidden = true;
-    const f = e.dataTransfer.files[0];
-    if (!f) return;
+    const dropped = [...e.dataTransfer.files];
     if (plugin()) { notice("A plugin-made part comes from its CAD plugin: export it again there.", "warn"); return; }
-    if (!/\.(step|stp|stl|obj)$/i.test(f.name)) { notice(`${f.name} isn't a CAD file: drop a .step, .stp, .stl or .obj file.`, "error"); return; }
-    reimport(f);
+    const problem = cadFilesProblem(dropped);
+    if (problem) { notice(problem, "error"); return; }
+    reimport(dropped);
   });
 }
 
@@ -562,7 +577,14 @@ export async function initPart() {
     const ps = selectedPieces();
     if (ps.length) editOp("leave_out", { pieces: ps.map((p) => p.key), out: !ps.every((p) => p.left_out) });
   });
-  $("#part-reimport").addEventListener("click", () => reimport());
+  $("#part-reimport").addEventListener("click", importAgain);
+  $("#part-reimport-file").addEventListener("change", (e) => {
+    const files = [...e.target.files];
+    if (!files.length) return;
+    const problem = cadFilesProblem(files);
+    if (problem) { notice(problem, "error"); return; }
+    reimport(files, true);
+  });
   initDrop();
   const [m, app] = await Promise.all([api("GET", "/api/part/materials"), api("GET", "/api/app/state")]);
   if (m.status === 200) part.materials = m.data;

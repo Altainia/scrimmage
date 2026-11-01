@@ -12,10 +12,17 @@ export const CAD_FILE = /\.(step|stp|stl|obj)$/i;
 
 // A CAD file sent to POST /api/part/upload: {status, data} (data is the part's state on 200). With a part open it
 // replaces that part's source; with none it makes a new import and opens it.
-export async function uploadCad(file) {
+// Send dropped or chosen CAD files to /api/part/upload: one file (X-Filename), or several STL or OBJ files read
+// together as one source (X-Files: each one's name and size, in the order the body holds them). `again` is Import
+// again on a copied source: the settings are kept as for an ordinary re-import.
+export async function uploadCad(files, { again = false } = {}) {
+  const list = [...(files.length === undefined ? [files] : files)];
+  const headers = { "X-Scrimmage-Token": sessionToken(), "Content-Type": "application/octet-stream" };
+  if (list.length === 1) headers["X-Filename"] = encodeURIComponent(list[0].name);
+  else headers["X-Files"] = encodeURIComponent(JSON.stringify(list.map((f) => ({ name: f.name, size: f.size }))));
+  if (again) headers["X-Import-Again"] = "1";
   try {
-    const res = await fetch("/api/part/upload", { method: "POST", body: file, headers: {
-      "X-Scrimmage-Token": sessionToken(), "X-Filename": encodeURIComponent(file.name), "Content-Type": "application/octet-stream" } });
+    const res = await fetch("/api/part/upload", { method: "POST", body: list.length === 1 ? list[0] : new Blob(list), headers });
     let data;
     try { data = await res.json(); } catch { data = {}; }
     return { status: res.status, data: data && typeof data === "object" ? data : {} };
@@ -23,6 +30,21 @@ export async function uploadCad(file) {
     return { status: 0, data: { error: "can't reach the editor (is scrimmage edit still running?)" } };
   }
 }
+
+// What is wrong with dropping or choosing these files together, in one sentence, or null. Several files are STL or
+// OBJ files, read as one part (like a folder of them); a STEP file goes on its own.
+export function cadFilesProblem(files) {
+  const list = [...files];
+  if (!list.length) return "No file came with that: drop or choose a .step, .stp, .stl or .obj file.";
+  const bad = list.find((f) => !CAD_FILE.test(f.name));
+  if (bad) return `${bad.name} isn't a CAD file: use a .step, .stp, .stl or .obj file.`;
+  if (list.length === 1) return null;
+  const steps = list.filter((f) => /\.(step|stp)$/i.test(f.name)).length;
+  if (steps === list.length) return "Use one STEP file at a time: a STEP file already holds the whole assembly.";
+  if (steps) return "Use a STEP file on its own, or only STL and OBJ files, not both at once.";
+  return null;
+}
+export const filesName = (files) => (files.length === 1 ? files[0].name : `${files.length} files`);
 const slash = (p) => p.replace(/\/+$/, "").lastIndexOf("/");
 const base = (p) => p.slice(slash(p) + 1);
 const dirOf = (p) => (slash(p) > 0 ? p.slice(0, slash(p)) : "/");
@@ -103,27 +125,28 @@ export async function showStart(root, { canGoBack, onBack, cadFor = null }) {
   function cadForm(robot = null) {
     const list = h("div", { id: "start-cad-browse", class: "start-folder-browse" });
     const pick = (path) => post("/api/app/new", { kind: "import", path, ...(robot ? { robot } : {}) });
-    const send = async (file) => {
-      if (!file) return;
-      if (!CAD_FILE.test(file.name)) { notice(`${file.name} isn't a CAD file: use a .step, .stp, .stl or .obj file.`, "error", "start"); return; }
+    const send = async (fileList) => {
+      const files = [...(fileList || [])];
+      const problem = cadFilesProblem(files);
+      if (problem) { notice(problem, "error", "start"); return; }
       drop.classList.add("busy");
-      drop.querySelector("p").textContent = `Reading ${file.name}…`;
-      const { status, data } = await uploadCad(file);
+      drop.querySelector("p").textContent = `Reading ${filesName(files)}…`;
+      const { status, data } = await uploadCad(files);
       if (status === 200) { reload(); return; }
       drop.classList.remove("busy");
       drop.querySelector("p").textContent = dropText;
       const why = (data.errors && data.errors[0] && data.errors[0].message) || data.error || `the server answered ${status}`;
-      notice(status === 409 ? `Can't switch right now: ${why}` : `Couldn't read ${file.name}: ${why}`, "error", "start");
+      notice(status === 409 ? `Can't switch right now: ${why}` : `Couldn't read ${filesName(files)}: ${why}`, "error", "start");
     };
-    const dropText = "Drop a .step, .stl or .obj file here";
-    const chooser = h("input", { type: "file", id: "start-cad-file", accept: ".step,.stp,.stl,.obj", hidden: true, "aria-label": "CAD file",
-      onchange: (e) => send(e.target.files[0]) });
+    const dropText = "Drop a .step file here, or several .stl or .obj files";
+    const chooser = h("input", { type: "file", id: "start-cad-file", accept: ".step,.stp,.stl,.obj", multiple: true, hidden: true, "aria-label": "CAD files",
+      onchange: (e) => send(e.target.files) });
     const drop = h("div", { id: "start-drop", class: "start-drop" },
       h("p", { text: dropText }),
       h("button", { type: "button", class: "btn btn-small", onclick: () => chooser.click() }, "Choose a file…"), chooser);
     drop.addEventListener("dragover", (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; drop.classList.add("drop-here"); });
     drop.addEventListener("dragleave", () => drop.classList.remove("drop-here"));
-    drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("drop-here"); send(e.dataTransfer.files[0]); });
+    drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("drop-here"); send(e.dataTransfer.files); });
     newBox.replaceChildren(h("div", { class: "start-form start-cad" },
       h("p", { class: "start-hint", text: "Export your robot mechanism from your CAD program as a STEP file (or STL files), then pick it here. "
         + "Scrimmage reads it, guesses what is what, and shows you what is left to check." }),

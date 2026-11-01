@@ -37,13 +37,15 @@ scrimmage edit parts/arm                          # a part folder made by a CAD 
 
 You can also start from the start page (`scrimmage edit` with no file): **New part from CAD** lets you **Browse…**
 for the file, drop one on the page, or press **Choose a file…**. For a folder of STL files, Browse to the folder and
-press **Use its STL files** (one piece per file). In the assembler, **Import CAD…** in the parts library does the same for the robot you
+press **Use its STL files** (one piece per file), or drop (or choose) all the STL files at once: they make one part
+together, the same as the folder. Drop one STEP file at a time, and don't mix a STEP file with STL files. In the
+assembler, **Import CAD…** in the parts library does the same for the robot you
 have open.
 
 The first time, Scrimmage reads the file, guesses the bodies, and writes `<name>.import.toml` into the `parts/` folder
 next to your robot config (or next to the CAD file). That file holds every choice you make, so the CAD file itself is
-never changed. A file you drop on the page is copied next to it, in `<name>.source/`; a file you Browse to is used
-where it is.
+never changed. A file you drop on the page or choose with **Choose a file…** is copied next to it, in
+`<name>.source/` (several STL files go in `<name>.source/meshes/`); a file you Browse to is used where it is.
 
 One import can make several parts. A climber with a base and a swinging arm can be two parts, each in its own folder
 under `parts/`. See [Bodies](#bodies).
@@ -182,8 +184,15 @@ are never listed.
 
 ## Importing again
 
-You changed the CAD? Export it again over the same file, then press **Import again** (or drop the new file on the
-page to use it in place of the old one). Scrimmage keeps your settings: it matches each piece by its **name** first,
+You changed the CAD? Export it again, then:
+
+- **If you opened the file with Browse or `scrimmage edit`,** export it over the same file and press **Import
+  again**. Scrimmage reads that file again.
+- **If you dropped the file or used Choose a file…,** Scrimmage works from its own copy, so press **Import again** and
+  choose the new export in the window that opens (for STL files, choose all of them). You can also drop the new export
+  on the page.
+
+Either way, Scrimmage keeps your settings: it matches each piece by its **name** first,
 then by its **shape**. A piece matched only by shape goes on the checklist so you can check it. New pieces get
 guessed bodies. A piece that is gone is dropped, and a joint or mount that belonged only to it is dropped with a
 message saying "no longer in the CAD". Nothing else is lost. Your choices are stored in CAD coordinates, so

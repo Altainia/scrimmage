@@ -1,6 +1,7 @@
 """The Part tab's server side: a CAD import (or a plugin part folder) behind /api/part/*."""
 
 import base64
+import json
 import os
 import shutil
 import struct
@@ -10,6 +11,7 @@ import tomllib
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import quote
 
 import numpy as np
 import pytest
@@ -512,3 +514,102 @@ def test_rapid_edits_latest_wins(part_app, tmp_path):
     assert imp.pieces[HOOK].material == "steel" and imp.written == {"climber": "climber"}
     assert sum(b.mass for b in load_part(tmp_path / "parts" / "climber").bodies) == pytest.approx(
         st["parts"][0]["mass"])
+
+
+def _upload(c, files, again=False):
+    """POST /api/part/upload with [(name, bytes)]: one file as X-Filename, several as X-Files. (status, body)."""
+    headers = {"X-Scrimmage-Token": c.token}
+    if len(files) == 1:
+        headers["X-Filename"] = quote(files[0][0])
+    else:
+        headers["X-Files"] = quote(json.dumps([{"name": n, "size": len(b)} for n, b in files]))
+    if again:
+        headers["X-Import-Again"] = "1"
+    req = urllib.request.Request(c.base + "/api/part/upload", data=b"".join(b for _, b in files), method="POST",
+                                 headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=40) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read())
+
+
+STL = DATA / "stl"
+
+
+def _stls(*names):
+    return [(f"{n}.stl", (STL / f"{n}.stl").read_bytes()) for n in names]
+
+
+def test_several_stls_from_the_start_page_are_one_part(part_app, tmp_path):
+    c, _ = part_app(None)
+    s, st = _upload(c, _stls("base_plate", "arm_A", "hook"))
+    assert s == 200, st
+    folder = tmp_path / "parts" / "stl_parts.source" / part_session.MESH_FOLDER
+    assert sorted(p.name for p in folder.iterdir()) == ["arm_A.stl", "base_plate.stl", "hook.stl"]
+    assert read_import(tmp_path / "parts" / "stl_parts.import.toml").source == "stl_parts.source/meshes"
+    assert {p["key"] for p in st["pieces"]} == {"base_plate", "arm_A", "hook"}
+    assert st["source_copied"] is True
+
+
+def test_several_stls_dropped_on_an_open_part_replace_its_source(part_app, tmp_path):
+    c, _ = part_app(None)
+    s, st = _upload(c, _stls("base_plate", "arm_A"))
+    assert s == 200, st
+    s, st = _edit(c, "set_units", units="in")
+    assert s == 200, st
+    # the next drop holds a different set: the old files go, and the units stay (the same folder)
+    s, st = _upload(c, _stls("arm_A", "hook"))
+    assert s == 200, st
+    folder = tmp_path / "parts" / "stl_parts.source" / part_session.MESH_FOLDER
+    assert sorted(p.name for p in folder.iterdir()) == ["arm_A.stl", "hook.stl"]
+    assert {p["key"] for p in st["pieces"]} == {"arm_A", "hook"} and st["units"] == "in"
+    assert not [p for p in folder.parent.iterdir() if p.name.startswith(".")]
+
+
+@pytest.mark.parametrize("files, says", [
+    ([("a.step", b"x"), ("b.step", b"y")], "Use one STEP file at a time"),
+    ([("a.step", b"x"), ("b.stl", b"y")], "Use a STEP file on its own, or only STL and OBJ files"),
+    ([("a.stl", b"x"), ("notes.txt", b"y")], "notes.txt is not a STEP, STL or OBJ file"),
+    ([("a.stl", b"x"), ("A.STL", b"y")], "Two of the files are called"),
+])
+def test_several_files_that_dont_go_together_are_refused(part_app, tmp_path, files, says):
+    for path in (None, "step"):
+        c, _ = part_app(path)
+        s, b = _upload(c, files)
+        assert s == 400 and says in b["error"], b
+    assert not (tmp_path / "parts" / "a.source").exists()
+    assert not (tmp_path / "parts" / "climber.source").exists()
+
+
+def test_import_again_on_a_copied_source_keeps_the_settings(part_app, tmp_path):
+    """A file sent from the chooser is copied in: Import again sends the new export (X-Import-Again) in its place and
+    reconciles the settings as an ordinary re-import does. An import opened from a path is read from that path."""
+    c, _ = part_app(None)
+    s, st = _upload(c, [("climber.step", (DATA / "climber.step").read_bytes())])
+    assert s == 200 and st["source_copied"] is True
+    _edit(c, "set_material", pieces=[HOOK], material="steel")
+    s, st = _upload(c, [("climber.step", (DATA / "climber_v2.step").read_bytes())], again=True)
+    assert s == 200, st
+    copy = tmp_path / "parts" / "climber.source" / "climber.step"
+    assert copy.read_bytes() == (DATA / "climber_v2.step").read_bytes()
+    assert {p["key"] for p in st["pieces"]} == {p.key for p in load_source(DATA / "climber_v2.step").pieces}
+    assert st["messages"]
+    hook = next((p for p in st["pieces"] if p["key"] == HOOK), None)
+    assert hook is None or hook["material"] == "steel"
+    assert st["source_copied"] is True
+
+
+def test_import_again_on_copied_stls_keeps_the_typed_units(part_app, tmp_path):
+    c, _ = part_app(None)
+    assert _upload(c, [("arm_A.stl", (STL / "arm_A.stl").read_bytes())])[0] == 200
+    s, st = _edit(c, "set_units", units="in")
+    assert s == 200, st
+    # the new export has another name: as Import again, its units are still the ones typed
+    s, st = _upload(c, [("arm_A v2.stl", (STL / "arm_A.stl").read_bytes())], again=True)
+    assert s == 200 and st["units"] == "in", st
+
+
+def test_a_source_opened_from_a_path_is_not_copied(part_app):
+    c, _ = part_app()
+    assert _state(c)["source_copied"] is False

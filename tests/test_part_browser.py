@@ -576,3 +576,112 @@ def test_plugin_part_shows_and_clears_what_was_changed_here(browser, tmp_path, m
         ctx.close()
         srv.stop()
     assert not logs, f"browser errors: {logs}"
+
+
+def _start_page(browser, tmp_path, monkeypatch):
+    """(page, close) on the start page of `scrimmage edit` in tmp_path, with climber.step and climber_v2.step there."""
+    monkeypatch.setenv("SCRIMMAGE_RECENT", str(tmp_path / "recent.json"))
+    monkeypatch.setenv("SCRIMMAGE_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("SCRIMMAGE_FOLDERS", str(tmp_path / "folders.json"))
+    for n in ("climber.step", "climber_v2.step"):
+        shutil.copy(DATA / n, tmp_path / n)
+    srv = Server(None, cwd=tmp_path)
+    ctx = browser.new_context(viewport={"width": 1400, "height": 900})
+    logs = []
+    page = ctx.new_page()
+    page.set_default_timeout(30000)
+    page.on("pageerror", lambda e: logs.append(f"pageerror: {e}"))
+
+    def close():
+        ctx.close()
+        srv.stop()
+        assert not logs, f"browser errors: {logs}"
+    page.goto(srv.url)
+    page.click('[data-key="new-part"]')
+    page.wait_for_selector("#start-drop")
+    return page, close
+
+
+def _drop(page, target, files):
+    """Drop [(name, bytes)] on `target` as one drag from the file manager."""
+    page.evaluate("""([sel, files]) => {
+      const dt = new DataTransfer();
+      for (const [name, bytes] of files) dt.items.add(new File([new Uint8Array(bytes)], name));
+      const el = document.querySelector(sel);
+      el.dispatchEvent(new DragEvent("dragenter", { bubbles: true, dataTransfer: dt }));
+      el.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }));
+    }""", [target, [[n, list(b)] for n, b in files]])
+
+
+def test_import_again_on_a_chosen_file_asks_for_the_new_export(browser, tmp_path, monkeypatch):
+    page, close = _start_page(browser, tmp_path, monkeypatch)
+    try:
+        page.set_input_files("#start-cad-file", str(tmp_path / "climber.step"))
+        page.wait_for_function(READY)
+        assert page.evaluate("__scrimmagePart.store.state.source_copied") is True
+        _click_piece_in_3d(page, ARM)
+        page.wait_for_selector("#part-material")
+        _edit(page, lambda: page.select_option("#part-material", "steel"))
+        posts = []
+        page.on("request", lambda r: posts.append(r.url) if r.url.endswith("/api/part/reimport") else None)
+        with page.expect_file_chooser() as fc:
+            page.click("#part-reimport")
+        with page.expect_response(lambda r: r.url.endswith("/api/part/upload")) as resp:
+            fc.value.set_files(str(tmp_path / "climber_v2.step"))
+        assert resp.value.status == 200 and resp.value.request.headers.get("x-import-again") == "1"
+        page.wait_for_function("__scrimmagePart.store.state.pieces.some(p => p.key === 'Climber/hook_assy_right/hook')")
+        assert posts == []
+        assert (tmp_path / "parts" / "climber.source" / "climber_v2.step").read_bytes() == \
+            (tmp_path / "climber_v2.step").read_bytes()
+        assert page.evaluate("__scrimmagePart.store.state.source") == "climber.source/climber_v2.step"
+        assert _piece(page, ARM)["material"] == "steel"     # kept, as an ordinary re-import keeps it
+    finally:
+        close()
+
+
+def test_import_again_on_an_opened_path_reads_it_again(part_page, tmp_path):
+    page, _ = part_page
+    assert page.evaluate("__scrimmagePart.store.state.source_copied") is False
+    shutil.copy(DATA / "climber_v2.step", tmp_path / "climber.step")
+    choosers = []
+    page.on("filechooser", lambda f: choosers.append(f))
+    with page.expect_response(lambda r: r.url.endswith("/api/part/reimport")) as resp:
+        page.click("#part-reimport")
+    assert resp.value.status == 200
+    page.wait_for_function("__scrimmagePart.store.state.pieces.some(p => p.key === 'Climber/hook_assy_right/hook')")
+    assert choosers == []
+
+
+def test_several_stls_chosen_on_the_start_page_are_one_part(browser, tmp_path, monkeypatch):
+    page, close = _start_page(browser, tmp_path, monkeypatch)
+    try:
+        page.set_input_files("#start-cad-file", [str(DATA / "stl" / f"{n}.stl") for n in ("base_plate", "arm_A", "hook")])
+        page.wait_for_function("window.__scrimmagePart && __scrimmagePart.store.state"
+                               " && __scrimmagePart.store.state.pieces.length === 3")
+        assert sorted(p["key"] for p in page.evaluate("__scrimmagePart.store.state.pieces")) == ["arm_A", "base_plate", "hook"]
+        assert (tmp_path / "parts" / "stl_parts.source" / "meshes" / "hook.stl").is_file()
+        # several dropped on the Part tab replace the set; a STEP among them is refused in one sentence
+        stl = lambda n: (f"{n}.stl", (DATA / "stl" / f"{n}.stl").read_bytes())  # noqa: E731
+        _drop(page, "#tab-part", [stl("arm_A"), ("climber.step", (DATA / "climber.step").read_bytes())])
+        page.wait_for_selector("text=Use a STEP file on its own, or only STL and OBJ files, not both at once.")
+        with page.expect_response(lambda r: r.url.endswith("/api/part/upload")) as resp:
+            _drop(page, "#tab-part", [stl("arm_A"), stl("hook")])
+        assert resp.value.status == 200
+        page.wait_for_function("__scrimmagePart.store.state.pieces.length === 2")
+        assert sorted(p.name for p in (tmp_path / "parts" / "stl_parts.source" / "meshes").iterdir()) == ["arm_A.stl", "hook.stl"]
+    finally:
+        close()
+
+
+def test_two_step_files_dropped_on_the_start_page_are_refused(browser, tmp_path, monkeypatch):
+    page, close = _start_page(browser, tmp_path, monkeypatch)
+    try:
+        sent = []
+        page.on("request", lambda r: sent.append(r.url) if r.url.endswith("/api/part/upload") else None)
+        step = (DATA / "climber.step").read_bytes()
+        _drop(page, "#start-drop", [("a.step", step), ("b.step", step)])
+        page.wait_for_selector("text=Use one STEP file at a time: a STEP file already holds the whole assembly.")
+        page.wait_for_timeout(300)
+        assert sent == [] and not (tmp_path / "parts").exists()
+    finally:
+        close()

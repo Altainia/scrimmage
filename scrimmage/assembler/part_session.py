@@ -30,6 +30,7 @@ import copy
 import dataclasses
 import logging
 import os
+import shutil
 import threading
 import time
 import tomllib
@@ -175,14 +176,50 @@ def open_part(path: Path, version: int, parts_dir: Path | None = None,
     return PartSession(import_for_source(path, parts_dir or path.parent / "parts"), version, source=path)
 
 
-def save_upload(stream, length: int, filename: str | None, folder: Path) -> Path:
-    """Copy an uploaded file (`length` bytes of `stream`) into `folder` under its own name (only the last part of
-    `filename`, which may be %-encoded); 400 for a name that isn't a CAD file or a body over MAX_UPLOAD."""
+MESH_FOLDER = "meshes"   # several mesh files sent at once go in parts/<name>.source/meshes/, read as one folder
+
+
+def upload_name(filename: str | None) -> str:
+    """The plain name of an uploaded file (only the last part of `filename`, which may be %-encoded); 400 for no
+    name or one that isn't a CAD file."""
     name = unquote(filename or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
     if not name or name.startswith(".") or ":" in name or any(ord(ch) < 32 for ch in name):
         raise SessionError(400, "the file needs a name (header X-Filename)")
     if Path(name).suffix.lower() not in CAD_SUFFIXES:
         raise SessionError(400, f"{name} is not a STEP, STL or OBJ file: export it from CAD as one of those")
+    return name
+
+
+def upload_set(names: list[str]) -> None:
+    """Several files sent at once must be STL or OBJ files, read together like a folder of them: 400 in one
+    sentence for STEP files among them, or two with the same name."""
+    steps = [n for n in names if Path(n).suffix.lower() in STEP_SUFFIXES]
+    if len(steps) == len(names) and len(names) > 1:
+        raise SessionError(400, "Use one STEP file at a time: a STEP file already holds the whole assembly.")
+    if steps:
+        raise SessionError(400, "Use a STEP file on its own, or only STL and OBJ files, not both at once.")
+    seen = set()
+    for n in names:
+        if n.lower() in seen:
+            raise SessionError(400, f"Two of the files are called {n}: give each piece its own file name.")
+        seen.add(n.lower())
+
+
+def _copy_in(stream, length: int, dest) -> None:
+    with open(dest, "wb") as f:
+        left = length
+        while left > 0:
+            chunk = stream.read(min(left, 1 << 20))
+            if not chunk:
+                raise SessionError(400, "the upload stopped before the whole file arrived")
+            f.write(chunk)
+            left -= len(chunk)
+
+
+def save_upload(stream, length: int, filename: str | None, folder: Path) -> Path:
+    """Copy an uploaded file (`length` bytes of `stream`) into `folder` under its own name (upload_name); 400 for
+    a name that isn't a CAD file, 413 for a body over MAX_UPLOAD."""
+    name = upload_name(filename)
     if length > MAX_UPLOAD:
         raise SessionError(413, "that file is too large to upload (over 512 MB)")
     folder = Path(folder).resolve()
@@ -192,18 +229,52 @@ def save_upload(stream, length: int, filename: str | None, folder: Path) -> Path
         raise SessionError(400, "the file needs a plain name")
     tmp = folder / f".upload-{uuid.uuid4().hex[:8]}.tmp"
     try:
-        with open(tmp, "wb") as f:
-            left = length
-            while left > 0:
-                chunk = stream.read(min(left, 1 << 20))
-                if not chunk:
-                    raise SessionError(400, "the upload stopped before the whole file arrived")
-                f.write(chunk)
-                left -= len(chunk)
+        _copy_in(stream, length, tmp)
         os.replace(tmp, dest)
     finally:
         tmp.unlink(missing_ok=True)
     return dest
+
+
+def save_uploads(stream, length: int, files: list[tuple[str, int]], folder: Path) -> Path:
+    """Several mesh files sent one after another in `stream` (`files` is each one's (name, size), `length` their
+    sum) into `folder`/meshes/, replacing what was there, so the set is read as one folder of STL files. 400 as
+    for upload_name and upload_set, or when the sizes don't add up; 413 over MAX_UPLOAD."""
+    names = [upload_name(n) for n, _ in files]
+    upload_set(names)
+    sizes = [n for _, n in files]
+    if any(isinstance(n, bool) or not isinstance(n, int) or n < 0 for n in sizes) or sum(sizes) != length:
+        raise SessionError(400, "the files' sizes don't add up to what was sent")
+    if length > MAX_UPLOAD:
+        raise SessionError(413, "those files are too large to upload (over 512 MB)")
+    folder = Path(folder).resolve()
+    folder.mkdir(parents=True, exist_ok=True)
+    dest, tag = folder / MESH_FOLDER, uuid.uuid4().hex[:8]
+    tmp, old = folder / f".upload-{tag}", folder / f".old-{tag}"
+    tmp.mkdir()
+    try:
+        for name, size in zip(names, sizes):
+            _copy_in(stream, size, tmp / name)
+        if dest.exists():
+            os.replace(dest, old)
+        try:
+            os.replace(tmp, dest)
+        except OSError:
+            if old.exists():
+                os.replace(old, dest)
+            raise
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.rmtree(old, ignore_errors=True)
+    return dest
+
+
+def upload_stem(names: list[str]) -> str:
+    """A name for a new import made from several files: what their names start with (arm_a.stl and arm_b.stl make
+    "arm"), else "stl_parts"."""
+    stems = [Path(n).stem for n in names]
+    common = os.path.commonprefix(stems).rstrip("_- .0123456789")
+    return sanitize(common) if len(common) >= 3 else "stl_parts"
 
 
 # ---------------------------------------------------------------- what both modes share
@@ -281,7 +352,7 @@ class _Session:
     def reimport(self, body: dict) -> tuple[int, dict]:
         raise SessionError(400, "a part from the CAD plugin has no CAD file to read again: import the STEP instead")
 
-    def replace_source(self, path: Path) -> tuple[int, dict]:
+    def replace_source(self, path: Path, again: bool = False) -> tuple[int, dict]:
         raise SessionError(400, "a part from the CAD plugin has no CAD file to replace: import the STEP instead")
 
     def source_folder(self) -> Path:
@@ -494,6 +565,7 @@ class PartSession(_Session):
             imp, src = self.imp, self.src
             out = {"version": self.version, "mode": "import", "path": str(self.path),
                    "name": imp.name if imp else self._stem(), "source": imp.source if imp else None,
+                   "source_copied": self._copied(),
                    "units": imp.units if imp else None,
                    "frame": dataclasses.asdict(imp.frame) if imp else None, "pieces": [], "bodies": [], "parts": [],
                    "couplings": [], "loops": [], "checklist": [], "messages": list(self._messages),
@@ -609,8 +681,10 @@ class PartSession(_Session):
                 raise SessionError(400, str(e)) from None
             return {"point": _floats(point), "axis": _floats(d)}
 
-    def reimport(self, body: dict, path: Path | None = None) -> tuple[int, dict]:
-        """Read the source again (or `path`, a new one, in its place) and reconcile the settings with it."""
+    def reimport(self, body: dict, path: Path | None = None, again: bool = False) -> tuple[int, dict]:
+        """Read the source again (or `path`, a new one, in its place) and reconcile the settings with it. `again`
+        says `path` is the same source exported again (Import again on a copied source): its units are kept, as
+        for an ordinary re-import."""
         with self._lock:
             self._check_open()
             self._sync()
@@ -620,7 +694,7 @@ class PartSession(_Session):
                 self._fresh(body)
             if path is None:
                 path = self._source_path()
-            units = self.imp.units if self.imp is not None and path == self._source_path() else None
+            units = self.imp.units if self.imp is not None and (again or path == self._source_path()) else None
         if path is None:
             raise SessionError(400, self._src_problem or "this import names no CAD file")
         try:
@@ -647,8 +721,19 @@ class PartSession(_Session):
             self._commit(self.imp, new, msgs)
             return 200, self.state()
 
-    def replace_source(self, path: Path) -> tuple[int, dict]:
-        return self.reimport({}, path)
+    def replace_source(self, path: Path, again: bool = False) -> tuple[int, dict]:
+        return self.reimport({}, path, again)
+
+    def _copied(self) -> bool:
+        """Whether the source is a copy in parts/<name>.source/ (a dropped or chosen file): Import again then asks
+        for the new export, as re-reading the copy would find nothing new."""
+        if self.imp is None:
+            return False
+        try:
+            src = _resolve(self.imp.source, self.path).resolve()
+        except CadError:
+            return False
+        return src.is_relative_to(self.source_folder().resolve())
 
     def source_folder(self) -> Path:
         """Where a dropped file goes: parts/<import name>.source/ next to the import file."""
