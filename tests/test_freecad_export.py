@@ -142,6 +142,8 @@ out["arm_again"] = run("arm_again", out["arm"]["fcstd"], o)
 out["arm_again"]["stale_left"] = os.path.exists(os.path.join(o, "stale.txt"))
 out["arm_again"]["edits"] = (open(os.path.join(o, "scrimmage-edits.toml")).read()
                              if os.path.exists(os.path.join(o, "scrimmage-edits.toml")) else None)
+if out["arm_again"]["edits"] is not None:
+    os.remove(os.path.join(o, "scrimmage-edits.toml"))      # later cases load this folder as the plain export
 keep = os.path.join(root, "out", "not_a_part")
 os.makedirs(keep)
 open(os.path.join(keep, "keep.txt"), "w").write("mine")
