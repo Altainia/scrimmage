@@ -91,3 +91,53 @@ def test_single_triangle_for_round_is_an_error_and_never_nan():
         fit_axis(p, 0, "round")
     point, d = fit_axis(p, 0, "flat")
     assert np.all(np.isfinite(point)) and np.all(np.isfinite(d))
+
+
+def bore(k=6, ri=0.0127 / np.sqrt(3), ro=0.03, t=0.01, c=(0.1, 0.05), turn=0.3):
+    """A k-sided plate with a k-sided bore along x (k=6: a 1/2" hex bore, 12.7 mm across its flats). The bore's
+    walls are triangles 0..2k-1."""
+    def poly(r, x):
+        a = turn + np.arange(k) * 2 * np.pi / k
+        return np.stack([np.full(k, x), c[0] + r * np.cos(a), c[1] + r * np.sin(a)], 1)
+    v = np.vstack([poly(ri, 0.0), poly(ri, t), poly(ro, 0.0), poly(ro, t)])
+    f = []
+    for i in range(k):
+        j = (i + 1) % k
+        f += [[i, k + j, j], [i, k + i, k + j]]                      # bore wall
+    for i in range(k):
+        j = (i + 1) % k
+        f += [[i, j, 2 * k + j], [i, 2 * k + j, 2 * k + i]]
+        f += [[k + i, 3 * k + j, k + j], [k + i, 3 * k + i, 3 * k + j]]
+        f += [[2 * k + i, 2 * k + j, 3 * k + j], [2 * k + i, 3 * k + j, 3 * k + i]]
+    return piece(v, f)
+
+
+@pytest.mark.parametrize("k", [6, 8])
+def test_hex_and_octagon_bores_give_their_center(k):
+    p = bore(k)
+    for tri in range(2 * k):
+        point, d = fit_axis(p, tri, "round")
+        assert np.allclose(d, [1, 0, 0], atol=1e-6)
+        assert np.allclose(point, [0.005, 0.1, 0.05], atol=1e-9)
+
+
+def test_hex_outside_is_still_not_round_on_one_flat():
+    # a hex plate's outside walls are round enough too (they go all the way round), but its end face is flat
+    p = bore(6)
+    with pytest.raises(CadError, match="isn't round"):
+        fit_axis(p, 2 * 6 + 1, "round")      # the face at x=0
+
+
+def test_a_chamfered_bar_is_not_a_bore():
+    """A bar's top with 45-degree chamfers along both edges: its normals all lie across the bar, but they don't go
+    round, so it isn't taken for a bore."""
+    w, c, L = 0.02, 0.003, 0.1
+    prof = [(-w / 2, 0), (-w / 2, c * 2), (-w / 2 + c, c * 3), (w / 2 - c, c * 3), (w / 2, c * 2), (w / 2, 0)]
+    v = [[x, y, z] for x in (0.0, L) for (y, z) in prof]
+    m = len(prof)
+    f = []
+    for i in range(m - 1):
+        f += [[i, i + 1, m + i + 1], [i, m + i + 1, m + i]]
+    p = piece(v, f)
+    with pytest.raises(CadError, match="isn't round"):
+        fit_axis(p, 4, "round")        # the flat top, between the chamfers

@@ -129,7 +129,7 @@ input, select {
   font: inherit; font-size: 13px; color: var(--text); background: var(--panel);
   border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 4px 7px; min-width: 0;
 }
-input[type="number"] { width: 6.5em; }
+input[type="number"], input[inputmode="decimal"], input[inputmode="numeric"] { width: 6.5em; }
 input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--accent-text); }
 input:focus, select:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
 .has-error > input, .has-error input, .has-error select, .invalid { border-color: var(--error); }
@@ -417,7 +417,7 @@ body.read-only .lib-item .btn { display: none; }
 .add-select { color: var(--accent-strong); font-weight: 600; background: var(--accent-soft); border-color: transparent; cursor: pointer; }
 .mono { font-family: var(--mono); }
 .small { font-size: 12px; margin: 2px 0; }
-.field-num input[type="number"] { width: 7em; }
+.field-num input[type="number"], .field-num input[inputmode="decimal"] { width: 7em; }
 
 .ports { display: flex; flex-wrap: wrap; gap: 10px; }
 .port { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px 10px; flex: 1 1 320px; max-width: 520px; background: var(--panel); }
@@ -995,7 +995,8 @@ dialog.start-dialog { width: auto; max-width: 96vw; }
 .part-try-row input[type="range"] { flex: 1; min-width: 0; accent-color: var(--accent-text); }
 .part-try-out { font-family: var(--mono); font-size: 12px; min-width: 4.5em; text-align: right; }
 .part-pair input { width: 6em; }
-#part-inspector .with-unit input[type="number"] { width: 7em; }
+#part-inspector .with-unit input[inputmode] { width: 7em; }
+#part-inspector .part-pivot input[inputmode] { width: 5.5em; }
 .part-more { margin: 4px 0 0; }
 .part-more summary { cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--accent-text); margin: 0 0 8px; }
 .part-more h4 { font-size: 12.5px; margin: 8px 0 6px; }

@@ -491,3 +491,31 @@ def test_text_that_isnt_a_number_is_refused_and_not_sent(part_page):
     # a comma counts as the decimal point
     _edit(page, lambda: _type(page, "#part-body-weight", "2,5"))
     assert _body(page, "arm_A")["typed_mass"] == 2.5
+
+
+def test_a_snapped_hinge_takes_a_typed_pivot_point(part_page):
+    """With no round face to click, snap the axis and type where it turns: robot meters, saved as CAD meters."""
+    from scrimmage.cad.frame import RobotFrame, to_robot
+    page, imp = part_page
+    _pick_body(page, "hook_assy")
+    page.select_option("#part-joint-kind", "hinge")
+    _edit(page, lambda: page.click("#part-snap-x"))
+    page.wait_for_selector("#part-pivot-x")
+    for box, text in (("x", "0.05"), ("y", "-0.1"), ("z", "0.83")):
+        _edit(page, lambda: _type(page, f"#part-pivot-{box}", text))
+    f = page.evaluate("__scrimmagePart.store.state.frame")
+    R, t = to_robot(RobotFrame(f["up"], f["front"], f["floor"], f["center"], f["skip"]))
+    anchor = np.asarray(_body(page, "hook_assy")["joint"]["anchor"])
+    assert np.allclose(R @ anchor + t, [0.05, -0.1, 0.83], atol=1e-9)
+    saved = tomllib.loads(imp.read_text())["bodies"]["hook_assy"]["joint"]["anchor"]
+    assert np.allclose(saved, anchor)
+    # an empty box is refused: all three are needed
+    posts = []
+    page.on("request", lambda r: posts.append(r) if r.url.endswith("/api/part/edit") and r.method == "POST" else None)
+    page.click("#part-pivot-y", click_count=3)
+    page.keyboard.press("Backspace")
+    page.keyboard.press("Enter")
+    page.locator('#part-inspector [data-field="pivot"] .error').wait_for()
+    assert "all three" in page.inner_text('#part-inspector [data-field="pivot"] .error')
+    page.wait_for_timeout(300)
+    assert posts == []

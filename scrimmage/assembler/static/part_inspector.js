@@ -458,6 +458,24 @@ function snap(name, i) {
   return patchJoint(name, { axis: dirToCad(r, robot) });
 }
 
+// The pivot point typed as numbers, for a hinge with no round face to click (or snapped, which puts it through the
+// center of gravity): robot meters, as the inspector shows points. One box commits all three.
+function pivotRow(b) {
+  const now = cadToRobot(rt(), b.joint.anchor);
+  const els = ["x", "y", "z"].map((a, i) => box({ id: `part-pivot-${a}`, type: "text", inputmode: "decimal", value: fmtNum(now[i], 4),
+    "aria-label": `Pivot point ${AXIS_WORDS[i]}, meters` }, () => {
+    const vals = els.map((e) => number(e.value, "pivot"));
+    if (vals.some((v) => Number.isNaN(v))) return;
+    if (vals.some((v) => v === null)) { part.errors = [{ field: "pivot", message: "Type all three numbers: x, y and z." }]; render(); return; }
+    patchJoint(b.name, { anchor: robotToCad(rt(), vals) });
+  }));
+  const row = field("Pivot point", h("span", { class: "with-unit part-pivot" },
+    ...els.flatMap((el, i) => [h("span", { class: "unit", text: "xyz"[i] }), el]), h("span", { class: "unit", text: "m" })), "pivot",
+    "Where it turns, in meters: x forward, y left, z up. Type it when there's no round face to click.");
+  row.querySelector("label").htmlFor = "part-pivot-x";
+  return row;
+}
+
 // "Try it": a slider that moves the body (and the bodies on it) in the view only.
 const trySig = new Map();   // body -> the joint the slider value was for
 onPart(() => {
@@ -618,6 +636,7 @@ addSection({
         h("span", { class: "muted", text: `through ${pointWords(cadToRobot(rt(), j.anchor))}` })));
       rows.push(axisButtons());
       rows.push(h("p", { class: "hint", text: j.kind === "hinge" ? "Click Pick the axis, then a hole or a round face (a bearing, a shaft)." : "Click Pick the axis, then a flat face that faces the way it slides." }));
+      if (j.kind === "hinge") rows.push(pivotRow(b));
       rows.push(tryIt(b));
       rows.push(jointMore(c, b));
     }

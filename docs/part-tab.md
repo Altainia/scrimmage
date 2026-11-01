@@ -123,8 +123,10 @@ A new body is **No (welded)**: it moves only when the body it hangs on moves. In
 it an axis:
 
 - **Pick the axis** then click, in the 3D view, a hole or a round face (a bearing or a shaft) for something that turns,
-  or a flat face that faces the way it slides.
-- Or **Snap to** the robot's X, Y or Z.
+  or a flat face that faces the way it slides. A hex bore (like a 1/2" hex shaft hole) works too: click one of its
+  flat walls.
+- Or **Snap to** the robot's X, Y or Z. A snapped turn goes through the body's center of gravity at first. If that is
+  not where it turns, type the **Pivot point** (x forward, y left, z up, in meters, as the Inspector shows points).
 
 **A turns or slides joint is not saved until its axis is picked or snapped.** Until then the Inspector says "Not saved
 yet", and Esc cancels. This is so Scrimmage never guesses an axis for you.
@@ -221,8 +223,9 @@ in the library and can be added like any other part. For a part made from a CAD 
 - **A piece is missing from the 3D view.** It may be left out (turn on **Show left out**), or the CAD file has an open
   surface instead of a solid. Check the list for "no volume".
 - **My arm weighs nothing / the total is too small.** Open shapes have no volume. Type a weight for the body.
-- **"That click didn't work".** The click missed the part or hit a flat face when an axis needs a round one. Click
-  again on a hole or a round face.
+- **"That face isn't round" or "That click didn't work".** The click missed the part or hit a flat face when an axis
+  needs a round one. Click again on a hole, a round face or a hex bore. If there is none, snap the axis and type the
+  **Pivot point**.
 - **The 3D view says WebGL isn't available.** The list and the Inspector still work. Reload, or turn on hardware
   acceleration in the browser.
 - **"Parts not updated".** The background rebuild failed; the message says why. Fix it and edit again.
