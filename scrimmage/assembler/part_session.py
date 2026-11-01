@@ -113,23 +113,30 @@ def source_text(source: Path, import_path: Path) -> str:
         return p.as_posix()
 
 
+def _taken(path: Path) -> bool:
+    """Whether parts/<name>.import.toml can't be a new import: it, its <name>.source/ or its default part folder
+    parts/<name>/ (say one FreeCAD made) is already there."""
+    stem = path.name[:-len(SUFFIX)]
+    return path.exists() or path.with_name(stem + ".source").exists() or path.with_name(stem).exists()
+
+
 def free_import(parts_dir: Path, name: str) -> Path:
     """parts_dir/<name>.import.toml, or <name>_2... when that is taken."""
     path, n = Path(parts_dir) / f"{name}{SUFFIX}", 2
-    while path.exists() or path.with_name(path.name[:-len(SUFFIX)] + ".source").exists():
+    while _taken(path):
         path, n = Path(parts_dir) / f"{name}_{n}{SUFFIX}", n + 1
     return path
 
 
 def import_for_source(source: Path, parts_dir: Path) -> Path:
     """The import file for a CAD source: an existing parts_dir/<stem>.import.toml (or _2, ...) that names it, else
-    the first free one."""
+    the first free one (see free_import)."""
     source = Path(source).resolve()
     name = sanitize(source.stem if source.is_file() else source.name)
     path, n = Path(parts_dir) / f"{name}{SUFFIX}", 2
-    while path.exists():
+    while _taken(path):
         try:
-            if _resolve(read_import(path).source, path).resolve() == source:
+            if path.exists() and _resolve(read_import(path).source, path).resolve() == source:
                 return path
         except CadError:
             pass

@@ -314,6 +314,22 @@ def test_app_new_import(part_app, tmp_path):
     assert _post(c, "/api/app/new", {"kind": "import", "path": "nope.step"})[0] == 400
 
 
+def test_new_import_skips_a_part_folder_that_is_already_there(part_app, tmp_path):
+    """parts/climber/ made by the FreeCAD add-on: a new import of climber.step is climber_2, so its first build works."""
+    plugin = tmp_path / "parts" / "climber"
+    plugin.mkdir(parents=True)
+    (plugin / "part.toml").write_text("[part]\nname = \"climber\"\n")
+    c, _ = part_app()
+    st = _wait_for(c, lambda st: (tmp_path / "parts" / "climber_2" / "part.toml").is_file()
+                   or st["build"]["state"] == "failed")
+    assert st["build"]["state"] != "failed", st["build"]
+    assert (tmp_path / "parts" / "climber_2.import.toml").is_file()
+    assert not (tmp_path / "parts" / "climber.import.toml").exists()
+    assert (tmp_path / "parts" / "climber_2" / "part.toml").is_file()
+    assert (plugin / "part.toml").read_text() == "[part]\nname = \"climber\"\n"
+    assert part_session.free_import(tmp_path / "parts", "climber").name == "climber_3.import.toml"
+
+
 PLUGIN = """
 [part]
 name = "arm"
