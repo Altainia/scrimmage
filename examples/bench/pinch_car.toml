@@ -1,0 +1,67 @@
+# A toy car fired down a track by two powered wheels that pinch it, top and bottom: a rigid piece on MuJoCo's own
+# contacts, the wheels' treads soft, the car's plastic body softer still.
+#
+#   scrimmage bench run examples/bench/pinch_car.toml
+
+[bench]
+name = "pinch car"
+author = "Maya"
+idea = "two wheels pinch the car down the track"
+
+[piece]
+name = "car"
+kind = "rigid"
+shape = "box"
+size = [0.10, 0.06, 0.04]        # a 10 cm toy car, 4 cm tall
+mass = 0.2
+stiffness = 3000                 # N/m: a soft plastic body, squeezed 5 mm each side by the wheels
+
+[shaft.bottom]
+motor = "KrakenX60"
+target_rps = 40
+kP = 0.5
+wheel_inertia = 0.0005
+
+[shaft.top]
+motor = "KrakenX60"
+target_rps = 40
+kP = 0.5
+wheel_inertia = 0.0005
+
+[[wheel]]
+name = "bottom"
+shaft = "bottom"
+center = [0.0, 0.0, -0.045]
+diameter = 0.06
+width = 0.08
+tread = "60A"
+
+[[wheel]]
+name = "top"
+shaft = "top"
+center = [0.0, 0.0, 0.045]
+axis = [0.0, -1.0, 0.0]          # turned the other way, so both treads drive the car forward
+diameter = 0.06
+width = 0.08
+tread = "60A"
+
+[[plate]]
+name = "track"
+center = [-0.15, 0.0, -0.025]
+size = [0.22, 0.12, 0.01]
+
+[[inlet]]
+name = "feed"
+center = [-0.2, 0.0, 0.001]
+size = [0.01, 0.01, 0.001]
+count = 3
+rate = 4
+velocity = [3.0, 0.0, 0.0]       # pushed in at 3 m/s
+
+[[outlet]]
+name = "shot"
+center = [0.45, 0.0, 0.0]
+size = [0.1, 0.4, 0.4]
+
+[run]
+duration = 2.0

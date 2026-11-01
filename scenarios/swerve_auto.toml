@@ -1,0 +1,18 @@
+# The Java swerve example's autonomous routine (examples/java_swerve): 1 m forward field-centric, then face 90°.
+#   scrimmage run scenarios/swerve_auto.toml
+config = "../configs/swerve.toml"
+description = "Java swerve (Phoenix 6) auto: 1 m forward, then face 90 degrees"
+[[step]]
+mode = "disabled"
+duration = 1.0
+[[step]]
+name = "auto"
+mode = "auto"
+duration = 5.0
+  [[step.check]]
+  pose = { x = 3.0, y = 4.035, heading = 90, tol_xy = 0.2, tol_heading = 6 }
+  [[step.check]]
+  console = { contains = "auto: done" }
+  [[step.screenshot]]
+  view = "top"
+  at = "end"

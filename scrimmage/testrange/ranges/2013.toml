@@ -1,0 +1,166 @@
+# The FRC 2013 ULTIMATE ASCENT test range: the blue alliance's slot goals on the red ALLIANCE WALL, the wall itself,
+# the blue PYRAMID as an obstacle, and starts in the blue AUTO ZONE. WPILib field coordinates (blue alliance wall at
+# x = 0, z up), SI units; inches converted at 0.0254 m.
+#
+# Sources:
+#   MAN-2  2013 FRC Game Manual, Section 2 "The Arena", rev. 1/8/13. Mirror:
+#          https://first-a-holics.com/wp-content/uploads/2021/12/2013-Game-2-The-Arena.pdf
+#   MAN-3  2013 Manual, Section 3 "The Game": https://first-a-holics.com/wp-content/uploads/2021/12/2013-Game-3-The-Game.pdf
+#   MAN-6  2013 Manual, Section 6 "Glossary": https://first-a-holics.com/wp-content/uploads/2021/12/2013-Game-6-Glossary.pdf
+#   TEAMDWG  FIRST "2013 Team Drawings" (TE-13001 pyramid), Wayback copy of
+#          http://www.usfirst.org/sites/default/files/uploadedFiles/Robotics_Programs/FRC/Game_and_Season__Info/2013/2013_Team_Drawings.pdf
+#
+# What's modeled, and what isn't:
+# - One goal wall only: the red ALLIANCE WALL at the generated field's x = 16.54 with the four goals the BLUE
+#   alliance shoots at ("each ALLIANCE'S LOW GOAL is located adjacent to the opponent ALLIANCE WALL", MAN-2 §2.2.3).
+#   Red's goals on the blue wall, the feeder stations and the red pyramid are left out.
+# - The field: the 2013 carpet is 27 x 54 ft (8.23 x 16.46 m, MAN-2 §2.1), the generated field 8.07 x 16.54 m
+#   (scrimmage/parts/field.py). Everything here is placed from the goal wall (x = 16.54) and the field's center line
+#   along its length (y = 4.035), so the distances a shot sees (wall to auto line, pyramid, goal heights) are the
+#   manual's; the field's ends and corners are the generated field's, 8 cm narrower on each side.
+# - Pieces: discs (MAN-2 §2.2.10); the range places them only as preloads and spares, no floor discs (the staged
+#   discs of MAN-3 §3.1.1 are left out).
+# - Scoring counts the disc's center crossing the opening (scrimmage/testrange/spec.py), for the manual's "any part
+#   of the DISC has crossed through the opening of the GOAL, is in the GOAL at the end of the MATCH" (MAN-3 §3.1.5.1);
+#   the box behind holds it.
+
+[range]
+name = "FRC 2013 ULTIMATE ASCENT"   # source: the 2013 game's name, MAN-2 title page (URL above)
+disc = "2013-frisbee"               # source: the 2013 disc, MAN-2 §2.2.10 (the preset in scrimmage/disc/presets.toml cites its own numbers)
+aero = "pc-long"                    # source: Hummel's recommended set (HUM03 §3.5), the disc model's default (scrimmage/disc/presets.toml)
+
+# The goal frame (spec.py): tilt 90 stands each opening on the wall, heading 0 points the goal's +x into the wall
+# (+x, toward the red alliance station), its x up and its y along the wall; a disc scores coming down the field.
+# rim_height is the opening's center: its bottom edge plus half its height.
+
+[[goal]]
+name = "high"
+pos = [16.54, 4.035]        # source: MAN-6 HIGH GOAL, "centered over the ALLIANCE WALL"; x is the generated field's red wall face (see above)
+heading_deg = 0.0           # source: MAN-2 §2.2.3: the goal faces down the field; +x into the wall (spec.py)
+tilt_deg = 90.0             # source: MAN-2 §2.2.3 and Fig. 2-4: the opening is a vertical slot in the wall's plane
+rim_height = 2.7972         # source: MAN-2 §2.2.3: bottom edge 104 1/8 in above the carpet, plus half the 12 in height: 110.125 in
+opening = { kind = "rect", width = 1.3716, height = 0.3048 }    # source: MAN-2 §2.2.3: the HIGH GOAL opening is 54 in wide by 12 in tall
+slot = { depth = 0.6096, frame = 0.1016 }   # estimate: depth 24 in, the 24-30 in the research suggests (MAN-2 §2.2.3 puts the chains 9 1/2 in back; the GE drawings weren't found); frame 4 in, the retro-reflective border's width around each opening (MAN-2 §2.2.4)
+
+[[goal]]
+name = "middle_left"
+pos = [16.54, 5.5082]       # estimate: center 58 in left of the HIGH goal's (seen from the field): MAN-2 §2.2.3 puts the MIDDLE GOALS "either side of the HIGH GOAL" and doesn't dimension them; Fig. 2-4 shows the three 54 in openings about abutting, 56-62 in apart
+heading_deg = 0.0           # source: as high
+tilt_deg = 90.0             # source: as high
+rim_height = 2.5178         # source: MAN-2 §2.2.3: bottom edge 88 5/8 in, plus half the 21 in height: 99.125 in
+opening = { kind = "rect", width = 1.3716, height = 0.5334 }    # source: MAN-2 §2.2.3: each MIDDLE GOAL opening is 54 in wide by 21 in tall
+slot = { depth = 0.6096, frame = 0.1016 }   # estimate: as high
+
+[[goal]]
+name = "middle_right"
+pos = [16.54, 2.5618]       # estimate: as middle_left, 58 in right of the HIGH goal's center
+heading_deg = 0.0           # source: as high
+tilt_deg = 90.0             # source: as high
+rim_height = 2.5178         # source: as middle_left
+opening = { kind = "rect", width = 1.3716, height = 0.5334 }    # source: as middle_left
+slot = { depth = 0.6096, frame = 0.1016 }   # estimate: as high
+
+[[goal]]
+name = "low"
+pos = [16.54, 0.9235]       # estimate: in the field corner on the red drivers' left (MAN-2 §2.2.3, "adjacent to the opponent ALLIANCE WALL and to the opponent DRIVERS' left"), its 29 in opening beside the wall's end: y = 4.035 - 108 in - 14.5 in. The real corner is angled (MAN-2 §2.1, an octagonal carpet); here the goal sits on the wall's plane.
+heading_deg = 0.0           # source: as high
+tilt_deg = 90.0             # source: as high
+rim_height = 0.7874         # source: MAN-2 §2.2.3: bottom edge 19 in, plus half the 24 in height: 31 in
+opening = { kind = "rect", width = 0.7366, height = 0.6096 }    # source: MAN-2 §2.2.3: the LOW GOAL opening is 29 in wide by 24 in tall
+slot = { depth = 0.6096, frame = 0.1016 }   # estimate: as high (MAN-2 §2.2.3 gives no depth; TE-13004's feeder/low goal panel wasn't measured)
+
+# The red ALLIANCE WALL: 18 ft wide and 6.5 ft high, centered across the field (MAN-2 §2.2.1); the goals hang above it.
+# The generated field's own 0.5 m wall_red stays under it.
+[[obstacle]]
+name = "alliance_wall"
+pos = [16.55, 4.035, 0.9906]    # source: MAN-2 §2.2.1: half of 6.5 ft high; x: its 2 cm thickness (our choice) behind the wall face at 16.54
+size = [0.02, 5.4864, 1.9812]   # source: MAN-2 §2.2.1: "6.5 ft high and 18 ft wide" (5.4864 x 1.9812 m); 2 cm thick, our choice (the real wall is aluminum diamond plate under polycarbonate)
+
+# A backing plate in the wall's plane over the goal band, from the top of the ALLIANCE WALL (6.5 ft) to the top of the
+# HIGH goal's frame, the wall's width, with the four openings of the three upper goals left as holes, so a disc
+# missing them rebounds onto the field instead of passing between the goals. estimate: Fig. 2-4 (MAN-2 §2.2.3) shows
+# the goals in one framed face above the wall; its construction isn't dimensioned. Nine boxes tile it, 2 cm thick in
+# the wall's plane (as alliance_wall). The openings (MAN-2 §2.2.3, as the goals above): HIGH y 3.3492-4.7208,
+# z 2.6448-2.9496; MIDDLE y 1.8760-3.2476 and 4.8224-6.1940, z 2.2511-2.7845. Wall: y 1.2918-6.7782, top z 1.9812.
+[[obstacle]]
+name = "goal_backing_0"             # choice: piece 0 of the goal face's nine boxes
+pos = [16.55, 4.035, 2.1161]        # estimate: the band from the wall's top (1.9812) to the MIDDLE openings' bottom (2.2511), the wall's width
+size = [0.02, 5.4864, 0.2699]       # estimate: as above
+[[obstacle]]
+name = "goal_backing_1"             # choice: piece 1 of the goal face's nine boxes
+pos = [16.55, 1.5839, 2.5178]       # estimate: beside middle_right, from the wall's end (1.2918) to its opening (1.8760), z over the MIDDLE openings (2.2511-2.7845)
+size = [0.02, 0.5842, 0.5334]       # estimate: as above
+[[obstacle]]
+name = "goal_backing_2"             # choice: piece 2 of the goal face's nine boxes
+pos = [16.55, 6.4861, 2.5178]       # estimate: as goal_backing_1, beside middle_left (6.1940 to 6.7782)
+size = [0.02, 0.5842, 0.5334]       # estimate: as above
+[[obstacle]]
+name = "goal_backing_3"             # choice: piece 3 of the goal face's nine boxes
+pos = [16.55, 4.035, 2.4479]        # estimate: between the MIDDLE openings (3.2476-4.8224), from their bottom (2.2511) to the HIGH opening's bottom (2.6448)
+size = [0.02, 1.5748, 0.3937]       # estimate: as above
+[[obstacle]]
+name = "goal_backing_4"             # choice: piece 4 of the goal face's nine boxes
+pos = [16.55, 3.2984, 2.7146]       # estimate: between middle_right's and HIGH's openings (3.2476-3.3492), from the HIGH opening's bottom (2.6448) to the MIDDLE openings' top (2.7845)
+size = [0.02, 0.1016, 0.1397]       # estimate: as above
+[[obstacle]]
+name = "goal_backing_5"             # choice: piece 5 of the goal face's nine boxes
+pos = [16.55, 4.7716, 2.7146]       # estimate: as goal_backing_4, between HIGH's and middle_left's openings (4.7208-4.8224)
+size = [0.02, 0.1016, 0.1397]       # estimate: as above
+[[obstacle]]
+name = "goal_backing_6"             # choice: piece 6 of the goal face's nine boxes
+pos = [16.55, 2.3205, 2.8670]       # estimate: from the wall's end (1.2918) to the HIGH opening (3.3492), from the MIDDLE openings' top (2.7845) to the HIGH opening's top (2.9496)
+size = [0.02, 2.0574, 0.1651]       # estimate: as above
+[[obstacle]]
+name = "goal_backing_7"             # choice: piece 7 of the goal face's nine boxes
+pos = [16.55, 5.7495, 2.8670]       # estimate: as goal_backing_6, from the HIGH opening (4.7208) to the wall's end (6.7782)
+size = [0.02, 2.0574, 0.1651]       # estimate: as above
+[[obstacle]]
+name = "goal_backing_8"             # choice: piece 8 of the goal face's nine boxes
+pos = [16.55, 4.035, 3.0004]        # estimate: from the HIGH opening's top (2.9496) to the top of its 4 in frame (3.0512), the wall's width
+size = [0.02, 5.4864, 0.1016]       # estimate: as above
+
+# The blue PYRAMID (MAN-2 §2.2.5): 1.5 in steel tube, 94 in square at the base, each face at 68 deg, rungs at 30, 60
+# and 90 in. Modeled as its four corner legs up to the 90 in rung and the floor protector's lip under it, for
+# driving around and for a disc to hit; the rungs, the top and the PYRAMID GOAL are left out (not climbable here;
+# the built-in range 2013-pyramid has its rungs as bars to climb).
+# Where: "A PYRAMID is adjacent to each ALLIANCE'S AUTO LINE" (MAN-2 §2.2.5); Fig. 2-3 puts the blue one between the
+# blue AUTO LINE and the red wall, its center about 155 in from the center line, so 324 - 155 = 169 in from the wall:
+# x = 16.54 - 4.2926 = 12.2474 (estimate, measured off Fig. 2-3), its edge 47 in nearer, on the auto line.
+# A leg runs from a base corner (47 in out each way) up the 68 deg faces to the 90 in rung, where the faces have come
+# in 90 / tan 68 = 36.36 in: the corner is 10.64 in out each way. Corners: x 12.2474 +- 1.1938 (base) and +- 0.2702
+# (rung), y 4.035 +- the same.
+[[obstacle]]
+name = "pyramid_leg_0"              # choice: corner leg 0
+from = [13.4412, 5.2288, 0.0]       # estimate: the corner toward the wall and left, from the center above (base 94 in, MAN-2 §2.2.5)
+to = [12.5176, 4.3052, 2.286]       # estimate: the same corner at the 90 in rung (faces at 68 deg, MAN-2 §2.2.5)
+width = 0.0381                      # source: MAN-2 §2.2.5: 1.5 in tube
+[[obstacle]]
+name = "pyramid_leg_1"              # choice: corner leg 1
+from = [13.4412, 2.8412, 0.0]       # estimate: as pyramid_leg_0, the corner toward the wall and right
+to = [12.5176, 3.7648, 2.286]       # estimate: as pyramid_leg_0
+width = 0.0381                      # source: as pyramid_leg_0
+[[obstacle]]
+name = "pyramid_leg_2"              # choice: corner leg 2
+from = [11.0536, 5.2288, 0.0]       # estimate: as pyramid_leg_0, the corner on the auto line and left
+to = [11.9772, 4.3052, 2.286]       # estimate: as pyramid_leg_0
+width = 0.0381                      # source: as pyramid_leg_0
+[[obstacle]]
+name = "pyramid_leg_3"              # choice: corner leg 3
+from = [11.0536, 2.8412, 0.0]       # estimate: as pyramid_leg_0, the corner on the auto line and right
+to = [11.9772, 3.7648, 2.286]       # estimate: as pyramid_leg_0
+width = 0.0381                      # source: as pyramid_leg_0
+[[obstacle]]
+name = "pyramid_base"
+pos = [12.2474, 4.035, 0.0048]      # estimate: under the pyramid's center (above), half the lip's height
+size = [2.3876, 2.3876, 0.0095]     # source: MAN-2 §2.2.5: 94 in square at the base, with a 1/4-3/8 in lip of floor protector and carpet around it (3/8 in used)
+
+# Starts in the blue AUTO ZONE: the area between the red ALLIANCE WALL and the blue AUTO LINE (MAN-6 AUTO ZONE; the
+# docs/disc.md, Sources), the auto lines 108 in either side of the center line (MAN-2 §2.2.2), so 324 - 108 = 216 in
+# (5.4864 m) from the red wall: x = 11.0536. The pyramid's base fills the zone's middle from the auto line to 94 in
+# beyond it (y 2.8412 to 5.2288), so the two auto line starts stand beside it, and the center one behind it.
+[start.auto_line_left]
+pose = [11.6536, 5.8288, -20.1582]  # choice: 0.6 m inside the auto line and 0.6 m left of the pyramid base's edge, so a robot up to 0.9 m square turned to this heading touches neither; heading at the HIGH goal's center, 5.21 m away
+[start.auto_line_right]
+pose = [11.6536, 2.2412, 20.1582]   # choice: as auto_line_left, mirrored across the field's center line
+[start.pyramid_back]
+pose = [13.9412, 4.035, 0.0]        # choice: 0.5 m behind the pyramid base (MAN-2 §2.2.5), centered, facing the HIGH goal 2.6 m away: the "back of the pyramid" start

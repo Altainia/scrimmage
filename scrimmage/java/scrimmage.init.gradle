@@ -1,0 +1,82 @@
+// scrimmage Gradle init script. scrimmage runs:   ./gradlew -I <this file> simulateJava
+// It changes nothing in the project's files. For every project using GradleRIO it:
+//   - loads only the HALSim WebSocket client (sim GUI, DS socket, WS server, XRP off): scrimmage is the DS
+//   - appends the scrimmage_lockstep HALSim extension (SCRIMMAGE_LOCKSTEP_SO) to HALSIM_EXTENSIONS
+//   - loads the sim-write guard agent (SCRIMMAGE_AGENT_JAR) so robot-side sim models can't fight the physics
+//   - writes the robot's console to SCRIMMAGE_CONSOLE_FILE when scrimmage sets it: Gradle's own console passes task
+//     output on in batches, seconds behind at first, which a fast lockstep run can outrun
+// HALSIMWS_HOST/HALSIMWS_PORT reach the robot JVM through the ./gradlew environment.
+def lockstepSo = System.getenv("SCRIMMAGE_LOCKSTEP_SO")
+def consoleFile = System.getenv("SCRIMMAGE_CONSOLE_FILE")
+// The agent jar: scrimmage passes SCRIMMAGE_AGENT_JAR; hand-run, fall back to where `scrimmage java build` puts
+// it (java_tools.agent_jar_path(): $SCRIMMAGE_CACHE, else ~/.cache/scrimmage/java).
+def agentJar = System.getenv("SCRIMMAGE_AGENT_JAR")
+if (!agentJar) {
+    def cache = System.getenv("SCRIMMAGE_CACHE")
+    def dir = cache ? new File(cache) : new File(System.getProperty("user.home"), ".cache/scrimmage/java")
+    agentJar = new File(dir, "scrimmage-agent.jar").path
+}
+final boolean AGENT_FOUND = new File(agentJar).exists()
+final String WS_CLIENT = "Sim Websockets Client"
+final List<String> SIM_TASKS = ["simulateJavaRelease", "simulateJavaDebug"]
+final Map<Task, OutputStream> consoleStreams = [:]
+
+allprojects { p ->
+    p.plugins.withId("edu.wpi.first.GradleRIO") {
+        p.afterEvaluate {
+            def sim = p.extensions.getByName("wpi").sim
+            if (sim.halExtensions.findByName(WS_CLIENT) == null) {
+                sim.addWebsocketsClient()               // addX() throws if that name already exists
+            }
+            sim.halExtensions.all { it.defaultEnabled.set(it.name == WS_CLIENT) }
+            // GradleRIO reads sim.environment when the sim task runs: make scrimmage's host/port win over a
+            // project's own wpi.sim.envVar(...) (only when scrimmage set them; hand-run use keeps the project's).
+            ["HALSIMWS_HOST", "HALSIMWS_PORT"].each { k ->
+                def want = System.getenv(k)
+                if (want != null) {
+                    def old = sim.environment.get(k)
+                    if (old != null && old != want) {
+                        println "scrimmage: note: ignoring the project's Gradle setting ${k}=${old} under scrimmage (using ${want})"
+                    }
+                    sim.environment.put(k, want)
+                }
+            }
+
+            if (!AGENT_FOUND) {
+                println "scrimmage: WARNING: the scrimmage Java agent isn't built (no ${agentJar}), so robot-side sim code " +
+                        "isn't blocked: run `scrimmage java build`"
+            }
+            def simTasks = p.tasks.matching { it.name in SIM_TASKS }
+            simTasks.configureEach { t ->
+                if (AGENT_FOUND) t.jvmArgs("-javaagent:" + agentJar)
+            }
+            if (lockstepSo || consoleFile) {
+                // GradleRIO's doFirst overwrites HALSIM_EXTENSIONS; insert ours right before the exec action.
+                p.gradle.taskGraph.whenReady { graph ->
+                    graph.allTasks.findAll { it.project == p && it.name in SIM_TASKS }.each { t ->
+                        int exec = t.actions.findIndexOf { it.displayName == "Execute exec" }
+                        if (exec < 0) {
+                            exec = t.actions.size() - 1
+                            println "scrimmage: WARNING: couldn't find the simulation's exec action; lockstep may be off"
+                        }
+                        t.actions.add(exec, { Task task ->
+                            if (lockstepSo) {
+                                def cur = task.environment["HALSIM_EXTENSIONS"]
+                                task.environment("HALSIM_EXTENSIONS", cur ? cur + File.pathSeparator + lockstepSo : lockstepSo)
+                            }
+                            if (consoleFile) {
+                                // the JavaExec's output stream pump writes each chunk as it comes, unbatched
+                                def out = new FileOutputStream(consoleFile, true)
+                                consoleStreams[task] = out
+                                task.standardOutput = out
+                                task.errorOutput = out
+                            }
+                        } as Action<Task>)
+                    }
+                }
+                // the daemon outlives the robot: close the file however the task ends (a stopped robot fails it)
+                p.gradle.taskGraph.afterTask { Task task -> consoleStreams.remove(task)?.close() }
+            }
+        }
+    }
+}

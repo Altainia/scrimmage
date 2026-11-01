@@ -1,0 +1,159 @@
+# A stretch climb to the 2022 TRAVERSAL rung: high.toml's climb to HIGH, then a hand-over to TRAVERSAL
+# (docs/climbing.md, "Scripts"). Not gated by a test: see "The examples" in docs/climbing.md for how it ends.
+#   scrimmage climb run configs/climber_robot.toml --script examples/climb/traversal.toml
+#
+# From HIGH (hanging from the high climber): the high arm's pivot tips the robot nose down until the mid climber
+# stands in front of HIGH; the mid hooks rise above it and the pivot tips the robot back, bringing them over HIGH;
+# the mid climber hooks HIGH and takes the robot. The high hooks lift off HIGH, lean back behind it and retract; the
+# short arm swings forward under HIGH. Then, timed on the swing (the robot swings from HIGH under the mid hooks, so
+# TRAVERSAL moves against the arm), the high arm extends at the forward end of a swing so the back swing carries
+# TRAVERSAL into its hooks; it retracts to catch it, and the mid hooks lift off HIGH.
+
+goal = "TRAVERSAL"
+
+[[step]]
+name = "forward, the hooks past MID"
+# the mid hooks open backward, so they come over the rung from in front of it: 0.11 m forward first. Gently (1.5 V):
+# at 3 V the wheels slip as the loop stops them, and where the robot ends up (whether the hooks catch MID) varies
+drive = [{ joint = "dt.left_2", to = 1.4, max_voltage = 1.5 }, { joint = "dt.right_2", to = 1.4, max_voltage = 1.5 }]
+wait = { time = 1.0 }
+
+[[step]]
+name = "reach above MID"
+# the hooks' tips 2 cm over the rung; the robot's top at about 65.6 in (G106: 66)
+drive = { joint = "mid.stage1", to = 0.41 }
+wait = { joint_at = { joint = "mid.stage1", value = 0.41, tol = 0.003 } }
+
+[[step]]
+name = "back the hooks over MID"
+drive = [{ joint = "dt.left_2", to = 0.0, max_voltage = 1.5 }, { joint = "dt.right_2", to = 0.0, max_voltage = 1.5 }]
+wait = { time = 1.0 }
+
+[[step]]
+name = "pull up onto MID"
+drive = { joint = "mid.stage1", to = 0.0 }
+wait = { joint_at = { joint = "mid.stage1", value = 0.0, tol = 0.01 } }
+
+[[step]]
+name = "settle on MID"
+wait = { time = 1.0 }
+
+[[step]]
+name = "raise the high climber"
+# leaning a little, so its hooks rise beside HIGH, behind it, their tips 4 cm above it at the top
+drive = [{ joint = "high.pivot", to_deg = 8.0 }, { joint = "high.stage1", to = 0.30 }]
+wait = { joint_at = { joint = "high.stage1", value = 0.30, tol = 0.005 } }
+
+[[step]]
+name = "lean over HIGH"
+# slowly (3 V): the hooks' tips lead over the rung; a fast lean swings the robot and the arm into the rung
+drive = { joint = "high.pivot", to_deg = 15.0, max_voltage = 1.5 }
+wait = { time = 1.0 }
+
+[[step]]
+name = "hook HIGH"
+drive = { joint = "high.stage1", to = 0.2 }
+wait = { hook_contact = "high" }
+
+[[step]]
+name = "seat on HIGH"
+# the pivot back on full voltage, so the arm holds its lean while the robot's weight moves onto it
+drive = [{ joint = "high.stage1", to = 0.21 }, { joint = "high.pivot", to_deg = 15.0 }]
+wait = { time = 0.5 }
+
+[[step]]
+name = "lift the mid hooks off MID"
+# extending pushes the robot down onto the high hooks; MID leaves the mid hooks through their mouths and the robot
+# swings under HIGH
+drive = { joint = "mid.stage1", to = 0.16 }
+wait = { level = "HIGH" }
+timeout = 3.0
+
+[[step]]
+name = "clear of MID"
+# a little more extension, so the mid hooks are well clear of MID before they retract; retracting the moment HIGH
+# is held can catch MID again
+wait = { time = 0.2 }
+
+[[step]]
+name = "retract mid, stand the high arm up"
+# hanging from the high arm, the chassis pitches as the pivot turns: back to upright tips the mid climber forward,
+# away from MID, which its hooks would otherwise catch on the back swing
+drive = [{ joint = "mid.stage1", to = 0.0 }, { joint = "high.pivot", to_deg = -5.0 }]
+wait = { time = 0.5 }
+
+[[step]]
+name = "tip the robot nose down"
+drive = { joint = "high.pivot", to_deg = -40.0, max_voltage = 6.0 }
+wait = { time = 2.0 }
+
+[[step]]
+name = "raise the mid hooks above HIGH"
+drive = { joint = "mid.stage1", to = 0.225 }
+wait = { joint_at = { joint = "mid.stage1", value = 0.225, tol = 0.005 } }
+
+[[step]]
+name = "tip back, the mid hooks over HIGH"
+drive = { joint = "high.pivot", to_deg = -17.0, max_voltage = 6.0 }
+wait = { time = 2.0 }
+
+[[step]]
+name = "hook HIGH with mid"
+drive = { joint = "mid.stage1", to = 0.15 }
+wait = { hook_contact = { bar = "high", hook = "mid" } }
+
+[[step]]
+name = "load the mid hooks"
+drive = { joint = "mid.stage1", to = 0.18 }
+wait = { time = 1.0 }
+
+[[step]]
+name = "lift the high hooks off HIGH"
+drive = { joint = "high.stage1", to = 0.27 }
+wait = { time = 0.5 }
+
+[[step]]
+name = "lean the high arm back, its hooks behind HIGH"
+drive = { joint = "high.pivot", to_deg = -30.0, max_voltage = 6.0 }
+wait = { time = 1.0 }
+
+[[step]]
+name = "retract the high arm"
+drive = { joint = "high.stage1", to = 0.0 }
+wait = { time = 1.0 }
+
+[[step]]
+name = "swing the high arm forward under HIGH"
+drive = { joint = "high.pivot", to_deg = 10.0, max_voltage = 6.0 }
+wait = { time = 1.0 }
+
+[[step]]
+name = "wait for the forward end of a swing"
+wait = { swing_phase = "forward_peak" }
+timeout = 3.0
+
+[[step]]
+name = "extend the high arm into TRAVERSAL's path"
+drive = { joint = "high.stage1", to = 0.43 }
+wait = { hook_contact = { bar = "traversal", hook = "high" } }
+timeout = 3.0
+
+[[step]]
+name = "catch TRAVERSAL"
+drive = { joint = "high.stage1", to = 0.33 }
+wait = { time = 1.0 }
+
+[[step]]
+name = "lift the mid hooks off HIGH"
+drive = { joint = "mid.stage1", to = 0.30 }
+wait = { level = "TRAVERSAL" }
+timeout = 3.0
+
+[[step]]
+name = "retract mid"
+drive = { joint = "mid.stage1", to = 0.0 }
+wait = { time = 1.0 }
+
+[[step]]
+name = "hang on TRAVERSAL"
+wait = { time = 2.0 }

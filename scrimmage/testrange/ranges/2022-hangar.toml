@@ -1,0 +1,144 @@
+# The FRC 2022 RAPID REACT HANGAR, the four rungs a robot climbs, on today's field (sub-project 12). Only the hangar,
+# not the 2022 field. WPILib field coordinates (blue alliance wall at x = 0, z up), SI units unless a key ends in _in
+# (inches).
+#
+# Numbers cite the 2022 Game Manual V7, sections 5.4 to 5.4.3 and Table 6-1
+# (https://firstfrc.blob.core.windows.net/frc2022/Manual/2022FRCGameManual.pdf), and the HANGAR drawing GE-22100 and
+# the RUNG drawing GE-22150 (2022 field drawings, RAPID REACT specific,
+# https://firstfrc.blob.core.windows.net/frc2022/FieldAssets/2022FieldDrawings-RAPIDREACTSpecific.pdf), or say they
+# are an estimate or our choice. Heights come from GE-22100, not the manual's prose: its "2 ft. apart" for MID, HIGH
+# and TRAVERSAL is the drawing's 24.00 in horizontal step, each step also rising 15.34 in.
+#
+# Layout: the hangar stands in the blue alliance's corner against the alliance wall (x = 0) and the guardrail at
+# y = 0. The rungs run along y (yaw 90), across the hangar's 9 ft 1/4 in width, each 108.50 in pipe spanning both side
+# trusses. Two side frames carry them, each a horizontal 12 in truss on two 12 in legs: the drawing's BOM is 4 x 4 ft
+# and 4 x 5 ft truss sections and 4 corner blocks, so the two sides are joined only by the rungs. The rungs' brackets,
+# the MID rung's saddles and the HIGH rung's holder are left out (each fills a gap of 1.4 in or less to the truss);
+# the TRAVERSAL rung's plate towers are two boxes. The LAUNCH PADS and the legs' baseplates are left out.
+
+[range]
+name = "FRC 2022 HANGAR"     # source: the 2022 game (RAPID REACT) and its HANGAR, manual section 5.4
+ball = "2026-fuel"           # choice: a range needs a ball preset; this range has no floor balls and a robot preloads none
+
+[climb]
+rule = "lowest-rung"         # source: manual 6.4.1: a robot scores the level of the lowest rung it touches, and nothing while it touches the carpet or the floor protection
+levels = { LOW = 4, MID = 6, HIGH = 10, TRAVERSAL = 15 }   # source: manual Table 6-1, points per robot
+
+# The rungs: 1 1/4 in Sch 40 steel pipe, bolted through at both ends, so they don't turn. Each rides a sprung slide
+# standing in for its bending (see stiffness).
+[[element]]
+name = "low"
+kind = "bar"
+level = "LOW"
+center_in = [128.98, 58.0]   # source: GE-22100: LOW is 41.98 in (horizontal, centers) beyond MID, away from the wall; y: choice, the hangar centered in the 9 ft 8 in (116 in) HANGAR ZONE (manual 5.2) against the guardrail
+yaw_deg = 90.0               # source: GE-22100: the rungs span the hangar's width, parallel to the alliance wall
+length_in = 108.5            # source: GE-22150: the pipe is 108.50 in overall
+diameter_in = 1.66           # source: manual 5.4.2: 1.66 in OD (1 1/4 in Sch 40)
+height_in = 47.89            # source: GE-22100: the top 48.72 in above the field carpet, less the 0.83 in radius
+posts = false                # source: GE-22100: the rungs are clamped to the truss (GE-22111 low bar holder), with no posts of their own
+stiffness = 160000.0         # estimate: N/m, the middle of the 80 to 320 kN/m that simply supported and fixed-fixed bending of the 84 in span give (pipe I = 0.195 in^4), before the truss's and U-bolts' unknown compliance; not measured
+damping = 250.0              # estimate: N s/m, light: about 10 % of critical for the pipe's own 9.3 kg on the spring, about 4 % with a 60 kg robot hanging; not measured
+friction = 0.5               # estimate: powder-coated steel against a robot's aluminum or polycarbonate; a hook sets its own
+
+[[element]]
+name = "mid"
+kind = "bar"
+level = "MID"
+center_in = [87.0, 58.0]     # source: GE-22100: MID is 2 x 24.00 in (horizontal) beyond TRAVERSAL; y: choice, as low
+yaw_deg = 90.0               # source: as low
+length_in = 108.5            # source: as low
+diameter_in = 1.66           # source: as low
+height_in = 59.805           # source: GE-22100: the top 60.26 in above the floor protection (0.375 in, manual 5.4.3), less the 0.83 in radius
+posts = false                # source: GE-22100: hung under the truss in pipe saddles (GE-22120, GE-22123)
+stiffness = 160000.0         # estimate: as low
+damping = 250.0              # estimate: as low
+friction = 0.5               # estimate: as low
+
+[[element]]
+name = "high"
+kind = "bar"
+level = "HIGH"
+center_in = [63.0, 58.0]     # source: GE-22100: HIGH is 24.00 in (horizontal) beyond TRAVERSAL; y: choice, as low
+yaw_deg = 90.0               # source: as low
+length_in = 108.5            # source: as low
+diameter_in = 1.66           # source: as low
+height_in = 75.135           # source: GE-22100: the top 75.59 in above the floor protection (0.375 in), less the 0.83 in radius
+posts = false                # source: GE-22100: on top of the truss (GE-22140 mid transition bar holder)
+stiffness = 160000.0         # estimate: as low
+damping = 250.0              # estimate: as low
+friction = 0.5               # estimate: as low
+
+[[element]]
+name = "traversal"
+kind = "bar"
+level = "TRAVERSAL"
+center_in = [39.0, 58.0]     # source: manual 5.4.2: the TRAVERSAL rung's center is 3 ft 3 in from the ALLIANCE WALL; y: choice, as low
+yaw_deg = 90.0               # source: as low
+length_in = 108.5            # source: as low
+diameter_in = 1.66           # source: as low
+height_in = 90.485           # source: GE-22100: the top 90.94 in above the floor protection (0.375 in), less the 0.83 in radius
+posts = false                # source: GE-22100: on plate towers above the truss (GE-22130 upper transition bar holder)
+stiffness = 160000.0         # estimate: as low
+damping = 250.0              # estimate: as low
+friction = 0.5               # estimate: as low
+
+# The truss: structure, not ground. Each side frame's legs run from the carpet to the horizontal truss, which tops
+# out 6 ft 2 in up (manual 5.4.1). The structure is 10 ft 3/4 in deep: its field-side legs' faces are put against
+# the LOW rung (an estimate: GE-22111 clamps LOW to them), so it runs from x = 7.40 to 128.15 in.
+[[element]]
+name = "leg_wall_right"
+kind = "box"
+center_in = [13.40, 9.875]   # estimate: x, the structure's wall end (128.15 - 120.75 = 7.40 in) plus half a 12 in leg; y, the side truss centered 6 in inside the 108.25 in width
+size_in = [12.0, 12.0, 62.0] # source: manual 5.4.1: 1 ft square truss, up to the horizontal truss's bottom (74 - 12 in)
+[[element]]
+name = "leg_field_right"
+kind = "box"
+center_in = [122.15, 9.875]  # estimate: x, its field face against the LOW rung (128.98 - 0.83 in), less half a leg; y, as leg_wall_right
+size_in = [12.0, 12.0, 62.0] # source: as leg_wall_right
+[[element]]
+name = "leg_wall_left"
+kind = "box"
+center_in = [13.40, 106.125] # estimate: as leg_wall_right, the other side (58 + 48.125 in)
+size_in = [12.0, 12.0, 62.0] # source: as leg_wall_right
+[[element]]
+name = "leg_field_left"
+kind = "box"
+center_in = [122.15, 106.125] # estimate: as leg_field_right, the other side
+size_in = [12.0, 12.0, 62.0] # source: as leg_wall_right
+[[element]]
+name = "truss_right"
+kind = "box"
+center_in = [67.775, 9.875]  # estimate: midway along the structure (7.40 to 128.15 in); y, as leg_wall_right
+size_in = [120.75, 12.0, 12.0] # source: manual 5.4.1: 10 ft 3/4 in deep, 1 ft square truss
+base_height_in = 62.0        # source: manual 5.4.1: 6 ft 2 in tall, less the 12 in truss
+[[element]]
+name = "truss_left"
+kind = "box"
+center_in = [67.775, 106.125] # estimate: as truss_right, the other side
+size_in = [120.75, 12.0, 12.0] # source: as truss_right
+base_height_in = 62.0        # source: as truss_right
+[[element]]
+name = "tower_right"
+kind = "box"
+center_in = [39.0, 9.875]    # source: GE-22100: under the TRAVERSAL rung, on the side truss
+size_in = [6.0, 12.0, 15.655] # estimate: a plate tower 6 in along the field, across the truss, from the truss top (74 in) to the rung's underside (90.485 - 0.83 in)
+base_height_in = 74.0        # source: manual 5.4.1: the truss tops out 6 ft 2 in up
+[[element]]
+name = "tower_left"
+kind = "box"
+center_in = [39.0, 106.125]  # source: as tower_right, the other side
+size_in = [6.0, 12.0, 15.655] # estimate: as tower_right
+base_height_in = 74.0        # source: as tower_right
+
+# The floor protection: ground, so a robot standing on it is on the floor (and scores nothing).
+[[element]]
+name = "floor_protection"
+kind = "box"
+center_in = [67.775, 58.0]   # estimate: inside the truss bases (manual 5.4.3), taken as the whole structure's footprint
+size_in = [120.75, 108.25, 0.375] # source: manual 5.4.1 and 5.4.3: the structure's 10 ft 3/4 in by 9 ft 1/4 in; 1/8 in hardboard under carpet, about 3/8 in in all
+ground = true
+friction = 1.0               # estimate: carpet, as the field's (scrimmage/parts/field.py)
+
+# Starts: under the MID rung, on the floor protection, facing the alliance wall (the HIGH and TRAVERSAL rungs).
+[start.under_mid]
+pose = [2.2098, 1.4732, 180.0] # choice: under MID's center (87.0, 58.0 in), heading 180 deg toward the wall

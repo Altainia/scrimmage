@@ -1,0 +1,31 @@
+# The kitbot's autonomous routine: drive 2 m, turn 90° left, drive 1 m.
+#   scrimmage run scenarios/kitbot_auto.toml
+config = "../configs/kitbot.toml"
+description = "Kitbot auto ends 2 m ahead and 1 m left of its start, facing left"
+
+[[step]]
+mode = "disabled"
+duration = 2.0
+
+[[step]]
+name = "auto"
+mode = "auto"
+duration = 9.0
+  [[step.check]]
+  pose = { x = 4.0, y = 5.035, heading = 90, tol_xy = 0.3, tol_heading = 4 }
+  [[step.check]]
+  always = { signal = "battery", min = 7.0 }
+  [[step.check]]
+  never_touch = "obstacle"
+  [[step.check]]
+  console = { contains = "step 3: stop" }
+  [[step.screenshot]]
+  view = "top"
+  at = "end"
+  [step.contact_sheet]
+  frames = 8
+  view = "follow"
+
+[[step]]
+mode = "disabled"
+duration = 0.5

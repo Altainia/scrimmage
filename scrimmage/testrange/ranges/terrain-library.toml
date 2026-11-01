@@ -1,0 +1,62 @@
+# Example field elements from other seasons, to show how they are described (sub-project 10). WPILib field
+# coordinates (blue alliance wall at x = 0, z up), SI units unless a key ends in _in (inches). Positions are our
+# choice: these were never on one field together.
+
+[range]
+name = "Terrain library"
+ball = "2026-fuel"           # choice: a range needs a ball preset; this range has no floor balls
+
+# A generic ramp: up 15 cm at 12 deg to a 0.6 m deck and down the other side.
+[[element]]
+name = "ramp"
+kind = "ramp"
+center = [3.5, 2.0]          # choice: anywhere clear on the field
+width = 1.5                  # choice: a typical small ramp
+height = 0.15                # choice: a typical small ramp
+ramp_deg = 12.0              # choice: a typical small ramp
+deck = 0.6                   # choice: a typical small ramp
+two_sided = true
+
+# The FRC 2016 STRONGHOLD RAMPARTS: two steel ramps side by side, facing opposite ways. 2016 manual section 2.2.2.1
+# (https://firstfrc.blob.core.windows.net/frc2016manuals/GameManual/FRC-2016-game-manual.pdf): each is 2 ft wide and
+# 1 ft 10 in deep, at 8 deg.
+[[element]]
+name = "rampart_a"
+kind = "ramp"
+center = [7.0, 2.0]          # choice: anywhere clear on the field
+width_in = 24.0              # source: 2016 manual 2.2.2.1, 2 ft wide
+height_in = 2.95             # estimate: the 22 in depth is a 21 in slope at 8 deg (21 tan 8 deg) and a 1 in top; the manual gives only the depth and the angle
+ramp_deg = 8.0               # source: 2016 manual 2.2.2.1
+deck_in = 1.0                # estimate: see height_in
+two_sided = false
+[[element]]
+name = "rampart_b"
+kind = "ramp"
+center = [7.0, 2.6096]       # choice: beside rampart_a (2 ft further along y)
+yaw_deg = 180.0              # source: 2016 manual 2.2.2.1, facing the other way
+width_in = 24.0              # source: as rampart_a
+height_in = 2.95             # estimate: as rampart_a
+ramp_deg = 8.0               # source: as rampart_a
+deck_in = 1.0                # estimate: as rampart_a
+two_sided = false
+
+# The FRC 2012 REBOUND RUMBLE BRIDGE, a see-saw robots balanced on: 48 in wide, 88 in long, its deck 12 in up when
+# level (the 2012 manual as quoted in Chief Delphi's "Gyro Autobalancing" thread,
+# https://www.chiefdelphi.com/forums/showthread.php?p=1136269; the official manual wasn't found). Everything else is an
+# estimate: one pivot under the center near the deck, modeled as a narrow double hinge.
+[[element]]
+name = "bridge_2012"         # source: the 2012 game (REBOUND RUMBLE)
+kind = "platform"
+center = [11.0, 4.035]       # choice: anywhere clear on the field
+yaw_deg = 0.0                # choice: robots drive along its length, along the field
+length_in = 88.0             # source: the thread above, 88 in long (along the tilt)
+width_in = 48.0              # source: the thread above, 48 in wide
+height_in = 12.0             # source: the thread above, 12 in up when level
+max_tilt_deg = 15.0          # estimate: until an end meets the carpet, asin(12 / 44) = 15.8 deg
+hinge_height_in = 10.0       # estimate: not published; the pivot just under the deck
+hinge_spacing_in = 1.0       # estimate: a single pivot, as a narrow double hinge
+ramp_length_in = 4.0         # estimate: a bevel at each end
+mass = 45.0                  # estimate: not published
+inertia = 18.7               # estimate: a uniform 45 kg deck 88 in long, m L^2 / 12
+com_height_in = 11.0         # estimate: not published; just under the deck top
+damping = 20.0               # estimate: not published; the low end of the CHARGE STATION estimate (2023-charge-station.toml)

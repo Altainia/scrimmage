@@ -1,0 +1,33 @@
+# The FRC 2023 CHARGED UP CHARGE STATION, a tilting balance platform, on today's field (sub-project 10). WPILib field
+# coordinates (blue alliance wall at x = 0, z up), SI units unless a key ends in _in (inches).
+#
+# Numbers cite the 2023 Game Manual section 5.4 (https://firstfrc.blob.core.windows.net/frc2023/Manual/2023FRCGameManual.pdf)
+# and the CHARGE STATION drawing GE-23300 Rev B, sheets 5 and 6 (2023 game-specific field drawings,
+# https://firstfrc.blob.core.windows.net/frc2023/FieldAssets/2023FieldDrawings-CHARGEDUPSpecific.pdf), or say they
+# are an estimate or our choice. The ball is the 2026 FUEL only because a range names one; no ball is used here.
+
+[range]
+name = "FRC 2023 CHARGE STATION"   # source: the 2023 game (CHARGED UP) and its CHARGE STATION, manual section 5.4
+ball = "2026-fuel"           # choice: a range needs a ball preset; this range has no floor balls and a robot preloads none
+
+[[element]]
+name = "charge_station"
+kind = "platform"
+center_in = [154.875, 108.0]  # source: manual 5.4: its center is 8 ft 2 5/8 in from the far edge of the GRID's tape line, the GRID 56.25 in deep (manual 5.5), so 56.25 + 98.625 from the alliance wall (team 6328's FieldConstants.java gives 153.1: a 1.8 in disagreement); "centered in the width of the COMMUNITY", which is 216 in wide against the scoring-table guardrail, so 108 in from it
+yaw_deg = 0.0                # source: manual 5.4: it tilts about its long axis, parallel to the alliance wall, so robots drive onto it along the field's length (local x)
+length_in = 48.0             # source: manual 5.4 / GE-23300 sheet 5: the pivoting top is 96.00 in wide by 48.00 in deep; this is the depth, along the tilt
+width_in = 96.0              # source: as length_in, along the tilt axis
+height_in = 9.125            # source: manual 5.4: 9 1/8 in to the top when level (GE-23300: 9.19)
+max_tilt_deg = 15.0          # source: manual 5.4 / GE-23300 sheet 5: +-15 deg (the high edge 16 in up). How it stops isn't drawn: modeled as a stiff stop
+hinge_height_in = 6.57       # source: GE-23300 sheet 6: the double hinge's pivot axes 6.57 in above the carpet
+hinge_spacing_in = 5.30      # source: GE-23300 sheet 6: the double hinge's two axes 5.30 in apart (GE-23328)
+ramp_length_in = 15.125      # source: manual 5.4: 15 1/8 in ramps on each 96 in edge. Taken as the horizontal run from the deck's top edge to the carpet, so these slope at atan(9.125 / 15.125) = 31.1 deg level; the real ramp, hinged 8.76 in up and reaching 13.11 in, slopes at 34 1/4 deg (manual 5.4)
+mass = 94.8                  # source: GE-23300 sheet 6 note 1: 209 lb, all pivoting components (CAD estimate)
+inertia = 24.63              # source: GE-23300 sheet 6 note 2: 84,156 lb in^2 about the tilt axis through the CoM, level
+com_height_in = 7.27         # source: GE-23300 sheet 6: the CoM 7.27 in up, laterally centered
+damping = 30.0               # estimate: no published value and no damper in the drawings; the station settles in one or two swings after a robot drives off (match video), which a joint damping of 20 to 50 N m s/rad gives. Not measured
+friction = 0.6               # estimate: the polycarbonate top and HDPE ramps against a robot's tread; scrimmage/testrange/elements.py DEFAULT_FRICTION
+
+# Starts: in the COMMUNITY, facing the station (heading 0 drives +x onto it), on its center line.
+[start.approach]
+pose = [1.9, 2.743, 0.0]     # choice: about 0.6 m between the robot's front and the near ramp's foot (x 2.966)

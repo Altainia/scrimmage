@@ -1,0 +1,56 @@
+# Two wheels facing each other, at different speeds: the faster wheel's side is pushed ahead of the slower one's, so
+# the disc leaves spinning. Equal speeds give a spinless disc (which flies badly; see docs/disc.md).
+#
+#   scrimmage disc run examples/disc/pinch.toml
+#
+# See docs/disc.md. Everything marked ESTIMATE is a guess from published ranges, not a measurement.
+
+[disc]
+preset = "2013-frisbee"          # inertia and rim stiffness are ESTIMATES
+
+[wheels]
+preset = "urethane-60a-4in"      # friction 0.8 on the disc is an ESTIMATE
+
+[layout]
+kind = "pinch"
+wheels = [
+  { x = 0.10, side = "right", group = 0 },   # group 0: the faster wheel, on the right
+  { x = 0.10, side = "left",  group = 1 },   # group 1: the slower wheel, on the left
+]
+compression = 0.0318             # 1 1/4 in. in all: the gap between the wheels is the disc's diameter less this.
+                                 # A pinch needs more squeeze than a fence layout: each wheel carries half of it.
+channel_length = 0.30
+
+[[shaft]]                        # one table per wheel group, in group order
+wheel_inertia = 0.0010           # ESTIMATE: a 4 in. roller, its hub and a small flywheel (a bare roller sags by half)
+motor = "CIM"
+motor_count = 1
+gearing = 0.75
+
+[[shaft]]
+wheel_inertia = 0.0010
+motor = "CIM"
+motor_count = 1
+gearing = 0.75
+
+[[control]]
+target_rps = 100.0               # 6000 rpm at the wheel: the faster side
+kP = 0.5
+stator_limit = 60.0
+
+[[control]]
+target_rps = 30.0                # 1800 rpm: the slower side. The speed difference sets the spin.
+kP = 0.5
+stator_limit = 60.0
+
+[launcher]
+height = 0.76                    # ESTIMATE
+tilt_deg = 25.0
+
+[goal]                           # the 2013 HIGH goal, from the auto line
+distance = 5.4864
+
+[feed]
+count = 4
+rate = 2.0
+rule = "wait_for_speed"

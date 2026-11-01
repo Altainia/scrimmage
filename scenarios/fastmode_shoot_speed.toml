@@ -1,0 +1,31 @@
+# The fast-mode sample robot's "Shoot Moving" auto on the 2026 test range with the NEUTRAL ZONE FUEL turned off (8
+# preloaded only): the run tests/test_range_e2e.py times to show fast mode stays faster than real time with a
+# launcher and its balls (on CI, a 2-vCPU runner, with 4 preloaded: see the test). scenarios/fastmode_shoot_moving.toml
+# is the full run, with all 360 FUEL.
+#   scrimmage run scenarios/fastmode_shoot_speed.toml
+config = "../configs/fastmode_range.toml"
+description = "Fast-mode sample on the 2026 range: Shoot Moving with only the 8 preloaded FUEL (the speed test's run)"
+robot_env = { SCRIMMAGE_AUTO = "Shoot Moving" }
+
+[range]
+start = "blue_center"
+preload = 8
+floor_balls = false
+
+[[step]]
+mode = "disabled"
+duration = 1.0
+[[step]]
+name = "auto"
+mode = "auto"
+duration = 6.0
+  # As in fastmode_shoot_moving.toml: the 8 preloaded FUEL fire on the move by 2.95 s into auto and 4 score by
+  # 3.73 s (every run). Before the range had its BUMPS: 8 fired by 2.93 s, 6 scored by 3.73 s.
+  [[step.check]]
+  by_time = { signal = "fired", min = 8, t = 3.05 }
+  [[step.check]]
+  by_time = { signal = "score.hub_blue", min = 4, t = 3.8 }
+  [[step.check]]
+  at_end = { signal = "score.hub_blue", min = 4 }
+  [[step.check]]
+  at_end = { signal = "fired", min = 8 }

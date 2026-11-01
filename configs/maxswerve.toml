@@ -1,0 +1,76 @@
+# Maps examples/java_maxswerve (REV's MAXSwerve Java template: SPARK MAX controllers, NEO drive and NEO 550 steer
+# motors, Through Bore absolute encoders on the steer SPARKs, an ADIS16470 IMU) onto a swerve robot built from
+# scrimmage's stock parts: a chassis and four MAXSwerve modules (the `scrimmage edit --new swerve-rev` template).
+#   scrimmage run scenarios/maxswerve_auto.toml
+# examples/java_maxswerve is github.com/REVrobotics/MAXSwerve-Java-Template at b6145898c310 (v2026.0, BSD-3-Clause:
+# its LICENSE.txt) as published, except vendordeps/REVLib.json bumped to 2026.0.5 and gradlew made executable.
+# Paths are relative to this file. REV's SPARK simulation follows simulated time, so this runs in lockstep at any speed.
+
+[model]
+timestep = 0.001
+
+[robot]
+start_pose = [2.0, 4.035, 0.0]   # x (m), y (m), heading (deg); the template's auto resets its odometry to (0, 0, 0) here
+
+[battery]
+nominal_voltage = 12.5
+resistance = 0.02
+
+[lockstep]
+step = 0.005
+
+[robot_program]
+# The Gradle init script turns off the template's sim GUI and points HALSim WebSocket at scrimmage.
+command = ["./gradlew", "-I", "{scrimmage_java}/scrimmage.init.gradle", "simulateJava"]
+cwd = "../examples/java_maxswerve"
+start_timeout = 180       # a first Gradle build is slow; pre-build with ./gradlew build
+
+# ---- Parts ---------------------------------------------------------------------------
+# The template's Constants.java: kTrackWidth = kWheelBase = 26.5 in between module centers (a 28 in frame with the
+# modules 0.75 in in from each edge). Its gyro is WPILib's ADIS16470_IMU on the onboard SPI port: SimDevice
+# "Gyro:ADIS16470[0]", yaw on the Z axis as gyro_angle_z / gyro_rate_z, counter-clockwise positive.
+
+[[part]]
+name = "drive"
+stock = "chassis"
+length = 0.7112           # 28 in frame
+width = 0.7112
+module_inset = 0.01905    # 0.75 in: modules 26.5 in (0.6731 m) apart
+ids = { gyro = { device = "ADIS16470[0]", angle = "gyro_angle_z", rate = "gyro_rate_z", cw_positive = false } }
+
+# ---- Modules -------------------------------------------------------------------------
+# MAXSwerve with the template's 14T pinion; CAN IDs from the template's Constants.java. The template configures
+# the drive SPARKs non-inverted and inverts each steer SPARK's absolute encoder (Configs.java), matching the part.
+# A real robot's modules are mounted turned by 90 degrees from each other, and each absolute encoder is zeroed in
+# the module's own frame (REV's calibration jig). The template's kXxxChassisAngularOffset undoes that: chassis
+# angle = encoder - offset. Here the modules all face the same way, so each encoder's magnet sits at
+# -offset / 2 pi rotations (`offset`): front left -pi/2 -> 0.25, front right 0, back left pi -> -0.5,
+# back right pi/2 -> -0.25.
+
+[[part]]
+name = "fl"
+stock = "swerve/MAXSwerve"
+ratio = "14T"
+attach = "drive.front_left"
+ids = { drive = "SparkMax:11", steer = "SparkMax:10", encoder = { rev = "SparkMaxAbs:10", offset = 0.25 } }
+
+[[part]]
+name = "fr"
+stock = "swerve/MAXSwerve"
+ratio = "14T"
+attach = "drive.front_right"
+ids = { drive = "SparkMax:15", steer = "SparkMax:14", encoder = "SparkMaxAbs:14" }
+
+[[part]]
+name = "bl"
+stock = "swerve/MAXSwerve"
+ratio = "14T"
+attach = "drive.back_left"
+ids = { drive = "SparkMax:13", steer = "SparkMax:12", encoder = { rev = "SparkMaxAbs:12", offset = -0.5 } }
+
+[[part]]
+name = "br"
+stock = "swerve/MAXSwerve"
+ratio = "14T"
+attach = "drive.back_right"
+ids = { drive = "SparkMax:17", steer = "SparkMax:16", encoder = { rev = "SparkMaxAbs:16", offset = -0.25 } }

@@ -1,0 +1,31 @@
+# Materials for the bench. A shape's `material` names one of these; the launcher's tread presets (30A, 35A, ...)
+# are materials too (see scrimmage/launcher/presets.toml).
+#
+# Fields: foam_friction (coefficient against a squishy foam piece), rigid_friction (against a rigid piece),
+# source (where the numbers come from). Every number is an estimate: friction against FRC foam and plastic
+# pieces is not published. Replace them with a sled-pull measurement of your own part and piece.
+
+[material.polycarbonate]
+foam_friction = 0.5     # source: the launcher model's hood default (examples/launcher/hooded.toml, "polycarbonate on foam: an estimate")
+rigid_friction = 0.4    # estimate: smooth plastic against a hard plastic or painted piece, 0.3 to 0.5 typical
+source = "estimate"
+
+[material.aluminum]
+foam_friction = 0.45    # estimate: bare aluminum on foam, a little below polycarbonate
+rigid_friction = 0.35   # estimate: bare aluminum on a hard plastic piece, 0.3 to 0.4 typical
+source = "estimate"
+
+[material.steel]
+foam_friction = 0.4     # estimate: smooth steel on foam, the lowest of the metals here
+rigid_friction = 0.3    # estimate: steel on a hard plastic piece, 0.2 to 0.4 typical
+source = "estimate"
+
+[material.UHMW]
+foam_friction = 0.3     # estimate: UHMW is slippery; 0.2 to 0.4 on foam
+rigid_friction = 0.2    # estimate: UHMW on a hard plastic piece, 0.15 to 0.25 typical (it is a low-friction guide material)
+source = "estimate"
+
+[material.nitrile]
+foam_friction = 0.9     # estimate: nitrile rubber grips foam almost like a soft tread, a little below the 40A preset
+rigid_friction = 0.8    # estimate: rubber on a hard plastic piece, 0.7 to 1.0 typical
+source = "estimate"

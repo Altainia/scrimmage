@@ -1,0 +1,78 @@
+"""The part library for the GUI: stock parts with parameter metadata, and part folders."""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+from ..parts.model import PartError, load_part
+from ..parts.stock import REGISTRY, _load_all, build_stock
+
+_GROUPS = {"chassis": "Chassis", "mechanisms": "Mechanisms", "swerve": "Drivetrain", "differential": "Drivetrain"}
+
+
+def _group(stock) -> str:
+    return _GROUPS.get(stock.build.__module__.rsplit(".", 1)[-1], "Mechanisms")
+
+
+def _param(p) -> dict:
+    default = list(p.default) if p.kind == "pair" else p.default
+    return {"name": p.name, "kind": p.kind, "unit": p.unit, "default": default, "min": p.min,
+            "max": None if callable(p.max) else p.max, "max_depends": callable(p.max),
+            "choices": list(p.choices) if p.choices is not None else None, "doc": p.doc, "positive": p.positive}
+
+
+_KINDS: dict[str, dict[str, str]] = {}
+
+
+def _slot_kinds(s) -> dict[str, str]:
+    """{slot: kind} in the stock part's declared slot order, from the part built with default parameters."""
+    if s.name not in _KINDS:
+        kinds = build_stock(s.name, {}, s.name).slot_kinds()
+        _KINDS[s.name] = {n: kinds[n] for n in s.slots if n in kinds} | kinds
+    return _KINDS[s.name]
+
+
+def stock() -> list[dict]:
+    _load_all()
+    return [{"name": s.name, "group": _group(s), "doc": s.doc, "note": s.note,
+             "params": [_param(p) for p in s.params], "slots": _slot_kinds(s), "mounts": list(s.mounts)}
+            for s in sorted(REGISTRY.values(), key=lambda s: s.name)]
+
+
+def _rel(folder: Path, base: Path | None) -> str:
+    if base is not None:
+        try:
+            return os.path.relpath(folder, base)
+        except ValueError:
+            pass
+    return str(folder.resolve())
+
+
+def folders(dirs: list[Path], config_dir: Path | None = None) -> list[dict]:
+    """Each subfolder of `dirs` holding a part.toml (or the dir itself), once each even when dirs overlap;
+    `config_dir` makes paths relative. A folder that can't be read is skipped."""
+    out = []
+    seen: set[Path] = set()
+    for d in dirs:
+        d = Path(d)
+        try:
+            if not d.is_dir():
+                continue
+            cands = [d] if (d / "part.toml").is_file() else sorted(p for p in d.iterdir() if (p / "part.toml").is_file())
+        except OSError:
+            continue
+        for c in cands:
+            key = c.resolve()
+            if key in seen:
+                continue
+            seen.add(key)
+            item = {"name": c.name, "path": _rel(c, config_dir),
+                    "slots": {}, "mounts": [], "error": None}
+            try:
+                part = load_part(c)
+                item.update(name=part.name, slots=part.slot_kinds(), mounts=[m.name for m in part.mounts])
+            except PartError as e:
+                item["error"] = str(e)
+            out.append(item)
+    return out

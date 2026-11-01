@@ -1,0 +1,88 @@
+<!--
+  6-wheel drop-center differential drive ("kitbot"-like) on a simplified FRC field.
+
+  Conventions (match WPILib): x forward, y left, z up, field origin at the blue-alliance corner.
+  Wheel hinges spin about +y, so a positive joint velocity drives the robot forward on either side.
+  Each side's three wheels are chained together with equality constraints, like a belt or chain,
+  so a single motor binding on the center wheel drives the whole side.
+
+  Swap in your own robot by replacing the "chassis" body (meshes from CAD work: export STL/OBJ and
+  reference them with <mesh>), keeping joint names in sync with the TOML config.
+-->
+<mujoco model="kitbot">
+  <compiler angle="degree" autolimits="true"/>
+  <option timestep="0.001" integrator="implicitfast" cone="elliptic" impratio="10"/>
+  <visual>
+    <global offwidth="1600" offheight="1000" azimuth="-125" elevation="-30"/>
+    <quality shadowsize="4096"/>
+  </visual>
+
+  <default>
+    <joint damping="0.002" armature="0.0005"/>
+    <default class="wheel">
+      <!-- slight softness keeps the 6-point contact on a rigid chassis well behaved -->
+      <geom type="cylinder" size="0.0762 0.02" zaxis="0 1 0" mass="0.25"
+            friction="1.1 0.01 0.001" condim="4" solref="0.004 1" rgba="0.15 0.15 0.15 1"/>
+      <joint type="hinge" axis="0 1 0"/>
+    </default>
+    <default class="wall">
+      <geom type="box" friction="0.3 0.005 0.0001" rgba="0.75 0.75 0.8 0.35"/>
+    </default>
+  </default>
+
+  <asset>
+    <texture name="carpet" type="2d" builtin="checker" rgb1="0.28 0.29 0.32" rgb2="0.30 0.31 0.34" width="512" height="512"/>
+    <material name="carpet" texture="carpet" texrepeat="16 8"/>
+    <material name="bumper_blue" rgba="0.1 0.25 0.85 1"/>
+    <material name="frame" rgba="0.65 0.65 0.68 1"/>
+  </asset>
+
+  <worldbody>
+    <light pos="8.27 4.035 12" dir="0 0 -1" directional="true"/>
+
+    <!-- 2026-sized field: 16.54 m x 8.07 m, origin at the blue corner -->
+    <geom name="carpet" type="plane" pos="8.27 4.035 0" size="8.27 4.035 0.1" material="carpet" friction="1.0 0.01 0.001"/>
+    <geom class="wall" name="wall_blue"  pos="-0.05 4.035 0.25" size="0.05 4.135 0.25"/>
+    <geom class="wall" name="wall_red"   pos="16.59 4.035 0.25" size="0.05 4.135 0.25"/>
+    <geom class="wall" name="wall_right" pos="8.27 -0.05 0.25"  size="8.37 0.05 0.25"/>
+    <geom class="wall" name="wall_left"  pos="8.27 8.12 0.25"   size="8.37 0.05 0.25"/>
+    <!-- an obstacle, to show what collision gets you over kinematic sims -->
+    <geom name="obstacle" type="box" pos="8.27 4.035 0.25" size="0.6 0.6 0.25" rgba="0.8 0.55 0.1 1" friction="0.3 0.005 0.0001"/>
+
+    <body name="chassis" pos="2.0 4.035 0.09">
+      <freejoint name="chassis_free"/>
+      <!-- ~50 kg robot: frame + battery/electronics lumped low, bumpers as the collision shell -->
+      <geom name="frame" type="box" size="0.33 0.30 0.03" pos="0 0 0.01" mass="30" material="frame"/>
+      <geom name="battery" type="box" size="0.09 0.05 0.08" pos="-0.18 0 0.1" mass="6" rgba="0.1 0.1 0.1 1"/>
+      <geom name="superstructure" type="box" size="0.15 0.2 0.25" pos="0 0 0.3" mass="8" rgba="0.6 0.6 0.62 0.6" contype="0" conaffinity="0"/>
+      <geom name="bumper_front" type="box" size="0.04 0.39 0.06" pos="0.37 0 0.04" mass="1" material="bumper_blue" friction="0.3 0.005 0.0001"/>
+      <geom name="bumper_back"  type="box" size="0.04 0.39 0.06" pos="-0.37 0 0.04" mass="1" material="bumper_blue" friction="0.3 0.005 0.0001"/>
+      <geom name="bumper_left"  type="box" size="0.33 0.04 0.06" pos="0 0.35 0.04" mass="1" material="bumper_blue" friction="0.3 0.005 0.0001"/>
+      <geom name="bumper_right" type="box" size="0.33 0.04 0.06" pos="0 -0.35 0.04" mass="1" material="bumper_blue" friction="0.3 0.005 0.0001"/>
+      <!-- heading marker -->
+      <geom type="box" size="0.05 0.02 0.005" pos="0.25 0 0.045" rgba="1 0.9 0.1 1" contype="0" conaffinity="0" mass="0"/>
+
+      <!-- drop center: middle wheels sit 3 mm lower so the robot rocks and turns more easily -->
+      <body name="left_front"   pos="0.26 0.255 -0.0130"><joint class="wheel" name="left_front"/><geom class="wheel"/></body>
+      <body name="left_center"  pos="0.0 0.255 -0.0160"><joint class="wheel" name="left_center"/><geom class="wheel"/></body>
+      <body name="left_back"    pos="-0.26 0.255 -0.0130"><joint class="wheel" name="left_back"/><geom class="wheel"/></body>
+      <body name="right_front"  pos="0.26 -0.255 -0.0130"><joint class="wheel" name="right_front"/><geom class="wheel"/></body>
+      <body name="right_center" pos="0.0 -0.255 -0.0160"><joint class="wheel" name="right_center"/><geom class="wheel"/></body>
+      <body name="right_back"   pos="-0.26 -0.255 -0.0130"><joint class="wheel" name="right_back"/><geom class="wheel"/></body>
+    </body>
+  </worldbody>
+
+  <equality>
+    <joint joint1="left_front"  joint2="left_center"  polycoef="0 1 0 0 0" solref="0.002 1"/>
+    <joint joint1="left_back"   joint2="left_center"  polycoef="0 1 0 0 0" solref="0.002 1"/>
+    <joint joint1="right_front" joint2="right_center" polycoef="0 1 0 0 0" solref="0.002 1"/>
+    <joint joint1="right_back"  joint2="right_center" polycoef="0 1 0 0 0" solref="0.002 1"/>
+  </equality>
+
+  <contact>
+    <!-- wheels never touch the chassis shell -->
+    <exclude body1="chassis" body2="left_front"/><exclude body1="chassis" body2="left_center"/>
+    <exclude body1="chassis" body2="left_back"/><exclude body1="chassis" body2="right_front"/>
+    <exclude body1="chassis" body2="right_center"/><exclude body1="chassis" body2="right_back"/>
+  </contact>
+</mujoco>

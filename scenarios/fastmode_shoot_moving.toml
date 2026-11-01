@@ -1,0 +1,44 @@
+# The fast-mode sample robot on the 2026 test range (examples/java_fastmode, configs/fastmode_range.toml) in FAST
+# MODE: its "Shoot Moving" auto. From blue_center PathPlanner backs it away from the blue hub and drives it along a
+# line 2 m in front of the hub, while it fires its 8 preloaded FUEL on the move: it aims at a virtual target (the hub
+# less its velocity times the ball's flight time) and turns its drive to face it. It then goes through the left
+# TRENCH lane (beside the left BUMP, which its 2 cm bumpers can't climb) to the NEUTRAL ZONE, intakes FUEL from its
+# 360, drives back toward the hub and fires them standing from its NEUTRAL ZONE side.
+#   scrimmage run scenarios/fastmode_shoot_moving.toml
+config = "../configs/fastmode_range.toml"
+description = "Fast-mode sample on the 2026 range: Shoot Moving, preload fired on the move, NEUTRAL ZONE FUEL collected and fired"
+robot_env = { SCRIMMAGE_AUTO = "Shoot Moving" }
+
+[range]
+start = "blue_center"
+preload = 8
+
+[[step]]
+mode = "disabled"
+duration = 1.0
+[[step]]
+name = "auto"
+mode = "auto"
+duration = 15.0
+  # Fast mode repeats exactly. Every run: the 8 preloaded FUEL fire 0.98 to 2.95 s into auto at 1.1 to 2.0 m/s and
+  # 4 score by 3.73 s (the pairs fired along the line in front of the hub score one ball of two); 16 more are
+  # collected from the NEUTRAL ZONE and fired standing, 2.0 m from the hub on its far side by the path, from 12.12 s; 12 of them
+  # score by 14.74 s, a 13th as auto ends, two are still in the air and one misses. Fast mode has no run-to-run
+  # variation, but the score is sensitive to position (standing shots only score 1.75 to 2.05 m from the hub), so each
+  # score minimum is one ball under what was measured: 15 by 14.8 s (measured 16 by 14.74 s, margin 1 ball) and 15 at
+  # the end (measured 17, whose 17th lands on the last tick; margin 2).
+  # Before the range had its BUMPS the auto went over the left one; its checks were fired 8 by 3.0 s, score 6 by
+  # 3.8 s and 18 by 12.0 s, score 18 and fired 21 at the end.
+  [[step.check]]
+  by_time = { signal = "fired", min = 8, t = 3.05 }
+  [[step.check]]
+  by_time = { signal = "score.hub_blue", min = 4, t = 3.8 }
+  [[step.check]]
+  by_time = { signal = "score.hub_blue", min = 15, t = 14.8 }
+  [[step.check]]
+  at_end = { signal = "score.hub_blue", min = 15 }
+  [[step.check]]
+  at_end = { signal = "fired", min = 24 }
+  [[step.screenshot]]
+  view = "follow"
+  at = "end"

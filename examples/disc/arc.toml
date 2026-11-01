@@ -1,0 +1,44 @@
+# A single 8 in. pneumatic wheel with a fence curved round it through a half turn (the "semicircle" shooters of 2013).
+#
+#   scrimmage disc run examples/disc/arc.toml
+#
+# See docs/disc.md. Everything marked ESTIMATE is a guess from published ranges, not a measurement.
+
+[disc]
+preset = "2013-frisbee"          # inertia and rim stiffness are ESTIMATES
+
+[wheels]
+preset = "pneumatic-8in"         # AndyMark 8 in. pneumatic; tread width, stiffness and friction 0.75 are ESTIMATES
+
+[layout]
+kind = "arc"
+wheels = [{ x = 0.30, side = "right" }]
+fence = "rubber-tape"            # friction 0.8 is an ESTIMATE
+compression = 0.0127             # 1/2 in. between the wheel and the fence, all the way round
+arc_deg = 180.0                  # how far the fence wraps the wheel (up to a half turn); an ESTIMATE of the real geometry
+channel_length = 0.50
+wheel_stiffness = 20000.0        # N/m: a tire's stiffness is set by its pressure (10-40 kN/m); ESTIMATE, measure yours
+
+[shaft]
+wheel_inertia = 0.0027           # ESTIMATE: AndyMark 8 in. pneumatic, from Chief Delphi "Shooting Physics"
+motor = "CIM"
+motor_count = 2
+gearing = 0.5                    # the wheel runs twice as fast as the motors
+
+[control]
+target_rps = 66.7                # 4000 rpm at the wheel
+kP = 0.5
+stator_limit = 60.0
+supply_limit = 40.0
+
+[launcher]
+height = 0.76                    # ESTIMATE
+tilt_deg = 23.0
+
+[goal]                           # the 2013 HIGH goal, from the auto line
+distance = 5.4864
+
+[feed]
+count = 4
+rate = 2.0
+rule = "wait_for_speed"

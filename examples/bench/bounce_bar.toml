@@ -1,0 +1,73 @@
+# Two wheels, one above and one below, squeeze a FUEL ball and fire it forward; just past them a springy bar under
+# the path kicks the ball up. The bar is on a spring, so the room can see how hard it is hit and how far it gives.
+#
+#   scrimmage bench run examples/bench/bounce_bar.toml
+
+[bench]
+name = "bounce bar"
+author = "Priya"
+idea = "shoot it flat between two wheels and let a springy bar bounce it up into the goal"
+
+[piece]
+preset = "2026-fuel"             # 0.15 m foam ball
+
+[shaft.bottom]
+motor = "KrakenX60"
+target_rps = 30
+kP = 0.3
+wheel_inertia = 0.001
+
+[shaft.top]
+motor = "KrakenX60"
+target_rps = 30
+kP = 0.3
+wheel_inertia = 0.001
+
+# 4 in. wheels 0.12 m apart at the nip: the ball is squeezed 0.03 m, 0.2 of its diameter
+[[wheel]]
+name = "bottom"
+shaft = "bottom"
+center = [0.0, 0.0, -0.1108]
+diameter = 0.1016
+width = 0.1
+tread = "40A"
+
+[[wheel]]
+name = "top"
+shaft = "top"
+center = [0.0, 0.0, 0.1108]
+axis = [0.0, -1.0, 0.0]          # turned the other way, so both treads drive the ball forward
+diameter = 0.1016
+width = 0.1
+tread = "40A"
+
+[[plate]]
+name = "feeder"
+center = [-0.22, 0.0, -0.08]     # top face 0.075 m below the ball's center line: the ball rolls on it into the nip
+size = [0.26, 0.2, 0.01]
+
+[[bar]]
+name = "kicker"
+a = [0.25, -0.15, -0.058]        # a 1 in. tube across the path, 0.03 m into the ball's lower half
+b = [0.25, 0.15, -0.058]
+diameter = 0.0254
+material = "aluminum"
+spring = 3000.0                  # N/m, up and down
+travel = 0.02                    # it can give 2 cm either way
+spring_axis = [0.0, 0.0, 1.0]
+
+[[inlet]]
+name = "feed"
+center = [-0.25, 0.0, 0.001]
+size = [0.001, 0.001, 0.001]
+count = 3
+rate = 3
+velocity = [2.0, 0.0, 0.0]
+
+[[outlet]]
+name = "goal"
+center = [0.9, 0.0, 0.5]
+size = [1.0, 1.0, 1.0]
+
+[run]
+duration = 2.5

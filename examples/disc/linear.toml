@@ -1,0 +1,55 @@
+# The 2013 multi-wheel disc shooter: four 60A 4 in. urethane rollers in a row on the right, a grippy fence on the
+# left, 1/2 in. compression, shooting at the HIGH goal from the auto line.
+#
+#   scrimmage disc run examples/disc/linear.toml
+#
+# SI units (meters, kilograms, seconds); angles end in _deg. See docs/disc.md. Everything marked ESTIMATE below is a
+# guess from published ranges, not a measurement of your disc or wheels: measure them (docs/disc.md, "Measure these
+# first") before trusting absolute numbers.
+
+[disc]
+preset = "2013-frisbee"          # manual numbers for size and mass; inertia and rim stiffness are ESTIMATES
+
+[wheels]
+preset = "urethane-60a-4in"      # McMaster 2477K36 blue roller; friction 0.8 on the disc is an ESTIMATE
+
+[layout]
+kind = "linear"
+wheels = [                       # x: meters downrange from the disc's entry; all on the right, one shaft (group 0)
+  { x = 0.10, side = "right" },
+  { x = 0.20, side = "right" },
+  { x = 0.30, side = "right" },
+  { x = 0.40, side = "right" },
+]
+fence = "wedgetop"               # grippy fence; friction 1.0 is an ESTIMATE
+compression = 0.0127             # 1/2 in.: the disc is squeezed this much between a wheel and the fence
+channel_length = 0.50
+
+[shaft]                          # all four rollers on one shaft: their inertia together
+wheel_inertia = 0.0008           # ESTIMATE: 4 x 0.0002 kg m^2 (one 4 in. roller, hub and share of the shaft)
+motor = "CIM"
+motor_count = 2
+gearing = 0.75                   # motor turns per wheel turn: the wheel runs 4/3 as fast as the motor
+
+[control]
+target_rps = 75.0                # 4500 rpm at the wheel
+kP = 0.5
+stator_limit = 60.0              # amps per motor (as set on each Talon)
+supply_limit = 40.0
+
+[launcher]
+height = 0.76                    # ESTIMATE: the exit height of the FRC shot the flight model was checked against
+tilt_deg = 27.5                  # launch angle; tuned so the disc crosses the HIGH goal's slot
+
+[goal]                           # the 2013 HIGH goal (manual 2.2.3): 54 x 12 in., bottom edge 104 1/8 in. up
+distance = 5.4864                # the auto line, 216 in. from the wall
+
+[feed]
+count = 4                        # rule G24: a robot holds up to 4 discs
+rate = 2.0                       # discs per second offered
+rule = "wait_for_speed"
+
+# `scrimmage disc sweep` runs every combination of these; `disc run` ignores them. The tilt that scores is a narrow
+# band: too low and the disc hits the wall under the slot, too high and it passes over.
+[sweep]
+"launcher.tilt_deg" = [20.0, 22.5, 25.0, 27.5, 30.0]

@@ -1,0 +1,94 @@
+// scrimmage fast-mode library: simulated Kraken/CANcoder/gyro with Talon-style control built only from CTRE's
+// public documentation. It loads no CTRE/Phoenix class.
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+group = 'io.github.altainia.scrimmage'
+version = project.findProperty('libVersion') ?: '0.3.1'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+    withSourcesJar()
+}
+
+repositories {
+    maven { url 'https://frcmaven.wpi.edu/artifactory/release/' }
+    mavenCentral()
+}
+
+def wpilibVersion = '2026.2.2'
+def wpilibLibs = [
+    "edu.wpi.first.wpilibj:wpilibj-java:${wpilibVersion}",
+    "edu.wpi.first.hal:hal-java:${wpilibVersion}",
+    "edu.wpi.first.wpimath:wpimath-java:${wpilibVersion}",
+    "edu.wpi.first.wpiutil:wpiutil-java:${wpilibVersion}",
+    "edu.wpi.first.wpiunits:wpiunits-java:${wpilibVersion}",
+]
+
+def linuxX64 = System.getProperty('os.name') == 'Linux' && System.getProperty('os.arch') in ['amd64', 'x86_64']
+configurations {
+    halNatives
+}
+
+dependencies {
+    // The robot project provides WPILib; the published library must not pull it in.
+    wpilibLibs.each { compileOnly it }
+    // Tests use WPILib directly (e.g. DCMotor in KrakenModel).
+    wpilibLibs.each { testImplementation it }
+    // WPILib's POMs list no dependencies (GradleRIO adds them); DCMotor needs quickbuf at runtime.
+    testRuntimeOnly 'us.hebi.quickbuf:quickbuf-runtime:1.4'
+    // The sim HAL's desktop natives, so DevicesTest can create SimDevices (scrimmage's lockstep is Linux-only).
+    if (linuxX64) {
+        halNatives "edu.wpi.first.hal:hal-cpp:${wpilibVersion}:linuxx86-64@zip"
+        halNatives "edu.wpi.first.wpiutil:wpiutil-cpp:${wpilibVersion}:linuxx86-64@zip"
+    }
+
+    testImplementation platform('org.junit:junit-bom:5.10.1')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+def testNativesDir = layout.buildDirectory.dir('test-natives')
+def extractTestNatives = tasks.register('extractTestNatives', Sync) {
+    from { configurations.halNatives.collect { zipTree(it) } }
+    include '**/*.so'
+    eachFile { path = name }
+    includeEmptyDirs = false
+    into testNativesDir
+}
+
+test {
+    dependsOn extractTestNatives
+    systemProperty 'java.library.path', testNativesDir.get().asFile.absolutePath
+    environment 'LD_LIBRARY_PATH', testNativesDir.get().asFile.absolutePath
+    useJUnitPlatform()
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+    }
+}
+
+// Byte-identical jars from the same sources, so a re-vendored sample only changes when the library does.
+tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            artifactId = 'scrimmage-fastmode'
+            from components.java
+        }
+    }
+    repositories {
+        // scrimmage's `java build` publishes into its cache (-PpublishDir); a plain `./gradlew publish` into build/.
+        maven {
+            name = 'scrimmage'
+            url = findProperty('publishDir') ? file(findProperty('publishDir')) : layout.buildDirectory.dir('repo')
+        }
+    }
+}

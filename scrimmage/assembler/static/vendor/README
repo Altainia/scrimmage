@@ -1,0 +1,17 @@
+three.js, vendored for the assembler's 3D view (no CDN at runtime, no build step).
+
+Version: three 0.185.1 (npm, published 2026-07-01)
+Source:  https://registry.npmjs.org/three/-/three-0.185.1.tgz
+sha256:  a2143f5bf978bd3470a51024b2b6bdd581913ba8f36ff1538d433f3a95adf2df
+sha1:    63e9e241a17b101e211965121a017b4b4d8054ae (matches the registry's dist.shasum)
+License: MIT, see LICENSE (copied from the tarball)
+
+Files, copied unmodified from the tarball's package/ directory:
+  build/three.module.min.js                 -> three.module.min.js
+  build/three.core.min.js                   -> three.core.min.js   (three.module.min.js imports it)
+  examples/jsm/controls/OrbitControls.js    -> OrbitControls.js    (imports 'three'; index.html's importmap
+                                                                     maps it to ./vendor/three.module.min.js)
+  LICENSE                                   -> LICENSE
+
+To update: download a release at least two weeks old, copy the same files, and update this file.
+Releases from 0.186.0 on no longer ship the .min.js builds.

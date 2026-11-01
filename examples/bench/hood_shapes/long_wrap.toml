@@ -1,0 +1,71 @@
+# One of three hood shapes for the same launcher (hood_shapes/): the wheel, shaft, ball and feed of ../hooded.toml,
+# only the hood changes. Run them side by side with `scrimmage bench compare examples/bench/hood_shapes/*.toml`.
+#
+# Long wrap: the same gap, but the hood goes on 20 degrees further, to 120 deg; the ball leaves 30 degrees up.
+
+[bench]
+name = "long wrap hood"
+author = "Leo"
+idea = "wrap the hood further round so the wheel pushes the ball for longer"
+
+[piece]
+preset = "2020-power-cell"
+
+[shaft.shooter]
+motor = "KrakenX60"
+count = 1
+gearing = 1.0
+wheel_inertia = 0.0006           # the wheels, hubs and shaft (kg m^2)
+added_inertia = 0.002            # a flywheel on the same shaft
+target_rps = 66.7                # 4000 rpm
+kP = 0.2
+stator_limit = 80.0
+supply_limit = 60.0
+
+[[wheel]]
+name = "wheel"
+shaft = "shooter"
+center = [0.0, 0.0, 0.0]
+diameter = 0.1016                # 4 in.
+width = 0.127                    # a 5 in. wide roller
+tread = "35A"
+
+# The hood is the launcher model's: a straight 30 degree flare from no squeeze at 240 deg (the wheel's radius plus
+# the ball's diameter, 0.2286 m) down to the gap, then a concentric arc at the wheel's radius plus the gap (5.5 in.)
+# round to 140 deg. The flare starts 5 degrees early, a lead-in, so the ball can come in clear of it.
+[[curve]]
+name = "flare"
+center = [0.0, 0.0, 0.0]
+radius_start = 0.234679          # 0.2286 at 240 deg, plus 5 degrees of the flare's slope
+radius_end = 0.1905              # wheel radius + gap
+start_deg = 245.0
+end_deg = 208.6613               # 240 less the flare's 31.34 degrees: the 0.0381 m squeeze at tan(30) along the path
+width = 0.2
+material = "polycarbonate"
+
+[[curve]]
+name = "hood"
+center = [0.0, 0.0, 0.0]
+radius = 0.1905
+start_deg = 208.6613
+end_deg = 120.0                  # the exit: 120 - 90 = 30 degrees above horizontal
+width = 0.2
+material = "polycarbonate"
+
+[[inlet]]
+name = "feed"
+center = [-0.0504, 0.0, -0.1314]   # at 249 deg, 0.1407 m from the shaft: 1 mm off the wheel, just clear of the flare
+size = [0.001, 0.001, 0.001]
+count = 3
+rate = 5.0
+velocity = [-0.9336, 0.0, 0.3584]  # 1 m/s along the path, the launcher model's feed entry speed
+
+# The ball leaves the hood and wheel about 0.13 m up; it is counted out (and its speed read) as it rises through
+# 0.135 m, before gravity slows it much. Every 5 mm higher costs about 0.01 m/s at 5 m/s.
+[[outlet]]
+name = "shot"
+center = [0.2, 0.0, 0.635]
+size = [1.0, 1.0, 1.0]
+
+[run]
+duration = 2.0

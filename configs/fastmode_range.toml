@@ -1,0 +1,168 @@
+# Maps examples/java_fastmode in FAST MODE onto a made-up shooting robot on the 2026 test range: the fast-mode
+# sample's swerve drive plus a two-lane hooded launcher, a two-stage feeder (hopper floor, feeder) and an intake.
+# Not any team's robot: its launcher is tuned (below) to reach the 1.83 m hub from the range's starting positions.
+#   scrimmage run scenarios/fastmode_shoot_left.toml       (also _right, _moving; _phoenix in Phoenix mode)
+# The robot code picks its auto from the environment variable SCRIMMAGE_AUTO (the scenarios set it with robot_env) and
+# its fast-mode IO from sim_mode = "fast", as configs/fastmode.toml. The sample's elevator and arm aren't on this
+# robot: the robot code still creates their devices, and scrimmage says once that nothing binds them.
+# configs/fastmode_range_phoenix.toml is the same robot bound to its real (Phoenix 6) IO.
+# Paths are relative to this file.
+
+[model]
+timestep = 0.001
+
+[battery]
+nominal_voltage = 12.5
+resistance = 0.02
+
+[lockstep]
+step = 0.005
+
+# The 2026 range: both hubs and the 360 NEUTRAL ZONE FUEL. No [robot] start_pose: the robot starts at one of the
+# range's starting positions, here blue_center unless a scenario's [range] start picks another; 8 FUEL preloaded,
+# as the 2026 game allows.
+[range]
+file = "2026"
+start = "blue_center"
+preload = 8
+
+[robot_program]
+# The Gradle init script turns off the sim GUI and points HALSim WebSocket at scrimmage.
+command = ["./gradlew", "-I", "{scrimmage_java}/scrimmage.init.gradle", "simulateJava"]
+cwd = "../examples/java_fastmode"
+start_timeout = 180       # a first Gradle build is slow; pre-build with ./gradlew build
+sim_mode = "fast"
+
+# ---- Drive (as configs/fastmode.toml; see the notes there) --------------------------
+
+[[part]]
+name = "drive"
+stock = "chassis"
+module_inset = 0.096      # modules at +-0.254 m (TunerConstants: 10 in)
+ids = { gyro = "SimGyro:pigeon" }
+
+[[part]]
+name = "fl"
+stock = "swerve/MK4i"
+ratio = "L2"
+attach = "drive.front_left"
+ids = { drive = "SimMotor:fl_drive", steer = "SimMotor:fl_steer", encoder = { scrimmage = "fl_encoder", offset = -0.15234375 } }
+
+[[part]]
+name = "fr"
+stock = "swerve/MK4i"
+ratio = "L2"
+attach = "drive.front_right"
+drive_invert = true       # right side
+ids = { drive = "SimMotor:fr_drive", steer = "SimMotor:fr_steer", encoder = { scrimmage = "fr_encoder", offset = 0.4873046875 } }
+
+[[part]]
+name = "bl"
+stock = "swerve/MK4i"
+ratio = "L2"
+attach = "drive.back_left"
+ids = { drive = "SimMotor:bl_drive", steer = "SimMotor:bl_steer", encoder = { scrimmage = "bl_encoder", offset = 0.219482421875 } }
+
+[[part]]
+name = "br"
+stock = "swerve/MK4i"
+ratio = "L2"
+attach = "drive.back_right"
+drive_invert = true       # right side
+ids = { drive = "SimMotor:br_drive", steer = "SimMotor:br_steer", encoder = { scrimmage = "br_encoder", offset = -0.17236328125 } }
+
+# ---- Launcher ------------------------------------------------------------------------
+# Two Kraken X60s direct on a 4 in. wheel shaft (ScrimmageConstants: SHOOTER_GEARING 1), the follower opposed, so
+# mounted mirrored (`invert = true`). It shoots forward, over the robot's front, from 0.15 m behind its center with
+# the shaft 0.54 m off the carpet. A hood on its own Kraken through 50:1 sets the exit angle, 40 to 80 deg
+# (HOOD_MIN_DEGREES, HOOD_MAX_DEGREES); its joint reads 0 at 40 deg, as the robot's hood position does.
+# The geometry is tuned from the launcher model (`scrimmage launcher aim`, and the exit speed at 60 and 90 rps at
+# 45 deg): with the part's default 0.12 m hood gap the ball slips out at about 6 m/s, too slow for the 1.83 m hub;
+# the 0.09 m gap (0.06 m, 0.4 D of squish on the 0.150 m FUEL), wheels 0.12 m wide under each lane and the ball
+# entering 270 deg round the shaft (a longer wrap) let the wheels grip it up to about 9 m/s. Tighter (0.08 m) was
+# no faster. The resulting aiming table reaches about 1.5 to 4.5 m.
+
+[[part]]
+name = "launcher"
+stock = "launcher"
+attach = "drive.top"
+pos = [-0.15, 0.0, 0.40]
+width = 0.36              # inside the side plates: both lanes' balls (+-0.08 m, radius 0.075 m) fit
+wheel_diameter = 0.1016
+wheel_moi = 0.002
+added_moi = 0.002         # a flywheel on the shaft: the wheels dip less as a ball goes through
+motor = "KrakenX60"
+count = 2
+gearing = 1.0
+hood_gap = 0.09
+hood_entry_deg = 270.0
+hood = "articulated"
+hood_range = [40.0, 80.0]
+hood_gearing = 50.0
+ids = { shooter = ["SimMotor:shooter_lead", { scrimmage = "shooter_follower", invert = true }], hood = "SimMotor:hood" }
+
+# ---- Feeder and intake ---------------------------------------------------------------
+# Kraken X60s through 5:1 to 50 mm rollers (ROLLER_GEARING): about 2 m/s at the rollers' surface at FEED_VOLTS (8 V).
+
+[[part]]
+name = "hopper_floor"
+stock = "roller"
+attach = "drive.top"
+pos = [0.1, 0.0, 0.1]
+gearing = 5.0
+ids = { spin = "SimMotor:floor" }
+
+[[part]]
+name = "feeder"
+stock = "roller"
+attach = "drive.top"
+pos = [-0.05, 0.0, 0.25]
+gearing = 5.0
+ids = { spin = "SimMotor:feeder" }
+
+[[part]]
+name = "intake"
+stock = "roller"
+attach = "drive.center"
+pos = [0.40, 0.0, 0.2]
+gearing = 5.0
+ids = { spin = "SimMotor:intake" }
+
+# ---- The shooter's model -------------------------------------------------------------
+# Two lanes 0.16 m apart, a 4 in. wheel stack centered under each; 35A wheels (the preset's friction), a smooth hood.
+[shooter]
+part = "launcher"
+lanes = [-0.08, 0.08]
+[shooter.wheels]
+preset = "35A"
+positions = [-0.08, 0.08]
+width = 0.12
+[shooter.hood]
+friction = 0.3
+[shooter.air]
+preset = "default"
+[shooter.hopper]
+capacity = 16             # the 8 preloaded and 8 more from the floor
+[[shooter.stage]]
+name = "floor"
+part = "hopper_floor"
+path_length = 0.40
+[[shooter.stage]]
+name = "feeder"
+part = "feeder"
+path_length = 0.25
+# The intake zone reaches 0.07 m past the front bumper (its face 0.43 m ahead of the center), across most of the front.
+[shooter.intake]
+part = "intake"
+at = "drive.center"
+pos = [0.50, 0.0, 0.08]
+size = [0.15, 0.60, 0.20]
+rate = 8.0
+# Beam breaks (ScrimmageConstants: FEEDER_BEAM_DIO, LAUNCHER_BEAM_DIO), pulled low when broken.
+[[shooter.beam_break]]
+at = "stage:feeder"
+fraction = 0.5
+dio = 0
+[[shooter.beam_break]]
+at = "launcher"
+dio = 1

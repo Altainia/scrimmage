@@ -1,0 +1,87 @@
+# A climb to the 2022 HIGH rung: MID, then a transfer to HIGH (docs/climbing.md, "Scripts").
+#   scrimmage climb run configs/climber_robot.toml --script examples/climb/high.toml
+#
+# The robot (configs/climber_robot.toml) starts under the MID rung, facing the wall. Its `mid` climber (fixed, hooks
+# opening backward) catches MID and pulls the robot up; its `high` climber (on a pivot, hooks opening forward) leans
+# over HIGH and hooks it; then `mid` extends, lifting its hooks off MID, and the robot swings onto HIGH.
+# Joints: mid.stage1 and high.stage1 are each telescope's first stage (the tip follows it 1:1, so the hooks rise twice
+# a stage's travel); high.pivot leans the high climber forward (positive); dt.left_2 and dt.right_2 are the drive's
+# wheels (rad; 1 rad rolls the robot 7.6 cm).
+
+goal = "HIGH"
+
+[[step]]
+name = "forward, the hooks past MID"
+# the mid hooks open backward, so they come over the rung from in front of it: 0.11 m forward first. Gently (1.5 V):
+# at 3 V the wheels slip as the loop stops them, and where the robot ends up (whether the hooks catch MID) varies
+drive = [{ joint = "dt.left_2", to = 1.4, max_voltage = 1.5 }, { joint = "dt.right_2", to = 1.4, max_voltage = 1.5 }]
+wait = { time = 1.0 }
+
+[[step]]
+name = "reach above MID"
+# the hooks' tips 2 cm over the rung; the robot's top at about 65.6 in (G106: 66)
+drive = { joint = "mid.stage1", to = 0.41 }
+wait = { joint_at = { joint = "mid.stage1", value = 0.41, tol = 0.003 } }
+
+[[step]]
+name = "back the hooks over MID"
+# the rung passes just under the hooks' tips and stops against the stems and the hook bracket under them
+drive = [{ joint = "dt.left_2", to = 0.0, max_voltage = 1.5 }, { joint = "dt.right_2", to = 0.0, max_voltage = 1.5 }]
+wait = { time = 1.0 }
+
+[[step]]
+name = "pull up onto MID"
+drive = { joint = "mid.stage1", to = 0.0 }
+wait = { joint_at = { joint = "mid.stage1", value = 0.0, tol = 0.01 } }
+
+[[step]]
+name = "settle on MID"
+wait = { time = 1.0 }
+
+[[step]]
+name = "raise the high climber"
+# leaning a little, so its hooks rise beside HIGH, behind it, their tips 4 cm above it at the top
+drive = [{ joint = "high.pivot", to_deg = 8.0 }, { joint = "high.stage1", to = 0.30 }]
+wait = { joint_at = { joint = "high.stage1", value = 0.30, tol = 0.005 } }
+
+[[step]]
+name = "lean over HIGH"
+# slowly (3 V): the hooks' tips lead over the rung; a fast lean swings the robot and the arm into the rung
+drive = { joint = "high.pivot", to_deg = 15.0, max_voltage = 3.0 }
+wait = { time = 1.0 }
+
+[[step]]
+name = "hook HIGH"
+drive = { joint = "high.stage1", to = 0.2 }
+wait = { hook_contact = "high" }
+
+[[step]]
+name = "seat on HIGH"
+# the pivot back on full voltage, so the arm holds its lean while the robot's weight moves onto it
+drive = [{ joint = "high.stage1", to = 0.21 }, { joint = "high.pivot", to_deg = 15.0 }]
+wait = { time = 0.5 }
+
+[[step]]
+name = "lift the mid hooks off MID"
+# extending pushes the robot down onto the high hooks; MID leaves the mid hooks through their mouths and the robot
+# swings under HIGH
+drive = { joint = "mid.stage1", to = 0.16 }
+wait = { level = "HIGH" }
+timeout = 3.0
+
+[[step]]
+name = "clear of MID"
+# a little more extension, so the mid hooks are well clear of MID before they retract; retracting the moment HIGH
+# is held can catch MID again (the timed setpoint climb, examples/climb/high_timed.toml, needs the margin)
+wait = { time = 0.2 }
+
+[[step]]
+name = "retract mid, stand the high arm up"
+# hanging from the high arm, the chassis pitches as the pivot turns: back to upright tips the mid climber forward,
+# away from MID, which its hooks would otherwise catch on the back swing
+drive = [{ joint = "mid.stage1", to = 0.0 }, { joint = "high.pivot", to_deg = -5.0 }]
+wait = { time = 0.5 }
+
+[[step]]
+name = "hang on HIGH"
+wait = { time = 2.0 }

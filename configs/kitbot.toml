@@ -1,0 +1,58 @@
+# The kitbot: a 6-wheel drop-center differential drive, built from scrimmage's stock parts.
+# Maps the devices in examples/robotpy_kitbot (or WPILib's Java/C++ drive examples) onto those parts.
+# Paths are relative to this file.
+
+[model]
+timestep = 0.001          # seconds; 1 kHz physics, robot code still runs at 50 Hz
+
+[robot]
+start_pose = [2.0, 4.035, 0.0]   # x (m), y (m), heading (deg), field coordinates, blue origin
+
+[battery]
+nominal_voltage = 12.5
+resistance = 0.02         # ohms, same default as WPILib's BatterySim
+
+[lockstep]
+# Used when the robot program loads the scrimmage_lockstep extension (RobotPy: --scrimmage-lockstep).
+step = 0.005              # seconds of robot time per step; a whole multiple of the physics timestep
+
+[robot_program]
+# How scrimmage starts the robot program ("{python}" = the Python running scrimmage).
+command = ["{python}", "-m", "robotpy", "sim", "--nogui", "--ws-client", "--scrimmage-lockstep"]
+cwd = "../examples/robotpy_kitbot"
+
+[telemetry]
+odometry = "/SmartDashboard/Field/Robot"   # NT topic with the robot's own pose estimate (Field2d)
+
+# ---- Parts ---------------------------------------------------------------------------
+# The robot is a list of parts. Each [[part]] has an instance name (joints and bodies get it as a
+# prefix: "dt.left_2"), a stock part (or path = "<folder with a part.toml>"), the part's parameters,
+# where it attaches ("<instance>.<mount>"), and the device ID of each of its slots in `ids`.
+# Device IDs: "PWM:<port>", "DIO:<channel>", "TalonFX:<id>", "CANcoder:<id>", "Pigeon2:<id>", or a table
+# of binding keys for anything else (and for extras such as neutral = "brake" or counts_per_rev).
+# The root is the part without `attach` (in any position): its body is the one start_pose places and the scenario checks track.
+
+[[part]]
+name = "drive"
+stock = "chassis"         # frame, bumpers and a heading marker; ~50 kg with the drivetrain
+length = 0.66             # m, frame front to back (without bumpers)
+width = 0.6               # m, frame side to side
+mass = 47.0               # kg: frame, battery, electronics and superstructure
+frame_height = 0.1        # m, height of the frame's middle above the floor
+# The ADXRS450 is the SimDevice WPILib's ADXRS450_Gyro registers. It reports its single axis as angle_x
+# and is clockwise-positive, like the real sensor.
+ids = { gyro = { device = "ADXRS450[0]", axis = "x", cw_positive = true } }
+
+[[part]]
+name = "dt"
+stock = "differential"    # 3 wheels per side, 6 in (0.1524 m), the middle ones 3 mm lower (drop center)
+attach = "drive.center"
+# Defaults: 2 CIMs per side, 10.71:1, 90 % efficient, 0.51 m track, 0.52 m wheelbase.
+# Each side's middle wheel (dt.left_2, dt.right_2) is driven; the others are chained to it.
+# The right side is mirrored on a real robot, so robot code inverts it (setInverted(true)); the part
+# models that: its right motor and right encoder are inverted, so a positive command from an
+# un-inverted controller drives the right side backward.
+# PWM motor controllers (PWMSparkMax, PWMTalonFX, Spark, VictorSP...) brake at neutral by default.
+# Quadrature encoders are matched by their first DIO channel, e.g. Encoder(0, 1) -> channel_a = 0;
+# counts_per_rev is in the same units your code divides by in setDistancePerPulse.
+ids = { left = "PWM:0", right = "PWM:1", left_encoder = { channel_a = 0, counts_per_rev = 2048 }, right_encoder = { channel_a = 2, counts_per_rev = 2048 } }

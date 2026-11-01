@@ -1,0 +1,32 @@
+# The fast-mode sample robot (examples/java_fastmode, configs/fastmode_bump.toml: the sample's swerve drive,
+# elevator and arm, on 8 cm bumpers) in FAST MODE: its "Over the Bump" auto. From 1.5 m before the 2026 BUMP it drives
+# 4 m straight over it at BUMP_SPEED (ScrimmageConstants: 2 m/s, the speed limit `scrimmage terrain sweep` gives this
+# robot) and on past the row of FUEL. The scenario fails if the robot leaves the ground by more than 5 cm (it went
+# over too fast: it lands hard, or on the FUEL) or tips over. See docs/terrain.md.
+#   scrimmage run scenarios/fastmode_bump.toml
+# SCRIMMAGE_BUMP_SPEED (m/s) replaces BUMP_SPEED in simulation: set it in robot_env to try another speed.
+config = "../configs/fastmode_bump.toml"
+description = "Fast-mode sample over the 2026 BUMP at BUMP_SPEED: never more than 5 cm off the ground, never tipped"
+robot_env = { SCRIMMAGE_AUTO = "Over the Bump" }
+
+[[step]]
+mode = "disabled"
+duration = 1.0
+[[step]]
+name = "auto"
+mode = "auto"
+duration = 4.0
+  # The robot's own word for the speed it drives at
+  [[step.check]]
+  console = { contains = "bump: driving at 2.00 m/s" }
+  [[step.check]]
+  always = { signal = "robot.ground_gap", max = 0.05 }
+  [[step.check]]
+  always = { signal = "robot.tipped", equals = 0 }
+  # It crossed: the 4 m drive (by odometry) ends past the FUEL row, at x 6.49 (6.51 with the elevator up); a robot
+  # stopped against the bump would end near x 3.6. The tolerance leaves room for another speed (SCRIMMAGE_BUMP_SPEED).
+  [[step.check]]
+  pose = { x = 6.4, y = 2.513, heading = 0, tol_xy = 0.4, tol_heading = 5 }
+  [[step.screenshot]]
+  view = "follow"
+  at = "end"

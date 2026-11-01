@@ -1,0 +1,24 @@
+# The kitbot's autonomous routine checked against the wrong target: the pose check fails on purpose.
+config = "../../configs/kitbot.toml"
+description = "Kitbot auto ends 2 m ahead and 1 m left of its start, facing left"
+
+[[step]]
+mode = "disabled"
+duration = 2.0
+
+[[step]]
+name = "auto"
+mode = "auto"
+duration = 9.0
+  [[step.check]]
+  pose = { x = 6.0, y = 5.035, tol_xy = 0.3 }
+  [[step.check]]
+  always = { signal = "battery", min = 7.0 }
+  [[step.check]]
+  never_touch = "obstacle"
+  [[step.check]]
+  console = { contains = "step 3: stop" }
+
+[[step]]
+mode = "disabled"
+duration = 0.5

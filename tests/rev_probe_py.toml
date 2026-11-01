@@ -1,0 +1,48 @@
+# tests/rev_probe_py (RobotPy, robotpy-rev) under scrimmage: the RobotPy twin of tests/rev_probe.toml. A chassis
+# carrying an arm (two NEOs on SPARK MAX 1 and 2, 2 following 1 inverted; the absolute encoder on SPARK 1's data port)
+# and a flywheel (SPARK MAX 3, created lazily by the robot, and SPARK MAX 4, which follows a SPARK the robot never
+# creates).
+[model]
+timestep = 0.001
+
+[robot]
+start_pose = [2.0, 4.0, 0.0]
+
+[lockstep]
+step = 0.005
+
+[robot_program]
+command = ["{python}", "-m", "robotpy", "sim", "--nogui", "--ws-client", "--scrimmage-lockstep"]
+cwd = "rev_probe_py"
+
+[[part]]
+name = "drive"
+stock = "chassis"
+length = 0.66
+width = 0.6
+mass = 47.0
+
+# 0 degrees is horizontal forward and positive raises the tip. The second motor faces the first across the gearbox,
+# so it turns the other way (invert = true): the robot code makes SPARK 2 follow SPARK 1 inverted, as on a real arm.
+# The forward limit switch is pressed at the top of the range (limits = true).
+[[part]]
+name = "arm"
+stock = "arm"
+attach = "drive.center"
+pos = [0.0, 0.0, 0.3]
+length = 0.5
+mass = 2.0
+range = [-45.0, 110.0]
+motor = "NEO"
+count = 2
+gearing = 60.0
+ids = { pivot = [{ rev = "SparkMax:1", limits = true }, { rev = "SparkMax:2", invert = true }], encoder = "SparkMaxAbs:1" }
+
+[[part]]
+name = "shooter"
+stock = "flywheel"
+attach = "drive.center"
+pos = [-0.2, 0.0, 0.2]
+motor = "NEO"
+count = 2
+ids = { spin = ["SparkMax:3", "SparkMax:4"] }

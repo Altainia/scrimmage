@@ -1,0 +1,81 @@
+# Flywheel weight and squish: how much does each buy, for the hooded Power Cell launcher of hooded.toml?
+#
+#   scrimmage launcher sweep examples/launcher/flywheel_squish.toml
+#
+# Runs every combination of three added flywheel inertias and three hood gaps (9 runs of 5 balls). Look at:
+#   - exit_speed against squish: it rises while more squeeze buys grip, then falls as the squeeze's losses grow;
+#   - speed_drop_pct and recovery_s against added_inertia: a heavier flywheel dips less per ball and takes longer to
+#     spin back up (the same motor has more to accelerate);
+#   - exit_slip_pct: near 0 the wheel grips the ball all the way out; large, the shot is grip-limited.
+# The setup below is hooded.toml; see that file and docs/launcher.md for what each input means.
+
+[ball]
+preset = "2020-power-cell"       # 7 in. foam ball; stiffness_n and restitution are estimates
+
+[wheels]
+preset = "35A"                   # Shore 35A tread; friction 0.95 is an estimate
+diameter = 0.1016                # 4 in. wheels
+roller = true                    # a stack of wheels side by side, acting as one 5 in. wide roller
+width = 0.127                    # so the ball's whole contact patch (about 3 in. wide here) is on wheel
+
+[shaft]
+wheel_inertia = 0.0006           # the wheels, hubs and shaft (kg m^2): about 0.5 kg of wheels at a 2 in. radius
+added_inertia = 0.002            # a flywheel on the same shaft (kg m^2)
+motor = "KrakenX60"
+motor_count = 1
+gearing = 1.0                    # direct drive: one motor turn per wheel turn
+
+[control]
+target_rps = 66.7                # 4000 rpm at the wheel
+kP = 0.2                         # volts per rps of error; kV comes from the motor when left out, kS is 0
+stator_limit = 80.0              # amps, per motor (as set on each Talon)
+supply_limit = 60.0              # amps, per motor
+
+[hood]
+gap = 0.1397                     # 5.5 in.: the ball is squeezed by 7 - 5.5 = 1.5 in., 0.21 of its diameter
+entry_deg = 240.0                # where the ball enters, measured round the shaft (the default)
+exit_angle_deg = 50.0            # the ball leaves 50 degrees above horizontal; the wrap is 240 - 140 = 100 degrees
+friction = 0.5                   # polycarbonate on foam: an estimate
+
+[launcher]
+height = 0.6                     # shaft height above the floor
+width = 0.2                      # inside width, between the side plates: each feed lane +- D/2 must fit
+
+[goal]
+# The model's goal is a level ring the ball must drop through. The 2020 outer port was an upright opening, so this
+# is a stand-in: a ring at about the port's center height.
+distance = 4.0                   # straight ahead of the launcher
+height = 2.5                     # about 98 in. up
+diameter = 0.76                  # about the size of the port's opening
+
+[feed]
+count = 5
+rate = 5.0                       # balls per second offered by the hopper
+rule = "wait_for_speed"          # feed only when the wheel is back within tolerance of its target
+tolerance = 0.05
+
+[sweep]
+"shaft.added_inertia" = [0.0, 0.002, 0.004]   # kg m^2 on top of the wheels' own 0.0006
+# Hood gaps for squishes of 0.15, 0.3 and 0.5 of the ball's 7 in. (0.1778 m) diameter: gap = (1 - squish) * D.
+"hood.gap" = [0.1511, 0.1245, 0.0889]
+
+[[chart]]
+kind = "line"
+x = "hood.gap"
+y = "exit_speed"
+series = "shaft.added_inertia"
+
+[[chart]]
+kind = "line"
+x = "shaft.added_inertia"
+y = "speed_drop_pct"
+series = "hood.gap"
+
+[[chart]]
+kind = "line"
+x = "shaft.added_inertia"
+y = "recovery_s"
+series = "hood.gap"
+
+[[chart]]
+kind = "shaft"

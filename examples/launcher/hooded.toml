@@ -1,0 +1,52 @@
+# A single-wheel hooded launcher for the FRC 2020 Power Cell, shooting at a goal 4 m away.
+#
+#   scrimmage launcher run examples/launcher/hooded.toml
+#
+# Every number is in SI units (meters, kilograms, seconds, newtons); angles end in _deg. See docs/launcher.md for
+# what each input means. The ball and wheel numbers come from presets that are ESTIMATES: measure your own ball
+# (docs/launcher.md, "Measure these first") before trusting the absolute numbers.
+
+[ball]
+preset = "2020-power-cell"       # 7 in. foam ball; stiffness_n and restitution are estimates
+
+[wheels]
+preset = "35A"                   # Shore 35A tread; friction 0.95 is an estimate
+diameter = 0.1016                # 4 in. wheels
+roller = true                    # a stack of wheels side by side, acting as one 5 in. wide roller
+width = 0.127                    # so the ball's whole contact patch (about 3 in. wide here) is on wheel
+
+[shaft]
+wheel_inertia = 0.0006           # the wheels, hubs and shaft (kg m^2): about 0.5 kg of wheels at a 2 in. radius
+added_inertia = 0.002            # a flywheel on the same shaft (kg m^2)
+motor = "KrakenX60"
+motor_count = 1
+gearing = 1.0                    # direct drive: one motor turn per wheel turn
+
+[control]
+target_rps = 66.7                # 4000 rpm at the wheel
+kP = 0.2                         # volts per rps of error; kV comes from the motor when left out, kS is 0
+stator_limit = 80.0              # amps, per motor (as set on each Talon)
+supply_limit = 60.0              # amps, per motor
+
+[hood]
+gap = 0.1397                     # 5.5 in.: the ball is squeezed by 7 - 5.5 = 1.5 in., 0.21 of its diameter
+entry_deg = 240.0                # where the ball enters, measured round the shaft (the default)
+exit_angle_deg = 50.0            # the ball leaves 50 degrees above horizontal; the wrap is 240 - 140 = 100 degrees
+friction = 0.5                   # polycarbonate on foam: an estimate
+
+[launcher]
+height = 0.6                     # shaft height above the floor
+width = 0.2                      # inside width, between the side plates: each feed lane +- D/2 must fit
+
+[goal]
+# The model's goal is a level ring the ball must drop through. The 2020 outer port was an upright opening, so this
+# is a stand-in: a ring at about the port's center height.
+distance = 4.0                   # straight ahead of the launcher
+height = 2.5                     # about 98 in. up
+diameter = 0.76                  # about the size of the port's opening
+
+[feed]
+count = 5
+rate = 5.0                       # balls per second offered by the hopper
+rule = "wait_for_speed"          # feed only when the wheel is back within tolerance of its target
+tolerance = 0.05

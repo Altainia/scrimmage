@@ -1,0 +1,91 @@
+# A climbing robot for the 2022 HANGAR (sub-project 12, docs/climbing.md): the kitbot's chassis and drive with two
+# stock climbers, the 2022 "telescope + rotating telescope" archetype. Not any team's robot.
+#   scrimmage climb run configs/climber_robot.toml --script examples/climb/high.toml
+#
+# - `mid`, a fixed two-stage telescope just behind the robot's center, its hooks over the MID rung at the start; turned
+#   180 deg, its hooks open backward, so moving forward off a rung lets go of it;
+# - `high`, a two-stage telescope on a pivot near the front, leaning forward to reach the next rung (HIGH, then
+#   TRAVERSAL); its hooks open forward (the robot's +x), toward the wall, so they lead over the next rung.
+# Built to obey the 2022
+# robot limits: G107 (at most 16 in beyond the frame perimeter) and G106 (at most 66 in tall in the HANGAR ZONE);
+# `climb run` notes any breach.
+# Paths are relative to this file.
+
+[model]
+timestep = 0.001
+
+[battery]
+nominal_voltage = 12.5
+resistance = 0.02
+
+[lockstep]
+step = 0.005
+
+# The robot program for scenarios/climb_high.toml: the test suite's fake robot playing a timed setpoint climb in
+# teleop (position loops on the encoders below, setpoint times from `climb run` of examples/climb/high.toml; see
+# tests/climb_timed.py). `climb run` doesn't start it.
+[robot_program]
+command = ["{python}", "fake_robot_main.py", "--lockstep", "--climb", "../examples/climb/high_timed.toml"]
+cwd = "../tests"
+start_timeout = 15
+
+[telemetry]
+nt = false                # the fake robot serves no NetworkTables
+
+# The 2022 HANGAR, starting under the MID rung facing the wall (the HIGH and TRAVERSAL rungs).
+[range]
+file = "2022-hangar"
+start = "under_mid"
+floor_balls = false
+
+[[part]]
+name = "drive"
+stock = "chassis"
+length = 0.66             # m, the kitbot's (configs/kitbot.toml)
+width = 0.6
+mass = 47.0
+frame_height = 0.1
+ids = { gyro = { device = "ADXRS450[0]", axis = "x", cw_positive = true } }
+
+[[part]]
+name = "dt"
+stock = "differential"
+attach = "drive.center"
+ids = { left = "PWM:0", right = "PWM:1", left_encoder = { channel_a = 0, counts_per_rev = 2048 }, right_encoder = { channel_a = 2, counts_per_rev = 2048 } }
+
+[[part]]
+name = "mid"
+stock = "climber"
+attach = "drive.top"
+pos = [0.06, 0.0, 0.0]    # choice: the hooks' seat right over the start's center, under the MID rung
+rot = [0.0, 0.0, 180.0]   # its hooks open backward: moving forward off the rung lets go of it
+stages = 2
+base_length = 0.6
+travel = 0.9
+tube = 0.0508
+count = 2                 # estimate: two motors lift the robot (as 4089's and 254's climbers)
+gearing = 12.0
+hook_count = 2
+hook_spacing = 0.5        # choice: wider than high's 0.3 m, so both can hold one rung side by side
+hook_depth = 0.08         # choice: 2 cm shallower than the default, so the hooks clear a rung within G106's 66 in
+latch = "none"
+ids = { extend = "PWM:2", extend_encoder = { channel_a = 4, counts_per_rev = 2048 } }   # spool turns
+
+[[part]]
+name = "high"
+stock = "climber"
+attach = "drive.top"
+pos = [0.25, 0.0, 0.0]    # its hooks open forward: leaning forward, the hook's tip leads over the next rung
+stages = 2
+base_length = 0.6
+travel = 0.9
+count = 2
+gearing = 12.0
+hook_count = 2
+hook_spacing = 0.3
+hook_depth = 0.08
+latch = "none"
+pivot = "articulated"
+pivot_range = [-40.0, 40.0]
+# encoders: spool turns (a 2048-count quadrature on the spool), climber turns (an 8192-count through-bore on the pivot)
+ids = { extend = "PWM:3", pivot = "PWM:4", extend_encoder = { channel_a = 6, counts_per_rev = 2048 }, pivot_encoder = { channel_a = 8, counts_per_rev = 8192 } }

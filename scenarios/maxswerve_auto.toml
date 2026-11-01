@@ -1,0 +1,21 @@
+# REV's MAXSwerve Java template's own autonomous routine (examples/java_maxswerve): it resets its odometry to
+# (0, 0, 0), follows an S-curve trajectory through (1, 1) and (2, -1), and stops 3 m straight ahead, facing forward.
+#   scrimmage run scenarios/maxswerve_auto.toml
+config = "../configs/maxswerve.toml"
+description = "MAXSwerve (REV SPARK MAX) auto: S-curve trajectory, 3 m forward"
+[[step]]
+mode = "disabled"
+duration = 1.0
+[[step]]
+name = "auto"
+mode = "auto"
+duration = 5.0
+  # The trajectory ends at x = 5.0. The template's drive velocity loops (feedforward kV, P = 0.04, no kA) lag the
+  # trajectory, so the robot is still moving when it ends and stops past it: 0.23-0.24 m over 5 runs. That is the
+  # template's own behavior, not a simulation error: its own odometry also ends about 0.20 m past the end, and
+  # agrees with the simulated position to within about 5 cm.
+  [[step.check]]
+  pose = { x = 5.0, y = 4.035, heading = 0, tol_xy = 0.30, tol_heading = 6 }
+  [[step.screenshot]]
+  view = "top"
+  at = "end"

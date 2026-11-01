@@ -1,0 +1,22 @@
+# The climber robot climbs the 2022 HANGAR to HIGH in the endgame: the fake robot (tests/fake_robot_main.py --climb)
+# plays examples/climb/high_timed.toml: high.toml's setpoints at the times its steps started in `climb run`, each held
+# by a position loop on the joint's encoder (docs/climbing.md, "The climb scenario").
+#   scrimmage run scenarios/climb_high.toml
+config = "../configs/climber_robot.toml"
+description = "Climber robot climbs from under MID to HIGH in teleop"
+require_lockstep = true
+
+[[step]]
+mode = "disabled"
+duration = 0.3
+
+[[step]]
+name = "endgame climb"
+mode = "teleop"
+duration = 11.0
+  [[step.check]]
+  by_time = { signal = "climb.points", min = 10, t = 9.0 }
+  [[step.check]]
+  at_end = { signal = "climb.points", min = 10 }    # still hanging from HIGH at the end, not a moment's touch
+  [[step.check]]
+  always = { signal = "climb.hook_load", max = 4000 }

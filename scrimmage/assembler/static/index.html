@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scrimmage editor</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="app.css">
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">scrimmage <span>assembler</span></div>
+  <nav class="tabs" role="tablist" aria-label="What to edit">
+    <button type="button" role="tab" id="tab-btn-robot" class="tab" aria-controls="tab-robot" aria-selected="true">Robot</button>
+    <button type="button" role="tab" id="tab-btn-scenario" class="tab" aria-controls="tab-scenario" aria-selected="false" tabindex="-1" hidden>Scenario</button>
+    <button type="button" role="tab" id="tab-btn-drive" class="tab" aria-controls="tab-drive" aria-selected="false" tabindex="-1">Drive</button>
+    <button type="button" role="tab" id="tab-btn-bench" class="tab" aria-controls="tab-bench" aria-selected="false" tabindex="-1" hidden>Bench</button>
+  </nav>
+  <div class="file" id="file-path" title="The file this tab edits">Loading…</div>
+  <div class="topbar-actions">
+    <button type="button" id="start-link" class="btn" title="Open or create something else" hidden>Start page</button>
+    <button type="button" id="undo" class="btn" title="Undo (Ctrl+Z)" disabled>Undo</button>
+    <button type="button" id="redo" class="btn" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
+  </div>
+</header>
+
+<div id="notices" class="notices" aria-live="polite"></div>
+
+<section id="start-page" class="start-page" aria-label="Start page" hidden></section>
+
+<div id="tab-bench" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-bench" hidden>
+<div id="bench-lock" class="banner bench-lock" role="status" hidden></div>
+<div id="bench-readonly" class="banner banner-readonly" role="status" hidden></div>
+<main class="bench-layout">
+  <section id="bench-stage" class="bench-stage" aria-label="The idea on stage">
+    <header class="bench-head">
+      <div class="row bench-stage-buttons">
+        <button type="button" id="bench-run" class="btn btn-primary btn-big">Run</button>
+        <button type="button" id="bench-edit" class="btn btn-big" title="Edit the shape in 3D (coming next)" disabled>Edit shape</button>
+      </div>
+      <h1 id="bench-name" class="bench-name" tabindex="-1">Loading…</h1>
+      <p class="bench-by"><span class="muted">by</span> <span id="bench-author"></span></p>
+      <p id="bench-idea" class="bench-idea"></p>
+      <p id="bench-changed" class="bench-changed muted"></p>
+    </header>
+    <!-- above the picture, so they are always on screen -->
+    <p id="bench-running" class="bench-running" role="status" hidden></p>
+    <div id="bench-failure" class="bench-failure" role="alert" hidden></div>
+    <p id="bench-uncalibrated" class="bench-uncalibrated" hidden></p>
+    <div class="bench-body">
+      <figure class="bench-figure">
+        <div class="bench-picture-box">
+          <img id="bench-picture" class="bench-picture" alt="" hidden>
+          <p id="bench-nopicture" class="bench-nopicture">No picture yet. Press Run to see it work.</p>
+        </div>
+        <div class="row bench-figure-tools">
+          <button type="button" id="bench-gif" class="btn" aria-pressed="false" title="Show the moving picture of a piece going through" disabled>Pass GIF</button>
+        </div>
+      </figure>
+      <div class="bench-results">
+        <ul id="bench-headlines" class="bench-headlines"></ul>
+        <div id="bench-table-wrap" class="bench-table-wrap" hidden><table id="bench-table" class="bench-table"></table></div>
+        <p id="bench-noresult" class="bench-noresult muted" hidden>Not run yet. Press Run to see how it does.</p>
+      </div>
+    </div>
+  </section>
+  <aside id="bench-change" class="bench-change" aria-labelledby="bench-change-title">
+    <h2 id="bench-change-title" class="bench-change-title">Change it</h2>
+    <div class="scroll bench-change-scroll">
+      <div id="bench-focus" class="bench-fields"></div>
+      <div class="row bench-change-buttons">
+        <button type="button" id="bench-showall" class="btn" aria-expanded="false" aria-controls="bench-all">Show all</button>
+        <button type="button" id="bench-change-run" class="btn btn-primary">Run</button>
+      </div>
+      <div id="bench-all" class="bench-all" hidden></div>
+      <section class="bench-problems-wrap" aria-labelledby="bench-problems-title">
+        <h3 id="bench-problems-title" class="bench-sub">Problems</h3>
+        <ul id="bench-problems" class="bench-problems"></ul>
+      </section>
+    </div>
+  </aside>
+</main>
+<footer class="bench-foot">
+  <div class="bench-tools" role="group" aria-label="Session tools">
+    <button type="button" id="bench-new" class="btn btn-primary-soft">New idea</button>
+    <button type="button" id="bench-sweep" class="btn">Sweep</button>
+    <button type="button" id="bench-compare" class="btn">Compare</button>
+    <button type="button" id="bench-gallery" class="btn">Gallery</button>
+  </div>
+  <nav id="bench-strip" class="bench-strip" aria-label="Other ideas in this session"></nav>
+</footer>
+</div>
+
+<dialog id="bench-new-dialog" aria-labelledby="bench-new-title">
+  <form method="dialog" novalidate>
+    <h2 id="bench-new-title">New idea</h2>
+    <div class="field"><label for="bench-new-name">Name of the idea</label><input id="bench-new-name" autocomplete="off"></div>
+    <div class="field"><label for="bench-new-author">Whose idea?</label><input id="bench-new-author" autocomplete="off"></div>
+    <div class="field"><label for="bench-new-idea">The idea in a sentence</label><input id="bench-new-idea" autocomplete="off"></div>
+    <div class="field"><label for="bench-new-from">Start from</label><select id="bench-new-from"><option value="">Blank</option></select></div>
+    <ul id="bench-new-errors" class="error-list" role="alert" hidden></ul>
+    <div class="dialog-actions">
+      <button type="button" class="btn" data-close>Cancel</button>
+      <button type="submit" id="bench-new-go" class="btn btn-primary">Make it</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="bench-sweep-dialog" aria-labelledby="bench-sweep-title">
+  <form method="dialog" novalidate>
+    <h2 id="bench-sweep-title">Sweep: try a number at several values</h2>
+    <div class="field"><label for="bench-sweep-key">Which number?</label><select id="bench-sweep-key"></select></div>
+    <div class="row bench-sweep-range">
+      <div class="field"><label for="bench-sweep-from">From</label><input id="bench-sweep-from" inputmode="decimal" autocomplete="off"></div>
+      <div class="field"><label for="bench-sweep-to">To</label><input id="bench-sweep-to" inputmode="decimal" autocomplete="off"></div>
+      <div class="field"><label for="bench-sweep-steps">Steps</label><input id="bench-sweep-steps" inputmode="numeric" value="5" autocomplete="off"></div>
+    </div>
+    <p id="bench-sweep-unit" class="hint"></p>
+    <ul id="bench-sweep-errors" class="error-list" role="alert" hidden></ul>
+    <div class="dialog-actions">
+      <button type="button" class="btn" data-close>Cancel</button>
+      <button type="submit" id="bench-sweep-go" class="btn btn-primary">Sweep</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="bench-compare-dialog" aria-labelledby="bench-compare-title">
+  <form method="dialog" novalidate>
+    <h2 id="bench-compare-title">Compare ideas</h2>
+    <p class="hint">Tick two or more. They are run with the first one's piece and feed.</p>
+    <div id="bench-compare-list" class="bench-compare-list"></div>
+    <ul id="bench-compare-errors" class="error-list" role="alert" hidden></ul>
+    <div class="dialog-actions">
+      <button type="button" class="btn" data-close>Cancel</button>
+      <button type="submit" id="bench-compare-go" class="btn btn-primary">Compare</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="tab-robot" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-robot">
+<div id="readonly-banner" class="banner banner-readonly" role="status" hidden></div>
+
+<main class="layout">
+  <aside class="col col-library" aria-labelledby="library-title">
+    <h2 id="library-title" class="col-title">Parts library</h2>
+    <div id="library" class="scroll"></div>
+  </aside>
+
+  <section class="col col-view" aria-label="3D view and robot code">
+    <div class="center-switch" role="tablist" aria-label="Show">
+      <button type="button" role="tab" id="center-3d" class="center-tab active" aria-controls="view" aria-selected="true">3D view</button>
+      <button type="button" role="tab" id="center-code" class="center-tab" aria-controls="code-panel" aria-selected="false" tabindex="-1">Robot code</button>
+    </div>
+    <section id="code-panel" class="code-panel" role="tabpanel" aria-labelledby="center-code" hidden></section>
+    <div id="pick-banner" class="pick-banner" role="status" hidden>
+      <span>Click a highlighted mount in the 3D view to attach the new part.</span>
+      <button type="button" id="pick-cancel" class="btn btn-small">Cancel</button>
+    </div>
+    <div id="view"><p class="view-placeholder">3D view</p></div>
+  </section>
+
+  <aside class="col col-robot">
+    <section class="tree-wrap" aria-labelledby="tree-title">
+      <h2 id="tree-title" class="col-title">Robot</h2>
+      <div id="tree" class="scroll"></div>
+    </section>
+    <section class="inspector-wrap" aria-labelledby="inspector-title">
+      <h2 id="inspector-title" class="col-title">Inspector</h2>
+      <div id="inspector" class="scroll"></div>
+    </section>
+  </aside>
+</main>
+
+<details id="other-sections" class="other-sections">
+  <summary>Other sections (read-only)</summary>
+  <p class="muted">The assembler only edits the robot's parts. Edit these sections in a text editor:
+    <code id="other-path"></code></p>
+  <pre id="other-text"></pre>
+</details>
+
+<div id="messages" class="messages" aria-live="polite" hidden></div>
+<footer class="statusbar" id="statusbar">
+  <span id="saved" class="saved">Connecting…</span>
+  <span id="mass" class="stat"></span>
+  <span id="counts" class="stat"></span>
+  <span id="problems" class="stat"></span>
+</footer>
+</div>
+
+<div id="tab-scenario" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-scenario" hidden>
+<div id="sc-banner" class="banner banner-readonly" role="status" hidden>
+  <span id="sc-banner-text"></span>
+  <button type="button" id="sc-banner-robot" class="btn btn-small" hidden>Go to the Robot tab</button>
+</div>
+<section id="sc-header" class="sc-header" aria-label="Scenario settings"></section>
+<main class="layout layout-scenario">
+  <aside class="col col-timeline" aria-labelledby="timeline-title">
+    <h2 id="timeline-title" class="col-title">Steps</h2>
+    <div id="timeline" class="scroll"></div>
+  </aside>
+  <section class="col col-editor" aria-labelledby="editor-title">
+    <h2 id="editor-title" class="col-title">Step</h2>
+    <div id="step-editor" class="scroll"></div>
+  </section>
+  <aside id="sc-run" class="col col-run" aria-label="Run" hidden></aside>
+</main>
+<datalist id="sc-signal-list"></datalist>
+<datalist id="sc-contact-list"></datalist>
+<div id="sc-messages" class="messages" aria-live="polite" hidden></div>
+<footer class="statusbar" id="sc-statusbar">
+  <span id="sc-saved" class="saved">Loading…</span>
+  <span id="sc-total" class="stat"></span>
+  <span id="sc-problems" class="stat"></span>
+</footer>
+</div>
+
+<div id="tab-drive" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-drive" hidden>
+<div id="drive-banner" class="banner banner-readonly" role="status" hidden>
+  <span id="drive-banner-text"></span>
+  <button type="button" id="drive-banner-robot" class="btn btn-small" hidden>Go to the Robot tab</button>
+</div>
+<p id="drive-devices" class="drive-devices" role="status" hidden></p>
+<main class="layout layout-drive">
+  <aside id="drive-ds" class="col drive-ds" aria-labelledby="drive-ds-title">
+    <h2 id="drive-ds-title" class="col-title">Driver Station</h2>
+    <div class="scroll">
+      <div class="ds-section">
+        <div class="row">
+          <button type="button" id="drive-start" class="btn btn-primary">Start</button>
+          <button type="button" id="drive-stop" class="btn" disabled>Stop</button>
+        </div>
+      </div>
+      <div class="ds-section">
+        <span class="field-label ds-label" id="drive-mode-label">Mode</span>
+        <div class="mode-seg" role="group" aria-labelledby="drive-mode-label">
+          <button type="button" class="mode-btn mode-teleop" data-key="mode-teleop" aria-pressed="true">Teleop</button>
+          <button type="button" class="mode-btn mode-auto" data-key="mode-auto" aria-pressed="false">Auto</button>
+          <button type="button" class="mode-btn mode-test" data-key="mode-test" aria-pressed="false">Test</button>
+        </div>
+        <div class="row ds-enable">
+          <button type="button" id="drive-enable" class="btn ds-enable-btn" title="Enable (Enter)" disabled>Enable</button>
+          <button type="button" id="drive-disable" class="btn ds-disable-btn" title="Disable (Space)" disabled>Disable</button>
+        </div>
+        <p class="hint">Enter enables, Space disables.</p>
+      </div>
+      <div class="ds-section">
+        <h3 class="ds-label">Record</h3>
+        <div class="row ds-record">
+          <button type="button" id="drive-record" class="btn drive-record" aria-pressed="false" title="Record the inputs and modes from the next step" disabled>● Record</button>
+          <button type="button" id="drive-save" class="btn" disabled>Save as scenario…</button>
+        </div>
+        <p class="hint">The scenario replays the recorded inputs step for step; pokes aren't in it.</p>
+      </div>
+      <div class="ds-section">
+        <h3 class="ds-label">Joysticks</h3>
+        <p class="hint">Keyboard: W/S and A/D left stick, I/K and J/L right stick, 1–8 buttons.</p>
+        <div id="drive-ports" class="drive-ports"></div>
+      </div>
+    </div>
+  </aside>
+  <section class="col drive-center" aria-label="Live view">
+    <div id="drive-sim" class="drive-sim" role="group" aria-label="Simulation controls">
+      <button type="button" id="drive-pause" class="btn" disabled>Pause</button>
+      <button type="button" id="drive-step" class="btn" title="Advance one robot step (paused)" disabled>Step</button>
+      <label for="drive-speed" class="ds-inline-label">Speed</label>
+      <select id="drive-speed">
+        <option value="0.25">0.25×</option>
+        <option value="0.5">0.5×</option>
+        <option value="1" selected>1×</option>
+        <option value="2">2×</option>
+        <option value="max">max</option>
+      </select>
+      <span id="drive-speed-lock" class="muted drive-speed-lock" hidden></span>
+      <label for="drive-camera" class="ds-inline-label drive-camera-label">Camera</label>
+      <select id="drive-camera">
+        <option value="follow">Follow</option>
+        <option value="top">Top</option>
+        <option value="driver">Driver station</option>
+        <option value="free">Free orbit</option>
+      </select>
+    </div>
+    <div id="drive-view" class="drive-view">
+      <div id="drive-canvas" class="drive-canvas"><p class="view-placeholder">Live view</p></div>
+      <div id="drive-hud" class="drive-hud" aria-live="off"></div>
+    </div>
+  </section>
+  <aside id="drive-readouts" class="col drive-readouts" aria-labelledby="drive-readouts-title">
+    <h2 id="drive-readouts-title" class="col-title">Readouts</h2>
+    <div class="scroll">
+      <section id="drive-pokes" class="ro-section drive-pokes off" aria-labelledby="drive-pokes-title">
+        <h3 id="drive-pokes-title" class="ro-title">Poke</h3>
+        <div class="minifield-wrap">
+          <canvas id="drive-field" class="minifield" role="application"
+            aria-label="Field, seen from above. Drag from a point to put the robot there facing the way you drag (a click keeps its heading); drag a game piece or other movable object to move it."></canvas>
+        </div>
+        <p class="hint">Drag on the field to place the robot (drag direction = heading); drag an object to move it.</p>
+        <div class="push-row" role="group" aria-label="Push the robot">
+          <label class="push-field" for="push-force"><span class="muted">Force</span><span class="with-unit"><input id="push-force" type="number" step="any" min="0" value="100" inputmode="decimal"><span class="unit">N</span></span></label>
+          <label class="push-field" for="push-dir"><span class="muted">Direction</span><span class="with-unit"><input id="push-dir" type="number" step="any" value="0" inputmode="decimal" title="Field direction: 0° is +x, 90° is +y"><span class="unit">°</span></span></label>
+          <label class="push-field" for="push-duration"><span class="muted">For</span><span class="with-unit"><input id="push-duration" type="number" step="any" min="0" value="0.5" inputmode="decimal"><span class="unit">s</span></span></label>
+        </div>
+        <div class="row push-actions">
+          <button type="button" id="push-go" class="btn btn-small" disabled>Push</button>
+          <button type="button" id="drive-reset" class="btn btn-small" title="Put the robot back at its start pose" disabled>Reset robot</button>
+        </div>
+      </section>
+      <div id="drive-values" class="ro-section"></div>
+      <section class="ro-section" aria-labelledby="drive-signals-title">
+        <h3 id="drive-signals-title" class="ro-title">Signals</h3>
+        <div id="drive-signals" class="ro-signals"></div>
+      </section>
+      <section class="ro-section" aria-labelledby="drive-console-title">
+        <h3 id="drive-console-title" class="ro-title">Console</h3>
+        <pre id="drive-console" class="drive-console" tabindex="0"></pre>
+      </section>
+    </div>
+  </aside>
+</main>
+<datalist id="drive-signal-list"></datalist>
+<footer class="statusbar" id="drive-status">
+  <span id="drive-state" class="saved">Not started</span>
+  <span id="drive-error" class="stat stat-bad" hidden></span>
+  <button type="button" id="drive-restart" class="btn btn-small" hidden>Restart</button>
+</footer>
+</div>
+
+<dialog id="save-dialog" class="save-dialog" aria-labelledby="save-title">
+  <form id="save-form" method="dialog" novalidate>
+    <h2 id="save-title">Save as scenario</h2>
+    <div class="field">
+      <label for="save-path">Scenario file</label>
+      <input id="save-path" autocomplete="off" spellcheck="false" class="mono">
+      <p class="hint">Relative to the folder scrimmage edit was started in. The input tracks go in a folder of the same name next to it.</p>
+    </div>
+    <p id="save-pokes" class="warning" role="status" hidden></p>
+    <div id="save-exists" class="save-exists" hidden>
+      <p id="save-exists-text" class="warning"></p>
+      <button type="button" id="save-overwrite" class="btn btn-danger">Overwrite</button>
+    </div>
+    <ul id="save-errors" class="error-list" role="alert" hidden></ul>
+    <div class="dialog-actions">
+      <button type="button" id="save-cancel" class="btn">Cancel</button>
+      <button type="submit" id="save-go" class="btn btn-primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="discard-dialog" aria-labelledby="discard-title" aria-describedby="discard-why">
+  <form id="discard-form" method="dialog" novalidate>
+    <h2 id="discard-title">Start a new session and discard the recording?</h2>
+    <p id="discard-why" class="hint">The last drive's recording hasn't been saved. Cancel, then Save as scenario… to keep it.</p>
+    <div class="dialog-actions">
+      <button type="button" id="discard-cancel" class="btn" autofocus>Cancel</button>
+      <button type="submit" id="discard-go" class="btn btn-danger">Discard and start</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="add-dialog" aria-labelledby="add-title">
+  <form id="add-form" method="dialog" novalidate>
+    <h2 id="add-title">Add part</h2>
+    <p id="add-source" class="muted"></p>
+    <div class="field">
+      <label for="add-name">Instance name</label>
+      <input id="add-name" name="name" autocomplete="off" spellcheck="false" required>
+      <p class="hint">Letters, digits and underscores. Joints and bodies get it as a prefix.</p>
+      <p class="error" data-err="name" hidden></p>
+    </div>
+    <div class="field">
+      <label for="add-attach">Attach to</label>
+      <div class="row">
+        <select id="add-attach" name="attach"></select>
+        <button type="button" id="add-pick" class="btn">Pick in 3D</button>
+      </div>
+      <p class="error" data-err="attach" hidden></p>
+    </div>
+    <ul id="add-errors" class="error-list" hidden></ul>
+    <div class="dialog-actions">
+      <button type="button" id="add-cancel" class="btn">Cancel</button>
+      <button type="submit" id="add-ok" class="btn btn-primary">Add part</button>
+    </div>
+  </form>
+</dialog>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

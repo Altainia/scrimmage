@@ -1,0 +1,38 @@
+# The FRC 2020 INFINITE RECHARGE GENERATOR SWITCH, the tilting bar robots hang from, on today's field (sub-project
+# 12). Only the switch: the SHIELD GENERATOR that carries it isn't built. WPILib field coordinates (blue alliance wall
+# at x = 0, z up), SI units unless a key ends in _in (inches).
+#
+# Numbers cite the 2020 Game Manual, sections 3.3.2, 4.3, 4.4.4 and 4.4.5
+# (https://firstfrc.blob.core.windows.net/frc2020/Manual/2020FRCGameSeasonManual.pdf), or say they are an estimate or
+# our choice. The manual gives the switch's mass, its CoM below the shaft, its stops and the rung's height; not where
+# the shaft is, nor the rung's distance below it, nor the shaft's friction.
+
+[range]
+name = "FRC 2020 GENERATOR SWITCH"   # source: the 2020 game (INFINITE RECHARGE) and its GENERATOR SWITCH, manual 3.3.2
+ball = "2026-fuel"           # choice: a range needs a ball preset; this range has no floor balls and a robot preloads none
+
+[climb]
+rule = "hang"                # source: manual 4.4.4: a HANG is a robot fully supported by the switch, scored 5 s after the match ends
+levels = { HANG = 25 }       # source: manual 4.4.4, 25 points per HANGING robot (a PARK's 5 points aren't counted here)
+level_bonus = 15             # source: manual 4.4.4: +15 per alliance when the switch is LEVEL with 1 to 3 robots HANGING
+switch = "generator_switch"
+
+[[element]]
+name = "generator_switch"
+kind = "switch"
+center = [8.27, 4.035]       # choice: the field's center (the real SHIELD GENERATOR stands there, turned 22.5 deg)
+yaw_deg = 0.0                # choice: the rung along the field's length
+bar_length_in = 121.5        # estimate: the switch's 10 ft 1 1/2 in depth (manual 3.3.2), taken as the rung's length: its two exposed 4 ft 7 5/8 in sections and the hanger between them
+diameter_in = 1.66           # source: manual 3.3.2: 1 1/4 in Sch 40 aluminum pipe, 1.66 in OD
+bar_drop_in = 52.0           # estimate: the switch is 4 ft 6 in tall (manual 3.3.2), the rung along its bottom; the shaft taken about 2 in below its top
+hinge_height_in = 114.17     # source: manual 3.3.2: the rung's top 5 ft 3 in up when level (its 63 in less the 0.83 in radius is the axis), plus bar_drop_in
+mass = 42.2                  # source: manual 3.3.2: the rotating part weighs about 93 lb
+com_drop_in = 26.0           # source: manual 3.3.2: its CoM about 2 ft 2 in below the suspension shaft's center
+stop_deg = 14.5              # source: manual 3.3.2: hard stops at +-14.5 deg
+level_deg = 8.0              # source: manual 4.4.5: LEVEL is the rung within 8 deg of horizontal
+damping = 20.0               # estimate: N m s/rad, small: the shaft's friction isn't published; about 8 % of critical, so a swing dies away in a few periods (about 3 s each)
+friction = 0.5               # estimate: aluminum against a robot's aluminum or polycarbonate; a hook sets its own
+
+# Starts: 1.5 m before the rung, facing it, centered on the -x exposed section.
+[start.approach]
+pose = [7.433, 2.535, 90.0]  # choice: x, the -x section's center, 0.837 m (5.125 + 27.81 in) off the switch's center; y, 1.5 m before the rung; heading 90 deg, across it

@@ -1,0 +1,33 @@
+# The kitbot world, with the lockstep probe robot (tests/lockstep_probe) crashing on purpose at loop 10.
+[model]
+mjcf = "models/kitbot.xml"
+timestep = 0.001
+
+[robot]
+body = "chassis"
+start_pose = [2.0, 4.035, 0.0]
+
+[lockstep]
+step = 0.005
+
+[robot_program]
+command = ["{python}", "-m", "robotpy", "sim", "--nogui", "--ws-client", "--scrimmage-lockstep"]
+cwd = "lockstep_probe"
+env = { PROBE_CRASH_AT_LOOP = "10" }
+
+[[motor]]
+name = "left_drive"
+pwm = 0
+joint = "left_center"
+motor = "CIM"
+count = 2
+gear_ratio = 10.71
+
+[[motor]]
+name = "right_drive"
+pwm = 1
+joint = "right_center"
+motor = "CIM"
+count = 2
+gear_ratio = 10.71
+invert = true

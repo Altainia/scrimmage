@@ -1,0 +1,6 @@
+.gradle/
+build/
+*.init.gradle.tmp
+networktables.json
+ctre_sim/
+simgui*.json

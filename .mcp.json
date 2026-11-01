@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "scrimmage": {
+      "command": ".venv/bin/scrimmage-mcp",
+      "args": []
+    }
+  }
+}

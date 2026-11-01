@@ -1,0 +1,19 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "robotpy-native-wpihal>=2026.2,<2027"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "scrimmage-lockstep"
+version = "0.6.0"
+# RobotPy shows this as the help text for --scrimmage-lockstep
+description = "Let scrimmage step the robot program's clock (lockstep simulation)"
+requires-python = ">=3.11"
+license = { text = "BSD-3-Clause" }
+dependencies = ["robotpy-hal>=2026.2,<2027"]
+
+[project.entry-points."robotpy_sim.2026"]
+scrimmage-lockstep = "scrimmage_lockstep"
+
+[tool.scikit-build]
+cmake.version = ">=3.21"
+wheel.packages = ["scrimmage_lockstep"]

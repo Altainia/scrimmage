@@ -1,0 +1,410 @@
+# Plain-word help, units and choices for every bench key, for the Bench tab's forms. One table per
+# "<section>.<key>"; a list or shaft section's key applies to every entry. `choices` names a list of valid words
+# (see fields.py); `default` is what the parser uses when the key is left out (absent where it is required or computed).
+
+[bench.name]
+help = "the idea's short name, used in pictures, tables and the gallery"
+
+[bench.author]
+help = "the student whose idea it is"
+default = ""
+
+[bench.idea]
+help = "the idea in your own words, one line"
+default = ""
+
+[bench.notes]
+help = "anything else, such as which numbers were guessed"
+default = ""
+
+[piece.name]
+help = "the piece's name"
+
+[piece.preset]
+help = "a ready-made ball; any key below overrides its numbers"
+choices = "pieces"
+
+[piece.kind]
+help = "squishy is a foam ball; rigid is anything hard"
+
+[piece.shape]
+help = "sphere, box, cylinder, disc (a short cylinder) or mesh (from a file)"
+
+[piece.size]
+unit = "m"
+help = "sphere [diameter]; box [x, y, z]; cylinder or disc [diameter, length]"
+
+[piece.mass]
+unit = "kg"
+help = "how heavy it is"
+
+[piece.inertia]
+unit = "kg m²"
+help = "how hard it is to spin, [Ixx, Iyy, Izz]; left out, it is worked out from the shape"
+
+[piece.stiffness_n]
+unit = "N"
+help = "foam ball: the force to squeeze it by a quarter of its width"
+
+[piece.stiffness_exponent]
+help = "foam ball: how fast it gets stiffer as it squeezes"
+
+[piece.restitution]
+help = "foam ball: how bouncy, above 0 and up to 1"
+
+[piece.inertia_factor]
+help = "foam ball: how its mass is spread, for how hard it is to spin"
+
+[piece.stiffness]
+unit = "N/m"
+help = "rigid only: how stiff its own surface is (higher is harder); left out, it is hard"
+
+[piece.mesh]
+help = "mesh shape: an STL or OBJ file, next to the bench file"
+
+[piece.units]
+help = "mesh shape: the unit the file was drawn in"
+choices = "units"
+
+[shaft.motor]
+help = "the motor that turns it; left out, it is a free roller"
+choices = "motors"
+
+[shaft.count]
+help = "how many motors drive the shaft"
+default = 1
+
+[shaft.gearing]
+help = "motor turns per shaft turn (3.0 is 3:1 down)"
+default = 1.0
+
+[shaft.wheel_inertia]
+unit = "kg m²"
+help = "how hard the wheels, hubs and shaft are to spin"
+
+[shaft.added_inertia]
+unit = "kg m²"
+help = "extra spin weight, such as a flywheel"
+default = 0.0
+
+[shaft.control]
+help = "speed holds a target speed, voltage applies fixed volts, free is not driven"
+choices = "controls"
+
+[shaft.target_rps]
+unit = "rps"
+help = "the speed to hold, in turns per second"
+
+[shaft.voltage]
+unit = "V"
+help = "fixed volts to apply, instead of holding a speed"
+
+[shaft.kP]
+unit = "V per rps"
+help = "how hard the motor pushes for each rps it is short; needed with a target speed"
+
+[shaft.kS]
+unit = "V"
+help = "volts just to get the shaft moving"
+default = 0.0
+
+[shaft.kV]
+unit = "V per rps"
+help = "volts for each rps of speed; left out, it comes from the motor and gearing"
+
+[shaft.stator_limit]
+unit = "A"
+help = "most current in the motor, for speed control"
+
+[shaft.supply_limit]
+unit = "A"
+help = "most current from the battery, for speed control"
+
+[shaft.coupled_to]
+help = "belted or geared to this other shaft, with no motor of its own"
+choices = "shafts"
+
+[shaft.ratio]
+help = "with coupled_to: how many times the other shaft's speed this one turns"
+default = 1.0
+
+[wheel.name]
+help = "the wheel's name"
+
+[wheel.shaft]
+help = "the shaft that turns this wheel"
+choices = "shafts"
+
+[wheel.center]
+unit = "m"
+help = "where its middle is, [x, y, z]"
+
+[wheel.axis]
+help = "the line it spins about; [0, 1, 0] moves its top forward"
+default = [0.0, 1.0, 0.0]
+
+[wheel.diameter]
+unit = "m"
+help = "the wheel's outside diameter, tread included"
+
+[wheel.width]
+unit = "m"
+help = "how wide the wheel is, along its axis"
+
+[wheel.tread]
+help = "the rubber on the wheel; a lower number is softer and grippier"
+choices = "treads"
+default = "35A"
+
+[plate.name]
+help = "the plate's name"
+
+[plate.center]
+unit = "m"
+help = "where the middle of the plate is, [x, y, z]"
+
+[plate.size]
+unit = "m"
+help = "the plate's full length, width and thickness, [x, y, z]"
+
+[plate.rot_deg]
+unit = "degrees"
+help = "how it is turned about x, then y, then z; [0, -20, 0] lifts the +x end"
+default = [0.0, 0.0, 0.0]
+
+[plate.material]
+help = "what it is made of, which sets how grippy it is"
+choices = "materials"
+default = "polycarbonate"
+
+[bar.name]
+help = "the bar's name"
+
+[bar.a]
+unit = "m"
+help = "one end of the bar, [x, y, z]; give both ends, or a center, axis and length"
+
+[bar.b]
+unit = "m"
+help = "the other end of the bar, [x, y, z]"
+
+[bar.center]
+unit = "m"
+help = "the middle of the bar, [x, y, z], used with axis and length"
+
+[bar.axis]
+help = "the direction the bar points, used with center and length"
+
+[bar.length]
+unit = "m"
+help = "how long the bar is, used with center and axis"
+
+[bar.diameter]
+unit = "m"
+help = "how thick the bar or tube is"
+
+[bar.material]
+help = "what it is made of, which sets how grippy it is"
+choices = "materials"
+default = "polycarbonate"
+
+[bar.spring]
+unit = "N/m"
+help = "makes it springy along spring_axis, like a bounce bar; left out, it is fixed"
+
+[bar.travel]
+unit = "m"
+help = "with a spring: how far it can give each way"
+
+[bar.spring_axis]
+help = "the direction a springy bar gives"
+default = [0.0, 0.0, 1.0]
+
+[curve.name]
+help = "the curve's name"
+
+[curve.center]
+unit = "m"
+help = "a point on the line the curve bends around, [x, y, z]"
+
+[curve.axis]
+help = "the line the curve bends around"
+default = [0.0, 1.0, 0.0]
+
+[curve.zero_dir]
+help = "where 0 degrees points; about the default axis, 0 is forward"
+default = [1.0, 0.0, 0.0]
+
+[curve.radius]
+unit = "m"
+help = "the inside radius, if it stays the same all the way round"
+
+[curve.radius_start]
+unit = "m"
+help = "the inside radius at the start angle, for a flare or spiral"
+
+[curve.radius_end]
+unit = "m"
+help = "the inside radius at the end angle, for a flare or spiral"
+
+[curve.start_deg]
+unit = "degrees"
+help = "where the curve starts: 0 is forward, 90 up, 180 back, 270 down"
+
+[curve.end_deg]
+unit = "degrees"
+help = "where the curve ends; the span is at most 360 degrees"
+
+[curve.width]
+unit = "m"
+help = "how wide the strip is, along the axis"
+
+[curve.thickness]
+unit = "m"
+help = "how thick the plate is, on the outside of the radius"
+default = 0.003175
+
+[curve.material]
+help = "what it is made of, which sets how grippy it is"
+choices = "materials"
+default = "polycarbonate"
+
+[cad.name]
+help = "the part's name; its shapes are named after it"
+
+[cad.part]
+help = "a part folder from the FreeCAD exporter, instead of a mesh"
+
+[cad.mesh]
+help = "an STL or OBJ file, next to the bench file; it stays fixed"
+
+[cad.units]
+help = "with a mesh: the unit the file was drawn in"
+choices = "units"
+
+[cad.center]
+unit = "m"
+help = "where the file's origin goes, [x, y, z]"
+default = [0.0, 0.0, 0.0]
+
+[cad.rot_deg]
+unit = "degrees"
+help = "how it is turned about x, then y, then z"
+default = [0.0, 0.0, 0.0]
+
+[cad.material]
+help = "what its shapes are made of, which sets how grippy they are"
+choices = "materials"
+default = "polycarbonate"
+
+[cad.slots]
+help = "with a part folder: which bench shaft turns each of its motor slots"
+
+[cad.tread]
+help = "with a part folder: the rubber on its wheels"
+choices = "treads"
+default = "35A"
+
+[inlet.name]
+help = "the inlet's name"
+
+[inlet.center]
+unit = "m"
+help = "where a new piece's middle appears, [x, y, z]"
+
+[inlet.size]
+unit = "m"
+help = "the box pieces appear in; it must keep the whole piece clear of every shape"
+
+[inlet.count]
+help = "how many pieces to feed"
+default = 1
+
+[inlet.rate]
+unit = "per s"
+help = "how many pieces appear each second"
+default = 5.0
+
+[inlet.velocity]
+unit = "m/s"
+help = "how fast a piece is moving as it appears, [x, y, z]"
+default = [0.0, 0.0, 0.0]
+
+[inlet.spin]
+unit = "rad/s"
+help = "how fast a piece is spinning as it appears, [x, y, z]"
+default = [0.0, 0.0, 0.0]
+
+[inlet.spread_speed]
+unit = "m/s"
+help = "random variation in the starting speed"
+default = 0.0
+
+[inlet.spread_position]
+unit = "m"
+help = "random variation in where pieces start"
+default = 0.0
+
+[inlet.spread_time]
+unit = "s"
+help = "random variation in when pieces start"
+default = 0.0
+
+[inlet.seed]
+help = "the random seed; the same seed gives the same run"
+default = 1
+
+[outlet.name]
+help = "the outlet's name"
+
+[outlet.center]
+unit = "m"
+help = "the middle of the box, [x, y, z]"
+
+[outlet.size]
+unit = "m"
+help = "the box's full size; a piece whose middle enters it counts as out"
+
+[flight.outlet]
+help = "which outlet's pieces to fly through the air"
+choices = "outlets"
+
+[flight.height]
+unit = "m"
+help = "how high the bench origin is above the floor"
+default = 0.0
+
+[flight.target_distance]
+unit = "m"
+help = "how far forward of the origin the target is"
+
+[flight.target_height]
+unit = "m"
+help = "how high the target is above the floor"
+
+[flight.ring_diameter]
+unit = "m"
+help = "a ring at the target; shots through it count"
+
+[flight.air]
+help = "which air to fly through"
+default = "default"
+
+[run.duration]
+unit = "s"
+help = "the longest the run goes on, spin-up included"
+default = 5.0
+
+[run.timestep]
+unit = "s"
+help = "the physics step; left out, 1e-4 for squishy pieces and 2.5e-4 for rigid"
+
+[run.jam_time]
+unit = "s"
+help = "a piece stuck this long counts as jammed"
+default = 1.0
+
+[run.jam_distance]
+unit = "m"
+help = "a piece that stays within this distance of one point is stuck"
+default = 0.01

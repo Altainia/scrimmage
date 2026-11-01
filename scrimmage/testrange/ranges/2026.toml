@@ -1,0 +1,127 @@
+# The FRC 2026 REBUILT test range: both HUBS and the NEUTRAL ZONE FUEL, in WPILib field coordinates (blue alliance
+# wall at x = 0, z up), SI units.
+#
+# Every number cites the official field CAD, FE-2026-rev-rebuilt-playing-field.step (measured in FreeCAD 2026-10-28
+# by ~/snap/freecad/common/sp9/measure.py and net.py), or the 2026 Game Manual, or says it is our choice.
+# CAD frame: millimeters, origin at the field's center, x along the field's length, z up; the blue ROBOT STARTING
+# LINE tape lies at CAD x = +4241.8..+4292.6, so blue is +x. CAD to field: x = 8.2705 - x_cad / 1000,
+# y = 4.035 - y_cad / 1000 (a half turn about z, keeping the frame right-handed; 8.2705 = 16.541 / 2, 4.035 =
+# 8.07 / 2). The checks: both HUB bodies land at x = 4.625 and 16.541 - 4.625 on y = 4.035.
+
+[range]
+name = "FRC 2026 REBUILT"  # source: the 2026 game's name, manual title page https://firstfrc.blob.core.windows.net/frc2026/Manual/HTML/2026GameManual.htm
+ball = "2026-fuel"         # source: FUEL, manual section 5.10.1 https://firstfrc.blob.core.windows.net/frc2026/Manual/HTML/2026GameManual.htm (the launcher preset cites its own numbers)
+
+[carpet]
+rolling_resistance = 0.07  # estimate: the default (scrimmage/testrange/spec.py, DEFAULT_ROLLING_RESISTANCE): FUEL on FRC carpet slowing at about 0.5 m/s^2, like a golf ball on a putting green; not measured
+
+[[goal]]
+name = "hub_blue"
+pos = [4.625, 4.035]         # source: CAD https://firstfrc.blob.core.windows.net/frc2026/FieldAssets/FE-2026-rev-rebuilt-playing-field.step: HUB panels at x_cad +3048.0..+4242.1 (center +3645.0, so 182.1 in from the wall), funnel centered on the same x at y_cad 0
+heading_deg = 0.0            # source: CAD (URL above): goal +x points away from the blue ALLIANCE WALL, toward the back net on the NEUTRAL ZONE side (manual 5.4)
+rim_height = 1.829           # source: CAD (URL above): every Hub Funnel Side (GE-26329) tops out at z_cad 1828.8 mm; manual 5.4 https://firstfrc.blob.core.windows.net/frc2026/Manual/HTML/2026GameManual.htm: "72in (~1.83m) off the carpet"
+tilt_deg = 0.0               # source: CAD (URL above): the rim is level, all six funnel sides top out at the same z
+opening = { sides = 6, across_flats = 1.060, rotation_deg = 0.0 }   # source: CAD (URL above): funnel sides span x_cad 3032.1..4257.7 (corners on +-x, 1225.6 across corners = 1061.4 across flats) and y_cad +-529.9 at the rim; manual 5.4: "41.7in (~1.06m) hexagonal opening"
+funnel = { depth = 0.395, slope_deg = 60.0, throat = 0.593 }        # source: CAD (URL above): walls from z_cad 1828.8 down to 1433.6 (0.395 deep), their inner edge from y_cad 529.9 to 302.6 (atan(395.2 / 227.3) = 60.1 deg); the throat is the Hub Funnel Base (GE-26315-01) opening, y_cad +-296.3 = 0.593 across flats. Gap stated: depth and slope alone give 1.060 - 2 * 0.395 / tan 60 = 0.604, which matches where the walls end in the CAD (0.605); the base plate's lip narrows that to the 0.593 used for scoring.
+body = { size = [1.194, 1.194], height = 1.510 }                     # source: CAD (URL above): panels x_cad 3048.0..4242.1 and y_cad +-596.9 (manual 5.4: "47in by 47in"); height = the top of the front and side diffusers (GE-26309, GE-26311), z_cad 1510.2
+[[goal.plate]]
+name = "net"
+pos = [0.845, 0.0, 0.512]    # source: CAD (URL above): Hub Net (Aesthetic) (GE-26318) back panel at x_cad 2794.2..2804.9 (845 mm behind the opening's center, its normal 0.4 deg from horizontal), z_cad 1673.8..3008.5 (center 2341.2, 512 mm above the rim)
+size = [1.403, 1.335]        # source: CAD (URL above): the net's outer sides at y_cad +-701.7, its height 3008.5 - 1673.8. The net's two triangular side panels (y_cad +-701.7, reaching forward to x_cad 3441.9 only at the bottom) are left out.
+rpy_deg = [0.0, 0.0, 0.0]    # source: CAD (URL above): the back panel stands vertical, facing the opening
+
+[[goal]]
+name = "hub_red"
+pos = [11.916, 4.035]        # source: CAD (URL above): the red HUB is the blue one turned a half turn about the field's center (panels x_cad -4242.1..-3048.0), 16.541 - 4.625
+heading_deg = 180.0          # source: CAD (URL above): goal +x points away from the red ALLIANCE WALL, toward its back net
+rim_height = 1.829           # source: CAD (URL above), as hub_blue
+tilt_deg = 0.0               # source: CAD (URL above), as hub_blue
+opening = { sides = 6, across_flats = 1.060, rotation_deg = 0.0 }   # source: CAD (URL above), as hub_blue
+funnel = { depth = 0.395, slope_deg = 60.0, throat = 0.593 }        # source: CAD (URL above), as hub_blue (derived throat 0.604, CAD 0.593: see hub_blue)
+body = { size = [1.194, 1.194], height = 1.510 }                     # source: CAD (URL above), as hub_blue
+[[goal.plate]]
+name = "net"
+pos = [0.845, 0.0, 0.512]    # source: CAD (URL above), as hub_blue (Hub Net (Aesthetic)001 at x_cad -2804.9..-2794.2)
+size = [1.403, 1.335]        # source: CAD (URL above), as hub_blue
+rpy_deg = [0.0, 0.0, 0.0]    # source: CAD (URL above), as hub_blue
+
+# The four BUMPS, one each side of each HUB (manual 5.5), crest on the HUB's center line. Their numbers as in
+# 2026-bump.toml (which is bump_blue_right alone): CAD crests at x_cad +-3644.9, ramps from y_cad +-594.1 to
+# +-2450.3 (centers +-1522). Left and right as the alliance's drivers see them: blue faces +x, so its left is +y;
+# red faces -x, so its left is -y.
+[[element]]
+name = "bump_blue_left"
+kind = "bump"
+center = [4.625, 5.557]    # source: CAD https://firstfrc.blob.core.windows.net/frc2026/FieldAssets/FE-2026-rev-rebuilt-playing-field.step: x = 8.2705 - 3.6449 (hub_blue's x), y = 4.035 + 1.522
+yaw_deg = 0.0              # source: CAD (URL above): the ramps slope down along the field's length, the crest runs across it
+depth_in = 44.40           # source: CAD (URL above): toe to toe x_cad 3081.1..4208.7; GE-26100 "(44.40)"; manual 5.5 "44.4in"
+width_in = 73.0            # source: manual 5.5 https://firstfrc.blob.core.windows.net/frc2026/Manual/HTML/2026GameManual.htm "73.0in (1.854m) wide"; GE-26100 73.00 (CAD 73.08)
+height_in = 6.51           # source: CAD (URL above): crest at z_cad 165.4; GE-26100 "(6.51)"; manual 5.5 "6.513in"
+ramp_deg = 15.0            # source: CAD (URL above): the ramps' faces have normals (+-0.2588, 0, 0.9659); GE-26100 "(15.0 deg)"; manual 5.5
+crest = 0.008              # source: CAD (URL above): the two plates' top edges at x_cad 3640.8 and 3649.0, both at z 165.4: an 8 mm ridge
+lip_in = 0.61              # source: CAD (URL above): each plate's end face, from z_cad 3.2 up to 15.4 mm at the toe; GE-26100 "(.61)"
+friction = 0.6             # estimate: the HDPE's matte orange-peel finish (GE-26101) against a robot's tread; scrimmage/testrange/elements.py DEFAULT_FRICTION
+[[element]]
+name = "bump_blue_right"
+kind = "bump"
+center = [4.625, 2.513]    # source: CAD (URL above): y = 4.035 - 1.522; otherwise as bump_blue_left
+yaw_deg = 0.0              # source: CAD (URL above), as bump_blue_left
+depth_in = 44.40           # source: CAD (URL above), as bump_blue_left
+width_in = 73.0            # source: manual 5.5 (URL above), as bump_blue_left
+height_in = 6.51           # source: CAD (URL above), as bump_blue_left
+ramp_deg = 15.0            # source: CAD (URL above), as bump_blue_left
+crest = 0.008              # source: CAD (URL above), as bump_blue_left
+lip_in = 0.61              # source: CAD (URL above), as bump_blue_left
+friction = 0.6             # estimate: as bump_blue_left
+[[element]]
+name = "bump_red_left"
+kind = "bump"
+center = [11.916, 2.513]   # source: CAD (URL above): the blue LEFT BUMP turned a half turn about the field's center (x_cad -3644.9, y_cad +1522); x = 16.541 - 4.625, as hub_red
+yaw_deg = 0.0              # source: CAD (URL above), as bump_blue_left (the bump is symmetric end to end)
+depth_in = 44.40           # source: CAD (URL above), as bump_blue_left
+width_in = 73.0            # source: manual 5.5 (URL above), as bump_blue_left
+height_in = 6.51           # source: CAD (URL above), as bump_blue_left
+ramp_deg = 15.0            # source: CAD (URL above), as bump_blue_left
+crest = 0.008              # source: CAD (URL above), as bump_blue_left
+lip_in = 0.61              # source: CAD (URL above), as bump_blue_left
+friction = 0.6             # estimate: as bump_blue_left
+[[element]]
+name = "bump_red_right"
+kind = "bump"
+center = [11.916, 5.557]   # source: CAD (URL above): the blue RIGHT BUMP turned a half turn about the field's center (y_cad -1522)
+yaw_deg = 0.0              # source: CAD (URL above), as bump_blue_left
+depth_in = 44.40           # source: CAD (URL above), as bump_blue_left
+width_in = 73.0            # source: manual 5.5 (URL above), as bump_blue_left
+height_in = 6.51           # source: CAD (URL above), as bump_blue_left
+ramp_deg = 15.0            # source: CAD (URL above), as bump_blue_left
+crest = 0.008              # source: CAD (URL above), as bump_blue_left
+lip_in = 0.61              # source: CAD (URL above), as bump_blue_left
+friction = 0.6             # estimate: as bump_blue_left
+
+# NEUTRAL ZONE FUEL: the CAD's 360 FUEL (GE-26900, 150 mm cubes' centers at z_cad 75) form a 12 x 30 grid on a 6 in
+# (152.4 mm) pitch: x_cad +-76.2..+-838.2, y_cad +-101.6..+-2235.2, two blocks of 15 rows split at the center line
+# along y_cad 0 by the manual's 2.0 in divider (6.3.4.1). Manual 6.3.4: 360 to 408 FUEL in the NEUTRAL ZONE (360 when
+# every ROBOT preloads 8, as the CAD stages it), corralled in a box about 206.0 in wide by 72.0 in deep; the CAD's 12
+# columns span 72 in, its 30 rows 182 in.
+[[floor_balls]]
+grid = { corner = [7.4323, 1.7998], step = [0.1524, 0.1524], count = [12, 15] }   # source: CAD (URL above): x = 8.2705 - 0.8382, y = 4.035 - 2.2352, pitch 152.4 mm, 12 columns by 15 rows; manual 6.3.4.1 https://firstfrc.blob.core.windows.net/frc2026/Manual/HTML/2026GameManual.htm
+[[floor_balls]]
+grid = { corner = [7.4323, 4.1366], step = [0.1524, 0.1524], count = [12, 15] }   # source: CAD (URL above): y = 4.035 + 0.1016, the other side of the divider; same grid
+
+# Starts: the blue ROBOT STARTING LINE spans the field at the edge of the ALLIANCE ZONE (manual 5.3; tape at field
+# x 3.978..4.029 from the CAD), and a ROBOT starts with its BUMPERS overlapping it, not touching a BUMP (manual G303
+# D and E). The HUB starts at x 4.028 (CAD); the BUMPS' near toes are at x 4.061 (above). x = 3.55 puts a robot
+# about 0.9 m long over the line without touching them. The y values are ours: in front of the left BUMP, the HUB and
+# the right BUMP. Heading 0 faces the HUB.
+#
+# blue_left and blue_right sit at x 3.42, behind the line, because the shooting autos turn there to face the hub
+# (about 52 deg): turning, a robot's bumper corner reaches 0.61 m from its center (half the diagonal of a 0.86 m
+# square), and from x 3.55 it hit the BUMP's ramp (measured: the bump pushed the robot 0.3 m and every ball missed).
+# From 3.42 the corner clears the toe (4.061) by 3 cm; the front bumper is then 0.13 m short of the line. A real
+# robot there would start already facing the hub; the start outline (a 0.9 m square, unturned) can't express that.
+[start.blue_left]
+pose = [3.42, 5.56, 0.0]     # choice: x behind the starting line so the robot can turn without hitting the BUMP (see above); y in front of the left BUMP (HUB edge 4.632 + 1.854 / 2, manual 5.5)
+[start.blue_center]
+pose = [3.55, 4.035, 0.0]    # choice: x behind the starting line (manual 5.3, G303); y in front of the HUB
+[start.blue_right]
+pose = [3.42, 2.51, 0.0]     # choice: x behind the starting line so the robot can turn without hitting the BUMP (see above); y in front of the right BUMP (HUB edge 3.438 - 1.854 / 2, manual 5.5)

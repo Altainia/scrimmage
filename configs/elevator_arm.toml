@@ -1,0 +1,74 @@
+# The kitbot's chassis and drivetrain carrying a two-stage elevator with a single-jointed arm on top,
+# all built from stock parts. The robot program is examples/robotpy_elevator_arm.
+# Paths are relative to this file.
+
+[model]
+timestep = 0.001
+
+[robot]
+start_pose = [2.0, 4.035, 0.0]
+
+[battery]
+nominal_voltage = 12.5
+resistance = 0.02
+
+[lockstep]
+step = 0.005
+
+[robot_program]
+command = ["{python}", "-m", "robotpy", "sim", "--nogui", "--ws-client", "--scrimmage-lockstep"]
+cwd = "../examples/robotpy_elevator_arm"
+
+[telemetry]
+odometry = "/SmartDashboard/Field/Robot"
+
+[[part]]
+name = "drive"
+stock = "chassis"
+length = 0.66
+width = 0.6
+mass = 47.0
+frame_height = 0.1
+ids = { gyro = { device = "ADXRS450[0]", axis = "x", cw_positive = true } }
+
+[[part]]
+name = "dt"
+stock = "differential"
+attach = "drive.center"
+ids = { left = "PWM:0", right = "PWM:1", left_encoder = { channel_a = 0, counts_per_rev = 2048 }, right_encoder = { channel_a = 2, counts_per_rev = 2048 } }
+
+# A two-stage cascade elevator: stage1 rides the base and the carriage rides stage1, so the carriage
+# moves twice as far as stage1 (and as the rope). Two Kraken X60s through 20:1 onto a 22 mm spool
+# lift the carriage at up to ~1.4 m/s, far more force than the ~50 N the load needs, so a simple
+# PID plus a constant gravity term holds it. The encoder counts spool turns; the carriage height is
+# spool turns x 2 pi r x stages.
+[[part]]
+name = "elevator"
+stock = "elevator"
+attach = "drive.center"
+pos = [0.1, 0.0, 0.12]
+stages = 2
+rigging = "cascade"
+travel = 1.0
+motor = "KrakenX60"
+count = 2
+gearing = 20.0
+spool_radius = 0.022
+carriage_mass = 3.0
+stage_mass = 1.5
+ids = { lift = "PWM:2", encoder = { channel_a = 4, counts_per_rev = 2048 } }
+
+# A 0.5 m, 2 kg arm on the carriage. One Falcon 500 through 60:1 gives ~ 280 N*m at the arm,
+# against 4.9 N*m of gravity at horizontal, so it is gravity-feedforward-plus-PD controllable.
+# 0 degrees is horizontal forward and positive raises the tip.
+[[part]]
+name = "arm"
+stock = "arm"
+attach = "elevator.carriage"
+length = 0.5
+mass = 2.0
+range = [-45.0, 110.0]
+motor = "Falcon500"
+count = 1
+gearing = 60.0
+ids = { pivot = "PWM:3", encoder = { channel_a = 6, counts_per_rev = 2048 } }

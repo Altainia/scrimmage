@@ -1,0 +1,110 @@
+# Maps examples/java_fastmode (AdvantageKit's TalonFX swerve template plus a two-Kraken elevator and an arm)
+# in FAST MODE onto a robot built from scrimmage's stock parts: a chassis, four SDS MK4i modules, an elevator
+# and an arm on its carriage.
+#   scrimmage run scenarios/fastmode_auto.toml
+# sim_mode = "fast" sets SCRIMMAGE_MODE=fast, so the robot's RobotContainer picks its scrimmage IO classes
+# (ModuleIOScrimmage, GyroIOScrimmage, ElevatorIOScrimmage, ArmIOScrimmage): simulated Krakens, CANcoders and a gyro from the
+# fast-mode library, no Phoenix devices. They follow the robot's simulated clock, so this runs in lockstep at any
+# speed and repeats exactly. configs/fastmode_phoenix.toml is the same robot bound to its real (Phoenix 6) IO instead.
+# Paths are relative to this file.
+
+[model]
+timestep = 0.001
+
+[robot]
+start_pose = [2.0, 4.035, 0.0]   # x (m), y (m), heading (deg): the start of the auto's "Two Meters" path
+
+[battery]
+nominal_voltage = 12.5
+resistance = 0.02
+
+[lockstep]
+step = 0.005
+
+[robot_program]
+# The Gradle init script turns off the sim GUI and points HALSim WebSocket at scrimmage.
+command = ["./gradlew", "-I", "{scrimmage_java}/scrimmage.init.gradle", "simulateJava"]
+cwd = "../examples/java_fastmode"
+start_timeout = 180       # a first Gradle build is slow; pre-build with ./gradlew build
+sim_mode = "fast"
+
+# ---- Parts ---------------------------------------------------------------------------
+# The fast-mode devices are named by the robot code: ModuleIOScrimmage("fl", ...) creates fl_drive, fl_steer and
+# fl_encoder, GyroIOScrimmage creates pigeon, ElevatorIOScrimmage creates elevator_lead and elevator_follower,
+# and ArmIOScrimmage creates arm.
+
+[[part]]
+name = "drive"
+stock = "chassis"         # 0.7 m square frame, 46 kg, bumpers; modules mount at its corners
+module_inset = 0.096      # m from each frame edge to a module center: modules at +-0.254 m (TunerConstants: 10 in)
+ids = { gyro = "SimGyro:pigeon" }
+
+# ---- Modules -------------------------------------------------------------------------
+# SDS MK4i, L2 (the sample's TunerConstants): drive 6.75 rotor revs per wheel rev, steer 150/7. As TunerConstants
+# configures: every steer motor inverted (the part's steer_invert defaults to true), the right-side drive motors
+# inverted (drive_invert = true on fr and br). Each CANcoder's magnet sits at minus TunerConstants' encoder offset
+# (`offset`, rotations), so wheels straight forward read 0 once the robot code applies its offset.
+
+[[part]]
+name = "fl"
+stock = "swerve/MK4i"
+ratio = "L2"
+attach = "drive.front_left"
+ids = { drive = "SimMotor:fl_drive", steer = "SimMotor:fl_steer", encoder = { scrimmage = "fl_encoder", offset = -0.15234375 } }
+
+[[part]]
+name = "fr"
+stock = "swerve/MK4i"
+ratio = "L2"
+attach = "drive.front_right"
+drive_invert = true       # right side
+ids = { drive = "SimMotor:fr_drive", steer = "SimMotor:fr_steer", encoder = { scrimmage = "fr_encoder", offset = 0.4873046875 } }
+
+[[part]]
+name = "bl"
+stock = "swerve/MK4i"
+ratio = "L2"
+attach = "drive.back_left"
+ids = { drive = "SimMotor:bl_drive", steer = "SimMotor:bl_steer", encoder = { scrimmage = "bl_encoder", offset = 0.219482421875 } }
+
+[[part]]
+name = "br"
+stock = "swerve/MK4i"
+ratio = "L2"
+attach = "drive.back_right"
+drive_invert = true       # right side
+ids = { drive = "SimMotor:br_drive", steer = "SimMotor:br_steer", encoder = { scrimmage = "br_encoder", offset = -0.17236328125 } }
+
+# ---- Elevator ------------------------------------------------------------------------
+# Two Kraken X60s, 9:1 onto a 22 mm spool, 1 m of travel (ScrimmageConstants). The follower is configured
+# opposed (it turns the other way), so it is mounted mirrored: `invert = true` on it. The robot measures height
+# with the lead motor's rotor, so the part's encoder slot is left unbound.
+
+[[part]]
+name = "elevator"
+stock = "elevator"
+attach = "drive.center"
+pos = [0.1, 0.0, 0.12]
+travel = 1.0
+motor = "KrakenX60"
+count = 2
+gearing = 9.0
+spool_radius = 0.022
+ids = { lift = ["SimMotor:elevator_lead", { scrimmage = "elevator_follower", invert = true }] }
+
+# ---- Arm -----------------------------------------------------------------------------
+# One Kraken X60 through 60:1 to a 0.5 m, 2 kg arm on the elevator carriage (ScrimmageConstants). The part's
+# 0 degrees is horizontal forward, positive raises the tip: as Arm/Cosine needs, and as the robot's zero (the
+# arm starts horizontal). The robot reads the motor's rotor, so the encoder slot is left unbound.
+
+[[part]]
+name = "arm"
+stock = "arm"
+attach = "elevator.carriage"
+length = 0.5
+mass = 2.0
+range = [-45.0, 110.0]
+motor = "KrakenX60"
+count = 1
+gearing = 60.0
+ids = { pivot = "SimMotor:arm" }

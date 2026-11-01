@@ -1,0 +1,34 @@
+# The fast-mode sample robot (configs/fastmode_bump.toml) in FAST MODE: its "Over the Bump, Elevator Up" auto. It
+# raises its elevator to 0.9 m, then drives 4 m straight over the 2026 BUMP at BUMP_SPEED_ELEVATOR_UP
+# (ScrimmageConstants: 1 m/s; top-heavy, the robot's sweep limit drops from 2 m/s to 1). The scenario fails if the
+# robot leaves the ground by more than 5 cm, tilts more than 30 degrees (pitch and roll together) or tips over.
+#   scrimmage run scenarios/fastmode_bump_elevator_up.toml
+config = "../configs/fastmode_bump.toml"
+description = "Fast-mode sample over the 2026 BUMP, elevator up: under 5 cm off the ground and 30 deg of tilt, never tipped"
+robot_env = { SCRIMMAGE_AUTO = "Over the Bump, Elevator Up" }
+
+[[step]]
+mode = "disabled"
+duration = 1.0
+[[step]]
+name = "auto"
+mode = "auto"
+duration = 7.0
+  # The elevator went up first, and stayed up
+  [[step.check]]
+  at_end = { signal = "joint.elevator.carriage.position", approx = 0.9, tol = 0.02 }
+  [[step.check]]
+  console = { contains = "bump: driving at 1.00 m/s" }
+  [[step.check]]
+  always = { signal = "robot.ground_gap", max = 0.05 }
+  [[step.check]]
+  always = { signal = "robot.tilt", max = 30 }
+  [[step.check]]
+  always = { signal = "robot.tipped", equals = 0 }
+  # It crossed: the 4 m drive (by odometry) ends past the FUEL row, at x 6.49 (6.51 with the elevator up); a robot
+  # stopped against the bump would end near x 3.6. The tolerance leaves room for another speed (SCRIMMAGE_BUMP_SPEED).
+  [[step.check]]
+  pose = { x = 6.4, y = 2.513, heading = 0, tol_xy = 0.4, tol_heading = 5 }
+  [[step.screenshot]]
+  view = "follow"
+  at = "end"

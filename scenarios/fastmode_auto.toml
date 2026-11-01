@@ -1,0 +1,35 @@
+# The fast-mode sample robot's autonomous routine (examples/java_fastmode) in FAST MODE: PathPlanner drives the
+# "Two Meters" path (2 m straight ahead, ending at x = 4.0 facing forward), then Motion Magic raises the elevator
+# to 0.75 m and swings the arm on its carriage to 45 degrees. scenarios/fastmode_auto_phoenix.toml makes the same checks in Phoenix mode.
+#   scrimmage run scenarios/fastmode_auto.toml
+config = "../configs/fastmode.toml"
+description = "Fast-mode sample (AdvantageKit, Kraken swerve + elevator + arm) in fast mode: 2 m path, elevator to 0.75 m, arm to 45 deg"
+[[step]]
+mode = "disabled"
+duration = 1.0
+[[step]]
+name = "auto"
+mode = "auto"
+duration = 4.0            # the deadline: the elevator and the arm must be up by the end of this step
+  # Fast mode repeats exactly: every run ends at x = 4.030 (the path follower stops 3 cm past the path's end),
+  # heading 0.0 (re-measured with library 0.2.0: x = 4.0302). The tolerance leaves room for small changes to the
+  # robot, not for run-to-run variation.
+  [[step.check]]
+  pose = { x = 4.0, y = 4.035, heading = 0, tol_xy = 0.05, tol_heading = 3 }
+  # The path ends 1.7 s into auto and the elevator is within 1 cm of 0.75 m 2.8 s in; it holds at 0.7515 m
+  # (every run; re-measured with library 0.2.0: 2.79 s, 0.75154 m).
+  [[step.check]]
+  at_end = { signal = "joint.elevator.carriage.position", approx = 0.75, tol = 0.01 }
+  # The robot's own word for it: Elevator.moveTo prints the height once within 1 cm (0.74 m, every run), or
+  # "timed out at" if it never gets there
+  [[step.check]]
+  console = { contains = "elevator: at 0\\.7[4-6] m" }
+  # Then the arm swings from horizontal (where it starts; it sags a little in brake mode until the move) to 45 deg:
+  # within 1 deg 3.46 s into auto, and it holds at 0.78549 rad (45.005 deg), every run.
+  [[step.check]]
+  at_end = { signal = "joint.arm.pivot.position", approx = 0.7854, tol = 0.0175 }
+  [[step.check]]
+  console = { contains = "arm: at 4[4-6]\\.\\d deg" }
+  [[step.screenshot]]
+  view = "follow"
+  at = "end"

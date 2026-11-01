@@ -1,0 +1,19 @@
+# Fast fake-robot scenario that fails (editor and runner tests).
+config = "../fake_robot.toml"
+description = "Fake robot: disabled, then auto with a pose check that cannot pass"
+
+[[step]]
+name = "idle"
+mode = "disabled"
+duration = 0.5
+
+[[step]]
+name = "auto"
+mode = "auto"
+duration = 1.0
+  [[step.check]]
+  console = { contains = "fake robot step" }
+  [[step.check]]
+  pose = { x = 50.0, y = 50.0, tol_xy = 0.1 }
+  [[step.check]]
+  at_end = { signal = "battery", min = 5 }

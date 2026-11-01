@@ -1,0 +1,95 @@
+# Maps examples/java_fastmode (AdvantageKit's TalonFX swerve template plus a two-Kraken elevator and an arm)
+# in PHOENIX MODE onto the same stock-part robot as configs/fastmode.toml: here the robot runs its real IO
+# (ModuleIOTalonFX, GyroIOPigeon2, ElevatorIOTalonFX, ArmIOTalonFX), so scrimmage binds Phoenix 6 devices by CAN
+# id (TunerConstants and ScrimmageConstants). Phoenix 6 simulation runs on the wall clock, so this runs in real
+# time (not lockstep) and runs are close but not identical.
+#   scrimmage run scenarios/fastmode_auto_phoenix.toml
+# Paths are relative to this file.
+
+[model]
+timestep = 0.001
+
+[robot]
+start_pose = [2.0, 4.035, 0.0]   # x (m), y (m), heading (deg): the start of the auto's "Two Meters" path
+
+[battery]
+nominal_voltage = 12.5
+resistance = 0.02
+
+[lockstep]
+step = 0.005
+
+[robot_program]
+# The Gradle init script turns off the sim GUI and points HALSim WebSocket at scrimmage.
+command = ["./gradlew", "-I", "{scrimmage_java}/scrimmage.init.gradle", "simulateJava"]
+cwd = "../examples/java_fastmode"
+start_timeout = 180       # a first Gradle build is slow; pre-build with ./gradlew build
+sim_mode = "phoenix"
+
+# ---- Parts (as configs/fastmode.toml; see the notes there) ---------------------------
+# Phoenix doesn't expose its neutral mode, so `neutral = "brake"` repeats what the robot code configures.
+
+[[part]]
+name = "drive"
+stock = "chassis"
+module_inset = 0.096      # modules at +-0.254 m (TunerConstants: 10 in)
+ids = { gyro = "Pigeon2:1" }
+
+[[part]]
+name = "fl"
+stock = "swerve/MK4i"
+ratio = "L2"
+attach = "drive.front_left"
+ids = { drive = { ctre = "TalonFX:3", neutral = "brake" }, steer = { ctre = "TalonFX:2", neutral = "brake" }, encoder = { ctre = "CANcoder:1", offset = -0.15234375 } }
+
+[[part]]
+name = "fr"
+stock = "swerve/MK4i"
+ratio = "L2"
+attach = "drive.front_right"
+drive_invert = true       # right side
+ids = { drive = { ctre = "TalonFX:1", neutral = "brake" }, steer = { ctre = "TalonFX:0", neutral = "brake" }, encoder = { ctre = "CANcoder:0", offset = 0.4873046875 } }
+
+[[part]]
+name = "bl"
+stock = "swerve/MK4i"
+ratio = "L2"
+attach = "drive.back_left"
+ids = { drive = { ctre = "TalonFX:7", neutral = "brake" }, steer = { ctre = "TalonFX:6", neutral = "brake" }, encoder = { ctre = "CANcoder:3", offset = 0.219482421875 } }
+
+[[part]]
+name = "br"
+stock = "swerve/MK4i"
+ratio = "L2"
+attach = "drive.back_right"
+drive_invert = true       # right side
+ids = { drive = { ctre = "TalonFX:5", neutral = "brake" }, steer = { ctre = "TalonFX:4", neutral = "brake" }, encoder = { ctre = "CANcoder:2", offset = -0.17236328125 } }
+
+[[part]]
+name = "elevator"
+stock = "elevator"
+attach = "drive.center"
+pos = [0.1, 0.0, 0.12]
+travel = 1.0
+motor = "KrakenX60"
+count = 2
+gearing = 9.0
+spool_radius = 0.022
+ids = { lift = [{ ctre = "TalonFX:8", neutral = "brake" }, { ctre = "TalonFX:9", neutral = "brake", invert = true }] }
+
+# ---- Arm -----------------------------------------------------------------------------
+# One Kraken X60 through 60:1 to a 0.5 m, 2 kg arm on the elevator carriage (ScrimmageConstants). The part's
+# 0 degrees is horizontal forward, positive raises the tip: as Arm/Cosine needs, and as the robot's zero (the
+# arm starts horizontal). The robot reads the motor's rotor, so the encoder slot is left unbound.
+
+[[part]]
+name = "arm"
+stock = "arm"
+attach = "elevator.carriage"
+length = 0.5
+mass = 2.0
+range = [-45.0, 110.0]
+motor = "KrakenX60"
+count = 1
+gearing = 60.0
+ids = { pivot = { ctre = "TalonFX:10", neutral = "brake" } }

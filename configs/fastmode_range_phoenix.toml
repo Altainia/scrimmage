@@ -1,0 +1,156 @@
+# Maps examples/java_fastmode in PHOENIX MODE onto the same made-up shooting robot on the 2026 test range as
+# configs/fastmode_range.toml (see the notes there): the robot runs its real IO (ModuleIOTalonFX, GyroIOPigeon2,
+# ShooterIOTalonFX), so scrimmage binds Phoenix 6 devices by CAN id (TunerConstants and ScrimmageConstants).
+# Phoenix 6 simulation runs on the wall clock, so this runs in real time (not lockstep): runs are close but not
+# identical, and the scenarios' score thresholds are looser than fast mode's.
+#   scrimmage run scenarios/fastmode_shoot_phoenix.toml
+# Phoenix doesn't expose its neutral mode, so `neutral = "brake"` (or "coast") repeats what the robot code configures.
+# Paths are relative to this file.
+
+[model]
+timestep = 0.001
+
+[battery]
+nominal_voltage = 12.5
+resistance = 0.02
+
+[lockstep]
+step = 0.005
+
+# The 2026 range, as configs/fastmode_range.toml.
+[range]
+file = "2026"
+start = "blue_center"
+preload = 8
+
+[robot_program]
+# The Gradle init script turns off the sim GUI and points HALSim WebSocket at scrimmage.
+command = ["./gradlew", "-I", "{scrimmage_java}/scrimmage.init.gradle", "simulateJava"]
+cwd = "../examples/java_fastmode"
+start_timeout = 180       # a first Gradle build is slow; pre-build with ./gradlew build
+sim_mode = "phoenix"
+
+# ---- Drive (as configs/fastmode_phoenix.toml) -----------------------------------------
+
+[[part]]
+name = "drive"
+stock = "chassis"
+module_inset = 0.096      # modules at +-0.254 m (TunerConstants: 10 in)
+ids = { gyro = "Pigeon2:1" }
+
+[[part]]
+name = "fl"
+stock = "swerve/MK4i"
+ratio = "L2"
+attach = "drive.front_left"
+ids = { drive = { ctre = "TalonFX:3", neutral = "brake" }, steer = { ctre = "TalonFX:2", neutral = "brake" }, encoder = { ctre = "CANcoder:1", offset = -0.15234375 } }
+
+[[part]]
+name = "fr"
+stock = "swerve/MK4i"
+ratio = "L2"
+attach = "drive.front_right"
+drive_invert = true       # right side
+ids = { drive = { ctre = "TalonFX:1", neutral = "brake" }, steer = { ctre = "TalonFX:0", neutral = "brake" }, encoder = { ctre = "CANcoder:0", offset = 0.4873046875 } }
+
+[[part]]
+name = "bl"
+stock = "swerve/MK4i"
+ratio = "L2"
+attach = "drive.back_left"
+ids = { drive = { ctre = "TalonFX:7", neutral = "brake" }, steer = { ctre = "TalonFX:6", neutral = "brake" }, encoder = { ctre = "CANcoder:3", offset = 0.219482421875 } }
+
+[[part]]
+name = "br"
+stock = "swerve/MK4i"
+ratio = "L2"
+attach = "drive.back_right"
+drive_invert = true       # right side
+ids = { drive = { ctre = "TalonFX:5", neutral = "brake" }, steer = { ctre = "TalonFX:4", neutral = "brake" }, encoder = { ctre = "CANcoder:2", offset = -0.17236328125 } }
+
+# ---- Launcher (as configs/fastmode_range.toml, where its tuning is explained) ----------
+
+[[part]]
+name = "launcher"
+stock = "launcher"
+attach = "drive.top"
+pos = [-0.15, 0.0, 0.40]
+width = 0.36              # inside the side plates: both lanes' balls (+-0.08 m, radius 0.075 m) fit
+wheel_diameter = 0.1016
+wheel_moi = 0.002
+added_moi = 0.002         # a flywheel on the shaft: the wheels dip less as a ball goes through
+motor = "KrakenX60"
+count = 2
+gearing = 1.0
+hood_gap = 0.09
+hood_entry_deg = 270.0
+hood = "articulated"
+hood_range = [40.0, 80.0]
+hood_gearing = 50.0
+ids = { shooter = [{ ctre = "TalonFX:11", neutral = "coast" }, { ctre = "TalonFX:12", neutral = "coast", invert = true }], hood = { ctre = "TalonFX:13", neutral = "brake" } }
+
+# ---- Feeder and intake ---------------------------------------------------------------
+# Kraken X60s through 5:1 to 50 mm rollers (ROLLER_GEARING): about 2 m/s at the rollers' surface at FEED_VOLTS (8 V).
+
+[[part]]
+name = "hopper_floor"
+stock = "roller"
+attach = "drive.top"
+pos = [0.1, 0.0, 0.1]
+gearing = 5.0
+ids = { spin = { ctre = "TalonFX:14", neutral = "brake" } }
+
+[[part]]
+name = "feeder"
+stock = "roller"
+attach = "drive.top"
+pos = [-0.05, 0.0, 0.25]
+gearing = 5.0
+ids = { spin = { ctre = "TalonFX:15", neutral = "brake" } }
+
+[[part]]
+name = "intake"
+stock = "roller"
+attach = "drive.center"
+pos = [0.40, 0.0, 0.2]
+gearing = 5.0
+ids = { spin = { ctre = "TalonFX:16", neutral = "brake" } }
+
+# ---- The shooter's model -------------------------------------------------------------
+# Two lanes 0.16 m apart, a 4 in. wheel stack centered under each; 35A wheels (the preset's friction), a smooth hood.
+[shooter]
+part = "launcher"
+lanes = [-0.08, 0.08]
+[shooter.wheels]
+preset = "35A"
+positions = [-0.08, 0.08]
+width = 0.12
+[shooter.hood]
+friction = 0.3
+[shooter.air]
+preset = "default"
+[shooter.hopper]
+capacity = 16             # the 8 preloaded and 8 more from the floor
+[[shooter.stage]]
+name = "floor"
+part = "hopper_floor"
+path_length = 0.40
+[[shooter.stage]]
+name = "feeder"
+part = "feeder"
+path_length = 0.25
+# The intake zone reaches 0.07 m past the front bumper (its face 0.43 m ahead of the center), across most of the front.
+[shooter.intake]
+part = "intake"
+at = "drive.center"
+pos = [0.50, 0.0, 0.08]
+size = [0.15, 0.60, 0.20]
+rate = 8.0
+# Beam breaks (ScrimmageConstants: FEEDER_BEAM_DIO, LAUNCHER_BEAM_DIO), pulled low when broken.
+[[shooter.beam_break]]
+at = "stage:feeder"
+fraction = 0.5
+dio = 0
+[[shooter.beam_break]]
+at = "launcher"
+dio = 1

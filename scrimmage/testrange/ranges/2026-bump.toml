@@ -1,0 +1,34 @@
+# One FRC 2026 REBUILT BUMP and a row of loose FUEL past it, for focused tests of a robot taking the bump (sub-project
+# 10). WPILib field coordinates (blue alliance wall at x = 0, z up), SI units unless a key ends in _in (inches).
+#
+# The BUMP is the blue alliance's right one (2026.toml's bump_blue_right), with no HUB, TRENCH or other FUEL around
+# it. Its numbers cite the official field CAD, FE-2026-rev-rebuilt-playing-field.step (measured in FreeCAD
+# 2026-10-29), the BUMP drawings (GE-26100, GE-26101) and the 2026 Game Manual section 5.5.
+
+[range]
+name = "FRC 2026 BUMP"    # source: the 2026 game (REBUILT) and its BUMP, manual section 5.5
+ball = "2026-fuel"         # source: FUEL, manual section 5.10.1 https://firstfrc.blob.core.windows.net/frc2026/Manual/HTML/2026GameManual.htm
+
+[[element]]
+name = "bump"
+kind = "bump"
+center = [4.625, 2.513]    # source: CAD https://firstfrc.blob.core.windows.net/frc2026/FieldAssets/FE-2026-rev-rebuilt-playing-field.step: crest at x_cad +3644.9 (the HUB's center line, 182.1 in from the wall), ramps from y_cad +594.1 to +2450.3 (center +1522); x = 8.2705 - 3.6449 (2026.toml's hub_blue x, 4.625), y = 4.035 - 1.522
+yaw_deg = 0.0              # source: CAD (URL above): the ramps slope down along the field's length, the crest runs across it
+depth_in = 44.40           # source: CAD (URL above): toe to toe x_cad 3081.1..4208.7; GE-26100 "(44.40)"; manual 5.5 "44.4in"
+width_in = 73.0            # source: manual 5.5 https://firstfrc.blob.core.windows.net/frc2026/Manual/HTML/2026GameManual.htm "73.0in (1.854m) wide"; GE-26100 73.00 (CAD 73.08)
+height_in = 6.51           # source: CAD (URL above): crest at z_cad 165.4; GE-26100 "(6.51)"; manual 5.5 "6.513in"
+ramp_deg = 15.0            # source: CAD (URL above): the ramps' faces have normals (+-0.2588, 0, 0.9659); GE-26100 "(15.0 deg)"; manual 5.5
+crest = 0.008              # source: CAD (URL above): the two plates' top edges at x_cad 3640.8 and 3649.0, both at z 165.4: no flat top, an 8 mm ridge
+lip_in = 0.61              # source: CAD (URL above): each plate's end face, from z_cad 3.2 up to 15.4 mm at the toe; GE-26100 "(.61)"
+friction = 0.6             # estimate: the HDPE's matte orange-peel finish (GE-26101) against a robot's tread; scrimmage/testrange/elements.py DEFAULT_FRICTION
+
+# A row of FUEL across the robot's path, 0.45 m past the far toe (x 5.189), where a robot that leaves the bump too
+# fast lands. Our choice, not the match layout: at the start of a match no FUEL lies near a BUMP (manual 6.3.4), but
+# the HUB's exits throw scored FUEL out right beside the neutral-zone ramps (manual 5.4). 0.18 m apart (a FUEL is
+# 0.15 m across), centered on the bump.
+[[floor_balls]]
+at = [[5.64, 2.063], [5.64, 2.243], [5.64, 2.423], [5.64, 2.603], [5.64, 2.783], [5.64, 2.963]]   # choice: see above
+
+# Starts: facing the bump (heading 0 drives +x, over the crest), centered on it, 1.5 m before its near toe (x 4.061).
+[start.approach]
+pose = [2.561, 2.513, 0.0]   # choice: x = 4.061 - 1.5, y on the bump's center line, facing it

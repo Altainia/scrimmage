@@ -1,0 +1,40 @@
+# The fast-mode sample robot on the 2026 test range (examples/java_fastmode, configs/fastmode_range.toml) in FAST
+# MODE: its "Shoot Left" auto. From the range's blue_left start the robot turns its drive to face the blue hub, spins
+# its two-lane launcher up and sets its hood from the aiming table (AimTable.java), and feeds its 8 preloaded FUEL
+# only while the wheels, the hood and the heading are on target.
+#   scrimmage run scenarios/fastmode_shoot_left.toml
+config = "../configs/fastmode_range.toml"
+description = "Fast-mode sample on the 2026 range: Shoot Left, 8 preloaded FUEL from blue_left, standing"
+robot_env = { SCRIMMAGE_AUTO = "Shoot Left" }
+
+[range]
+start = "blue_left"
+preload = 8
+
+[[step]]
+mode = "disabled"
+duration = 1.0
+[[step]]
+name = "auto"
+mode = "auto"
+duration = 5.0
+  # Fast mode repeats exactly: every run fires its 8 FUEL in pairs (one per lane) by 2.015 s into auto and all 8
+  # score, the last 3.22 s in, from 1.94 m (hood 75 deg), measured on MuJoCo 3.17. (Before the range had its BUMPS
+  # the start was 0.13 m nearer the hub: 1.95 s and 3.17 s, from 1.87 m.) Fast mode has no run-to-run variation to
+  # allow for; the times below give those about 0.1 s of margin, for small changes in the physics (another MuJoCo
+  # version) rather than for chance.
+  [[step.check]]
+  by_time = { signal = "fired", min = 8, t = 2.15 }
+  [[step.check]]
+  by_time = { signal = "score.hub_blue", min = 8, t = 3.35 }
+  [[step.check]]
+  at_end = { signal = "score.hub_blue", min = 8 }
+  [[step.check]]
+  at_end = { signal = "fired", min = 8 }
+  # The robot's own word for it: ShootCommands.shootStanding prints "shoot: empty" once its beam breaks have seen no
+  # ball for 1 s of feeding, or "shoot: timed out"
+  [[step.check]]
+  console = { contains = "shoot: empty" }
+  [[step.screenshot]]
+  view = "follow"
+  at = "end"

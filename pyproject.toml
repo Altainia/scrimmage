@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scrimmage"
+version = "0.1.0"
+description = "Run real WPILib robot code against a MuJoCo physics world over the HALSim WebSocket protocol"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "BSD-3-Clause" }
+# tomlkit: assembler/tomlutil.py uses private Container APIs (_insert_after, _insert_at, _raw_append, _map), so the range is the tested one
+dependencies = ["mujoco>=3.4", "websockets>=12", "numpy", "pillow", "tomlkit>=0.13,<0.16"]
+
+[project.optional-dependencies]
+# ground-truth pose to NetworkTables/AdvantageScope, the RobotPy example, and the test suite
+nt = ["pyntcore", "robotpy-wpimath"]
+mcp = ["mcp>=2.3,<3"]
+# splitting concave meshes into convex pieces (bench CAD)
+bench = ["coacd"]
+robotpy = ["robotpy[sim,commands2]", "robotpy-halsim-ws", "robotpy-rev>=2026.0.4,<2027"]
+dev = ["pytest", "matplotlib", "mcp>=2.3,<3", "pillow", "robotpy[sim,commands2]", "robotpy-halsim-ws", "robotpy-rev>=2026.0.4,<2027", "playwright==1.63.0"]
+
+[project.scripts]
+scrimmage = "scrimmage.__main__:main"
+scrimmage-mcp = "scrimmage.mcp_server:main"
+
+[tool.setuptools]
+packages = ["scrimmage", "scrimmage.parts", "scrimmage.parts.stock", "scrimmage.assembler", "scrimmage.launcher",
+            "scrimmage.testrange", "scrimmage.disc", "scrimmage.bench"]
+
+[tool.setuptools.package-data]
+scrimmage = ["java/**/*", "assembler/static/**/*", "launcher/*.toml", "disc/*.toml", "testrange/ranges/*.toml",
+              "bench/*.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

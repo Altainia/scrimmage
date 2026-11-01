@@ -1,0 +1,130 @@
+# A timed setpoint climb for the fake robot's --climb mode (tests/fake_robot_main.py): at each setpoint's t
+# (s from the first robot loop enabled in teleop) a joint's position loop, on its own encoder, takes a new
+# target. Written by tests/climb_timed.py (its docstring explains it) from examples/climb/high.toml and the
+# times its steps started in `climb run`. Regenerate it after a change to the climb, the robot or the physics:
+#   .venv/bin/python tests/climb_timed.py configs/climber_robot.toml examples/climb/high.toml examples/climb/high_timed.toml
+#
+# The climb run ended "reached HIGH" at 10.57 s; MID held at 4.20 s, HIGH held at 7.77 s; peak hook load 1077 N.
+
+loop = 0.005          # s: the robot loop (the config's [lockstep] step)
+
+[[joint]]
+name = "dt.left_2"
+pwm = 0
+encoder = 0            # the quadrature Encoder's DIO channel_a
+counts_per_unit = 325.949   # counts per rad
+kp = 60               # V per rad of error, clipped to the battery
+
+[[joint]]
+name = "dt.right_2"
+pwm = 1
+inverted = true
+encoder = 2            # the quadrature Encoder's DIO channel_a
+counts_per_unit = -325.949   # counts per rad
+kp = 60               # V per rad of error, clipped to the battery
+
+[[joint]]
+name = "mid.stage1"
+pwm = 2
+encoder = 4            # the quadrature Encoder's DIO channel_a
+counts_per_unit = 43459.9   # counts per m
+kp = 400               # V per m of error, clipped to the battery
+
+[[joint]]
+name = "high.pivot"
+pwm = 4
+encoder = 8            # the quadrature Encoder's DIO channel_a
+counts_per_unit = 1303.8   # counts per rad
+kp = 60               # V per rad of error, clipped to the battery
+
+[[joint]]
+name = "high.stage1"
+pwm = 3
+encoder = 6            # the quadrature Encoder's DIO channel_a
+counts_per_unit = 43459.9   # counts per m
+kp = 400               # V per m of error, clipped to the battery
+
+# step 1: forward, the hooks past MID (ended by time 1 s at 1.000 s)
+[[setpoint]]
+t = 0.000
+joint = "dt.left_2"
+to = 1.4
+max_voltage = 1.5
+[[setpoint]]
+t = 0.000
+joint = "dt.right_2"
+to = 1.4
+max_voltage = 1.5
+
+# step 2: reach above MID (ended by mid.stage1 at 0.41 +- 0.003 at 2.108 s)
+[[setpoint]]
+t = 1.000
+joint = "mid.stage1"
+to = 0.41
+
+# step 3: back the hooks over MID (ended by time 1 s at 3.108 s)
+[[setpoint]]
+t = 2.108
+joint = "dt.left_2"
+to = 0
+max_voltage = 1.5
+[[setpoint]]
+t = 2.108
+joint = "dt.right_2"
+to = 0
+max_voltage = 1.5
+
+# step 4: pull up onto MID (ended by mid.stage1 at 0 +- 0.01 at 4.218 s)
+[[setpoint]]
+t = 3.108
+joint = "mid.stage1"
+to = 0
+
+# step 6: raise the high climber (ended by high.stage1 at 0.3 +- 0.005 at 6.023 s)
+[[setpoint]]
+t = 5.218
+joint = "high.pivot"
+to = 0.139626
+[[setpoint]]
+t = 5.218
+joint = "high.stage1"
+to = 0.3
+
+# step 7: lean over HIGH (ended by time 1 s at 7.023 s)
+[[setpoint]]
+t = 6.023
+joint = "high.pivot"
+to = 0.261799
+max_voltage = 3
+
+# step 8: hook HIGH (ended by hook contact high at 7.113 s)
+[[setpoint]]
+t = 7.023
+joint = "high.stage1"
+to = 0.2
+
+# step 9: seat on HIGH (ended by time 0.5 s at 7.613 s)
+[[setpoint]]
+t = 7.113
+joint = "high.stage1"
+to = 0.21
+[[setpoint]]
+t = 7.113
+joint = "high.pivot"
+to = 0.261799
+
+# step 10: lift the mid hooks off MID (ended by level HIGH at 7.868 s)
+[[setpoint]]
+t = 7.613
+joint = "mid.stage1"
+to = 0.16
+
+# step 12: retract mid, stand the high arm up (ended by time 0.5 s at 8.568 s)
+[[setpoint]]
+t = 8.068
+joint = "mid.stage1"
+to = 0
+[[setpoint]]
+t = 8.068
+joint = "high.pivot"
+to = -0.0872665

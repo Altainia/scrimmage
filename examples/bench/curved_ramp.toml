@@ -1,0 +1,75 @@
+# An intake that lifts: a roller carries FUEL balls in underneath it, round the front and up a curved ramp, and drops
+# them over the top into a hopper behind. Balls thrown too far land past the hopper: that is the spill.
+#
+#   scrimmage bench run examples/bench/curved_ramp.toml
+#
+# Angles round the roller run from +x (forward, 0 deg) to +z (up, 90 deg). The ball comes in at the bottom (-95 deg)
+# moving forward, rides round the front, and leaves the ramp at 100 deg, heading backward.
+
+[bench]
+name = "curved ramp"
+author = "Diego"
+idea = "a roller pushes the balls up a curved ramp and over the top into the hopper"
+
+[piece]
+preset = "2026-fuel"             # 0.15 m foam ball
+
+[shaft.roller]
+motor = "NEO"
+gearing = 3.0                    # 3:1 down
+target_rps = 10                  # 600 rpm at the roller: about 3 m/s at its surface
+kP = 0.5
+wheel_inertia = 0.0005
+
+[[wheel]]
+name = "roller"
+shaft = "roller"
+center = [0.0, 0.0, 0.0]
+axis = [0.0, -1.0, 0.0]          # turning so its front surface moves up
+diameter = 0.1016                # 4 in.
+width = 0.2
+tread = "40A"
+
+# The ramp sits 0.1276 m out from the roller's surface: the ball is squeezed 0.15 of its diameter. Its entry is a
+# 30 degree flare, as on a shooter hood, starting a few degrees early as a lead-in.
+[[curve]]
+name = "lead"
+center = [0.0, 0.0, 0.0]
+radius_start = 0.20667
+radius_end = 0.1784
+start_deg = -100.0
+end_deg = -75.52
+width = 0.24
+material = "UHMW"
+
+[[curve]]
+name = "ramp"
+center = [0.0, 0.0, 0.0]
+radius = 0.1784
+start_deg = -75.52
+end_deg = 100.0
+width = 0.24
+material = "UHMW"
+
+[[inlet]]
+name = "feed"
+center = [-0.0285, 0.0, -0.1236]   # at -103 deg, 1 mm off the roller, just clear of the lead
+size = [0.001, 0.001, 0.001]
+count = 4
+rate = 3
+velocity = [1.46, 0.0, -0.34]    # 1.5 m/s along the roller, as a conveyor would hand it over
+spread_speed = 0.3
+seed = 7
+
+[[outlet]]
+name = "hopper"
+center = [-0.3, 0.0, -0.2]
+size = [0.3, 0.4, 0.3]
+
+[[outlet]]
+name = "spill"
+center = [-0.95, 0.0, -0.2]
+size = [1.0, 0.4, 0.3]
+
+[run]
+duration = 3.0

@@ -1,0 +1,80 @@
+# Maps examples/robotpy_maxswerve (robotpy-rev's MAXSwerve example, a RobotPy port of REV's MAXSwerve template:
+# SPARK MAX controllers, NEO drive and NEO 550 steer motors, Through Bore absolute encoders on the steer SPARKs, an
+# ADIS16448 IMU) onto a swerve robot built from scrimmage's stock parts: a chassis and four MAXSwerve modules (the
+# `scrimmage edit --new swerve-rev` template). The RobotPy twin of configs/maxswerve.toml.
+#   scrimmage run scenarios/maxswerve_py_auto.toml
+# examples/robotpy_maxswerve is github.com/robotpy/robotpy-rev's examples/maxswerve at tag 2026.0.4 (commit
+# f6085a73fd13; the default branch has moved on to RobotPy 2027) as published, except a fix for REVLib 2026's renamed
+# FeedbackSensor enum, without which it doesn't start (its README.md says what and why), with the repository's LICENSE
+# (RobotPy pieces Apache-2.0, REV pieces BSD-3-Clause) and the WPILib license its file headers refer to. It needs
+# robotpy-rev and commands2 (the scrimmage `robotpy` extra installs both).
+# Paths are relative to this file. REV's SPARK simulation follows simulated time, so this runs in lockstep at any speed.
+
+[model]
+timestep = 0.001
+
+[robot]
+start_pose = [2.0, 4.035, 0.0]   # x (m), y (m), heading (deg); the example's auto resets its odometry to (0, 0, 0) here
+
+[battery]
+nominal_voltage = 12.5
+resistance = 0.02
+
+[lockstep]
+step = 0.005
+
+[robot_program]
+# --scrimmage-lockstep loads scrimmage's lockstep extension, which also drives the robot's REV SPARKs (its REV helper).
+command = ["{python}", "-m", "robotpy", "sim", "--nogui", "--ws-client", "--scrimmage-lockstep"]
+cwd = "../examples/robotpy_maxswerve"
+
+# ---- Parts ---------------------------------------------------------------------------
+# The example's constants.py: kTrackWidth = kWheelBase = 26.5 in between module centers (a 28 in frame with the
+# modules 0.75 in in from each edge). Its gyro is WPILib's ADIS16448_IMU on its default SPI port, the MXP (port 4):
+# SimDevice "Gyro:ADIS16448[4]", yaw on the Z axis as gyro_angle_z / gyro_rate_z, counter-clockwise positive (the
+# example's odometry takes getAngle() as counter-clockwise degrees).
+
+[[part]]
+name = "drive"
+stock = "chassis"
+length = 0.7112           # 28 in frame
+width = 0.7112
+module_inset = 0.01905    # 0.75 in: modules 26.5 in (0.6731 m) apart
+ids = { gyro = { device = "ADIS16448[4]", angle = "gyro_angle_z", rate = "gyro_rate_z", cw_positive = false } }
+
+# ---- Modules -------------------------------------------------------------------------
+# MAXSwerve with the example's 14T pinion; CAN IDs from the example's constants.py (the same as REV's Java template
+# and the swerve-rev template). The example configures the drive SPARKs non-inverted and inverts each steer SPARK's
+# absolute encoder, matching the part. A real robot's modules are mounted turned by 90 degrees from each other, and
+# each absolute encoder is zeroed in the module's own frame (REV's calibration jig). The example's
+# kXxxChassisAngularOffset undoes that: chassis angle = encoder - offset. Here the modules all face the same way, so
+# each encoder's magnet sits at -offset / 2 pi rotations (`offset`): front left -pi/2 -> 0.25, front right 0,
+# back left pi -> -0.5, back right pi/2 -> -0.25.
+
+[[part]]
+name = "fl"
+stock = "swerve/MAXSwerve"
+ratio = "14T"
+attach = "drive.front_left"
+ids = { drive = "SparkMax:11", steer = "SparkMax:10", encoder = { rev = "SparkMaxAbs:10", offset = 0.25 } }
+
+[[part]]
+name = "fr"
+stock = "swerve/MAXSwerve"
+ratio = "14T"
+attach = "drive.front_right"
+ids = { drive = "SparkMax:15", steer = "SparkMax:14", encoder = "SparkMaxAbs:14" }
+
+[[part]]
+name = "bl"
+stock = "swerve/MAXSwerve"
+ratio = "14T"
+attach = "drive.back_left"
+ids = { drive = "SparkMax:13", steer = "SparkMax:12", encoder = { rev = "SparkMaxAbs:12", offset = -0.5 } }
+
+[[part]]
+name = "br"
+stock = "swerve/MAXSwerve"
+ratio = "14T"
+attach = "drive.back_right"
+ids = { drive = "SparkMax:17", steer = "SparkMax:16", encoder = { rev = "SparkMaxAbs:16", offset = -0.25 } }

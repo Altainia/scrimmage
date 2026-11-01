@@ -1,0 +1,17 @@
+# Fast fake-robot scenario that passes (editor and runner tests).
+config = "../fake_robot.toml"
+description = "Fake robot: disabled, then auto with a console line and a healthy battery"
+
+[[step]]
+name = "idle"
+mode = "disabled"
+duration = 0.5
+
+[[step]]
+name = "auto"
+mode = "auto"
+duration = 1.0
+  [[step.check]]
+  console = { contains = "fake robot step" }
+  [[step.check]]
+  at_end = { signal = "battery", min = 5 }

@@ -1,0 +1,289 @@
+// The live view: draws the robot and the field from /api/live/view and moves them with pose frames from the stream.
+//
+// setModel(view) builds a static group (the floor and world geoms with mover -1) and one THREE.Group per mover
+// holding that mover's geoms at their local poses. applyFrame({poses, n}) sets each mover group's pose (ignored if
+// n differs from the mover count). Scene frame is MuJoCo's: z up, quaternions w, x, y, z.
+//
+// A mover below PARK_Z_HIDE (a parked ball sits at z = -20) is hidden. setScore(range) draws the test range's counts
+// ({goals, fired, held}, or null for none) as an overlay in the top-left corner.
+//
+// Camera modes: follow (behind and above the robot's root mover, yaw-following, smoothed), top (straight down over
+// the floor), driver (from the blue alliance wall at x = 0 looking +x, 1.7 m up), free (OrbitControls). Rendering is
+// on demand. The follow camera tracks view.root_mover (-1: it looks at the floor center instead).
+// Where WebGL is software (SwiftShader, llvmpipe: no GPU acceleration) the view draws at half resolution without
+// antialiasing and at most every SOFTWARE_MS, so drawing doesn't starve the page.
+// For tests: window.__scrimmage.live3d = {groups, lastSeq, camera, root, follow, software} of the newest live view not yet
+// disposed (the Drive tab's, or the Scenario run panel's Watch view while it is shown).
+
+import * as THREE from "three";
+import { OrbitControls } from "./vendor/OrbitControls.js";
+import { meshGeometry, primitive, setPose, geomMaterial, buildFloor } from "./scene3d.js";
+
+const FOLLOW_BACK = 2.2, FOLLOW_UP = 1.4, FOLLOW_LOOK_UP = 0.25, FOLLOW_SMOOTH = 0.18;
+const DRIVER_HEIGHT = 1.7;
+const MODES = ["follow", "top", "driver", "free"];
+const PARK_Z_HIDE = -10;   // movers below this are parked, not drawn
+const SOFTWARE_MS = 66;   // about 15 drawings a second
+
+// Is WebGL drawn in software here? Asked once, from a throwaway context, before the real renderer picks antialiasing.
+let softwareGL = null;
+export function isSoftwareGL() {
+  if (softwareGL === null) {
+    softwareGL = false;
+    try {
+      const gl = document.createElement("canvas").getContext("webgl2") || document.createElement("canvas").getContext("webgl");
+      if (gl) {
+        const ext = gl.getExtension("WEBGL_debug_renderer_info");
+        const name = String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER) || "");
+        softwareGL = /swiftshader|llvmpipe|softpipe|software/i.test(name);
+        const lose = gl.getExtension("WEBGL_lose_context");
+        if (lose) lose.loseContext();
+      }
+    } catch { softwareGL = false; }
+  }
+  return softwareGL;
+}
+
+const views = [];   // the live views not yet disposed, oldest first
+
+function hook() {
+  if (!window.__scrimmage) return;
+  const v = views[views.length - 1];
+  if (!v) { delete window.__scrimmage.live3d; return; }
+  Object.defineProperty(window.__scrimmage, "live3d", {
+    configurable: true, enumerable: true,
+    get: () => ({ groups: v.groups.length, lastSeq: v.lastSeq, camera: v.mode, root: v.rootMover, follow: v.followTarget.toArray(),
+                  software: v.software }),
+  });
+}
+
+const yawOf = (q) => Math.atan2(2 * (q[0] * q[3] + q[1] * q[2]), 1 - 2 * (q[2] * q[2] + q[3] * q[3]));   // q = w, x, y, z
+
+export class LiveView {
+  constructor(container) {
+    this.container = container;
+    this.software = isSoftwareGL();
+    this.renderer = new THREE.WebGLRenderer({ antialias: !this.software });
+    this.renderer.setPixelRatio(this.software ? 0.5 : window.devicePixelRatio || 1);
+    this.lastDraw = 0;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.domElement.className = "view-canvas";
+    this.renderer.domElement.setAttribute("role", "img");
+    this.renderer.domElement.setAttribute("aria-label", "3D view of the field and robot");
+
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0xe9ecf0);
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x8a8f96, 2.0);
+    hemi.position.set(0, 0, 1);
+    const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+    sun.position.set(3, -2, 6);
+    this.scene.add(hemi, sun, sun.target);
+
+    this.camera = new THREE.PerspectiveCamera(50, 1, 0.02, 200);
+    this.camera.up.set(0, 0, 1);   // before OrbitControls, which reads camera.up once
+    this.camera.position.set(-2, -3, 3);
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.addEventListener("change", () => this.requestRender());
+
+    this.model = new THREE.Group();
+    this.scene.add(this.model);
+    this.groups = [];
+    this.disposables = [];
+    this.floorInfo = { pos: [8, 4, 0], size: [8, 4] };
+    this.rootMover = 0;
+    this.mode = "follow";
+    this.lastSeq = -1;
+    this.followYaw = null;
+    this.followTarget = new THREE.Vector3();
+    this.pending = false;
+    this.disposed = false;
+
+    this.score = document.createElement("div");
+    this.score.className = "view-score";
+    this.score.hidden = true;
+    container.replaceChildren(this.renderer.domElement, this.score);
+    this.observer = new ResizeObserver(() => this.resize());
+    this.observer.observe(container);
+    this.onLost = (e) => e.preventDefault();
+    this.renderer.domElement.addEventListener("webglcontextlost", this.onLost);
+
+    views.push(this);
+    hook();
+    this.setCamera("follow");
+    this.resize();
+  }
+
+  clear() {
+    for (const d of this.disposables) d.dispose();
+    this.disposables = [];
+    this.model.clear();
+    this.groups = [];
+  }
+
+  setModel(view) {
+    this.clear();
+    view = view || {};
+    const stat = new THREE.Group();
+    this.model.add(stat);
+    if (view.floor) {
+      const f = buildFloor(view.floor);
+      stat.add(f.group);
+      this.disposables.push(...f.disposables);
+      this.floorInfo = view.floor;
+    }
+    this.groups = (view.movers || []).map(() => {
+      const g = new THREE.Group();
+      this.model.add(g);
+      return g;
+    });
+    const meshGeoms = (view.meshes || []).map(() => null);   // built on first use, shared between geoms
+    const add = (gd) => {
+      if (gd.rgba && gd.rgba[3] <= 0) return;
+      let geo;
+      if (gd.type === "mesh") {
+        const m = view.meshes && view.meshes[gd.mesh];
+        if (!m) return;
+        if (!meshGeoms[gd.mesh]) { meshGeoms[gd.mesh] = meshGeometry(m); this.disposables.push(meshGeoms[gd.mesh]); }
+        geo = meshGeoms[gd.mesh];
+      } else {
+        const mover = gd.mover >= 0 && view.movers ? view.movers[gd.mover] : null;
+        geo = primitive(gd.type, gd.size, !!(mover && String(mover.name).startsWith("ball.")));   // a range ball
+        if (!geo) return;
+        this.disposables.push(geo);
+      }
+      const mat = geomMaterial(gd.rgba, gd.type === "mesh");
+      this.disposables.push(mat);
+      const mesh = new THREE.Mesh(geo, mat);
+      const parent = gd.mover >= 0 ? this.groups[gd.mover] : stat;
+      if (!parent) return;
+      if (gd.mover >= 0) setPose(mesh, gd.lpos, gd.lquat);
+      else setPose(mesh, gd.pos, gd.quat);   // static geoms sit at their world pose
+      parent.add(mesh);
+    };
+    for (const gd of view.geoms || []) add(gd);
+    for (const gd of view.world_geoms || []) add(gd);
+    this.rootMover = Number.isInteger(view.root_mover) ? view.root_mover : -1;   // -1: follow falls back to the floor
+    this.lastSeq = -1;
+    this.followYaw = null;
+    this.setCamera(this.mode);
+  }
+
+  applyFrame(frame) {
+    if (frame.n !== this.groups.length) return;
+    const p = frame.poses;
+    for (let i = 0; i < frame.n; i++) {
+      const o = i * 7;
+      setPose(this.groups[i], [p[o], p[o + 1], p[o + 2]], [p[o + 3], p[o + 4], p[o + 5], p[o + 6]]);
+      this.groups[i].visible = p[o + 2] >= PARK_Z_HIDE;
+    }
+    this.lastSeq = frame.seq;
+    this.requestRender();
+  }
+
+  setScore(range) {
+    if (!range || !range.goals) { this.score.hidden = true; this.score.textContent = ""; return; }
+    const lines = Object.entries(range.goals).map(([name, n]) => `${name} ${n}`);
+    lines.push(`fired ${range.fired} · held ${range.held}`);
+    this.score.textContent = lines.join("\n");
+    this.score.hidden = false;
+  }
+
+  setCamera(mode) {
+    if (!MODES.includes(mode)) return;
+    this.mode = mode;
+    this.controls.enabled = mode === "free";
+    if (mode === "top") this.camera.up.set(0, 1, 0); else this.camera.up.set(0, 0, 1);   // top: +y up the screen
+    if (mode === "free") {
+      // start the orbit from a view over the field
+      const [cx, cy] = this.floorInfo.pos;
+      this.controls.target.set(cx, cy, 0);
+      this.camera.position.set(cx - 3, cy - 8, 6);
+      this.controls.update();
+    } else if (mode === "follow") {
+      this.followYaw = null;
+    }
+    this.placeCamera(true);
+    this.requestRender();
+  }
+
+  rootPose() {
+    const g = this.groups[this.rootMover];
+    if (!g) return null;
+    const q = g.quaternion;   // x, y, z, w
+    return { pos: g.position, yaw: yawOf([q.w, q.x, q.y, q.z]) };
+  }
+
+  // Positions the camera for the current mode; returns true while a smoothed follow camera is still moving.
+  placeCamera(snap) {
+    const cam = this.camera;
+    const [cx, cy] = this.floorInfo.pos, [hx, hy] = this.floorInfo.size;
+    if (this.mode === "top") {
+      const fov = THREE.MathUtils.degToRad(cam.fov);
+      const need = Math.max(hy / Math.tan(fov / 2), hx / (Math.tan(fov / 2) * cam.aspect));
+      cam.position.set(cx, cy, need * 1.05);
+      cam.lookAt(cx, cy, 0);
+    } else if (this.mode === "driver") {
+      cam.position.set(0, cy, DRIVER_HEIGHT);
+      cam.lookAt(cx, cy, 0.4);
+    } else if (this.mode === "follow") {
+      const r = this.rootPose();
+      if (!r) { cam.position.set(cx - 3, cy - 3, 3); cam.lookAt(cx, cy, 0); return false; }
+      let moving = false;
+      if (this.followYaw === null || snap) {
+        this.followYaw = r.yaw;
+        this.followTarget.copy(r.pos);
+      } else {
+        let d = r.yaw - this.followYaw;
+        d = Math.atan2(Math.sin(d), Math.cos(d));   // shortest way round
+        this.followYaw += d * FOLLOW_SMOOTH;
+        this.followTarget.lerp(r.pos, FOLLOW_SMOOTH);
+        moving = Math.abs(d) > 1e-3 || this.followTarget.distanceTo(r.pos) > 1e-3;
+      }
+      const t = this.followTarget, y = this.followYaw;
+      cam.position.set(t.x - Math.cos(y) * FOLLOW_BACK, t.y - Math.sin(y) * FOLLOW_BACK, t.z + FOLLOW_UP);
+      cam.lookAt(t.x, t.y, t.z + FOLLOW_LOOK_UP);
+      return moving;
+    }
+    return false;
+  }
+
+  resize() {
+    if (this.disposed) return;
+    const w = Math.max(1, this.container.clientWidth), hgt = Math.max(1, this.container.clientHeight);
+    this.renderer.setSize(w, hgt, false);
+    this.renderer.domElement.style.width = "100%";
+    this.renderer.domElement.style.height = "100%";
+    this.camera.aspect = w / hgt;
+    this.camera.updateProjectionMatrix();
+    this.placeCamera(true);
+    this.requestRender();
+  }
+
+  requestRender() {
+    if (this.pending || this.disposed) return;
+    this.pending = true;
+    const wait = this.software ? Math.max(0, this.lastDraw + SOFTWARE_MS - performance.now()) : 0;
+    const go = () => requestAnimationFrame(() => {
+      this.pending = false;
+      if (this.disposed) return;
+      const moving = this.placeCamera(false);
+      this.renderer.render(this.scene, this.camera);
+      this.lastDraw = performance.now();
+      if (moving) this.requestRender();
+    });
+    if (wait > 0) setTimeout(go, wait); else go();
+  }
+
+  dispose() {
+    this.disposed = true;
+    this.observer.disconnect();
+    this.renderer.domElement.removeEventListener("webglcontextlost", this.onLost);
+    this.controls.dispose();
+    this.clear();
+    this.renderer.dispose();
+    this.renderer.domElement.remove();
+    const k = views.indexOf(this);
+    if (k >= 0) views.splice(k, 1);
+    hook();
+  }
+}

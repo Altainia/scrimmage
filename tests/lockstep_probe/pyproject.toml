@@ -1,0 +1,5 @@
+# Probe robot for tests/test_lockstep_ext.py
+[tool.robotpy]
+robotpy_version = "2026.2.2"
+components = ["sim"]
+requires = []

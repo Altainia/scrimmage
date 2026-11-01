@@ -1,0 +1,49 @@
+[model]
+mjcf = "models/kitbot.xml"
+
+[robot]
+body = "chassis"
+start_pose = [2.0, 4.035, 0.0]
+
+[[motor]]
+name = "left_drive"
+can = "Fake[1]"
+joint = "left_center"
+motor = "CIM"
+count = 2
+gear_ratio = 10.71
+
+[[motor]]
+name = "right_drive"
+can = "Fake[2]"
+joint = "right_center"
+motor = "CIM"
+count = 2
+gear_ratio = 10.71
+invert = true
+
+[[encoder]]
+can = "Fake[1]"
+joint = "left_center"
+ratio = 10.71
+
+[[encoder]]
+can = "Fake[2]"
+joint = "right_center"
+ratio = 10.71
+invert = true
+
+# a "limit switch" that is pressed until the left wheel has turned 1 rad, and a "potentiometer"
+[[digital]]
+channel = 9
+joint = "left_center"
+max = 1.0
+
+[[analog]]
+port = 0
+joint = "left_center"
+volts_per_unit = 0.01
+
+[robot_program]
+command = ["{python}", "-m", "robotpy", "sim", "--nogui", "--ws-client"]
+cwd = "can_robot"

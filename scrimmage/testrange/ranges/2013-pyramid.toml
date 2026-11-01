@@ -1,0 +1,182 @@
+# The FRC 2013 ULTIMATE ASCENT PYRAMID, the stepped climbing frame, on today's field (sub-project 12). WPILib field
+# coordinates (blue alliance wall at x = 0, z up), SI units unless a key ends in _in (inches).
+#
+# Numbers cite the 2013 Game Manual, sections 2.2.5 and 3.1.5.2 and Table 1-4
+# (https://firstfrc.blob.core.windows.net/frcarchive/2013/2013-game-manual.pdf), or say they are an estimate or our
+# choice. Kept simple: the pyramid is its twelve rungs, a square of four at each level, as bars with no posts, and
+# its floor protection. Its four slanted corner legs aren't built (a box element can't slant), nor its 24 in base
+# plates or the goal on top. A robot climbs at a corner, where the rungs of two sides meet.
+#
+# The rungs lie on the sides, which slant in at 68 deg from a 94 in square base: at height h the side's center line
+# is 47 - h / tan(68 deg) in from the pyramid's center (estimate: the 94 in taken at the tubes' center lines). Each
+# rung runs the side's width plus a tube diameter, so the four meet at the corners.
+
+[range]
+name = "FRC 2013 PYRAMID"    # source: the 2013 game (ULTIMATE ASCENT) and its PYRAMID, manual section 2.2.5
+ball = "2026-fuel"           # choice: a range needs a ball preset; this range has no floor balls and a robot preloads none
+
+[climb]
+rule = "lowest-point"        # source: manual 3.1.5.2: the level is set by the robot's lowest point: held off the carpet is level 1, above the level-1 rungs level 2, above the level-2 rungs level 3 (the manual's sequential-climb rule isn't checked)
+levels = { LEVEL1 = 10, LEVEL2 = 20, LEVEL3 = 30 } # source: manual Table 1-4, points per level
+
+# Level 1: rungs 30 in up, 69.76 in apart.
+[[element]]
+name = "l1_s"                # choice: level 1's rung on the -y side
+kind = "bar"
+level = "LEVEL1"             # source: manual 2.2.5 and Table 1-4: the 30 in rungs bound level 1 from above: a robot whose lowest point is above them is level 2 (scrimmage/terrain/climb.py)
+center = [8.2700, 3.1491]    # estimate: the pyramid's center (choice: the field's, 8.27, 4.035) - 0.8859 m (34.88 in) along y
+yaw_deg = 0.0                # choice: along its side
+length_in = 71.26            # estimate: the side's width at this height (69.76 in) plus a tube diameter
+diameter_in = 1.5            # source: manual 2.2.5: 1 1/2 in diameter steel tube
+height_in = 30.0             # source: manual 2.2.5: rungs 30 in off the floor (estimate: taken as the tube's axis; the manual doesn't say which edge)
+posts = false                # choice: carried by the pyramid's legs, which aren't built
+friction = 0.5               # estimate: powder-coated steel against a robot's aluminum or polycarbonate; a hook sets its own
+
+[[element]]
+name = "l1_n"                # choice: level 1's rung on the +y side
+kind = "bar"
+level = "LEVEL1"             # source: manual 2.2.5 and Table 1-4: the 30 in rungs bound level 1 from above: a robot whose lowest point is above them is level 2 (scrimmage/terrain/climb.py)
+center = [8.2700, 4.9209]    # estimate: the pyramid's center (choice: the field's, 8.27, 4.035) + 0.8859 m (34.88 in) along y
+yaw_deg = 0.0                # choice: along its side
+length_in = 71.26            # estimate: the side's width at this height (69.76 in) plus a tube diameter
+diameter_in = 1.5            # source: manual 2.2.5: 1 1/2 in diameter steel tube
+height_in = 30.0             # source: manual 2.2.5: rungs 30 in off the floor (estimate: taken as the tube's axis; the manual doesn't say which edge)
+posts = false                # choice: carried by the pyramid's legs, which aren't built
+friction = 0.5               # estimate: powder-coated steel against a robot's aluminum or polycarbonate; a hook sets its own
+
+[[element]]
+name = "l1_w"                # choice: level 1's rung on the -x side
+kind = "bar"
+level = "LEVEL1"             # source: manual 2.2.5 and Table 1-4: the 30 in rungs bound level 1 from above: a robot whose lowest point is above them is level 2 (scrimmage/terrain/climb.py)
+center = [7.3841, 4.0350]    # estimate: the pyramid's center (choice: the field's, 8.27, 4.035) - 0.8859 m (34.88 in) along x
+yaw_deg = 90.0               # choice: along its side
+length_in = 71.26            # estimate: the side's width at this height (69.76 in) plus a tube diameter
+diameter_in = 1.5            # source: manual 2.2.5: 1 1/2 in diameter steel tube
+height_in = 30.0             # source: manual 2.2.5: rungs 30 in off the floor (estimate: taken as the tube's axis; the manual doesn't say which edge)
+posts = false                # choice: carried by the pyramid's legs, which aren't built
+friction = 0.5               # estimate: powder-coated steel against a robot's aluminum or polycarbonate; a hook sets its own
+
+[[element]]
+name = "l1_e"                # choice: level 1's rung on the +x side
+kind = "bar"
+level = "LEVEL1"             # source: manual 2.2.5 and Table 1-4: the 30 in rungs bound level 1 from above: a robot whose lowest point is above them is level 2 (scrimmage/terrain/climb.py)
+center = [9.1559, 4.0350]    # estimate: the pyramid's center (choice: the field's, 8.27, 4.035) + 0.8859 m (34.88 in) along x
+yaw_deg = 90.0               # choice: along its side
+length_in = 71.26            # estimate: the side's width at this height (69.76 in) plus a tube diameter
+diameter_in = 1.5            # source: manual 2.2.5: 1 1/2 in diameter steel tube
+height_in = 30.0             # source: manual 2.2.5: rungs 30 in off the floor (estimate: taken as the tube's axis; the manual doesn't say which edge)
+posts = false                # choice: carried by the pyramid's legs, which aren't built
+friction = 0.5               # estimate: powder-coated steel against a robot's aluminum or polycarbonate; a hook sets its own
+
+
+# Level 2: rungs 60 in up, 45.52 in apart.
+[[element]]
+name = "l2_s"                # choice: level 2's rung on the -y side
+kind = "bar"
+level = "LEVEL2"             # source: manual 2.2.5 and Table 1-4: the 60 in rungs bound level 2 from above: a robot whose lowest point is above them is level 3
+center = [8.2700, 3.4569]    # estimate: the pyramid's center (choice: the field's, 8.27, 4.035) - 0.5781 m (22.76 in) along y
+yaw_deg = 0.0                # choice: along its side
+length_in = 47.02            # estimate: the side's width at this height (45.52 in) plus a tube diameter
+diameter_in = 1.5            # source: manual 2.2.5: 1 1/2 in diameter steel tube
+height_in = 60.0             # source: manual 2.2.5: rungs 60 in off the floor (estimate: taken as the tube's axis; the manual doesn't say which edge)
+posts = false                # choice: carried by the pyramid's legs, which aren't built
+friction = 0.5               # estimate: powder-coated steel against a robot's aluminum or polycarbonate; a hook sets its own
+
+[[element]]
+name = "l2_n"                # choice: level 2's rung on the +y side
+kind = "bar"
+level = "LEVEL2"             # source: manual 2.2.5 and Table 1-4: the 60 in rungs bound level 2 from above: a robot whose lowest point is above them is level 3
+center = [8.2700, 4.6131]    # estimate: the pyramid's center (choice: the field's, 8.27, 4.035) + 0.5781 m (22.76 in) along y
+yaw_deg = 0.0                # choice: along its side
+length_in = 47.02            # estimate: the side's width at this height (45.52 in) plus a tube diameter
+diameter_in = 1.5            # source: manual 2.2.5: 1 1/2 in diameter steel tube
+height_in = 60.0             # source: manual 2.2.5: rungs 60 in off the floor (estimate: taken as the tube's axis; the manual doesn't say which edge)
+posts = false                # choice: carried by the pyramid's legs, which aren't built
+friction = 0.5               # estimate: powder-coated steel against a robot's aluminum or polycarbonate; a hook sets its own
+
+[[element]]
+name = "l2_w"                # choice: level 2's rung on the -x side
+kind = "bar"
+level = "LEVEL2"             # source: manual 2.2.5 and Table 1-4: the 60 in rungs bound level 2 from above: a robot whose lowest point is above them is level 3
+center = [7.6919, 4.0350]    # estimate: the pyramid's center (choice: the field's, 8.27, 4.035) - 0.5781 m (22.76 in) along x
+yaw_deg = 90.0               # choice: along its side
+length_in = 47.02            # estimate: the side's width at this height (45.52 in) plus a tube diameter
+diameter_in = 1.5            # source: manual 2.2.5: 1 1/2 in diameter steel tube
+height_in = 60.0             # source: manual 2.2.5: rungs 60 in off the floor (estimate: taken as the tube's axis; the manual doesn't say which edge)
+posts = false                # choice: carried by the pyramid's legs, which aren't built
+friction = 0.5               # estimate: powder-coated steel against a robot's aluminum or polycarbonate; a hook sets its own
+
+[[element]]
+name = "l2_e"                # choice: level 2's rung on the +x side
+kind = "bar"
+level = "LEVEL2"             # source: manual 2.2.5 and Table 1-4: the 60 in rungs bound level 2 from above: a robot whose lowest point is above them is level 3
+center = [8.8481, 4.0350]    # estimate: the pyramid's center (choice: the field's, 8.27, 4.035) + 0.5781 m (22.76 in) along x
+yaw_deg = 90.0               # choice: along its side
+length_in = 47.02            # estimate: the side's width at this height (45.52 in) plus a tube diameter
+diameter_in = 1.5            # source: manual 2.2.5: 1 1/2 in diameter steel tube
+height_in = 60.0             # source: manual 2.2.5: rungs 60 in off the floor (estimate: taken as the tube's axis; the manual doesn't say which edge)
+posts = false                # choice: carried by the pyramid's legs, which aren't built
+friction = 0.5               # estimate: powder-coated steel against a robot's aluminum or polycarbonate; a hook sets its own
+
+
+# Level 3: rungs 90 in up, 21.28 in apart.
+[[element]]
+name = "l3_s"                # choice: level 3's rung on the -y side
+kind = "bar"
+level = "LEVEL3"             # source: manual 2.2.5 and Table 1-4: the 90 in rungs bound level 3, the last level, from above
+center = [8.2700, 3.7648]    # estimate: the pyramid's center (choice: the field's, 8.27, 4.035) - 0.2702 m (10.64 in) along y
+yaw_deg = 0.0                # choice: along its side
+length_in = 22.78            # estimate: the side's width at this height (21.28 in) plus a tube diameter
+diameter_in = 1.5            # source: manual 2.2.5: 1 1/2 in diameter steel tube
+height_in = 90.0             # source: manual 2.2.5: rungs 90 in off the floor (estimate: taken as the tube's axis; the manual doesn't say which edge)
+posts = false                # choice: carried by the pyramid's legs, which aren't built
+friction = 0.5               # estimate: powder-coated steel against a robot's aluminum or polycarbonate; a hook sets its own
+
+[[element]]
+name = "l3_n"                # choice: level 3's rung on the +y side
+kind = "bar"
+level = "LEVEL3"             # source: manual 2.2.5 and Table 1-4: the 90 in rungs bound level 3, the last level, from above
+center = [8.2700, 4.3052]    # estimate: the pyramid's center (choice: the field's, 8.27, 4.035) + 0.2702 m (10.64 in) along y
+yaw_deg = 0.0                # choice: along its side
+length_in = 22.78            # estimate: the side's width at this height (21.28 in) plus a tube diameter
+diameter_in = 1.5            # source: manual 2.2.5: 1 1/2 in diameter steel tube
+height_in = 90.0             # source: manual 2.2.5: rungs 90 in off the floor (estimate: taken as the tube's axis; the manual doesn't say which edge)
+posts = false                # choice: carried by the pyramid's legs, which aren't built
+friction = 0.5               # estimate: powder-coated steel against a robot's aluminum or polycarbonate; a hook sets its own
+
+[[element]]
+name = "l3_w"                # choice: level 3's rung on the -x side
+kind = "bar"
+level = "LEVEL3"             # source: manual 2.2.5 and Table 1-4: the 90 in rungs bound level 3, the last level, from above
+center = [7.9998, 4.0350]    # estimate: the pyramid's center (choice: the field's, 8.27, 4.035) - 0.2702 m (10.64 in) along x
+yaw_deg = 90.0               # choice: along its side
+length_in = 22.78            # estimate: the side's width at this height (21.28 in) plus a tube diameter
+diameter_in = 1.5            # source: manual 2.2.5: 1 1/2 in diameter steel tube
+height_in = 90.0             # source: manual 2.2.5: rungs 90 in off the floor (estimate: taken as the tube's axis; the manual doesn't say which edge)
+posts = false                # choice: carried by the pyramid's legs, which aren't built
+friction = 0.5               # estimate: powder-coated steel against a robot's aluminum or polycarbonate; a hook sets its own
+
+[[element]]
+name = "l3_e"                # choice: level 3's rung on the +x side
+kind = "bar"
+level = "LEVEL3"             # source: manual 2.2.5 and Table 1-4: the 90 in rungs bound level 3, the last level, from above
+center = [8.5402, 4.0350]    # estimate: the pyramid's center (choice: the field's, 8.27, 4.035) + 0.2702 m (10.64 in) along x
+yaw_deg = 90.0               # choice: along its side
+length_in = 22.78            # estimate: the side's width at this height (21.28 in) plus a tube diameter
+diameter_in = 1.5            # source: manual 2.2.5: 1 1/2 in diameter steel tube
+height_in = 90.0             # source: manual 2.2.5: rungs 90 in off the floor (estimate: taken as the tube's axis; the manual doesn't say which edge)
+posts = false                # choice: carried by the pyramid's legs, which aren't built
+friction = 0.5               # estimate: powder-coated steel against a robot's aluminum or polycarbonate; a hook sets its own
+
+# The floor protection: ground.
+[[element]]
+name = "floor_protection"
+kind = "box"
+center = [8.27, 4.035]       # choice: under the pyramid, at the field's center
+size_in = [94.0, 94.0, 0.3125] # source: manual 2.2.5: the 94 in base; its floor protection makes a 1/4 to 3/8 in lip (estimate: 5/16 in, between them)
+ground = true
+friction = 1.0               # estimate: carpet, as the field's (scrimmage/parts/field.py)
+
+# Starts: 2 m before the pyramid's center, facing it from the -x side.
+[start.approach]
+pose = [6.27, 4.035, 0.0]    # choice: 0.81 m from the robot's center to the floor protection's edge (2 m less 47 in), its front about 0.5 m or less from it

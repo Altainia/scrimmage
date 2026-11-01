@@ -1,0 +1,9 @@
+# Fake robot driven by an input track: full forward, a button press and a POV, then release.
+config = "../fake_robot.toml"
+description = "Replays fake_track/drive.csv in teleop"
+
+[[step]]
+name = "drive"
+mode = "teleop"
+duration = 0.1
+inputs = "fake_track/drive.csv"

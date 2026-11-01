@@ -1,0 +1,26 @@
+# The fast-mode sample robot's autonomous routine (examples/java_fastmode) in PHOENIX MODE: the robot runs its real
+# Phoenix 6 IO, on the wall clock (real time). The same checks as scenarios/fastmode_auto.toml.
+#   scrimmage run scenarios/fastmode_auto_phoenix.toml
+config = "../configs/fastmode_phoenix.toml"
+description = "Fast-mode sample (AdvantageKit, Kraken swerve + elevator + arm) in Phoenix mode: 2 m path, elevator to 0.75 m, arm to 45 deg"
+[[step]]
+mode = "disabled"
+duration = 1.0
+[[step]]
+name = "auto"
+mode = "auto"
+duration = 4.0            # the deadline: the elevator and the arm must be up by the end of this step
+  # Over 6 runs the robot ended at x = 4.038-4.039, heading 0.0 (fast mode: 4.030). Runs on the wall clock vary a
+  # little, so the tolerance is wider than fast mode's.
+  [[step.check]]
+  pose = { x = 4.0, y = 4.035, heading = 0, tol_xy = 0.1, tol_heading = 3 }
+  # Over the same 6 runs the elevator held at 0.7513 m (fast mode: 0.7515 m).
+  [[step.check]]
+  at_end = { signal = "joint.elevator.carriage.position", approx = 0.75, tol = 0.01 }
+  # Over 3 runs the arm held at 0.78514-0.78528 rad (fast mode: 0.78549), within 1 deg 3.40-3.44 s into auto
+  # (fast mode: 3.46 s).
+  [[step.check]]
+  at_end = { signal = "joint.arm.pivot.position", approx = 0.7854, tol = 0.0175 }
+  [[step.screenshot]]
+  view = "follow"
+  at = "end"

@@ -1,0 +1,68 @@
+# Presets for the launcher model. A setup section may say `preset = "<name>"`; the preset fills the section and
+# explicit keys override it. Sections: [ball.*], [wheels.*], [air.*]. SI units throughout.
+#
+# Every value has a `# source:` comment, or a `# estimate:` comment saying how it was estimated.
+# Estimates are NOT measurements. Ball stiffness and restitution and wheel friction can all be measured at home
+# (see docs/launcher.md); replace them with your numbers.
+#
+# Ball fields: diameter (m), mass (kg), stiffness_n (N to compress the ball by 25% of its diameter between flat
+# plates), stiffness_exponent (force grows as compression^exponent; 1.5 is the Hertz contact law),
+# restitution (bounce coefficient from a drop on a hard floor), inertia_factor (moment of inertia over
+# mass * radius^2).
+
+[ball.2020-power-cell]
+# FRC 2020 Infinite Recharge "Power Cell": yellow medium-bounce dino-skin foam ball.
+diameter = 0.1778       # source: 7 in., FRC 2020 Game Overview (Team 245 summary of the 2020 manual) https://www.adambots.com/wp-content/uploads/2021/11/Infinite_Recharge_2020_Game_Overview_Team245.pdf
+mass = 0.1417           # source: about 5 oz, AndyMark replica listing https://www.andymark.com/products/infinite-recharge-power-cell (the replica is described as a close approximation; the manual's own figure was not found)
+stiffness_n = 60.0      # estimate: a soft hand-squeezable foam ball; about 60 N for a quarter-diameter squeeze judged by hand. No published force or compression figure was found for the Power Cell (searched 2026-10-28). For comparison with foam data: a Hertz sphere squeezed between plates, F = (4/3) E/(1 - nu^2) sqrt(D/2) (delta/2)^1.5, gives 60 N at delta = D/4 for E/(1 - nu^2) = 46 kPa. Not measured. THE most influential input (it sets the grip limit): measure it with a bathroom scale and two boards (docs/launcher.md).
+restitution = 0.6       # estimate: "medium bounce" foam (the manual's wording); no published number. Measure with a drop test.
+inertia_factor = 0.4    # estimate: a uniform solid sphere, 2/5; a foam ball is near-uniform throughout.
+
+[ball.2022-cargo]
+# FRC 2022 Rapid React "Cargo": oversized fuzzy tennis ball, inflated to 3.5 psi.
+diameter = 0.2413       # source: 9.5 in., FRC 2022 Game Overview (Team 245 summary of the 2022 manual) https://www.adambots.com/wp-content/uploads/2022/01/FRC-Game-Overview-Rapid-React-Adambots-FRC245.pdf
+mass = 0.2693           # source: 9.5 oz., same document
+stiffness_n = 500.0     # estimate: gauge pressure (3.5 psi = 24 kPa, from the manual) times the contact-patch area at a 25% squeeze (about 0.023 m^2) is about 550 N; rounded down because the patch is not a flat disc. Shell stiffness ignored. Not measured.
+restitution = 0.87      # source: derived from the manual, which says a 3 ft drop on carpet bounces to 2 ft 1 in. to 2 ft 6 in. (bottom of ball), so e = sqrt(h/H) = 0.83 to 0.91; midpoint 0.87. Carpet, not a hard floor, so a hard-floor drop may bounce a little higher.
+inertia_factor = 0.667  # estimate: a thin inflated shell, 2/3 (the felt cover and rubber bladder carry the mass).
+
+[ball.2026-fuel]
+# FRC 2026 REBUILT "FUEL": high density polyurethane foam ball.
+diameter = 0.1501       # source: 5.91 in., AndyMark https://andymark.com/collections/first%C2%AE-robotics-competition-2026-rebuilt/products/official-rebuilt-fuel
+mass = 0.2164           # source: average of AndyMark's in-line production inspection samples, 216.4 g, in the 2026 scoring element whitepaper https://community.firstinspires.org/hubfs/blog/frc/2026-scoring-element-whitepaper-am.pdf (AndyMark lists 0.448 to 0.5 lb, 203 to 227 g; the whitepaper's design target was about 200 g)
+stiffness_n = 80.0      # estimate: judged as a firmer foam than the Power Cell (a Hertz sphere between plates gives 80 N at delta = D/4 for E/(1 - nu^2) = 85 kPa). The whitepaper above charts "spring rate" (production nominal 20, Figs. 7 and 10; aged balls 30 to 38, Fig. 10) and "deflection under a weight" (0.625 in. for 200 g balls, Table 1) without units or the load, so no force at 25% can be read from it. IF the spring rate were lbf/in. measured as a straight line, 20 lbf/in. over a quarter-diameter squeeze (1.48 in.) would be about 130 N, and an aged ball about 200 N: so 80 N may be low. Chief Delphi FUEL threads (Fuel Variance Testing, Fuels with different hardness) report only qualitative hardness differences. Not measured; measure your own.
+restitution = 0.6       # estimate: no published bounce figure; assumed equal to the Power Cell's. Measure with a drop test.
+inertia_factor = 0.4    # estimate: a uniform solid sphere, 2/5; high density foam throughout.
+
+# Shooter-wheel materials by Shore A durometer. Fields: durometer, friction (coefficient against the ball).
+# Friction is not published for these materials against FRC foam and felt balls. The trend used for every entry:
+# softer rubber grips more. Values are estimates for polyurethane/rubber on a fuzzy or foam surface; they are
+# for the model's first runs and should be replaced by a sled-pull measurement of your own wheel and ball.
+
+[wheels.30A]
+durometer = 30.0        # source: the preset name (Shore A)
+friction = 1.0          # estimate: top of the 0.5 to 1.0 range typical for rubber on foam; softest wheel grips most.
+
+[wheels.35A]
+durometer = 35.0        # source: the preset name (Shore A)
+friction = 0.95         # estimate: interpolated between the 30A and 40A entries.
+
+[wheels.40A]
+durometer = 40.0        # source: the preset name (Shore A)
+friction = 0.9          # estimate: interpolated, midway between the 30A and 60A entries along the same trend.
+
+[wheels.45A]
+durometer = 45.0        # source: the preset name (Shore A)
+friction = 0.85         # estimate: interpolated between the 40A and 60A entries.
+
+[wheels.60A]
+durometer = 60.0        # source: the preset name (Shore A)
+friction = 0.7          # estimate: harder rubber, lower grip; low end of the typical range.
+
+# Air. density in kg/m^3; flight uses drag = 1/2 rho A Cd v^2 and a lift force on the spinning ball,
+# F = 1/2 rho A C_L v^2, with C_L = lift_slope * S up to lift_max, where S = spin surface speed / ball speed.
+[air.default]
+density = 1.2           # source: dry air at 20 C and sea level, 1.204 kg/m^3 (International Standard Atmosphere is 1.225 at 15 C), rounded
+drag_coefficient = 0.47 # source: smooth sphere in the sub-critical range, Hoerner "Fluid-Dynamic Drag" and NASA Glenn "Drag of a Sphere" https://www.grc.nasa.gov/www/k-12/VirtualAero/BottleRocket/airplane/sphere.html (a fuzzy or foam ball is rougher, so a little higher in practice)
+lift_slope = 1.0        # estimate: wind-tunnel studies of spinning sports balls (Mehta 1985, "Aerodynamics of Sports Balls", Annu. Rev. Fluid Mech.) show C_L rising roughly in proportion to S for S below about 0.3. Not measured for FRC balls.
+lift_max = 0.3          # estimate: the same studies show C_L leveling off near 0.25 to 0.35 at higher S.

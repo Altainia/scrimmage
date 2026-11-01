@@ -1,0 +1,45 @@
+# The fast-mode sample robot's "Shoot Left" auto on the 2026 test range in PHOENIX MODE (configs/
+# fastmode_range_phoenix.toml): the robot runs its real Phoenix 6 IO, on the wall clock (real time).
+# scenarios/fastmode_shoot_left.toml is the same auto in fast mode. The NEUTRAL ZONE FUEL are turned off: Shoot Left
+# doesn't use them, and on the wall clock the physics time they cost would be spent for nothing.
+#   scrimmage run scenarios/fastmode_shoot_phoenix.toml
+config = "../configs/fastmode_range_phoenix.toml"
+description = "Fast-mode sample on the 2026 range in Phoenix mode: Shoot Left, 8 preloaded FUEL from blue_left, standing"
+robot_env = { SCRIMMAGE_AUTO = "Shoot Left" }
+
+[range]
+start = "blue_left"
+preload = 8
+floor_balls = false
+
+[[step]]
+mode = "disabled"
+duration = 1.0
+[[step]]
+name = "auto"
+mode = "auto"
+duration = 9.0
+  # Measured over 10 runs on an idle machine, from the old start 0.13 m nearer the hub: all 8 FUEL fired every run, the
+  # 8th 2.33 to 2.92 s into auto (fast mode: 1.95 s); 2 to 6 scored (fast mode: 8, every run), the last by 4.51 s. From
+  # the start at x 3.42 (2026.toml), one run: the 8th 2.52 s in, 3 scored (fast mode: 2.015 s, 8). Phoenix mode runs on
+  # the wall clock, so the robot loop and physics interleave differently every run, and its wheels leave about 1 rps
+  # slower than fast mode's (42.5 rps at the exit against 43.7): enough for one lane's ball to land on the funnel's rim
+  # and bounce out. So the firm checks are the fired count and the score is only recorded (min 0): any minimum would
+  # fail on a busy CI runner. The fired count's deadline is for a starved machine: pinned to 2 cores (taskset), the 8th
+  # fired 2.4 to 3.0 s into auto with nothing else running (5 runs), 2.6 to 3.2 s beside one busy process (8 of 9 runs),
+  # 3.5 to 6.1 s beside two (8 of 10 runs); the other runs stopped feeding (the robot program and Phoenix's sim starved:
+  # its own control never settles, so no deadline helps). A 2-vCPU GitHub runner had 6 fired 4.93 s in and all 8 by 6 s.
+  # So 8 s: a third more than the slowest that fired them all. A later run there fired none by 8 s: its physics fell
+  # behind real time and caught up 250 ms at a time on the robot's stale commands, its control loops blind meanwhile
+  # (physics now steps in 5 ms passes; padded to 0.6x real time here, all 8 fired by 2.6 s). A run whose physics or
+  # robot program fell behind real time says so in its notes (tests/test_range_e2e.py skips a run on that when its fired
+  # counts are its only failures).
+  [[step.check]]
+  by_time = { signal = "fired", min = 8, t = 8.0 }
+  [[step.check]]
+  at_end = { signal = "score.hub_blue", min = 0 }   # recorded, not checked
+  [[step.check]]
+  at_end = { signal = "fired", min = 8 }
+  [[step.screenshot]]
+  view = "follow"
+  at = "end"

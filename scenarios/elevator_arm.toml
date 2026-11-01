@@ -1,0 +1,24 @@
+# The elevator and arm example: lift the carriage to 0.6 m and the arm to 45 degrees.
+#   scrimmage run scenarios/elevator_arm.toml
+config = "../configs/elevator_arm.toml"
+description = "Elevator reaches 0.6 m and the arm 45 degrees in autonomous"
+
+[[step]]
+mode = "disabled"
+duration = 1.0
+
+[[step]]
+name = "auto"
+mode = "auto"
+duration = 5.0
+  [[step.check]]
+  console = { contains = "elevator: at 0.60" }
+  [[step.check]]
+  console = { contains = "arm: at 45" }
+  [[step.check]]
+  at_end = { signal = "joint.elevator.stage1.position", approx = 0.3, tol = 0.02 }
+  [[step.check]]
+  at_end = { signal = "joint.arm.pivot.position", approx = 0.785, tol = 0.03 }
+  [[step.screenshot]]
+  view = "follow"
+  at = "end"

@@ -1,0 +1,32 @@
+# tests/java_probe under scrimmage: the kitbot world, with Phoenix devices bound to the left wheel joint.
+[model]
+mjcf = "../models/kitbot.xml"
+[robot]
+body = "chassis"
+[lockstep]
+step = 0.005
+[robot_program]
+command = ["./gradlew", "-I", "{scrimmage_java}/scrimmage.init.gradle", "simulateJava"]
+cwd = "."
+start_timeout = 180
+
+[[motor]]
+name = "probe"
+ctre = "TalonFX:1"
+joint = "left_center"
+motor = "KrakenX60"
+gear_ratio = 10.0
+neutral = "brake"         # the probe configures NeutralModeValue.Brake
+[[motor]]
+name = "probe_inv"
+ctre = "TalonFX:4"
+joint = "right_center"
+motor = "KrakenX60"
+gear_ratio = 10.0
+neutral = "brake"         # the probe configures NeutralModeValue.Brake
+[[encoder]]
+ctre = "CANcoder:2"
+joint = "left_center"
+[[gyro]]
+ctre = "Pigeon2:3"
+body = "chassis"

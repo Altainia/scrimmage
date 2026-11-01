@@ -1,0 +1,20 @@
+{
+  "fileName": "Scrimmage.json",
+  "name": "Scrimmage",
+  "version": "0.3.1",
+  "uuid": "312a1138-d262-41fe-9cca-bc05120dfa6b",
+  "frcYear": "2026",
+  "mavenUrls": [
+    "scrimmage-maven"
+  ],
+  "jsonUrl": "",
+  "javaDependencies": [
+    {
+      "groupId": "io.github.altainia.scrimmage",
+      "artifactId": "scrimmage-fastmode",
+      "version": "0.3.1"
+    }
+  ],
+  "jniDependencies": [],
+  "cppDependencies": []
+}

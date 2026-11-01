@@ -1,0 +1,70 @@
+# A 2013-style disc robot on the 2013 test range: the kitbot chassis on a PWM differential drive, a stock
+# disc_shooter on top (four 4 in. rollers on the right, a fence on the left, a fixed tilt) and a loader roller that
+# pushes the discs from the hopper into the channel. Four discs are preloaded at auto_line_left, facing the HIGH goal.
+# tests/fake_robot_main.py --shoot stands in for the robot program: it holds the shooter at a fixed output and feeds
+# the discs a set time into auto. scenarios/disc_auto_line.toml runs it; see docs/disc.md ("Disc scenario").
+# Paths are relative to this file.
+
+[model]
+timestep = 0.001          # at most 1 ms with a range
+
+[battery]
+nominal_voltage = 12.5
+resistance = 0.02         # ohms, same default as WPILib's BatterySim
+
+[lockstep]
+step = 0.005              # seconds of robot time per step; a whole multiple of the physics timestep
+
+[robot_program]
+# The fake robot: the shooter (PWM 2) at full output from the start of auto, the loader (PWM 3) feeding from 1.5 s,
+# once the wheels are up to speed.
+command = ["{python}", "fake_robot_main.py", "--lockstep", "--shoot", "--shooter-pwm", "2", "--shooter-output", "1.0",
+           "--feed-pwm", "3", "--feed-at", "1.5", "--step", "0.005"]   # --step must match [lockstep] step
+cwd = "../tests"
+start_timeout = 15
+
+[range]
+file = "2013"
+start = "auto_line_left"  # inside the AUTO ZONE beside the pyramid, facing the HIGH goal 5.21 m away
+preload = 4               # the 2013 limit (G24)
+floor_balls = false
+
+[[part]]
+name = "drive"
+stock = "chassis"
+length = 0.66
+width = 0.6
+mass = 47.0
+frame_height = 0.1
+
+[[part]]
+name = "dt"
+stock = "differential"
+attach = "drive.center"
+ids = { left = "PWM:0", right = "PWM:1" }
+
+[[part]]
+name = "shooter"
+stock = "disc_shooter"    # the defaults: examples/disc/linear.toml's channel, 2 x Kraken X60 at 0.75:1
+attach = "drive.top"
+pos = [-0.25, 0.0, 0.58]  # the channel's entry 0.70 m above the carpet
+tilt_angle = 22.5         # degrees: all four score from 21.5 to 23.75 at full output (docs/disc.md, "Disc scenario")
+ids = { shooter0 = "PWM:2" }
+
+[[part]]
+name = "loader"
+stock = "roller"
+attach = "drive.top"
+pos = [-0.35, 0.0, 0.5]
+gearing = 10.0            # 0.05 m rollers: about 1.6 m/s surface speed at full output
+ids = { spin = "PWM:3" }
+
+[shooter]
+kind = "disc"
+part = "shooter"
+wheels = { preset = "urethane-60a-4in" }
+layout = { fence = "wedgetop" }
+[[shooter.stage]]
+name = "loader"
+part = "loader"
+path_length = 0.30

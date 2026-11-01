@@ -1,0 +1,25 @@
+# robotpy-rev's MAXSwerve example's own autonomous routine (examples/robotpy_maxswerve): it resets its odometry to
+# (0, 0, 0) and follows an S-curve trajectory through (1, 1) and (2, -1) to 3 m straight ahead, facing forward.
+#   scrimmage run scenarios/maxswerve_py_auto.toml
+config = "../configs/maxswerve_py.toml"
+description = "MAXSwerve (RobotPy, REV SPARK MAX) auto: the example's S-curve trajectory"
+[[step]]
+mode = "disabled"
+duration = 1.0
+[[step]]
+name = "auto"
+mode = "auto"
+duration = 5.0
+  # The example doesn't reach the trajectory's end (x = 5.0): its drive feedforward, velocityFF(1 / free speed), is
+  # 12x too weak under REVLib 2026, which reads it as volts, not duty cycle (examples/robotpy_maxswerve/README.md).
+  # It drives a flattened S peaking at about 0.69 m/s and stops about 1.57 m ahead. That is the example's own
+  # behavior, not a simulation error: in 3 runs its own odometry (printed from a scratch copy) ended at
+  # (1.580, -0.049), (1.582, -0.047) and (1.579, -0.048) from its start, i.e. (3.58, 3.99) on the field, within about
+  # 1 cm of the simulated ends (3.5703, 3.9846), (3.5713, 3.9863), (3.5700, 3.9847).
+  # Those runs predate the seed library (scrimmage-lockstep 0.4.0), when REV's sensor noise varied from run to run
+  # and the ends differed by 1-2 mm; runs now repeat exactly. The tolerances are kept wide all the same.
+  [[step.check]]
+  pose = { x = 3.570, y = 3.985, heading = 0, tol_xy = 0.10, tol_heading = 3 }
+  [[step.screenshot]]
+  view = "top"
+  at = "end"

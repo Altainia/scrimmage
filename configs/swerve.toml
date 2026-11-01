@@ -1,0 +1,74 @@
+# Maps examples/java_swerve (Phoenix 6 SwerveDrivetrain: Kraken X60s, CANcoders, a Pigeon 2) onto a swerve
+# robot built from scrimmage's stock parts: a chassis and four SDS MK4i modules.
+#   scrimmage run scenarios/swerve_auto.toml
+# Paths are relative to this file. Phoenix 6 simulation runs on the wall clock, so scrimmage runs it at 1x.
+
+[model]
+timestep = 0.001
+
+[robot]
+start_pose = [2.0, 4.035, 0.0]   # x (m), y (m), heading (deg); matches Constants.START_POSE in the example
+
+[battery]
+nominal_voltage = 12.5
+resistance = 0.02
+
+[lockstep]
+step = 0.005
+
+[robot_program]
+# The Gradle init script turns off the template's sim GUI and points HALSim WebSocket at scrimmage.
+command = ["./gradlew", "-I", "{scrimmage_java}/scrimmage.init.gradle", "simulateJava"]
+cwd = "../examples/java_swerve"
+start_timeout = 180       # a first Gradle build is slow; pre-build with ./gradlew build
+
+[telemetry]
+odometry = "/SmartDashboard/Field/Robot"   # the example's Field2d ("Field") pose
+
+# ---- Parts ---------------------------------------------------------------------------
+# Each [[part]] is a stock part with its parameters, where it attaches ("<instance>.<mount>"), and the
+# device ID of each slot in `ids`. Joints and bodies are prefixed with the instance name ("fl.steer").
+
+[[part]]
+name = "drive"
+stock = "chassis"         # 0.7 m square frame, 46 kg, bumpers; modules mount at its corners
+module_inset = 0.0579     # m from each frame edge to a module center: modules at +-0.2921 m (11.5 in)
+ids = { gyro = "Pigeon2:13" }
+
+# ---- Modules -------------------------------------------------------------------------
+# SDS MK4i, L2: drive 6.75 rotor revs per wheel rev, steer 150/7 rotor revs per module rev.
+# The part models a real MK4i's motor directions, so the example configures the inversions a real robot
+# needs: every steer motor inverted (the part's steer_invert defaults to true) and the right-side drive
+# motors inverted (drive_invert = true on fr and br). Both motors are configured Brake by the example.
+# The CANcoders read the steer joint directly with the magnet at 0: wheels straight forward read 0,
+# matching the example's encoder offsets of 0.
+
+[[part]]
+name = "fl"
+stock = "swerve/MK4i"
+ratio = "L2"
+attach = "drive.front_left"
+ids = { drive = { ctre = "TalonFX:1", neutral = "brake" }, steer = { ctre = "TalonFX:2", neutral = "brake" }, encoder = "CANcoder:9" }
+
+[[part]]
+name = "fr"
+stock = "swerve/MK4i"
+ratio = "L2"
+attach = "drive.front_right"
+drive_invert = true       # right side
+ids = { drive = { ctre = "TalonFX:3", neutral = "brake" }, steer = { ctre = "TalonFX:4", neutral = "brake" }, encoder = "CANcoder:10" }
+
+[[part]]
+name = "bl"
+stock = "swerve/MK4i"
+ratio = "L2"
+attach = "drive.back_left"
+ids = { drive = { ctre = "TalonFX:5", neutral = "brake" }, steer = { ctre = "TalonFX:6", neutral = "brake" }, encoder = "CANcoder:11" }
+
+[[part]]
+name = "br"
+stock = "swerve/MK4i"
+ratio = "L2"
+attach = "drive.back_right"
+drive_invert = true       # right side
+ids = { drive = { ctre = "TalonFX:7", neutral = "brake" }, steer = { ctre = "TalonFX:8", neutral = "brake" }, encoder = "CANcoder:12" }
