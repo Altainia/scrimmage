@@ -18,8 +18,10 @@ nt = ["pyntcore", "robotpy-wpimath"]
 mcp = ["mcp>=2.3,<3"]
 # splitting concave meshes into convex pieces (bench CAD)
 bench = ["coacd"]
+# reading STEP/STL/OBJ files into parts, in the browser (CAD to part)
+cad = ["cascadio>=0.1.1", "trimesh>=4.0"]
 robotpy = ["robotpy[sim,commands2]", "robotpy-halsim-ws", "robotpy-rev>=2026.0.4,<2027"]
-dev = ["pytest", "matplotlib", "mcp>=2.3,<3", "pillow", "robotpy[sim,commands2]", "robotpy-halsim-ws", "robotpy-rev>=2026.0.4,<2027", "playwright==1.63.0"]
+dev = ["pytest", "matplotlib", "mcp>=2.3,<3", "pillow", "robotpy[sim,commands2]", "robotpy-halsim-ws", "robotpy-rev>=2026.0.4,<2027", "playwright==1.63.0", "cascadio>=0.1.1", "trimesh>=4.0"]
 
 [project.scripts]
 scrimmage = "scrimmage.__main__:main"
@@ -27,7 +29,7 @@ scrimmage-mcp = "scrimmage.mcp_server:main"
 
 [tool.setuptools]
 packages = ["scrimmage", "scrimmage.parts", "scrimmage.parts.stock", "scrimmage.assembler", "scrimmage.launcher",
-            "scrimmage.testrange", "scrimmage.disc", "scrimmage.bench"]
+            "scrimmage.testrange", "scrimmage.disc", "scrimmage.bench", "scrimmage.cad"]
 
 [tool.setuptools.package-data]
 scrimmage = ["java/**/*", "assembler/static/**/*", "launcher/*.toml", "disc/*.toml", "testrange/ranges/*.toml",
