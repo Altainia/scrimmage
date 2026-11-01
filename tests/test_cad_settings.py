@@ -165,3 +165,19 @@ def test_remove_empty_bodies_root(tmp_path):
 def test_dumps_has_no_none(tmp_path):
     src, imp = make(tmp_path)
     assert "None" not in dumps_import(imp)
+
+
+def test_written_folders_round_trip_and_are_checked(tmp_path):
+    from scrimmage.cad.settings import ImportFile
+    src, imp = make(tmp_path)
+    imp.written = {"climber": "climber", "right arm": "{cad}/arms/right arm"}
+    path = tmp_path / "climber.import.toml"
+    write_import(imp, path)
+    assert read_import(path).written == imp.written
+    d = imp.to_dict()
+    d["written"] = {"climber": 3}
+    with pytest.raises(CadError, match="written.climber must be text"):
+        ImportFile.from_dict(d)
+    d["written"] = ["climber"]
+    with pytest.raises(CadError, match="written must be a table"):
+        ImportFile.from_dict(d)

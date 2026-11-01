@@ -24,8 +24,9 @@ their part body's frame. Problems that don't stop the build come back as plain-w
 Folders. Each part goes to its `folder` (`{cad}/...` expanded, else relative to the import file's folder), written
 to `<folder>.tmp` and swapped in, with an `import-origin.toml` marker: the import file's relative path, the
 import_id, and each body's origin in the robot frame. A folder holding files but no marker for this import is
-refused. A folder this import wrote earlier for a part it no longer makes (found beside the import file or beside a
-folder just written, by its marker) is removed, so a robot can't count those bodies twice.
+refused. The import file records the folders each build wrote (`written`); a recorded folder this build doesn't
+write is removed (while its marker and part.toml still say it is that part from this import), so a robot can't
+count those bodies twice. Nothing else is ever deleted: a copy of a part folder is safe.
 
 A hand-edited import file whose bodies hang on each other in a ring, or with a joint axis or mount normal of no
 direction, is a CadError in plain words (never a hang or a NaN in a file).
@@ -445,12 +446,20 @@ def _convex(v: np.ndarray, f: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]
 
 def part_folder(imp: ImportFile, part: str, import_path: Path) -> Path:
     """Where part `part` is saved: its folder with {cad}/{code} expanded, else relative to the import file's folder."""
+    return _resolve(_folder_text(imp, part), import_path)
+
+
+def _folder_text(imp: ImportFile, part: str) -> str:
     ps = imp.parts.get(part)
-    text = ps.folder if ps is not None else part
+    return ps.folder if ps is not None else part
+
+
+def _resolve(text: str, import_path: Path) -> Path:
+    """A stored folder as a path (ruling R9): {cad}/{code} expanded, else relative to the import file's folder."""
     try:
         text = teamfolders.expand(text)
     except teamfolders.TeamFolderError as e:
-        raise CadError(f"Can't save {part}: {e}.") from None
+        raise CadError(f"Can't find the folder {text}: {e}.") from None
     p = Path(text)
     return p if p.is_absolute() else Path(import_path).parent / p
 
@@ -477,41 +486,51 @@ def _shown(folder: Path) -> str:
     return f"{folder.parent.name}/{folder.name}"
 
 
-def _remove_stale(imp: ImportFile, import_path: Path, targets: dict[str, Path]) -> list[str]:
-    """Remove the part folders this import wrote before but no longer makes (a part was renamed, or merged back into
-    another), so a robot config can't count those bodies twice. Looks beside the import file and beside every
-    folder just written; a folder without this import's marker is never touched. Returns a message per folder."""
+def _part_name(folder: Path) -> str | None:
+    try:
+        name = tomllib.loads((folder / "part.toml").read_text(encoding="utf-8")).get("part", {}).get("name")
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, AttributeError):
+        return None
+    return name if isinstance(name, str) else None
+
+
+def _remove_stale(imp: ImportFile, import_path: Path, targets: dict[str, Path]) -> tuple[dict[str, str], list[str]]:
+    """Remove the folders the last build wrote (`imp.written`) for parts this build doesn't write there (a part
+    merged back into another, or saved to another folder), so a robot config can't count those bodies twice. A folder
+    goes only while its marker still names this import and its part.toml still holds the part written there; a copy
+    the student made, or a folder another import now owns, is never touched. Returns (the entries to keep in
+    `written` because they couldn't be removed, a message per folder)."""
     keep = {f.resolve() for f in targets.values()}
-    places = {Path(import_path).parent.resolve()} | {f.parent.resolve() for f in targets.values()}
     tree = _Tree(imp, [])
-    msgs = []
-    for place in sorted(places):
-        if not place.is_dir():
+    kept, msgs = {}, []
+    for part, text in imp.written.items():
+        try:
+            folder = _resolve(text, import_path)
+        except CadError:
+            continue                            # a team folder this computer doesn't know: leave it be
+        if folder.resolve() in keep or not folder.is_dir():
             continue
-        for folder in sorted(place.iterdir()):
-            if (not folder.is_dir() or folder.name.startswith(".") or folder.name.endswith(".tmp")
-                    or folder.resolve() in keep):
-                continue
-            marker = _read_marker(folder)
-            if marker is None or marker.get("import_id") != imp.import_id:
-                continue
-            try:
-                shutil.rmtree(folder)
-            except OSError as e:
-                msgs.append(f"{_shown(folder)} is an old part from this import but couldn't be removed "
-                            f"({e.strerror or e}): close anything using it and delete it.")
-                continue
+        marker = _read_marker(folder)
+        if marker is None or marker.get("import_id") != imp.import_id or _part_name(folder) != part:
+            continue
+        try:
+            shutil.rmtree(folder)
+        except OSError:
+            kept[part] = text
+            msgs.append(f"Couldn't remove {_shown(folder)}, an old part from this import; delete it yourself.")
+            continue
+        if part in targets:
+            why = f"part {part} is now saved in {_shown(targets[part])}"
+        else:
             now: dict[str, list[str]] = {}
             origins = marker.get("origins")
-            for b in origins if isinstance(origins, dict) else []:
-                if b in imp.bodies:
-                    now.setdefault(tree.part_name(tree.part_root(b)), []).append(b)
-            why = "; ".join(f"part {part} is now saved in {_shown(targets[part])}" if part == folder.name
-                            and part in targets else
-                            f"{_and(bs)} {'is' if len(bs) == 1 else 'are'} part of {part} again"
-                            for part, bs in now.items()) or "this import no longer makes that part"
-            msgs.append(f"{_shown(folder)} was removed: {why}")
-    return msgs
+            for body in origins if isinstance(origins, dict) else []:
+                if body in imp.bodies:
+                    now.setdefault(tree.part_name(tree.part_root(body)), []).append(body)
+            why = "; ".join(f"{_and(bs)} {'is' if len(bs) == 1 else 'are'} part of {p} again"
+                            for p, bs in now.items()) or "this import no longer makes that part"
+        msgs.append(f"{_shown(folder)} was removed: {why}")
+    return kept, msgs
 
 
 def _marker_text(imp: ImportFile, built: BuiltPart, folder: Path, import_path: Path) -> str:
@@ -526,8 +545,10 @@ def _marker_text(imp: ImportFile, built: BuiltPart, folder: Path, import_path: P
 
 def write_parts(result: BuildResult, imp: ImportFile, import_path: Path) -> list[Path]:
     """Save each built part to its folder (see the module's notes); returns the folders. Raises CadError.
-    Folders this import wrote before for parts it no longer makes are removed, with a message added to
-    `result.messages`."""
+
+    The folders the last build wrote (`imp.written`) that this build doesn't write are removed (see `_remove_stale`),
+    with a message added to `result.messages`. `imp.written` is then updated in place to what this build wrote: the
+    caller saves the import file afterwards, so the next build knows exactly which folders are its own."""
     targets = {name: part_folder(imp, name, import_path) for name in result.parts}
     for folder in targets.values():
         _check_target(folder, imp)
@@ -553,7 +574,9 @@ def write_parts(result: BuildResult, imp: ImportFile, import_path: Path) -> list
                            "written and try again.") from None
         _install(tmp, folder)
         out.append(folder)
-    result.messages += _remove_stale(imp, import_path, targets)
+    kept, msgs = _remove_stale(imp, import_path, targets)
+    result.messages += msgs
+    imp.written = {**kept, **{name: _folder_text(imp, name) for name in result.parts}}
     return out
 
 

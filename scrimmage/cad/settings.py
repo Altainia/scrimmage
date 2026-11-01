@@ -118,6 +118,9 @@ class ImportFile:
     couplings: list[dict] = field(default_factory=list)
     loops: list[dict] = field(default_factory=list)
     parts: dict[str, PartSettings] = field(default_factory=dict)
+    # part name -> the folder (as PartSettings.folder spells it) the last build wrote it to; build.write_parts keeps
+    # it, so a later build removes exactly the folders it wrote for parts it no longer makes
+    written: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         """Plain data in the file's layout (no None values; tuples as lists)."""
@@ -129,13 +132,16 @@ class ImportFile:
     def from_dict(cls, d: dict) -> "ImportFile":
         """Build from `to_dict`'s layout. A wrong or unknown key raises CadError naming its path."""
         _expect_dict(d, "")
-        _no_unknown(d, {"import", "pieces", "bodies", "couplings", "loops", "parts"}, "")
+        _no_unknown(d, {"import", "pieces", "bodies", "couplings", "loops", "parts", "written"}, "")
         head = d.get("import")
         _expect_dict(head, "import")
         _no_unknown(head, {"name", "import_id", "source", "units", "frame"}, "import")
         flat = {k: head[k] for k in head if k != "frame"}
-        for k in ("pieces", "bodies", "parts"):
+        for k in ("pieces", "bodies", "parts", "written"):
             _expect_dict(d.get(k, {}), k)
+        for k, v in d.get("written", {}).items():
+            if not isinstance(v, str):
+                raise CadError(f"written.{k} must be text (a folder).")
         kw = dict(
             frame=_build(RobotFrame, head.get("frame", {}), "import.frame"),
             pieces={k: _build(PieceSettings, v, f"pieces.{k}") for k, v in d.get("pieces", {}).items()},
@@ -143,6 +149,7 @@ class ImportFile:
             parts={k: _build(PartSettings, v, f"parts.{k}") for k, v in d.get("parts", {}).items()},
             couplings=_list_of_dicts(d.get("couplings", []), "couplings"),
             loops=_list_of_dicts(d.get("loops", []), "loops"),
+            written=dict(d.get("written", {})),
         )
         for k in ("name", "import_id", "source", "units"):
             if k not in flat:

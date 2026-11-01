@@ -471,25 +471,59 @@ def test_inertia_and_its_axes_match_mujoco(tmp_path):
 # ---------------------------------------------------------------- fix round 1
 
 def test_unparted_body_removes_its_old_folder(tmp_path, src):
+    import shutil
     imp = edit(make(src, tmp_path), "set_part", body="arm_B", part="right_arm")
     write(imp, src, tmp_path)
-    other = tmp_path / "someone_elses"
-    other.mkdir()
-    (other / "import-origin.toml").write_text('import_id = "other"\norigins = { arm_B = [0.0, 0.0, 0.0] }\n')
-    (tmp_path / "loose").mkdir()
-    (tmp_path / "loose" / "part.toml").write_text("")
-    assert (tmp_path / "right_arm").is_dir()
+    assert imp.written == {"climber": "climber", "right_arm": "right_arm"}
+    # a copy the student made has the same marker: it is never this import's to remove
+    shutil.copytree(tmp_path / "right_arm", tmp_path / "right_arm_backup")
     imp = edit(imp, "set_part", body="arm_B", part=None, parent="base_plate")
     result, paths = write(imp, src, tmp_path)
     assert paths == [tmp_path / "climber"] and not (tmp_path / "right_arm").exists()
-    assert f"{tmp_path.name}/right_arm was removed: arm_B is part of climber again" in result.messages
-    assert other.is_dir() and (tmp_path / "loose").is_dir()        # never another import's, or an unmarked folder
-    # a part moved to another folder: the old folder goes
+    assert result.messages == [f"{tmp_path.name}/right_arm was removed: arm_B is part of climber again"]
+    assert (tmp_path / "right_arm_backup" / "part.toml").is_file()
+    assert imp.written == {"climber": "climber"}
+
+    # a part saved to another folder: the old folder goes
     imp.parts["climber"].folder = "lifter"
     result, paths = write(imp, src, tmp_path)
     assert paths == [tmp_path / "lifter"] and not (tmp_path / "climber").exists()
     assert result.messages == [f"{tmp_path.name}/climber was removed: part climber is now saved in "
                                f"{tmp_path.name}/lifter"]
+    assert imp.written == {"climber": "lifter"}
+
+
+def test_recorded_folder_now_owned_by_another_import_survives(tmp_path, src):
+    imp = edit(make(src, tmp_path), "set_part", body="arm_B", part="right_arm")
+    write(imp, src, tmp_path)
+    marker = tmp_path / "right_arm" / "import-origin.toml"
+    marker.write_text(marker.read_text().replace(imp.import_id, "another-import"))
+    imp = edit(imp, "set_part", body="arm_B", part=None, parent="base_plate")
+    result, _ = write(imp, src, tmp_path)
+    assert (tmp_path / "right_arm" / "part.toml").is_file() and not result.messages
+    # and a recorded folder that now holds a different part (same import) survives too
+    import shutil
+    shutil.copytree(tmp_path / "climber", tmp_path / "old_left")
+    imp.written = {"left_arm": "old_left", "climber": "climber"}
+    result, _ = write(imp, src, tmp_path)
+    assert (tmp_path / "old_left" / "part.toml").is_file() and not result.messages
+
+
+def test_folder_that_cant_be_removed_is_a_plain_message(monkeypatch, tmp_path, src):
+    imp = edit(make(src, tmp_path), "set_part", body="arm_B", part="right_arm")
+    write(imp, src, tmp_path)
+    real = build.shutil.rmtree
+
+    def stuck(path, *a, **k):
+        if Path(path).name == "right_arm":
+            raise OSError(None, None)
+        return real(path, *a, **k)
+    monkeypatch.setattr(build.shutil, "rmtree", stuck)
+    imp = edit(imp, "set_part", body="arm_B", part=None, parent="base_plate")
+    result, _ = write(imp, src, tmp_path)
+    assert result.messages == [f"Couldn't remove {tmp_path.name}/right_arm, an old part from this import; delete it "
+                               "yourself."]
+    assert imp.written == {"right_arm": "right_arm", "climber": "climber"}       # tried again next time
 
 
 def test_bodies_hanging_on_each_other_are_a_plain_error(tmp_path, src):
