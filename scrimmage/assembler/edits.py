@@ -1,5 +1,8 @@
 """Pure edit operations on a robot config's tomlkit document: its [[part]] tables, and the robot code panel's
-[robot_program], start ([robot] start_pose, [range]) and [battery]."""
+[robot_program], start ([robot] start_pose, [range]) and [battery].
+
+`cad_offset` is where a part built from a CAD import attaches so it sits where the CAD has it (the add op's `pos`
+when none is given, and the Placement panel's "Reset to CAD")."""
 
 from __future__ import annotations
 
@@ -116,6 +119,24 @@ def add_part(doc, *, name, stock=None, path=None, attach=None, pos=None, rot=Non
         aot = tomlkit.aot()
         aot.append(t)
         doc["part"] = aot
+
+
+def cad_offset(marker: dict | None, body: str, target_marker: dict | None, chassis_root: bool) -> list[float] | None:
+    """The `pos` (m, with `rot` zero) that puts a part built from a CAD import where the CAD has it when it attaches to
+    body `body` of another part, or None when that isn't known. `marker` is the part's import-origin.toml
+    (library.cad_marker: {import_id, origins}; None for a part not from an import), `target_marker` the target part's.
+
+    Every body frame of an import part is aligned with the robot frame and its root's origin is the robot origin (the
+    floor at the frame center), so on the stock chassis's root body (`chassis_root`) the offset is zero. On body B of
+    a part from the same import it is -origins[B], B's origin in the robot frame undone: this assumes that part sits
+    where the CAD has it. Any other target (another import, a stock part, a mount) has no CAD placement."""
+    if marker is None:
+        return None
+    if chassis_root:
+        return [0.0, 0.0, 0.0]
+    if target_marker is None or target_marker["import_id"] != marker["import_id"] or body not in target_marker["origins"]:
+        return None
+    return [0.0 - x for x in target_marker["origins"][body]]     # 0.0 - x: never a -0.0 in the file
 
 
 def remove_part(doc, name: str) -> None:

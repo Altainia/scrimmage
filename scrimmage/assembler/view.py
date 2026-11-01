@@ -1,4 +1,4 @@
-"""The compiled MuJoCo model as JSON for the 3D view (start pose; robot geoms, optionally the world's too)."""
+"""The compiled MuJoCo model as JSON for the 3D view (start pose; robot geoms and its CG, optionally the world's geoms too)."""
 
 from __future__ import annotations
 
@@ -78,7 +78,8 @@ def model_view(world, include_world: bool = False) -> dict:
             break
     out = {"instances": [i.name for i in instances], "geoms": geoms, "meshes": meshes,
            "mounts": mounts, "floor": floor, "movers": [{"kind": mv.kind, "name": mv.name} for mv in ms],
-           "root_mover": body_mover.get(world.robot_body, -1)}   # the robot body's index in `movers` (-1: not a mover)
+           "root_mover": body_mover.get(world.robot_body, -1),   # the robot body's index in `movers` (-1: not a mover)
+           "com": [float(v) for v in d.subtree_com[world.robot_body]]}   # the robot's CG in the world (the CG marker)
     if include_world:
         out["world_geoms"] = _world_geoms(world, d, root, ms)
         out["movable"] = world.movable_objects()

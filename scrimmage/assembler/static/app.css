@@ -204,6 +204,8 @@ body.picking .col-view #view { outline: 2px solid #e8590c; outline-offset: -2px;
 .lib-more { margin-top: 3px; font-size: 12px; }
 .lib-more summary { color: var(--accent-text); cursor: pointer; font-size: 12px; }
 .lib-more p { margin: 3px 0; }
+.lib-import { margin-top: 10px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; font-size: 12.5px; }
+.insp-cad { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .folder-form { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
 .folder-form label { font-weight: 600; }
 

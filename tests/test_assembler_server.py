@@ -6,6 +6,7 @@ import subprocess
 import sys
 import threading
 import time
+import tomllib
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -286,7 +287,7 @@ def test_mjcf_config_is_read_only(served):
         'mjcf = "models/kitbot.xml"', f'mjcf = "{ROOT / "tests" / "models" / "kitbot.xml"}"'))
     s = c.get("/api/robot/state")[1]
     assert s["read_only"] and "hand-written model" in s["read_only_reason"]
-    assert s["part_bodies"] is None
+    assert s["part_bodies"] is None and s["com"] is None
     assert c.get("/api/robot/view")[1] == {}
     before = cfg.read_bytes()
     st, r = c.post("/api/robot/edit", {"op": "remove", "name": "x"})
@@ -299,7 +300,7 @@ def test_invalid_config_is_read_only_with_errors(served):
     c, _ = served(text='[[part]]\nname = "drive"\nstock = "chassis"\nids = { gyro = "Pigeon2:1", extra = "TalonFX:1" }\n')
     s = c.get("/api/robot/state")[1]
     assert s["read_only"] and s["errors"] and "extra" in s["read_only_reason"]
-    assert s["part_bodies"] is None
+    assert s["part_bodies"] is None and s["com"] is None
     assert c.get("/api/robot/view")[1] == {}
     assert [p["name"] for p in s["parts"]] == ["drive"]
 
@@ -521,3 +522,97 @@ def test_empty_or_unrelated_toml_says_how_to_start(served, text):
     s = c.get("/api/robot/state")[1]
     assert s["read_only"] and "--new-scenario --robot CONFIG" in s["read_only_reason"]
     assert "--new swerve|differential" in s["read_only_reason"]
+
+
+# ---------------------------------------------------------------- the robot's CG and parts placed by their CAD
+
+def test_state_and_view_have_the_robots_cg(served):
+    c, _ = served()
+    s = c.get("/api/robot/state")[1]
+    assert set(s["com"]) == {"height", "forward", "left"}
+    assert 0.05 < s["com"]["height"] < 0.4
+    assert abs(s["com"]["forward"]) < 0.1 and abs(s["com"]["left"]) < 0.1   # the kitbot is near symmetric
+    v = c.get("/api/robot/view")[1]
+    # the view's com is the same point in the world: the kitbot starts at (2.0, 4.035) facing +x
+    assert v["com"] == pytest.approx([2.0 + s["com"]["forward"], 4.035 + s["com"]["left"], s["com"]["height"]], abs=1e-6)
+
+
+def _part_wait(c, pred, timeout=60.0):
+    end = time.monotonic() + timeout
+    st = c.get("/api/part/state")[1]
+    while not pred(st):
+        assert time.monotonic() < end, st
+        st = c.get(f"/api/part/state?since={st['version']}")[1]
+    return st
+
+
+def _part_edit(c, op, **args):
+    st = _part_wait(c, lambda st: st["build"]["state"] != "building")
+    s, r = c.call("POST", "/api/part/edit", {"version": st["version"], "op": op, "args": args})
+    assert s == 200, r
+    return r
+
+
+def _split_climber(c, cfg):
+    """Import the climber for `cfg` (into parts/ next to it) and split it as the Part tab would: part `base` (the base
+    plate, arm_B on a hinge) and part `right_arm` (the hook on arm_B). Returns the import's state once built."""
+    shutil.copy(ROOT / "tests" / "data" / "cad" / "climber.step", cfg.parent / "climber.step")
+    s, r = c.call("POST", "/api/app/new", {"kind": "import", "path": str(cfg.parent / "climber.step"), "robot": str(cfg)})
+    assert s == 200, r
+    _part_edit(c, "set_part", body="base_plate", part="base")
+    _part_edit(c, "set_joint", body="arm_B", parent="base_plate",
+               joint={"kind": "hinge", "anchor": [0.24, 0.1, 0.01], "axis": [0, 1, 0]})
+    _part_edit(c, "set_part", body="hook_assy_2", part="right_arm")
+    return _part_wait(c, lambda st: st["build"]["state"] == "idle" and len(st["parts"]) == 2
+                      and all(p["com"] is not None for p in st["parts"]))
+
+
+def test_parts_from_one_import_land_where_the_cad_has_them(served, tmp_path, monkeypatch):
+    monkeypatch.setenv("SCRIMMAGE_CACHE", str(tmp_path / "cache"))
+    import mujoco
+    import numpy as np
+    from scrimmage.parts.assemble import assemble
+    c, cfg = served()
+    built = _split_climber(c, cfg)
+    assert c.call("GET", "/api/app/state")[1]["back"]["path"] == str(cfg.resolve())   # opened from the robot
+    assert c.call("POST", "/api/app/open", {"path": str(cfg)})[0] == 200
+    lib = c.get("/api/robot/library")[1]
+    folders = {f["name"]: f for f in lib["folders"]}
+    assert folders["base"]["cad"] is True and folders["right_arm"]["cad"] is True
+    for name, attach in (("base", "drive.chassis"), ("right_arm", "base.arm_B")):
+        s, r = c.post("/api/robot/edit", {"op": "add", "name": name, "path": folders[name]["path"], "attach": attach})
+        assert s == 200 and r["ok"], r
+    marker = tomllib.loads((cfg.parent / folders["base"]["path"] / "import-origin.toml").read_text())
+    arm_b = marker["origins"]["arm_B"]
+    assert arm_b == pytest.approx([0.09, 0.0, 0.01], abs=1e-6)   # the hinge anchor, from the frame's center
+    st = c.get("/api/robot/state")[1]
+    parts = {p["name"]: p for p in st["parts"]}
+    assert parts["base"]["pos"] == [0, 0, 0] and parts["base"]["cad_pos"] == [0.0, 0.0, 0.0]
+    assert parts["right_arm"]["pos"] == pytest.approx([-x for x in arm_b])
+    assert parts["right_arm"]["cad_pos"] == pytest.approx(parts["right_arm"]["pos"])
+    assert parts["drive"]["cad_pos"] is None and parts["dt"]["cad_pos"] is None   # stock parts have no CAD
+
+    # every part's center of mass, in the world, is where the import put it in the robot frame
+    w = assemble(tomllib.loads(cfg.read_text()), cfg.parent)
+    m = w.model
+    d = mujoco.MjData(m)
+    mujoco.mj_kinematics(m, d)
+    mujoco.mj_comPos(m, d)
+    chassis = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, "drive.chassis")
+    origin, rot = d.xpos[chassis], d.xmat[chassis].reshape(3, 3)
+    for p in built["parts"]:
+        ids = [b for b in range(m.nbody) if (mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, b) or "").startswith(p["name"] + ".")]
+        mass = sum(m.body_mass[b] for b in ids)
+        world_com = sum(m.body_mass[b] * d.xipos[b] for b in ids) / mass
+        assert mass == pytest.approx(p["mass"], rel=1e-6)
+        assert world_com == pytest.approx(origin + rot @ np.array(p["com"]), abs=1e-6), p["name"]
+
+    # moved away, "Reset to CAD" (an attach edit with cad_pos) puts it back; another target has no CAD placement
+    c.post("/api/robot/edit", {"op": "attach", "name": "right_arm", "attach": "base.arm_B", "pos": [0, 0, 0.2], "rot": [0, 0, 0]})
+    assert {p["name"]: p for p in c.get("/api/robot/state")[1]["parts"]}["right_arm"]["cad_pos"] == pytest.approx([-x for x in arm_b])
+    c.post("/api/robot/edit", {"op": "attach", "name": "right_arm", "attach": "drive.top", "pos": [0, 0, 0], "rot": [0, 0, 0]})
+    assert {p["name"]: p for p in c.get("/api/robot/state")[1]["parts"]}["right_arm"]["cad_pos"] is None
+    # a part added with a pos of its own keeps it
+    s, r = c.post("/api/robot/edit", {"op": "add", "name": "again", "path": folders["right_arm"]["path"], "attach": "base.arm_B",
+                                      "pos": [0.1, 0, 0]})
+    assert r["ok"] and {p["name"]: p for p in c.get("/api/robot/state")[1]["parts"]}["again"]["pos"] == [0.1, 0, 0]

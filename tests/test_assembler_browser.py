@@ -126,7 +126,9 @@ def make_page(browser, tmp_path):
         page = ctx.new_page()
         page.set_default_timeout(20000)
         page.on("pageerror", lambda e: logs.append(f"pageerror: {e}"))
-        page.on("console", lambda m: logs.append(f"console.{m.type}: {m.text} ({m.location.get('url') or '?'})") if m.type == "error" else None)
+        # a part's long poll answers 404 once Back to the robot has closed the part (the page then reloads)
+        page.on("console", lambda m: logs.append(f"console.{m.type}: {m.text} ({m.location.get('url') or '?'})")
+                if m.type == "error" and "/api/part/state" not in (m.location.get("url") or "") else None)
         page.goto(srv.url)
         page.wait_for_function("window.__scrimmage && __scrimmage.state && __scrimmage.scene && __scrimmage.scene.meshes > 0")
         return page, cfg
@@ -280,6 +282,60 @@ def test_placeholder_contrast_meets_wcag_aa(make_page):
     for scheme in ("light", "dark"):
         page.emulate_media(color_scheme=scheme)
         assert page.evaluate(f"({CONTRAST_JS}).check(document.querySelector('#probe'))") == [], scheme
+
+
+def test_cg_text_and_marker(make_page):
+    """The status bar says where the robot's CG is; the 3D view's CG button draws an orange marker there (and the text
+    meets WCAG AA in both themes)."""
+    page, _ = make_page("kitbot.toml")
+    page.wait_for_function("document.querySelector('#cg').textContent.startsWith('CG: ')")
+    com = page.evaluate("__scrimmage.state.com")
+    assert re.fullmatch(r"CG: \d+\.\d\d m up, \d+\.\d\d m (forward|back)", page.inner_text("#cg"))
+    assert page.inner_text("#cg").startswith(f"CG: {com['height']:.2f} m up, ")
+    assert page.evaluate("__scrimmage.scene.cg") is False and page.get_attribute("#view-cg", "aria-pressed") == "false"
+    page.click("#view-cg")
+    page.wait_for_function("__scrimmage.scene.cg === true")
+    assert page.get_attribute("#view-cg", "aria-pressed") == "true"
+    for scheme in ("light", "dark"):
+        page.emulate_media(color_scheme=scheme)
+        assert page.evaluate(f"({CONTRAST_JS}).check(document.querySelector('#statusbar'))") == [], scheme
+    page.click("#view-cg")
+    page.wait_for_function("__scrimmage.scene.cg === false")
+
+
+def test_import_cad_from_the_library_places_it_by_cad(make_page, tmp_path, monkeypatch):
+    """Import CAD... opens "New part from CAD" for this robot; Back to the robot opens it again, and the new part folder
+    added from the library goes on the chassis where the CAD has it (Reset to CAD puts it back after a nudge)."""
+    monkeypatch.setenv("SCRIMMAGE_CACHE", str(tmp_path / "cache"))
+    shutil.copy(REPO / "tests" / "data" / "cad" / "climber.step", tmp_path / "climber.step")
+    page, cfg = make_page("kitbot.toml")
+    page.click("#lib-import-cad")
+    page.wait_for_selector("#start-cad-for")
+    page.click("#start-cad-browse-btn")
+    page.click('#start-cad-browse [data-entry="climber.step"]')
+    page.wait_for_function("window.__scrimmagePart && __scrimmagePart.store.state"
+                           " && __scrimmagePart.store.state.build.state === 'idle' && __scrimmagePart.store.state.parts.length")
+    assert (tmp_path / "parts" / "climber" / "import-origin.toml").is_file()
+    page.click("#back-robot")
+    page.wait_for_function("window.__scrimmage && __scrimmage.mode === 'robot' && __scrimmage.state && __scrimmage.scene"
+                           " && __scrimmage.scene.meshes > 0")
+    page.click('button[aria-label="Add climber (folder)"]')
+    page.wait_for_selector("#add-dialog[open]")
+    assert page.input_value("#add-attach") == "drive.chassis"
+    assert page.is_visible("#add-cad-hint")
+    v = page.evaluate("__scrimmage.state.version")
+    page.click("#add-ok")
+    page.wait_for_function(f"__scrimmage.state.version > {v} && __scrimmage.state.parts.some(p => p.name === 'climber')")
+    page.wait_for_selector("#insp-cad")
+    assert page.inner_text("#insp-cad") == "Placed where the CAD has it"
+    assert page.is_disabled("#insp-cad-reset")
+    assert 'attach = "drive.chassis"' in cfg.read_text()
+    page.fill("#insp-pos-2", "0.1")
+    page.keyboard.press("Enter")
+    page.wait_for_function("document.querySelector('#insp-cad').textContent === 'Moved from where the CAD has it'")
+    page.click("#insp-cad-reset")
+    page.wait_for_function("document.querySelector('#insp-cad').textContent === 'Placed where the CAD has it'")
+    assert page.evaluate("__scrimmage.state.parts.find(p => p.name === 'climber').pos") == [0, 0, 0]
 
 
 def test_pick_mode_cancels_when_config_goes_read_only(make_page):

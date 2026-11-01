@@ -20,6 +20,7 @@
   </nav>
   <div class="file" id="file-path" title="The file this tab edits">Loading…</div>
   <div class="topbar-actions">
+    <button type="button" id="back-robot" class="btn" hidden>Back to the robot</button>
     <button type="button" id="start-link" class="btn" title="Open or create something else" hidden>Start page</button>
     <button type="button" id="undo" class="btn" title="Undo (Ctrl+Z)" disabled>Undo</button>
     <button type="button" id="redo" class="btn" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
@@ -184,6 +185,7 @@
 <footer class="statusbar" id="statusbar">
   <span id="saved" class="saved">Connecting…</span>
   <span id="mass" class="stat"></span>
+  <span id="cg" class="stat"></span>
   <span id="counts" class="stat"></span>
   <span id="problems" class="stat"></span>
 </footer>
@@ -409,6 +411,7 @@
         <select id="add-attach" name="attach"></select>
         <button type="button" id="add-pick" class="btn">Pick in 3D</button>
       </div>
+      <p id="add-cad-hint" class="hint" hidden>Made from a CAD file: on the chassis, or on a body of another part from the same CAD file, it goes where the CAD has it.</p>
       <p class="error" data-err="attach" hidden></p>
     </div>
     <ul id="add-errors" class="error-list" hidden></ul>

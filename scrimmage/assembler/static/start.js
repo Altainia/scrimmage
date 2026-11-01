@@ -68,7 +68,9 @@ export async function browseList(box, dir, opts = {}) {
   return data;
 }
 
-export async function showStart(root, { canGoBack, onBack }) {
+// cadFor: a robot config's path (the Robot tab's "Import CAD…"): "New part from CAD" opens at once, and the part goes in
+// parts/ next to that robot config.
+export async function showStart(root, { canGoBack, onBack, cadFor = null }) {
   root.replaceChildren(h("p", { class: "start-hint", text: "Loading…" }));   // not the last visit's answers
   const { status, data: app } = await api("GET", "/api/app/state");
   if (status !== 200) { notice("Couldn't load the start page.", "error"); return; }
@@ -98,9 +100,9 @@ export async function showStart(root, { canGoBack, onBack }) {
   }
 
   // New part from CAD: Browse (the file is used where it is) or drop a file (it is copied in next to the import)
-  function cadForm() {
+  function cadForm(robot = null) {
     const list = h("div", { id: "start-cad-browse", class: "start-folder-browse" });
-    const pick = (path) => post("/api/app/new", { kind: "import", path });
+    const pick = (path) => post("/api/app/new", { kind: "import", path, ...(robot ? { robot } : {}) });
     const send = async (file) => {
       if (!file) return;
       if (!CAD_FILE.test(file.name)) { notice(`${file.name} isn't a CAD file: use a .step, .stp, .stl or .obj file.`, "error", "start"); return; }
@@ -125,6 +127,8 @@ export async function showStart(root, { canGoBack, onBack }) {
     newBox.replaceChildren(h("div", { class: "start-form start-cad" },
       h("p", { class: "start-hint", text: "Export your robot mechanism from your CAD program as a STEP file (or STL files), then pick it here. "
         + "Scrimmage reads it, guesses what is what, and shows you what is left to check." }),
+      robot ? h("p", { class: "start-hint", id: "start-cad-for", text: `The parts go in the parts folder next to ${base(robot)}. `
+        + "When you're done, Back to the robot opens it again." }) : null,
       drop,
       h("div", { class: "start-buttons" },
         h("button", { type: "button", class: "btn", id: "start-cad-browse-btn", onclick: () => browseList(list, null, { onFile: (e) => (e.kind === "import" ? open(e.path) : pick(e.path)), kinds: ["cad", "import"],
@@ -184,12 +188,16 @@ export async function showStart(root, { canGoBack, onBack }) {
         h("button", { type: "button", class: "btn", dataset: { key: "new-robot" }, onclick: () => newForm("robot") }, "New robot"),
         h("button", { type: "button", class: "btn", dataset: { key: "new-scenario" }, onclick: () => newForm("scenario") }, "New scenario"),
         h("button", { type: "button", class: "btn", dataset: { key: "new-session" }, onclick: () => newForm("session") }, "New idea session"),
-        h("button", { type: "button", class: "btn", dataset: { key: "new-part" }, onclick: () => cadForm() }, "New part from CAD")),
+        h("button", { type: "button", class: "btn", dataset: { key: "new-part" }, onclick: () => cadForm(cadFor) }, "New part from CAD")),
       newBox),
     h("section", { class: "start-card" }, h("h2", { text: "Open a file or folder" }),
       h("div", { class: "start-buttons" }, h("button", { type: "button", class: "btn", dataset: { key: "browse" }, onclick: () => browse(null) }, "Browse…")),
       browseBox),
     folders.card));
+  if (cadFor) {
+    cadForm(cadFor);
+    newBox.scrollIntoView({ block: "nearest" });
+  }
 }
 
 // -- team folders ---------------------------------------------------------------------------------------------------

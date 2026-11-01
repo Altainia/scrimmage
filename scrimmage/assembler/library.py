@@ -1,10 +1,17 @@
-"""The part library for the GUI: stock parts with parameter metadata, and part folders."""
+"""The part library for the GUI: stock parts with parameter metadata, and part folders.
+
+A part folder the Part tab built from a CAD import has an `import-origin.toml` marker (scrimmage/cad/build.py):
+`cad_marker` reads it, and the folder's entry says `cad: true`, so the robot can place the part where the CAD has it.
+"""
 
 from __future__ import annotations
 
+import math
 import os
+import tomllib
 from pathlib import Path
 
+from ..cad.build import MARKER
 from ..parts.model import PartError, load_part
 from ..parts.stock import REGISTRY, _load_all, build_stock
 
@@ -49,6 +56,25 @@ def _rel(folder: Path, base: Path | None) -> str:
     return str(folder.resolve())
 
 
+def cad_marker(folder: Path) -> dict | None:
+    """{import_id, origins: {body: [x, y, z]}} from a part folder's import-origin.toml (each body's origin in the robot
+    frame, m), or None when the folder has none or it can't be read (a hand-edited one with a bad origin too)."""
+    try:
+        raw = tomllib.loads((Path(folder) / MARKER).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return None
+    iid, origins = raw.get("import_id"), raw.get("origins")
+    if not isinstance(iid, str) or not isinstance(origins, dict):
+        return None
+    out = {}
+    for body, o in origins.items():
+        if not (isinstance(o, list) and len(o) == 3 and all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                                                            and math.isfinite(x) for x in o)):
+            return None
+        out[body] = [float(x) for x in o]
+    return {"import_id": iid, "origins": out}
+
+
 def folders(dirs: list[Path], config_dir: Path | None = None) -> list[dict]:
     """Each subfolder of `dirs` holding a part.toml (or the dir itself), once each even when dirs overlap;
     `config_dir` makes paths relative. A folder that can't be read is skipped."""
@@ -68,7 +94,7 @@ def folders(dirs: list[Path], config_dir: Path | None = None) -> list[dict]:
                 continue
             seen.add(key)
             item = {"name": c.name, "path": _rel(c, config_dir),
-                    "slots": {}, "mounts": [], "error": None}
+                    "slots": {}, "mounts": [], "error": None, "cad": cad_marker(c) is not None}
             try:
                 part = load_part(c)
                 item.update(name=part.name, slots=part.slot_kinds(), mounts=[m.name for m in part.mounts])

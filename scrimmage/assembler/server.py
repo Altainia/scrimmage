@@ -24,7 +24,9 @@ API contract (all bodies JSON; every /api/* request needs header X-Scrimmage-Tok
 App (`/api/app/*`; in every mode):
   GET  /api/app/state              -> {mode: start|robot|bench|part, path, display_path, recent: [{path, kind:
         robot|scenario|session|import, t}] (newest first, see recent.py), examples: [stems of examples/bench/*.toml],
-        needs_folder: "cad"|"code"|null}. path is the opened file (the scenario in scenario mode), session folder,
+        needs_folder: "cad"|"code"|null, back: {path, display_path}|null}. back: in part mode, the robot config (or
+        scenario) that was open when the part was opened (the library's Import CAD...): "Back to the robot" opens it
+        again; null otherwise. path is the opened file (the scenario in scenario mode), session folder,
         import file or plugin part folder, absolute; null in start mode. needs_folder: the team folder ({cad}, {code}: teamfolders.py) a value in the
         open robot file (or the scenario's) names that this computer hasn't set; the robot is then read-only, its
         read_only_reason saying which folder to set and how.
@@ -191,21 +193,29 @@ Part (`/api/part/*`; 404 unless a part is open, except upload). Pieces are keyed
 
 Robot (`/api/robot/*`):
   GET  /api/robot/state[?since=N]  -> {version, path, display_path, read_only, read_only_reason, parts, errors,
-        warnings, other_sections, can_undo, can_redo, mass_kg, bodies, joints, part_bodies, scenario_open}. With `since`, returns
+        warnings, other_sections, can_undo, can_redo, mass_kg, com, bodies, joints, part_bodies, scenario_open}. With `since`, returns
         at once if version != N, else long-polls up to 25 s (also noticing outside edits of either file).
         path is absolute; display_path is relative to the server's working directory when the file is under it.
-        parts: [{name, stock, path, attach, pos, rot, params, ids}] read from the document, so they are
-        listed even when the config is invalid. mass_kg, bodies and joints are null when the config is
-        invalid or read-only; joints excludes the free joint, bodies excludes the world body (a count).
+        parts: [{name, stock, path, attach, pos, rot, params, ids, cad_pos}] read from the document, so they are
+        listed even when the config is invalid. cad_pos: for a part folder built from a CAD import (it has an
+        import-origin.toml), the pos (m, with rot zero) that puts it where the CAD has it on what it attaches to
+        (edits.cad_offset), else null. mass_kg, com, bodies and joints are null when the config is
+        invalid or read-only; com: {height, forward, left} (m), the robot's center of gravity at its start pose
+        (subtree_com of the robot body in that body's frame: the stock chassis's origin is on the floor at the frame
+        center); joints excludes the free joint, bodies excludes the world body (a count).
         part_bodies: {instance: [body names]} (attach targets "<instance>.<body>"), null when read-only/invalid.
         When the scenario names a robot config that can't be read, path is null, parts [] and the robot is
         read-only with the reason. The version keeps counting up when the robot document is replaced.
         scenario_open: true when the opened file is a scenario (the page then shows the Scenario tab).
-  GET  /api/robot/view             -> model_view of the current world, or {} when read-only/invalid.
+  GET  /api/robot/view             -> model_view of the current world (com: the robot's CG in the world, for the 3D
+        view's CG marker), or {} when read-only/invalid.
   GET  /api/robot/library          -> {stock, folders}; folders lists each part folder (a folder holding part.toml)
-        in the config's directory, in its parts/ subfolder, and in any added folders, once each.
+        in the config's directory, in its parts/ subfolder, and in any added folders, once each: {name, path,
+        slots, mounts, error, cad} (cad: it was built from a CAD import, so it can go where the CAD has it).
   POST /api/robot/edit             -> body {version, op, ...}; ops and their fields:
-        add     {name, stock | path, attach?, pos?, rot?, params?, ids?}
+        add     {name, stock | path, attach?, pos?, rot?, params?, ids?}   without pos, a part folder from a CAD
+                import gets its cad_pos (see the state) for that attach: zero on the stock chassis's root body,
+                -origins[B] on body B of a part from the same import
         remove  {name}
         rename  {name, new_name}
         attach  {name, attach, pos, rot}
@@ -440,6 +450,7 @@ field errors use "scenario/<key>", "step<i>/<key>", "step<i>/check<j>/<key>", "s
 from __future__ import annotations
 
 import dataclasses
+import functools
 import json
 import logging
 import math
@@ -520,6 +531,14 @@ class ApiError(Exception):
 
 def _plain(v):
     return v.unwrap() if hasattr(v, "unwrap") else v
+
+
+@functools.cache
+def _chassis_root() -> str:
+    """The stock chassis's root body ("chassis"): an import part attached to it at zero offset sits where the CAD has it."""
+    from ..parts.stock import build_stock
+    _load_all()
+    return build_stock("chassis", {}, "chassis").bodies[0].name
 
 
 def _stock_defaults(stock) -> dict:
@@ -649,6 +668,8 @@ class App:
         self.scenario_errors: list[dict] = []
         self.bench: BenchSession | None = None    # the idea session (bench mode)
         self.part = None                          # the PartSession or PluginSession (part mode)
+        self.back: Path | None = None             # part mode: the robot config (or scenario) the part was opened from
+        self._com: tuple | None = None            # (world, its CG) for the robot state
         self._view: dict | None = None
         self._scenario_view: dict | None = None
         self._signals: dict | None = None
@@ -703,6 +724,12 @@ class App:
                                           self.bench.version if self.bench else 0,
                                           self.part.version if self.part else 0)
         doc = ConfigDoc(path) if kind in ("robot", "scenario") else None
+        if kind != "import":
+            back = None
+        elif self.mode == "robot" and (self.scenario or self.robot) is not None:
+            back = (self.scenario or self.robot).path    # "Back to the robot" reopens it
+        else:
+            back = self.back if self.mode == "part" else None
         bench = part = None
         if kind in ("bench", "session"):
             folder, stage = (path, None) if kind == "session" else (path.parent, path.name)
@@ -711,6 +738,7 @@ class App:
             part = part_session.open_part(path, floor, parts_dir, source)
         old, self.bench = self.bench, bench
         old_part, self.part = self.part, part
+        self.back = back
         self.robot, self.robot_missing, self._robot_target, self._robot_ver = None, NO_ROBOT, None, floor
         self.scenario, self.extra_folders = None, []
         if kind == "robot":
@@ -773,8 +801,10 @@ class App:
             p = self.bench.folder if mode == "bench" else self.part.path if mode == "part" \
                 else (self.scenario or self.robot).path if mode == "robot" else None
             unset = self._needs_folder()
+            back = self.back if mode == "part" else None
         return {"mode": mode, "path": str(p) if p is not None else None,
                 "display_path": self._display(p) if p is not None else "", "recent": recent.recent(),
+                "back": {"path": str(back), "display_path": self._display(back)} if back is not None else None,
                 "examples": bench_session.examples(), "needs_folder": unset[0] if unset else None}
 
     def _needs_folder(self) -> tuple[str, str] | None:
@@ -1137,7 +1167,8 @@ class App:
                               "path": _plain(p.get("path")), "attach": _plain(p.get("attach")),
                               "pos": _plain(p.get("pos", [0.0, 0.0, 0.0])), "rot": _plain(p.get("rot", [0.0, 0.0, 0.0])),
                               "params": {k: _plain(v) for k, v in p.items() if k not in reserved},
-                              "ids": _plain(p.get("ids", {}))})
+                              "ids": _plain(p.get("ids", {})),
+                              "cad_pos": self._cad_pos(d.doc, _plain(p.get("path")), _plain(p.get("attach")))})
             rest = tomlkit.parse(d.text)
             rest.pop("part", None)
             other = tomlkit.dumps(rest)
@@ -1151,7 +1182,7 @@ class App:
                "other_sections": other, "can_undo": d is not None and d.can_undo,
                "can_redo": d is not None and d.can_redo,
                "scenario_open": self.scenario is not None,
-               "mass_kg": None, "bodies": None, "joints": None, "part_bodies": None}
+               "mass_kg": None, "bodies": None, "joints": None, "part_bodies": None, "com": None}
         w = self.result.world if self.result.ok else None
         if w is not None and w.parts is not None:
             m = w.model
@@ -1161,7 +1192,51 @@ class App:
             out["bodies"] = sum(1 for b in range(1, m.nbody) if int(m.body_rootid[b]) == root)
             out["joints"] = sum(1 for j in range(m.njnt) if int(m.body_rootid[m.jnt_bodyid[j]]) == root
                                 and int(m.jnt_type[j]) != int(mujoco.mjtJoint.mjJNT_FREE))
+            out["com"] = self._robot_com(w)
         return out
+
+    def _robot_com(self, w) -> dict:
+        """The robot's center of gravity at its start pose: subtree_com of the robot body in that body's frame (m;
+        for a chassis root, its origin is on the floor at the frame center). Kept until the world changes."""
+        if self._com is None or self._com[0] is not w:
+            m = w.model
+            d = mujoco.MjData(m)
+            mujoco.mj_kinematics(m, d)
+            mujoco.mj_comPos(m, d)
+            b = w.robot_body
+            x, y, z = d.xmat[b].reshape(3, 3).T @ (d.subtree_com[b] - d.xpos[b])
+            self._com = (w, {"height": float(z), "forward": float(x), "left": float(y)})
+        return self._com[1]
+
+    def _part_folder(self, path) -> Path | None:
+        """The folder a [[part]] `path` names (relative to the robot config, or {cad}/...), or None."""
+        if not isinstance(path, str) or not path.strip():
+            return None
+        try:
+            p = Path(teamfolders.expand(path)).expanduser()
+        except teamfolders.TeamFolderError:
+            return None
+        return p if p.is_absolute() else self._base_dir() / p
+
+    def _cad_pos(self, doc, path, attach) -> list[float] | None:
+        """Where the part folder `path` attached to `attach` sits where the CAD has it (edits.cad_offset), or None:
+        not from a CAD import, a target that isn't a body (a mount: known while the robot loads), or one with no CAD
+        placement."""
+        folder = self._part_folder(path)
+        marker = library.cad_marker(folder) if folder is not None else None
+        if marker is None or not isinstance(attach, str) or "." not in attach:
+            return None
+        inst, body = attach.split(".", 1)
+        target = next((p for p in edits.parts(doc) if p.get("name") == inst), None)
+        if target is None:
+            return None
+        w = self._robot_world()
+        if w is not None and w.parts is not None and any(
+                i.name == inst and any(mt.name == body for mt in i.part.mounts) for i in w.parts.instances):
+            return None     # a mount wins over a body of the same name
+        tfolder = self._part_folder(_plain(target.get("path")))
+        return edits.cad_offset(marker, body, library.cad_marker(tfolder) if tfolder is not None else None,
+                                chassis_root=_plain(target.get("stock")) == "chassis" and body == _chassis_root())
 
     def wait_state(self, since: int | None) -> dict:
         return self._wait(since, lambda: self.robot_version, self.state)
@@ -1214,11 +1289,14 @@ class App:
         name = b.get("name")
         if op == "add":
             path = b.get("path")
+            pos = b.get("pos")
+            if pos is None:     # a part from a CAD import goes where the CAD has it
+                pos = self._cad_pos(self.robot.doc, path, b.get("attach"))
             if isinstance(path, str) and path.strip() and not _FOLDER_PLACEHOLDER.search(path):
                 portable = self._portable((self._base_dir() / Path(path).expanduser()).resolve(), self._base_dir())
                 path = portable if portable.startswith("{") else path
             return lambda doc: edits.add_part(doc, name=name, stock=b.get("stock"), path=path,
-                                              attach=b.get("attach"), pos=b.get("pos"), rot=b.get("rot"),
+                                              attach=b.get("attach"), pos=pos, rot=b.get("rot"),
                                               params=b.get("params"), ids=b.get("ids"),
                                               defaults=_stock_defaults(b.get("stock")))
         if op == "remove":

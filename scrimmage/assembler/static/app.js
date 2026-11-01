@@ -383,6 +383,9 @@ function renderStatus() {
   const s = store.state;
   renderSaved();
   $("#mass").textContent = s.mass_kg == null ? "Mass: —" : `Mass: ${s.mass_kg.toFixed(1)} kg`;
+  $("#cg").textContent = cgText(s.com);
+  $("#cg").title = s.com ? "The robot's center of gravity at its start pose, from the floor at the frame's center"
+    + ` (${Math.abs(s.com.left).toFixed(2)} m ${Math.round(s.com.left * 100) < 0 ? "right" : "left"})` : "";
   $("#counts").textContent = s.bodies == null ? "" : `${s.bodies} bodies · ${s.joints} joints`;
   const ne = s.errors.length + store.lastErrors.length, nw = s.warnings.length;
   const parts = [];
@@ -392,6 +395,13 @@ function renderStatus() {
   $("#problems").className = `stat ${ne ? "stat-bad" : nw ? "stat-warn" : "stat-ok"}`;
 }
 export { renderErrors, renderStatus };
+
+// "CG: 0.31 m up, 0.02 m forward" (meters, two decimals) from the state's com; "" without one.
+export function cgText(com) {
+  if (!com) return "";
+  const m = (v) => Math.abs(v).toFixed(2);
+  return `CG: ${m(com.height)} m up, ${m(com.forward)} m ${Math.round(com.forward * 100) < 0 ? "back" : "forward"}`;
+}
 
 // -- helpers shared by the library and inspector ------------------------------------------------
 export function stockMeta(name) {
@@ -492,7 +502,10 @@ function onKey(e) {
 // plugin part folder: the Part tab) or "start" (nothing; only the start page). The "Start page" link shows the start page client-side; the server's mode only changes when
 // something is opened or made there (the page then reloads).
 let startShown = false;
-async function showStartPage(canGoBack) {
+// The start page from the Robot tab's "Import CAD…": straight to "New part from CAD", the part going in parts/ next to
+// the robot config `cadFor`.
+export function importCad(cadFor) { return showStartPage(true, { cadFor }); }
+async function showStartPage(canGoBack, { cadFor = null } = {}) {
   startShown = true;
   document.body.classList.add("on-start");
   $("#start-page").replaceChildren();   // not the last visit's answers (the team folders may have changed since)
@@ -501,7 +514,7 @@ async function showStartPage(canGoBack) {
   $("#file-path").replaceChildren(h("strong", { text: "Start" }));
   try {
     const m = await import("./start.js");
-    await m.showStart($("#start-page"), { canGoBack, onBack: hideStartPage });
+    await m.showStart($("#start-page"), { canGoBack, onBack: hideStartPage, cadFor });
   } catch (e) {
     console.error(e);
     notice(`The start page failed to load: ${e.message || e}`, "error");
@@ -561,6 +574,25 @@ function bootRobot() {
   });
 }
 
+// The part was opened from a robot (the library's Import CAD…): "Back to the robot" opens that robot config again.
+function backButton(back) {
+  const btn = $("#back-robot");
+  btn.hidden = false;
+  btn.title = `Open ${back.display_path} again`;
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    const { status, data } = await api("POST", "/api/app/open", { path: back.path });
+    if (status === 200 && data.ok) {
+      location.hash = `token=${encodeURIComponent(token)}`;   // the robot opens on its own first tab
+      location.reload();
+      return;
+    }
+    btn.disabled = false;
+    const why = (data.errors && data.errors[0] && data.errors[0].message) || `the server answered ${status}`;
+    notice(status === 409 ? `Can't switch right now: ${why}` : why, "error");
+  });
+}
+
 async function boot() {
   window.__scrimmage = {
     mode: null,
@@ -596,6 +628,7 @@ async function boot() {
     $("#tab-btn-robot").hidden = true;
     $("#tab-btn-drive").hidden = true;
     $("#start-link").hidden = false;
+    if (data.back) backButton(data.back);
     bootPart();
   } else {
     $("#start-link").hidden = false;
