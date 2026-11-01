@@ -150,7 +150,8 @@ Part (`/api/part/*`; 404 unless a part is open, except upload). Pieces are keyed
         can't be read), typed_mass, left_out, volume (m^3), hardware (the hardware guess)}], bodies: [{name, parent,
         joint, motor, encoder, gyro, mounts, collision, part, typed_mass, mass (its pieces left in, or its typed
         weight), com (robot coordinates; null for no mass)}], parts: [{name, folder, mass, com (from the last
-        build; null before one), total_mass}], checklist: [{level: todo|check|error, text, target: {kind:
+        build; null before one), total_mass}], couplings: [{a, b, ratio}] and loops: [{body1, body2, point (CAD)}]
+        (as the import file has them; [] in plugin mode), checklist: [{level: todo|check|error, text, target: {kind:
         piece|body|frame, keys}}], messages (what the last edit, undo or re-import dropped or guessed, plain words),
         build: {state: idle|building|failed, message}, can_undo, can_redo, read_only_reason}; long-polls like
         /api/bench/state. Every edit is saved at once; the part folders then rebuild in the background (one build at

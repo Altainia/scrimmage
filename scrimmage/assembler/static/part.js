@@ -5,19 +5,22 @@
 //              guessed folded under "+N hardware"; a piece dragged onto a body moves into it. Above it "New body
 //              from selection" and "Leave out" act on the selection. Below it the checklist ("Still needed"): a click
 //              selects what the item is about.
-//   Middle     the 3D view (part3d.js, loaded on its own so a WebGL failure leaves the rest working).
-//   Right      the inspector: the sections in `sections` whose `when(ctx)` is true, in order.
+//   Middle     the 3D view (part3d.js, loaded on its own so a WebGL failure leaves the rest working), with the
+//              "Where's the robot?" step over it until the robot frame is confirmed.
+//   Right      the inspector: the sections in `sections` whose `when(ctx)` is true, in order (part_inspector.js).
 //   Status     saved or not, "Parts up to date" / "Updating parts…" from build.state, the part's mass, Import again.
 //
-// Every edit is saved at once (no Save button); the part folders rebuild in the background. A CAD file dropped
-// anywhere on the tab replaces the source. In plugin mode (state.mode "plugin") there are no pieces: only the
-// body-level controls show.
+// This file is the store, the edits, the tree, the checklist and the status line. Every edit is saved at once (no
+// Save button); the part folders rebuild in the background. A CAD file dropped anywhere on the tab replaces the
+// source. In plugin mode (state.mode "plugin") there are no pieces: only the body-level controls show.
 //
-// For the next steps (joints, slots, mounts, the robot frame): `addSection({id, when, render}, {before})` adds an
-// inspector section (render(ctx) returns a node or a list; ctx is {state, sel, pieces, bodies, body, plugin, ro});
-// `editOp(op, args)` makes one edit (it resolves {ok, errors}); `select(kind, keys, {add})` changes the selection;
-// `onPart(fn)` calls fn after every render and `onView(fn)` with every new /api/part/view; `field()` draws a
-// labelled control with its error messages. Test hook: window.__scrimmagePart {store, screenPos(pieceKey), scene}.
+// For the inspector (part_inspector.js): `addSection({id, when, render}, {before})` adds an inspector section
+// (render(ctx) returns a node or a list; ctx is {state, sel, pieces, bodies, body, plugin, ro}); `editOp(op, args)`
+// makes one edit (it resolves {ok, errors}); `select(kind, keys, {add})` changes the selection; `onPart(fn)` calls fn
+// after every render and `onView(fn)` with every new /api/part/view; `field()` draws a labelled control with its
+// error messages. `view3d` is filled by part3d.js: startPick({hint, onPick}), cancelPick(), picking(), pose() (redraw
+// the "Try it" poses from part.tryit), solidBox() (the drawn pieces' robot-frame box). Test hook:
+// window.__scrimmagePart {store, screenPos(pieceKey, {across}), screenPoint(pieceKey), scene, toRobot(frame)}.
 
 import { $, h, api, notice, serial, registerTab, setTab, showPath } from "./app.js";
 import { uploadCad } from "./start.js";
@@ -31,7 +34,11 @@ export const part = {
   showLeftOut: false,
   openHardware: new Set(),   // bodies whose hardware rows are unfolded
   appPath: "",        // /api/app/state's display path of the import file (or part folder)
+  tryit: new Map(),   // body -> its "Try it" slider (degrees or meters): the 3D view only, never sent
 };
+
+// The 3D view's controls, filled in by part3d.js when it loads (empty when WebGL is missing).
+export const view3d = {};
 
 const listeners = [], viewListeners = [];
 export function onPart(fn) { listeners.push(fn); }
@@ -40,6 +47,7 @@ export function onView(fn) { viewListeners.push(fn); if (part.view) fn(part.view
 let busy = 0, working = "";   // working: a re-import or upload in progress ("Reading the CAD file…")
 let reveal = false;           // after the next render, scroll the selected tree row into view
 let pendingBody = null;       // select this body once a state that has it arrives (a new or renamed body)
+export function expectBody(name) { pendingBody = name; }
 let lastMessages = "[]";
 let viewKey = null;
 
@@ -47,13 +55,14 @@ const plugin = () => !!part.state && part.state.mode === "plugin";
 const readOnly = () => !!part.state && !!part.state.read_only_reason;
 const pieceOf = (key) => part.state.pieces.find((p) => p.key === key) || null;
 const bodyOf = (name) => part.state.bodies.find((b) => b.name === name) || null;
-const tail = (key) => String(key).split("/").pop();
+export const tail = (key) => String(key).split("/").pop();
 
 export function kg(x) {
   if (typeof x !== "number" || !isFinite(x)) return "—";
   return `${x >= 10 ? x.toFixed(2) : x === 0 ? "0" : String(+x.toPrecision(3))} kg`;
 }
-const cog = (c) => (c ? `x ${c[0].toFixed(3)}, y ${c[1].toFixed(3)}, z ${c[2].toFixed(3)} m` : "none (no weight)");
+const mm = (v) => (Math.abs(v) < 5e-4 ? 0 : v).toFixed(3);   // never "-0.000"
+export const cog = (c) => (c ? `x ${mm(c[0])}, y ${mm(c[1])}, z ${mm(c[2])} m` : "none (no weight)");
 
 // -- edits ------------------------------------------------------------------------------------------
 async function mutate(path, body) {
@@ -288,8 +297,8 @@ function renderTree() {
 function bodyWords(b, n) {
   const pieces = plugin() ? "" : `${n} piece${n === 1 ? "" : "s"} · `;
   if (b.parent == null) return `${pieces}its own part${b.part && b.part !== b.name ? ` (${b.part})` : ""}`;
-  const kind = b.joint && b.joint.kind;
-  const how = kind === "hinge" || kind === "revolute" ? "turns on" : kind === "slide" || kind === "prismatic" ? "slides on" : "fixed to";
+  const kind = b.joint && b.joint.kind;   // JointSettings.kind (and a plugin part's Joint.kind): "hinge" | "slide"
+  const how = kind === "hinge" ? "turns on" : kind === "slide" ? "slides on" : "fixed to";
   return `${pieces}${how} ${b.parent}`;
 }
 
@@ -442,7 +451,7 @@ export function box(attrs, commit) {
 }
 
 // A typed number, or null for an empty box; NaN (and a local message) for text that isn't one.
-function number(text, name) {
+export function number(text, name) {
   if (text === "") return null;
   const v = Number(text.replace(",", "."));
   if (!isFinite(v)) {
@@ -453,7 +462,7 @@ function number(text, name) {
   return v;
 }
 
-function matLabel(key, short = false) {
+export function matLabel(key, short = false) {
   if (key === "custom") return short ? "custom" : "Something else (type its density)";
   const m = part.materials && part.materials.materials[key];
   if (!m) return key;
@@ -496,233 +505,6 @@ function renderInspector() {
   }
 }
 
-// Nothing selected: the part as a whole.
-addSection({
-  id: "summary",
-  when: (c) => !c.sel.kind,
-  render: (c) => h("section", { class: "insp-section" },
-    h("h3", { text: c.state.name || "This part" }),
-    ...c.state.parts.map((p) => h("p", { class: "part-line" },
-      c.state.parts.length > 1 ? h("strong", { text: `${p.name}: ` }) : null,
-      `Weight ${kg(p.mass)} · center of gravity ${cog(p.com)}`)),
-    h("p", { class: "hint", text: c.plugin
-      ? "Click a body in the 3D view or the list to change its weight."
-      : "Click a piece in the 3D view or the list to say what it is made of. Shift-click adds more pieces. Drag pieces onto a body to move them." }),
-    c.state.source ? h("p", { class: "hint" }, "From ", h("code", { text: c.state.source }), ". Drop a new CAD file anywhere here to use it instead.") : null),
-});
-
-// The selected pieces: their weight, their body.
-addSection({
-  id: "pieces",
-  when: (c) => c.sel.kind === "piece" && c.pieces.length > 0,
-  render: (c) => {
-    const ps = c.pieces;
-    const mass = ps.reduce((a, p) => a + (p.left_out ? 0 : p.mass || 0), 0);
-    const bodies = [...new Set(ps.map((p) => p.body))];
-    const move = h("select", { id: "part-move" },
-      bodies.length > 1 ? h("option", { value: "", disabled: true }, "Different bodies") : null,
-      ...c.state.bodies.map((b) => h("option", { value: b.name }, b.name)));
-    move.value = bodies.length > 1 ? "" : bodies[0];
-    move.addEventListener("change", () => { if (live(move) && move.value) editOp("move_pieces", { pieces: ps.map((p) => p.key), body: move.value }); });
-    const out = ps.filter((p) => p.left_out).length;
-    return h("section", { class: "insp-section insp-head" },
-      h("h3", { text: ps.length === 1 ? ps[0].name : `${ps.length} pieces` }),
-      ps.length === 1 ? h("p", { class: "hint mono", text: ps[0].key }) : null,
-      h("p", { class: "part-line" }, "Weight ",
-        h("strong", { id: "part-sel-mass", dataset: { kg: String(mass) }, text: kg(mass) }),
-        out ? h("span", { class: "muted", text: ` (${out === ps.length ? "left out" : `${out} left out`})` }) : null),
-      field("In body", move, "body", "Pieces in one body move together. You can also drag them in the list."));
-  },
-});
-
-// What the selected pieces (or the selected body's pieces) are made of, and "or type a weight".
-addSection({
-  id: "material",
-  when: (c) => !c.plugin && ((c.sel.kind === "piece" && c.pieces.length > 0)
-    || (c.body && c.state.pieces.some((p) => p.body === c.body.name))),
-  render: (c) => {
-    const ps = c.sel.kind === "piece" ? c.pieces : c.state.pieces.filter((p) => p.body === c.body.name);
-    const keys = ps.map((p) => p.key);
-    const mats = new Set(ps.map((p) => p.material));
-    const one = mats.size === 1 ? [...mats][0] : undefined;
-    const choices = part.materials ? Object.keys(part.materials.materials) : [];
-    const sel = h("select", { id: "part-material" },
-      one === undefined ? h("option", { value: "-", disabled: true }, "Different materials") : null,
-      one === null ? h("option", { value: "", disabled: true }, "Not chosen yet (counted as aluminum)") : null,
-      ...choices.map((k) => h("option", { value: k }, matLabel(k))),
-      h("option", { value: "custom" }, matLabel("custom")));
-    sel.value = one === undefined ? "-" : one === null ? "" : one;
-    const printed = one && part.materials && part.materials.materials[one] && part.materials.materials[one].printed;
-    const infillOf = ps[0] && ps[0].infill;
-    const send = (material, extra = {}) => editOp("set_material", { pieces: keys, material, ...extra });
-    sel.addEventListener("change", () => {
-      if (!live(sel)) return;
-      const m = sel.value;
-      if (m === "custom") {   // ask for the density first; the edit goes when it is typed
-        customAsked = true;
-        render();
-        const d = document.getElementById("part-density");
-        if (d) d.focus();
-        return;
-      }
-      customAsked = false;
-      const pm = part.materials.materials[m];
-      send(m, pm && pm.printed ? { infill: one === m && infillOf != null ? infillOf : null } : {});
-    });
-    const rows = [field("Material", sel, "material", ps.length > 1 ? `Sets all ${ps.length} pieces.` : null)];
-    if (printed) {
-      const fill = box({ id: "part-infill", type: "number", min: "0", max: "100", step: "5", inputmode: "decimal",
-        value: infillOf == null ? "" : String(+(infillOf * 100).toFixed(1)), placeholder: "40" }, (text) => {
-        const v = number(text, "infill");
-        if (!Number.isNaN(v)) send(one, { infill: v === null ? null : v / 100 });
-      });
-      rows.push(field("Infill (percent)", h("span", { class: "with-unit" }, fill, h("span", { class: "unit", text: "%" })), "infill",
-        "How full the slicer fills the inside. Empty means 40%."));
-      rows[rows.length - 1].querySelector("label").htmlFor = "part-infill";
-    }
-    if (one === "custom" || (customAsked && sel.value !== "-")) {
-      if (one !== "custom") sel.value = "custom";
-      const dens = box({ id: "part-density", type: "number", min: "0", step: "any", inputmode: "decimal",
-        value: one === "custom" && ps[0].custom_density != null ? String(ps[0].custom_density) : "", placeholder: "2700" }, (text) => {
-        const v = number(text, "custom_density");
-        if (!Number.isNaN(v)) send("custom", { custom_density: v });
-      });
-      rows.push(field("Density", h("span", { class: "with-unit" }, dens, h("span", { class: "unit", text: "kg per cubic meter" })), "custom_density",
-        "Aluminum is 2700, steel 7850, polycarbonate 1200."));
-      rows[rows.length - 1].querySelector("label").htmlFor = "part-density";
-    }
-    if (c.sel.kind === "piece") {
-      const typed = new Set(ps.map((p) => p.typed_mass));
-      const t = typed.size === 1 ? [...typed][0] : null;
-      const w = box({ id: "part-weight", type: "number", min: "0", step: "any", inputmode: "decimal",
-        value: t == null ? "" : String(t), placeholder: ps.length === 1 && ps[0].mass != null ? String(+ps[0].mass.toPrecision(3)) : "" }, async (text) => {
-        const v = number(text, "kg");
-        if (Number.isNaN(v)) return;
-        for (const k of keys) {   // one edit per piece: set_mass names one piece
-          const r = await editOp("set_mass", { piece: k, kg: v });
-          if (!r.ok) break;
-        }
-      });
-      rows.push(field(ps.length > 1 ? "or type a weight (each piece)" : "or type a weight",
-        h("span", { class: "with-unit" }, w, h("span", { class: "unit", text: "kg" })), "kg",
-        "A typed weight wins over the material. Empty it to use the material again."));
-      rows[rows.length - 1].querySelector("label").htmlFor = "part-weight";
-    }
-    return h("section", { class: "insp-section" }, h("h3", { text: c.sel.kind === "body" ? "What its pieces are made of" : "What it is made of" }), ...rows);
-  },
-});
-let customAsked = false;
-onPart(() => { if (part.sel.kind !== "piece" && part.sel.kind !== "body") customAsked = false; });
-
-// One body: its name, weight, center of gravity and whether it is its own part.
-addSection({
-  id: "body",
-  when: (c) => !!c.body,
-  render: (c) => {
-    const b = c.body, s = c.state;
-    const rows = [];
-    if (c.plugin) rows.push(h("h3", { text: b.name }));
-    else {
-      rows.push(h("h3", { text: "Body" }));
-      const name = box({ id: "part-body-name", type: "text", value: b.name, spellcheck: "false" }, (text) => {
-        if (!text) { part.errors = [{ field: "new", message: "A body needs a name: type one." }]; render(); return; }
-        pendingBody = text;
-        editOp("rename_body", { old: b.name, new: text });
-      });
-      rows.push(field("Name", name, "new"));
-    }
-    rows.push(h("p", { class: "part-line" }, "Weight ", h("strong", { id: "part-body-mass", dataset: { kg: String(b.mass ?? "") }, text: kg(b.mass) })));
-    rows.push(h("p", { class: "part-line" }, "Center of gravity ", h("span", { class: "mono", text: cog(b.com) })));
-    if (b.typed_mass !== undefined || c.plugin) {
-      const w = box({ id: "part-body-weight", type: "number", min: "0", step: "any", inputmode: "decimal",
-        value: b.typed_mass == null ? "" : String(b.typed_mass), placeholder: b.mass != null ? String(+b.mass.toPrecision(3)) : "" }, (text) => {
-        const v = number(text, "kg");
-        if (!Number.isNaN(v)) editOp("set_mass", { body: b.name, kg: v });
-      });
-      rows.push(field("or type its weight", h("span", { class: "with-unit" }, w, h("span", { class: "unit", text: "kg" })), "kg",
-        c.plugin ? "Empty it to use the weight the CAD plugin wrote." : "A typed weight wins over its pieces' materials. Empty it to use them again."));
-      rows[rows.length - 1].querySelector("label").htmlFor = "part-body-weight";
-    }
-    if (!c.plugin) {
-      const own = b.parent == null;
-      const roots = s.bodies.filter((x) => x.parent == null);
-      const check = h("input", { type: "checkbox", id: "part-own" });
-      check.checked = own && askParent !== b.name;
-      const only = own && roots.length < 2;
-      if (only) check.disabled = true;
-      check.addEventListener("change", () => {
-        if (!live(check)) return;
-        if (check.checked) { askParent = null; editOp("set_part", { body: b.name, part: b.name }); }
-        else { askParent = b.name; render(); const p = document.getElementById("part-parent"); if (p) p.focus(); }
-      });
-      const ownRow = h("div", { class: "field part-own", dataset: { field: "part" } },
-        h("label", { class: "part-check-label", for: "part-own" }, check, " Its own part"),
-        h("p", { class: "hint", text: only ? "Every import makes at least one part: this is it."
-          : own ? "It is placed on the robot by itself, and the bodies on it go with it." : "Tick it to place this body on the robot by itself." }),
-        ...part.errors.filter((e) => e.field === "part").map((e) => h("p", { class: "error field-msg", role: "alert", text: e.message })));
-      rows.push(ownRow);
-      if (own && askParent !== b.name) {
-        const pn = box({ id: "part-part-name", type: "text", value: b.part || b.name, spellcheck: "false" }, (text) => {
-          if (text) editOp("set_part", { body: b.name, part: text });
-        });
-        rows.push(field("Part name", pn, "part-name", "The name of its folder in parts/."));
-      }
-      if (askParent === b.name) {
-        const below = descendants(b.name);
-        const choices = s.bodies.filter((x) => x.name !== b.name && !below.has(x.name));
-        const ps = h("select", { id: "part-parent" }, h("option", { value: "", disabled: true }, "Pick a body"),
-          ...choices.map((x) => h("option", { value: x.name }, x.name)));
-        ps.value = "";
-        ps.addEventListener("change", async () => {
-          if (!live(ps) || !ps.value) return;
-          const r = await editOp("set_part", { body: b.name, part: null, parent: ps.value });
-          if (r.ok) { askParent = null; render(); }
-        });
-        rows.push(field("It hangs on", ps, "parent", "It stops being a part and moves with that body."));
-      }
-    }
-    return h("section", { class: "insp-section insp-head" }, ...rows);
-  },
-});
-let askParent = null;   // the body whose "Its own part" was just unticked: which body does it hang on?
-
-function descendants(name) {
-  const out = new Set();
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const b of part.state.bodies) if (b.parent && (b.parent === name || out.has(b.parent)) && !out.has(b.name)) { out.add(b.name); grew = true; }
-  }
-  return out;
-}
-
-// Several bodies (a checklist item names them): one button each.
-addSection({
-  id: "bodies",
-  when: (c) => c.sel.kind === "body" && c.bodies.length > 1,
-  render: (c) => h("section", { class: "insp-section" },
-    h("h3", { text: `${c.bodies.length} bodies` }),
-    h("ul", { class: "part-body-list" }, ...c.bodies.map((b) => h("li", {},
-      h("button", { type: "button", class: "linklike", onclick: () => select("body", [b.name]) }, b.name),
-      h("span", { class: "muted", text: ` · ${kg(b.mass)}` })))),
-    h("p", { class: "hint", text: "Pick one to change it." })),
-});
-
-// The robot frame (which way is up and forward), as the import guessed it.
-const AXIS = { "+x": "+x", "-x": "−x", "+y": "+y", "-y": "−y", "+z": "+z", "-z": "−z" };
-addSection({
-  id: "frame",
-  when: (c) => c.sel.kind === "frame",
-  render: (c) => {
-    const f = c.state.frame;
-    if (!f) return h("section", { class: "insp-section" }, h("p", { class: "hint", text: "A plugin-made part keeps the frame its CAD plugin wrote." }));
-    return h("section", { class: "insp-section" },
-      h("h3", { text: "Robot frame" }),
-      h("p", { class: "part-line" }, "Up is ", h("strong", { text: AXIS[f.up] || f.up }), " and forward is ", h("strong", { text: AXIS[f.front] || f.front }), " in the CAD file."),
-      h("p", { class: "hint", text: f.confirmed ? "Checked." : "This is a guess: most CAD programs use +z up, but Inventor uses +y up." }));
-  },
-});
-
 // -- boot -------------------------------------------------------------------------------------------------
 function initDrop() {
   // a CAD file dropped anywhere on the tab replaces the source (a piece dragged in the tree is not a file)
@@ -747,6 +529,7 @@ function initDrop() {
 
 export async function initPart() {
   window.__scrimmagePart = { store: part, screenPos: () => null, scene: { drawn: [], faint: [], meshes: 0 } };
+  await import("./part_inspector.js");   // its sections (it imports this file, so not at the top)
   registerTab("part", { renderTop, undo, redo, onShow: render });
   setTab("part");
   $("#part-new-body").addEventListener("click", () => {

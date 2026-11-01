@@ -184,7 +184,8 @@ class PluginSession(_Session):
         with self._lock:
             out = {"version": self.version, "mode": "plugin", "path": str(self.path),
                    "name": self.part.name if self.part else self.path.name, "source": None, "units": "m",
-                   "frame": None, "pieces": [], "bodies": [], "parts": [], "checklist": [],
+                   "frame": None, "pieces": [], "bodies": [], "parts": [], "couplings": [], "loops": [],
+                   "checklist": [],
                    "messages": list(self._messages), "build": {"state": "idle", "message": None},
                    "can_undo": bool(self._undo), "can_redo": bool(self._redo),
                    "read_only_reason": self.read_only_reason}

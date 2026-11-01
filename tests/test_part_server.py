@@ -151,6 +151,19 @@ def test_edit_messages_are_shown(part_app):
     assert isinstance(st["messages"], list)
 
 
+def test_state_has_couplings_and_loops(part_app):
+    c, _ = part_app()
+    st = _built(c)
+    assert st["couplings"] == [] and st["loops"] == []
+    hinge = {"kind": "hinge", "anchor": [0.06, 0.1, 0.818], "axis": [1, 0, 0]}
+    for body in ("hook_assy", "hook_assy_2"):
+        assert _edit(c, "set_joint", body=body, parent="base_plate", joint=hinge)[0] == 200
+    s, st = _edit(c, "add_coupling", a="hook_assy", b="hook_assy_2", ratio=-1)
+    assert s == 200 and st["couplings"] == [{"a": "hook_assy", "b": "hook_assy_2", "ratio": -1.0}]
+    s, st = _edit(c, "add_loop", body1="arm_A", body2="arm_B", point=[0.1, 0.1, 0.5])
+    assert s == 200 and st["loops"] == [{"body1": "arm_A", "body2": "arm_B", "point": [0.1, 0.1, 0.5]}]
+
+
 def test_stale_version_409(part_app):
     c, _ = part_app()
     st = _built(c)

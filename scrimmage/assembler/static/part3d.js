@@ -10,30 +10,52 @@
 // selection change rewrites colors, not geometry), and a click finds its piece through the mesh's
 // triangle-to-piece index. The merge is redone only when a piece changes body or is left out or put back.
 //
-// For the next steps: pickAt(clientX, clientY) -> {key, triangle (an index into that piece's view faces), point}
-// or null; `overlay` is a group drawn over the part (axes, anchors); requestRender() redraws.
-// Test hook (on window.__scrimmagePart): screenPos(pieceKey) gives the client {x, y} of a visible spot on that piece,
-// or null when it isn't drawn or is hidden behind others; scene is {drawn, faint, meshes, triangles}.
+// Over the part (`overlay`, drawn on top): each joint's axis as an arrow through its anchor (orange: turns, with a ring;
+// blue: slides; the selected body's brighter), the mounts (green), and while the robot frame is being checked a red
+// "front" arrow along the robot's +x on the floor. Joint anchors and axes, and mount points, are CAD coordinates in
+// the state; they are drawn through the robot frame (part_frame.js, the same math as scrimmage/cad/frame.py).
+//
+// "Try it" (part.tryit, set by the inspector's sliders) moves each body's merged mesh, and the bodies hanging on it,
+// with a matrix: nothing is sent to the server. Picking still finds the right piece and triangle of a moved body.
+//
+// Pick mode (view3d.startPick({hint, onPick, owner})): a hint shows over the view, the next click on a piece calls
+// onPick({key, triangle, point, rest}) instead of selecting (rest: the point with the body at zero pose); onPick may
+// resolve {again: message} to stay in pick mode with that message. Esc or Cancel stops it.
+//
+// pickAt(clientX, clientY) -> {key, triangle (an index into that piece's view faces), point, rest} or null;
+// requestRender() redraws. Test hook (on window.__scrimmagePart): screenPos(pieceKey, {across}) gives the client
+// {x, y} of a visible spot on that piece (with `across`, a robot-frame direction, only on triangles whose normal is
+// across it: a round side), or null when it isn't drawn or is hidden behind others; screenPoint(pieceKey) is where
+// the piece's first vertex is drawn (it follows Try it); scene is {drawn, faint, meshes, triangles, arrows (bodies
+// whose joint axis is drawn), mounts, lowest (the drawn pieces' lowest robot z at zero pose)}.
 
 import * as THREE from "three";
 import { OrbitControls } from "./vendor/OrbitControls.js";
 import { $, h } from "./app.js";
-import { part, onPart, onView, select, bodyColor } from "./part.js";
+import { part, onPart, onView, select, bodyColor, view3d } from "./part.js";
 import { decode } from "./scene3d.js";
+import { toRobot, cadToRobot, dirToRobot, normalize, bodyPoses, apply } from "./part_frame.js";
 
 const SELECTED = new THREE.Color(0x2f7ff0);
 const COG = 0xe8590c;
+const TURNS = 0xd58a3a, SLIDES = 0x3a7bd5, MOUNT = 0x2a9d55, FRONT = 0xc62828;
 const CLICK_SLOP = 5;
 
 let renderer, scene, camera, controls, root, cogs, grid;
 export const overlay = new THREE.Group();
 let pieces = new Map();        // key -> {pos: Float32Array, idx: Uint32Array}
-let meshes = [];               // [{mesh, keys, triPiece, triStart, vStart, faint}]
+let meshes = [];               // [{mesh, keys, triPiece, triStart, vStart, faint, body}]
 let mergedSig = null;          // which pieces each merged mesh holds
 let framed = false;
 let pending = false;
 let down = null;
 let disposables = [];
+let overlayParts = [];         // geometries and materials of the overlay, disposed on each redraw
+let arrows = [];               // bodies whose joint axis is drawn
+let mountsDrawn = 0;
+let poses = new Map();         // body -> {R, t}: its Try-it pose
+let pick = null;               // {hint, onPick, owner, busy}
+let frameKey = null;
 
 export function initPartView() {
   const host = $("#part-view");
@@ -80,9 +102,13 @@ export function initPartView() {
   const tools = h("div", { class: "view-tools" },
     h("button", { type: "button", class: "btn btn-small", id: "part-frame-view", title: "Fit the part in the view", onclick: () => frameAll() }, "Fit to view"),
     leftBtn);
-  const legend = h("p", { class: "part-legend" }, h("span", { class: "part-cog-dot", "aria-hidden": "true" }), " center of gravity");
+  const legend = h("p", { class: "part-legend" }, h("span", { class: "part-cog-dot", "aria-hidden": "true" }), " center of gravity",
+    h("span", { id: "part-legend-front", hidden: true }, h("span", { class: "part-front-dot", "aria-hidden": "true" }), " front"));
   const empty = h("p", { class: "view-placeholder", id: "part-view-empty", hidden: true });
-  host.replaceChildren(cv, tools, legend, empty);
+  const hint = h("div", { class: "part-pick-hint", id: "part-pick-hint", hidden: true, role: "status" },
+    h("span", { id: "part-pick-text" }),
+    h("button", { type: "button", class: "btn btn-small", id: "part-pick-cancel", onclick: () => cancelPick() }, "Cancel (Esc)"));
+  host.replaceChildren(cv, tools, legend, empty, hint);
 
   new ResizeObserver(resize).observe(host);
   resize();
@@ -92,6 +118,9 @@ export function initPartView() {
   });
   cv.addEventListener("pointerdown", (e) => { down = { x: e.clientX, y: e.clientY, button: e.button }; });
   cv.addEventListener("pointerup", onUp);
+  document.addEventListener("keydown", (e) => {
+    if (pick && e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancelPick(); }
+  }, true);
   const dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)");
   if (dark && dark.addEventListener) dark.addEventListener("change", () => { setBackground(); requestRender(); });
 
@@ -99,6 +128,9 @@ export function initPartView() {
   hook.screenPos = screenPos;
   Object.defineProperty(hook, "scene", { configurable: true, enumerable: true, get: sceneInfo });
   hook.pickAt = pickAt;
+  hook.screenPoint = screenPoint;
+  Object.assign(view3d, { startPick, cancelPick, picking: () => !!pick, pickOwner: () => (pick ? pick.owner || null : null),
+    pose: () => { applyPoses(); updateCogs(); drawOverlay(); requestRender(); }, solidBox });
 
   onView(build);
   onPart(update);
@@ -119,7 +151,10 @@ function build(view) {
   }
   mergedSig = null;
   update();
-  if (!framed && meshes.some((m) => !m.faint)) { frameAll(); framed = true; }
+  const f = part.state && part.state.frame;
+  const fk = JSON.stringify(f ? [f.up, f.front, f.floor, f.center, f.skip] : null);
+  if ((!framed || fk !== frameKey) && meshes.some((m) => !m.faint)) { frameAll(); framed = true; }
+  frameKey = fk;
 }
 
 // The body each drawn key belongs to, and whether it is left out (plugin mode: the key is the body).
@@ -139,7 +174,7 @@ function clearMeshes() {
   meshes = [];
 }
 
-function merge(keys, faint) {
+function merge(keys, faint, body) {
   let nv = 0, nt = 0;
   for (const k of keys) { const p = pieces.get(k); nv += p.pos.length / 3; nt += p.idx.length / 3; }
   const pos = new Float32Array(nv * 3), col = new Float32Array(nv * 3), idx = new Uint32Array(nt * 3);
@@ -169,8 +204,9 @@ function merge(keys, faint) {
   disposables.push(g, mat);
   const mesh = new THREE.Mesh(g, mat);
   if (faint) { mesh.visible = part.showLeftOut; mesh.renderOrder = 1; }
+  mesh.matrixAutoUpdate = false;
   root.add(mesh);
-  return { mesh, keys, triPiece, triStart, vStart, faint };
+  return { mesh, keys, triPiece, triStart, vStart, faint, body: faint ? null : body };
 }
 
 // After every render of the tab: re-merge when pieces moved, else recolor; the centers of gravity.
@@ -187,10 +223,12 @@ function update() {
       if (!groups.has(g)) groups.set(g, []);
       groups.get(g).push(k);
     }
-    for (const [g, keys] of groups) meshes.push(merge(keys, g === "\u0000faint"));
+    for (const [g, keys] of groups) meshes.push(merge(keys, g === "\u0000faint", g));
   }
   recolor(where);
+  applyPoses();
   updateCogs();
+  drawOverlay();
   const empty = $("#part-view-empty");
   const s = part.state;
   const why = meshes.length || !part.view ? ""
@@ -238,7 +276,7 @@ function updateCogs() {
     m.renderOrder = 10;
     cogs.add(m);
   };
-  for (const b of part.state.bodies) if (b.com) dot(b.com, r, COG);
+  for (const b of part.state.bodies) if (b.com) dot(poses.has(b.name) ? apply(poses.get(b.name), b.com) : b.com, r, COG);
   for (const p of part.state.parts) if (p.com) dot(p.com, r * 2.2, 0xc2410c);
   // the floor (robot frame z = 0) under an import, as a grid
   if (part.state.mode !== "plugin" && !box.isEmpty()) {
@@ -249,6 +287,149 @@ function updateCogs() {
     grid.material.transparent = true;
     grid.material.opacity = 0.5;
     scene.add(grid);
+  }
+}
+
+// -- Try it poses and the overlay ---------------------------------------------------------------------------------
+const toMatrix = (p) => new THREE.Matrix4().set(
+  p.R[0][0], p.R[0][1], p.R[0][2], p.t[0], p.R[1][0], p.R[1][1], p.R[1][2], p.t[1],
+  p.R[2][0], p.R[2][1], p.R[2][2], p.t[2], 0, 0, 0, 1);
+
+function applyPoses() {
+  const s = part.state;
+  poses = s && s.mode === "import" && s.frame && part.tryit.size ? bodyPoses(s, part.tryit) : new Map();
+  for (const m of meshes) {
+    const p = m.body != null && poses.get(m.body);
+    if (p) m.mesh.matrix.copy(toMatrix(p)); else m.mesh.matrix.identity();
+    m.mesh.matrixWorldNeedsUpdate = true;
+  }
+}
+
+function keep(x) { overlayParts.push(x); return x; }
+
+function clearOverlay() {
+  for (const d of overlayParts) d.dispose();
+  overlayParts = [];
+  overlay.clear();
+}
+
+const Y = new THREE.Vector3(0, 1, 0);
+
+// An arrow from `from` along unit `dir`, `len` long, drawn on top of the part.
+function arrow(from, dir, len, color, opacity, radius) {
+  const g = new THREE.Group();
+  const mat = keep(new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthTest: false }));
+  const shaft = new THREE.Mesh(keep(new THREE.CylinderGeometry(radius, radius, len * 0.8, 10)), mat);
+  shaft.position.y = len * 0.4;
+  const head = new THREE.Mesh(keep(new THREE.ConeGeometry(radius * 2.6, len * 0.2, 16)), mat);
+  head.position.y = len * 0.9;
+  for (const m of [shaft, head]) { m.renderOrder = 12; g.add(m); }
+  g.quaternion.setFromUnitVectors(Y, dir);
+  g.position.copy(from);
+  return g;
+}
+
+function ring(center, dir, radius, tube, color, opacity) {
+  const mat = keep(new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthTest: false }));
+  const m = new THREE.Mesh(keep(new THREE.TorusGeometry(radius, tube, 8, 32)), mat);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
+  m.position.copy(center);
+  m.renderOrder = 12;
+  return m;
+}
+
+function drawOverlay() {
+  clearOverlay();
+  arrows = [];
+  const s = part.state;
+  if (!s || s.mode !== "import" || !s.frame) { showFront(false); return; }
+  const rt = toRobot(s.frame);
+  const box = drawnBox();
+  const size = box.isEmpty() ? 0.5 : box.getSize(new THREE.Vector3()).length();
+  const len = Math.max(0.05, size * 0.22), radius = Math.max(0.0015, size * 0.004);
+  const chosen = (name) => part.sel.kind === "body" && part.sel.keys.has(name);
+  const byName = new Map(s.bodies.map((b) => [b.name, b]));
+  const posed = (name, v) => { const p = name != null && poses.get(name); return p ? apply(p, v) : v; };
+  const turned = (name, d) => { const p = name != null && poses.get(name); return p ? apply({ R: p.R, t: [0, 0, 0] }, d) : d; };
+  for (const b of s.bodies) {
+    const j = b.joint;
+    if (!j || !j.anchor || !j.axis) continue;
+    // the axis is fixed to the parent: it moves with the parent's pose
+    const a = normalize(turned(b.parent, normalize(dirToRobot(rt, j.axis))));
+    const c = posed(b.parent, cadToRobot(rt, j.anchor));
+    const color = j.kind === "slide" ? SLIDES : TURNS, op = chosen(b.name) ? 1 : 0.5;
+    const r = chosen(b.name) ? radius * 1.6 : radius;
+    const va = new THREE.Vector3(...a), vc = new THREE.Vector3(...c);
+    overlay.add(arrow(vc.clone().addScaledVector(va, -len / 2), va, len, color, op, r));
+    if (j.kind === "hinge") overlay.add(ring(vc, va, len * 0.18, r * 0.8, color, op));
+    arrows.push(b.name);
+  }
+  // mounts (and one picked but not named yet)
+  const mounts = [];
+  for (const b of s.bodies) for (const m of b.mounts || []) mounts.push({ body: b.name, ...m });
+  if (part.pendingMount) mounts.push(part.pendingMount);
+  mountsDrawn = 0;
+  for (const m of mounts) {
+    if (!byName.has(m.body)) continue;
+    mountsDrawn++;
+    const n = normalize(turned(m.body, normalize(dirToRobot(rt, m.normal))));
+    const pt = new THREE.Vector3(...posed(m.body, cadToRobot(rt, m.point)));
+    const op = chosen(m.body) ? 1 : 0.5;
+    overlay.add(arrow(pt, new THREE.Vector3(...n), len * 0.4, MOUNT, op, radius));
+    const dotMat = keep(new THREE.MeshBasicMaterial({ color: MOUNT, transparent: true, opacity: op, depthTest: false }));
+    const dot = new THREE.Mesh(keep(new THREE.SphereGeometry(radius * 3, 12, 8)), dotMat);
+    dot.position.copy(pt);
+    dot.renderOrder = 12;
+    overlay.add(dot);
+  }
+  // the robot's front, along +x on the floor, while the frame is being checked
+  const front = !!part.frameStep || part.sel.kind === "frame";
+  if (front) overlay.add(arrow(new THREE.Vector3(0, 0, 0.001), new THREE.Vector3(1, 0, 0), Math.max(0.15, size * 0.3), FRONT, 0.95, radius * 1.6));
+  showFront(front);
+}
+
+function showFront(on) {
+  const el = document.getElementById("part-legend-front");
+  if (el) el.hidden = !on;
+}
+
+// The drawn (not left-out) pieces' box in robot coordinates at zero pose, as {min, max} arrays, or null.
+function solidBox() {
+  const box = new THREE.Box3();
+  for (const m of meshes) if (!m.faint) box.union(m.mesh.geometry.boundingBox);
+  return box.isEmpty() ? null : { min: box.min.toArray(), max: box.max.toArray() };
+}
+
+// -- pick mode -------------------------------------------------------------------------------------------------
+function startPick(opts) {
+  pick = { ...opts, busy: false };
+  $("#part-pick-text").textContent = opts.hint;
+  $("#part-pick-hint").hidden = false;
+  $("#part-view").classList.add("picking");
+  requestRender();
+}
+
+function cancelPick() {
+  if (!pick) return;
+  pick = null;
+  $("#part-pick-hint").hidden = true;
+  $("#part-view").classList.remove("picking");
+  const b = document.getElementById("part-pick-axis");
+  if (b) b.setAttribute("aria-pressed", "false");
+}
+
+async function pickClick(e) {
+  const t = pickAt(e.clientX, e.clientY);
+  const text = $("#part-pick-text");
+  if (!t) { text.textContent = `${pick.hint} (That click missed: click on a piece.)`; return; }
+  if (pick.busy) return;
+  const cur = pick;
+  cur.busy = true;
+  try {
+    const r = await cur.onPick(t);
+    if (pick === cur && r && r.again) text.textContent = `${r.again} ${cur.hint}`;
+  } finally {
+    cur.busy = false;
   }
 }
 
@@ -300,6 +481,7 @@ export function pickAt(clientX, clientY) {
   if (!r.width || !r.height) return null;
   ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
   camera.updateMatrixWorld();
+  root.updateMatrixWorld(true);
   raycaster.setFromCamera(ndc, camera);
   const shown = meshes.filter((m) => m.mesh.visible);
   const hits = raycaster.intersectObjects(shown.map((m) => m.mesh), false);
@@ -308,13 +490,15 @@ export function pickAt(clientX, clientY) {
   if (!best || best.faceIndex == null) return null;
   const m = shown.find((x) => x.mesh === best.object);
   const j = m.triPiece[best.faceIndex];
-  return { key: m.keys[j], triangle: best.faceIndex - m.triStart[j], point: best.point.toArray() };
+  const rest = best.point.clone().applyMatrix4(m.mesh.matrixWorld.clone().invert());
+  return { key: m.keys[j], triangle: best.faceIndex - m.triStart[j], point: best.point.toArray(), rest: rest.toArray() };
 }
 
 function onUp(e) {
   const d = down;
   down = null;
   if (!d || d.button !== 0 || Math.hypot(e.clientX - d.x, e.clientY - d.y) > CLICK_SLOP) return;
+  if (pick) { pickClick(e); return; }
   const t = pickAt(e.clientX, e.clientY);
   const kind = part.state && part.state.mode === "plugin" ? "body" : "piece";
   if (t) select(kind, [t.key], { add: e.shiftKey || e.ctrlKey || e.metaKey });
@@ -329,23 +513,48 @@ function toScreen(v) {
   return { x: r.left + ((p.x + 1) / 2) * r.width, y: r.top + ((1 - p.y) / 2) * r.height };
 }
 
-// A spot on the piece that a click there would hit: some of its triangles' centers, tried in turn.
-function screenPos(key) {
+// A spot on the piece that a click there would hit: some of its triangles' centers, tried in turn. With `across`
+// (a robot-frame direction), only triangles whose normal is across it (within about 10 degrees).
+function screenPos(key, { across = null } = {}) {
   if (!renderer) return null;
   camera.updateMatrixWorld();
+  root.updateMatrixWorld(true);
+  const ax = across ? new THREE.Vector3(...across).normalize() : null;
   for (const m of meshes) {
     const j = m.keys.indexOf(key);
     if (j < 0 || !m.mesh.visible) continue;
-    const pos = m.mesh.geometry.getAttribute("position"), idx = m.mesh.geometry.index;
-    const t0 = m.triStart[j], n = m.triStart[j + 1] - t0, step = Math.max(1, Math.floor(n / 64));
-    const c = new THREE.Vector3(), a = new THREE.Vector3();
-    for (let t = t0; t < t0 + n; t += step) {
-      c.set(0, 0, 0);
-      for (let i = 0; i < 3; i++) c.add(a.fromBufferAttribute(pos, idx.getX(t * 3 + i)));
-      c.divideScalar(3);
-      const p = toScreen(c);
+    const pos = m.mesh.geometry.getAttribute("position"), idx = m.mesh.geometry.index, w = m.mesh.matrixWorld;
+    const t0 = m.triStart[j], n = m.triStart[j + 1] - t0;
+    const v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()], nrm = new THREE.Vector3(), e = new THREE.Vector3();
+    const cands = [];
+    for (let t = t0; t < t0 + n; t++) {
+      for (let i = 0; i < 3; i++) v[i].fromBufferAttribute(pos, idx.getX(t * 3 + i)).applyMatrix4(w);
+      if (ax) {
+        nrm.subVectors(v[1], v[0]).cross(e.subVectors(v[2], v[0]));
+        if (nrm.lengthSq() < 1e-20 || Math.abs(nrm.normalize().dot(ax)) > 0.17) continue;
+      }
+      cands.push(v[0].clone().add(v[1]).add(v[2]).divideScalar(3));
+    }
+    const step = Math.max(1, Math.floor(cands.length / 64));
+    for (let i = 0; i < cands.length; i += step) {
+      const p = toScreen(cands[i]);
       if (p && pickAt(p.x, p.y)?.key === key) return p;
     }
+  }
+  return null;
+}
+
+// Where the piece's first vertex is drawn (it moves with Try it; maybe off screen), or null.
+function screenPoint(key) {
+  if (!renderer) return null;
+  camera.updateMatrixWorld();
+  root.updateMatrixWorld(true);
+  for (const m of meshes) {
+    const j = m.keys.indexOf(key);
+    if (j < 0) continue;
+    const v = new THREE.Vector3().fromBufferAttribute(m.mesh.geometry.getAttribute("position"), m.vStart[j]).applyMatrix4(m.mesh.matrixWorld);
+    const q = v.project(camera), r = renderer.domElement.getBoundingClientRect();   // off screen too
+    return { x: r.left + ((q.x + 1) / 2) * r.width, y: r.top + ((1 - q.y) / 2) * r.height };
   }
   return null;
 }
@@ -358,5 +567,6 @@ function sceneInfo() {
     (m.faint ? faint : drawn).push(...m.keys);
     triangles += m.triPiece.length;
   }
-  return { drawn, faint, meshes: meshes.length, triangles };
+  const box = solidBox();
+  return { drawn, faint, meshes: meshes.length, triangles, arrows: [...arrows], mounts: mountsDrawn, lowest: box ? box.min[2] : null };
 }

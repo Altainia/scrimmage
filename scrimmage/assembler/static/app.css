@@ -976,3 +976,26 @@ dialog.start-dialog { width: auto; max-width: 96vw; }
 #part-inspector .field-label { font-family: var(--font); }
 #tab-part.part-plugin #part-show-left-out { display: none; }
 #part-view-empty { pointer-events: none; padding: 0 24px; text-align: center; }
+/* the Part tab: the robot frame step, pick mode, joints and slots */
+.part-frame-step { padding: 8px 12px; background: var(--warn-soft); color: var(--warn-text); border-bottom: 1px solid var(--warn-line); display: flex; flex-direction: column; gap: 6px; }
+.part-frame-step .btn:not(.btn-primary) { background: var(--panel); color: var(--text); }
+.part-step-text { margin: 0; font-size: 13px; }
+.part-btns { flex-wrap: wrap; margin: 0 0 8px; }
+.part-frame-step .part-btns { margin: 0; }
+.part-pick-hint { position: absolute; top: 10px; left: 10px; right: 230px; z-index: 3; display: flex; align-items: center; gap: 10px;
+  padding: 6px 10px; background: var(--accent-soft); color: var(--accent-strong); border: 1px solid var(--accent-line); border-radius: var(--radius); font-size: 13px; font-weight: 500; }
+.part-pick-hint span { flex: 1; }
+#part-view.picking { outline: 2px solid #e8590c; outline-offset: -2px; }
+#part-view.picking canvas { cursor: crosshair; }
+.part-front-dot { width: 10px; height: 10px; border-radius: 2px; background: #c62828; display: inline-block; margin-left: 8px; }
+.part-snap-label { font-size: 12px; margin-left: 6px; }
+.part-try-row { display: flex; align-items: center; gap: 8px; }
+.part-try-row input[type="range"] { flex: 1; min-width: 0; accent-color: var(--accent-text); }
+.part-try-out { font-family: var(--mono); font-size: 12px; min-width: 4.5em; text-align: right; }
+.part-pair input { width: 6em; }
+#part-inspector .with-unit input[type="number"] { width: 7em; }
+.part-more { margin: 4px 0 0; }
+.part-more summary { cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--accent-text); margin: 0 0 8px; }
+.part-more h4 { font-size: 12.5px; margin: 8px 0 6px; }
+.part-suggest { margin: 0; padding: 6px 8px; font-size: 13px; background: var(--accent-soft); color: var(--accent-strong); border-radius: var(--radius); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.part-draft { color: var(--warn-text); }

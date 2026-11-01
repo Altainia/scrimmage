@@ -5,7 +5,11 @@ tests/data/cad/climber.step makes parts/climber.import.toml next to it; its five
 bolts folded in as hardware), arm_A, arm_B, hook_assy and hook_assy_2.
 """
 import shutil
+import time
+import tomllib
 from pathlib import Path
+
+import numpy as np
 
 import pytest
 
@@ -20,29 +24,49 @@ READY = ("window.__scrimmagePart && __scrimmagePart.store.state && __scrimmagePa
          " && __scrimmagePart.scene.drawn.length > 0")
 
 
-@pytest.fixture
-def part_page(browser, tmp_path, monkeypatch):
-    """(page, the import file) on `scrimmage edit tmp_path/climber.step`, with its own recent list and cache."""
+def _open(browser, tmp_path, monkeypatch, name):
+    """(page, the import file, close) on `scrimmage edit tmp_path/<name>`, with its own recent list and cache."""
     monkeypatch.setenv("SCRIMMAGE_RECENT", str(tmp_path / "recent.json"))
     monkeypatch.setenv("SCRIMMAGE_CACHE", str(tmp_path / "cache"))
     monkeypatch.setenv("SCRIMMAGE_FOLDERS", str(tmp_path / "folders.json"))
-    shutil.copy(DATA / "climber.step", tmp_path / "climber.step")
-    srv = Server(tmp_path / "climber.step", cwd=tmp_path)
+    shutil.copy(DATA / name, tmp_path / name)
+    srv = Server(tmp_path / name, cwd=tmp_path)
     ctx = browser.new_context(viewport={"width": 1500, "height": 950})
     logs = []
-    try:
-        page = ctx.new_page()
-        page.set_default_timeout(30000)
-        page.on("pageerror", lambda e: logs.append(f"pageerror: {e}"))
-        page.on("console", lambda m: logs.append(f"console.{m.type}: {m.text}")
-                if m.type == "error" and "status of 4" not in m.text else None)
-        page.goto(srv.url)
-        page.wait_for_function(READY)
-        yield page, tmp_path / "parts" / "climber.import.toml"
-    finally:
+    page = ctx.new_page()
+    page.set_default_timeout(30000)
+    page.on("pageerror", lambda e: logs.append(f"pageerror: {e}"))
+    page.on("console", lambda m: logs.append(f"console.{m.type}: {m.text}")
+            if m.type == "error" and "status of 4" not in m.text else None)
+
+    def close():
         ctx.close()
         srv.stop()
-    assert not logs, f"browser errors: {logs}"
+        assert not logs, f"browser errors: {logs}"
+    try:
+        page.goto(srv.url)
+        page.wait_for_function(READY)
+    except Exception:
+        ctx.close()
+        srv.stop()
+        raise
+    return page, tmp_path / "parts" / (Path(name).stem + ".import.toml"), close
+
+
+@pytest.fixture
+def part_page(browser, tmp_path, monkeypatch):
+    """(page, the import file) on `scrimmage edit tmp_path/climber.step`."""
+    page, imp, close = _open(browser, tmp_path, monkeypatch, "climber.step")
+    yield page, imp
+    close()
+
+
+@pytest.fixture
+def yup_page(browser, tmp_path, monkeypatch):
+    """(page, the import file) on climber_yup.step: the same climber drawn with +y up, as Inventor saves it."""
+    page, imp, close = _open(browser, tmp_path, monkeypatch, "climber_yup.step")
+    yield page, imp
+    close()
 
 
 def _piece(page, key):
@@ -174,3 +198,155 @@ def test_new_part_from_cad_on_the_start_page(browser, tmp_path, monkeypatch, how
     finally:
         ctx.close()
         srv.stop()
+
+
+# ---------------------------------------------------------------- Task 13: frame, joints, slots, mounts, collision
+
+HOOK = "Climber/hook_assy/hook"
+
+
+def _body(page, name):
+    return page.evaluate(f"__scrimmagePart.store.state.bodies.find(b => b.name === {name!r})")
+
+
+def _pick_body(page, name):
+    page.click(f'#part-tree [data-body="{name}"]')
+    page.wait_for_function(f"__scrimmagePart.store.sel.kind === 'body' && __scrimmagePart.store.sel.keys.has({name!r})")
+
+
+def _edit(page, fn):
+    """Run fn (a UI action that makes one edit) and wait until the page shows the state the edit returned."""
+    with page.expect_response(lambda r: r.url.split("?")[0].endswith("/api/part/edit") and r.request.method == "POST") as resp:
+        fn()
+    body = resp.value.json()
+    assert resp.value.status == 200, body
+    page.wait_for_function(f"__scrimmagePart.store.state.version >= {body['version']}")
+
+
+def _wait_file(path_fn, pred, timeout=60):
+    end = time.time() + timeout
+    while time.time() < end:
+        p = path_fn()
+        if p is not None and p.is_file() and pred(p.read_text()):
+            return p.read_text()
+        time.sleep(0.25)
+    raise AssertionError("the part folder never got the expected change")
+
+
+def test_y_is_up_puts_the_floor_under_the_base_plate(yup_page):
+    page, imp = yup_page
+    banner = page.locator("#part-frame-step")
+    banner.wait_for()
+    assert banner.is_visible()
+    assert "robot" in banner.inner_text().lower()
+    # the default guess (z up) has the robot on its side: the arms lie along y
+    arm = _body(page, "arm_A")["com"]
+    assert arm[2] < 0.2
+    _edit(page, lambda: page.click("#part-frame-yup"))
+    f = page.evaluate("__scrimmagePart.store.state.frame")
+    assert f["up"] == "+y" and f["front"][1] != "y"
+    # the floor is the base plate's underside (CAD y = 0), so the floor grid (robot z = 0) is under it
+    assert f["floor"] == pytest.approx(0.0, abs=1e-6)
+    page.wait_for_function("__scrimmagePart.store.state.bodies.find(b => b.name === 'arm_A').com[2] > 0.3")
+    plate = _body(page, "base_plate")["com"]
+    assert 0 < plate[2] < 0.03
+    assert _body(page, "arm_A")["com"][2] == pytest.approx(0.41, abs=0.03)
+    page.wait_for_function("__scrimmagePart.scene.lowest !== null && Math.abs(__scrimmagePart.scene.lowest) < 1e-4")
+    assert banner.is_visible(), "the step stays until the student says it looks right"
+    _edit(page, lambda: page.click("#part-frame-ok"))
+    assert page.evaluate("__scrimmagePart.store.state.frame.confirmed") is True
+    page.wait_for_selector("#part-frame-step", state="hidden")
+    assert "up = \"+y\"" in imp.read_text()
+
+
+def test_frame_math_in_the_page_matches_frame_py(yup_page):
+    from scrimmage.cad.frame import RobotFrame, to_robot
+    page, _ = yup_page
+    frames = [RobotFrame(), RobotFrame("+y", "+x", 0.1, (0.15, -0.1)), RobotFrame("+y", "-z", -0.2, (1, 2)),
+              RobotFrame("-y", "+z", 0.3, None), RobotFrame("-x", "+y", 0.5, (0.2, 0.3)),
+              RobotFrame("+z", "-y", 0.0, (0.0, 0.0), skip=True)]
+    for fr in frames:
+        R, t = to_robot(fr)
+        got = page.evaluate("f => __scrimmagePart.toRobot(f)", {"up": fr.up, "front": fr.front, "floor": fr.floor,
+                                                                 "center": fr.center, "skip": fr.skip})
+        assert np.allclose(got["R"], R) and np.allclose(got["t"], t), (fr, got)
+
+
+def test_hook_turns_on_arm_a_and_try_it_moves_it(part_page):
+    page, imp = part_page
+    _pick_body(page, "hook_assy")
+    _edit(page, lambda: page.select_option("#part-joint-parent", "arm_A"))
+    assert _body(page, "hook_assy")["parent"] == "arm_A"
+    _edit(page, lambda: page.select_option("#part-joint-kind", "hinge"))
+    assert _body(page, "hook_assy")["joint"]["kind"] == "hinge"
+    assert "turns on arm_A" in page.inner_text('#part-tree [data-body="hook_assy"]')
+    page.keyboard.press("Escape")
+    page.wait_for_selector("#part-pick-hint", state="hidden")
+    page.click("#part-pick-axis")
+    page.wait_for_selector("#part-pick-hint")
+    # click the hook's round side (its triangles whose normal is across the x axis)
+    pos = page.evaluate(f"__scrimmagePart.screenPos({HOOK!r}, {{across: [1, 0, 0]}})")
+    assert pos, "the hook's side is not on screen"
+    v0 = page.evaluate("__scrimmagePart.store.state.version")
+    page.mouse.click(pos["x"], pos["y"])
+    _changed(page, v0)
+    j = _body(page, "hook_assy")["joint"]
+    assert np.allclose(np.abs(j["axis"]), [1, 0, 0], atol=1e-3)
+    assert np.allclose(j["anchor"][1:], [0.1, 0.818], atol=2e-3)
+    page.wait_for_selector("#part-pick-hint", state="hidden")
+    assert "hook_assy" in page.evaluate("__scrimmagePart.scene.arrows")
+    # Try it: the slider turns the hook in the view only
+    sent = []
+    page.on("request", lambda r: sent.append(r.url) if r.method == "POST" else None)
+    saved = imp.read_text()
+    before = page.evaluate(f"__scrimmagePart.screenPoint({HOOK!r})")
+    page.fill("#part-try-hook_assy", "90")
+    page.wait_for_function(f"(() => {{ const p = __scrimmagePart.screenPoint({HOOK!r}); return Math.hypot(p.x - {before['x']}, p.y - {before['y']}) > 2; }})()")
+    page.wait_for_timeout(400)
+    assert not sent, f"Try it never edits the part: {sent}"
+    assert imp.read_text() == saved
+
+
+def test_neo_on_a_sliding_arm_writes_its_gearing(part_page):
+    page, imp = part_page
+    # the hooks ride on arm_A (welded to it), and arm_A slides on the base plate
+    _pick_body(page, "hook_assy")
+    _edit(page, lambda: page.select_option("#part-joint-parent", "arm_A"))
+    _pick_body(page, "arm_A")
+    _edit(page, lambda: page.select_option("#part-joint-kind", "slide"))
+    page.wait_for_selector("#part-pick-hint")
+    page.keyboard.press("Escape")
+    page.wait_for_selector("#part-pick-hint", state="hidden")
+    _edit(page, lambda: page.click("#part-snap-z"))
+    assert np.allclose(_body(page, "arm_A")["joint"]["axis"], [0, 0, 1])
+    page.select_option("#part-motor", "NEO")
+    page.fill("#part-motor-ratio", "25")
+    page.press("#part-motor-ratio", "Enter")
+    page.click("#part-spool-in")
+    page.fill("#part-spool", "1")
+    _edit(page, lambda: page.press("#part-spool", "Enter"))
+    m = _body(page, "arm_A")["motor"]
+    assert m["motor"] == "NEO" and m["ratio"] == 25 and m["spool_diameter"] == pytest.approx(0.0254)
+    text = _wait_file(lambda: next(iter(sorted(imp.parent.glob("*/part.toml"))), None), lambda t: "NEO" in t)
+    slots = tomllib.loads(text)["motor"]
+    assert slots[0]["gearing"] == pytest.approx(1968.5, rel=1e-3)
+    # Try it on arm_A slides the hook too (it hangs on arm_A)
+    before = page.evaluate(f"__scrimmagePart.screenPoint({HOOK!r})")
+    page.focus("#part-try-arm_A")
+    page.keyboard.press("End")      # the keyboard moves it too: to the end of its +-0.5 m
+    page.wait_for_function(f"(() => {{ const p = __scrimmagePart.screenPoint({HOOK!r}); return Math.hypot(p.x - {before['x']}, p.y - {before['y']}) > 5; }})()")
+
+
+def test_wheel_collision_writes_a_cylinder(part_page):
+    page, imp = part_page
+    _pick_body(page, "hook_assy_2")
+    # a body named like a hook gets a suggestion, which is never applied by itself
+    assert "looks like a hook" in page.inner_text("#part-inspector")
+    assert _body(page, "hook_assy_2")["collision"] == "none"
+    _edit(page, lambda: page.select_option("#part-joint-kind", "hinge"))
+    page.keyboard.press("Escape")
+    _edit(page, lambda: page.select_option("#part-collision", "wheel"))
+    assert _body(page, "hook_assy_2")["collision"] == "wheel"
+    text = _wait_file(lambda: next(iter(sorted(imp.parent.glob("*/part.toml"))), None), lambda t: "cylinder" in t)
+    body = next(b for b in tomllib.loads(text)["body"] if b["name"] == "hook_assy_2")
+    assert any("cylinder" in g for g in body["geom"])

@@ -489,7 +489,8 @@ class PartSession(_Session):
                    "name": imp.name if imp else self._stem(), "source": imp.source if imp else None,
                    "units": imp.units if imp else None,
                    "frame": dataclasses.asdict(imp.frame) if imp else None, "pieces": [], "bodies": [], "parts": [],
-                   "checklist": [], "messages": list(self._messages), "build": dict(self._build),
+                   "couplings": [], "loops": [], "checklist": [], "messages": list(self._messages),
+                   "build": dict(self._build),
                    "can_undo": bool(self._undo), "can_redo": bool(self._redo),
                    "read_only_reason": self.read_only_reason}
             if imp is None:
@@ -507,6 +508,8 @@ class PartSession(_Session):
                                       "left_out": ps.left_out, "volume": vol, "hardware": hw})
                 if not ps.left_out and ps.body in sums and mass is not None and com is not None:
                     sums[ps.body].append((mass, R @ com + t))
+            out["couplings"] = copy.deepcopy(imp.couplings)
+            out["loops"] = copy.deepcopy(imp.loops)
             for name, bs in imp.bodies.items():
                 got = sums[name]
                 total = sum(m for m, _ in got)

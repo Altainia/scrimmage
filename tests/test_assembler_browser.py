@@ -596,6 +596,14 @@ def _screen_part(page, tmp_path):
     page.click('#part-tree [data-hardware="base_plate"]')
     page.click('#part-tree [data-piece="Climber/arm_A"]')
     page.wait_for_selector("#part-material")
+    # a hinge on hook_assy: the frame step, the pick hint, the joint and slot controls and the collision suggestion
+    page.wait_for_selector("#part-frame-step")
+    page.click('#part-tree [data-body="hook_assy"]')
+    page.select_option("#part-joint-kind", "hinge")
+    page.wait_for_selector("#part-pick-hint")
+    page.wait_for_selector("#part-try-hook_assy")
+    page.click("#part-joint-more summary")
+    page.wait_for_selector("#part-collision-suggest")
 
 
 def _robot_with_program(folder: Path, mismatch: bool = False) -> Path:
