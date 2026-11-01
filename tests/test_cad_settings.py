@@ -102,7 +102,7 @@ def test_source_path_portable(tmp_path, monkeypatch):
     src = load_source(DATA / "climber.step")
     assert new_import(src, "c", cad / "sub" / "climber.step", tmp_path).source == "{cad}/sub/climber.step"
     assert new_import(src, "c", Path("sub\\climber.step"), tmp_path).source == "sub/climber.step"
-    assert teamfolders.expand("{cad}/sub/climber.step") == str(cad / "sub" / "climber.step")
+    assert Path(teamfolders.expand("{cad}/sub/climber.step")) == cad / "sub" / "climber.step"
 
 
 def test_new_import_defaults(tmp_path):
