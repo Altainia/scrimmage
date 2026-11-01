@@ -5,14 +5,14 @@ from __future__ import annotations
 
 import copy
 import math
-from dataclasses import fields, replace
+from dataclasses import MISSING, fields, replace
 
 from . import CadError
 from .mass import MATERIALS, density
 from .names import sanitize
-from .frame import RobotFrame
+from .frame import AXES, RobotFrame
 from .settings import (COLLISIONS, BodySettings, EncoderSettings, ImportFile, JointSettings, MotorSettings,
-                       MountSettings, PartSettings, _mentions, remove_empty_bodies)
+                       MountSettings, PartSettings, _mentions, drop_couplings, remove_empty_bodies)
 from .source import STEP_SUFFIXES, UNITS
 from ..motors import MOTORS
 
@@ -31,7 +31,7 @@ def _fail(field, message):
 # ---------------------------------------------------------------- helpers
 
 def _body(imp, name, field="body"):
-    if name not in imp.bodies:
+    if not isinstance(name, str) or name not in imp.bodies:
         _fail(field, f"There is no body called {name}: pick one from the list.")
     return imp.bodies[name]
 
@@ -40,7 +40,7 @@ def _pieces(imp, keys, field="pieces"):
     if not isinstance(keys, (list, tuple)) or not keys:
         _fail(field, "Pick at least one piece.")
     for k in keys:
-        if k not in imp.pieces:
+        if not isinstance(k, str) or k not in imp.pieces:
             _fail(field, f"There is no piece called {k}: pick one from the list.")
     return list(keys)
 
@@ -82,13 +82,48 @@ def _part_members(imp, name):
     return [n for n in imp.bodies if root(n) == r]
 
 
-def _drop_slots(b):
+def _clear_joint(imp, name, msgs):
+    """Take the joint, motor and encoder off body `name`, and the couplings that used it; say what went."""
+    b = imp.bodies[name]
+    gone = [w for w, has in (("joint", b.joint), ("motor", b.motor), ("encoder", b.encoder)) if has]
     b.joint = b.motor = b.encoder = None
+    if gone:
+        msgs.append(f"{name}'s {' and '.join(gone)} {'was' if len(gone) == 1 else 'were'} dropped")
+    if drop_couplings(imp, name):
+        msgs.append(f"A coupling that used {name} was dropped, because {name} no longer has a joint")
+
+
+def _check_mounts(imp):
+    """Mount names must stay unique inside each part (bodies may have moved between parts)."""
+    seen: dict[str, set] = {}
+    for n in imp.bodies:
+        root = _part_members(imp, n)[0]
+        for m in imp.bodies[n].mounts:
+            if m.name in seen.setdefault(root, set()):
+                _fail("name", f"Two mounts are called {m.name} in the same part: rename one first.")
+            seen[root].add(m.name)
+
+
+def _text(v, field, what):
+    if not isinstance(v, str) or not v.strip():
+        _fail(field, f"{what} must be text: enter a name.")
+    return v.strip()
 
 
 def _drop_links(imp, name):
-    imp.couplings = [c for c in imp.couplings if not _mentions(c, name)]
+    drop_couplings(imp, name)
     imp.loops = [c for c in imp.loops if not _mentions(c, name)]
+
+
+_LABEL = {"JointSettings": "joint", "MotorSettings": "motor", "EncoderSettings": "encoder"}
+
+
+def _pair(v, field, what):
+    ok = (isinstance(v, (list, tuple)) and len(v) == 2
+          and all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) for x in v))
+    if not ok:
+        _fail(field, f"{what} must be two numbers, from and to: enter both.")
+    return (float(v[0]), float(v[1]))
 
 
 def _build(cls, d, field):
@@ -98,12 +133,27 @@ def _build(cls, d, field):
     for k in d:
         if k not in known:
             _fail(k, f"{k} is not a setting here: remove it.")
+    for f in fields(cls):
+        if f.default is MISSING and f.default_factory is MISSING and f.name not in d:
+            _fail(f.name, f"The {_LABEL.get(cls.__name__, 'setting')} needs a {f.name}: enter one.")
+    if cls is JointSettings:
+        d = dict(d)
+        if d.get("range") is not None:
+            d["range"] = _pair(d["range"], "range", "The range")
+            if d["range"][0] >= d["range"][1]:
+                _fail("range", "The range must run from a smaller number to a larger one: swap them.")
+        if d.get("spring") is not None:
+            d["spring"] = _pair(d["spring"], "spring", "The spring")
+        for k in ("damping", "frictionloss"):
+            v = d.get(k, 0.0)
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0:
+                _fail(k, f"The {k} must be a number of zero or more: enter one.")
     try:
         return cls(**d)
     except CadError as e:
-        _fail(field, str(e))
-    except TypeError as e:
-        _fail(field, f"These settings aren't complete: {e}.")
+        _fail(field if cls is not EncoderSettings else "on", str(e))
+    except (TypeError, ValueError, IndexError):
+        _fail(field, f"The {_LABEL.get(cls.__name__, 'setting')} settings aren't valid: check the values.")
 
 
 # ---------------------------------------------------------------- ops
@@ -129,6 +179,8 @@ def _set_material(imp, a):
 
 
 def _set_mass(imp, a):
+    if "kg" not in a:
+        _fail("kg", "Say the mass in kg, or kg = none to clear it.")
     kg = a.get("kg")
     if kg is not None:
         kg = _number(kg, "kg", "The mass")
@@ -153,7 +205,7 @@ def _new_body(imp, a):
     old = {imp.pieces[k].body for k in keys}
     if len(old) != 1:
         _fail("pieces", "These pieces are in different bodies: pick pieces from one body.")
-    name = sanitize(str(a.get("name", "")))
+    name = sanitize(_text(a.get("name"), "name", "The body name"))
     if name in imp.bodies:
         _fail("name", f"A body called {name} already exists: pick another name.")
     imp.bodies[name] = BodySettings(parent=old.pop())
@@ -177,14 +229,22 @@ def _merge_bodies(imp, a):
             b.parent = ob.parent if n == into else into
     if imp.bodies[into].parent == other:
         imp.bodies[into].parent = ob.parent
+    msgs = []
+    gone = [w for w, has in (("joint", ob.joint), ("motor", ob.motor), ("encoder", ob.encoder), ("gyro", ob.gyro),
+                             ("mounts", ob.mounts)) if has]
+    if gone:
+        msgs.append(f"{other}'s {', '.join(gone)} {'was' if len(gone) == 1 else 'were'} dropped in the merge")
+    if any(_mentions(c, other) for c in imp.couplings + imp.loops):
+        msgs.append(f"The couplings and loops that used {other} were dropped")
     del imp.bodies[other]
     _drop_links(imp, other)
+    return msgs
 
 
 def _rename_body(imp, a):
     old = a.get("old")
     _body(imp, old, "old")
-    new = sanitize(str(a.get("new", "")))
+    new = sanitize(_text(a.get("new"), "new", "The new name"))
     if new != old and new in imp.bodies:
         _fail("new", f"A body called {new} already exists: pick another name.")
     imp.bodies = {(new if n == old else n): b for n, b in imp.bodies.items()}
@@ -239,8 +299,9 @@ def _set_joint(imp, a):
     b.parent = parent
     b.joint = joint
     if joint is None:
-        _drop_slots(b)
-        imp.couplings = [c for c in imp.couplings if not _mentions(c, name)]
+        msgs = []
+        _clear_joint(imp, name, msgs)
+        return msgs
 
 
 def _needs_joint(imp, a):
@@ -289,9 +350,7 @@ def _set_gyro(imp, a):
 
 def _add_mount(imp, a):
     b = _body(imp, a.get("body"))
-    name = a.get("name")
-    if not isinstance(name, str) or not name.strip():
-        _fail("name", "A mount needs a name: enter one.")
+    name = _text(a.get("name"), "name", "A mount name")
     taken = {m.name for n in _part_members(imp, a["body"]) for m in imp.bodies[n].mounts}
     if name in taken:
         _fail("name", f"A mount called {name} already exists in this part: pick another name.")
@@ -332,7 +391,7 @@ def _set_part(imp, a):
         imp.parts.pop(b.part, None)
         b.part, b.parent = None, parent
         return
-    new = sanitize(str(part))
+    new = sanitize(_text(part, "part", "The part name"))
     if new in imp.parts and b.part != new:
         _fail("part", f"A part called {new} already exists: pick another name.")
     if b.part is not None:
@@ -340,8 +399,10 @@ def _set_part(imp, a):
     else:
         imp.parts[new] = PartSettings(folder=new)
         b.parent = None
-        _drop_slots(b)
-        imp.couplings = [c for c in imp.couplings if not _mentions(c, name)]
+        msgs = []
+        _clear_joint(imp, name, msgs)
+        b.part = new
+        return msgs
     b.part = new
 
 
@@ -392,12 +453,22 @@ def _set_frame(imp, a):
     for k in a:
         if k not in known:
             _fail(k, f"{k} is not a frame setting: remove it.")
-    try:
-        imp.frame = replace(imp.frame, **a, confirmed=True)
-    except CadError as e:
-        _fail("front" if "different axes" in str(e) else "up", str(e))
-    except (TypeError, ValueError, IndexError):
-        _fail("center", "The frame values aren't valid: check the floor and center numbers.")
+    f = dict(a)
+    for k in ("up", "front"):
+        if k in f and f[k] not in AXES:
+            _fail(k, f"The robot's {k} direction must be one of {', '.join(AXES)}, not {f[k]!r}: pick one.")
+    up, front = f.get("up", imp.frame.up), f.get("front", imp.frame.front)
+    if up[1] == front[1]:
+        _fail("front", f"Up ({up}) and front ({front}) must point along different axes: change one.")
+    if "floor" in f and (isinstance(f["floor"], bool) or not isinstance(f["floor"], (int, float))
+                         or not math.isfinite(f["floor"])):
+        _fail("floor", "The floor must be a number (CAD meters along up): enter one.")
+    if f.get("center") is not None:
+        f["center"] = _pair(f["center"], "center", "The center")
+    for k in ("skip",):
+        if k in f and not isinstance(f[k], bool):
+            _fail(k, f"{k} must be true or false: pick one.")
+    imp.frame = replace(imp.frame, **f, confirmed=True)
 
 
 def _set_total(imp, a):
@@ -425,15 +496,20 @@ _OPS = {
     "remove_loop": _remove_loop, "set_frame": _set_frame, "set_total": _set_total, "set_units": _set_units,
 }
 _EMPTYING = {"move_pieces", "new_body"}
+_CHECK_MOUNTS = {"set_joint", "set_part", "merge_bodies"}
 
 
-def apply_edit(imp: ImportFile, op: str, args: dict) -> ImportFile:
-    """A new ImportFile with `op` applied; `imp` is untouched. Raises EditError(field, message)."""
+def apply_edit(imp: ImportFile, op: str, args: dict) -> tuple[ImportFile, list[str]]:
+    """(a new ImportFile with `op` applied, messages about anything the edit dropped); `imp` is untouched.
+    Raises EditError(field, message)."""
     fn = _OPS.get(op)
     if fn is None:
         _fail("op", f"There is no edit called {op!r}: use one of {', '.join(_OPS)}.")
     out = copy.deepcopy(imp)
-    fn(out, args if isinstance(args, dict) else {})
+    msgs = list(fn(out, args if isinstance(args, dict) else {}) or [])
     if op in _EMPTYING:
-        out, _ = remove_empty_bodies(out)
-    return out
+        out, more = remove_empty_bodies(out)
+        msgs += more
+    if op in _CHECK_MOUNTS:
+        _check_mounts(out)
+    return out, msgs

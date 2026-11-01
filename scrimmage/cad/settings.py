@@ -315,6 +315,14 @@ def _mentions(x, name: str) -> bool:
     return False
 
 
+def drop_couplings(imp: ImportFile, name: str) -> bool:
+    """Remove the couplings that name body `name` (couplings link bodies with joints). True if any went."""
+    keep = [c for c in imp.couplings if not _mentions(c, name)]
+    changed = len(keep) != len(imp.couplings)
+    imp.couplings = keep
+    return changed
+
+
 def remove_empty_bodies(imp: ImportFile) -> tuple[ImportFile, list[str]]:
     """A copy of `imp` without the bodies that hold no pieces, and one message per removed body.
 
@@ -345,7 +353,12 @@ def remove_empty_bodies(imp: ImportFile) -> tuple[ImportFile, list[str]]:
             hb = imp.bodies[heir]
             hb.joint = hb.motor = hb.encoder = None
             msg += f"; {heir} is now the root, so its joint was dropped"
-        messages.append(msg)
+            messages.append(msg)
+            msg = None
+            if drop_couplings(imp, heir):
+                messages.append(f"A coupling that used {heir} was dropped, because {heir} no longer has a joint")
+        if msg is not None:
+            messages.append(msg)
         for attr in ("couplings", "loops"):
             keep = [c for c in getattr(imp, attr) if not _mentions(c, name)]
             if len(keep) != len(getattr(imp, attr)):
