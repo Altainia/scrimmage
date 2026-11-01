@@ -6,20 +6,26 @@ The app holds one thing at a time (`mode`):
         `config`: changing the scenario's config (an edit, undo/redo or an outside edit) loads that robot config in
         its place.
   "bench": an idea session, a folder of bench files (the Bench tab; see bench_session.py).
+  "part": a CAD import or a plugin-made part folder (the Part tab; see part_session.py).
   "start": nothing (`scrimmage edit` with no FILE): the start page opens or creates something.
-classify(): a folder is a session; a file is a scenario when it has a top-level `config` key or a `[[step]]` array,
-else a bench file when it has a top-level [bench] table, else a robot config. A bench file opens its folder as the
-session, with that file on stage. While the app isn't in robot mode the robot, scenario and live routes answer 404
-"no robot is open"; while no session is open the bench routes answer 404 "no idea session is open".
+classify(): "import" for a .step/.stp/.stl/.obj file, a folder holding a part.toml, or a .toml with a top-level
+[import] table (an import file); any other folder is a session; a file is a scenario when it has a top-level
+`config` key or a `[[step]]` array, else a bench file when it has a top-level [bench] table, else a robot config. A
+bench file opens its folder as the session, with that file on stage. Opening a CAD file asks for nothing: it makes
+parts/<stem>.import.toml next to it (or opens the one there that names it), builds it and opens it. A part folder
+with an import-origin.toml marker opens its import file; one without is plugin mode (its scrimmage-edits.toml is
+edited). While the app isn't in robot mode the robot, scenario and live routes answer 404 "no robot is open"; while
+no session is open the bench routes answer 404 "no idea session is open"; while no part is open the part routes
+(but upload) answer 404 "no part is open".
 
 API contract (all bodies JSON; every /api/* request needs header X-Scrimmage-Token and a Host of
 127.0.0.1 or localhost, else 403):
 
 App (`/api/app/*`; in every mode):
-  GET  /api/app/state              -> {mode: start|robot|bench, path, display_path, recent: [{path, kind:
-        robot|scenario|session, t}] (newest first, see recent.py), examples: [stems of examples/bench/*.toml],
-        needs_folder: "cad"|"code"|null}. path is the opened file (the scenario in scenario mode) or session folder,
-        absolute; null in start mode. needs_folder: the team folder ({cad}, {code}: teamfolders.py) a value in the
+  GET  /api/app/state              -> {mode: start|robot|bench|part, path, display_path, recent: [{path, kind:
+        robot|scenario|session|import, t}] (newest first, see recent.py), examples: [stems of examples/bench/*.toml],
+        needs_folder: "cad"|"code"|null}. path is the opened file (the scenario in scenario mode), session folder,
+        import file or plugin part folder, absolute; null in start mode. needs_folder: the team folder ({cad}, {code}: teamfolders.py) a value in the
         open robot file (or the scenario's) names that this computer hasn't set; the robot is then read-only, its
         read_only_reason saying which folder to set and how.
   GET  /api/app/folders            -> {cad, code, from_env: {cad: bool, code: bool}}: this computer's team folders
@@ -28,19 +34,25 @@ App (`/api/app/*`; in every mode):
   POST /api/app/folders            -> body {name: cad|code, path|null}: remembers (null: forgets) where that folder
         is on this computer (path relative to the working directory, ~ expanded); {ok: true}; 400 for another name
         or a path that isn't an existing folder. The open robot (and scenario) are read again with it.
-  GET  /api/app/browse[?dir=D]     -> {dir, parent, entries: [{name, path, kind: folder|robot|scenario|bench}]}:
-        D's folders, then its .toml files (classified), each sorted by name; hidden entries and other files left out.
+  GET  /api/app/browse[?dir=D]     -> {dir, parent, entries: [{name, path, kind: folder|robot|scenario|bench|
+        import|cad}]}: D's folders, then its .toml files (classified) and .step/.stp/.stl/.obj files (cad), each sorted
+        by name; hidden entries and other files left out.
         D defaults to the working directory (relative to it, ~ expanded); parent is null at the root; 400 when D
         isn't a folder.
   POST /api/app/open               -> body {path} (relative to the working directory, ~ expanded): opens a robot
-        config, scenario, bench file or folder in place of what is open. {ok: true}; 400 when it doesn't exist or is
-        a file other than .toml; 409 while a drive session is starting, running or paused, a scenario run is in
+        config, scenario, bench file, import file, CAD file or folder in place of what is open. {ok: true}; 400 when
+        it doesn't exist, is a file other than .toml or CAD, or is an import-made part folder whose import file is
+        gone; 409 while a drive session is starting, running or paused, a scenario run is in
         progress, or this editor's bench job (below) is queued or running (never because another process, the
         agent or the CLI, holds the session's run lock). Every version keeps counting up across the switch, so
         open long polls return; the page reloads itself after it. Opening remembers the path in the recent list (a bench file as its folder).
-  POST /api/app/new                -> body {kind: robot|scenario|session, path, template?, robot?}: writes a robot
-        config from a template (template: swerve|swerve-rev|differential), a scenario for the robot config `robot`
-        (its `config` relative to the scenario's folder) or makes the session folder, then opens it as /open does.
+  POST /api/app/new                -> body {kind: robot|scenario|session|import, path, template?, robot?}: writes a
+        robot config from a template (template: swerve|swerve-rev|differential), a scenario for the robot config
+        `robot` (its `config` relative to the scenario's folder) or makes the session folder, then opens it as /open
+        does. kind import ("New part from CAD"): path is the Browse-picked source (a CAD file, or a folder of STL/OBJ
+        files), referenced in place; its import file goes in parts/ next to it, or in the parts/ folder next to the
+        robot config `robot` when given (an existing one naming that source is opened); 400 when path isn't a CAD
+        file or such a folder.
         A robot or scenario path without .toml gets it. {ok: true}; 400 for an existing path, a bad kind or
         template, or a `robot` that isn't a robot config; 409 as for open. The templates write no start_pose
         (the robot code panel asks where the robot starts). A scenario's `config` is written as `{cad}/...` (or
@@ -128,6 +140,52 @@ Bench (`/api/bench/*`; 404 unless an idea session is open). `file` is an idea's 
         bench's own error: a BenchRunError, a bad sweep value, ...), null otherwise. A run that finished with a
         failed energy check is done; its latest says energy_failed. out is the results folder (the gallery's HTML file). Opening something else forgets the finished jobs.
   A request that obtained the idea session before an open replaced it answers 409 "the idea session was closed".
+
+Part (`/api/part/*`; 404 unless a part is open, except upload). Pieces are keyed as the CAD file's tree spells them
+("Climber/hook_assy/hook", "#2" on repeats); points and axes the student picks are CAD coordinates (meters):
+  GET  /api/part/state[?since=N]   -> {version, mode: import|plugin, path (the import file or part folder), name,
+        source (as the import file stores it; null in plugin mode), units, frame ({up, front, floor, center, skip,
+        confirmed}; null in plugin mode), pieces: [{key, name, group, body, material (null: not chosen yet, built as
+        aluminum), infill, custom_density, mass (kg: the typed weight, else volume x density; null when the source
+        can't be read), typed_mass, left_out, volume (m^3), hardware (the hardware guess)}], bodies: [{name, parent,
+        joint, motor, encoder, gyro, mounts, collision, part, typed_mass, mass (its pieces left in, or its typed
+        weight), com (robot coordinates; null for no mass)}], parts: [{name, folder, mass, com (from the last
+        build; null before one), total_mass}], checklist: [{level: todo|check|error, text, target: {kind:
+        piece|body|frame, keys}}], messages (what the last edit, undo or re-import dropped or guessed, plain words),
+        build: {state: idle|building|failed, message}, can_undo, can_redo, read_only_reason}; long-polls like
+        /api/bench/state. Every edit is saved at once; the part folders then rebuild in the background (one build at
+        a time, the newest settings win) and the version goes up when the build is done. Outside edits of the import
+        file show within 0.25 s (and go on the undo history); a file that stops reading as an import file, or a
+        source that can't be read (the cad extra missing: 'Reading CAD files needs the cad extra: pip install
+        "scrimmage[cad]"'), makes the part read-only with that reason; the build is then failed with it. In plugin
+        mode pieces are [] and bodies come from the folder's part.toml with its overlay (joint: {kind, axis, range,
+        spring, damping, frictionloss}, motor and encoder: slot names, mounts: names), and the checklist is the
+        overlay's notes.
+  GET  /api/part/view              -> {pieces: [{key, vert, face}]}: each piece's mesh (left-out ones too) in robot
+        coordinates (base64 little-endian float32 xyz / int32 triangles, as the robot view's meshes); cached per
+        source read and robot frame. Plugin mode: one entry per body with meshes (key: the body), in the part frame.
+        {pieces: []} while the source can't be read.
+  GET  /api/part/materials         -> {materials: {key: {key, label, density, printed}}, motors: [names]}.
+  POST /api/part/edit              -> body {version, op, args}: scrimmage.cad.edits.apply_edit(op, args) (plugin
+        mode: set_mass {body, kg}, set_collision {body, mode}, set_joint {body, joint: {range?, spring?, damping?,
+        frictionloss?}} (null removes one), set_total {kg}; piece edits are 400 "per-piece materials need the STEP:
+        import it instead"). 200 with the state (its messages say what the edit dropped); 400 {field, message} for
+        an edit refused (nothing written); 409 when the settings changed after `version` (another tab, an undo, an
+        outside edit: a build finishing doesn't count) or the part is read-only.
+  POST /api/part/undo, /redo       -> body {version}: a 50-step history of the settings (the build's record of the
+        folders it wrote is never undone); 200 with the state ({..., ok: false} when there is nothing to undo).
+  POST /api/part/axis              -> body {piece, triangle, kind: round|flat}: cad.axis.fit_axis on the clicked
+        triangle (an index into the piece's view faces); {point, axis} in CAD coordinates; 400 with the plain reason
+        (a flat face picked as round, a click outside the piece, an unknown piece).
+  POST /api/part/reimport          -> body {version?}: reads the source again (the same path) and reconciles the
+        settings (pieces keep theirs, matched by name then shape); 200 with the state, its messages saying what
+        changed; 400 when it can't be read (the part is then read-only with the reason).
+  POST /api/part/upload            -> the raw file as the body, header X-Filename (its name, %-encoded; only the
+        last path part is used, and it must end .step/.stp/.stl/.obj): saved into parts/<import name>.source/ next
+        to the import file, which then points at it, and re-imported (a dropped file replaces the source). With no
+        part open it makes parts/<stem>.import.toml (made unique) in the robot config's folder (robot mode) or the
+        working directory, its source in parts/<stem>.source/, and opens it (409 as for /api/app/open). 200 with the
+        state; 400 for a bad name or plugin mode, 413 over 512 MB.
 
 Robot (`/api/robot/*`):
   GET  /api/robot/state[?since=N]  -> {version, path, display_path, read_only, read_only_reason, parts, errors,
@@ -406,7 +464,10 @@ from ..scenario import ScenarioError
 from ..scenario_runner import UNSET
 from ..testrange.spec import BUILTIN_RANGES, RangeError, load_range
 from ..tracks import TrackError, load_track
-from . import bench_session, edits, library, recent, scenario_edits, scenario_validate, templates, validate
+from ..cad import CadError
+from ..cad.names import sanitize
+from . import (bench_session, edits, library, part_session, recent, scenario_edits, scenario_validate, templates,
+               validate)
 from .bench_session import BenchJobs, BenchSession, SessionError
 from .doc import ConfigDoc, FileChanged
 from .edits import EditError
@@ -425,6 +486,7 @@ HAND_WRITTEN = "this robot uses a hand-written model; the assembler edits [[part
 NO_PROGRAM = "this robot config has no [robot_program] section: add one to drive it"
 NO_ROBOT = "no robot is open"
 NO_SESSION = "no idea session is open"
+NO_PART = "no part is open"
 ROBOT_TEMPLATES = ("swerve", "swerve-rev", "differential")
 UNPICKED = "Pick where the robot starts first"
 NOT_BUILT = ("The robot code hasn't been built on this computer yet. Build it first (Build now, under Ready to "
@@ -514,10 +576,17 @@ def start_sentence(pose) -> str:
     return f"Starts on the {side} side, facing {facing}"
 
 
+_IMPORT_HEADER = re.compile(r"(?m)^[ \t]*\[[ \t]*import[ \t]*\]")
+
+
 def classify(path) -> str:
-    """"session" for a folder (of bench files); for a file, "scenario" when it has a top-level `config` key or a
-    [[step]] array, else "bench" when it has a top-level [bench] table, else "robot". A file that isn't valid TOML is
-    judged by its lines (a [[step]] header or `config =` before the first table; then a [bench] header)."""
+    """"import" for a CAD file (.step/.stp/.stl/.obj), a folder holding a part.toml, or a file with a top-level
+    [import] table; "session" for another folder (of bench files); for a file, "scenario" when it has a top-level
+    `config` key or a [[step]] array, else "bench" when it has a top-level [bench] table, else "robot". A file that
+    isn't valid TOML is judged by its lines (an [import] header; a [[step]] header or `config =` before the first
+    table; then a [bench] header)."""
+    if part_session.is_part_target(path):
+        return "import"
     if Path(path).is_dir():
         return "session"
     try:
@@ -527,11 +596,15 @@ def classify(path) -> str:
     try:
         raw = tomllib.loads(text)
     except tomllib.TOMLDecodeError:
+        if _IMPORT_HEADER.search(text):
+            return "import"
         first_table = _TABLE.search(text)
         head = text[:first_table.start()] if first_table else text
         if _STEP_HEADER.search(text) or _CONFIG_KEY.search(head):
             return "scenario"
         return "bench" if _BENCH_HEADER.search(text) else "robot"
+    if isinstance(raw.get("import"), dict):
+        return "import"
     if "config" in raw or "step" in raw:
         return "scenario"
     return "bench" if isinstance(raw.get("bench"), dict) else "robot"
@@ -546,14 +619,17 @@ def _info_json(info) -> dict:
 
 
 def remember_opened(path: Path) -> None:
-    """Put an opened file in the start page's recent list: a robot, a scenario, or a session (a bench file's folder)."""
+    """Put an opened file in the start page's recent list: a robot, a scenario, a session (a bench file's folder) or
+    an import (a CAD file's import file, an import-made folder's, or a plugin part folder)."""
     kind = classify(path)
+    if kind == "import":
+        return   # App.remember_part does, once the import file is known
     recent.remember(Path(path).parent if kind == "bench" else path, "session" if kind in ("bench", "session") else kind)
 
 
 class App:
     def __init__(self, path: Path | None, open_browser: bool = True, port: int = 0,
-                 runs_dir: Path | str | None = None):
+                 runs_dir: Path | str | None = None, parts_dir: Path | None = None):
         self.cwd = Path.cwd().resolve()
         self.open_browser = open_browser
         self.port = port
@@ -570,6 +646,7 @@ class App:
         self.scenario_robot_problem: str | None = None
         self.scenario_errors: list[dict] = []
         self.bench: BenchSession | None = None    # the idea session (bench mode)
+        self.part = None                          # the PartSession or PluginSession (part mode)
         self._view: dict | None = None
         self._scenario_view: dict | None = None
         self._signals: dict | None = None
@@ -598,29 +675,40 @@ class App:
         self._build_failed: dict[str, tuple[float, dict]] = {}   # code folder -> (when, the failed gradle_built check)
         self._ranges: dict = {}   # (range file, its mtime) -> its named starts
         with self._lock:
-            self._load(Path(path) if path is not None else None, initial=True)
+            self._load(Path(path) if path is not None else None, initial=True, parts_dir=parts_dir)
 
     # -- what is open -----------------------------------------------------------------------
     @property
     def mode(self) -> str:
-        """"bench" (an idea session), "robot" (a robot config or a scenario) or "start" (nothing)."""
+        """"bench" (an idea session), "part" (a CAD import or plugin part folder), "robot" (a robot config or a
+        scenario) or "start" (nothing)."""
         if self.bench is not None:
             return "bench"
+        if self.part is not None:
+            return "part"
         return "robot" if self.robot is not None or self.scenario is not None else "start"
 
-    def _load(self, path: Path | None, initial: bool = False) -> None:
-        """Make `path` (a robot config, scenario, bench file or folder; None: nothing) what the app holds, replacing
-        what it held. Every version keeps counting up, so open pages' long polls return. Called with self._lock
-        held; OSError when the file can't be read (nothing is replaced then)."""
-        kind = classify(path) if path is not None else None
+    def _load(self, path: Path | None, initial: bool = False, kind: str | None = None,
+              parts_dir: Path | None = None, source: Path | None = None) -> None:
+        """Make `path` (a robot config, scenario, bench file, folder, import file, CAD file or part folder; None:
+        nothing) what the app holds, replacing what it held. kind "import" opens `path` as a part even when classify
+        wouldn't (a folder of STL files), its import file made in `parts_dir` (default parts/ next to it); with
+        `source`, `path` is the import file to make from that CAD file. Every
+        version keeps counting up, so open pages' long polls return. Called with self._lock held; OSError when the
+        file can't be read, CadError when an import-made folder's import file is gone (nothing is replaced then)."""
+        kind = kind or (classify(path) if path is not None else None)
         floor = 0 if initial else 1 + max(self.robot_version, self.scenario.version if self.scenario else 0,
-                                          self.bench.version if self.bench else 0)
+                                          self.bench.version if self.bench else 0,
+                                          self.part.version if self.part else 0)
         doc = ConfigDoc(path) if kind in ("robot", "scenario") else None
-        bench = None
+        bench = part = None
         if kind in ("bench", "session"):
             folder, stage = (path, None) if kind == "session" else (path.parent, path.name)
             bench = BenchSession(folder, lambda: None, stage=stage, version=floor, cwd=self.cwd)
+        elif kind == "import":
+            part = part_session.open_part(path, floor, parts_dir, source)
         old, self.bench = self.bench, bench
+        old_part, self.part = self.part, part
         self.robot, self.robot_missing, self._robot_target, self._robot_ver = None, NO_ROBOT, None, floor
         self.scenario, self.extra_folders = None, []
         if kind == "robot":
@@ -634,6 +722,8 @@ class App:
         self._revalidate_scenario()
         if old is not None:
             old.close()
+        if old_part is not None:
+            old_part.close()
 
     def need_robot(self) -> None:
         """404 unless a robot config or scenario is open (the Robot, Scenario and Drive tabs' routes)."""
@@ -646,6 +736,19 @@ class App:
             if self.bench is None:
                 raise ApiError(404, NO_SESSION)
             return self.bench
+
+    def need_part(self):
+        with self._lock:
+            if self.part is None:
+                raise ApiError(404, NO_PART)
+            return self.part
+
+    def remember_part(self) -> None:
+        """The open part in the recent list: its import file, or the plugin part folder."""
+        with self._lock:
+            p = self.part.path if self.part is not None else None
+        if p is not None:
+            recent.remember(p, "import")
 
     def _user_path(self, path, what: str) -> Path:
         if not isinstance(path, str) or not path.strip():
@@ -665,8 +768,8 @@ class App:
     def app_state(self) -> dict:
         with self._lock:
             mode = self.mode
-            p = self.bench.folder if mode == "bench" else (self.scenario or self.robot).path if mode == "robot" \
-                else None
+            p = self.bench.folder if mode == "bench" else self.part.path if mode == "part" \
+                else (self.scenario or self.robot).path if mode == "robot" else None
             unset = self._needs_folder()
         return {"mode": mode, "path": str(p) if p is not None else None,
                 "display_path": self._display(p) if p is not None else "", "recent": recent.recent(),
@@ -729,33 +832,79 @@ class App:
                 folders.append({"name": p.name, "path": str(p), "kind": "folder"})
             elif p.is_file() and p.suffix.lower() == ".toml":
                 files.append({"name": p.name, "path": str(p), "kind": classify(p)})
+            elif p.is_file() and p.suffix.lower() in part_session.CAD_SUFFIXES:
+                files.append({"name": p.name, "path": str(p), "kind": "cad"})
         return {"dir": str(d), "parent": str(d.parent) if d.parent != d else None, "entries": folders + files}
 
-    def open_path(self, path) -> dict:
-        """Open a robot config, scenario, bench file (its folder as the session, that file on stage) or folder."""
+    def open_path(self, path, kind: str | None = None, parts_dir: Path | None = None) -> dict:
+        """Open a robot config, scenario, bench file (its folder as the session, that file on stage), folder, import
+        file, CAD file or part folder (see _load for kind and parts_dir)."""
         p = self._user_path(path, "a file or folder path")
         if not p.exists():
             raise ApiError(400, f"{self._display(p)} doesn't exist")
-        if p.is_file() and p.suffix.lower() != ".toml":
-            raise ApiError(400, f"{self._display(p)} is not a robot config, scenario, bench file or folder")
+        if p.is_file() and p.suffix.lower() not in (".toml", *part_session.CAD_SUFFIXES):
+            raise ApiError(400, f"{self._display(p)} is not a robot config, scenario, bench file, CAD file or folder")
         with self._lock:
             self._check_can_open()
             try:
                 with self.bench_jobs.gate():   # no job can queue on the old session while it is replaced
-                    self._load(p)
+                    self._load(p, kind=kind, parts_dir=parts_dir)
             except OSError as e:
                 raise ApiError(400, f"can't read {self._display(p)}: {e.strerror or e}") from None
+            except CadError as e:
+                raise ApiError(400, str(e)) from None
         self.bench_jobs.stop()    # idle (refused above while a job is active); outside the lock: it joins
         self.bench_jobs.clear()
         remember_opened(p)
+        self.remember_part()
         return {"ok": True}
+
+    def new_import(self, body: dict) -> dict:
+        """New part from CAD: open a Browse-picked source in place (its import file in parts/ next to it, or next
+        to the robot config `robot`)."""
+        p = self._user_path(body.get("path"), "the CAD file to import")
+        if not (p.is_file() and p.suffix.lower() in part_session.CAD_SUFFIXES) and not (
+                p.is_dir() and any(f.suffix.lower() in part_session.CAD_SUFFIXES for f in p.iterdir())):
+            raise ApiError(400, f"{self._display(p)} is not a STEP, STL or OBJ file (or a folder of STL/OBJ files)")
+        parts_dir = None
+        if body.get("robot") is not None:
+            robot = self._user_path(body.get("robot"), "the robot config the part is for")
+            if not robot.is_file() or classify(robot) != "robot":
+                raise ApiError(400, f"{self._display(robot)} is not a robot config")
+            parts_dir = robot.parent / "parts"
+        return self.open_path(str(p), kind="import", parts_dir=parts_dir)
+
+    def upload(self, stream, length: int, filename: str | None) -> tuple[int, dict]:
+        """A dropped CAD file: into the open import's parts/<name>.source/ (re-imported from there), or, with no
+        part open, a new import in parts/ (next to the robot config in robot mode, else the working directory)."""
+        with self._lock:
+            part, base = self.part, (self._base_dir() if self.mode == "robot" else self.cwd)
+        if part is not None:
+            dest = part_session.save_upload(stream, length, filename, part.source_folder())
+            return part.replace_source(dest)
+        with self._lock:
+            self._check_can_open()
+        name = sanitize(Path(unquote(filename or "x").replace("\\", "/")).stem)
+        imp = part_session.free_import(base / "parts", name)
+        dest = part_session.save_upload(stream, length, filename,
+                                        imp.with_name(imp.name[:-len(part_session.SUFFIX)] + ".source"))
+        with self._lock:
+            self._check_can_open()
+            with self.bench_jobs.gate():
+                self._load(imp, kind="import", source=dest)
+        self.bench_jobs.stop()
+        self.bench_jobs.clear()
+        self.remember_part()
+        return 200, self.part.state()
 
     def new(self, body: dict) -> dict:
         """Write a new robot config (from a template), scenario (for a robot config) or session folder, then open
         it. A path that exists is refused; a robot or scenario path without .toml gets it."""
         kind = body.get("kind")
+        if kind == "import":
+            return self.new_import(body)
         if kind not in ("robot", "scenario", "session"):
-            raise ApiError(400, "kind must be robot, scenario or session")
+            raise ApiError(400, "kind must be robot, scenario, session or import")
         p = self._user_path(body.get("path"), "a file or folder path")
         if kind != "session" and p.suffix.lower() != ".toml":
             p = p.with_name(p.name + ".toml")
@@ -1877,6 +2026,8 @@ class App:
         self.bench_jobs.stop()
         if self.bench is not None:
             self.bench.close()
+        if self.part is not None:
+            self.part.close()
         self.runs.stop()
         self.live.shutdown()
         if self._httpd is not None:
@@ -1990,6 +2141,16 @@ class _Handler(BaseHTTPRequestHandler):
             return self._app_api(method, url)
         if path.startswith("/api/bench/"):
             return self._bench_api(method, url, app.need_bench())
+        if path == "/api/part/upload" and method == "POST":
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                raise ApiError(400, "bad Content-Length") from None
+            if n > part_session.MAX_UPLOAD:
+                raise ApiError(413, "that file is too large to upload (over 512 MB)")
+            return app.upload(self.rfile, n, self.headers.get("X-Filename"))
+        if path.startswith("/api/part/"):
+            return self._part_api(method, url, app.need_part())
         if path.startswith(("/api/robot/", "/api/scenario/", "/api/live/")):
             app.need_robot()
         if method == "GET":
@@ -2100,6 +2261,27 @@ class _Handler(BaseHTTPRequestHandler):
                 return bench.new_idea(body)
             if path in ("/api/bench/run", "/api/bench/sweep", "/api/bench/compare", "/api/bench/gallery"):
                 return self.app.bench_jobs.submit(bench, path.rsplit("/", 1)[1], body)
+        raise ApiError(404, "no such endpoint")
+
+    def _part_api(self, method: str, url, part) -> tuple:
+        path = url.path
+        if method == "GET":
+            if path == "/api/part/state":
+                return 200, part.wait_state(self._since(url))
+            if path == "/api/part/view":
+                return 200, part.view()
+            if path == "/api/part/materials":
+                return 200, part_session.materials()
+        elif method == "POST":
+            body = self._body()
+            if path == "/api/part/edit":
+                return part.edit(body)
+            if path in ("/api/part/undo", "/api/part/redo"):
+                return part.history(path.rsplit("/", 1)[1], body)
+            if path == "/api/part/axis":
+                return 200, part.axis(body)
+            if path == "/api/part/reimport":
+                return part.reimport(body)
         raise ApiError(404, "no such endpoint")
 
     def _static(self, urlpath: str) -> None:

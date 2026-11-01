@@ -182,14 +182,17 @@ def main(argv: list[str] | None = None) -> None:
     fe.add_argument("file", type=Path, help="the .FCStd file holding the Assembly")
     fe.add_argument("out_dir", type=Path, help="the part folder to write (replaced if it already holds a part.toml)")
 
-    ep = sub.add_parser("edit", help="edit a robot config, a scenario or an idea session in a local web app (3D view, "
-                                     "validation, runs); with no FILE, a start page")
+    ep = sub.add_parser("edit", help="edit a robot config, a scenario, an idea session or a part from CAD in a local "
+                                     "web app (3D view, validation, runs); with no FILE, a start page")
     ep.add_argument("file", type=Path, nargs="?",
                     help="robot config or scenario TOML to edit (a scenario has a top-level config key or [[step]]s), "
-                         "or a bench file or a folder of them (an idea session, on the Bench tab)")
+                         "a bench file or a folder of them (an idea session, on the Bench tab), or a .step/.stp/.stl/"
+                         ".obj file, an import file or a part folder (the Part tab)")
     ep.add_argument("--new", choices=("swerve", "swerve-rev", "differential"), help="write a starting robot config to FILE first")
     ep.add_argument("--new-scenario", action="store_true", help="write a starting scenario to FILE first (with --robot)")
-    ep.add_argument("--robot", type=Path, metavar="CONFIG", help="the robot config a --new-scenario uses")
+    ep.add_argument("--robot", type=Path, metavar="CONFIG",
+                    help="the robot config a --new-scenario uses; with a CAD file, the robot whose parts/ folder "
+                         "gets its import file")
     ep.add_argument("--port", type=_port, default=0, help="port on 127.0.0.1 (default: any free port)")
     ep.add_argument("--no-browser", action="store_true", help="print the URL instead of opening a browser")
     ep.add_argument("-v", "--verbose", action="store_true")
@@ -609,6 +612,7 @@ def _edit(args) -> None:
     import threading
     from .assembler import scenario_validate
     from .assembler.server import App, remember_opened
+    from .cad import CadError
     from .assembler.templates import new_config, new_scenario
 
     def fail(msg: str) -> None:
@@ -620,8 +624,11 @@ def _edit(args) -> None:
         fail(f"{'--new' if args.new else '--new-scenario'} needs FILE, the file to write")
     if args.new and args.new_scenario:
         fail("use --new (a robot config) or --new-scenario (a scenario), not both")
-    if args.robot is not None and not args.new_scenario:
-        fail("--robot goes with --new-scenario")
+    cad = args.file is not None and args.file.suffix.lower() in (".step", ".stp", ".stl", ".obj")
+    if args.robot is not None and not args.new_scenario and not cad:
+        fail("--robot goes with --new-scenario or a CAD file")
+    if cad and args.robot is not None and not args.robot.is_file():
+        fail(f"robot config {args.robot} not found")
     if args.new_scenario and args.robot is None:
         fail("--new-scenario needs --robot CONFIG (the robot config the scenario runs)")
     if args.new or args.new_scenario:
@@ -647,13 +654,17 @@ def _edit(args) -> None:
     elif args.file is not None and not args.file.exists():
         fail(f"{args.file} not found; {how}")
     try:
-        app = App(args.file, open_browser=not args.no_browser, port=args.port)
+        app = App(args.file, open_browser=not args.no_browser, port=args.port,
+                  parts_dir=args.robot.resolve().parent / "parts" if cad and args.robot is not None else None)
         url = app.start()
         if args.file is not None:
             remember_opened(args.file)
+            app.remember_part()
     except OSError as e:
         if e.errno == errno.EADDRINUSE:
             fail(f"port {args.port} is in use; choose another with --port or leave it out")
+        fail(str(e))
+    except CadError as e:   # an import-made part folder whose import file is gone
         fail(str(e))
     try:
         # Ctrl+C stops the server even when the parent started us with SIGINT ignored (Python then keeps it ignored).
