@@ -183,6 +183,19 @@ def test_set_part_makes_second_part(imp):
     bad(imp, "set_part", {"body": "arm", "part": "bot"}, "part")
 
 
+def test_set_part_remembers_where_it_hung(imp):
+    """A body made its own part remembers the body it hung on (the robot attaches it there); renaming, merging or
+    removing that body keeps the memory pointing at the body that took its place."""
+    out, _ = apply_edit(imp, "set_part", {"body": "hook", "part": "claw"})
+    assert out.parts["claw"].attach == "arm" and out.parts["bot"].attach is None
+    assert apply_edit(out, "rename_body", {"old": "arm", "new": "lift"})[0].parts["claw"].attach == "lift"
+    assert apply_edit(out, "merge_bodies", {"into": "base", "other": "arm"})[0].parts["claw"].attach == "base"
+    gone = copy.deepcopy(out)
+    gone.pieces.pop("b1")
+    assert remove_empty_bodies(gone)[0].parts["claw"].attach == "base"
+    assert apply_edit(out, "set_part", {"body": "hook", "part": "grabber"})[0].parts["grabber"].attach == "arm"
+
+
 def test_set_part_none_joins_another_part(imp):
     two, _ = apply_edit(imp, "set_part", {"body": "arm", "part": "claw"})
     out, _ = apply_edit(two, "set_part", {"body": "arm", "part": None, "parent": "base"})

@@ -555,13 +555,15 @@ def _part_edit(c, op, **args):
 
 def _split_climber(c, cfg):
     """Import the climber for `cfg` (into parts/ next to it) and split it as the Part tab would: part `base` (the base
-    plate, arm_B on a hinge) and part `right_arm` (the hook on arm_B). Returns the import's state once built."""
+    plate, arm_B on a hinge) and part `right_arm` (the hook, welded to arm_B, then made its own part). Returns the
+    import's state once built."""
     shutil.copy(ROOT / "tests" / "data" / "cad" / "climber.step", cfg.parent / "climber.step")
     s, r = c.call("POST", "/api/app/new", {"kind": "import", "path": str(cfg.parent / "climber.step"), "robot": str(cfg)})
     assert s == 200, r
     _part_edit(c, "set_part", body="base_plate", part="base")
     _part_edit(c, "set_joint", body="arm_B", parent="base_plate",
                joint={"kind": "hinge", "anchor": [0.24, 0.1, 0.01], "axis": [0, 1, 0]})
+    _part_edit(c, "set_joint", body="hook_assy_2", parent="arm_B", joint=None)
     _part_edit(c, "set_part", body="hook_assy_2", part="right_arm")
     return _part_wait(c, lambda st: st["build"]["state"] == "idle" and len(st["parts"]) == 2
                       and all(p["com"] is not None for p in st["parts"]))
@@ -578,7 +580,10 @@ def test_parts_from_one_import_land_where_the_cad_has_them(served, tmp_path, mon
     assert c.call("POST", "/api/app/open", {"path": str(cfg)})[0] == 200
     lib = c.get("/api/robot/library")[1]
     folders = {f["name"]: f for f in lib["folders"]}
-    assert folders["base"]["cad"] is True and folders["right_arm"]["cad"] is True
+    iid = folders["base"]["cad"]["import_id"]
+    assert folders["base"]["cad"] == {"import_id": iid, "part": "base", "attach": None}
+    assert folders["right_arm"]["cad"] == {"import_id": iid, "part": "right_arm", "attach": "base.arm_B"}
+    assert {s["name"]: s["root_body"] for s in lib["stock"]}["chassis"] == "chassis"
     for name, attach in (("base", "drive.chassis"), ("right_arm", "base.arm_B")):
         s, r = c.post("/api/robot/edit", {"op": "add", "name": name, "path": folders[name]["path"], "attach": attach})
         assert s == 200 and r["ok"], r
@@ -591,6 +596,9 @@ def test_parts_from_one_import_land_where_the_cad_has_them(served, tmp_path, mon
     assert parts["right_arm"]["pos"] == pytest.approx([-x for x in arm_b])
     assert parts["right_arm"]["cad_pos"] == pytest.approx(parts["right_arm"]["pos"])
     assert parts["drive"]["cad_pos"] is None and parts["dt"]["cad_pos"] is None   # stock parts have no CAD
+    assert parts["drive"]["cad"] is None
+    assert parts["base"]["cad"] == {"import_id": iid, "part": "base", "hangs_on": None}
+    assert parts["right_arm"]["cad"] == {"import_id": iid, "part": "right_arm", "hangs_on": "base.arm_B"}
 
     # every part's center of mass, in the world, is where the import put it in the robot frame
     w = assemble(tomllib.loads(cfg.read_text()), cfg.parent)
@@ -616,3 +624,39 @@ def test_parts_from_one_import_land_where_the_cad_has_them(served, tmp_path, mon
     s, r = c.post("/api/robot/edit", {"op": "add", "name": "again", "path": folders["right_arm"]["path"], "attach": "base.arm_B",
                                       "pos": [0.1, 0, 0]})
     assert r["ok"] and {p["name"]: p for p in c.get("/api/robot/state")[1]["parts"]}["again"]["pos"] == [0.1, 0, 0]
+
+    # an import that isn't made for this robot (its parts go elsewhere) has no way back to it
+    (cfg.parent / "other").mkdir()
+    shutil.copy(cfg.parent / "climber.step", cfg.parent / "other" / "climber.step")
+    assert c.call("POST", "/api/app/open", {"path": str(cfg.parent / "other" / "climber.step")})[0] == 200
+    assert c.call("GET", "/api/app/state")[1]["back"] is None
+
+
+def _hand_part(folder, text, marker=None):
+    folder.mkdir(parents=True)
+    (folder / "part.toml").write_text(text)
+    if marker is not None:
+        (folder / "import-origin.toml").write_text(marker)
+
+
+def test_a_mount_named_like_a_body_wins_over_the_cad_placement(served, tmp_path):
+    """Attaching to "<part>.<name>" where the part has a mount of that name attaches to the mount, so there is no CAD
+    placement; without the mount the same target is the body, at -origins[body]."""
+    c, cfg = served()
+    q = 'import = "x"\nimport_id = "same"\norigins = { base = [0.0, 0.0, 0.0], arm = [0.1, 0.0, 0.2] }\n'
+    body = '[part]\nname = "{n}"\nformat = 1\n\n[[body]]\nname = "base"\nmass = 1.0\ngeom = [{{ box = [0.05, 0.05, 0.05] }}]\n'
+    arm = '\n[[body]]\nname = "arm"\nparent = "base"\npos = [0.1, 0, 0.2]\nmass = 1.0\ngeom = [{ box = [0.02, 0.02, 0.02] }]\njoint = { name = "pivot", hinge = "y" }\n'
+    _hand_part(tmp_path / "parts" / "q", body.format(n="q") + arm, q)
+    _hand_part(tmp_path / "parts" / "qm", body.format(n="qm") + arm + '\n[[mount]]\nname = "arm"\nbody = "base"\n',
+               q.replace('"same"', '"other"'))
+    _hand_part(tmp_path / "parts" / "p", body.format(n="p"),
+               'import = "x"\nimport_id = "same"\norigins = { base = [0.0, 0.0, 0.0] }\nattach = "q.arm"\n')
+    _hand_part(tmp_path / "parts" / "pm", body.format(n="pm"),
+               'import = "x"\nimport_id = "other"\norigins = { base = [0.0, 0.0, 0.0] }\nattach = "qm.arm"\n')
+    for name, attach in (("q", "drive.chassis"), ("qm", "drive.chassis"), ("p", "q.arm"), ("pm", "qm.arm")):
+        s, r = c.post("/api/robot/edit", {"op": "add", "name": name, "path": f"parts/{name}", "attach": attach})
+        assert s == 200 and r["ok"], r
+    parts = {p["name"]: p for p in c.get("/api/robot/state")[1]["parts"]}
+    assert parts["p"]["pos"] == pytest.approx([-0.1, 0.0, -0.2]) and parts["p"]["cad_pos"] == pytest.approx([-0.1, 0.0, -0.2])
+    assert parts["pm"]["pos"] == [0, 0, 0] and parts["pm"]["cad_pos"] is None     # the mount wins
+    assert parts["p"]["cad"]["hangs_on"] == "q.arm" and parts["pm"]["cad"]["hangs_on"] == "qm.arm"

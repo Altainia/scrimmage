@@ -128,7 +128,7 @@ export async function showStart(root, { canGoBack, onBack, cadFor = null }) {
       h("p", { class: "start-hint", text: "Export your robot mechanism from your CAD program as a STEP file (or STL files), then pick it here. "
         + "Scrimmage reads it, guesses what is what, and shows you what is left to check." }),
       robot ? h("p", { class: "start-hint", id: "start-cad-for", text: `The parts go in the parts folder next to ${base(robot)}. `
-        + "When you're done, Back to the robot opens it again." }) : null,
+        + "When you're done, click \"Back to the robot\"." }) : null,
       drop,
       h("div", { class: "start-buttons" },
         h("button", { type: "button", class: "btn", id: "start-cad-browse-btn", onclick: () => browseList(list, null, { onFile: (e) => (e.kind === "import" ? open(e.path) : pick(e.path)), kinds: ["cad", "import"],

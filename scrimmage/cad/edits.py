@@ -227,6 +227,9 @@ def _merge_bodies(imp, a):
     for n, b in imp.bodies.items():
         if b.parent == other:
             b.parent = ob.parent if n == into else into
+    for ps in imp.parts.values():
+        if ps.attach == other:
+            ps.attach = into
     if imp.bodies[into].parent == other:
         imp.bodies[into].parent = ob.parent
     msgs = []
@@ -251,6 +254,9 @@ def _rename_body(imp, a):
     for b in imp.bodies.values():
         if b.parent == old:
             b.parent = new
+    for ps in imp.parts.values():
+        if ps.attach == old:
+            ps.attach = new
     for p in imp.pieces.values():
         if p.body == old:
             p.body = new
@@ -397,7 +403,7 @@ def _set_part(imp, a):
     if b.part is not None:
         imp.parts[new] = imp.parts.pop(b.part)
     else:
-        imp.parts[new] = PartSettings(folder=new)
+        imp.parts[new] = PartSettings(folder=new, attach=b.parent)    # the robot attaches it where it hung
         b.parent = None
         msgs = []
         _clear_joint(imp, name, msgs)

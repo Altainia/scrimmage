@@ -383,6 +383,22 @@ def test_second_part_and_message(tmp_path, src):
     assert "hook_assy" not in [b.name for b in result.parts["climber"].part.bodies]
 
 
+def test_marker_says_what_a_part_hangs_on(tmp_path, src):
+    """A part split off a body of another part says so in its import-origin.toml (attach = "<part>.<body>", the
+    part body that holds it); a part the robot carries has no attach."""
+    imp = edit(make(src, tmp_path), "set_joint", body="arm_B", parent="base_plate",
+               joint={"kind": "hinge", "anchor": [0.24, 0.1, 0.01], "axis": [0, 1, 0]})
+    imp = edit(imp, "set_joint", body="hook_assy_2", parent="arm_B", joint=None)
+    imp = edit(imp, "set_part", body="hook_assy_2", part="right_arm")
+    imp = edit(imp, "set_part", body="arm_A", part="left_arm")       # hung on base_plate, welded: its part body
+    result, _ = write(imp, src, tmp_path)
+    assert result.parts["right_arm"].attach == "climber.arm_B" and result.parts["left_arm"].attach == "climber.base_plate"
+    assert result.parts["climber"].attach is None and not result.messages
+    marker = lambda n: tomllib.loads((tmp_path / n / "import-origin.toml").read_text())
+    assert marker("right_arm")["attach"] == "climber.arm_B" and "attach" not in marker("climber")
+    load_part(tmp_path / "right_arm")      # part.toml is unchanged in form
+
+
 def test_refuses_foreign_folder(tmp_path, src):
     imp = make(src, tmp_path)
     (tmp_path / "climber").mkdir()

@@ -187,19 +187,30 @@ function placementSection(part) {
 
 // A part made from a CAD file: whether it sits where the CAD has it (the state's cad_pos, for what it attaches to),
 // and "Reset to CAD" to put it back there.
+function onChassis(part) {
+  const target = store.state && store.state.parts.find((p) => p.name === String(part.attach || "").split(".")[0]);
+  return !!target && target.stock === "chassis";
+}
+
 function cadLine(part) {
-  const meta = part.path ? folderMeta(part.path) : null;
+  const hangs = part.cad && part.cad.hangs_on;
   if (!part.cad_pos) {
-    return meta && meta.cad ? h("p", { class: "hint", id: "insp-cad" },
-      "Made from a CAD file: attach it to the chassis, or to a body of another part from the same CAD file, to place it where the CAD has it.") : null;
+    if (!part.cad) return null;
+    return h("p", { class: "hint", id: "insp-cad" }, hangs
+      ? `Made from a CAD file, where it hangs on ${hangs}: attach it there to place it where the CAD has it.`
+      : "Made from a CAD file: attach it to the chassis, or to a body of another part from the same CAD file, to place it where the CAD has it.");
   }
   const near = (a, b) => (a || [0, 0, 0]).every((v, i) => Math.abs(v - b[i]) < 1e-6);
   const there = near(part.pos, part.cad_pos) && near(part.rot, [0, 0, 0]);
-  return h("div", { class: "insp-cad" },
-    h("p", { class: "hint", id: "insp-cad" }, there ? "Placed where the CAD has it" : "Moved from where the CAD has it"),
-    h("button", { type: "button", class: "btn btn-small", id: "insp-cad-reset", disabled: there || (store.state && store.state.read_only),
-      title: "Put this part back where the CAD has it", onclick: () => edit("attach", { name: part.name, attach: part.attach, pos: part.cad_pos, rot: [0, 0, 0] }) },
-    "Reset to CAD"));
+  // fixed elsewhere (the chassis) while the CAD hangs it on another part's body: in place, but it won't move with it
+  const elsewhere = hangs && hangs !== part.attach;
+  return h("div", {},
+    h("div", { class: "insp-cad" },
+      h("p", { class: "hint", id: "insp-cad" }, there ? "Placed where the CAD has it" : "Moved from where the CAD has it"),
+      h("button", { type: "button", class: "btn btn-small", id: "insp-cad-reset", disabled: there || (store.state && store.state.read_only),
+        title: "Put this part back where the CAD has it", onclick: () => edit("attach", { name: part.name, attach: part.attach, pos: part.cad_pos, rot: [0, 0, 0] }) },
+      "Reset to CAD")),
+    elsewhere ? h("p", { class: "hint", id: "insp-cad-hangs" }, `In the CAD this hangs on ${hangs}; it's fixed to ${onChassis(part) ? "the chassis" : part.attach} here.`) : null);
 }
 
 function vecInputs(n, key, value) {

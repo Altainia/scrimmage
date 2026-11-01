@@ -384,8 +384,7 @@ function renderStatus() {
   renderSaved();
   $("#mass").textContent = s.mass_kg == null ? "Mass: —" : `Mass: ${s.mass_kg.toFixed(1)} kg`;
   $("#cg").textContent = cgText(s.com);
-  $("#cg").title = s.com ? "The robot's center of gravity at its start pose, from the floor at the frame's center"
-    + ` (${Math.abs(s.com.left).toFixed(2)} m ${Math.round(s.com.left * 100) < 0 ? "right" : "left"})` : "";
+  $("#cg").title = s.com ? "The robot's center of gravity at its start pose, from the floor at the frame's center" : "";
   $("#counts").textContent = s.bodies == null ? "" : `${s.bodies} bodies · ${s.joints} joints`;
   const ne = s.errors.length + store.lastErrors.length, nw = s.warnings.length;
   const parts = [];
@@ -396,11 +395,15 @@ function renderStatus() {
 }
 export { renderErrors, renderStatus };
 
-// "CG: 0.31 m up, 0.02 m forward" (meters, two decimals) from the state's com; "" without one.
+// "CG: 0.31 m up, 0.02 m forward" (meters, two decimals) from the state's com, with ", 0.03 m left" (or right) when
+// that rounds to 0.01 m or more; "" without one. Each side comes from the rounded value: never "0.00 m back".
 export function cgText(com) {
   if (!com) return "";
-  const m = (v) => Math.abs(v).toFixed(2);
-  return `CG: ${m(com.height)} m up, ${m(com.forward)} m ${Math.round(com.forward * 100) < 0 ? "back" : "forward"}`;
+  const r = (v) => Number(v.toFixed(2)) || 0;     // || 0: -0 reads as 0
+  const m = (v) => Math.abs(r(v)).toFixed(2);
+  const side = r(com.left);
+  return `CG: ${m(com.height)} m up, ${m(com.forward)} m ${r(com.forward) < 0 ? "back" : "forward"}`
+    + (side ? `, ${m(com.left)} m ${side < 0 ? "right" : "left"}` : "");
 }
 
 // -- helpers shared by the library and inspector ------------------------------------------------

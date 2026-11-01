@@ -23,7 +23,9 @@ their part body's frame. Problems that don't stop the build come back as plain-w
 
 Folders. Each part goes to its `folder` (`{cad}/...` expanded, else relative to the import file's folder), written
 to `<folder>.tmp` and swapped in, with an `import-origin.toml` marker: the import file's relative path, the
-import_id, and each body's origin in the robot frame. A folder holding files but no marker for this import is
+import_id, each body's origin in the robot frame, and `attach = "<part>.<body>"` when the part hangs on a body of
+another part of this import in the CAD (its root's parent, or the body it hung on when it was made a part; left out
+for a part the robot itself carries). A folder holding files but no marker for this import is
 refused. The import file records the folders each build wrote (`written`); a recorded folder this build doesn't
 write is removed (while its marker and part.toml still say it is that part from this import), so a robot can't
 count those bodies twice. Nothing else is ever deleted: a copy of a part folder is safe.
@@ -69,6 +71,7 @@ class BuiltPart:
     origins: dict[str, list[float]]                         # body -> its origin in the robot frame
     com: list[float]                                        # the part's center of mass, robot frame
     mass: float
+    attach: str | None = None                               # "<part>.<body>" it hangs on in the CAD; None: the robot
 
 
 @dataclass
@@ -259,6 +262,11 @@ def _build_part(imp, tree, root, heads, origin, verts, items, R, t, msgs) -> Bui
     # the total weight scales the computed masses
     ps = imp.parts.get(name)
     total = ps.total_mass if ps is not None else None
+    # where it hangs in the CAD: the root's own parent, else the body it hung on when it was made a part
+    hang = imp.bodies[root].parent if imp.bodies[root].parent in imp.bodies else ps.attach if ps is not None else None
+    attach = None
+    if hang in imp.bodies and tree.part_root(hang) != root:
+        attach = f"{tree.part_name(tree.part_root(hang))}.{tree.head(hang)}"
     if total:
         typed = sum(i.mass for h in order for i, ty in items[h] if ty)
         computed = sum(i.mass for h in order for i, ty in items[h] if not ty)
@@ -345,7 +353,8 @@ def _build_part(imp, tree, root, heads, origin, verts, items, R, t, msgs) -> Bui
 
     whole = combine(inertials)
     part = Part(name, bodies, couplings, loops, motors, encoders, gyros, mounts)
-    return BuiltPart(part, meshes, {h: _floats(origin[h]) for h in order}, _floats(whole.com), float(whole.mass))
+    return BuiltPart(part, meshes, {h: _floats(origin[h]) for h in order}, _floats(whole.com), float(whole.mass),
+                     attach)
 
 
 def _join(vs: list[tuple[np.ndarray, np.ndarray]]) -> tuple[np.ndarray, np.ndarray]:
@@ -520,8 +529,9 @@ def _marker_text(imp: ImportFile, built: BuiltPart, folder: Path, import_path: P
     except ValueError:              # Windows: another drive
         rel = Path(import_path).resolve().as_posix()
     origins = ", ".join(f"{_key(b)} = [{', '.join(repr(float(x)) for x in o)}]" for b, o in built.origins.items())
+    attach = f"attach = {_toml_value(built.attach)}\n" if built.attach is not None else ""
     return (f"import = {_toml_value(rel)}\nimport_id = {_toml_value(imp.import_id)}\n"
-            f"origins = {{ {origins} }}\n")
+            f"origins = {{ {origins} }}\n{attach}")
 
 
 def write_parts(result: BuildResult, imp: ImportFile, import_path: Path) -> list[Path]:

@@ -1,7 +1,9 @@
 """The part library for the GUI: stock parts with parameter metadata, and part folders.
 
 A part folder the Part tab built from a CAD import has an `import-origin.toml` marker (scrimmage/cad/build.py):
-`cad_marker` reads it, and the folder's entry says `cad: true`, so the robot can place the part where the CAD has it.
+`cad_marker` reads it, and the folder's entry carries it as `cad`, so the robot can place the part where the CAD has it
+and attach it to what it hangs on in the CAD. Each stock part names its `root_body` (the chassis's is where an import
+part's own root goes).
 """
 
 from __future__ import annotations
@@ -40,10 +42,21 @@ def _slot_kinds(s) -> dict[str, str]:
     return _KINDS[s.name]
 
 
+_ROOTS: dict[str, str] = {}
+
+
+def root_body(name: str) -> str:
+    """The stock part's root body (built with default parameters): "chassis" for the chassis."""
+    if name not in _ROOTS:
+        _ROOTS[name] = build_stock(name, {}, name).bodies[0].name
+    return _ROOTS[name]
+
+
 def stock() -> list[dict]:
     _load_all()
     return [{"name": s.name, "group": _group(s), "doc": s.doc, "note": s.note,
-             "params": [_param(p) for p in s.params], "slots": _slot_kinds(s), "mounts": list(s.mounts)}
+             "params": [_param(p) for p in s.params], "slots": _slot_kinds(s), "mounts": list(s.mounts),
+             "root_body": root_body(s.name)}
             for s in sorted(REGISTRY.values(), key=lambda s: s.name)]
 
 
@@ -57,8 +70,10 @@ def _rel(folder: Path, base: Path | None) -> str:
 
 
 def cad_marker(folder: Path) -> dict | None:
-    """{import_id, origins: {body: [x, y, z]}} from a part folder's import-origin.toml (each body's origin in the robot
-    frame, m), or None when the folder has none or it can't be read (a hand-edited one with a bad origin too)."""
+    """{import_id, part, origins: {body: [x, y, z]}, attach} from a part folder's import-origin.toml: each body's
+    origin in the robot frame (m), and attach "<part>.<body>" (the body of another part from the same import it hangs on
+    in the CAD; None when the robot carries it). part is the folder's part name (its part.toml's; None when unreadable).
+    None when the folder has no marker or it can't be read (a hand-edited one with a bad origin or attach too)."""
     try:
         raw = tomllib.loads((Path(folder) / MARKER).read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
@@ -66,13 +81,25 @@ def cad_marker(folder: Path) -> dict | None:
     iid, origins = raw.get("import_id"), raw.get("origins")
     if not isinstance(iid, str) or not isinstance(origins, dict):
         return None
+    attach = raw.get("attach")
+    if attach is not None and not (isinstance(attach, str) and attach.count(".") == 1):
+        return None
     out = {}
     for body, o in origins.items():
         if not (isinstance(o, list) and len(o) == 3 and all(isinstance(x, (int, float)) and not isinstance(x, bool)
                                                             and math.isfinite(x) for x in o)):
             return None
         out[body] = [float(x) for x in o]
-    return {"import_id": iid, "origins": out}
+    try:
+        part = tomllib.loads((Path(folder) / "part.toml").read_text(encoding="utf-8")).get("part", {}).get("name")
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, AttributeError):
+        part = None
+    return {"import_id": iid, "part": part if isinstance(part, str) else None, "origins": out, "attach": attach}
+
+
+def _cad_entry(folder: Path) -> dict | None:
+    m = cad_marker(folder)
+    return None if m is None else {"import_id": m["import_id"], "part": m["part"], "attach": m["attach"]}
 
 
 def folders(dirs: list[Path], config_dir: Path | None = None) -> list[dict]:
@@ -94,7 +121,7 @@ def folders(dirs: list[Path], config_dir: Path | None = None) -> list[dict]:
                 continue
             seen.add(key)
             item = {"name": c.name, "path": _rel(c, config_dir),
-                    "slots": {}, "mounts": [], "error": None, "cad": cad_marker(c) is not None}
+                    "slots": {}, "mounts": [], "error": None, "cad": _cad_entry(c)}
             try:
                 part = load_part(c)
                 item.update(name=part.name, slots=part.slot_kinds(), mounts=[m.name for m in part.mounts])

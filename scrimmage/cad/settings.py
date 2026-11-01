@@ -104,6 +104,9 @@ class BodySettings:
 class PartSettings:
     folder: str
     total_mass: float | None = None
+    # the body this part hung on in the CAD when it was made its own part (set_part); the build writes where that body
+    # ends up ("<part>.<body>") into the folder's import-origin.toml, so the robot can attach it there
+    attach: str | None = None
 
 
 @dataclass
@@ -345,6 +348,9 @@ def remove_empty_bodies(imp: ImportFile) -> tuple[ImportFile, list[str]]:
         heir = b.parent if b.parent is not None else (kids[0] if kids else None)
         for n in kids:
             imp.bodies[n].parent = b.parent if b.parent is not None else (None if n == heir else heir)
+        for ps in imp.parts.values():
+            if ps.attach == name:
+                ps.attach = b.parent if b.parent is not None else heir
         if b.part is not None:
             if heir is not None and imp.bodies[heir].part is None:
                 imp.bodies[heir].part = b.part

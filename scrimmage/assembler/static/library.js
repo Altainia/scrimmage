@@ -1,6 +1,6 @@
 // The parts library (left column) and the "Add part" dialog.
 
-import { $, h, api, edit, store, attachGroups, fillAttachSelect, importCad, loadLibrary, notice, renderErrors, renderStatus } from "./app.js";
+import { $, h, api, edit, store, attachGroups, fillAttachSelect, importCad, loadLibrary, notice, renderErrors, renderStatus, stockMeta } from "./app.js";
 
 const GROUP_ORDER = ["Chassis", "Drivetrain", "Mechanisms"];
 let rendered = { library: null, readOnly: null };
@@ -41,17 +41,18 @@ export function renderLibrary(st) {
         title: f.name, kind: "folder", doc: f.path, error: f.error,
         meta: f.error ? [] : [Object.keys(f.slots).length ? `Slots: ${Object.entries(f.slots).map(([k, v]) => `${k} (${v})`).join(", ")}` : "No device slots",
           f.mounts.length ? `Mounts: ${f.mounts.join(", ")}` : "No mounts"],
-        source: { path: f.path }, cad: f.cad, ro,
+        source: { path: f.path }, cad: f.cad || null, ro,
       })))
       : h("p", { class: "empty empty-small" }, "No part folders found next to this config (folders holding a part.toml)."),
     h("div", { class: "lib-import" },
-      h("button", { type: "button", class: "btn btn-small", id: "lib-import-cad", onclick: () => importCad(st.state && st.state.path) }, "Import CAD…"),
+      h("button", { type: "button", class: "btn btn-small", id: "lib-import-cad", disabled: ro || !(st.state && st.state.path),
+        title: ro ? "This config is read-only" : "Make part folders from a CAD file", onclick: () => importCad(st.state.path) }, "Import CAD…"),
       h("p", { class: "hint" }, "Make part folders from a STEP, STL or OBJ file. They go in the parts folder next to this config.")),
     folderForm(ro)));
   root.replaceChildren(...out);
 }
 
-function libItem({ title, kind, doc, note, meta, error, source, cad = false, ro }) {
+function libItem({ title, kind, doc, note, meta, error, source, cad = null, ro }) {
   const label = kind === "folder" ? `${title} (folder)` : title;
   return h("li", { class: "lib-item" },
     h("div", { class: "lib-item-head" },
@@ -99,26 +100,41 @@ export function uniqueName(base) {
   for (let i = 2; ; i++) if (!taken.has(`${base}_${i}`)) return `${base}_${i}`;
 }
 
-// The stock chassis's root body ("drive.chassis"): a part made from a CAD file sits where the CAD has it there.
+// The stock chassis's root body ("drive.chassis", the name from the library): a part made from a CAD file sits where
+// the CAD has it there.
 function chassisRoot(groups) {
+  const meta = stockMeta("chassis");
   const parts = store.state ? store.state.parts : [];
   for (const p of [...parts.filter((x) => !x.attach), ...parts]) {
-    const g = p.stock === "chassis" && groups.find((x) => x.instance === p.name);
-    const body = g && g.bodies.find((b) => b === `${p.name}.chassis`);
+    const g = meta && p.stock === "chassis" && groups.find((x) => x.instance === p.name);
+    const body = g && g.bodies.find((b) => b === `${p.name}.${meta.root_body}`);
     if (body) return body;
   }
   return null;
 }
 
+// What the CAD hangs a part from an import on ({import_id, attach: "<part>.<body>"}), as an attach target in this
+// robot: "<instance>.<body>" when a part from the same import with that name is in it, else null.
+function cadTarget(groups, cad) {
+  if (!cad || !cad.attach) return null;
+  const [part, body] = cad.attach.split(".");
+  for (const p of store.state ? store.state.parts : []) {
+    if (!p.cad || p.cad.import_id !== cad.import_id || p.cad.part !== part) continue;
+    const g = groups.find((x) => x.instance === p.name);
+    if (g && g.bodies.includes(`${p.name}.${body}`)) return `${p.name}.${body}`;
+  }
+  return null;
+}
+
 function defaultAttach(groups, cad) {
-  if (cad && chassisRoot(groups)) return chassisRoot(groups);
+  if (cad && (cadTarget(groups, cad) || chassisRoot(groups))) return cadTarget(groups, cad) || chassisRoot(groups);
   const root = store.state && store.state.parts.find((p) => !p.attach);
   const g = groups.find((x) => root && x.instance === root.name) || groups[0];
   if (!g) return "";
   return g.mounts.find((o) => o.endsWith(".top")) || g.mounts[0] || g.bodies[0] || "";
 }
 
-function openAdd(source, title, cad = false) {
+function openAdd(source, title, cad = null) {
   if (!store.state || store.state.read_only) return;
   adding = { source, title };
   const dlg = $("#add-dialog");

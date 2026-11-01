@@ -25,8 +25,9 @@ App (`/api/app/*`; in every mode):
   GET  /api/app/state              -> {mode: start|robot|bench|part, path, display_path, recent: [{path, kind:
         robot|scenario|session|import, t}] (newest first, see recent.py), examples: [stems of examples/bench/*.toml],
         needs_folder: "cad"|"code"|null, back: {path, display_path}|null}. back: in part mode, the robot config (or
-        scenario) that was open when the part was opened (the library's Import CAD...): "Back to the robot" opens it
-        again; null otherwise. path is the opened file (the scenario in scenario mode), session folder,
+        scenario) that was open when an import made for it was opened (its import file in that robot's parts/, as the
+        library's Import CAD... makes it): "Back to the robot" opens it again; null otherwise. path is the opened
+        file (the scenario in scenario mode), session folder,
         import file or plugin part folder, absolute; null in start mode. needs_folder: the team folder ({cad}, {code}: teamfolders.py) a value in the
         open robot file (or the scenario's) names that this computer hasn't set; the robot is then read-only, its
         read_only_reason saying which folder to set and how.
@@ -196,10 +197,13 @@ Robot (`/api/robot/*`):
         warnings, other_sections, can_undo, can_redo, mass_kg, com, bodies, joints, part_bodies, scenario_open}. With `since`, returns
         at once if version != N, else long-polls up to 25 s (also noticing outside edits of either file).
         path is absolute; display_path is relative to the server's working directory when the file is under it.
-        parts: [{name, stock, path, attach, pos, rot, params, ids, cad_pos}] read from the document, so they are
+        parts: [{name, stock, path, attach, pos, rot, params, ids, cad_pos, cad}] read from the document, so they are
         listed even when the config is invalid. cad_pos: for a part folder built from a CAD import (it has an
         import-origin.toml), the pos (m, with rot zero) that puts it where the CAD has it on what it attaches to
-        (edits.cad_offset), else null. mass_kg, com, bodies and joints are null when the config is
+        (edits.cad_offset), else null. cad: for such a folder {import_id, part, hangs_on}, else null; hangs_on is
+        the attach target the CAD hangs it on ("<instance>.<body>" when a part from the same import with that name
+        is in the robot, else the marker's "<part>.<body>"), null when the robot itself carries it. mass_kg, com,
+        bodies and joints are null when the config is
         invalid or read-only; com: {height, forward, left} (m), the robot's center of gravity at its start pose
         (subtree_com of the robot body in that body's frame: the stock chassis's origin is on the floor at the frame
         center); joints excludes the free joint, bodies excludes the world body (a count).
@@ -211,7 +215,9 @@ Robot (`/api/robot/*`):
         view's CG marker), or {} when read-only/invalid.
   GET  /api/robot/library          -> {stock, folders}; folders lists each part folder (a folder holding part.toml)
         in the config's directory, in its parts/ subfolder, and in any added folders, once each: {name, path,
-        slots, mounts, error, cad} (cad: it was built from a CAD import, so it can go where the CAD has it).
+        slots, mounts, error, cad} (cad: {import_id, part, attach} from its import-origin.toml when it was built
+        from a CAD import, else null; attach is the "<part>.<body>" it hangs on in the CAD, or null). Each stock entry
+        names its root_body.
   POST /api/robot/edit             -> body {version, op, ...}; ops and their fields:
         add     {name, stock | path, attach?, pos?, rot?, params?, ids?}   without pos, a part folder from a CAD
                 import gets its cad_pos (see the state) for that attach: zero on the stock chassis's root body,
@@ -450,7 +456,6 @@ field errors use "scenario/<key>", "step<i>/<key>", "step<i>/check<j>/<key>", "s
 from __future__ import annotations
 
 import dataclasses
-import functools
 import json
 import logging
 import math
@@ -533,12 +538,10 @@ def _plain(v):
     return v.unwrap() if hasattr(v, "unwrap") else v
 
 
-@functools.cache
-def _chassis_root() -> str:
+def _chassis_root_body() -> str:
     """The stock chassis's root body ("chassis"): an import part attached to it at zero offset sits where the CAD has it."""
-    from ..parts.stock import build_stock
     _load_all()
-    return build_stock("chassis", {}, "chassis").bodies[0].name
+    return library.root_body("chassis")
 
 
 def _stock_defaults(stock) -> dict:
@@ -724,12 +727,13 @@ class App:
                                           self.bench.version if self.bench else 0,
                                           self.part.version if self.part else 0)
         doc = ConfigDoc(path) if kind in ("robot", "scenario") else None
-        if kind != "import":
-            back = None
-        elif self.mode == "robot" and (self.scenario or self.robot) is not None:
-            back = (self.scenario or self.robot).path    # "Back to the robot" reopens it
-        else:
-            back = self.back if self.mode == "part" else None
+        # "Back to the robot": an import made for the open robot (its parts go in that robot's parts/, as Import CAD...
+        # does) leads back to it, and keeps doing so across re-opens in part mode
+        back = robot_parts = None
+        if kind == "import" and self.mode == "robot" and (self.scenario or self.robot) is not None:
+            back, robot_parts = (self.scenario or self.robot).path, (self.robot or self.scenario).path.parent / "parts"
+        elif kind == "import" and self.mode == "part":
+            back = self.back
         bench = part = None
         if kind in ("bench", "session"):
             folder, stage = (path, None) if kind == "session" else (path.parent, path.name)
@@ -738,6 +742,8 @@ class App:
             part = part_session.open_part(path, floor, parts_dir, source)
         old, self.bench = self.bench, bench
         old_part, self.part = self.part, part
+        if robot_parts is not None and (part is None or Path(part.path).parent.resolve() != robot_parts.resolve()):
+            back = None
         self.back = back
         self.robot, self.robot_missing, self._robot_target, self._robot_ver = None, NO_ROBOT, None, floor
         self.scenario, self.extra_folders = None, []
@@ -1168,7 +1174,8 @@ class App:
                               "pos": _plain(p.get("pos", [0.0, 0.0, 0.0])), "rot": _plain(p.get("rot", [0.0, 0.0, 0.0])),
                               "params": {k: _plain(v) for k, v in p.items() if k not in reserved},
                               "ids": _plain(p.get("ids", {})),
-                              "cad_pos": self._cad_pos(d.doc, _plain(p.get("path")), _plain(p.get("attach")))})
+                              "cad_pos": self._cad_pos(d.doc, _plain(p.get("path")), _plain(p.get("attach"))),
+                              "cad": self._cad_info(d.doc, _plain(p.get("path")))})
             rest = tomlkit.parse(d.text)
             rest.pop("part", None)
             other = tomlkit.dumps(rest)
@@ -1236,7 +1243,26 @@ class App:
             return None     # a mount wins over a body of the same name
         tfolder = self._part_folder(_plain(target.get("path")))
         return edits.cad_offset(marker, body, library.cad_marker(tfolder) if tfolder is not None else None,
-                                chassis_root=_plain(target.get("stock")) == "chassis" and body == _chassis_root())
+                                chassis_root=_plain(target.get("stock")) == "chassis" and body == _chassis_root_body())
+
+    def _cad_info(self, doc, path) -> dict | None:
+        """{import_id, part, hangs_on} for a part folder from a CAD import, else None. hangs_on: what the CAD hangs it
+        on, as an attach target: "<instance>.<body>" when a part from the same import with that name is in the robot,
+        else the marker's "<part>.<body>"; None when the robot carries it."""
+        folder = self._part_folder(path)
+        marker = library.cad_marker(folder) if folder is not None else None
+        if marker is None:
+            return None
+        hangs_on = marker["attach"]
+        if hangs_on is not None:
+            part, body = hangs_on.split(".")
+            for p in edits.parts(doc):
+                f = self._part_folder(_plain(p.get("path")))
+                m = library.cad_marker(f) if f is not None else None
+                if m is not None and m["import_id"] == marker["import_id"] and m["part"] == part:
+                    hangs_on = f"{_plain(p.get('name'))}.{body}"
+                    break
+        return {"import_id": marker["import_id"], "part": marker["part"], "hangs_on": hangs_on}
 
     def wait_state(self, since: int | None) -> dict:
         return self._wait(since, lambda: self.robot_version, self.state)
