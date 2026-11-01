@@ -450,3 +450,44 @@ def test_a_redraw_while_typing_keeps_the_text_and_commits_it_once(part_page):
     page.wait_for_function("__scrimmagePart.store.state.bodies.find(b => b.name === 'arm_A').typed_mass === 1.25")
     page.wait_for_timeout(300)
     assert [(p["op"], p["args"]) for p in posts] == [("set_mass", {"body": "arm_A", "kg": 1.25})]
+
+
+def test_a_redraw_after_a_trailing_point_keeps_the_decimal(part_page):
+    """"1." then a redraw then "5" saves 1.5, not 15: the boxes are text boxes, so the redraw carries "1." over as it is."""
+    page, imp = part_page
+    posts = []
+    page.on("request", lambda r: posts.append(r.post_data_json) if r.url.endswith("/api/part/edit") and r.method == "POST" else None)
+    _pick_body(page, "arm_A")
+    page.wait_for_selector("#part-body-weight")
+    assert page.get_attribute("#part-body-weight", "type") == "text"
+    assert page.get_attribute("#part-body-weight", "inputmode") == "decimal"
+    page.click("#part-body-weight", click_count=3)
+    page.keyboard.type("1.")
+    page.evaluate("__scrimmagePart.render()")
+    assert page.input_value("#part-body-weight") == "1."
+    page.keyboard.type("5")
+    page.keyboard.press("Enter")
+    page.wait_for_function("__scrimmagePart.store.state.bodies.find(b => b.name === 'arm_A').typed_mass !== undefined"
+                           " && __scrimmagePart.store.state.bodies.find(b => b.name === 'arm_A').typed_mass !== null")
+    assert _body(page, "arm_A")["typed_mass"] == 1.5
+    assert [(p["op"], p["args"]) for p in posts] == [("set_mass", {"body": "arm_A", "kg": 1.5})]
+    assert tomllib.loads(imp.read_text())["bodies"]["arm_A"]["mass"] == 1.5
+
+
+def test_text_that_isnt_a_number_is_refused_and_not_sent(part_page):
+    page, imp = part_page
+    posts = []
+    page.on("request", lambda r: posts.append(r.post_data_json) if r.url.endswith("/api/part/edit") and r.method == "POST" else None)
+    _pick_body(page, "arm_A")
+    page.wait_for_selector("#part-body-weight")
+    saved = imp.read_text()
+    for bad in ("1.5kg", "0x10", "1-"):
+        _type(page, "#part-body-weight", bad)
+        msg = page.locator('#part-inspector [data-field="kg"] .error')
+        msg.wait_for()
+        assert "isn't a number" in msg.inner_text()
+    page.wait_for_timeout(300)
+    assert posts == [] and imp.read_text() == saved
+    # a comma counts as the decimal point
+    _edit(page, lambda: _type(page, "#part-body-weight", "2,5"))
+    assert _body(page, "arm_A")["typed_mass"] == 2.5

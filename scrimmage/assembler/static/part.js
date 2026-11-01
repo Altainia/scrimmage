@@ -441,7 +441,7 @@ export function field(label, control, name, hint = null) {
     ...msgs.map((e) => h("p", { class: "error field-msg", role: "alert", text: e.message })));
 }
 
-// A text or number box that commits on Enter or leaving it, when its text differs from the server's (dataset.orig),
+// A text box (numbers too: see number) that commits on Enter or leaving it, when its text differs from the server's (dataset.orig),
 // once. Not only on "change": text carried across a redraw (renderInspector) is set by script, and then Enter or
 // leaving the box fires no change. A box a redraw removes never commits (live): its text lives on in the new box.
 export function box(attrs, commit) {
@@ -458,12 +458,16 @@ export function box(attrs, commit) {
   return el;
 }
 
-// A typed number, or null for an empty box; NaN (and a local message) for text that isn't one.
+// A typed number, or null for an empty box; NaN (and a local message, nothing sent) for text that isn't one.
+// The boxes are text boxes, not type=number: a number box reads "1." as "1", so a redraw mid-typing would turn
+// "1." then "5" into 15. A comma counts as the decimal point.
+const NUMBER_TEXT = /^[+-]?(\d+[.,]?\d*|[.,]\d+)([eE][+-]?\d+)?$/;
 export function number(text, name) {
+  text = text.trim();
   if (text === "") return null;
-  const v = Number(text.replace(",", "."));
+  const v = NUMBER_TEXT.test(text) ? Number(text.replace(",", ".")) : NaN;
   if (!isFinite(v)) {
-    part.errors = [{ field: name, message: "Type a number, such as 0.25." }];
+    part.errors = [{ field: name, message: `"${text}" isn't a number. Type one such as 0.25.` }];
     render();
     return NaN;
   }
@@ -502,7 +506,7 @@ function renderInspector() {
   if (keepFocus) {
     const el = document.getElementById(keepFocus);
     if (el && root.contains(el)) {
-      if (typing && el.tagName === "INPUT") { el.value = typing.value; try { el.setSelectionRange(typing.start, typing.end); } catch { /* number boxes */ } }
+      if (typing && el.tagName === "INPUT") { el.value = typing.value; try { el.setSelectionRange(typing.start, typing.end); } catch { /* boxes with no text selection */ } }
       el.focus({ preventScroll: true });
     }
   }

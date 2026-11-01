@@ -839,3 +839,21 @@ def test_a_redraw_while_typing_neither_commits_early_nor_loses_the_text(make_pag
     page.wait_for_function("__scrimmage.state.parts.find(p => p.name === 'dt').pos[0] === 0.15")
     page.wait_for_timeout(300)
     assert [(p["op"], p["pos"][0]) for p in posts] == [("attach", 0.15)]
+
+
+def test_a_redraw_after_a_trailing_point_keeps_the_decimal(make_page):
+    """"1." then a redraw then "5" commits 1.5, not 15: the boxes are text boxes, so the redraw keeps "1." as typed."""
+    page, _ = make_page("kitbot.toml")
+    posts = []
+    page.on("request", lambda r: posts.append(r.post_data_json) if r.url.endswith("/api/robot/edit") and r.method == "POST" else None)
+    page.evaluate("__scrimmage.select('dt')")
+    page.wait_for_selector("#insp-pos-0")
+    page.click("#insp-pos-0", click_count=3)
+    page.keyboard.type("1.")
+    page.evaluate("__scrimmage.render()")
+    assert page.input_value("#insp-pos-0") == "1."
+    page.keyboard.type("5")
+    page.keyboard.press("Enter")
+    page.wait_for_function("__scrimmage.state.parts.find(p => p.name === 'dt').pos[0] === 1.5")
+    page.wait_for_timeout(300)
+    assert [(p["op"], p["pos"][0]) for p in posts] == [("attach", 1.5)]

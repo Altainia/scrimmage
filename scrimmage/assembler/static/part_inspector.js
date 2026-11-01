@@ -107,7 +107,7 @@ addSection({
     });
     const rows = [field("Material", sel, "material", ps.length > 1 ? `Sets all ${ps.length} pieces.` : null)];
     if (printed) {
-      const fill = box({ id: "part-infill", type: "number", min: "0", max: "100", step: "5", inputmode: "decimal",
+      const fill = box({ id: "part-infill", type: "text", inputmode: "decimal",
         value: infillOf == null ? "" : String(+(infillOf * 100).toFixed(1)), placeholder: "40" }, (text) => {
         const v = number(text, "infill");
         if (!Number.isNaN(v)) send(one, { infill: v === null ? null : v / 100 });
@@ -118,7 +118,7 @@ addSection({
     }
     if (one === "custom" || (customAsked && sel.value !== "-")) {
       if (one !== "custom") sel.value = "custom";
-      const dens = box({ id: "part-density", type: "number", min: "0", step: "any", inputmode: "decimal",
+      const dens = box({ id: "part-density", type: "text", inputmode: "decimal",
         value: one === "custom" && ps[0].custom_density != null ? String(ps[0].custom_density) : "", placeholder: "2700" }, (text) => {
         const v = number(text, "custom_density");
         if (!Number.isNaN(v)) send("custom", { custom_density: v });
@@ -130,7 +130,7 @@ addSection({
     if (c.sel.kind === "piece") {
       const typed = new Set(ps.map((p) => p.typed_mass));
       const t = typed.size === 1 ? [...typed][0] : null;
-      const w = box({ id: "part-weight", type: "number", min: "0", step: "any", inputmode: "decimal",
+      const w = box({ id: "part-weight", type: "text", inputmode: "decimal",
         value: t == null ? "" : String(t), placeholder: ps.length === 1 && ps[0].mass != null ? String(+ps[0].mass.toPrecision(3)) : "" }, async (text) => {
         const v = number(text, "kg");
         if (Number.isNaN(v)) return;
@@ -170,7 +170,7 @@ addSection({
     rows.push(h("p", { class: "part-line" }, "Weight ", h("strong", { id: "part-body-mass", dataset: { kg: String(b.mass ?? "") }, text: kg(b.mass) })));
     rows.push(h("p", { class: "part-line" }, "Center of gravity ", h("span", { class: "mono", text: cog(b.com) })));
     if (b.typed_mass !== undefined || c.plugin) {
-      const w = box({ id: "part-body-weight", type: "number", min: "0", step: "any", inputmode: "decimal",
+      const w = box({ id: "part-body-weight", type: "text", inputmode: "decimal",
         value: b.typed_mass == null ? "" : String(b.typed_mass), placeholder: b.mass != null ? String(+b.mass.toPrecision(3)) : "" }, (text) => {
         const v = number(text, "kg");
         if (!Number.isNaN(v)) editOp("set_mass", { body: b.name, kg: v });
@@ -503,7 +503,7 @@ function jointMore(c, b) {
   const pair = (which, saved, ids, send, waitText) => {
     const key = `${b.name}:${which}`, d = pairDraft.get(key);
     const text = d || (saved ? saved.map((x) => fmtNum(x, 4)) : ["", ""]);
-    const els = ids.map(([id, extra], i) => box({ id, type: "number", step: "any", inputmode: "decimal", value: text[i], ...extra }, () => {
+    const els = ids.map(([id, extra], i) => box({ id, type: "text", inputmode: "decimal", value: text[i], ...extra }, () => {
       const now = els.map((e) => e.value.trim());
       const vals = now.map((t) => number(t, which));
       if (vals.some((v) => Number.isNaN(v))) return;
@@ -525,7 +525,7 @@ function jointMore(c, b) {
       : slide ? "How far it slides each way, in meters from where the CAD shows it." : "How far it turns each way, in degrees from where the CAD shows it.");
   rangeRow.querySelector("label").htmlFor = "part-range-from";
   rows.push(rangeRow);
-  const spring = pair("spring", j.spring, [["part-spring", { min: "0", placeholder: "none" }], ["part-spring-rest", { placeholder: "0", "aria-label": `Spring rest (${u.pos})` }]],
+  const spring = pair("spring", j.spring, [["part-spring", { placeholder: "none" }], ["part-spring-rest", { placeholder: "0", "aria-label": `Spring rest (${u.pos})` }]],
     ([k, r]) => (k === null && r !== null ? null
       : patchJoint(b.name, { spring: k === null ? null : plugin ? { stiffness: k, rest: r || 0 } : [k, r || 0] })),
     "Type the stiffness too.");
@@ -534,7 +534,7 @@ function jointMore(c, b) {
   springRow.querySelector("label").htmlFor = "part-spring";
   rows.push(springRow);
   for (const [key, label, unitText, hint] of [["damping", "Damping", u.d, "Slows it more the faster it moves."], ["frictionloss", "Friction", u.f, "A steady drag that holds it until pushed hard enough."]]) {
-    const el = box({ id: `part-${key}`, type: "number", min: "0", step: "any", inputmode: "decimal", value: j[key] ? fmtNum(j[key], 5) : "", placeholder: "0" }, (text) => {
+    const el = box({ id: `part-${key}`, type: "text", inputmode: "decimal", value: j[key] ? fmtNum(j[key], 5) : "", placeholder: "0" }, (text) => {
       const v = number(text, key);
       if (!Number.isNaN(v)) patchJoint(b.name, { [key]: plugin ? v : v || 0 });
     });
@@ -670,14 +670,14 @@ function motorRows(c, b) {
   sel.addEventListener("change", () => { if (live(sel)) send({ motor: sel.value }); });
   const rows = [field("Motor", sel, "motor")];
   if (cur.motor) {
-    const count = box({ id: "part-motor-count", type: "number", min: "1", step: "1", inputmode: "numeric", value: String(cur.count) }, (text) => {
+    const count = box({ id: "part-motor-count", type: "text", inputmode: "numeric", value: String(cur.count) }, (text) => {
       const v = number(text, "count");
       if (Number.isNaN(v)) return;
       if (v === null || v < 1 || Math.round(v) !== v) { part.errors = [{ field: "count", message: "Type a whole number of motors, such as 2." }]; render(); return; }
       send({ count: v });
     });
     rows.push(field("How many", count, "count", "Motors geared together on this joint."));
-    const ratio = box({ id: "part-motor-ratio", type: "number", min: "0", step: "any", inputmode: "decimal", value: fmtNum(cur.ratio, 4) }, (text) => {
+    const ratio = box({ id: "part-motor-ratio", type: "text", inputmode: "decimal", value: fmtNum(cur.ratio, 4) }, (text) => {
       const v = number(text, "ratio");
       if (Number.isNaN(v)) return;
       if (v === null || v <= 0) { part.errors = [{ field: "ratio", message: "Type the gear ratio, such as 25 for 25:1." }]; render(); return; }
@@ -688,7 +688,7 @@ function motorRows(c, b) {
     rows[rows.length - 1].querySelector("label").htmlFor = "part-motor-ratio";
     if (slide) {
       const k = SPOOL[spoolUnit];
-      const spool = box({ id: "part-spool", type: "number", min: "0", step: "any", inputmode: "decimal",
+      const spool = box({ id: "part-spool", type: "text", inputmode: "decimal",
         value: cur.spool ? fmtNum(cur.spool / k, 4) : "", placeholder: spoolUnit === "in" ? "1" : "25" }, (text) => {
         const v = number(text, "spool_diameter");
         if (Number.isNaN(v)) return;
@@ -880,7 +880,7 @@ addSection({
       const w = h("select", { id: "part-couple-with" }, ...others.map((x) => h("option", { value: x.name }, x.name)));
       if (linkDraft.with && others.some((x) => x.name === linkDraft.with)) w.value = linkDraft.with;
       w.addEventListener("change", () => { linkDraft.with = w.value; });
-      const ratio = h("input", { type: "number", id: "part-couple-ratio", step: "any", inputmode: "decimal", value: linkDraft.ratio, autocomplete: "off" });
+      const ratio = h("input", { type: "text", id: "part-couple-ratio", inputmode: "decimal", value: linkDraft.ratio, autocomplete: "off" });
       ratio.addEventListener("input", () => { linkDraft.ratio = ratio.value; });
       rows.push(field("Moves with", w, "b"),
         field("times", ratio, "ratio", "1 means as much as that joint; −1 the other way; 2 twice as far."),

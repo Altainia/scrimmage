@@ -46,13 +46,17 @@ function field(fieldId, labelFor, label, control, { hint, doc, extraClass } = {}
 export function markDirty(el) { el.addEventListener("input", () => { el.dataset.dirty = "1"; }); return el; }
 export function clean(...els) { for (const el of els) delete el.dataset.dirty; }
 
-function numberInput(id, key, value, { step = "any", label } = {}) {
-  return markDirty(h("input", { id, type: "number", step, inputmode: "decimal", value: fmt(value), dataset: { key }, "aria-label": label }));
+// A text box for a number, not type=number: a number box reads "1." as "1", so the re-render (which carries the
+// half-typed text into the new box) would turn "1." then "5" into 15.
+function numberInput(id, key, value, { label } = {}) {
+  return markDirty(h("input", { id, type: "text", inputmode: "decimal", autocomplete: "off", value: fmt(value), dataset: { key }, "aria-label": label }));
 }
 
-// Text a number box can't parse ("0.1-", "1e") reads as value "" with validity.badInput set; check it before
-// using .value, or bad text would be taken as an empty box.
-export const badNumber = (...inputs) => inputs.some((i) => i.validity && i.validity.badInput);
+// Text that isn't a number ("0.1-", "1e"): check it before using .value. A type=number box (code.js) reports it
+// with validity.badInput and an empty value, which would otherwise be taken as an empty box.
+const NUMBER_TEXT = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+export const badNumber = (...inputs) => inputs.some((i) => (i.validity && i.validity.badInput)
+  || (i.type === "text" && i.value.trim() !== "" && !NUMBER_TEXT.test(i.value.trim())));
 
 // Commit on change; also on blur while still dirty, because a value restored across a re-render
 // (see renderInspector) doesn't fire "change". Every commit function cleans its inputs. A box the re-render removes
@@ -116,7 +120,7 @@ export function renderInspector(st) {
     if (el) {
       if (keep.dirty !== null) { el.value = keep.dirty; el.dataset.dirty = "1"; }
       el.focus();
-      if (keep.sel && typeof el.setSelectionRange === "function") { try { el.setSelectionRange(...keep.sel); } catch { /* number inputs */ } }
+      if (keep.sel && typeof el.setSelectionRange === "function") { try { el.setSelectionRange(...keep.sel); } catch { /* no text selection */ } }
     }
   }
 }
@@ -336,9 +340,7 @@ function paramField(n, p, value) {
     control = h("div", { class: "with-unit" }, a, h("span", { class: "muted" }, "to"), b, p.unit ? h("span", { class: "unit" }, unit(p.unit)) : null, reset);
   } else {   // float, int
     const isInt = p.kind === "int";
-    const inp = numberInput(id, `param:${p.name}`, cur, { step: isInt ? "1" : "any" });
-    if (p.min !== null && p.min !== undefined) inp.min = p.min;
-    if (p.max !== null && p.max !== undefined) inp.max = p.max;
+    const inp = numberInput(id, `param:${p.name}`, cur);
     onCommit(inp, () => {
       if (badNumber(inp)) return localError(inp.closest(".field"), isInt ? "Enter a whole number." : "Enter a number.");
       clean(inp);
