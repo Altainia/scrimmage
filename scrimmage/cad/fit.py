@@ -8,10 +8,19 @@ yaw degrees. The plugin overlay (`scrimmage/parts/overlay.py`) uses this module 
 numpy and `scrimmage.cad.mass` only, never trimesh.
 """
 
+import hashlib
+import os
+import tempfile
+import uuid
+from pathlib import Path
+
 import numpy as np
 
 from .mass import principal, rpy_deg
 
+WHEEL_FRICTION = 1.2
+WHEEL_CONDIM = 4
+SHAPED_CACHE = Path(tempfile.gettempdir()) / "scrimmage-cad-shaped"
 MIN_SIZE = 1e-4     # m: a box side, cylinder radius or length is at least this (part.toml needs sizes above 0)
 
 
@@ -66,3 +75,19 @@ def rot_z_to(n: np.ndarray) -> tuple[float, float, float]:
     kx = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
     r = np.eye(3) + s * kx + (1 - c) * kx @ kx
     return tuple(float(x) for x in rpy_deg(r))
+
+
+def convex_split(v: np.ndarray, f: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]:
+    """The mesh's convex pieces (meters), by `bench.cad.convex_pieces` (imported here, not at the top: it pulls in
+    mujoco). Raises BenchError. The mesh is written to a cache file named by its content, so convex_pieces's own
+    cache (beside it) saves re-splitting the same body again."""
+    from ..bench.cad import convex_pieces, read_mesh
+    lines = [f"v {x:.9g} {y:.9g} {z:.9g}" for x, y, z in v] + [f"f {a + 1} {b + 1} {c + 1}" for a, b, c in f]
+    text = "\n".join(lines) + "\n"
+    SHAPED_CACHE.mkdir(parents=True, exist_ok=True)
+    path = SHAPED_CACHE / f"{hashlib.sha256(text.encode()).hexdigest()[:16]}.obj"
+    if not path.is_file():
+        tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}")
+        tmp.write_text(text)
+        os.replace(tmp, path)
+    return [read_mesh(p) for p in convex_pieces(path, "m")]

@@ -616,7 +616,21 @@ def load_part(path: Path) -> Part:
         raise PartError(f"can't read part file {file}: {e}") from None
     except tomllib.TOMLDecodeError as e:
         raise PartError(f"{file}: {e}") from None
-    return part_from_dict(raw, str(file), file.parent)
+    part = part_from_dict(raw, str(file), file.parent)
+    edits = file.parent / "scrimmage-edits.toml"            # the plugin overlay (parts/overlay.py)
+    if edits.is_file():
+        import warnings
+        from .overlay import apply_overlay
+        try:
+            text = tomllib.loads(edits.read_text())
+        except (OSError, UnicodeDecodeError) as e:
+            raise PartError(f"can't read {edits}: {e}") from None
+        except tomllib.TOMLDecodeError as e:
+            raise PartError(f"{edits}: {e}") from None
+        part, notes = apply_overlay(part, text, str(edits))
+        for n in notes:
+            warnings.warn(n, stacklevel=2)
+    return part
 
 
 def dump_part(p: Part, path: Path) -> None:

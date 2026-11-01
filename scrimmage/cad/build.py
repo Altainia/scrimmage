@@ -34,11 +34,9 @@ direction, is a CadError in plain words (never a hang or a NaN in a file).
 
 from __future__ import annotations
 
-import hashlib
 import math
 import os
 import shutil
-import tempfile
 import tomllib
 import uuid
 from dataclasses import dataclass, field
@@ -47,24 +45,21 @@ from pathlib import Path
 import numpy as np
 
 from .. import teamfolders
-from ..bench.cad import convex_pieces, read_mesh, write_obj
+from ..bench.cad import write_obj
 from ..bench.spec import BenchError
 from ..parts.model import (Body, Coupling, EncoderSlot, Geom, GyroSlot, Joint, Loop, MotorSlot, Mount, Part,
                            PartError, dump_part, load_part)
 from ..parts.toml_writer import _toml_value
 from . import CadError
-from .fit import fit_box, fit_wheel, rot_z_to
+from .fit import WHEEL_CONDIM, WHEEL_FRICTION, convex_split, fit_box, fit_wheel, rot_z_to
 from .frame import to_robot
 from .mass import Inertial, combine, density, mesh_inertial, principal, rpy_deg
 from .settings import ImportFile, _key
 from .source import Source
 
 PLACEHOLDER_KG = 0.001
-WHEEL_FRICTION = 1.2
-WHEEL_CONDIM = 4
 SMALL_INERTIA = 0.4 * 0.05 ** 2     # x mass: a 5 cm solid sphere, as the assembler uses for a mass with no shape
 MARKER = "import-origin.toml"
-SHAPED_CACHE = Path(tempfile.gettempdir()) / "scrimmage-cad-shaped"
 
 
 @dataclass
@@ -406,7 +401,7 @@ def _collision(imp, n, h, vs, meshes, R, msgs) -> list[Geom]:
                     "It touches things as a simple box until then.")
     elif mode == "shaped":
         try:
-            pieces = _convex(v, f)
+            pieces = convex_split(v, f)
         except BenchError as e:
             if "needs coacd" in str(e):
                 msgs.append(f"{n} is concave, and touching things as shaped needs coacd to split it: pip install "
@@ -426,20 +421,6 @@ def _collision(imp, n, h, vs, meshes, R, msgs) -> list[Geom]:
             return out
     size, center, rpy = fit_box(v)
     return [Geom("box", tuple(size), pos=tuple(center), rot=rpy)]
-
-
-def _convex(v: np.ndarray, f: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]:
-    """The mesh's convex pieces (meters). The mesh is written to a cache file named by its content, so
-    convex_pieces's own cache (beside it) saves re-splitting the same body on every rebuild."""
-    lines = [f"v {x:.9g} {y:.9g} {z:.9g}" for x, y, z in v] + [f"f {a + 1} {b + 1} {c + 1}" for a, b, c in f]
-    text = "\n".join(lines) + "\n"
-    SHAPED_CACHE.mkdir(parents=True, exist_ok=True)
-    path = SHAPED_CACHE / f"{hashlib.sha256(text.encode()).hexdigest()[:16]}.obj"
-    if not path.is_file():
-        tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}")
-        tmp.write_text(text)
-        os.replace(tmp, path)
-    return [read_mesh(p) for p in convex_pieces(path, "m")]
 
 
 # ---------------------------------------------------------------- writing

@@ -23,6 +23,7 @@ from .errors import ExportError
 from .motors import MOTOR_NAMES
 from .toml_writer import dumps
 
+OVERLAY = "scrimmage-edits.toml"
 NAME_RE = re.compile(r"[A-Za-z0-9_]+$")
 WHEEL_FRICTION = 1.2
 WHEEL_OFF_AXIS_MM = 1.0
@@ -97,6 +98,9 @@ def _install(tmp, out_dir):
     try:
         if os.path.exists(out_dir):
             old = os.path.join(os.path.dirname(out_dir), f".{os.path.basename(out_dir)}.old-{uuid.uuid4().hex[:8]}")
+            kept = os.path.join(out_dir, OVERLAY)       # the plugin overlay survives a re-export
+            if os.path.isfile(kept):
+                shutil.copyfile(kept, os.path.join(tmp, OVERLAY))
             os.rename(out_dir, old)
         try:
             os.rename(tmp, out_dir)
