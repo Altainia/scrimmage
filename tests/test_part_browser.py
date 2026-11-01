@@ -223,6 +223,13 @@ def _edit(page, fn):
     page.wait_for_function(f"__scrimmagePart.store.state.version >= {body['version']}")
 
 
+def _type(page, sel, text):
+    """Type into a box as a student does (keys, then Enter): a redraw while typing keeps the text."""
+    page.click(sel, click_count=3)
+    page.keyboard.type(text)
+    page.keyboard.press("Enter")
+
+
 def _wait_file(path_fn, pred, timeout=60):
     end = time.time() + timeout
     while time.time() < end:
@@ -287,9 +294,7 @@ def test_hook_turns_on_arm_a_and_try_it_moves_it(part_page):
     # click the hook's round side (its triangles whose normal is across the x axis)
     pos = page.evaluate(f"__scrimmagePart.screenPos({HOOK!r}, {{across: [1, 0, 0]}})")
     assert pos, "the hook's side is not on screen"
-    v0 = page.evaluate("__scrimmagePart.store.state.version")
-    page.mouse.click(pos["x"], pos["y"])
-    _changed(page, v0)
+    _edit(page, lambda: page.mouse.click(pos["x"], pos["y"]))
     j = _body(page, "hook_assy")["joint"]
     assert np.allclose(np.abs(j["axis"]), [1, 0, 0], atol=1e-3)
     assert np.allclose(j["anchor"][1:], [0.1, 0.818], atol=2e-3)
@@ -320,11 +325,10 @@ def test_neo_on_a_sliding_arm_writes_its_gearing(part_page):
     _edit(page, lambda: page.click("#part-snap-z"))
     assert np.allclose(_body(page, "arm_A")["joint"]["axis"], [0, 0, 1])
     page.select_option("#part-motor", "NEO")
-    page.fill("#part-motor-ratio", "25")
-    page.press("#part-motor-ratio", "Enter")
+    _type(page, "#part-motor-ratio", "25")
+    page.wait_for_function("document.querySelector('#part-motor-ratio').dataset.orig === '25'")
     page.click("#part-spool-in")
-    page.fill("#part-spool", "1")
-    _edit(page, lambda: page.press("#part-spool", "Enter"))
+    _edit(page, lambda: _type(page, "#part-spool", "1"))
     m = _body(page, "arm_A")["motor"]
     assert m["motor"] == "NEO" and m["ratio"] == 25 and m["spool_diameter"] == pytest.approx(0.0254)
     text = _wait_file(lambda: next(iter(sorted(imp.parent.glob("*/part.toml"))), None), lambda t: "NEO" in t)
