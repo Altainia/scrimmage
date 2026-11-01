@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .mass import mesh_inertial, principal
+from .mass import mesh_inertial
 from .source import Piece
 
 VOLUME_TOL = 0.02       # relative
@@ -21,23 +21,58 @@ def _r(x) -> float:
     return float(f"{float(x):.6g}")
 
 
+def _frame(axis: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Two unit vectors perpendicular to `axis` and to each other."""
+    helper = np.array([1.0, 0, 0]) if abs(axis[0]) < 0.9 else np.array([0, 1.0, 0])
+    u = np.cross(axis, helper)
+    u /= np.linalg.norm(u)
+    return u, np.cross(axis, u)
+
+
+def _extents(v: np.ndarray, f: np.ndarray) -> np.ndarray:
+    """Sorted side lengths of a tight oriented bounding box, found by trying several candidate axes (the inertia
+    axes and the normals of the biggest faces) and turning the box about each in half-degree steps, keeping the
+    smallest volume. Unlike plain inertia axes this does not wobble when a piece with equal principal moments
+    (square tube, round stock, cube) is turned."""
+    if len(v) < 2:
+        return np.zeros(3)
+    centered = v - v.mean(axis=0)
+    cov = np.nan_to_num(np.cov(centered.T))
+    axes = list(np.linalg.eigh(cov)[1].T)
+    if len(f):
+        a, b, c = v[f[:, 0]], v[f[:, 1]], v[f[:, 2]]
+        n = np.cross(b - a, c - a)
+        area = np.linalg.norm(n, axis=1)
+        for i in np.argsort(-area)[:24]:
+            if area[i] > 0:
+                axes.append(n[i] / area[i])
+    angles = np.radians(np.arange(0, 90, 0.5))
+    best, best_ext = None, None
+    for axis in axes:
+        u, w = _frame(axis)
+        along = centered @ axis
+        pu, pw = centered @ u, centered @ w
+        c, s = np.cos(angles)[:, None], np.sin(angles)[:, None]
+        x, y = pu * c + pw * s, -pu * s + pw * c                    # (angles, points)
+        ex, ey = x.max(axis=1) - x.min(axis=1), y.max(axis=1) - y.min(axis=1)
+        k = int(np.argmin(ex * ey))
+        ez = along.max() - along.min()
+        vol = ex[k] * ey[k] * ez
+        if best is None or vol < best * (1 - 1e-9):
+            best, best_ext = vol, (ex[k], ey[k], ez)
+    return np.sort(np.array(best_ext))
+
+
 def fingerprint(p: Piece) -> dict:
     v, f = np.asarray(p.v, dtype=float), np.asarray(p.f, dtype=int)
     inertial = mesh_inertial(v, f, 1.0)
-    if inertial.mass > 0:
-        _, r = principal(inertial.tensor)
-    else:
-        # Open or empty mesh: the vertex covariance's eigenvectors stand in for the inertia axes.
-        cov = np.cov((v - v.mean(axis=0)).T) if len(v) > 1 else np.zeros((3, 3))
-        _, r = np.linalg.eigh(np.nan_to_num(cov))
-    proj = v @ r
-    extents = np.sort(proj.max(axis=0) - proj.min(axis=0)) if len(v) else np.zeros(3)
+    extents = _extents(v, f)
     if len(f):
         a, b, c = v[f[:, 0]], v[f[:, 1]], v[f[:, 2]]
         area = 0.5 * np.linalg.norm(np.cross(b - a, c - a), axis=1).sum()
     else:
         area = 0.0
-    return {"volume": _r(inertial.mass), "area": _r(area), "extents": [_r(e) for e in extents],
+    return {"volume": _r(abs(inertial.mass)), "area": _r(area), "extents": [_r(e) for e in extents],
             "center": [_r(c) for c in inertial.com]}
 
 

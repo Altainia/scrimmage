@@ -77,3 +77,46 @@ def test_shape_only_match_is_guessed():
 def test_different_shape_is_missing_and_added():
     m = match(records([box("A/x", (0.1, 0.1, 0.1), (0, 0, 0))]), [box("A/y", (0.2, 0.1, 0.1), (0, 0, 0))])
     assert m.pairs == {} and m.missing == ["A/x"] and m.added == ["A/y"]
+
+
+def _turn(p, axis, deg):
+    a = np.radians(deg)
+    c, s = np.cos(a), np.sin(a)
+    r = {"x": [[1, 0, 0], [0, c, -s], [0, s, c]], "y": [[c, 0, s], [0, 1, 0], [-s, 0, c]],
+         "z": [[c, -s, 0], [s, c, 0], [0, 0, 1]]}[axis]
+    return Piece(p.key, p.name, p.group, p.v @ np.array(r).T, p.f)
+
+
+def _cylinder(key, radius, length, n=48):
+    t = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    ring = np.stack([radius * np.cos(t), radius * np.sin(t)], axis=1)
+    v = np.concatenate([np.c_[ring, np.full(n, -length / 2)], np.c_[ring, np.full(n, length / 2)],
+                        [[0, 0, -length / 2], [0, 0, length / 2]]])
+    f = []
+    for i in range(n):
+        j = (i + 1) % n
+        f += [[i, j, n + j], [i, n + j, n + i], [2 * n, j, i], [2 * n + 1, n + i, n + j]]
+    return Piece(key, key, (), v, np.array(f, dtype=np.int32))
+
+
+@pytest.mark.parametrize("make", [lambda: box("A/tube", (0.02, 0.02, 0.1), (0.3, 0.2, 0.1)),
+                                  lambda: _cylinder("A/bolt", 0.01, 0.1)])
+def test_extents_do_not_depend_on_turning(make):
+    base = make()
+    ref = fingerprint(base)["extents"]
+    for axis in "xyz":
+        for deg in (0, 20, 45):
+            turned = _turn(base, axis, deg)
+            assert fingerprint(turned)["extents"] == pytest.approx(ref, rel=0.02)
+            assert match(records([base]), [turned]).pairs == {base.key: base.key}
+
+
+def test_open_mesh_does_not_crash_and_volume_is_not_negative():
+    p = box("A/open", (0.1, 0.1, 0.1), (0, 0, 0))
+    p = Piece(p.key, p.name, p.group, p.v, p.f[:-2])      # a hole in the surface
+    fp = fingerprint(p)
+    assert fp["volume"] >= 0 and fp["area"] > 0
+    inside_out = box("A/flipped", (0.1, 0.1, 0.1), (0, 0, 0))
+    assert fingerprint(Piece("A/flipped", "flipped", (), inside_out.v, inside_out.f[:, ::-1]))["volume"] == \
+        pytest.approx(0.001)
+    assert match(records([p]), [p]).pairs == {p.key: p.key}
