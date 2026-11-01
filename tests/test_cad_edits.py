@@ -47,7 +47,7 @@ def test_set_material_clears_mass(imp):
     imp.pieces["a1"].mass = 2.0
     out, _ = apply_edit(imp, "set_material", {"pieces": ["a1", "a2"], "material": "pla", "infill": 0.2})
     assert out.pieces["a1"].material == "pla" and out.pieces["a1"].infill == 0.2 and out.pieces["a1"].mass is None
-    assert out.pieces["b1"].material == "aluminum"
+    assert out.pieces["b1"].material is None
     bad(imp, "set_material", {"pieces": ["a1"], "material": "unobtainium"}, "material")
     bad(imp, "set_material", {"pieces": ["a1"], "material": "custom"}, "custom_density")
     bad(imp, "set_material", {"pieces": ["zz"], "material": "steel"}, "pieces")

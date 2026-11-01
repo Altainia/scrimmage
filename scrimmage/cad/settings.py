@@ -29,7 +29,7 @@ COLLISIONS = ("none", "wheel", "shaped", "simple")
 @dataclass
 class PieceSettings:
     body: str
-    material: str = "aluminum"
+    material: str | None = None             # None: not chosen yet, built as aluminum
     infill: float | None = None
     custom_density: float | None = None
     mass: float | None = None

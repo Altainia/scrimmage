@@ -227,7 +227,7 @@ def build_parts(imp: ImportFile, src: Source) -> BuildResult:
                 continue
             v = by_key[key].v @ R.T + t
             try:
-                rho = density(ps.material, ps.infill, ps.custom_density)
+                rho = density(ps.material or "aluminum", ps.infill, ps.custom_density)
             except CadError as e:
                 msgs.append(f"{key}: {e} It counts as aluminum until then.")
                 rho = density("aluminum")

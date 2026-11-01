@@ -6,7 +6,7 @@ wrong), a plain-words `text`, and a `target` the GUI selects when the item is cl
 aluminum (one item per body), pieces with no volume, guessed re-import matches, welded bodies (one item), jointed
 bodies with no motor, an unconfirmed robot frame, then the build's own messages.
 
-Left-out pieces are never listed. "Guessed as aluminum" means material aluminum with no typed weight on the piece or
+Left-out pieces are never listed. "Guessed as aluminum" means no material chosen yet (`material` is None; picking aluminum explicitly settles it), with no typed weight on the piece or
 its body. `guessed` is the piece keys `reimport` matched by shape (its messages say "matched by shape; check it"); the
 checklist can't see those messages, so the caller passes the keys.
 """
@@ -37,6 +37,14 @@ def _and(names: list[str]) -> str:
 
 def _target(imp: ImportFile, text: str) -> dict:
     """What a build message is about: the body or piece it starts with, else the robot frame."""
+    if text.startswith("The weights typed in "):
+        name = text[len("The weights typed in "):].split(" ")[0]
+        # the message names a body, or a part (then its root body)
+        if name in imp.bodies:
+            return {"kind": "body", "keys": [name]}
+        roots = [n for n, b in imp.bodies.items() if b.part == name]
+        if roots:
+            return {"kind": "body", "keys": roots}
     for kind, names in (("body", imp.bodies), ("piece", imp.pieces)):
         for n in names:
             if text.startswith(n + " ") or text.startswith(n + ":") or text.startswith(n + "'"):
@@ -53,7 +61,7 @@ def checklist(imp: ImportFile, src: Source, result: BuildResult, guessed: Iterab
     for name, bs in imp.bodies.items():
         if bs.mass:
             continue
-        keys = [k for k, ps in live if ps.body == name and ps.material == "aluminum" and not ps.mass]
+        keys = [k for k, ps in live if ps.body == name and ps.material is None and not ps.mass]
         if keys:
             items.append(Item("todo", f"{_pieces(len(keys))} in {name} {'is' if len(keys) == 1 else 'are'} still "
                               "guessed as aluminum", {"kind": "piece", "keys": keys}))

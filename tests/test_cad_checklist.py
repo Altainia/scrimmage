@@ -59,8 +59,8 @@ def test_fresh_import_lists_everything_in_order(src, tmp_path):
 
 
 def test_default_material_one_item_per_body(imp, src):
-    imp = edit(imp, "set_material", pieces=["Climber/arm_A"], material="aluminum")
-    imp = edit(imp, "set_material", pieces=[f"Climber/bolt{s}" for s in ("", "#2", "#3")], material="aluminum")
+    for k in ["Climber/arm_A", "Climber/bolt", "Climber/bolt#2", "Climber/bolt#3"]:
+        imp.pieces[k].material = None
     items = run(imp, src)
     assert items == [Item("todo", "3 pieces in base_plate are still guessed as aluminum",
                           {"kind": "piece", "keys": ["Climber/bolt", "Climber/bolt#2", "Climber/bolt#3"]}),
@@ -69,7 +69,7 @@ def test_default_material_one_item_per_body(imp, src):
 
 
 def test_typed_mass_or_left_out_is_not_a_guess(imp, src):
-    imp = edit(imp, "set_material", pieces=["Climber/arm_A", "Climber/arm_B"], material="aluminum")
+    imp.pieces["Climber/arm_A"].material = imp.pieces["Climber/arm_B"].material = None
     imp = edit(imp, "set_mass", piece="Climber/arm_A", kg=1.0)
     imp = edit(imp, "set_mass", body="arm_B", kg=1.0)
     assert run(imp, src) == []
@@ -127,3 +127,26 @@ def test_build_messages_come_last(imp, src):
     assert items[-2:] == [Item("todo", "Check which way is up and forward for the robot", {"kind": "frame", "keys": []}),
                           Item("check", items[-1].text, {"kind": "body", "keys": ["arm_A"]})]
     assert items[-1].text.startswith("arm_A is set to touch things as a wheel")
+
+
+def test_explicit_aluminum_clears_the_guess(src, tmp_path):
+    imp = new_import(src, "climber", DATA / "climber.step", tmp_path)
+    assert imp.pieces["Climber/arm_A"].material is None
+    assert any("arm_A" in i.text and "guessed" in i.text for i in run(imp, src))
+    imp = edit(imp, "set_material", pieces=list(imp.pieces), material="aluminum")
+    assert not any("guessed" in i.text for i in run(imp, src))
+
+
+def test_none_builds_like_aluminum(src, tmp_path):
+    none = new_import(src, "climber", DATA / "climber.step", tmp_path)
+    alu = edit(none, "set_material", pieces=list(none.pieces), material="aluminum")
+    mass = lambda i: [p.mass for p in build_parts(i, src).parts.values()]
+    assert mass(none) == mass(alu) and mass(none)[0] > 0
+
+
+def test_typed_weights_message_targets_its_body(imp, src):
+    imp.bodies["arm_A"].mass = 5.0
+    imp.parts["climber"].total_mass = 1.0
+    items = run(imp, src)
+    msg = [i for i in items if i.text.startswith("The weights typed in ")]
+    assert msg and msg[0].target == {"kind": "body", "keys": ["base_plate"]}   # the part's root body
