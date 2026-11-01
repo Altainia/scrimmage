@@ -601,7 +601,11 @@ def _screen_part(page, tmp_path):
     page.click('#part-tree [data-body="hook_assy"]')
     page.select_option("#part-joint-kind", "hinge")
     page.wait_for_selector("#part-pick-hint")
+    page.wait_for_selector("#part-joint-draft")
+    page.click("#part-snap-x")
     page.wait_for_selector("#part-try-hook_assy")
+    page.click("#part-pick-axis")
+    page.wait_for_selector("#part-pick-hint")
     page.click("#part-joint-more summary")
     page.wait_for_selector("#part-collision-suggest")
 

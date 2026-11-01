@@ -449,7 +449,7 @@ def _remove_loop(imp, a):
 
 
 def _set_frame(imp, a):
-    known = {f.name for f in fields(RobotFrame)} - {"confirmed"}
+    known = {f.name for f in fields(RobotFrame)}
     for k in a:
         if k not in known:
             _fail(k, f"{k} is not a frame setting: remove it.")
@@ -465,10 +465,12 @@ def _set_frame(imp, a):
         _fail("floor", "The floor must be a number (CAD meters along up): enter one.")
     if f.get("center") is not None:
         f["center"] = _pair(f["center"], "center", "The center")
-    for k in ("skip",):
+    for k in ("skip", "confirmed"):
         if k in f and not isinstance(f[k], bool):
             _fail(k, f"{k} must be true or false: pick one.")
-    imp.frame = replace(imp.frame, **f, confirmed=True)
+    # a change to the frame needs checking again: only `confirmed = true` ("Looks right") marks it checked
+    f["confirmed"] = f.get("confirmed", False)
+    imp.frame = replace(imp.frame, **f)
 
 
 def _set_total(imp, a):

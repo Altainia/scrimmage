@@ -212,7 +212,12 @@ def test_loops(imp):
 
 def test_set_frame_up_perpendicular_to_front(imp):
     out, _ = apply_edit(imp, "set_frame", {"up": "+y", "front": "-x", "floor": 0.1})
-    assert (out.frame.up, out.frame.front, out.frame.floor, out.frame.confirmed) == ("+y", "-x", 0.1, True)
+    assert (out.frame.up, out.frame.front, out.frame.floor, out.frame.confirmed) == ("+y", "-x", 0.1, False)
+    out, _ = apply_edit(out, "set_frame", {"confirmed": True})
+    assert out.frame.confirmed and out.frame.up == "+y"
+    out, _ = apply_edit(out, "set_frame", {"floor": 0.2})     # a change needs checking again
+    assert not out.frame.confirmed
+    bad(imp, "set_frame", {"confirmed": "yes"}, "confirmed")
     bad(imp, "set_frame", {"up": "+z", "front": "-z"}, "front")
     bad(imp, "set_frame", {"sideways": 1}, "sideways")
 

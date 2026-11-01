@@ -25,7 +25,7 @@ def imp(src, tmp_path):
     """Every piece done (steel, frame confirmed), every body jointed with a motor: nothing left."""
     i = new_import(src, "climber", DATA / "climber.step", tmp_path)
     i = edit(i, "set_material", pieces=list(i.pieces), material="steel")
-    i = edit(i, "set_frame", up="+z")
+    i = edit(i, "set_frame", up="+z", confirmed=True)
     for b in ("arm_A", "arm_B", "hook_assy", "hook_assy_2"):
         i = edit(i, "set_joint", body=b, parent="base_plate", joint=HINGE)
         i = edit(i, "set_motor", body=b, settings={"motor": "NEO", "ratio": 9})

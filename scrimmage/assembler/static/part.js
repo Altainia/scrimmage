@@ -20,7 +20,7 @@
 // after every render and `onView(fn)` with every new /api/part/view; `field()` draws a labelled control with its
 // error messages. `view3d` is filled by part3d.js: startPick({hint, onPick}), cancelPick(), picking(), pose() (redraw
 // the "Try it" poses from part.tryit), solidBox() (the drawn pieces' robot-frame box). Test hook:
-// window.__scrimmagePart {store, screenPos(pieceKey, {across}), screenPoint(pieceKey), scene, toRobot(frame)}.
+// window.__scrimmagePart {store, screenPos(pieceKey, {along, across}), screenPoint(pieceKey), scene, toRobot(frame)}.
 
 import { $, h, api, notice, serial, registerTab, setTab, showPath } from "./app.js";
 import { uploadCad } from "./start.js";

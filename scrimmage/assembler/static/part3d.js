@@ -18,20 +18,21 @@
 // "Try it" (part.tryit, set by the inspector's sliders) moves each body's merged mesh, and the bodies hanging on it,
 // with a matrix: nothing is sent to the server. Picking still finds the right piece and triangle of a moved body.
 //
-// Pick mode (view3d.startPick({hint, onPick, owner})): a hint shows over the view, the next click on a piece calls
-// onPick({key, triangle, point, rest}) instead of selecting (rest: the point with the body at zero pose); onPick may
-// resolve {again: message} to stay in pick mode with that message. Esc or Cancel stops it.
+// Pick mode (view3d.startPick({hint, onPick, owner, key, onCancel})): a hint shows over the view, the next click on a
+// piece calls onPick({key, triangle, point, rest}) instead of selecting (rest: the point with the body at zero pose);
+// onPick may resolve {again: message} to stay in pick mode with that message, and one that fails ends pick mode with
+// a notice. Esc or Cancel stops it and calls onCancel, as does another pick with a different key.
 //
 // pickAt(clientX, clientY) -> {key, triangle (an index into that piece's view faces), point, rest} or null;
-// requestRender() redraws. Test hook (on window.__scrimmagePart): screenPos(pieceKey, {across}) gives the client
-// {x, y} of a visible spot on that piece (with `across`, a robot-frame direction, only on triangles whose normal is
+// requestRender() redraws. Test hook (on window.__scrimmagePart): screenPos(pieceKey, {along, across}) gives the client
+// {x, y} of a visible spot on that piece (with `along` or `across`, a robot-frame direction, only on triangles whose normal is
 // across it: a round side), or null when it isn't drawn or is hidden behind others; screenPoint(pieceKey) is where
 // the piece's first vertex is drawn (it follows Try it); scene is {drawn, faint, meshes, triangles, arrows (bodies
 // whose joint axis is drawn), mounts, lowest (the drawn pieces' lowest robot z at zero pose)}.
 
 import * as THREE from "three";
 import { OrbitControls } from "./vendor/OrbitControls.js";
-import { $, h } from "./app.js";
+import { $, h, notice } from "./app.js";
 import { part, onPart, onView, select, bodyColor, view3d } from "./part.js";
 import { decode } from "./scene3d.js";
 import { toRobot, cadToRobot, dirToRobot, normalize, bodyPoses, apply } from "./part_frame.js";
@@ -402,6 +403,7 @@ function solidBox() {
 
 // -- pick mode -------------------------------------------------------------------------------------------------
 function startPick(opts) {
+  if (pick && pick.onCancel && pick.key !== opts.key) pick.onCancel();   // another pick replaces this one
   pick = { ...opts, busy: false };
   $("#part-pick-text").textContent = opts.hint;
   $("#part-pick-hint").hidden = false;
@@ -411,7 +413,9 @@ function startPick(opts) {
 
 function cancelPick() {
   if (!pick) return;
+  const was = pick;
   pick = null;
+  if (was.onCancel) was.onCancel();
   $("#part-pick-hint").hidden = true;
   $("#part-view").classList.remove("picking");
   const b = document.getElementById("part-pick-axis");
@@ -428,6 +432,9 @@ async function pickClick(e) {
   try {
     const r = await cur.onPick(t);
     if (pick === cur && r && r.again) text.textContent = `${r.again} ${cur.hint}`;
+  } catch (err) {
+    if (pick === cur) cancelPick();
+    notice(`That click didn't work (${err && err.message ? err.message : err}): try again.`, "error");
   } finally {
     cur.busy = false;
   }
@@ -514,12 +521,14 @@ function toScreen(v) {
 }
 
 // A spot on the piece that a click there would hit: some of its triangles' centers, tried in turn. With `across`
-// (a robot-frame direction), only triangles whose normal is across it (within about 10 degrees).
-function screenPos(key, { across = null } = {}) {
+// (a robot-frame direction), only triangles whose normal is across it (within about 10 degrees); with `along`, only
+// those whose normal is along it (a flat face facing that way, or the opposite way).
+function screenPos(key, { across = null, along = null } = {}) {
   if (!renderer) return null;
   camera.updateMatrixWorld();
   root.updateMatrixWorld(true);
   const ax = across ? new THREE.Vector3(...across).normalize() : null;
+  const al = along ? new THREE.Vector3(...along).normalize() : null;
   for (const m of meshes) {
     const j = m.keys.indexOf(key);
     if (j < 0 || !m.mesh.visible) continue;
@@ -529,9 +538,12 @@ function screenPos(key, { across = null } = {}) {
     const cands = [];
     for (let t = t0; t < t0 + n; t++) {
       for (let i = 0; i < 3; i++) v[i].fromBufferAttribute(pos, idx.getX(t * 3 + i)).applyMatrix4(w);
-      if (ax) {
+      if (ax || al) {
         nrm.subVectors(v[1], v[0]).cross(e.subVectors(v[2], v[0]));
-        if (nrm.lengthSq() < 1e-20 || Math.abs(nrm.normalize().dot(ax)) > 0.17) continue;
+        if (nrm.lengthSq() < 1e-20) continue;
+        nrm.normalize();
+        if (ax && Math.abs(nrm.dot(ax)) > 0.17) continue;
+        if (al && Math.abs(nrm.dot(al)) < 0.98) continue;
       }
       cands.push(v[0].clone().add(v[1]).add(v[2]).divideScalar(3));
     }

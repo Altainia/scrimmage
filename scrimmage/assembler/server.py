@@ -167,7 +167,8 @@ Part (`/api/part/*`; 404 unless a part is open, except upload). Pieces are keyed
         source read and robot frame. Plugin mode: one entry per body with meshes (key: the body), in the part frame.
         {pieces: []} while the source can't be read.
   GET  /api/part/materials         -> {materials: {key: {key, label, density, printed}}, motors: [names]}.
-  POST /api/part/edit              -> body {version, op, args}: scrimmage.cad.edits.apply_edit(op, args) (plugin
+  POST /api/part/edit              -> body {version, op, args}: scrimmage.cad.edits.apply_edit(op, args) (set_frame
+        leaves the frame unchecked unless args has confirmed = true, which "Looks right" sends; plugin
         mode: set_mass {body, kg}, set_collision {body, mode}, set_joint {body, joint: {range?, spring?, damping?,
         frictionloss?}} (null removes one), set_total {kg}; piece edits are 400 "per-piece materials need the STEP:
         import it instead"). 200 with the state (its messages say what the edit dropped); 400 {field, message} for

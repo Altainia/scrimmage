@@ -260,10 +260,16 @@ def test_y_is_up_puts_the_floor_under_the_base_plate(yup_page):
     assert _body(page, "arm_A")["com"][2] == pytest.approx(0.41, abs=0.03)
     page.wait_for_function("__scrimmagePart.scene.lowest !== null && Math.abs(__scrimmagePart.scene.lowest) < 1e-4")
     assert banner.is_visible(), "the step stays until the student says it looks right"
+    assert f["confirmed"] is False
+    page.reload()
+    page.wait_for_function(READY)
+    page.wait_for_selector("#part-frame-step")      # still asking after a reload
+    assert "Check which way is up" in page.inner_text("#part-checklist")
     _edit(page, lambda: page.click("#part-frame-ok"))
     assert page.evaluate("__scrimmagePart.store.state.frame.confirmed") is True
     page.wait_for_selector("#part-frame-step", state="hidden")
     assert "up = \"+y\"" in imp.read_text()
+    assert "Check which way is up" not in page.inner_text("#part-checklist")
 
 
 def test_frame_math_in_the_page_matches_frame_py(yup_page):
@@ -284,11 +290,17 @@ def test_hook_turns_on_arm_a_and_try_it_moves_it(part_page):
     _pick_body(page, "hook_assy")
     _edit(page, lambda: page.select_option("#part-joint-parent", "arm_A"))
     assert _body(page, "hook_assy")["parent"] == "arm_A"
-    _edit(page, lambda: page.select_option("#part-joint-kind", "hinge"))
-    assert _body(page, "hook_assy")["joint"]["kind"] == "hinge"
-    assert "turns on arm_A" in page.inner_text('#part-tree [data-body="hook_assy"]')
+    # Turns is only a draft until the axis is picked: nothing is saved, and Esc drops it
+    page.select_option("#part-joint-kind", "hinge")
+    page.wait_for_selector("#part-joint-draft")
+    page.wait_for_selector("#part-pick-hint")
+    assert _body(page, "hook_assy")["joint"] is None
     page.keyboard.press("Escape")
     page.wait_for_selector("#part-pick-hint", state="hidden")
+    page.wait_for_selector("#part-joint-draft", state="hidden")
+    assert page.input_value("#part-joint-kind") == ""
+    assert "joint" not in imp.read_text().split("[bodies.hook_assy]")[1].split("[bodies.")[0]
+    page.select_option("#part-joint-kind", "hinge")
     page.click("#part-pick-axis")
     page.wait_for_selector("#part-pick-hint")
     # click the hook's round side (its triangles whose normal is across the x axis)
@@ -296,6 +308,8 @@ def test_hook_turns_on_arm_a_and_try_it_moves_it(part_page):
     assert pos, "the hook's side is not on screen"
     _edit(page, lambda: page.mouse.click(pos["x"], pos["y"]))
     j = _body(page, "hook_assy")["joint"]
+    assert j["kind"] == "hinge"
+    assert "turns on arm_A" in page.inner_text('#part-tree [data-body="hook_assy"]')
     assert np.allclose(np.abs(j["axis"]), [1, 0, 0], atol=1e-3)
     assert np.allclose(j["anchor"][1:], [0.1, 0.818], atol=2e-3)
     page.wait_for_selector("#part-pick-hint", state="hidden")
@@ -318,11 +332,10 @@ def test_neo_on_a_sliding_arm_writes_its_gearing(part_page):
     _pick_body(page, "hook_assy")
     _edit(page, lambda: page.select_option("#part-joint-parent", "arm_A"))
     _pick_body(page, "arm_A")
-    _edit(page, lambda: page.select_option("#part-joint-kind", "slide"))
+    page.select_option("#part-joint-kind", "slide")
     page.wait_for_selector("#part-pick-hint")
-    page.keyboard.press("Escape")
+    _edit(page, lambda: page.click("#part-snap-z"))     # snapping saves the slide too
     page.wait_for_selector("#part-pick-hint", state="hidden")
-    _edit(page, lambda: page.click("#part-snap-z"))
     assert np.allclose(_body(page, "arm_A")["joint"]["axis"], [0, 0, 1])
     page.select_option("#part-motor", "NEO")
     _type(page, "#part-motor-ratio", "25")
@@ -347,10 +360,71 @@ def test_wheel_collision_writes_a_cylinder(part_page):
     # a body named like a hook gets a suggestion, which is never applied by itself
     assert "looks like a hook" in page.inner_text("#part-inspector")
     assert _body(page, "hook_assy_2")["collision"] == "none"
-    _edit(page, lambda: page.select_option("#part-joint-kind", "hinge"))
-    page.keyboard.press("Escape")
+    page.select_option("#part-joint-kind", "hinge")
+    _edit(page, lambda: page.click("#part-snap-x"))
     _edit(page, lambda: page.select_option("#part-collision", "wheel"))
     assert _body(page, "hook_assy_2")["collision"] == "wheel"
     text = _wait_file(lambda: next(iter(sorted(imp.parent.glob("*/part.toml"))), None), lambda t: "cylinder" in t)
     body = next(b for b in tomllib.loads(text)["body"] if b["name"] == "hook_assy_2")
     assert any("cylinder" in g for g in body["geom"])
+
+
+def test_add_a_mount_a_coupling_and_a_pin(part_page):
+    page, imp = part_page
+    # a mount on the base plate's top face, named by typing
+    _pick_body(page, "base_plate")
+    page.click("#part-add-mount")
+    page.wait_for_selector("#part-pick-hint")
+    pos = page.evaluate("__scrimmagePart.screenPos('Climber/base_plate', {along: [0, 0, 1]})")
+    assert pos, "the base plate's top is not on screen"
+    page.mouse.click(pos["x"], pos["y"])
+    page.wait_for_function("document.activeElement && document.activeElement.id === 'part-mount-name'")
+    assert page.evaluate("__scrimmagePart.scene.mounts") == 1     # drawn before it is named
+    page.keyboard.press("Control+A")
+    page.keyboard.type("top")
+    _edit(page, lambda: page.keyboard.press("Enter"))
+    m = _body(page, "base_plate")["mounts"]
+    assert [x["name"] for x in m] == ["top"]
+    assert m[0]["point"][2] == pytest.approx(0.01, abs=1e-4) and np.allclose(np.abs(m[0]["normal"]), [0, 0, 1], atol=1e-3)
+    _wait_file(lambda: next(iter(sorted(imp.parent.glob("*/part.toml"))), None), lambda t: '"top"' in t)
+    # the two hooks turn together, the other way round
+    for body in ("hook_assy", "hook_assy_2"):
+        _pick_body(page, body)
+        page.select_option("#part-joint-kind", "hinge")
+        _edit(page, lambda: page.click("#part-snap-x"))
+    page.click("#part-links summary")
+    page.select_option("#part-couple-with", "hook_assy")
+    page.fill("#part-couple-ratio", "-1")
+    _edit(page, lambda: page.click("#part-couple-add"))
+    assert page.evaluate("__scrimmagePart.store.state.couplings") == [{"a": "hook_assy_2", "b": "hook_assy", "ratio": -1}]
+    # and hook_assy_2 is pinned to arm_B where the arm is clicked
+    page.select_option("#part-loop-with", "arm_B")
+    page.click("#part-loop-pick")
+    page.wait_for_selector("#part-pick-hint")
+    pos = page.evaluate("__scrimmagePart.screenPos('Climber/arm_B')")
+    _edit(page, lambda: page.mouse.click(pos["x"], pos["y"]))
+    loops = page.evaluate("__scrimmagePart.store.state.loops")
+    assert [(x["body1"], x["body2"]) for x in loops] == [("hook_assy_2", "arm_B")]
+    p = loops[0]["point"]
+    assert 0.229 < p[0] < 0.251 and 0.089 < p[1] < 0.111 and 0.0 < p[2] < 0.82     # on arm_B, in CAD meters
+
+
+def test_click_the_floor_and_the_center(part_page):
+    page, _ = part_page
+    page.wait_for_selector("#part-frame-step")
+    page.click("#part-frame-floor")
+    page.wait_for_selector("#part-pick-hint")
+    pos = page.evaluate("__scrimmagePart.screenPos('Climber/base_plate', {along: [0, 0, 1]})")
+    _edit(page, lambda: page.mouse.click(pos["x"], pos["y"]))
+    f = page.evaluate("__scrimmagePart.store.state.frame")
+    assert f["floor"] == pytest.approx(0.01, abs=1e-4)    # the plate's top face, as clicked
+    assert f["confirmed"] is False
+    page.wait_for_selector("#part-pick-hint", state="hidden")
+    page.click("#part-frame-center")
+    page.wait_for_selector("#part-pick-hint")
+    page.wait_for_function("__scrimmagePart.scene.lowest !== null && __scrimmagePart.scene.lowest < -0.005")
+    pos = page.evaluate("__scrimmagePart.screenPos('Climber/base_plate', {along: [0, 0, 1]})")
+    _edit(page, lambda: page.mouse.click(pos["x"], pos["y"]))
+    c = page.evaluate("__scrimmagePart.store.state.frame.center")
+    assert 0 <= c[0] <= 0.3 and 0 <= c[1] <= 0.2 and c != pytest.approx([0.15, 0.1])
+    assert page.evaluate("__scrimmagePart.store.state.frame.floor") == pytest.approx(0.01, abs=1e-4)

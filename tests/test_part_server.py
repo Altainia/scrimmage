@@ -413,6 +413,24 @@ def test_part_threads_stop(tmp_path):
     assert not [t for t in threading.enumerate() if t.name.startswith("part-")]
 
 
+def test_frame_stays_unchecked_until_confirmed(part_app):
+    """Changing the frame doesn't check it: the checklist keeps asking, after a reopen too, until confirmed = true."""
+    c, _ = part_app()
+    _built(c)
+    ask = "Check which way is up and forward for the robot"
+    s, st = _edit(c, "set_frame", up="+y")
+    assert s == 200 and st["frame"]["confirmed"] is False
+    assert any(i["text"] == ask for i in st["checklist"])
+    assert _post(c, "/api/app/open", {"path": "climber.step"})[0] == 200
+    st = _built(c)
+    assert st["frame"]["up"] == "+y" and st["frame"]["confirmed"] is False
+    s, st = _edit(c, "set_frame", confirmed=True)
+    assert s == 200 and st["frame"]["confirmed"] is True and st["frame"]["up"] == "+y"
+    assert not any(i["text"] == ask for i in st["checklist"])
+    assert _post(c, "/api/app/open", {"path": "climber.step"})[0] == 200
+    assert _built(c)["frame"]["confirmed"] is True
+
+
 def test_view_is_robot_coordinates_after_frame_change(part_app):
     c, _ = part_app()
     _built(c)

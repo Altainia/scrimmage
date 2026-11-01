@@ -6,7 +6,8 @@
 //   material     what the selected pieces (or the selected body's pieces) are made of, or a typed weight
 //   body         one body: its name, weight, center of gravity, and whether it is its own part
 //   joint        one body: "Moves: no (welded) / turns / slides" relative to its parent, the axis (picked in the
-//                3D view, or snapped to x, y or z), "More" (range, spring, damping, friction) and "Try it"
+//                3D view, or snapped to x, y or z; a new turn or slide is saved only then), "More" (range, spring,
+//                damping, friction) and "Try it"
 //   slots        one body: its motor (count, gear ratio, spool diameter for a slide, in inches or mm; stored in
 //                meters), encoder (none, on the joint, on the motor) and gyro
 //   mounts       one body: the spots another part bolts on ("Add mount": click a flat face, then name it)
@@ -294,10 +295,10 @@ const btn = (id, text, onclick, title = null) => h("button", { type: "button", c
   disabled: !!(part.state && part.state.read_only_reason) }, text);
 
 // -- the "Where's the robot?" step ------------------------------------------------------------------------------
-// Shown over the 3D view until the frame is confirmed ("Looks right") or skipped ("This isn't a whole robot"); the
-// frame section's "Check up and front" shows it again. Any frame edit counts as confirmed on the server, so the step
-// stays open by itself here until the student says it looks right.
-let stepOpen = null;   // null: not decided yet (decided from the first state that has a frame)
+// Shown over the 3D view while the frame isn't confirmed: a frame edit leaves it unconfirmed on the server, and only
+// "Looks right" (or "This isn't a whole robot") sends confirmed = true, so the step and its checklist item stay after a
+// reload too. The frame section's "Check up and front" shows it again for a confirmed frame.
+let reopened = false;
 
 function frameEdit(args) { return editOp("set_frame", args); }
 
@@ -354,8 +355,7 @@ function renderFrameStep() {
   const el = document.getElementById("part-frame-step");
   if (!el || !part.state) return;
   const s = part.state, f = s.frame;
-  if (stepOpen === null && f) stepOpen = !f.confirmed;
-  const show = !!f && s.mode === "import" && !s.read_only_reason && !!stepOpen;
+  const show = !!f && s.mode === "import" && !s.read_only_reason && (!f.confirmed || reopened);
   part.frameStep = show;
   el.hidden = !show;
   if (!show) { el.replaceChildren(); return; }
@@ -374,9 +374,9 @@ function renderFrameStep() {
       btn("part-frame-center", "Click the frame's center", pickCenter, "Click the middle of the robot, seen from above")),
     buttons("Done",
       h("button", { type: "button", class: "btn btn-small btn-primary", id: "part-frame-ok",
-        onclick: async () => { const r = await frameEdit({}); if (r.ok) { stepOpen = false; view3d.cancelPick && view3d.cancelPick(); render(); } } }, "Looks right"),
+        onclick: async () => { const r = await frameEdit({ confirmed: true }); if (r.ok) { reopened = false; view3d.cancelPick && view3d.cancelPick(); render(); } } }, "Looks right"),
       h("button", { type: "button", class: "btn btn-small", id: "part-frame-skip", title: "Use the CAD file's own axes (for a mechanism, not a whole robot)",
-        onclick: async () => { const r = await frameEdit({ skip: true }); if (r.ok) { stepOpen = false; render(); } } }, "This isn't a whole robot")));
+        onclick: async () => { const r = await frameEdit({ skip: true, confirmed: true }); if (r.ok) { reopened = false; render(); } } }, "This isn't a whole robot")));
 }
 const AXIS_TEXT = { "+x": "+x", "-x": "−x", "+y": "+y", "-y": "−y", "+z": "+z", "-z": "−z" };
 onPart(renderFrameStep);
@@ -394,48 +394,68 @@ addSection({
         : h("p", { class: "part-line" }, "Up is ", h("strong", { text: AXIS_TEXT[f.up] }), " and forward is ", h("strong", { text: AXIS_TEXT[f.front] }), " in the CAD file."),
       h("p", { class: "hint", text: f.confirmed ? "Checked." : "This is a guess: most CAD programs use +z up, but Inventor uses +y up." }),
       c.ro || c.plugin ? null : buttons("Robot frame",
-        btn("part-frame-check", "Check up and front", () => { stepOpen = true; render(); const b = document.getElementById("part-frame-yup"); if (b) b.focus(); }),
-        f.skip ? btn("part-frame-unskip", "It is a whole robot", () => frameEdit({ skip: false }).then(() => { stepOpen = true; render(); })) : null));
+        btn("part-frame-check", "Check up and front", () => { reopened = true; render(); const b = document.getElementById("part-frame-yup"); if (b) b.focus(); }),
+        f.skip ? btn("part-frame-unskip", "It is a whole robot", () => frameEdit({ skip: false })) : null));
   },
 });
 
 // -- joint ----------------------------------------------------------------------------------------------------
 const KIND_WORDS = { hinge: "turns", slide: "slides" };
 
-function startJoint(b, kind) {
-  // a first guess the student then replaces by picking: the body's center of gravity, the robot's left (turns) or up (slides)
-  const r = rt();
-  const anchor = robotToCad(r, b.com || [0, 0, 0]);
-  const axis = dirToCad(r, kind === "slide" ? [0, 0, 1] : [0, 1, 0]);
-  const spec = b.joint ? jointSpec(b.joint, { kind, range: null, spring: null }) : { kind, anchor, axis };
-  if (b.joint && (b.joint.range || b.joint.spring)) notice("The range and spring were cleared: a turn is in degrees and a slide in meters.", "info");
-  return editOp("set_joint", { body: b.name, parent: b.parent, joint: spec });
+// Turns or Slides chosen but no axis picked or snapped yet: nothing is saved until one is (a guessed axis would
+// look right and simulate wrong). Esc, Cancel, welding it or selecting another body drops the draft.
+let jointDraft = null;   // {body, kind}
+const draftKind = (name) => (jointDraft && jointDraft.body === name ? jointDraft.kind : null);
+function dropDraft(name) { if (draftKind(name)) { jointDraft = null; render(); } }
+onPart(() => { if (jointDraft && !(part.sel.kind === "body" && part.sel.keys.has(jointDraft.body))) jointDraft = null; });
+
+// Save body `name`'s joint as `kind` about `axis` through `anchor` (CAD), keeping its other settings when the kind
+// stays; a turn changed to a slide (or back) drops the range and spring, whose units differ.
+function saveJoint(name, kind, anchor, axis) {
+  return editOp("set_joint", () => {
+    const b = bodyOf(name);
+    const j = b.joint;
+    if (j && j.kind !== kind && (j.range || j.spring)) notice("The range and spring were cleared: a turn is in degrees and a slide in meters.", "info");
+    const spec = !j ? { kind, anchor, axis } : jointSpec(j, j.kind === kind ? { anchor, axis } : { kind, anchor, axis, range: null, spring: null });
+    return { body: name, parent: b.parent, joint: spec };
+  });
 }
 
 function pickAxis(name) {
   if (!needView()) return;
   const b = bodyOf(name);
-  if (!b || !b.joint) return;
-  const turns = b.joint.kind === "hinge";
+  const kind = draftKind(name) || (b && b.joint && b.joint.kind);
+  if (!kind) return;
+  const turns = kind === "hinge";
   view3d.startPick({
     owner: selSig(),
+    key: `axis:${name}`,
     hint: turns ? `Click inside a hole or on a round face: ${name} turns about its center line.`
       : `Click a flat face that faces the way ${name} slides.`,
+    onCancel: () => dropDraft(name),
     onPick: async (hit) => {
       const { status, data } = await api("POST", "/api/part/axis", { piece: hit.key, triangle: hit.triangle, kind: turns ? "round" : "flat" });
       if (status !== 200) return { again: why(data) };
+      if (draftKind(name)) jointDraft = null;
       view3d.cancelPick();
-      await patchJoint(name, { anchor: data.point, axis: data.axis });
+      await saveJoint(name, kind, data.point, data.axis);
     },
   });
 }
 
+// Snap the axis to the robot's x, y or z (keeping its sign); a draft joint is saved through its center of gravity.
 function snap(name, i) {
-  const b = bodyOf(name);
-  const now = dirToRobot(rt(), b.joint.axis);
-  const robot = [0, 0, 0];
+  const b = bodyOf(name), r = rt(), robot = [0, 0, 0];
+  const kind = draftKind(name);
+  if (kind) {
+    robot[i] = 1;
+    jointDraft = null;
+    if (view3d.cancelPick) view3d.cancelPick();
+    return saveJoint(name, kind, robotToCad(r, b.com || [0, 0, 0]), dirToCad(r, robot));
+  }
+  const now = dirToRobot(r, b.joint.axis);
   robot[i] = now[i] < 0 ? -1 : 1;
-  return patchJoint(name, { axis: dirToCad(rt(), robot) });
+  return patchJoint(name, { axis: dirToCad(r, robot) });
 }
 
 // "Try it": a slider that moves the body (and the bodies on it) in the view only.
@@ -557,13 +577,19 @@ addSection({
     }
     const kind = h("select", { id: "part-joint-kind" },
       h("option", { value: "" }, "No (welded)"), h("option", { value: "hinge" }, "Turns"), h("option", { value: "slide" }, "Slides"));
-    kind.value = b.joint ? b.joint.kind : "";
-    kind.addEventListener("change", async () => {
+    const draft = draftKind(b.name);
+    kind.value = draft || (b.joint ? b.joint.kind : "");
+    kind.addEventListener("change", () => {
       if (!live(kind)) return;
-      if (!kind.value) { editOp("set_joint", { body: b.name, parent: b.parent, joint: null }); return; }
-      if (b.joint && b.joint.kind === kind.value) { pickAxis(b.name); return; }
-      const r = await startJoint(b, kind.value);
-      if (r.ok) pickAxis(b.name);
+      if (!kind.value) {
+        jointDraft = null;
+        if (view3d.cancelPick) view3d.cancelPick();
+        if (b.joint) editOp("set_joint", { body: b.name, parent: b.parent, joint: null }); else render();
+        return;
+      }
+      jointDraft = b.joint && b.joint.kind === kind.value ? null : { body: b.name, kind: kind.value };
+      render();
+      pickAxis(b.name);
     });
     rows.push(field("Moves", kind, "joint"));
     const below = descendants(b.name);
@@ -574,18 +600,23 @@ addSection({
       if (!live(parent)) return;
       editOp("set_joint", { body: b.name, parent: parent.value, joint: b.joint ? jointSpec(b.joint) : null });
     });
-    rows.push(field("relative to", parent, "parent", b.joint ? null : "Welded: it moves only when that body moves."));
-    if (b.joint) {
+    rows.push(field("relative to", parent, "parent", b.joint || draft ? null : "Welded: it moves only when that body moves."));
+    const axisButtons = () => buttons("The axis",
+      h("button", { type: "button", class: "btn btn-small", id: "part-pick-axis",
+        "aria-pressed": String(!!(view3d.picking && view3d.picking()) && view3d.pickOwner() === selSig()),
+        onclick: () => pickAxis(b.name) }, "Pick the axis"),
+      h("span", { class: "muted part-snap-label", text: "Snap to" }),
+      ...["x", "y", "z"].map((a, i) => h("button", { type: "button", class: "btn btn-small", id: `part-snap-${a}`,
+        title: `Along the robot's ${AXIS_WORDS[i]}`, onclick: () => snap(b.name, i) }, a.toUpperCase())));
+    if (draft) {
+      rows.push(h("p", { class: "hint part-draft", id: "part-joint-draft", role: "status",
+        text: `Not saved yet: pick the axis ${draft === "hinge" ? "(a hole or a round face)" : "(a flat face that faces the way it slides)"}, or snap it to X, Y or Z. Esc cancels.` }),
+      axisButtons());
+    } else if (b.joint) {
       const j = b.joint;
       rows.push(h("p", { class: "part-line" }, "Axis ", h("strong", { text: axisWords(j.axis) }), h("br"),
         h("span", { class: "muted", text: `through ${pointWords(cadToRobot(rt(), j.anchor))}` })));
-      const picking = view3d.picking && view3d.picking();
-      rows.push(buttons("The axis",
-        h("button", { type: "button", class: "btn btn-small", id: "part-pick-axis", "aria-pressed": String(!!picking && view3d.pickOwner() === selSig()),
-          onclick: () => pickAxis(b.name) }, "Pick the axis"),
-        h("span", { class: "muted part-snap-label", text: "Snap to" }),
-        ...["x", "y", "z"].map((a, i) => h("button", { type: "button", class: "btn btn-small", id: `part-snap-${a}`,
-          title: `Along the robot's ${AXIS_WORDS[i]}`, onclick: () => snap(b.name, i) }, a.toUpperCase()))));
+      rows.push(axisButtons());
       rows.push(h("p", { class: "hint", text: j.kind === "hinge" ? "Click Pick the axis, then a hole or a round face (a bearing, a shaft)." : "Click Pick the axis, then a flat face that faces the way it slides." }));
       rows.push(tryIt(b));
       rows.push(jointMore(c, b));
@@ -802,7 +833,8 @@ addSection({
     const rows = [h("h3", { text: "Touching things" }), field("How it touches things", sel, "mode",
       "Hooks and claws that grab need to touch things. A wheel needs a joint that turns.")];
     const look = LOOKS.find(([re]) => re.test(b.name));
-    if (look && (b.collision || "none") === "none" && !c.ro) {
+    const turns = !!b.joint && b.joint.kind === "hinge";
+    if (look && (look[2] !== "wheel" || turns) && (b.collision || "none") === "none" && !c.ro) {
       rows.push(h("p", { class: "part-suggest" }, `This looks like ${look[1]}: make it touch things ${look[3]}? `,
         h("button", { type: "button", class: "btn btn-small", id: "part-collision-suggest",
           onclick: () => editOp("set_collision", { body: b.name, mode: look[2] }) }, `Yes, ${look[3]}`)));
