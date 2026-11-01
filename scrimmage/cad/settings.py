@@ -320,7 +320,7 @@ def remove_empty_bodies(imp: ImportFile) -> tuple[ImportFile, list[str]]:
 
     A removed body takes its joint, motor, encoder, gyro, mounts, and any coupling or loop that names it. Its
     children re-parent to its parent. If it was the root (no parent), its first child becomes the new root and
-    takes over the part it rooted. Used by reimport and by edits that move pieces out of a body."""
+    takes over the part it rooted (a root has no joint, so the heir's joint, motor and encoder are dropped). Used by reimport and by edits that move pieces out of a body."""
     imp = copy.deepcopy(imp)
     messages: list[str] = []
     used = {p.body for p in imp.pieces.values()}
@@ -341,6 +341,10 @@ def remove_empty_bodies(imp: ImportFile) -> tuple[ImportFile, list[str]]:
         if gone:
             what = gone[0] if len(gone) == 1 else ", ".join(gone[:-1]) + " and " + gone[-1]
             msg += f"; its {what} {'was' if len(gone) == 1 else 'were'} dropped"
+        if b.parent is None and heir is not None and imp.bodies[heir].joint is not None:
+            hb = imp.bodies[heir]
+            hb.joint = hb.motor = hb.encoder = None
+            msg += f"; {heir} is now the root, so its joint was dropped"
         messages.append(msg)
         for attr in ("couplings", "loops"):
             keep = [c for c in getattr(imp, attr) if not _mentions(c, name)]
