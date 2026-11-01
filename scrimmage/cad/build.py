@@ -24,7 +24,11 @@ their part body's frame. Problems that don't stop the build come back as plain-w
 Folders. Each part goes to its `folder` (`{cad}/...` expanded, else relative to the import file's folder), written
 to `<folder>.tmp` and swapped in, with an `import-origin.toml` marker: the import file's relative path, the
 import_id, and each body's origin in the robot frame. A folder holding files but no marker for this import is
-refused.
+refused. A folder this import wrote earlier for a part it no longer makes (found beside the import file or beside a
+folder just written, by its marker) is removed, so a robot can't count those bodies twice.
+
+A hand-edited import file whose bodies hang on each other in a ring, or with a joint axis or mount normal of no
+direction, is a CadError in plain words (never a hang or a NaN in a file).
 """
 
 from __future__ import annotations
@@ -101,10 +105,16 @@ class _Tree:
     def __init__(self, imp: ImportFile, messages: list[str]):
         self.imp = imp
         b = imp.bodies
+        _no_cycles(imp)
         self.roots = [n for n, s in b.items() if s.part is not None or s.parent not in b]
         for n in self.roots:
             if b[n].parent in b:
                 messages.append(f"{n} is its own part; attach it to {b[n].parent} in the robot")
+                gone = [w for w, has in (("joint", b[n].joint), ("motor", b[n].motor), ("encoder", b[n].encoder))
+                        if has]
+                if gone:
+                    messages.append(f"{n}'s {_and(gone)} {'was' if len(gone) == 1 else 'were'} dropped, because the "
+                                    "first body of a part can't move on its own")
         self._head: dict[str, str] = {}
 
     def is_root(self, n: str) -> bool:
@@ -113,11 +123,8 @@ class _Tree:
     def head(self, n: str) -> str:
         """The part body `n`'s pieces go in: itself if it is a part root or has a joint, else its parent's."""
         if n not in self._head:
-            seen, cur = [], n
+            cur = n
             while not (self.is_root(cur) or self.imp.bodies[cur].joint is not None):
-                if cur in seen:
-                    raise CadError(f"{cur} hangs on itself through other bodies: pick a different parent for it.")
-                seen.append(cur)
                 cur = self.imp.bodies[cur].parent
             self._head[n] = cur
         return self._head[n]
@@ -135,11 +142,67 @@ class _Tree:
         return self.imp.bodies[root].part or root
 
 
+def _and(words: list[str]) -> str:
+    return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1]
+
+
+def _no_cycles(imp: ImportFile) -> None:
+    """A CadError when bodies hang on each other in a ring (only a hand-edited import file can say that)."""
+    b = imp.bodies
+    for start in b:
+        path, cur = [], start
+        while cur in b and cur not in path:
+            path.append(cur)
+            cur = b[cur].parent
+        if cur in path:
+            ring = path[path.index(cur):]
+            raise CadError(f"{_and(ring)} hang on each other; give one of them another parent." if len(ring) > 1
+                           else f"{cur} hangs on itself; give it another parent.")
+
+
+def _direction(v, what: str) -> np.ndarray:
+    """v as a unit vector, or a CadError saying `what` has no direction (never a NaN in a file)."""
+    a = np.asarray(v, dtype=float)
+    n = float(np.linalg.norm(a)) if a.shape == (3,) and np.all(np.isfinite(a)) else 0.0
+    if not n > 1e-12:
+        raise CadError(f"{what} has no direction: set it again.")
+    return a / n
+
+
+def _point(v, what: str) -> np.ndarray:
+    a = np.asarray(v, dtype=float)
+    if a.shape != (3,) or not np.all(np.isfinite(a)):
+        raise CadError(f"{what} isn't a point (it needs three numbers): set it again.")
+    return a
+
+
+def _check_geometry(imp: ImportFile) -> None:
+    for n, b in imp.bodies.items():
+        if b.joint is not None:
+            _direction(b.joint.axis, f"{n}'s joint axis")
+            _point(b.joint.anchor, f"{n}'s joint anchor")
+        for m in b.mounts:
+            _direction(m.normal, f"{n}'s mount {m.name}")
+            _point(m.point, f"{n}'s mount {m.name}")
+
+
+def _coupling_messages(imp: ImportFile, tree: "_Tree", msgs: list[str]) -> None:
+    """One message per coupling that can't be built (both bodies must move on joints in the same part)."""
+    def moves(x):
+        return x in imp.bodies and tree.head(x) == x and not tree.is_root(x)
+    for c in imp.couplings:
+        a, b = c.get("a"), c.get("b")
+        if not (moves(a) and moves(b) and tree.part_root(a) == tree.part_root(b)):
+            msgs.append(f"The coupling between {a} and {b} was left out: both need joints in the same part.")
+
+
 def build_parts(imp: ImportFile, src: Source) -> BuildResult:
     """The parts `imp` makes from `src`, in memory, and messages about anything that couldn't be built as asked."""
     msgs: list[str] = []
     R, t = to_robot(imp.frame)
+    _check_geometry(imp)
     tree = _Tree(imp, msgs)
+    _coupling_messages(imp, tree, msgs)
     by_key = {p.key: p for p in src.pieces}
     heads = [n for n in imp.bodies if tree.head(n) == n]
     origin = {h: np.zeros(3) if tree.is_root(h) else R @ np.asarray(imp.bodies[h].joint.anchor, float) + t
@@ -206,6 +269,9 @@ def _build_part(imp, tree, root, heads, origin, verts, items, R, t, msgs) -> Bui
         if typed > total:
             msgs.append(f"The weights typed in {name} add up to {typed:.3g} kg, more than its total of {total:.3g} "
                         "kg: lower a typed weight or raise the total.")
+        elif typed == total and computed > 0:
+            msgs.append(f"The weights typed in {name} already reach its total of {total:.3g} kg, so the rest keep "
+                        "their weight from their material: lower a typed weight or raise the total.")
         elif computed > 0:
             k = (total - typed) / computed
             for h in order:
@@ -247,7 +313,7 @@ def _build_part(imp, tree, root, heads, origin, verts, items, R, t, msgs) -> Bui
         parent = tree.parent_head(h)
         if parent is not None:
             j = bs.joint
-            joint = Joint(h, j.kind, tuple(_floats(_unit(R @ np.asarray(j.axis, float)))), j.range, j.damping,
+            joint = Joint(h, j.kind, tuple(_floats(R @ _direction(j.axis, h))), j.range, j.damping,
                           j.frictionloss, spring=j.spring)
             motor, encoder = _slots(h, bs, msgs)
             motors += motor
@@ -258,7 +324,7 @@ def _build_part(imp, tree, root, heads, origin, verts, items, R, t, msgs) -> Bui
                 gyros.append(GyroSlot(f"{n}_gyro", h))
             for m in nb.mounts:
                 mounts.append(Mount(m.name, h, tuple(_floats(R @ np.asarray(m.point, float) + t - o)),
-                                    rot_z_to(R @ np.asarray(m.normal, float))))
+                                    rot_z_to(R @ _direction(m.normal, m.name))))
         bodies.append(Body(h, parent, float(mass), geoms, tuple(_floats(o - origin[parent])) if parent else
                            (0.0, 0.0, 0.0), joint=joint, com=tuple(_floats(np.asarray(com) - o)),
                            inertia=tuple(inertia), inertia_rot=inertia_rot))
@@ -267,12 +333,8 @@ def _build_part(imp, tree, root, heads, origin, verts, items, R, t, msgs) -> Bui
     couplings = []
     for c in imp.couplings:
         a, b = c.get("a"), c.get("b")
-        if not any(x in imp.bodies and tree.part_root(x) == root for x in (a, b)):
-            continue                            # another part's
-        if a in jointed and b in jointed:
+        if a in jointed and b in jointed:     # the ones left out were said once, by _coupling_messages
             couplings.append(Coupling((a, b), float(c["ratio"])))
-        elif a not in jointed or tree.part_root(a) == root:     # said once, by the part that holds `a` (or `b`)
-            msgs.append(f"The coupling between {a} and {b} was left out: both need joints in the same part.")
     loops = []
     for lp in imp.loops:
         b1, b2 = lp.get("body1"), lp.get("body2")
@@ -288,10 +350,6 @@ def _build_part(imp, tree, root, heads, origin, verts, items, R, t, msgs) -> Bui
     whole = combine(inertials)
     part = Part(name, bodies, couplings, loops, motors, encoders, gyros, mounts)
     return BuiltPart(part, meshes, {h: _floats(origin[h]) for h in order}, _floats(whole.com), float(whole.mass))
-
-
-def _unit(a: np.ndarray) -> np.ndarray:
-    return a / np.linalg.norm(a)
 
 
 def _join(vs: list[tuple[np.ndarray, np.ndarray]]) -> tuple[np.ndarray, np.ndarray]:
@@ -333,7 +391,7 @@ def _collision(imp, n, h, vs, meshes, R, msgs) -> list[Geom]:
     if mode == "wheel":
         j = imp.bodies[n].joint
         if n == h and j is not None and j.kind == "hinge":
-            axis = _unit(R @ np.asarray(j.axis, float))
+            axis = R @ _direction(j.axis, n)
             radius, length, center = fit_wheel(v, axis)
             g = Geom("cylinder", (radius, length), pos=tuple(_floats(center)), friction=WHEEL_FRICTION,
                      condim=WHEEL_CONDIM)
@@ -349,9 +407,12 @@ def _collision(imp, n, h, vs, meshes, R, msgs) -> list[Geom]:
         try:
             pieces = _convex(v, f)
         except BenchError as e:
-            if "coacd" in str(e):
+            if "needs coacd" in str(e):
                 msgs.append(f"{n} is concave, and touching things as shaped needs coacd to split it: pip install "
                             "scrimmage[bench]. It touches things as a simple box until then.")
+            elif "no convex pieces" in str(e):
+                msgs.append(f"{n} couldn't be split into convex pieces to touch things as shaped: pick simple "
+                            "instead. It touches things as a simple box until then.")
             else:
                 msgs.append(f"{n} can't touch things as shaped because its pieces aren't closed solids: "
                             "pick simple instead. It touches things as a simple box until then.")
@@ -395,18 +456,62 @@ def part_folder(imp: ImportFile, part: str, import_path: Path) -> Path:
 
 
 def _check_target(folder: Path, imp: ImportFile) -> None:
-    shown = f"{folder.parent.name}/{folder.name}"
-    refuse = CadError(f"{shown} already holds a part that didn't come from this import; pick another name")
+    refuse = CadError(f"{_shown(folder)} already holds a part that didn't come from this import; pick another name")
     if folder.is_file():
         raise refuse
     if not folder.is_dir() or not any(folder.iterdir()):
         return
-    try:
-        marker = tomllib.loads((folder / MARKER).read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
-        raise refuse from None
-    if marker.get("import_id") != imp.import_id:
+    marker = _read_marker(folder)
+    if marker is None or marker.get("import_id") != imp.import_id:
         raise refuse
+
+
+def _read_marker(folder: Path) -> dict | None:
+    try:
+        return tomllib.loads((folder / MARKER).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return None
+
+
+def _shown(folder: Path) -> str:
+    return f"{folder.parent.name}/{folder.name}"
+
+
+def _remove_stale(imp: ImportFile, import_path: Path, targets: dict[str, Path]) -> list[str]:
+    """Remove the part folders this import wrote before but no longer makes (a part was renamed, or merged back into
+    another), so a robot config can't count those bodies twice. Looks beside the import file and beside every
+    folder just written; a folder without this import's marker is never touched. Returns a message per folder."""
+    keep = {f.resolve() for f in targets.values()}
+    places = {Path(import_path).parent.resolve()} | {f.parent.resolve() for f in targets.values()}
+    tree = _Tree(imp, [])
+    msgs = []
+    for place in sorted(places):
+        if not place.is_dir():
+            continue
+        for folder in sorted(place.iterdir()):
+            if (not folder.is_dir() or folder.name.startswith(".") or folder.name.endswith(".tmp")
+                    or folder.resolve() in keep):
+                continue
+            marker = _read_marker(folder)
+            if marker is None or marker.get("import_id") != imp.import_id:
+                continue
+            try:
+                shutil.rmtree(folder)
+            except OSError as e:
+                msgs.append(f"{_shown(folder)} is an old part from this import but couldn't be removed "
+                            f"({e.strerror or e}): close anything using it and delete it.")
+                continue
+            now: dict[str, list[str]] = {}
+            origins = marker.get("origins")
+            for b in origins if isinstance(origins, dict) else []:
+                if b in imp.bodies:
+                    now.setdefault(tree.part_name(tree.part_root(b)), []).append(b)
+            why = "; ".join(f"part {part} is now saved in {_shown(targets[part])}" if part == folder.name
+                            and part in targets else
+                            f"{_and(bs)} {'is' if len(bs) == 1 else 'are'} part of {part} again"
+                            for part, bs in now.items()) or "this import no longer makes that part"
+            msgs.append(f"{_shown(folder)} was removed: {why}")
+    return msgs
 
 
 def _marker_text(imp: ImportFile, built: BuiltPart, folder: Path, import_path: Path) -> str:
@@ -420,7 +525,9 @@ def _marker_text(imp: ImportFile, built: BuiltPart, folder: Path, import_path: P
 
 
 def write_parts(result: BuildResult, imp: ImportFile, import_path: Path) -> list[Path]:
-    """Save each built part to its folder (see the module's notes); returns the folders. Raises CadError."""
+    """Save each built part to its folder (see the module's notes); returns the folders. Raises CadError.
+    Folders this import wrote before for parts it no longer makes are removed, with a message added to
+    `result.messages`."""
     targets = {name: part_folder(imp, name, import_path) for name in result.parts}
     for folder in targets.values():
         _check_target(folder, imp)
@@ -446,6 +553,7 @@ def write_parts(result: BuildResult, imp: ImportFile, import_path: Path) -> list
                            "written and try again.") from None
         _install(tmp, folder)
         out.append(folder)
+    result.messages += _remove_stale(imp, import_path, targets)
     return out
 
 

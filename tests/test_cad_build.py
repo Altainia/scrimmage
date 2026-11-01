@@ -466,3 +466,98 @@ def test_inertia_and_its_axes_match_mujoco(tmp_path):
     assert mine[0] == pytest.approx(theirs[0], rel=1e-6)
     assert np.abs(mine[1] - theirs[1]).max() < 1e-7
     assert np.abs(mine[2] - theirs[2]).max() < 1e-6 * np.abs(theirs[2]).max()
+
+
+# ---------------------------------------------------------------- fix round 1
+
+def test_unparted_body_removes_its_old_folder(tmp_path, src):
+    imp = edit(make(src, tmp_path), "set_part", body="arm_B", part="right_arm")
+    write(imp, src, tmp_path)
+    other = tmp_path / "someone_elses"
+    other.mkdir()
+    (other / "import-origin.toml").write_text('import_id = "other"\norigins = { arm_B = [0.0, 0.0, 0.0] }\n')
+    (tmp_path / "loose").mkdir()
+    (tmp_path / "loose" / "part.toml").write_text("")
+    assert (tmp_path / "right_arm").is_dir()
+    imp = edit(imp, "set_part", body="arm_B", part=None, parent="base_plate")
+    result, paths = write(imp, src, tmp_path)
+    assert paths == [tmp_path / "climber"] and not (tmp_path / "right_arm").exists()
+    assert f"{tmp_path.name}/right_arm was removed: arm_B is part of climber again" in result.messages
+    assert other.is_dir() and (tmp_path / "loose").is_dir()        # never another import's, or an unmarked folder
+    # a part moved to another folder: the old folder goes
+    imp.parts["climber"].folder = "lifter"
+    result, paths = write(imp, src, tmp_path)
+    assert paths == [tmp_path / "lifter"] and not (tmp_path / "climber").exists()
+    assert result.messages == [f"{tmp_path.name}/climber was removed: part climber is now saved in "
+                               f"{tmp_path.name}/lifter"]
+
+
+def test_bodies_hanging_on_each_other_are_a_plain_error(tmp_path, src):
+    imp = make(src, tmp_path)
+    imp.bodies["arm_A"].parent = "arm_B"
+    imp.bodies["arm_A"].joint = JointSettings("hinge", [0, 0, 0], [0, 1, 0])
+    imp.bodies["arm_B"].parent = "arm_A"
+    imp.bodies["arm_B"].joint = JointSettings("hinge", [0, 0, 0], [0, 1, 0])
+    with pytest.raises(CadError, match="^arm_A and arm_B hang on each other; give one of them another parent.$"):
+        build_parts(imp, src)
+    imp.bodies["arm_A"].joint = None                    # welded ones too
+    imp.bodies["arm_B"].joint = None
+    with pytest.raises(CadError, match="hang on each other"):
+        build_parts(imp, src)
+
+
+def test_no_direction_is_a_plain_error(tmp_path, src):
+    imp = make(src, tmp_path)
+    imp.bodies["arm_A"].joint = JointSettings("hinge", [0.06, 0.1, 0.01], [0, 0, 0])
+    with pytest.raises(CadError, match="arm_A's joint axis has no direction"):
+        build_parts(imp, src)
+    imp = edit(make(src, tmp_path), "add_mount", body="arm_A", name="tip", point=[0, 0, 0], normal=[0, 0, 1])
+    imp.bodies["arm_A"].mounts[0].normal = [0.0, 0.0, 0.0]
+    with pytest.raises(CadError, match="arm_A's mount tip has no direction"):
+        build_parts(imp, src)
+    imp.bodies["arm_A"].mounts[0].normal = [float("nan"), 0.0, 1.0]
+    with pytest.raises(CadError, match="no direction"):
+        build_parts(imp, src)
+
+
+def test_coacd_finding_no_pieces_does_not_say_install(monkeypatch, tmp_path, src):
+    def nothing(path, units):
+        raise BenchError(f"mesh {path}: coacd found no convex pieces in it")
+    monkeypatch.setattr(build, "convex_pieces", nothing)
+    imp = edit(make(src, tmp_path), "set_collision", body="base_plate", mode="shaped")
+    result = build_parts(imp, src)
+    assert not any("pip install" in m for m in result.messages)
+    assert any("base_plate couldn't be split into convex pieces" in m for m in result.messages)
+
+
+def test_typed_weights_that_reach_the_total(tmp_path, src):
+    imp = make(src, tmp_path)
+    imp = edit(imp, "set_joint", body="arm_B", parent="base_plate",
+               joint={"kind": "hinge", "anchor": [0.24, 0.1, 0.01], "axis": [0, 1, 0]})
+    imp = edit(imp, "set_mass", body="arm_B", kg=2.0)
+    plain = {b.name: b.mass for b in build_parts(imp, src).parts["climber"].part.bodies}
+    imp = edit(imp, "set_total", part="climber", kg=2.0)
+    result = build_parts(imp, src)
+    assert any("already reach its total of 2 kg" in m for m in result.messages)
+    assert not any("0.001" in m for m in result.messages)
+    assert {b.name: b.mass for b in result.parts["climber"].part.bodies} == pytest.approx(plain)
+
+
+def test_dropped_root_joint_names_its_slots_and_couplings_said_once(tmp_path, src):
+    imp = make(src, tmp_path)
+    imp = edit(imp, "set_joint", body="arm_B", parent="base_plate",
+               joint={"kind": "hinge", "anchor": [0.24, 0.1, 0.01], "axis": [0, 1, 0]})
+    imp = edit(imp, "set_motor", body="arm_B", settings={"motor": "NEO", "ratio": 5})
+    imp = edit(imp, "set_joint", body="arm_A", parent="base_plate",
+               joint={"kind": "hinge", "anchor": [0.06, 0.1, 0.01], "axis": [0, 1, 0]})
+    imp = edit(imp, "set_motor", body="arm_A", settings={"motor": "NEO", "ratio": 5})
+    imp, _, _ = hinge_on_hook(imp, src, parent="arm_B")
+    imp = edit(imp, "add_coupling", a="arm_A", b="hook_assy", ratio=2)
+    imp.bodies["arm_B"].part = "right_arm"          # a part root that keeps its parent, joint and motor
+    imp.parts["right_arm"] = type(imp.parts["climber"])(folder="right_arm")
+    result = build_parts(imp, src)
+    assert "arm_B's joint and motor were dropped, because the first body of a part can't move on its own" \
+        in result.messages
+    assert result.messages.count("The coupling between arm_A and hook_assy was left out: both need joints in the "
+                                 "same part.") == 1
+    assert not result.parts["right_arm"].part.motors
