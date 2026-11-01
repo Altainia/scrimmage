@@ -817,3 +817,25 @@ def test_every_screen_meets_wcag_aa(browser, tmp_path, monkeypatch, screen, sche
     finally:
         ctx.close()
         srv.stop()
+
+
+def test_a_redraw_while_typing_neither_commits_early_nor_loses_the_text(make_page):
+    """Half-typed text in an inspector box survives a redraw (a state arriving) without being committed, and the
+    student's Enter then commits the whole value exactly once."""
+    page, _ = make_page("kitbot.toml")
+    posts = []
+    page.on("request", lambda r: posts.append(r.post_data_json) if r.url.endswith("/api/robot/edit") and r.method == "POST" else None)
+    page.evaluate("__scrimmage.select('dt')")
+    page.wait_for_selector("#insp-pos-0")
+    page.click("#insp-pos-0", click_count=3)
+    page.keyboard.type("0.1")
+    page.evaluate("__scrimmage.render()")
+    page.wait_for_timeout(300)
+    assert posts == [] and page.input_value("#insp-pos-0") == "0.1"
+    assert page.evaluate("document.activeElement.id") == "insp-pos-0"
+    page.keyboard.type("5")
+    page.evaluate("__scrimmage.render()")          # again between the last key and Enter
+    page.keyboard.press("Enter")
+    page.wait_for_function("__scrimmage.state.parts.find(p => p.name === 'dt').pos[0] === 0.15")
+    page.wait_for_timeout(300)
+    assert [(p["op"], p["pos"][0]) for p in posts] == [("attach", 0.15)]

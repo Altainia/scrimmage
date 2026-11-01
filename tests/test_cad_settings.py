@@ -181,3 +181,17 @@ def test_written_folders_round_trip_and_are_checked(tmp_path):
     d["written"] = ["climber"]
     with pytest.raises(CadError, match="written must be a table"):
         ImportFile.from_dict(d)
+
+
+def test_part_attach_round_trips_and_is_checked(tmp_path):
+    from scrimmage.cad.settings import ImportFile
+    _, imp = make(tmp_path)
+    imp.parts["climber"].attach = "arm_B"
+    path = tmp_path / "climber.import.toml"
+    write_import(imp, path)
+    assert read_import(path).parts["climber"].attach == "arm_B"
+    for bad in (3, ["arm_B"], ""):
+        d = imp.to_dict()
+        d["parts"]["climber"]["attach"] = bad
+        with pytest.raises(CadError, match=r"parts\.climber: attach must name a body"):
+            ImportFile.from_dict(d)

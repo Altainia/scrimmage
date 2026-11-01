@@ -108,6 +108,10 @@ class PartSettings:
     # ends up ("<part>.<body>") into the folder's import-origin.toml, so the robot can attach it there
     attach: str | None = None
 
+    def __post_init__(self):
+        if self.attach is not None and (not isinstance(self.attach, str) or not self.attach):
+            raise CadError(f"attach must name a body, such as \"arm_B\", not {self.attach!r}: fix it or remove it.")
+
 
 @dataclass
 class ImportFile:

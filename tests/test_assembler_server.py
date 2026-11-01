@@ -625,11 +625,17 @@ def test_parts_from_one_import_land_where_the_cad_has_them(served, tmp_path, mon
                                       "pos": [0.1, 0, 0]})
     assert r["ok"] and {p["name"]: p for p in c.get("/api/robot/state")[1]["parts"]}["again"]["pos"] == [0.1, 0, 0]
 
-    # an import that isn't made for this robot (its parts go elsewhere) has no way back to it
+    # an import that isn't made for this robot (its parts go elsewhere) has no way back to it, also when it is opened
+    # from one that is
     (cfg.parent / "other").mkdir()
     shutil.copy(cfg.parent / "climber.step", cfg.parent / "other" / "climber.step")
+    own = str(cfg.parent / "parts" / "climber.import.toml")
+    back = lambda: c.call("GET", "/api/app/state")[1]["back"]
+    assert c.call("POST", "/api/app/open", {"path": own})[0] == 200 and back()["path"] == str(cfg.resolve())
+    assert c.call("POST", "/api/app/open", {"path": own})[0] == 200 and back()["path"] == str(cfg.resolve())
     assert c.call("POST", "/api/app/open", {"path": str(cfg.parent / "other" / "climber.step")})[0] == 200
-    assert c.call("GET", "/api/app/state")[1]["back"] is None
+    assert back() is None
+    assert c.call("POST", "/api/app/open", {"path": own})[0] == 200 and back() is None
 
 
 def _hand_part(folder, text, marker=None):

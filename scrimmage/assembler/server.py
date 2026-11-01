@@ -672,6 +672,7 @@ class App:
         self.bench: BenchSession | None = None    # the idea session (bench mode)
         self.part = None                          # the PartSession or PluginSession (part mode)
         self.back: Path | None = None             # part mode: the robot config (or scenario) the part was opened from
+        self._back_parts: Path | None = None      # ... and that robot's parts/ folder, where its imports go
         self._com: tuple | None = None            # (world, its CG) for the robot state
         self._view: dict | None = None
         self._scenario_view: dict | None = None
@@ -728,12 +729,12 @@ class App:
                                           self.part.version if self.part else 0)
         doc = ConfigDoc(path) if kind in ("robot", "scenario") else None
         # "Back to the robot": an import made for the open robot (its parts go in that robot's parts/, as Import CAD...
-        # does) leads back to it, and keeps doing so across re-opens in part mode
+        # does) leads back to it; another import opened from the part leads back too while it is made for that robot
         back = robot_parts = None
         if kind == "import" and self.mode == "robot" and (self.scenario or self.robot) is not None:
             back, robot_parts = (self.scenario or self.robot).path, (self.robot or self.scenario).path.parent / "parts"
-        elif kind == "import" and self.mode == "part":
-            back = self.back
+        elif kind == "import" and self.mode == "part" and self.back is not None:
+            back, robot_parts = self.back, self._back_parts
         bench = part = None
         if kind in ("bench", "session"):
             folder, stage = (path, None) if kind == "session" else (path.parent, path.name)
@@ -743,8 +744,8 @@ class App:
         old, self.bench = self.bench, bench
         old_part, self.part = self.part, part
         if robot_parts is not None and (part is None or Path(part.path).parent.resolve() != robot_parts.resolve()):
-            back = None
-        self.back = back
+            back = robot_parts = None
+        self.back, self._back_parts = back, robot_parts
         self.robot, self.robot_missing, self._robot_target, self._robot_ver = None, NO_ROBOT, None, floor
         self.scenario, self.extra_folders = None, []
         if kind == "robot":

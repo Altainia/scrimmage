@@ -428,3 +428,25 @@ def test_click_the_floor_and_the_center(part_page):
     c = page.evaluate("__scrimmagePart.store.state.frame.center")
     assert 0 <= c[0] <= 0.3 and 0 <= c[1] <= 0.2 and c != pytest.approx([0.15, 0.1])
     assert page.evaluate("__scrimmagePart.store.state.frame.floor") == pytest.approx(0.01, abs=1e-4)
+
+
+def test_a_redraw_while_typing_keeps_the_text_and_commits_it_once(part_page):
+    """Half-typed text in a Part tab box survives a redraw (a state arriving) without being committed, and the
+    student's Enter then commits the whole value exactly once (a box refilled by the redraw fires no "change")."""
+    page, _ = part_page
+    posts = []
+    page.on("request", lambda r: posts.append(r.post_data_json) if r.url.endswith("/api/part/edit") and r.method == "POST" else None)
+    _pick_body(page, "arm_A")
+    page.wait_for_selector("#part-body-weight")
+    page.click("#part-body-weight", click_count=3)
+    page.keyboard.type("1.2")
+    page.evaluate("__scrimmagePart.render()")
+    page.wait_for_timeout(300)
+    assert posts == [] and page.input_value("#part-body-weight") == "1.2"
+    assert page.evaluate("document.activeElement.id") == "part-body-weight"
+    page.keyboard.type("5")
+    page.evaluate("__scrimmagePart.render()")      # again between the last key and Enter: the box is refilled by script
+    page.keyboard.press("Enter")
+    page.wait_for_function("__scrimmagePart.store.state.bodies.find(b => b.name === 'arm_A').typed_mass === 1.25")
+    page.wait_for_timeout(300)
+    assert [(p["op"], p["args"]) for p in posts] == [("set_mass", {"body": "arm_A", "kg": 1.25})]

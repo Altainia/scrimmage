@@ -607,6 +607,7 @@ async function boot() {
     store,
     get tab() { return tab; },
     setTab: (name) => setTab(name),
+    render: () => renderAll(),      // tests: a redraw (as a state arriving does) at a moment they choose
   };
   if (!token) {
     notice("This page needs the link scrimmage edit printed (it carries a #token=…). Open that link.", "error");

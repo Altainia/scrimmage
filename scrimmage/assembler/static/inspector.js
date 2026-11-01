@@ -55,9 +55,10 @@ function numberInput(id, key, value, { step = "any", label } = {}) {
 export const badNumber = (...inputs) => inputs.some((i) => i.validity && i.validity.badInput);
 
 // Commit on change; also on blur while still dirty, because a value restored across a re-render
-// (see renderInspector) doesn't fire "change". Every commit function cleans its inputs.
+// (see renderInspector) doesn't fire "change". Every commit function cleans its inputs. A box the re-render removes
+// fires "change" in Chromium; it is ignored like its blur (the half-typed text goes on in the new box).
 export function onCommit(el, fn) {
-  el.addEventListener("change", fn);
+  el.addEventListener("change", () => { if (!rerendering && el.isConnected) fn(); });
   el.addEventListener("blur", () => { if (el.dataset.dirty && !rerendering && el.isConnected) fn(); });
   el.addEventListener("keydown", (e) => { if (e.key === "Enter" && el.tagName === "INPUT" && el.type !== "checkbox") { e.preventDefault(); el.blur(); } });
   return el;

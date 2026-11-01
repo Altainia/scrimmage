@@ -441,11 +441,19 @@ export function field(label, control, name, hint = null) {
     ...msgs.map((e) => h("p", { class: "error field-msg", role: "alert", text: e.message })));
 }
 
-// A text or number box that commits on Enter or leaving it, when its text changed.
+// A text or number box that commits on Enter or leaving it, when its text differs from the server's (dataset.orig),
+// once. Not only on "change": text carried across a redraw (renderInspector) is set by script, and then Enter or
+// leaving the box fires no change. A box a redraw removes never commits (live): its text lives on in the new box.
 export function box(attrs, commit) {
   const el = h("input", { autocomplete: "off", ...attrs });
   el.dataset.orig = el.value = attrs.value == null ? "" : String(attrs.value);
-  el.addEventListener("change", () => { if (live(el) && el.value !== el.dataset.orig) commit(el.value.trim(), el); });
+  const send = () => {
+    if (!live(el) || el.value === el.dataset.orig) return;
+    el.dataset.orig = el.value;     // once: "change" and "blur" both come when leaving an edited box
+    commit(el.value.trim(), el);
+  };
+  el.addEventListener("change", send);
+  el.addEventListener("blur", send);
   el.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); el.blur(); } });
   return el;
 }
@@ -528,7 +536,7 @@ function initDrop() {
 }
 
 export async function initPart() {
-  window.__scrimmagePart = { store: part, screenPos: () => null, scene: { drawn: [], faint: [], meshes: 0 } };
+  window.__scrimmagePart = { store: part, screenPos: () => null, scene: { drawn: [], faint: [], meshes: 0 }, render: () => render() };
   await import("./part_inspector.js");   // its sections (it imports this file, so not at the top)
   registerTab("part", { renderTop, undo, redo, onShow: render });
   setTab("part");
