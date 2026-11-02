@@ -11,24 +11,33 @@ test file is read on the App's next sync; one that can't be read keeps the last 
 until it is fixed.
 
 Runs are kept where `scrimmage test run` keeps them (scrimmage/blocks/store.py: `<test stem>-runs/` next to the test).
+
+A new test starts with blocks that do something on its robot (`starter_blocks`) and its hooks preselected
+(`starter_hooks`); the Part tab's "Test it" puts the built parts on a stand-in robot (`standin_config`).
 """
 
 from __future__ import annotations
 
 import logging
+import os
+import re
 import tempfile
 import threading
 import time
 from pathlib import Path
 
+import tomlkit
+
 from ..blocks import store
 from ..blocks.palette import palette, problems
-from ..blocks.program import TestFileError, dumps, from_json, load, to_json
+from ..blocks.program import Block, TestFileError, dumps, from_json, load, to_json
 from ..blocks.run import TestRun, world_for
 from ..blocks.sweep import MAX_SWEEP, _kind as sweep_kind, run_sweep
 from ..cad.settings import replace_file
 from .bench_session import SessionError
+from .edits import add_part, cad_offset
 from .simlock import SimBusy, SimLock
+from .templates import new_config
 
 log = logging.getLogger("scrimmage.assembler")
 STALE = "the test changed (another tab, or an outside edit); the page has reloaded it"
@@ -36,6 +45,101 @@ BUSY = "a test run is in progress; wait for it to finish or stop it"
 FIX_FIRST = "Fix the problems first: the test can't run on this robot yet."
 PROGRESS_PERIOD = 0.25    # s of wall time between progress updates while a run goes
 POLL_SECONDS = 25.0
+
+
+STARTER_DRIVE_M = 0.3    # a new test's drive up to the bars
+STARTER_VOLTS = 6.0      # ... its spin of the first motor, for STARTER_WAIT_S
+STARTER_WAIT_S = 2.0
+STARTER_MOVE_DEG = 45.0  # ... its move of a lone hinge motor
+STANDIN_RANGE = {"file": "ladder", "start": "below"}   # the stand-in for a part with a hook: in front of the ladder
+
+
+def starter_blocks(pal: dict | None) -> list[Block]:
+    """A new test's blocks for a robot with this palette: drive 0.3 m first when it can drive and the field has bars;
+    then a robot whose only mechanism motor is a hinge moves it to 45 degrees, else the first mechanism motor spins at
+    6 V for 2 s and everything stops; a robot with nothing to move waits 1 s."""
+    out = []
+    pal = pal or {}
+    if pal.get("drive") and pal.get("bars"):
+        out.append(Block("drive", {"distance": STARTER_DRIVE_M}))
+    mech = [m for m in pal.get("motors") or [] if m["kind"] != "wheel"]
+    if len(mech) == 1 and mech[0]["kind"] == "hinge":
+        out.append(Block("move", {"joint": mech[0]["name"], "to": STARTER_MOVE_DEG, "unit": "deg"}))
+    elif mech:
+        out += [Block("spin", {"motor": mech[0]["name"], "volts": STARTER_VOLTS}),
+                Block("wait", {"seconds": STARTER_WAIT_S}), Block("stop", {"motor": "all"})]
+    return out or [Block("wait", {"seconds": 1.0})]
+
+
+def _hooky(name: str) -> bool:
+    return "hook" in name.rsplit(".", 1)[-1].lower()
+
+
+def starter_hooks(pal: dict | None) -> list[str]:
+    """The robot's bodies whose names contain "hook", but the stock climber's (they count already)."""
+    pal = pal or {}
+    counted = set(pal.get("hooks") or [])
+    return [b for b in pal.get("bodies") or [] if _hooky(b) and b not in counted]
+
+
+def standin_config(parts: list[tuple[str, dict]], root_body: str) -> str:
+    """The stand-in robot (templates' "standin") carrying the part folders `parts` [(path as the config writes it,
+    cad_marker)] of one CAD import where the CAD has them (edits.cad_offset): a part the robot carries on the stock
+    chassis's root body at zero offset, a part the CAD hangs on another's body on that body. Each is named after its
+    part (made unique). With a body named like a hook, the robot starts in front of the ladder range."""
+    doc = tomlkit.parse(new_config("standin"))
+    taken = {str(p["name"]) for p in doc["part"]}
+    names: dict[str, str] = {}            # part name -> instance name
+    for _, m in parts:
+        base = re.sub(r"[^A-Za-z0-9_]", "_", m["part"] or "part") or "part"
+        name, k = base, 2
+        while name in taken:
+            name, k = f"{base}_{k}", k + 1
+        taken.add(name)
+        names[m["part"]] = name
+    by_part = {m["part"]: (path, m) for path, m in parts}
+    done: set[str] = set()
+
+    def add(part: str, trail: tuple = ()) -> None:
+        if part in done:
+            return
+        path, m = by_part[part]
+        attach, pos = f"drive.{root_body}", [0.0, 0.0, 0.0]
+        if m["attach"] is not None:
+            target, body = m["attach"].split(".")
+            if target in by_part and target not in trail:
+                add(target, (*trail, part))
+                attach = f"{names[target]}.{body}"
+                pos = cad_offset(m, body, by_part[target][1], chassis_root=False) or pos
+        done.add(part)
+        add_part(doc, name=names[part], path=path, attach=attach, pos=pos)
+
+    for _, m in parts:
+        add(m["part"])
+    if any(_hooky(b) for _, m in parts for b in m["origins"]):
+        rng = tomlkit.table()
+        rng.update(STANDIN_RANGE)
+        doc.add(tomlkit.nl())
+        doc["range"] = rng
+    return tomlkit.dumps(doc)
+
+
+def write_new(path: Path, text: str) -> bool:
+    """Write a new file; False when it is there already (it is never replaced)."""
+    try:
+        with open(path, "x", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+        return True
+    except FileExistsError:
+        return False
+
+
+def config_path(target: Path, base: Path) -> str:
+    """`target` as a config writes it: relative to `base` ("/"-separated) when it can be, else absolute."""
+    try:
+        return Path(os.path.relpath(target, base)).as_posix()
+    except ValueError:      # another drive (Windows)
+        return target.as_posix()
 
 
 def _sig(path: Path) -> bytes | None:

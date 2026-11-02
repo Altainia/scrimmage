@@ -11,9 +11,13 @@
 //             "compared with" (default: the run before it) drawn faded and dashed, the replay's time marked; a
 //             click on a plot moves the replay there
 //   Runs      the kept runs, newest first, each with its outcome (a stopped one says so); a click shows it
+//   Sweep     over the shown run when it is one of a sweep's (and when a sweep has just finished): what it tried,
+//             a row per value (the value, the outcome, each check) and a chart of when the run ended, or a signal's
+//             value at the end, against the value; a click on a row shows that row's run
 //
 // When a new run is kept (a run ends), it is shown. Test hook: window.__scrimmageTest.replay (test.js) is replay():
-// {time, playing, runId, view (the LiveView or null), chart: {signals, runs: [shown, compared or null]}}.
+// {time, playing, runId, view (the LiveView or null), chart: {signals, runs: [shown, compared or null]}}, and
+// window.__scrimmageTest.sweep is sweepShown(): {id, rows, y, points: [[value, y], ...]} or null.
 
 import { $, h, api, apiFile } from "./app.js";
 
@@ -37,6 +41,10 @@ const rp = {
   view: null,
   viewFailed: null,
   seq: 0,
+  sweepId: null,      // the sweep shown over the run (its id, "sweep-002"), or null
+  newestSweep: undefined,
+  sweepY: "t_end",    // what the sweep's chart shows: "t_end" or a signal's name
+  sweepFinals: new Map(),  // run id|started -> {signal: its last value}
 };
 
 export function runName(id) {
@@ -63,6 +71,12 @@ export function replay() {
 // -- the state -----------------------------------------------------------------------------------------------------
 export function update(state) {
   rp.state = state;
+  const sweeps = state.sweeps || [];
+  const newestSweep = sweeps.length ? sweeps[0].id : null;
+  if (newestSweep !== rp.newestSweep) {
+    if (rp.newestSweep !== undefined && newestSweep) rp.sweepId = newestSweep;   // one just finished: show it
+    rp.newestSweep = newestSweep;
+  }
   const runs = state.runs || [];
   const newest = runs.length ? runs[0].id : null;
   if (newest !== rp.newest) {
@@ -80,6 +94,7 @@ export function update(state) {
   err.textContent = state.run_error ? `The run couldn't finish: ${state.run_error}` : "";
   renderList();
   renderCompare();
+  renderSweep();
 }
 
 function clear() {
@@ -127,10 +142,14 @@ export function parseMotion(buf) {
   return { n, times, poses };
 }
 
-async function show(id) {
+const sweepOf = (id) => { const m = /^(sweep-\d+)\//.exec(id || ""); return m ? m[1] : null; };
+
+export async function show(id) {
   const seq = ++rp.seq;
   pause();
   rp.shownId = id;
+  rp.sweepId = sweepOf(id);
+  renderSweep();
   rp.compareId = undefined;
   renderList();
   const loadErr = $("#test-load-error");
@@ -452,6 +471,187 @@ function plot(canvas, name, cmp, tEnd, tk) {
   ctx.globalAlpha = 1;
 }
 
+
+// -- the sweep -----------------------------------------------------------------------------------------------------
+const ROBOT_WORDS = { mass: "the robot's weight (kg)", com_forward: "the robot's center of mass, forward (m)",
+  com_left: "the robot's center of mass, left (m)", com_up: "the robot's center of mass, up (m)" };
+const AXIS_WORDS = { x: "forward (x, m)", y: "left (y, m)", z: "up (z, m)", yaw: "turned (yaw, °)" };
+const KEY_UNITS = { volts: "V", seconds: "s", distance: "m" };
+
+// The block at a place in the test JSON (0-based, through repeat bodies), or null.
+function blockAt(test, place) {
+  let blocks = (test && test.blocks) || [], b = null;
+  for (const i of place || []) { b = blocks[i]; if (!b) return null; blocks = b.body || []; }
+  return b;
+}
+
+const blockWords = (b) => {
+  if (!b) return "a block";
+  const name = b.motor || b.joint;
+  return name ? `${b.do} ${name}` : b.do;
+};
+
+function targetText(target) {
+  if (!target) return "";
+  if ("block" in target) {
+    const b = blockAt(rp.state && rp.state.test, target.block);
+    const unit = target.key === "to" ? (b && b.unit === "deg" ? "°" : b ? b.unit : "") : KEY_UNITS[target.key] || "";
+    return `${blockWords(b)} (block ${target.block.map((i) => i + 1).join(" in ")}): ${target.key}${unit ? ` (${unit})` : ""}`;
+  }
+  if ("robot" in target) return ROBOT_WORDS[target.robot] || target.robot;
+  if ("mount" in target) return `where ${target.mount} is mounted: ${AXIS_WORDS[target.axis] || target.axis}`;
+  return "";
+}
+
+const sweepNumber = (id) => (/^sweep-(\d+)$/.exec(id || "") || [])[1];
+const rowRun = (sweep, k) => `${sweep.id}/${String(k + 1).padStart(3, "0")}`;
+const hasRun = (id) => ((rp.state && rp.state.runs) || []).some((r) => r.id === id);
+const shownSweep = () => ((rp.state && rp.state.sweeps) || []).find((s) => s.id === rp.sweepId) || null;
+const checkColumns = (sweep) => (sweep.rows.length ? Object.keys(sweep.rows[0]).filter((c) => !["value", "status", "outcome", "t_end"].includes(c)) : []);
+
+export function sweepShown() {
+  const sw = shownSweep();
+  return sw ? { id: sw.id, rows: sw.rows.length, y: rp.sweepY, points: sweepPoints(sw) } : null;
+}
+
+function renderSweep() {
+  const wrap = $("#test-sweep-wrap");
+  const sw = shownSweep();
+  wrap.hidden = !sw;
+  if (!sw) return;
+  $("#test-sweep-title").textContent = `Sweep ${+sweepNumber(sw.id)}: ${targetText(sw.target)}`;
+  const notes = [...(sw.cancelled ? ["You stopped this sweep, so it has the values done before that."] : []), ...(sw.problems || [])];
+  const note = $("#test-sweep-note");
+  note.hidden = !notes.length;
+  note.textContent = notes.join(" ");
+  const checks = checkColumns(sw);
+  const table = $("#test-sweep-table");
+  const key = JSON.stringify([sw.id, sw.rows, checks, rp.shownId, (rp.state.runs || []).map((r) => r.id)]);
+  if (table.dataset.key !== key) {
+    table.dataset.key = key;
+    table.replaceChildren(
+      h("thead", {}, h("tr", {}, h("th", { scope: "col", text: "Value" }), h("th", { scope: "col", text: "Outcome" }),
+        ...checks.map((c, i) => h("th", { scope: "col", title: c, text: `Check ${i + 1}` })))),
+      h("tbody", {}, ...sw.rows.map((r, k) => {
+        const id = rowRun(sw, k), ran = hasRun(id);
+        const current = id === rp.shownId;
+        const outcome = r.status === "couldn't run" ? `Couldn't run: ${r.outcome}` : `${statusWord(r.status)}: ${outcomeText(r)}`;
+        return h("tr", { class: ran ? "test-sweep-row" : "test-sweep-row test-sweep-norun", "data-row": String(k), "aria-current": current ? "true" : null,
+          onclick: ran ? () => { if (id !== rp.shownId) show(id); } : null },
+          h("td", {}, ran ? h("button", { type: "button", class: "linklike test-sweep-value", "data-run": id,
+            "aria-label": `Show the run at ${r.value}`, text: r.value }) : h("span", { text: r.value })),
+          h("td", { class: "test-sweep-outcome", text: outcome }),
+          ...checks.map((c) => h("td", { class: r[c] === "passed" ? "test-check-ok" : r[c] === "failed" ? "test-check-bad" : "",
+            title: c, text: r[c] === "passed" ? "✓" : r[c] === "failed" ? "✗" : "" })));
+      })));
+    if (checks.length) {
+      table.prepend(h("caption", { class: "test-sweep-caption" }, ...checks.map((c, i) => h("span", { text: `Check ${i + 1}: ${sentence(c)}` }))));
+    }
+  }
+  const sel = $("#test-sweep-y");
+  const signals = ((rp.state.palette && rp.state.palette.signals) || []);
+  const opts = [["t_end", "when the run ended (s)"], ...signals.map((s) => [s, `${s} at the end${unitOf(s) ? ` (${unitOf(s)})` : ""}`])];
+  const okey = opts.map((o) => o.join("=")).join("|");
+  if (sel.dataset.key !== okey) {
+    sel.replaceChildren(...opts.map(([v, text]) => h("option", { value: v, text })));
+    sel.dataset.key = okey;
+  }
+  if (!opts.some(([v]) => v === rp.sweepY)) rp.sweepY = "t_end";
+  sel.value = rp.sweepY;
+  drawSweep();
+}
+
+// [[value, y], ...] of the rows that ran (a signal's final value once its run is loaded)
+function sweepPoints(sw) {
+  const out = [];
+  sw.rows.forEach((r, k) => {
+    const x = Number(r.value);
+    if (rp.sweepY === "t_end") { if (r.t_end !== "" && r.t_end != null) out.push([x, Number(r.t_end)]); return; }
+    const fin = rp.sweepFinals.get(resultKey(rowRun(sw, k)));
+    if (fin && rp.sweepY in fin) out.push([x, fin[rp.sweepY]]);
+  });
+  return out;
+}
+
+const loadingFinals = new Set();
+async function loadFinals(sw) {
+  await Promise.all(sw.rows.map(async (r, k) => {
+    const id = rowRun(sw, k), key = resultKey(id);
+    if (!hasRun(id) || rp.sweepFinals.has(key) || loadingFinals.has(key)) return;
+    loadingFinals.add(key);
+    try {
+      const res = await result(id);
+      const fin = {};
+      for (const [name, vs] of Object.entries(res.signals || {})) if (name !== "t" && vs.length) fin[name] = vs[vs.length - 1];
+      rp.sweepFinals.set(key, fin);
+    } catch {
+      rp.sweepFinals.set(key, {});     // that row's point is left out
+    } finally {
+      loadingFinals.delete(key);
+    }
+  }));
+  while (rp.sweepFinals.size > 64) rp.sweepFinals.delete(rp.sweepFinals.keys().next().value);
+  const now = shownSweep();
+  if (now && now.id === sw.id) drawSweep();
+}
+
+function drawSweep() {
+  const sw = shownSweep();
+  const canvas = $("#test-sweep-chart");
+  if (!sw) return;
+  if (rp.sweepY !== "t_end" && sw.rows.some((r, k) => hasRun(rowRun(sw, k)) && !rp.sweepFinals.has(resultKey(rowRun(sw, k))))) loadFinals(sw);
+  const pts = sweepPoints(sw);
+  const tk = tokens();
+  const W = Math.max(200, Math.floor(canvas.clientWidth || canvas.parentElement.clientWidth || 320)), H = 140;
+  const dpr = window.devicePixelRatio || 1;
+  if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) {
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    canvas.style.height = `${H}px`;
+  }
+  const yName = rp.sweepY === "t_end" ? "when the run ended" : `${rp.sweepY} at the end`;
+  canvas.setAttribute("aria-label", `${yName} against ${targetText(sw.target)}: ${pts.map(([x, y]) => `${+x.toPrecision(4)} → ${+y.toPrecision(4)}`).join(", ") || "no runs"}`);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = tk.bg;
+  ctx.fillRect(0, 0, W, H);
+  ctx.font = `10px ${tk.font}`;
+  ctx.fillStyle = tk.text;
+  if (!pts.length) {
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(rp.sweepY !== "t_end" && loadingFinals.size ? "Loading…" : "No run to chart", W / 2, H / 2);
+    return;
+  }
+  const xs = sw.rows.map((r) => Number(r.value)).filter(isFinite);
+  let [x0, x1] = [Math.min(...xs), Math.max(...xs)];
+  if (x1 - x0 < 1e-9) { x0 -= 1; x1 += 1; }
+  let [y0, y1] = [Math.min(...pts.map((p) => p[1])), Math.max(...pts.map((p) => p[1]))];
+  if (y1 - y0 < 1e-6) { y0 -= 1; y1 += 1; }
+  const padR = 14, padT = 8, plotH = H - TICKS_H - padT;
+  const X = (v) => PAD_L + 6 + ((v - x0) / (x1 - x0)) * (W - PAD_L - 6 - padR);
+  const Y = (v) => padT + (1 - (v - y0) / (y1 - y0)) * plotH;
+  ctx.lineWidth = 1; ctx.strokeStyle = tk.grid;
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (const v of [y0, y1]) {
+    ctx.beginPath(); ctx.moveTo(PAD_L, Math.round(Y(v)) + 0.5); ctx.lineTo(W - padR, Math.round(Y(v)) + 0.5); ctx.stroke();
+    ctx.fillText(+v.toFixed(Math.abs(v) >= 100 ? 0 : 2) + "", PAD_L - 5, Y(v));
+  }
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  const labels = xs.length <= 6 ? xs : [x0, x1];
+  for (const v of labels) ctx.fillText(+v.toPrecision(4) + "", X(v), H - TICKS_H + 3);
+  ctx.strokeStyle = tk.run; ctx.lineWidth = 1.75;
+  ctx.beginPath();
+  pts.forEach(([x, y], i) => (i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y))));
+  ctx.stroke();
+  const shown = sw.rows.findIndex((_, k) => rowRun(sw, k) === rp.shownId);
+  ctx.fillStyle = tk.run;
+  for (const [x, y] of pts) { ctx.beginPath(); ctx.arc(X(x), Y(y), 3.5, 0, 2 * Math.PI); ctx.fill(); }
+  if (shown >= 0) {
+    const p = pts.find(([x]) => x === Number(sw.rows[shown].value));
+    if (p) { ctx.strokeStyle = tk.mark; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 6.5, 0, 2 * Math.PI); ctx.stroke(); }
+  }
+}
+
 // -- boot ----------------------------------------------------------------------------------------------------------
 export function initRunPanel() {
   $("#test-play").addEventListener("click", () => (rp.playing ? pause() : play()));
@@ -462,6 +662,8 @@ export function initRunPanel() {
     loadCompare();
   });
   new ResizeObserver(() => drawChart()).observe($("#test-chart"));
+  new ResizeObserver(() => drawSweep()).observe($("#test-sweep-wrap"));
+  $("#test-sweep-y").addEventListener("change", (e) => { rp.sweepY = e.target.value || "t_end"; drawSweep(); });
   const dark = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
-  if (dark && dark.addEventListener) dark.addEventListener("change", () => drawChart());
+  if (dark && dark.addEventListener) dark.addEventListener("change", () => { drawChart(); drawSweep(); });
 }

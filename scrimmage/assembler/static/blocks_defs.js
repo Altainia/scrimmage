@@ -14,6 +14,9 @@
 //                                  pickers even when the palette doesn't have them
 //   placeOf(ws) / incomplete(ws)   block -> its place ([i, j, ...] as problems() gives them); the blocks that can't be
 //                                  saved yet (an empty condition socket) or aren't joined to the test
+//   headOf(ws) / setHead(ws, p)    the test's header (robot, hooks, ...) as workspaceToTest writes it / changed
+//   sweepNumber(block)             the block's number a sweep can try ({key, field, unit}: scrimmage/blocks/sweep.py's
+//                                  block keys), or null
 //
 // A block keeps the settings it has no box for (a move's timeout, a repeat until's max, a drive's volts) in
 // `block.data`, so the round trip test -> workspace -> test is exact.
@@ -370,6 +373,21 @@ function blockJson(b) {
   if (k.cond) out[k.cond[1]] = condJson(b.getInputTargetBlock(k.cond[0]));
   if (k.body) out.body = stackBlocks(b.getInputTargetBlock("DO")).map(blockJson);
   return out;
+}
+
+export const headOf = (ws) => header.get(ws) || {};
+export function setHead(ws, patch) { header.set(ws, { ...headOf(ws), ...patch }); }
+
+const UNIT_TEXT = { deg: "°", in: "in", m: "m" };
+export function sweepNumber(b) {
+  if (!b || b.isInFlyout) return null;
+  if (b.type === "spin") return { key: "volts", field: "VOLTS", unit: "V" };
+  if (b.type === "move") return { key: "to", field: "TO", unit: UNIT_TEXT[b.getFieldValue("UNIT")] || "" };
+  if (b.type === "wait") return { key: "seconds", field: "SECONDS", unit: "s" };
+  if (b.type === "drive") {
+    return b.getFieldValue("WHAT") === "seconds" ? { key: "seconds", field: "AMOUNT", unit: "s" } : { key: "distance", field: "AMOUNT", unit: "m" };
+  }
+  return null;
 }
 
 export function workspaceToTest(ws) {

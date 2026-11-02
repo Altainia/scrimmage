@@ -653,3 +653,136 @@ seconds = 500.0
     page.evaluate("document.querySelector('#test-stop').click()")      # (a click would take the focus)
     page.wait_for_function("__scrimmageTest.replay.runId === '002'")
     assert page.evaluate("document.activeElement.dataset.run") == "001"
+
+
+CHECKED = SPIN + """
+[[block]]
+do = "expect"
+that = { tilt = { below = 20.0 } }
+"""
+
+
+def _sweep_block(page, values=("1", "3", "3")):
+    """Right-click the test's first block (spin), pick "Try values…", and try from/to/steps."""
+    box = page.evaluate("""(() => {
+      const r = __scrimmageTest.workspace.getTopBlocks(true)[0].getSvgRoot().getBoundingClientRect();
+      return {x: r.left + 14, y: r.top + 12};
+    })()""")
+    page.mouse.click(box["x"], box["y"], button="right")
+    page.locator(".blocklyMenuItem", has_text="Try values…").click()
+    page.wait_for_selector("#test-sweep-dialog[open]")
+    assert "spin arm.pivot" in page.inner_text("#test-sweep-for")
+    for sel, v in zip(("#test-sweep-from", "#test-sweep-to", "#test-sweep-steps"), values):
+        page.fill(sel, v)
+    page.click("#test-sweep-go")
+    page.wait_for_function("!document.querySelector('#test-sweep-dialog').open")
+    page.wait_for_function("__scrimmageTest.sweep && __scrimmageTest.state.running === null"
+                           " && __scrimmageTest.sweep.rows === 3")
+
+
+def test_a_sweep_of_a_blocks_volts_shows_a_row_per_value_and_a_row_replays_its_run(test_page):
+    page, path = test_page(CHECKED)
+    _sweep_block(page)
+    rows = page.locator("#test-sweep-table tbody tr")
+    assert rows.count() == 3
+    assert [rows.nth(k).locator("td").first.inner_text() for k in range(3)] == ["1", "2", "3"]
+    assert "spin arm.pivot (block 1): volts (V)" in page.inner_text("#test-sweep-title")
+    assert rows.nth(0).locator("td.test-check-ok").count() == 1           # the expect, passed
+    # the chart: a point per value against when its run ended
+    sweep = page.evaluate("__scrimmageTest.sweep")
+    assert sweep["y"] == "t_end" and [p[0] for p in sweep["points"]] == [1, 2, 3]
+    # the newest run is the sweep's last; a click on the second row shows its run
+    page.wait_for_function("__scrimmageTest.replay.runId === 'sweep-001/003'")
+    page.click("#test-sweep-table [data-run='sweep-001/002']")
+    page.wait_for_function("__scrimmageTest.replay.runId === 'sweep-001/002'")
+    assert page.inner_text("#test-result-title") == "Sweep 1, run 2 · finished"
+    assert rows.nth(1).get_attribute("aria-current") == "true"
+    # a signal's value at the end: the arm turned further at more volts
+    page.select_option("#test-sweep-y", "arm.pivot")
+    page.wait_for_function("__scrimmageTest.sweep.points.length === 3")
+    ys = [p[1] for p in page.evaluate("__scrimmageTest.sweep.points")]
+    assert ys[0] < ys[1] < ys[2], ys
+    # the file never changed, and a plain run hides the sweep again
+    assert _file_blocks(path)[0]["volts"] == 2.0
+    _run(page, "001")
+    assert page.is_hidden("#test-sweep-wrap")
+
+
+def test_the_sweep_form_refuses_more_than_twelve_values(test_page):
+    page, _ = test_page()
+    page.evaluate("__scrimmageTest.trySweep(__scrimmageTest.workspace.getTopBlocks(true)[0].id)")
+    page.wait_for_selector("#test-sweep-dialog[open]")
+    page.fill("#test-sweep-list", "1 2 3 4 5 6 7 8 9 10 11 12 13")
+    page.click("#test-sweep-go")
+    assert "at most 12 values" in page.inner_text("#test-sweep-errors")
+    page.fill("#test-sweep-list", "1, two")
+    page.click("#test-sweep-go")
+    assert "“two” isn't a number" in page.inner_text("#test-sweep-errors")
+    assert page.evaluate("__scrimmageTest.state.sweeps.length") == 0
+    page.click("#test-sweep-dialog [data-close]")
+
+
+def _robot_part(path, name):
+    return next(p for p in tomllib.loads((path.parent / "robot.toml").read_text(encoding="utf-8"))["part"]
+                if p["name"] == name)
+
+
+def _wait_file(pred, path, timeout=15.0):
+    import time
+    end = time.monotonic() + timeout
+    while not pred():
+        assert time.monotonic() < end, path.read_text(encoding="utf-8")
+        time.sleep(0.05)
+
+
+def test_setup_changes_the_stand_ins_weight_and_mounts_in_the_robot_file_and_the_hooks_in_the_test(test_page):
+    page, path = test_page()
+    assert page.evaluate("document.querySelector('#test-setup').open") is False      # folded away at first
+    page.wait_for_function("document.querySelector('#test-setup summary').textContent.includes('robot 45 kg')")
+    page.click("#test-setup summary")
+    page.wait_for_selector("#test-mass")
+    assert page.input_value("#test-mass") == "45"
+    page.fill("#test-mass", "30")
+    page.press("#test-mass", "Enter")
+    _wait_file(lambda: _robot_part(path, "drive").get("mass") == 30.0, path)
+    page.wait_for_function("__scrimmageTest.robot.can_undo")          # the Robot tab's Undo takes it back
+    page.fill("#test-com-up", "0.1")
+    page.press("#test-com-up", "Enter")
+    _wait_file(lambda: _robot_part(path, "drive").get("com_offset") == [0.0, 0.0, 0.1], path)
+    # the arm's mount, but not the drivetrain's (the Robot tab moves that)
+    assert page.locator("#test-setup tr[data-part='arm']").count() == 1
+    assert page.locator("#test-setup tr[data-part='dt']").count() == 0
+    page.fill("#test-mount-arm-x", "0.05")
+    page.press("#test-mount-arm-x", "Enter")
+    _wait_file(lambda: _robot_part(path, "arm").get("pos") == [0.05, 0.0, 0.0], path)
+    assert _robot_part(path, "arm")["attach"] == "drive.top"
+    # a hook: saved in the test
+    page.check("#test-setup input[data-body='arm.arm']")
+    page.evaluate("__scrimmageTest.saved")
+    _wait_file(lambda: tomllib.loads(path.read_text(encoding="utf-8"))["test"].get("hooks") == ["arm.arm"], path)
+    page.wait_for_function("__scrimmageTest.state.palette.hooks.includes('arm.arm')")
+    assert "hooks: arm.arm" in page.inner_text("#test-setup summary")
+
+
+def test_setup_try_values_sweeps_the_robots_weight(test_page):
+    page, path = test_page()
+    page.click("#test-setup summary")
+    page.click("#test-setup [data-try='mass']")
+    page.wait_for_selector("#test-sweep-dialog[open]")
+    assert page.is_hidden("#test-sweep-which-field")
+    page.fill("#test-sweep-list", "40, 50")
+    page.click("#test-sweep-go")
+    page.wait_for_function("__scrimmageTest.sweep && __scrimmageTest.sweep.rows === 2"
+                           " && __scrimmageTest.state.running === null")
+    assert "the robot's weight (kg)" in page.inner_text("#test-sweep-title")
+    assert _robot_part(path, "drive")["mass"] == 45.0       # a sweep changes a copy, never the file
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_setup_and_a_sweep_meet_wcag_aa(test_page, scheme):
+    page, _ = test_page(CHECKED, scheme)
+    page.click("#test-setup summary")
+    page.wait_for_selector("#test-mass")
+    _sweep_block(page)
+    page.wait_for_timeout(200)
+    assert page.evaluate(f"({CONTRAST_JS}).check(document.querySelector('#tab-test'))") == []

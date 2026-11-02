@@ -417,7 +417,14 @@ Test (`/api/test/*`; 404 "no test is open" unless a test is open, except /api/te
   GET  /api/test/run/<id>          -> result.json's fields plus id and signals; /view -> view.json; /motion ->
         motion.bin (application/octet-stream); 404 for a run that isn't kept.
   POST /api/test/new               -> body {robot?} (default: the open robot): writes <robot stem>.test.toml next to
-        it (<stem>-2.test.toml ... when taken) with one `wait 1 s` block and opens it as /api/app/open does.
+        it (<stem>-2.test.toml ... when taken) and opens it as /api/app/open does. Its blocks are the starter blocks
+        (test_session.starter_blocks: drive 0.3 m when the robot is a tank drive and the field has bars, then a lone
+        hinge motor moved to 45 deg, or the first motor spun at 6 V for 2 s and all stopped; else wait 1 s) and its
+        hooks the robot's bodies named like a hook. With a part from a CAD import open and no robot ("Test it" in the
+        Part tab): makes <import name>-standin.toml (the standin template carrying the built parts where the CAD has
+        them, in front of the ladder range when a body is named like a hook) and <import name>.test.toml next to the
+        import's parts/ folder, once each (pressed again it opens the same test), and opens the test; 409 while the
+        parts are updating, didn't build or the part is read-only, 400 in plugin mode.
 
 Live (`/api/live/*`; one simulation at a time: a drive session, a scenario run, a bench job or a test run):
   GET  /api/live/info              -> {port, status, run_active, can_start, start_problem}: port is the stream's
@@ -515,9 +522,10 @@ from ..scenario_runner import UNSET
 from ..testrange.spec import BUILTIN_RANGES, RangeError, load_range
 from ..tracks import TrackError, load_track
 from ..cad import CadError
+from ..cad.build import part_folder
 from ..cad.names import sanitize
 from . import (bench_session, edits, library, part_session, recent, scenario_edits, scenario_validate, templates,
-               validate)
+               test_session, validate)
 from .bench_session import BenchJobs, BenchSession, SessionError
 from .doc import ConfigDoc, FileChanged
 from .edits import EditError
@@ -529,7 +537,7 @@ from .simlock import SimBusy, SimLock
 from .stream import StreamHub
 from .test_session import TestSession
 from .view import model_view
-from ..blocks.program import Block as TestBlock, Program as TestProgram, TestFileError, dumps as dumps_test
+from ..blocks.program import Program as TestProgram, TestFileError, dumps as dumps_test
 
 STATIC = Path(__file__).resolve().parent / "static"
 POLL_SECONDS = 25.0
@@ -2094,33 +2102,91 @@ class App:
 
     def new_test(self, body: dict) -> dict:
         """Write `<robot stem>.test.toml` next to the robot config `robot` (default: the open robot), or
-        `<stem>-2.test.toml` and so on when that is taken, with a starting block, and open it."""
+        `<stem>-2.test.toml` and so on when that is taken, with starter blocks and hooks, and open it. With a part
+        from a CAD import open (and no robot), it is the Part tab's "Test it": see test_from_part."""
         if body.get("robot") is not None:
             robot = self._user_path(body.get("robot"), "the robot config the test is for")
             if not robot.is_file() or classify(robot) != "robot":
                 raise ApiError(400, f"{self._display(robot)} is not a robot config")
         else:
             with self._lock:
-                robot = self.robot.path if self.mode == "robot" and self.robot is not None else None
+                if self.mode == "part":
+                    robot = None
+                else:
+                    robot = self.robot.path if self.mode == "robot" and self.robot is not None else None
+                    if robot is None:
+                        raise ApiError(400, "say which robot config the test is for (robot)")
             if robot is None:
-                raise ApiError(400, "say which robot config the test is for (robot)")
+                return self.test_from_part()
         with self._lock:
             self._check_can_open()
-        text = dumps_test(TestProgram(robot.parent / "x.test.toml", Path(robot.name),
-                                      blocks=[TestBlock("wait", {"seconds": 1.0})]))
+        text = self._starter_test(robot)
         for k in range(1, 1000):
             p = robot.parent / (f"{robot.stem}.test.toml" if k == 1 else f"{robot.stem}-{k}.test.toml")
             try:
-                with open(p, "x", encoding="utf-8", newline="\n") as f:
-                    f.write(text)
-                break
-            except FileExistsError:
-                continue
+                if test_session.write_new(p, text):
+                    break
             except OSError as e:
                 raise ApiError(400, f"can't write {self._display(p)}: {e.strerror or e}") from None
         else:
             raise ApiError(400, f"there are too many tests of {robot.name} already; delete some")
         return self.open_path(str(p))
+
+    def _starter_test(self, robot: Path, folder: Path | None = None) -> str:
+        """A new test's text for the robot config `robot` (the test in `folder`, default the robot's): starter blocks
+        and hooks from the robot's palette (a robot that doesn't load gets one wait block, and its problem shows once
+        the test is open)."""
+        from ..blocks.palette import palette
+        from ..config import build_world, load_config
+        folder = folder or robot.parent
+        try:
+            pal = palette(build_world(load_config(robot)), [])
+        except Exception:     # a robot that doesn't build: the open test says why
+            pal = None
+        return dumps_test(TestProgram(folder / "x.test.toml", Path(test_session.config_path(robot, folder)),
+                                      hooks=test_session.starter_hooks(pal), blocks=test_session.starter_blocks(pal)))
+
+    def test_from_part(self) -> dict:
+        """The Part tab's "Test it": make (once) `<import name>-standin.toml` next to the import's parts folder, the
+        built parts on it where the CAD has them (test_session.standin_config), and `<import name>.test.toml` beside
+        it with starter blocks, then open the test. Pressed again it opens the same test: nothing is made twice."""
+        with self._lock:
+            part = self.part
+            if self.mode != "part" or not isinstance(part, part_session.PartSession):
+                raise ApiError(400, "Test it works on a part made from a CAD import")
+            st, imp = part.state_and_settings()
+        if st["read_only_reason"]:
+            raise ApiError(409, f"the part can't be tested yet: {st['read_only_reason']}")
+        if st["build"]["state"] == "building":
+            raise ApiError(409, "the parts are still updating; try again when they're up to date")
+        if st["build"]["state"] == "failed" or imp is None:
+            raise ApiError(409, f"the parts didn't build: {st['build']['message'] or 'see the Part tab'}")
+        imp_path = Path(st["path"])
+        # next to the parts folder the import file is in (or beside an import file kept elsewhere)
+        home = imp_path.parent.parent if imp_path.parent.name == "parts" else imp_path.parent
+        parts = []
+        for p in st["parts"]:
+            try:
+                folder = part_folder(imp, p["name"], imp_path)
+            except CadError as e:
+                raise ApiError(409, str(e)) from None
+            marker = library.cad_marker(folder)
+            if marker is None or not (folder / "part.toml").is_file():
+                raise ApiError(409, f"the part {p['name']} isn't built yet; try again when the parts are up to date")
+            parts.append((test_session.config_path(folder, home), marker))
+        if not parts:
+            raise ApiError(409, "this import makes no parts yet: put its pieces in a body first")
+        with self._lock:
+            self._check_can_open()
+        name = sanitize(st["name"]) or "part"
+        standin, test = home / f"{name}-standin.toml", home / f"{name}.test.toml"
+        try:
+            test_session.write_new(standin, test_session.standin_config(parts, _chassis_root_body()))
+            if not test.exists():
+                test_session.write_new(test, self._starter_test(standin, home))
+        except OSError as e:
+            raise ApiError(400, f"can't write next to {self._display(home)}: {e.strerror or e}") from None
+        return self.open_path(str(test))
 
     # -- runs -------------------------------------------------------------------------------
     def _runs_changed(self) -> None:

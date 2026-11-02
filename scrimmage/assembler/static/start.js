@@ -2,7 +2,8 @@
 // when the open robot names a team folder this computer hasn't set (it then asks where that folder is first). It
 // lists what was opened recently, browses folders, makes a new robot, scenario, idea session or part from CAD (Browse
 // for a .step/.stl/.obj file or a folder of them, or drop one on the page), and sets this computer's team folders
-// ({cad} and {code}). After an
+// ({cad} and {code}), and starts a block test of a mechanism ("Test a mechanism": a robot file gets a test at once; a
+// CAD file goes through the Part tab, whose Test it makes the stand-in robot and the test). After an
 // open or new the server has already swapped what it holds, so the page reloads itself (see /api/app/* in
 // scrimmage/assembler/server.py).
 import { api, h, notice, sessionToken } from "./app.js";
@@ -122,7 +123,7 @@ export async function showStart(root, { canGoBack, onBack, cadFor = null }) {
   }
 
   // New part from CAD: Browse (the file is used where it is) or drop a file (it is copied in next to the import)
-  function cadForm(robot = null) {
+  function cadForm(robot = null, forTest = false) {
     const list = h("div", { id: "start-cad-browse", class: "start-folder-browse" });
     const pick = (path) => post("/api/app/new", { kind: "import", path, ...(robot ? { robot } : {}) });
     const send = async (fileList) => {
@@ -152,12 +153,32 @@ export async function showStart(root, { canGoBack, onBack, cadFor = null }) {
         + "Scrimmage reads it, guesses what is what, and shows you what is left to check." }),
       robot ? h("p", { class: "start-hint", id: "start-cad-for", text: `The parts go in the parts folder next to ${base(robot)}. `
         + "When you're done, click \"Back to the robot\"." }) : null,
+      forTest ? h("p", { class: "start-hint", id: "start-cad-test", text: "The Part tab opens on it. When its parts are up to date, "
+        + "click \"Test it\" at the bottom: your part goes on a stand-in robot with a test to start from." }) : null,
       drop,
       h("div", { class: "start-buttons" },
         h("button", { type: "button", class: "btn", id: "start-cad-browse-btn", onclick: () => browseList(list, null, { onFile: (e) => (e.kind === "import" ? open(e.path) : pick(e.path)), kinds: ["cad", "import"],
           folderButton: { key: "stl", label: "Use its STL files", title: "Make one part from the STL or OBJ files in this folder", onclick: (e) => pick(e.path) } }) }, "Browse…"),
         h("button", { type: "button", class: "btn", onclick: () => newBox.replaceChildren() }, "Cancel")),
       list));
+  }
+
+  // Test a mechanism: a robot file gets a new test with starter blocks; a CAD file goes through the Part tab first
+  async function testForm() {
+    const choices = await robotChoices();
+    const robot = h("select", { id: "start-test-robot" }, ...[...choices].map(([p, n]) => h("option", { value: p }, n)));
+    newBox.replaceChildren(h("form", { class: "start-form", novalidate: true, onsubmit: (e) => e.preventDefault() },
+      h("p", { class: "start-hint", text: "Try a mechanism with blocks: spin its motors, wait, check what happened, and watch the replay. "
+        + "Start from your CAD, or from a robot file you already have." }),
+      h("div", { class: "start-buttons" },
+        h("button", { type: "button", class: "btn btn-primary", id: "start-test-cad", onclick: () => cadForm(null, true) }, "From a CAD file…")),
+      choices.size ? h("div", {}, h("label", { for: "start-test-robot", text: "Or test a robot file" }),
+        h("div", { class: "row" }, robot,
+          h("button", { type: "button", class: "btn", id: "start-test-go", onclick: () => post("/api/test/new", { robot: robot.value }) }, "Make the test")))
+        : h("p", { class: "start-hint", text: "There is no robot file here yet: start from a CAD file." }),
+      h("div", { class: "dialog-actions" },
+        h("button", { type: "button", class: "btn", onclick: () => newBox.replaceChildren() }, "Cancel"))));
+    document.getElementById("start-test-cad").focus();
   }
 
   async function newForm(kind) {
@@ -211,7 +232,8 @@ export async function showStart(root, { canGoBack, onBack, cadFor = null }) {
         h("button", { type: "button", class: "btn", dataset: { key: "new-robot" }, onclick: () => newForm("robot") }, "New robot"),
         h("button", { type: "button", class: "btn", dataset: { key: "new-scenario" }, onclick: () => newForm("scenario") }, "New scenario"),
         h("button", { type: "button", class: "btn", dataset: { key: "new-session" }, onclick: () => newForm("session") }, "New idea session"),
-        h("button", { type: "button", class: "btn", dataset: { key: "new-part" }, onclick: () => cadForm(cadFor) }, "New part from CAD")),
+        h("button", { type: "button", class: "btn", dataset: { key: "new-part" }, onclick: () => cadForm(cadFor) }, "New part from CAD"),
+        h("button", { type: "button", class: "btn", dataset: { key: "test-mechanism" }, onclick: () => testForm() }, "Test a mechanism")),
       newBox),
     h("section", { class: "start-card" }, h("h2", { text: "Open a file or folder" }),
       h("div", { class: "start-buttons" }, h("button", { type: "button", class: "btn", dataset: { key: "browse" }, onclick: () => browse(null) }, "Browse…")),

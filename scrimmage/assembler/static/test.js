@@ -6,6 +6,12 @@
 //   Right      the run: the problems that keep it from running, Run (and Stop while it runs), and the runs
 //              (test_run.js: the shown run's outcome, replay and chart, and the kept runs)
 //   Status     saved or not, how many blocks
+//   Setup      (folded away over the blocks) the test's hooks (saved in the test), and the robot's weight and center of
+//              mass (when its root part is the stock chassis) and where each part is mounted, which change the robot
+//              file through /api/robot/edit, so the Robot tab's Undo takes them back
+//
+// "Try values…" (a block's context menu, for its number; or beside a number in Setup) opens the sweep form: from, to
+// and steps, or typed values, at most 12; /api/test/sweep runs them and test_run.js shows the table and its chart.
 //
 // Every change is saved (500 ms after the last one) through /api/test/save with the state's version; a 409 (the file
 // changed meanwhile) shows the saved version again and says so. Problems from the state show as a warning on their
@@ -14,14 +20,16 @@
 // its colors read from app.css's tokens.
 //
 // Test hook: window.__scrimmageTest {workspace, state, toJSON(), saved: a promise for the save under way (or
-// resolved), replay: test_run.js's replay()}.
+// resolved), replay: test_run.js's replay(), sweep: test_run.js's sweepShown(), robot: the robot state Setup shows,
+// trySweep(blockId): opens the sweep form for that block's number}.
 
 import { $, h, api, notice, registerTab, setTab, showPath, currentTab, store } from "./app.js";
-import { initRunPanel, update as updateRuns, replay } from "./test_run.js";
-import { defineBlocks, toolbox, testToWorkspace, workspaceToTest, placeOf, incomplete, looseStacks, setUsed, STYLES }
-  from "./blocks_defs.js";
+import { initRunPanel, update as updateRuns, replay, sweepShown } from "./test_run.js";
+import { defineBlocks, toolbox, testToWorkspace, workspaceToTest, placeOf, incomplete, looseStacks, setUsed, STYLES,
+  headOf, setHead, sweepNumber } from "./blocks_defs.js";
 
 const SAVE_DELAY = 500;     // ms after the last change
+const MAX_SWEEP = 12;       // scrimmage/blocks/sweep.py's
 const STALE = "The test changed on disk; showing the saved version.";
 
 const t = {
@@ -36,6 +44,11 @@ const t = {
   toolboxKey: null,
   stopping: false,    // Stop was pressed and the run hasn't ended yet
   serverWarn: new Map(),   // block id -> the state's problems on it, placed while the workspace showed the saved test
+  robot: null,        // /api/robot/state (Setup's weight, center of mass and mounts)
+  stock: null,        // /api/robot/library's stock parts by name (their defaults and groups)
+  setupError: null,   // the last robot edit Setup made that the server refused
+  setupKey: null,     // what Setup drew last (see renderSetup)
+  sweepFor: null,     // the sweep form's numbers: [{label, target, value, unit, block}]
 };
 
 // JSON with sorted keys, so two equal tests compare equal whatever order their keys came in.
@@ -112,6 +125,7 @@ function inject() {
   });
   t.toolboxKey = canon(t.state.palette);
   t.ws.addChangeListener(onChange);
+  registerTryValues();
   if (dark && dark.addEventListener) dark.addEventListener("change", () => t.ws.setTheme(theme()));
   new ResizeObserver(() => { B.svgResize(t.ws); fitHeads(); }).observe(box);
 }
@@ -203,7 +217,12 @@ function apply(s, reload = false) {
   if (t.ws) {
     setUsed([s.test, workspaceToTest(t.ws)]);
     const key = canon(s.palette);
-    if (key !== t.toolboxKey) { t.toolboxKey = key; t.ws.updateToolbox(toolbox(s.palette)); fitHeads(); }
+    if (key !== t.toolboxKey) {
+      t.toolboxKey = key;
+      t.ws.updateToolbox(toolbox(s.palette));
+      fitHeads();
+      if ($("#test-setup").open) loadRobot();     // the robot changed: its parts may have too
+    }
     const changed = canon(s.test) !== t.synced;
     // a change this page didn't make (an outside edit, another tab), while nothing of ours is waiting to be saved
     if (reload || (changed && !t.timer && !t.saving)) {
@@ -330,6 +349,7 @@ function render() {
   renderProblems();
   renderStatus();
   renderTop();
+  renderSetup();
 }
 
 async function run() {
@@ -355,6 +375,267 @@ async function stop() {
   }
 }
 
+
+// -- setup ------------------------------------------------------------------------------------------------------------
+async function loadRobot() {
+  const [{ status, data }, lib] = await Promise.all([api("GET", "/api/robot/state"),
+    t.stock ? null : api("GET", "/api/robot/library")]);
+  if (lib && lib.status === 200) t.stock = Object.fromEntries((lib.data.stock || []).map((x) => [x.name, x]));
+  t.robot = status === 200 ? data : null;
+  renderSetup();
+}
+
+const stockDefault = (stock, name, fallback) => {
+  const p = t.stock && t.stock[stock] && t.stock[stock].params.find((x) => x.name === name);
+  return p ? p.default : fallback;
+};
+// the part the robot is (attached to nothing): Setup's weight and center of mass are its, when it is the stock chassis
+const rootPart = () => (t.robot ? (t.robot.parts || []).find((p) => !p.attach) || null : null);
+const chassis = () => { const r = rootPart(); return r && r.stock === "chassis" ? r : null; };
+const mass = (c) => Number(c.params.mass ?? stockDefault("chassis", "mass", 46));
+const com = (c) => (Array.isArray(c.params.com_offset) ? c.params.com_offset : stockDefault("chassis", "com_offset", [0, 0, 0])).map(Number);
+// each part but the root and the drivetrain, which only the Robot tab moves
+const mounted = () => (t.robot ? (t.robot.parts || []).filter((p) => p.attach
+  && !(p.stock && t.stock && t.stock[p.stock] && t.stock[p.stock].group === "Drivetrain")) : []);
+const AXES = [["x", 0, "pos", "forward"], ["y", 1, "pos", "left"], ["z", 2, "pos", "up"], ["yaw", 2, "rot", "turned"]];
+const fmt = (v) => String(+Number(v).toPrecision(6));
+
+function numberBox(id, value, label, commit) {
+  const el = h("input", { id, class: "test-num", inputmode: "decimal", autocomplete: "off", "aria-label": label });
+  el.value = el.dataset.orig = fmt(value);
+  const send = () => {
+    if (el.value.trim() === el.dataset.orig) return;
+    const v = Number(el.value.trim());
+    if (el.value.trim() === "" || !isFinite(v)) { t.setupError = `${label}: type a number`; renderSetupError(); el.value = el.dataset.orig; return; }
+    el.dataset.orig = el.value.trim();
+    commit(v);
+  };
+  el.addEventListener("change", send);
+  el.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); send(); } });
+  return el;
+}
+
+// Robot edits go one at a time, each built (`make()`) from the robot as the last one left it, with its version: two
+// boxes changed quickly don't undo each other or come back stale.
+let editing = Promise.resolve();
+function robotEdit(make) {
+  editing = editing.then(async () => {
+    const body = t.robot && make(t.robot);
+    if (!body) return;
+    const { status, data } = await api("POST", "/api/robot/edit", { version: t.robot.version, ...body });
+    t.setupError = status === 200 && data.ok ? null
+      : (data.errors && data.errors[0] && data.errors[0].message) || `the server answered ${status}`;
+    await loadRobot();
+  }).catch((e) => { t.setupError = String(e.message || e); renderSetupError(); });
+  return editing;
+}
+const partNamed = (robot, name) => (robot.parts || []).find((p) => p.name === name) || null;
+
+function setHooks(hooks) {
+  setHead(t.ws, { hooks: [...hooks].sort() });
+  schedule();
+  renderSetup();
+}
+
+function renderSetupError() {
+  const el = document.getElementById("test-setup-error");
+  if (!el) return;
+  el.hidden = !t.setupError;
+  el.textContent = t.setupError ? `Not changed: ${t.setupError}` : "";
+}
+
+function renderSetup() {
+  const s = t.state;
+  if (!s || !t.ws) return;
+  const body = $("#test-setup-body");
+  const open = $("#test-setup").open;
+  const pal = s.palette || {};
+  const mine = new Set(headOf(t.ws).hooks || []);
+  const counted = new Set((pal.hooks || []).filter((x) => !mine.has(x)));     // the stock climber's: always hooks
+  const c = chassis();
+  const sum = [`hooks: ${[...mine, ...counted].length ? [...counted, ...mine].join(", ") : "none"}`];
+  if (c) sum.push(`robot ${fmt(mass(c))} kg`);
+  $("#test-setup-sum").textContent = `· ${sum.join(" · ")}`;
+  if (!open) { t.setupKey = null; return; }      // filled in when it is opened
+  const ro = !t.robot || !!t.robot.read_only;
+  // drawn again only when something it shows changed (states come four times a second while a run goes)
+  const key = canon([pal.bodies || [], [...mine], [...counted], t.robot ? [t.robot.version, t.robot.parts, ro] : null,
+    !!t.stock, t.setupError]);
+  if (key === t.setupKey) return;
+  const focused = document.activeElement && body.contains(document.activeElement) ? document.activeElement.id : null;
+  if (focused && document.activeElement.matches("input.test-num") && document.activeElement.value !== document.activeElement.dataset.orig) return;
+
+  const bodies = [...new Set([...(pal.bodies || []), ...mine])].sort();
+  const hooks = h("fieldset", { class: "test-setup-hooks" },
+    h("legend", { text: "Hooks" }),
+    h("p", { class: "hint", text: "Tick the bodies that grab a bar. A stock climber's hooks always count." }),
+    h("div", { class: "test-hook-list" }, ...bodies.map((b, i) => {
+      const id = `test-hook-${i}`;
+      const missing = !(pal.bodies || []).includes(b);
+      const box = h("input", { type: "checkbox", id, "data-body": b, checked: mine.has(b) || counted.has(b), disabled: counted.has(b),
+        onchange: (e) => { const next = new Set(mine); if (e.target.checked) next.add(b); else next.delete(b); setHooks(next); } });
+      return h("label", { class: "test-hook", for: id }, box, h("span", { text: b + (missing ? " (not on the robot)" : "") }));
+    })));
+
+  const parts = [];
+  if (c) {
+    const [f, l, u] = com(c);
+    const send = (key, v) => robotEdit(() => ({ op: "params", name: c.name, params: { [key]: v } }));
+    const comBox = (i, word, v) => numberBox(`test-com-${word}`, v, `Center of mass ${word} (m)`, (x) => robotEdit((r) => {
+      const now = partNamed(r, c.name);
+      if (!now) return null;
+      const off = com(now); off[i] = x;
+      return { op: "params", name: c.name, params: { com_offset: off } };
+    }));
+    parts.push(h("fieldset", { class: "test-setup-robot" },
+      h("legend", { text: "The robot" }),
+      h("p", { class: "hint", text: "The weight of everything on the robot that isn't one of its parts: the frame, the battery, "
+        + "the bumpers and the rest. These change the robot file; the Robot tab's Undo takes them back." }),
+      h("div", { class: "test-setup-grid" },
+        h("label", { for: "test-mass", text: "Weight (kg)" }),
+        h("div", { class: "row" }, numberBox("test-mass", mass(c), "Weight (kg)", (v) => send("mass", v)),
+          h("button", { type: "button", class: "btn btn-small", "data-try": "mass", disabled: ro,
+            onclick: () => openSweep([{ label: "Weight", target: { robot: "mass" }, value: mass(c), unit: "kg" }], "the robot's weight") }, "Try values…")),
+        h("span", { class: "test-setup-label", text: "Center of mass (m)" }),
+        h("div", { class: "row test-com" },
+          h("label", { for: "test-com-forward", text: "forward" }), comBox(0, "forward", f),
+          h("label", { for: "test-com-left", text: "left" }), comBox(1, "left", l),
+          h("label", { for: "test-com-up", text: "up" }), comBox(2, "up", u),
+          h("button", { type: "button", class: "btn btn-small", "data-try": "com", disabled: ro,
+            onclick: () => openSweep([["forward", 0], ["left", 1], ["up", 2]].map(([w, i]) => ({ label: `Center of mass ${w}`,
+              target: { robot: `com_${w}` }, value: com(c)[i], unit: "m" })), "the robot's center of mass") }, "Try values…")))));
+  }
+  const ms = mounted();
+  if (ms.length) {
+    parts.push(h("fieldset", { class: "test-setup-mounts" },
+      h("legend", { text: "Where the parts are mounted" }),
+      h("p", { class: "hint", text: "How far each part is moved from where it attaches: forward (x), left (y), up (z) in meters, turned (yaw) in degrees." }),
+      h("table", { class: "test-mounts" },
+        h("thead", {}, h("tr", {}, h("th", { text: "Part" }), ...AXES.map(([a]) => h("th", { text: a === "yaw" ? "yaw (°)" : `${a} (m)` })), h("th", {}))),
+        h("tbody", {}, ...ms.map((p) => h("tr", { "data-part": p.name },
+          h("th", { scope: "row", title: `on ${p.attach}`, text: p.name }),
+          ...AXES.map(([a, i, key, word]) => h("td", {}, numberBox(`test-mount-${p.name}-${a}`, p[key][i],
+            `${p.name} ${word} (${a === "yaw" ? "°" : "m"})`, (v) => robotEdit((r) => {
+            const now = partNamed(r, p.name);
+            if (!now) return null;
+            const pos = [...now.pos].map(Number), rot = [...now.rot].map(Number);
+            (key === "pos" ? pos : rot)[i] = v;
+            return { op: "attach", name: p.name, attach: now.attach, pos, rot };
+          })))),
+          h("td", {}, h("button", { type: "button", class: "btn btn-small", "data-try": `mount-${p.name}`, disabled: ro,
+            onclick: () => openSweep(AXES.map(([a, i, key, word]) => ({ label: `${word} (${a})`, target: { mount: p.name, axis: a },
+              value: Number(p[key][i]), unit: a === "yaw" ? "°" : "m" })), `where ${p.name} is mounted`) }, "Try values…"))))))));
+  }
+  const note = !t.robot ? h("p", { class: "hint", text: "Loading the robot…" })
+    : t.robot.read_only ? h("p", { class: "hint", text: `The robot file can't be changed here: ${t.robot.read_only_reason}` }) : null;
+  body.replaceChildren(hooks, ...parts, note || "", h("p", { id: "test-setup-error", class: "error", role: "alert", hidden: true }));
+  if (ro) for (const x of body.querySelectorAll("input.test-num")) x.disabled = true;
+  t.setupKey = key;
+  renderSetupError();
+  if (focused && document.getElementById(focused)) document.getElementById(focused).focus();
+}
+
+// -- sweeps -----------------------------------------------------------------------------------------------------------
+function registerTryValues() {
+  const B = window.Blockly;
+  const reg = B.ContextMenuRegistry.registry;
+  if (reg.getItem("scrimmage-try-values")) return;
+  reg.register({
+    id: "scrimmage-try-values",
+    scopeType: B.ContextMenuRegistry.ScopeType.BLOCK,
+    weight: -1,
+    displayText: () => "Try values…",
+    preconditionFn: (scope) => {
+      const b = scope.block;
+      if (!sweepNumber(b) || !placeOf(t.ws).has(b.id)) return "hidden";
+      return t.state && !t.state.running ? "enabled" : "disabled";
+    },
+    callback: (scope) => tryBlock(scope.block.id),
+  });
+}
+
+function tryBlock(id) {
+  const b = t.ws && t.ws.getBlockById(id);
+  const n = sweepNumber(b);
+  if (!n || !placeOf(t.ws).has(id)) return;
+  openSweep([{ label: n.key, target: { key: n.key }, block: id, value: Number(b.getFieldValue(n.field)), unit: n.unit }],
+    `“${b.toString()}”`);
+}
+
+function openSweep(choices, what) {
+  const d = $("#test-sweep-dialog");
+  t.sweepFor = choices;
+  $("#test-sweep-for").textContent = `Run the test once for each value of ${what}, to see which works best.`;
+  const which = $("#test-sweep-which");
+  which.replaceChildren(...choices.map((c, i) => h("option", { value: String(i), text: `${c.label} (now ${fmt(c.value)} ${c.unit})` })));
+  $("#test-sweep-which-field").hidden = choices.length < 2;
+  const fill = () => {
+    const c = choices[Number(which.value) || 0];
+    const span = c.unit === "°" ? 45 : Math.abs(c.value) > 1e-9 ? Math.abs(c.value) / 2 : 1;
+    $("#test-sweep-from").value = fmt(c.value - span);
+    $("#test-sweep-to").value = fmt(c.value + span);
+  };
+  which.onchange = fill;
+  fill();
+  $("#test-sweep-steps").value = "5";
+  $("#test-sweep-list").value = "";
+  showSweepErrors([]);
+  d.showModal();
+  $("#test-sweep-from").focus();
+}
+
+function showSweepErrors(list) {
+  const ul = $("#test-sweep-errors");
+  ul.replaceChildren(...list.map((m) => h("li", { text: m })));
+  ul.hidden = !list.length;
+}
+
+// The values the form asks for: [values] or a sentence saying what is wrong.
+function sweepValues(from, to, steps, list) {
+  if (list.trim()) {
+    const parts = list.split(/[\s,;]+/).filter(Boolean);
+    const vs = parts.map(Number);
+    const bad = parts.find((x, i) => !isFinite(vs[i]));
+    if (bad !== undefined) return `“${bad}” isn't a number: type numbers with commas between them`;
+    if (vs.length > MAX_SWEEP) return `Try at most ${MAX_SWEEP} values at a time (that's ${vs.length})`;
+    return vs;
+  }
+  const a = Number(from), b = Number(to), n = Number(steps);
+  if (from.trim() === "" || to.trim() === "" || !isFinite(a) || !isFinite(b)) return "Type a number in From and To (or type the values)";
+  if (!Number.isInteger(n) || n < 1 || n > MAX_SWEEP) return `Steps is a whole number from 1 to ${MAX_SWEEP}`;
+  if (n === 1) return [a];
+  return Array.from({ length: n }, (_, k) => +(a + ((b - a) * k) / (n - 1)).toPrecision(6));
+}
+
+async function submitSweep(e) {
+  e.preventDefault();
+  const choices = t.sweepFor || [];
+  const c = choices[Number($("#test-sweep-which").value) || 0];
+  if (!c) return;
+  const values = sweepValues($("#test-sweep-from").value, $("#test-sweep-to").value, $("#test-sweep-steps").value, $("#test-sweep-list").value);
+  if (typeof values === "string") { showSweepErrors([values]); return; }
+  let target = c.target;
+  if (c.block) {
+    await flush();      // the sweep runs the saved test: it must be the one on screen
+    const place = placeOf(t.ws).get(c.block);
+    if (!place || t.saveError || t.local.some((p) => p.blocking) || !fits()) {
+      showSweepErrors(["Fix the test first: it isn't saved the way it shows."]);
+      return;
+    }
+    target = { block: place, key: c.target.key };
+  }
+  $("#test-sweep-go").disabled = true;
+  const { status, data } = await api("POST", "/api/test/sweep", { target, values });
+  $("#test-sweep-go").disabled = false;
+  if (status !== 200) {
+    const why = (data.errors && data.errors[0] && data.errors[0].message) || data.error || `the server answered ${status}`;
+    showSweepErrors([`Can't try them: ${why}`]);
+    return;
+  }
+  $("#test-sweep-dialog").close();
+  await refresh();
+}
+
 // -- boot -------------------------------------------------------------------------------------------------------------
 export async function initTest() {
   window.__scrimmageTest = {
@@ -363,14 +644,21 @@ export async function initTest() {
     toJSON: () => workspaceToTest(t.ws),
     get saved() { return flush(); },
     get replay() { return replay(); },
+    get sweep() { return sweepShown(); },
+    get robot() { return t.robot; },
+    trySweep: (id) => tryBlock(id),
   };
   registerTab("test", {
     renderTop,
     undo() { if (t.ws) t.ws.undo(false); },
     redo() { if (t.ws) t.ws.undo(true); },
-    onShow() { if (t.ws) { window.Blockly.svgResize(t.ws); fitHeads(); } render(); },
+    onShow() { if (t.ws) { window.Blockly.svgResize(t.ws); fitHeads(); } render(); loadRobot(); },
   });
   $("#test-run").addEventListener("click", run);
+  $("#test-setup").addEventListener("toggle", () => { if ($("#test-setup").open) loadRobot(); renderSetup(); });
+  const dlg = $("#test-sweep-dialog");
+  dlg.querySelector("form").addEventListener("submit", submitSweep);
+  for (const b of dlg.querySelectorAll("[data-close]")) b.addEventListener("click", () => dlg.close());
   $("#test-stop").addEventListener("click", stop);
   initRunPanel();
   while (!t.state) {
@@ -382,6 +670,7 @@ export async function initTest() {
   show(t.state.test);
   fitHeads();
   render();
+  loadRobot();
   if (currentTab() !== "test" && new URLSearchParams(location.hash.slice(1)).has("test")) setTab("test");
   pollLoop();
 }

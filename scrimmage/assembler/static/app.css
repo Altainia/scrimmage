@@ -972,6 +972,8 @@ dialog.start-dialog { width: auto; max-width: 96vw; }
 .part-own .part-check-label { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
 .part-body-list { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .part-reimport { margin-left: auto; }
+.part-test-it { margin-left: auto; }
+.part-test-it:not([hidden]) + .part-reimport { margin-left: 0; }
 .part-legend { position: absolute; left: 10px; bottom: 8px; margin: 0; z-index: 2; display: flex; align-items: center; gap: 6px;
   font-size: 12px; color: var(--text); background: var(--overlay); border-radius: var(--radius); padding: 2px 8px; pointer-events: none; }
 .part-cog-dot { width: 10px; height: 10px; border-radius: 50%; background: #e8590c; display: inline-block; }
@@ -1071,6 +1073,49 @@ dialog.start-dialog { width: auto; max-width: 96vw; }
 .test-run-name { font-weight: 700; }
 .test-run-status { font-weight: 400; color: var(--muted); }
 .test-run-outcome { color: var(--muted); overflow-wrap: anywhere; }
+/* Setup: folded over the blocks */
+.test-setup { border-bottom: 1px solid var(--line); background: var(--subtle); }
+.test-setup > summary { cursor: pointer; padding: 7px 12px; font-size: 13px; display: flex; gap: 6px; align-items: baseline; }
+.test-setup-title { font-weight: 700; }
+.test-setup-sum { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.test-setup-body { max-height: 42vh; overflow: auto; padding: 4px 12px 12px; display: flex; flex-direction: column; gap: 10px; }
+.test-setup fieldset { border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 10px 10px; margin: 0; background: var(--panel); }
+.test-setup legend { font-weight: 700; font-size: 12.5px; padding: 0 4px; }
+.test-setup .hint { margin: 0 0 6px; }
+.test-hook-list { display: flex; flex-wrap: wrap; gap: 2px 14px; }
+.test-hook { display: inline-flex; gap: 5px; align-items: center; font-size: 12.5px; font-family: var(--mono); cursor: pointer; }
+.test-setup-grid { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 10px; align-items: center; font-size: 12.5px; }
+.test-setup-grid > label, .test-setup-label { font-weight: 600; }
+.test-setup .row > input.test-num { flex: none; }
+.test-num { width: 6.5em; font-family: var(--mono); }
+.test-com { flex-wrap: wrap; }
+.test-com label { font-weight: 400; }
+.test-mounts { border-collapse: collapse; font-size: 12.5px; }
+.test-mounts th, .test-mounts td { padding: 2px 6px 2px 0; text-align: left; }
+.test-mounts thead th { font-weight: 600; color: var(--muted); }
+.test-mounts tbody th { font-family: var(--mono); font-weight: 600; }
+.test-mounts .test-num { width: 5.5em; }
+#test-setup-error { margin: 0; }
+/* a sweep's table and chart, over the run */
+.test-sweep-wrap { display: flex; flex-direction: column; gap: 8px; }
+.test-sweep-wrap .test-sub { margin: 0; overflow-wrap: anywhere; }
+.test-sweep-table-wrap { overflow-x: auto; }
+.test-sweep-table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.test-sweep-table th, .test-sweep-table td { border-bottom: 1px solid var(--line); padding: 3px 6px; text-align: left; vertical-align: top; }
+.test-sweep-table thead th { font-weight: 600; color: var(--muted); }
+.test-sweep-row { cursor: pointer; }
+.test-sweep-row:hover { background: var(--hover); }
+.test-sweep-row[aria-current="true"] { background: var(--selected); }
+.test-sweep-norun { cursor: default; color: var(--muted); }
+.test-sweep-value { font-family: var(--mono); }
+.test-sweep-outcome { overflow-wrap: anywhere; }
+.test-sweep-table td.test-check-ok { color: var(--ok); font-weight: 700; }
+.test-sweep-table td.test-check-bad { color: var(--error); font-weight: 700; }
+.test-sweep-caption { caption-side: bottom; text-align: left; font-size: 12px; color: var(--muted); padding-top: 4px; display: table-caption; }
+.test-sweep-caption span { display: block; overflow-wrap: anywhere; }
+.test-sweep-chart { cursor: default; }
+#test-sweep-dialog .bench-sweep-range .field { flex: 1; }
+#test-sweep-dialog input { width: 100%; }
 /* Blockly's own pop-ups (the dropdown and the number box) in the page's theme */
 .blocklyDropDownDiv.blocklyDropDownDiv { background-color: var(--panel); border-color: var(--line-strong); }
 .blocklyDropDownDiv .blocklyMenuItem { color: var(--text); }

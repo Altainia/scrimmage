@@ -609,6 +609,11 @@ class PartSession(_Session):
                                               {k: v[0] for k, v in self._info.items()})]
             return out
 
+    def state_and_settings(self) -> tuple:
+        """The state and a copy of the settings (the ImportFile, or None) it shows, read together."""
+        with self._lock:
+            return self.state(), copy.deepcopy(self.imp)
+
     def view(self) -> dict:
         """Every piece's mesh in robot coordinates (left-out pieces too); cached per source read and frame."""
         with self._lock:

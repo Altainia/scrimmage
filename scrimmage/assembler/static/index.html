@@ -359,6 +359,7 @@
   <span id="part-saved" class="saved">Loading…</span>
   <span id="part-build" class="stat" role="status"></span>
   <span id="part-total" class="stat"></span>
+  <button type="button" id="part-test-it" class="btn btn-small btn-primary part-test-it" hidden>Test it</button>
   <button type="button" id="part-reimport" class="btn btn-small part-reimport" title="Read the CAD file again (after you changed it in your CAD program)">Import again</button>
   <input type="file" id="part-reimport-file" accept=".step,.stp,.stl,.obj" multiple hidden aria-label="The new export of the CAD file">
 </footer>
@@ -369,6 +370,10 @@
 <div id="test-banner" class="banner banner-readonly" role="status" hidden></div>
 <main class="layout layout-test">
   <section class="col col-test-edit" aria-label="The blocks and your test">
+    <details id="test-setup" class="test-setup">
+      <summary><span class="test-setup-title">Setup</span> <span id="test-setup-sum" class="test-setup-sum"></span></summary>
+      <div id="test-setup-body" class="test-setup-body"></div>
+    </details>
     <div class="test-heads">
       <h2 id="test-palette-title" class="col-title">Blocks</h2>
       <h2 id="test-edit-title" class="col-title">Your test <span class="test-heads-hint">drag blocks in from the left</span></h2>
@@ -389,6 +394,15 @@
       </div>
       <p id="test-run-error" class="error" role="alert" hidden></p>
       <p id="test-load-error" class="error" role="alert" hidden></p>
+      <section id="test-sweep-wrap" class="test-sweep-wrap" aria-labelledby="test-sweep-title" hidden>
+        <h3 id="test-sweep-title" class="test-sub"></h3>
+        <p id="test-sweep-note" class="test-note muted" hidden></p>
+        <div class="test-sweep-table-wrap"><table id="test-sweep-table" class="test-sweep-table"></table></div>
+        <div class="row test-chart-head">
+          <label class="test-compare">chart <select id="test-sweep-y"></select></label>
+        </div>
+        <canvas id="test-sweep-chart" class="test-plot test-sweep-chart" role="img"></canvas>
+      </section>
       <section id="test-results" class="test-results" aria-labelledby="test-result-title" hidden>
         <h3 id="test-result-title" class="test-sub"></h3>
         <p id="test-outcome" class="test-outcome"></p>
@@ -426,6 +440,26 @@
   <span id="test-count" class="stat"></span>
 </footer>
 </div>
+
+<dialog id="test-sweep-dialog" aria-labelledby="test-sweep-dialog-title">
+  <form method="dialog" novalidate>
+    <h2 id="test-sweep-dialog-title">Try values</h2>
+    <p id="test-sweep-for" class="hint"></p>
+    <div class="field" id="test-sweep-which-field"><label for="test-sweep-which">Which number?</label><select id="test-sweep-which"></select></div>
+    <div class="row bench-sweep-range">
+      <div class="field"><label for="test-sweep-from">From</label><input id="test-sweep-from" inputmode="decimal" autocomplete="off"></div>
+      <div class="field"><label for="test-sweep-to">To</label><input id="test-sweep-to" inputmode="decimal" autocomplete="off"></div>
+      <div class="field"><label for="test-sweep-steps">Steps</label><input id="test-sweep-steps" inputmode="numeric" value="5" autocomplete="off"></div>
+    </div>
+    <div class="field"><label for="test-sweep-list">Or type the values</label><input id="test-sweep-list" autocomplete="off" placeholder="for example 2, 4, 6"></div>
+    <p class="hint">Up to 12 values. The test runs once for each; your files don't change.</p>
+    <ul id="test-sweep-errors" class="error-list" role="alert" hidden></ul>
+    <div class="dialog-actions">
+      <button type="button" class="btn" data-close>Cancel</button>
+      <button type="submit" id="test-sweep-go" class="btn btn-primary">Try them</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="save-dialog" class="save-dialog" aria-labelledby="save-title">
   <form id="save-form" method="dialog" novalidate>

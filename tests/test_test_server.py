@@ -2,6 +2,7 @@
 
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
@@ -201,11 +202,107 @@ def test_new_test(tmp_path, test_app):
     made = tmp_path / "robot.test.toml"
     assert made.is_file() and classify(made) == "test"
     st = _state(c)
-    assert st["test"]["blocks"] == [{"do": "wait", "seconds": 1.0}] and st["problems"] == []
+    # the arm's one hinge motor: move it; no bars on this field, so no drive first
+    assert st["test"]["blocks"] == [{"do": "move", "joint": "arm.pivot", "to": 45.0, "unit": "deg"}]
+    assert st["problems"] == [] and st["test"]["hooks"] == []
     s, b = c.call("POST", "/api/test/new", {"robot": str(robot)})
     assert s == 200, b
     assert (tmp_path / "robot-2.test.toml").is_file()
     assert c.get("/api/app/state")[1]["test"] == str((tmp_path / "robot-2.test.toml").resolve())
+
+
+LADDER = """
+[range]
+file = "ladder"
+start = "below"
+"""
+ROLLER = """
+[[part]]
+name = "roller"
+stock = "roller"
+attach = "drive.top"
+ids = { spin = "PWM:3" }
+"""
+HOOK_PART = """\
+[part]
+name = "grabber"
+format = 1
+
+[[body]]
+name = "base"
+mass = 0.5
+geom = [{ box = [0.05, 0.05, 0.05] }]
+
+[[body]]
+name = "hook_A"
+parent = "base"
+pos = [0.0, 0.0, 0.2]
+mass = 0.2
+geom = [{ box = [0.02, 0.02, 0.05] }]
+"""
+GRABBER = """
+[[part]]
+name = "grab"
+path = "grabber"
+attach = "drive.top"
+"""
+
+
+def _new_blocks(tmp_path, test_app, extra: str) -> dict:
+    robot = tmp_path / "robot.toml"
+    robot.write_text(new_config("standin") + extra, encoding="utf-8")
+    c = test_app(robot)
+    s, b = c.call("POST", "/api/test/new", {})
+    assert s == 200, b
+    st = _state(c)
+    assert st["problems"] == [], st["problems"]
+    return st["test"]
+
+
+def test_a_new_test_on_the_stand_in_by_bars_drives_first(tmp_path, test_app):
+    """A drivetrain and bars on the field: drive up to them first, then the mechanism."""
+    test = _new_blocks(tmp_path, test_app, ARM + LADDER)
+    assert test["blocks"] == [{"do": "drive", "distance": 0.3},
+                              {"do": "move", "joint": "arm.pivot", "to": 45.0, "unit": "deg"}]
+
+
+def test_a_new_test_spins_the_first_motor_when_there_are_several(tmp_path, test_app):
+    test = _new_blocks(tmp_path, test_app, ARM + ROLLER + LADDER)
+    assert test["blocks"] == [{"do": "drive", "distance": 0.3}, {"do": "spin", "motor": "arm.pivot", "volts": 6.0},
+                              {"do": "wait", "seconds": 2.0}, {"do": "stop", "motor": "all"}]
+
+
+def test_a_new_test_without_bars_has_the_motor_lines_only(tmp_path, test_app):
+    test = _new_blocks(tmp_path, test_app, ARM + ROLLER)
+    assert test["blocks"] == [{"do": "spin", "motor": "arm.pivot", "volts": 6.0}, {"do": "wait", "seconds": 2.0},
+                              {"do": "stop", "motor": "all"}]
+
+
+def test_a_new_test_preselects_the_bodies_named_hook(tmp_path, test_app):
+    (tmp_path / "grabber").mkdir()
+    (tmp_path / "grabber" / "part.toml").write_text(HOOK_PART, encoding="utf-8")
+    test = _new_blocks(tmp_path, test_app, GRABBER)
+    assert test["hooks"] == ["grab.hook_A"]
+    assert test["blocks"] == [{"do": "wait", "seconds": 1.0}]      # nothing to move: the stand-in has no bars
+
+
+def test_the_stand_in_for_parts_from_one_import_puts_them_where_the_cad_has_them():
+    """Two parts from one import: the robot carries the first (on the chassis's root body at zero offset), the second
+    hangs on the first's body `arm` at minus that body's origin; a hook-named body puts the stand-in by the ladder."""
+    from scrimmage.assembler.test_session import standin_config
+    base = {"import_id": "x", "part": "lift", "origins": {"frame": [0.0, 0.0, 0.0], "arm": [0.1, 0.0, 0.5]},
+            "attach": None}
+    hook = {"import_id": "x", "part": "hook", "origins": {"hook_body": [0.1, 0.0, 0.9]}, "attach": "lift.arm"}
+    text = standin_config([("parts/hook", hook), ("parts/lift", base)], "chassis")
+    import tomllib
+    raw = tomllib.loads(text)
+    parts = {p["name"]: p for p in raw["part"]}
+    assert [p["name"] for p in raw["part"]] == ["drive", "dt", "lift", "hook"]
+    assert parts["lift"] == {"name": "lift", "path": "parts/lift", "attach": "drive.chassis"}
+    assert parts["hook"]["attach"] == "lift.arm" and parts["hook"]["pos"] == [-0.1, 0.0, -0.5]
+    assert raw["range"] == {"file": "ladder", "start": "below"}
+    no_hooks = tomllib.loads(standin_config([("parts/lift", base)], "chassis"))
+    assert "range" not in no_hooks and no_hooks["part"][0]["mass"] == 45.0
 
 
 def test_missing_robot_and_bad_outside_edit(tmp_path, test_app):
@@ -341,3 +438,59 @@ def test_a_part_given_as_its_file_next_to_the_robot_watches_only_what_it_reads(t
     assert c.get("/api/robot/state")[1]["version"] == version
     write_wedge(tmp_path, 0.2)                    # the part's mesh replaced: that is the robot changing
     assert c.get("/api/robot/state")[1]["version"] > version
+
+
+CAD = Path(__file__).resolve().parent / "data" / "cad"
+
+
+def _built_part(c, timeout=60.0):
+    end = time.monotonic() + timeout
+    s, st = c.get("/api/part/state")
+    while not (st["build"]["state"] == "idle" and st["parts"] and st["parts"][0]["mass"]):
+        assert time.monotonic() < end, st
+        s, st = c.get(f"/api/part/state?since={st['version']}")
+        assert s == 200, st
+    return st
+
+
+def test_test_it_from_the_part_tab_puts_the_part_on_a_stand_in_where_the_cad_has_it(tmp_path, test_app):
+    import shutil
+    import tomllib
+
+    import mujoco
+    from scrimmage.assembler import library
+    from scrimmage.config import build_world, load_config
+    step = tmp_path / "climber.step"
+    shutil.copy(CAD / "climber.step", step)
+    c = test_app(step)
+    assert c.get("/api/app/state")[1]["mode"] == "part"
+    _built_part(c)
+    s, b = c.call("POST", "/api/test/new", {})
+    assert s == 200, b
+    standin, test = tmp_path / "climber-standin.toml", tmp_path / "climber.test.toml"
+    app = c.get("/api/app/state")[1]
+    assert app["mode"] == "robot" and app["test"] == str(test.resolve())     # the page opens on the Test tab
+    raw = tomllib.loads(standin.read_text(encoding="utf-8"))
+    [part] = [p for p in raw["part"] if p.get("path")]
+    assert part == {"name": "climber", "path": "parts/climber", "attach": "drive.chassis"}
+    assert classify(standin) == "robot" and classify(test) == "test"
+    st = _state(c)
+    assert st["problems"] == [] and st["test"]["robot"] == "climber-standin.toml" and st["test"]["blocks"]
+    # each of the part's bodies sits where the CAD has it: its origin in the robot frame is the import's
+    marker = library.cad_marker(tmp_path / "parts" / "climber")
+    w = build_world(load_config(standin))
+    mujoco.mj_forward(w.model, w.data)
+    root = w.robot_body
+    R = w.data.xmat[root].reshape(3, 3)
+    for body, origin in marker["origins"].items():
+        rel = R.T @ (w.data.xpos[w.model.body(f"climber.{body}").id] - w.data.xpos[root])
+        assert rel == pytest.approx(origin, abs=1e-6), body
+    # Test it again (back in the Part tab) opens the same test: nothing made twice, the student's edits kept
+    standin.write_text(standin.read_text(encoding="utf-8").replace("mass = 45.0", "mass = 30.0"), encoding="utf-8")
+    assert c.call("POST", "/api/app/open", {"path": str(step)})[0] == 200
+    _built_part(c)
+    s, b = c.call("POST", "/api/test/new", {})
+    assert s == 200, b
+    assert "mass = 30.0" in standin.read_text(encoding="utf-8")
+    assert not (tmp_path / "climber-standin-2.toml").exists() and not (tmp_path / "climber-2.test.toml").exists()
+    assert c.get("/api/app/state")[1]["test"] == str(test.resolve())

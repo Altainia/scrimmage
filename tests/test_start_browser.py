@@ -96,3 +96,23 @@ def test_new_scenario_and_errors_as_notices(make_start_page, tmp_path):
     page.wait_for_function("window.__scrimmage && __scrimmage.mode === 'robot' && __scrimmage.state")
     assert (tmp_path / "first.toml").is_file()
     page.wait_for_function("window.__scrimmage && __scrimmage.tab === 'scenario'")
+
+
+def test_test_a_mechanism_makes_a_test_of_a_robot_file_or_goes_through_the_part_tab(make_start_page, tmp_path):
+    from scrimmage.assembler.templates import new_config
+    (tmp_path / "box.toml").write_text(new_config("standin"), encoding="utf-8")
+    page = make_start_page()
+    page.click("[data-key='test-mechanism']")
+    # a CAD file goes through the Part tab, which says where Test it is
+    page.click("#start-test-cad")
+    assert "Test it" in page.inner_text("#start-cad-test")
+    assert page.is_visible("#start-drop")
+    page.click("[data-key='test-mechanism']")
+    page.select_option("#start-test-robot", label="box.toml")
+    page.click("#start-test-go")
+    page.wait_for_function("window.__scrimmageTest && __scrimmageTest.state && __scrimmageTest.workspace"
+                           " && __scrimmageTest.workspace.getAllBlocks(false).length > 0")
+    assert page.evaluate("__scrimmage.tab") == "test"
+    assert (tmp_path / "box.test.toml").is_file()
+    # the stand-in on the plain field: nothing but its drive, so the starter test waits
+    assert page.evaluate("__scrimmageTest.toJSON().blocks") == [{"do": "wait", "seconds": 1}]
