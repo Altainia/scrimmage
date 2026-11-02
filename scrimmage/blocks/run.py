@@ -8,13 +8,16 @@ is on the run's clock, which starts with the settle; `time_limit` ends the run a
 
 Blocks hold like a climb script's drives: `spin` holds its volts until a later block changes that motor; `move` holds
 its position target (a proportional loop, as `climb run`'s) and waits until the joint is within MOVE_TOL of it, or its
-timeout; `drive` (a tank drive's) drives the wheel motors (forward for a positive distance or volts) until the robot
-has gone that far across the floor from where the block started (or its timeout), or for its seconds, then stops
-them; `stop` lets a motor (or all of them) go to neutral. `wait`, `wait_until` and `repeat` pass time and loop; a
-`repeat` goes round at most once a physics step when its body takes no time. `expect` checks its condition once, or
-(`throughout`) every step until the run ends; a check that fails ends the run, saying what happened instead. The
-Watch reads the world once after the settle, so the first blocks judge the robot as it rests (a hook already on a bar
-touches it).
+timeout; `drive` drives the wheel motors (forward for a positive distance or volts, or in its direction) until the
+robot has gone that far across the floor from where the block started (or its timeout), or for its seconds, then stops
+them; `turn` drives them until the robot's heading has turned that far (unwrapped every step, so past 180°), or its
+timeout. On a swerve drive both point the modules first (drive.py's steer targets, held by the position loop, wheels at
+0 V) and start the wheels once every module is pointed, or after STEER_TIMEOUT; a drive's seconds count from then. The
+steer targets stay held after the block, until a later block changes them. `stop` lets a motor (or all of them) go
+to neutral. `wait`, `wait_until` and `repeat` pass time and loop; a `repeat` goes round at most once a physics step
+when its body takes no time. `expect` checks its condition once, or (`throughout`) every step until the run ends; a
+check that fails ends the run, saying what happened instead. The Watch reads the world once after the settle, so the
+first blocks judge the robot as it rests (a hook already on a bar touches it).
 
 Feeding: `start_feeding` and `stop_feeding` take no time (the station feeds every interval from the next step on, or
 stops). `feed_one` asks for one piece and waits until the station's count rises, or until it is empty or used up (it
@@ -31,11 +34,10 @@ start position with its heading turned by `angle_deg`, and the spread's ball is 
 heading and `offset_in` to its left, turned by `rotation_deg` about the vertical. It is tracked as "floor" from the
 first block on, so the run's counts and outcome include it.
 
-A run ends with one status: "finished" (every block played), "check failed", "timed out" (a wait until, a move or a
-drive),
-"tipped over" (the robot body's up axis more than TIP_DEG from vertical), "walked off" (the climb runner's "hook walked
-off" rule, scrimmage/climb/run.py's WalkOff), "time limit", "repeat limit" (a repeat until reached its max) or
-"cancelled", and a one-sentence outcome for the student.
+A run ends with one status: "finished" (every block played), "check failed", "timed out" (a wait until, a move, a
+drive or a turn), "tipped over" (the robot body's up axis more than TIP_DEG from vertical), "walked off" (the climb
+runner's "hook walked off" rule, scrimmage/climb/run.py's WalkOff), "time limit", "repeat limit" (a repeat until
+reached its max) or "cancelled", and a one-sentence outcome for the student.
 """
 
 from __future__ import annotations
@@ -55,6 +57,7 @@ from ..movers import mover_poses, movers
 from ..protocol import HalState
 from ..testrange.build import BALL_BITS
 from .conditions import IN, Watch, describe
+from .drive import STEER_TIMEOUT, drivetrain
 from .feeds import SETTLE_MAX_S, Outcomes, counts, is_standin, made_it_in, sentence
 from .palette import ALL_MOTORS, ANY_HOOK, ANY_PIECE, NEXT_BAR, palette, problems
 from .program import (DRIVE_TIMEOUT, DRIVE_VOLTS, MOVE_TIMEOUT, REPEAT_MAX, WAIT_TIMEOUT, Program,
@@ -178,7 +181,7 @@ class TestRun:
         self._drive = {n: MotorDrive(b) for n, b in self.motors.items()}
         pal = palette(world, list(program.hooks))
         kinds = {j["name"]: j["kind"] for j in pal["joints"]}
-        self.wheels = [n for n in self.motors if kinds.get(n) == "wheel"]
+        self.drivetrain = drivetrain(world, self.motors)
         self.signal_names = list(pal["signals"])
         self._qadr = {n: int(m.jnt_qposadr[m.joint(n).id]) for n in kinds}
         self._slide = {n: k == "slide" for n, k in kinds.items()}
@@ -472,14 +475,39 @@ class TestRun:
             self.active["count"] = f.count(a["station"])
             if not f.capped(a["station"]):
                 f.request(a["station"])
-        elif b.do == "drive":
-            self.active["from"] = self.world.data.xpos[self.world.robot_body][:2].copy()
-            volts = a.get("volts", DRIVE_VOLTS)
-            if "distance" in a:
-                volts = math.copysign(abs(volts), a["distance"])
-            for j, sign in self._wheel_signs().items():
-                self.drives[j] = ("volts", sign * volts)
+        elif b.do in ("drive", "turn"):
+            dt, d = self.drivetrain, self.world.data
+            self.active["from"] = d.xpos[self.world.robot_body][:2].copy()
+            self.active["yaw"], self.active["turned"] = self._yaw(), 0.0
+            self.active["rolling"] = None              # when the wheels started
+            for j, q in dt.steer_targets(a.get("direction"), self._turn(b)).items():
+                self.drives[j] = ("to", q)
+            for j in dt.wheels:
+                self.drives[j] = ("volts", 0.0)
+            if dt.steered(d):
+                self._roll(b, t)
         return False
+
+    def _turn(self, b) -> float:
+        """A turn block's sign (+1 left, -1 right); 0 for a drive."""
+        return math.copysign(1.0, b.args["degrees"]) if b.do == "turn" else 0.0
+
+    def _roll(self, b, t: float) -> None:
+        """Start the drive or turn block's wheels at t, signed by where each rolls now."""
+        a = b.args
+        volts = a.get("volts", DRIVE_VOLTS)
+        if b.do == "turn":
+            volts = abs(volts)
+        elif "distance" in a:
+            volts = math.copysign(abs(volts), a["distance"])
+        for j, v in self.drivetrain.wheel_volts(a.get("direction"), self._turn(b), volts).items():
+            self.drives[j] = ("volts", v)
+        self.active["rolling"] = t
+
+    def _yaw(self) -> float:
+        """The robot body's heading, rad (its x axis seen from above)."""
+        r = self.world.data.xmat[self.world.robot_body].reshape(3, 3)
+        return math.atan2(float(r[1, 0]), float(r[0, 0]))
 
     def _waited(self, b, place: tuple, t: float) -> bool:
         """Block b, under way since self.active["t0"], is done at t; raises _End when it gives up."""
@@ -517,27 +545,36 @@ class TestRun:
                                         f"{'short of' if short else 'past'} {_amount(a['to'], a['unit'])} "
                                         f"({_where(place)})")
             return False
-        # drive
-        if "distance" in a:
-            gone = float(np.linalg.norm(d.xpos[self.world.robot_body][:2] - self.active["from"]))
-            done = gone >= abs(a["distance"]) - EPS
-            timeout = a.get("timeout", DRIVE_TIMEOUT)
+        # drive or turn
+        act = self.active
+        yaw = self._yaw()
+        act["turned"] += (yaw - act["yaw"] + math.pi) % (2.0 * math.pi) - math.pi
+        act["yaw"] = yaw
+        if act["rolling"] is None and (self.drivetrain.steered(d) or elapsed >= STEER_TIMEOUT - EPS):
+            self._roll(b, t)
+        timeout = a.get("timeout", DRIVE_TIMEOUT)
+        if b.do == "turn":
+            done = act["turned"] * math.copysign(1.0, a["degrees"]) >= math.radians(abs(a["degrees"])) - EPS
             if not done and elapsed >= timeout - EPS:
-                raise _End("timed out", f"drive ({_where(place)}) didn't reach {abs(a['distance']):g} m in "
-                                        f"{timeout:g} s (went {gone:.2f} m)")
+                raise _End("timed out", f"turn ({_where(place)}) didn't turn {a['degrees']:g}° in {timeout:g} s "
+                                        f"(turned {math.degrees(act['turned']):.0f}°)")
+        elif "distance" in a:
+            gone = float(np.linalg.norm(d.xpos[self.world.robot_body][:2] - act["from"]))
+            done = gone >= abs(a["distance"]) - EPS
+            if not done and elapsed >= timeout - EPS:
+                raise _End("timed out", f"{self._drive_name(a)} ({_where(place)}) didn't reach "
+                                        f"{abs(a['distance']):g} m in {timeout:g} s (went {gone:.2f} m)")
         else:
-            done = elapsed >= a["seconds"] - EPS
+            done = act["rolling"] is not None and t - act["rolling"] >= a["seconds"] - EPS
         if done:
-            for j in self.wheels:
+            for j in self.drivetrain.wheels:
                 self.drives.pop(j, None)
         return done
 
-    def _wheel_signs(self) -> dict[str, float]:
-        """Each wheel motor's sign that rolls the robot forward (its +x): a wheel turning about the chassis's +y
-        rolls it forward, so the sign of the chassis's y . the wheel's axis."""
-        d, m = self.world.data, self.world.model
-        side = d.xmat[self.world.robot_body].reshape(3, 3)[:, 1]
-        return {j: 1.0 if float(side @ d.xaxis[m.joint(j).id]) >= 0.0 else -1.0 for j in self.wheels}
+    @staticmethod
+    def _drive_name(a: dict) -> str:
+        """`drive`, or `drive left` with its direction."""
+        return f"drive {a['direction']}" if "direction" in a else "drive"
 
     def _value(self, joint: str, unit: str) -> str:
         """A joint's position now in `unit`, in words (`38.2°`)."""
@@ -599,9 +636,12 @@ class TestRun:
             return f"moving {a['joint']} to {_amount(a['to'], a['unit'])}"
         if b.do == "feed_one":
             return f"feeding one from {a['station']}"
+        if b.do == "turn":
+            return f"turning {a['degrees']:g}°"
+        way = f" {a['direction']}" if "direction" in a else ""
         if "distance" in a:
-            return f"driving {a['distance']:g} m"
-        return f"driving for {a['seconds']:g} s"
+            return f"driving{way} {a['distance']:g} m"
+        return f"driving{way} for {a['seconds']:g} s"
 
     def _under_way(self) -> str:
         """The innermost repeat and the block under way, for the time-limit sentence ("" for neither)."""

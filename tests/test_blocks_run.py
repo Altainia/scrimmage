@@ -301,13 +301,12 @@ def test_drive_timeout_goes_with_distance(tmp_path):
               tmp_path / "t.test.toml")
 
 
-def test_drive_is_for_a_tank_drive():
-    """Ruling R6: a swerve robot can't drive; its drive block says to spin the drive motors."""
+def test_a_swerve_robot_drives():
+    """Sub-project 21 lifts ruling R6 (drive on a tank drive only): a swerve robot's drive block has no problems."""
     world = build_world(load_config("configs/swerve.toml"))
-    assert palette(world, [])["drive"] is False
+    assert palette(world, [])["drive"] is True and palette(world, [])["drive_kind"] == "swerve"
     program = loads('[test]\nrobot = "swerve.toml"\n[[block]]\ndo = "drive"\ndistance = 1.0\n', "t.test.toml")
-    assert [p["message"] for p in problems(program, world)] == [
-        "drive works on a tank drive; spin the drive motors instead"]
+    assert problems(program, world) == []
 
 
 def _resting_on_rung1(folder):

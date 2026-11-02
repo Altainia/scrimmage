@@ -2,11 +2,11 @@
 
 The palette lists every name a block can pick, as the world names them: the robot's motors and joints (a hinge reads
 in degrees, a slide in inches, a drive wheel is a `wheel`), its bodies and parts, its hooks, the field's bars,
-elements, game pieces, other surfaces a touch can name (`targets`: the carpet, the walls) and climb levels, whether it can drive (a tank drive: it has drive-wheel motors, joints whose
-body carries a tread geom as parts/assemble.py marks them, and no wheel is steered, so a swerve robot can't) and the
-signals a chart can show. Every list is sorted by name except
-`levels`, which keeps the range's climb order (lowest first), so a picker reads the way the robot climbs. `pieces`
-are the field's game pieces (the floor balls), not the balls parked in the robot's slots.
+elements, game pieces, other surfaces a touch can name (`targets`: the carpet, the walls) and climb levels, whether it
+can drive and how (`drive_kind`: a tank or swerve drive, as drive.py finds them) and the signals a chart can show.
+Every list is sorted by name except `levels`, which keeps the range's climb order (lowest first), so a picker reads the
+way the robot climbs. `pieces` are the field's game pieces (the floor balls), not the balls parked in the robot's
+slots.
 
 `problems()` checks a test's names against that: one plain sentence per bad name, at the block's place (0-based
 indices, through repeat bodies). A test written before Import again renamed a part shows its blocks' problems here
@@ -22,6 +22,7 @@ from ..launcher.inputs import PRESETS
 from ..terrain.climb import robot_hooks
 from ..testrange.spec import BALL_CHOICE_RANGES, RangeError, load_range
 from ..testrange.station import OVERRIDE_KEYS, with_overrides
+from .drive import drivetrain
 from .spread import NO_BALL, spread_ball
 
 NEXT_BAR = "next bar"     # a hanging_from or touch target: the lowest bar above every bar hung from so far
@@ -29,7 +30,6 @@ ANY_BAR = "any bar"       # a touch target: any of the field's bars
 ANY_HOOK = "hook"         # a touch's robot side: any of the robot's hooks
 ANY_PIECE = "any"         # a piece_in's piece: any game piece
 ALL_MOTORS = "all"        # a stop's motor: every motor
-VERTICAL = 0.99           # a hinge axis this close to its body's z is a steer (azimuth) joint, as terrain/drive.py's
 
 
 def _robot_bodies(world) -> list[int]:
@@ -53,17 +53,6 @@ def _joints(world) -> dict[str, str]:
         else:
             out[name] = "wheel" if int(m.jnt_bodyid[j]) in tread_bodies else "hinge"
     return out
-
-
-def _steered(world) -> bool:
-    """A tread wheel hangs from a steer joint (a vertical hinge on the wheel's parent body): a swerve module."""
-    m = world.model
-    for name in (world.parts.tread_geoms if world.parts else ()):
-        parent = int(m.body_parentid[m.geom_bodyid[m.geom(name).id]])
-        for k in range(int(m.body_jntadr[parent]), int(m.body_jntadr[parent]) + int(m.body_jntnum[parent])):
-            if int(m.jnt_type[k]) == int(mujoco.mjtJoint.mjJNT_HINGE) and abs(float(m.jnt_axis[k][2])) > VERTICAL:
-                return True
-    return False
 
 
 def _entry(name: str, kind: str) -> dict:
@@ -102,7 +91,8 @@ def hook_names(world, hooks: list[str]) -> list[str]:
 def palette(world, hooks: list[str]) -> dict:
     m = world.model
     kinds = _joints(world)
-    motors = sorted(n for n in driven_joints(world) if n in kinds)
+    driven = driven_joints(world)
+    motors = sorted(n for n in driven if n in kinds)
     parts, layout, rng = world.parts, None, None
     if parts is not None:
         layout, rng = parts.layout, parts.range
@@ -115,7 +105,7 @@ def palette(world, hooks: list[str]) -> dict:
     signals = ["tilt", *motors, *(f"{n}.current" for n in motors)]
     if hook_list:
         signals.append("hook_load")
-    drive = any(kinds[n] == "wheel" for n in motors) and not _steered(world)
+    dt = drivetrain(world, driven)
     stations = sorted(rng.stations, key=lambda st: st.name) if rng is not None else []
     return {
         "motors": [_entry(n, kinds[n]) for n in motors],
@@ -128,8 +118,8 @@ def palette(world, hooks: list[str]) -> dict:
         "pieces": pieces,
         "targets": _targets(world, bar_set | set(elements) | set(pieces)),
         "levels": list(rule.levels) if rule is not None else [],      # lowest first, as the range lists them
-        "drive": drive,
-        "drive_kind": "tank" if drive else None,      # "swerve" arrives with the swerve drive blocks
+        "drive": dt is not None,
+        "drive_kind": dt.kind if dt is not None else None,
         "signals": signals,
         "stations": [st.name for st in stations],
         "station_settings": {st.name: _station_settings(st) for st in stations},
@@ -259,7 +249,7 @@ def _block_problems(n: _Names, b) -> list[str]:
                 return ["a tank drive can't drive sideways; turn, then drive forward"]
             return []
         if any(j["kind"] == "wheel" for j in n.p["motors"]):
-            return ["drive works on a tank drive; spin the drive motors instead"]
+            return ["drive works on a tank or swerve drive; spin the drive motors instead"]
         return ["drive needs a drivetrain; this robot has none"]
     for key in ("until", "that"):
         if key in a:
