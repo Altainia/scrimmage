@@ -2,8 +2,9 @@
 
 A test opens in robot mode: the robot document is the test's `robot`, and the App keeps it in step with the file
 (an assembler edit, an outside edit, Import again). The session holds the test's Program, the palette and problems of
-the robot as it is now (`refresh`, called by the App whenever it validates the robot), and one run or sweep at a time
-on a worker thread ("test-run", "test-sweep"), which holds the SimLock as "test" while it runs.
+the robot as it is now (`refresh`, called by the App whenever it validates the robot), and one run, sweep or floor
+spread at a time on a worker thread ("test-run", "test-sweep", "test-spread"), which holds the SimLock as "test" while
+it runs.
 
 Every change bumps one `version`, which the page long-polls. A save is refused (409) when the test changed after the
 version the page sent (`_changed_at`): a run's progress doesn't make the page's version stale. An outside edit of the
@@ -12,12 +13,14 @@ until it is fixed.
 
 Runs are kept where `scrimmage test run` keeps them (scrimmage/blocks/store.py: `<test stem>-runs/` next to the test).
 
-A new test starts with blocks that do something on its robot (`starter_blocks`) and its hooks preselected
-(`starter_hooks`); the Part tab's "Test it" puts the built parts on a stand-in robot (`standin_config`).
+A new test starts with blocks that do something on its robot (`starter_blocks`) and its hooks and hopper preselected
+(`starter_hooks`, `starter_hopper`); the Part tab's "Test it" puts the built parts on a stand-in robot
+(`standin_config`). The state carries every field Setup can pick (`field_choices`).
 """
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 import re
@@ -30,10 +33,12 @@ import tomlkit
 
 from ..blocks import store
 from ..blocks.palette import palette, problems
-from ..blocks.program import Block, TestFileError, dumps, from_json, load, to_json
+from ..blocks.program import Block, Cond, TestFileError, _block_json, dumps, from_json, load, to_json
 from ..blocks.run import TestRun, world_for
+from ..blocks.spread import NO_BALL, NO_SPREAD, run_spread
 from ..blocks.sweep import MAX_SWEEP, _kind as sweep_kind, run_sweep
 from ..cad.settings import replace_file
+from ..testrange.spec import BALL_CHOICE_RANGES, BUILTIN_RANGES, load_range
 from .bench_session import SessionError
 from .edits import add_part, cad_offset
 from .simlock import SimBusy, SimLock
@@ -51,13 +56,48 @@ STARTER_DRIVE_M = 0.3    # a new test's drive up to the bars
 STARTER_VOLTS = 6.0      # ... its spin of the first motor, for STARTER_WAIT_S
 STARTER_WAIT_S = 2.0
 STARTER_MOVE_DEG = 45.0  # ... its move of a lone hinge motor
+STARTER_HOPPER_COUNT = 5        # ... on a field with a station: feed until this many are in the hopper
+STARTER_FEED_TIMEOUT = 20.0     # s: ... giving up after this long
 STANDIN_RANGE = {"file": "ladder", "start": "below"}   # the stand-in for a part with a hook: in front of the ladder
+STANDIN_STATION = {"file": "station", "start": "at_station"}   # ... with a hopper-like body: at the station's chute
+PLAIN_FIELD = "The plain field"
+
+
+@functools.cache
+def field_choices() -> list[dict]:
+    """Every field the Test tab's Setup can put the robot on: the plain field (no [range]) first, then each built-in
+    range in BUILTIN_RANGES order with its name, its starts (file order: Setup picks the first), whether its piece is
+    a disc, whether Setup can change its ball, and its stations."""
+    out: list[dict] = [{"file": None, "name": PLAIN_FIELD, "starts": []}]
+    for name in BUILTIN_RANGES:
+        rng = load_range(name, Path("."))
+        out.append({"file": name, "name": rng.name, "starts": list(rng.starts), "disc": rng.disc is not None,
+                    "ball_choice": name in BALL_CHOICE_RANGES,
+                    "stations": sorted(st.name for st in rng.stations)})   # sorted, as the palette's
+    return out
+
+
+def station_starter(pal: dict | None) -> list[Block]:
+    """The starter blocks for a field with a station: start feeding from the first, wait until 5 pieces are in the
+    hopper (giving up after 20 s), stop feeding. Empty without a station."""
+    stations = (pal or {}).get("stations") or []
+    if not stations:
+        return []
+    first = stations[0]
+    return [Block("start_feeding", {"station": first}),
+            Block("wait_until", {"until": Cond("in_hopper", {"at_least": STARTER_HOPPER_COUNT}),
+                                 "timeout": STARTER_FEED_TIMEOUT}),
+            Block("stop_feeding", {"station": first})]
 
 
 def starter_blocks(pal: dict | None) -> list[Block]:
-    """A new test's blocks for a robot with this palette: drive 0.3 m first when it can drive and the field has bars;
-    then a robot whose only mechanism motor is a hinge moves it to 45 degrees, else the first mechanism motor spins at
-    6 V for 2 s and everything stops; a robot with nothing to move waits 1 s."""
+    """A new test's blocks for a robot with this palette: on a field with a station, the station starter; else drive
+    0.3 m first when it can drive and the field has bars; then a robot whose only mechanism motor is a hinge moves it
+    to 45 degrees, else the first mechanism motor spins at 6 V for 2 s and everything stops; a robot with nothing to
+    move waits 1 s."""
+    feed = station_starter(pal)
+    if feed:
+        return feed
     out = []
     pal = pal or {}
     if pal.get("drive") and pal.get("bars"):
@@ -80,6 +120,18 @@ def starter_hooks(pal: dict | None) -> list[str]:
     pal = pal or {}
     counted = set(pal.get("hooks") or [])
     return [b for b in pal.get("bodies") or [] if _hooky(b) and b not in counted]
+
+
+HOPPER_WORDS = ("hopper", "intake", "indexer")
+
+
+def _hoppery(name: str) -> bool:
+    return any(w in name.lower() for w in HOPPER_WORDS)
+
+
+def starter_hopper(pal: dict | None) -> list[str]:
+    """The robot's bodies whose names (the part's or the body's) contain "hopper", "intake" or "indexer"."""
+    return [b for b in (pal or {}).get("bodies") or [] if _hoppery(b)]
 
 
 PWM_CHANNELS = range(20)          # a roboRIO's PWM outputs: 0-9 on the board, 10-19 on the MXP
@@ -174,12 +226,16 @@ def _place(doc, parts: list[tuple[str, dict]], root_body: str, motor_slots: dict
 def standin_config(parts: list[tuple[str, dict]], root_body: str, motor_slots: dict | None = None) -> str:
     """The stand-in robot (templates' "standin") carrying the part folders `parts` [(path, cad_marker)] of one CAD
     import where the CAD has them, their motor slots on free IDs (see _place). With a body named like a hook, the robot
-    starts in front of the ladder range (the Test tab's Setup changes the field)."""
+    starts in front of the ladder range; else with one named like a hopper (its part's name or its own: as the robot
+    names it, starter_hopper), at the station range's chute (the Test tab's Setup changes the field)."""
     doc = tomlkit.parse(new_config("standin"))
     _place(doc, parts, root_body, motor_slots)
-    if any(_hooky(b) for _, m in parts for b in m["origins"]):
+    bodies = [(m["part"], b) for _, m in parts for b in m["origins"]]
+    field = STANDIN_RANGE if any(_hooky(b) for _, b in bodies) else \
+        STANDIN_STATION if any(_hoppery(f"{p}.{b}") for p, b in bodies) else None
+    if field is not None:
         rng = tomlkit.table()
-        rng.update(STANDIN_RANGE)
+        rng.update(field)
         doc.add(tomlkit.nl())
         doc["range"] = rng
     return tomlkit.dumps(doc)
@@ -254,15 +310,15 @@ class TestSession:
         self.palette: dict | None = None
         self.problems: list[dict] = []
         self.file_error: str | None = None   # the test file as it is on disk can't be read (an outside edit)
-        self.run_error: str | None = None    # why the last run or sweep couldn't run
-        self.running: dict | None = None     # {"kind": "run" | "sweep", "progress": 0..1}
-        self.last: dict | None = None        # the last run or sweep this session made: {"kind", "id"}
+        self.run_error: str | None = None    # why the last run, sweep or spread couldn't run
+        self.running: dict | None = None     # {"kind": "run" | "sweep" | "spread", "progress": 0..1}
+        self.last: dict | None = None        # the last run, sweep or spread this session made: {"kind", "id"}
         self._world = None
         self._robot_problem: str | None = None
         self._cancel = threading.Event()
         self._thread: threading.Thread | None = None
         self._closed = False
-        self._kept: tuple | None = None      # (the runs folder's look, list_runs, list_sweeps): see _kept_runs
+        self._kept: tuple | None = None      # (the runs folder's look, list_runs, list_sweeps, list_spreads)
 
     # -- what it is -------------------------------------------------------------------------
     @property
@@ -361,7 +417,8 @@ class TestSession:
             return self.running is not None
 
     def start(self, kind: str, body: dict | None = None) -> tuple[int, dict]:
-        """Start a run ("run") or a sweep ("sweep", body {target, values}) on the worker thread."""
+        """Start a run ("run"), a sweep ("sweep", body {target, values}) or the test's floor spread ("spread") on the
+        worker thread."""
         body = body or {}
         target = values = None
         if kind == "sweep":
@@ -380,6 +437,10 @@ class TestSession:
                 raise SessionError(409, BUSY)
             if self.file_error is not None:
                 raise SessionError(409, f"fix the test file first: {self.file_error}")
+            if kind == "spread" and self.palette is not None and not self.palette.get("floor_piece"):
+                raise SessionError(409, NO_BALL)
+            if kind == "spread" and not self.program.setup.get("floor_spread"):
+                raise SessionError(409, NO_SPREAD)
             if self.problems:
                 return 409, {"ok": False, "error": FIX_FIRST, "problems": self.problems}
             try:
@@ -393,6 +454,8 @@ class TestSession:
             self._bump()
             if kind == "run":
                 work, args = self._run, (program, cancel)
+            elif kind == "spread":
+                work, args = self._spread, (program, cancel)
             else:
                 work, args = self._sweep, (program, target, values, cancel)
             self._thread = threading.Thread(target=work, args=args, daemon=True, name=f"test-{kind}")
@@ -461,11 +524,26 @@ class TestSession:
         finally:
             self._finish(last, error)
 
+    def _spread(self, program, cancel: threading.Event) -> None:
+        last = error = None
+        clock = [time.monotonic()]
+        try:
+            folder = run_spread(program, self.runs_dir, cancel=cancel,
+                                on_progress=lambda k, n, row: self._progress(k / n, clock))
+            last = {"kind": "spread", "id": folder.name}
+        except (ValueError, OSError) as e:
+            error = str(e)
+        except Exception as e:
+            log.exception("test spread")
+            error = _plain_error(e)
+        finally:
+            self._finish(last, error)
+
     # -- reading ----------------------------------------------------------------------------
-    def _kept_runs(self) -> tuple[list, list]:
-        """list_runs and list_sweeps, read again only when the runs folder changes: a run or a sweep is renamed into
-        it whole and pruned whole, so its time and its names tell (the page polls four times a second while a run
-        goes)."""
+    def _kept_runs(self) -> tuple[list, list, list]:
+        """list_runs, list_sweeps and list_spreads, read again only when the runs folder changes: a run, a sweep or a
+        spread is renamed into it whole and pruned whole, so its time and its names tell (the page polls four times a
+        second while a run goes)."""
         base = self.runs_dir
         try:
             look = (base.stat().st_mtime_ns, tuple(sorted(p.name for p in base.iterdir())))
@@ -473,15 +551,17 @@ class TestSession:
             look = None
         kept = self._kept
         if kept is None or kept[0] != look:
-            kept = self._kept = (look, store.list_runs(base), store.list_sweeps(base))
-        return kept[1], kept[2]
+            kept = self._kept = (look, store.list_runs(base), store.list_sweeps(base), store.list_spreads(base))
+        return kept[1], kept[2], kept[3]
 
     def state(self) -> dict:
         with self._cond:
             out = {"version": self.version, "path": str(self.path), "test": to_json(self.program),
                    "palette": self.palette, "problems": self.problems, "running": self.running,
-                   "file_error": self.file_error, "run_error": self.run_error, "last": self.last}
-        out["runs"], out["sweeps"] = self._kept_runs()
+                   "file_error": self.file_error, "run_error": self.run_error, "last": self.last,
+                   "station_starter": [_block_json(b) for b in station_starter(self.palette)] or None}
+        out["fields"] = field_choices()
+        out["runs"], out["sweeps"], out["spreads"] = self._kept_runs()
         return out
 
     def wait(self, since: int | None, end: float) -> bool:

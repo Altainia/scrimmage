@@ -239,8 +239,8 @@ Robot (`/api/robot/*`):
         params  {name, params}   (a null value resets that parameter to its default)
         ids     {name, ids}
         start   {pose?: [x, y, deg] | null, named?: str | null, keep_pose?: bool,
-                range?: "2026" | "ladder" | "ladder-square" | "intake" | null, floor_balls?: bool}
-                where the robot starts and on which field (the ladders and the ball are the Test tab Setup's).
+                range?: a built-in range's name ("2026", "ladder", "station", ...) | null, floor_balls?: bool}
+                where the robot starts and on which field (the fields but 2026 are the Test tab Setup's).
                 range "2026" writes [range] file = "2026" (another range's named start goes), null removes [range]
                 (the plain field); absent keeps the config's (one naming another range keeps it). pose writes
                 [robot] start_pose (x, y in m from the blue corner, rounded to mm; heading in degrees, (-180, 180])
@@ -404,13 +404,18 @@ Scenario (`/api/scenario/*`; 404 while no scenario is open, except /api/scenario
 Test (`/api/test/*`; 404 "no test is open" unless a test is open, except /api/test/new). See test_session.py:
   GET  /api/test/state[?since=N]   -> {version, path, test: the test as JSON (scrimmage/blocks/program.py to_json),
         palette (scrimmage/blocks/palette.py; null when the robot doesn't load), problems: [{place, message}] (a
-        robot that doesn't load is one problem at place []), running: null|{kind: run|sweep, progress: 0..1},
-        runs: list_runs (newest first; a sweep's runs have ids "sweep-NNN/NNN"; cancelled: Stop ended it), sweeps:
-        [{id, target, values, cancelled, problems, rows}] (newest first), file_error: why the file as edited outside
-        can't be read (the last good test is kept) or null, run_error: why the last run or sweep couldn't run or null,
-        last: {kind, id} of the last run or sweep this editor made, or null}; long-polls like /api/robot/state. The
-        robot changing on disk (an edit, Import again, a part folder's files) shows in the next state's palette and
-        problems.
+        robot that doesn't load is one problem at place []), running: null|{kind: run|sweep|spread, progress: 0..1},
+        runs: list_runs (newest first; a sweep's runs have ids "sweep-NNN/NNN", a spread's "spread-NNN/NNN";
+        cancelled: Stop ended it), sweeps: [{id, target, values, cancelled, problems, rows}] (newest first), spreads:
+        list_spreads ([{id, spread, placements, picked, sentence, cancelled, rows}], newest first), file_error: why
+        the file as edited outside can't be read (the last good test is kept) or null, run_error: why the last run,
+        sweep or spread couldn't run or null, last: {kind, id} of the last run, sweep or spread this editor made, or
+        null, fields: test_session.field_choices() (the plain field {file: null, name, starts: []}, then every
+        built-in range: {file, name, starts (file order), disc, ball_choice, stations}), station_starter: the starter
+        feed blocks for the robot's field (start feeding from its first station, wait until 5 are in the hopper
+        within 20 s, stop feeding) as JSON, or null on a field with no station}; long-polls like /api/robot/state.
+        The robot changing on disk (an edit, Import again, a part folder's files) shows in the next state's palette
+        and problems.
   POST /api/test/save              -> body {test, version}: replaces the test and writes the file. {ok, version};
         400 with the block's place for a bad shape; 409 {error, state} when the test changed after `version`.
   POST /api/test/run               -> {ok: true} once the run starts on its thread; 409 {error, problems} while there
@@ -418,17 +423,24 @@ Test (`/api/test/*`; 404 "no test is open" unless a test is open, except /api/te
         409 while a test run is in progress or the file can't be read. The run is kept when it ends.
   POST /api/test/sweep             -> body {target, values} (scrimmage/blocks/sweep.py); refused as run; 400 for a
         target or values it can't sweep.
-  POST /api/test/cancel            -> {ok: true}; stops the run or sweep under way (a cancelled run is kept).
-  GET  /api/test/run/<id>          -> result.json's fields plus id and signals; /view -> view.json; /motion ->
-        motion.bin (application/octet-stream); 404 for a run that isn't kept.
+  POST /api/test/spread            -> runs the test once per placement of its [setup] floor_spread
+        (scrimmage/blocks/spread.py) on thread "test-spread"; refused as run, and 409 "the floor spread needs a ball
+        on the floor in front of the robot's start" when the field has none there (palette.floor_piece) or 409 when
+        the test has no floor spread. The spread is kept (the newest 3) when it ends.
+  POST /api/test/cancel            -> {ok: true}; stops the run, sweep or spread under way (a cancelled run is kept).
+  GET  /api/test/run/<id>          -> (<id>: "004", "sweep-002/003", "spread-001/002") result.json's fields plus id
+        and signals; /view -> view.json; /motion -> motion.bin (application/octet-stream); 404 for a run that isn't
+        kept.
   POST /api/test/new               -> body {robot?, from_part?} (default: the open robot): writes <robot
         stem>.test.toml next to it (<stem>-2.test.toml ... when taken) and opens it as /api/app/open does. Its
         blocks are the starter blocks
-        (test_session.starter_blocks: drive 0.3 m when the robot is a tank drive and the field has bars, then a lone
-        hinge motor moved to 45 deg, or the first motor spun at 6 V for 2 s and all stopped; else wait 1 s) and its
-        hooks the robot's bodies named like a hook. With from_part: true and a part from a CAD import open ("Test it"
-        in the Part tab): makes <import name>-standin.toml (the standin template carrying the built parts where the
-        CAD has them, in front of the ladder range when a body is named like a hook) and <import name>.test.toml next
+        (test_session.starter_blocks: on a field with a station, its station_starter; else drive 0.3 m when the robot
+        is a tank drive and the field has bars, then a lone hinge motor moved to 45 deg, or the first motor spun at 6 V
+        for 2 s and all stopped; else wait 1 s), its hooks the robot's bodies named like a hook and its hopper those
+        named like a hopper ("hopper", "intake" or "indexer"). With from_part: true and a part from a CAD import open
+        ("Test it" in the Part tab): makes <import name>-standin.toml (the standin template carrying the built parts
+        where the CAD has them, in front of the ladder range when a body is named like a hook, else at the station
+        range's chute when one is named like a hopper) and <import name>.test.toml next
         to the import's parts/ folder, once each, and opens the test. Pressed again it opens the same test and adds
         the import's built parts the stand-in doesn't have yet, where the CAD has them (it never removes one);
         {ok, added: [their names]}. 409 while the parts are updating, didn't build or the part is read-only, 400
@@ -2148,9 +2160,9 @@ class App:
         return self.open_path(str(p))
 
     def _starter_test(self, robot: Path, folder: Path | None = None) -> str:
-        """A new test's text for the robot config `robot` (the test in `folder`, default the robot's): starter blocks
-        and hooks from the robot's palette (a robot that doesn't load gets one wait block, and its problem shows once
-        the test is open)."""
+        """A new test's text for the robot config `robot` (the test in `folder`, default the robot's): starter blocks,
+        hooks and hopper from the robot's palette (a robot that doesn't load gets one wait block, and its problem
+        shows once the test is open)."""
         from ..blocks.palette import palette
         from ..config import build_world, load_config
         folder = folder or robot.parent
@@ -2159,7 +2171,8 @@ class App:
         except Exception:     # a robot that doesn't build: the open test says why
             pal = None
         return dumps_test(TestProgram(folder / "x.test.toml", Path(test_session.config_path(robot, folder)),
-                                      hooks=test_session.starter_hooks(pal), blocks=test_session.starter_blocks(pal)))
+                                      hooks=test_session.starter_hooks(pal), blocks=test_session.starter_blocks(pal),
+                                      hopper=test_session.starter_hopper(pal)))
 
     def test_from_part(self) -> dict:
         """The Part tab's "Test it": make (once) `<import name>-standin.toml` next to the import's parts folder, the
@@ -2731,7 +2744,7 @@ class _Handler(BaseHTTPRequestHandler):
             body = self._body()
             if path == "/api/test/save":
                 return app.test_save(body)
-            if path in ("/api/test/run", "/api/test/sweep"):
+            if path in ("/api/test/run", "/api/test/sweep", "/api/test/spread"):
                 return app.test_start(path.rsplit("/", 1)[1], body)
             if path == "/api/test/cancel":
                 return 200, test.cancel()

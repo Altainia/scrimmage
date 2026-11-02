@@ -646,3 +646,138 @@ def test_setup_field_choice_moves_a_robot_with_its_own_start_pose_to_the_fields_
     assert s == 200 and b["ok"], b
     after = tomllib.loads(robot.read_text(encoding="utf-8"))
     assert after["robot"]["start_pose"] == match_start and after["range"] == {"file": "2026"}
+
+
+# ---- every field, station starters, floor spreads ------------------------------------------------------------------
+
+STATION = Path(__file__).resolve().parents[1] / "examples" / "blocks" / "station"
+ON_STATION = """
+[range]
+file = "station"
+start = "{start}"
+"""
+SPREAD = """
+[setup]
+floor_spread = {{ offset_in = [-3.0, 3.0] }}
+
+[[block]]
+do = "wait"
+seconds = 0.2
+"""
+
+
+def test_every_builtin_field_is_a_choice(tmp_path, test_app):
+    from scrimmage.testrange.spec import BUILTIN_RANGES
+    c = test_app(write_test(tmp_path))
+    f = _state(c)["fields"]
+    assert [x["file"] for x in f] == [None, *BUILTIN_RANGES] and len(f) == 13
+    assert f[0] == {"file": None, "name": "The plain field", "starts": []}
+    station = next(x for x in f if x["file"] == "station")
+    assert station == {"file": "station", "name": "A human player station", "starts": ["at_station", "facing_ball"],
+                       "disc": False, "ball_choice": True, "stations": ["feeder"]}
+    assert next(x for x in f if x["file"] == "2013")["disc"] is True
+    assert next(x for x in f if x["file"] == "2026")["ball_choice"] is False
+    assert all(x["starts"] for x in f if x["file"])        # terrain-library has a start now
+
+
+def test_set_start_takes_any_builtin_field():
+    import tomlkit
+
+    from scrimmage.assembler import edits
+    doc = tomlkit.parse(new_config("standin"))
+    edits.set_start(doc, {"range": "2022-hangar", "named": "under_mid"})
+    assert doc["range"] == {"file": "2022-hangar", "start": "under_mid"}
+    edits.set_start(doc, {"range": "2026"})
+    assert doc["range"] == {"file": "2026"}
+    with pytest.raises(edits.EditError):
+        edits.set_start(doc, {"range": "somewhere"})
+
+
+def _station_copy(tmp_path) -> Path:
+    import shutil
+    shutil.copytree(STATION / "parts", tmp_path / "parts")
+    robot = tmp_path / "hopper-standin.toml"
+    shutil.copy(STATION / "hopper-standin.toml", robot)
+    return robot
+
+
+def test_a_new_test_on_the_station_field_starts_feeding(tmp_path, test_app):
+    """The station field: start feeding from its station, wait for 5 in the hopper, stop; the hopper is preselected."""
+    c = test_app(_station_copy(tmp_path))
+    s, b = c.call("POST", "/api/test/new", {})
+    assert s == 200, b
+    st = _state(c)
+    t = st["test"]
+    assert [b["do"] for b in t["blocks"]] == ["start_feeding", "wait_until", "stop_feeding"]
+    assert t["hopper"] == ["hopper.bin"]
+    assert t["blocks"] == [{"do": "start_feeding", "station": "feeder"},
+                           {"do": "wait_until", "until": {"in_hopper": {"at_least": 5}}, "timeout": 20.0},
+                           {"do": "stop_feeding", "station": "feeder"}]
+    assert st["problems"] == [] and st["station_starter"] == t["blocks"]
+    # a field with no station has no station starter
+    (tmp_path / "plain").mkdir()
+    assert _state(test_app(write_test(tmp_path / "plain")))["station_starter"] is None
+
+
+def test_starter_hopper_picks_bodies_named_like_a_hopper():
+    from scrimmage.assembler.test_session import starter_hopper
+    pal = {"bodies": ["drive.chassis", "hopper.bin", "arm.Intake_roller", "feed.indexer", "dt.left_1",
+                      "hook.hopperish"]}
+    assert starter_hopper(pal) == ["hopper.bin", "arm.Intake_roller", "feed.indexer", "hook.hopperish"]
+    assert starter_hopper(None) == []
+
+
+def test_test_it_puts_a_hopper_part_on_the_station_field():
+    """A part with a hopper-like body and no hook body: the stand-in starts at the station; a hook wins."""
+    import tomllib
+
+    from scrimmage.assembler.test_session import standin_config
+    hopper = {"import_id": "x", "part": "hopper", "origins": {"bin": [0.0, 0.0, 0.0]}, "attach": None}
+    raw = tomllib.loads(standin_config([("parts/hopper", hopper)], "chassis"))
+    assert raw["range"] == {"file": "station", "start": "at_station"}
+    intake = {"import_id": "x", "part": "front", "origins": {"Indexer_belt": [0.0, 0.0, 0.0]}, "attach": None}
+    assert tomllib.loads(standin_config([("parts/front", intake)], "chassis"))["range"]["file"] == "station"
+    hook = {"import_id": "x", "part": "hook", "origins": {"hook_body": [0.1, 0.0, 0.9]}, "attach": "hopper.bin"}
+    raw = tomllib.loads(standin_config([("parts/hopper", hopper), ("parts/hook", hook)], "chassis"))
+    assert raw["range"] == {"file": "ladder", "start": "below"}
+
+
+def _spread_test(tmp_path, start: str) -> Path:
+    path = write_test(tmp_path, blocks=SPREAD.format())
+    robot = tmp_path / "robot.toml"
+    robot.write_text(robot.read_text(encoding="utf-8") + ON_STATION.format(start=start), encoding="utf-8")
+    return path
+
+
+def test_a_spread_runs_and_is_listed(tmp_path, test_app):
+    c = test_app(_spread_test(tmp_path, "facing_ball"))
+    st = _state(c)
+    assert st["problems"] == [] and st["palette"]["floor_piece"] and st["spreads"] == []
+    s, b = c.call("POST", "/api/test/spread", {})
+    assert s == 200, b
+    st = _wait_idle(c)
+    assert st["run_error"] is None, st
+    assert st["spreads"][0]["id"].startswith("spread-") and len(st["spreads"][0]["rows"]) == 2
+    assert st["last"] == {"kind": "spread", "id": st["spreads"][0]["id"]}
+    run_id = next(r["id"] for r in st["runs"] if r["id"].startswith("spread-"))
+    s, r = c.get(f"/api/test/run/{run_id}")
+    assert s == 200 and r["id"] == run_id, r
+    s, view = c.get(f"/api/test/run/{run_id}/view")
+    assert s == 200, view
+
+
+def test_a_spread_without_a_floor_ball_is_refused(tmp_path, test_app):
+    c = test_app(_spread_test(tmp_path, "at_station"))
+    assert _state(c)["palette"]["floor_piece"] is False
+    s, b = c.call("POST", "/api/test/spread", {})
+    assert s == 409 and b["error"] == "the floor spread needs a ball on the floor in front of the robot's start", b
+    assert _state(c)["running"] is None
+
+
+def test_a_spread_on_a_test_without_one_is_refused(tmp_path, test_app):
+    write_test(tmp_path)
+    robot = tmp_path / "robot.toml"
+    robot.write_text(robot.read_text(encoding="utf-8") + ON_STATION.format(start="facing_ball"), encoding="utf-8")
+    c = test_app(tmp_path / "t.test.toml")
+    s, b = c.call("POST", "/api/test/spread", {})
+    assert s == 409 and "no floor spread" in b["error"], b

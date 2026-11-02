@@ -39,6 +39,7 @@ SPREAD_CONE_DEG = 30.0    # the spread's ball is within this of the start's head
 SPREAD_REACH = 3.0        # m: ... and no further than this from the start (our call)
 IN = 0.0254              # m per inch (conditions.IN; not imported: conditions imports the palette, which imports this)
 NO_BALL = "the floor spread needs a ball on the floor in front of the robot's start"
+NO_SPREAD = "this test has no floor spread: set one in Setup ([setup] floor_spread)"
 COULDNT_RUN = "couldn't run"
 
 
@@ -137,7 +138,7 @@ def run_spread(program: Program, base, on_progress=None, cancel: threading.Event
     from .sweep import _plain_error
     spread = program.setup.get("floor_spread")
     if not spread:
-        raise TestFileError("this test has no floor spread: set one in Setup ([setup] floor_spread)")
+        raise TestFileError(NO_SPREAD)
     world = world_for(program)
     check_problems(program, world)          # the test's problems (a spread with no ball among them), before any run
     found = spread_ball(world)

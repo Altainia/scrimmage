@@ -60,3 +60,7 @@ mass = 45.0                  # estimate: not published
 inertia = 18.7               # estimate: a uniform 45 kg deck 88 in long, m L^2 / 12
 com_height_in = 11.0         # estimate: not published; just under the deck top
 damping = 20.0               # estimate: not published; the low end of the CHARGE STATION estimate (2023-charge-station.toml)
+
+# Starts: before the generic ramp, facing it along its length from the -x side.
+[start.approach]
+pose = [1.4, 2.0, 0.0]       # choice: 1.1 m from the robot's center to the ramp's foot (x 3.5 - 0.3 - 0.15 / tan 12 deg = 2.49), its front about 0.6 m from it
