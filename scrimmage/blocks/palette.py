@@ -3,7 +3,9 @@
 The palette lists every name a block can pick, as the world names them: the robot's motors and joints (a hinge reads
 in degrees, a slide in inches, a drive wheel is a `wheel`), its bodies and parts, its hooks, the field's bars,
 elements, game pieces and climb levels, whether it can drive (it has drive-wheel motors: joints whose body carries a
-tread geom, as parts/assemble.py marks them) and the signals a chart can show.
+tread geom, as parts/assemble.py marks them) and the signals a chart can show. Every list is sorted by name except
+`levels`, which keeps the range's climb order (lowest first), so a picker reads the way the robot climbs. `pieces`
+are the field's game pieces (the floor balls), not the balls parked in the robot's slots.
 
 `problems()` checks a test's names against that: one plain sentence per bad name, at the block's place (0-based
 indices, through repeat bodies). A test written before Import again renamed a part shows its blocks' problems here
@@ -76,7 +78,7 @@ def palette(world, hooks: list[str]) -> dict:
         "hooks": hook_list,
         "bars": bars,
         "elements": sorted(e.name for e in rng.elements) if rng is not None else [],
-        "pieces": sorted(layout.ball_names) if layout is not None else [],
+        "pieces": sorted(layout.ball_names[:layout.n_floor]) if layout is not None else [],   # on the field
         "levels": list(rule.levels) if rule is not None else [],      # lowest first, as the range lists them
         "drive": any(kinds[n] == "wheel" for n in motors),
         "signals": signals,

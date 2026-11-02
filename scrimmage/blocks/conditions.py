@@ -4,12 +4,15 @@ step, and the plain words that name them in a run's outcome.
 - `joint`: a hinge's angle (degrees) or a slide's travel (inches or meters) above or below a number.
 - `tilt`: the angle between the robot body's z axis and straight up, in degrees.
 - `touch`: a robot part, body or hook (`hook` for any of them) touching a field element, bar, game piece or any
-  named field geom or body; `next bar` for the bar the robot climbs to next.
+  named field geom or body; `next bar` for the bar the robot climbs to next. It reads the contacts update() recorded
+  at the last physics step.
 - `piece_in`: a game piece's center inside a robot body's box: the axis-aligned box, in the body's own frame, around
   its geoms' bounding boxes. `any` for any piece.
-- `hanging_from`: the robot hangs from a bar: the hooks touching it carry at least a quarter of the robot's weight
-  (its subtree mass times g) for HANG_S. A hook's load is the climb monitor's (`climb.hook.<hook>.load`), on each
-  bar it touches.
+- `hanging_from`: the robot hangs from a bar: the hooks hold the robot up from that bar with at least a quarter of
+  its weight (its subtree mass times g) for HANG_S. The force counted is, over each contact between a hook geom and
+  one of that bar's geoms, the upward (world z) part of the contact force on the hook (mj_contactForce, turned out
+  of the contact frame): a push sideways, a hook pressed down onto a bar from below, or a hook's contact with
+  anything else (a rail, another bar) holds nothing up from this bar.
 - `level`: on a range that scores climbs, the climb monitor's scoring level (`climb.level`) is this one.
 
 "The next bar" is the lowest bar whose top is higher than every bar the robot has hung from so far in this run; the
@@ -64,6 +67,11 @@ class Watch:
         self.hanging: set[str] = set()                      # holds the robot hangs from now
         self.hung: list[str] = []                           # holds hung from so far, in order
         self._held = {name: 0.0 for name in self._holds}    # s each hold has carried a quarter of the weight
+        self.load = {name: 0.0 for name in self._holds}     # N each hold holds the robot up by, through its hooks
+        self._hold_of = {g: name for name, gs in self._holds.items() for g in gs}
+        self._all_hooks = set().union(*self._hook_geoms.values()) if self._hook_geoms else set()
+        self._f6 = np.zeros(6)
+        self._pairs: set[tuple[int, int]] = set()           # (robot geom, field geom) touching at the last update
         self._read_tilt()
 
     # ---- every physics step -----------------------------------------------------------------------------------------
@@ -72,20 +80,37 @@ class Watch:
         """Read the world after a physics step."""
         self._read_tilt()
         if self.mon is not None:
-            self.climb = v = self.mon.sample()
+            self.climb = self.mon.sample()
             self.mon.consume()
-            _, _, hooked, _ = self.mon.contact_state()
-            dt = float(self.model.opt.timestep)
-            need = HANG_SHARE * self.weight
-            for name in self._held:
-                load = sum(float(v.get(f"climb.hook.{h}.load", 0.0)) for h in hooked.get(name, ()))
-                self._held[name] = self._held[name] + dt if load >= need else 0.0
-                if self._held[name] >= HANG_S - 0.5 * dt:
-                    self.hanging.add(name)
-                    if name not in self.hung:
-                        self.hung.append(name)
-                else:
-                    self.hanging.discard(name)
+        m, d = self.model, self.data
+        root, hold_of, hooks = self._robot_root, self._hold_of, self._all_hooks
+        pairs: set[tuple[int, int]] = set()
+        up = {name: 0.0 for name in self._held}
+        bodies = m.geom_bodyid
+        for i, (g1, g2) in enumerate(d.contact.geom[:d.ncon].tolist()):
+            r1 = m.body_rootid[bodies[g1]] == root
+            if r1 == (m.body_rootid[bodies[g2]] == root):
+                continue
+            mine, other = (g1, g2) if r1 else (g2, g1)
+            pairs.add((mine, other))
+            hold = hold_of.get(other)
+            if hold is None or mine not in hooks:
+                continue
+            mujoco.mj_contactForce(m, d, i, self._f6)
+            fz = float(self._f6[:3] @ d.contact.frame[i].reshape(3, 3)[:, 2])   # world z of the force on geom2
+            up[hold] += fz if mine == g2 else -fz        # on the hook: geom1 feels the opposite of geom2
+        self._pairs = pairs
+        self.load = up
+        dt = float(m.opt.timestep)
+        need = HANG_SHARE * self.weight
+        for name, carried in up.items():
+            self._held[name] = self._held[name] + dt if carried >= need else 0.0
+            if self._held[name] >= HANG_S - 0.5 * dt:
+                self.hanging.add(name)
+                if name not in self.hung:
+                    self.hung.append(name)
+            else:
+                self.hanging.discard(name)
 
     def _read_tilt(self) -> None:
         zz = float(self.data.xmat[self.body][8])        # the body's z axis, its world z component
@@ -94,12 +119,14 @@ class Watch:
     # ---- the bars ---------------------------------------------------------------------------------------------------
 
     def _top(self, name: str) -> float:
-        """A hold's top now: the highest point of its first geom's bounding box."""
+        """A hold's top now: the highest point of its geoms' bounding boxes."""
         d, m = self.data, self.model
-        g = self._holds[name][0]
-        r = d.geom_xmat[g].reshape(3, 3)
-        c, h = m.geom_aabb[g][:3], m.geom_aabb[g][3:]
-        return float(d.geom_xpos[g][2] + r[2] @ c + np.abs(r[2]) @ h)
+        top = -math.inf
+        for g in self._holds[name]:
+            r = d.geom_xmat[g].reshape(3, 3)
+            c, h = m.geom_aabb[g][:3], m.geom_aabb[g][3:]
+            top = max(top, float(d.geom_xpos[g][2] + r[2] @ c + np.abs(r[2]) @ h))
+        return top
 
     def next_bar(self) -> str | None:
         """The lowest bar whose top is above every bar hung from so far; None when there is none."""
@@ -180,10 +207,7 @@ class Watch:
             if field is None:
                 return False
             mine, other = self._robot_side(a["robot"]), self._field_side(field)
-            for g1, g2 in self.data.contact.geom[:self.data.ncon].tolist():     # the last physics step's contacts
-                if (g1 in mine and g2 in other) or (g2 in mine and g1 in other):
-                    return True
-            return False
+            return any(g in mine and o in other for g, o in self._pairs)
         if k == "piece_in":
             b, lo, hi = self._box(a["body"])
             d = self.data

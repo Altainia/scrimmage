@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from range_fixtures import range_cfg
+from range_fixtures import range_cfg, shooter_cfg, spares_world
 from scrimmage.assembler.templates import new_config
 from scrimmage.blocks.palette import palette, problems
 from scrimmage.blocks.program import loads
@@ -61,6 +61,14 @@ def test_palette_of_the_ladder():
     assert p["elements"] == ["rail_left", "rail_right", "rung1", "rung2", "rung3", "rung4"]
     assert p["hooks"] == ["drive.chassis"] and p["signals"][-1] == "hook_load"
     assert p["levels"] == []
+
+
+def test_pieces_are_the_field_balls_not_the_robots_slots():
+    w = World(shooter_cfg(), None)
+    assert w.parts.layout.ball_names and palette(w, [])["pieces"] == []      # four hopper slots, no floor balls
+    w = spares_world(range_cfg())
+    layout = w.parts.layout
+    assert palette(w, [])["pieces"] == sorted(layout.ball_names[:layout.n_floor]) and layout.n_floor > 0
 
 
 def test_palette_levels_on_a_range_that_scores_climbs():

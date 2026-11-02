@@ -30,7 +30,7 @@ geom = [{ box = [0.05, 0.05, 0.05], collide = false }]
 [[body]]
 name = "paw"
 parent = "base"
-pos = [0.0, 0.0, 0.3]
+pos = [%(x)s, 0.0, %(z)s]
 mass = 0.5
 geom = [{ box = [0.1, 0.1, 0.1] }]
 """
@@ -80,22 +80,53 @@ def test_joint(standin):
     w.reset()
 
 
-@pytest.fixture(scope="module")
-def hanging(tmp_path_factory):
-    """A small box robot whose `arm.paw` sits right over its center, put 5 cm above rung1 so it drops onto it and
-    hangs there, every bit of its weight on the paw."""
-    folder = tmp_path_factory.mktemp("hang")
-    (folder / "arm").mkdir()
-    (folder / "arm" / "part.toml").write_text(PAW_PART)
+def test_hinge_joint_in_degrees(standin):
+    w = standin
+    w.reset()
+    m = w.model
+    w.data.qpos[m.jnt_qposadr[m.joint("climber.latch0").id]] = math.radians(30.0)
+    mujoco.mj_forward(m, w.data)
+    watch = Watch(w, program())
+    assert watch.holds(Cond("joint", {"name": "climber.latch0", "above": 20.0, "unit": "deg"}))
+    assert not watch.holds(Cond("joint", {"name": "climber.latch0", "below": 20.0, "unit": "deg"}))
+    assert not watch.holds(Cond("joint", {"name": "climber.latch0", "above": 40.0, "unit": "deg"}))
+    w.reset()
+
+
+def paw_world(folder, x=0.0, z=0.3) -> World:
+    """A small box robot (no wheels) on the ladder with a hand-written `arm` part whose `paw` box (0.1 m, 0.5 kg) is
+    (x, 0, z) from the robot's top mount."""
+    (folder / "arm").mkdir(parents=True)
+    (folder / "arm" / "part.toml").write_text(PAW_PART % {"x": x, "z": z})
     cfg = range_cfg(range={"file": "ladder", "start": "below"},
                     part=[{"name": "drive", "stock": "chassis", "length": 0.4, "width": 0.4},
                           {"name": "arm", "path": "arm", "attach": "drive.top"}])
-    w = World(cfg, folder)
+    return World(cfg, folder)
+
+
+def paw_geom(w) -> int:
+    m = w.model
+    return next(g for g in range(m.ngeom) if m.body(m.geom_bodyid[g]).name == "arm.paw")
+
+
+def step(w, watch, seconds):
+    hal = HalState()
+    for _ in range(round(seconds / w.model.opt.timestep)):
+        w.step(hal)
+        watch.update()
+        yield
+
+
+@pytest.fixture(scope="module")
+def hanging(tmp_path_factory):
+    """The box robot, its `arm.paw` right over its center, put 5 cm above rung1 so it drops onto it and hangs there,
+    every bit of its weight on the paw."""
+    w = paw_world(tmp_path_factory.mktemp("hang"))
     m, d = w.model, w.data
     q = w.free_qadr
     d.qpos[q] += 1.0                                # under the rungs (1.0 m ahead of the start)
     mujoco.mj_forward(m, d)
-    paw = next(g for g in range(m.ngeom) if m.body(m.geom_bodyid[g]).name == "arm.paw")
+    paw = paw_geom(w)
     d.qpos[q + 2] += 24 * IN + 0.05 - (float(d.geom_xpos[paw][2]) - float(m.geom_size[paw][2]))
     mujoco.mj_forward(m, d)
     return w
@@ -110,16 +141,14 @@ def test_next_bar_follows_the_bars_hung_from(hanging):
     hang_next = Cond("hanging_from", {"bar": "next bar"})
     touch1 = Cond("touch", {"robot": "hook", "field": "rung1"})
     touch_next = Cond("touch", {"robot": "arm", "field": "next bar"})
-    hal = HalState()
     seen_touch_before_hang = False
-    for _ in range(500):
-        w.step(hal)
-        watch.update()
+    for _ in step(w, watch, 0.5):
         if watch.holds(touch1) and not watch.holds(hang1):
             seen_touch_before_hang = True
             assert watch.holds(touch_next)          # rung1 is the next bar until the robot hangs from it
     assert seen_touch_before_hang
     assert watch.holds(hang1) and watch.hung == ["rung1"]
+    assert watch.load["rung1"] == pytest.approx(watch.weight, rel=0.02)     # at rest, the whole weight
     assert watch.next_bar() == "rung2"
     assert not watch.holds(hang_next) and not watch.holds(touch_next)
     assert watch.holds(touch1)
@@ -153,3 +182,48 @@ def test_describe():
     assert describe(Cond("joint", {"name": "lift.stage1", "below": 2.5, "unit": "in"})) == \
         "lift.stage1 goes below 2.5 in"
     assert describe(Cond("level", {"level": "HIGH"})) == "the robot hangs at HIGH"
+
+
+def test_a_push_into_a_bar_from_the_side_is_no_hang(tmp_path):
+    """The box robot on the floor, its paw at rung1's height just short of it, pushed forward into the rung at 400 N:
+    the paw presses the rung hard (the climb monitor's hook load, every direction, is well over a quarter of the
+    weight) but holds nothing up from it for long: the contact's friction carries a moment's spike as the paw hits."""
+    probe = paw_world(tmp_path / "probe", x=0.0, z=0.0)
+    mujoco.mj_forward(probe.model, probe.data)
+    rung = probe.model.geom("element.rung1.pipe").id
+    paw = probe.data.geom_xpos[paw_geom(probe)]
+    rung_at = probe.data.geom_xpos[rung]
+    x = float(rung_at[0] - paw[0]) - 0.83 * IN - 0.05 - 0.01         # the paw's face 1 cm short of the rung
+    w = paw_world(tmp_path / "real", x=x, z=float(rung_at[2] - paw[2]))
+    watch = Watch(w, program(hooks=["arm.paw"]))
+    w.set_robot_force(400.0, 0.0)
+    pressed = 0.0
+    for _ in step(w, watch, 0.6):
+        assert not watch.hanging
+        if watch.climb["climb.hook.arm.paw.load"] > 0.25 * watch.weight:
+            pressed += w.model.opt.timestep
+    assert pressed > 0.3 and watch.holds(Cond("touch", {"robot": "arm.paw", "field": "rung1"}))
+    assert watch.mon.contact_state()[0]                                 # on the floor all along
+    assert watch.hung == [] and watch.next_bar() == "rung1"
+
+
+def test_a_hook_carrying_less_than_a_quarter_is_no_hang(tmp_path):
+    """The box robot on the floor with its paw 1.5 m ahead, resting on rung1's top: the rung carries part of its
+    weight, less than a quarter, for well over 0.1 s."""
+    probe = paw_world(tmp_path / "probe", x=1.5, z=0.0)
+    mujoco.mj_forward(probe.model, probe.data)
+    g = paw_geom(probe)
+    z = 24 * IN - 0.002 - (float(probe.data.geom_xpos[g][2]) - float(probe.model.geom_size[g][2]))
+    w = paw_world(tmp_path / "real", x=1.5, z=z)
+    m, d = w.model, w.data
+    d.qpos[w.free_qadr] -= 0.5                     # back, so the paw is over the rung
+    mujoco.mj_forward(m, d)
+    watch = Watch(w, program(hooks=["arm.paw"]))
+    carried = 0.0
+    for i, _ in enumerate(step(w, watch, 0.6)):
+        if i * m.opt.timestep < 0.2:
+            continue                                # settling onto the floor and the rung
+        assert 0.05 * watch.weight < watch.load["rung1"] < 0.25 * watch.weight
+        carried += m.opt.timestep
+    assert carried > 0.3
+    assert not watch.holds(Cond("hanging_from", {"bar": "rung1"})) and watch.hung == []
