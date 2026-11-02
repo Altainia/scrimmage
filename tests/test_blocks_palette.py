@@ -292,6 +292,7 @@ def test_review_focus_1_a_ball_that_doesnt_fit_is_a_setup_problem(tmp_path):
     text = (Path(__file__).resolve().parent.parent / "scrimmage/testrange/ranges/station.toml").read_text()
     text = text.replace("chute = { length = 0.5, slope_deg = 30.0 }", "chute = { length = 0.5, slope_deg = 30.0, width = 0.25 }")
     text = text.replace("release = [0.3, 4.0, 1.1]", "release = [1.0, 4.0, 1.1]")    # clear of the wall for a big ball
+    text = text.replace("pose = [1.183, 4.0, 180.0]", "pose = [1.883, 4.0, 180.0]")      # moved with the release
     (tmp_path / "station.toml").write_text(text)
     w = station_world(str(tmp_path / "station.toml"))
     p = sprog(setup='\n[setup]\nball = "2014-ball"\n')
