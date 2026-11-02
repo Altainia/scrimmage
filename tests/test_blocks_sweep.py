@@ -155,3 +155,134 @@ def test_only_the_newest_sweeps_are_kept_and_cancel(tmp_path):
     cancel.set()
     out = run_sweep(_program(path), {"block": [0], "key": "seconds"}, [0.1, 0.2], base, cancel=cancel)
     assert [r["status"] for r in _table(out)] == ["cancelled"]
+    assert out.name == f"sweep-{KEEP_SWEEPS + 2:03d}"
+
+
+def test_a_cancelled_sweep_doesnt_push_out_a_complete_one(tmp_path):
+    path = write_test(tmp_path, WAIT)
+    base = tmp_path / "runs"
+    for _ in range(KEEP_SWEEPS):
+        run_sweep(_program(path), {"block": [0], "key": "seconds"}, [0.1], base)
+    cancel = threading.Event()
+    cancel.set()
+    out = run_sweep(_program(path), {"block": [0], "key": "seconds"}, [0.1], base, cancel=cancel)
+    assert json.loads((out / "sweep.json").read_text(encoding="utf-8"))["cancelled"] is True
+    names = sorted(p.name for p in base.iterdir())
+    assert names == [f"sweep-{i:03d}" for i in range(1, KEEP_SWEEPS + 2)]       # nothing pruned
+    run_sweep(_program(path), {"block": [0], "key": "seconds"}, [0.1], base)   # a complete one prunes the oldest
+    assert sorted(p.name for p in base.iterdir()) == [f"sweep-{i:03d}" for i in range(2, KEEP_SWEEPS + 3)]
+
+
+def test_the_temp_config_is_deleted_while_briefly_held(tmp_path, monkeypatch):
+    import scrimmage.blocks.sweep as sweep
+    from pathlib import Path
+    monkeypatch.setattr(sweep, "REPLACE_WAITS", (0.0, 0.0, 0.0))
+    real = Path.unlink
+    held = {"n": 2}
+
+    def unlink(self, *a, **kw):
+        if ".sweep-" in self.name and held["n"] > 0:
+            held["n"] -= 1
+            raise PermissionError(13, "held by another program")
+        return real(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+    path = write_test(tmp_path, WAIT)
+    out = run_sweep(_program(path), {"robot": "mass"}, [40.0], tmp_path / "runs")
+    assert held["n"] == 0 and _left_behind(tmp_path) == []
+    assert "problems" not in json.loads((out / "sweep.json").read_text(encoding="utf-8"))
+
+
+def test_a_temp_config_still_held_is_named(tmp_path, monkeypatch):
+    import scrimmage.blocks.sweep as sweep
+    from pathlib import Path
+    monkeypatch.setattr(sweep, "REPLACE_WAITS", (0.0,))
+    real = Path.unlink
+
+    def unlink(self, *a, **kw):
+        if ".sweep-" in self.name and self.suffix == ".toml":
+            raise PermissionError(13, "held by another program")
+        return real(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+    path = write_test(tmp_path, WAIT)
+    out = run_sweep(_program(path), {"robot": "mass"}, [40.0], tmp_path / "runs")
+    [left] = _left_behind(tmp_path)
+    assert left.startswith(".robot.sweep-")
+    [problem] = json.loads((out / "sweep.json").read_text(encoding="utf-8"))["problems"]
+    assert left in problem and "Delete it by hand" in problem
+    assert _table(out)[0]["status"] == "finished"
+
+
+def test_any_error_in_one_value_is_its_row(tmp_path, monkeypatch):
+    import scrimmage.blocks.sweep as sweep
+    real = sweep.TestRun.run
+    calls = {"n": 0}
+
+    def run(self, *a, **kw):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("the physics blew up")
+        return real(self, *a, **kw)
+
+    monkeypatch.setattr(sweep.TestRun, "run", run)
+    path = write_test(tmp_path, WAIT)
+    out = run_sweep(_program(path), {"robot": "mass"}, [30.0, 40.0, 50.0], tmp_path / "runs")
+    rows = _table(out)
+    assert [r["status"] for r in rows] == ["finished", "couldn't run", "finished"]
+    assert rows[1]["outcome"] == "something went wrong (RuntimeError: the physics blew up)"
+    assert sorted(e["id"] for e in list_runs(tmp_path / "runs")) == ["sweep-001/001", "sweep-001/003"]
+    assert _left_behind(tmp_path) == []
+
+
+def test_an_interrupted_sweep_keeps_the_runs_done(tmp_path, monkeypatch):
+    import scrimmage.blocks.sweep as sweep
+    real = sweep.TestRun.run
+    calls = {"n": 0}
+
+    def run(self, *a, **kw):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise KeyboardInterrupt
+        return real(self, *a, **kw)
+
+    monkeypatch.setattr(sweep.TestRun, "run", run)
+    path = write_test(tmp_path, WAIT)
+    with pytest.raises(KeyboardInterrupt):
+        run_sweep(_program(path), {"robot": "mass"}, [30.0, 40.0], tmp_path / "runs")
+    out = tmp_path / "runs" / "sweep-001"
+    assert json.loads((out / "sweep.json").read_text(encoding="utf-8"))["cancelled"] is True
+    assert [r["status"] for r in _table(out)] == ["finished"]
+    assert _left_behind(tmp_path) == [] and _left_behind(tmp_path / "runs") == []
+
+
+def test_leftovers_of_a_killed_sweep_are_removed(tmp_path):
+    import os
+    import time
+    path = write_test(tmp_path, WAIT)
+    base = tmp_path / "runs"
+    base.mkdir()
+    old = time.time() - 2 * 3600
+    stale = [tmp_path / ".robot.sweep-abc.toml", base / ".run-x", base / ".sweep-y"]
+    fresh = [tmp_path / ".robot.sweep-new.toml", base / ".run-new"]
+    for p in stale + fresh:
+        if p.suffix == ".toml":
+            p.write_text("", encoding="utf-8")
+        else:
+            p.mkdir()
+            (p / "result.json").write_text("{}", encoding="utf-8")
+    for p in stale:
+        os.utime(p, (old, old))
+    (tmp_path / ".other.toml").write_text("", encoding="utf-8")
+    os.utime(tmp_path / ".other.toml", (old, old))
+    run_sweep(_program(path), {"robot": "mass"}, [40.0], base)
+    assert not any(p.exists() for p in stale)
+    assert all(p.exists() for p in fresh) and (tmp_path / ".other.toml").exists()
+
+
+def test_com_target_has_its_own_message(tmp_path):
+    from scrimmage.blocks.sweep import _edit_config
+    write_test(tmp_path, WAIT)
+    text = (tmp_path / "robot.toml").read_text(encoding="utf-8").replace('stock = "chassis"', 'stock = "kitbot"')
+    with pytest.raises(ValueError, match="to move the center of gravity of"):
+        _edit_config(text, {"robot": "com_up"}, 0.1)

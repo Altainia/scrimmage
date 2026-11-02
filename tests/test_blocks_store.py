@@ -136,3 +136,34 @@ def test_cli_keeps_the_run(tmp_path, capsys, monkeypatch):
     assert f"kept in {there / '001'}" in capsys.readouterr().out
     assert [e["id"] for e in list_runs(there)] == ["001"]
     assert len(list_runs(tmp_path / "t-runs")) == 1
+
+
+def _fake_run(base, run_id: str, started: str) -> None:
+    import json
+    folder = base / run_id
+    folder.mkdir(parents=True)
+    (folder / "result.json").write_text(json.dumps({"status": "finished", "outcome": "finished",
+                                                    "started": started, "sweep": None}), encoding="utf-8")
+
+
+def test_runs_sort_by_time_and_number(tmp_path):
+    base = tmp_path / "runs"
+    # across a fall-back DST change: 01:30-04:00 is earlier than 01:10-05:00 though its text sorts later
+    _fake_run(base, "001", "2026-11-01T01:30:00.000-04:00")
+    _fake_run(base, "002", "2026-11-01T01:10:00.000-05:00")
+    # the same time: the higher number is newer, past 999 too, and a later sweep's run after a plain run
+    same = "2026-11-02T10:00:00.000+00:00"
+    _fake_run(base, "999", same)
+    _fake_run(base, "1000", same)
+    _fake_run(base, "sweep-002/001", same)
+    _fake_run(base, "sweep-010/002", same)
+    ids = [e["id"] for e in list_runs(base)]
+    assert ids == ["sweep-010/002", "sweep-002/001", "1000", "999", "002", "001"]
+
+
+def test_started_is_when_the_run_started(tmp_path):
+    from datetime import datetime
+    program, r = _run(write_test(tmp_path, WAIT_1))
+    assert r.started and datetime.fromisoformat(r.started).tzinfo is not None
+    save_run(r, program, tmp_path / "runs")
+    assert load_run(tmp_path / "runs", "001")["started"] == r.started

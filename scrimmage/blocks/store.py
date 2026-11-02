@@ -27,6 +27,7 @@ import re
 import shutil
 import struct
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -37,6 +38,7 @@ from .program import Program, dumps
 
 KEEP_RUNS = 10
 KEEP_SWEEPS = 3
+STALE_S = 3600.0          # a temp file or folder this old was left by a process that was killed
 MOTION_MAGIC = b"SCRM"
 MOTION_VERSION = 1
 _HEADER = struct.Struct("<4sHII")
@@ -61,6 +63,49 @@ def _numbered(base: Path, pattern: re.Pattern) -> list[tuple[int, Path]]:
         if m and p.is_dir():
             out.append((int(m.group(1) if m.groups() else m.group(0)), p))
     return sorted(out)
+
+
+def _now() -> str:
+    return datetime.now().astimezone().isoformat(timespec="milliseconds")
+
+
+def _when(started) -> float:
+    """An ISO time (with its UTC offset) as a timestamp, for sorting; 0 for none or a bad one."""
+    try:
+        t = datetime.fromisoformat(started)
+    except (TypeError, ValueError):
+        return 0.0
+    if t.tzinfo is None:
+        t = t.astimezone()
+    return t.timestamp()
+
+
+def _id_key(run_id: str) -> tuple[int, int]:
+    """("004" -> (0, 4), "sweep-002/003" -> (2, 3)): the newer sweep and the later run sort higher."""
+    head, _, tail = run_id.rpartition("/")
+    return (int(head[len("sweep-"):]) if head else 0, int(tail))
+
+
+def clean_stale(folder: Path, patterns: tuple[str, ...], age_s: float = STALE_S) -> None:
+    """Remove temp files and folders matching `patterns` in folder, older than age_s: what a process killed while
+    writing a run or a sweep left behind."""
+    if not folder.is_dir():
+        return
+    now = time.time()
+    for pattern in patterns:
+        for p in folder.glob(pattern):
+            try:
+                if now - p.stat().st_mtime < age_s:
+                    continue
+                if p.is_dir():
+                    shutil.rmtree(p, ignore_errors=True)
+                else:
+                    p.unlink()
+            except OSError:
+                pass        # held or gone: the next clean tries again
+
+
+TEMP_RUNS = (".run-*", ".sweep-*")
 
 
 def _plain(v):
@@ -146,11 +191,12 @@ def save_run(result, program: Program, base, sweep: dict | None = None) -> Path:
     plain runs in base; a sweep's runs are pruned with their sweep."""
     base = Path(base)
     base.mkdir(parents=True, exist_ok=True)
+    clean_stale(base, TEMP_RUNS)
     tmp = Path(tempfile.mkdtemp(dir=base, prefix=".run-"))
     try:
         _write_json(tmp / "result.json", {
             "status": result.status, "outcome": result.outcome, "t_end": result.t_end, "checks": result.checks,
-            "hung": result.hung, "started": datetime.now().astimezone().isoformat(timespec="milliseconds"),
+            "hung": result.hung, "started": getattr(result, "started", "") or _now(),
             "test": dumps(program), "sweep": sweep})
         _write_signals(tmp / "signals.csv", result.signals)
         _write_json(tmp / "view.json", result.view)
@@ -181,7 +227,7 @@ def list_runs(base) -> list[dict]:
     for _, s in _numbered(base, _SWEEP_RE):
         folders += [p for _, p in _numbered(s, _RUN_RE)]
     out = [e for e in (_entry(base, p) for p in folders) if e is not None]
-    out.sort(key=lambda e: (e["started"] or "", e["id"]), reverse=True)
+    out.sort(key=lambda e: (_when(e["started"]), _id_key(e["id"])), reverse=True)
     return out
 
 
@@ -204,14 +250,31 @@ def load_run(base, run_id: str) -> dict:
 def new_sweep_folder(base: Path) -> Path:
     """A hidden temp folder in base to build a sweep in; `place_sweep` renames it into place."""
     base.mkdir(parents=True, exist_ok=True)
+    clean_stale(base, TEMP_RUNS)
     return Path(tempfile.mkdtemp(dir=base, prefix=".sweep-"))
 
 
-def place_sweep(tmp: Path, base: Path) -> Path:
+def _cancelled(folder: Path) -> bool:
+    try:
+        return bool(json.loads((folder / "sweep.json").read_text(encoding="utf-8")).get("cancelled"))
+    except (OSError, ValueError):
+        return False
+
+
+def place_sweep(tmp: Path, base: Path, cancelled: bool = False) -> Path:
+    """Rename a finished sweep into place. A complete one leaves the newest KEEP_SWEEPS complete sweeps (and the
+    cancelled ones newer than the oldest of those); a cancelled one doesn't count and prunes nothing."""
     try:
         folder = _place(tmp, base, _SWEEP_RE, lambda k: f"sweep-{k:03d}")
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
-    _prune(base, _SWEEP_RE, KEEP_SWEEPS)
+    if not cancelled:
+        sweeps = _numbered(base, _SWEEP_RE)
+        complete = [k for k, p in sweeps if not _cancelled(p)]
+        if len(complete) > KEEP_SWEEPS:
+            oldest_kept = complete[-KEEP_SWEEPS]
+            for k, p in sweeps:
+                if k < oldest_kept:
+                    shutil.rmtree(p, ignore_errors=True)
     return folder

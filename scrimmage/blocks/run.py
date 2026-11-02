@@ -28,6 +28,7 @@ from __future__ import annotations
 import math
 import threading
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -65,6 +66,7 @@ class RunResult:
     motion: list[tuple[float, np.ndarray]] = field(default_factory=list)  # (t, (movers, 7) poses), MOTION_HZ
     movers: list[str] = field(default_factory=list)
     view: dict = field(default_factory=dict)            # model_view(world, include_world=True) at the start
+    started: str = ""         # when the run started, ISO time with its UTC offset
 
     @property
     def passed(self) -> bool:
@@ -135,6 +137,7 @@ class TestRun:
         """Play the blocks. `on_sample(t, row)` is called at each signal sample (row: signal -> value); setting
         `cancel` ends the run at the next physics step."""
         from ..assembler.view import model_view
+        started = datetime.now().astimezone().isoformat(timespec="milliseconds")
         w, m, d = self.world, self.world.model, self.world.data
         dt = float(m.opt.timestep)
         w.external = None
@@ -148,7 +151,7 @@ class TestRun:
         walk = WalkOff(dt) if watch.mon is not None else None
         view = model_view(w, include_world=True)
         ms = movers(w)
-        result = RunResult("", "", 0.0, movers=[mv.name for mv in ms], view=view)
+        result = RunResult("", "", 0.0, movers=[mv.name for mv in ms], view=view, started=started)
         result.signals = {"t": [], **{n: [] for n in self.signal_names}}
 
         self.drives: dict[str, tuple[str, float]] = {}      # joint -> ("volts", V) or ("to", qpos target)

@@ -8,12 +8,15 @@ The setting (a target) is one of
     {"mount": "<part>", "axis": "x" | "y" | "z" | "yaw"}                   a [[part]]'s pos (m) / rot yaw (deg)
 
 A block value changes the test; a robot or mount value changes a copy of the robot config, written as a hidden
-temp file next to it (so its meshes and part folders still resolve) and deleted after that run. A value that can't
-build or run ("mass must be greater than 0") is a row with that message, not the end of the sweep.
+temp file next to it (so its meshes and part folders still resolve) and deleted after that run (tried again while
+another program holds it; one still there is named in sweep.json's `problems`). Temp copies and folders over an hour
+old, left by a process that was killed, are removed when a sweep starts. A value that can't build or run ("mass must
+be greater than 0"), or whose run fails in any other way, is a row with that message, not the end of the sweep.
 
 The sweep is kept as `base/sweep-<NNN>/`: a run per value (`001/` ...), `table.csv` (value, status, outcome, t_end,
-and passed / failed for each check) and `sweep.json` (target, values). Run `<k>/` is row k's (none for a value that
-couldn't run). The newest KEEP_SWEEPS are kept.
+and passed / failed for each check) and `sweep.json` (target, values, and `cancelled` / `problems` when there are
+any). Run `<k>/` is row k's (none for a value that couldn't run). The newest KEEP_SWEEPS complete sweeps are kept; a
+cancelled sweep (stopped, or interrupted, with the runs done so far) doesn't count and prunes nothing.
 """
 
 from __future__ import annotations
@@ -25,11 +28,12 @@ import os
 import shutil
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 import tomlkit
 
-from ..cad.settings import replace_file
+from ..cad.settings import REPLACE_WAITS, replace_file
 from . import store
 from .program import Program, TestFileError, from_json, to_json
 from .run import TestRun, _where
@@ -99,7 +103,8 @@ def _edit_config(text: str, target: dict, value: float) -> str:
     if "robot" in target:
         chassis = next((p for p in parts if p.get("stock") == "chassis"), None)
         if chassis is None:
-            raise ValueError("this robot has no stand-in chassis (stock = \"chassis\") to change the mass of")
+            what = "change the mass of" if target["robot"] == "mass" else "move the center of gravity of"
+            raise ValueError(f"this robot has no stand-in chassis (stock = \"chassis\") to {what}")
         i = ROBOT_KEYS[target["robot"]]
         _set(chassis, "mass" if i is None else "com_offset", i, value)
     else:
@@ -113,26 +118,47 @@ def _edit_config(text: str, target: dict, value: float) -> str:
 
 # ---- one value ------------------------------------------------------------------------------------------------------
 
-def _world(config: Path, text: str):
-    """The World of the config's text, built from a hidden temp file next to the config; the file is deleted."""
-    from ..config import build_world, load_config
-    fd, name = tempfile.mkstemp(dir=config.parent, prefix=f".{config.stem}.sweep-", suffix=".toml")
-    tmp = Path(name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
-            f.write(text)
+def _remove(path: Path) -> bool:
+    """Delete a file, tried again for about a second while it's held (on Windows a virus scanner or the search
+    indexer briefly holds a file just written); False when it's still there after that."""
+    for wait in (*REPLACE_WAITS, None):
         try:
-            return build_world(load_config(tmp))
-        except (ValueError, OSError) as e:
-            msg = str(e)
-            for s in (str(tmp.resolve()), str(tmp), tmp.name):
-                msg = msg.replace(s, config.name)
-            raise ValueError(msg) from None
-    finally:
-        try:
-            tmp.unlink()
+            path.unlink()
+            return True
+        except FileNotFoundError:
+            return True
+        except PermissionError:
+            if wait is None:
+                return False
+            time.sleep(wait)
         except OSError:
-            pass
+            return False
+    return False
+
+
+def _temp_config(config: Path, text: str) -> Path:
+    fd, name = tempfile.mkstemp(dir=config.parent, prefix=f".{config.stem}.sweep-", suffix=".toml")
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
+    return Path(name)
+
+
+def _world(config: Path, tmp: Path):
+    """The World of the temp copy `tmp` of the config; an error names the config, not the temp copy."""
+    from ..config import build_world, load_config
+    try:
+        return build_world(load_config(tmp))
+    except (ValueError, OSError) as e:
+        msg = str(e)
+        for s in (str(tmp.resolve()), str(tmp), tmp.name):
+            msg = msg.replace(s, config.name)
+        raise ValueError(msg) from None
+
+
+def _plain_error(e: BaseException) -> str:
+    """An unexpected error's message for a row."""
+    text = str(e).strip()
+    return f"something went wrong ({type(e).__name__}{': ' + text if text else ''})"
 
 
 def _check_column(c: dict) -> str:
@@ -165,22 +191,32 @@ def run_sweep(program: Program, target: dict, values: list[float], base, on_prog
         _edit_config(text, target, values[0])                          # the part or chassis is there
 
     base = Path(base)
+    if kind != "block":
+        store.clean_stale(config.parent, (f".{config.stem}.sweep-*.toml",))
     tmp = store.new_sweep_folder(base)
+    rows: list[dict] = []
+    left: list[str] = []            # temp configs that couldn't be removed
+    cancelled = False
     try:
-        rows: list[dict] = []
         for i, v in enumerate(values):
             row = {"value": v, "status": COULDNT_RUN, "outcome": "", "t_end": None, "checks": {}}
+            result = temp = None
             try:
                 if kind == "block":
                     p = _edit_program(program, target["block"], target["key"], v)
                     world = world_for(p)
                 else:
                     p = program
-                    world = _world(config, _edit_config(text, target, v))
+                    temp = _temp_config(config, _edit_config(text, target, v))
+                    world = _world(config, temp)
                 result = TestRun(world, p).run(cancel=cancel)
             except (ValueError, OSError) as e:      # TestFileError, ConfigError and PartError are ValueErrors
                 row["outcome"] = str(e)
-                result = None
+            except Exception as e:                  # anything else: this value's row, not the end of the sweep
+                row["outcome"] = _plain_error(e)
+            finally:
+                if temp is not None and not _remove(temp):
+                    left.append(temp.name)
             if result is not None:
                 row.update(status=result.status, outcome=result.outcome, t_end=result.t_end,
                            checks={_check_column(c): "passed" if c["passed"] else "failed" for c in result.checks})
@@ -191,13 +227,30 @@ def run_sweep(program: Program, target: dict, values: list[float], base, on_prog
             if on_progress is not None:
                 on_progress(i + 1, len(values), row)
             if result is not None and result.status == "cancelled":
+                cancelled = True
                 break
+    except BaseException:
+        cancelled = True                            # interrupted: keep the runs done so far, then stop
+        _finish(tmp, base, target, values, rows, left, cancelled)
+        raise
+    return _finish(tmp, base, target, values, rows, left, cancelled)
+
+
+def _finish(tmp: Path, base: Path, target: dict, values: list, rows: list, left: list, cancelled: bool) -> Path:
+    """Write table.csv and sweep.json and put the sweep in place."""
+    meta = {"target": target, "values": values}
+    if cancelled:
+        meta["cancelled"] = True
+    if left:
+        meta["problems"] = [f"couldn't delete the temp copy of the robot file, {n}; it's held by another program. "
+                            "Delete it by hand." for n in left]
+    try:
         _write_table(tmp / "table.csv", rows)
-        (tmp / "sweep.json").write_text(json.dumps({"target": target, "values": values}), encoding="utf-8")
+        (tmp / "sweep.json").write_text(json.dumps(meta), encoding="utf-8")
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
-    return store.place_sweep(tmp, base)
+    return store.place_sweep(tmp, base, cancelled=cancelled)
 
 
 def _write_table(path: Path, rows: list[dict]) -> None:
