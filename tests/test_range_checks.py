@@ -226,7 +226,7 @@ def test_scenario_range_overrides_config(tmp_path):
             assert s.world.test_range.counts()["held"] == 0
             rep = await run_scenario(scn, tmp_path / "passed", session=s)
             # the run is over: the next restart goes back to the config's start and preload
-            assert s.world.test_range.settings() == {"start": None, "preload": 0, "floor_balls": False}
+            assert s.world.test_range.settings() == {"start": None, "preload": 0, "floor_balls": False, "seed": 1}
             return rep, s.state()
         finally:
             await s.stop()

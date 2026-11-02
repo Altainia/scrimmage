@@ -11,14 +11,15 @@
     spread_yaw_deg = 5.0          # each feed varies uniformly within +-this of the heading, and so on
     spread_pitch_deg = 5.0
     spread_speed = 0.2
-    spread_position = [0.0, 0.02, 0.02]    # or spread_position_in; a box around the release point, half sizes
+    spread_position = [0.0, 0.02, 0.02]    # or spread_position_in; a box this size centered on the release point
     spread_rotation_deg = [0, 0, 0]        # the ball's turn; it does nothing to a ball (a later piece's)
     chute = { length = 0.6, slope_deg = 25.0, width = 0.3 }   # a sloped floor and two side walls (optional)
 
 The spreads are limits, not standard deviations (the bench's inlet takes standard deviations): a piece never leaves
 a tight chute's limits. The chute's floor top passes under the release point, tangent to a ball resting there, and
-runs down along the heading for `length` at `slope_deg`; its side walls stand one ball diameter above the floor. Its
-`width` is the space between the walls, 1.3 ball diameters when left out (so a ball of any preset fits).
+runs down along the heading for `length` at `slope_deg` (its high end reaches a little behind the release point, so
+the ball lands on the floor's face); its side walls stand one ball diameter above the floor. Its `width` is the space
+between the walls, 1.3 ball diameters when left out (so a ball of any preset fits).
 Stations feed balls, not discs.
 """
 

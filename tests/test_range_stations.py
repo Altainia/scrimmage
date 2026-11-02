@@ -1,11 +1,16 @@
 import math
 import tomllib
+from pathlib import Path
 
 import numpy as np
 import pytest
 
+from scrimmage.protocol import HalState
+from scrimmage.testrange.balls import BallState
+from scrimmage.testrange.build import BALL_BITS
 from scrimmage.testrange.build_elements import chute_parts
 from scrimmage.testrange.spec import BUILTIN_RANGES, RangeError, load_range, parse_range
+from scrimmage.testrange.station import Chute
 
 HEAD = '''
 [range]
@@ -146,6 +151,216 @@ def test_a_station_in_a_disc_range_is_refused(tmp_path):
 
 
 def test_ranges_without_stations_are_unchanged():
-    from pathlib import Path
     for name in BUILTIN_RANGES:
+        if name == "station":       # the station field has one on purpose
+            continue
         assert load_range(name, Path(".")).stations == ()
+
+
+# ------------------------------------------------------------------------------------------------ in the world
+
+ROOT = Path(__file__).resolve().parents[1]
+STATION_TOML = ROOT / "scrimmage" / "testrange" / "ranges" / "station.toml"
+AWAY = (8.0, 2.0, 0.0)          # a robot pose clear of the station and its chute
+
+
+def station_world(tmp_path, extra: str = "", away: bool = True):
+    """The stand-in robot (no extra parts) on the station field; `extra` lines go into its [[station]] (the range
+    copied to tmp_path). The robot moved clear of the chute unless `away` is false."""
+    from scrimmage.assembler.templates import new_config
+    from scrimmage.world import World
+
+    ref = "station"
+    if extra:
+        text = STATION_TOML.read_text(encoding="utf-8").replace('name = "feeder"\n', f'name = "feeder"\n{extra}\n')
+        (tmp_path / "station.toml").write_text(text, encoding="utf-8")
+        ref = "station.toml"
+    cfg = tomllib.loads(new_config("standin") + f'\n[range]\nfile = "{ref}"\n')
+    w = World(cfg, tmp_path)
+    if away:
+        w.set_robot_pose(*AWAY)
+    return w
+
+
+def advance(w, seconds):
+    hal = HalState()
+    for _ in range(int(round(seconds / w.model.opt.timestep))):
+        w.step(hal)
+
+
+def test_a_station_has_its_pool_parked(tmp_path):
+    w = station_world(tmp_path)
+    lay = w.parts.layout
+    assert len(lay.station_slots["feeder"]) == 50 and lay.station_slots["feeder"].start == lay.robot_slots.stop
+    assert all(w.test_range.balls.state[i] == BallState.SPARE for i in lay.station_slots["feeder"])
+    assert all(w.test_range.balls.log[i].origin == "station" for i in lay.station_slots["feeder"])
+    assert w.model.geom("element.feeder.chute.floor") is not None
+
+
+def test_start_feeds_at_once_then_every_interval(tmp_path):
+    w = station_world(tmp_path)
+    feeder = w.test_range.feeder
+    t0 = w.time
+    feeder.start("feeder")
+    advance(w, 3.05)
+    assert [round(f.t - t0, 3) for f in feeder.fed] == [0.0, 1.0, 2.0, 3.0]
+    assert feeder.count("feeder") == 4 and feeder.left("feeder") is None and not feeder.empty("feeder")
+    lay = w.parts.layout
+    assert [f.ball for f in feeder.fed] == list(lay.station_slots["feeder"][:4])
+    assert all(f.station == "feeder" for f in feeder.fed)
+
+
+def test_a_fed_piece_slides_down_the_chute_onto_the_carpet(tmp_path):
+    w = station_world(tmp_path)
+    st = w.test_range.range.stations[0]
+    chute_low_end_x = st.release[0] + st.chute.length * math.cos(math.radians(st.chute.slope_deg))
+    w.test_range.feeder.request("feeder")
+    advance(w, 3.0)
+    i = w.test_range.feeder.fed[0].ball
+    x, _, z = w.test_range.balls.positions()[i]
+    r = w.test_range.balls.r
+    assert z == pytest.approx(r, abs=0.005) and x > chute_low_end_x
+    assert w.test_range.balls.state[i] == BallState.FIELD
+
+
+def feeds(w, seed):
+    w.test_range.reset(seed=seed)
+    w.set_robot_pose(*AWAY)
+    feeder = w.test_range.feeder
+    assert feeder.seed == seed and feeder.fed == []
+    t0 = w.time
+    feeder.start("feeder")
+    advance(w, 2.05)
+    return [(round(f.t - t0, 6), f.release, f.velocity) for f in feeder.fed]
+
+
+def test_the_same_seed_gives_the_same_feeds_and_another_seed_doesnt(tmp_path):
+    w = station_world(tmp_path, "spread_yaw_deg = 10\nspread_speed = 0.5\nspeed = 0.5")
+    a, b, c = feeds(w, 7), feeds(w, 7), feeds(w, 8)
+    assert len(a) == 3 and a == b and a != c
+    assert w.test_range.settings()["seed"] == 8
+    w.test_range.reset()                    # kept like the other overrides
+    assert w.test_range.feeder.seed == 8
+
+
+def test_a_fed_piece_varies_within_its_spreads(tmp_path):
+    w = station_world(tmp_path, "speed = 1.0\nspread_yaw_deg = 10\nspread_pitch_deg = 5\nspread_speed = 0.5\n"
+                                "spread_position = [0.0, 0.04, 0.02]")
+    feeder = w.test_range.feeder
+    st = w.test_range.range.stations[0]
+    feeder.start("feeder")
+    advance(w, 5.05)
+    assert len(feeder.fed) == 6
+    for f in feeder.fed:
+        d = np.array(f.release) - np.array(st.release)
+        assert abs(d[0]) < 1e-12 and abs(d[1]) <= 0.02 and abs(d[2]) <= 0.01
+        v = np.array(f.velocity)
+        speed = float(np.linalg.norm(v))
+        assert 0.5 <= speed <= 1.5
+        assert abs(math.degrees(math.atan2(v[1], v[0]))) <= 10.0 + 1e-9
+        assert abs(math.degrees(math.asin(-v[2] / speed))) <= 5.0 + 1e-9
+    assert len({f.velocity for f in feeder.fed}) == 6
+
+
+def test_a_stock_runs_out(tmp_path):
+    w = station_world(tmp_path, "stock = 3")
+    feeder = w.test_range.feeder
+    assert len(w.parts.layout.station_slots["feeder"]) == 3
+    feeder.start("feeder")
+    assert feeder.left("feeder") == 3 and not feeder.empty("feeder")
+    advance(w, 5.0)
+    assert feeder.count("feeder") == 3 and feeder.left("feeder") == 0
+    assert feeder.empty("feeder") and feeder.capped("feeder")
+    advance(w, 1.0)
+    assert feeder.count("feeder") == 3
+
+
+def test_feed_one_waits_out_the_interval(tmp_path):
+    w = station_world(tmp_path)
+    feeder = w.test_range.feeder
+    t0 = w.time
+    feeder.request("feeder")
+    feeder.request("feeder")
+    advance(w, 2.5)
+    assert [round(f.t - t0, 3) for f in feeder.fed] == [0.0, 1.0]
+
+
+def test_stop_ends_feeding(tmp_path):
+    w = station_world(tmp_path)
+    feeder = w.test_range.feeder
+    feeder.start("feeder")
+    advance(w, 1.5)
+    feeder.stop_all()
+    advance(w, 2.0)
+    assert feeder.count("feeder") == 2
+    with pytest.raises(ValueError, match="no station 'nope'; this range's stations: feeder"):
+        feeder.start("nope")
+
+
+def test_a_blocked_release_point_waits(tmp_path):
+    w = station_world(tmp_path)
+    rt = w.test_range
+    st = rt.range.stations[0]
+    rt.balls.put(0, st.release, BALL_BITS)          # ball 0 is the field's floor ball
+    feeder = rt.feeder
+    assert feeder.blocked("feeder")
+    feeder.start("feeder")
+    advance(w, 0.05)
+    assert feeder.fed == [] and feeder.blocked("feeder")
+    advance(w, 1.0)                                 # ball 0 has rolled down the chute: the feed goes
+    assert len(feeder.fed) == 1 and not rt.balls.positions()[0][0] < st.release[0] + 0.15
+
+
+def test_reset_puts_the_pool_back(tmp_path):
+    w = station_world(tmp_path)
+    feeder = w.test_range.feeder
+    feeder.start("feeder")
+    advance(w, 1.05)
+    w.test_range.reset()
+    lay = w.parts.layout
+    assert feeder.fed == [] and feeder.count("feeder") == 0 and not feeder.capped("feeder")
+    assert all(w.test_range.balls.state[i] == BallState.SPARE for i in lay.station_slots["feeder"])
+    advance(w, 0.5)
+    assert feeder.fed == []                          # nothing feeding after a reset
+
+
+def test_preload_never_takes_a_station_slot():
+    from range_fixtures import shooter_cfg
+    from scrimmage.world import World
+
+    w = World(shooter_cfg(range={"file": "station", "preload": 3}), None)
+    lay = w.parts.layout
+    state = w.test_range.balls.state
+    assert len(lay.robot_slots) == 4 and lay.robot_slots.start == lay.n_floor
+    assert [i for i in range(w.test_range.balls.n) if state[i] == BallState.ROBOT] == list(lay.robot_slots[:3])
+    assert all(state[i] == BallState.SPARE for i in lay.station_slots["feeder"])
+    with pytest.raises(ValueError, match="holds at most 4"):
+        w.test_range.reset(preload=5)
+
+
+def test_a_range_without_stations_has_no_feeder():
+    from range_fixtures import range_cfg
+    from scrimmage.world import World
+
+    w = World(range_cfg(), None)
+    assert w.test_range.feeder is None and w.parts.layout.station_slots == {}
+    assert w.test_range.settings()["seed"] == 1
+
+
+def test_the_station_field_loads_and_its_starts_are_clear():
+    from scrimmage.testrange.elements import ROBOT_OUTLINE
+
+    rng = load_range("station", ROOT)
+    assert rng.name == "A human player station" and rng.piece_preset == "2026-fuel"
+    (st,) = rng.stations
+    assert st.name == "feeder" and st.heading_deg == 0.0 and st.stock is None and st.interval == 1.0
+    assert st.release[2] == pytest.approx(1.1, abs=0.1) and st.chute == Chute(length=0.5, slope_deg=30.0)
+    low_x = st.release[0] + 0.5 * math.cos(math.radians(30.0))
+    x, y, heading = rng.starts["at_station"]
+    assert heading == 180.0 and y == st.release[1] and x - ROBOT_OUTLINE / 2 == pytest.approx(low_x, abs=1e-3)
+    # facing_ball: 1.5 m behind the floor ball, facing it, clear of the chute (and its walls) across y
+    x, y, heading = rng.starts["facing_ball"]
+    (bx, by), = rng.floor_balls
+    assert y == 2.0 and heading == 0.0 and (bx - x, by - y) == pytest.approx((1.5, 0.0))
+    walls = [c[1] + k * h[1] for c, _, h in chute_parts(st, rng.piece.diameter).values() for k in (-1, 1)]
+    assert y + ROBOT_OUTLINE / 2 < min(walls)

@@ -110,9 +110,9 @@ class BallPath:
         self.balls.log[i].lane = lane
 
     def preload(self, n: int) -> None:
-        """n of the robot's spare ball slots into the hopper."""
+        """n of the robot's spare ball slots (never a station's pool) into the hopper."""
         b = self.balls
-        slots = [i for i in range(b.layout.n_floor, b.n) if b.state[i] == BallState.SPARE]
+        slots = [i for i in b.layout.robot_slots if b.state[i] == BallState.SPARE]
         if n > len(slots) or self.held() + n > self.config.capacity:
             raise ValueError(f"preload {n}: the robot holds at most {self.config.capacity} balls")
         for i in slots[:n]:

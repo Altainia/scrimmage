@@ -70,7 +70,7 @@ OUTCOME = {BallState.FIELD: "on_field", BallState.ROBOT: "held", BallState.STUCK
 class BallLog:
     """What happened to one ball. Floats are NaN and the rest None until set (ball_log() gives None for both)."""
     id: int
-    origin: str                                                 # "floor" or "preload"
+    origin: str                                                 # "floor", "preload" or "station"
     fired_t: float = NAN
     robot_pose: tuple[float, float, float] | None = None       # x, y, heading_deg at the exit
     robot_velocity: tuple[float, float, float] | None = None   # vx, vy, omega deg/s at the exit
@@ -153,7 +153,11 @@ class Balls:
         """Every ball spare and parked, its log empty, the counts zero."""
         self.state[:] = BallState.SPARE
         self.field[:] = False
-        self.log = [BallLog(id=i, origin="floor" if i < self.layout.n_floor else "preload") for i in range(self.n)]
+        station = np.zeros(self.n, dtype=bool)
+        for slots in self.layout.station_slots.values():
+            station[slots.start:slots.stop] = True
+        self.log = [BallLog(id=i, origin="floor" if i < self.layout.n_floor else "station" if station[i] else "preload")
+                    for i in range(self.n)]
         self.goal_counts = {name: 0 for name, _ in self.surfaces}
         self.fired = 0
         self._released[:] = -np.inf
@@ -190,10 +194,12 @@ class Balls:
         self._bits(i, PARKED_BITS)
         self._full_bits_at[i] = np.inf
 
-    def put(self, i: int, pos, bits: dict) -> None:
-        """At rest at `pos`, in play, as a floor ball is at the start (not a release: no flight tracking)."""
+    def put(self, i: int, pos, bits: dict, quat=None) -> None:
+        """At rest at `pos`, in play, as a floor ball is at the start (not a release: no flight tracking), turned to
+        `quat` (w, x, y, z; unturned when None)."""
         d = self.data
-        d.qpos[self._q[i]] = [*pos, 1.0, 0.0, 0.0, 0.0]
+        q = [1.0, 0.0, 0.0, 0.0] if quat is None else list(np.asarray(quat, dtype=float) / np.linalg.norm(quat))
+        d.qpos[self._q[i]] = [*pos, *q]
         d.qvel[self._v[i]] = 0.0
         self._bits(i, bits)
         self._full_bits_at[i] = np.inf

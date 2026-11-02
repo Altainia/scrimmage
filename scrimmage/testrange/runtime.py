@@ -5,6 +5,10 @@ World.step calls before_physics after its motor loop (the supply current it retu
 which leaves the shooter's external bindings out of its own total, so the shooter is charged once), then mj_step,
 then after_physics (where the intake collects). World.reset calls reset().
 
+Stations: a range with [[station]]s has a Feeder (feeder.py), stepped in before_physics after the launches and before
+the step's starting positions are recorded, so a fed ball's first step already moves. Its seed is a setting like
+start and preload (reset(seed=...)).
+
 Launches: before_physics steps the launcher model first, and every ball it launched in this step is placed in the
 world (launch.py) before the step's starting positions are recorded and the flight forces applied, so its first
 step already flies and can score. The launcher model's clock and the world's both start at 0 on reset, but the exit
@@ -34,8 +38,10 @@ from ..protocol import HalState
 from .ballpath import BallPath
 from .balls import BallState, Balls, log_dict
 from .build import BALL_BITS, LAUNCHED_BITS
+from .feeder import Feeder
 from .launch import LAUNCH_CLEAR_S, exit_state, exit_state_disc
 from .shooter import DiscShooter, Shooter, parse_shooter
+from .station import DEFAULT_SEED
 
 
 class RangeRuntime:
@@ -45,7 +51,7 @@ class RangeRuntime:
         self.layout = built.layout
         sec = cfg.get("range", {})
         self._config = {"start": sec.get("start"), "preload": sec.get("preload", 0),
-                        "floor_balls": sec.get("floor_balls", True)}
+                        "floor_balls": sec.get("floor_balls", True), "seed": DEFAULT_SEED}
         self._overrides: dict = {}
         m = world.model
         m.opt.enableflags |= int(mujoco.mjtEnableBit.mjENBL_SLEEP)
@@ -69,29 +75,35 @@ class RangeRuntime:
         if config is not None:
             # the frame the launcher model works in: the launcher's base (on its shaft), the disc shooter's channel
             self._base = m.body(f"{config.part}.{'channel' if self.disc else 'base'}").id
+        # the stations' feeder, None on a range without stations
+        self.feeder = Feeder(self.balls, self.layout, self.range) if self.range.stations else None
         self._prev = np.zeros((self.balls.n, 3))
         self.events: list[tuple[int, str]] = []     # the last step's (ball, "scored" | "out")
 
     # ------------------------------------------------------------------------------------------------ setup
 
     def settings(self) -> dict:
-        """start, preload and floor_balls: the config's, under the last overrides."""
+        """start, preload, floor_balls and seed: the config's (seed: DEFAULT_SEED), under the last overrides."""
         return {**self._config, **self._overrides}
 
     def clear_overrides(self) -> None:
-        """Back to the config's start, preload and floor_balls at the next reset."""
+        """Back to the config's start, preload, floor_balls and seed at the next reset."""
         self._overrides = {}
 
-    def reset(self, *, start: str | None = None, preload: int | None = None, floor_balls: bool | None = None) -> None:
-        """Every ball back where the range starts it, the counts and logs cleared. A value given here overrides the
-        config's [range] key and stays for later plain reset()s (the bridge resets the world when the robot
-        connects) until clear_overrides()."""
-        given = {"start": start, "preload": preload, "floor_balls": floor_balls}
+    def reset(self, *, start: str | None = None, preload: int | None = None, floor_balls: bool | None = None,
+              seed: int | None = None) -> None:
+        """Every ball back where the range starts it, the counts and logs cleared, the stations' pools unused and
+        their draws restarted from the seed. A value given here overrides the config's [range] key (the seed:
+        DEFAULT_SEED) and stays for later plain reset()s (the bridge resets the world when the robot connects) until
+        clear_overrides()."""
+        given = {"start": start, "preload": preload, "floor_balls": floor_balls, "seed": seed}
         new = {k: v for k, v in given.items() if v is not None}
         if start is not None and start not in self.range.starts:
             raise ValueError(f"start {start!r} isn't a start of range {self.range.name!r}; its starts: "
                              f"{', '.join(self.range.starts) or 'none'}")
-        n_slots = self.balls.n - self.layout.n_floor
+        if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or seed < 0):
+            raise ValueError(f"seed must be a whole number, 0 or more, not {seed!r}")
+        n_slots = len(self.layout.robot_slots)
         if preload is not None and not 0 <= preload <= n_slots:
             raise ValueError(f"preload {preload}: the robot holds at most {n_slots} balls")
         if floor_balls and self.layout.n_floor == 0 and len(self.range.floor_balls):
@@ -110,6 +122,8 @@ class RangeRuntime:
             self.shooter.reset()
             self.ball_path.reset()
             self.ball_path.preload(s["preload"])
+        if self.feeder is not None:
+            self.feeder.reset(s["seed"])
         mujoco.mj_forward(self.world.model, self.world.data)
         self.events = []
 
@@ -139,7 +153,9 @@ class RangeRuntime:
         if self.shooter is not None:
             self._shoot(dt, vbatt)
             current = self.shooter.supply_current()
-        self._prev[:] = self.balls._qpos[:, :3]     # after the launches: a launched ball's first step is a flight
+        if self.feeder is not None:
+            self.feeder.step(float(self.world.data.time))
+        self._prev[:] = self.balls._qpos[:, :3]     # after the launches and feeds: a placed ball's first step moves
         self.balls.apply_flight_forces()
         self.balls.apply_rolling_resistance()
         return current

@@ -1,0 +1,27 @@
+# A human player station: one station at the blue alliance wall feeds 2026 FUEL down a short chute onto the field. It
+# is a stand-in to try a hopper or an intake on, not a game's field, so every value is our choice. WPILib field
+# coordinates (blue alliance wall at x = 0, z up), SI units.
+#
+# The chute runs from the release point, 0.3 m out from the wall and 1.1 m up, down toward +x for 0.5 m at 30 degrees;
+# its low end is about 0.73 m out and 0.76 m up. The robot starts with its bumpers at the chute's low end, so the
+# test's blocks can start feeding at once. A second start drives up to a ball on the carpet instead. There are no goals.
+
+[range]
+name = "A human player station"
+ball = "2026-fuel"           # choice: the 2026 game's FUEL, a 15 cm foam ball
+
+[[station]]
+name = "feeder"
+release = [0.3, 4.0, 1.1]    # choice: 0.3 m out from the blue alliance wall, mid-field across, about chest high on a human player
+heading_deg = 0.0            # choice: fed toward +x, onto the field
+chute = { length = 0.5, slope_deg = 30.0 }   # choice: a short, steep chute; no width, so it fits any ball (1.3 diameters)
+
+[[floor_balls]]
+at = [[3.5, 2.0]]            # choice: 1.5 m in front of the facing_ball start, on its center line
+
+# Starts. A 0.9 m square robot outline is assumed (scrimmage/testrange/elements.py ROBOT_OUTLINE).
+[start.at_station]
+pose = [1.183, 4.0, 180.0]   # choice: facing the station, its outline's front edge at the chute's low end (0.3 + 0.5 cos 30 = 0.733 m, plus 0.45 m)
+
+[start.facing_ball]
+pose = [2.0, 2.0, 0.0]       # choice: 2 m clear of the chute across the field, 1.5 m before the floor ball, heading +x toward it
