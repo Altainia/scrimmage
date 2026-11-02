@@ -14,7 +14,7 @@ robot code to write: the station does the feeding.
 | File | What it is |
 |---|---|
 | `parts/hopper/part.toml` | the hopper, written by hand: one body `bin`, a floor and four walls |
-| `hopper-standin.toml` | the stand-in box robot with the hopper on its top (`drive.top`), on the built-in `station` range, starting `at_station` |
+| `hopper-standin.toml` | the stand-in box robot with the hopper on its top, on the `station` range, at `at_station` |
 | `feed.test.toml` | the blocks |
 
 The `station` range has one station, `feeder`, at the blue alliance wall. It drops a ball 1.1 m up onto a 0.5 m
@@ -45,7 +45,8 @@ station = { feeder = { spread_yaw_deg = 5.0, spread_pitch_deg = 5.0, spread_spee
 
 A human player doesn't drop every ball the same way. The field's station just sets each ball down at the top of the
 chute. With this spread, about half the balls get a push of up to 0.2 m/s as they're let go, aimed up to 5° off to
-either side and up to 5° up or down. The seed picks which of those draws you get. The same seed gives exactly the same feeds every run, so comparing two hoppers is fair.
+either side and up to 5° up or down. The seed picks which of those draws you get.
+The same seed gives exactly the same feeds every run, so comparing two hoppers is fair.
 
 "In the hopper" means a ball's center is inside the box around the bin's pieces. The last check is made after the run
 has waited for every fed ball to settle, so a ball still bouncing when the blocks end gets its outcome too: in the

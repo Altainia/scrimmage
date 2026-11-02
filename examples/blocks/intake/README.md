@@ -122,7 +122,7 @@ with its floor 3 to 4 cm off the carpet, the lip is a 2 cm rod, the roller is 6 
 Two tries before this one didn't work, and why is worth knowing:
 
 - With the roller 5 cm closer to the bin, a ball got wedged between the roller and the bin's front edge: the roller
-  pressed it down onto the carpet instead of pulling it in, and stalled below 8 V. The roller has to be far enough in
+  pressed it down onto the carpet instead of pulling it in, and stalled at 6 V. The roller has to be far enough in
   front that the ball is under it before it touches the bin.
 - With a flat floor and no lip, a ball that got in rolled back out when the robot slowed down. A square lip was no
   better: the ball came to rest balanced on top of it. A round lip doesn't let a ball rest on it.

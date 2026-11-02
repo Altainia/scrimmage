@@ -32,8 +32,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ..launcher.inputs import Ball
-from .elements import IN
-from .spec import FIELD_LENGTH, FIELD_WIDTH, RangeError, _Reader
+from .elements import IN, ROBOT_OUTLINE, _rect, _separated
+from .spec import FIELD_LENGTH, FIELD_WIDTH, RangeError, _Reader, _rot_z
 
 if TYPE_CHECKING:
     from .spec import Range
@@ -52,6 +52,7 @@ _STATION = ("name", "release", "release_in", "heading_deg", "pitch_deg", "speed"
             "spread_rotation_deg", "chute")
 _CHUTE = ("width", "length", "slope_deg")
 _TOUCH = 1e-6   # m: a ball resting on a surface is not inside it
+_START_TOUCH = 0.01     # m: a start's bumpers may lie against a chute's low end (its plate's corner reaches past)
 
 
 def stock_too_big(stock: int) -> str:
@@ -97,6 +98,10 @@ class Station:
         y, p = math.radians(yaw_deg), math.radians(pitch_deg)
         return np.array([math.cos(p) * math.cos(y), math.cos(p) * math.sin(y), -math.sin(p)])
 
+    def chute_top(self, ball_d: float) -> float:
+        """The height of the chute floor's top face under the release point: tangent to a ball resting there."""
+        return self.release[2] - (ball_d / 2.0) / math.cos(math.radians(self.chute.slope_deg))
+
     def chute_width(self, ball_d: float) -> float:
         """The space between the chute's walls for a ball of diameter `ball_d`."""
         width = self.chute.width if self.chute is not None else None
@@ -107,7 +112,7 @@ def _low_end_drop(st: Station, ball_d: float) -> float:
     """How far the chute's floor underside at its low end lies below the carpet (negative: above it)."""
     c = st.chute
     s = math.radians(c.slope_deg)
-    top = st.release[2] - (ball_d / 2.0) / math.cos(s) - c.length * math.sin(s)
+    top = st.chute_top(ball_d) - c.length * math.sin(s)
     return -(top - CHUTE_PLATE * math.cos(s))
 
 
@@ -192,8 +197,7 @@ def parse_stations(path, tables, piece, taken: tuple[str, ...] = ()) -> tuple[St
 def _world_boxes(center, yaw_deg: float, parts) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """(center, rotation, half sizes) in the field for boxes given in an element's frame (turned `yaw_deg` about z
     at (x, y) on the carpet)."""
-    c, s = math.cos(math.radians(yaw_deg)), math.sin(math.radians(yaw_deg))
-    rz = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+    rz = _rot_z(yaw_deg)
     origin = np.array([center[0], center[1], 0.0])
     return [(origin + rz @ np.asarray(pc, float), rz @ np.asarray(pr, float), np.asarray(ph, float))
             for pc, pr, ph in parts]
@@ -267,8 +271,18 @@ def _overlap(a, b) -> bool:
     return True
 
 
+def _footprint(box) -> np.ndarray:
+    """(4, 2) corners of a chute box's base from above: its length along the slope and its width, leaving out how far
+    a wall's top leans out over the low end (a start's bumpers may tuck in there)."""
+    center, rot, half = box
+    base = center[:2] - rot[:2, 2] * half[2]
+    along, across = rot[:2, 0] * half[0], rot[:2, 1] * half[1]
+    return base + np.array([-along - across, along - across, along + across, -along + across])
+
+
 def _check_chutes(path, rng: Range, solids) -> None:
-    """Each chute's boxes on the field (inside its walls) and clear of the elements, obstacles and other chutes."""
+    """Each chute's boxes on the field (inside its walls) and clear of the elements, obstacles, other chutes and
+    the start poses' robot outlines (seen from above, as the elements are)."""
     from .build_elements import chute_parts
 
     for st in rng.stations:
@@ -287,6 +301,12 @@ def _check_chutes(path, rng: Range, solids) -> None:
                     continue
                 if any(_overlap(box, other) for other in boxes):
                     raise RangeError(f"{where} runs into {what}; move the station or shorten its chute")
+            for sname, (sx, sy, heading) in rng.starts.items():
+                outline = _rect((sx, sy), heading, ROBOT_OUTLINE - 2 * _START_TOUCH, ROBOT_OUTLINE - 2 * _START_TOUCH)
+                if not _separated(outline, _footprint(box)):
+                    raise RangeError(f"{where} ({part.replace('_', ' ')}) overlaps start '{sname}' at"
+                                     f" ({sx:.4g}, {sy:.4g}); move the start or the station (a {ROBOT_OUTLINE} m"
+                                     " square robot outline is assumed)")
 
 
 def with_overrides(rng: Range, overrides: dict) -> Range:
@@ -310,15 +330,12 @@ def with_overrides(rng: Range, overrides: dict) -> Range:
             if stock > MAX_STOCK:
                 raise r.err(stock_too_big(stock))
             new["stock"] = stock or None
-        for key in ("spread_yaw_deg", "spread_pitch_deg", "spread_speed"):
+        for key in ("spread_yaw_deg", "spread_pitch_deg", "spread_speed", "spread_position", "spread_rotation_deg"):
             if r.has(key):
-                new[key] = r.num(key)
-        for key in ("spread_position", "spread_rotation_deg"):
-            if r.has(key):
-                new[key] = r.nums(key, 3)
-        for key, v in new.items():
-            if key.startswith("spread") and min(v if isinstance(v, tuple) else (v,)) < 0.0:
-                raise r.err(f"{key} must be 0 or more, not {v!r}")
+                v = r.nums(key, 3) if key in ("spread_position", "spread_rotation_deg") else r.num(key)
+                if min(v if isinstance(v, tuple) else (v,)) < 0.0:
+                    raise r.err(f"{key} must be 0 or more, not {v!r}")
+                new[key] = v
         changed[name] = replace(next(s for s in rng.stations if s.name == name), **new)
     out = replace(rng, stations=tuple(changed.get(s.name, s) for s in rng.stations))
     check_release_clear(rng.path, out)

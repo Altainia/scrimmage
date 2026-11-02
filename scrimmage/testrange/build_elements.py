@@ -64,6 +64,7 @@ import numpy as np
 from ..parts.field import ELEMENT_GROUP, FIELD_BITS
 from .build import FUNNEL_RGBA, PLATE_FRICTION, RangeLayout, _quat, _rpy
 from .elements import IN, POST, Bar, Box, Bump, Element, Platform, Ramp, Switch
+from .spec import _rot_z
 from .station import CHUTE_PLATE, CHUTE_WALL_BALLS, Station
 
 __all__ = ["ELEMENT_GROUP", "NON_GROUND_GROUP", "add_chute", "add_element", "fill_layout", "platform_joints",
@@ -160,16 +161,15 @@ def chute_parts(st: Station, ball_d: float) -> dict[str, tuple[np.ndarray, np.nd
     c = st.chute
     s = math.radians(c.slope_deg)
     width = st.chute_width(ball_d)
-    x, y, z = st.release
+    x, y = st.release[:2]
     r = ball_d / 2.0
-    top0 = (0.0, z - r / math.cos(s))                   # in the heading's vertical plane: (along, up)
+    top0 = (0.0, st.chute_top(ball_d))                  # in the heading's vertical plane: (along, up)
     # the ball touches at (-r sin s, z - r cos s); one radius further up the slope is r cos s further back
     back = r * (math.sin(s) + math.cos(s))
     high = (-back, top0[1] + back * math.tan(s))
     low = (c.length * math.cos(s), top0[1] - c.length * math.sin(s))
     center, rot, (hx, hz) = _slope(high, low, CHUTE_PLATE)
-    h = math.radians(st.heading_deg)
-    rz = np.array([[math.cos(h), -math.sin(h), 0.0], [math.sin(h), math.cos(h), 0.0], [0.0, 0.0, 1.0]])
+    rz = _rot_z(st.heading_deg)
     origin = np.array([x, y, 0.0])
     wall_h = CHUTE_WALL_BALLS * ball_d
     up = rot[:, 2]                                       # the floor's upward normal

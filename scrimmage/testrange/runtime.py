@@ -83,7 +83,8 @@ class RangeRuntime:
     # ------------------------------------------------------------------------------------------------ setup
 
     def settings(self) -> dict:
-        """start, preload, floor_balls and seed: the config's (seed: the [range] seed or DEFAULT_SEED), under the last overrides."""
+        """start, preload, floor_balls and seed: the config's (seed: the [range] seed or DEFAULT_SEED), under the last
+        overrides."""
         return {**self._config, **self._overrides}
 
     def clear_overrides(self) -> None:

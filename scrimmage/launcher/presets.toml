@@ -37,7 +37,7 @@ inertia_factor = 0.4    # estimate: a uniform solid sphere, 2/5; high density fo
 [ball.2016-boulder]
 # FRC 2016 STRONGHOLD "Boulder": 10 in. gray coated-foam ball (the 2016 Kit of Parts ball).
 diameter = 0.254        # source: 10 in., FRC 2016 game manual, as quoted in https://www.chiefdelphi.com/t/2016-boulder-weight-issue/147506 (where teams measured boulders at 9.6 to 9.7 in.)
-mass = 0.285            # estimate: the same Chief Delphi thread (https://www.chiefdelphi.com/t/2016-boulder-weight-issue/147506) reports gray boulders at 281 to 295 g (an official one 292 g, a kit ball 281 g) and some other makers' balls up to 388 g; 285 g is taken from the gray ones. The manual's own mass was not confirmed.
+mass = 0.285            # estimate: the same Chief Delphi thread (https://www.chiefdelphi.com/t/2016-boulder-weight-issue/147506) reports gray boulders at 281 to 300 g (an official one 292 g, a kit ball 281 g, a gray one at 300 g) and some other makers' balls up to 388 g; 285 g is taken from the gray ones. The manual's own mass was not confirmed.
 stiffness_n = 120.0     # estimate: a coated foam ball much firmer than the Power Cell. The thread above reports forces to compress a ball to 8 in. (about 6.3 kg-force for a kit ball, 11 to 13 kg-force for newer ones), a 2 in. squeeze on a 10 in. ball, not the 25% of this field, and not converted. Not measured.
 restitution = 0.5       # estimate: coated foam that bounces less than the Power Cell; no published number. Measure with a drop test.
 inertia_factor = 0.4    # estimate: a uniform solid sphere, 2/5; solid foam throughout.

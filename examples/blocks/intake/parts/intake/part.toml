@@ -48,7 +48,7 @@ geom = [{ cylinder = [0.03, 0.36], axis = "y", color = [0.95, 0.5, 0.1, 1.0], fr
 slot = "roller"
 joint = "roller"
 motor = "NEO"
-gearing = 3.0                 # choice: 3 to 1, about 4 m/s at the roller's surface at 8 V
+gearing = 3.0                 # choice: 3 to 1, about 3 m/s at the roller's surface at 6 V (the default), 4 m/s at 8 V
 
 [[mount]]
 name = "base"
