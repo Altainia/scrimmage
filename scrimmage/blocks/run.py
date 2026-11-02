@@ -16,6 +16,16 @@ them; `stop` lets a motor (or all of them) go to neutral. `wait`, `wait_until` a
 Watch reads the world once after the settle, so the first blocks judge the robot as it rests (a hook already on a bar
 touches it).
 
+Feeding: `start_feeding` and `stop_feeding` take no time (the station feeds every interval from the next step on, or
+stops). `feed_one` asks for one piece and waits until the station's count rises, or until it is empty or used up (it
+does nothing then; the counts show it); past its timeout it ends the run "timed out", saying whether the release point
+stayed blocked. Every piece a station feeds is tracked (feeds.py's Outcomes). When the blocks finish, the stations
+stop and the run keeps stepping, motors as they were, until every piece has settled or for SETTLE_MAX_S (the settle
+doesn't count against `time_limit`); any other ending decides the pieces where they are. A last top-level `expect
+made_it_in` (not `throughout`) is checked after the settle, against the final counts; any other `made_it_in` reads
+the counts so far. With pieces tracked, a finished run's outcome is the counts sentence (feeds.sentence) and any other
+ending is "<ending>; <counts>".
+
 A run ends with one status: "finished" (every block played), "check failed", "timed out" (a wait until, a move or a
 drive),
 "tipped over" (the robot body's up axis more than TIP_DEG from vertical), "walked off" (the climb runner's "hook walked
@@ -38,6 +48,7 @@ from ..hal_drive import MotorDrive, driven_joints, position_volts
 from ..movers import mover_poses, movers
 from ..protocol import HalState
 from .conditions import IN, Watch, describe
+from .feeds import SETTLE_MAX_S, Outcomes, counts, is_standin, sentence
 from .palette import ALL_MOTORS, ANY_HOOK, ANY_PIECE, NEXT_BAR, palette, problems
 from .program import (DRIVE_TIMEOUT, DRIVE_VOLTS, MOVE_TIMEOUT, REPEAT_MAX, WAIT_TIMEOUT, Program,
                       TestFileError)
@@ -52,7 +63,7 @@ EPS = 1e-9
 # The verbs describe() uses, as "-ing" (after "without") and "to ..." (after "waiting for").
 _VERBS = {"passes": ("passing", "to pass"), "goes": ("going", "to go"), "tilts": ("tilting", "to tilt"),
           "touches": ("touching", "to touch"), "reaches": ("reaching", "to reach"), "hangs": ("hanging", "to hang"),
-          "are": ("being", "to be"), "is": ("being", "to be")}
+          "are": ("being", "to be"), "is": ("being", "to be"), "made": ("having made", "to have made")}
 
 
 @dataclass
@@ -68,6 +79,10 @@ class RunResult:
     movers: list[str] = field(default_factory=list)
     view: dict = field(default_factory=dict)            # model_view(world, include_world=True) at the start
     started: str = ""         # when the run started, ISO time with its UTC offset
+    feeds: list[dict] = field(default_factory=list)     # one row per fed piece (feeds.Outcomes.final)
+    counts: dict | None = None    # fed, in, stuck, missed; None on a field without stations
+    seed: int | None = None       # the stations' seed; None on a field without stations
+    settle_s: float = 0.0         # s the run went on after the blocks finished, for the pieces to settle
 
     @property
     def passed(self) -> bool:
@@ -153,6 +168,8 @@ class TestRun:
         self.signal_names = list(pal["signals"])
         self._qadr = {n: int(m.jnt_qposadr[m.joint(n).id]) for n in kinds}
         self._slide = {n: k == "slide" for n, k in kinds.items()}
+        self.feeder = world.test_range.feeder if world.test_range is not None else None
+        self.standin = is_standin(Path(program.path).parent / program.robot)
 
     # ---- the run ----------------------------------------------------------------------------------------------------
 
@@ -171,6 +188,9 @@ class TestRun:
         if watch.mon is not None:
             watch.mon.reset()
         watch.update()                                      # the robot as it rests, for the first blocks
+        outcomes = self.outcomes = watch.outcomes = Outcomes(w, watch, self.standin)
+        self._deferred: tuple[dict, object] | None = None  # the last made_it_in check, decided after the settle
+        self._final: dict | None = None                     # the final counts, once the run has ended
         walk = WalkOff(dt) if watch.mon is not None else None
         view = model_view(w, include_world=True)
         ms = movers(w)
@@ -200,6 +220,7 @@ class TestRun:
                 next_motion += 1.0 / MOTION_HZ
 
         sample(t)
+        outcomes.update(t)
         try:
             while True:
                 self._advance(t)
@@ -210,6 +231,7 @@ class TestRun:
                 self._step()
                 t = float(d.time)
                 watch.update()
+                self._track(t)
                 sample(t)
                 for check, cond in self.throughout:
                     if not watch.holds(cond):
@@ -225,11 +247,36 @@ class TestRun:
                         raise _End("walked off", f"a hook walked off {bars} at {t:.1f} s")
         except _End as e:
             result.status, ending = e.status, e.ending
+        if result.status == "finished":
+            t0 = t
+            try:
+                t = self._settle(t, sample, cancel)
+            except _End as e:
+                result.status, ending = e.status, e.ending
+                t = float(d.time)
+            result.settle_s = t - t0
+        rows = outcomes.final()
+        self._final = counts(rows)
+        if self._deferred is not None:           # reached: the run finished, or was stopped while settling
+            check, cond = self._deferred
+            check["t"] = t
+            if not self._made_it_in(cond, self._final):
+                try:
+                    self._fail(check, cond, t)
+                except _End as e:
+                    if result.status == "finished":
+                        result.status, ending = e.status, e.ending
         if result.signals["t"][-1] < t - EPS:          # the run's last moment, off the sample grid
             next_signal = t
         if result.motion[-1][0] < t - EPS:
             next_motion = t
         sample(t)
+        if self.feeder is not None or rows:
+            result.feeds, result.counts = rows, counts(rows)
+            result.seed = self.feeder.seed if self.feeder is not None else None
+        if rows:
+            told = sentence(rows)
+            ending = told if result.status == "finished" else f"{ending}; {told}"
         top = watch.highest_hung()
         result.outcome = f"reached {top}, then {ending}" if top else ending
         result.t_end = t
@@ -238,6 +285,34 @@ class TestRun:
             check["line"] = self._line(check)
         result.checks = self.checks
         return result
+
+    def _track(self, t: float) -> None:
+        """After a physics step at t: track the pieces the stations fed in it, and update every tracked piece."""
+        if self.feeder is not None:
+            for fed in self.feeder.fed[len(self.outcomes.pieces):]:
+                self.outcomes.track(fed.ball, fed.station, fed.t)
+        self.outcomes.update(t)
+
+    def _settle(self, t: float, sample, cancel) -> float:
+        """After the blocks finish: the stations stopped, step until every piece has settled, or for SETTLE_MAX_S
+        (motors as they were); the time it ends. Setting `cancel` ends it, and the run, at the next step."""
+        if self.feeder is not None:
+            self.feeder.stop_all()
+        d = self.world.data
+        t0 = t
+        while not self.outcomes.settled() and t < t0 + SETTLE_MAX_S - EPS:
+            if cancel is not None and cancel.is_set():
+                raise _End("cancelled", f"you stopped the run at {t:.1f} s")
+            self._step()
+            t = float(d.time)
+            self.watch.update()
+            self._track(t)
+            sample(t)
+        return t
+
+    @staticmethod
+    def _made_it_in(cond, so_far: dict) -> bool:
+        return so_far["fed"] > 0 and 100.0 * so_far["in"] >= cond.args["at_least"] * so_far["fed"]
 
     def _step(self) -> None:
         """One physics step with the motor commands as they stand."""
@@ -324,11 +399,20 @@ class TestRun:
             else:
                 self.drives.pop(a["motor"], None)
             return True
+        if b.do in ("start_feeding", "stop_feeding"):
+            (self.feeder.start if b.do == "start_feeding" else self.feeder.stop)(a["station"])
+            return True
         if b.do == "expect":
             cond = a["that"]
+            throughout = bool(a.get("throughout", False))
+            if cond.kind == "made_it_in" and not throughout and place == (len(self.program.blocks) - 1,):
+                check = {"place": list(place), "text": describe(cond), "throughout": False, "passed": True, "t": t}
+                self.checks.append(check)
+                self._deferred = (check, cond)       # decided after the settle, on the final counts
+                return True
             ok = watch.holds(cond)
             check = {"place": list(place), "text": describe(cond, watch.next_bar()),
-                     "throughout": bool(a.get("throughout", False)), "passed": ok, "t": t}
+                     "throughout": throughout, "passed": ok, "t": t}
             self.checks.append(check)
             if not ok:
                 self._fail(check, cond, t)
@@ -347,6 +431,11 @@ class TestRun:
             self.active["target"] = to
             self.active["q0"] = float(self.world.data.qpos[self._qadr[j]])
             self.drives[j] = ("to", to)
+        elif b.do == "feed_one":
+            f = self.feeder
+            self.active["count"] = f.count(a["station"])
+            if not f.capped(a["station"]):
+                f.request(a["station"])
         elif b.do == "drive":
             self.active["from"] = self.world.data.xpos[self.world.robot_body][:2].copy()
             volts = a.get("volts", DRIVE_VOLTS)
@@ -368,6 +457,16 @@ class TestRun:
             if elapsed >= a.get("timeout", WAIT_TIMEOUT) - EPS:
                 what = _recast(describe(a["until"], watch.next_bar()), 1)
                 raise _End("timed out", f"waiting for {what} timed out at {t:.1f} s ({_where(place)})")
+            return False
+        if b.do == "feed_one":
+            f, name = self.feeder, a["station"]
+            if f.count(name) > self.active["count"] or f.capped(name):
+                return True
+            if elapsed >= a.get("timeout", WAIT_TIMEOUT) - EPS:
+                st = next(s for s in f.stations if s.name == name)
+                why = ("its release point stayed blocked" if f.blocked(name)
+                       else f"its {st.interval:g} s between pieces hadn't passed")
+                raise _End("timed out", f"feed one from {name} timed out at {t:.1f} s: {why} ({_where(place)})")
             return False
         if b.do == "move":
             j = a["joint"]
@@ -433,6 +532,18 @@ class TestRun:
             if a["piece"] == ANY_PIECE:
                 return f"no ball was in {a['body']}"
             return f"{a['piece']} wasn't in {a['body']}"
+        if k == "in_hopper":
+            n = watch.hopper_count()
+            pieces = "1 piece was" if n == 1 else f"{n} pieces were"
+            if "at_least" in a:
+                return f"expected {a['at_least']} or more pieces in the hopper, but {pieces} in it"
+            return f"expected at most {a['at_most']} pieces in the hopper, but {pieces} in it"
+        if k == "station_empty":
+            left = self.feeder.left(a["station"]) if self.feeder is not None else None
+            return f"{a['station']} wasn't empty" + (f" ({left} left)" if left else "")
+        if k == "made_it_in":
+            c = self._final if self._final is not None else self.outcomes.so_far()
+            return f"expected at least {a['at_least']:g}% to make it in, but {c['in']} of {c['fed']} did"
         if k == "hanging_from":
             return f"the robot wasn't hanging from {bar(a['bar'])}"
         return f"the robot wasn't hanging at {a['level']}"           # level
@@ -450,6 +561,8 @@ class TestRun:
             return f"waiting for {_recast(describe(a['until'], self.watch.next_bar()), 1)}"
         if b.do == "move":
             return f"moving {a['joint']} to {_amount(a['to'], a['unit'])}"
+        if b.do == "feed_one":
+            return f"feeding one from {a['station']}"
         if "distance" in a:
             return f"driving {a['distance']:g} m"
         return f"driving for {a['seconds']:g} s"

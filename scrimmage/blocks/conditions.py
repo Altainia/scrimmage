@@ -214,17 +214,22 @@ class Watch:
             self._boxes[name] = (b, lo, hi)
         return self._boxes[name]
 
-    def hopper_count(self) -> int:
-        """Balls whose center is inside a hopper body's box now, fed or not."""
-        if not self._balls:
-            return 0
+    def hopper_mask(self) -> np.ndarray:
+        """(balls,) True for each range ball whose center is inside a hopper body's box now, in the range's ball
+        order."""
         d = self.data
         inside = np.zeros(len(self._balls), bool)
+        if not self._balls:
+            return inside
         for name in self._hopper:
             b, lo, hi = self._box(name)
             local = (d.xpos[self._balls] - d.xpos[b]) @ d.xmat[b].reshape(3, 3)
             inside |= np.all((local >= lo) & (local <= hi), axis=1)
-        return int(inside.sum())
+        return inside
+
+    def hopper_count(self) -> int:
+        """Balls whose center is inside a hopper body's box now, fed or not."""
+        return int(self.hopper_mask().sum())
 
     # ---- conditions -------------------------------------------------------------------------------------------------
 

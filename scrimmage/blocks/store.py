@@ -4,7 +4,9 @@
       001/ ... 010/          the newest KEEP_RUNS runs (folder names count up and are never reused); a run the student
                              stopped doesn't count (`_prune_runs`)
         result.json          status, outcome, t_end, checks, hung, started (ISO time), test (the test file's TOML
-                             as it ran), sweep (None, or what was swept and the value)
+                             as it ran), sweep (None, or what was swept and the value), feeds (one row per fed
+                             piece), counts (fed, in, stuck, missed; None without stations) and seed (the stations'
+                             seed; None without stations)
         signals.csv          t and each signal, SIGNAL_HZ (scrimmage/blocks/run.py)
         view.json            model_view(world, include_world=True) at the run's start, meshes included
         motion.bin           the movers' poses at MOTION_HZ (below)
@@ -203,18 +205,36 @@ def _read_signals(path: Path) -> dict[str, list[float]]:
     return {n: [float(r[i]) for r in body] for i, n in enumerate(names)}
 
 
+def _seed(folder: Path):
+    try:
+        return json.loads((folder / "result.json").read_text(encoding="utf-8")).get("seed")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
 def save_run(result, program: Program, base, sweep: dict | None = None) -> Path:
     """Keep a run in a new folder `base/<NNN>/`; returns it. A plain run (no `sweep`) leaves the newest KEEP_RUNS
-    plain runs in base, not counting stopped ones (`_prune_runs`); a sweep's runs are pruned with their sweep."""
+    plain runs in base, not counting stopped ones (`_prune_runs`); a sweep's runs are pruned with their sweep.
+
+    A plain run whose stations' seed differs from the newest kept plain run's (when that one had a seed) says so: its
+    outcome, `result.outcome` too, gains "; a new shuffle (seed N)", so a comparison of two runs is seen to be fair or
+    not."""
     base = Path(base)
     base.mkdir(parents=True, exist_ok=True)
     clean_stale(base, TEMP_RUNS)
+    seed = getattr(result, "seed", None)
+    if sweep is None and seed is not None:
+        runs = _numbered(base, _RUN_RE)
+        before = _seed(runs[-1][1]) if runs else None
+        if before is not None and before != seed:
+            result.outcome = f"{result.outcome}; a new shuffle (seed {seed})"
     tmp = Path(tempfile.mkdtemp(dir=base, prefix=".run-"))
     try:
         _write_json(tmp / "result.json", {
             "status": result.status, "outcome": result.outcome, "t_end": result.t_end, "checks": result.checks,
             "hung": result.hung, "started": getattr(result, "started", "") or _now(),
-            "test": dumps(program), "sweep": sweep})
+            "test": dumps(program), "sweep": sweep, "feeds": getattr(result, "feeds", []),
+            "counts": getattr(result, "counts", None), "seed": seed})
         _write_signals(tmp / "signals.csv", result.signals)
         _write_json(tmp / "view.json", result.view)
         write_motion(tmp / "motion.bin", result.motion, len(result.movers))

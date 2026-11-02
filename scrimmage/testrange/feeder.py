@@ -84,7 +84,9 @@ class Feeder:
         self._feeding[self._index(name)] = False
 
     def stop_all(self) -> None:
+        """No station feeds again until told to: every one stopped, and pieces asked for and not yet fed dropped."""
         self._feeding = [False] * len(self.stations)
+        self._requested = [0] * len(self.stations)
 
     def request(self, name: str) -> None:
         """One more piece, as soon as the interval since the last feed has passed."""

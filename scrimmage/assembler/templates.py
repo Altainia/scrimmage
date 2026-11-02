@@ -140,6 +140,11 @@ _STANDIN = _DIFFERENTIAL.replace(
     'mass = 45.0\n'
     'com_offset = [0.0, 0.0, 0.0]\n', 1)
 
+# The stand-in says so: a block test then doesn't count a piece resting on its stock chassis or drive as stuck in
+# the robot (scrimmage/blocks/feeds.py).
+_STANDIN_ROBOT = ("[robot]\n"
+                  "standin = true   # the stand-in robot: a piece resting on its chassis or drive isn't stuck in your robot\n")
+
 KINDS = ("swerve", "swerve-rev", "differential", "standin")
 
 
@@ -151,7 +156,8 @@ def new_config(kind: str) -> str:
     if kind == "differential":
         return _HEADER.format(title="A differential-drive robot: a chassis and a 6-wheel drop-center drivetrain.") + _DIFFERENTIAL
     if kind == "standin":
-        return _HEADER.format(title="Stand-in box robot: the kitbot's chassis and drive, for trying a part on its own.") + _STANDIN
+        head = _HEADER.format(title="Stand-in box robot: the kitbot's chassis and drive, for trying a part on its own.")
+        return head.replace("[robot]\n", _STANDIN_ROBOT, 1) + _STANDIN
     raise ValueError(f"unknown template {kind!r} (use one of: {', '.join(KINDS)})")
 
 

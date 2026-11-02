@@ -580,8 +580,11 @@ async def test_run(path: str) -> dict:
     Returns "status" (finished, check failed, timed out, tipped over, walked off, time limit, repeat limit),
     "outcome" (one plain sentence to read to the room), "passed" (finished with every check passed), "t_end"
     (seconds), "checks" (one plain line each, with whether it passed), "hung" (the bars the robot hung from),
-    "signals" (each measured signal's min, max and final value), and "run_folder", where the run is kept (the app's
-    Test tab replays it). path: an absolute path. A bad test file or robot is a plain error naming the block."""
+    "signals" (each measured signal's min, max and final value), "counts" (on a field with a human player
+    station: fed, in, stuck, missed; else null), "feeds" (one row per fed piece: ball, source, t, outcome "in",
+    "stuck" or "missed", why, t_outcome, body for a stuck piece), "seed" (the stations' seed, or null), and
+    "run_folder", where the run is kept (the app's Test tab replays it). path: an absolute path. A bad test file or
+    robot is a plain error naming the block."""
     file = _test_file(path)
 
     def work():
@@ -595,6 +598,7 @@ async def test_run(path: str) -> dict:
                 "t_end": result.t_end,
                 "checks": [{"line": c["line"], "passed": c["passed"]} for c in result.checks],
                 "hung": list(result.hung), "signals": _signal_summary(result.signals),
+                "counts": result.counts, "feeds": result.feeds, "seed": result.seed,
                 "run_folder": str(folder.resolve())}
 
     try:

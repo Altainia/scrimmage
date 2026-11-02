@@ -589,14 +589,20 @@ def _test(args) -> None:
     except (ValueError, OSError) as e:    # TestFileError, ConfigError and PartError are ValueErrors
         print(f"scrimmage: {e}", file=sys.stderr)
         sys.exit(2)
+    out = args.out if args.out is not None else blocks_store.runs_dir(args.file)
+    try:
+        folder = blocks_store.save_run(result, program, out)     # names a new shuffle in the outcome
+    except OSError as e:
+        folder, error = None, e
     print(result.outcome)
     for check in result.checks:
         print(f"  {check['line']}")
-    out = args.out if args.out is not None else blocks_store.runs_dir(args.file)
-    try:
-        folder = blocks_store.save_run(result, program, out)
-    except OSError as e:
-        print(f"scrimmage: couldn't keep the run in {out}: {e}", file=sys.stderr)
+    for f in result.feeds:
+        if f["outcome"] == "stuck":
+            what = "the floor piece" if f["source"] == "floor" else f"a piece from {f['source']}"
+            print(f"  stuck in the robot: {what} (fed at {f['t']:.1f} s) rests on {f['body']}")
+    if folder is None:
+        print(f"scrimmage: couldn't keep the run in {out}: {error}", file=sys.stderr)
         sys.exit(2)
     print(f"kept in {folder}")
     sys.exit(0 if result.passed else 1)
