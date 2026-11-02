@@ -34,6 +34,62 @@ stiffness_n = 80.0      # estimate: judged as a firmer foam than the Power Cell 
 restitution = 0.6       # estimate: no published bounce figure; assumed equal to the Power Cell's. Measure with a drop test.
 inertia_factor = 0.4    # estimate: a uniform solid sphere, 2/5; high density foam throughout.
 
+[ball.2016-boulder]
+# FRC 2016 STRONGHOLD "Boulder": 10 in. gray coated-foam ball (the 2016 Kit of Parts ball).
+diameter = 0.254        # source: 10 in., FRC 2016 game manual (the manual's figure; also stated on https://en.wikipedia.org/wiki/FIRST_Stronghold). Chief Delphi reports boulders measuring slightly under: https://www.chiefdelphi.com/t/2016-boulder-weight-issue/147506
+mass = 0.285            # estimate: about 10 oz. The manual's mass was not confirmed (searched 2026-11-02; the Chief Delphi thread above is about weight and compression but its figures were not read). Replace with a kitchen-scale reading.
+stiffness_n = 120.0     # estimate: a coated foam ball much firmer than the Power Cell; Chief Delphi compression tests (same thread) exist but were not converted. Not measured.
+restitution = 0.5       # estimate: coated foam that bounces less than the Power Cell; no published number. Measure with a drop test.
+inertia_factor = 0.4    # estimate: a uniform solid sphere, 2/5; solid foam throughout.
+
+[ball.2017-fuel]
+# FRC 2017 STEAMWORKS "Fuel": 5 in. high-visibility yellow foam ball.
+diameter = 0.127        # source: 5 in., FRC 2017 game manual
+mass = 0.0737           # source: 2.6 oz., FRC 2017 game manual
+stiffness_n = 60.0      # estimate: a small low-density foam ball, taken equal to the Power Cell's 60 N. No published figure. Not measured.
+restitution = 0.5       # estimate: low-density foam; no published number. Measure with a drop test.
+inertia_factor = 0.4    # estimate: a uniform solid sphere, 2/5; foam throughout.
+
+[ball.2019-cargo]
+# FRC 2019 Destination: Deep Space "Cargo": 13 in. orange inflated rubber ball.
+diameter = 0.3302       # source: 13 in. +/- 0.5 in., FRC 2019 game manual
+mass = 0.280            # estimate: about 9.9 oz, remembered from a hollow rubber playground ball of this size; the manual's mass was not confirmed. Replace with a kitchen-scale reading.
+stiffness_n = 250.0     # estimate: a lightly inflated hollow rubber ball; the squeeze force comes mostly from pressure over the contact patch (as for the 2022 Cargo). No published figure. Not measured.
+restitution = 0.7       # estimate: a hollow rubber ball; no published number. Measure with a drop test.
+inertia_factor = 0.667  # estimate: a thin inflated shell, 2/3.
+
+[ball.2025-algae]
+# FRC 2025 REEFSCAPE "Algae": 16 in. blue-green inflated foam-and-rubber ball.
+diameter = 0.4064       # source: 16 in., FRC 2025 game manual
+mass = 0.450            # estimate: about 1 lb. The manual's mass was not confirmed. Replace with a kitchen-scale reading.
+stiffness_n = 200.0     # estimate: a large lightly inflated ball, squeezed by hand much like the 2022 Cargo. No published figure. Not measured.
+restitution = 0.7       # estimate: a hollow inflated ball; no published number. Measure with a drop test.
+inertia_factor = 0.667  # estimate: a thin inflated shell, 2/3.
+
+[ball.2014-ball]
+# FRC 2014 Aerial Assist "Ball": the large inflated exercise ball (about 25 in.) with a soft cover.
+diameter = 0.635        # source: 25 in., the bladder size reported in the Chief Delphi thread https://www.chiefdelphi.com/t/ball-dimensional-variability/132470 (one team measured a ball at up to about 25.75 in.); the 2014 manual says only "approximately 2 ft" (24 in.)
+mass = 1.3              # estimate: a forum figure, unconfirmed. Replace with a scale reading.
+stiffness_n = 300.0     # estimate: a large inflated vinyl ball squeezed over a big patch; pressure is low, so about the same as the 2022 Cargo's. No published figure. Not measured.
+restitution = 0.8       # estimate: a large inflated ball; no published number. Measure with a drop test.
+inertia_factor = 0.667  # estimate: a thin inflated shell, 2/3.
+
+[ball.2010-soccer-ball]
+# FRC 2010 Breakaway "Soccer ball": a size 5 soccer ball (also the 2002 Zone Zone piece).
+diameter = 0.2223       # source: 27 to 28 in. circumference in the FRC 2010 game manual, midpoint 27.5 in. / pi = 8.75 in. = 0.2223 m
+mass = 0.425            # source: 14 to 16 oz in the FRC 2010 game manual, midpoint 15 oz = 0.425 kg
+stiffness_n = 300.0     # estimate: an inflated soccer ball (about 8 to 16 psi); pressure times a contact patch at a 25% squeeze gives several hundred N. Not measured.
+restitution = 0.8       # estimate: a regulation soccer ball dropped on a hard floor rebounds about 0.6 to 0.7 of its drop height by FIFA's test (e about 0.8); not looked up for this entry. Measure with a drop test.
+inertia_factor = 0.667  # estimate: a thin inflated shell, 2/3.
+
+[ball.2012-basketball]
+# FRC 2012 Rebound Rumble "Basketball": 8 in. FIRST-logo foam basketball (size 4).
+diameter = 0.2021       # source: 25 in. circumference / pi = 7.96 in. = 0.2021 m (FRC 2012 game manual; the 8 in. diameter is also on https://www.team254.com/first/2012/)
+mass = 0.3175           # estimate: about 11.2 oz. The manual's mass was not confirmed. Replace with a kitchen-scale reading.
+stiffness_n = 100.0     # estimate: a coated foam ball, firmer than the Power Cell but not as firm as the 2016 Boulder. No published figure. Not measured.
+restitution = 0.55      # estimate: coated foam; no published number. Measure with a drop test.
+inertia_factor = 0.4    # estimate: a uniform solid sphere, 2/5; foam throughout.
+
 # Shooter-wheel materials by Shore A durometer. Fields: durometer, friction (coefficient against the ball).
 # Friction is not published for these materials against FRC foam and felt balls. The trend used for every entry:
 # softer rubber grips more. Values are estimates for polyurethane/rubber on a fuzzy or foam surface; they are

@@ -324,7 +324,8 @@ def plate_hit(ball, v: float) -> tuple[float, float]:
 
 
 @pytest.mark.parametrize("v", [30.0, 40.0, 50.0])
-@pytest.mark.parametrize("preset", ["2020-power-cell", "2022-cargo", "2026-fuel"])
+@pytest.mark.parametrize("preset", ["2020-power-cell", "2022-cargo", "2026-fuel", "2016-boulder", "2017-fuel", "2019-cargo",
+                                    "2025-algae", "2014-ball", "2010-soccer-ball", "2012-basketball"])
 def test_fast_hit_on_plate_bounces_back(preset, v):
     """At the default 1 ms step a fast ball doesn't pass through a 2 cm plate, and bounces back at no more than
     0.08 of its speed above e. That margin is the step's: a ball arriving at 40 m/s is already up to 4 cm into the

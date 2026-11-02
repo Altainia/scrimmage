@@ -164,7 +164,7 @@ This section is for the agent (and anyone writing a file by hand).
 
 1. **Name the idea and its author.** `[bench] name` is a short name, `author` the student's name, and `idea` the
    student's own words, in one line. These go on the picture and in the gallery: keep the student's words.
-2. **Pick the piece.** Use the game's ball preset (`2020-power-cell`, `2022-cargo`, `2026-fuel`) for a foam ball. For
+2. **Pick the piece.** Use the game's ball preset (`2020-power-cell`, `2022-cargo`, `2026-fuel`, or one of seven from past games, listed in docs/launcher.md) for a foam ball. For
    anything else, a rigid custom piece (a box, a cylinder or a disc) with a rough mass. A squishy piece must be a
    ball (see [Pieces and contact laws](#pieces-and-contact-laws)).
 3. **Guess sizes from the piece, and say which numbers were guessed.** Students say "two wheels", not "4 in. 40A at
@@ -393,7 +393,7 @@ Either `preset = "<ball>"` (a squishy ball; any key below overrides the preset's
 
 | Key | Meaning | Default |
 |---|---|---|
-| `preset` | `2020-power-cell`, `2022-cargo` or `2026-fuel` | none |
+| `preset` | `2020-power-cell`, `2022-cargo`, `2026-fuel`, `2016-boulder`, `2017-fuel`, `2019-cargo`, `2025-algae`, `2014-ball`, `2010-soccer-ball` or `2012-basketball` | none |
 | `name` | the piece's name | the preset, or `piece` |
 | `kind` | `squishy` or `rigid` | `squishy` with a preset, else `rigid` |
 | `shape` | `sphere`, `box`, `cylinder`, `disc` (a cylinder) or `mesh` | `sphere` with a preset, else required |

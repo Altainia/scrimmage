@@ -471,7 +471,7 @@ point `[range] file` at the copy.
 # range file: one hexagonal goal, an 8-ball line on the floor, a start in front of the goal
 [range]
 name = "My practice goal"
-ball = "2026-fuel"        # a launcher ball preset: 2020-power-cell, 2022-cargo or 2026-fuel
+ball = "2026-fuel"        # a launcher ball preset: 2020-power-cell, 2022-cargo, 2026-fuel or one from a past game (docs/launcher.md)
 
 [carpet]
 rolling_resistance = 0.07 # optional; see "Rolling on carpet"
