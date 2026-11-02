@@ -217,6 +217,7 @@ def msgs(prog, w) -> list[str]:
 FEED = '[[block]]\ndo = "feed_one"\nstation = "{}"\n'
 WAIT_HOPPER = '[[block]]\ndo = "wait_until"\nuntil = {{ in_hopper = {{ at_least = 1 }} }}\n'
 WAIT_EMPTY = '[[block]]\ndo = "wait_until"\nuntil = {{ station_empty = "feeder" }}\n'
+WAIT_MADE_IT = '[[block]]\ndo = "wait_until"\nuntil = {{ made_it_in = {{ at_least = 50 }} }}\n'
 
 
 def test_palette_lists_stations_ball_choice_and_floor_piece():
@@ -239,6 +240,8 @@ def test_feed_problems():
     assert msgs(sprog(FEED.format("feeder")), w) == []
     assert msgs(sprog(WAIT_HOPPER.format()), w) == ["pick the hopper in Setup: the bodies a piece lands in"]
     assert msgs(sprog(WAIT_HOPPER.format(), ["drive.chassis"]), w) == []
+    assert msgs(sprog(WAIT_MADE_IT.format()), w) == ["pick the hopper in Setup: the bodies a piece lands in"]
+    assert msgs(sprog(WAIT_MADE_IT.format(), ["drive.chassis"]), w) == []
     assert '"feeder" never runs out' in msgs(sprog(WAIT_EMPTY.format(), ["drive.chassis"]), w)[0]
     stocked = '\n[setup.station.feeder]\nstock = 3\n'
     assert msgs(sprog(WAIT_EMPTY.format(), ["drive.chassis"], stocked), w) == []

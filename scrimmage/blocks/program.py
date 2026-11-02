@@ -52,6 +52,7 @@ DO_KINDS = ("spin", "move", "drive", "stop", "wait", "wait_until", "repeat", "ex
 COND_KINDS = ("joint", "touch", "tilt", "piece_in", "hanging_from", "level", "in_hopper", "station_empty",
               "made_it_in")
 DRIVE_DIRECTIONS = ("forward", "back", "left", "right")
+_OPPOSITE = {"back": "forward", "left": "right", "right": "left"}     # where a minus distance goes instead
 SPREAD_AXES = ("offset_in", "distance_in", "angle_deg", "rotation_deg")
 SETUP_KEYS = ("ball", "seed", "station", "floor_spread")
 _STATION_LISTS = ("spread_position", "spread_rotation_deg")
@@ -229,9 +230,9 @@ def _block(t, trail: tuple) -> Block:
             if t["direction"] not in DRIVE_DIRECTIONS:
                 raise TestFileError(f"{where}: direction must be one of {', '.join(DRIVE_DIRECTIONS)}, "
                                     f"not {t['direction']!r}")
-            if t["direction"] == "back" and k == "distance" and a[k] < 0:
-                raise TestFileError(f"{where}: drive back with a minus distance goes forward; "
-                                    "use one or the other")
+            if t["direction"] in _OPPOSITE and k == "distance" and a[k] < 0:
+                raise TestFileError(f"{where}: drive {t['direction']} with a minus distance goes "
+                                    f"{_OPPOSITE[t['direction']]}; use one or the other")
             a["direction"] = t["direction"]
         if "volts" in t:
             a["volts"] = _volts(t["volts"], where)
