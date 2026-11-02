@@ -82,11 +82,53 @@ def starter_hooks(pal: dict | None) -> list[str]:
     return [b for b in pal.get("bodies") or [] if _hooky(b) and b not in counted]
 
 
-def _place(doc, parts: list[tuple[str, dict]], root_body: str) -> list[str]:
+PWM_CHANNELS = range(20)          # a roboRIO's PWM outputs: 0-9 on the board, 10-19 on the MXP
+CAN_IDS = range(1, 63)            # CAN IDs a motor controller can take (0 is a new controller's factory ID)
+CAN_MOTORS = ("SparkMax", "SparkFlex", "TalonFX")      # the CAN motor controllers a config names in `ids`
+_DEVICE = re.compile(r"^([A-Za-z][A-Za-z0-9]*):(\d+)$")
+
+
+def _device_texts(v):
+    """Every "<Kind>:<id>" text in one `ids` value (a short form, or a table's ctre/rev/... entries)."""
+    if isinstance(v, str):
+        m = _DEVICE.match(v)
+        if m:
+            yield m.group(1), int(m.group(2))
+    elif isinstance(v, dict):
+        for x in v.values():
+            yield from _device_texts(x)
+
+
+def free_motor_ids(doc, slots: list[str]) -> dict[str, str]:
+    """A free device ID for each motor slot in `slots`, none of them one the robot document `doc` uses already: PWM
+    channels, or CAN IDs of the robot's CAN motor controller when its motors are on CAN (more CAN motor controllers
+    than PWM motors). ValueError when there are too few left."""
+    pwm, can, kinds = set(), set(), []
+    for p in doc.get("part", []):
+        for v in (p.get("ids") or {}).values():
+            for kind, n in _device_texts(v.unwrap() if hasattr(v, "unwrap") else v):
+                if kind == "PWM":
+                    pwm.add(n)
+                elif kind not in ("DIO", "AIO", "Analog"):
+                    can.add(n)                  # one CAN bus: an ID is taken whatever the device is
+                    if kind in CAN_MOTORS:
+                        kinds.append(kind)
+    on_can = len(kinds) > len(pwm)
+    kind = max(dict.fromkeys(kinds), key=kinds.count) if on_can else "PWM"
+    free = [n for n in (CAN_IDS if on_can else PWM_CHANNELS) if n not in (can if on_can else pwm)]
+    if len(free) < len(slots):
+        raise ValueError(f"the robot has no free {'CAN IDs' if on_can else 'PWM channels'} left for "
+                         f"{len(slots)} more motor{'s' if len(slots) != 1 else ''}")
+    return {slot: f"{kind}:{n}" for slot, n in zip(slots, free)}
+
+
+def _place(doc, parts: list[tuple[str, dict]], root_body: str, motor_slots: dict | None = None) -> list[str]:
     """Add to the robot document `doc` the part folders `parts` [(path as the config writes it, cad_marker)] of one
     CAD import that it doesn't have yet (a [[part]] with that path), where the CAD has them (edits.cad_offset): a part
     the robot carries on the stock chassis's root body at zero offset, a part the CAD hangs on another's body on that
-    body (the other one first). Each is named after its part (made unique). Returns the names added."""
+    body (the other one first). Each is named after its part (made unique), and its motor slots (`motor_slots`: part
+    name -> slot names) get device IDs the robot doesn't use yet (free_motor_ids), so they run at once. Returns the
+    names added."""
     have = {str(p.get("path")).replace("\\", "/"): str(p["name"]) for p in doc.get("part", []) if p.get("path")}
     taken = {str(p["name"]) for p in doc.get("part", [])}
     names: dict = {}            # part name -> instance name
@@ -116,7 +158,8 @@ def _place(doc, parts: list[tuple[str, dict]], root_body: str) -> list[str]:
                 attach = f"{names[target]}.{body}"
                 pos = cad_offset(m, body, by_part[target][1], chassis_root=False) or pos
         done.add(part)
-        add_part(doc, name=names[part], path=path, attach=attach, pos=pos)
+        ids = free_motor_ids(doc, list((motor_slots or {}).get(part) or []))
+        add_part(doc, name=names[part], path=path, attach=attach, pos=pos, ids=ids or None)
         added.append(names[part])
 
     for _, m in parts:
@@ -124,12 +167,12 @@ def _place(doc, parts: list[tuple[str, dict]], root_body: str) -> list[str]:
     return added
 
 
-def standin_config(parts: list[tuple[str, dict]], root_body: str) -> str:
+def standin_config(parts: list[tuple[str, dict]], root_body: str, motor_slots: dict | None = None) -> str:
     """The stand-in robot (templates' "standin") carrying the part folders `parts` [(path, cad_marker)] of one CAD
-    import where the CAD has them (see _place). With a body named like a hook, the robot starts in front of the ladder
-    range (the Test tab's Setup changes the field)."""
+    import where the CAD has them, their motor slots on free IDs (see _place). With a body named like a hook, the robot
+    starts in front of the ladder range (the Test tab's Setup changes the field)."""
     doc = tomlkit.parse(new_config("standin"))
-    _place(doc, parts, root_body)
+    _place(doc, parts, root_body, motor_slots)
     if any(_hooky(b) for _, m in parts for b in m["origins"]):
         rng = tomlkit.table()
         rng.update(STANDIN_RANGE)
@@ -138,11 +181,12 @@ def standin_config(parts: list[tuple[str, dict]], root_body: str) -> str:
     return tomlkit.dumps(doc)
 
 
-def add_to_standin(text: str, parts: list[tuple[str, dict]], root_body: str) -> tuple[str, list[str]]:
-    """An existing stand-in's text with the import's parts it doesn't have yet added where the CAD has them, and their
-    names; nothing is removed or moved, and its field stays."""
+def add_to_standin(text: str, parts: list[tuple[str, dict]], root_body: str,
+                   motor_slots: dict | None = None) -> tuple[str, list[str]]:
+    """An existing stand-in's text with the import's parts it doesn't have yet added where the CAD has them (their
+    motor slots on IDs it doesn't use yet), and their names; nothing is removed or moved, and its field stays."""
     doc = tomlkit.parse(text)
-    added = _place(doc, parts, root_body)
+    added = _place(doc, parts, root_body, motor_slots)
     return tomlkit.dumps(doc), added
 
 

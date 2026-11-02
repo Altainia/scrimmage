@@ -523,6 +523,7 @@ from tomlkit.exceptions import TOMLKitError
 from .. import robotcode, teamfolders
 from ..config import ConfigError, load_config_text
 from ..lockstep import parse_speed
+from ..parts.model import PartError, load_part
 from ..parts.stock import REGISTRY, _load_all
 from ..scenario import ScenarioError
 from ..scenario_runner import UNSET
@@ -2177,7 +2178,7 @@ class App:
         imp_path = Path(st["path"])
         # next to the parts folder the import file is in (or beside an import file kept elsewhere)
         home = imp_path.parent.parent if imp_path.parent.name == "parts" else imp_path.parent
-        parts = []
+        parts, slots = [], {}
         for p in st["parts"]:
             try:
                 folder = part_folder(imp, p["name"], imp_path)
@@ -2186,6 +2187,10 @@ class App:
             marker = library.cad_marker(folder)
             if marker is None or not (folder / "part.toml").is_file():
                 raise ApiError(409, f"the part {p['name']} isn't built yet; try again when the parts are up to date")
+            try:
+                slots[marker["part"]] = [m.slot for m in load_part(folder).motors]
+            except (PartError, OSError) as e:
+                raise ApiError(409, f"the part {p['name']} can't be read: {e}") from None
             parts.append((test_session.config_path(folder, home), marker))
         if not parts:
             raise ApiError(409, "this import makes no parts yet: put its pieces in a body first")
@@ -2195,9 +2200,9 @@ class App:
         standin, test = home / f"{name}-standin.toml", home / f"{name}.test.toml"
         added: list[str] = []
         try:
-            if not test_session.write_new(standin, test_session.standin_config(parts, _chassis_root_body())):
+            if not test_session.write_new(standin, test_session.standin_config(parts, _chassis_root_body(), slots)):
                 text, added = test_session.add_to_standin(standin.read_text(encoding="utf-8"), parts,
-                                                          _chassis_root_body())
+                                                          _chassis_root_body(), slots)
                 if added:
                     test_session.replace_text(standin, text)
             if not test.exists():

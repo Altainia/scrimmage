@@ -16,7 +16,7 @@ The question the test answers: does that motion climb the ladder rung after rung
 | `climber.step` | the CAD (a copy of `tests/data/cad/crank_climber.step`, made by `tests/make_cad_fixtures.py`) |
 | `parts/climber.import.toml` | the Part tab's choices: bodies, materials, joints, the two loop pins, the hook springs, the motor |
 | `parts/climber/` | the part the Part tab built from it |
-| `climber-standin.toml` | the stand-in box robot with the climber where the CAD has it, in front of the `ladder` range, as the Part tab's **Test it** makes it; the crank motor's ID set (`PWM:2`) |
+| `climber-standin.toml` | the stand-in box robot with the climber where the CAD has it, in front of the `ladder` range, as the Part tab's **Test it** makes it (it puts the crank motor on `PWM:2`, the first PWM channel the drive leaves free) |
 | `climb.test.toml` | the blocks |
 | `make_climber.py` | makes the three above from `climber.step` with the same edits a student makes in the Part tab |
 
@@ -38,14 +38,16 @@ scrimmage test run examples/blocks/ladder_climber/climb.test.toml
 `reached rung1, then waiting for a hook to touch rung2 timed out at 12.1 s (block 2 inside block 3)`.
 
 The robot drives up to the ladder, the high hook comes down onto rung1 and lifts the front of the robot, and the low
-hook folds past rung1 on its way up. But the robot doesn't hang: it tips up on its back bumper. At the top of the
-stroke the robot is tilted 17° (20° at most in the run, so the tilt check passes), and the rising hook's pin is
-0.81 m up and 0.15 m back from the ladder, while rung2's top is 0.91 m up. It never reaches rung2, so it comes back
-down onto rung1, and the crank goes on turning with the robot rocking on rung1 until the wait gives up.
+hook folds past rung1 on its way up. The robot hangs from rung1 (the hooks carry more than a quarter of its weight),
+but it tips up on its back bumper instead of rising. At the top of the stroke the robot is tilted 17° (20° at most
+in the run, so the tilt check passes), and the rising hook's pin is 0.81 m up and 0.15 m back from the ladder, while
+rung2's top is 0.91 m up. It never reaches rung2, so it comes back down onto rung1, and the crank goes on turning
+with the robot rocking on rung1 until the wait gives up.
 
 **Why (physics, not a bug):** the hooks are at the front edge of the robot and its weight is in the middle. A hook
 pulling up on the front can't lift the back off the carpet until the robot has tilted far enough that its center of
-mass is right under the hook, about 40° for this robot. Until then the robot pivots on its back bumper, so lifting
+mass is right under the hook: about 45° for this robot, an estimate from where the hooks sit (about 0.5 m ahead of
+the center of mass and 0.45 m above it), not a measurement. Until then the robot pivots on its back bumper, so lifting
 the front 0.35 m (one stroke) mostly tilts it. Tilting it back swings everything above the bumper away from the
 ladder, the higher hook most of all, so the next rung is out of reach. The crank is strong enough (the motor isn't
 stalled), and the hooks fold and catch as designed.
@@ -64,9 +66,10 @@ stalled), and the hooks fold and catch as designed.
 
 Not tried, and the next things to try: a climber that holds the robot nearer its middle (hooks reaching over the
 robot's top from a mount near its center), or a robot whose weight sits further forward (the stand-in's
-`com_offset`), so that it hangs before it tilts. A quick try with `com_offset = [0.3, 0, 0]` still tilted the robot
-27° on its back bumper.
+`com_offset`), so that the back leaves the carpet before the robot tilts far. A quick try with
+`com_offset = [0.3, 0, 0]` still tilted the robot 27° on its back bumper.
 
 A side note from the simulation: the hook's stop (its hinge's range) is soft under a robot's weight, so a loaded hook
-turns 40° to 60° past it until its back plate rests on the rung. The rung then holds the hook, so the climb
-doesn't depend on it, but the replay shows the hooks tipped up while they carry the robot.
+turns 40° to 60° past it until its back plate rests on the rung, and the replay shows the hooks tipped up while they
+carry the robot. A real hook would sit on its stop. How much this changes the climb hasn't been tested: the Part tab
+can't stiffen a hinge's stop yet (the part format's `armature` and `limit_solref` aren't among its joint settings).

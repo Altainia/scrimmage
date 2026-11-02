@@ -7,6 +7,7 @@ fail, so a change that makes it climb further says so here."""
 from __future__ import annotations
 
 import importlib.util
+import csv
 import json
 import re
 import shutil
@@ -22,6 +23,7 @@ from scrimmage.blocks import store
 from scrimmage.blocks.palette import problems
 from scrimmage.blocks.program import load
 from scrimmage.blocks.run import TestRun, world_for
+from scrimmage.blocks.sweep import run_sweep
 from scrimmage.cad.settings import read_import
 from scrimmage.parts.model import load_part
 
@@ -117,8 +119,9 @@ def test_the_climb_ends_in_a_sentence(climb):
     assert max(r.signals["climber.crank"]) > 360.0                 # the crank went round, it didn't stall
 
 
-@pytest.mark.xfail(strict=True, reason="the robot pivots on its back bumper instead of hanging, so the higher hook "
-                                       "stays below and behind rung2 (examples/blocks/ladder_climber/README.md)")
+@pytest.mark.xfail(strict=True, reason="the robot hangs from rung1 but tips up on its back bumper instead of "
+                                       "rising, so the higher hook stays below and behind rung2 "
+                                       "(examples/blocks/ladder_climber/README.md)")
 def test_crank_climber_reaches_rung2(climb):
     assert "rung2" in climb["result"].hung
 
@@ -132,6 +135,24 @@ def test_the_run_is_kept_for_the_replay(climb):
     n, times, poses = store.read_motion(run["motion"])
     assert n == len(r.movers) and len(times) == len(r.motion) and poses.shape[1:] == (n, 7)
     assert run["signals"]["tilt"] == pytest.approx(r.signals["tilt"], abs=1e-6)
+
+
+def test_a_crank_volts_sweep_and_its_runs_for_compare(climb):
+    """The spin of the crank (block 3's first block) at 6 V and 9 V: a row and a kept run each, and both runs load for
+    the compare view."""
+    base = climb["folder"] / "sweep-runs"
+    out = run_sweep(climb["program"], {"block": [2, 0], "key": "volts"}, [6.0, 9.0], base)
+    with open(out / "table.csv", newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    assert [float(r["value"]) for r in rows] == [6.0, 9.0]
+    assert all(r["status"] in STATUSES and r["outcome"] for r in rows), rows
+    ids = sorted(e["id"] for e in store.list_runs(base))
+    assert ids == ["sweep-001/001", "sweep-001/002"]
+    runs = [store.load_run(base, i) for i in ids]
+    assert [r["sweep"]["value"] for r in runs] == [6.0, 9.0]
+    for r in runs:
+        assert r["signals"]["t"] and r["view"]["geoms"] and r["motion"].is_file()
+        assert "rung1" in r["hung"]
 
 
 def test_scrimmage_test_run_on_the_example(tmp_path, capsys, monkeypatch):

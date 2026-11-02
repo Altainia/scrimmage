@@ -234,8 +234,8 @@ for the traversal (a taller rotating arm, a reaction arm against the truss), are
 arms that rise and fall in turn (like a steam train's wheel rods), with spring hooks that fold past a rung and catch
 it, on the stand-in box robot in front of the `ladder` range. Its test (`climb.test.toml`, gated by
 tests/test_blocks_climber.py) **reaches rung1 and stops there for a physics reason**: the hooks are at the robot's
-front edge and its weight is in the middle, so lifting the front tips the robot up on its back bumper (17° at the top
-of a stroke) instead of hanging it, and that tilt swings the rising hook back from the ladder and below rung2. Its
+front edge and its weight is in the middle, so the robot hangs from rung1 but tips up on its back bumper (17° at the
+top of a stroke) instead of rising, and that tilt swings the rising hook back from the ladder and below rung2. Its
 README has the numbers, what was tuned, and what to try next.
 
 ## The climb scenario

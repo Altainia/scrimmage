@@ -21,7 +21,6 @@ RATIO = 200.0                    # NEO turns per crank turn: 6 V spins a free NE
 HOOK_SPRING = [3.0, -15.0]       # N*m/rad, and its rest (degrees): it holds the hook on its stop with 0.8 N*m
 HOOK_FOLD = [0.0, 95.0]          # degrees: the stop at 0 holds the finger; it folds tip down to pass a rung
 STROKE = 0.4                     # m each arm slides: twice the crank pins' 0.2 m radius
-CRANK_IDS = {"crank_motor": "PWM:2"}     # the crank motor's controller, as the Robot tab writes it
 P = "CrankClimber"               # the STEP file's top assembly: piece keys are P/<sub-assembly>/<piece>
 
 
@@ -118,12 +117,9 @@ def import_climber(step: Path, parts: Path):
 
 def make(folder: Path, step: Path | None = None) -> list[str]:
     """Import `step` (default: `folder`/climber.step) into `folder`/parts, build the part, and write the stand-in
-    robot `folder`/climber-standin.toml: "Test it"'s stand-in, with the crank motor's device ID set as the Robot tab
-    sets it. Returns the edits' and the build's messages."""
-    import tomlkit
-
+    robot `folder`/climber-standin.toml as "Test it" makes it: the part on the chassis's root body where the CAD has it,
+    its crank motor on a free PWM channel. Returns the edits' and the build's messages."""
     from scrimmage.assembler import library
-    from scrimmage.assembler.edits import set_ids
     from scrimmage.assembler.server import _chassis_root_body
     from scrimmage.assembler.test_session import config_path, replace_text, standin_config
     from scrimmage.cad.build import build_parts, part_folder, write_parts
@@ -139,9 +135,8 @@ def make(folder: Path, step: Path | None = None) -> list[str]:
     write_import(imp, imp_path)
     placed = [(config_path(part_folder(imp, name, imp_path), folder),
                library.cad_marker(part_folder(imp, name, imp_path))) for name in result.parts]
-    doc = tomlkit.parse(standin_config(placed, _chassis_root_body()))
-    set_ids(doc, "climber", CRANK_IDS)
-    replace_text(folder / "climber-standin.toml", tomlkit.dumps(doc))
+    slots = {name: [m.slot for m in built.part.motors] for name, built in result.parts.items()}
+    replace_text(folder / "climber-standin.toml", standin_config(placed, _chassis_root_body(), slots))
     return messages + result.messages
 
 

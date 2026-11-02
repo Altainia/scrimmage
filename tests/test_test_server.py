@@ -520,6 +520,67 @@ def test_test_it_from_the_part_tab_puts_the_part_on_a_stand_in_where_the_cad_has
     assert c.get("/api/app/state")[1]["test"] == str(test.resolve())
 
 
+def _part_edit(c, op, **args):
+    v = c.get("/api/part/state")[1]["version"]
+    s, b = c.call("POST", "/api/part/edit", {"version": v, "op": op, "args": args})
+    assert s == 200 and b.get("ok", True), b
+
+
+def test_test_it_gives_the_parts_motors_free_ids_so_the_starter_test_runs(tmp_path, test_app):
+    """A part with a motor: Test it puts its slot on a PWM channel the stand-in's drive doesn't use, and the starter
+    test (which moves that motor's joint) has no problems."""
+    import shutil
+    import tomllib
+    step = tmp_path / "climber.step"
+    shutil.copy(CAD / "climber.step", step)
+    c = test_app(step)
+    _built_part(c)
+    _part_edit(c, "set_joint", body="arm_A", parent="base_plate",
+               joint={"kind": "hinge", "anchor": [0.06, 0.1, 0.01], "axis": [0, 1, 0]})
+    _part_edit(c, "set_motor", body="arm_A", settings={"motor": "NEO", "count": 1, "ratio": 50.0})
+    end = time.monotonic() + 60
+    while "arm_A_motor" not in (tmp_path / "parts" / "climber" / "part.toml").read_text(encoding="utf-8") \
+            or c.get("/api/part/state")[1]["build"]["state"] != "idle":
+        assert time.monotonic() < end
+        time.sleep(0.05)
+    s, b = c.call("POST", "/api/test/new", {"from_part": True})
+    assert s == 200, b
+    raw = tomllib.loads((tmp_path / "climber-standin.toml").read_text(encoding="utf-8"))
+    parts = {p["name"]: p for p in raw["part"]}
+    assert parts["climber"]["ids"] == {"arm_A_motor": "PWM:2"}           # the drive has PWM 0 and 1
+    st = _state(c)
+    assert st["problems"] == [], st["problems"]
+    assert st["test"]["blocks"] == [{"do": "move", "joint": "climber.arm_A", "to": 45.0, "unit": "deg"}]
+
+
+def test_free_motor_ids_never_reuse_one_the_robot_has():
+    """Adding a part to an existing stand-in: its motors take the lowest PWM channels nothing uses (a hand-added part's
+    included); a robot whose motors are on CAN gets CAN IDs of its controller, clear of every CAN device's ID."""
+    import tomllib
+
+    import tomlkit
+
+    from scrimmage.assembler.test_session import add_to_standin, free_motor_ids, standin_config
+    lift = {"import_id": "x", "part": "lift", "origins": {"frame": [0.0, 0.0, 0.0]}, "attach": None}
+    roller = {"import_id": "x", "part": "roller", "origins": {"roll": [0.0, 0.0, 0.0]}, "attach": None}
+    text = standin_config([("parts/lift", lift)], "chassis", {"lift": ["frame_motor"]})
+    assert {p["name"]: p for p in tomllib.loads(text)["part"]}["lift"]["ids"] == {"frame_motor": "PWM:2"}
+    text += '\n[[part]]\nname = "arm"\nstock = "arm"\nattach = "drive.top"\nids = { pivot = "PWM:3" }\n'
+    new, added = add_to_standin(text, [("parts/lift", lift), ("parts/roller", roller)], "chassis",
+                                {"lift": ["frame_motor"], "roller": ["roll_motor", "roll_2_motor"]})
+    parts = {p["name"]: p for p in tomllib.loads(new)["part"]}
+    assert added == ["roller"] and parts["lift"]["ids"] == {"frame_motor": "PWM:2"}
+    assert parts["roller"]["ids"] == {"roll_motor": "PWM:4", "roll_2_motor": "PWM:5"}
+    can = tomlkit.parse('[[part]]\nname = "a"\nids = { drive = "SparkMax:1", steer = { rev = "SparkMax:2" }, '
+                        'encoder = "SparkMaxAbs:3" }\n[[part]]\nname = "g"\nids = { gyro = "Pigeon2:4" }\n')
+    assert free_motor_ids(can, ["x_motor", "y_motor"]) == {"x_motor": "SparkMax:5", "y_motor": "SparkMax:6"}
+    assert free_motor_ids(can, []) == {}
+    pwm = ", ".join(f'm{i} = "PWM:{i}"' for i in range(20))
+    full = tomlkit.parse(f'[[part]]\nname = "a"\nids = {{ {pwm} }}\n')
+    with pytest.raises(ValueError, match="no free PWM channels left for 1 more motor"):
+        free_motor_ids(full, ["x_motor"])
+
+
 def test_a_robot_edit_puts_the_stand_in_by_the_ladder_and_the_test_sees_its_bars(tmp_path, test_app):
     """Setup's field choice is the Robot tab's start edit with a ladder (undo works); the test's palette follows."""
     import tomllib
