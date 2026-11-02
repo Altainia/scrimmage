@@ -8,14 +8,16 @@
 //
 // Every change is saved (500 ms after the last one) through /api/test/save with the state's version; a 409 (the file
 // changed meanwhile) shows the saved version again and says so. Problems from the state show as a warning on their
-// block and in the list above Run; Run is off while there are any. Blockly's theme follows the page's (light or dark),
+// block and in the list above Run, with this page's own (a save the server refused, an empty condition socket, blocks
+// not joined to the test); Run is off while there are any, and runs only the test as it is on screen. Blockly's theme follows the page's (light or dark),
 // its colors read from app.css's tokens.
 //
 // Test hook: window.__scrimmageTest {workspace, state, toJSON(), saved: a promise for the save under way (or
 // resolved)}.
 
 import { $, h, api, notice, registerTab, setTab, showPath, currentTab, store } from "./app.js";
-import { defineBlocks, toolbox, testToWorkspace, workspaceToTest, placeOf, incomplete, STYLES } from "./blocks_defs.js";
+import { defineBlocks, toolbox, testToWorkspace, workspaceToTest, placeOf, incomplete, looseStacks, setUsed, STYLES }
+  from "./blocks_defs.js";
 
 const SAVE_DELAY = 500;     // ms after the last change
 const STALE = "The test changed on disk; showing the saved version.";
@@ -26,7 +28,7 @@ const t = {
   synced: null,       // canon() of the test as the server has it, when the workspace shows it
   base: null,         // the state version whose test the workspace started from (a save sends it)
   local: [],          // incomplete(ws): blocks not joined to the test, empty condition sockets
-  saveError: null,    // why the last save was refused (400)
+  saveError: null,    // the last save the server refused (400): {message, place: [i, j, ...] or null}
   timer: null,        // the pending save
   saving: null,       // the save under way (a promise)
   toolboxKey: null,
@@ -118,6 +120,7 @@ function fitHeads() {
 }
 
 function show(test) {
+  t.saveError = null;
   testToWorkspace(test, t.ws);
   t.synced = canon(test);
   t.base = t.state.version;
@@ -169,9 +172,19 @@ async function save() {
     notice(STALE, "warn", "test-stale");
     await refresh(true);
   } else {
-    t.saveError = (data.errors && data.errors[0] && data.errors[0].message) || `the server answered ${status}`;
+    t.saveError = refused((data.errors && data.errors[0] && data.errors[0].message) || `the server answered ${status}`);
+    check();
   }
   renderStatus();
+}
+
+// The server names a bad block by its place ("block 2 inside block 3 (repeat): seconds can't be negative"): the
+// message without that, and the place (0-based, outermost first) when it has one.
+function refused(text) {
+  const m = /^block (\d+)((?: inside block \d+)*)(?: \(repeat\))?: (.*)$/s.exec(text);
+  if (!m) return { message: text, place: null };
+  const nums = [m[1], ...(m[2].match(/\d+/g) || [])].map(Number).reverse();
+  return { message: m[3], place: nums.map((n) => n - 1) };
 }
 
 // -- state ------------------------------------------------------------------------------------------------------------
@@ -185,13 +198,16 @@ function apply(s, reload = false) {
   if (prev && !reload && s.version < prev.version) return;   // an older answer overtaken by a newer one
   t.state = s;
   if (t.ws) {
+    setUsed([s.test, workspaceToTest(t.ws)]);
     const key = canon(s.palette);
     if (key !== t.toolboxKey) { t.toolboxKey = key; t.ws.updateToolbox(toolbox(s.palette)); fitHeads(); }
     const changed = canon(s.test) !== t.synced;
     // a change this page didn't make (an outside edit, another tab), while nothing of ours is waiting to be saved
     if (reload || (changed && !t.timer && !t.saving)) {
       if (changed && !reload && prev) notice("The test changed outside this page (the file was edited, or another tab), so it was reloaded.", "info");
+      const loose = looseStacks(t.ws).map((b) => b.toString());
       show(s.test);
+      if (loose.length) notice(`Blocks not joined to your test were left out: ${loose.join("; ")}`, "warn");
     } else {
       if (!changed) t.base = s.version;
       check();
@@ -225,6 +241,8 @@ function check() {
     }
   }
   const byBlock = new Map(t.serverWarn);
+  const refusedAt = saveErrorBlock();
+  if (refusedAt) byBlock.set(refusedAt, [...(byBlock.get(refusedAt) || []), t.saveError.message]);
   for (const p of t.local) byBlock.set(p.block.id, [...(byBlock.get(p.block.id) || []), p.message]);
   for (const b of t.ws.getAllBlocks(false)) {
     const msgs = byBlock.get(b.id);
@@ -236,6 +254,8 @@ function check() {
 
 const fits = () => !!t.ws && canon(workspaceToTest(t.ws)) === t.synced;
 const placeIds = () => new Map([...placeOf(t.ws)].map(([id, place]) => [place.join("/"), id]));
+// the block a refused save names (its place is the workspace's: that is the test it tried to save)
+const saveErrorBlock = () => (t.saveError && t.saveError.place && t.ws ? placeIds().get(t.saveError.place.join("/")) || null : null);
 
 function problemList() {
   const out = [];
@@ -244,7 +264,8 @@ function problemList() {
   if (s.file_error) out.push({ message: `The test file can't be read: ${s.file_error}` });
   const ids = fits() ? placeIds() : new Map();
   for (const p of s.problems || []) out.push({ message: p.message, id: p.place.length ? ids.get(p.place.join("/")) : null });
-  for (const p of t.local) if (p.blocking) out.push({ message: p.message, id: p.block.id });
+  if (t.saveError) out.push({ message: `Not saved: ${t.saveError.message}`, id: saveErrorBlock() });
+  for (const p of t.local) out.push({ message: p.message, id: p.block.id });
   return out;
 }
 
@@ -261,7 +282,7 @@ function renderProblems() {
   ul.replaceChildren(...list.map((p) => {
     const b = p.id && t.ws ? t.ws.getBlockById(p.id) : null;
     return h("li", { class: "test-problem" },
-      b ? h("button", { type: "button", class: "linklike", onclick: () => goTo(p.id), text: b.toString(40) }) : null,
+      b ? h("button", { type: "button", class: "linklike", onclick: () => goTo(p.id), text: b.toString() }) : null,
       h("span", { text: p.message }));
   }));
   $("#test-problems-wrap").hidden = !list.length;
@@ -283,10 +304,10 @@ function renderStatus(busy = false) {
   if (!t.state) return;
   const blocking = t.local.find((p) => p.blocking);
   if (busy || t.timer || t.saving) { el.textContent = "Saving…"; el.className = "saved saved-busy"; }
-  else if (t.saveError) { el.textContent = `Not saved: ${t.saveError}`; el.className = "saved saved-bad"; }
+  else if (t.saveError) { el.textContent = `Not saved: ${t.saveError.message}`; el.className = "saved saved-bad"; }
   else if (blocking) { el.textContent = "Not saved yet: a block needs a check plugged in"; el.className = "saved saved-warn"; }
   else { el.textContent = "✓ All changes saved"; el.className = "saved saved-ok"; }
-  const n = t.ws ? workspaceToTest(t.ws).blocks.length : 0;
+  const n = t.ws ? placeOf(t.ws).size : 0;   // every block of the test, the ones inside repeats too
   $("#test-count").textContent = t.ws ? `${n} block${n === 1 ? "" : "s"} in the test` : "";
 }
 
@@ -306,8 +327,13 @@ function render() {
 
 async function run() {
   await flush();
+  // only the test on screen runs: not a file this page couldn't save
+  if (t.saveError || t.local.length || !fits()) { check(); renderStatus(); return; }
   const { status, data } = await api("POST", "/api/test/run", {});
-  if (status !== 200) notice(`Can't run the test: ${data.errors[0].message}`, "warn");
+  if (status !== 200) {
+    const why = (data.errors && data.errors[0] && data.errors[0].message) || data.error || `the server answered ${status}`;
+    notice(`Can't run the test: ${why}`, "warn");
+  }
   await refresh();
 }
 

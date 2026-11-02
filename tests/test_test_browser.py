@@ -294,3 +294,100 @@ def test_the_test_tab_meets_wcag_aa(test_page, scheme):
         page.emulate_media(color_scheme="dark")
         page.wait_for_function("__scrimmageTest.workspace.getTheme().name === 'scrimmage-dark'")
         assert page.evaluate(f"({CONTRAST_JS}).check(document.body)") == []
+
+
+def _click_field(page, block_js, field):
+    box = page.evaluate(f"""(() => {{
+      const r = ({block_js}).getField('{field}').getSvgRoot().getBoundingClientRect();
+      return {{x: r.left + r.width / 2, y: r.top + r.height / 2}};
+    }})()""")
+    page.mouse.click(box["x"], box["y"])
+
+
+def test_a_save_the_server_refuses_shows_on_its_block_and_nothing_runs(test_page):
+    """-0.5 m is fine, -0.5 s isn't: the server refuses the save, the drive block says why, and Run stays off (the
+    file still holds the last good test, which Run must not run)."""
+    page, path = test_page("""
+[[block]]
+do = "wait"
+seconds = 0.2
+
+[[block]]
+do = "drive"
+distance = 0.3
+""")
+    drive = "__scrimmageTest.workspace.getTopBlocks(true)[0].getNextBlock()"
+    _click_field(page, drive, "AMOUNT")
+    page.wait_for_selector(".blocklyHtmlInput")
+    page.keyboard.press("Control+A")
+    page.keyboard.type("-0.5")
+    page.keyboard.press("Enter")
+    page.evaluate("__scrimmageTest.saved")
+    page.wait_for_function("__scrimmageTest.state.test.blocks[1].distance === -0.5")
+    assert page.is_enabled("#test-run")
+    _click_field(page, drive, "WHAT")
+    page.click(".blocklyDropDownDiv .blocklyMenuItem:has-text('s')")
+    page.wait_for_function("document.querySelector('#test-saved').textContent.startsWith('Not saved')")
+    warning = page.evaluate(f"(() => {{ const i = ({drive}).getIcon(Blockly.icons.IconType.WARNING); return i ? i.getText() : null; }})()")
+    assert warning and "negative" in warning
+    assert "negative" in page.inner_text("#test-problems")
+    assert page.is_disabled("#test-run")
+    page.evaluate("document.querySelector('#test-run').disabled = false; document.querySelector('#test-run').click()")
+    page.wait_for_timeout(1500)
+    assert page.evaluate("__scrimmageTest.state.runs") == [] and page.evaluate("__scrimmageTest.state.running") is None
+    assert _file_blocks(path)[1] == {"do": "drive", "distance": -0.5}
+
+
+def test_the_touch_picker_offers_the_fields_surfaces_and_marks_missing_names_by_side(test_page):
+    page, _ = test_page("""
+[[block]]
+do = "wait_until"
+until = { touch = { robot = "drive.chassis", field = "carpet" } }
+
+[[block]]
+do = "wait_until"
+until = { touch = { robot = "arm.gone", field = "nowhere" } }
+""")
+    targets = page.evaluate("__scrimmageTest.state.palette.targets")
+    assert "carpet" in targets and "wall_left" in targets
+    opts = page.evaluate("""(() => {
+      const [a, b] = __scrimmageTest.workspace.getTopBlocks(true)[0].getDescendants(true).filter(x => x.type === 'cond_touch');
+      const labels = (blk, f) => blk.getField(f).getOptions(false).map(o => o[0]);
+      return {field: labels(a, 'FIELD'), robot: labels(b, 'ROBOT'), missingField: labels(b, 'FIELD')};
+    })()""")
+    assert "carpet" in opts["field"] and "wall_left" in opts["field"]
+    assert not [o for o in opts["field"] if "not on" in o and "nowhere" not in o]
+    assert "arm.gone (not on the robot)" in opts["robot"]
+    assert "nowhere (not on the field)" in opts["missingField"]
+    # nothing is wrong with touching the carpet: only the second block has problems
+    page.wait_for_function("__scrimmageTest.state.problems.length > 0")
+    assert {tuple(p["place"]) for p in page.evaluate("__scrimmageTest.state.problems")} == {(1,)}
+
+
+def test_the_status_bar_counts_every_block_of_the_test(test_page):
+    page, _ = test_page(EVERYTHING)
+    page.wait_for_function("document.querySelector('#test-count').textContent === '13 blocks in the test'")
+
+
+def test_dragging_a_test_apart_keeps_the_first_block_and_a_reload_says_what_it_left_out(test_page):
+    page, path = test_page(SPIN + """
+[[block]]
+do = "wait"
+seconds = 0.7
+""")
+    # the two blocks under the first, pulled off together: the bigger stack, but not the test
+    page.evaluate("""(() => {
+      const second = __scrimmageTest.workspace.getTopBlocks(true)[0].getNextBlock();
+      second.unplug(false);
+      second.moveBy(0, 200);
+    })()""")
+    page.wait_for_function("__scrimmageTest.state.test.blocks.length === 1")
+    assert page.evaluate("__scrimmageTest.toJSON().blocks") == [{"do": "spin", "motor": "arm.pivot", "volts": 2}]
+    assert _file_blocks(path) == [{"do": "spin", "motor": "arm.pivot", "volts": 2.0}]
+    assert page.is_disabled("#test-run")
+    assert "joined to the test" in page.inner_text("#test-problems")
+    # an outside edit reloads the test: the loose blocks go, and the page says so
+    path.write_text(path.read_text(encoding="utf-8").replace("volts = 2.0", "volts = 4.0"), encoding="utf-8")
+    page.wait_for_selector("#notices .notice:has-text('Blocks not joined to your test were left out: wait 0.5 s')")
+    page.wait_for_function("__scrimmageTest.workspace.getTopBlocks(false).length === 1")
+    assert page.is_enabled("#test-run")

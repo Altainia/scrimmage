@@ -1026,7 +1026,8 @@ dialog.start-dialog { width: auto; max-width: 96vw; }
 .test-problems-wrap { border: 1px solid var(--warn-line); background: var(--warn-soft); color: var(--warn-text);
   border-radius: var(--radius); padding: 10px 12px; }
 .test-problems { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
-.test-problem .linklike { color: var(--warn-text); margin-right: 6px; }
+.test-problem { display: flex; flex-direction: column; gap: 1px; }
+.test-problem .linklike { color: var(--warn-text); text-align: left; white-space: normal; overflow-wrap: anywhere; }
 .test-running { margin: 0; color: var(--accent-text); font-weight: 600; }
 /* Blockly's own pop-ups (the dropdown and the number box) in the page's theme */
 .blocklyDropDownDiv.blocklyDropDownDiv { background-color: var(--panel); border-color: var(--line-strong); }

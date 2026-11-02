@@ -7,8 +7,11 @@
 //   toolbox(palette)               the flyout's contents: Move, Wait, Repeat, Check (a block only when every one of its
 //                                  pickers has something to pick)
 //   testToWorkspace(test, ws)      replaces the workspace's blocks with the test's (one stack, top to bottom)
-//   workspaceToTest(ws)            the test JSON of the workspace: the stack with the most blocks is the test; the
-//                                  header (robot, hooks, ...) is the one testToWorkspace was given
+//   workspaceToTest(ws)            the test JSON of the workspace: the test is the stack that holds the test's first
+//                                  block (a stack dragged off it is left out); without one, the stack with the most
+//                                  blocks; the header (robot, hooks, ...) is the one testToWorkspace was given
+//   setUsed(tests)                 the names the tests use (the saved one and the one on screen), offered by the
+//                                  pickers even when the palette doesn't have them
 //   placeOf(ws) / incomplete(ws)   block -> its place ([i, j, ...] as problems() gives them); the blocks that can't be
 //                                  saved yet (an empty condition socket) or aren't joined to the test
 //
@@ -18,10 +21,13 @@
 export const STYLES = { move: "move_blocks", wait: "wait_blocks", repeat: "repeat_blocks", check: "check_blocks" };
 const COND = "Condition";
 
-// Names the loaded tests use that the palette may not have (a joint renamed on Import again): a picker keeps
-// offering them so the block keeps its value (and shows the problem) instead of quietly picking another name.
-const used = { motor: new Set(), joint: new Set(), robot: new Set(), field: new Set(), body: new Set(),
-  piece: new Set(), bar: new Set(), level: new Set() };
+// Names the tests use that the palette may not have (a joint renamed on Import again): a picker keeps offering them
+// so the block keeps its value (and shows the problem) instead of quietly picking another name. Rebuilt by setUsed.
+const KINDS_OF_NAME = { motor: "robot", joint: "robot", robot: "robot", body: "robot",
+  field: "field", piece: "field", bar: "field", level: "field" };
+let used = {};
+const resetUsed = () => { used = Object.fromEntries(Object.keys(KINDS_OF_NAME).map((k) => [k, new Set()])); };
+resetUsed();
 
 let names = () => null;
 let loading = 0;        // testToWorkspace is filling the workspace: pickers don't adjust each other
@@ -34,7 +40,7 @@ function choices(list, kind, special = []) {
   const out = [], seen = new Set();
   for (const v of special) { out.push([SPECIAL[v] || v, v]); seen.add(v); }
   for (const v of list) if (!seen.has(v)) { out.push([v, v]); seen.add(v); }
-  for (const v of used[kind]) if (!seen.has(v)) { out.push([`${v} (not on the robot)`, v]); seen.add(v); }
+  for (const v of used[kind]) if (!seen.has(v)) { out.push([`${v} (not on the ${KINDS_OF_NAME[kind]})`, v]); seen.add(v); }
   return out.length ? out : [["(none)", "(none)"]];
 }
 
@@ -42,7 +48,8 @@ const pal = () => names() || {};
 const motorNames = () => (pal().motors || []).map((m) => m.name);
 const jointNames = () => (pal().joints || []).map((j) => j.name);
 const robotSide = () => [...(pal().hooks || []), ...(pal().parts || []), ...(pal().bodies || [])];
-const fieldSide = () => [...(pal().bars || []), ...(pal().elements || []), ...(pal().pieces || [])];
+// bars, elements and pieces first, then the field's other surfaces (the carpet, the walls)
+const fieldSide = () => [...(pal().bars || []), ...(pal().elements || []), ...(pal().pieces || []), ...(pal().targets || [])];
 const has = (xs) => (xs || []).length > 0;
 
 const OPTIONS = {
@@ -218,7 +225,7 @@ export function toolbox(p) {
   p = p || {};
   const motors = has(p.motors), bars = has(p.bars);
   const touchOk = has([...(p.hooks || []), ...(p.parts || []), ...(p.bodies || [])])
-    && has([...(p.bars || []), ...(p.elements || []), ...(p.pieces || [])]);
+    && has([...(p.bars || []), ...(p.elements || []), ...(p.pieces || []), ...(p.targets || [])]);
   const cond = (kind, fields = {}) => ({ block: { type: condType(kind), fields } });
   const waitCond = touchOk ? cond("touch") : cond("tilt", { SIDE: "below", ANGLE: 10 });
   const repeatCond = bars && has(p.hooks) ? cond("hanging_from") : cond("tilt", { SIDE: "above", ANGLE: 45 });
@@ -294,16 +301,23 @@ function chain(blocks) {
   return first;
 }
 
+export function setUsed(tests) {
+  resetUsed();
+  for (const test of tests) rememberNames((test && test.blocks) || []);
+}
+
 export function testToWorkspace(test, ws) {
   const B = window.Blockly;
   const { blocks = [], ...head } = test || {};
   header.set(ws, head);
-  rememberNames(blocks);
+  rememberNames(blocks);   // added to the current set until the next setUsed
   loading++;
   try {
     const top = chain(blocks);
     if (top) { top.x = 24; top.y = 24; }
     B.serialization.workspaces.load({ blocks: { languageVersion: 0, blocks: top ? [top] : [] } }, ws);
+    const loaded = ws.getTopBlocks(false)[0];
+    if (loaded) firstBlock.set(ws, loaded.id); else firstBlock.delete(ws);
   } finally {
     loading--;
   }
@@ -313,12 +327,26 @@ export function testToWorkspace(test, ws) {
 // -- workspace -> test JSON -------------------------------------------------------------------------------------------
 const stackSize = (b) => b.getDescendants(false).length;
 
-// The stack that is the test: the one with the most blocks (the topmost of equals); null when there are none.
+const firstBlock = new WeakMap();   // workspace -> id of the test's first block
+
+// The stack that is the test: the one holding the test's first block; when that block is gone, the one with the most
+// blocks (the topmost of equals); null when there are none. Its top block becomes the test's first block.
 export function mainStack(ws) {
   const tops = ws.getTopBlocks(true).filter((b) => !b.outputConnection);
-  let best = null;
-  for (const t of tops) if (!best || stackSize(t) > stackSize(best)) best = t;
+  const first = ws.getBlockById(firstBlock.get(ws) || "");
+  let best = first ? first.getRootBlock() : null;
+  if (!best || !tops.includes(best)) {
+    best = null;
+    for (const t of tops) if (!best || stackSize(t) > stackSize(best)) best = t;
+  }
+  if (best) firstBlock.set(ws, best.id);
   return best;
+}
+
+// The stacks and checks lying loose beside the test (they aren't in the file).
+export function looseStacks(ws) {
+  const top = mainStack(ws);
+  return ws.getTopBlocks(true).filter((b) => b !== top);
 }
 
 function stackBlocks(first) {
@@ -366,8 +394,7 @@ export function placeOf(ws) {
 export function incomplete(ws) {
   const out = [];
   const top = mainStack(ws);
-  for (const t of ws.getTopBlocks(true)) {
-    if (t === top) continue;
+  for (const t of looseStacks(ws)) {
     out.push({ block: t, blocking: false, message: t.outputConnection
       ? "This check isn't plugged into a block, so it does nothing: plug it into wait until, repeat until or expect."
       : "These blocks aren't joined to the test, so they don't run: drag them under the others, or delete them." });

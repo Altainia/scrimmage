@@ -47,6 +47,22 @@ def test_palette_of_the_standin_with_a_climber(climber_world):
                             "dt.left_2.current", "dt.right_2.current", "hook_load"]
 
 
+def test_touch_targets_are_the_fields_other_surfaces(climber_world):
+    """A touch can name any field geom or body (the carpet, a wall): the palette lists them as targets, without
+    `world` and without what bars, elements and pieces already list."""
+    p = palette(climber_world, [])
+    assert "carpet" in p["targets"] and "wall_left" in p["targets"] and "world" not in p["targets"]
+    assert p["targets"] == sorted(p["targets"])
+    w = World(range_cfg(range={"file": "ladder", "start": "below"}), None)
+    p = palette(w, [])
+    assert "carpet" in p["targets"] and "rail_left" in p["elements"]
+    assert not [t for t in p["targets"] if t.startswith("element.") or t in p["bars"] or t in p["elements"]]
+    # every target is a name problems() accepts on the field side
+    prog = loads(HEAD + "".join(f'[[block]]\ndo = "wait_until"\nuntil = {{ touch = {{ robot = "drive.chassis", field = "{t}" }} }}\n'
+                                for t in p["targets"]), PATH)
+    assert problems(prog, w) == []
+
+
 def test_palette_of_a_robot_without_a_drivetrain_or_hooks(tmp_path):
     w = World({"part": [{"name": "drive", "stock": "chassis"}]}, tmp_path)
     p = palette(w, [])

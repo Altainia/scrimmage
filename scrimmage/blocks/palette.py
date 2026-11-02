@@ -2,7 +2,7 @@
 
 The palette lists every name a block can pick, as the world names them: the robot's motors and joints (a hinge reads
 in degrees, a slide in inches, a drive wheel is a `wheel`), its bodies and parts, its hooks, the field's bars,
-elements, game pieces and climb levels, whether it can drive (a tank drive: it has drive-wheel motors, joints whose
+elements, game pieces, other surfaces a touch can name (`targets`: the carpet, the walls) and climb levels, whether it can drive (a tank drive: it has drive-wheel motors, joints whose
 body carries a tread geom as parts/assemble.py marks them, and no wheel is steered, so a swerve robot can't) and the
 signals a chart can show. Every list is sorted by name except
 `levels`, which keeps the range's climb order (lowest first), so a picker reads the way the robot climbs. `pieces`
@@ -65,6 +65,13 @@ def _entry(name: str, kind: str) -> dict:
     return {"name": name, "unit": "in" if kind == "slide" else "deg", "kind": kind}
 
 
+def _targets(world, named: set[str]) -> list[str]:
+    """The field's other named surfaces a touch can name (the carpet, the walls): its geoms and bodies outside the robot,
+    less the bars, elements and pieces listed already, the `element.<name>...` geoms of those elements and `world`
+    (every fixed thing at once)."""
+    return [n for n in world.contact_names() if n not in named and n != "world" and not n.startswith("element.")]
+
+
 def hook_names(world, hooks: list[str]) -> list[str]:
     """The robot's hooks: the stock climber's (`<inst>.hook<i>`) and the bodies the test names as hooks."""
     return sorted(set(robot_hooks(world.model, world.robot_body)) | set(hooks))
@@ -80,6 +87,9 @@ def palette(world, hooks: list[str]) -> dict:
     bars = sorted([*layout.bars, *layout.switches]) if layout is not None else []
     rule = rng.climb if rng is not None else None
     hook_list = hook_names(world, hooks)
+    bar_set = set(bars)
+    elements = sorted(e.name for e in rng.elements) if rng is not None else []
+    pieces = sorted(layout.ball_names[:layout.n_floor]) if layout is not None else []   # on the field
     signals = ["tilt", *motors, *(f"{n}.current" for n in motors)]
     if hook_list:
         signals.append("hook_load")
@@ -90,8 +100,9 @@ def palette(world, hooks: list[str]) -> dict:
         "parts": sorted(i.name for i in parts.instances) if parts is not None else [],
         "hooks": hook_list,
         "bars": bars,
-        "elements": sorted(e.name for e in rng.elements) if rng is not None else [],
-        "pieces": sorted(layout.ball_names[:layout.n_floor]) if layout is not None else [],   # on the field
+        "elements": elements,
+        "pieces": pieces,
+        "targets": _targets(world, bar_set | set(elements) | set(pieces)),
         "levels": list(rule.levels) if rule is not None else [],      # lowest first, as the range lists them
         "drive": any(kinds[n] == "wheel" for n in motors) and not _steered(world),
         "signals": signals,
