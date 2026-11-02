@@ -58,7 +58,7 @@ FIELD_LENGTH = 16.54  # m, the generated field's alliance walls' inner faces (sc
 FIELD_WIDTH = 8.07  # m, its guardrails' inner faces
 BUILTIN_RANGES = {name: Path(__file__).with_name("ranges") / f"{name}.toml"
                   for name in ("2026", "2013", "2026-bump", "2023-charge-station", "terrain-library", "2022-hangar",
-                               "2020-switch", "2013-pyramid")}
+                               "2020-switch", "2013-pyramid", "ladder", "ladder-square")}
 # estimate: no published figure for an FRC foam ball on FRC carpet. Chosen so a 2026 FUEL (k = 0.4) slows at
 # 0.07 * 9.81 / 1.4 = 0.49 m/s^2, stopping from 1 m/s in about 2 s and 1 m: about a golf ball on a putting green
 # (a Stimpmeter roll, 1.83 m/s over 10 ft, is 0.55 m/s^2, USGA Stimpmeter instructions), on the reasoning that a

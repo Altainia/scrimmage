@@ -137,11 +137,13 @@ class World:
             self.terrain = TerrainMonitor(self)
         return self.terrain
 
-    def climb_monitor(self):
-        """The world's ClimbMonitor, made on first use."""
-        if self.climb is None:
+    def climb_monitor(self, hook_bodies: list[str] | None = None):
+        """The world's ClimbMonitor, made on first use. `hook_bodies` (robot bodies, as `<part>.<body>`) count as
+        hooks too; asking for a different list than the monitor has rebuilds it."""
+        want = list(hook_bodies) if hook_bodies else []
+        if self.climb is None or (hook_bodies is not None and want != self.climb.hook_bodies):
             from .terrain.climb import ClimbMonitor
-            self.climb = ClimbMonitor(self)
+            self.climb = ClimbMonitor(self, want)
         return self.climb
 
     def part_tree(self) -> list[dict] | None:

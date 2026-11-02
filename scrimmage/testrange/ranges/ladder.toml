@@ -1,0 +1,70 @@
+# A generic ladder: four rungs one above another in a single vertical plane, with a rail at each end. It is a
+# stand-in to try a climber on, not a game's field, so every value is our choice. WPILib field coordinates (blue
+# alliance wall at x = 0, z up), SI units unless a key ends in _in (inches).
+#
+# The robot starts at (2.0, 4.0 m) facing +x; the rungs are 1.0 m in front of it, across its way (they run along y).
+# The rung tops are 24, 36, 48 and 60 in up. There is no [climb] table, so nothing scores: read the climb signals.
+
+[range]
+name = "Generic ladder (a stand-in climb)"
+ball = "2026-fuel"           # choice: a range needs a ball preset; this range has no floor balls and a robot preloads none
+
+[[element]]
+name = "rung1"                 # choice: rungs are numbered from the bottom
+kind = "bar"
+center_in = [118.1102, 157.4803]   # choice: 1.0 m in front of the start, in one vertical plane with the other rungs
+yaw_deg = 90.0               # choice: rungs run across, from the robot's left to its right
+length_in = 30.0             # choice: wide enough for a robot about 28 in across to hang with room each side
+diameter_in = 1.66            # choice: 1.66 in across, the size of a 2022 rung
+height_in = 23.17            # choice: the top 24 in up, less the radius (0.83 in)
+posts = false                # choice: the side rails hold the rungs, no posts of their own
+friction = 0.5               # choice: powder-coated steel against a robot's aluminum, as the 2022 hangar's
+
+[[element]]
+name = "rung2"                 # choice: rungs are numbered from the bottom
+kind = "bar"
+center_in = [118.1102, 157.4803]   # choice: 1.0 m in front of the start, in one vertical plane with the other rungs
+yaw_deg = 90.0               # choice: rungs run across, from the robot's left to its right
+length_in = 30.0             # choice: wide enough for a robot about 28 in across to hang with room each side
+diameter_in = 1.66            # choice: 1.66 in across, the size of a 2022 rung
+height_in = 35.17            # choice: the top 36 in up, less the radius (0.83 in)
+posts = false                # choice: the side rails hold the rungs, no posts of their own
+friction = 0.5               # choice: powder-coated steel against a robot's aluminum, as the 2022 hangar's
+
+[[element]]
+name = "rung3"                 # choice: rungs are numbered from the bottom
+kind = "bar"
+center_in = [118.1102, 157.4803]   # choice: 1.0 m in front of the start, in one vertical plane with the other rungs
+yaw_deg = 90.0               # choice: rungs run across, from the robot's left to its right
+length_in = 30.0             # choice: wide enough for a robot about 28 in across to hang with room each side
+diameter_in = 1.66            # choice: 1.66 in across, the size of a 2022 rung
+height_in = 47.17            # choice: the top 48 in up, less the radius (0.83 in)
+posts = false                # choice: the side rails hold the rungs, no posts of their own
+friction = 0.5               # choice: powder-coated steel against a robot's aluminum, as the 2022 hangar's
+
+[[element]]
+name = "rung4"                 # choice: rungs are numbered from the bottom
+kind = "bar"
+center_in = [118.1102, 157.4803]   # choice: 1.0 m in front of the start, in one vertical plane with the other rungs
+yaw_deg = 90.0               # choice: rungs run across, from the robot's left to its right
+length_in = 30.0             # choice: wide enough for a robot about 28 in across to hang with room each side
+diameter_in = 1.66            # choice: 1.66 in across, the size of a 2022 rung
+height_in = 59.17            # choice: the top 60 in up, less the radius (0.83 in)
+posts = false                # choice: the side rails hold the rungs, no posts of their own
+friction = 0.5               # choice: powder-coated steel against a robot's aluminum, as the 2022 hangar's
+
+[[element]]
+name = "rail_right"
+kind = "box"
+center_in = [118.1102, 141.4803]   # choice: a rail just outside each rung end (the rung is 30 in long, the rail 2 in wide)
+size_in = [2.0, 2.0, 64.0]   # choice: 2 in square, 4 in above the top rung
+
+[[element]]
+name = "rail_left"
+kind = "box"
+center_in = [118.1102, 173.4803]   # choice: a rail just outside each rung end (the rung is 30 in long, the rail 2 in wide)
+size_in = [2.0, 2.0, 64.0]   # choice: 2 in square, 4 in above the top rung
+
+# Starts: 1.0 m back from the ladder, facing it.
+[start.below]
+pose = [2.0, 4.0, 0.0]       # choice: the robot's center 1.0 m before the rungs, heading +x toward them

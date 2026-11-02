@@ -46,6 +46,7 @@ Library ranges:
 | `2022-hangar` | the four 2022 rungs (LOW, MID, HIGH, TRAVERSAL: 4, 6, 10, 15 points), the trusses and the floor protection, from drawing GE-22100 | `under_mid` |
 | `2020-switch` | the 2020 GENERATOR SWITCH: ±14.5°, about 42 kg, LEVEL within 8° | |
 | `2013-pyramid` | the 2013 PYRAMID's rungs at 30, 60 and 90 in, as bars (its legs aren't built) | |
+| `ladder`, `ladder-square` | a generic ladder, not a game's field: rungs `rung1` to `rung4` with tops at 24, 36, 48 and 60 in, round or (`ladder-square`) 1.5 in square, nothing scores | `below` |
 
 To climb the 2013 PYRAMID use `2013-pyramid`. The built-in `2013` is the disc range ([docs/disc.md](disc.md)): its
 pyramid is legs and a base lip as static obstacles for shooting past, with no bars to climb.
@@ -90,8 +91,15 @@ like the terrain signals:
 | `climb.swing` | deg: the robot's CoM from straight under the bar it swings from, positive toward the bar's local x × up (for a 2022 rung, field +x) |
 | `climb.hook_load` | N: the largest whole hook's contact force (every geom of `<inst>.hook<i>`, the latch too), peak-held between checks |
 | `climb.hook.<inst>.hook<i>.load` | N: one hook's |
+| `climb.hook.<part>.<body>.load` | N: one hook body's, for a body of a CAD part made a hook (see below) |
 | `climb.extension` | m: how far the robot reaches beyond its frame perimeter, in the chassis's own plane (G107) |
 | `climb.height` | m: the robot's top above the carpet (G106) |
+
+**A body of your own part as a hook.** The stock climber's hooks are found by name. For a climber made in CAD, name
+the body that catches the bar: `world.climb_monitor(["climber.hook"])` (a body's name is `<part>.<body>`) counts every
+colliding geom of that body as a hook, like the stock ones: it is part of the hook assembly (it may touch a bar
+without "hitting" it), and it gets its own `climb.hook.climber.hook.load`. An unknown name is an error that lists the
+robot's bodies. Asking again with a different list makes a new monitor.
 
 Notes:
 - **The swing's bar** is the one a hook touched most recently while the hooks touch two (a hand-over), so the swing
