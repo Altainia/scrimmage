@@ -7,6 +7,7 @@ import copy
 import os
 import re
 import tempfile
+import time
 import tomllib
 import uuid
 from dataclasses import dataclass, field, fields
@@ -286,6 +287,23 @@ def dumps_import(imp: ImportFile) -> str:
     return "\n".join(lines).lstrip("\n") + "\n"
 
 
+REPLACE_WAITS = (0.05, 0.1, 0.2, 0.3, 0.35)   # seconds between tries: about 1 s in all
+
+
+def replace_file(src, dst) -> None:
+    """os.replace, tried again for about a second on PermissionError: on Windows a virus scanner or the search
+    indexer briefly holds a file just written (opened without delete sharing), and a rename onto it is refused
+    meanwhile. A file still held after that raises as os.replace does."""
+    for wait in (*REPLACE_WAITS, None):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if wait is None:
+                raise
+            time.sleep(wait)
+
+
 def write_import(imp: ImportFile, path: Path) -> None:
     """Write the file in one step (a temporary file, then a rename)."""
     path = Path(path)
@@ -297,7 +315,7 @@ def write_import(imp: ImportFile, path: Path) -> None:
                                          encoding="utf-8", newline="\n") as f:
             tmp = f.name
             f.write(text)
-        os.replace(tmp, path)
+        replace_file(tmp, path)
     except OSError:
         if tmp is not None:
             try:

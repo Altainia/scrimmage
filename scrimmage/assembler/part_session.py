@@ -51,7 +51,7 @@ from ..cad.frame import to_robot
 from ..cad.mass import MATERIALS, density, mesh_inertial
 from ..cad.matching import match
 from ..cad.names import sanitize
-from ..cad.settings import new_import, read_import, reimport, write_import
+from ..cad.settings import new_import, read_import, reimport, replace_file, write_import
 from ..cad.source import MESH_SUFFIXES, STEP_SUFFIXES, load_source
 from ..motors import MOTORS
 from .bench_session import SessionError
@@ -230,7 +230,7 @@ def save_upload(stream, length: int, filename: str | None, folder: Path) -> Path
     tmp = folder / f".upload-{uuid.uuid4().hex[:8]}.tmp"
     try:
         _copy_in(stream, length, tmp)
-        os.replace(tmp, dest)
+        replace_file(tmp, dest)
     finally:
         tmp.unlink(missing_ok=True)
     return dest
@@ -256,12 +256,12 @@ def save_uploads(stream, length: int, files: list[tuple[str, int]], folder: Path
         for name, size in zip(names, sizes):
             _copy_in(stream, size, tmp / name)
         if dest.exists():
-            os.replace(dest, old)
+            replace_file(dest, old)
         try:
-            os.replace(tmp, dest)
+            replace_file(tmp, dest)
         except OSError:
             if old.exists():
-                os.replace(old, dest)
+                replace_file(old, dest)
             raise
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

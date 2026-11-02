@@ -195,3 +195,61 @@ def test_part_attach_round_trips_and_is_checked(tmp_path):
         d["parts"]["climber"]["attach"] = bad
         with pytest.raises(CadError, match=r"parts\.climber: attach must name a body"):
             ImportFile.from_dict(d)
+
+
+def test_replace_file_waits_out_a_brief_hold_and_gives_up_on_a_long_one(tmp_path, monkeypatch):
+    """A file a virus scanner holds for a moment (PermissionError from the rename) is replaced once it lets go; one
+    still held after about a second raises, and nothing else is retried."""
+    from scrimmage.cad import settings
+    src, dst = tmp_path / "new.tmp", tmp_path / "x.import.toml"
+    dst.write_text("old", encoding="utf-8")
+    real, tries, slept = settings.os.replace, [], []
+    monkeypatch.setattr(settings.time, "sleep", slept.append)
+
+    def held(n, err=PermissionError(13, "Access is denied")):
+        def replace(a, b):
+            tries.append(1)
+            if len(tries) <= n:
+                raise err
+            real(a, b)
+        return replace
+
+    src.write_text("new", encoding="utf-8")
+    monkeypatch.setattr(settings.os, "replace", held(2))
+    settings.replace_file(src, dst)
+    assert dst.read_text(encoding="utf-8") == "new" and len(tries) == 3 and len(slept) == 2
+
+    tries.clear()
+    slept.clear()
+    src.write_text("newer", encoding="utf-8")
+    monkeypatch.setattr(settings.os, "replace", held(99))
+    with pytest.raises(PermissionError):
+        settings.replace_file(src, dst)
+    assert dst.read_text(encoding="utf-8") == "new" and len(tries) == len(settings.REPLACE_WAITS) + 1
+    assert sum(slept) <= 1.0
+
+    tries.clear()
+    slept.clear()
+    monkeypatch.setattr(settings.os, "replace", held(99, FileNotFoundError(2, "gone")))
+    with pytest.raises(FileNotFoundError):
+        settings.replace_file(src, dst)
+    assert len(tries) == 1 and not slept
+
+
+def test_write_import_retries_a_held_file(tmp_path, monkeypatch):
+    from scrimmage.cad import settings
+    src = load_source(DATA / "climber.step")
+    path = tmp_path / "climber.import.toml"
+    imp = new_import(src, "climber", Path("../climber.step"), tmp_path)
+    real, tries = settings.os.replace, []
+    monkeypatch.setattr(settings.time, "sleep", lambda s: None)
+
+    def replace(a, b):
+        tries.append(1)
+        if len(tries) == 1:
+            raise PermissionError(13, "Access is denied")
+        real(a, b)
+    monkeypatch.setattr(settings.os, "replace", replace)
+    write_import(imp, path)
+    assert read_import(path).name == "climber" and len(tries) == 2
+    assert [p.name for p in tmp_path.iterdir()] == ["climber.import.toml"]

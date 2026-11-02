@@ -15,7 +15,6 @@ were changed here and which come from the plugin.
 from __future__ import annotations
 
 import copy
-import os
 import tomllib
 import uuid
 from pathlib import Path
@@ -24,6 +23,7 @@ import numpy as np
 import tomlkit
 
 from ..cad.edits import EditError
+from ..cad.settings import replace_file
 from ..parts.model import PartError, load_part, part_from_dict
 from ..parts.overlay import JOINT_KEYS, OVERLAY, _rot, apply_overlay
 from .bench_session import SessionError
@@ -73,7 +73,7 @@ class PluginSession(_Session):
             if edits:
                 tmp = self._overlay.with_name(f".{OVERLAY}.{uuid.uuid4().hex[:8]}.tmp")
                 tmp.write_text(tomlkit.dumps(edits), encoding="utf-8")
-                os.replace(tmp, self._overlay)
+                replace_file(tmp, self._overlay)
             else:
                 self._overlay.unlink(missing_ok=True)
         except OSError as e:
