@@ -238,17 +238,18 @@ Robot (`/api/robot/*`):
         attach  {name, attach, pos, rot}
         params  {name, params}   (a null value resets that parameter to its default)
         ids     {name, ids}
-        start   {pose?: [x, y, deg] | null, named?: str | null, range?: "2026" | "ladder" | "ladder-square" | null,
-                floor_balls?: bool}
-                where the robot starts and on which field (the ladders are the Test tab Setup's). range "2026"
-                writes [range] file = "2026" (another
-                range's named start goes), null removes [range] (the plain field); absent keeps the config's (one
-                naming another range keeps it). pose writes [robot] start_pose (x, y in m from the blue corner,
-                rounded to mm; heading in degrees, (-180, 180]) and removes [range] start; named writes [range]
-                start and removes start_pose (the loader refuses both); a null pose or named clears the start.
-                floor_balls false writes [range] floor_balls = false, true removes it. Field errors: start/range
-                (another range), start/pose (not 3 numbers, off the 16.54 x 8.07 m field), start/named (the plain
-                field has none), start/floor_balls; an unknown named start is the loader's status error.
+        start   {pose?: [x, y, deg] | null, named?: str | null, keep_pose?: bool,
+                range?: "2026" | "ladder" | "ladder-square" | "intake" | null, floor_balls?: bool}
+                where the robot starts and on which field (the ladders and the ball are the Test tab Setup's).
+                range "2026" writes [range] file = "2026" (another range's named start goes), null removes [range]
+                (the plain field); absent keeps the config's (one naming another range keeps it). pose writes
+                [robot] start_pose (x, y in m from the blue corner, rounded to mm; heading in degrees, (-180, 180])
+                and removes [range] start; named writes [range] start and removes start_pose (the loader refuses
+                both); a null pose or named clears the start. keep_pose true (the Test tab's field picker) with
+                named keeps a start_pose still on the field instead of writing named. floor_balls false writes
+                [range] floor_balls = false, true removes it. Field errors: start/range (another range), start/pose
+                (not 3 numbers, off the 16.54 x 8.07 m field), start/named (the plain field has none),
+                start/floor_balls, start/keep_pose; an unknown named start is the loader's status error.
         battery {nominal_voltage?, resistance?}   [battery] (V, ohm); null removes the key (the default);
                 field errors battery/nominal_voltage (a number above 0), battery/resistance (0 or more)
         match_devices {matches: {slot: device}}   points each slot's ID (in its part's `ids`) at a device the
@@ -1509,8 +1510,8 @@ class App:
         if op == "ids":
             return lambda doc: edits.set_ids(doc, name, b.get("ids") or {})
         if op == "start":
-            return lambda doc: edits.set_start(doc, {k: b[k] for k in ("range", "pose", "named", "floor_balls")
-                                                     if k in b})
+            keys = ("range", "pose", "named", "keep_pose", "floor_balls")
+            return lambda doc: edits.set_start(doc, {k: b[k] for k in keys if k in b})
         if op == "battery":
             return lambda doc: edits.set_battery(doc, {k: b[k] for k in ("nominal_voltage", "resistance") if k in b})
         if op == "match_devices":

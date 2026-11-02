@@ -266,12 +266,26 @@ def _pose(v) -> list[float]:
     return [round(x, 3), round(y, 3), round(h, 1) + 0.0]
 
 
+def _valid_start_pose(doc) -> bool:
+    """The config has a [robot] start_pose that set_start would write: 3 numbers on the field."""
+    pose = doc.get("robot", {}).get("start_pose")
+    if pose is None:
+        return False
+    try:
+        _pose(list(pose) if isinstance(pose, list) else pose)
+    except EditError:
+        return False
+    return True
+
+
 def set_start(doc, body: dict) -> None:
     """Where the robot starts and on which field, from the keys present in `body`:
     range: "2026" (the 2026 field), "ladder" / "ladder-square" / "intake" (the Test tab's Setup ranges) or None
     (the plain field: no [range]); absent keeps the config's field;
     pose: [x, y, heading] writes [robot] start_pose and removes [range] start; None clears the start;
     named: a start of the field's range writes [range] start and removes [robot] start_pose; None clears it;
+    keep_pose: true with named keeps a [robot] start_pose that is still valid (on the field) instead, and writes
+    no [range] start; without one, named is written as above;
     floor_balls: false writes [range] floor_balls = false, true removes it (the range's default)."""
     if "range" in body:
         rng = body["range"]
@@ -300,7 +314,13 @@ def set_start(doc, body: dict) -> None:
             _set_value(_section(doc, "robot"), "start_pose", arr)
     elif "named" in body:
         named = body["named"]
-        if named is None:
+        keep = body.get("keep_pose", False)
+        if not isinstance(keep, bool):
+            raise EditError("start/keep_pose", "keep_pose must be true or false")
+        if keep and named is not None and _valid_start_pose(doc):
+            if has_range:
+                doc["range"].pop("start", None)
+        elif named is None:
             clear = True
         elif not isinstance(named, str) or not named:
             raise EditError("start/named", "a named start is the name of one of the field's starts")

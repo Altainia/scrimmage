@@ -498,12 +498,14 @@ function renderSetup() {
     const sel = h("select", { id: "test-field", onchange: (e) => {
       const v = e.target.value;
       if (v === now || !FIELD_CHOICES.some(([x]) => x === v)) return;
-      robotEdit(() => (v ? { op: "start", range: v, named: FIELD_START[v] || "below" } : { op: "start", range: null }));
+      // keep_pose: a robot placed by its own start_pose (still on the field) stays there; the plain field keeps it anyway
+      robotEdit(() => (v ? { op: "start", range: v, named: FIELD_START[v] || "below", keep_pose: true } : { op: "start", range: null }));
     } }, ...opts.map(([v, text]) => h("option", { value: v, text })));
     sel.value = now;
     parts.push(h("fieldset", { class: "test-setup-field" },
       h("legend", { text: "The field" }),
-      h("p", { class: "hint", text: "Where the robot starts. In front of a ladder, a climber has rungs to climb (rung1 to rung4). In front of a ball, an intake has a ball to pick up." }),
+      h("p", { class: "hint", text: "Where the robot starts. In front of a ladder, a climber has rungs to climb (rung1 to rung4). In front of a ball, an intake has a ball to pick up. "
+        + `This changes ${t.robot.display_path || t.robot.path || "the robot file"}; a robot with its own start pose keeps it. The Robot tab's Undo takes the change back.` }),
       h("label", { class: "visually-hidden", for: "test-field", text: "The field" }), sel));
   }
   if (c) {

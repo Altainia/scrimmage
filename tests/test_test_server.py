@@ -608,3 +608,20 @@ def test_a_robot_edit_puts_the_stand_in_by_the_ladder_and_the_test_sees_its_bars
                                               "range": "intake", "named": "facing_ball"})
     assert s == 200 and b["ok"], b
     assert c.get("/api/robot/state")[1]["range"] == "intake"
+
+
+def test_setup_field_choice_keeps_the_robot_s_own_start_pose(tmp_path, test_app):
+    """Setup's field picker sends keep_pose: a robot placed by [robot] start_pose keeps it on the new field."""
+    import tomllib
+    t = write_test(tmp_path)
+    robot = tmp_path / "robot.toml"
+    text = robot.read_text(encoding="utf-8").replace("[robot]\n", "[robot]\nstart_pose = [2.0, 4.0, 0.0]\n", 1)
+    robot.write_text(text, encoding="utf-8")
+    c = test_app(t)
+    v = c.get("/api/robot/state")[1]["version"]
+    s, b = c.call("POST", "/api/robot/edit", {"version": v, "op": "start", "range": "ladder", "named": "below",
+                                              "keep_pose": True})
+    assert s == 200 and b["ok"], b
+    raw = tomllib.loads(robot.read_text(encoding="utf-8"))
+    assert raw["range"] == {"file": "ladder"} and raw["robot"]["start_pose"] == [2.0, 4.0, 0.0]
+    assert _state(c)["palette"]["bars"] == ["rung1", "rung2", "rung3", "rung4"]
