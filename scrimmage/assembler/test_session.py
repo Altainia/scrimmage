@@ -89,13 +89,17 @@ _DEVICE = re.compile(r"^([A-Za-z][A-Za-z0-9]*):(\d+)$")
 
 
 def _device_texts(v):
-    """Every "<Kind>:<id>" text in one `ids` value (a short form, or a table's ctre/rev/... entries)."""
+    """Every "<Kind>:<id>" text in one `ids` value (a short form, a table's ctre/rev/... entries, or a list of
+    either: a slot bound to several motors)."""
     if isinstance(v, str):
         m = _DEVICE.match(v)
         if m:
             yield m.group(1), int(m.group(2))
     elif isinstance(v, dict):
         for x in v.values():
+            yield from _device_texts(x)
+    elif isinstance(v, (list, tuple)):
+        for x in v:
             yield from _device_texts(x)
 
 

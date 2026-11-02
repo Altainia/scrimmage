@@ -575,6 +575,9 @@ def test_free_motor_ids_never_reuse_one_the_robot_has():
                         'encoder = "SparkMaxAbs:3" }\n[[part]]\nname = "g"\nids = { gyro = "Pigeon2:4" }\n')
     assert free_motor_ids(can, ["x_motor", "y_motor"]) == {"x_motor": "SparkMax:5", "y_motor": "SparkMax:6"}
     assert free_motor_ids(can, []) == {}
+    multi = tomlkit.parse('[[part]]\nname = "a"\nids = { lift = [{ ctre = "TalonFX:1" }, { ctre = "TalonFX:2" }], '
+                          'x = "TalonFX:3" }\n')
+    assert free_motor_ids(multi, ["m1", "m2"]) == {"m1": "TalonFX:4", "m2": "TalonFX:5"}
     pwm = ", ".join(f'm{i} = "PWM:{i}"' for i in range(20))
     full = tomlkit.parse(f'[[part]]\nname = "a"\nids = {{ {pwm} }}\n')
     with pytest.raises(ValueError, match="no free PWM channels left for 1 more motor"):
