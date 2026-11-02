@@ -20,6 +20,7 @@ A new test starts with blocks that do something on its robot (`starter_blocks`) 
 
 from __future__ import annotations
 
+import copy
 import functools
 import logging
 import os
@@ -33,7 +34,7 @@ import tomlkit
 
 from ..blocks import store
 from ..blocks.palette import palette, problems
-from ..blocks.program import Block, Cond, TestFileError, _block_json, dumps, from_json, load, to_json
+from ..blocks.program import Block, Cond, TestFileError, block_json, dumps, from_json, load, to_json
 from ..blocks.run import TestRun, world_for
 from ..blocks.spread import NO_BALL, NO_SPREAD, run_spread
 from ..blocks.sweep import MAX_SWEEP, _kind as sweep_kind, run_sweep
@@ -63,11 +64,15 @@ STANDIN_STATION = {"file": "station", "start": "at_station"}   # ... with a hopp
 PLAIN_FIELD = "The plain field"
 
 
-@functools.cache
 def field_choices() -> list[dict]:
     """Every field the Test tab's Setup can put the robot on: the plain field (no [range]) first, then each built-in
     range in BUILTIN_RANGES order with its name, its starts (file order: Setup picks the first), whether its piece is
-    a disc, whether Setup can change its ball, and its stations."""
+    a disc, whether Setup can change its ball, and its stations. A fresh copy each call (the ranges are read once)."""
+    return copy.deepcopy(_field_choices())
+
+
+@functools.cache
+def _field_choices() -> list[dict]:
     out: list[dict] = [{"file": None, "name": PLAIN_FIELD, "starts": []}]
     for name in BUILTIN_RANGES:
         rng = load_range(name, Path("."))
@@ -129,9 +134,36 @@ def _hoppery(name: str) -> bool:
     return any(w in name.lower() for w in HOPPER_WORDS)
 
 
-def starter_hopper(pal: dict | None) -> list[str]:
-    """The robot's bodies whose names (the part's or the body's) contain "hopper", "intake" or "indexer"."""
-    return [b for b in (pal or {}).get("bodies") or [] if _hoppery(b)]
+def pick_hopper(bodies: list[str], roots: dict[str, str]) -> list[str]:
+    """The hopper bodies among `bodies` ("<part>.<body>" names): those whose own name (after the last dot) contains
+    "hopper", "intake" or "indexer"; when none does, the root body of each part whose name contains one (`roots`:
+    part -> its root body's "<part>.<body>" name), never its other bodies: an intake's roller counted as "in" would
+    make the catch rate look better than it is."""
+    own = [b for b in bodies if _hoppery(b.rsplit(".", 1)[-1])]
+    return own or [r for part, r in roots.items() if _hoppery(part)]
+
+
+def part_roots(world) -> dict[str, str]:
+    """Each robot part instance's root body ("<instance>.<body>"): its first body whose parent body is another
+    part's (or the world's), from the MuJoCo body tree."""
+    m = world.model
+    root = m.body_rootid[world.robot_body]
+    out: dict[str, str] = {}
+    for b in range(m.nbody):
+        name = m.body(b).name
+        if m.body_rootid[b] != root or "." not in name:
+            continue
+        inst = name.split(".", 1)[0]
+        parent = m.body(int(m.body_parentid[b])).name
+        if inst not in out and parent.split(".", 1)[0] != inst:
+            out[inst] = name
+    return out
+
+
+def starter_hopper(pal: dict | None, roots: dict[str, str] | None = None) -> list[str]:
+    """The robot's bodies a new test preselects as its hopper (pick_hopper over the palette's bodies; `roots`:
+    part_roots of its world)."""
+    return pick_hopper(list((pal or {}).get("bodies") or []), roots or {})
 
 
 PWM_CHANNELS = range(20)          # a roboRIO's PWM outputs: 0-9 on the board, 10-19 on the MXP
@@ -223,16 +255,18 @@ def _place(doc, parts: list[tuple[str, dict]], root_body: str, motor_slots: dict
     return added
 
 
-def standin_config(parts: list[tuple[str, dict]], root_body: str, motor_slots: dict | None = None) -> str:
+def standin_config(parts: list[tuple[str, dict]], root_body: str, motor_slots: dict | None = None,
+                   roots: dict[str, str] | None = None) -> str:
     """The stand-in robot (templates' "standin") carrying the part folders `parts` [(path, cad_marker)] of one CAD
     import where the CAD has them, their motor slots on free IDs (see _place). With a body named like a hook, the robot
-    starts in front of the ladder range; else with one named like a hopper (its part's name or its own: as the robot
-    names it, starter_hopper), at the station range's chute (the Test tab's Setup changes the field)."""
+    starts in front of the ladder range; else with a hopper body (pick_hopper; `roots`: part name -> its root body's
+    name, or None), at the station range's chute (the Test tab's Setup changes the field)."""
     doc = tomlkit.parse(new_config("standin"))
     _place(doc, parts, root_body, motor_slots)
-    bodies = [(m["part"], b) for _, m in parts for b in m["origins"]]
-    field = STANDIN_RANGE if any(_hooky(b) for _, b in bodies) else \
-        STANDIN_STATION if any(_hoppery(f"{p}.{b}") for p, b in bodies) else None
+    bodies = [f"{m['part']}.{b}" for _, m in parts for b in m["origins"]]
+    named = {m["part"] for _, m in parts}
+    field = STANDIN_RANGE if any(_hooky(b) for b in bodies) else STANDIN_STATION if pick_hopper(
+        bodies, {p: f"{p}.{r}" for p, r in (roots or {}).items() if p in named and r}) else None
     if field is not None:
         rng = tomlkit.table()
         rng.update(field)
@@ -437,10 +471,10 @@ class TestSession:
                 raise SessionError(409, BUSY)
             if self.file_error is not None:
                 raise SessionError(409, f"fix the test file first: {self.file_error}")
-            if kind == "spread" and self.palette is not None and not self.palette.get("floor_piece"):
-                raise SessionError(409, NO_BALL)
             if kind == "spread" and not self.program.setup.get("floor_spread"):
                 raise SessionError(409, NO_SPREAD)
+            if kind == "spread" and self.palette is not None and not self.palette.get("floor_piece"):
+                raise SessionError(409, NO_BALL)
             if self.problems:
                 return 409, {"ok": False, "error": FIX_FIRST, "problems": self.problems}
             try:
@@ -559,7 +593,7 @@ class TestSession:
             out = {"version": self.version, "path": str(self.path), "test": to_json(self.program),
                    "palette": self.palette, "problems": self.problems, "running": self.running,
                    "file_error": self.file_error, "run_error": self.run_error, "last": self.last,
-                   "station_starter": [_block_json(b) for b in station_starter(self.palette)] or None}
+                   "station_starter": [block_json(b) for b in station_starter(self.palette)] or None}
         out["fields"] = field_choices()
         out["runs"], out["sweeps"], out["spreads"] = self._kept_runs()
         return out

@@ -720,11 +720,22 @@ def test_a_new_test_on_the_station_field_starts_feeding(tmp_path, test_app):
 
 
 def test_starter_hopper_picks_bodies_named_like_a_hopper():
+    """A body's own name first; only when none matches, the root body of a part named like one, never its others."""
     from scrimmage.assembler.test_session import starter_hopper
     pal = {"bodies": ["drive.chassis", "hopper.bin", "arm.Intake_roller", "feed.indexer", "dt.left_1",
                       "hook.hopperish"]}
-    assert starter_hopper(pal) == ["hopper.bin", "arm.Intake_roller", "feed.indexer", "hook.hopperish"]
-    assert starter_hopper(None) == []
+    roots = {"drive": "drive.chassis", "hopper": "hopper.bin", "arm": "arm.base"}
+    assert starter_hopper(pal, roots) == ["arm.Intake_roller", "feed.indexer", "hook.hopperish"]
+    intake = {"bodies": ["drive.chassis", "intake.arm", "intake.frame", "intake.roller"]}
+    assert starter_hopper(intake, {"drive": "drive.chassis", "intake": "intake.frame"}) == ["intake.frame"]
+    assert starter_hopper(intake) == [] and starter_hopper(None) == []
+
+
+def test_the_station_examples_hopper_is_its_parts_root_body():
+    from scrimmage.assembler.test_session import part_roots
+    from scrimmage.config import build_world, load_config
+    roots = part_roots(build_world(load_config(STATION / "hopper-standin.toml")))
+    assert roots["hopper"] == "hopper.bin" and roots["drive"] == "drive.chassis"
 
 
 def test_test_it_puts_a_hopper_part_on_the_station_field():
@@ -733,12 +744,14 @@ def test_test_it_puts_a_hopper_part_on_the_station_field():
 
     from scrimmage.assembler.test_session import standin_config
     hopper = {"import_id": "x", "part": "hopper", "origins": {"bin": [0.0, 0.0, 0.0]}, "attach": None}
-    raw = tomllib.loads(standin_config([("parts/hopper", hopper)], "chassis"))
+    raw = tomllib.loads(standin_config([("parts/hopper", hopper)], "chassis", roots={"hopper": "bin"}))
     assert raw["range"] == {"file": "station", "start": "at_station"}
-    intake = {"import_id": "x", "part": "front", "origins": {"Indexer_belt": [0.0, 0.0, 0.0]}, "attach": None}
-    assert tomllib.loads(standin_config([("parts/front", intake)], "chassis"))["range"]["file"] == "station"
+    assert "range" not in tomllib.loads(standin_config([("parts/hopper", hopper)], "chassis"))   # no root known
+    indexer = {"import_id": "x", "part": "front", "origins": {"Indexer_belt": [0.0, 0.0, 0.0]}, "attach": None}
+    assert tomllib.loads(standin_config([("parts/front", indexer)], "chassis"))["range"]["file"] == "station"
     hook = {"import_id": "x", "part": "hook", "origins": {"hook_body": [0.1, 0.0, 0.9]}, "attach": "hopper.bin"}
-    raw = tomllib.loads(standin_config([("parts/hopper", hopper), ("parts/hook", hook)], "chassis"))
+    raw = tomllib.loads(standin_config([("parts/hopper", hopper), ("parts/hook", hook)], "chassis",
+                                       roots={"hopper": "bin", "hook": "hook_body"}))
     assert raw["range"] == {"file": "ladder", "start": "below"}
 
 

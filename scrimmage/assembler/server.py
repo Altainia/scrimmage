@@ -2167,12 +2167,13 @@ class App:
         from ..config import build_world, load_config
         folder = folder or robot.parent
         try:
-            pal = palette(build_world(load_config(robot)), [])
+            world = build_world(load_config(robot))
+            pal, roots = palette(world, []), test_session.part_roots(world)
         except Exception:     # a robot that doesn't build: the open test says why
-            pal = None
+            pal, roots = None, {}
         return dumps_test(TestProgram(folder / "x.test.toml", Path(test_session.config_path(robot, folder)),
                                       hooks=test_session.starter_hooks(pal), blocks=test_session.starter_blocks(pal),
-                                      hopper=test_session.starter_hopper(pal)))
+                                      hopper=test_session.starter_hopper(pal, roots)))
 
     def test_from_part(self) -> dict:
         """The Part tab's "Test it": make (once) `<import name>-standin.toml` next to the import's parts folder, the
@@ -2192,7 +2193,7 @@ class App:
         imp_path = Path(st["path"])
         # next to the parts folder the import file is in (or beside an import file kept elsewhere)
         home = imp_path.parent.parent if imp_path.parent.name == "parts" else imp_path.parent
-        parts, slots = [], {}
+        parts, slots, roots = [], {}, {}
         for p in st["parts"]:
             try:
                 folder = part_folder(imp, p["name"], imp_path)
@@ -2202,7 +2203,9 @@ class App:
             if marker is None or not (folder / "part.toml").is_file():
                 raise ApiError(409, f"the part {p['name']} isn't built yet; try again when the parts are up to date")
             try:
-                slots[marker["part"]] = [m.slot for m in load_part(folder).motors]
+                built = load_part(folder)
+                slots[marker["part"]] = [m.slot for m in built.motors]
+                roots[marker["part"]] = next((b.name for b in built.bodies if b.parent is None), None)
             except (PartError, OSError) as e:
                 raise ApiError(409, f"the part {p['name']} can't be read: {e}") from None
             parts.append((test_session.config_path(folder, home), marker))
@@ -2214,7 +2217,8 @@ class App:
         standin, test = home / f"{name}-standin.toml", home / f"{name}.test.toml"
         added: list[str] = []
         try:
-            if not test_session.write_new(standin, test_session.standin_config(parts, _chassis_root_body(), slots)):
+            new = test_session.standin_config(parts, _chassis_root_body(), slots, roots)
+            if not test_session.write_new(standin, new):
                 text, added = test_session.add_to_standin(standin.read_text(encoding="utf-8"), parts,
                                                           _chassis_root_body(), slots)
                 if added:

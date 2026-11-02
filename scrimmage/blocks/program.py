@@ -422,12 +422,13 @@ def _cond_json(c: Cond):
     return {c.kind: dict(c.args)}
 
 
-def _block_json(b: Block) -> dict:
+def block_json(b: Block) -> dict:
+    """One block as the test's JSON has it (to_json's "blocks" entries)."""
     d: dict = {"do": b.do}
     for k, v in b.args.items():
         d[k] = _cond_json(v) if isinstance(v, Cond) else v
     if b.do == "repeat":
-        d["body"] = [_block_json(x) for x in b.body]
+        d["body"] = [block_json(x) for x in b.body]
     return d
 
 
@@ -435,7 +436,7 @@ def to_json(p: Program) -> dict:
     return {"robot": p.robot.as_posix(), "hooks": list(p.hooks), "hopper": list(p.hopper),
             "time_limit": p.time_limit,
             "chart": None if p.chart is None else list(p.chart), "setup": dict(p.setup),
-            "blocks": [_block_json(b) for b in p.blocks]}
+            "blocks": [block_json(b) for b in p.blocks]}
 
 
 def from_json(d: dict, path: Path) -> Program:
