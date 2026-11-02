@@ -339,13 +339,15 @@ def test_start_named_and_free_pose_exclusive(tmp_path, start):
     st = c.get("/api/robot/code")[1]["start"]
     assert st["range"] is None and st["named_starts"] == [] and st["sentence"] == \
         "Starts on the blue side, facing a side wall"
-    # a named start the field doesn't have, a field the picker doesn't offer, a spot off the field: refused
+    # a named start the field doesn't have, a field that doesn't exist, a spot off the field: refused
     for body, field in (({"named": "red_left", "range": "2026"}, "status"),
-                        ({"pose": [1.0, 1.0, 0.0], "range": "2022-hangar"}, "start/range"),
+                        ({"pose": [1.0, 1.0, 0.0], "range": "nowhere"}, "start/range"),
                         ({"pose": [30.0, 1.0, 0.0], "range": None}, "start/pose"),
                         ({"named": "blue_left", "range": None}, "start/named")):
         s, b = c.post("/api/robot/edit", {"op": "start", **body})
         assert s == 200 and b["ok"] is False and b["errors"][0]["field"] == field, (body, b)
+    s, b = c.post("/api/robot/edit", {"op": "start", "pose": [1.0, 1.0, 0.0], "range": "nowhere"})
+    assert b["errors"][0]["message"] == "choose a built-in field or the plain field", b
     # null clears the start
     s, b = c.post("/api/robot/edit", {"op": "start", "pose": None, "range": None})
     assert s == 200 and b["ok"] is True
