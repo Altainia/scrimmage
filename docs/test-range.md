@@ -168,6 +168,9 @@ fast-mode sample's shooter.
 | `start` | | none | a named start from the range file. The robot starts there. Give either `start` or `[robot] start_pose`, not both |
 | `preload` | balls | 0 | balls already in the hopper at the start of a run. More than the robot holds (the hopper capacity) is an error |
 | `floor_balls` | | `true` | `false`: no floor balls (the range's `[[floor_balls]]` are left out of the world entirely, so the world can't put them out later). Faster runs, and the right choice when the auto never touches them |
+| `ball` | | the range's | a ball preset to use in place of the range's own (`"2017-fuel"`, `"2019-cargo"`, and so on: the names in [docs/launcher.md](launcher.md)). Only a range with a ball takes it (not a disc range). A range with a station refuses a ball that doesn't fit the station's chute (a chute with a set `width` must be wider than the ball). The Test tab's Setup sets this for a stand-in's `intake` and `station` fields |
+| `station` | | none | changes a station's settings for this run: `station = { feeder = { interval = 0.5, stock = 8, spread_yaw_deg = 5.0 } }`. The keys are `interval`, `stock`, `spread_yaw_deg`, `spread_pitch_deg`, `spread_speed`, `spread_position` and `spread_rotation_deg`; any other key, or a station the range doesn't have, is an error. `stock = 0` means "never runs out" (at most 50 balls are fed in one run) |
+| `seed` | | `1` | the whole number (0 or more) that picks which draw of the spreads the stations feed. The same seed gives the same feeds every run |
 
 A `[range]` replaces the field's center obstacle with the range's own elements, so `[field] obstacle = true` with a
 range is an error. `[range] file` problems list what is valid (the built-in names, a range's starts).
@@ -493,6 +496,67 @@ grid = { corner = [7.0, 4.0], step = [0.2, 0.2], count = [1, 8] }
 pose = [3.0, 4.035, 0.0]   # x, y, heading in degrees
 ```
 
+### `[[station]]`: a human player station
+
+A station feeds balls onto the field from a release point, as a human player would: one every `interval` seconds, each
+varying a little. It is built like the bench's `[[inlet]]` ([docs/bench.md](bench.md)), with limits where the inlet
+has standard deviations. Stations feed balls only; a `[[station]]` in a disc range is an error.
+
+```toml
+[[station]]
+name = "feeder"
+release = [0.3, 4.0, 1.1]     # where a fed ball's center appears (m); or release_in, in inches
+heading_deg = 0.0             # the way it is fed, from the field's +x
+pitch_deg = 30.0              # down from horizontal
+speed = 0.0                   # m/s along that direction (0: the ball is only set down)
+interval = 1.0                # s between balls
+stock = 12                    # balls to feed; leave it out for "never runs out"
+spread_yaw_deg = 5.0
+chute = { length = 0.5, slope_deg = 30.0 }
+```
+
+| key | unit | default | meaning |
+|---|---|---|---|
+| `name` | | required | the name a test's feed blocks and the `[range] station` table use. It can't repeat another station, goal, obstacle or element's name |
+| `release` or `release_in` | m or in | one is required | where a fed ball's center appears: field x, y and height. It must be on the field, at least a ball radius above the carpet, and clear of every element, obstacle and chute |
+| `heading_deg` | degrees | required | the way a ball is fed, turned from the field's +x about the vertical (z) |
+| `pitch_deg` | degrees | 0 | down from horizontal, -90 to 90 |
+| `speed` | m/s | 0 | the ball's speed along the heading and pitch. 0 sets it down with no push |
+| `interval` | s | 1.0 | time between balls. A human player's pace; some are much quicker, so it is a setting to try |
+| `stock` | balls | none | how many balls the station feeds. Left out, it never runs out, but feeds at most 50 in one run |
+| `spread_yaw_deg`, `spread_pitch_deg` | degrees | 0 | each feed's heading and pitch vary by up to this much either way |
+| `spread_speed` | m/s | 0 | each feed's speed varies by up to this much either way |
+| `spread_position` or `spread_position_in` | m or in | 0, 0, 0 | a box around the release point, three numbers (along x, y, z): each feed's release point moves by up to this much either way on each axis |
+| `spread_rotation_deg` | degrees | 0, 0, 0 | how much each feed is turned about each axis. A round ball doesn't show it; the key is there for pieces that are not round |
+| `chute` | | none | a sloped floor and two side walls (below) |
+
+**Every spread is plus or minus its value.** `spread_yaw_deg = 5.0` means each ball goes up to 5 degrees left or 5
+degrees right of the heading, and `spread_position = [0, 0.02, 0.02]` is 2 cm either way across and up. The draws are
+uniform between those limits, not standard deviations, so a ball never leaves a tight chute's limits. A spread of 0 is
+exact.
+
+**The seed.** The draws come from `[range] seed` (default 1), one stream per station, so the same seed gives the same
+feeds whatever the timing. A different seed is a different shuffle of the same spreads: the Test tab's **New shuffle**
+changes it.
+
+**The chute** is an optional sloped plate with a wall on each side, built into the world as the body
+`element.<station>.chute`. `length` runs along the slope, `slope_deg` is below horizontal, and `width` is the space
+between the walls (leave it out for 1.3 ball diameters, so a ball of any preset fits). The floor's top starts
+beneath the release point and runs down along the heading; its walls stand one ball diameter tall. The chute is
+refused if its low end would go below the carpet, or it reaches off the field or into an element, an obstacle or
+another station's chute.
+
+**A feed waits** while another ball on the field is within one ball diameter of the release point, so balls don't
+land on each other. If the release point stays blocked, a test's **feed one** block times out and says so.
+
+**How many balls a station feeds.** Each station has its own parked pool of balls (`stock` of them, or 50 when `stock`
+is left out), added to the world when it is built. Because the model is built once, a station can't be restocked
+during a run.
+
+The built-in `station` range is one station at the blue alliance wall with a short chute and two starts: `at_station`
+(bumpers against the chute's low end) and `facing_ball` (a ball on the carpet in front). The built-in `2026` range
+has its two outposts as stations: see [Where the 2026 numbers come from](#where-the-2026-numbers-come-from).
+
 ### Geometry conventions
 
 - **The goal's frame** has its origin at the center of the opening at rim height. x runs along `heading_deg` (from
@@ -558,6 +622,11 @@ Every number in `2026.toml` cites its source on its line, or says it is our choi
   0.593 m. The range uses the CAD's value and says so in the file.
 - **The four BUMPS** (`bump_blue_left`, `bump_blue_right`, `bump_red_left`, `bump_red_right`) are from the CAD, as in
   `2026-bump.toml` (one of them alone): see [docs/terrain.md](terrain.md).
+- **The two OUTPOSTS** (`outpost_blue`, `outpost_red`) are stations: 24 FUEL each (manual 6.3.4), fed one every 0.25 s
+  down a 15 degree tunnel out of a notch in the alliance wall (manual 5.9.2; geometry from the CAD). The release point
+  is just clear of the wall, so **the outposts have no chute** (the tunnel is behind the wall, off the field), and **the
+  chute door**, which holds the staged FUEL in, is left out: a station feeds as if it were open. The feed pace and the
+  spreads are estimates and the file says so. `blue_outpost` is a start below the blue opening.
 - **Starts** (`blue_left`, `blue_center`, `blue_right`) are our choice, in front of the left bump, the hub and the
   right bump. `blue_center` is behind the starting line so a bumper overlaps it. `blue_left` and `blue_right` are
   0.13 m further back: the shooting autos turn there to face the hub, and from the line the robot's bumper corner hit
@@ -681,6 +750,9 @@ by `SCRIMMAGE_AUTO`; they run on `configs/fastmode_range.toml` (fast mode) and `
   funnel and its internal exits and the game's hub-activation rules are not modeled. Every goal always scores.
 - **Trenches.** The 2026 range has its four bumps ([docs/terrain.md](terrain.md)) but not the TRENCH structures:
   a robot drives through where a trench arm is.
+- **Restocking over a match.** A station feeds the balls it started with (its `stock`, or at most 50) and then stops.
+  A human player who gets balls back from the field and feeds them again isn't modeled; it comes up with match
+  simulation.
 - **Feeder loads on motors.** The rollers turn as if the balls weren't there.
 - **Ball-to-ball compression.** Balls are rigid spheres with a soft contact; a ball does not squash in the hopper.
 - **Calibration.** Nothing here is calibrated: the ball's stiffness, the wheel's friction and the carpet's rolling

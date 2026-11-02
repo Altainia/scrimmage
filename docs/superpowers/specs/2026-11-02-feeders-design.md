@@ -198,3 +198,90 @@ instead of their real one. The standing anti-goal applies: **no unnecessary fric
 - How the replay marks a fed piece's outcome.
 
 ## Decisions made during the build
+
+One plain sentence for each decision. "Cost if wrong" says what changes if the call turns out to be the wrong one.
+
+**Planning decisions**
+
+- **Station keys follow the bench's inlet** where they fit (`release`, `heading_deg`, `pitch_deg`, `speed`, `interval`,
+  `stock`, the spreads, `chute`), so someone who has written a bench file can write a station. Cost if wrong: renaming
+  keys in range files and docs.
+- **Spreads are uniform limits, not standard deviations**, so a ball never leaves a tight chute's limits. Cost if
+  wrong: a station would need a second set of keys for a normal draw.
+- **The chute is a sloped plate with two walls, built from the existing box helpers** as the body
+  `element.<station>.chute`, because a ramp element is a wedge on the carpet and can't be raised. Cost if wrong: a
+  new element kind for raised slopes.
+- **A chute's default width is 1.3 ball diameters**, so a station fits any ball the Setup picker offers. Cost if wrong:
+  a ball jams in a chute set for a smaller one.
+- **Stations feed balls only.** A station in a disc range is refused, because pieces beyond balls belong to a later
+  project. Cost if wrong: that project adds them.
+- **Each station draws from its own random stream, nine numbers per feed**, so the same seed gives the same feeds
+  whatever the timing; the default seed is 1, as the bench's. Cost if wrong: results change for a given seed, so old
+  seeds would not reproduce.
+- **A feed waits while another ball is within one diameter of the release point**, as the bench's inlet does, so balls
+  don't land on each other. Cost if wrong: a jammed release point shows as a timed-out feed block instead of a pile-up.
+- **Test settings reach the world as optional `[range]` keys** (`ball`, `station`, `seed`), and `stock = 0` in a test
+  means "never runs out" (at most 50). Cost if wrong: the keys would move to a new table.
+- **The hopper is a list of body names in the test** (`[test] hopper`), and a piece is in when its center is inside one
+  of those bodies' boxes. Cost if wrong: a test would need a different way to say where "in" is.
+- **The stand-in is a robot that says `standin = true`, or whose file ends in `-standin.toml`**, and its own chassis and
+  drive bodies don't make a ball "stuck". Cost if wrong: a ball resting on the kitbot's frame reads as stuck.
+- **"At rest on the robot" is judged against the robot's own motion**, so a ball wedged on a moving robot still counts
+  as stuck. Cost if wrong: a ball wedged on a moving robot reads as missed.
+- **Settling happens only after the blocks finish**, for up to 3 s, with the motors keeping their last commands and the
+  stations stopped. Cost if wrong: results for balls still rolling at the end would change.
+- **The headline is the counts alone when the run finished**, and "ending; counts" otherwise; a seed that differs from
+  the last run's adds "a new shuffle". Cost if wrong: wording only.
+- **A floor spread keeps the robot at its start** and moves the floor ball nearest ahead of it, over the axes the test
+  lists, at most 25 placements; an axis left out keeps the ball's own place. Cost if wrong: the cap or the choice of
+  ball changes; the spread format stays.
+- **Every built-in field gets a start**, and Setup puts the robot at a field's first one, with a Start picker when
+  there are more. Cost if wrong: a student picks a start by hand.
+- **"Test it" puts a stand-in with a hopper-like body on the station field**, and **Add the station blocks** adds the
+  starter feed blocks to an existing test without deleting anything. Cost if wrong: one more click for the student.
+
+**Rulings made during the build**
+
+- **R1: "existing ranges are unchanged" excludes the ranges that deliberately have stations** (`station`, then `2026`).
+  Cost if wrong: none, test wording only.
+- **R2: every spread is plus or minus its value on each axis, the release box included**, so one meaning serves the
+  files, the docs and Setup's "± 2 in" labels. Cost if wrong: the docs and Setup wording and one line of feed math.
+- **R3: the chute floor starts one ball radius further up the slope**, so a ball set at the release point rolls rather
+  than balancing on the plate's edge. Cost: none.
+- **R4: the settle also waits for hopper pieces to rest; a piece the ball path takes counts as "in"; a scored piece is
+  "missed" with no reason; stopping drops pending feed requests; only the last top-level `made_it_in` is checked after
+  the settle.** Cost if wrong: a scored piece on a game field reads as a miss (rare in component tests); one-line
+  changes.
+- **R5: a piece that bounced out of the hopper and came to rest on the student's own part is "stuck", not "missed
+  (bounced out)"**, because stuck pieces count toward possession limits. Cost if wrong: one precedence line.
+- **R6: the throughout, tip-over and walk-off checks don't run during the settle**, because the blocks are done and the
+  settle only counts pieces. Cost if wrong: a robot left driving could tip over unreported in the last 3 s.
+- **R7: the intake example's roller runs at 6 V** (it was 8 V), because at 8 V a ball near the center sometimes
+  bounced out at scattered points; a margin test pins that a half-inch grid around the center is all picked up. Cost if
+  wrong: the example part's numbers change slightly (its README says so).
+- **R8: the station example gets a modest spread** (5° yaw and pitch, 0.2 m/s) so it shows the variation the owner
+  described and its seed means something. Cost if wrong: its numbers depend on a spread a student might not expect;
+  one `[setup]` line.
+- **R9: the hopper is preselected from a body whose last name segment says hopper, intake or indexer, else the root
+  body of such a part**, so a part named "intake" doesn't preselect its roller, which would inflate the catch rate.
+  Cost if wrong: a student ticks one more box in Setup.
+- **R10: the 2026 outposts stay always-present stations**, so every 2026 world carries 48 more parked balls (about
+  13% more ball bodies) and twelve test expectations changed (408 balls, the stored fingerprints). Cost if wrong: an
+  opt-out key could be added later.
+- **R11: the robot-code server's `set_start` accepts any built-in range**, since each is a valid checked range; the
+  Robot tab's picker still offers only the robot's own fields. Cost if wrong: a hand-made request can put a
+  robot-code robot on a test-only field, which is harmless.
+
+**Calls made by implementers**
+
+- **The 2026 outposts have no chute and the chute door is left out**: the real tunnel lies behind the alliance wall, off
+  the field, so each outpost is a release point with a 15° pitch, and a station feeds as if the door were open. Cost if
+  wrong: the feed pace and the spreads (estimates, marked as such) would be tuned against a real door.
+- **Setup's floor-spread defaults keep the ball out of the robot**: the distance runs from 12 in nearer to 12 in
+  farther than the field's ball, and a placement inside the robot is refused with a message. Cost if wrong: a student
+  types different numbers.
+- **A ball resting on a student's intake part is "stuck"** (the stand-in exclusion covers only its own chassis and drive),
+  which is how the intake example's wedged balls at 6 in off center are reported. Cost if wrong: those read as missed.
+- **Swerve modules are pointed the least way, up to 90° either way, and the wheels may drive backward**; the wheels
+  start after 1 s even if a module is not pointed yet. Cost if wrong: a slow-steering swerve drive starts driving
+  with a module still half-turned.
