@@ -168,6 +168,7 @@ def main(argv: list[str] | None = None) -> None:
     xr = xsub.add_parser("run", help="run a test file (<name>.test.toml) and print how it ended and each check "
                                      "(exit 0 finished with every check passed, 1 not, 2 couldn't run)")
     xr.add_argument("file", type=Path, help="the test file")
+    xr.add_argument("--out", type=Path, help="folder to keep the run in (default <FILE's folder>/<FILE stem>-runs)")
 
     mp = sub.add_parser("model", help="print (or write) the MJCF a parts robot assembles to")
     mp.add_argument("config", type=Path)
@@ -579,6 +580,7 @@ def _test(args) -> None:
     """Exit 0 when the test finished with every check passed, 1 when not, 2 when the file or its robot is wrong."""
     from .blocks import program as blocks_program
     from .blocks import run as blocks_run
+    from .blocks import store as blocks_store
     try:
         if not args.file.is_file():
             raise FileNotFoundError(f"test file not found: {args.file}")
@@ -590,6 +592,13 @@ def _test(args) -> None:
     print(result.outcome)
     for check in result.checks:
         print(f"  {check['line']}")
+    out = args.out if args.out is not None else blocks_store.runs_dir(args.file)
+    try:
+        folder = blocks_store.save_run(result, program, out)
+    except OSError as e:
+        print(f"scrimmage: couldn't keep the run in {out}: {e}", file=sys.stderr)
+        sys.exit(2)
+    print(f"kept in {folder}")
     sys.exit(0 if result.passed else 1)
 
 
