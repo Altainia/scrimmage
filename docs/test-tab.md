@@ -139,9 +139,9 @@ Open **Setup** over the blocks. Its summary shows the hooks, the weight and the 
 - **The field.** Where the robot starts: **The plain field**, **In front of a ladder (round rungs)**,
   **In front of a ladder (square rungs)** or **In front of a ball (to try an intake)**. In front of a ladder, a climber
   has rungs `rung1` to `rung4` to climb. In front of a ball, an intake has a ball to pick up. This changes the robot
-  file, so the Robot tab's **Undo** takes it back. A robot that has its own start pose (`[robot] start_pose`, from
-  the robot code panel's **Where it starts**) keeps it when you pick another field, as long as that pose is on the
-  field.
+  file. Picking a field moves the robot to that field's start, in front of its rungs or its ball, even when the robot
+  had its own start pose (from the robot code panel's **Where it starts**). The Robot tab's **Undo** puts the old
+  field and start back.
 - **The robot (weight and center of mass).** These appear when the robot's base is the stock chassis, which a stand-in
   robot always is. **Weight** is everything that isn't one of the robot's parts (frame, battery, bumpers). The center of
   mass is forward, left and up, in meters. These also change the robot file and **Undo** takes them back.

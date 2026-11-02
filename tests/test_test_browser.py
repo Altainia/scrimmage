@@ -804,7 +804,8 @@ def test_setup_field_box_says_what_it_changes_and_how_to_undo_it(test_page):
     page, _ = test_page()
     page.click("#test-setup summary")
     hint = page.inner_text("#test-setup .test-setup-field .hint")
-    assert "This changes robot.toml" in hint and "The Robot tab's Undo takes the change back." in hint
+    assert "Picking a field moves the robot to that field's start (this changes robot.toml)." in hint
+    assert "The Robot tab's Undo puts the old field and start back." in hint
 
 
 # 900 x 700: a small laptop's window. Wider, the mounts used to share a row with the hooks and were cut off there:

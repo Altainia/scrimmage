@@ -610,18 +610,39 @@ def test_a_robot_edit_puts_the_stand_in_by_the_ladder_and_the_test_sees_its_bars
     assert c.get("/api/robot/state")[1]["range"] == "intake"
 
 
-def test_setup_field_choice_keeps_the_robot_s_own_start_pose(tmp_path, test_app):
-    """Setup's field picker sends keep_pose: a robot placed by [robot] start_pose keeps it on the new field."""
+def test_setup_field_choice_moves_a_robot_with_its_own_start_pose_to_the_fields_start(tmp_path, test_app):
+    """Setup's field picker sends the field's named start: a real robot placed at a 2026 match start
+    ([robot] start_pose) moves to the ladder's start, in front of the rungs; the Robot tab's Undo puts the old field
+    and pose back."""
     import tomllib
+
+    import mujoco
+
+    from scrimmage.testrange.spec import load_range
+    from scrimmage.world import World
     t = write_test(tmp_path)
     robot = tmp_path / "robot.toml"
-    text = robot.read_text(encoding="utf-8").replace("[robot]\n", "[robot]\nstart_pose = [2.0, 4.0, 0.0]\n", 1)
+    match_start = [3.42, 5.56, 0.0]       # the 2026 field's blue_left start
+    text = robot.read_text(encoding="utf-8").replace(
+        "[robot]\n", f'[range]\nfile = "2026"\n\n[robot]\nstart_pose = {match_start}\n', 1)
     robot.write_text(text, encoding="utf-8")
+    before = tomllib.loads(robot.read_text(encoding="utf-8"))
+    assert before["robot"]["start_pose"] == match_start and before["range"] == {"file": "2026"}
     c = test_app(t)
     v = c.get("/api/robot/state")[1]["version"]
-    s, b = c.call("POST", "/api/robot/edit", {"version": v, "op": "start", "range": "ladder", "named": "below",
-                                              "keep_pose": True})
+    # what static/test.js's field picker sends for "In front of a ladder (round rungs)"
+    s, b = c.call("POST", "/api/robot/edit", {"version": v, "op": "start", "range": "ladder", "named": "below"})
     assert s == 200 and b["ok"], b
     raw = tomllib.loads(robot.read_text(encoding="utf-8"))
-    assert raw["range"] == {"file": "ladder"} and raw["robot"]["start_pose"] == [2.0, 4.0, 0.0]
+    assert raw["range"] == {"file": "ladder", "start": "below"} and "start_pose" not in raw.get("robot", {})
     assert _state(c)["palette"]["bars"] == ["rung1", "rung2", "rung3", "rung4"]
+    # the robot is built at the ladder's start, 1.0 m before the rungs, not at the match start
+    w = World(raw, tmp_path)
+    mujoco.mj_forward(w.model, w.data)
+    x, y, _ = load_range("ladder", ".").starts["below"]
+    assert [float(v) for v in w.data.xpos[w.model.body("drive.chassis").id][:2]] == pytest.approx([x, y], abs=1e-6)
+    # Undo puts the old field and the match start back
+    s, b = c.call("POST", "/api/robot/undo", {"version": c.get("/api/robot/state")[1]["version"]})
+    assert s == 200 and b["ok"], b
+    after = tomllib.loads(robot.read_text(encoding="utf-8"))
+    assert after["robot"]["start_pose"] == match_start and after["range"] == {"file": "2026"}
