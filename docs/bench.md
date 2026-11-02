@@ -164,7 +164,7 @@ This section is for the agent (and anyone writing a file by hand).
 
 1. **Name the idea and its author.** `[bench] name` is a short name, `author` the student's name, and `idea` the
    student's own words, in one line. These go on the picture and in the gallery: keep the student's words.
-2. **Pick the piece.** Use the game's ball preset (`2020-power-cell`, `2022-cargo`, `2026-fuel`, or one of seven from past games, listed in docs/launcher.md) for a foam ball. For
+2. **Pick the piece.** Use the game's ball preset (`2020-power-cell`, `2022-cargo`, `2026-fuel`, or a past game's ball: see the preset table in [docs/launcher.md](launcher.md#presets-and-their-sources)) for a foam ball. For
    anything else, a rigid custom piece (a box, a cylinder or a disc) with a rough mass. A squishy piece must be a
    ball (see [Pieces and contact laws](#pieces-and-contact-laws)).
 3. **Guess sizes from the piece, and say which numbers were guessed.** Students say "two wheels", not "4 in. 40A at

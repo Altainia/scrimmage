@@ -36,15 +36,15 @@ inertia_factor = 0.4    # estimate: a uniform solid sphere, 2/5; high density fo
 
 [ball.2016-boulder]
 # FRC 2016 STRONGHOLD "Boulder": 10 in. gray coated-foam ball (the 2016 Kit of Parts ball).
-diameter = 0.254        # source: 10 in., FRC 2016 game manual (the manual's figure; also stated on https://en.wikipedia.org/wiki/FIRST_Stronghold). Chief Delphi reports boulders measuring slightly under: https://www.chiefdelphi.com/t/2016-boulder-weight-issue/147506
-mass = 0.285            # estimate: about 10 oz. The manual's mass was not confirmed (searched 2026-11-02; the Chief Delphi thread above is about weight and compression but its figures were not read). Replace with a kitchen-scale reading.
-stiffness_n = 120.0     # estimate: a coated foam ball much firmer than the Power Cell; Chief Delphi compression tests (same thread) exist but were not converted. Not measured.
+diameter = 0.254        # source: 10 in., FRC 2016 game manual, as quoted in https://www.chiefdelphi.com/t/2016-boulder-weight-issue/147506 (where teams measured boulders at 9.6 to 9.7 in.)
+mass = 0.285            # estimate: the same Chief Delphi thread (https://www.chiefdelphi.com/t/2016-boulder-weight-issue/147506) reports gray boulders at 281 to 295 g (an official one 292 g, a kit ball 281 g) and some other makers' balls up to 388 g; 285 g is taken from the gray ones. The manual's own mass was not confirmed.
+stiffness_n = 120.0     # estimate: a coated foam ball much firmer than the Power Cell. The thread above reports forces to compress a ball to 8 in. (about 6.3 kg-force for a kit ball, 11 to 13 kg-force for newer ones), a 2 in. squeeze on a 10 in. ball, not the 25% of this field, and not converted. Not measured.
 restitution = 0.5       # estimate: coated foam that bounces less than the Power Cell; no published number. Measure with a drop test.
 inertia_factor = 0.4    # estimate: a uniform solid sphere, 2/5; solid foam throughout.
 
 [ball.2017-fuel]
 # FRC 2017 STEAMWORKS "Fuel": 5 in. high-visibility yellow foam ball.
-diameter = 0.127        # source: 5 in., FRC 2017 game manual
+diameter = 0.127        # source: 5 in. (nominal), FRC 2017 game manual
 mass = 0.0737           # source: 2.6 oz., FRC 2017 game manual
 stiffness_n = 60.0      # estimate: a small low-density foam ball, taken equal to the Power Cell's 60 N. No published figure. Not measured.
 restitution = 0.5       # estimate: low-density foam; no published number. Measure with a drop test.
@@ -60,7 +60,7 @@ inertia_factor = 0.667  # estimate: a thin inflated shell, 2/3.
 
 [ball.2025-algae]
 # FRC 2025 REEFSCAPE "Algae": 16 in. blue-green inflated foam-and-rubber ball.
-diameter = 0.4064       # source: 16 in., FRC 2025 game manual
+diameter = 0.4064       # source: 16 in., Wikipedia (Reefscape) https://en.wikipedia.org/wiki/Reefscape ; the 2025 game manual's figure was not confirmed
 mass = 0.450            # estimate: about 1 lb. The manual's mass was not confirmed. Replace with a kitchen-scale reading.
 stiffness_n = 200.0     # estimate: a large lightly inflated ball, squeezed by hand much like the 2022 Cargo. No published figure. Not measured.
 restitution = 0.7       # estimate: a hollow inflated ball; no published number. Measure with a drop test.
@@ -84,8 +84,8 @@ inertia_factor = 0.667  # estimate: a thin inflated shell, 2/3.
 
 [ball.2012-basketball]
 # FRC 2012 Rebound Rumble "Basketball": 8 in. FIRST-logo foam basketball (size 4).
-diameter = 0.2021       # source: 25 in. circumference / pi = 7.96 in. = 0.2021 m (FRC 2012 game manual; the 8 in. diameter is also on https://www.team254.com/first/2012/)
-mass = 0.3175           # estimate: about 11.2 oz. The manual's mass was not confirmed. Replace with a kitchen-scale reading.
+diameter = 0.2021       # source: 25 in. circumference / pi = 7.96 in. = 0.2021 m, FRC 2012 game manual section 2.2.11
+mass = 0.3175           # source: "approximate weight of 11.2 oz", FRC 2012 game manual section 2.2.11; 11.2 oz = 0.3175 kg
 stiffness_n = 100.0     # estimate: a coated foam ball, firmer than the Power Cell but not as firm as the 2016 Boulder. No published figure. Not measured.
 restitution = 0.55      # estimate: coated foam; no published number. Measure with a drop test.
 inertia_factor = 0.4    # estimate: a uniform solid sphere, 2/5; foam throughout.
