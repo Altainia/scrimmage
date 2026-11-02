@@ -19,6 +19,7 @@ climbing: no hooks, no bars, just a motor, a drive and a ball.
 | `parts/intake/part.toml` | the intake, written by hand: a frame, the bin (body `hopper`) and the roller (joint `roller`, a NEO at 3 to 1) |
 | `intake-standin.toml` | the stand-in box robot with the intake in front of its front bumper, on the `intake` range (one ball 1.5 m in front of the start). The roller motor is on `PWM:2`, the first PWM channel the drive leaves free |
 | `intake.test.toml` | the blocks |
+| `spread.test.toml` | the same blocks, run with the ball at three places across the robot's path (a floor spread) |
 
 The ball moves only by physics: the robot has no `[shooter]`, so nothing takes balls out of the world, and the ball
 gets into the bin because the roller and the lip touch it.
@@ -79,6 +80,37 @@ That's the same as `pos = [0.43, 0.0, 0.0]` in `intake-standin.toml`'s intake pa
 **Something else to try.** The drive's voltage (the drive block's **Try values…**): from 2 V to 8 V the ball is
 taken (at 6 V on the roller). The roller's position, size or grip (`pos`, `cylinder` and `friction` in `parts/intake/part.toml`), or the lip,
 are part changes: edit the file and run the test again.
+
+## Where the ball can be: a floor spread
+
+`spread.test.toml` is the same test with `hopper = ["intake.hopper"]` and a floor spread in its setup:
+
+```toml
+[setup]
+floor_spread = { offset_in = [-6.0, 0.0, 6.0] }
+```
+
+The spread runs the test once with the ball 6 in right of the robot's center line, once on it and once 6 in left, the
+same 1.5 m ahead. Run it with:
+
+```bash
+scrimmage test spread examples/blocks/intake/spread.test.toml
+```
+
+What it shows today:
+
+```
+picked up 1 of 3; missed at 6 in right and 6 in left
+```
+
+The center ball is picked up. The other two miss for a reason in the part, not luck: the bin is 36 cm wide inside, so a
+15 cm ball goes in only with its center within about 10 cm (4 in) of the center line. At 6 in off center the ball's side
+meets the front edge of a side wall, and the roller wedges it there, between itself and the wall. The run says "1 stuck
+in the robot" for it (stuck on `intake.hopper`), and the wait times out. To take balls 6 in off center, the bin and the
+roller would have to be wider: about 48 cm inside (6 in plus the ball's radius each side, and a little room).
+
+The intake's own margin is in the tests: a 3 by 3 spread of half an inch around the field's ball, across and along the
+path, picks up all 9.
 
 ## The numbers
 
