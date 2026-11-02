@@ -472,6 +472,7 @@ parameters:
   bumper = 0.08 m (greater than 0): bumper thickness
   bumper_clearance = 0.02 m (greater than 0): height of the bumpers' bottom above the carpet; with the bumpers' reach past the front wheels it sets the approach angle, the steepest ramp the robot drives onto (docs/terrain.md)
   module_inset = 0.0579 m (at least 0.0, limited by other parameters): distance from each frame edge to a corner mount (module center)
+  com_offset = [0.0, 0.0, 0.0] m ([x, y, z]): moves the chassis's center of mass from its usual place [forward, left, up]; use it when a part you attach changes where the robot's weight sits
 
 slots: gyro
 mounts: front_left, front_right, back_left, back_right, center, top

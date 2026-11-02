@@ -12,14 +12,14 @@ from typing import Any, Callable
 from ..assemble import TREAD_DAMPING, TREAD_STIFFNESS
 from ..model import Part, PartError, part_from_dict
 
-KINDS = ("float", "int", "str", "bool", "ratio", "pair")
+KINDS = ("float", "int", "str", "bool", "ratio", "pair", "vec3")
 
 
 @dataclass(frozen=True)
 class Param:
     """One parameter of a stock part.
 
-    kind: float | int | str | bool | ratio (a named choice or a number > 0) | pair ([min, max], min < max).
+    kind: float | int | str | bool | ratio (a named choice or a number > 0) | pair ([min, max], min < max) | vec3 ([x, y, z], three finite numbers).
     min: inclusive lower bound. max: inclusive upper bound, or a callable(checked) -> float for a limit that
     depends on other parameters. The callable receives a dict of the parameters declared before this one, already
     checked and converted (not the later ones), so declare dependent parameters after the ones they depend on.
@@ -119,6 +119,12 @@ def _check(p: Param, v: Any, where: str, params: dict) -> Any:
         if not ok:
             raise bad(f"must be [min, max] with min < max{unit}, not {v!r}")
         return (float(v[0]), float(v[1]))
+    if p.kind == "vec3":
+        ok = (isinstance(v, (list, tuple)) and len(v) == 3
+              and all(isinstance(x, (int, float)) and not isinstance(x, bool) and _finite(x) for x in v))
+        if not ok:
+            raise bad(f"must be [x, y, z], three numbers{unit}, not {v!r}")
+        return [float(x) for x in v]
     raise AssertionError(p.kind)
 
 
@@ -167,6 +173,8 @@ def _constraints(p: Param) -> str:
         parts.append(f"one of {', '.join(map(str, p.choices))}")
     if p.kind == "pair":
         parts.append("[min, max] with min < max")
+    if p.kind == "vec3":
+        parts.append("[x, y, z]")
     if p.positive:
         parts.append("greater than 0")
     if p.min is not None:
@@ -190,7 +198,7 @@ def describe(name: str | None) -> str:
         lines += [s.note, ""]
     lines.append("parameters:")
     for p in s.params:
-        value = repr(list(p.default) if p.kind == "pair" else p.default)
+        value = repr(list(p.default) if p.kind in ("pair", "vec3") else p.default)
         if p.unit:
             value += f" {p.unit}"
         constraints = _constraints(p)

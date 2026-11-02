@@ -394,7 +394,7 @@ def test_cli_port_errors(tmp_path):
     assert r.returncode == 2 and "port must be 0-65535" in r.stderr
 
 
-@pytest.mark.parametrize("kind", ["swerve", "swerve-rev", "differential"])
+@pytest.mark.parametrize("kind", ["swerve", "swerve-rev", "differential", "standin"])
 def test_new_templates_validate(kind, tmp_path):
     text = templates.new_config(kind)
     res = validate.check(text, tmp_path / "robot.toml")

@@ -1,4 +1,4 @@
-"""Starting files for `scrimmage edit`: robot configs (`--new swerve|swerve-rev|differential`) and scenarios
+"""Starting files for `scrimmage edit`: robot configs (`--new swerve|swerve-rev|differential|standin`) and scenarios
 (`--new-scenario --robot CONFIG`)."""
 
 from __future__ import annotations
@@ -132,7 +132,15 @@ attach = "drive.center"
 ids = { left = "PWM:0", right = "PWM:1", left_encoder = { channel_a = 0, counts_per_rev = 2048 }, right_encoder = { channel_a = 2, counts_per_rev = 2048 } }
 """
 
-KINDS = ("swerve", "swerve-rev", "differential")
+_STANDIN = _DIFFERENTIAL.replace(
+    'stock = "chassis"\n',
+    'stock = "chassis"\n'
+    '# Attach your part to drive.top, or to wherever its CAD has it. Set mass to what the rest of the robot weighs and\n'
+    '# com_offset to move the robot\'s center of mass [forward, left, up] in meters.\n'
+    'mass = 45.0\n'
+    'com_offset = [0.0, 0.0, 0.0]\n', 1)
+
+KINDS = ("swerve", "swerve-rev", "differential", "standin")
 
 
 def new_config(kind: str) -> str:
@@ -142,6 +150,8 @@ def new_config(kind: str) -> str:
         return _HEADER.format(title="A REV swerve robot: a chassis and four MAXSwerve modules on SPARK MAX controllers.") + _SWERVE_REV
     if kind == "differential":
         return _HEADER.format(title="A differential-drive robot: a chassis and a 6-wheel drop-center drivetrain.") + _DIFFERENTIAL
+    if kind == "standin":
+        return _HEADER.format(title="Stand-in box robot: the kitbot's chassis and drive, for trying a part on its own.") + _STANDIN
     raise ValueError(f"unknown template {kind!r} (use one of: {', '.join(KINDS)})")
 
 

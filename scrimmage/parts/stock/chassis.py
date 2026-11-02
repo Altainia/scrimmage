@@ -23,11 +23,12 @@ def build(p: dict) -> dict:
         {"box": [L, b, bumper_h], "pos": [0, -W / 2 - b / 2, bumper_z], "color": BLUE, "friction": 0.3},
         {"box": [0.1, 0.04, 0.01], "pos": [L / 2 - 0.1, 0, fh + 0.025], "color": YELLOW, "collide": False},
     ]
+    cx, cy, cz = p["com_offset"]
     x, y = L / 2 - inset, W / 2 - inset
     return {
         "part": {"name": "chassis", "format": 1},
         "body": [{"name": "chassis", "mass": m, "geom": geoms,
-                  "com": [0, 0, fh + 0.06],
+                  "com": [cx, cy, fh + 0.06 + cz],
                   "inertia": [m * (W ** 2 + h ** 2) / 12, m * (L ** 2 + h ** 2) / 12, m * (L ** 2 + W ** 2) / 12]}],
         "gyro": [{"slot": "gyro", "body": "chassis"}],
         "mount": [{"name": "front_left", "body": "chassis", "pos": [x, y, 0]},
@@ -50,5 +51,7 @@ register(Stock(
            "past the front wheels it sets the approach angle, the steepest ramp the robot drives onto "
            "(docs/terrain.md)", positive=True),
      Param("module_inset", "m", 0.0579, "distance from each frame edge to a corner mount (module center)",
-           min=0.0, max=lambda q: min(q["length"], q["width"]) / 2)),
+           min=0.0, max=lambda q: min(q["length"], q["width"]) / 2),
+     Param("com_offset", "m", [0.0, 0.0, 0.0], "moves the chassis's center of mass from its usual place "
+           "[forward, left, up]; use it when a part you attach changes where the robot's weight sits", kind="vec3")),
     build, slots=("gyro",), mounts=("front_left", "front_right", "back_left", "back_right", "center", "top")))
