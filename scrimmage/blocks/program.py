@@ -168,9 +168,10 @@ def _block(t, trail: tuple) -> Block:
     if do is None:
         raise TestFileError(f"{where}: says nothing about what to do (do = \"spin\", ...)")
     if do not in DO_KINDS:
-        raise TestFileError(f'{where}: "{do}" isn\'t a block; use {', '.join(DO_KINDS)}')
+        kinds = ", ".join(DO_KINDS)
+        raise TestFileError(f'{where}: "{do}" isn\'t a block; use {kinds}')
     if len(trail) > MAX_DEPTH:
-        raise TestFileError(f"{where}: repeats go at most {MAX_DEPTH} deep")
+        raise TestFileError(f"{where}: blocks go at most {MAX_DEPTH} deep inside each other")
     t = {k: v for k, v in t.items() if k != "do"}
     a: dict = {}
     body: list = []
@@ -231,17 +232,18 @@ def _strings(v, where: str, what: str) -> list:
     return list(v)
 
 
-def _program(data: dict, path: Path) -> Program:
+def _program(data: dict, path: Path, head: str = "[test]") -> Program:
     test = data.get("test")
     if not isinstance(test, dict) or "robot" not in test:
-        raise TestFileError('[test] needs robot = "<robot file>.toml", which says which robot to test')
-    _keys(test, ("robot", "hooks", "time_limit", "chart"), "[test]")
+        raise TestFileError(f'{head} needs robot = "<robot file>.toml", which says which robot to test'
+                            if head == "[test]" else "the test needs a robot file, which says which robot to test")
+    _keys(test, ("robot", "hooks", "time_limit", "chart"), head)
     robot = test["robot"]
     if not isinstance(robot, str) or not robot:
-        raise TestFileError('[test] robot must be the robot file\'s name in quotes, like "my_robot.toml"')
-    hooks = _strings(test.get("hooks", []), "[test]", "hooks")
-    chart = _strings(test["chart"], "[test]", "chart") if "chart" in test else None
-    limit = _time(test.get("time_limit", TIME_LIMIT), "[test]", "time_limit")
+        raise TestFileError(f'{head} robot must be the robot file\'s name in quotes, like "my_robot.toml"')
+    hooks = _strings(test.get("hooks", []), head, "hooks")
+    chart = _strings(test["chart"], head, "chart") if "chart" in test else None
+    limit = _time(test.get("time_limit", TIME_LIMIT), head, "time_limit")
     raw = data.get("block", [])
     if not isinstance(raw, list):
         raise TestFileError("blocks are written as [[block]] tables")
@@ -291,9 +293,12 @@ def to_json(p: Program) -> dict:
 def from_json(d: dict, path: Path) -> Program:
     if not isinstance(d, dict):
         raise TestFileError("the test is a table")
+    extra = [k for k in d if k not in ("robot", "hooks", "time_limit", "chart", "setup", "blocks")]
+    if extra:
+        raise TestFileError(f"the test has something it doesn't use: {extra[0]!r}")
     test = {k: d[k] for k in ("robot", "hooks", "time_limit", "chart") if d.get(k) is not None}
     data = {"test": test, "block": d.get("blocks", []), "setup": d.get("setup") or {}}
-    return _program(data, Path(path))
+    return _program(data, Path(path), "the test")
 
 
 # ---- writing --------------------------------------------------------------------------------------------------------
@@ -306,7 +311,7 @@ def _value(v) -> str:
     if isinstance(v, int):
         return str(v)
     if isinstance(v, str):
-        return json.dumps(v, ensure_ascii=False)
+        return _string(v)
     if isinstance(v, Cond):
         return _value(_cond_json(v))
     if isinstance(v, (list, tuple)):
@@ -316,8 +321,13 @@ def _value(v) -> str:
     raise TypeError(f"can't write {v!r} to TOML")
 
 
+def _string(v: str) -> str:
+    # json escapes quotes, backslashes and C0 controls; TOML also forbids DEL
+    return json.dumps(v, ensure_ascii=False).replace("\x7f", "\\u007f")
+
+
 def _key(k: str) -> str:
-    return k if k.replace("_", "").replace("-", "").isalnum() else json.dumps(k, ensure_ascii=False)
+    return k if k.replace("_", "").replace("-", "").isalnum() else _string(k)
 
 
 def _write_block(b: Block, header: str, out: list) -> None:

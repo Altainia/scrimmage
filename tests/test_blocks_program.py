@@ -75,22 +75,18 @@ that = { level = "mid" }
 '''
 
 
-def test_roundtrips():
+def test_roundtrips(tmp_path):
     p = P.loads(SAMPLE, PATH)
     assert {b.do for b in p.blocks} == set(P.DO_KINDS)
     text = P.dumps(p)
     assert text.startswith("[test]\nrobot = ")
     assert P.loads(text, PATH) == p
     assert P.from_json(P.to_json(p), PATH) == p
-    assert P.load(_write(text)).blocks == p.blocks
-
-
-def _write(text):
-    import tempfile
-    d = Path(tempfile.mkdtemp())
-    f = d / "a.test.toml"
+    f = tmp_path / "a.test.toml"
     f.write_text(text, encoding="utf-8")
-    return f
+    assert P.load(f).blocks == p.blocks
+
+
 
 
 def test_nested_bodies_are_written_as_tables():
@@ -153,3 +149,25 @@ def test_json_errors_are_the_same():
     d["blocks"] = [{"do": "wait", "seconds": -1}]
     with pytest.raises(P.TestFileError, match="can't be negative"):
         P.from_json(d, PATH)
+
+
+def test_awkward_text_roundtrips():
+    p = P.Program(PATH, Path('C:\\robots\\"my" bot\x7f\t.toml'), ['a"b', "c\\d\x01"], 5.0, ["é\x7f"],
+                  [P.Block("spin", {"motor": 'q"\\.x\x7f', "volts": 1.0})])
+    q = P.loads(P.dumps(p), PATH)
+    assert q.robot.as_posix() == p.robot.as_posix()
+    assert (q.hooks, q.chart, q.blocks) == (p.hooks, p.chart, p.blocks)
+    assert P.from_json(P.to_json(p), PATH) == p
+
+
+def test_json_depth_and_wording():
+    leaf = {"do": "wait", "seconds": 1}
+    for _ in range(4):
+        leaf = {"do": "repeat", "times": 1, "body": [leaf]}
+    d = {"robot": "r.toml", "blocks": [leaf]}
+    with pytest.raises(P.TestFileError, match="at most 4 deep inside each other"):
+        P.from_json(d, PATH)
+    for bad in ({"blocks": []}, {"robot": "r.toml", "bogus": 1}, {"robot": 3}):
+        with pytest.raises(P.TestFileError) as e:
+            P.from_json(bad, PATH)
+        assert "[test]" not in str(e.value)
