@@ -51,7 +51,7 @@ const t = {
   stock: null,        // /api/robot/library's stock parts by name (their defaults and groups)
   setupError: null,   // the last robot edit Setup made that the server refused
   setupKey: null,     // what Setup drew last (see renderSetup)
-  sweepFor: null,     // the sweep form's numbers: [{label, target, value, unit, block, from, to}]
+  sweepFor: null,     // the sweep form's numbers: [{label, target, value, unit, block, from, to, scale (file per shown)}]
   hopperSet: false,   // the student changed the hopper in Setup (no longer starter_hopper's preselection)
   floor: null,        // the floor spread's boxes as typed (floorDraft), for the test's floor_spread `floorFor`
   floorFor: null,
@@ -421,16 +421,20 @@ const STATION_BOXES = [
   { key: "spread_yaw_deg", label: "Left/right angle (± degrees)", unit: "°", upTo: 10 },
   { key: "spread_pitch_deg", label: "Up/down angle (± degrees)", unit: "°", upTo: 10 },
   { key: "spread_speed", label: "Speed (± m/s)", unit: "m/s", upTo: 0.4 },
-  { key: "spread_position", label: "Release box (± in)", unit: "in", axes: ["x", "y", "z"], scale: IN, upTo: 0.05 },
+  { key: "spread_position", label: "Release box (± in)", unit: "in", axes: ["x", "y", "z"], scale: IN, upTo: 2 },
   { key: "spread_rotation_deg", label: "Turned (± degrees)", unit: "°", axes: ["about x", "about y", "about z"], upTo: 90 },
 ];
-// the floor spread's axes (scrimmage/blocks/spread.py's SPREAD_AXES): label, and from, to, steps when ticked
+// the floor spread's axes (scrimmage/blocks/spread.py's SPREAD_AXES): label, and from, to, steps when ticked: around
+// where the field's ball lies (palette.floor_ball; offset and distance), never nearer than its nearest_in
 const FLOOR_AXES = [
   ["offset_in", "Offset across (in)", -6, 6, 3],
-  ["distance_in", "Distance ahead (in)", 12, 36, 3],
+  ["distance_in", "Distance ahead (in)", -12, 12, 3],
   ["angle_deg", "Angle (degrees)", -30, 30, 3],
   ["rotation_deg", "Turned (degrees)", 0, 90, 3],
 ];
+// a start's id in words: "at_station" -> "At station"
+const startWords = (id) => { const w = id.replace(/_/g, " "); return w.charAt(0).toUpperCase() + w.slice(1); };
+const floorBall = () => (t.state && t.state.palette && t.state.palette.floor_ball) || null;
 
 // A number box: `blank` (when given) is what an empty box means, and a value equal to it shows empty.
 function numberBox(id, value, label, commit, blank = null) {
@@ -466,9 +470,7 @@ function robotEdit(make) {
 const partNamed = (robot, name) => (robot.parts || []).find((p) => p.name === name) || null;
 
 function setHooks(hooks) {
-  setHead(t.ws, { hooks: [...hooks].sort() });
-  schedule();
-  renderSetup();
+  setTest({ hooks: [...hooks].sort() });
 }
 
 // The hopper Setup ticks: the test's; for a test with none, starter_hopper's until the student changes it.
@@ -526,10 +528,17 @@ function floorDraft() {
   const key = canon(fs);
   if (t.floor && t.floorFor === key) return t.floor;
   t.floorFor = key;
+  const ball = floorBall() || {};
   t.floor = Object.fromEntries(FLOOR_AXES.map(([axis, , from, to, steps]) => {
     const v = fs[axis];
-    return [axis, v && v.length ? { on: true, from: fmt(v[0]), to: fmt(v[v.length - 1]), steps: String(v.length) }
-      : { on: false, from: fmt(from), to: fmt(to), steps: String(steps) }];
+    if (v && v.length) return [axis, { on: true, from: fmt(v[0]), to: fmt(v[v.length - 1]), steps: String(v.length) }];
+    const base = ball[axis] ?? 0;
+    let lo = base + from, hi = base + to;
+    if (axis === "distance_in" && ball.nearest_in !== undefined && lo < ball.nearest_in) {
+      lo = ball.nearest_in;
+      hi = Math.max(hi, lo + (to - from));
+    }
+    return [axis, { on: false, from: fmt(Math.round(lo)), to: fmt(Math.round(hi)), steps: String(steps) }];
   }));
   return t.floor;
 }
@@ -544,6 +553,10 @@ function floorSpread(draft) {
     const a = Number(d.from), b = Number(d.to), n = Number(d.steps);
     if (d.from.trim() === "" || d.to.trim() === "" || !isFinite(a) || !isFinite(b)) return { error: `${label}: type a number in from and to` };
     if (!Number.isInteger(n) || n < 1) return { error: `${label}: steps is a whole number, 1 or more` };
+    const nearest = floorBall() && floorBall().nearest_in;
+    if (axis === "distance_in" && nearest !== undefined && nearest !== null && Math.min(a, b) < nearest) {
+      return { error: `${label}: ${nearest} in or more (nearer, the ball starts inside the robot)` };
+    }
     spread[axis] = n === 1 ? [a] : Array.from({ length: n }, (_, k) => +(a + ((b - a) * k) / (n - 1)).toPrecision(6));
     runs *= n;
   }
@@ -602,10 +615,11 @@ function stationChoice(name, box, value) {
     return { label: box.label, target, value, unit: "", from, to: from + 4 };
   }
   if (box.key === "interval") return { label: box.label, target, value, unit: "s" };
-  const v = box.axes ? Math.max(...value) : value;       // a list: the sweep sets all three axes to the value
-  const unit = box.scale ? "m" : box.unit;               // the release box is swept in meters, as the file has it
-  const label = box.axes ? `${box.label.replace(/ \(.*/, "")}, every axis (± ${unit})` : box.label;
-  return { label, target, value: v, unit, from: 0, to: v > 0 ? 2 * v : box.upTo };
+  // a list: the sweep sets all three axes to the value; the release box is tried in inches, as its boxes show it
+  const scale = box.scale || 1;
+  const v = +((box.axes ? Math.max(...value) : value) / scale).toPrecision(6);
+  const label = box.axes ? `${box.label.replace(/ \(.*/, "")}, every axis (± ${box.unit})` : box.label;
+  return { label, target, value: v, unit: box.unit, from: 0, to: v > 0 ? 2 * v : box.upTo, ...(box.scale ? { scale } : {}) };
 }
 
 function stationBox(name, box, setting, field) {
@@ -702,13 +716,14 @@ function renderSetup() {
     } }, ...opts.map(([v, text]) => h("option", { value: v, text })));
     sel.value = now;
     const field = [h("legend", { text: "The field" }),
-      h("p", { class: "hint", text: "Where the robot starts. In front of a ladder, a climber has rungs to climb (rung1 to rung4). In front of a ball, an intake has a ball to pick up. "
+      h("p", { class: "hint", text: "Where the robot starts: an empty floor, a field made to try one mechanism on (a ladder to climb, a ball to pick up, "
+        + "a human player station that feeds balls), or a whole season's field. "
         + `Picking a field moves the robot to that field's start (this changes ${t.robot.display_path || t.robot.path || "the robot file"}). The Robot tab's Undo puts the old field and start back.` }),
       h("label", { class: "visually-hidden", for: "test-field", text: "The field" }), sel];
     if (entry && entry.starts.length > 1) {
       const start = t.robot.start || "";
       const starts = [...(start && entry.starts.includes(start) ? [] : [[start, start ? `${start} (not on this field)` : "Where the robot file puts it"]]),
-        ...entry.starts.map((x) => [x, x])];
+        ...entry.starts.map((x) => [x, startWords(x)])];
       const pick = h("select", { id: "test-start", onchange: (e) => {
         const v = e.target.value;
         if (v && v !== start && entry.starts.includes(v)) robotEdit(() => ({ op: "start", named: v }));
@@ -728,15 +743,17 @@ function renderSetup() {
     bodyList("hook", mine, counted, setHooks)));
   if (pal.ball_choice && pal.ball) {
     const balls = [pal.ball, ...(pal.balls || []).filter((b) => b !== pal.ball)];
+    const odd = setup.ball && !balls.includes(setup.ball) ? [setup.ball] : [];
     const sel = h("select", { id: "test-ball", onchange: (e) => {
       const next = setupOf();
       if (e.target.value === pal.ball) delete next.ball; else next.ball = e.target.value;
       setTest({ setup: next });
-    } }, ...balls.map((b) => h("option", { value: b, text: b === pal.ball ? `${b} (the field's)` : b })));
+    } }, ...balls.map((b) => h("option", { value: b, text: b === pal.ball ? `${b} (the field's)` : b })),
+      ...odd.map((b) => h("option", { value: b, text: `${b} (not in the list)` })));
     sel.value = setup.ball || pal.ball;
     parts.push(h("fieldset", { class: "test-setup-ball" },
       h("legend", { text: "Ball" }),
-      h("p", { class: "hint", text: "Which ball the field's pieces are in this test." }),
+      h("p", { class: "hint", text: "Pick the ball this test uses." }),
       h("label", { class: "visually-hidden", for: "test-ball", text: "Ball" }), sel));
   }
   const settings = pal.station_settings || {};
@@ -938,7 +955,8 @@ async function submitSweep(e) {
     target = { block: place, key: c.target.key };
   }
   $("#test-sweep-go").disabled = true;
-  const { status, data } = await api("POST", "/api/test/sweep", { target, values });
+  const sent = c.scale ? values.map((v) => +(v * c.scale).toPrecision(6)) : values;    // the file's unit
+  const { status, data } = await api("POST", "/api/test/sweep", { target, values: sent });
   $("#test-sweep-go").disabled = false;
   if (status !== 200) {
     const why = (data.errors && data.errors[0] && data.errors[0].message) || data.error || `the server answered ${status}`;

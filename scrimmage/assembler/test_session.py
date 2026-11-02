@@ -36,7 +36,7 @@ from ..blocks import store
 from ..blocks.palette import palette, problems
 from ..blocks.program import Block, Cond, TestFileError, block_json, dumps, from_json, load, to_json
 from ..blocks.run import TestRun, world_for
-from ..blocks.spread import NO_BALL, NO_SPREAD, run_spread
+from ..blocks.spread import NO_BALL, NO_SPREAD, inside_robot, run_spread
 from ..blocks.sweep import MAX_SWEEP, _kind as sweep_kind, run_sweep
 from ..cad.settings import replace_file
 from ..testrange.spec import BALL_CHOICE_RANGES, BUILTIN_RANGES, load_range
@@ -477,6 +477,10 @@ class TestSession:
                 raise SessionError(409, NO_SPREAD)
             if kind == "spread" and self.palette is not None and not self.palette.get("floor_piece"):
                 raise SessionError(409, NO_BALL)
+            if kind == "spread" and self._world is not None:
+                inside = inside_robot(self._world, self.program.setup["floor_spread"])
+                if inside is not None:
+                    raise SessionError(409, inside)
             if self.problems:
                 return 409, {"ok": False, "error": FIX_FIRST, "problems": self.problems}
             try:

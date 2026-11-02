@@ -29,6 +29,7 @@ import shutil
 import threading
 from pathlib import Path
 
+import mujoco
 import numpy as np
 
 from ..cad.settings import replace_file
@@ -74,6 +75,62 @@ def spread_ball(world) -> tuple[int, dict] | None:
     i = min(near, key=lambda k: dist[k])
     # not rounded: an axis left out puts the ball exactly where the field has it
     return i, {"offset_in": float(side[i]) / IN, "distance_in": float(ahead[i]) / IN}
+
+
+CLEAR_IN = 1.0            # in: a placement's ball is at least this far clear of the robot (Setup's nearest_in)
+
+
+def _robot_boxes(world) -> np.ndarray:
+    """Every colliding robot geom's box in the robot's own frame (x ahead, y left, z up from its origin, which is on
+    the floor), as rows [x0, x1, y0, y1, z0, z1] in m: the geom's bounding box, turned with it (so a little larger
+    than the geom when it is turned)."""
+    m, d = world.model, world.data
+    mujoco.mj_kinematics(m, d)
+    root = m.body_rootid[world.robot_body]
+    rpos, rmat = d.xpos[world.robot_body], d.xmat[world.robot_body].reshape(3, 3)
+    signs = np.array([[sx, sy, sz] for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)], float)
+    out = []
+    for g in range(m.ngeom):
+        if m.body_rootid[m.geom_bodyid[g]] != root or not (m.geom_contype[g] or m.geom_conaffinity[g]):
+            continue
+        corners = signs * m.geom_aabb[g][3:] + m.geom_aabb[g][:3]
+        local = (corners @ d.geom_xmat[g].reshape(3, 3).T + d.geom_xpos[g] - rpos) @ rmat
+        out.append([local[:, 0].min(), local[:, 0].max(), local[:, 1].min(), local[:, 1].max(),
+                    local[:, 2].min(), local[:, 2].max()])
+    return np.array(out, float).reshape(-1, 6)
+
+
+def floor_ball(world) -> dict | None:
+    """Where the spread's ball lies from the start ({offset_in, distance_in}, as spread_ball's) and the nearest
+    distance ahead (in, whole) Setup offers: the robot's front, the ball's radius and CLEAR_IN; None without one."""
+    found = spread_ball(world)
+    if found is None:
+        return None
+    r = world.test_range.balls.rest_z                 # a resting ball's center height: its radius
+    boxes = _robot_boxes(world)
+    front = float(boxes[:, 1].max()) if len(boxes) else 0.0
+    return {**found[1], "nearest_in": math.ceil((front + r) / IN + CLEAR_IN)}
+
+
+def inside_robot(world, spread: dict) -> str | None:
+    """Why the floor spread can't run when a placement puts the ball inside the robot ("the floor spread puts the
+    ball inside the robot at 12 in ahead: ..."), or None. The robot turns with the angle, so the ball sits at the
+    same place in its frame whatever the angle."""
+    found = spread_ball(world)
+    if found is None:
+        return None
+    r = world.test_range.balls.rest_z
+    boxes = _robot_boxes(world)
+    for p in placements(spread, found[1]):
+        c = np.array([p["distance_in"] * IN, p["offset_in"] * IN, r])
+        near = np.clip(c, boxes[:, 0::2], boxes[:, 1::2])
+        if len(boxes) and (np.linalg.norm(near - c, axis=1) < r - 1e-3).any():
+            nearest = floor_ball(world)["nearest_in"]
+            side = "" if p["offset_in"] == 0 else \
+                f", {_n(abs(p['offset_in']))} in {'left' if p['offset_in'] > 0 else 'right'}"
+            return (f"the floor spread puts the ball inside the robot at {_n(p['distance_in'])} in ahead{side}: "
+                    f"start the distance at {nearest} in or more")
+    return None
 
 
 def placements(spread: dict, base: dict) -> list[dict]:
@@ -144,6 +201,9 @@ def run_spread(program: Program, base, on_progress=None, cancel: threading.Event
     found = spread_ball(world)
     if found is None:
         raise TestFileError(NO_BALL)
+    inside = inside_robot(world, spread)
+    if inside is not None:
+        raise TestFileError(inside)
     ps = placements(spread, found[1])
     names = varying(spread)
     labels = [label(p, names) for p in ps]

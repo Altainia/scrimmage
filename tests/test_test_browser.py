@@ -980,9 +980,12 @@ def test_setup_lists_every_field_and_a_start_picker_for_fields_with_more_than_on
     page, path = test_page(path=_example(tmp_path, "station", "feed.test.toml"))
     _open_setup(page)
     names = page.eval_on_selector_all("#test-field option", "os => os.map(o => o.textContent)")
-    assert len(names) == 13 and names[0] == "The plain field"
+    assert len(names) == page.evaluate("__scrimmageTest.state.fields.length") and names[0] == "The plain field"
+    assert "A human player station" in names
     assert page.input_value("#test-field") == "station"
-    assert page.input_value("#test-start") == "at_station"       # the station field has two starts
+    assert page.input_value("#test-start") == "at_station"       # the station field has two starts, in words
+    assert page.eval_on_selector_all("#test-start option", "os => os.map(o => o.textContent)") == [
+        "At station", "Facing ball"]
     robot = path.parent / "hopper-standin.toml"
     page.select_option("#test-field", "2026")
     _wait_file(lambda: _toml(robot)["range"]["file"] == "2026", robot)
@@ -1035,6 +1038,27 @@ def test_setup_hopper_ball_and_station_settings_are_saved_in_the_test(test_page,
     page.wait_for_selector("#test-sweep-dialog[open]")
     assert page.evaluate("__scrimmageTest.sweepFor[0].target") == {"station": "feeder", "key": "interval"}
     page.click("#test-sweep-dialog [data-close]")
+    # the release box is tried in inches too (meters in the request)
+    page.click("#test-setup [data-try='station-feeder-spread_position']")
+    page.wait_for_selector("#test-sweep-dialog[open]")
+    assert "(now 2 in)" in page.inner_text("#test-sweep-which")
+    sent = []
+    page.on("request", lambda r: sent.append(r.post_data_json) if r.url.endswith("/api/test/sweep") else None)
+    page.fill("#test-sweep-list", "1, 3")
+    page.click("#test-sweep-go")
+    page.wait_for_function("__scrimmageTest.state.sweeps.length === 1 && __scrimmageTest.state.running === null",
+                           timeout=120000)
+    assert sent[0]["target"] == {"station": "feeder", "key": "spread_position"}
+    assert sent[0]["values"] == [0.0254, 0.0762]
+
+
+def test_a_hook_change_saves_the_preselected_hopper_too(test_page, tmp_path):
+    path = _example(tmp_path, "station", "feed.test.toml", lambda s: s.replace('hopper = ["hopper.bin"]\n', ""))
+    page, _ = test_page(path=path)
+    _open_setup(page)
+    page.check("#test-setup .test-setup-hooks input[data-body='hopper.bin']")
+    _wait_file(lambda: _toml(path)["test"].get("hooks") == ["hopper.bin"], path)
+    assert _toml(path)["test"]["hopper"] == ["hopper.bin"]
 
 
 def test_new_shuffle_changes_the_seed_in_the_file(test_page, tmp_path):
@@ -1060,6 +1084,18 @@ def test_the_floor_spread_counts_runs_and_refuses_more_than_25(test_page, tmp_pa
     _open_setup(page)
     page.wait_for_selector("#test-spread-count")
     assert page.inner_text("#test-spread-count") == "3 runs"
+    # a ticked distance starts around the field's ball (59 in ahead), never inside the robot
+    ball = page.evaluate("__scrimmageTest.state.palette.floor_ball")
+    assert page.input_value("#test-spread-distance_in-from") == "47" and page.input_value("#test-spread-distance_in-to") == "71"
+    assert ball["nearest_in"] <= 47
+    page.fill("#test-spread-distance_in-from", "12")
+    page.check("#test-spread-distance_in-on")
+    page.wait_for_function("document.querySelector('#test-spread-count').textContent.includes('inside the robot')")
+    assert page.inner_text("#test-spread-count") == (f"Distance ahead (in): {ball['nearest_in']} in or more"
+                                                     " (nearer, the ball starts inside the robot)")
+    page.uncheck("#test-spread-distance_in-on")
+    page.wait_for_function("document.querySelector('#test-spread-count').textContent === '3 runs'")
+    assert "distance_in" not in _toml(path)["setup"]["floor_spread"]
     assert page.is_checked("#test-spread-offset_in-on") and not page.is_checked("#test-spread-distance_in-on")
     page.check("#test-spread-angle_deg-on")
     page.fill("#test-spread-angle_deg-from", "-20")

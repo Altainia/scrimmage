@@ -810,3 +810,25 @@ def test_the_state_names_the_hopper_a_test_without_one_would_preselect(tmp_path,
     c = test_app(write_test(tmp_path / "plain"))
     assert _state(c)["starter_hopper"] == []
     assert c.get("/api/robot/state")[1]["start"] is None
+
+
+def test_a_spread_that_puts_the_ball_inside_the_robot_is_refused(tmp_path, test_app):
+    """The robot's front, the ball's radius and an inch: nearer, a placement's ball would start inside the robot."""
+    path = _spread_test(tmp_path, "facing_ball")
+    c = test_app(path)
+    ball = _state(c)["palette"]["floor_ball"]
+    assert ball["distance_in"] > ball["nearest_in"] > 17.7      # past the stand-in's half length
+    path.write_text(path.read_text(encoding="utf-8").replace("offset_in = [-3.0, 3.0]", "distance_in = [12.0, 40.0]"),
+                    encoding="utf-8")
+    end = time.monotonic() + 15
+    while _state(c)["test"]["setup"]["floor_spread"] != {"distance_in": [12.0, 40.0]}:
+        assert time.monotonic() < end
+        time.sleep(0.05)
+    s, b = c.call("POST", "/api/test/spread", {})
+    assert s == 409, b
+    assert b["error"] == (f"the floor spread puts the ball inside the robot at 12 in ahead: start the distance at "
+                          f"{ball['nearest_in']} in or more")
+    from scrimmage.blocks.spread import inside_robot
+    from scrimmage.config import build_world, load_config
+    world = build_world(load_config(tmp_path / "robot.toml"))
+    assert inside_robot(world, {"distance_in": [float(ball["nearest_in"])], "offset_in": [-6.0, 6.0]}) is None

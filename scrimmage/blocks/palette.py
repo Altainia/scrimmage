@@ -23,7 +23,7 @@ from ..terrain.climb import robot_hooks
 from ..testrange.spec import BALL_CHOICE_RANGES, RangeError, load_range
 from ..testrange.station import OVERRIDE_KEYS, with_overrides
 from .drive import drivetrain
-from .spread import NO_BALL, spread_ball
+from .spread import NO_BALL, floor_ball, spread_ball
 
 NEXT_BAR = "next bar"     # a hanging_from or touch target: the lowest bar above every bar hung from so far
 ANY_BAR = "any bar"       # a touch target: any of the field's bars
@@ -107,6 +107,7 @@ def palette(world, hooks: list[str]) -> dict:
         signals.append("hook_load")
     dt = drivetrain(world, driven)
     stations = sorted(rng.stations, key=lambda st: st.name) if rng is not None else []
+    ball = floor_ball(world)
     return {
         "motors": [_entry(n, kinds[n]) for n in motors],
         "joints": [_entry(n, k) for n, k in sorted(kinds.items())],
@@ -126,7 +127,10 @@ def palette(world, hooks: list[str]) -> dict:
         "ball": rng.ball_preset if rng is not None else None,
         "balls": sorted(PRESETS["ball"]),
         "ball_choice": rng is not None and rng.path.stem in BALL_CHOICE_RANGES,
-        "floor_piece": spread_ball(world) is not None,
+        "floor_piece": ball is not None,
+        # where the floor spread's ball lies (in) and the nearest distance ahead Setup offers: {offset_in,
+        # distance_in, nearest_in}, or null
+        "floor_ball": None if ball is None else {k: round(v, 2) for k, v in ball.items()},
     }
 
 
