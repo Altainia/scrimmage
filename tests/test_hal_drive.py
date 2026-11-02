@@ -37,7 +37,7 @@ def test_chassis_com_offset():
 
 def test_standin_template_assembles(tmp_path):
     cfg = tmp_path / "standin.toml"
-    cfg.write_text(templates.new_config("standin"))
+    cfg.write_text(templates.new_config("standin"), encoding="utf-8")
     world = build_world(load_config(cfg))
     assert world.model.nbody > 1
-    assert "Stand-in box robot" in cfg.read_text()
+    assert "Stand-in box robot" in cfg.read_text(encoding="utf-8")

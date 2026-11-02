@@ -160,3 +160,48 @@ The more annoying the tool, the less it is used.
 - The default chart signals per test, and the exact list of contact targets ("either hook", "any part of the arm").
 - Sweep limits (how many values, run time) and how a sweep runs in the background without freezing the tab.
 - Accessibility of the block editor (keyboard use, contrast in both themes; the app has a contrast test).
+
+## Decisions made during the build
+
+- A test file is a `<name>.test.toml` with a top-level `[test]` table and `[[block]]` arrays nested through `body`
+  arrays, so it can never be mistaken for a scenario, whose marker is `config` or `[[step]]`.
+- Blocks keep their effect from one to the next, as climb drives do: `spin` holds until a later block changes that
+  motor, `move` holds its target and waits until it is reached, and `drive` waits until its distance or time is done
+  and then stops, so a test reads like what the robot does.
+- "Next bar" is the lowest bar above every bar the robot has hung from so far, and "hanging" means the hooks carry at
+  least a quarter of the robot's weight from that bar for 0.1 s, so brushing a bar doesn't count as a climb.
+- A run's replay is stored in the run itself (the model view with its meshes at the start, mover poses at 30 Hz, and
+  signals at 50 Hz), so a run from before Import again still replays with its old geometry without keeping any
+  MuJoCo models.
+- Runs are kept in `<test name>-runs/` next to the test file, the newest 10 runs and the newest 3 sweeps, so the
+  results travel with the test and the folder can't grow without limit.
+- A robot counts as tipped over when its up axis is more than 60° from vertical, which is our call: past that it is
+  not going to recover.
+- A `repeat until` stops after 20 rounds unless the test says otherwise, and a whole run stops at 60 s, so a
+  condition that never comes true ends the run with a plain sentence and doesn't hang.
+- The climb runner's motor writing moved into one shared module that both runners use, so a block test and a climb
+  script drive motors the same way and there is only one copy to keep right.
+- The climb monitor takes any bodies as hooks, and the stock climber's hooks still count, so a climber made from CAD
+  can be tested without changing the stock part.
+- Setup shows the robot's weight and center of mass when the robot's base part is the stock chassis, because that is
+  what the stand-in robot has and what a sweep changes; a hand-made chassis robot gets the same boxes, which does no
+  harm.
+- The command line prints how the run ended and exits with its code first, and keeping the run folder (`--out`) came
+  with the run storage, so that each step could be built and tested on its own.
+- A new test starts with blocks chosen from what the robot has (a lone `wait 1 s` when it has nothing to move), and
+  the first version of that was a plain `wait 1 s` until the full rules were ready, so that the new-test button worked
+  from the first day and every new test can be run right away.
+- A `move` block always carries its unit (degrees, inches or meters) in the file and the editor fills it in, so a
+  number is never guessed from the joint; the cost is one more key in a hand-written file.
+- The climb levels in the block pickers stay in the range's climbing order, lowest first, not alphabetical, because a
+  student thinks of them in the order they climb.
+- The `drive` block is for a tank drive only; on a swerve or mecanum robot it gets a plain problem telling the student
+  to spin the drive motors, because driving those needs steering that the stand-in robot doesn't have.
+- Each run keeps its own full copy of the model view and doesn't share meshes with other runs, which differs from the
+  idea above of sharing identical meshes: it is simpler and old replays stay exact, at the cost of disk space (at most
+  10 runs and 3 sweeps per test, which could reach tens of megabytes for a large CAD robot).
+- The default chart leaves out the drive wheels' angles, because they grow without bound and say little about a
+  mechanism; a student who wants them picks them in the chart's list.
+- The shipped ladder climber is accepted as reaching the first rung, as the fallback above allows for a robot that
+  stops at a rung for a physics reason: the limit is the example's geometry, the example says so, and a test for the
+  second rung stays as an expected failure so a better design shows up when it passes.

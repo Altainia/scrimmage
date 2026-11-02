@@ -399,7 +399,8 @@ const isDrivetrain = (p) => !!(p.stock && t.stock && t.stock[p.stock] && t.stock
 const mounted = () => (t.robot ? (t.robot.parts || []).filter((p) => p.attach && !isDrivetrain(p)) : []);
 // Setup's fields: the plain field and the ladders (the robot starts in front of them), plus the robot's own field
 const FIELD_CHOICES = [["", "The plain field"], ["ladder", "In front of a ladder (round rungs)"],
-  ["ladder-square", "In front of a ladder (square rungs)"]];
+  ["ladder-square", "In front of a ladder (square rungs)"], ["intake", "In front of a ball (to try an intake)"]];
+const FIELD_START = { intake: "facing_ball" };   // the named start each field is put at (the ladders': "below")
 const AXES = [["x", 0, "pos", "forward"], ["y", 1, "pos", "left"], ["z", 2, "pos", "up"], ["yaw", 2, "rot", "turned"]];
 const fmt = (v) => String(+Number(v).toPrecision(6));
 
@@ -497,12 +498,12 @@ function renderSetup() {
     const sel = h("select", { id: "test-field", onchange: (e) => {
       const v = e.target.value;
       if (v === now || !FIELD_CHOICES.some(([x]) => x === v)) return;
-      robotEdit(() => (v ? { op: "start", range: v, named: "below" } : { op: "start", range: null }));
+      robotEdit(() => (v ? { op: "start", range: v, named: FIELD_START[v] || "below" } : { op: "start", range: null }));
     } }, ...opts.map(([v, text]) => h("option", { value: v, text })));
     sel.value = now;
     parts.push(h("fieldset", { class: "test-setup-field" },
       h("legend", { text: "The field" }),
-      h("p", { class: "hint", text: "Where the robot starts. In front of a ladder, a climber has rungs to climb (rung1 to rung4)." }),
+      h("p", { class: "hint", text: "Where the robot starts. In front of a ladder, a climber has rungs to climb (rung1 to rung4). In front of a ball, an intake has a ball to pick up." }),
       h("label", { class: "visually-hidden", for: "test-field", text: "The field" }), sel));
   }
   if (c) {

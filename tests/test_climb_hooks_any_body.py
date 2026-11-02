@@ -35,7 +35,7 @@ def ladder_world(folder, file="ladder", z=0.0):
     mount, `z` above it."""
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "arm").mkdir(exist_ok=True)
-    (folder / "arm" / "part.toml").write_text(PAW_PART % {"z": z})
+    (folder / "arm" / "part.toml").write_text(PAW_PART % {"z": z}, encoding="utf-8")
     cfg = range_cfg(range={"file": file, "start": "below"})
     cfg["part"] = cfg["part"] + [{"name": "arm", "path": "arm", "attach": "drive.top"}]
     return World(cfg, folder)

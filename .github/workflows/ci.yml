@@ -43,8 +43,8 @@ jobs:
           SCRIMMAGE_REQUIRE_BROWSER: "1"   # fail, not skip, the browser tests when Chromium is missing
         run: pytest -v -rs
 
-  # The Part tab's CAD code (STEP/STL reading, mass, the import file, the server) has to work on the students'
-  # Windows laptops too; the browser tests need Linux's Chromium setup, so they are skipped here.
+  # The Part tab's CAD code (STEP/STL reading, mass, the import file, the server) and the Test tab's blocks (test
+  # files, runs, kept runs, sweeps, its server) have to work on the students' Windows laptops too; the browser tests need Linux's Chromium setup, so they are skipped here.
   windows:
     runs-on: windows-latest
     strategy:
@@ -63,7 +63,7 @@ jobs:
         shell: bash   # bash expands the test_cad_*.py wildcard; PowerShell would pass it to pytest as is
         env:
           SCRIMMAGE_SKIP_BROWSER: "1"
-        run: pytest tests/test_cad_*.py tests/test_part_overlay.py tests/test_part_server.py -v
+        run: pytest tests/test_cad_*.py tests/test_part_overlay.py tests/test_part_server.py tests/test_blocks_*.py tests/test_test_server.py tests/test_hal_drive.py tests/test_climb_hooks_any_body.py -v
 
   # Java robots (Phoenix 6, REVLib): needs a JDK 17; downloads WPILib and the vendor libraries (no ~/wpilib on CI)
   java:

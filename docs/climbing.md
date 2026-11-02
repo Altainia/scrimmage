@@ -46,7 +46,7 @@ Library ranges:
 | `2022-hangar` | the four 2022 rungs (LOW, MID, HIGH, TRAVERSAL: 4, 6, 10, 15 points), the trusses and the floor protection, from drawing GE-22100 | `under_mid` |
 | `2020-switch` | the 2020 GENERATOR SWITCH: ±14.5°, about 42 kg, LEVEL within 8° | |
 | `2013-pyramid` | the 2013 PYRAMID's rungs at 30, 60 and 90 in, as bars (its legs aren't built) | |
-| `ladder`, `ladder-square` | a generic ladder, not a game's field: rungs `rung1` to `rung4` with tops at 24, 36, 48 and 60 in, round or (`ladder-square`) 1.5 in square, nothing scores | `below` |
+| `ladder`, `ladder-square` | a generic ladder (the [Test tab](test-tab.md)'s field choice puts a robot in front of it), not a game's field: rungs `rung1` to `rung4` with tops at 24, 36, 48 and 60 in, round or (`ladder-square`) 1.5 in square, nothing scores | `below` |
 
 To climb the 2013 PYRAMID use `2013-pyramid`. The built-in `2013` is the disc range ([docs/disc.md](disc.md)): its
 pyramid is legs and a base lip as static obstacles for shooting past, with no bars to climb.
@@ -100,6 +100,10 @@ the body that catches the bar: `world.climb_monitor(["climber.hook"])` (a body's
 colliding geom of that body as a hook, like the stock ones: it is part of the hook assembly (it may touch a bar
 without "hitting" it), and it gets its own `climb.hook.climber.hook.load`. An unknown name is an error that lists the
 robot's bodies. Asking again with a different list makes a new monitor.
+
+In the [Test tab](test-tab.md) you tick the hook bodies in Setup instead, and the rungs can be round (`ladder`) or
+square (`ladder-square`; a bar's `section = "square"`, whose top is its axis plus half the side). The ladder ranges
+reach `rung4` at 60 in.
 
 Notes:
 - **The swing's bar** is the one a hook touched most recently while the hooks touch two (a hand-over), so the swing

@@ -604,3 +604,7 @@ def test_a_robot_edit_puts_the_stand_in_by_the_ladder_and_the_test_sees_its_bars
     s, b = c.call("POST", "/api/robot/edit", {"version": c.get("/api/robot/state")[1]["version"], "op": "start",
                                               "range": "somewhere"})
     assert s == 200 and not b["ok"] and b["errors"][0]["field"] == "start/range", b
+    s, b = c.call("POST", "/api/robot/edit", {"version": c.get("/api/robot/state")[1]["version"], "op": "start",
+                                              "range": "intake", "named": "facing_ball"})
+    assert s == 200 and b["ok"], b
+    assert c.get("/api/robot/state")[1]["range"] == "intake"

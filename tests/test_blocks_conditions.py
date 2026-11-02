@@ -97,7 +97,7 @@ def paw_world(folder, x=0.0, z=0.3) -> World:
     """A small box robot (no wheels) on the ladder with a hand-written `arm` part whose `paw` box (0.1 m, 0.5 kg) is
     (x, 0, z) from the robot's top mount."""
     (folder / "arm").mkdir(parents=True)
-    (folder / "arm" / "part.toml").write_text(PAW_PART % {"x": x, "z": z})
+    (folder / "arm" / "part.toml").write_text(PAW_PART % {"x": x, "z": z}, encoding="utf-8")
     cfg = range_cfg(range={"file": "ladder", "start": "below"},
                     part=[{"name": "drive", "stock": "chassis", "length": 0.4, "width": 0.4},
                           {"name": "arm", "path": "arm", "attach": "drive.top"}])
