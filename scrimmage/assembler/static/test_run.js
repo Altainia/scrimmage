@@ -28,7 +28,7 @@ const rp = {
   run: null,          // the shown run: {id, result, motion: {n, times, poses}} once loaded
   compareId: undefined,   // undefined: the default (the run before the shown one); null: none
   compare: null,      // the compared run's result, once loaded
-  results: new Map(), // id -> result (kept runs never change)
+  results: new Map(), // "id|started" -> result (a kept run never changes; an id comes back if the runs folder is emptied)
   picked: null,       // the signals the student picked (a Set), or null for the default
   time: 0,
   playing: false,
@@ -55,7 +55,8 @@ const start = () => (rp.run && rp.run.motion.times.length ? rp.run.motion.times[
 export function replay() {
   return {
     time: rp.time, playing: rp.playing, runId: rp.run ? rp.run.id : null, view: rp.view,
-    chart: { signals: rp.run ? shownSignals() : [], runs: [rp.shownId, rp.compare ? rp.compare.id : null] },
+    chart: { signals: rp.run ? shownSignals() : [], runs: [rp.run ? rp.run.id : null, rp.compare ? rp.compare.id : null],
+      colors: (({ run, compare, bg }) => ({ run, compare, bg }))(tokens()) },
   };
 }
 
@@ -68,8 +69,11 @@ export function update(state) {
     rp.newest = newest;
     if (newest) show(newest);
   }
-  if (rp.shownId && !runs.some((r) => r.id === rp.shownId)) {   // pruned (or the folder was emptied)
+  const shown = runs.find((r) => r.id === rp.shownId);
+  if (rp.shownId && !shown) {   // pruned (or the folder was emptied)
     if (newest) show(newest); else clear();
+  } else if (shown && rp.run && rp.run.id === shown.id && rp.run.result.started !== shown.started) {
+    show(shown.id);             // the folder was emptied and this number is a new run
   }
   const err = $("#test-run-error");
   err.hidden = !state.run_error;
@@ -85,26 +89,36 @@ function clear() {
   rp.compare = null;
   pause();
   $("#test-results").hidden = true;
+  $("#test-load-error").hidden = true;
+}
+
+function resultKey(id) {
+  const entry = ((rp.state && rp.state.runs) || []).find((r) => r.id === id);
+  return `${id}|${entry ? entry.started : ""}`;
 }
 
 async function result(id) {
-  if (rp.results.has(id)) return rp.results.get(id);
+  const key = resultKey(id);
+  if (rp.results.has(key)) return rp.results.get(key);
   const { status, data } = await api("GET", `/api/test/run/${id}`);
   if (status !== 200) throw new Error((data.errors && data.errors[0] && data.errors[0].message) || `the server answered ${status}`);
-  rp.results.set(id, data);
+  if (`${id}|${data.started}` !== key) return data;     // the run changed meanwhile: use it, keep nothing
+  rp.results.set(key, data);
   while (rp.results.size > KEEP_LOADED) rp.results.delete(rp.results.keys().next().value);
   return data;
 }
 
+const DAMAGED = "this run's replay file is damaged; run the test again";
+
 export function parseMotion(buf) {
   const dv = new DataView(buf);
   if (buf.byteLength < HEADER || String.fromCharCode(...new Uint8Array(buf, 0, 4)) !== MOTION_MAGIC) {
-    throw new Error("the replay file isn't one");
+    throw new Error(DAMAGED);
   }
-  if (dv.getUint16(4, true) !== MOTION_VERSION) throw new Error("the replay file is from a newer scrimmage");
+  if (dv.getUint16(4, true) !== MOTION_VERSION) throw new Error("this run was saved by a newer scrimmage: update scrimmage to replay it");
   const frames = dv.getUint32(6, true), n = dv.getUint32(10, true);
   const size = 8 + n * 28;
-  if (buf.byteLength !== HEADER + frames * size) throw new Error("the replay file is cut short");
+  if (buf.byteLength !== HEADER + frames * size) throw new Error(DAMAGED);
   const times = new Float64Array(frames), poses = new Float32Array(frames * n * 7);
   for (let k = 0, o = HEADER; k < frames; k++, o += size) {
     times[k] = dv.getFloat64(o, true);
@@ -130,6 +144,9 @@ async function show(id) {
     motion = parseMotion(await m.blob.arrayBuffer());
   } catch (e) {
     if (seq !== rp.seq) return;
+    rp.run = null;                     // the error takes the run's place: no earlier run stays up under this one
+    rp.compare = null;
+    $("#test-results").hidden = true;
     loadErr.hidden = false;
     loadErr.textContent = `Couldn't load ${runName(id)}: ${e.message || e}`;
     return;
@@ -201,7 +218,7 @@ function renderCompare() {
 // -- outcome and runs ----------------------------------------------------------------------------------------------
 const NOTES = {
   "timed out": "A block gave up after its timeout. Timeouts aren't shown on the blocks yet: change one in the test file.",
-  "repeat limit": "A repeat until stopped at its most rounds (max). The max isn't shown on the block yet: change it in the test file.",
+  "repeat limit": "A “repeat until” block gave up after going round as many times as it may (its max). The max isn't shown on the block yet: change it in the test file.",
 };
 
 function renderOutcome() {
@@ -215,14 +232,34 @@ function renderOutcome() {
     h("span", { class: "test-check-icon", "aria-hidden": "true", text: c.passed ? "✓" : "✗" }), sentence(c.line))));
 }
 
+// Updated in place (not rebuilt), so a run button keeps the keyboard focus while states arrive during a run.
 function renderList() {
   const runs = (rp.state && rp.state.runs) || [];
   $("#test-runs-wrap").hidden = !runs.length;
-  $("#test-runs").replaceChildren(...runs.map((r) => h("li", {},
-    h("button", { type: "button", class: `test-run-item${r.cancelled ? " test-run-stopped" : ""}`, "data-run": r.id,
-      "aria-current": r.id === rp.shownId ? "true" : null, onclick: () => { if (r.id !== rp.shownId) show(r.id); } },
-    h("span", { class: "test-run-name" }, runName(r.id), h("span", { class: "test-run-status", text: ` · ${statusWord(r.status)}` })),
-    h("span", { class: "test-run-outcome", text: outcomeText(r) })))));
+  const ol = $("#test-runs");
+  const have = new Map([...ol.children].map((li) => [li.dataset.key, li]));
+  const want = new Set(runs.map((r) => r.id));
+  for (const [id, li] of have) if (!want.has(id)) li.remove();
+  let prev = null;
+  for (const r of runs) {
+    let li = have.get(r.id);
+    if (!li || !li.isConnected) {
+      li = h("li", {},
+        h("button", { type: "button", class: "test-run-item", "data-run": r.id, onclick: () => { if (r.id !== rp.shownId) show(r.id); } },
+          h("span", { class: "test-run-name" }, runName(r.id), h("span", { class: "test-run-status" })),
+          h("span", { class: "test-run-outcome" })));
+      li.dataset.key = r.id;
+      if (prev) prev.after(li); else ol.prepend(li);
+    }
+    const b = li.firstChild;
+    b.classList.toggle("test-run-stopped", !!r.cancelled);
+    if (r.id === rp.shownId) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
+    const status = ` · ${statusWord(r.status)}`, outcome = outcomeText(r);
+    const [st, oc] = [b.querySelector(".test-run-status"), b.querySelector(".test-run-outcome")];
+    if (st.textContent !== status) st.textContent = status;
+    if (oc.textContent !== outcome) oc.textContent = outcome;
+    prev = li;
+  }
 }
 
 // -- the replay ----------------------------------------------------------------------------------------------------
@@ -325,7 +362,7 @@ function renderSignals() {
 function tokens() {
   const css = getComputedStyle(document.documentElement);
   const v = (n) => css.getPropertyValue(n).trim();
-  return { run: v("--accent-text"), compare: v("--muted"), grid: v("--line"), text: v("--muted"), mark: v("--text"),
+  return { run: v("--accent-text"), compare: v("--chart-compare"), grid: v("--line"), text: v("--muted"), mark: v("--text"),
     bg: v("--subtle"), font: v("--font") };
 }
 
@@ -407,7 +444,7 @@ function plot(canvas, name, cmp, tEnd, tk) {
     ctx.stroke();
     ctx.restore();
   };
-  if (other) line(other, tk.compare, [5, 3], 0.7);
+  if (other) line(other, tk.compare, [5, 3], 1);   // "faded": a lighter gray, dashed (still 3:1 on the background)
   line(run, tk.run, [], 1);
   // the replay's time
   ctx.strokeStyle = tk.mark; ctx.globalAlpha = 0.6; ctx.lineWidth = 1;

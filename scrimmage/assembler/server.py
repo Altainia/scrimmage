@@ -721,6 +721,7 @@ class App:
         self._scenario_view: dict | None = None
         self._signals: dict | None = None
         self._parts_seen = None                   # _parts_look() when the robot was last validated
+        self._part_meshes: dict = {}              # (part.toml, its stat) -> the mesh files it names
         self._lock = threading.RLock()
         self._changed = threading.Condition(self._lock)
         # run progress has its own condition: the run's worker never waits for the app lock (edit validation)
@@ -1330,23 +1331,47 @@ class App:
             return None
         return p if p.is_absolute() else self._base_dir() / p
 
+    def _part_files(self, path) -> list[Path]:
+        """The files a [[part]] `path` reads: its part.toml, the plugin overlay beside it and the meshes it names (not
+        the folder around them, which may be the robot's own, with its tests and their runs)."""
+        folder = self._part_folder(path)
+        if folder is None:
+            return []
+        toml = folder if folder.suffix == ".toml" else folder / "part.toml"
+        files = [toml, toml.parent / "scrimmage-edits.toml"]
+        try:
+            st = toml.stat()
+        except OSError:
+            return files
+        key = (str(toml), st.st_mtime_ns, st.st_size, st.st_ino)
+        meshes = self._part_meshes.get(key)
+        if meshes is None:
+            try:
+                raw = tomllib.loads(toml.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+                raw = {}
+            bodies = raw.get("body") if isinstance(raw.get("body"), list) else []
+            meshes = sorted({g["mesh"] for b in bodies if isinstance(b, dict)
+                             for g in (b.get("geom") if isinstance(b.get("geom"), list) else [])
+                             if isinstance(g, dict) and isinstance(g.get("mesh"), str)})
+            if len(self._part_meshes) > 64:
+                self._part_meshes.clear()
+            self._part_meshes[key] = meshes
+        return files + [toml.parent / m for m in meshes]
+
     def _parts_look(self) -> tuple | None:
-        """Each file in the robot document's part folders with its time, size and file id, to see a folder change."""
+        """Each file the robot document's parts read, with its time, size and file id, to see Import again."""
         d = self.robot
         if d is None or d.doc is None:
             return None
         out = []
         for p in edits.parts(d.doc):
-            folder = self._part_folder(p.get("path"))
-            if folder is None:
-                continue
-            try:
-                root = folder.parent if folder.is_file() else folder
-                for f in sorted(root.rglob("*")):
+            for f in self._part_files(p.get("path")):
+                try:
                     st = f.stat()
                     out.append((str(f), st.st_mtime_ns, st.st_size, st.st_ino))
-            except OSError:
-                out.append((str(folder), None))        # being replaced: the next look sees it whole
+                except OSError:
+                    out.append((str(f), None))      # not there (an overlay a part doesn't have), or being replaced
         return tuple(out)
 
     def _cad_pos(self, doc, path, attach) -> list[float] | None:

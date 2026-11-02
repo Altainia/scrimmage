@@ -49,6 +49,8 @@
   --block-wait: #a8580f;   --block-wait-3: #7a400b;
   --block-repeat: #1f7f43; --block-repeat-3: #165c30;
   --block-check: #7448c0;  --block-check-3: #54338c;
+  /* the Test tab chart's compared run: a lighter gray than the run's line, still 3:1 on --subtle (dashed besides) */
+  --chart-compare: #7d8590;
   --radius: 6px;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
@@ -102,6 +104,7 @@
     --block-wait: #9c5410;   --block-wait-3: #6e3b0a;
     --block-repeat: #1d7a40; --block-repeat-3: #145a2d;
     --block-check: #6c42b8;  --block-check-3: #4b2e80;
+    --chart-compare: #768390;
     color-scheme: dark;
   }
   input::placeholder { color: var(--placeholder); opacity: 1; }   /* Chromium's default gray is too faint on dark */
@@ -1030,7 +1033,7 @@ dialog.start-dialog { width: auto; max-width: 96vw; }
 .test-problem .linklike { color: var(--warn-text); text-align: left; white-space: normal; overflow-wrap: anywhere; }
 .test-running { margin: 0; color: var(--accent-text); font-weight: 600; }
 .test-run-buttons { flex-wrap: wrap; gap: 10px; }
-#test-run-error { margin: 0; }
+#test-run-error, #test-load-error { margin: 0; }
 .test-results { display: flex; flex-direction: column; gap: 8px; }
 .test-results .test-sub { margin: 0; }
 .test-outcome { margin: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
@@ -1059,7 +1062,7 @@ dialog.start-dialog { width: auto; max-width: 96vw; }
 .test-chart-key { margin: 0; display: flex; flex-wrap: wrap; gap: 12px; font-size: 12.5px; }
 .test-key { display: inline-flex; align-items: center; gap: 5px; }
 .test-swatch { display: inline-block; width: 18px; height: 0; border-top: 2px solid var(--accent-text); }
-.test-swatch-compare { border-top: 2px dashed var(--muted); opacity: .8; }
+.test-swatch-compare { border-top: 2px dashed var(--chart-compare); }
 .test-runs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .test-run-item { font: inherit; font-size: 12.5px; text-align: left; width: 100%; display: flex; flex-direction: column; gap: 1px;
   padding: 5px 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); cursor: pointer; }

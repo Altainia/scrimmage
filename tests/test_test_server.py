@@ -320,3 +320,24 @@ def test_a_part_folder_changed_within_the_second_rebuilds_the_robot(tmp_path, te
     assert st["run_error"] is None, st
     first, second = (c.get(f"/api/test/run/{i}/view")[1] for i in ("001", "002"))
     assert mesh_extent(second) == pytest.approx(2 * mesh_extent(first), rel=1e-3)
+
+
+def test_a_part_given_as_its_file_next_to_the_robot_watches_only_what_it_reads(tmp_path, test_app):
+    """A part can be its part.toml file (docs/parts.md), here next to the robot config, the test and its runs folder.
+    Runs write only to the runs folder, so they aren't mistaken for Import again; the part's own mesh changing is."""
+    t = write_test(tmp_path)
+    robot = tmp_path / "robot.toml"
+    robot.write_text(robot.read_text(encoding="utf-8")
+                     + '\n[[part]]\nname = "w"\npath = "part.toml"\nattach = "drive.top"\n', encoding="utf-8")
+    write_wedge(tmp_path, 0.1)
+    c = test_app(t)
+    assert _state(c)["problems"] == []
+    version = c.get("/api/robot/state")[1]["version"]
+    for _ in range(2):
+        assert c.call("POST", "/api/test/run", {})[0] == 200
+        assert _wait_idle(c)["run_error"] is None
+        assert c.get("/api/robot/state")[1]["version"] == version
+    (tmp_path / "notes.txt").write_text("not the part's", encoding="utf-8")
+    assert c.get("/api/robot/state")[1]["version"] == version
+    write_wedge(tmp_path, 0.2)                    # the part's mesh replaced: that is the robot changing
+    assert c.get("/api/robot/state")[1]["version"] > version

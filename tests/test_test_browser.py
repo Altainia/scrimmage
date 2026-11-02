@@ -450,11 +450,12 @@ def test_a_run_shows_its_outcome_and_a_replay_that_plays_and_scrubs(test_page):
 def test_a_second_run_is_charted_against_the_first(test_page):
     page, _ = test_page()
     _run(page, "001")
-    assert page.evaluate("__scrimmageTest.replay.chart") == {"signals": ["tilt", "arm.pivot"], "runs": ["001", None]}
+    chart = page.evaluate("__scrimmageTest.replay.chart")
+    assert (chart["signals"], chart["runs"]) == (["tilt", "arm.pivot"], ["001", None])
     _run(page, "002")
     page.wait_for_function("__scrimmageTest.replay.chart.runs[1] === '001'")
     chart = page.evaluate("__scrimmageTest.replay.chart")
-    assert chart == {"signals": ["tilt", "arm.pivot"], "runs": ["002", "001"]}
+    assert (chart["signals"], chart["runs"]) == (["tilt", "arm.pivot"], ["002", "001"])
     plots = "[...document.querySelectorAll('#test-chart canvas')].map(c => [c.dataset.signal, c.dataset.series])"
     assert page.evaluate(plots) == [["tilt", "2"], ["arm.pivot", "2"]]
     assert page.inner_text("#test-chart-key").replace("\n", " ").split() == ["Run", "2", "Run", "1", "(faded)"]
@@ -567,3 +568,88 @@ that = { tilt = { below = 20.0 } }
     page.click("#test-signals [data-signal='arm.pivot.current']")
     assert page.is_visible("#test-checks li")
     assert page.evaluate(f"({CONTRAST_JS}).check(document.querySelector('#test-run-col'))") == []
+
+
+def _hex_ratio(a, b):
+    def lum(h):
+        h = h.strip().lstrip("#")
+        c = [int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+        c = [x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4 for x in c]
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    x, y = lum(a), lum(b)
+    return (max(x, y) + 0.05) / (min(x, y) + 0.05)
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_the_charts_lines_are_3_to_1_on_its_background(test_page, scheme):
+    """WCAG 1.4.11 for the plotted lines (canvas pixels the DOM check can't see): the colors the chart draws with,
+    the compared run's faded line included, against the plot's background."""
+    page, _ = test_page(SPIN, scheme)
+    _run(page, "001")
+    colors = page.evaluate("__scrimmageTest.replay.chart.colors")
+    assert _hex_ratio(colors["compare"], colors["bg"]) >= 3, colors
+    assert _hex_ratio(colors["run"], colors["bg"]) >= 3, colors
+
+
+def test_a_run_that_cant_load_shows_the_error_in_its_place(test_page, tmp_path):
+    page, _ = test_page()
+    _run(page, "001")
+    _run(page, "002")
+    motion = tmp_path / "t-runs" / "001" / "motion.bin"
+    motion.write_bytes(motion.read_bytes()[:-10])
+    page.click("#test-runs [data-run='001']")
+    page.wait_for_selector("#test-load-error:not([hidden])")
+    assert page.inner_text("#test-load-error") == "Couldn't load Run 1: this run's replay file is damaged; run the test again"
+    assert page.is_hidden("#test-results") and page.evaluate("__scrimmageTest.replay.runId") is None
+    assert page.get_attribute("#test-runs button[data-run='001']", "aria-current") == "true"
+    page.click("#test-runs [data-run='002']")
+    page.wait_for_function("__scrimmageTest.replay.runId === '002'")
+    assert page.is_hidden("#test-load-error") and page.is_visible("#test-results")
+    # the first run the page loads can't load either: the error still shows
+    motion = tmp_path / "t-runs" / "002" / "motion.bin"
+    motion.write_bytes(b"nope")
+    page.reload()
+    page.wait_for_selector("#test-load-error:not([hidden])")
+    assert "Run 2" in page.inner_text("#test-load-error") and page.is_hidden("#test-results")
+
+
+def test_a_run_number_used_again_shows_the_new_run(test_page, tmp_path):
+    """The runs folder deleted: numbering starts again at 001, and the page shows the new run 001, not the one it
+    loaded before under that number."""
+    import shutil
+    page, path = test_page()
+    _run(page, "001")
+    assert page.inner_text("#test-result-title") == "Run 1 · finished"
+    shutil.rmtree(tmp_path / "t-runs")
+    page.wait_for_function("__scrimmageTest.state.runs.length === 0")
+    path.write_text('[test]\nrobot = "robot.toml"\n[[block]]\ndo = "wait_until"\n'
+                    'until = { tilt = { above = 45.0 } }\ntimeout = 0.3\n', encoding="utf-8")
+    page.wait_for_function("__scrimmageTest.state.test.blocks[0].do === 'wait_until'")
+    _run(page, "001")
+    page.wait_for_function("document.querySelector('#test-result-title').textContent === 'Run 1 · timed out'")
+    assert "timed out" in page.inner_text("#test-outcome")
+
+
+def test_a_run_button_keeps_the_keyboard_focus_while_a_run_goes(test_page):
+    page, _ = test_page("""time_limit = 600.0
+
+[[block]]
+do = "wait"
+seconds = 500.0
+""")
+
+    def start():
+        page.click("#test-run")
+        page.wait_for_selector("#test-stop:not([hidden])")
+        page.wait_for_function("(__scrimmageTest.state.running || {}).progress > 0")
+    start()
+    page.click("#test-stop")
+    page.wait_for_function("__scrimmageTest.replay.runId === '001'")
+    start()
+    page.focus("#test-runs button[data-run='001']")
+    v = page.evaluate("__scrimmageTest.state.version")
+    page.wait_for_function(f"__scrimmageTest.state.version >= {v} + 3")     # a few progress states
+    assert page.evaluate("document.activeElement.dataset.run") == "001"
+    page.evaluate("document.querySelector('#test-stop').click()")      # (a click would take the focus)
+    page.wait_for_function("__scrimmageTest.replay.runId === '002'")
+    assert page.evaluate("document.activeElement.dataset.run") == "001"
