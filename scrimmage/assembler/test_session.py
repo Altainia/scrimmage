@@ -342,6 +342,7 @@ class TestSession:
         self._changed_at = version
         self._cond = threading.Condition()
         self.palette: dict | None = None
+        self.starter_hopper: list[str] = []      # what Setup ticks for a test with no hopper (starter_hopper)
         self.problems: list[dict] = []
         self.file_error: str | None = None   # the test file as it is on disk can't be read (an outside edit)
         self.run_error: str | None = None    # why the last run, sweep or spread couldn't run
@@ -382,8 +383,9 @@ class TestSession:
 
     def _recompute(self) -> None:
         pal, probs = self._names()
-        if (pal, probs) != (self.palette, self.problems):
-            self.palette, self.problems = pal, probs
+        hopper = starter_hopper(pal, part_roots(self._world)) if pal is not None else []
+        if (pal, probs, hopper) != (self.palette, self.problems, self.starter_hopper):
+            self.palette, self.problems, self.starter_hopper = pal, probs, hopper
             self._bump()
 
     def refresh(self, world, robot_problem: str | None) -> None:
@@ -593,6 +595,7 @@ class TestSession:
             out = {"version": self.version, "path": str(self.path), "test": to_json(self.program),
                    "palette": self.palette, "problems": self.problems, "running": self.running,
                    "file_error": self.file_error, "run_error": self.run_error, "last": self.last,
+                   "starter_hopper": list(self.starter_hopper),
                    "station_starter": [block_json(b) for b in station_starter(self.palette)] or None}
         out["fields"] = field_choices()
         out["runs"], out["sweeps"], out["spreads"] = self._kept_runs()

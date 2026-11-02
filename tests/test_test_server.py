@@ -794,3 +794,19 @@ def test_a_spread_on_a_test_without_one_is_refused(tmp_path, test_app):
     c = test_app(tmp_path / "t.test.toml")
     s, b = c.call("POST", "/api/test/spread", {})
     assert s == 409 and "no floor spread" in b["error"], b
+
+
+def test_the_state_names_the_hopper_a_test_without_one_would_preselect(tmp_path, test_app):
+    """Setup ticks starter_hopper's bodies for a test with no hopper (R9: a body named like one, else a part's root
+    body); the robot state names the field's start Setup's Start picker shows."""
+    _station_copy(tmp_path)
+    path = tmp_path / "t.test.toml"
+    path.write_text('[test]\nrobot = "hopper-standin.toml"\n' + SPIN.replace("arm.pivot", "dt.left"), encoding="utf-8")
+    c = test_app(path)
+    assert _state(c)["starter_hopper"] == ["hopper.bin"]
+    s, robot = c.get("/api/robot/state")
+    assert s == 200 and robot["range"] == "station" and robot["start"] == "at_station"
+    (tmp_path / "plain").mkdir()
+    c = test_app(write_test(tmp_path / "plain"))
+    assert _state(c)["starter_hopper"] == []
+    assert c.get("/api/robot/state")[1]["start"] is None

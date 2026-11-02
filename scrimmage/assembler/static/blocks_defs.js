@@ -7,6 +7,7 @@
 //   toolbox(palette)               the flyout's contents: Move, Wait, Repeat, Check (a block only when every one of its
 //                                  pickers has something to pick)
 //   testToWorkspace(test, ws)      replaces the workspace's blocks with the test's (one stack, top to bottom)
+//   appendBlocks(ws, blocks)       joins blocks (the test JSON's) below the test's last block
 //   workspaceToTest(ws)            the test JSON of the workspace: the test is the stack that holds the test's first
 //                                  block (a stack dragged off it is left out); without one, the stack with the most
 //                                  blocks; the header (robot, hooks, ...) is the one testToWorkspace was given
@@ -392,6 +393,26 @@ export function testToWorkspace(test, ws) {
     loading--;
   }
   ws.clearUndo();
+}
+
+// Blocks (the test's JSON shape) joined below the test's last block, or the test when there is none (Undo takes them
+// off again).
+export function appendBlocks(ws, blocks) {
+  const B = window.Blockly;
+  const top = chain(blocks);
+  if (!top) return;
+  rememberNames(blocks);
+  const main = mainStack(ws);
+  let last = main;
+  while (last && last.getNextBlock()) last = last.getNextBlock();
+  B.Events.setGroup(true);
+  try {
+    const made = B.serialization.blocks.append(top, ws);
+    if (last && last.nextConnection && made.previousConnection) last.nextConnection.connect(made.previousConnection);
+    else if (!main) { made.moveBy(24, 24); firstBlock.set(ws, made.id); }
+  } finally {
+    B.Events.setGroup(false);
+  }
 }
 
 // -- workspace -> test JSON -------------------------------------------------------------------------------------------

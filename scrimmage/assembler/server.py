@@ -204,7 +204,7 @@ Part (`/api/part/*`; 404 unless a part is open, except upload). Pieces are keyed
 Robot (`/api/robot/*`):
   GET  /api/robot/state[?since=N]  -> {version, path, display_path, read_only, read_only_reason, parts, errors,
         warnings, other_sections, can_undo, can_redo, mass_kg, com, bodies, joints, part_bodies, scenario_open,
-        range}. With `since`, returns
+        range, start} (range: [range] file as written or null; start: its named start or null). With `since`, returns
         at once if version != N, else long-polls up to 25 s (also noticing outside edits of either file).
         path is absolute; display_path is relative to the server's working directory when the file is under it.
         parts: [{name, stock, path, attach, pos, rot, params, ids, cad_pos, cad}] read from the document, so they are
@@ -413,7 +413,8 @@ Test (`/api/test/*`; 404 "no test is open" unless a test is open, except /api/te
         null, fields: test_session.field_choices() (the plain field {file: null, name, starts: []}, then every
         built-in range: {file, name, starts (file order), disc, ball_choice, stations}), station_starter: the starter
         feed blocks for the robot's field (start feeding from its first station, wait until 5 are in the hopper
-        within 20 s, stop feeding) as JSON, or null on a field with no station}; long-polls like /api/robot/state.
+        within 20 s, stop feeding) as JSON, or null on a field with no station, starter_hopper: the bodies Setup
+        ticks as the hopper of a test with none (test_session.starter_hopper; [] without one)}; long-polls like /api/robot/state.
         The robot changing on disk (an edit, Import again, a part folder's files) shows in the next state's palette
         and problems.
   POST /api/test/save              -> body {test, version}: replaces the test and writes the file. {ok, version};
@@ -1325,7 +1326,7 @@ class App:
                "can_redo": d is not None and d.can_redo,
                "scenario_open": self.scenario is not None,
                "mass_kg": None, "bodies": None, "joints": None, "part_bodies": None, "com": None,
-               "range": self._range_file()}
+               "range": self._range_file(), "start": self._range_start()}
         w = self.result.world if self.result.ok else None
         if w is not None and w.parts is not None:
             m = w.model
@@ -1343,6 +1344,12 @@ class App:
         raw = self.robot.doc.unwrap() if self.robot is not None and self.robot.doc is not None else {}
         sec = raw.get("range") if isinstance(raw.get("range"), dict) else None
         return sec.get("file") if sec is not None and isinstance(sec.get("file"), str) else None
+
+    def _range_start(self) -> str | None:
+        """The robot document's [range] start (a named start of its field) as written; None when it names none."""
+        raw = self.robot.doc.unwrap() if self.robot is not None and self.robot.doc is not None else {}
+        sec = raw.get("range") if isinstance(raw.get("range"), dict) else None
+        return sec.get("start") if sec is not None and isinstance(sec.get("start"), str) else None
 
     def _robot_com(self, w) -> dict:
         """The robot's center of gravity at its start pose: subtree_com of the robot body in that body's frame (m;
