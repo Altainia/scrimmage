@@ -162,6 +162,13 @@ def main(argv: list[str] | None = None) -> None:
     cr.add_argument("--script", type=Path, required=True, help="the climb script TOML ([[step]]s)")
     cr.add_argument("--out", type=Path, help="results folder (default <SCRIPT's folder>/<SCRIPT stem>-climb)")
 
+    xp = sub.add_parser("test", help="test a mechanism with blocks: play a test file's blocks with no robot program")
+    xp.add_argument("-v", "--verbose", action="store_true")
+    xsub = xp.add_subparsers(dest="test_command", required=True)
+    xr = xsub.add_parser("run", help="run a test file (<name>.test.toml) and print how it ended and each check "
+                                     "(exit 0 finished with every check passed, 1 not, 2 couldn't run)")
+    xr.add_argument("file", type=Path, help="the test file")
+
     mp = sub.add_parser("model", help="print (or write) the MJCF a parts robot assembles to")
     mp.add_argument("config", type=Path)
     mp.add_argument("-o", "--output", type=Path, help="write the MJCF to this file instead of printing it")
@@ -216,6 +223,8 @@ def main(argv: list[str] | None = None) -> None:
         _terrain(args)
     elif args.command == "climb":
         _climb(args)
+    elif args.command == "test":
+        _test(args)
     elif args.command == "model":
         _model(args)
     elif args.command == "parts":
@@ -564,6 +573,24 @@ def _climb(args) -> None:
     print(f"wrote {out / 'timeline.csv'}")
     print(f"wrote {out / 'summary.md'}")
     sys.exit(0 if result.reached_goal else 1)
+
+
+def _test(args) -> None:
+    """Exit 0 when the test finished with every check passed, 1 when not, 2 when the file or its robot is wrong."""
+    from .blocks import program as blocks_program
+    from .blocks import run as blocks_run
+    try:
+        if not args.file.is_file():
+            raise FileNotFoundError(f"test file not found: {args.file}")
+        program = blocks_program.load(args.file)
+        result = blocks_run.TestRun(blocks_run.world_for(program), program).run()
+    except (ValueError, OSError) as e:    # TestFileError, ConfigError and PartError are ValueErrors
+        print(f"scrimmage: {e}", file=sys.stderr)
+        sys.exit(2)
+    print(result.outcome)
+    for check in result.checks:
+        print(f"  {check['line']}")
+    sys.exit(0 if result.passed else 1)
 
 
 def _print_export(s: dict) -> None:

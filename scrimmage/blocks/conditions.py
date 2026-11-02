@@ -135,6 +135,10 @@ class Watch:
         higher = [n for n in tops if tops[n] > above]
         return min(higher, key=lambda n: tops[n]) if higher else None
 
+    def highest_hung(self) -> str | None:
+        """The highest bar (by its top now) the robot has hung from so far; None before it has hung from any."""
+        return max(self.hung, key=self._top) if self.hung else None
+
     def _bar(self, name: str) -> str | None:
         return self.next_bar() if name == NEXT_BAR else name
 

@@ -147,6 +147,49 @@ class _Phase:
         return self.hi > 0.0 and s < self.hi - PEAK_DB_DEG
 
 
+class WalkOff:
+    """The "hook walked off" and "fell" rules (the module docstring), one physics step at a time. `climb run` and the
+    block-test runner (scrimmage/blocks/run.py) both judge a let-go with it."""
+
+    def __init__(self, dt: float):
+        self.dt = dt
+        self.hung = False                     # the robot has hung (HANG_CONFIRM_S of climb.hanging)
+        self.drop = 0.0                       # m the CoM dropped, at a walk-off
+        self.left: list[str] = []             # the bars it let go of, at a walk-off
+        self._hang_s = 0.0
+        self._carried_t = -math.inf           # the last step a hook carried the robot
+        self._air = None                      # touching nothing since: (the CoM's height then, a hook carried it)
+        self._touched: list[str] = []         # the bars touched at the last step on one
+
+    def see(self, t: float, hanging: bool, load: float, z: float, on_ground: bool, touched) -> str:
+        """After a physics step at t, with that step's climb.hanging and climb.hook_load, the robot's CoM height and
+        its contact_state() (on the ground, the bars it touches): "hook walked off", "fell" or ""."""
+        dt = self.dt
+        self._hang_s = self._hang_s + dt if hanging else 0.0
+        if not self.hung and self._hang_s >= HANG_CONFIRM_S - 1e-9:
+            self.hung = True
+        if not self.hung:
+            if touched:
+                self._touched = sorted(touched)
+            return ""
+        air = self._air
+        if air is not None and air[1]:          # let go while carried: it walks off once it really drops
+            drop = air[0] - z
+            if on_ground or drop > WALK_OFF_DROP:
+                self.drop, self.left = drop, list(self._touched)
+                return "hook walked off"
+        if on_ground:
+            return "fell"
+        if touched:
+            self._air = None                    # back on a bar (a bounce): neither
+            self._touched = sorted(touched)
+            if load > LOADED_N:
+                self._carried_t = t
+        elif air is None:
+            self._air = (z, t - dt - self._carried_t <= CARRY_WINDOW_S + 1e-9)
+        return ""
+
+
 class ClimbRun:
     def __init__(self, world, script: Script):
         self.world, self.script = world, script
@@ -220,10 +263,7 @@ class ClimbRun:
         state = {"t": 0.0, "level": 0, "swing": 0.0, "load": 0.0, "row_load": 0.0}
         peak = {"load": 0.0, "load_t": 0.0, "swing": 0.0, "swing_t": 0.0, "ext": 0.0, "height": 0.0}
         swings: list[tuple[float, float]] = []
-        hung = False
-        hang_s = 0.0
-        carried_t = -math.inf                 # the last step a hook carried the robot
-        air = None                            # touching nothing since: (the CoM's height then, a hook carried it)
+        walk = WalkOff(dt)
         level_seen = (0, 0.0)                 # the level being held, and since when
         next_row = 0.0
         status = ""
@@ -237,7 +277,7 @@ class ClimbRun:
 
         def tick() -> str:
             """One physics step with the drives as they stand; returns a failure status, or ""."""
-            nonlocal hung, hang_s, carried_t, air, level_seen, next_row
+            nonlocal level_seen, next_row
             hal = HalState()
             bus = w.vbatt
             for joint, (target, volts, cap) in drives.items():
@@ -296,29 +336,16 @@ class ClimbRun:
                 if force > self.script.limits.hit_force:
                     event(f"{_geom_label(m, geom)} hit {bar} ({force:.0f} N)")
                     return "hit a bar"
-            hang_s = hang_s + dt if hanging else 0.0
-            if not hung and hang_s >= HANG_CONFIRM_S - 1e-9:
-                hung = True
+            was_hung = walk.hung
+            end = walk.see(t, hanging, load, float(d.subtree_com[w.robot_body][2]), on_ground, touched)
+            if walk.hung and not was_hung:
                 event("hanging")
-            if not hung:
-                return ""
-            z = float(d.subtree_com[w.robot_body][2])
-            if air is not None and air[1]:              # let go while carried: it walks off once it really drops
-                drop = air[0] - z
-                if on_ground or drop > WALK_OFF_DROP:
-                    event(f"let go of every bar and dropped {drop * 100:.0f} cm"
-                          + (" to the ground" if on_ground else ""))
-                    return "hook walked off"
-            if on_ground:
+            if end == "hook walked off":
+                event(f"let go of every bar and dropped {walk.drop * 100:.0f} cm"
+                      + (" to the ground" if on_ground else ""))
+            elif end == "fell":
                 event("touched the ground")
-                return "fell"
-            if touched:
-                air = None                              # back on a bar (a bounce): neither
-                if load > LOADED_N:
-                    carried_t = t
-            elif air is None:
-                air = (z, t - dt - carried_t <= CARRY_WINDOW_S + 1e-9)
-            return ""
+            return end
 
         for st in self.script.steps:
             start = state["t"]
