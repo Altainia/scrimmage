@@ -26,6 +26,11 @@ made_it_in` (not `throughout`) is checked after the settle, against the final co
 the counts so far. With pieces tracked, a finished run's outcome is the counts sentence (feeds.sentence) and any other
 ending is "<ending>; <counts>".
 
+A floor spread's placement (spread.py) moves the floor ball and turns the robot: after the reset the robot keeps its
+start position with its heading turned by `angle_deg`, and the spread's ball is put `distance_in` ahead along that
+heading and `offset_in` to its left, turned by `rotation_deg` about the vertical. It is tracked as "floor" from the
+first block on, so the run's counts and outcome include it.
+
 A run ends with one status: "finished" (every block played), "check failed", "timed out" (a wait until, a move or a
 drive),
 "tipped over" (the robot body's up axis more than TIP_DEG from vertical), "walked off" (the climb runner's "hook walked
@@ -41,17 +46,20 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+import mujoco
 import numpy as np
 
 from ..climb.run import SETTLE_S, WalkOff
 from ..hal_drive import MotorDrive, driven_joints, position_volts
 from ..movers import mover_poses, movers
 from ..protocol import HalState
+from ..testrange.build import BALL_BITS
 from .conditions import IN, Watch, describe
 from .feeds import SETTLE_MAX_S, Outcomes, counts, is_standin, made_it_in, sentence
 from .palette import ALL_MOTORS, ANY_HOOK, ANY_PIECE, NEXT_BAR, palette, problems
 from .program import (DRIVE_TIMEOUT, DRIVE_VOLTS, MOVE_TIMEOUT, REPEAT_MAX, WAIT_TIMEOUT, Program,
                       TestFileError)
+from .spread import NO_BALL, spread_ball, start_pose
 
 MOTION_HZ = 30            # mover poses a second, for the replay
 SIGNAL_HZ = 50            # signal samples a second, for the chart
@@ -153,7 +161,8 @@ def world_for(program: Program):
 class TestRun:
     __test__ = False     # not a pytest class
 
-    def __init__(self, world, program: Program):
+    def __init__(self, world, program: Program, placement: dict | None = None):
+        """`placement`: a floor spread's {offset_in, distance_in, angle_deg, rotation_deg} (spread.placements)."""
         bad = problems(program, world)
         if bad:
             lines = [(f"{_where(tuple(p['place']))}: " if p["place"] else "") + p["message"] for p in bad]
@@ -170,6 +179,10 @@ class TestRun:
         self._slide = {n: k == "slide" for n, k in kinds.items()}
         self.feeder = world.test_range.feeder if world.test_range is not None else None
         self.standin = is_standin(Path(program.path).parent / program.robot)
+        self.placement = placement
+        self._floor = spread_ball(world) if placement is not None else None
+        if placement is not None and self._floor is None:
+            raise TestFileError(NO_BALL)
 
     # ---- the run ----------------------------------------------------------------------------------------------------
 
@@ -182,6 +195,8 @@ class TestRun:
         dt = float(m.opt.timestep)
         w.external = None
         w.reset()
+        if self.placement is not None:
+            self._place(self.placement)
         for _ in range(round(SETTLE_S / dt)):
             w.step(HalState())
         watch = self.watch = Watch(w, self.program)
@@ -192,6 +207,8 @@ class TestRun:
         self._deferred: tuple[dict, object] | None = None  # the last made_it_in check, decided after the settle
         self._final: dict | None = None                     # the final counts, once the run has ended
         self._fed_seen = 0                                  # the feeder's Feds tracked so far
+        if self._floor is not None:
+            outcomes.track(self._floor[0], "floor", float(d.time))
         walk = WalkOff(dt) if watch.mon is not None else None
         view = model_view(w, include_world=True)
         ms = movers(w)
@@ -286,6 +303,22 @@ class TestRun:
             check["line"] = self._line(check)
         result.checks = self.checks
         return result
+
+    def _place(self, p: dict) -> None:
+        """A floor spread's placement, after the reset: the robot turned at its start, the spread's ball put in front
+        of it."""
+        w = self.world
+        x, y, heading = start_pose(w)
+        heading += p["angle_deg"]
+        w.set_robot_pose(x, y, heading)
+        h = math.radians(heading)
+        ahead, left = p["distance_in"] * IN, p["offset_in"] * IN
+        balls = w.test_range.balls
+        r = math.radians(p["rotation_deg"]) / 2.0
+        balls.put(self._floor[0], (x + ahead * math.cos(h) - left * math.sin(h),
+                                   y + ahead * math.sin(h) + left * math.cos(h), balls.rest_z),
+                  BALL_BITS, quat=(math.cos(r), 0.0, 0.0, math.sin(r)))
+        mujoco.mj_forward(w.model, w.data)
 
     def _track(self, t: float) -> None:
         """After a physics step at t: track the pieces the stations fed in it, and update every tracked piece."""

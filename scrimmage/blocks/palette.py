@@ -15,17 +15,14 @@ and doesn't run; nothing crashes.
 
 from __future__ import annotations
 
-import math
-
 import mujoco
-import numpy as np
 
 from ..hal_drive import driven_joints
 from ..launcher.inputs import PRESETS
 from ..terrain.climb import robot_hooks
-from ..testrange.elements import ROBOT_OUTLINE
 from ..testrange.spec import BALL_CHOICE_RANGES, RangeError, load_range
 from ..testrange.station import OVERRIDE_KEYS, with_overrides
+from .spread import NO_BALL, spread_ball
 
 NEXT_BAR = "next bar"     # a hanging_from or touch target: the lowest bar above every bar hung from so far
 ANY_BAR = "any bar"       # a touch target: any of the field's bars
@@ -88,23 +85,6 @@ def _targets(world, named: set[str]) -> list[str]:
     return sorted(n for n in out if n not in skip and not n.startswith("element."))
 
 
-def floor_piece_ahead(world) -> int | None:
-    """The index of the nearest floor ball ahead of the robot's start (in front of it along its heading, no further
-    to the side than the robot is wide), the ball a floor spread moves; None when there is none or no start."""
-    tr = getattr(world, "test_range", None)
-    rng = tr.range if tr is not None else None
-    start = rng.starts.get(tr._config.get("start")) if rng is not None else None
-    if start is None or not len(rng.floor_balls):
-        return None
-    x, y, heading = start
-    h = math.radians(heading)
-    rel = np.asarray(rng.floor_balls, float) - np.array([x, y])
-    ahead = rel @ np.array([math.cos(h), math.sin(h)])
-    side = rel @ np.array([-math.sin(h), math.cos(h)])
-    near = [i for i in range(len(rel)) if ahead[i] > 0.0 and abs(side[i]) <= ROBOT_OUTLINE / 2.0]
-    return min(near, key=lambda i: ahead[i]) if near else None
-
-
 def _station_settings(st) -> dict:
     """A station's OVERRIDE_KEYS values, as Setup's boxes show them (no stock is 0; lists, not tuples)."""
     out = {}
@@ -156,7 +136,7 @@ def palette(world, hooks: list[str]) -> dict:
         "ball": rng.ball_preset if rng is not None else None,
         "balls": sorted(PRESETS["ball"]),
         "ball_choice": rng is not None and rng.path.stem in BALL_CHOICE_RANGES,
-        "floor_piece": floor_piece_ahead(world) is not None,
+        "floor_piece": spread_ball(world) is not None,
     }
 
 
@@ -321,8 +301,8 @@ def _setup_level_problems(program, world, n: _Names) -> list[str]:
         out.append("this field keeps its own ball; pick a ball on the intake or station field")
     out += [f'Setup names a station this field doesn\'t have: "{name}"'
             for name in setup.get("station", {}) if name not in n.stations]
-    if setup.get("floor_spread") and floor_piece_ahead(world) is None:
-        out.append("the floor spread needs a ball on the floor in front of the robot's start")
+    if setup.get("floor_spread") and spread_ball(world) is None:
+        out.append(NO_BALL)
     if rng is not None and tr is not None:
         out += setup_problems(program, rng)
     return out

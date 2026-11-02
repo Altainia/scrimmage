@@ -1,4 +1,4 @@
-"""The block test's MCP tools: test_run and test_sweep run in a worker thread and keep their runs."""
+"""The block test's MCP tools: test_run, test_sweep and test_spread run in a worker thread and keep their runs."""
 
 import asyncio
 import json
@@ -17,7 +17,7 @@ def test_block_tools_are_registered():
     async def go():
         async with Client(mcp_server.server) as c:
             return {t.name for t in (await c.list_tools()).tools}
-    assert {"test_run", "test_sweep"} <= asyncio.run(go())
+    assert {"test_run", "test_sweep", "test_spread"} <= asyncio.run(go())
     assert "test_run" in mcp_server.INSTRUCTIONS
 
 
@@ -65,3 +65,18 @@ def test_test_sweep_returns_the_table(tmp_path):
         asyncio.run(mcp_server.test_sweep(str(path), {"nope": 1}, [1]))
     with pytest.raises(ToolError, match="at least one value"):
         asyncio.run(mcp_server.test_sweep(str(path), {"robot": "mass"}, []))
+
+
+def test_test_spread_returns_the_sentence_and_rows(tmp_path):
+    from test_blocks_spread import spread_test
+    path = spread_test(tmp_path, "offset_in = [0, 30]")
+    info = asyncio.run(mcp_server.test_spread(str(path)))
+    assert info["sentence"] == "picked up 1 of 2; missed at 30 in left", info
+    assert [r["picked up"] for r in info["rows"]] == ["yes", "no"]
+    assert info["spread_folder"] == str((path.parent / "intake-runs" / "spread-001").resolve())
+    json.dumps(info)
+    with pytest.raises(ToolError, match="test file not found"):
+        asyncio.run(mcp_server.test_spread(str(tmp_path / "nope.test.toml")))
+    path.write_text(path.read_text(encoding="utf-8").split("[setup.floor_spread]")[0], encoding="utf-8")
+    with pytest.raises(ToolError, match="no floor spread"):
+        asyncio.run(mcp_server.test_spread(str(path)))
