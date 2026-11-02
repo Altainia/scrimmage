@@ -3,7 +3,7 @@
 The Test tab tries a mechanism with blocks, before anyone builds it and with no robot code. You snap blocks together
 ("spin the crank at 6 volts", "wait until a hook touches the next bar", "expect the robot to tilt less than 30°"),
 press **Run**, and watch a replay with a chart. It uses the same physics as the whole-robot simulation, and the motors
-are driven through the robot's own motor bindings, so the gearing, the battery and the weight all count. It is the
+are driven through the robot's own motor settings (which motor controller and ID each motor has), so the gearing, the battery and the weight all count. It is the
 same page as the [assembler](assembler.md) and the [Part tab](part-tab.md) (`scrimmage edit`), with the same habit:
 every change is saved at once, there is no Save button.
 
@@ -73,7 +73,7 @@ The bottom bar says whether the test is saved and how many blocks it has.
 switches for you when you pick the joint). **m** is there too. The file always says the unit, so a number is never
 guessed.
 
-**Drive works on a tank drive only.** A tank drive (the stock `differential`) is a wheel on each side with its own
+**Drive works on a tank drive only.** A tank drive (the kitbot's kind of drivetrain, `differential` in the parts list) is a wheel on each side with its own
 motor. A swerve or mecanum robot has no **drive** block: spin the drive motors one by one instead. A robot with no
 drivetrain at all gets the problem "drive needs a drivetrain".
 
@@ -106,7 +106,7 @@ lowest bar. **Any bar** is any of them.
 resting on it with the wheels still on the carpet, is not hanging.
 
 **Hooks.** A climber's hooks are bodies. Tick them in **Setup**; see [Setup](#setup). A stock `climber` part's hooks
-always count, and Setup shows them ticked and greyed out. A hook can be any body of a CAD part: see
+always count, and Setup shows them ticked and grayed out. A hook can be any body of a CAD part: see
 [Climbing](climbing.md#the-climber-part).
 
 ## Times and limits
@@ -120,6 +120,9 @@ always count, and Setup shows them ticked and greyed out. A hook can be any body
   rung2 timed out at 12.1 s (block 2 inside block 3)`.
 - **A repeat until has a max, default 20.** After that many rounds the run ends, saying which repeat gave up.
 - **Each test has a time limit, default 60 s.** The run ends there with "ran out of time".
+- **"Walked off" ends a climb run.** If the robot has hung from a bar, then lets go of every bar while a hook was
+  carrying it, and then drops, the run ends with "a hook walked off". A robot that hung and then touches the floor
+  with no hook letting go ends it too.
 - **A robot counts as tipped over at 60°.** The run ends with "the robot tipped over" when the robot's body leans more
   than 60° from upright. (The **tilt** check is separate: it only tests what you ask.)
 
@@ -150,11 +153,11 @@ If the robot file can't be changed (it has an error, or it is read-only), Setup 
 
 Press **Run**. The tab shows the progress, and **Stop** ends the run early. Then:
 
-- **The sentence.** What happened, in one line: `reached rung1, then waiting for a hook to touch rung2 timed out at
-  12.1 s`, or `finished at 3.3 s, with passed: a ball reaches intake.hopper`.
+- **The sentence.** What happened, in one line: `Reached rung1, then waiting for a hook to touch rung2 timed out at
+  12.1 s (block 2 inside block 3).`, or, when the test works, "Every block played."
 - **The checks.** One line each, passed or failed, with the time. A failed check ends the run, and its line says what
   happened instead.
-- **The replay.** A 3D view of the run. **Play**, the time slider and a speed box. If the browser has no WebGL it says
+- **The replay.** A 3D view of the run. **Play**, the time slider and a speed box. If the browser can't draw 3D (WebGL is the browser's 3D drawing) it says
   so and the rest still works.
 - **The chart.** Tick the signals to draw (tilt, joint positions, hook load, motor current and more). It starts with
   the signals the test names in its `chart` line, or else the tilt and the joints a block drives. Motor currents, hook
@@ -256,5 +259,5 @@ Open one with `scrimmage edit examples/blocks/intake/intake.test.toml`.
   more. Pick the new name in the block.
 - **"The test file can't be read".** The file has a mistake. The message names the block ("block 3, inside repeat 2")
   and what is wrong. Fix the file in a text editor, or delete the block in the tab.
-- **The 3D replay says WebGL isn't available.** The result and chart still work. Reload, or turn on hardware
+- **The 3D replay says WebGL isn't available.** (WebGL is the browser's 3D drawing.) The result and chart still work. Reload, or turn on hardware
   acceleration in the browser.

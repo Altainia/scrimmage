@@ -188,9 +188,8 @@ The more annoying the tool, the less it is used.
   harm.
 - The command line prints how the run ended and exits with its code first, and keeping the run folder (`--out`) came
   with the run storage, so that each step could be built and tested on its own.
-- A new test starts with blocks chosen from what the robot has (a lone `wait 1 s` when it has nothing to move), and
-  the first version of that was a plain `wait 1 s` until the full rules were ready, so that the new-test button worked
-  from the first day and every new test can be run right away.
+- A new test starts with blocks chosen from what the robot has (a lone `wait 1 s` when it has nothing to move), so
+  every new test can be run right away.
 - A `move` block always carries its unit (degrees, inches or meters) in the file and the editor fills it in, so a
   number is never guessed from the joint; the cost is one more key in a hand-written file.
 - The climb levels in the block pickers stay in the range's climbing order, lowest first, not alphabetical, because a

@@ -19,17 +19,17 @@ A browser tab opens on the **Test** tab. On the left are the blocks. In the midd
 ## 2. Run it
 
 Press the blue **Run**. In a few seconds the right side says what happened in one sentence, here
-`finished at 3.3 s, with passed: a ball reaches intake.hopper`, and shows each check, a replay and a chart.
+"Every block played.", then the check: "passed: a ball reaches intake.hopper at 3.3 s (block 5)". Below it are a replay and a chart.
 
 Press **Play** under the picture to watch the robot drive at the ball and the roller pull it into the bin.
 
 ## 3. Change a number
 
 Click the number in the **spin** block (8 V) and type 2, then press **Run** again. The roller is too slow to grab the
-ball, and the sentence says the wait timed out. Type 8 again to get it back.
+ball, so the robot just pushes it ahead of it, and the sentence says the wait timed out. Type 8 again to get it back.
 
-To try many values at once, right-click the **spin** block, choose **Try values…**, type From 0, To 12 and Steps 7,
-and press **Run**. You get one row per voltage and can click any row to replay it.
+To try many values at once, right-click the **spin** block, choose **Try values…**, type From 0, To 12 and Steps 7 (Steps starts at 5),
+and press **Try them**. You get one row per voltage and can click any row to replay it.
 
 ## 4. Test your own part
 
