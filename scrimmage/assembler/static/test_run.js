@@ -92,6 +92,8 @@ export function update(state) {
   const err = $("#test-run-error");
   err.hidden = !state.run_error;
   err.textContent = state.run_error ? `The run couldn't finish: ${state.run_error}` : "";
+  // before the first run: what to do (nothing kept, nothing running, no sweep, no error)
+  $("#test-run-empty").hidden = !!(runs.length || sweeps.length || state.running || state.run_error);
   renderList();
   renderCompare();
   renderSweep();
@@ -388,7 +390,8 @@ function tokens() {
 function drawChart() {
   const box = $("#test-chart");
   const key = $("#test-chart-key");
-  if (!rp.run) { box.replaceChildren(); key.replaceChildren(); return; }
+  const outcomes = $("#test-chart-outcomes");
+  if (!rp.run) { box.replaceChildren(); key.replaceChildren(); outcomes.replaceChildren(); outcomes.hidden = true; return; }
   const names = shownSignals();
   const cmp = rp.compare;
   const tEnd = Math.max(end(), cmp ? cmp.t_end || 0 : 0) || 1;
@@ -412,6 +415,11 @@ function drawChart() {
     h("span", { class: "test-key" }, h("span", { class: "test-swatch test-swatch-run" }), runName(rp.run.id)),
     cmp ? h("span", { class: "test-key" }, h("span", { class: "test-swatch test-swatch-compare" }), `${runName(cmp.id)} (faded)`) : null,
     names.length ? null : h("span", { class: "muted", text: "Pick something to chart above." })].filter(Boolean));
+  // the two runs' outcomes side by side, so a compare reads without scrolling down to the Runs list
+  const line = (id, r) => h("li", {}, h("span", { class: "test-chart-outcome-name", text: `${runName(id)} · ${statusWord(r.status)}: ` }),
+    outcomeText(r));
+  outcomes.replaceChildren(...(cmp ? [line(rp.run.id, rp.run.result), line(cmp.id, cmp)] : []));
+  outcomes.hidden = !cmp;
 }
 
 function plot(canvas, name, cmp, tEnd, tk) {

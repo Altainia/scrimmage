@@ -117,18 +117,19 @@ def _write(folder, blocks):
 
 @pytest.fixture
 def test_page(browser, tmp_path, monkeypatch):
-    """open(blocks, scheme="light") -> (page, the test file); everything is torn down afterwards."""
+    """open(blocks, scheme="light", viewport=(1500, 950)) -> (page, the test file); everything is torn down
+    afterwards."""
     monkeypatch.setenv("SCRIMMAGE_SKIP_JAVA", "1")
     monkeypatch.setenv("SCRIMMAGE_RECENT", str(tmp_path / "recent.json"))
     monkeypatch.setenv("SCRIMMAGE_CACHE", str(tmp_path / "cache"))
     monkeypatch.setenv("SCRIMMAGE_FOLDERS", str(tmp_path / "folders.json"))
     servers, contexts, logs = [], [], []
 
-    def open_(blocks=SPIN, scheme="light"):
+    def open_(blocks=SPIN, scheme="light", viewport=(1500, 950)):
         path = _write(tmp_path, blocks)
         srv = Server(path, cwd=tmp_path)
         servers.append(srv)
-        ctx = browser.new_context(viewport={"width": 1500, "height": 950}, color_scheme=scheme)
+        ctx = browser.new_context(viewport={"width": viewport[0], "height": viewport[1]}, color_scheme=scheme)
         contexts.append(ctx)
         page = ctx.new_page()
         page.set_default_timeout(30000)
@@ -415,7 +416,11 @@ def _moved(a, b):
 
 def test_a_run_shows_its_outcome_and_a_replay_that_plays_and_scrubs(test_page):
     page, _ = test_page()
+    # before the first run, one line says what to do
+    page.wait_for_selector("#test-run-empty", state="visible")
+    assert page.inner_text("#test-run-empty") == "Press Run to try your test. The replay and chart show up here."
     run = _run(page, "001")
+    assert page.is_hidden("#test-run-empty")
     assert run["status"] == "finished"
     assert page.inner_text("#test-result-title") == "Run 1 · finished"
     assert run["outcome"] == "finished" and page.inner_text("#test-outcome") == "Every block played."
@@ -460,6 +465,9 @@ def test_a_second_run_is_charted_against_the_first(test_page):
     assert page.evaluate(plots) == [["tilt", "2"], ["arm.pivot", "2"]]
     assert page.inner_text("#test-chart-key").replace("\n", " ").split() == ["Run", "2", "Run", "1", "(faded)"]
     assert page.input_value("#test-compare") == "001"
+    # the two runs' outcomes, next to the chart
+    assert page.inner_text("#test-chart-outcomes").splitlines() == ["Run 2 · finished: Every block played.",
+                                                                    "Run 1 · finished: Every block played."]
     # the signal picker adds the arm's current
     page.click("#test-signals [data-signal='arm.pivot.current']")
     assert page.evaluate("__scrimmageTest.replay.chart.signals") == ["tilt", "arm.pivot", "arm.pivot.current"]
@@ -468,6 +476,7 @@ def test_a_second_run_is_charted_against_the_first(test_page):
     page.select_option("#test-compare", "")
     page.wait_for_function("__scrimmageTest.replay.chart.runs[1] === null")
     assert page.evaluate("[...document.querySelectorAll('#test-chart canvas')].every(c => c.dataset.series === '1')")
+    assert page.is_hidden("#test-chart-outcomes")
     # the newest first; clicking the older run shows it, compared with nothing older
     items = page.locator("#test-runs .test-run-item")
     assert [items.nth(i).get_attribute("data-run") for i in range(items.count())] == ["002", "001"]
@@ -789,6 +798,37 @@ def test_setup_changes_the_stand_ins_weight_and_mounts_in_the_robot_file_and_the
     page.click("#undo")
     _wait_file(lambda: "pos" not in _robot_part(path, "arm"), path)
     assert _robot_part(path, "drive")["mass"] == 30.0
+
+
+def test_setup_field_box_says_what_it_changes_and_how_to_undo_it(test_page):
+    page, _ = test_page()
+    page.click("#test-setup summary")
+    hint = page.inner_text("#test-setup .test-setup-field .hint")
+    assert "This changes robot.toml" in hint and "The Robot tab's Undo takes the change back." in hint
+
+
+# 900 x 700: a small laptop's window. Wider, the mounts used to share a row with the hooks and were cut off there:
+# at 1200 px and at the default 1500 px "Try values…" was 116 px and 26 px past the edge.
+@pytest.mark.parametrize("viewport", [(900, 700), (1200, 700), (1500, 950)])
+def test_setup_mounts_try_values_is_whole_inside_setup(test_page, viewport):
+    """The mounts table (a part name, four boxes and a button) is whole inside Setup: no sideways scrolling to
+    reach "Try values…"."""
+    page, _ = test_page(viewport=viewport)
+    page.click("#test-setup summary")
+    page.wait_for_selector("#test-setup [data-try='mount-arm']")
+    rects = page.evaluate("""() => {
+      const r = (el) => { const b = el.getBoundingClientRect(); return [b.left, b.right]; };
+      const body = document.querySelector('#test-setup-body');
+      const table = document.querySelector('#test-setup .test-mounts');
+      return { button: r(document.querySelector("#test-setup [data-try='mount-arm']")),
+               fieldset: r(document.querySelector('#test-setup .test-setup-mounts')), body: r(body),
+               table_overflow: table.scrollWidth - table.clientWidth,
+               body_overflow: body.scrollWidth - body.clientWidth };
+    }""")
+    (bl, br), (fl, fr), (pl, pr) = rects["button"], rects["fieldset"], rects["body"]
+    assert fl - 0.5 <= bl and br <= fr + 0.5, rects
+    assert pl - 0.5 <= bl and br <= pr + 0.5, rects
+    assert rects["table_overflow"] <= 0 and rects["body_overflow"] <= 0, rects
 
 
 def test_setup_try_values_sweeps_the_robots_weight(test_page):
