@@ -1,0 +1,36 @@
+[test]
+robot = "climber-standin.toml"
+hooks = ["climber.hook_A", "climber.hook_B"]
+chart = ["tilt", "climber.crank", "climber.arm_A", "climber.arm_B", "hook_load"]
+
+[[block]]
+do = "expect"
+that = { tilt = { below = 30.0 } }
+throughout = true
+
+[[block]]
+do = "repeat"
+until = { touch = { robot = "hook", field = "rung1" } }
+max = 60
+
+[[block.body]]
+do = "drive"
+seconds = 0.1
+volts = 3.0
+
+[[block]]
+do = "repeat"
+until = { hanging_from = "rung4" }
+
+[[block.body]]
+do = "spin"
+motor = "climber.crank"
+volts = 6.0
+
+[[block.body]]
+do = "wait_until"
+until = { touch = { robot = "hook", field = "next bar" } }
+
+[[block.body]]
+do = "wait"
+seconds = 0.3

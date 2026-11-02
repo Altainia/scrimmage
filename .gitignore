@@ -24,3 +24,4 @@ examples/bench/**/compare-results/
 examples/bench/**/gallery.html
 *.convex/
 .scrimmage-bench/
+examples/blocks/**/*-runs/

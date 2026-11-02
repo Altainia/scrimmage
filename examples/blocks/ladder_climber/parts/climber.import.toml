@@ -1,0 +1,479 @@
+couplings = []
+
+[import]
+name = "climber"
+import_id = "0fd91b1dd4db4855bec827dac96ee172"
+source = "../climber.step"
+units = "m"
+
+[import.frame]
+up = "+z"
+front = "+x"
+floor = 0.14000000059604645
+center = [0.2550000036135316, 0.0]
+skip = true
+confirmed = true
+
+[pieces]
+
+[pieces."CrankClimber/base/base_plate"]
+body = "base"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/base/base_plate".fp]
+volume = 0.002592
+area = 0.45504
+extents = [0.012, 0.36, 0.6]
+center = [0.15, 0.0, 0.146]
+
+[pieces."CrankClimber/base/tower_L"]
+body = "base"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/base/tower_L".fp]
+volume = 0.0003168
+area = 0.054
+extents = [0.02, 0.03, 0.528]
+center = [0.19, 0.2, 0.416]
+
+[pieces."CrankClimber/base/tower_R"]
+body = "base"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/base/tower_R".fp]
+volume = 0.0003168
+area = 0.054
+extents = [0.02, 0.03, 0.528]
+center = [0.19, -0.2, 0.416]
+
+[pieces."CrankClimber/base/guide_L"]
+body = "base"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/base/guide_L".fp]
+volume = 0.00018144
+area = 0.044624
+extents = [0.014, 0.02, 0.648]
+center = [0.169, 0.28, 0.476]
+
+[pieces."CrankClimber/base/guide_R"]
+body = "base"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/base/guide_R".fp]
+volume = 0.00018144
+area = 0.044624
+extents = [0.014, 0.02, 0.648]
+center = [0.169, -0.28, 0.476]
+
+[pieces."CrankClimber/base/neo_motor"]
+body = "base"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/base/neo_motor".fp]
+volume = 0.000168913
+area = 0.0169279
+extents = [0.0599027, 0.0599513, 0.06]
+center = [0.19, -0.12, 0.66]
+
+[pieces."CrankClimber/base/gearbox"]
+body = "base"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/base/gearbox".fp]
+volume = 0.000144
+area = 0.0168
+extents = [0.04, 0.06, 0.06]
+center = [0.19, -0.07, 0.66]
+
+[pieces."CrankClimber/crank/shaft"]
+body = "crank"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/crank/shaft".fp]
+volume = 0.000161777
+area = 0.0332153
+extents = [0.0198542, 0.02, 0.52]
+center = [0.19, 1.12504e-14, 0.66]
+
+[pieces."CrankClimber/crank/disc_L"]
+body = "crank"
+material = "polycarbonate"
+left_out = false
+
+[pieces."CrankClimber/crank/disc_L".fp]
+volume = 0.00083074
+area = 0.284829
+extents = [0.006, 0.419608, 0.419807]
+center = [0.19, 0.227, 0.66]
+
+[pieces."CrankClimber/crank/disc_R"]
+body = "crank"
+material = "polycarbonate"
+left_out = false
+
+[pieces."CrankClimber/crank/disc_R".fp]
+volume = 0.00083074
+area = 0.284829
+extents = [0.006, 0.419608, 0.419807]
+center = [0.19, -0.227, 0.66]
+
+[pieces."CrankClimber/crank/crank_pin_A"]
+body = "crank"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/crank/crank_pin_A".fp]
+volume = 6.76976e-06
+area = 0.00210309
+extents = [0.0158833, 0.016, 0.034]
+center = [0.19, 0.247, 0.86]
+
+[pieces."CrankClimber/crank/crank_pin_B"]
+body = "crank"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/crank/crank_pin_B".fp]
+volume = 6.76976e-06
+area = 0.00210309
+extents = [0.0158833, 0.016, 0.034]
+center = [0.19, -0.247, 0.46]
+
+[pieces."CrankClimber/rod_A/rod_A_bar"]
+body = "rod_A"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/rod_A/rod_A_bar".fp]
+volume = 4.736e-05
+area = 0.015712
+extents = [0.01, 0.016, 0.296]
+center = [0.19, 0.259, 0.72]
+
+[pieces."CrankClimber/arm_A/arm_pin_A"]
+body = "arm_A"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/arm_A/arm_pin_A".fp]
+volume = 1.792e-06
+area = 0.000825719
+extents = [0.0119125, 0.012, 0.016]
+center = [0.19, 0.262, 0.58]
+
+[pieces."CrankClimber/arm_A/arm_A_bar"]
+body = "arm_A"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/arm_A/arm_A_bar".fp]
+volume = 3.8e-05
+area = 0.0084
+extents = [0.02, 0.02, 0.095]
+center = [0.19, 0.28, 0.6075]
+
+[pieces."CrankClimber/arm_A/bracket_A"]
+body = "arm_A"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/arm_A/bracket_A".fp]
+volume = 9.12e-05
+area = 0.01904
+extents = [0.02, 0.02, 0.228]
+center = [0.314, 0.28, 0.645]
+
+[pieces."CrankClimber/hook_A/hook_pin_A"]
+body = "hook_A"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/hook_A/hook_pin_A".fp]
+volume = 9.95553e-07
+area = 0.000600988
+extents = [0.00794167, 0.008, 0.02]
+center = [0.434, 0.28, 0.655]
+
+[pieces."CrankClimber/hook_A/finger_A"]
+body = "hook_A"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/hook_A/finger_A".fp]
+volume = 3.36e-05
+area = 0.00844
+extents = [0.015, 0.02, 0.112]
+center = [0.484, 0.28, 0.6625]
+
+[pieces."CrankClimber/hook_A/lip_A"]
+body = "lip_A"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/hook_A/lip_A".fp]
+volume = 7.5e-06
+area = 0.00235
+extents = [0.015, 0.02, 0.025]
+center = [0.5325, 0.28, 0.6425]
+
+[pieces."CrankClimber/hook_A/back_A"]
+body = "back_A"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/hook_A/back_A".fp]
+volume = 2.64e-05
+area = 0.00752
+extents = [0.012, 0.02, 0.11]
+center = [0.434, 0.28, 0.6]
+
+[pieces."CrankClimber/rod_B/rod_B_bar"]
+body = "rod_B"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/rod_B/rod_B_bar".fp]
+volume = 4.736e-05
+area = 0.015712
+extents = [0.01, 0.016, 0.296]
+center = [0.19, -0.259, 0.32]
+
+[pieces."CrankClimber/arm_B/arm_pin_B"]
+body = "arm_B"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/arm_B/arm_pin_B".fp]
+volume = 1.792e-06
+area = 0.000825719
+extents = [0.0119125, 0.012, 0.016]
+center = [0.19, -0.262, 0.18]
+
+[pieces."CrankClimber/arm_B/arm_B_bar"]
+body = "arm_B"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/arm_B/arm_B_bar".fp]
+volume = 3.8e-05
+area = 0.0084
+extents = [0.02, 0.02, 0.095]
+center = [0.19, -0.28, 0.2075]
+
+[pieces."CrankClimber/arm_B/bracket_B"]
+body = "arm_B"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/arm_B/bracket_B".fp]
+volume = 9.12e-05
+area = 0.01904
+extents = [0.02, 0.02, 0.228]
+center = [0.314, -0.28, 0.245]
+
+[pieces."CrankClimber/hook_B/hook_pin_B"]
+body = "hook_B"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/hook_B/hook_pin_B".fp]
+volume = 9.95553e-07
+area = 0.000600988
+extents = [0.00794167, 0.008, 0.02]
+center = [0.434, -0.28, 0.255]
+
+[pieces."CrankClimber/hook_B/finger_B"]
+body = "hook_B"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/hook_B/finger_B".fp]
+volume = 3.36e-05
+area = 0.00844
+extents = [0.015, 0.02, 0.112]
+center = [0.484, -0.28, 0.2625]
+
+[pieces."CrankClimber/hook_B/lip_B"]
+body = "lip_B"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/hook_B/lip_B".fp]
+volume = 7.5e-06
+area = 0.00235
+extents = [0.015, 0.02, 0.025]
+center = [0.5325, -0.28, 0.2425]
+
+[pieces."CrankClimber/hook_B/back_B"]
+body = "back_B"
+material = "aluminum"
+left_out = false
+
+[pieces."CrankClimber/hook_B/back_B".fp]
+volume = 2.64e-05
+area = 0.00752
+extents = [0.012, 0.02, 0.11]
+center = [0.434, -0.28, 0.2]
+
+[bodies]
+
+[bodies.base]
+collision = "none"
+part = "climber"
+gyro = false
+mounts = []
+
+[bodies.crank]
+parent = "base"
+collision = "none"
+gyro = false
+mounts = []
+
+[bodies.crank.joint]
+kind = "hinge"
+anchor = [0.1899999976158155, -1.9984008619901453e-17, 0.6600000262260434]
+axis = [-0.0, 1.0000000000000002, -2.220446049250313e-16]
+damping = 0.0
+frictionloss = 0.0
+
+[bodies.crank.motor]
+motor = "NEO"
+count = 1
+ratio = 200.0
+invert = false
+efficiency = 1.0
+
+[bodies.rod_A]
+parent = "crank"
+collision = "none"
+gyro = false
+mounts = []
+
+[bodies.rod_A.joint]
+kind = "hinge"
+anchor = [0.18999999761580827, 0.24700000509619713, 0.860000014305113]
+axis = [-0.0, 1.0, 0.0]
+damping = 0.0
+frictionloss = 0.0
+
+[bodies.arm_A]
+parent = "base"
+collision = "none"
+gyro = false
+mounts = []
+
+[bodies.arm_A.joint]
+kind = "slide"
+anchor = [0.1899999976158167, 0.2620000084862114, 0.5799999833107]
+axis = [0.0, 0.0, 1.0]
+range = [-0.42000000000000004, 0.02]
+damping = 0.0
+frictionloss = 0.0
+
+[bodies.hook_A]
+parent = "arm_A"
+collision = "simple"
+gyro = false
+mounts = []
+
+[bodies.hook_A.joint]
+kind = "hinge"
+anchor = [0.4339999854564669, 0.28000001050531864, 0.6549999713897675]
+axis = [-0.0, 1.0, -0.0]
+range = [0.0, 95.0]
+spring = [3.0, -15.0]
+damping = 0.02
+frictionloss = 0.0
+
+[bodies.rod_B]
+parent = "crank"
+collision = "none"
+gyro = false
+mounts = []
+
+[bodies.rod_B.joint]
+kind = "hinge"
+anchor = [0.1899999976158164, -0.24699999764561653, 0.4600000083446504]
+axis = [-0.0, 1.0, -0.0]
+damping = 0.0
+frictionloss = 0.0
+
+[bodies.arm_B]
+parent = "base"
+collision = "none"
+gyro = false
+mounts = []
+
+[bodies.arm_B.joint]
+kind = "slide"
+anchor = [0.18999999761581393, -0.26200001034885645, 0.18000000715255746]
+axis = [0.0, 0.0, 1.0]
+range = [-0.02, 0.42000000000000004]
+damping = 0.0
+frictionloss = 0.0
+
+[bodies.hook_B]
+parent = "arm_B"
+collision = "simple"
+gyro = false
+mounts = []
+
+[bodies.hook_B.joint]
+kind = "hinge"
+anchor = [0.4339999854564675, -0.27999999187886715, 0.2549999952316285]
+axis = [-0.0, 1.0, -0.0]
+range = [0.0, 95.0]
+spring = [3.0, -15.0]
+damping = 0.02
+frictionloss = 0.0
+
+[bodies.lip_A]
+parent = "hook_A"
+collision = "simple"
+gyro = false
+mounts = []
+
+[bodies.back_A]
+parent = "hook_A"
+collision = "simple"
+gyro = false
+mounts = []
+
+[bodies.lip_B]
+parent = "hook_B"
+collision = "simple"
+gyro = false
+mounts = []
+
+[bodies.back_B]
+parent = "hook_B"
+collision = "simple"
+gyro = false
+mounts = []
+
+[[loops]]
+body1 = "rod_A"
+body2 = "arm_A"
+point = [0.1899999976158167, 0.2620000084862114, 0.5799999833107]
+
+[[loops]]
+body1 = "rod_B"
+body2 = "arm_B"
+point = [0.18999999761581393, -0.26200001034885645, 0.18000000715255746]
+
+[parts]
+
+[parts.climber]
+folder = "climber"
+
+[written]
+climber = "climber"
