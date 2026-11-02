@@ -4,6 +4,7 @@ hopper = ["hopper.bin"]
 
 [setup]
 seed = 1
+station = { feeder = { spread_yaw_deg = 5.0, spread_pitch_deg = 5.0, spread_speed = 0.2 } }
 
 [[block]]
 do = "start_feeding"

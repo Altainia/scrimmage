@@ -101,6 +101,9 @@ What it shows today:
 
 ```
 picked up 1 of 3; missed at 6 in right and 6 in left
+  6 in right: missed (waiting for a ball to reach intake.hopper timed out at 7.3 s (block 3); 0 of 1 made it in (0%); 1 stuck in the robot)
+  on the center line: picked up (1 of 1 made it in (100%))
+  6 in left: missed (waiting for a ball to reach intake.hopper timed out at 7.3 s (block 3); 0 of 1 made it in (0%); 1 stuck in the robot)
 ```
 
 The center ball is picked up. The other two miss for a reason in the part, not luck: the bin is 36 cm wide inside, so a

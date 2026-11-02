@@ -34,8 +34,18 @@ scrimmage test run examples/blocks/station/feed.test.toml
 3. Stop feeding from `feeder`.
 4. Expect at least 80% of the fed balls made it in.
 
-The test file also says which body is the hopper (`hopper = ["hopper.bin"]`) and the seed for the station's random
-spread (`[setup] seed = 1`).
+The test file also says which body is the hopper (`hopper = ["hopper.bin"]`), and its `[setup]` makes the station
+less exact than the field file has it:
+
+```toml
+[setup]
+seed = 1
+station = { feeder = { spread_yaw_deg = 5.0, spread_pitch_deg = 5.0, spread_speed = 0.2 } }
+```
+
+A human player doesn't drop every ball the same way. The field's station just sets each ball down at the top of the
+chute. With this spread, about half the balls get a push of up to 0.2 m/s as they're let go, aimed up to 5° off to
+either side and up to 5° up or down. The seed picks which of those draws you get. The same seed gives exactly the same feeds every run, so comparing two hoppers is fair.
 
 "In the hopper" means a ball's center is inside the box around the bin's pieces. The last check is made after the run
 has waited for every fed ball to settle, so a ball still bouncing when the blocks end gets its outcome too: in the
@@ -45,7 +55,7 @@ hopper, stuck somewhere else on the robot, or missed.
 
 ```
 5 of 5 made it in (100%)
-  passed: at least 80% made it in at 6.8 s (block 4)
+  passed: at least 80% made it in at 8.0 s (block 4)
 ```
 
 The run's clock starts at 0.3 s (the robot settles on its wheels first), and the first ball leaves the station then.
@@ -53,10 +63,9 @@ Each ball takes about 0.6 s to roll down the chute and fly over the bin's front 
 bounces off the back wall. The fifth is in at about 5 s, the feeding stops, and the run waits for the balls to come to
 rest before the last check.
 
-The station on this field feeds every ball the same way (its spreads are 0), so every seed gives the same run. To see
-the seed matter, give the station a spread in the Setup column, for example 5° of yaw and pitch and 0.2 m/s of speed
-(in the test file: `[setup.station.feeder]` with `spread_yaw_deg = 5.0`, `spread_pitch_deg = 5.0` and
-`spread_speed = 0.2`). With that, seeds 1 to 8 all gave 5 of 5.
+**Is it luck?** One seed is one draw. **New shuffle** in the Setup column picks a new seed (it changes `seed` in
+`[setup]`), so you can check the result wasn't a lucky draw. To try many at once, use **Try values…** on the seed:
+one run per seed, each with a row in the table. Seeds 1 to 8 all give 5 of 5 today.
 
 ## Change it and run it again
 
@@ -66,16 +75,18 @@ the ones already in, and the more likely one bounces out.
 **The check.** Change `at_least = 80.0` in the last block. A ball that bounces out counts against it: `5 of 6 made it
 in (83%)` still passes 80%, `5 of 7 (71%)` doesn't.
 
-**The station.** In the Setup column, the station's row has its interval, stock and spreads. **Try values…** on the
-seed runs the test once per seed, so you can see how often a spread makes a ball miss.
+**The station.** In the Setup column, the station's row has its interval, stock and spreads. Make the spread wider
+(say 10° of yaw) and try a few seeds to see where balls start to miss. Without the spread (delete the `station = ...`
+line), every ball is fed the same way and every seed gives the same run.
 
 ## The numbers
 
 Every size in `parts/hopper/part.toml` is our choice: the bin is 64 cm long and 60 cm wide, its floor on the chassis's
 top, its front and side walls 30 cm high and its back wall 50 cm high.
 
-The first try had 30 cm walls all round, and it made 5 of 6 (83%): the fourth ball landed on the third, bounced about
-0.4 m above the bin's floor, over the back wall, and rolled away across the carpet. The check still passed, but only
-just, so we raised the back wall to 50 cm, where a ball coming in off another one hits it instead of clearing it. A
-ball landing on the balls already in the bin bounces higher than one landing on the floor: a hopper that is fine with
-one ball in it can lose balls once it fills.
+The first try had 30 cm walls all round. With the same spread, 2 of the 8 seeds lost a ball: seed 3 made 5 of 6 (83%)
+and seed 7 made 4 of 5 (80%). Each time, a ball landed on the balls already in the bin, bounced about 0.4 m above the
+bin's floor, went over the back wall and rolled away across the carpet. Both still passed 80%, but only just, so we
+raised the back wall to 50 cm. Now a ball coming in off another one hits the wall instead of clearing it, and all 8
+seeds make 5 of 5. A ball landing on the balls already in the bin bounces higher than one landing on the floor: a
+hopper that is fine with one ball in it can lose balls once it fills.
