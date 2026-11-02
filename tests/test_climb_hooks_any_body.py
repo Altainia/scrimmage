@@ -6,6 +6,7 @@ import mujoco
 import pytest
 
 from range_fixtures import drive, range_cfg
+from scrimmage.protocol import HalState
 from scrimmage.testrange.elements import IN, Bar
 from scrimmage.testrange.spec import load_range
 from scrimmage.terrain.climb import ClimbMonitor
@@ -41,24 +42,57 @@ def ladder_world(folder, file="ladder", z=0.0):
     return World(cfg, folder)
 
 
+# How far the paw starts below rung1's top. The robot stands on its wheels as well, so the rung lifts the front and
+# the paw settles nearer the top than this. At 5 mm the paw ended a few micrometers into the rung and bounced in and
+# out of contact while it settled: whether it touched at the last step was down to rounding, and on Windows it
+# didn't. At 20 mm it stays about 0.5 mm in and carries hundreds of newtons.
+PUSH = 0.02
+
+
 @pytest.fixture
 def world(tmp_path):
-    """The paw rests on rung1: its bottom 5 mm into the rung's top (24 in)."""
+    """The paw pressed onto rung1: its bottom PUSH below the rung's top (24 in), measured in the same world."""
     probe = ladder_world(tmp_path / "probe")
     mujoco.mj_forward(probe.model, probe.data)
     top = float(probe.data.xpos[probe.model.body("arm.base").id][2])
-    return ladder_world(tmp_path / "real", z=24 * IN - 0.005 + 0.05 - top)
+    w = ladder_world(tmp_path / "real", z=24 * IN - PUSH + 0.05 - top)
+    mujoco.mj_forward(w.model, w.data)
+    g = w.model.geom("element.rung1.pipe").id
+    rung_top = float(w.data.geom_xpos[g][2]) + float(w.model.geom_size[g][0])
+    paw_bottom = float(w.data.xpos[w.model.body("arm.paw").id][2]) - 0.05
+    assert rung_top - paw_bottom == pytest.approx(PUSH, abs=1e-6)
+    return w
+
+
+def settle_and_watch(world, mon, seconds=0.1):
+    """Step `world` 0.1 s to settle, then `seconds` more; mon.contact_state() after each of those later steps."""
+    drive(world, 0.1)
+    hal = HalState()
+    states = []
+    for _ in range(int(seconds / world.model.opt.timestep)):
+        world.step(hal)
+        states.append(mon.contact_state())
+    return states
+
+
+def paw_depth(world):
+    """How far (m) the paw is into rung1: the deepest contact between them, 0 when they don't touch."""
+    m, d = world.model, world.data
+    pair = {m.body("arm.paw").id, m.body("element.rung1").id}
+    return max([-d.contact[i].dist for i in range(d.ncon)
+                if {int(m.geom_bodyid[d.contact[i].geom1]), int(m.geom_bodyid[d.contact[i].geom2])} == pair],
+               default=0.0)
 
 
 def test_a_body_counts_as_a_hook(world):
     mon = world.climb_monitor(["arm.paw"])
     assert mon.hooks == ["arm.paw"]
     assert "climb.hook.arm.paw.load" in mon.sample()
-    drive(world, 0.2)
-    on_ground, touched, hooked, others = mon.contact_state()
-    assert hooked == {"rung1": {"arm.paw"}}
-    assert not others
-    assert mon.sample()["climb.hook.arm.paw.load"] > 0.0
+    states = settle_and_watch(world, mon)
+    # the paw is a hook on rung1 at every step, not just at the last one, and well into it
+    assert all(hooked == {"rung1": {"arm.paw"}} and not others for _, _, hooked, others in states)
+    assert paw_depth(world) > 1e-4
+    assert mon.sample()["climb.hook.arm.paw.load"] > 50.0
     # the paw is part of the hook assembly: it may touch a bar
     paw = [g for g in range(world.model.ngeom) if world.model.body(world.model.geom_bodyid[g]).name == "arm.paw"]
     assert paw and all(mon.is_hook_assembly(g) for g in paw)
@@ -67,10 +101,10 @@ def test_a_body_counts_as_a_hook(world):
 def test_without_hook_bodies_the_body_is_not_a_hook(world):
     mon = world.climb_monitor()
     assert mon.hooks == []
-    drive(world, 0.2)
-    _, touched, hooked, others = mon.contact_state()
-    assert touched == {"rung1"} and hooked == {}
-    assert {name for _, name, _ in others} == {"rung1"}
+    states = settle_and_watch(world, mon)
+    assert all(touched == {"rung1"} and hooked == {} for _, touched, hooked, _ in states)
+    assert all({name for _, name, _ in others} == {"rung1"} for _, _, _, others in states)
+    assert paw_depth(world) > 1e-4
 
 
 def test_climb_monitor_rebuilds_for_a_different_list(world):
