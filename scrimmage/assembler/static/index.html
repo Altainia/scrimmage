@@ -384,9 +384,40 @@
       </section>
       <div class="row test-run-buttons">
         <button type="button" id="test-run" class="btn btn-primary btn-big" disabled>&#9654; Run</button>
+        <button type="button" id="test-stop" class="btn" hidden>Stop</button>
+        <p id="test-running" class="test-running" role="status" hidden></p>
       </div>
-      <p id="test-running" class="test-running" role="status" hidden></p>
-      <div id="test-results" class="test-results"></div>
+      <p id="test-run-error" class="error" role="alert" hidden></p>
+      <section id="test-results" class="test-results" aria-labelledby="test-result-title" hidden>
+        <h3 id="test-result-title" class="test-sub"></h3>
+        <p id="test-outcome" class="test-outcome"></p>
+        <p id="test-outcome-note" class="test-note muted" hidden></p>
+        <ul id="test-checks" class="test-checks"></ul>
+        <div id="test-replay" class="test-replay"></div>
+        <div class="row test-player">
+          <button type="button" id="test-play" class="btn btn-small test-play">&#9654; Play</button>
+          <input type="range" id="test-scrub" class="test-scrub" min="0" max="1" step="any" value="0" aria-label="Replay time">
+          <span id="test-time" class="test-time">0.0 s</span>
+          <select id="test-speed" aria-label="Replay speed">
+            <option value="0.25">&frac14;&times;</option>
+            <option value="0.5">&frac12;&times;</option>
+            <option value="1" selected>1&times;</option>
+            <option value="2">2&times;</option>
+          </select>
+        </div>
+        <p id="test-load-error" class="error" role="alert" hidden></p>
+        <div class="row test-chart-head">
+          <h3 class="test-sub">Chart</h3>
+          <label class="test-compare">compare with <select id="test-compare"></select></label>
+        </div>
+        <div id="test-signals" class="test-signals" role="group" aria-label="What to chart"></div>
+        <div id="test-chart" class="test-chart"></div>
+        <p id="test-chart-key" class="test-chart-key"></p>
+      </section>
+      <section id="test-runs-wrap" class="test-runs-wrap" aria-labelledby="test-runs-title" hidden>
+        <h3 id="test-runs-title" class="test-sub">Runs</h3>
+        <ol id="test-runs" class="test-runs"></ol>
+      </section>
     </div>
   </aside>
 </main>

@@ -391,3 +391,179 @@ seconds = 0.7
     page.wait_for_selector("#notices .notice:has-text('Blocks not joined to your test were left out: wait 0.5 s')")
     page.wait_for_function("__scrimmageTest.workspace.getTopBlocks(false).length === 1")
     assert page.is_enabled("#test-run")
+
+
+# -- the run panel: replay, chart and compare ------------------------------------------------------------------------
+
+POSES = "__scrimmageTest.replay.view.groups.map(g => [...g.position.toArray(), ...g.quaternion.toArray()])"
+
+
+def _sentence(s):
+    return s[0].upper() + s[1:] + ("" if s[-1] in ".!?" else ".")
+
+
+def _run(page, run_id):
+    page.wait_for_function("!document.querySelector('#test-run').disabled")
+    page.click("#test-run")
+    page.wait_for_function(f"__scrimmageTest.replay.runId === {run_id!r} && __scrimmageTest.state.running === null")
+    return page.evaluate("__scrimmageTest.state.runs[0]")
+
+
+def _moved(a, b):
+    return max(abs(x - y) for ga, gb in zip(a, b) for x, y in zip(ga, gb))
+
+
+def test_a_run_shows_its_outcome_and_a_replay_that_plays_and_scrubs(test_page):
+    page, _ = test_page()
+    run = _run(page, "001")
+    assert run["status"] == "finished"
+    assert page.inner_text("#test-result-title") == "Run 1 · finished"
+    assert run["outcome"] == "finished" and page.inner_text("#test-outcome") == "Every block played."
+    assert page.evaluate("__scrimmageTest.replay.playing") is False
+    start = page.evaluate(POSES)
+    t0 = page.evaluate("__scrimmageTest.replay.time")
+    assert float(page.input_value("#test-scrub")) == pytest.approx(t0)
+    page.select_option("#test-speed", "0.25")
+    page.click("#test-play")
+    page.wait_for_function("__scrimmageTest.replay.playing"
+                           f" && Number(document.querySelector('#test-scrub').value) > {t0} + 0.02")
+    page.click("#test-play")
+    assert page.evaluate("__scrimmageTest.replay.playing") is False
+    # drag the scrubber to its end: the arm has swung, so a mover is drawn somewhere else
+    box = page.locator("#test-scrub").bounding_box()
+    y = box["y"] + box["height"] / 2
+    page.mouse.move(box["x"] + 4, y)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] / 2, y, steps=5)
+    page.mouse.move(box["x"] + box["width"] + 20, y, steps=5)
+    page.mouse.up()
+    t_end = page.evaluate("Number(document.querySelector('#test-scrub').max)")
+    assert t_end > t0 + 0.4
+    assert page.evaluate("__scrimmageTest.replay.time") == pytest.approx(t_end)
+    assert page.inner_text("#test-time") == f"{t_end:.1f} s of {t_end:.1f} s"
+    assert _moved(start, page.evaluate(POSES)) > 1e-3
+    # the runs list has it, with its outcome
+    assert page.locator("#test-runs .test-run-item").count() == 1
+    assert "Run 1" in page.inner_text("#test-runs") and "Every block played." in page.inner_text("#test-runs")
+
+
+def test_a_second_run_is_charted_against_the_first(test_page):
+    page, _ = test_page()
+    _run(page, "001")
+    assert page.evaluate("__scrimmageTest.replay.chart") == {"signals": ["tilt", "arm.pivot"], "runs": ["001", None]}
+    _run(page, "002")
+    page.wait_for_function("__scrimmageTest.replay.chart.runs[1] === '001'")
+    chart = page.evaluate("__scrimmageTest.replay.chart")
+    assert chart == {"signals": ["tilt", "arm.pivot"], "runs": ["002", "001"]}
+    plots = "[...document.querySelectorAll('#test-chart canvas')].map(c => [c.dataset.signal, c.dataset.series])"
+    assert page.evaluate(plots) == [["tilt", "2"], ["arm.pivot", "2"]]
+    assert page.inner_text("#test-chart-key").replace("\n", " ").split() == ["Run", "2", "Run", "1", "(faded)"]
+    assert page.input_value("#test-compare") == "001"
+    # the signal picker adds the arm's current
+    page.click("#test-signals [data-signal='arm.pivot.current']")
+    assert page.evaluate("__scrimmageTest.replay.chart.signals") == ["tilt", "arm.pivot", "arm.pivot.current"]
+    assert page.locator("#test-chart canvas").count() == 3
+    # compare with nothing: one line each
+    page.select_option("#test-compare", "")
+    page.wait_for_function("__scrimmageTest.replay.chart.runs[1] === null")
+    assert page.evaluate("[...document.querySelectorAll('#test-chart canvas')].every(c => c.dataset.series === '1')")
+    # the newest first; clicking the older run shows it, compared with nothing older
+    items = page.locator("#test-runs .test-run-item")
+    assert [items.nth(i).get_attribute("data-run") for i in range(items.count())] == ["002", "001"]
+    items.nth(1).click()
+    page.wait_for_function("__scrimmageTest.replay.runId === '001'")
+    assert page.inner_text("#test-result-title") == "Run 1 · finished"
+    assert items.nth(1).get_attribute("aria-current") == "true"
+    # a click on a plot moves the replay there
+    box = page.locator("#test-chart canvas").first.bounding_box()
+    page.mouse.click(box["x"] + box["width"] - 9, box["y"] + 20)
+    assert page.evaluate("__scrimmageTest.replay.time") == pytest.approx(
+        page.evaluate("Number(document.querySelector('#test-scrub').max)"), abs=0.05)
+
+
+def test_a_timeout_the_tab_cant_edit_is_named_in_full(test_page):
+    """A wait's timeout has no box on the block: the outcome sentence names the block in full, and a note says where
+    the timeout is set."""
+    page, _ = test_page("""
+[[block]]
+do = "wait_until"
+until = { tilt = { above = 45.0 } }
+timeout = 0.3
+""")
+    run = _run(page, "001")
+    assert run["status"] == "timed out" and "(block 1)" in run["outcome"], run
+    assert page.inner_text("#test-result-title") == "Run 1 · timed out"
+    assert page.inner_text("#test-outcome") == _sentence(run["outcome"])
+    assert page.is_visible("#test-outcome-note") and "timeout" in page.inner_text("#test-outcome-note")
+    assert _sentence(run["outcome"]) in page.inner_text("#test-runs")
+
+
+def test_stop_ends_the_run_and_the_list_says_it_was_stopped(test_page):
+    page, _ = test_page("""
+[[block]]
+do = "wait"
+seconds = 30.0
+""")
+    page.click("#test-run")
+    page.wait_for_selector("#test-stop:not([hidden])")
+    page.wait_for_function("(__scrimmageTest.state.running || {}).progress > 0")
+    page.click("#test-stop")
+    page.wait_for_function("__scrimmageTest.replay.runId === '001'")
+    assert page.is_hidden("#test-stop")
+    assert page.inner_text("#test-result-title") == "Run 1 · stopped"
+    assert page.inner_text("#test-outcome").startswith("You stopped the run at")
+    assert "stopped" in page.inner_text("#test-runs .test-run-item")
+
+
+WEDGE_EXTENTS = """(() => {
+  const out = [];
+  for (const g of __scrimmageTest.replay.view.groups) g.traverse((o) => {
+    if (!o.isMesh || o.geometry.type !== 'BufferGeometry') return;
+    o.geometry.computeBoundingBox();
+    const b = o.geometry.boundingBox;
+    out.push(Math.max(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z));
+  });
+  return out;
+})()"""
+
+
+def test_an_old_run_replays_its_own_geometry_after_the_part_changes(test_page, tmp_path):
+    """Review Focus 5: the part's mesh and its config replaced (Import again) between two runs; the first run still
+    draws its own robot, and the second draws the new one."""
+    import os
+
+    from test_test_server import write_wedge
+    page, _ = test_page()
+    robot = tmp_path / "robot.toml"
+    write_wedge(tmp_path / "wedge", 0.1)
+    robot.write_text(robot.read_text(encoding="utf-8")
+                     + '\n[[part]]\nname = "w"\npath = "wedge"\nattach = "drive.top"\n', encoding="utf-8")
+    page.wait_for_function("__scrimmageTest.state.palette.parts.includes('w')")
+    _run(page, "001")
+    old = min(page.evaluate(WEDGE_EXTENTS))
+    write_wedge(tmp_path / "wedge", 0.2, mass=2.0)
+    stl = tmp_path / "wedge" / "wedge.stl"
+    st = stl.stat()                  # Import again comes seconds later, not within MuJoCo's one-second mesh cache
+    os.utime(stl, (st.st_atime + 5, st.st_mtime + 5))
+    _run(page, "002")
+    new = min(page.evaluate(WEDGE_EXTENTS))
+    assert new == pytest.approx(2 * old, rel=1e-3)
+    page.click("#test-runs [data-run='001']")
+    page.wait_for_function("__scrimmageTest.replay.runId === '001'")
+    assert min(page.evaluate(WEDGE_EXTENTS)) == pytest.approx(old, rel=1e-3)
+    assert page.inner_text("#test-result-title") == "Run 1 · finished"
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_the_run_panel_meets_wcag_aa(test_page, scheme):
+    page, _ = test_page(SPIN + """
+[[block]]
+do = "expect"
+that = { tilt = { below = 20.0 } }
+""", scheme)
+    _run(page, "001")
+    _run(page, "002")
+    page.wait_for_function("__scrimmageTest.replay.chart.runs[1] === '001'")
+    page.click("#test-signals [data-signal='arm.pivot.current']")
+    assert page.is_visible("#test-checks li")
+    assert page.evaluate(f"({CONTRAST_JS}).check(document.querySelector('#test-run-col'))") == []

@@ -400,11 +400,12 @@ Test (`/api/test/*`; 404 "no test is open" unless a test is open, except /api/te
   GET  /api/test/state[?since=N]   -> {version, path, test: the test as JSON (scrimmage/blocks/program.py to_json),
         palette (scrimmage/blocks/palette.py; null when the robot doesn't load), problems: [{place, message}] (a
         robot that doesn't load is one problem at place []), running: null|{kind: run|sweep, progress: 0..1},
-        runs: list_runs (newest first; a sweep's runs have ids "sweep-NNN/NNN"), sweeps: [{id, target, values,
-        cancelled, problems, rows}] (newest first), file_error: why the file as edited outside can't be read (the last
-        good test is kept) or null, run_error: why the last run or sweep couldn't run or null, last: {kind, id} of the
-        last run or sweep this editor made, or null}; long-polls like /api/robot/state. The robot changing on disk
-        (an edit, Import again) shows in the next state's palette and problems.
+        runs: list_runs (newest first; a sweep's runs have ids "sweep-NNN/NNN"; cancelled: Stop ended it), sweeps:
+        [{id, target, values, cancelled, problems, rows}] (newest first), file_error: why the file as edited outside
+        can't be read (the last good test is kept) or null, run_error: why the last run or sweep couldn't run or null,
+        last: {kind, id} of the last run or sweep this editor made, or null}; long-polls like /api/robot/state. The
+        robot changing on disk (an edit, Import again, a part folder's files) shows in the next state's palette and
+        problems.
   POST /api/test/save              -> body {test, version}: replaces the test and writes the file. {ok, version};
         400 with the block's place for a bad shape; 409 {error, state} when the test changed after `version`.
   POST /api/test/run               -> {ok: true} once the run starts on its thread; 409 {error, problems} while there
@@ -719,6 +720,7 @@ class App:
         self._view: dict | None = None
         self._scenario_view: dict | None = None
         self._signals: dict | None = None
+        self._parts_seen = None                   # _parts_look() when the robot was last validated
         self._lock = threading.RLock()
         self._changed = threading.Condition(self._lock)
         # run progress has its own condition: the run's worker never waits for the app lock (edit validation)
@@ -1138,6 +1140,7 @@ class App:
         self._view = None
         self._scenario_view = None
         self._signals = None
+        self._parts_seen = self._parts_look()
         if self.robot is None:
             self.result = validate.Result(False, [validate.FieldError("status", self.robot_missing)], [], None)
         else:
@@ -1217,6 +1220,13 @@ class App:
             self.test.reload_if_changed()
             r_changed = self._point_test_robot() or r_changed
         if self.robot is not None and self.robot.reload_if_changed():
+            r_changed = True
+        if self.robot is not None and self._parts_look() != self._parts_seen:
+            # a part folder changed (Import again rewrites the folder, not the robot config): build the robot again,
+            # past MuJoCo's cache, which keeps a mesh by its file name and time to the second
+            mujoco.mj_clearCache(mujoco.mj_getCache())
+            if not r_changed:
+                self.robot.version += 1
             r_changed = True
         if r_changed:
             self._revalidate()
@@ -1319,6 +1329,25 @@ class App:
         except teamfolders.TeamFolderError:
             return None
         return p if p.is_absolute() else self._base_dir() / p
+
+    def _parts_look(self) -> tuple | None:
+        """Each file in the robot document's part folders with its time, size and file id, to see a folder change."""
+        d = self.robot
+        if d is None or d.doc is None:
+            return None
+        out = []
+        for p in edits.parts(d.doc):
+            folder = self._part_folder(p.get("path"))
+            if folder is None:
+                continue
+            try:
+                root = folder.parent if folder.is_file() else folder
+                for f in sorted(root.rglob("*")):
+                    st = f.stat()
+                    out.append((str(f), st.st_mtime_ns, st.st_size, st.st_ino))
+            except OSError:
+                out.append((str(folder), None))        # being replaced: the next look sees it whole
+        return tuple(out)
 
     def _cad_pos(self, doc, path, attach) -> list[float] | None:
         """Where the part folder `path` attached to `attach` sits where the CAD has it (edits.cad_offset), or None:
@@ -1498,6 +1527,7 @@ class App:
             return 200, {"ok": False, "errors": [{"field": "status", "message": f"can't write the file: {e}"}]}
         self._view = self._scenario_view = self._signals = None
         self.result = res
+        self._parts_seen = self._parts_look()
         self._revalidate_scenario(bump=True)
         self._changed.notify_all()
         return 200, {"ok": True, "version": self.robot.version}

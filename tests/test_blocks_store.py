@@ -44,7 +44,7 @@ def test_save_then_load(tmp_path):
     assert got["view"] == r.view
     [entry] = list_runs(base)
     assert entry == {"id": "001", "status": "finished", "outcome": "finished", "started": got["started"],
-                     "sweep": None}
+                     "sweep": None, "cancelled": False}
     with pytest.raises(FileNotFoundError):
         load_run(base, "002")
     with pytest.raises(FileNotFoundError):
@@ -79,6 +79,29 @@ def test_only_the_newest_runs_are_kept(tmp_path):
     assert sorted(p.name for p in base.iterdir()) == [f"{i:03d}" for i in range(2, KEEP_RUNS + 2)]
     assert [e["id"] for e in list_runs(base)] == [f"{i:03d}" for i in range(KEEP_RUNS + 1, 1, -1)]
     assert not [p for p in base.iterdir() if p.name.startswith(".")]     # no temp folder left behind
+
+
+def test_stopped_runs_dont_push_finished_runs_out(tmp_path):
+    """A run the student stopped doesn't count toward KEEP_RUNS: pressing Stop again and again keeps the finished
+    runs. The stopped runs newer than the oldest finished run kept stay (at most KEEP_RUNS of them)."""
+    from dataclasses import replace
+    program, r = _run(write_test(tmp_path, WAIT_1))
+    stopped = replace(r, status="cancelled", outcome="you stopped the run at 0.5 s")
+    base = tmp_path / "runs"
+    for _ in range(KEEP_RUNS):
+        save_run(r, program, base)
+    for _ in range(3):
+        save_run(stopped, program, base)
+    names = sorted(p.name for p in base.iterdir())
+    assert names == [f"{i:03d}" for i in range(1, KEEP_RUNS + 4)]          # nothing pushed out
+    assert [e["cancelled"] for e in list_runs(base)][:4] == [True, True, True, False]
+    save_run(r, program, base)                    # a finished run: the oldest finished one goes, the stopped stay
+    assert sorted(p.name for p in base.iterdir()) == [f"{i:03d}" for i in range(2, KEEP_RUNS + 5)]
+    for _ in range(KEEP_RUNS + 2):                # more stops than KEEP_RUNS: the oldest stopped ones go
+        save_run(stopped, program, base)
+    runs = list_runs(base)
+    assert sum(e["cancelled"] for e in runs) == KEEP_RUNS
+    assert sum(not e["cancelled"] for e in runs) == KEEP_RUNS
 
 
 WEDGE_TOML = '[part]\nname = "wedge"\nformat = 1\n[[body]]\nname = "b"\nmass = 1\ngeom = [{ mesh = "wedge.stl" }]\n'

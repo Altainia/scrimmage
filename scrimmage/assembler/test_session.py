@@ -73,6 +73,7 @@ class TestSession:
         self._cancel = threading.Event()
         self._thread: threading.Thread | None = None
         self._closed = False
+        self._kept: tuple | None = None      # (the runs folder's look, list_runs, list_sweeps): see _kept_runs
 
     # -- what it is -------------------------------------------------------------------------
     @property
@@ -233,6 +234,7 @@ class TestSession:
         self.simlock.release("test")    # first: a page that sees the run finished may start a drive session
         with self._cond:
             self.running = None
+            self._kept = None                # read the runs folder again, whatever its clock says
             if last is not None:
                 self.last = last
             self.run_error = error
@@ -271,13 +273,26 @@ class TestSession:
             self._finish(last, error)
 
     # -- reading ----------------------------------------------------------------------------
+    def _kept_runs(self) -> tuple[list, list]:
+        """list_runs and list_sweeps, read again only when the runs folder changes: a run or a sweep is renamed into
+        it whole and pruned whole, so its time and its names tell (the page polls four times a second while a run
+        goes)."""
+        base = self.runs_dir
+        try:
+            look = (base.stat().st_mtime_ns, tuple(sorted(p.name for p in base.iterdir())))
+        except OSError:
+            look = None
+        kept = self._kept
+        if kept is None or kept[0] != look:
+            kept = self._kept = (look, store.list_runs(base), store.list_sweeps(base))
+        return kept[1], kept[2]
+
     def state(self) -> dict:
         with self._cond:
             out = {"version": self.version, "path": str(self.path), "test": to_json(self.program),
                    "palette": self.palette, "problems": self.problems, "running": self.running,
                    "file_error": self.file_error, "run_error": self.run_error, "last": self.last}
-        out["runs"] = store.list_runs(self.runs_dir)
-        out["sweeps"] = store.list_sweeps(self.runs_dir)
+        out["runs"], out["sweeps"] = self._kept_runs()
         return out
 
     def wait(self, since: int | None, end: float) -> bool:

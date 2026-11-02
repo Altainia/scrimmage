@@ -225,3 +225,98 @@ def test_missing_robot_and_bad_outside_edit(tmp_path, test_app):
     assert st["file_error"] and "block 1" in st["file_error"] and st["test"]["blocks"][0]["do"] == "spin"
     s, b = c.call("POST", "/api/test/run", {})
     assert s == 409 and "fix the test file first" in b["error"], b
+
+
+def test_state_reads_the_kept_runs_only_when_they_change(tmp_path, test_app, monkeypatch):
+    """The page polls the state four times a second while a run goes: the kept runs' files are read again only when
+    the runs folder changes (a run kept, one pruned), not on every poll."""
+    from scrimmage.blocks import store
+    t = write_test(tmp_path)
+    c = test_app(t)
+    reads = []
+    real = store.list_runs
+    monkeypatch.setattr(store, "list_runs", lambda base: reads.append(base) or real(base))
+    for _ in range(5):
+        _state(c)
+    assert len(reads) <= 1, reads
+    s, b = c.call("POST", "/api/test/run", {})
+    assert s == 200, b
+    st = _wait_idle(c)
+    assert len(st["runs"]) == 1
+    n = len(reads)
+    for _ in range(5):
+        assert len(_state(c)["runs"]) == 1
+    assert len(reads) == n
+    # a run kept from outside (`scrimmage test run`, the MCP tool) shows
+    (store.runs_dir(t) / "002").mkdir()
+    (store.runs_dir(t) / "002" / "result.json").write_text('{"status": "finished", "started": ""}', encoding="utf-8")
+    assert {r["id"] for r in _state(c)["runs"]} == {"001", "002"}
+
+
+LONG = """
+[[block]]
+do = "wait"
+seconds = 30.0
+"""
+
+
+def test_a_stopped_run_is_kept_marked_and_doesnt_push_runs_out(tmp_path, test_app):
+    t = write_test(tmp_path, LONG)
+    c = test_app(t)
+    assert c.call("POST", "/api/test/run", {})[0] == 200
+    end = time.monotonic() + 30
+    while not (_state(c)["running"] or {}).get("progress"):
+        assert time.monotonic() < end
+        time.sleep(0.05)
+    assert c.call("POST", "/api/test/cancel", {})[0] == 200
+    st = _wait_idle(c)
+    [run] = st["runs"]
+    assert run["status"] == "cancelled" and run["cancelled"] and run["outcome"].startswith("you stopped the run")
+
+
+WEDGE = '[part]\nname = "wedge"\nformat = 1\n[[body]]\nname = "b"\nmass = 1\ngeom = [{ mesh = "wedge.stl" }]\n'
+
+
+def write_wedge(folder, size: float, mass: float = 1.0) -> None:
+    from test_assembler_core import stl_bytes
+    a, b, c, d = (0, 0, 0), (size, 0, 0), (0, size, 0), (0, 0, size)
+    folder.mkdir(exist_ok=True)
+    (folder / "part.toml").write_text(WEDGE.replace("mass = 1", f"mass = {mass}"), encoding="utf-8")
+    (folder / "wedge.stl").write_bytes(stl_bytes([(a, c, b), (a, b, d), (a, d, c), (b, c, d)]))
+
+
+def mesh_extent(view) -> float:
+    import base64
+
+    import numpy as np
+    sizes = [np.ptp(np.frombuffer(base64.b64decode(m["vert"]), "<f4").reshape(-1, 3), axis=0).max()
+             for m in view["meshes"]]
+    return float(min(sizes))
+
+
+def test_a_part_folder_changed_within_the_second_rebuilds_the_robot(tmp_path, test_app):
+    """Import again rewrites a part's folder, not the robot config: the server sees the folder change, so the next run
+    (and the palette) use the new part. MuJoCo caches a mesh file by its name and time to the second, so the folder
+    here changes within the same second as before, and the run must still draw the new mesh."""
+    import os
+    t = write_test(tmp_path)
+    robot = tmp_path / "robot.toml"
+    robot.write_text(robot.read_text(encoding="utf-8")
+                     + '\n[[part]]\nname = "w"\npath = "wedge"\nattach = "drive.top"\n', encoding="utf-8")
+    part = tmp_path / "wedge"
+    write_wedge(part, 0.1)
+    c = test_app(t)
+    assert _state(c)["problems"] == []
+    assert c.call("POST", "/api/test/run", {})[0] == 200
+    _wait_idle(c)
+    stl = part / "wedge.stl"
+    old = stl.stat().st_mtime_ns
+    write_wedge(part, 0.2, mass=2.0)
+    sec = old - old % 1_000_000_000
+    same = sec + (old - sec + 500_000_000) % 1_000_000_000      # the same second, another moment in it
+    os.utime(stl, ns=(same, same))
+    assert c.call("POST", "/api/test/run", {})[0] == 200
+    st = _wait_idle(c)
+    assert st["run_error"] is None, st
+    first, second = (c.get(f"/api/test/run/{i}/view")[1] for i in ("001", "002"))
+    assert mesh_extent(second) == pytest.approx(2 * mesh_extent(first), rel=1e-3)

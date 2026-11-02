@@ -1,7 +1,8 @@
 """Kept runs of a block test, each a self-contained replay: `<test stem>-runs/` next to the test file.
 
     <test stem>-runs/
-      001/ ... 010/          the newest KEEP_RUNS runs (folder names count up and are never reused)
+      001/ ... 010/          the newest KEEP_RUNS runs (folder names count up and are never reused); a run the student
+                             stopped doesn't count (`_prune_runs`)
         result.json          status, outcome, t_end, checks, hung, started (ISO time), test (the test file's TOML
                              as it ran), sweep (None, or what was swept and the value)
         signals.csv          t and each signal, SIGNAL_HZ (scrimmage/blocks/run.py)
@@ -139,9 +140,25 @@ def _place(tmp: Path, base: Path, pattern: re.Pattern, name) -> Path:
     raise OSError(f"couldn't find a free folder name in {base}")
 
 
-def _prune(base: Path, pattern: re.Pattern, keep: int) -> None:
-    for _, p in _numbered(base, pattern)[:-keep]:
-        shutil.rmtree(p, ignore_errors=True)
+def _status(folder: Path) -> str | None:
+    try:
+        return json.loads((folder / "result.json").read_text(encoding="utf-8")).get("status")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def _prune_runs(base: Path) -> None:
+    """Leave the newest KEEP_RUNS runs that weren't stopped, and the stopped ones newer than the oldest of those (the
+    newest KEEP_RUNS of them): pressing Stop doesn't push a finished run out."""
+    runs = _numbered(base, _RUN_RE)
+    stopped = {k for k, p in runs if _status(p) == "cancelled"}
+    done = [k for k, _ in runs if k not in stopped]
+    keep = set(done[-KEEP_RUNS:])
+    oldest = done[-KEEP_RUNS] if len(done) >= KEEP_RUNS else -1
+    keep |= set([k for k, _ in runs if k in stopped and k > oldest][-KEEP_RUNS:])
+    for k, p in runs:
+        if k not in keep:
+            shutil.rmtree(p, ignore_errors=True)
 
 
 def write_motion(path: Path, motion: list, n_movers: int) -> None:
@@ -188,7 +205,7 @@ def _read_signals(path: Path) -> dict[str, list[float]]:
 
 def save_run(result, program: Program, base, sweep: dict | None = None) -> Path:
     """Keep a run in a new folder `base/<NNN>/`; returns it. A plain run (no `sweep`) leaves the newest KEEP_RUNS
-    plain runs in base; a sweep's runs are pruned with their sweep."""
+    plain runs in base, not counting stopped ones (`_prune_runs`); a sweep's runs are pruned with their sweep."""
     base = Path(base)
     base.mkdir(parents=True, exist_ok=True)
     clean_stale(base, TEMP_RUNS)
@@ -206,7 +223,7 @@ def save_run(result, program: Program, base, sweep: dict | None = None) -> Path:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
     if sweep is None:
-        _prune(base, _RUN_RE, KEEP_RUNS)
+        _prune_runs(base)
     return folder
 
 
@@ -216,12 +233,12 @@ def _entry(base: Path, folder: Path) -> dict | None:
     except (OSError, ValueError):
         return None                     # a folder being deleted, or not a run
     return {"id": folder.relative_to(base).as_posix(), "status": r.get("status"), "outcome": r.get("outcome"),
-            "started": r.get("started"), "sweep": r.get("sweep")}
+            "started": r.get("started"), "sweep": r.get("sweep"), "cancelled": r.get("status") == "cancelled"}
 
 
 def list_runs(base) -> list[dict]:
     """The kept runs, plain and in sweeps, newest first: id ("004", "sweep-002/003"), status, outcome, started,
-    sweep."""
+    sweep, cancelled (the student stopped it)."""
     base = Path(base)
     folders = [p for _, p in _numbered(base, _RUN_RE)]
     for _, s in _numbered(base, _SWEEP_RE):

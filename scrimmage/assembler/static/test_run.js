@@ -1,0 +1,430 @@
+// The Test tab's run panel (test.js calls update() with each state): the shown run, its replay and its chart, and
+// the kept runs. Data: GET /api/test/run/<id> (result.json's fields and signals), /view (the run's own view.json,
+// so a run from before Import again draws its old robot) and /motion (motion.bin, scrimmage/blocks/store.py).
+//
+//   Outcome   "Run 3 · timed out", the outcome sentence in full, a note when a setting the tab has no box for (a
+//             timeout, a repeat's max) ended it, and each check's line
+//   Replay    live3d.js's LiveView draws the view; motion.bin's frames move it. Play / Pause, speed (¼× to 2×), a
+//             scrubber with the time
+//   Chart     one plot per signal picked (default: the test's `chart`, else tilt and the driven joints but the
+//             drive wheels), the run
+//             "compared with" (default: the run before it) drawn faded and dashed, the replay's time marked; a
+//             click on a plot moves the replay there
+//   Runs      the kept runs, newest first, each with its outcome (a stopped one says so); a click shows it
+//
+// When a new run is kept (a run ends), it is shown. Test hook: window.__scrimmageTest.replay (test.js) is replay():
+// {time, playing, runId, view (the LiveView or null), chart: {signals, runs: [shown, compared or null]}}.
+
+import { $, h, api, apiFile } from "./app.js";
+
+const MOTION_MAGIC = "SCRM", MOTION_VERSION = 1, HEADER = 14;   // struct "<4sHII"
+const CHART_H = 92, PAD_L = 44, PAD_R = 8, PAD_T = 6, TICKS_H = 16;
+const KEEP_LOADED = 12;   // results kept in memory for compares
+
+const rp = {
+  state: null,
+  newest: undefined,  // the newest kept run's id last seen (undefined: no state yet)
+  shownId: null,
+  run: null,          // the shown run: {id, result, motion: {n, times, poses}} once loaded
+  compareId: undefined,   // undefined: the default (the run before the shown one); null: none
+  compare: null,      // the compared run's result, once loaded
+  results: new Map(), // id -> result (kept runs never change)
+  picked: null,       // the signals the student picked (a Set), or null for the default
+  time: 0,
+  playing: false,
+  speed: 1,
+  wall: 0,
+  view: null,
+  viewFailed: null,
+  seq: 0,
+};
+
+export function runName(id) {
+  const m = /^(?:sweep-(\d+)\/)?(\d+)$/.exec(id || "");
+  if (!m) return String(id);
+  return m[1] ? `Sweep ${+m[1]}, run ${+m[2]}` : `Run ${+m[2]}`;
+}
+
+const statusWord = (status) => (status === "cancelled" ? "stopped" : status || "");
+// the outcome as the student reads it ("finished" alone says nothing the status doesn't)
+const outcomeText = (r) => sentence(r.status === "finished" && r.outcome === "finished" ? "every block played" : r.outcome);
+const sentence = (s) => (s ? `${s[0].toUpperCase()}${s.slice(1)}${/[.!?]$/.test(s) ? "" : "."}` : "");
+const end = () => (rp.run ? rp.run.result.t_end || 0 : 0);
+const start = () => (rp.run && rp.run.motion.times.length ? rp.run.motion.times[0] : 0);
+
+export function replay() {
+  return {
+    time: rp.time, playing: rp.playing, runId: rp.run ? rp.run.id : null, view: rp.view,
+    chart: { signals: rp.run ? shownSignals() : [], runs: [rp.shownId, rp.compare ? rp.compare.id : null] },
+  };
+}
+
+// -- the state -----------------------------------------------------------------------------------------------------
+export function update(state) {
+  rp.state = state;
+  const runs = state.runs || [];
+  const newest = runs.length ? runs[0].id : null;
+  if (newest !== rp.newest) {
+    rp.newest = newest;
+    if (newest) show(newest);
+  }
+  if (rp.shownId && !runs.some((r) => r.id === rp.shownId)) {   // pruned (or the folder was emptied)
+    if (newest) show(newest); else clear();
+  }
+  const err = $("#test-run-error");
+  err.hidden = !state.run_error;
+  err.textContent = state.run_error ? `The run couldn't finish: ${state.run_error}` : "";
+  renderList();
+  renderCompare();
+}
+
+function clear() {
+  rp.seq++;
+  rp.shownId = null;
+  rp.run = null;
+  rp.compare = null;
+  pause();
+  $("#test-results").hidden = true;
+}
+
+async function result(id) {
+  if (rp.results.has(id)) return rp.results.get(id);
+  const { status, data } = await api("GET", `/api/test/run/${id}`);
+  if (status !== 200) throw new Error((data.errors && data.errors[0] && data.errors[0].message) || `the server answered ${status}`);
+  rp.results.set(id, data);
+  while (rp.results.size > KEEP_LOADED) rp.results.delete(rp.results.keys().next().value);
+  return data;
+}
+
+export function parseMotion(buf) {
+  const dv = new DataView(buf);
+  if (buf.byteLength < HEADER || String.fromCharCode(...new Uint8Array(buf, 0, 4)) !== MOTION_MAGIC) {
+    throw new Error("the replay file isn't one");
+  }
+  if (dv.getUint16(4, true) !== MOTION_VERSION) throw new Error("the replay file is from a newer scrimmage");
+  const frames = dv.getUint32(6, true), n = dv.getUint32(10, true);
+  const size = 8 + n * 28;
+  if (buf.byteLength !== HEADER + frames * size) throw new Error("the replay file is cut short");
+  const times = new Float64Array(frames), poses = new Float32Array(frames * n * 7);
+  for (let k = 0, o = HEADER; k < frames; k++, o += size) {
+    times[k] = dv.getFloat64(o, true);
+    for (let j = 0; j < n * 7; j++) poses[k * n * 7 + j] = dv.getFloat32(o + 8 + 4 * j, true);
+  }
+  return { n, times, poses };
+}
+
+async function show(id) {
+  const seq = ++rp.seq;
+  pause();
+  rp.shownId = id;
+  rp.compareId = undefined;
+  renderList();
+  const loadErr = $("#test-load-error");
+  let res, viewData, motion;
+  try {
+    const [r, v, m] = await Promise.all([result(id), api("GET", `/api/test/run/${id}/view`), apiFile(`/api/test/run/${id}/motion`)]);
+    if (v.status !== 200) throw new Error((v.data.errors && v.data.errors[0] && v.data.errors[0].message) || `the server answered ${v.status}`);
+    if (!m.blob) throw new Error(`the server answered ${m.status}`);
+    res = r;
+    viewData = v.data;
+    motion = parseMotion(await m.blob.arrayBuffer());
+  } catch (e) {
+    if (seq !== rp.seq) return;
+    loadErr.hidden = false;
+    loadErr.textContent = `Couldn't load ${runName(id)}: ${e.message || e}`;
+    return;
+  }
+  await ensureView();
+  if (seq !== rp.seq) return;
+  loadErr.hidden = true;
+  rp.run = { id, result: res, motion };
+  if (rp.view) rp.view.setModel(viewData);
+  if (rp.picked) rp.picked = new Set([...rp.picked].filter((s) => s in res.signals));
+  if (rp.picked && !rp.picked.size) rp.picked = null;
+  $("#test-results").hidden = false;
+  renderOutcome();
+  renderSignals();
+  renderCompare();
+  setTime(start());
+  loadCompare();
+}
+
+async function ensureView() {
+  if (rp.view || rp.viewFailed) return;
+  const box = $("#test-replay");
+  try {
+    const { LiveView } = await import("./live3d.js");
+    if (rp.view) return;
+    rp.view = new LiveView(box);
+    rp.view.renderer.domElement.setAttribute("aria-label", "Replay of the run in 3D");
+  } catch (e) {
+    rp.viewFailed = String(e.message || e);
+    box.replaceChildren(h("p", { class: "view-placeholder", text: `The replay needs WebGL: ${rp.viewFailed}` }));
+  }
+}
+
+// -- compare -------------------------------------------------------------------------------------------------------
+function compareTarget() {
+  if (rp.compareId !== undefined) return rp.compareId;
+  const runs = (rp.state && rp.state.runs) || [];
+  const k = runs.findIndex((r) => r.id === rp.shownId);
+  return k >= 0 && k + 1 < runs.length ? runs[k + 1].id : null;
+}
+
+async function loadCompare() {
+  const id = compareTarget();
+  const seq = rp.seq;
+  if (!id) { rp.compare = null; drawChart(); return; }
+  if (rp.compare && rp.compare.id === id) { drawChart(); return; }
+  try {
+    const res = await result(id);
+    if (seq !== rp.seq || compareTarget() !== id) return;
+    rp.compare = res;
+  } catch {
+    rp.compare = null;
+  }
+  drawChart();
+}
+
+function renderCompare() {
+  const sel = $("#test-compare");
+  const runs = ((rp.state && rp.state.runs) || []).filter((r) => r.id !== rp.shownId);
+  const want = compareTarget();
+  const opts = [h("option", { value: "", text: "nothing" }),
+    ...runs.map((r) => h("option", { value: r.id, text: `${runName(r.id)} · ${statusWord(r.status)}` }))];
+  const key = opts.map((o) => `${o.value}=${o.textContent}`).join("|");
+  if (sel.dataset.key !== key) { sel.replaceChildren(...opts); sel.dataset.key = key; }
+  sel.value = want || "";
+  if (rp.run && (want || null) !== (rp.compare ? rp.compare.id : null)) loadCompare();
+}
+
+// -- outcome and runs ----------------------------------------------------------------------------------------------
+const NOTES = {
+  "timed out": "A block gave up after its timeout. Timeouts aren't shown on the blocks yet: change one in the test file.",
+  "repeat limit": "A repeat until stopped at its most rounds (max). The max isn't shown on the block yet: change it in the test file.",
+};
+
+function renderOutcome() {
+  const r = rp.run.result;
+  $("#test-result-title").textContent = `${runName(rp.run.id)} · ${statusWord(r.status)}`;
+  $("#test-outcome").textContent = outcomeText(r);
+  const note = $("#test-outcome-note");
+  note.hidden = !NOTES[r.status];
+  note.textContent = NOTES[r.status] || "";
+  $("#test-checks").replaceChildren(...(r.checks || []).map((c) => h("li", { class: c.passed ? "test-check-ok" : "test-check-bad" },
+    h("span", { class: "test-check-icon", "aria-hidden": "true", text: c.passed ? "✓" : "✗" }), sentence(c.line))));
+}
+
+function renderList() {
+  const runs = (rp.state && rp.state.runs) || [];
+  $("#test-runs-wrap").hidden = !runs.length;
+  $("#test-runs").replaceChildren(...runs.map((r) => h("li", {},
+    h("button", { type: "button", class: `test-run-item${r.cancelled ? " test-run-stopped" : ""}`, "data-run": r.id,
+      "aria-current": r.id === rp.shownId ? "true" : null, onclick: () => { if (r.id !== rp.shownId) show(r.id); } },
+    h("span", { class: "test-run-name" }, runName(r.id), h("span", { class: "test-run-status", text: ` · ${statusWord(r.status)}` })),
+    h("span", { class: "test-run-outcome", text: outcomeText(r) })))));
+}
+
+// -- the replay ----------------------------------------------------------------------------------------------------
+function frameAt(t) {
+  const times = rp.run.motion.times;
+  let lo = 0, hi = times.length - 1;
+  if (hi < 0) return -1;
+  while (lo < hi) {   // the last frame at or before t
+    const mid = (lo + hi + 1) >> 1;
+    if (times[mid] <= t + 1e-9) lo = mid; else hi = mid - 1;
+  }
+  return lo;
+}
+
+function setTime(t) {
+  if (!rp.run) return;
+  rp.time = Math.max(start(), Math.min(end(), t));
+  const k = frameAt(rp.time);
+  const { n, poses } = rp.run.motion;
+  if (rp.view && k >= 0) rp.view.applyFrame({ poses: poses.subarray(k * n * 7, (k + 1) * n * 7), n, seq: k });
+  renderPlayer();
+  drawChart();
+}
+
+function renderPlayer() {
+  const scrub = $("#test-scrub");
+  scrub.min = String(start());
+  scrub.max = String(Math.max(end(), start() + 0.01));
+  scrub.value = String(rp.time);
+  $("#test-time").textContent = `${rp.time.toFixed(1)} s of ${end().toFixed(1)} s`;
+  const play = $("#test-play");
+  play.textContent = rp.playing ? "❚❚ Pause" : "▶ Play";
+  play.setAttribute("aria-pressed", String(rp.playing));
+}
+
+function play() {
+  if (!rp.run) return;
+  if (rp.time >= end() - 1e-6) setTime(start());
+  rp.playing = true;
+  rp.wall = performance.now();
+  renderPlayer();
+  requestAnimationFrame(tick);
+}
+
+function pause() {
+  rp.playing = false;
+  if (rp.run) renderPlayer();
+}
+
+function tick(now) {
+  if (!rp.playing || !rp.run) return;
+  const dt = Math.max(0, now - rp.wall) / 1000;
+  rp.wall = now;
+  setTime(rp.time + dt * rp.speed);
+  if (rp.time >= end() - 1e-9) { pause(); return; }
+  requestAnimationFrame(tick);
+}
+
+// -- the chart -----------------------------------------------------------------------------------------------------
+function available() {
+  return rp.run ? Object.keys(rp.run.result.signals).filter((k) => k !== "t") : [];
+}
+
+// The test's own `chart`, else tilt and the driven joints: not the currents or the hook load, and not the drive
+// wheels, whose turning says little about a mechanism (they are in the picker).
+function defaultSignals() {
+  const have = available();
+  const chart = rp.state && rp.state.test && rp.state.test.chart;
+  const listed = chart ? chart.filter((s) => have.includes(s)) : [];
+  if (listed.length) return listed;
+  const pal = rp.state && rp.state.palette;
+  const wheels = new Set(((pal && pal.joints) || []).filter((j) => j.kind === "wheel").map((j) => j.name));
+  return have.filter((s) => !s.endsWith(".current") && s !== "hook_load" && !wheels.has(s));
+}
+
+const shownSignals = () => (rp.picked ? available().filter((s) => rp.picked.has(s)) : defaultSignals());
+
+function unitOf(name) {
+  if (name === "tilt") return "°";
+  if (name.endsWith(".current")) return "A";
+  if (name === "hook_load") return "N";
+  const pal = rp.state && rp.state.palette;
+  const j = pal && (pal.joints || []).find((x) => x.name === name);
+  return j ? (j.unit === "deg" ? "°" : j.unit) : "";
+}
+
+function renderSignals() {
+  const shown = new Set(shownSignals());
+  $("#test-signals").replaceChildren(...available().map((s) => h("button", {
+    type: "button", class: "test-signal", "aria-pressed": String(shown.has(s)), "data-signal": s, text: s,
+    onclick: () => {
+      const now = new Set(shownSignals());
+      if (now.has(s)) now.delete(s); else now.add(s);
+      rp.picked = now;
+      renderSignals();
+      drawChart();
+    } })));
+}
+
+function tokens() {
+  const css = getComputedStyle(document.documentElement);
+  const v = (n) => css.getPropertyValue(n).trim();
+  return { run: v("--accent-text"), compare: v("--muted"), grid: v("--line"), text: v("--muted"), mark: v("--text"),
+    bg: v("--subtle"), font: v("--font") };
+}
+
+function drawChart() {
+  const box = $("#test-chart");
+  const key = $("#test-chart-key");
+  if (!rp.run) { box.replaceChildren(); key.replaceChildren(); return; }
+  const names = shownSignals();
+  const cmp = rp.compare;
+  const tEnd = Math.max(end(), cmp ? cmp.t_end || 0 : 0) || 1;
+  let canvases = [...box.querySelectorAll("canvas")];
+  if (canvases.map((c) => c.dataset.signal).join("|") !== names.join("|")) {
+    box.replaceChildren(...names.map((name) => {
+      const c = h("canvas", { class: "test-plot", "data-signal": name, role: "img" });
+      c.addEventListener("pointerdown", (e) => {
+        const r = c.getBoundingClientRect();
+        const x = (e.clientX - r.left - PAD_L) / Math.max(1, r.width - PAD_L - PAD_R);
+        setTime(start() + Math.max(0, Math.min(1, x)) * (Number(c.dataset.tend) - start()));
+      });
+      return h("div", { class: "test-plot-wrap" },
+        h("div", { class: "test-plot-title", text: `${name}${unitOf(name) ? ` (${unitOf(name)})` : ""}` }), c);
+    }));
+    canvases = [...box.querySelectorAll("canvas")];
+  }
+  const tk = tokens();
+  canvases.forEach((c) => plot(c, c.dataset.signal, cmp, tEnd, tk));
+  key.replaceChildren(...[
+    h("span", { class: "test-key" }, h("span", { class: "test-swatch test-swatch-run" }), runName(rp.run.id)),
+    cmp ? h("span", { class: "test-key" }, h("span", { class: "test-swatch test-swatch-compare" }), `${runName(cmp.id)} (faded)`) : null,
+    names.length ? null : h("span", { class: "muted", text: "Pick something to chart above." })].filter(Boolean));
+}
+
+function plot(canvas, name, cmp, tEnd, tk) {
+  const W = Math.max(200, Math.floor(canvas.clientWidth || canvas.parentElement.clientWidth || 320));
+  const H = CHART_H;
+  const dpr = window.devicePixelRatio || 1;
+  if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) {
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    canvas.style.height = `${H}px`;
+  }
+  canvas.dataset.tend = String(tEnd);
+  const run = rp.run.result.signals;
+  const other = cmp && name in cmp.signals ? cmp.signals : null;
+  canvas.dataset.series = String(other ? 2 : 1);
+  canvas.setAttribute("aria-label", `${name} over time, ${runName(rp.run.id)}${other ? ` and ${runName(cmp.id)}` : ""}`);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = tk.bg;
+  ctx.fillRect(0, 0, W, H);
+  let lo = Infinity, hi = -Infinity;
+  for (const vs of [run[name], other ? other[name] : []]) for (const v of vs) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  if (!(hi >= lo)) { lo = 0; hi = 1; }
+  if (hi - lo < 1e-6) { lo -= 1; hi += 1; }
+  const t0 = start();
+  const plotH = H - TICKS_H - PAD_T;
+  const X = (t) => PAD_L + ((t - t0) / Math.max(1e-9, tEnd - t0)) * (W - PAD_L - PAD_R);
+  const Y = (v) => PAD_T + (1 - (v - lo) / (hi - lo)) * plotH;
+  ctx.font = `10px ${tk.font}`;
+  ctx.lineWidth = 1;
+  ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillStyle = tk.text;
+  for (const v of [lo, hi]) {
+    ctx.strokeStyle = tk.grid;
+    ctx.beginPath(); ctx.moveTo(PAD_L, Math.round(Y(v)) + 0.5); ctx.lineTo(W - PAD_R, Math.round(Y(v)) + 0.5); ctx.stroke();
+    ctx.fillText(+v.toFixed(Math.abs(v) >= 100 ? 0 : 1) + "", PAD_L - 5, Y(v));
+  }
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  const span = tEnd - t0;
+  const every = span > 30 ? 10 : span > 12 ? 5 : span > 5 ? 2 : span > 2 ? 1 : 0.5;
+  for (let s = Math.ceil(t0 / every) * every; s <= tEnd + 1e-9; s += every) {
+    ctx.fillText(`${+s.toFixed(1)} s`, X(s), H - TICKS_H + 3);
+  }
+  const line = (sig, color, dash, alpha) => {
+    const ts = sig.t, vs = sig[name];
+    ctx.save();
+    ctx.strokeStyle = color; ctx.globalAlpha = alpha; ctx.lineWidth = 1.75; ctx.setLineDash(dash);
+    ctx.beginPath();
+    for (let k = 0; k < vs.length; k++) { if (k === 0) ctx.moveTo(X(ts[k]), Y(vs[k])); else ctx.lineTo(X(ts[k]), Y(vs[k])); }
+    ctx.stroke();
+    ctx.restore();
+  };
+  if (other) line(other, tk.compare, [5, 3], 0.7);
+  line(run, tk.run, [], 1);
+  // the replay's time
+  ctx.strokeStyle = tk.mark; ctx.globalAlpha = 0.6; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(Math.round(X(rp.time)) + 0.5, PAD_T); ctx.lineTo(Math.round(X(rp.time)) + 0.5, PAD_T + plotH); ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+// -- boot ----------------------------------------------------------------------------------------------------------
+export function initRunPanel() {
+  $("#test-play").addEventListener("click", () => (rp.playing ? pause() : play()));
+  $("#test-scrub").addEventListener("input", (e) => setTime(Number(e.target.value)));
+  $("#test-speed").addEventListener("change", (e) => { rp.speed = Number(e.target.value) || 1; });
+  $("#test-compare").addEventListener("change", (e) => {
+    rp.compareId = e.target.value || null;
+    loadCompare();
+  });
+  new ResizeObserver(() => drawChart()).observe($("#test-chart"));
+  const dark = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  if (dark && dark.addEventListener) dark.addEventListener("change", () => drawChart());
+}

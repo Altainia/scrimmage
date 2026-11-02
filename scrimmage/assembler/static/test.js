@@ -3,7 +3,8 @@
 //
 //   Left       the palette: Blockly's flyout (Move, Wait, Repeat, Check), filled from the robot's own names
 //   Middle     the test: Blockly's workspace; the stack with the most blocks is the test
-//   Right      the run: the problems that keep it from running, and Run (Task 10 adds the results)
+//   Right      the run: the problems that keep it from running, Run (and Stop while it runs), and the runs
+//              (test_run.js: the shown run's outcome, replay and chart, and the kept runs)
 //   Status     saved or not, how many blocks
 //
 // Every change is saved (500 ms after the last one) through /api/test/save with the state's version; a 409 (the file
@@ -13,9 +14,10 @@
 // its colors read from app.css's tokens.
 //
 // Test hook: window.__scrimmageTest {workspace, state, toJSON(), saved: a promise for the save under way (or
-// resolved)}.
+// resolved), replay: test_run.js's replay()}.
 
 import { $, h, api, notice, registerTab, setTab, showPath, currentTab, store } from "./app.js";
+import { initRunPanel, update as updateRuns, replay } from "./test_run.js";
 import { defineBlocks, toolbox, testToWorkspace, workspaceToTest, placeOf, incomplete, looseStacks, setUsed, STYLES }
   from "./blocks_defs.js";
 
@@ -32,6 +34,7 @@ const t = {
   timer: null,        // the pending save
   saving: null,       // the save under way (a promise)
   toolboxKey: null,
+  stopping: false,    // Stop was pressed and the run hasn't ended yet
   serverWarn: new Map(),   // block id -> the state's problems on it, placed while the workspace showed the saved test
 };
 
@@ -320,6 +323,10 @@ function render() {
   const running = $("#test-running");
   running.hidden = !s.running;
   running.textContent = s.running ? `Running… ${Math.round(100 * (s.running.progress || 0))}%` : "";
+  if (!s.running) t.stopping = false;
+  $("#test-stop").hidden = !s.running;
+  $("#test-stop").disabled = t.stopping;
+  updateRuns(s);
   renderProblems();
   renderStatus();
   renderTop();
@@ -337,6 +344,17 @@ async function run() {
   await refresh();
 }
 
+async function stop() {
+  t.stopping = true;
+  $("#test-stop").disabled = true;
+  const { status, data } = await api("POST", "/api/test/cancel", {});
+  if (status !== 200) {
+    notice(`Couldn't stop the run: ${(data.errors && data.errors[0] && data.errors[0].message) || `the server answered ${status}`}`, "error");
+    t.stopping = false;
+    $("#test-stop").disabled = false;
+  }
+}
+
 // -- boot -------------------------------------------------------------------------------------------------------------
 export async function initTest() {
   window.__scrimmageTest = {
@@ -344,6 +362,7 @@ export async function initTest() {
     get state() { return t.state; },
     toJSON: () => workspaceToTest(t.ws),
     get saved() { return flush(); },
+    get replay() { return replay(); },
   };
   registerTab("test", {
     renderTop,
@@ -352,6 +371,8 @@ export async function initTest() {
     onShow() { if (t.ws) { window.Blockly.svgResize(t.ws); fitHeads(); } render(); },
   });
   $("#test-run").addEventListener("click", run);
+  $("#test-stop").addEventListener("click", stop);
+  initRunPanel();
   while (!t.state) {
     await refresh();
     if (!t.state) await new Promise((r) => setTimeout(r, 2000));
