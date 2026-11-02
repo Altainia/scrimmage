@@ -48,7 +48,7 @@ from ..hal_drive import MotorDrive, driven_joints, position_volts
 from ..movers import mover_poses, movers
 from ..protocol import HalState
 from .conditions import IN, Watch, describe
-from .feeds import SETTLE_MAX_S, Outcomes, counts, is_standin, sentence
+from .feeds import SETTLE_MAX_S, Outcomes, counts, is_standin, made_it_in, sentence
 from .palette import ALL_MOTORS, ANY_HOOK, ANY_PIECE, NEXT_BAR, palette, problems
 from .program import (DRIVE_TIMEOUT, DRIVE_VOLTS, MOVE_TIMEOUT, REPEAT_MAX, WAIT_TIMEOUT, Program,
                       TestFileError)
@@ -191,6 +191,7 @@ class TestRun:
         outcomes = self.outcomes = watch.outcomes = Outcomes(w, watch, self.standin)
         self._deferred: tuple[dict, object] | None = None  # the last made_it_in check, decided after the settle
         self._final: dict | None = None                     # the final counts, once the run has ended
+        self._fed_seen = 0                                  # the feeder's Feds tracked so far
         walk = WalkOff(dt) if watch.mon is not None else None
         view = model_view(w, include_world=True)
         ms = movers(w)
@@ -260,7 +261,7 @@ class TestRun:
         if self._deferred is not None:           # reached: the run finished, or was stopped while settling
             check, cond = self._deferred
             check["t"] = t
-            if not self._made_it_in(cond, self._final):
+            if not made_it_in(self._final, cond.args["at_least"]):
                 try:
                     self._fail(check, cond, t)
                 except _End as e:
@@ -289,8 +290,9 @@ class TestRun:
     def _track(self, t: float) -> None:
         """After a physics step at t: track the pieces the stations fed in it, and update every tracked piece."""
         if self.feeder is not None:
-            for fed in self.feeder.fed[len(self.outcomes.pieces):]:
+            for fed in self.feeder.fed[self._fed_seen:]:
                 self.outcomes.track(fed.ball, fed.station, fed.t)
+            self._fed_seen = len(self.feeder.fed)
         self.outcomes.update(t)
 
     def _settle(self, t: float, sample, cancel) -> float:
@@ -309,10 +311,6 @@ class TestRun:
             self._track(t)
             sample(t)
         return t
-
-    @staticmethod
-    def _made_it_in(cond, so_far: dict) -> bool:
-        return so_far["fed"] > 0 and 100.0 * so_far["in"] >= cond.args["at_least"] * so_far["fed"]
 
     def _step(self) -> None:
         """One physics step with the motor commands as they stand."""

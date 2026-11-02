@@ -61,9 +61,10 @@ def standin_bodies(world) -> set[int]:
         if inst.source.startswith("stock "):
             stock = REGISTRY.get(inst.source[len("stock "):])
             if stock is not None and _group(stock) in _OWN_GROUPS:
-                names.append(inst.name + ".")
+                names.append(inst.name)
     m = world.model
-    return {b for b in range(m.nbody) if any(m.body(b).name.startswith(n) for n in names)}
+    return {b for b in range(m.nbody)
+            if any(m.body(b).name == n or m.body(b).name.startswith(n + ".") for n in names)}
 
 
 @dataclass
@@ -150,7 +151,6 @@ class Outcomes:
                 pc.t_left = t
             pc.now_in = now_in
             pc.ever_in |= now_in
-            pc.body = support.get(i)
             v = b._qvel[i, :3]
             if on_robot.get(i):
                 p = b._qpos[i, :3]
@@ -159,8 +159,11 @@ class Outcomes:
                 if pc.rest == 0.0:
                     pc.rest_since = t
                 pc.rest += dt
+                # at rest: the body it rests on stays, though its contact may drop out for a step
+                pc.body = support.get(i, pc.body)
             else:
                 pc.rest, pc.rest_since = 0.0, math.nan
+                pc.body = support.get(i)
 
     def _settled(self, pc: _Piece) -> bool:
         return not math.isnan(pc.t_gone) or pc.rest >= STUCK_S - 1e-9
@@ -179,6 +182,8 @@ class Outcomes:
             return "in", "", pc.t_gone
         if pc.now_in:
             return "in", "", pc.t_in
+        # stuck before bounced out (controller ruling R5): a piece that bounced out of the hopper and came to rest on
+        # the student's own part is in the robot, and counts toward a possession limit
         if state == BallState.FIELD and pc.body is not None and pc.rest >= STUCK_S - 1e-9:
             return "stuck", "", pc.rest_since
         if pc.ever_in:
@@ -208,6 +213,11 @@ class Outcomes:
                          "t_outcome": None if math.isnan(when) else float(when),
                          "body": m.body(pc.body).name if outcome == "stuck" else None})
         return rows
+
+
+def made_it_in(c: dict, at_least: float) -> bool:
+    """At least `at_least` percent of the pieces fed (counts `c`: fed, in, ...) made it in; false with none fed."""
+    return c["fed"] > 0 and 100.0 * c["in"] >= at_least * c["fed"]
 
 
 def counts(rows: list[dict]) -> dict:

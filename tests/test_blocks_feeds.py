@@ -97,7 +97,8 @@ def station_file(folder, release, speed=0.0, extra="") -> str:
 
 
 def write(folder, blocks: str, field: str = "station", parts: str = HOPPER, back: bool = True,
-          standin: bool = True, robot: str = "bot.toml", head: str = "", setup: str = ""):
+          standin: bool = True, robot: str = "bot.toml", head: str = "", setup: str = "",
+          hopper: str = 'hopper = ["hopper.bin"]\n'):
     """The stand-in (or, without `standin`, the same robot not marked as one) with the bin and `parts`, on `field`,
     and a test of it; the test's path."""
     folder.mkdir(parents=True, exist_ok=True)
@@ -112,7 +113,7 @@ def write(folder, blocks: str, field: str = "station", parts: str = HOPPER, back
     text += "\n" + parts + f'\n[range]\nfile = {field!r}\nstart = "at_station"\n'.replace("'", '"')
     (folder / robot).write_text(text, encoding="utf-8")
     path = folder / "t.test.toml"
-    path.write_text(f'[test]\nrobot = "{robot}"\nhopper = ["hopper.bin"]\n{head}\n{blocks}{setup}', encoding="utf-8")
+    path.write_text(f'[test]\nrobot = "{robot}"\n{hopper}{head}\n{blocks}{setup}', encoding="utf-8")
     return path
 
 
@@ -166,6 +167,64 @@ def test_on_another_robot_every_body_counts(tmp_path):
     field = station_file(tmp_path, (1.523, 4.0, 1.0), extra="stock = 1\n")
     r = run(write(tmp_path, FEED_ONE, field, HOPPER + SHELF_STOCK, standin=False))
     assert r.feeds[0]["outcome"] == "stuck" and r.feeds[0]["body"] == "shelf.chassis", r.feeds
+
+
+@pytest.mark.parametrize("standin", [True, False])
+def test_a_piece_on_the_standins_own_frame_is_not_stuck(tmp_path, standin):
+    # no bin: the ball drops onto the stand-in's own chassis frame (drive.chassis) and rests there
+    field = station_file(tmp_path, (1.183, 4.0, 0.6), extra="stock = 1\n")
+    r = run(write(tmp_path, FEED_ONE, field, parts="", standin=standin, hopper=""))
+    f = r.feeds[0]
+    if standin:
+        assert f["outcome"] == "missed" and f["why"] == "", r.feeds       # at rest, on the robot, not on the floor
+    else:
+        assert f["outcome"] == "stuck" and f["body"] == "drive.chassis", r.feeds
+
+
+def test_standin_bodies_are_the_chassis_and_drive(tmp_path):
+    from scrimmage.blocks.feeds import standin_bodies
+    program = loads(write(tmp_path, FEED_ONE, parts=HOPPER + SHELF).read_text(encoding="utf-8"),
+                    tmp_path / "t.test.toml")
+    w = world_for(program)
+    m = w.model
+    names = {m.body(b).name for b in standin_bodies(w)}
+    robot = {m.body(b).name for b in range(m.nbody) if m.body_rootid[b] == m.body_rootid[w.robot_body]}
+    assert names == {n for n in robot if n.startswith(("drive.", "dt."))} and "drive.chassis" in names
+    assert "hopper.bin" not in names and "shelf.plate" not in names
+
+
+# A catch tray the student added behind a bin with no back wall, hanging past the back bumper with its floor 8 cm below
+# the bin's: a ball that bounces out of the bin drops into it and can't roll back up.
+CATCH_PART = """\
+[part]
+name = "catch"
+format = 1
+
+[[body]]
+name = "tray"
+mass = 0.3
+geom = [
+  { box = [0.40, 0.60, 0.01], pos = [-0.65, 0.0, -0.075] },
+  { box = [0.01, 0.60, 0.38], pos = [-0.85, 0.0, 0.11] },
+  { box = [0.40, 0.01, 0.38], pos = [-0.65, 0.30, 0.11] },
+  { box = [0.40, 0.01, 0.38], pos = [-0.65, -0.30, 0.11] },
+]
+
+[[mount]]
+name = "base"
+body = "tray"
+"""
+
+
+def test_a_bounce_out_that_comes_to_rest_on_the_students_part_is_stuck(tmp_path):
+    # controller ruling R5: stuck wins over bounced out
+    (tmp_path / "catch").mkdir()
+    (tmp_path / "catch" / "part.toml").write_text(CATCH_PART, encoding="utf-8")
+    catch = '[[part]]\nname = "catch"\npath = "catch"\nattach = "drive.top"\n'
+    field = station_file(tmp_path, (1.2, 4.0, 0.3), speed=3.0, extra="stock = 1\n")
+    blocks = FEED_ONE + '\n[[block]]\ndo = "wait"\nseconds = 3.0\n'        # it rolls a while in the tray
+    r = run(write(tmp_path, blocks, field, HOPPER + catch, back=False))
+    assert r.feeds[0]["outcome"] == "stuck" and r.feeds[0]["body"] == "catch.tray", r.feeds
 
 
 def test_a_bounce_out_is_missed_bounced_out(tmp_path):

@@ -35,6 +35,7 @@ import mujoco
 import numpy as np
 
 from ..terrain.climb import hold_geoms, robot_hooks
+from .feeds import made_it_in
 from .palette import ANY_BAR, ANY_HOOK, ANY_PIECE, NEXT_BAR
 
 HANG_S = 0.1            # s: the hooks carry a quarter of the robot's weight this long to count as hanging
@@ -266,8 +267,7 @@ class Watch:
         if k == "made_it_in":
             if self.outcomes is None:
                 return False
-            so_far = self.outcomes.so_far()
-            return so_far["fed"] > 0 and 100.0 * so_far["in"] >= a["at_least"] * so_far["fed"]
+            return made_it_in(self.outcomes.so_far(), a["at_least"])
         if k == "hanging_from":
             bar = self._bar(a["bar"])
             return bar is not None and bar in self.hanging
