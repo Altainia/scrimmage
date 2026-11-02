@@ -23,11 +23,12 @@
 // its colors read from app.css's tokens.
 //
 // Test hook: window.__scrimmageTest {workspace, state, toJSON(), saved: a promise for the save under way (or
-// resolved), replay: test_run.js's replay(), sweep: test_run.js's sweepShown(), robot: the robot state Setup shows,
-// sweepFor: the sweep form's numbers, trySweep(blockId): opens the sweep form for that block's number}.
+// resolved), replay: test_run.js's replay(), sweep: test_run.js's sweepShown(), spread: its spreadShown(), robot: the
+// robot state Setup shows, sweepFor: the sweep form's numbers, trySweep(blockId): opens the sweep form for that
+// block's number}.
 
 import { $, h, api, notice, registerTab, setTab, showPath, currentTab, store } from "./app.js";
-import { initRunPanel, update as updateRuns, replay, sweepShown } from "./test_run.js";
+import { initRunPanel, update as updateRuns, replay, sweepShown, spreadShown } from "./test_run.js";
 import { defineBlocks, toolbox, testToWorkspace, workspaceToTest, placeOf, incomplete, looseStacks, setUsed, STYLES,
   headOf, setHead, sweepNumber, appendBlocks } from "./blocks_defs.js";
 
@@ -976,6 +977,7 @@ export async function initTest() {
     get saved() { return flush(); },
     get replay() { return replay(); },
     get sweep() { return sweepShown(); },
+    get spread() { return spreadShown(); },
     get robot() { return t.robot; },
     get sweepFor() { return t.sweepFor; },
     trySweep: (id) => tryBlock(id),

@@ -3,9 +3,13 @@
 // so a run from before Import again draws its old robot) and /motion (motion.bin, scrimmage/blocks/store.py).
 //
 //   Outcome   "Run 3 · timed out", the outcome sentence in full, a note when a setting the tab has no box for (a
-//             timeout, a repeat's max) ended it, and each check's line
+//             timeout, a repeat's max) ended it, and each check's line; for a run that fed pieces (result.json's
+//             feeds and counts), "Fed pieces: 17 in · 1 stuck · 2 missed" and a "Show the stuck piece" button for
+//             each stuck one
 //   Replay    live3d.js's LiveView draws the view; motion.bin's frames move it. Play / Pause, speed (¼× to 2×), a
-//             scrubber with the time
+//             scrubber with the time, and under it a mark per fed piece at its feed time, its shape and color its
+//             outcome (in: filled; stuck: a diamond, the warning color; missed: hollow). A click on a mark or a stuck
+//             button moves the replay to when that piece's outcome was settled and outlines the piece
 //   Chart     one plot per signal picked (default: the test's `chart`, else tilt and the driven joints but the
 //             drive wheels), the run
 //             "compared with" (default: the run before it) drawn faded and dashed, the replay's time marked; a
@@ -14,10 +18,15 @@
 //   Sweep     over the shown run when it is one of a sweep's (and when a sweep has just finished): what it tried,
 //             a row per value (the value, the outcome, each check) and a chart of when the run ended, or a signal's
 //             value at the end, against the value; a click on a row shows that row's run
+//   Spread    over the shown run when it is one of a floor spread's (and when a spread has just finished): its
+//             sentence ("Picked up 7 of 9; missed at …") and a row per placement (where, picked up, the outcome); a
+//             click on a row shows that placement's run
 //
 // When a new run is kept (a run ends), it is shown. Test hook: window.__scrimmageTest.replay (test.js) is replay():
-// {time, playing, runId, view (the LiveView or null), chart: {signals, runs: [shown, compared or null]}}, and
-// window.__scrimmageTest.sweep is sweepShown(): {id, rows, y, points: [[value, y], ...]} or null.
+// {time, playing, runId, view (the LiveView or null), chart: {signals, runs: [shown, compared or null]}, feeds (the
+// shown run's), outlined (the ball index of the piece outlined, or null), feedColors: {in, stuck, missed, bg}},
+// window.__scrimmageTest.sweep is sweepShown(): {id, rows, y, points: [[value, y], ...]} or null, and
+// window.__scrimmageTest.spread is spreadShown(): {id, rows, sentence} or null.
 
 import { $, h, api, apiFile } from "./app.js";
 
@@ -45,12 +54,16 @@ const rp = {
   newestSweep: undefined,
   sweepY: "t_end",    // what the sweep's chart shows: "t_end" or a signal's name
   sweepFinals: new Map(),  // run id|started -> {signal: its last value}
+  spreadId: null,     // the floor spread shown over the run ("spread-001"), or null
+  newestSpread: undefined,
+  outlined: null,     // the fed piece outlined in the replay (its ball index), or null
 };
 
 export function runName(id) {
-  const m = /^(?:sweep-(\d+)\/)?(\d+)$/.exec(id || "");
+  const m = /^(?:(sweep|spread)-(\d+)\/)?(\d+)$/.exec(id || "");
   if (!m) return String(id);
-  return m[1] ? `Sweep ${+m[1]}, run ${+m[2]}` : `Run ${+m[2]}`;
+  if (m[1] === "spread") return `Spread ${+m[2]}, placement ${+m[3]}`;
+  return m[1] ? `Sweep ${+m[2]}, run ${+m[3]}` : `Run ${+m[3]}`;
 }
 
 const statusWord = (status) => (status === "cancelled" ? "stopped" : status || "");
@@ -65,6 +78,7 @@ export function replay() {
     time: rp.time, playing: rp.playing, runId: rp.run ? rp.run.id : null, view: rp.view,
     chart: { signals: rp.run ? shownSignals() : [], runs: [rp.run ? rp.run.id : null, rp.compare ? rp.compare.id : null],
       colors: (({ run, compare, bg }) => ({ run, compare, bg }))(tokens()) },
+    feeds: rp.run ? feedsOf(rp.run.result) : null, outlined: rp.outlined, feedColors: feedColors(),
   };
 }
 
@@ -76,6 +90,12 @@ export function update(state) {
   if (newestSweep !== rp.newestSweep) {
     if (rp.newestSweep !== undefined && newestSweep) rp.sweepId = newestSweep;   // one just finished: show it
     rp.newestSweep = newestSweep;
+  }
+  const spreads = state.spreads || [];
+  const newestSpread = spreads.length ? spreads[0].id : null;
+  if (newestSpread !== rp.newestSpread) {
+    if (rp.newestSpread !== undefined && newestSpread) rp.spreadId = newestSpread;
+    rp.newestSpread = newestSpread;
   }
   const runs = state.runs || [];
   const newest = runs.length ? runs[0].id : null;
@@ -93,10 +113,11 @@ export function update(state) {
   err.hidden = !state.run_error;
   err.textContent = state.run_error ? `The run couldn't finish: ${state.run_error}` : "";
   // before the first run: what to do (nothing kept, nothing running, no sweep, no error)
-  $("#test-run-empty").hidden = !!(runs.length || sweeps.length || state.running || state.run_error);
+  $("#test-run-empty").hidden = !!(runs.length || sweeps.length || spreads.length || state.running || state.run_error);
   renderList();
   renderCompare();
   renderSweep();
+  renderSpread();
 }
 
 function clear() {
@@ -145,13 +166,16 @@ export function parseMotion(buf) {
 }
 
 const sweepOf = (id) => { const m = /^(sweep-\d+)\//.exec(id || ""); return m ? m[1] : null; };
+const spreadOf = (id) => { const m = /^(spread-\d+)\//.exec(id || ""); return m ? m[1] : null; };
 
 export async function show(id) {
   const seq = ++rp.seq;
   pause();
   rp.shownId = id;
   rp.sweepId = sweepOf(id);
+  rp.spreadId = spreadOf(id);
   renderSweep();
+  renderSpread();
   rp.compareId = undefined;
   renderList();
   const loadErr = $("#test-load-error");
@@ -175,7 +199,8 @@ export async function show(id) {
   await ensureView();
   if (seq !== rp.seq) return;
   loadErr.hidden = true;
-  rp.run = { id, result: res, motion };
+  rp.run = { id, result: res, motion, movers: (viewData.movers || []).map((m) => m.name) };
+  rp.outlined = null;
   if (rp.view) rp.view.setModel(viewData);
   if (rp.picked) rp.picked = new Set([...rp.picked].filter((s) => s in res.signals));
   if (rp.picked && !rp.picked.size) rp.picked = null;
@@ -251,6 +276,61 @@ function renderOutcome() {
   note.textContent = NOTES[r.status] || "";
   $("#test-checks").replaceChildren(...(r.checks || []).map((c) => h("li", { class: c.passed ? "test-check-ok" : "test-check-bad" },
     h("span", { class: "test-check-icon", "aria-hidden": "true", text: c.passed ? "✓" : "✗" }), sentence(c.line))));
+  renderFeeds();
+}
+
+// -- the fed pieces --------------------------------------------------------------------------------------------------
+const feedsOf = (r) => (r && Array.isArray(r.feeds) ? r.feeds : []);
+const OUTCOME_WORDS = { in: "made it in", stuck: "stuck in the robot", missed: "missed" };
+const feedWhen = (f) => (f.t_outcome == null ? f.t : f.t_outcome);
+
+// "piece 4 from feeder at 3.0 s: missed (bounced out)"
+function feedText(f, k) {
+  const from = f.source === "floor" ? "the floor" : f.source;
+  const why = f.outcome === "stuck" && f.body ? `on ${f.body}` : f.why;
+  return `piece ${k + 1} from ${from} at ${Number(f.t).toFixed(1)} s: ${OUTCOME_WORDS[f.outcome] || f.outcome}${why ? ` (${why})` : ""}`;
+}
+
+function renderFeeds() {
+  const r = rp.run.result, feeds = feedsOf(r), c = r.counts;
+  const summary = $("#test-feeds-summary");
+  summary.hidden = !c;
+  summary.replaceChildren(...(c ? [h("span", { text: `Fed pieces: ${c.in} in · ${c.stuck} stuck · ${c.missed} missed` }),
+    ...feeds.filter((f) => f.outcome === "stuck").map((f) => h("button", { type: "button", class: "btn btn-small test-stuck-show",
+      "data-ball": String(f.ball), onclick: () => jumpTo(f), text: `Show the stuck piece (at ${feedWhen(f).toFixed(1)} s)` }))] : []));
+  const marks = $("#test-feed-marks");
+  marks.hidden = !feeds.length;
+  const t0 = start(), span = Math.max(1e-9, end() - t0);
+  marks.replaceChildren(...feeds.map((f, k) => {
+    const words = feedText(f, k);
+    return h("button", { type: "button", class: `test-feed-mark test-feed-${f.outcome}`, "data-outcome": f.outcome,
+      "data-ball": String(f.ball), title: words, "aria-label": words, onclick: () => jumpTo(f),
+      style: `left: ${(100 * Math.max(0, Math.min(1, (f.t - t0) / span))).toFixed(3)}%` });
+  }));
+}
+
+// Move the replay to when piece f's outcome was settled, and outline it there.
+function jumpTo(f) {
+  pause();
+  rp.outlined = f.ball;
+  for (const m of $("#test-feed-marks").children) m.classList.toggle("test-feed-mark-on", m.dataset.ball === String(f.ball));
+  if (rp.view) rp.view.outline(rp.run.movers.indexOf(`ball.${f.ball}`));
+  setTime(feedWhen(f));
+}
+
+// the colors the marks draw with, and the color behind them (#rrggbb), for the 3:1 check
+function feedColors() {
+  const css = getComputedStyle(document.documentElement);
+  const v = (n) => css.getPropertyValue(n).trim();
+  return { in: v("--feed-in"), stuck: v("--feed-stuck"), missed: v("--feed-missed"), bg: behind($("#test-feed-marks")) };
+}
+
+function behind(el) {
+  for (let e = el; e; e = e.parentElement) {
+    const m = /rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)/.exec(getComputedStyle(e).backgroundColor);
+    if (m && (m[4] === undefined || Number(m[4]) > 0)) return `#${[m[1], m[2], m[3]].map((x) => (+x).toString(16).padStart(2, "0")).join("")}`;
+  }
+  return "#ffffff";
 }
 
 // Updated in place (not rebuilt), so a run button keeps the keyboard focus while states arrive during a run.
@@ -485,6 +565,10 @@ const ROBOT_WORDS = { mass: "the robot's weight (kg)", com_forward: "the robot's
   com_left: "the robot's center of mass, left (m)", com_up: "the robot's center of mass, up (m)" };
 const AXIS_WORDS = { x: "forward (x, m)", y: "left (y, m)", z: "up (z, m)", yaw: "turned (yaw, °)" };
 const KEY_UNITS = { volts: "V", seconds: "s", distance: "m" };
+// a station's settings as a sweep tries them (in the file's units: the release box in meters)
+const STATION_WORDS = { interval: "time between pieces (s)", stock: "stock", spread_yaw_deg: "left/right angle (± °)",
+  spread_pitch_deg: "up/down angle (± °)", spread_speed: "speed (± m/s)", spread_position: "release box (± m)",
+  spread_rotation_deg: "turned (± °)" };
 
 // The block at a place in the test JSON (0-based, through repeat bodies), or null.
 function blockAt(test, place) {
@@ -508,6 +592,8 @@ function targetText(target) {
   }
   if ("robot" in target) return ROBOT_WORDS[target.robot] || target.robot;
   if ("mount" in target) return `where ${target.mount} is mounted: ${AXIS_WORDS[target.axis] || target.axis}`;
+  if ("station" in target) return `${target.station}: ${STATION_WORDS[target.key] || target.key}`;
+  if (target.setup === "seed") return "the shuffle";
   return "";
 }
 
@@ -658,6 +744,44 @@ function drawSweep() {
     const p = pts.find(([x]) => x === Number(sw.rows[shown].value));
     if (p) { ctx.strokeStyle = tk.mark; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 6.5, 0, 2 * Math.PI); ctx.stroke(); }
   }
+}
+
+// -- the floor spread ------------------------------------------------------------------------------------------------
+const shownSpread = () => ((rp.state && rp.state.spreads) || []).find((s) => s.id === rp.spreadId) || null;
+
+export function spreadShown() {
+  const sp = shownSpread();
+  return sp ? { id: sp.id, rows: sp.rows.length, sentence: sp.sentence } : null;
+}
+
+function renderSpread() {
+  const wrap = $("#test-spread-wrap");
+  const sp = shownSpread();
+  wrap.hidden = !sp;
+  if (!sp) return;
+  $("#test-spread-title").textContent = `Spread ${+(/^spread-(\d+)$/.exec(sp.id) || [])[1]}`;
+  $("#test-spread-sentence").textContent = sentence(sp.sentence || "");
+  const note = $("#test-spread-note");
+  note.hidden = !sp.cancelled;
+  note.textContent = sp.cancelled ? "You stopped this spread, so it has the placements done before that." : "";
+  const table = $("#test-spread-table");
+  const key = JSON.stringify([sp.id, sp.rows, rp.shownId, (rp.state.runs || []).map((r) => r.id)]);
+  if (table.dataset.key === key) return;
+  table.dataset.key = key;
+  table.replaceChildren(
+    h("thead", {}, h("tr", {}, h("th", { scope: "col", text: "Placement" }), h("th", { scope: "col", text: "Picked up" }),
+      h("th", { scope: "col", text: "Outcome" }))),
+    h("tbody", {}, ...sp.rows.map((r, k) => {
+      const id = rowRun(sp, k), ran = hasRun(id);
+      const outcome = r.status === "couldn't run" ? `Couldn't run: ${r.outcome}` : `${statusWord(r.status)}: ${outcomeText(r)}`;
+      const picked = r["picked up"] === "yes";
+      return h("tr", { class: ran ? "test-sweep-row" : "test-sweep-row test-sweep-norun", "data-row": String(k),
+        "aria-current": id === rp.shownId ? "true" : null, onclick: ran ? () => { if (id !== rp.shownId) show(id); } : null },
+        h("td", {}, ran ? h("button", { type: "button", class: "linklike", "data-run": id,
+          "aria-label": `Show the run at ${r.placement}`, text: r.placement }) : h("span", { text: r.placement })),
+        h("td", { class: picked ? "test-check-ok" : "test-check-bad", text: r["picked up"] }),
+        h("td", { class: "test-sweep-outcome", text: outcome }));
+    })));
 }
 
 // -- boot ----------------------------------------------------------------------------------------------------------

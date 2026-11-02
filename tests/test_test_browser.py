@@ -1050,6 +1050,8 @@ def test_setup_hopper_ball_and_station_settings_are_saved_in_the_test(test_page,
                            timeout=120000)
     assert sent[0]["target"] == {"station": "feeder", "key": "spread_position"}
     assert sent[0]["values"] == [0.0254, 0.0762]
+    page.wait_for_selector("#test-sweep-wrap", state="visible")
+    assert page.inner_text("#test-sweep-title") == "Sweep 1: feeder: release box (± m)"
 
 
 def test_a_hook_change_saves_the_preselected_hopper_too(test_page, tmp_path):
@@ -1138,3 +1140,92 @@ def test_the_station_setup_meets_wcag_aa(test_page, tmp_path, scheme):
     page.wait_for_timeout(200)
     assert page.locator("#test-setup input").count() > 15
     assert page.evaluate(f"({CONTRAST_JS}).check(document.querySelector('#test-setup'))") == []
+
+
+# A station field of our own that feeds 3 pieces a second apart onto the stand-in's bin with a shelf on its back wall
+# (tests/test_blocks_feeds.py): the first lodges on the shelf (stuck), the second rolls off to the floor (missed), the
+# third lands in the bin (in).
+FEED_3 = '\n[[block]]\ndo = "start_feeding"\nstation = "feeder"\n\n[[block]]\ndo = "wait"\nseconds = 3.0\n'
+
+
+def _fed_test(tmp_path):
+    from test_blocks_feeds import HOPPER, SHELF, station_file, write as write_fed
+    folder = tmp_path / "fed"
+    folder.mkdir()
+    field = station_file(folder, (1.523, 4.0, 1.0), extra="stock = 3\ninterval = 1.0\n")
+    return write_fed(folder, FEED_3, field, HOPPER + SHELF)
+
+
+def _result(page, run_id):
+    return page.evaluate(f"""import('/app.js').then(app => app.api('GET', '/api/test/run/{run_id}'))
+                         .then(r => r.data)""")
+
+
+def test_a_fed_run_marks_every_piece_and_jumps_to_a_stuck_one(test_page, tmp_path):
+    page, _ = test_page(path=_fed_test(tmp_path))
+    _run(page, "001")
+    res = _result(page, "001")
+    feeds, counts = res["feeds"], res["counts"]
+    assert counts == {"fed": 3, "in": 1, "stuck": 1, "missed": 1}, res["outcome"]
+    assert page.evaluate("__scrimmageTest.replay.feeds") == feeds
+    marks = page.locator("#test-feed-marks .test-feed-mark")
+    assert marks.count() == counts["fed"]
+    assert [marks.nth(k).get_attribute("data-outcome") for k in range(3)] == [f["outcome"] for f in feeds]
+    missed = next(k for k, f in enumerate(feeds) if f["outcome"] == "missed")
+    f = feeds[missed]
+    assert marks.nth(missed).get_attribute("title") == (f"piece {missed + 1} from feeder at {f['t']:.1f} s: missed"
+                                                         f" ({f['why']})")
+    assert page.inner_text("#test-feeds-summary").startswith("Fed pieces: 1 in · 1 stuck · 1 missed")
+    # the stuck piece's button jumps the replay to when it was stuck and outlines that ball
+    stuck = next(f for f in feeds if f["outcome"] == "stuck")
+    button = page.locator("#test-feeds-summary button")
+    assert button.count() == 1 and button.inner_text() == f"Show the stuck piece (at {stuck['t_outcome']:.1f} s)"
+    button.click()
+    assert page.evaluate("__scrimmageTest.replay.time") == pytest.approx(stuck["t_outcome"], abs=1 / 30)
+    assert page.evaluate("__scrimmageTest.replay.outlined") == stuck["ball"]
+    # a click on a mark jumps to that piece's outcome
+    marks.nth(missed).click()
+    assert page.evaluate("__scrimmageTest.replay.time") == pytest.approx(f["t_outcome"], abs=1 / 30)
+    assert page.evaluate("__scrimmageTest.replay.outlined") == f["ball"]
+
+
+def test_a_spread_shows_its_sentence_and_a_row_replays_its_run(test_page, tmp_path):
+    page, _ = test_page(path=_example(tmp_path, "intake", "spread.test.toml"))
+    _open_setup(page)
+    page.wait_for_selector("#test-spread-run:not([disabled])")
+    page.click("#test-spread-run")
+    page.wait_for_function("__scrimmageTest.state.spreads.length === 1 && __scrimmageTest.state.running === null"
+                           " && __scrimmageTest.replay.runId === 'spread-001/003'", timeout=120000)
+    spread = page.evaluate("__scrimmageTest.state.spreads[0]")
+    page.wait_for_selector("#test-spread-wrap", state="visible")
+    assert page.inner_text("#test-spread-title") == "Spread 1"
+    assert page.inner_text("#test-spread-sentence") == _sentence(spread["sentence"])
+    rows = page.locator("#test-spread-table tbody tr")
+    assert rows.count() == 3
+    assert [rows.nth(k).locator("td").first.inner_text() for k in range(3)] == [r["placement"] for r in spread["rows"]]
+    assert [rows.nth(k).locator("td").nth(1).inner_text() for k in range(3)] == [r["picked up"] for r in spread["rows"]]
+    status = [r["status"] for r in spread["rows"]]
+    assert page.inner_text("#test-result-title") == f"Spread 1, placement 3 · {status[2]}"
+    page.click("#test-spread-table [data-run='spread-001/001']")
+    page.wait_for_function("__scrimmageTest.replay.runId === 'spread-001/001'")
+    assert page.inner_text("#test-result-title") == f"Spread 1, placement 1 · {status[0]}"
+    assert rows.nth(0).get_attribute("aria-current") == "true"
+    assert "Spread 1, placement 1" in page.inner_text("#test-runs")
+    # a floor run marks its one piece, from the floor
+    assert page.locator("#test-feed-marks .test-feed-mark").count() == 1
+    assert " from the floor at " in page.get_attribute("#test-feed-marks .test-feed-mark", "title")
+    _run(page, "001")
+    assert page.is_hidden("#test-spread-wrap")
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_the_feed_marks_are_3_to_1_on_their_background(test_page, tmp_path, scheme):
+    """WCAG 1.4.11 for the feed marks (shapes with no text): each outcome's color against the panel behind them; and
+    the run column with them shown meets AA."""
+    page, _ = test_page(path=_fed_test(tmp_path), scheme=scheme)
+    _run(page, "001")
+    colors = page.evaluate("__scrimmageTest.replay.feedColors")
+    assert set(colors) == {"in", "stuck", "missed", "bg"}
+    for k in ("in", "stuck", "missed"):
+        assert _hex_ratio(colors[k], colors["bg"]) >= 3, (k, colors)
+    assert page.evaluate(f"({CONTRAST_JS}).check(document.querySelector('#test-run-col'))") == []
