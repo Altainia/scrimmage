@@ -286,3 +286,59 @@ def test_com_target_has_its_own_message(tmp_path):
     text = (tmp_path / "robot.toml").read_text(encoding="utf-8").replace('stock = "chassis"', 'stock = "kitbot"')
     with pytest.raises(ValueError, match="to move the center of gravity of"):
         _edit_config(text, {"robot": "com_up"}, 0.1)
+
+
+# ---- the seed and a station's settings ----------------------------------------------------------------------------
+
+def _feeds_test(tmp_path, setup=""):
+    from test_blocks_feeds import FEED_AND_WAIT, write
+    return write(tmp_path, FEED_AND_WAIT.replace("5.0", "3.0"), setup=setup)
+
+
+def _row_for(rows, value):
+    return next(r for r in rows if float(r["value"]) == value)
+
+
+def test_sweep_a_stations_interval(tmp_path):
+    path = _feeds_test(tmp_path)
+    out = run_sweep(_program(path), {"station": "feeder", "key": "interval"}, [0.5, 1.0], tmp_path / "runs")
+    rows = _table(out)
+    assert [r["value"] for r in rows] == ["0.5", "1"]
+    assert all(r["status"] == "finished" for r in rows)
+    assert "interval = 0.5" in load_run(tmp_path / "runs", "sweep-001/001")["test"]
+    assert "interval = 1.0" in load_run(tmp_path / "runs", "sweep-001/002")["test"]
+
+
+def test_sweep_a_spread_sets_all_three_axes(tmp_path):
+    from scrimmage.blocks.sweep import _edit_setup
+    program = _program(_feeds_test(tmp_path))
+    p = _edit_setup(program, {"station": "feeder", "key": "spread_position"}, 0.02)
+    assert p.setup["station"]["feeder"]["spread_position"] == [0.02, 0.02, 0.02]
+    assert program.setup == {}
+
+
+def test_sweep_the_seed_gives_different_feeds(tmp_path):
+    from scrimmage.blocks.run import TestRun, world_for
+    path = _feeds_test(tmp_path, '\n[setup]\nstation = { feeder = { spread_yaw_deg = 15.0, spread_speed = 1.0 } }\n')
+    out = run_sweep(_program(path), {"setup": "seed"}, [1, 2], tmp_path / "runs")
+    assert [r["value"] for r in _table(out)] == ["1", "2"]
+    feeds = []
+    for k in (1, 2):
+        test = loads(load_run(tmp_path / "runs", f"sweep-001/{k:03d}")["test"], path)
+        assert test.setup["seed"] == k
+        feeds.append(TestRun(world_for(test), test).run().feeds)
+    assert feeds[0] and feeds[1]
+    assert [f["t_outcome"] for f in feeds[0]] != [f["t_outcome"] for f in feeds[1]]    # a different shuffle
+
+
+def test_review_focus_5_bad_values_are_rows_and_a_bad_station_is_refused(tmp_path):
+    p = _program(_feeds_test(tmp_path))
+    rows = _table(run_sweep(p, {"setup": "seed"}, [2.5, 3], tmp_path / "a"))
+    assert _row_for(rows, 2.5)["outcome"] == "seed must be a whole number"
+    rows = _table(run_sweep(p, {"station": "feeder", "key": "stock"}, [1.5], tmp_path / "b"))
+    assert rows[0]["outcome"] == "stock must be a whole number"
+    rows = _table(run_sweep(p, {"station": "feeder", "key": "interval"}, [-1, 1], tmp_path / "c"))
+    assert "interval" in _row_for(rows, -1)["outcome"] and rows[0]["status"] == "couldn't run"
+    with pytest.raises(ValueError, match="the field has no station 'nope'; its stations: feeder"):
+        run_sweep(p, {"station": "nope", "key": "interval"}, [1], tmp_path / "d")
+    assert not (tmp_path / "d").exists() or not list((tmp_path / "d").iterdir())

@@ -6,8 +6,12 @@ The setting (a target) is one of
                                                                            first, as a check's place)
     {"robot": "mass" | "com_forward" | "com_left" | "com_up"}              the stand-in chassis' mass / com_offset
     {"mount": "<part>", "axis": "x" | "y" | "z" | "yaw"}                   a [[part]]'s pos (m) / rot yaw (deg)
+    {"setup": "seed"}                                                      the test's [setup] seed
+    {"station": "<name>", "key": "interval" | "stock" | "spread_..."}      a station's setting in [setup]
+                                                                           (spread_position / spread_rotation_deg:
+                                                                           all three axes at the value)
 
-A block value changes the test; a robot or mount value changes a copy of the robot config, written as a hidden
+A block, seed or station value changes the test; a robot or mount value changes a copy of the robot config, written as a hidden
 temp file next to it (so its meshes and part folders still resolve) and deleted after that run (tried again while
 another program holds it; one still there is named in sweep.json's `problems`). Temp copies and folders over an hour
 old, left by a process that was killed, are removed when a sweep starts. A value that can't build or run ("mass must
@@ -34,6 +38,8 @@ from pathlib import Path
 import tomlkit
 
 from ..cad.settings import REPLACE_WAITS, replace_file
+from ..testrange.spec import RangeError, load_range
+from ..testrange.station import OVERRIDE_KEYS
 from . import store
 from .program import Program, TestFileError, from_json, to_json
 from .run import TestRun, _where
@@ -42,6 +48,8 @@ MAX_SWEEP = 12
 BLOCK_KEYS = ("volts", "seconds", "to", "distance")
 ROBOT_KEYS = {"mass": None, "com_forward": 0, "com_left": 1, "com_up": 2}
 AXES = {"x": ("pos", 0), "y": ("pos", 1), "z": ("pos", 2), "yaw": ("rot", 2)}
+STATION_KEYS = OVERRIDE_KEYS
+SPREAD_LISTS = ("spread_position", "spread_rotation_deg")     # three axes, all at the swept value
 COULDNT_RUN = "couldn't run"
 
 
@@ -56,8 +64,12 @@ def _kind(target) -> str:
             return "robot"
         if set(target) == {"mount", "axis"} and isinstance(target["mount"], str) and target["axis"] in AXES:
             return "mount"
+        if target == {"setup": "seed"}:
+            return "setup"
+        if set(target) == {"station", "key"} and isinstance(target["station"], str) and target["key"] in STATION_KEYS:
+            return "setup"
     raise ValueError(f"can't sweep {target!r}: sweep a block's volts, seconds, to or distance, the robot's mass or "
-                     "center of mass, or where a part is mounted")
+                     "center of mass, where a part is mounted, a station's interval, stock or spread, or the seed")
 
 
 def _block_json(blocks: list, place: list) -> dict:
@@ -83,6 +95,42 @@ def _edit_program(program: Program, place: list, key: str, value: float) -> Prog
         raise TestFileError(f"{_where(tuple(place))} has no {key}")
     b[key] = value
     return from_json(d, program.path)
+
+
+def _edit_setup(program: Program, target: dict, value: float) -> Program:
+    """The program with the target (the seed or a station's setting) set to value in its [setup]."""
+    d = to_json(program)
+    setup = json.loads(json.dumps(d.get("setup") or {}))
+    if "setup" in target:
+        if value != int(value):
+            raise TestFileError("seed must be a whole number")
+        setup["seed"] = int(value)
+    else:
+        key = target["key"]
+        if key == "stock":
+            if value != int(value):
+                raise TestFileError("stock must be a whole number")
+            value = int(value)
+        station = setup.setdefault("station", {}).setdefault(target["station"], {})
+        station[key] = [value] * 3 if key in SPREAD_LISTS else value
+    d["setup"] = setup
+    return from_json(d, program.path)
+
+
+def _check_station(program: Program, config: Path, name: str) -> None:
+    """Raise ValueError when the robot's field has no station `name` (before any run)."""
+    from ..config import load_config
+    raw = load_config(config).raw
+    sec = raw.get("range")
+    if not isinstance(sec, dict) or not isinstance(sec.get("file"), str):
+        raise ValueError("this robot is on the plain field, which has no stations")
+    try:
+        rng = load_range(sec["file"], config.parent)
+    except RangeError as e:
+        raise ValueError(str(e)) from None
+    names = [s.name for s in rng.stations]
+    if name not in names:
+        raise ValueError(f"the field has no station '{name}'; its stations: {', '.join(names) or 'none'}")
 
 
 def _set(table, key: str, i: int | None, value: float) -> None:
@@ -186,12 +234,15 @@ def run_sweep(program: Program, target: dict, values: list[float], base, on_prog
         b = _block_json(to_json(program)["blocks"], target["block"])     # the target is there (else it's refused)
         if target["key"] not in b:
             raise TestFileError(f"{_where(tuple(target['block']))} has no {target['key']}")
+    elif kind == "setup":
+        if "station" in target:
+            _check_station(program, config, target["station"])
     else:
         text = config.read_text(encoding="utf-8")
         _edit_config(text, target, values[0])                          # the part or chassis is there
 
     base = Path(base)
-    if kind != "block":
+    if kind in ("robot", "mount"):
         store.clean_stale(config.parent, (f".{config.stem}.sweep-*.toml",))
     tmp = store.new_sweep_folder(base)
     rows: list[dict] = []
@@ -202,8 +253,9 @@ def run_sweep(program: Program, target: dict, values: list[float], base, on_prog
             row = {"value": v, "status": COULDNT_RUN, "outcome": "", "t_end": None, "checks": {}}
             result = temp = None
             try:
-                if kind == "block":
-                    p = _edit_program(program, target["block"], target["key"], v)
+                if kind in ("block", "setup"):
+                    p = (_edit_program(program, target["block"], target["key"], v) if kind == "block"
+                         else _edit_setup(program, target, v))
                     world = world_for(p)
                 else:
                     p = program

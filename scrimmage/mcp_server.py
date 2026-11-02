@@ -613,7 +613,9 @@ async def test_sweep(path: str, target: dict, values: list[float]) -> dict:
     changes: {"block": [2], "key": "to"} is the "to" of block 3 (a list of positions, counting from 0, goes inside
     repeats, and key is volts, seconds, to or distance); {"robot": "mass"} is the robot's mass (also com_forward,
     com_left, com_up for the center of mass); {"mount": "arm", "axis": "x"} is where a part is mounted (axis x, y,
-    z or yaw). values: the numbers to try, in order (at most 12). Returns "rows" (each value's
+    z or yaw); {"setup": "seed"} is the human player's shuffle (a whole number), and {"station": "feeder", "key":
+    "interval"} is a station's interval (also stock, spread_yaw_deg, spread_pitch_deg, spread_speed, spread_position,
+    spread_rotation_deg; the last two set all three axes). values: the numbers to try, in order (at most 12). Returns "rows" (each value's
     status, outcome, t_end and a passed or failed per check), "sweep_folder" (table.csv and sweep.json, each run
     kept inside; the app's Test tab shows them) and any "problems" to tell the room. A value that can't run gets a
     row saying why; the rest still run. path: an absolute path."""
