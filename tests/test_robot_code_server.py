@@ -318,7 +318,7 @@ def test_start_named_and_free_pose_exclusive(tmp_path, start):
     assert raw["range"] == {"file": "2026", "start": "blue_left"} and "start_pose" not in raw.get("robot", {})
     st = c.get("/api/robot/code")[1]["start"]
     assert st == {"picked": True, "pose": [3.42, 5.56, 0.0], "range": "2026", "named": "blue_left",
-                  "named_starts": ["blue_left", "blue_center", "blue_right"], "floor_balls": True,
+                  "named_starts": ["blue_left", "blue_center", "blue_right", "blue_outpost"], "floor_balls": True,
                   "fields": ["2026", None], "range_read_only": False,
                   "sentence": "Starts on the blue side, facing the red wall"}
     # a free placement replaces the named start; the field stays

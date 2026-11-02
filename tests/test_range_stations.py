@@ -178,7 +178,7 @@ def test_a_station_in_a_disc_range_is_refused(tmp_path):
 
 def test_ranges_without_stations_are_unchanged():
     for name in BUILTIN_RANGES:
-        if name == "station":       # the station field has one on purpose
+        if name in ("station", "2026"):     # the station field and 2026's OUTPOSTS have them on purpose
             continue
         assert load_range(name, Path(".")).stations == ()
 
@@ -373,7 +373,7 @@ def test_a_range_without_stations_has_no_feeder():
     from range_fixtures import range_cfg
     from scrimmage.world import World
 
-    w = World(range_cfg(), None)
+    w = World(range_cfg(range={"file": "2026-bump"}), None)
     assert w.test_range.feeder is None and w.parts.layout.station_slots == {}
     assert w.test_range.settings()["seed"] == 1
 
@@ -395,6 +395,37 @@ def test_the_station_field_loads_and_its_starts_are_clear():
     assert y == 2.0 and heading == 0.0 and (bx - x, by - y) == pytest.approx((1.5, 0.0))
     walls = [c[1] + k * h[1] for c, _, h in chute_parts(st, rng.piece.diameter).values() for k in (-1, 1)]
     assert y + ROBOT_OUTLINE / 2 < min(walls)
+
+
+def test_the_2026_field_has_two_outposts_and_a_start_at_the_blue_one():
+    from scrimmage.testrange.elements import ROBOT_OUTLINE
+    from scrimmage.testrange.spec import FIELD_LENGTH, FIELD_WIDTH
+
+    rng = load_range("2026", ROOT)
+    assert [s.name for s in rng.stations] == ["outpost_blue", "outpost_red"]
+    for st in rng.stations:
+        assert st.stock is not None and st.stock > 0 and st.release[2] > rng.piece.diameter / 2
+    blue = rng.stations[0]
+    # blue_outpost: a 0.9 m robot (unturned, so either heading) with a bumper against the wall below the opening
+    x, y, heading = rng.starts["blue_outpost"]
+    assert x - ROBOT_OUTLINE / 2 == pytest.approx(0.0, abs=0.02) and y == pytest.approx(blue.release[1], abs=1e-3)
+    assert ROBOT_OUTLINE / 2 <= y <= FIELD_WIDTH - ROBOT_OUTLINE / 2 and x + ROBOT_OUTLINE / 2 < FIELD_LENGTH
+
+
+def test_a_fuel_fed_from_the_blue_outpost_reaches_the_carpet():
+    from range_fixtures import range_cfg
+    from scrimmage.testrange.spec import FIELD_LENGTH, FIELD_WIDTH
+    from scrimmage.world import World
+
+    w = World(range_cfg(), None)            # the 2026 range, floor balls off
+    w.set_robot_pose(*AWAY)                 # in the NEUTRAL ZONE, clear of both outposts
+    w.test_range.feeder.request("outpost_blue")
+    advance(w, 3.0)
+    i = w.test_range.feeder.fed[0].ball
+    x, y, z = w.test_range.balls.positions()[i]
+    assert z == pytest.approx(w.test_range.balls.r, abs=0.005)
+    assert 0.0 < x < FIELD_LENGTH and 0.0 < y < FIELD_WIDTH
+    assert w.test_range.balls.state[i] == BallState.FIELD
 
 
 # ------------------------------------------------------------------------------------------------ overrides

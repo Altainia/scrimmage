@@ -144,15 +144,17 @@ def test_ball_bodies_fixed_count():
     on = World(range_cfg(range={"floor_balls": True}), None)
     off = World(range_cfg(), None)
     n_floor = len(on.parts.range.floor_balls)
+    pool = sum(s.pool() for s in on.parts.range.stations)              # the OUTPOSTS' FUEL, parked after them
     assert n_floor == 360 and on.parts.layout.n_floor == n_floor
     names = [mujoco.mj_id2name(on.model, mujoco.mjtObj.mjOBJ_BODY, b) for b in ball_ids(on)]
-    assert names == [f"ball.{i}" for i in range(n_floor + 0)]       # capacity 0: no [shooter]
+    assert names == [f"ball.{i}" for i in range(n_floor + 0 + pool)]   # capacity 0: no [shooter]
     assert on.parts.layout.ball_names == names
-    assert ball_ids(off) == [] and off.parts.layout.ball_names == [] and off.parts.layout.n_floor == 0
+    assert len(ball_ids(off)) == pool and off.parts.layout.ball_names == [f"ball.{i}" for i in range(pool)]
+    assert off.parts.layout.n_floor == 0
     with pytest.raises(ValueError, match="built with \\[range\\] floor_balls = false"):
         off.test_range.reset(floor_balls=True)
     r = on.parts.range.ball.diameter / 2
-    for i, b in enumerate(ball_ids(on)):
+    for i, b in enumerate(ball_ids(on)[:n_floor]):
         g = on.model.body_geomadr[b]
         assert on.model.body_geomnum[b] == 1 and on.model.geom_size[g][0] == pytest.approx(r)
         assert on.model.body_mass[b] == pytest.approx(on.parts.range.ball.mass)
@@ -172,7 +174,9 @@ def test_hopper_slots_are_parked_after_the_floor_balls():
     m = spec.compile()
     d = mujoco.MjData(m)
     mujoco.mj_forward(m, d)
-    assert layout.n_floor == 360 and layout.ball_names == [f"ball.{i}" for i in range(365)]
+    pool = sum(s.pool() for s in rng.stations)                          # the OUTPOSTS' FUEL, after the hopper's
+    assert layout.n_floor == 360 and layout.ball_names == [f"ball.{i}" for i in range(365 + pool)]
+    assert layout.robot_slots == range(360, 365)
     slots = [m.body(f"ball.{i}").id for i in range(360, 365)]
     xy = {tuple(np.round(d.xpos[b][:2], 6)) for b in slots}
     assert len(xy) == 5                                                 # each slot parks under its own (x, y)

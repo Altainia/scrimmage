@@ -1,8 +1,9 @@
-# The FRC 2026 REBUILT test range: both HUBS and the NEUTRAL ZONE FUEL, in WPILib field coordinates (blue alliance
-# wall at x = 0, z up), SI units.
+# The FRC 2026 REBUILT test range: both HUBS, the BUMPS, the NEUTRAL ZONE FUEL and both OUTPOSTS, in WPILib field
+# coordinates (blue alliance wall at x = 0, z up), SI units.
 #
 # Every number cites the official field CAD, FE-2026-rev-rebuilt-playing-field.step (measured in FreeCAD 2026-10-28
-# by ~/snap/freecad/common/sp9/measure.py and net.py), or the 2026 Game Manual, or says it is our choice.
+# by ~/snap/freecad/common/sp9/measure.py and net.py, the OUTPOSTS 2026-11-02 by ~/snap/freecad/common/sp21/outpost.py),
+# or the 2026 Game Manual, or says it is our choice.
 # CAD frame: millimeters, origin at the field's center, x along the field's length, z up; the blue ROBOT STARTING
 # LINE tape lies at CAD x = +4241.8..+4292.6, so blue is +x. CAD to field: x = 8.2705 - x_cad / 1000,
 # y = 4.035 - y_cad / 1000 (a half turn about z, keeping the frame right-handed; 8.2705 = 16.541 / 2, 4.035 =
@@ -108,6 +109,41 @@ grid = { corner = [7.4323, 1.7998], step = [0.1524, 0.1524], count = [12, 15] } 
 [[floor_balls]]
 grid = { corner = [7.4323, 4.1366], step = [0.1524, 0.1524], count = [12, 15] }   # source: CAD (URL above): y = 4.035 + 0.1016, the other side of the divider; same grid
 
+# The OUTPOSTS (manual 5.9.2): HUMAN PLAYERS roll FUEL down the CHUTE, a 15 deg sloped tunnel behind the ALLIANCE
+# WALL, and out through an opening onto the FIELD. The CHUTE itself lies off the field (CAD x_cad +8275.3..+9062.0 for
+# blue, field x -0.005..-0.792), so each station is only a release point: a FUEL's center just clear of the wall,
+# resting on the CHUTE's floor line as it leaves. Its floor top meets the wall at z_cad 714.0, the opening's bottom
+# (a notch in the Outpost Lower Panel, GE-26002) is at 714.4 and its top at 892.2 (manual: "7.0in (17.8cm) tall",
+# "28.1in (71.4cm) off the floor"). The notch is 762.0 mm wide (y_cad 2987.7..3749.7); the CHUTE between its side
+# sheets (GE-26005-01, inner faces y_cad 2964.3 and 3773.0) is 808.7 mm, the manual's "31.8in (80.8cm) wide": the
+# narrower notch limits where a FUEL leaves. The CHUTE DOOR (GE-26006), which holds the staged FUEL in, is left out:
+# a station feeds with it open. The red OUTPOST is the blue one turned a half turn about the field's center (CAD
+# x_cad -9062.0..-8275.3, y_cad -3775.1..-2962.3).
+[[station]]
+name = "outpost_blue"
+release = [0.076, 0.666, 0.789]   # source: CAD https://firstfrc.blob.core.windows.net/frc2026/FieldAssets/FE-2026-rev-rebuilt-playing-field.step: x is our choice, the ball's radius (0.0751) and 1 mm out from the wall (the panel's field face is at x_cad 8269.3, field x 0.001); y = 4.035 - 3.3687, the center of the notch and of the CHUTE's side sheets (y_cad 3368.7); z = the floor at the opening, z_cad 714.0 (manual 5.9.2: 28.1in, 0.714 m), plus the radius
+heading_deg = 0.0            # source: CAD (URL above): the CHUTE Bottom (GE-26005-03) falls toward -x_cad, the field's +x, onto the FIELD
+pitch_deg = 15.0             # source: CAD (URL above): the CHUTE Bottom's top face has normal (-0.2588, 0, 0.9659), 15.0 deg; manual 5.9.2 https://firstfrc.blob.core.windows.net/frc2026/Manual/HTML/2026GameManual.htm "A 15.0 deg sloped tunnel"
+speed = 0.8                  # estimate: a FUEL rolling from rest down the CHUTE's floor (its top face 0.813 m long, x_cad 8275.3..9060.4), no slip, as a solid sphere: from the back (0.17 m of drop) it leaves at sqrt(10/7 g h) = 1.55 m/s, the one against the door at almost 0. 0.8 is the middle; not measured
+spread_speed = 0.75          # estimate: 0.05 to 1.55 m/s, the range above
+interval = 0.25              # estimate: with the CHUTE DOOR open the staged FUEL rolls out on its own, about 5 abreast (808.7 / 150.1); one every 0.25 s empties the CHUTE in 6 s. Not measured; a human player feeding one at a time is slower
+stock = 24                   # source: manual 6.3.4 B (URL above) "24 FUEL are staged in each OUTPOST CHUTE" (6.3.4 C: a ROBOT preloads up to 8 more of its own)
+spread_yaw_deg = 5.0         # estimate: the CHUTE's sides are straight and parallel (CAD); FUEL jostling in it turns a little off its heading. Not measured
+spread_pitch_deg = 5.0       # estimate: a FUEL bouncing on the CHUTE's floor leaves a little above or below its slope. Not measured
+spread_position = [0.0, 0.305, 0.0]   # source: CAD (URL above): across the notch, y_cad 2987.7..3749.7, (0.762 - 0.1501) / 2 = 0.306 either side of the center keeps a FUEL inside it; along x and z a FUEL leaves from the floor's edge
+[[station]]
+name = "outpost_red"
+release = [16.464, 7.404, 0.789]  # source: CAD (URL above): the blue release turned a half turn about the field's center: y = 4.035 + 3.3687; x = 16.54 - 0.076, from the simulated red ALLIANCE WALL (scrimmage/testrange/spec.py FIELD_LENGTH, 1 mm short of the CAD's 16.541)
+heading_deg = 180.0          # source: CAD (URL above): the red CHUTE Bottom (GE-26005-03 001) falls toward +x_cad, the field's -x
+pitch_deg = 15.0             # source: CAD (URL above), as outpost_blue
+speed = 0.8                  # estimate: as outpost_blue
+spread_speed = 0.75          # estimate: as outpost_blue
+interval = 0.25              # estimate: as outpost_blue
+stock = 24                   # source: manual 6.3.4 B (URL above), as outpost_blue
+spread_yaw_deg = 5.0         # estimate: as outpost_blue
+spread_pitch_deg = 5.0       # estimate: as outpost_blue
+spread_position = [0.0, 0.305, 0.0]   # source: CAD (URL above), as outpost_blue (the red notch at y_cad -3749.7..-2987.7)
+
 # Starts: the blue ROBOT STARTING LINE spans the field at the edge of the ALLIANCE ZONE (manual 5.3; tape at field
 # x 3.978..4.029 from the CAD), and a ROBOT starts with its BUMPERS overlapping it, not touching a BUMP (manual G303
 # D and E). The HUB starts at x 4.028 (CAD); the BUMPS' near toes are at x 4.061 (above). x = 3.55 puts a robot
@@ -125,3 +161,5 @@ pose = [3.42, 5.56, 0.0]     # choice: x behind the starting line so the robot c
 pose = [3.55, 4.035, 0.0]    # choice: x behind the starting line (manual 5.3, G303); y in front of the HUB
 [start.blue_right]
 pose = [3.42, 2.51, 0.0]     # choice: x behind the starting line so the robot can turn without hitting the BUMP (see above); y in front of the right BUMP (HUB edge 3.438 - 1.854 / 2, manual 5.5)
+[start.blue_outpost]
+pose = [0.46, 0.666, 180.0]  # choice: a 0.9 m robot's front bumper 1 cm from the blue ALLIANCE WALL below the OUTPOST's opening, centered on it (outpost_blue's y), facing it to take FUEL from the CHUTE

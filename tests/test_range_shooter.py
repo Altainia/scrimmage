@@ -333,5 +333,5 @@ def test_preload_over_hopper_capacity_rejected():
     with pytest.raises(PartError, match=r"preload = 5.*capacity = 3"):
         World(shooter_cfg(range={"preload": 5}, shooter={"hopper": {"capacity": 3}}), None)
     w = World(shooter_cfg(range={"preload": 3}, shooter={"hopper": {"capacity": 3}}), None)
-    assert len(w.parts.layout.ball_names) - w.parts.layout.n_floor == 3
+    assert len(w.parts.layout.robot_slots) == 3
     assert w.test_range.shooter.config.capacity == 3

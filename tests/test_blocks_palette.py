@@ -229,7 +229,8 @@ def test_palette_lists_stations_ball_choice_and_floor_piece():
     assert on_intake["floor_piece"] is True and on_intake["ball_choice"] and on_intake["stations"] == []
     assert palette(station_world("station", "facing_ball"), [])["floor_piece"] is True
     on_2026 = palette(World(range_cfg(), None), [])
-    assert on_2026["ball_choice"] is False and on_2026["stations"] == [] and on_2026["floor_piece"] is False
+    assert on_2026["ball_choice"] is False and on_2026["floor_piece"] is False
+    assert on_2026["stations"] == ["outpost_blue", "outpost_red"]     # its OUTPOSTS
 
 
 def test_feed_problems():

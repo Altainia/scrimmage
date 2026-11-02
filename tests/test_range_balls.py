@@ -61,6 +61,11 @@ def run(w, seconds, each=None):
             each(w)
 
 
+def station_pool(w) -> int:
+    """The balls parked for the range's stations (the 2026 OUTPOSTS' FUEL): spare until fed."""
+    return sum(len(s) for s in w.parts.layout.station_slots.values())
+
+
 def ledger_sum(w) -> int:
     return sum(w.test_range.counts()["ledger"].values())
 
@@ -68,9 +73,10 @@ def ledger_sum(w) -> int:
 def test_ledger_sums_to_ball_count():
     w = world(floor_balls=True)
     n = n_balls(w)
-    assert n == 360
+    pool = station_pool(w)
+    assert w.parts.layout.n_floor == 360 and n == 360 + pool
     assert w.test_range.counts()["ledger"] == {"field": 360, "robot": 0, "stuck": 0, "scored": 0, "out": 0,
-                                               "spare": 0}
+                                               "spare": pool}
     w.set_robot_pose(6.6, 3.0, 0.0)
     w.set_robot_force(400.0, 0.0)
     sums = []
@@ -364,7 +370,8 @@ def test_reset_restores_balls():
     c = w.test_range.counts()
     assert c["score"] == 0 and c["goals"] == {"hub_blue": 0, "hub_red": 0} and c["fired"] == 0
     assert c["held"] == 0 and c["on_field"] == n_floor
-    assert c["ledger"] == {"field": n_floor, "robot": 0, "stuck": 0, "scored": 0, "out": 0, "spare": 0}
+    assert c["ledger"] == {"field": n_floor, "robot": 0, "stuck": 0, "scored": 0, "out": 0,
+                           "spare": station_pool(w)}
     for i in range(n_floor):
         np.testing.assert_array_equal(ball_qpos(w, i), qpos0[w.model.jnt_qposadr[w.model.body_jntadr[
             w.model.body(f"ball.{i}").id]]:][:7])
@@ -414,7 +421,8 @@ def test_same_inputs_same_outcome():
 
 def test_full_2026_layout_runs():
     w = world(floor_balls=True)
-    assert n_balls(w) == 360
+    n = n_balls(w)
+    assert w.parts.layout.n_floor == 360
     w.set_robot_pose(6.6, 4.0, 0.0)
     w.set_robot_force(500.0, 0.0)
     t0 = time.perf_counter()
@@ -424,7 +432,7 @@ def test_full_2026_layout_runs():
     print(f"full 2026 layout: 2.0 s simulated in {wall:.2f} s wall, speed factor {2.0 / wall:.1f}x")
     assert np.all(np.isfinite(w.data.qpos)) and np.all(np.isfinite(w.data.qvel))
     assert [x.number for x in w.data.warning] == [0] * len(w.data.warning)
-    assert set(sums) == {360}
+    assert set(sums) == {n}
     assert wall < 60.0
 
 
