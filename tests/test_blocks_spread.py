@@ -72,6 +72,16 @@ def test_the_spread_ball_is_the_intake_fields_ball():
     assert i == 0 and where == {"offset_in": 0.0, "distance_in": pytest.approx(1.5 / IN)}    # 1.5 m straight ahead
 
 
+def test_the_robot_boxes_leave_the_worlds_own_data_alone():
+    """floor_ball measures the robot on a scratch MjData, as drive.drivetrain() does: the session world's own data
+    (its positions, which a Watch may be reading) is not recomputed."""
+    from scrimmage.blocks.spread import floor_ball
+    world = world_for(load(EXAMPLE / "intake.test.toml"))
+    world.data.xpos[:] = 0.0                # stale on purpose: mj_kinematics on the world's data would fill it in
+    assert floor_ball(world)["nearest_in"] > 0
+    assert not world.data.xpos.any()
+
+
 def test_a_placement_moves_the_ball_and_turns_the_robot(tmp_path):
     program = load(spread_test(tmp_path, "offset_in = [6]"))
     world = world_for(program)

@@ -496,3 +496,29 @@ def test_bad_range_override_keys_name_themselves(tmp_path, line, key):
     cfg = tomllib.loads(new_config("standin") + f'\n[range]\nfile = "station"\n{line}\n')
     with pytest.raises(PartError, match=rf"\[range\] {key}"):
         parse_range_section(cfg, tmp_path)
+
+
+def test_a_stock_is_at_most_200(tmp_path):
+    """Ruling R13: each piece of a stock is parked in the world from the start, so a stock is capped at 200."""
+    assert parse(tmp_path, HEAD + FEEDER + "stock = 200\n").stations[0].pool() == 200
+    with pytest.raises(RangeError, match="'feeder' stock can be at most 200 pieces, not 201"):
+        parse(tmp_path, HEAD + FEEDER + "stock = 201\n")
+    rng = load_range("station", ROOT)
+    assert with_overrides(rng, {"feeder": {"stock": 200}}).stations[0].stock == 200
+    with pytest.raises(RangeError, match="stock can be at most 200 pieces, not 500"):
+        with_overrides(rng, {"feeder": {"stock": 500}})
+
+
+def test_a_broken_range_file_is_named_as_the_file_even_with_a_ball(tmp_path):
+    """A config's [range] ball doesn't take the blame for a range file that doesn't load on its own."""
+    from scrimmage.assembler.templates import new_config
+    from scrimmage.parts.model import PartError
+    from scrimmage.testrange.build import parse_range_section
+
+    (tmp_path / "bad.toml").write_text("[range\nname = 'x'\n", encoding="utf-8")
+    cfg = tomllib.loads(new_config("standin") + '\n[range]\nfile = "bad.toml"\nball = "2017-fuel"\n')
+    with pytest.raises(PartError, match=r"^\[range\] file: "):
+        parse_range_section(cfg, tmp_path)
+    cfg = tomllib.loads(new_config("standin") + '\n[range]\nfile = "2026"\nball = "2025-algae"\n')
+    with pytest.raises(PartError, match=r"^\[range\] ball: .*overlap"):
+        parse_range_section(cfg, tmp_path)

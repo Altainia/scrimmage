@@ -150,13 +150,18 @@ class _Names:
         self.pieces = set(p["pieces"])
         self.field = set(world.contact_names()) | set(p["elements"]) | self.bars
         self.stations = set(p["stations"])
-        self.hopper = list(program.hopper) if program is not None else []
+        self.hopper = list(program.hopper or []) if program is not None else []
         self.stock = {}                     # station -> its stock after the test's setup (None: no stock)
         rng = world.parts.range if world.parts is not None else None
         if rng is not None:
+            # only the field's own stations: a name it doesn't have is reported by problems() and leaves the others'
+            # settings in force
+            known = {st.name for st in rng.stations}
+            asked = program.setup.get("station") or {} if program is not None else {}
+            settings = {k: v for k, v in asked.items() if k in known}
             try:
-                if program is not None and program.setup.get("station"):
-                    rng = with_overrides(rng, program.setup["station"])
+                if settings:
+                    rng = with_overrides(rng, settings)
             except RangeError:
                 pass                        # reported at place [] by setup_problems
             self.stock = {st.name: st.stock for st in rng.stations}
@@ -291,7 +296,9 @@ def _setup_level_problems(program, world, n: _Names) -> list[str]:
     rng = world.parts.range if world.parts is not None else None
     out = []
     setup = program.setup
-    if "ball" in setup and not n.p["ball_choice"]:
+    if "ball" in setup and rng is None:
+        out.append("the plain field has no ball to pick; clear the ball in Setup")
+    elif "ball" in setup and not n.p["ball_choice"]:
         out.append("this field keeps its own ball; pick a ball on the intake or station field")
     out += [f'Setup names a station this field doesn\'t have: "{name}"'
             for name in setup.get("station", {}) if name not in n.stations]
@@ -310,7 +317,7 @@ def problems(program, world) -> list[dict]:
     out = [{"place": [], "message": f'no body "{h}" on this robot any more (the test lists it as a hook)'}
            for h in program.hooks if h not in n.bodies]
     out += [{"place": [], "message": f'no body "{h}" on this robot any more (the test lists it as the hopper)'}
-            for h in program.hopper if h not in n.bodies]
+            for h in program.hopper or [] if h not in n.bodies]
     out += [{"place": [], "message": msg} for msg in _setup_level_problems(program, world, n)]
 
     def walk(blocks, trail):

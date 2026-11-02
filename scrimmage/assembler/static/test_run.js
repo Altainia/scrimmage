@@ -294,8 +294,9 @@ function feedText(f, k) {
 function renderFeeds() {
   const r = rp.run.result, feeds = feedsOf(r), c = r.counts;
   const summary = $("#test-feeds-summary");
-  summary.hidden = !c;
-  summary.replaceChildren(...(c ? [h("span", { text: `Fed pieces: ${c.in} in · ${c.stuck} stuck · ${c.missed} missed` }),
+  const shown = !!c && c.fed > 0;      // a station field's run that fed nothing has nothing to sum up
+  summary.hidden = !shown;
+  summary.replaceChildren(...(shown ? [h("span", { text: `Fed pieces: ${c.in} in · ${c.stuck} stuck · ${c.missed} missed` }),
     ...feeds.filter((f) => f.outcome === "stuck").map((f) => h("button", { type: "button", class: "btn btn-small test-stuck-show",
       "data-ball": String(f.ball), onclick: () => jumpTo(f), text: `Show the stuck piece (at ${feedWhen(f).toFixed(1)} s)` }))] : []));
   const marks = $("#test-feed-marks");
@@ -565,10 +566,15 @@ const ROBOT_WORDS = { mass: "the robot's weight (kg)", com_forward: "the robot's
   com_left: "the robot's center of mass, left (m)", com_up: "the robot's center of mass, up (m)" };
 const AXIS_WORDS = { x: "forward (x, m)", y: "left (y, m)", z: "up (z, m)", yaw: "turned (yaw, °)" };
 const KEY_UNITS = { volts: "V", seconds: "s", distance: "m" };
-// a station's settings as a sweep tries them (in the file's units: the release box in meters)
+// a station's settings as a sweep tries them (the release box in inches, as Setup shows it; the file has meters)
 const STATION_WORDS = { interval: "time between pieces (s)", stock: "stock", spread_yaw_deg: "left/right angle (± °)",
-  spread_pitch_deg: "up/down angle (± °)", spread_speed: "speed (± m/s)", spread_position: "release box (± m)",
+  spread_pitch_deg: "up/down angle (± °)", spread_speed: "speed (± m/s)", spread_position: "release box (± in)",
   spread_rotation_deg: "turned (± °)" };
+const IN = 0.0254;            // m per inch
+// a sweep row's value as the table and chart show it: the release box's meters in inches
+const rowValue = (sw, r) => (sw.target && sw.target.key === "spread_position" && "station" in sw.target
+  ? +(Number(r.value) / IN).toPrecision(6) : Number(r.value));
+const rowText = (sw, r) => (sw.target && sw.target.key === "spread_position" && "station" in sw.target ? String(rowValue(sw, r)) : r.value);
 
 // The block at a place in the test JSON (0-based, through repeat bodies), or null.
 function blockAt(test, place) {
@@ -633,7 +639,7 @@ function renderSweep() {
         return h("tr", { class: ran ? "test-sweep-row" : "test-sweep-row test-sweep-norun", "data-row": String(k), "aria-current": current ? "true" : null,
           onclick: ran ? () => { if (id !== rp.shownId) show(id); } : null },
           h("td", {}, ran ? h("button", { type: "button", class: "linklike test-sweep-value", "data-run": id,
-            "aria-label": `Show the run at ${r.value}`, text: r.value }) : h("span", { text: r.value })),
+            "aria-label": `Show the run at ${rowText(sw, r)}`, text: rowText(sw, r) }) : h("span", { text: rowText(sw, r) })),
           h("td", { class: "test-sweep-outcome", text: outcome }),
           ...checks.map((c) => h("td", { class: r[c] === "passed" ? "test-check-ok" : r[c] === "failed" ? "test-check-bad" : "",
             title: c, text: r[c] === "passed" ? "✓" : r[c] === "failed" ? "✗" : "" })));
@@ -659,7 +665,7 @@ function renderSweep() {
 function sweepPoints(sw) {
   const out = [];
   sw.rows.forEach((r, k) => {
-    const x = Number(r.value);
+    const x = rowValue(sw, r);
     if (rp.sweepY === "t_end") { if (r.t_end !== "" && r.t_end != null) out.push([x, Number(r.t_end)]); return; }
     const fin = rp.sweepFinals.get(resultKey(rowRun(sw, k)));
     if (fin && rp.sweepY in fin) out.push([x, fin[rp.sweepY]]);
@@ -716,7 +722,7 @@ function drawSweep() {
     ctx.fillText(rp.sweepY !== "t_end" && loadingFinals.size ? "Loading…" : "No run to chart", W / 2, H / 2);
     return;
   }
-  const xs = sw.rows.map((r) => Number(r.value)).filter(isFinite);
+  const xs = sw.rows.map((r) => rowValue(sw, r)).filter(isFinite);
   let [x0, x1] = [Math.min(...xs), Math.max(...xs)];
   if (x1 - x0 < 1e-9) { x0 -= 1; x1 += 1; }
   let [y0, y1] = [Math.min(...pts.map((p) => p[1])), Math.max(...pts.map((p) => p[1]))];
@@ -741,7 +747,7 @@ function drawSweep() {
   ctx.fillStyle = tk.run;
   for (const [x, y] of pts) { ctx.beginPath(); ctx.arc(X(x), Y(y), 3.5, 0, 2 * Math.PI); ctx.fill(); }
   if (shown >= 0) {
-    const p = pts.find(([x]) => x === Number(sw.rows[shown].value));
+    const p = pts.find(([x]) => x === rowValue(sw, sw.rows[shown]));
     if (p) { ctx.strokeStyle = tk.mark; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 6.5, 0, 2 * Math.PI); ctx.stroke(); }
   }
 }

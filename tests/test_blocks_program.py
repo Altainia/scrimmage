@@ -240,6 +240,7 @@ def test_old_test_files_load_unchanged():
     ("[setup]\nstation = { f = { interval = 0 } }", "more than 0"),
     ("[setup]\nstation = { f = { colour = 1 } }", "isn't something"),
     ("[setup]\nstation = { f = { spread_position = [1, 2] } }", "3 numbers"),
+    ("[setup]\nstation = { f = { stock = 201 } }", "stock can be at most 200 pieces, not 201"),
     ('[[block]]\ndo = "turn"\ndegrees = 0', "can't be 0"),
     ('[[block]]\ndo = "turn"\ndegrees = 721', "between -720 and 720"),
     ('[[block]]\ndo = "drive"\ndistance = -1\ndirection = "back"', "use one or the other"),
@@ -251,3 +252,14 @@ def test_old_test_files_load_unchanged():
 def test_bad_setup_and_blocks_say_what(bad, words):
     with pytest.raises(P.TestFileError, match=words):
         P.loads(HEAD + bad, PATH)
+
+
+def test_a_cleared_hopper_is_kept():
+    """`hopper = []` (the student cleared it in Setup) is kept, so Setup doesn't preselect one again; a test that
+    names no hopper has none (None), and writes none."""
+    p = P.loads(HEAD + "hopper = []\n", PATH)
+    assert p.hopper == [] and "hopper = []" in P.dumps(p) and P.to_json(p)["hopper"] == []
+    assert P.from_json(P.to_json(p), PATH).hopper == []
+    q = P.loads(HEAD, PATH)
+    assert q.hopper is None and "hopper" not in P.dumps(q) and P.to_json(q)["hopper"] is None
+    assert P.from_json(P.to_json(q), PATH).hopper is None

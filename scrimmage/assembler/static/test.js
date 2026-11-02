@@ -474,10 +474,12 @@ function setHooks(hooks) {
   setTest({ hooks: [...hooks].sort() });
 }
 
-// The hopper Setup ticks: the test's; for a test with none, starter_hopper's until the student changes it.
+// The hopper Setup ticks: the test's (an empty one the student cleared stays empty); for a test that names none,
+// starter_hopper's until the student changes it.
+const hopperNamed = () => Array.isArray(headOf(t.ws).hopper);
 function hopperShown() {
   const mine = headOf(t.ws).hopper || [];
-  return mine.length || t.hopperSet ? mine : (t.state && t.state.starter_hopper) || [];
+  return hopperNamed() || t.hopperSet ? mine : (t.state && t.state.starter_hopper) || [];
 }
 
 // A change to the test's own Setup settings (`patch`: hopper, setup) saves the test; a preselected hopper goes
@@ -485,7 +487,7 @@ function hopperShown() {
 // focus), so the box tabbed to keeps it.
 function setTest(patch) {
   const shown = hopperShown();
-  if (!("hopper" in patch) && !(headOf(t.ws).hopper || []).length && shown.length) patch = { ...patch, hopper: [...shown] };
+  if (!("hopper" in patch) && !hopperNamed() && shown.length) patch = { ...patch, hopper: [...shown] };
   setHead(t.ws, patch);
   schedule();
   setTimeout(renderSetup, 0);
@@ -644,6 +646,26 @@ function stationBox(name, box, setting, field) {
       })]), tryIt)];
 }
 
+// The test's [setup] settings this field can't use, as [key, words, clear(setup)]: a station it doesn't have, a ball
+// on a field that keeps its own, a floor spread with no ball on the floor (palette.problems refuses the run for each)
+function leftovers(pal, setup) {
+  const out = [];
+  for (const name of Object.keys(setup.station || {})) {
+    if ((pal.stations || []).includes(name)) continue;
+    out.push([`station-${name}`, `Station "${name}": this field has no station by that name`, (x) => {
+      delete x.station[name];
+      if (!Object.keys(x.station).length) delete x.station;
+    }]);
+  }
+  if (setup.ball && !pal.ball_choice) {
+    out.push(["ball", `Ball "${setup.ball}": ${pal.ball ? "this field keeps its own ball" : "this field has no ball to pick"}`, (x) => { delete x.ball; }]);
+  }
+  if (setup.floor_spread && Object.keys(setup.floor_spread).length && !pal.floor_piece) {
+    out.push(["floor_spread", "Floor spread: this field has no ball on the floor", (x) => { delete x.floor_spread; }]);
+  }
+  return out;
+}
+
 function renderSetupError() {
   const el = document.getElementById("test-setup-error");
   if (!el) return;
@@ -799,6 +821,16 @@ function renderSetup() {
           h("td", {}, box(axis, "steps", `${label} steps`)))))),
       h("div", { class: "row" }, h("span", { id: "test-spread-count", class: "test-spread-count", role: "status" }),
         h("button", { type: "button", id: "test-spread-run", class: "btn btn-small", onclick: runSpread }, "Run the spread"))));
+  }
+  const left = leftovers(pal, setup);
+  if (left.length) {
+    parts.push(h("fieldset", { class: "test-setup-leftover" },
+      h("legend", { text: "Settings for another field" }),
+      h("p", { class: "hint", text: "The test has settings this field can't use (they were made on another field). Clear them to run the test here." }),
+      ...left.map(([key, words, clear]) => h("div", { class: "row", "data-leftover": key },
+        h("span", { text: words }),
+        h("button", { type: "button", class: "btn btn-small", "aria-label": `Clear: ${words}`,
+          onclick: () => { const next = setupOf(); clear(next); setTest({ setup: next }); } }, "Clear")))));
   }
   if (s.station_starter && !feeding) {
     parts.push(h("fieldset", { class: "test-setup-starter" },

@@ -169,7 +169,7 @@ fast-mode sample's shooter.
 | `preload` | balls | 0 | balls already in the hopper at the start of a run. More than the robot holds (the hopper capacity) is an error |
 | `floor_balls` | | `true` | `false`: no floor balls (the range's `[[floor_balls]]` are left out of the world entirely, so the world can't put them out later). Faster runs, and the right choice when the auto never touches them |
 | `ball` | | the range's | a ball preset to use in place of the range's own (`"2017-fuel"`, `"2019-cargo"`, and so on: the names in [docs/launcher.md](launcher.md)). Only a range with a ball takes it (not a disc range). A range with a station refuses a ball that doesn't fit the station's chute (a chute with a set `width` must be wider than the ball). The Test tab's Setup sets this for a stand-in's `intake` and `station` fields |
-| `station` | | none | changes a station's settings for this run: `station = { feeder = { interval = 0.5, stock = 8, spread_yaw_deg = 5.0 } }`. The keys are `interval`, `stock`, `spread_yaw_deg`, `spread_pitch_deg`, `spread_speed`, `spread_position` and `spread_rotation_deg`; any other key, or a station the range doesn't have, is an error. `stock = 0` means "never runs out" (at most 50 balls are fed in one run) |
+| `station` | | none | changes a station's settings for this run: `station = { feeder = { interval = 0.5, stock = 8, spread_yaw_deg = 5.0 } }`. The keys are `interval`, `stock`, `spread_yaw_deg`, `spread_pitch_deg`, `spread_speed`, `spread_position` and `spread_rotation_deg`; any other key, or a station the range doesn't have, is an error. `stock = 0` means "never runs out" (at most 50 balls are fed in one run); a stock can be at most 200 |
 | `seed` | | `1` | the whole number (0 or more) that picks which draw of the spreads the stations feed. The same seed gives the same feeds every run |
 
 A `[range]` replaces the field's center obstacle with the range's own elements, so `[field] obstacle = true` with a
@@ -523,7 +523,7 @@ chute = { length = 0.5, slope_deg = 30.0 }
 | `pitch_deg` | degrees | 0 | down from horizontal, -90 to 90 |
 | `speed` | m/s | 0 | the ball's speed along the heading and pitch. 0 sets it down with no push |
 | `interval` | s | 1.0 | time between balls. A human player's pace; some are much quicker, so it is a setting to try |
-| `stock` | balls | none | how many balls the station feeds. Left out, it never runs out, but feeds at most 50 in one run |
+| `stock` | balls | none | how many balls the station feeds, 1 to 200. Left out, it never runs out, but feeds at most 50 in one run. In a test's Setup (and the `[range] station` table), `stock = 0` also means "never runs out" |
 | `spread_yaw_deg`, `spread_pitch_deg` | degrees | 0 | each feed's heading and pitch vary by up to this much either way |
 | `spread_speed` | m/s | 0 | each feed's speed varies by up to this much either way |
 | `spread_position` or `spread_position_in` | m or in | 0, 0, 0 | a box around the release point, three numbers (along x, y, z): each feed's release point moves by up to this much either way on each axis |
@@ -663,7 +663,8 @@ be beyond the step.
 **A scenario's `[range]`** overlays the config's, with the keys `file`, `start`, `preload` and `floor_balls`. A
 scenario's `file` that isn't a built-in range's name is **relative to the scenario file**. A scenario's `start`
 replaces the config's `start` or `[robot] start_pose` for that run. A bad `start` or a `preload` the robot can't hold
-is an error before the run starts. A scenario with a `[range]` needs a config with one.
+is an error before the run starts. A scenario with a `[range]` needs a config with one. A scenario can't set `ball`,
+`station` or `seed`: those are the Test tab's settings, and robot code driving a station is not part of scrimmage yet.
 
 **`robot_env`** sets environment variables for the robot program for that run:
 

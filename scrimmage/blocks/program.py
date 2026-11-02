@@ -3,7 +3,8 @@
     [test]
     robot = "climber_box.toml"          # required: a robot config, relative to this file
     hooks = ["climber.hook_A"]          # optional: robot bodies that count as hooks
-    hopper = ["feeder.hopper"]          # optional: robot bodies that hold balls (counted by in_hopper)
+    hopper = ["feeder.hopper"]          # optional: robot bodies that hold balls (counted by in_hopper); [] is
+                                        # kept: no hopper, and Setup preselects none
     time_limit = 60.0                   # optional, s
     chart = ["tilt", "climber.crank"]   # optional: signals shown by default
 
@@ -29,7 +30,7 @@ from pathlib import Path
 
 from ..climb.run import SETTLE_S
 from ..launcher.inputs import PRESETS
-from ..testrange.station import OVERRIDE_KEYS
+from ..testrange.station import MAX_STOCK, OVERRIDE_KEYS, stock_too_big
 
 TIME_LIMIT = 60.0        # s: the whole run ends here
 MOVE_TIMEOUT = 5.0       # s: a move gives up after this long
@@ -82,7 +83,8 @@ class Program:
     chart: list | None = None
     blocks: list = field(default_factory=list)
     setup: dict = field(default_factory=dict)
-    hopper: list = field(default_factory=list)
+    hopper: list | None = None      # None: the file names none; []: the student cleared it (kept, so Setup
+                                    # doesn't preselect one again)
 
 
 # ---- reading --------------------------------------------------------------------------------------------------------
@@ -345,6 +347,8 @@ def _station_setup(name: str, t) -> dict:
         elif key == "stock":
             if isinstance(v, bool) or not isinstance(v, int) or v < 0:
                 raise TestFileError(f"{where}: stock must be a whole number, 0 (no limit) or more")
+            if v > MAX_STOCK:
+                raise TestFileError(f"{where}: {stock_too_big(v)}")
             out[key] = v
         else:
             x = _time(v, where, key)
@@ -385,7 +389,7 @@ def _program(data: dict, path: Path, head: str = "[test]") -> Program:
     if not isinstance(robot, str) or not robot:
         raise TestFileError(f'{head} robot must be the robot file\'s name in quotes, like "my_robot.toml"')
     hooks = _strings(test.get("hooks", []), head, "hooks")
-    hopper = _strings(test.get("hopper", []), head, "hopper")
+    hopper = _strings(test["hopper"], head, "hopper") if "hopper" in test else None
     chart = _strings(test["chart"], head, "chart") if "chart" in test else None
     limit = _time(test.get("time_limit", TIME_LIMIT), head, "time_limit")
     if limit <= SETTLE_S:
@@ -433,8 +437,8 @@ def block_json(b: Block) -> dict:
 
 
 def to_json(p: Program) -> dict:
-    return {"robot": p.robot.as_posix(), "hooks": list(p.hooks), "hopper": list(p.hopper),
-            "time_limit": p.time_limit,
+    return {"robot": p.robot.as_posix(), "hooks": list(p.hooks),
+            "hopper": None if p.hopper is None else list(p.hopper), "time_limit": p.time_limit,
             "chart": None if p.chart is None else list(p.chart), "setup": dict(p.setup),
             "blocks": [block_json(b) for b in p.blocks]}
 
@@ -490,7 +494,7 @@ def dumps(p: Program) -> str:
     out = ["[test]", f"robot = {_value(p.robot.as_posix())}"]
     if p.hooks:
         out.append(f"hooks = {_value(p.hooks)}")
-    if p.hopper:
+    if p.hopper is not None:
         out.append(f"hopper = {_value(p.hopper)}")
     if p.time_limit != TIME_LIMIT:
         out.append(f"time_limit = {_value(p.time_limit)}")

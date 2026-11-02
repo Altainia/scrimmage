@@ -7,7 +7,7 @@
     pitch_deg = 20.0              # down from horizontal, -90 to 90 (default 0)
     speed = 1.0                   # m/s along that direction (default 0: the ball is only set down)
     interval = 1.0                # s between balls (default DEFAULT_INTERVAL)
-    stock = 12                    # balls to feed (default: no limit, but at most STATION_CAP in one run)
+    stock = 12                    # balls to feed, at most MAX_STOCK (default: none, but at most STATION_CAP a run)
     spread_yaw_deg = 5.0          # each feed varies uniformly within +-this of the heading, and so on
     spread_pitch_deg = 5.0
     spread_speed = 0.2
@@ -40,6 +40,7 @@ if TYPE_CHECKING:
 
 DEFAULT_INTERVAL = 1.0      # s between balls (a human player's pace; some are much quicker, so it is a setting)
 STATION_CAP = 50            # balls a station with no stock feeds at most in one run (the parked pool's size)
+MAX_STOCK = 200             # a station's stock at most (ruling R13: each ball is parked in the world from the start)
 CHUTE_WIDTH_BALLS = 1.3     # a chute's default width between its walls, in ball diameters
 CHUTE_WALL_BALLS = 1.0      # its side walls' height above the floor, in ball diameters
 CHUTE_PLATE = 0.25 * IN     # m: the chute's floor and wall thickness (estimate: a polycarbonate sheet)
@@ -51,6 +52,10 @@ _STATION = ("name", "release", "release_in", "heading_deg", "pitch_deg", "speed"
             "spread_rotation_deg", "chute")
 _CHUTE = ("width", "length", "slope_deg")
 _TOUCH = 1e-6   # m: a ball resting on a surface is not inside it
+
+
+def stock_too_big(stock: int) -> str:
+    return f"stock can be at most {MAX_STOCK} pieces, not {stock}"
 
 
 def check_seed(seed) -> int:
@@ -131,6 +136,8 @@ def _station(path, table, i: int, piece, taken: list[str]) -> Station:
     stock = r.whole("stock") if r.has("stock") else None
     if stock is not None and stock < 1:
         raise r.err(f"stock must be at least 1, not {stock}")
+    if stock is not None and stock > MAX_STOCK:
+        raise r.err(stock_too_big(stock))
     rotation = r.nums("spread_rotation_deg", 3, (0.0, 0.0, 0.0))
     spreads = {"spread_yaw_deg": r.num("spread_yaw_deg", 0.0), "spread_pitch_deg": r.num("spread_pitch_deg", 0.0),
                "spread_speed": r.num("spread_speed", 0.0)}
@@ -300,6 +307,8 @@ def with_overrides(rng: Range, overrides: dict) -> Range:
             stock = r.whole("stock")
             if stock < 0:
                 raise r.err(f"stock must be 0 (no limit) or more, not {stock}")
+            if stock > MAX_STOCK:
+                raise r.err(stock_too_big(stock))
             new["stock"] = stock or None
         for key in ("spread_yaw_deg", "spread_pitch_deg", "spread_speed"):
             if r.has(key):

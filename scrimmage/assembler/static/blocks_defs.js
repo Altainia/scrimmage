@@ -258,7 +258,8 @@ const CONDS = {
   },
   made_it_in: {
     def: { message0: "at least %1% made it in", args0: [num("PERCENT", 80, { min: 0, max: 100 })],
-      tooltip: "Of the pieces the robot shot, at least this share went into the goal." },
+      tooltip: "Of the pieces fed to the robot, at least this share made it into the hopper. "
+        + "In an expect that is the test's last block, it waits (up to 3 s) for the pieces to settle first; anywhere else it counts them as they are." },
     fields: (a) => ({ PERCENT: a.at_least }),
     json: (b) => ({ made_it_in: { at_least: b.getFieldValue("PERCENT") } }),
   },

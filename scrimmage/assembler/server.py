@@ -2180,7 +2180,7 @@ class App:
             pal, roots = None, {}
         return dumps_test(TestProgram(folder / "x.test.toml", Path(test_session.config_path(robot, folder)),
                                       hooks=test_session.starter_hooks(pal), blocks=test_session.starter_blocks(pal),
-                                      hopper=test_session.starter_hopper(pal, roots)))
+                                      hopper=test_session.starter_hopper(pal, roots) or None))
 
     def test_from_part(self) -> dict:
         """The Part tab's "Test it": make (once) `<import name>-standin.toml` next to the import's parts folder, the

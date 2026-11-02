@@ -271,6 +271,17 @@ One plain sentence for each decision. "Cost if wrong" says what changes if the c
 - **R11: the robot-code server's `set_start` accepts any built-in range**, since each is a valid checked range; the
   Robot tab's picker still offers only the robot's own fields. Cost if wrong: a hand-made request can put a
   robot-code robot on a test-only field, which is harmless.
+- **R12: scenario files keep refusing `[range]` `ball`, `station` and `seed`**, because robot code driving a station
+  is out of scope; no doc says a scenario can use them. Cost if wrong: a later task adds them to scenarios.
+- **R13: a station's stock is at most 200** (in a range file and in a test's Setup), with a plain message, because each
+  piece is parked in the world from the start and big pools cost build time and replay size. Cost if wrong: a student
+  wanting more than 200 feeds in one run is refused.
+- **The settle doesn't count against `time_limit`**, so blocks that finish just before the limit still get their
+  full settle. Cost if wrong: a run's clock can end up to 3 s past its time limit.
+- **Floor spreads are kept as `spread-NNN/` folders, the newest 3, apart from sweeps**, so a spread doesn't push out
+  the sweeps a student kept. Cost if wrong: one more kind of run folder to clean up.
+- **`feed_one` on an empty or used-up station does nothing**, and the counts show that no piece came. Cost if wrong: a
+  student might expect the run to stop there.
 
 **Calls made by implementers**
 

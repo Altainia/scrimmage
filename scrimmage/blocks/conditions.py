@@ -65,7 +65,7 @@ class Watch:
             self._hook_geoms[name] = set(self._body_geoms(name))
         self._balls = [m.body(n).id for n in layout.ball_names] if layout is not None else []
         self._ball_names = list(layout.ball_names) if layout is not None else []
-        self._hopper = list(program.hopper)
+        self._hopper = list(program.hopper or [])
         self.outcomes = None                                # the runner's piece tracker (made_it_in reads it)
         self._sides: dict[str, set[int]] = {}
         self._boxes: dict[str, tuple[int, np.ndarray, np.ndarray]] = {}

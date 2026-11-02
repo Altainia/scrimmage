@@ -84,7 +84,9 @@ def _robot_boxes(world) -> np.ndarray:
     """Every colliding robot geom's box in the robot's own frame (x ahead, y left, z up from its origin, which is on
     the floor), as rows [x0, x1, y0, y1, z0, z1] in m: the geom's bounding box, turned with it (so a little larger
     than the geom when it is turned)."""
-    m, d = world.model, world.data
+    m = world.model
+    d = mujoco.MjData(m)                # a scratch MjData at the world's pose: the world's own is left alone
+    d.qpos[:] = world.data.qpos
     mujoco.mj_kinematics(m, d)
     root = m.body_rootid[world.robot_body]
     rpos, rmat = d.xpos[world.robot_body], d.xmat[world.robot_body].reshape(3, 3)

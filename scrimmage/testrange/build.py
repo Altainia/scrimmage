@@ -355,6 +355,11 @@ def parse_range_section(cfg: dict, cfg_dir: Path | None) -> RangeSection | None:
     try:
         rng = load_range(ref, Path(cfg_dir) if cfg_dir is not None else Path("."), ball)
     except RangeError as e:
+        if ball is not None:        # the file's own fault or the ball's: the file read with its own ball says which
+            try:
+                load_range(ref, Path(cfg_dir) if cfg_dir is not None else Path("."))
+            except RangeError as own:
+                raise PartError(f"[range] file: {own}") from None
         raise PartError(f"[range] {'ball' if ball is not None else 'file'}: {e}") from None
     if "station" in sec:
         try:

@@ -269,6 +269,22 @@ def test_setup_problems_at_place_nothing():
         "this field keeps its own ball; pick a ball on the intake or station field"]
 
 
+def test_an_unknown_station_in_setup_leaves_the_others_settings_alone():
+    """One station the field doesn't have is reported on its own: the field's station keeps the test's stock."""
+    setup = '\n[setup.station.feeder]\nstock = 3\n\n[setup.station.nope]\nstock = 1\n'
+    assert msgs(sprog(WAIT_EMPTY.format(), ["drive.chassis"], setup), station_world()) == [
+        'Setup names a station this field doesn\'t have: "nope"']
+
+
+def test_setup_on_the_plain_field_says_what_to_clear():
+    plain = World(tomllib.loads(new_config("standin")), None)
+    assert msgs(sprog(setup='\n[setup]\nseed = 4\n'), plain) == []
+    assert msgs(sprog(setup='\n[setup]\nball = "2014-ball"\n'), plain) == [
+        "the plain field has no ball to pick; clear the ball in Setup"]
+    assert msgs(sprog(setup='\n[setup.station.feeder]\nstock = 1\n'), plain) == [
+        'Setup names a station this field doesn\'t have: "feeder"']
+
+
 def test_review_focus_1_a_ball_that_doesnt_fit_is_a_setup_problem(tmp_path):
     text = (Path(__file__).resolve().parent.parent / "scrimmage/testrange/ranges/station.toml").read_text()
     text = text.replace("chute = { length = 0.5, slope_deg = 30.0 }", "chute = { length = 0.5, slope_deg = 30.0, width = 0.25 }")

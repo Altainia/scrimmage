@@ -3,6 +3,7 @@
 The fixtures (Chromium lookup, the Server helper) live in tests/test_assembler_browser.py. The robot is the stand-in
 box with the stock arm (motor and joint arm.pivot), as in tests/test_test_server.py.
 """
+import json
 import shutil
 import tomllib
 from pathlib import Path
@@ -1051,7 +1052,64 @@ def test_setup_hopper_ball_and_station_settings_are_saved_in_the_test(test_page,
     assert sent[0]["target"] == {"station": "feeder", "key": "spread_position"}
     assert sent[0]["values"] == [0.0254, 0.0762]
     page.wait_for_selector("#test-sweep-wrap", state="visible")
-    assert page.inner_text("#test-sweep-title") == "Sweep 1: feeder: release box (± m)"
+    assert page.inner_text("#test-sweep-title") == "Sweep 1: feeder: release box (± in)"
+    # the table shows the values in inches, as they were typed
+    assert page.eval_on_selector_all("#test-sweep-table .test-sweep-value", "bs => bs.map(b => b.textContent)") == ["1", "3"]
+
+
+def _just_a_wait(text):
+    """The station example's test with its feed blocks swapped for one wait block (its [setup] kept)."""
+    return text[:text.index("[[block]]")] + '[[block]]\ndo = "wait"\nseconds = 0.5\n'
+
+
+def test_settings_for_another_field_can_be_cleared_so_the_test_runs(test_page, tmp_path):
+    """Moved to the ladder, the station test's station settings are left over: Setup lists them with Clear, and once
+    cleared the test runs. The shuffle is no problem on a field without stations."""
+    path = _example(tmp_path, "station", "feed.test.toml", _just_a_wait)
+    page, _ = test_page(path=path)
+    _open_setup(page)
+    assert page.query_selector("#test-setup .test-setup-leftover") is None       # the station field uses them all
+    robot = path.parent / "hopper-standin.toml"
+    page.select_option("#test-field", "ladder")
+    _wait_file(lambda: _toml(robot)["range"]["file"] == "ladder", robot)
+    page.wait_for_function("__scrimmageTest.state.problems.length > 0")
+    assert 'Setup names a station this field doesn\'t have: "feeder"' in page.inner_text("#test-problems")
+    assert page.is_disabled("#test-run")
+    page.wait_for_selector("#test-setup .test-setup-leftover")
+    assert page.inner_text("#test-setup .test-setup-leftover legend") == "Settings for another field"
+    row = "#test-setup .test-setup-leftover [data-leftover='station-feeder']"
+    assert 'Station "feeder": this field has no station by that name' in page.inner_text(row)
+    page.click(f"{row} button")
+    _wait_file(lambda: "station" not in _toml(path).get("setup", {}), path)
+    assert _toml(path)["setup"] == {"seed": 1}                                      # the shuffle is left alone
+    page.wait_for_function("__scrimmageTest.state.problems.length === 0")
+    page.wait_for_function("!document.querySelector('#test-run').disabled")
+    assert page.query_selector("#test-setup .test-setup-leftover") is None
+    assert _run(page, "001")["status"] == "finished"
+
+
+def test_a_run_on_a_station_field_that_fed_nothing_has_no_fed_pieces_line(test_page, tmp_path):
+    page, path = test_page(path=_example(tmp_path, "station", "feed.test.toml", _just_a_wait))
+    run = _run(page, "001")
+    assert run["status"] == "finished"
+    result = json.loads((path.parent / "feed-runs" / "001" / "result.json").read_text(encoding="utf-8"))
+    assert result["counts"] == {"fed": 0, "in": 0, "stuck": 0, "missed": 0}      # counted, but nothing to say
+    assert page.is_hidden("#test-feeds-summary")
+
+
+def test_a_cleared_hopper_stays_cleared_after_a_reload(test_page, tmp_path):
+    path = _example(tmp_path, "station", "feed.test.toml")
+    page, _ = test_page(path=path)
+    _open_setup(page)
+    page.uncheck("#test-setup .test-setup-hopper input[data-body='hopper.bin']")
+    _wait_file(lambda: _toml(path)["test"].get("hopper") == [], path)
+    page.reload()
+    page.wait_for_function(READY)
+    _open_setup(page)
+    assert not page.is_checked("#test-setup .test-setup-hopper input[data-body='hopper.bin']")
+    page.click("#test-new-shuffle")                     # the next Setup change doesn't bring the preselection back
+    _wait_file(lambda: _toml(path)["setup"]["seed"] != 1, path)
+    assert _toml(path)["test"]["hopper"] == []
 
 
 def test_a_hook_change_saves_the_preselected_hopper_too(test_page, tmp_path):

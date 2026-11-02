@@ -354,9 +354,12 @@ def test_world_for_applies_the_setup(tmp_path):
 
 
 def test_setup_on_the_plain_field_says_it_needs_a_field(tmp_path):
+    """A ball or station setting needs a field; a seed left over from one is dropped (it only picks stations' draws)."""
     (tmp_path / "robot.toml").write_text(new_config("standin"), encoding="utf-8")
     path = tmp_path / "t.test.toml"
     path.write_text('[test]\nrobot = "robot.toml"\n\n[setup]\nseed = 2\n', encoding="utf-8")
+    assert world_for(loads(path.read_text(encoding="utf-8"), path)).test_range is None
+    path.write_text('[test]\nrobot = "robot.toml"\n\n[setup]\nseed = 2\nball = "2017-fuel"\n', encoding="utf-8")
     with pytest.raises(TestFileError, match="need a field; this robot is on the plain field"):
         world_for(loads(path.read_text(encoding="utf-8"), path))
 
