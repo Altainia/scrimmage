@@ -2,8 +2,9 @@
 
 The palette lists every name a block can pick, as the world names them: the robot's motors and joints (a hinge reads
 in degrees, a slide in inches, a drive wheel is a `wheel`), its bodies and parts, its hooks, the field's bars,
-elements, game pieces and climb levels, whether it can drive (it has drive-wheel motors: joints whose body carries a
-tread geom, as parts/assemble.py marks them) and the signals a chart can show. Every list is sorted by name except
+elements, game pieces and climb levels, whether it can drive (a tank drive: it has drive-wheel motors, joints whose
+body carries a tread geom as parts/assemble.py marks them, and no wheel is steered, so a swerve robot can't) and the
+signals a chart can show. Every list is sorted by name except
 `levels`, which keeps the range's climb order (lowest first), so a picker reads the way the robot climbs. `pieces`
 are the field's game pieces (the floor balls), not the balls parked in the robot's slots.
 
@@ -23,6 +24,7 @@ NEXT_BAR = "next bar"     # a hanging_from or touch target: the lowest bar above
 ANY_HOOK = "hook"         # a touch's robot side: any of the robot's hooks
 ANY_PIECE = "any"         # a piece_in's piece: any game piece
 ALL_MOTORS = "all"        # a stop's motor: every motor
+VERTICAL = 0.99           # a hinge axis this close to its body's z is a steer (azimuth) joint, as terrain/drive.py's
 
 
 def _robot_bodies(world) -> list[int]:
@@ -46,6 +48,17 @@ def _joints(world) -> dict[str, str]:
         else:
             out[name] = "wheel" if int(m.jnt_bodyid[j]) in tread_bodies else "hinge"
     return out
+
+
+def _steered(world) -> bool:
+    """A tread wheel hangs from a steer joint (a vertical hinge on the wheel's parent body): a swerve module."""
+    m = world.model
+    for name in (world.parts.tread_geoms if world.parts else ()):
+        parent = int(m.body_parentid[m.geom_bodyid[m.geom(name).id]])
+        for k in range(int(m.body_jntadr[parent]), int(m.body_jntadr[parent]) + int(m.body_jntnum[parent])):
+            if int(m.jnt_type[k]) == int(mujoco.mjtJoint.mjJNT_HINGE) and abs(float(m.jnt_axis[k][2])) > VERTICAL:
+                return True
+    return False
 
 
 def _entry(name: str, kind: str) -> dict:
@@ -80,7 +93,7 @@ def palette(world, hooks: list[str]) -> dict:
         "elements": sorted(e.name for e in rng.elements) if rng is not None else [],
         "pieces": sorted(layout.ball_names[:layout.n_floor]) if layout is not None else [],   # on the field
         "levels": list(rule.levels) if rule is not None else [],      # lowest first, as the range lists them
-        "drive": any(kinds[n] == "wheel" for n in motors),
+        "drive": any(kinds[n] == "wheel" for n in motors) and not _steered(world),
         "signals": signals,
     }
 
@@ -173,7 +186,11 @@ def _block_problems(n: _Names, b) -> list[str]:
     if b.do == "move":
         return _joint_problems(n, a["joint"], a["unit"], motor=True)
     if b.do == "drive":
-        return [] if n.p["drive"] else ["drive needs a drivetrain; this robot has none"]
+        if n.p["drive"]:
+            return []
+        if any(j["kind"] == "wheel" for j in n.p["motors"]):
+            return ["drive works on a tank drive; spin the drive motors instead"]
+        return ["drive needs a drivetrain; this robot has none"]
     for key in ("until", "that"):
         if key in a:
             return _cond_problems(n, a[key])

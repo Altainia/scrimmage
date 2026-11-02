@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 import threading
 
 import numpy as np
@@ -10,7 +11,10 @@ import pytest
 
 from scrimmage.__main__ import main
 from scrimmage.assembler.templates import new_config
+from scrimmage.blocks.palette import palette, problems
 from scrimmage.blocks.program import TestFileError, loads
+from scrimmage.config import build_world, load_config
+from test_blocks_conditions import IN, paw_geom, paw_world
 from scrimmage.blocks.run import MOTION_HZ, SIGNAL_HZ, TestRun, world_for
 from scrimmage.climb.run import SETTLE_S
 
@@ -92,8 +96,16 @@ throughout = true
 """ + MOVE_45
     r = run(tmp_path, blocks)
     assert r.status == "check failed"
-    assert r.outcome.startswith("a check failed: arm.pivot goes below 30° at ")
+    assert re.fullmatch(r"a check failed \(block 1\): expected arm\.pivot below 30°, but it was 3\d(\.\d)?° at 0\.\d s",
+                        r.outcome), r.outcome
     assert not r.checks[0]["passed"] and r.checks[0]["throughout"]
+    assert r.checks[0]["line"].startswith("failed (block 1): expected arm.pivot below 30°, but it was ")
+
+
+def test_a_failed_tilt_check_says_how_far_it_tilted(tmp_path):
+    r = run(tmp_path, '[[block]]\ndo = "expect"\nthat = { tilt = { above = 20.0 } }\n')
+    assert re.fullmatch(r"a check failed \(block 1\): expected the robot to tilt more than 20°, "
+                        r"but it tilted \d(\.\d)?° at 0\.3 s", r.outcome), r.outcome
 
 
 def test_repeat_that_never_ends(tmp_path):
@@ -164,7 +176,7 @@ def test_tipped_over(tmp_path):
 def test_time_limit(tmp_path):
     r = run(tmp_path, '[[block]]\ndo = "wait"\nseconds = 5.0\n', head="time_limit = 1.0")
     assert r.status == "time limit"
-    assert r.outcome == "ran out of time (1 s)"
+    assert r.outcome == "ran out of time (1 s), waiting 5 s (block 1)"
     assert r.t_end == pytest.approx(1.0, abs=2e-3)
 
 
@@ -229,3 +241,103 @@ def test_cli_exit_codes(tmp_path, capsys, monkeypatch):
     (gone / "robot.toml").unlink()
     assert _cli(["test", "run", str(path)]) == 2
     assert "not found" in capsys.readouterr().err
+
+
+def test_time_limit_names_the_repeat_under_way(tmp_path):
+    """Review Focus 2: a repeat until that the time limit ends names the repeat and what it was doing."""
+    blocks = """
+[[block]]
+do = "repeat"
+until = { hanging_from = "rung4" }
+max = 100
+
+[[block.body]]
+do = "wait_until"
+until = { touch = { robot = "drive", field = "rung4" } }
+timeout = 5.0
+"""
+    r = run(tmp_path, blocks, head="time_limit = 1.0", ladder=True)
+    assert r.status == "time limit"
+    assert r.outcome == "ran out of time (1 s) during repeat (block 1), waiting for drive to touch rung4"
+
+
+def test_a_repeat_of_instant_blocks_goes_round_once_a_step(tmp_path):
+    blocks = """
+[[block]]
+do = "repeat"
+times = 5
+
+[[block.body]]
+do = "spin"
+motor = "arm.pivot"
+volts = 0.0
+"""
+    r = run(tmp_path, blocks)
+    assert r.status == "finished"
+    assert r.t_end == pytest.approx(SETTLE_S + 4 * 0.001, abs=1e-6)       # rounds 2 to 5, one a step
+
+
+def test_drive_times_out(tmp_path):
+    r = run(tmp_path, '[[block]]\ndo = "drive"\ndistance = 5.0\ntimeout = 0.3\n')
+    assert r.status == "timed out"
+    assert re.fullmatch(r"drive \(block 1\) didn't reach 5 m in 0\.3 s \(went 0\.\d\d m\)", r.outcome), r.outcome
+
+
+def test_move_timeout_says_where_the_joint_stopped(tmp_path):
+    r = run(tmp_path, '[[block]]\ndo = "move"\njoint = "arm.pivot"\nto = 120.0\nunit = "deg"\ntimeout = 0.5\n')
+    assert r.status == "timed out"
+    m = re.fullmatch(r"arm\.pivot stopped at ([\d.]+)° short of 120° \(block 1\)", r.outcome)
+    assert m and 85.0 < float(m.group(1)) < 95.0, r.outcome           # at its 90° stop
+
+
+def test_a_time_limit_inside_the_settle_is_refused(tmp_path):
+    with pytest.raises(TestFileError, match="the time limit must be longer than 0.3 s"):
+        loads('[test]\nrobot = "r.toml"\ntime_limit = 0.3\n', tmp_path / "t.test.toml")
+
+
+def test_drive_timeout_goes_with_distance(tmp_path):
+    with pytest.raises(TestFileError, match="timeout goes with distance, not seconds"):
+        loads('[test]\nrobot = "r.toml"\n[[block]]\ndo = "drive"\nseconds = 1.0\ntimeout = 2.0\n',
+              tmp_path / "t.test.toml")
+
+
+def test_drive_is_for_a_tank_drive():
+    """Ruling R6: a swerve robot can't drive; its drive block says to spin the drive motors."""
+    world = build_world(load_config("configs/swerve.toml"))
+    assert palette(world, [])["drive"] is False
+    program = loads('[test]\nrobot = "swerve.toml"\n[[block]]\ndo = "drive"\ndistance = 1.0\n', "t.test.toml")
+    assert [p["message"] for p in problems(program, world)] == [
+        "drive works on a tank drive; spin the drive motors instead"]
+
+
+def _resting_on_rung1(folder):
+    """The box robot of the conditions tests, its `arm.paw` hook 1 cm over rung1 at the start, so it rests on the rung
+    by the end of the settle."""
+    w = paw_world(folder)
+    m, d = w.model, w.data
+    q = w.free_qadr
+    x, y, heading = w.test_range.range.starts["below"]
+    w.test_range.range.starts["below"] = (x + 1.0, y, heading)     # under the rungs: every reset starts it there
+    w.reset()
+    paw = paw_geom(w)
+    m.qpos0[q + 2] += 24 * IN + 0.01 - (float(d.geom_xpos[paw][2]) - float(m.geom_size[paw][2]))
+    return w
+
+
+def _paw_run(folder, blocks: str):
+    program = loads(f'[test]\nrobot = "r.toml"\nhooks = ["arm.paw"]\n{blocks}', folder / "t.test.toml")
+    return TestRun(_resting_on_rung1(folder), program).run()
+
+
+def test_first_block_sees_a_hook_resting_on_a_bar(tmp_path):
+    r = _paw_run(tmp_path, '[[block]]\ndo = "expect"\nthat = { touch = { robot = "hook", field = "rung1" } }\n')
+    assert r.status == "finished", r.outcome
+    assert r.checks[0]["passed"]
+
+
+def test_a_failed_touch_or_hang_check_says_what_didnt_happen(tmp_path):
+    r = _paw_run(tmp_path / "a", '[[block]]\ndo = "expect"\nthat = { touch = { robot = "hook", field = "rung2" } }\n')
+    assert r.outcome == "a check failed (block 1): no hook touched rung2 at 0.3 s"
+    r = _paw_run(tmp_path / "b", '[[block]]\ndo = "wait"\nseconds = 0.3\n\n'
+                                  '[[block]]\ndo = "expect"\nthat = { hanging_from = "next bar" }\n')
+    assert r.outcome == "reached rung1, then a check failed (block 2): the robot wasn't hanging from rung2 at 0.6 s"

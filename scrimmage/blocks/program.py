@@ -23,9 +23,12 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..climb.run import SETTLE_S
+
 TIME_LIMIT = 60.0        # s: the whole run ends here
 MOVE_TIMEOUT = 5.0       # s: a move gives up after this long
 WAIT_TIMEOUT = 10.0      # s: a wait until gives up after this long
+DRIVE_TIMEOUT = 10.0     # s: a drive for a distance gives up after this long
 DRIVE_VOLTS = 4.0        # V: drive's default
 REPEAT_MAX = 20          # a repeat until stops after this many rounds
 MAX_VOLTS = 12.0
@@ -185,11 +188,15 @@ def _block(t, trail: tuple) -> Block:
         if "timeout" in t:
             a["timeout"] = _time(t["timeout"], where, "timeout")
     elif do == "drive":
-        _keys(t, ("distance", "seconds", "volts"), where)
+        _keys(t, ("distance", "seconds", "volts", "timeout"), where)
         k = _one_of(t, ("distance", "seconds"), where)
         a = {k: _time(t[k], where, k) if k == "seconds" else _num(t[k], where, k)}
         if "volts" in t:
             a["volts"] = _volts(t["volts"], where)
+        if "timeout" in t:
+            if k == "seconds":
+                raise TestFileError(f"{where}: timeout goes with distance, not seconds")
+            a["timeout"] = _time(t["timeout"], where, "timeout")
     elif do == "stop":
         _keys(t, ("motor",), where)
         a = {"motor": _text(t.get("motor"), where, "motor")}
@@ -244,6 +251,9 @@ def _program(data: dict, path: Path, head: str = "[test]") -> Program:
     hooks = _strings(test.get("hooks", []), head, "hooks")
     chart = _strings(test["chart"], head, "chart") if "chart" in test else None
     limit = _time(test.get("time_limit", TIME_LIMIT), head, "time_limit")
+    if limit <= SETTLE_S:
+        raise TestFileError(f"{head}: the time limit must be longer than {SETTLE_S:g} s "
+                            "(the robot settles that long before the first block)")
     raw = data.get("block", [])
     if not isinstance(raw, list):
         raise TestFileError("blocks are written as [[block]] tables")

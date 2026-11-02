@@ -8,13 +8,16 @@ is on the run's clock, which starts with the settle; `time_limit` ends the run a
 
 Blocks hold like a climb script's drives: `spin` holds its volts until a later block changes that motor; `move` holds
 its position target (a proportional loop, as `climb run`'s) and waits until the joint is within MOVE_TOL of it, or its
-timeout; `drive` drives the wheel motors (forward for a positive distance or volts) until the robot has gone that far
-across the floor from where the block started, or for its seconds, then stops them; `stop` lets a motor (or all of
-them) go to neutral. `wait`, `wait_until` and `repeat` pass time and loop; a `repeat` goes round at most once a
-physics step when its body takes no time. `expect` checks its condition once, or (`throughout`) every step until the
-run ends; a check that fails ends the run.
+timeout; `drive` (a tank drive's) drives the wheel motors (forward for a positive distance or volts) until the robot
+has gone that far across the floor from where the block started (or its timeout), or for its seconds, then stops
+them; `stop` lets a motor (or all of them) go to neutral. `wait`, `wait_until` and `repeat` pass time and loop; a
+`repeat` goes round at most once a physics step when its body takes no time. `expect` checks its condition once, or
+(`throughout`) every step until the run ends; a check that fails ends the run, saying what happened instead. The
+Watch reads the world once after the settle, so the first blocks judge the robot as it rests (a hook already on a bar
+touches it).
 
-A run ends with one status: "finished" (every block played), "check failed", "timed out" (a wait until or a move),
+A run ends with one status: "finished" (every block played), "check failed", "timed out" (a wait until, a move or a
+drive),
 "tipped over" (the robot body's up axis more than TIP_DEG from vertical), "walked off" (the climb runner's "hook walked
 off" rule, scrimmage/climb/run.py's WalkOff), "time limit", "repeat limit" (a repeat until reached its max) or
 "cancelled", and a one-sentence outcome for the student.
@@ -34,8 +37,9 @@ from ..hal_drive import MotorDrive, driven_joints, position_volts
 from ..movers import mover_poses, movers
 from ..protocol import HalState
 from .conditions import IN, Watch, describe
-from .palette import ALL_MOTORS, palette, problems
-from .program import DRIVE_VOLTS, MOVE_TIMEOUT, REPEAT_MAX, WAIT_TIMEOUT, Program, TestFileError
+from .palette import ALL_MOTORS, ANY_HOOK, ANY_PIECE, NEXT_BAR, palette, problems
+from .program import (DRIVE_TIMEOUT, DRIVE_VOLTS, MOVE_TIMEOUT, REPEAT_MAX, WAIT_TIMEOUT, Program,
+                      TestFileError)
 
 MOTION_HZ = 30            # mover poses a second, for the replay
 SIGNAL_HZ = 50            # signal samples a second, for the chart
@@ -73,7 +77,7 @@ class _Frame:
     trail: tuple              # 0-based indices of the repeats this list is inside, outermost first
     index: int = 0
     rounds: int = 0           # rounds of a repeat's body done
-    round_t: float = 0.0      # when this round started
+    round_t: float | None = 0.0   # when this round started; None: it starts at the next step
 
 
 class _End(Exception):
@@ -140,6 +144,7 @@ class TestRun:
         watch = self.watch = Watch(w, self.program)
         if watch.mon is not None:
             watch.mon.reset()
+        watch.update()                                      # the robot as it rests, for the first blocks
         walk = WalkOff(dt) if watch.mon is not None else None
         view = model_view(w, include_world=True)
         ms = movers(w)
@@ -175,15 +180,14 @@ class TestRun:
                 if cancel is not None and cancel.is_set():
                     raise _End("cancelled", f"you stopped the run at {t:.1f} s")
                 if t >= self.program.time_limit - EPS:
-                    raise _End("time limit", f"ran out of time ({self.program.time_limit:g} s)")
+                    raise _End("time limit", f"ran out of time ({self.program.time_limit:g} s){self._under_way()}")
                 self._step()
                 t = float(d.time)
                 watch.update()
                 sample(t)
                 for check, cond in self.throughout:
                     if not watch.holds(cond):
-                        check.update(passed=False, t=t)
-                        raise _End("check failed", f"a check failed: {check['text']} at {t:.1f} s")
+                        self._fail(check, cond, t)
                 if watch.tilt > TIP_DEG:
                     raise _End("tipped over", f"the robot tipped over at {t:.1f} s")
                 if walk is not None:
@@ -242,6 +246,8 @@ class TestRun:
         watch = self.watch
         while True:
             f = self.frames[-1]
+            if f.round_t is None:
+                f.round_t = t
             if f.index >= len(f.blocks):
                 if len(self.frames) == 1:
                     raise _End("finished", "finished")
@@ -263,6 +269,7 @@ class TestRun:
                     continue
                 f.index = 0
                 if t <= f.round_t + EPS:       # the round took no time: go round again at the next step
+                    f.round_t = None
                     return
                 f.round_t = t
                 continue
@@ -298,7 +305,7 @@ class TestRun:
                      "throughout": bool(a.get("throughout", False)), "passed": ok, "t": t}
             self.checks.append(check)
             if not ok:
-                raise _End("check failed", f"a check failed: {check['text']} at {t:.1f} s")
+                self._fail(check, cond, t)
             if check["throughout"]:
                 self.throughout.append((check, cond))
             return True
@@ -312,6 +319,7 @@ class TestRun:
             j = a["joint"]
             to = math.radians(a["to"]) if a["unit"] == "deg" else a["to"] * IN if a["unit"] == "in" else a["to"]
             self.active["target"] = to
+            self.active["q0"] = float(self.world.data.qpos[self._qadr[j]])
             self.drives[j] = ("to", to)
         elif b.do == "drive":
             self.active["from"] = self.world.data.xpos[self.world.robot_body][:2].copy()
@@ -342,13 +350,20 @@ class TestRun:
             if abs(q - self.active["target"]) <= tol:
                 return True
             if elapsed >= a.get("timeout", MOVE_TIMEOUT) - EPS:
-                raise _End("timed out", f"moving {j} to {_amount(a['to'], a['unit'])} timed out at {t:.1f} s "
+                target = self.active["target"]
+                short = (target - q) * (target - self.active["q0"]) > 0.0     # still on the start's side
+                raise _End("timed out", f"{j} stopped at {self._value(j, a['unit'])} "
+                                        f"{'short of' if short else 'past'} {_amount(a['to'], a['unit'])} "
                                         f"({_where(place)})")
             return False
         # drive
         if "distance" in a:
             gone = float(np.linalg.norm(d.xpos[self.world.robot_body][:2] - self.active["from"]))
             done = gone >= abs(a["distance"]) - EPS
+            timeout = a.get("timeout", DRIVE_TIMEOUT)
+            if not done and elapsed >= timeout - EPS:
+                raise _End("timed out", f"drive ({_where(place)}) didn't reach {abs(a['distance']):g} m in "
+                                        f"{timeout:g} s (went {gone:.2f} m)")
         else:
             done = elapsed >= a["seconds"] - EPS
         if done:
@@ -363,9 +378,69 @@ class TestRun:
         side = d.xmat[self.world.robot_body].reshape(3, 3)[:, 1]
         return {j: 1.0 if float(side @ d.xaxis[m.joint(j).id]) >= 0.0 else -1.0 for j in self.wheels}
 
+    def _value(self, joint: str, unit: str) -> str:
+        """A joint's position now in `unit`, in words (`38.2°`)."""
+        q = float(self.world.data.qpos[self._qadr[joint]])
+        v = math.degrees(q) if unit == "deg" else q / IN if unit == "in" else q
+        return _amount(round(v, 1), unit)
+
+    def _failure(self, cond) -> str:
+        """What happened instead of `cond`, in words."""
+        a, k, watch = cond.args, cond.kind, self.watch
+
+        def bar(name: str) -> str:
+            return (watch.next_bar() or "the next bar") if name == NEXT_BAR else name
+
+        if k == "joint":
+            side = "above" if "above" in a else "below"
+            return (f"expected {a['name']} {side} {_amount(a[side], a['unit'])}, "
+                    f"but it was {self._value(a['name'], a['unit'])}")
+        if k == "tilt":
+            side, limit = ("more", a["above"]) if "above" in a else ("less", a["below"])
+            return (f"expected the robot to tilt {side} than {_amount(limit, 'deg')}, "
+                    f"but it tilted {_amount(round(watch.tilt, 1), 'deg')}")
+        if k == "touch":
+            if a["robot"] == ANY_HOOK:
+                return f"no hook touched {bar(a['field'])}"
+            return f"{a['robot']} didn't touch {bar(a['field'])}"
+        if k == "piece_in":
+            if a["piece"] == ANY_PIECE:
+                return f"no ball was in {a['body']}"
+            return f"{a['piece']} wasn't in {a['body']}"
+        if k == "hanging_from":
+            return f"the robot wasn't hanging from {bar(a['bar'])}"
+        return f"the robot wasn't hanging at {a['level']}"           # level
+
+    def _fail(self, check: dict, cond, t: float) -> None:
+        check.update(passed=False, t=t, failure=self._failure(cond))
+        raise _End("check failed", f"a check failed ({_where(tuple(check['place']))}): {check['failure']} at {t:.1f} s")
+
+    def _doing(self, b) -> str:
+        """A waiting block under way, in words."""
+        a = b.args
+        if b.do == "wait":
+            return f"waiting {a['seconds']:g} s"
+        if b.do == "wait_until":
+            return f"waiting for {_recast(describe(a['until'], self.watch.next_bar()), 1)}"
+        if b.do == "move":
+            return f"moving {a['joint']} to {_amount(a['to'], a['unit'])}"
+        if "distance" in a:
+            return f"driving {a['distance']:g} m"
+        return f"driving for {a['seconds']:g} s"
+
+    def _under_way(self) -> str:
+        """The innermost repeat and the block under way, for the time-limit sentence ("" for neither)."""
+        f = self.frames[-1]
+        doing = None
+        if self.active is not None and f.index < len(f.blocks):
+            doing = self._doing(f.blocks[f.index]), f.trail + (f.index,)
+        if len(self.frames) > 1:
+            return f" during repeat ({_where(f.trail)})" + (f", {doing[0]}" if doing else "")
+        return f", {doing[0]} ({_where(doing[1])})" if doing else ""
+
     def _line(self, c: dict) -> str:
         where = _where(tuple(c["place"]))
         if c["passed"]:
             when = f"from {c['t']:.1f} s on" if c["throughout"] else f"at {c['t']:.1f} s"
             return f"passed: {c['text']} {when} ({where})"
-        return f"failed: {c['text']} at {c['t']:.1f} s ({where})"
+        return f"failed ({where}): {c['failure']} at {c['t']:.1f} s"
