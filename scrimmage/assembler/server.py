@@ -2175,6 +2175,27 @@ class App:
         self.hub.close()
 
 
+class _Bounded:
+    """At most `length` bytes of a request body; drain() reads and drops what is left, so an upload refused before
+    its body was read (a bad name, a part that can't take it) still gets its answer: a server that closes with the
+    body unread resets the connection, and the browser (on Windows above all) shows a network error instead."""
+
+    def __init__(self, stream, length: int):
+        self._stream, self.left = stream, length
+
+    def read(self, size: int) -> bytes:
+        data = self._stream.read(min(size, self.left)) if self.left > 0 else b""
+        self.left -= len(data)
+        return data
+
+    def drain(self) -> None:
+        try:
+            while self.left > 0 and self.read(1 << 20):
+                pass
+        except OSError:   # the client went away: nothing to answer
+            pass
+
+
 class _Handler(BaseHTTPRequestHandler):
     app: App
     protocol_version = "HTTP/1.1"
@@ -2273,18 +2294,22 @@ class _Handler(BaseHTTPRequestHandler):
                 n = int(self.headers.get("Content-Length") or 0)
             except ValueError:
                 raise ApiError(400, "bad Content-Length") from None
-            if n > part_session.MAX_UPLOAD:
+            if n > part_session.MAX_UPLOAD:   # (not read: a body this large may be cut off)
                 raise ApiError(413, "that file is too large to upload (over 512 MB)")
-            files = None
-            if self.headers.get("X-Files"):
-                try:
-                    files = [(f["name"], f["size"]) for f in json.loads(unquote(self.headers["X-Files"]))]
-                except (ValueError, TypeError, KeyError):
-                    raise ApiError(400, "X-Files must be a list of {name, size}") from None
-                if not files:
-                    raise ApiError(400, "no files were sent")
-            return app.upload(self.rfile, n, self.headers.get("X-Filename"), files,
-                              again=self.headers.get("X-Import-Again") == "1")
+            body = _Bounded(self.rfile, n)
+            try:
+                files = None
+                if self.headers.get("X-Files"):
+                    try:
+                        files = [(f["name"], f["size"]) for f in json.loads(unquote(self.headers["X-Files"]))]
+                    except (ValueError, TypeError, KeyError):
+                        raise ApiError(400, "X-Files must be a list of {name, size}") from None
+                    if not files:
+                        raise ApiError(400, "no files were sent")
+                return app.upload(body, n, self.headers.get("X-Filename"), files,
+                                  again=self.headers.get("X-Import-Again") == "1")
+            finally:
+                body.drain()   # a refusal answers after the body arrived, never by resetting the connection
         if path.startswith("/api/part/"):
             return self._part_api(method, url, app.need_part())
         if path.startswith(("/api/robot/", "/api/scenario/", "/api/live/")):

@@ -582,6 +582,19 @@ def test_several_files_that_dont_go_together_are_refused(part_app, tmp_path, fil
     assert not (tmp_path / "parts" / "climber.source").exists()
 
 
+@pytest.mark.parametrize("files, says", [
+    ([("a.stl", b"x" * (4 << 20)), ("A.STL", b"y" * (4 << 20))], "Two of the files are called"),
+    ([("notes.txt", b"x" * (8 << 20))], "notes.txt is not a STEP, STL or OBJ file"),
+])
+def test_a_refused_upload_still_answers_after_its_body_was_sent(part_app, files, says):
+    """A refusal reads the body it was sent before answering: closing with it unread resets the connection, and a
+    browser (on Windows above all) then shows a network error instead of the message."""
+    for path in (None, "step"):
+        c, _ = part_app(path)
+        s, b = _upload(c, files)
+        assert s == 400 and says in b["error"], b
+
+
 def test_import_again_on_a_copied_source_keeps_the_settings(part_app, tmp_path):
     """A file sent from the chooser is copied in: Import again sends the new export (X-Import-Again) in its place and
     reconciles the settings as an ordinary re-import does. An import opened from a path is read from that path."""
