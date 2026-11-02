@@ -1,0 +1,17 @@
+# A ball to pick up: one 2026 FUEL on open carpet, straight ahead of the start. It is a stand-in to try an intake on,
+# not a game's field, so every value is our choice. WPILib field coordinates (blue alliance wall at x = 0, z up), SI
+# units.
+#
+# The robot starts at (2.0, 4.0 m) facing +x; the ball lies 1.5 m in front of the robot's center, in its path. There
+# are no goals and no [shooter]: a ball the intake takes is still a ball on the field, so a test can ask where it is.
+
+[range]
+name = "A ball to pick up (a stand-in intake test)"
+ball = "2026-fuel"           # choice: the 2026 game's FUEL, a 15 cm foam ball
+
+[[floor_balls]]
+at = [[3.5, 4.0]]            # choice: 1.5 m in front of the start, on its center line: far enough that the robot is up to speed when it gets there
+
+# Starts: 1.5 m back from the ball, facing it.
+[start.facing_ball]
+pose = [2.0, 4.0, 0.0]       # choice: the robot's center 1.5 m before the ball, heading +x toward it
