@@ -20,7 +20,8 @@ from ..parts.stock import REGISTRY, _load_all, build_stock
 _GROUPS = {"chassis": "Chassis", "mechanisms": "Mechanisms", "swerve": "Drivetrain", "differential": "Drivetrain"}
 
 
-def _group(stock) -> str:
+def group(stock) -> str:
+    """The library group a stock part is listed under: Chassis, Drivetrain or Mechanisms."""
     return _GROUPS.get(stock.build.__module__.rsplit(".", 1)[-1], "Mechanisms")
 
 
@@ -54,7 +55,7 @@ def root_body(name: str) -> str:
 
 def stock() -> list[dict]:
     _load_all()
-    return [{"name": s.name, "group": _group(s), "doc": s.doc, "note": s.note,
+    return [{"name": s.name, "group": group(s), "doc": s.doc, "note": s.note,
              "params": [_param(p) for p in s.params], "slots": _slot_kinds(s), "mounts": list(s.mounts),
              "root_body": root_body(s.name)}
             for s in sorted(REGISTRY.values(), key=lambda s: s.name)]

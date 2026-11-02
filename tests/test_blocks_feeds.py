@@ -14,8 +14,8 @@ from scrimmage.blocks.run import TestRun, world_for
 from scrimmage.climb.run import SETTLE_S
 
 # A bin on the stand-in's top, written by hand (box sizes are full sizes): a floor and four walls 0.3 m high over
-# the whole top. The robot faces
-# the station (heading 180), so a fed ball comes in over the front wall and lands near the back.
+# the whole top. The robot faces the station (heading 180), so a fed ball comes in over the front wall and lands
+# near the back.
 BIN = """\
 [part]
 name = "hopper"
@@ -328,3 +328,67 @@ def test_the_sentence():
     assert sentence(rows(2, 0, 0, 0, floor=1)) == "2 of 3 made it in (67%); 1 missed"
     assert sentence(rows(1, 0, 0, 0, floor=1)) == "1 of 2 made it in (50%); 1 missed"
     assert sentence(rows(5, 0, 0, 0)) == "5 of 5 made it in (100%)" and sentence([]) == ""
+
+
+# ---- the tracker on a tiny world: a box robot and one ball, placed by hand (no physics steps) ------------------------
+
+TINY = """
+<mujoco>
+  <worldbody>
+    <geom name="carpet" type="plane" size="5 5 0.1"/>
+    <body name="robot" pos="0 0 0.1"><freejoint/><geom name="top" type="box" size="0.2 0.2 0.1"/></body>
+    <body name="ball" pos="0 0 0.249"><freejoint/><geom name="ball" type="sphere" size="0.05"/></body>
+  </worldbody>
+</mujoco>
+"""
+
+
+def _tiny():
+    """An Outcomes tracking the one ball; a function that puts the ball at (x, z), and its velocity (set it)."""
+    import mujoco
+    import numpy as np
+    from types import SimpleNamespace
+    from scrimmage.blocks.feeds import Outcomes
+    from scrimmage.testrange.balls import BallState
+    m = mujoco.MjModel.from_xml_string(TINY)
+    d = mujoco.MjData(m)
+    q = int(m.jnt_qposadr[m.body("ball").jntadr[0]])
+    of_geom = np.full(m.ngeom, -1)
+    of_geom[m.geom("ball").id] = 0
+    v = np.zeros(3)
+    balls = SimpleNamespace(state=np.array([BallState.FIELD], dtype=object), rest_z=0.05,
+                            ball_of_geom=lambda g: of_geom[g], position=lambda i: d.qpos[q:q + 3],
+                            velocity=lambda i: v)
+    world = SimpleNamespace(model=m, data=d, robot_body=m.body("robot").id, test_range=SimpleNamespace(balls=balls))
+    out = Outcomes(world, SimpleNamespace(hopper_mask=lambda: np.zeros(1, bool)), standin=False)
+    out.track(0, "feeder", 0.0)
+
+    def put(x, z):
+        d.qpos[q:q + 3] = (x, 0.0, z)
+        mujoco.mj_forward(m, d)
+    return out, put, v
+
+
+def test_a_piece_at_rest_that_slides_off_the_robot_onto_the_floor_isnt_stuck():
+    out, put, v = _tiny()
+    dt = 0.002
+    put(0.0, 0.249)                         # on the robot's top
+    v[0] = 1.0                              # rolling ...
+    out.update(0.0)
+    out.update(0.002)
+    v[0] = 0.0                              # ... and at rest from some time in the step that ends at 0.004
+    t = 0.002
+    for _ in range(400):
+        out.update(t := t + dt)
+    row = out.final()[0]
+    assert row["outcome"] == "stuck" and row["t_outcome"] == pytest.approx(0.002)    # that step's start
+    put(0.0, 0.26)                          # its contact drops out for one step: still on the robot
+    out.update(t := t + dt)
+    put(0.0, 0.249)
+    out.update(t := t + dt)
+    assert out.final()[0]["outcome"] == "stuck"
+    put(1.0, 0.05)                          # slid off, slowly enough to stay at rest, onto the carpet
+    for _ in range(3):
+        out.update(t := t + dt)
+    row = out.final()[0]
+    assert row["outcome"] == "missed" and row["why"] == "on the floor", row
