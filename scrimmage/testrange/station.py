@@ -11,7 +11,7 @@
     spread_yaw_deg = 5.0          # each feed varies uniformly within +-this of the heading, and so on
     spread_pitch_deg = 5.0
     spread_speed = 0.2
-    spread_position = [0.0, 0.02, 0.02]    # or spread_position_in; a box this size centered on the release point
+    spread_position = [0.0, 0.02, 0.02]    # or spread_position_in; a box around the release point, half sizes
     spread_rotation_deg = [0, 0, 0]        # the ball's turn; it does nothing to a ball (a later piece's)
     chute = { length = 0.6, slope_deg = 25.0, width = 0.3 }   # a sloped floor and two side walls (optional)
 
@@ -51,6 +51,13 @@ _STATION = ("name", "release", "release_in", "heading_deg", "pitch_deg", "speed"
             "spread_rotation_deg", "chute")
 _CHUTE = ("width", "length", "slope_deg")
 _TOUCH = 1e-6   # m: a ball resting on a surface is not inside it
+
+
+def check_seed(seed) -> int:
+    """`seed` if it is a whole number, 0 or more (numpy's seeds); a ValueError otherwise."""
+    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
+        raise ValueError(f"seed must be a whole number, 0 or more, not {seed!r}")
+    return seed
 
 
 @dataclass(frozen=True)
@@ -205,7 +212,8 @@ def _element_boxes(e) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
 
 
 def check_release_clear(path, rng: Range) -> None:
-    """Refuse a release point whose ball overlaps an element's box, an obstacle, or a station's chute."""
+    """Refuse a release point whose ball overlaps an element's box, an obstacle, or a station's chute, and a chute
+    that reaches off the field or into an element, an obstacle or another station's chute."""
     if not rng.stations:
         return
     from .build_elements import chute_parts
@@ -216,6 +224,7 @@ def check_release_clear(path, rng: Range) -> None:
                for o in rng.obstacles]
     solids += [(f"the chute of station '{s.name}'", list(chute_parts(s, rng.piece.diameter).values()))
                for s in rng.stations if s.chute is not None]
+    _check_chutes(path, rng, solids)
     for st in rng.stations:
         p = np.array(st.release)
         for what, boxes in solids:
@@ -226,3 +235,48 @@ def check_release_clear(path, rng: Range) -> None:
                     raise RangeError(
                         f"{path}: [[station]] '{st.name}': its release point at ({x:.4g}, {y:.4g}, {z:.4g}) is"
                         f" inside {what}; move it clear (the ball's center needs {r:.2g} m all round)")
+
+
+def _corners(center, rot, half) -> np.ndarray:
+    """The 8 corners of a box (center, rotation, half sizes)."""
+    signs = np.array([[i, j, k] for i in (-1, 1) for j in (-1, 1) for k in (-1, 1)], float)
+    return center + (signs * half) @ rot.T
+
+
+def _overlap(a, b) -> bool:
+    """Whether two boxes (center, rotation, half sizes) overlap by more than _TOUCH (the separating axis test)."""
+    (ca, ra, ha), (cb, rb, hb) = a, b
+    axes = [ra[:, i] for i in range(3)] + [rb[:, i] for i in range(3)]
+    axes += [np.cross(ra[:, i], rb[:, j]) for i in range(3) for j in range(3)]
+    d = cb - ca
+    for u in axes:
+        n = float(np.linalg.norm(u))
+        if n < 1e-9:            # parallel edges: covered by the face axes
+            continue
+        u = u / n
+        reach = float(np.abs(ra.T @ u) @ ha + np.abs(rb.T @ u) @ hb)
+        if abs(float(d @ u)) >= reach - _TOUCH:
+            return False
+    return True
+
+
+def _check_chutes(path, rng: Range, solids) -> None:
+    """Each chute's boxes on the field (inside its walls) and clear of the elements, obstacles and other chutes."""
+    from .build_elements import chute_parts
+
+    for st in rng.stations:
+        if st.chute is None:
+            continue
+        where = f"{path}: [[station]] '{st.name}': its chute"
+        for part, box in chute_parts(st, rng.piece.diameter).items():
+            c = _corners(*box)
+            lo, hi = c.min(axis=0), c.max(axis=0)
+            if lo[0] < 0.0 or lo[1] < 0.0 or hi[0] > FIELD_LENGTH or hi[1] > FIELD_WIDTH:
+                raise RangeError(f"{where} reaches off the field (0..{FIELD_LENGTH} x 0..{FIELD_WIDTH} m: its"
+                                 f" {part.replace('_', ' ')} spans x {lo[0]:.3g} to {hi[0]:.3g}, y {lo[1]:.3g} to"
+                                 f" {hi[1]:.3g}); move the release point further onto the field")
+            for what, boxes in solids:
+                if what == f"the chute of station '{st.name}'":
+                    continue
+                if any(_overlap(box, other) for other in boxes):
+                    raise RangeError(f"{where} runs into {what}; move the station or shorten its chute")

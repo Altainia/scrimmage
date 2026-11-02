@@ -41,7 +41,7 @@ from .build import BALL_BITS, LAUNCHED_BITS
 from .feeder import Feeder
 from .launch import LAUNCH_CLEAR_S, exit_state, exit_state_disc
 from .shooter import DiscShooter, Shooter, parse_shooter
-from .station import DEFAULT_SEED
+from .station import DEFAULT_SEED, check_seed
 
 
 class RangeRuntime:
@@ -101,8 +101,8 @@ class RangeRuntime:
         if start is not None and start not in self.range.starts:
             raise ValueError(f"start {start!r} isn't a start of range {self.range.name!r}; its starts: "
                              f"{', '.join(self.range.starts) or 'none'}")
-        if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int) or seed < 0):
-            raise ValueError(f"seed must be a whole number, 0 or more, not {seed!r}")
+        if seed is not None:
+            check_seed(seed)
         n_slots = len(self.layout.robot_slots)
         if preload is not None and not 0 <= preload <= n_slots:
             raise ValueError(f"preload {preload}: the robot holds at most {n_slots} balls")

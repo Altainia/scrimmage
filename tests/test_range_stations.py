@@ -1,4 +1,5 @@
 import math
+import re
 import tomllib
 from pathlib import Path
 
@@ -126,6 +127,31 @@ def test_bad_station_values(tmp_path, extra, key):
         parse(tmp_path, HEAD + FEEDER + extra + "\n")
 
 
+def test_a_chute_off_the_field_is_refused(tmp_path):
+    text = HEAD + FEEDER.replace("[1.0, 4.0, 0.5]", "[0.1, 4.0, 0.5]") + "chute = { length = 0.3, slope_deg = 30.0 }\n"
+    with pytest.raises(RangeError, match=r"'feeder': its chute reaches off the field .*its floor spans x -0\.0"):
+        parse(tmp_path, text)
+
+
+def test_a_chute_into_an_element_is_refused(tmp_path):
+    text = HEAD + '''
+[[element]]
+name = "wall"
+kind = "box"
+center = [1.3, 4.0]
+size = [0.2, 1.0, 2.0]
+''' + FEEDER + "chute = { length = 0.5, slope_deg = 10.0 }\n"
+    with pytest.raises(RangeError, match="'feeder': its chute runs into element 'wall'; move the station or shorten"):
+        parse(tmp_path, text)
+
+
+def test_a_chute_into_another_chute_is_refused(tmp_path):
+    chute = "chute = { length = 0.5, slope_deg = 10.0 }\n"
+    other = FEEDER.replace('"feeder"', '"second"').replace("[1.0, 4.0, 0.5]", "[1.3, 4.0, 0.5]")
+    with pytest.raises(RangeError, match="its chute runs into the chute of station 'second'"):
+        parse(tmp_path, HEAD + FEEDER + chute + other + chute)
+
+
 def test_two_stations_named_alike_are_refused(tmp_path):
     with pytest.raises(RangeError, match="shares its name"):
         parse(tmp_path, HEAD + FEEDER + FEEDER)
@@ -172,7 +198,8 @@ def station_world(tmp_path, extra: str = "", away: bool = True):
 
     ref = "station"
     if extra:
-        text = STATION_TOML.read_text(encoding="utf-8").replace('name = "feeder"\n', f'name = "feeder"\n{extra}\n')
+        text = re.sub(r'(?m)^(name = "feeder".*\n)', lambda m: m.group(1) + extra + "\n",
+                      STATION_TOML.read_text(encoding="utf-8"))
         (tmp_path / "station.toml").write_text(text, encoding="utf-8")
         ref = "station.toml"
     cfg = tomllib.loads(new_config("standin") + f'\n[range]\nfile = "{ref}"\n')
@@ -253,13 +280,17 @@ def test_a_fed_piece_varies_within_its_spreads(tmp_path):
     assert len(feeder.fed) == 6
     for f in feeder.fed:
         d = np.array(f.release) - np.array(st.release)
-        assert abs(d[0]) < 1e-12 and abs(d[1]) <= 0.02 and abs(d[2]) <= 0.01
+        assert abs(d[0]) < 1e-12 and abs(d[1]) <= 0.04 and abs(d[2]) <= 0.02
         v = np.array(f.velocity)
         speed = float(np.linalg.norm(v))
         assert 0.5 <= speed <= 1.5
         assert abs(math.degrees(math.atan2(v[1], v[0]))) <= 10.0 + 1e-9
         assert abs(math.degrees(math.asin(-v[2] / speed))) <= 5.0 + 1e-9
     assert len({f.velocity for f in feeder.fed}) == 6
+    # +-spread_position on each axis: the first feed's dy is its fifth draw times the whole 0.04
+    draws = np.random.default_rng([1, 0]).uniform(-1.0, 1.0, 9)
+    assert feeder.fed[0].release[1] - st.release[1] == pytest.approx(draws[4] * 0.04)
+    assert max(abs(f.release[1] - st.release[1]) for f in feeder.fed) > 0.02
 
 
 def test_a_stock_runs_out(tmp_path):

@@ -5,7 +5,7 @@ A feed puts the station's next pool ball in play at the release point, moving al
 the physics step (RangeRuntime.before_physics), so its first step already moves. Each feed varies within the
 station's spreads, drawn uniformly from -1 to 1:
 
-- position: release + U * spread_position / 2 on each axis;
+- position: release + U * spread_position on each axis;
 - speed: speed + U * spread_speed, at least 0;
 - direction: Station.direction(heading_deg + U * spread_yaw_deg, pitch_deg + U * spread_pitch_deg);
 - turn: roll, pitch and yaw of U * spread_rotation_deg (it does nothing to a ball). No spin.
@@ -26,10 +26,10 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .balls import BallLog, Balls, BallState
+from .balls import Balls
 from .build import BALL_BITS, RangeLayout, _quat, _rpy
 from .spec import Range
-from .station import DEFAULT_SEED
+from .station import DEFAULT_SEED, check_seed
 
 EPS = 1e-6      # s: a feed due within this of now is due now (the step clock's rounding)
 
@@ -54,12 +54,11 @@ class Feeder:
         self.reset(seed)
 
     def reset(self, seed: int | None = None) -> None:
-        """Every pool back to unused (parked, spare), the draws restarted (from `seed` when given, else the current
-        seed), nothing feeding or requested."""
+        """The draws restarted (from `seed` when given, else the current seed), every pool unused, nothing feeding
+        or requested. It leaves the balls alone: call it right after Balls.clear() (as RangeRuntime.reset does),
+        which parks the pools and gives their logs back."""
         if seed is not None:
-            if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
-                raise ValueError(f"seed must be a whole number, 0 or more, not {seed!r}")
-            self.seed = seed
+            self.seed = check_seed(seed)
         n = len(self.stations)
         self._gen = [np.random.default_rng([self.seed, k]) for k in range(n)]
         self._next = [0] * n                    # the next unused pool ball, per station
@@ -67,13 +66,6 @@ class Feeder:
         self._requested = [0] * n
         self._feeding = [False] * n
         self.fed = []
-        b = self.balls
-        for slots in self.layout.station_slots.values():
-            for i in slots:
-                if b.state[i] != BallState.SPARE:      # a spare ball is already parked
-                    b.set_state(i, BallState.SPARE)
-                    b.park(i)
-                b.log[i] = BallLog(id=i, origin="station")
 
     def _index(self, name: str) -> int:
         k = self._k.get(name)
@@ -109,12 +101,11 @@ class Feeder:
                 continue
             i = self.layout.station_slots[st.name][self._next[k]]
             yaw, pitch, speed, dx, dy, dz, rx, ry, rz = self._gen[k].uniform(-1.0, 1.0, 9).tolist()
-            pos = np.array(st.release) + np.array([dx, dy, dz]) * np.array(st.spread_position) / 2.0
+            pos = np.array(st.release) + np.array([dx, dy, dz]) * np.array(st.spread_position)
             v = max(0.0, st.speed + speed * st.spread_speed) * st.direction(
                 st.heading_deg + yaw * st.spread_yaw_deg, st.pitch_deg + pitch * st.spread_pitch_deg)
             turn = np.array([rx, ry, rz]) * np.array(st.spread_rotation_deg)
             self.balls.place(i, pos, v, (0.0, 0.0, 0.0), BALL_BITS, quat=_quat(_rpy(turn)))
-            self.balls.log[i].origin = "station"
             self._next[k] += 1
             self._last[k] = t
             self._requested[k] = max(0, self._requested[k] - 1)

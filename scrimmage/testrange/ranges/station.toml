@@ -7,11 +7,11 @@
 # test's blocks can start feeding at once. A second start drives up to a ball on the carpet instead. There are no goals.
 
 [range]
-name = "A human player station"
+name = "A human player station"   # choice: a plain name for the field picker
 ball = "2026-fuel"           # choice: the 2026 game's FUEL, a 15 cm foam ball
 
 [[station]]
-name = "feeder"
+name = "feeder"              # choice: the name a test's feeding blocks use
 release = [0.3, 4.0, 1.1]    # choice: 0.3 m out from the blue alliance wall, mid-field across, about chest high on a human player
 heading_deg = 0.0            # choice: fed toward +x, onto the field
 chute = { length = 0.5, slope_deg = 30.0 }   # choice: a short, steep chute; no width, so it fits any ball (1.3 diameters)
