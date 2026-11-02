@@ -32,7 +32,7 @@ resetUsed();
 let names = () => null;
 let loading = 0;        // testToWorkspace is filling the workspace: pickers don't adjust each other
 
-const SPECIAL = { hook: "any hook", "next bar": "next bar", any: "any piece", all: "all motors" };
+const SPECIAL = { hook: "any hook", "next bar": "next bar", "any bar": "any bar", any: "any piece", all: "all motors" };
 
 // [[label, value], ...] for a picker: `special` first (when given), the palette's names, then names only the test
 // uses (marked as missing from the robot).
@@ -58,7 +58,7 @@ const OPTIONS = {
   moveJoint: () => choices(motorNames(), "joint"),
   joint: () => choices(jointNames(), "joint"),
   robot: () => choices(robotSide(), "robot", has(pal().hooks) ? ["hook"] : []),
-  field: () => choices(fieldSide(), "field", has(pal().bars) ? ["next bar"] : []),
+  field: () => choices(fieldSide(), "field", has(pal().bars) ? ["next bar", "any bar"] : []),
   body: () => choices(pal().bodies || [], "body"),
   piece: () => choices(pal().pieces || [], "piece", has(pal().pieces) ? ["any"] : []),
   bar: () => choices(pal().bars || [], "bar", has(pal().bars) ? ["next bar"] : []),

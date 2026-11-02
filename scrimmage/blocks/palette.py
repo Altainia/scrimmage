@@ -21,6 +21,7 @@ from ..hal_drive import driven_joints
 from ..terrain.climb import robot_hooks
 
 NEXT_BAR = "next bar"     # a hanging_from or touch target: the lowest bar above every bar hung from so far
+ANY_BAR = "any bar"       # a touch target: any of the field's bars
 ANY_HOOK = "hook"         # a touch's robot side: any of the robot's hooks
 ANY_PIECE = "any"         # a piece_in's piece: any game piece
 ALL_MOTORS = "all"        # a stop's motor: every motor
@@ -66,10 +67,18 @@ def _entry(name: str, kind: str) -> dict:
 
 
 def _targets(world, named: set[str]) -> list[str]:
-    """The field's other named surfaces a touch can name (the carpet, the walls): its geoms and bodies outside the robot,
-    less the bars, elements and pieces listed already, the `element.<name>...` geoms of those elements and `world`
-    (every fixed thing at once)."""
-    return [n for n in world.contact_names() if n not in named and n != "world" and not n.startswith("element.")]
+    """The field's other surfaces a touch can name, as a student knows them: each field body by its own name (a hub,
+    never its numbered geoms: a touch on a body counts all of its geoms) and the named geoms of the fixed field (the
+    carpet, the walls). Not `world` (every fixed thing at once), not `element.<name>...` (an element goes by its own
+    name), not a ball (the floor balls are `pieces`; the robot's slot balls are no surface of the field), and not what
+    bars, elements and pieces list already."""
+    m = world.model
+    root = m.body_rootid[world.robot_body]
+    layout = world.parts.layout if world.parts is not None else None
+    skip = set(named) | set(layout.ball_names if layout is not None else ())
+    out = {m.body(b).name for b in range(1, m.nbody) if m.body_rootid[b] != root and m.body(b).name}
+    out |= {m.geom(g).name for g in range(m.ngeom) if int(m.geom_bodyid[g]) == 0 and m.geom(g).name}
+    return sorted(n for n in out if n not in skip and not n.startswith("element."))
 
 
 def hook_names(world, hooks: list[str]) -> list[str]:
@@ -159,6 +168,8 @@ def _cond_problems(n: _Names, c) -> list[str]:
         return _joint_problems(n, a["name"], a["unit"], motor=False)
     if c.kind == "touch":
         out = []
+        if a["field"] == ANY_BAR:
+            out += [] if n.bars else ['"any bar" needs a field with bars']
         if a["robot"] == ANY_HOOK:
             if not n.p["hooks"]:
                 out.append("this robot has no hooks; say which bodies are hooks in the test's setup")
@@ -166,7 +177,7 @@ def _cond_problems(n: _Names, c) -> list[str]:
             out.append(f'no part or body "{a["robot"]}" on this robot any more')
         if a["field"] == NEXT_BAR:
             out += _bar_problems(n, NEXT_BAR)
-        elif a["field"] not in n.field and a["field"] not in n.pieces:
+        elif a["field"] != ANY_BAR and a["field"] not in n.field and a["field"] not in n.pieces:
             out.append(f'nothing called "{a["field"]}" on this field')
         return out
     if c.kind == "piece_in":

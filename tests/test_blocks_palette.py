@@ -63,6 +63,25 @@ def test_touch_targets_are_the_fields_other_surfaces(climber_world):
     assert problems(prog, w) == []
 
 
+def test_touch_targets_on_a_game_piece_field_are_surfaces_a_student_knows():
+    """On the 2026 range with a shooter robot (its hopper's slot balls) and floor balls: a hub is one target by its own
+    name, never its numbered geoms, and no ball is a target (the floor balls are pieces)."""
+    for w in (World(shooter_cfg(), None), spares_world(range_cfg())):
+        p = palette(w, [])
+        assert "hub_blue" in p["targets"] and "hub_red" in p["targets"] and "carpet" in p["targets"]
+        assert not [t for t in p["targets"] if "." in t], p["targets"]
+        balls = set(w.parts.layout.ball_names)
+        assert balls and not balls & set(p["targets"])
+
+
+def test_any_bar_is_a_touch_target_on_a_field_with_bars(climber_world):
+    ladder = World(range_cfg(range={"file": "ladder", "start": "below"}), None)
+    prog = loads(HEAD + '[[block]]\ndo = "wait_until"\nuntil = { touch = { robot = "drive.chassis", field = "any bar" } }\n',
+                 PATH)
+    assert problems(prog, ladder) == []
+    assert [p["message"] for p in problems(prog, climber_world)] == ['"any bar" needs a field with bars']
+
+
 def test_palette_of_a_robot_without_a_drivetrain_or_hooks(tmp_path):
     w = World({"part": [{"name": "drive", "stock": "chassis"}]}, tmp_path)
     p = palette(w, [])

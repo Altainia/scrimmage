@@ -153,6 +153,27 @@ def test_next_bar_follows_the_bars_hung_from(hanging):
     assert not watch.holds(hang_next) and not watch.holds(touch_next)
     assert watch.holds(touch1)
     assert not watch.holds(Cond("hanging_from", {"bar": "rung2"}))
+    # any bar: rung1 is one; a bar the paw doesn't touch is not
+    assert watch.holds(Cond("touch", {"robot": "arm", "field": "any bar"}))
+    assert not watch.holds(Cond("touch", {"robot": "arm", "field": "rung3"}))
+
+
+def test_a_touch_on_a_field_body_counts_all_of_its_geoms():
+    """A hub is one field body with numbered geoms (hub_blue.body_0, .funnel_0, .net...): touching it by name is any
+    contact with any of them."""
+    w = spares_world(range_cfg())
+    watch = Watch(w, program())
+    m = w.model
+    hub = m.body("hub_blue").id
+    geoms = watch._field_side("hub_blue")
+    assert geoms == {g for g in range(m.ngeom) if int(m.geom_bodyid[g]) == hub} and len(geoms) > 3
+    chassis = next(iter(watch._robot_side("drive")))
+    cond = Cond("touch", {"robot": "drive", "field": "hub_blue"})
+    for g in sorted(geoms):
+        watch._pairs = {(chassis, g)}
+        assert watch.holds(cond), m.geom(g).name
+    watch._pairs = set()
+    assert not watch.holds(cond)
 
 
 def test_piece_inside_a_body():
@@ -171,6 +192,8 @@ def test_piece_inside_a_body():
 
 
 def test_describe():
+    assert describe(Cond("touch", {"robot": "hook", "field": "any bar"}), next_bar="rung3") == "a hook touches any bar"
+    assert describe(Cond("touch", {"robot": "arm.paw", "field": "any bar"})) == "arm.paw touches any bar"
     assert describe(Cond("touch", {"robot": "hook", "field": "rung2"})) == "a hook touches rung2"
     assert describe(tilt(above=20.0)) == "the robot tilts more than 20°"
     assert describe(Cond("joint", {"name": "climber.arm", "above": 40.0, "unit": "deg"})) == "climber.arm passes 40°"

@@ -4,7 +4,8 @@ step, and the plain words that name them in a run's outcome.
 - `joint`: a hinge's angle (degrees) or a slide's travel (inches or meters) above or below a number.
 - `tilt`: the angle between the robot body's z axis and straight up, in degrees.
 - `touch`: a robot part, body or hook (`hook` for any of them) touching a field element, bar, game piece or any
-  named field geom or body; `next bar` for the bar the robot climbs to next. It reads the contacts update() recorded
+  named field geom or body (a body with all of its geoms and the bodies under it); `next bar` for the bar the robot
+  climbs to next, `any bar` for any of the field's bars. It reads the contacts update() recorded
   at the last physics step.
 - `piece_in`: a game piece's center inside a robot body's box: the axis-aligned box, in the body's own frame, around
   its geoms' bounding boxes. `any` for any piece.
@@ -30,7 +31,7 @@ import mujoco
 import numpy as np
 
 from ..terrain.climb import hold_geoms, robot_hooks
-from .palette import ANY_HOOK, ANY_PIECE, NEXT_BAR
+from .palette import ANY_BAR, ANY_HOOK, ANY_PIECE, NEXT_BAR
 
 HANG_S = 0.1            # s: the hooks carry a quarter of the robot's weight this long to count as hanging
 HANG_SHARE = 0.25       # of the robot's weight
@@ -162,17 +163,30 @@ class Watch:
             self._sides[name] = gs
         return self._sides[name]
 
+    def _ancestor(self, b: int, bodies: set[int]) -> bool:
+        """b is one of `bodies` or under one of them."""
+        m = self.model
+        while b > 0:
+            if b in bodies:
+                return True
+            b = int(m.body_parentid[b])
+        return False
+
     def _field_side(self, name: str) -> set[int]:
         if name not in self._sides:
             m = self.model
-            if name in self._holds:
+            if name == ANY_BAR:
+                gs = set().union(*self._holds.values()) if self._holds else set()
+            elif name in self._holds:
                 gs = set(self._holds[name])
             else:
                 el = f"element.{name}"
+                named = {b for b in range(1, m.nbody) if m.body(b).name == name}
+                under = {b for b in range(1, m.nbody) if self._ancestor(b, named)}
                 gs = {g for g in range(m.ngeom)
                       if m.body_rootid[m.geom_bodyid[g]] != self._robot_root
                       and (m.geom(g).name == name or m.geom(g).name == el or m.geom(g).name.startswith(el + ".")
-                           or m.body(m.geom_bodyid[g]).name == name)}
+                           or int(m.geom_bodyid[g]) in under)}
             self._sides[name] = gs
         return self._sides[name]
 
@@ -243,6 +257,8 @@ def describe(cond, next_bar: str | None = None) -> str:
     def bar(name: str) -> str:
         return (next_bar or "the next bar") if name == NEXT_BAR else name
 
+    if k == "touch" and a["field"] == ANY_BAR:
+        return f"{'a hook' if a['robot'] == ANY_HOOK else a['robot']} touches any bar"
     if k == "joint":
         if "above" in a:
             return f"{a['name']} passes {_amount(a['above'], a['unit'])}"
