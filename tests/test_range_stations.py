@@ -11,7 +11,7 @@ from scrimmage.testrange.balls import BallState
 from scrimmage.testrange.build import BALL_BITS
 from scrimmage.testrange.build_elements import chute_parts
 from scrimmage.testrange.spec import BUILTIN_RANGES, RangeError, load_range, parse_range
-from scrimmage.testrange.station import Chute
+from scrimmage.testrange.station import Chute, with_overrides
 
 HEAD = '''
 [range]
@@ -395,3 +395,73 @@ def test_the_station_field_loads_and_its_starts_are_clear():
     assert y == 2.0 and heading == 0.0 and (bx - x, by - y) == pytest.approx((1.5, 0.0))
     walls = [c[1] + k * h[1] for c, _, h in chute_parts(st, rng.piece.diameter).values() for k in (-1, 1)]
     assert y + ROBOT_OUTLINE / 2 < min(walls)
+
+
+# ------------------------------------------------------------------------------------------------ overrides
+
+
+def test_a_ball_override_rebuilds_the_range():
+    rng = load_range("station", ROOT, ball="2019-cargo")
+    assert rng.ball.diameter == pytest.approx(0.3302)
+
+
+def test_a_ball_that_overlaps_the_floor_balls_is_refused():
+    with pytest.raises(RangeError, match="overlap"):
+        load_range("2026", ROOT, ball="2025-algae")
+
+
+def test_a_ball_override_on_a_disc_range_is_refused(tmp_path):
+    disc = next(n for n in BUILTIN_RANGES if load_range(n, ROOT).disc is not None)
+    with pytest.raises(RangeError, match="is a disc field; it can't take a ball"):
+        load_range(disc, ROOT, ball="2019-cargo")
+
+
+def test_station_overrides():
+    rng = load_range("station", ROOT)
+    s = with_overrides(rng, {"feeder": {"interval": 0.4, "stock": 6}}).stations[0]
+    assert (s.interval, s.stock, s.pool()) == (0.4, 6, 6)
+    s = with_overrides(rng, {"feeder": {"spread_position": [0.01, 0.02, 0.03], "spread_yaw_deg": 3}}).stations[0]
+    assert s.spread_position == (0.01, 0.02, 0.03) and s.spread_yaw_deg == 3.0
+    rng2 = with_overrides(rng, {"feeder": {"stock": 6}})
+    assert with_overrides(rng2, {"feeder": {"stock": 0}}).stations[0].stock is None
+
+
+def test_bad_station_overrides_name_themselves():
+    rng = load_range("station", ROOT)
+    with pytest.raises(RangeError, match="the field has no station 'nope'; its stations: feeder"):
+        with_overrides(rng, {"nope": {}})
+    with pytest.raises(RangeError, match="unknown key 'speed'.*valid keys: interval, stock"):
+        with_overrides(rng, {"feeder": {"speed": 1}})
+    with pytest.raises(RangeError, match="spread_position must be a list of 3 numbers"):
+        with_overrides(rng, {"feeder": {"spread_position": [1, 2]}})
+    with pytest.raises(RangeError, match="spread_speed must be 0 or more"):
+        with_overrides(rng, {"feeder": {"spread_speed": -1}})
+
+
+def range_world(tmp_path, **sec):
+    from scrimmage.assembler.templates import new_config
+    from scrimmage.world import World
+
+    lines = "".join(f"{k} = {v}\n" for k, v in sec.items())
+    cfg = tomllib.loads(new_config("standin") + f'\n[range]\nfile = "station"\n{lines}')
+    return World(cfg, tmp_path)
+
+
+def test_config_range_keys_build_a_world_with_them(tmp_path):
+    w = range_world(tmp_path, ball='"2017-fuel"', station="{ feeder = { stock = 4 } }", seed=9)
+    assert len(w.parts.layout.station_slots["feeder"]) == 4 and w.test_range.feeder.seed == 9
+    assert w.test_range.range.ball.diameter == pytest.approx(0.127)
+
+
+@pytest.mark.parametrize("line, key", [
+    ('ball = "nope"', "ball"), ("ball = 3", "ball"), ("seed = -1", "seed"), ("seed = 1.5", "seed"),
+    ("station = { nope = {} }", "station"), ("station = { feeder = { stock = -1 } }", "station"),
+    ("station = 3", "station")])
+def test_bad_range_override_keys_name_themselves(tmp_path, line, key):
+    from scrimmage.assembler.templates import new_config
+    from scrimmage.parts.model import PartError
+    from scrimmage.testrange.build import parse_range_section
+
+    cfg = tomllib.loads(new_config("standin") + f'\n[range]\nfile = "station"\n{line}\n')
+    with pytest.raises(PartError, match=rf"\[range\] {key}"):
+        parse_range_section(cfg, tmp_path)

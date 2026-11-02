@@ -26,7 +26,7 @@ Stations feed balls, not discs.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -280,3 +280,37 @@ def _check_chutes(path, rng: Range, solids) -> None:
                     continue
                 if any(_overlap(box, other) for other in boxes):
                     raise RangeError(f"{where} runs into {what}; move the station or shorten its chute")
+
+
+def with_overrides(rng: Range, overrides: dict) -> Range:
+    """`rng` with the named stations' settings replaced: `{station name: {OVERRIDE_KEYS...}}`. `stock = 0` is no stock
+    (the station feeds up to STATION_CAP); a list key takes 3 numbers. The release check runs again."""
+    if not isinstance(overrides, dict):
+        raise RangeError(f"station settings must be a table of station names, not {overrides!r}")
+    names = [s.name for s in rng.stations]
+    changed = {}
+    for name, table in overrides.items():
+        if name not in names:
+            raise RangeError(f"the field has no station '{name}'; its stations: {', '.join(names) or 'none'}")
+        r = _Reader(rng.path, f"station '{name}'", table, OVERRIDE_KEYS)
+        new: dict = {}
+        if r.has("interval"):
+            new["interval"] = r.num("interval", positive=True)
+        if r.has("stock"):
+            stock = r.whole("stock")
+            if stock < 0:
+                raise r.err(f"stock must be 0 (no limit) or more, not {stock}")
+            new["stock"] = stock or None
+        for key in ("spread_yaw_deg", "spread_pitch_deg", "spread_speed"):
+            if r.has(key):
+                new[key] = r.num(key)
+        for key in ("spread_position", "spread_rotation_deg"):
+            if r.has(key):
+                new[key] = r.nums(key, 3)
+        for key, v in new.items():
+            if key.startswith("spread") and min(v if isinstance(v, tuple) else (v,)) < 0.0:
+                raise r.err(f"{key} must be 0 or more, not {v!r}")
+        changed[name] = replace(next(s for s in rng.stations if s.name == name), **new)
+    out = replace(rng, stations=tuple(changed.get(s.name, s) for s in rng.stations))
+    check_release_clear(rng.path, out)
+    return out

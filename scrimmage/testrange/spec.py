@@ -562,8 +562,9 @@ def parse_range(raw: dict, path: Path) -> Range:
     return built
 
 
-def load_range(ref: str, base_dir: Path) -> Range:
-    """`ref` is a built-in range's name (BUILTIN_RANGES) or a path relative to `base_dir`."""
+def load_range(ref: str, base_dir: Path, ball: str | None = None) -> Range:
+    """`ref` is a built-in range's name (BUILTIN_RANGES) or a path relative to `base_dir`. With `ball`, the file is
+    read with its [range] ball replaced (all the checks run again; a disc range refuses)."""
     try:
         path = BUILTIN_RANGES.get(ref) or Path(base_dir) / expand(ref)
     except TeamFolderError as e:
@@ -578,4 +579,9 @@ def load_range(ref: str, base_dir: Path) -> Range:
         raw = tomllib.loads(text)
     except tomllib.TOMLDecodeError as e:  # also a start (or any table) given twice
         raise RangeError(f"{path}: {e}") from e
+    if ball is not None:
+        table = raw.get("range")
+        if isinstance(table, dict) and "disc" in table:
+            raise RangeError(f"{path}: \"{table.get('name', ref)}\" is a disc field; it can't take a ball")
+        raw = {**raw, "range": {**(table if isinstance(table, dict) else {}), "ball": ball}}
     return parse_range(raw, path)

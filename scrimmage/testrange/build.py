@@ -62,6 +62,7 @@ from ..disc.inputs import Disc
 from ..launcher.inputs import Ball
 from ..parts.field import FIELD_BITS
 from .spec import BUILTIN_RANGES, Goal, Obstacle, Range, RangeError, RectOpening, load_range
+from .station import DEFAULT_SEED, check_seed, with_overrides
 
 BALL_BITS = {"contype": 4, "conaffinity": 7}       # touches the field, the robot and other balls
 LAUNCHED_BITS = {"contype": 4, "conaffinity": 5}   # touches the field and balls, not the robot
@@ -89,7 +90,7 @@ DISC_RGBA = [0.95, 0.95, 0.95, 1.0]
 SLOT_PITCH = 0.2                # m between parked slots' (x, y), in rows of SLOT_ROW from the blue right corner
 SLOT_ROW = 80
 
-RANGE_KEYS = ("file", "start", "preload", "floor_balls")
+RANGE_KEYS = ("file", "start", "preload", "floor_balls", "ball", "station", "seed")
 
 
 @dataclass
@@ -116,6 +117,7 @@ class RangeSection:
     preload: int
     floor_balls: bool
     capacity: int               # balls the robot holds (hopper, stages and launcher); 0 without a [shooter]
+    seed: int = DEFAULT_SEED    # the stations' spreads' random seed
 
     def start_pose(self) -> tuple[float, float, float] | None:
         return None if self.start is None else self.range.starts[self.start]
@@ -347,10 +349,22 @@ def parse_range_section(cfg: dict, cfg_dir: Path | None) -> RangeSection | None:
     if not isinstance(ref, str):
         raise PartError(f"[range] file must be a built-in range's name ({', '.join(BUILTIN_RANGES)}) or a path "
                         f"relative to the config, not {ref!r}")
+    ball = sec.get("ball")
+    if ball is not None and not isinstance(ball, str):
+        raise PartError(f"[range] ball must be a ball preset's name, not {ball!r}")
     try:
-        rng = load_range(ref, Path(cfg_dir) if cfg_dir is not None else Path("."))
+        rng = load_range(ref, Path(cfg_dir) if cfg_dir is not None else Path("."), ball)
     except RangeError as e:
-        raise PartError(f"[range] file: {e}") from None
+        raise PartError(f"[range] {'ball' if ball is not None else 'file'}: {e}") from None
+    if "station" in sec:
+        try:
+            rng = with_overrides(rng, sec["station"])
+        except RangeError as e:
+            raise PartError(f"[range] station: {e}") from None
+    try:
+        seed = check_seed(sec.get("seed", DEFAULT_SEED))
+    except ValueError as e:
+        raise PartError(f"[range] {e}") from None
     try:
         check_contact(rng.piece, model_timestep(cfg, MAX_TIMESTEP))
     except ValueError as e:
@@ -375,4 +389,4 @@ def parse_range_section(cfg: dict, cfg_dir: Path | None) -> RangeSection | None:
     if preload > capacity:
         raise PartError(f"[range] preload = {preload} is more balls than the robot holds "
                         f"([shooter] hopper capacity = {capacity})")
-    return RangeSection(range=rng, start=start, preload=preload, floor_balls=floor, capacity=capacity)
+    return RangeSection(range=rng, start=start, preload=preload, floor_balls=floor, capacity=capacity, seed=seed)

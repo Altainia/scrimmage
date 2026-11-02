@@ -51,7 +51,7 @@ class RangeRuntime:
         self.layout = built.layout
         sec = cfg.get("range", {})
         self._config = {"start": sec.get("start"), "preload": sec.get("preload", 0),
-                        "floor_balls": sec.get("floor_balls", True), "seed": DEFAULT_SEED}
+                        "floor_balls": sec.get("floor_balls", True), "seed": sec.get("seed", DEFAULT_SEED)}
         self._overrides: dict = {}
         m = world.model
         m.opt.enableflags |= int(mujoco.mjtEnableBit.mjENBL_SLEEP)
@@ -76,14 +76,14 @@ class RangeRuntime:
             # the frame the launcher model works in: the launcher's base (on its shaft), the disc shooter's channel
             self._base = m.body(f"{config.part}.{'channel' if self.disc else 'base'}").id
         # the stations' feeder, None on a range without stations
-        self.feeder = Feeder(self.balls, self.layout, self.range) if self.range.stations else None
+        self.feeder = Feeder(self.balls, self.layout, self.range, self._config["seed"]) if self.range.stations else None
         self._prev = np.zeros((self.balls.n, 3))
         self.events: list[tuple[int, str]] = []     # the last step's (ball, "scored" | "out")
 
     # ------------------------------------------------------------------------------------------------ setup
 
     def settings(self) -> dict:
-        """start, preload, floor_balls and seed: the config's (seed: DEFAULT_SEED), under the last overrides."""
+        """start, preload, floor_balls and seed: the config's (seed: the [range] seed or DEFAULT_SEED), under the last overrides."""
         return {**self._config, **self._overrides}
 
     def clear_overrides(self) -> None:
