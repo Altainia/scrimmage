@@ -475,18 +475,26 @@ export function box(attrs, commit) {
 
 // A typed number, or null for an empty box; NaN (and a local message, nothing sent) for text that isn't one.
 // The boxes are text boxes, not type=number: a number box reads "1." as "1", so a redraw mid-typing would turn
-// "1." then "5" into 15. A comma counts as the decimal point.
+// "1." then "5" into 15. A comma counts as the decimal point, except before exactly three digits: "7,850" could
+// mean 7850 or 7.85, so it is refused rather than guessed. A typed minus sign (−, as the hints show) counts as "-".
 const NUMBER_TEXT = /^[+-]?(\d+[.,]?\d*|[.,]\d+)([eE][+-]?\d+)?$/;
+const THOUSANDS = /\d,\d{3}(?!\d)/;
 export function number(text, name) {
-  text = text.trim();
+  text = text.trim().replace(/\u2212/g, "-");
   if (text === "") return null;
-  const v = NUMBER_TEXT.test(text) ? Number(text.replace(",", ".")) : NaN;
-  if (!isFinite(v)) {
-    part.errors = [{ field: name, message: `"${text}" isn't a number. Type one such as 0.25.` }];
+  let message = null;
+  if (THOUSANDS.test(text)) {
+    const whole = text.replace(",", ""), dec = text.replace(",", ".");
+    message = `"${text}" could mean ${whole} or ${dec}. Type it without the comma.`;
+  } else if (!NUMBER_TEXT.test(text) || !isFinite(Number(text.replace(",", ".")))) {
+    message = `"${text}" isn't a number. Type one such as 0.25.`;
+  }
+  if (message) {
+    part.errors = [{ field: name, message }];
     render();
     return NaN;
   }
-  return v;
+  return Number(text.replace(",", "."));
 }
 
 export function matLabel(key, short = false) {

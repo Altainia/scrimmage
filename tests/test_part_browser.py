@@ -491,6 +491,12 @@ def test_text_that_isnt_a_number_is_refused_and_not_sent(part_page):
     # a comma counts as the decimal point
     _edit(page, lambda: _type(page, "#part-body-weight", "2,5"))
     assert _body(page, "arm_A")["typed_mass"] == 2.5
+    # "2,700" could be 2700 or 2.7: refused, not guessed
+    _type(page, "#part-body-weight", "2,700")
+    msg = page.locator('#part-inspector [data-field="kg"] .error')
+    msg.wait_for()
+    assert "without the comma" in msg.inner_text()
+    assert _body(page, "arm_A")["typed_mass"] == 2.5
 
 
 def test_a_snapped_hinge_takes_a_typed_pivot_point(part_page):
