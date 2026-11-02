@@ -32,7 +32,6 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
-from ..cad.settings import replace_file
 from . import store
 from .program import SPREAD_AXES, Program, TestFileError
 
@@ -194,7 +193,7 @@ def run_spread(program: Program, base, on_progress=None, cancel: threading.Event
     `on_progress(k, n, row)` is called after each placement (k from 1); setting `cancel` ends the run under way and
     the spread."""
     from .run import TestRun, check_problems, world_for
-    from .sweep import _plain_error
+    from .sweep import run_each
     spread = program.setup.get("floor_spread")
     if not spread:
         raise TestFileError(NO_SPREAD)
@@ -211,34 +210,15 @@ def run_spread(program: Program, base, on_progress=None, cancel: threading.Event
     labels = [label(p, names) for p in ps]
     base = Path(base)
     tmp = store.new_sweep_folder(base, prefix="spread")
-    rows: list[dict] = []
-    cancelled = False
-    try:
-        for i, p in enumerate(ps):
-            row = {"placement": labels[i], **p, "status": COULDNT_RUN, "picked": False, "outcome": ""}
-            result = None
-            try:
-                result = TestRun(world, program, placement=p).run(cancel=cancel)
-            except (ValueError, OSError) as e:
-                row["outcome"] = str(e)
-            except Exception as e:              # anything else: this placement's row, not the end of the spread
-                row["outcome"] = _plain_error(e)
-            if result is not None:
-                row.update(status=result.status, outcome=result.outcome, picked=_floor_outcome(result) == "in")
-                folder = store.save_run(result, program, tmp, sweep={"spread": p, "index": i})
-                if folder.name != f"{i + 1:03d}":         # a placement before it couldn't run: keep k = its row
-                    replace_file(folder, tmp / f"{i + 1:03d}")
-            rows.append(row)
-            if on_progress is not None:
-                on_progress(i + 1, len(ps), row)
-            if result is not None and result.status == "cancelled":
-                cancelled = True
-                break
-    except BaseException:
-        cancelled = True                        # interrupted: keep the runs done so far, then stop
-        _finish(tmp, base, spread, ps, labels, rows, cancelled)
-        raise
-    return _finish(tmp, base, spread, ps, labels, rows, cancelled)
+
+    def record(i: int, row: dict, result):
+        row.update(status=result.status, outcome=result.outcome, picked=_floor_outcome(result) == "in")
+        return program, {"spread": ps[i], "index": i}
+
+    rows = [{"placement": labels[i], **p, "status": COULDNT_RUN, "picked": False, "outcome": ""}
+            for i, p in enumerate(ps)]
+    return run_each(tmp, rows, lambda i: TestRun(world, program, placement=ps[i]).run(cancel=cancel), record,
+                    lambda done, cancelled: _finish(tmp, base, spread, ps, labels, done, cancelled), on_progress)
 
 
 def _finish(tmp: Path, base: Path, spread: dict, ps: list, labels: list, rows: list, cancelled: bool) -> Path:

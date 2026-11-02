@@ -44,7 +44,7 @@ from __future__ import annotations
 
 import math
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -158,7 +158,6 @@ def setup_config(raw: dict, setup: dict) -> dict:
 
 def world_for(program: Program):
     """The World of the test's robot config (its `robot`, relative to the test file), with the test's setup applied."""
-    from dataclasses import replace
     from ..config import build_world, load_config
     config = load_config(Path(program.path).parent / program.robot)
     return build_world(replace(config, raw=setup_config(config.raw, program.setup)))

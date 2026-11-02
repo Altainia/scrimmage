@@ -326,9 +326,11 @@ def test_sweep_the_seed_gives_different_feeds(tmp_path):
     for k in (1, 2):
         test = loads(load_run(tmp_path / "runs", f"sweep-001/{k:03d}")["test"], path)
         assert test.setup["seed"] == k
-        feeds.append(TestRun(world_for(test), test).run().feeds)
-    assert feeds[0] and feeds[1]
-    assert [f["t_outcome"] for f in feeds[0]] != [f["t_outcome"] for f in feeds[1]]    # a different shuffle
+        world = world_for(test)
+        TestRun(world, test).run()
+        feeds.append([f.velocity for f in world.test_range.feeder.fed])
+    assert feeds[0] and len(feeds[0]) == len(feeds[1])
+    assert feeds[0] != feeds[1]         # a different shuffle: each piece leaves the station another way
 
 
 def test_review_focus_5_bad_values_are_rows_and_a_bad_station_is_refused(tmp_path):
@@ -342,3 +344,18 @@ def test_review_focus_5_bad_values_are_rows_and_a_bad_station_is_refused(tmp_pat
     with pytest.raises(ValueError, match="the field has no station 'nope'; its stations: feeder"):
         run_sweep(p, {"station": "nope", "key": "interval"}, [1], tmp_path / "d")
     assert not (tmp_path / "d").exists() or not list((tmp_path / "d").iterdir())
+
+
+def test_an_interrupted_loop_raises_the_interruption_even_when_keeping_the_runs_fails(tmp_path):
+    from scrimmage.blocks.sweep import run_each
+
+    def attempt(i):
+        raise KeyboardInterrupt
+
+    def finish(done, cancelled):
+        assert cancelled and done == []
+        raise OSError("disk full")
+
+    with pytest.raises(KeyboardInterrupt) as e:
+        run_each(tmp_path, [{"status": "couldn't run"}], attempt, None, finish)
+    assert "disk full" in "".join(getattr(e.value, "__notes__", []))
