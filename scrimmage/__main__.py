@@ -586,6 +586,7 @@ def _test(args) -> None:
     """Exit 0 when the test finished with every check passed, 1 when not, 2 when the file or its robot is wrong."""
     if args.test_command == "spread":
         _test_spread(args)
+        return
     from .blocks import program as blocks_program
     from .blocks import run as blocks_run
     from .blocks import store as blocks_store

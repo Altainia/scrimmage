@@ -14,7 +14,7 @@ scrimmage edit examples/blocks/intake/intake.test.toml
 ```
 
 A browser tab opens on the **Test** tab. On the left are the blocks. In the middle is the test: five blocks, from
-"spin intake.roller at 8 V" down to "expect a ball in intake.hopper". On the right is **Run**.
+"spin intake.roller at 6 V" down to "expect a ball in intake.hopper". On the right is **Run**.
 
 ## 2. Run it
 
@@ -25,8 +25,8 @@ Press **Play** under the picture to watch the robot drive at the ball and the ro
 
 ## 3. Change a number
 
-Click the number in the **spin** block (8 V) and type 2, then press **Run** again. The roller is too slow to grab the
-ball, so the robot just pushes it ahead of it, and the sentence says the wait timed out. Type 8 again to get it back.
+Click the number in the **spin** block (6 V) and type 2, then press **Run** again. The roller is too slow to grab the
+ball, so the robot just pushes it ahead of it, and the sentence says the wait timed out. Type 6 again to get it back.
 
 To try many values at once, right-click the **spin** block, choose **Try values…**, type From 0, To 12 and Steps 7 (Steps starts at 5),
 and press **Try them**. You get one row per voltage and can click any row to replay it.

@@ -158,15 +158,20 @@ def world_for(program: Program):
     return build_world(replace(config, raw=setup_config(config.raw, program.setup)))
 
 
+def check_problems(program: Program, world) -> None:
+    """Raise TestFileError listing the test's problems on this robot (palette.problems), one line each."""
+    bad = problems(program, world)
+    if bad:
+        lines = [(f"{_where(tuple(p['place']))}: " if p["place"] else "") + p["message"] for p in bad]
+        raise TestFileError("the test can't run on this robot yet:\n" + "\n".join(lines))
+
+
 class TestRun:
     __test__ = False     # not a pytest class
 
     def __init__(self, world, program: Program, placement: dict | None = None):
         """`placement`: a floor spread's {offset_in, distance_in, angle_deg, rotation_deg} (spread.placements)."""
-        bad = problems(program, world)
-        if bad:
-            lines = [(f"{_where(tuple(p['place']))}: " if p["place"] else "") + p["message"] for p in bad]
-            raise TestFileError("the test can't run on this robot yet:\n" + "\n".join(lines))
+        check_problems(program, world)
         self.world, self.program = world, program
         m = world.model
         self.motors = driven_joints(world)

@@ -82,11 +82,11 @@ def test_the_run_is_kept_for_the_replay(intake, tmp_path):
 
 
 def test_a_roller_volts_sweep_shows_the_roller_does_it(intake, tmp_path):
-    """Try values… on the spin block: off, the robot pushes the ball away and the wait times out; at 8 V it's taken."""
-    out = run_sweep(intake["program"], {"block": [0], "key": "volts"}, [0.0, 8.0], tmp_path / "runs")
+    """Try values… on the spin block: off, the robot pushes the ball away and the wait times out; at 6 V it's taken."""
+    out = run_sweep(intake["program"], {"block": [0], "key": "volts"}, [0.0, 6.0], tmp_path / "runs")
     with open(out / "table.csv", newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
-    assert [float(row["value"]) for row in rows] == [0.0, 8.0]
+    assert [float(row["value"]) for row in rows] == [0.0, 6.0]
     assert [row["status"] for row in rows] == ["timed out", "finished"], rows
     assert rows[0]["outcome"].startswith("waiting for a ball to reach intake.hopper timed out at "), rows[0]
 

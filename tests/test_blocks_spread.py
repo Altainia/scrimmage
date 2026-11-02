@@ -168,3 +168,15 @@ def test_cli_spread_exit_codes(tmp_path, capsys, monkeypatch):
     assert (bad.parent / "intake-runs" / "spread-001" / "table.csv").is_file()
     assert cli(tmp_path / "nope.test.toml") == 2
     assert "test file not found" in capsys.readouterr().err
+
+
+def test_the_intake_picks_up_a_ball_within_half_an_inch_of_its_place(tmp_path):
+    """The example's margin: a 3 x 3 grid, +-0.5 in across and along the path around the field's ball, all picked
+    up (at 8 V on the roller a ball could rattle back over the lip, so the run ended "bounced out" at scattered
+    placements; examples/blocks/intake/README.md)."""
+    d = 1.5 / IN
+    p = load(spread_test(tmp_path, f"offset_in = [-0.5, 0, 0.5]\ndistance_in = [{d - 0.5}, {d}, {d + 0.5}]"))
+    folder = run_spread(p, tmp_path / "runs")
+    rows = read_table(folder)
+    assert len(rows) == 9 and all(r["picked up"] == "yes" for r in rows), rows
+    assert json.loads((folder / "spread.json").read_text(encoding="utf-8"))["sentence"] == "picked up 9 of 9"

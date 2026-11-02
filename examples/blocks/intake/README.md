@@ -31,7 +31,7 @@ scrimmage test run examples/blocks/intake/intake.test.toml
 
 ## The blocks
 
-1. Spin `intake.roller` at 8 V (it keeps spinning until the end).
+1. Spin `intake.roller` at 6 V (it keeps spinning until the end).
 2. Drive forward for 2 s at 4 V, at the ball.
 3. Wait until a ball is in `intake.hopper` (give up after 5 s).
 4. Wait 1 s, so the robot has stopped.
@@ -44,6 +44,13 @@ scrimmage test run examples/blocks/intake/intake.test.toml
 `finished` at 3.3 s, with `passed: a ball reaches intake.hopper`. The run's clock starts at 0.3 s (the robot settles
 on its wheels first). The roller reaches the ball at about 1.0 s, pulls it in under itself and over the lip by about
 1.3 s, while the robot is still driving, and the lid stops it bouncing out. It ends resting on the bin's floor.
+
+Why 6 V and not more: a ball that comes in fast rattles between the lid, the back wall and the lip, and can roll back
+over the lip for a moment before the roller pulls it in again. At 8 V the run sometimes ended with the ball on the
+wrong side of the lip: in a floor spread over the ball's placement, 3 of 70 placements within an inch of the field's
+ball were "bounced out", at scattered points (moving the ball 0.1 mm could change it). At 6 V all 150 we tried were
+taken. A floor spread near a mechanism's edge can show misses like these that are luck, not a pattern: try the
+neighbors of a miss before trusting it.
 
 ## Change it and run it again
 
@@ -60,7 +67,7 @@ At 3 V the ball is in only after the robot stops (4.3 s instead of 3.3 s). To ch
 into the block, or edit `volts` in the first block of `intake.test.toml`.
 
 **How high the intake is.** In the Setup column, the intake's row has its position: `z (m)` is how far it is moved
-up. Type a number to move it, or press **Try values…** on that row and choose "up (z)". At 8 V on the roller:
+up. Type a number to move it, or press **Try values…** on that row and choose "up (z)". At 6 V on the roller:
 
 | moved up | result |
 |---|---|
@@ -70,7 +77,7 @@ up. Type a number to move it, or press **Try values…** on that row and choose 
 That's the same as `pos = [0.43, 0.0, 0.0]` in `intake-standin.toml`'s intake part (the last number is up).
 
 **Something else to try.** The drive's voltage (the drive block's **Try values…**): from 2 V to 8 V the ball is
-taken (at 8 V on the roller). The roller's position, size or grip (`pos`, `cylinder` and `friction` in `parts/intake/part.toml`), or the lip,
+taken (at 6 V on the roller). The roller's position, size or grip (`pos`, `cylinder` and `friction` in `parts/intake/part.toml`), or the lip,
 are part changes: edit the file and run the test again.
 
 ## The numbers

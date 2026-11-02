@@ -15,7 +15,8 @@ rotation. "Picked up" means the ball made it in (feeds.py's outcome "in": into a
 
 The spread is kept as `base/spread-<NNN>/`, as a sweep is (store.py, KEEP_SPREADS): a run per placement (`001/` ...),
 `table.csv` (placement, the four axes, status, picked up, outcome) and `spread.json` (spread, placements, picked,
-sentence, and `cancelled` when it was stopped). A cancelled spread is kept and prunes nothing.
+sentence, and `cancelled` when it was stopped). A cancelled spread is kept and prunes nothing; its `picked` (and the
+table's rows) cover only the placements run, so `picked` is shorter than `placements`, the two aligned by index.
 """
 
 from __future__ import annotations
@@ -132,12 +133,13 @@ def run_spread(program: Program, base, on_progress=None, cancel: threading.Event
     """Run the test once per placement of its floor spread, on one world; returns the spread's folder.
     `on_progress(k, n, row)` is called after each placement (k from 1); setting `cancel` ends the run under way and
     the spread."""
-    from .run import TestRun, world_for
+    from .run import TestRun, check_problems, world_for
+    from .sweep import _plain_error
     spread = program.setup.get("floor_spread")
     if not spread:
         raise TestFileError("this test has no floor spread: set one in Setup ([setup] floor_spread)")
     world = world_for(program)
-    TestRun(world, program)                 # the test's problems (a spread with no ball among them), before any run
+    check_problems(program, world)          # the test's problems (a spread with no ball among them), before any run
     found = spread_ball(world)
     if found is None:
         raise TestFileError(NO_BALL)
@@ -157,8 +159,7 @@ def run_spread(program: Program, base, on_progress=None, cancel: threading.Event
             except (ValueError, OSError) as e:
                 row["outcome"] = str(e)
             except Exception as e:              # anything else: this placement's row, not the end of the spread
-                text = str(e).strip()
-                row["outcome"] = f"something went wrong ({type(e).__name__}{': ' + text if text else ''})"
+                row["outcome"] = _plain_error(e)
             if result is not None:
                 row.update(status=result.status, outcome=result.outcome, picked=_floor_outcome(result) == "in")
                 folder = store.save_run(result, program, tmp, sweep={"spread": p, "index": i})
