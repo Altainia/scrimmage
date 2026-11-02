@@ -27,9 +27,12 @@ const COND = "Condition";
 // Names the tests use that the palette may not have (a joint renamed on Import again): a picker keeps offering them
 // so the block keeps its value (and shows the problem) instead of quietly picking another name. Rebuilt by setUsed.
 const KINDS_OF_NAME = { motor: "robot", joint: "robot", robot: "robot", body: "robot",
-  field: "field", piece: "field", bar: "field", level: "field" };
+  field: "field", piece: "field", bar: "field", level: "field", station: "field" };
 let used = {};
-const resetUsed = () => { used = Object.fromEntries(Object.keys(KINDS_OF_NAME).map((k) => [k, new Set()])); };
+const resetUsed = () => {
+  used = Object.fromEntries(Object.keys(KINDS_OF_NAME).map((k) => [k, new Set()]));
+  used.sideways = false;   // a test drives left or right (a tank can't, but the block keeps what the file says)
+};
 resetUsed();
 
 let names = () => null;
@@ -66,7 +69,13 @@ const OPTIONS = {
   piece: () => choices(pal().pieces || [], "piece", has(pal().pieces) ? ["any"] : []),
   bar: () => choices(pal().bars || [], "bar", has(pal().bars) ? ["next bar"] : []),
   level: () => choices(pal().levels || [], "level"),
+  station: () => choices(pal().stations || [], "station"),
+  // left and right only on a swerve robot (or when the test already has one)
+  heading: () => [["forward", "forward"], ["back", "back"],
+    ...(pal().drive_kind === "swerve" || used.sideways ? [["left", "left"], ["right", "right"]] : [])],
 };
+const TURNS = [["left", "left"], ["right", "right"]];
+const HOPPER_SIDES = [["or more", "at_least"], ["or fewer", "at_most"]];
 const UNITS = [["°", "deg"], ["in", "in"], ["m", "m"]];
 const SIDES = [["above", "above"], ["below", "below"]];
 
@@ -105,12 +114,45 @@ const KINDS = {
     init(b) { b.getField("JOINT").setValidator(fitUnit("UNIT")); },
   },
   drive: {
-    def: { message0: "drive forward %1 %2", args0: [num("AMOUNT", 0.3), dd("WHAT", [["m", "distance"], ["s", "seconds"]])],
-      style: STYLES.move, ...stmt, tooltip: "Drive the robot forward this far (a minus number drives back), or for this long." },
-    keys: ["distance", "seconds"],
-    fields: (a) => ("seconds" in a ? { AMOUNT: a.seconds, WHAT: "seconds" } : { AMOUNT: a.distance, WHAT: "distance" }),
-    args: (b) => ({ [b.getFieldValue("WHAT")]: b.getFieldValue("AMOUNT") }),
+    def: { message0: "drive %1 %2 %3",
+      args0: [dd("DIR", OPTIONS.heading), num("AMOUNT", 0.3), dd("WHAT", [["m", "distance"], ["s", "seconds"]])],
+      style: STYLES.move, ...stmt, tooltip: "Drive the robot this far (a minus number goes the other way), or for this long." },
+    keys: ["distance", "seconds", "direction"],
+    fields: (a) => ({ DIR: a.direction || "forward",
+      ...("seconds" in a ? { AMOUNT: a.seconds, WHAT: "seconds" } : { AMOUNT: a.distance, WHAT: "distance" }) }),
+    // forward is what no direction means: only the others are written (a file that says forward keeps it, from block.data)
+    args: (b) => ({ [b.getFieldValue("WHAT")]: b.getFieldValue("AMOUNT"),
+      ...(b.getFieldValue("DIR") === "forward" ? {} : { direction: b.getFieldValue("DIR") }) }),
+    extra: (a) => (a.direction === "forward" ? { direction: "forward" } : {}),
     drop: (b) => (b.getFieldValue("WHAT") === "seconds" ? ["timeout"] : []),   // a timeout only goes with a distance
+  },
+  turn: {
+    def: { message0: "turn %1 %2 °", args0: [dd("DIR", TURNS), num("DEGREES", 90, { min: 0, max: 720 })],
+      style: STYLES.move, ...stmt, tooltip: "Turn the robot on the spot this many degrees, left or right." },
+    keys: ["degrees"],
+    fields: (a) => ({ DIR: a.degrees < 0 ? "right" : "left", DEGREES: Math.abs(a.degrees) }),
+    args: (b) => ({ degrees: b.getFieldValue("DIR") === "right" ? -b.getFieldValue("DEGREES") : b.getFieldValue("DEGREES") }),
+  },
+  start_feeding: {
+    def: { message0: "start feeding %1", args0: [dd("STATION", OPTIONS.station)], style: STYLES.move, ...stmt,
+      tooltip: "The station starts putting pieces onto the field." },
+    keys: ["station"],
+    fields: (a) => ({ STATION: a.station }),
+    args: (b) => ({ station: b.getFieldValue("STATION") }),
+  },
+  stop_feeding: {
+    def: { message0: "stop feeding %1", args0: [dd("STATION", OPTIONS.station)], style: STYLES.move, ...stmt,
+      tooltip: "The station stops putting pieces onto the field." },
+    keys: ["station"],
+    fields: (a) => ({ STATION: a.station }),
+    args: (b) => ({ station: b.getFieldValue("STATION") }),
+  },
+  feed_one: {
+    def: { message0: "feed one from %1", args0: [dd("STATION", OPTIONS.station)], style: STYLES.move, ...stmt,
+      tooltip: "The station puts one piece onto the field, and the test waits for it to land." },
+    keys: ["station"],
+    fields: (a) => ({ STATION: a.station }),
+    args: (b) => ({ station: b.getFieldValue("STATION") }),
   },
   stop: {
     def: { message0: "stop %1", args0: [dd("MOTOR", OPTIONS.stopMotor)], style: STYLES.move, ...stmt,
@@ -200,6 +242,25 @@ const CONDS = {
     fields: (v) => ({ LEVEL: v }),
     json: (b) => ({ level: b.getFieldValue("LEVEL") }),
   },
+  in_hopper: {
+    def: { message0: "%1 %2 pieces in the hopper",
+      args0: [num("COUNT", 5, { min: 0, max: 1000, precision: 1 }), dd("SIDE", HOPPER_SIDES)],
+      tooltip: "How many pieces the hopper holds (pick the hopper in the test's setup)." },
+    fields: (a) => ("at_most" in a ? { COUNT: a.at_most, SIDE: "at_most" } : { COUNT: a.at_least, SIDE: "at_least" }),
+    json: (b) => ({ in_hopper: { [b.getFieldValue("SIDE")]: b.getFieldValue("COUNT") } }),
+  },
+  station_empty: {
+    def: { message0: "%1 is empty", args0: [dd("STATION", OPTIONS.station)],
+      tooltip: "The station has no pieces left to feed." },
+    fields: (v) => ({ STATION: v }),
+    json: (b) => ({ station_empty: b.getFieldValue("STATION") }),
+  },
+  made_it_in: {
+    def: { message0: "at least %1% made it in", args0: [num("PERCENT", 80, { min: 0, max: 100 })],
+      tooltip: "Of the pieces the robot shot, at least this share went into the goal." },
+    fields: (a) => ({ PERCENT: a.at_least }),
+    json: (b) => ({ made_it_in: { at_least: b.getFieldValue("PERCENT") } }),
+  },
 };
 const condType = (kind) => `cond_${kind}`;
 
@@ -235,8 +296,9 @@ export function toolbox(p) {
   const item = (type, extra = {}) => ({ kind: "block", type, ...extra });
   const out = [{ kind: "label", text: "Move" }];
   if (motors) out.push(item("spin"), item("move"));
-  if (p.drive) out.push(item("drive"));
+  if (p.drive) out.push(item("drive"), item("turn"));
   out.push(item("stop"));
+  if (has(p.stations)) out.push({ kind: "label", text: "Station" }, item("start_feeding"), item("stop_feeding"), item("feed_one"));
   out.push({ kind: "label", text: "Wait" }, item("wait"), item("wait_until", { inputs: { COND: waitCond } }));
   out.push({ kind: "label", text: "Repeat" }, item("repeat"), item("repeat_until", { inputs: { COND: repeatCond } }));
   out.push({ kind: "label", text: "Check" }, item("expect", { inputs: { COND: cond("tilt", { SIDE: "below", ANGLE: 20 }) } }));
@@ -246,6 +308,8 @@ export function toolbox(p) {
   if (has(p.pieces) && has(p.bodies)) out.push(item(condType("piece_in")));
   if (bars) out.push(item(condType("hanging_from")));
   if (has(p.levels)) out.push(item(condType("level")));
+  if (has(p.stations)) out.push(item(condType("station_empty")));
+  out.push(item(condType("in_hopper")), item(condType("made_it_in")));
   return { kind: "flyoutToolbox", contents: out };
 }
 
@@ -259,6 +323,8 @@ function rememberNames(blocks) {
     if (b.do === "spin") remember("motor", b.motor);
     if (b.do === "stop" && b.motor !== "all") remember("motor", b.motor);
     if (b.do === "move") remember("joint", b.joint);
+    if (["start_feeding", "stop_feeding", "feed_one"].includes(b.do)) remember("station", b.station);
+    if (b.do === "drive" && (b.direction === "left" || b.direction === "right")) used.sideways = true;
     const c = b.until || b.that;
     if (c && typeof c === "object") {
       const [kind, a] = Object.entries(c)[0] || [];
@@ -267,6 +333,7 @@ function rememberNames(blocks) {
       if (kind === "piece_in") { remember("body", a.body); remember("piece", a.piece); }
       if (kind === "hanging_from") remember("bar", a);
       if (kind === "level") remember("level", a);
+      if (kind === "station_empty") remember("station", a);
     }
     rememberNames(b.body);
   }

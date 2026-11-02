@@ -92,6 +92,62 @@ until = { hanging_from = "next bar" }
 [[block]]
 do = "wait_until"
 until = { level = "high" }
+
+[[block]]
+do = "drive"
+distance = 0.5
+direction = "left"
+volts = 4.0
+
+[[block]]
+do = "drive"
+seconds = 1.0
+direction = "back"
+
+[[block]]
+do = "drive"
+distance = 0.2
+direction = "forward"
+
+[[block]]
+do = "turn"
+degrees = 90.0
+volts = 3.0
+timeout = 2.0
+
+[[block]]
+do = "turn"
+degrees = -45.0
+
+[[block]]
+do = "start_feeding"
+station = "feeder"
+
+[[block]]
+do = "feed_one"
+station = "feeder"
+timeout = 4.0
+
+[[block]]
+do = "stop_feeding"
+station = "feeder"
+
+[[block]]
+do = "wait_until"
+until = { in_hopper = { at_least = 5 } }
+timeout = 20.0
+
+[[block]]
+do = "expect"
+that = { in_hopper = { at_most = 2 } }
+
+[[block]]
+do = "wait_until"
+until = { station_empty = "feeder" }
+
+[[block]]
+do = "expect"
+that = { made_it_in = { at_least = 80.0 } }
 """
 MISSING = """
 [[block]]
@@ -172,12 +228,52 @@ def test_the_test_tab_opens_on_the_test_and_shows_its_blocks(test_page):
 def test_every_kind_of_block_round_trips_exactly(test_page):
     page, _ = test_page(EVERYTHING)
     st = page.evaluate("__scrimmageTest.state.test")
-    assert len(st["blocks"]) == 10
+    assert len(st["blocks"]) == 22
     assert page.evaluate("__scrimmageTest.toJSON()") == st
     # the condition blocks sit in their sockets
     types = page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).map(b => b.type)")
-    for kind in ("cond_tilt", "cond_joint", "cond_touch", "cond_piece_in", "cond_hanging_from", "cond_level"):
+    for kind in ("cond_tilt", "cond_joint", "cond_touch", "cond_piece_in", "cond_hanging_from", "cond_level",
+                 "cond_in_hopper", "cond_station_empty", "cond_made_it_in"):
         assert kind in types, kind
+
+
+def _flyout_types(page):
+    return page.evaluate("__scrimmageTest.workspace.getFlyout().getWorkspace().getTopBlocks(true).map(b => b.type)")
+
+
+def test_the_station_blocks_show_on_a_station_field_only(test_page):
+    page, path = test_page()
+    assert "start_feeding" not in _flyout_types(page)
+    robot = path.parent / "robot.toml"
+    base = robot.read_text(encoding="utf-8")
+    robot.write_text(base + '\n[range]\nfile = "station"\nstart = "at_station"\n', encoding="utf-8")
+    page.wait_for_function("__scrimmageTest.state.palette.stations.includes('feeder')")
+    types = _flyout_types(page)
+    for t in ("start_feeding", "stop_feeding", "feed_one", "cond_station_empty", "turn", "cond_in_hopper",
+              "cond_made_it_in"):
+        assert t in types, t
+    robot.write_text(base + '\n[range]\nfile = "ladder"\nstart = "below"\n', encoding="utf-8")
+    page.wait_for_function("__scrimmageTest.state.palette.stations.length === 0")
+    types = _flyout_types(page)
+    assert "start_feeding" not in types and "cond_station_empty" not in types
+    assert "cond_in_hopper" in types and "cond_made_it_in" in types
+
+
+def _drive_choices(page):
+    return page.evaluate("""(() => {
+      const fl = __scrimmageTest.workspace.getFlyout().getWorkspace();
+      const b = fl.getTopBlocks(true).find(b => b.type === 'drive');
+      return b.getField('DIR').getOptions(false).map(o => o[1]);
+    })()""")
+
+
+def test_drive_offers_left_and_right_on_a_swerve_robot_only(test_page):
+    page, path = test_page()
+    assert page.evaluate("__scrimmageTest.state.palette.drive_kind") == "tank"
+    assert _drive_choices(page) == ["forward", "back"]
+    (path.parent / "robot.toml").write_text(new_config("swerve"), encoding="utf-8")
+    page.wait_for_function("__scrimmageTest.state.palette.drive_kind === 'swerve'")
+    assert _drive_choices(page) == ["forward", "back", "left", "right"]
 
 
 def test_a_wait_dragged_from_the_palette_is_saved(test_page):
@@ -367,7 +463,7 @@ until = { touch = { robot = "arm.gone", field = "nowhere" } }
 
 def test_the_status_bar_counts_every_block_of_the_test(test_page):
     page, _ = test_page(EVERYTHING)
-    page.wait_for_function("document.querySelector('#test-count').textContent === '13 blocks in the test'")
+    page.wait_for_function("document.querySelector('#test-count').textContent === '25 blocks in the test'")
 
 
 def test_dragging_a_test_apart_keeps_the_first_block_and_a_reload_says_what_it_left_out(test_page):
