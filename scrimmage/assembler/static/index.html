@@ -17,6 +17,7 @@
     <button type="button" role="tab" id="tab-btn-drive" class="tab" aria-controls="tab-drive" aria-selected="false" tabindex="-1">Drive</button>
     <button type="button" role="tab" id="tab-btn-bench" class="tab" aria-controls="tab-bench" aria-selected="false" tabindex="-1" hidden>Bench</button>
     <button type="button" role="tab" id="tab-btn-part" class="tab" aria-controls="tab-part" aria-selected="false" tabindex="-1" hidden>Part</button>
+    <button type="button" role="tab" id="tab-btn-test" class="tab" aria-controls="tab-test" aria-selected="false" tabindex="-1" hidden>Test</button>
   </nav>
   <div class="file" id="file-path" title="The file this tab edits">Loading…</div>
   <div class="topbar-actions">
@@ -358,11 +359,109 @@
   <span id="part-saved" class="saved">Loading…</span>
   <span id="part-build" class="stat" role="status"></span>
   <span id="part-total" class="stat"></span>
+  <button type="button" id="part-test-it" class="btn btn-small btn-primary part-test-it" hidden>Test it</button>
   <button type="button" id="part-reimport" class="btn btn-small part-reimport" title="Read the CAD file again (after you changed it in your CAD program)">Import again</button>
   <input type="file" id="part-reimport-file" accept=".step,.stp,.stl,.obj" multiple hidden aria-label="The new export of the CAD file">
 </footer>
 <div id="part-drop" class="part-drop" hidden><p>Drop the CAD file (or its STL files) to use in place of this one</p></div>
 </div>
+
+<div id="tab-test" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-test" hidden>
+<div id="test-banner" class="banner banner-readonly" role="status" hidden></div>
+<main class="layout layout-test">
+  <section class="col col-test-edit" aria-label="The blocks and your test">
+    <details id="test-setup" class="test-setup">
+      <summary><span class="test-setup-title">Setup</span> <span id="test-setup-sum" class="test-setup-sum"></span></summary>
+      <div id="test-setup-body" class="test-setup-body"></div>
+    </details>
+    <div class="test-heads">
+      <h2 id="test-palette-title" class="col-title">Blocks</h2>
+      <h2 id="test-edit-title" class="col-title">Your test <span class="test-heads-hint">drag blocks in from the left</span></h2>
+    </div>
+    <div id="test-blockly" class="test-blockly"><p class="view-placeholder">Loading the blocks…</p></div>
+  </section>
+  <aside id="test-run-col" class="col col-test-run" aria-labelledby="test-run-title">
+    <h2 id="test-run-title" class="col-title">Run</h2>
+    <div class="scroll test-run-scroll">
+      <section id="test-problems-wrap" class="test-problems-wrap" aria-labelledby="test-problems-title" hidden>
+        <h3 id="test-problems-title" class="test-sub">Fix these first</h3>
+        <ul id="test-problems" class="test-problems"></ul>
+      </section>
+      <div class="row test-run-buttons">
+        <button type="button" id="test-run" class="btn btn-primary btn-big" disabled>&#9654; Run</button>
+        <button type="button" id="test-stop" class="btn" hidden>Stop</button>
+        <p id="test-running" class="test-running" role="status" hidden></p>
+      </div>
+      <p id="test-run-error" class="error" role="alert" hidden></p>
+      <p id="test-run-empty" class="hint test-run-empty" hidden>Press Run to try your test. The replay and chart show up here.</p>
+      <p id="test-load-error" class="error" role="alert" hidden></p>
+      <section id="test-sweep-wrap" class="test-sweep-wrap" aria-labelledby="test-sweep-title" hidden>
+        <h3 id="test-sweep-title" class="test-sub"></h3>
+        <p id="test-sweep-note" class="test-note muted" hidden></p>
+        <div class="test-sweep-table-wrap"><table id="test-sweep-table" class="test-sweep-table"></table></div>
+        <div class="row test-chart-head">
+          <label class="test-compare">chart <select id="test-sweep-y"></select></label>
+        </div>
+        <canvas id="test-sweep-chart" class="test-plot test-sweep-chart" role="img"></canvas>
+      </section>
+      <section id="test-results" class="test-results" aria-labelledby="test-result-title" hidden>
+        <h3 id="test-result-title" class="test-sub"></h3>
+        <p id="test-outcome" class="test-outcome"></p>
+        <p id="test-outcome-note" class="test-note muted" hidden></p>
+        <ul id="test-checks" class="test-checks"></ul>
+        <div id="test-replay" class="test-replay"></div>
+        <div class="row test-player">
+          <button type="button" id="test-play" class="btn btn-small test-play">&#9654; Play</button>
+          <input type="range" id="test-scrub" class="test-scrub" min="0" max="1" step="any" value="0" aria-label="Replay time">
+          <span id="test-time" class="test-time">0.0 s</span>
+          <select id="test-speed" aria-label="Replay speed">
+            <option value="0.25">&frac14;&times;</option>
+            <option value="0.5">&frac12;&times;</option>
+            <option value="1" selected>1&times;</option>
+            <option value="2">2&times;</option>
+          </select>
+        </div>
+        <div class="row test-chart-head">
+          <h3 class="test-sub">Chart</h3>
+          <label class="test-compare">compare with <select id="test-compare"></select></label>
+        </div>
+        <div id="test-signals" class="test-signals" role="group" aria-label="What to chart"></div>
+        <div id="test-chart" class="test-chart"></div>
+        <p id="test-chart-key" class="test-chart-key"></p>
+        <ul id="test-chart-outcomes" class="test-chart-outcomes" aria-label="The compared runs' outcomes" hidden></ul>
+      </section>
+      <section id="test-runs-wrap" class="test-runs-wrap" aria-labelledby="test-runs-title" hidden>
+        <h3 id="test-runs-title" class="test-sub">Runs</h3>
+        <ol id="test-runs" class="test-runs"></ol>
+      </section>
+    </div>
+  </aside>
+</main>
+<footer class="statusbar" id="test-status">
+  <span id="test-saved" class="saved">Loading…</span>
+  <span id="test-count" class="stat"></span>
+</footer>
+</div>
+
+<dialog id="test-sweep-dialog" aria-labelledby="test-sweep-dialog-title">
+  <form method="dialog" novalidate>
+    <h2 id="test-sweep-dialog-title">Try values</h2>
+    <p id="test-sweep-for" class="hint"></p>
+    <div class="field" id="test-sweep-which-field"><label for="test-sweep-which">Which number?</label><select id="test-sweep-which"></select></div>
+    <div class="row bench-sweep-range">
+      <div class="field"><label for="test-sweep-from">From</label><input id="test-sweep-from" inputmode="decimal" autocomplete="off"></div>
+      <div class="field"><label for="test-sweep-to">To</label><input id="test-sweep-to" inputmode="decimal" autocomplete="off"></div>
+      <div class="field"><label for="test-sweep-steps">Steps</label><input id="test-sweep-steps" inputmode="numeric" value="5" autocomplete="off"></div>
+    </div>
+    <div class="field"><label for="test-sweep-list">Or type the values</label><input id="test-sweep-list" autocomplete="off" placeholder="for example 2, 4, 6"></div>
+    <p class="hint">Up to 12 values. The test runs once for each; your files don't change.</p>
+    <ul id="test-sweep-errors" class="error-list" role="alert" hidden></ul>
+    <div class="dialog-actions">
+      <button type="button" class="btn" data-close>Cancel</button>
+      <button type="submit" id="test-sweep-go" class="btn btn-primary">Try them</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="save-dialog" class="save-dialog" aria-labelledby="save-title">
   <form id="save-form" method="dialog" novalidate>

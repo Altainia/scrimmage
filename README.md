@@ -719,6 +719,14 @@ materials, joints, motors, mounts and the robot frame in the browser, with the w
 It writes part folders you can add to a robot, and keeps your settings when you import the CAD again. See
 [docs/part-tab.md](docs/part-tab.md), and [Bring your CAD in](docs/getting-started/bring-your-cad-in.md) for a first walkthrough.
 
+**Testing a mechanism with blocks.** The Test tab tries a mechanism on a robot with no robot code: snap together blocks
+(spin a motor, move a joint, drive, wait, repeat until, check), press Run, and watch a replay with a chart. Hooks,
+sweeps of a number (a voltage, the robot's weight, where a part is mounted), and compare against an earlier run are
+built in. **Test it** on the Part tab puts your part on a stand-in robot with a starter test. From the command line,
+`scrimmage test run my.test.toml` exits 0 when every check passed, and the MCP tools `test_run` and `test_sweep` do the
+same for an agent. See [docs/test-tab.md](docs/test-tab.md), [Test a mechanism with blocks](docs/getting-started/test-a-mechanism.md)
+and the examples in `examples/blocks/`.
+
 ## Editing and running scenarios in the browser
 
 ```bash
@@ -918,6 +926,7 @@ scrimmage/        bridge (asyncio WebSocket server + real-time loop), world, bin
 scrimmage/freecad_tools.py  FreeCAD add-on install/zip and headless export (scrimmage freecad)
 scrimmage/launcher/  hooded ball launcher model, presets, sweeps and reports (scrimmage launcher)
 scrimmage/bench/  the component bench: bench files, contact laws, runs, pictures, compare and gallery
+scrimmage/blocks/ the Test tab's blocks: test files, what a robot offers, running, kept runs, sweeps (scrimmage test)
 scrimmage/cad/    CAD to part: reading STEP/STL, bodies, mass, import files, building part folders (Part tab)
 scrimmage/parts/  part format (model.py), assembler (assemble.py), field, device IDs, stock/ parts library
 docs/getting-started/  first-steps guides: install, try a mechanism idea, run and test your robot code
@@ -925,6 +934,7 @@ docs/usability-future-work.md  rough edges found writing those guides, as possib
 docs/parts.md      part.toml reference, [[part]] entries, stock parts
 docs/part-tab.md   the Part tab (scrimmage edit my.step): CAD file to part folders, frame, materials, joints, re-import
 docs/assembler.md  the browser assembler (scrimmage edit): walkthrough, shortcuts, troubleshooting
+docs/test-tab.md   the Test tab (scrimmage edit my.test.toml): blocks, hooks, setup, replay, sweeps, scrimmage test run
 docs/bench-tab.md  the Bench tab (scrimmage edit on a folder of ideas): stage, Change it, 3D editor, working with an agent
 docs/scenario-editor.md  the browser scenario editor: steps, pickers, running and reports, read-only cases
 docs/drive.md      the Drive tab: driving live, keyboard and gamepad maps, recording, input-track CSV format
@@ -940,7 +950,7 @@ freecad/           the FreeCAD workbench add-on (Scrimmage/), installed by `scri
 configs/           robot configs built from parts (kitbot, swerve, elevator_arm, fastmode, disc_robot,
                    climber_robot)
 scenarios/         scenario files (steps, checks, screenshots)
-examples/          RobotPy kitbot robot program; Java swerve (Phoenix 6) project; Java fast-mode
+examples/          blocks/ (Test tab examples: an intake, a ladder climber); RobotPy kitbot robot program; Java swerve (Phoenix 6) project; Java fast-mode
                    (AdvantageKit) project; Java build.gradle notes; launcher/ and disc/ setups; climb/ scripts
 shims/             CANMotor/CANEncoder shims for vendor controllers (Python tested, Java template)
 tools/plot_run.py  plots a --log CSV

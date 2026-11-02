@@ -46,6 +46,7 @@ Library ranges:
 | `2022-hangar` | the four 2022 rungs (LOW, MID, HIGH, TRAVERSAL: 4, 6, 10, 15 points), the trusses and the floor protection, from drawing GE-22100 | `under_mid` |
 | `2020-switch` | the 2020 GENERATOR SWITCH: ±14.5°, about 42 kg, LEVEL within 8° | |
 | `2013-pyramid` | the 2013 PYRAMID's rungs at 30, 60 and 90 in, as bars (its legs aren't built) | |
+| `ladder`, `ladder-square` | a generic ladder (the [Test tab](test-tab.md)'s field choice puts a robot in front of it), not a game's field: rungs `rung1` to `rung4` with tops at 24, 36, 48 and 60 in, round or (`ladder-square`) 1.5 in square, nothing scores | `below` |
 
 To climb the 2013 PYRAMID use `2013-pyramid`. The built-in `2013` is the disc range ([docs/disc.md](disc.md)): its
 pyramid is legs and a base lip as static obstacles for shooting past, with no bars to climb.
@@ -90,8 +91,19 @@ like the terrain signals:
 | `climb.swing` | deg: the robot's CoM from straight under the bar it swings from, positive toward the bar's local x × up (for a 2022 rung, field +x) |
 | `climb.hook_load` | N: the largest whole hook's contact force (every geom of `<inst>.hook<i>`, the latch too), peak-held between checks |
 | `climb.hook.<inst>.hook<i>.load` | N: one hook's |
+| `climb.hook.<part>.<body>.load` | N: one hook body's, for a body of a CAD part made a hook (see below) |
 | `climb.extension` | m: how far the robot reaches beyond its frame perimeter, in the chassis's own plane (G107) |
 | `climb.height` | m: the robot's top above the carpet (G106) |
+
+**A body of your own part as a hook.** The stock climber's hooks are found by name. For a climber made in CAD, name
+the body that catches the bar: `world.climb_monitor(["climber.hook"])` (a body's name is `<part>.<body>`) counts every
+colliding geom of that body as a hook, like the stock ones: it is part of the hook assembly (it may touch a bar
+without "hitting" it), and it gets its own `climb.hook.climber.hook.load`. An unknown name is an error that lists the
+robot's bodies. Asking again with a different list makes a new monitor.
+
+In the [Test tab](test-tab.md) you tick the hook bodies in Setup instead, and the rungs can be round (`ladder`) or
+square (`ladder-square`; a bar's `section = "square"`, whose top is its axis plus half the side). The ladder ranges
+reach `rung4` at 60 in.
 
 Notes:
 - **The swing's bar** is the one a hook touched most recently while the hooks touch two (a hand-over), so the swing
@@ -221,6 +233,14 @@ at the forward end of a swing, touch TRAVERSAL (step 23, about 20.4 s); but they
 the mid hooks lift off HIGH the robot drops. Timing a catch on a swing of about 30–34° (34° at its largest) (the robot hangs from HIGH, so TRAVERSAL
 moves against the arm as it swings) is the hard part, as it was for teams; damping the swing first, or a robot built
 for the traversal (a taller rotating arm, a reaction arm against the truss), are the next things to try.
+
+**`examples/blocks/ladder_climber/`** is a CAD climber tested with blocks, no robot program: a crank turning two
+arms that rise and fall in turn (like a steam train's wheel rods), with spring hooks that fold past a rung and catch
+it, on the stand-in box robot in front of the `ladder` range. Its test (`climb.test.toml`, gated by
+tests/test_blocks_climber.py) **reaches rung1 and stops there for a physics reason**: the hooks are at the robot's
+front edge and its weight is in the middle, so the robot hangs from rung1 but tips up on its back bumper (17° at the
+top of a stroke) instead of rising, and that tilt swings the rising hook back from the ladder and below rung2. Its
+README has the numbers, what was tuned, and what to try next.
 
 ## The climb scenario
 

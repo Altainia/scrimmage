@@ -41,6 +41,10 @@ game pieces, no robot or session needed: write a bench file (TOML) with your own
 (examples, each written as a student's idea: {bench_examples}), then bench_check it and bench_run it. Pass absolute
 paths. A Bench tab (`scrimmage edit <folder>`) may be showing the session: bench_focus pins the numbers you are
 talking about there.
+
+Block tests (test_run, test_sweep) try a mechanism on a robot with no robot program: write a test file
+(<name>.test.toml) with your own file tools, then test_run it. test_sweep tries one number in the test or the robot at
+several values. Pass absolute paths. Each run is kept next to the test file, where the app's Test tab can replay it.
 """
 
 
@@ -545,6 +549,91 @@ async def bench_gallery(folder: str, out: str | None = None) -> str:
                 "problems": [{"file": str(e.file), "problem": e.problem} for e in entries if e.problem]}
 
     return _json(await _bench_call(work))
+
+
+# ------------------------------------------------------------------------------------------------- block tests
+# Like the bench, a block test never touches the robot session: it builds its own world, in a worker thread.
+
+def _test_errors():
+    return (ValueError, OSError)    # TestFileError, ConfigError and PartError are ValueErrors
+
+
+def _test_file(path: str) -> Path:
+    file = Path(path).expanduser().resolve()
+    if not file.is_file():
+        raise ToolError(f"test file not found: {file}")
+    return file
+
+
+def _signal_summary(signals: dict) -> dict:
+    out = {}
+    for name, values in signals.items():
+        if name == "t" or not values:
+            continue
+        out[name] = {"min": min(values), "max": max(values), "final": values[-1]}
+    return out
+
+
+@server.tool()
+async def test_run(path: str) -> dict:
+    """Run a block test (a <name>.test.toml file) on its robot, with no robot program: the blocks drive the motors.
+    Returns "status" (finished, check failed, timed out, tipped over, walked off, time limit, repeat limit),
+    "outcome" (one plain sentence to read to the room), "passed" (finished with every check passed), "t_end"
+    (seconds), "checks" (one plain line each, with whether it passed), "hung" (the bars the robot hung from),
+    "signals" (each measured signal's min, max and final value), and "run_folder", where the run is kept (the app's
+    Test tab replays it). path: an absolute path. A bad test file or robot is a plain error naming the block."""
+    file = _test_file(path)
+
+    def work():
+        from .blocks import program as blocks_program
+        from .blocks import run as blocks_run
+        from .blocks import store as blocks_store
+        program = blocks_program.load(file)
+        result = blocks_run.TestRun(blocks_run.world_for(program), program).run()
+        folder = blocks_store.save_run(result, program, blocks_store.runs_dir(file))
+        return {"status": result.status, "outcome": result.outcome, "passed": result.passed,
+                "t_end": result.t_end,
+                "checks": [{"line": c["line"], "passed": c["passed"]} for c in result.checks],
+                "hung": list(result.hung), "signals": _signal_summary(result.signals),
+                "run_folder": str(folder.resolve())}
+
+    try:
+        return await asyncio.to_thread(work)
+    except _test_errors() as e:
+        raise ToolError(str(e)) from None
+
+
+@server.tool()
+async def test_sweep(path: str, target: dict, values: list[float]) -> dict:
+    """Run a block test several times, changing one number each time, to find which value works. target says what
+    changes: {"block": [2], "key": "to"} is the "to" of block 3 (a list of positions, counting from 0, goes inside
+    repeats, and key is volts, seconds, to or distance); {"robot": "mass"} is the robot's mass (also com_forward,
+    com_left, com_up for the center of mass); {"mount": "arm", "axis": "x"} is where a part is mounted (axis x, y,
+    z or yaw). values: the numbers to try, in order (at most 12). Returns "rows" (each value's
+    status, outcome, t_end and a passed or failed per check), "sweep_folder" (table.csv and sweep.json, each run
+    kept inside; the app's Test tab shows them) and any "problems" to tell the room. A value that can't run gets a
+    row saying why; the rest still run. path: an absolute path."""
+    file = _test_file(path)
+
+    def work():
+        import csv
+        from .blocks import program as blocks_program
+        from .blocks import store as blocks_store
+        from .blocks.sweep import run_sweep
+        program = blocks_program.load(file)
+        folder = run_sweep(program, target, values, blocks_store.runs_dir(file))
+        with open(folder / "table.csv", newline="", encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+        meta = json.loads((folder / "sweep.json").read_text(encoding="utf-8"))
+        info = {"rows": rows, "sweep_folder": str(folder.resolve())}
+        if meta.get("problems"):
+            info["problems"] = meta["problems"]
+        return info
+
+    try:
+        return await asyncio.to_thread(work)
+    except _test_errors() as e:
+        raise ToolError(str(e)) from None
 
 
 def _kill_leftover_robot() -> None:

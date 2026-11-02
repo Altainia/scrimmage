@@ -394,3 +394,27 @@ def test_cad_offset():
     assert cad_offset(mine, "arm", {**q, "import_id": "b"}, False) is None     # another import
     assert cad_offset(mine, "claw", q, False) is None                          # a body the other part doesn't have
     assert cad_offset(mine, "arm", None, False) is None                        # a part not from an import
+
+
+def test_start_keep_pose_keeps_a_valid_start_pose():
+    """The Test tab's field picker sends keep_pose: a robot placed by [robot] start_pose stays where it is when only
+    the field changes."""
+    doc = tomlkit.parse('[robot]\nstart_pose = [5.0, 2.0, 90.0]\n\n[range]\nfile = "2026"\n')
+    edits.set_start(doc, {"range": "ladder", "named": "below", "keep_pose": True})
+    assert doc["range"].unwrap() == {"file": "ladder"}
+    assert doc["robot"]["start_pose"].unwrap() == [5.0, 2.0, 90.0]
+
+
+@pytest.mark.parametrize("robot", ['[robot]\nstart_pose = [30.0, 2.0, 0.0]\n', '[robot]\nstart_pose = "here"\n',
+                                   '[robot]\nmass = 50.0\n', ''])
+def test_start_keep_pose_without_a_valid_pose_uses_the_named_start(robot):
+    doc = tomlkit.parse(robot)
+    edits.set_start(doc, {"range": "ladder", "named": "below", "keep_pose": True})
+    assert doc["range"].unwrap() == {"file": "ladder", "start": "below"}
+    assert "start_pose" not in doc.get("robot", {})
+
+
+def test_start_keep_pose_must_be_true_or_false():
+    with pytest.raises(EditError) as e:
+        edits.set_start(tomlkit.parse(""), {"range": "ladder", "named": "below", "keep_pose": "yes"})
+    assert e.value.field == "start/keep_pose"

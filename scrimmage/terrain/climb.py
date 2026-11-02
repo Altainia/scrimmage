@@ -88,7 +88,7 @@ def robot_hooks(model: mujoco.MjModel, robot_body: int) -> dict[str, list[int]]:
 
 
 class ClimbMonitor:
-    def __init__(self, world):
+    def __init__(self, world, hook_bodies: list[str] | None = None):
         m = world.model
         self.world, self.model, self.data = world, m, world.data
         self.body = world.robot_body
@@ -119,6 +119,14 @@ class ClimbMonitor:
             self._switch = (k, layout.switches[self.rule.switch], math.radians(elements[self.rule.switch].level_deg))
 
         hooks = robot_hooks(m, self.body)
+        self.hook_bodies = list(hook_bodies) if hook_bodies else []
+        for name in self.hook_bodies:       # a body of the robot counts as a hook: all its colliding geoms
+            bodies = [b for b in range(m.nbody) if m.body(b).name == name and m.body_rootid[b] == root]
+            if not bodies:
+                names = [m.body(b).name for b in range(m.nbody) if m.body_rootid[b] == root and m.body(b).name]
+                raise ValueError(f"hook body '{name}' isn't a body of the robot; its bodies: {', '.join(names)}")
+            hooks[name] = [g for g in range(m.ngeom) if m.geom_bodyid[g] == bodies[0]
+                           and (m.geom_contype[g] or m.geom_conaffinity[g])]
         self.hooks: list[str] = list(hooks)
         self._hook_l = [-1] * m.ngeom
         for i, geoms in enumerate(hooks.values()):

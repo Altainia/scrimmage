@@ -29,7 +29,7 @@ has an inch form, `<key>_in` (give one of the two). `friction` (default 0.6) is 
 | `bump` | two ramps meeting at a crest, with a lip at each toe | `depth`, `width`, `height`, `ramp_deg`, `crest` (the flat top's length, default 8 mm), `lip` (the toe lip's height, default 0.61 in) |
 | `ramp` | an incline up to a flat deck, from one end or both | `width`, `height`, `ramp_deg`, `deck`, `two_sided` (default true; one-sided climbs toward +x) |
 | `platform` | a deck on a double hinge that tilts under a robot, with a ramp at each end and stops | `length`, `width`, `height`, `max_tilt_deg`, `hinge_height`, `hinge_spacing`, `ramp_length`, `mass`, `inertia`, `com_height`, `damping` |
-| `bar` | a fixed horizontal pipe to climb, along its own x, optionally on a vertical sprung slide | `length` (end to end), `diameter` (outer), `height` (of its axis), `posts` (default true: a post under each end), `stiffness` (N/m; leave it out for a rigid bar), `damping` (N s/m, with `stiffness`), `level` (a `[climb]` level) |
+| `bar` | a fixed horizontal pipe to climb, along its own x, optionally on a vertical sprung slide | `length` (end to end), `diameter` (outer), `height` (of its axis), `posts` (default true: a post under each end), `stiffness` (N/m; leave it out for a rigid bar), `damping` (N s/m, with `stiffness`), `level` (a `[climb]` level), `section` (`"round"`, the default, or `"square"`: a square tube whose side is `diameter`; its top is the axis plus half the side) |
 | `box` | a static block: structure (a truss) or, with `ground = true`, floor (a floor protector, a step) | `size` (`[x, y, z]`), `base_height` (its bottom, default 0), `ground` (default false) |
 | `switch` | a bar hanging below a hinge about its own y, which tilts under a hanging robot (2020's GENERATOR SWITCH) | `hinge_height`, `bar_length`, `bar_drop` (hinge to the bar's axis), `diameter` (default 1.66 in), `mass`, `com_drop` (its CoM below the hinge), `stop_deg`, `damping`, `level_deg` |
 
@@ -54,6 +54,7 @@ The built-in ranges with elements:
 | `terrain-library` | a generic ramp, the 2016 RAMPARTS and the 2012 bridge, as examples of describing other seasons |
 | `2022-hangar` | the 2022 RAPID REACT HANGAR in the blue corner: rungs `low`, `mid`, `high` and `traversal` (GE-22100's heights, the upper three above 3/8 in floor protection, each on a 160 kN/m slide), the truss as boxes, `floor_protection`, `[start.under_mid]` |
 | `2020-switch` | the 2020 GENERATOR SWITCH, `generator_switch` (+-14.5 deg, 42 kg, LEVEL within 8 deg), at the field's center, `[start.approach]` |
+| `ladder`, `ladder-square` | a generic ladder to try a climber on (not a game's field): four rungs `rung1` to `rung4`, tops at 24, 36, 48 and 60 in, in one vertical plane 1.0 m in front of `[start.below]`, with a rail at each end; round rungs (1.66 in across) or, in `ladder-square`, square ones (1.5 in). No `[climb]`, so nothing scores; read the climb signals |
 | `2013-pyramid` | the 2013 PYRAMID's twelve rungs at 30, 60 and 90 in (`l1_s` to `l3_e`; its legs aren't built) and floor protection, `[start.approach]`  (for climbing; the built-in `2013` is the disc range, its pyramid only obstacles) |
 
 Everything is built from boxes and capsules (the bars): the live view and the renderer draw them with no meshes. A platform is two hinged

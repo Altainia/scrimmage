@@ -184,9 +184,16 @@ def _turn(quat, v) -> np.ndarray:
     return out
 
 
-def _pipe(body, name: str, length: float, diameter: float, friction: float, z: float = 0.0) -> None:
-    """A capsule `length` end to end along the body's x, its axis at height z in the body."""
+def _pipe(body, name: str, length: float, diameter: float, friction: float, z: float = 0.0,
+          square: bool = False) -> None:
+    """A capsule (or, `square`, a box of side `diameter`) `length` end to end along the body's x, its axis at height
+    z in the body. Both are turned so the geom's z column is the axis and size[0] is the half side or radius."""
     r = diameter / 2.0
+    if square:
+        body.add_geom(name=name, type=mujoco.mjtGeom.mjGEOM_BOX, pos=[0.0, 0.0, z], quat=_ALONG_X,
+                      size=[r, r, length / 2.0], rgba=BAR_RGBA, friction=[friction, 0.005, 0.0001],
+                      group=NON_GROUND_GROUP, **FIELD_BITS)
+        return
     body.add_geom(name=name, type=mujoco.mjtGeom.mjGEOM_CAPSULE, pos=[0.0, 0.0, z], quat=_ALONG_X,
                   size=[r, length / 2.0 - r, 0.0], rgba=BAR_RGBA, friction=[friction, 0.005, 0.0001],
                   group=NON_GROUND_GROUP, **FIELD_BITS)
@@ -215,7 +222,7 @@ def _bar(spec: mujoco.MjSpec, e: Bar, pos, quat) -> None:
         body.add_joint(name=f"element.{e.name}.flex", type=mujoco.mjtJoint.mjJNT_SLIDE, axis=[0.0, 0.0, 1.0],
                        limited=True, range=[-FLEX_TRAVEL, FLEX_TRAVEL], stiffness=e.stiffness,
                        springref=weight / e.stiffness, damping=e.damping, solref_limit=[PLATFORM_STOP_TC, 1.0])
-    _pipe(body, f"element.{e.name}.pipe", e.length, e.diameter, e.friction)
+    _pipe(body, f"element.{e.name}.pipe", e.length, e.diameter, e.friction, square=e.section == "square")
 
 
 def _switch(spec: mujoco.MjSpec, e: Switch, pos, quat) -> None:

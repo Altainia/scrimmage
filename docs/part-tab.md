@@ -10,7 +10,7 @@ Contents: [Install](#install), [Starting it](#starting-it), [The three columns](
 [Where's the robot?](#wheres-the-robot), [Bodies](#bodies), [Materials and weight](#materials-and-weight),
 [Joints](#joints), [Motors and sensors](#motors-and-sensors), [Mounts](#mounts), [Touching things](#touching-things),
 [The checklist](#the-checklist), [Importing again](#importing-again), [Parts made by a CAD plugin](#parts-made-by-a-cad-plugin),
-[Using the parts in a robot](#using-the-parts-in-a-robot), [Troubleshooting](#troubleshooting).
+[Using the parts in a robot](#using-the-parts-in-a-robot), [Testing the part](#testing-the-part), [Troubleshooting](#troubleshooting).
 
 ## Install
 
@@ -223,6 +223,15 @@ in the library and can be added like any other part. For a part made from a CAD 
   it back.
 - **CG:** the bottom bar shows the robot's whole center of gravity ("CG: 0.31 m up, 0.02 m forward"), and the **CG**
   button over the 3D view shows it as an orange ball with a line down to the floor.
+
+## Testing the part
+
+Once the bottom bar says **Parts up to date**, press **Test it**. Scrimmage makes a stand-in robot (the kitbot's frame
+and tank drive) with your part attached where the CAD has it, and a starter test next to your parts, then opens the
+[Test tab](test-tab.md). **Test it also gives the part's motors free device IDs**, so a motor can spin without anyone
+choosing IDs first. A part with a hook is put in front of a ladder. Pressing **Test it** again after you add parts
+adds them to the same stand-in and tells you which. It stays off until the parts are built and while the part is
+read-only (hold the pointer over it to see why), and it is hidden for parts made by a CAD plugin.
 
 ## Troubleshooting
 

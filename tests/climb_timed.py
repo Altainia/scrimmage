@@ -22,7 +22,8 @@ import math
 import sys
 from pathlib import Path
 
-from scrimmage.climb.run import KP_HINGE, KP_SLIDE, ClimbRun, run_climb
+from scrimmage.climb.run import ClimbRun, run_climb
+from scrimmage.hal_drive import KP_HINGE, KP_SLIDE
 from scrimmage.climb.script import ScriptError, load_script
 from scrimmage.config import build_world, load_config
 

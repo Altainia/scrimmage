@@ -15,7 +15,7 @@ CODE = re.compile(r"```[a-z]*\n(.*?)\n```", re.S)
 COMMAND = re.compile(r"^\s*scrimmage (\w+)(?: (\w+))?", re.M)
 EXAMPLE = re.compile(r"(?<![\w/])((?:examples|scenarios|configs)/[\w./-]+\.toml)\b")  # a repo path, not sim/scenarios/...
 # commands whose next word is a subcommand (`scrimmage bench run`); for the rest it is a file
-GROUPS = {"java", "launcher", "bench", "terrain", "climb", "freecad"}
+GROUPS = {"java", "launcher", "bench", "terrain", "climb", "freecad", "test"}
 
 
 def _slug(heading: str) -> str:

@@ -8,7 +8,9 @@
 //   Middle     the 3D view (part3d.js, loaded on its own so a WebGL failure leaves the rest working), with the
 //              "Where's the robot?" step over it until the robot frame is confirmed.
 //   Right      the inspector: the sections in `sections` whose `when(ctx)` is true, in order (part_inspector.js).
-//   Status     saved or not, "Parts up to date" / "Updating parts…" from build.state, the part's mass, Import again.
+//   Status     saved or not, "Parts up to date" / "Updating parts…" from build.state, the part's mass, Test it (once the
+//              parts are built: puts them on a stand-in robot with a starter test and opens the Test tab), Import
+//              again.
 //
 // This file is the store, the edits, the tree, the checklist and the status line. Every edit is saved at once (no
 // Save button); the part folders rebuild in the background. A CAD file dropped anywhere on the tab replaces the
@@ -22,7 +24,7 @@
 // the "Try it" poses from part.tryit), solidBox() (the drawn pieces' robot-frame box). Test hook:
 // window.__scrimmagePart {store, screenPos(pieceKey, {along, across}), screenPoint(pieceKey), scene, toRobot(frame)}.
 
-import { $, h, api, notice, serial, registerTab, setTab, showPath } from "./app.js";
+import { $, h, api, notice, serial, registerTab, setTab, showPath, sessionToken } from "./app.js";
 import { uploadCad, cadFilesProblem, filesName } from "./start.js";
 
 export const part = {
@@ -49,6 +51,7 @@ let reveal = false;           // after the next render, scroll the selected tree
 let pendingBody = null;       // select this body once a state that has it arrives (a new or renamed body)
 export function expectBody(name) { pendingBody = name; }
 let lastMessages = "[]";
+let testing = false;          // Test it was pressed and the Test tab is on its way
 let viewKey = null;
 
 const plugin = () => !!part.state && part.state.mode === "plugin";
@@ -419,6 +422,12 @@ function renderStatus() {
   else { b.textContent = "Parts up to date"; b.className = "stat stat-ok"; }
   const total = s.parts.reduce((a, p) => a + (p.mass || 0), 0);
   $("#part-total").textContent = s.parts.length > 1 ? `${s.parts.length} parts · ${kg(total)}` : `Weight ${kg(total)}`;
+  const tryIt = $("#part-test-it");
+  const built = st === "idle" && !working && s.parts.length > 0 && s.parts.every((p) => p.mass != null);
+  tryIt.hidden = plugin();
+  tryIt.disabled = !built || readOnly() || testing;
+  tryIt.title = readOnly() ? "This part is read-only" : built ? "Try the part on a stand-in robot: opens the Test tab with a test to start from"
+    : "Wait for the parts to be up to date";
   $("#part-reimport").hidden = plugin();
   $("#part-reimport").title = s.source_copied ? "Choose the new export: this part was made from a copy of a dropped or chosen file"
     : "Read the CAD file again (after you changed it in your CAD program)";
@@ -562,6 +571,27 @@ function initDrop() {
   });
 }
 
+// Test it: the server makes the stand-in robot and the test (once) and opens the test; the page then reloads on it.
+async function testIt() {
+  testing = true;
+  renderStatus();
+  const { status, data } = await api("POST", "/api/test/new", { from_part: true });
+  if (status === 200 && data.ok) {
+    const added = data.added || [];
+    if (added.length) {   // said by the Test tab once the page has reloaded on it
+      const text = `Added to the stand-in robot where the CAD has ${added.length === 1 ? "it" : "them"}: ${added.join(", ")}.`;
+      try { sessionStorage.setItem("scrimmage-test-notice", text); } catch { /* the notice is lost, nothing else */ }
+    }
+    location.hash = `token=${encodeURIComponent(sessionToken())}`;
+    location.reload();
+    return;
+  }
+  testing = false;
+  renderStatus();
+  const why = (data.errors && data.errors[0] && data.errors[0].message) || data.error || `the server answered ${status}`;
+  notice(`Can't test it yet: ${why}`, "warn");
+}
+
 export async function initPart() {
   window.__scrimmagePart = { store: part, screenPos: () => null, scene: { drawn: [], faint: [], meshes: 0 }, render: () => render() };
   await import("./part_inspector.js");   // its sections (it imports this file, so not at the top)
@@ -586,6 +616,7 @@ export async function initPart() {
     if (ps.length) editOp("leave_out", { pieces: ps.map((p) => p.key), out: !ps.every((p) => p.left_out) });
   });
   $("#part-reimport").addEventListener("click", importAgain);
+  $("#part-test-it").addEventListener("click", testIt);
   $("#part-reimport-file").addEventListener("change", (e) => {
     const files = [...e.target.files];
     if (!files.length) return;

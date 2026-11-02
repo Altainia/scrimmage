@@ -4,12 +4,14 @@ The app holds one thing at a time (`mode`):
   "robot": a robot config (the Robot tab) and, when the opened file is a scenario, that scenario (the Scenario tab);
         the Drive tab drives the robot document. With a scenario open, the robot document is the scenario's
         `config`: changing the scenario's config (an edit, undo/redo or an outside edit) loads that robot config in
-        its place.
+        its place. A block test (`<name>.test.toml`, the Test tab; see test_session.py) attaches the same way: the
+        robot document is its [test] `robot`.
   "bench": an idea session, a folder of bench files (the Bench tab; see bench_session.py).
   "part": a CAD import or a plugin-made part folder (the Part tab; see part_session.py).
   "start": nothing (`scrimmage edit` with no FILE): the start page opens or creates something.
 classify(): "import" for a .step/.stp/.stl/.obj file, a folder holding a part.toml, or a .toml with a top-level
-[import] table (an import file); any other folder is a session; a file is a scenario when it has a top-level
+[import] table (an import file); any other folder is a session; a file is a test when it has a top-level [test]
+table, else a scenario when it has a top-level
 `config` key or a `[[step]]` array, else a bench file when it has a top-level [bench] table, else a robot config. A
 bench file opens its folder as the session, with that file on stage. Opening a CAD file asks for nothing: it makes
 parts/<stem>.import.toml next to it (or opens the one there that names it), builds it and opens it. A part folder
@@ -22,15 +24,16 @@ API contract (all bodies JSON; every /api/* request needs header X-Scrimmage-Tok
 127.0.0.1 or localhost, else 403):
 
 App (`/api/app/*`; in every mode):
-  GET  /api/app/state              -> {mode: start|robot|bench|part, path, display_path, recent: [{path, kind:
-        robot|scenario|session|import, t}] (newest first, see recent.py), examples: [stems of examples/bench/*.toml],
+  GET  /api/app/state              -> {mode: start|robot|bench|part, path, display_path, test, recent: [{path, kind:
+        robot|scenario|test|session|import, t}] (newest first, see recent.py), examples: [stems of examples/bench/*.toml],
         needs_folder: "cad"|"code"|null, back: {path, display_path}|null}. back: in part mode, the robot config (or
         scenario) that was open when an import made for it was opened (its import file in that robot's parts/, as the
         library's Import CAD... makes it): "Back to the robot" opens it again; null otherwise. path is the opened
-        file (the scenario in scenario mode), session folder,
+        file (the scenario in scenario mode, the test with a test open), session folder,
         import file or plugin part folder, absolute; null in start mode. needs_folder: the team folder ({cad}, {code}: teamfolders.py) a value in the
         open robot file (or the scenario's) names that this computer hasn't set; the robot is then read-only, its
-        read_only_reason saying which folder to set and how.
+        read_only_reason saying which folder to set and how. test: the open block test (absolute), else null; opening
+        another file closes it.
   GET  /api/app/folders            -> {cad, code, from_env: {cad: bool, code: bool}}: this computer's team folders
         (absolute, null when not set); from_env is true when SCRIMMAGE_CAD / SCRIMMAGE_CODE sets it (it wins over the
         saved one).
@@ -200,7 +203,8 @@ Part (`/api/part/*`; 404 unless a part is open, except upload). Pieces are keyed
 
 Robot (`/api/robot/*`):
   GET  /api/robot/state[?since=N]  -> {version, path, display_path, read_only, read_only_reason, parts, errors,
-        warnings, other_sections, can_undo, can_redo, mass_kg, com, bodies, joints, part_bodies, scenario_open}. With `since`, returns
+        warnings, other_sections, can_undo, can_redo, mass_kg, com, bodies, joints, part_bodies, scenario_open,
+        range}. With `since`, returns
         at once if version != N, else long-polls up to 25 s (also noticing outside edits of either file).
         path is absolute; display_path is relative to the server's working directory when the file is under it.
         parts: [{name, stock, path, attach, pos, rot, params, ids, cad_pos, cad}] read from the document, so they are
@@ -216,7 +220,8 @@ Robot (`/api/robot/*`):
         part_bodies: {instance: [body names]} (attach targets "<instance>.<body>"), null when read-only/invalid.
         When the scenario names a robot config that can't be read, path is null, parts [] and the robot is
         read-only with the reason. The version keeps counting up when the robot document is replaced.
-        scenario_open: true when the opened file is a scenario (the page then shows the Scenario tab).
+        scenario_open: true when the opened file is a scenario (the page then shows the Scenario tab). range: the
+        config's [range] file as written (null: the plain field).
   GET  /api/robot/view             -> model_view of the current world (com: the robot's CG in the world, for the 3D
         view's CG marker), or {} when read-only/invalid.
   GET  /api/robot/library          -> {stock, folders}; folders lists each part folder (a folder holding part.toml)
@@ -233,15 +238,18 @@ Robot (`/api/robot/*`):
         attach  {name, attach, pos, rot}
         params  {name, params}   (a null value resets that parameter to its default)
         ids     {name, ids}
-        start   {pose?: [x, y, deg] | null, named?: str | null, range?: "2026" | null, floor_balls?: bool}
-                where the robot starts and on which field. range "2026" writes [range] file = "2026" (another
-                range's named start goes), null removes [range] (the plain field); absent keeps the config's (one
-                naming another range keeps it). pose writes [robot] start_pose (x, y in m from the blue corner,
-                rounded to mm; heading in degrees, (-180, 180]) and removes [range] start; named writes [range]
-                start and removes start_pose (the loader refuses both); a null pose or named clears the start.
-                floor_balls false writes [range] floor_balls = false, true removes it. Field errors: start/range
-                (another range), start/pose (not 3 numbers, off the 16.54 x 8.07 m field), start/named (the plain
-                field has none), start/floor_balls; an unknown named start is the loader's status error.
+        start   {pose?: [x, y, deg] | null, named?: str | null, keep_pose?: bool,
+                range?: "2026" | "ladder" | "ladder-square" | "intake" | null, floor_balls?: bool}
+                where the robot starts and on which field (the ladders and the ball are the Test tab Setup's).
+                range "2026" writes [range] file = "2026" (another range's named start goes), null removes [range]
+                (the plain field); absent keeps the config's (one naming another range keeps it). pose writes
+                [robot] start_pose (x, y in m from the blue corner, rounded to mm; heading in degrees, (-180, 180])
+                and removes [range] start; named writes [range] start and removes start_pose (the loader refuses
+                both); a null pose or named clears the start. keep_pose true (the Test tab's field picker) with
+                named keeps a start_pose still on the field instead of writing named. floor_balls false writes
+                [range] floor_balls = false, true removes it. Field errors: start/range (another range), start/pose
+                (not 3 numbers, off the 16.54 x 8.07 m field), start/named (the plain field has none),
+                start/floor_balls, start/keep_pose; an unknown named start is the loader's status error.
         battery {nominal_voltage?, resistance?}   [battery] (V, ohm); null removes the key (the default);
                 field errors battery/nominal_voltage (a number above 0), battery/resistance (0 or more)
         match_devices {matches: {slot: device}}   points each slot's ID (in its part's `ids`) at a device the
@@ -393,7 +401,40 @@ Scenario (`/api/scenario/*`; 404 while no scenario is open, except /api/scenario
         none, with a TOML error, or naming a file that can't be read is refused (a recording just saved from that
         session opens). Works when the editor was opened on a robot config too.
 
-Live (`/api/live/*`; one simulation at a time: a drive session or a scenario run, never both):
+Test (`/api/test/*`; 404 "no test is open" unless a test is open, except /api/test/new). See test_session.py:
+  GET  /api/test/state[?since=N]   -> {version, path, test: the test as JSON (scrimmage/blocks/program.py to_json),
+        palette (scrimmage/blocks/palette.py; null when the robot doesn't load), problems: [{place, message}] (a
+        robot that doesn't load is one problem at place []), running: null|{kind: run|sweep, progress: 0..1},
+        runs: list_runs (newest first; a sweep's runs have ids "sweep-NNN/NNN"; cancelled: Stop ended it), sweeps:
+        [{id, target, values, cancelled, problems, rows}] (newest first), file_error: why the file as edited outside
+        can't be read (the last good test is kept) or null, run_error: why the last run or sweep couldn't run or null,
+        last: {kind, id} of the last run or sweep this editor made, or null}; long-polls like /api/robot/state. The
+        robot changing on disk (an edit, Import again, a part folder's files) shows in the next state's palette and
+        problems.
+  POST /api/test/save              -> body {test, version}: replaces the test and writes the file. {ok, version};
+        400 with the block's place for a bad shape; 409 {error, state} when the test changed after `version`.
+  POST /api/test/run               -> {ok: true} once the run starts on its thread; 409 {error, problems} while there
+        are problems; 409 "Wait for the drive session to stop first." (and so on) while another simulation runs;
+        409 while a test run is in progress or the file can't be read. The run is kept when it ends.
+  POST /api/test/sweep             -> body {target, values} (scrimmage/blocks/sweep.py); refused as run; 400 for a
+        target or values it can't sweep.
+  POST /api/test/cancel            -> {ok: true}; stops the run or sweep under way (a cancelled run is kept).
+  GET  /api/test/run/<id>          -> result.json's fields plus id and signals; /view -> view.json; /motion ->
+        motion.bin (application/octet-stream); 404 for a run that isn't kept.
+  POST /api/test/new               -> body {robot?, from_part?} (default: the open robot): writes <robot
+        stem>.test.toml next to it (<stem>-2.test.toml ... when taken) and opens it as /api/app/open does. Its
+        blocks are the starter blocks
+        (test_session.starter_blocks: drive 0.3 m when the robot is a tank drive and the field has bars, then a lone
+        hinge motor moved to 45 deg, or the first motor spun at 6 V for 2 s and all stopped; else wait 1 s) and its
+        hooks the robot's bodies named like a hook. With from_part: true and a part from a CAD import open ("Test it"
+        in the Part tab): makes <import name>-standin.toml (the standin template carrying the built parts where the
+        CAD has them, in front of the ladder range when a body is named like a hook) and <import name>.test.toml next
+        to the import's parts/ folder, once each, and opens the test. Pressed again it opens the same test and adds
+        the import's built parts the stand-in doesn't have yet, where the CAD has them (it never removes one);
+        {ok, added: [their names]}. 409 while the parts are updating, didn't build or the part is read-only, 400
+        with no part open or in plugin mode.
+
+Live (`/api/live/*`; one simulation at a time: a drive session, a scenario run, a bench job or a test run):
   GET  /api/live/info              -> {port, status, run_active, can_start, start_problem}: port is the stream's
         WebSocket port; status is the session's {state: idle|starting|running|paused|stopped|error, error, config,
         t, mode, chosen_mode, enabled, paused, speed, speed_locked, recording, pokes, can_save} (mode is the
@@ -483,15 +524,17 @@ from tomlkit.exceptions import TOMLKitError
 from .. import robotcode, teamfolders
 from ..config import ConfigError, load_config_text
 from ..lockstep import parse_speed
+from ..parts.model import PartError, load_part
 from ..parts.stock import REGISTRY, _load_all
 from ..scenario import ScenarioError
 from ..scenario_runner import UNSET
 from ..testrange.spec import BUILTIN_RANGES, RangeError, load_range
 from ..tracks import TrackError, load_track
 from ..cad import CadError
+from ..cad.build import part_folder
 from ..cad.names import sanitize
 from . import (bench_session, edits, library, part_session, recent, scenario_edits, scenario_validate, templates,
-               validate)
+               test_session, validate)
 from .bench_session import BenchJobs, BenchSession, SessionError
 from .doc import ConfigDoc, FileChanged
 from .edits import EditError
@@ -501,7 +544,9 @@ from .runs import RunBusy, RunManager
 from .signals import signals
 from .simlock import SimBusy, SimLock
 from .stream import StreamHub
+from .test_session import TestSession
 from .view import model_view
+from ..blocks.program import Program as TestProgram, TestFileError, dumps as dumps_test
 
 STATIC = Path(__file__).resolve().parent / "static"
 POLL_SECONDS = 25.0
@@ -511,6 +556,7 @@ NO_PROGRAM = "this robot config has no [robot_program] section: add one to drive
 NO_ROBOT = "no robot is open"
 NO_SESSION = "no idea session is open"
 NO_PART = "no part is open"
+NO_TEST = "no test is open"
 ROBOT_TEMPLATES = ("swerve", "swerve-rev", "differential")
 UNPICKED = "Pick where the robot starts first"
 NOT_BUILT = ("The robot code hasn't been built on this computer yet. Build it first (Build now, under Ready to "
@@ -530,7 +576,8 @@ _TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=
           ".css": "text/css; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml",
           ".png": "image/png", ".txt": "text/plain; charset=utf-8", ".map": "application/json",
           ".md": "text/markdown; charset=utf-8", ".csv": "text/csv; charset=utf-8",
-          ".log": "text/plain; charset=utf-8", ".toml": "text/plain; charset=utf-8", ".gif": "image/gif"}
+          ".log": "text/plain; charset=utf-8", ".toml": "text/plain; charset=utf-8", ".gif": "image/gif",
+          ".cur": "image/x-icon"}
 
 
 class ApiError(Exception):
@@ -607,14 +654,16 @@ def start_sentence(pose) -> str:
 
 
 _IMPORT_HEADER = re.compile(r"(?m)^[ \t]*\[[ \t]*import[ \t]*\]")
+_TEST_HEADER = re.compile(r"(?m)^[ \t]*\[[ \t]*test[ \t]*\]")
 
 
 def classify(path) -> str:
     """"import" for a CAD file (.step/.stp/.stl/.obj), a folder holding a part.toml, or a file with a top-level
-    [import] table; "session" for another folder (of bench files); for a file, "scenario" when it has a top-level
-    `config` key or a [[step]] array, else "bench" when it has a top-level [bench] table, else "robot". A file that
-    isn't valid TOML is judged by its lines (an [import] header; a [[step]] header or `config =` before the first
-    table; then a [bench] header)."""
+    [import] table; "session" for another folder (of bench files); for a file, "test" when it has a top-level [test]
+    table (a block test), else "scenario" when it has a top-level `config` key or a [[step]] array, else "bench"
+    when it has a top-level [bench] table, else "robot". A file that isn't valid TOML is judged by its lines (an
+    [import] header; a [test] header; a [[step]] header or `config =` before the first table; then a [bench]
+    header)."""
     if part_session.is_part_target(path):
         return "import"
     if Path(path).is_dir():
@@ -628,6 +677,8 @@ def classify(path) -> str:
     except tomllib.TOMLDecodeError:
         if _IMPORT_HEADER.search(text):
             return "import"
+        if _TEST_HEADER.search(text):
+            return "test"
         first_table = _TABLE.search(text)
         head = text[:first_table.start()] if first_table else text
         if _STEP_HEADER.search(text) or _CONFIG_KEY.search(head):
@@ -635,6 +686,8 @@ def classify(path) -> str:
         return "bench" if _BENCH_HEADER.search(text) else "robot"
     if isinstance(raw.get("import"), dict):
         return "import"
+    if isinstance(raw.get("test"), dict):
+        return "test"
     if "config" in raw or "step" in raw:
         return "scenario"
     return "bench" if isinstance(raw.get("bench"), dict) else "robot"
@@ -649,8 +702,8 @@ def _info_json(info) -> dict:
 
 
 def remember_opened(path: Path) -> None:
-    """Put an opened file in the start page's recent list: a robot, a scenario, a session (a bench file's folder) or
-    an import (a CAD file's import file, an import-made folder's, or a plugin part folder)."""
+    """Put an opened file in the start page's recent list: a robot, a scenario, a test, a session (a bench file's
+    folder) or an import (a CAD file's import file, an import-made folder's, or a plugin part folder)."""
     kind = classify(path)
     if kind == "import":
         return   # App.remember_part does, once the import file is known
@@ -675,6 +728,7 @@ class App:
         self.scenario_read_only_reason: str | None = None
         self.scenario_robot_problem: str | None = None
         self.scenario_errors: list[dict] = []
+        self.test: TestSession | None = None      # the block test (robot mode; its robot is the robot document)
         self.bench: BenchSession | None = None    # the idea session (bench mode)
         self.part = None                          # the PartSession or PluginSession (part mode)
         self.back: Path | None = None             # part mode: the robot config (or scenario) the part was opened from
@@ -683,6 +737,8 @@ class App:
         self._view: dict | None = None
         self._scenario_view: dict | None = None
         self._signals: dict | None = None
+        self._parts_seen = None                   # _parts_look() when the robot was last validated
+        self._part_meshes: dict = {}              # (part.toml, its stat) -> the mesh files it names
         self._lock = threading.RLock()
         self._changed = threading.Condition(self._lock)
         # run progress has its own condition: the run's worker never waits for the app lock (edit validation)
@@ -713,13 +769,13 @@ class App:
     # -- what is open -----------------------------------------------------------------------
     @property
     def mode(self) -> str:
-        """"bench" (an idea session), "part" (a CAD import or plugin part folder), "robot" (a robot config or a
-        scenario) or "start" (nothing)."""
+        """"bench" (an idea session), "part" (a CAD import or plugin part folder), "robot" (a robot config, a
+        scenario or a test) or "start" (nothing)."""
         if self.bench is not None:
             return "bench"
         if self.part is not None:
             return "part"
-        return "robot" if self.robot is not None or self.scenario is not None else "start"
+        return "robot" if self.robot is not None or self.scenario is not None or self.test is not None else "start"
 
     def _load(self, path: Path | None, initial: bool = False, kind: str | None = None,
               parts_dir: Path | None = None, source: Path | None = None) -> None:
@@ -732,8 +788,10 @@ class App:
         kind = kind or (classify(path) if path is not None else None)
         floor = 0 if initial else 1 + max(self.robot_version, self.scenario.version if self.scenario else 0,
                                           self.bench.version if self.bench else 0,
-                                          self.part.version if self.part else 0)
+                                          self.part.version if self.part else 0,
+                                          self.test.version if self.test else 0)
         doc = ConfigDoc(path) if kind in ("robot", "scenario") else None
+        test = TestSession(path, self.simlock, floor) if kind == "test" else None   # TestFileError: nothing replaced
         # "Back to the robot": an import made for the open robot (its parts go in that robot's parts/, as Import CAD...
         # does) leads back to it; another import opened from the part leads back too while it is made for that robot
         back = robot_parts = None
@@ -754,6 +812,7 @@ class App:
         self.back, self._back_parts = back, robot_parts
         self.robot, self.robot_missing, self._robot_target, self._robot_ver = None, NO_ROBOT, None, floor
         self.scenario, self.extra_folders = None, []
+        old_test, self.test = self.test, test
         if kind == "robot":
             doc.version = floor
             self.robot, self.robot_missing = doc, None
@@ -761,18 +820,28 @@ class App:
             doc.version = floor
             self.scenario = doc
             self._point_robot(initial=initial)
+        elif kind == "test":
+            self._point_test_robot(initial=initial)
         self._revalidate()
         self._revalidate_scenario()
         if old is not None:
             old.close()
         if old_part is not None:
             old_part.close()
+        if old_test is not None:
+            old_test.close()
 
     def need_robot(self) -> None:
         """404 unless a robot config or scenario is open (the Robot, Scenario and Drive tabs' routes)."""
         with self._lock:
             if self.mode != "robot":
                 raise ApiError(404, NO_ROBOT)
+
+    def need_test(self) -> TestSession:
+        with self._lock:
+            if self.test is None:
+                raise ApiError(404, NO_TEST)
+            return self.test
 
     def need_bench(self) -> BenchSession:
         with self._lock:
@@ -807,15 +876,18 @@ class App:
             raise ApiError(409, "a scenario run is in progress; stop it first")
         if self.bench_jobs.active:   # this App's own job; another process holding the session lock never refuses
             raise ApiError(409, "a bench run is in progress; wait for it to finish")
+        if self.test is not None and self.test.busy:
+            raise ApiError(409, "a test run is in progress; stop it first")
 
     def app_state(self) -> dict:
         with self._lock:
             mode = self.mode
             p = self.bench.folder if mode == "bench" else self.part.path if mode == "part" \
-                else (self.scenario or self.robot).path if mode == "robot" else None
+                else (self.test or self.scenario or self.robot).path if mode == "robot" else None
             unset = self._needs_folder()
             back = self.back if mode == "part" else None
-        return {"mode": mode, "path": str(p) if p is not None else None,
+            test = str(self.test.path) if self.test is not None else None
+        return {"mode": mode, "test": test, "path": str(p) if p is not None else None,
                 "display_path": self._display(p) if p is not None else "", "recent": recent.recent(),
                 "back": {"path": str(back), "display_path": self._display(back)} if back is not None else None,
                 "examples": bench_session.examples(), "needs_folder": unset[0] if unset else None}
@@ -896,7 +968,7 @@ class App:
                     self._load(p, kind=kind, parts_dir=parts_dir)
             except OSError as e:
                 raise ApiError(400, f"can't read {self._display(p)}: {e.strerror or e}") from None
-            except CadError as e:
+            except (CadError, TestFileError) as e:
                 raise ApiError(400, str(e)) from None
         self.bench_jobs.stop()    # idle (refused above while a job is active); outside the lock: it joins
         self.bench_jobs.clear()
@@ -1053,6 +1125,15 @@ class App:
                 unset = unset_folder(_plain(sc.doc.get("config")))
                 reason = unset[1] if unset else 'this scenario names no robot config (config = "<robot config .toml>")'
             return self._detach(reason, None, initial)
+        return self._attach_robot(target, initial)
+
+    def _point_test_robot(self, initial: bool = False) -> bool:
+        """Make the robot document the test's robot; True when it was replaced, detached or reattached."""
+        return self._attach_robot(self.test.robot_path, initial)
+
+    def _attach_robot(self, target: Path, initial: bool) -> bool:
+        """Make the robot config `target` the robot document (a scenario's or a test's); True when it was replaced,
+        detached or reattached."""
         if self.robot is not None and self.robot.path == target:
             if target.exists():
                 return False
@@ -1077,6 +1158,7 @@ class App:
         self._view = None
         self._scenario_view = None
         self._signals = None
+        self._parts_seen = self._parts_look()
         if self.robot is None:
             self.result = validate.Result(False, [validate.FieldError("status", self.robot_missing)], [], None)
         else:
@@ -1094,7 +1176,17 @@ class App:
                                                         "swerve|differential or --new-scenario --robot CONFIG")
                 elif self.result.world.parts is None:
                     self.robot.read_only_reason = HAND_WRITTEN
+        if self.test is not None:
+            self.test.refresh(self._robot_world(), self._robot_problem())
         self._changed.notify_all()
+
+    def _robot_problem(self) -> str | None:
+        """Why the robot document has no World, in a sentence (None when it has one)."""
+        if self._robot_world() is not None:
+            return None
+        if self.robot is None:
+            return self._rel(self.robot_missing)
+        return self._rel(f"{self.robot.path.name} has errors: " + "; ".join(e.message for e in self.result.errors))
 
     def _scenario_signature(self):
         r = self.scenario_result
@@ -1142,7 +1234,17 @@ class App:
         """Pick up outside edits of either file; True when something changed."""
         s_changed = self.scenario is not None and self.scenario.reload_if_changed()
         r_changed = self.scenario is not None and self._point_robot()
+        if self.test is not None:
+            self.test.reload_if_changed()
+            r_changed = self._point_test_robot() or r_changed
         if self.robot is not None and self.robot.reload_if_changed():
+            r_changed = True
+        if self.robot is not None and self._parts_look() != self._parts_seen:
+            # a part folder changed (Import again rewrites the folder, not the robot config): build the robot again,
+            # past MuJoCo's cache, which keeps a mesh by its file name and time to the second
+            mujoco.mj_clearCache(mujoco.mj_getCache())
+            if not r_changed:
+                self.robot.version += 1
             r_changed = True
         if r_changed:
             self._revalidate()
@@ -1210,7 +1312,8 @@ class App:
                "other_sections": other, "can_undo": d is not None and d.can_undo,
                "can_redo": d is not None and d.can_redo,
                "scenario_open": self.scenario is not None,
-               "mass_kg": None, "bodies": None, "joints": None, "part_bodies": None, "com": None}
+               "mass_kg": None, "bodies": None, "joints": None, "part_bodies": None, "com": None,
+               "range": self._range_file()}
         w = self.result.world if self.result.ok else None
         if w is not None and w.parts is not None:
             m = w.model
@@ -1222,6 +1325,12 @@ class App:
                                 and int(m.jnt_type[j]) != int(mujoco.mjtJoint.mjJNT_FREE))
             out["com"] = self._robot_com(w)
         return out
+
+    def _range_file(self) -> str | None:
+        """The robot document's [range] file as written (a built-in range's name or a path); None: the plain field."""
+        raw = self.robot.doc.unwrap() if self.robot is not None and self.robot.doc is not None else {}
+        sec = raw.get("range") if isinstance(raw.get("range"), dict) else None
+        return sec.get("file") if sec is not None and isinstance(sec.get("file"), str) else None
 
     def _robot_com(self, w) -> dict:
         """The robot's center of gravity at its start pose: subtree_com of the robot body in that body's frame (m;
@@ -1245,6 +1354,49 @@ class App:
         except teamfolders.TeamFolderError:
             return None
         return p if p.is_absolute() else self._base_dir() / p
+
+    def _part_files(self, path) -> list[Path]:
+        """The files a [[part]] `path` reads: its part.toml, the plugin overlay beside it and the meshes it names (not
+        the folder around them, which may be the robot's own, with its tests and their runs)."""
+        folder = self._part_folder(path)
+        if folder is None:
+            return []
+        toml = folder if folder.suffix == ".toml" else folder / "part.toml"
+        files = [toml, toml.parent / "scrimmage-edits.toml"]
+        try:
+            st = toml.stat()
+        except OSError:
+            return files
+        key = (str(toml), st.st_mtime_ns, st.st_size, st.st_ino)
+        meshes = self._part_meshes.get(key)
+        if meshes is None:
+            try:
+                raw = tomllib.loads(toml.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+                raw = {}
+            bodies = raw.get("body") if isinstance(raw.get("body"), list) else []
+            meshes = sorted({g["mesh"] for b in bodies if isinstance(b, dict)
+                             for g in (b.get("geom") if isinstance(b.get("geom"), list) else [])
+                             if isinstance(g, dict) and isinstance(g.get("mesh"), str)})
+            if len(self._part_meshes) > 64:
+                self._part_meshes.clear()
+            self._part_meshes[key] = meshes
+        return files + [toml.parent / m for m in meshes]
+
+    def _parts_look(self) -> tuple | None:
+        """Each file the robot document's parts read, with its time, size and file id, to see Import again."""
+        d = self.robot
+        if d is None or d.doc is None:
+            return None
+        out = []
+        for p in edits.parts(d.doc):
+            for f in self._part_files(p.get("path")):
+                try:
+                    st = f.stat()
+                    out.append((str(f), st.st_mtime_ns, st.st_size, st.st_ino))
+                except OSError:
+                    out.append((str(f), None))      # not there (an overlay a part doesn't have), or being replaced
+        return tuple(out)
 
     def _cad_pos(self, doc, path, attach) -> list[float] | None:
         """Where the part folder `path` attached to `attach` sits where the CAD has it (edits.cad_offset), or None:
@@ -1298,7 +1450,7 @@ class App:
             return self._view
 
     def _base_dir(self) -> Path:
-        return (self.robot or self.scenario).path.parent
+        return (self.robot or self.scenario or self.test).path.parent
 
     def library(self) -> dict:
         with self._lock:
@@ -1358,8 +1510,8 @@ class App:
         if op == "ids":
             return lambda doc: edits.set_ids(doc, name, b.get("ids") or {})
         if op == "start":
-            return lambda doc: edits.set_start(doc, {k: b[k] for k in ("range", "pose", "named", "floor_balls")
-                                                     if k in b})
+            keys = ("range", "pose", "named", "keep_pose", "floor_balls")
+            return lambda doc: edits.set_start(doc, {k: b[k] for k in keys if k in b})
         if op == "battery":
             return lambda doc: edits.set_battery(doc, {k: b[k] for k in ("nominal_voltage", "resistance") if k in b})
         if op == "match_devices":
@@ -1424,6 +1576,9 @@ class App:
             return 200, {"ok": False, "errors": [{"field": "status", "message": f"can't write the file: {e}"}]}
         self._view = self._scenario_view = self._signals = None
         self.result = res
+        self._parts_seen = self._parts_look()
+        if self.test is not None:      # its palette and problems: an edit can change the field or the parts
+            self.test.refresh(self._robot_world(), self._robot_problem())
         self._revalidate_scenario(bump=True)
         self._changed.notify_all()
         return 200, {"ok": True, "version": self.robot.version}
@@ -1918,6 +2073,8 @@ class App:
         if self.runs.running:
             raise ApiError(409, "a scenario run is in progress")
         with self._lock:
+            if self.test is not None and self.test.busy:
+                raise ApiError(409, "a test run is in progress")
             try:
                 doc = ConfigDoc(p)
             except OSError as e:
@@ -1926,11 +2083,136 @@ class App:
             if self.scenario is not None:
                 doc.version = self.scenario.version + 1   # the page's long poll sees the new document
             self.scenario = doc
+            if self.test is not None:   # the scenario takes the test's place
+                self.test.close()
+                self.test = None
             if not self._point_robot() and self.robot is not None:
                 self.robot.version += 1   # the same robot: its state now says scenario_open
             self._revalidate()
             self._revalidate_scenario()
         return {"ok": True}
+
+    # -- test -------------------------------------------------------------------------------
+    def wait_test_state(self, since: int | None) -> dict:
+        """The test's state once its version moves from `since` (or after POLL_SECONDS); each second the files are
+        read again, so an outside edit of the test or its robot shows."""
+        end = time.monotonic() + POLL_SECONDS
+        while True:
+            with self._lock:
+                self._sync()
+                test = self.need_test()
+            if test.wait(since, end):
+                return self.need_test().state()   # another file opened meanwhile: its state (or 404)
+
+    def test_save(self, body: dict) -> tuple[int, dict]:
+        with self._lock:
+            self._sync()
+            test = self.need_test()
+            status, out = test.save(body)
+            if status == 200 and self._point_test_robot():   # the test now names another robot
+                self._revalidate()
+        return status, out
+
+    def test_start(self, kind: str, body: dict) -> tuple[int, dict]:
+        with self._lock:
+            self._sync()   # the problems as the files are now
+            return self.need_test().start(kind, body)
+
+    def new_test(self, body: dict) -> dict:
+        """Write `<robot stem>.test.toml` next to the robot config `robot` (default: the open robot), or
+        `<stem>-2.test.toml` and so on when that is taken, with starter blocks and hooks, and open it. With
+        `from_part: true` it is the Part tab's "Test it": see test_from_part."""
+        if body.get("from_part") is True:
+            return self.test_from_part()
+        if body.get("robot") is not None:
+            robot = self._user_path(body.get("robot"), "the robot config the test is for")
+            if not robot.is_file() or classify(robot) != "robot":
+                raise ApiError(400, f"{self._display(robot)} is not a robot config")
+        else:
+            with self._lock:
+                robot = self.robot.path if self.mode == "robot" and self.robot is not None else None
+            if robot is None:
+                raise ApiError(400, "say which robot config the test is for (robot)")
+        with self._lock:
+            self._check_can_open()
+        text = self._starter_test(robot)
+        for k in range(1, 1000):
+            p = robot.parent / (f"{robot.stem}.test.toml" if k == 1 else f"{robot.stem}-{k}.test.toml")
+            try:
+                if test_session.write_new(p, text):
+                    break
+            except OSError as e:
+                raise ApiError(400, f"can't write {self._display(p)}: {e.strerror or e}") from None
+        else:
+            raise ApiError(400, f"there are too many tests of {robot.name} already; delete some")
+        return self.open_path(str(p))
+
+    def _starter_test(self, robot: Path, folder: Path | None = None) -> str:
+        """A new test's text for the robot config `robot` (the test in `folder`, default the robot's): starter blocks
+        and hooks from the robot's palette (a robot that doesn't load gets one wait block, and its problem shows once
+        the test is open)."""
+        from ..blocks.palette import palette
+        from ..config import build_world, load_config
+        folder = folder or robot.parent
+        try:
+            pal = palette(build_world(load_config(robot)), [])
+        except Exception:     # a robot that doesn't build: the open test says why
+            pal = None
+        return dumps_test(TestProgram(folder / "x.test.toml", Path(test_session.config_path(robot, folder)),
+                                      hooks=test_session.starter_hooks(pal), blocks=test_session.starter_blocks(pal)))
+
+    def test_from_part(self) -> dict:
+        """The Part tab's "Test it": make (once) `<import name>-standin.toml` next to the import's parts folder, the
+        built parts on it where the CAD has them (test_session.standin_config), and `<import name>.test.toml` beside
+        it with starter blocks, then open the test. Pressed again it opens the same test: nothing is made twice."""
+        with self._lock:
+            part = self.part
+            if self.mode != "part" or not isinstance(part, part_session.PartSession):
+                raise ApiError(400, "Test it works on a part made from a CAD import: open one in the Part tab")
+            st, imp = part.state_and_settings()
+        if st["read_only_reason"]:
+            raise ApiError(409, f"the part can't be tested yet: {st['read_only_reason']}")
+        if st["build"]["state"] == "building":
+            raise ApiError(409, "the parts are still updating; try again when they're up to date")
+        if st["build"]["state"] == "failed" or imp is None:
+            raise ApiError(409, f"the parts didn't build: {st['build']['message'] or 'see the Part tab'}")
+        imp_path = Path(st["path"])
+        # next to the parts folder the import file is in (or beside an import file kept elsewhere)
+        home = imp_path.parent.parent if imp_path.parent.name == "parts" else imp_path.parent
+        parts, slots = [], {}
+        for p in st["parts"]:
+            try:
+                folder = part_folder(imp, p["name"], imp_path)
+            except CadError as e:
+                raise ApiError(409, str(e)) from None
+            marker = library.cad_marker(folder)
+            if marker is None or not (folder / "part.toml").is_file():
+                raise ApiError(409, f"the part {p['name']} isn't built yet; try again when the parts are up to date")
+            try:
+                slots[marker["part"]] = [m.slot for m in load_part(folder).motors]
+            except (PartError, OSError) as e:
+                raise ApiError(409, f"the part {p['name']} can't be read: {e}") from None
+            parts.append((test_session.config_path(folder, home), marker))
+        if not parts:
+            raise ApiError(409, "this import makes no parts yet: put its pieces in a body first")
+        with self._lock:
+            self._check_can_open()
+        name = sanitize(st["name"]) or "part"
+        standin, test = home / f"{name}-standin.toml", home / f"{name}.test.toml"
+        added: list[str] = []
+        try:
+            if not test_session.write_new(standin, test_session.standin_config(parts, _chassis_root_body(), slots)):
+                text, added = test_session.add_to_standin(standin.read_text(encoding="utf-8"), parts,
+                                                          _chassis_root_body(), slots)
+                if added:
+                    test_session.replace_text(standin, text)
+            if not test.exists():
+                test_session.write_new(test, self._starter_test(standin, home))
+        except OSError as e:
+            raise ApiError(400, f"can't write next to {self._display(home)}: {e.strerror or e}") from None
+        except (ValueError, KeyError, TypeError) as e:   # a hand-edited stand-in that can't be read as one
+            raise ApiError(409, f"can't add the new parts to {standin.name}: {e}") from None
+        return {**self.open_path(str(test)), "added": added}
 
     # -- runs -------------------------------------------------------------------------------
     def _runs_changed(self) -> None:
@@ -2155,6 +2437,8 @@ class App:
             self.bench.close()
         if self.part is not None:
             self.part.close()
+        if self.test is not None:
+            self.test.close()
         self.runs.stop()
         self.live.shutdown()
         if self._httpd is not None:
@@ -2312,6 +2596,8 @@ class _Handler(BaseHTTPRequestHandler):
                 body.drain()   # a refusal answers after the body arrived, never by resetting the connection
         if path.startswith("/api/part/"):
             return self._part_api(method, url, app.need_part())
+        if path.startswith("/api/test/"):
+            return self._test_api(method, url)
         if path.startswith(("/api/robot/", "/api/scenario/", "/api/live/")):
             app.need_robot()
         if method == "GET":
@@ -2422,6 +2708,33 @@ class _Handler(BaseHTTPRequestHandler):
                 return bench.new_idea(body)
             if path in ("/api/bench/run", "/api/bench/sweep", "/api/bench/compare", "/api/bench/gallery"):
                 return self.app.bench_jobs.submit(bench, path.rsplit("/", 1)[1], body)
+        raise ApiError(404, "no such endpoint")
+
+    def _test_api(self, method: str, url) -> tuple:
+        app, path = self.app, url.path
+        if method == "POST" and path == "/api/test/new":
+            return 200, app.new_test(self._body())
+        if method == "GET" and path == "/api/test/state":
+            return 200, app.wait_test_state(self._since(url))
+        test = app.need_test()
+        if method == "GET" and path.startswith("/api/test/run/"):
+            rest = unquote(path[len("/api/test/run/"):])
+            for what, ctype in (("view", "application/json"), ("motion", "application/octet-stream")):
+                if rest.endswith("/" + what):
+                    try:
+                        data = test.run_file(rest[:-len(what) - 1], what).read_bytes()
+                    except FileNotFoundError:   # pruned meanwhile
+                        raise ApiError(404, "that run is no longer kept") from None
+                    return 200, data, ctype
+            return 200, test.run_result(rest)
+        if method == "POST":
+            body = self._body()
+            if path == "/api/test/save":
+                return app.test_save(body)
+            if path in ("/api/test/run", "/api/test/sweep"):
+                return app.test_start(path.rsplit("/", 1)[1], body)
+            if path == "/api/test/cancel":
+                return 200, test.cancel()
         raise ApiError(404, "no such endpoint")
 
     def _part_api(self, method: str, url, part) -> tuple:

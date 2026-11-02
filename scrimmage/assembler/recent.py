@@ -1,6 +1,6 @@
-"""The start page's recent list: robots, scenarios, idea sessions and parts from CAD opened in the editor, newest
-first. Each entry's kind is "robot", "scenario", "session" (a folder) or "import" (an import file, or a plugin-made
-part folder).
+"""The start page's recent list: robots, scenarios, tests, idea sessions and parts from CAD opened in the editor,
+newest first. Each entry's kind is "robot", "scenario", "test" (a block test), "session" (a folder) or "import" (an
+import file, or a plugin-made part folder).
 
 Kept in `$SCRIMMAGE_CACHE/recent.json`, else `~/.cache/scrimmage/recent.json` (`$SCRIMMAGE_RECENT`, a file path, overrides
 both: the tests use it so they never touch the user's list). A file or folder that no longer exists is

@@ -114,6 +114,7 @@ class Bar:
     damping: float = 0.0  # N s/m, the slide's
     level: str | None = None  # a [climb] level's name
     points: float | None = None  # from [climb] levels, for the level
+    section: str = "round"  # "round" (a pipe) or "square" (a box of side `diameter`)
 
 
 @dataclass(frozen=True)
@@ -168,7 +169,7 @@ _OTHER = {
     "bump": ("ramp_deg",),
     "ramp": ("ramp_deg", "two_sided"),
     "platform": ("max_tilt_deg", "mass", "inertia", "damping"),
-    "bar": ("posts", "stiffness", "damping", "level"),
+    "bar": ("posts", "stiffness", "damping", "level", "section"),
     "box": ("size", "size_in", "ground"),
     "switch": ("mass", "stop_deg", "damping", "level_deg"),
 }
@@ -221,6 +222,9 @@ def _climbing(r: _Reader, kind: str, kw: dict) -> None:
         if kw["damping"] < 0.0:
             raise r.err(f"damping must be 0 or more, not {kw['damping']!r}")
         kw["level"] = r.text("level") if r.has("level") else None
+        kw["section"] = r.text("section") if r.has("section") else "round"
+        if kw["section"] not in ("round", "square"):
+            raise r.err(f"section must be \"round\" or \"square\", not {kw['section']!r}")
     elif kind == "box":
         if r.has("size") == r.has("size_in"):
             raise r.err("needs one of size = [x, y, z] (m) or size_in = [x, y, z] (in)")

@@ -278,3 +278,11 @@ def test_starts_may_stand_under_a_bar_but_not_on_its_posts():
     with pytest.raises(RangeError, match="overlaps element 'a'"):
         _parse("[start.no]\npose = [3.0, 2.0, 0.0]\n", bar.replace("height = 1.2\n", "height = 1.2\nposts = true\n")
                .replace("length = 2.0", "length = 0.6"))               # a short bar: its posts under the robot
+
+
+def test_bar_section_defaults_to_round_and_takes_square():
+    bar = CLIMB_RANGE.replace('level = "ONE"\n', "")
+    assert _parse("", bar).elements[0].section == "round"
+    assert _parse("", bar.replace("height = 1.2\n", 'height = 1.2\nsection = "square"\n')).elements[0].section == "square"
+    with pytest.raises(RangeError, match="section must be"):
+        _parse("", bar.replace("height = 1.2\n", 'height = 1.2\nsection = "hex"\n'))

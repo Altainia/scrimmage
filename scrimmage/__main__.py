@@ -162,6 +162,14 @@ def main(argv: list[str] | None = None) -> None:
     cr.add_argument("--script", type=Path, required=True, help="the climb script TOML ([[step]]s)")
     cr.add_argument("--out", type=Path, help="results folder (default <SCRIPT's folder>/<SCRIPT stem>-climb)")
 
+    xp = sub.add_parser("test", help="test a mechanism with blocks: play a test file's blocks with no robot program")
+    xp.add_argument("-v", "--verbose", action="store_true")
+    xsub = xp.add_subparsers(dest="test_command", required=True)
+    xr = xsub.add_parser("run", help="run a test file (<name>.test.toml) and print how it ended and each check "
+                                     "(exit 0 finished with every check passed, 1 not, 2 couldn't run)")
+    xr.add_argument("file", type=Path, help="the test file")
+    xr.add_argument("--out", type=Path, help="folder to keep the run in (default <FILE's folder>/<FILE stem>-runs)")
+
     mp = sub.add_parser("model", help="print (or write) the MJCF a parts robot assembles to")
     mp.add_argument("config", type=Path)
     mp.add_argument("-o", "--output", type=Path, help="write the MJCF to this file instead of printing it")
@@ -216,6 +224,8 @@ def main(argv: list[str] | None = None) -> None:
         _terrain(args)
     elif args.command == "climb":
         _climb(args)
+    elif args.command == "test":
+        _test(args)
     elif args.command == "model":
         _model(args)
     elif args.command == "parts":
@@ -566,6 +576,32 @@ def _climb(args) -> None:
     sys.exit(0 if result.reached_goal else 1)
 
 
+def _test(args) -> None:
+    """Exit 0 when the test finished with every check passed, 1 when not, 2 when the file or its robot is wrong."""
+    from .blocks import program as blocks_program
+    from .blocks import run as blocks_run
+    from .blocks import store as blocks_store
+    try:
+        if not args.file.is_file():
+            raise FileNotFoundError(f"test file not found: {args.file}")
+        program = blocks_program.load(args.file)
+        result = blocks_run.TestRun(blocks_run.world_for(program), program).run()
+    except (ValueError, OSError) as e:    # TestFileError, ConfigError and PartError are ValueErrors
+        print(f"scrimmage: {e}", file=sys.stderr)
+        sys.exit(2)
+    print(result.outcome)
+    for check in result.checks:
+        print(f"  {check['line']}")
+    out = args.out if args.out is not None else blocks_store.runs_dir(args.file)
+    try:
+        folder = blocks_store.save_run(result, program, out)
+    except OSError as e:
+        print(f"scrimmage: couldn't keep the run in {out}: {e}", file=sys.stderr)
+        sys.exit(2)
+    print(f"kept in {folder}")
+    sys.exit(0 if result.passed else 1)
+
+
 def _print_export(s: dict) -> None:
     def names(xs):
         return ", ".join(xs) if xs else "none"
@@ -612,6 +648,7 @@ def _edit(args) -> None:
     import threading
     from .assembler import scenario_validate
     from .assembler.server import App, remember_opened
+    from .blocks.program import TestFileError
     from .cad import CadError
     from .assembler.templates import new_config, new_scenario
 
@@ -665,6 +702,8 @@ def _edit(args) -> None:
             fail(f"port {args.port} is in use; choose another with --port or leave it out")
         fail(str(e))
     except CadError as e:   # an import-made part folder whose import file is gone
+        fail(str(e))
+    except TestFileError as e:   # a block test that can't be read
         fail(str(e))
     try:
         # Ctrl+C stops the server even when the parent started us with SIGINT ignored (Python then keeps it ignored).

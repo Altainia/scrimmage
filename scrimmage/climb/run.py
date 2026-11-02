@@ -4,7 +4,7 @@ the climb: a timeline, the peak hook load, the swing, the 2022 robot limits and 
 The runner takes the robot program's place: every physics step it writes the motor controllers' outputs, so each
 drive goes through the config's own motor, gearing, battery and neutral mode (a motor's speed and torque limits
 apply, and a `release` motor in brake mode slows its latch as it would on the robot). A position drive is a
-proportional loop on the joint: KP_SLIDE or KP_HINGE volts per unit of error, clipped to the bus (or the drive's
+proportional loop on the joint: KP_SLIDE or KP_HINGE (scrimmage/hal_drive.py) volts per unit of error, clipped to the bus (or the drive's
 max_voltage), as a team's position loop on a climber; the motor's own back-EMF damps it.
 
 The run settles the robot on the carpet for SETTLE_S, then plays the steps from t = 0. Every physics step it reads
@@ -33,12 +33,11 @@ import mujoco
 import numpy as np
 
 from ..config import build_world, load_config
+from ..hal_drive import MotorDrive, driven_joints, position_volts
 from ..protocol import HalState
 from .script import Script, ScriptError, Wait
 
 SETTLE_S = 0.3            # s on the carpet, motors at neutral, before step 1
-KP_SLIDE = 400.0          # V/m: a slide's position loop (12 V at 3 cm of error; estimate, a team's climber kP)
-KP_HINGE = 60.0           # V/rad: a hinge's (12 V at 11.5 deg of error; estimate)
 HANG_CONFIRM_S = 0.1      # s of climb.hanging before the robot counts as hung (a margin contact can read 1 a step early)
 LOADED_N = 50.0           # N: a hook carrying more than this carries the robot
 CARRY_WINDOW_S = 0.2      # s: a hook carried the robot if it did at any step this long before the robot let go
@@ -100,22 +99,6 @@ class ClimbResult:
     notes: list[Note] = field(default_factory=list)
 
 
-class _Motor:
-    """A motor binding the runner drives, writing its HAL outputs like the robot program would."""
-
-    def __init__(self, binding):
-        self.b = binding
-
-    def write(self, hal: HalState, volts: float, bus: float) -> None:
-        b = self.b
-        if b.kind == "PWM":
-            hal.devices[b.device_key] = {"<init": True, "<speed": b.sign * volts / max(bus, 1e-6)}
-        elif b.kind == "CANMotor":
-            hal.devices[b.device_key] = {"<percentOutput": b.sign * volts / max(bus, 1e-6)}
-        else:                           # Phoenix 6, the REV helper and fast mode take a voltage
-            hal.devices[b.device_key] = {"<motorVoltage": b.sign * volts}
-
-
 class _Breach:
     def __init__(self, rule: str, limit: float):
         self.rule, self.limit = rule, limit
@@ -164,6 +147,49 @@ class _Phase:
         return self.hi > 0.0 and s < self.hi - PEAK_DB_DEG
 
 
+class WalkOff:
+    """The "hook walked off" and "fell" rules (the module docstring), one physics step at a time. `climb run` and the
+    block-test runner (scrimmage/blocks/run.py) both judge a let-go with it."""
+
+    def __init__(self, dt: float):
+        self.dt = dt
+        self.hung = False                     # the robot has hung (HANG_CONFIRM_S of climb.hanging)
+        self.drop = 0.0                       # m the CoM dropped, at a walk-off
+        self.left: list[str] = []             # the bars it let go of, at a walk-off
+        self._hang_s = 0.0
+        self._carried_t = -math.inf           # the last step a hook carried the robot
+        self._air = None                      # touching nothing since: (the CoM's height then, a hook carried it)
+        self._touched: list[str] = []         # the bars touched at the last step on one
+
+    def see(self, t: float, hanging: bool, load: float, z: float, on_ground: bool, touched) -> str:
+        """After a physics step at t, with that step's climb.hanging and climb.hook_load, the robot's CoM height and
+        its contact_state() (on the ground, the bars it touches): "hook walked off", "fell" or ""."""
+        dt = self.dt
+        self._hang_s = self._hang_s + dt if hanging else 0.0
+        if not self.hung and self._hang_s >= HANG_CONFIRM_S - 1e-9:
+            self.hung = True
+        if not self.hung:
+            if touched:
+                self._touched = sorted(touched)
+            return ""
+        air = self._air
+        if air is not None and air[1]:          # let go while carried: it walks off once it really drops
+            drop = air[0] - z
+            if on_ground or drop > WALK_OFF_DROP:
+                self.drop, self.left = drop, list(self._touched)
+                return "hook walked off"
+        if on_ground:
+            return "fell"
+        if touched:
+            self._air = None                    # back on a bar (a bounce): neither
+            self._touched = sorted(touched)
+            if load > LOADED_N:
+                self._carried_t = t
+        elif air is None:
+            self._air = (z, t - dt - self._carried_t <= CARRY_WINDOW_S + 1e-9)
+        return ""
+
+
 class ClimbRun:
     def __init__(self, world, script: Script):
         self.world, self.script = world, script
@@ -173,12 +199,7 @@ class ClimbRun:
         rule = self.mon.rule
         self.levels = list(rule.levels) if rule is not None else []
         names = world.joint_states()
-        by_qadr = {mb.qadr: mb for mb in world.motors}
-        motors = {}
-        for j in range(m.njnt):
-            name = m.joint(j).name
-            if name in names and int(m.jnt_qposadr[j]) in by_qadr:
-                motors[name] = by_qadr[int(m.jnt_qposadr[j])]
+        motors = driven_joints(world)
         self.motors = motors
         self.latches = sorted(n for n in motors if n.rsplit(".", 1)[-1].startswith("latch"))
         holds = {h[0] for h in self.mon.holds}
@@ -242,10 +263,7 @@ class ClimbRun:
         state = {"t": 0.0, "level": 0, "swing": 0.0, "load": 0.0, "row_load": 0.0}
         peak = {"load": 0.0, "load_t": 0.0, "swing": 0.0, "swing_t": 0.0, "ext": 0.0, "height": 0.0}
         swings: list[tuple[float, float]] = []
-        hung = False
-        hang_s = 0.0
-        carried_t = -math.inf                 # the last step a hook carried the robot
-        air = None                            # touching nothing since: (the CoM's height then, a hook carried it)
+        walk = WalkOff(dt)
         level_seen = (0, 0.0)                 # the level being held, and since when
         next_row = 0.0
         status = ""
@@ -259,18 +277,17 @@ class ClimbRun:
 
         def tick() -> str:
             """One physics step with the drives as they stand; returns a failure status, or ""."""
-            nonlocal hung, hang_s, carried_t, air, level_seen, next_row
+            nonlocal level_seen, next_row
             hal = HalState()
             bus = w.vbatt
             for joint, (target, volts, cap) in drives.items():
                 if target is not None:
                     q = float(d.qpos[self._qadr[joint]])
-                    kp = KP_HINGE if self._hinge[joint] else KP_SLIDE
                     lim = bus if cap is None else min(cap, bus)
-                    volts = max(-lim, min(lim, kp * (target - q)))
-                _Motor(self.motors[joint]).write(hal, volts, bus)
+                    volts = position_volts(target, q, self._hinge[joint], lim)
+                MotorDrive(self.motors[joint]).write(hal, volts, bus)
             for joint, out in release.items():
-                _Motor(self.motors[joint]).write(hal, out * bus, bus)
+                MotorDrive(self.motors[joint]).write(hal, out * bus, bus)
             mon.consume()
             w.step(hal)
             t = float(d.time) - t0
@@ -319,29 +336,16 @@ class ClimbRun:
                 if force > self.script.limits.hit_force:
                     event(f"{_geom_label(m, geom)} hit {bar} ({force:.0f} N)")
                     return "hit a bar"
-            hang_s = hang_s + dt if hanging else 0.0
-            if not hung and hang_s >= HANG_CONFIRM_S - 1e-9:
-                hung = True
+            was_hung = walk.hung
+            end = walk.see(t, hanging, load, float(d.subtree_com[w.robot_body][2]), on_ground, touched)
+            if walk.hung and not was_hung:
                 event("hanging")
-            if not hung:
-                return ""
-            z = float(d.subtree_com[w.robot_body][2])
-            if air is not None and air[1]:              # let go while carried: it walks off once it really drops
-                drop = air[0] - z
-                if on_ground or drop > WALK_OFF_DROP:
-                    event(f"let go of every bar and dropped {drop * 100:.0f} cm"
-                          + (" to the ground" if on_ground else ""))
-                    return "hook walked off"
-            if on_ground:
+            if end == "hook walked off":
+                event(f"let go of every bar and dropped {walk.drop * 100:.0f} cm"
+                      + (" to the ground" if on_ground else ""))
+            elif end == "fell":
                 event("touched the ground")
-                return "fell"
-            if touched:
-                air = None                              # back on a bar (a bounce): neither
-                if load > LOADED_N:
-                    carried_t = t
-            elif air is None:
-                air = (z, t - dt - carried_t <= CARRY_WINDOW_S + 1e-9)
-            return ""
+            return end
 
         for st in self.script.steps:
             start = state["t"]
