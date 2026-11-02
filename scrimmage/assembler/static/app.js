@@ -8,7 +8,8 @@
 //   scrimmage:pick-mount   detail {active}    the Add dialog wants a mount clicked in 3D (active false = stop)
 //   scrimmage:mount-picked detail {name}      the 3D view reports a clicked mount "<instance>.<mount>"
 //   scrimmage:hover        detail {name, source}  an instance is hovered in the tree or the 3D view (null = none)
-//   scrimmage:tab          detail {tab}       the shown tab changed ("robot" | "scenario" | "drive" | "bench" | "part")
+//   scrimmage:tab          detail {tab}       the shown tab changed ("robot" | "scenario" | "drive" | "bench" | "part" |
+//                                             "test")
 //   scrimmage:code         detail {state}     the robot code panel loaded /api/robot/code (code.js)
 // The 3D view (view3d.js, loaded on its own so a WebGL failure can't break the page) selects a part with
 // select(name) and sets store.view3d once it is running.
@@ -84,8 +85,9 @@ export async function apiFile(path) {
 
 // -- tabs ----------------------------------------------------------------------------------------
 // The Robot tab is this file's; the Scenario tab (scenario.js) registers itself with registerTab when a
-// scenario is open, the Drive tab (drive.js) always: {renderTop(), undo(), redo(), onShow(), onHide()?}.
-const TABS = ["robot", "scenario", "drive", "bench", "part"];
+// scenario is open, the Test tab (test.js) when a test is open, the Drive tab (drive.js) always:
+// {renderTop(), undo(), redo(), onShow(), onHide()?}.
+const TABS = ["robot", "scenario", "drive", "bench", "part", "test"];
 const tabHooks = {};
 let tab = "robot";
 
@@ -95,8 +97,8 @@ export function registerTab(name, hooks) {
   tabHooks[name] = hooks;
   $(`#tab-btn-${name}`).hidden = false;
   const want = hashParams();
-  // a tab the link asks for opens; a scenario opens on its own tab unless the link asks for another one
-  if (want.has(name) || (name === "scenario" && !TABS.some((t) => want.has(t)))) setTab(name);
+  // a tab the link asks for opens; a scenario or a test opens on its own tab unless the link asks for another one
+  if (want.has(name) || ((name === "scenario" || name === "test") && !TABS.some((t) => want.has(t)))) setTab(name);
 }
 
 export function setTab(name, { focus = false } = {}) {
@@ -490,7 +492,7 @@ export const UNIT = { "kg*m^2": "kg·m²", deg: "°", "N*m/rad": "N·m/rad" };
 // -- boot ---------------------------------------------------------------------------------------
 function onKey(e) {
   const mod = e.ctrlKey || e.metaKey;
-  if (!mod || e.altKey) return;
+  if (!mod || e.altKey || e.defaultPrevented) return;   // defaultPrevented: the block editor did it itself
   const k = e.key.toLowerCase();
   const t = e.target;
   const typing = t && (t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && !["checkbox", "button", "radio"].includes(t.type)));
@@ -549,6 +551,15 @@ function bootPart() {
   import("./part.js").then((m) => m.initPart()).catch((e) => {
     console.error(e);
     notice(`The Part tab failed to load: ${e.message || e}`, "error");
+  });
+}
+
+function bootTest() {
+  // like the Bench tab: shown at once, test.js registers its real hooks when it has loaded
+  registerTab("test", { renderTop() {}, undo() {}, redo() {}, onShow() {} });
+  import("./test.js").then((m) => m.initTest()).catch((e) => {
+    console.error(e);
+    notice(`The Test tab failed to load: ${e.message || e}`, "error");
   });
 }
 
@@ -637,6 +648,7 @@ async function boot() {
   } else {
     $("#start-link").hidden = false;
     bootRobot();
+    if (data.test) bootTest();   // a test file is open: its robot is the robot document
     // the robot (or scenario) names a team folder this computer hasn't set: the start page asks where it is
     if (data.needs_folder) showStartPage(true);
   }

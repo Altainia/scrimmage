@@ -240,7 +240,9 @@ def test_new_swerve_page_has_five_instances(make_page):
 
 # WCAG AA contrast of every piece of visible text under a root: {lum(cssColor), check(root) -> [failures]}. The
 # background is the nearest ancestor's opaque one (a translucent one is blended over the one under it). Disabled
-# controls are exempt (as WCAG says); large text (24 px, or 18.66 px bold) needs 3:1, the rest 4.5:1.
+# controls are exempt (as WCAG says); large text (24 px, or 18.66 px bold) needs 3:1, the rest 4.5:1. The Test tab's
+# blocks are SVG (Blockly): their text is checked by its fill on the box behind it (a field's translucent box over the
+# block, the block, or the palette's or the test's background); blocks(root) counts the block texts it checked.
 CONTRAST_JS = r"""{
   parse(c) { const m = String(c).match(/[\d.]+/g) || [0, 0, 0, 0]; return [+m[0], +m[1], +m[2], m.length > 3 ? +m[3] : 1]; },
   lum(c) {
@@ -258,10 +260,37 @@ CONTRAST_JS = r"""{
     return `rgb(${out.join(",")})`;
   },
   ratio(a, b) { const x = this.lum(a), y = this.lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); },
+  blockBg(el) {
+    const layers = [];
+    const field = el.parentElement && el.parentElement.closest(".blocklyField");
+    const rect = field && [...field.children].find((c) => c.matches("rect.blocklyFieldRect"));
+    if (rect && getComputedStyle(rect).display !== "none") layers.push([getComputedStyle(rect).fill, +getComputedStyle(rect).fillOpacity]);
+    const block = el.closest(".blocklyBlock");
+    const path = block && [...block.children].find((c) => c.matches("path.blocklyPath"));
+    const under = path || el.closest("svg").querySelector(".blocklyFlyoutBackground, .blocklyMainBackground");
+    const fill = getComputedStyle(under).fill;   // the test's background may be a grid pattern: then the page's
+    layers.push([fill.startsWith("rgb") ? fill : this.bgOf(el.closest(".injectionDiv")), 1]);
+    let out = [255, 255, 255];
+    for (const [c, a] of layers.reverse()) { const [r, g, b] = this.parse(c); out = [r * a + out[0] * (1 - a), g * a + out[1] * (1 - a), b * a + out[2] * (1 - a)]; }
+    return `rgb(${out.join(",")})`;
+  },
+  blocks(root, bad = []) {
+    let n = 0;
+    for (const el of root.querySelectorAll(".injectionDiv svg text")) {
+      const text = [...el.childNodes].filter((c) => c.nodeType === 3).map((c) => c.textContent).join("").trim();
+      if (!text || !el.checkVisibility() || el.closest(".blocklyDisabled")) continue;
+      n++;
+      const fg = getComputedStyle(el).fill, bg = this.blockBg(el), r = this.ratio(fg, bg);
+      if (r < 4.5) bad.push(`block text "${text.slice(0, 30)}" ${fg} on ${bg}: ${r.toFixed(2)}`);
+    }
+    return n;
+  },
   check(root) {
     const bad = [];
+    this.blocks(root, bad);
     for (const el of [root, ...root.querySelectorAll("*")]) {
       if (!el.checkVisibility || !el.checkVisibility()) continue;
+      if (el.closest(".injectionDiv svg")) continue;   // Blockly's SVG: blocks() did it
       if (el.closest(":disabled, [aria-disabled='true']") || el.matches("canvas, svg, option")) continue;
       const text = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join("").trim()
         || (el.matches("input:not([type=checkbox]):not([type=radio]), select") ? (el.value || el.placeholder || "x") : "");
@@ -737,6 +766,12 @@ def _screen_part(page, tmp_path):
     page.wait_for_selector("#part-collision-suggest")
 
 
+def _screen_test(page, tmp_path):
+    page.wait_for_function("window.__scrimmageTest && __scrimmageTest.workspace && __scrimmage.tab === 'test'"
+                           " && __scrimmageTest.state.problems.length > 0")
+    assert page.evaluate(f"({CONTRAST_JS}).blocks(document.body)") > 10
+
+
 def _robot_with_program(folder: Path, mismatch: bool = False) -> Path:
     import json as _json
     from scrimmage.assembler import templates
@@ -768,6 +803,15 @@ def _open_for(screen: str, tmp_path: Path) -> Path | None:
         return scn
     if screen == "drive":
         return _robot_with_program(tmp_path, mismatch=True)
+    if screen == "test":   # a test of the stand-in box with an arm, one block naming a joint it doesn't have
+        from scrimmage.assembler import templates
+        (tmp_path / "robot.toml").write_text(templates.new_config("standin") + '\n[[part]]\nname = "arm"\nstock = "arm"\n'
+                                             'attach = "drive.top"\nids = { pivot = "PWM:2" }\n')
+        t = tmp_path / "t.test.toml"
+        t.write_text('[test]\nrobot = "robot.toml"\n\n[[block]]\ndo = "spin"\nmotor = "arm.pivot"\nvolts = 6.0\n'
+                     '\n[[block]]\ndo = "repeat"\ntimes = 2\n  [[block.body]]\n  do = "move"\n  joint = "arm.crank"\n'
+                     '  to = 40.0\n  unit = "deg"\n\n[[block]]\ndo = "expect"\nthat = { tilt = { below = 20.0 } }\n')
+        return t
     if screen == "part":
         shutil.copy(REPO / "tests" / "data" / "cad" / "climber.step", tmp_path / "climber.step")
         return tmp_path / "climber.step"
@@ -787,15 +831,16 @@ def _open_for(screen: str, tmp_path: Path) -> Path | None:
 
 
 SCREENS = {"start": _screen_start, "robot": _screen_robot, "scenario": _screen_scenario, "drive": _screen_drive,
-           "bench_stage": _screen_bench_stage, "bench_editor": _screen_bench_editor, "part": _screen_part}
+           "bench_stage": _screen_bench_stage, "bench_editor": _screen_bench_editor, "part": _screen_part,
+           "test": _screen_test}
 
 
 @pytest.mark.parametrize("scheme", ["light", "dark"])
 @pytest.mark.parametrize("screen", list(SCREENS))
 def test_every_screen_meets_wcag_aa(browser, tmp_path, monkeypatch, screen, scheme):
     """Every piece of text on each screen (the start page, the Robot tab's 3D view, the Scenario tab with a run's
-    report, the Drive tab running with its device line, the Bench stage with a result, the Bench editor and the Part tab
-    with a piece selected) has WCAG AA
+    report, the Drive tab running with its device line, the Bench stage with a result, the Bench editor, the Part tab
+    with a piece selected and the Test tab's blocks with a problem) has WCAG AA
     contrast, in the light and the dark theme."""
     monkeypatch.setenv("SCRIMMAGE_FOLDERS", str(tmp_path / "folders.json"))
     monkeypatch.setenv("SCRIMMAGE_NT_CONNECT_TIMEOUT", "0.5")

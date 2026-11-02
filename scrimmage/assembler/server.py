@@ -558,7 +558,8 @@ _TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=
           ".css": "text/css; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml",
           ".png": "image/png", ".txt": "text/plain; charset=utf-8", ".map": "application/json",
           ".md": "text/markdown; charset=utf-8", ".csv": "text/csv; charset=utf-8",
-          ".log": "text/plain; charset=utf-8", ".toml": "text/plain; charset=utf-8", ".gif": "image/gif"}
+          ".log": "text/plain; charset=utf-8", ".toml": "text/plain; charset=utf-8", ".gif": "image/gif",
+          ".cur": "image/x-icon"}
 
 
 class ApiError(Exception):

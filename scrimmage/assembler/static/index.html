@@ -17,6 +17,7 @@
     <button type="button" role="tab" id="tab-btn-drive" class="tab" aria-controls="tab-drive" aria-selected="false" tabindex="-1">Drive</button>
     <button type="button" role="tab" id="tab-btn-bench" class="tab" aria-controls="tab-bench" aria-selected="false" tabindex="-1" hidden>Bench</button>
     <button type="button" role="tab" id="tab-btn-part" class="tab" aria-controls="tab-part" aria-selected="false" tabindex="-1" hidden>Part</button>
+    <button type="button" role="tab" id="tab-btn-test" class="tab" aria-controls="tab-test" aria-selected="false" tabindex="-1" hidden>Test</button>
   </nav>
   <div class="file" id="file-path" title="The file this tab edits">Loading…</div>
   <div class="topbar-actions">
@@ -362,6 +363,37 @@
   <input type="file" id="part-reimport-file" accept=".step,.stp,.stl,.obj" multiple hidden aria-label="The new export of the CAD file">
 </footer>
 <div id="part-drop" class="part-drop" hidden><p>Drop the CAD file (or its STL files) to use in place of this one</p></div>
+</div>
+
+<div id="tab-test" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-test" hidden>
+<div id="test-banner" class="banner banner-readonly" role="status" hidden></div>
+<main class="layout layout-test">
+  <section class="col col-test-edit" aria-label="The blocks and your test">
+    <div class="test-heads">
+      <h2 id="test-palette-title" class="col-title">Blocks</h2>
+      <h2 id="test-edit-title" class="col-title">Your test <span class="test-heads-hint">drag blocks in from the left</span></h2>
+    </div>
+    <div id="test-blockly" class="test-blockly"><p class="view-placeholder">Loading the blocks…</p></div>
+  </section>
+  <aside id="test-run-col" class="col col-test-run" aria-labelledby="test-run-title">
+    <h2 id="test-run-title" class="col-title">Run</h2>
+    <div class="scroll test-run-scroll">
+      <section id="test-problems-wrap" class="test-problems-wrap" aria-labelledby="test-problems-title" hidden>
+        <h3 id="test-problems-title" class="test-sub">Fix these first</h3>
+        <ul id="test-problems" class="test-problems"></ul>
+      </section>
+      <div class="row test-run-buttons">
+        <button type="button" id="test-run" class="btn btn-primary btn-big" disabled>&#9654; Run</button>
+      </div>
+      <p id="test-running" class="test-running" role="status" hidden></p>
+      <div id="test-results" class="test-results"></div>
+    </div>
+  </aside>
+</main>
+<footer class="statusbar" id="test-status">
+  <span id="test-saved" class="saved">Loading…</span>
+  <span id="test-count" class="stat"></span>
+</footer>
 </div>
 
 <dialog id="save-dialog" class="save-dialog" aria-labelledby="save-title">

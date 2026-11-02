@@ -15,3 +15,25 @@ Files, copied unmodified from the tarball's package/ directory:
 
 To update: download a release at least two weeks old, copy the same files, and update this file.
 Releases from 0.186.0 on no longer ship the .min.js builds.
+
+
+Blockly, vendored for the Test tab's block editor (loaded as a classic script that sets window.Blockly).
+
+Version: blockly 13.4.0 (npm, published 2026-10-13)
+Source:  https://registry.npmjs.org/blockly/-/blockly-13.4.0.tgz
+sha256:  9c191ff35384acdc334cfd3757aeafcf4c74e3021b3a10046346338ec7fd1f9c
+sha1:    316ae038eb6694ff4a73d685a2778f3a8b3d985d (matches the registry's dist.shasum)
+License: Apache-2.0, see blockly-LICENSE (the tarball's LICENSE)
+
+Files, copied unmodified from the tarball's package/ directory:
+  blockly.min.js            -> blockly.min.js   (the package's "umd" export: core, the English messages, the
+                                                 library blocks and the JavaScript generator in one script)
+  LICENSE                   -> blockly-LICENSE
+  media/sprites.svg, media/dropdown-arrow.svg, media/delete-icon.svg, media/foldout-icon.svg,
+  media/resize-handle.svg, media/handclosed.cur, media/handdelete.cur, media/handopen.cur, media/1x1.gif
+                            -> blockly-media/   (test.js passes media: "vendor/blockly-media/", so nothing is
+                                                 fetched from static.blockly.com; sounds are off, so the .mp3
+                                                 files are left out)
+
+To update: download a release at least two weeks old, check blockly.min.js is still the UMD build, copy the same
+files, and update this entry.

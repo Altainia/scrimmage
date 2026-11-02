@@ -139,6 +139,24 @@ def test_vendored_three_is_served_and_pinned(served):
         assert not re.search(r"https?://", f.read_text()), f"{f.name} must not load anything remote"
 
 
+def test_vendored_blockly_is_served_and_pinned(served):
+    """The Test tab loads Blockly and its media from static/vendor: nothing comes from a CDN."""
+    import re
+    c, _ = served()
+    for f, ctype in (("vendor/blockly.min.js", "text/javascript"), ("vendor/blockly-media/sprites.svg", "image/svg+xml"),
+                     ("vendor/blockly-media/handopen.cur", "image/x-icon"), ("test.js", "text/javascript"),
+                     ("blocks_defs.js", "text/javascript")):
+        with urllib.request.urlopen(urllib.request.Request(c.base + "/" + f), timeout=10) as r:
+            assert r.status == 200 and r.headers.get_content_type() == ctype, f
+    vendor = ROOT / "scrimmage/assembler/static/vendor"
+    assert "Apache License" in (vendor / "blockly-LICENSE").read_text()
+    readme = (vendor / "README").read_text()
+    version = re.search(r"blockly (\d+\.\d+\.\d+)", readme)
+    assert version and len(re.findall(r"sha256:\s+[0-9a-f]{64}", readme)) == 2
+    assert f'VERSION="{version.group(1)}"' in (vendor / "blockly.min.js").read_text()
+    assert 'media: "vendor/blockly-media/"' in (ROOT / "scrimmage/assembler/static/test.js").read_text()
+
+
 def test_state_content(served):
     c, cfg = served()
     st, s = c.get("/api/robot/state")
