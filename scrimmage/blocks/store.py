@@ -231,19 +231,48 @@ def list_runs(base) -> list[dict]:
     return out
 
 
-def load_run(base, run_id: str) -> dict:
-    """A kept run: result.json's fields plus signals (t and each signal), view and motion (the motion.bin path)."""
+def run_folder(base, run_id: str) -> Path:
+    """The folder of the kept run `run_id` ("004", "sweep-002/003"); FileNotFoundError for an id that isn't one."""
     base = Path(base)
     if not isinstance(run_id, str) or not _ID_RE.fullmatch(run_id):
         raise FileNotFoundError(f"no run {run_id!r}")
     folder = base / run_id
     if not (folder / "result.json").is_file():
         raise FileNotFoundError(f"no run {run_id!r} in {base}")
+    return folder
+
+
+def load_result(base, run_id: str) -> dict:
+    """A kept run without its replay: result.json's fields plus id and signals (t and each signal)."""
+    folder = run_folder(base, run_id)
     out = json.loads((folder / "result.json").read_text(encoding="utf-8"))
     out["id"] = run_id
     out["signals"] = _read_signals(folder / "signals.csv")
+    return out
+
+
+def load_run(base, run_id: str) -> dict:
+    """A kept run: result.json's fields plus signals (t and each signal), view and motion (the motion.bin path)."""
+    out = load_result(base, run_id)
+    folder = Path(base) / run_id
     out["view"] = json.loads((folder / "view.json").read_text(encoding="utf-8"))
     out["motion"] = folder / "motion.bin"
+    return out
+
+
+def list_sweeps(base) -> list[dict]:
+    """The kept sweeps, newest first: id ("sweep-002"), target, values, cancelled, problems and rows (table.csv's,
+    each a dict of its columns as text). A sweep whose files can't be read (being deleted) is left out."""
+    out = []
+    for _, folder in reversed(_numbered(Path(base), _SWEEP_RE)):
+        try:
+            meta = json.loads((folder / "sweep.json").read_text(encoding="utf-8"))
+            with open(folder / "table.csv", newline="", encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+        except (OSError, ValueError):
+            continue
+        out.append({"id": folder.name, "target": meta.get("target"), "values": meta.get("values"),
+                    "cancelled": bool(meta.get("cancelled")), "problems": meta.get("problems", []), "rows": rows})
     return out
 
 

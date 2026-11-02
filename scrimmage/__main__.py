@@ -648,6 +648,7 @@ def _edit(args) -> None:
     import threading
     from .assembler import scenario_validate
     from .assembler.server import App, remember_opened
+    from .blocks.program import TestFileError
     from .cad import CadError
     from .assembler.templates import new_config, new_scenario
 
@@ -701,6 +702,8 @@ def _edit(args) -> None:
             fail(f"port {args.port} is in use; choose another with --port or leave it out")
         fail(str(e))
     except CadError as e:   # an import-made part folder whose import file is gone
+        fail(str(e))
+    except TestFileError as e:   # a block test that can't be read
         fail(str(e))
     try:
         # Ctrl+C stops the server even when the parent started us with SIGINT ignored (Python then keeps it ignored).
