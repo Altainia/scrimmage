@@ -86,6 +86,7 @@ def _robot_boxes(world) -> np.ndarray:
     m = world.model
     d = mujoco.MjData(m)                # a scratch MjData at the world's pose: the world's own is left alone
     d.qpos[:] = world.data.qpos
+    d.mocap_pos[:], d.mocap_quat[:] = world.data.mocap_pos, world.data.mocap_quat
     mujoco.mj_kinematics(m, d)
     root = m.body_rootid[world.robot_body]
     rpos, rmat = d.xpos[world.robot_body], d.xmat[world.robot_body].reshape(3, 3)

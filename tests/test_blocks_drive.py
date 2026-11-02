@@ -134,3 +134,52 @@ def test_a_swerve_drive_is_no_problem_but_a_tank_drive_left_is(swerve_world, sta
     assert problems(left, swerve_world) == []
     assert [p["message"] for p in problems(left, standin_world)] == [
         "a tank drive can't drive sideways; turn, then drive forward"]
+
+
+def test_a_swerve_drive_for_seconds_counts_from_when_the_wheels_start(swerve_world):
+    """Driving left first turns the modules 90° (wheels at 0 V), so the block ends that much later than driving
+    forward, and goes about as far."""
+    block = '[[block]]\ndo = "drive"\ndirection = "{}"\nseconds = 0.5\n'
+    fwd, left = run(swerve_world, block.format("forward")), run(swerve_world, block.format("left"))
+    assert fwd.status == left.status == "finished", (fwd.outcome, left.outcome)
+    assert left.t_end - fwd.t_end > 0.03
+    assert moved(swerve_world, left)[1] == pytest.approx(moved(swerve_world, fwd)[0], rel=0.15)
+
+
+def test_wheels_that_start_before_the_modules_are_pointed_are_signed_every_step(swerve_world, monkeypatch):
+    """Past STEER_TIMEOUT the wheels start though a module is still turning; each step until it's pointed, its wheel's
+    sign follows where it rolls then (one signing as the wheels start would keep a wrong sign)."""
+    import scrimmage.blocks.run as R
+    from scrimmage.blocks.drive import Drivetrain
+    calls = []
+    signed = Drivetrain.wheel_volts
+    monkeypatch.setattr(R, "STEER_TIMEOUT", 0.0)
+    monkeypatch.setattr(Drivetrain, "steered", lambda self, data: False)      # never pointed: signed every step
+    monkeypatch.setattr(Drivetrain, "wheel_volts", lambda self, *a: calls.append(1) or signed(self, *a))
+    r = run(swerve_world, '[[block]]\ndo = "drive"\ndirection = "left"\nseconds = 0.2\n')
+    assert r.status == "finished", r.outcome
+    assert len(calls) > 20                  # 0.2 s of steps, not once
+    monkeypatch.undo()
+    calls.clear()
+    monkeypatch.setattr(Drivetrain, "wheel_volts", lambda self, *a: calls.append(1) or signed(self, *a))
+    assert run(swerve_world, '[[block]]\ndo = "drive"\ndirection = "forward"\nseconds = 0.2\n').status == "finished"
+    assert len(calls) == 1                  # pointed already: signed once
+
+
+def test_the_drivetrain_rest_pose_is_worked_out_once_per_world(tmp_path, monkeypatch):
+    import sys
+    import scrimmage.blocks.drive as D
+    w = world_of("swerve", tmp_path)
+    made = []                               # the scratch MjDatas drive.py makes
+    scratch = D.mujoco.MjData
+
+    def counted(m):
+        if sys._getframe(1).f_globals["__name__"] == D.__name__:
+            made.append(1)
+        return scratch(m)
+
+    monkeypatch.setattr(D.mujoco, "MjData", counted)
+    palette(w, [])
+    run(w, '[[block]]\ndo = "drive"\nseconds = 0.1\n')        # its problems, its palette and its drivetrain
+    assert drivetrain(w, driven_joints(w)).kind == "swerve"
+    assert len(made) == 1
