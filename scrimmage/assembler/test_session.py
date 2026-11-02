@@ -82,15 +82,18 @@ def starter_hooks(pal: dict | None) -> list[str]:
     return [b for b in pal.get("bodies") or [] if _hooky(b) and b not in counted]
 
 
-def standin_config(parts: list[tuple[str, dict]], root_body: str) -> str:
-    """The stand-in robot (templates' "standin") carrying the part folders `parts` [(path as the config writes it,
-    cad_marker)] of one CAD import where the CAD has them (edits.cad_offset): a part the robot carries on the stock
-    chassis's root body at zero offset, a part the CAD hangs on another's body on that body. Each is named after its
-    part (made unique). With a body named like a hook, the robot starts in front of the ladder range."""
-    doc = tomlkit.parse(new_config("standin"))
-    taken = {str(p["name"]) for p in doc["part"]}
-    names: dict[str, str] = {}            # part name -> instance name
-    for _, m in parts:
+def _place(doc, parts: list[tuple[str, dict]], root_body: str) -> list[str]:
+    """Add to the robot document `doc` the part folders `parts` [(path as the config writes it, cad_marker)] of one
+    CAD import that it doesn't have yet (a [[part]] with that path), where the CAD has them (edits.cad_offset): a part
+    the robot carries on the stock chassis's root body at zero offset, a part the CAD hangs on another's body on that
+    body (the other one first). Each is named after its part (made unique). Returns the names added."""
+    have = {str(p.get("path")).replace("\\", "/"): str(p["name"]) for p in doc.get("part", []) if p.get("path")}
+    taken = {str(p["name"]) for p in doc.get("part", [])}
+    names: dict = {}            # part name -> instance name
+    for path, m in parts:
+        if path in have:
+            names[m["part"]] = have[path]
+            continue
         base = re.sub(r"[^A-Za-z0-9_]", "_", m["part"] or "part") or "part"
         name, k = base, 2
         while name in taken:
@@ -98,9 +101,10 @@ def standin_config(parts: list[tuple[str, dict]], root_body: str) -> str:
         taken.add(name)
         names[m["part"]] = name
     by_part = {m["part"]: (path, m) for path, m in parts}
-    done: set[str] = set()
+    done = {m["part"] for path, m in parts if path in have}
+    added: list[str] = []
 
-    def add(part: str, trail: tuple = ()) -> None:
+    def add(part, trail: tuple = ()) -> None:
         if part in done:
             return
         path, m = by_part[part]
@@ -113,15 +117,48 @@ def standin_config(parts: list[tuple[str, dict]], root_body: str) -> str:
                 pos = cad_offset(m, body, by_part[target][1], chassis_root=False) or pos
         done.add(part)
         add_part(doc, name=names[part], path=path, attach=attach, pos=pos)
+        added.append(names[part])
 
     for _, m in parts:
         add(m["part"])
+    return added
+
+
+def standin_config(parts: list[tuple[str, dict]], root_body: str) -> str:
+    """The stand-in robot (templates' "standin") carrying the part folders `parts` [(path, cad_marker)] of one CAD
+    import where the CAD has them (see _place). With a body named like a hook, the robot starts in front of the ladder
+    range (the Test tab's Setup changes the field)."""
+    doc = tomlkit.parse(new_config("standin"))
+    _place(doc, parts, root_body)
     if any(_hooky(b) for _, m in parts for b in m["origins"]):
         rng = tomlkit.table()
         rng.update(STANDIN_RANGE)
         doc.add(tomlkit.nl())
         doc["range"] = rng
     return tomlkit.dumps(doc)
+
+
+def add_to_standin(text: str, parts: list[tuple[str, dict]], root_body: str) -> tuple[str, list[str]]:
+    """An existing stand-in's text with the import's parts it doesn't have yet added where the CAD has them, and their
+    names; nothing is removed or moved, and its field stays."""
+    doc = tomlkit.parse(text)
+    added = _place(doc, parts, root_body)
+    return tomlkit.dumps(doc), added
+
+
+def replace_text(path: Path, text: str) -> None:
+    """Write `text` over the file at `path` in one step (a temp file beside it, then replaced)."""
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile("w", dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False,
+                                         encoding="utf-8", newline="\n") as f:
+            tmp = Path(f.name)
+            f.write(text)
+        replace_file(tmp, path)
+    except BaseException:
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)
+        raise
 
 
 def write_new(path: Path, text: str) -> bool:

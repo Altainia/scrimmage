@@ -708,3 +708,16 @@ def test_test_it_puts_the_part_on_a_stand_in_and_opens_the_test_tab(part_page):
     raw = tomllib.loads((folder / "climber-standin.toml").read_text(encoding="utf-8"))
     assert {"name": "climber", "path": "parts/climber", "attach": "drive.chassis"} in raw["part"]
     assert (folder / "climber.test.toml").is_file()
+    # Setup puts the stand-in in front of the ladder: the config says so and the blocks can name its rungs
+    assert "range" not in raw
+    page.click("#test-setup summary")
+    page.wait_for_selector("#test-field")
+    page.select_option("#test-field", "ladder")
+    end = time.monotonic() + 20
+    while tomllib.loads((folder / "climber-standin.toml").read_text(encoding="utf-8")).get("range") \
+            != {"file": "ladder", "start": "below"}:
+        assert time.monotonic() < end, (folder / "climber-standin.toml").read_text(encoding="utf-8")
+        time.sleep(0.05)
+    page.wait_for_function("__scrimmageTest.state.palette.bars.includes('rung1')")
+    page.wait_for_function("document.querySelector('#test-setup summary').textContent.includes('field: ladder')")
+    assert page.input_value("#test-field") == "ladder"

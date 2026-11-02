@@ -722,6 +722,24 @@ def test_the_sweep_form_refuses_more_than_twelve_values(test_page):
     page.click("#test-sweep-dialog [data-close]")
 
 
+def test_a_sweep_is_refused_while_blocks_lie_loose_as_run_is(test_page):
+    page, _ = test_page()
+    page.evaluate("""(() => {
+      const b = __scrimmageTest.workspace.newBlock('wait');
+      b.initSvg(); b.render(); b.moveBy(400, 300);
+    })()""")
+    page.wait_for_function("document.querySelector('#test-run').disabled")
+    page.evaluate("__scrimmageTest.trySweep(__scrimmageTest.workspace.getTopBlocks(true)[0].id)")
+    page.wait_for_selector("#test-sweep-dialog[open]")
+    page.fill("#test-sweep-list", "1, 2")
+    page.click("#test-sweep-go")
+    page.wait_for_selector("#test-sweep-errors:not([hidden])")
+    assert "Fix the problems first" in page.inner_text("#test-sweep-errors")
+    assert page.evaluate("__scrimmageTest.state.running") is None
+    assert page.evaluate("__scrimmageTest.state.sweeps.length") == 0
+    page.click("#test-sweep-dialog [data-close]")
+
+
 def _robot_part(path, name):
     return next(p for p in tomllib.loads((path.parent / "robot.toml").read_text(encoding="utf-8"))["part"]
                 if p["name"] == name)
@@ -762,6 +780,15 @@ def test_setup_changes_the_stand_ins_weight_and_mounts_in_the_robot_file_and_the
     _wait_file(lambda: tomllib.loads(path.read_text(encoding="utf-8"))["test"].get("hooks") == ["arm.arm"], path)
     page.wait_for_function("__scrimmageTest.state.palette.hooks.includes('arm.arm')")
     assert "hooks: arm.arm" in page.inner_text("#test-setup summary")
+    # the hooks offered are the mechanism's: not the drivetrain's or the chassis's
+    assert page.locator("#test-setup input[data-body='dt.left_1']").count() == 0
+    assert page.locator("#test-setup input[data-body='drive.chassis']").count() == 0
+    assert page.locator("#test-setup input[data-body='arm.base']").count() == 1
+    # the Robot tab's Undo takes the last Setup edit (the arm's mount) back out of the file
+    page.click("#tab-btn-robot")
+    page.click("#undo")
+    _wait_file(lambda: "pos" not in _robot_part(path, "arm"), path)
+    assert _robot_part(path, "drive")["mass"] == 30.0
 
 
 def test_setup_try_values_sweeps_the_robots_weight(test_page):

@@ -627,7 +627,7 @@ function drawSweep() {
   if (x1 - x0 < 1e-9) { x0 -= 1; x1 += 1; }
   let [y0, y1] = [Math.min(...pts.map((p) => p[1])), Math.max(...pts.map((p) => p[1]))];
   if (y1 - y0 < 1e-6) { y0 -= 1; y1 += 1; }
-  const padR = 14, padT = 8, plotH = H - TICKS_H - padT;
+  const padR = 14, padT = 8, padB = 10, plotH = H - TICKS_H - padT - padB;   // padB: the lowest dot clears the labels
   const X = (v) => PAD_L + 6 + ((v - x0) / (x1 - x0)) * (W - PAD_L - 6 - padR);
   const Y = (v) => padT + (1 - (v - y0) / (y1 - y0)) * plotH;
   ctx.lineWidth = 1; ctx.strokeStyle = tk.grid;

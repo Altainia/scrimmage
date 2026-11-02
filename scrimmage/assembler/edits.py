@@ -209,6 +209,7 @@ def set_ids(doc, name: str, ids: dict) -> None:
 # ---- whole-robot sections: the robot code, where it starts and on which field, the battery -----------------------
 
 FIELDS = ("2026", None)     # the start picker's fields: the 2026 game field and the plain field (no [range])
+LADDERS = ("ladder", "ladder-square")   # the Test tab's Setup also puts a robot in front of a ladder (round or square)
 
 
 def _section(doc, name: str):
@@ -267,14 +268,15 @@ def _pose(v) -> list[float]:
 
 def set_start(doc, body: dict) -> None:
     """Where the robot starts and on which field, from the keys present in `body`:
-    range: "2026" (the 2026 field) or None (the plain field: no [range]); absent keeps the config's field;
+    range: "2026" (the 2026 field), "ladder" / "ladder-square" (the ladder ranges, for the Test tab's Setup) or None
+    (the plain field: no [range]); absent keeps the config's field;
     pose: [x, y, heading] writes [robot] start_pose and removes [range] start; None clears the start;
     named: a start of the field's range writes [range] start and removes [robot] start_pose; None clears it;
     floor_balls: false writes [range] floor_balls = false, true removes it (the range's default)."""
     if "range" in body:
         rng = body["range"]
-        if rng not in FIELDS:
-            raise EditError("start/range", "choose the 2026 field or the plain field")
+        if rng not in FIELDS and rng not in LADDERS:
+            raise EditError("start/range", "choose the 2026 field, a ladder or the plain field")
         if rng is None:
             if "range" in doc:
                 _remove_table(doc, "range")

@@ -305,6 +305,27 @@ def test_the_stand_in_for_parts_from_one_import_puts_them_where_the_cad_has_them
     assert "range" not in no_hooks and no_hooks["part"][0]["mass"] == 45.0
 
 
+def test_test_it_again_adds_the_imports_new_parts_to_the_stand_in_and_never_removes_one():
+    """The import now makes a second part that hangs on the first: it is added on the first's instance (whatever the
+    student renamed it), where the CAD has it; the student's own edits and parts stay."""
+    import tomllib
+
+    from scrimmage.assembler.test_session import add_to_standin, standin_config
+    base = {"import_id": "x", "part": "lift", "origins": {"frame": [0.0, 0.0, 0.0], "arm": [0.1, 0.0, 0.5]},
+            "attach": None}
+    hook = {"import_id": "x", "part": "hook", "origins": {"tip": [0.1, 0.0, 0.9]}, "attach": "lift.arm"}
+    text = standin_config([("parts/lift", base)], "chassis").replace('name = "lift"', 'name = "my_lift"')
+    text = text.replace("mass = 45.0", "mass = 30.0")
+    text += '\n[[part]]\nname = "extra"\nstock = "arm"\nattach = "drive.top"\n'
+    new, added = add_to_standin(text, [("parts/lift", base), ("parts/hook", hook)], "chassis")
+    assert added == ["hook"]
+    parts = {p["name"]: p for p in tomllib.loads(new)["part"]}
+    assert set(parts) == {"drive", "dt", "my_lift", "extra", "hook"}
+    assert parts["hook"]["attach"] == "my_lift.arm" and parts["hook"]["pos"] == [-0.1, 0.0, -0.5]
+    assert parts["drive"]["mass"] == 30.0
+    assert add_to_standin(new, [("parts/lift", base), ("parts/hook", hook)], "chassis") == (new, [])
+
+
 def test_missing_robot_and_bad_outside_edit(tmp_path, test_app):
     """A test naming a robot file that isn't there opens with a plain problem; an outside edit that breaks the file
     keeps the last good test and says why until it's fixed."""
@@ -465,8 +486,11 @@ def test_test_it_from_the_part_tab_puts_the_part_on_a_stand_in_where_the_cad_has
     c = test_app(step)
     assert c.get("/api/app/state")[1]["mode"] == "part"
     _built_part(c)
-    s, b = c.call("POST", "/api/test/new", {})
-    assert s == 200, b
+    s, b = c.call("POST", "/api/test/new", {})       # an empty body never means Test it
+    assert s == 400, b
+    assert not (tmp_path / "climber-standin.toml").exists()
+    s, b = c.call("POST", "/api/test/new", {"from_part": True})
+    assert s == 200 and b["added"] == [], b
     standin, test = tmp_path / "climber-standin.toml", tmp_path / "climber.test.toml"
     app = c.get("/api/app/state")[1]
     assert app["mode"] == "robot" and app["test"] == str(test.resolve())     # the page opens on the Test tab
@@ -489,8 +513,30 @@ def test_test_it_from_the_part_tab_puts_the_part_on_a_stand_in_where_the_cad_has
     standin.write_text(standin.read_text(encoding="utf-8").replace("mass = 45.0", "mass = 30.0"), encoding="utf-8")
     assert c.call("POST", "/api/app/open", {"path": str(step)})[0] == 200
     _built_part(c)
-    s, b = c.call("POST", "/api/test/new", {})
-    assert s == 200, b
+    s, b = c.call("POST", "/api/test/new", {"from_part": True})
+    assert s == 200 and b["added"] == [], b
     assert "mass = 30.0" in standin.read_text(encoding="utf-8")
     assert not (tmp_path / "climber-standin-2.toml").exists() and not (tmp_path / "climber-2.test.toml").exists()
     assert c.get("/api/app/state")[1]["test"] == str(test.resolve())
+
+
+def test_a_robot_edit_puts_the_stand_in_by_the_ladder_and_the_test_sees_its_bars(tmp_path, test_app):
+    """Setup's field choice is the Robot tab's start edit with a ladder (undo works); the test's palette follows."""
+    import tomllib
+    t = write_test(tmp_path)
+    c = test_app(t)
+    assert _state(c)["palette"]["bars"] == []
+    v = c.get("/api/robot/state")[1]["version"]
+    s, b = c.call("POST", "/api/robot/edit", {"version": v, "op": "start", "range": "ladder", "named": "below"})
+    assert s == 200 and b["ok"], b
+    raw = tomllib.loads((tmp_path / "robot.toml").read_text(encoding="utf-8"))
+    assert raw["range"] == {"file": "ladder", "start": "below"}
+    assert c.get("/api/robot/state")[1]["range"] == "ladder"
+    assert _state(c)["palette"]["bars"] == ["rung1", "rung2", "rung3", "rung4"]
+    s, b = c.call("POST", "/api/robot/undo", {"version": c.get("/api/robot/state")[1]["version"]})
+    assert s == 200 and b["ok"], b
+    assert "range" not in tomllib.loads((tmp_path / "robot.toml").read_text(encoding="utf-8"))
+    assert _state(c)["palette"]["bars"] == []
+    s, b = c.call("POST", "/api/robot/edit", {"version": c.get("/api/robot/state")[1]["version"], "op": "start",
+                                              "range": "somewhere"})
+    assert s == 200 and not b["ok"] and b["errors"][0]["field"] == "start/range", b

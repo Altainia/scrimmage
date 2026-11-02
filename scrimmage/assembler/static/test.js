@@ -395,8 +395,11 @@ const chassis = () => { const r = rootPart(); return r && r.stock === "chassis" 
 const mass = (c) => Number(c.params.mass ?? stockDefault("chassis", "mass", 46));
 const com = (c) => (Array.isArray(c.params.com_offset) ? c.params.com_offset : stockDefault("chassis", "com_offset", [0, 0, 0])).map(Number);
 // each part but the root and the drivetrain, which only the Robot tab moves
-const mounted = () => (t.robot ? (t.robot.parts || []).filter((p) => p.attach
-  && !(p.stock && t.stock && t.stock[p.stock] && t.stock[p.stock].group === "Drivetrain")) : []);
+const isDrivetrain = (p) => !!(p.stock && t.stock && t.stock[p.stock] && t.stock[p.stock].group === "Drivetrain");
+const mounted = () => (t.robot ? (t.robot.parts || []).filter((p) => p.attach && !isDrivetrain(p)) : []);
+// Setup's fields: the plain field and the ladders (the robot starts in front of them), plus the robot's own field
+const FIELD_CHOICES = [["", "The plain field"], ["ladder", "In front of a ladder (round rungs)"],
+  ["ladder-square", "In front of a ladder (square rungs)"]];
 const AXES = [["x", 0, "pos", "forward"], ["y", 1, "pos", "left"], ["z", 2, "pos", "up"], ["yaw", 2, "rot", "turned"]];
 const fmt = (v) => String(+Number(v).toPrecision(6));
 
@@ -455,6 +458,7 @@ function renderSetup() {
   const c = chassis();
   const sum = [`hooks: ${[...mine, ...counted].length ? [...counted, ...mine].join(", ") : "none"}`];
   if (c) sum.push(`robot ${fmt(mass(c))} kg`);
+  if (t.robot) sum.push(t.robot.range ? `field: ${t.robot.range}` : "plain field");
   $("#test-setup-sum").textContent = `· ${sum.join(" · ")}`;
   if (!open) { t.setupKey = null; return; }      // filled in when it is opened
   const ro = !t.robot || !!t.robot.read_only;
@@ -465,7 +469,16 @@ function renderSetup() {
   const focused = document.activeElement && body.contains(document.activeElement) ? document.activeElement.id : null;
   if (focused && document.activeElement.matches("input.test-num") && document.activeElement.value !== document.activeElement.dataset.orig) return;
 
-  const bodies = [...new Set([...(pal.bodies || []), ...mine])].sort();
+  // the mechanism's bodies: not the drivetrain's or the stock root part's (as the mounts); a ticked one always shows
+  const skip = new Set();
+  if (t.robot && t.robot.part_bodies) {
+    const root = rootPart();
+    for (const p of t.robot.parts || []) {
+      if (!(p.stock && ((root && p.name === root.name) || isDrivetrain(p)))) continue;
+      for (const b of t.robot.part_bodies[p.name] || []) skip.add(`${p.name}.${b}`);
+    }
+  }
+  const bodies = [...new Set([...(pal.bodies || []).filter((b) => !skip.has(b)), ...mine, ...counted])].sort();
   const hooks = h("fieldset", { class: "test-setup-hooks" },
     h("legend", { text: "Hooks" }),
     h("p", { class: "hint", text: "Tick the bodies that grab a bar. A stock climber's hooks always count." }),
@@ -478,6 +491,20 @@ function renderSetup() {
     })));
 
   const parts = [];
+  if (t.robot && !t.robot.read_only) {
+    const now = t.robot.range || "";
+    const opts = FIELD_CHOICES.some(([v]) => v === now) ? FIELD_CHOICES : [...FIELD_CHOICES, [now, `${now} (this robot's field)`]];
+    const sel = h("select", { id: "test-field", onchange: (e) => {
+      const v = e.target.value;
+      if (v === now || !FIELD_CHOICES.some(([x]) => x === v)) return;
+      robotEdit(() => (v ? { op: "start", range: v, named: "below" } : { op: "start", range: null }));
+    } }, ...opts.map(([v, text]) => h("option", { value: v, text })));
+    sel.value = now;
+    parts.push(h("fieldset", { class: "test-setup-field" },
+      h("legend", { text: "The field" }),
+      h("p", { class: "hint", text: "Where the robot starts. In front of a ladder, a climber has rungs to climb (rung1 to rung4)." }),
+      h("label", { class: "visually-hidden", for: "test-field", text: "The field" }), sel));
+  }
   if (c) {
     const [f, l, u] = com(c);
     const send = (key, v) => robotEdit(() => ({ op: "params", name: c.name, params: { [key]: v } }));
@@ -489,8 +516,8 @@ function renderSetup() {
     }));
     parts.push(h("fieldset", { class: "test-setup-robot" },
       h("legend", { text: "The robot" }),
-      h("p", { class: "hint", text: "The weight of everything on the robot that isn't one of its parts: the frame, the battery, "
-        + "the bumpers and the rest. These change the robot file; the Robot tab's Undo takes them back." }),
+      h("p", { class: "hint", text: "Weight: everything that isn't one of the robot's parts (frame, battery, bumpers). "
+        + "The Robot tab's Undo takes changes back." }),
       h("div", { class: "test-setup-grid" },
         h("label", { for: "test-mass", text: "Weight (kg)" }),
         h("div", { class: "row" }, numberBox("test-mass", mass(c), "Weight (kg)", (v) => send("mass", v)),
@@ -615,13 +642,15 @@ async function submitSweep(e) {
   const values = sweepValues($("#test-sweep-from").value, $("#test-sweep-to").value, $("#test-sweep-steps").value, $("#test-sweep-list").value);
   if (typeof values === "string") { showSweepErrors([values]); return; }
   let target = c.target;
+  await flush();      // a sweep runs the saved test, as Run does: only the test on screen, with nothing to fix
+  if (t.saveError || t.local.length || !fits()) {
+    check();
+    showSweepErrors(["Fix the problems first (they are listed over Run): the test can't run like this yet."]);
+    return;
+  }
   if (c.block) {
-    await flush();      // the sweep runs the saved test: it must be the one on screen
     const place = placeOf(t.ws).get(c.block);
-    if (!place || t.saveError || t.local.some((p) => p.blocking) || !fits()) {
-      showSweepErrors(["Fix the test first: it isn't saved the way it shows."]);
-      return;
-    }
+    if (!place) { showSweepErrors(["That block isn't in the test any more."]); return; }
     target = { block: place, key: c.target.key };
   }
   $("#test-sweep-go").disabled = true;
@@ -671,6 +700,9 @@ export async function initTest() {
   fitHeads();
   render();
   loadRobot();
+  let said = null;      // what the Part tab's Test it did before the page reloaded here
+  try { said = sessionStorage.getItem("scrimmage-test-notice"); sessionStorage.removeItem("scrimmage-test-notice"); } catch { said = null; }
+  if (said) notice(said, "info");
   if (currentTab() !== "test" && new URLSearchParams(location.hash.slice(1)).has("test")) setTab("test");
   pollLoop();
 }

@@ -575,8 +575,13 @@ function initDrop() {
 async function testIt() {
   testing = true;
   renderStatus();
-  const { status, data } = await api("POST", "/api/test/new", {});
+  const { status, data } = await api("POST", "/api/test/new", { from_part: true });
   if (status === 200 && data.ok) {
+    const added = data.added || [];
+    if (added.length) {   // said by the Test tab once the page has reloaded on it
+      const text = `Added to the stand-in robot where the CAD has ${added.length === 1 ? "it" : "them"}: ${added.join(", ")}.`;
+      try { sessionStorage.setItem("scrimmage-test-notice", text); } catch { /* the notice is lost, nothing else */ }
+    }
     location.hash = `token=${encodeURIComponent(sessionToken())}`;
     location.reload();
     return;

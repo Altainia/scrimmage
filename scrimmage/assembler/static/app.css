@@ -1078,8 +1078,14 @@ dialog.start-dialog { width: auto; max-width: 96vw; }
 .test-setup > summary { cursor: pointer; padding: 7px 12px; font-size: 13px; display: flex; gap: 6px; align-items: baseline; }
 .test-setup-title { font-weight: 700; }
 .test-setup-sum { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.test-setup-body { max-height: 42vh; overflow: auto; padding: 4px 12px 12px; display: flex; flex-direction: column; gap: 10px; }
-.test-setup fieldset { border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 10px 10px; margin: 0; background: var(--panel); }
+.test-setup-body { max-height: 30vh; overflow: auto; padding: 4px 12px 12px; display: flex; flex-wrap: wrap; gap: 10px;
+  align-items: flex-start; }
+.test-setup fieldset { border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 10px 10px; margin: 0; background: var(--panel);
+  flex: 1 1 300px; min-width: 0; }
+.test-setup .test-setup-field { flex: 0 1 260px; }
+.test-setup .btn { white-space: nowrap; }
+.test-setup-field select { max-width: 100%; }
+#test-setup-error, .test-setup-body > .hint { flex-basis: 100%; }
 .test-setup legend { font-weight: 700; font-size: 12.5px; padding: 0 4px; }
 .test-setup .hint { margin: 0 0 6px; }
 .test-hook-list { display: flex; flex-wrap: wrap; gap: 2px 14px; }
@@ -1096,6 +1102,7 @@ dialog.start-dialog { width: auto; max-width: 96vw; }
 .test-mounts tbody th { font-family: var(--mono); font-weight: 600; }
 .test-mounts .test-num { width: 5.5em; }
 #test-setup-error { margin: 0; }
+.test-setup .test-mounts { display: block; max-width: 100%; overflow-x: auto; }
 /* a sweep's table and chart, over the run */
 .test-sweep-wrap { display: flex; flex-direction: column; gap: 8px; }
 .test-sweep-wrap .test-sub { margin: 0; overflow-wrap: anywhere; }
