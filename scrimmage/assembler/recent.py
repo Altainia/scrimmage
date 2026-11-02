@@ -1,4 +1,6 @@
-"""The start page's recent list: robots, scenarios and idea sessions opened in the editor, newest first.
+"""The start page's recent list: robots, scenarios, idea sessions and parts from CAD opened in the editor, newest
+first. Each entry's kind is "robot", "scenario", "session" (a folder) or "import" (an import file, or a plugin-made
+part folder).
 
 Kept in `$SCRIMMAGE_CACHE/recent.json`, else `~/.cache/scrimmage/recent.json` (`$SCRIMMAGE_RECENT`, a file path, overrides
 both: the tests use it so they never touch the user's list). A file or folder that no longer exists is
@@ -34,7 +36,7 @@ def _read() -> list[dict]:
 
 
 def remember(path: Path, kind: str) -> None:
-    """Put `path` (a robot, scenario or session folder) at the top of the list."""
+    """Put `path` (a robot, scenario, session folder, import file or part folder) at the top of the list."""
     p = str(Path(path).resolve())
     entries = [{"path": p, "kind": kind, "t": time.time()}, *(e for e in _read() if e["path"] != p)][:MAX]
     store = _store()

@@ -1,12 +1,50 @@
 // The start page: shown when `scrimmage edit` was run with no file, from the "Start page" link in the top bar, or
 // when the open robot names a team folder this computer hasn't set (it then asks where that folder is first). It
-// lists what was opened recently, browses folders, makes a new robot, scenario or idea session, and sets this
-// computer's team folders ({cad} and {code}). After an
+// lists what was opened recently, browses folders, makes a new robot, scenario, idea session or part from CAD (Browse
+// for a .step/.stl/.obj file or a folder of them, or drop one on the page), and sets this computer's team folders
+// ({cad} and {code}). After an
 // open or new the server has already swapped what it holds, so the page reloads itself (see /api/app/* in
 // scrimmage/assembler/server.py).
 import { api, h, notice, sessionToken } from "./app.js";
 
-const KIND = { robot: "Robot", scenario: "Scenario", session: "Idea session", bench: "Idea", folder: "Folder" };
+const KIND = { robot: "Robot", scenario: "Scenario", session: "Idea session", bench: "Idea", folder: "Folder", import: "Part", cad: "CAD file" };
+export const CAD_FILE = /\.(step|stp|stl|obj)$/i;
+
+// A CAD file sent to POST /api/part/upload: {status, data} (data is the part's state on 200). With a part open it
+// replaces that part's source; with none it makes a new import and opens it.
+// Send dropped or chosen CAD files to /api/part/upload: one file (X-Filename), or several STL or OBJ files read
+// together as one source (X-Files: each one's name and size, in the order the body holds them). `again` is Import
+// again on a copied source: the settings are kept as for an ordinary re-import.
+export async function uploadCad(files, { again = false } = {}) {
+  const list = [...(files.length === undefined ? [files] : files)];
+  const headers = { "X-Scrimmage-Token": sessionToken(), "Content-Type": "application/octet-stream" };
+  if (list.length === 1) headers["X-Filename"] = encodeURIComponent(list[0].name);
+  else headers["X-Files"] = encodeURIComponent(JSON.stringify(list.map((f) => ({ name: f.name, size: f.size }))));
+  if (again) headers["X-Import-Again"] = "1";
+  try {
+    const res = await fetch("/api/part/upload", { method: "POST", body: list.length === 1 ? list[0] : new Blob(list), headers });
+    let data;
+    try { data = await res.json(); } catch { data = {}; }
+    return { status: res.status, data: data && typeof data === "object" ? data : {} };
+  } catch {
+    return { status: 0, data: { error: "can't reach the editor (is scrimmage edit still running?)" } };
+  }
+}
+
+// What is wrong with dropping or choosing these files together, in one sentence, or null. Several files are STL or
+// OBJ files, read as one part (like a folder of them); a STEP file goes on its own.
+export function cadFilesProblem(files) {
+  const list = [...files];
+  if (!list.length) return "No file came with that: drop or choose a .step, .stp, .stl or .obj file.";
+  const bad = list.find((f) => !CAD_FILE.test(f.name));
+  if (bad) return `${bad.name} isn't a CAD file: use a .step, .stp, .stl or .obj file.`;
+  if (list.length === 1) return null;
+  const steps = list.filter((f) => /\.(step|stp)$/i.test(f.name)).length;
+  if (steps === list.length) return "Use one STEP file at a time: a STEP file already holds the whole assembly.";
+  if (steps) return "Use a STEP file on its own, or only STL and OBJ files, not both at once.";
+  return null;
+}
+export const filesName = (files) => (files.length === 1 ? files[0].name : `${files.length} files`);
 const slash = (p) => p.replace(/\/+$/, "").lastIndexOf("/");
 const base = (p) => p.slice(slash(p) + 1);
 const dirOf = (p) => (slash(p) > 0 ? p.slice(0, slash(p)) : "/");
@@ -27,17 +65,18 @@ async function post(path, body) {
 const open = (path) => post("/api/app/open", { path });
 
 // A folder's listing from /api/app/browse in `box`: folders (a click goes in), then its .toml files when `onFile`
-// is given (a click calls it with the entry {name, path, kind}). `folderButton` {key, label, title, onclick} adds a
-// button beside each folder (data-<key> is the folder's name). Also used by the Bench tab's CAD part picker.
+// is given (a click calls it with the entry {name, path, kind}; `kinds` lists the kinds shown, default all).
+// `folderButton` {key, label, title, onclick} adds a button beside each folder (data-<key> is the folder's name).
+// Also used by the Bench tab's CAD part picker.
 export async function browseList(box, dir, opts = {}) {
-  const { onFile = null, folderButton = null, noticeId = "start" } = opts;
+  const { onFile = null, folderButton = null, noticeId = "start", kinds = null } = opts;
   const { status: st, data } = await api("GET", "/api/app/browse" + (dir ? `?dir=${encodeURIComponent(dir)}` : ""));
   if (st !== 200) { notice((data.errors && data.errors[0].message) || "Can't list that folder.", "error", noticeId); return null; }
   const list = h("ul", { class: "start-list" });
   if (data.parent) {
     list.append(h("li", {}, h("button", { type: "button", class: "start-item", dataset: { entry: ".." }, onclick: () => browseList(box, data.parent, opts) }, "↑ Up one folder")));
   }
-  const shown = data.entries.filter((e) => e.kind === "folder" || onFile);
+  const shown = data.entries.filter((e) => e.kind === "folder" || (onFile && (!kinds || kinds.includes(e.kind))));
   for (const e of shown) {
     const folder = e.kind === "folder";
     list.append(h("li", {},
@@ -46,12 +85,14 @@ export async function browseList(box, dir, opts = {}) {
         h("span", { class: "start-kind", text: folder ? "Folder" : KIND[e.kind] || e.kind }), h("strong", { text: e.name })),
       folder && folderButton ? h("button", { type: "button", class: "btn btn-small", dataset: { [folderButton.key]: e.name }, title: folderButton.title, onclick: () => folderButton.onclick(e) }, folderButton.label) : null));
   }
-  if (!shown.length) list.append(h("li", { class: "start-hint", text: onFile ? "No folders or .toml files here." : "No folders here." }));
+  if (!shown.length) list.append(h("li", { class: "start-hint", text: !onFile ? "No folders here." : kinds && kinds.includes("cad") ? "No folders or CAD files here." : "No folders or .toml files here." }));
   box.replaceChildren(h("p", { class: "start-hint", text: data.dir }), list);
   return data;
 }
 
-export async function showStart(root, { canGoBack, onBack }) {
+// cadFor: a robot config's path (the Robot tab's "Import CAD…"): "New part from CAD" opens at once, and the part goes in
+// parts/ next to that robot config.
+export async function showStart(root, { canGoBack, onBack, cadFor = null }) {
   root.replaceChildren(h("p", { class: "start-hint", text: "Loading…" }));   // not the last visit's answers
   const { status, data: app } = await api("GET", "/api/app/state");
   if (status !== 200) { notice("Couldn't load the start page.", "error"); return; }
@@ -78,6 +119,45 @@ export async function showStart(root, { canGoBack, onBack }) {
     if (st === 200) for (const e of data.entries) if (e.kind === "robot") out.set(e.path, e.name);
     for (const r of app.recent) if (r.kind === "robot" && !out.has(r.path)) out.set(r.path, `${base(r.path)}  (in ${dirOf(r.path)})`);
     return out;
+  }
+
+  // New part from CAD: Browse (the file is used where it is) or drop a file (it is copied in next to the import)
+  function cadForm(robot = null) {
+    const list = h("div", { id: "start-cad-browse", class: "start-folder-browse" });
+    const pick = (path) => post("/api/app/new", { kind: "import", path, ...(robot ? { robot } : {}) });
+    const send = async (fileList) => {
+      const files = [...(fileList || [])];
+      const problem = cadFilesProblem(files);
+      if (problem) { notice(problem, "error", "start"); return; }
+      drop.classList.add("busy");
+      drop.querySelector("p").textContent = `Reading ${filesName(files)}…`;
+      const { status, data } = await uploadCad(files);
+      if (status === 200) { reload(); return; }
+      drop.classList.remove("busy");
+      drop.querySelector("p").textContent = dropText;
+      const why = (data.errors && data.errors[0] && data.errors[0].message) || data.error || `the server answered ${status}`;
+      notice(status === 409 ? `Can't switch right now: ${why}` : `Couldn't read ${filesName(files)}: ${why}`, "error", "start");
+    };
+    const dropText = "Drop a .step file here, or several .stl or .obj files";
+    const chooser = h("input", { type: "file", id: "start-cad-file", accept: ".step,.stp,.stl,.obj", multiple: true, hidden: true, "aria-label": "CAD files",
+      onchange: (e) => send(e.target.files) });
+    const drop = h("div", { id: "start-drop", class: "start-drop" },
+      h("p", { text: dropText }),
+      h("button", { type: "button", class: "btn btn-small", onclick: () => chooser.click() }, "Choose a file…"), chooser);
+    drop.addEventListener("dragover", (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; drop.classList.add("drop-here"); });
+    drop.addEventListener("dragleave", () => drop.classList.remove("drop-here"));
+    drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("drop-here"); send(e.dataTransfer.files); });
+    newBox.replaceChildren(h("div", { class: "start-form start-cad" },
+      h("p", { class: "start-hint", text: "Export your robot mechanism from your CAD program as a STEP file (or STL files), then pick it here. "
+        + "Scrimmage reads it, guesses what is what, and shows you what is left to check." }),
+      robot ? h("p", { class: "start-hint", id: "start-cad-for", text: `The parts go in the parts folder next to ${base(robot)}. `
+        + "When you're done, click \"Back to the robot\"." }) : null,
+      drop,
+      h("div", { class: "start-buttons" },
+        h("button", { type: "button", class: "btn", id: "start-cad-browse-btn", onclick: () => browseList(list, null, { onFile: (e) => (e.kind === "import" ? open(e.path) : pick(e.path)), kinds: ["cad", "import"],
+          folderButton: { key: "stl", label: "Use its STL files", title: "Make one part from the STL or OBJ files in this folder", onclick: (e) => pick(e.path) } }) }, "Browse…"),
+        h("button", { type: "button", class: "btn", onclick: () => newBox.replaceChildren() }, "Cancel")),
+      list));
   }
 
   async function newForm(kind) {
@@ -130,12 +210,17 @@ export async function showStart(root, { canGoBack, onBack }) {
       h("div", { class: "start-buttons" },
         h("button", { type: "button", class: "btn", dataset: { key: "new-robot" }, onclick: () => newForm("robot") }, "New robot"),
         h("button", { type: "button", class: "btn", dataset: { key: "new-scenario" }, onclick: () => newForm("scenario") }, "New scenario"),
-        h("button", { type: "button", class: "btn", dataset: { key: "new-session" }, onclick: () => newForm("session") }, "New idea session")),
+        h("button", { type: "button", class: "btn", dataset: { key: "new-session" }, onclick: () => newForm("session") }, "New idea session"),
+        h("button", { type: "button", class: "btn", dataset: { key: "new-part" }, onclick: () => cadForm(cadFor) }, "New part from CAD")),
       newBox),
     h("section", { class: "start-card" }, h("h2", { text: "Open a file or folder" }),
       h("div", { class: "start-buttons" }, h("button", { type: "button", class: "btn", dataset: { key: "browse" }, onclick: () => browse(null) }, "Browse…")),
       browseBox),
     folders.card));
+  if (cadFor) {
+    cadForm(cadFor);
+    newBox.scrollIntoView({ block: "nearest" });
+  }
 }
 
 // -- team folders ---------------------------------------------------------------------------------------------------

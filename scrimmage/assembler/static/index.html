@@ -16,9 +16,11 @@
     <button type="button" role="tab" id="tab-btn-scenario" class="tab" aria-controls="tab-scenario" aria-selected="false" tabindex="-1" hidden>Scenario</button>
     <button type="button" role="tab" id="tab-btn-drive" class="tab" aria-controls="tab-drive" aria-selected="false" tabindex="-1">Drive</button>
     <button type="button" role="tab" id="tab-btn-bench" class="tab" aria-controls="tab-bench" aria-selected="false" tabindex="-1" hidden>Bench</button>
+    <button type="button" role="tab" id="tab-btn-part" class="tab" aria-controls="tab-part" aria-selected="false" tabindex="-1" hidden>Part</button>
   </nav>
   <div class="file" id="file-path" title="The file this tab edits">Loading…</div>
   <div class="topbar-actions">
+    <button type="button" id="back-robot" class="btn" hidden>Back to the robot</button>
     <button type="button" id="start-link" class="btn" title="Open or create something else" hidden>Start page</button>
     <button type="button" id="undo" class="btn" title="Undo (Ctrl+Z)" disabled>Undo</button>
     <button type="button" id="redo" class="btn" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
@@ -183,6 +185,7 @@
 <footer class="statusbar" id="statusbar">
   <span id="saved" class="saved">Connecting…</span>
   <span id="mass" class="stat"></span>
+  <span id="cg" class="stat"></span>
   <span id="counts" class="stat"></span>
   <span id="problems" class="stat"></span>
 </footer>
@@ -325,6 +328,42 @@
 </footer>
 </div>
 
+<div id="tab-part" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-part" hidden>
+<div id="part-readonly" class="banner banner-readonly" role="status" hidden></div>
+<main class="layout layout-part">
+  <aside class="col col-part-left">
+    <section class="part-tree-wrap" aria-labelledby="part-tree-title">
+      <h2 id="part-tree-title" class="col-title">Bodies (pieces that move together)</h2>
+      <div class="row part-tree-tools" role="group" aria-label="Act on the selected pieces">
+        <button type="button" id="part-new-body" class="btn btn-small" disabled>New body from selection</button>
+        <button type="button" id="part-leave-out" class="btn btn-small" disabled>Leave out</button>
+      </div>
+      <div id="part-tree" class="scroll"></div>
+    </section>
+    <section class="part-check-wrap" aria-labelledby="part-check-title">
+      <h2 id="part-check-title" class="col-title">Still needed</h2>
+      <ul id="part-checklist" class="scroll part-checklist"></ul>
+    </section>
+  </aside>
+  <section class="col col-view" aria-label="3D view of the part">
+    <div id="part-frame-step" class="part-frame-step" role="region" aria-label="Where's the robot?" hidden></div>
+    <div id="part-view"><p class="view-placeholder">3D view</p></div>
+  </section>
+  <aside class="col col-part-right" aria-labelledby="part-insp-title">
+    <h2 id="part-insp-title" class="col-title">Inspector</h2>
+    <div id="part-inspector" class="scroll"></div>
+  </aside>
+</main>
+<footer class="statusbar" id="part-status">
+  <span id="part-saved" class="saved">Loading…</span>
+  <span id="part-build" class="stat" role="status"></span>
+  <span id="part-total" class="stat"></span>
+  <button type="button" id="part-reimport" class="btn btn-small part-reimport" title="Read the CAD file again (after you changed it in your CAD program)">Import again</button>
+  <input type="file" id="part-reimport-file" accept=".step,.stp,.stl,.obj" multiple hidden aria-label="The new export of the CAD file">
+</footer>
+<div id="part-drop" class="part-drop" hidden><p>Drop the CAD file (or its STL files) to use in place of this one</p></div>
+</div>
+
 <dialog id="save-dialog" class="save-dialog" aria-labelledby="save-title">
   <form id="save-form" method="dialog" novalidate>
     <h2 id="save-title">Save as scenario</h2>
@@ -373,6 +412,7 @@
         <select id="add-attach" name="attach"></select>
         <button type="button" id="add-pick" class="btn">Pick in 3D</button>
       </div>
+      <p id="add-cad-hint" class="hint" hidden>Made from a CAD file: on the chassis, or on a body of another part from the same CAD file, it goes where the CAD has it.</p>
       <p class="error" data-err="attach" hidden></p>
     </div>
     <ul id="add-errors" class="error-list" hidden></ul>

@@ -126,7 +126,11 @@ def make_page(browser, tmp_path):
         page = ctx.new_page()
         page.set_default_timeout(20000)
         page.on("pageerror", lambda e: logs.append(f"pageerror: {e}"))
-        page.on("console", lambda m: logs.append(f"console.{m.type}: {m.text} ({m.location.get('url') or '?'})") if m.type == "error" else None)
+        # switching between a robot and a part (Import CAD..., "Back to the robot") makes the old one's polls answer
+        # 404 ("no robot is open", "no part is open") just before the page reloads
+        page.on("console", lambda m: logs.append(f"console.{m.type}: {m.text} ({m.location.get('url') or '?'})")
+                if m.type == "error" and not ("404" in m.text and re.search(
+                    r"/api/(part/state|robot/(state|view))", m.location.get("url") or "")) else None)
         page.goto(srv.url)
         page.wait_for_function("window.__scrimmage && __scrimmage.state && __scrimmage.scene && __scrimmage.scene.meshes > 0")
         return page, cfg
@@ -280,6 +284,129 @@ def test_placeholder_contrast_meets_wcag_aa(make_page):
     for scheme in ("light", "dark"):
         page.emulate_media(color_scheme=scheme)
         assert page.evaluate(f"({CONTRAST_JS}).check(document.querySelector('#probe'))") == [], scheme
+
+
+def test_cg_text_and_marker(make_page):
+    """The status bar says where the robot's CG is; the 3D view's CG button draws an orange marker there (and the text
+    meets WCAG AA in both themes)."""
+    page, _ = make_page("kitbot.toml")
+    page.wait_for_function("document.querySelector('#cg').textContent.startsWith('CG: ')")
+    com = page.evaluate("__scrimmage.state.com")
+    assert re.fullmatch(r"CG: \d+\.\d\d m up, \d+\.\d\d m (forward|back)", page.inner_text("#cg"))
+    assert page.inner_text("#cg").startswith(f"CG: {com['height']:.2f} m up, ")
+    # left/right shows from 0.01 m; each side comes from the rounded value (never "0.00 m back")
+    texts = page.evaluate("""async () => { const { cgText } = await import('./app.js');
+      return [[0.31, 0.02, 0.03], [0.31, -0.004, -0.004], [0.2, -0.005, -0.012], [0.2, 0.004, 0.006]]
+        .map(([height, forward, left]) => cgText({ height, forward, left })); }""")
+    assert texts == ["CG: 0.31 m up, 0.02 m forward, 0.03 m left", "CG: 0.31 m up, 0.00 m forward",
+                     "CG: 0.20 m up, 0.01 m back, 0.01 m right", "CG: 0.20 m up, 0.00 m forward, 0.01 m left"]
+    assert page.evaluate("__scrimmage.scene.cg") is False and page.get_attribute("#view-cg", "aria-pressed") == "false"
+    page.click("#view-cg")
+    page.wait_for_function("__scrimmage.scene.cg === true")
+    assert page.get_attribute("#view-cg", "aria-pressed") == "true"
+    for scheme in ("light", "dark"):
+        page.emulate_media(color_scheme=scheme)
+        assert page.evaluate(f"({CONTRAST_JS}).check(document.querySelector('#statusbar'))") == [], scheme
+    page.click("#view-cg")
+    page.wait_for_function("__scrimmage.scene.cg === false")
+
+
+def test_import_cad_from_the_library_places_it_by_cad(make_page, tmp_path, monkeypatch):
+    """Import CAD... opens "New part from CAD" for this robot; Back to the robot opens it again, and the new part folder
+    added from the library goes on the chassis where the CAD has it (Reset to CAD puts it back after a nudge)."""
+    monkeypatch.setenv("SCRIMMAGE_CACHE", str(tmp_path / "cache"))
+    shutil.copy(REPO / "tests" / "data" / "cad" / "climber.step", tmp_path / "climber.step")
+    page, cfg = make_page("kitbot.toml")
+    page.click("#lib-import-cad")
+    page.wait_for_selector("#start-cad-for")
+    page.click("#start-cad-browse-btn")
+    page.click('#start-cad-browse [data-entry="climber.step"]')
+    page.wait_for_function("window.__scrimmagePart && __scrimmagePart.store.state"
+                           " && __scrimmagePart.store.state.build.state === 'idle' && __scrimmagePart.store.state.parts.length")
+    assert (tmp_path / "parts" / "climber" / "import-origin.toml").is_file()
+    page.click("#back-robot")
+    page.wait_for_function("window.__scrimmage && __scrimmage.mode === 'robot' && __scrimmage.state && __scrimmage.scene"
+                           " && __scrimmage.scene.meshes > 0")
+    page.click('button[aria-label="Add climber (folder)"]')
+    page.wait_for_selector("#add-dialog[open]")
+    assert page.input_value("#add-attach") == "drive.chassis"
+    assert page.is_visible("#add-cad-hint")
+    v = page.evaluate("__scrimmage.state.version")
+    page.click("#add-ok")
+    page.wait_for_function(f"__scrimmage.state.version > {v} && __scrimmage.state.parts.some(p => p.name === 'climber')")
+    page.wait_for_selector("#insp-cad")
+    assert page.inner_text("#insp-cad") == "Placed where the CAD has it"
+    assert page.is_disabled("#insp-cad-reset")
+    assert 'attach = "drive.chassis"' in cfg.read_text()
+    page.click('#inspector [aria-label="Increase z by 10 mm"]')     # one click, one edit: no typing to lose
+    page.wait_for_function("document.querySelector('#insp-cad').textContent === 'Moved from where the CAD has it'")
+    page.click("#insp-cad-reset")
+    page.wait_for_function("document.querySelector('#insp-cad').textContent === 'Placed where the CAD has it'")
+    assert page.evaluate("__scrimmage.state.parts.find(p => p.name === 'climber').pos") == [0, 0, 0]
+
+
+def _split_climber(folder: Path) -> None:
+    """parts/ in `folder`: the climber split as a student would in the Part tab: part `base` (the base plate, arm_B on
+    a hinge; its folder stays parts/climber) and part `right_arm` (the hook welded to arm_B, then made its own part)."""
+    from scrimmage.cad.build import build_parts, write_parts
+    from scrimmage.cad.edits import apply_edit
+    from scrimmage.cad.settings import new_import, write_import
+    from scrimmage.cad.source import load_source
+    step = folder / "climber.step"
+    shutil.copy(REPO / "tests" / "data" / "cad" / "climber.step", step)
+    src = load_source(step)
+    imp = new_import(src, "climber", step, folder / "parts")
+    for op, args in (("set_part", {"body": "base_plate", "part": "base"}),
+                     ("set_joint", {"body": "arm_B", "parent": "base_plate",
+                                    "joint": {"kind": "hinge", "anchor": [0.24, 0.1, 0.01], "axis": [0, 1, 0]}}),
+                     ("set_joint", {"body": "hook_assy_2", "parent": "arm_B", "joint": None}),
+                     ("set_part", {"body": "hook_assy_2", "part": "right_arm"})):
+        imp = apply_edit(imp, op, args)[0]
+    path = folder / "parts" / "climber.import.toml"
+    write_parts(build_parts(imp, src), imp, path)
+    write_import(imp, path)
+
+
+def test_second_part_from_an_import_hangs_where_the_cad_has_it(make_page, tmp_path):
+    """Adding base, then right_arm: the dialog preselects drive.chassis, then base.arm_B (what the CAD hangs the hook
+    on), and every body lands at its CAD position. Fixed to the chassis instead, the panel says so plainly."""
+    import tomllib
+    import mujoco
+    import numpy as np
+    from scrimmage.parts.assemble import assemble
+    _split_climber(tmp_path)
+    page, cfg = make_page("kitbot.toml")
+    for name, target in (("base", "drive.chassis"), ("right_arm", "base.arm_B")):
+        page.click(f'button[aria-label="Add {name} (folder)"]')
+        page.wait_for_selector("#add-dialog[open]")
+        assert page.input_value("#add-attach") == target
+        v = page.evaluate("__scrimmage.state.version")
+        page.click("#add-ok")
+        page.wait_for_function(f"__scrimmage.state.version > {v} && __scrimmage.state.parts.some(p => p.name === {name!r})")
+        page.wait_for_selector("#insp-cad")
+        assert page.inner_text("#insp-cad") == "Placed where the CAD has it"
+        assert page.locator("#insp-cad-hangs").count() == 0
+
+    # each body, in the world, is at its CAD origin (the robot frame on the chassis)
+    w = assemble(tomllib.loads(cfg.read_text()), cfg.parent)
+    m, d = w.model, mujoco.MjData(w.model)
+    mujoco.mj_kinematics(m, d)
+    bid = lambda n: mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, n)
+    origin, rot = d.xpos[bid("drive.chassis")], d.xmat[bid("drive.chassis")].reshape(3, 3)
+    for inst, folder in (("base", "climber"), ("right_arm", "right_arm")):
+        origins = tomllib.loads((tmp_path / "parts" / folder / "import-origin.toml").read_text())["origins"]
+        for body, o in origins.items():
+            assert np.allclose(d.xpos[bid(f"{inst}.{body}")], origin + rot @ np.array(o), atol=1e-6), (inst, body)
+    assert set(origins) == {"hook_assy_2"} and "arm_B" in tomllib.loads(
+        (tmp_path / "parts" / "climber" / "import-origin.toml").read_text())["origins"]
+
+    # fixed to the chassis, the hook is in place but won't ride the arm: the panel says where the CAD hangs it
+    v = page.evaluate("__scrimmage.state.version")
+    page.select_option("#insp-attach", "drive.chassis")
+    page.wait_for_function(f"__scrimmage.state.version > {v}")
+    page.click("#insp-cad-reset")
+    page.wait_for_function("document.querySelector('#insp-cad').textContent === 'Placed where the CAD has it'")
+    assert page.inner_text("#insp-cad-hangs") == "In the CAD this hangs on base.arm_B; it's fixed to the chassis here."
 
 
 def test_pick_mode_cancels_when_config_goes_read_only(make_page):
@@ -590,6 +717,26 @@ def _screen_bench_editor(page, tmp_path):
     page.wait_for_function("__scrimmageBench.editor && __scrimmageBench.editor.instances.length > 0")
 
 
+def _screen_part(page, tmp_path):
+    page.wait_for_function("window.__scrimmagePart && __scrimmagePart.store.state && __scrimmagePart.scene"
+                           " && __scrimmagePart.scene.drawn.length > 0")
+    page.click('#part-tree [data-hardware="base_plate"]')
+    page.click('#part-tree [data-piece="Climber/arm_A"]')
+    page.wait_for_selector("#part-material")
+    # a hinge on hook_assy: the frame step, the pick hint, the joint and slot controls and the collision suggestion
+    page.wait_for_selector("#part-frame-step")
+    page.click('#part-tree [data-body="hook_assy"]')
+    page.select_option("#part-joint-kind", "hinge")
+    page.wait_for_selector("#part-pick-hint")
+    page.wait_for_selector("#part-joint-draft")
+    page.click("#part-snap-x")
+    page.wait_for_selector("#part-try-hook_assy")
+    page.click("#part-pick-axis")
+    page.wait_for_selector("#part-pick-hint")
+    page.click("#part-joint-more summary")
+    page.wait_for_selector("#part-collision-suggest")
+
+
 def _robot_with_program(folder: Path, mismatch: bool = False) -> Path:
     import json as _json
     from scrimmage.assembler import templates
@@ -621,6 +768,9 @@ def _open_for(screen: str, tmp_path: Path) -> Path | None:
         return scn
     if screen == "drive":
         return _robot_with_program(tmp_path, mismatch=True)
+    if screen == "part":
+        shutil.copy(REPO / "tests" / "data" / "cad" / "climber.step", tmp_path / "climber.step")
+        return tmp_path / "climber.step"
     # the bench: a session folder whose idea has a run on the stage
     import time as _time
     from scrimmage.bench import session
@@ -637,14 +787,15 @@ def _open_for(screen: str, tmp_path: Path) -> Path | None:
 
 
 SCREENS = {"start": _screen_start, "robot": _screen_robot, "scenario": _screen_scenario, "drive": _screen_drive,
-           "bench_stage": _screen_bench_stage, "bench_editor": _screen_bench_editor}
+           "bench_stage": _screen_bench_stage, "bench_editor": _screen_bench_editor, "part": _screen_part}
 
 
 @pytest.mark.parametrize("scheme", ["light", "dark"])
 @pytest.mark.parametrize("screen", list(SCREENS))
 def test_every_screen_meets_wcag_aa(browser, tmp_path, monkeypatch, screen, scheme):
     """Every piece of text on each screen (the start page, the Robot tab's 3D view, the Scenario tab with a run's
-    report, the Drive tab running with its device line, the Bench stage with a result and the Bench editor) has WCAG AA
+    report, the Drive tab running with its device line, the Bench stage with a result, the Bench editor and the Part tab
+    with a piece selected) has WCAG AA
     contrast, in the light and the dark theme."""
     monkeypatch.setenv("SCRIMMAGE_FOLDERS", str(tmp_path / "folders.json"))
     monkeypatch.setenv("SCRIMMAGE_NT_CONNECT_TIMEOUT", "0.5")
@@ -666,3 +817,43 @@ def test_every_screen_meets_wcag_aa(browser, tmp_path, monkeypatch, screen, sche
     finally:
         ctx.close()
         srv.stop()
+
+
+def test_a_redraw_while_typing_neither_commits_early_nor_loses_the_text(make_page):
+    """Half-typed text in an inspector box survives a redraw (a state arriving) without being committed, and the
+    student's Enter then commits the whole value exactly once."""
+    page, _ = make_page("kitbot.toml")
+    posts = []
+    page.on("request", lambda r: posts.append(r.post_data_json) if r.url.endswith("/api/robot/edit") and r.method == "POST" else None)
+    page.evaluate("__scrimmage.select('dt')")
+    page.wait_for_selector("#insp-pos-0")
+    page.click("#insp-pos-0", click_count=3)
+    page.keyboard.type("0.1")
+    page.evaluate("__scrimmage.render()")
+    page.wait_for_timeout(300)
+    assert posts == [] and page.input_value("#insp-pos-0") == "0.1"
+    assert page.evaluate("document.activeElement.id") == "insp-pos-0"
+    page.keyboard.type("5")
+    page.evaluate("__scrimmage.render()")          # again between the last key and Enter
+    page.keyboard.press("Enter")
+    page.wait_for_function("__scrimmage.state.parts.find(p => p.name === 'dt').pos[0] === 0.15")
+    page.wait_for_timeout(300)
+    assert [(p["op"], p["pos"][0]) for p in posts] == [("attach", 0.15)]
+
+
+def test_a_redraw_after_a_trailing_point_keeps_the_decimal(make_page):
+    """"1." then a redraw then "5" commits 1.5, not 15: the boxes are text boxes, so the redraw keeps "1." as typed."""
+    page, _ = make_page("kitbot.toml")
+    posts = []
+    page.on("request", lambda r: posts.append(r.post_data_json) if r.url.endswith("/api/robot/edit") and r.method == "POST" else None)
+    page.evaluate("__scrimmage.select('dt')")
+    page.wait_for_selector("#insp-pos-0")
+    page.click("#insp-pos-0", click_count=3)
+    page.keyboard.type("1.")
+    page.evaluate("__scrimmage.render()")
+    assert page.input_value("#insp-pos-0") == "1."
+    page.keyboard.type("5")
+    page.keyboard.press("Enter")
+    page.wait_for_function("__scrimmage.state.parts.find(p => p.name === 'dt').pos[0] === 1.5")
+    page.wait_for_timeout(300)
+    assert [(p["op"], p["pos"][0]) for p in posts] == [("attach", 1.5)]

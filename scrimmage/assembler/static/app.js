@@ -8,7 +8,7 @@
 //   scrimmage:pick-mount   detail {active}    the Add dialog wants a mount clicked in 3D (active false = stop)
 //   scrimmage:mount-picked detail {name}      the 3D view reports a clicked mount "<instance>.<mount>"
 //   scrimmage:hover        detail {name, source}  an instance is hovered in the tree or the 3D view (null = none)
-//   scrimmage:tab          detail {tab}       the shown tab changed ("robot" | "scenario" | "drive" | "bench")
+//   scrimmage:tab          detail {tab}       the shown tab changed ("robot" | "scenario" | "drive" | "bench" | "part")
 //   scrimmage:code         detail {state}     the robot code panel loaded /api/robot/code (code.js)
 // The 3D view (view3d.js, loaded on its own so a WebGL failure can't break the page) selects a part with
 // select(name) and sets store.view3d once it is running.
@@ -85,7 +85,7 @@ export async function apiFile(path) {
 // -- tabs ----------------------------------------------------------------------------------------
 // The Robot tab is this file's; the Scenario tab (scenario.js) registers itself with registerTab when a
 // scenario is open, the Drive tab (drive.js) always: {renderTop(), undo(), redo(), onShow(), onHide()?}.
-const TABS = ["robot", "scenario", "drive", "bench"];
+const TABS = ["robot", "scenario", "drive", "bench", "part"];
 const tabHooks = {};
 let tab = "robot";
 
@@ -383,6 +383,8 @@ function renderStatus() {
   const s = store.state;
   renderSaved();
   $("#mass").textContent = s.mass_kg == null ? "Mass: —" : `Mass: ${s.mass_kg.toFixed(1)} kg`;
+  $("#cg").textContent = cgText(s.com);
+  $("#cg").title = s.com ? "The robot's center of gravity at its start pose, from the floor at the frame's center" : "";
   $("#counts").textContent = s.bodies == null ? "" : `${s.bodies} bodies · ${s.joints} joints`;
   const ne = s.errors.length + store.lastErrors.length, nw = s.warnings.length;
   const parts = [];
@@ -392,6 +394,17 @@ function renderStatus() {
   $("#problems").className = `stat ${ne ? "stat-bad" : nw ? "stat-warn" : "stat-ok"}`;
 }
 export { renderErrors, renderStatus };
+
+// "CG: 0.31 m up, 0.02 m forward" (meters, two decimals) from the state's com, with ", 0.03 m left" (or right) when
+// that rounds to 0.01 m or more; "" without one. Each side comes from the rounded value: never "0.00 m back".
+export function cgText(com) {
+  if (!com) return "";
+  const r = (v) => Number(v.toFixed(2)) || 0;     // || 0: -0 reads as 0
+  const m = (v) => Math.abs(r(v)).toFixed(2);
+  const side = r(com.left);
+  return `CG: ${m(com.height)} m up, ${m(com.forward)} m ${r(com.forward) < 0 ? "back" : "forward"}`
+    + (side ? `, ${m(com.left)} m ${side < 0 ? "right" : "left"}` : "");
+}
 
 // -- helpers shared by the library and inspector ------------------------------------------------
 export function stockMeta(name) {
@@ -488,11 +501,14 @@ function onKey(e) {
 }
 
 // -- start page and modes ------------------------------------------------------------------------
-// The server holds one thing at a time: "robot" (today's tabs), "bench" (an idea session) or "start" (nothing; only
-// the start page). The "Start page" link shows the start page client-side; the server's mode only changes when
+// The server holds one thing at a time: "robot" (today's tabs), "bench" (an idea session), "part" (a CAD import or a
+// plugin part folder: the Part tab) or "start" (nothing; only the start page). The "Start page" link shows the start page client-side; the server's mode only changes when
 // something is opened or made there (the page then reloads).
 let startShown = false;
-async function showStartPage(canGoBack) {
+// The start page from the Robot tab's "Import CAD…": straight to "New part from CAD", the part going in parts/ next to
+// the robot config `cadFor`.
+export function importCad(cadFor) { return showStartPage(true, { cadFor }); }
+async function showStartPage(canGoBack, { cadFor = null } = {}) {
   startShown = true;
   document.body.classList.add("on-start");
   $("#start-page").replaceChildren();   // not the last visit's answers (the team folders may have changed since)
@@ -501,7 +517,7 @@ async function showStartPage(canGoBack) {
   $("#file-path").replaceChildren(h("strong", { text: "Start" }));
   try {
     const m = await import("./start.js");
-    await m.showStart($("#start-page"), { canGoBack, onBack: hideStartPage });
+    await m.showStart($("#start-page"), { canGoBack, onBack: hideStartPage, cadFor });
   } catch (e) {
     console.error(e);
     notice(`The start page failed to load: ${e.message || e}`, "error");
@@ -523,6 +539,16 @@ function bootBench() {
   import("./bench.js").then((m) => m.initBench()).catch((e) => {
     console.error(e);
     notice(`The Bench tab failed to load: ${e.message || e}`, "error");
+  });
+}
+
+function bootPart() {
+  // like the Bench tab: shown at once, part.js registers its real hooks when it has loaded
+  registerTab("part", { renderTop() {}, undo() {}, redo() {}, onShow() {} });
+  setTab("part");
+  import("./part.js").then((m) => m.initPart()).catch((e) => {
+    console.error(e);
+    notice(`The Part tab failed to load: ${e.message || e}`, "error");
   });
 }
 
@@ -551,6 +577,25 @@ function bootRobot() {
   });
 }
 
+// The part was opened from a robot (the library's Import CAD…): "Back to the robot" opens that robot config again.
+function backButton(back) {
+  const btn = $("#back-robot");
+  btn.hidden = false;
+  btn.title = `Open ${back.display_path} again`;
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    const { status, data } = await api("POST", "/api/app/open", { path: back.path });
+    if (status === 200 && data.ok) {
+      location.hash = `token=${encodeURIComponent(token)}`;   // the robot opens on its own first tab
+      location.reload();
+      return;
+    }
+    btn.disabled = false;
+    const why = (data.errors && data.errors[0] && data.errors[0].message) || `the server answered ${status}`;
+    notice(status === 409 ? `Can't switch right now: ${why}` : why, "error");
+  });
+}
+
 async function boot() {
   window.__scrimmage = {
     mode: null,
@@ -562,6 +607,7 @@ async function boot() {
     store,
     get tab() { return tab; },
     setTab: (name) => setTab(name),
+    render: () => renderAll(),      // tests: a redraw (as a state arriving does) at a moment they choose
   };
   if (!token) {
     notice("This page needs the link scrimmage edit printed (it carries a #token=…). Open that link.", "error");
@@ -582,6 +628,12 @@ async function boot() {
     $("#tab-btn-drive").hidden = true;
     $("#start-link").hidden = false;
     bootBench();
+  } else if (mode === "part") {
+    $("#tab-btn-robot").hidden = true;
+    $("#tab-btn-drive").hidden = true;
+    $("#start-link").hidden = false;
+    if (data.back) backButton(data.back);
+    bootPart();
   } else {
     $("#start-link").hidden = false;
     bootRobot();

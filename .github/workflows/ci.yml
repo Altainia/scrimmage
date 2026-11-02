@@ -26,7 +26,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libosmesa6
       - name: Install
         run: |
-          pip install -e ".[dev,nt,mcp]"
+          pip install -e ".[dev,nt,mcp,cad,bench]"
           pip install ./lockstep
       # the e2e and extension tests skip themselves without these; fail here instead so CI never passes on skipped tests
       - name: Check RobotPy, robotpy-rev, commands2 and the lockstep extension are importable
@@ -42,6 +42,28 @@ jobs:
           SCRIMMAGE_SKIP_FREECAD: "1"   # the freecad job below runs the FreeCAD tests
           SCRIMMAGE_REQUIRE_BROWSER: "1"   # fail, not skip, the browser tests when Chromium is missing
         run: pytest -v -rs
+
+  # The Part tab's CAD code (STEP/STL reading, mass, the import file, the server) has to work on the students'
+  # Windows laptops too; the browser tests need Linux's Chromium setup, so they are skipped here.
+  windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: pip install -e ".[dev,cad,bench]"
+      - name: Test
+        shell: bash   # bash expands the test_cad_*.py wildcard; PowerShell would pass it to pytest as is
+        env:
+          SCRIMMAGE_SKIP_BROWSER: "1"
+        run: pytest tests/test_cad_*.py tests/test_part_overlay.py tests/test_part_server.py -v
 
   # Java robots (Phoenix 6, REVLib): needs a JDK 17; downloads WPILib and the vendor libraries (no ~/wpilib on CI)
   java:

@@ -4,9 +4,10 @@
 // quaternions are copied as they are) and the camera is told that +z is up instead.
 //
 // Hover a part to highlight it; click it to select it (tree and inspector follow). Mount triads show where
-// parts attach; in "pick in 3D" mode (the Add dialog's button) they become clickable targets.
+// parts attach; in "pick in 3D" mode (the Add dialog's button) they become clickable targets. The "CG" button shows the
+// robot's center of gravity (the view's com) as an orange ball with a line down to the floor.
 //
-// For tests: window.__scrimmage.scene is {instances, meshes, mounts}; window.__scrimmage.screenPos(name) gives the
+// For tests: window.__scrimmage.scene is {instances, meshes, mounts, cg (the CG marker is shown)}; window.__scrimmage.screenPos(name) gives the
 // client {x, y} of a mount ("<instance>.<mount>") or of an instance's center, or null when off screen;
 // window.__scrimmage.gpuMemory() is three's count of live GPU geometries and textures.
 
@@ -18,14 +19,16 @@ import { meshGeometry, primitive, setPose, geomMaterial, buildFloor } from "./sc
 const HOVER = new THREE.Color(0x5b8fd6);     // emissive tints
 const SELECTED = new THREE.Color(0x1d6fd6);
 const PICK = new THREE.Color(0xe8590c);       // pickable mount markers
+const CG = new THREE.Color(0xff8c1a);         // the center of gravity marker
 const CLICK_SLOP = 5;                          // px a press may move and still count as a click
 
 let renderer, scene, camera, controls, robot, floor, tip;
-let built = { geoms: [], mounts: [], instances: [], triad: 0.1 };   // what the current view drew
+let built = { geoms: [], mounts: [], instances: [], triad: 0.1, cg: null };   // what the current view drew
 let disposables = [];                                    // geometries/materials of the current view
 let hovered = null;            // {kind: "instance"|"mount", name}
 let picking = false;
 let showMounts = true;
+let showCg = false;
 let framed = false;            // the camera has been fitted to a non-empty robot once
 let pending = false;           // a render is scheduled
 let down = null;               // pointerdown position, to tell clicks from orbit drags
@@ -70,9 +73,14 @@ export function initView() {
     title: "Show or hide the mount triads (where parts attach)",
     onclick: () => { showMounts = !showMounts; mountsBtn.setAttribute("aria-pressed", String(showMounts)); updateMountVisibility(); },
   }, "Mounts");
+  const cgBtn = h("button", {
+    type: "button", class: "btn btn-small", id: "view-cg", "aria-pressed": "false",
+    title: "Show or hide the robot's center of gravity",
+    onclick: () => { showCg = !showCg; cgBtn.setAttribute("aria-pressed", String(showCg)); updateCg(); },
+  }, "CG");
   const tools = h("div", { class: "view-tools" },
     h("button", { type: "button", class: "btn btn-small", id: "view-frame", title: "Fit the robot in the view", onclick: () => frameRobot() }, "Frame robot"),
-    mountsBtn);
+    mountsBtn, cgBtn);
   const empty = h("p", { class: "view-placeholder", id: "view-empty", hidden: true });
   host.replaceChildren(renderer.domElement, tools, tip, empty);
 
@@ -104,7 +112,8 @@ export function initView() {
 
   Object.defineProperty(window.__scrimmage, "scene", {
     configurable: true, enumerable: true,
-    get: () => ({ instances: [...built.instances], meshes: built.geoms.length, mounts: built.mounts.length }),
+    get: () => ({ instances: [...built.instances], meshes: built.geoms.length, mounts: built.mounts.length,
+      cg: !!(built.cg && built.cg.visible) }),
   });
   window.__scrimmage.screenPos = screenPos;
   window.__scrimmage.frameRobot = frameRobot;
@@ -121,7 +130,7 @@ function clear() {
   disposables = [];
   robot.clear();
   if (floor) { scene.remove(floor); floor = null; }
-  built = { geoms: [], mounts: [], instances: [], triad: 0.1 };
+  built = { geoms: [], mounts: [], instances: [], triad: 0.1, cg: null };
 }
 
 function build(view) {
@@ -186,11 +195,36 @@ function build(view) {
     built.mounts.push(g);
   }
 
+  if (view.com) built.cg = cgMarker(view.com, size);
+
   hovered = keep && (keep.kind === "instance" ? names.has(keep.name) : built.mounts.some((m) => m.userData.mount === keep.name)) ? keep : null;
   updateMountVisibility();
   updateHighlight();
   updateEmpty();
   if (!framed || !hadRobot) { if (built.geoms.length) { frameRobot(); framed = true; } }
+  requestRender();
+}
+
+// An orange ball at the CG and a line from it straight down to the floor (how high it is), drawn on top of the parts.
+function cgMarker(com, size) {
+  const g = new THREE.Group();
+  const ballGeo = new THREE.SphereGeometry(size * 0.3, 20, 14);
+  const ballMat = new THREE.MeshBasicMaterial({ color: CG, depthTest: false, transparent: true, opacity: 0.95 });
+  const lineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -com[2])]);
+  const lineMat = new THREE.LineBasicMaterial({ color: CG, depthTest: false, transparent: true });
+  disposables.push(ballGeo, ballMat, lineGeo, lineMat);
+  const ball = new THREE.Mesh(ballGeo, ballMat);
+  const line = new THREE.Line(lineGeo, lineMat);
+  ball.renderOrder = line.renderOrder = 4;
+  g.add(ball, line);
+  g.position.set(com[0], com[1], com[2]);
+  g.visible = showCg;
+  robot.add(g);
+  return g;
+}
+
+function updateCg() {
+  if (built.cg) built.cg.visible = showCg;
   requestRender();
 }
 

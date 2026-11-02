@@ -1,10 +1,10 @@
 // The parts library (left column) and the "Add part" dialog.
 
-import { $, h, api, edit, store, attachGroups, fillAttachSelect, loadLibrary, notice, renderErrors, renderStatus } from "./app.js";
+import { $, h, api, edit, store, attachGroups, fillAttachSelect, importCad, loadLibrary, notice, renderErrors, renderStatus, stockMeta } from "./app.js";
 
 const GROUP_ORDER = ["Chassis", "Drivetrain", "Mechanisms"];
 let rendered = { library: null, readOnly: null };
-let adding = null;          // {stock} or {path, label} while the dialog is open
+let adding = null;          // {source: {stock} or {path}, title} while the dialog is open
 let picking = false;
 let dialogErrors = null;  // the lastErrors array the dialog is showing
 
@@ -41,14 +41,18 @@ export function renderLibrary(st) {
         title: f.name, kind: "folder", doc: f.path, error: f.error,
         meta: f.error ? [] : [Object.keys(f.slots).length ? `Slots: ${Object.entries(f.slots).map(([k, v]) => `${k} (${v})`).join(", ")}` : "No device slots",
           f.mounts.length ? `Mounts: ${f.mounts.join(", ")}` : "No mounts"],
-        source: { path: f.path }, ro,
+        source: { path: f.path }, cad: f.cad || null, ro,
       })))
       : h("p", { class: "empty empty-small" }, "No part folders found next to this config (folders holding a part.toml)."),
+    h("div", { class: "lib-import" },
+      h("button", { type: "button", class: "btn btn-small", id: "lib-import-cad", disabled: ro || !(st.state && st.state.path),
+        title: ro ? "This config is read-only" : "Make part folders from a CAD file", onclick: () => importCad(st.state.path) }, "Import CAD…"),
+      h("p", { class: "hint" }, "Make part folders from a STEP, STL or OBJ file. They go in the parts folder next to this config.")),
     folderForm(ro)));
   root.replaceChildren(...out);
 }
 
-function libItem({ title, kind, doc, note, meta, error, source, ro }) {
+function libItem({ title, kind, doc, note, meta, error, source, cad = null, ro }) {
   const label = kind === "folder" ? `${title} (folder)` : title;
   return h("li", { class: "lib-item" },
     h("div", { class: "lib-item-head" },
@@ -56,7 +60,7 @@ function libItem({ title, kind, doc, note, meta, error, source, ro }) {
       h("button", {
         type: "button", class: "btn btn-small btn-primary-soft", disabled: ro || !!error,
         "aria-label": `Add ${label}`, title: error ? "This folder's part.toml has an error" : `Add a ${title}`,
-        onclick: () => openAdd(source, title),
+        onclick: () => openAdd(source, title, cad),
       }, "Add")),
     doc ? h("p", { class: "lib-doc", text: doc }) : null,
     error ? h("p", { class: "error", text: error }) : null,
@@ -96,14 +100,41 @@ export function uniqueName(base) {
   for (let i = 2; ; i++) if (!taken.has(`${base}_${i}`)) return `${base}_${i}`;
 }
 
-function defaultAttach(groups) {
+// The stock chassis's root body ("drive.chassis", the name from the library): a part made from a CAD file sits where
+// the CAD has it there.
+function chassisRoot(groups) {
+  const meta = stockMeta("chassis");
+  const parts = store.state ? store.state.parts : [];
+  for (const p of [...parts.filter((x) => !x.attach), ...parts]) {
+    const g = meta && p.stock === "chassis" && groups.find((x) => x.instance === p.name);
+    const body = g && g.bodies.find((b) => b === `${p.name}.${meta.root_body}`);
+    if (body) return body;
+  }
+  return null;
+}
+
+// What the CAD hangs a part from an import on ({import_id, attach: "<part>.<body>"}), as an attach target in this
+// robot: "<instance>.<body>" when a part from the same import with that name is in it, else null.
+function cadTarget(groups, cad) {
+  if (!cad || !cad.attach) return null;
+  const [part, body] = cad.attach.split(".");
+  for (const p of store.state ? store.state.parts : []) {
+    if (!p.cad || p.cad.import_id !== cad.import_id || p.cad.part !== part) continue;
+    const g = groups.find((x) => x.instance === p.name);
+    if (g && g.bodies.includes(`${p.name}.${body}`)) return `${p.name}.${body}`;
+  }
+  return null;
+}
+
+function defaultAttach(groups, cad) {
+  if (cad && (cadTarget(groups, cad) || chassisRoot(groups))) return cadTarget(groups, cad) || chassisRoot(groups);
   const root = store.state && store.state.parts.find((p) => !p.attach);
   const g = groups.find((x) => root && x.instance === root.name) || groups[0];
   if (!g) return "";
   return g.mounts.find((o) => o.endsWith(".top")) || g.mounts[0] || g.bodies[0] || "";
 }
 
-function openAdd(source, title) {
+function openAdd(source, title, cad = null) {
   if (!store.state || store.state.read_only) return;
   adding = { source, title };
   const dlg = $("#add-dialog");
@@ -113,12 +144,13 @@ function openAdd(source, title) {
   const groups = attachGroups();
   const sel = $("#add-attach");
   if (groups.length) {
-    fillAttachSelect(sel, groups, defaultAttach(groups));
+    fillAttachSelect(sel, groups, defaultAttach(groups, cad));
     sel.disabled = false;
   } else {
     sel.replaceChildren(h("option", { value: "" }, "Nothing: this will be the robot's root part"));
     sel.disabled = true;
   }
+  $("#add-cad-hint").hidden = !cad;
   const pick = $("#add-pick");
   pick.disabled = !groups.length || !store.view3d;
   pick.title = !store.view3d ? "The 3D view isn't available" : !groups.length ? "Nothing to attach to yet" : "Click a mount in the 3D view";

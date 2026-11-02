@@ -137,8 +137,13 @@ for key, fixture, st, mutate in cfg["cases"]:
 # re-export over an existing part folder replaces it; a folder that isn't a part is left alone
 o = os.path.join(root, "out", "arm")
 open(os.path.join(o, "stale.txt"), "w").write("x")
+open(os.path.join(o, "scrimmage-edits.toml"), "w").write("[body.Arm]\nmass = 9.0\n")
 out["arm_again"] = run("arm_again", out["arm"]["fcstd"], o)
 out["arm_again"]["stale_left"] = os.path.exists(os.path.join(o, "stale.txt"))
+out["arm_again"]["edits"] = (open(os.path.join(o, "scrimmage-edits.toml")).read()
+                             if os.path.exists(os.path.join(o, "scrimmage-edits.toml")) else None)
+if out["arm_again"]["edits"] is not None:
+    os.remove(os.path.join(o, "scrimmage-edits.toml"))      # later cases load this folder as the plain export
 keep = os.path.join(root, "out", "not_a_part")
 os.makedirs(keep)
 open(os.path.join(keep, "keep.txt"), "w").write("mine")
@@ -308,6 +313,10 @@ def test_material_without_density_warns(ex):
     assert ("material 'Wood' on Arm has no density; used 2700 kg/m³ — assign a material with a density or set a "
             "mass override") in s["warnings"]
     assert body(part(ex, "arm_wood"), "Arm").mass == pytest.approx(300 * 20 * 20 * 1e-9 * RHO_AL)
+
+
+def test_reexport_keeps_the_plugin_overlay(ex):
+    assert ex["arm_again"]["edits"] == "[body.Arm]\nmass = 9.0\n"
 
 
 def test_reexport_replaces_a_part_folder_but_never_another_folder(ex):

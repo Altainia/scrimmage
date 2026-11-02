@@ -381,3 +381,16 @@ def test_remove_first_part_keeps_next_parts_comment():
     edits.remove_part(d, "a")
     assert tomlkit.dumps(d) == ('[robot]\nstart_pose = [0.0, 0.0, 0.0]\n\n# Parts\n\n# about b\n[[part]]\n'
                                 'name = "b"\nstock = "chassis"\n')
+
+
+def test_cad_offset():
+    from scrimmage.assembler.edits import cad_offset
+    mine = {"import_id": "a", "origins": {"hook": [0.0, 0.0, 0.0]}}
+    q = {"import_id": "a", "origins": {"base": [0.0, 0.0, 0.0], "arm": [0.09, 0.0, 0.01]}}
+    assert cad_offset(None, "chassis", None, True) is None                      # not from a CAD import
+    assert cad_offset(mine, "chassis", None, True) == [0.0, 0.0, 0.0]          # the stock chassis's root body
+    assert cad_offset(mine, "arm", q, False) == [-0.09, 0.0, -0.01]            # -origins[arm]
+    assert str(cad_offset(mine, "base", q, False)) == "[0.0, 0.0, 0.0]"        # never -0.0
+    assert cad_offset(mine, "arm", {**q, "import_id": "b"}, False) is None     # another import
+    assert cad_offset(mine, "claw", q, False) is None                          # a body the other part doesn't have
+    assert cad_offset(mine, "arm", None, False) is None                        # a part not from an import
