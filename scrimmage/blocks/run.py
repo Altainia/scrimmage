@@ -106,10 +106,32 @@ def _amount(x: float, unit: str) -> str:
     return f"{x:g}°" if unit == "deg" else f"{x:g} {unit}"
 
 
+def setup_config(raw: dict, setup: dict) -> dict:
+    """A copy of the config dict with the test's `[setup]` ball, station settings and seed in its `[range]` (a
+    station's settings add to, and replace, the config's own). Nothing to set leaves `raw` as it is."""
+    values = {k: setup[k] for k in ("ball", "station", "seed") if k in setup}
+    if not values:
+        return raw
+    if not isinstance(raw.get("range"), dict):
+        raise TestFileError("Setup's ball and station settings need a field; this robot is on the plain field")
+    rng = dict(raw["range"])
+    for key, v in values.items():
+        if key == "station":
+            have = rng.get("station")
+            have = have if isinstance(have, dict) else {}
+            rng[key] = {**have, **{n: {**(have[n] if isinstance(have.get(n), dict) else {}), **t}
+                                   for n, t in v.items()}}
+        else:
+            rng[key] = v
+    return {**raw, "range": rng}
+
+
 def world_for(program: Program):
-    """The World of the test's robot config (its `robot`, relative to the test file)."""
+    """The World of the test's robot config (its `robot`, relative to the test file), with the test's setup applied."""
+    from dataclasses import replace
     from ..config import build_world, load_config
-    return build_world(load_config(Path(program.path).parent / program.robot))
+    config = load_config(Path(program.path).parent / program.robot)
+    return build_world(replace(config, raw=setup_config(config.raw, program.setup)))
 
 
 class TestRun:

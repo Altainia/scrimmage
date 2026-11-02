@@ -341,3 +341,30 @@ def test_a_failed_touch_or_hang_check_says_what_didnt_happen(tmp_path):
     r = _paw_run(tmp_path / "b", '[[block]]\ndo = "wait"\nseconds = 0.3\n\n'
                                   '[[block]]\ndo = "expect"\nthat = { hanging_from = "next bar" }\n')
     assert r.outcome == "reached rung1, then a check failed (block 2): the robot wasn't hanging from rung2 at 0.6 s"
+
+
+def test_world_for_applies_the_setup(tmp_path):
+    robot = new_config("standin") + '\n[range]\nfile = "station"\nseed = 3\n'
+    (tmp_path / "robot.toml").write_text(robot, encoding="utf-8")
+    path = tmp_path / "t.test.toml"
+    path.write_text('[test]\nrobot = "robot.toml"\n\n[setup]\nball = "2017-fuel"\nseed = 9\n'
+                    "station = { feeder = { stock = 4 } }\n", encoding="utf-8")
+    w = world_for(loads(path.read_text(encoding="utf-8"), path))
+    assert w.test_range.range.ball.diameter == pytest.approx(0.127) and w.test_range.feeder.seed == 9
+    assert len(w.parts.layout.station_slots["feeder"]) == 4
+
+
+def test_setup_on_the_plain_field_says_it_needs_a_field(tmp_path):
+    (tmp_path / "robot.toml").write_text(new_config("standin"), encoding="utf-8")
+    path = tmp_path / "t.test.toml"
+    path.write_text('[test]\nrobot = "robot.toml"\n\n[setup]\nseed = 2\n', encoding="utf-8")
+    with pytest.raises(TestFileError, match="need a field; this robot is on the plain field"):
+        world_for(loads(path.read_text(encoding="utf-8"), path))
+
+
+def test_setup_config_leaves_the_original_alone():
+    from scrimmage.blocks.run import setup_config
+    raw = {"range": {"file": "station", "station": {"feeder": {"stock": 1}}}}
+    out = setup_config(raw, {"station": {"feeder": {"interval": 2.0}}})
+    assert out["range"]["station"] == {"feeder": {"stock": 1, "interval": 2.0}}
+    assert raw["range"]["station"] == {"feeder": {"stock": 1}} and setup_config(raw, {}) is raw
