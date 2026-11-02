@@ -14,6 +14,10 @@ step, and the plain words that name them in a run's outcome.
   one of that bar's geoms, the upward (world z) part of the contact force on the hook (mj_contactForce, turned out
   of the contact frame): a push sideways, a hook pressed down onto a bar from below, or a hook's contact with
   anything else (a rail, another bar) holds nothing up from this bar.
+- `in_hopper`: how many balls (fed or not) have their center inside a hopper body's box, at least or at most N.
+- `station_empty`: a station with a stock has fed all of it.
+- `made_it_in`: the share of the pieces fed so far that are in the hopper, at least P percent (the runner's
+  `outcomes`; false while nothing has been fed).
 - `level`: on a range that scores climbs, the climb monitor's scoring level (`climb.level`) is this one.
 
 "The next bar" is the lowest bar whose top is higher than every bar the robot has hung from so far in this run; the
@@ -60,6 +64,8 @@ class Watch:
             self._hook_geoms[name] = set(self._body_geoms(name))
         self._balls = [m.body(n).id for n in layout.ball_names] if layout is not None else []
         self._ball_names = list(layout.ball_names) if layout is not None else []
+        self._hopper = list(program.hopper)
+        self.outcomes = None                                # the runner's piece tracker (made_it_in reads it)
         self._sides: dict[str, set[int]] = {}
         self._boxes: dict[str, tuple[int, np.ndarray, np.ndarray]] = {}
 
@@ -208,6 +214,18 @@ class Watch:
             self._boxes[name] = (b, lo, hi)
         return self._boxes[name]
 
+    def hopper_count(self) -> int:
+        """Balls whose center is inside a hopper body's box now, fed or not."""
+        if not self._balls:
+            return 0
+        d = self.data
+        inside = np.zeros(len(self._balls), bool)
+        for name in self._hopper:
+            b, lo, hi = self._box(name)
+            local = (d.xpos[self._balls] - d.xpos[b]) @ d.xmat[b].reshape(3, 3)
+            inside |= np.all((local >= lo) & (local <= hi), axis=1)
+        return int(inside.sum())
+
     # ---- conditions -------------------------------------------------------------------------------------------------
 
     def holds(self, cond) -> bool:
@@ -235,6 +253,16 @@ class Watch:
             r = d.xmat[b].reshape(3, 3)
             local = (d.xpos[balls] - d.xpos[b]) @ r          # each center in the body's frame
             return bool(np.any(np.all((local >= lo) & (local <= hi), axis=1)))
+        if k == "in_hopper":
+            n = self.hopper_count()
+            return n >= a["at_least"] if "at_least" in a else n <= a["at_most"]
+        if k == "station_empty":
+            return bool(self.world.test_range.feeder.empty(a["station"]))
+        if k == "made_it_in":
+            if self.outcomes is None:
+                return False
+            so_far = self.outcomes.so_far()
+            return so_far["fed"] > 0 and 100.0 * so_far["in"] >= a["at_least"] * so_far["fed"]
         if k == "hanging_from":
             bar = self._bar(a["bar"])
             return bar is not None and bar in self.hanging
@@ -273,6 +301,14 @@ def describe(cond, next_bar: str | None = None) -> str:
     if k == "piece_in":
         what = "a ball" if a["piece"] == ANY_PIECE else a["piece"]
         return f"{what} reaches {a['body']}"
+    if k == "in_hopper":
+        if "at_least" in a:
+            return f"{a['at_least']} or more pieces are in the hopper"
+        return f"at most {a['at_most']} pieces are in the hopper"
+    if k == "station_empty":
+        return f"{a['station']} is empty"
+    if k == "made_it_in":
+        return f"at least {a['at_least']:g}% made it in"
     if k == "hanging_from":
         return f"the robot hangs from {bar(a['bar'])}"
     if k == "level":

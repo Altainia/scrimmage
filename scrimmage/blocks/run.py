@@ -51,7 +51,8 @@ EPS = 1e-9
 
 # The verbs describe() uses, as "-ing" (after "without") and "to ..." (after "waiting for").
 _VERBS = {"passes": ("passing", "to pass"), "goes": ("going", "to go"), "tilts": ("tilting", "to tilt"),
-          "touches": ("touching", "to touch"), "reaches": ("reaching", "to reach"), "hangs": ("hanging", "to hang")}
+          "touches": ("touching", "to touch"), "reaches": ("reaching", "to reach"), "hangs": ("hanging", "to hang"),
+          "are": ("being", "to be"), "is": ("being", "to be")}
 
 
 @dataclass

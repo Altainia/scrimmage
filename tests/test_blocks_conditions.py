@@ -250,3 +250,66 @@ def test_a_hook_carrying_less_than_a_quarter_is_no_hang(tmp_path):
         carried += m.opt.timestep
     assert carried > 0.3
     assert not watch.holds(Cond("hanging_from", {"bar": "rung1"})) and watch.hung == []
+
+
+# ---- the hopper and stations ---------------------------------------------------------------------------------------
+
+def _put_ball(w, name, local):
+    """Ball `name` at `local` in the robot body's frame."""
+    m, d = w.model, w.data
+    q = int(m.jnt_qposadr[m.body_jntadr[m.body(name).id]])
+    d.qpos[q:q + 3] = d.xpos[w.robot_body] + d.xmat[w.robot_body].reshape(3, 3) @ local
+    mujoco.mj_forward(m, d)
+
+
+def test_hopper_count_counts_every_ball_in_the_hopper():
+    w = spares_world(range_cfg())
+    prog = program()
+    prog.hopper = ["drive.chassis"]
+    watch = Watch(w, prog)
+    a, b, c = w.parts.layout.ball_names[:3]
+    assert watch.hopper_count() == 0 and not watch.holds(Cond("in_hopper", {"at_least": 1}))
+    _put_ball(w, a, [0.0, 0.0, 0.08])
+    _put_ball(w, b, [0.05, 0.0, 0.08])
+    _put_ball(w, c, [3.0, 0.0, 0.08])          # outside
+    assert watch.hopper_count() == 2 and watch.holds(Cond("in_hopper", {"at_least": 2}))
+    assert not watch.holds(Cond("in_hopper", {"at_least": 3}))
+    assert watch.holds(Cond("in_hopper", {"at_most": 2})) and not watch.holds(Cond("in_hopper", {"at_most": 1}))
+
+
+def test_station_empty_and_made_it_in():
+    cfg = tomllib.loads(new_config("standin"))
+    cfg["range"] = {"file": "station", "start": "at_station", "station": {"feeder": {"stock": 1}}}
+    w = World(cfg, None)
+    watch = Watch(w, program())
+    empty = Cond("station_empty", {"station": "feeder"})
+    assert not watch.holds(empty)
+    feeder = w.test_range.feeder
+    feeder.request("feeder")
+    hal = HalState()
+    for _ in range(10):
+        w.step(hal)
+    assert feeder.count("feeder") == 1 and watch.holds(empty)
+    made = Cond("made_it_in", {"at_least": 80.0})
+    assert not watch.holds(made)                         # no outcomes yet
+
+    class Counts:
+        def __init__(self, fed, got):
+            self.fed, self.got = fed, got
+
+        def so_far(self):
+            return {"fed": self.fed, "in": self.got, "stuck": 0, "missed": 0}
+
+    watch.outcomes = Counts(0, 0)
+    assert not watch.holds(made)
+    watch.outcomes = Counts(5, 4)
+    assert watch.holds(made)
+    watch.outcomes = Counts(5, 3)
+    assert not watch.holds(made)
+
+
+def test_describe_new_conditions():
+    assert describe(Cond("in_hopper", {"at_least": 5})) == "5 or more pieces are in the hopper"
+    assert describe(Cond("in_hopper", {"at_most": 2})) == "at most 2 pieces are in the hopper"
+    assert describe(Cond("station_empty", {"station": "feeder"})) == "feeder is empty"
+    assert describe(Cond("made_it_in", {"at_least": 80.0})) == "at least 80% made it in"

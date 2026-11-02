@@ -15,10 +15,17 @@ and doesn't run; nothing crashes.
 
 from __future__ import annotations
 
+import math
+
 import mujoco
+import numpy as np
 
 from ..hal_drive import driven_joints
+from ..launcher.inputs import PRESETS
 from ..terrain.climb import robot_hooks
+from ..testrange.elements import ROBOT_OUTLINE
+from ..testrange.spec import BALL_CHOICE_RANGES, RangeError, load_range
+from ..testrange.station import OVERRIDE_KEYS, with_overrides
 
 NEXT_BAR = "next bar"     # a hanging_from or touch target: the lowest bar above every bar hung from so far
 ANY_BAR = "any bar"       # a touch target: any of the field's bars
@@ -81,6 +88,32 @@ def _targets(world, named: set[str]) -> list[str]:
     return sorted(n for n in out if n not in skip and not n.startswith("element."))
 
 
+def floor_piece_ahead(world) -> int | None:
+    """The index of the nearest floor ball ahead of the robot's start (in front of it along its heading, no further
+    to the side than the robot is wide), the ball a floor spread moves; None when there is none or no start."""
+    tr = getattr(world, "test_range", None)
+    rng = tr.range if tr is not None else None
+    start = rng.starts.get(tr._config.get("start")) if rng is not None else None
+    if start is None or not len(rng.floor_balls):
+        return None
+    x, y, heading = start
+    h = math.radians(heading)
+    rel = np.asarray(rng.floor_balls, float) - np.array([x, y])
+    ahead = rel @ np.array([math.cos(h), math.sin(h)])
+    side = rel @ np.array([-math.sin(h), math.cos(h)])
+    near = [i for i in range(len(rel)) if ahead[i] > 0.0 and abs(side[i]) <= ROBOT_OUTLINE / 2.0]
+    return min(near, key=lambda i: ahead[i]) if near else None
+
+
+def _station_settings(st) -> dict:
+    """A station's OVERRIDE_KEYS values, as Setup's boxes show them (no stock is 0; lists, not tuples)."""
+    out = {}
+    for key in OVERRIDE_KEYS:
+        v = getattr(st, key)
+        out[key] = 0 if key == "stock" and v is None else list(v) if isinstance(v, tuple) else v
+    return out
+
+
 def hook_names(world, hooks: list[str]) -> list[str]:
     """The robot's hooks: the stock climber's (`<inst>.hook<i>`) and the bodies the test names as hooks."""
     return sorted(set(robot_hooks(world.model, world.robot_body)) | set(hooks))
@@ -102,6 +135,8 @@ def palette(world, hooks: list[str]) -> dict:
     signals = ["tilt", *motors, *(f"{n}.current" for n in motors)]
     if hook_list:
         signals.append("hook_load")
+    drive = any(kinds[n] == "wheel" for n in motors) and not _steered(world)
+    stations = sorted(rng.stations, key=lambda st: st.name) if rng is not None else []
     return {
         "motors": [_entry(n, kinds[n]) for n in motors],
         "joints": [_entry(n, k) for n, k in sorted(kinds.items())],
@@ -113,8 +148,15 @@ def palette(world, hooks: list[str]) -> dict:
         "pieces": pieces,
         "targets": _targets(world, bar_set | set(elements) | set(pieces)),
         "levels": list(rule.levels) if rule is not None else [],      # lowest first, as the range lists them
-        "drive": any(kinds[n] == "wheel" for n in motors) and not _steered(world),
+        "drive": drive,
+        "drive_kind": "tank" if drive else None,      # "swerve" arrives with the swerve drive blocks
         "signals": signals,
+        "stations": [st.name for st in stations],
+        "station_settings": {st.name: _station_settings(st) for st in stations},
+        "ball": rng.ball_preset if rng is not None else None,
+        "balls": sorted(PRESETS["ball"]),
+        "ball_choice": rng is not None and rng.path.stem in BALL_CHOICE_RANGES,
+        "floor_piece": floor_piece_ahead(world) is not None,
     }
 
 
@@ -123,7 +165,7 @@ def palette(world, hooks: list[str]) -> dict:
 class _Names:
     """The names a test can use on this world, for checking."""
 
-    def __init__(self, world, hooks: list[str]):
+    def __init__(self, world, hooks: list[str], program=None):
         p = palette(world, hooks)
         self.p = p
         self.joints = {j["name"]: j["kind"] for j in p["joints"]}
@@ -133,6 +175,17 @@ class _Names:
         self.bars = set(p["bars"])
         self.pieces = set(p["pieces"])
         self.field = set(world.contact_names()) | set(p["elements"]) | self.bars
+        self.stations = set(p["stations"])
+        self.hopper = list(program.hopper) if program is not None else []
+        self.stock = {}                     # station -> its stock after the test's setup (None: no stock)
+        rng = world.parts.range if world.parts is not None else None
+        if rng is not None:
+            try:
+                if program is not None and program.setup.get("station"):
+                    rng = with_overrides(rng, program.setup["station"])
+            except RangeError:
+                pass                        # reported at place [] by setup_problems
+            self.stock = {st.name: st.stock for st in rng.stations}
 
 
 def _unit_problem(name: str, kind: str, unit: str) -> str | None:
@@ -192,6 +245,15 @@ def _cond_problems(n: _Names, c) -> list[str]:
         return out
     if c.kind == "hanging_from":
         return _bar_problems(n, a["bar"])
+    if c.kind in ("in_hopper", "made_it_in") and not n.hopper:
+        return ["pick the hopper in Setup: the bodies a piece lands in"]
+    if c.kind == "station_empty":
+        name = a["station"]
+        if name not in n.stations:
+            return [f'no station "{name}" on this field']
+        if n.stock.get(name) is None:
+            return [f'"{name}" never runs out (it has no stock); give it a stock in Setup']
+        return []
     if c.kind == "level":
         if not n.p["levels"]:
             return ["levels need a field that scores climbs"]
@@ -207,8 +269,14 @@ def _block_problems(n: _Names, b) -> list[str]:
         return _joint_problems(n, a["motor"], None, motor=True)
     if b.do == "move":
         return _joint_problems(n, a["joint"], a["unit"], motor=True)
+    if b.do in ("start_feeding", "stop_feeding", "feed_one"):
+        return [] if a["station"] in n.stations else [f'no station "{a["station"]}" on this field']
+    if b.do == "turn":
+        return [] if n.p["drive_kind"] else ["turn needs a drivetrain; this robot has none"]
     if b.do == "drive":
         if n.p["drive"]:
+            if n.p["drive_kind"] == "tank" and a.get("direction") in ("left", "right"):
+                return ["a tank drive can't drive sideways; turn, then drive forward"]
             return []
         if any(j["kind"] == "wheel" for j in n.p["motors"]):
             return ["drive works on a tank drive; spin the drive motors instead"]
@@ -219,12 +287,57 @@ def _block_problems(n: _Names, b) -> list[str]:
     return []
 
 
+def setup_problems(program, rng) -> list[str]:
+    """What the test's setup asks of the field that the field won't do: the messages of the RangeErrors from applying
+    its ball and station settings to `rng` (the file path dropped). Names the field doesn't have are left to
+    problems(), which says them in its own words."""
+    out: list[str] = []
+
+    def say(e: RangeError) -> str:
+        return str(e).removeprefix(f"{rng.path}: ")
+
+    ball = program.setup.get("ball")
+    if ball is not None and rng.path.stem in BALL_CHOICE_RANGES:
+        try:
+            rng = load_range(rng.path.as_posix(), rng.path.parent, ball=ball)
+        except RangeError as e:
+            out.append(say(e))
+    known = {st.name for st in rng.stations}
+    settings = {k: v for k, v in program.setup.get("station", {}).items() if k in known}
+    if settings:
+        try:
+            with_overrides(rng, settings)
+        except RangeError as e:
+            out.append(say(e))
+    return out
+
+
+def _setup_level_problems(program, world, n: _Names) -> list[str]:
+    tr = world.test_range
+    rng = world.parts.range if world.parts is not None else None
+    out = []
+    setup = program.setup
+    if "ball" in setup and not n.p["ball_choice"]:
+        out.append("this field keeps its own ball; pick a ball on the intake or station field")
+    out += [f'Setup names a station this field doesn\'t have: "{name}"'
+            for name in setup.get("station", {}) if name not in n.stations]
+    if setup.get("floor_spread") and floor_piece_ahead(world) is None:
+        out.append("the floor spread needs a ball on the floor in front of the robot's start")
+    if rng is not None and tr is not None:
+        out += setup_problems(program, rng)
+    return out
+
+
 def problems(program, world) -> list[dict]:
-    """[{"place": [i, j, ...], "message": str}]: each name the program uses that this world doesn't have. A hook the
-    test's setup names that isn't a body of the robot is at place []. Empty when the program can run."""
-    n = _Names(world, list(program.hooks))
+    """[{"place": [i, j, ...], "message": str}]: each name the program uses that this world doesn't have. A hook or
+    hopper body the test's setup names that isn't a body of the robot, and what the setup asks of the field, are at
+    place []. Empty when the program can run."""
+    n = _Names(world, list(program.hooks), program)
     out = [{"place": [], "message": f'no body "{h}" on this robot any more (the test lists it as a hook)'}
            for h in program.hooks if h not in n.bodies]
+    out += [{"place": [], "message": f'no body "{h}" on this robot any more (the test lists it as the hopper)'}
+            for h in program.hopper if h not in n.bodies]
+    out += [{"place": [], "message": msg} for msg in _setup_level_problems(program, world, n)]
 
     def walk(blocks, trail):
         for i, b in enumerate(blocks):
