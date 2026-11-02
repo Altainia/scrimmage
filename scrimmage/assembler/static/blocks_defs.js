@@ -117,7 +117,7 @@ const KINDS = {
   drive: {
     def: { message0: "drive %1 %2 %3",
       args0: [dd("DIR", OPTIONS.heading), num("AMOUNT", 0.3), dd("WHAT", [["m", "distance"], ["s", "seconds"]])],
-      style: STYLES.move, ...stmt, tooltip: "Drive the robot this far (a minus number goes the other way), or for this long." },
+      style: STYLES.move, ...stmt, tooltip: "Drive the robot this far, or for this long. Forward with a minus distance drives back." },
     keys: ["distance", "seconds", "direction"],
     fields: (a) => ({ DIR: a.direction || "forward",
       ...("seconds" in a ? { AMOUNT: a.seconds, WHAT: "seconds" } : { AMOUNT: a.distance, WHAT: "distance" }) }),

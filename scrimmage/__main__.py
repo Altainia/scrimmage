@@ -609,7 +609,7 @@ def _test(args) -> None:
     for f in result.feeds:
         if f["outcome"] == "stuck":
             what = "the floor piece" if f["source"] == "floor" else f"a piece from {f['source']}"
-            print(f"  stuck in the robot: {what} (fed at {f['t']:.1f} s) rests on {f['body']}")
+            print(f"  stuck in the robot: {what} (fed at {f['t']:.1f} s) resting on {f['body']}")
     if folder is None:
         print(f"scrimmage: couldn't keep the run in {out}: {error}", file=sys.stderr)
         sys.exit(2)

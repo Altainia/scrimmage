@@ -497,7 +497,8 @@ class TestRun:
 
     def _roll(self, b, t: float) -> None:
         """Start the drive or turn block's wheels at t, signed by where each rolls now (again every step until every
-        module is pointed, when they start after STEER_TIMEOUT)."""
+        module is pointed, when they start after STEER_TIMEOUT). A module stuck near 90 degrees from its target may
+        flip its wheel's sign from step to step; harmless, as such a wheel adds almost nothing."""
         a = b.args
         volts = a.get("volts", DRIVE_VOLTS)
         if b.do == "turn":

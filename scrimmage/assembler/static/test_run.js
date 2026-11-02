@@ -302,11 +302,11 @@ function renderFeeds() {
   const marks = $("#test-feed-marks");
   marks.hidden = !feeds.length;
   const t0 = start(), span = Math.max(1e-9, end() - t0);
-  // marks shrink (to 4 px) to the room between the closest two, so each stays a click of its own
+  // marks shrink (to 6 px) to the room between the closest two, so each stays a click of its own
   const times = feeds.map((f) => f.t).sort((a, b) => a - b);
   const gap = Math.min(...times.slice(1).map((x, k) => x - times[k]));
   const room = (gap / span) * marks.clientWidth;
-  const size = marks.clientWidth > 0 && room < 11 ? Math.max(4, Math.floor(room)) : 11;
+  const size = marks.clientWidth > 0 && room < 11 ? Math.max(6, Math.floor(room)) : 11;
   marks.style.setProperty("--feed-size", `${size}px`);
   marks.replaceChildren(...feeds.map((f, k) => {
     const words = feedText(f, k);

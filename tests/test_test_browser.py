@@ -1287,7 +1287,8 @@ def test_many_fed_pieces_shrink_their_marks_to_stay_on_the_scrubber_and_clickabl
         return {left: r.left, right: r.right, width: m.offsetWidth, hit: hit === m};
       })};
     })()""")
-    assert all(b["width"] >= 4 for b in boxes["marks"]) and all(b["width"] < 11 for b in boxes["marks"])
+    # at least 6 px (a stuck mark, a diamond, is 1 px less)
+    assert all(b["width"] >= 5 for b in boxes["marks"]) and all(b["width"] < 11 for b in boxes["marks"])
     assert all(boxes["wrap"][0] - 1 <= b["left"] and b["right"] <= boxes["wrap"][1] + 1 for b in boxes["marks"])
     assert all(b["hit"] for b in boxes["marks"]), [(round(b["left"]), b["width"], b["hit"]) for b in boxes["marks"]]
 

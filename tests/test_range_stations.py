@@ -120,6 +120,9 @@ def test_a_chute_over_a_start_is_refused(tmp_path):
     with pytest.raises(RangeError, match=r"'feeder': its chute \(floor\) overlaps start 's' at \(1.25, 4\)"):
         parse(tmp_path, HEAD + start.format(x=1.25) + FEEDER + chute)
     parse(tmp_path, HEAD + start.format(x=3.0) + FEEDER + chute)          # clear of it: accepted
+    parse(tmp_path, HEAD + start.format(x=1.9325) + FEEDER + chute)       # outline just touching the low end: accepted
+    with pytest.raises(RangeError, match="overlaps start 's'"):
+        parse(tmp_path, HEAD + start.format(x=1.9125) + FEEDER + chute)   # 2 cm in: refused
 
 
 def test_a_chute_through_the_carpet_is_refused(tmp_path):

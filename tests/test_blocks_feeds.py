@@ -153,7 +153,7 @@ def test_test_run_prints_each_stuck_piece(tmp_path, capsys, monkeypatch):
     assert _cli(["test", "run", str(write(tmp_path, FEED_ONE, field, HOPPER + SHELF))]) == 0
     out = capsys.readouterr().out.splitlines()
     assert out[0] == "0 of 1 made it in (0%); 1 stuck in the robot"
-    assert out[1] == f"  stuck in the robot: a piece from feeder (fed at {SETTLE_S:.1f} s) rests on shelf.plate"
+    assert out[1] == f"  stuck in the robot: a piece from feeder (fed at {SETTLE_S:.1f} s) resting on shelf.plate"
 
 
 def test_a_piece_on_the_standins_own_body_is_not_stuck(tmp_path):

@@ -62,7 +62,7 @@ The bottom bar says whether the test is saved and how many blocks it has.
 |---|---|
 | **spin** *motor* **at** *V* **V** | Runs a motor at that many volts (-12 to 12). It keeps going until a later block changes that motor. |
 | **move** *joint* **to** *number* *unit* | Drives a joint to a position and waits until it gets there. |
-| **drive** *direction* *number* **m** or **s** | Drives the robot that far in a direction (**forward**, **back**, **left** or **right**; a minus number goes the other way), or for that many seconds, then stops. |
+| **drive** *direction* *number* **m** or **s** | Drives the robot that far in a direction (**forward**, **back**, **left** or **right**; a minus number with **forward** drives back; **back**, **left** and **right** refuse one), or for that many seconds, then stops. |
 | **turn** *left or right* *number* **°** | Turns the robot on the spot that many degrees (up to 720). |
 | **start feeding** *station*, **stop feeding** *station*, **feed one from** *station* | A human player station puts balls on the field. See [Feeding from a station](#feeding-from-a-station). |
 | **stop** *motor* | Lets a motor go to neutral. **all motors** stops every motor. |
