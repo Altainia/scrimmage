@@ -52,13 +52,15 @@ from ..teamfolders import TeamFolderError, expand
 
 if TYPE_CHECKING:
     from .elements import ClimbRule, Element
+    from .station import Station
 
 CIRCLE_SIDES = 24  # a circular opening is this regular polygon of the given diameter (corners on the circle)
 FIELD_LENGTH = 16.54  # m, the generated field's alliance walls' inner faces (scrimmage/parts/field.py)
 FIELD_WIDTH = 8.07  # m, its guardrails' inner faces
 BUILTIN_RANGES = {name: Path(__file__).with_name("ranges") / f"{name}.toml"
                   for name in ("2026", "2013", "2026-bump", "2023-charge-station", "terrain-library", "2022-hangar",
-                               "2020-switch", "2013-pyramid", "ladder", "ladder-square", "intake")}
+                               "2020-switch", "2013-pyramid", "ladder", "ladder-square", "intake", "station")}
+BALL_CHOICE_RANGES = ("intake", "station")   # the ranges whose ball a test's Setup can change (a stand-in's, not a game's)
 # estimate: no published figure for an FRC foam ball on FRC carpet. Chosen so a 2026 FUEL (k = 0.4) slows at
 # 0.07 * 9.81 / 1.4 = 0.49 m/s^2, stopping from 1 m/s in about 2 s and 1 m: about a golf ball on a putting green
 # (a Stimpmeter roll, 1.83 m/s over 10 ft, is 0.55 m/s^2, USGA Stimpmeter instructions), on the reasoning that a
@@ -239,6 +241,7 @@ class Range:
     obstacles: tuple[Obstacle, ...] = ()
     elements: tuple[Element, ...] = ()  # bumps, ramps, platforms, bars, boxes, switches (testrange/elements.py)
     climb: ClimbRule | None = None  # [climb]: how hanging scores (scrimmage/testrange/elements.py)
+    stations: tuple[Station, ...] = ()  # human player stations (scrimmage/testrange/station.py)
 
     @property
     def piece(self) -> Ball | Disc:
@@ -311,7 +314,7 @@ class _Reader:
         return _Reader(self.path, f"{self.where} {key}", self.raw(key), valid)
 
 
-_TOP = ("range", "goal", "floor_balls", "start", "carpet", "obstacle", "element", "climb")
+_TOP = ("range", "goal", "floor_balls", "start", "carpet", "obstacle", "element", "climb", "station")
 _RANGE = ("name", "ball", "disc", "aero")
 _GOAL = ("name", "pos", "heading_deg", "rim_height", "tilt_deg", "opening", "funnel", "body", "plate", "slot")
 _OPENING = ("kind", "sides", "across_flats", "rotation_deg", "diameter", "width", "height")
@@ -544,19 +547,25 @@ def parse_range(raw: dict, path: Path) -> Range:
                              "names must be unique")
         obstacles.append(o)
     from .elements import check_clear, parse_climb, parse_elements  # elements.py imports this module
+    from .station import check_release_clear, parse_stations
 
     elements = parse_elements(path, raw.get("element", []))
     climb, elements = parse_climb(path, raw.get("climb"), elements)
     floor_balls = _floor_balls(path, raw.get("floor_balls", []), piece)
     check_clear(path, elements, starts, floor_balls, piece.diameter / 2.0)
-    return Range(name=rng.text("name"), ball_preset=preset, ball=ball, goals=tuple(goals),
-                 floor_balls=floor_balls, starts=starts, path=path, rolling_resistance=rolling,
-                 disc_preset=disc_name, disc=disc, aero=aero, obstacles=tuple(obstacles),
-                 elements=elements, climb=climb)
+    taken = tuple([g.name for g in goals] + [o.name for o in obstacles] + [e.name for e in elements])
+    stations = parse_stations(path, raw.get("station", []), piece, taken)
+    built = Range(name=rng.text("name"), ball_preset=preset, ball=ball, goals=tuple(goals),
+                  floor_balls=floor_balls, starts=starts, path=path, rolling_resistance=rolling,
+                  disc_preset=disc_name, disc=disc, aero=aero, obstacles=tuple(obstacles),
+                  elements=elements, climb=climb, stations=stations)
+    check_release_clear(path, built)
+    return built
 
 
-def load_range(ref: str, base_dir: Path) -> Range:
-    """`ref` is a built-in range's name (BUILTIN_RANGES) or a path relative to `base_dir`."""
+def load_range(ref: str, base_dir: Path, ball: str | None = None) -> Range:
+    """`ref` is a built-in range's name (BUILTIN_RANGES) or a path relative to `base_dir`. With `ball`, the file is
+    read with its [range] ball replaced (all the checks run again; a disc range refuses)."""
     try:
         path = BUILTIN_RANGES.get(ref) or Path(base_dir) / expand(ref)
     except TeamFolderError as e:
@@ -571,4 +580,9 @@ def load_range(ref: str, base_dir: Path) -> Range:
         raw = tomllib.loads(text)
     except tomllib.TOMLDecodeError as e:  # also a start (or any table) given twice
         raise RangeError(f"{path}: {e}") from e
+    if ball is not None:
+        table = raw.get("range")
+        if isinstance(table, dict) and "disc" in table:
+            raise RangeError(f"{path}: \"{table.get('name', ref)}\" is a disc field; it can't take a ball")
+        raw = {**raw, "range": {**(table if isinstance(table, dict) else {}), "ball": ball}}
     return parse_range(raw, path)

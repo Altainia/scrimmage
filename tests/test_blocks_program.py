@@ -10,8 +10,15 @@ HEAD = '[test]\nrobot = "r.toml"\n'
 PATH = Path("/tmp/x.test.toml")
 
 SAMPLE = HEAD + '''hooks = ["climber.hook_A"]
+hopper = ["feeder.hopper"]
 time_limit = 30.0
 chart = ["tilt", "climber.crank"]
+
+[setup]
+ball = "2025-algae"
+seed = 7
+station = { feeder = { interval = 0.5, stock = 6, spread_yaw_deg = 3.0, spread_position = [0.0, 0.02, 0.0] } }
+floor_spread = { offset_in = [-6.0, 0.0, 6.0], angle_deg = [0.0, 10.0] }
 
 [[block]]
 do = "spin"
@@ -72,6 +79,41 @@ that = { hanging_from = "next bar" }
 [[block]]
 do = "expect"
 that = { level = "mid" }
+
+[[block]]
+do = "start_feeding"
+station = "feeder"
+
+[[block]]
+do = "feed_one"
+station = "feeder"
+timeout = 4.0
+
+[[block]]
+do = "drive"
+distance = 1.0
+direction = "left"
+
+[[block]]
+do = "turn"
+degrees = -90.0
+volts = 3.0
+
+[[block]]
+do = "wait_until"
+until = { in_hopper = { at_least = 3 } }
+
+[[block]]
+do = "wait_until"
+until = { station_empty = "feeder" }
+
+[[block]]
+do = "expect"
+that = { made_it_in = { at_least = 80.0 } }
+
+[[block]]
+do = "stop_feeding"
+station = "feeder"
 '''
 
 
@@ -171,3 +213,53 @@ def test_json_depth_and_wording():
         with pytest.raises(P.TestFileError) as e:
             P.from_json(bad, PATH)
         assert "[test]" not in str(e.value)
+
+
+def test_feed_blocks_conditions_and_setup_round_trip():
+    p = P.loads(SAMPLE, PATH)
+    assert P.loads(P.dumps(p), PATH) == p and P.from_json(P.to_json(p), PATH) == p
+    assert p.setup["floor_spread"]["offset_in"] == [-6.0, 0.0, 6.0] and p.hopper == ["feeder.hopper"]
+    assert P.placement_count(p.setup) == 6 and P.placement_count({}) == 1
+
+
+def test_old_test_files_load_unchanged():
+    files = sorted(Path(__file__).parent.parent.glob("examples/blocks/*/*.test.toml"))
+    assert files
+    for f in files:
+        assert P.dumps(P.load(f)) == f.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("bad, words", [
+    ('[setup]\ncolour = "red"', '"colour" isn\'t a setting'),
+    ("[setup]\nseed = 2.5", "seed must be a whole number"),
+    ('[setup]\nball = "beachball"', "isn't a ball"),
+    ("[setup]\nfloor_spread = { offset_in = [1,2,3,4,5,6], angle_deg = [0,10,20,30,40,50] }",
+     "36 placements; at most 25"),
+    ("[setup]\nfloor_spread = { distance_in = [0] }", "more than 0"),
+    ("[setup]\nfloor_spread = { offset_in = [] }", "list of numbers"),
+    ("[setup]\nstation = { f = { interval = 0 } }", "more than 0"),
+    ("[setup]\nstation = { f = { colour = 1 } }", "isn't something"),
+    ("[setup]\nstation = { f = { spread_position = [1, 2] } }", "3 numbers"),
+    ("[setup]\nstation = { f = { stock = 201 } }", "stock can be at most 200 pieces, not 201"),
+    ('[[block]]\ndo = "turn"\ndegrees = 0', "can't be 0"),
+    ('[[block]]\ndo = "turn"\ndegrees = 721', "between -720 and 720"),
+    ('[[block]]\ndo = "drive"\ndistance = -1\ndirection = "back"', "use one or the other"),
+    ('[[block]]\ndo = "drive"\ndistance = 1\ndirection = "up"', "direction must be one of"),
+    ('[[block]]\ndo = "wait_until"\nuntil = { made_it_in = { at_least = 120 } }', "from 0 to 100"),
+    ('[[block]]\ndo = "wait_until"\nuntil = { in_hopper = { at_least = 1.5 } }', "whole number from 0 to 1000"),
+    ('[[block]]\ndo = "feed_one"', "station must be a name"),
+])
+def test_bad_setup_and_blocks_say_what(bad, words):
+    with pytest.raises(P.TestFileError, match=words):
+        P.loads(HEAD + bad, PATH)
+
+
+def test_a_cleared_hopper_is_kept():
+    """`hopper = []` (the student cleared it in Setup) is kept, so Setup doesn't preselect one again; a test that
+    names no hopper has none (None), and writes none."""
+    p = P.loads(HEAD + "hopper = []\n", PATH)
+    assert p.hopper == [] and "hopper = []" in P.dumps(p) and P.to_json(p)["hopper"] == []
+    assert P.from_json(P.to_json(p), PATH).hopper == []
+    q = P.loads(HEAD, PATH)
+    assert q.hopper is None and "hopper" not in P.dumps(q) and P.to_json(q)["hopper"] is None
+    assert P.from_json(P.to_json(q), PATH).hopper is None

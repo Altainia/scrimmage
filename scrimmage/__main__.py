@@ -169,6 +169,12 @@ def main(argv: list[str] | None = None) -> None:
                                      "(exit 0 finished with every check passed, 1 not, 2 couldn't run)")
     xr.add_argument("file", type=Path, help="the test file")
     xr.add_argument("--out", type=Path, help="folder to keep the run in (default <FILE's folder>/<FILE stem>-runs)")
+    xf = xsub.add_parser("spread", help="run a test file once per placement of its [setup] floor_spread and say which "
+                                        "placements got the floor ball picked up (exit 0 every one picked up, 1 not, "
+                                        "2 couldn't run)")
+    xf.add_argument("file", type=Path, help="the test file")
+    xf.add_argument("--out", type=Path, help="folder to keep the spread in, as spread-<NNN> (default <FILE's "
+                                             "folder>/<FILE stem>-runs)")
 
     mp = sub.add_parser("model", help="print (or write) the MJCF a parts robot assembles to")
     mp.add_argument("config", type=Path)
@@ -578,6 +584,9 @@ def _climb(args) -> None:
 
 def _test(args) -> None:
     """Exit 0 when the test finished with every check passed, 1 when not, 2 when the file or its robot is wrong."""
+    if args.test_command == "spread":
+        _test_spread(args)
+        return
     from .blocks import program as blocks_program
     from .blocks import run as blocks_run
     from .blocks import store as blocks_store
@@ -589,17 +598,48 @@ def _test(args) -> None:
     except (ValueError, OSError) as e:    # TestFileError, ConfigError and PartError are ValueErrors
         print(f"scrimmage: {e}", file=sys.stderr)
         sys.exit(2)
+    out = args.out if args.out is not None else blocks_store.runs_dir(args.file)
+    try:
+        folder = blocks_store.save_run(result, program, out)     # names a new shuffle in the outcome
+    except OSError as e:
+        folder, error = None, e
     print(result.outcome)
     for check in result.checks:
         print(f"  {check['line']}")
-    out = args.out if args.out is not None else blocks_store.runs_dir(args.file)
-    try:
-        folder = blocks_store.save_run(result, program, out)
-    except OSError as e:
-        print(f"scrimmage: couldn't keep the run in {out}: {e}", file=sys.stderr)
+    for f in result.feeds:
+        if f["outcome"] == "stuck":
+            what = "the floor piece" if f["source"] == "floor" else f"a piece from {f['source']}"
+            print(f"  stuck in the robot: {what} (fed at {f['t']:.1f} s) rests on {f['body']}")
+    if folder is None:
+        print(f"scrimmage: couldn't keep the run in {out}: {error}", file=sys.stderr)
         sys.exit(2)
     print(f"kept in {folder}")
     sys.exit(0 if result.passed else 1)
+
+
+def _test_spread(args) -> None:
+    """Exit 0 when every placement got the floor ball picked up, 1 when not, 2 when the file or its robot is wrong."""
+    import csv
+    import json
+    from .blocks import program as blocks_program
+    from .blocks import store as blocks_store
+    from .blocks.spread import run_spread
+    out = args.out if args.out is not None else blocks_store.runs_dir(args.file)
+    try:
+        if not args.file.is_file():
+            raise FileNotFoundError(f"test file not found: {args.file}")
+        folder = run_spread(blocks_program.load(args.file), out)
+    except (ValueError, OSError) as e:    # TestFileError, ConfigError and PartError are ValueErrors
+        print(f"scrimmage: {e}", file=sys.stderr)
+        sys.exit(2)
+    meta = json.loads((folder / "spread.json").read_text(encoding="utf-8"))
+    print(meta["sentence"])
+    with open(folder / "table.csv", newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            what = "picked up" if row["picked up"] == "yes" else "missed"
+            print(f"  {row['placement']}: {what} ({row['outcome']})")
+    print(f"kept in {folder}")
+    sys.exit(0 if meta["picked"] and all(meta["picked"]) else 1)
 
 
 def _print_export(s: dict) -> None:

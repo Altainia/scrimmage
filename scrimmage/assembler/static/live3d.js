@@ -4,7 +4,9 @@
 // holding that mover's geoms at their local poses. applyFrame({poses, n}) sets each mover group's pose (ignored if
 // n differs from the mover count). Scene frame is MuJoCo's: z up, quaternions w, x, y, z.
 //
-// A mover below PARK_Z_HIDE (a parked ball sits at z = -20) is hidden. setScore(range) draws the test range's counts
+// A mover below PARK_Z_HIDE (a parked ball sits at z = -20) is hidden. outline(i) draws mover i (a piece the Test
+// tab's replay points at) with a colored rim, a larger back-faced copy of its geoms; outline(-1) takes it off.
+// setScore(range) draws the test range's counts
 // ({goals, fired, held}, or null for none) as an overlay in the top-left corner.
 //
 // Camera modes: follow (behind and above the robot's root mover, yaw-following, smoothed), top (straight down over
@@ -24,6 +26,7 @@ const DRIVER_HEIGHT = 1.7;
 const MODES = ["follow", "top", "driver", "free"];
 const PARK_Z_HIDE = -10;   // movers below this are parked, not drawn
 const SOFTWARE_MS = 66;   // about 15 drawings a second
+const OUTLINE = 0xd6336c, OUTLINE_SCALE = 1.5;   // outline(i)'s rim: a pink that stands out from a yellow ball and the field
 
 // Is WebGL drawn in software here? Asked once, from a throwaway context, before the real renderer picks antialiasing.
 let softwareGL = null;
@@ -89,6 +92,8 @@ export class LiveView {
     this.scene.add(this.model);
     this.groups = [];
     this.disposables = [];
+    this.outlines = [];       // the outline(i) rim's meshes (their geometries are the mover's own)
+    this.outlined = -1;
     this.floorInfo = { pos: [8, 4, 0], size: [8, 4] };
     this.rootMover = 0;
     this.mode = "follow";
@@ -114,6 +119,7 @@ export class LiveView {
   }
 
   clear() {
+    this.outline(-1);
     for (const d of this.disposables) d.dispose();
     this.disposables = [];
     this.model.clear();
@@ -177,6 +183,22 @@ export class LiveView {
       this.groups[i].visible = p[o + 2] >= PARK_Z_HIDE;
     }
     this.lastSeq = frame.seq;
+    this.requestRender();
+  }
+
+  outline(i) {
+    for (const m of this.outlines) { m.removeFromParent(); m.material.dispose(); }
+    this.outlines = [];
+    const g = i >= 0 ? this.groups[i] : null;
+    this.outlined = g ? i : -1;
+    for (const mesh of g ? [...g.children] : []) {
+      const rim = new THREE.Mesh(mesh.geometry, new THREE.MeshBasicMaterial({ color: OUTLINE, side: THREE.BackSide }));
+      rim.position.copy(mesh.position);
+      rim.quaternion.copy(mesh.quaternion);
+      rim.scale.copy(mesh.scale).multiplyScalar(OUTLINE_SCALE);
+      g.add(rim);
+      this.outlines.push(rim);
+    }
     this.requestRender();
   }
 

@@ -244,7 +244,7 @@ a preset (`preset = "name"`); keys you set yourself override it.
 
 | key | unit | default | meaning |
 |---|---|---|---|
-| `preset` | | | `2020-power-cell`, `2022-cargo` or `2026-fuel` |
+| `preset` | | | `2020-power-cell`, `2022-cargo`, `2026-fuel`, `2016-boulder`, `2017-fuel`, `2019-cargo`, `2025-algae`, `2014-ball`, `2010-soccer-ball` or `2012-basketball` |
 | `diameter` | m | required | |
 | `mass` | kg | required | |
 | `stiffness_n` | N | required | force to squeeze the ball by 25% of its diameter between flat plates. The most influential input |
@@ -414,6 +414,13 @@ comment saying where it came from.
 | `2020-power-cell` | 0.1778 m (7 in., game manual) | 0.1417 kg (AndyMark replica) | 60 N **estimate** | 0.6 **estimate** | 0.4 estimate |
 | `2022-cargo` | 0.2413 m (9.5 in., game manual) | 0.2693 kg (game manual) | 500 N **estimate** (from its 3.5 psi) | 0.87 (from the manual's carpet bounce) | 0.667 estimate |
 | `2026-fuel` | 0.1501 m (AndyMark) | 0.2164 kg (AndyMark/FIRST whitepaper) | 80 N **estimate** | 0.6 **estimate** | 0.4 estimate |
+| `2016-boulder` | 0.254 m (10 in., game manual) | 0.285 kg **estimate** (from Chief Delphi weighings) | 120 N **estimate** | 0.5 **estimate** | 0.4 estimate |
+| `2017-fuel` | 0.127 m (5 in. nominal, game manual) | 0.0737 kg (2.6 oz, game manual) | 60 N **estimate** | 0.5 **estimate** | 0.4 estimate |
+| `2019-cargo` | 0.3302 m (13 in., game manual) | 0.28 kg **estimate** | 250 N **estimate** | 0.7 **estimate** | 0.667 estimate |
+| `2025-algae` | 0.4064 m (16 in., Wikipedia; manual figure not confirmed) | 0.45 kg **estimate** | 200 N **estimate** | 0.7 **estimate** | 0.667 estimate |
+| `2014-ball` | 0.635 m (about 25 in., Chief Delphi) | 1.3 kg **estimate** | 300 N **estimate** | 0.8 **estimate** | 0.667 estimate |
+| `2010-soccer-ball` | 0.2223 m (27.5 in. circumference, game manual; also the 2002 piece) | 0.425 kg (15 oz, game manual) | 300 N **estimate** | 0.8 **estimate** | 0.667 estimate |
+| `2012-basketball` | 0.2021 m (25 in. circumference, 2012 manual section 2.2.11) | 0.3175 kg (11.2 oz, 2012 manual section 2.2.11) | 100 N **estimate** | 0.55 **estimate** | 0.4 estimate |
 
 No published squeeze force was found for any of these balls. The FUEL whitepaper charts a "spring rate" without
 units; if it were in lb/in., FUEL would be nearer 130 N (200 N once aged) than 80 N. Measure your own.

@@ -404,15 +404,25 @@
         </div>
         <canvas id="test-sweep-chart" class="test-plot test-sweep-chart" role="img"></canvas>
       </section>
+      <section id="test-spread-wrap" class="test-sweep-wrap" aria-labelledby="test-spread-title" hidden>
+        <h3 id="test-spread-title" class="test-sub"></h3>
+        <p id="test-spread-sentence" class="test-outcome"></p>
+        <p id="test-spread-note" class="test-note muted" hidden></p>
+        <div class="test-sweep-table-wrap"><table id="test-spread-table" class="test-sweep-table"></table></div>
+      </section>
       <section id="test-results" class="test-results" aria-labelledby="test-result-title" hidden>
         <h3 id="test-result-title" class="test-sub"></h3>
         <p id="test-outcome" class="test-outcome"></p>
         <p id="test-outcome-note" class="test-note muted" hidden></p>
+        <p id="test-feeds-summary" class="test-feeds-summary" hidden></p>
         <ul id="test-checks" class="test-checks"></ul>
         <div id="test-replay" class="test-replay"></div>
         <div class="row test-player">
           <button type="button" id="test-play" class="btn btn-small test-play">&#9654; Play</button>
-          <input type="range" id="test-scrub" class="test-scrub" min="0" max="1" step="any" value="0" aria-label="Replay time">
+          <div class="test-scrub-wrap">
+            <input type="range" id="test-scrub" class="test-scrub" min="0" max="1" step="any" value="0" aria-label="Replay time">
+            <div id="test-feed-marks" class="test-feed-marks" role="group" aria-label="Each fed piece, at the time it was fed" hidden></div>
+          </div>
           <span id="test-time" class="test-time">0.0 s</span>
           <select id="test-speed" aria-label="Replay speed">
             <option value="0.25">&frac14;&times;</option>

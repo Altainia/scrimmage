@@ -62,11 +62,12 @@ import mujoco
 import numpy as np
 
 from ..parts.field import ELEMENT_GROUP, FIELD_BITS
-from .build import RangeLayout, _quat, _rpy
+from .build import FUNNEL_RGBA, PLATE_FRICTION, RangeLayout, _quat, _rpy
 from .elements import IN, POST, Bar, Box, Bump, Element, Platform, Ramp, Switch
+from .station import CHUTE_PLATE, CHUTE_WALL_BALLS, Station
 
-__all__ = ["ELEMENT_GROUP", "NON_GROUND_GROUP", "add_element", "fill_layout", "platform_joints", "platform_tilt",
-           "switch_joint"]
+__all__ = ["ELEMENT_GROUP", "NON_GROUND_GROUP", "add_chute", "add_element", "fill_layout", "platform_joints",
+           "platform_tilt", "switch_joint"]
 
 # Structure the robot can touch but doesn't drive on: bars, switches and boxes that aren't ground. Not ELEMENT_GROUP
 # (the ground), and drawn by default (MuJoCo draws groups 0 to 2).
@@ -147,6 +148,48 @@ def ramp_parts(e: Ramp) -> dict:
         parts = {"ramp": _slope((left - run, 0.0), (left, e.height), fill)}
     parts["deck"] = _box((left, 0.0), (right, e.height))
     return parts
+
+
+def chute_parts(st: Station, ball_d: float) -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """A station's chute as boxes in the field: (center, rotation, half sizes) for "floor", "wall_left" and
+    "wall_right". The floor's top plane is tangent to a ball resting at the release point and runs down along the
+    heading, `length` from under the release point; the walls stand CHUTE_WALL_BALLS ball diameters above it, the
+    left one on the heading's left. A ball on a slope touches it r sin(slope) back up the slope from under its center,
+    so the floor's high end starts one more ball radius up the slope from that point: a ball set down at the release
+    point lands on the floor's face, not on its top edge."""
+    c = st.chute
+    s = math.radians(c.slope_deg)
+    width = st.chute_width(ball_d)
+    x, y, z = st.release
+    r = ball_d / 2.0
+    top0 = (0.0, z - r / math.cos(s))                   # in the heading's vertical plane: (along, up)
+    # the ball touches at (-r sin s, z - r cos s); one radius further up the slope is r cos s further back
+    back = r * (math.sin(s) + math.cos(s))
+    high = (-back, top0[1] + back * math.tan(s))
+    low = (c.length * math.cos(s), top0[1] - c.length * math.sin(s))
+    center, rot, (hx, hz) = _slope(high, low, CHUTE_PLATE)
+    h = math.radians(st.heading_deg)
+    rz = np.array([[math.cos(h), -math.sin(h), 0.0], [math.sin(h), math.cos(h), 0.0], [0.0, 0.0, 1.0]])
+    origin = np.array([x, y, 0.0])
+    wall_h = CHUTE_WALL_BALLS * ball_d
+    up = rot[:, 2]                                       # the floor's upward normal
+    surface = center + up * CHUTE_PLATE / 2.0            # the middle of the floor's top face
+    side = CHUTE_PLATE / 2.0 + width / 2.0
+    parts = {"floor": (center, (hx, width / 2.0 + CHUTE_PLATE, hz))}
+    for name, k in (("wall_left", 1.0), ("wall_right", -1.0)):
+        parts[name] = (surface + up * wall_h / 2.0 + np.array([0.0, k * side, 0.0]),
+                       (hx, CHUTE_PLATE / 2.0, wall_h / 2.0))
+    return {name: (origin + rz @ c3, rz @ rot, np.array(half)) for name, (c3, half) in parts.items()}
+
+
+def add_chute(spec: mujoco.MjSpec, st: Station, ball_d: float) -> None:
+    """Station `st`'s chute (chute_parts) as body `element.<station>.chute`, welded to the world: geoms
+    `element.<station>.chute.floor`, `.wall_left` and `.wall_right`, clear polycarbonate. Structure, not ground."""
+    body = spec.worldbody.add_body(name=f"element.{st.name}.chute")
+    for part, (center, rot, half) in chute_parts(st, ball_d).items():
+        body.add_geom(name=f"element.{st.name}.chute.{part}", type=mujoco.mjtGeom.mjGEOM_BOX, pos=list(center),
+                      quat=_quat(rot), size=list(half), rgba=list(FUNNEL_RGBA), friction=list(PLATE_FRICTION),
+                      group=NON_GROUND_GROUP, **FIELD_BITS)
 
 
 def platform_parts(e: Platform) -> dict:

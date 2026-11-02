@@ -225,7 +225,8 @@ def test_bar_box_switch_keys_checked():
     assert b.size == pytest.approx((10 * IN, 20 * IN, IN)) and b.base_height == 1.5 and not b.ground
 
 
-EXISTING = {"2026": (375, 425, 367), "2026-bump": (16, 31, 13), "2023-charge-station": (11, 22, 9),
+# 2026: 48 more since its OUTPOSTS became stations, one parked ball body, geom and joint for each of their 2 x 24 FUEL.
+EXISTING = {"2026": (423, 473, 415), "2026-bump": (16, 31, 13), "2023-charge-station": (11, 22, 9),
             "terrain-library": (14, 29, 9)}
 # The sums of geom_size, geom_pos and geom_friction over each range's element.* geoms, recorded from the code before
 # the climbing kinds (commit d1bdb90).

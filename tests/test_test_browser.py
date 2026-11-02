@@ -3,7 +3,10 @@
 The fixtures (Chromium lookup, the Server helper) live in tests/test_assembler_browser.py. The robot is the stand-in
 box with the stock arm (motor and joint arm.pivot), as in tests/test_test_server.py.
 """
+import json
+import shutil
 import tomllib
+from pathlib import Path
 
 import pytest
 
@@ -92,6 +95,62 @@ until = { hanging_from = "next bar" }
 [[block]]
 do = "wait_until"
 until = { level = "high" }
+
+[[block]]
+do = "drive"
+distance = 0.5
+direction = "left"
+volts = 4.0
+
+[[block]]
+do = "drive"
+seconds = 1.0
+direction = "back"
+
+[[block]]
+do = "drive"
+distance = 0.2
+direction = "forward"
+
+[[block]]
+do = "turn"
+degrees = 90.0
+volts = 3.0
+timeout = 2.0
+
+[[block]]
+do = "turn"
+degrees = -45.0
+
+[[block]]
+do = "start_feeding"
+station = "feeder"
+
+[[block]]
+do = "feed_one"
+station = "feeder"
+timeout = 4.0
+
+[[block]]
+do = "stop_feeding"
+station = "feeder"
+
+[[block]]
+do = "wait_until"
+until = { in_hopper = { at_least = 5 } }
+timeout = 20.0
+
+[[block]]
+do = "expect"
+that = { in_hopper = { at_most = 2 } }
+
+[[block]]
+do = "wait_until"
+until = { station_empty = "feeder" }
+
+[[block]]
+do = "expect"
+that = { made_it_in = { at_least = 80.0 } }
 """
 MISSING = """
 [[block]]
@@ -117,16 +176,16 @@ def _write(folder, blocks):
 
 @pytest.fixture
 def test_page(browser, tmp_path, monkeypatch):
-    """open(blocks, scheme="light", viewport=(1500, 950)) -> (page, the test file); everything is torn down
-    afterwards."""
+    """open(blocks, scheme="light", viewport=(1500, 950), path=None) -> (page, the test file: `path`, else one with
+    `blocks` on the stand-in with the arm); everything is torn down afterwards."""
     monkeypatch.setenv("SCRIMMAGE_SKIP_JAVA", "1")
     monkeypatch.setenv("SCRIMMAGE_RECENT", str(tmp_path / "recent.json"))
     monkeypatch.setenv("SCRIMMAGE_CACHE", str(tmp_path / "cache"))
     monkeypatch.setenv("SCRIMMAGE_FOLDERS", str(tmp_path / "folders.json"))
     servers, contexts, logs = [], [], []
 
-    def open_(blocks=SPIN, scheme="light", viewport=(1500, 950)):
-        path = _write(tmp_path, blocks)
+    def open_(blocks=SPIN, scheme="light", viewport=(1500, 950), path=None):
+        path = path or _write(tmp_path, blocks)
         srv = Server(path, cwd=tmp_path)
         servers.append(srv)
         ctx = browser.new_context(viewport={"width": viewport[0], "height": viewport[1]}, color_scheme=scheme)
@@ -172,12 +231,52 @@ def test_the_test_tab_opens_on_the_test_and_shows_its_blocks(test_page):
 def test_every_kind_of_block_round_trips_exactly(test_page):
     page, _ = test_page(EVERYTHING)
     st = page.evaluate("__scrimmageTest.state.test")
-    assert len(st["blocks"]) == 10
+    assert len(st["blocks"]) == 22
     assert page.evaluate("__scrimmageTest.toJSON()") == st
     # the condition blocks sit in their sockets
     types = page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).map(b => b.type)")
-    for kind in ("cond_tilt", "cond_joint", "cond_touch", "cond_piece_in", "cond_hanging_from", "cond_level"):
+    for kind in ("cond_tilt", "cond_joint", "cond_touch", "cond_piece_in", "cond_hanging_from", "cond_level",
+                 "cond_in_hopper", "cond_station_empty", "cond_made_it_in"):
         assert kind in types, kind
+
+
+def _flyout_types(page):
+    return page.evaluate("__scrimmageTest.workspace.getFlyout().getWorkspace().getTopBlocks(true).map(b => b.type)")
+
+
+def test_the_station_blocks_show_on_a_station_field_only(test_page):
+    page, path = test_page()
+    assert "start_feeding" not in _flyout_types(page)
+    robot = path.parent / "robot.toml"
+    base = robot.read_text(encoding="utf-8")
+    robot.write_text(base + '\n[range]\nfile = "station"\nstart = "at_station"\n', encoding="utf-8")
+    page.wait_for_function("__scrimmageTest.state.palette.stations.includes('feeder')")
+    types = _flyout_types(page)
+    for t in ("start_feeding", "stop_feeding", "feed_one", "cond_station_empty", "turn", "cond_in_hopper",
+              "cond_made_it_in"):
+        assert t in types, t
+    robot.write_text(base + '\n[range]\nfile = "ladder"\nstart = "below"\n', encoding="utf-8")
+    page.wait_for_function("__scrimmageTest.state.palette.stations.length === 0")
+    types = _flyout_types(page)
+    assert "start_feeding" not in types and "cond_station_empty" not in types
+    assert "cond_in_hopper" in types and "cond_made_it_in" in types
+
+
+def _drive_choices(page):
+    return page.evaluate("""(() => {
+      const fl = __scrimmageTest.workspace.getFlyout().getWorkspace();
+      const b = fl.getTopBlocks(true).find(b => b.type === 'drive');
+      return b.getField('DIR').getOptions(false).map(o => o[1]);
+    })()""")
+
+
+def test_drive_offers_left_and_right_on_a_swerve_robot_only(test_page):
+    page, path = test_page()
+    assert page.evaluate("__scrimmageTest.state.palette.drive_kind") == "tank"
+    assert _drive_choices(page) == ["forward", "back"]
+    (path.parent / "robot.toml").write_text(new_config("swerve"), encoding="utf-8")
+    page.wait_for_function("__scrimmageTest.state.palette.drive_kind === 'swerve'")
+    assert _drive_choices(page) == ["forward", "back", "left", "right"]
 
 
 def test_a_wait_dragged_from_the_palette_is_saved(test_page):
@@ -367,7 +466,7 @@ until = { touch = { robot = "arm.gone", field = "nowhere" } }
 
 def test_the_status_bar_counts_every_block_of_the_test(test_page):
     page, _ = test_page(EVERYTHING)
-    page.wait_for_function("document.querySelector('#test-count').textContent === '13 blocks in the test'")
+    page.wait_for_function("document.querySelector('#test-count').textContent === '25 blocks in the test'")
 
 
 def test_dragging_a_test_apart_keeps_the_first_block_and_a_reload_says_what_it_left_out(test_page):
@@ -784,15 +883,15 @@ def test_setup_changes_the_stand_ins_weight_and_mounts_in_the_robot_file_and_the
     _wait_file(lambda: _robot_part(path, "arm").get("pos") == [0.05, 0.0, 0.0], path)
     assert _robot_part(path, "arm")["attach"] == "drive.top"
     # a hook: saved in the test
-    page.check("#test-setup input[data-body='arm.arm']")
+    page.check("#test-setup .test-setup-hooks input[data-body='arm.arm']")
     page.evaluate("__scrimmageTest.saved")
     _wait_file(lambda: tomllib.loads(path.read_text(encoding="utf-8"))["test"].get("hooks") == ["arm.arm"], path)
     page.wait_for_function("__scrimmageTest.state.palette.hooks.includes('arm.arm')")
     assert "hooks: arm.arm" in page.inner_text("#test-setup summary")
     # the hooks offered are the mechanism's: not the drivetrain's or the chassis's
-    assert page.locator("#test-setup input[data-body='dt.left_1']").count() == 0
-    assert page.locator("#test-setup input[data-body='drive.chassis']").count() == 0
-    assert page.locator("#test-setup input[data-body='arm.base']").count() == 1
+    assert page.locator("#test-setup .test-setup-hooks input[data-body='dt.left_1']").count() == 0
+    assert page.locator("#test-setup .test-setup-hooks input[data-body='drive.chassis']").count() == 0
+    assert page.locator("#test-setup .test-setup-hooks input[data-body='arm.base']").count() == 1
     # the Robot tab's Undo takes the last Setup edit (the arm's mount) back out of the file
     page.click("#tab-btn-robot")
     page.click("#undo")
@@ -854,3 +953,337 @@ def test_setup_and_a_sweep_meet_wcag_aa(test_page, scheme):
     _sweep_block(page)
     page.wait_for_timeout(200)
     assert page.evaluate(f"({CONTRAST_JS}).check(document.querySelector('#tab-test'))") == []
+
+
+EXAMPLES = Path(__file__).resolve().parents[1] / "examples" / "blocks"
+
+
+def _example(tmp_path, name, test, edit=None):
+    """A copy of examples/blocks/<name> in tmp_path, and its test file (`edit(text)` -> the text to write instead)."""
+    folder = tmp_path / name
+    shutil.copytree(EXAMPLES / name, folder)
+    path = folder / test
+    if edit:
+        path.write_text(edit(path.read_text(encoding="utf-8")), encoding="utf-8")
+    return path
+
+
+def _toml(path):
+    return tomllib.loads(path.read_text(encoding="utf-8"))
+
+
+def _open_setup(page):
+    page.click("#test-setup summary")
+    page.wait_for_selector("#test-field")
+
+
+def test_setup_lists_every_field_and_a_start_picker_for_fields_with_more_than_one(test_page, tmp_path):
+    page, path = test_page(path=_example(tmp_path, "station", "feed.test.toml"))
+    _open_setup(page)
+    names = page.eval_on_selector_all("#test-field option", "os => os.map(o => o.textContent)")
+    assert len(names) == page.evaluate("__scrimmageTest.state.fields.length") and names[0] == "The plain field"
+    assert "A human player station" in names
+    assert page.input_value("#test-field") == "station"
+    assert page.input_value("#test-start") == "at_station"       # the station field has two starts, in words
+    assert page.eval_on_selector_all("#test-start option", "os => os.map(o => o.textContent)") == [
+        "At station", "Facing ball"]
+    robot = path.parent / "hopper-standin.toml"
+    page.select_option("#test-field", "2026")
+    _wait_file(lambda: _toml(robot)["range"]["file"] == "2026", robot)
+    first = page.evaluate("__scrimmageTest.state.fields.find(f => f.file === '2026').starts")
+    assert len(first) > 1 and _toml(robot)["range"]["start"] == first[0]        # put at the field's first start
+    page.wait_for_function(f"document.querySelector('#test-start') && document.querySelector('#test-start').value"
+                           f" === {first[0]!r}")
+    page.select_option("#test-start", first[1])
+    _wait_file(lambda: _toml(robot)["range"].get("start") == first[1], robot)
+    page.select_option("#test-field", "")
+    _wait_file(lambda: "range" not in _toml(robot), robot)
+    page.wait_for_function("!document.querySelector('#test-start')")             # the plain field has none
+
+
+def test_setup_hopper_ball_and_station_settings_are_saved_in_the_test(test_page, tmp_path):
+    path = _example(tmp_path, "station", "feed.test.toml", lambda s: s.replace('hopper = ["hopper.bin"]\n', ""))
+    page, _ = test_page(path=path)
+    _open_setup(page)
+    hint = page.inner_text("#test-setup .test-setup-hopper .hint")
+    assert hint == "Tick the bodies a piece lands in. A piece whose center is inside one made it in."
+    box = "#test-setup .test-setup-hopper input[data-body='hopper.bin']"
+    assert page.is_checked(box)                       # preselected (starter_hopper) ...
+    assert "hopper" not in _toml(path)["test"]        # ... and not saved until Setup changes
+    page.uncheck(box)
+    page.check(box)
+    _wait_file(lambda: _toml(path)["test"].get("hopper") == ["hopper.bin"], path)
+    balls = page.eval_on_selector_all("#test-ball option", "os => os.map(o => [o.value, o.textContent])")
+    field_ball = page.evaluate("__scrimmageTest.state.palette.ball")
+    assert balls[0] == [field_ball, f"{field_ball} (the field's)"] and len(balls) > 2
+    page.select_option("#test-ball", "2017-fuel")
+    _wait_file(lambda: _toml(path).get("setup", {}).get("ball") == "2017-fuel", path)
+    # the field's interval until changed; a change goes in [setup] beside the example's spreads
+    shown = page.input_value("#test-station-feeder-interval")
+    assert float(shown) == page.evaluate("__scrimmageTest.state.palette.station_settings.feeder.interval")
+    assert page.input_value("#test-station-feeder-spread_yaw_deg") == "5"          # the test's own value
+    page.fill("#test-station-feeder-interval", "0.5")
+    page.press("#test-station-feeder-interval", "Enter")
+    _wait_file(lambda: _toml(path)["setup"]["station"]["feeder"].get("interval") == 0.5, path)
+    setup = _toml(path)["setup"]
+    assert setup["station"]["feeder"] == {"spread_yaw_deg": 5.0, "spread_pitch_deg": 5.0, "spread_speed": 0.2,
+                                          "interval": 0.5}
+    assert setup["seed"] == 1 and setup["ball"] == "2017-fuel" and _toml(path)["test"]["hopper"] == ["hopper.bin"]
+    # the release box is in inches on screen, meters in the file
+    page.fill("#test-station-feeder-spread_position-1", "2")
+    page.press("#test-station-feeder-spread_position-1", "Enter")
+    _wait_file(lambda: "spread_position" in _toml(path)["setup"]["station"]["feeder"], path)
+    assert _toml(path)["setup"]["station"]["feeder"]["spread_position"][1] == pytest.approx(0.0508)
+    # each number has Try values… for the station sweeps
+    page.click("#test-setup [data-try='station-feeder-interval']")
+    page.wait_for_selector("#test-sweep-dialog[open]")
+    assert page.evaluate("__scrimmageTest.sweepFor[0].target") == {"station": "feeder", "key": "interval"}
+    page.click("#test-sweep-dialog [data-close]")
+    # the release box is tried in inches too (meters in the request)
+    page.click("#test-setup [data-try='station-feeder-spread_position']")
+    page.wait_for_selector("#test-sweep-dialog[open]")
+    assert "(now 2 in)" in page.inner_text("#test-sweep-which")
+    sent = []
+    page.on("request", lambda r: sent.append(r.post_data_json) if r.url.endswith("/api/test/sweep") else None)
+    page.fill("#test-sweep-list", "1, 3")
+    page.click("#test-sweep-go")
+    page.wait_for_function("__scrimmageTest.state.sweeps.length === 1 && __scrimmageTest.state.running === null",
+                           timeout=120000)
+    assert sent[0]["target"] == {"station": "feeder", "key": "spread_position"}
+    assert sent[0]["values"] == [0.0254, 0.0762]
+    page.wait_for_selector("#test-sweep-wrap", state="visible")
+    assert page.inner_text("#test-sweep-title") == "Sweep 1: feeder: release box (± in)"
+    # the table shows the values in inches, as they were typed
+    assert page.eval_on_selector_all("#test-sweep-table .test-sweep-value", "bs => bs.map(b => b.textContent)") == ["1", "3"]
+
+
+def _just_a_wait(text):
+    """The station example's test with its feed blocks swapped for one wait block (its [setup] kept)."""
+    return text[:text.index("[[block]]")] + '[[block]]\ndo = "wait"\nseconds = 0.5\n'
+
+
+def test_settings_for_another_field_can_be_cleared_so_the_test_runs(test_page, tmp_path):
+    """Moved to the ladder, the station test's station settings are left over: Setup lists them with Clear, and once
+    cleared the test runs. The shuffle is no problem on a field without stations."""
+    path = _example(tmp_path, "station", "feed.test.toml", _just_a_wait)
+    page, _ = test_page(path=path)
+    _open_setup(page)
+    assert page.query_selector("#test-setup .test-setup-leftover") is None       # the station field uses them all
+    robot = path.parent / "hopper-standin.toml"
+    page.select_option("#test-field", "ladder")
+    _wait_file(lambda: _toml(robot)["range"]["file"] == "ladder", robot)
+    page.wait_for_function("__scrimmageTest.state.problems.length > 0")
+    assert 'Setup names a station this field doesn\'t have: "feeder"' in page.inner_text("#test-problems")
+    assert page.is_disabled("#test-run")
+    page.wait_for_selector("#test-setup .test-setup-leftover")
+    assert page.inner_text("#test-setup .test-setup-leftover legend") == "Settings for another field"
+    row = "#test-setup .test-setup-leftover [data-leftover='station-feeder']"
+    assert 'Station "feeder": this field has no station by that name' in page.inner_text(row)
+    page.click(f"{row} button")
+    _wait_file(lambda: "station" not in _toml(path).get("setup", {}), path)
+    assert _toml(path)["setup"] == {"seed": 1}                                      # the shuffle is left alone
+    page.wait_for_function("__scrimmageTest.state.problems.length === 0")
+    page.wait_for_function("!document.querySelector('#test-run').disabled")
+    assert page.query_selector("#test-setup .test-setup-leftover") is None
+    assert _run(page, "001")["status"] == "finished"
+
+
+def test_a_run_on_a_station_field_that_fed_nothing_has_no_fed_pieces_line(test_page, tmp_path):
+    page, path = test_page(path=_example(tmp_path, "station", "feed.test.toml", _just_a_wait))
+    run = _run(page, "001")
+    assert run["status"] == "finished"
+    result = json.loads((path.parent / "feed-runs" / "001" / "result.json").read_text(encoding="utf-8"))
+    assert result["counts"] == {"fed": 0, "in": 0, "stuck": 0, "missed": 0}      # counted, but nothing to say
+    assert page.is_hidden("#test-feeds-summary")
+
+
+def test_a_cleared_hopper_stays_cleared_after_a_reload(test_page, tmp_path):
+    path = _example(tmp_path, "station", "feed.test.toml")
+    page, _ = test_page(path=path)
+    _open_setup(page)
+    page.uncheck("#test-setup .test-setup-hopper input[data-body='hopper.bin']")
+    _wait_file(lambda: _toml(path)["test"].get("hopper") == [], path)
+    page.reload()
+    page.wait_for_function(READY)
+    _open_setup(page)
+    assert not page.is_checked("#test-setup .test-setup-hopper input[data-body='hopper.bin']")
+    page.click("#test-new-shuffle")                     # the next Setup change doesn't bring the preselection back
+    _wait_file(lambda: _toml(path)["setup"]["seed"] != 1, path)
+    assert _toml(path)["test"]["hopper"] == []
+
+
+def test_a_hook_change_saves_the_preselected_hopper_too(test_page, tmp_path):
+    path = _example(tmp_path, "station", "feed.test.toml", lambda s: s.replace('hopper = ["hopper.bin"]\n', ""))
+    page, _ = test_page(path=path)
+    _open_setup(page)
+    page.check("#test-setup .test-setup-hooks input[data-body='hopper.bin']")
+    _wait_file(lambda: _toml(path)["test"].get("hooks") == ["hopper.bin"], path)
+    assert _toml(path)["test"]["hopper"] == ["hopper.bin"]
+
+
+def test_new_shuffle_changes_the_seed_in_the_file(test_page, tmp_path):
+    path = _example(tmp_path, "station", "feed.test.toml")
+    page, _ = test_page(path=path)
+    _open_setup(page)
+    assert page.inner_text("#test-seed") == "Shuffle 1"
+    page.click("#test-new-shuffle")
+    _wait_file(lambda: _toml(path)["setup"]["seed"] != 1, path)
+    seed = _toml(path)["setup"]["seed"]
+    assert 1 <= seed <= 999999
+    page.wait_for_function(f"document.querySelector('#test-seed').textContent === 'Shuffle {seed}'")
+    page.click("#test-setup [data-try='seed']")
+    page.wait_for_selector("#test-sweep-dialog[open]")
+    assert page.evaluate("__scrimmageTest.sweepFor[0].target") == {"setup": "seed"}
+    assert page.input_value("#test-sweep-from") == str(seed)        # whole seeds, from this one on
+    page.click("#test-sweep-dialog [data-close]")
+
+
+def test_the_floor_spread_counts_runs_and_refuses_more_than_25(test_page, tmp_path):
+    path = _example(tmp_path, "intake", "spread.test.toml")
+    page, _ = test_page(path=path)
+    _open_setup(page)
+    page.wait_for_selector("#test-spread-count")
+    assert page.inner_text("#test-spread-count") == "3 runs"
+    # a ticked distance starts around the field's ball (59 in ahead), never inside the robot
+    ball = page.evaluate("__scrimmageTest.state.palette.floor_ball")
+    assert page.input_value("#test-spread-distance_in-from") == "47" and page.input_value("#test-spread-distance_in-to") == "71"
+    assert ball["nearest_in"] <= 47
+    page.fill("#test-spread-distance_in-from", "12")
+    page.check("#test-spread-distance_in-on")
+    page.wait_for_function("document.querySelector('#test-spread-count').textContent.includes('inside the robot')")
+    assert page.inner_text("#test-spread-count") == (f"Distance ahead (in): {ball['nearest_in']} in or more"
+                                                     " (nearer, the ball starts inside the robot)")
+    page.uncheck("#test-spread-distance_in-on")
+    page.wait_for_function("document.querySelector('#test-spread-count').textContent === '3 runs'")
+    assert "distance_in" not in _toml(path)["setup"]["floor_spread"]
+    assert page.is_checked("#test-spread-offset_in-on") and not page.is_checked("#test-spread-distance_in-on")
+    page.check("#test-spread-angle_deg-on")
+    page.fill("#test-spread-angle_deg-from", "-20")
+    page.fill("#test-spread-angle_deg-to", "20")
+    page.fill("#test-spread-angle_deg-steps", "3")
+    page.press("#test-spread-angle_deg-steps", "Enter")
+    page.wait_for_function("document.querySelector('#test-spread-count').textContent === '9 runs'")
+    _wait_file(lambda: _toml(path)["setup"]["floor_spread"].get("angle_deg") == [-20.0, 0.0, 20.0], path)
+    assert _toml(path)["setup"]["floor_spread"]["offset_in"] == [-6.0, 0.0, 6.0]
+    assert page.is_enabled("#test-spread-run")
+    page.fill("#test-spread-angle_deg-steps", "9")
+    page.press("#test-spread-angle_deg-steps", "Enter")
+    page.wait_for_function("document.querySelector('#test-spread-count').textContent.includes('at most 25 runs')")
+    assert page.inner_text("#test-spread-count") == "27 runs: at most 25 runs; use fewer steps"
+    assert page.is_disabled("#test-spread-run")
+    page.evaluate("__scrimmageTest.saved")
+    assert _toml(path)["setup"]["floor_spread"]["angle_deg"] == [-20.0, 0.0, 20.0]     # not written
+    page.uncheck("#test-spread-angle_deg-on")
+    page.wait_for_function("document.querySelector('#test-spread-count').textContent === '3 runs'")
+    _wait_file(lambda: "angle_deg" not in _toml(path)["setup"]["floor_spread"], path)
+
+
+def test_add_the_station_blocks_appends_them(test_page, tmp_path):
+    path = _example(tmp_path, "station", "feed.test.toml",
+                    lambda s: s.split("[[block]]")[0] + '[[block]]\ndo = "wait"\nseconds = 0.5\n')
+    page, _ = test_page(path=path)
+    _open_setup(page)
+    page.click("#test-add-station-blocks")
+    _wait_file(lambda: len(_file_blocks(path)) == 4, path)
+    assert [b["do"] for b in _file_blocks(path)] == ["wait", "start_feeding", "wait_until", "stop_feeding"]
+    assert _types(page)[0] == "wait"
+    page.wait_for_function("!document.querySelector('#test-add-station-blocks')")     # a feed block is there now
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_the_station_setup_meets_wcag_aa(test_page, tmp_path, scheme):
+    page, _ = test_page(path=_example(tmp_path, "station", "feed.test.toml"), scheme=scheme)
+    _open_setup(page)
+    page.wait_for_selector("#test-station-feeder-interval")
+    page.wait_for_timeout(200)
+    assert page.locator("#test-setup input").count() > 15
+    assert page.evaluate(f"({CONTRAST_JS}).check(document.querySelector('#test-setup'))") == []
+
+
+# A station field of our own that feeds 3 pieces a second apart onto the stand-in's bin with a shelf on its back wall
+# (tests/test_blocks_feeds.py): the first lodges on the shelf (stuck), the second rolls off to the floor (missed), the
+# third lands in the bin (in).
+FEED_3 = '\n[[block]]\ndo = "start_feeding"\nstation = "feeder"\n\n[[block]]\ndo = "wait"\nseconds = 3.0\n'
+
+
+def _fed_test(tmp_path):
+    from test_blocks_feeds import HOPPER, SHELF, station_file, write as write_fed
+    folder = tmp_path / "fed"
+    folder.mkdir()
+    field = station_file(folder, (1.523, 4.0, 1.0), extra="stock = 3\ninterval = 1.0\n")
+    return write_fed(folder, FEED_3, field, HOPPER + SHELF)
+
+
+def _result(page, run_id):
+    return page.evaluate(f"""import('/app.js').then(app => app.api('GET', '/api/test/run/{run_id}'))
+                         .then(r => r.data)""")
+
+
+def test_a_fed_run_marks_every_piece_and_jumps_to_a_stuck_one(test_page, tmp_path):
+    page, _ = test_page(path=_fed_test(tmp_path))
+    _run(page, "001")
+    res = _result(page, "001")
+    feeds, counts = res["feeds"], res["counts"]
+    assert counts == {"fed": 3, "in": 1, "stuck": 1, "missed": 1}, res["outcome"]
+    assert page.evaluate("__scrimmageTest.replay.feeds") == feeds
+    marks = page.locator("#test-feed-marks .test-feed-mark")
+    assert marks.count() == counts["fed"]
+    assert [marks.nth(k).get_attribute("data-outcome") for k in range(3)] == [f["outcome"] for f in feeds]
+    missed = next(k for k, f in enumerate(feeds) if f["outcome"] == "missed")
+    f = feeds[missed]
+    assert marks.nth(missed).get_attribute("title") == (f"piece {missed + 1} from feeder at {f['t']:.1f} s: missed"
+                                                         f" ({f['why']})")
+    assert page.inner_text("#test-feeds-summary").startswith("Fed pieces: 1 in · 1 stuck · 1 missed")
+    # the stuck piece's button jumps the replay to when it was stuck and outlines that ball
+    stuck = next(f for f in feeds if f["outcome"] == "stuck")
+    button = page.locator("#test-feeds-summary button")
+    assert button.count() == 1 and button.inner_text() == f"Show the stuck piece (at {stuck['t_outcome']:.1f} s)"
+    button.click()
+    assert page.evaluate("__scrimmageTest.replay.time") == pytest.approx(stuck["t_outcome"], abs=1 / 30)
+    assert page.evaluate("__scrimmageTest.replay.outlined") == stuck["ball"]
+    # a click on a mark jumps to that piece's outcome
+    marks.nth(missed).click()
+    assert page.evaluate("__scrimmageTest.replay.time") == pytest.approx(f["t_outcome"], abs=1 / 30)
+    assert page.evaluate("__scrimmageTest.replay.outlined") == f["ball"]
+
+
+def test_a_spread_shows_its_sentence_and_a_row_replays_its_run(test_page, tmp_path):
+    page, _ = test_page(path=_example(tmp_path, "intake", "spread.test.toml"))
+    _open_setup(page)
+    page.wait_for_selector("#test-spread-run:not([disabled])")
+    page.click("#test-spread-run")
+    page.wait_for_function("__scrimmageTest.state.spreads.length === 1 && __scrimmageTest.state.running === null"
+                           " && __scrimmageTest.replay.runId === 'spread-001/003'", timeout=120000)
+    spread = page.evaluate("__scrimmageTest.state.spreads[0]")
+    page.wait_for_selector("#test-spread-wrap", state="visible")
+    assert page.inner_text("#test-spread-title") == "Spread 1"
+    assert page.inner_text("#test-spread-sentence") == _sentence(spread["sentence"])
+    rows = page.locator("#test-spread-table tbody tr")
+    assert rows.count() == 3
+    assert [rows.nth(k).locator("td").first.inner_text() for k in range(3)] == [r["placement"] for r in spread["rows"]]
+    assert [rows.nth(k).locator("td").nth(1).inner_text() for k in range(3)] == [r["picked up"] for r in spread["rows"]]
+    status = [r["status"] for r in spread["rows"]]
+    assert page.inner_text("#test-result-title") == f"Spread 1, placement 3 · {status[2]}"
+    page.click("#test-spread-table [data-run='spread-001/001']")
+    page.wait_for_function("__scrimmageTest.replay.runId === 'spread-001/001'")
+    assert page.inner_text("#test-result-title") == f"Spread 1, placement 1 · {status[0]}"
+    assert rows.nth(0).get_attribute("aria-current") == "true"
+    assert "Spread 1, placement 1" in page.inner_text("#test-runs")
+    # a floor run marks its one piece, from the floor
+    assert page.locator("#test-feed-marks .test-feed-mark").count() == 1
+    assert " from the floor at " in page.get_attribute("#test-feed-marks .test-feed-mark", "title")
+    _run(page, "001")
+    assert page.is_hidden("#test-spread-wrap")
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_the_feed_marks_are_3_to_1_on_their_background(test_page, tmp_path, scheme):
+    """WCAG 1.4.11 for the feed marks (shapes with no text): each outcome's color against the panel behind them; and
+    the run column with them shown meets AA."""
+    page, _ = test_page(path=_fed_test(tmp_path), scheme=scheme)
+    _run(page, "001")
+    colors = page.evaluate("__scrimmageTest.replay.feedColors")
+    assert set(colors) == {"in", "stuck", "missed", "bg"}
+    for k in ("in", "stuck", "missed"):
+        assert _hex_ratio(colors[k], colors["bg"]) >= 3, (k, colors)
+    assert page.evaluate(f"({CONTRAST_JS}).check(document.querySelector('#test-run-col'))") == []

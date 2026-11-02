@@ -211,8 +211,9 @@ def test_report_shows_ball_table(browser, tmp_path):
         assert rows == ["held", "held", "held"], rows
         score = page.inner_text("#rp-score")
         assert "hub_blue: 0" in score and "held: 3" in score and "fired: 0" in score
-        # the floor balls are off (not in the world), and the robot holds 4: one slot is spare
-        assert ("Not listed: 1 spare ball (unused slots, or floor balls turned off)."
+        # the floor balls are off (not in the world), and the robot holds 4: one slot is spare, and the OUTPOSTS'
+        # 48 FUEL wait parked
+        assert ("Not listed: 49 spare balls (unused slots, or floor balls turned off)."
                 in page.inner_text("#rp-balls .rp-not-listed"))
     finally:
         ctx.close()

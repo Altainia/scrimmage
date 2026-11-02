@@ -1,0 +1,30 @@
+[test]
+robot = "intake-standin.toml"
+hopper = ["intake.hopper"]
+chart = ["intake.roller"]
+
+[setup]
+floor_spread = { offset_in = [-6.0, 0.0, 6.0] }
+
+[[block]]
+do = "spin"
+motor = "intake.roller"
+volts = 6.0
+
+[[block]]
+do = "drive"
+seconds = 2.0
+volts = 4.0
+
+[[block]]
+do = "wait_until"
+until = { piece_in = { body = "intake.hopper", piece = "any" } }
+timeout = 5.0
+
+[[block]]
+do = "wait"
+seconds = 1.0
+
+[[block]]
+do = "expect"
+that = { piece_in = { body = "intake.hopper", piece = "any" } }

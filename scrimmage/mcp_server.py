@@ -42,9 +42,10 @@ game pieces, no robot or session needed: write a bench file (TOML) with your own
 paths. A Bench tab (`scrimmage edit <folder>`) may be showing the session: bench_focus pins the numbers you are
 talking about there.
 
-Block tests (test_run, test_sweep) try a mechanism on a robot with no robot program: write a test file
+Block tests (test_run, test_sweep, test_spread) try a mechanism on a robot with no robot program: write a test file
 (<name>.test.toml) with your own file tools, then test_run it. test_sweep tries one number in the test or the robot at
-several values. Pass absolute paths. Each run is kept next to the test file, where the app's Test tab can replay it.
+several values; test_spread tries the floor ball at each placement of the test's floor spread. Pass absolute paths.
+Each run is kept next to the test file, where the app's Test tab can replay it.
 """
 
 
@@ -580,8 +581,11 @@ async def test_run(path: str) -> dict:
     Returns "status" (finished, check failed, timed out, tipped over, walked off, time limit, repeat limit),
     "outcome" (one plain sentence to read to the room), "passed" (finished with every check passed), "t_end"
     (seconds), "checks" (one plain line each, with whether it passed), "hung" (the bars the robot hung from),
-    "signals" (each measured signal's min, max and final value), and "run_folder", where the run is kept (the app's
-    Test tab replays it). path: an absolute path. A bad test file or robot is a plain error naming the block."""
+    "signals" (each measured signal's min, max and final value), "counts" (on a field with a human player
+    station: fed, in, stuck, missed; else null), "feeds" (one row per fed piece: ball, source, t, outcome "in",
+    "stuck" or "missed", why, t_outcome, body for a stuck piece), "seed" (the stations' seed, or null), and
+    "run_folder", where the run is kept (the app's Test tab replays it). path: an absolute path. A bad test file or
+    robot is a plain error naming the block."""
     file = _test_file(path)
 
     def work():
@@ -595,6 +599,7 @@ async def test_run(path: str) -> dict:
                 "t_end": result.t_end,
                 "checks": [{"line": c["line"], "passed": c["passed"]} for c in result.checks],
                 "hung": list(result.hung), "signals": _signal_summary(result.signals),
+                "counts": result.counts, "feeds": result.feeds, "seed": result.seed,
                 "run_folder": str(folder.resolve())}
 
     try:
@@ -609,7 +614,9 @@ async def test_sweep(path: str, target: dict, values: list[float]) -> dict:
     changes: {"block": [2], "key": "to"} is the "to" of block 3 (a list of positions, counting from 0, goes inside
     repeats, and key is volts, seconds, to or distance); {"robot": "mass"} is the robot's mass (also com_forward,
     com_left, com_up for the center of mass); {"mount": "arm", "axis": "x"} is where a part is mounted (axis x, y,
-    z or yaw). values: the numbers to try, in order (at most 12). Returns "rows" (each value's
+    z or yaw); {"setup": "seed"} is the human player's shuffle (a whole number), and {"station": "feeder", "key":
+    "interval"} is a station's interval (also stock, spread_yaw_deg, spread_pitch_deg, spread_speed, spread_position,
+    spread_rotation_deg; the last two set all three axes). values: the numbers to try, in order (at most 12). Returns "rows" (each value's
     status, outcome, t_end and a passed or failed per check), "sweep_folder" (table.csv and sweep.json, each run
     kept inside; the app's Test tab shows them) and any "problems" to tell the room. A value that can't run gets a
     row saying why; the rest still run. path: an absolute path."""
@@ -629,6 +636,35 @@ async def test_sweep(path: str, target: dict, values: list[float]) -> dict:
         if meta.get("problems"):
             info["problems"] = meta["problems"]
         return info
+
+    try:
+        return await asyncio.to_thread(work)
+    except _test_errors() as e:
+        raise ToolError(str(e)) from None
+
+
+@server.tool()
+async def test_spread(path: str) -> dict:
+    """Run a block test once per placement of its floor spread (the test file's [setup] floor_spread, e.g.
+    floor_spread = { offset_in = [-6, 0, 6], angle_deg = [0, 30] }: every combination, at most 25), to see which
+    placements of the floor ball in front of the robot got it picked up (into a hopper body). The axes are offset_in
+    (left of the robot's center line +, right -), distance_in (ahead), angle_deg (the robot's approach angle) and
+    rotation_deg (the piece turned). Returns "sentence" ("picked up 7 of 9; missed at 6 in left at 30° and 6 in
+    right at 30°", to read to the room), "rows" (each placement's words, its four axes, status, "picked up" yes or
+    no, and outcome) and "spread_folder" (table.csv and spread.json, each run kept inside; the app's Test tab shows
+    them). path: an absolute path."""
+    file = _test_file(path)
+
+    def work():
+        import csv
+        from .blocks import program as blocks_program
+        from .blocks import store as blocks_store
+        from .blocks.spread import run_spread
+        folder = run_spread(blocks_program.load(file), blocks_store.runs_dir(file))
+        with open(folder / "table.csv", newline="", encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+        meta = json.loads((folder / "spread.json").read_text(encoding="utf-8"))
+        return {"sentence": meta["sentence"], "rows": rows, "spread_folder": str(folder.resolve())}
 
     try:
         return await asyncio.to_thread(work)

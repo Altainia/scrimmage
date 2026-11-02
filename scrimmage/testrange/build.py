@@ -3,8 +3,10 @@ config's [range] section.
 
 Goals are thin boxes (FIELD_BITS, so the robot and the balls hit them) on one static body per goal, welded to the
 world. Balls are `ball.<i>`: the range's floor balls first, in file order, then one parked slot per ball the robot
-can hold. The ball count is fixed when the model is built (the live view drops frames whose body count changes), so
-a ball out of play is parked: PARK_Z under its own (x, y), with PARKED_BITS (it touches nothing).
+can hold, then each [[station]]'s pool (Station.pool() slots, in file order), all parked. A station's chute is body
+`element.<station>.chute` (build_elements.add_chute). The ball count is fixed when the model is built (the live view
+drops frames whose body count changes), so a ball out of play is parked: PARK_Z under its own (x, y), with
+PARKED_BITS (it touches nothing).
 
 Ball contact: MuJoCo's soft contact is a damped spring, solref = (time constant T, damping ratio zeta), solimp =
 (dmin, dmax, width, mid, power) its impedance d, which grows from dmin to dmax as the penetration grows to `width`.
@@ -60,6 +62,7 @@ from ..disc.inputs import Disc
 from ..launcher.inputs import Ball
 from ..parts.field import FIELD_BITS
 from .spec import BUILTIN_RANGES, Goal, Obstacle, Range, RangeError, RectOpening, load_range
+from .station import DEFAULT_SEED, check_seed, with_overrides
 
 BALL_BITS = {"contype": 4, "conaffinity": 7}       # touches the field, the robot and other balls
 LAUNCHED_BITS = {"contype": 4, "conaffinity": 5}   # touches the field and balls, not the robot
@@ -87,14 +90,17 @@ DISC_RGBA = [0.95, 0.95, 0.95, 1.0]
 SLOT_PITCH = 0.2                # m between parked slots' (x, y), in rows of SLOT_ROW from the blue right corner
 SLOT_ROW = 80
 
-RANGE_KEYS = ("file", "start", "preload", "floor_balls")
+RANGE_KEYS = ("file", "start", "preload", "floor_balls", "ball", "station", "seed")
 
 
 @dataclass
 class RangeLayout:
-    ball_names: list[str]       # ball.0 ...: the floor balls (n_floor), then the robot's slots
+    ball_names: list[str]       # ball.0 ...: the floor balls (n_floor), the robot's slots, then the stations' pools
     n_floor: int                # 0 when built with floor_balls off: the world has no floor ball bodies
     goal_bodies: list[str]      # one static body per goal, named as the goal
+    robot_slots: range = range(0)   # the ball indices parked for the robot to hold (preload, the intake)
+    # station name -> the ball indices of its pool (Station.pool() each, after the robot's slots, in file order)
+    station_slots: dict[str, range] = field(default_factory=dict)
     # platform name -> the qpos addresses of its two hinges (build_elements.platform_joints); the tilt is their sum
     platforms: dict[str, tuple[int, int]] = field(default_factory=dict)
     # bar name -> its pipe's geom names (not its posts): what a robot hangs from
@@ -111,6 +117,7 @@ class RangeSection:
     preload: int
     floor_balls: bool
     capacity: int               # balls the robot holds (hopper, stages and launcher); 0 without a [shooter]
+    seed: int = DEFAULT_SEED    # the stations' spreads' random seed
 
     def start_pose(self) -> tuple[float, float, float] | None:
         return None if self.start is None else self.range.starts[self.start]
@@ -268,17 +275,20 @@ def add_goal(spec: mujoco.MjSpec, goal: Goal) -> None:
 
 
 def add_range(spec: mujoco.MjSpec, rng: Range, n_slots: int, *, floor_balls: bool = True) -> RangeLayout:
-    """The range's goals, field elements and ball bodies into `spec`: the floor balls on the carpet (none when
-    `floor_balls` is false: 360 parked balls would still cost each physics step about as much as the robot), then
-    `n_slots` parked slots for the balls the robot holds. The layout's `platforms` is filled in once the model is
-    compiled (assemble), and so are its `bars` and `switches`."""
-    from .build_elements import add_element   # build_elements imports this module
+    """The range's goals, field elements, stations' chutes and ball bodies into `spec`: the floor balls on the carpet
+    (none when `floor_balls` is false: 360 parked balls would still cost each physics step about as much as the
+    robot), then `n_slots` parked slots for the balls the robot holds, then each station's parked pool. The layout's
+    `platforms` is filled in once the model is compiled (assemble), and so are its `bars` and `switches`."""
+    from .build_elements import add_chute, add_element   # build_elements imports this module
     for goal in rng.goals:
         add_goal(spec, goal)
     for obstacle in rng.obstacles:
         add_obstacle(spec, obstacle)
     for e in rng.elements:     # before the balls, which must come last (see Balls)
         add_element(spec, e)
+    for st in rng.stations:
+        if st.chute is not None:
+            add_chute(spec, st, rng.piece.diameter)
     ball = rng.piece
     r = ball.diameter / 2.0
     contact = ball_contact(ball, spec.option.timestep)
@@ -289,7 +299,8 @@ def add_range(spec: mujoco.MjSpec, rng: Range, n_slots: int, *, floor_balls: boo
         rest_z, inertia = r, [ball.inertia_factor * ball.mass * r * r] * 3
         geom = {"type": mujoco.mjtGeom.mjGEOM_SPHERE, "size": [r, 0, 0], "rgba": [0.95, 0.85, 0.1, 1.0]}
     places = [((x, y, rest_z), BALL_BITS) for x, y in rng.floor_balls] if floor_balls else []
-    places += [((*slot_xy(j), PARK_Z), PARKED_BITS) for j in range(n_slots)]
+    n_parked = n_slots + sum(st.pool() for st in rng.stations)
+    places += [((*slot_xy(j), PARK_Z), PARKED_BITS) for j in range(n_parked)]
     names = []
     for i, (pos, bits) in enumerate(places):
         name = f"ball.{i}"
@@ -299,7 +310,12 @@ def add_range(spec: mujoco.MjSpec, rng: Range, n_slots: int, *, floor_balls: boo
         b.add_geom(name=name, density=0, **geom, **contact, **bits)
         names.append(name)
     n_floor = len(rng.floor_balls) if floor_balls else 0
-    return RangeLayout(ball_names=names, n_floor=n_floor, goal_bodies=[g.name for g in rng.goals])
+    station_slots, start = {}, n_floor + n_slots
+    for st in rng.stations:
+        station_slots[st.name] = range(start, start + st.pool())
+        start += st.pool()
+    return RangeLayout(ball_names=names, n_floor=n_floor, goal_bodies=[g.name for g in rng.goals],
+                       robot_slots=range(n_floor, n_floor + n_slots), station_slots=station_slots)
 
 
 def _capacity(cfg: dict) -> int | None:
@@ -333,10 +349,27 @@ def parse_range_section(cfg: dict, cfg_dir: Path | None) -> RangeSection | None:
     if not isinstance(ref, str):
         raise PartError(f"[range] file must be a built-in range's name ({', '.join(BUILTIN_RANGES)}) or a path "
                         f"relative to the config, not {ref!r}")
+    ball = sec.get("ball")
+    if ball is not None and not isinstance(ball, str):
+        raise PartError(f"[range] ball must be a ball preset's name, not {ball!r}")
     try:
-        rng = load_range(ref, Path(cfg_dir) if cfg_dir is not None else Path("."))
+        rng = load_range(ref, Path(cfg_dir) if cfg_dir is not None else Path("."), ball)
     except RangeError as e:
-        raise PartError(f"[range] file: {e}") from None
+        if ball is not None:        # the file's own fault or the ball's: the file read with its own ball says which
+            try:
+                load_range(ref, Path(cfg_dir) if cfg_dir is not None else Path("."))
+            except RangeError as own:
+                raise PartError(f"[range] file: {own}") from None
+        raise PartError(f"[range] {'ball' if ball is not None else 'file'}: {e}") from None
+    if "station" in sec:
+        try:
+            rng = with_overrides(rng, sec["station"])
+        except RangeError as e:
+            raise PartError(f"[range] station: {e}") from None
+    try:
+        seed = check_seed(sec.get("seed", DEFAULT_SEED))
+    except ValueError as e:
+        raise PartError(f"[range] {e}") from None
     try:
         check_contact(rng.piece, model_timestep(cfg, MAX_TIMESTEP))
     except ValueError as e:
@@ -361,4 +394,4 @@ def parse_range_section(cfg: dict, cfg_dir: Path | None) -> RangeSection | None:
     if preload > capacity:
         raise PartError(f"[range] preload = {preload} is more balls than the robot holds "
                         f"([shooter] hopper capacity = {capacity})")
-    return RangeSection(range=rng, start=start, preload=preload, floor_balls=floor, capacity=capacity)
+    return RangeSection(range=rng, start=start, preload=preload, floor_balls=floor, capacity=capacity, seed=seed)

@@ -1,0 +1,24 @@
+[test]
+robot = "hopper-standin.toml"
+hopper = ["hopper.bin"]
+
+[setup]
+seed = 1
+station = { feeder = { spread_yaw_deg = 5.0, spread_pitch_deg = 5.0, spread_speed = 0.2 } }
+
+[[block]]
+do = "start_feeding"
+station = "feeder"
+
+[[block]]
+do = "wait_until"
+until = { in_hopper = { at_least = 5 } }
+timeout = 20.0
+
+[[block]]
+do = "stop_feeding"
+station = "feeder"
+
+[[block]]
+do = "expect"
+that = { made_it_in = { at_least = 80.0 } }

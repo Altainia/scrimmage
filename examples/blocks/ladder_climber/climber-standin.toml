@@ -5,6 +5,7 @@
 timestep = 0.001
 
 [robot]
+standin = true   # the stand-in robot: a piece resting on its chassis or drive isn't stuck in your robot
 # Where the robot starts: pick it in the Robot tab ("Where it starts"), which writes
 # start_pose = [x (m), y (m), heading (deg)], field coordinates from the blue corner.
 

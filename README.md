@@ -720,7 +720,7 @@ It writes part folders you can add to a robot, and keeps your settings when you 
 [docs/part-tab.md](docs/part-tab.md), and [Bring your CAD in](docs/getting-started/bring-your-cad-in.md) for a first walkthrough.
 
 **Testing a mechanism with blocks.** The Test tab tries a mechanism on a robot with no robot code: snap together blocks
-(spin a motor, move a joint, drive, wait, repeat until, check), press Run, and watch a replay with a chart. Hooks,
+(spin a motor, move a joint, drive or turn, feed from a human player station, wait, repeat until, check), press Run, and watch a replay with a chart. A feeding test counts how many balls made it in, got stuck or missed, and floor spreads try the ball in many places. Hooks,
 sweeps of a number (a voltage, the robot's weight, where a part is mounted), and compare against an earlier run are
 built in. **Test it** on the Part tab puts your part on a stand-in robot with a starter test. From the command line,
 `scrimmage test run my.test.toml` exits 0 when every check passed, and the MCP tools `test_run` and `test_sweep` do the
@@ -950,7 +950,7 @@ freecad/           the FreeCAD workbench add-on (Scrimmage/), installed by `scri
 configs/           robot configs built from parts (kitbot, swerve, elevator_arm, fastmode, disc_robot,
                    climber_robot)
 scenarios/         scenario files (steps, checks, screenshots)
-examples/          blocks/ (Test tab examples: an intake, a ladder climber); RobotPy kitbot robot program; Java swerve (Phoenix 6) project; Java fast-mode
+examples/          blocks/ (Test tab examples: an intake, a station, a ladder climber); RobotPy kitbot robot program; Java swerve (Phoenix 6) project; Java fast-mode
                    (AdvantageKit) project; Java build.gradle notes; launcher/ and disc/ setups; climb/ scripts
 shims/             CANMotor/CANEncoder shims for vendor controllers (Python tested, Java template)
 tools/plot_run.py  plots a --log CSV

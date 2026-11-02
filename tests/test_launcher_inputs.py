@@ -6,7 +6,7 @@ import pytest
 
 from scrimmage.launcher import inputs
 from scrimmage.launcher.inputs import (
-    PRESETS, LauncherConfigError, Setup, apply_overrides, load_setup, parse_setup,
+    PRESETS, LauncherConfigError, Setup, _build_section, apply_overrides, load_setup, parse_setup,
 )
 
 BASE = {
@@ -240,6 +240,21 @@ def test_lane_outside_the_launcher_width_names_lane_width_and_ball():
         parse_setup(raw(feed={"lanes": [0.0, 0.08]}))
     msg = str(e.value)
     assert "[feed] lanes" in msg and "0.08" in msg and "0.3" in msg and "0.1778" in msg
+
+
+def test_new_ball_presets_are_there_with_their_sizes():
+    P = inputs.PRESETS["ball"]
+    NEW = ["2016-boulder", "2017-fuel", "2019-cargo", "2025-algae", "2014-ball", "2010-soccer-ball", "2012-basketball"]
+    assert P["2017-fuel"]["diameter"] == pytest.approx(0.127) and P["2017-fuel"]["mass"] == pytest.approx(0.0737)
+    assert P["2016-boulder"]["diameter"] == pytest.approx(0.254)
+    assert P["2019-cargo"]["diameter"] == pytest.approx(0.3302)
+    assert P["2025-algae"]["diameter"] == pytest.approx(0.4064)
+    assert P["2014-ball"]["diameter"] == pytest.approx(0.635)
+    assert P["2010-soccer-ball"]["diameter"] == pytest.approx(0.2223, abs=5e-4)
+    assert P["2012-basketball"]["diameter"] == pytest.approx(0.2021, abs=5e-4)
+    for name in NEW:
+        assert 0 < P[name]["restitution"] <= 0.95
+        _build_section("ball", {"preset": name})       # complete
 
 
 def test_every_preset_value_is_tagged_source_or_estimate():

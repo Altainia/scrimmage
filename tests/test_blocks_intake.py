@@ -18,6 +18,7 @@ from scrimmage.blocks import store
 from scrimmage.blocks.palette import problems
 from scrimmage.blocks.program import load
 from scrimmage.blocks.run import TestRun, world_for
+from scrimmage.blocks.spread import run_spread
 from scrimmage.blocks.sweep import run_sweep
 from scrimmage.testrange.spec import BUILTIN_RANGES, load_range
 
@@ -82,11 +83,11 @@ def test_the_run_is_kept_for_the_replay(intake, tmp_path):
 
 
 def test_a_roller_volts_sweep_shows_the_roller_does_it(intake, tmp_path):
-    """Try values… on the spin block: off, the robot pushes the ball away and the wait times out; at 8 V it's taken."""
-    out = run_sweep(intake["program"], {"block": [0], "key": "volts"}, [0.0, 8.0], tmp_path / "runs")
+    """Try values… on the spin block: off, the robot pushes the ball away and the wait times out; at 6 V it's taken."""
+    out = run_sweep(intake["program"], {"block": [0], "key": "volts"}, [0.0, 6.0], tmp_path / "runs")
     with open(out / "table.csv", newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
-    assert [float(row["value"]) for row in rows] == [0.0, 8.0]
+    assert [float(row["value"]) for row in rows] == [0.0, 6.0]
     assert [row["status"] for row in rows] == ["timed out", "finished"], rows
     assert rows[0]["outcome"].startswith("waiting for a ball to reach intake.hopper timed out at "), rows[0]
 
@@ -100,3 +101,14 @@ def test_scrimmage_test_run_on_the_example(tmp_path, capsys, monkeypatch):
     assert e.value.code == 0, out
     assert out.startswith("finished") and "passed: a ball reaches intake.hopper" in out
     assert json.loads((tmp_path / "runs" / "001" / "result.json").read_text(encoding="utf-8"))["status"] == "finished"
+
+
+def test_the_intake_spread_picks_up_the_center_ball(tmp_path):
+    """spread.test.toml: the ball 6 in right, on the center line and 6 in left. The center one is picked up; 6 in off
+    center the ball's side meets the front of a bin wall and it wedges there (the README says why)."""
+    folder = run_spread(load(EXAMPLE / "spread.test.toml"), tmp_path / "runs")
+    with open(folder / "table.csv", newline="", encoding="utf-8") as f:
+        rows = {row["placement"]: row for row in csv.DictReader(f)}
+    assert list(rows) == ["6 in right", "on the center line", "6 in left"]
+    assert rows["on the center line"]["picked up"] == "yes", rows
+    assert sum(json.loads((folder / "spread.json").read_text(encoding="utf-8"))["picked"]) >= 1

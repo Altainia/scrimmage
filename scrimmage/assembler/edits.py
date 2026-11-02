@@ -13,6 +13,7 @@ from typing import Any
 import tomlkit
 from tomlkit.items import InlineTable, Whitespace
 
+from ..testrange.spec import BUILTIN_RANGES
 from ..testrange.spec import FIELD_LENGTH, FIELD_WIDTH   # m: the generated field, the blue alliance wall at x = 0
 from .tomlutil import plain as _plain
 from .tomlutil import ensure_newline_end, remove_aot_item, remove_table as _remove_table
@@ -209,7 +210,7 @@ def set_ids(doc, name: str, ids: dict) -> None:
 # ---- whole-robot sections: the robot code, where it starts and on which field, the battery -----------------------
 
 FIELDS = ("2026", None)     # the start picker's fields: the 2026 game field and the plain field (no [range])
-LADDERS = ("ladder", "ladder-square", "intake")   # the Test tab's Setup also puts a robot in front of a ladder (round or square) or a ball
+TEST_FIELDS = (None, *BUILTIN_RANGES)   # the Test tab's Setup puts a robot on any built-in field (or the plain one)
 
 
 def _section(doc, name: str):
@@ -280,7 +281,7 @@ def _valid_start_pose(doc) -> bool:
 
 def set_start(doc, body: dict) -> None:
     """Where the robot starts and on which field, from the keys present in `body`:
-    range: "2026" (the 2026 field), "ladder" / "ladder-square" / "intake" (the Test tab's Setup ranges) or None
+    range: a built-in range's name ("2026", "ladder", "station", ...: the Test tab's Setup offers every one) or None
     (the plain field: no [range]); absent keeps the config's field;
     pose: [x, y, heading] writes [robot] start_pose and removes [range] start; None clears the start;
     named: a start of the field's range writes [range] start and removes [robot] start_pose; None clears it;
@@ -289,8 +290,8 @@ def set_start(doc, body: dict) -> None:
     floor_balls: false writes [range] floor_balls = false, true removes it (the range's default)."""
     if "range" in body:
         rng = body["range"]
-        if rng not in FIELDS and rng not in LADDERS:
-            raise EditError("start/range", "choose the 2026 field, a ladder, a ball or the plain field")
+        if rng not in FIELDS and rng not in TEST_FIELDS:
+            raise EditError("start/range", "choose a built-in field or the plain field")
         if rng is None:
             if "range" in doc:
                 _remove_table(doc, "range")

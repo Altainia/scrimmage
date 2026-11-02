@@ -190,3 +190,26 @@ def test_started_is_when_the_run_started(tmp_path):
     assert r.started and datetime.fromisoformat(r.started).tzinfo is not None
     save_run(r, program, tmp_path / "runs")
     assert load_run(tmp_path / "runs", "001")["started"] == r.started
+
+
+def test_a_new_seed_is_named_in_the_outcome(tmp_path):
+    from dataclasses import replace
+    program, r = _run(write_test(tmp_path, WAIT_1))
+    base = tmp_path / "t-runs"
+    feeds = [{"ball": 3, "source": "feeder", "t": 0.3, "outcome": "in", "why": "", "t_outcome": 1.2, "body": None}]
+    counts = {"fed": 1, "in": 1, "stuck": 0, "missed": 0}
+    first = replace(r, outcome="1 of 1 made it in (100%)", seed=1, feeds=feeds, counts=counts)
+    save_run(first, program, base)
+    assert first.outcome == "1 of 1 made it in (100%)"         # nothing kept before it to differ from
+    got = load_run(base, "001")
+    assert got["feeds"] == feeds and got["counts"] == counts and got["seed"] == 1
+    second = replace(first, seed=7)
+    save_run(second, program, base)
+    assert load_run(base, "002")["outcome"] == second.outcome == "1 of 1 made it in (100%); a new shuffle (seed 7)"
+    third = replace(first, seed=7)
+    save_run(third, program, base)
+    assert load_run(base, "003")["outcome"] == "1 of 1 made it in (100%)"
+    save_run(replace(r), program, base)                       # no stations: no seed, no note
+    assert load_run(base, "004")["seed"] is None and load_run(base, "004")["counts"] is None
+    save_run(replace(first, seed=2), program, base)            # the newest kept run had no seed: no note
+    assert load_run(base, "005")["outcome"] == "1 of 1 made it in (100%)"

@@ -226,7 +226,7 @@ def test_scenario_range_overrides_config(tmp_path):
             assert s.world.test_range.counts()["held"] == 0
             rep = await run_scenario(scn, tmp_path / "passed", session=s)
             # the run is over: the next restart goes back to the config's start and preload
-            assert s.world.test_range.settings() == {"start": None, "preload": 0, "floor_balls": False}
+            assert s.world.test_range.settings() == {"start": None, "preload": 0, "floor_balls": False, "seed": 1}
             return rep, s.state()
         finally:
             await s.stop()
@@ -442,11 +442,14 @@ def test_report_lists_only_balls_that_took_part(tmp_path):
     n = len(start)
     assert [b["id"] for b in rep.balls] == [1, 2]
     assert rep.balls[0]["outcome"] == "scored" and rep.balls[1]["outcome"] == "on_field"
-    assert rep.ball_summary == {"untouched": n - 2, "spare": 0}
-    assert len(rep.ball_states) == n and rep.ball_states[1] == "scored" and rep.ball_states[0] == "on_field"
+    pool = sum(len(s) for s in w.parts.layout.station_slots.values())     # the OUTPOSTS' FUEL, parked
+    assert rep.ball_summary == {"untouched": n - 2, "spare": pool}
+    assert len(rep.ball_states) == n + pool and rep.ball_states[1] == "scored" and rep.ball_states[0] == "on_field"
+    assert set(rep.ball_states[n:]) <= {"spare"}
     rep.write(tmp_path)
     md = (tmp_path / "report.md").read_text()
-    assert f"Not listed: {n - 2} floor balls untouched (still where the range put them)." in md
+    assert (f"Not listed: {n - 2} floor balls untouched (still where the range put them); {pool} spare balls"
+            in md)
     assert sum(ln.startswith("| ") and "---" not in ln for ln in md.split("## Balls", 1)[1].splitlines()) == 3
     json.loads((tmp_path / "report.json").read_text())       # valid JSON
 

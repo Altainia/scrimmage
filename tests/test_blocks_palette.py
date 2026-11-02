@@ -195,3 +195,105 @@ def test_a_hook_that_is_no_body_is_a_setup_problem(climber_world):
     text = HEAD.replace('robot = "r.toml"\n', 'robot = "r.toml"\nhooks = ["arm.hook_A"]\n')
     assert problems(loads(text, PATH), climber_world) == [
         {"place": [], "message": 'no body "arm.hook_A" on this robot any more (the test lists it as a hook)'}]
+
+
+# ---- stations, the hopper and the ball ----------------------------------------------------------------------------
+
+def station_world(file="station", start="at_station", **range_extra) -> World:
+    cfg = tomllib.loads(new_config("standin"))
+    cfg["range"] = {"file": file, "start": start, **range_extra}
+    return World(cfg, None)
+
+
+def sprog(blocks="", hopper=(), setup="") -> object:
+    head = HEAD + (f"hopper = {list(hopper)!r}\n".replace("'", '"') if hopper else "")
+    return loads(head + blocks + setup, PATH)
+
+
+def msgs(prog, w) -> list[str]:
+    return [p["message"] for p in problems(prog, w)]
+
+
+FEED = '[[block]]\ndo = "feed_one"\nstation = "{}"\n'
+WAIT_HOPPER = '[[block]]\ndo = "wait_until"\nuntil = {{ in_hopper = {{ at_least = 1 }} }}\n'
+WAIT_EMPTY = '[[block]]\ndo = "wait_until"\nuntil = {{ station_empty = "feeder" }}\n'
+
+
+def test_palette_lists_stations_ball_choice_and_floor_piece():
+    pal = palette(station_world(), [])
+    assert pal["stations"] == ["feeder"] and pal["ball_choice"] and pal["ball"] == "2026-fuel"
+    assert pal["station_settings"]["feeder"]["interval"] == 1.0 and not pal["floor_piece"]
+    assert pal["station_settings"]["feeder"]["stock"] == 0 and "2014-ball" in pal["balls"]
+    assert pal["drive_kind"] == "tank" and pal["drive"] is True
+    on_intake = palette(station_world("intake", "facing_ball"), [])
+    assert on_intake["floor_piece"] is True and on_intake["ball_choice"] and on_intake["stations"] == []
+    assert palette(station_world("station", "facing_ball"), [])["floor_piece"] is True
+    on_2026 = palette(World(range_cfg(), None), [])
+    assert on_2026["ball_choice"] is False and on_2026["floor_piece"] is False
+    assert on_2026["stations"] == ["outpost_blue", "outpost_red"]     # its OUTPOSTS
+
+
+def test_feed_problems():
+    w = station_world()
+    assert msgs(sprog(FEED.format("nope"), ["drive.chassis"]), w) == ['no station "nope" on this field']
+    assert msgs(sprog(FEED.format("feeder")), w) == []
+    assert msgs(sprog(WAIT_HOPPER.format()), w) == ["pick the hopper in Setup: the bodies a piece lands in"]
+    assert msgs(sprog(WAIT_HOPPER.format(), ["drive.chassis"]), w) == []
+    assert '"feeder" never runs out' in msgs(sprog(WAIT_EMPTY.format(), ["drive.chassis"]), w)[0]
+    stocked = '\n[setup.station.feeder]\nstock = 3\n'
+    assert msgs(sprog(WAIT_EMPTY.format(), ["drive.chassis"], stocked), w) == []
+    left = '[[block]]\ndo = "drive"\nseconds = 1\ndirection = "left"\n'
+    assert msgs(sprog(left), w) == ["a tank drive can't drive sideways; turn, then drive forward"]
+    turn = '[[block]]\ndo = "turn"\ndegrees = 90\n'
+    assert msgs(sprog(turn), w) == []
+
+
+def test_turn_needs_a_drivetrain():
+    from types import SimpleNamespace
+    from scrimmage.blocks.palette import _block_problems
+    block = sprog('[[block]]\ndo = "turn"\ndegrees = 90\n').blocks[0]
+    assert _block_problems(SimpleNamespace(p={"drive_kind": None}), block) == [
+        "turn needs a drivetrain; this robot has none"]
+
+
+def test_setup_problems_at_place_nothing():
+    w = station_world()
+    assert msgs(sprog(hopper=["nope.body"]), w) == ['no body "nope.body" on this robot any more (the test lists it as the hopper)']
+    assert msgs(sprog(setup='\n[setup.station.nope]\nstock = 1\n'), w) == [
+        'Setup names a station this field doesn\'t have: "nope"']
+    assert msgs(sprog(setup='\n[setup.floor_spread]\noffset_in = [-3, 3]\n'), w) == [
+        "the floor spread needs a ball on the floor in front of the robot's start"]
+    assert msgs(sprog(setup='\n[setup.floor_spread]\noffset_in = [-3, 3]\n'), station_world("station", "facing_ball")) == []
+    on_2026 = World(range_cfg(), None)
+    assert msgs(sprog(setup='\n[setup]\nball = "2014-ball"\n'), on_2026) == [
+        "this field keeps its own ball; pick a ball on the intake or station field"]
+
+
+def test_an_unknown_station_in_setup_leaves_the_others_settings_alone():
+    """One station the field doesn't have is reported on its own: the field's station keeps the test's stock."""
+    setup = '\n[setup.station.feeder]\nstock = 3\n\n[setup.station.nope]\nstock = 1\n'
+    assert msgs(sprog(WAIT_EMPTY.format(), ["drive.chassis"], setup), station_world()) == [
+        'Setup names a station this field doesn\'t have: "nope"']
+
+
+def test_setup_on_the_plain_field_says_what_to_clear():
+    plain = World(tomllib.loads(new_config("standin")), None)
+    assert msgs(sprog(setup='\n[setup]\nseed = 4\n'), plain) == []
+    assert msgs(sprog(setup='\n[setup]\nball = "2014-ball"\n'), plain) == [
+        "the plain field has no ball to pick; clear the ball in Setup"]
+    assert msgs(sprog(setup='\n[setup.station.feeder]\nstock = 1\n'), plain) == [
+        'Setup names a station this field doesn\'t have: "feeder"']
+
+
+def test_review_focus_1_a_ball_that_doesnt_fit_is_a_setup_problem(tmp_path):
+    text = (Path(__file__).resolve().parent.parent / "scrimmage/testrange/ranges/station.toml").read_text()
+    text = text.replace("chute = { length = 0.5, slope_deg = 30.0 }", "chute = { length = 0.5, slope_deg = 30.0, width = 0.25 }")
+    text = text.replace("release = [0.3, 4.0, 1.1]", "release = [1.0, 4.0, 1.1]")    # clear of the wall for a big ball
+    (tmp_path / "station.toml").write_text(text)
+    w = station_world(str(tmp_path / "station.toml"))
+    p = sprog(setup='\n[setup]\nball = "2014-ball"\n')
+    found = problems(p, w)
+    assert found[0]["place"] == [] and "no wider than the ball" in found[0]["message"]
+    assert str(tmp_path) not in found[0]["message"]
+    p.setup["ball"] = "2026-fuel"
+    assert problems(p, w) == []

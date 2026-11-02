@@ -5,7 +5,7 @@ chart = ["intake.roller"]
 [[block]]
 do = "spin"
 motor = "intake.roller"
-volts = 8.0
+volts = 6.0
 
 [[block]]
 do = "drive"
