@@ -139,7 +139,9 @@ Open **Setup** over the blocks. Its summary shows the hooks, the weight and the 
 - **The field.** Where the robot starts: **The plain field**, **In front of a ladder (round rungs)**,
   **In front of a ladder (square rungs)** or **In front of a ball (to try an intake)**. In front of a ladder, a climber
   has rungs `rung1` to `rung4` to climb. In front of a ball, an intake has a ball to pick up. This changes the robot
-  file, so the Robot tab's **Undo** takes it back.
+  file, so the Robot tab's **Undo** takes it back. A robot that has its own start pose (`[robot] start_pose`, from
+  the robot code panel's **Where it starts**) keeps it when you pick another field, as long as that pose is on the
+  field.
 - **The robot (weight and center of mass).** These appear when the robot's base is the stock chassis, which a stand-in
   robot always is. **Weight** is everything that isn't one of the robot's parts (frame, battery, bumpers). The center of
   mass is forward, left and up, in meters. These also change the robot file and **Undo** takes them back.
@@ -151,7 +153,8 @@ If the robot file can't be changed (it has an error, or it is read-only), Setup 
 
 ## Running, replay and chart
 
-Press **Run**. The tab shows the progress, and **Stop** ends the run early. Then:
+Press **Run**. Until the first run, the Run column says just that. The tab shows the progress, and **Stop** ends the
+run early. Then:
 
 - **The sentence.** What happened, in one line: `Reached rung1, then waiting for a hook to touch rung2 timed out at
   12.1 s (block 2 inside block 3).`, or, when the test works, "Every block played."
@@ -164,7 +167,7 @@ Press **Run**. The tab shows the progress, and **Stop** ends the run early. Then
   load and the drive wheels' angles are in the picker but not drawn at first (the wheel angles just keep growing, which
   tells you little about a mechanism).
 - **Compare.** Pick another run in **compare with** to draw both on the same chart, for example before and after a
-  change.
+  change. Under the chart, each run's sentence is shown one above the other.
 
 **Old runs keep their own geometry.** A run saves the robot and field as they were when it ran. If you press **Import
 again** in the Part tab later, an old run still replays the old shape, and a new run uses the new one. That makes
@@ -257,7 +260,8 @@ Open one with `scrimmage edit examples/blocks/intake/intake.test.toml`.
   again** once more, and run again.
 - **A block names a joint that is gone.** After **Import again**, the block says the joint isn't on the robot any
   more. Pick the new name in the block.
-- **"The test file can't be read".** The file has a mistake. The message names the block ("block 3, inside repeat 2")
-  and what is wrong. Fix the file in a text editor, or delete the block in the tab.
-- **The 3D replay says WebGL isn't available.** (WebGL is the browser's 3D drawing.) The result and chart still work. Reload, or turn on hardware
-  acceleration in the browser.
+- **"The test file can't be read".** The file has a mistake. The message names the block ("block 2 inside block 3
+  (repeat)": the second block inside the third, a repeat) and what is wrong. Fix the file in a text editor, or delete
+  the block in the tab.
+- **The 3D view says "The replay needs WebGL: …".** (WebGL is the browser's 3D drawing; the rest of the message says
+  why the browser refused.) The result and chart still work. Reload, or turn on hardware acceleration in the browser.

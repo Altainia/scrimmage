@@ -230,7 +230,8 @@ Once the bottom bar says **Parts up to date**, press **Test it**. Scrimmage make
 and tank drive) with your part attached where the CAD has it, and a starter test next to your parts, then opens the
 [Test tab](test-tab.md). **Test it also gives the part's motors free device IDs**, so a motor can spin without anyone
 choosing IDs first. A part with a hook is put in front of a ladder. Pressing **Test it** again after you add parts
-adds them to the same stand-in and tells you which. It stays off until the parts are built, and it is hidden for parts made by a CAD plugin.
+adds them to the same stand-in and tells you which. It stays off until the parts are built and while the part is
+read-only (hold the pointer over it to see why), and it is hidden for parts made by a CAD plugin.
 
 ## Troubleshooting
 
