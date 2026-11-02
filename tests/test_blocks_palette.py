@@ -270,6 +270,8 @@ def test_setup_problems_at_place_nothing():
     on_2026 = World(range_cfg(), None)
     assert msgs(sprog(setup='\n[setup]\nball = "2014-ball"\n'), on_2026) == [
         "this field keeps its own ball; pick a ball on the intake or station field"]
+    assert msgs(sprog(setup='\n[setup]\nball = "2014-ball"\n'), station_world("2013", "auto_line_left")) == [
+        "this field has no ball to pick; clear the ball in Setup"]
 
 
 def test_an_unknown_station_in_setup_leaves_the_others_settings_alone():

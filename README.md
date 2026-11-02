@@ -720,9 +720,11 @@ It writes part folders you can add to a robot, and keeps your settings when you 
 [docs/part-tab.md](docs/part-tab.md), and [Bring your CAD in](docs/getting-started/bring-your-cad-in.md) for a first walkthrough.
 
 **Testing a mechanism with blocks.** The Test tab tries a mechanism on a robot with no robot code: snap together blocks
-(spin a motor, move a joint, drive or turn, feed from a human player station, wait, repeat until, check), press Run, and watch a replay with a chart. A feeding test counts how many balls made it in, got stuck or missed, and floor spreads try the ball in many places. Hooks,
-sweeps of a number (a voltage, the robot's weight, where a part is mounted), and compare against an earlier run are
-built in. **Test it** on the Part tab puts your part on a stand-in robot with a starter test. From the command line,
+(spin a motor, move a joint, drive or turn, feed from a human player station, wait, repeat until, check), press
+Run, and watch a replay with a chart. A feeding test counts how many balls made it in, got stuck or missed, and
+floor spreads try the ball in many places. Hooks, sweeps of a number (a voltage, the robot's weight, where a part
+is mounted), and compare against an earlier run are built in. **Test it** on the Part tab puts your part on a
+stand-in robot with a starter test. From the command line,
 `scrimmage test run my.test.toml` exits 0 when every check passed, and the MCP tools `test_run` and `test_sweep` do the
 same for an agent. See [docs/test-tab.md](docs/test-tab.md), [Test a mechanism with blocks](docs/getting-started/test-a-mechanism.md)
 and the examples in `examples/blocks/`.

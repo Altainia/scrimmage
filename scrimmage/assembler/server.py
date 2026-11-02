@@ -427,7 +427,8 @@ Test (`/api/test/*`; 404 "no test is open" unless a test is open, except /api/te
   POST /api/test/spread            -> runs the test once per placement of its [setup] floor_spread
         (scrimmage/blocks/spread.py) on thread "test-spread"; refused as run, and 409 "the floor spread needs a ball
         on the floor in front of the robot's start" when the field has none there (palette.floor_piece), 409 when
-        the test has no floor spread, or 409 (spread.inside_robot) when a placement puts the ball inside the robot. The spread is kept (the newest 3) when it ends.
+        the test has no floor spread, or 409 (spread.inside_robot) when a placement puts the ball inside the robot.
+        The spread is kept (the newest 3) when it ends.
   POST /api/test/cancel            -> {ok: true}; stops the run, sweep or spread under way (a cancelled run is kept).
   GET  /api/test/run/<id>          -> (<id>: "004", "sweep-002/003", "spread-001/002") result.json's fields plus id
         and signals; /view -> view.json; /motion -> motion.bin (application/octet-stream); 404 for a run that isn't

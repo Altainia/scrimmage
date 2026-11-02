@@ -223,9 +223,9 @@ always count, and Setup shows them ticked and grayed out. A hook can be any body
 - **A robot counts as tipped over at 60°.** The run ends with "the robot tipped over" when the robot's body leans more
   than 60° from upright. (The **tilt** check is separate: it only tests what you ask.)
 
-The tab doesn't have boxes for these settings yet (the settle's 3 s is fixed). To change one, edit the test file in a text editor: `timeout` on a
+The tab doesn't have boxes for these settings yet. To change one, edit the test file in a text editor: `timeout` on a
 block, `max` on a **repeat until**, `volts` on a **drive**, `time_limit` in the `[test]` table. The tab keeps them when
-it saves.
+it saves. The 3 s settle after the blocks is fixed, and the file can't change it.
 
 ## Setup
 

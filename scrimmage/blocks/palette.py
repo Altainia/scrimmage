@@ -299,7 +299,10 @@ def _setup_level_problems(program, world, n: _Names) -> list[str]:
     if "ball" in setup and rng is None:
         out.append("the plain field has no ball to pick; clear the ball in Setup")
     elif "ball" in setup and not n.p["ball_choice"]:
-        out.append("this field keeps its own ball; pick a ball on the intake or station field")
+        if n.p["ball"]:
+            out.append("this field keeps its own ball; pick a ball on the intake or station field")
+        else:
+            out.append("this field has no ball to pick; clear the ball in Setup")
     out += [f'Setup names a station this field doesn\'t have: "{name}"'
             for name in setup.get("station", {}) if name not in n.stations]
     if setup.get("floor_spread") and spread_ball(world) is None:
