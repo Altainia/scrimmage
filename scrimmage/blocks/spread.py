@@ -92,7 +92,7 @@ def spread_ball(world) -> tuple[int, dict] | None:
     where = {"offset_in": float(side[i]) / IN, "distance_in": float(ahead[i]) / IN}
     kind = spread_kind(world, i)
     if kind is not None:
-        turns = tr.range.floor_turns
+        turns = tr.range.floor_turns     # a row per floor piece, but empty in a Range made without it (its default)
         tip, turn = (float(turns[i][0]), float(turns[i][1])) if len(turns) == len(tr.range.floor_balls) \
             else (default_tip(kind), 0.0)
         where.update(tip_deg=tip, rotation_deg=(turn - heading + 180.0) % 360.0 - 180.0)
@@ -137,25 +137,44 @@ def _robot_boxes(world) -> np.ndarray:
     return np.array(out, float).reshape(-1, 6)
 
 
-def _shape(world, i: int, p: dict) -> tuple[float, np.ndarray, np.ndarray, np.ndarray]:
+def _shape(world, i: int, p: dict) -> tuple[float, tuple, np.ndarray, np.ndarray]:
     """Floor piece i as placement `p` has it, in the robot's frame with its center at the origin: its center's
-    height, its points (box corners and mesh vertices, (n, 3)) and its spheres' centers ((m, 3)) and radii. A ball is
-    one sphere."""
+    height, its solids' oriented boxes (centers, axes as rows, half sizes: PieceKind.turned_solids) and its spheres'
+    centers ((m, 3)) and radii. A ball is one sphere."""
     kind = spread_kind(world, i)
     if kind is None:
         r = world.test_range.balls.rest_z_of(i)     # a resting ball's center height: its radius
-        return r, np.zeros((0, 3)), np.zeros((1, 3)), np.array([r])
+        return r, (np.zeros((0, 3)), np.zeros((0, 3, 3)), np.zeros((0, 3))), np.zeros((1, 3)), np.array([r])
     z, quat = rest_of(world, i, p, 0.0)
-    points, centers, radii = kind.turned_points(quat)
-    return z, points, centers, radii
+    bc, ba, bh, sc, radii = kind.turned_solids(quat)
+    return z, (bc, ba, bh), sc, radii
+
+
+def _boxes_overlap(obbs: tuple, lo: np.ndarray, hi: np.ndarray, tol: float = 1e-3) -> bool:
+    """Whether any oriented box (centers (n, 3), axes (n, 3, 3) as rows, half sizes (n, 3)) overlaps any
+    axis-aligned box (corners lo, hi: (m, 3)) by more than `tol`: the separating-axis test, over the three world axes,
+    the box's three and their nine cross products."""
+    cb, ub, hb = obbs
+    if not len(cb) or not len(lo):
+        return False
+    ca, ha = (lo + hi) / 2.0, (hi - lo) / 2.0
+    eye = np.broadcast_to(np.eye(3), ub.shape)
+    cross = np.cross(eye[:, :, None, :], ub[:, None, :, :]).reshape(-1, 9, 3)
+    axes = np.concatenate([eye, ub, cross], axis=1)                                 # (n, 15, 3)
+    norm = np.linalg.norm(axes, axis=2, keepdims=True)
+    axes = np.where(norm > 1e-9, axes / np.maximum(norm, 1e-12), np.array([1.0, 0.0, 0.0]))    # parallel: any axis
+    r_b = (np.abs(axes @ ub.transpose(0, 2, 1)) * hb[:, None, :]).sum(axis=2)       # (n, 15)
+    r_a = np.abs(axes) @ ha.T                                                        # (n, 15, m)
+    d = np.abs(axes @ cb[:, :, None] - axes @ ca.T)                                  # (n, 15, m)
+    return bool((d < r_a + r_b[:, :, None] - tol).all(axis=1).any())
 
 
 def _nearest_in(world, i: int, p: dict, boxes: np.ndarray) -> int:
     """The nearest distance ahead (in, whole) Setup offers for the piece lying as `p` has it: the robot's front,
-    how far the piece reaches back toward the robot, and CLEAR_IN."""
-    _, points, centers, radii = _shape(world, i, p)
-    back = -min(float(points[:, 0].min()) if len(points) else math.inf, float((centers[:, 0] - radii).min())
-                if len(radii) else math.inf)
+    how far the piece's boxes and spheres reach back toward the robot, and CLEAR_IN."""
+    _, (bc, ba, bh), sc, radii = _shape(world, i, p)
+    reach = [bc[:, 0] - (np.abs(ba[:, :, 0]) * bh).sum(axis=1), sc[:, 0] - radii]
+    back = -float(np.concatenate(reach).min())
     front = float(boxes[:, 1].max()) if len(boxes) else 0.0
     return math.ceil((front + back) / IN + CLEAR_IN)
 
@@ -175,8 +194,8 @@ def floor_ball(world) -> dict | None:
 def inside_robot(world, spread: dict) -> str | None:
     """Why the floor spread can't run when a placement puts the piece inside the robot ("the floor spread puts the
     ball inside the robot at 12 in ahead: ..."), or None. The robot turns with the angle, so the piece sits at the
-    same place in its frame whatever the angle. A piece other than a ball is inside when one of its points (a box
-    corner or mesh vertex) or spheres is: a robot geom passing between its points isn't seen."""
+    same place in its frame whatever the angle. A piece other than a ball is inside when one of its solids' oriented
+    bounding boxes, or one of its spheres, overlaps a robot geom's box."""
     found = spread_ball(world)
     if found is None:
         return None
@@ -187,14 +206,12 @@ def inside_robot(world, spread: dict) -> str | None:
     lo, hi = boxes[:, 0::2], boxes[:, 1::2]
     kind = spread_kind(world, i)
     for p in placements(spread, found[1]):
-        z, points, centers, radii = _shape(world, i, p)
+        z, (bc, ba, bh), centers, radii = _shape(world, i, p)
         at = np.array([p["distance_in"] * IN, p["offset_in"] * IN, z])
         c = centers + at
         near = np.clip(c[:, None, :], lo, hi)                       # (m, boxes, 3)
         hit = (np.linalg.norm(near - c[:, None, :], axis=2) < radii[:, None] - 1e-3).any()
-        pts = (points + at)[:, None, :]
-        hit = hit or ((pts > lo + 1e-3) & (pts < hi - 1e-3)).all(axis=2).any()
-        if hit:
+        if hit or _boxes_overlap((bc + at, ba, bh), lo, hi):
             side = "" if p["offset_in"] == 0 else \
                 f", {_n(abs(p['offset_in']))} in {'left' if p['offset_in'] > 0 else 'right'}"
             what = "ball" if kind is None else kind.label
@@ -255,8 +272,34 @@ def label(p: dict, varying: list[str], kind: PieceKind | None = None) -> str:
     return " ".join(words)
 
 
+def placement_labels(ps: list[dict], varying: list[str], kind: PieceKind | None = None) -> list[str]:
+    """Each placement's label. Where words for how a piece lies say the same for two placements or more ("lying
+    flat" at every turn of a disc, "standing on end" at tips 80 and 90), each of those gets its tip or turn that
+    differs after them: "lying flat, turned 45°", "standing on end, tipped 80°"."""
+    out = [label(p, varying, kind) for p in ps]
+    if not worded(varying, kind):
+        return out
+    groups: dict[str, list[int]] = {}
+    for k, lb in enumerate(out):
+        groups.setdefault(lb, []).append(k)
+    for lb, ks in groups.items():
+        if len(ks) < 2:
+            continue
+        differs = [a for a in ORIENTATION_AXES if a in varying and len({ps[k][a] for k in ks}) > 1]
+        for k in ks:
+            extra = [f"turned {_n(ps[k][a])}°" if a == "rotation_deg" else f"tipped {_n(ps[k][a])}°"
+                     for a in differs]
+            out[k] = ", ".join([lb, *extra])
+    return out
+
+
 def _joined(items: list[str]) -> str:
-    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
+    """"a, b and c"; "a, b; c, d; and e, f" when an item has a comma of its own."""
+    if len(items) == 1:
+        return items[0]
+    if any("," in it for it in items):
+        return f"{'; '.join(items[:-1])}; and {items[-1]}"
+    return f"{', '.join(items[:-1])} and {items[-1]}"
 
 
 def sentence(picked: list[bool], labels: list[str], at: bool = True) -> str:
@@ -294,7 +337,7 @@ def run_spread(program: Program, base, on_progress=None, cancel: threading.Event
     ps = placements(spread, found[1])
     names = varying(spread)
     kind = spread_kind(world, found[0])
-    labels = [label(p, names, kind) for p in ps]
+    labels = placement_labels(ps, names, kind)
     at = not worded(names, kind)
     base = Path(base)
     tmp = store.new_sweep_folder(base, prefix="spread")

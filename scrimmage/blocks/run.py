@@ -327,7 +327,7 @@ class TestRun:
         h = math.radians(heading)
         ahead, left = p["distance_in"] * IN, p["offset_in"] * IN
         i = self._floor[0]
-        z, quat = rest_of(w, i, p, heading)          # a ball at its radius; a coral at its rest height for its tip
+        z, quat = rest_of(w, i, p, heading)          # a ball at its radius; any other piece at its rest height
         w.test_range.balls.put(i, (x + ahead * math.cos(h) - left * math.sin(h),
                                    y + ahead * math.sin(h) + left * math.cos(h), z), BALL_BITS, quat=quat)
         mujoco.mj_forward(w.model, w.data)

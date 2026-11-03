@@ -345,12 +345,35 @@ class PieceKind:
              @ _to_x(self.axis))
         return _quat(m)
 
-    def turned_points(self, quat) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """The kind turned by `quat` (w x y z), about its center: its box corners and mesh vertices ((n, 3)), and its
-        spheres' centers ((m, 3)) and radii."""
+    @cached_property
+    def _boxes(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Each box and mesh solid's oriented bounding box, in the kind's frame: centers (n, 3), axes (n, 3, 3, each
+        row a unit axis) and half sizes (n, 3). A mesh's box lies along its vertices' principal axes, so a tube's
+        slice is boxed closely whichever way round the tube it lies."""
+        centers, axes, halves = [], [], []
+        for s in self.solids:
+            if s.kind == "box":
+                centers.append(np.asarray(s.pos, dtype=float))
+                axes.append(_matrix(s.quat).T)
+                halves.append(np.asarray(s.size, dtype=float))
+            elif s.kind == "mesh":
+                v = np.asarray(s.vertices, dtype=float)
+                rows = np.linalg.eigh(np.cov((v - v.mean(axis=0)).T))[1].T     # principal axes, as rows
+                local = v @ rows.T
+                lo, hi = local.min(axis=0), local.max(axis=0)
+                centers.append(((lo + hi) / 2.0) @ rows)
+                axes.append(rows)
+                halves.append((hi - lo) / 2.0)
+        return (np.array(centers, dtype=float).reshape(-1, 3), np.array(axes, dtype=float).reshape(-1, 3, 3),
+                np.array(halves, dtype=float).reshape(-1, 3))
+
+    def turned_solids(self, quat) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """The kind turned by `quat` (w x y z), about its center: its solids' oriented boxes (centers (n, 3), axes
+        (n, 3, 3) as rows, half sizes (n, 3)) and its spheres' centers ((m, 3)) and radii."""
         m = _matrix(quat)
-        centers, radii = self._spheres
-        return self._points @ m.T, centers @ m.T, radii.copy()
+        centers, axes, halves = self._boxes
+        sc, radii = self._spheres
+        return centers @ m.T, axes @ m.T, halves.copy(), sc @ m.T, radii.copy()
 
     def reach(self, quat) -> float:
         """The largest horizontal distance of a point of the kind from its center, turned by `quat`."""

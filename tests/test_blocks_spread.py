@@ -16,7 +16,7 @@ from scrimmage.__main__ import main
 from scrimmage.blocks import store
 from scrimmage.blocks.program import load
 from scrimmage.blocks.run import TestRun, world_for
-from scrimmage.blocks.spread import label, placements, run_spread, sentence, spread_ball
+from scrimmage.blocks.spread import label, placement_labels, placements, run_spread, sentence, spread_ball
 from scrimmage.blocks.store import KEEP_SPREADS
 
 EXAMPLE = Path(__file__).resolve().parent.parent / "examples" / "blocks" / "intake"
@@ -81,6 +81,27 @@ def test_labels_for_a_coral():
     assert label({**p, "rotation_deg": 45}, ["offset_in", "rotation_deg"], c) == "6 in left lying at 45°"
     assert label({**p, "rotation_deg": 45}, ["rotation_deg"], None) == "turned 45°"   # a ball: unchanged
     assert label({**p, "offset_in": -6}, ["offset_in"], c) == "6 in right"            # no orientation varying
+
+
+def test_a_flat_kinds_turns_read_differently():
+    """A note lying flat reads "lying flat" at every turn: a spread over its turn adds the turn, so every placement
+    reads differently, and the sentence still parses."""
+    from scrimmage.testrange.pieces import parse_kind
+    note = parse_kind(Path("note.toml"), "note", {"preset": "2024-note"}, Path("."))
+    assert note.flat
+    ps = placements({"rotation_deg": [0, 45, 90]}, {"offset_in": 0.0, "distance_in": 40.0, "tip_deg": 90.0})
+    words = placement_labels(ps, ["rotation_deg"], note)
+    assert words == ["lying flat, turned 0°", "lying flat, turned 45°", "lying flat, turned 90°"]
+    assert sentence([False] * 3, words, at=False) == \
+        "picked up 0 of 3; missed lying flat, turned 0°; lying flat, turned 45°; and lying flat, turned 90°"
+    ps = placements({"offset_in": [-6, 6], "tip_deg": [80, 90]}, {"offset_in": 0.0, "distance_in": 40.0})
+    assert placement_labels(ps, ["offset_in", "tip_deg"], coral()) == [
+        "6 in right standing on end, tipped 80°", "6 in right standing on end, tipped 90°",
+        "6 in left standing on end, tipped 80°", "6 in left standing on end, tipped 90°"]
+    ps = placements({"rotation_deg": [0, 45]}, {"offset_in": 0.0, "distance_in": 40.0})
+    assert placement_labels(ps, ["rotation_deg"], None) == ["turned 0°", "turned 45°"]     # a ball: unchanged
+    ps = placements({"rotation_deg": [0, 90]}, {"offset_in": 0.0, "distance_in": 40.0, "tip_deg": 0.0})
+    assert placement_labels(ps, ["rotation_deg"], coral()) == ["lying in line", "lying across"]   # distinct: as is
 
 
 def test_a_coral_sentence_drops_the_at():
@@ -302,6 +323,16 @@ def test_a_coral_lying_in_line_reaches_back_into_the_robot(tmp_path):
     assert inside_robot(world, {"distance_in": [30], "rotation_deg": [90]}) is None
     why = inside_robot(world, {"distance_in": [30], "rotation_deg": [0]})
     assert why == "the floor spread puts the coral inside the robot at 30 in ahead: start the distance at 39 in or more"
+
+
+def test_a_coral_through_the_hopper_floor_is_refused(tmp_path):
+    """23 in ahead lying in line, the coral's ends clear every robot geom but its middle passes through the
+    hopper's floor: refused, whatever its offset across the hopper."""
+    from scrimmage.blocks.spread import inside_robot
+    world = world_for(load(coral_spread_test(tmp_path, "tip_deg = [90]")))
+    for off in (-9.5, 0, 9.5):
+        why = inside_robot(world, {"distance_in": [23], "offset_in": [off], "rotation_deg": [0]})
+        assert why is not None and why.startswith("the floor spread puts the coral inside the robot at 23 in"), why
 
 
 def test_a_coral_spread_names_its_misses_by_how_they_lay(tmp_path):
