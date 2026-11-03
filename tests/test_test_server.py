@@ -194,6 +194,18 @@ def test_sweep_and_cancel(tmp_path, test_app):
     assert s == 200 and b["ok"]
 
 
+def test_sweep_values_may_be_material_names_for_a_grip(tmp_path, test_app):
+    c = test_app(write_test(tmp_path))
+    s, b = c.call("POST", "/api/test/sweep", {"target": {"block": [0], "key": "volts"}, "values": ["hdpe"]})
+    assert s == 400 and "numbers" in b["error"], b
+    s, b = c.call("POST", "/api/test/sweep", {"target": {"grip": "arm.pad"}, "values": ["hdpe", 0.8, None]})
+    assert s == 400 and "material names or numbers" in b["error"], b
+    s, b = c.call("POST", "/api/test/sweep", {"target": {"grip": "arm.pad"}, "values": ["hdpe", "nitrile"]})
+    assert s == 200, b                # accepted; the worker finds arm is a stock part
+    st = _wait_idle(c)
+    assert "arm is a stock part" in (st["run_error"] or ""), st
+
+
 def test_new_test(tmp_path, test_app):
     robot = write_robot(tmp_path)
     c = test_app(robot)

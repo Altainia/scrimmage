@@ -578,8 +578,10 @@ const STATION_WORDS = { interval: "time between pieces (s)", stock: "stock", spr
   spread_pitch_deg: "up/down angle (± °)", spread_speed: "speed (± m/s)", spread_position: "release box (± in)",
   spread_rotation_deg: "turned (± °)" };
 const IN = 0.0254;            // m per inch
-// a sweep row's value as the table and chart show it: the release box's meters in inches
-const rowValue = (sw, r) => (sw.target && sw.target.key === "spread_position" && "station" in sw.target
+const isGrip = (sw) => !!(sw.target && "grip" in sw.target);
+// a sweep row's value as the table and chart show it: the release box's meters in inches; a grip's material names
+// (not numbers) are placed in order, one step apart, and labeled with the name
+const rowValue = (sw, r) => (isGrip(sw) ? sw.rows.indexOf(r) : sw.target && sw.target.key === "spread_position" && "station" in sw.target
   ? +(Number(r.value) / IN).toPrecision(6) : Number(r.value));
 const rowText = (sw, r) => (sw.target && sw.target.key === "spread_position" && "station" in sw.target ? String(rowValue(sw, r)) : r.value);
 
@@ -604,6 +606,7 @@ function targetText(target) {
     return `${blockWords(b)} (block ${target.block.map((i) => i + 1).join(" in ")}): ${target.key}${unit ? ` (${unit})` : ""}`;
   }
   if ("robot" in target) return ROBOT_WORDS[target.robot] || target.robot;
+  if ("grip" in target) return `grip material of ${target.grip}`;
   if ("mount" in target) return `where ${target.mount} is mounted: ${AXIS_WORDS[target.axis] || target.axis}`;
   if ("station" in target) return `${target.station}: ${STATION_WORDS[target.key] || target.key}`;
   if (target.setup === "seed") return "the shuffle";
@@ -716,7 +719,7 @@ function drawSweep() {
     canvas.style.height = `${H}px`;
   }
   const yName = rp.sweepY === "t_end" ? "when the run ended" : `${rp.sweepY} at the end`;
-  canvas.setAttribute("aria-label", `${yName} against ${targetText(sw.target)}: ${pts.map(([x, y]) => `${+x.toPrecision(4)} → ${+y.toPrecision(4)}`).join(", ") || "no runs"}`);
+  canvas.setAttribute("aria-label", `${yName} against ${targetText(sw.target)}: ${pts.map(([x, y]) => `${isGrip(sw) ? sw.rows[x].value : +x.toPrecision(4)} → ${+y.toPrecision(4)}`).join(", ") || "no runs"}`);
   const ctx = canvas.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, W, H);
@@ -745,7 +748,7 @@ function drawSweep() {
   }
   ctx.textAlign = "center"; ctx.textBaseline = "top";
   const labels = xs.length <= 6 ? xs : [x0, x1];
-  for (const v of labels) ctx.fillText(+v.toPrecision(4) + "", X(v), H - TICKS_H + 3);
+  for (const v of labels) ctx.fillText(isGrip(sw) ? String(sw.rows[v].value) : +v.toPrecision(4) + "", X(v), H - TICKS_H + 3);
   ctx.strokeStyle = tk.run; ctx.lineWidth = 1.75;
   ctx.beginPath();
   pts.forEach(([x, y], i) => (i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y))));

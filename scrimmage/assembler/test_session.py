@@ -509,9 +509,12 @@ class TestSession:
                 sweep_kind(target)
             except ValueError as e:
                 raise SessionError(400, str(e)) from None
+            names = isinstance(target, dict) and "grip" in target       # a grip sweep's values may be material names
             if not isinstance(values, list) or not values or len(values) > MAX_SWEEP or not all(
-                    isinstance(x, (int, float)) and not isinstance(x, bool) for x in values):
-                raise SessionError(400, f"values must be a list of 1 to {MAX_SWEEP} numbers")
+                    (isinstance(x, str) and names) or (isinstance(x, (int, float)) and not isinstance(x, bool))
+                    for x in values):
+                raise SessionError(400, f"values must be a list of 1 to {MAX_SWEEP} " +
+                                   ("material names or numbers" if names else "numbers"))
         with self._cond:
             if self._closed:
                 raise SessionError(409, "the test was closed")
