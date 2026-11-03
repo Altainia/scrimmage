@@ -47,12 +47,13 @@ MAX_SEED = 2147483647
 MAX_HOPPER = 1000        # balls: in_hopper's count
 MAX_SCORED = 1000        # balls: scored's count
 MAX_TURN = 720.0         # degrees
+AIMED_DEG = 2.0          # degrees: aimed's default within_deg
 
 UNITS = ("deg", "in", "m")
 DO_KINDS = ("spin", "move", "drive", "stop", "wait", "wait_until", "repeat", "expect",
-            "start_feeding", "stop_feeding", "feed_one", "turn")
+            "start_feeding", "stop_feeding", "feed_one", "turn", "aim")
 COND_KINDS = ("joint", "touch", "tilt", "piece_in", "hanging_from", "level", "in_hopper", "station_empty",
-              "made_it_in", "held", "rests_on", "seated", "scored")
+              "made_it_in", "held", "rests_on", "seated", "scored", "aimed")
 DRIVE_DIRECTIONS = ("forward", "back", "left", "right")
 _OPPOSITE = {"back": "forward", "left": "right", "right": "left"}     # where a minus distance goes instead
 SPREAD_AXES = ("offset_in", "distance_in", "angle_deg", "rotation_deg", "tip_deg")
@@ -191,6 +192,13 @@ def _cond(v, where: str) -> Cond:
         _keys(t, ("goal", "at_least"), where)
         return Cond(kind, {"goal": _text(t.get("goal"), where, "goal"),
                            "at_least": _whole(t.get("at_least"), where, "at_least", MAX_SCORED)})
+    if kind == "aimed":
+        _keys(t, ("turret", "at", "within_deg"), where)
+        within = _num(t.get("within_deg", AIMED_DEG), where, "within_deg")
+        if within <= 0:
+            raise TestFileError(f"{where}: within_deg must be more than 0")
+        return Cond(kind, {"turret": _text(t.get("turret"), where, "turret"), "at": _text(t.get("at"), where, "at"),
+                           "within_deg": within})
     if kind == "tilt":
         _keys(t, ("above", "below"), where)
         side = _one_of(t, ("above", "below"), where)
@@ -277,6 +285,9 @@ def _block(t, trail: tuple) -> Block:
         a = {"station": _text(t.get("station"), where, "station")}
         if "timeout" in t:
             a["timeout"] = _time(t["timeout"], where, "timeout")
+    elif do == "aim":
+        _keys(t, ("turret", "at"), where)
+        a = {"turret": _text(t.get("turret"), where, "turret"), "at": _text(t.get("at"), where, "at")}
     elif do == "turn":
         _keys(t, ("degrees", "volts", "timeout"), where)
         deg = _num(t.get("degrees"), where, "degrees")

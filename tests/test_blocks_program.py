@@ -112,6 +112,15 @@ do = "expect"
 that = { made_it_in = { at_least = 80.0 } }
 
 [[block]]
+do = "aim"
+turret = "turret"
+at = "hub_blue"
+
+[[block]]
+do = "expect"
+that = { aimed = { turret = "turret", at = "hub_blue", within_deg = 3.0 } }
+
+[[block]]
 do = "stop_feeding"
 station = "feeder"
 '''

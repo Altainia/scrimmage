@@ -53,6 +53,13 @@ the launcher and its stages shoots the balls the robot holds. Every motor of a j
 lead and follower, say), as robot code drives each one. The run's `goals` are the range's goal counts at the end
 (None without a `[shooter]`); `scored` checks them.
 
+Aiming: `aim` takes no time. From then on, every step, it sets the turret joint's position target to aim.py's
+aim_target (the goal's center, clamped to the turret's range), held by the same position loop as a `move`, until a
+later spin, move, stop or aim on that joint. A run with an aim block or an aimed condition has an `aim_error` signal
+(degrees, positive with the goal to the left): the latest aim block's turret and goal once one has started, the
+test's first aim's or aimed condition's before. A failed `aimed` check whose goal is beyond the turret's stop says so
+("hub_blue is outside the turret's range (it stops at 30°)").
+
 A run ends with one status: "finished" (every block played), "check failed", "timed out" (a wait until, a move, a
 drive or a turn), "tipped over" (the robot body's up axis more than TIP_DEG from vertical), "walked off" (the climb
 runner's "hook walked off" rule, scrimmage/climb/run.py's WalkOff), "time limit", "repeat limit" (a repeat until
@@ -75,7 +82,8 @@ from ..hal_drive import MotorDrive, driven_joints, position_volts
 from ..movers import mover_poses, movers
 from ..protocol import HalState
 from ..testrange.build import BALL_BITS
-from .conditions import IN, Watch, _conds, describe
+from .aim import TURN, aim_error, aim_target
+from .conditions import IN, Watch, _conds, describe, turret_words
 from .drive import STEER_TIMEOUT, drivetrain
 from .feeds import SETTLE_MAX_S, Outcomes, counts, is_standin, made_it_in, sentence
 from .grip_watch import SET_DOWN, SLIP_LOOKBACK_S, default_word
@@ -237,6 +245,17 @@ def goal_lines(result: RunResult) -> list[str]:
     return [f"scored {n} in {name}" for name, n in (result.goals or {}).items() if n]
 
 
+def _aims(blocks) -> list[tuple[str, str]]:
+    """(turret, goal) of each aim block and aimed condition, in the test's order, through repeat bodies."""
+    out = []
+    for b in blocks:
+        if b.do == "aim":
+            out.append((b.args["turret"], b.args["at"]))
+        out += [(c.args["turret"], c.args["at"]) for c in b.args.values() if getattr(c, "kind", None) == "aimed"]
+        out += _aims(b.body)
+    return out
+
+
 def check_problems(program: Program, world) -> None:
     """Raise TestFileError listing the test's problems on this robot (palette.problems), one line each."""
     bad = problems(program, world)
@@ -263,6 +282,10 @@ class TestRun:
         kinds = {j["name"]: j["kind"] for j in pal["joints"]}
         self.drivetrain = drivetrain(world, self.motors)
         self.signal_names = list(pal["signals"])
+        aims = _aims(program.blocks)
+        self._first_aim = aims[0] if aims else None      # (turret, goal) the aim_error signal reads at the start
+        if aims:
+            self.signal_names.append("aim_error")
         self._seated = {f"seated.{r}": r for r in pal["rods"]}     # a seated signal -> its rod
         self._qadr = {n: int(m.jnt_qposadr[m.joint(n).id]) for n in kinds}
         self._slide = {n: k == "slide" for n, k in kinds.items()}
@@ -308,6 +331,8 @@ class TestRun:
         result.signals = {"t": [], **{n: [] for n in self.signal_names}}
 
         self.drives: dict[str, tuple[str, float]] = {}      # joint -> ("volts", V) or ("to", qpos target)
+        self.aims: dict[str, tuple[str, str]] = {}          # turret joint -> (turret, goal) its target follows
+        self._aim_signal = self._first_aim                  # the latest aim block's, once one has started
         self.frames = [_Frame(list(self.program.blocks), ())]
         self.active: dict | None = None                     # the waiting block under way
         self.checks: list[dict] = []
@@ -480,6 +505,8 @@ class TestRun:
         w, d = self.world, self.world.data
         hal = HalState()
         bus = w.vbatt
+        for joint, (turret, goal) in self.aims.items():
+            self.drives[joint] = ("to", aim_target(w, turret, goal)[0])
         for joint, (kind, value) in self.drives.items():
             if kind == "to":
                 value = position_volts(value, float(d.qpos[self._qadr[joint]]), not self._slide[joint], bus)
@@ -498,6 +525,8 @@ class TestRun:
             elif name in self._seated:                  # inches; NaN while no piece is on the rod
                 got = watch.placed.seated(self._seated[name])
                 row[name] = got[0] / IN if got is not None else math.nan
+            elif name == "aim_error":
+                row[name] = math.degrees(aim_error(self.world, *self._aim_signal))
             elif name.endswith(".current") and name[:-8] in self.motors:
                 row[name] = float(self.motors[name[:-8]].current)
             else:
@@ -555,6 +584,16 @@ class TestRun:
     def _start(self, b, place: tuple, t: float) -> bool:
         """Start block b; True when it is done already (it takes no time)."""
         a, watch = b.args, self.watch
+        if b.do in ("spin", "stop"):
+            self.aims.pop(a["motor"], None)
+        elif b.do == "move":
+            self.aims.pop(a["joint"], None)
+        if b.do == "aim":
+            j = f"{a['turret']}.{TURN}"
+            self.aims[j] = self._aim_signal = (a["turret"], a["at"])
+            self.drives[j] = ("to", aim_target(self.world, a["turret"], a["at"])[0])
+            self._commanded[j] = t
+            return True
         if b.do == "spin":
             self.drives[a["motor"]] = ("volts", a["volts"])
             self._commanded[a["motor"]] = t
@@ -563,6 +602,7 @@ class TestRun:
             if a["motor"] == ALL_MOTORS:
                 self._commanded.update({j: t for j in self.drives})
                 self.drives.clear()
+                self.aims.clear()
             else:
                 self._commanded[a["motor"]] = t
                 self.drives.pop(a["motor"], None)
@@ -755,6 +795,13 @@ class TestRun:
             n = watch.scored_count(a["goal"])
             where = "any goal" if a["goal"] == ANY_GOAL else a["goal"]
             return f"expected {a['at_least']} or more balls scored in {where}, but {n} {'was' if n == 1 else 'were'}"
+        if k == "aimed":
+            target, ok = aim_target(self.world, a["turret"], a["at"])
+            if not ok:
+                return f"{a['at']} is outside the turret's range (it stops at {round(math.degrees(target), 1):g}°)"
+            off = math.degrees(aim_error(self.world, a["turret"], a["at"]))
+            return (f"expected {turret_words(a['turret'])} aimed at {a['at']} within "
+                    f"{_amount(a['within_deg'], 'deg')}, but it was {abs(off):.1f}° off")
         if k == "station_empty":
             left = self.feeder.left(a["station"]) if self.feeder is not None else None
             return f"{a['station']} wasn't empty" + (f" ({left} left)" if left else "")
