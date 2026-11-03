@@ -28,7 +28,7 @@ const COND = "Condition";
 // Names the tests use that the palette may not have (a joint renamed on Import again): a picker keeps offering them
 // so the block keeps its value (and shows the problem) instead of quietly picking another name. Rebuilt by setUsed.
 const KINDS_OF_NAME = { motor: "robot", joint: "robot", robot: "robot", body: "robot",
-  field: "field", piece: "field", bar: "field", level: "field", station: "field" };
+  field: "field", piece: "field", bar: "field", level: "field", station: "field", element: "field", rod: "field" };
 let used = {};
 const resetUsed = () => {
   used = Object.fromEntries(Object.keys(KINDS_OF_NAME).map((k) => [k, new Set()]));
@@ -39,15 +39,16 @@ resetUsed();
 let names = () => null;
 let loading = 0;        // testToWorkspace is filling the workspace: pickers don't adjust each other
 
-const SPECIAL = { hook: "any hook", "next bar": "next bar", "any bar": "any bar", any: "any piece", all: "all motors" };
+const SPECIAL = { hook: "any hook", "next bar": "next bar", "any bar": "any bar", any: "any piece", all: "all motors",
+  "a piece": "a piece" };
 
 // [[label, value], ...] for a picker: `special` first (when given), the palette's names, then names only the test
 // uses (marked as missing from the robot).
-function choices(list, kind, special = []) {
+function choices(list, kind, special = [], label = (v) => v) {
   const out = [], seen = new Set();
   for (const v of special) { out.push([SPECIAL[v] || v, v]); seen.add(v); }
-  for (const v of list) if (!seen.has(v)) { out.push([v, v]); seen.add(v); }
-  for (const v of used[kind]) if (!seen.has(v)) { out.push([`${v} (not on the ${KINDS_OF_NAME[kind]})`, v]); seen.add(v); }
+  for (const v of list) if (!seen.has(v)) { out.push([label(v), v]); seen.add(v); }
+  for (const v of used[kind]) if (!seen.has(v)) { out.push([`${label(v)} (not on the ${KINDS_OF_NAME[kind]})`, v]); seen.add(v); }
   return out.length ? out : [["(none)", "(none)"]];
 }
 
@@ -59,6 +60,18 @@ const robotSide = () => [...(pal().hooks || []), ...(pal().parts || []), ...(pal
 const fieldSide = () => [...(pal().bars || []), ...(pal().elements || []), ...(pal().pieces || []), ...(pal().targets || [])];
 const has = (xs) => (xs || []).length > 0;
 
+// A floor piece as a student reads it (scrimmage/testrange/balls.py piece_name): "ball 3" on a field of one ball or
+// disc kind, else its kind's plain name and its number among that kind's pieces from 1 ("coral 1"). The value stays
+// the body's name.
+function pieceLabel(name) {
+  const p = pal(), kinds = p.kinds || {}, of = p.floor_kinds || {}, names = Object.keys(kinds);
+  if (!(name in of)) return name;
+  const list = p.pieces || [];
+  if (names.length === 1 && kinds[names[0]].form !== "rigid") return `ball ${list.indexOf(name)}`;
+  const same = list.filter((n) => of[n] === of[name]);
+  return `${(kinds[of[name]] || {}).label || of[name]} ${same.indexOf(name) + 1}`;
+}
+
 const OPTIONS = {
   motor: () => choices(motorNames(), "motor"),
   stopMotor: () => choices(motorNames(), "motor", ["all"]),
@@ -67,7 +80,10 @@ const OPTIONS = {
   robot: () => choices(robotSide(), "robot", has(pal().hooks) ? ["hook"] : []),
   field: () => choices(fieldSide(), "field", has(pal().bars) ? ["next bar", "any bar"] : []),
   body: () => choices(pal().bodies || [], "body"),
-  piece: () => choices(pal().pieces || [], "piece", has(pal().pieces) ? ["any"] : []),
+  piece: () => choices(pal().pieces || [], "piece", has(pal().pieces) ? ["any"] : [], pieceLabel),
+  heldBy: () => choices([...(pal().parts || []), ...(pal().bodies || [])], "robot"),
+  restsOn: () => choices(pal().elements || [], "element", (pal().pieces || []).length > 1 || used.element.has("a piece") ? ["a piece"] : []),
+  rod: () => choices(pal().rods || [], "rod"),
   bar: () => choices(pal().bars || [], "bar", has(pal().bars) ? ["next bar"] : []),
   level: () => choices(pal().levels || [], "level"),
   station: () => choices(pal().stations || [], "station"),
@@ -231,6 +247,26 @@ const CONDS = {
     fields: (a) => ({ PIECE: a.piece, BODY: a.body }),
     json: (b) => ({ piece_in: { body: b.getFieldValue("BODY"), piece: b.getFieldValue("PIECE") } }),
   },
+  held: {
+    def: { message0: "%1 is held by %2", args0: [dd("PIECE", OPTIONS.piece), dd("BY", OPTIONS.heldBy)],
+      tooltip: "A game piece is held by a part or body of the robot: off the ground, touching it and moving with it." },
+    fields: (a) => ({ PIECE: a.piece, BY: a.by }),
+    json: (b) => ({ held: { piece: b.getFieldValue("PIECE"), by: b.getFieldValue("BY") } }),
+  },
+  rests_on: {
+    def: { message0: "%1 rests on %2", args0: [dd("PIECE", OPTIONS.piece), dd("ON", OPTIONS.restsOn)],
+      tooltip: "A game piece rests on a part of the field (or on another piece), which carries its weight." },
+    fields: (a) => ({ PIECE: a.piece, ON: a.on }),
+    json: (b) => ({ rests_on: { piece: b.getFieldValue("PIECE"), on: b.getFieldValue("ON") } }),
+  },
+  seated: {
+    def: { message0: "%1 is seated at least %2 in on %3",
+      args0: [dd("PIECE", OPTIONS.piece), num("DEPTH", 3, { min: 0 }), dd("ON", OPTIONS.rod)],
+      tooltip: "A game piece with a hole is on a rod, its hole passed over the rod's tip by at least this many inches." },
+    fields: (a) => ({ PIECE: a.piece, DEPTH: a.at_least_in, ON: a.on }),
+    json: (b) => ({ seated: { piece: b.getFieldValue("PIECE"), on: b.getFieldValue("ON"),
+      at_least_in: b.getFieldValue("DEPTH") } }),
+  },
   hanging_from: {
     def: { message0: "hanging from %1", args0: [dd("BAR", OPTIONS.bar)],
       tooltip: "The robot's hooks hold it up from this bar." },
@@ -308,6 +344,9 @@ export function toolbox(p) {
   out.push(item(condType("tilt")));
   if (has(p.joints)) out.push(item(condType("joint")));
   if (has(p.pieces) && has(p.bodies)) out.push(item(condType("piece_in")));
+  if (has(p.bodies) || has(p.parts)) out.push(item(condType("held")));
+  if (has(p.elements) || (p.pieces || []).length > 1) out.push(item(condType("rests_on")));
+  if (has(p.rods)) out.push(item(condType("seated")));
   if (bars) out.push(item(condType("hanging_from")));
   if (has(p.levels)) out.push(item(condType("level")));
   if (has(p.stations)) out.push(item(condType("station_empty")));
@@ -333,6 +372,9 @@ function rememberNames(blocks) {
       if (kind === "joint") remember("joint", a.name);
       if (kind === "touch") { remember("robot", a.robot); remember("field", a.field); }
       if (kind === "piece_in") { remember("body", a.body); remember("piece", a.piece); }
+      if (kind === "held") { remember("piece", a.piece); remember("robot", a.by); }
+      if (kind === "rests_on") { remember("piece", a.piece); remember("element", a.on); }
+      if (kind === "seated") { remember("piece", a.piece); remember("rod", a.on); }
       if (kind === "hanging_from") remember("bar", a);
       if (kind === "level") remember("level", a);
       if (kind === "station_empty") remember("station", a);

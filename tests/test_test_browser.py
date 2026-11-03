@@ -97,6 +97,23 @@ do = "wait_until"
 until = { level = "high" }
 
 [[block]]
+do = "expect"
+that = { held = { piece = "any", by = "drive.chassis" } }
+
+[[block]]
+do = "wait_until"
+until = { rests_on = { piece = "ball.0", on = "branch_l2" } }
+timeout = 4.0
+
+[[block]]
+do = "expect"
+that = { seated = { piece = "any", on = "branch_l3", at_least_in = 2.5 } }
+
+[[block]]
+do = "expect"
+that = { rests_on = { piece = "any", on = "a piece" } }
+
+[[block]]
 do = "drive"
 distance = 0.5
 direction = "left"
@@ -231,12 +248,13 @@ def test_the_test_tab_opens_on_the_test_and_shows_its_blocks(test_page):
 def test_every_kind_of_block_round_trips_exactly(test_page):
     page, _ = test_page(EVERYTHING)
     st = page.evaluate("__scrimmageTest.state.test")
-    assert len(st["blocks"]) == 22
+    assert len(st["blocks"]) == 26
     assert page.evaluate("__scrimmageTest.toJSON()") == st
     # the condition blocks sit in their sockets
     types = page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).map(b => b.type)")
     for kind in ("cond_tilt", "cond_joint", "cond_touch", "cond_piece_in", "cond_hanging_from", "cond_level",
-                 "cond_in_hopper", "cond_station_empty", "cond_made_it_in"):
+                 "cond_in_hopper", "cond_station_empty", "cond_made_it_in", "cond_held", "cond_rests_on",
+                 "cond_seated"):
         assert kind in types, kind
 
 
@@ -278,6 +296,25 @@ def test_the_station_blocks_show_on_a_station_field_only(test_page):
     types = _flyout_types(page)
     assert "start_feeding" not in types and "cond_station_empty" not in types
     assert "cond_in_hopper" in types and "cond_made_it_in" in types
+
+
+def test_seated_shows_on_a_field_with_rods_only(test_page):
+    page, path = test_page()
+    robot = path.parent / "robot.toml"
+    base = robot.read_text(encoding="utf-8")
+    robot.write_text(base + '\n[range]\nfile = "reef"\nstart = "facing_coral"\n', encoding="utf-8")
+    page.wait_for_function("__scrimmageTest.state.palette && __scrimmageTest.state.palette.rods.length > 0")
+    types = _flyout_types(page)
+    assert "cond_seated" in types and "cond_rests_on" in types and "cond_held" in types
+    # a piece reads as its kind and number, never its body's name
+    labels = page.evaluate("""(() => {
+      const fl = __scrimmageTest.workspace.getFlyout().getWorkspace();
+      return fl.getTopBlocks(true).find(b => b.type === 'cond_held').getField('PIECE').getOptions(false).map(o => o[0]);
+    })()""")
+    assert labels[0] == "any piece" and all(l.startswith("coral ") for l in labels[1:]) and len(labels) > 1, labels
+    robot.write_text(base + '\n[range]\nfile = "ladder"\nstart = "below"\n', encoding="utf-8")
+    page.wait_for_function("__scrimmageTest.state.palette && __scrimmageTest.state.palette.rods.length === 0")
+    assert "cond_seated" not in _flyout_types(page)
 
 
 def _drive_choices(page):
@@ -484,7 +521,7 @@ until = { touch = { robot = "arm.gone", field = "nowhere" } }
 
 def test_the_status_bar_counts_every_block_of_the_test(test_page):
     page, _ = test_page(EVERYTHING)
-    page.wait_for_function("document.querySelector('#test-count').textContent === '25 blocks in the test'")
+    page.wait_for_function("document.querySelector('#test-count').textContent === '29 blocks in the test'")
 
 
 def test_dragging_a_test_apart_keeps_the_first_block_and_a_reload_says_what_it_left_out(test_page):
