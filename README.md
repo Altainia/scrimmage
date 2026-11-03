@@ -254,7 +254,7 @@ edit the robot code, `restart_robot()`, repeat. The agent launches your robot wi
 | `advance` | Run forward `seconds` (at most 60), then hold. Returns state and new console lines. |
 | `set_mode` | Driver Station mode: disabled, auto, teleop or test. |
 | `set_joystick` | Set axes, buttons and POVs on a port 0-5. |
-| `get_state` | Ground-truth pose, speed, battery, motor commands and currents, joint positions; on a robot with air cylinders, the air (`pneumatics`: stored and working psi, whether the compressor is on, each rod's extension in inches). |
+| `get_state` | Ground-truth pose, speed, battery, motor commands and currents, joint positions; on a robot with air cylinders, the air (`pneumatics`: stored and working psi, whether the compressor is on, each rod's extension in meters, `extension_m`). |
 | `get_hal` | Raw HAL values the robot reported, with an optional device filter. |
 | `get_console` | Robot console lines with simulated timestamps. |
 | `nt_list`, `nt_get` | List and read NetworkTables topics. |

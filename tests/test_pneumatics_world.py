@@ -357,7 +357,7 @@ def test_state_reports_the_air():
     assert st["stored_psi"] == pytest.approx(w.pneumatics.system.stored_psi, abs=0.01) and st["stored_psi"] < 120
     assert st["working_psi"] == pytest.approx(60, abs=0.01)
     assert st["compressor_on"] is False                 # no robot code turned the closed loop on
-    assert st["cylinders"] == {"cyl": pytest.approx(6.0, abs=0.05)}     # inches: the stock 6 in stroke, all out
+    assert st["cylinders"] == {"cyl": {"extension_m": pytest.approx(6 * 0.0254, abs=0.001)}}   # m: the stock 6 in stroke, all out
 
 
 def test_get_state_has_the_air_only_with_cylinders(tmp_path):
@@ -383,4 +383,4 @@ def test_get_state_has_the_air_only_with_cylinders(tmp_path):
     assert "pneumatics" not in asyncio.run(state(plain))
     air = asyncio.run(state(with_cyl))["pneumatics"]
     assert air == {"stored_psi": pytest.approx(120, abs=0.01), "working_psi": pytest.approx(60, abs=0.01),
-                   "compressor_on": False, "cylinders": {"cyl": pytest.approx(0, abs=0.01)}}
+                   "compressor_on": False, "cylinders": {"cyl": {"extension_m": pytest.approx(0, abs=0.001)}}}

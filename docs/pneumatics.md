@@ -282,7 +282,7 @@ Robots with valves only on a PCM keep working with lockstep 0.6.0.
 | `stored_psi` | the tanks' pressure, psi |
 | `working_psi` | the regulator's output, psi (the tanks' pressure when they are below the working pressure) |
 | `compressor_on` | whether the compressor is running |
-| `cylinders` | each cylinder's rod extension in inches, by its part name: `{ "kicker": 6.0 }` |
+| `cylinders` | each cylinder's rod extension in meters, by its part name: `{ "kicker": { "extension_m": 0.1524 } }` (the Test tab's `<name>.extension` signal is in inches) |
 
 ## What isn't simulated
 
