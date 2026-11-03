@@ -26,7 +26,10 @@ from it leaves the tanks. A regulator does not relieve, so a chamber pushed abov
 stays there. The exhaust is the atmosphere, and flows either way (a chamber pulled below atmosphere breathes in).
 
 Stability. Each call splits into SUBSTEPS sub-steps. In each, a chamber's new mass is clamped so it never passes
-the pressure it is flowing toward, so no step size can overshoot.
+the pressure it is flowing toward, so no step size can overshoot, and the tanks never give air below the
+atmosphere. The air in a chamber is also a spring on the rod, k = p A^2 / V, stiffest at a stroke's end where only
+the dead volume is left; the assembler gives each cylinder's tendon the inertia that keeps it stable at the
+physics step (parts/assemble.py, cylinder_armature).
 
 The compressor adds its free-air flow to the tanks while on. It is on when the robot is enabled, the program's
 closed loop is on, and the pressure switch calls for air. The switch has hysteresis: it stops at switch_off_psi
@@ -49,6 +52,9 @@ MAX_STORED_PSI = 120.0    # FRC rule: stored side at most 120 psi
 DEFAULT_CONDUCTANCE = 8e-9   # m^3/(s Pa), 0.8 dm^3/(s bar): an estimate for FRC's small 5/2 valves
 CRITICAL_RATIO = 0.3
 SUBSTEPS = 10
+# Air at each port that the piston never sweeps: the port, its fitting and about 0.3 m of 5/32 in ID tube back to
+# the valve (an estimate, UNCALIBRATED). It also sets how stiff the air's spring is at a stroke's end, p A^2 / V.
+DEFAULT_DEAD_VOLUME = 5e-6      # m^3
 
 _STATES = ("extend", "retract", "hold")
 
@@ -123,7 +129,7 @@ class CylinderSpec:
     stroke: float
     friction: float                 # N of seal friction; applied by MuJoCo, not by this model
     conductance: float
-    dead_volume: float = 1e-6       # m^3 at each port
+    dead_volume: float = DEFAULT_DEAD_VOLUME     # m^3 at each port
     pin_a: tuple[str, tuple] | None = None
     pin_b: tuple[str, tuple] | None = None
     length: float | None = None
@@ -297,7 +303,9 @@ class AirSystem:
         # When the tanks set the supply, the draw also stops where tank and chamber share one pressure.
         v_t = self._tank_volume
         shared = (self._tank_mass * v_fed - fed.mass * v_t) / (v_t + v_fed)
-        dm = min(dm, max(0.0, self._mass_at(supply, v_fed) - fed.mass), max(0.0, shared))
+        # And the tanks never fall below the atmosphere: a regulator can't push air out of tanks at 0 psi gauge.
+        spare = self._tank_mass - self._mass_at(ATM, v_t)
+        dm = min(dm, max(0.0, self._mass_at(supply, v_fed) - fed.mass), max(0.0, shared), max(0.0, spare))
         fed.mass += dm
         self._tank_mass -= dm
 

@@ -16,7 +16,7 @@ from .field import add_field
 from .ids import slot_bindings
 from ..teamfolders import TeamFolderError, expand
 from .model import Body, Geom, Part, PartError, load_part, model_timestep, quat_from_rpy, tread_name
-from ..pneumatics.model import CylinderSpec
+from ..pneumatics.model import ATM, MAX_WORKING_PSI, PSI, CylinderSpec
 
 if TYPE_CHECKING:
     from ..testrange.build import RangeLayout
@@ -359,6 +359,20 @@ def _set_treads(built: Built, timestep: float) -> None:
 CYLINDER_STOP_SOLREF = (0.002, 1.0)
 
 
+def cylinder_armature(cy: CylinderSpec, timestep: float) -> float:
+    """The inertia (kg) along a cylinder's line that keeps its air stable at the physics step.
+
+    The air in a chamber is a spring on the rod, k = p_abs A^2 / V, and the air model hands MuJoCo its force once per
+    step from the length at the step's start (PneumaticsRuntime.tendon_length): an explicit spring, which on a mass m
+    is unstable once k dt^2 / m passes about 4. k is largest at a stroke's end, where only the dead volume is left: k_max on the cap side (the larger area) at
+    the working limit. Armature k_max dt^2 / 2 on the tendon keeps k dt^2 / m_eff below 2 whatever load the cylinder
+    drives. It stands for real inertia along the cylinder's line (the rod, and the air's lag in the tube), not a
+    change to the force: about 0.02 kg on the stock 1-1/16 in bore, 0.2 kg on a 2 in bore, at 1 ms."""
+    a_cap = math.pi * cy.bore ** 2 / 4
+    k_max = (MAX_WORKING_PSI * PSI + ATM) * a_cap ** 2 / cy.dead_volume
+    return k_max * timestep ** 2 / 2
+
+
 def _pin_body(inst: Instance, body: str, by_name: dict[str, Instance]) -> str:
     """A cylinder pin's body by its full name: the instance's own body, or (push) "<instance>.<body>", checked."""
     if any(b.name == body for b in inst.part.bodies):
@@ -372,9 +386,11 @@ def _pin_body(inst: Instance, body: str, by_name: dict[str, Instance]) -> str:
     return body
 
 
-def _add_cylinders(spec: mujoco.MjSpec, insts: list[Instance], by_name: dict[str, Instance]) -> list[CylinderSpec]:
+def _add_cylinders(spec: mujoco.MjSpec, insts: list[Instance], by_name: dict[str, Instance],
+                   timestep: float) -> list[CylinderSpec]:
     """Each cylinder's pins as sites "<inst>.pin_a" and "<inst>.pin_b", a spatial tendon "<inst>.cylinder" between
-    them that stops at both ends of the stroke and carries the seal friction, and an actuator of the same name whose
+    them that stops at both ends of the stroke and carries the seal friction and the armature that keeps the air
+    stable at `timestep` (cylinder_armature), and an actuator of the same name whose
     ctrl is the air's force in N (positive extends). The tendon's range is set in _resolve_cylinders, once compiled."""
     out = []
     for inst in insts:
@@ -386,7 +402,8 @@ def _add_cylinders(spec: mujoco.MjSpec, insts: list[Instance], by_name: dict[str
                 pins.append((full, tuple(pos)))
             ten = spec.add_tendon(name=f"{inst.name}.cylinder", limited=mujoco.mjtLimited.mjLIMITED_TRUE,
                                   range=[0.0, cy.stroke], frictionloss=cy.friction, width=cy.bore / 2,
-                                  solref_limit=list(CYLINDER_STOP_SOLREF))
+                                  solref_limit=list(CYLINDER_STOP_SOLREF),
+                                  armature=cylinder_armature(cy, timestep))
             ten.wrap_site(f"{inst.name}.pin_a")
             ten.wrap_site(f"{inst.name}.pin_b")
             spec.add_actuator(name=f"{inst.name}.cylinder", trntype=mujoco.mjtTrn.mjTRN_TENDON,
@@ -492,7 +509,7 @@ def assemble(cfg: dict, cfg_dir: Path) -> Built:
             dep, drv, c = (b, a, cp.ratio) if abs(cp.ratio) >= 1 else (a, b, 1.0 / cp.ratio)
             spec.add_equality(type=mujoco.mjtEq.mjEQ_JOINT, name1=dep, name2=drv,
                               data=[0, c] + [0] * (mujoco.mjNEQDATA - 2), solref=[0.002, 1], solimp=[0.9999, 0.9999, 0.001, 0.5, 2])
-    cylinders = _add_cylinders(spec, insts, by_name)
+    cylinders = _add_cylinders(spec, insts, by_name, timestep if timestep is not None else spec.option.timestep)
     layout = None
     if section is not None:
         from ..testrange.build import add_range

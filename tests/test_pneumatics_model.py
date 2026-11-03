@@ -3,8 +3,8 @@ import math
 
 import pytest
 
-from scrimmage.pneumatics.model import (ATM, COMPRESSORS, DEFAULT_CONDUCTANCE, PSI, AirConfig, AirSystem,
-                                        CylinderSpec)
+from scrimmage.pneumatics.model import (ATM, COMPRESSORS, DEFAULT_CONDUCTANCE, DEFAULT_DEAD_VOLUME, PSI, AirConfig,
+                                        AirSystem, CylinderSpec)
 
 BORE, ROD, STROKE = 0.0269875, 0.0079375, 0.1524     # 1-1/16 in, 5/16 in, 6 in
 A_CAP = math.pi * BORE ** 2 / 4
@@ -89,7 +89,7 @@ def test_air_used_per_stroke():
     # The extended cap side holds its volume at 60 psi gauge, i.e. (60 psi + atmosphere) absolute, of which the
     # dead volume was already there as atmosphere (the cap side starts vented).
     absolute = (60 * PSI + ATM) / ATM
-    expected = (A_CAP * STROKE + 1e-6) * absolute - 1e-6
+    expected = (A_CAP * STROKE + DEFAULT_DEAD_VOLUME) * absolute - DEFAULT_DEAD_VOLUME
     assert used == pytest.approx(expected, rel=0.05)
 
 
@@ -149,3 +149,17 @@ def test_set_valve_refuses_unknowns():
         air.set_valve("nope", "extend")
     with pytest.raises(ValueError):
         air.set_valve("c", "sideways")
+
+
+def test_tanks_never_below_atmosphere():
+    """Nearly empty tanks feeding a chamber pulled below the atmosphere stop at 0 psi gauge, not where tank and
+    chamber would share one pressure."""
+    air = system(start_psi=1.0, tanks=1)
+    vented(air, "hold")
+    air.step(0.001, {"c": STROKE}, True, True)          # held shut and pulled out: the cap side far below atmosphere
+    assert air.chamber_psi("c")[0] < -10.0
+    air.set_valve("c", "extend")
+    for _ in range(1000):
+        air.step(0.001, {"c": STROKE}, True, True)
+        assert air.stored_psi >= -1e-9
+    assert air.stored_psi == pytest.approx(0.0, abs=1e-6)

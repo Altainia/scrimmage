@@ -82,7 +82,7 @@ def test_push_cylinder_on_an_arm():
     pivot = m.joint("arm.pivot").dofadr[0]
     d = mujoco.MjData(m)
     mujoco.mj_forward(m, d)
-    assert d.qacc[pivot] < 0          # unpushed, the arm falls
+    assert abs(d.qacc[pivot]) < 1e-6  # unpushed, the cylinder's retract stop holds the arm up
     d.ctrl[m.actuator("cyl.cylinder").id] = 100.0
     mujoco.mj_forward(m, d)
     assert d.qacc[pivot] > 0          # 100 N on the cylinder pushes the tip up

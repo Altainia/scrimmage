@@ -89,14 +89,11 @@ def test_set_cylinder_extends(tmp_path):
 
 
 def test_air_runs_out(tmp_path):
-    """Review Focus 5: a big cylinder on one tank with no compressor drains it below the working pressure.
-
-    The rod carries 1 kg: a 2 in bore's free 0.1 kg rod chatters between its stops at a 1 ms step (the air spring is
-    too stiff for so light a rod), which the task's report raises."""
+    """Review Focus 5: a big cylinder on one tank with no compressor drains it below the working pressure."""
     cycle = _set("extend") + _wait(0.5) + _set("retract") + _wait(0.5)
     body = cycle.replace("[[block]]", "[[block.body]]")
     p = _program(tmp_path, '[[block]]\ndo = "repeat"\ntimes = 6\n' + body,
-                 cylinder="bore = 0.0508\nrod_mass = 1.0\n",
+                 cylinder="bore = 0.0508\n",
                  pneumatics='compressor = "none"\nstart_psi = 70\ntanks = 1\n')
     result = TestRun(world_for(p), p).run()
     assert result.status == "finished", result.outcome

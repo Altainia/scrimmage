@@ -12,7 +12,8 @@ Every step, before mj_step:
     A PCM channel's output is ("Solenoid", "<id>,<ch>", "<output"); a hub channel's is bit ch of
     ("ScrimmagePH", "<id>", "<solenoids").
     A disabled robot's solenoid outputs are off, as on a real robot.
-  - the extension is the tendon's length past its retracted length, clamped to [0, stroke];
+  - the extension is the tendon's length now (carried forward from mj_step's pre-integration length, see
+    tendon_length) past its retracted length, clamped to [0, stroke];
   - the AirSystem steps and each force (N, positive extends) goes to data.ctrl. MuJoCo keeps ctrl, so it is written
     every step.
 
@@ -78,8 +79,20 @@ class PneumaticsRuntime:
     def extension(self, name: str) -> float:
         """How far the cylinder's rod is out, in m (0 to its stroke)."""
         spec = self._specs[name]
-        x = float(self.world.data.ten_length[self._tendon[name]]) - spec.length
+        x = self.tendon_length(name) - spec.length
         return min(max(x, 0.0), spec.stroke)
+
+    def tendon_length(self, name: str) -> float:
+        """The cylinder's tendon length (m) now. mj_step leaves ten_length at the position before it integrated,
+        one step old; an air spring driven from a one-step-old position is unstable at any stiffness (nothing
+        damps it enough). So it is carried forward by this step's motion: q_now = q_before + dt qvel, and qvel is
+        already the new velocity, so L_now = ten_length + dt (ten_J . qvel). Exact for a slide; first order for
+        turning joints."""
+        m, d = self.world.model, self.world.data
+        tid = self._tendon[name]
+        adr, nnz = int(m.ten_J_rowadr[tid]), int(m.ten_J_rownnz[tid])
+        rate = float(d.ten_J[adr:adr + nnz] @ d.qvel[m.ten_J_colind[adr:adr + nnz]])
+        return float(d.ten_length[tid]) + m.opt.timestep * rate
 
     def before_physics(self, hal: HalState, enabled: bool, dt: float) -> None:
         for name in self.names:

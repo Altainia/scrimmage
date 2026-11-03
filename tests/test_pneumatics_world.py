@@ -243,3 +243,102 @@ def test_pneumatics_section_checked():
     with pytest.raises(ValueError, match="tank_ml") as e:
         World(robot("PCM:3", pneumatics={"tank_size": 1}), ROOT)
     assert "tank_size" in str(e.value)
+
+
+
+def _watch(w: World, seconds: float, samples: list) -> None:
+    """Step a robot with no HAL valves for `seconds`, appending (raw extension m, fed side psi, vented side psi,
+    tank psi) each step. The raw extension is the tendon's length past retracted, unclamped, so a rod through its
+    stops shows; the fed side is the one the valve supplies."""
+    rt = w.pneumatics
+    spec = w.parts.cylinders[0]
+    for _ in range(round(seconds / w.model.opt.timestep)):
+        w.step(hal())
+        cap, rod = rt.system.chamber_psi("cyl")
+        fed, vented = (cap, rod) if rt.system._valves["cyl"] == "extend" else (rod, cap)
+        samples.append((rt.tendon_length("cyl") - spec.length, fed, vented, rt.system.stored_psi))
+
+
+def _assert_stable(w: World, samples: list, past_stop: float) -> None:
+    """Within `past_stop` m of each stop; the fed side never above the regulator; the vented side may cushion a
+    moving load (real compression) but stays below 3 times the working pressure; the tanks never below 0 psi."""
+    spec = w.parts.cylinders[0]
+    working = w.pneumatics.system.config.working_psi
+    xs = [s[0] for s in samples]
+    assert -past_stop <= min(xs) and max(xs) <= spec.stroke + past_stop, (min(xs), max(xs))
+    assert max(s[1] for s in samples) <= working + 1
+    assert max(s[2] for s in samples) <= 3 * working
+    assert min(s[3] for s in samples) >= 0.0
+
+
+def test_big_light_cylinder_is_stable():
+    """A 2 in bore on the default 0.1 kg rod at a 1 ms step: the air's spring is stiff at a stroke's end (small
+    dead volume), so with a one-step-old length, or no tendon armature, the rod went through its stops and the
+    chambers read ~1700 psi. 3 mm past a stop: the prime's first step puts 60 psi on a rod against its soft stop
+    (about 2 mm); after that it stays within half a millimeter."""
+    cfg = {"part": [{"name": "drive", "stock": "chassis"},
+                    {"name": "cyl", "stock": "cylinder", "attach": "drive.top", "bore": 0.0508}]}
+    w = World(cfg, ROOT)
+    assert w.model.opt.timestep == pytest.approx(0.001)
+    samples = []
+    w.pneumatics.command("cyl", "extend")
+    _watch(w, 1.0, samples)
+    w.pneumatics.command("cyl", "retract")
+    _watch(w, 1.0, samples)
+    assert max(s[0] for s in samples) > w.parts.cylinders[0].stroke - 0.005      # it did go out
+    assert samples[-1][0] < 0.005                                                 # and back
+    _assert_stable(w, samples, past_stop=0.003)
+
+
+def test_light_push_load_is_stable():
+    """A push-form 2 in bore on a 0.05 kg stock arm, laid out as a real design is: the 2 in stroke ends (about 39
+    degrees) before the arm's own limits (+-90), so the cylinder's stops set the arm's travel."""
+    stroke = 0.0508
+    cfg = {"part": [{"name": "drive", "stock": "chassis"},
+                    {"name": "arm", "stock": "arm", "attach": "drive.top", "mass": 0.05},
+                    {"name": "cyl", "stock": "cylinder", "attach": "drive.top", "pos": [0, 0, -0.1],
+                     "bore": 0.0508, "stroke": stroke, "push": "arm.arm", "push_pos": [0.2, 0, 0]}]}
+    w = World(cfg, ROOT)
+    # Pin to pin: barrel at (0, 0, -0.1), arm pin 0.2 m out at angle t: L^2 = 0.05 + 0.04 sin t; retracted at t = 0.
+    top = math.degrees(math.asin(((math.sqrt(0.05) + stroke) ** 2 - 0.05) / 0.04))
+    pivot = w.model.joint("arm.pivot")
+    lo, hi = (math.degrees(v) for v in pivot.range)
+    assert lo < -1.0 and top < hi - 1.0
+    angles, samples = [], []
+    for state in ("extend", "retract"):
+        w.pneumatics.command("cyl", state)
+        for _ in range(1000):
+            _watch(w, 0.001, samples)
+            angles.append(math.degrees(float(w.data.qpos[pivot.qposadr[0]])))
+    assert max(angles) > top - 2.0                # it did push the arm up to the stroke's end
+    assert -1.0 <= min(angles) and max(angles) <= top + 1.0, (min(angles), max(angles), top)
+    assert angles[-1] < 1.0                       # and back down
+    _assert_stable(w, samples, past_stop=0.003)
+
+
+def test_predicted_length_matches_forward():
+    """tendon_length carries mj_step's pre-integration length forward by this step's motion: on the free form's
+    slide it is the length mj_fwdPosition computes at the new position."""
+    import mujoco
+    cfg = {"part": [{"name": "drive", "stock": "chassis"},
+                    {"name": "cyl", "stock": "cylinder", "attach": "drive.top", "bore": 0.0508}]}
+    w = World(cfg, ROOT)
+    w.pneumatics.command("cyl", "extend")
+    run(w, hal(), 0.05)
+    assert abs(float(w.data.qvel[w.model.joint("cyl.extend").dofadr[0]])) > 0.1     # it is moving
+    predicted = w.pneumatics.tendon_length("cyl")
+    mujoco.mj_fwdPosition(w.model, w.data)
+    assert predicted == pytest.approx(float(w.data.ten_length[w.model.tendon("cyl.cylinder").id]), abs=1e-9)
+
+
+def test_armature_formula():
+    """The cylinder's tendon carries armature k_max dt^2 / 2, k_max the cap side's air spring at the working limit
+    with only the dead volume left: so k dt^2 / m_eff stays below 2 whatever the cylinder drives."""
+    from scrimmage.pneumatics.model import ATM, MAX_WORKING_PSI, PSI
+    w = World(robot(), ROOT)
+    spec = w.parts.cylinders[0]
+    a_cap = math.pi * spec.bore ** 2 / 4
+    k_max = (MAX_WORKING_PSI * PSI + ATM) * a_cap ** 2 / spec.dead_volume
+    dt = w.model.opt.timestep
+    tid = w.model.tendon("cyl.cylinder").id
+    assert float(w.model.tendon_armature[tid]) == pytest.approx(k_max * dt ** 2 / 2, rel=1e-9)
