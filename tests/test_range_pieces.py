@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from scrimmage.launcher.inputs import PRESETS
 from scrimmage.testrange.elements import IN
 from scrimmage.testrange.pieces import (
     FLOOR_DROP,
@@ -16,6 +17,7 @@ from scrimmage.testrange.pieces import (
     ball_kind,
     disc_kind,
     display_name,
+    kind_preset,
     orientation_words,
     parse_kind,
     rotate,
@@ -210,3 +212,21 @@ def test_display_names():
     assert display_name("2025-coral") == "coral" and display_name("2010-soccer-ball") == "soccer ball"
     assert display_name("coral") == "coral" and ball_kind("2026-fuel", "2026-fuel").label == "fuel"
     assert parse_kind(P, "c", {**HOLLOW, "label": "pipe"}, ROOT).label == "pipe"
+
+
+def test_piece_presets_are_there_with_their_sizes():
+    P = PRESETS["piece"]
+    assert set(P) == {"2025-coral", "2023-cone", "2023-cube", "2017-gear", "2019-hatch-panel", "2015-tote", "2024-note"}
+    coral = kind_preset("2025-coral")
+    assert coral.hole is not None and coral.extent == pytest.approx(11.875 * IN, abs=1e-4)
+    assert kind_preset("2017-gear").mass == pytest.approx(0.522, abs=0.005) and kind_preset("2017-gear").flat
+    assert kind_preset("2019-hatch-panel").hole.diameter == pytest.approx(6 * IN)
+    assert kind_preset("2024-note").hole.diameter == pytest.approx(10 * IN) and kind_preset("2024-note").flat
+    assert kind_preset("2015-tote").extent == pytest.approx(26.9 * IN)
+    assert kind_preset("2015-tote").mass == pytest.approx(3.54, abs=0.01)
+    assert kind_preset("2023-cone").mass == pytest.approx(0.652, abs=0.001)
+    assert kind_preset("2023-cube").extent == pytest.approx(9.5 * IN)
+    for name in P:
+        assert 0 < kind_preset(name).friction < 2
+        assert kind_preset(name).label == display_name(name)
+    assert set(PRESETS["surface"]) == {"pvc", "polycarbonate", "rubber", "foam", "hdpe", "polypropylene", "fabric"}

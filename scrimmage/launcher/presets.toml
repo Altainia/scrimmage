@@ -1,5 +1,7 @@
 # Presets for the launcher model. A setup section may say `preset = "<name>"`; the preset fills the section and
-# explicit keys override it. Sections: [ball.*], [wheels.*], [air.*]. SI units throughout.
+# explicit keys override it. Sections: [ball.*], [wheels.*], [air.*], [surface.*], [piece.*]. SI units throughout.
+# The [surface.*] and [piece.*] tables are for the test range's rigid game pieces (docs/test-range.md); lengths are
+# written in inches (`_in`) where the manual gives inches.
 #
 # Every value has a `# source:` comment, or a `# estimate:` comment saying how it was estimated.
 # Estimates are NOT measurements. Ball stiffness and restitution and wheel friction can all be measured at home
@@ -122,3 +124,106 @@ density = 1.2           # source: dry air at 20 C and sea level, 1.204 kg/m^3 (I
 drag_coefficient = 0.47 # source: smooth sphere in the sub-critical range, Hoerner "Fluid-Dynamic Drag" and NASA Glenn "Drag of a Sphere" https://www.grc.nasa.gov/www/k-12/VirtualAero/BottleRocket/airplane/sphere.html (a fuzzy or foam ball is rougher, so a little higher in practice)
 lift_slope = 1.0        # estimate: wind-tunnel studies of spinning sports balls (Mehta 1985, "Aerodynamics of Sports Balls", Annu. Rev. Fluid Mech.) show C_L rising roughly in proportion to S for S below about 0.3. Not measured for FRC balls.
 lift_max = 0.3          # estimate: the same studies show C_L leveling off near 0.25 to 0.35 at higher S.
+
+# Surface materials for rigid pieces. A piece's `material` names one; friction is the sliding coefficient of the
+# piece's surface against a hard plastic or metal robot part (the bench's materials, scrimmage/bench/presets.toml,
+# use the same footing: its polycarbonate 0.4 and nitrile rubber 0.8 `rigid_friction` are repeated here so the two
+# tables can't disagree). Friction against FRC pieces is not published; every value is an estimate. Replace
+# with a sled-pull measurement of your own part and piece.
+# Published figures read for this table (Engineering ToolBox, https://www.engineeringtoolbox.com/friction-coefficients-d_778.html,
+# clean and dry): polyethylene on polyethylene 0.2, polystyrene on polystyrene 0.5, Plexiglas on Plexiglas 0.8,
+# rubber on dry concrete 0.6 to 0.85, rubber on cardboard 0.5 to 0.8. It lists no PVC, polypropylene or polycarbonate.
+
+[surface.pvc]
+friction = 0.4          # estimate: hard smooth plastic on plastic, between that page's polyethylene (0.2) and polystyrene (0.5); the same 0.4 as the bench's smooth-plastic entry.
+
+[surface.polycarbonate]
+friction = 0.4          # estimate: smooth plastic on plastic; equal to the bench's polycarbonate rigid_friction (scrimmage/bench/presets.toml), which is itself an estimate (0.3 to 0.5 typical).
+
+[surface.rubber]
+friction = 0.8          # estimate: rubber on a hard surface, in the lower half of that page's rubber ranges (0.5 to 0.85); equal to the bench's nitrile rigid_friction.
+
+[surface.foam]
+friction = 0.6          # estimate: coated foam grips about like a firm rubber but less; between the plastics (0.4) and rubber (0.8).
+
+[surface.hdpe]
+friction = 0.25         # estimate: a waxy plastic, a little above that page's polyethylene on polyethylene (0.2).
+
+[surface.polypropylene]
+friction = 0.3          # estimate: polypropylene is a waxy plastic like polyethylene but a little harder; between hdpe (0.25) and PVC (0.4).
+
+[surface.fabric]
+friction = 0.5          # estimate: a smooth PVC fabric cover against plastic, the bottom of that page's rubber on cardboard range (0.5 to 0.8) since it is not rubber.
+
+# Rigid game pieces (the test range's `[piece.*]`; see scrimmage/testrange/pieces.py). A piece names its shape(s), mass
+# (kg) and `material` (a [surface.*] above). Lengths are `_in` (inches). A piece's display name drops the year ("2025-coral"
+# is "coral").
+
+[piece.2025-coral]
+# FRC 2025 REEFSCAPE "Coral": a 4 in nominal PVC pipe, 11 7/8 in long: a hollow tube.
+shape = "tube"          # source: FRC 2025 game manual section 5.7.1 (CORAL): "a 11 7/8 in. long piece of 4 in. diameter Schedule 40 Cellular (Foam) Core PVC pipe" https://firstfrc.blob.core.windows.net/frc2025/Manual/2025GameManual.pdf
+diameter_in = 4.5       # source: same section: "a 4 1/2 in. (~11 cm) outside diameter" (4.500 in is the OD of any 4 in nominal Schedule 40 pipe)
+inner_diameter_in = 4.0 # source: same section: "a 4-in. (~102 mm) inside diameter" (a Sch 40 solid-wall 4 in pipe is 4.026 in; the manual's 4.0 is used for this foam core pipe)
+length_in = 11.875      # source: same section, 11 7/8 in.
+mass = 0.658            # estimate: the manual says CORAL "has a weight of between 1.1-1.8 lbs. (~0.5-0.8 kg)"; the midpoint, 1.45 lb = 0.658 kg. Weigh yours.
+material = "pvc"        # source: the manual calls it PVC pipe; its friction is the estimate in [surface.pvc]
+
+[piece.2023-cone]
+# FRC 2023 Charged Up "Cone": a yellow rubber marker cone on a square base, tip up. A square slab and a frustum.
+shape = "compound"      # source: FRC 2023 game manual section 5.8.1: a rubber marker cone, Flaghouse 4158 (the manual's figure is not dimensioned beyond the numbers below) https://uploads-ssl.webflow.com/599637fe3f1ad60001ccbba1/63c344503b2b7643a59facad_2023FRCGameManual.pdf
+mass = 0.652            # source: same section, "weighs 1lb 7oz (~653 g)"; 1 lb 7 oz = 0.6522 kg
+material = "rubber"     # source: same section, "rubber marker cone"; its friction is the estimate in [surface.rubber]
+
+# Base slab and feet: the manual gives an 8 3/8 in. +/- 1/8 in. square base with 1/4 in. tall feet. The cone is 1 ft 13/16 in. (12.8125 in.) tall.
+[[piece.2023-cone.shapes]]
+shape = "box"           # estimate: the 8 3/8 in square base from the manual, but the slab thickness (0.75 in, with the feet) is a guess from the photograph; the manual gives no base thickness.
+size_in = [8.375, 8.375, 0.75]  # source: manual section 5.8.1 for the 8 3/8 in square; estimate: the 0.75 in thickness
+pos_in = [0.0, 0.0, 0.375]      # estimate: the slab sits on the floor, its middle half its thickness up
+
+# The cone body: from the slab's top (0.75 in) to the manual's 12.8125 in height.
+[[piece.2023-cone.shapes]]
+shape = "cone"         # estimate: a frustum; the manual gives no body shape or mass distribution
+diameter_in = 7.0      # estimate: a base diameter a little inside the 8 3/8 in slab, from the photograph; not dimensioned in the manual
+tip_diameter_in = 1.25 # estimate: the flat top of the cone with its stacking hole, from the photograph; not dimensioned in the manual
+length_in = 12.0625    # source: manual 12.8125 in. height minus the 0.75 in slab (estimate)
+pos_in = [0.0, 0.0, 6.78125]   # estimate: the middle of the body, 0.75 + 12.0625 / 2 in up
+
+[piece.2023-cube]
+# FRC 2023 Charged Up "Cube": a purple PVC fabric inflatable cube. A rigid stand-in for an inflated fabric cube (the real one squashes).
+shape = "box"           # source: FRC 2023 game manual section 5.8.2: "inflated to 9 1/2 in. +/- 1/4 in. ... face to face", rounded corners, sides not necessarily equal; a sharp-cornered cube here
+size_in = [9.5, 9.5, 9.5]       # source: same section
+mass = 0.0709           # source: same section: "A CUBE weighs 2.5 oz (~71 g)" (REV and AndyMark say the same; 2.5 oz = 0.0709 kg)
+material = "fabric"     # source: same section, "purple PVC fabric"; its friction is the estimate in [surface.fabric]
+
+[piece.2017-gear]
+# FRC 2017 STEAMWORKS "Gear": a gold polypropylene toothed wheel, taken as a plain solid disc.
+shape = "cylinder"      # source: FRC 2017 game manual section 3.12.2: a toothed wheel; teeth and the center hole are left out here https://firstfrc.blob.core.windows.net/frc2017/Manual/2017FRCGameSeasonManual.pdf
+diameter_in = 11.0      # source: same section, "an 11 in. (~28 cm) diameter" (its pitch diameter is 10 in)
+length_in = 2.0         # source: same section, "2 in. (~5 cm) thick"
+mass = 0.522            # source: same section, "weighs 18.4 oz. (~0.5 kg.)"; 18.4 oz = 0.5216 kg
+material = "polypropylene"  # source: same section, "polypropylene"; its friction is the estimate in [surface.polypropylene]
+
+[piece.2019-hatch-panel]
+# FRC 2019 Destination: Deep Space "Hatch Panel": a 19 in polycarbonate ring with a 6 in hole.
+shape = "ring"          # source: FRC 2019 game manual GAME PIECES section (HATCH PANEL): "a circular 3/16-in. (~5 mm) thick polycarbonate toroid" https://robotics.choate.edu/wp-content/uploads/2020/01/2019FRCGameSeasonManual.pdf (the loop tape on its edge is left out)
+diameter_in = 19.0      # source: same section, "outside diameter ... 19 in."
+inner_diameter_in = 6.0 # source: same section, "the diameter of the hole ... 6 in."
+length_in = 0.1875      # source: same section, 3/16 in. thick
+mass = 0.941            # estimate: polycarbonate's density, 1200 kg/m^3, times the ring's volume (pi/4 (19^2 - 6^2) in^2 x 3/16 in = 7.84e-4 m^3); the manual gives no mass, the loop tape is left out
+material = "polycarbonate"  # source: same section; its friction is the estimate in [surface.polycarbonate]
+
+[piece.2015-tote]
+# FRC 2015 Recycle Rush "Tote": a gray or yellow plastic tote, taken as a solid box (its inertia is a solid box's, an estimate: an empty tote's is higher).
+shape = "box"           # source: FRC 2015 game manual section 2.3.1: a rigid plastic tote (Orbis FP243) https://first-a-holics.com/wp-content/uploads/2021/12/2015-Game-Manual.pdf (its handles, ribs and lid are left out)
+size_in = [26.9, 16.9, 12.1]    # source: same section, "26.9 in. long, 16.9 in. wide, 12.1 in. tall"
+mass = 3.54             # source: same section, "weighs approximately 7.8 lbs"; 7.8 lb = 3.538 kg
+material = "hdpe"       # estimate: the manual says only "a rigid plastic"; a molded storage tote like the Orbis is usually HDPE, which was not looked up. Its friction is the estimate in [surface.hdpe]
+
+[piece.2024-note]
+# FRC 2024 Crescendo "Note": an orange foam ring. A rigid stand-in for a foam ring (the real one squashes).
+shape = "ring"          # source: AndyMark Crescendo Note page https://andymark.com/products/crescendo-note: OD 14 in, ID 10 in, 2 in thick, coated foam, "rather squishy / flexible"
+diameter_in = 14.0      # source: same page, 14 in. OD
+inner_diameter_in = 10.0  # source: same page, 10 in. ID
+length_in = 2.0         # source: same page, 2 in. thick
+mass = 0.235            # source: same page, "8.3 oz. +/- 0.2 oz."; 8.3 oz = 0.2353 kg
+material = "foam"       # source: same page, "coated foam"; its friction is the estimate in [surface.foam]
