@@ -42,6 +42,7 @@ SLIP_LOOKBACK_S = 1.0   # s: a joint or drive commanded this long before a slip 
 RAY_CASTS = 4           # rays down from around the piece's center, at half its bounding radius (our call)
 _RAY_HOPS = 8           # robot geoms a ray may pass through before it gives up
 _DOWN = np.array([0.0, 0.0, -1.0])
+SET_DOWN = "was set down on "    # a loss's words before what the piece was set down on (run.py reads it)
 _UNTOUCHED, _NO_NEWS, _OUT_OF_PLAY = "untouched", "no news", "out of play"     # _judge's other answers
 
 
@@ -160,7 +161,7 @@ class HeldTracker:
             below[i] = self._below(i)
         under, gap = below[i]
         if gap < HELD_CLEAR:
-            return f"was set down on {under}"
+            return f"{SET_DOWN}{under}"
         if not bodies:
             return _UNTOUCHED
         rels = [v for v in (self._relative(i, b) for b in bodies) if v is not None]

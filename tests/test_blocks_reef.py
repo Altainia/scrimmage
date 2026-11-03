@@ -1,10 +1,12 @@
 """The reef field (a built-in range: three 2025 branches on a post, a coral on the carpet, a coral station) and the
 grabber example on it (examples/blocks/reef): the field loads with its starts clear, a fed coral comes to rest on the
-carpet, and the grabber closes on the floor coral and lifts it."""
+carpet, and the grabber closes on the floor coral and lifts it. The worked example: place.test.toml places the coral
+on branch_l2, held throughout until it is placed (controller ruling P34), and spread.test.toml turns the floor coral."""
 
 from __future__ import annotations
 
 import math
+import re
 import shutil
 from pathlib import Path
 
@@ -160,3 +162,87 @@ def test_a_new_test_of_the_grabber_starts_with_the_coral_held(tmp_path):
     result = TestRun(world_for(program), program).run()
     assert result.status == "finished" and result.checks and all(c["passed"] for c in result.checks), result.outcome
     assert result.checks[-1]["throughout"]
+
+
+# ---- the worked example: place.test.toml and spread.test.toml --------------------------------------------------
+
+@pytest.fixture(scope="module")
+def placed_run():
+    program = load(EXAMPLE / "place.test.toml")
+    world = world_for(program)
+    return program, world, TestRun(world, program).run()
+
+
+def test_the_example_names_only_what_the_robot_and_field_have(placed_run):
+    from scrimmage.blocks.palette import problems
+    program, world, _ = placed_run
+    assert problems(program, world) == []
+
+
+def test_the_grabber_places_a_coral_on_l2(placed_run):
+    _, world, r = placed_run
+    assert r.status == "finished" and r.checks and all(c["passed"] for c in r.checks), r.outcome
+    held, seated, rests = r.checks
+    assert held["throughout"] and "until it was placed on branch_l2" in held["line"], held["line"]
+    assert seated["text"] == "a coral is seated at least 3 in on branch_l2"
+    assert rests["text"] == "a coral rests on branch_l2"
+    assert r.signals["seated.branch_l2"][-1] >= 3
+    assert min(r.signals["grabber.arm"]) < -140.0                            # it really swung over the top
+    tilt = math.degrees(math.asin(abs(coral_axis(world, 0)[2])))
+    assert tilt == pytest.approx(35.0, abs=3.0)                              # lying along the branch
+
+
+def _place_text(**swap) -> str:
+    text = (EXAMPLE / "place.test.toml").read_text(encoding="utf-8")
+    for old, new in swap.items():
+        assert old in text
+        text = text.replace(old, new)
+    return text
+
+
+def _run_text(tmp_path, text: str):
+    folder = tmp_path / "reef"
+    shutil.copytree(EXAMPLE, folder)
+    path = folder / "x.test.toml"
+    path.write_text(text, encoding="utf-8")
+    program = load(path)
+    return TestRun(world_for(program), program).run()
+
+
+def test_a_held_check_still_fails_when_the_coral_slips_before_the_branch(tmp_path):
+    """Ruling P34: only a piece set down on a rod or element a check names ends a held check passed. Opening the jaws
+    over the top drops the coral, and that's a failure even with branch_l2 named."""
+    drive = 'do = "drive"\ndistance = 2.65\nvolts = 3.0\n'
+    opened = squeeze(-2.0).lstrip("\n").removeprefix("[[block]]\n") + wait(1.0) + "\n[[block]]\n" + drive
+    r = _run_text(tmp_path, _place_text(**{drive: opened}))
+    assert r.status == "check failed", r.outcome
+    held = r.checks[0]
+    assert not held["passed"] and "until" not in held["line"], held["line"]
+    assert held["failure"].startswith("the coral ") and "branch_l2" not in held["failure"], held
+
+
+def test_a_held_check_fails_when_the_coral_is_set_down_where_no_check_names(tmp_path):
+    """The coral is set down on branch_l2, but the checks name branch_l3: the held check fails, saying where."""
+    r = _run_text(tmp_path, _place_text(**{'on = "branch_l2", at_least_in': 'on = "branch_l3", at_least_in',
+                                           'rests_on = { piece = "any", on = "branch_l2" }':
+                                           'rests_on = { piece = "any", on = "branch_l3" }'}))
+    assert r.status == "check failed", r.outcome
+    held = r.checks[0]
+    assert not held["passed"] and "was set down on branch_l2" in held["failure"], held
+
+
+def test_the_reef_spread_picks_up_a_coral_lying_in_line(tmp_path):
+    """The spread over the coral's facing (40 in ahead, the robot driving up to it first): lying in line and a little
+    turned are picked up; turned 20° or more, the coral is wider than the open jaws over the pads' length."""
+    import json
+
+    from scrimmage.blocks.spread import run_spread
+    program = load(EXAMPLE / "spread.test.toml")
+    out = run_spread(program, tmp_path / "runs")
+    info = json.loads((out / "spread.json").read_text(encoding="utf-8"))
+    said = info["sentence"]
+    assert re.match(r"^picked up \d of 6", said), said
+    missed = said.partition("; missed ")[2]
+    assert "lying in line" not in missed and "lying at 10°" not in missed, said
+    assert "lying across" in missed and "lying at 45°" in missed, said
+    assert "standing on end" not in said                                    # P8: no tipped placements

@@ -355,7 +355,7 @@ absolute path. **`test_spread`** runs the floor spread. The agent writes the `.t
 
 ## The examples
 
-Three worked examples are in `examples/blocks/`. Each has a README with the story, the blocks and how to change them.
+Four worked examples are in `examples/blocks/`. Each has a README with the story, the blocks and how to change them.
 
 - **`examples/blocks/intake`**, a roller and bin that take a ball off the carpet. Run it and it finishes at 3.3 s
   with the ball in the bin. The README has a sweep of the roller's voltage.
@@ -363,6 +363,13 @@ Three worked examples are in `examples/blocks/`. Each has a README with the stor
   station's chute. It starts feeding, waits until 5 balls are in, stops, and expects at least 80% of the fed balls to
   have made it in. Its station has a small spread, so the shuffle means something. The README tells of the first try
   that lost balls over a low back wall. (`examples/blocks/intake` also has `spread.test.toml`, a floor spread.)
+- **`examples/blocks/reef`**, a grabber on a stand-in robot, on the `reef` field. It picks a coral up off the carpet,
+  swings it over the top and drives it onto the L2 branch. It checks the coral is held throughout and seated at least
+  3 in on `branch_l2`. A held check that runs throughout ends, passed, when the piece is set down on a rod or element
+  that the test's own seated or rests-on checks name: "held by grabber from 1.4 s until it was placed on branch_l2 at
+  4.4 s". Any other way of losing the piece still fails it. The README has a grip-material sweep. Its
+  `spread.test.toml` turns the coral to six angles and picks up three: past about 15° the coral is wider than the open
+  jaws.
 - **`examples/blocks/ladder_climber`**, a train-wheel climber made from a CAD file with the same steps a student takes
   in the Part tab. **It reaches `rung1` and no further, and it is honest about why.** The robot hangs from `rung1`
   (the hooks carry more than a quarter of its weight), but then it tips up on its back bumper instead of rising: the

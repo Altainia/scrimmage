@@ -17,8 +17,10 @@ step, as its module turns, until they all are); a drive's seconds count from the
 the block, until a later block changes them. `stop` lets a motor (or all of them) go to neutral. `wait`,
 `wait_until` and `repeat` pass time and loop; a `repeat` goes round at most once a physics step when its body takes
 no time. `expect` checks its condition once, or (`throughout`) every step until the run ends; a check that fails ends
-the run, saying what happened instead. The Watch reads the world once after the settle, so the first blocks judge the
-robot as it rests (a hook already on a bar touches it).
+the run, saying what happened instead. A held throughout check ends, passed, when the piece is set down on a rod or
+element that a `seated` or `rests_on` condition of the test names ("... until it was placed on branch_l2 at 4.4 s",
+controller ruling P34): placing a piece lets go of it. Any other loss still fails it. The Watch reads the world once
+after the settle, so the first blocks judge the robot as it rests (a hook already on a bar touches it).
 
 Feeding: `start_feeding` and `stop_feeding` take no time (the station feeds every interval from the next step on, or
 stops). `feed_one` asks for one piece and waits until the station's count rises, or until it is empty or used up (it
@@ -71,7 +73,7 @@ from ..testrange.build import BALL_BITS
 from .conditions import IN, Watch, _conds, describe
 from .drive import STEER_TIMEOUT, drivetrain
 from .feeds import SETTLE_MAX_S, Outcomes, counts, is_standin, made_it_in, sentence
-from .grip_watch import SLIP_LOOKBACK_S, default_word
+from .grip_watch import SET_DOWN, SLIP_LOOKBACK_S, default_word
 from .palette import ALL_MOTORS, ANY_HOOK, ANY_PIECE, NEXT_BAR, palette, problems
 from .placed import KNOCK_OFF_SHARE, ON_PIECE, seated_words
 from .program import (DRIVE_TIMEOUT, DRIVE_VOLTS, MOVE_TIMEOUT, REPEAT_MAX, WAIT_TIMEOUT, Program,
@@ -259,9 +261,10 @@ class TestRun:
         if watch.mon is not None:
             watch.mon.reset()
         watch.update()                                      # the robot as it rests, for the first blocks
-        outcomes = self.outcomes = watch.outcomes = Outcomes(w, watch, self.standin, (
-            [c.args["on"] for c in _conds(self.program.blocks, "seated")],
-            [c.args["on"] for c in _conds(self.program.blocks, "rests_on") if c.args["on"] != ON_PIECE]))
+        places = ([c.args["on"] for c in _conds(self.program.blocks, "seated")],
+                  [c.args["on"] for c in _conds(self.program.blocks, "rests_on") if c.args["on"] != ON_PIECE])
+        self._places = set(places[0]) | set(places[1])     # where a check expects a piece: a held check ends there
+        outcomes = self.outcomes = watch.outcomes = Outcomes(w, watch, self.standin, places)
         self._deferred: tuple[dict, object] | None = None  # the last made_it_in check, decided after the settle
         self._final: dict | None = None                     # the final counts, once the run has ended
         self._fed_seen = 0                                  # the feeder's Feds tracked so far
@@ -313,9 +316,13 @@ class TestRun:
                 watch.update()
                 self._track(t)
                 sample(t)
-                for check, cond in self.throughout:
+                for check, cond in list(self.throughout):
                     if not watch.holds(cond):
-                        self._fail(check, cond, t)
+                        placed = self._placed_hold(cond)
+                        if placed is None:
+                            self._fail(check, cond, t)
+                        check["until"] = placed                 # the hold ended where a check expects the piece
+                        self.throughout.remove((check, cond))
                 if watch.tilt > TIP_DEG:
                     raise _End("tipped over", f"the robot tipped over at {t:.1f} s")
                 if walk is not None:
@@ -737,6 +744,20 @@ class TestRun:
         lost = f"{how} {by}" if how in ("slipped out of", "slid in") else how
         return f"{what} {lost} at {t:.1f} s while {self._moving(t)}"
 
+    def _placed_hold(self, cond) -> str | None:
+        """A held throughout check that stopped holding because the piece was set down on a rod or element a `seated`
+        or `rests_on` condition of the test names (controller ruling P34): "until it was placed on branch_l2 at 4.4
+        s". None for any other loss, and for any other condition."""
+        if cond.kind != "held":
+            return None
+        held = self.watch.held
+        i, by = self.watch.piece_index(cond.args["piece"]), cond.args["by"]
+        loss = held.lost(i, by) if held.ever(i, by) else None
+        if loss is None or not loss[1].startswith(SET_DOWN):
+            return None
+        on = loss[1].removeprefix(SET_DOWN)
+        return f"until it was placed on {on} at {loss[0]:.1f} s" if on in self._places else None
+
     def _not_placed(self, k: str, a: dict) -> str:
         """How a rests_on or seated check failed: "the coral doesn't rest on shelf (a robot body still touches it)";
         "the coral isn't on branch_l2", "the coral is seated only 0.8 in on branch_l2 (could be knocked off)", or,
@@ -815,5 +836,7 @@ class TestRun:
         where = _where(tuple(c["place"]))
         if c["passed"]:
             when = f"from {c['t']:.1f} s on" if c["throughout"] else f"at {c['t']:.1f} s"
+            if c.get("until"):
+                when = f"from {c['t']:.1f} s {c['until']}"
             return f"passed: {c['text']} {when} ({where})"
         return f"failed ({where}): {c['failure']}" + ("" if c.get("timed") else f" at {c['t']:.1f} s")

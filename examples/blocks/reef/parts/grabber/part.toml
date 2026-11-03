@@ -1,19 +1,20 @@
 # A coral grabber written by hand: an arm on a hinge, hanging from a mast at the front bumper, carries two jaws that
 # close on a coral lying in line on the carpet (along the robot's heading), each jaw a pad on a slide with its own
 # motor. Swinging the arm forward and up lifts the coral; swung on over the top to about 145 degrees, the coral's axis
-# tilts down ahead of the robot at 35 degrees, the slope of a 2025 L2 or L3 reef branch, so the robot can lower it onto
-# one. It sits in front of the stand-in robot's front bumper (attached at the bumper's face, on the floor). Every
-# number is our choice. Coordinates: x forward, y left, z up, in meters; the origin is on the floor at the bumper's face.
+# tilts down ahead of the robot at 35 degrees, the slope of a 2025 L2 or L3 reef branch, its center at the L2 branch's
+# line (the hinge's 44 cm sets that height), so the robot can drive it onto that branch. It sits in front of the
+# stand-in robot's front bumper (attached at the bumper's face, on the floor). Every number is our choice.
+# Coordinates: x forward, y left, z up, in meters; the origin is on the floor at the bumper's face.
 
 [part]
 name = "grabber"
 format = 1
 
-# The mast: a post up to the arm's hinge, 50 cm up. Only drawn, so it never touches the coral or the field.
+# The mast: a post up to the arm's hinge, 44 cm up. Only drawn, so it never touches the coral or the field.
 [[body]]
 name = "mast"
 mass = 0.6                    # choice: an aluminum tube and its bracket
-geom = [{ box = [0.04, 0.04, 0.50], pos = [0.0, 0.0, 0.25], color = [0.55, 0.55, 0.6, 1.0], collide = false }]
+geom = [{ box = [0.04, 0.04, 0.44], pos = [0.0, 0.0, 0.22], color = [0.55, 0.55, 0.6, 1.0], collide = false }]
 
 # The arm turns about y at the top of the mast; at 0 it hangs straight down, its jaws on the carpet. A negative angle
 # swings the jaws forward and up (-90 holds them straight ahead, -145 over the top with the coral sloping down ahead).
@@ -21,12 +22,12 @@ geom = [{ box = [0.04, 0.04, 0.50], pos = [0.0, 0.0, 0.25], color = [0.55, 0.55,
 [[body]]
 name = "arm"
 parent = "mast"
-pos = [0.0, 0.0, 0.50]
+pos = [0.0, 0.0, 0.44]
 mass = 1.0                    # choice: an arm tube and the jaws' carrier plate
 joint = { name = "arm", hinge = "y", range = [-160, 10], armature = 1.0 }
 geom = [
-  { box = [0.03, 0.03, 0.36], pos = [0.0, 0.0, -0.18], color = [0.6, 0.6, 0.65, 1.0], collide = false },   # the arm
-  { box = [0.26, 0.24, 0.02], pos = [0.13, 0.0, -0.37], color = [0.6, 0.6, 0.65, 1.0], collide = false },  # the carrier
+  { box = [0.03, 0.03, 0.30], pos = [0.0, 0.0, -0.15], color = [0.6, 0.6, 0.65, 1.0], collide = false },   # the arm
+  { box = [0.26, 0.24, 0.02], pos = [0.13, 0.0, -0.31], color = [0.6, 0.6, 0.65, 1.0], collide = false },  # the carrier
 ]
 
 # The jaws hang from the carrier on either side of the coral, their pads' centers at the coral's middle height
@@ -38,7 +39,7 @@ geom = [
 [[body]]
 name = "jaw_left"
 parent = "arm"
-pos = [0.20, 0.0972, -0.4428]
+pos = [0.20, 0.0972, -0.3828]
 mass = 0.2                    # choice: a pad and its slide
 joint = { name = "jaw_left", slide = [0, -1, 0], range = [0.0, 0.05], armature = 9.0, spring = { stiffness = 50.0 } }
 geom = [{ box = [0.20, 0.02, 0.08], name = "pad_left", color = [0.2, 0.2, 0.2, 1.0] }]
@@ -46,7 +47,7 @@ geom = [{ box = [0.20, 0.02, 0.08], name = "pad_left", color = [0.2, 0.2, 0.2, 1
 [[body]]
 name = "jaw_right"
 parent = "arm"
-pos = [0.20, -0.0972, -0.4428]
+pos = [0.20, -0.0972, -0.3828]
 mass = 0.2                    # choice: as jaw_left
 joint = { name = "jaw_right", slide = [0, 1, 0], range = [0.0, 0.05], armature = 9.0, spring = { stiffness = 50.0 } }
 geom = [{ box = [0.20, 0.02, 0.08], name = "pad_right", color = [0.2, 0.2, 0.2, 1.0] }]
