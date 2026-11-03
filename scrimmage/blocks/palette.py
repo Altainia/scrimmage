@@ -7,7 +7,8 @@ cylinders (`cylinders`: each one's name and whether its valve is a double soleno
 a single), other surfaces a touch can name (`targets`: the carpet, the walls) and climb levels, whether it can drive
 and how (`drive_kind`: a tank or swerve drive, as drive.py finds them) and the signals a chart can show
 (`seated.<rod>` for each rod, in inches, when a piece kind of the field has a hole; with cylinders, `air.psi` (the
-tanks), `air.working_psi` (the regulator's output) and each cylinder's `<name>.extension` in inches).
+tanks), `air.working_psi` (the regulator's output) and each cylinder's `<name>.extension` in inches; and
+`element.<name>` for each of the field's hinged or sliding elements, `moving_elements`, in its unit).
 The field's pieces: `piece` (its default kind's preset), `kinds` (each kind's form, whether it is hollow or flat and the
 plain name a student reads, e.g. "coral"), `floor_kinds` (each floor piece's kind), `piece_labels` (what a student
 reads for each floor piece, "coral 2", as the run's sentences name it) and `station_kinds` (each station's), and every
@@ -32,6 +33,7 @@ from ..hal_drive import driven_joints
 from ..launcher.inputs import PRESETS
 from ..parts.grip import GRIP_MATERIALS
 from ..terrain.climb import robot_hooks
+from ..testrange.elements import moving_units
 from ..testrange.spec import BALL_CHOICE_RANGES, RangeError, load_range
 from ..testrange.station import OVERRIDE_KEYS, with_overrides
 from .aim import turrets
@@ -175,6 +177,8 @@ def palette(world, hooks: list[str]) -> dict:
     cyls = cylinders(world)
     if cyls:
         signals += ["air.psi", "air.working_psi", *(f"{c['name']}.extension" for c in cyls)]     # psi, psi, in
+    moving = moving_units(rng.elements) if rng is not None else {}
+    signals += [f"element.{n}" for n in moving]                    # deg (hinged) or in (sliding), 0 at rest
     dt = drivetrain(world, driven)
     stations = sorted(rng.stations, key=lambda st: st.name) if rng is not None else []
     ball = floor_ball(world)
@@ -187,6 +191,7 @@ def palette(world, hooks: list[str]) -> dict:
         "hooks": hook_list,
         "bars": bars,
         "elements": elements,
+        "moving_elements": [{"name": n, "unit": u} for n, u in moving.items()],     # hinged ("deg"), sliding ("in")
         "goals": sorted(g.name for g in rng.goals) if rng is not None else [],
         "turrets": turrets(world),          # stock turrets' instances: each turns `<inst>.turn`
         "cylinders": cyls,                  # pneumatic cylinders: {name, double}
@@ -234,6 +239,7 @@ class _Names:
         self.bars = set(p["bars"])
         self.pieces = set(p["pieces"])
         self.elements = set(p["elements"])
+        self.moving = [e["name"] for e in p["moving_elements"]]
         self.rods = set(p["rods"])
         self.goals = list(p["goals"])
         self.turrets = list(p["turrets"])
@@ -365,6 +371,10 @@ def _cond_problems(n: _Names, c) -> list[str]:
         return _cylinder_problems(n, a["cylinder"], "check")
     if c.kind == "pressure":
         return [] if n.cylinders else ["this robot has no air system (no cylinder)"]
+    if c.kind == "element" and a["element"] not in n.moving:
+        known = f"this field's moving elements: {', '.join(n.moving)}" if n.moving else \
+            "this field has no moving elements"
+        return [f"{a['element']} isn't a moving element; {known}"]
     if c.kind == "station_empty":
         name = a["station"]
         if name not in n.stations:

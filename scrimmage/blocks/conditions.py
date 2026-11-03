@@ -33,6 +33,8 @@ step, and the plain words that name them in a run's outcome.
   0), as the air system's extension reads it (pneumatics/runtime.py).
 - `pressure`: the air system's stored (the tanks') or working (the regulator's output) pressure is above or below N
   psi.
+- `element`: a hinged field element's angle (degrees) or a sliding one's travel (inches), 0 at rest, is above or below
+  N: its `element.<name>` signal.
 
 The words name pieces as a student knows them: any piece by the field's kind ("a coral"; "a ball" on a field of one
 ball or disc kind, as always; "a piece" on a mixed field or when the kinds aren't known), and a named piece by its
@@ -53,6 +55,7 @@ import mujoco
 import numpy as np
 
 from ..terrain.climb import hold_geoms, robot_hooks
+from ..testrange.elements import moving_units, moving_value
 from ..testrange.spec import _one_round_kind as one_round_kind
 from .aim import aim_error
 from .feeds import made_it_in
@@ -83,6 +86,8 @@ class Watch:
             self.mon = world.climb_monitor(list(program.hooks))
         rng = parts.range if parts is not None else None
         self._levels = list(rng.climb.levels) if rng is not None and rng.climb is not None else []
+        self.units = moving_units(rng.elements) if rng is not None else {}    # moving element -> "deg" or "in"
+        self._moving = {name: layout.moving[name] for name in self.units}     # moving element -> its qpos address
         self._hook_geoms = {name: set(gs) for name, gs in robot_hooks(m, self.body).items()}
         for name in program.hooks:
             self._hook_geoms[name] = set(self._body_geoms(name))
@@ -282,6 +287,10 @@ class Watch:
         goals = tr.counts()["goals"] if tr is not None else {}
         return sum(goals.values()) if goal == ANY_GOAL else int(goals.get(goal, 0))
 
+    def element_value(self, name: str) -> float:
+        """Moving element `name`'s signal now: degrees for a hinged one, inches for a sliding one, 0 at rest."""
+        return moving_value(float(self.data.qpos[self._moving[name]]), self.units[name])
+
     def hopper_count(self) -> int:
         """Balls whose center is inside a hopper body's box now, fed or not."""
         return int(self.hopper_mask().sum())
@@ -326,6 +335,9 @@ class Watch:
             s = self.world.pneumatics.system
             psi = s.stored_psi if a["side"] == "stored" else s.working_psi
             return psi > a["above"] if "above" in a else psi < a["below"]
+        if k == "element":
+            v = self.element_value(a["element"])
+            return v > a["above"] if "above" in a else v < a["below"]
         if k == "station_empty":
             return bool(self.world.test_range.feeder.empty(a["station"]))
         if k == "made_it_in":
@@ -382,9 +394,11 @@ def turret_words(name: str) -> str:
     return "the turret" if name == "turret" else f"turret {name}"
 
 
-def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names: dict | None = None) -> str:
+def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names: dict | None = None,
+             units: dict | None = None) -> str:
     """The condition in plain words, for a run's outcome. `next_bar` names "the next bar" when known; `kinds` (the
-    field's Range.kinds) names any piece by its kind, `names` a piece by what a student reads (Watch.piece_names)."""
+    field's Range.kinds) names any piece by its kind, `names` a piece by what a student reads (Watch.piece_names),
+    `units` a moving element's unit (Watch.units; a number alone when not known)."""
     a, k = cond.args, cond.kind
     names = names or {}
 
@@ -424,6 +438,10 @@ def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names
         side, psi = ("above", a["above"]) if "above" in a else ("below", a["below"])
         what = f"the {a['side']} air pressure"      # as the block reads: "stored air pressure above 60 psi"
         return f"{what} is {side} {psi:g} psi"
+    if k == "element":
+        side = "above" if "above" in a else "below"
+        unit = (units or {}).get(a["element"])
+        return f"{a['element']} is {side} {_amount(a[side], unit) if unit else f'{a[side]:g}'}"
     if k == "station_empty":
         return f"{a['station']} is empty"
     if k == "made_it_in":

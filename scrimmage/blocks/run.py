@@ -71,6 +71,9 @@ output) and each cylinder's `<name>.extension` (in), and the run's `air`: the ta
 the lowest and when, how long the compressor ran and when the tanks first fell below the working pressure
 (air_lines words it).
 
+A field with hinged or sliding elements has each one's `element.<name>` signal: a hinged element's angle (deg) or a
+sliding one's travel (in), 0 at rest; the `element` condition reads it.
+
 A run ends with one status: "finished" (every block played), "check failed", "timed out" (a wait until, a move, a
 drive or a turn), "tipped over" (the robot body's up axis more than TIP_DEG from vertical), "walked off" (the climb
 runner's "hook walked off" rule, scrimmage/climb/run.py's WalkOff), "time limit", "repeat limit" (a repeat until
@@ -346,6 +349,7 @@ class TestRun:
         self._seated = {f"seated.{r}": r for r in pal["rods"]}     # a seated signal -> its rod
         self._double = {c["name"]: c["double"] for c in pal["cylinders"]}
         self._extension = {f"{c}.extension": c for c in self._double}     # an extension signal -> its cylinder
+        self._elements = {f"element.{e['name']}": e["name"] for e in pal["moving_elements"]}   # signal -> element
         self._qadr = {n: int(m.jnt_qposadr[m.joint(n).id]) for n in kinds}
         self._slide = {n: k == "slide" for n, k in kinds.items()}
         self.feeder = world.test_range.feeder if world.test_range is not None else None
@@ -616,6 +620,8 @@ class TestRun:
                 row[name] = self.world.pneumatics.system.working_psi
             elif name in self._extension:
                 row[name] = self.world.pneumatics.extension(self._extension[name]) / IN
+            elif name in self._elements:                # deg or in
+                row[name] = watch.element_value(self._elements[name])
             elif name.endswith(".current") and name[:-8] in self.motors:
                 row[name] = float(self.motors[name[:-8]].current)
             else:
@@ -907,6 +913,11 @@ class TestRun:
             now = s.stored_psi if a["side"] == "stored" else s.working_psi
             what = f"the {a['side']} air pressure"      # as the block reads: "stored air pressure above 60 psi"
             return f"expected {what} {side} {psi:g} psi, but it was {now:.1f} psi"
+        if k == "element":
+            side = "above" if "above" in a else "below"
+            unit = watch.units[a["element"]]
+            now = round(watch.element_value(a["element"]), 1) + 0.0        # + 0.0: a panel at rest never reads "-0"
+            return f"expected {a['element']} {side} {_amount(a[side], unit)}, but it was {_amount(now, unit)}"
         if k == "station_empty":
             left = self.feeder.left(a["station"]) if self.feeder is not None else None
             return f"{a['station']} wasn't empty" + (f" ({left} left)" if left else "")
@@ -981,9 +992,9 @@ class TestRun:
         return " and ".join(words) if words else "nothing was moving"
 
     def _describe(self, cond) -> str:
-        """describe() with this run's next bar and the field's piece words."""
+        """describe() with this run's next bar, the field's piece words and its moving elements' units."""
         w = self.watch
-        return describe(cond, w.next_bar(), w.kinds, w.piece_names)
+        return describe(cond, w.next_bar(), w.kinds, w.piece_names, w.units)
 
     def _fail(self, check: dict, cond, t: float) -> None:
         check.update(passed=False, t=t, failure=self._failure(cond))

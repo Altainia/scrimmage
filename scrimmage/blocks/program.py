@@ -56,7 +56,8 @@ UNITS = ("deg", "in", "m")
 DO_KINDS = ("spin", "move", "drive", "stop", "wait", "wait_until", "repeat", "expect",
             "start_feeding", "stop_feeding", "feed_one", "turn", "aim", "set_cylinder")
 COND_KINDS = ("joint", "touch", "tilt", "piece_in", "hanging_from", "level", "in_hopper", "station_empty",
-              "made_it_in", "held", "rests_on", "seated", "scored", "aimed", "cylinder", "pressure")
+              "made_it_in", "held", "rests_on", "seated", "scored", "aimed", "cylinder", "pressure",
+              "element")
 DRIVE_DIRECTIONS = ("forward", "back", "left", "right")
 _OPPOSITE = {"back": "forward", "left": "right", "right": "left"}     # where a minus distance goes instead
 SPREAD_AXES = ("offset_in", "distance_in", "angle_deg", "rotation_deg", "tip_deg")
@@ -217,6 +218,10 @@ def _cond(v, where: str) -> Cond:
         if psi < 0:
             raise TestFileError(f"{where}: {limit} is a pressure in psi and can't be negative")
         return Cond(kind, {"side": side, limit: psi})
+    if kind == "element":     # in the element's unit: degrees for a hinged one, inches for a sliding one
+        _keys(t, ("element", "above", "below"), where)
+        side = _one_of(t, ("above", "below"), where)
+        return Cond(kind, {"element": _text(t.get("element"), where, "element"), side: _num(t[side], where, side)})
     if kind == "tilt":
         _keys(t, ("above", "below"), where)
         side = _one_of(t, ("above", "below"), where)

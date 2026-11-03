@@ -294,6 +294,19 @@ def panel_inertia(e: Hinged | Sliding) -> np.ndarray:
     return m / 12.0 * np.array([sy * sy + sz * sz, sx * sx + sz * sz, sx * sx + sy * sy])
 
 
+def moving_units(elements) -> dict[str, str]:
+    """Each hinged or sliding element's name -> the unit its `element.<name>` signal reads in: "deg" for a hinged
+    one, "in" for a sliding one; sorted by name."""
+    return {e.name: "deg" if isinstance(e, Hinged) else "in"
+            for e in sorted(elements, key=lambda e: e.name) if isinstance(e, (Hinged, Sliding))}
+
+
+def moving_value(q: float, unit: str) -> float:
+    """A moving element's signal from its joint's position (radians or m from rest, as qpos holds it): degrees (MuJoCo
+    keeps a hinge's angle unwrapped, so three turns read 1080) or inches."""
+    return math.degrees(q) if unit == "deg" else q / IN
+
+
 def hinge_inertia(e: Hinged) -> float:
     """The panel's moment of inertia about its hinge (kg m^2)."""
     point, axis = hinge_axis(e)
