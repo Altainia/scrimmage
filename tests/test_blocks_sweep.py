@@ -385,6 +385,21 @@ def test_sweep_the_grip_material(tmp_path):
     assert _left_behind(tmp_path) == []
 
 
+def test_sweep_the_grip_of_a_whole_part(tmp_path):
+    """Both pads of the grabber at once (no overlay on either), 1 V: HDPE slips, nitrile holds. The arm and base
+    have no colliding geom or aren't pads; only bodies that touch something are set."""
+    from pieces_helpers import blocks, grab_test
+    path = grab_test(tmp_path, blocks(1.0))
+    out = run_sweep(_program(path), {"grip": "grabber"}, ["hdpe", "nitrile"], tmp_path / "t-runs")
+    rows = _table(out)
+    assert rows[0]["status"] == "check failed" and rows[1]["status"] == "finished"
+    assert _left_behind(tmp_path) == []
+    from scrimmage.blocks.sweep import _check_grip
+    assert _check_grip(tmp_path / "grab-standin.toml", "grabber") == ["jaw_b", "jaw_f"]
+    with pytest.raises(ValueError, match="or sweep the whole part, grabber"):
+        _check_grip(tmp_path / "grab-standin.toml", "grabber.nothing")
+
+
 def test_review_focus_4_a_bad_material_is_a_row(tmp_path):
     path = _grip_test(tmp_path)
     out = run_sweep(_program(path), {"grip": "grabber.jaw_f"}, ["velcro", 0.8], tmp_path / "t-runs")
@@ -397,8 +412,10 @@ def test_a_stock_part_grip_sweep_is_refused(tmp_path):
     path = write_test(tmp_path, MOVE_45)
     with pytest.raises(ValueError, match="can't sweep the grip of arm.pad: arm is a stock part"):
         run_sweep(_program(path), {"grip": "arm.pad"}, ["hdpe"], tmp_path / "t-runs")
+    with pytest.raises(ValueError, match="arm is a stock part"):
+        run_sweep(_program(path), {"grip": "arm"}, ["hdpe"], tmp_path / "t-runs")
     for target in ("ghost.pad", "grabber.nothing"):
         with pytest.raises(ValueError, match=f"no body {target} on this robot"):
             run_sweep(_program(_grip_test(tmp_path / "g")), {"grip": target}, ["hdpe"], tmp_path / "t-runs")
     with pytest.raises(ValueError, match="a body's grip material"):
-        run_sweep(_program(path), {"grip": "nodot"}, ["hdpe"], tmp_path / "t-runs")
+        run_sweep(_program(path), {"grip": "a.b.c"}, ["hdpe"], tmp_path / "t-runs")

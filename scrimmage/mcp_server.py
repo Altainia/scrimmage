@@ -620,9 +620,10 @@ async def test_sweep(path: str, target: dict, values: list[float | str]) -> dict
     changes: {"block": [2], "key": "to"} is the "to" of block 3 (a list of positions, counting from 0, goes inside
     repeats, and key is volts, seconds, to or distance); {"robot": "mass"} is the robot's mass (also com_forward,
     com_left, com_up for the center of mass); {"mount": "arm", "axis": "x"} is where a part is mounted (axis x, y,
-    z or yaw); {"grip": "claw.pad"} is the grip material of a body (a path part's name and body; values are
-    material names such as "hdpe", "nitrile" or "grip-tape", or a measured friction number: "would grip tape
-    help?"); {"setup": "seed"} is the human player's shuffle (a whole number), and {"station": "feeder", "key":
+    z or yaw); {"grip": "claw"} is the grip material of every body of a path part that touches anything, and
+    {"grip": "claw.pad"} of one body (values are material names such as "hdpe", "nitrile" or "grip-tape", or a
+    measured friction number: "would grip tape help?"; sweeping one pad of several may show no difference, so
+    sweep the part); {"setup": "seed"} is the human player's shuffle (a whole number), and {"station": "feeder", "key":
     "interval"} is a station's interval (also stock, spread_yaw_deg, spread_pitch_deg, spread_speed, spread_position,
     spread_rotation_deg; the last two set all three axes). values: the numbers
     (for a grip, material names or numbers) to try, in order (at most 12).

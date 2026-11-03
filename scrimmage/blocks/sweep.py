@@ -6,7 +6,8 @@ The setting (a target) is one of
                                                                            first, as a check's place)
     {"robot": "mass" | "com_forward" | "com_left" | "com_up"}              the stand-in chassis' mass / com_offset
     {"mount": "<part>", "axis": "x" | "y" | "z" | "yaw"}                   a [[part]]'s pos (m) / rot yaw (deg)
-    {"grip": "<part>.<body>"}                                              the grip material of a path part's body
+    {"grip": "<part>.<body>" | "<part>"}                                   the grip material of a path part's body, or of
+                                                                           every body of the part that touches anything
                                                                            (values: GRIP_MATERIALS names or numbers)
     {"setup": "seed"}                                                      the test's [setup] seed
     {"station": "<name>", "key": "interval" | "stock" | "spread_..."}      a station's setting in [setup]
@@ -71,7 +72,7 @@ def _kind(target) -> str:
             return "robot"
         if set(target) == {"mount", "axis"} and isinstance(target["mount"], str) and target["axis"] in AXES:
             return "mount"
-        if set(target) == {"grip"} and isinstance(target["grip"], str) and target["grip"].count(".") == 1 \
+        if set(target) == {"grip"} and isinstance(target["grip"], str) and target["grip"].count(".") <= 1 \
                 and all(target["grip"].split(".")):
             return "grip"
         if target == {"setup": "seed"}:
@@ -156,12 +157,13 @@ def _set(table, key: str, i: int | None, value: float) -> None:
     table[key][i] = value
 
 
-def _check_grip(config: Path, grip: str) -> None:
-    """Raise ValueError when `grip` ("<part>.<body>") isn't a body of a path part of the robot (before any run)."""
-    name, body = grip.split(".")
+def _check_grip(config: Path, grip: str) -> list[str]:
+    """The bodies a grip sweep of `grip` ("<part>.<body>", or "<part>": every body with a geom that touches anything)
+    sets; raises ValueError when it isn't a path part of the robot (before any run)."""
+    name, _, body = grip.partition(".")
     part = next((p for p in load_config(config).raw.get("part", []) if p.get("name") == name), None)
     if part is None:
-        raise ValueError(f"no body {grip} on this robot")
+        raise ValueError(f"no {'body' if body else 'part'} {grip} on this robot")
     if "stock" in part:
         raise ValueError(f"can't sweep the grip of {grip}: {name} is a stock part")
     try:
@@ -169,22 +171,32 @@ def _check_grip(config: Path, grip: str) -> None:
         loaded = load_part(folder if folder.is_file() else folder / "part.toml")
     except (TeamFolderError, PartError) as e:
         raise ValueError(f"can't sweep the grip of {grip}: {e}") from None
-    if body not in [b.name for b in loaded.bodies]:
-        raise ValueError(f"no body {grip} on this robot; {name}'s bodies: {', '.join(b.name for b in loaded.bodies)}")
+    names = [b.name for b in loaded.bodies]
+    if body:
+        if body not in names:
+            raise ValueError(f"no body {grip} on this robot; {name}'s bodies: {', '.join(names)} "
+                             f"(or sweep the whole part, {name})")
+        return [body]
+    touching = [b.name for b in loaded.bodies if any(g.collide and not g.tread for g in b.geoms)]
+    if not touching:
+        raise ValueError(f"can't sweep the grip of {name}: no body of it has a geom that touches anything")
+    return touching
 
 
-def _edit_config(text: str, target: dict, value: float | str) -> str:
-    """The robot config's text with the target set to value, comments kept."""
+def _edit_config(text: str, target: dict, value: float | str, bodies: list[str] | None = None) -> str:
+    """The robot config's text with the target set to value, comments kept. `bodies`: a grip target's bodies."""
     doc = tomlkit.parse(text)
     parts = list(doc.get("part", []))
     if "grip" in target:
-        name, body = target["grip"].split(".")
+        name, _, body = target["grip"].partition(".")
         part = next((p for p in parts if p.get("name") == name), None)
         if part is None:
-            raise ValueError(f"no body {target['grip']} on this robot")
+            raise ValueError(f"no part {name} on this robot")
         grips = tomlkit.inline_table()
-        grips.update(part.get("grip") or {})            # the part's other bodies keep their grips
-        grips[body] = value
+        if body:
+            grips.update(part.get("grip") or {})            # the part's other bodies keep their grips
+        for b in bodies or [body]:                          # a whole part replaces the part's grips for the run
+            grips[b] = value
         part["grip"] = grips
     elif "robot" in target:
         chassis = next((p for p in parts if p.get("stock") == "chassis"), None)
@@ -270,7 +282,7 @@ def run_sweep(program: Program, target: dict, values: list[float | str], base, o
             raise ValueError("a sweep's values must be numbers")
         values = [float(v) for v in values]
     config = Path(program.path).parent / program.robot
-    text = None
+    text = bodies = None
     if kind == "block":
         b = _block_json(to_json(program)["blocks"], target["block"])     # the target is there (else it's refused)
         if target["key"] not in b:
@@ -279,10 +291,9 @@ def run_sweep(program: Program, target: dict, values: list[float | str], base, o
         if "station" in target:
             _check_station(program, config, target["station"])
     else:
-        if kind == "grip":
-            _check_grip(config, target["grip"])
+        bodies = _check_grip(config, target["grip"]) if kind == "grip" else None
         text = config.read_text(encoding="utf-8")
-        _edit_config(text, target, values[0])                          # the part or chassis is there
+        _edit_config(text, target, values[0], bodies)                          # the part or chassis is there
 
     base = Path(base)
     if kind in ("robot", "mount", "grip"):
@@ -300,7 +311,7 @@ def run_sweep(program: Program, target: dict, values: list[float | str], base, o
                 world = world_for(p)
             else:
                 p = program
-                temp = _temp_config(config, _edit_config(text, target, values[i]))
+                temp = _temp_config(config, _edit_config(text, target, values[i], bodies))
                 world = _world(config, temp)
             made[i] = p
             return TestRun(world, p).run(cancel=cancel)
