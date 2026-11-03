@@ -111,7 +111,7 @@ def test_a_goal_counts_a_named_ball_and_refuses_coral(tmp_path):
 def test_floor_pieces_are_spaced_by_their_reach(tmp_path):
     def two(gap):
         return CORAL_ONLY.replace("at = [[3.0, 2.0]]", f"at = [[3.0, 2.0], [3.0, {2.0 + gap}]]\nrotation_deg = 90")
-    with pytest.raises(RangeError, match=r"floor_balls: coral 0 and coral 1 overlap"):
+    with pytest.raises(RangeError, match=r"floor_balls: coral 1 and coral 2 overlap"):
         parse(tmp_path, two(0.2))
     rng = parse(tmp_path, two(0.35))
     assert rng.floor_turns.tolist() == [[0.0, 90.0], [0.0, 90.0]]
@@ -119,8 +119,16 @@ def test_floor_pieces_are_spaced_by_their_reach(tmp_path):
 
 def test_a_coral_off_the_field_by_its_reach(tmp_path):
     # lying in line along x, a coral reaches 0.161 m from its center: 0.1 m from the wall is off the field
-    with pytest.raises(RangeError, match=r"floor_balls: coral 0 at \(0\.1, 2\) lies off the field"):
+    with pytest.raises(RangeError, match=r"floor_balls: coral 1 at \(0\.1, 2\) lies off the field"):
         parse(tmp_path, CORAL_ONLY.replace("[3.0, 2.0]", "[0.1, 2.0]"))
+
+
+def test_piece_and_piece_preset_name_the_same_kind(tmp_path):
+    # a rigid default with a ball kind after it: piece is the ball, and so is piece_preset (ruling P12)
+    rng = parse(tmp_path, CORAL_ONLY + '[piece.algae]\nball = "2025-algae"\n')
+    assert rng.default_kind == "coral" and rng.piece is rng.ball and rng.piece_preset == "2025-algae"
+    disc = parse(tmp_path, CORAL_ONLY + '[piece.frisbee]\ndisc = "2013-frisbee"\n')
+    assert disc.piece is disc.disc and disc.piece_preset == "2013-frisbee"
 
 
 def test_a_station_feeds_its_kind(tmp_path):
@@ -172,6 +180,15 @@ def test_a_piece_override():
     assert load_range("station", ROOT, piece="2019-cargo").ball_preset == "2019-cargo"
     with pytest.raises(RangeError, match="give ball or piece, not both"):
         load_range("station", ROOT, ball="2019-cargo", piece="2025-coral")
+
+
+def test_a_piece_override_replaces_a_default_from_a_piece_table(tmp_path):
+    (tmp_path / "reef.toml").write_text(CORAL_ONLY.replace("[3.0, 2.0]]", '[3.0, 2.0]]\nkind = "coral"'))
+    rng = load_range("reef.toml", tmp_path, piece="2019-cargo")
+    assert list(rng.kinds) == ["coral"] and rng.kinds["coral"].form == "ball"
+    assert rng.ball_preset == "2019-cargo" and rng.floor_kinds == ("coral",)
+    rng = load_range("reef.toml", tmp_path, piece="2023-cube")
+    assert list(rng.kinds) == ["coral"] and rng.piece_preset == "2023-cube" and rng.kinds["coral"].label == "cube"
 
 
 def test_every_builtin_range_is_unchanged():

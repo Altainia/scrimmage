@@ -401,7 +401,7 @@ def _on_floor(e: Element, start: bool) -> list[np.ndarray]:
 def check_clear(path, elements, starts: dict, floor_balls: np.ndarray, reaches, names=None) -> None:
     """Reject a start whose outline overlaps an element standing on the carpet, and a floor piece resting inside one
     (see _on_floor). `reaches` are the floor pieces' reaches across the carpet (a ball's radius), one each or one for
-    all; `names` what a student reads for each ("ball 3", "coral 0"; default "ball <k>")."""
+    all; `names` what a student reads for each ("ball 3", "coral 1"; default "ball <k>")."""
     reaches = np.broadcast_to(np.asarray(reaches, dtype=float), (len(floor_balls),))
     for sname, (x, y, heading) in starts.items():
         outline = _rect((x, y), heading, ROBOT_OUTLINE, ROBOT_OUTLINE)

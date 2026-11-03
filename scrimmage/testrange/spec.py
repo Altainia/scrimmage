@@ -269,8 +269,10 @@ class Range:
 
     @property
     def piece_preset(self) -> str | None:
-        """The default kind's preset."""
-        return self.kinds[self.default_kind].preset
+        """The preset of the kind `piece` is: the first ball kind's, else the first disc kind's, else the default's."""
+        if self.ball is not None:
+            return self.ball_preset
+        return self.disc_preset if self.disc is not None else self.kinds[self.default_kind].preset
 
 
 # ---------------------------------------------------------------------------------------------------- parsing
@@ -486,14 +488,14 @@ def _one_round_kind(kinds: dict[str, PieceKind]) -> bool:
 
 def _floor_names(kinds: dict[str, PieceKind], floor_kinds: list[str]) -> list[str]:
     """What a student reads for each floor piece: "ball 3" on a field of one ball or disc kind (as always), else the
-    kind's plain name and its number among that kind's floor pieces ("coral 0")."""
+    kind's plain name and its number among that kind's floor pieces, from 1 ("coral 1")."""
     if _one_round_kind(kinds):
         return [f"ball {k}" for k in range(len(floor_kinds))]
     seen: dict[str, int] = {}
     names = []
     for k in floor_kinds:
-        names.append(f"{kinds[k].label} {seen.get(k, 0)}")
         seen[k] = seen.get(k, 0) + 1
+        names.append(f"{kinds[k].label} {seen[k]}")
     return names
 
 
@@ -695,7 +697,8 @@ def parse_range(raw: dict, path: Path) -> Range:
 def load_range(ref: str, base_dir: Path, ball: str | None = None, piece: str | None = None) -> Range:
     """`ref` is a built-in range's name (BUILTIN_RANGES) or a path relative to `base_dir`. With `ball`, the file is
     read with its [range] ball replaced (all the checks run again; a disc range refuses). With `piece` (a ball or
-    piece preset), its default kind, the [range] ball, disc or piece, is replaced the same way."""
+    piece preset), its default kind is replaced the same way: the [range] ball, disc or piece, or, when the default
+    is the first [piece.<name>] table, that table (keeping its name, so what names it still finds it)."""
     if ball is not None and piece is not None:
         raise RangeError("give ball or piece, not both")
     try:
@@ -719,9 +722,15 @@ def load_range(ref: str, base_dir: Path, ball: str | None = None, piece: str | N
         kept = {k: v for k, v in table.items() if k != "piece"} if isinstance(table, dict) else {}
         raw = {**raw, "range": {**kept, "ball": ball}}
     if piece is not None:
-        table = raw.get("range")
-        kept = {}
-        if isinstance(table, dict):
+        table = raw.get("range") if isinstance(raw.get("range"), dict) else {}
+        tables = raw.get("piece")
+        if not any(k in table for k in ("ball", "disc", "piece")) and isinstance(tables, dict) and tables:
+            from .pieces import display_name
+
+            first = next(iter(tables))
+            key = "ball" if piece in PRESETS["ball"] else "preset"
+            raw = {**raw, "piece": {**tables, first: {key: piece, "label": display_name(piece)}}}
+        else:
             kept = {k: v for k, v in table.items() if k not in ("ball", "disc", "aero", "piece")}
-        raw = {**raw, "range": {**kept, "piece": piece}}
+            raw = {**raw, "range": {**kept, "piece": piece}}
     return parse_range(raw, path)
