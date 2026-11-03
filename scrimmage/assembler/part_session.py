@@ -54,7 +54,7 @@ from ..cad.names import sanitize
 from ..cad.settings import new_import, read_import, reimport, replace_file, write_import
 from ..cad.source import MESH_SUFFIXES, STEP_SUFFIXES, load_source
 from ..motors import MOTORS
-from ..parts.grip import set_grip
+from ..parts.grip import GRIP_MATERIALS, set_grip
 from ..parts.model import PartError
 from ..parts.overlay import OVERLAY
 from .bench_session import SessionError
@@ -72,8 +72,10 @@ log = logging.getLogger("scrimmage.assembler")
 
 
 def materials() -> dict:
-    """GET /api/part/materials: the materials (key -> label, density, printed) and the motor names."""
-    return {"materials": {k: dataclasses.asdict(m) for k, m in MATERIALS.items()}, "motors": sorted(MOTORS)}
+    """GET /api/part/materials: the materials (key -> label, density, printed), the motor names and the grip materials
+    a body's Grip picker offers ([key, label, friction estimate], parts/grip.py's order)."""
+    return {"materials": {k: dataclasses.asdict(m) for k, m in MATERIALS.items()}, "motors": sorted(MOTORS),
+            "grips": [[k, label, mu] for k, (label, mu) in GRIP_MATERIALS.items()]}
 
 
 def _sig(*paths: Path):

@@ -8,13 +8,18 @@
 //   Status     saved or not, how many blocks
 //   Setup      (folded away over the blocks) the field and its start, the robot's weight and center of mass (when its
 //              root part is the stock chassis) and where each part is mounted, which change the robot file through
-//              /api/robot/edit, so the Robot tab's Undo takes them back; and the test's own (saved in the test): its
-//              hopper (starter_hopper's preselection until changed) and hooks, and its [setup]: the ball, each
-//              station's settings, the shuffle (seed) and the floor spread (Run the spread: /api/test/spread). On a
-//              field with a station and a test with no feed block, "Add the station blocks" appends station_starter.
+//              /api/robot/edit, so the Robot tab's Undo takes them back; the grip material of the pads (a grabber's,
+//              or a body ticked as where a piece should end up), which /api/test/grip writes in that part folder's
+//              own edits at once, as the Part tab's Grip row does; and the test's own (saved in the test): where a
+//              piece should end up (the hopper: starter_hopper's preselection until changed) and its hooks, and its
+//              [setup]: the piece (on the intake and station fields), each station's settings, the shuffle (seed) and
+//              the floor spread (Run the spread: /api/test/spread). On a field with a station and a test with no feed
+//              block, "Add the station blocks" appends station_starter.
 //
 // "Try values…" (a block's context menu, for its number; or beside a number in Setup) opens the sweep form: from, to
 // and steps, or typed values, at most 12; /api/test/sweep runs them and test_run.js shows the table and its chart.
+// "Try materials…" (beside a grip) opens it over ticked materials instead, for the whole part (ruling P28: one pad of
+// two shows no difference while the other holds alone) or the one body.
 //
 // Every change is saved (500 ms after the last one) through /api/test/save with the state's version; a 409 (the file
 // changed meanwhile) shows the saved version again and says so. Problems from the state show as a warning on their
@@ -56,6 +61,8 @@ const t = {
   hopperSet: false,   // the student changed the hopper in Setup (no longer starter_hopper's preselection)
   floor: null,        // the floor spread's boxes as typed (floorDraft), for the test's floor_spread `floorFor`
   floorFor: null,
+  gripOwn: new Set(), // the bodies whose grip picker shows "My own number…" before a number is typed
+  gripSent: new Map(),   // body -> the grip sent, shown until the palette has it (the robot is built again first)
 };
 
 // JSON with sorted keys, so two equal tests compare equal whatever order their keys came in.
@@ -424,18 +431,45 @@ const STATION_BOXES = [
   { key: "spread_speed", label: "Speed (± m/s)", unit: "m/s", upTo: 0.4 },
   { key: "spread_position", label: "Release box (± in)", unit: "in", axes: ["x", "y", "z"], scale: IN, upTo: 2 },
   { key: "spread_rotation_deg", label: "Turned (± degrees)", unit: "°", axes: ["about x", "about y", "about z"], upTo: 90 },
+  // a piece other than a ball's tip and turn (a ball has neither): Try values… goes from and to these
+  { key: "tip_deg", label: "Tip (degrees, 0 lying, 90 standing)", unit: "°", piece: true, from: 0, to: 90 },
+  { key: "turn_deg", label: "Turn (degrees)", unit: "°", piece: true, from: 0, to: 90 },
+  { key: "spread_tip_deg", label: "Tip spread (± degrees)", unit: "°", piece: true, upTo: 30 },
+  { key: "spread_turn_deg", label: "Turn spread (± degrees)", unit: "°", piece: true, upTo: 90 },
 ];
+// a flat kind (a disc, a hatch panel) lies flat at a tip of 90: its axis is its face's normal
+const FLAT_TIP = "Tip (degrees, 90 lying flat, 0 on edge)";
+const tipLabel = (kind) => (kind && kind.flat ? FLAT_TIP : "Tip (degrees, 0 lying, 90 standing)");
+const tipWords = (kind) => (kind && kind.flat ? "Tip: 90 is lying flat, 0 standing on its edge."
+  : "Tip: 0 is lying on its side, 90 standing on end.");
+const GRABBER = /claw|grabber|gripper|jaw/i;     // test_session.py's GRABBER_WORDS
+// a grip material as its picker shows it (ruling P27): two with the same estimate read the same
+const gripText = ([, label, mu]) => `${label} — ${fmt(mu)}, estimate`;
+const OWN = "own";      // the grip picker's "My own number…"
 // the floor spread's axes (scrimmage/blocks/spread.py's SPREAD_AXES): label, and from, to, steps when ticked: around
 // where the field's ball lies (palette.floor_ball; offset and distance), never nearer than its nearest_in
+// tip_deg (a piece other than a ball's) is from 0 to 90 whatever the piece's own
 const FLOOR_AXES = [
   ["offset_in", "Offset across (in)", -6, 6, 3],
   ["distance_in", "Distance ahead (in)", -12, 12, 3],
   ["angle_deg", "Angle (degrees)", -30, 30, 3],
   ["rotation_deg", "Turned (degrees)", 0, 90, 3],
+  ["tip_deg", "Tip (degrees)", 0, 90, 3],
 ];
 // a start's id in words: "at_station" -> "At station"
 const startWords = (id) => { const w = id.replace(/_/g, " "); return w.charAt(0).toUpperCase() + w.slice(1); };
 const floorBall = () => (t.state && t.state.palette && t.state.palette.floor_ball) || null;
+// the floor spread's piece kind ({form, flat, label}), null for a ball
+function floorKind() {
+  const ball = floorBall(), kinds = (t.state && t.state.palette && t.state.palette.kinds) || {};
+  const k = ball && kinds[ball.kind];
+  return k && k.form !== "ball" ? k : null;
+}
+// the floor spread's axes as Setup shows them ([axis, label, ...]): tip for a piece other than a ball only
+function floorAxes() {
+  const k = floorKind();
+  return FLOOR_AXES.filter(([axis]) => axis !== "tip_deg" || k).map((a) => (a[0] === "tip_deg" ? [a[0], tipLabel(k), ...a.slice(2)] : a));
+}
 
 // A number box: `blank` (when given) is what an empty box means, and a value equal to it shows empty.
 function numberBox(id, value, label, commit, blank = null) {
@@ -535,7 +569,7 @@ function floorDraft() {
   t.floor = Object.fromEntries(FLOOR_AXES.map(([axis, , from, to, steps]) => {
     const v = fs[axis];
     if (v && v.length) return [axis, { on: true, from: fmt(v[0]), to: fmt(v[v.length - 1]), steps: String(v.length) }];
-    const base = ball[axis] ?? 0;
+    const base = axis === "tip_deg" ? 0 : ball[axis] ?? 0;
     let lo = base + from, hi = base + to;
     if (axis === "distance_in" && ball.nearest_in !== undefined && lo < ball.nearest_in) {
       lo = ball.nearest_in;
@@ -550,7 +584,7 @@ function floorDraft() {
 function floorSpread(draft) {
   const spread = {};
   let runs = 1;
-  for (const [axis, label] of FLOOR_AXES) {
+  for (const [axis, label] of floorAxes()) {
     const d = draft[axis];
     if (!d.on) continue;
     const a = Number(d.from), b = Number(d.to), n = Number(d.steps);
@@ -564,14 +598,14 @@ function floorSpread(draft) {
     spread[axis] = n === 1 ? [a] : Array.from({ length: n }, (_, k) => +(a + ((b - a) * k) / (n - 1)).toPrecision(6));
     runs *= n;
   }
-  if (!Object.keys(spread).length) return { error: "Tick an axis to spread the ball over", spread, runs: 0 };
+  if (!Object.keys(spread).length) return { error: `Tick an axis to spread the ${floorKind() ? "piece" : "ball"} over`, spread, runs: 0 };
   if (runs > MAX_SPREAD) return { error: `${runs} runs: at most ${MAX_SPREAD} runs; use fewer steps`, runs };
   return { spread, runs };
 }
 
 function floorChanged() {
   const draft = t.floor;
-  for (const [axis] of FLOOR_AXES) {
+  for (const [axis] of floorAxes()) {
     const on = document.getElementById(`test-spread-${axis}-on`);
     if (!on) continue;
     draft[axis].on = on.checked;
@@ -619,6 +653,7 @@ function stationChoice(name, box, value) {
     return { label: box.label, target, value, unit: "", from, to: from + 4 };
   }
   if (box.key === "interval") return { label: box.label, target, value, unit: "s" };
+  if (box.from !== undefined) return { label: box.label, target, value, unit: box.unit, from: box.from, to: box.to };
   // a list: the sweep sets all three axes to the value; the release box is tried in inches, as its boxes show it
   const scale = box.scale || 1;
   const v = +((box.axes ? Math.max(...value) : value) / scale).toPrecision(6);
@@ -626,7 +661,8 @@ function stationChoice(name, box, value) {
   return { label, target, value: v, unit: box.unit, from: 0, to: v > 0 ? 2 * v : box.upTo, ...(box.scale ? { scale } : {}) };
 }
 
-function stationBox(name, box, setting, field) {
+function stationBox(name, box, setting, field, kind) {
+  if (box.key === "tip_deg") box = { ...box, label: tipLabel(kind) };
   const id = `test-station-${name}-${box.key}`;
   const tryIt = h("button", { type: "button", class: "btn btn-small", "data-try": `station-${name}-${box.key}`,
     onclick: () => openSweep([stationChoice(name, box, setting)], `${name}'s ${box.label.replace(/ \(.*/, "").toLowerCase()}`) }, "Try values…");
@@ -661,10 +697,127 @@ function leftovers(pal, setup) {
   if (setup.ball && !pal.ball_choice) {
     out.push(["ball", `Ball "${setup.ball}": ${pal.ball ? "this field keeps its own ball" : "this field has no ball to pick"}`, (x) => { delete x.ball; }]);
   }
+  if (setup.piece && !pal.ball_choice) {
+    out.push(["piece", `Piece "${setup.piece}": ${pal.piece ? "this field keeps its own pieces" : "this field has no piece to pick"}`, (x) => { delete x.piece; }]);
+  }
   if (setup.floor_spread && Object.keys(setup.floor_spread).length && !pal.floor_piece) {
     out.push(["floor_spread", "Floor spread: this field has no ball on the floor", (x) => { delete x.floor_spread; }]);
   }
   return out;
+}
+
+// -- grip: a body's pad material, written in its part folder at once (/api/test/grip); the robot is built again with it
+const errorOf = (data, status) => (data.errors && data.errors[0] && data.errors[0].message) || data.error || `the server answered ${status}`;
+
+// The bodies Setup offers a grip for: those palette.grips has (a path part's, touching things) that are ticked as
+// where a piece should end up, named like a grabber, or already given a grip.
+function gripBodies(pal, hopper) {
+  const grips = pal.grips || {};
+  return Object.keys(grips).filter((b) => hopper.has(b) || GRABBER.test(b) || grips[b] !== null).sort();
+}
+
+// What a body's picker shows: the grip just sent until the palette has it, else the palette's.
+function gripShown(pal, body) {
+  const now = (pal.grips || {})[body] ?? null;
+  if (t.gripSent.has(body) && canon(t.gripSent.get(body)) !== canon(now)) return t.gripSent.get(body);
+  t.gripSent.delete(body);
+  return now;
+}
+
+async function setGrip(body, grip) {
+  t.gripSent.set(body, grip);
+  const { status, data } = await api("POST", "/api/test/grip", { body, grip });
+  if (status === 200 && data.ok) {
+    t.setupError = null;
+    t.gripOwn.delete(body);
+  } else {
+    t.setupError = `${body}'s grip: ${errorOf(data, status)}`;
+    t.gripSent.delete(body);
+  }
+  t.setupKey = null;
+  await refresh();
+  renderSetup();
+  renderSetupError();
+}
+
+function gripRow(pal, body, i, running) {
+  const id = `test-grip-${i}`;
+  const now = gripShown(pal, body);
+  const own = typeof now === "number" || t.gripOwn.has(body);
+  const mats = pal.grip_materials || [];
+  const sel = h("select", { id, "data-grip": body, disabled: running, onchange: (e) => {
+    const v = e.target.value;
+    if (v === OWN) {          // asks for the number first; nothing is sent until it is typed
+      t.gripOwn.add(body);
+      t.setupKey = null;
+      renderSetup();
+      const el = document.querySelector(`[data-grip-own="${body}"]`);
+      if (el) el.focus();
+      return;
+    }
+    t.gripOwn.delete(body);
+    setGrip(body, v === "" ? null : v);
+  } }, h("option", { value: "", text: "Default friction (not set)" }),
+  ...mats.map((m) => h("option", { value: m[0], text: gripText(m) })),
+  h("option", { value: OWN, text: "My own number…" }));
+  sel.value = own ? OWN : now === null ? "" : now;
+  const row = [sel];
+  if (own) {
+    const box = h("input", { id: `${id}-own`, class: "test-num", "data-grip-own": body, inputmode: "decimal", autocomplete: "off",
+      disabled: running, placeholder: "0.9", "aria-label": `${body}: my own friction (measured)` });
+    box.value = box.dataset.orig = typeof now === "number" ? fmt(now) : "";
+    const send = () => {
+      const text = box.value.trim();
+      if (text === box.dataset.orig) return;
+      const v = Number(text);
+      if (text === "" || !isFinite(v) || v <= 0) {
+        t.setupError = `${body}'s grip: type the friction you measured, a number above 0 such as 0.9`;
+        renderSetupError();
+        box.value = box.dataset.orig;
+        return;
+      }
+      box.dataset.orig = text;
+      setGrip(body, v);
+    };
+    box.addEventListener("change", send);
+    box.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); send(); } });
+    row.push(box);
+  }
+  const part = body.split(".")[0];
+  row.push(h("button", { type: "button", class: "btn btn-small", "data-try": `grip-${body}`, disabled: running,
+    onclick: () => openSweep(gripChoices(pal, body), `${part}'s grip`) }, "Try materials…"));
+  return [h("label", { for: id, text: body }), h("div", { class: "row" }, ...row)];
+}
+
+// Try materials… for a body: its whole part first (ruling P28), the body on its own second.
+function gripChoices(pal, body) {
+  const part = body.split(".")[0];
+  const named = (g) => {
+    if (g === null || g === undefined) return "the default friction";
+    if (typeof g === "number") return `my own ${fmt(g)}`;
+    const m = (pal.grip_materials || []).find((x) => x[0] === g);
+    return m ? m[1] : g;
+  };
+  const pads = Object.keys(pal.grips || {}).filter((b) => b.split(".")[0] === part);
+  return [{ label: `Every pad of ${part}: ${pads.map((b) => b.split(".")[1]).join(", ")}`, target: { grip: part }, materials: true },
+    { label: `${body} only`, target: { grip: body }, materials: true, now: named(gripShown(pal, body)) }];
+}
+
+// "On the floor: 1 algae, 1 coral" on a field with several kinds (in the kinds' order), else null
+function floorKindsLine(pal) {
+  const kinds = pal.kinds || {};
+  if (Object.keys(kinds).length < 2) return null;
+  const count = {};
+  for (const k of Object.values(pal.floor_kinds || {})) count[k] = (count[k] || 0) + 1;
+  const words = Object.keys(kinds).filter((k) => count[k]).map((k) => `${count[k]} ${kinds[k].label}`);
+  return words.length ? `On the floor: ${words.join(", ")}` : null;
+}
+
+function floorHint() {
+  const k = floorKind();
+  const what = k ? `the ${k.label}` : "the ball";
+  const words = `Run the test with ${what} in front of the robot at each place of a grid, to see which ones it picks up. Tick the axes to spread it over.`;
+  return k ? `${words} ${tipWords(k)} Turned: about the vertical, 0 in line with the robot's path, 90 across it.` : words;
 }
 
 function renderSetupError() {
@@ -700,6 +853,8 @@ function renderSetup() {
   const key = canon([pal.bodies || [], [...mine], [...counted], [...hopper], drawn,
     canon(fs || {}) === t.floorFor ? null : fs, pal.station_settings || {},
     pal.ball || null, pal.balls || [], !!pal.ball_choice, !!pal.floor_piece, s.station_starter, feeding, !!s.running,
+    pal.piece || null, pal.piece_presets || null, pal.kinds || {}, pal.floor_kinds || {}, pal.station_kinds || {},
+    pal.floor_ball || null, pal.grips || {}, pal.grip_materials || [], [...t.gripOwn], [...t.gripSent],
     (s.fields || []).length, t.robot ? [t.robot.version, t.robot.parts, ro] : null, !!t.stock, t.setupError]);
   if (key === t.setupKey) return;
   const focused = document.activeElement && body.contains(document.activeElement) ? document.activeElement.id : null;
@@ -744,6 +899,8 @@ function renderSetup() {
         + "a human player station that feeds balls), or a whole season's field. "
         + `Picking a field moves the robot to that field's start (this changes ${t.robot.display_path || t.robot.path || "the robot file"}). The Robot tab's Undo puts the old field and start back.` }),
       h("label", { class: "visually-hidden", for: "test-field", text: "The field" }), sel];
+    const floorWords = floorKindsLine(pal);
+    if (floorWords) field.push(h("p", { id: "test-floor-kinds", class: "hint test-floor-kinds", text: floorWords }));
     if (entry && entry.starts.length > 1) {
       const start = t.robot.start || "";
       const starts = [...(start && entry.starts.includes(start) ? [] : [[start, start ? `${start} (not on this field)` : "Where the robot file puts it"]]),
@@ -758,37 +915,58 @@ function renderSetup() {
     parts.push(h("fieldset", { class: "test-setup-field" }, ...field));
   }
   parts.push(h("fieldset", { class: "test-setup-hopper" },
-    h("legend", { text: "Hopper" }),
-    h("p", { class: "hint", text: "Tick the bodies a piece lands in. A piece whose center is inside one made it in." }),
+    h("legend", { text: "Where a piece should end up" }),
+    h("p", { class: "hint", text: "Tick the bodies a piece should end up in or be held by: a hopper, an intake, a claw. "
+      + "A piece whose center is inside one, or that one holds when the run ends, made it in." }),
     bodyList("hopper", hopper, new Set(), setHopper)));
+  const grips = gripBodies(pal, hopper);
+  if (grips.length) {
+    parts.push(h("fieldset", { class: "test-setup-grip" },
+      h("legend", { text: "Grip" }),
+      h("p", { class: "hint", text: "What the pads are made of. Friction values are estimates (UNCALIBRATED); docs/test-tab.md says how to measure yours." }),
+      h("div", { class: "test-setup-grid" }, ...grips.flatMap((b, i) => gripRow(pal, b, i, !!s.running)))));
+  }
   parts.push(h("fieldset", { class: "test-setup-hooks" },
     h("legend", { text: "Hooks" }),
     h("p", { class: "hint", text: "Tick the bodies that grab a bar. A stock climber's hooks always count." }),
     bodyList("hook", mine, counted, setHooks)));
-  if (pal.ball_choice && pal.ball) {
-    const balls = [pal.ball, ...(pal.balls || []).filter((b) => b !== pal.ball)];
-    const odd = setup.ball && !balls.includes(setup.ball) ? [setup.ball] : [];
-    const sel = h("select", { id: "test-ball", onchange: (e) => {
+  const own = pal.piece || pal.ball;
+  if (pal.ball_choice && own) {
+    // the field's own first, then every ball and every other piece; a pick is [setup] piece (an old test's ball goes)
+    const presets = pal.piece_presets || { balls: pal.balls || [], pieces: [] };
+    const now = setup.piece || setup.ball || own;
+    const odd = now !== own && ![...presets.balls, ...presets.pieces].includes(now) ? [now] : [];
+    const group = (label, names) => h("optgroup", { label },
+      ...names.filter((b) => b !== own).map((b) => h("option", { value: b, text: b })));
+    const sel = h("select", { id: "test-piece", onchange: (e) => {
       const next = setupOf();
-      if (e.target.value === pal.ball) delete next.ball; else next.ball = e.target.value;
+      delete next.ball;
+      delete next.piece;
+      if (e.target.value !== own) next.piece = e.target.value;
       setTest({ setup: next });
-    } }, ...balls.map((b) => h("option", { value: b, text: b === pal.ball ? `${b} (the field's)` : b })),
-      ...odd.map((b) => h("option", { value: b, text: `${b} (not in the list)` })));
-    sel.value = setup.ball || pal.ball;
-    parts.push(h("fieldset", { class: "test-setup-ball" },
-      h("legend", { text: "Ball" }),
-      h("p", { class: "hint", text: "Pick the ball this test uses." }),
-      h("label", { class: "visually-hidden", for: "test-ball", text: "Ball" }), sel));
+    } }, h("option", { value: own, text: `${own} (the field's)` }), group("Balls", presets.balls),
+      group("Other pieces", presets.pieces), ...odd.map((b) => h("option", { value: b, text: `${b} (not in the list)` })));
+    sel.value = now;
+    parts.push(h("fieldset", { class: "test-setup-piece" },
+      h("legend", { text: "Piece" }),
+      h("p", { class: "hint", text: "Pick the piece this test uses." }),
+      h("label", { class: "visually-hidden", for: "test-piece", text: "Piece" }), sel));
   }
   const settings = pal.station_settings || {};
+  const kinds = pal.kinds || {};
+  const several = Object.keys(kinds).length > 1;
   for (const name of pal.stations || []) {
     const field = settings[name] || {};
-    const own = (setup.station || {})[name] || {};
+    const chosen = (setup.station || {})[name] || {};
+    const kind = kinds[(pal.station_kinds || {})[name]] || null;
+    const piece = !!kind && kind.form !== "ball";          // a ball has no tip or turn
     parts.push(h("fieldset", { class: "test-setup-station", "data-station": name },
-      h("legend", { text: `Station: ${name}` }),
+      h("legend", { text: `Station: ${name}${several && kind ? ` (${kind.label})` : ""}` }),
       h("p", { class: "hint", text: "How the human player feeds pieces. Each box shows the field's value until you change it; a change is saved in the test. "
-        + "Each piece varies by up to ± each spread." }),
-      h("div", { class: "test-setup-grid" }, ...STATION_BOXES.flatMap((box) => stationBox(name, box, own[box.key] ?? field[box.key], field[box.key])))));
+        + "Each piece varies by up to ± each spread."
+        + (piece ? ` ${tipWords(kind)} Turn: about the vertical, from the way the station feeds.` : "") }),
+      h("div", { class: "test-setup-grid" }, ...STATION_BOXES.filter((box) => piece || !box.piece)
+        .flatMap((box) => stationBox(name, box, chosen[box.key] ?? field[box.key], field[box.key], kind)))));
   }
   if ((pal.stations || []).length) {
     const seed = setup.seed ?? DEFAULT_SEED;
@@ -811,10 +989,10 @@ function renderSetup() {
     };
     parts.push(h("fieldset", { class: "test-setup-floor" },
       h("legend", { text: "Floor spread" }),
-      h("p", { class: "hint", text: "Run the test with the ball in front of the robot at each place of a grid, to see which ones it picks up. Tick the axes to spread it over." }),
+      h("p", { class: "hint", text: floorHint() }),
       h("table", { class: "test-mounts test-floor" },
         h("thead", {}, h("tr", {}, h("th", { text: "Axis" }), h("th", { text: "from" }), h("th", { text: "to" }), h("th", { text: "steps" }))),
-        h("tbody", {}, ...FLOOR_AXES.map(([axis, label]) => h("tr", { "data-axis": axis },
+        h("tbody", {}, ...floorAxes().map(([axis, label]) => h("tr", { "data-axis": axis },
           h("th", { scope: "row" }, h("label", { class: "test-hook", for: `test-spread-${axis}-on` },
             h("input", { type: "checkbox", id: `test-spread-${axis}-on`, checked: draft[axis].on, onchange: floorChanged }),
             h("span", { text: label }))),
@@ -924,15 +1102,30 @@ function tryBlock(id) {
     `“${b.toString()}”`);
 }
 
+// A choice with `materials` (a grip) is tried over the ticked materials, not from and to.
 function openSweep(choices, what) {
   const d = $("#test-sweep-dialog");
   t.sweepFor = choices;
-  $("#test-sweep-for").textContent = `Run the test once for each value of ${what}, to see which works best.`;
+  const mats = choices.some((c) => c.materials);
+  $("#test-sweep-dialog-title").textContent = mats ? "Try materials" : "Try values";
+  $("#test-sweep-for").textContent = mats ? `Run the test once for each material you tick, for ${what}, to see which grips best.`
+    : `Run the test once for each value of ${what}, to see which works best.`;
+  $("#test-sweep-which-label").textContent = mats ? "Which pads?" : "Which number?";
+  $("#test-sweep-range").hidden = mats;
+  $("#test-sweep-list-field").hidden = mats;
+  const list = $("#test-sweep-materials");
+  list.hidden = !mats;
+  const pal = (t.state && t.state.palette) || {};
+  list.replaceChildren(h("legend", { text: "Materials" }), ...(mats ? pal.grip_materials || [] : []).map((m, i) =>
+    h("label", { class: "test-hook", for: `test-sweep-mat-${i}` },
+      h("input", { type: "checkbox", id: `test-sweep-mat-${i}`, value: m[0], checked: true }), h("span", { text: gripText(m) }))));
+  const now = (c) => (c.materials ? (c.now ? ` (now ${c.now})` : "") : ` (now ${fmt(c.value)}${c.unit ? ` ${c.unit}` : ""})`);
   const which = $("#test-sweep-which");
-  which.replaceChildren(...choices.map((c, i) => h("option", { value: String(i), text: `${c.label} (now ${fmt(c.value)}${c.unit ? ` ${c.unit}` : ""})` })));
+  which.replaceChildren(...choices.map((c, i) => h("option", { value: String(i), text: `${c.label}${now(c)}` })));
   $("#test-sweep-which-field").hidden = choices.length < 2;
   const fill = () => {
     const c = choices[Number(which.value) || 0];
+    if (c.materials) return;
     const span = c.unit === "°" ? 45 : Math.abs(c.value) > 1e-9 ? Math.abs(c.value) / 2 : 1;
     $("#test-sweep-from").value = fmt(c.from ?? c.value - span);
     $("#test-sweep-to").value = fmt(c.to ?? c.value + span);
@@ -943,7 +1136,7 @@ function openSweep(choices, what) {
   $("#test-sweep-list").value = "";
   showSweepErrors([]);
   d.showModal();
-  $("#test-sweep-from").focus();
+  (mats ? list.querySelector("input") || which : $("#test-sweep-from")).focus();
 }
 
 function showSweepErrors(list) {
@@ -974,7 +1167,10 @@ async function submitSweep(e) {
   const choices = t.sweepFor || [];
   const c = choices[Number($("#test-sweep-which").value) || 0];
   if (!c) return;
-  const values = sweepValues($("#test-sweep-from").value, $("#test-sweep-to").value, $("#test-sweep-steps").value, $("#test-sweep-list").value);
+  const values = c.materials
+    ? [...$("#test-sweep-materials").querySelectorAll("input:checked")].map((b) => b.value)
+    : sweepValues($("#test-sweep-from").value, $("#test-sweep-to").value, $("#test-sweep-steps").value, $("#test-sweep-list").value);
+  if (Array.isArray(values) && !values.length) { showSweepErrors(["Tick at least one material to try"]); return; }
   if (typeof values === "string") { showSweepErrors([values]); return; }
   let target = c.target;
   await flush();      // a sweep runs the saved test, as Run does: only the test on screen, with nothing to fix

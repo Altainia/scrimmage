@@ -457,13 +457,14 @@
   <form method="dialog" novalidate>
     <h2 id="test-sweep-dialog-title">Try values</h2>
     <p id="test-sweep-for" class="hint"></p>
-    <div class="field" id="test-sweep-which-field"><label for="test-sweep-which">Which number?</label><select id="test-sweep-which"></select></div>
-    <div class="row bench-sweep-range">
+    <div class="field" id="test-sweep-which-field"><label for="test-sweep-which" id="test-sweep-which-label">Which number?</label><select id="test-sweep-which"></select></div>
+    <fieldset id="test-sweep-materials" class="test-sweep-materials" hidden></fieldset>
+    <div class="row bench-sweep-range" id="test-sweep-range">
       <div class="field"><label for="test-sweep-from">From</label><input id="test-sweep-from" inputmode="decimal" autocomplete="off"></div>
       <div class="field"><label for="test-sweep-to">To</label><input id="test-sweep-to" inputmode="decimal" autocomplete="off"></div>
       <div class="field"><label for="test-sweep-steps">Steps</label><input id="test-sweep-steps" inputmode="numeric" value="5" autocomplete="off"></div>
     </div>
-    <div class="field"><label for="test-sweep-list">Or type the values</label><input id="test-sweep-list" autocomplete="off" placeholder="for example 2, 4, 6"></div>
+    <div class="field" id="test-sweep-list-field"><label for="test-sweep-list">Or type the values</label><input id="test-sweep-list" autocomplete="off" placeholder="for example 2, 4, 6"></div>
     <p class="hint">Up to 12 values. The test runs once for each; your files don't change.</p>
     <ul id="test-sweep-errors" class="error-list" role="alert" hidden></ul>
     <div class="dialog-actions">

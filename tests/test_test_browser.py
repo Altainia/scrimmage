@@ -1061,18 +1061,18 @@ def test_setup_hopper_ball_and_station_settings_are_saved_in_the_test(test_page,
     page, _ = test_page(path=path)
     _open_setup(page)
     hint = page.inner_text("#test-setup .test-setup-hopper .hint")
-    assert hint == "Tick the bodies a piece lands in. A piece whose center is inside one made it in."
+    assert hint.startswith("Tick the bodies a piece should end up in or be held by")
     box = "#test-setup .test-setup-hopper input[data-body='hopper.bin']"
     assert page.is_checked(box)                       # preselected (starter_hopper) ...
     assert "hopper" not in _toml(path)["test"]        # ... and not saved until Setup changes
     page.uncheck(box)
     page.check(box)
     _wait_file(lambda: _toml(path)["test"].get("hopper") == ["hopper.bin"], path)
-    balls = page.eval_on_selector_all("#test-ball option", "os => os.map(o => [o.value, o.textContent])")
+    balls = page.eval_on_selector_all("#test-piece option", "os => os.map(o => [o.value, o.textContent])")
     field_ball = page.evaluate("__scrimmageTest.state.palette.ball")
     assert balls[0] == [field_ball, f"{field_ball} (the field's)"] and len(balls) > 2
-    page.select_option("#test-ball", "2017-fuel")
-    _wait_file(lambda: _toml(path).get("setup", {}).get("ball") == "2017-fuel", path)
+    page.select_option("#test-piece", "2017-fuel")
+    _wait_file(lambda: _toml(path).get("setup", {}).get("piece") == "2017-fuel", path)
     # the field's interval until changed; a change goes in [setup] beside the example's spreads
     shown = page.input_value("#test-station-feeder-interval")
     assert float(shown) == page.evaluate("__scrimmageTest.state.palette.station_settings.feeder.interval")
@@ -1083,7 +1083,7 @@ def test_setup_hopper_ball_and_station_settings_are_saved_in_the_test(test_page,
     setup = _toml(path)["setup"]
     assert setup["station"]["feeder"] == {"spread_yaw_deg": 5.0, "spread_pitch_deg": 5.0, "spread_speed": 0.2,
                                           "interval": 0.5}
-    assert setup["seed"] == 1 and setup["ball"] == "2017-fuel" and _toml(path)["test"]["hopper"] == ["hopper.bin"]
+    assert setup["seed"] == 1 and setup["piece"] == "2017-fuel" and _toml(path)["test"]["hopper"] == ["hopper.bin"]
     # the release box is in inches on screen, meters in the file
     page.fill("#test-station-feeder-spread_position-1", "2")
     page.press("#test-station-feeder-spread_position-1", "Enter")
@@ -1384,3 +1384,169 @@ def test_the_feed_marks_are_3_to_1_on_their_background(test_page, tmp_path, sche
     for k in ("in", "stuck", "missed"):
         assert _hex_ratio(colors[k], colors["bg"]) >= 3, (k, colors)
     assert page.evaluate(f"({CONTRAST_JS}).check(document.querySelector('#test-run-col'))") == []
+
+
+# ---- pieces beyond balls: the piece picker, where a piece ends up, grip ---------------------------------------------
+
+def _reef(tmp_path, blocks='[[block]]\ndo = "wait"\nseconds = 0.2\n'):
+    """A copy of examples/blocks/reef (the grabber on the stand-in, on the reef field) and a test of it."""
+    folder = tmp_path / "reef"
+    shutil.copytree(EXAMPLES / "reef", folder)
+    path = folder / "g.test.toml"
+    path.write_text(f'[test]\nrobot = "grabber-standin.toml"\n{blocks}', encoding="utf-8")
+    return path
+
+
+def _options(page, sel):
+    return page.eval_on_selector_all(f"{sel} option", "os => os.map(o => [o.value, o.textContent])")
+
+
+def test_setup_picks_a_piece_and_saves_it_as_piece(test_page, tmp_path):
+    """The station field: the Piece picker lists the field's own first, then the balls and the other pieces; a pick
+    goes in [setup] piece and drops the test's [setup] ball; picking the field's own clears both."""
+    path = _example(tmp_path, "station", "feed.test.toml", lambda s: s.replace("seed = 1\n", 'seed = 1\nball = "2017-fuel"\n'))
+    page, _ = test_page(path=path)
+    _open_setup(page)
+    page.wait_for_selector("#test-piece")
+    assert page.inner_text("#test-setup .test-setup-piece legend") == "Piece"
+    assert page.inner_text("#test-setup .test-setup-piece .hint") == "Pick the piece this test uses."
+    assert page.query_selector("#test-ball") is None
+    field = page.evaluate("__scrimmageTest.state.palette.piece")
+    opts = _options(page, "#test-piece")
+    assert opts[0] == [field, f"{field} (the field's)"]
+    assert page.eval_on_selector_all("#test-piece optgroup", "gs => gs.map(g => g.label)") == ["Balls", "Other pieces"]
+    pieces = page.eval_on_selector_all("#test-piece optgroup:nth-of-type(2) option", "os => os.map(o => o.value)")
+    assert "2025-coral" in pieces and "2024-note" in pieces
+    assert page.input_value("#test-piece") == "2017-fuel"         # the test's ball, as it was
+    page.select_option("#test-piece", "2025-coral")
+    _wait_file(lambda: _toml(path)["setup"].get("piece") == "2025-coral", path)
+    assert "ball" not in _toml(path)["setup"]
+    page.wait_for_function("__scrimmageTest.state.problems.length === 0")
+    page.select_option("#test-piece", field)
+    _wait_file(lambda: "piece" not in _toml(path)["setup"], path)
+    assert "ball" not in _toml(path)["setup"]
+    # the old Hopper box: where a piece should end up
+    assert page.inner_text("#test-setup .test-setup-hopper legend") == "Where a piece should end up"
+    assert page.inner_text("#test-setup .test-setup-hopper .hint") == (
+        "Tick the bodies a piece should end up in or be held by: a hopper, an intake, a claw. A piece whose center "
+        "is inside one, or that one holds when the run ends, made it in.")
+
+
+def test_setup_grip_writes_the_parts_overlay_and_offers_try_values(test_page, tmp_path):
+    """The reef grabber: a grip picker per jaw, each material with its friction estimate; a pick (or my own number)
+    goes in the grabber folder's scrimmage-edits.toml at once. Try materials… sweeps the whole grabber by default
+    (ruling P28), one jaw on its own too, over ticked materials."""
+    path = _reef(tmp_path)
+    page, _ = test_page(path=path)
+    _open_setup(page)
+    left = "#test-setup [data-grip='grabber.jaw_left']"
+    page.wait_for_selector(left)
+    assert page.query_selector("#test-setup [data-grip='grabber.jaw_right']")
+    assert page.inner_text("#test-setup .test-setup-grip legend") == "Grip"
+    assert page.inner_text("#test-setup .test-setup-grip > .hint") == (
+        "What the pads are made of. Friction values are estimates (UNCALIBRATED); docs/test-tab.md says how to "
+        "measure yours.")
+    texts = [t for _, t in _options(page, left)]
+    assert "Rubber — 0.8, estimate" in texts and "Nitrile — 0.8, estimate" in texts       # ruling P27: they read the same
+    assert "HDPE / UHMW — 0.2, estimate" in texts and texts[-1] == "My own number…"
+    assert page.input_value(left) == ""                                                   # the default friction
+    overlay = path.parent / "parts" / "grabber" / "scrimmage-edits.toml"
+    page.select_option(left, "nitrile")
+    _wait_file(lambda: overlay.is_file() and _toml(overlay)["body"]["jaw_left"]["grip"] == "nitrile", overlay)
+    page.wait_for_function("__scrimmageTest.state.palette.grips['grabber.jaw_left'] === 'nitrile'")
+    page.wait_for_function(f"document.querySelector(\"{left}\").value === 'nitrile'")
+    # my own number: a box for a measured friction
+    page.select_option(left, "own")
+    own = "#test-setup [data-grip-own='grabber.jaw_left']"
+    page.wait_for_selector(own)
+    page.fill(own, "1.05")
+    page.press(own, "Enter")
+    _wait_file(lambda: _toml(overlay)["body"]["jaw_left"]["grip"] == 1.05, overlay)
+    page.wait_for_function("__scrimmageTest.state.palette.grips['grabber.jaw_left'] === 1.05")
+    page.wait_for_function(f"document.querySelector(\"{own}\") && document.querySelector(\"{own}\").value === '1.05'")
+    # Try materials…: the whole part first, one jaw on its own too; materials are ticked, not from and to
+    page.click("#test-setup [data-try='grip-grabber.jaw_left']")
+    page.wait_for_selector("#test-sweep-dialog[open]")
+    assert [c["target"] for c in page.evaluate("__scrimmageTest.sweepFor")] == [{"grip": "grabber"},
+                                                                                {"grip": "grabber.jaw_left"}]
+    assert page.is_hidden("#test-sweep-range") and page.is_hidden("#test-sweep-list")
+    boxes = page.eval_on_selector_all("#test-sweep-materials input[type=checkbox]", "bs => bs.map(b => b.value)")
+    assert boxes == page.evaluate("__scrimmageTest.state.palette.grip_materials.map(m => m[0])")
+    for b in boxes:
+        if b not in ("nitrile", "grip-tape"):
+            page.uncheck(f"#test-sweep-materials input[value='{b}']")
+    sent = []
+    page.on("request", lambda r: sent.append(r.post_data_json) if r.url.endswith("/api/test/sweep") else None)
+    page.click("#test-sweep-go")
+    page.wait_for_function("__scrimmageTest.state.sweeps.length === 1 && __scrimmageTest.state.running === null",
+                           timeout=180000)
+    assert sent[0] == {"target": {"grip": "grabber"}, "values": ["nitrile", "grip-tape"]}
+    # the floor spread offers the coral's tip, and says what tip and turn mean for it
+    assert page.query_selector("#test-spread-tip_deg-on")
+    assert "Tip (degrees, 0 lying, 90 standing)" in page.inner_text("#test-setup .test-setup-floor")
+    assert "standing on end" in page.inner_text("#test-setup .test-setup-floor .hint")
+
+
+MIXED_FIELD = """[range]
+name = "a mixed field"
+ball = "2025-algae"
+
+[piece.coral]
+preset = "2025-coral"
+
+[[floor_balls]]
+at = [[3.0, 6.5]]
+
+[[floor_balls]]
+at = [[3.0, 7.0]]
+kind = "coral"
+
+[[station]]
+name = "feeder"
+release = [1.523, 4.0, 1.0]
+heading_deg = 0.0
+speed = 0.0
+kind = "coral"
+
+[start.at_station]
+pose = [1.183, 4.0, 180.0]
+"""
+
+
+def test_a_mixed_field_shows_each_stations_kind(test_page, tmp_path):
+    """A field with two kinds: the station's legend says the kind it feeds, a line counts the floor pieces by kind,
+    and a station feeding a coral has tip and turn boxes."""
+    (tmp_path / "mixed.toml").write_text(MIXED_FIELD, encoding="utf-8")
+    (tmp_path / "robot.toml").write_text(new_config("standin") + ARM + '\n[range]\nfile = "mixed.toml"\nstart = "at_station"\n',
+                                         encoding="utf-8")
+    path = tmp_path / "t.test.toml"
+    path.write_text('[test]\nrobot = "robot.toml"\n\n[[block]]\ndo = "wait"\nseconds = 0.2\n', encoding="utf-8")
+    page, _ = test_page(path=path)
+    _open_setup(page)
+    page.wait_for_selector("#test-setup [data-station='feeder']")
+    assert page.inner_text("#test-setup [data-station='feeder'] legend") == "Station: feeder (coral)"
+    assert page.inner_text("#test-floor-kinds") == "On the floor: 1 algae, 1 coral"
+    assert page.query_selector("#test-piece") is None                     # this field keeps its own pieces
+    for key in ("tip_deg", "turn_deg", "spread_tip_deg", "spread_turn_deg"):
+        assert page.query_selector(f"#test-station-feeder-{key}"), key
+    page.fill("#test-station-feeder-tip_deg", "90")
+    page.press("#test-station-feeder-tip_deg", "Enter")
+    _wait_file(lambda: _toml(path).get("setup", {}).get("station", {}).get("feeder", {}).get("tip_deg") == 90, path)
+    page.click("#test-setup [data-try='station-feeder-spread_turn_deg']")
+    page.wait_for_selector("#test-sweep-dialog[open]")
+    assert page.evaluate("__scrimmageTest.sweepFor[0].target") == {"station": "feeder", "key": "spread_turn_deg"}
+    page.click("#test-sweep-dialog [data-close]")
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_the_pieces_setup_meets_wcag_aa(test_page, tmp_path, scheme):
+    page, _ = test_page(path=_reef(tmp_path), scheme=scheme)
+    _open_setup(page)
+    page.wait_for_selector("#test-setup [data-grip='grabber.jaw_left']")
+    page.wait_for_selector("#test-spread-tip_deg-on")
+    page.wait_for_timeout(200)
+    assert page.evaluate(f"({CONTRAST_JS}).check(document.querySelector('#test-setup'))") == []
+    page.click("#test-setup [data-try='grip-grabber.jaw_left']")
+    page.wait_for_selector("#test-sweep-dialog[open]")
+    page.wait_for_timeout(200)
+    assert page.evaluate(f"({CONTRAST_JS}).check(document.querySelector('#test-sweep-dialog'))") == []

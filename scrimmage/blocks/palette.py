@@ -117,6 +117,12 @@ def _grips(world) -> dict:
     return dict(sorted(out.items()))
 
 
+def _spread_kind_name(world) -> str:
+    """The kind name of the floor spread's piece (the one spread_ball picks)."""
+    i, _ = spread_ball(world)
+    return str(world.test_range.balls.kind[i])
+
+
 def hook_names(world, hooks: list[str]) -> list[str]:
     """The robot's hooks: the stock climber's (`<inst>.hook<i>`) and the bodies the test names as hooks."""
     return sorted(set(robot_hooks(world.model, world.robot_body)) | set(hooks))
@@ -174,9 +180,11 @@ def palette(world, hooks: list[str]) -> dict:
         "station_kinds": {st.name: st.kind or rng.default_kind for st in stations},
         "grips": _grips(world),
         "grip_materials": [[key, label, mu] for key, (label, mu) in GRIP_MATERIALS.items()],
-        # where the floor spread's ball lies (in) and the nearest distance ahead Setup offers: {offset_in,
-        # distance_in, nearest_in}, or null
-        "floor_ball": None if ball is None else {k: round(v, 2) for k, v in ball.items()},
+        # where the floor spread's piece lies (in) and the nearest distance ahead Setup offers: {offset_in,
+        # distance_in, nearest_in, kind (its kind's name), and a piece other than a ball's tip_deg and rotation_deg},
+        # or null
+        "floor_ball": None if ball is None else {**{k: round(v, 2) for k, v in ball.items()},
+                                                 "kind": _spread_kind_name(world)},
     }
 
 
@@ -283,7 +291,7 @@ def _cond_problems(n: _Names, c) -> list[str]:
     if c.kind == "hanging_from":
         return _bar_problems(n, a["bar"])
     if c.kind in ("in_hopper", "made_it_in") and not n.hopper:
-        return ["pick the hopper in Setup: the bodies a piece lands in"]
+        return ["tick where a piece should end up in Setup: the bodies a piece lands in or is held by"]
     if c.kind == "station_empty":
         name = a["station"]
         if name not in n.stations:

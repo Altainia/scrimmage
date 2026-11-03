@@ -721,3 +721,31 @@ def test_test_it_puts_the_part_on_a_stand_in_and_opens_the_test_tab(part_page):
     page.wait_for_function("__scrimmageTest.state.palette.bars.includes('rung1')")
     page.wait_for_function("document.querySelector('#test-setup summary').textContent.includes('field: ladder')")
     assert page.input_value("#test-field") == "ladder"
+
+
+def test_the_part_tab_grip_row_sets_the_overlay(part_page):
+    """A body that touches things gets a Grip row: the materials with their friction estimates and my own number,
+    written to the built folder's scrimmage-edits.toml; Undo takes it back. A body that only shows has none."""
+    page, imp = part_page
+    page.wait_for_function("__scrimmagePart.store.state.build.state === 'idle'")
+    _pick_body(page, "base_plate")
+    assert page.query_selector("#part-grip") is None                      # it doesn't touch anything yet
+    _edit(page, lambda: page.select_option("#part-collision", "simple"))
+    page.wait_for_function("__scrimmagePart.store.state.build.state === 'idle'", timeout=60000)
+    page.wait_for_selector("#part-grip:not([disabled])")
+    texts = page.eval_on_selector_all("#part-grip option", "os => os.map(o => o.textContent)")
+    assert "Nitrile — 0.8, estimate" in texts and "Grip tape — 1.1, estimate" in texts and texts[-1] == "My own number…"
+    assert page.input_value("#part-grip") == ""
+    overlay = imp.parent / "climber" / "scrimmage-edits.toml"
+    _edit(page, lambda: page.select_option("#part-grip", "nitrile"))
+    assert _body(page, "base_plate")["grip"] == "nitrile"
+    assert tomllib.loads(overlay.read_text())["body"]["base_plate"]["grip"] == "nitrile"
+    page.select_option("#part-grip", "own")
+    page.wait_for_selector("#part-grip-own")
+    _edit(page, lambda: _type(page, "#part-grip-own", "0.95"))
+    assert tomllib.loads(overlay.read_text())["body"]["base_plate"]["grip"] == 0.95
+    assert page.input_value("#part-grip") == "own" and page.input_value("#part-grip-own") == "0.95"
+    with page.expect_response(lambda r: r.url.split("?")[0].endswith("/api/part/undo")):
+        page.click("#undo")
+    page.wait_for_function("__scrimmagePart.store.state.bodies.find(b => b.name === 'base_plate').grip === 'nitrile'")
+    assert page.input_value("#part-grip") == "nitrile"

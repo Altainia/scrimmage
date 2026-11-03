@@ -1134,6 +1134,9 @@ dialog.start-dialog { width: auto; max-width: 96vw; }
 .test-floor tbody th { font-family: inherit; font-weight: 400; }
 .test-spread-count { font-size: 12.5px; }
 .test-setup-floor > .row { margin-top: 6px; }
+.test-setup .test-setup-grip { flex: 0 1 auto; }
+.test-setup-grip .test-setup-grid > label { font-family: var(--mono); }    /* a body's name */
+.test-setup .test-floor-kinds { margin: 6px 0 0; }
 /* a sweep's table and chart, over the run */
 .test-sweep-wrap { display: flex; flex-direction: column; gap: 8px; }
 .test-sweep-wrap .test-sub { margin: 0; overflow-wrap: anywhere; }
@@ -1155,6 +1158,11 @@ dialog.start-dialog { width: auto; max-width: 96vw; }
 .test-sweep-chart { cursor: default; }
 #test-sweep-dialog .bench-sweep-range .field { flex: 1; }
 #test-sweep-dialog input { width: 100%; }
+#test-sweep-dialog .test-sweep-materials { border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 10px;
+  padding: 4px 10px 8px; display: flex; flex-direction: column; gap: 3px; }
+#test-sweep-dialog .test-sweep-materials legend { font-weight: 600; font-size: 12.5px; padding: 0 4px; }
+#test-sweep-dialog .test-sweep-materials .test-hook { font-family: inherit; }
+#test-sweep-dialog .test-sweep-materials input { width: auto; }
 /* Blockly's own pop-ups (the dropdown and the number box) in the page's theme */
 .blocklyDropDownDiv.blocklyDropDownDiv { background-color: var(--panel); border-color: var(--line-strong); }
 .blocklyDropDownDiv .blocklyMenuItem { color: var(--text); }

@@ -238,9 +238,9 @@ def test_feed_problems():
     w = station_world()
     assert msgs(sprog(FEED.format("nope"), ["drive.chassis"]), w) == ['no station "nope" on this field']
     assert msgs(sprog(FEED.format("feeder")), w) == []
-    assert msgs(sprog(WAIT_HOPPER.format()), w) == ["pick the hopper in Setup: the bodies a piece lands in"]
+    assert msgs(sprog(WAIT_HOPPER.format()), w) == ["tick where a piece should end up in Setup: the bodies a piece lands in or is held by"]
     assert msgs(sprog(WAIT_HOPPER.format(), ["drive.chassis"]), w) == []
-    assert msgs(sprog(WAIT_MADE_IT.format()), w) == ["pick the hopper in Setup: the bodies a piece lands in"]
+    assert msgs(sprog(WAIT_MADE_IT.format()), w) == ["tick where a piece should end up in Setup: the bodies a piece lands in or is held by"]
     assert msgs(sprog(WAIT_MADE_IT.format(), ["drive.chassis"]), w) == []
     assert '"feeder" never runs out' in msgs(sprog(WAIT_EMPTY.format(), ["drive.chassis"]), w)[0]
     stocked = '\n[setup.station.feeder]\nstock = 3\n'

@@ -174,15 +174,16 @@ Part (`/api/part/*`; 404 unless a part is open, except upload). Pieces are keyed
         coordinates (base64 little-endian float32 xyz / int32 triangles, as the robot view's meshes); cached per
         source read and robot frame. Plugin mode: one entry per body with meshes (key: the body), in the part frame.
         {pieces: []} while the source can't be read.
-  GET  /api/part/materials         -> {materials: {key: {key, label, density, printed}}, motors: [names]}.
+  GET  /api/part/materials         -> {materials: {key: {key, label, density, printed}}, motors: [names], grips:
+        [[key, label, friction estimate]] (parts/grip.py's materials, for the Grip picker)}.
   POST /api/part/edit              -> body {version, op, args}: scrimmage.cad.edits.apply_edit(op, args) (set_frame
         leaves the frame unchecked unless args has confirmed = true, which "Looks right" sends; plugin
         mode: set_mass {body, kg}, set_collision {body, mode}, set_joint {body, joint: {range?, spring?, damping?,
         frictionloss?}} (null removes one), set_total {kg}; piece edits are 400 "per-piece materials need the STEP:
         import it instead"). Both modes: set_grip {body, grip: a parts/grip.py material key, a number (a measured
         friction) or null (the default)} writes the body's grip in its part folder's own edits (scrimmage-edits.toml):
-        plugin mode the folder's, on the history; import mode the built folder holding that body, not rebuilt and not
-        on the history (a rebuild keeps it), 400 on body for a body built into another's or a part not built yet.
+        plugin mode the folder's; import mode the built folder holding that body, not rebuilt (a rebuild keeps it),
+        400 on body for a body built into another's or a part not built yet; both on the history.
         Each state body carries `grip` (None: the default friction). 200 with the state (its messages say what the
         edit dropped); 400 {field, message} for an edit refused (nothing written); 409 when the settings changed after
         `version` (another tab, an undo, an outside edit: a build finishing doesn't count) or the part is read-only.

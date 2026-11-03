@@ -12,7 +12,8 @@
 //                meters), encoder (none, on the joint, on the motor) and gyro
 //   mounts       one body: the spots another part bolts on ("Add mount": click a flat face, then name it)
 //   collision    one body: how it touches things, with a one-click suggestion for hooks and wheels (never applied
-//                by itself)
+//                by itself), and for a body that touches things its grip material (set_grip: the pads' friction, the
+//                same picker as the Test tab's Setup)
 //   links        one body, under "More": couplings ("turns with another joint") and loops ("pinned to another body")
 //   bodies       several bodies: one button each
 //   frame        the robot frame: which way is up and forward, and a button that shows the step again
@@ -874,9 +875,56 @@ addSection({
         h("button", { type: "button", class: "btn btn-small", id: "part-collision-suggest",
           onclick: () => editOp("set_collision", { body: b.name, mode: look[2] }) }, `Yes, ${look[3]}`)));
     }
+    if (touches(c, b)) rows.push(...gripRows(c, b));
     return h("section", { class: "insp-section" }, ...rows);
   },
 });
+
+// A body touches things when it is set to (plugin mode: unless set to only show; the plugin's own may touch). A
+// wheel's tread keeps its own friction, so a wheel has no grip.
+const touches = (c, b) => (c.plugin ? (b.collision || "plugin") : b.collision || "none") !== "none" && b.collision !== "wheel";
+let gripOwnAsked = null;    // the body whose Grip picker shows "My own number…" before a number is typed
+onPart(() => { if (part.sel.kind !== "body") gripOwnAsked = null; });
+
+// The Grip row: the materials with their friction estimates (ruling P27: two with the same estimate read the same),
+// and my own number, a measured friction. Import mode writes the built folder, so it waits while a build runs.
+function gripRows(c, b) {
+  const mats = (part.materials && part.materials.grips) || [];
+  const own = typeof b.grip === "number" || gripOwnAsked === b.name;
+  const building = !c.plugin && c.state.build && c.state.build.state === "building";
+  const sel = h("select", { id: "part-grip" },
+    h("option", { value: "" }, "Default friction (not set)"),
+    ...mats.map(([k, label, mu]) => h("option", { value: k }, `${label} — ${+mu.toPrecision(6)}, estimate`)),
+    h("option", { value: "own" }, "My own number…"));
+  sel.value = own ? "own" : b.grip == null ? "" : b.grip;
+  sel.addEventListener("change", () => {
+    if (!live(sel)) return;
+    if (sel.value === "own") {    // ask for the number first; the edit goes when it is typed
+      gripOwnAsked = b.name;
+      render();
+      const el = document.getElementById("part-grip-own");
+      if (el) el.focus();
+      return;
+    }
+    gripOwnAsked = null;
+    editOp("set_grip", { body: b.name, grip: sel.value || null });
+  });
+  if (building) sel.disabled = true;
+  const rows = [field("Grip", sel, "grip", building ? "Wait for the parts to update, then pick it."
+    : "What its pads are made of, for gripping a game piece. Friction values are estimates (UNCALIBRATED); docs/test-tab.md says how to measure yours.")];
+  if (own) {
+    const v = box({ id: "part-grip-own", type: "text", inputmode: "decimal", placeholder: "0.9",
+      value: typeof b.grip === "number" ? String(b.grip) : "" }, async (text) => {
+      const x = number(text, "grip");
+      if (Number.isNaN(x) || x === null) return;
+      const r = await editOp("set_grip", { body: b.name, grip: x });
+      if (r && r.ok && gripOwnAsked === b.name) { gripOwnAsked = null; render(); }     // the number shows it now
+    });
+    if (building) v.disabled = true;
+    rows.push(field("My own friction", v, "grip_own", "A friction you measured with a sled pull, such as 0.9."));
+  }
+  return rows;
+}
 
 // -- couplings and loops ("More") --------------------------------------------------------------------------------
 let loopWith = null;   // the body chosen for a new loop (kept across redraws)
