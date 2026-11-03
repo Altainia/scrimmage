@@ -14,7 +14,8 @@ def signals(world) -> dict[str, list[str]]:
     element.<name> per hinged or sliding element). The climb signals, for a robot with hooks (a stock climber) or on
     a range with a bar or a switch: climb.extension and climb.height in `fixed`, with climb.hook_load and
     climb.hook.<hook>.load per hook; climb.hanging, level, points and swing in `range`, with a bar or a switch. (A
-    scenario may use extension and height on any robot.)"""
+    scenario may use extension and height on any robot.) With a [partner], `fixed` has partner.height, tilt and
+    moved."""
     from ..terrain.climb import robot_hooks
     from ..terrain.monitor import ROBOT_SIGNALS, WHEEL_SIGNALS
     from ..testrange.elements import Platform, moving_units
@@ -30,6 +31,9 @@ def signals(world) -> dict[str, list[str]]:
         fixed += ["climb.extension", "climb.height"]
     if hooks:
         fixed += ["climb.hook_load", *(f"climb.hook.{h}.load" for h in hooks)]
+    if getattr(world, "partner", None) is not None:
+        from ..parts.partner import SIGNALS
+        fixed += list(SIGNALS)
     out = {"fixed": fixed,
            "motors": [f"motor.{b.name}" for b in world.motors],
            "joints": [f"joint.{j}" for j in sorted(world.joint_states())],

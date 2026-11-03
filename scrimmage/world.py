@@ -56,6 +56,9 @@ class World:
         if "range" in cfg and "part" not in cfg:
             from .parts.model import PartError
             raise PartError("a range needs a robot built from [[part]]: [model] mjcf robots can't have a [range]")
+        if "partner" in cfg and "part" not in cfg:
+            from .parts.model import PartError
+            raise PartError("a [partner] robot needs a robot built from [[part]]: [model] mjcf robots can't have one")
         start_pose = parse_start_pose(rcfg.get("start_pose"))
         self.warnings: list[str] = []
         if "part" in cfg:
@@ -136,6 +139,11 @@ class World:
         layout = self.parts.layout if self.parts is not None else None
         if layout is not None and (layout.bars or layout.switches):
             self.climb_monitor()
+        # The partner robot's signals (parts/partner.py): None without a [partner], and stepping costs nothing extra.
+        self.partner = None
+        if self.parts is not None and self.parts.partner is not None:
+            from .parts.partner import PartnerMonitor
+            self.partner = PartnerMonitor(self, self.parts.partner)
         self.reset()
 
     def terrain_monitor(self):
@@ -185,6 +193,8 @@ class World:
             self.terrain.reset()
         if self.climb is not None:
             self.climb.reset()
+        if self.partner is not None:
+            self.partner.reset()
 
     def reset_robot(self) -> None:
         """Put the robot's joints (its pose and every mechanism) back to qpos0 at rest, the robot at its start pose;
@@ -328,6 +338,8 @@ class World:
             self.terrain.after_physics()
         if self.climb is not None:
             self.climb.after_physics()
+        if self.partner is not None:
+            self.partner.after_physics()
 
     def _bus_voltage(self, rng) -> float:
         """The battery's terminal voltage this step: V = nominal - R * (the supply current every motor draws at V).

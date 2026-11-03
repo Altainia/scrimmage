@@ -15,7 +15,8 @@ SIGNALS_HELP = ("battery, speed, motor.<name>.current|command, joint.<name>.posi
                 "robot.ground_gap|wheels_down|air_time|pitch|roll|tilt|z|stranded|tipped, "
                 "climb.hanging|level|points|swing|hook_load|extension|height, climb.hook.<hook>.load, "
                 "hal:<type>/<device>/<key>, nt:<topic>, and on a test range score, score.<goal>, fired, held, on_field, "
-                "element.<platform>.angle, element.<hinged or sliding element>")
+                "element.<platform>.angle, element.<hinged or sliding element>, and with a [partner] partner.height|"
+                "tilt|moved")
 RANGE_SIGNALS = ("score", "fired", "held", "on_field")   # and score.<goal>: read from the range's counts()
 
 
@@ -123,6 +124,16 @@ def _element_signal(name: str, world) -> Signal:
     return Signal(name, lambda s: s.world.terrain.platform_angle(elem))
 
 
+def _partner_signal(name: str, world) -> Signal:
+    """partner.height (in), partner.tilt (deg) and partner.moved (in): the [partner] robot's (parts/partner.py)."""
+    from .parts.partner import SIGNALS
+    if name not in SIGNALS:
+        raise ScenarioError(f"unknown signal {name!r}: the partner signals are {', '.join(SIGNALS)}")
+    if getattr(world, "partner", None) is None:
+        raise ScenarioError(f"{name} needs a partner robot: add [partner] to the config (see README.md)")
+    return Signal(name, lambda s: s.world.partner.read(name))
+
+
 def _climb_signal(name: str, world) -> Signal:
     """climb.<field> and climb.hook.<hook>.load: the climb signals (scrimmage/terrain/climb.py), peak-held between
     ticks."""
@@ -157,6 +168,8 @@ def resolve_signal(name: str, world) -> Signal:
         return _element_signal(name, world)
     if name.startswith("climb."):
         return _climb_signal(name, world)
+    if name.startswith("partner."):
+        return _partner_signal(name, world)
     if name == "battery":
         return Signal(name, lambda s: s.world.vbatt)
     if name == "speed":

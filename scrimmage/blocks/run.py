@@ -74,6 +74,10 @@ the lowest and when, how long the compressor ran and when the tanks first fell b
 A field with hinged or sliding elements has each one's `element.<name>` signal: a hinged element's angle (deg) or a
 sliding one's travel (in), 0 at rest; the `element` condition reads it.
 
+A robot with a partner robot (the config's `[partner]`, or Setup's partner: setup_config) has the signals
+`partner.height` (in), `partner.tilt` (deg) and `partner.moved` (in), read from where the partner settled
+(parts/partner.py); the `partner_lifted` and `partner_moved` conditions read them.
+
 Clearance (clearance.py): a test that names a field element in a `clears` condition or as `clearance.<element>` in
 its chart measures the robot's clearance to it after every step (Watch.closest), and only then. The chart's
 `clearance.<element>` is in inches, NaN while nothing is within 0.5 m; the run's `clearance` is each element's
@@ -100,6 +104,7 @@ import numpy as np
 from ..climb.run import SETTLE_S, WalkOff
 from ..hal_drive import MotorDrive, driven_joints, position_volts
 from ..movers import mover_poses, movers
+from ..parts.partner import SIGNALS as PARTNER_SIGNALS
 from ..protocol import HalState
 from ..testrange.build import BALL_BITS
 from .aim import TURN, aim_error, aim_target
@@ -129,7 +134,7 @@ _VERBS = {"passes": ("passing", "to pass"), "goes": ("going", "to go"), "tilts":
           "touches": ("touching", "to touch"), "reaches": ("reaching", "to reach"), "hangs": ("hanging", "to hang"),
           "are": ("being", "to be"), "is": ("being", "to be"), "made": ("having made", "to have made"),
           "is held": ("being held", "to be held"), "rests": ("resting", "to rest"),
-          "clears": ("clearing", "to clear")}
+          "clears": ("clearing", "to clear"), "moved": ("having moved", "to have moved")}
 
 
 @dataclass
@@ -202,11 +207,40 @@ def _amount(x: float, unit: str) -> str:
     return f"{x:g}°" if unit == "deg" else f"{x:g} {unit}"
 
 
-def setup_config(raw: dict, setup: dict) -> dict:
+def setup_config(raw: dict, setup: dict, cfg_dir: Path | None = None) -> dict:
     """A copy of the config dict with the test's `[setup]` ball or piece, station settings and seed in its `[range]`
     (a station's settings add to, and replace, the config's own; a ball or piece replaces the config's own, whichever
-    it gave). Nothing to set leaves `raw` as it is. On the plain field (no `[range]`) the seed is dropped: it only
-    picks the stations' draws, and there are none."""
+    it gave), and its partner as a `[partner]` (setup_partner). Nothing to set leaves `raw` as it is. On the plain
+    field (no `[range]`) the seed is dropped: it only picks the stations' draws, and there are none. `cfg_dir` is the
+    config's folder, where a partner's robot start reads the config's own range file from."""
+    raw = _range_setup(raw, setup)
+    if "partner" in setup:
+        raw = setup_partner(raw, setup["partner"], cfg_dir)
+    return raw
+
+
+def setup_partner(raw: dict, partner, cfg_dir: Path | None) -> dict:
+    """A copy of the config dict with Setup's partner: false drops the config's `[partner]`; a table puts the
+    partner's center `ahead_in` ahead of the robot's start along its heading, turned `heading_deg` from it, its brake
+    as given (the config's `[partner]` keeps its other settings)."""
+    if partner is False:
+        return {k: v for k, v in raw.items() if k != "partner"}
+    from ..parts.assemble import robot_start
+    try:
+        x, y, heading = robot_start(raw, cfg_dir)
+    except ValueError as e:     # the config's own mistake (its [range], its start_pose), which building it says too
+        raise TestFileError(f"Setup's partner needs the robot's start: {e}") from None
+    h, ahead = math.radians(heading), partner["ahead_in"] * IN
+    have = raw.get("partner")
+    out = {**(have if isinstance(have, dict) else {}),
+           "start": [x + ahead * math.cos(h), y + ahead * math.sin(h), heading + partner.get("heading_deg", 0.0)]}
+    if "brake" in partner:
+        out["brake"] = partner["brake"]
+    return {**raw, "partner": out}
+
+
+def _range_setup(raw: dict, setup: dict) -> dict:
+    """setup_config's `[range]` part: the ball or piece, the station settings and the seed."""
     values = {k: setup[k] for k in ("ball", "piece", "station", "seed") if k in setup}
     if not isinstance(raw.get("range"), dict):
         values.pop("seed", None)
@@ -234,7 +268,7 @@ def world_for(program: Program):
     """The World of the test's robot config (its `robot`, relative to the test file), with the test's setup applied."""
     from ..config import build_world, load_config
     config = load_config(Path(program.path).parent / program.robot)
-    return build_world(replace(config, raw=setup_config(config.raw, program.setup)))
+    return build_world(replace(config, raw=setup_config(config.raw, program.setup, config.dir)))
 
 
 GRIP_CONDITIONS = ("held", "rests_on", "seated")     # a test of these rests on the grip's friction
@@ -646,6 +680,8 @@ class TestRun:
                 row[name] = watch.element_value(self._elements[name])
             elif name in self._clearance:               # in; NaN while nothing is within 0.5 m
                 row[name] = inches(watch.closest.now[self._clearance[name]])
+            elif name in PARTNER_SIGNALS:               # in, deg, in
+                row[name] = self.world.partner.read(name)
             elif name.endswith(".current") and name[:-8] in self.motors:
                 row[name] = float(self.motors[name[:-8]].current)
             else:
@@ -947,6 +983,15 @@ class TestRun:
             now = f"{c / IN:.2f} in" if math.isfinite(c) else f">{NEVER_WITHIN_IN} in"
             return (f"expected the robot to clear {a['element']} by at least {_amount(a['at_least_in'], 'in')}, "
                     f"but it was {now}")
+        if k == "partner_lifted":
+            p, level = self.world.partner, a.get("level_within_deg")
+            want = f"at least {_amount(a['at_least_in'], 'in')}" + (
+                f" (level within {_amount(level, 'deg')})" if level is not None else "")
+            up = round(p.height(), 1) + 0.0                 # + 0.0: a partner at rest never reads "-0"
+            return f"expected the partner lifted {want}, but it was {up:g} in up, {p.tilt():.1f}° from level"
+        if k == "partner_moved":
+            return (f"expected the partner to move at least {_amount(a['at_least_in'], 'in')}, "
+                    f"but it moved {self.world.partner.moved():.1f} in")
         if k == "station_empty":
             left = self.feeder.left(a["station"]) if self.feeder is not None else None
             return f"{a['station']} wasn't empty" + (f" ({left} left)" if left else "")

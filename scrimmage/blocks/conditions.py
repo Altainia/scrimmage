@@ -38,6 +38,10 @@ step, and the plain words that name them in a run's outcome.
 - `clears`: the robot keeps at least `at_least_in` inches from a field element: clearance.py's clearance, between
   every robot geom that collides and the element's geoms, measured after every step (`Watch.closest`) for the
   elements the test names; nothing within 0.5 m counts as clear.
+- `partner_lifted`: the partner robot's frame is lifted at least `at_least_in` inches (its `partner.height`: the
+  lowest frame corner above where it settled), and, with `level_within_deg`, its tilt is within that of level.
+- `partner_moved`: the partner robot has gone at least `at_least_in` inches across the floor from where it settled
+  (`partner.moved`).
 
 The words name pieces as a student knows them: any piece by the field's kind ("a coral"; "a ball" on a field of one
 ball or disc kind, as always; "a piece" on a mixed field or when the kinds aren't known), and a named piece by its
@@ -347,6 +351,12 @@ class Watch:
             return v > a["above"] if "above" in a else v < a["below"]
         if k == "clears":
             return self.closest.now[a["element"]] >= a["at_least_in"] * IN
+        if k == "partner_lifted":
+            p = self.world.partner
+            level = a.get("level_within_deg")
+            return p.height() >= a["at_least_in"] and (level is None or p.tilt() <= level)
+        if k == "partner_moved":
+            return self.world.partner.moved() >= a["at_least_in"]
         if k == "station_empty":
             return bool(self.world.test_range.feeder.empty(a["station"]))
         if k == "made_it_in":
@@ -453,6 +463,12 @@ def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names
         return f"{a['element']} is {side} {_amount(a[side], unit) if unit else f'{a[side]:g}'}"
     if k == "clears":
         return f"the robot clears {a['element']} by at least {_amount(a['at_least_in'], 'in')}"
+    if k == "partner_lifted":
+        level = a.get("level_within_deg")
+        return (f"the partner is lifted at least {_amount(a['at_least_in'], 'in')}"
+                + (f" (level within {_amount(level, 'deg')})" if level is not None else ""))
+    if k == "partner_moved":
+        return f"the partner moved at least {_amount(a['at_least_in'], 'in')}"
     if k == "station_empty":
         return f"{a['station']} is empty"
     if k == "made_it_in":

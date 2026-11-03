@@ -8,9 +8,10 @@ a single), other surfaces a touch can name (`targets`: the carpet, the walls) an
 and how (`drive_kind`: a tank or swerve drive, as drive.py finds them) and the signals a chart can show
 (`seated.<rod>` for each rod, in inches, when a piece kind of the field has a hole; with cylinders, `air.psi` (the
 tanks), `air.working_psi` (the regulator's output) and each cylinder's `<name>.extension` in inches; and
-`element.<name>` for each of the field's hinged or sliding elements, `moving_elements`, in its unit). A chart can
-also show `clearance.<element>` (in) for any of `elements`; it isn't in `signals`, as a run measures it only when the
-test names it (clearance.py).
+`element.<name>` for each of the field's hinged or sliding elements, `moving_elements`, in its unit; and with a
+partner robot, `partner: true`, `partner.height` and `partner.moved` in inches and `partner.tilt` in degrees). A
+chart can also show `clearance.<element>` (in) for any of `elements`; it isn't in `signals`, as a run measures it
+only when the test names it (clearance.py).
 The field's pieces: `piece` (its default kind's preset), `kinds` (each kind's form, whether it is hollow or flat and the
 plain name a student reads, e.g. "coral"), `floor_kinds` (each floor piece's kind), `piece_labels` (what a student
 reads for each floor piece, "coral 2", as the run's sentences name it) and `station_kinds` (each station's), and every
@@ -34,6 +35,7 @@ import mujoco
 from ..hal_drive import driven_joints
 from ..launcher.inputs import PRESETS
 from ..parts.grip import GRIP_MATERIALS
+from ..parts.partner import SIGNALS as PARTNER_SIGNALS
 from ..terrain.climb import robot_hooks
 from ..testrange.elements import moving_units
 from ..testrange.spec import BALL_CHOICE_RANGES, RangeError, load_range
@@ -58,14 +60,17 @@ def _robot_bodies(world) -> list[int]:
 
 
 def _joints(world) -> dict[str, str]:
-    """Joint name -> kind ("hinge", "slide" or "wheel"), for every named hinge and slide."""
+    """Joint name -> kind ("hinge", "slide" or "wheel"), for every named hinge and slide but the partner robot's
+    wheels (it has no motors, and no block turns them)."""
     m = world.model
     tread_bodies = {int(m.geom_bodyid[m.geom(g).id]) for g in (world.parts.tread_geoms if world.parts else ())}
+    partner = getattr(world, "partner", None)
+    partner_root = int(m.body_rootid[partner.body]) if partner is not None else -1
     out = {}
     names = world.joint_states()
     for j in range(m.njnt):
         name = m.joint(j).name
-        if name not in names:
+        if name not in names or int(m.body_rootid[m.jnt_bodyid[j]]) == partner_root:
             continue
         if int(m.jnt_type[j]) == int(mujoco.mjtJoint.mjJNT_SLIDE):
             out[name] = "slide"
@@ -181,6 +186,9 @@ def palette(world, hooks: list[str]) -> dict:
         signals += ["air.psi", "air.working_psi", *(f"{c['name']}.extension" for c in cyls)]     # psi, psi, in
     moving = moving_units(rng.elements) if rng is not None else {}
     signals += [f"element.{n}" for n in moving]                    # deg (hinged) or in (sliding), 0 at rest
+    partner = getattr(world, "partner", None) is not None
+    if partner:
+        signals += list(PARTNER_SIGNALS)                           # in, deg, in: from where it settled
     dt = drivetrain(world, driven)
     stations = sorted(rng.stations, key=lambda st: st.name) if rng is not None else []
     ball = floor_ball(world)
@@ -194,6 +202,7 @@ def palette(world, hooks: list[str]) -> dict:
         "bars": bars,
         "elements": elements,
         "moving_elements": [{"name": n, "unit": u} for n, u in moving.items()],     # hinged ("deg"), sliding ("in")
+        "partner": partner,                 # a partner robot ([partner], or Setup's partner)
         "goals": sorted(g.name for g in rng.goals) if rng is not None else [],
         "turrets": turrets(world),          # stock turrets' instances: each turns `<inst>.turn`
         "cylinders": cyls,                  # pneumatic cylinders: {name, double}
@@ -246,6 +255,7 @@ class _Names:
         self.goals = list(p["goals"])
         self.turrets = list(p["turrets"])
         self.cylinders = [c["name"] for c in p["cylinders"]]
+        self.partner = p["partner"]
         rng = world.parts.range if world.parts is not None else None
         self.hollow = rng is not None and any(k.hole is not None for k in rng.kinds.values())
         self.field = set(world.contact_names()) | set(p["elements"]) | self.bars
@@ -379,6 +389,8 @@ def _cond_problems(n: _Names, c) -> list[str]:
         return [f"{a['element']} isn't a moving element; {known}"]
     if c.kind == "clears" and a["element"] not in n.elements:
         return [f'no element "{a["element"]}" on this field']
+    if c.kind in ("partner_lifted", "partner_moved") and not n.partner:
+        return ["there's no partner robot; add one in Setup"]
     if c.kind == "station_empty":
         name = a["station"]
         if name not in n.stations:
