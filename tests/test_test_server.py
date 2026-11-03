@@ -1092,3 +1092,76 @@ def test_a_cylinder_pin_on_a_body_that_never_moves_is_its_world_position(tmp_pat
     world_pin = d.site_xpos[w.model.site("cyl.pin_a").id]
     assert cyl["a"][0] == -1 and cyl["a"][1] == pytest.approx(list(world_pin))
     assert v["movers"][cyl["b"][0]]["name"] == "arm.arm"        # the other pin still rides its mover
+
+
+# ---- moving elements, clearance and the partner (sub-project 24) ----------------------------------------------------
+PARTNER_CHECKS = """
+[[block]]
+do = "wait"
+seconds = 0.2
+
+[[block]]
+do = "expect"
+that = { partner_moved = { at_least_in = 0.0001 } }
+"""
+
+
+def _partner_test(tmp_path, setup: str, robot: str = "", blocks: str = PARTNER_CHECKS) -> Path:
+    (tmp_path / "robot.toml").write_text(new_config("standin") + ARM + robot, encoding="utf-8")
+    t = tmp_path / "t.test.toml"
+    t.write_text(f'[test]\nrobot = "robot.toml"\n\n[setup]\n{setup}\n{blocks}', encoding="utf-8")
+    return t
+
+
+def test_the_palettes_partner_follows_setups_partner(tmp_path, test_app):
+    """The App's world is the robot config's, without the test's [setup]: Setup's partner still shows in the palette
+    (its blocks and signals) and the partner checks aren't a problem; `robot_partner` says whether the config has its
+    own [partner]."""
+    c = test_app(_partner_test(tmp_path, "partner = { ahead_in = 60 }"))
+    st = _state(c)
+    pal = st["palette"]
+    assert pal["partner"] is True and pal["robot_partner"] is False
+    assert {"partner.height", "partner.tilt", "partner.moved"} <= set(pal["signals"])
+    assert st["problems"] == []
+    s, b = c.call("POST", "/api/test/save", {"version": st["version"],
+                                              "test": {**st["test"], "setup": {}}})
+    assert s == 200, b
+    st = _state(c)
+    assert st["palette"]["partner"] is False and "partner.height" not in st["palette"]["signals"]
+    assert st["problems"] and "no partner robot" in st["problems"][0]["message"], st["problems"]
+
+
+def test_setups_partner_false_hides_the_configs_own(tmp_path, test_app):
+    c = test_app(_partner_test(tmp_path, "partner = false", robot="\n[partner]\nstart = [5, 4, 0]\n"))
+    pal = _state(c)["palette"]
+    assert pal["partner"] is False and pal["robot_partner"] is True
+    assert "partner.moved" not in pal["signals"]
+
+
+def test_a_robot_sweep_keeps_setups_partner(tmp_path, test_app):
+    """A sweep of the robot's weight builds each world from a temp copy of the config: the test's [setup] (its
+    partner here) still applies, as it does to a run."""
+    c = test_app(_partner_test(tmp_path, "partner = { ahead_in = 60 }"))
+    s, b = c.call("POST", "/api/test/sweep", {"target": {"robot": "mass"}, "values": [30.0]})
+    assert s == 200, b
+    st = _wait_idle(c, timeout=120)
+    assert st["run_error"] is None, st
+    [row] = st["sweeps"][0]["rows"]
+    assert row["status"] != "couldn't run", row
+    run = next(r for r in st["runs"] if r["sweep"])
+    s, res = c.get(f"/api/test/run/{run['id']}")
+    assert s == 200 and "partner.moved" in res["signals"], sorted(res["signals"])
+
+
+def test_a_clears_run_has_the_clearance_line(tmp_path, test_app):
+    blocks = ('\n[[block]]\ndo = "wait"\nseconds = 0.2\n\n[[block]]\ndo = "expect"\n'
+              'that = { clears = { element = "portcullis", at_least_in = 1.0 } }\n')
+    c = test_app(_partner_test(tmp_path, "", robot='\n[range]\nfile = "2016-defenses"\nstart = "portcullis"\n',
+                               blocks=blocks))
+    st = _state(c)
+    assert st["problems"] == [] and {"name": "portcullis", "unit": "in"} in st["palette"]["moving_elements"]
+    assert c.call("POST", "/api/test/run", {})[0] == 200
+    [run] = _wait_idle(c, timeout=120)["runs"]
+    s, res = c.get(f"/api/test/run/{run['id']}")
+    assert s == 200
+    assert [ln for ln in res["lines"] if "portcullis" in ln] == ["portcullis: never within 20 in"], res["lines"]

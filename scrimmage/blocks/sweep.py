@@ -38,6 +38,7 @@ import shutil
 import tempfile
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import tomlkit
@@ -50,7 +51,7 @@ from ..teamfolders import TeamFolderError, expand
 from ..testrange.station import OVERRIDE_KEYS
 from . import store
 from .program import Program, TestFileError, from_json, to_json
-from .run import TestRun, _where, world_for
+from .run import TestRun, _where, setup_config, world_for
 
 MAX_SWEEP = 12
 BLOCK_KEYS = ("volts", "seconds", "to", "distance")
@@ -241,10 +242,12 @@ def _temp_config(config: Path, text: str) -> Path:
     return Path(name)
 
 
-def _world(config: Path, tmp: Path):
-    """The World of the temp copy `tmp` of the config; an error names the config, not the temp copy."""
+def _world(config: Path, tmp: Path, program: Program):
+    """The World of the temp copy `tmp` of the config, with the test's setup applied (setup_config, as world_for
+    does); an error names the config, not the temp copy."""
     try:
-        return build_world(load_config(tmp))
+        cfg = load_config(tmp)
+        return build_world(replace(cfg, raw=setup_config(cfg.raw, program.setup, cfg.dir)))
     except (ValueError, OSError) as e:
         msg = str(e)
         for s in (str(tmp.resolve()), str(tmp), tmp.name):
@@ -312,7 +315,7 @@ def run_sweep(program: Program, target: dict, values: list[float | str], base, o
             else:
                 p = program
                 temp = _temp_config(config, _edit_config(text, target, values[i], bodies))
-                world = _world(config, temp)
+                world = _world(config, temp, p)
             made[i] = p
             return TestRun(world, p).run(cancel=cancel)
         finally:

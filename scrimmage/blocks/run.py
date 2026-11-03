@@ -390,7 +390,7 @@ class TestRun:
         # written as robot code writes it, through its own binding
         self._drive = {n: [MotorDrive(mb) for mb in world.motors if mb.qadr == b.qadr]
                        for n, b in self.motors.items()}
-        pal = palette(world, list(program.hooks))
+        pal = palette(world, list(program.hooks), program.setup)
         kinds = {j["name"]: j["kind"] for j in pal["joints"]}
         self.drivetrain = drivetrain(world, self.motors)
         self.signal_names = list(pal["signals"])

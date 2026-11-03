@@ -1869,3 +1869,196 @@ def test_a_cylinder_run_says_how_the_air_went_and_the_replay_draws_the_cylinder_
     assert end[0]["barrel"] == pytest.approx(0.3 * stroke + 0.05, abs=1e-6)
     assert start[0]["rod"] == pytest.approx(0, abs=2e-3)
     assert end[0]["rod"] == pytest.approx(stroke, abs=5e-3)     # out to its stop
+
+
+# ---- moving elements, clearance and the partner (sub-project 24) ----------------------------------------------------
+ON_THE_DEFENSES = '\n[range]\nfile = "2016-defenses"\nstart = "portcullis"\n'
+ELEMENT_BLOCKS = """
+[setup]
+partner = { ahead_in = 80, heading_deg = 180.0, brake = false }
+
+[[block]]
+do = "wait_until"
+until = { element = { element = "portcullis", above = 6.5 } }
+timeout = 3.0
+
+[[block]]
+do = "expect"
+that = { element = { element = "drawbridge", below = 12.0 } }
+
+[[block]]
+do = "expect"
+that = { clears = { element = "trench", at_least_in = 2.5 } }
+throughout = true
+
+[[block]]
+do = "expect"
+that = { partner_lifted = { at_least_in = 3.0, level_within_deg = 4.0 } }
+
+[[block]]
+do = "expect"
+that = { partner_lifted = { at_least_in = 1.5 } }
+
+[[block]]
+do = "expect"
+that = { partner_moved = { at_least_in = 10.0 } }
+"""
+MOVING_KINDS = ("cond_element", "cond_clears", "cond_partner_lifted", "cond_partner_moved")
+
+
+def _defenses_test(tmp_path, blocks, field=ON_THE_DEFENSES):
+    (tmp_path / "robot.toml").write_text(new_config("standin") + ARM + field, encoding="utf-8")
+    path = tmp_path / "t.test.toml"
+    path.write_text(f'[test]\nrobot = "robot.toml"\n{blocks}', encoding="utf-8")
+    return path
+
+
+def _units(page):
+    """Each element check's element and the unit it shows."""
+    return page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).filter(b => b.type === 'cond_element')"
+                         ".map(b => [b.getFieldValue('ELEMENT'), b.getField('UNIT').getText()])")
+
+
+def test_the_element_clears_and_partner_checks_show_only_where_they_apply(test_page, tmp_path):
+    page, path = test_page()
+    types = _flyout_types(page)
+    assert not set(MOVING_KINDS) & set(types), types       # the plain field: no moving element, no partner
+    robot = path.parent / "robot.toml"
+    robot.write_text(robot.read_text(encoding="utf-8") + ON_THE_DEFENSES, encoding="utf-8")
+    page.wait_for_function("__scrimmageTest.state.palette.moving_elements.length > 0")
+    types = _flyout_types(page)
+    assert {"cond_element", "cond_clears"} <= set(types), types
+    assert not {"cond_partner_lifted", "cond_partner_moved"} & set(types), types
+    options = page.evaluate("""(() => {
+      const fl = __scrimmageTest.workspace.getFlyout().getWorkspace();
+      const opts = (t) => fl.getTopBlocks(true).find(b => b.type === t).getField('ELEMENT').getOptions(false).map(o => o[1]);
+      return [opts('cond_element'), opts('cond_clears')];
+    })()""")
+    moving = [e["name"] for e in page.evaluate("__scrimmageTest.state.palette.moving_elements")]
+    assert options[0] == moving and "portcullis" in moving and "portcullis_post_left" not in moving
+    assert options[1] == page.evaluate("__scrimmageTest.state.palette.elements")
+
+
+def test_the_element_clears_and_partner_checks_round_trip_exactly(test_page, tmp_path):
+    page, _ = test_page(path=_defenses_test(tmp_path, ELEMENT_BLOCKS))
+    st = page.evaluate("__scrimmageTest.state.test")
+    assert st["setup"]["partner"] == {"ahead_in": 80, "heading_deg": 180.0, "brake": False}
+    assert page.evaluate("__scrimmageTest.toJSON()") == st
+    types = page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).map(b => b.type)")
+    assert set(MOVING_KINDS) <= set(types), types
+    # the unit follows the element: the portcullis slides (in), the drawbridge swings (°)
+    assert _units(page) == [["portcullis", "in"], ["drawbridge", "°"]]
+    # trench isn't on this field: kept, and marked
+    clears = page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).find(b => b.type === 'cond_clears')"
+                           ".getField('ELEMENT').getText()")
+    assert clears == "trench (not on the field)"
+    # level within's degrees show only while it is ticked
+    lifted = """__scrimmageTest.workspace.getAllBlocks(false).filter(b => b.type === 'cond_partner_lifted')
+      .map(b => [b.getFieldValue('LIFT'), b.getFieldValue('LEVEL'), b.getField('WITHIN').isVisible(),
+                 b.getField('DEG').isVisible()])"""
+    assert page.evaluate(lifted) == [[3, "TRUE", True, True], [1.5, "FALSE", False, False]]
+    page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).filter(b => b.type === 'cond_partner_lifted')[1]"
+                  ".setFieldValue('TRUE', 'LEVEL')")
+    assert page.evaluate(lifted)[1] == [1.5, "TRUE", True, True]
+    # picking a hinged element turns the unit to degrees
+    page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).find(b => b.type === 'cond_element')"
+                  ".setFieldValue('sally_port', 'ELEMENT')")
+    assert _units(page)[0] == ["sally_port", "°"]
+
+
+def test_the_new_checks_from_the_palette_save_as_the_test_file_reads_them(test_page, tmp_path):
+    from scrimmage.blocks.program import load
+    page, path = test_page(path=_defenses_test(tmp_path, '[setup]\npartner = { ahead_in = 80 }\n\n'
+                                                         '[[block]]\ndo = "wait"\nseconds = 0.2\n'))
+    page.wait_for_function("__scrimmageTest.state.palette.partner === true")
+    page.evaluate(BUILD_FROM_FLYOUT, [["expect", "cond_element"], ["expect", "cond_clears"],
+                                      ["expect", "cond_partner_lifted"], ["expect", "cond_partner_moved"]])
+    page.wait_for_function("__scrimmageTest.state.test.blocks.length === 5")
+    page.wait_for_function("document.querySelector('#test-saved').textContent === '✓ All changes saved'")
+    first = page.evaluate("__scrimmageTest.state.palette.moving_elements[0].name")
+    field = page.evaluate("__scrimmageTest.state.palette.elements[0]")
+    checks = [(b.args["that"].kind, b.args["that"].args) for b in load(path).blocks[1:]]
+    assert checks == [("element", {"element": first, "above": 10.0}),
+                      ("clears", {"element": field, "at_least_in": 2.0}),
+                      ("partner_lifted", {"at_least_in": 2.0, "level_within_deg": None}),
+                      ("partner_moved", {"at_least_in": 6.0})]
+    assert page.evaluate("__scrimmageTest.toJSON()") == page.evaluate("__scrimmageTest.state.test")
+
+
+def _partner_setup(path):
+    return _toml(path).get("setup", {}).get("partner")
+
+
+def test_setups_partner_robot_writes_and_clears_setup_partner(test_page, tmp_path):
+    page, path = test_page()
+    _open_setup(page)
+    assert not page.is_checked("#test-partner") and not page.is_visible("#test-partner-ahead")
+    assert "cond_partner_moved" not in _flyout_types(page)
+    page.check("#test-partner")
+    _wait_file(lambda: _partner_setup(path) == {"ahead_in": 60.0, "heading_deg": 0.0, "brake": True}, path)
+    page.wait_for_function("__scrimmageTest.state.palette.partner === true")
+    assert {"cond_partner_lifted", "cond_partner_moved"} <= set(_flyout_types(page))
+    page.fill("#test-partner-ahead", "72")
+    page.press("#test-partner-ahead", "Enter")
+    _wait_file(lambda: (_partner_setup(path) or {}).get("ahead_in") == 72, path)
+    assert page.eval_on_selector_all("#test-partner-facing option", "os => os.map(o => o.textContent)") == [
+        "the same way", "toward me", "sideways"]
+    page.select_option("#test-partner-facing", "180")
+    _wait_file(lambda: (_partner_setup(path) or {}).get("heading_deg") == 180, path)
+    page.uncheck("#test-partner-brake")
+    _wait_file(lambda: (_partner_setup(path) or {}).get("brake") is False, path)
+    assert _partner_setup(path) == {"ahead_in": 72.0, "heading_deg": 180.0, "brake": False}
+    page.uncheck("#test-partner")
+    _wait_file(lambda: "partner" not in _toml(path).get("setup", {}), path)
+    page.wait_for_function("__scrimmageTest.state.palette.partner === false")
+    assert "cond_partner_moved" not in _flyout_types(page)
+
+
+def test_setups_partner_robot_off_writes_false_over_the_configs_own(test_page, tmp_path):
+    page, path = test_page(path=_defenses_test(tmp_path, SPIN, field="\n[partner]\nstart = [5, 4, 0]\n"))
+    _open_setup(page)
+    assert page.is_checked("#test-partner")              # the robot config's own partner
+    page.uncheck("#test-partner")
+    _wait_file(lambda: _partner_setup(path) is False, path)
+    page.wait_for_function("__scrimmageTest.state.palette.partner === false")
+    page.check("#test-partner")
+    _wait_file(lambda: "partner" not in _toml(path).get("setup", {}), path)       # the config's own again
+
+
+CLEARS_PORTCULLIS = """
+[[block]]
+do = "wait"
+seconds = 0.2
+
+[[block]]
+do = "expect"
+that = { clears = { element = "portcullis", at_least_in = 1.0 } }
+"""
+
+
+def test_a_clears_run_shows_its_clearance_line_and_the_chart_offers_the_others(test_page, tmp_path):
+    page, path = test_page(path=_defenses_test(tmp_path, CLEARS_PORTCULLIS))
+    _run(page, "001")
+    res = _result(page, "001")
+    assert "portcullis: never within 20 in" in res["lines"], res["lines"]
+    assert "Portcullis: never within 20 in." in page.inner_text("#test-totals").split("\n")
+    measured = page.eval_on_selector_all("#test-signals [data-signal^='clearance.']", "bs => bs.map(b => b.dataset.signal)")
+    elements = page.evaluate("__scrimmageTest.state.palette.elements")
+    assert sorted(measured) == sorted(f"clearance.{e}" for e in elements)
+    # one the run didn't measure: picking it puts it in the test's chart, with the default signals, for the next run
+    sel = "#test-signals [data-signal='clearance.drawbridge']"
+    assert page.get_attribute(sel, "aria-pressed") == "false"
+    shown = page.evaluate("__scrimmageTest.replay.chart.signals")
+    page.click(sel)
+    _wait_file(lambda: "clearance.drawbridge" in _toml(path)["test"].get("chart", []), path)
+    assert _toml(path)["test"]["chart"] == [*shown, "clearance.drawbridge"]
+    page.wait_for_function(f"document.querySelector({sel!r}).getAttribute('aria-pressed') === 'true'")
+    page.click(sel)                                                  # and out again
+    _wait_file(lambda: _toml(path)["test"]["chart"] == shown, path)
+    page.click(sel)
+    _wait_file(lambda: "clearance.drawbridge" in _toml(path)["test"].get("chart", []), path)
+    page.wait_for_function("document.querySelector('#test-saved').textContent === '✓ All changes saved'")
+    _run(page, "002")
+    assert "clearance.drawbridge" in _result(page, "002")["signals"]
+    assert "clearance.drawbridge" in page.evaluate("__scrimmageTest.replay.chart.signals")
+    assert page.get_attribute(sel, "aria-pressed") == "true"

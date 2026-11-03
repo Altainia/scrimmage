@@ -433,7 +433,9 @@ class TestSession:
         if self._world is None:
             return None, [{"place": [], "message": self._robot_problem or "the robot isn't loaded"}]
         try:
-            return palette(self._world, list(self.program.hooks)), problems(self.program, self._world)
+            # the robot config's world, with the test's setup's partner (world_for builds a run's with it)
+            pal = palette(self._world, list(self.program.hooks), self.program.setup)
+            return pal, problems(self.program, self._world)
         except Exception as e:   # a robot the palette can't read must not take the Test tab down
             log.exception("test palette")
             return None, [{"place": [], "message": f"can't read the robot's motors and joints ({e})"}]

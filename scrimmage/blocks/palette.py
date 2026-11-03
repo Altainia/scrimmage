@@ -9,7 +9,8 @@ and how (`drive_kind`: a tank or swerve drive, as drive.py finds them) and the s
 (`seated.<rod>` for each rod, in inches, when a piece kind of the field has a hole; with cylinders, `air.psi` (the
 tanks), `air.working_psi` (the regulator's output) and each cylinder's `<name>.extension` in inches; and
 `element.<name>` for each of the field's hinged or sliding elements, `moving_elements`, in its unit; and with a
-partner robot, `partner: true`, `partner.height` and `partner.moved` in inches and `partner.tilt` in degrees). A
+partner robot, `partner: true`, `partner.height` and `partner.moved` in inches and `partner.tilt` in degrees: the
+world's own partner (`robot_partner`), unless the test's [setup] partner, given, says otherwise). A
 chart can also show `clearance.<element>` (in) for any of `elements`; it isn't in `signals`, as a run measures it
 only when the test names it (clearance.py).
 The field's pieces: `piece` (its default kind's preset), `kinds` (each kind's form, whether it is hollow or flat and the
@@ -161,7 +162,10 @@ def cylinders(world) -> list[dict]:
     return [{"name": n, "double": n in doubles} for n in sorted(world.pneumatics.names)]
 
 
-def palette(world, hooks: list[str]) -> dict:
+def palette(world, hooks: list[str], setup: dict | None = None) -> dict:
+    """The names and signals a test can use on `world`. `setup` (the test's [setup]) decides the partner robot when
+    it names one (a table: there is one; false: there is none), as world_for builds it: the Test tab's world is the
+    robot config's own, built without the test's setup."""
     m = world.model
     kinds = _joints(world)
     driven = driven_joints(world)
@@ -186,7 +190,8 @@ def palette(world, hooks: list[str]) -> dict:
         signals += ["air.psi", "air.working_psi", *(f"{c['name']}.extension" for c in cyls)]     # psi, psi, in
     moving = moving_units(rng.elements) if rng is not None else {}
     signals += [f"element.{n}" for n in moving]                    # deg (hinged) or in (sliding), 0 at rest
-    partner = getattr(world, "partner", None) is not None
+    robot_partner = getattr(world, "partner", None) is not None
+    partner = setup["partner"] is not False if setup and "partner" in setup else robot_partner
     if partner:
         signals += list(PARTNER_SIGNALS)                           # in, deg, in: from where it settled
     dt = drivetrain(world, driven)
@@ -203,6 +208,7 @@ def palette(world, hooks: list[str]) -> dict:
         "elements": elements,
         "moving_elements": [{"name": n, "unit": u} for n, u in moving.items()],     # hinged ("deg"), sliding ("in")
         "partner": partner,                 # a partner robot ([partner], or Setup's partner)
+        "robot_partner": robot_partner,     # the world's own partner: the Test tab's is the robot config's [partner]
         "goals": sorted(g.name for g in rng.goals) if rng is not None else [],
         "turrets": turrets(world),          # stock turrets' instances: each turns `<inst>.turn`
         "cylinders": cyls,                  # pneumatic cylinders: {name, double}
@@ -241,7 +247,7 @@ class _Names:
     """The names a test can use on this world, for checking."""
 
     def __init__(self, world, hooks: list[str], program=None):
-        p = palette(world, hooks)
+        p = palette(world, hooks, program.setup if program is not None else None)
         self.p = p
         self.joints = {j["name"]: j["kind"] for j in p["joints"]}
         self.motors = {j["name"] for j in p["motors"]}
