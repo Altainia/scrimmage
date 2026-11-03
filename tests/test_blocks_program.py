@@ -237,6 +237,7 @@ def test_old_test_files_load_unchanged():
      "36 placements; at most 25"),
     ("[setup]\nfloor_spread = { distance_in = [0] }", "more than 0"),
     ("[setup]\nfloor_spread = { offset_in = [] }", "list of numbers"),
+    ("[setup]\nfloor_spread = { tip_deg = [0, 95] }", "tip_deg must be from 0 to 90"),
     ("[setup]\nstation = { f = { interval = 0 } }", "more than 0"),
     ("[setup]\nstation = { f = { colour = 1 } }", "isn't something"),
     ("[setup]\nstation = { f = { spread_position = [1, 2] } }", "3 numbers"),

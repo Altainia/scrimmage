@@ -240,6 +240,15 @@ class Balls:
         piece's lowest point (as it lies: a floor piece's own turn, else its kind's default) plus FLOOR_DROP."""
         return float(self._rest[i])
 
+    def clearance(self, i: int) -> float:
+        """How far piece i's lowest point is above the carpet as it lies now: a ball's center less its radius, any
+        other piece's less how far below its center its lowest point is, turned as it is."""
+        z = float(self._qpos[i, 2])
+        kind = self.kinds.get(str(self.kind[i]))
+        if kind is None or kind.form == "ball":
+            return z - float(self._r[i])
+        return z - kind.lowest(self._qpos[i, 3:7])
+
     def rest_quat(self, i: int) -> list[float] | None:
         """Piece i's orientation set down on the carpet (w, x, y, z), None for a ball's or a flat disc's (unturned)."""
         return self._quat[i]

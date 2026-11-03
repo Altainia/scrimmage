@@ -32,8 +32,9 @@ ending is "<ending>; <counts>".
 
 A floor spread's placement (spread.py) moves the floor ball and turns the robot: after the reset the robot keeps its
 start position with its heading turned by `angle_deg`, and the spread's ball is put `distance_in` ahead along that
-heading and `offset_in` to its left, turned by `rotation_deg` about the vertical. It is tracked as "floor" from the
-first block on, so the run's counts and outcome include it.
+heading and `offset_in` to its left, turned by `rotation_deg` about the vertical (any piece but a ball from the
+robot's heading, its axis tipped up by `tip_deg`, at its own resting height: spread.rest_of). It is tracked as "floor"
+from the first block on, so the run's counts and outcome include it.
 
 A run ends with one status: "finished" (every block played), "check failed", "timed out" (a wait until, a move, a
 drive or a turn), "tipped over" (the robot body's up axis more than TIP_DEG from vertical), "walked off" (the climb
@@ -63,7 +64,7 @@ from .feeds import SETTLE_MAX_S, Outcomes, counts, is_standin, made_it_in, sente
 from .palette import ALL_MOTORS, ANY_HOOK, ANY_PIECE, NEXT_BAR, palette, problems
 from .program import (DRIVE_TIMEOUT, DRIVE_VOLTS, MOVE_TIMEOUT, REPEAT_MAX, WAIT_TIMEOUT, Program,
                       TestFileError)
-from .spread import NO_BALL, spread_ball, start_pose
+from .spread import NO_BALL, rest_of, spread_ball, start_pose
 
 MOTION_HZ = 30            # mover poses a second, for the replay
 SIGNAL_HZ = 50            # signal samples a second, for the chart
@@ -176,7 +177,8 @@ class TestRun:
     __test__ = False     # not a pytest class
 
     def __init__(self, world, program: Program, placement: dict | None = None):
-        """`placement`: a floor spread's {offset_in, distance_in, angle_deg, rotation_deg} (spread.placements)."""
+        """`placement`: a floor spread's {offset_in, distance_in, angle_deg, rotation_deg, tip_deg}
+        (spread.placements)."""
         check_problems(program, world)
         self.world, self.program = world, program
         m = world.model
@@ -324,11 +326,10 @@ class TestRun:
         w.set_robot_pose(x, y, heading)
         h = math.radians(heading)
         ahead, left = p["distance_in"] * IN, p["offset_in"] * IN
-        balls = w.test_range.balls
-        r = math.radians(p["rotation_deg"]) / 2.0
-        balls.put(self._floor[0], (x + ahead * math.cos(h) - left * math.sin(h),
-                                   y + ahead * math.sin(h) + left * math.cos(h), balls.rest_z),
-                  BALL_BITS, quat=(math.cos(r), 0.0, 0.0, math.sin(r)))
+        i = self._floor[0]
+        z, quat = rest_of(w, i, p, heading)          # a ball at its radius; a coral at its rest height for its tip
+        w.test_range.balls.put(i, (x + ahead * math.cos(h) - left * math.sin(h),
+                                   y + ahead * math.sin(h) + left * math.cos(h), z), BALL_BITS, quat=quat)
         mujoco.mj_forward(w.model, w.data)
 
     def _track(self, t: float) -> None:

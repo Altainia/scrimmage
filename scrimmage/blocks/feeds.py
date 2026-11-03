@@ -31,7 +31,7 @@ from ..testrange.balls import AT_REST_SPEED, BallState
 
 STUCK_S = 0.5           # s at rest on the robot to be stuck (the spec's number); also how long a piece rests to settle
 SETTLE_MAX_S = 3.0      # s the run keeps going after the blocks finish, for the pieces to settle (the spec's number)
-ON_FLOOR = 0.01         # m: a piece whose center is within this of resting on the carpet is on the floor
+ON_FLOOR = 0.01         # m: a piece whose lowest point is within this of the carpet is on the floor
 DROPPED_STEPS = 1       # steps a piece at rest keeps the body it rests on with no contact with it (our call)
 _OWN_GROUPS = ("Chassis", "Drivetrain")     # the stand-in's own parts: these families of stock parts
 
@@ -202,7 +202,7 @@ class Outcomes:
             return "missed", "", pc.t_gone
         if pc.rest < STUCK_S - 1e-9:
             return "missed", "still moving when the run ended", end
-        if float(self.balls.position(pc.ball)[2]) <= self.balls.rest_z + ON_FLOOR:
+        if self.balls.clearance(pc.ball) <= ON_FLOOR:
             return "missed", "on the floor", pc.rest_since
         return "missed", "", pc.rest_since
 

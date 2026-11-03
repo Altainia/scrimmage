@@ -648,11 +648,13 @@ async def test_spread(path: str) -> dict:
     """Run a block test once per placement of its floor spread (the test file's [setup] floor_spread, e.g.
     floor_spread = { offset_in = [-6, 0, 6], angle_deg = [0, 30] }: every combination, at most 25), to see which
     placements of the floor ball in front of the robot got it picked up (into a hopper body). The axes are offset_in
-    (left of the robot's center line +, right -), distance_in (ahead), angle_deg (the robot's approach angle) and
-    rotation_deg (the piece turned). Returns "sentence" ("picked up 7 of 9; missed at 6 in left at 30° and 6 in
-    right at 30°", to read to the room), "rows" (each placement's words, its four axes, status, "picked up" yes or
-    no, and outcome) and "spread_folder" (table.csv and spread.json, each run kept inside; the app's Test tab shows
-    them). path: an absolute path."""
+    (left of the robot's center line +, right -), distance_in (ahead), angle_deg (the robot's approach angle),
+    rotation_deg (the piece turned, from the robot's heading for a piece other than a ball) and tip_deg (0 to 90: a
+    coral's axis pitched up from lying; 90 stands it on end). Returns "sentence" ("picked up 7 of 9; missed at 6 in
+    left at 30° and 6 in right at 30°", or for a coral "picked up 2 of 3; missed standing on end", to read to the
+    room), "rows" (each placement's words, its five axes, status, "picked up" yes or no, and outcome) and
+    "spread_folder" (table.csv and spread.json, each run kept inside; the app's Test tab shows them). path: an
+    absolute path."""
     file = _test_file(path)
 
     def work():

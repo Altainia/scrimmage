@@ -345,6 +345,13 @@ class PieceKind:
              @ _to_x(self.axis))
         return _quat(m)
 
+    def turned_points(self, quat) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """The kind turned by `quat` (w x y z), about its center: its box corners and mesh vertices ((n, 3)), and its
+        spheres' centers ((m, 3)) and radii."""
+        m = _matrix(quat)
+        centers, radii = self._spheres
+        return self._points @ m.T, centers @ m.T, radii.copy()
+
     def reach(self, quat) -> float:
         """The largest horizontal distance of a point of the kind from its center, turned by `quat`."""
         m = _matrix(quat)

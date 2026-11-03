@@ -44,9 +44,49 @@ def test_placements_grid_order_and_defaults():
     ps = placements({"offset_in": [-6, 6], "angle_deg": [0, 30]}, {"offset_in": 0.0, "distance_in": 59.06})
     assert [(p["offset_in"], p["angle_deg"]) for p in ps] == [(-6, 0), (-6, 30), (6, 0), (6, 30)]
     assert all(p["distance_in"] == 59.06 and p["rotation_deg"] == 0 for p in ps)
-    assert all(list(p) == ["offset_in", "distance_in", "angle_deg", "rotation_deg"] for p in ps)
+    assert all(list(p) == ["offset_in", "distance_in", "angle_deg", "rotation_deg", "tip_deg"] for p in ps)
     (only,) = placements({"distance_in": [40]}, {"offset_in": 2.5, "distance_in": 59.06})
-    assert only == {"offset_in": 2.5, "distance_in": 40, "angle_deg": 0, "rotation_deg": 0}
+    assert only == {"offset_in": 2.5, "distance_in": 40, "angle_deg": 0, "rotation_deg": 0, "tip_deg": 0}
+
+
+def test_tip_is_a_spread_axis_and_old_spreads_keep_their_order():
+    base = {"offset_in": 0.0, "distance_in": 59.06}
+    ps = placements({"offset_in": [-6, 6], "rotation_deg": [0, 90]}, base)
+    assert all(p["tip_deg"] == 0 for p in ps)
+    assert [(p["offset_in"], p["rotation_deg"]) for p in ps] == [(-6, 0), (-6, 90), (6, 0), (6, 90)]
+    ps = placements({"tip_deg": [0, 90], "rotation_deg": [0, 45]}, base)
+    assert [(p["rotation_deg"], p["tip_deg"]) for p in ps] == [(0, 0), (0, 90), (45, 0), (45, 90)]   # tip last
+
+
+def test_a_floor_pieces_own_tip_and_turn_are_the_spreads_defaults():
+    """A coral the field has lying across stays lying across in a spread that names neither axis."""
+    (only,) = placements({"offset_in": [3]}, {"offset_in": 0.0, "distance_in": 40.0, "tip_deg": 0.0,
+                                                "rotation_deg": 90.0})
+    assert only["tip_deg"] == 0 and only["rotation_deg"] == 90
+    (only,) = placements({"tip_deg": [90]}, {"offset_in": 0.0, "distance_in": 40.0, "tip_deg": 0.0,
+                                               "rotation_deg": 90.0})
+    assert only["tip_deg"] == 90 and only["rotation_deg"] == 90
+
+
+def coral():
+    from scrimmage.testrange.pieces import parse_kind
+    return parse_kind(Path("coral.toml"), "coral", {"preset": "2025-coral"}, Path("."))
+
+
+def test_labels_for_a_coral():
+    c = coral()
+    p = {"offset_in": 6, "distance_in": 40, "angle_deg": 0, "rotation_deg": 0, "tip_deg": 0}
+    assert label({**p, "rotation_deg": 90, "tip_deg": 0}, ["rotation_deg", "tip_deg"], c) == "lying across"
+    assert label({**p, "tip_deg": 90}, ["tip_deg"], c) == "standing on end"
+    assert label({**p, "rotation_deg": 45}, ["offset_in", "rotation_deg"], c) == "6 in left lying at 45°"
+    assert label({**p, "rotation_deg": 45}, ["rotation_deg"], None) == "turned 45°"   # a ball: unchanged
+    assert label({**p, "offset_in": -6}, ["offset_in"], c) == "6 in right"            # no orientation varying
+
+
+def test_a_coral_sentence_drops_the_at():
+    labels = ["lying in line", "lying at 45°", "standing on end"]
+    assert sentence([True, True, False], labels, at=False) == "picked up 2 of 3; missed standing on end"
+    assert sentence([True, False], ["a", "b"]) == "picked up 1 of 2; missed at b"         # a ball's: unchanged
 
 
 def test_label():
@@ -57,7 +97,7 @@ def test_label():
     assert label(p, ["distance_in", "rotation_deg"]) == "40 in ahead turned 45°"
 
 
-def test_sentence():
+def test_sentence():  # a ball's
     assert sentence([True] * 9, ["x"] * 9) == "picked up 9 of 9"
     picked = [True, True, False, True, True, True, True, False, True]
     labels = [f"p{i}" for i in range(9)]
@@ -85,7 +125,7 @@ def test_the_robot_boxes_leave_the_worlds_own_data_alone():
 def test_a_placement_moves_the_ball_and_turns_the_robot(tmp_path):
     program = load(spread_test(tmp_path, "offset_in = [6]"))
     world = world_for(program)
-    p = {"offset_in": 6.0, "distance_in": 40.0, "angle_deg": 30.0, "rotation_deg": 45.0}
+    p = {"offset_in": 6.0, "distance_in": 40.0, "angle_deg": 30.0, "rotation_deg": 45.0, "tip_deg": 0.0}
     r = TestRun(world, program, placement=p).run()
     poses = r.motion[0][1]                                  # the first sample, after the settle
     ball = poses[r.movers.index("ball.0")]
@@ -110,8 +150,8 @@ def test_run_spread_keeps_a_spread_with_a_row_per_placement(tmp_path):
     assert len(rows) == 3 and meta["sentence"].startswith("picked up ")
     assert seen == [(1, 3), (2, 3), (3, 3)]
     assert folder.name.startswith("spread-") and store.list_spreads(base)[0]["id"] == folder.name
-    assert list(rows[0]) == ["placement", "offset_in", "distance_in", "angle_deg", "rotation_deg", "status",
-                             "picked up", "outcome"]
+    assert list(rows[0]) == ["placement", "offset_in", "distance_in", "angle_deg", "rotation_deg", "tip_deg",
+                             "status", "picked up", "outcome"]
     assert [r["placement"] for r in rows] == ["3 in right", "on the center line", "3 in left"]
     assert rows[1]["picked up"] == "yes" and rows[1]["distance_in"] == "59.06", rows[1]     # the table rounds
     assert meta["picked"][1] is True and meta["spread"] == {"offset_in": [-3.0, 0.0, 3.0]}
@@ -190,3 +230,84 @@ def test_the_intake_picks_up_a_ball_within_half_an_inch_of_its_place(tmp_path):
     rows = read_table(folder)
     assert len(rows) == 9 and all(r["picked up"] == "yes" for r in rows), rows
     assert json.loads((folder / "spread.json").read_text(encoding="utf-8"))["sentence"] == "picked up 9 of 9"
+
+
+CORAL_RANGE = """
+[range]
+name = "A coral to pick up"
+ball = "2026-fuel"
+
+[piece.coral]
+preset = "2025-coral"
+
+[[floor_balls]]
+at = [[3.5, 4.0]]
+kind = "coral"
+tip_deg = 0
+rotation_deg = 90
+
+[start.facing_ball]
+pose = [2.0, 4.0, 0.0]
+"""
+
+
+def coral_spread_test(folder: Path, spread: str = "") -> Path:
+    """spread_test's intake on a field with a coral lying across 1.5 m in front of the start, in place of the ball."""
+    path = spread_test(folder, spread)
+    (path.parent / "coral.toml").write_text(CORAL_RANGE, encoding="utf-8")
+    robot = path.parent / "intake-standin.toml"
+    robot.write_text(robot.read_text(encoding="utf-8").replace('file = "intake"', 'file = "coral.toml"'),
+                     encoding="utf-8")
+    return path
+
+
+def test_the_spread_piece_is_a_coral_with_its_own_tip_and_turn(tmp_path):
+    world = world_for(load(coral_spread_test(tmp_path, "tip_deg = [90]")))
+    i, where = spread_ball(world)
+    assert i == 0 and where == {"offset_in": 0.0, "distance_in": pytest.approx(1.5 / IN), "tip_deg": 0.0,
+                                "rotation_deg": 90.0}
+
+
+def test_a_placement_stands_a_coral_on_end(tmp_path):
+    program = load(coral_spread_test(tmp_path, "tip_deg = [90]"))
+    world = world_for(program)
+    kind = world.test_range.range.kinds["coral"]
+    p = {"offset_in": 0.0, "distance_in": 40.0, "angle_deg": 0.0, "rotation_deg": 0.0, "tip_deg": 90.0}
+    r = TestRun(world, program, placement=p).run()
+    pose = r.motion[0][1][r.movers.index("ball.0")]          # the first sample, after the settle
+    assert pose[:2] == pytest.approx([2.0 + 40 * IN, 4.0], abs=0.005)
+    from scrimmage.testrange.pieces import rotate
+    assert abs(rotate(pose[3:], kind.axis)[2]) == pytest.approx(1.0, abs=1e-3)       # its axis vertical
+    assert pose[2] == pytest.approx(kind.rest_height(kind.orient(90.0, 0.0)), abs=0.006)
+
+
+def test_a_coral_lying_in_line_is_turned_with_the_robot(tmp_path):
+    program = load(coral_spread_test(tmp_path, "angle_deg = [30]"))
+    world = world_for(program)
+    kind = world.test_range.range.kinds["coral"]
+    p = {"offset_in": 0.0, "distance_in": 40.0, "angle_deg": 30.0, "rotation_deg": 0.0, "tip_deg": 0.0}
+    r = TestRun(world, program, placement=p).run()
+    pose = r.motion[0][1][r.movers.index("ball.0")]
+    from scrimmage.testrange.pieces import rotate
+    axis = rotate(pose[3:], kind.axis)
+    assert abs(axis[2]) < 1e-2 and abs(math.degrees(math.atan2(axis[1], axis[0])) % 180 - 30) < 1.0
+
+
+def test_a_coral_lying_in_line_reaches_back_into_the_robot(tmp_path):
+    """30 in ahead, a coral lying across clears the intake's roller and hopper; lying in line, its end reaches back
+    into the hopper's floor, and the nearest distance offered counts its half length (0.15 m), not its radius."""
+    from scrimmage.blocks.spread import floor_ball, inside_robot
+    world = world_for(load(coral_spread_test(tmp_path, "tip_deg = [90]")))
+    assert floor_ball(world)["nearest_in"] == 36                                # lying across, as the field has it
+    assert inside_robot(world, {"distance_in": [30], "rotation_deg": [90]}) is None
+    why = inside_robot(world, {"distance_in": [30], "rotation_deg": [0]})
+    assert why == "the floor spread puts the coral inside the robot at 30 in ahead: start the distance at 39 in or more"
+
+
+def test_a_coral_spread_names_its_misses_by_how_they_lay(tmp_path):
+    folder = run_spread(load(coral_spread_test(tmp_path, "offset_in = [40]\ntip_deg = [0, 90]")), tmp_path / "runs")
+    meta = json.loads((folder / "spread.json").read_text(encoding="utf-8"))
+    assert meta["sentence"] == "picked up 0 of 2; missed lying across and standing on end", meta["sentence"]
+    assert [r["tip_deg"] for r in read_table(folder)] == ["0", "90"]
+    for k in (1, 2):                    # each missed lying on the floor, as it lay: its lowest point on the carpet
+        assert store.load_result(tmp_path / "runs", f"{folder.name}/{k:03d}")["feeds"][0]["why"] == "on the floor"

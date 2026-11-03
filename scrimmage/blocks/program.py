@@ -53,7 +53,7 @@ COND_KINDS = ("joint", "touch", "tilt", "piece_in", "hanging_from", "level", "in
               "made_it_in")
 DRIVE_DIRECTIONS = ("forward", "back", "left", "right")
 _OPPOSITE = {"back": "forward", "left": "right", "right": "left"}     # where a minus distance goes instead
-SPREAD_AXES = ("offset_in", "distance_in", "angle_deg", "rotation_deg")
+SPREAD_AXES = ("offset_in", "distance_in", "angle_deg", "rotation_deg", "tip_deg")
 SETUP_KEYS = ("ball", "seed", "station", "floor_spread")
 _STATION_LISTS = ("spread_position", "spread_rotation_deg")
 
@@ -374,6 +374,8 @@ def _floor_spread(spread: dict) -> dict:
         out[axis] = [_num(x, where, axis) for x in v]
         if axis == "distance_in" and min(out[axis]) <= 0:
             raise TestFileError(f"{where}: distance_in must be more than 0")
+        if axis == "tip_deg" and not 0 <= min(out[axis]) <= max(out[axis]) <= 90:
+            raise TestFileError(f"{where}: tip_deg must be from 0 to 90")
     return out
 
 

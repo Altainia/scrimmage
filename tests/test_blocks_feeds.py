@@ -358,7 +358,7 @@ def _tiny():
     v = np.zeros(3)
     balls = SimpleNamespace(state=np.array([BallState.FIELD], dtype=object), rest_z=0.05,
                             ball_of_geom=lambda g: of_geom[g], position=lambda i: d.qpos[q:q + 3],
-                            velocity=lambda i: v)
+                            velocity=lambda i: v, clearance=lambda i: float(d.qpos[q + 2]) - 0.05)
     world = SimpleNamespace(model=m, data=d, robot_body=m.body("robot").id, test_range=SimpleNamespace(balls=balls))
     out = Outcomes(world, SimpleNamespace(hopper_mask=lambda: np.zeros(1, bool)), standin=False)
     out.track(0, "feeder", 0.0)

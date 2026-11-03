@@ -170,6 +170,11 @@ refused with a message, since it can't be a real place. Press **Run the spread**
 per placement, "picked up" or not, and each run is kept (the last 3 spreads are kept, apart from sweeps); click a
 row to open its replay. It is saved in the test as `floor_spread = { offset_in = [-6, 0, 6] }` under `[setup]`.
 
+For a piece that isn't a ball, such as a coral, the test file takes a fifth axis, `tip_deg` (0 to 90): the piece's
+long axis pitched up from lying, so `tip_deg = [0, 45, 90]` tries it lying, leaning and standing on end. Its turn is
+then measured from the robot's heading, and an axis you leave out keeps how the field has the piece lying. The results
+name how it lay: "picked up 2 of 3; missed standing on end".
+
 **Misses near a mechanism's edge can be noise.** A ball just at the edge of what a mechanism catches can bounce out at
 scattered points, where moving the ball a tenth of a millimeter flips the result. If one placement misses and its
 neighbors don't, try the neighbors of a miss before trusting it. The intake example's README has the story (the "Why 6
