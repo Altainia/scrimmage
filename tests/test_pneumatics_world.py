@@ -69,8 +69,8 @@ def test_unbound_valve_warns():
     w = World(robot(), ROOT)
     run(w, hal(("Solenoid", "0,3", {"<output": True})), 1.0)
     assert w.pneumatics.extension("cyl") < 0.001
-    assert "cyl.valve has no device ID, so it won't move" in w.warnings
-    assert w.warnings.count("cyl.valve has no device ID, so it won't move") == 1
+    assert "cyl.valve has no device ID, so robot code can't move it (the Test tab's blocks still can)" in w.warnings
+    assert w.warnings.count("cyl.valve has no device ID, so robot code can't move it (the Test tab's blocks still can)") == 1
 
 
 def test_command_overrides_until_reset():

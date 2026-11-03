@@ -297,7 +297,7 @@ Robots with valves only on a PCM keep working with lockstep 0.6.0.
 
 | Message | What to do |
 |---|---|
-| `kicker.valve has no device ID, so it won't move` | Robot code can't reach a valve without an ID: give the slot one. Under the Test tab the valve needs none. |
+| `kicker.valve has no device ID, so robot code can't move it (the Test tab's blocks still can)` | Robot code can't reach a valve without an ID: give the slot one. Under the Test tab the valve needs none. |
 | `... is on a PCM and ... is on a PH: one robot's valves must all be on one kind of module` | Put every valve on PCMs, or every valve on Pneumatic Hubs. |
 | `...: both of the double solenoid's channels (4 and 5) are on, so the valve holds where it is; turn one off` | The robot code set both coils of a double solenoid. Set one. |
 | `... is on a REV Pneumatic Hub, which needs the lockstep extension` | Install it (`pip install ./lockstep`), and for RobotPy add `--scrimmage-lockstep` to the command. |

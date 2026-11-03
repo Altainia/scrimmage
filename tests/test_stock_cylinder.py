@@ -151,7 +151,7 @@ def test_valve_in_a_motor_slot():
 
 def test_unbound_valve_warns():
     built = assemble(free_robot(), ".")
-    assert "cyl.valve has no device ID, so it won't move" in built.warnings
+    assert "cyl.valve has no device ID, so robot code can't move it (the Test tab's blocks still can)" in built.warnings
     assert built.bindings["valve"] == []
 
 

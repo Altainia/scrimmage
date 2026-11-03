@@ -117,7 +117,7 @@ class PneumaticsRuntime:
     def _valve_state(self, name: str, hal: HalState, enabled: bool) -> str:
         v = self._valves.get(name)
         if v is None:
-            return "retract"            # no device ID: the assembler's warning says it won't move
+            return "retract"            # no device ID: the assembler's warning says robot code can't move it
         if v["module"] == "PH":
             mask = int(hal.get(PH_TYPE, str(v["id"]), "<solenoids", 0) or 0)
 

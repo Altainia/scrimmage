@@ -115,13 +115,13 @@ def slot_bindings(inst) -> tuple[dict[str, list[dict]], list[str]]:
     out: dict[str, list[dict]] = {"motor": [], "encoder": [], "gyro": [], "valve": []}
     warnings: list[str] = []
 
-    def missing(slot: str, verb: str) -> None:
-        warnings.append(f"{n}.{slot} has no device ID, so it won't {verb}")
+    def missing(slot: str, consequence: str) -> None:
+        warnings.append(f"{n}.{slot} has no device ID, so {consequence}")
 
     for s in part.motors:
         value = inst.ids.get(s.slot)
         if value is None:
-            missing(s.slot, "move")
+            missing(s.slot, "it won't move")
             continue
         values = value if isinstance(value, list) else [value]
         if isinstance(value, list) and len(value) != s.count:
@@ -136,7 +136,7 @@ def slot_bindings(inst) -> tuple[dict[str, list[dict]], list[str]]:
     for s in part.encoders:
         value = inst.ids.get(s.slot)
         if value is None:
-            missing(s.slot, "report")
+            missing(s.slot, "it won't report")
             continue
         cfg = _device("encoder", s.slot, value, where)
         cfg.update(name=f"{n}.{s.slot}", joint=f"{n}.{s.joint}", ratio=s.ratio,
@@ -145,7 +145,7 @@ def slot_bindings(inst) -> tuple[dict[str, list[dict]], list[str]]:
     for s in part.gyros:
         value = inst.ids.get(s.slot)
         if value is None:
-            missing(s.slot, "report")
+            missing(s.slot, "it won't report")
             continue
         cfg = _device("gyro", s.slot, value, where)
         cfg.update(name=f"{n}.{s.slot}", body=f"{n}.{s.body}")
@@ -153,7 +153,7 @@ def slot_bindings(inst) -> tuple[dict[str, list[dict]], list[str]]:
     if part.cylinders:
         value = inst.ids.get(VALVE_SLOT)
         if value is None:
-            missing(VALVE_SLOT, "move")
+            missing(VALVE_SLOT, "robot code can't move it (the Test tab's blocks still can)")
         else:
             out["valve"].append({"name": f"{n}.{VALVE_SLOT}", "cylinder": n,
                                  **_device("valve", VALVE_SLOT, value, where)})

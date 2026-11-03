@@ -64,7 +64,7 @@ Blockly (web app), pytest.
 ## Review Focus
 
 1. **An unbound valve in the robot code path.** The cylinder stays retracted (at a single solenoid's off state) and
-   there's one warning, `<inst>.valve has no device ID, so it won't move`. No crash. Test: Task 5.
+   there's one warning, `<inst>.valve has no device ID, so robot code can't move it (the Test tab's blocks still can)`. No crash. Test: Task 5.
 2. **Both coils of a double solenoid on.** The cylinder holds its last position, and one warning names the valve.
    Test: Task 5.
 3. **A push cylinder whose two pins can't move relative to each other** (no joint between the bodies). This is a
