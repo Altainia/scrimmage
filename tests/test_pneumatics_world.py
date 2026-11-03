@@ -3,6 +3,7 @@ compressor's current on the battery."""
 
 from __future__ import annotations
 
+import math
 import tomllib
 from pathlib import Path
 
@@ -149,6 +150,30 @@ def test_reset_restores_air():
     assert w.pneumatics.system.stored_psi < 120
     w.reset()
     assert w.pneumatics.system.stored_psi == pytest.approx(120)
+
+
+@pytest.mark.parametrize("output_after", [False, True])
+def test_reset_robot_refills_chambers(output_after):
+    """reset_robot() puts the rod back; the air is refilled for the new position, so there's no force spike."""
+    from scrimmage.pneumatics.model import PSI
+    w = World(robot("PCM:3"), ROOT)
+    rt = w.pneumatics
+    run(w, hal(("Solenoid", "0,3", {"<output": True})), 1.0)
+    assert rt.extension("cyl") >= 0.15
+    psi = rt.system.stored_psi
+    w.reset_robot()
+    assert rt.extension("cyl") < 0.001
+    assert rt.system.stored_psi == pytest.approx(psi)        # the tanks keep their air
+    spec = w.parts.cylinders[0]
+    stall = 1.05 * rt.system.config.working_psi * PSI * math.pi * spec.bore ** 2 / 4
+    act = w.model.actuator("cyl.cylinder").id
+    h = hal(("Solenoid", "0,3", {"<output": output_after}))
+    fresh = World(robot("PCM:3"), ROOT)       # the same 10 ms from a fresh start: how far the rod may go
+    for _ in range(10):
+        w.step(h)
+        fresh.step(h)
+        assert abs(float(w.data.ctrl[act])) <= stall
+        assert rt.extension("cyl") <= fresh.pneumatics.extension("cyl") + 0.001
 
 
 def test_no_cylinders_no_runtime():

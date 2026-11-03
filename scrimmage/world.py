@@ -203,6 +203,8 @@ class World:
         self._apply_start_pose()
         if self.test_range is not None:
             self.test_range.reset_robot()
+        if self.pneumatics is not None:
+            self.pneumatics.reprime()     # the rods moved: refill the chambers for where they are now
         mujoco.mj_forward(m, d)
         if self.terrain is not None:
             self.terrain.reset()

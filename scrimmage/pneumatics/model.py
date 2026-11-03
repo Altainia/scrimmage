@@ -184,6 +184,12 @@ class AirSystem:
     def _mass_at(p_abs: float, volume: float) -> float:
         return p_abs * volume / (R_AIR * T_AIR)
 
+    def reprime(self):
+        """Refill every chamber for wherever the rods are at the next step, as the first step does (the "retract"
+        start state), keeping the tanks' air. For a robot whose joints were put back without a full reset: the old
+        masses squeezed into the new volumes would push far past the regulator."""
+        self._primed = False
+
     def set_valve(self, name: str, state: str):
         if name not in self._specs:
             raise ValueError(f"No cylinder named {name!r}; the cylinders are {', '.join(self._specs) or 'none'}.")

@@ -64,6 +64,11 @@ class PneumaticsRuntime:
         self.system.reset()
         self._overrides.clear()
 
+    def reprime(self) -> None:
+        """The cylinders were moved back without a full reset (World.reset_robot): refill their chambers for where
+        they are now, keeping the tanks' air and the Test tab's overrides."""
+        self.system.reprime()
+
     def extension(self, name: str) -> float:
         """How far the cylinder's rod is out, in m (0 to its stroke)."""
         spec = self._specs[name]
