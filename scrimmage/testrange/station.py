@@ -141,17 +141,30 @@ class Station:
                 for turn in across(self.turn_deg, self.spread_turn_deg)]
         return [_rpy(r) @ m for r in rpys for m in base]
 
+    def to_floor(self) -> np.ndarray:
+        """The rotation that turns the chute floor's upward normal to +z: about z by -heading, then y by -slope."""
+        from .pieces import _axis_angle
+
+        return (_axis_angle((0, 1, 0), -math.radians(self.chute.slope_deg))
+                @ _axis_angle((0, 0, 1), -math.radians(self.heading_deg)))
+
     def clearance(self, kind: PieceKind) -> float:
         """How far the chute floor's top lies below the release point, at right angles to the floor: a ball's
-        radius; for a rigid piece, the furthest it reaches toward the floor at any of its `fed_rotations`."""
-        if kind.ball is not None:
-            return kind.ball.diameter / 2.0
-        from .pieces import _axis_angle, _quat
+        radius; for a rigid piece, the furthest it reaches toward the floor at any of its `fed_rotations`. Either
+        way, plus the furthest the position spread moves the release point toward the floor. Kept on the kind per
+        station (a sweep asks again and again)."""
+        cache = kind.__dict__.setdefault("_station_clearance", {})
+        if self not in cache:
+            to_floor = self.to_floor()
+            toward = float(np.abs(to_floor[2] * np.array(self.spread_position)).sum())
+            if kind.ball is not None:
+                reach = kind.ball.diameter / 2.0
+            else:
+                from .pieces import _quat
 
-        # turned so that the floor's normal is up: about z by -heading, then about y by -slope
-        to_floor = (_axis_angle((0, 1, 0), -math.radians(self.chute.slope_deg))
-                    @ _axis_angle((0, 0, 1), -math.radians(self.heading_deg)))
-        return max(kind.lowest(_quat(to_floor @ m)) for m in self.fed_rotations(kind))
+                reach = max(kind.lowest(_quat(to_floor @ m)) for m in self.fed_rotations(kind))
+            cache[self] = reach + toward if toward else reach
+        return cache[self]
 
     def chute_top(self, kind: PieceKind) -> float:
         """The height of the chute floor's top face under the release point: tangent to the piece resting there."""

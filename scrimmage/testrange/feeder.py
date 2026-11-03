@@ -10,6 +10,8 @@ station's spreads, drawn uniformly from -1 to 1:
 - direction: Station.direction(heading_deg + U * spread_yaw_deg, pitch_deg + U * spread_pitch_deg);
 - turn: roll, pitch and yaw of U * spread_rotation_deg (it does nothing to a ball); a rigid piece is first laid at
   PieceKind.orient(tip_deg + U * spread_tip_deg, heading_deg + turn_deg + U * spread_turn_deg). No spin.
+- a rigid piece fed into a chute is then lowered straight down until it is FLOOR_GAP clear of the floor (the floor
+  is set for the lowest any feed may reach, so the others would drop onto it); a ball is released where it is drawn.
 
 The draws come from numpy.random.default_rng([seed, k]) for station k, nine per feed in a fixed order (yaw, pitch,
 speed, dx, dy, dz, roll, pitch, yaw) and, for a rigid piece, two more (tip, turn), so a seed gives the same feeds
@@ -31,11 +33,13 @@ import numpy as np
 
 from .balls import Balls
 from .build import BALL_BITS, RangeLayout, _quat, _rpy
-from .pieces import _matrix
+from .pieces import _matrix, _quat as _piece_quat
 from .spec import Range
 from .station import DEFAULT_SEED, check_seed
 
 EPS = 1e-6      # s: a feed due within this of now is due now (the step clock's rounding)
+FLOOR_GAP = 0.001   # m: a rigid piece fed into a chute is set down this far clear of its floor (estimate: clear of
+                    # contact, a drop too short to bounce)
 
 
 @dataclass
@@ -53,6 +57,10 @@ class Feeder:
         self.balls, self.layout = balls, layout
         self.stations = rng.stations
         self._kinds = [st.kind_of(rng) for st in self.stations]
+        # per station with a chute: its floor's turn (normal to +z), upward normal and a point on its top plane
+        self._floors = [None if st.chute is None else
+                        (st.to_floor(), st.to_floor()[2], np.array([*st.release[:2], st.chute_top(kind)]))
+                        for st, kind in zip(self.stations, self._kinds)]
         self._k = {st.name: k for k, st in enumerate(self.stations)}
         self.seed = seed
         self.fed: list[Fed] = []
@@ -117,6 +125,8 @@ class Feeder:
                 tip, about = self._gen[k].uniform(-1.0, 1.0, 2).tolist()
                 turn = turn @ _matrix(kind.orient(st.tip_deg + tip * st.spread_tip_deg,
                                                   st.heading_deg + st.turn_deg + about * st.spread_turn_deg))
+                if self._floors[k] is not None:
+                    pos = self._set_down(pos, turn, kind, *self._floors[k], st.chute.slope_deg)
             self.balls.place(i, pos, v, (0.0, 0.0, 0.0), BALL_BITS, quat=_quat(turn))
             self._next[k] += 1
             self._last[k] = t
@@ -126,6 +136,15 @@ class Feeder:
             self.fed.append(fed)
             out.append(fed)
         return out
+
+    @staticmethod
+    def _set_down(pos, turn, kind, to_floor, normal, on_floor, slope_deg: float) -> np.ndarray:
+        """`pos` lowered straight down until the piece, turned by `turn`, is FLOOR_GAP clear of the chute floor (the
+        floor sits at the lowest any feed may reach, so most feeds would otherwise fall onto it); never raised."""
+        above = float((pos - on_floor) @ normal) - kind.lowest(_piece_quat(to_floor @ turn)) - FLOOR_GAP
+        if above <= 0.0:
+            return pos
+        return pos - np.array([0.0, 0.0, above / math.cos(math.radians(slope_deg))])
 
     def _blocked(self, k: int) -> bool:
         b = self.balls

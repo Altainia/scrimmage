@@ -746,3 +746,33 @@ def test_station_tip_and_turn_overrides():
         with_overrides(rng, {"feeder": {"tip_deg": 100}})
     with pytest.raises(RangeError, match="spread_turn_deg must be 0 or more"):
         with_overrides(rng, {"feeder": {"spread_turn_deg": -1}})
+
+
+def test_spread_corals_all_slide_out_and_the_stock_is_fed(tmp_path):
+    """Ruling P16: each feed is set down just clear of the floor at its own drawn tip and turn, so none drops onto
+    the floor (lowered for the worst tip) and wedges under the release point. The corals pile up past the low end:
+    one may come to rest leaning on another."""
+    w = coral_station_world(tmp_path, "spread_tip_deg = 20\nspread_turn_deg = 20\nstock = 4")
+    st = w.test_range.range.stations[0]
+    chute_low_end_x = st.release[0] + st.chute.length * math.cos(math.radians(st.chute.slope_deg))
+    w.test_range.feeder.start("feeder")
+    advance(w, 12.0)
+    assert w.test_range.feeder.empty("feeder") and len(w.test_range.feeder.fed) == 4
+    b = w.test_range.balls
+    for f in w.test_range.feeder.fed:
+        assert f.release[2] <= st.release[2]
+        x, _, z = b.positions()[f.ball]
+        assert x > chute_low_end_x and z < 0.2 and b.at_rest()[f.ball]     # on the carpet, or leaning on a coral
+
+
+def test_a_position_spread_lowers_the_chute_by_its_reach_toward_the_floor(tmp_path):
+    chute = "chute = { length = 0.5, slope_deg = 30.0 }\n"
+    st = parse(tmp_path, CORAL_HEAD + CORAL_FEEDER + chute).stations[0]
+    spread = parse(tmp_path, CORAL_HEAD + CORAL_FEEDER + chute + "spread_position = [0.01, 0.05, 0.02]\n").stations[0]
+    coral = parse(tmp_path, CORAL_HEAD + CORAL_FEEDER + chute).kinds["coral"]
+    s = math.radians(30.0)
+    # dx up the slope and dz down both move the release toward the floor; dy runs along it
+    assert spread.clearance(coral) - st.clearance(coral) == pytest.approx(0.01 * math.sin(s) + 0.02 * math.cos(s))
+    assert spread.clearance(coral) is spread.clearance(coral)          # kept, not worked out again
+    ball = parse(tmp_path, HEAD + FEEDER + chute + "spread_position = [0, 0, 0.02]\n")
+    assert ball.stations[0].clearance(fuel()) == pytest.approx(0.1501 / 2 + 0.02 * math.cos(s))
