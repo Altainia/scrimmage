@@ -140,6 +140,20 @@ def test_off_on_a_single_solenoid_retracts(tmp_path):
     assert max(result.signals["cyl.extension"]) > 5.75
 
 
+def test_off_on_an_inverted_single_solenoid_extends(tmp_path):
+    """Off is the valve's spring position, as in robot code and on the robot: an inverted single solenoid's spring
+    extends the cylinder."""
+    p = _program(tmp_path, _set("retract") + _wait(1.0)
+                 + '[[block]]\ndo = "expect"\nthat = ' + _cyl("retracted") + "\n"
+                 + _set("off") + _wait(1.0)
+                 + '[[block]]\ndo = "expect"\nthat = ' + _cyl("extended") + "\n",
+                 cylinder='ids = { valve = { pcm = 0, channel = 3, invert = true } }\n')
+    world = world_for(p)
+    assert palette(world, [])["cylinders"] == [{"name": "cyl", "double": False}]
+    result = TestRun(world, p).run()
+    assert result.passed, result.outcome
+
+
 def test_off_on_a_double_solenoid_holds(tmp_path):
     p = _program(tmp_path, _set("extend") + _wait(1.0) + _set("off") + _wait(1.0)
                  + '[[block]]\ndo = "expect"\nthat = ' + _cyl("extended") + "\n",

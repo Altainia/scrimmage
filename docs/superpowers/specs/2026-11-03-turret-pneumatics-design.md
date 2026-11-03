@@ -172,8 +172,8 @@ friction**.
     at the start that is retracted.
   - **Both coils on:** holds the last position, with a warning.
   - **`invert = true`:** swaps extend and retract.
-  - **Test tab:** the *set* block's "off" means "retract" on a single solenoid, and on a double solenoid "leave it
-    where it is".
+  - **Test tab:** the *set* block's "off" is the valve's spring position: "retract" on a single solenoid ("extend"
+    when it is inverted), and on a double solenoid "leave it where it is".
 - **C10 Device IDs:**
   - `"PCM:3"` and `"PCM:3,4"`: module 0, single and double (forward, reverse).
   - `"PH:3"` and `"PH:3,4"`: REV PH module 1, single and double.
@@ -290,8 +290,11 @@ if it is wrong.
 **The Test tab**
 - **The air line names the working pressure.** The run's `air` carries `working_psi`, so the warning says the robot's
   own working pressure. If wrong: nothing.
-- **"off" on an inverted single solenoid retracts.** C9's "off" is about the cylinder, not the coil, and the docs say
-  so. If wrong: a surprise for a student who thinks of "off" as the coil off on an inverted valve.
+- **"off" on an inverted single solenoid extends** (reversed in the final review; Task 9 ruled it retracts). "Off"
+  is the valve's spring position, as robot code (`set(false)`) and the hardware give: an inverted single solenoid's
+  spring extends the cylinder. Why reversed: an "off" that retracted would disagree with what the same robot does
+  disabled or under its own code, so a test that passes in the Test tab could describe a robot that doesn't exist.
+  If wrong: a surprise for a student who thinks of "off" as "retract".
 
 **Examples**
 - **A 3/4 in bore for the pneumatic arm**, not the plan's 2 in. Why: a 2 in bore spends the tanks in about one cycle

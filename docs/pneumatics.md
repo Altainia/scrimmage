@@ -79,8 +79,9 @@ fills one side of the cylinder while it lets the other side out (valve makers ca
 - A **double solenoid** has two coils: forward extends and reverse retracts. With both off it stays where it was (it
   is detented), and at the start that is retracted. With both on it also stays where it was, with a warning.
 - `invert = true` in a valve's ID table swaps extend and retract (for a cylinder plumbed the other way round).
-- A disabled robot's solenoids are off, as on a real robot: a single solenoid's cylinder retracts, and a double
-  solenoid's stays where it was.
+- A disabled robot's solenoids are off, as on a real robot: a single solenoid's cylinder retracts (extends, when the
+  valve is inverted), and a double solenoid's stays where it was. The Test tab's **set** *cylinder* **to off** does
+  the same.
 
 **Dead volume.** Each port of a cylinder has a little air that the piston never sweeps: the port itself, its fitting,
 and the tube back to the valve. Scrimmage counts 5 cm³ at each port (about 0.3 m of 5/32 in inside-diameter tube plus

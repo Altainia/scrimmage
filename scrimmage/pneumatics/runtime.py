@@ -67,6 +67,14 @@ class PneumaticsRuntime:
         self.system.set_valve(name, state)      # checks the name and the state
         self._overrides[name] = state
 
+    def spring_state(self, name: str) -> str:
+        """The valve's state with its coils off: a double solenoid's detent holds; a single solenoid's spring
+        retracts, or extends when the valve is inverted. One with no device ID counts as a single, not inverted."""
+        v = self._valves.get(name)
+        if v is not None and v["reverse"] is not None:
+            return "hold"
+        return "extend" if v is not None and v["invert"] else "retract"
+
     def reset(self) -> None:
         self.system.reset()
         self._overrides.clear()

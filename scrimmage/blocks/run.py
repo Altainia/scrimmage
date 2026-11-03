@@ -62,8 +62,9 @@ test's first aim's or aimed condition's before. A failed `aimed` check whose goa
 
 Pneumatics: `set_cylinder` takes no time. It sets the cylinder's valve through the air system
 (PneumaticsRuntime.command, plan decision D3: no device ID needed) to extend or retract until a later set_cylinder on
-it; "off" retracts a single solenoid's cylinder (one with no device ID counts as single) and leaves a double
-solenoid's where it is (spec C9).
+it; "off" is the valve's spring position, as with the coils off in robot code: a single solenoid's spring
+retracts the cylinder (extends it when the valve is inverted; one with no device ID counts as single, not inverted)
+and a double solenoid's stays where it is (spec C9).
 The compressor runs throughout a run, as if the robot code's closed loop were on (C11): the pressure switch still
 starts and stops it. A robot with cylinders has the signals `air.psi` (the tanks), `air.working_psi` (the regulator's
 output) and each cylinder's `<name>.extension` (in), and the run's `air`: the tanks' pressure at the start and end,
@@ -684,8 +685,8 @@ class TestRun:
             return True
         if b.do == "set_cylinder":
             to = a["to"]
-            if to == "off":         # C9: a single solenoid's spring retracts it; a double's detent holds it
-                to = "hold" if self._double[a["cylinder"]] else "retract"
+            if to == "off":         # C9: the valve's spring position (an inverted single's extends)
+                to = self.world.pneumatics.spring_state(a["cylinder"])
             self.world.pneumatics.command(a["cylinder"], to)
             return True
         if b.do == "spin":

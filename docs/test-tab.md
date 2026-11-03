@@ -408,9 +408,9 @@ air system, and these blocks work it with no robot code.
 - **set** *cylinder* **to extend** pushes the rod out, and **to retract** pulls it in. It takes no time: the valve
   switches and the next block starts at once, while the rod moves. Follow it with **wait until** *cylinder* **is
   extended** to wait for the rod.
-- **set** *cylinder* **to off** is about the cylinder: on a single solenoid (or a valve with no device ID) the spring
-  retracts it, and on a double solenoid it stays where it is. On a single solenoid with `invert = true`, "off" still
-  retracts the cylinder.
+- **set** *cylinder* **to off** turns the valve's coils off, as robot code does: on a single solenoid (or a valve with
+  no device ID) the spring retracts the cylinder, and on a double solenoid it stays where it is. On a single solenoid
+  with `invert = true` the spring extends it, as it would on the robot.
 - *cylinder* **is extended** (or **retracted**) is true when the rod is within 0.25 in of that end of its stroke.
 - *stored or working* **air pressure above / below** *n* **psi** reads the tanks (stored) or the regulator's output
   (working). It is strict: at exactly 120 psi the air is not above 120.
