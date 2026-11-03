@@ -440,8 +440,8 @@ Test (`/api/test/*`; 404 "no test is open" unless a test is open, except /api/te
         the robot is built again; {ok, version}. 400 (nothing written) for a grip parts/grip.py refuses, a stock
         part, a body the part doesn't have or that touches nothing, or one the robot config's own [[part]] grip sets;
         409 while a run, sweep or spread goes.
-  GET  /api/test/run/<id>          -> (<id>: "004", "sweep-002/003", "spread-001/002") result.json's fields plus id
-        and signals; /view -> view.json; /motion -> motion.bin (application/octet-stream); 404 for a run that isn't
+  GET  /api/test/run/<id>          -> (<id>: "004", "sweep-002/003", "spread-001/002") result.json's fields plus id,
+        signals and lines (the goal and air sentences `scrimmage test` prints); /view -> view.json; /motion -> motion.bin (application/octet-stream); 404 for a run that isn't
         kept.
   POST /api/test/new               -> body {robot?, from_part?} (default: the open robot): writes <robot
         stem>.test.toml next to it (<stem>-2.test.toml ... when taken) and opens it as /api/app/open does. Its

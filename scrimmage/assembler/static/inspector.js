@@ -304,6 +304,11 @@ function paramField(n, p, value) {
     const inp = markDirty(h("input", { id, value: cur ?? "", dataset: { key: `param:${p.name}` } }));
     onCommit(inp, () => { clean(inp); send(inp.value === "" ? null : inp.value); });
     control = withUnit(inp);
+  } else if (p.kind === "text") {   // free text, empty allowed (a cylinder's push): the default when it matches it
+    const inp = markDirty(h("input", { id, type: "text", value: cur ?? "", autocomplete: "off", spellcheck: "false",
+      dataset: { key: `param:${p.name}` } }));
+    onCommit(inp, () => { clean(inp); send(inp.value === p.default ? null : inp.value); });
+    control = withUnit(inp);
   } else if (p.kind === "ratio") {
     const custom = typeof cur === "number";
     const sel = h("select", { id, dataset: { key: `param:${p.name}` } },

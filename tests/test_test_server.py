@@ -1025,3 +1025,50 @@ def test_a_config_grip_isnt_a_robot_tab_parameter(test_app, tmp_path):
     s, rs = c.get("/api/robot/state")
     grabber = next(p for p in rs["parts"] if p["name"] == "grabber")
     assert "grip" not in grabber["params"], grabber
+
+
+PUSH_CYLINDER = ARM + """
+[[part]]
+name = "cyl"
+stock = "cylinder"
+attach = "drive.top"
+pos = [0.0, 0.0, -0.1]
+push = "arm.arm"
+push_pos = [0.2, 0.0, 0.0]
+"""
+EXTEND = """
+[[block]]
+do = "set_cylinder"
+cylinder = "cyl"
+to = "extend"
+
+[[block]]
+do = "wait"
+seconds = 0.3
+"""
+
+
+def test_a_push_cylinders_run_keeps_its_pins_in_the_view_and_says_how_the_air_went(tmp_path, test_app):
+    """The replay's view lists each cylinder (its pins as [mover, pos in the mover's frame], bore, rod, retracted
+    length and stroke), and the run's result has the air line the CLI prints (run.py air_lines)."""
+    (tmp_path / "robot.toml").write_text(new_config("standin") + PUSH_CYLINDER, encoding="utf-8")
+    t = tmp_path / "t.test.toml"
+    t.write_text(f'[test]\nrobot = "robot.toml"\n{EXTEND}', encoding="utf-8")
+    c = test_app(t)
+    assert _state(c)["palette"]["cylinders"] == [{"name": "cyl", "double": False}]
+    s, b = c.call("POST", "/api/test/run", {})
+    assert s == 200, b
+    [run] = _wait_idle(c)["runs"]
+    assert run["status"] == "finished", run
+    s, view = c.get(f"/api/test/run/{run['id']}/view")
+    assert s == 200
+    [cyl] = view["cylinders"]
+    movers = [m["name"] for m in view["movers"]]
+    assert movers[cyl["a"][0]] == "cyl.barrel" and cyl["a"][1] == pytest.approx([0, 0, 0])
+    assert movers[cyl["b"][0]] == "arm.arm" and cyl["b"][1] == pytest.approx([0.2, 0, 0])
+    assert cyl["name"] == "cyl" and cyl["bore"] == pytest.approx(0.0269875) and cyl["rod"] == pytest.approx(0.0079375)
+    assert cyl["stroke"] == pytest.approx(0.1524) and 0 < cyl["retracted"] < 1
+    s, res = c.get(f"/api/test/run/{run['id']}")
+    assert s == 200
+    assert res["air"]["start_psi"] == pytest.approx(120.0)
+    assert res["lines"] and res["lines"][0].startswith("air: 120 psi at the start, ")

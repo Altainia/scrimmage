@@ -678,6 +678,38 @@ def test_scenario_run_is_refused_while_the_file_has_errors(scenario_page):
     assert "Fix the error" in page.inner_text("#run-why")
 
 
+def test_a_text_parameter_is_a_text_box_that_may_be_left_empty(make_page, tmp_path):
+    """A stock part's free-text parameter (the cylinder's push) takes any text, and an empty box is its default."""
+    from scrimmage.assembler.templates import new_config
+    (tmp_path / "robot.toml").write_text(new_config("standin") + """
+[[part]]
+name = "arm"
+stock = "arm"
+attach = "drive.top"
+
+[[part]]
+name = "cyl"
+stock = "cylinder"
+attach = "drive.top"
+pos = [0.0, 0.0, -0.1]
+""", encoding="utf-8")
+    page, cfg = make_page(None)
+    page.evaluate("__scrimmage.select('cyl')")
+    page.wait_for_selector("#insp-p-push")
+    box = page.locator("#insp-p-push")
+    assert box.get_attribute("type") == "text" and box.get_attribute("inputmode") is None
+    assert box.input_value() == ""
+    page.fill("#insp-p-push", "arm.arm")
+    page.keyboard.press("Enter")
+    page.wait_for_function("__scrimmage.state.parts.find(p => p.name === 'cyl').params.push === 'arm.arm'")
+    assert 'push = "arm.arm"' in cfg.read_text()
+    assert not page.locator('[data-field="cyl/param:push"] .error').count()
+    page.fill("#insp-p-push", "")
+    page.keyboard.press("Enter")
+    page.wait_for_function("!('push' in __scrimmage.state.parts.find(p => p.name === 'cyl').params)")
+    assert "push =" not in cfg.read_text()
+
+
 def test_rev_short_form_is_kept_as_a_string_in_the_inspector(make_page):
     page, cfg = make_page(None, "--new", "swerve-rev")
     page.evaluate("__scrimmage.select('fr')")   # its encoder is a plain short form (no offset)

@@ -79,10 +79,29 @@ def model_view(world, include_world: bool = False) -> dict:
     out = {"instances": [i.name for i in instances], "geoms": geoms, "meshes": meshes,
            "mounts": mounts, "floor": floor, "movers": [{"kind": mv.kind, "name": mv.name} for mv in ms],
            "root_mover": body_mover.get(world.robot_body, -1),   # the robot body's index in `movers` (-1: not a mover)
-           "com": [float(v) for v in d.subtree_com[world.robot_body]]}   # the robot's CG in the world (the CG marker)
+           "com": [float(v) for v in d.subtree_com[world.robot_body]],   # the robot's CG in the world (the CG marker)
+           "cylinders": _cylinders(world, d, body_mover)}
     if include_world:
         out["world_geoms"] = _world_geoms(world, d, root, ms, meshes, remap)
         out["movable"] = world.movable_objects()
+    return out
+
+
+def _cylinders(world, d, body_mover: dict[int, int]) -> list[dict]:
+    """Each pneumatic cylinder (parts/assemble.py Built.cylinders) for the live view to draw between its pins:
+    {name, a, b, bore, rod, retracted, stroke}, sizes in m. A pin is [mover, pos]: pos in that mover's frame, as a
+    geom's lpos; or, on a body that never moves (mover -1), its fixed world position."""
+    m = world.model
+    out = []
+    for cy in (world.parts.cylinders if world.parts is not None else []):
+        pins = []
+        for key in ("pin_a", "pin_b"):
+            site = m.site(f"{cy.name}.{key}").id
+            mover = body_mover.get(int(m.site_bodyid[site]), -1)
+            pos = m.site_pos[site] if mover >= 0 else d.site_xpos[site]
+            pins.append([mover, [float(v) for v in pos]])
+        out.append({"name": cy.name, "a": pins[0], "b": pins[1], "bore": cy.bore, "rod": cy.rod,
+                    "retracted": float(cy.length), "stroke": cy.stroke})
     return out
 
 

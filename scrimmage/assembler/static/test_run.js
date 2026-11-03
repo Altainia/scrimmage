@@ -7,10 +7,11 @@
 //             feeds and counts), "Fed pieces: 17 in · 1 stuck · 2 missed" ("17 in · 2 placed · …" when pieces
 //             were placed on the field; no "0 in" when the test names no hopper) and a "Show the stuck piece"
 //             button for each stuck one; for a run with a piece on a rod at the end, its depth in words ("seated
-//             3.5 in of 4.0 in on branch_l2"); and the run's notes (what its numbers rest on: an UNCALIBRATED
-//             grip) as a list
-//   Replay    live3d.js's LiveView draws the view; motion.bin's frames move it. Play / Pause, speed (¼× to 2×), a
-//             scrubber with the time, and under it a mark per fed piece at its feed time, its shape and color its
+//             3.5 in of 4.0 in on branch_l2"); the goal counts and how the air went, as `scrimmage test` prints
+//             them (the result's lines: "Scored 5 in hub_blue.", "Air: 120 psi at the start, …"); and the run's
+//             notes (what its numbers rest on: an UNCALIBRATED grip) as a list
+//   Replay    live3d.js's LiveView draws the view (a cylinder between its pins); motion.bin's frames move it. Play /
+//             Pause, speed (¼× to 2×), a scrubber with the time, and under it a mark per fed piece at its feed time, its shape and color its
 //             outcome (in: filled; placed on the field: a square; stuck: a diamond, the warning color; missed:
 //             hollow). A click on a mark or a stuck
 //             button moves the replay to when that piece's outcome was settled and outlines the piece. Under
@@ -30,7 +31,8 @@
 //             click on a row shows that placement's run
 //
 // When a new run is kept (a run ends), it is shown. Test hook: window.__scrimmageTest.replay (test.js) is replay():
-// {time, playing, runId, view (the LiveView or null), chart: {signals, runs: [shown, compared or null]}, feeds (the
+// {time, playing, runId, view (the LiveView or null), cylinders (LiveView.cylinderShapes(): [{name, barrel, rod}]
+// drawn lengths in m, or null), chart: {signals, runs: [shown, compared or null]}, feeds (the
 // shown run's), marks (the shown run's), outlined (the ball index of the piece outlined, or null), feedColors: {in,
 // placed, stuck, missed, bg}, markColors: {slip, bg}},
 // window.__scrimmageTest.sweep is sweepShown(): {id, rows, y, points: [[value, y], ...]} or null, and
@@ -84,6 +86,7 @@ const start = () => (rp.run && rp.run.motion.times.length ? rp.run.motion.times[
 export function replay() {
   return {
     time: rp.time, playing: rp.playing, runId: rp.run ? rp.run.id : null, view: rp.view,
+    cylinders: rp.view ? rp.view.cylinderShapes() : null,
     chart: { signals: rp.run ? shownSignals() : [], runs: [rp.run ? rp.run.id : null, rp.compare ? rp.compare.id : null],
       colors: (({ run, compare, bg }) => ({ run, compare, bg }))(tokens()) },
     feeds: rp.run ? feedsOf(rp.run.result) : null, marks: rp.run ? marksOf(rp.run.result) : null, outlined: rp.outlined,
@@ -286,6 +289,9 @@ function renderOutcome() {
   const seated = Object.entries(r.seated || {}).map(([rod, words]) => `${words} on ${rod}`);
   $("#test-seated").hidden = !seated.length;
   $("#test-seated").textContent = seated.join("; ");
+  const totals = Array.isArray(r.lines) ? r.lines : [];
+  $("#test-totals").hidden = !totals.length;
+  $("#test-totals").replaceChildren(...totals.map((s) => h("li", { text: sentence(s) })));
   const notes = Array.isArray(r.notes) ? r.notes : [];
   $("#test-run-notes").hidden = !notes.length;
   $("#test-run-notes").replaceChildren(...notes.map((n) => h("li", { text: n })));

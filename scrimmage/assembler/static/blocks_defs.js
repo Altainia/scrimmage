@@ -5,7 +5,8 @@
 //
 //   defineBlocks(names)            registers the block types once; `names()` answers the current palette (or null)
 //   toolbox(palette)               the flyout's contents: Move, Wait, Repeat, Check (a block only when every one of its
-//                                  pickers has something to pick)
+//                                  pickers has something to pick: aim needs a turret and a goal, scored a goal, the
+//                                  cylinder blocks and the air pressure check a cylinder)
 //   testToWorkspace(test, ws)      replaces the workspace's blocks with the test's (one stack, top to bottom)
 //   appendBlocks(ws, blocks)       joins blocks (the test JSON's) below the test's last block
 //   workspaceToTest(ws)            the test JSON of the workspace: the test is the stack that holds the test's first
@@ -27,8 +28,9 @@ const COND = "Condition";
 
 // Names the tests use that the palette may not have (a joint renamed on Import again): a picker keeps offering them
 // so the block keeps its value (and shows the problem) instead of quietly picking another name. Rebuilt by setUsed.
-const KINDS_OF_NAME = { motor: "robot", joint: "robot", robot: "robot", body: "robot",
-  field: "field", piece: "field", bar: "field", level: "field", station: "field", element: "field", rod: "field" };
+const KINDS_OF_NAME = { motor: "robot", joint: "robot", robot: "robot", body: "robot", turret: "robot", cylinder: "robot",
+  field: "field", piece: "field", bar: "field", level: "field", station: "field", element: "field", rod: "field",
+  goal: "field" };
 let used = {};
 const resetUsed = () => {
   used = Object.fromEntries(Object.keys(KINDS_OF_NAME).map((k) => [k, new Set()]));
@@ -42,11 +44,15 @@ let loading = 0;        // testToWorkspace is filling the workspace: pickers don
 const SPECIAL = { hook: "any hook", "next bar": "next bar", "any bar": "any bar", any: "any piece", all: "all motors",
   "a piece": "a piece" };
 
-// [[label, value], ...] for a picker: `special` first (when given), the palette's names, then names only the test
-// uses (marked as missing from the robot).
+// [[label, value], ...] for a picker: `special` first (when given: a value SPECIAL names, or [label, value]), the
+// palette's names, then names only the test uses (marked as missing from the robot).
 function choices(list, kind, special = [], label = (v) => v) {
   const out = [], seen = new Set();
-  for (const v of special) { out.push([SPECIAL[v] || v, v]); seen.add(v); }
+  for (const sp of special) {
+    const [text, v] = Array.isArray(sp) ? sp : [SPECIAL[sp] || sp, sp];
+    out.push([text, v]);
+    seen.add(v);
+  }
   for (const v of list) if (!seen.has(v)) { out.push([label(v), v]); seen.add(v); }
   for (const v of used[kind]) if (!seen.has(v)) { out.push([`${label(v)} (not on the ${KINDS_OF_NAME[kind]})`, v]); seen.add(v); }
   return out.length ? out : [["(none)", "(none)"]];
@@ -59,6 +65,8 @@ const robotSide = () => [...(pal().hooks || []), ...(pal().parts || []), ...(pal
 // bars, elements and pieces first, then the field's other surfaces (the carpet, the walls)
 const fieldSide = () => [...(pal().bars || []), ...(pal().elements || []), ...(pal().pieces || []), ...(pal().targets || [])];
 const has = (xs) => (xs || []).length > 0;
+const cylinderNames = () => (pal().cylinders || []).map((c) => c.name);
+const ANY_GOAL = [["any goal", "any"]];   // a scored check's goal: every goal together (palette.py ANY_GOAL)
 
 // A floor piece as a student reads it ("ball 10", "coral 2"): the palette's `piece_labels`, the names every sentence uses
 // (scrimmage/testrange/balls.py piece_name). The value stays the body's name.
@@ -81,6 +89,10 @@ const OPTIONS = {
   bar: () => choices(pal().bars || [], "bar", has(pal().bars) ? ["next bar"] : []),
   level: () => choices(pal().levels || [], "level"),
   station: () => choices(pal().stations || [], "station"),
+  turret: () => choices(pal().turrets || [], "turret"),
+  goal: () => choices(pal().goals || [], "goal"),
+  scoredGoal: () => choices(pal().goals || [], "goal", ANY_GOAL),
+  cylinder: () => choices(cylinderNames(), "cylinder"),
   // left and right only on a swerve robot (or when the test already has one)
   heading: () => [["forward", "forward"], ["back", "back"],
     ...(pal().drive_kind === "swerve" || used.sideways ? [["left", "left"], ["right", "right"]] : [])],
@@ -89,6 +101,9 @@ const TURNS = [["left", "left"], ["right", "right"]];
 const HOPPER_SIDES = [["or more", "at_least"], ["or fewer", "at_most"]];
 const UNITS = [["°", "deg"], ["in", "in"], ["m", "m"]];
 const SIDES = [["above", "above"], ["below", "below"]];
+const CYLINDER_TO = [["extend", "extend"], ["retract", "retract"], ["off", "off"]];
+const CYLINDER_IS = [["extended", "extended"], ["retracted", "retracted"]];
+const AIR_SIDES = [["stored", "stored"], ["working", "working"]];
 
 // A joint picker's validator: picking a joint that slides (or turns) switches a unit that doesn't fit it.
 function fitUnit(unitField) {
@@ -171,6 +186,23 @@ const KINDS = {
     keys: ["motor"],
     fields: (a) => ({ MOTOR: a.motor }),
     args: (b) => ({ motor: b.getFieldValue("MOTOR") }),
+  },
+  aim: {
+    def: { message0: "aim %1 at %2", args0: [dd("TURRET", OPTIONS.turret), dd("GOAL", OPTIONS.goal)],
+      style: STYLES.move, ...stmt,
+      tooltip: "Keep the turret pointed at the goal's center, even while the robot drives and turns, until a later block spins, moves or stops it." },
+    keys: ["turret", "at"],
+    fields: (a) => ({ TURRET: a.turret, GOAL: a.at }),
+    args: (b) => ({ turret: b.getFieldValue("TURRET"), at: b.getFieldValue("GOAL") }),
+  },
+  set_cylinder: {
+    def: { message0: "set %1 to %2", args0: [dd("CYLINDER", OPTIONS.cylinder), dd("TO", CYLINDER_TO)],
+      style: STYLES.move, ...stmt,
+      tooltip: "Switch the cylinder's valve to push the rod out (extend) or pull it in (retract). Off lets a single "
+        + "solenoid's spring retract it, and leaves a double solenoid's cylinder where it is." },
+    keys: ["cylinder", "to"],
+    fields: (a) => ({ CYLINDER: a.cylinder, TO: a.to }),
+    args: (b) => ({ cylinder: b.getFieldValue("CYLINDER"), to: b.getFieldValue("TO") }),
   },
   wait: {
     def: { message0: "wait %1 s", args0: [num("SECONDS", 1, { min: 0 })], style: STYLES.wait, ...stmt,
@@ -280,6 +312,32 @@ const CONDS = {
     fields: (a) => ("at_most" in a ? { COUNT: a.at_most, SIDE: "at_most" } : { COUNT: a.at_least, SIDE: "at_least" }),
     json: (b) => ({ in_hopper: { [b.getFieldValue("SIDE")]: b.getFieldValue("COUNT") } }),
   },
+  scored: {
+    def: { message0: "%1 scored in %2", args0: [num("COUNT", 1, { min: 1, max: 1000, precision: 1 }), dd("GOAL", OPTIONS.scoredGoal)],
+      tooltip: "At least this many balls have gone into the goal (or into the goals together, for any goal)." },
+    fields: (a) => ({ COUNT: a.at_least, GOAL: a.goal }),
+    json: (b) => ({ scored: { goal: b.getFieldValue("GOAL"), at_least: b.getFieldValue("COUNT") } }),
+  },
+  aimed: {
+    def: { message0: "%1 aimed at %2 within %3 °",
+      args0: [dd("TURRET", OPTIONS.turret), dd("GOAL", OPTIONS.goal), num("WITHIN", 2, { min: 0 })],
+      tooltip: "The turret points at the goal's center, off by no more than this many degrees." },
+    fields: (a) => ({ TURRET: a.turret, GOAL: a.at, WITHIN: a.within_deg }),
+    json: (b) => ({ aimed: { turret: b.getFieldValue("TURRET"), at: b.getFieldValue("GOAL"),
+      within_deg: b.getFieldValue("WITHIN") } }),
+  },
+  cylinder: {
+    def: { message0: "%1 is %2", args0: [dd("CYLINDER", OPTIONS.cylinder), dd("IS", CYLINDER_IS)],
+      tooltip: "The cylinder's rod is all the way out (extended) or all the way in (retracted)." },
+    fields: (a) => ({ CYLINDER: a.cylinder, IS: a.is }),
+    json: (b) => ({ cylinder: { cylinder: b.getFieldValue("CYLINDER"), is: b.getFieldValue("IS") } }),
+  },
+  pressure: {
+    def: { message0: "air pressure %1 %2 %3 psi", args0: [dd("AIR", AIR_SIDES), dd("SIDE", SIDES), num("PSI", 60, { min: 0 })],
+      tooltip: "The air pressure in the tanks (stored), or after the regulator, which the cylinders get (working)." },
+    fields: (a) => ({ AIR: a.side || "stored", ...("above" in a ? { SIDE: "above", PSI: a.above } : { SIDE: "below", PSI: a.below }) }),
+    json: (b) => ({ pressure: { side: b.getFieldValue("AIR"), [b.getFieldValue("SIDE")]: b.getFieldValue("PSI") } }),
+  },
   station_empty: {
     def: { message0: "%1 is empty", args0: [dd("STATION", OPTIONS.station)],
       tooltip: "The station has no pieces left to feed." },
@@ -329,6 +387,9 @@ export function toolbox(p) {
   const out = [{ kind: "label", text: "Move" }];
   if (motors) out.push(item("spin"), item("move"));
   if (p.drive) out.push(item("drive"), item("turn"));
+  const aimOk = has(p.turrets) && has(p.goals), cylinders = has(p.cylinders);
+  if (aimOk) out.push(item("aim"));
+  if (cylinders) out.push(item("set_cylinder"));
   out.push(item("stop"));
   if (has(p.stations)) out.push({ kind: "label", text: "Station" }, item("start_feeding"), item("stop_feeding"), item("feed_one"));
   out.push({ kind: "label", text: "Wait" }, item("wait"), item("wait_until", { inputs: { COND: waitCond } }));
@@ -344,6 +405,9 @@ export function toolbox(p) {
   if (bars) out.push(item(condType("hanging_from")));
   if (has(p.levels)) out.push(item(condType("level")));
   if (has(p.stations)) out.push(item(condType("station_empty")));
+  if (has(p.goals)) out.push(item(condType("scored")));
+  if (aimOk) out.push(item(condType("aimed")));
+  if (cylinders) out.push(item(condType("cylinder")), item(condType("pressure")));
   out.push(item(condType("in_hopper")), item(condType("made_it_in")));
   return { kind: "flyoutToolbox", contents: out };
 }
@@ -360,6 +424,8 @@ function rememberNames(blocks) {
     if (b.do === "move") remember("joint", b.joint);
     if (["start_feeding", "stop_feeding", "feed_one"].includes(b.do)) remember("station", b.station);
     if (b.do === "drive" && (b.direction === "left" || b.direction === "right")) used.sideways = true;
+    if (b.do === "aim") { remember("turret", b.turret); remember("goal", b.at); }
+    if (b.do === "set_cylinder") remember("cylinder", b.cylinder);
     const c = b.until || b.that;
     if (c && typeof c === "object") {
       const [kind, a] = Object.entries(c)[0] || [];
@@ -372,6 +438,9 @@ function rememberNames(blocks) {
       if (kind === "hanging_from") remember("bar", a);
       if (kind === "level") remember("level", a);
       if (kind === "station_empty") remember("station", a);
+      if (kind === "scored" && a.goal !== "any") remember("goal", a.goal);
+      if (kind === "aimed") { remember("turret", a.turret); remember("goal", a.at); }
+      if (kind === "cylinder") remember("cylinder", a.cylinder);
     }
     rememberNames(b.body);
   }
