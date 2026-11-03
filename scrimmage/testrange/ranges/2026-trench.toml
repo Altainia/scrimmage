@@ -1,0 +1,39 @@
+# One FRC 2026 REBUILT TRENCH, for focused tests of a robot driving under it with its mechanisms stowed or raised
+# (sub-project 24). WPILib field coordinates (blue alliance wall at x = 0, z up), SI units unless a key ends in _in
+# (inches).
+#
+# The 2026 Game Manual section 5.6 (https://firstfrc.blob.core.windows.net/frc2026/Manual/HTML/2026GameManual.htm):
+# "TRENCHES are a 65.65in (1.668m) wide, 47.0in (1.194m) deep, and 40.25in (1.022m) tall structure that ROBOTS drive
+# underneath", and "The space underneath each TRENCH arm is 50.34in (1.279m) wide, 22.25in (56.52cm) tall." The
+# manual gives no arm or side sizes beyond those, so the TRENCH is three boxes: an arm across the whole width, from
+# the 22.25 in clearance up to the 40.25 in top, on two equal side structures either side of the 50.34 in opening.
+# Everything is structure (not ground) and collides with a robot's colliding parts (collide = true). The pivot arm
+# of the far-side TRENCHES (manual 5.6) isn't modeled: the arm is fixed. No HUB, BUMP or FUEL around it.
+
+[range]
+name = "FRC 2026 TRENCH"   # source: the 2026 game (REBUILT) and its TRENCH, manual section 5.6
+ball = "2026-fuel"         # source: FUEL, manual section 5.10.1 (URL above); this range has no floor balls
+
+# The arm spanning the opening. Its underside is the manual's 22.25 in clearance.
+[[element]]
+name = "trench_arm"
+kind = "box"
+center = [4.625, 0.83376]   # choice: x on the HUB's line as 2026-bump.toml's BUMP (the TRENCH extends from the guardrail to the BUMP, manual 5.6); y = 65.65 in / 2, its outer side against the guardrail (y = 0)
+size_in = [47.0, 65.65, 18.0]   # source: manual 5.6, 47.0 in deep and 65.65 in wide; z: 40.25 in tall less the 22.25 in clearance (estimate: the arm is taken to fill the whole depth and the height above the opening)
+base_height_in = 22.25     # source: manual 5.6, the space under the arm is 22.25 in tall
+
+# The side structures under the arm's ends, each half of the 65.65 in width less the 50.34 in opening.
+[[element]]
+name = "trench_side_left"  # +y, the BUMP's side
+kind = "box"
+center = [4.625, 1.5703]   # source: manual 5.6, beside the 50.34 in opening: y = 0.83376 + (50.34 + 7.655) / 2 in
+size_in = [47.0, 7.655, 22.25]   # source: manual 5.6, 47.0 in deep, (65.65 - 50.34) / 2 wide (estimate: the two sides equal), up to the arm
+[[element]]
+name = "trench_side_right" # -y, the guardrail's side
+kind = "box"
+center = [4.625, 0.09722]   # source: manual 5.6, beside the 50.34 in opening: y = 0.83376 - (50.34 + 7.655) / 2 in
+size_in = [47.0, 7.655, 22.25]   # source: as trench_side_left (estimate: the two sides equal)
+
+# Starts: facing the opening (heading 0 drives +x, through it), centered on it, 1.5 m before its near face (x 4.028).
+[start.approach]
+pose = [2.528, 0.83376, 0.0]   # choice: x = 4.625 - 47.0 in / 2 - 1.5, y on the opening's center line, facing it

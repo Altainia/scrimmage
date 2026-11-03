@@ -226,8 +226,10 @@ def test_bar_box_switch_keys_checked():
 
 
 # 2026: 48 more since its OUTPOSTS became stations, one parked ball body, geom and joint for each of their 2 x 24 FUEL.
+# terrain-library: one more body, geom and joint since it gained the 2020 CONTROL PANEL (ADDED, left out of the sums).
 EXISTING = {"2026": (423, 473, 415), "2026-bump": (16, 31, 13), "2023-charge-station": (11, 22, 9),
-            "terrain-library": (14, 29, 9)}
+            "terrain-library": (15, 30, 10)}
+ADDED = {"element.control_panel"}
 # The sums of geom_size, geom_pos and geom_friction over each range's element.* geoms, recorded from the code before
 # the climbing kinds (commit d1bdb90).
 ELEMENT_SUMS = {
@@ -246,7 +248,8 @@ def test_existing_ranges_unchanged(name):
     w = World(range_cfg(range={"file": name, "floor_balls": True}), None)
     m = w.model
     assert (m.nbody, m.ngeom, m.njnt) == EXISTING[name]
-    gids = [g for g in range(m.ngeom) if m.body(m.geom_bodyid[g]).name.startswith("element.")]
+    gids = [g for g in range(m.ngeom) if m.body(m.geom_bodyid[g]).name.startswith("element.")
+            and m.body(m.geom_bodyid[g]).name not in ADDED]
     assert all(m.geom_group[g] == ELEMENT_GROUP for g in gids)
     sums = tuple(float(getattr(m, a)[gids].sum()) for a in ("geom_size", "geom_pos", "geom_friction"))
     assert sums == pytest.approx(ELEMENT_SUMS[name], rel=1e-12)

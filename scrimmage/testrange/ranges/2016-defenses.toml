@@ -1,0 +1,218 @@
+# Four of the FRC 2016 FIRST STRONGHOLD DEFENSES that move, each on its PLATFORM, for tests of a robot getting through
+# them (sub-project 24). WPILib field coordinates (blue alliance wall at x = 0, z up), SI units unless a key ends in
+# _in (inches).
+#
+# Numbers cite the 2016 Game Manual, Section 2 (Arena), V12, 2.2.2.1 DEFENSES
+# (https://firstfrc.blob.core.windows.net/frc2016manuals/GameManual/FRC-2016-game-manual-02.pdf, read 2026-11-03).
+# Its figures (2-6 to 2-13) give no numbers the text doesn't, so the doors' frames, masses and springs are estimates.
+# The forces are the manual's: the portcullis's "approximately 5 lbs. to lift" is its weight (spec C2), the sally
+# port's "approximately 1.5 lbs." at its outer edge its breakaway.
+#
+# The defenses stand in a line across the field, as on the OUTER WORKS (manual 2.2.2), each crossed along +x from
+# the NEUTRAL ZONE side (-x), toward which the drawbridge lowers and the sally port swings. Our spacing, not the
+# OUTER WORKS': no shields or low bar between them. Every defense is at x = 4.0, its PLATFORM centered on it.
+
+[range]
+name = "FRC 2016 DEFENSES"   # source: the 2016 game (FIRST STRONGHOLD), manual 2.2.2.1
+ball = "2016-boulder"        # source: the BOULDER, manual 2.3; this range has no floor balls
+
+# ------------------------------------------------------------------------------------------------ the PLATFORMS
+# Manual 2.2.2.1 (PLATFORM): "4 ft. 2 in. wide, 2 ft. deep and 3 in. tall", ramps "4 ft. 2 in. wide, 1 ft. deep,
+# resulting in a 13.5 deg. angle" on each long edge (3 in / tan 13.5 deg = 12.5 in, the manual's 1 ft).
+[[element]]
+name = "portcullis_platform"
+kind = "ramp"
+center = [4.0, 1.5]          # choice: the first defense
+width_in = 50.0              # source: manual 2.2.2.1, 4 ft 2 in wide
+height_in = 3.0              # source: manual 2.2.2.1, 3 in tall
+ramp_deg = 13.5              # source: manual 2.2.2.1
+deck_in = 24.0               # source: manual 2.2.2.1, 2 ft deep
+two_sided = true
+[[element]]
+name = "sally_port_platform"
+kind = "ramp"
+center = [4.0, 3.0]          # choice: 1.5 m along y from the last, clear of it (a PLATFORM is 1.27 m wide)
+width_in = 50.0              # source: as portcullis_platform
+height_in = 3.0              # source: as portcullis_platform
+ramp_deg = 13.5              # source: as portcullis_platform
+deck_in = 24.0               # source: as portcullis_platform
+two_sided = true
+[[element]]
+name = "drawbridge_platform"
+kind = "ramp"
+center = [4.0, 4.5]          # choice: as sally_port_platform
+width_in = 50.0              # source: as portcullis_platform
+height_in = 3.0              # source: as portcullis_platform
+ramp_deg = 13.5              # source: as portcullis_platform
+deck_in = 24.0               # source: as portcullis_platform
+two_sided = true
+[[element]]
+name = "cheval_platform"
+kind = "ramp"
+center = [4.0, 6.0]          # choice: as sally_port_platform
+width_in = 50.0              # source: as portcullis_platform
+height_in = 3.0              # source: as portcullis_platform
+ramp_deg = 13.5              # source: as portcullis_platform
+deck_in = 24.0               # source: as portcullis_platform
+two_sided = true
+
+# ------------------------------------------------------------------------------------------------ the portcullis
+# Manual 2.2.2.1: "an arched gateway with a door that opens when lifted up. The gateway is 3 ft. 8 in. wide and 5 ft.
+# 2 in. tall ... The door requires approximately 5 lbs. to lift from the bottom edge. When it is resting in its
+# natural position there is a 5 in. gap below the door." A door on a vertical slide with no spring, resting on its
+# lower stop: lifting it takes its weight.
+[[element]]
+name = "portcullis"
+kind = "sliding"
+center = [4.0, 1.5]          # choice: on its PLATFORM's center
+size_in = [1.0, 43.0, 30.0]  # estimate: 1 in thick (a steel frame with a 1/8 in polycarbonate sheet, manual 2.2.2.1), 43 in wide (the 44 in gateway less an inch of play), 30 in tall (not given; figure 2-6 has no numbers)
+base_height_in = 8.0         # source: manual 2.2.2.1, a 5 in gap below the door, above the 3 in PLATFORM
+axis = "z"
+range_in = [0.0, 24.0]       # estimate: lifted 24 in, a 37 in opening under it, its top still inside the 62 in gateway
+mass = 2.27                  # source: manual 2.2.2.1, "approximately 5 lbs. to lift" (5 lb = 2.27 kg) is its weight
+[[element]]
+name = "portcullis_post_left"
+kind = "box"
+center = [4.0, 2.0969]       # source: manual 2.2.2.1, beside the 44 in gateway: y = 1.5 + (44 / 2 + 3 / 2) in
+size_in = [4.0, 3.0, 62.0]   # estimate: a 4 x 3 in post (not given); 62 in, the gateway's 5 ft 2 in (manual 2.2.2.1)
+base_height_in = 3.0         # source: on the 3 in PLATFORM
+[[element]]
+name = "portcullis_post_right"
+kind = "box"
+center = [4.0, 0.9031]       # source: as portcullis_post_left, y = 1.5 - (44 / 2 + 3 / 2) in
+size_in = [4.0, 3.0, 62.0]   # estimate: as portcullis_post_left
+base_height_in = 3.0         # source: on the 3 in PLATFORM
+
+# ------------------------------------------------------------------------------------------------ the sally port
+# Manual 2.2.2.1: "a door 1/4" thick, 4 ft. wide, 2 ft. tall that can only swing toward the NEUTRAL ZONE. The opening
+# is 3 ft. 6 in. wide. The top of the door is 2 ft. 1 in. from the surface of the platform. ... A force of
+# approximately 1.5 lbs. must be applied to the outer edge of the door in order for it to open." Hinged on its +y
+# side, swinging toward -x (negative about +z); the 1.5 lb at the outer edge, 48 in from the hinge, is its breakaway.
+# The manual's return spring isn't modeled: a spring as strong as the breakaway would add to the push to open it.
+[[element]]
+name = "sally_port"
+kind = "hinged"
+center = [3.946, 3.0]        # estimate: in front of its frame on the NEUTRAL ZONE side, x = 4.0 - (4 / 2 + 1 / 8) in
+size_in = [0.25, 48.0, 24.0] # source: manual 2.2.2.1, 1/4 in thick, 4 ft wide, 2 ft tall
+base_height_in = 4.0         # source: manual 2.2.2.1, its top 2 ft 1 in above the 3 in PLATFORM, so its bottom 1 in above it
+hinge = "left"
+range_deg = [-90.0, 0.0]     # source: manual 2.2.2.1, swings only toward the NEUTRAL ZONE (-x); estimate: opens to 90 deg
+mass = 6.0                   # estimate: the 48 x 24 x 1/4 in polycarbonate (1200 kg/m^3) is 5.7 kg, plus its hardware
+breakaway = 8.135            # source: manual 2.2.2.1, 1.5 lb (6.672 N) at the outer edge, 48 in (1.219 m) from the hinge
+[[element]]
+name = "sally_port_post_left"
+kind = "box"
+center = [4.0, 3.5715]       # source: manual 2.2.2.1, beside the 42 in opening: y = 3.0 + (42 / 2 + 3 / 2) in
+size_in = [4.0, 3.0, 25.0]   # estimate: a 4 x 3 in post (not given), as tall as the door's top (25 in, manual 2.2.2.1)
+base_height_in = 3.0         # source: on the 3 in PLATFORM
+[[element]]
+name = "sally_port_post_right"
+kind = "box"
+center = [4.0, 2.4285]       # source: as sally_port_post_left, y = 3.0 - (42 / 2 + 3 / 2) in
+size_in = [4.0, 3.0, 25.0]   # estimate: as sally_port_post_left
+base_height_in = 3.0         # source: on the 3 in PLATFORM
+
+# ------------------------------------------------------------------------------------------------ the drawbridge
+# Manual 2.2.2.1: "an arched gateway with a door that lowers toward the NEUTRAL ZONE. The door is made from
+# polycarbonate and is 37 in. tall and 1/4 in. thick. When the door is fully down, the opening is 3 ft. 6 in. wide
+# and 5 ft. 5-3/4 in. tall ... The door is sprung so that it will return to a closed position when there is no
+# weight on it. ... it takes approximately 2 lbs. of force applied at the top edge of the door for it to begin to
+# move. Once moving, the required force increases to a maximum of 5 lbs." Standing up on its bottom hinge, lowered
+# toward -x (negative about +y) by a robot pulling its top edge or pressing it down, and driven over (ground). Its
+# spring stands it back up against its own weight: 0.65 N m/deg against the door's 0.60 N m/deg near upright, so
+# pressed flat its top edge takes (0.65 x 90 - 34.6) / 0.94 = 25 N (5.7 lb, the manual's 5 lb about). The manual's
+# 2 lb to begin moving would need a spring preloaded against the closed stop, which a hinged element hasn't.
+[[element]]
+name = "drawbridge"
+kind = "hinged"
+center = [4.0, 4.5]          # choice: on its PLATFORM's center
+size_in = [0.25, 41.0, 37.0] # source: manual 2.2.2.1, 1/4 in thick and 37 in tall; estimate: 41 in wide, the 42 in opening less an inch of play
+base_height_in = 3.0         # source: hinged on the 3 in PLATFORM (estimate: at its surface)
+hinge = "bottom"
+range_deg = [-90.0, 0.0]     # source: manual 2.2.2.1, lowers toward the NEUTRAL ZONE (-x), flat at -90; closed (0) on its frame
+stiffness = 0.65             # estimate: see above, just over the door's own 7.5 x 9.81 x 0.47 m = 34.6 N m (0.60 N m/deg near upright)
+damping = 3.0                # estimate: settles it closed in a few seconds; the critical damping for the spring alone, 18 N m s/rad, would hold it open far longer against so small a net spring
+mass = 7.5                   # estimate: the 41 x 37 x 1/4 in polycarbonate (1200 kg/m^3), 7.5 kg
+ground = true                # choice: a robot drives over it lowered
+[[element]]
+name = "drawbridge_post_left"
+kind = "box"
+center = [4.0, 5.0715]       # source: manual 2.2.2.1, beside the 42 in opening: y = 4.5 + (42 / 2 + 3 / 2) in
+size_in = [4.0, 3.0, 65.75]  # estimate: a 4 x 3 in post (not given); 65.75 in, the opening's 5 ft 5 3/4 in (manual 2.2.2.1)
+base_height_in = 3.0         # source: on the 3 in PLATFORM
+[[element]]
+name = "drawbridge_post_right"
+kind = "box"
+center = [4.0, 3.9285]       # source: as drawbridge_post_left, y = 4.5 - (42 / 2 + 3 / 2) in
+size_in = [4.0, 3.0, 65.75]  # estimate: as drawbridge_post_left
+base_height_in = 3.0         # source: on the 3 in PLATFORM
+
+# ------------------------------------------------------------------------------------------------ the cheval de frise
+# Manual 2.2.2.1: "a series of four (4) independently tilting, weighted polycarbonate platforms. The platforms rotate
+# about a pipe in the middle and are weighted so that they rest on alternate sides. Platforms are 1 ft. wide and 2 ft.
+# long and 1/2 in. thick. The axis of the pipe is 3-3/4 in. from the surface of the platform. The top edge of the
+# platform is 9-5/8 in. from the DEFENSE platform. In order to tilt a platform, approximately 1 lbs. of force must be
+# applied at the edge of the platform." Each plate turns about a pipe across the lane (local y) through its own
+# center (estimate: the 3 3/4 in between the pipe and the plate isn't modeled), its center 9 5/8 / 2 = 4.81 in above
+# the DEFENSE platform so that tilted to rest its low end meets the PLATFORM and its high edge is the manual's 9 5/8
+# in up: asin(4.81 / 12) = 23.6 deg. The weights are a spring: 1 lb at the edge (1.356 N m) pressed level, 23.6 deg
+# from rest. Plates 1 and 3 rest with their far (+x) end down, 2 and 4 with their near end down.
+[[element]]
+name = "cheval_1"           # source: manual 2.2.2.1, plate 1 of its four
+kind = "hinged"
+center = [4.0, 5.5238]       # estimate: four plates 12.5 in apart (the 12 in plates and a 1/2 in gap) across the 50 in PLATFORM: y = 6.0 - 1.5 x 12.5 in
+size_in = [24.0, 12.0, 0.5]  # source: manual 2.2.2.1, 2 ft long (along x), 1 ft wide, 1/2 in thick
+base_height_in = 7.5625      # estimate: its center 4.8125 in above the 3 in PLATFORM (see above), less half its thickness
+hinge = "center"
+axis = "y"
+range_deg = [-23.6, 23.6]    # estimate: tilted until an end meets the PLATFORM (see above)
+rest_deg = 23.6              # source: manual 2.2.2.1, rests on alternate sides; this one far end down
+stiffness = 0.0575           # estimate: 1 lb (manual 2.2.2.1) at the 12 in edge, 1.356 N m, pressed level from rest: 1.356 / 23.6
+mass = 3.0                   # estimate: the 24 x 12 x 1/2 in polycarbonate (1200 kg/m^3) is 2.8 kg, plus its weights
+[[element]]
+name = "cheval_2"           # source: manual 2.2.2.1, plate 2 of its four
+kind = "hinged"
+center = [4.0, 5.8413]       # estimate: as cheval_1, y = 6.0 - 0.5 x 12.5 in
+size_in = [24.0, 12.0, 0.5]  # source: as cheval_1
+base_height_in = 7.5625      # estimate: as cheval_1
+hinge = "center"
+axis = "y"
+range_deg = [-23.6, 23.6]    # estimate: as cheval_1
+rest_deg = -23.6             # source: as cheval_1; this one near end down
+stiffness = 0.0575           # estimate: as cheval_1
+mass = 3.0                   # estimate: as cheval_1
+[[element]]
+name = "cheval_3"           # source: manual 2.2.2.1, plate 3 of its four
+kind = "hinged"
+center = [4.0, 6.1588]       # estimate: as cheval_1, y = 6.0 + 0.5 x 12.5 in
+size_in = [24.0, 12.0, 0.5]  # source: as cheval_1
+base_height_in = 7.5625      # estimate: as cheval_1
+hinge = "center"
+axis = "y"
+range_deg = [-23.6, 23.6]    # estimate: as cheval_1
+rest_deg = 23.6              # source: as cheval_1; this one far end down
+stiffness = 0.0575           # estimate: as cheval_1
+mass = 3.0                   # estimate: as cheval_1
+[[element]]
+name = "cheval_4"           # source: manual 2.2.2.1, plate 4 of its four
+kind = "hinged"
+center = [4.0, 6.4763]       # estimate: as cheval_1, y = 6.0 + 1.5 x 12.5 in
+size_in = [24.0, 12.0, 0.5]  # source: as cheval_1
+base_height_in = 7.5625      # estimate: as cheval_1
+hinge = "center"
+axis = "y"
+range_deg = [-23.6, 23.6]    # estimate: as cheval_1
+rest_deg = -23.6             # source: as cheval_1; this one near end down
+stiffness = 0.0575           # estimate: as cheval_1
+mass = 3.0                   # estimate: as cheval_1
+
+# Starts: each facing its defense (heading 0 drives +x, onto the PLATFORM), centered on it, 1.5 m before the near
+# ramp's foot (x = 4.0 - (24 / 2 + 3 / tan 13.5 deg) in = 3.378).
+[start.portcullis]
+pose = [1.878, 1.5, 0.0]     # choice: x = 3.378 - 1.5, on the portcullis's center line
+[start.sally_port]
+pose = [1.878, 3.0, 0.0]     # choice: as start.portcullis, on the sally port's
+[start.drawbridge]
+pose = [1.878, 4.5, 0.0]     # choice: as start.portcullis, on the drawbridge's
+[start.cheval_de_frise]
+pose = [1.878, 6.0, 0.0]     # choice: as start.portcullis, on the cheval de frise's
