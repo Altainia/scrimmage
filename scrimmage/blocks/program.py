@@ -48,12 +48,15 @@ MAX_HOPPER = 1000        # balls: in_hopper's count
 MAX_SCORED = 1000        # balls: scored's count
 MAX_TURN = 720.0         # degrees
 AIMED_DEG = 2.0          # degrees: aimed's default within_deg
+CYLINDER_TO = ("extend", "retract", "off")     # set_cylinder's states ("off": C9, by the valve's kind)
+CYLINDER_IS = ("extended", "retracted")
+PRESSURE_SIDES = ("stored", "working")
 
 UNITS = ("deg", "in", "m")
 DO_KINDS = ("spin", "move", "drive", "stop", "wait", "wait_until", "repeat", "expect",
-            "start_feeding", "stop_feeding", "feed_one", "turn", "aim")
+            "start_feeding", "stop_feeding", "feed_one", "turn", "aim", "set_cylinder")
 COND_KINDS = ("joint", "touch", "tilt", "piece_in", "hanging_from", "level", "in_hopper", "station_empty",
-              "made_it_in", "held", "rests_on", "seated", "scored", "aimed")
+              "made_it_in", "held", "rests_on", "seated", "scored", "aimed", "cylinder", "pressure")
 DRIVE_DIRECTIONS = ("forward", "back", "left", "right")
 _OPPOSITE = {"back": "forward", "left": "right", "right": "left"}     # where a minus distance goes instead
 SPREAD_AXES = ("offset_in", "distance_in", "angle_deg", "rotation_deg", "tip_deg")
@@ -199,6 +202,21 @@ def _cond(v, where: str) -> Cond:
             raise TestFileError(f"{where}: within_deg must be more than 0")
         return Cond(kind, {"turret": _text(t.get("turret"), where, "turret"), "at": _text(t.get("at"), where, "at"),
                            "within_deg": within})
+    if kind == "cylinder":
+        _keys(t, ("cylinder", "is"), where)
+        if t.get("is") not in CYLINDER_IS:
+            raise TestFileError(f'{where}: is must be "extended" or "retracted", not {t.get("is")!r}')
+        return Cond(kind, {"cylinder": _text(t.get("cylinder"), where, "cylinder"), "is": t["is"]})
+    if kind == "pressure":
+        _keys(t, ("side", "above", "below"), where)
+        side = t.get("side", "stored")
+        if side not in PRESSURE_SIDES:
+            raise TestFileError(f'{where}: side must be "stored" or "working", not {side!r}')
+        limit = _one_of(t, ("above", "below"), where)
+        psi = _num(t[limit], where, limit)
+        if psi < 0:
+            raise TestFileError(f"{where}: {limit} is a pressure in psi and can't be negative")
+        return Cond(kind, {"side": side, limit: psi})
     if kind == "tilt":
         _keys(t, ("above", "below"), where)
         side = _one_of(t, ("above", "below"), where)
@@ -288,6 +306,11 @@ def _block(t, trail: tuple) -> Block:
     elif do == "aim":
         _keys(t, ("turret", "at"), where)
         a = {"turret": _text(t.get("turret"), where, "turret"), "at": _text(t.get("at"), where, "at")}
+    elif do == "set_cylinder":
+        _keys(t, ("cylinder", "to"), where)
+        if t.get("to") not in CYLINDER_TO:
+            raise TestFileError(f'{where}: to must be "extend", "retract" or "off", not {t.get("to")!r}')
+        a = {"cylinder": _text(t.get("cylinder"), where, "cylinder"), "to": t["to"]}
     elif do == "turn":
         _keys(t, ("degrees", "volts", "timeout"), where)
         deg = _num(t.get("degrees"), where, "degrees")

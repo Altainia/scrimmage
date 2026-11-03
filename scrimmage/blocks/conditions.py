@@ -29,6 +29,10 @@ step, and the plain words that name them in a run's outcome.
   depth read to one decimal, as a student reads it; placed.py's seated_depth).
 - `aimed`: a stock turret points within `within_deg` of a goal's center, horizontally (aim.py's aim_error: the
   `[shooter]` launcher's forward axis when it rides on the turret, else the turret's own).
+- `cylinder`: a pneumatic cylinder's rod is extended (within CYLINDER_TOL_IN of its stroke) or retracted (within it of
+  0), as the air system's extension reads it (pneumatics/runtime.py).
+- `pressure`: the air system's stored (the tanks') or working (the regulator's output) pressure is above or below N
+  psi.
 
 The words name pieces as a student knows them: any piece by the field's kind ("a coral"; "a ball" on a field of one
 ball or disc kind, as always; "a piece" on a mixed field or when the kinds aren't known), and a named piece by its
@@ -59,6 +63,7 @@ from .placed import Placed
 HANG_S = 0.1            # s: the hooks carry a quarter of the robot's weight this long to count as hanging
 HANG_SHARE = 0.25       # of the robot's weight
 IN = 0.0254
+CYLINDER_TOL_IN = 0.25  # in: a cylinder this close to an end of its stroke is extended or retracted
 
 
 class Watch:
@@ -315,6 +320,12 @@ class Watch:
             return self.scored_count(a["goal"]) >= a["at_least"]
         if k == "aimed":
             return abs(math.degrees(aim_error(self.world, a["turret"], a["at"]))) <= a["within_deg"]
+        if k == "cylinder":
+            return cylinder_at(self.world, a["cylinder"], a["is"])
+        if k == "pressure":
+            s = self.world.pneumatics.system
+            psi = s.stored_psi if a["side"] == "stored" else s.working_psi
+            return psi > a["above"] if "above" in a else psi < a["below"]
         if k == "station_empty":
             return bool(self.world.test_range.feeder.empty(a["station"]))
         if k == "made_it_in":
@@ -335,6 +346,14 @@ class Watch:
             rank = int(self.climb.get("climb.level", 0))
             return 0 < rank <= len(self._levels) and self._levels[rank - 1] == a["level"]
         raise ValueError(f"unknown condition {k!r}")
+
+
+def cylinder_at(world, name: str, end: str) -> bool:
+    """The cylinder's rod is within CYLINDER_TOL_IN of its stroke's end ("extended") or start ("retracted")."""
+    x = world.pneumatics.extension(name)
+    if end == "extended":
+        x = next(c.stroke for c in world.parts.cylinders if c.name == name) - x
+    return x <= CYLINDER_TOL_IN * IN
 
 
 def _conds(blocks, kind: str) -> list:
@@ -399,6 +418,12 @@ def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names
         return f"{a['at_least']} or more balls are scored in {where}"
     if k == "aimed":
         return f"{turret_words(a['turret'])} is aimed at {a['at']} within {_amount(a['within_deg'], 'deg')}"
+    if k == "cylinder":
+        return f"{a['cylinder']} is {a['is']}"
+    if k == "pressure":
+        side, psi = ("above", a["above"]) if "above" in a else ("below", a["below"])
+        what = "the air pressure" if a["side"] == "stored" else "the working pressure"
+        return f"{what} is {side} {psi:g} psi"
     if k == "station_empty":
         return f"{a['station']} is empty"
     if k == "made_it_in":

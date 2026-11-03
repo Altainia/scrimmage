@@ -639,7 +639,7 @@ def _test(args) -> None:
     print(result.outcome)
     for check in result.checks:
         print(f"  {check['line']}")
-    for line in blocks_run.goal_lines(result):
+    for line in blocks_run.goal_lines(result) + blocks_run.air_lines(result):
         print(f"  {line}")
     for f in result.feeds:
         if f["outcome"] == "stuck":

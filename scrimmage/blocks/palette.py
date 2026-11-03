@@ -2,10 +2,12 @@
 
 The palette lists every name a block can pick, as the world names them: the robot's motors and joints (a hinge reads
 in degrees, a slide in inches, a drive wheel is a `wheel`), its bodies and parts, its hooks, the field's bars,
-elements, rods, goals and game pieces, its stock turrets (`turrets`, what an aim block turns), other surfaces a
-touch can name (`targets`: the carpet, the walls) and climb levels, whether it can drive and how (`drive_kind`: a tank
-or swerve drive, as drive.py finds them) and the signals a chart can show (`seated.<rod>` for each rod, in inches, when
-a piece kind of the field has a hole).
+elements, rods, goals and game pieces, its stock turrets (`turrets`, what an aim block turns), its pneumatic
+cylinders (`cylinders`: each one's name and whether its valve is a double solenoid; one with no device ID counts as
+a single), other surfaces a touch can name (`targets`: the carpet, the walls) and climb levels, whether it can drive
+and how (`drive_kind`: a tank or swerve drive, as drive.py finds them) and the signals a chart can show
+(`seated.<rod>` for each rod, in inches, when a piece kind of the field has a hole; with cylinders, `air.psi` (the
+tanks), `air.working_psi` (the regulator's output) and each cylinder's `<name>.extension` in inches).
 The field's pieces: `piece` (its default kind's preset), `kinds` (each kind's form, whether it is hollow or flat and the
 plain name a student reads, e.g. "coral"), `floor_kinds` (each floor piece's kind), `piece_labels` (what a student
 reads for each floor piece, "coral 2", as the run's sentences name it) and `station_kinds` (each station's), and every
@@ -141,6 +143,15 @@ def hook_names(world, hooks: list[str]) -> list[str]:
     return sorted(set(robot_hooks(world.model, world.robot_body)) | set(hooks))
 
 
+def cylinders(world) -> list[dict]:
+    """The robot's pneumatic cylinders, sorted: {"name", "double"}, double when its valve is bound to a double
+    solenoid (a valve with no device ID counts as a single under the Test tab)."""
+    if getattr(world, "pneumatics", None) is None:
+        return []
+    doubles = {v["cylinder"] for v in world.parts.bindings.get("valve", []) if v["reverse"] is not None}
+    return [{"name": n, "double": n in doubles} for n in sorted(world.pneumatics.names)]
+
+
 def palette(world, hooks: list[str]) -> dict:
     m = world.model
     kinds = _joints(world)
@@ -161,6 +172,9 @@ def palette(world, hooks: list[str]) -> dict:
     rods = sorted(layout.rods) if layout is not None else []
     if rng is not None and any(k.hole is not None for k in rng.kinds.values()):
         signals += [f"seated.{r}" for r in rods]                   # inches, empty while no piece is on it
+    cyls = cylinders(world)
+    if cyls:
+        signals += ["air.psi", "air.working_psi", *(f"{c['name']}.extension" for c in cyls)]     # psi, psi, in
     dt = drivetrain(world, driven)
     stations = sorted(rng.stations, key=lambda st: st.name) if rng is not None else []
     ball = floor_ball(world)
@@ -175,6 +189,7 @@ def palette(world, hooks: list[str]) -> dict:
         "elements": elements,
         "goals": sorted(g.name for g in rng.goals) if rng is not None else [],
         "turrets": turrets(world),          # stock turrets' instances: each turns `<inst>.turn`
+        "cylinders": cyls,                  # pneumatic cylinders: {name, double}
         "rods": rods,                       # the field's rods (a reef's branches)
         "pieces": pieces,
         "targets": _targets(world, bar_set | set(elements) | set(pieces)),
@@ -222,6 +237,7 @@ class _Names:
         self.rods = set(p["rods"])
         self.goals = list(p["goals"])
         self.turrets = list(p["turrets"])
+        self.cylinders = [c["name"] for c in p["cylinders"]]
         rng = world.parts.range if world.parts is not None else None
         self.hollow = rng is not None and any(k.hole is not None for k in rng.kinds.values())
         self.field = set(world.contact_names()) | set(p["elements"]) | self.bars
@@ -287,6 +303,15 @@ def _aim_problems(n: _Names, turret: str, goal: str) -> list[str]:
     return out
 
 
+def _cylinder_problems(n: _Names, name: str, doing: str) -> list[str]:
+    """A set_cylinder block's or cylinder condition's cylinder: one of the robot's."""
+    if not n.cylinders:
+        return [f"this robot has no cylinder to {doing}"]
+    if name not in n.cylinders:
+        return [f"{name} isn't a cylinder; the robot's cylinders: {', '.join(n.cylinders)}"]
+    return []
+
+
 def _cond_problems(n: _Names, c) -> list[str]:
     a = c.args
     if c.kind == "joint":
@@ -336,6 +361,10 @@ def _cond_problems(n: _Names, c) -> list[str]:
         return []
     if c.kind == "aimed":
         return _aim_problems(n, a["turret"], a["at"])
+    if c.kind == "cylinder":
+        return _cylinder_problems(n, a["cylinder"], "check")
+    if c.kind == "pressure":
+        return [] if n.cylinders else ["this robot has no air system (no cylinder)"]
     if c.kind == "station_empty":
         name = a["station"]
         if name not in n.stations:
@@ -367,6 +396,8 @@ def _block_problems(n: _Names, b) -> list[str]:
         if a["turret"] in n.turrets:
             out += _joint_problems(n, f"{a['turret']}.turn", None, motor=True)
         return out
+    if b.do == "set_cylinder":
+        return _cylinder_problems(n, a["cylinder"], "set")
     if b.do == "drive":
         if n.p["drive"]:
             if n.p["drive_kind"] == "tank" and a.get("direction") in ("left", "right"):
