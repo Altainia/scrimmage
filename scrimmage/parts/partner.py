@@ -44,9 +44,19 @@ MIN_SIZE = 0.4                  # m: the smallest frame its drive's wheels fit i
 # kept that far inside a frame of any size.
 TRACK_INSET = 0.19              # m: frame width minus track width
 WHEELBASE_INSET = 0.18          # m: frame length minus wheelbase
-# A braked drive's back-EMF on each wheel joint (N·m·s/rad), an estimate: a braked FRC drive barely rolls when
-# pushed, so its wheels slide on the carpet before they turn much. Coasting leaves the wheels free.
-BRAKE_DAMPING = 20.0
+IN = 0.0254                     # m per inch
+
+
+def brake_damping(drive_params: dict) -> float:
+    """Each wheel joint's damping (N·m·s/rad) with the drive braked, an estimate: a braked controller shorts the
+    motor's windings, so it resists turning by its back-EMF, as world.py's motor bindings model it (bindings.py:
+    eff Kt g^2 / (Kv R) for the motors on a side, Ke = 1 / Kv), not a lock. That side's damping is shared by its
+    wheels, which are chained together: about 0.29 N·m·s/rad a wheel for the stock differential (2 CIMs a side at
+    10.71:1, 90 % efficient, 3 wheels). Coasting leaves the wheels free."""
+    from ..motors import get_motor
+    m = get_motor(drive_params["motor"], drive_params["motors_per_side"])
+    side = drive_params["efficiency"] * m.Kt * drive_params["gearing"] ** 2 / (m.Kv * m.R)
+    return side / drive_params["wheels_per_side"]
 
 
 @dataclass(frozen=True)
@@ -158,9 +168,10 @@ def add_partner(spec: mujoco.MjSpec, cfg: dict) -> PartnerInfo | None:
             spec.add_exclude(bodyname1=a, bodyname2=b)
     wheels = [f"{PREFIX}{j}" for j in drive.part.joint_names()]
     if p.brake:
+        b = brake_damping(drive.stock_params)
         for j in wheels:
             sj = spec.joint(j)
-            sj.damping = [BRAKE_DAMPING, *list(sj.damping)[1:]]      # [linear, ...]: MuJoCo's damping terms
+            sj.damping = [b, *list(sj.damping)[1:]]      # [linear, ...]: MuJoCo's damping terms
     prm = chassis.stock_params
     fh, bumper = prm["frame_height"], prm["bumper"]
     corners = np.array([[sx * p.length / 2, sy * p.width / 2, fh - 0.02] for sx in (1, -1) for sy in (1, -1)])
@@ -202,8 +213,6 @@ def check_start(info: PartnerInfo, robot_start: tuple[float, float, float], elem
 
 
 # ---- its signals ----------------------------------------------------------------------------------------------------
-
-IN = 0.0254
 
 
 class PartnerMonitor:
