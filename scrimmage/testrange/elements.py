@@ -27,12 +27,13 @@ stops at +-`stop_deg`, joint `damping` (N m s/rad) and `level_deg`, within which
 A hinged element is a panel on a hinge (C1): a box of `size` (x, y, z), or (`shape = "disc"`) a disc of `diameter`
 and `thickness` lying flat, its bottom `base_height` up. `hinge` names the edge it turns on, the panel as described
 (angle 0 of the file): "bottom" or "top" (about local y), "left" (+y) or "right" (-y) or "front" (+x) or "back" (-x)
-(about local z), or "center", about its thinnest axis through its center (a disc's own axis: a spinning panel).
+(about local z), or "center", through its center about its `axis` ("x", "y" or "z"; left out, its thinnest axis:
+a disc's own axis, a spinning panel). `ground = true` makes it floor for the terrain signals (a drawbridge).
 `range_deg` [lo, hi] are its stops (none without it), `rest_deg` where its spring rests (both angles from the
 panel as described); `stiffness` is N m/deg, `breakaway` N m (C2), `damping` N m s/rad (left out, critical for the
 panel's inertia about the hinge with a spring, else DEFAULT_MOVING_DAMPING). A sliding element is a box on a slide
 along its local `axis` ("x", "y" or "z"): `range` [lo, hi] (m, or `range_in`), `rest` (m, or `rest_in`), stiffness
-N/m, breakaway N, damping N s/m (the same default). Each takes `mass`, all of it moving.
+N/m, breakaway N, damping N s/m (the same default). Each takes `mass`, all of it moving, and `ground`.
 
 `[climb]` picks a scoring rule (CLIMB_RULES) and lists the levels lowest first, each with its points:
 `levels = { LOW = 4, MID = 6 }`. The "hang" rule also takes `level_bonus` and the `switch` it applies to.
@@ -207,6 +208,8 @@ class Hinged:
     yaw_deg: float
     hinge: str  # one of HINGES
     mass: float
+    axis: str | None = None  # a "center" hinge's, one of AXES; None for the thinnest (a disc's z)
+    ground: bool = False  # floor for the terrain signals (a drawbridge); otherwise structure
     shape: str = "box"  # one of SHAPES
     size: tuple[float, float, float] | None = None  # a box's, along local x, y and z
     diameter: float | None = None  # a disc's
@@ -238,6 +241,7 @@ class Sliding:
     axis: str  # one of AXES, in the element's frame
     range: tuple[float, float]  # (lo, hi), m
     mass: float
+    ground: bool = False  # floor for the terrain signals; otherwise structure
     base_height: float = 0.0  # its bottom above the carpet
     rest: float = 0.0  # m
     stiffness: float = 0.0  # N/m
@@ -265,13 +269,14 @@ def panel_center(e: Hinged | Sliding) -> np.ndarray:
 def hinge_axis(e: Hinged) -> tuple[np.ndarray, np.ndarray]:
     """The hinge's point and unit axis in the element's frame, the panel as described. "bottom" and "top" turn about
     local y along the bottom or top edge; "left" (+y) and "right" (-y) about local z along a side edge; "front" (+x)
-    and "back" (-x) about local z along an end edge; "center" about the panel's thinnest axis through its center (a
-    disc's own axis, z: it lies flat; a box's smallest size, x before y before z on a tie)."""
+    and "back" (-x) about local z along an end edge; "center" through its center about its `axis` or, without one, its
+    thinnest axis (a disc's own axis, z: it lies flat; a box's smallest size, x before y before z on a tie)."""
     sx, sy, sz = panel_size(e)
     c = panel_center(e)
     y, z = np.array([0.0, 1.0, 0.0]), np.array([0.0, 0.0, 1.0])
     if e.hinge == "center":
-        k = 2 if e.shape == "disc" else int(np.argmin([sx, sy, sz]))
+        k = (AXES.index(e.axis) if e.axis is not None else 2 if e.shape == "disc"
+             else int(np.argmin([sx, sy, sz])))
         return c, np.eye(3)[k]
     return {"bottom": (c - [0.0, 0.0, sz / 2.0], y), "top": (c + [0.0, 0.0, sz / 2.0], y),
             "left": (c + [0.0, sy / 2.0, 0.0], z), "right": (c - [0.0, sy / 2.0, 0.0], z),
@@ -328,9 +333,9 @@ _OTHER = {
     "box": ("size", "size_in", "ground"),
     "switch": ("mass", "stop_deg", "damping", "level_deg"),
     "rod": ("base", "base_in", "tip", "tip_in", "section"),
-    "hinged": ("shape", "size", "size_in", "hinge", "range_deg", "rest_deg", "stiffness", "damping", "breakaway",
-               "mass"),
-    "sliding": ("size", "size_in", "axis", "range", "range_in", "stiffness", "damping", "breakaway", "mass"),
+    "hinged": ("shape", "size", "size_in", "hinge", "axis", "range_deg", "rest_deg", "stiffness", "damping",
+               "breakaway", "mass", "ground"),
+    "sliding": ("size", "size_in", "axis", "range", "range_in", "stiffness", "damping", "breakaway", "mass", "ground"),
 }
 _ALL = tuple(dict.fromkeys(
     _COMMON + tuple(k + s for v in _LENGTHS.values() for k in v for s in ("", "_in"))
@@ -341,14 +346,16 @@ _CLASSES = {"bump": Bump, "ramp": Ramp, "platform": Platform, "bar": Bar, "box":
 _LENGTH_DEFAULTS = {"crest": DEFAULT_CREST, "lip": DEFAULT_LIP, "base_height": 0.0}
 
 
-def _length(r: _Reader, key: str, default: float | None = None, *, positive: bool = True) -> float:
+def _length(r: _Reader, key: str, default: float | None = None, *, positive: bool = True,
+            signed: bool = False) -> float:
+    """`key` (m) or `<key>_in` (in): positive, or with `positive` false 0 or more, or with `signed` either sign."""
     if r.has(key) and r.has(key + "_in"):
         raise r.err(f"has both {key} and {key}_in; give one")
     if r.has(key + "_in"):
         v = r.num(key + "_in", positive=positive) * IN
     else:
         v = r.num(key, default, positive=positive)
-    if not positive and v < 0.0:
+    if not positive and not signed and v < 0.0:
         raise r.err(f"{key} must be 0 or more, not {v!r}")
     return v
 
@@ -416,15 +423,17 @@ def _not_negative(r: _Reader, key: str, default: float) -> float:
 
 def _span(r: _Reader, key: str, unit: str) -> tuple[float, float]:
     """`range_deg` [lo, hi], or `range` [lo, hi] (m) or `range_in` (in): lo below hi."""
-    if key == "range" and r.has("range") and r.has("range_in"):
-        raise r.err("has both range and range_in; give one")
-    if key == "range" and r.has("range_in"):
-        lo, hi = (v * IN for v in r.nums("range_in", 2))
-    else:
-        lo, hi = r.nums(key, 2)
+    lo, hi = _lengths(r, key, "lo, hi") if key == "range" else r.nums(key, 2)
     if not lo < hi:
         raise r.err(f"{key} [{lo:g}, {hi:g}] must run from low to high: [lo, hi] in {unit}")
     return lo, hi
+
+
+def _axis(r: _Reader) -> str:
+    v = r.text("axis")
+    if v not in AXES:
+        raise r.err(f"axis must be \"x\", \"y\" or \"z\" (in the element's frame), not {v!r}")
+    return v
 
 
 def _moving(r: _Reader, kind: str, kw: dict) -> Hinged | Sliding:
@@ -432,6 +441,7 @@ def _moving(r: _Reader, kind: str, kw: dict) -> Hinged | Sliding:
     spring, damping and breakaway."""
     kw["base_height"] = _length(r, "base_height", 0.0, positive=False)
     kw["mass"] = r.num("mass", positive=True)
+    kw["ground"] = _bool(r, "ground", False)
     for key in ("stiffness", "breakaway"):
         kw[key] = _not_negative(r, key, 0.0)
     if r.has("damping"):
@@ -452,18 +462,19 @@ def _moving(r: _Reader, kind: str, kw: dict) -> Hinged | Sliding:
         kw["hinge"] = r.text("hinge")
         if kw["hinge"] not in HINGES:
             raise r.err(f"hinge must be one of {', '.join(HINGES)}, not {kw['hinge']!r}")
+        if r.has("axis"):
+            if kw["hinge"] != "center":
+                raise r.err(f"has axis, which only a \"center\" hinge takes; an edge hinge's axis is its edge "
+                            f"(hinge = {kw['hinge']!r})")
+            kw["axis"] = _axis(r)
         kw["range_deg"] = _span(r, "range_deg", "degrees") if r.has("range_deg") else None
         kw["rest_deg"] = r.num("rest_deg", 0.0)
         span, rest, key = kw["range_deg"], kw["rest_deg"], "rest_deg"
     else:
         kw["size"] = _size(r)
-        kw["axis"] = r.text("axis")
-        if kw["axis"] not in AXES:
-            raise r.err(f"axis must be \"x\", \"y\" or \"z\" (in the element's frame), not {kw['axis']!r}")
+        kw["axis"] = _axis(r)
         kw["range"] = _span(r, "range", "m")
-        if r.has("rest") and r.has("rest_in"):
-            raise r.err("has both rest and rest_in; give one")
-        kw["rest"] = r.num("rest_in") * IN if r.has("rest_in") else r.num("rest", 0.0)   # either sign
+        kw["rest"] = _length(r, "rest", 0.0, positive=False, signed=True)
         span, rest, key = kw["range"], kw["rest"], "rest"
     if span is not None and not span[0] <= rest <= span[1]:
         rkey = "range_deg" if kind == "hinged" else "range"
@@ -471,18 +482,23 @@ def _moving(r: _Reader, kind: str, kw: dict) -> Hinged | Sliding:
     return (Hinged if kind == "hinged" else Sliding)(**kw)
 
 
-def _end(r: _Reader, key: str) -> tuple[float, float, float]:
-    """A rod's `base` or `tip`, (x, y, z) in m or, as `<key>_in`, in inches."""
+def _lengths(r: _Reader, key: str, names: str) -> tuple[float, ...]:
+    """A list of lengths, `key` in m or `<key>_in` in inches: a rod's `base` or `tip` ("x, y, z"), a slide's `range`
+    ("lo, hi")."""
+    n = len(names.split(", "))
     if r.has(key) and r.has(key + "_in"):
         raise r.err(f"has both {key} and {key}_in; give one")
     if r.has(key + "_in"):
-        return tuple(v * IN for v in r.nums(key + "_in", 3))
-    return r.nums(key, 3)
+        return tuple(v * IN for v in r.nums(key + "_in", n))
+    if not r.has(key):
+        raise r.err(f"needs one of {key} = [{names}] (m) or {key}_in = [{names}] (in)")
+    return r.nums(key, n)
 
 
 def _rod(r: _Reader, name: str) -> Rod:
     """A rod: no center or yaw (its ends say where it is), two different ends, and a diameter shorter than it."""
-    kw = dict(name=name, base=_end(r, "base"), tip=_end(r, "tip"), diameter=_length(r, "diameter"),
+    kw = dict(name=name, base=_lengths(r, "base", "x, y, z"), tip=_lengths(r, "tip", "x, y, z"),
+              diameter=_length(r, "diameter"),
               friction=r.num("friction", DEFAULT_FRICTION, positive=True))
     kw["section"] = r.text("section") if r.has("section") else "round"
     if kw["section"] not in ("round", "square"):

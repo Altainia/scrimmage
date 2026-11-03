@@ -60,7 +60,8 @@ file's range less the rest. Positive is a right-hand turn about the axis (C3), o
 toward -x), about +z for the side and end edges and a flat disc (counter-clockwise seen from above), along +x, +y or
 +z for a slide. The stops are a platform's (PLATFORM_STOP_TC, critically damped); without `range_deg` a hinged panel
 turns freely. The breakaway is the joint's frictionloss, its solref as stiff as the stops so a push under it holds.
-The panel is a uniform box or disc of the element's mass. It is structure (NON_GROUND_GROUP), not ground.
+The panel is a uniform box or disc of the element's mass. It is structure (NON_GROUND_GROUP) or, with `ground`,
+ground (ELEMENT_GROUP).
 
 The stops are the joints' limits at +-`max_tilt_deg`, stiff (PLATFORM_STOP_TC) and critically damped, so the deck
 lands on its stop without a bounce; the seats at 0 are the same kind of limit. Each joint carries the range file's
@@ -380,7 +381,8 @@ def _moving(spec: mujoco.MjSpec, e: Hinged | Sliding, pos, quat) -> None:
              if hinged and e.shape == "disc" else
              dict(type=mujoco.mjtGeom.mjGEOM_BOX, size=list(np.asarray(panel_size(e) if hinged else e.size) / 2.0)))
     body.add_geom(name=f"element.{e.name}.panel", pos=list(arm), rgba=list(STRUCTURE_RGBA),
-                  friction=[e.friction, 0.005, 0.0001], group=NON_GROUND_GROUP, **shape, **FIELD_BITS)
+                  friction=[e.friction, 0.005, 0.0001], group=ELEMENT_GROUP if e.ground else NON_GROUND_GROUP,
+                  **shape, **FIELD_BITS)
 
 
 def add_element(spec: mujoco.MjSpec, e: Element) -> None:

@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from scrimmage.parts.field import FIELD_BITS
-from scrimmage.testrange.build_elements import ELEMENT_GROUP, add_element, panel_parts
+from scrimmage.testrange.build_elements import ELEMENT_GROUP, NON_GROUND_GROUP, add_element, panel_parts
 from scrimmage.testrange.elements import IN, Hinged, Sliding
 from scrimmage.testrange.spec import RangeError, load_range, parse_range
 
@@ -105,7 +105,8 @@ def test_light_flap_is_stable():
     m, d = _world(e)
     _, q, v = _joint(m, "flap", "hinge")
     # rad/s, out through its range and into its stop at 0: the flap's 0.2 m tip struck at 4 m/s, a robot at full
-    # speed
+    # speed. The stop gives about 0.031 deg per rad/s of knock, so the 1 deg band holds up to about 32 rad/s (6 m/s
+    # at the tip); a harder knock needs a stiffer stop than PLATFORM_STOP_TC.
     for knock in (20.0, -20.0):
         mujoco.mj_resetData(m, d)
         d.qvel[v] = knock
@@ -167,6 +168,8 @@ def test_inch_forms():
     assert inch.rest == pytest.approx(metric.rest) and inch.base_height == pytest.approx(metric.base_height)
     disc = _element("hinged", 'shape = "disc"\nhinge = "center"\ndiameter_in = 32\nthickness_in = 1\nmass = 1\n')
     assert disc.diameter == pytest.approx(32 * IN) and disc.thickness == pytest.approx(IN)
+    with pytest.raises(RangeError, match=r"needs one of range = \[lo, hi\] \(m\) or range_in = \[lo, hi\] \(in\)"):
+        _element("sliding", PORTCULLIS.replace("range = [0, 0.6]\n", ""))
     with pytest.raises(RangeError, match="both range and range_in"):
         _element("sliding", PORTCULLIS + "range_in = [0, 10]\n")
 
@@ -223,3 +226,96 @@ def test_moving_elements_in_a_world(tmp_path):
     for _ in range(3000):
         w.step(hal)
     assert math.degrees(d.qpos[q]) > 10.0        # it swings open, about its +y edge
+
+
+BLOCK = 'size = [0.4, 0.6, 0.8]\nbase_height = 0.1\nmass = 1\n'
+
+
+@pytest.mark.parametrize("hinge, anchor, axis, moves", [
+    ("bottom", (4.0, 3.0, 0.1), (0, 1, 0), (1, 0, 0)),      # tips its top toward +x
+    ("top", (4.0, 3.0, 0.9), (0, 1, 0), (-1, 0, 0)),        # swings its bottom toward -x
+    ("left", (4.0, 3.3, 0.5), (0, 0, 1), (1, 0, 0)),        # counter-clockwise seen from above
+    ("right", (4.0, 2.7, 0.5), (0, 0, 1), (-1, 0, 0)),
+    ("front", (4.2, 3.0, 0.5), (0, 0, 1), (0, -1, 0)),
+    ("back", (3.8, 3.0, 0.5), (0, 0, 1), (0, 1, 0)),
+    ("center", (4.0, 3.0, 0.5), (1, 0, 0), (0, 0, 0)),      # its thinnest axis, x; the center stays put
+])
+def test_each_hinge_turns_where_the_docstrings_say(hinge, anchor, axis, moves):
+    e = _element("hinged", f'hinge = "{hinge}"\n' + BLOCK)
+    m, d = _world(e)
+    j, q, _ = _joint(m, "e", "hinge")
+    mujoco.mj_forward(m, d)
+    assert d.xanchor[j.id] == pytest.approx(anchor) and d.xaxis[j.id] == pytest.approx(axis)
+    g = m.geom("element.e.panel").id
+    before = d.geom_xpos[g].copy()
+    d.qpos[q] = 0.01                            # a small positive turn
+    mujoco.mj_forward(m, d)
+    step = d.geom_xpos[g] - before
+    if any(moves):
+        assert step / np.linalg.norm(step) == pytest.approx(moves, abs=0.01)
+    else:
+        assert np.linalg.norm(step) < 1e-9
+
+
+def test_critical_damping_default():
+    e = _element("hinged", DOOR + "stiffness = 1\n", "door")
+    k = math.degrees(1.0)                       # N m/rad
+    inertia = 5.0 * (0.05 ** 2 + 0.9 ** 2) / 12.0 + 5.0 * 0.45 ** 2     # about the edge: center plus m d^2
+    assert e.damping == pytest.approx(2.0 * math.sqrt(k * inertia))
+    assert e.damping == pytest.approx(17.6, abs=0.05)
+    assert _element("hinged", DOOR + "stiffness = 1\ndamping = 3\n").damping == 3.0
+    s = _element("sliding", PORTCULLIS + "stiffness = 400\n")
+    assert s.damping == pytest.approx(2.0 * math.sqrt(400.0 * 2.27))
+
+
+def test_yawed_hinge_in_the_world():
+    """Turned 90 deg, local +y is world -x: a left hinge's edge is 0.45 m toward -x, a bottom hinge's axis -x."""
+    door = _element("hinged", DOOR + "yaw_deg = 90\n", "door")
+    m, d = _world(door)
+    j, _, _ = _joint(m, "door", "hinge")
+    mujoco.mj_forward(m, d)
+    assert d.xanchor[j.id] == pytest.approx([3.55, 3.0, 0.6]) and d.xaxis[j.id] == pytest.approx([0.0, 0.0, 1.0])
+    bridge = _element("hinged", 'hinge = "bottom"\n' + BLOCK + "yaw_deg = 90\n")
+    m, d = _world(bridge)
+    j, _, _ = _joint(m, "e", "hinge")
+    mujoco.mj_forward(m, d)
+    assert d.xanchor[j.id] == pytest.approx([4.0, 3.0, 0.1]) and d.xaxis[j.id] == pytest.approx([-1.0, 0.0, 0.0])
+
+
+def test_center_hinge_takes_an_axis():
+    """The cheval de frise's plate: flat, tilting about a horizontal axis through its middle."""
+    plate = ('hinge = "center"\naxis = "y"\nsize = [0.6, 0.6, 0.02]\nbase_height = 0.3\nrange_deg = [-30, 30]\n'
+             'mass = 2\n')
+    e = _element("hinged", plate)
+    assert e.axis == "y"
+    m, d = _world(e)
+    j, q, v = _joint(m, "e", "hinge")
+    mujoco.mj_forward(m, d)
+    assert d.xanchor[j.id] == pytest.approx([4.0, 3.0, 0.31]) and d.xaxis[j.id] == pytest.approx([0.0, 1.0, 0.0])
+    angles = _run(m, d, 1.0, torque=5.0, dof=v)          # pressed down on one side, it tilts to its stop
+    assert math.degrees(angles[-1]) == pytest.approx(30.0, abs=0.5)
+    disc = _element("hinged", 'shape = "disc"\nhinge = "center"\ndiameter = 0.8\nthickness = 0.02\nmass = 1\n')
+    assert disc.axis is None
+    with pytest.raises(RangeError, match="only a \"center\" hinge takes"):
+        _element("hinged", DOOR + 'axis = "y"\n')
+    with pytest.raises(RangeError, match="axis must be"):
+        _element("hinged", plate.replace('axis = "y"', 'axis = "w"'))
+
+
+def test_ground_panels_are_floor():
+    """`ground = true` puts the panel in the ground group (a drawbridge a robot drives over); otherwise structure."""
+    bridge = 'hinge = "bottom"\nsize = [1.2, 1.0, 0.05]\nrange_deg = [0, 90]\nmass = 10\n'
+    for kind, body in (("hinged", bridge), ("sliding", PORTCULLIS)):
+        for ground, group in (("", NON_GROUND_GROUP), ("ground = true\n", ELEMENT_GROUP)):
+            e = _element(kind, body + ground)
+            assert e.ground == bool(ground)
+            m, d = _world(e)
+            assert m.geom_group[m.geom("element.e.panel").id] == group
+    m, d = _world(_element("hinged", bridge + "ground = true\n"))
+    mujoco.mj_forward(m, d)
+    gid = np.array([-1], dtype=np.int32)
+    groups = np.array([1 if g == ELEMENT_GROUP else 0 for g in range(6)], dtype=np.uint8)
+    dist = mujoco.mj_ray(m, d, np.array([4.0, 3.0, 1.0]), np.array([0.0, 0.0, -1.0]), groups, 1, -1, gid)
+    assert m.geom(int(gid[0])).name == "element.e.panel" and 1.0 - dist == pytest.approx(0.05)
+    with pytest.raises(RangeError, match="ground must be true or false"):
+        _element("hinged", bridge + "ground = 1\n")
