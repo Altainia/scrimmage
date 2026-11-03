@@ -184,7 +184,7 @@ Compare it with the cycle line of `scrimmage air`. Count every tank on the store
 air settles for a few seconds (air leaving a tank cools it, so the gauge creeps back up a little as it warms).
 
 **The compressor.** Time how long your compressor takes to fill the tanks from empty until it stops. The default
-system (two 574 mL tanks and a VIAIR 90C) takes about 52 s in Scrimmage. To try your own tanks, run a Test-tab test
+system (two 574 mL tanks and a VIAIR 90C) takes about 50 s in Scrimmage. To try your own tanks, run a Test-tab test
 whose robot has `start_psi = 0` and that waits until the stored air pressure is above 114 psi; filling takes longer than a
 wait's usual 10 s limit, so give that block `timeout = 120` and the test `time_limit = 150` in the test file.
 

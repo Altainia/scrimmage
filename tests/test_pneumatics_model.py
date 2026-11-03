@@ -3,7 +3,7 @@ import math
 
 import pytest
 
-from scrimmage.pneumatics.model import (ATM, COMPRESSORS, DEFAULT_CONDUCTANCE, DEFAULT_DEAD_VOLUME, PSI, AirConfig,
+from scrimmage.pneumatics.model import (ATM, CFM, COMPRESSORS, DEFAULT_CONDUCTANCE, DEFAULT_DEAD_VOLUME, PSI, AirConfig,
                                         AirSystem, CylinderSpec)
 
 BORE, ROD, STROKE = 0.0269875, 0.0079375, 0.1524     # 1-1/16 in, 5/16 in, 6 in
@@ -91,6 +91,17 @@ def test_air_used_per_stroke():
     absolute = (60 * PSI + ATM) / ATM
     expected = (A_CAP * STROKE + DEFAULT_DEAD_VOLUME) * absolute - DEFAULT_DEAD_VOLUME
     assert used == pytest.approx(expected, rel=0.05)
+
+
+def test_compressor_free_air_matches_the_tanks():
+    """One definition of free air: the compressor's cfm, counted into the tanks, raises them as that much air at one
+    atmosphere would (the budget's and the tanks' free air)."""
+    air = AirSystem(AirConfig(compressor="VIAIR 90C", start_psi=50.0), [])     # no cylinder drawing air
+    before, h = air.stored_psi, 0.01
+    flow = COMPRESSORS["VIAIR 90C"].flow_cfm(before) * CFM          # m^3/s of free air
+    air.step(h, {}, True, True)
+    rise = (air.stored_psi - before) * PSI * (2 * 574e-6) / ATM       # m^3 of free air added to the tanks
+    assert rise == pytest.approx(flow * h, rel=1e-3)
 
 
 def test_switch_hysteresis():

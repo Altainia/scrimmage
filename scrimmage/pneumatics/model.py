@@ -16,7 +16,7 @@ It carries no seal friction: MuJoCo's tendon frictionloss does that.
 
 Flow through a valve follows ISO 6358, with sonic conductance C and critical ratio b:
 
-    q = C p_up RHO_ANR phi(r),  r = p_down / p_up,  phi = 1 for r <= b, else sqrt(1 - ((r - b) / (1 - b))^2)
+    q = C p_up RHO_FREE phi(r),  r = p_down / p_up,  phi = 1 for r <= b, else sqrt(1 - ((r - b) / (1 - b))^2)
 
 A valve is one of three states. "extend" feeds the cap side from the regulator and vents the rod side. "retract"
 is the mirror. "hold" shuts both ports and traps the air (a detented double solenoid with both coils off).
@@ -45,7 +45,10 @@ PSI = 6894.757            # Pa per psi
 ATM = 101325.0            # Pa
 T_AIR = 293.15            # K
 R_AIR = 287.05            # J/(kg K)
-RHO_ANR = 1.185           # kg/m^3, air at the standard reference condition (ISO 8778)
+# Free air, one definition throughout (the compressor's cfm, valve flow, the tanks, the budget): air at one
+# atmosphere and T_AIR, about 1.204 kg/m^3. (ISO 6358 counts flow at 1.185 kg/m^3, ANR; the conductance is an
+# estimate far coarser than the 1.6 % between them.)
+RHO_FREE = ATM / (R_AIR * T_AIR)   # kg/m^3
 CFM = 4.719474e-4         # m^3/s per cubic foot per minute
 MAX_WORKING_PSI = 60.0    # FRC rule: working side at most 60 psi
 MAX_STORED_PSI = 120.0    # FRC rule: stored side at most 120 psi
@@ -160,7 +163,7 @@ def _flow(p_up: float, p_down: float, conductance: float) -> float:
         phi = 1.0
     else:
         phi = math.sqrt(1.0 - ((r - CRITICAL_RATIO) / (1.0 - CRITICAL_RATIO)) ** 2)
-    return conductance * p_up * RHO_ANR * phi
+    return conductance * p_up * RHO_FREE * phi
 
 
 class AirSystem:
@@ -265,7 +268,7 @@ class AirSystem:
             self._on = (self._compressor is not None and enabled and closed_loop and self._calling)
             if self._on:
                 cfm = self._compressor.flow_cfm(self.stored_psi)
-                self._tank_mass += cfm * CFM * RHO_ANR * h
+                self._tank_mass += cfm * CFM * RHO_FREE * h
             for name, spec in self._specs.items():
                 x = min(max(extension.get(name, self._x[name]), 0.0), spec.stroke)
                 self._x[name] = x

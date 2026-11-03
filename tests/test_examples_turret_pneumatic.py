@@ -109,9 +109,9 @@ def test_pneumatic_example_air_lasts_ten_lifts(pneumatic):
     assert pneumatic["lifts"] == 10
     air = r.air
     assert air["below_working_t"] is None
-    # the README: 67 psi at the end, lowest 67 psi at 4.1 s; the compressor ran 2.1 s
+    # the README: 67 psi at the end, lowest 67 psi at 4.0 s; the compressor ran 2.1 s
     assert air["low_psi"] == pytest.approx(67, abs=0.5) and air["end_psi"] == pytest.approx(67, abs=0.5)
-    assert air["low_t"] == pytest.approx(4.1, abs=0.1)
+    assert air["low_t"] == pytest.approx(4.0, abs=0.1)
     assert air["compressor_s"] == pytest.approx(2.1, abs=0.1)
     assert max(r.signals["lift.extension"]) > 7.9           # the arm's swing uses the whole 8 in. stroke
     assert air_lines(r) == [f"air: 120 psi at the start, {air['end_psi']:.0f} psi at the end, lowest "

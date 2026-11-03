@@ -43,11 +43,11 @@ scrimmage test run examples/blocks/pneumatic/cycles.test.toml
 ```
 finished
   passed: the stored air pressure is above 60 psi from 0.3 s on (block 1)
-  air: 120 psi at the start, 67 psi at the end, lowest 67 psi at 4.1 s; the compressor ran 2.1 s
+  air: 120 psi at the start, 67 psi at the end, lowest 67 psi at 4.0 s; the compressor ran 2.1 s
   note: Pneumatic numbers are estimates (UNCALIBRATED): see docs/pneumatics.md.
 ```
 
-Each lift-and-drop cycle takes about 0.4 s, so the 10 are done by 4.1 s. The arm swings fast enough to carry the rod to
+Each lift-and-drop cycle takes about 0.4 s, so the 10 are done by 4.0 s. The arm swings fast enough to carry the rod to
 the end of its stroke most times. Every cycle uses about 5 psi from the tanks. The lowest pressure, 67 psi, is at the
 end, so the air lasts, with 7 psi to spare.
 
