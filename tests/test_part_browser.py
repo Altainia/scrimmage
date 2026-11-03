@@ -735,6 +735,7 @@ def test_the_part_tab_grip_row_sets_the_overlay(part_page):
     page.wait_for_selector("#part-grip:not([disabled])")
     texts = page.eval_on_selector_all("#part-grip option", "os => os.map(o => o.textContent)")
     assert "Nitrile — 0.8, estimate" in texts and "Grip tape — 1.1, estimate" in texts and texts[-1] == "My own number…"
+    assert texts[0] == "Default — 1.0 (MuJoCo's default; the larger of pad and piece applies)"   # ruling P37
     assert page.input_value("#part-grip") == ""
     overlay = imp.parent / "climber" / "scrimmage-edits.toml"
     _edit(page, lambda: page.select_option("#part-grip", "nitrile"))

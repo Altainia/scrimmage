@@ -36,6 +36,7 @@ GRIP_PRIORITY = 1                     # above a piece's (and every field geom's)
 GRIP_SOLREF = (0.004, 1.0)            # a rigid piece's firm contact (testrange/build.py, RIGID_SOLREF); a pad's own
 #                                       solref governs at GRIP_PRIORITY, so without it the pad's contact would be
 #                                       MuJoCo's soft default and a squeezed coral would creep down the pads
+MUJOCO_FRICTION = 1.0                 # MuJoCo's default sliding friction: a geom's when neither a grip nor part.toml sets one
 MY_OWN_MAX = 3.0                      # the largest measured friction taken (rubber on rubber is about 1 to 2)
 
 _HERE = Path(__file__).resolve().parent.parent
@@ -159,6 +160,26 @@ def _label(grip: str | float) -> str:
     label, mu = GRIP_MATERIALS[grip]
     word = label[0].lower() + label[1:] if label[1:2].islower() else label     # "nitrile", "HDPE / UHMW"
     return f"{word}, friction {mu:g} (UNCALIBRATED estimate; {MEASURE})"
+
+
+def pad_frictions(world) -> dict[str, float | None]:
+    """"<instance>.<body>" -> the sliding friction part.toml gives the body's touching geoms (treads aside; the largest
+    when they differ, a geom with none counting MuJoCo's default), or None when none sets one (MuJoCo's default,
+    MUJOCO_FRICTION), for each body of a path part with a geom that touches anything and no grip set."""
+    built = getattr(world, "parts", None)
+    if built is None:
+        return {}
+    out = {}
+    for inst in built.instances:
+        if inst.source.startswith("stock "):
+            continue
+        for b in inst.part.bodies:
+            touch = [g for g in b.geoms if g.collide and not g.tread]
+            if touch and b.name not in inst.part.grips:
+                set_ = [g.friction for g in touch if g.friction is not None]
+                out[f"{inst.name}.{b.name}"] = (max(g.friction if g.friction is not None else MUJOCO_FRICTION
+                                                    for g in touch) if set_ else None)
+    return dict(sorted(out.items()))
 
 
 def grip_notes(world) -> list[str]:

@@ -47,7 +47,10 @@ grip = { pad_left = "grip-tape", pad_right = 1.05 }    # 1.05: a friction you me
 ```
 
 Every colliding geom of the body (a wheel's tread is left alone) gets the material's sliding friction, a firm contact and
-contact priority 1, so the pad's friction, not a game piece's, is the one that applies. A number must be above 0 and at
+contact priority 1, so the pad's friction, not a game piece's, is the one that applies. That contact also replaces a
+ball's own tuned contact (its bounce and rolling) against that pad. A pad with no grip keeps its geoms' `friction`, or
+MuJoCo's default 1.0 (about grip tape's) when `part.toml` sets none, and then the larger of the pad's and the piece's
+friction applies; a run says which (an UNCALIBRATED estimate). A number must be above 0 and at
 most 3. A name that isn't a material, a body the part doesn't have, or a stock part is an error that names the file and the
 body; a body with no geom that touches anything is a warning. The friction values (rubber and nitrile 0.8, grip tape
 1.1, polycarbonate 0.4, aluminum 0.35, HDPE / UHMW 0.2) are estimates, **UNCALIBRATED**: see

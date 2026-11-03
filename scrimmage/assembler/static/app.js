@@ -487,6 +487,8 @@ export function fmt(v) {
   return String(+v.toPrecision(10));
 }
 
+// A Grip picker's entry for a pad with no grip set (the Part and Test tabs; scrimmage/blocks/run.py DEFAULT_GRIP_NOTE)
+export const DEFAULT_GRIP = "Default — 1.0 (MuJoCo's default; the larger of pad and piece applies)";
 export const UNIT = { "kg*m^2": "kg·m²", deg: "°", "N*m/rad": "N·m/rad" };
 
 // -- boot ---------------------------------------------------------------------------------------

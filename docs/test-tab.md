@@ -309,12 +309,16 @@ choices, with the friction the simulation uses for each:
 | **My own number** | what you type (above 0, up to 3) |
 
 (Rubber and nitrile are the same estimate, so they act the same: a sweep over both won't show a difference.) The
-picker shows each estimate beside the name. Left alone, a pad keeps the friction its part gives it.
+picker shows each estimate beside the name. Left alone (**Default — 1.0 (MuJoCo's default; the larger of pad and piece
+applies)**), a pad keeps the friction its part gives it: MuJoCo's default 1.0, about grip tape's, unless `part.toml`
+sets a `friction` on its geoms, and the larger of the pad's and the piece's friction applies.
 
 **Every number here is an estimate, marked UNCALIBRATED.** Friction against game pieces isn't published, so these are
 typical ranges. A run that depends on a grip says so in a line under the sentence ("claw.pad_left grip: nitrile,
 friction 0.8 (UNCALIBRATED estimate; measure yours with a sled pull)"), and a test of held, rests-on or seated with
-no grip set says that the pads have the default friction. Never take a grip result as measured.
+no grip set says what the pads have instead ("grip: the pads have MuJoCo's default friction 1.0 — about grip tape's;
+the larger of pad and piece applies — an UNCALIBRATED estimate; ...", or the friction `part.toml` gives them). Never take
+a grip result as measured.
 
 **How to measure your own friction (a sled pull).** Take a piece of your pad material, or a block covered in it, and
 the piece's surface (a scrap of the pipe, or the piece itself) lying flat on a table. Put weight on the pad block (it can

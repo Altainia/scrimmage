@@ -25,7 +25,7 @@
 // over the view and Esc (or Cancel) stops it. "Try it" only moves the drawing (part.tryit): it never makes an edit.
 // Points and axes go to the server in CAD coordinates; part_frame.js converts them from and to the robot frame.
 
-import { h, api, notice } from "./app.js";
+import { h, api, notice, DEFAULT_GRIP } from "./app.js";
 import { part, view3d, addSection, editOp, select, render, live, field, box, number, matLabel, kg, cog, expectBody,
   onPart } from "./part.js";
 import { toRobot, cadToRobot, robotToCad, dirToCad, dirToRobot, normalize, tryRange, turnFront, floorAndCenter,
@@ -893,7 +893,7 @@ function gripRows(c, b) {
   const own = typeof b.grip === "number" || gripOwnAsked === b.name;
   const building = !c.plugin && c.state.build && c.state.build.state === "building";
   const sel = h("select", { id: "part-grip" },
-    h("option", { value: "" }, "Default friction (not set)"),
+    h("option", { value: "" }, DEFAULT_GRIP),
     ...mats.map(([k, label, mu]) => h("option", { value: k }, `${label} — ${+mu.toPrecision(6)}, estimate`)),
     h("option", { value: "own" }, "My own number…"));
   sel.value = own ? "own" : b.grip == null ? "" : b.grip;

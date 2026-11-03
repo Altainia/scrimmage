@@ -32,7 +32,7 @@
 // robot state Setup shows, sweepFor: the sweep form's numbers, trySweep(blockId): opens the sweep form for that
 // block's number}.
 
-import { $, h, api, notice, registerTab, setTab, showPath, currentTab, store } from "./app.js";
+import { $, h, api, notice, registerTab, setTab, showPath, currentTab, store, DEFAULT_GRIP } from "./app.js";
 import { initRunPanel, update as updateRuns, replay, sweepShown, spreadShown } from "./test_run.js";
 import { defineBlocks, toolbox, testToWorkspace, workspaceToTest, placeOf, incomplete, looseStacks, setUsed, STYLES,
   headOf, setHead, sweepNumber, appendBlocks } from "./blocks_defs.js";
@@ -764,7 +764,7 @@ function gripRow(pal, body, i, running, first) {
     }
     t.gripOwn.delete(body);
     setGrip(body, v === "" ? null : v);
-  } }, h("option", { value: "", text: "Default friction (not set)" }),
+  } }, h("option", { value: "", text: DEFAULT_GRIP }),
   ...mats.map((m) => h("option", { value: m[0], text: gripText(m) })),
   h("option", { value: OWN, text: "My own number…" }));
   sel.value = own ? OWN : now === null ? "" : now;
@@ -801,7 +801,7 @@ function gripRow(pal, body, i, running, first) {
 // Try materials… for a part: every pad of it first (ruling P28), then each pad on its own.
 function gripChoices(pal, part) {
   const named = (g) => {
-    if (g === null || g === undefined) return "the default friction";
+    if (g === null || g === undefined) return "the default friction 1.0";
     if (typeof g === "number") return `my own ${fmt(g)}`;
     const m = (pal.grip_materials || []).find((x) => x[0] === g);
     return m ? m[1] : g;

@@ -206,10 +206,33 @@ def test_a_held_test_without_a_grip_still_says_uncalibrated(tmp_path):
     world = world_for(load(grabber(tmp_path, blocks())))
     assert grip_notes(world) == []
     program = load(tmp_path / "grab.test.toml")
-    from scrimmage.blocks.run import run_notes
+    from scrimmage.blocks.run import DEFAULT_GRIP_NOTE, run_notes
     (note,) = run_notes(world, program)
-    assert "UNCALIBRATED" in note
+    assert note == DEFAULT_GRIP_NOTE and "UNCALIBRATED" in note
+    # ruling P37: the default is MuJoCo's 1.0, said with the rule MuJoCo mixes by
+    assert "MuJoCo's default friction 1.0" in note and "the larger of pad and piece applies" in note
     assert run_notes(world, load(grabber(tmp_path / "plain", wait(0.1)))) == []
+
+
+@pytest.mark.parametrize("frictions, words", [
+    ((0.6, 0.6), "grip: the pads have friction 0.6, which part.toml gives them; the larger of pad and piece applies"),
+    ((0.6, None), "grip: the pads have the friction part.toml gives them (grabber.jaw_b 0.6, grabber.jaw_f MuJoCo's "
+                  "default 1.0); the larger of pad and piece applies")])
+def test_a_pads_own_friction_in_part_toml_is_the_one_the_note_names(tmp_path, frictions, words):
+    from scrimmage.blocks.run import run_notes
+    from scrimmage.parts.grip import pad_frictions
+    path = grabber(tmp_path, blocks())
+    part = tmp_path / "parts" / "grabber" / "part.toml"
+    text = part.read_text(encoding="utf-8").split("[[body]]")
+    for k, mu in zip((3, 4), frictions):       # jaw_b, jaw_f
+        if mu is not None:
+            text[k] = text[k].replace("color = [0.2, 0.2, 0.2, 1.0] }", f"color = [0.2, 0.2, 0.2, 1.0], friction = {mu} }}")
+    part.write_text("[[body]]".join(text), encoding="utf-8")
+    world = world_for(load(path))
+    assert pad_frictions(world) == {"grabber.jaw_b": frictions[0], "grabber.jaw_f": frictions[1]}
+    (note,) = run_notes(world, load(path))
+    assert note.startswith(words) and note.endswith("UNCALIBRATED estimate; pick a grip material for them in the "
+                                                    "Part tab, or measure yours with a sled pull (docs/test-tab.md)")
 
 
 @pytest.mark.parametrize("case, words", [("typo", "isn't a grip material"), ("no geoms", "does nothing"),

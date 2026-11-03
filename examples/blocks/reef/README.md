@@ -83,7 +83,8 @@ it.
 
 **Would grip tape help?** In Setup, the grabber's pads have a grip picker, and **Try materials…** beside the first one
 runs the test once per material on every pad of the grabber. At 4 V on the jaws every material places the coral. So
-does the pads' default friction (an uncalibrated estimate, which the run's note says). The squeeze is what matters:
+does the pads' default, MuJoCo's friction 1.0, about grip tape's, where the larger of pad and coral applies (an
+uncalibrated estimate, which the run's note says). The squeeze is what matters:
 
 | jaws | grip tape, rubber, nitrile | polycarbonate, aluminum | HDPE / UHMW |
 |---|---|---|---|
@@ -143,4 +144,4 @@ it is picked up, the jaws closing around it like a post.
 - The field's branch heights, angles and pipe size come from the 2025 game manual. The branches' lengths and the
   post's height are estimates from its figures (see the comments in the `reef` field file).
 - The coral is the `2025-coral` preset: 11 7/8 in long, 4.5 in outside and 4 in inside, 0.66 kg.
-- The pads use the default friction, an estimate. Measure yours with a sled pull before trusting a squeeze to a volt.
+- The pads use MuJoCo's default friction 1.0 (the larger of pad and coral applies), an estimate. Measure yours with a sled pull before trusting a squeeze to a volt.

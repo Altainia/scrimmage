@@ -195,17 +195,33 @@ def world_for(program: Program):
 
 
 GRIP_CONDITIONS = ("held", "rests_on", "seated")     # a test of these rests on the grip's friction
-DEFAULT_GRIP_NOTE = ("grip: the pads have the default friction, an UNCALIBRATED estimate; pick a grip material for "
-                     "them in the Part tab, or measure yours with a sled pull (docs/test-tab.md)")
+_GRIP_ADVICE = "an UNCALIBRATED estimate; pick a grip material for them in the Part tab, or measure yours with a sled " \
+               "pull (docs/test-tab.md)"
+_LARGER = "the larger of pad and piece applies"
+DEFAULT_GRIP_NOTE = f"grip: the pads have MuJoCo's default friction 1.0 — about grip tape's; {_LARGER} — {_GRIP_ADVICE}"
+
+
+def default_grip_note(world) -> str:
+    """The note for a test of held, rests on or seated with no grip anywhere: DEFAULT_GRIP_NOTE, or, when part.toml
+    sets a pad's friction, the pads' own values (MuJoCo's default 1.0 for a pad it leaves alone)."""
+    from ..parts.grip import pad_frictions
+    pads = pad_frictions(world)
+    if all(mu is None for mu in pads.values()):
+        return DEFAULT_GRIP_NOTE
+    mus = set(pads.values())
+    if len(mus) == 1:
+        return f"grip: the pads have friction {mus.pop():g}, which part.toml gives them; {_LARGER} — {_GRIP_ADVICE}"
+    each = ", ".join(f"{b} {mu:g}" if mu is not None else f"{b} MuJoCo's default 1.0" for b, mu in pads.items())
+    return f"grip: the pads have the friction part.toml gives them ({each}); {_LARGER} — {_GRIP_ADVICE}"
 
 
 def run_notes(world, program: Program) -> list[str]:
     """What the run's numbers rest on: a line per gripped body (parts/grip.py's grip_notes); a test of held, rests on
-    or seated with no grip anywhere gets DEFAULT_GRIP_NOTE, so its grip isn't read as measured either."""
+    or seated with no grip anywhere gets default_grip_note, so its grip isn't read as measured either."""
     from ..parts.grip import grip_notes
     notes = grip_notes(world)
     if not notes and any(_conds(program.blocks, k) for k in GRIP_CONDITIONS):
-        notes = [DEFAULT_GRIP_NOTE]
+        notes = [default_grip_note(world)]
     return notes
 
 

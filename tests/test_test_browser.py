@@ -1476,6 +1476,7 @@ def test_setup_grip_writes_the_parts_overlay_and_offers_try_values(test_page, tm
     assert "Rubber — 0.8, estimate" in texts and "Nitrile — 0.8, estimate" in texts       # ruling P27: they read the same
     assert "HDPE / UHMW — 0.2, estimate" in texts and texts[-1] == "My own number…"
     assert page.input_value(left) == ""                                                   # the default friction
+    assert texts[0] == "Default — 1.0 (MuJoCo's default; the larger of pad and piece applies)"   # ruling P37
     overlay = path.parent / "parts" / "grabber" / "scrimmage-edits.toml"
     page.select_option(left, "nitrile")
     _wait_file(lambda: overlay.is_file() and _toml(overlay)["body"]["jaw_left"]["grip"] == "nitrile", overlay)
