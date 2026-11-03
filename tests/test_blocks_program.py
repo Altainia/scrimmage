@@ -241,6 +241,8 @@ def test_old_test_files_load_unchanged():
     ("[setup]\nstation = { f = { colour = 1 } }", "isn't something"),
     ("[setup]\nstation = { f = { spread_position = [1, 2] } }", "3 numbers"),
     ("[setup]\nstation = { f = { stock = 201 } }", "stock can be at most 200 pieces, not 201"),
+    ("[setup]\nstation = { f = { tip_deg = 91 } }", "tip_deg must be from -90 to 90"),
+    ("[setup]\nstation = { f = { spread_turn_deg = -5 } }", "spread_turn_deg can't be negative"),
     ('[[block]]\ndo = "turn"\ndegrees = 0', "can't be 0"),
     ('[[block]]\ndo = "turn"\ndegrees = 721', "between -720 and 720"),
     ('[[block]]\ndo = "drive"\ndistance = -1\ndirection = "back"', "use one or the other"),
@@ -257,6 +259,13 @@ def test_old_test_files_load_unchanged():
 def test_bad_setup_and_blocks_say_what(bad, words):
     with pytest.raises(P.TestFileError, match=words):
         P.loads(HEAD + bad, PATH)
+
+
+def test_a_stations_tip_and_turn_are_setup_settings():
+    p = P.loads(HEAD + "[setup]\nstation = { f = { tip_deg = -30, turn_deg = -90, spread_tip_deg = 10,"
+                " spread_turn_deg = 45 } }", PATH)
+    assert p.setup["station"]["f"] == {"tip_deg": -30.0, "turn_deg": -90.0, "spread_tip_deg": 10.0,
+                                       "spread_turn_deg": 45.0}
 
 
 def test_a_cleared_hopper_is_kept():

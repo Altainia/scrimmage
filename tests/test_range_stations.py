@@ -30,6 +30,13 @@ def parse(tmp_path, text):
     return parse_range(tomllib.loads(text), tmp_path / "r.toml")
 
 
+def fuel():
+    """The 2026 FUEL kind (a 0.15 m ball), as HEAD's range has it."""
+    from scrimmage.testrange.pieces import ball_kind
+
+    return ball_kind("2026-fuel", "2026-fuel")
+
+
 def test_a_station_parses_with_its_defaults(tmp_path):
     rng = parse(tmp_path, HEAD + FEEDER)
     st = rng.stations[0]
@@ -108,7 +115,7 @@ def test_a_release_inside_each_kind_of_element_is_refused(tmp_path, kind):
 
 def test_a_release_inside_another_stations_chute_is_refused(tmp_path):
     chute = "chute = { length = 0.5, slope_deg = 10.0 }\n"
-    floor = chute_parts(parse(tmp_path, HEAD + FEEDER + chute).stations[0], 0.15)["floor"][0]
+    floor = chute_parts(parse(tmp_path, HEAD + FEEDER + chute).stations[0], fuel())["floor"][0]
     other = FEEDER.replace('"feeder"', '"second"').replace("[1.0, 4.0, 0.5]", f"[{floor[0]}, {floor[1]}, {floor[2]}]")
     with pytest.raises(RangeError, match="'second': its release point at .* is inside the chute of station 'feeder'"):
         parse(tmp_path, HEAD + FEEDER + chute + other)
@@ -140,22 +147,22 @@ def test_a_chute_narrower_than_the_ball_is_refused(tmp_path):
 
 def test_a_chute_without_a_width_fits_the_ball(tmp_path):
     st = parse(tmp_path, HEAD + FEEDER + "chute = { length = 0.5, slope_deg = 10.0 }\n").stations[0]
-    assert st.chute_width(0.15) == pytest.approx(0.195)
+    assert st.chute_width(fuel()) == pytest.approx(1.3 * 0.1501)
 
 
 def test_the_chute_parts_slope_down_the_heading_with_walls_each_side(tmp_path):
     st = parse(tmp_path, HEAD + FEEDER.replace("heading_deg = 0.0", "heading_deg = 90.0")
                + "chute = { length = 0.5, slope_deg = 20.0 }\n").stations[0]
-    parts = chute_parts(st, 0.15)
+    parts = chute_parts(st, fuel())
     assert set(parts) == {"floor", "wall_left", "wall_right"}
     floor_c, floor_r, floor_h = parts["floor"]
     assert floor_c[1] > 4.0 and floor_c[0] == pytest.approx(1.0)       # runs toward +y
     # the floor's top is tangent to a ball resting at the release point
     normal = floor_r[:, 2]
-    assert (np.array(st.release) - (floor_c + normal * floor_h[2])) @ normal == pytest.approx(0.075)
+    assert (np.array(st.release) - (floor_c + normal * floor_h[2])) @ normal == pytest.approx(0.1501 / 2)
     left, right = parts["wall_left"][0], parts["wall_right"][0]
     assert left[0] < 1.0 < right[0]                                       # left of +y is -x
-    assert abs(left[0] - right[0]) == pytest.approx(0.195 + 0.25 * 0.0254)
+    assert abs(left[0] - right[0]) == pytest.approx(1.3 * 0.1501 + 0.25 * 0.0254)
 
 
 @pytest.mark.parametrize("extra, key", [
@@ -435,7 +442,7 @@ def test_the_station_field_loads_and_its_starts_are_clear():
     x, y, heading = rng.starts["facing_ball"]
     (bx, by), = rng.floor_balls
     assert y == 2.0 and heading == 0.0 and (bx - x, by - y) == pytest.approx((1.5, 0.0))
-    walls = [c[1] + k * h[1] for c, _, h in chute_parts(st, rng.piece.diameter).values() for k in (-1, 1)]
+    walls = [c[1] + k * h[1] for c, _, h in chute_parts(st, st.kind_of(rng)).values() for k in (-1, 1)]
     assert y + ROBOT_OUTLINE / 2 < min(walls)
 
 
@@ -571,3 +578,171 @@ def test_a_broken_range_file_is_named_as_the_file_even_with_a_ball(tmp_path):
     cfg = tomllib.loads(new_config("standin") + '\n[range]\nfile = "2026"\nball = "2025-algae"\n')
     with pytest.raises(PartError, match=r"^\[range\] ball: .*overlap"):
         parse_range_section(cfg, tmp_path)
+
+
+# ------------------------------------------------------------------------------------------------ any piece kind
+
+IN = 0.0254
+CORAL_HEAD = '''
+[range]
+name = "t"
+ball = "2026-fuel"
+
+[piece.coral]
+preset = "2025-coral"
+'''
+CORAL_FEEDER = FEEDER + 'kind = "coral"\n'
+
+
+def coral_station_world(tmp_path, extra: str = ""):
+    """The station field with its feeder feeding 2025 corals (`extra` lines into its [[station]])."""
+    text = STATION_TOML.read_text(encoding="utf-8").replace(
+        "[[station]]", '[piece.coral]\npreset = "2025-coral"\n\n[[station]]', 1)
+    text = re.sub(r'(?m)^(name = "feeder".*\n)', lambda m: m.group(1) + 'kind = "coral"\n' + extra + "\n", text)
+    (tmp_path / "coral_station.toml").write_text(text, encoding="utf-8")
+    from scrimmage.assembler.templates import new_config
+    from scrimmage.world import World
+
+    cfg = tomllib.loads(new_config("standin") + '\n[range]\nfile = "coral_station.toml"\n')
+    w = World(cfg, tmp_path)
+    w.set_robot_pose(*AWAY)
+    return w
+
+
+def placed_quats(w) -> list:
+    """Each fed piece's quaternion as the feeder sets it (Balls.place recorded)."""
+    out, place = [], w.test_range.balls.place
+
+    def record(i, pos, vel, ang_vel, bits, full_bits_after=None, quat=None):
+        out.append(quat)
+        return place(i, pos, vel, ang_vel, bits, full_bits_after, quat)
+
+    w.test_range.balls.place = record
+    return out
+
+
+def axis_of(w, quat) -> np.ndarray:
+    from scrimmage.testrange.pieces import _matrix
+
+    kind = w.test_range.range.kinds["coral"]
+    return _matrix(quat) @ np.array(kind.axis)
+
+
+def test_a_ball_stations_feeds_are_unchanged(tmp_path):
+    w = station_world(tmp_path, "spread_yaw_deg = 10\nspread_speed = 0.5\nspeed = 0.5")
+    w.test_range.reset(seed=7)
+    w.set_robot_pose(*AWAY)
+    quats = placed_quats(w)
+    t0 = w.time
+    w.test_range.feeder.start("feeder")
+    advance(w, 2.05)
+    # printed by this body on the code before stations fed any kind
+    assert [(f.ball, round(f.t - t0, 6), f.release, f.velocity) for f in w.test_range.feeder.fed] == [
+        (1, 0.0, (0.3, 4.0, 1.1), (0.7749462813958566, 0.03386075902716931, -0.0)),
+        (2, 1.0, (0.3, 4.0, 1.1), (0.2784081718331147, -0.003116300728936605, -0.0)),
+        (3, 2.0, (0.3, 4.0, 1.1), (0.21511291511775546, 0.009179830360608196, -0.0))]
+    assert [list(q) for q in quats] == [[1.0, 0.0, 0.0, 0.0]] * 3
+
+
+def test_a_coral_station_sizes_its_chute_from_the_coral(tmp_path):
+    rng = parse(tmp_path, CORAL_HEAD + CORAL_FEEDER + "chute = { length = 0.5, slope_deg = 10.0 }\n")
+    st, coral = rng.stations[0], rng.kinds["coral"]
+    assert st.chute_width(coral) == pytest.approx(1.3 * 11.875 * IN)
+    parts = chute_parts(st, coral)
+    assert 2 * parts["wall_left"][2][2] == pytest.approx(11.875 * IN)          # the walls a coral's length high
+    # the floor's top is tangent to the coral lying in line at the release point: it touches, nothing passes below
+    floor_c, floor_r, floor_h = parts["floor"]
+    normal = floor_r[:, 2]
+    gap = (np.array(st.release) - (floor_c + normal * floor_h[2])) @ normal
+    assert gap == pytest.approx(coral.lowest(_on_slope(coral, 10.0)))
+    # the ball's chute is as it was, and the default kind's ball fills in for a station naming none
+    ball = parse(tmp_path, CORAL_HEAD + FEEDER + "chute = { length = 0.5, slope_deg = 10.0 }\n")
+    assert ball.stations[0].chute_width(ball.stations[0].kind_of(ball)) == pytest.approx(1.3 * 0.1501)
+
+
+def _on_slope(kind, slope_deg):
+    """The coral lying in line (turn 0 along the heading +x) seen in the frame of a floor sloping down +x."""
+    from scrimmage.testrange.pieces import _axis_angle, _matrix, _quat
+
+    return _quat(_axis_angle((0, 1, 0), -math.radians(slope_deg)) @ _matrix(kind.orient(0.0, 0.0)))
+
+
+def test_a_chute_narrower_than_a_coral_is_refused_in_its_words(tmp_path):
+    with pytest.raises(RangeError, match=r"chute: 0.3 m wide, no wider than the coral \(0.3016 m\)"):
+        parse(tmp_path, CORAL_HEAD + CORAL_FEEDER + "chute = { length = 0.5, slope_deg = 10.0, width = 0.3 }\n")
+
+
+def test_a_tip_spread_lowers_the_chute_for_the_worst_tip(tmp_path):
+    chute = "chute = { length = 0.5, slope_deg = 10.0 }\n"
+    rng = parse(tmp_path, CORAL_HEAD + CORAL_FEEDER + chute)
+    tipped = parse(tmp_path, CORAL_HEAD + CORAL_FEEDER + chute + "spread_tip_deg = 30\n")
+    coral = rng.kinds["coral"]
+    flat, worst = rng.stations[0].chute_top(coral), tipped.stations[0].chute_top(coral)
+    assert worst < flat - 0.05            # a 30 degree tip reaches about 7.5 cm further down
+    # no tip in the spread puts the coral's lowest point below the floor's top under it
+    from scrimmage.testrange.pieces import _axis_angle, _matrix, _quat
+
+    st = tipped.stations[0]
+    for tip in np.linspace(-30, 30, 13):
+        q = _quat(_axis_angle((0, 1, 0), -math.radians(10.0)) @ _matrix(coral.orient(tip, 0.0)))
+        assert coral.lowest(q) <= (st.release[2] - worst) * math.cos(math.radians(10.0)) + 1e-9
+
+
+def test_a_flat_kinds_station_feeds_it_lying_flat_by_default(tmp_path):
+    rng = parse(tmp_path, CORAL_HEAD.replace("coral]\npreset = \"2025-coral\"", "gear]\npreset = \"2017-gear\"")
+                + FEEDER + 'kind = "gear"\n')
+    assert rng.stations[0].tip_deg == 90.0
+    assert parse(tmp_path, CORAL_HEAD + CORAL_FEEDER).stations[0].tip_deg == 0.0
+
+
+def test_a_replaced_ball_sizes_the_chute(tmp_path):
+    import dataclasses
+
+    from scrimmage.testrange.pieces import ball_kind
+
+    rng = parse(tmp_path, HEAD + FEEDER + "chute = { length = 0.5, slope_deg = 10.0 }\n")
+    big = ball_kind("x", "2019-cargo").ball
+    st = rng.stations[0]
+    kind = st.kind_of(dataclasses.replace(rng, ball=big))
+    assert kind.ball is big and st.chute_width(kind) == pytest.approx(1.3 * big.diameter)
+
+
+def test_coral_comes_down_at_varied_turns(tmp_path):
+    w = coral_station_world(tmp_path, "spread_turn_deg = 45\nstock = 6")
+    quats = placed_quats(w)
+    w.test_range.feeder.start("feeder")
+    advance(w, 8.0)
+    assert len(quats) == 6
+    turns = [math.degrees(math.atan2(a[1], a[0])) for a in (axis_of(w, q) for q in quats)]
+    assert len({round(t) for t in turns}) >= 4 and all(abs(t) <= 45 + 1 for t in turns)
+    # the two extra draws come after the nine: the first feed's turn is its eleventh draw times 45
+    draws = np.random.default_rng([1, 0]).uniform(-1.0, 1.0, 11)
+    assert turns[0] == pytest.approx(draws[10] * 45.0)
+
+
+def test_a_fed_coral_slides_down_the_chute_onto_the_carpet(tmp_path):
+    w = coral_station_world(tmp_path)
+    st = w.test_range.range.stations[0]
+    chute_low_end_x = st.release[0] + st.chute.length * math.cos(math.radians(st.chute.slope_deg))
+    quats = placed_quats(w)
+    w.test_range.feeder.request("feeder")
+    advance(w, 4.0)
+    a = axis_of(w, quats[0])
+    assert abs(a[2]) < 1e-9 and a[0] == pytest.approx(1.0)                  # fed lying in line along the heading
+    i = w.test_range.feeder.fed[0].ball
+    x, _, z = w.test_range.balls.positions()[i]
+    b = w.test_range.balls
+    axis = w.data.xmat[b.bodies[i]].reshape(3, 3) @ np.array(w.test_range.range.kinds["coral"].axis)
+    assert x > chute_low_end_x and z == pytest.approx(4.5 * IN / 2, abs=0.01) and abs(axis[2]) < 0.05
+    assert b.state[i] == BallState.FIELD
+
+
+def test_station_tip_and_turn_overrides():
+    rng = load_range("station", ROOT)
+    assert with_overrides(rng, {"feeder": {"spread_turn_deg": 30}}).stations[0].spread_turn_deg == 30
+    s = with_overrides(rng, {"feeder": {"tip_deg": -20, "turn_deg": -90, "spread_tip_deg": 5}}).stations[0]
+    assert (s.tip_deg, s.turn_deg, s.spread_tip_deg) == (-20.0, -90.0, 5.0)
+    with pytest.raises(RangeError, match="tip_deg must be from -90 to 90, not 100"):
+        with_overrides(rng, {"feeder": {"tip_deg": 100}})
+    with pytest.raises(RangeError, match="spread_turn_deg must be 0 or more"):
+        with_overrides(rng, {"feeder": {"spread_turn_deg": -1}})

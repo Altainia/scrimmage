@@ -12,22 +12,28 @@
     spread_pitch_deg = 5.0
     spread_speed = 0.2
     spread_position = [0.0, 0.02, 0.02]    # or spread_position_in; a box around the release point, half sizes
-    spread_rotation_deg = [0, 0, 0]        # the ball's turn; it does nothing to a ball (a later piece's)
+    spread_rotation_deg = [0, 0, 0]        # roll, pitch and yaw turning the fed piece (it does nothing to a ball)
     chute = { length = 0.6, slope_deg = 25.0, width = 0.3 }   # a sloped floor and two side walls (optional)
     kind = "coral"                # the field's piece kind it feeds (default: the range's default kind)
-    tip_deg = 0.0                 # the fed piece's tip (0 lying on its side, 90 standing on end), -90 to 90
+    tip_deg = 0.0                 # the fed piece's tip (0 lying on its side, 90 standing on end), -90 to 90;
+                                  # left out, it lies down: 90 for a flat kind (lying flat), 0 for any other
     turn_deg = 0.0                # its turn about vertical, from the heading
     spread_tip_deg = 10.0         # and their spreads, as the others
     spread_turn_deg = 30.0
 
 The spreads are limits, not standard deviations (the bench's inlet takes standard deviations): a piece never leaves
-a tight chute's limits. The chute's floor top passes under the release point, tangent to a ball resting there, and
-runs down along the heading for `length` at `slope_deg` (its high end reaches a little behind the release point, so
-the ball lands on the floor's face); its side walls stand one ball diameter above the floor. Its `width` is the space
-between the walls, 1.3 ball diameters when left out (so a ball of any preset fits).
-Stations feed balls and rigid pieces (a kind, scrimmage/testrange/pieces.py), not discs. The release point's
-clearance is the piece's bounding radius, and a chute is sized for its bounding sphere (`fed_size`: for a ball, its
-diameter), so a release point clear of its own chute stays clear for any piece.
+a tight chute's limits. Every spread is +- its value on each axis.
+Stations feed balls and rigid pieces (a kind, scrimmage/testrange/pieces.py), not discs. A rigid piece is fed
+turned by its tip and turn (PieceKind.orient, the turn from the heading), then by the rotation spread; a ball is
+fed unturned (its rotation spread turns it, which changes nothing).
+
+The chute's floor top passes under the release point, tangent to the piece resting there: a ball, or a rigid piece
+at the lowest of the tips and turns its spreads allow (so no feed starts inside the floor; the rest are set down a
+little above it). It runs down along the heading for `length` at `slope_deg` (its high end reaches a little behind
+the release point, so the piece lands on the floor's face); its side walls stand one piece extent (the largest
+side of its bounding box: a ball's diameter) above the floor. Its `width` is the space between the walls, 1.3
+extents when left out (so a piece of any preset fits, whichever way it is turned). The release point's clearance
+from everything but its own chute's floor is the piece's bounding radius.
 """
 
 from __future__ import annotations
@@ -48,12 +54,13 @@ if TYPE_CHECKING:
 DEFAULT_INTERVAL = 1.0      # s between balls (a human player's pace; some are much quicker, so it is a setting)
 STATION_CAP = 50            # balls a station with no stock feeds at most in one run (the parked pool's size)
 MAX_STOCK = 200             # a station's stock at most (ruling R13: each ball is parked in the world from the start)
-CHUTE_WIDTH_BALLS = 1.3     # a chute's default width between its walls, in ball diameters
-CHUTE_WALL_BALLS = 1.0      # its side walls' height above the floor, in ball diameters
+CHUTE_WIDTH_BALLS = 1.3     # a chute's default width between its walls, in piece extents (a ball's diameters)
+CHUTE_WALL_BALLS = 1.0      # its side walls' height above the floor, in piece extents
+SPREAD_SAMPLES = 9          # tips (and turns) tried across a spread for the lowest one under the release point
 CHUTE_PLATE = 0.25 * IN     # m: the chute's floor and wall thickness (estimate: a polycarbonate sheet)
 DEFAULT_SEED = 1            # the spreads' random seed, as the bench's
 OVERRIDE_KEYS = ("interval", "stock", "spread_yaw_deg", "spread_pitch_deg", "spread_speed", "spread_position",
-                 "spread_rotation_deg")
+                 "spread_rotation_deg", "tip_deg", "turn_deg", "spread_tip_deg", "spread_turn_deg")
 _STATION = ("name", "release", "release_in", "heading_deg", "pitch_deg", "speed", "interval", "stock",
             "spread_yaw_deg", "spread_pitch_deg", "spread_speed", "spread_position", "spread_position_in",
             "spread_rotation_deg", "chute", "kind", "tip_deg", "turn_deg", "spread_tip_deg", "spread_turn_deg")
@@ -77,7 +84,7 @@ def check_seed(seed) -> int:
 class Chute:
     length: float               # along the slope
     slope_deg: float            # below horizontal
-    width: float | None = None  # between the walls; None: CHUTE_WIDTH_BALLS ball diameters
+    width: float | None = None  # between the walls; None: CHUTE_WIDTH_BALLS piece extents
 
 
 @dataclass(frozen=True)
@@ -96,14 +103,21 @@ class Station:
     spread_rotation_deg: tuple[float, float, float] = (0.0, 0.0, 0.0)
     chute: Chute | None = None
     kind: str | None = None     # the kind it feeds; None: the range's default kind
-    tip_deg: float = 0.0        # the fed piece's tip: 0 lying on its side, 90 standing on end
+    tip_deg: float = 0.0        # the fed piece's tip: 0 lying on its side, 90 standing on end (a range file's
+                                # default is the kind's lying down: 90 for a flat kind)
     turn_deg: float = 0.0       # its turn about vertical, from the heading
     spread_tip_deg: float = 0.0
     spread_turn_deg: float = 0.0
 
     def kind_of(self, rng: Range) -> PieceKind:
-        """The kind this station feeds."""
-        return rng.kinds[self.kind if self.kind is not None else rng.default_kind]
+        """The kind this station feeds: Range.piece's own ball for the kind it is (a range with its `ball` replaced
+        builds and feeds that ball)."""
+        from .pieces import ball_kind_of
+
+        kind = rng.kinds[self.kind if self.kind is not None else rng.default_kind]
+        if kind.form == "ball" and kind.name == rng.piece_kind and rng.ball is not None and rng.ball is not kind.ball:
+            return ball_kind_of(kind.name, kind.preset, rng.ball)
+        return kind
 
     def pool(self) -> int:
         """Balls the station can feed in one run."""
@@ -114,27 +128,47 @@ class Station:
         y, p = math.radians(yaw_deg), math.radians(pitch_deg)
         return np.array([math.cos(p) * math.cos(y), math.cos(p) * math.sin(y), -math.sin(p)])
 
-    def chute_top(self, ball_d: float) -> float:
-        """The height of the chute floor's top face under the release point: tangent to a ball resting there."""
-        return self.release[2] - (ball_d / 2.0) / math.cos(math.radians(self.chute.slope_deg))
+    def fed_rotations(self, kind: PieceKind) -> list[np.ndarray]:
+        """The rotation matrices a rigid piece of `kind` may be fed at: its tip and turn (PieceKind.orient) across
+        their spreads, SPREAD_SAMPLES of each, then the rotation spread's corners and middles. One, unspread."""
+        from .pieces import _matrix, _rpy
 
-    def chute_width(self, ball_d: float) -> float:
-        """The space between the chute's walls for a ball of diameter `ball_d`."""
+        def across(v: float, spread: float) -> np.ndarray:
+            return np.linspace(v - spread, v + spread, SPREAD_SAMPLES) if spread > 0.0 else np.array([v])
+
+        rpys = {tuple((np.array(c) - 1.0) * self.spread_rotation_deg) for c in np.ndindex(3, 3, 3)}
+        base = [_matrix(kind.orient(tip, self.heading_deg + turn)) for tip in across(self.tip_deg, self.spread_tip_deg)
+                for turn in across(self.turn_deg, self.spread_turn_deg)]
+        return [_rpy(r) @ m for r in rpys for m in base]
+
+    def clearance(self, kind: PieceKind) -> float:
+        """How far the chute floor's top lies below the release point, at right angles to the floor: a ball's
+        radius; for a rigid piece, the furthest it reaches toward the floor at any of its `fed_rotations`."""
+        if kind.ball is not None:
+            return kind.ball.diameter / 2.0
+        from .pieces import _axis_angle, _quat
+
+        # turned so that the floor's normal is up: about z by -heading, then about y by -slope
+        to_floor = (_axis_angle((0, 1, 0), -math.radians(self.chute.slope_deg))
+                    @ _axis_angle((0, 0, 1), -math.radians(self.heading_deg)))
+        return max(kind.lowest(_quat(to_floor @ m)) for m in self.fed_rotations(kind))
+
+    def chute_top(self, kind: PieceKind) -> float:
+        """The height of the chute floor's top face under the release point: tangent to the piece resting there."""
+        return self.release[2] - self.clearance(kind) / math.cos(math.radians(self.chute.slope_deg))
+
+    def chute_width(self, kind: PieceKind) -> float:
+        """The space between the chute's walls for a piece of `kind`."""
         width = self.chute.width if self.chute is not None else None
-        return width if width is not None else CHUTE_WIDTH_BALLS * ball_d
+        return width if width is not None else CHUTE_WIDTH_BALLS * kind.extent
 
 
-def _low_end_drop(st: Station, ball_d: float) -> float:
+def _low_end_drop(st: Station, kind: PieceKind) -> float:
     """How far the chute's floor underside at its low end lies below the carpet (negative: above it)."""
     c = st.chute
     s = math.radians(c.slope_deg)
-    top = st.chute_top(ball_d) - c.length * math.sin(s)
+    top = st.chute_top(kind) - c.length * math.sin(s)
     return -(top - CHUTE_PLATE * math.cos(s))
-
-
-def fed_size(kind: PieceKind) -> float:
-    """The size a station's chute is built for: the diameter of the kind's bounding sphere (a ball's diameter)."""
-    return 2.0 * kind.radius
 
 
 def _piece_words(kind: PieceKind) -> str:
@@ -182,10 +216,10 @@ def _station(path, table, i: int, kinds: dict[str, PieceKind], default: str, tak
     speed = r.num("speed", 0.0)
     if speed < 0.0:
         raise r.err(f"speed must be 0 or more, not {speed!r}")
-    tip = r.num("tip_deg", 0.0)
+    tip = r.num("tip_deg", 90.0 if kind.flat else 0.0)
     if not -90.0 <= tip <= 90.0:
         raise r.err(f"tip_deg must be from -90 to 90, not {tip}")
-    rad, size = kind.radius, fed_size(kind)
+    rad = kind.radius
     x, y, z = release
     if not (rad <= x <= FIELD_LENGTH - rad and rad <= y <= FIELD_WIDTH - rad):
         raise r.err(f"release point ({x:.4g}, {y:.4g}) lies off the field (0..{FIELD_LENGTH} x 0..{FIELD_WIDTH} m,"
@@ -206,11 +240,10 @@ def _station(path, table, i: int, kinds: dict[str, PieceKind], default: str, tak
                  spread_position=spread_position, spread_rotation_deg=rotation, chute=chute, kind=kind_name,
                  tip_deg=tip, turn_deg=r.num("turn_deg", 0.0))
     if chute is not None:
-        if chute.width is not None and chute.width <= size:
-            what = "the ball" if kind.ball is not None else f"the {kind.label}"
-            raise RangeError(f"{path}: {r.where} chute: {chute.width:.4g} m wide, no wider than {what}"
-                             f" ({size} m)")
-        drop = _low_end_drop(st, size)
+        if chute.width is not None and chute.width <= kind.extent:
+            what = f"the ball ({kind.extent} m)" if kind.ball is not None else f"the {kind.label} ({kind.extent:.4g} m)"
+            raise RangeError(f"{path}: {r.where} chute: {chute.width:.4g} m wide, no wider than {what}")
+        drop = _low_end_drop(st, kind)
         if drop > 0.0:
             raise RangeError(f"{path}: {r.where} chute: its low end would be {drop:.2g} m below the carpet; make"
                              " it shorter or less steep")
@@ -260,8 +293,9 @@ def _element_boxes(e) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
 
 
 def check_release_clear(path, rng: Range) -> None:
-    """Refuse a release point whose ball overlaps an element's box, an obstacle, or a station's chute, and a chute
-    that reaches off the field or into an element, an obstacle or another station's chute."""
+    """Refuse a release point whose piece (its bounding sphere) overlaps an element's box, an obstacle, or a station's
+    chute (its own chute's walls, not the floor built under it), and a chute that reaches off the field or into an
+    element, an obstacle or another station's chute."""
     if not rng.stations:
         return
     from .build_elements import chute_parts
@@ -269,14 +303,17 @@ def check_release_clear(path, rng: Range) -> None:
     solids = [(f"element '{e.name}'", _element_boxes(e)) for e in rng.elements]
     solids += [(f"obstacle '{o.name}'", [(np.array(o.pos, float), o.rotation(), np.array(o.size) / 2.0)])
                for o in rng.obstacles]
-    solids += [(f"the chute of station '{s.name}'", list(chute_parts(s, fed_size(s.kind_of(rng))).values()))
-               for s in rng.stations if s.chute is not None]
-    _check_chutes(path, rng, solids)
+    chutes = {s.name: chute_parts(s, s.kind_of(rng)) for s in rng.stations if s.chute is not None}
+    solids += [(f"the chute of station '{name}'", list(parts.values())) for name, parts in chutes.items()]
+    _check_chutes(path, rng, solids, chutes)
     for st in rng.stations:
         kind = st.kind_of(rng)
         r = kind.radius
         p = np.array(st.release)
+        own = [b for part, b in chutes[st.name].items() if part != "floor"] if st.name in chutes else []
         for what, boxes in solids:
+            if what == f"the chute of station '{st.name}'":
+                boxes = own
             for center, rot, half in boxes:
                 local = rot.T @ (p - center)
                 if np.linalg.norm(local - np.clip(local, -half, half)) < r - _TOUCH:
@@ -319,16 +356,14 @@ def _footprint(box) -> np.ndarray:
     return base + np.array([-along - across, along - across, along + across, -along + across])
 
 
-def _check_chutes(path, rng: Range, solids) -> None:
-    """Each chute's boxes on the field (inside its walls) and clear of the elements, obstacles, other chutes and
-    the start poses' robot outlines (seen from above, as the elements are)."""
-    from .build_elements import chute_parts
-
+def _check_chutes(path, rng: Range, solids, chutes: dict) -> None:
+    """Each chute's boxes (`chutes`: station name -> chute_parts) on the field (inside its walls) and clear of the
+    elements, obstacles, other chutes and the start poses' robot outlines (seen from above, as the elements are)."""
     for st in rng.stations:
         if st.chute is None:
             continue
         where = f"{path}: [[station]] '{st.name}': its chute"
-        for part, box in chute_parts(st, fed_size(st.kind_of(rng))).items():
+        for part, box in chutes[st.name].items():
             c = _corners(*box)
             lo, hi = c.min(axis=0), c.max(axis=0)
             if lo[0] < 0.0 or lo[1] < 0.0 or hi[0] > FIELD_LENGTH or hi[1] > FIELD_WIDTH:
@@ -369,7 +404,15 @@ def with_overrides(rng: Range, overrides: dict) -> Range:
             if stock > MAX_STOCK:
                 raise r.err(stock_too_big(stock))
             new["stock"] = stock or None
-        for key in ("spread_yaw_deg", "spread_pitch_deg", "spread_speed", "spread_position", "spread_rotation_deg"):
+        if r.has("tip_deg"):
+            tip = r.num("tip_deg")
+            if not -90.0 <= tip <= 90.0:
+                raise r.err(f"tip_deg must be from -90 to 90, not {tip:g}")
+            new["tip_deg"] = tip
+        if r.has("turn_deg"):
+            new["turn_deg"] = r.num("turn_deg")
+        for key in ("spread_yaw_deg", "spread_pitch_deg", "spread_speed", "spread_position", "spread_rotation_deg",
+                    "spread_tip_deg", "spread_turn_deg"):
             if r.has(key):
                 v = r.nums(key, 3) if key in ("spread_position", "spread_rotation_deg") else r.num(key)
                 if min(v if isinstance(v, tuple) else (v,)) < 0.0:

@@ -8,7 +8,8 @@ The setting (a target) is one of
     {"mount": "<part>", "axis": "x" | "y" | "z" | "yaw"}                   a [[part]]'s pos (m) / rot yaw (deg)
     {"setup": "seed"}                                                      the test's [setup] seed
     {"station": "<name>", "key": "interval" | "stock" | "spread_..."}      a station's setting in [setup]
-                                                                           (spread_position / spread_rotation_deg:
+                                                                           (or "tip_deg" | "turn_deg";
+                                                                           spread_position / spread_rotation_deg:
                                                                            all three axes at the value)
 
 A block, seed or station value changes the test; a robot or mount value changes a copy of the robot config, written
@@ -71,7 +72,8 @@ def _kind(target) -> str:
         if set(target) == {"station", "key"} and isinstance(target["station"], str) and target["key"] in STATION_KEYS:
             return "setup"
     raise ValueError(f"can't sweep {target!r}: sweep a block's volts, seconds, to or distance, the robot's mass or "
-                     "center of mass, where a part is mounted, a station's interval, stock or spread, or the seed")
+                     "center of mass, where a part is mounted, a station's interval, stock, spread, tip or turn, or "
+                     "the seed")
 
 
 def _block_json(blocks: list, place: list) -> dict:

@@ -61,6 +61,7 @@ high side than these do.
 from __future__ import annotations
 
 import math
+from typing import TYPE_CHECKING
 
 import mujoco
 import numpy as np
@@ -70,6 +71,9 @@ from .build import FUNNEL_RGBA, PLATE_FRICTION, RangeLayout, _quat, _rpy
 from .elements import IN, POST, Bar, Box, Bump, Element, Platform, Ramp, Rod, Switch
 from .spec import _rot_z
 from .station import CHUTE_PLATE, CHUTE_WALL_BALLS, Station
+
+if TYPE_CHECKING:
+    from .pieces import PieceKind
 
 __all__ = ["ELEMENT_GROUP", "NON_GROUND_GROUP", "add_chute", "add_element", "fill_layout", "platform_joints",
            "platform_tilt", "switch_joint"]
@@ -155,19 +159,21 @@ def ramp_parts(e: Ramp) -> dict:
     return parts
 
 
-def chute_parts(st: Station, ball_d: float) -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]]:
-    """A station's chute as boxes in the field: (center, rotation, half sizes) for "floor", "wall_left" and
-    "wall_right". The floor's top plane is tangent to a ball resting at the release point and runs down along the
-    heading, `length` from under the release point; the walls stand CHUTE_WALL_BALLS ball diameters above it, the
-    left one on the heading's left. A ball on a slope touches it r sin(slope) back up the slope from under its center,
-    so the floor's high end starts one more ball radius up the slope from that point: a ball set down at the release
-    point lands on the floor's face, not on its top edge."""
+def chute_parts(st: Station, kind: PieceKind) -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """A station's chute for pieces of `kind`, as boxes in the field: (center, rotation, half sizes) for "floor",
+    "wall_left" and "wall_right". The floor's top plane is tangent to the piece resting at the release point
+    (Station.chute_top) and runs down along the heading, `length` from under the release point; the walls stand
+    CHUTE_WALL_BALLS piece extents above it, the left one on the heading's left. A ball on a slope touches it
+    r sin(slope) back up the slope from under its center, so the floor's high end starts one more ball radius up the
+    slope from that point: a ball set down at the release point lands on the floor's face, not on its top edge. A
+    rigid piece touches within its bounding radius of its center, so that radius stands in for r.
+    """
     c = st.chute
     s = math.radians(c.slope_deg)
-    width = st.chute_width(ball_d)
+    width = st.chute_width(kind)
     x, y = st.release[:2]
-    r = ball_d / 2.0
-    top0 = (0.0, st.chute_top(ball_d))                  # in the heading's vertical plane: (along, up)
+    r = kind.ball.diameter / 2.0 if kind.ball is not None else kind.radius
+    top0 = (0.0, st.chute_top(kind))                    # in the heading's vertical plane: (along, up)
     # the ball touches at (-r sin s, z - r cos s); one radius further up the slope is r cos s further back
     back = r * (math.sin(s) + math.cos(s))
     high = (-back, top0[1] + back * math.tan(s))
@@ -175,7 +181,7 @@ def chute_parts(st: Station, ball_d: float) -> dict[str, tuple[np.ndarray, np.nd
     center, rot, (hx, hz) = _slope(high, low, CHUTE_PLATE)
     rz = _rot_z(st.heading_deg)
     origin = np.array([x, y, 0.0])
-    wall_h = CHUTE_WALL_BALLS * ball_d
+    wall_h = CHUTE_WALL_BALLS * kind.extent
     up = rot[:, 2]                                       # the floor's upward normal
     surface = center + up * CHUTE_PLATE / 2.0            # the middle of the floor's top face
     side = CHUTE_PLATE / 2.0 + width / 2.0
@@ -186,11 +192,12 @@ def chute_parts(st: Station, ball_d: float) -> dict[str, tuple[np.ndarray, np.nd
     return {name: (origin + rz @ c3, rz @ rot, np.array(half)) for name, (c3, half) in parts.items()}
 
 
-def add_chute(spec: mujoco.MjSpec, st: Station, ball_d: float) -> None:
-    """Station `st`'s chute (chute_parts) as body `element.<station>.chute`, welded to the world: geoms
-    `element.<station>.chute.floor`, `.wall_left` and `.wall_right`, clear polycarbonate. Structure, not ground."""
+def add_chute(spec: mujoco.MjSpec, st: Station, kind: PieceKind) -> None:
+    """Station `st`'s chute for pieces of `kind` (chute_parts) as body `element.<station>.chute`, welded to the
+    world: geoms `element.<station>.chute.floor`, `.wall_left` and `.wall_right`, clear polycarbonate. Structure, not
+    ground."""
     body = spec.worldbody.add_body(name=f"element.{st.name}.chute")
-    for part, (center, rot, half) in chute_parts(st, ball_d).items():
+    for part, (center, rot, half) in chute_parts(st, kind).items():
         body.add_geom(name=f"element.{st.name}.chute.{part}", type=mujoco.mjtGeom.mjGEOM_BOX, pos=list(center),
                       quat=_quat(rot), size=list(half), rgba=list(FUNNEL_RGBA), friction=list(PLATE_FRICTION),
                       group=NON_GROUND_GROUP, **FIELD_BITS)

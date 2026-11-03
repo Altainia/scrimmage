@@ -351,6 +351,11 @@ def _station_setup(name: str, t) -> dict:
             if v > MAX_STOCK:
                 raise TestFileError(f"{where}: {stock_too_big(v)}")
             out[key] = v
+        elif key in ("tip_deg", "turn_deg"):
+            x = _num(v, where, key)
+            if key == "tip_deg" and not -90 <= x <= 90:
+                raise TestFileError(f"{where}: tip_deg must be from -90 to 90")
+            out[key] = x
         else:
             x = _time(v, where, key)
             if key == "interval" and x <= 0:

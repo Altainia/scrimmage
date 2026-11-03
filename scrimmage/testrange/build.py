@@ -73,7 +73,7 @@ from ..launcher.inputs import Ball
 from ..parts.field import FIELD_BITS
 from .pieces import PieceKind
 from .spec import BUILTIN_RANGES, Goal, Obstacle, Range, RangeError, RectOpening, load_range
-from .station import DEFAULT_SEED, check_seed, fed_size, with_overrides
+from .station import DEFAULT_SEED, check_seed, with_overrides
 
 BALL_BITS = {"contype": 4, "conaffinity": 7}       # touches the field, the robot and other balls
 LAUNCHED_BITS = {"contype": 4, "conaffinity": 5}   # touches the field and balls, not the robot
@@ -308,7 +308,7 @@ def add_range(spec: mujoco.MjSpec, rng: Range, n_slots: int, *, floor_balls: boo
         add_element(spec, e)
     for st in rng.stations:
         if st.chute is not None:
-            add_chute(spec, st, fed_size(st.kind_of(rng)))
+            add_chute(spec, st, st.kind_of(rng))
     timestep = spec.option.timestep
     # each slot's kind, in ball order: the floor pieces, the robot's slots (Range.piece's kind), the stations' pools
     n_floor = len(rng.floor_balls) if floor_balls else 0

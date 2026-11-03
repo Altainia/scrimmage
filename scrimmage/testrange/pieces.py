@@ -611,6 +611,11 @@ def ball_kind(name: str, preset: str) -> PieceKind:
         ball = _build_section("ball", {"preset": preset})
     except LauncherConfigError as e:  # pragma: no cover - the shipped presets are complete
         raise RangeError(str(e)) from e
+    return ball_kind_of(name, preset, ball)
+
+
+def ball_kind_of(name: str, preset: str | None, ball: Ball) -> PieceKind:
+    """A kind that is the launcher ball `ball` (from `preset`)."""
     r = ball.diameter / 2
     i = ball.inertia_factor * ball.mass * r * r
     return PieceKind(name=name, form="ball", preset=preset, ball=ball, disc=None, aero=None,
