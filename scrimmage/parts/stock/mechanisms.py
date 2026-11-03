@@ -1,5 +1,7 @@
-"""Stock mechanisms: elevator, arm, flywheel, roller. Their geoms never collide; they exist to carry mass,
-inertia, joints and motor/encoder slots."""
+"""Stock mechanisms: elevator, arm, flywheel, roller, turret, cylinder, launcher and disc shooter. They carry mass,
+inertia, joints and motor/encoder slots. Their geoms touch nothing unless the part sets collide = true; then all but
+the drawing-only ones (the launcher's hood arc, the disc shooter's guide plates, a push cylinder's barrel) touch the
+field, game pieces and a partner robot, never the robot's own parts."""
 
 from __future__ import annotations
 
@@ -21,6 +23,10 @@ def _motor_param(doc: str) -> Param:
 
 def _count_param(doc: str, default: int) -> Param:
     return Param("count", "", default, doc, kind="int", min=1)
+
+
+COLLIDE = Param("collide", "", False, "its geoms touch the field, game pieces and a partner robot (never the "
+                "robot's own parts)", kind="bool")
 
 
 # ---------------------------------------------------------------- elevator
@@ -62,14 +68,14 @@ def slide_chain(p: dict, stage_geoms, last: str, last_mass: float, slot: str, en
 
 
 def _elevator(p: dict) -> dict:
-    n, w = p["stages"], p["width"]
+    n, w, c = p["stages"], p["width"], p["collide"]
 
     def geoms(i: int, h: float) -> list[dict]:
         if i == 0:
-            return [{"box": [0.05, w, h], "pos": [0, 0, h / 2], "color": STEEL, "collide": False}]
+            return [{"box": [0.05, w, h], "pos": [0, 0, h / 2], "color": STEEL, "collide": c}]
         if i == n:
-            return [{"box": [0.08, w, 0.1], "pos": [0, 0, 0.05], "color": ORANGE, "collide": False}]
-        return [{"box": [0.05, w - 0.02 * i, h], "pos": [0, 0, h / 2], "color": STEEL, "collide": False}]
+            return [{"box": [0.08, w, 0.1], "pos": [0, 0, 0.05], "color": ORANGE, "collide": c}]
+        return [{"box": [0.05, w - 0.02 * i, h], "pos": [0, 0, h / 2], "color": STEEL, "collide": c}]
 
     return {
         "part": {"name": "elevator", "format": 1},
@@ -95,7 +101,8 @@ register(Stock(
      Param("gearing", "", 9.0, "motor turns per spool turn", positive=True),
      Param("spool_radius", "m", 0.022, "radius the rope winds on", positive=True),
      Param("friction", "N", 5.0, "constant sliding friction, in newtons felt at the carriage", min=0.0),
-     Param("width", "m", 0.3, "side-to-side width of the stages", min=0.1)),
+     Param("width", "m", 0.3, "side-to-side width of the stages", min=0.1),
+     COLLIDE),
     _elevator, slots=("lift", "encoder"), mounts=("base", "carriage"),
     note="Slots: lift (motor), encoder (spool turns). The elevator stands up from its base mount; the carriage "
          "starts fully lowered."))
@@ -114,10 +121,10 @@ def _arm(p: dict) -> dict:
         "part": {"name": "arm", "format": 1},
         "body": [
             {"name": "base", "mass": 0.5,
-             "geom": [{"box": [0.06, 0.06, 0.06], "color": STEEL, "collide": False}]},
+             "geom": [{"box": [0.06, 0.06, 0.06], "color": STEEL, "collide": p["collide"]}]},
             {"name": "arm", "parent": "base", "mass": m, "joint": joint,
              "com": [com, 0, 0], "inertia": [m * 0.04 ** 2 / 6, m * L ** 2 / 12, m * L ** 2 / 12],
-             "geom": [{"box": [L, 0.04, 0.04], "pos": [L / 2, 0, 0], "color": ORANGE, "collide": False}]},
+             "geom": [{"box": [L, 0.04, 0.04], "pos": [L / 2, 0, 0], "color": ORANGE, "collide": p["collide"]}]},
         ],
         "motor": [{"slot": "pivot", "joint": "pivot", "motor": p["motor"], "count": p["count"],
                    "gearing": p["gearing"]}],
@@ -139,7 +146,8 @@ register(Stock(
      _count_param("motors driving the pivot", 1),
      Param("gearing", "", 50.0, "motor turns per arm turn", positive=True),
      Param("spring_stiffness", "N*m/rad", 0.0, "torsion spring (gas spring or counterbalance) stiffness", min=0.0),
-     Param("spring_rest", "deg", 0.0, "angle at which the spring is relaxed (a spring is added whenever this or the stiffness is non-zero)")),
+     Param("spring_rest", "deg", 0.0, "angle at which the spring is relaxed (a spring is added whenever this or the stiffness is non-zero)"),
+     COLLIDE),
     _arm, slots=("pivot", "encoder"), mounts=("base", "tip"),
     note="Slots: pivot (motor), encoder (arm turns)."))
 
@@ -156,11 +164,11 @@ def _turret(p: dict) -> dict:
         "part": {"name": "turret", "format": 1},
         "body": [
             {"name": "base", "mass": 0.5,
-             "geom": [{"box": [0.06, 0.06, 0.06], "color": STEEL, "collide": False}]},
+             "geom": [{"box": [0.06, 0.06, 0.06], "color": STEEL, "collide": p["collide"]}]},
             {"name": "platform", "parent": "base", "mass": m,
              "joint": {"name": "turn", "hinge": [0, 0, 1], "range": [lo, hi], "frictionloss": p["friction"]},
              "com": [0, 0, 0], "inertia": [m * r ** 2 / 4, m * r ** 2 / 4, m * r ** 2 / 2],
-             "geom": [{"cylinder": [r, 0.02], "color": ORANGE, "collide": False}]},
+             "geom": [{"cylinder": [r, 0.02], "color": ORANGE, "collide": p["collide"]}]},
         ],
         "motor": [{"slot": "turn", "joint": "turn", "motor": p["motor"], "count": p["count"],
                    "gearing": p["gearing"]}],
@@ -179,7 +187,8 @@ register(Stock(
      _motor_param("motor model"),
      _count_param("motors driving the turret", 1),
      Param("gearing", "", 60.0, "motor turns per turret turn", positive=True),
-     Param("friction", "N*m", 0.2, "constant friction torque on the turret's joint", min=0.0)),
+     Param("friction", "N*m", 0.2, "constant friction torque on the turret's joint", min=0.0),
+     COLLIDE),
     _turret, slots=("turn", "encoder"), mounts=("base", "top"),
     note="Slots: turn (motor), encoder (turret turns). 0 faces the part's +x; positive turns left (counter-clockwise "
          "from above). Attach the launcher to turret.top."))
@@ -199,8 +208,9 @@ def _cylinder(p: dict) -> dict:
     from ..model import PartError
     push, stroke = p["push"], p["stroke"]
     length = p["length"] or 0.3 * stroke + 0.05     # drawn length; the push form's real one may come from the pose
+    # a push cylinder's barrel is drawn only: it is fixed to its mount and doesn't turn to follow its rod's end
     barrel = {"cylinder": [p["bore"] / 2 + CYLINDER_WALL, length], "axis": "x", "pos": [length / 2, 0, 0],
-              "color": STEEL, "collide": False}
+              "color": STEEL, "collide": p["collide"] and not push}
     cylinder = {"bore": p["bore"], "rod": p["rod"], "stroke": stroke, "friction": p["friction"],
                 "conductance": p["conductance"], "pin_a": {"body": "barrel"}}
     if p["length"]:
@@ -225,7 +235,7 @@ def _cylinder(p: dict) -> dict:
                       "joint": {"name": "extend", "slide": "x", "range": [0.0, stroke],
                                 "limit_solref": list(CYLINDER_STOP_SOLREF)},
                       "geom": [{"cylinder": [p["rod"] / 2, rod_len], "axis": "x", "pos": [-rod_len / 2, 0, 0],
-                                "color": BRASS, "collide": False}]}],
+                                "color": BRASS, "collide": p["collide"]}]}],
             "cylinder": cylinder,
             "mount": [{"name": "base", "body": "barrel"}, {"name": "rod", "body": "rod"}]}
 
@@ -245,7 +255,8 @@ register(Stock(
      Param("push_pos", "m", [0.0, 0.0, 0.0], "where on the push body the rod's end is pinned, in that body's frame",
            kind="vec3"),
      Param("length", "m", 0.0, "pin to pin when retracted; 0 takes it from the assembled pose (push) or "
-           "0.3 x stroke + 0.05 m (free)", min=0.0)),
+           "0.3 x stroke + 0.05 m (free)", min=0.0),
+     COLLIDE),
     _cylinder, slots=("valve",), mounts=("base", "rod"),
     note="Slots: valve (a PCM or PH solenoid). The barrel lies along the part's +x and the rod extends toward +x. "
          "Free (push empty): mount things on cylinder.rod. Push: the rod's end is pinned to push at push_pos, and "
@@ -261,10 +272,10 @@ def _spinner(p: dict, name: str, length: float) -> dict:
         "part": {"name": name, "format": 1},
         "body": [
             {"name": "base", "mass": 0.2,
-             "geom": [{"box": [0.05, length, 0.05], "color": STEEL, "collide": False}]},
+             "geom": [{"box": [0.05, length, 0.05], "color": STEEL, "collide": p["collide"]}]},
             {"name": "wheel", "parent": "base", "mass": m, "joint": {"name": "spin", "hinge": "y"},
              "com": [0, 0, 0], "inertia": [moi / 2, moi, moi / 2],
-             "geom": [{"cylinder": [r, length], "axis": "y", "color": ORANGE, "collide": False}]},
+             "geom": [{"cylinder": [r, length], "axis": "y", "color": ORANGE, "collide": p["collide"]}]},
         ],
         "motor": [{"slot": "spin", "joint": "spin", "motor": p["motor"], "count": p["count"],
                    "gearing": p["gearing"]}],
@@ -288,7 +299,8 @@ def _spinner_params(diameter: float, mass: float, extent: Param) -> tuple[Param,
             extent,
             _motor_param("motor model"),
             _count_param("motors driving the wheel", 1),
-            Param("gearing", "", 1.0, "motor turns per wheel turn", positive=True))
+            Param("gearing", "", 1.0, "motor turns per wheel turn", positive=True),
+            COLLIDE)
 
 
 register(Stock(
@@ -311,7 +323,8 @@ HOOD_SEGMENT_DEG = 15.0             # the drawn hood's arc is boxes of at most t
 
 
 def _hood_arc(r_inner: float, width: float, start_deg: float, span_deg: float) -> list[dict]:
-    """Boxes along the hood's arc, from start_deg (the path angle phi, from +x toward +z) round span_deg further."""
+    """Boxes along the hood's arc, from start_deg (the path angle phi, from +x toward +z) round span_deg further.
+    Drawn only, even with collide = true: the launcher model, not contact, carries the ball round the hood."""
     n = max(1, math.ceil(span_deg / HOOD_SEGMENT_DEG))
     step = span_deg / n
     rc = r_inner + HOOD_PLATE / 2
@@ -335,7 +348,7 @@ def _launcher(p: dict) -> dict:
     articulated = p["hood"] == "articulated"
     entry = p["hood_entry_deg"]
     plates = [{"box": [side, SIDE_PLATE, side], "pos": [0, s * (w + SIDE_PLATE) / 2, 0], "color": STEEL,
-               "collide": False} for s in (1, -1)]
+               "collide": p["collide"]} for s in (1, -1)]
     if articulated:   # drawn over the wrap the hood keeps at its high stop, so it never reaches past the entry
         hood_geoms = _hood_arc(r_hood, w, lo + 90.0, max(entry - (hi + 90.0), 1.0))
     else:
@@ -345,7 +358,7 @@ def _launcher(p: dict) -> dict:
         # the wheel's mass is a solid disc's of this inertia; added_moi turns with it in the launcher model only
         {"name": "wheel", "parent": "base", "mass": 2 * moi / (r * r), "joint": {"name": "spin", "hinge": "y"},
          "com": [0, 0, 0], "inertia": [moi / 2, moi, moi / 2],
-         "geom": [{"cylinder": [r, w], "axis": "y", "color": ORANGE, "collide": False}]},
+         "geom": [{"cylinder": [r, w], "axis": "y", "color": ORANGE, "collide": p["collide"]}]},
     ]
     out = {
         "part": {"name": "launcher", "format": 1},
@@ -387,7 +400,8 @@ register(Stock(
      Param("hood_motor", "", "KrakenX60", "hood motor model", kind="str", choices=_MOTOR_NAMES),
      Param("hood_count", "", 1, "motors driving the hood", kind="int", min=1),
      Param("hood_gearing", "", 50.0, "hood motor turns per hood turn", positive=True),
-     Param("hood_mass", "kg", 1.0, "the articulated hood's mass", positive=True)),
+     Param("hood_mass", "kg", 1.0, "the articulated hood's mass", positive=True),
+     COLLIDE),
     _launcher, slots=("shooter", "hood", "hood_encoder"), mounts=("base",),
     note="Slots: shooter (motor on joint spin), hood (motor) and hood_encoder (hood turns), the last two only with "
          "an articulated hood. The base's origin is on the shaft (x forward, z up, the shaft along y). The hood "
@@ -434,7 +448,8 @@ def disc_wheel_y(p: dict, side: str) -> float:
 
 def _disc_channel_geoms(p: dict) -> list[dict]:
     """The guide plates above and below the disc, and the fence opposite the wheels (an arc's curves round its
-    wheel)."""
+    wheel). The guide plates are drawn only, even with collide = true: the disc launcher model holds the disc
+    between them."""
     L, r, w = p["channel_length"], p["channel_width"] / 2, p["channel_width"]
     length = L + 2 * r                          # from behind the entry to the exit guide's end
     geoms = [{"box": [length, w, DISC_PLATE], "pos": [length / 2 - r, 0, s * (DISC_GAP + DISC_PLATE) / 2],
@@ -442,7 +457,7 @@ def _disc_channel_geoms(p: dict) -> list[dict]:
     fence_side = -1 if p["wheel_side"] == "right" else 1
     if p["layout"] == "linear":
         geoms.append({"box": [L, DISC_PLATE, DISC_GAP], "pos": [L / 2, fence_side * (r + DISC_PLATE / 2), 0],
-                      "color": ORANGE, "collide": False})
+                      "color": ORANGE, "collide": p["collide"]})
     elif p["layout"] == "arc":
         # the fence round the wheel, from its entry end round arc_deg to beside the wheel (disc/launcher.py)
         xw, yw = p["wheel_start"], disc_wheel_y(p, p["wheel_side"])
@@ -457,7 +472,7 @@ def _disc_channel_geoms(p: dict) -> list[dict]:
             a = math.radians(phi)
             geoms.append({"box": [DISC_PLATE, chord, DISC_GAP],
                           "pos": [xw + radius * math.cos(a), yw + radius * math.sin(a), 0], "rot": [0, 0, phi],
-                          "color": ORANGE, "collide": False})
+                          "color": ORANGE, "collide": p["collide"]})
     return geoms
 
 
@@ -473,7 +488,7 @@ def _disc_shooter(p: dict) -> dict:
         # hinge -y at the channel's entry, as the launcher's hood: positive raises the exit end. 0 at the low stop.
         channel["joint"] = {"name": "tilt", "hinge": [0, -1, 0], "range": [0.0, hi - lo]}
     bodies = [{"name": "base", "mass": DISC_FRAME_MASS,
-               "geom": [{"box": [0.05, 0.05, 0.05], "color": STEEL, "collide": False}]}, channel]
+               "geom": [{"box": [0.05, 0.05, 0.05], "color": STEEL, "collide": p["collide"]}]}, channel]
     motors = []
     groups = max(s["group"] for s in spots) + 1
     for g in range(groups):
@@ -487,11 +502,12 @@ def _disc_shooter(p: dict) -> dict:
                        "pos": [first["x"], disc_wheel_y(p, first["side"]), 0],
                        "joint": {"name": f"spin{g}", "hinge": axis}, "com": [0, 0, 0],
                        "inertia": [moi / 2, moi / 2, moi],
-                       "geom": [{"cylinder": [r_w, width], "axis": "z", "color": ORANGE, "collide": False}]})
+                       "geom": [{"cylinder": [r_w, width], "axis": "z", "color": ORANGE,
+                                 "collide": p["collide"]}]})
         for s in mine[1:]:
             channel["geom"].append({"cylinder": [r_w, width], "axis": "z",
                                     "pos": [s["x"], disc_wheel_y(p, s["side"]), 0], "color": ORANGE,
-                                    "collide": False})
+                                    "collide": p["collide"]})
         motors.append({"slot": f"shooter{g}", "joint": f"spin{g}", "motor": p["motor"], "count": p["count"],
                        "gearing": p["gearing"]})
     out = {"part": {"name": "disc_shooter", "format": 1}, "body": bodies, "motor": motors,
@@ -543,7 +559,8 @@ register(Stock(
            "stops", kind="pair"),
      Param("tilt_motor", "", "KrakenX60", "tilt motor model", kind="str", choices=_MOTOR_NAMES),
      Param("tilt_count", "", 1, "motors driving the tilt", kind="int", min=1),
-     Param("tilt_gearing", "", 100.0, "tilt motor turns per channel turn", positive=True)),
+     Param("tilt_gearing", "", 100.0, "tilt motor turns per channel turn", positive=True),
+     COLLIDE),
     _disc_shooter, slots=("shooter0",),
     mounts=("base",),
     note="Slots: shooter<g> (motor on joint spin<g>, one per wheel group: shooter0, shooter1, ...), and tilt "

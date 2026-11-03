@@ -275,6 +275,7 @@ def parse_shooter(cfg: dict, built, cfg_dir: Path | None) -> ShooterConfig:
     capacity = _capacity(sec, 0)
     stages = _stages(sec.get("stage"), by_name, name)
     intake = _intake(sec.get("intake"), by_name)
+    _no_collide(by_name, name, stages, intake)
     beams = _beam_breaks(sec.get("beam_break", []), stages, len(lanes))
 
     for (section, key), value in given.items():
@@ -351,6 +352,18 @@ def _stages(table, by_name: dict, launcher: str) -> tuple[Stage, ...]:
         stages.append(Stage(name=name, part=inst.name, path_length=float(length),
                             diameter=float(inst.stock_params["diameter"])))
     return tuple(stages)
+
+
+def _no_collide(by_name: dict, launcher: str, stages: tuple[Stage, ...], intake: Intake | None) -> None:
+    """The launcher, its stages and its intake keep collide off: the ball path moves their balls, and contact
+    would fight it over them."""
+    roles = [(launcher, "launcher"), *((st.part, "stage") for st in stages)]
+    if intake is not None:
+        roles.append((intake.part, "intake"))
+    for part, role in roles:
+        if by_name[part].stock_params.get("collide"):
+            raise ValueError(f"{part} has collide = true but is the [shooter]'s {role}; the ball path moves those "
+                             "balls, so leave collide off")
 
 
 def _mount_frame(at, by_name: dict, where: str) -> tuple[str, np.ndarray, np.ndarray]:
@@ -750,6 +763,7 @@ def _parse_disc(sec: dict, built, cfg_dir: Path | None) -> DiscShooterConfig:
     capacity = _capacity(sec, _disc_capacity())
     stages = _stages(sec.get("stage"), by_name, name)
     intake = _intake(sec.get("intake"), by_name)
+    _no_collide(by_name, name, stages, intake)
     beams = _beam_breaks(sec.get("beam_break", []), stages, 1)
 
     layout = {k: v for k, v in raw.get("layout", {}).items() if k != "fence_radius"}
