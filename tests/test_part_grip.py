@@ -75,7 +75,14 @@ def test_my_own_number(tmp_path):
     assert colliding(load_part(folder), "pad").friction == pytest.approx(0.85)
     set_grip(folder, "pad", None)                                       # removed: the table goes too
     assert colliding(load_part(folder), "pad").friction is None
-    assert "pad" not in tomllib.loads((folder / "scrimmage-edits.toml").read_text()).get("body", {})
+    assert not (folder / "scrimmage-edits.toml").exists()                # nothing left in it: no file
+
+
+def test_clearing_a_grip_keeps_an_overlay_with_other_edits(tmp_path):
+    folder = claw(tmp_path, "total_mass = 3.0\n")
+    set_grip(folder, "pad", "nitrile")
+    set_grip(folder, "pad", None)
+    assert tomllib.loads((folder / "scrimmage-edits.toml").read_text()) == {"total_mass": 3.0}
 
 
 def test_set_grip_keeps_the_rest_of_the_overlay(tmp_path):

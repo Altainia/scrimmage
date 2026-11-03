@@ -682,4 +682,48 @@ def test_the_part_tab_sets_a_grip_in_import_mode(part_app, tmp_path):
     _built(c)
     assert load_part(tmp_path / "parts" / "climber").grips == {"base_plate": "grip-tape"}
     s, st = _edit(c, "set_grip", body="base_plate", grip=None)
-    assert s == 200 and tomllib.loads(overlay.read_text()) == {}
+    assert s == 200 and not overlay.exists()
+
+
+def test_an_import_grip_is_undone_and_redone(part_app, tmp_path):
+    """Ruling P29: in import mode a grip change goes on the undo history: Undo puts the previous grip back and
+    leaves the earlier settings edit alone; Redo sets the grip again. A grip can't be set while a build runs."""
+    c, _ = part_app()
+    _built(c)
+    assert _edit(c, "set_material", pieces=[HOOK], material="steel")[0] == 200
+    _built(c)
+    overlay = tmp_path / "parts" / "climber" / "scrimmage-edits.toml"
+    assert _edit(c, "set_grip", body="base_plate", grip="nitrile")[0] == 200
+    assert _edit(c, "set_grip", body="base_plate", grip="grip-tape")[0] == 200
+
+    def grip_of(st):
+        return next(b for b in st["bodies"] if b["name"] == "base_plate")["grip"]
+
+    def steel(st):
+        return next(p for p in st["pieces"] if p["key"] == HOOK)["material"] == "steel"
+
+    s, st = _post(c, "/api/part/undo", {"version": _state(c)["version"]})
+    assert s == 200 and grip_of(st) == "nitrile" and steel(st), st
+    s, st = _post(c, "/api/part/undo", {"version": st["version"]})
+    assert s == 200 and grip_of(st) is None and steel(st) and not overlay.exists()
+    s, st = _post(c, "/api/part/redo", {"version": st["version"]})
+    assert s == 200 and grip_of(st) == "nitrile" and steel(st)
+    s, st = _post(c, "/api/part/redo", {"version": st["version"]})
+    assert s == 200 and grip_of(st) == "grip-tape"
+    assert tomllib.loads(overlay.read_text()) == {"body": {"base_plate": {"grip": "grip-tape"}}}
+    s, st = _post(c, "/api/part/undo", {"version": st["version"]})
+    s, st = _post(c, "/api/part/undo", {"version": st["version"]})
+    s, st = _post(c, "/api/part/undo", {"version": st["version"]})     # now the material edit
+    assert s == 200 and grip_of(st) is None and not steel(st)
+
+
+def test_an_import_grip_waits_for_the_build(part_app):
+    c, _ = part_app()
+    _built(c)
+    session = c.app.part
+    with session._lock:
+        session._build = {"state": "building", "message": None}
+        s, b = session.edit({"version": session.version, "op": "set_grip",
+                             "args": {"body": "base_plate", "grip": "nitrile"}})
+        session._build = {"state": "idle", "message": None}
+    assert s == 400 and b["field"] == "body" and "wait for the build" in b["message"], b

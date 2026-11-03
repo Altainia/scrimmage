@@ -111,7 +111,7 @@ def apply_grip(part: Part, grips: dict[str, str | float], where: str) -> tuple[P
 
 def set_grip(folder: Path, body: str, grip: str | float | None) -> None:
     """Write `[body.<body>] grip` in the part folder's scrimmage-edits.toml (None removes it, and the body's table if
-    nothing else is in it), keeping the file's other keys and comments. The grip is checked first (a PartError)."""
+    nothing else is in it, and the file when nothing at all is), keeping the file's other keys and comments. The grip is checked first (a PartError)."""
     import tomlkit
     from ..cad.settings import replace_file
     from .overlay import OVERLAY
@@ -136,12 +136,16 @@ def set_grip(folder: Path, body: str, grip: str | float | None) -> None:
         if body not in bodies:
             bodies[body] = tomlkit.table()
         bodies[body]["grip"] = grip
+    text = tomlkit.dumps(doc)
+    if not text.strip():            # nothing left in it: no file (as the Part tab's plugin mode leaves it)
+        path.unlink(missing_ok=True)
+        return
     tmp = None
     try:
         with tempfile.NamedTemporaryFile("w", dir=path.parent, prefix=path.name + ".", suffix=".tmp", delete=False,
                                          encoding="utf-8", newline="\n") as f:
             tmp = f.name
-            f.write(tomlkit.dumps(doc))
+            f.write(text)
         replace_file(tmp, path)
     except OSError:
         if tmp is not None and os.path.exists(tmp):

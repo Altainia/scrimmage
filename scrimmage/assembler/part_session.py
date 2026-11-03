@@ -364,6 +364,15 @@ class _Session:
 
 # ---------------------------------------------------------------- import mode
 
+@dataclasses.dataclass(frozen=True)
+class GripStep:
+    """A grip change on the import's undo history (ruling P29): `grip` is what Undo (or Redo) writes back for part
+    `part`'s body `body` (None: no grip). A grip lives in the built folder's own edits, not in the import file."""
+    part: str
+    body: str
+    grip: str | float | None
+
+
 class PartSession(_Session):
     mode = "import"
 
@@ -675,17 +684,35 @@ class PartSession(_Session):
             return _refused(EditError("body", f"{name} is built into {home}'s body (it has no joint of its own): "
                                               f"set the grip on {home}."))
         folder = part_folder(self.imp, part, self.path)
-        if not (folder / "part.toml").is_file():
+        # not while a build runs: write_parts copies the folder's edits before it swaps the new folder in
+        if not (folder / "part.toml").is_file() or self._build["state"] == "building":
             return _refused(EditError("body", f"{part} isn't built yet: wait for the build, then set the grip."))
+        before = self._grips().get(name)
         try:
             set_grip(folder, name, a["grip"])
         except PartError as e:
             return _refused(EditError("grip", str(e)))
         except OSError as e:
             raise SessionError(500, f"can't save {folder / OVERLAY}: {e.strerror or e}") from None
+        self._push(GripStep(part, name, before))      # ruling P29: Undo puts the previous grip back
         self._messages = []
         self._bump(changed=True)
         return 200, self.state()
+
+    def _grip_step(self, step: "GripStep", other: list) -> None:
+        """Undo or redo a grip change: `step`'s grip written again, and the grip it replaces put on `other` (lock
+        held)."""
+        folder = part_folder(self.imp, step.part, self.path)
+        if self._build["state"] == "building":
+            raise SessionError(409, f"{step.part} is being built: wait for the build, then undo the grip.")
+        now = self._grips().get(step.body)
+        try:
+            set_grip(folder, step.body, step.grip)
+        except PartError as e:
+            raise SessionError(400, str(e)) from None
+        except OSError as e:
+            raise SessionError(500, f"can't save {folder / OVERLAY}: {e.strerror or e}") from None
+        other.append(GripStep(step.part, step.body, now))
 
     def _grips(self) -> dict:
         """Import body -> its grip in its built folder's own edits (None: none, or a body built into another's)."""
@@ -714,6 +741,12 @@ class PartSession(_Session):
             stack, other = (self._undo, self._redo) if which == "undo" else (self._redo, self._undo)
             if not stack:
                 return 200, {**self.state(), "ok": False}
+            if isinstance(stack[-1], GripStep):
+                self._grip_step(stack[-1], other)
+                stack.pop()
+                self._messages = []
+                self._bump(changed=True)
+                return 200, self.state()
             new = copy.deepcopy(stack[-1])
             new.written = dict(self.imp.written)   # the build's record is never undone
             if (new.source, new.units) != (self.imp.source, self.imp.units):

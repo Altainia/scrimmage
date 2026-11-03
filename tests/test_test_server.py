@@ -992,6 +992,7 @@ def test_the_grip_endpoint_wont_write_what_the_robot_config_overrides(test_app, 
     assert _state(c)["palette"]["grips"]["grabber.jaw_left"] == "hdpe"
     s, b = _grip(c, "grabber.jaw_left", "nitrile")
     assert s == 400 and "grabber-standin.toml" in b["error"] and "change it there" in b["error"], b
+    assert _grip(c, "grabber.jaw_left", None)[0] == 200     # clearing the folder's own grip is always fine
     assert _grip(c, "grabber.jaw_right", "nitrile")[0] == 200
 
 

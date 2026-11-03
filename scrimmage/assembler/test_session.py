@@ -525,7 +525,7 @@ class TestSession:
         if grip is not None and not any(g.collide and not g.tread for g in found.geoms):
             raise SessionError(400, f"{name} touches nothing (no geom collides), so a grip on it does nothing")
         own = self._config_grip(part)
-        if b in own:
+        if grip is not None and b in own:       # clearing the folder's own grip is always fine
             raise SessionError(400, f"{self.robot_path.name} sets {name}'s grip itself (its [[part]] {part}'s "
                                     "grip), and that wins over the part folder's; change it there")
         folder = Path(inst.source)
