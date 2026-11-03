@@ -69,7 +69,7 @@ Blockly (web app), pytest.
    Test: Task 5.
 3. **A push cylinder whose two pins can't move relative to each other** (no joint between the bodies). This is a
    PartError: "<inst>: the cylinder's two ends are on bodies that can't move relative to each other (nothing
-   between drive.chassis and drive.chassis turns or slides)". Test: Task 4.
+   between lift.barrel and drive.chassis turns or slides)", naming the two pin bodies. Test: Task 4.
 4. **Aiming at a goal outside the turret's range.** The target is clamped to the stop, `aimed` stays false, and a
    failed aimed check says "<goal> is outside the turret's range (it stops at 180°)". Test: Task 8.
 5. **A run where the tanks fall below the working pressure.** The air line warns "the tanks fell below the 60 psi

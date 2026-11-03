@@ -99,7 +99,7 @@ def test_push_pins_rigid():
     with pytest.raises(PartError) as e:
         assemble(arm_robot(push="drive.chassis"), ".")
     assert str(e.value) == ("cyl: the cylinder's two ends are on bodies that can't move relative to each other "
-                            "(nothing between drive.chassis and drive.chassis turns or slides)")
+                            "(nothing between cyl.barrel and drive.chassis turns or slides)")
 
 
 def test_push_unknown_body():

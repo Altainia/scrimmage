@@ -435,9 +435,8 @@ def _resolve_cylinders(built: Built, cylinders: list[CylinderSpec]) -> None:
     for cy in cylinders:
         a, b = (_moving_body(m, m.body(pin[0]).id) for pin in (cy.pin_a, cy.pin_b))
         if a == b:
-            name = m.body(a).name
             raise PartError(f"{cy.name}: the cylinder's two ends are on bodies that can't move relative to each other "
-                            f"(nothing between {name} and {name} turns or slides)")
+                            f"(nothing between {cy.pin_a[0]} and {cy.pin_b[0]} turns or slides)")
         apart = float(np.linalg.norm(d.site_xpos[m.site(f"{cy.name}.pin_a").id]
                                      - d.site_xpos[m.site(f"{cy.name}.pin_b").id]))
         if apart < 1e-6:
