@@ -112,6 +112,28 @@ do = "expect"
 that = { made_it_in = { at_least = 80.0 } }
 
 [[block]]
+do = "aim"
+turret = "turret"
+at = "hub_blue"
+
+[[block]]
+do = "expect"
+that = { aimed = { turret = "turret", at = "hub_blue", within_deg = 3.0 } }
+
+[[block]]
+do = "set_cylinder"
+cylinder = "claw"
+to = "off"
+
+[[block]]
+do = "wait_until"
+until = { cylinder = { cylinder = "claw", is = "extended" } }
+
+[[block]]
+do = "expect"
+that = { pressure = { side = "working", below = 55.0 } }
+
+[[block]]
 do = "stop_feeding"
 station = "feeder"
 '''

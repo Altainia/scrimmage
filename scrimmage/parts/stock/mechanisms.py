@@ -6,6 +6,7 @@ from __future__ import annotations
 import math
 
 from ...motors import MOTORS
+from ...pneumatics.model import DEFAULT_CONDUCTANCE
 from . import Param, Stock, register
 
 STEEL = [0.55, 0.55, 0.6, 1.0]
@@ -141,6 +142,114 @@ register(Stock(
      Param("spring_rest", "deg", 0.0, "angle at which the spring is relaxed (a spring is added whenever this or the stiffness is non-zero)")),
     _arm, slots=("pivot", "encoder"), mounts=("base", "tip"),
     note="Slots: pivot (motor), encoder (arm turns)."))
+
+
+# ---------------------------------------------------------------- turret
+
+def _turret(p: dict) -> dict:
+    from ..model import PartError
+    lo, hi = p["range"]
+    if not (-360 <= lo and hi <= 360):
+        raise PartError(f"turret: range {[lo, hi]} has an end beyond 360 degrees: keep both ends within +-360")
+    r, m = p["diameter"] / 2, p["mass"]
+    return {
+        "part": {"name": "turret", "format": 1},
+        "body": [
+            {"name": "base", "mass": 0.5,
+             "geom": [{"box": [0.06, 0.06, 0.06], "color": STEEL, "collide": False}]},
+            {"name": "platform", "parent": "base", "mass": m,
+             "joint": {"name": "turn", "hinge": [0, 0, 1], "range": [lo, hi], "frictionloss": p["friction"]},
+             "com": [0, 0, 0], "inertia": [m * r ** 2 / 4, m * r ** 2 / 4, m * r ** 2 / 2],
+             "geom": [{"cylinder": [r, 0.02], "color": ORANGE, "collide": False}]},
+        ],
+        "motor": [{"slot": "turn", "joint": "turn", "motor": p["motor"], "count": p["count"],
+                   "gearing": p["gearing"]}],
+        "encoder": [{"slot": "encoder", "joint": "turn", "ratio": 1.0}],
+        "mount": [{"name": "base", "body": "base"},
+                  {"name": "top", "body": "platform", "pos": [0, 0, p["height"]]}],
+    }
+
+
+register(Stock(
+    "turret", "a flat platform on a vertical axis; carry a launcher on it and turn it to aim",
+    (Param("diameter", "m", 0.3, "the platform's diameter", positive=True),
+     Param("mass", "kg", 2.0, "platform mass", positive=True),
+     Param("height", "m", 0.05, "the top mount's height above the base", min=0.0),
+     Param("range", "deg", [-180.0, 180.0], "lowest and highest allowed angle (each end within +-360)", kind="pair"),
+     _motor_param("motor model"),
+     _count_param("motors driving the turret", 1),
+     Param("gearing", "", 60.0, "motor turns per turret turn", positive=True),
+     Param("friction", "N*m", 0.2, "constant friction torque on the turret's joint", min=0.0)),
+    _turret, slots=("turn", "encoder"), mounts=("base", "top"),
+    note="Slots: turn (motor), encoder (turret turns). 0 faces the part's +x; positive turns left (counter-clockwise "
+         "from above). Attach the launcher to turret.top."))
+
+
+# ---------------------------------------------------------------- pneumatic cylinder
+
+BRASS = [0.8, 0.7, 0.35, 1.0]
+CYLINDER_WALL = 0.004    # m the barrel is drawn wider than its bore
+
+
+def _cylinder(p: dict) -> dict:
+    """A double-acting cylinder along the part's +x, the rod extending toward +x. Free form (push empty): a rod
+    body on the slide "extend". Push form: the barrel alone, its rod's end pinned to another part's body. Either way
+    the assembler adds the tendon between the pins that carries the air's force (parts/assemble.py)."""
+    from ..assemble import CYLINDER_STOP_SOLREF
+    from ..model import PartError
+    push, stroke = p["push"], p["stroke"]
+    length = p["length"] or 0.3 * stroke + 0.05     # drawn length; the push form's real one may come from the pose
+    barrel = {"cylinder": [p["bore"] / 2 + CYLINDER_WALL, length], "axis": "x", "pos": [length / 2, 0, 0],
+              "color": STEEL, "collide": False}
+    cylinder = {"bore": p["bore"], "rod": p["rod"], "stroke": stroke, "friction": p["friction"],
+                "conductance": p["conductance"], "pin_a": {"body": "barrel"}}
+    if p["length"]:
+        cylinder["length"] = p["length"]
+    if push:
+        if push.count(".") != 1 or not all(push.split(".")):
+            raise PartError(f"cylinder: push must be \"<part>.<body>\" (the body the rod's end is pinned to), "
+                            f"not {push!r}")
+        cylinder["pin_b"] = {"body": push, "pos": p["push_pos"]}
+        return {"part": {"name": "cylinder", "format": 1},
+                "body": [{"name": "barrel", "mass": p["mass"] + p["rod_mass"], "geom": [barrel]}],
+                "cylinder": cylinder, "mount": [{"name": "base", "body": "barrel"}]}
+    if any(p["push_pos"]):
+        raise PartError("cylinder: push_pos places the rod's end on the part named by push; set push too, "
+                        "or remove push_pos")
+    rod_len = 0.8 * length
+    cylinder["pin_b"] = {"body": "rod"}
+    cylinder["length"] = length
+    return {"part": {"name": "cylinder", "format": 1},
+            "body": [{"name": "barrel", "mass": p["mass"], "geom": [barrel]},
+                     {"name": "rod", "parent": "barrel", "mass": p["rod_mass"], "pos": [length, 0, 0],
+                      "joint": {"name": "extend", "slide": "x", "range": [0.0, stroke],
+                                "limit_solref": list(CYLINDER_STOP_SOLREF)},
+                      "geom": [{"cylinder": [p["rod"] / 2, rod_len], "axis": "x", "pos": [-rod_len / 2, 0, 0],
+                                "color": BRASS, "collide": False}]}],
+            "cylinder": cylinder,
+            "mount": [{"name": "base", "body": "barrel"}, {"name": "rod", "body": "rod"}]}
+
+
+register(Stock(
+    "cylinder", "a double-acting pneumatic cylinder, driven by air through its valve",
+    (Param("bore", "m", 0.0269875, "the piston's diameter (1-1/16 in; estimate, UNCALIBRATED)", positive=True),
+     Param("rod", "m", 0.0079375, "the rod's diameter, less than the bore (5/16 in; UNCALIBRATED)", positive=True),
+     Param("stroke", "m", 0.1524, "how far the rod travels (6 in)", positive=True),
+     Param("friction", "N", 8.0, "seal friction (estimate, UNCALIBRATED)", min=0.0),
+     Param("conductance", "m^3/(s*Pa)", DEFAULT_CONDUCTANCE,
+           "the valve's sonic conductance, how freely air flows (estimate, UNCALIBRATED)", positive=True),
+     Param("mass", "kg", 0.25, "the barrel's mass (UNCALIBRATED)", positive=True),
+     Param("rod_mass", "kg", 0.1, "the rod's mass (UNCALIBRATED)", positive=True),
+     Param("push", "", "", "\"<part>.<body>\" the rod's end is pinned to (a stock arm's \"arm.arm\"); empty for a "
+           "free rod with its own mount", kind="text"),
+     Param("push_pos", "m", [0.0, 0.0, 0.0], "where on the push body the rod's end is pinned, in that body's frame",
+           kind="vec3"),
+     Param("length", "m", 0.0, "pin to pin when retracted; 0 takes it from the assembled pose (push) or "
+           "0.3 x stroke + 0.05 m (free)", min=0.0)),
+    _cylinder, slots=("valve",), mounts=("base", "rod"),
+    note="Slots: valve (a PCM or PH solenoid). The barrel lies along the part's +x and the rod extends toward +x. "
+         "Free (push empty): mount things on cylinder.rod. Push: the rod's end is pinned to push at push_pos, and "
+         "the cylinder drives the joints between its two ends; it has only the base mount."))
 
 
 # ---------------------------------------------------------------- flywheel and roller

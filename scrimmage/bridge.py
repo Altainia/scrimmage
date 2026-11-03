@@ -20,6 +20,7 @@ from . import foreign_writes as fwn
 from .driverstation import DriverStationState
 from .lockstep import DEFAULT_STEP, LOCKSTEP_DEVICE, LockstepDriver, physics_steps_per_step
 from .nt_reader import NetworkTablesLink, NTUnavailable
+from .pneumatics.runtime import PH_TYPE
 from .protocol import DeviceKey, HalState, OutboundCache, frame
 from .recorder import Recorder
 from .world import World
@@ -324,6 +325,7 @@ class Bridge:
         self._rev_encoder_keys = {e.device_key for e in world.encoders if e.kind == "REV"}
         self._rev_unbound: set[DeviceKey] = set()   # SPARKs nothing binds, reported this connection
         self._rev_present: set[DeviceKey] = set()   # ScrimmageREV helpers seen this connection
+        self._ph_present: set[DeviceKey] = set()    # ScrimmagePH devices (REV Pneumatic Hubs) seen this connection
         self._rev_checked = False        # REV sim availability reported for the current connection
         self.rev_state: Callable[[], str | None] = lambda: None  # "unavailable: <reason>" per the agent (console)
         # (device, key) -> pending suspect: first value and time, latest value, how many
@@ -383,6 +385,10 @@ class Bridge:
                     self._scrimmage_seen(got[0])
                 if got[0][0] == REV_TYPE:
                     self._rev_seen(got[0])
+                if got[0][0] == PH_TYPE and got[0] not in self._ph_present:
+                    # The extension creates it when the robot opens the hub, with no <init: resend the hub's inputs
+                    self._ph_present.add(got[0])
+                    self.cache.forget(*got[0])
                 self._check_inputs(*got)
                 if got[0] == LOCKSTEP_DEVICE:
                     if got[1].get("<engaged") is False:
@@ -604,6 +610,7 @@ class Bridge:
         self._devices_checked = False
         self._rev_unbound = set()
         self._rev_present = set()
+        self._ph_present = set()
         self._rev_checked = False
         self._ticks = _Ticks()
         self.recorder.reset()
@@ -690,6 +697,8 @@ class Bridge:
                                              self._rev_encoder_keys, self.agent_state(),
                                              self.robot_language)
             msgs += missing_scrimmage_warnings(self.hal, self._scrimmage_expected, self.sim_mode)
+            if self.world.pneumatics is not None:
+                msgs += self.world.pneumatics.warn_missing_hubs(self.hal)   # in the run's notes too
             for msg in msgs:
                 log.warning("%s", msg)
         if (not self._fast_phoenix_warned and now >= MISSING_AFTER - 1e-6

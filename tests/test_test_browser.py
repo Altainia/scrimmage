@@ -1701,3 +1701,171 @@ def test_the_slip_mark_is_3_to_1_on_its_background(test_page, tmp_path, scheme):
     assert _hex_ratio(colors["slip"], colors["bg"]) >= 3, colors
     assert page.is_visible("#test-slip-marks .test-slip-mark") and page.is_visible("#test-run-notes")
     assert page.evaluate(f"({CONTRAST_JS}).check(document.querySelector('#test-run-col'))") == []
+
+
+# ---- turrets, cylinders, goals and air (sub-project 23) --------------------------------------------------------------
+TURRET_CYLINDER = """
+[[part]]
+name = "turret"
+stock = "turret"
+attach = "drive.top"
+ids = { turn = "PWM:3" }
+
+[[part]]
+name = "cyl"
+stock = "cylinder"
+attach = "drive.top"
+pos = [0.15, 0.1, 0.0]
+"""
+ON_THE_2026_FIELD = '\n[range]\nfile = "2026"\nstart = "blue_center"\n'
+AIR_BLOCKS = """
+[[block]]
+do = "aim"
+turret = "turret"
+at = "hub_red"
+
+[[block]]
+do = "set_cylinder"
+cylinder = "cyl"
+to = "off"
+
+[[block]]
+do = "wait_until"
+until = { scored = { goal = "hub_blue", at_least = 3 } }
+timeout = 5.0
+
+[[block]]
+do = "expect"
+that = { aimed = { turret = "turret", at = "hub_red", within_deg = 4.5 } }
+
+[[block]]
+do = "expect"
+that = { cylinder = { cylinder = "cyl", is = "retracted" } }
+throughout = true
+
+[[block]]
+do = "expect"
+that = { pressure = { side = "working", below = 55.0 } }
+
+[[block]]
+do = "expect"
+that = { pressure = { above = 70.0 } }
+"""
+NEW_KINDS = ("aim", "set_cylinder", "cond_scored", "cond_aimed", "cond_cylinder", "cond_pressure")
+
+
+def _turret_test(tmp_path, blocks, field=ON_THE_2026_FIELD):
+    (tmp_path / "robot.toml").write_text(new_config("standin") + ARM + TURRET_CYLINDER + field, encoding="utf-8")
+    path = tmp_path / "t.test.toml"
+    path.write_text(f'[test]\nrobot = "robot.toml"\n{blocks}', encoding="utf-8")
+    return path
+
+
+def test_the_aim_cylinder_scored_and_air_blocks_show_only_on_a_robot_and_field_that_have_them(test_page, tmp_path):
+    page, path = test_page()
+    types = _flyout_types(page)
+    assert not set(NEW_KINDS) & set(types), types
+    robot = path.parent / "robot.toml"
+    base = robot.read_text(encoding="utf-8")
+    # a turret and a cylinder, no field: the cylinder's blocks, but nothing to aim at or score in
+    robot.write_text(base + TURRET_CYLINDER, encoding="utf-8")
+    page.wait_for_function("__scrimmageTest.state.palette.cylinders.length === 1")
+    types = _flyout_types(page)
+    assert {"set_cylinder", "cond_cylinder", "cond_pressure"} <= set(types), types
+    assert not {"aim", "cond_aimed", "cond_scored"} & set(types), types
+    robot.write_text(base + TURRET_CYLINDER + ON_THE_2026_FIELD, encoding="utf-8")
+    page.wait_for_function("__scrimmageTest.state.palette.goals.length === 2")
+    types = _flyout_types(page)
+    assert set(NEW_KINDS) <= set(types), types
+    goals = page.evaluate("""(() => {
+      const fl = __scrimmageTest.workspace.getFlyout().getWorkspace();
+      return fl.getTopBlocks(true).find(b => b.type === 'cond_scored').getField('GOAL').getOptions(false);
+    })()""")
+    assert goals == [["any goal", "any"], ["hub_blue", "hub_blue"], ["hub_red", "hub_red"]]
+
+
+def test_the_aim_cylinder_scored_and_air_blocks_round_trip_exactly(test_page, tmp_path):
+    page, _ = test_page(path=_turret_test(tmp_path, AIR_BLOCKS))
+    st = page.evaluate("__scrimmageTest.state.test")
+    assert [b["do"] for b in st["blocks"]] == ["aim", "set_cylinder", "wait_until", "expect", "expect", "expect", "expect"]
+    assert page.evaluate("__scrimmageTest.toJSON()") == st
+    types = page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).map(b => b.type)")
+    assert set(NEW_KINDS) <= set(types), types
+    texts = page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).filter(b => b.type === 'cond_pressure')"
+                          ".map(b => b.toString())")
+    assert texts == ["working air pressure below 55 psi", "stored air pressure above 70 psi"], texts
+    # within_deg must be more than 0 (program.py): the box goes no lower than 0.1
+    assert page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).find(b => b.type === 'cond_aimed')"
+                         ".getField('WITHIN').getMin()") == 0.1
+
+
+# Join a copy of each flyout block below the test's last block; an expect gets the named check in place of its own.
+BUILD_FROM_FLYOUT = """(items) => {
+  const B = window.Blockly, ws = __scrimmageTest.workspace;
+  const fl = ws.getFlyout().getWorkspace();
+  const copy = (type) => B.serialization.blocks.append(
+    B.serialization.blocks.save(fl.getTopBlocks(true).find(b => b.type === type)), ws);
+  for (const [type, check] of items) {
+    const b = copy(type);
+    if (check) {
+      b.getInputTargetBlock('COND').dispose();
+      b.getInput('COND').connection.connect(copy(check).outputConnection);
+    }
+    const top = ws.getTopBlocks(true).find(t => t !== b && !t.outputConnection);
+    const last = top.getDescendants(false).filter(x => !x.outputConnection && !x.getNextBlock()).at(-1);
+    last.nextConnection.connect(b.previousConnection);
+  }
+}"""
+
+
+def test_aim_set_cylinder_and_the_new_checks_from_the_palette_save_as_the_test_file_reads_them(test_page, tmp_path):
+    from scrimmage.blocks.program import load
+    page, path = test_page(path=_turret_test(tmp_path, '[[block]]\ndo = "wait"\nseconds = 0.2\n'))
+    page.evaluate(BUILD_FROM_FLYOUT, [["aim", None], ["set_cylinder", None], ["expect", "cond_scored"],
+                                      ["expect", "cond_aimed"], ["expect", "cond_cylinder"], ["expect", "cond_pressure"]])
+    page.wait_for_function("__scrimmageTest.state.test.blocks.length === 7")
+    page.wait_for_function("document.querySelector('#test-saved').textContent === '✓ All changes saved'")
+    blocks = load(path).blocks
+    assert [(b.do, b.args) for b in blocks[1:3]] == [("aim", {"turret": "turret", "at": "hub_blue"}),
+                                                     ("set_cylinder", {"cylinder": "cyl", "to": "extend"})]
+    checks = [(b.args["that"].kind, b.args["that"].args) for b in blocks[3:]]
+    assert checks == [("scored", {"goal": "any", "at_least": 1}),
+                      ("aimed", {"turret": "turret", "at": "hub_blue", "within_deg": 2.0}),
+                      ("cylinder", {"cylinder": "cyl", "is": "extended"}),
+                      ("pressure", {"side": "stored", "above": 60.0})]
+    # the file's blocks are the editor's
+    assert page.evaluate("__scrimmageTest.toJSON()") == page.evaluate("__scrimmageTest.state.test")
+
+
+EXTEND_CYLINDER = """
+[[block]]
+do = "set_cylinder"
+cylinder = "cyl"
+to = "extend"
+
+[[block]]
+do = "wait"
+seconds = 0.5
+"""
+
+
+def test_a_cylinder_run_says_how_the_air_went_and_the_replay_draws_the_cylinder_moving(test_page, tmp_path):
+    page, _ = test_page(path=_turret_test(tmp_path, EXTEND_CYLINDER, field=""))
+    _run(page, "001")
+    res = _result(page, "001")
+    assert res["lines"] and res["lines"][0].startswith("air: 120 psi at the start")
+    assert page.inner_text("#test-totals") == "\n".join(_sentence(s) for s in res["lines"])
+    start = page.evaluate("__scrimmageTest.replay.cylinders")
+    assert [c["name"] for c in start] == ["cyl"]
+    box = page.locator("#test-scrub").bounding_box()
+    y = box["y"] + box["height"] / 2
+    page.mouse.move(box["x"] + 4, y)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] + 20, y, steps=5)
+    page.mouse.up()
+    end = page.evaluate("__scrimmageTest.replay.cylinders")
+    stroke = 0.1524
+    assert start[0]["barrel"] == pytest.approx(0.3 * stroke + 0.05, abs=1e-3)      # retracted (its stop is soft)
+    assert end[0]["barrel"] == pytest.approx(0.3 * stroke + 0.05, abs=1e-6)
+    assert start[0]["rod"] == pytest.approx(0, abs=2e-3)
+    assert end[0]["rod"] == pytest.approx(stroke, abs=5e-3)     # out to its stop

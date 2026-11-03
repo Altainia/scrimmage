@@ -4,6 +4,10 @@
 // holding that mover's geoms at their local poses. applyFrame({poses, n}) sets each mover group's pose (ignored if
 // n differs from the mover count). Scene frame is MuJoCo's: z up, quaternions w, x, y, z.
 //
+// A pneumatic cylinder (view.cylinders, assembler/view.py) is drawn between its two pins instead of by its part's
+// geoms: a barrel (the bore's diameter, the retracted length long) from pin a toward pin b, and the rod (its
+// diameter) the rest of the way, placed again with every frame. cylinderShapes() gives each one's drawn lengths.
+//
 // A mover below PARK_Z_HIDE (a parked ball sits at z = -20) is hidden. outline(i) draws mover i (a piece the Test
 // tab's replay points at) with a colored rim, a larger back-faced copy of its geoms; outline(-1) takes it off.
 // setScore(range) draws the test range's counts
@@ -27,6 +31,8 @@ const MODES = ["follow", "top", "driver", "free"];
 const PARK_Z_HIDE = -10;   // movers below this are parked, not drawn
 const SOFTWARE_MS = 66;   // about 15 drawings a second
 const OUTLINE = 0xd6336c, OUTLINE_SCALE = 1.5;   // outline(i)'s rim: a pink that stands out from a yellow ball and the field
+const BARREL_RGBA = [0.55, 0.55, 0.6, 1], ROD_RGBA = [0.8, 0.7, 0.35, 1];   // the stock cylinder's steel and brass
+const UP = new THREE.Vector3(0, 1, 0);   // three's cylinders run along y
 
 // Is WebGL drawn in software here? Asked once, from a throwaway context, before the real renderer picks antialiasing.
 let softwareGL = null;
@@ -94,6 +100,7 @@ export class LiveView {
     this.disposables = [];
     this.outlines = [];       // the outline(i) rim's meshes (their geometries are the mover's own)
     this.outlined = -1;
+    this.cylinders = [];      // {spec (the view's), barrel, rod (meshes), lengths: [barrel, rod] as drawn}
     this.floorInfo = { pos: [8, 4, 0], size: [8, 4] };
     this.rootMover = 0;
     this.mode = "follow";
@@ -124,6 +131,7 @@ export class LiveView {
     this.disposables = [];
     this.model.clear();
     this.groups = [];
+    this.cylinders = [];
   }
 
   setModel(view) {
@@ -143,8 +151,10 @@ export class LiveView {
       return g;
     });
     const meshGeoms = (view.meshes || []).map(() => null);   // built on first use, shared between geoms
+    const cylinderParts = new Set((view.cylinders || []).map((c) => c.name));
     const add = (gd) => {
       if (gd.rgba && gd.rgba[3] <= 0) return;
+      if (gd.instance && cylinderParts.has(gd.instance)) return;   // drawn between its pins instead (below)
       let geo;
       if (gd.type === "mesh") {
         const m = view.meshes && view.meshes[gd.mesh];
@@ -168,6 +178,16 @@ export class LiveView {
     };
     for (const gd of view.geoms || []) add(gd);
     for (const gd of view.world_geoms || []) add(gd);
+    const tube = (radius, rgba) => {
+      const geo = new THREE.CylinderGeometry(radius, radius, 1, 24), mat = geomMaterial(rgba);
+      this.disposables.push(geo, mat);
+      const mesh = new THREE.Mesh(geo, mat);
+      stat.add(mesh);
+      return mesh;
+    };
+    this.cylinders = (view.cylinders || []).map((c) => ({ spec: c, barrel: tube(c.bore / 2, BARREL_RGBA),
+      rod: tube(c.rod / 2, ROD_RGBA), lengths: [0, 0] }));
+    this.placeCylinders();
     this.rootMover = Number.isInteger(view.root_mover) ? view.root_mover : -1;   // -1: follow falls back to the floor
     this.lastSeq = -1;
     this.followYaw = null;
@@ -182,8 +202,37 @@ export class LiveView {
       setPose(this.groups[i], [p[o], p[o + 1], p[o + 2]], [p[o + 3], p[o + 4], p[o + 5], p[o + 6]]);
       this.groups[i].visible = p[o + 2] >= PARK_Z_HIDE;
     }
+    this.placeCylinders();
     this.lastSeq = frame.seq;
     this.requestRender();
+  }
+
+  // Each cylinder between its pins where the mover groups are now: the barrel from pin a, the rod on to pin b.
+  placeCylinders() {
+    const pin = ([mover, pos]) => {
+      const v = new THREE.Vector3(pos[0], pos[1], pos[2]);
+      const g = mover >= 0 ? this.groups[mover] : null;   // -1: a body that never moves, pos in the world
+      return g ? v.applyQuaternion(g.quaternion).add(g.position) : v;
+    };
+    const place = (mesh, from, along, start, length) => {
+      mesh.visible = length > 1e-6;
+      mesh.position.copy(from).addScaledVector(along, start + length / 2);
+      mesh.quaternion.setFromUnitVectors(UP, along);
+      mesh.scale.set(1, Math.max(length, 1e-6), 1);
+    };
+    for (const c of this.cylinders) {
+      const a = pin(c.spec.a), along = pin(c.spec.b).sub(a);
+      const apart = along.length();
+      if (apart < 1e-9) along.set(1, 0, 0); else along.divideScalar(apart);
+      const barrel = Math.min(c.spec.retracted, apart), rod = apart - barrel;
+      place(c.barrel, a, along, 0, barrel);
+      place(c.rod, a, along, barrel, rod);
+      c.lengths = [barrel, rod];
+    }
+  }
+
+  cylinderShapes() {
+    return this.cylinders.map((c) => ({ name: c.spec.name, barrel: c.lengths[0], rod: c.lengths[1] }));
   }
 
   outline(i) {

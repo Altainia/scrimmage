@@ -1,0 +1,76 @@
+# Stand-in box robot: the kitbot's chassis and drive, for trying a part on its own.
+# Edit it with `scrimmage edit {this file}`, or by hand: the assembler only touches [[part]] tables.
+
+[model]
+timestep = 0.001
+
+[robot]
+standin = true   # the stand-in robot: a piece resting on its chassis or drive isn't stuck in your robot
+# Where the robot starts: pick it in the Robot tab ("Where it starts"), which writes
+# start_pose = [x (m), y (m), heading (deg)], field coordinates from the blue corner.
+
+[battery]
+nominal_voltage = 12.5
+resistance = 0.02
+
+[lockstep]
+step = 0.005
+
+# How scrimmage starts your robot program (uncomment and adjust; "{python}" = the Python running scrimmage).
+# [robot_program]
+# command = ["{python}", "-m", "robotpy", "sim", "--nogui", "--ws-client", "--scrimmage-lockstep"]
+# cwd = "../my_robot_project"
+# Or use the Robot code panel in `scrimmage edit`: it writes this for Java or Python.
+
+[telemetry]
+odometry = "/SmartDashboard/Field/Robot"   # NT topic with the robot's own pose estimate (Field2d)
+
+# ---- Parts ---------------------------------------------------------------------------
+# Each [[part]] is a stock part (or path = "<part folder>") with its parameters, where it attaches
+# ("<instance>.<mount>"), and the device ID of each slot in `ids`.
+
+[[part]]
+name = "drive"
+stock = "chassis"
+# Attach your part to drive.top, or to wherever its CAD has it. Set mass to what the rest of the robot weighs and
+# com_offset to move the robot's center of mass [forward, left, up] in meters.
+mass = 45.0
+com_offset = [0.0, 0.0, 0.0]
+ids = { gyro = { device = "ADXRS450[0]", axis = "x", cw_positive = true } }
+
+[[part]]
+name = "dt"
+stock = "differential"    # 3 wheels per side, 6 in, the middle ones 3 mm lower (drop center)
+attach = "drive.center"
+ids = { left = "PWM:0", right = "PWM:1", left_encoder = { channel_a = 0, counts_per_rev = 2048 }, right_encoder = { channel_a = 2, counts_per_rev = 2048 } }
+
+# ---- Arm and cylinder ----------------------------------------------------------------
+# A stock arm, 0.5 m long, its pivot 0.30 m above the chassis's top (on a post we don't draw) and 0.15 m behind the
+# center, pointing forward with its tip near the front of the frame. 0 is level, positive raises the tip. Its motor
+# slot is left empty: the cylinder moves it.
+
+[[part]]
+name = "arm"
+stock = "arm"
+attach = "drive.top"
+pos = [-0.15, 0.0, 0.30]
+
+# A 3/4 in. bore, 8 in. stroke cylinder standing almost straight up on the chassis's top, 0.18 m in front of the pivot,
+# its rod's end pinned to the arm 0.19 m out from the pivot. Retracted it is 0.30 m pin to pin and holds the arm
+# level; extended 8 in. it lifts the arm to about 76 deg. Its valve slot is left empty: under the Test tab the
+# set_cylinder block works the valve with no device ID.
+
+[[part]]
+name = "lift"
+stock = "cylinder"
+attach = "drive.top"
+pos = [0.03, 0.0, 0.0]
+rot = [0.0, -88.0, 0.0]   # the barrel drawn along the line to the arm's pin
+bore = 0.01905            # 3/4 in. (a 2 in. bore used the air up in one cycle: see the README)
+rod = 0.00635             # 1/4 in.
+stroke = 0.2032           # 8 in.
+push = "arm.arm"
+push_pos = [0.19, 0.0, 0.0]
+
+# The air: the defaults (two 574 mL tanks, a VIAIR 90C compressor, 60 psi working pressure, 120 psi at the start).
+[pneumatics]

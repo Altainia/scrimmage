@@ -12,14 +12,15 @@ from typing import Any, Callable
 from ..assemble import TREAD_DAMPING, TREAD_STIFFNESS
 from ..model import Part, PartError, part_from_dict
 
-KINDS = ("float", "int", "str", "bool", "ratio", "pair", "vec3")
+KINDS = ("float", "int", "str", "bool", "ratio", "pair", "vec3", "text")
 
 
 @dataclass(frozen=True)
 class Param:
     """One parameter of a stock part.
 
-    kind: float | int | str | bool | ratio (a named choice or a number > 0) | pair ([min, max], min < max) | vec3 ([x, y, z], three finite numbers).
+    kind: float | int | str | bool | ratio (a named choice or a number > 0) | pair ([min, max], min < max) | vec3 ([x, y, z], three finite numbers)
+    | text (any string, empty allowed; the builder checks what it means).
     min: inclusive lower bound. max: inclusive upper bound, or a callable(checked) -> float for a limit that
     depends on other parameters. The callable receives a dict of the parameters declared before this one, already
     checked and converted (not the later ones), so declare dependent parameters after the ones they depend on.
@@ -105,6 +106,10 @@ def _check(p: Param, v: Any, where: str, params: dict) -> Any:
     if p.kind == "str":
         if not isinstance(v, str) or v not in p.choices:
             raise bad(f"must be one of {', '.join(map(str, p.choices))}, not {v!r}")
+        return v
+    if p.kind == "text":
+        if not isinstance(v, str):
+            raise bad(f"must be text in quotes, not {v!r}")
         return v
     if p.kind == "ratio":
         if isinstance(v, str) and v in p.choices:

@@ -1,0 +1,126 @@
+# Stand-in box robot: the kitbot's chassis and drive, for trying a part on its own.
+# Edit it with `scrimmage edit {this file}`, or by hand: the assembler only touches [[part]] tables.
+
+[model]
+timestep = 0.001
+
+[robot]
+standin = true   # the stand-in robot: a piece resting on its chassis or drive isn't stuck in your robot
+# Where the robot starts: pick it in the Robot tab ("Where it starts"), which writes
+# start_pose = [x (m), y (m), heading (deg)], field coordinates from the blue corner.
+start_pose = [3.33, 4.035, 0.0]   # 1.3 m short of hub_blue's center, facing it
+
+[battery]
+nominal_voltage = 12.5
+resistance = 0.02
+
+[lockstep]
+step = 0.005
+
+# How scrimmage starts your robot program (uncomment and adjust; "{python}" = the Python running scrimmage).
+# [robot_program]
+# command = ["{python}", "-m", "robotpy", "sim", "--nogui", "--ws-client", "--scrimmage-lockstep"]
+# cwd = "../my_robot_project"
+# Or use the Robot code panel in `scrimmage edit`: it writes this for Java or Python.
+
+[telemetry]
+odometry = "/SmartDashboard/Field/Robot"   # NT topic with the robot's own pose estimate (Field2d)
+
+# ---- Parts ---------------------------------------------------------------------------
+# Each [[part]] is a stock part (or path = "<part folder>") with its parameters, where it attaches
+# ("<instance>.<mount>"), and the device ID of each slot in `ids`.
+
+[[part]]
+name = "drive"
+stock = "chassis"
+# Attach your part to drive.top, or to wherever its CAD has it. Set mass to what the rest of the robot weighs and
+# com_offset to move the robot's center of mass [forward, left, up] in meters.
+mass = 45.0
+com_offset = [0.0, 0.0, 0.0]
+ids = { gyro = { device = "ADXRS450[0]", axis = "x", cw_positive = true } }
+
+[[part]]
+name = "dt"
+stock = "differential"    # 3 wheels per side, 6 in, the middle ones 3 mm lower (drop center)
+attach = "drive.center"
+ids = { left = "PWM:0", right = "PWM:1", left_encoder = { channel_a = 0, counts_per_rev = 2048 }, right_encoder = { channel_a = 2, counts_per_rev = 2048 } }
+
+# ---- Turret and launcher -------------------------------------------------------------
+# The turret sits on the chassis's top, centered, so turning the robot on the spot doesn't move the launcher. Its
+# motor turns it through 60:1 (the stock part's default); 0 faces the robot's front, positive turns left.
+# The launcher is configs/fastmode_range.toml's: two Kraken X60s on a 4 in. wheel shaft and a hood on its own motor,
+# its joint reading 0 at its 40 deg stop. Its motors keep that robot's fast-mode names (SimMotor:...): with no robot
+# code, the Test tab drives each joint itself, so any ID binds.
+
+[[part]]
+name = "turret"
+stock = "turret"
+attach = "drive.top"
+pos = [0.0, 0.0, 0.35]
+ids = { turn = "SimMotor:turret" }
+
+[[part]]
+name = "launcher"
+stock = "launcher"
+attach = "turret.top"
+width = 0.36
+wheel_diameter = 0.1016
+wheel_moi = 0.002
+added_moi = 0.002
+motor = "KrakenX60"
+count = 2
+gearing = 1.0
+hood_gap = 0.09
+hood_entry_deg = 270.0
+hood = "articulated"
+hood_range = [40.0, 80.0]
+hood_gearing = 50.0
+ids = { shooter = ["SimMotor:shooter_lead", { scrimmage = "shooter_follower", invert = true }], hood = "SimMotor:hood" }
+
+# ---- Feeder --------------------------------------------------------------------------
+# configs/fastmode_range.toml's two stages: Kraken X60s through 5:1 to 50 mm rollers, the hopper floor and the feeder.
+
+[[part]]
+name = "hopper_floor"
+stock = "roller"
+attach = "drive.top"
+pos = [0.1, 0.0, 0.1]
+gearing = 5.0
+ids = { spin = "SimMotor:floor" }
+
+[[part]]
+name = "feeder"
+stock = "roller"
+attach = "drive.top"
+pos = [-0.05, 0.0, 0.25]
+gearing = 5.0
+ids = { spin = "SimMotor:feeder" }
+
+# ---- The shooter's model (configs/fastmode_range.toml's, without the intake and beam breaks) -----------------------
+[shooter]
+part = "launcher"
+lanes = [-0.08, 0.08]
+[shooter.wheels]
+preset = "35A"
+positions = [-0.08, 0.08]
+width = 0.12
+[shooter.hood]
+friction = 0.3
+[shooter.air]
+preset = "default"
+[shooter.hopper]
+capacity = 8
+[[shooter.stage]]
+name = "floor"
+part = "hopper_floor"
+path_length = 0.40
+[[shooter.stage]]
+name = "feeder"
+part = "feeder"
+path_length = 0.25
+
+# The 2026 range, both hubs and the NEUTRAL ZONE FUEL, with 8 FUEL preloaded. The robot starts 1.3 m in front of
+# hub_blue's center, facing it ([robot] start_pose, above, can't be given as well as a [range] start).
+[range]
+file = "2026"
+preload = 8

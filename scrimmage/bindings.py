@@ -69,6 +69,17 @@ def binds_rev(raw) -> bool:
     if isinstance(raw, list):
         return any(binds_rev(v) for v in raw)
     return isinstance(raw, str) and _REV_SHORT.match(raw) is not None
+
+
+def binds_ph(raw) -> bool:
+    """Does a raw config put a part's valve on a REV Pneumatic Hub (ids valve = "PH:..." or { ph = ... })?"""
+    parts = raw.get("part", []) if isinstance(raw, dict) else []
+    for part in parts if isinstance(parts, list) else []:
+        ids = part.get("ids") if isinstance(part, dict) else None
+        valve = ids.get("valve") if isinstance(ids, dict) else None
+        if (isinstance(valve, str) and valve.strip().startswith("PH:")) or (isinstance(valve, dict) and "ph" in valve):
+            return True
+    return False
 _REV_KINDS_FOR = {"motor": {"SparkMax": "SparkMax", "SparkFlex": "SparkFlex"},
                   "encoder": {"SparkMaxAbs": "SparkMax", "SparkFlexAbs": "SparkFlex"}}
 

@@ -126,7 +126,9 @@ then the robot program steps 5 ms (running any loops that fall due), and so on. 
   they can differ between runs. Every other column repeats exactly. Devices robot code creates mid-run (a
   SPARK in `teleopInit`, say) count too: the extension tells Scrimmage how many simulated device values exist,
   and Scrimmage waits until it has heard from all of them before using a step's outputs. Reinstall the
-  extension (`pip install ./lockstep`) after updating Scrimmage; it must be 0.6.0 or later for this.
+  extension (`pip install ./lockstep`) after updating Scrimmage; it must be 0.6.0 or later for this. A robot
+  with valves on a REV Pneumatic Hub needs 0.7.0 or later, which relays the hub (see
+  [docs/pneumatics.md](docs/pneumatics.md#robot-code)); robots with valves only on a CTRE PCM keep working with 0.6.0.
 - **The robot's clock starts at 1 µs** (FPGA time), the same in every run and language. Since 0.6.0 it is 1 µs, not
   0: AdvantageKit's `LoggedRobot` takes a loop wake-up at time 0 for a stopped notifier and quits at once. A Java
   robot run with an older extension installed stops at the start with a message to reinstall it.
@@ -252,7 +254,7 @@ edit the robot code, `restart_robot()`, repeat. The agent launches your robot wi
 | `advance` | Run forward `seconds` (at most 60), then hold. Returns state and new console lines. |
 | `set_mode` | Driver Station mode: disabled, auto, teleop or test. |
 | `set_joystick` | Set axes, buttons and POVs on a port 0-5. |
-| `get_state` | Ground-truth pose, speed, battery, motor commands and currents, joint positions. |
+| `get_state` | Ground-truth pose, speed, battery, motor commands and currents, joint positions; on a robot with air cylinders, the air (`pneumatics`: stored and working psi, whether the compressor is on, each rod's extension in meters, `extension_m`). |
 | `get_hal` | Raw HAL values the robot reported, with an optional device filter. |
 | `get_console` | Robot console lines with simulated timestamps. |
 | `nt_list`, `nt_get` | List and read NetworkTables topics. |
@@ -371,7 +373,9 @@ ids = { drive = "TalonFX:3", steer = "TalonFX:4", encoder = "CANcoder:10" }
   centers, so modules sit with their wheels on the carpet.
 - **`ids`** gives each of the part's slots a device. The short forms are `"PWM:0"`, `"TalonFX:3"`,
   `"CANcoder:9"`, `"Pigeon2:13"`, `"DIO:4"` (the first channel of an `Encoder(4, 5)`) and REV's `"SparkMax:3"`,
-  `"SparkFlex:3"`, `"SparkMaxAbs:3"`, `"SparkFlexAbs:3"` (see [docs/rev.md](docs/rev.md)). A slot with more than
+  `"SparkFlex:3"`, `"SparkMaxAbs:3"`, `"SparkFlexAbs:3"` (see [docs/rev.md](docs/rev.md)), and for a cylinder's
+  valve `"PCM:3"` or `"PH:3,4"` (a single or a double solenoid; see
+  [docs/parts.md](docs/parts.md#valve-ids)). A slot with more than
   one motor takes a list, `["TalonFX:3", "TalonFX:4"]`. For anything else (an ADXRS450 gyro, `counts_per_rev`,
   `neutral = "brake"`) give a table of the binding keys from the next section:
   `{ can = "VictorSPX[3]" }`, `{ channel_a = 0, counts_per_rev = 2048 }`. Fast-mode devices take a name, not a
@@ -436,6 +440,8 @@ ones an `ids` table accepts.) `configs/kitbot.toml` is fully commented. In brief
 | `[[gyro]] device = "ADXRS450[0]"` | `Gyro` SimDevice angle/rate (CW+ like the real part) | body yaw, unwrapped |
 | `[[analog]] port = 0` | `AnalogInput` voltage | `offset + volts_per_unit · joint position` |
 | `[[digital]] channel = 9` | `DigitalInput`, active-low by default | true while the joint is in `[min, max]` |
+| a cylinder's `valve = "PCM:3"` (or `"PCM:4,5"`) | `Solenoid(PneumaticsModuleType.CTREPCM, 3)` (or a `DoubleSolenoid`) reads `<output`; the PCM's `<closed_loop` (on once the module is made; `Compressor.disable()` turns it off) runs the compressor | the cylinder's valve: extend, retract or hold; sends the PCM `>pressure_switch`, `>on` and `>current` |
+| a cylinder's `valve = "PH:3"` (or `"PH:4,5"`) | the same on a REV Pneumatic Hub, relayed by the lockstep extension (0.7.0 or later); `getPressure()` reads 0 | the same, into the hub's switch, compressor and current |
 
 Motor types include `CIM, MiniCIM, Bag, Vex775Pro, NEO, NEO550, NeoVortex, Falcon500(FOC), KrakenX60(FOC)`.
 The constants come from WPILib's `DCMotor`. For anything else, pass a table:
@@ -847,6 +853,16 @@ the launcher, hopper, feeder stages, intake and beam breaks are driven by your m
 carpet numbers are estimates until you measure your own. See [docs/test-range.md](docs/test-range.md), and the
 [fast-mode sample](docs/fast-mode.md#shooting-on-the-test-range) for a complete robot.
 
+## Turrets and air cylinders
+
+The stock `turret` part turns a launcher on its own, so the robot can shoot while it faces any way; the Test tab's
+**aim** block keeps it on a goal while the robot drives and turns. The stock `cylinder` part is a double-acting air
+cylinder on a CTRE PCM or REV Pneumatic Hub solenoid, with the tanks, compressor and regulator simulated: does it push
+hard enough, how fast does it fire, and does the air last the match? `scrimmage air <config>` gives the air budget,
+the sum FRC teams make by hand. Every pneumatic number is an estimate (UNCALIBRATED). See
+[docs/pneumatics.md](docs/pneumatics.md), [docs/parts.md](docs/parts.md#turret) and the
+[Test tab](docs/test-tab.md#aiming); `examples/blocks/turret` and `examples/blocks/pneumatic` are worked examples.
+
 ## Terrain: bumps, ramps and tipping over
 
 A range file can also put bumps, ramps and a tilting platform (the 2023 CHARGE STATION) on the field, and the robot
@@ -933,6 +949,8 @@ scrimmage/bench/  the component bench: bench files, contact laws, runs, pictures
 scrimmage/blocks/ the Test tab's blocks: test files, what a robot offers, running, kept runs, sweeps (scrimmage test)
 scrimmage/cad/    CAD to part: reading STEP/STL, bodies, mass, import files, building part folders (Part tab)
 scrimmage/parts/  part format (model.py), assembler (assemble.py), field, device IDs, stock/ parts library
+scrimmage/pneumatics/  the air system: tanks, compressor, regulator and cylinders (model.py), in the world
+                   (runtime.py), the air budget (budget.py, scrimmage air)
 docs/getting-started/  first-steps guides: install, try a mechanism idea, run and test your robot code
 docs/usability-future-work.md  rough edges found writing those guides, as possible future work
 docs/parts.md      part.toml reference, [[part]] entries, stock parts
@@ -948,13 +966,15 @@ docs/launcher.md   the launcher model (scrimmage launcher): inputs, presets, acc
 docs/disc.md       the disc launcher and disc flight (scrimmage disc): models, limits, what to measure, examples
 docs/bench.md      the component bench (scrimmage bench): the flow, the file format, results, accuracy
 docs/test-range.md the test range: goals, balls, shooters, range files, aiming tables
+docs/pneumatics.md air cylinders: the air model, its numbers and sources, measuring your own, robot code (PCM, PH)
 docs/terrain.md    field elements (bumps, ramps, platforms), terrain signals, scrimmage terrain sweep
 docs/climbing.md   bars, the climber part, climb signals, scrimmage climb run and its scripts, the climb scenario
 freecad/           the FreeCAD workbench add-on (Scrimmage/), installed by `scrimmage freecad install`
 configs/           robot configs built from parts (kitbot, swerve, elevator_arm, fastmode, disc_robot,
                    climber_robot)
 scenarios/         scenario files (steps, checks, screenshots)
-examples/          blocks/ (Test tab examples: an intake, a station, a ladder climber); RobotPy kitbot robot program; Java swerve (Phoenix 6) project; Java fast-mode
+examples/          blocks/ (Test tab examples: an intake, a station, a reef grabber, a ladder climber, a turret
+                   shooter, a pneumatic arm); RobotPy kitbot robot program; Java swerve (Phoenix 6) project; Java fast-mode
                    (AdvantageKit) project; Java build.gradle notes; launcher/ and disc/ setups; climb/ scripts
 shims/             CANMotor/CANEncoder shims for vendor controllers (Python tested, Java template)
 tools/plot_run.py  plots a --log CSV

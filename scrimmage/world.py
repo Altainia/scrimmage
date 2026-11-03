@@ -112,6 +112,14 @@ class World:
         elif "shooter" in cfg:
             from .testrange.shooter import parse_shooter
             parse_shooter(cfg, self.parts, cfg_dir)     # raises: a [shooter] runs on a [range]
+        # The air system (scrimmage/pneumatics): None for a robot without a cylinder, which then steps as before.
+        self.pneumatics = None
+        if self.parts is not None and self.parts.cylinders:
+            from .pneumatics.runtime import PneumaticsRuntime
+            self.pneumatics = PneumaticsRuntime(self, self.parts, cfg.get("pneumatics"))
+        elif "pneumatics" in cfg:
+            from .pneumatics.runtime import parse_section
+            parse_section(cfg["pneumatics"])      # checked all the same, so a mistake shows before a cylinder is added
         _reject_duplicate_devices(self.motors, self.encoders, self.gyros, self.analogs, self.digitals,
                                   self.test_range.devices() if self.test_range is not None else [])
         # The terrain signals (scrimmage/terrain): read every physics step on a range with field elements, or once a
@@ -167,6 +175,8 @@ class World:
         self._apply_start_pose()
         if self.test_range is not None:
             self.test_range.reset()
+        if self.pneumatics is not None:
+            self.pneumatics.reset()
         mujoco.mj_forward(self.model, self.data)
         for g in self.gyros:
             g.reset()
@@ -193,6 +203,8 @@ class World:
         self._apply_start_pose()
         if self.test_range is not None:
             self.test_range.reset_robot()
+        if self.pneumatics is not None:
+            self.pneumatics.reprime()     # the rods moved: refill the chambers for where they are now
         mujoco.mj_forward(m, d)
         if self.terrain is not None:
             self.terrain.reset()
@@ -304,6 +316,8 @@ class World:
             mb.drive(self.data, self.vbatt, damping, qfrc)
         if self.external is not None:
             self.external(self.data)
+        if self.pneumatics is not None:
+            self.pneumatics.before_physics(hal, enabled, self.model.opt.timestep)
         if rng is None:
             mujoco.mj_step(self.model, self.data)
         else:
@@ -338,6 +352,8 @@ class World:
         loads = [mb for mb in self.motors if not mb.idle]
         if rng is not None and rng.shooter is not None:
             loads.append(rng)
+        if self.pneumatics is not None and self.pneumatics.system.compressor_on:
+            loads.append(self.pneumatics)     # the compressor, as last step left it (its current doesn't depend on V)
         if r <= 0.0 or not loads:
             return v0
 
@@ -411,6 +427,8 @@ class World:
             ups += dg.updates(hal, self.data)
         if self.test_range is not None:
             ups += self.test_range.sensor_updates(hal)
+        if self.pneumatics is not None:
+            ups += self.pneumatics.sensor_updates()
         return ups
 
     def robot_pose(self) -> tuple[float, float, float]:

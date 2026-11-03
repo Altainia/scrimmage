@@ -10,8 +10,13 @@
 // creates during a step can reach scrimmage after that step's done_seq. With each done_seq the extension therefore
 // also reports sim_values, how many distinct SimDevice values exist, and scrimmage waits until it has heard of that
 // many before it uses the step's outputs.
+//
+// halsim_ws_client relays a CTRE PCM but nothing for a REV Pneumatic Hub, so the extension also mirrors each hub the
+// robot program opens into a "ScrimmagePH:<module>" SimDevice (relayed as type "ScrimmagePH", device "<module>"): its
+// solenoid outputs and closed loop out to scrimmage, and the pressure switch and compressor state back into the hub.
 // Design: docs/superpowers/specs/2026-10-11-lockstep-design.md
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -25,10 +30,12 @@
 
 #include <hal/Extensions.h>
 #include <hal/Notifier.h>
+#include <hal/Ports.h>
 #include <hal/SimDevice.h>
 #include <hal/Value.h>
 #include <hal/simulation/MockHooks.h>
 #include <hal/simulation/NotifierData.h>
+#include <hal/simulation/REVPHData.h>
 #include <hal/simulation/SimDeviceData.h>
 
 namespace {
@@ -39,6 +46,8 @@ constexpr auto kPoll = std::chrono::milliseconds(50);
 constexpr auto kStartCap = std::chrono::seconds(30);  // longest wait for the program to start once engaged
 constexpr auto kShutdownWait = std::chrono::milliseconds(500);  // first wait for the worker at shutdown
 constexpr auto kUnstickWait = std::chrono::seconds(1);          // wait after stopping the notifiers
+
+void Log(const char* msg) { std::fprintf(stderr, "scrimmage_lockstep: %s\n", msg); }
 
 // Every distinct (device, value) name the robot program's SimDevices have created. HAL runs these callbacks with
 // its own lock released, on whichever thread created the device or value.
@@ -58,6 +67,88 @@ void OnDeviceCreated(const char* name, void*, HAL_SimDeviceHandle handle) {
   HALSIM_RegisterSimValueCreatedCallback(handle, device, OnValueCreated, true);
 }
 
+// One REV Pneumatic Hub module and its "ScrimmagePH:<module>" SimDevice, created the first time the robot program
+// opens the hub (OnDeviceCreated counts its values for lockstep like any other SimDevice's). The REVPH callbacks
+// use the value they are given rather than the REVPH getters, so none reads a value while the HAL is setting it.
+struct PneumaticHub;
+struct SolenoidChannel {
+  PneumaticHub* hub;
+  int32_t channel;
+};
+struct PneumaticHub {
+  int32_t module = 0;
+  std::mutex m;                    // guards device creation
+  HAL_SimDeviceHandle device = 0;
+  HAL_SimValueHandle solenoids = 0, closedLoop = 0;                          // outputs: robot to scrimmage
+  HAL_SimValueHandle pressureSwitch = 0, compressorOn = 0, compressorCurrent = 0;  // inputs: scrimmage to robot
+  std::atomic<int32_t> mask{0};    // bit n: solenoid channel n is on
+  std::vector<SolenoidChannel> channels;
+};
+
+void OnPHSolenoid(const char*, void* param, const HAL_Value* value) {
+  auto* c = static_cast<SolenoidChannel*>(param);
+  const int32_t bit = 1 << c->channel;
+  auto& m = c->hub->mask;
+  const int32_t mask = value->data.v_boolean ? (m.fetch_or(bit) | bit) : (m.fetch_and(~bit) & ~bit);
+  HAL_SetSimValueInt(c->hub->solenoids, mask);
+}
+
+void OnPHConfigType(const char*, void* param, const HAL_Value* value) {
+  auto* hub = static_cast<PneumaticHub*>(param);
+  HAL_SetSimValueBoolean(hub->closedLoop, value->data.v_enum != HAL_REVPHCompressorConfigType_kDisabled);
+}
+
+void OnPHPressureSwitch(const char*, void* param, HAL_SimValueHandle, int32_t, const HAL_Value* value) {
+  HALSIM_SetREVPHPressureSwitch(static_cast<PneumaticHub*>(param)->module, value->data.v_boolean);
+}
+
+void OnPHCompressorOn(const char*, void* param, HAL_SimValueHandle, int32_t, const HAL_Value* value) {
+  HALSIM_SetREVPHCompressorOn(static_cast<PneumaticHub*>(param)->module, value->data.v_boolean);
+}
+
+void OnPHCompressorCurrent(const char*, void* param, HAL_SimValueHandle, int32_t, const HAL_Value* value) {
+  HALSIM_SetREVPHCompressorCurrent(static_cast<PneumaticHub*>(param)->module, value->data.v_double);
+}
+
+void OnPHInitialized(const char*, void* param, const HAL_Value* value) {
+  auto* hub = static_cast<PneumaticHub*>(param);
+  if (!value->data.v_boolean) return;
+  std::lock_guard lock{hub->m};
+  if (hub->device != 0) return;  // opened again: already mirrored
+  const std::string name = "ScrimmagePH:" + std::to_string(hub->module);
+  HAL_SimDeviceHandle dev = HAL_CreateSimDevice(name.c_str());
+  if (dev == 0) {
+    Log("could not create a ScrimmagePH SimDevice; that Pneumatic Hub's valves won't move");
+    return;
+  }
+  hub->device = dev;
+  hub->solenoids = HAL_CreateSimValueInt(dev, "solenoids", HAL_SimValueOutput, 0);
+  hub->closedLoop = HAL_CreateSimValueBoolean(dev, "closed_loop", HAL_SimValueOutput, false);
+  hub->pressureSwitch = HAL_CreateSimValueBoolean(dev, "pressure_switch", HAL_SimValueInput, false);
+  hub->compressorOn = HAL_CreateSimValueBoolean(dev, "compressor_on", HAL_SimValueInput, false);
+  hub->compressorCurrent = HAL_CreateSimValueDouble(dev, "compressor_current", HAL_SimValueInput, 0.0);
+  const int32_t n = HAL_GetNumREVPHChannels();
+  hub->channels.reserve(n);  // never reallocated: each callback keeps a pointer to its channel
+  for (int32_t ch = 0; ch < n; ++ch) {
+    hub->channels.push_back({hub, ch});
+    HALSIM_RegisterREVPHSolenoidOutputCallback(hub->module, ch, OnPHSolenoid, &hub->channels.back(), true);
+  }
+  HALSIM_RegisterREVPHCompressorConfigTypeCallback(hub->module, OnPHConfigType, hub, true);
+  HALSIM_RegisterSimValueChangedCallback(hub->pressureSwitch, hub, OnPHPressureSwitch, false);
+  HALSIM_RegisterSimValueChangedCallback(hub->compressorOn, hub, OnPHCompressorOn, false);
+  HALSIM_RegisterSimValueChangedCallback(hub->compressorCurrent, hub, OnPHCompressorCurrent, false);
+}
+
+// Mirror every REV Pneumatic Hub module the robot program opens (or has already opened).
+void WatchPneumaticHubs() {
+  const int32_t n = HAL_GetNumREVPHModules();
+  auto* hubs = new PneumaticHub[n];  // lives for the whole process, like the callbacks
+  for (int32_t i = 0; i < n; ++i) {
+    hubs[i].module = i;
+    HALSIM_RegisterREVPHInitializedCallback(i, OnPHInitialized, &hubs[i], true);
+  }
+}
+
 struct State {
   HAL_SimValueHandle engage = 0, stepUs = 0, stepSeq = 0, engaged = 0, doneSeq = 0, keepalive = 0, simValues = 0;
   std::mutex m;
@@ -71,8 +162,6 @@ struct State {
   bool exited = false;         // guarded by m: the worker thread has returned
   std::thread worker;
 };
-
-void Log(const char* msg) { std::fprintf(stderr, "scrimmage_lockstep: %s\n", msg); }
 
 std::chrono::duration<double> GracePeriod() {
   const char* s = std::getenv("SCRIMMAGE_LOCKSTEP_GRACE_S");
@@ -292,6 +381,7 @@ __attribute__((visibility("default"))) int HALSIM_InitExtension(void) {
   s->keepalive = HAL_CreateSimValueLong(dev, "keepalive", HAL_SimValueInput, 0);
   s->simValues = HAL_CreateSimValueLong(dev, "sim_values", HAL_SimValueOutput, 0);
   HALSIM_RegisterSimDeviceCreatedCallback("", nullptr, OnDeviceCreated, true);  // counts its own values too
+  WatchPneumaticHubs();  // after the line above, so the ScrimmagePH devices' values are counted
 
   HALSIM_PauseTiming();  // before the robot's first loop, so every run starts on the same step grid
   // RobotPy loads extensions after importing robot.py, so its clock has already run a little: restart it, so the

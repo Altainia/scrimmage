@@ -10,7 +10,8 @@ every change is saved at once, there is no Save button.
 Contents: [Starting a test](#starting-a-test), [The three columns](#the-three-columns), [How the editor works](#how-the-editor-works),
 [The blocks](#the-blocks), [Feeding from a station](#feeding-from-a-station),
 [Floor spreads](#floor-spreads), [The checks](#the-checks), [Holding a piece](#holding-a-piece),
-[Placing a piece](#placing-a-piece), [Grip material](#grip-material), [Times and limits](#times-and-limits), [Setup](#setup),
+[Placing a piece](#placing-a-piece), [Grip material](#grip-material), [Shooting](#shooting), [Aiming](#aiming),
+[Pneumatics](#pneumatics), [Times and limits](#times-and-limits), [Setup](#setup),
 [Running, replay and chart](#running-replay-and-chart), [Trying values (sweeps)](#trying-values-sweeps),
 [Kept runs](#kept-runs), [The stand-in robot](#the-stand-in-robot), [The command line and MCP tools](#the-command-line-and-mcp-tools),
 [The examples](#the-examples), [Troubleshooting](#troubleshooting).
@@ -71,7 +72,9 @@ The bottom bar says whether the test is saved and how many blocks it has.
 | **drive** *direction* *number* **m** or **s** | Drives the robot that far in a direction (**forward**, **back**, **left** or **right**; a minus number with **forward** drives back; **back**, **left** and **right** refuse one), or for that many seconds, then stops. |
 | **turn** *left or right* *number* **°** | Turns the robot on the spot that many degrees (up to 720). |
 | **start feeding** *station*, **stop feeding** *station*, **feed one from** *station* | A human player station puts balls on the field. See [Feeding from a station](#feeding-from-a-station). |
-| **stop** *motor* | Lets a motor go to neutral. **all motors** stops every motor. |
+| **aim** *turret* **at** *goal* | Keeps a turret pointed at a goal's center from now on, while the robot drives and turns. It takes no time. See [Aiming](#aiming). |
+| **set** *cylinder* **to** *extend, retract or off* | Switches a cylinder's valve. It takes no time. See [Pneumatics](#pneumatics). |
+| **stop** *motor* | Lets a motor go to neutral. **all motors** stops every motor (and every aim). |
 | **wait** *s* **s** | Waits that many seconds. |
 | **wait until** *check* | Waits until the check is true. |
 | **repeat** *n* **times** | Does the blocks inside *n* times (1 to 100). |
@@ -92,8 +95,10 @@ Any other robot (mecanum, say) has no **drive** or **turn** block: spin the driv
 problem text on such a robot is "drive works on a tank or swerve drive; spin the drive motors instead". A robot with
 no drivetrain at all gets the problem "drive needs a drivetrain".
 
-**A motor in a block needs a device ID.** A **spin**, **stop** or **move** block works through the robot's motor
-bindings, so the motor's slot must have an ID in the robot. See [Troubleshooting](#troubleshooting).
+**A motor in a block needs a device ID.** A **spin**, **stop**, **move** or **aim** block works through the robot's
+motor bindings, so the motor's slot must have an ID in the robot. See [Troubleshooting](#troubleshooting). When
+several motors drive one joint (a launcher's lead and follower, say), the block drives every one of them, as robot
+code would. A cylinder's valve needs no ID: see [Pneumatics](#pneumatics).
 
 ## Feeding from a station
 
@@ -218,6 +223,10 @@ A check is a round-ended block that plugs into **wait until**, **repeat until** 
 | *piece* **is seated at least** *n* **in on** *rod* | A piece with a hole has gone that far onto the rod. See [Placing a piece](#placing-a-piece). |
 | **hanging from** *bar* | The robot's hooks hold it up from that bar. |
 | **holding level** *level* | The robot holds that climb level (the field's own rule, such as the 2022 hangar's). |
+| *n* **scored in** *goal* | At least *n* balls have gone into the goal (**any goal**: into all of them together). See [Shooting](#shooting). |
+| *turret* **aimed at** *goal* **within** *n* **°** | The turret's launcher points within *n*° of the goal's center. See [Aiming](#aiming). |
+| *cylinder* **is** *extended or retracted* | The cylinder's rod is all the way out, or all the way in. See [Pneumatics](#pneumatics). |
+| *stored or working* **air pressure above / below** *n* **psi** | The air in the tanks (stored), or after the regulator (working), is above or below that. See [Pneumatics](#pneumatics). |
 
 **What "touches" can name.** On the robot side: **any hook**, one of the hooks, a part, or a body. On the field side:
 
@@ -337,6 +346,95 @@ import and plugin mode. Test files don't set grip; to try it in a robot config, 
 
 **Would grip tape help?** Press **Try materials…** in Setup, beside a part's first pad: see
 [Trying values](#trying-values-sweeps).
+
+## Shooting
+
+A robot whose config has a `[range]` (a field with goals and balls) and a `[shooter]` (its launcher, stages and
+hopper) shoots under the blocks, as it does under robot code: see [the test range](test-range.md). Spin the launcher's
+motor to get the wheels up to speed, then spin the stages that carry the balls to it. The robot's preloaded balls, and
+any it picks up, go out of the launcher, fly, and score or miss. Nothing about shooting needs a block of its own.
+
+- **The check.** *n* **scored in** *goal* is true once at least *n* balls have gone into that goal. **any goal** counts
+  every goal together.
+- **The result** has a line per goal with a ball in it: `scored 8 in hub_blue`.
+- **The replay** shows the balls in flight.
+
+In the test file:
+
+| Form | Keys |
+|---|---|
+| `{ scored = { goal = "hub_blue", at_least = 3 } }` | `goal`: a goal of the field, or `"any"` for all of them. `at_least`: a whole number of balls, 1 to 1000. |
+
+## Aiming
+
+A stock `turret` part (see [parts.md](parts.md#turret)) carries a launcher and turns it on its own, so the robot can
+face any way and still shoot at the goal.
+
+- **aim** *turret* **at** *goal* points the turret at the goal's center and keeps it there every moment from then on,
+  while the robot drives and turns, until a later block spins, moves or stops the turret's motor (or another aim
+  takes it over). It takes no time: the next block starts at once. It turns the turret through its own motor, so the
+  turret's motor slot needs a device ID.
+- *turret* **aimed at** *goal* **within** *n* **°** is true when the launcher points within that many degrees of the
+  goal's center, seen from above (2° unless you change it). It measures the launcher on the turret (the `[shooter]`'s
+  launcher), or the turret's own front if no launcher rides on it.
+- **The chart** gets an `aim_error` signal in a test with an aim block or an aimed check: how far off the turret
+  points, in degrees, positive when the goal is to its left.
+
+Things to know:
+
+- **Aiming doesn't lead the shot.** The turret points at where the goal is now, and takes no account of the robot's
+  own motion. A ball shot while the robot drives keeps the robot's speed, so it lands off by about the robot's speed
+  times the ball's time in the air (at 2 m/s and a 1 s flight, about 2 m). Shoot while turning on the spot, or slow
+  down to shoot.
+- **The turret's stops.** A turret only turns as far as its `range`. A goal past a stop leaves it at the stop, and a
+  failed aimed check says so: `hub_blue is outside the turret's range (it stops at 30°)`. A turret whose range is more
+  than a full turn (up to ±360°) picks the way of pointing at the goal that is nearest where it is now, so it doesn't
+  unwind for nothing.
+- **At a stop, the check reads the launcher.** A goal 1° past a stop, checked within 2°, reads as aimed: the launcher
+  really is within 2° of it.
+
+In the test file:
+
+| Form | Keys |
+|---|---|
+| `do = "aim"` | `turret`: a stock turret part's name. `at`: a goal of the field. |
+| `{ aimed = { turret = "turret", at = "hub_blue", within_deg = 2 } }` | `turret`, `at` as for aim. `within_deg`: more than 0, default 2. |
+
+## Pneumatics
+
+A robot with a stock `cylinder` part (see [parts.md](parts.md#cylinder) and [pneumatics.md](pneumatics.md)) has an
+air system, and these blocks work it with no robot code.
+
+- **set** *cylinder* **to extend** pushes the rod out, and **to retract** pulls it in. It takes no time: the valve
+  switches and the next block starts at once, while the rod moves. Follow it with **wait until** *cylinder* **is
+  extended** to wait for the rod.
+- **set** *cylinder* **to off** turns the valve's coils off, as robot code does: on a single solenoid (or a valve with
+  no device ID) the spring retracts the cylinder, and on a double solenoid it stays where it is. On a single solenoid
+  with `invert = true` the spring extends it, as it would on the robot.
+- *cylinder* **is extended** (or **retracted**) is true when the rod is within 0.25 in of that end of its stroke.
+- *stored or working* **air pressure above / below** *n* **psi** reads the tanks (stored) or the regulator's output
+  (working). It is strict: at exactly 120 psi the air is not above 120.
+
+**The valve needs no device ID here.** The blocks switch the valve themselves, so a stand-in robot's cylinder works
+with its `valve` slot empty. (Motors still need IDs.) **The compressor runs the whole run**, as if the robot code had
+turned its closed loop on, and the pressure switch still starts and stops it.
+
+**The run's air.** A robot with cylinders adds a line to the result, such as `air: 120 psi at the start, 84 psi at the
+end, lowest 81 psi at 14.2 s; the compressor ran 9.0 s`. If the tanks fell below the working pressure it warns: `the
+tanks fell below the 60 psi working pressure at 2.0 s: the cylinders pushed weaker from then on`. The notes say
+`Pneumatic numbers are estimates (UNCALIBRATED): see docs/pneumatics.md.`
+
+**The chart** gets `air.psi` (the tanks), `air.working_psi` (after the regulator) and each cylinder's
+`<name>.extension` (how far its rod is out, in inches). **The replay** draws each cylinder's barrel and rod between its
+two ends.
+
+In the test file:
+
+| Form | Keys |
+|---|---|
+| `do = "set_cylinder"` | `cylinder`: a cylinder part's name. `to`: `"extend"`, `"retract"` or `"off"`. |
+| `{ cylinder = { cylinder = "lift", is = "extended" } }` | `cylinder`: a cylinder part's name. `is`: `"extended"` or `"retracted"`. |
+| `{ pressure = { side = "stored", above = 60 } }` | `side`: `"stored"` (the default) or `"working"`. `above` or `below`: psi, 0 or more. |
 
 ## Times and limits
 
@@ -472,7 +570,8 @@ team keeps its robot in git, add this line to `.gitignore`:
 Then it opens the Test tab. If you press **Test it** again after adding parts, new parts are added to the same stand-in
 and the tab says which. **Test it also gives the part's motors free device IDs**: the first PWM channels the drive
 leaves free (`PWM:2` and up), so a motor you built in the Part tab can spin at once without anyone choosing IDs.
-Change them in the Robot tab if you like. A part with a hook is put in front of the ladder field.
+Change them in the Robot tab if you like. A cylinder's valve needs no ID under the Test tab. A part with a hook is
+put in front of the ladder field.
 
 You can use any robot file instead: **Test a mechanism** on the start page, then **Make the test**.
 
@@ -496,7 +595,7 @@ absolute path. **`test_spread`** runs the floor spread. The agent writes the `.t
 
 ## The examples
 
-Four worked examples are in `examples/blocks/`. Each has a README with the story, the blocks and how to change them.
+Six worked examples are in `examples/blocks/`. Each has a README with the story, the blocks and how to change them.
 
 - **`examples/blocks/intake`**, a roller and bin that take a ball off the carpet. Run it and it finishes at 3.3 s
   with the ball in the bin. The README has a sweep of the roller's voltage.
@@ -517,6 +616,15 @@ Four worked examples are in `examples/blocks/`. Each has a README with the story
   hooks are at the front edge and the weight is in the middle, so a hook pulling up on the front mostly tilts the robot,
   and tilting swings the next rung out of reach. The motor is not stalled and the hooks work as designed. The README
   says what was tried and what to try next. The test's tilt check passes (the robot leans 20° at most).
+- **`examples/blocks/turret`**, a launcher on a turret on a stand-in robot, on the 2026 field with 8 balls preloaded.
+  It aims at `hub_blue`, shoots standing still, turns on the spot, then shoots while it drives 1.5 m, and checks the
+  turret stays aimed within 5° throughout and that the balls score: 7 of 8 go in, all 4 standing and 3 of the 4 on
+  the move (the aim doesn't lead the shot). The README tries the hood, the wheel speed, a faster drive and the same
+  run without the turret.
+- **`examples/blocks/pneumatic`**, an arm lifted by an air cylinder on a stand-in robot. It lifts the arm and puts it
+  down 10 times and checks the air stays above the 60 psi working pressure (the lowest is 67 psi). The README compares
+  the run with `scrimmage air`'s budget, and tells of the first try, whose 2 in bore used the air up in about one
+  cycle.
 
 Open one with `scrimmage edit examples/blocks/intake/intake.test.toml`.
 
@@ -524,6 +632,12 @@ Open one with `scrimmage edit examples/blocks/intake/intake.test.toml`.
 
 - **"... has no motor to move it".** A block uses a joint or motor whose slot has no device ID in the robot. Open the
   Robot tab and give the slot an ID (a `PWM:n` or a CAN ID). **Test it** does this for you on a stand-in robot.
+- **"this robot has no turret to aim", "this field has no goals to aim at".** An aim block or aimed check needs a
+  stock `turret` part on the robot and a field with goals (a `[range]`).
+- **"hub_blue is outside the turret's range (it stops at 30°)".** The goal is past the turret's stop. Turn the robot
+  toward the goal, or widen the turret's `range`.
+- **"this robot has no cylinder to set", "this robot has no air system (no cylinder)".** The pneumatics blocks need a
+  stock `cylinder` part on the robot.
 - **"drive works on a tank or swerve drive; spin the drive motors instead".** The robot's drivetrain is neither (a
   mecanum drive, say). Use **spin** blocks on the drive motors.
 - **A station run ends "timed out ... its release point stayed blocked".** A ball is sitting at the station's

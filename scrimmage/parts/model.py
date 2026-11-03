@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..motors import MOTORS
+from ..pneumatics.model import CylinderSpec
 from .toml_writer import dumps
 
 FORMAT = 1
@@ -19,6 +20,7 @@ AXES = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0)}
 SHAPES = ("box", "cylinder", "sphere", "mesh", "capsule")
 GEOM_NAME_RE = re.compile(r"[A-Za-z0-9_.]+$")
 ZERO3 = (0.0, 0.0, 0.0)
+VALVE_SLOT = "valve"                             # a cylinder's valve slot (a part has at most one cylinder)
 
 
 class PartError(ValueError):
@@ -144,11 +146,16 @@ class Part:
     warnings: list[str] = field(default_factory=list)   # notes from loading (the plugin overlay); not in part.toml
     grips: dict = field(default_factory=dict)           # body -> grip material or number (parts/grip.py), from the
     #                                                     overlay or the config; not in part.toml
+    cylinders: list[CylinderSpec] = field(default_factory=list)   # the stock cylinder's only (D2); not in part.toml.
+    # Its pins name the part's own bodies, or (pin_b, the push form) another part's body as "<instance>.<body>";
+    # length None means the pins' distance at the assembled pose. Each cylinder's valve is the slot VALVE_SLOT.
 
     def slot_kinds(self) -> dict[str, str]:
         out = {s.slot: "motor" for s in self.motors}
         out.update({s.slot: "encoder" for s in self.encoders})
         out.update({s.slot: "gyro" for s in self.gyros})
+        if self.cylinders:
+            out[VALVE_SLOT] = "valve"
         return out
 
     def joint_names(self) -> list[str]:
@@ -257,6 +264,7 @@ GEOM_KEYS = SHAPES + ("axis", "pos", "rot", "collide", "friction", "color", "con
                       "priority")
 JOINT_KEYS = ("name", "hinge", "slide", "range", "damping", "frictionloss", "armature", "spring", "limit_solref")
 LOOP_KEYS = ("body1", "body2", "pos")
+CYLINDER_KEYS = ("bore", "rod", "stroke", "friction", "conductance", "pin_a", "pin_b", "length")
 BODY_KEYS = ("name", "parent", "mass", "pos", "rot", "geom", "joint", "com", "inertia", "inertia_rot")
 
 
@@ -354,7 +362,10 @@ def _table_list(c: _Ctx, d: dict, key: str) -> list[dict]:
 def part_from_dict(d: dict, source: str, base_dir: Path | None) -> Part:
     """Validate a parsed part.toml (or a stock builder's dict) into a Part."""
     c = _Ctx(source)
-    c.keys(d, ("part", "body", "loop", "coupling", "motor", "encoder", "gyro", "mount"), "")
+    top = ("part", "body", "loop", "coupling", "motor", "encoder", "gyro", "mount")
+    if "(stock " in source:     # only a stock builder makes a cylinder (D2): in a part.toml it's an unknown key
+        top += ("cylinder",)
+    c.keys(d, top, "")
     head = d.get("part")
     if not isinstance(head, dict):
         raise c.err("", "missing the [part] table (name = \"...\", format = 1)")
@@ -511,7 +522,33 @@ def part_from_dict(d: dict, source: str, base_dir: Path | None) -> Part:
         if body not in body_names:
             raise c.err(where, f"no body {body!r}; the part's bodies: {', '.join(body_names)}")
         mounts.append(Mount(n, body, c.vec(m, "pos", where, default=ZERO3), c.vec(m, "rot", where, default=ZERO3)))
-    return Part(name, bodies, couplings, loops, motors, encoders, gyros, mounts, base_dir)
+    cylinders = []
+    if "cylinder" in d:
+        if VALVE_SLOT in slots:
+            raise c.err("cylinder", f"slot {VALVE_SLOT!r} is the cylinder's valve; rename the other slot")
+        cylinders.append(_cylinder(c, d["cylinder"], body_names))
+    return Part(name, bodies, couplings, loops, motors, encoders, gyros, mounts, base_dir, cylinders=cylinders)
+
+
+def _cylinder(c: _Ctx, cy: dict, body_names: list[str]) -> CylinderSpec:
+    """The cylinder table: sizes in m, friction in N, conductance in m^3/(s Pa), and pin_a, pin_b as
+    { body, pos }. pin_a is on one of the part's bodies; pin_b may be on another part's, as "<instance>.<body>"."""
+    where = "cylinder"
+    c.keys(cy, CYLINDER_KEYS, where)
+    bore, rod, stroke = (c.num(cy, k, where, positive=True) for k in ("bore", "rod", "stroke"))
+    if rod >= bore:
+        raise c.err(where, f"the rod ({rod} m) must be thinner than the bore ({bore} m)")
+    pins = []
+    for key in ("pin_a", "pin_b"):
+        pin = cy.get(key)
+        c.keys(pin, ("body", "pos"), f"{where} {key}")
+        body = c.name(pin, "body", f"{where} {key}")
+        if body not in body_names and not (key == "pin_b" and "." in body):
+            raise c.err(f"{where} {key}", f"no body {body!r}; the part's bodies: {', '.join(body_names)}")
+        pins.append((body, c.vec(pin, "pos", f"{where} {key}", default=ZERO3)))
+    length = c.num(cy, "length", where, positive=True) if "length" in cy else None
+    return CylinderSpec("cylinder", bore, rod, stroke, c.num(cy, "friction", where, nonneg=True),
+                        c.num(cy, "conductance", where, positive=True), pin_a=pins[0], pin_b=pins[1], length=length)
 
 
 def _axis_out(v: tuple[float, float, float]):

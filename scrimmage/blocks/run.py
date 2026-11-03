@@ -48,6 +48,29 @@ touches it)"); a failed `seated` check says the piece isn't on the rod, or how f
 is seated 2.0 in of 4.0 in on branch_l2, less than 3 in"). Each `seated.<rod>` signal is the deepest piece's depth on
 that rod in inches, NaN while none is on it; the run's `seated` says each rod's depth at the end in words.
 
+Shooting: on a range with a `[shooter]` the range's launcher model runs as it does under robot code, so spinning
+the launcher and its stages shoots the balls the robot holds. Every motor of a joint is written (a launcher's
+lead and follower, say), as robot code drives each one. The run's `goals` are the range's goal counts at the end
+(None without a `[shooter]`); `scored` checks them.
+
+Aiming: `aim` takes no time. From then on, every step, it sets the turret joint's position target to aim.py's
+aim_target (the goal's center, clamped to the turret's range), held by the same position loop as a `move`, until a
+later spin, move, stop or aim on that joint. A run with an aim block or an aimed condition has an `aim_error` signal
+(degrees, positive with the goal to the left): the latest aim block's turret and goal once one has started, the
+test's first aim's or aimed condition's before. A failed `aimed` check whose goal is beyond the turret's stop says so
+("hub_blue is outside the turret's range (it stops at 30°)").
+
+Pneumatics: `set_cylinder` takes no time. It sets the cylinder's valve through the air system
+(PneumaticsRuntime.command, plan decision D3: no device ID needed) to extend or retract until a later set_cylinder on
+it; "off" is the valve's spring position, as with the coils off in robot code: a single solenoid's spring
+retracts the cylinder (extends it when the valve is inverted; one with no device ID counts as single, not inverted)
+and a double solenoid's stays where it is (spec C9).
+The compressor runs throughout a run, as if the robot code's closed loop were on (C11): the pressure switch still
+starts and stops it. A robot with cylinders has the signals `air.psi` (the tanks), `air.working_psi` (the regulator's
+output) and each cylinder's `<name>.extension` (in), and the run's `air`: the tanks' pressure at the start and end,
+the lowest and when, how long the compressor ran and when the tanks first fell below the working pressure
+(air_lines words it).
+
 A run ends with one status: "finished" (every block played), "check failed", "timed out" (a wait until, a move, a
 drive or a turn), "tipped over" (the robot body's up axis more than TIP_DEG from vertical), "walked off" (the climb
 runner's "hook walked off" rule, scrimmage/climb/run.py's WalkOff), "time limit", "repeat limit" (a repeat until
@@ -70,11 +93,12 @@ from ..hal_drive import MotorDrive, driven_joints, position_volts
 from ..movers import mover_poses, movers
 from ..protocol import HalState
 from ..testrange.build import BALL_BITS
-from .conditions import IN, Watch, _conds, describe
+from .aim import TURN, aim_error, aim_target
+from .conditions import IN, Watch, _conds, describe, turret_words
 from .drive import STEER_TIMEOUT, drivetrain
 from .feeds import SETTLE_MAX_S, Outcomes, counts, is_standin, made_it_in, sentence
 from .grip_watch import SET_DOWN, SLIP_LOOKBACK_S, default_word
-from .palette import ALL_MOTORS, ANY_HOOK, ANY_PIECE, NEXT_BAR, palette, problems
+from .palette import ALL_MOTORS, ANY_GOAL, ANY_HOOK, ANY_PIECE, NEXT_BAR, palette, problems
 from .placed import KNOCK_OFF_SHARE, ON_PIECE, seated_words
 from .program import (DRIVE_TIMEOUT, DRIVE_VOLTS, MOVE_TIMEOUT, REPEAT_MAX, WAIT_TIMEOUT, Program,
                       TestFileError)
@@ -117,6 +141,11 @@ class RunResult:
     marks: list[dict] = field(default_factory=list)     # moments the replay marks: {t, kind ("slip"), text, ball}
     seated: dict[str, str] = field(default_factory=dict)  # rod -> its piece's depth at the end in words (placed.py)
     notes: list[str] = field(default_factory=list)      # what the run's numbers rest on (run_notes): UNCALIBRATED grips
+    goals: dict[str, int] | None = None     # the range's goal counts at the end; None without a [shooter]
+    # the air, on a robot with cylinders (None without): start_psi, end_psi, low_psi, low_t (s), compressor_s and
+    # below_working_t (s; None while the tanks stayed at or above the working pressure), the tanks' gauge psi; and
+    # working_psi, the regulator's set pressure, which air_lines' warning names
+    air: dict | None = None
 
     @property
     def passed(self) -> bool:
@@ -215,14 +244,73 @@ def default_grip_note(world) -> str:
     return f"grip: the pads have the friction part.toml gives them ({each}); {_LARGER} — {_GRIP_ADVICE}"
 
 
+PNEUMATIC_NOTE = "Pneumatic numbers are estimates (UNCALIBRATED): see docs/pneumatics.md."
+
+
 def run_notes(world, program: Program) -> list[str]:
     """What the run's numbers rest on: a line per gripped body (parts/grip.py's grip_notes); a test of held, rests on
-    or seated with no grip anywhere gets default_grip_note, so its grip isn't read as measured either."""
+    or seated with no grip anywhere gets default_grip_note, so its grip isn't read as measured either. A robot with
+    cylinders gets PNEUMATIC_NOTE."""
     from ..parts.grip import grip_notes
     notes = grip_notes(world)
     if not notes and any(_conds(program.blocks, k) for k in GRIP_CONDITIONS):
         notes = [default_grip_note(world)]
+    if getattr(world, "pneumatics", None) is not None:
+        notes.append(PNEUMATIC_NOTE)
     return notes
+
+
+def goal_lines(result: RunResult) -> list[str]:
+    """The run's goal counts as lines, "scored 5 in hub_blue", one per goal with a ball in it (none without a
+    [shooter])."""
+    return [f"scored {n} in {name}" for name, n in (result.goals or {}).items() if n]
+
+
+def air_lines(result: RunResult) -> list[str]:
+    """The run's air as lines (none without cylinders): "air: 120 psi at the start, 84 psi at the end, lowest 81 psi
+    at 14.2 s; the compressor ran 9.0 s", and when the tanks fell below the working pressure, a warning (Review
+    Focus 5)."""
+    a = result.air
+    if a is None:
+        return []
+    lines = [f"air: {a['start_psi']:.0f} psi at the start, {a['end_psi']:.0f} psi at the end, lowest "
+             f"{a['low_psi']:.0f} psi at {a['low_t']:.1f} s; the compressor ran {a['compressor_s']:.1f} s"]
+    if a["below_working_t"] is not None:
+        lines.append(f"the tanks fell below the {a['working_psi']:g} psi working pressure at "
+                     f"{a['below_working_t']:.1f} s: the cylinders pushed weaker from then on")
+    return lines
+
+
+class _Air:
+    """The air through a run, seen after every physics step: RunResult.air's numbers."""
+
+    def __init__(self, pneumatics, t: float):
+        self.system = pneumatics.system
+        psi = self.system.stored_psi
+        self.out = {"start_psi": psi, "end_psi": psi, "low_psi": psi, "low_t": t, "compressor_s": 0.0,
+                    "below_working_t": None, "working_psi": self.system.config.working_psi}
+
+    def see(self, t: float, dt: float) -> None:
+        s, out = self.system, self.out
+        psi = s.stored_psi
+        out["end_psi"] = psi
+        if psi < out["low_psi"]:
+            out["low_psi"], out["low_t"] = psi, t
+        if s.compressor_on:
+            out["compressor_s"] += dt
+        if out["below_working_t"] is None and psi < out["working_psi"]:
+            out["below_working_t"] = t
+
+
+def _aims(blocks) -> list[tuple[str, str]]:
+    """(turret, goal) of each aim block and aimed condition, in the test's order, through repeat bodies."""
+    out = []
+    for b in blocks:
+        if b.do == "aim":
+            out.append((b.args["turret"], b.args["at"]))
+        out += [(c.args["turret"], c.args["at"]) for c in b.args.values() if getattr(c, "kind", None) == "aimed"]
+        out += _aims(b.body)
+    return out
 
 
 def check_problems(program: Program, world) -> None:
@@ -243,12 +331,21 @@ class TestRun:
         self.world, self.program = world, program
         m = world.model
         self.motors = driven_joints(world)
-        self._drive = {n: MotorDrive(b) for n, b in self.motors.items()}
+        # every motor on each joint (a slot of several motors, a lead and its followers, shares one joint), each
+        # written as robot code writes it, through its own binding
+        self._drive = {n: [MotorDrive(mb) for mb in world.motors if mb.qadr == b.qadr]
+                       for n, b in self.motors.items()}
         pal = palette(world, list(program.hooks))
         kinds = {j["name"]: j["kind"] for j in pal["joints"]}
         self.drivetrain = drivetrain(world, self.motors)
         self.signal_names = list(pal["signals"])
+        aims = _aims(program.blocks)
+        self._first_aim = aims[0] if aims else None      # (turret, goal) the aim_error signal reads at the start
+        if aims:
+            self.signal_names.append("aim_error")
         self._seated = {f"seated.{r}": r for r in pal["rods"]}     # a seated signal -> its rod
+        self._double = {c["name"]: c["double"] for c in pal["cylinders"]}
+        self._extension = {f"{c}.extension": c for c in self._double}     # an extension signal -> its cylinder
         self._qadr = {n: int(m.jnt_qposadr[m.joint(n).id]) for n in kinds}
         self._slide = {n: k == "slide" for n, k in kinds.items()}
         self.feeder = world.test_range.feeder if world.test_range is not None else None
@@ -262,17 +359,33 @@ class TestRun:
 
     def run(self, on_sample=None, cancel: threading.Event | None = None) -> RunResult:
         """Play the blocks. `on_sample(t, row)` is called at each signal sample (row: signal -> value); setting
-        `cancel` ends the run at the next physics step."""
+        `cancel` ends the run at the next physics step. The compressor runs throughout a run (C11); afterward the
+        world's closed loop is back to what it was."""
+        air = self.world.pneumatics
+        if air is None:
+            return self._play(on_sample, cancel)
+        before = air.always_closed_loop
+        air.always_closed_loop = True
+        try:
+            return self._play(on_sample, cancel)
+        finally:
+            air.always_closed_loop = before
+
+    def _play(self, on_sample, cancel: threading.Event | None) -> RunResult:
         from ..assembler.view import model_view
         started = datetime.now().astimezone().isoformat(timespec="milliseconds")
         w, m, d = self.world, self.world.model, self.world.data
         dt = float(m.opt.timestep)
         w.external = None
         w.reset()
+        self.air = None
+        if w.pneumatics is not None:
+            self.air = _Air(w.pneumatics, float(d.time))
         if self.placement is not None:
             self._place(self.placement)
         for _ in range(round(SETTLE_S / dt)):
             w.step(HalState())
+            self._see_air()
         watch = self.watch = Watch(w, self.program)
         if watch.mon is not None:
             watch.mon.reset()
@@ -293,6 +406,8 @@ class TestRun:
         result.signals = {"t": [], **{n: [] for n in self.signal_names}}
 
         self.drives: dict[str, tuple[str, float]] = {}      # joint -> ("volts", V) or ("to", qpos target)
+        self.aims: dict[str, tuple[str, str]] = {}          # turret joint -> (turret, goal) its target follows
+        self._aim_signal = self._first_aim                  # the latest aim block's, once one has started
         self.frames = [_Frame(list(self.program.blocks), ())]
         self.active: dict | None = None                     # the waiting block under way
         self.checks: list[dict] = []
@@ -393,7 +508,17 @@ class TestRun:
             if got is not None:
                 result.seated[rod] = seated_words(*got)
         result.notes = run_notes(self.world, self.program)
+        tr = self.world.test_range
+        if tr is not None and tr.shooter is not None:
+            result.goals = dict(tr.counts()["goals"])
+        if self.air is not None:
+            result.air = dict(self.air.out)
         return result
+
+    def _see_air(self) -> None:
+        if self.air is not None:
+            d = self.world.data
+            self.air.see(float(d.time), float(self.world.model.opt.timestep))
 
     def _place(self, p: dict) -> None:
         """A floor spread's placement, after the reset: the robot turned at its start, the spread's ball put in front
@@ -462,11 +587,15 @@ class TestRun:
         w, d = self.world, self.world.data
         hal = HalState()
         bus = w.vbatt
+        for joint, (turret, goal) in self.aims.items():
+            self.drives[joint] = ("to", aim_target(w, turret, goal)[0])
         for joint, (kind, value) in self.drives.items():
             if kind == "to":
                 value = position_volts(value, float(d.qpos[self._qadr[joint]]), not self._slide[joint], bus)
-            self._drive[joint].write(hal, value, bus)
+            for drive in self._drive[joint]:
+                drive.write(hal, value, bus)
         w.step(hal)
+        self._see_air()
 
     def _row(self, watch) -> dict[str, float]:
         d = self.world.data
@@ -479,6 +608,14 @@ class TestRun:
             elif name in self._seated:                  # inches; NaN while no piece is on the rod
                 got = watch.placed.seated(self._seated[name])
                 row[name] = got[0] / IN if got is not None else math.nan
+            elif name == "aim_error":
+                row[name] = math.degrees(aim_error(self.world, *self._aim_signal))
+            elif name == "air.psi":
+                row[name] = self.world.pneumatics.system.stored_psi
+            elif name == "air.working_psi":
+                row[name] = self.world.pneumatics.system.working_psi
+            elif name in self._extension:
+                row[name] = self.world.pneumatics.extension(self._extension[name]) / IN
             elif name.endswith(".current") and name[:-8] in self.motors:
                 row[name] = float(self.motors[name[:-8]].current)
             else:
@@ -536,6 +673,22 @@ class TestRun:
     def _start(self, b, place: tuple, t: float) -> bool:
         """Start block b; True when it is done already (it takes no time)."""
         a, watch = b.args, self.watch
+        if b.do in ("spin", "stop"):
+            self.aims.pop(a["motor"], None)
+        elif b.do == "move":
+            self.aims.pop(a["joint"], None)
+        if b.do == "aim":
+            j = f"{a['turret']}.{TURN}"
+            self.aims[j] = self._aim_signal = (a["turret"], a["at"])
+            self.drives[j] = ("to", aim_target(self.world, a["turret"], a["at"])[0])
+            self._commanded[j] = t
+            return True
+        if b.do == "set_cylinder":
+            to = a["to"]
+            if to == "off":         # C9: the valve's spring position (an inverted single's extends)
+                to = self.world.pneumatics.spring_state(a["cylinder"])
+            self.world.pneumatics.command(a["cylinder"], to)
+            return True
         if b.do == "spin":
             self.drives[a["motor"]] = ("volts", a["volts"])
             self._commanded[a["motor"]] = t
@@ -544,6 +697,7 @@ class TestRun:
             if a["motor"] == ALL_MOTORS:
                 self._commanded.update({j: t for j in self.drives})
                 self.drives.clear()
+                self.aims.clear()
             else:
                 self._commanded[a["motor"]] = t
                 self.drives.pop(a["motor"], None)
@@ -732,6 +886,27 @@ class TestRun:
             if "at_least" in a:
                 return f"expected {a['at_least']} or more pieces in the hopper, but {pieces} in it"
             return f"expected at most {a['at_most']} pieces in the hopper, but {pieces} in it"
+        if k == "scored":
+            n = watch.scored_count(a["goal"])
+            where = "any goal" if a["goal"] == ANY_GOAL else a["goal"]
+            return f"expected {a['at_least']} or more balls scored in {where}, but {n} {'was' if n == 1 else 'were'}"
+        if k == "aimed":
+            target, ok = aim_target(self.world, a["turret"], a["at"])
+            if not ok:
+                return f"{a['at']} is outside the turret's range (it stops at {round(math.degrees(target), 1):g}°)"
+            off = math.degrees(aim_error(self.world, a["turret"], a["at"]))
+            return (f"expected {turret_words(a['turret'])} aimed at {a['at']} within "
+                    f"{_amount(a['within_deg'], 'deg')}, but it was {abs(off):.1f}° off")
+        if k == "cylinder":
+            out = self.world.pneumatics.extension(a["cylinder"]) / IN
+            stroke = next(c.stroke for c in self.world.parts.cylinders if c.name == a["cylinder"]) / IN
+            return f"expected {a['cylinder']} {a['is']}, but its rod was out {out:.1f} in of {round(stroke, 1):g} in"
+        if k == "pressure":
+            side, psi = ("above", a["above"]) if "above" in a else ("below", a["below"])
+            s = self.world.pneumatics.system
+            now = s.stored_psi if a["side"] == "stored" else s.working_psi
+            what = f"the {a['side']} air pressure"      # as the block reads: "stored air pressure above 60 psi"
+            return f"expected {what} {side} {psi:g} psi, but it was {now:.1f} psi"
         if k == "station_empty":
             left = self.feeder.left(a["station"]) if self.feeder is not None else None
             return f"{a['station']} wasn't empty" + (f" ({left} left)" if left else "")

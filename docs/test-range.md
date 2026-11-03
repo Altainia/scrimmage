@@ -913,6 +913,9 @@ fixed-size set of rows `{distance, wheel_rps, hood_deg, flight_s, apex}`.
   the steepest solution; each later row takes the solution **closest to the row before it** (wheel speed and hood angle
   together), so the table is smooth to interpolate between.
 - `flight_s` is the time from the exit to the rim-height crossing; the robot code can use it to lead a moving shot.
+- **A launcher on a turret** (the stock `turret` part, [parts.md](parts.md#turret)) is measured with the turret at 0.
+  A turret near the robot's middle moves the launcher only a little as it turns, which is small next to the shot's
+  distance.
 - A table takes several minutes for a long list of distances.
 
 Robot code should **hold fire beyond the table's reach** rather than clamp to its last row; the sample does.

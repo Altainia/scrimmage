@@ -129,6 +129,8 @@ Each slot in a part (listed by `scrimmage parts <name>` and by the `robot_parts`
 | `"SparkMaxAbs:3"`, `"SparkFlexAbs:3"` | encoder | `[[encoder]] rev = "SparkMaxAbs:3"`, the absolute encoder on that SPARK's data port |
 | `{ ... }` | any | a table of binding keys for anything else |
 | `["TalonFX:3", "TalonFX:4"]` | motor | a list, one ID per motor, for slots with `count` motors |
+| `"PCM:3"`, `"PCM:3,4"` | valve | a single solenoid on channel 3, or a double solenoid on channels 3 and 4, of CTRE PCM 0 (see [Valve IDs](#valve-ids)) |
+| `"PH:3"`, `"PH:3,4"` | valve | the same on REV Pneumatic Hub 1 |
 
 A slot's kind must match: `"TalonFX:3"` in an encoder slot is an error.
 
@@ -153,6 +155,56 @@ slot's motor count.
 such as `dt.left has no device ID, so it won't move`. Warnings appear in the `serve`/`run` terminal log
 at start, in a session's `status()` (`session_status` over MCP) as `warnings`, and as notes in the scenario
 report. An ID for a slot the part doesn't have is an error that lists the part's slots.
+
+### Valve IDs
+
+A cylinder's `valve` slot takes a solenoid on a CTRE PCM or a REV Pneumatic Hub. The short forms use WPILib's
+default module numbers: `"PCM:3"` is channel 3 of PCM 0, and `"PH:3"` is channel 3 of Pneumatic Hub 1. Two channels,
+`"PCM:3,4"`, make a double solenoid (forward, then reverse). Any other module, or an inverted valve, takes a table:
+`{ pcm = 1, channel = 3 }` or `{ ph = 2, forward = 3, reverse = 4, invert = true }`.
+
+| Key | Meaning |
+|---|---|
+| `pcm` / `ph` | Exactly one of them: the module's CAN number, 0 to 62. |
+| `channel` | A single solenoid's channel (a spring-return valve: on extends, off retracts). |
+| `forward`, `reverse` | A double solenoid's two channels, in place of `channel`: forward extends, reverse retracts, neither leaves it where it is. They must differ. |
+| `invert` | `true` swaps extend and retract (a cylinder plumbed the other way round). Default `false`. |
+
+A PCM's channels are 0 to 7 and a Pneumatic Hub's 0 to 15. All of one robot's valves must be on one kind of module
+(all PCM or all PH); a robot with both is an error that names a valve on each. Valves on a Pneumatic Hub need the
+lockstep extension 0.7.0 or later. Robot code for each form, and what each valve state does, are in
+[pneumatics.md](pneumatics.md#robot-code). Under the Test tab a valve needs no ID.
+
+### The air system: `[pneumatics]`
+
+A robot with cylinders has one air system: tanks, a compressor, a pressure switch and a regulator. A config with
+cylinders and no `[pneumatics]` section gets the defaults. Pressures are in psi (gauge), the one exception to
+Scrimmage's metric units, since every FRC pneumatic part and rule uses psi. Every default is an estimate
+(UNCALIBRATED); [pneumatics.md](pneumatics.md#the-numbers-and-where-they-come-from) gives each one's source.
+
+```toml
+[pneumatics]
+tanks = 2
+tank_ml = 574
+compressor = "VIAIR 90C"
+working_psi = 60
+start_psi = 120
+switch_on_psi = 95
+switch_off_psi = 115
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `tanks` | `2` | Number of tanks on the stored side, 1 or more. |
+| `tank_ml` | `574` | Each tank's volume in milliliters (the Clippard AVT-PP-35 FRC tank). |
+| `compressor` | `"VIAIR 90C"` | The compressor's flow and current curve, or `"none"` for tanks only. |
+| `working_psi` | `60` | The regulator's pressure, what the cylinders get. At most 60 (the FRC rule). |
+| `start_psi` | `120` | The tanks' pressure when a run starts (charged before the match). At most 120 (the FRC rule). |
+| `switch_on_psi` | `95` | The pressure switch turns the compressor on below this. |
+| `switch_off_psi` | `115` | ... and off at this. At most 120, and above `switch_on_psi`. |
+
+An unknown key is an error that lists these. `scrimmage air <config>` gives the robot's air budget: see
+[pneumatics.md](pneumatics.md#the-air-budget-scrimmage-air).
 
 ### Inspecting a robot
 
@@ -440,6 +492,28 @@ Things worth knowing when you set the stock parts' parameters, or model the same
   MAXSwerve template uses. The encoder slot is inverted whatever it is bound to: it reads the module
   clockwise-positive, like the Through Bore encoder on the steer SPARK, which robot code inverts as REV's template
   does. `scrimmage edit --new swerve-rev` starts a robot with the template's four modules and CAN IDs.
+- **Turret.** A platform on a vertical hinge (joint `turn`): 0 faces the part's +x, and positive turns left
+  (counter-clockwise seen from above). `range` is where its hard stops are (the wires' limit), each end within ±360°,
+  so a turret with a slip ring is a wide range. Attach the launcher to `turret.top`: the shots leave from the launcher,
+  so they go where the turret points. The Test tab's **aim** block points it at a goal (see
+  [the Test tab](test-tab.md#aiming)). `scrimmage launcher aim` measures its table with the turret at 0, which is
+  close enough while the turret is near the robot's middle. The 60:1 gearing on one Kraken X60 is an estimate typical
+  of 2022 and 2026 turrets.
+- **Cylinder.** A double-acting air cylinder. Its barrel lies along the part's +x and its rod pushes out toward +x.
+  It has two forms:
+  - **Free** (`push` empty): the cylinder has its own rod, on a slide, with a `rod` mount at its end. Attach a pusher,
+    a kicker's plate or an intake's slide to `<name>.rod`.
+  - **Push** (`push = "<part>.<body>"`): the rod's end is pinned to another part's body at `push_pos` (in that body's
+    frame), and the cylinder drives whatever joints lie between its two ends: a stock arm raised by a piston
+    (`push = "arm.arm"`), a CAD claw's jaw, a wrist. Its retracted length is `length`, or by default the distance
+    between its ends as assembled; the assembled distance must lie between the retracted and extended lengths, or the
+    error gives both. Its own barrel is drawn along the part's +x; the Test tab's replay draws the real cylinder
+    between its two pins.
+
+  In both forms the force acts along the line between the two ends, and the rod stops at both ends of its stroke. The
+  size, friction, masses and valve flow are estimates (UNCALIBRATED): see [pneumatics.md](pneumatics.md). A cylinder
+  is a stock part only: a `part.toml` can't have one, so put a stock cylinder next to your CAD part and pin it with
+  `push`.
 - **Differential.** The right side is mirrored: its motor and encoder are inverted, as on a real robot, so robot
   code that doesn't call `setInverted` drives the sides in opposite directions.
 
@@ -454,13 +528,17 @@ $ scrimmage parts
 arm                  single-jointed arm on a horizontal pivot; 0 degrees points forward, positive raises the tip
 chassis              rectangular drive base with bumpers; modules mount at its corners
 climber              telescoping climber with J hooks at its tip that hold a bar by contact; optional spring latch (passive or released by a motor) and pivot. Every geom collides
+cylinder             a double-acting pneumatic cylinder, driven by air through its valve
 differential         tank drive with 2-6 wheels per side; the middle wheel of each side is driven
+disc_shooter         planar disc shooter: wheels driving a flat disc along a channel against a fence (or a second row of wheels), the channel tilted to the launch angle, fixed or on a motor; the test range's [shooter] kind = "disc" runs it with the disc launcher model
 elevator             linear lift of 1-4 stages driven by a spool; the carriage is the last stage
 flywheel             spinning wheel on a horizontal axle (shooter wheel)
+launcher             hooded shooter: a wheel on a horizontal shaft and a hood around it, articulated or fixed; the test range's [shooter] runs it with sub-project 8's launcher model
 roller               spinning roller on a horizontal axle (intake or indexer)
 swerve/MAXSwerve     REV MAXSwerve module, 3 in wheel, NEO drive and NEO 550 steer
 swerve/MK4i          SDS MK4i swerve module (inverted steer motor), 4 in wheel
 swerve/MK4n          SDS MK4n swerve module (narrow), 4 in wheel
+turret               a flat platform on a vertical axis; carry a launcher on it and turn it to aim
 ```
 
 ### arm
@@ -541,6 +619,29 @@ parameters:
 
 slots: extend, extend_encoder
 mounts: base, tip
+```
+
+### cylinder
+
+```
+cylinder: a double-acting pneumatic cylinder, driven by air through its valve
+
+Slots: valve (a PCM or PH solenoid). The barrel lies along the part's +x and the rod extends toward +x. Free (push empty): mount things on cylinder.rod. Push: the rod's end is pinned to push at push_pos, and the cylinder drives the joints between its two ends; it has only the base mount.
+
+parameters:
+  bore = 0.0269875 m (greater than 0): the piston's diameter (1-1/16 in; estimate, UNCALIBRATED)
+  rod = 0.0079375 m (greater than 0): the rod's diameter, less than the bore (5/16 in; UNCALIBRATED)
+  stroke = 0.1524 m (greater than 0): how far the rod travels (6 in)
+  friction = 8.0 N (at least 0.0): seal friction (estimate, UNCALIBRATED)
+  conductance = 8e-09 m^3/(s*Pa) (greater than 0): the valve's sonic conductance, how freely air flows (estimate, UNCALIBRATED)
+  mass = 0.25 kg (greater than 0): the barrel's mass (UNCALIBRATED)
+  rod_mass = 0.1 kg (greater than 0): the rod's mass (UNCALIBRATED)
+  push = '': "<part>.<body>" the rod's end is pinned to (a stock arm's "arm.arm"); empty for a free rod with its own mount
+  push_pos = [0.0, 0.0, 0.0] m ([x, y, z]): where on the push body the rod's end is pinned, in that body's frame
+  length = 0.0 m (at least 0.0): pin to pin when retracted; 0 takes it from the assembled pose (push) or 0.3 x stroke + 0.05 m (free)
+
+slots: valve
+mounts: base, rod
 ```
 
 ### differential
@@ -699,4 +800,25 @@ parameters:
 
 slots: drive, steer, encoder
 mounts: none
+```
+
+### turret
+
+```
+turret: a flat platform on a vertical axis; carry a launcher on it and turn it to aim
+
+Slots: turn (motor), encoder (turret turns). 0 faces the part's +x; positive turns left (counter-clockwise from above). Attach the launcher to turret.top.
+
+parameters:
+  diameter = 0.3 m (greater than 0): the platform's diameter
+  mass = 2.0 kg (greater than 0): platform mass
+  height = 0.05 m (at least 0.0): the top mount's height above the base
+  range = [-180.0, 180.0] deg ([min, max] with min < max): lowest and highest allowed angle (each end within +-360)
+  motor = 'KrakenX60' (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): motor model
+  count = 1 (a whole number, at least 1): motors driving the turret
+  gearing = 60.0 (greater than 0): motor turns per turret turn
+  friction = 0.2 N*m (at least 0.0): constant friction torque on the turret's joint
+
+slots: turn, encoder
+mounts: base, top
 ```

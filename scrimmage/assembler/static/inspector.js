@@ -268,7 +268,7 @@ function paramsSection(part, meta) {
 
 function hintFor(p) {
   const bits = [];
-  const d = p.kind === "pair" ? p.default.map(fmt).join(" to ") : p.kind === "bool" ? (p.default ? "on" : "off") : fmt(p.default);
+  const d = p.kind === "pair" ? p.default.map(fmt).join(" to ") : p.kind === "vec3" ? `[${p.default.map(fmt).join(", ")}]` : p.kind === "bool" ? (p.default ? "on" : "off") : fmt(p.default);
   bits.push(`default ${d}${p.unit && p.kind !== "bool" ? " " + unit(p.unit) : ""}`);
   if (p.positive) bits.push("more than 0");
   if (p.min !== null && p.min !== undefined) bits.push(`at least ${fmt(p.min)}`);
@@ -304,6 +304,11 @@ function paramField(n, p, value) {
     const inp = markDirty(h("input", { id, value: cur ?? "", dataset: { key: `param:${p.name}` } }));
     onCommit(inp, () => { clean(inp); send(inp.value === "" ? null : inp.value); });
     control = withUnit(inp);
+  } else if (p.kind === "text") {   // free text, empty allowed (a cylinder's push): the default when it matches it
+    const inp = markDirty(h("input", { id, type: "text", value: cur ?? "", autocomplete: "off", spellcheck: "false",
+      dataset: { key: `param:${p.name}` } }));
+    onCommit(inp, () => { clean(inp); send(inp.value === p.default ? null : inp.value); });
+    control = withUnit(inp);
   } else if (p.kind === "ratio") {
     const custom = typeof cur === "number";
     const sel = h("select", { id, dataset: { key: `param:${p.name}` } },
@@ -338,6 +343,20 @@ function paramField(n, p, value) {
     };
     onCommit(a, commit); onCommit(b, commit);
     control = h("div", { class: "with-unit" }, a, h("span", { class: "muted" }, "to"), b, p.unit ? h("span", { class: "unit" }, unit(p.unit)) : null, reset);
+  } else if (p.kind === "vec3") {   // [x, y, z]: three numbers, sent together
+    const boxes = ["x", "y", "z"].map((axis, k) => numberInput(k ? `${id}-${k}` : id, `param:${p.name}:${k}`, cur[k],
+      { label: `${p.name} ${axis} (${p.unit || "value"})` }));
+    const commit = () => {
+      if (badNumber(...boxes)) return localError(boxes[0].closest(".field"), "Enter a number.");
+      const v = boxes.map((b) => Number(b.value));
+      if (boxes.some((b) => b.value.trim() === "") || !v.every(isFinite)) {
+        return localError(boxes[0].closest(".field"), "Enter all three numbers.");
+      }
+      clean(...boxes);
+      send(v);
+    };
+    for (const b of boxes) onCommit(b, commit);
+    control = h("div", { class: "with-unit" }, ...boxes, p.unit ? h("span", { class: "unit" }, unit(p.unit)) : null, reset);
   } else {   // float, int
     const isInt = p.kind === "int";
     const inp = numberInput(id, `param:${p.name}`, cur);
