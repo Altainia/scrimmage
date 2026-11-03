@@ -1072,3 +1072,23 @@ def test_a_push_cylinders_run_keeps_its_pins_in_the_view_and_says_how_the_air_we
     assert s == 200
     assert res["air"]["start_psi"] == pytest.approx(120.0)
     assert res["lines"] and res["lines"][0].startswith("air: 120 psi at the start, ")
+
+
+def test_a_cylinder_pin_on_a_body_that_never_moves_is_its_world_position(tmp_path, monkeypatch):
+    """model_view's pin on a body that isn't a mover (welded to the world) is [-1, its world position]. An assembled
+    robot always has a free joint, so the barrel is made a non-mover here by leaving it out of the movers."""
+    import mujoco
+    from scrimmage.assembler import view as view_mod
+    from scrimmage.blocks.program import loads
+    from scrimmage.blocks.run import world_for
+    (tmp_path / "robot.toml").write_text(new_config("standin") + PUSH_CYLINDER, encoding="utf-8")
+    w = world_for(loads(f'[test]\nrobot = "robot.toml"\n{EXTEND}', tmp_path / "t.test.toml"))
+    real = view_mod._movers
+    monkeypatch.setattr(view_mod, "_movers", lambda world: [mv for mv in real(world) if mv.name != "cyl.barrel"])
+    v = view_mod.model_view(w)
+    [cyl] = v["cylinders"]
+    d = mujoco.MjData(w.model)
+    mujoco.mj_forward(w.model, d)
+    world_pin = d.site_xpos[w.model.site("cyl.pin_a").id]
+    assert cyl["a"][0] == -1 and cyl["a"][1] == pytest.approx(list(world_pin))
+    assert v["movers"][cyl["b"][0]]["name"] == "arm.arm"        # the other pin still rides its mover

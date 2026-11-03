@@ -320,7 +320,7 @@ const CONDS = {
   },
   aimed: {
     def: { message0: "%1 aimed at %2 within %3 °",
-      args0: [dd("TURRET", OPTIONS.turret), dd("GOAL", OPTIONS.goal), num("WITHIN", 2, { min: 0 })],
+      args0: [dd("TURRET", OPTIONS.turret), dd("GOAL", OPTIONS.goal), num("WITHIN", 2, { min: 0.1 })],
       tooltip: "The turret points at the goal's center, off by no more than this many degrees." },
     fields: (a) => ({ TURRET: a.turret, GOAL: a.at, WITHIN: a.within_deg }),
     json: (b) => ({ aimed: { turret: b.getFieldValue("TURRET"), at: b.getFieldValue("GOAL"),
@@ -333,7 +333,7 @@ const CONDS = {
     json: (b) => ({ cylinder: { cylinder: b.getFieldValue("CYLINDER"), is: b.getFieldValue("IS") } }),
   },
   pressure: {
-    def: { message0: "air pressure %1 %2 %3 psi", args0: [dd("AIR", AIR_SIDES), dd("SIDE", SIDES), num("PSI", 60, { min: 0 })],
+    def: { message0: "%1 air pressure %2 %3 psi", args0: [dd("AIR", AIR_SIDES), dd("SIDE", SIDES), num("PSI", 60, { min: 0 })],
       tooltip: "The air pressure in the tanks (stored), or after the regulator, which the cylinders get (working)." },
     fields: (a) => ({ AIR: a.side || "stored", ...("above" in a ? { SIDE: "above", PSI: a.above } : { SIDE: "below", PSI: a.below }) }),
     json: (b) => ({ pressure: { side: b.getFieldValue("AIR"), [b.getFieldValue("SIDE")]: b.getFieldValue("PSI") } }),

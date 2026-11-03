@@ -710,6 +710,47 @@ pos = [0.0, 0.0, -0.1]
     assert "push =" not in cfg.read_text()
 
 
+def test_a_vec3_parameter_is_three_number_boxes_saved_as_a_list(make_page, tmp_path):
+    """A stock part's [x, y, z] parameter (the push cylinder's push_pos) has a box per number; a change saves the three
+    as a list, and text that isn't a number is an error that isn't sent."""
+    from scrimmage.assembler.templates import new_config
+    (tmp_path / "robot.toml").write_text(new_config("standin") + """
+[[part]]
+name = "arm"
+stock = "arm"
+attach = "drive.top"
+
+[[part]]
+name = "cyl"
+stock = "cylinder"
+attach = "drive.top"
+pos = [0.0, 0.0, -0.1]
+push = "arm.arm"
+push_pos = [0.2, 0.0, 0.0]
+""", encoding="utf-8")
+    page, cfg = make_page(None)
+    page.evaluate("__scrimmage.select('cyl')")
+    page.wait_for_selector("#insp-p-push_pos-2")
+    assert [page.input_value(f"#insp-p-push_pos{k}") for k in ("", "-1", "-2")] == ["0.2", "0", "0"]
+    page.fill("#insp-p-push_pos", "0.25")
+    page.keyboard.press("Enter")
+    page.wait_for_function("JSON.stringify(__scrimmage.state.parts.find(p => p.name === 'cyl').params.push_pos)"
+                           " === '[0.25,0,0]'")
+    import tomllib
+    [cyl] = [x for x in tomllib.loads(cfg.read_text())["part"] if x["name"] == "cyl"]
+    assert cyl["push_pos"] == [0.25, 0, 0]
+    assert not page.locator('[data-field="cyl/param:push_pos"] .error').count()
+    before = cfg.read_bytes()
+    page.fill("#insp-p-push_pos-1", "")
+    page.type("#insp-p-push_pos-1", "1-")
+    page.keyboard.press("Enter")
+    e = page.locator('[data-field="cyl/param:push_pos"] .error')
+    e.wait_for()
+    assert e.inner_text().strip() == "Enter a number."
+    page.wait_for_timeout(500)
+    assert cfg.read_bytes() == before
+
+
 def test_rev_short_form_is_kept_as_a_string_in_the_inspector(make_page):
     page, cfg = make_page(None, "--new", "swerve-rev")
     page.evaluate("__scrimmage.select('fr')")   # its encoder is a plain short form (no offset)

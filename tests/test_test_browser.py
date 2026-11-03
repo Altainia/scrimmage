@@ -1791,6 +1791,12 @@ def test_the_aim_cylinder_scored_and_air_blocks_round_trip_exactly(test_page, tm
     assert page.evaluate("__scrimmageTest.toJSON()") == st
     types = page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).map(b => b.type)")
     assert set(NEW_KINDS) <= set(types), types
+    texts = page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).filter(b => b.type === 'cond_pressure')"
+                          ".map(b => b.toString())")
+    assert texts == ["working air pressure below 55 psi", "stored air pressure above 70 psi"], texts
+    # within_deg must be more than 0 (program.py): the box goes no lower than 0.1
+    assert page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).find(b => b.type === 'cond_aimed')"
+                         ".getField('WITHIN').getMin()") == 0.1
 
 
 # Join a copy of each flyout block below the test's last block; an expect gets the named check in place of its own.
