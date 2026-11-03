@@ -28,7 +28,7 @@ from .spread import NO_BALL, floor_ball, spread_ball
 NEXT_BAR = "next bar"     # a hanging_from or touch target: the lowest bar above every bar hung from so far
 ANY_BAR = "any bar"       # a touch target: any of the field's bars
 ANY_HOOK = "hook"         # a touch's robot side: any of the robot's hooks
-ANY_PIECE = "any"         # a piece_in's piece: any game piece
+ANY_PIECE = "any"         # a piece_in's or held's piece: any game piece
 ALL_MOTORS = "all"        # a stop's motor: every motor
 
 
@@ -212,10 +212,12 @@ def _cond_problems(n: _Names, c) -> list[str]:
         elif a["field"] != ANY_BAR and a["field"] not in n.field and a["field"] not in n.pieces:
             out.append(f'nothing called "{a["field"]}" on this field')
         return out
-    if c.kind == "piece_in":
+    if c.kind in ("piece_in", "held"):
         out = []
-        if a["body"] not in n.bodies:
+        if c.kind == "piece_in" and a["body"] not in n.bodies:
             out.append(f'no body "{a["body"]}" on this robot any more')
+        if c.kind == "held" and a["by"] not in n.robot:
+            out.append(f'no body or part "{a["by"]}" on this robot (held by)')
         if a["piece"] == ANY_PIECE:
             if not n.pieces:
                 out.append("this field has no game pieces")

@@ -5,8 +5,9 @@
                              stopped doesn't count (`_prune_runs`)
         result.json          status, outcome, t_end, checks, hung, started (ISO time), test (the test file's TOML
                              as it ran), sweep (None, or what was swept and the value), feeds (one row per fed
-                             piece), counts (fed, in, stuck, missed; None without stations) and seed (the stations'
-                             seed; None without stations)
+                             piece), counts (fed, in, stuck, missed; None without stations), seed (the stations'
+                             seed; None without stations) and marks (moments the replay marks: {t, kind, text},
+                             e.g. a slip out of a grabber)
         signals.csv          t and each signal, SIGNAL_HZ (scrimmage/blocks/run.py)
         view.json            model_view(world, include_world=True) at the run's start, meshes included
         motion.bin           the movers' poses at MOTION_HZ (below)
@@ -241,7 +242,7 @@ def save_run(result, program: Program, base, sweep: dict | None = None) -> Path:
             "status": result.status, "outcome": result.outcome, "t_end": result.t_end, "checks": result.checks,
             "hung": result.hung, "started": getattr(result, "started", "") or _now(),
             "test": dumps(program), "sweep": sweep, "feeds": getattr(result, "feeds", []),
-            "counts": getattr(result, "counts", None), "seed": seed})
+            "counts": getattr(result, "counts", None), "seed": seed, "marks": getattr(result, "marks", [])})
         _write_signals(tmp / "signals.csv", result.signals)
         _write_json(tmp / "view.json", result.view)
         write_motion(tmp / "motion.bin", result.motion, len(result.movers))

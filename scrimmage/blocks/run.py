@@ -36,6 +36,11 @@ heading and `offset_in` to its left, turned by `rotation_deg` about the vertical
 robot's heading, its axis tipped up by `tip_deg`, at its own resting height: spread.rest_of). It is tracked as "floor"
 from the first block on, so the run's counts and outcome include it.
 
+A failed `held` check says when the piece was lost and how (grip_watch.py), and what was commanded in the
+SLIP_LOOKBACK_S before: each joint a `spin` started or a `move` was moving (until it got there), and a `drive` or
+`turn` while under way ("the coral slipped out of claw at 2.3 s while claw.arm was moving"), or that the piece was
+never held. That sentence carries its own time, and a lost piece's moment is kept in `marks` for the replay.
+
 A run ends with one status: "finished" (every block played), "check failed", "timed out" (a wait until, a move, a
 drive or a turn), "tipped over" (the robot body's up axis more than TIP_DEG from vertical), "walked off" (the climb
 runner's "hook walked off" rule, scrimmage/climb/run.py's WalkOff), "time limit", "repeat limit" (a repeat until
@@ -61,6 +66,7 @@ from ..testrange.build import BALL_BITS
 from .conditions import IN, Watch, describe
 from .drive import STEER_TIMEOUT, drivetrain
 from .feeds import SETTLE_MAX_S, Outcomes, counts, is_standin, made_it_in, sentence
+from .grip_watch import SLIP_LOOKBACK_S, default_word
 from .palette import ALL_MOTORS, ANY_HOOK, ANY_PIECE, NEXT_BAR, palette, problems
 from .program import (DRIVE_TIMEOUT, DRIVE_VOLTS, MOVE_TIMEOUT, REPEAT_MAX, WAIT_TIMEOUT, Program,
                       TestFileError)
@@ -76,7 +82,8 @@ EPS = 1e-9
 # The verbs describe() uses, as "-ing" (after "without") and "to ..." (after "waiting for").
 _VERBS = {"passes": ("passing", "to pass"), "goes": ("going", "to go"), "tilts": ("tilting", "to tilt"),
           "touches": ("touching", "to touch"), "reaches": ("reaching", "to reach"), "hangs": ("hanging", "to hang"),
-          "are": ("being", "to be"), "is": ("being", "to be"), "made": ("having made", "to have made")}
+          "are": ("being", "to be"), "is": ("being", "to be"), "made": ("having made", "to have made"),
+          "is held": ("being held", "to be held")}
 
 
 @dataclass
@@ -96,6 +103,7 @@ class RunResult:
     counts: dict | None = None    # fed, in, stuck, missed; None on a field without stations
     seed: int | None = None       # the stations' seed; None on a field without stations
     settle_s: float = 0.0         # s the run went on after the blocks finished, for the pieces to settle
+    marks: list[dict] = field(default_factory=list)     # moments the replay marks: {t, kind ("slip"), text}
 
     @property
     def passed(self) -> bool:
@@ -122,9 +130,12 @@ def _where(place: tuple) -> str:
 
 
 def _recast(text: str, form: int) -> str:
-    """describe()'s words with its verb as "-ing" (form 0) or "to ..." (form 1)."""
+    """describe()'s words with its verb (one word, or two: "is held") as "-ing" (form 0) or "to ..." (form 1)."""
     words = text.split(" ")
     for i, w in enumerate(words):
+        two = " ".join(words[i:i + 2])
+        if two in _VERBS:
+            return " ".join([*words[:i], _VERBS[two][form], *words[i + 2:]])
         if w in _VERBS:
             words[i] = _VERBS[w][form]
             break
@@ -232,6 +243,8 @@ class TestRun:
         self.frames = [_Frame(list(self.program.blocks), ())]
         self.active: dict | None = None                     # the waiting block under way
         self.checks: list[dict] = []
+        self.marks: list[dict] = []
+        self._commanded: dict[str, float] = {}             # joint, "drive" or "turn" -> the last time it was commanded
         self.throughout: list[tuple[dict, object]] = []
         t = float(d.time)
         next_signal = next_motion = t
@@ -315,6 +328,7 @@ class TestRun:
         for check in self.checks:
             check["line"] = self._line(check)
         result.checks = self.checks
+        result.marks = self.marks
         return result
 
     def _place(self, p: dict) -> None:
@@ -404,7 +418,7 @@ class TestRun:
                 else:
                     done = watch.holds(a["until"])
                     if not done and f.rounds >= a.get("max", REPEAT_MAX):
-                        what = _recast(describe(a["until"], watch.next_bar()), 0)
+                        what = _recast(self._describe(a["until"]), 0)
                         times = "1 time" if f.rounds == 1 else f"{f.rounds} times"
                         raise _End("repeat limit", f"repeat ({_where(f.trail)}) stopped after {times} without {what}")
                 if done:
@@ -435,6 +449,7 @@ class TestRun:
         a, watch = b.args, self.watch
         if b.do == "spin":
             self.drives[a["motor"]] = ("volts", a["volts"])
+            self._commanded[a["motor"]] = t
             return True
         if b.do == "stop":
             if a["motor"] == ALL_MOTORS:
@@ -449,12 +464,13 @@ class TestRun:
             cond = a["that"]
             throughout = bool(a.get("throughout", False))
             if cond.kind == "made_it_in" and not throughout and place == (len(self.program.blocks) - 1,):
-                check = {"place": list(place), "text": describe(cond), "throughout": False, "passed": True, "t": t}
+                check = {"place": list(place), "text": self._describe(cond), "throughout": False, "passed": True,
+                         "t": t}
                 self.checks.append(check)
                 self._deferred = (check, cond)       # decided after the settle, on the final counts
                 return True
             ok = watch.holds(cond)
-            check = {"place": list(place), "text": describe(cond, watch.next_bar()),
+            check = {"place": list(place), "text": self._describe(cond),
                      "throughout": throughout, "passed": ok, "t": t}
             self.checks.append(check)
             if not ok:
@@ -474,12 +490,14 @@ class TestRun:
             self.active["target"] = to
             self.active["q0"] = float(self.world.data.qpos[self._qadr[j]])
             self.drives[j] = ("to", to)
+            self._commanded[j] = t
         elif b.do == "feed_one":
             f = self.feeder
             self.active["count"] = f.count(a["station"])
             if not f.capped(a["station"]):
                 f.request(a["station"])
         elif b.do in ("drive", "turn"):
+            self._commanded[b.do] = t
             dt, d = self.drivetrain, self.world.data
             self.active["from"] = d.xpos[self.world.robot_body][:2].copy()
             self.active["yaw"], self.active["turned"] = self._yaw(), 0.0
@@ -526,7 +544,7 @@ class TestRun:
             if watch.holds(a["until"]):
                 return True
             if elapsed >= a.get("timeout", WAIT_TIMEOUT) - EPS:
-                what = _recast(describe(a["until"], watch.next_bar()), 1)
+                what = _recast(self._describe(a["until"]), 1)
                 raise _End("timed out", f"waiting for {what} timed out at {t:.1f} s ({_where(place)})")
             return False
         if b.do == "feed_one":
@@ -541,6 +559,7 @@ class TestRun:
             return False
         if b.do == "move":
             j = a["joint"]
+            self._commanded[j] = t                      # moving until it gets there
             q = float(d.qpos[self._qadr[j]])
             tol = MOVE_TOL_IN * IN if self._slide[j] else math.radians(MOVE_TOL_DEG)
             if abs(q - self.active["target"]) <= tol:
@@ -553,6 +572,7 @@ class TestRun:
                                         f"({_where(place)})")
             return False
         # drive or turn
+        self._commanded[b.do] = t
         act = self.active
         yaw = self._yaw()
         act["turned"] += (yaw - act["yaw"] + math.pi) % (2.0 * math.pi) - math.pi
@@ -613,8 +633,8 @@ class TestRun:
             return f"{a['robot']} didn't touch {bar(a['field'])}"
         if k == "piece_in":
             if a["piece"] == ANY_PIECE:
-                return f"no ball was in {a['body']}"
-            return f"{a['piece']} wasn't in {a['body']}"
+                return f"no {default_word(watch.kinds)} was in {a['body']}"
+            return f"{watch.piece_names.get(a['piece'], a['piece'])} wasn't in {a['body']}"
         if k == "in_hopper":
             n = watch.hopper_count()
             pieces = "1 piece was" if n == 1 else f"{n} pieces were"
@@ -629,11 +649,48 @@ class TestRun:
             return f"expected at least {a['at_least']:g}% to make it in, but {c['in']} of {c['fed']} did"
         if k == "hanging_from":
             return f"the robot wasn't hanging from {bar(a['bar'])}"
+        if k == "held":
+            return self._not_held(a)
         return f"the robot wasn't hanging at {a['level']}"           # level
+
+    def _not_held(self, a: dict) -> str:
+        """How a held check failed: when and how the piece was lost, and what was moving in the second before; or
+        that it was never held. It carries its own time (the moment it was lost)."""
+        watch = self.watch
+        i, by = watch.piece_index(a["piece"]), a["by"]
+        loss = watch.held.lost(i, by) if watch.held.ever(i, by) else None
+        named = watch.piece_names.get(a["piece"], a["piece"]) if i is not None else None
+        if loss is None:
+            return f"{named or 'the ' + default_word(watch.kinds)} was never held by {by}"
+        t, how, kind = loss
+        what = named or f"the {kind}"
+        lost = f"{how} {by}" if how in ("slipped out of", "slid in") else how
+        return f"{what} {lost} at {t:.1f} s while {self._moving(t)}"
+
+    def _moving(self, t: float) -> str:
+        """What was commanded in the SLIP_LOOKBACK_S before t, most recent first: "claw.arm was moving", "the robot
+        was driving" (several joined by "and"); "nothing was moving"."""
+        recent = sorted(((c, n) for n, c in self._commanded.items() if t - SLIP_LOOKBACK_S - EPS <= c <= t + EPS),
+                        reverse=True)
+        words = [("the robot was driving" if n == "drive" else "the robot was turning" if n == "turn"
+                  else f"{n} was moving") for _, n in recent]
+        return " and ".join(words) if words else "nothing was moving"
+
+    def _describe(self, cond) -> str:
+        """describe() with this run's next bar and the field's piece words."""
+        w = self.watch
+        return describe(cond, w.next_bar(), w.kinds, w.piece_names)
 
     def _fail(self, check: dict, cond, t: float) -> None:
         check.update(passed=False, t=t, failure=self._failure(cond))
-        raise _End("check failed", f"a check failed ({_where(tuple(check['place']))}): {check['failure']} at {t:.1f} s")
+        if cond.kind == "held":
+            check["timed"] = True                  # its failure says its own time
+            i, by = self.watch.piece_index(cond.args["piece"]), cond.args["by"]
+            loss = self.watch.held.lost(i, by)
+            if loss is not None and self.watch.held.ever(i, by):
+                self.marks.append({"t": loss[0], "kind": "slip", "text": check["failure"]})
+        when = "" if check.get("timed") else f" at {t:.1f} s"
+        raise _End("check failed", f"a check failed ({_where(tuple(check['place']))}): {check['failure']}{when}")
 
     def _doing(self, b) -> str:
         """A waiting block under way, in words."""
@@ -641,7 +698,7 @@ class TestRun:
         if b.do == "wait":
             return f"waiting {a['seconds']:g} s"
         if b.do == "wait_until":
-            return f"waiting for {_recast(describe(a['until'], self.watch.next_bar()), 1)}"
+            return f"waiting for {_recast(self._describe(a['until']), 1)}"
         if b.do == "move":
             return f"moving {a['joint']} to {_amount(a['to'], a['unit'])}"
         if b.do == "feed_one":
@@ -668,4 +725,4 @@ class TestRun:
         if c["passed"]:
             when = f"from {c['t']:.1f} s on" if c["throughout"] else f"at {c['t']:.1f} s"
             return f"passed: {c['text']} {when} ({where})"
-        return f"failed ({where}): {c['failure']} at {c['t']:.1f} s"
+        return f"failed ({where}): {c['failure']}" + ("" if c.get("timed") else f" at {c['t']:.1f} s")
