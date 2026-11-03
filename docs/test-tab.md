@@ -617,9 +617,10 @@ Six worked examples are in `examples/blocks/`. Each has a README with the story,
   and tilting swings the next rung out of reach. The motor is not stalled and the hooks work as designed. The README
   says what was tried and what to try next. The test's tilt check passes (the robot leans 20° at most).
 - **`examples/blocks/turret`**, a launcher on a turret on a stand-in robot, on the 2026 field with 8 balls preloaded.
-  It aims at `hub_blue`, shoots, turns on the spot and shoots again, and checks the turret stays aimed within 5° and
-  that the balls score: all 8 go in, 4 before the turn and 4 after. The README tries the hood and the wheel speed, and
-  the same run without the turret.
+  It aims at `hub_blue`, shoots standing still, turns on the spot, then shoots while it drives 1.5 m, and checks the
+  turret stays aimed within 5° throughout and that the balls score: 7 of 8 go in, all 4 standing and 3 of the 4 on
+  the move (the aim doesn't lead the shot). The README tries the hood, the wheel speed, a faster drive and the same
+  run without the turret.
 - **`examples/blocks/pneumatic`**, an arm lifted by an air cylinder on a stand-in robot. It lifts the arm and puts it
   down 10 times and checks the air stays above the 60 psi working pressure (the lowest is 67 psi). The README compares
   the run with `scrimmage air`'s budget, and tells of the first try, whose 2 in bore used the air up in about one

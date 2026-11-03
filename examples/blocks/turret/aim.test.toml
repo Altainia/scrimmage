@@ -77,6 +77,11 @@ motor = "feeder.spin"
 volts = 8.0
 
 [[block]]
+do = "drive"
+distance = 1.5
+volts = 2.0
+
+[[block]]
 do = "wait"
 seconds = 2.0
 

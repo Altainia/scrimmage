@@ -1,6 +1,6 @@
 """The turret shooter and the pneumatic arm (examples/blocks/turret and examples/blocks/pneumatic): two worked Test-tab
-examples on the stand-in robot. The turret keeps the launcher on hub_blue while the robot turns on the spot, and
-shots fired before and after the turn score; the arm is lifted by a cylinder 10 times and the air stays above the
+examples on the stand-in robot. The turret keeps the launcher on hub_blue while the robot turns on the spot and
+while it drives; the standing shots score, and most of the shots on the move (the aim doesn't lead them); the arm is lifted by a cylinder 10 times and the air stays above the
 working pressure. Each test asserts what the example's README says the run does."""
 
 from __future__ import annotations
@@ -33,16 +33,28 @@ def turret():
     world = world_for(program)
     m, d = world.model, world.data
     q = m.joint("turret.turn").qposadr[0]
+    dof = int(m.jnt_dofadr[next(j for j in range(m.njnt) if m.jnt_bodyid[j] == world.robot_body)])
     scored_at_turn: list[int] = []      # hub_blue's count when the turret first swung away from straight ahead
+    driving: list[tuple[float, float]] = []     # (t, aim_error) while the robot's center moves faster than 0.05 m/s
+    yaw_at_drive: list[float] = []      # the robot's heading when it starts to drive
+    drive_from: list = []               # and where it is then
+
+    def yaw() -> float:
+        r = d.xmat[world.robot_body].reshape(3, 3)
+        return math.degrees(math.atan2(r[1, 0], r[0, 0]))
 
     def on_sample(t, row):
         if not scored_at_turn and abs(math.degrees(d.qpos[q])) > 5.0:
             scored_at_turn.append(world.test_range.counts()["goals"]["hub_blue"])
+        if math.hypot(*d.qvel[dof:dof + 2]) > 0.05:
+            if not driving:
+                yaw_at_drive.append(yaw())
+                drive_from.append(d.xpos[world.robot_body][:2].copy())
+            driving.append((t, row["aim_error"]))
 
     result = TestRun(world, program).run(on_sample=on_sample)
-    r = d.xmat[world.robot_body].reshape(3, 3)
     return {"program": program, "world": world, "result": result, "scored_at_turn": scored_at_turn,
-            "yaw": math.degrees(math.atan2(r[1, 0], r[0, 0])), "turret": math.degrees(d.qpos[q])}
+            "driving": driving, "yaw_at_drive": yaw_at_drive[0], "drive_from": drive_from[0]}
 
 
 def test_turret_example_robot(turret):
@@ -55,21 +67,27 @@ def test_turret_example_robot(turret):
     assert problems(turret["program"], turret["world"]) == []
 
 
-def test_turret_example_scores_before_and_after_the_turn(turret):
+def test_turret_example_scores_standing_and_on_the_move(turret):
     r = turret["result"]
     assert r.status == "finished", r.outcome
     assert [c["passed"] for c in r.checks] == [True, True, True], r.checks
     assert r.checks[0]["line"].startswith("passed: the turret is aimed at hub_blue within 5° from ")
-    # the README's times: aimed from 1.4 s, 3 scored at 3.8 s, 6 scored at 6.6 s
+    # the README's times: aimed from 1.4 s, 3 scored at 3.8 s, 6 scored at 9.0 s
     assert [c["t"] for c in r.checks] == [pytest.approx(1.4, abs=0.1), pytest.approx(3.8, abs=0.1),
-                                          pytest.approx(6.6, abs=0.1)]
-    assert r.goals == {"hub_blue": 8, "hub_red": 0}         # the README: all 8
-    assert goal_lines(r) == ["scored 8 in hub_blue"]
-    assert turret["scored_at_turn"] == [4]                  # 4 in before the turn, 4 after
-    # the robot coasts on past its 90° to about 120°, and the turret turns back as far to stay on the hub
-    assert 110 < turret["yaw"] < 130
-    assert turret["turret"] == pytest.approx(-turret["yaw"], abs=3)
+                                          pytest.approx(9.0, abs=0.1)]
+    assert r.goals == {"hub_blue": 7, "hub_red": 0}         # the README: 7 of 8
+    assert goal_lines(r) == ["scored 7 in hub_blue"]
+    assert turret["scored_at_turn"] == [4]                  # all 4 standing shots in before the turn; 3 on the move
+    # the robot coasts on past its 90° to about 112° before it drives
+    assert 105 < turret["yaw_at_drive"] < 120
+    # it drives (from 4.6 s, the shots leave at 4.7 s) and the aim holds while it does: at most 1.7° off
+    drive = turret["driving"]
+    assert drive[0][0] == pytest.approx(4.6, abs=0.1)
+    assert max(abs(e) for _, e in drive) < 2.5
     assert max(abs(e) for e in r.signals["aim_error"]) < 5
+    # it drove about the 1.5 m
+    end = turret["world"].data.xpos[turret["world"].robot_body][:2]
+    assert math.dist(end, turret["drive_from"]) == pytest.approx(1.5, abs=0.15)
 
 
 @pytest.fixture(scope="module")
