@@ -100,6 +100,9 @@ class AirConfig:
         if self.start_psi > MAX_STORED_PSI:
             raise ValueError(f"The start pressure is {self.start_psi:g} psi; FRC allows at most "
                              f"{MAX_STORED_PSI:g} psi stored.")
+        if self.switch_off_psi > MAX_STORED_PSI:
+            raise ValueError(f"The switch stops the compressor at {self.switch_off_psi:g} psi; FRC allows at most "
+                             f"{MAX_STORED_PSI:g} psi stored.")
         if self.switch_on_psi >= self.switch_off_psi:
             raise ValueError("The pressure switch must turn on below the pressure where it turns off.")
         if self.compressor != "none" and self.compressor not in COMPRESSORS:
@@ -182,6 +185,8 @@ class AirSystem:
         return p_abs * volume / (R_AIR * T_AIR)
 
     def set_valve(self, name: str, state: str):
+        if name not in self._specs:
+            raise ValueError(f"No cylinder named {name!r}; the cylinders are {', '.join(self._specs) or 'none'}.")
         if state not in _STATES:
             raise ValueError(f"A valve state is one of {', '.join(_STATES)}, not {state!r}.")
         self._valves[name] = state
@@ -226,14 +231,15 @@ class AirSystem:
     # --- stepping ---------------------------------------------------------------------------------------------
 
     def _prime(self, extension: dict[str, float]):
-        """Fill every chamber to the pressure its valve's state feeds, and the other to atmosphere."""
+        """Fill every chamber to the start state: "retract", so the rod side at the regulator and the cap side at
+        atmosphere, whatever the valves have been commanded since (a valve switched before the first step pays
+        for its air from the tanks)."""
         supply = self._supply_abs()
         for name, spec in self._specs.items():
             x = min(max(extension.get(name, 0.0), 0.0), spec.stroke)
             cap, rod = self._chambers[name]
-            feeds_cap = self._valves[name] == "extend"
-            cap.mass = self._mass_at(supply if feeds_cap else ATM, cap.volume(x))
-            rod.mass = self._mass_at(ATM if feeds_cap else supply, rod.volume(spec.stroke - x))
+            cap.mass = self._mass_at(ATM, cap.volume(x))
+            rod.mass = self._mass_at(supply, rod.volume(spec.stroke - x))
             self._x[name] = x
         self._primed = True
 
@@ -282,7 +288,10 @@ class AirSystem:
         supply = self._supply_abs()
         p_fed = fed.pressure(v_fed)
         dm = _flow(supply, p_fed, spec.conductance) * h
-        dm = min(dm, max(0.0, self._mass_at(supply, v_fed) - fed.mass), self._tank_mass)
+        # When the tanks set the supply, the draw also stops where tank and chamber share one pressure.
+        v_t = self._tank_volume
+        shared = (self._tank_mass * v_fed - fed.mass * v_t) / (v_t + v_fed)
+        dm = min(dm, max(0.0, self._mass_at(supply, v_fed) - fed.mass), max(0.0, shared))
         fed.mass += dm
         self._tank_mass -= dm
 
