@@ -224,8 +224,8 @@ if it is wrong.
 - **Aim with no motor.** An *aim* on a turret whose motor slot has no ID is a problem sentence before the run (it
   crashed before). Why: a plain sentence, like a *move* on an unbound joint. If wrong: nothing.
 - **"It stops at …" wording.** The out-of-range sentence ("hub_blue is outside the turret's range (it stops at
-  30°)") only fires on a range under a full turn; the review's "(it stops at 180°)" was an illustration, and a default
-  ±180° turret covers the circle. If wrong: nothing.
+  30°)") only fires on a range under a full turn. Why: the review's "(it stops at 180°)" was an illustration, and a
+  default ±180° turret covers the circle. If wrong: nothing.
 - **What *aimed* reads at a stop.** *aimed* measures where the launcher points (|error| ≤ within), so a goal 1° past a
   stop, checked within 2°, reads as aimed. Why: C2 read literally. If wrong: a lenient pass at the edge of the range.
 
@@ -261,10 +261,11 @@ if it is wrong.
   (`ten_length + dt·(ten_J·qvel)`), with the armature kept. Why: mj_step leaves the length from before it integrated,
   and an air spring driven from a one-step-old position is unstable at any stiffness. Exact on the free form, first
   order elsewhere, and cheap. If wrong: a first-order error on curved tendon paths.
-- **Stability test bounds.** The free form may go 3 mm past a stop on the first step (the stop's softness). The push
-  test bounds the fed side's pressure, while the vented side may cushion up to 3 times the working pressure (real
-  compression); its arm is laid out so the cylinder's stroke limits it, within ±1°. The push test asserts that the
-  retract stop holds the arm. If wrong: a looser regression net.
+- **Stability test bounds.** The free form may go 3 mm past a stop on the first step. The push test bounds the fed
+  side's pressure, while the vented side may cushion up to 3 times the working pressure; its arm is laid out so the
+  cylinder's stroke limits it, within ±1°. The push test asserts that the retract stop holds the arm. Why: the stop
+  is soft, a vented side squeezed by a moving load really does compress above the working pressure, and the armature
+  makes the stop's hold physically right. If wrong: a looser regression net.
 
 **The cylinder part**
 - **Stiffer end stops.** The tendon and the slide stop with solref [0.002, 1]. Why: the default let 60 psi push the rod
@@ -272,7 +273,7 @@ if it is wrong.
 - **The Robot tab's text box.** The inspector's new "text" parameter kind (the cylinder's `push`) showed a number box;
   it was fixed in Task 10, outside Task 4's files. If wrong: a wrong input box until then.
 - **The replay's pins.** The model view gives each cylinder its pins as [mover, pos] (mover -1 is the world) and the
-  rod's diameter, as the existing geoms do. If wrong: nothing.
+  rod's diameter. Why: it matches how the existing geoms are drawn. If wrong: nothing.
 - **The vec3 box.** The inspector had no box for a three-number parameter (the cylinder's `push_pos`, and the chassis's
   `com_offset`, which already needed it); Task 10 added it. Why: the push form needs it from the Robot tab. If wrong:
   a small extra change.

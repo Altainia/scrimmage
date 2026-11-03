@@ -440,7 +440,7 @@ ones an `ids` table accepts.) `configs/kitbot.toml` is fully commented. In brief
 | `[[gyro]] device = "ADXRS450[0]"` | `Gyro` SimDevice angle/rate (CW+ like the real part) | body yaw, unwrapped |
 | `[[analog]] port = 0` | `AnalogInput` voltage | `offset + volts_per_unit · joint position` |
 | `[[digital]] channel = 9` | `DigitalInput`, active-low by default | true while the joint is in `[min, max]` |
-| a cylinder's `valve = "PCM:3"` (or `"PCM:4,5"`) | `Solenoid(PneumaticsModuleType.CTREPCM, 3)` (or a `DoubleSolenoid`) reads `<output`; the PCM's `<closed_loop` (from `Compressor`) runs the compressor | the cylinder's valve: extend, retract or hold; sends the PCM `>pressure_switch`, `>on` and `>current` |
+| a cylinder's `valve = "PCM:3"` (or `"PCM:4,5"`) | `Solenoid(PneumaticsModuleType.CTREPCM, 3)` (or a `DoubleSolenoid`) reads `<output`; the PCM's `<closed_loop` (on once the module is made; `Compressor.disable()` turns it off) runs the compressor | the cylinder's valve: extend, retract or hold; sends the PCM `>pressure_switch`, `>on` and `>current` |
 | a cylinder's `valve = "PH:3"` (or `"PH:4,5"`) | the same on a REV Pneumatic Hub, relayed by the lockstep extension (0.7.0 or later); `getPressure()` reads 0 | the same, into the hub's switch, compressor and current |
 
 Motor types include `CIM, MiniCIM, Bag, Vex775Pro, NEO, NEO550, NeoVortex, Falcon500(FOC), KrakenX60(FOC)`.

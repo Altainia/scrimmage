@@ -51,9 +51,9 @@ works a cylinder with no robot code and no valve ID: see [the Test tab](test-tab
 **The stored side.** The tanks hold air at up to 120 psi. Before a match they are charged (the run starts at
 `start_psi`, 120 by default). The compressor fills them, and a pressure switch turns it on below 95 psi and off at 115
 psi, so it doesn't cycle on and off every moment. The compressor runs only while the robot is enabled and the robot
-program has the closed loop on (see [Robot code](#robot-code)). Under the Test tab it runs as if the closed loop were
-on, and the switch still starts and stops it. The higher the pressure, the less air the compressor pushes each second,
-and the more current it draws.
+program has made the module its valves are on (its closed loop is on unless the program turns it off; see [Robot
+code](#robot-code)). Under the Test tab it runs as if the closed loop were on, and the switch still starts and stops it.
+The higher the pressure, the less air the compressor pushes each second, and the more current it draws.
 
 **The regulator.** The cylinders don't get the tanks' pressure. A regulator lowers it to the working pressure, 60 psi
 by default. When the tanks fall below the working pressure, the cylinders get only what the tanks have, and they push
@@ -72,7 +72,8 @@ weaker from then on.
   cylinder with nothing on its rod extends all the way in about 0.12 s.
 - **End stops.** The rod bottoms out at each end of its stroke.
 
-**The valve.** A valve is a 5/2 valve (two ports to the cylinder, both switched at once):
+**The valve.** Each valve has five ports (air in, two to the cylinder, two exhausts) and two positions, so it always
+fills one side of the cylinder while it lets the other side out (valve makers call this a 5/2 valve):
 
 - A **single solenoid** has a spring: on extends, off retracts.
 - A **double solenoid** has two coils: forward extends and reverse retracts. With both off it stays where it was (it
@@ -129,18 +130,22 @@ sum for a robot config:
 scrimmage air examples/blocks/pneumatic/arm-standin.toml
 ```
 
-For a robot with one stock cylinder and the default air it prints:
+The pneumatic example's robot (one 3/4 in bore, 8 in stroke cylinder named `lift`, and the default air) prints:
 
 ```
 Working pressure 60 psi; the switch stops the compressor at 115 psi.
 Free air for one cycle (extend and retract):
-  cyl: 0.889 L
+  lift: 0.597 L
 Stored air above the working pressure: 4.30 L
-Cycles from the tanks alone: 5
+Cycles from the tanks alone: 7
 Compressor air in a 150 s match: 13.2 L
-Cycles per match, tanks and compressor: 20
+Cycles per match, tanks and compressor: 29
 Estimates (UNCALIBRATED): see docs/pneumatics.md.
 ```
+
+The tanks' 4.30 L pay for 4.30 / 0.597, about 7 cycles, and with the compressor's 13.2 L, (4.30 + 13.2) / 0.597,
+about 29. The cycle counts are rounded to whole cycles (4.8 shows as 5). The stock cylinder (1-1/16 in bore, 6 in
+stroke) takes 0.889 L a cycle: 5 from the tanks, 20 in a match.
 
 - **Free air** is air measured at the atmosphere's pressure, the way compressors and tanks are rated.
 - **One cycle** is one extend and one retract, each side filled all the way to the working pressure. The piston's side
@@ -152,8 +157,8 @@ Estimates (UNCALIBRATED): see docs/pneumatics.md.
 - `--match-seconds 135` (say) changes the match length.
 
 It is a quick sum, not a run: a real cylinder whose valve switches before the stroke ends uses less than a full
-cycle, and a run that starts at 120 psi has a little more than the budget counts. The pneumatic example's README
-compares the budget with a run.
+cycle, and a run that starts at 120 psi has a little more than the budget counts. That is why the pneumatic example's
+test lifts its arm 10 times on the tanks where the budget says 7; its README compares the two.
 
 ## Measure your own
 
@@ -206,10 +211,12 @@ The short forms use WPILib's default module numbers (0 for a PCM, 1 for a Pneuma
 `invert = true` too. All of a robot's valves must be on one kind of module (all PCM or all Pneumatic Hub). The full
 table of ID forms is in [parts.md](parts.md#valve-ids).
 
-**The closed loop runs the compressor.** The compressor runs only while the robot is enabled and the robot program has
-turned on the closed loop of a module that one of the valves is on (the pressure switch then starts and stops it). A
-program that never makes the module never runs the compressor, which is right: the real one wouldn't either. A
-compressor on a module with no valves bound to it doesn't run in Scrimmage.
+**The compressor runs on its own.** A module's closed loop is on as soon as the robot program makes the module (any
+`Solenoid` or `DoubleSolenoid` on it does), so the compressor runs whenever the robot is enabled, and the pressure
+switch starts and stops it. You don't need a `Compressor` object or `enableDigital()` for that; `disable()` (or
+`disableCompressor()` on a `PneumaticHub`) turns it off. A program that never makes the module never runs the
+compressor, which is right: the real one wouldn't either. Scrimmage runs the compressor only for a module that one of
+the robot's valves is on, so a compressor on a module with no valves bound to it doesn't run.
 
 **A CTRE PCM** works with the usual RobotPy or Java setup: the HALSim WebSocket client carries its solenoids. RobotPy:
 
@@ -222,8 +229,8 @@ class MyRobot(wpilib.TimedRobot):
     def robotInit(self):
         self.kicker = wpilib.Solenoid(PCM, 3)               # ids = { valve = "PCM:3" }
         self.claw = wpilib.DoubleSolenoid(PCM, 4, 5)        # ids = { valve = "PCM:4,5" }
-        self.compressor = wpilib.Compressor(PCM)
-        self.compressor.enableDigital()                     # the closed loop: runs on the pressure switch
+        self.compressor = wpilib.Compressor(PCM)            # optional: to read it back, or to disable() it
+        self.compressor.enableDigital()                     # optional: the closed loop is already on
 
     def teleopPeriodic(self):
         self.kicker.set(True)                               # extend
@@ -236,7 +243,7 @@ Java is the same:
 private final Solenoid kicker = new Solenoid(PneumaticsModuleType.CTREPCM, 3);
 private final DoubleSolenoid claw = new DoubleSolenoid(PneumaticsModuleType.CTREPCM, 4, 5);
 private final Compressor compressor = new Compressor(PneumaticsModuleType.CTREPCM);
-// in robotInit: compressor.enableDigital();
+// optional, as the closed loop is already on: compressor.enableDigital();
 ```
 
 **A REV Pneumatic Hub needs the lockstep extension, version 0.7.0 or later**, for RobotPy and Java alike: the HALSim
@@ -248,7 +255,7 @@ with an older extension, or with none, and says how to install it. The code is t
 
 ```python
 self.hub = wpilib.PneumaticHub(1)
-self.hub.enableCompressorDigital()
+self.hub.enableCompressorDigital()                          # optional: the hub's closed loop is already on
 self.claw = self.hub.makeDoubleSolenoid(4, 5)               # ids = { valve = "PH:4,5" }
 ```
 
