@@ -48,6 +48,11 @@ touches it)"); a failed `seated` check says the piece isn't on the rod, or how f
 is seated 2.0 in of 4.0 in on branch_l2, less than 3 in"). Each `seated.<rod>` signal is the deepest piece's depth on
 that rod in inches, NaN while none is on it; the run's `seated` says each rod's depth at the end in words.
 
+Shooting: on a range with a `[shooter]` the range's launcher model runs as it does under robot code, so spinning
+the launcher and its stages shoots the balls the robot holds. Every motor of a joint is written (a launcher's
+lead and follower, say), as robot code drives each one. The run's `goals` are the range's goal counts at the end
+(None without a `[shooter]`); `scored` checks them.
+
 A run ends with one status: "finished" (every block played), "check failed", "timed out" (a wait until, a move, a
 drive or a turn), "tipped over" (the robot body's up axis more than TIP_DEG from vertical), "walked off" (the climb
 runner's "hook walked off" rule, scrimmage/climb/run.py's WalkOff), "time limit", "repeat limit" (a repeat until
@@ -74,7 +79,7 @@ from .conditions import IN, Watch, _conds, describe
 from .drive import STEER_TIMEOUT, drivetrain
 from .feeds import SETTLE_MAX_S, Outcomes, counts, is_standin, made_it_in, sentence
 from .grip_watch import SET_DOWN, SLIP_LOOKBACK_S, default_word
-from .palette import ALL_MOTORS, ANY_HOOK, ANY_PIECE, NEXT_BAR, palette, problems
+from .palette import ALL_MOTORS, ANY_GOAL, ANY_HOOK, ANY_PIECE, NEXT_BAR, palette, problems
 from .placed import KNOCK_OFF_SHARE, ON_PIECE, seated_words
 from .program import (DRIVE_TIMEOUT, DRIVE_VOLTS, MOVE_TIMEOUT, REPEAT_MAX, WAIT_TIMEOUT, Program,
                       TestFileError)
@@ -117,6 +122,7 @@ class RunResult:
     marks: list[dict] = field(default_factory=list)     # moments the replay marks: {t, kind ("slip"), text, ball}
     seated: dict[str, str] = field(default_factory=dict)  # rod -> its piece's depth at the end in words (placed.py)
     notes: list[str] = field(default_factory=list)      # what the run's numbers rest on (run_notes): UNCALIBRATED grips
+    goals: dict[str, int] | None = None     # the range's goal counts at the end; None without a [shooter]
 
     @property
     def passed(self) -> bool:
@@ -225,6 +231,12 @@ def run_notes(world, program: Program) -> list[str]:
     return notes
 
 
+def goal_lines(result: RunResult) -> list[str]:
+    """The run's goal counts as lines, "scored 5 in hub_blue", one per goal with a ball in it (none without a
+    [shooter])."""
+    return [f"scored {n} in {name}" for name, n in (result.goals or {}).items() if n]
+
+
 def check_problems(program: Program, world) -> None:
     """Raise TestFileError listing the test's problems on this robot (palette.problems), one line each."""
     bad = problems(program, world)
@@ -243,7 +255,10 @@ class TestRun:
         self.world, self.program = world, program
         m = world.model
         self.motors = driven_joints(world)
-        self._drive = {n: MotorDrive(b) for n, b in self.motors.items()}
+        # every motor on each joint (a slot of several motors, a lead and its followers, shares one joint), each
+        # written as robot code writes it, through its own binding
+        self._drive = {n: [MotorDrive(mb) for mb in world.motors if mb.qadr == b.qadr]
+                       for n, b in self.motors.items()}
         pal = palette(world, list(program.hooks))
         kinds = {j["name"]: j["kind"] for j in pal["joints"]}
         self.drivetrain = drivetrain(world, self.motors)
@@ -393,6 +408,9 @@ class TestRun:
             if got is not None:
                 result.seated[rod] = seated_words(*got)
         result.notes = run_notes(self.world, self.program)
+        tr = self.world.test_range
+        if tr is not None and tr.shooter is not None:
+            result.goals = dict(tr.counts()["goals"])
         return result
 
     def _place(self, p: dict) -> None:
@@ -465,7 +483,8 @@ class TestRun:
         for joint, (kind, value) in self.drives.items():
             if kind == "to":
                 value = position_volts(value, float(d.qpos[self._qadr[joint]]), not self._slide[joint], bus)
-            self._drive[joint].write(hal, value, bus)
+            for drive in self._drive[joint]:
+                drive.write(hal, value, bus)
         w.step(hal)
 
     def _row(self, watch) -> dict[str, float]:
@@ -732,6 +751,10 @@ class TestRun:
             if "at_least" in a:
                 return f"expected {a['at_least']} or more pieces in the hopper, but {pieces} in it"
             return f"expected at most {a['at_most']} pieces in the hopper, but {pieces} in it"
+        if k == "scored":
+            n = watch.scored_count(a["goal"])
+            where = "any goal" if a["goal"] == ANY_GOAL else a["goal"]
+            return f"expected {a['at_least']} or more balls scored in {where}, but {n} {'was' if n == 1 else 'were'}"
         if k == "station_empty":
             left = self.feeder.left(a["station"]) if self.feeder is not None else None
             return f"{a['station']} wasn't empty" + (f" ({left} left)" if left else "")

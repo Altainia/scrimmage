@@ -23,6 +23,8 @@ step, and the plain words that name them in a run's outcome.
   touching the part and moving with it, for HELD_S (grip_watch.py's HeldTracker, `Watch.held`).
 - `rests_on`: a game piece rests on a field element (or on another piece, `a piece`): the element carries at least
   half its weight, it is at rest and no robot geom touches it, for REST_S (placed.py's Placed, `Watch.placed`).
+- `scored`: at least N balls are scored in a range goal, or in all of them together (`any`), as the range's goal
+  counts have them (TestRange.counts()'s "goals").
 - `seated`: a hollow game piece is on a rod, its hole passed over the rod's tip by at least `at_least_in` inches (the
   depth read to one decimal, as a student reads it; placed.py's seated_depth).
 
@@ -48,7 +50,7 @@ from ..terrain.climb import hold_geoms, robot_hooks
 from ..testrange.spec import _one_round_kind as one_round_kind
 from .feeds import made_it_in
 from .grip_watch import HeldTracker, default_word
-from .palette import ANY_BAR, ANY_HOOK, ANY_PIECE, NEXT_BAR
+from .palette import ANY_BAR, ANY_GOAL, ANY_HOOK, ANY_PIECE, NEXT_BAR
 from .placed import Placed
 
 HANG_S = 0.1            # s: the hooks carry a quarter of the robot's weight this long to count as hanging
@@ -266,6 +268,12 @@ class Watch:
         """A condition's piece as a ledger index: None for `any`."""
         return None if name == ANY_PIECE else self._ball_names.index(name)
 
+    def scored_count(self, goal: str) -> int:
+        """Balls scored so far in `goal`, or in every goal for `any` (0 on a field without a range)."""
+        tr = self.world.test_range
+        goals = tr.counts()["goals"] if tr is not None else {}
+        return sum(goals.values()) if goal == ANY_GOAL else int(goals.get(goal, 0))
+
     def hopper_count(self) -> int:
         """Balls whose center is inside a hopper body's box now, fed or not."""
         return int(self.hopper_mask().sum())
@@ -300,6 +308,8 @@ class Watch:
         if k == "in_hopper":
             n = self.hopper_count()
             return n >= a["at_least"] if "at_least" in a else n <= a["at_most"]
+        if k == "scored":
+            return self.scored_count(a["goal"]) >= a["at_least"]
         if k == "station_empty":
             return bool(self.world.test_range.feeder.empty(a["station"]))
         if k == "made_it_in":
@@ -374,6 +384,9 @@ def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names
         if "at_least" in a:
             return f"{a['at_least']} or more pieces are in the hopper"
         return f"at most {a['at_most']} pieces are in the hopper"
+    if k == "scored":
+        where = "any goal" if a["goal"] == ANY_GOAL else a["goal"]
+        return f"{a['at_least']} or more balls are scored in {where}"
     if k == "station_empty":
         return f"{a['station']} is empty"
     if k == "made_it_in":

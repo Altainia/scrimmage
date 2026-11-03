@@ -2,7 +2,7 @@
 
 The palette lists every name a block can pick, as the world names them: the robot's motors and joints (a hinge reads
 in degrees, a slide in inches, a drive wheel is a `wheel`), its bodies and parts, its hooks, the field's bars,
-elements, rods and game pieces, other surfaces a touch can name (`targets`: the carpet, the walls) and climb levels,
+elements, rods, goals and game pieces, other surfaces a touch can name (`targets`: the carpet, the walls) and climb levels,
 whether it can drive and how (`drive_kind`: a tank or swerve drive, as drive.py finds them) and the signals a chart
 can show (`seated.<rod>` for each rod, in inches, when a piece kind of the field has a hole).
 The field's pieces: `piece` (its default kind's preset), `kinds` (each kind's form, whether it is hollow or flat and the
@@ -39,6 +39,7 @@ NEXT_BAR = "next bar"     # a hanging_from or touch target: the lowest bar above
 ANY_BAR = "any bar"       # a touch target: any of the field's bars
 ANY_HOOK = "hook"         # a touch's robot side: any of the robot's hooks
 ANY_PIECE = "any"         # a piece_in's, held's, rests_on's or seated's piece: any game piece
+ANY_GOAL = "any"          # a scored's goal: every goal of the range together
 ALL_MOTORS = "all"        # a stop's motor: every motor
 
 
@@ -170,6 +171,7 @@ def palette(world, hooks: list[str]) -> dict:
         "hooks": hook_list,
         "bars": bars,
         "elements": elements,
+        "goals": sorted(g.name for g in rng.goals) if rng is not None else [],
         "rods": rods,                       # the field's rods (a reef's branches)
         "pieces": pieces,
         "targets": _targets(world, bar_set | set(elements) | set(pieces)),
@@ -215,6 +217,7 @@ class _Names:
         self.pieces = set(p["pieces"])
         self.elements = set(p["elements"])
         self.rods = set(p["rods"])
+        self.goals = list(p["goals"])
         rng = world.parts.range if world.parts is not None else None
         self.hollow = rng is not None and any(k.hole is not None for k in rng.kinds.values())
         self.field = set(world.contact_names()) | set(p["elements"]) | self.bars
@@ -303,6 +306,12 @@ def _cond_problems(n: _Names, c) -> list[str]:
         return _bar_problems(n, a["bar"])
     if c.kind in ("in_hopper", "made_it_in") and not n.hopper:
         return ["tick where a piece should end up in Setup: the bodies a piece lands in or is held by"]
+    if c.kind == "scored":
+        if not n.goals:
+            return ["this field has no goals to score in"]
+        if a["goal"] != ANY_GOAL and a["goal"] not in n.goals:
+            return [f"no goal '{a['goal']}' on this field; its goals: {', '.join(n.goals)}"]
+        return []
     if c.kind == "station_empty":
         name = a["station"]
         if name not in n.stations:

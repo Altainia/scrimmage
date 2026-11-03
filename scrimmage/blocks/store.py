@@ -255,6 +255,7 @@ def save_run(result, program: Program, base, sweep: dict | None = None) -> Path:
             "test": dumps(program), "sweep": sweep, "feeds": getattr(result, "feeds", []),
             "counts": getattr(result, "counts", None), "seed": seed, "marks": getattr(result, "marks", []),
             "notes": getattr(result, "notes", []), "seated": getattr(result, "seated", {}),
+            "goals": getattr(result, "goals", None),
             "hopper": bool(program.hopper)})
         _write_signals(tmp / "signals.csv", result.signals)
         _write_json(tmp / "view.json", result.view)

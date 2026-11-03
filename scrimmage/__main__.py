@@ -606,6 +606,8 @@ def _test(args) -> None:
     print(result.outcome)
     for check in result.checks:
         print(f"  {check['line']}")
+    for line in blocks_run.goal_lines(result):
+        print(f"  {line}")
     for f in result.feeds:
         if f["outcome"] == "stuck":
             what = "the floor piece" if f["source"] == "floor" else f"a piece from {f['source']}"

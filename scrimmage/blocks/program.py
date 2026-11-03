@@ -45,13 +45,14 @@ MAX_DEPTH = 4            # repeats inside repeats, counting the top level
 MAX_PLACEMENTS = 25      # the floor spread's placements: the product of its axes' lengths
 MAX_SEED = 2147483647
 MAX_HOPPER = 1000        # balls: in_hopper's count
+MAX_SCORED = 1000        # balls: scored's count
 MAX_TURN = 720.0         # degrees
 
 UNITS = ("deg", "in", "m")
 DO_KINDS = ("spin", "move", "drive", "stop", "wait", "wait_until", "repeat", "expect",
             "start_feeding", "stop_feeding", "feed_one", "turn")
 COND_KINDS = ("joint", "touch", "tilt", "piece_in", "hanging_from", "level", "in_hopper", "station_empty",
-              "made_it_in", "held", "rests_on", "seated")
+              "made_it_in", "held", "rests_on", "seated", "scored")
 DRIVE_DIRECTIONS = ("forward", "back", "left", "right")
 _OPPOSITE = {"back": "forward", "left": "right", "right": "left"}     # where a minus distance goes instead
 SPREAD_AXES = ("offset_in", "distance_in", "angle_deg", "rotation_deg", "tip_deg")
@@ -186,6 +187,10 @@ def _cond(v, where: str) -> Cond:
         if not 0 <= pct <= 100:
             raise TestFileError(f"{where}: at_least is a percent, from 0 to 100")
         return Cond(kind, {"at_least": pct})
+    if kind == "scored":
+        _keys(t, ("goal", "at_least"), where)
+        return Cond(kind, {"goal": _text(t.get("goal"), where, "goal"),
+                           "at_least": _whole(t.get("at_least"), where, "at_least", MAX_SCORED)})
     if kind == "tilt":
         _keys(t, ("above", "below"), where)
         side = _one_of(t, ("above", "below"), where)
