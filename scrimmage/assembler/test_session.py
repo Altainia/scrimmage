@@ -62,7 +62,10 @@ STARTER_FEED_TIMEOUT = 20.0     # s: ... giving up after this long
 STANDIN_RANGE = {"file": "ladder", "start": "below"}   # the stand-in for a part with a hook: in front of the ladder
 STANDIN_STATION = {"file": "station", "start": "at_station"}   # ... with a hopper-like body: at the station's chute
 STANDIN_REEF = {"file": "reef", "start": "facing_coral"}       # ... with a grabber-like body: facing the floor coral
-GRABBER_HOLD_TIMEOUT = 10.0     # s: a grabber's starter waits this long for a piece to be held
+GRABBER_CLOSE_VOLTS = 4.0       # a grabber's starter closes its jaws at this (a NEO squeezes about 260 N on 300:1)
+GRABBER_CLOSE_S = 1.0           # s: ... waits this long for them to close
+GRABBER_LIFT_DEG = -30.0        # ... lifts with the part's lone arm hinge to this (the reef example's forward and up)
+GRABBER_HOLD_TIMEOUT = 10.0     # s: ... then waits this long for a piece to be held
 GRABBER_WAIT_S = 2.0            # ... then holds it this long, expected held throughout
 PLAIN_FIELD = "The plain field"
 
@@ -99,15 +102,28 @@ def station_starter(pal: dict | None) -> list[Block]:
 
 
 def grabber_starter(pal: dict | None) -> list[Block]:
-    """The starter blocks for a robot with a grabber on a field with rods (the reef): wait until any piece is held by
-    its first body named like a grabber's (giving up after 10 s), then expect it held throughout a 2 s wait. Empty
-    without rods or without such a body."""
+    """The starter blocks for a robot with a grabber on a field with rods (the reef): the grabber is the part of its
+    first body named like a grabber's. Spin each of that part's motors whose joint is named like a jaw (CLOSE_WORDS)
+    at 4 V, closing the grab (positive volts close, as the reef example's jaws do), and wait 1 s; when the part has
+    one other hinge motor (an arm), move it to -30 degrees to lift the piece (held means off the carpet); wait until
+    any piece is held by the part (giving up after 10 s), then expect it held throughout a 2 s wait. Empty without
+    rods or such a body."""
     pal = pal or {}
     grabbers = [b for b in pal.get("bodies") or [] if _grabby(b.rsplit(".", 1)[-1])]
     if not pal.get("rods") or not grabbers:
         return []
-    held = Cond("held", {"piece": ANY_PIECE, "by": grabbers[0]})
-    return [Block("wait_until", {"until": held, "timeout": GRABBER_HOLD_TIMEOUT}),
+    part = grabbers[0].split(".", 1)[0]
+    mine = [m for m in pal.get("motors") or [] if m["kind"] != "wheel" and m["name"].startswith(part + ".")]
+    jaws = [m["name"] for m in mine if any(w in m["name"].rsplit(".", 1)[-1].lower() for w in CLOSE_WORDS)]
+    arms = [m["name"] for m in mine if m["kind"] == "hinge" and m["name"] not in jaws]
+    held = Cond("held", {"piece": ANY_PIECE, "by": part})
+    close = [Block("spin", {"motor": j, "volts": GRABBER_CLOSE_VOLTS}) for j in jaws]
+    if close:
+        close.append(Block("wait", {"seconds": GRABBER_CLOSE_S}))
+    if len(arms) == 1:
+        close.append(Block("move", {"joint": arms[0], "to": GRABBER_LIFT_DEG, "unit": "deg"}))
+    return [*close,
+            Block("wait_until", {"until": held, "timeout": GRABBER_HOLD_TIMEOUT}),
             Block("expect", {"that": copy.deepcopy(held), "throughout": True}),
             Block("wait", {"seconds": GRABBER_WAIT_S})]
 
@@ -145,6 +161,7 @@ def starter_hooks(pal: dict | None) -> list[str]:
 
 
 GRABBER_WORDS = ("claw", "grabber", "gripper", "jaw")
+CLOSE_WORDS = ("jaw", "claw", "grip", "finger")     # a grabber's joints that close the grab (ruling P24)
 HOPPER_WORDS = ("hopper", "intake", "indexer", *GRABBER_WORDS)     # where a piece should end up: held counts
 
 

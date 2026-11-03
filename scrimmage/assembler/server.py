@@ -436,8 +436,8 @@ Test (`/api/test/*`; 404 "no test is open" unless a test is open, except /api/te
   POST /api/test/new               -> body {robot?, from_part?} (default: the open robot): writes <robot
         stem>.test.toml next to it (<stem>-2.test.toml ... when taken) and opens it as /api/app/open does. Its
         blocks are the starter blocks
-        (test_session.starter_blocks: with a grabber on a field with rods, wait up to 10 s for a held piece and
-        expect it held through 2 s; on a field with a station, its station_starter; else drive 0.3 m when the robot
+        (test_session.starter_blocks: with a grabber on a field with rods, close its jaws at 4 V, lift with its arm,
+        wait up to 10 s for a held piece and expect it held through 2 s; on a field with a station, its station_starter; else drive 0.3 m when the robot
         is a tank drive and the field has bars, then a lone hinge motor moved to 45 deg, or the first motor spun at 6 V
         for 2 s and all stopped; else wait 1 s), its hooks the robot's bodies named like a hook and its hopper those
         named like a hopper ("hopper", "intake", "indexer", or a grabber's "claw", "grabber", "gripper", "jaw"). With

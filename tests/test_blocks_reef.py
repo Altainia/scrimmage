@@ -140,3 +140,23 @@ def test_the_grabber_closes_on_the_coral_and_lifts_it(tmp_path):
     assert r.checks[-1]["text"] == "a coral is held by grabber"
     assert min(r.signals["grabber.arm"]) < -85.0                             # it really swung
     assert world.test_range.balls.positions()[0][2] > 0.4                    # the coral is up off the carpet
+
+
+def test_a_new_test_of_the_grabber_starts_with_the_coral_held(tmp_path):
+    """The starter blocks a new test of the reef example gets (test_session.starter_blocks) close the jaws, lift the
+    coral and finish with it held throughout: Test it reads "held" without editing (ruling P24)."""
+    from scrimmage.assembler import test_session as ts
+    from scrimmage.blocks.palette import palette
+    from scrimmage.blocks.program import Program, dumps
+    from scrimmage.config import build_world, load_config
+    robot = EXAMPLE / "grabber-standin.toml"
+    world = build_world(load_config(robot))
+    pal = palette(world, [])
+    path = tmp_path / "g.test.toml"
+    path.write_text(dumps(Program(path, robot, blocks=ts.starter_blocks(pal),
+                                  hopper=ts.starter_hopper(pal, ts.part_roots(world)))), encoding="utf-8")
+    program = load(path)
+    assert program.blocks[0].do == "spin" and program.hopper == ["grabber.jaw_left", "grabber.jaw_right"]
+    result = TestRun(world_for(program), program).run()
+    assert result.status == "finished" and result.checks and all(c["passed"] for c in result.checks), result.outcome
+    assert result.checks[-1]["throughout"]

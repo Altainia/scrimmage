@@ -871,15 +871,22 @@ def test_test_it_puts_a_claw_on_the_reef_field():
 
 def test_a_grabber_on_a_field_with_rods_starts_by_waiting_for_a_hold():
     """On a field with rods (the reef, which has a station too), a robot with a body named like a grabber's starts
-    waiting up to 10 s for any piece held by its first grabber body, expects it held throughout, and waits 2 s;
-    without rods, or without a grabber body, the starters are as before."""
+    by closing that part's jaw-like motors at 4 V (ruling P24), lifting with its lone arm hinge, waiting up to 10 s
+    for any piece held by the part, expecting it held throughout a 2 s wait; without rods, or without a grabber body,
+    the starters are as before."""
     from scrimmage.assembler.test_session import grabber_starter, starter_blocks, station_starter
     from scrimmage.blocks.program import block_json
     pal = {"bodies": ["drive.chassis", "grabber.arm", "grabber.jaw_left", "grabber.jaw_right"],
            "rods": ["branch_l2", "branch_l3", "branch_l4"], "stations": ["coral_station"],
-           "motors": [{"name": "grabber.arm", "kind": "hinge"}]}
-    held = {"held": {"piece": "any", "by": "grabber.jaw_left"}}
-    want = [{"do": "wait_until", "until": held, "timeout": 10.0},
+           "motors": [{"name": "dt.left", "kind": "wheel"}, {"name": "grabber.arm", "kind": "hinge"},
+                      {"name": "grabber.jaw_left", "kind": "slide"}, {"name": "grabber.Finger_r", "kind": "slide"},
+                      {"name": "lift.jaw", "kind": "slide"}]}
+    held = {"held": {"piece": "any", "by": "grabber"}}
+    want = [{"do": "spin", "motor": "grabber.jaw_left", "volts": 4.0},
+            {"do": "spin", "motor": "grabber.Finger_r", "volts": 4.0},
+            {"do": "wait", "seconds": 1.0},
+            {"do": "move", "joint": "grabber.arm", "to": -30.0, "unit": "deg"},
+            {"do": "wait_until", "until": held, "timeout": 10.0},
             {"do": "expect", "that": held, "throughout": True},
             {"do": "wait", "seconds": 2.0}]
     assert [block_json(b) for b in grabber_starter(pal)] == want
