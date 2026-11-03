@@ -40,6 +40,10 @@ moves all of it (the real rung bends most at mid-span). Its posts, `element.<nam
 A box is a welded body `element.<name>` with one box geom, `element.<name>.box`: in ELEMENT_GROUP when it is ground,
 else NON_GROUND_GROUP.
 
+A rod is a welded body `element.<name>` holding one geom, `element.<name>.rod`: a capsule (exact contacts, its
+rounded ends reaching the base and tip) or, for a square section, a box, its axis from base to tip (rod_parts). It is
+structure, not ground.
+
 A switch is body `element.<name>` on one hinge about its local y, `element.<name>.tilt` (positive when its +x end
 goes down), `hinge_height` up, and its bar, `element.<name>.bar`, `bar_drop` below the hinge. It reuses a
 platform's stops (+-`stop_deg`, PLATFORM_STOP_TC, critically damped) and its file's damping. Its CoM is `com_drop`
@@ -63,7 +67,7 @@ import numpy as np
 
 from ..parts.field import ELEMENT_GROUP, FIELD_BITS
 from .build import FUNNEL_RGBA, PLATE_FRICTION, RangeLayout, _quat, _rpy
-from .elements import IN, POST, Bar, Box, Bump, Element, Platform, Ramp, Switch
+from .elements import IN, POST, Bar, Box, Bump, Element, Platform, Ramp, Rod, Switch
 from .spec import _rot_z
 from .station import CHUTE_PLATE, CHUTE_WALL_BALLS, Station
 
@@ -242,6 +246,30 @@ def _pipe(body, name: str, length: float, diameter: float, friction: float, z: f
                   group=NON_GROUND_GROUP, **FIELD_BITS)
 
 
+def rod_parts(e: Rod) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """The rod as one box around its whole extent, in the field: (center, rotation, half sizes). The rotation's z
+    column is the axis from base to tip, x the horizontal across it (the field's x for an upright rod); the halves are
+    the radius twice, then half the length, so a round rod's end caps are inside the box."""
+    axis = e.axis()
+    across = np.cross([0.0, 0.0, 1.0], axis)
+    across = np.array([1.0, 0.0, 0.0]) if np.linalg.norm(across) < 1e-9 else across / np.linalg.norm(across)
+    rot = np.column_stack([across, np.cross(axis, across), axis])
+    center = (np.asarray(e.base, float) + np.asarray(e.tip, float)) / 2.0
+    r = e.diameter / 2.0
+    return center, rot, np.array([r, r, e.length() / 2.0])
+
+
+def _rod(spec: mujoco.MjSpec, e: Rod) -> None:
+    """A welded body with the one geom `element.<name>.rod`, a capsule (or a box) whose axis runs base to tip. A
+    capsule's rounded ends reach the base and tip exactly."""
+    center, rot, (rx, _, hz) = rod_parts(e)
+    body = spec.worldbody.add_body(name=f"element.{e.name}", pos=list(center), quat=_quat(rot))
+    shape = dict(type=mujoco.mjtGeom.mjGEOM_BOX, size=[rx, rx, hz]) if e.section == "square" else dict(
+        type=mujoco.mjtGeom.mjGEOM_CAPSULE, size=[rx, hz - rx, 0.0])
+    body.add_geom(name=f"element.{e.name}.rod", rgba=BAR_RGBA, friction=[e.friction, 0.005, 0.0001],
+                  group=NON_GROUND_GROUP, **shape, **FIELD_BITS)
+
+
 def _upright(body, name: str, center, half, ground: bool, friction: float, rgba=STRUCTURE_RGBA) -> None:
     body.add_geom(name=name, type=mujoco.mjtGeom.mjGEOM_BOX, pos=list(center), size=list(half), rgba=list(rgba),
                   friction=[friction, 0.005, 0.0001], group=ELEMENT_GROUP if ground else NON_GROUND_GROUP,
@@ -291,6 +319,9 @@ def add_element(spec: mujoco.MjSpec, e: Element) -> None:
     if isinstance(e, Switch):
         _switch(spec, e, pos, quat)
         return
+    if isinstance(e, Rod):
+        _rod(spec, e)
+        return
     if isinstance(e, Box):
         body = spec.worldbody.add_body(name=f"element.{e.name}", pos=list(pos), quat=quat)
         sx, sy, sz = e.size
@@ -326,3 +357,4 @@ def fill_layout(layout: RangeLayout, model: mujoco.MjModel, elements) -> None:
     layout.platforms = {e.name: platform_joints(model, e.name) for e in elements if isinstance(e, Platform)}
     layout.switches = {e.name: switch_joint(model, e.name) for e in elements if isinstance(e, Switch)}
     layout.bars = {e.name: [f"element.{e.name}.pipe"] for e in elements if isinstance(e, Bar)}
+    layout.rods = {e.name: e for e in elements if isinstance(e, Rod)}

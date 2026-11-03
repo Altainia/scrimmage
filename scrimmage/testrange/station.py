@@ -240,13 +240,15 @@ def _world_boxes(center, yaw_deg: float, parts) -> list[tuple[np.ndarray, np.nda
 
 def _element_boxes(e) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """The boxes an element is built from, level (a platform untilted), in the field."""
-    from .build_elements import bump_parts, platform_parts, ramp_parts
-    from .elements import Bar, Box, Bump, Platform, Ramp
+    from .build_elements import bump_parts, platform_parts, ramp_parts, rod_parts
+    from .elements import Bar, Box, Bump, Platform, Ramp, Rod
 
     if isinstance(e, Box):
         sx, sy, sz = e.size
         return _world_boxes(e.center, e.yaw_deg, [((0, 0, e.base_height + sz / 2.0), np.eye(3),
                                                   (sx / 2.0, sy / 2.0, sz / 2.0))])
+    if isinstance(e, Rod):
+        return [rod_parts(e)]
     if isinstance(e, Bar):
         r = e.diameter / 2.0
         return _world_boxes(e.center, e.yaw_deg, [((0, 0, e.height), np.eye(3), (e.length / 2.0, r, r))])
