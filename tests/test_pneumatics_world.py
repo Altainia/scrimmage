@@ -259,23 +259,23 @@ def _watch(w: World, seconds: float, samples: list) -> None:
         samples.append((rt.tendon_length("cyl") - spec.length, fed, vented, rt.system.stored_psi))
 
 
-def _assert_stable(w: World, samples: list, past_stop: float) -> None:
-    """Within `past_stop` m of each stop; the fed side never above the regulator; the vented side may cushion a
-    moving load (real compression) but stays below 3 times the working pressure; the tanks never below 0 psi."""
+def _assert_stable(w: World, samples: list, vented_max: float) -> None:
+    """Within 1 mm of each stop, but 3 mm in the first 10 ms (the prime's first step puts 60 psi on a rod against
+    its soft stop); the fed side never above the regulator; the vented side at most `vented_max` psi; the tanks
+    never below 0 psi."""
     spec = w.parts.cylinders[0]
     working = w.pneumatics.system.config.working_psi
-    xs = [s[0] for s in samples]
-    assert -past_stop <= min(xs) and max(xs) <= spec.stroke + past_stop, (min(xs), max(xs))
-    assert max(s[1] for s in samples) <= working + 1
-    assert max(s[2] for s in samples) <= 3 * working
-    assert min(s[3] for s in samples) >= 0.0
-
+    for i, (x, fed, vented, tank) in enumerate(samples):
+        past_stop = 0.003 if i < 10 else 0.001
+        assert -past_stop <= x <= spec.stroke + past_stop, (i, x)
+        assert fed <= working + 1, (i, fed)
+        assert vented <= vented_max, (i, vented)
+        assert tank >= 0.0, (i, tank)
 
 def test_big_light_cylinder_is_stable():
     """A 2 in bore on the default 0.1 kg rod at a 1 ms step: the air's spring is stiff at a stroke's end (small
     dead volume), so with a one-step-old length, or no tendon armature, the rod went through its stops and the
-    chambers read ~1700 psi. 3 mm past a stop: the prime's first step puts 60 psi on a rod against its soft stop
-    (about 2 mm); after that it stays within half a millimeter."""
+    chambers read ~1700 psi. No outside load acts, so both sides stay at or below the working pressure."""
     cfg = {"part": [{"name": "drive", "stock": "chassis"},
                     {"name": "cyl", "stock": "cylinder", "attach": "drive.top", "bore": 0.0508}]}
     w = World(cfg, ROOT)
@@ -287,7 +287,7 @@ def test_big_light_cylinder_is_stable():
     _watch(w, 1.0, samples)
     assert max(s[0] for s in samples) > w.parts.cylinders[0].stroke - 0.005      # it did go out
     assert samples[-1][0] < 0.005                                                 # and back
-    _assert_stable(w, samples, past_stop=0.003)
+    _assert_stable(w, samples, vented_max=w.pneumatics.system.config.working_psi + 1)
 
 
 def test_light_push_load_is_stable():
@@ -313,7 +313,8 @@ def test_light_push_load_is_stable():
     assert max(angles) > top - 2.0                # it did push the arm up to the stroke's end
     assert -1.0 <= min(angles) and max(angles) <= top + 1.0, (min(angles), max(angles), top)
     assert angles[-1] < 1.0                       # and back down
-    _assert_stable(w, samples, past_stop=0.003)
+    # The vented side cushions the arm as it comes down: real compression, bounded loosely to catch a blow-up.
+    _assert_stable(w, samples, vented_max=3 * w.pneumatics.system.config.working_psi)
 
 
 def test_predicted_length_matches_forward():
@@ -342,3 +343,6 @@ def test_armature_formula():
     dt = w.model.opt.timestep
     tid = w.model.tendon("cyl.cylinder").id
     assert float(w.model.tendon_armature[tid]) == pytest.approx(k_max * dt ** 2 / 2, rel=1e-9)
+    slow = World(robot(model={"timestep": 0.002}), ROOT)      # the run's own step sets it
+    assert slow.model.opt.timestep == pytest.approx(0.002)
+    assert float(slow.model.tendon_armature[tid]) == pytest.approx(k_max * 0.002 ** 2 / 2, rel=1e-9)

@@ -364,10 +364,13 @@ def cylinder_armature(cy: CylinderSpec, timestep: float) -> float:
 
     The air in a chamber is a spring on the rod, k = p_abs A^2 / V, and the air model hands MuJoCo its force once per
     step from the length at the step's start (PneumaticsRuntime.tendon_length): an explicit spring, which on a mass m
-    is unstable once k dt^2 / m passes about 4. k is largest at a stroke's end, where only the dead volume is left: k_max on the cap side (the larger area) at
-    the working limit. Armature k_max dt^2 / 2 on the tendon keeps k dt^2 / m_eff below 2 whatever load the cylinder
-    drives. It stands for real inertia along the cylinder's line (the rod, and the air's lag in the tube), not a
-    change to the force: about 0.02 kg on the stock 1-1/16 in bore, 0.2 kg on a 2 in bore, at 1 ms."""
+    is unstable once k dt^2 / m passes about 4. k is largest at a stroke's end, where only the dead volume is left:
+    k_max on the cap side (the larger area) at the working limit. Armature k_max dt^2 / 2 on the tendon keeps
+    k dt^2 / m_eff below 2 whatever load the cylinder drives, while its chambers are at or below the working
+    pressure. A vented side squeezed above it, cushioning a moving load, is stiffer; there the load's own inertia
+    (in m_eff) keeps it stable. The armature stands for real inertia along the cylinder's line (the rod, and the
+    air's lag in the tube), not a change to the force: about 0.02 kg on the stock 1-1/16 in bore, 0.2 kg on a 2 in
+    bore, at 1 ms."""
     a_cap = math.pi * cy.bore ** 2 / 4
     k_max = (MAX_WORKING_PSI * PSI + ATM) * a_cap ** 2 / cy.dead_volume
     return k_max * timestep ** 2 / 2

@@ -87,7 +87,8 @@ class PneumaticsRuntime:
         one step old; an air spring driven from a one-step-old position is unstable at any stiffness (nothing
         damps it enough). So it is carried forward by this step's motion: q_now = q_before + dt qvel, and qvel is
         already the new velocity, so L_now = ten_length + dt (ten_J . qvel). Exact for a slide; first order for
-        turning joints."""
+        turning joints. Right after a pose is set by hand (set_pose, move_body), ten_length is already current and
+        qvel may be the old velocity, so for that one step the length is off by dt times it: a millimeter or less."""
         m, d = self.world.model, self.world.data
         tid = self._tendon[name]
         adr, nnz = int(m.ten_J_rowadr[tid]), int(m.ten_J_rownnz[tid])
