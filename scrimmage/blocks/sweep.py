@@ -11,11 +11,12 @@ The setting (a target) is one of
                                                                            (spread_position / spread_rotation_deg:
                                                                            all three axes at the value)
 
-A block, seed or station value changes the test; a robot or mount value changes a copy of the robot config, written as a hidden
-temp file next to it (so its meshes and part folders still resolve) and deleted after that run (tried again while
-another program holds it; one still there is named in sweep.json's `problems`). Temp copies and folders over an hour
-old, left by a process that was killed, are removed when a sweep starts. A value that can't build or run ("mass must
-be greater than 0"), or whose run fails in any other way, is a row with that message, not the end of the sweep.
+A block, seed or station value changes the test; a robot or mount value changes a copy of the robot config, written
+as a hidden temp file next to it (so its meshes and part folders still resolve) and deleted after that run (tried
+again while another program holds it; one still there is named in sweep.json's `problems`). Temp copies and folders
+over an hour old, left by a process that was killed, are removed when a sweep starts. A value that can't build or run
+("mass must be greater than 0"), or whose run fails in any other way, is a row with that message, not the end of the
+sweep.
 
 The sweep is kept as `base/sweep-<NNN>/`: a run per value (`001/` ...), `table.csv` (value, status, outcome, t_end,
 and passed / failed for each check) and `sweep.json` (target, values, and `cancelled` / `problems` when there are
@@ -38,11 +39,12 @@ from pathlib import Path
 import tomlkit
 
 from ..cad.settings import REPLACE_WAITS, replace_file
+from ..config import build_world, load_config
 from ..testrange.spec import RangeError, load_range
 from ..testrange.station import OVERRIDE_KEYS
 from . import store
 from .program import Program, TestFileError, from_json, to_json
-from .run import TestRun, _where
+from .run import TestRun, _where, world_for
 
 MAX_SWEEP = 12
 BLOCK_KEYS = ("volts", "seconds", "to", "distance")
@@ -97,20 +99,22 @@ def _edit_program(program: Program, place: list, key: str, value: float) -> Prog
     return from_json(d, program.path)
 
 
+def _whole(value: float, what: str) -> int:
+    if value != int(value):
+        raise TestFileError(f"{what} must be a whole number")
+    return int(value)
+
+
 def _edit_setup(program: Program, target: dict, value: float) -> Program:
     """The program with the target (the seed or a station's setting) set to value in its [setup]."""
     d = to_json(program)
     setup = json.loads(json.dumps(d.get("setup") or {}))
     if "setup" in target:
-        if value != int(value):
-            raise TestFileError("seed must be a whole number")
-        setup["seed"] = int(value)
+        setup["seed"] = _whole(value, "seed")
     else:
         key = target["key"]
         if key == "stock":
-            if value != int(value):
-                raise TestFileError("stock must be a whole number")
-            value = int(value)
+            value = _whole(value, "stock")
         station = setup.setdefault("station", {}).setdefault(target["station"], {})
         station[key] = [value] * 3 if key in SPREAD_LISTS else value
     d["setup"] = setup
@@ -119,7 +123,6 @@ def _edit_setup(program: Program, target: dict, value: float) -> Program:
 
 def _check_station(program: Program, config: Path, name: str) -> None:
     """Raise ValueError when the robot's field has no station `name` (before any run)."""
-    from ..config import load_config
     raw = load_config(config).raw
     sec = raw.get("range")
     if not isinstance(sec, dict) or not isinstance(sec.get("file"), str):
@@ -193,7 +196,6 @@ def _temp_config(config: Path, text: str) -> Path:
 
 def _world(config: Path, tmp: Path):
     """The World of the temp copy `tmp` of the config; an error names the config, not the temp copy."""
-    from ..config import build_world, load_config
     try:
         return build_world(load_config(tmp))
     except (ValueError, OSError) as e:
@@ -219,7 +221,6 @@ def run_sweep(program: Program, target: dict, values: list[float], base, on_prog
               cancel: threading.Event | None = None) -> Path:
     """Run the test at each value; returns the sweep's folder. `on_progress(k, n, row)` is called after each value
     (k from 1); setting `cancel` ends the run under way and the sweep."""
-    from .run import world_for
     kind = _kind(target)
     if not isinstance(values, (list, tuple)) or not values:
         raise ValueError("a sweep needs at least one value")
@@ -245,47 +246,73 @@ def run_sweep(program: Program, target: dict, values: list[float], base, on_prog
     if kind in ("robot", "mount"):
         store.clean_stale(config.parent, (f".{config.stem}.sweep-*.toml",))
     tmp = store.new_sweep_folder(base)
-    rows: list[dict] = []
     left: list[str] = []            # temp configs that couldn't be removed
+    made: dict[int, Program] = {}   # each value's program, for its saved run
+
+    def attempt(i: int):
+        temp = None
+        try:
+            if kind in ("block", "setup"):
+                p = (_edit_program(program, target["block"], target["key"], values[i]) if kind == "block"
+                     else _edit_setup(program, target, values[i]))
+                world = world_for(p)
+            else:
+                p = program
+                temp = _temp_config(config, _edit_config(text, target, values[i]))
+                world = _world(config, temp)
+            made[i] = p
+            return TestRun(world, p).run(cancel=cancel)
+        finally:
+            if temp is not None and not _remove(temp):
+                left.append(temp.name)
+
+    def record(i: int, row: dict, result):
+        row.update(status=result.status, outcome=result.outcome, t_end=result.t_end,
+                   checks={_check_column(c): "passed" if c["passed"] else "failed" for c in result.checks})
+        return made[i], {"target": target, "value": values[i], "index": i}
+
+    rows = [{"value": v, "status": COULDNT_RUN, "outcome": "", "t_end": None, "checks": {}} for v in values]
+    return run_each(tmp, rows, attempt, record, lambda done, cancelled: _finish(
+        tmp, base, target, values, done, left, cancelled), on_progress)
+
+
+def run_each(tmp: Path, rows: list[dict], attempt, record, finish, on_progress=None) -> Path:
+    """The loop a sweep and a spread share. `rows` are each run's row as it starts (status "couldn't run").
+    `attempt(i)` (i from 0) builds and runs run i and returns its RunResult; an error it raises is that row's outcome
+    (a ValueError's or OSError's message, anything else in plain words), not the end of the loop. `record(i, row,
+    result)` fills the row in from the result and returns the (program, sweep) store.save_run keeps the run with, as
+    `tmp/<i + 1>/`. `on_progress(k, n, row)` is called after each row (k from 1); a cancelled run ends the loop.
+    `finish(rows done, cancelled)` writes the table and puts the folder in place; anything that interrupts the loop
+    calls it with cancelled=True (keeping the runs done so far) and is raised again, even when finish fails too."""
+    done: list[dict] = []
     cancelled = False
     try:
-        for i, v in enumerate(values):
-            row = {"value": v, "status": COULDNT_RUN, "outcome": "", "t_end": None, "checks": {}}
-            result = temp = None
+        for i, row in enumerate(rows):
+            result = None
             try:
-                if kind in ("block", "setup"):
-                    p = (_edit_program(program, target["block"], target["key"], v) if kind == "block"
-                         else _edit_setup(program, target, v))
-                    world = world_for(p)
-                else:
-                    p = program
-                    temp = _temp_config(config, _edit_config(text, target, v))
-                    world = _world(config, temp)
-                result = TestRun(world, p).run(cancel=cancel)
+                result = attempt(i)
             except (ValueError, OSError) as e:      # TestFileError, ConfigError and PartError are ValueErrors
                 row["outcome"] = str(e)
-            except Exception as e:                  # anything else: this value's row, not the end of the sweep
+            except Exception as e:                  # anything else: this row, not the end of the loop
                 row["outcome"] = _plain_error(e)
-            finally:
-                if temp is not None and not _remove(temp):
-                    left.append(temp.name)
             if result is not None:
-                row.update(status=result.status, outcome=result.outcome, t_end=result.t_end,
-                           checks={_check_column(c): "passed" if c["passed"] else "failed" for c in result.checks})
-                folder = store.save_run(result, p, tmp, sweep={"target": target, "value": v, "index": i})
-                if folder.name != f"{i + 1:03d}":             # a value before it couldn't run: keep k = its row
+                program, sweep = record(i, row, result)
+                folder = store.save_run(result, program, tmp, sweep=sweep)
+                if folder.name != f"{i + 1:03d}":             # a row before it couldn't run: keep k = its row
                     replace_file(folder, tmp / f"{i + 1:03d}")
-            rows.append(row)
+            done.append(row)
             if on_progress is not None:
-                on_progress(i + 1, len(values), row)
+                on_progress(i + 1, len(rows), row)
             if result is not None and result.status == "cancelled":
                 cancelled = True
                 break
-    except BaseException:
-        cancelled = True                            # interrupted: keep the runs done so far, then stop
-        _finish(tmp, base, target, values, rows, left, cancelled)
+    except BaseException as e:
+        try:
+            finish(done, True)                      # interrupted: keep the runs done so far, then stop
+        except Exception as f:                      # the interruption is what to raise; say this failed too
+            e.add_note(f"(keeping the runs done so far failed too: {type(f).__name__}: {f})")
         raise
-    return _finish(tmp, base, target, values, rows, left, cancelled)
+    return finish(done, cancelled)
 
 
 def _finish(tmp: Path, base: Path, target: dict, values: list, rows: list, left: list, cancelled: bool) -> Path:

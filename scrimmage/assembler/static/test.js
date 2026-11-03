@@ -556,6 +556,7 @@ function floorSpread(draft) {
     const a = Number(d.from), b = Number(d.to), n = Number(d.steps);
     if (d.from.trim() === "" || d.to.trim() === "" || !isFinite(a) || !isFinite(b)) return { error: `${label}: type a number in from and to` };
     if (!Number.isInteger(n) || n < 1) return { error: `${label}: steps is a whole number, 1 or more` };
+    // nearest_in alone, ignoring the offset: stricter than the server's exact check, which is fine as a quick warning
     const nearest = floorBall() && floorBall().nearest_in;
     if (axis === "distance_in" && nearest !== undefined && nearest !== null && Math.min(a, b) < nearest) {
       return { error: `${label}: ${nearest} in or more (nearer, the ball starts inside the robot)` };

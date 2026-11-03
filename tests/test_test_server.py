@@ -777,6 +777,8 @@ def test_a_spread_runs_and_is_listed(tmp_path, test_app):
     assert s == 200 and r["id"] == run_id, r
     s, view = c.get(f"/api/test/run/{run_id}/view")
     assert s == 200, view
+    s, body = c.get(f"/api/test/run/{run_id}/motion")
+    assert s == 200 and body[:4] == b"SCRM"
 
 
 def test_a_spread_without_a_floor_ball_is_refused(tmp_path, test_app):

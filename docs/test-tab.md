@@ -62,7 +62,7 @@ The bottom bar says whether the test is saved and how many blocks it has.
 |---|---|
 | **spin** *motor* **at** *V* **V** | Runs a motor at that many volts (-12 to 12). It keeps going until a later block changes that motor. |
 | **move** *joint* **to** *number* *unit* | Drives a joint to a position and waits until it gets there. |
-| **drive** *direction* *number* **m** or **s** | Drives the robot that far in a direction (**forward**, **back**, **left** or **right**; a minus number goes the other way), or for that many seconds, then stops. |
+| **drive** *direction* *number* **m** or **s** | Drives the robot that far in a direction (**forward**, **back**, **left** or **right**; a minus number with **forward** drives back; **back**, **left** and **right** refuse one), or for that many seconds, then stops. |
 | **turn** *left or right* *number* **°** | Turns the robot on the spot that many degrees (up to 720). |
 | **start feeding** *station*, **stop feeding** *station*, **feed one from** *station* | A human player station puts balls on the field. See [Feeding from a station](#feeding-from-a-station). |
 | **stop** *motor* | Lets a motor go to neutral. **all motors** stops every motor. |
@@ -223,9 +223,9 @@ always count, and Setup shows them ticked and grayed out. A hook can be any body
 - **A robot counts as tipped over at 60°.** The run ends with "the robot tipped over" when the robot's body leans more
   than 60° from upright. (The **tilt** check is separate: it only tests what you ask.)
 
-The tab doesn't have boxes for these settings yet (the settle's 3 s is fixed). To change one, edit the test file in a text editor: `timeout` on a
+The tab doesn't have boxes for these settings yet. To change one, edit the test file in a text editor: `timeout` on a
 block, `max` on a **repeat until**, `volts` on a **drive**, `time_limit` in the `[test]` table. The tab keeps them when
-it saves.
+it saves. The 3 s settle after the blocks is fixed, and the file can't change it.
 
 ## Setup
 

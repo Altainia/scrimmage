@@ -9,7 +9,7 @@ every physics step. A piece's outcome is where it is when the run ends:
   least STUCK_S. At rest on the robot means its speed relative to the robot is below balls.AT_REST_SPEED, where
   v_rel = v_ball - (v_robot + w_robot x (p_ball - p_robot)), so a piece wedged on a moving robot still counts. On a
   stand-in robot (`is_standin`) its own bodies, the stock Chassis and Drivetrain parts' (assembler/library.py
-  `_GROUPS`), don't count: the stand-in isn't the student's robot. A piece resting on a part the student added is
+  `group`), don't count: the stand-in isn't the student's robot. A piece resting on a part the student added is
   still stuck. On any other robot every robot body counts, stock chassis included.
 - **missed**: everything else, with why: "bounced out" (it was in the hopper once and isn't now), "off the field",
   "still moving when the run ended" (not at rest for STUCK_S yet), "on the floor", or "" (resting somewhere else: on
@@ -32,6 +32,7 @@ from ..testrange.balls import AT_REST_SPEED, BallState
 STUCK_S = 0.5           # s at rest on the robot to be stuck (the spec's number); also how long a piece rests to settle
 SETTLE_MAX_S = 3.0      # s the run keeps going after the blocks finish, for the pieces to settle (the spec's number)
 ON_FLOOR = 0.01         # m: a piece whose center is within this of resting on the carpet is on the floor
+DROPPED_STEPS = 1       # steps a piece at rest keeps the body it rests on with no contact with it (our call)
 _OWN_GROUPS = ("Chassis", "Drivetrain")     # the stand-in's own parts: these families of stock parts
 
 
@@ -51,7 +52,7 @@ def is_standin(config_path) -> bool:
 
 def standin_bodies(world) -> set[int]:
     """Body ids of the robot's stock Chassis and Drivetrain parts (every body named `<instance>.<...>`)."""
-    from ..assembler.library import _group
+    from ..assembler.library import group
     from ..parts.stock import REGISTRY
     parts = world.parts
     if parts is None:
@@ -60,7 +61,7 @@ def standin_bodies(world) -> set[int]:
     for inst in parts.instances:
         if inst.source.startswith("stock "):
             stock = REGISTRY.get(inst.source[len("stock "):])
-            if stock is not None and _group(stock) in _OWN_GROUPS:
+            if stock is not None and group(stock) in _OWN_GROUPS:
                 names.append(inst.name)
     m = world.model
     return {b for b in range(m.nbody)
@@ -79,6 +80,7 @@ class _Piece:
     rest: float = 0.0           # s at rest so far (relative to the robot when it touches the robot)
     rest_since: float = math.nan
     body: int | None = None     # the counting robot body it touches now
+    off: int = 0                # steps in a row at rest touching no counting body
     t_gone: float = math.nan    # it left play (off the field, scored, taken in by the ball path)
 
 
@@ -127,7 +129,7 @@ class Outcomes:
         support: dict[int, int] = {}            # ball -> a counting robot body it touches
         if d.ncon:
             geom = d.contact.geom[:d.ncon]
-            ball = b._geom_ball[geom]
+            ball = b.ball_of_geom(geom)
             for side in (0, 1):
                 for c in np.flatnonzero(ball[:, side] >= 0).tolist():
                     other = int(geom[c, 1 - side])
@@ -151,19 +153,25 @@ class Outcomes:
                 pc.t_left = t
             pc.now_in = now_in
             pc.ever_in |= now_in
-            v = b._qvel[i, :3]
+            v = b.velocity(i)
             if on_robot.get(i):
-                p = b._qpos[i, :3]
+                p = b.position(i)
                 v = v - (v_r + np.cross(w_r, p - p_r))
             if float(np.linalg.norm(v)) < AT_REST_SPEED:
                 if pc.rest == 0.0:
-                    pc.rest_since = t
+                    pc.rest_since = t - dt          # it came to rest during this step
                 pc.rest += dt
-                # at rest: the body it rests on stays, though its contact may drop out for a step
-                pc.body = support.get(i, pc.body)
+                # at rest: the body it rests on stays, though its contact may drop out for a step; off it for longer
+                # (slid off slowly onto the floor, say), it rests on no counting body
+                if i in support:
+                    pc.body, pc.off = support[i], 0
+                else:
+                    pc.off += 1
+                    if pc.off > DROPPED_STEPS:
+                        pc.body = None
             else:
                 pc.rest, pc.rest_since = 0.0, math.nan
-                pc.body = support.get(i)
+                pc.body, pc.off = support.get(i), 0
 
     def _settled(self, pc: _Piece) -> bool:
         return not math.isnan(pc.t_gone) or pc.rest >= STUCK_S - 1e-9
@@ -194,7 +202,7 @@ class Outcomes:
             return "missed", "", pc.t_gone
         if pc.rest < STUCK_S - 1e-9:
             return "missed", "still moving when the run ended", end
-        if float(self.balls._qpos[pc.ball, 2]) <= self.balls.rest_z + ON_FLOOR:
+        if float(self.balls.position(pc.ball)[2]) <= self.balls.rest_z + ON_FLOOR:
             return "missed", "on the floor", pc.rest_since
         return "missed", "", pc.rest_since
 

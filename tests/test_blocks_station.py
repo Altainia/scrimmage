@@ -14,9 +14,11 @@ import pytest
 from scrimmage.blocks.palette import problems
 from scrimmage.blocks.program import load
 from scrimmage.blocks.run import TestRun, world_for
+from scrimmage.testrange.spec import load_range
 
-EXAMPLE = Path(__file__).resolve().parent.parent / "examples" / "blocks" / "station"
-RELEASE_Z = 1.1      # m: the station's release height (scrimmage/testrange/ranges/station.toml)
+ROOT = Path(__file__).resolve().parent.parent
+EXAMPLE = ROOT / "examples" / "blocks" / "station"
+RELEASE_Z = load_range("station", ROOT).stations[0].release[2]      # m: the station's release height
 
 
 @pytest.fixture(scope="module")

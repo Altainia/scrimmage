@@ -84,6 +84,47 @@ size = [0.3, 0.3, 1.0]
         parse(tmp_path, text)
 
 
+ELEMENTS = {
+    "bump": 'center = [4.0, 2.0]\ndepth_in = 44.40\nwidth_in = 73.0\nheight_in = 6.51\nramp_deg = 15.0\n',
+    "ramp": 'center = [4.0, 2.0]\nwidth = 1.0\nheight = 0.2\nramp_deg = 10.0\ndeck = 0.5\n',
+    "platform": ('center = [4.0, 2.0]\nlength_in = 96\nwidth_in = 48\nheight_in = 9.125\nmax_tilt_deg = 15\n'
+                 'hinge_height_in = 6.57\nhinge_spacing_in = 5.30\nramp_length_in = 15.125\nmass = 94.8\n'
+                 'inertia = 24.6\ncom_height_in = 7.27\ndamping = 50.0\n'),
+    "bar": 'center = [4.0, 2.0]\nlength = 2.0\ndiameter = 0.04\nheight = 1.2\n',
+}
+
+
+@pytest.mark.parametrize("kind", list(ELEMENTS))
+def test_a_release_inside_each_kind_of_element_is_refused(tmp_path, kind):
+    from scrimmage.testrange.station import _element_boxes
+
+    element = f'\n[[element]]\nname = "e"\nkind = "{kind}"\n' + ELEMENTS[kind]
+    boxes = _element_boxes(parse(tmp_path, HEAD + element).elements[0])
+    x, y, z = max((b[0] for b in boxes), key=lambda c: c[2])      # the middle of its highest box
+    station = FEEDER.replace("[1.0, 4.0, 0.5]", f"[{x}, {y}, {z}]")
+    with pytest.raises(RangeError, match="'feeder': its release point at .* is inside element 'e'"):
+        parse(tmp_path, HEAD + element + station)
+
+
+def test_a_release_inside_another_stations_chute_is_refused(tmp_path):
+    chute = "chute = { length = 0.5, slope_deg = 10.0 }\n"
+    floor = chute_parts(parse(tmp_path, HEAD + FEEDER + chute).stations[0], 0.15)["floor"][0]
+    other = FEEDER.replace('"feeder"', '"second"').replace("[1.0, 4.0, 0.5]", f"[{floor[0]}, {floor[1]}, {floor[2]}]")
+    with pytest.raises(RangeError, match="'second': its release point at .* is inside the chute of station 'feeder'"):
+        parse(tmp_path, HEAD + FEEDER + chute + other)
+
+
+def test_a_chute_over_a_start_is_refused(tmp_path):
+    start = '\n[start.s]\npose = [{x}, 4.0, 0.0]\n'
+    chute = "chute = { length = 0.5, slope_deg = 10.0 }\n"
+    with pytest.raises(RangeError, match=r"'feeder': its chute \(floor\) overlaps start 's' at \(1.25, 4\)"):
+        parse(tmp_path, HEAD + start.format(x=1.25) + FEEDER + chute)
+    parse(tmp_path, HEAD + start.format(x=3.0) + FEEDER + chute)          # clear of it: accepted
+    parse(tmp_path, HEAD + start.format(x=1.9325) + FEEDER + chute)       # outline just touching the low end: accepted
+    with pytest.raises(RangeError, match="overlaps start 's'"):
+        parse(tmp_path, HEAD + start.format(x=1.9125) + FEEDER + chute)   # 2 cm in: refused
+
+
 def test_a_chute_through_the_carpet_is_refused(tmp_path):
     text = HEAD + FEEDER + "chute = { length = 2.0, slope_deg = 30.0 }\n"
     with pytest.raises(RangeError, match=r"chute: its low end would be 0\.\d+ m below the carpet; make it shorter"):
@@ -118,9 +159,10 @@ def test_the_chute_parts_slope_down_the_heading_with_walls_each_side(tmp_path):
 
 
 @pytest.mark.parametrize("extra, key", [
-    ("interval = 0", "interval"), ("stock = 0", "stock"), ("spread_speed = -1", "spread_speed"),
-    ("pitch_deg = 100", "pitch_deg"), ("rate = 2", "rate"), ("spread_position = [0, -1, 0]", "spread_position"),
-    ("release_in = [1, 2, 3]", "release"),
+    ("interval = 0", "interval must be positive"), ("stock = 0", "stock must be at least 1"),
+    ("spread_speed = -1", "spread_speed must be 0 or more"), ("pitch_deg = 100", "pitch_deg must be from -90 to 90"),
+    ("rate = 2", "unknown key 'rate'"), ("spread_position = [0, -1, 0]", "spread_position must be 0 or more"),
+    ("release_in = [1, 2, 3]", "has both release and release_in"),
 ])
 def test_bad_station_values(tmp_path, extra, key):
     with pytest.raises(RangeError, match=key):
@@ -397,8 +439,8 @@ def test_the_station_field_loads_and_its_starts_are_clear():
     assert y + ROBOT_OUTLINE / 2 < min(walls)
 
 
-def test_the_2026_field_has_two_outposts_and_a_start_at_the_blue_one():
-    from scrimmage.testrange.elements import ROBOT_OUTLINE
+def test_the_2026_field_has_two_outposts_and_a_start_at_the_blue_one_clear_of_the_elements():
+    from scrimmage.testrange.elements import ROBOT_OUTLINE, _on_floor, _rect, _separated
     from scrimmage.testrange.spec import FIELD_LENGTH, FIELD_WIDTH
 
     rng = load_range("2026", ROOT)
@@ -410,22 +452,29 @@ def test_the_2026_field_has_two_outposts_and_a_start_at_the_blue_one():
     x, y, heading = rng.starts["blue_outpost"]
     assert x - ROBOT_OUTLINE / 2 == pytest.approx(0.0, abs=0.02) and y == pytest.approx(blue.release[1], abs=1e-3)
     assert ROBOT_OUTLINE / 2 <= y <= FIELD_WIDTH - ROBOT_OUTLINE / 2 and x + ROBOT_OUTLINE / 2 < FIELD_LENGTH
+    outline = _rect((x, y), heading, ROBOT_OUTLINE, ROBOT_OUTLINE)
+    assert all(_separated(outline, f) for e in rng.elements for f in _on_floor(e, start=True))
 
 
-def test_a_fuel_fed_from_the_blue_outpost_reaches_the_carpet():
+def test_fuel_fed_from_the_blue_outpost_reach_the_carpet_and_rest():
     from range_fixtures import range_cfg
     from scrimmage.testrange.spec import FIELD_LENGTH, FIELD_WIDTH
     from scrimmage.world import World
 
     w = World(range_cfg(), None)            # the 2026 range, floor balls off
     w.set_robot_pose(*AWAY)                 # in the NEUTRAL ZONE, clear of both outposts
-    w.test_range.feeder.request("outpost_blue")
-    advance(w, 3.0)
-    i = w.test_range.feeder.fed[0].ball
-    x, y, z = w.test_range.balls.positions()[i]
-    assert z == pytest.approx(w.test_range.balls.r, abs=0.005)
-    assert 0.0 < x < FIELD_LENGTH and 0.0 < y < FIELD_WIDTH
-    assert w.test_range.balls.state[i] == BallState.FIELD
+    for _ in range(4):
+        w.test_range.feeder.request("outpost_blue")
+    advance(w, 10.0)
+    fed = w.test_range.feeder.fed
+    assert len(fed) == 4
+    balls = w.test_range.balls
+    for f in fed:
+        x, y, z = balls.positions()[f.ball]
+        assert z == pytest.approx(balls.r, abs=0.005)
+        assert 0.0 < x < FIELD_LENGTH and 0.0 < y < FIELD_WIDTH
+        assert balls.state[f.ball] == BallState.FIELD
+        assert balls.at_rest()[f.ball]
 
 
 # ------------------------------------------------------------------------------------------------ overrides
@@ -441,7 +490,7 @@ def test_a_ball_that_overlaps_the_floor_balls_is_refused():
         load_range("2026", ROOT, ball="2025-algae")
 
 
-def test_a_ball_override_on_a_disc_range_is_refused(tmp_path):
+def test_a_ball_override_on_a_disc_range_is_refused():
     disc = next(n for n in BUILTIN_RANGES if load_range(n, ROOT).disc is not None)
     with pytest.raises(RangeError, match="is a disc field; it can't take a ball"):
         load_range(disc, ROOT, ball="2019-cargo")

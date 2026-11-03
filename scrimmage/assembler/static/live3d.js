@@ -191,7 +191,7 @@ export class LiveView {
     this.outlines = [];
     const g = i >= 0 ? this.groups[i] : null;
     this.outlined = g ? i : -1;
-    for (const mesh of g ? [...g.children] : []) {
+    for (const mesh of g ? g.children.filter((c) => c.isMesh) : []) {
       const rim = new THREE.Mesh(mesh.geometry, new THREE.MeshBasicMaterial({ color: OUTLINE, side: THREE.BackSide }));
       rim.position.copy(mesh.position);
       rim.quaternion.copy(mesh.quaternion);

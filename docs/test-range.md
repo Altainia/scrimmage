@@ -543,8 +543,9 @@ changes it.
 `element.<station>.chute`. `length` runs along the slope, `slope_deg` is below horizontal, and `width` is the space
 between the walls (leave it out for 1.3 ball diameters, so a ball of any preset fits). The floor's top starts
 beneath the release point and runs down along the heading; its walls stand one ball diameter tall. The chute is
-refused if its low end would go below the carpet, or it reaches off the field or into an element, an obstacle or
-another station's chute.
+refused if its low end would go below the carpet, or it reaches off the field or into an element, an obstacle,
+another station's chute or a start's robot outline (the check uses each chute part's base, so the wall tops leaning out about
+a ball diameter times the sine of the slope over the low end are not counted).
 
 **A feed waits** while another ball on the field is within one ball diameter of the release point, so balls don't
 land on each other. If the release point stays blocked, a test's **feed one** block times out and says so.

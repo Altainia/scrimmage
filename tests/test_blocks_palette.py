@@ -217,6 +217,7 @@ def msgs(prog, w) -> list[str]:
 FEED = '[[block]]\ndo = "feed_one"\nstation = "{}"\n'
 WAIT_HOPPER = '[[block]]\ndo = "wait_until"\nuntil = {{ in_hopper = {{ at_least = 1 }} }}\n'
 WAIT_EMPTY = '[[block]]\ndo = "wait_until"\nuntil = {{ station_empty = "feeder" }}\n'
+WAIT_MADE_IT = '[[block]]\ndo = "wait_until"\nuntil = {{ made_it_in = {{ at_least = 50 }} }}\n'
 
 
 def test_palette_lists_stations_ball_choice_and_floor_piece():
@@ -239,6 +240,8 @@ def test_feed_problems():
     assert msgs(sprog(FEED.format("feeder")), w) == []
     assert msgs(sprog(WAIT_HOPPER.format()), w) == ["pick the hopper in Setup: the bodies a piece lands in"]
     assert msgs(sprog(WAIT_HOPPER.format(), ["drive.chassis"]), w) == []
+    assert msgs(sprog(WAIT_MADE_IT.format()), w) == ["pick the hopper in Setup: the bodies a piece lands in"]
+    assert msgs(sprog(WAIT_MADE_IT.format(), ["drive.chassis"]), w) == []
     assert '"feeder" never runs out' in msgs(sprog(WAIT_EMPTY.format(), ["drive.chassis"]), w)[0]
     stocked = '\n[setup.station.feeder]\nstock = 3\n'
     assert msgs(sprog(WAIT_EMPTY.format(), ["drive.chassis"], stocked), w) == []
@@ -267,6 +270,8 @@ def test_setup_problems_at_place_nothing():
     on_2026 = World(range_cfg(), None)
     assert msgs(sprog(setup='\n[setup]\nball = "2014-ball"\n'), on_2026) == [
         "this field keeps its own ball; pick a ball on the intake or station field"]
+    assert msgs(sprog(setup='\n[setup]\nball = "2014-ball"\n'), station_world("2013", "auto_line_left")) == [
+        "this field has no ball to pick; clear the ball in Setup"]
 
 
 def test_an_unknown_station_in_setup_leaves_the_others_settings_alone():
@@ -289,6 +294,7 @@ def test_review_focus_1_a_ball_that_doesnt_fit_is_a_setup_problem(tmp_path):
     text = (Path(__file__).resolve().parent.parent / "scrimmage/testrange/ranges/station.toml").read_text()
     text = text.replace("chute = { length = 0.5, slope_deg = 30.0 }", "chute = { length = 0.5, slope_deg = 30.0, width = 0.25 }")
     text = text.replace("release = [0.3, 4.0, 1.1]", "release = [1.0, 4.0, 1.1]")    # clear of the wall for a big ball
+    text = text.replace("pose = [1.183, 4.0, 180.0]", "pose = [1.883, 4.0, 180.0]")      # moved with the release
     (tmp_path / "station.toml").write_text(text)
     w = station_world(str(tmp_path / "station.toml"))
     p = sprog(setup='\n[setup]\nball = "2014-ball"\n')

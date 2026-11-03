@@ -93,6 +93,20 @@ def _hinges(m, body: int) -> list[int]:
             if int(m.jnt_type[k]) == int(mujoco.mjtJoint.mjJNT_HINGE)]
 
 
+def _rest_pose(world) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """The robot body's rotation and origin and every joint's anchor at the model's rest pose, worked out once per
+    world (on a scratch MjData: the world's own is left alone) and kept on it: the palette, the problems and each run
+    ask for the drivetrain."""
+    rest = getattr(world, "_drive_rest_pose", None)
+    if rest is None:
+        m = world.model
+        d = mujoco.MjData(m)
+        mujoco.mj_kinematics(m, d)
+        rest = (d.xmat[world.robot_body].reshape(3, 3).copy(), d.xpos[world.robot_body].copy(), d.xanchor.copy())
+        world._drive_rest_pose = rest
+    return rest
+
+
 def drivetrain(world, motors) -> Drivetrain | None:
     """The robot's drivetrain, from its tread wheels and `motors` (hal_drive.driven_joints: joint -> binding)."""
     m = world.model
@@ -106,13 +120,10 @@ def drivetrain(world, motors) -> Drivetrain | None:
         steers.append(steer)
     if not wheels:
         return None
-    # The places, at the model's rest pose (a scratch MjData: the world's own is left alone).
-    d = mujoco.MjData(m)
-    mujoco.mj_kinematics(m, d)
-    rot, origin = d.xmat[world.robot_body].reshape(3, 3), d.xpos[world.robot_body]
+    rot, origin, anchors = _rest_pose(world)
 
     def place(joint: str) -> np.ndarray:
-        return (rot.T @ (d.xanchor[m.joint(joint).id] - origin))[:2].copy()
+        return (rot.T @ (anchors[m.joint(joint).id] - origin))[:2].copy()
 
     if all(steers):
         if not all(w in motors and s in motors for w, s in zip(wheels, steers)):

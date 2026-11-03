@@ -12,12 +12,13 @@ timeout; `drive` drives the wheel motors (forward for a positive distance or vol
 robot has gone that far across the floor from where the block started (or its timeout), or for its seconds, then stops
 them; `turn` drives them until the robot's heading has turned that far (unwrapped every step, so past 180°), or its
 timeout. On a swerve drive both point the modules first (drive.py's steer targets, held by the position loop, wheels at
-0 V) and start the wheels once every module is pointed, or after STEER_TIMEOUT; a drive's seconds count from then. The
-steer targets stay held after the block, until a later block changes them. `stop` lets a motor (or all of them) go
-to neutral. `wait`, `wait_until` and `repeat` pass time and loop; a `repeat` goes round at most once a physics step
-when its body takes no time. `expect` checks its condition once, or (`throughout`) every step until the run ends; a
-check that fails ends the run, saying what happened instead. The Watch reads the world once after the settle, so the
-first blocks judge the robot as it rests (a hook already on a bar touches it).
+0 V) and start the wheels once every module is pointed, or after STEER_TIMEOUT (each wheel then signed again every
+step, as its module turns, until they all are); a drive's seconds count from then. The steer targets stay held after
+the block, until a later block changes them. `stop` lets a motor (or all of them) go to neutral. `wait`,
+`wait_until` and `repeat` pass time and loop; a `repeat` goes round at most once a physics step when its body takes
+no time. `expect` checks its condition once, or (`throughout`) every step until the run ends; a check that fails ends
+the run, saying what happened instead. The Watch reads the world once after the settle, so the first blocks judge the
+robot as it rests (a hook already on a bar touches it).
 
 Feeding: `start_feeding` and `stop_feeding` take no time (the station feeds every interval from the next step on, or
 stops). `feed_one` asks for one piece and waits until the station's count rises, or until it is empty or used up (it
@@ -44,7 +45,7 @@ from __future__ import annotations
 
 import math
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -158,7 +159,6 @@ def setup_config(raw: dict, setup: dict) -> dict:
 
 def world_for(program: Program):
     """The World of the test's robot config (its `robot`, relative to the test file), with the test's setup applied."""
-    from dataclasses import replace
     from ..config import build_world, load_config
     config = load_config(Path(program.path).parent / program.robot)
     return build_world(replace(config, raw=setup_config(config.raw, program.setup)))
@@ -496,7 +496,9 @@ class TestRun:
         return math.copysign(1.0, b.args["degrees"]) if b.do == "turn" else 0.0
 
     def _roll(self, b, t: float) -> None:
-        """Start the drive or turn block's wheels at t, signed by where each rolls now."""
+        """Start the drive or turn block's wheels at t, signed by where each rolls now (again every step until every
+        module is pointed, when they start after STEER_TIMEOUT). A module stuck near 90 degrees from its target may
+        flip its wheel's sign from step to step; harmless, as such a wheel adds almost nothing."""
         a = b.args
         volts = a.get("volts", DRIVE_VOLTS)
         if b.do == "turn":
@@ -506,6 +508,7 @@ class TestRun:
         for j, v in self.drivetrain.wheel_volts(a.get("direction"), self._turn(b), volts).items():
             self.drives[j] = ("volts", v)
         self.active["rolling"] = t
+        self.active["steered"] = self.drivetrain.steered(self.world.data)
 
     def _yaw(self) -> float:
         """The robot body's heading, rad (its x axis seen from above)."""
@@ -553,8 +556,11 @@ class TestRun:
         yaw = self._yaw()
         act["turned"] += (yaw - act["yaw"] + math.pi) % (2.0 * math.pi) - math.pi
         act["yaw"] = yaw
-        if act["rolling"] is None and (self.drivetrain.steered(d) or elapsed >= STEER_TIMEOUT - EPS):
-            self._roll(b, t)
+        if act["rolling"] is None:
+            if self.drivetrain.steered(d) or elapsed >= STEER_TIMEOUT - EPS:
+                self._roll(b, t)
+        elif not act["steered"]:
+            self._roll(b, act["rolling"])       # a module still turning: its wheel signed by where it rolls now
         timeout = a.get("timeout", DRIVE_TIMEOUT)
         if b.do == "turn":
             done = act["turned"] * math.copysign(1.0, a["degrees"]) >= math.radians(abs(a["degrees"])) - EPS

@@ -240,6 +240,24 @@ def test_every_kind_of_block_round_trips_exactly(test_page):
         assert kind in types, kind
 
 
+def test_an_old_tank_drive_block_gains_no_direction_on_a_round_trip(test_page):
+    """A drive block written before directions existed has none; loading it into the editor and reading it back
+    must not add a forward."""
+    page, _ = test_page("""
+[[block]]
+do = "drive"
+distance = 0.5
+
+[[block]]
+do = "drive"
+seconds = 1.0
+""")
+    st = page.evaluate("__scrimmageTest.toJSON()")
+    assert [b["do"] for b in st["blocks"]] == ["drive", "drive"]
+    assert all("direction" not in b for b in st["blocks"])
+    assert st == page.evaluate("__scrimmageTest.state.test")
+
+
 def _flyout_types(page):
     return page.evaluate("__scrimmageTest.workspace.getFlyout().getWorkspace().getTopBlocks(true).map(b => b.type)")
 
@@ -371,9 +389,9 @@ def test_a_save_after_an_outside_edit_shows_the_saved_version(test_page):
     page, path = test_page()
     outside = path.read_text(encoding="utf-8").replace("volts = 2.0", "volts = 5.0")
     # the file changes outside, then the page changes a block before it has heard of that
-    page.evaluate(f"""(() => {{
+    page.evaluate("""(() => {
       __scrimmageTest.workspace.getTopBlocks(true)[0].getNextBlock().setFieldValue(3, 'SECONDS');
-    }})()""")
+    })()""")
     path.write_text(outside, encoding="utf-8")
     page.wait_for_selector("#notices .notice:has-text('The test changed on disk; showing the saved version.')")
     page.wait_for_function("__scrimmageTest.toJSON().blocks[0].volts === 5")
@@ -1206,12 +1224,12 @@ def test_the_station_setup_meets_wcag_aa(test_page, tmp_path, scheme):
 FEED_3 = '\n[[block]]\ndo = "start_feeding"\nstation = "feeder"\n\n[[block]]\ndo = "wait"\nseconds = 3.0\n'
 
 
-def _fed_test(tmp_path):
+def _fed_test(tmp_path, extra="stock = 3\ninterval = 1.0\n", blocks=FEED_3):
     from test_blocks_feeds import HOPPER, SHELF, station_file, write as write_fed
     folder = tmp_path / "fed"
     folder.mkdir()
-    field = station_file(folder, (1.523, 4.0, 1.0), extra="stock = 3\ninterval = 1.0\n")
-    return write_fed(folder, FEED_3, field, HOPPER + SHELF)
+    field = station_file(folder, (1.523, 4.0, 1.0), extra=extra)
+    return write_fed(folder, blocks, field, HOPPER + SHELF)
 
 
 def _result(page, run_id):
@@ -1245,6 +1263,48 @@ def test_a_fed_run_marks_every_piece_and_jumps_to_a_stuck_one(test_page, tmp_pat
     marks.nth(missed).click()
     assert page.evaluate("__scrimmageTest.replay.time") == pytest.approx(f["t_outcome"], abs=1 / 30)
     assert page.evaluate("__scrimmageTest.replay.outlined") == f["ball"]
+
+
+def test_a_stuck_pieces_mark_says_what_it_rests_on(test_page, tmp_path):
+    page, _ = test_page(path=_fed_test(tmp_path))
+    _run(page, "001")
+    stuck = next(f for f in _result(page, "001")["feeds"] if f["outcome"] == "stuck")
+    title = page.get_attribute(f"#test-feed-marks [data-ball='{stuck['ball']}']", "title")
+    assert title.endswith(f"stuck in the robot (resting on {stuck['body']})"), title
+
+
+def test_many_fed_pieces_shrink_their_marks_to_stay_on_the_scrubber_and_clickable(test_page, tmp_path):
+    page, _ = test_page(path=_fed_test(tmp_path, "stock = 60\ninterval = 0.15\n", FEED_3.replace("3.0", "8.0")))
+    _run(page, "001")
+    n = page.locator("#test-feed-marks .test-feed-mark").count()
+    assert n >= 30, n
+    boxes = page.evaluate("""(() => {
+      const wrap = document.querySelector('.test-scrub-wrap').getBoundingClientRect();
+      const marks = [...document.querySelectorAll('#test-feed-marks .test-feed-mark')];
+      return {wrap: [wrap.left, wrap.right], marks: marks.map((m) => {
+        const r = m.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return {left: r.left, right: r.right, width: m.offsetWidth, hit: hit === m};
+      })};
+    })()""")
+    # at least 6 px (a stuck mark, a diamond, is 1 px less)
+    assert all(b["width"] >= 5 for b in boxes["marks"]) and all(b["width"] < 11 for b in boxes["marks"])
+    assert all(boxes["wrap"][0] - 1 <= b["left"] and b["right"] <= boxes["wrap"][1] + 1 for b in boxes["marks"])
+    assert all(b["hit"] for b in boxes["marks"]), [(round(b["left"]), b["width"], b["hit"]) for b in boxes["marks"]]
+
+
+def test_a_seed_sweeps_title_says_the_shuffle(test_page, tmp_path):
+    page, _ = test_page(path=_example(tmp_path, "station", "feed.test.toml", _just_a_wait))
+    _open_setup(page)
+    page.click("#test-setup [data-try='seed']")
+    page.wait_for_selector("#test-sweep-dialog[open]")
+    for sel, v in zip(("#test-sweep-from", "#test-sweep-to", "#test-sweep-steps"), ("1", "2", "2")):
+        page.fill(sel, v)
+    page.click("#test-sweep-go")
+    page.wait_for_function("!document.querySelector('#test-sweep-dialog').open")
+    page.wait_for_function("__scrimmageTest.sweep && __scrimmageTest.state.running === null"
+                           " && __scrimmageTest.sweep.rows === 2", timeout=120000)
+    assert page.inner_text("#test-sweep-title") == "Sweep 1: the shuffle"
 
 
 def test_a_spread_shows_its_sentence_and_a_row_replays_its_run(test_page, tmp_path):

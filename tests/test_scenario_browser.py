@@ -190,6 +190,7 @@ def test_report_shows_ball_table(browser, tmp_path):
     outcome."""
     from range_fixtures import shooter_cfg
     from test_range_checks import write_config
+    from scrimmage.testrange.spec import load_range
     cfg = write_config(tmp_path, shooter_cfg(range={"preload": 2, "start": "blue_center"}))   # the page asks for one
     scn = tmp_path / "range.toml"
     scn.write_text(f'config = "{cfg.name}"\n\n[range]\npreload = 3\n\n[[step]]\nmode = "disabled"\nduration = 0.2\n'
@@ -212,8 +213,9 @@ def test_report_shows_ball_table(browser, tmp_path):
         score = page.inner_text("#rp-score")
         assert "hub_blue: 0" in score and "held: 3" in score and "fired: 0" in score
         # the floor balls are off (not in the world), and the robot holds 4: one slot is spare, and the OUTPOSTS'
-        # 48 FUEL wait parked
-        assert ("Not listed: 49 spare balls (unused slots, or floor balls turned off)."
+        # FUEL wait parked
+        parked = sum(s.pool() for s in load_range("2026", REPO).stations)
+        assert (f"Not listed: {parked + 1} spare balls (unused slots, or floor balls turned off)."
                 in page.inner_text("#rp-balls .rp-not-listed"))
     finally:
         ctx.close()

@@ -287,7 +287,7 @@ const feedWhen = (f) => (f.t_outcome == null ? f.t : f.t_outcome);
 // "piece 4 from feeder at 3.0 s: missed (bounced out)"
 function feedText(f, k) {
   const from = f.source === "floor" ? "the floor" : f.source;
-  const why = f.outcome === "stuck" && f.body ? `on ${f.body}` : f.why;
+  const why = f.outcome === "stuck" && f.body ? `resting on ${f.body}` : f.why;
   return `piece ${k + 1} from ${from} at ${Number(f.t).toFixed(1)} s: ${OUTCOME_WORDS[f.outcome] || f.outcome}${why ? ` (${why})` : ""}`;
 }
 
@@ -302,6 +302,12 @@ function renderFeeds() {
   const marks = $("#test-feed-marks");
   marks.hidden = !feeds.length;
   const t0 = start(), span = Math.max(1e-9, end() - t0);
+  // marks shrink (to 6 px) to the room between the closest two, so each stays a click of its own
+  const times = feeds.map((f) => f.t).sort((a, b) => a - b);
+  const gap = Math.min(...times.slice(1).map((x, k) => x - times[k]));
+  const room = (gap / span) * marks.clientWidth;
+  const size = marks.clientWidth > 0 && room < 11 ? Math.max(6, Math.floor(room)) : 11;
+  marks.style.setProperty("--feed-size", `${size}px`);
   marks.replaceChildren(...feeds.map((f, k) => {
     const words = feedText(f, k);
     return h("button", { type: "button", class: `test-feed-mark test-feed-${f.outcome}`, "data-outcome": f.outcome,
@@ -313,9 +319,10 @@ function renderFeeds() {
 // Move the replay to when piece f's outcome was settled, and outline it there.
 function jumpTo(f) {
   pause();
-  rp.outlined = f.ball;
+  const mover = rp.run.movers.indexOf(`ball.${f.ball}`);
+  rp.outlined = mover >= 0 ? f.ball : null;
   for (const m of $("#test-feed-marks").children) m.classList.toggle("test-feed-mark-on", m.dataset.ball === String(f.ball));
-  if (rp.view) rp.view.outline(rp.run.movers.indexOf(`ball.${f.ball}`));
+  if (rp.view) rp.view.outline(mover);
   setTime(feedWhen(f));
 }
 
@@ -765,7 +772,8 @@ function renderSpread() {
   const sp = shownSpread();
   wrap.hidden = !sp;
   if (!sp) return;
-  $("#test-spread-title").textContent = `Spread ${+(/^spread-(\d+)$/.exec(sp.id) || [])[1]}`;
+  const num = /^spread-(\d+)$/.exec(sp.id);
+  $("#test-spread-title").textContent = num ? `Spread ${+num[1]}` : String(sp.id);
   $("#test-spread-sentence").textContent = sentence(sp.sentence || "");
   const note = $("#test-spread-note");
   note.hidden = !sp.cancelled;

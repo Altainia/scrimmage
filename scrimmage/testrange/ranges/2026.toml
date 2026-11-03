@@ -130,7 +130,7 @@ interval = 0.25              # estimate: with the CHUTE DOOR open the staged FUE
 stock = 24                   # source: manual 6.3.4 B (URL above) "24 FUEL are staged in each OUTPOST CHUTE" (6.3.4 C: a ROBOT preloads up to 8 more of its own)
 spread_yaw_deg = 5.0         # estimate: the CHUTE's sides are straight and parallel (CAD); FUEL jostling in it turns a little off its heading. Not measured
 spread_pitch_deg = 5.0       # estimate: a FUEL bouncing on the CHUTE's floor leaves a little above or below its slope. Not measured
-spread_position = [0.0, 0.305, 0.0]   # source: CAD (URL above): across the notch, y_cad 2987.7..3749.7, (0.762 - 0.1501) / 2 = 0.306 either side of the center keeps a FUEL inside it; along x and z a FUEL leaves from the floor's edge
+spread_position = [0.0, 0.305, 0.0]   # source: CAD (URL above): across the notch, y_cad 2987.7..3749.7, (0.762 - 0.1501) / 2 = 0.306 either side of the center, rounded down to 0.305 to keep a FUEL inside it; along x and z a FUEL leaves from the floor's edge
 [[station]]
 name = "outpost_red"
 release = [16.464, 7.404, 0.789]  # source: CAD (URL above): the blue release turned a half turn about the field's center: y = 4.035 + 3.3687; x = 16.54 - 0.076, from the simulated red ALLIANCE WALL (scrimmage/testrange/spec.py FIELD_LENGTH, 1 mm short of the CAD's 16.541)

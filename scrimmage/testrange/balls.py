@@ -185,6 +185,18 @@ class Balls:
         """(n, 3) ball centers (a copy)."""
         return self._qpos[:, :3].copy()
 
+    def position(self, i: int) -> np.ndarray:
+        """Ball i's center (a view: read it, don't write it)."""
+        return self._qpos[i, :3]
+
+    def velocity(self, i: int) -> np.ndarray:
+        """Ball i's velocity (a view: read it, don't write it)."""
+        return self._qvel[i, :3]
+
+    def ball_of_geom(self, geom) -> np.ndarray:
+        """The ball index of each geom id in `geom` (any shape), -1 for a geom that isn't a ball."""
+        return self._geom_ball[geom]
+
     def park(self, i: int) -> None:
         """Out of play: under its own (x, y) at PARK_Z, at rest, touching nothing. The state is the caller's."""
         d = self.data
