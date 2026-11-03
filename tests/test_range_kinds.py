@@ -193,6 +193,8 @@ def test_a_piece_override_replaces_a_default_from_a_piece_table(tmp_path):
 
 def test_every_builtin_range_is_unchanged():
     for name in BUILTIN_RANGES:
+        if name == "reef":      # new with pieces beyond balls: a coral range from the start
+            continue
         r = load_range(name, ROOT)
         assert len(r.kinds) == 1 and all(g.kind is None for g in r.goals)
         n = len(r.floor_balls)

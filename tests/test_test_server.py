@@ -670,7 +670,7 @@ def test_every_builtin_field_is_a_choice(tmp_path, test_app):
     from scrimmage.testrange.spec import BUILTIN_RANGES
     c = test_app(write_test(tmp_path))
     f = _state(c)["fields"]
-    assert [x["file"] for x in f] == [None, *BUILTIN_RANGES] and len(f) == 13
+    assert [x["file"] for x in f] == [None, *BUILTIN_RANGES] and len(f) == 14
     assert f[0] == {"file": None, "name": "The plain field", "starts": []}
     station = next(x for x in f if x["file"] == "station")
     assert station == {"file": "station", "name": "A human player station", "starts": ["at_station", "facing_ball"],

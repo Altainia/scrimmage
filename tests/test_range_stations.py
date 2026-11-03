@@ -227,7 +227,7 @@ def test_a_station_in_a_disc_range_is_refused(tmp_path):
 
 def test_ranges_without_stations_are_unchanged():
     for name in BUILTIN_RANGES:
-        if name in ("station", "2026"):     # the station field and 2026's OUTPOSTS have them on purpose
+        if name in ("station", "2026", "reef"):     # the station field, 2026's OUTPOSTS and the reef's coral station
             continue
         assert load_range(name, Path(".")).stations == ()
 
