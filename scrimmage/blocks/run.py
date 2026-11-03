@@ -44,7 +44,7 @@ never held. That sentence carries its own time, and a lost piece's moment is kep
 touches it)"); a failed `seated` check says the piece isn't on the rod, or how far it is ("the coral is seated only
 0.8 in on branch_l2 (could be knocked off)" under placed.py's KNOCK_OFF_SHARE of how far it could go, else "the coral
 is seated 2.0 in of 4.0 in on branch_l2, less than 3 in"). Each `seated.<rod>` signal is the deepest piece's depth on
-that rod in inches, NaN while none is on it.
+that rod in inches, NaN while none is on it; the run's `seated` says each rod's depth at the end in words.
 
 A run ends with one status: "finished" (every block played), "check failed", "timed out" (a wait until, a move, a
 drive or a turn), "tipped over" (the robot body's up axis more than TIP_DEG from vertical), "walked off" (the climb
@@ -112,7 +112,8 @@ class RunResult:
     counts: dict | None = None    # fed, in, stuck, missed; None on a field without stations
     seed: int | None = None       # the stations' seed; None on a field without stations
     settle_s: float = 0.0         # s the run went on after the blocks finished, for the pieces to settle
-    marks: list[dict] = field(default_factory=list)     # moments the replay marks: {t, kind ("slip"), text}
+    marks: list[dict] = field(default_factory=list)     # moments the replay marks: {t, kind ("slip"), text, ball}
+    seated: dict[str, str] = field(default_factory=dict)  # rod -> its piece's depth at the end in words (placed.py)
     notes: list[str] = field(default_factory=list)      # what the run's numbers rest on (run_notes): UNCALIBRATED grips
 
     @property
@@ -362,6 +363,10 @@ class TestRun:
             check["line"] = self._line(check)
         result.checks = self.checks
         result.marks = self.marks
+        for rod in self._seated.values():
+            got = watch.placed.seated(rod)
+            if got is not None:
+                result.seated[rod] = seated_words(*got)
         result.notes = run_notes(self.world, self.program)
         return result
 
@@ -771,7 +776,8 @@ class TestRun:
             i, by = self.watch.piece_index(cond.args["piece"]), cond.args["by"]
             loss = self.watch.held.lost(i, by)
             if loss is not None and self.watch.held.ever(i, by):
-                self.marks.append({"t": loss[0], "kind": "slip", "text": check["failure"]})
+                self.marks.append({"t": loss[0], "kind": "slip", "text": check["failure"],
+                                   "ball": self.watch.held.lost_piece(i, by)})
         when = "" if check.get("timed") else f" at {t:.1f} s"
         raise _End("check failed", f"a check failed ({_where(tuple(check['place']))}): {check['failure']}{when}")
 

@@ -5,15 +5,19 @@
 //   Outcome   "Run 3 · timed out", the outcome sentence in full, a note when a setting the tab has no box for (a
 //             timeout, a repeat's max) ended it, and each check's line; for a run that fed pieces (result.json's
 //             feeds and counts), "Fed pieces: 17 in · 1 stuck · 2 missed" and a "Show the stuck piece" button for
-//             each stuck one
+//             each stuck one; for a run with a piece on a rod at the end, its depth in words ("seated 3.5 in of
+//             4.0 in on branch_l2"); and the run's notes (what its numbers rest on: an UNCALIBRATED grip) as a list
 //   Replay    live3d.js's LiveView draws the view; motion.bin's frames move it. Play / Pause, speed (¼× to 2×), a
 //             scrubber with the time, and under it a mark per fed piece at its feed time, its shape and color its
 //             outcome (in: filled; stuck: a diamond, the warning color; missed: hollow). A click on a mark or a stuck
-//             button moves the replay to when that piece's outcome was settled and outlines the piece
+//             button moves the replay to when that piece's outcome was settled and outlines the piece. Under
+//             those, a cross (the warning color) at each moment result.json's marks keep (a piece slipping out of
+//             a grabber), its sentence its tooltip; a click moves the replay there and outlines the piece
 //   Chart     one plot per signal picked (default: the test's `chart`, else tilt and the driven joints but the
 //             drive wheels), the run
 //             "compared with" (default: the run before it) drawn faded and dashed, the replay's time marked; a
-//             click on a plot moves the replay there
+//             click on a plot moves the replay there. An empty sample (null: a seated depth while no piece is on
+//             its rod) breaks the line
 //   Runs      the kept runs, newest first, each with its outcome (a stopped one says so); a click shows it
 //   Sweep     over the shown run when it is one of a sweep's (and when a sweep has just finished): what it tried,
 //             a row per value (the value, the outcome, each check) and a chart of when the run ended, or a signal's
@@ -24,7 +28,8 @@
 //
 // When a new run is kept (a run ends), it is shown. Test hook: window.__scrimmageTest.replay (test.js) is replay():
 // {time, playing, runId, view (the LiveView or null), chart: {signals, runs: [shown, compared or null]}, feeds (the
-// shown run's), outlined (the ball index of the piece outlined, or null), feedColors: {in, stuck, missed, bg}},
+// shown run's), marks (the shown run's), outlined (the ball index of the piece outlined, or null), feedColors: {in,
+// stuck, missed, bg}, markColors: {slip, bg}},
 // window.__scrimmageTest.sweep is sweepShown(): {id, rows, y, points: [[value, y], ...]} or null, and
 // window.__scrimmageTest.spread is spreadShown(): {id, rows, sentence} or null.
 
@@ -78,7 +83,8 @@ export function replay() {
     time: rp.time, playing: rp.playing, runId: rp.run ? rp.run.id : null, view: rp.view,
     chart: { signals: rp.run ? shownSignals() : [], runs: [rp.run ? rp.run.id : null, rp.compare ? rp.compare.id : null],
       colors: (({ run, compare, bg }) => ({ run, compare, bg }))(tokens()) },
-    feeds: rp.run ? feedsOf(rp.run.result) : null, outlined: rp.outlined, feedColors: feedColors(),
+    feeds: rp.run ? feedsOf(rp.run.result) : null, marks: rp.run ? marksOf(rp.run.result) : null, outlined: rp.outlined,
+    feedColors: feedColors(), markColors: markColors(),
   };
 }
 
@@ -274,9 +280,16 @@ function renderOutcome() {
   const note = $("#test-outcome-note");
   note.hidden = !NOTES[r.status];
   note.textContent = NOTES[r.status] || "";
+  const seated = Object.entries(r.seated || {}).map(([rod, words]) => `${words} on ${rod}`);
+  $("#test-seated").hidden = !seated.length;
+  $("#test-seated").textContent = seated.join("; ");
+  const notes = Array.isArray(r.notes) ? r.notes : [];
+  $("#test-run-notes").hidden = !notes.length;
+  $("#test-run-notes").replaceChildren(...notes.map((n) => h("li", { text: n })));
   $("#test-checks").replaceChildren(...(r.checks || []).map((c) => h("li", { class: c.passed ? "test-check-ok" : "test-check-bad" },
     h("span", { class: "test-check-icon", "aria-hidden": "true", text: c.passed ? "✓" : "✗" }), sentence(c.line))));
   renderFeeds();
+  renderMarks();
 }
 
 // -- the fed pieces --------------------------------------------------------------------------------------------------
@@ -318,12 +331,38 @@ function renderFeeds() {
 
 // Move the replay to when piece f's outcome was settled, and outline it there.
 function jumpTo(f) {
-  pause();
-  const mover = rp.run.movers.indexOf(`ball.${f.ball}`);
-  rp.outlined = mover >= 0 ? f.ball : null;
   for (const m of $("#test-feed-marks").children) m.classList.toggle("test-feed-mark-on", m.dataset.ball === String(f.ball));
+  for (const m of $("#test-slip-marks").children) m.classList.remove("test-slip-mark-on");
+  showPiece(f.ball, feedWhen(f));
+}
+
+// Move the replay to t and outline piece `ball` there (none when it isn't one of the run's movers).
+function showPiece(ball, t) {
+  pause();
+  const mover = ball == null ? -1 : rp.run.movers.indexOf(`ball.${ball}`);
+  rp.outlined = mover >= 0 ? ball : null;
   if (rp.view) rp.view.outline(mover);
-  setTime(feedWhen(f));
+  setTime(t);
+}
+
+// -- the moments the replay marks (a slip) ---------------------------------------------------------------------------
+const marksOf = (r) => (r && Array.isArray(r.marks) ? r.marks : []);
+
+function renderMarks() {
+  const marks = marksOf(rp.run.result), row = $("#test-slip-marks");
+  row.hidden = !marks.length;
+  const t0 = start(), span = Math.max(1e-9, end() - t0);
+  row.replaceChildren(...marks.map((m, k) => h("button", { type: "button", class: "test-slip-mark", "data-mark": String(k),
+    title: m.text, "aria-label": m.text, style: `left: ${(100 * Math.max(0, Math.min(1, (m.t - t0) / span))).toFixed(3)}%`,
+    onclick: (e) => {
+      for (const b of row.children) b.classList.toggle("test-slip-mark-on", b === e.currentTarget);
+      for (const b of $("#test-feed-marks").children) b.classList.remove("test-feed-mark-on");
+      showPiece(m.ball, m.t);
+    } })));
+}
+
+function markColors() {
+  return { slip: getComputedStyle(document.documentElement).getPropertyValue("--slip-mark").trim(), bg: behind($("#test-slip-marks")) };
 }
 
 // the colors the marks draw with, and the color behind them (#rrggbb), for the 3:1 check
@@ -450,6 +489,7 @@ function unitOf(name) {
   if (name === "tilt") return "°";
   if (name.endsWith(".current")) return "A";
   if (name === "hook_load") return "N";
+  if (name.startsWith("seated.")) return "in";
   const pal = rp.state && rp.state.palette;
   const j = pal && (pal.joints || []).find((x) => x.name === name);
   return j ? (j.unit === "deg" ? "°" : j.unit) : "";
@@ -529,7 +569,7 @@ function plot(canvas, name, cmp, tEnd, tk) {
   ctx.fillStyle = tk.bg;
   ctx.fillRect(0, 0, W, H);
   let lo = Infinity, hi = -Infinity;
-  for (const vs of [run[name], other ? other[name] : []]) for (const v of vs) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  for (const vs of [run[name], other ? other[name] : []]) for (const v of vs) { if (v == null) continue; if (v < lo) lo = v; if (v > hi) hi = v; }
   if (!(hi >= lo)) { lo = 0; hi = 1; }
   if (hi - lo < 1e-6) { lo -= 1; hi += 1; }
   const t0 = start();
@@ -550,17 +590,25 @@ function plot(canvas, name, cmp, tEnd, tk) {
   for (let s = Math.ceil(t0 / every) * every; s <= tEnd + 1e-9; s += every) {
     ctx.fillText(`${+s.toFixed(1)} s`, X(s), H - TICKS_H + 3);
   }
+  // the line through a signal's samples, broken at each empty one (null); its pieces' [first t, last t]
   const line = (sig, color, dash, alpha) => {
-    const ts = sig.t, vs = sig[name];
+    const ts = sig.t, vs = sig[name], pieces = [];
     ctx.save();
     ctx.strokeStyle = color; ctx.globalAlpha = alpha; ctx.lineWidth = 1.75; ctx.setLineDash(dash);
     ctx.beginPath();
-    for (let k = 0; k < vs.length; k++) { if (k === 0) ctx.moveTo(X(ts[k]), Y(vs[k])); else ctx.lineTo(X(ts[k]), Y(vs[k])); }
+    for (let k = 0; k < vs.length; k++) {
+      if (vs[k] == null) continue;
+      if (k > 0 && vs[k - 1] != null) { ctx.lineTo(X(ts[k]), Y(vs[k])); pieces[pieces.length - 1][1] = ts[k]; continue; }
+      ctx.moveTo(X(ts[k]), Y(vs[k]));
+      pieces.push([ts[k], ts[k]]);
+      if (k + 1 >= vs.length || vs[k + 1] == null) ctx.lineTo(X(ts[k]) + 1.5, Y(vs[k]));   // a lone sample: a dash
+    }
     ctx.stroke();
     ctx.restore();
+    return pieces;
   };
   if (other) line(other, tk.compare, [5, 3], 1);   // "faded": a lighter gray, dashed (still 3:1 on the background)
-  line(run, tk.run, [], 1);
+  canvas.dataset.segments = JSON.stringify(line(run, tk.run, [], 1));
   // the replay's time
   ctx.strokeStyle = tk.mark; ctx.globalAlpha = 0.6; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(Math.round(X(rp.time)) + 0.5, PAD_T); ctx.lineTo(Math.round(X(rp.time)) + 0.5, PAD_T + plotH); ctx.stroke();
@@ -692,7 +740,8 @@ async function loadFinals(sw) {
     try {
       const res = await result(id);
       const fin = {};
-      for (const [name, vs] of Object.entries(res.signals || {})) if (name !== "t" && vs.length) fin[name] = vs[vs.length - 1];
+      // an empty last sample (null: no piece on a rod) leaves that row's point out
+      for (const [name, vs] of Object.entries(res.signals || {})) if (name !== "t" && vs.length && vs[vs.length - 1] != null) fin[name] = vs[vs.length - 1];
       rp.sweepFinals.set(key, fin);
     } catch {
       rp.sweepFinals.set(key, {});     // that row's point is left out

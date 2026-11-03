@@ -413,7 +413,9 @@
       <section id="test-results" class="test-results" aria-labelledby="test-result-title" hidden>
         <h3 id="test-result-title" class="test-sub"></h3>
         <p id="test-outcome" class="test-outcome"></p>
+        <p id="test-seated" class="test-seated" hidden></p>
         <p id="test-outcome-note" class="test-note muted" hidden></p>
+        <ul id="test-run-notes" class="test-run-notes" aria-label="What these numbers rest on" hidden></ul>
         <p id="test-feeds-summary" class="test-feeds-summary" hidden></p>
         <ul id="test-checks" class="test-checks"></ul>
         <div id="test-replay" class="test-replay"></div>
@@ -422,6 +424,7 @@
           <div class="test-scrub-wrap">
             <input type="range" id="test-scrub" class="test-scrub" min="0" max="1" step="any" value="0" aria-label="Replay time">
             <div id="test-feed-marks" class="test-feed-marks" role="group" aria-label="Each fed piece, at the time it was fed" hidden></div>
+            <div id="test-slip-marks" class="test-feed-marks" role="group" aria-label="Each time a piece slipped out" hidden></div>
           </div>
           <span id="test-time" class="test-time">0.0 s</span>
           <select id="test-speed" aria-label="Replay speed">

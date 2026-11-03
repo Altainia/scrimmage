@@ -54,6 +54,7 @@
   /* the Test tab replay's fed-piece marks, each 3:1 on --panel: in (filled), stuck (a diamond), missed (hollow) */
   --feed-in: var(--accent-text);
   --feed-stuck: var(--warn);
+  --slip-mark: var(--warn);      /* a slip's cross under the scrubber */
   --feed-missed: var(--muted);
   --radius: 6px;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -1065,6 +1066,15 @@ dialog.start-dialog { width: auto; max-width: 96vw; }
   background: var(--feed-stuck); border-color: var(--feed-stuck);
   transform: translateX(-50%) rotate(45deg); }
 .test-feed-mark-on { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--text); }
+/* a slip: a cross, two bars, in the warning color */
+.test-slip-mark { position: absolute; top: 0; width: 13px; height: 13px; padding: 0; border: 0; background: none;
+  border-radius: 2px; transform: translateX(-50%); cursor: pointer; }
+.test-slip-mark::before, .test-slip-mark::after { content: ""; position: absolute; left: 50%; top: 50%; width: 3px;
+  height: 13px; background: var(--slip-mark); transform: translate(-50%, -50%) rotate(45deg); }
+.test-slip-mark::after { transform: translate(-50%, -50%) rotate(-45deg); }
+.test-slip-mark-on { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--text); }
+.test-seated { margin: 0; font-size: 13px; }
+.test-run-notes { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--warn-text); }
 .test-feeds-summary { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 12.5px; }
 .test-player select { flex: none; width: auto; }
 .test-time { font-family: var(--mono); font-size: 12px; white-space: nowrap; }

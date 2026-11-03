@@ -52,6 +52,7 @@ def test_too_little_squeeze_slips_and_says_when_and_what_was_moving(tmp_path):
                     r"grabber\.arm was moving", r.outcome), r.outcome
     (mark,) = r.marks
     assert mark["kind"] == "slip" and mark["t"] == pytest.approx(r.t_end, abs=0.02)
+    assert mark["ball"] == 0                                                 # the coral: body ball.0
     assert mark["text"] == r.outcome.split(": ", 1)[1]
     assert r.checks[-1]["line"] == f"failed (block 9): {mark['text']}"      # its own time, not a second " at"
 

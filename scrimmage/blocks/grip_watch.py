@@ -250,6 +250,11 @@ class HeldTracker:
         losses = [self._lost[k] for k in self._keys(piece, by, self._lost)]
         return max(losses) if losses else None
 
+    def lost_piece(self, piece: int | None, by: str) -> int | None:
+        """The piece (its index) whose loss lost() gives; None if none was lost."""
+        keys = self._keys(piece, by, self._lost)
+        return max(keys, key=lambda k: self._lost[k])[0] if keys else None
+
     def holders(self, piece: int) -> set[str]:
         """The tracked parts and bodies holding `piece` now."""
         return {by for i, by in self._held if i == piece}

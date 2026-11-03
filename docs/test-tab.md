@@ -272,12 +272,17 @@ run early. Then:
   12.1 s (block 2 inside block 3).`, or, when the test works, "Every block played."
 - **The checks.** One line each, passed or failed, with the time. A failed check ends the run, and its line says what
   happened instead.
+- **Seated and grip.** When a piece is on a rod at the end, a line under the sentence says how far: `seated 3.5 in of
+  4.0 in on branch_l2`. A test that grips a piece lists what its grip rests on, such as pads with the default
+  friction, an UNCALIBRATED estimate.
 - **The replay.** A 3D view of the run. **Play**, the time slider and a speed box. If the browser can't draw 3D (WebGL is the browser's 3D drawing) it says
-  so and the rest still works.
+  so and the rest still works. When a piece slipped out of a grabber, a cross under the time slider marks the moment:
+  point at it to read what happened, or click it to jump there with the piece outlined.
 - **The chart.** Tick the signals to draw (tilt, joint positions, hook load, motor current and more). It starts with
   the signals the test names in its `chart` line, or else the tilt and the joints a block drives. Motor currents, hook
   load and the drive wheels' angles are in the picker but not drawn at first (the wheel angles just keep growing, which
-  tells you little about a mechanism).
+  tells you little about a mechanism). A seated depth (`seated.branch_l2`, in inches) has a gap while no piece is on
+  its rod.
 - **Compare.** Pick another run in **compare with** to draw both on the same chart, for example before and after a
   change. Under the chart, each run's sentence is shown one above the other.
 

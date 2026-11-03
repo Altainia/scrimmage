@@ -6,9 +6,10 @@
         result.json          status, outcome, t_end, checks, hung, started (ISO time), test (the test file's TOML
                              as it ran), sweep (None, or what was swept and the value), feeds (one row per fed
                              piece), counts (fed, in, stuck, missed; None without stations), seed (the stations'
-                             seed; None without stations) and marks (moments the replay marks: {t, kind, text},
-                             e.g. a slip out of a grabber) and notes (what the numbers rest on: the grips'
-                             UNCALIBRATED frictions, scrimmage/blocks/run.py's run_notes)
+                             seed; None without stations), marks (moments the replay marks: {t, kind, text,
+                             ball}, e.g. a slip out of a grabber, ball the piece's index), notes (what the numbers
+                             rest on: the grips' UNCALIBRATED frictions, scrimmage/blocks/run.py's run_notes) and
+                             seated (each rod with a piece on it at the end: its depth in words)
         signals.csv          t and each signal, SIGNAL_HZ (scrimmage/blocks/run.py)
         view.json            model_view(world, include_world=True) at the run's start, meshes included
         motion.bin           the movers' poses at MOTION_HZ (below)
@@ -252,7 +253,7 @@ def save_run(result, program: Program, base, sweep: dict | None = None) -> Path:
             "hung": result.hung, "started": getattr(result, "started", "") or _now(),
             "test": dumps(program), "sweep": sweep, "feeds": getattr(result, "feeds", []),
             "counts": getattr(result, "counts", None), "seed": seed, "marks": getattr(result, "marks", []),
-            "notes": getattr(result, "notes", [])})
+            "notes": getattr(result, "notes", []), "seated": getattr(result, "seated", {})})
         _write_signals(tmp / "signals.csv", result.signals)
         _write_json(tmp / "view.json", result.view)
         write_motion(tmp / "motion.bin", result.motion, len(result.movers))

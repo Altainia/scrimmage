@@ -1565,3 +1565,107 @@ def test_the_pieces_setup_meets_wcag_aa(test_page, tmp_path, scheme):
     page.wait_for_selector("#test-sweep-dialog[open]")
     page.wait_for_timeout(200)
     assert page.evaluate(f"({CONTRAST_JS}).check(document.querySelector('#test-sweep-dialog'))") == []
+
+
+# ---- pieces beyond balls: the run panel (a slip's mark, the seated depth, the grip notes) ---------------------------
+
+def _slip_test(tmp_path):
+    """The hand-written grabber (tests/pieces_helpers.py) squeezing the coral too lightly (0.2 V): it slips out while
+    the arm swings up, and the held check fails."""
+    from pieces_helpers import blocks as grab_blocks, grab_test
+    return grab_test(tmp_path / "slip", grab_blocks(0.2))
+
+
+def _peg_test(tmp_path):
+    """A coral dropped standing on end over a 4 in peg (tests/test_blocks_placed.py): no piece on the peg until it
+    lands, then seated 4.0 in of 4.0 in."""
+    from pieces_helpers import grab_test, wait
+    from test_blocks_placed import FEED, PEG_RANGE, expect
+    folder = tmp_path / "peg"
+    path = grab_test(folder, wait(0.5) + FEED + wait(2.0) + expect('seated = { on = "peg", at_least_in = 3 }'))
+    (folder / "grab.toml").write_text(PEG_RANGE, encoding="utf-8")
+    path.write_text(path.read_text(encoding="utf-8").replace('chart = ["grabber.arm"]', 'chart = ["seated.peg"]'),
+                    encoding="utf-8")
+    return path
+
+
+def test_a_slip_is_marked_and_jumps_the_replay(test_page, tmp_path):
+    page, _ = test_page(path=_slip_test(tmp_path))
+    _run(page, "001")
+    res = _result(page, "001")
+    assert res["status"] == "check failed", res["outcome"]
+    (mark,) = res["marks"]
+    assert mark["kind"] == "slip"
+    assert page.evaluate("__scrimmageTest.replay.marks") == res["marks"]
+    marks = page.locator("#test-slip-marks .test-slip-mark")
+    assert marks.count() == 1
+    assert marks.first.get_attribute("title") == mark["text"]
+    assert marks.first.get_attribute("aria-label") == mark["text"]
+    assert page.evaluate("__scrimmageTest.replay.time") < mark["t"] - 1     # the replay shows the start
+    marks.first.click()
+    assert page.evaluate("__scrimmageTest.replay.time") == pytest.approx(mark["t"], abs=1 / 30)
+    assert page.evaluate("__scrimmageTest.replay.outlined") == mark["ball"]
+    assert "test-slip-mark-on" in marks.first.get_attribute("class")
+
+
+def test_a_grip_note_says_uncalibrated(test_page, tmp_path):
+    page, _ = test_page(path=_slip_test(tmp_path))
+    _run(page, "001")
+    notes = _result(page, "001")["notes"]
+    assert notes and "UNCALIBRATED" in notes[0]
+    page.wait_for_selector("#test-run-notes", state="visible")
+    assert page.eval_on_selector_all("#test-run-notes li", "ls => ls.map(l => l.textContent)") == notes
+    # a run with nothing gripped has no notes
+    page2, _ = test_page()
+    _run(page2, "001")
+    assert page2.is_hidden("#test-run-notes")
+
+
+# how many pixels of a plot's column at time t have the run line's color: [plot selector, the chart's start, t]
+COLUMN_HITS = """([sel, t0, t]) => {
+  const c = document.querySelector(sel), dpr = window.devicePixelRatio || 1;
+  const copy = Object.assign(document.createElement('canvas'), {width: c.width, height: c.height});
+  const ctx = copy.getContext('2d', {willReadFrequently: true});    // (a fresh copy: no readback warning)
+  ctx.drawImage(c, 0, 0);
+  const tEnd = Number(c.dataset.tend), w = c.width / dpr;
+  const x = Math.round((44 + (t - t0) / (tEnd - t0) * (w - 44 - 8)) * dpr);
+  const run = __scrimmageTest.replay.chart.colors.run.replace('#', '');
+  const want = [0, 2, 4].map((i) => parseInt(run.slice(i, i + 2), 16));
+  const px = ctx.getImageData(x, 0, 1, c.height).data;
+  let hits = 0;
+  for (let y = 0; y < c.height; y++) if ([0, 1, 2].every((i) => Math.abs(px[4 * y + i] - want[i]) < 40)) hits++;
+  return hits;
+}"""
+
+
+def test_the_seated_line_has_a_gap_while_off_the_rod(test_page, tmp_path):
+    page, _ = test_page(path=_peg_test(tmp_path))
+    _run(page, "001")
+    sig = _result(page, "001")["signals"]
+    s, ts = sig["seated.peg"], sig["t"]
+    assert s[0] is None and s[-1] == pytest.approx(4.0, abs=0.05)
+    first = next(k for k, v in enumerate(s) if v is not None)
+    plot = "#test-chart canvas[data-signal='seated.peg']"
+    page.wait_for_selector(plot)
+    # the run's line starts where the coral first went on the peg, not at 0 s
+    segments = json.loads(page.get_attribute(plot, "data-segments"))
+    assert segments and segments[0][0] == pytest.approx(ts[first])
+    # no line drawn to 0 before then: the column halfway through the empty samples has none of the line's color
+    assert page.evaluate(COLUMN_HITS, [plot, ts[0], ts[first // 2]]) == 0
+    assert page.evaluate(COLUMN_HITS, [plot, ts[0], ts[-1] - 0.3]) > 0     # (the check sees the line where it is)
+    # the latest depth in words beside the outcome; the plot in inches
+    assert page.inner_text("#test-seated") == "seated 4.0 in of 4.0 in on peg"
+    assert page.inner_text("#test-chart .test-plot-title") == "seated.peg (in)"
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_the_slip_mark_is_3_to_1_on_its_background(test_page, tmp_path, scheme):
+    """WCAG 1.4.11 for the slip mark (a cross with no text): its color against the panel behind it; and the run column
+    with it, the seated words and the notes shown meets AA."""
+    page, _ = test_page(path=_slip_test(tmp_path), scheme=scheme)
+    _run(page, "001")
+    colors = page.evaluate("__scrimmageTest.replay.markColors")
+    assert set(colors) == {"slip", "bg"}
+    assert _hex_ratio(colors["slip"], colors["bg"]) >= 3, colors
+    assert page.is_visible("#test-slip-marks .test-slip-mark") and page.is_visible("#test-run-notes")
+    assert page.evaluate(f"({CONTRAST_JS}).check(document.querySelector('#test-run-col'))") == []

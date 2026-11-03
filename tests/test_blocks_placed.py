@@ -320,6 +320,7 @@ def test_seated_and_rests_on_checks_in_a_run(peg_run):
     assert lines[1].startswith("passed: a coral rests on pad")
     assert r.status == "check failed"
     assert "the coral is seated 4.0 in of 4.0 in on peg, less than 5 in" in r.outcome
+    assert r.seated == {"peg": "seated 4.0 in of 4.0 in"}                  # the depth at the end, for the run panel
 
 
 def test_review_focus_1_a_coral_lying_across_isnt_on_the_rod_but_rests_on_it(tmp_path):
