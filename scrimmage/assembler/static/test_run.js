@@ -4,12 +4,14 @@
 //
 //   Outcome   "Run 3 · timed out", the outcome sentence in full, a note when a setting the tab has no box for (a
 //             timeout, a repeat's max) ended it, and each check's line; for a run that fed pieces (result.json's
-//             feeds and counts), "Fed pieces: 17 in · 1 stuck · 2 missed" and a "Show the stuck piece" button for
-//             each stuck one; for a run with a piece on a rod at the end, its depth in words ("seated 3.5 in of
-//             4.0 in on branch_l2"); and the run's notes (what its numbers rest on: an UNCALIBRATED grip) as a list
+//             feeds and counts), "Fed pieces: 17 in · 1 stuck · 2 missed" ("17 in · 2 placed · …" when pieces
+//             were placed on the field) and a "Show the stuck piece" button for each stuck one; for a run with a
+//             piece on a rod at the end, its depth in words ("seated 3.5 in of 4.0 in on branch_l2"); and the
+//             run's notes (what its numbers rest on: an UNCALIBRATED grip) as a list
 //   Replay    live3d.js's LiveView draws the view; motion.bin's frames move it. Play / Pause, speed (¼× to 2×), a
 //             scrubber with the time, and under it a mark per fed piece at its feed time, its shape and color its
-//             outcome (in: filled; stuck: a diamond, the warning color; missed: hollow). A click on a mark or a stuck
+//             outcome (in: filled; placed on the field: a square; stuck: a diamond, the warning color; missed:
+//             hollow). A click on a mark or a stuck
 //             button moves the replay to when that piece's outcome was settled and outlines the piece. Under
 //             those, a cross (the warning color) at each moment result.json's marks keep (a piece slipping out of
 //             a grabber), its sentence its tooltip; a click moves the replay there and outlines the piece
@@ -29,7 +31,7 @@
 // When a new run is kept (a run ends), it is shown. Test hook: window.__scrimmageTest.replay (test.js) is replay():
 // {time, playing, runId, view (the LiveView or null), chart: {signals, runs: [shown, compared or null]}, feeds (the
 // shown run's), marks (the shown run's), outlined (the ball index of the piece outlined, or null), feedColors: {in,
-// stuck, missed, bg}, markColors: {slip, bg}},
+// placed, stuck, missed, bg}, markColors: {slip, bg}},
 // window.__scrimmageTest.sweep is sweepShown(): {id, rows, y, points: [[value, y], ...]} or null, and
 // window.__scrimmageTest.spread is spreadShown(): {id, rows, sentence} or null.
 
@@ -294,14 +296,16 @@ function renderOutcome() {
 
 // -- the fed pieces --------------------------------------------------------------------------------------------------
 const feedsOf = (r) => (r && Array.isArray(r.feeds) ? r.feeds : []);
-const OUTCOME_WORDS = { in: "made it in", stuck: "stuck in the robot", missed: "missed" };
+const OUTCOME_WORDS = { in: "made it in", placed: "placed", stuck: "stuck in the robot", missed: "missed" };
 const feedWhen = (f) => (f.t_outcome == null ? f.t : f.t_outcome);
 
-// "piece 4 from feeder at 3.0 s: missed (bounced out)"
+// "piece 4 from feeder at 3.0 s: missed (bounced out)"; "piece 1 from drop at 0.5 s: placed on peg"
 function feedText(f, k) {
   const from = f.source === "floor" ? "the floor" : f.source;
+  const head = `piece ${k + 1} from ${from} at ${Number(f.t).toFixed(1)} s: `;
+  if (f.outcome === "placed") return `${head}placed${f.why ? ` on ${f.why}` : ""}`;
   const why = f.outcome === "stuck" && f.body ? `resting on ${f.body}` : f.why;
-  return `piece ${k + 1} from ${from} at ${Number(f.t).toFixed(1)} s: ${OUTCOME_WORDS[f.outcome] || f.outcome}${why ? ` (${why})` : ""}`;
+  return `${head}${OUTCOME_WORDS[f.outcome] || f.outcome}${why ? ` (${why})` : ""}`;
 }
 
 function renderFeeds() {
@@ -309,7 +313,8 @@ function renderFeeds() {
   const summary = $("#test-feeds-summary");
   const shown = !!c && c.fed > 0;      // a station field's run that fed nothing has nothing to sum up
   summary.hidden = !shown;
-  summary.replaceChildren(...(shown ? [h("span", { text: `Fed pieces: ${c.in} in · ${c.stuck} stuck · ${c.missed} missed` }),
+  const placed = c && c.placed ? ` · ${c.placed} placed` : "";
+  summary.replaceChildren(...(shown ? [h("span", { text: `Fed pieces: ${c.in} in${placed} · ${c.stuck} stuck · ${c.missed} missed` }),
     ...feeds.filter((f) => f.outcome === "stuck").map((f) => h("button", { type: "button", class: "btn btn-small test-stuck-show",
       "data-ball": String(f.ball), onclick: () => jumpTo(f), text: `Show the stuck piece (at ${feedWhen(f).toFixed(1)} s)` }))] : []));
   const marks = $("#test-feed-marks");
@@ -347,9 +352,10 @@ function showPiece(ball, t) {
 
 // -- the moments the replay marks (a slip) ---------------------------------------------------------------------------
 const marksOf = (r) => (r && Array.isArray(r.marks) ? r.marks : []);
+const slipsOf = (r) => marksOf(r).filter((m) => m.kind === "slip");     // the kinds drawn: a slip, as a cross
 
 function renderMarks() {
-  const marks = marksOf(rp.run.result), row = $("#test-slip-marks");
+  const marks = slipsOf(rp.run.result), row = $("#test-slip-marks");
   row.hidden = !marks.length;
   const t0 = start(), span = Math.max(1e-9, end() - t0);
   row.replaceChildren(...marks.map((m, k) => h("button", { type: "button", class: "test-slip-mark", "data-mark": String(k),
@@ -369,7 +375,8 @@ function markColors() {
 function feedColors() {
   const css = getComputedStyle(document.documentElement);
   const v = (n) => css.getPropertyValue(n).trim();
-  return { in: v("--feed-in"), stuck: v("--feed-stuck"), missed: v("--feed-missed"), bg: behind($("#test-feed-marks")) };
+  return { in: v("--feed-in"), placed: v("--feed-placed"), stuck: v("--feed-stuck"), missed: v("--feed-missed"),
+    bg: behind($("#test-feed-marks")) };
 }
 
 function behind(el) {

@@ -588,9 +588,10 @@ async def test_run(path: str) -> dict:
     "outcome" (one plain sentence to read to the room), "passed" (finished with every check passed), "t_end"
     (seconds), "checks" (one plain line each, with whether it passed), "hung" (the bars the robot hung from),
     "signals" (each measured signal's min, max and final value), "counts" (on a field with a human player
-    station: fed, in, stuck, missed; else null), "feeds" (one row per fed piece: ball, source, t, outcome "in",
+    station: fed, in, stuck, missed, and placed when a piece was placed; else null), "feeds" (one row per fed piece:
+    ball, source, t, outcome "in", "placed" (on a rod or element a seated or rests on check names: why is its name),
     "stuck" or "missed", why, t_outcome, body for a stuck piece), "seed" (the stations' seed, or null), "marks" (the
-    moments the replay marks: {t, kind "slip", text}, such as when a held piece slipped out), "notes" (what the
+    moments the replay marks: {t, kind "slip", text, ball}, such as when a held piece slipped out), "notes" (what the
     numbers rest on: each gripped body's material and friction, UNCALIBRATED estimates; say them with the outcome)
     and "run_folder", where the run is kept (the app's Test tab replays it). path: an absolute path. A bad test file
     or robot is a plain error naming the block."""

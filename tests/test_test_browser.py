@@ -1382,8 +1382,8 @@ def test_the_feed_marks_are_3_to_1_on_their_background(test_page, tmp_path, sche
     page, _ = test_page(path=_fed_test(tmp_path), scheme=scheme)
     _run(page, "001")
     colors = page.evaluate("__scrimmageTest.replay.feedColors")
-    assert set(colors) == {"in", "stuck", "missed", "bg"}
-    for k in ("in", "stuck", "missed"):
+    assert set(colors) == {"in", "placed", "stuck", "missed", "bg"}
+    for k in ("in", "placed", "stuck", "missed"):
         assert _hex_ratio(colors[k], colors["bg"]) >= 3, (k, colors)
     assert page.evaluate(f"({CONTRAST_JS}).check(document.querySelector('#test-run-col'))") == []
 
@@ -1656,6 +1656,12 @@ def test_the_seated_line_has_a_gap_while_off_the_rod(test_page, tmp_path):
     # the latest depth in words beside the outcome; the plot in inches
     assert page.inner_text("#test-seated") == "seated 4.0 in of 4.0 in on peg"
     assert page.inner_text("#test-chart .test-plot-title") == "seated.peg (in)"
+    # the fed coral is placed on the peg (controller ruling P33), not missed: the sentence, the summary and its mark
+    assert page.inner_text("#test-outcome") == "1 of 1 placed on peg."
+    assert page.inner_text("#test-feeds-summary") == "Fed pieces: 0 in · 1 placed · 0 stuck · 0 missed"
+    mark = page.locator("#test-feed-marks .test-feed-mark")
+    assert mark.count() == 1 and mark.get_attribute("data-outcome") == "placed"
+    assert mark.get_attribute("title").endswith(": placed on peg")
 
 
 @pytest.mark.parametrize("scheme", ["light", "dark"])

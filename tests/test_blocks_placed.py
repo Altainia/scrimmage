@@ -14,6 +14,7 @@ from pieces_helpers import CORAL_X, grab_test, squeeze, wait
 
 from range_fixtures import range_cfg
 from scrimmage.blocks import store
+from scrimmage.blocks.feeds import counts, made_it_in, sentence
 from scrimmage.blocks.conditions import describe
 from scrimmage.blocks.palette import palette, problems
 from scrimmage.blocks.placed import (KNOCK_OFF_SHARE, ON_PIECE, REST_S, Placed, seated_depth, seated_words)
@@ -321,6 +322,46 @@ def test_seated_and_rests_on_checks_in_a_run(peg_run):
     assert r.status == "check failed"
     assert "the coral is seated 4.0 in of 4.0 in on peg, less than 5 in" in r.outcome
     assert r.seated == {"peg": "seated 4.0 in of 4.0 in"}                  # the depth at the end, for the run panel
+
+
+def test_a_fed_coral_seated_on_the_peg_is_placed_not_missed(peg_run):
+    """Controller ruling P33: a fed piece on a rod a seated check names is placed there; with no hopper the sentence
+    leads with it."""
+    _, _, r = peg_run
+    (row,) = r.feeds
+    assert (row["outcome"], row["why"]) == ("placed", "peg")
+    assert r.counts == {"fed": 1, "in": 0, "stuck": 0, "missed": 0, "placed": 1}
+    assert r.outcome.endswith("; 1 of 1 placed on peg"), r.outcome
+    assert not made_it_in(r.counts, 1)                                 # made it in stays the hopper's
+
+
+def test_with_a_hopper_too_the_placed_pieces_follow_the_ones_in(tmp_path):
+    path = grab_test(tmp_path, wait(0.5) + FEED + wait(2.0) + expect('seated = { on = "peg" }'),
+                     hopper=["grabber.jaw_b", "grabber.jaw_f"])
+    (tmp_path / "grab.toml").write_text(PEG_RANGE, encoding="utf-8")
+    r = TestRun(world_for(load(path)), load(path)).run()
+    assert r.status == "finished", r.outcome
+    assert r.outcome == "0 of 1 made it in (0%); 1 placed on peg"
+
+
+def test_a_piece_on_an_element_no_condition_names_is_missed(tmp_path):
+    """Placed only on what the test names: the same drop with no seated or rests_on condition is missed, as before."""
+    _, r = _run(tmp_path, PEG_RANGE, wait(0.5) + FEED + wait(2.0))
+    assert r.feeds[0]["outcome"] == "missed" and "placed" not in r.counts
+    assert r.outcome.startswith("0 of 1 made it in (0%); 1 missed"), r.outcome
+
+
+def test_the_placed_sentences():
+    def row(outcome, why=""):
+        return {"outcome": outcome, "why": why}
+    three = [row("placed", "branch_l2"), row("placed", "branch_l2"), row("placed", "branch_l3")]
+    assert sentence(three, hopper=False) == "3 of 3 placed (2 on branch_l2, 1 on branch_l3)"
+    mixed = [row("in"), row("in"), row("in"), row("placed", "peg"), row("placed", "peg")]
+    assert sentence(mixed) == "3 of 5 made it in (60%); 2 placed on peg"
+    assert sentence(mixed, hopper=False) == "2 of 5 placed on peg; 3 made it in"
+    assert sentence([row("placed", "peg"), row("missed", "on the floor")], hopper=False) == "1 of 2 placed on peg; 1 missed"
+    assert counts(mixed) == {"fed": 5, "in": 3, "stuck": 0, "missed": 0, "placed": 2}
+    assert "placed" not in counts([row("in")])
 
 
 def test_review_focus_1_a_coral_lying_across_isnt_on_the_rod_but_rests_on_it(tmp_path):

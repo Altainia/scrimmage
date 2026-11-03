@@ -51,8 +51,10 @@
   --block-check: #7448c0;  --block-check-3: #54338c;
   /* the Test tab chart's compared run: a lighter gray than the run's line, still 3:1 on --subtle (dashed besides) */
   --chart-compare: #7d8590;
-  /* the Test tab replay's fed-piece marks, each 3:1 on --panel: in (filled), stuck (a diamond), missed (hollow) */
+  /* the Test tab replay's fed-piece marks, each 3:1 on --panel: in (filled), placed (a square), stuck (a diamond),
+     missed (hollow) */
   --feed-in: var(--accent-text);
+  --feed-placed: var(--ok);
   --feed-stuck: var(--warn);
   --slip-mark: var(--warn);      /* a slip's cross under the scrubber */
   --feed-missed: var(--muted);
@@ -1061,6 +1063,7 @@ dialog.start-dialog { width: auto; max-width: 96vw; }
   padding: 0; border: 2px solid; border-radius: 50%;
   transform: translateX(-50%); cursor: pointer; }
 .test-feed-in { background: var(--feed-in); border-color: var(--feed-in); }
+.test-feed-placed { border-radius: 1px; background: var(--feed-placed); border-color: var(--feed-placed); }
 .test-feed-missed { background: var(--panel); border-color: var(--feed-missed); }
 .test-feed-stuck { width: calc(var(--size) - 1px); height: calc(var(--size) - 1px); border-radius: 0;
   background: var(--feed-stuck); border-color: var(--feed-stuck);

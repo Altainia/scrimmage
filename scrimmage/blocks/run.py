@@ -73,7 +73,7 @@ from .drive import STEER_TIMEOUT, drivetrain
 from .feeds import SETTLE_MAX_S, Outcomes, counts, is_standin, made_it_in, sentence
 from .grip_watch import SLIP_LOOKBACK_S, default_word
 from .palette import ALL_MOTORS, ANY_HOOK, ANY_PIECE, NEXT_BAR, palette, problems
-from .placed import KNOCK_OFF_SHARE, seated_words
+from .placed import KNOCK_OFF_SHARE, ON_PIECE, seated_words
 from .program import (DRIVE_TIMEOUT, DRIVE_VOLTS, MOVE_TIMEOUT, REPEAT_MAX, WAIT_TIMEOUT, Program,
                       TestFileError)
 from .spread import NO_BALL, rest_of, spread_ball, start_pose
@@ -259,7 +259,9 @@ class TestRun:
         if watch.mon is not None:
             watch.mon.reset()
         watch.update()                                      # the robot as it rests, for the first blocks
-        outcomes = self.outcomes = watch.outcomes = Outcomes(w, watch, self.standin)
+        outcomes = self.outcomes = watch.outcomes = Outcomes(w, watch, self.standin, (
+            [c.args["on"] for c in _conds(self.program.blocks, "seated")],
+            [c.args["on"] for c in _conds(self.program.blocks, "rests_on") if c.args["on"] != ON_PIECE]))
         self._deferred: tuple[dict, object] | None = None  # the last made_it_in check, decided after the settle
         self._final: dict | None = None                     # the final counts, once the run has ended
         self._fed_seen = 0                                  # the feeder's Feds tracked so far
@@ -353,7 +355,7 @@ class TestRun:
             result.feeds, result.counts = rows, counts(rows)
             result.seed = self.feeder.seed if self.feeder is not None else None
         if rows:
-            told = sentence(rows)
+            told = sentence(rows, hopper=bool(self.program.hopper))
             ending = told if result.status == "finished" else f"{ending}; {told}"
         top = watch.highest_hung()
         result.outcome = f"reached {top}, then {ending}" if top else ending
