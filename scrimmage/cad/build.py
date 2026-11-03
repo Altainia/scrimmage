@@ -441,6 +441,14 @@ def part_folder(imp: ImportFile, part: str, import_path: Path) -> Path:
     return _resolve(_folder_text(imp, part), import_path)
 
 
+def body_home(imp: ImportFile, body: str) -> tuple[str, str]:
+    """(part, part body) that import body `body`'s pieces are built into: the part's name (its folder:
+    part_folder) and the body of that part (itself, or the one it is welded to). Raises CadError for bodies that hang
+    on each other in a ring."""
+    tree = _Tree(imp, [])
+    return tree.part_name(tree.part_root(body)), tree.head(body)
+
+
 def _folder_text(imp: ImportFile, part: str) -> str:
     ps = imp.parts.get(part)
     return ps.folder if ps is not None else part

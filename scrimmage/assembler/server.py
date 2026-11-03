@@ -179,9 +179,13 @@ Part (`/api/part/*`; 404 unless a part is open, except upload). Pieces are keyed
         leaves the frame unchecked unless args has confirmed = true, which "Looks right" sends; plugin
         mode: set_mass {body, kg}, set_collision {body, mode}, set_joint {body, joint: {range?, spring?, damping?,
         frictionloss?}} (null removes one), set_total {kg}; piece edits are 400 "per-piece materials need the STEP:
-        import it instead"). 200 with the state (its messages say what the edit dropped); 400 {field, message} for
-        an edit refused (nothing written); 409 when the settings changed after `version` (another tab, an undo, an
-        outside edit: a build finishing doesn't count) or the part is read-only.
+        import it instead"). Both modes: set_grip {body, grip: a parts/grip.py material key, a number (a measured
+        friction) or null (the default)} writes the body's grip in its part folder's own edits (scrimmage-edits.toml):
+        plugin mode the folder's, on the history; import mode the built folder holding that body, not rebuilt and not
+        on the history (a rebuild keeps it), 400 on body for a body built into another's or a part not built yet.
+        Each state body carries `grip` (None: the default friction). 200 with the state (its messages say what the
+        edit dropped); 400 {field, message} for an edit refused (nothing written); 409 when the settings changed after
+        `version` (another tab, an undo, an outside edit: a build finishing doesn't count) or the part is read-only.
   POST /api/part/undo, /redo       -> body {version}: a 50-step history of the settings (the build's record of the
         folders it wrote is never undone); 200 with the state ({..., ok: false} when there is nothing to undo).
   POST /api/part/axis              -> body {piece, triangle, kind: round|flat}: cad.axis.fit_axis on the clicked
@@ -430,6 +434,11 @@ Test (`/api/test/*`; 404 "no test is open" unless a test is open, except /api/te
         the test has no floor spread, or 409 (spread.inside_robot) when a placement puts the ball inside the robot.
         The spread is kept (the newest 3) when it ends.
   POST /api/test/cancel            -> {ok: true}; stops the run, sweep or spread under way (a cancelled run is kept).
+  POST /api/test/grip              -> body {body: "<instance>.<body>", grip: a material key | a number | null}: Setup's
+        grip picker writes it in that path part's folder (its scrimmage-edits.toml, as the Part tab's set_grip), and
+        the robot is built again; {ok, version}. 400 (nothing written) for a grip parts/grip.py refuses, a stock
+        part, a body the part doesn't have or that touches nothing, or one the robot config's own [[part]] grip sets;
+        409 while a run, sweep or spread goes.
   GET  /api/test/run/<id>          -> (<id>: "004", "sweep-002/003", "spread-001/002") result.json's fields plus id
         and signals; /view -> view.json; /motion -> motion.bin (application/octet-stream); 404 for a run that isn't
         kept.
@@ -540,6 +549,7 @@ from tomlkit.exceptions import TOMLKitError
 from .. import robotcode, teamfolders
 from ..config import ConfigError, load_config_text
 from ..lockstep import parse_speed
+from ..parts.assemble import PLACEMENT_KEYS
 from ..parts.model import PartError, load_part
 from ..parts.stock import REGISTRY, _load_all
 from ..scenario import ScenarioError
@@ -1307,11 +1317,10 @@ class App:
         other = ""
         if d is not None and d.doc is not None:
             for p in edits.parts(d.doc):
-                reserved = {"name", "stock", "path", "attach", "pos", "rot", "ids"}
                 parts.append({"name": _plain(p.get("name")), "stock": _plain(p.get("stock")),
                               "path": _plain(p.get("path")), "attach": _plain(p.get("attach")),
                               "pos": _plain(p.get("pos", [0.0, 0.0, 0.0])), "rot": _plain(p.get("rot", [0.0, 0.0, 0.0])),
-                              "params": {k: _plain(v) for k, v in p.items() if k not in reserved},
+                              "params": {k: _plain(v) for k, v in p.items() if k not in PLACEMENT_KEYS},
                               "ids": _plain(p.get("ids", {})),
                               "cad_pos": self._cad_pos(d.doc, _plain(p.get("path")), _plain(p.get("attach"))),
                               "cad": self._cad_info(d.doc, _plain(p.get("path")))})
@@ -2135,6 +2144,14 @@ class App:
                 self._revalidate()
         return status, out
 
+    def test_grip(self, body: dict) -> tuple[int, dict]:
+        with self._lock:
+            self._sync()
+            test = self.need_test()
+            status, out = test.grip(body)
+            self._sync()    # the part folder changed: the robot is built again, and the test's palette with it
+            return status, {**out, "version": test.version}
+
     def test_start(self, kind: str, body: dict) -> tuple[int, dict]:
         with self._lock:
             self._sync()   # the problems as the files are now
@@ -2762,6 +2779,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return app.test_start(path.rsplit("/", 1)[1], body)
             if path == "/api/test/cancel":
                 return 200, test.cancel()
+            if path == "/api/test/grip":
+                return app.test_grip(body)
         raise ApiError(404, "no such endpoint")
 
     def _part_api(self, method: str, url, part) -> tuple:

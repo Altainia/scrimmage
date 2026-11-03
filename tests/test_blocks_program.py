@@ -278,3 +278,17 @@ def test_a_cleared_hopper_is_kept():
     q = P.loads(HEAD, PATH)
     assert q.hopper is None and "hopper" not in P.dumps(q) and P.to_json(q)["hopper"] is None
     assert P.from_json(P.to_json(q), PATH).hopper is None
+
+
+def test_setup_piece_is_a_ball_or_piece_preset():
+    p = P.loads(HEAD + '[setup]\npiece = "2025-coral"', PATH)
+    assert p.setup == {"piece": "2025-coral"} and P.loads(P.dumps(p), PATH) == p
+    assert P.from_json(P.to_json(p), PATH) == p
+    assert P.loads(HEAD + '[setup]\npiece = "2014-ball"', PATH).setup == {"piece": "2014-ball"}
+    with pytest.raises(P.TestFileError, match="isn't a piece; pieces: .*2015-tote.*2014-ball"):
+        P.loads(HEAD + '[setup]\npiece = "frisbee"', PATH)
+
+
+def test_setup_piece_and_ball_together_are_refused():
+    with pytest.raises(P.TestFileError, match="give ball or piece, not both"):
+        P.loads(HEAD + '[setup]\nball = "2014-ball"\npiece = "2025-coral"', PATH)

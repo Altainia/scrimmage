@@ -589,9 +589,11 @@ async def test_run(path: str) -> dict:
     (seconds), "checks" (one plain line each, with whether it passed), "hung" (the bars the robot hung from),
     "signals" (each measured signal's min, max and final value), "counts" (on a field with a human player
     station: fed, in, stuck, missed; else null), "feeds" (one row per fed piece: ball, source, t, outcome "in",
-    "stuck" or "missed", why, t_outcome, body for a stuck piece), "seed" (the stations' seed, or null), and
-    "run_folder", where the run is kept (the app's Test tab replays it). path: an absolute path. A bad test file or
-    robot is a plain error naming the block."""
+    "stuck" or "missed", why, t_outcome, body for a stuck piece), "seed" (the stations' seed, or null), "marks" (the
+    moments the replay marks: {t, kind "slip", text}, such as when a held piece slipped out), "notes" (what the
+    numbers rest on: each gripped body's material and friction, UNCALIBRATED estimates; say them with the outcome)
+    and "run_folder", where the run is kept (the app's Test tab replays it). path: an absolute path. A bad test file
+    or robot is a plain error naming the block."""
     file = _test_file(path)
 
     def work():
@@ -606,7 +608,7 @@ async def test_run(path: str) -> dict:
                 "checks": [{"line": c["line"], "passed": c["passed"]} for c in result.checks],
                 "hung": list(result.hung), "signals": _signal_summary(result.signals),
                 "counts": result.counts, "feeds": result.feeds, "seed": result.seed,
-                "run_folder": str(folder.resolve())}
+                "marks": list(result.marks), "notes": list(result.notes), "run_folder": str(folder.resolve())}
 
     try:
         return await asyncio.to_thread(work)

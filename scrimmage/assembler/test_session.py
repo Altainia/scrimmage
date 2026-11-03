@@ -28,6 +28,7 @@ import re
 import tempfile
 import threading
 import time
+import tomllib
 from pathlib import Path
 
 import tomlkit
@@ -39,6 +40,7 @@ from ..blocks.run import TestRun, world_for
 from ..blocks.spread import NO_BALL, NO_SPREAD, inside_robot, run_spread
 from ..blocks.sweep import MAX_SWEEP, _kind as sweep_kind, run_sweep
 from ..cad.settings import replace_file
+from ..parts.model import PartError
 from ..testrange.spec import BALL_CHOICE_RANGES, BUILTIN_RANGES, load_range
 from .bench_session import SessionError
 from .edits import add_part, cad_offset
@@ -491,6 +493,59 @@ class TestSession:
             self._bump(changed=True)
             self._recompute()
             return 200, {"ok": True, "version": self.version}
+
+    # -- the grip ---------------------------------------------------------------------------
+    def grip(self, body: dict) -> tuple[int, dict]:
+        """Setup's grip picker: body {body: "<instance>.<body>", grip: a GRIP_MATERIALS key, a number (my own
+        friction) or null (the default)} written into that path part's folder, in its own edits (parts/grip.py
+        set_grip), which the Part tab edits too. The App then sees the folder change and builds the robot again.
+        400 for a grip, part or body it can't take (nothing is written); 409 while a run, sweep or spread goes."""
+        from ..parts.grip import set_grip
+        name, grip = body.get("body"), body.get("grip")
+        with self._cond:
+            if self._closed:
+                raise SessionError(409, "the test was closed")
+            if self.running is not None:
+                raise SessionError(409, BUSY)
+            world = self._world
+        if not isinstance(name, str) or name.count(".") != 1 or not all(name.split(".")):
+            raise SessionError(400, f'body must be "<part>.<body>", such as "claw.pad_left", not {name!r}')
+        if world is None or world.parts is None:
+            raise SessionError(409, f"fix the robot first: {self._robot_problem or 'it is not made of parts'}")
+        part, b = name.split(".")
+        inst = next((i for i in world.parts.instances if i.name == part), None)
+        if inst is None:
+            raise SessionError(400, f'no part "{part}" on this robot')
+        if inst.source.startswith("stock "):
+            raise SessionError(400, f"{part}: grip is for a part folder's bodies; a stock part has its own materials")
+        found = next((x for x in inst.part.bodies if x.name == b), None)
+        if found is None:
+            raise SessionError(400, f'no body "{b}" in {part}; its bodies: '
+                                    f'{", ".join(x.name for x in inst.part.bodies)}')
+        if grip is not None and not any(g.collide and not g.tread for g in found.geoms):
+            raise SessionError(400, f"{name} touches nothing (no geom collides), so a grip on it does nothing")
+        own = self._config_grip(part)
+        if b in own:
+            raise SessionError(400, f"{self.robot_path.name} sets {name}'s grip itself (its [[part]] {part}'s "
+                                    "grip), and that wins over the part folder's; change it there")
+        folder = Path(inst.source)
+        try:
+            set_grip(folder.parent if folder.is_file() else folder, b, grip)
+        except PartError as e:
+            raise SessionError(400, str(e)) from None
+        except OSError as e:
+            raise SessionError(400, f"can't write the grip in {folder}: {e.strerror or e}") from None
+        return 200, {"ok": True}
+
+    def _config_grip(self, part: str) -> dict:
+        """The robot config's own `grip` table of [[part]] `part` ({} without one)."""
+        try:
+            raw = tomllib.loads(self.robot_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+            return {}
+        entry = next((e for e in raw.get("part") or [] if isinstance(e, dict) and e.get("name") == part), {})
+        own = entry.get("grip")
+        return own if isinstance(own, dict) else {}
 
     # -- runs -------------------------------------------------------------------------------
     @property

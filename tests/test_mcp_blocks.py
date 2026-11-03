@@ -28,6 +28,7 @@ def test_test_run_reports_and_keeps_the_run(tmp_path):
     assert info["outcome"] and info["t_end"] > 0
     assert len(info["checks"]) == 1 and info["checks"][0]["passed"] is True
     assert info["counts"] is None and info["feeds"] == [] and info["seed"] is None
+    assert info["marks"] == [] and info["notes"] == []
     assert info["run_folder"] == str((tmp_path / "t-runs" / "001").resolve())
     assert (tmp_path / "t-runs" / "001" / "result.json").is_file()
     sig = info["signals"]
@@ -43,6 +44,22 @@ def test_test_run_returns_the_counts_and_feeds(tmp_path):
     assert info["counts"] == {"fed": 1, "in": 1, "stuck": 0, "missed": 0}, info["outcome"]
     assert info["outcome"] == "1 of 1 made it in (100%)" and info["seed"] == 1
     assert [f["outcome"] for f in info["feeds"]] == ["in"] and info["feeds"][0]["source"] == "feeder"
+    json.dumps(info)
+
+
+def test_test_run_returns_the_grip_notes(tmp_path):
+    """A test of held on the reef's grabber says its pads' friction is a default estimate (run_notes)."""
+    import shutil
+    from pathlib import Path
+
+    from scrimmage.blocks.run import DEFAULT_GRIP_NOTE
+    reef = Path(__file__).resolve().parent.parent / "examples" / "blocks" / "reef"
+    shutil.copytree(reef, tmp_path / "reef")
+    path = tmp_path / "reef" / "g.test.toml"
+    path.write_text('[test]\nrobot = "grabber-standin.toml"\n\n[[block]]\ndo = "wait_until"\n'
+                    'until = { held = { piece = "any", by = "grabber" } }\ntimeout = 0.2\n', encoding="utf-8")
+    info = asyncio.run(mcp_server.test_run(str(path)))
+    assert info["notes"] == [DEFAULT_GRIP_NOTE] and info["marks"] == []
     json.dumps(info)
 
 

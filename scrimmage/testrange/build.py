@@ -111,7 +111,7 @@ PIECE_RGBA = [0.92, 0.9, 0.84, 1.0]     # a rigid piece (a coral, a cone...): of
 SLOT_PITCH = 0.2                # m between parked slots' (x, y), in rows of SLOT_ROW from the blue right corner
 SLOT_ROW = 80
 
-RANGE_KEYS = ("file", "start", "preload", "floor_balls", "ball", "station", "seed")
+RANGE_KEYS = ("file", "start", "preload", "floor_balls", "ball", "piece", "station", "seed")
 
 
 @dataclass
@@ -458,18 +458,23 @@ def parse_range_section(cfg: dict, cfg_dir: Path | None) -> RangeSection | None:
     if not isinstance(ref, str):
         raise PartError(f"[range] file must be a built-in range's name ({', '.join(BUILTIN_RANGES)}) or a path "
                         f"relative to the config, not {ref!r}")
-    ball = sec.get("ball")
+    ball, piece = sec.get("ball"), sec.get("piece")
     if ball is not None and not isinstance(ball, str):
         raise PartError(f"[range] ball must be a ball preset's name, not {ball!r}")
+    if piece is not None and not isinstance(piece, str):
+        raise PartError(f"[range] piece must be a piece or ball preset's name, not {piece!r}")
+    if ball is not None and piece is not None:
+        raise PartError("[range]: give ball or piece, not both")
+    asked = "ball" if ball is not None else "piece" if piece is not None else None
     try:
-        rng = load_range(ref, Path(cfg_dir) if cfg_dir is not None else Path("."), ball)
+        rng = load_range(ref, Path(cfg_dir) if cfg_dir is not None else Path("."), ball, piece)
     except RangeError as e:
-        if ball is not None:        # the file's own fault or the ball's: the file read with its own ball says which
+        if asked is not None:       # the file's own fault or the piece's: the file read with its own says which
             try:
                 load_range(ref, Path(cfg_dir) if cfg_dir is not None else Path("."))
             except RangeError as own:
                 raise PartError(f"[range] file: {own}") from None
-        raise PartError(f"[range] {'ball' if ball is not None else 'file'}: {e}") from None
+        raise PartError(f"[range] {asked or 'file'}: {e}") from None
     if "station" in sec:
         try:
             rng = with_overrides(rng, sec["station"])

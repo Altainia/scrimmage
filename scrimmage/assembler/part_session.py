@@ -44,7 +44,7 @@ from .. import teamfolders
 from ..cad import CadError
 from ..cad.axis import fit_axis
 from ..cad.bodies import assembly_diagonal, is_hardware
-from ..cad.build import MARKER, BuildResult, _resolve, build_parts, write_parts
+from ..cad.build import MARKER, BuildResult, _resolve, body_home, build_parts, part_folder, write_parts
 from ..cad.checklist import checklist
 from ..cad.edits import EditError, apply_edit
 from ..cad.frame import to_robot
@@ -54,6 +54,9 @@ from ..cad.names import sanitize
 from ..cad.settings import new_import, read_import, reimport, replace_file, write_import
 from ..cad.source import MESH_SUFFIXES, STEP_SUFFIXES, load_source
 from ..motors import MOTORS
+from ..parts.grip import set_grip
+from ..parts.model import PartError
+from ..parts.overlay import OVERLAY
 from .bench_session import SessionError
 
 POLL_PERIOD = 0.25
@@ -589,6 +592,7 @@ class PartSession(_Session):
                     sums[ps.body].append((mass, R @ com + t))
             out["couplings"] = copy.deepcopy(imp.couplings)
             out["loops"] = copy.deepcopy(imp.loops)
+            grips = self._grips()
             for name, bs in imp.bodies.items():
                 got = sums[name]
                 total = sum(m for m, _ in got)
@@ -597,7 +601,8 @@ class PartSession(_Session):
                      for k, v in ((f.name, getattr(bs, f.name)) for f in dataclasses.fields(bs))}
                 d["mounts"] = [dataclasses.asdict(m) for m in bs.mounts]
                 d["typed_mass"] = d.pop("mass")
-                out["bodies"].append({"name": name, **d, "mass": float(bs.mass) if bs.mass else total, "com": com})
+                out["bodies"].append({"name": name, **d, "mass": float(bs.mass) if bs.mass else total, "com": com,
+                                      "grip": grips.get(name)})
             built = self._result.parts if self._result is not None else {}
             for name, ps in imp.parts.items():
                 b = built.get(name)
@@ -642,6 +647,8 @@ class PartSession(_Session):
             raise SessionError(400, "args must be a JSON object")
         with self._lock:
             self._writable(body)
+            if op == "set_grip":
+                return self._set_grip(args)
             try:
                 new, msgs = apply_edit(self.imp, op, args)
             except EditError as e:
@@ -650,6 +657,56 @@ class PartSession(_Session):
                 self._use(self._try_read(new, new.units))
             self._commit(self.imp, new, msgs)
             return 200, self.state()
+
+    def _set_grip(self, a: dict) -> tuple[int, dict]:
+        """set_grip {body, grip}: the grip material (parts/grip.py; None: the default friction) in the own edits of
+        the built folder holding `body`, which a rebuild keeps (write_parts). Not in the import file, so nothing is
+        rebuilt and it isn't on the undo history (lock held)."""
+        name = a.get("body")
+        if not isinstance(name, str) or name not in self.imp.bodies:
+            return _refused(EditError("body", f"There is no body called {name}: pick one from the list."))
+        if "grip" not in a:
+            return _refused(EditError("grip", "Say the grip material, or grip = none for the default friction."))
+        try:
+            part, home = body_home(self.imp, name)
+        except CadError as e:
+            return _refused(EditError("body", str(e)))
+        if home != name:
+            return _refused(EditError("body", f"{name} is built into {home}'s body (it has no joint of its own): "
+                                              f"set the grip on {home}."))
+        folder = part_folder(self.imp, part, self.path)
+        if not (folder / "part.toml").is_file():
+            return _refused(EditError("body", f"{part} isn't built yet: wait for the build, then set the grip."))
+        try:
+            set_grip(folder, name, a["grip"])
+        except PartError as e:
+            return _refused(EditError("grip", str(e)))
+        except OSError as e:
+            raise SessionError(500, f"can't save {folder / OVERLAY}: {e.strerror or e}") from None
+        self._messages = []
+        self._bump(changed=True)
+        return 200, self.state()
+
+    def _grips(self) -> dict:
+        """Import body -> its grip in its built folder's own edits (None: none, or a body built into another's)."""
+        out: dict = {}
+        read: dict = {}
+        for name in self.imp.bodies:
+            try:
+                part, home = body_home(self.imp, name)
+            except CadError:
+                return {}
+            if home != name:
+                continue
+            if part not in read:
+                try:
+                    f = part_folder(self.imp, part, self.path) / OVERLAY
+                    read[part] = tomllib.loads(f.read_text(encoding="utf-8")) if f.is_file() else {}
+                except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, CadError):
+                    read[part] = {}
+            own = read[part].get("body", {}).get(name, {})
+            out[name] = own.get("grip") if isinstance(own, dict) else None
+        return out
 
     def history(self, which: str, body: dict) -> tuple[int, dict]:
         with self._lock:

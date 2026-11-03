@@ -924,3 +924,90 @@ def test_the_reef_palette_lists_its_rods():
     pal = palette(build_world(load_config(REEF / "grabber-standin.toml")), [])
     assert pal["rods"] == ["branch_l2", "branch_l3", "branch_l4"]
     assert "grabber.jaw_left" in pal["bodies"]
+
+
+# ---- grips ----------------------------------------------------------------------------------------------------------
+
+def _reef_test(tmp_path, blocks='[[block]]\ndo = "wait"\nseconds = 0.2\n') -> Path:
+    import shutil
+    shutil.copytree(REEF, tmp_path / "reef")
+    t = tmp_path / "reef" / "g.test.toml"
+    t.write_text(f'[test]\nrobot = "grabber-standin.toml"\n{blocks}', encoding="utf-8")
+    return t
+
+
+def _grip(c, body, grip):
+    return c.call("POST", "/api/test/grip", {"body": body, "grip": grip})
+
+
+def test_the_grip_endpoint_writes_the_overlay(test_app, tmp_path):
+    """Setup's grip picker writes the grip into the part folder's own edits (scrimmage-edits.toml), and the robot is
+    built again with it: the palette shows it. A material it doesn't know, a stock part, a body the part doesn't
+    have and one that touches nothing are refused (nothing written); null clears it."""
+    t = _reef_test(tmp_path)
+    c = test_app(t)
+    overlay = tmp_path / "reef" / "parts" / "grabber" / "scrimmage-edits.toml"
+    assert _state(c)["palette"]["grips"] == {"grabber.jaw_left": None, "grabber.jaw_right": None}
+    s, b = _grip(c, "grabber.jaw_left", "nitrile")
+    assert s == 200 and b["ok"], b
+    assert 'grip = "nitrile"' in overlay.read_text(encoding="utf-8")
+    st = _state(c)
+    assert st["palette"]["grips"]["grabber.jaw_left"] == "nitrile" and st["problems"] == []
+    s, b = _grip(c, "grabber.jaw_right", 1.05)          # my own number
+    assert s == 200 and _state(c)["palette"]["grips"]["grabber.jaw_right"] == 1.05
+    before = overlay.read_text(encoding="utf-8")
+    for body, grip, words in (("grabber.jaw_left", "velcro", "isn't a grip material"),
+                              ("grabber.jaw_left", 9.0, "isn't a friction to use"),
+                              ("drive.chassis", "nitrile", "a stock part has its own materials"),
+                              ("grabber.nope", "nitrile", "no body \"nope\" in grabber"),
+                              ("claw.jaw", "nitrile", "no part \"claw\" on this robot"),
+                              ("grabber.arm", "nitrile", "touches nothing"),
+                              ("jaw_left", "nitrile", "<part>.<body>")):
+        s, b = _grip(c, body, grip)
+        assert s == 400 and words in b["error"], (body, b)
+    assert overlay.read_text(encoding="utf-8") == before
+    s, b = _grip(c, "grabber.jaw_left", None)
+    assert s == 200 and "jaw_left" not in overlay.read_text(encoding="utf-8")
+    assert _state(c)["palette"]["grips"]["grabber.jaw_left"] is None
+
+
+def test_the_grip_endpoint_waits_for_a_run(test_app, tmp_path):
+    c = test_app(_reef_test(tmp_path, '[[block]]\ndo = "wait"\nseconds = 20\n'))
+    assert c.call("POST", "/api/test/run", {})[0] == 200
+    s, b = _grip(c, "grabber.jaw_left", "nitrile")
+    assert s == 409 and "in progress" in b["error"], b
+    c.call("POST", "/api/test/cancel", {})
+    _wait_idle(c)
+    assert not (tmp_path / "reef" / "parts" / "grabber" / "scrimmage-edits.toml").exists()
+
+
+def test_the_grip_endpoint_wont_write_what_the_robot_config_overrides(test_app, tmp_path):
+    """A path part's own `grip` in the robot config wins over the folder's: Setup says so instead of writing a grip
+    that would do nothing."""
+    t = _reef_test(tmp_path)
+    robot = t.parent / "grabber-standin.toml"
+    robot.write_text(robot.read_text(encoding="utf-8").replace(
+        'ids = { arm = "PWM:2"', 'grip = { jaw_left = "hdpe" }\nids = { arm = "PWM:2"'), encoding="utf-8")
+    c = test_app(t)
+    assert _state(c)["palette"]["grips"]["grabber.jaw_left"] == "hdpe"
+    s, b = _grip(c, "grabber.jaw_left", "nitrile")
+    assert s == 400 and "grabber-standin.toml" in b["error"] and "change it there" in b["error"], b
+    assert _grip(c, "grabber.jaw_right", "nitrile")[0] == 200
+
+
+def test_the_state_carries_the_new_palette_keys(test_app, tmp_path):
+    st = _state(test_app(_reef_test(tmp_path)))
+    pal = st["palette"]
+    assert pal["piece"] == "2025-coral" and pal["kinds"]["2025-coral"]["label"] == "coral"
+    assert pal["rods"] == ["branch_l2", "branch_l3", "branch_l4"] and pal["grip_materials"][0][0] == "rubber"
+
+
+def test_a_config_grip_isnt_a_robot_tab_parameter(test_app, tmp_path):
+    t = _reef_test(tmp_path)
+    robot = t.parent / "grabber-standin.toml"
+    robot.write_text(robot.read_text(encoding="utf-8").replace(
+        'ids = { arm = "PWM:2"', 'grip = { jaw_left = "hdpe" }\nids = { arm = "PWM:2"'), encoding="utf-8")
+    c = test_app(robot)
+    s, rs = c.get("/api/robot/state")
+    grabber = next(p for p in rs["parts"] if p["name"] == "grabber")
+    assert "grip" not in grabber["params"], grabber

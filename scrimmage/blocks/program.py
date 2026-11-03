@@ -13,8 +13,9 @@
     motor = "climber.crank"
     volts = 6.0
 
-An optional `[setup]` table sets the field up for the test: ball, seed, station (a human player's settings by name)
-and floor_spread (several placements of the robot on the floor).
+An optional `[setup]` table sets the field up for the test: ball or piece (the field's game piece: a ball preset, or
+any piece or ball preset), seed, station (a human player's settings by name) and floor_spread (several placements of
+the robot on the floor).
 
 A `repeat` block holds its blocks as `[[block.body]]` tables (`[[block.body.body]]` one level in). Only the file's
 shape is checked here (kinds, types, ranges); names are checked against the robot elsewhere.
@@ -54,7 +55,7 @@ COND_KINDS = ("joint", "touch", "tilt", "piece_in", "hanging_from", "level", "in
 DRIVE_DIRECTIONS = ("forward", "back", "left", "right")
 _OPPOSITE = {"back": "forward", "left": "right", "right": "left"}     # where a minus distance goes instead
 SPREAD_AXES = ("offset_in", "distance_in", "angle_deg", "rotation_deg", "tip_deg")
-SETUP_KEYS = ("ball", "seed", "station", "floor_spread")
+SETUP_KEYS = ("ball", "piece", "seed", "station", "floor_spread")
 _STATION_LISTS = ("spread_position", "spread_rotation_deg")
 
 
@@ -315,8 +316,8 @@ def _strings(v, where: str, what: str) -> list:
 
 
 def _setup(raw: dict) -> dict:
-    """The `[setup]` table, checked: ball, seed, station settings and the floor spread. What the field has (which
-    stations, whether it has a range at all) is checked when the world is built."""
+    """The `[setup]` table, checked: ball or piece, seed, station settings and the floor spread. What the field has
+    (which stations, whether it has a range at all) is checked when the world is built."""
     where = "[setup]"
     extra = [k for k in raw if k not in SETUP_KEYS]
     if extra:
@@ -327,6 +328,14 @@ def _setup(raw: dict) -> dict:
         if not isinstance(ball, str) or ball not in PRESETS["ball"]:
             raise TestFileError(f'{where}: ball {ball!r} isn\'t a ball; balls: {", ".join(PRESETS["ball"])}')
         out["ball"] = ball
+    if "piece" in raw:
+        if "ball" in raw:
+            raise TestFileError(f"{where}: give ball or piece, not both")
+        piece = raw["piece"]
+        if not isinstance(piece, str) or (piece not in PRESETS["piece"] and piece not in PRESETS["ball"]):
+            raise TestFileError(f'{where}: piece {piece!r} isn\'t a piece; pieces: '
+                                f'{", ".join([*PRESETS["piece"], *PRESETS["ball"]])}')
+        out["piece"] = piece
     if "seed" in raw:
         seed = raw["seed"]
         if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= MAX_SEED:

@@ -157,17 +157,22 @@ def _amount(x: float, unit: str) -> str:
 
 
 def setup_config(raw: dict, setup: dict) -> dict:
-    """A copy of the config dict with the test's `[setup]` ball, station settings and seed in its `[range]` (a
-    station's settings add to, and replace, the config's own). Nothing to set leaves `raw` as it is. On the plain field
-    (no `[range]`) the seed is dropped: it only picks the stations' draws, and there are none."""
-    values = {k: setup[k] for k in ("ball", "station", "seed") if k in setup}
+    """A copy of the config dict with the test's `[setup]` ball or piece, station settings and seed in its `[range]`
+    (a station's settings add to, and replace, the config's own; a ball or piece replaces the config's own, whichever
+    it gave). Nothing to set leaves `raw` as it is. On the plain field (no `[range]`) the seed is dropped: it only
+    picks the stations' draws, and there are none."""
+    values = {k: setup[k] for k in ("ball", "piece", "station", "seed") if k in setup}
     if not isinstance(raw.get("range"), dict):
         values.pop("seed", None)
         if values:          # palette.problems says so too, so Setup shows it before Run
-            raise TestFileError("Setup's ball and station settings need a field; this robot is on the plain field")
+            raise TestFileError("Setup's ball, piece and station settings need a field; this robot is on the plain "
+                                "field")
     if not values:
         return raw
     rng = dict(raw["range"])
+    if "ball" in values or "piece" in values:      # the test's one choice, never both (load_range refuses both)
+        rng.pop("ball", None)
+        rng.pop("piece", None)
     for key, v in values.items():
         if key == "station":
             have = rng.get("station")

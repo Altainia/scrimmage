@@ -1,15 +1,17 @@
 """The Part tab's plugin mode: a part folder the FreeCAD add-on made (no `import-origin.toml` marker).
 
 Its part.toml is never written (the add-on writes it again on every export); the edits go in the overlay
-(`scrimmage-edits.toml`, scrimmage/parts/overlay.py), and only body-level ones: a body's weight, collision and joint
-limits, and the part's total weight. Piece edits are refused: the folder has no pieces, only the bodies the add-on
-merged them into. Each edit is checked by applying it to the part before it is written. A poll every 0.25 s picks up
-outside writes of part.toml or the overlay (a re-export, a hand edit); one that doesn't load makes the part read-only
-with the reason until it loads again. Versions, history and the 409 rule are part_session's.
+(`scrimmage-edits.toml`, scrimmage/parts/overlay.py), and only body-level ones: a body's weight, collision, joint
+limits and grip material (parts/grip.py), and the part's total weight. Piece edits are refused: the folder has no
+pieces, only the bodies the add-on merged them into. Each edit is checked by applying it to the part before it is
+written. A poll every 0.25 s picks up outside writes of part.toml or the overlay (a re-export, a hand edit); one that
+doesn't load makes the part read-only with the reason until it loads again. Versions, history and the 409 rule are
+part_session's.
 
 Each body in the state has `typed_mass` (the weight typed here, else None) and `changed` (the overlay's keys for it:
-"mass", "collision" and the joint's "range", "spring", "damping", "frictionloss"), so the page can show which values
-were changed here and which come from the plugin.
+"mass", "collision", "grip" and the joint's "range", "spring", "damping", "frictionloss"), so the page can show
+which values were changed here and which come from the plugin; `grip` is the body's grip material (None: the default
+friction).
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ import tomlkit
 
 from ..cad.edits import EditError
 from ..cad.settings import replace_file
+from ..parts.grip import grip_friction
 from ..parts.model import PartError, load_part, part_from_dict
 from ..parts.overlay import JOINT_KEYS, OVERLAY, _rot, apply_overlay
 from .bench_session import SessionError
@@ -135,6 +138,18 @@ class PluginSession(_Session):
                 j.pop(k, None) if v is None else j.__setitem__(k, list(v) if isinstance(v, (list, tuple)) else v)
             if not j:
                 b.pop("joint")
+        elif op == "set_grip":
+            if "grip" not in a:
+                raise EditError("grip", "Say the grip material, or grip = none for the default friction.")
+            b = body()
+            if a["grip"] is None:
+                b.pop("grip", None)
+            else:
+                try:
+                    grip_friction(a["grip"], f"body {a['body']}")
+                except PartError as e:
+                    raise EditError("grip", str(e)) from None
+                b["grip"] = a["grip"] if isinstance(a["grip"], str) else float(a["grip"])
         elif op == "set_total":
             kg = a.get("kg")
             edits.pop("total_mass", None) if kg is None else edits.update(total_mass=number(kg, "kg",
@@ -205,7 +220,7 @@ class PluginSession(_Session):
                 joints = {j.name} if j else set()
                 be = bes.get(b.name, {})
                 # what was changed here (in the overlay), as the GUI's field names; the rest is the plugin's
-                changed = sorted({k for k in ("mass", "collision") if k in be} | set(be.get("joint", {})))
+                changed = sorted({k for k in ("mass", "collision", "grip") if k in be} | set(be.get("joint", {})))
                 out["bodies"].append({
                     "name": b.name, "parent": b.parent, "part": p.name if b.parent is None else None,
                     "joint": None if j is None else {"kind": j.kind, "axis": _floats(R @ np.asarray(j.axis, float)),
@@ -216,7 +231,7 @@ class PluginSession(_Session):
                     "gyro": any(g.body == b.name for g in p.gyros),
                     "mounts": [m.name for m in p.mounts if m.body == b.name],
                     "collision": be.get("collision"), "mass": float(b.mass), "com": _floats(com),
-                    "typed_mass": be.get("mass"), "changed": changed})
+                    "typed_mass": be.get("mass"), "grip": be.get("grip"), "changed": changed})
             out["parts"] = [{"name": p.name, "folder": str(self.path), "total_mass": self.edits.get("total_mass"),
                              "mass": total, "com": _floats(moment / total) if total > 0 else None}]
             out["checklist"] = [{"level": "check", "text": w, "target": {"kind": "frame", "keys": []}}

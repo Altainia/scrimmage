@@ -303,3 +303,88 @@ def test_review_focus_1_a_ball_that_doesnt_fit_is_a_setup_problem(tmp_path):
     assert str(tmp_path) not in found[0]["message"]
     p.setup["ball"] = "2026-fuel"
     assert problems(p, w) == []
+
+
+# ---- piece kinds, rods and grips ------------------------------------------------------------------------------------
+
+REEF = Path(__file__).resolve().parent.parent / "examples" / "blocks" / "reef"
+
+
+def test_palette_lists_kinds_presets_rods_and_grips():
+    """The reef field with the grabber: the default kind's preset, every ball and piece preset, the field's kinds
+    (with the plain name a student reads), what each floor piece and station is, the rods, and a grip per body of a
+    path part that touches anything (the grabber's two jaws; the mast and arm touch nothing), with the materials and
+    their friction estimates."""
+    from scrimmage.config import build_world, load_config
+    from scrimmage.parts.grip import GRIP_MATERIALS
+    pal = palette(build_world(load_config(REEF / "grabber-standin.toml")), [])
+    assert pal["piece"] == "2025-coral" and "2015-tote" in pal["piece_presets"]["pieces"] and pal["rods"]
+    assert pal["piece_presets"]["pieces"] == sorted(pal["piece_presets"]["pieces"])
+    assert "2014-ball" in pal["piece_presets"]["balls"] and "2014-ball" not in pal["piece_presets"]["pieces"]
+    assert pal["kinds"] == {"2025-coral": {"form": "rigid", "hollow": True, "flat": False, "label": "coral"}}
+    assert pal["floor_kinds"] == {"ball.0": "2025-coral"} and pal["station_kinds"] == {"coral_station": "2025-coral"}
+    assert pal["grips"] == {"grabber.jaw_left": None, "grabber.jaw_right": None}
+    assert pal["grip_materials"] == [[k, label, mu] for k, (label, mu) in GRIP_MATERIALS.items()]
+    assert ["rubber", "Rubber", 0.8] in pal["grip_materials"]
+    # the old keys stay
+    assert pal["ball"] is None and "2014-ball" in pal["balls"] and pal["ball_choice"] is False
+
+
+def test_the_grips_show_a_parts_own_material_and_skip_stock_parts(tmp_path):
+    import shutil
+
+    from scrimmage.config import build_world, load_config
+    from scrimmage.parts.grip import set_grip
+    shutil.copytree(REEF, tmp_path / "reef")
+    set_grip(tmp_path / "reef" / "parts" / "grabber", "jaw_left", "nitrile")
+    pal = palette(build_world(load_config(tmp_path / "reef" / "grabber-standin.toml")), [])
+    assert pal["grips"] == {"grabber.jaw_left": "nitrile", "grabber.jaw_right": None}
+    assert palette(station_world(), [])["grips"] == {}       # the stand-in's chassis and drive are stock parts
+
+
+def test_a_ball_fields_kinds_and_the_plain_field():
+    pal = palette(station_world("intake", "facing_ball"), [])
+    assert pal["piece"] == pal["ball"] == "2026-fuel"
+    (name, kind), = pal["kinds"].items()
+    assert kind["form"] == "ball" and not kind["hollow"] and pal["floor_kinds"] == {"ball.0": name}
+    plain = palette(World(tomllib.loads(new_config("standin")), None), [])
+    assert plain["piece"] is None and plain["kinds"] == plain["floor_kinds"] == plain["station_kinds"] == {}
+    assert plain["piece_presets"]["pieces"] and plain["grip_materials"]
+
+
+def test_review_focus_2_a_piece_that_doesnt_fit_is_a_setup_problem():
+    """A tote fed from the station field's chute: its release point is too near the wall for the tote's size (a
+    setup problem at place [], the file's path left out); a coral fits."""
+    w = station_world()
+    p = sprog(setup='\n[setup]\npiece = "2015-tote"\n')
+    found = problems(p, w)
+    assert found[0]["place"] == [] and found[0]["message"].startswith(
+        "[[station]] 'feeder' release point (0.3, 4) lies off the field"), found
+    assert "station.toml" not in found[0]["message"]
+    p.setup["piece"] = "2025-coral"
+    assert problems(p, w) == []
+    p.setup.pop("piece")
+    assert problems(p, w) == []
+
+
+def test_a_piece_in_setup_on_a_field_that_keeps_its_own():
+    assert msgs(sprog(setup='\n[setup]\npiece = "2025-coral"\n'), World(range_cfg(), None)) == [
+        "this field keeps its own pieces; pick a piece on the intake or station field"]
+    plain = World(tomllib.loads(new_config("standin")), None)
+    assert msgs(sprog(setup='\n[setup]\npiece = "2025-coral"\n'), plain) == [
+        "the plain field has no piece to pick; clear the piece in Setup"]
+    assert msgs(sprog(setup='\n[setup]\npiece = "2025-coral"\n'), station_world("intake", "facing_ball")) == []
+
+
+def test_a_setup_piece_reaches_the_world():
+    """[setup] piece goes in the config's [range] piece: the intake field's floor piece is a coral."""
+    from dataclasses import replace
+
+    from scrimmage.blocks.run import setup_config
+    from scrimmage.config import build_world, load_config
+    config = load_config(Path(__file__).resolve().parent.parent / "examples/blocks/intake/intake-standin.toml")
+    raw = setup_config(config.raw, {"piece": "2025-coral"})
+    assert raw["range"]["piece"] == "2025-coral"
+    pal = palette(build_world(replace(config, raw=raw)), [])
+    assert pal["piece"] == "2025-coral" and list(pal["floor_kinds"].values()) == list(pal["kinds"])
+    assert next(iter(pal["kinds"].values()))["label"] == "coral"
