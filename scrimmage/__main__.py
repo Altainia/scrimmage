@@ -136,6 +136,12 @@ def main(argv: list[str] | None = None) -> None:
     bg.add_argument("folder", type=Path, help="a folder of bench files (*.toml; subfolders are not read)")
     bg.add_argument("--out", type=Path, help="the HTML file (default <FOLDER>/gallery.html)")
 
+    ap_air = sub.add_parser("air", help="an air budget: how many cylinder cycles the tanks and compressor pay for")
+    ap_air.add_argument("config", type=Path, help="robot config TOML with cylinders (and a [pneumatics] table)")
+    ap_air.add_argument("--match-seconds", type=float, default=150.0, metavar="S",
+                        help="match length for the compressor's air (default 150)")
+    ap_air.add_argument("-v", "--verbose", action="store_true")
+
     tp = sub.add_parser("terrain", help="field elements: find how fast a robot can take one")
     tp.add_argument("-v", "--verbose", action="store_true")
     tsub = tp.add_subparsers(dest="terrain_command", required=True)
@@ -226,6 +232,8 @@ def main(argv: list[str] | None = None) -> None:
         _disc(args)
     elif args.command == "bench":
         _bench(args)
+    elif args.command == "air":
+        _air(args)
     elif args.command == "terrain":
         _terrain(args)
     elif args.command == "climb":
@@ -537,6 +545,31 @@ def _holds(items: list[str]) -> dict[str, float]:
         if not math.isfinite(out[name.strip()]):
             raise ValueError(f"--set {item!r}: the value must be a finite number")
     return out
+
+
+def _air(args) -> None:
+    """Exit 0 with the budget, 1 when the robot has no cylinders, 2 on bad input."""
+    import tomllib
+    from .parts.assemble import assemble
+    from .pneumatics.budget import budget, format_budget
+    from .pneumatics.runtime import parse_section
+    try:
+        if not (args.match_seconds > 0.0 and math.isfinite(args.match_seconds)):
+            raise ValueError("--match-seconds wants a time above 0 s")
+        path = args.config.resolve()
+        try:
+            cfg = tomllib.loads(path.read_text())
+        except tomllib.TOMLDecodeError as e:
+            raise ValueError(f"{path}: {e}") from None
+        built = assemble(cfg, path.parent)
+        config = parse_section(cfg.get("pneumatics"))
+    except (ValueError, OSError) as e:    # PartError and ConfigError are ValueErrors
+        print(f"scrimmage: {e}", file=sys.stderr)
+        sys.exit(2)
+    if not built.cylinders:
+        print(f"scrimmage: {args.config} has no pneumatic cylinders", file=sys.stderr)
+        sys.exit(1)
+    print(format_budget(budget(config, built.cylinders, args.match_seconds)))
 
 
 def _terrain(args) -> None:
