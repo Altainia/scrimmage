@@ -116,11 +116,47 @@ def test_pcm_inputs():
     assert pcm[0][">current"] == 0.0 and pcm[0][">on"] is False
 
 
-def test_ph_valve_reads_as_retract():
+def test_ph_valve_reads_its_bit_of_the_hub_mask():
     w = World(robot("PH:3"), ROOT)
-    run(w, hal(("Solenoid", "1,3", {"<output": True})), 0.5)
-    assert w.pneumatics.extension("cyl") < 0.001
+    run(w, hal(("Solenoid", "1,3", {"<output": True}), ("ScrimmagePH", "1", {"<solenoids": 1 << 4})), 0.5)
+    assert w.pneumatics.extension("cyl") < 0.001        # a PCM's channel 3 and the hub's channel 4 aren't this valve
+    run(w, hal(("ScrimmagePH", "1", {"<solenoids": 1 << 3})), 1.0)
+    assert w.pneumatics.extension("cyl") >= 0.15
     assert not any(typ == "CTREPCM" for typ, _, _ in w.sensor_updates(hal()))
+
+
+def test_ph_double_solenoid_and_disabled():
+    w = World(robot({"ph": 2, "forward": 14, "reverse": 15}), ROOT)
+    h = hal(("ScrimmagePH", "2", {"<solenoids": 1 << 14}))
+    h.devices[("DriverStation", "")] = {">enabled": False}
+    run(w, h, 0.5)
+    assert w.pneumatics.extension("cyl") < 0.001        # disabled: the hub's outputs count as off
+    run(w, hal(("ScrimmagePH", "2", {"<solenoids": 1 << 14})), 1.0)
+    assert w.pneumatics.extension("cyl") >= 0.15
+    run(w, hal(("ScrimmagePH", "2", {"<solenoids": 1 << 15})), 1.0)
+    assert w.pneumatics.extension("cyl") < 0.001
+
+
+def test_ph_closed_loop_and_inputs():
+    w = World(robot("PH:3", pneumatics={"start_psi": 90}), ROOT)
+    run(w, hal(), 0.01)
+    assert not w.pneumatics.system.compressor_on
+    h = hal(("ScrimmagePH", "1", {"<closed_loop": True}))
+    run(w, h, 0.01)
+    assert w.pneumatics.system.compressor_on
+    ph = [data for typ, dev, data in w.sensor_updates(h) if (typ, dev) == ("ScrimmagePH", "1")]
+    assert len(ph) == 1
+    assert ph[0][">pressure_switch"] is True and ph[0][">compressor_on"] is True
+    assert 7 <= ph[0][">compressor_current"] <= 11
+
+
+def test_ph_without_the_extension_warns():
+    w = World(robot("PH:3"), ROOT)
+    msg = ("cyl.valve is on a REV Pneumatic Hub, which needs the lockstep extension "
+           "(`--scrimmage-lockstep` for RobotPy, the Gradle init script for Java)")
+    assert w.pneumatics.missing_extension_warnings(hal()) == [msg]
+    assert w.pneumatics.missing_extension_warnings(hal(("ScrimmagePH", "1", {"<solenoids": 0}))) == []
+    assert World(robot("PCM:3"), ROOT).pneumatics.missing_extension_warnings(hal()) == []
 
 
 def test_compressor_loads_battery():

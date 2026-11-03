@@ -1,5 +1,6 @@
-"""The air system in a World: each cylinder's valve read from the robot program's HAL (a CTRE PCM's solenoids), its
-force written to the cylinder's actuator, the compressor's current put on the battery, and the PCM's inputs sent back.
+"""The air system in a World: each cylinder's valve read from the robot program's HAL (a CTRE PCM's solenoids, or a
+REV Pneumatic Hub's through the lockstep extension's "ScrimmagePH:<module>" SimDevice), its force written to the
+cylinder's actuator, the compressor's current put on the battery, and the module's inputs sent back.
 
 Every step, before mj_step:
 
@@ -8,13 +9,15 @@ Every step, before mj_step:
       double solenoid    forward on -> "extend", reverse on -> "retract", neither -> "hold",
                          both -> "hold" and a one-time warning naming the valve
       no device ID       "retract" (the assembler already warned)
+    A PCM channel's output is ("Solenoid", "<id>,<ch>", "<output"); a hub channel's is bit ch of
+    ("ScrimmagePH", "<id>", "<solenoids").
     A disabled robot's solenoid outputs are off, as on a real robot.
   - the extension is the tendon's length past its retracted length, clamped to [0, stroke];
   - the AirSystem steps and each force (N, positive extends) goes to data.ctrl. MuJoCo keeps ctrl, so it is written
     every step.
 
-The compressor runs (in the model) when the robot is enabled and the closed loop of any PCM a valve names is on, or
-always_closed_loop is set (the Test tab's runs). Its current joins the bus voltage solve as a constant load.
+The compressor runs (in the model) when the robot is enabled and the closed loop of any module a valve names is on,
+or always_closed_loop is set (the Test tab's runs). Its current joins the bus voltage solve as a constant load.
 """
 from __future__ import annotations
 
@@ -24,6 +27,7 @@ from ..bindings import Update
 from ..protocol import HalState
 from .model import AirConfig, AirSystem
 
+PH_TYPE = "ScrimmagePH"     # the lockstep extension's SimDevice per REV Pneumatic Hub: "ScrimmagePH:<module>"
 KEYS = ("tanks", "tank_ml", "compressor", "working_psi", "start_psi", "switch_on_psi", "switch_off_psi")
 
 
@@ -50,8 +54,10 @@ class PneumaticsRuntime:
         self._tendon = {c.name: m.tendon(f"{c.name}.cylinder").id for c in built.cylinders}
         self._actuator = {c.name: m.actuator(f"{c.name}.cylinder").id for c in built.cylinders}
         self._valves = {v["cylinder"]: v for v in built.bindings.get("valve", [])}
-        # The CTRE PCMs a valve names, by CAN number: their closed loop runs the compressor, and they get its inputs.
+        # The CTRE PCMs and REV Pneumatic Hubs a valve names, by CAN number: their closed loop runs the compressor,
+        # and they get its inputs.
         self._pcms = sorted({v["id"] for v in self._valves.values() if v["module"] == "PCM"})
+        self._hubs = sorted({v["id"] for v in self._valves.values() if v["module"] == "PH"})
         self._overrides: dict[str, str] = {}
         self._warned: set[str] = set()
 
@@ -78,8 +84,9 @@ class PneumaticsRuntime:
     def before_physics(self, hal: HalState, enabled: bool, dt: float) -> None:
         for name in self.names:
             self.system.set_valve(name, self._overrides.get(name) or self._valve_state(name, hal, enabled))
-        closed_loop = self.always_closed_loop or any(
-            hal.get("CTREPCM", str(n), "<closed_loop", False) for n in self._pcms)
+        closed_loop = (self.always_closed_loop
+                       or any(hal.get("CTREPCM", str(n), "<closed_loop", False) for n in self._pcms)
+                       or any(hal.get(PH_TYPE, str(n), "<closed_loop", False) for n in self._hubs))
         forces = self.system.step(dt, {n: self.extension(n) for n in self.names}, enabled, bool(closed_loop))
         ctrl = self.world.data.ctrl
         for name, f in forces.items():
@@ -89,11 +96,14 @@ class PneumaticsRuntime:
         v = self._valves.get(name)
         if v is None:
             return "retract"            # no device ID: the assembler's warning says it won't move
-        if v["module"] != "PCM":
-            return "retract"            # a REV Pneumatic Hub's valves: read through its own device (not yet)
+        if v["module"] == "PH":
+            mask = int(hal.get(PH_TYPE, str(v["id"]), "<solenoids", 0) or 0)
 
-        def coil(channel: int) -> bool:
-            return enabled and bool(hal.get("Solenoid", f"{v['id']},{channel}", "<output", False))
+            def coil(channel: int) -> bool:
+                return enabled and bool(mask >> channel & 1)
+        else:
+            def coil(channel: int) -> bool:
+                return enabled and bool(hal.get("Solenoid", f"{v['id']},{channel}", "<output", False))
 
         if v["reverse"] is None:
             return "extend" if coil(v["forward"]) != v["invert"] else "retract"
@@ -118,6 +128,18 @@ class PneumaticsRuntime:
 
     def sensor_updates(self) -> list[Update]:
         s = self.system
-        data = {">pressure_switch": s.switch_calls_for_air, ">current": round(s.compressor_amps, 3),
-                ">on": s.compressor_on}
-        return [("CTREPCM", str(n), dict(data)) for n in self._pcms]
+        amps = round(s.compressor_amps, 3)
+        pcm = {">pressure_switch": s.switch_calls_for_air, ">current": amps, ">on": s.compressor_on}
+        hub = {">pressure_switch": s.switch_calls_for_air, ">compressor_on": s.compressor_on,
+               ">compressor_current": amps}
+        return ([("CTREPCM", str(n), dict(pcm)) for n in self._pcms]
+                + [(PH_TYPE, str(n), dict(hub)) for n in self._hubs])
+
+    def missing_extension_warnings(self, hal: HalState) -> list[str]:
+        """What to say, once the robot has had time to open its modules, when valves are on a REV Pneumatic Hub but
+        the HAL holds no ScrimmagePH device: only the lockstep extension relays a hub."""
+        if not self._hubs or any(typ == PH_TYPE for typ, _ in hal.devices):
+            return []
+        return [f"{v['name']} is on a REV Pneumatic Hub, which needs the lockstep extension "
+                "(`--scrimmage-lockstep` for RobotPy, the Gradle init script for Java)"
+                for v in self._valves.values() if v["module"] == "PH"]
