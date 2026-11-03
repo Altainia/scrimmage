@@ -46,16 +46,17 @@ by theirs, the robot's slots by Range.piece's (piece_kind), a station's pool by 
 the one geom above. A rigid kind's body is an ordinary free body: its mass, its full inertia tensor about its center
 of mass (the body's origin), and its solids as geoms `ball.<i>.<k>` (spheres, boxes and convex meshes: a hollow
 coral is a ring of slices), each mesh added once per kind and shared by its slots. Its contact is MuJoCo's own
-(default solref and solimp, solmix 1) with its surface's sliding friction and the ball's torsional and rolling
-friction (rigid_contact). A floor piece is set down turned by its tip and rotation, its lowest point FLOOR_DROP above
+(RIGID_SOLREF, firmer than MuJoCo's default, weighted RIGID_SOLMIX; default solimp) with its surface's sliding
+friction and the ball's torsional and rolling friction (rigid_contact). A floor piece is set down turned by its tip and rotation, its lowest point FLOOR_DROP above
 the carpet, so it settles.
 
 - A goal with a rect opening and a `slot` is built as a frame (four bars `frame` wide around the opening, on the wall
   face), a box behind it (four walls just outside the opening's edges, `depth` deep) and a back wall closing the box.
 - An [[obstacle]] is one static box, `<name>.box`, on its own body welded to the world.
 
-MuJoCo mixes two geoms' solref and solimp by their solmix weights; the ball's is far above every other geom's, so
-its values govern its contacts with the carpet, the walls, the goals and the robot. Friction and condim take the
+MuJoCo mixes two geoms' solref and solimp by their solmix weights; the ball's (and a rigid piece's, RIGID_SOLMIX) is
+far above every other geom's, so its values govern its contacts with the carpet, the walls, the goals and the robot
+(a geom with a higher priority, such as a climber hook, uses its own instead). Friction and condim take the
 larger of the two geoms' values: the ball's are the low ones, so the carpet's rolling friction stops a rolling ball.
 """
 
@@ -83,6 +84,14 @@ PARK_Z = -20.0                                     # m: a parked ball's height, 
 PLATE = 0.02                    # m, every goal plate's thickness
 BALL_SOLMIX = 1e6               # every other geom has MuJoCo's default solmix, 1
 BALL_DMAX = 0.95                # MuJoCo's default dmax
+# A rigid piece's contact: a hard plastic or rubber piece barely gives. MuJoCo's default (a 20 ms time constant) is so
+# soft that a coral squeezed hard between two pads creeps down them at several cm/s while the arm swings, far inside
+# its friction cone. estimate: a 4 ms time constant, critically damped (4 timesteps at MAX_TIMESTEP; MuJoCo needs at
+# least 2), the stiffest that stays well clear of that limit; it held a coral squeezed at 4 V and 8 V through a fast
+# swing on default pads (tests/test_blocks_held.py). Its weight is the ball's, so it governs the piece's contacts with
+# the carpet, the field and the robot (whose geoms have solmix 1); against a ball the two mix evenly.
+RIGID_SOLREF = (0.004, 1.0)
+RIGID_SOLMIX = BALL_SOLMIX
 W_SOFT = math.pi / 0.012        # rad/s: a gentle contact's frequency (a 12 ms half period)
 W_STIFF = 1000.0                # rad/s: the contact's frequency at its stiffest
 STIFFEN = 0.75                  # the penetration, in ball diameters, over which d grows linearly from dmin to dmax
@@ -382,8 +391,10 @@ def rest_pose(rng: Range, name: str, turn=None) -> tuple[float, list[float] | No
 
 def rigid_contact(kind: PieceKind) -> dict:
     """A rigid piece's geoms' MuJoCo contact keywords: its surface's sliding friction, the ball's torsional and
-    rolling friction, MuJoCo's default solref and solimp (solmix 1, priority 0)."""
-    return {"condim": 6, "friction": [kind.friction, BALL_FRICTION[1], BALL_FRICTION[2]]}
+    rolling friction, a firm contact (RIGID_SOLREF, MuJoCo's default solimp) weighted RIGID_SOLMIX so it governs the
+    piece's contacts with every other geom (priority 0)."""
+    return {"condim": 6, "friction": [kind.friction, BALL_FRICTION[1], BALL_FRICTION[2]],
+            "solref": list(RIGID_SOLREF), "solmix": RIGID_SOLMIX}
 
 
 def _slot_body(spec: mujoco.MjSpec, rng: Range, name: str, first: str, timestep: float) -> dict:
@@ -469,7 +480,7 @@ def parse_range_section(cfg: dict, cfg_dir: Path | None) -> RangeSection | None:
     except ValueError as e:
         raise PartError(f"[range] {e}") from None
     timestep = model_timestep(cfg, MAX_TIMESTEP)
-    for name, kind in rng.kinds.items():     # every ball and disc kind's contact; a rigid piece's is MuJoCo's own
+    for name, kind in rng.kinds.items():     # every ball and disc kind's contact; a rigid piece's needs the timestep
         piece = kind_piece(rng, name)
         try:
             if piece is not None:

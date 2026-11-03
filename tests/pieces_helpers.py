@@ -20,8 +20,8 @@ CORAL_X = 0.15          # m: the coral's center forward of the bumper's face, be
 # slide toward the coral (positive volts close it), sprung open; a 4.5 in coral lying across fits between them with
 # 3 cm to spare each side. The arm is geared 100:1, each jaw 300 rad of motor per meter (a NEO squeezes about 13 N
 # at 0.2 V, 260 N at 4 V); each joint's armature is a motor rotor (1e-4 kg m^2, the stock swerve's ROTOR_MOI) seen
-# through that gearing. The pads are stiffer than a default contact and set the contact's friction (priority 1), so
-# a firm squeeze doesn't creep. Every number is our choice.
+# through that gearing. The pads are plain boxes with MuJoCo's default contact (the coral's own firm contact governs,
+# testrange/build.py's RIGID_SOLREF). Every number is our choice.
 GRABBER_PART = """
 [part]
 name = "grabber"
@@ -46,7 +46,7 @@ parent = "arm"
 pos = [0.0528, 0.0, -0.24]
 mass = 0.2
 joint = { name = "jaw_b", slide = "x", range = [0.0, 0.05], armature = 9.0, spring = { stiffness = 50.0 } }
-geom = [{ box = [0.02, 0.20, 0.08], color = [0.2, 0.2, 0.2, 1.0], priority = 1, solref = [0.004, 1.0] }]
+geom = [{ box = [0.02, 0.20, 0.08], color = [0.2, 0.2, 0.2, 1.0] }]
 
 [[body]]
 name = "jaw_f"
@@ -54,7 +54,7 @@ parent = "arm"
 pos = [0.2472, 0.0, -0.24]
 mass = 0.2
 joint = { name = "jaw_f", slide = [-1, 0, 0], range = [0.0, 0.05], armature = 9.0, spring = { stiffness = 50.0 } }
-geom = [{ box = [0.02, 0.20, 0.08], color = [0.2, 0.2, 0.2, 1.0], priority = 1, solref = [0.004, 1.0] }]
+geom = [{ box = [0.02, 0.20, 0.08], color = [0.2, 0.2, 0.2, 1.0] }]
 
 [[motor]]
 slot = "arm"

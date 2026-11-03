@@ -7,13 +7,15 @@ import re
 from pathlib import Path
 
 import pytest
-from pieces_helpers import EXPECT_HELD, blocks, grab_run, grab_test, move_arm, run_grab, squeeze, wait  # noqa: F401
+from pieces_helpers import (EXPECT_HELD, GRABBER_PART, blocks, grab_run, grab_test, move_arm,  # noqa: F401
+                            run_grab, squeeze, wait)
 
 from scrimmage.blocks import grip_watch, store
 from scrimmage.blocks.conditions import describe
 from scrimmage.blocks.palette import problems
 from scrimmage.blocks.program import Cond, dumps, load, loads
-from scrimmage.blocks.run import _recast, world_for
+from scrimmage.blocks.run import TestRun, _recast, world_for
+from scrimmage.testrange.build import RIGID_SOLMIX, RIGID_SOLREF
 from scrimmage.testrange.pieces import parse_kind
 
 
@@ -24,11 +26,30 @@ def test_a_closed_grabber_holds_the_coral_while_the_arm_swings(grab_run):
     assert max(abs(a) for a in grab_run.signals["grabber.arm"]) > 75.0         # it really swung
 
 
+def test_firm_squeezes_hold_on_plain_pads(tmp_path):
+    """The pads have MuJoCo's default contact (no solref, no priority): the coral's own firm contact keeps a hard
+    squeeze from creeping (testrange/build.py's RIGID_SOLREF). The edge: 0.4 V slips in the swing, 0.45 V holds."""
+    assert "solref" not in GRABBER_PART and "priority" not in GRABBER_PART
+    for volts in (0.45, 8.0):
+        _, _, r = run_grab(tmp_path / str(volts), blocks(volts))
+        assert r.status == "finished" and r.checks[-1]["passed"], (volts, r.outcome)
+
+
+def test_a_rigid_piece_has_a_firm_contact_that_governs(tmp_path):
+    _, world, _ = run_grab(tmp_path, wait(0.1))
+    m = world.model
+    body = m.body("ball.0").id
+    geoms = [g for g in range(m.ngeom) if m.geom_bodyid[g] == body]
+    assert geoms and all(list(m.geom_solref[g]) == list(RIGID_SOLREF) for g in geoms)
+    assert all(m.geom_solmix[g] == RIGID_SOLMIX for g in geoms)
+
+
 def test_too_little_squeeze_slips_and_says_when_and_what_was_moving(tmp_path):
     _, _, r = run_grab(tmp_path, blocks(0.2))
     assert r.status == "check failed", r.outcome
-    assert re.fullmatch(r"a check failed \(block 9\): the coral slipped out of grabber at \d+\.\d s while "
-                        r"grabber\.arm was moving", r.outcome), r.outcome
+    # the arm (the last block started) first; then whatever else was moving then (the jaws give a little)
+    assert re.match(r"a check failed \(block 9\): the coral slipped out of grabber at \d+\.\d s while "
+                    r"grabber\.arm was moving", r.outcome), r.outcome
     (mark,) = r.marks
     assert mark["kind"] == "slip" and mark["t"] == pytest.approx(r.t_end, abs=0.02)
     assert mark["text"] == r.outcome.split(": ", 1)[1]
@@ -71,15 +92,75 @@ that = { touch = { robot = "grabber", field = "ball.0" } }
 
 
 def test_review_focus_3_never_held_and_nothing_moving(tmp_path):
-    """Never held: the jaws never close. Nothing moving: the jaws let go (a stop block) more than a second after the
-    last move."""
+    """Never held: the jaws never close. A stop block counts as a command: the jaws let go more than a second after
+    the last move, and the sentence names them, not "nothing"."""
     _, _, r1 = run_grab(tmp_path / "a", move_arm(-15) + wait(0.3) + EXPECT_HELD.replace("throughout = true\n", ""))
     assert "the coral was never held by grabber" in r1.outcome, r1.outcome
     stop = "".join(f'\n[[block]]\ndo = "stop"\nmotor = "grabber.{j}"\n' for j in ("jaw_b", "jaw_f"))
     _, _, r2 = run_grab(tmp_path / "b", squeeze(4.0) + wait(1.0) + move_arm(-15) + wait(0.3) + EXPECT_HELD
                         + wait(1.2) + stop + wait(1.0))
     assert r2.status == "check failed", r2.outcome
-    assert re.search(r"the coral slipped out of grabber at \d+\.\d s while nothing was moving$", r2.outcome), r2.outcome
+    assert re.search(r"the coral slipped out of grabber at \d+\.\d s while grabber\.jaw_[bf] was moving and "
+                     r"grabber\.jaw_[bf] was moving$", r2.outcome), r2.outcome
+    assert "grabber.arm" not in r2.outcome
+
+
+def test_what_was_moving(tmp_path):
+    """Commanded in the second before, most recent first, then what was still turning; else nothing."""
+    run = TestRun(*reversed(_loaded(tmp_path)))
+    run._commanded, run._turning = {"grabber.arm": 0.5, "grabber.jaw_b": 4.5, "drive": 4.8}, {}
+    assert run._moving(5.0) == "the robot was driving and grabber.jaw_b was moving"
+    run._turning = {5.0: {"grabber.arm", "grabber.jaw_b"}}       # the arm still swinging from a block long ago
+    assert run._moving(5.0) == "the robot was driving and grabber.jaw_b was moving and grabber.arm was moving"
+    run._commanded, run._turning = {"grabber.arm": 0.5}, {}
+    assert run._moving(5.0) == "nothing was moving"
+
+
+def _loaded(folder: Path):
+    p = load(grab_test(folder))
+    return p, world_for(p)
+
+
+def _held_run(folder: Path):
+    """The 4 V run, ended with the coral held at the top of the swing: (its TestRun, the tracker, (jaw_b's pairs,
+    jaw_f's pairs))."""
+    program, world = _loaded(folder)
+    run = TestRun(world, program)
+    run.run()
+    tr, m = run.watch.held, world.model
+    assert tr.held(None, "grabber")
+    pairs = run.watch._pairs
+    side = {j: {p for p in pairs if m.body(m.geom_bodyid[p[0]]).name == f"grabber.{j}"} for j in ("jaw_b", "jaw_f")}
+    assert side["jaw_b"] and side["jaw_f"]
+    return run, tr, side
+
+
+def test_a_clean_handoff_between_jaws_keeps_the_hold(tmp_path):
+    """Only jaw_b touches for three updates (jaw_f's last sample ages out), then only jaw_f: no body it touches has
+    an earlier sample, which is no news, not a slide."""
+    run, tr, side = _held_run(tmp_path)
+    t, dt = float(run.world.data.time), float(run.world.model.opt.timestep)
+    for k, pairs in enumerate([side["jaw_b"]] * 3 + [side["jaw_f"]] * 2, start=1):
+        run.watch._pairs = pairs
+        tr.update(t + k * dt)
+        assert tr.held(None, "grabber"), k
+    assert tr.lost(None, "grabber") is None
+
+
+def test_one_dropped_contact_step_keeps_the_hold_two_end_it(tmp_path):
+    run, tr, side = _held_run(tmp_path)
+    t, dt = float(run.world.data.time), float(run.world.model.opt.timestep)
+    both = side["jaw_b"] | side["jaw_f"]
+    for k, pairs in enumerate([set(), both, both], start=1):
+        run.watch._pairs = pairs
+        tr.update(t + k * dt)
+        assert tr.held(None, "grabber"), k
+    for k in (4, 5):
+        run.watch._pairs = set()
+        tr.update(t + k * dt)
+    assert not tr.held(None, "grabber")
+    when, how, kind = tr.lost(None, "grabber")
+    assert when == t + 4 * dt and how == "slipped out of" and kind == "coral"     # at the first step it missed
 
 
 def _coral():

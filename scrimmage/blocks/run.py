@@ -78,6 +78,9 @@ TIP_DEG = 60.0            # the robot body's up axis this far from vertical: it 
 MOVE_TOL_DEG = 1.0        # a move has reached its target within this (a hinge), our call
 MOVE_TOL_IN = 0.25        # ... or this (a slide), our call
 EPS = 1e-9
+MOVING_DEG_S = 5.0        # a joint turning faster than this (a hinge), our call, was moving at a slip
+MOVING_IN_S = 0.5         # ... or sliding faster than this (a slide), our call
+MOVING_SPEED = 0.1        # m/s: the robot going across the floor faster than this was driving at a slip, our call
 
 # The verbs describe() uses, as "-ing" (after "without") and "to ..." (after "waiting for").
 _VERBS = {"passes": ("passing", "to pass"), "goes": ("going", "to go"), "tilts": ("tilting", "to tilt"),
@@ -245,6 +248,8 @@ class TestRun:
         self.checks: list[dict] = []
         self.marks: list[dict] = []
         self._commanded: dict[str, float] = {}             # joint, "drive" or "turn" -> the last time it was commanded
+        self._turning: dict[float, set[str]] = {}          # the moment a hold was lost -> what was turning
+        #                                                     (seen at the update that ended it)
         self.throughout: list[tuple[dict, object]] = []
         t = float(d.time)
         next_signal = next_motion = t
@@ -353,6 +358,28 @@ class TestRun:
                 self.outcomes.track(fed.ball, fed.station, fed.t)
             self._fed_seen = len(self.feeder.fed)
         self.outcomes.update(t)
+        lost = self.watch.held.lost_now
+        if lost is not None:
+            self._turning[lost] = self._turning_now()
+
+    def _turning_now(self) -> set[str]:
+        """What is moving now: each driven joint (not a drive wheel) turning faster than MOVING_DEG_S, or sliding
+        faster than MOVING_IN_S, by its name; "drive" when the robot goes across the floor faster than
+        MOVING_SPEED (its wheels turn a little as it rocks)."""
+        m, d, w = self.world.model, self.world.data, self.world
+        wheels = set(self.drivetrain.wheels) if self.drivetrain is not None else set()
+        out = set()
+        for j in self.motors:
+            if j in wheels:
+                continue
+            v = abs(float(d.qvel[m.jnt_dofadr[m.joint(j).id]]))
+            if v > (MOVING_IN_S * IN if self._slide.get(j) else math.radians(MOVING_DEG_S)):
+                out.add(j)
+        vel = np.zeros(6)
+        mujoco.mj_objectVelocity(m, d, mujoco.mjtObj.mjOBJ_BODY, w.robot_body, vel, 0)
+        if float(np.linalg.norm(vel[3:5])) > MOVING_SPEED:
+            out.add("drive")
+        return out
 
     def _settle(self, t: float, sample, cancel) -> float:
         """After the blocks finish: the stations stopped, step until every piece has settled, or for SETTLE_MAX_S
@@ -453,8 +480,10 @@ class TestRun:
             return True
         if b.do == "stop":
             if a["motor"] == ALL_MOTORS:
+                self._commanded.update({j: t for j in self.drives})
                 self.drives.clear()
             else:
+                self._commanded[a["motor"]] = t
                 self.drives.pop(a["motor"], None)
             return True
         if b.do in ("start_feeding", "stop_feeding"):
@@ -668,12 +697,14 @@ class TestRun:
         return f"{what} {lost} at {t:.1f} s while {self._moving(t)}"
 
     def _moving(self, t: float) -> str:
-        """What was commanded in the SLIP_LOOKBACK_S before t, most recent first: "claw.arm was moving", "the robot
-        was driving" (several joined by "and"); "nothing was moving"."""
-        recent = sorted(((c, n) for n, c in self._commanded.items() if t - SLIP_LOOKBACK_S - EPS <= c <= t + EPS),
-                        reverse=True)
+        """What was commanded (moved, spun or stopped) in the SLIP_LOOKBACK_S before t, most recent first, then
+        anything else still turning at t: "claw.arm was moving", "the robot was driving" (several joined by "and");
+        "nothing was moving"."""
+        recent = [n for _, n in sorted(((c, n) for n, c in self._commanded.items()
+                                        if t - SLIP_LOOKBACK_S - EPS <= c <= t + EPS), reverse=True)]
+        recent += sorted(n for n in self._turning.get(t, ()) if n not in recent)
         words = [("the robot was driving" if n == "drive" else "the robot was turning" if n == "turn"
-                  else f"{n} was moving") for _, n in recent]
+                  else f"{n} was moving") for n in recent]
         return " and ".join(words) if words else "nothing was moving"
 
     def _describe(self, cond) -> str:

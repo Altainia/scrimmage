@@ -8,7 +8,11 @@ for at least HELD_S:
 - its speed relative to the part is under HELD_SPEED: how fast its center moves in the touching body's own frame,
   from that position at the last update and now (both from the same forward pass as the contacts, so a whip of the
   arm doesn't read as a slip the way mixing the step's start and end would), the slowest of the bodies it touches. A
-  body it has just started touching has no speed yet and doesn't count.
+  body it has just started touching has no speed yet: a step where no touched body has an earlier sample (the piece
+  handed cleanly from one jaw to the other) is no news, and the hold stays as it was.
+
+A held piece may miss its contact for one step (a contact MuJoCo drops for a step); the hold ends when it misses two
+in a row, at the first.
 
 The tracker follows every piece in play that touches a part a condition names, so `any` (None) costs no more than a
 named piece. When a held piece stops being held it keeps when, how and what kind it was (`lost`):
@@ -37,6 +41,7 @@ SLIP_LOOKBACK_S = 1.0   # s: a joint or drive commanded this long before a slip 
 RAY_CASTS = 4           # rays down from around the piece's center, at half its bounding radius (our call)
 _RAY_HOPS = 8           # robot geoms a ray may pass through before it gives up
 _DOWN = np.array([0.0, 0.0, -1.0])
+_UNTOUCHED, _NO_NEWS, _OUT_OF_PLAY = "untouched", "no news", "out of play"     # _judge's other answers
 
 
 def kind_word(kinds: dict | None, name: str | None) -> str:
@@ -71,6 +76,8 @@ class HeldTracker:
         self._t = 0.0
         self._prev: dict[tuple[int, int], tuple[float, np.ndarray]] = {}
         self._hit = np.zeros(1, dtype=np.int32)
+        self._missed: dict[tuple[int, str], float] = {}   # held, not touched at the last update: since when
+        self.lost_now: float | None = None                 # when a hold lost at the last update was lost
 
     def track(self, by: str) -> None:
         """Watch `by` (a part, body or hook name) from the next update on."""
@@ -81,6 +88,7 @@ class HeldTracker:
 
     def update(self, t: float) -> None:
         """After a physics step at t (after Watch.update recorded its contacts)."""
+        self.lost_now: float | None = None
         if not self._geoms or self.balls is None:
             return
         balls, m = self.balls, self.model
@@ -92,16 +100,25 @@ class HeldTracker:
             for by, gs in self._geoms.items():
                 if g in gs:
                     touching[by].setdefault(i, set()).add(int(m.geom_bodyid[g]))
+        dt = float(m.opt.timestep)
         self._t = t
         seen = {(i, b) for now in touching.values() for i, bs in now.items() for b in bs}
-        self._prev = {k: v for k, v in self._local.items() if k in seen}
-        self._local = {k: (t, self._in_body(*k)) for k in seen}
-        dt = float(m.opt.timestep)
+        # each (piece, body)'s last sample, kept over one step without it, so a dropped contact step still has one
+        self._prev = self._local
+        self._local = {k: v for k, v in self._local.items() if t - v[0] <= 2.5 * dt}
+        self._local.update({k: (t, self._in_body(*k)) for k in seen})
+        below: dict[int, tuple[str, float]] = {}            # each piece's _below, once this update
         for by in self._geoms:
             now = touching[by]
             for i in set(now) | {i for i, b in self._acc if b == by}:
                 key = (i, by)
-                why = self._judge(i, now.get(i)) if balls.field[i] else "slipped out of"    # out of play
+                why = self._judge(i, now.get(i), below) if balls.field[i] else _OUT_OF_PLAY
+                if why is _NO_NEWS:                         # no body it touches has a sample from before
+                    continue
+                if why is _UNTOUCHED and key in self._held and key not in self._missed:
+                    self._missed[key] = t                   # one dropped contact step: the hold goes on
+                    continue
+                first = self._missed.pop(key, t)
                 if why is None:
                     self._acc[key] = self._acc.get(key, 0.0) + dt
                     if self._acc[key] >= HELD_S - 0.5 * dt:
@@ -111,18 +128,24 @@ class HeldTracker:
                 self._acc.pop(key, None)
                 if key in self._held:
                     self._held.discard(key)
-                    self._lost[key] = (t, why, kind_word(self.kinds, str(balls.kind[i])))
+                    how = "slipped out of" if why in (_UNTOUCHED, _OUT_OF_PLAY) else why
+                    self._lost[key] = (first, how, kind_word(self.kinds, str(balls.kind[i])))
+                    self.lost_now = first
 
-    def _judge(self, i: int, bodies: set[int] | None) -> str | None:
-        """None when piece i meets all three now; else how it fails, in the words `lost` gives."""
-        under, gap = self._below(i)
+    def _judge(self, i: int, bodies: set[int] | None, below: dict) -> str | None:
+        """None when piece i meets all three now; _UNTOUCHED when it touches none of the part; _NO_NEWS when no body
+        it touches has an earlier sample (it was just handed from one to another); else how it fails, in the words
+        `lost` gives."""
+        if i not in below:
+            below[i] = self._below(i)
+        under, gap = below[i]
         if gap < HELD_CLEAR:
             return f"was set down on {under}"
         if not bodies:
-            return "slipped out of"
+            return _UNTOUCHED
         rels = [v for v in (self._relative(i, b) for b in bodies) if v is not None]
         if not rels:
-            return "slid in"
+            return _NO_NEWS
         rel = min(rels, key=lambda v: float(v @ v))
         speed = float(np.linalg.norm(rel))
         if speed < HELD_SPEED:
@@ -135,7 +158,8 @@ class HeldTracker:
         return d.xmat[body].reshape(3, 3).T @ (d.xpos[self.balls.bodies[i]] - d.xpos[body])
 
     def _relative(self, i: int, body: int) -> np.ndarray | None:
-        """Piece i's center's velocity relative to `body`, in the world's axes; None the first update it touches."""
+        """Piece i's center's velocity relative to `body`, in the world's axes; None without an earlier sample (a
+        body it hasn't touched in the last two updates)."""
         prev = self._prev.get((i, body))
         if prev is None or self._t <= prev[0]:
             return None
