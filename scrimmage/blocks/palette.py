@@ -2,8 +2,9 @@
 
 The palette lists every name a block can pick, as the world names them: the robot's motors and joints (a hinge reads
 in degrees, a slide in inches, a drive wheel is a `wheel`), its bodies and parts, its hooks, the field's bars,
-elements, game pieces, other surfaces a touch can name (`targets`: the carpet, the walls) and climb levels, whether it
-can drive and how (`drive_kind`: a tank or swerve drive, as drive.py finds them) and the signals a chart can show.
+elements, rods and game pieces, other surfaces a touch can name (`targets`: the carpet, the walls) and climb levels,
+whether it can drive and how (`drive_kind`: a tank or swerve drive, as drive.py finds them) and the signals a chart
+can show.
 Every list is sorted by name except `levels`, which keeps the range's climb order (lowest first), so a picker reads the
 way the robot climbs. `pieces` are the field's game pieces (the floor balls), not the balls parked in the robot's
 slots.
@@ -116,6 +117,7 @@ def palette(world, hooks: list[str]) -> dict:
         "hooks": hook_list,
         "bars": bars,
         "elements": elements,
+        "rods": sorted(layout.rods) if layout is not None else [],     # the field's rods (a reef's branches)
         "pieces": pieces,
         "targets": _targets(world, bar_set | set(elements) | set(pieces)),
         "levels": list(rule.levels) if rule is not None else [],      # lowest first, as the range lists them

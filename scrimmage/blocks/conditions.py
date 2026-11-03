@@ -96,6 +96,9 @@ class Watch:
         self.held = HeldTracker(world, self)                # the pieces held, by each part a held condition names
         for by in _held_by(program.blocks):
             self.held.track(by)
+        for by in self._hopper:                             # and by each hopper body: a piece one holds is in
+            self.held.track(by, hopper=True)
+        self.inside = self.hopper_mask()                    # hopper_mask at the last update (feeds.py reads it)
         self._read_tilt()
 
     # ---- every physics step -----------------------------------------------------------------------------------------
@@ -135,7 +138,8 @@ class Watch:
                     self.hung.append(name)
             else:
                 self.hanging.discard(name)
-        self.held.update(float(d.time))
+        self.inside = self.hopper_mask()
+        self.held.update(float(d.time), self.inside if self._hopper else None)
 
     def _read_tilt(self) -> None:
         zz = float(self.data.xmat[self.body][8])        # the body's z axis, its world z component

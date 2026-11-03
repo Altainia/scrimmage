@@ -33,7 +33,7 @@ from pathlib import Path
 import tomlkit
 
 from ..blocks import store
-from ..blocks.palette import palette, problems
+from ..blocks.palette import ANY_PIECE, palette, problems
 from ..blocks.program import Block, Cond, TestFileError, block_json, dumps, from_json, load, to_json
 from ..blocks.run import TestRun, world_for
 from ..blocks.spread import NO_BALL, NO_SPREAD, inside_robot, run_spread
@@ -61,6 +61,9 @@ STARTER_HOPPER_COUNT = 5        # ... on a field with a station: feed until this
 STARTER_FEED_TIMEOUT = 20.0     # s: ... giving up after this long
 STANDIN_RANGE = {"file": "ladder", "start": "below"}   # the stand-in for a part with a hook: in front of the ladder
 STANDIN_STATION = {"file": "station", "start": "at_station"}   # ... with a hopper-like body: at the station's chute
+STANDIN_REEF = {"file": "reef", "start": "facing_coral"}       # ... with a grabber-like body: facing the floor coral
+GRABBER_HOLD_TIMEOUT = 10.0     # s: a grabber's starter waits this long for a piece to be held
+GRABBER_WAIT_S = 2.0            # ... then holds it this long, expected held throughout
 PLAIN_FIELD = "The plain field"
 
 
@@ -95,12 +98,26 @@ def station_starter(pal: dict | None) -> list[Block]:
             Block("stop_feeding", {"station": first})]
 
 
+def grabber_starter(pal: dict | None) -> list[Block]:
+    """The starter blocks for a robot with a grabber on a field with rods (the reef): wait until any piece is held by
+    its first body named like a grabber's (giving up after 10 s), then expect it held throughout a 2 s wait. Empty
+    without rods or without such a body."""
+    pal = pal or {}
+    grabbers = [b for b in pal.get("bodies") or [] if _grabby(b.rsplit(".", 1)[-1])]
+    if not pal.get("rods") or not grabbers:
+        return []
+    held = Cond("held", {"piece": ANY_PIECE, "by": grabbers[0]})
+    return [Block("wait_until", {"until": held, "timeout": GRABBER_HOLD_TIMEOUT}),
+            Block("expect", {"that": copy.deepcopy(held), "throughout": True}),
+            Block("wait", {"seconds": GRABBER_WAIT_S})]
+
+
 def starter_blocks(pal: dict | None) -> list[Block]:
-    """A new test's blocks for a robot with this palette: on a field with a station, the station starter; else drive
-    0.3 m first when it can drive and the field has bars; then a robot whose only mechanism motor is a hinge moves it
-    to 45 degrees, else the first mechanism motor spins at 6 V for 2 s and everything stops; a robot with nothing to
-    move waits 1 s."""
-    feed = station_starter(pal)
+    """A new test's blocks for a robot with this palette: with a grabber on a field with rods, the grabber starter; on
+    a field with a station, the station starter; else drive 0.3 m first when it can drive and the field has bars;
+    then a robot whose only mechanism motor is a hinge moves it to 45 degrees, else the first mechanism motor spins at
+    6 V for 2 s and everything stops; a robot with nothing to move waits 1 s."""
+    feed = grabber_starter(pal) or station_starter(pal)
     if feed:
         return feed
     out = []
@@ -127,18 +144,24 @@ def starter_hooks(pal: dict | None) -> list[str]:
     return [b for b in pal.get("bodies") or [] if _hooky(b) and b not in counted]
 
 
-HOPPER_WORDS = ("hopper", "intake", "indexer")
+GRABBER_WORDS = ("claw", "grabber", "gripper", "jaw")
+HOPPER_WORDS = ("hopper", "intake", "indexer", *GRABBER_WORDS)     # where a piece should end up: held counts
 
 
 def _hoppery(name: str) -> bool:
     return any(w in name.lower() for w in HOPPER_WORDS)
 
 
+def _grabby(name: str) -> bool:
+    return any(w in name.lower() for w in GRABBER_WORDS)
+
+
 def pick_hopper(bodies: list[str], roots: dict[str, str]) -> list[str]:
     """The hopper bodies among `bodies` ("<part>.<body>" names): those whose own name (after the last dot) contains
-    "hopper", "intake" or "indexer"; when none does, the root body of each part whose name contains one (`roots`:
-    part -> its root body's "<part>.<body>" name), never its other bodies: an intake's roller counted as "in" would
-    make the catch rate look better than it is."""
+    one of HOPPER_WORDS ("hopper", "intake", "indexer", or a grabber's "claw", "grabber", "gripper", "jaw"); when
+    none does, the root body of each part whose name contains one (`roots`: part -> its root body's "<part>.<body>"
+    name), never its other bodies: an intake's roller counted as "in" would make the catch rate look better than it
+    is."""
     own = [b for b in bodies if _hoppery(b.rsplit(".", 1)[-1])]
     return own or [r for part, r in roots.items() if _hoppery(part)]
 
@@ -260,13 +283,19 @@ def standin_config(parts: list[tuple[str, dict]], root_body: str, motor_slots: d
     """The stand-in robot (templates' "standin") carrying the part folders `parts` [(path, cad_marker)] of one CAD
     import where the CAD has them, their motor slots on free IDs (see _place). With a body named like a hook, the robot
     starts in front of the ladder range; else with a hopper body (pick_hopper; `roots`: part name -> its root body's
-    name, or None), at the station range's chute (the Test tab's Setup changes the field)."""
+    name, or None) named like a grabber's (in its own name or its part's), facing the reef field's floor coral; else
+    with any other hopper body, at the station range's chute (the Test tab's Setup changes the field)."""
     doc = tomlkit.parse(new_config("standin"))
     _place(doc, parts, root_body, motor_slots)
     bodies = [f"{m['part']}.{b}" for _, m in parts for b in m["origins"]]
     named = {m["part"] for _, m in parts}
-    field = STANDIN_RANGE if any(_hooky(b) for b in bodies) else STANDIN_STATION if pick_hopper(
-        bodies, {p: f"{p}.{r}" for p, r in (roots or {}).items() if p in named and r}) else None
+    hopper = pick_hopper(bodies, {p: f"{p}.{r}" for p, r in (roots or {}).items() if p in named and r})
+    if any(_hooky(b) for b in bodies):
+        field = STANDIN_RANGE
+    elif any(_grabby(b) for b in hopper):      # a grabber's body, or the root of a part named like one
+        field = STANDIN_REEF
+    else:
+        field = STANDIN_STATION if hopper else None
     if field is not None:
         rng = tomlkit.table()
         rng.update(field)

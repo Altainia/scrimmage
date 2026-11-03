@@ -436,13 +436,15 @@ Test (`/api/test/*`; 404 "no test is open" unless a test is open, except /api/te
   POST /api/test/new               -> body {robot?, from_part?} (default: the open robot): writes <robot
         stem>.test.toml next to it (<stem>-2.test.toml ... when taken) and opens it as /api/app/open does. Its
         blocks are the starter blocks
-        (test_session.starter_blocks: on a field with a station, its station_starter; else drive 0.3 m when the robot
+        (test_session.starter_blocks: with a grabber on a field with rods, wait up to 10 s for a held piece and
+        expect it held through 2 s; on a field with a station, its station_starter; else drive 0.3 m when the robot
         is a tank drive and the field has bars, then a lone hinge motor moved to 45 deg, or the first motor spun at 6 V
         for 2 s and all stopped; else wait 1 s), its hooks the robot's bodies named like a hook and its hopper those
-        named like a hopper ("hopper", "intake" or "indexer"). With from_part: true and a part from a CAD import open
-        ("Test it" in the Part tab): makes <import name>-standin.toml (the standin template carrying the built parts
-        where the CAD has them, in front of the ladder range when a body is named like a hook, else at the station
-        range's chute when one is named like a hopper) and <import name>.test.toml next
+        named like a hopper ("hopper", "intake", "indexer", or a grabber's "claw", "grabber", "gripper", "jaw"). With
+        from_part: true and a part from a CAD import open ("Test it" in the Part tab): makes <import
+        name>-standin.toml (the standin template carrying the built parts where the CAD has them, in front of the
+        ladder range when a body is named like a hook, else facing the reef's floor coral when one is named like a
+        grabber, else at the station range's chute when one is named like a hopper) and <import name>.test.toml next
         to the import's parts/ folder, once each, and opens the test. Pressed again it opens the same test and adds
         the import's built parts the stand-in doesn't have yet, where the CAD has them (it never removes one);
         {ok, added: [their names]}. 409 while the parts are updating, didn't build or the part is read-only, 400

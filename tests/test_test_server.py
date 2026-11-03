@@ -651,6 +651,7 @@ def test_setup_field_choice_moves_a_robot_with_its_own_start_pose_to_the_fields_
 # ---- every field, station starters, floor spreads ------------------------------------------------------------------
 
 STATION = Path(__file__).resolve().parents[1] / "examples" / "blocks" / "station"
+REEF = STATION.parent / "reef"
 ON_STATION = """
 [range]
 file = "station"
@@ -834,3 +835,64 @@ def test_a_spread_that_puts_the_ball_inside_the_robot_is_refused(tmp_path, test_
     from scrimmage.config import build_world, load_config
     world = build_world(load_config(tmp_path / "robot.toml"))
     assert inside_robot(world, {"distance_in": [float(ball["nearest_in"])], "offset_in": [-6.0, 6.0]}) is None
+
+
+def test_grabber_words_preselect():
+    """A body named like a grabber's ("claw", "grabber", "gripper", "jaw") is where a piece should end up too."""
+    from scrimmage.assembler.test_session import GRABBER_WORDS, HOPPER_WORDS, pick_hopper
+    assert GRABBER_WORDS == ("claw", "grabber", "gripper", "jaw")
+    assert HOPPER_WORDS == ("hopper", "intake", "indexer", "claw", "grabber", "gripper", "jaw")
+    assert pick_hopper(["claw.jaw_left", "claw.arm"], {}) == ["claw.jaw_left"]
+    assert pick_hopper(["grabber.mast", "grabber.arm", "grabber.jaw_left", "grabber.jaw_right"], {}) == [
+        "grabber.jaw_left", "grabber.jaw_right"]
+    assert pick_hopper(["Gripper.base", "x.Gripper_pad"], {}) == ["x.Gripper_pad"]
+    assert pick_hopper(["claw.base", "claw.arm"], {"claw": "claw.base"}) == ["claw.base"]   # a part named like one
+
+
+def test_test_it_puts_a_claw_on_the_reef_field():
+    """A part with a grabber-like body starts facing the reef's floor coral; a hook still wins, and a hopper-like body
+    with no grabber body still goes to the station."""
+    import tomllib
+
+    from scrimmage.assembler.test_session import STANDIN_REEF, standin_config
+    assert STANDIN_REEF == {"file": "reef", "start": "facing_coral"}
+    claw = {"import_id": "x", "part": "claw", "origins": {"arm": [0.0, 0.0, 0.0], "jaw": [0.1, 0.0, 0.2]},
+            "attach": None}
+    assert tomllib.loads(standin_config([("parts/claw", claw)], "chassis"))["range"] == STANDIN_REEF
+    both = {"import_id": "x", "part": "front", "origins": {"intake": [0.0, 0.0, 0.0], "jaw": [0.1, 0.0, 0.2]},
+            "attach": None}
+    assert tomllib.loads(standin_config([("parts/front", both)], "chassis"))["range"]["file"] == "reef"
+    hook = {"import_id": "x", "part": "hook", "origins": {"hook_body": [0.1, 0.0, 0.9]}, "attach": "claw.arm"}
+    raw = tomllib.loads(standin_config([("parts/claw", claw), ("parts/hook", hook)], "chassis"))
+    assert raw["range"] == {"file": "ladder", "start": "below"}
+    indexer = {"import_id": "x", "part": "front", "origins": {"Indexer_belt": [0.0, 0.0, 0.0]}, "attach": None}
+    assert tomllib.loads(standin_config([("parts/front", indexer)], "chassis"))["range"]["file"] == "station"
+
+
+def test_a_grabber_on_a_field_with_rods_starts_by_waiting_for_a_hold():
+    """On a field with rods (the reef, which has a station too), a robot with a body named like a grabber's starts
+    waiting up to 10 s for any piece held by its first grabber body, expects it held throughout, and waits 2 s;
+    without rods, or without a grabber body, the starters are as before."""
+    from scrimmage.assembler.test_session import grabber_starter, starter_blocks, station_starter
+    from scrimmage.blocks.program import block_json
+    pal = {"bodies": ["drive.chassis", "grabber.arm", "grabber.jaw_left", "grabber.jaw_right"],
+           "rods": ["branch_l2", "branch_l3", "branch_l4"], "stations": ["coral_station"],
+           "motors": [{"name": "grabber.arm", "kind": "hinge"}]}
+    held = {"held": {"piece": "any", "by": "grabber.jaw_left"}}
+    want = [{"do": "wait_until", "until": held, "timeout": 10.0},
+            {"do": "expect", "that": held, "throughout": True},
+            {"do": "wait", "seconds": 2.0}]
+    assert [block_json(b) for b in grabber_starter(pal)] == want
+    assert [block_json(b) for b in starter_blocks(pal)] == want
+    no_rods = {**pal, "rods": []}
+    assert grabber_starter(no_rods) == [] and starter_blocks(no_rods) == station_starter(no_rods)
+    no_grabber = {**pal, "bodies": ["drive.chassis", "lift.arm"]}
+    assert grabber_starter(no_grabber) == [] and starter_blocks(no_grabber) == station_starter(no_grabber)
+
+
+def test_the_reef_palette_lists_its_rods():
+    from scrimmage.blocks.palette import palette
+    from scrimmage.config import build_world, load_config
+    pal = palette(build_world(load_config(REEF / "grabber-standin.toml")), [])
+    assert pal["rods"] == ["branch_l2", "branch_l3", "branch_l4"]
+    assert "grabber.jaw_left" in pal["bodies"]

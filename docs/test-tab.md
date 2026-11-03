@@ -105,13 +105,14 @@ Two conditions go with them. **\<station\> is empty** is true when the station h
 (or at most) n pieces in the hopper** counts the balls inside the hopper right now.
 
 **The hopper.** The test needs to know where a ball counts as "in". In Setup, **Hopper**, tick the bodies a ball lands
-in. A ball is in when its center is inside one of those bodies' boxes. A new test ticks the bodies named hopper,
-intake or indexer for you. If you use **in the hopper** or **made it in** with nothing ticked, the problem says "pick
+in. A ball is in when its center is inside one of those bodies' boxes, or when one of them holds it as the run ends
+(a grabber's jaws count too). A new test ticks the bodies named hopper, intake, indexer, claw, grabber, gripper or
+jaw for you. If you use **in the hopper** or **made it in** with nothing ticked, the problem says "pick
 the hopper in Setup".
 
 **What happens to each ball.** Every ball the station feeds ends in one of three ways:
 
-- **in**: its center is inside a hopper body.
+- **in**: its center is inside a hopper body, or a hopper body holds it.
 - **stuck**: it is resting on a part of your robot outside the hopper, not moving for half a second. It is called out
   on its own because games limit how many pieces a robot controls, and a stuck piece counts toward that limit. On a
   stand-in robot, the stand-in's own frame and drive don't count (a ball resting on the kitbot's chassis is a miss,

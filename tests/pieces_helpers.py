@@ -5,12 +5,14 @@ the coral up (import it into a test module to use it)."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
 from scrimmage.blocks.program import load
 from scrimmage.blocks.run import TestRun, world_for
+from scrimmage.blocks.spread import placements, spread_ball
 
 EXAMPLE = Path(__file__).resolve().parent.parent / "examples" / "blocks" / "intake"
 CORAL_X = 0.15          # m: the coral's center forward of the bumper's face, between the jaws
@@ -142,9 +144,9 @@ def blocks(jaw_volts: float = 4.0, throughout: bool = True, after: str = "") -> 
             + (EXPECT_HELD if throughout else "") + move_arm(-80) + wait(0.5) + after)
 
 
-def grab_test(folder: Path, text: str | None = None) -> Path:
+def grab_test(folder: Path, text: str | None = None, hopper: list[str] | None = None) -> Path:
     """The stand-in with the grabber on the grab range in `folder`, and a test file playing `text` (TOML blocks;
-    default `blocks()`); the test file's path."""
+    default `blocks()`) with `hopper` (where a piece should end up; None: none named); the test file's path."""
     folder.mkdir(parents=True, exist_ok=True)
     part = folder / "parts" / "grabber"
     part.mkdir(parents=True, exist_ok=True)
@@ -156,16 +158,22 @@ def grab_test(folder: Path, text: str | None = None) -> Path:
     robot = robot.replace('file = "intake"\nstart = "facing_ball"', 'file = "grab.toml"\nstart = "facing_coral"')
     (folder / "grab-standin.toml").write_text(robot, encoding="utf-8")
     path = folder / "grab.test.toml"
-    path.write_text('[test]\nrobot = "grab-standin.toml"\nchart = ["grabber.arm"]\n' + (blocks() if text is None
-                                                                                         else text), encoding="utf-8")
+    head = '[test]\nrobot = "grab-standin.toml"\nchart = ["grabber.arm"]\n'
+    if hopper is not None:
+        head += f"hopper = {json.dumps(hopper)}\n"
+    path.write_text(head + (blocks() if text is None else text), encoding="utf-8")
     return path
 
 
-def run_grab(folder: Path, text: str | None = None):
-    """grab_test's run: (program, world, result)."""
-    program = load(grab_test(folder, text))
+def run_grab(folder: Path, text: str | None = None, hopper: list[str] | None = None, floor: bool = False):
+    """grab_test's run: (program, world, result). With `floor`, the coral is tracked as a floor spread's piece is
+    (it stays where the range puts it), so the run's feeds give its outcome."""
+    program = load(grab_test(folder, text, hopper))
     world = world_for(program)
-    return program, world, TestRun(world, program).run()
+    placement = None
+    if floor:
+        placement = placements({}, spread_ball(world)[1])[0]
+    return program, world, TestRun(world, program, placement=placement).run()
 
 
 @pytest.fixture(scope="module")

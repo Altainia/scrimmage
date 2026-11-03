@@ -61,8 +61,8 @@ def test_held_needs_a_tenth_of_a_second(tmp_path, monkeypatch):
     seen = []
     update = grip_watch.HeldTracker.update
 
-    def record(self, t):
-        update(self, t)
+    def record(self, t, *rest):
+        update(self, t, *rest)
         key = (0, "grabber")
         seen.append((t, key in self._acc, self.held(None, "grabber")))
 

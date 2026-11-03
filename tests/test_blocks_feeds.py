@@ -5,9 +5,11 @@ from __future__ import annotations
 import threading
 
 import pytest
+from pieces_helpers import run_grab
 
 from scrimmage.assembler.templates import new_config
 from scrimmage.blocks import run as blocks_run
+from scrimmage.blocks.conditions import Watch
 from scrimmage.blocks.feeds import is_standin, sentence
 from scrimmage.blocks.program import loads
 from scrimmage.blocks.run import TestRun, world_for
@@ -360,7 +362,7 @@ def _tiny():
                             ball_of_geom=lambda g: of_geom[g], position=lambda i: d.qpos[q:q + 3],
                             velocity=lambda i: v, clearance=lambda i: float(d.qpos[q + 2]) - 0.05)
     world = SimpleNamespace(model=m, data=d, robot_body=m.body("robot").id, test_range=SimpleNamespace(balls=balls))
-    out = Outcomes(world, SimpleNamespace(hopper_mask=lambda: np.zeros(1, bool)), standin=False)
+    out = Outcomes(world, SimpleNamespace(inside=np.zeros(1, bool), _hopper=[]), standin=False)
     out.track(0, "feeder", 0.0)
 
     def put(x, z):
@@ -392,3 +394,30 @@ def test_a_piece_at_rest_that_slides_off_the_robot_onto_the_floor_isnt_stuck():
         out.update(t := t + dt)
     row = out.final()[0]
     assert row["outcome"] == "missed" and row["why"] == "on the floor", row
+
+
+# ---- a held piece made it in (tests/pieces_helpers.py's grabber, its coral tracked as a floor piece) ----------------
+
+@pytest.fixture(scope="module")
+def held_grab(tmp_path_factory):
+    """The grabber swinging the coral up, its jaws where a piece should end up: (program, world, result)."""
+    return run_grab(tmp_path_factory.mktemp("held"), hopper=["grabber.jaw_b", "grabber.jaw_f"], floor=True)
+
+
+def test_a_held_floor_piece_counts_as_picked_up(held_grab):
+    """Its center is between the jaws, outside both jaws' boxes: it is in because a jaw holds it, from when the hold
+    began (after the jaws closed, before the run ended)."""
+    program, world, result = held_grab
+    assert result.status == "finished" and result.checks[-1]["passed"], result.outcome
+    (row,) = result.feeds
+    assert row["source"] == "floor" and row["outcome"] == "in" and row["why"] == ""
+    assert not Watch(world, program).hopper_mask()[row["ball"]]     # not in a box: held
+    assert 1.0 < row["t_outcome"] < result.t_end
+
+
+def test_a_held_piece_by_a_body_not_in_the_list_is_missed(tmp_path):
+    """Held by the jaws, but only the grabber's base is where a piece should end up: it didn't make it in. At rest on
+    the student's part, it is stuck in the robot, as before."""
+    _, _, result = run_grab(tmp_path, hopper=["grabber.base"], floor=True)
+    (row,) = result.feeds
+    assert row["outcome"] == "stuck" and row["body"] in ("grabber.jaw_b", "grabber.jaw_f")   # held, rules unchanged

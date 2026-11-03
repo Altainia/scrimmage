@@ -15,7 +15,8 @@ A held piece may miss its contact for one step (a contact MuJoCo drops for a ste
 in a row, at the first.
 
 The tracker follows every piece in play that touches a part a condition names, so `any` (None) costs no more than a
-named piece. When a held piece stops being held it keeps when, how and what kind it was (`lost`):
+named piece; and every hopper body, which counts a piece it holds as in (feeds.py), skipping the pieces in a hopper
+box. When a held piece stops being held it keeps when, how and what kind it was (`lost`):
 - "was set down on <name>": its lowest point came within HELD_CLEAR of something that isn't the robot (named by the
   ray that found it: a field element, a piece, the carpet);
 - "slipped out of": it stopped touching the part, or it moves relative to it mostly downward (falling out of the
@@ -70,6 +71,7 @@ class HeldTracker:
         self._robot = self.model.body_rootid == watch._robot_root   # body id -> part of the robot
         self._acc: dict[tuple[int, str], float] = {}    # (piece, by) -> s all three have held, while they do
         self._held: set[tuple[int, str]] = set()
+        self._since: dict[tuple[int, str], float] = {}  # (piece, by) held now -> when that hold began
         self._ever: set[tuple[int, str]] = set()
         self._lost: dict[tuple[int, str], tuple[float, str, str]] = {}
         self._local: dict[tuple[int, int], tuple[float, np.ndarray]] = {}   # (piece, body) -> (t, center in body)
@@ -78,16 +80,25 @@ class HeldTracker:
         self._hit = np.zeros(1, dtype=np.int32)
         self._missed: dict[tuple[int, str], float] = {}   # held, not touched at the last update: since when
         self.lost_now: float | None = None                 # when a hold lost at the last update was lost
+        self._boxed: set[str] = set()       # tracked only as a hopper body: pieces inside a hopper box are skipped
 
-    def track(self, by: str) -> None:
-        """Watch `by` (a part, body or hook name) from the next update on."""
+    def track(self, by: str, hopper: bool = False) -> None:
+        """Watch `by` (a part, body or hook name) from the next update on. `hopper`: only because it is a hopper body
+        (feeds.py's Outcomes asks whether one holds a piece). A piece inside a hopper body's box is in already, so
+        such a name skips it (a bin full of balls would cost rays for every one, every step): a piece that leaves the
+        box while touching it is held HELD_S later. A held condition naming it watches every piece."""
         if by not in self._geoms:
             self._geoms[by] = set(self.watch._robot_side(by))
+            if hopper:
+                self._boxed.add(by)
+        elif not hopper:
+            self._boxed.discard(by)
 
     # ---- every physics step -----------------------------------------------------------------------------------------
 
-    def update(self, t: float) -> None:
-        """After a physics step at t (after Watch.update recorded its contacts)."""
+    def update(self, t: float, boxed=None) -> None:
+        """After a physics step at t (after Watch.update recorded its contacts). `boxed`: (balls,) True for each piece
+        inside a hopper body's box now (Watch.hopper_mask), or None."""
         self.lost_now: float | None = None
         if not self._geoms or self.balls is None:
             return
@@ -110,8 +121,15 @@ class HeldTracker:
         below: dict[int, tuple[str, float]] = {}            # each piece's _below, once this update
         for by in self._geoms:
             now = touching[by]
+            skip = boxed is not None and by in self._boxed
             for i in set(now) | {i for i, b in self._acc if b == by}:
                 key = (i, by)
+                if skip and boxed[i]:                       # in the box: no hold to follow, and none lost
+                    self._acc.pop(key, None)
+                    self._held.discard(key)
+                    self._since.pop(key, None)
+                    self._missed.pop(key, None)
+                    continue
                 why = self._judge(i, now.get(i), below) if balls.field[i] else _OUT_OF_PLAY
                 if why is _NO_NEWS:                         # no body it touches has a sample from before
                     continue
@@ -121,13 +139,15 @@ class HeldTracker:
                 first = self._missed.pop(key, t)
                 if why is None:
                     self._acc[key] = self._acc.get(key, 0.0) + dt
-                    if self._acc[key] >= HELD_S - 0.5 * dt:
+                    if self._acc[key] >= HELD_S - 0.5 * dt and key not in self._held:
                         self._held.add(key)
+                        self._since[key] = t
                         self._ever.add(key)
                     continue
                 self._acc.pop(key, None)
                 if key in self._held:
                     self._held.discard(key)
+                    self._since.pop(key, None)
                     how = "slipped out of" if why in (_UNTOUCHED, _OUT_OF_PLAY) else why
                     self._lost[key] = (first, how, kind_word(self.kinds, str(balls.kind[i])))
                     self.lost_now = first
@@ -233,3 +253,7 @@ class HeldTracker:
     def holders(self, piece: int) -> set[str]:
         """The tracked parts and bodies holding `piece` now."""
         return {by for i, by in self._held if i == piece}
+
+    def since(self, piece: int, by: str) -> float:
+        """When `by`'s hold on `piece` began (it has held it for HELD_S by then); nan when it doesn't hold it now."""
+        return self._since.get((piece, by), math.nan)
