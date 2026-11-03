@@ -58,6 +58,11 @@ TUBE_SLICES = 24  # a hollow tube or ring is this many convex slices around its 
 ROUND_SIDES = 32  # a solid round (cylinder, solid tube, cone, disc) is this regular polygon's prism or frustum
 FLOOR_DROP = 0.005  # m: a rigid piece is set down this far above its resting height, so it settles
 MAX_EXTENT = 3.0  # m: a piece bigger than this is refused as a units mistake
+
+
+def _meters(m: float) -> str:
+    """A units mistake's size in plain digits: "301", "1234" (whole meters above 100), "3.5"; never "1.23e+03"."""
+    return f"{m:.0f}" if m > 100 else f"{m:.3g}"
 SHAPES = ("sphere", "box", "cylinder", "tube", "ring", "cone", "compound", "cad")
 FORMS = ("ball", "disc", "rigid")
 PRESETS_PATH = Path(launcher_inputs.__file__).with_name("presets.toml")
@@ -414,7 +419,7 @@ def _finish(r: _Reader, name: str, shape: str, solids: list[Solid], mass: float,
     sides = hi - lo
     extent = float(sides.max())
     if extent > MAX_EXTENT:
-        raise r.err(f"the piece is {extent:.3g} m across; check units (m, mm or in)")
+        raise r.err(f"the piece is {_meters(extent)} m across; check units (m, mm or in)")
     moved = tuple(s.moved(np.eye(3), -com) for s in solids)
     i = int(np.argmax(axis))
     hole = None
@@ -554,7 +559,7 @@ def _cad(r: _Reader, base_dir: Path) -> tuple[list[Solid], Inertial]:
     lo = np.min([p.v.min(axis=0) for p in src.pieces], axis=0)
     hi = np.max([p.v.max(axis=0) for p in src.pieces], axis=0)
     if float((hi - lo).max()) > MAX_EXTENT:  # before the split, which a units mistake would make slow
-        raise r.err(f"the piece is {float((hi - lo).max()):.3g} m across; check units (m, mm or in)")
+        raise r.err(f"the piece is {_meters(float((hi - lo).max()))} m across; check units (m, mm or in)")
     solids = []
     for p in src.pieces:
         try:

@@ -586,7 +586,7 @@ default kind (a goal's, the first ball or disc kind).
 turn. Tipped up 80 degrees or more: "standing on end" (for a flat kind, "lying flat"). Tipped up 10 or less: "lying
 in line" at a turn of 0, "lying across" at 90 (either way), "lying in line, turned around" at 180, "lying at 45°"
 between; a flat kind at tip 0 is "standing on edge". In between: "leaning 40°, lying across". When a spread would give
-two placements the same words, the words add what differs ("lying flat, turned 45°").
+two placements the same words, the words add what differs ("lying flat (turned 45°)").
 
 ### Rods
 

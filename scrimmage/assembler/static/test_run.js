@@ -5,9 +5,10 @@
 //   Outcome   "Run 3 · timed out", the outcome sentence in full, a note when a setting the tab has no box for (a
 //             timeout, a repeat's max) ended it, and each check's line; for a run that fed pieces (result.json's
 //             feeds and counts), "Fed pieces: 17 in · 1 stuck · 2 missed" ("17 in · 2 placed · …" when pieces
-//             were placed on the field) and a "Show the stuck piece" button for each stuck one; for a run with a
-//             piece on a rod at the end, its depth in words ("seated 3.5 in of 4.0 in on branch_l2"); and the
-//             run's notes (what its numbers rest on: an UNCALIBRATED grip) as a list
+//             were placed on the field; no "0 in" when the test names no hopper) and a "Show the stuck piece"
+//             button for each stuck one; for a run with a piece on a rod at the end, its depth in words ("seated
+//             3.5 in of 4.0 in on branch_l2"); and the run's notes (what its numbers rest on: an UNCALIBRATED
+//             grip) as a list
 //   Replay    live3d.js's LiveView draws the view; motion.bin's frames move it. Play / Pause, speed (¼× to 2×), a
 //             scrubber with the time, and under it a mark per fed piece at its feed time, its shape and color its
 //             outcome (in: filled; placed on the field: a square; stuck: a diamond, the warning color; missed:
@@ -313,8 +314,10 @@ function renderFeeds() {
   const summary = $("#test-feeds-summary");
   const shown = !!c && c.fed > 0;      // a station field's run that fed nothing has nothing to sum up
   summary.hidden = !shown;
-  const placed = c && c.placed ? ` · ${c.placed} placed` : "";
-  summary.replaceChildren(...(shown ? [h("span", { text: `Fed pieces: ${c.in} in${placed} · ${c.stuck} stuck · ${c.missed} missed` }),
+  // with no hopper named (feeds.py's sentence) a test can't count a piece in, so "0 in" is left out
+  const words = c ? [...(c.in || r.hopper !== false ? [`${c.in} in`] : []), ...(c.placed ? [`${c.placed} placed`] : []),
+    `${c.stuck} stuck`, `${c.missed} missed`] : [];
+  summary.replaceChildren(...(shown ? [h("span", { text: `Fed pieces: ${words.join(" · ")}` }),
     ...feeds.filter((f) => f.outcome === "stuck").map((f) => h("button", { type: "button", class: "btn btn-small test-stuck-show",
       "data-ball": String(f.ball), onclick: () => jumpTo(f), text: `Show the stuck piece (at ${feedWhen(f).toFixed(1)} s)` }))] : []));
   const marks = $("#test-feed-marks");

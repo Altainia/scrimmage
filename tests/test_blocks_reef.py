@@ -183,7 +183,7 @@ def test_the_grabber_places_a_coral_on_l2(placed_run):
     _, world, r = placed_run
     assert r.status == "finished" and r.checks and all(c["passed"] for c in r.checks), r.outcome
     held, seated, rests = r.checks
-    assert held["throughout"] and "until it was placed on branch_l2" in held["line"], held["line"]
+    assert held["throughout"] and "until it was set down on branch_l2" in held["line"], held["line"]
     assert seated["text"] == "a coral is seated at least 3 in on branch_l2"
     assert rests["text"] == "a coral rests on branch_l2"
     assert r.signals["seated.branch_l2"][-1] >= 3

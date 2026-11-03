@@ -26,8 +26,9 @@ A test is a file that ends in `.test.toml`. Three ways to get one:
 - **An existing test.** `scrimmage edit examples/blocks/ladder_climber/climb.test.toml`.
 
 **A part with a grabber** (a body named claw, grabber, gripper or jaw, and no hook) is put on the **reef** field. Its
-starter closes the grab (each jaw or claw motor at 4 V), waits a second, lifts if there is an arm, waits until a coral
-is held by the grabber, then expects it held throughout and waits 2 s. If your jaws close with negative volts, flip the sign.
+starter closes each motor that closes the jaws (a joint named jaw, claw, grip or finger) at 4 V, waits a second, lifts
+if there is an arm, waits until a coral is held by the grabber, then expects it held throughout and waits 2 s. If your
+jaws close with negative volts, flip the sign.
 
 A new test starts with blocks that do something on its robot, so you can press **Run** right away: it drives 0.3 m
 first when the robot can drive and the field has bars, then spins the first mechanism motor (or moves a lone hinge to
@@ -194,7 +195,7 @@ For a piece that isn't a ball, such as a coral, **Tipped up** is the fifth axis 
 `tip_deg = [0, 45, 90]` tries it lying, leaning and standing on end. Its turn is then measured from the robot's
 heading, and an axis you leave out keeps how the field has the piece lying. The results name how it lay in plain
 words: "picked up 2 of 3; missed standing on end". Two placements that would read the same get what differs added
-("lying flat, turned 45°"). A standing piece looks the same turned any way, so a spread over the turn of a piece
+("lying flat (turned 45°)"). A standing piece looks the same turned any way, so a spread over the turn of a piece
 standing on end would give identical rows; try it on its own.
 
 **Misses near a mechanism's edge can be noise.** A ball just at the edge of what a mechanism catches can bounce out at
@@ -257,13 +258,14 @@ and how:
 - `the coral was set down on branch_l2 at 4.4 s while nothing was moving` (it came to rest on a thing of the field)
 
 What was moving is the last joint a **spin** or **move** block started or was still turning, or a **drive** or **turn**
-under way, within the second before; "nothing was moving" says no block was. If the piece was never held by that part:
-"the coral was never held by claw". In the replay, a cross under the time slider marks the slip; point at it for the
-words, or click it to jump there with the piece outlined.
+under way, within the second before: the joints first, then the robot ("claw.arm and claw.jaw were moving and the
+robot was driving"); "nothing was moving" says no block was. If the piece was never held by that part: "the coral was
+never held by claw at 3.0 s" (when the check failed). In the replay, a cross under the time slider marks the slip;
+point at it for the words, or click it to jump there with the piece outlined.
 
 **Placing ends the hold, and that is passing.** A held-throughout check is passed (and ends) when the piece is set down
 on a rod or element that a seated or rests-on check in the same test names: the test passes with "held by grabber from
-1.4 s until it was placed on branch_l2 at 4.4 s". Setting it down anywhere else, or dropping it, still fails.
+1.4 s until it was set down on branch_l2 at 4.4 s". Setting it down anywhere else, or dropping it, still fails.
 
 ## Placing a piece
 
@@ -505,7 +507,7 @@ Four worked examples are in `examples/blocks/`. Each has a README with the story
 - **`examples/blocks/reef`**, a grabber on a stand-in robot, on the `reef` field. It picks a coral up off the carpet,
   swings it over the top and drives it onto the L2 branch. It checks the coral is held throughout and seated at least
   3 in on `branch_l2`. A held check that runs throughout ends, passed, when the piece is set down on a rod or element
-  that the test's own seated or rests-on checks name: "held by grabber from 1.4 s until it was placed on branch_l2 at
+  that the test's own seated or rests-on checks name: "held by grabber from 1.4 s until it was set down on branch_l2 at
   4.4 s". Any other way of losing the piece still fails it. The README has a grip-material sweep. Its
   `spread.test.toml` turns the coral to six angles and picks up three: past about 15° the coral is wider than the open
   jaws.

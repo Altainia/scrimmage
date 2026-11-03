@@ -49,7 +49,8 @@ def test_too_little_squeeze_slips_and_says_when_and_what_was_moving(tmp_path):
     assert r.status == "check failed", r.outcome
     # the arm (the last block started) first; then whatever else was moving then (the jaws give a little)
     assert re.match(r"a check failed \(block 9\): the coral slipped out of grabber at \d+\.\d s while "
-                    r"grabber\.arm was moving", r.outcome), r.outcome
+                    r"grabber\.arm( was| and grabber\.jaw_[bf]( and grabber\.jaw_[bf])? were) moving$", r.outcome), \
+        r.outcome
     (mark,) = r.marks
     assert mark["kind"] == "slip" and mark["t"] == pytest.approx(r.t_end, abs=0.02)
     assert mark["ball"] == 0                                                 # the coral: body ball.0
@@ -88,7 +89,8 @@ that = { touch = { robot = "grabber", field = "ball.0" } }
     held = EXPECT_HELD.replace("throughout = true\n", "")
     _, _, r = run_grab(tmp_path, squeeze(4.0) + wait(1.0) + touching + held)
     assert r.checks[0]["passed"], r.outcome                        # the jaws are closed on it
-    assert r.status == "check failed" and r.outcome.endswith("the coral was never held by grabber"), r.outcome
+    assert r.status == "check failed" and re.search(r"the coral was never held by grabber at \d+\.\d s$", r.outcome), \
+        r.outcome                                                  # no loss: the check's own time is said
     assert r.marks == []
 
 
@@ -101,8 +103,8 @@ def test_review_focus_3_never_held_and_nothing_moving(tmp_path):
     _, _, r2 = run_grab(tmp_path / "b", squeeze(4.0) + wait(1.0) + move_arm(-15) + wait(0.3) + EXPECT_HELD
                         + wait(1.2) + stop + wait(1.0))
     assert r2.status == "check failed", r2.outcome
-    assert re.search(r"the coral slipped out of grabber at \d+\.\d s while grabber\.jaw_[bf] was moving and "
-                     r"grabber\.jaw_[bf] was moving$", r2.outcome), r2.outcome
+    assert re.search(r"the coral slipped out of grabber at \d+\.\d s while grabber\.jaw_[bf] and "
+                     r"grabber\.jaw_[bf] were moving$", r2.outcome), r2.outcome
     assert "grabber.arm" not in r2.outcome
 
 
@@ -110,9 +112,11 @@ def test_what_was_moving(tmp_path):
     """Commanded in the second before, most recent first, then what was still turning; else nothing."""
     run = TestRun(*reversed(_loaded(tmp_path)))
     run._commanded, run._turning = {"grabber.arm": 0.5, "grabber.jaw_b": 4.5, "drive": 4.8}, {}
-    assert run._moving(5.0) == "the robot was driving and grabber.jaw_b was moving"
+    assert run._moving(5.0) == "grabber.jaw_b was moving and the robot was driving"     # the joints first
     run._turning = {5.0: {"grabber.arm", "grabber.jaw_b"}}       # the arm still swinging from a block long ago
-    assert run._moving(5.0) == "the robot was driving and grabber.jaw_b was moving and grabber.arm was moving"
+    assert run._moving(5.0) == "grabber.jaw_b and grabber.arm were moving and the robot was driving"
+    run._commanded = {"grabber.arm": 4.0, "grabber.jaw_b": 4.5, "grabber.jaw_f": 4.6}
+    assert run._moving(5.0) == "grabber.jaw_f, grabber.jaw_b and grabber.arm were moving"
     run._commanded, run._turning = {"grabber.arm": 0.5}, {}
     assert run._moving(5.0) == "nothing was moving"
 

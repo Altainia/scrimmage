@@ -32,17 +32,22 @@ scrimmage test run examples/blocks/reef/place.test.toml
 
 ## The blocks
 
-1. Spin `grabber.jaw_left` and `grabber.jaw_right` at 4 V. Positive volts close a jaw, and they keep squeezing.
-2. Wait 1 s for the jaws to close on the coral.
-3. Move `grabber.arm` to -30°, lifting the coral off the carpet.
-4. Wait until a coral is held by `grabber` (give up after 5 s).
-5. Expect a coral held by `grabber`, **throughout**.
-6. Move `grabber.arm` to -145°, over the top.
-7. Drive forward 2.65 m at 3 V, onto the branch.
-8. Wait 0.5 s.
-9. Spin both jaws at -2 V to open them, then wait 2 s.
-10. Expect a coral seated at least 3 in on `branch_l2`.
-11. Expect a coral resting on `branch_l2`.
+The run numbers each block on its own, so these are the numbers its sentences use:
+
+1. Spin `grabber.jaw_left` at 4 V. Positive volts close a jaw, and it keeps squeezing.
+2. Spin `grabber.jaw_right` at 4 V.
+3. Wait 1 s for the jaws to close on the coral.
+4. Move `grabber.arm` to -30°, lifting the coral off the carpet.
+5. Wait until a coral is held by `grabber` (give up after 5 s).
+6. Expect a coral held by `grabber`, **throughout**.
+7. Move `grabber.arm` to -145°, over the top.
+8. Drive forward 2.65 m at 3 V, onto the branch.
+9. Wait 0.5 s.
+10. Spin `grabber.jaw_left` at -2 V to open it.
+11. Spin `grabber.jaw_right` at -2 V.
+12. Wait 2 s.
+13. Expect a coral seated at least 3 in on `branch_l2`.
+14. Expect a coral resting on `branch_l2`.
 
 "Held" means off whatever is under it, touching the grabber and moving with it. "Throughout" means it is checked every
 step from then on. A held check normally ends the run the moment the coral is let go. Here the coral is set down on
@@ -51,11 +56,12 @@ coral slipped out on the way, or were set down anywhere else, it would fail.
 
 ## What it does
 
-The run finishes at 7.4 s:
+The run finishes at 7.4 s. Its outcome is plain "finished", with no count of pieces that made it in: the coral is a
+floor piece, and a floor piece is counted only in a floor spread (below). The checks say what happened:
 
 ```
 finished
-  passed: a coral is held by grabber from 1.4 s until it was placed on branch_l2 at 4.4 s (block 6)
+  passed: a coral is held by grabber from 1.4 s until it was set down on branch_l2 at 4.4 s (block 6)
   passed: a coral is seated at least 3 in on branch_l2 at 7.4 s (block 13)
   passed: a coral rests on branch_l2 at 7.4 s (block 14)
 ```

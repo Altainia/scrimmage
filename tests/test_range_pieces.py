@@ -155,6 +155,13 @@ def test_review_focus_5_cad_mistakes(tmp_path, monkeypatch):
                                          r"\(m, mm or in\)$"):
         parse_kind(P, "coral", {"shape": "cad", "cad": "big.stl", "units": "m", "mass": 0.7, "friction": 0.4},
                    tmp_path)
+    # past 100 m, whole meters (not 1.23e+03)
+    write_stl(tmp_path / "huge.stl", *cube(1234.0))
+    with pytest.raises(RangeError, match=r": the piece is 1234 m across; check units \(m, mm or in\)$"):
+        parse_kind(P, "coral", {"shape": "cad", "cad": "huge.stl", "units": "m", "mass": 0.7, "friction": 0.4},
+                   tmp_path)
+    with pytest.raises(RangeError, match=r": the piece is 1234 m across; check units"):
+        parse_kind(P, "coral", {"shape": "box", "size": [1234.0, 0.1, 0.1], "mass": 0.7, "friction": 0.4}, tmp_path)
     # a concave piece without coacd: the bench's plain message
     import scrimmage.bench.cad as bench_cad
     import scrimmage.cad.fit as fit

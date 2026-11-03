@@ -18,7 +18,7 @@ the block, until a later block changes them. `stop` lets a motor (or all of them
 `wait_until` and `repeat` pass time and loop; a `repeat` goes round at most once a physics step when its body takes
 no time. `expect` checks its condition once, or (`throughout`) every step until the run ends; a check that fails ends
 the run, saying what happened instead. A held throughout check ends, passed, when the piece is set down on a rod or
-element that a `seated` or `rests_on` condition of the test names ("... until it was placed on branch_l2 at 4.4 s",
+element that a `seated` or `rests_on` condition of the test names ("... until it was set down on branch_l2 at 4.4 s",
 controller ruling P34): placing a piece lets go of it. Any other loss still fails it. The Watch reads the world once
 after the settle, so the first blocks judge the robot as it rests (a hook already on a bar touches it).
 
@@ -762,8 +762,8 @@ class TestRun:
 
     def _placed_hold(self, cond) -> str | None:
         """A held throughout check that stopped holding because the piece was set down on a rod or element a `seated`
-        or `rests_on` condition of the test names (controller ruling P34): "until it was placed on branch_l2 at 4.4
-        s". None for any other loss, and for any other condition."""
+        or `rests_on` condition of the test names (controller ruling P34): "until it was set down on branch_l2 at
+        4.4 s" (set down, not placed: the touch may not stay). None for any other loss, and for any other condition."""
         if cond.kind != "held":
             return None
         held = self.watch.held
@@ -772,7 +772,7 @@ class TestRun:
         if loss is None or not loss[1].startswith(SET_DOWN):
             return None
         on = loss[1].removeprefix(SET_DOWN)
-        return f"until it was placed on {on} at {loss[0]:.1f} s" if on in self._places else None
+        return f"until it was set down on {on} at {loss[0]:.1f} s" if on in self._places else None
 
     def _not_placed(self, k: str, a: dict) -> str:
         """How a rests_on or seated check failed: "the coral doesn't rest on shelf (a robot body still touches it)";
@@ -794,13 +794,15 @@ class TestRun:
 
     def _moving(self, t: float) -> str:
         """What was commanded (moved, spun or stopped) in the SLIP_LOOKBACK_S before t, most recent first, then
-        anything else still turning at t: "claw.arm was moving", "the robot was driving" (several joined by "and");
-        "nothing was moving"."""
+        anything else still turning at t: "claw.arm was moving", "claw.arm and claw.jaw were moving", the joints first,
+        then "and the robot was driving"; "nothing was moving"."""
         recent = [n for _, n in sorted(((c, n) for n, c in self._commanded.items()
                                         if t - SLIP_LOOKBACK_S - EPS <= c <= t + EPS), reverse=True)]
         recent += sorted(n for n in self._turning.get(t, ()) if n not in recent)
-        words = [("the robot was driving" if n == "drive" else "the robot was turning" if n == "turn"
-                  else f"{n} was moving") for n in recent]
+        joints = [n for n in recent if n not in ("drive", "turn")]
+        words = [f"{joints[0]} was moving" if len(joints) == 1 else
+                 f"{', '.join(joints[:-1])} and {joints[-1]} were moving"] if joints else []
+        words += [f"the robot was {'driving' if n == 'drive' else 'turning'}" for n in recent if n not in joints]
         return " and ".join(words) if words else "nothing was moving"
 
     def _describe(self, cond) -> str:
@@ -811,10 +813,10 @@ class TestRun:
     def _fail(self, check: dict, cond, t: float) -> None:
         check.update(passed=False, t=t, failure=self._failure(cond))
         if cond.kind == "held":
-            check["timed"] = True                  # its failure says its own time
             i, by = self.watch.piece_index(cond.args["piece"]), cond.args["by"]
             loss = self.watch.held.lost(i, by)
             if loss is not None and self.watch.held.ever(i, by):
+                check["timed"] = True              # its failure says its own time (the moment it was lost)
                 self.marks.append({"t": loss[0], "kind": "slip", "text": check["failure"],
                                    "ball": self.watch.held.lost_piece(i, by)})
         when = "" if check.get("timed") else f" at {t:.1f} s"

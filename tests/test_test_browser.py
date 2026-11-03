@@ -1683,7 +1683,8 @@ def test_the_seated_line_has_a_gap_while_off_the_rod(test_page, tmp_path):
     assert page.inner_text("#test-chart .test-plot-title") == "seated.peg (in)"
     # the fed coral is placed on the peg (controller ruling P33), not missed: the sentence, the summary and its mark
     assert page.inner_text("#test-outcome") == "1 of 1 placed on peg."
-    assert page.inner_text("#test-feeds-summary") == "Fed pieces: 0 in · 1 placed · 0 stuck · 0 missed"
+    # no hopper named: no "0 in" (as the sentence)
+    assert page.inner_text("#test-feeds-summary") == "Fed pieces: 1 placed · 0 stuck · 0 missed"
     mark = page.locator("#test-feed-marks .test-feed-mark")
     assert mark.count() == 1 and mark.get_attribute("data-outcome") == "placed"
     assert mark.get_attribute("title").endswith(": placed on peg")

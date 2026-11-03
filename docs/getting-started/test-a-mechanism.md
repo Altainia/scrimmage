@@ -77,7 +77,8 @@ placed on the branch, and how far onto the rod it sits. If it had slipped, the s
 moving, and the replay would mark the moment.
 
 On **your own** grabber part, press **Test it** in the Part tab. A part with a claw, grabber, gripper or jaw body is put
-on this field, and its test starts with the grab and the held check, ready to run. If the jaws close the wrong way, flip
+on this field, and its test starts with the grab and the held check, ready to run: it closes each motor that closes
+the jaws (a joint named jaw, claw, grip or finger) at 4 V. If the jaws close the wrong way, flip
 the sign of the volts.
 
 **Try grip tape.** Grip is how well the pads hold, and the squeeze is how hard they push. In Setup, the **Grip** group

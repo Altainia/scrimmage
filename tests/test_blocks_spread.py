@@ -91,13 +91,19 @@ def test_a_flat_kinds_turns_read_differently():
     assert note.flat
     ps = placements({"rotation_deg": [0, 45, 90]}, {"offset_in": 0.0, "distance_in": 40.0, "tip_deg": 90.0})
     words = placement_labels(ps, ["rotation_deg"], note)
-    assert words == ["lying flat, turned 0°", "lying flat, turned 45°", "lying flat, turned 90°"]
+    assert words == ["lying flat (turned 0°)", "lying flat (turned 45°)", "lying flat (turned 90°)"]
     assert sentence([False] * 3, words, at=False) == \
-        "picked up 0 of 3; missed lying flat, turned 0°; lying flat, turned 45°; and lying flat, turned 90°"
+        "picked up 0 of 3; missed lying flat (turned 0°), lying flat (turned 45°) and lying flat (turned 90°)"
     ps = placements({"offset_in": [-6, 6], "tip_deg": [80, 90]}, {"offset_in": 0.0, "distance_in": 40.0})
     assert placement_labels(ps, ["offset_in", "tip_deg"], coral()) == [
-        "6 in right standing on end, tipped 80°", "6 in right standing on end, tipped 90°",
-        "6 in left standing on end, tipped 80°", "6 in left standing on end, tipped 90°"]
+        "6 in right standing on end (tipped 80°)", "6 in right standing on end (tipped 90°)",
+        "6 in left standing on end (tipped 80°)", "6 in left standing on end (tipped 90°)"]
+    # both differ: the parentheses keep their comma, and the sentence still joins with plain commas
+    ps = placements({"tip_deg": [80, 90], "rotation_deg": [0, 90]}, {"offset_in": 0.0, "distance_in": 40.0})
+    words = placement_labels(ps, ["tip_deg", "rotation_deg"], coral())
+    assert words == ["standing on end (turned 0°, tipped 80°)", "standing on end (turned 0°, tipped 90°)",
+                     "standing on end (turned 90°, tipped 80°)", "standing on end (turned 90°, tipped 90°)"]
+    assert sentence([False] * 4, words, at=False).count(";") == 1          # "picked up 0 of 4; missed ..." only
     ps = placements({"rotation_deg": [0, 45]}, {"offset_in": 0.0, "distance_in": 40.0})
     assert placement_labels(ps, ["rotation_deg"], None) == ["turned 0°", "turned 45°"]     # a ball: unchanged
     ps = placements({"rotation_deg": [0, 90]}, {"offset_in": 0.0, "distance_in": 40.0, "tip_deg": 0.0})

@@ -30,6 +30,7 @@ import csv
 import itertools
 import json
 import math
+import re
 import shutil
 import threading
 from pathlib import Path
@@ -275,7 +276,7 @@ def label(p: dict, varying: list[str], kind: PieceKind | None = None) -> str:
 def placement_labels(ps: list[dict], varying: list[str], kind: PieceKind | None = None) -> list[str]:
     """Each placement's label. Where words for how a piece lies say the same for two placements or more ("lying
     flat" at every turn of a disc, "standing on end" at tips 80 and 90), each of those gets its tip or turn that
-    differs after them: "lying flat, turned 45°", "standing on end, tipped 80°"."""
+    differs after them in parentheses: "lying flat (turned 45°)", "standing on end (tipped 80°)"."""
     out = [label(p, varying, kind) for p in ps]
     if not worded(varying, kind):
         return out
@@ -289,15 +290,16 @@ def placement_labels(ps: list[dict], varying: list[str], kind: PieceKind | None 
         for k in ks:
             extra = [f"turned {_n(ps[k][a])}°" if a == "rotation_deg" else f"tipped {_n(ps[k][a])}°"
                      for a in differs]
-            out[k] = ", ".join([lb, *extra])
+            out[k] = f"{lb} ({', '.join(extra)})"
     return out
 
 
 def _joined(items: list[str]) -> str:
-    """"a, b and c"; "a, b; c, d; and e, f" when an item has a comma of its own."""
+    """"a, b and c"; "a, b; c, d; and e, f" when an item has a comma of its own (not one in its parentheses:
+    "lying flat (turned 0°), lying flat (turned 45°) and ...")."""
     if len(items) == 1:
         return items[0]
-    if any("," in it for it in items):
+    if any("," in re.sub(r"\([^)]*\)", "", it) for it in items):
         return f"{'; '.join(items[:-1])}; and {items[-1]}"
     return f"{', '.join(items[:-1])} and {items[-1]}"
 
