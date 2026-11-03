@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from ..testrange.spec import Range
 
 NAME_RE = re.compile(r"[A-Za-z0-9_]+$")
-PLACEMENT_KEYS = ("name", "stock", "path", "attach", "pos", "rot", "ids")
+PLACEMENT_KEYS = ("name", "stock", "path", "attach", "pos", "rot", "ids", "grip")   # grip: path parts only
 ROBOT_BITS = {"contype": 2, "conaffinity": 1}
 NO_BITS = {"contype": 0, "conaffinity": 0}
 GEOM_TYPES = {"box": mujoco.mjtGeom.mjGEOM_BOX, "cylinder": mujoco.mjtGeom.mjGEOM_CYLINDER,
@@ -153,6 +153,8 @@ def _instances(cfg: dict, cfg_dir: Path) -> list[Instance]:
         params = {k: v for k, v in e.items() if k not in PLACEMENT_KEYS}
         checked: dict = {}
         if "stock" in e:
+            if "grip" in e:
+                raise PartError(f"{where}: grip is for a part folder's bodies; a stock part has its own materials")
             checked = stock_params(str(e["stock"]), params, where)
             part, source = build_stock(str(e["stock"]), params, where), f"stock {e['stock']}"
         else:
@@ -167,6 +169,9 @@ def _instances(cfg: dict, cfg_dir: Path) -> list[Instance]:
                 part, source = load_part(folder if folder.is_file() else folder / "part.toml"), str(folder)
             except PartError as err:
                 raise PartError(f"{where}: {err}") from None
+            if "grip" in e:     # over the folder's own (its scrimmage-edits.toml)
+                from .grip import apply_grip
+                part, _ = apply_grip(part, e["grip"], where)
         attach = e.get("attach")
         if attach is not None and not (isinstance(attach, str) and attach.count(".") == 1 and all(attach.split("."))):
             raise PartError(f"{where}: attach must be \"<part>.<mount or body>\", not {attach!r}")

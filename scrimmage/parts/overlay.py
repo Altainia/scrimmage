@@ -5,6 +5,7 @@ again on every export; the overlay holds the student's edits and survives that).
     [body.<name>]
     mass = 2.5                         # kg; the body's inertia scales with it (center of mass kept)
     collision = "wheel"                # none | wheel | shaped | simple, as in the CAD import
+    grip = "nitrile"                   # the body's grip material, or a measured friction (parts/grip.py)
     [body.<name>.joint]                # range, spring, damping, frictionloss, as in part.toml
     [[motor]] [[encoder]] [[gyro]] [[mount]]     # added to the part, same shape as in part.toml
 
@@ -25,7 +26,7 @@ from .model import Part, PartError, part_from_dict, part_to_dict, quat_from_rpy
 
 OVERLAY = "scrimmage-edits.toml"
 COLLISION = ("none", "wheel", "shaped", "simple")
-BODY_KEYS = ("mass", "collision", "joint")
+BODY_KEYS = ("mass", "collision", "joint", "grip")
 JOINT_KEYS = ("range", "spring", "damping", "frictionloss")
 TOP_KEYS = ("total_mass", "body", "motor", "encoder", "gyro", "mount")
 
@@ -207,7 +208,14 @@ def apply_overlay(part: Part, edits: dict, source: str) -> tuple[Part, list[str]
             if not isinstance(edits[key], list) or not all(isinstance(x, dict) for x in edits[key]):
                 raise _err(f"[[{key}]] entries expected")
             d.setdefault(key, []).extend(copy.deepcopy(edits[key]))
-    return part_from_dict(d, source, part.base_dir), warns
+    out = part_from_dict(d, source, part.base_dir)
+    grips = {name: e["grip"] for name, e in bodies.items() if "grip" in e and name in by_name}
+    if grips:
+        from .grip import apply_grip
+        out, w = apply_grip(out, grips, OVERLAY)
+        warns += w
+        out.warnings = []                       # load_part sets them (warns)
+    return out, warns
 
 
 def _set_mass(b: dict, new: float) -> None:

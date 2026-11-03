@@ -142,6 +142,8 @@ class Part:
     mounts: list[Mount] = field(default_factory=list)
     base_dir: Path | None = None                 # where mesh paths resolve
     warnings: list[str] = field(default_factory=list)   # notes from loading (the plugin overlay); not in part.toml
+    grips: dict = field(default_factory=dict)           # body -> grip material or number (parts/grip.py), from the
+    #                                                     overlay or the config; not in part.toml
 
     def slot_kinds(self) -> dict[str, str]:
         out = {s.slot: "motor" for s in self.motors}

@@ -68,7 +68,7 @@ from ..hal_drive import MotorDrive, driven_joints, position_volts
 from ..movers import mover_poses, movers
 from ..protocol import HalState
 from ..testrange.build import BALL_BITS
-from .conditions import IN, Watch, describe
+from .conditions import IN, Watch, _conds, describe
 from .drive import STEER_TIMEOUT, drivetrain
 from .feeds import SETTLE_MAX_S, Outcomes, counts, is_standin, made_it_in, sentence
 from .grip_watch import SLIP_LOOKBACK_S, default_word
@@ -113,6 +113,7 @@ class RunResult:
     seed: int | None = None       # the stations' seed; None on a field without stations
     settle_s: float = 0.0         # s the run went on after the blocks finished, for the pieces to settle
     marks: list[dict] = field(default_factory=list)     # moments the replay marks: {t, kind ("slip"), text}
+    notes: list[str] = field(default_factory=list)      # what the run's numbers rest on (run_notes): UNCALIBRATED grips
 
     @property
     def passed(self) -> bool:
@@ -183,6 +184,21 @@ def world_for(program: Program):
     from ..config import build_world, load_config
     config = load_config(Path(program.path).parent / program.robot)
     return build_world(replace(config, raw=setup_config(config.raw, program.setup)))
+
+
+GRIP_CONDITIONS = ("held", "rests_on", "seated")     # a test of these rests on the grip's friction
+DEFAULT_GRIP_NOTE = ("grip: the pads have the default friction, an UNCALIBRATED estimate; pick a grip material for "
+                     "them in the Part tab, or measure yours with a sled pull (docs/test-tab.md)")
+
+
+def run_notes(world, program: Program) -> list[str]:
+    """What the run's numbers rest on: a line per gripped body (parts/grip.py's grip_notes); a test of held, rests on
+    or seated with no grip anywhere gets DEFAULT_GRIP_NOTE, so its grip isn't read as measured either."""
+    from ..parts.grip import grip_notes
+    notes = grip_notes(world)
+    if not notes and any(_conds(program.blocks, k) for k in GRIP_CONDITIONS):
+        notes = [DEFAULT_GRIP_NOTE]
+    return notes
 
 
 def check_problems(program: Program, world) -> None:
@@ -341,6 +357,7 @@ class TestRun:
             check["line"] = self._line(check)
         result.checks = self.checks
         result.marks = self.marks
+        result.notes = run_notes(self.world, self.program)
         return result
 
     def _place(self, p: dict) -> None:
