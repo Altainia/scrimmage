@@ -19,6 +19,8 @@ import json
 import sys
 from pathlib import Path
 
+import numpy as np
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from range_fixtures import drive, shooter_cfg  # noqa: E402
@@ -30,10 +32,14 @@ INTAKE = ROOT / "examples" / "blocks" / "intake"
 
 
 def _record(w) -> dict:
-    """Every piece's qpos, rounded to 1e-9, and the range's counts."""
+    """Every piece's qpos and the range's counts (the qpos rounded to 1e-9 when written to the golden file)."""
     b = w.test_range.balls
-    qpos = [[round(float(x), 9) for x in w.data.qpos[b._q[i]]] for i in range(b.n)]
+    qpos = [[float(x) for x in w.data.qpos[b._q[i]]] for i in range(b.n)]
     return {"qpos": qpos, "counts": w.test_range.counts()}
+
+
+def _rounded(rec: dict) -> dict:
+    return {**rec, "qpos": [[round(x, 9) for x in q] for q in rec["qpos"]]}
 
 
 def run_2026() -> dict:
@@ -69,8 +75,13 @@ RUNS = {"2026": run_2026, "2026_shooter": run_2026_shooter, "2013": run_2013, "i
 def test_the_ledger_steps_as_before():
     golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
     for name, run in RUNS.items():
-        assert run() == golden[name], name
+        got, want = run(), golden[name]
+        assert got["counts"] == want["counts"], name
+        assert len(got["qpos"]) == len(want["qpos"]), name
+        for q, w in zip(got["qpos"], want["qpos"]):      # within the file's rounding, not across a rounding edge
+            np.testing.assert_allclose(q, w, rtol=0, atol=1e-9, err_msg=name)
 
 
 if __name__ == "__main__":
-    GOLDEN.write_text(json.dumps({name: run() for name, run in RUNS.items()}, indent=1) + "\n", encoding="utf-8")
+    GOLDEN.write_text(json.dumps({name: _rounded(run()) for name, run in RUNS.items()}, indent=1) + "\n",
+                      encoding="utf-8")

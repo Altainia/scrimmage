@@ -47,8 +47,8 @@ the one geom above. A rigid kind's body is an ordinary free body: its mass, its 
 of mass (the body's origin), and its solids as geoms `ball.<i>.<k>` (spheres, boxes and convex meshes: a hollow
 coral is a ring of slices), each mesh added once per kind and shared by its slots. Its contact is MuJoCo's own
 (RIGID_SOLREF, firmer than MuJoCo's default, weighted RIGID_SOLMIX; default solimp) with its surface's sliding
-friction and the ball's torsional and rolling friction (rigid_contact). A floor piece is set down turned by its tip and rotation, its lowest point FLOOR_DROP above
-the carpet, so it settles.
+friction and the ball's torsional and rolling friction (rigid_contact). A floor piece is set down turned by its tip
+and rotation, its lowest point FLOOR_DROP above the carpet, so it settles.
 
 - A goal with a rect opening and a `slot` is built as a frame (four bars `frame` wide around the opening, on the wall
   face), a box behind it (four walls just outside the opening's edges, `depth` deep) and a back wall closing the box.
@@ -58,6 +58,9 @@ MuJoCo mixes two geoms' solref and solimp by their solmix weights; the ball's (a
 far above every other geom's, so its values govern its contacts with the carpet, the walls, the goals and the robot
 (a geom with a higher priority, such as a climber hook, uses its own instead). Friction and condim take the
 larger of the two geoms' values: the ball's are the low ones, so the carpet's rolling friction stops a rolling ball.
+A ball against a rigid piece weighs the two alike (RIGID_SOLMIX = BALL_SOLMIX), so that contact's solref and solimp
+are the average of the two: softer than either alone. No built-in field has both a ball kind and a rigid kind loose
+together, so none mixes them.
 """
 
 from __future__ import annotations
@@ -493,7 +496,8 @@ def parse_range_section(cfg: dict, cfg_dir: Path | None) -> RangeSection | None:
             else:
                 check_timestep(timestep)
         except ValueError as e:
-            raise PartError(f"[range] ({rng.path.name}, ball {kind.preset or name!r}): {e}") from None
+            word = "ball" if kind.form == "ball" else "piece"
+            raise PartError(f"[range] ({rng.path.name}, {word} {kind.preset or name!r}): {e}") from None
     start = sec.get("start")
     if start is not None:
         if not isinstance(start, str) or start not in rng.starts:
