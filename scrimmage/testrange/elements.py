@@ -17,11 +17,11 @@ carpet, with a post under each end down to the carpet (`posts`, default true). W
 vertical sprung slide (its `damping`, N s/m, default 0), standing in for the rung's bending; without, it is rigid.
 `level` names one of the `[climb]` levels; the bar's `points` come from there. A box is a static block, `size`
 (x, y, z) with its bottom `base_height` up; `ground = true` makes it floor for the terrain signals (a floor
-protector, a step), otherwise it is structure (a truss). A rod is a straight round or square rod fixed to the field between two ends, `base` and `tip` (x, y, z; also
-`base_in`, `tip_in`), `diameter` across (a square rod's side): a peg, a pole, a coral branch. It has no `center` or
-`yaw_deg`: its ends place it. A switch is a bar hung `bar_drop` below a hinge at
-`hinge_height` that turns about the element's local y: `mass`, its CoM `com_drop` below the hinge, stops at
-+-`stop_deg`, joint `damping` (N m s/rad) and `level_deg`, within which the scoring rule calls it level.
+protector, a step), otherwise it is structure (a truss). A rod is a straight round or square rod fixed to the field
+between two ends, `base` and `tip` (x, y, z; also `base_in`, `tip_in`), `diameter` across (a square rod's side): a
+peg, a pole, a coral branch. It has no `center` or `yaw_deg`: its ends place it. A switch is a bar hung `bar_drop`
+below a hinge at `hinge_height` that turns about the element's local y: `mass`, its CoM `com_drop` below the hinge,
+stops at +-`stop_deg`, joint `damping` (N m s/rad) and `level_deg`, within which the scoring rule calls it level.
 
 `[climb]` picks a scoring rule (CLIMB_RULES) and lists the levels lowest first, each with its points:
 `levels = { LOW = 4, MID = 6 }`. The "hang" rule also takes `level_bonus` and the `switch` it applies to.
@@ -53,6 +53,9 @@ DEFAULT_SWITCH_DIAMETER = 1.66 * IN
 # difference (the 2022 HANGAR's is 3/8 in, manual 5.4.3).
 START_STEP = 0.5 * IN  # m
 CLIMB_RULES = ("lowest-rung", "hang", "lowest-point")
+# A start's robot may not lie under a rod whose low end is lower than this (it would begin inside the rod); higher
+# rods (reef branches, overhead) are allowed over a start.
+ROD_START_CLEARANCE = 0.5  # m
 POST = 2.0 * IN  # m: a bar's posts' square section (estimate: a typical post; no range here has posts measured)
 
 
@@ -448,8 +451,9 @@ def _on_floor(e: Element, start: bool) -> list[np.ndarray]:
     raised off the carpet; a start may lie on a thin ground box (a floor protector, START_STEP), a ball may not."""
     if isinstance(e, Switch):
         return []
-    if isinstance(e, Rod):   # only a rod that reaches the carpet stands on it (a peg); one up on a post doesn't
-        return [footprint(e)] if min(e.base[2], e.tip[2]) <= e.diameter / 2.0 else []
+    if isinstance(e, Rod):   # a ball only rests against a rod that reaches the carpet (a peg); a start also may not
+        low = min(e.base[2], e.tip[2]) - e.diameter / 2.0       # lie under any part of a rod lower than the robot
+        return [footprint(e)] if low <= (ROD_START_CLEARANCE if start else 0.0) + 1e-9 else []
     if isinstance(e, Bar):
         if not e.posts:
             return []

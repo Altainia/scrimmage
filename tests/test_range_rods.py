@@ -181,3 +181,52 @@ def test_a_coral_dropped_off_center_doesnt_pass_through(tmp_path):
     p = seated(w, 4 * IN)
     assert w.test_range.balls.state[0] == BallState.FIELD
     assert abs(p[0] - 12.0) > 0.04 and p[2] - CORAL_L / 2 < 0.3 + 0.05
+
+
+def branch_at(z: float) -> str:
+    return f'''
+[[element]]
+name = "branch"
+kind = "rod"
+base = [3.0, 2.0, {z}]
+tip = [3.0, 2.5, {z + 0.2}]
+diameter = 0.03
+'''
+
+
+def test_a_start_under_a_low_branch_is_refused(tmp_path):
+    with pytest.raises(RangeError, match="start 'near'.*overlaps element 'branch'"):
+        load_text(tmp_path, branch_at(0.3) + '[start.near]\npose = [3.0, 2.2, 0.0]\n')
+
+
+def test_a_start_under_a_high_branch_is_fine(tmp_path):
+    load_text(tmp_path, branch_at(1.0) + '[start.near]\npose = [3.0, 2.2, 0.0]\n')
+
+
+def test_a_coral_rests_on_a_square_rod(tmp_path):
+    path = tmp_path / "field.toml"
+    path.write_text('''
+[range]
+name = "rods"
+
+[piece.coral]
+preset = "2025-coral"
+
+[[floor_balls]]
+at = [[2.0, 2.0]]
+tip_deg = 0
+
+[[element]]
+name = "beam"
+kind = "rod"
+base = [11.0, 4.0, 0.5]
+tip = [13.0, 4.0, 0.5]
+diameter = 0.05
+section = "square"
+''', encoding="utf-8")
+    w = World(range_cfg(range={"file": str(path), "floor_balls": True}), None)
+    b = w.test_range.balls
+    b.place(0, (12.0, 4.0, 0.5 + 0.025 + 0.06), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), BALL_BITS,
+            quat=b.kinds["coral"].orient(0.0, 90.0))      # lying across the beam
+    step(w, 2.0)
+    assert b.position(0)[2] == pytest.approx(0.5 + 0.025 + 4.5 * IN / 2, abs=0.01)
