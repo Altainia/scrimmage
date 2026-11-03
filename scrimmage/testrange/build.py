@@ -40,13 +40,27 @@ radius and height with the disc's diagonal inertia (Ixx, Ixx, Izz), body z its a
 center half its height above the carpet. Its contact is the ball's, with restitution DISC_RESTITUTION, and it
 stiffens over STIFFEN of the disc's height rather than its diameter: a disc meets a plate flat or on its rim, and a
 rim hit has only the rim's few centimeters to stop in.
+
+Other kinds (scrimmage/testrange/pieces.py): every slot is built by its kind (RangeLayout.kinds): the floor pieces
+by theirs, the robot's slots by Range.piece's (piece_kind), a station's pool by its station's. A ball or disc kind is
+the one geom above. A rigid kind's body is an ordinary free body: its mass, its full inertia tensor about its center
+of mass (the body's origin), and its solids as geoms `ball.<i>.<k>` (spheres, boxes and convex meshes: a hollow
+coral is a ring of slices), each mesh added once per kind and shared by its slots. Its contact is MuJoCo's own
+(RIGID_SOLREF, firmer than MuJoCo's default, weighted RIGID_SOLMIX; default solimp) with its surface's sliding
+friction and the ball's torsional and rolling friction (rigid_contact). A floor piece is set down turned by its tip
+and rotation, its lowest point FLOOR_DROP above the carpet, so it settles.
+
 - A goal with a rect opening and a `slot` is built as a frame (four bars `frame` wide around the opening, on the wall
   face), a box behind it (four walls just outside the opening's edges, `depth` deep) and a back wall closing the box.
 - An [[obstacle]] is one static box, `<name>.box`, on its own body welded to the world.
 
-MuJoCo mixes two geoms' solref and solimp by their solmix weights; the ball's is far above every other geom's, so
-its values govern its contacts with the carpet, the walls, the goals and the robot. Friction and condim take the
+MuJoCo mixes two geoms' solref and solimp by their solmix weights; the ball's (and a rigid piece's, RIGID_SOLMIX) is
+far above every other geom's, so its values govern its contacts with the carpet, the walls, the goals and the robot
+(a geom with a higher priority, such as a climber hook, uses its own instead). Friction and condim take the
 larger of the two geoms' values: the ball's are the low ones, so the carpet's rolling friction stops a rolling ball.
+A ball against a rigid piece weighs the two alike (RIGID_SOLMIX = BALL_SOLMIX), so that contact's solref and solimp
+are the average of the two: softer than either alone. No built-in field has both a ball kind and a rigid kind loose
+together, so none mixes them.
 """
 
 from __future__ import annotations
@@ -61,6 +75,7 @@ import numpy as np
 from ..disc.inputs import Disc
 from ..launcher.inputs import Ball
 from ..parts.field import FIELD_BITS
+from .pieces import PieceKind
 from .spec import BUILTIN_RANGES, Goal, Obstacle, Range, RangeError, RectOpening, load_range
 from .station import DEFAULT_SEED, check_seed, with_overrides
 
@@ -72,6 +87,14 @@ PARK_Z = -20.0                                     # m: a parked ball's height, 
 PLATE = 0.02                    # m, every goal plate's thickness
 BALL_SOLMIX = 1e6               # every other geom has MuJoCo's default solmix, 1
 BALL_DMAX = 0.95                # MuJoCo's default dmax
+# A rigid piece's contact: a hard plastic or rubber piece barely gives. MuJoCo's default (a 20 ms time constant) is so
+# soft that a coral squeezed hard between two pads creeps down them at several cm/s while the arm swings, far inside
+# its friction cone. estimate: a 4 ms time constant, critically damped (4 timesteps at MAX_TIMESTEP; MuJoCo needs at
+# least 2), the stiffest that stays well clear of that limit; it held a coral squeezed at 4 V and 8 V through a fast
+# swing on default pads (tests/test_blocks_held.py). Its weight is the ball's, so it governs the piece's contacts with
+# the carpet, the field and the robot (whose geoms have solmix 1); against a ball the two mix evenly.
+RIGID_SOLREF = (0.004, 1.0)
+RIGID_SOLMIX = BALL_SOLMIX
 W_SOFT = math.pi / 0.012        # rad/s: a gentle contact's frequency (a 12 ms half period)
 W_STIFF = 1000.0                # rad/s: the contact's frequency at its stiffest
 STIFFEN = 0.75                  # the penetration, in ball diameters, over which d grows linearly from dmin to dmax
@@ -87,10 +110,11 @@ PLATE_FRICTION = [0.3, 0.005, 0.0001]   # as the field's walls
 # 0.3-0.5 guessed for it, and the disc preset's rim_damping_ratio 0.25 bounces at 0.44 (scrimmage/disc/presets.toml).
 DISC_RESTITUTION = 0.4
 DISC_RGBA = [0.95, 0.95, 0.95, 1.0]
+PIECE_RGBA = [0.92, 0.9, 0.84, 1.0]     # a rigid piece (a coral, a cone...): off-white
 SLOT_PITCH = 0.2                # m between parked slots' (x, y), in rows of SLOT_ROW from the blue right corner
 SLOT_ROW = 80
 
-RANGE_KEYS = ("file", "start", "preload", "floor_balls", "ball", "station", "seed")
+RANGE_KEYS = ("file", "start", "preload", "floor_balls", "ball", "piece", "station", "seed")
 
 
 @dataclass
@@ -107,6 +131,9 @@ class RangeLayout:
     bars: dict[str, list[str]] = field(default_factory=dict)
     # switch name -> the qpos address of its hinge (build_elements.switch_joint)
     switches: dict[str, int] = field(default_factory=dict)
+    # rod name -> the Rod (what a piece's seated depth along it is measured against)
+    rods: dict = field(default_factory=dict)
+    kinds: list[str] = field(default_factory=list)     # each ball.<i>'s piece kind (Range.kinds)
 
 
 @dataclass(frozen=True, eq=False)
@@ -143,13 +170,18 @@ def restitution(piece: Ball | Disc) -> float:
     return DISC_RESTITUTION if isinstance(piece, Disc) else piece.restitution
 
 
-def check_contact(ball: Ball | Disc, timestep: float) -> None:
-    """A ValueError when the ball contact model doesn't hold for this ball (or disc) or timestep (see the module
-    docstring)."""
+def check_timestep(timestep: float) -> None:
+    """A ValueError when the timestep is too long for the range's ball contacts (see the module docstring)."""
     if timestep > MAX_TIMESTEP + 1e-12:
         raise ValueError(f"a range needs a timestep of at most {MAX_TIMESTEP:g} s, not {timestep:g}: its ball "
                          "contacts are stiff enough to stop a fast ball at a 2 cm plate, and a longer step lets them "
                          "gain energy or let the ball through")
+
+
+def check_contact(ball: Ball | Disc, timestep: float) -> None:
+    """A ValueError when the ball contact model doesn't hold for this ball (or disc) or timestep (see the module
+    docstring)."""
+    check_timestep(timestep)
     if not 0.0 < restitution(ball) <= MAX_RESTITUTION:
         raise ValueError(f"the ball's restitution {restitution(ball):g} is outside the range's contact model "
                          f"(above 0 and at most {MAX_RESTITUTION:g}): a bouncier ball gains energy on fast hits")
@@ -288,34 +320,114 @@ def add_range(spec: mujoco.MjSpec, rng: Range, n_slots: int, *, floor_balls: boo
         add_element(spec, e)
     for st in rng.stations:
         if st.chute is not None:
-            add_chute(spec, st, rng.piece.diameter)
-    ball = rng.piece
-    r = ball.diameter / 2.0
-    contact = ball_contact(ball, spec.option.timestep)
-    if isinstance(ball, Disc):
-        rest_z, inertia = ball.height / 2.0, [ball.ixx, ball.ixx, ball.izz]
-        geom = {"type": mujoco.mjtGeom.mjGEOM_CYLINDER, "size": [r, ball.height / 2.0, 0], "rgba": DISC_RGBA}
-    else:
-        rest_z, inertia = r, [ball.inertia_factor * ball.mass * r * r] * 3
-        geom = {"type": mujoco.mjtGeom.mjGEOM_SPHERE, "size": [r, 0, 0], "rgba": [0.95, 0.85, 0.1, 1.0]}
-    places = [((x, y, rest_z), BALL_BITS) for x, y in rng.floor_balls] if floor_balls else []
-    n_parked = n_slots + sum(st.pool() for st in rng.stations)
-    places += [((*slot_xy(j), PARK_Z), PARKED_BITS) for j in range(n_parked)]
-    names = []
-    for i, (pos, bits) in enumerate(places):
-        name = f"ball.{i}"
-        b = spec.worldbody.add_body(name=name, pos=[float(c) for c in pos])
-        b.mass, b.ipos, b.inertia, b.explicitinertial = ball.mass, [0, 0, 0], list(inertia), True
-        b.add_freejoint(name=name)
-        b.add_geom(name=name, density=0, **geom, **contact, **bits)
-        names.append(name)
+            add_chute(spec, st, st.kind_of(rng))
+    timestep = spec.option.timestep
+    # each slot's kind, in ball order: the floor pieces, the robot's slots (Range.piece's kind), the stations' pools
     n_floor = len(rng.floor_balls) if floor_balls else 0
+    floor_kinds = (list(rng.floor_kinds) if len(rng.floor_kinds) == len(rng.floor_balls)
+                   else [rng.piece_kind] * len(rng.floor_balls))
+    turns = rng.floor_turns if len(rng.floor_turns) == len(rng.floor_balls) else None
+    kinds = floor_kinds[:n_floor] + [rng.piece_kind] * n_slots
+    for st in rng.stations:
+        kinds += [st.kind_of(rng).name] * st.pool()
+    places = []
+    for i in range(n_floor):
+        z, quat = rest_pose(rng, kinds[i], None if turns is None else turns[i])
+        places.append(((*(float(c) for c in rng.floor_balls[i]), z), quat, BALL_BITS))
+    places += [((*slot_xy(j), PARK_Z), None, PARKED_BITS) for j in range(len(kinds) - n_floor)]
+    made: dict[str, dict] = {}
+    names = []
+    for i, ((pos, quat, bits), kind) in enumerate(zip(places, kinds)):
+        name = f"ball.{i}"
+        if kind not in made:
+            made[kind] = _slot_body(spec, rng, kind, name, timestep)
+        how = made[kind]
+        b = spec.worldbody.add_body(name=name, pos=[float(c) for c in pos])
+        if quat is not None:
+            b.quat = quat
+        if how["round"]:
+            b.mass, b.ipos, b.inertia, b.explicitinertial = how["mass"], [0, 0, 0], list(how["inertia"]), True
+            b.add_freejoint(name=name)
+            b.add_geom(name=name, density=0, **how["geom"], **how["contact"], **bits)
+        else:
+            b.mass, b.ipos, b.fullinertia, b.explicitinertial = how["mass"], [0, 0, 0], list(how["inertia"]), True
+            b.add_freejoint(name=name)
+            for k, geom in enumerate(how["geoms"]):
+                b.add_geom(name=f"{name}.{k}", density=0, **geom, rgba=list(PIECE_RGBA), **how["contact"], **bits)
+        names.append(name)
     station_slots, start = {}, n_floor + n_slots
     for st in rng.stations:
         station_slots[st.name] = range(start, start + st.pool())
         start += st.pool()
     return RangeLayout(ball_names=names, n_floor=n_floor, goal_bodies=[g.name for g in rng.goals],
-                       robot_slots=range(n_floor, n_floor + n_slots), station_slots=station_slots)
+                       robot_slots=range(n_floor, n_floor + n_slots), station_slots=station_slots, kinds=kinds)
+
+
+def kind_piece(rng: Range, name: str) -> Ball | Disc | None:
+    """Kind `name`'s Ball or Disc in the world (None for a rigid kind): Range.piece for the kind it is (piece_kind),
+    each other ball or disc kind's own."""
+    kind = rng.kinds[name] if name in rng.kinds else None
+    if name == rng.piece_kind and not isinstance(rng.piece, PieceKind):
+        return rng.piece
+    return None if kind is None else kind.ball if kind.form == "ball" else kind.disc
+
+
+def default_tip(kind: PieceKind) -> float:
+    """The tip a piece lies at when nothing says: 90 for a flat kind (lying flat), 0 for any other (on its side)."""
+    return 90.0 if kind.flat else 0.0
+
+
+def rest_pose(rng: Range, name: str, turn=None) -> tuple[float, list[float] | None]:
+    """A piece of kind `name` set down on the carpet at `turn` (tip_deg, rotation_deg; the kind's default lying when
+    None): its center's height and its quaternion (w, x, y, z), None for a ball and for a disc lying flat (unturned:
+    body z is a disc's axis)."""
+    piece = kind_piece(rng, name)
+    if isinstance(piece, Ball):
+        return piece.diameter / 2.0, None
+    kind = rng.kinds[name]
+    tip, rotation = (float(turn[0]), float(turn[1])) if turn is not None else (default_tip(kind), 0.0)
+    if isinstance(piece, Disc) and tip == 90.0:
+        return piece.height / 2.0, None
+    quat = kind.orient(tip, rotation)
+    return kind.rest_height(quat), [float(c) for c in quat]
+
+
+def rigid_contact(kind: PieceKind) -> dict:
+    """A rigid piece's geoms' MuJoCo contact keywords: its surface's sliding friction, the ball's torsional and
+    rolling friction, a firm contact (RIGID_SOLREF, MuJoCo's default solimp) weighted RIGID_SOLMIX so it governs the
+    piece's contacts with every other geom (priority 0)."""
+    return {"condim": 6, "friction": [kind.friction, BALL_FRICTION[1], BALL_FRICTION[2]],
+            "solref": list(RIGID_SOLREF), "solmix": RIGID_SOLMIX}
+
+
+def _slot_body(spec: mujoco.MjSpec, rng: Range, name: str, first: str, timestep: float) -> dict:
+    """How the slots of kind `name` are built: a ball or disc as one geom ("round"), a rigid piece as its solids,
+    each mesh added once (named after the kind's first slot, `first`) and shared by every slot of the kind."""
+    piece = kind_piece(rng, name)
+    if isinstance(piece, Disc):
+        r = piece.diameter / 2.0
+        return {"round": True, "mass": piece.mass, "inertia": [piece.ixx, piece.ixx, piece.izz],
+                "contact": ball_contact(piece, timestep),
+                "geom": {"type": mujoco.mjtGeom.mjGEOM_CYLINDER, "size": [r, piece.height / 2.0, 0], "rgba": DISC_RGBA}}
+    if isinstance(piece, Ball):
+        r = piece.diameter / 2.0
+        return {"round": True, "mass": piece.mass, "inertia": [piece.inertia_factor * piece.mass * r * r] * 3,
+                "contact": ball_contact(piece, timestep),
+                "geom": {"type": mujoco.mjtGeom.mjGEOM_SPHERE, "size": [r, 0, 0], "rgba": [0.95, 0.85, 0.1, 1.0]}}
+    kind = rng.kinds[name]
+    geoms = []
+    for k, s in enumerate(kind.solids):
+        if s.kind == "mesh":
+            mesh = f"{first}.mesh.{k}"
+            spec.add_mesh(name=mesh, uservert=[float(c) for c in np.asarray(s.vertices, dtype=float).ravel()])
+            geoms.append({"type": mujoco.mjtGeom.mjGEOM_MESH, "meshname": mesh})
+        elif s.kind == "sphere":
+            geoms.append({"type": mujoco.mjtGeom.mjGEOM_SPHERE, "size": [s.size[0], 0, 0], "pos": list(s.pos)})
+        else:
+            geoms.append({"type": mujoco.mjtGeom.mjGEOM_BOX, "size": list(s.size), "pos": list(s.pos),
+                          "quat": list(s.quat)})
+    return {"round": False, "mass": kind.mass, "inertia": list(kind.inertia), "contact": rigid_contact(kind),
+            "geoms": geoms}
 
 
 def _capacity(cfg: dict) -> int | None:
@@ -349,18 +461,23 @@ def parse_range_section(cfg: dict, cfg_dir: Path | None) -> RangeSection | None:
     if not isinstance(ref, str):
         raise PartError(f"[range] file must be a built-in range's name ({', '.join(BUILTIN_RANGES)}) or a path "
                         f"relative to the config, not {ref!r}")
-    ball = sec.get("ball")
+    ball, piece = sec.get("ball"), sec.get("piece")
     if ball is not None and not isinstance(ball, str):
         raise PartError(f"[range] ball must be a ball preset's name, not {ball!r}")
+    if piece is not None and not isinstance(piece, str):
+        raise PartError(f"[range] piece must be a piece or ball preset's name, not {piece!r}")
+    if ball is not None and piece is not None:
+        raise PartError("[range]: give ball or piece, not both")
+    asked = "ball" if ball is not None else "piece" if piece is not None else None
     try:
-        rng = load_range(ref, Path(cfg_dir) if cfg_dir is not None else Path("."), ball)
+        rng = load_range(ref, Path(cfg_dir) if cfg_dir is not None else Path("."), ball, piece)
     except RangeError as e:
-        if ball is not None:        # the file's own fault or the ball's: the file read with its own ball says which
+        if asked is not None:       # the file's own fault or the piece's: the file read with its own says which
             try:
                 load_range(ref, Path(cfg_dir) if cfg_dir is not None else Path("."))
             except RangeError as own:
                 raise PartError(f"[range] file: {own}") from None
-        raise PartError(f"[range] {'ball' if ball is not None else 'file'}: {e}") from None
+        raise PartError(f"[range] {asked or 'file'}: {e}") from None
     if "station" in sec:
         try:
             rng = with_overrides(rng, sec["station"])
@@ -370,10 +487,17 @@ def parse_range_section(cfg: dict, cfg_dir: Path | None) -> RangeSection | None:
         seed = check_seed(sec.get("seed", DEFAULT_SEED))
     except ValueError as e:
         raise PartError(f"[range] {e}") from None
-    try:
-        check_contact(rng.piece, model_timestep(cfg, MAX_TIMESTEP))
-    except ValueError as e:
-        raise PartError(f"[range] ({rng.path.name}, ball {rng.piece_preset!r}): {e}") from None
+    timestep = model_timestep(cfg, MAX_TIMESTEP)
+    for name, kind in rng.kinds.items():     # every ball and disc kind's contact; a rigid piece's needs the timestep
+        piece = kind_piece(rng, name)
+        try:
+            if piece is not None:
+                check_contact(piece, timestep)
+            else:
+                check_timestep(timestep)
+        except ValueError as e:
+            word = "ball" if kind.form == "ball" else "piece"
+            raise PartError(f"[range] ({rng.path.name}, {word} {kind.preset or name!r}): {e}") from None
     start = sec.get("start")
     if start is not None:
         if not isinstance(start, str) or start not in rng.starts:

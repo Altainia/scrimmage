@@ -1,0 +1,74 @@
+# A reef branch to place coral on: one pipe of the FRC 2025 REEFSCAPE REEF, its three BRANCHES (L2, L3 and L4) at the
+# 2025 manual's heights and angles, a coral on the carpet to pick up, and a CORAL STATION to feed coral from. It is a
+# test field to try a grabber on, not the whole REEF: no hexagon, no trough (L1), no other pipes, no ALGAE. WPILib field
+# coordinates (blue alliance wall at x = 0, z up), SI units; inches converted at 0.0254 m.
+#
+# Numbers cite the 2025 Game Manual, section 5.3 (REEF) and 5.6.2 (CORAL STATION)
+# (https://firstfrc.blob.core.windows.net/frc2025/Manual/2025GameManual.pdf), or say they are an estimate or our
+# choice. The manual gives each BRANCH's angle, the height of its highest point and how far that point is inset from
+# the REEF's base, but not the branches' lengths; those are estimates from its Figure 5-6.
+#
+# The layout: the robot starts at (2.0, 4.0 m) facing +x; the coral lies 0.63 m ahead of it, lying in line (along x),
+# and the REEF's base face would be the plane x = 5.0 m (choice), the branches pointing back at the robot. Each L2 and L3
+# BRANCH rises at 35 degrees from the pipe toward the robot, so a coral threads it lying along the branch: tilted 35
+# degrees, its far end lower. L4 is vertical. The branch rods are built as capsules (scrimmage/testrange/elements.py),
+# so a rod's highest point is its round end cap: for a 35 degree branch, its tip's axis point plus r (1 - sin 35) up
+# and r cos 35 away from the robot; the tips below are placed so the cap's top is where the manual puts it.
+
+[range]
+name = "A reef branch to place coral on"  # choice: a plain name for the field picker
+piece = "2025-coral"         # source: manual 5.7.1, CORAL (the preset in scrimmage/launcher/presets.toml cites its own numbers)
+
+# The pipe the branches come off: a vertical post from the carpet up to the L4 branch's bend. The real pipe is round
+# and carries the branches' bends; here it is a square box and the bends aren't built (the L4 branch stands free in
+# front of it, as the rods are fixed to the field).
+[[element]]
+name = "post"                # choice: the pipe the branches come off
+kind = "box"
+center = [5.2529, 4.0]       # estimate: under the L2 and L3 branches' base points (5.024 + 11 in cos 35 = 5.2529)
+size_in = [1.66, 1.66, 58.0] # source: manual 5.3: "1-1/4 in. Schedule 40 Steel" pipe, 1.66 in outer diameter (the OD of any 1 1/4 in Sch 40 pipe, as DEFAULT_SWITCH_DIAMETER in elements.py), drawn square; estimate: 58 in tall, up to the L4 branch's vertical end (below)
+
+[[element]]
+name = "branch_l2"           # choice: the L2 branch, the name a test's checks use
+kind = "rod"
+tip = [5.0240, 4.0, 0.8006]  # source: manual 5.3: "The highest point of the L2 BRANCH is 2 ft. 7 7/8 in. (~81 cm) from the carpet and is inset 1 5/8 in. (~41 mm) from the REEF base": the cap's top at x 5.0 + 1.625 in, z 31.875 in, less r cos 35 in x and r (1 - sin 35) in z
+base = [5.2529, 4.0, 0.6404] # source: manual 5.3: "angled up at 35°", toward the robot; estimate: 11 in along it from the tip (Figure 5-6 shows each angled branch rising about 6 1/2 in from its pipe, scaled by the L2 and L3 tops' 15 3/4 in apart; 6.5 / sin 35 = 11.3 in)
+diameter_in = 1.66           # source: manual 5.3: 1-1/4 in. Schedule 40 pipe, 1.66 in outer diameter
+friction = 0.4               # estimate: powder-coated steel against PVC, about PVC's own (the [surface.pvc] estimate in scrimmage/launcher/presets.toml)
+
+[[element]]
+name = "branch_l3"           # choice: the L3 branch, the name a test's checks use
+kind = "rod"
+tip = [5.0240, 4.0, 1.2007]  # source: manual 5.3: "The highest point of the L3 BRANCH is 3 ft. 11 5/8 in. (~121 cm) from the carpet and is inset 1 5/8 in. (~41 mm) from the REEF base": placed as branch_l2's
+base = [5.2529, 4.0, 1.0404] # source: manual 5.3: "angled up at 35°"; estimate: 11 in long, as branch_l2
+diameter_in = 1.66           # source: as branch_l2
+friction = 0.4               # estimate: as branch_l2
+
+[[element]]
+name = "branch_l4"           # choice: the L4 branch, the name a test's checks use
+kind = "rod"
+tip = [5.0286, 4.0, 1.8288]  # source: manual 5.3: "they are vertical. The highest point of the L4 BRANCH is 6 ft. (~183 cm) from the carpet and is inset 1 1/8 in. (~29 mm) from the REEF base": x 5.0 + 1.125 in, z 72 in (a vertical rod's tip is its highest point)
+base = [5.0286, 4.0, 1.4732] # estimate: its vertical part 14 in long, down to 58 in (Figure 5-6, scaled as branch_l2's)
+diameter_in = 1.66           # source: as branch_l2
+friction = 0.4               # estimate: as branch_l2
+
+# The CORAL STATION: coral comes out of an opening whose bottom is 37 1/2 in up, at the foot of a 55 degree CHUTE. The
+# real station stands in a field corner, angled between the guardrail and the alliance wall, with an opening 6 ft 4 in
+# wide; here it is a narrower chute (the station's default width, 1.3 coral lengths) straight out from the blue wall.
+[[station]]
+name = "coral_station"       # choice: the name a test's feeding blocks use
+release = [0.3, 1.5, 1.471]   # choice: 0.3 m out from the blue alliance wall, 1.5 m from the right guardrail, clear of the post; z set so the chute's low end (its floor's top) is the opening's bottom, 37 1/2 in up (source: manual 5.6.2, "the bottom of the opening is 3 ft. 1 1/2 in. (~95 cm) from the carpet")
+heading_deg = 0.0            # choice: fed toward +x, onto the field
+chute = { length = 0.3, slope_deg = 55.0 }   # source: manual 5.6.2: "A 55° sloped tunnel, called the CHUTE"; estimate: 0.3 m of it, the length that matters as the coral leaves (the tunnel's own length isn't given)
+
+[[floor_balls]]
+at = [[2.63, 4.0]]           # choice: 0.63 m ahead of the facing_coral start's center: 0.2 m past its bumpers' face (a 0.7 m frame's half length and the 8 cm bumper, 0.43 m), between the grabber's open jaws
+tip_deg = 0                  # choice: lying on its side
+rotation_deg = 0             # choice: lying in line, along x: a grabber that lifts it on an arm tilts it to a 35 degree branch (a coral lying across can't thread one)
+
+# Starts. A 0.9 m square robot outline is assumed (scrimmage/testrange/elements.py ROBOT_OUTLINE).
+[start.facing_coral]
+pose = [2.0, 4.0, 0.0]       # choice: heading +x toward the coral and, 3 m on, the reef's branches
+
+[start.at_coral_station]
+pose = [0.922, 1.5, 180.0]   # choice: facing the station, its outline's front edge at the chute's low end (0.3 + 0.3 cos 55 = 0.472 m, plus 0.45 m)

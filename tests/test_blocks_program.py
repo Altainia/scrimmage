@@ -237,10 +237,13 @@ def test_old_test_files_load_unchanged():
      "36 placements; at most 25"),
     ("[setup]\nfloor_spread = { distance_in = [0] }", "more than 0"),
     ("[setup]\nfloor_spread = { offset_in = [] }", "list of numbers"),
+    ("[setup]\nfloor_spread = { tip_deg = [0, 95] }", "tip_deg must be from 0 to 90"),
     ("[setup]\nstation = { f = { interval = 0 } }", "more than 0"),
     ("[setup]\nstation = { f = { colour = 1 } }", "isn't something"),
     ("[setup]\nstation = { f = { spread_position = [1, 2] } }", "3 numbers"),
     ("[setup]\nstation = { f = { stock = 201 } }", "stock can be at most 200 pieces, not 201"),
+    ("[setup]\nstation = { f = { tip_deg = 91 } }", "tip_deg must be from -90 to 90"),
+    ("[setup]\nstation = { f = { spread_turn_deg = -5 } }", "spread_turn_deg can't be negative"),
     ('[[block]]\ndo = "turn"\ndegrees = 0', "can't be 0"),
     ('[[block]]\ndo = "turn"\ndegrees = 721', "between -720 and 720"),
     ('[[block]]\ndo = "drive"\ndistance = -1\ndirection = "back"', "use one or the other"),
@@ -259,6 +262,13 @@ def test_bad_setup_and_blocks_say_what(bad, words):
         P.loads(HEAD + bad, PATH)
 
 
+def test_a_stations_tip_and_turn_are_setup_settings():
+    p = P.loads(HEAD + "[setup]\nstation = { f = { tip_deg = -30, turn_deg = -90, spread_tip_deg = 10,"
+                " spread_turn_deg = 45 } }", PATH)
+    assert p.setup["station"]["f"] == {"tip_deg": -30.0, "turn_deg": -90.0, "spread_tip_deg": 10.0,
+                                       "spread_turn_deg": 45.0}
+
+
 def test_a_cleared_hopper_is_kept():
     """`hopper = []` (the student cleared it in Setup) is kept, so Setup doesn't preselect one again; a test that
     names no hopper has none (None), and writes none."""
@@ -268,3 +278,17 @@ def test_a_cleared_hopper_is_kept():
     q = P.loads(HEAD, PATH)
     assert q.hopper is None and "hopper" not in P.dumps(q) and P.to_json(q)["hopper"] is None
     assert P.from_json(P.to_json(q), PATH).hopper is None
+
+
+def test_setup_piece_is_a_ball_or_piece_preset():
+    p = P.loads(HEAD + '[setup]\npiece = "2025-coral"', PATH)
+    assert p.setup == {"piece": "2025-coral"} and P.loads(P.dumps(p), PATH) == p
+    assert P.from_json(P.to_json(p), PATH) == p
+    assert P.loads(HEAD + '[setup]\npiece = "2014-ball"', PATH).setup == {"piece": "2014-ball"}
+    with pytest.raises(P.TestFileError, match="isn't a piece; pieces: .*2015-tote.*2014-ball"):
+        P.loads(HEAD + '[setup]\npiece = "frisbee"', PATH)
+
+
+def test_setup_piece_and_ball_together_are_refused():
+    with pytest.raises(P.TestFileError, match="give ball or piece, not both"):
+        P.loads(HEAD + '[setup]\nball = "2014-ball"\npiece = "2025-coral"', PATH)

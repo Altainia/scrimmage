@@ -44,7 +44,7 @@ from .. import teamfolders
 from ..cad import CadError
 from ..cad.axis import fit_axis
 from ..cad.bodies import assembly_diagonal, is_hardware
-from ..cad.build import MARKER, BuildResult, _resolve, build_parts, write_parts
+from ..cad.build import MARKER, BuildResult, _resolve, body_home, build_parts, part_folder, write_parts
 from ..cad.checklist import checklist
 from ..cad.edits import EditError, apply_edit
 from ..cad.frame import to_robot
@@ -54,6 +54,9 @@ from ..cad.names import sanitize
 from ..cad.settings import new_import, read_import, reimport, replace_file, write_import
 from ..cad.source import MESH_SUFFIXES, STEP_SUFFIXES, load_source
 from ..motors import MOTORS
+from ..parts.grip import GRIP_MATERIALS, set_grip
+from ..parts.model import PartError
+from ..parts.overlay import OVERLAY
 from .bench_session import SessionError
 
 POLL_PERIOD = 0.25
@@ -69,8 +72,10 @@ log = logging.getLogger("scrimmage.assembler")
 
 
 def materials() -> dict:
-    """GET /api/part/materials: the materials (key -> label, density, printed) and the motor names."""
-    return {"materials": {k: dataclasses.asdict(m) for k, m in MATERIALS.items()}, "motors": sorted(MOTORS)}
+    """GET /api/part/materials: the materials (key -> label, density, printed), the motor names and the grip materials
+    a body's Grip picker offers ([key, label, friction estimate], parts/grip.py's order)."""
+    return {"materials": {k: dataclasses.asdict(m) for k, m in MATERIALS.items()}, "motors": sorted(MOTORS),
+            "grips": [[k, label, mu] for k, (label, mu) in GRIP_MATERIALS.items()]}
 
 
 def _sig(*paths: Path):
@@ -361,6 +366,15 @@ class _Session:
 
 # ---------------------------------------------------------------- import mode
 
+@dataclasses.dataclass(frozen=True)
+class GripStep:
+    """A grip change on the import's undo history (ruling P29): `grip` is what Undo (or Redo) writes back for part
+    `part`'s body `body` (None: no grip). A grip lives in the built folder's own edits, not in the import file."""
+    part: str
+    body: str
+    grip: str | float | None
+
+
 class PartSession(_Session):
     mode = "import"
 
@@ -589,6 +603,7 @@ class PartSession(_Session):
                     sums[ps.body].append((mass, R @ com + t))
             out["couplings"] = copy.deepcopy(imp.couplings)
             out["loops"] = copy.deepcopy(imp.loops)
+            grips = self._grips()
             for name, bs in imp.bodies.items():
                 got = sums[name]
                 total = sum(m for m, _ in got)
@@ -597,7 +612,8 @@ class PartSession(_Session):
                      for k, v in ((f.name, getattr(bs, f.name)) for f in dataclasses.fields(bs))}
                 d["mounts"] = [dataclasses.asdict(m) for m in bs.mounts]
                 d["typed_mass"] = d.pop("mass")
-                out["bodies"].append({"name": name, **d, "mass": float(bs.mass) if bs.mass else total, "com": com})
+                out["bodies"].append({"name": name, **d, "mass": float(bs.mass) if bs.mass else total, "com": com,
+                                      "grip": grips.get(name)})
             built = self._result.parts if self._result is not None else {}
             for name, ps in imp.parts.items():
                 b = built.get(name)
@@ -642,6 +658,8 @@ class PartSession(_Session):
             raise SessionError(400, "args must be a JSON object")
         with self._lock:
             self._writable(body)
+            if op == "set_grip":
+                return self._set_grip(args)
             try:
                 new, msgs = apply_edit(self.imp, op, args)
             except EditError as e:
@@ -651,12 +669,86 @@ class PartSession(_Session):
             self._commit(self.imp, new, msgs)
             return 200, self.state()
 
+    def _set_grip(self, a: dict) -> tuple[int, dict]:
+        """set_grip {body, grip}: the grip material (parts/grip.py; None: the default friction) in the own edits of
+        the built folder holding `body`, which a rebuild keeps (write_parts). Not in the import file, so nothing is
+        rebuilt and it isn't on the undo history (lock held)."""
+        name = a.get("body")
+        if not isinstance(name, str) or name not in self.imp.bodies:
+            return _refused(EditError("body", f"There is no body called {name}: pick one from the list."))
+        if "grip" not in a:
+            return _refused(EditError("grip", "Say the grip material, or grip = none for the default friction."))
+        try:
+            part, home = body_home(self.imp, name)
+        except CadError as e:
+            return _refused(EditError("body", str(e)))
+        if home != name:
+            return _refused(EditError("body", f"{name} is built into {home}'s body (it has no joint of its own): "
+                                              f"set the grip on {home}."))
+        folder = part_folder(self.imp, part, self.path)
+        # not while a build runs: write_parts copies the folder's edits before it swaps the new folder in
+        if not (folder / "part.toml").is_file() or self._build["state"] == "building":
+            return _refused(EditError("body", f"{part} isn't built yet: wait for the build, then set the grip."))
+        before = self._grips().get(name)
+        try:
+            set_grip(folder, name, a["grip"])
+        except PartError as e:
+            return _refused(EditError("grip", str(e)))
+        except OSError as e:
+            raise SessionError(500, f"can't save {folder / OVERLAY}: {e.strerror or e}") from None
+        self._push(GripStep(part, name, before))      # ruling P29: Undo puts the previous grip back
+        self._messages = []
+        self._bump(changed=True)
+        return 200, self.state()
+
+    def _grip_step(self, step: "GripStep", other: list) -> None:
+        """Undo or redo a grip change: `step`'s grip written again, and the grip it replaces put on `other` (lock
+        held)."""
+        folder = part_folder(self.imp, step.part, self.path)
+        if self._build["state"] == "building":
+            raise SessionError(409, f"{step.part} is being built: wait for the build, then undo the grip.")
+        now = self._grips().get(step.body)
+        try:
+            set_grip(folder, step.body, step.grip)
+        except PartError as e:
+            raise SessionError(400, str(e)) from None
+        except OSError as e:
+            raise SessionError(500, f"can't save {folder / OVERLAY}: {e.strerror or e}") from None
+        other.append(GripStep(step.part, step.body, now))
+
+    def _grips(self) -> dict:
+        """Import body -> its grip in its built folder's own edits (None: none, or a body built into another's)."""
+        out: dict = {}
+        read: dict = {}
+        for name in self.imp.bodies:
+            try:
+                part, home = body_home(self.imp, name)
+            except CadError:
+                return {}
+            if home != name:
+                continue
+            if part not in read:
+                try:
+                    f = part_folder(self.imp, part, self.path) / OVERLAY
+                    read[part] = tomllib.loads(f.read_text(encoding="utf-8")) if f.is_file() else {}
+                except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, CadError):
+                    read[part] = {}
+            own = read[part].get("body", {}).get(name, {})
+            out[name] = own.get("grip") if isinstance(own, dict) else None
+        return out
+
     def history(self, which: str, body: dict) -> tuple[int, dict]:
         with self._lock:
             self._writable(body)
             stack, other = (self._undo, self._redo) if which == "undo" else (self._redo, self._undo)
             if not stack:
                 return 200, {**self.state(), "ok": False}
+            if isinstance(stack[-1], GripStep):
+                self._grip_step(stack[-1], other)
+                stack.pop()
+                self._messages = []
+                self._bump(changed=True)
+                return 200, self.state()
             new = copy.deepcopy(stack[-1])
             new.written = dict(self.imp.written)   # the build's record is never undone
             if (new.source, new.units) != (self.imp.source, self.imp.units):

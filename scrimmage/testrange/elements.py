@@ -17,9 +17,11 @@ carpet, with a post under each end down to the carpet (`posts`, default true). W
 vertical sprung slide (its `damping`, N s/m, default 0), standing in for the rung's bending; without, it is rigid.
 `level` names one of the `[climb]` levels; the bar's `points` come from there. A box is a static block, `size`
 (x, y, z) with its bottom `base_height` up; `ground = true` makes it floor for the terrain signals (a floor
-protector, a step), otherwise it is structure (a truss). A switch is a bar hung `bar_drop` below a hinge at
-`hinge_height` that turns about the element's local y: `mass`, its CoM `com_drop` below the hinge, stops at
-+-`stop_deg`, joint `damping` (N m s/rad) and `level_deg`, within which the scoring rule calls it level.
+protector, a step), otherwise it is structure (a truss). A rod is a straight round or square rod fixed to the field
+between two ends, `base` and `tip` (x, y, z; also `base_in`, `tip_in`), `diameter` across (a square rod's side): a
+peg, a pole, a coral branch. It has no `center` or `yaw_deg`: its ends place it. A switch is a bar hung `bar_drop`
+below a hinge at `hinge_height` that turns about the element's local y: `mass`, its CoM `com_drop` below the hinge,
+stops at +-`stop_deg`, joint `damping` (N m s/rad) and `level_deg`, within which the scoring rule calls it level.
 
 `[climb]` picks a scoring rule (CLIMB_RULES) and lists the levels lowest first, each with its points:
 `levels = { LOW = 4, MID = 6 }`. The "hang" rule also takes `level_bonus` and the `switch` it applies to.
@@ -51,6 +53,9 @@ DEFAULT_SWITCH_DIAMETER = 1.66 * IN
 # difference (the 2022 HANGAR's is 3/8 in, manual 5.4.3).
 START_STEP = 0.5 * IN  # m
 CLIMB_RULES = ("lowest-rung", "hang", "lowest-point")
+# A start's robot may not lie under a rod whose low end is lower than this (it would begin inside the rod); higher
+# rods (reef branches, overhead) are allowed over a start.
+ROD_START_CLEARANCE = 0.5  # m
 POST = 2.0 * IN  # m: a bar's posts' square section (estimate: a typical post; no range here has posts measured)
 
 
@@ -129,6 +134,34 @@ class Box:
 
 
 @dataclass(frozen=True)
+class Rod:
+    """A straight rod from `base` to `tip` (field coordinates, m), fixed to the field: a peg, a pole, a coral branch.
+    `center` (the mean of the two ends, on the carpet plan) and `yaw_deg` (the plan direction from base to tip, 0 for
+    an upright rod) are derived, so a rod has a footprint like the other elements."""
+    name: str
+    base: tuple[float, float, float]
+    tip: tuple[float, float, float]
+    diameter: float  # a round rod's, or a square rod's side
+    section: str = "round"  # "round" or "square"
+    friction: float = DEFAULT_FRICTION
+    center: tuple[float, float] = field(init=False)
+    yaw_deg: float = field(init=False)
+
+    def __post_init__(self) -> None:
+        d = np.asarray(self.tip, float) - np.asarray(self.base, float)
+        object.__setattr__(self, "center", ((self.base[0] + self.tip[0]) / 2.0, (self.base[1] + self.tip[1]) / 2.0))
+        object.__setattr__(self, "yaw_deg", math.degrees(math.atan2(d[1], d[0])) if math.hypot(d[0], d[1]) > 1e-9
+                           else 0.0)
+
+    def length(self) -> float:
+        return float(np.linalg.norm(np.asarray(self.tip, float) - np.asarray(self.base, float)))
+
+    def axis(self) -> np.ndarray:
+        """The unit vector from the base to the tip."""
+        return (np.asarray(self.tip, float) - np.asarray(self.base, float)) / self.length()
+
+
+@dataclass(frozen=True)
 class Switch:
     name: str
     center: tuple[float, float]
@@ -154,7 +187,7 @@ class ClimbRule:
     switch: str | None = None  # "hang": the switch element
 
 
-Element = Bump | Ramp | Platform | Bar | Box | Switch
+Element = Bump | Ramp | Platform | Bar | Box | Switch | Rod
 
 _COMMON = ("name", "kind", "center", "center_in", "yaw_deg", "friction")
 _LENGTHS = {
@@ -164,6 +197,7 @@ _LENGTHS = {
     "bar": ("length", "diameter", "height"),
     "box": ("base_height",),
     "switch": ("hinge_height", "bar_length", "bar_drop", "com_drop", "diameter"),
+    "rod": ("diameter",),
 }
 _OTHER = {
     "bump": ("ramp_deg",),
@@ -172,11 +206,12 @@ _OTHER = {
     "bar": ("posts", "stiffness", "damping", "level", "section"),
     "box": ("size", "size_in", "ground"),
     "switch": ("mass", "stop_deg", "damping", "level_deg"),
+    "rod": ("base", "base_in", "tip", "tip_in", "section"),
 }
 _ALL = tuple(dict.fromkeys(
     _COMMON + tuple(k + s for v in _LENGTHS.values() for k in v for s in ("", "_in"))
     + tuple(k for v in _OTHER.values() for k in v)))
-_CLASSES = {"bump": Bump, "ramp": Ramp, "platform": Platform, "bar": Bar, "box": Box, "switch": Switch}
+_CLASSES = {"bump": Bump, "ramp": Ramp, "platform": Platform, "bar": Bar, "box": Box, "switch": Switch, "rod": Rod}
 # Length keys that may be 0 or left out, with their defaults.
 _LENGTH_DEFAULTS = {"crest": DEFAULT_CREST, "lip": DEFAULT_LIP, "base_height": 0.0}
 
@@ -243,6 +278,30 @@ def _climbing(r: _Reader, kind: str, kw: dict) -> None:
                         "the hinge")
 
 
+def _end(r: _Reader, key: str) -> tuple[float, float, float]:
+    """A rod's `base` or `tip`, (x, y, z) in m or, as `<key>_in`, in inches."""
+    if r.has(key) and r.has(key + "_in"):
+        raise r.err(f"has both {key} and {key}_in; give one")
+    if r.has(key + "_in"):
+        return tuple(v * IN for v in r.nums(key + "_in", 3))
+    return r.nums(key, 3)
+
+
+def _rod(r: _Reader, name: str) -> Rod:
+    """A rod: no center or yaw (its ends say where it is), two different ends, and a diameter shorter than it."""
+    kw = dict(name=name, base=_end(r, "base"), tip=_end(r, "tip"), diameter=_length(r, "diameter"),
+              friction=r.num("friction", DEFAULT_FRICTION, positive=True))
+    kw["section"] = r.text("section") if r.has("section") else "round"
+    if kw["section"] not in ("round", "square"):
+        raise r.err(f"section must be \"round\" or \"square\", not {kw['section']!r}")
+    e = Rod(**kw)
+    if e.length() < 1e-9:
+        raise RangeError(f"{r.path}: {r.where}: base and tip are the same point; a rod needs two ends")
+    if e.diameter > e.length():
+        raise RangeError(f"{r.path}: {r.where}: diameter {e.diameter:.4g} m is longer than the rod")
+    return e
+
+
 def _element(path, table, i: int) -> Element:
     where = f"[[element]] #{i + 1}"
     name = _Reader(path, where, table, _ALL).text("name")
@@ -251,7 +310,11 @@ def _element(path, table, i: int) -> Element:
     if kind not in _CLASSES:
         raise RangeError(f"{path}: {where} has unknown kind '{kind}'; kinds: {', '.join(_CLASSES)}")
     valid = _COMMON + tuple(k + s for k in _LENGTHS[kind] for s in ("", "_in")) + _OTHER[kind]
+    if kind == "rod":    # its ends place it
+        valid = tuple(k for k in valid if k not in ("center", "center_in", "yaw_deg"))
     r = _Reader(path, where, table, valid)
+    if kind == "rod":
+        return _rod(r, name)
     kw: dict = dict(name=name, center=_center(r), yaw_deg=r.num("yaw_deg", 0.0),
                     friction=r.num("friction", DEFAULT_FRICTION, positive=True))
     defaults = dict(_LENGTH_DEFAULTS, diameter=DEFAULT_SWITCH_DIAMETER) if kind == "switch" else _LENGTH_DEFAULTS
@@ -351,6 +414,8 @@ def _extent(e: Element) -> tuple[float, float]:
         return e.size[0], e.size[1]
     if isinstance(e, Switch):
         return e.bar_length, e.diameter
+    if isinstance(e, Rod):   # its plan, with the rod's thickness added at both ends (a box of the rod's own width)
+        return math.hypot(e.tip[0] - e.base[0], e.tip[1] - e.base[1]) + e.diameter, e.diameter
     if isinstance(e, Ramp):
         run = e.height / math.tan(math.radians(e.ramp_deg))
         return e.deck + run * (2 if e.two_sided else 1), e.width
@@ -386,6 +451,9 @@ def _on_floor(e: Element, start: bool) -> list[np.ndarray]:
     raised off the carpet; a start may lie on a thin ground box (a floor protector, START_STEP), a ball may not."""
     if isinstance(e, Switch):
         return []
+    if isinstance(e, Rod):   # a ball only rests against a rod that reaches the carpet (a peg); a start also may not
+        low = min(e.base[2], e.tip[2]) - e.diameter / 2.0       # lie under any part of a rod lower than the robot
+        return [footprint(e)] if low <= (ROD_START_CLEARANCE if start else 0.0) + 1e-9 else []
     if isinstance(e, Bar):
         if not e.posts:
             return []
@@ -398,9 +466,11 @@ def _on_floor(e: Element, start: bool) -> list[np.ndarray]:
     return [footprint(e)]
 
 
-def check_clear(path, elements, starts: dict, floor_balls: np.ndarray, ball_radius: float) -> None:
-    """Reject a start whose outline overlaps an element standing on the carpet, and a floor ball resting inside one
-    (see _on_floor)."""
+def check_clear(path, elements, starts: dict, floor_balls: np.ndarray, reaches, names=None) -> None:
+    """Reject a start whose outline overlaps an element standing on the carpet, and a floor piece resting inside one
+    (see _on_floor). `reaches` are the floor pieces' reaches across the carpet (a ball's radius), one each or one for
+    all; `names` what a student reads for each ("ball 3", "coral 1"; default "ball <k>")."""
+    reaches = np.broadcast_to(np.asarray(reaches, dtype=float), (len(floor_balls),))
     for sname, (x, y, heading) in starts.items():
         outline = _rect((x, y), heading, ROBOT_OUTLINE, ROBOT_OUTLINE)
         for e in elements:
@@ -412,10 +482,11 @@ def check_clear(path, elements, starts: dict, floor_balls: np.ndarray, ball_radi
     for k, (x, y) in enumerate(floor_balls):
         for e in elements:
             for f in _on_floor(e, start=False):
-                if _gap(f, (x, y)) < ball_radius:
+                if _gap(f, (x, y)) < reaches[k]:
+                    what = names[k] if names is not None else f"ball {k}"
                     raise RangeError(
-                        f"{path}: floor_balls: ball {k} at ({x:.4g}, {y:.4g}) lies on element '{e.name}'; move the"
-                        f" ball off it"
+                        f"{path}: floor_balls: {what} at ({x:.4g}, {y:.4g}) lies on element '{e.name}'; move the"
+                        f" {what.rsplit(' ', 1)[0]} off it"
                     )
 
 

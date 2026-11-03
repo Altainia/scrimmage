@@ -1,4 +1,4 @@
-"""The range's human player stations at run time: each feeds balls from its parked pool (RangeLayout.station_slots)
+"""The range's human player stations at run time: each feeds pieces from its parked pool (RangeLayout.station_slots)
 when it is told to (start, stop, request one).
 
 A feed puts the station's next pool ball in play at the release point, moving along the station's direction, before
@@ -8,15 +8,20 @@ station's spreads, drawn uniformly from -1 to 1:
 - position: release + U * spread_position on each axis;
 - speed: speed + U * spread_speed, at least 0;
 - direction: Station.direction(heading_deg + U * spread_yaw_deg, pitch_deg + U * spread_pitch_deg);
-- turn: roll, pitch and yaw of U * spread_rotation_deg (it does nothing to a ball). No spin.
+- turn: roll, pitch and yaw of U * spread_rotation_deg (it does nothing to a ball); a rigid piece is first laid at
+  PieceKind.orient(tip_deg + U * spread_tip_deg, heading_deg + turn_deg + U * spread_turn_deg). No spin.
+- a rigid piece fed into a chute is then lowered straight down until it is FLOOR_GAP clear of the floor (the floor
+  is set for the lowest any feed may reach, so the others would drop onto it); a ball is released where it is drawn.
 
 The draws come from numpy.random.default_rng([seed, k]) for station k, nine per feed in a fixed order (yaw, pitch,
-speed, dx, dy, dz, roll, pitch, yaw), so a seed gives the same feeds whatever the timing, and one station's feeds
-don't change another's. A fed ball has BALL_BITS: it can touch the robot at once (a human player feeds into it).
+speed, dx, dy, dz, roll, pitch, yaw) and, for a rigid piece, two more (tip, turn), so a seed gives the same feeds
+whatever the timing, and one station's feeds don't change another's. A fed piece has BALL_BITS: it can touch the
+robot at once (a human player feeds into it).
 
 A station feeds when it is feeding (start) or has pieces requested (request), its last feed was at least its
-interval ago (the first is at once), its pool isn't used up, and no ball in play has its center within one ball
-diameter of the release point (the last one hasn't cleared it yet: the station waits, as the bench's inlet does).
+interval ago (the first is at once), its pool isn't used up, and no piece in play has its center within its own
+bounding diameter of the release point (the last one hasn't cleared it yet: the station waits, as the bench's inlet
+does).
 """
 
 from __future__ import annotations
@@ -28,10 +33,13 @@ import numpy as np
 
 from .balls import Balls
 from .build import BALL_BITS, RangeLayout, _quat, _rpy
+from .pieces import _matrix, _quat as _piece_quat
 from .spec import Range
 from .station import DEFAULT_SEED, check_seed
 
 EPS = 1e-6      # s: a feed due within this of now is due now (the step clock's rounding)
+FLOOR_GAP = 0.001   # m: a rigid piece fed into a chute is set down this far clear of its floor (estimate: clear of
+                    # contact, a drop too short to bounce)
 
 
 @dataclass
@@ -48,6 +56,11 @@ class Feeder:
     def __init__(self, balls: Balls, layout: RangeLayout, rng: Range, seed: int = DEFAULT_SEED):
         self.balls, self.layout = balls, layout
         self.stations = rng.stations
+        self._kinds = [st.kind_of(rng) for st in self.stations]
+        # per station with a chute: its floor's turn (normal to +z), upward normal and a point on its top plane
+        self._floors = [None if st.chute is None else
+                        (st.to_floor(), st.to_floor()[2], np.array([*st.release[:2], st.chute_top(kind)]))
+                        for st, kind in zip(self.stations, self._kinds)]
         self._k = {st.name: k for k, st in enumerate(self.stations)}
         self.seed = seed
         self.fed: list[Fed] = []
@@ -106,8 +119,15 @@ class Feeder:
             pos = np.array(st.release) + np.array([dx, dy, dz]) * np.array(st.spread_position)
             v = max(0.0, st.speed + speed * st.spread_speed) * st.direction(
                 st.heading_deg + yaw * st.spread_yaw_deg, st.pitch_deg + pitch * st.spread_pitch_deg)
-            turn = np.array([rx, ry, rz]) * np.array(st.spread_rotation_deg)
-            self.balls.place(i, pos, v, (0.0, 0.0, 0.0), BALL_BITS, quat=_quat(_rpy(turn)))
+            turn = _rpy(np.array([rx, ry, rz]) * np.array(st.spread_rotation_deg))
+            kind = self._kinds[k]
+            if kind.form != "ball":
+                tip, about = self._gen[k].uniform(-1.0, 1.0, 2).tolist()
+                turn = turn @ _matrix(kind.orient(st.tip_deg + tip * st.spread_tip_deg,
+                                                  st.heading_deg + st.turn_deg + about * st.spread_turn_deg))
+                if self._floors[k] is not None:
+                    pos = self._set_down(pos, turn, kind, *self._floors[k], st.chute.slope_deg)
+            self.balls.place(i, pos, v, (0.0, 0.0, 0.0), BALL_BITS, quat=_quat(turn))
             self._next[k] += 1
             self._last[k] = t
             self._requested[k] = max(0, self._requested[k] - 1)
@@ -117,13 +137,22 @@ class Feeder:
             out.append(fed)
         return out
 
+    @staticmethod
+    def _set_down(pos, turn, kind, to_floor, normal, on_floor, slope_deg: float) -> np.ndarray:
+        """`pos` lowered straight down until the piece, turned by `turn`, is FLOOR_GAP clear of the chute floor (the
+        floor sits at the lowest any feed may reach, so most feeds would otherwise fall onto it); never raised."""
+        above = float((pos - on_floor) @ normal) - kind.lowest(_piece_quat(to_floor @ turn)) - FLOOR_GAP
+        if above <= 0.0:
+            return pos
+        return pos - np.array([0.0, 0.0, above / math.cos(math.radians(slope_deg))])
+
     def _blocked(self, k: int) -> bool:
         b = self.balls
         f = np.flatnonzero(b.field)
         if not len(f):
             return False
         gap = np.linalg.norm(b._qpos[f, :3] - np.array(self.stations[k].release), axis=1)
-        return bool((gap < 2.0 * b.r).any())
+        return bool((gap < 2.0 * b.radius[f]).any())
 
     # ------------------------------------------------------------------------------------------------ reports
 
@@ -146,5 +175,5 @@ class Feeder:
         return self._next[k] >= self.stations[k].pool()
 
     def blocked(self, name: str) -> bool:
-        """A ball in play is at the release point now (its center within one diameter of it)."""
+        """A piece in play is at the release point now (its center within its bounding diameter of it)."""
         return self._blocked(self._index(name))

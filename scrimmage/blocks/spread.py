@@ -6,15 +6,20 @@ is its own setting. The test's `[setup] floor_spread` lists values for any of SP
     offset_in      across the robot's path, left (+) or right (-) of its center line
     distance_in    ahead of the robot's start, along its (turned) heading
     angle_deg      the approach angle: the robot's start heading turns by this, counterclockwise seen from above
-    rotation_deg   the ball turned about the vertical (it does nothing to a ball; the format carries it for pieces)
+    rotation_deg   the piece turned about the vertical, from the robot's heading (a ball: from the field's +x; it does
+                   nothing to a ball)
+    tip_deg        the piece's axis pitched up from lying, 0 to 90 (a coral standing on end at 90, a flat kind such
+                   as a disc lying flat; it does nothing to a ball)
 
 The placements are every combination of them (`placements`), at most MAX_PLACEMENTS. The robot keeps its start
-position; the ball moved is `spread_ball`'s, the floor ball nearest ahead of the start (within SPREAD_CONE_DEG of the
-heading and SPREAD_REACH), and an axis left out keeps that ball's own offset or distance, or 0 for the angle and
-rotation. "Picked up" means the ball made it in (feeds.py's outcome "in": into a hopper body).
+position; the piece moved is `spread_ball`'s, the floor piece nearest ahead of the start (within SPREAD_CONE_DEG of the
+heading and SPREAD_REACH), and an axis left out keeps that piece's own offset, distance, tip and turn (a ball's tip
+and turn are 0), or 0 for the angle. A piece other than a ball is set down at its own resting height for its tip and
+turn, and a placement names how it lies ("standing on end", "lying across": pieces.orientation_words) in place of
+"turned 45°". "Picked up" means the piece made it in (feeds.py's outcome "in": into a hopper body).
 
 The spread is kept as `base/spread-<NNN>/`, as a sweep is (store.py, KEEP_SPREADS): a run per placement (`001/` ...),
-`table.csv` (placement, the four axes, status, picked up, outcome) and `spread.json` (spread, placements, picked,
+`table.csv` (placement, the five axes, status, picked up, outcome) and `spread.json` (spread, placements, picked,
 sentence, and `cancelled` when it was stopped). A cancelled spread is kept and prunes nothing; its `picked` (and the
 table's rows) cover only the placements run, so `picked` is shorter than `placements`, the two aligned by index.
 """
@@ -25,6 +30,7 @@ import csv
 import itertools
 import json
 import math
+import re
 import shutil
 import threading
 from pathlib import Path
@@ -32,6 +38,8 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
+from ..testrange.build import default_tip, rest_pose
+from ..testrange.pieces import PieceKind, orientation_words
 from . import store
 from .program import SPREAD_AXES, Program, TestFileError
 
@@ -54,9 +62,18 @@ def start_pose(world) -> tuple[float, float, float] | None:
     return tuple(float(v) for v in pose) if pose is not None else None
 
 
+def spread_kind(world, i: int) -> PieceKind | None:
+    """Floor piece i's kind, None for a ball."""
+    tr = world.test_range
+    kind = tr.range.kinds.get(str(tr.balls.kind[i]))
+    return None if kind is None or kind.form == "ball" else kind
+
+
 def spread_ball(world) -> tuple[int, dict] | None:
-    """The floor ball nearest ahead of the robot's start (within SPREAD_CONE_DEG of its heading and SPREAD_REACH of
-    it) and where it lies from the start, {"offset_in" (left +), "distance_in" (ahead)}; None when there is none."""
+    """The floor piece nearest ahead of the robot's start (within SPREAD_CONE_DEG of its heading and SPREAD_REACH of
+    it) and where it lies from the start, {"offset_in" (left +), "distance_in" (ahead)}, and for a piece other than a
+    ball how the field has it lying, {"tip_deg", "rotation_deg" (from the start's heading)}; None when there is
+    none."""
     tr = getattr(world, "test_range", None)
     pose = start_pose(world)
     if tr is None or pose is None or not tr.layout.n_floor:
@@ -72,8 +89,27 @@ def spread_ball(world) -> tuple[int, dict] | None:
     if not near:
         return None
     i = min(near, key=lambda k: dist[k])
-    # not rounded: an axis left out puts the ball exactly where the field has it
-    return i, {"offset_in": float(side[i]) / IN, "distance_in": float(ahead[i]) / IN}
+    # not rounded: an axis left out puts the piece exactly where the field has it
+    where = {"offset_in": float(side[i]) / IN, "distance_in": float(ahead[i]) / IN}
+    kind = spread_kind(world, i)
+    if kind is not None:
+        turns = tr.range.floor_turns     # a row per floor piece, but empty in a Range made without it (its default)
+        tip, turn = (float(turns[i][0]), float(turns[i][1])) if len(turns) == len(tr.range.floor_balls) \
+            else (default_tip(kind), 0.0)
+        where.update(tip_deg=tip, rotation_deg=(turn - heading + 180.0) % 360.0 - 180.0)
+    return i, where
+
+
+def rest_of(world, i: int, p: dict, heading: float) -> tuple[float, list[float]]:
+    """Floor piece i set down as placement `p` has it, the robot heading `heading` (deg): its center's height and its
+    quaternion (w, x, y, z). A ball rests at its radius turned by rotation_deg from the field's +x; any other piece
+    at its kind's rest height, its axis tipped by tip_deg and turned by rotation_deg from the heading."""
+    if spread_kind(world, i) is None:
+        r = math.radians(p["rotation_deg"]) / 2.0
+        return world.test_range.balls.rest_z_of(i), [math.cos(r), 0.0, 0.0, math.sin(r)]
+    tr = world.test_range
+    z, quat = rest_pose(tr.range, str(tr.balls.kind[i]), (p["tip_deg"], heading + p["rotation_deg"]))
+    return z, quat if quat is not None else [1.0, 0.0, 0.0, 0.0]
 
 
 CLEAR_IN = 1.0            # in: a placement's ball is at least this far clear of the robot (Setup's nearest_in)
@@ -102,44 +138,94 @@ def _robot_boxes(world) -> np.ndarray:
     return np.array(out, float).reshape(-1, 6)
 
 
+def _shape(world, i: int, p: dict) -> tuple[float, tuple, np.ndarray, np.ndarray]:
+    """Floor piece i as placement `p` has it, in the robot's frame with its center at the origin: its center's
+    height, its solids' oriented boxes (centers, axes as rows, half sizes: PieceKind.turned_solids) and its spheres'
+    centers ((m, 3)) and radii. A ball is one sphere."""
+    kind = spread_kind(world, i)
+    if kind is None:
+        r = world.test_range.balls.rest_z_of(i)     # a resting ball's center height: its radius
+        return r, (np.zeros((0, 3)), np.zeros((0, 3, 3)), np.zeros((0, 3))), np.zeros((1, 3)), np.array([r])
+    z, quat = rest_of(world, i, p, 0.0)
+    bc, ba, bh, sc, radii = kind.turned_solids(quat)
+    return z, (bc, ba, bh), sc, radii
+
+
+def _boxes_overlap(obbs: tuple, lo: np.ndarray, hi: np.ndarray, tol: float = 1e-3) -> bool:
+    """Whether any oriented box (centers (n, 3), axes (n, 3, 3) as rows, half sizes (n, 3)) overlaps any
+    axis-aligned box (corners lo, hi: (m, 3)) by more than `tol`: the separating-axis test, over the three world axes,
+    the box's three and their nine cross products."""
+    cb, ub, hb = obbs
+    if not len(cb) or not len(lo):
+        return False
+    ca, ha = (lo + hi) / 2.0, (hi - lo) / 2.0
+    eye = np.broadcast_to(np.eye(3), ub.shape)
+    cross = np.cross(eye[:, :, None, :], ub[:, None, :, :]).reshape(-1, 9, 3)
+    axes = np.concatenate([eye, ub, cross], axis=1)                                 # (n, 15, 3)
+    norm = np.linalg.norm(axes, axis=2, keepdims=True)
+    axes = np.where(norm > 1e-9, axes / np.maximum(norm, 1e-12), np.array([1.0, 0.0, 0.0]))    # parallel: any axis
+    r_b = (np.abs(axes @ ub.transpose(0, 2, 1)) * hb[:, None, :]).sum(axis=2)       # (n, 15)
+    r_a = np.abs(axes) @ ha.T                                                        # (n, 15, m)
+    d = np.abs(axes @ cb[:, :, None] - axes @ ca.T)                                  # (n, 15, m)
+    return bool((d < r_a + r_b[:, :, None] - tol).all(axis=1).any())
+
+
+def _nearest_in(world, i: int, p: dict, boxes: np.ndarray) -> int:
+    """The nearest distance ahead (in, whole) Setup offers for the piece lying as `p` has it: the robot's front,
+    how far the piece's boxes and spheres reach back toward the robot, and CLEAR_IN."""
+    _, (bc, ba, bh), sc, radii = _shape(world, i, p)
+    reach = [bc[:, 0] - (np.abs(ba[:, :, 0]) * bh).sum(axis=1), sc[:, 0] - radii]
+    back = -float(np.concatenate(reach).min())
+    front = float(boxes[:, 1].max()) if len(boxes) else 0.0
+    return math.ceil((front + back) / IN + CLEAR_IN)
+
+
 def floor_ball(world) -> dict | None:
-    """Where the spread's ball lies from the start ({offset_in, distance_in}, as spread_ball's) and the nearest
-    distance ahead (in, whole) Setup offers: the robot's front, the ball's radius and CLEAR_IN; None without one."""
+    """Where the spread's piece lies from the start (as spread_ball's) and the nearest distance ahead (in, whole)
+    Setup offers: the robot's front, how far the piece (a ball: its radius) reaches back and CLEAR_IN; None without
+    one."""
     found = spread_ball(world)
     if found is None:
         return None
-    r = world.test_range.balls.rest_z                 # a resting ball's center height: its radius
-    boxes = _robot_boxes(world)
-    front = float(boxes[:, 1].max()) if len(boxes) else 0.0
-    return {**found[1], "nearest_in": math.ceil((front + r) / IN + CLEAR_IN)}
+    i, where = found
+    (p,) = placements({}, where)
+    return {**where, "nearest_in": _nearest_in(world, i, p, _robot_boxes(world))}
 
 
 def inside_robot(world, spread: dict) -> str | None:
-    """Why the floor spread can't run when a placement puts the ball inside the robot ("the floor spread puts the
-    ball inside the robot at 12 in ahead: ..."), or None. The robot turns with the angle, so the ball sits at the
-    same place in its frame whatever the angle."""
+    """Why the floor spread can't run when a placement puts the piece inside the robot ("the floor spread puts the
+    ball inside the robot at 12 in ahead: ..."), or None. The robot turns with the angle, so the piece sits at the
+    same place in its frame whatever the angle. A piece other than a ball is inside when one of its solids' oriented
+    bounding boxes, or one of its spheres, overlaps a robot geom's box."""
     found = spread_ball(world)
     if found is None:
         return None
-    r = world.test_range.balls.rest_z
+    i = found[0]
     boxes = _robot_boxes(world)
+    if not len(boxes):
+        return None
+    lo, hi = boxes[:, 0::2], boxes[:, 1::2]
+    kind = spread_kind(world, i)
     for p in placements(spread, found[1]):
-        c = np.array([p["distance_in"] * IN, p["offset_in"] * IN, r])
-        near = np.clip(c, boxes[:, 0::2], boxes[:, 1::2])
-        if len(boxes) and (np.linalg.norm(near - c, axis=1) < r - 1e-3).any():
-            nearest = floor_ball(world)["nearest_in"]
+        z, (bc, ba, bh), centers, radii = _shape(world, i, p)
+        at = np.array([p["distance_in"] * IN, p["offset_in"] * IN, z])
+        c = centers + at
+        near = np.clip(c[:, None, :], lo, hi)                       # (m, boxes, 3)
+        hit = (np.linalg.norm(near - c[:, None, :], axis=2) < radii[:, None] - 1e-3).any()
+        if hit or _boxes_overlap((bc + at, ba, bh), lo, hi):
             side = "" if p["offset_in"] == 0 else \
                 f", {_n(abs(p['offset_in']))} in {'left' if p['offset_in'] > 0 else 'right'}"
-            return (f"the floor spread puts the ball inside the robot at {_n(p['distance_in'])} in ahead{side}: "
-                    f"start the distance at {nearest} in or more")
+            what = "ball" if kind is None else kind.label
+            return (f"the floor spread puts the {what} inside the robot at {_n(p['distance_in'])} in ahead{side}: "
+                    f"start the distance at {_nearest_in(world, i, p, boxes)} in or more")
     return None
 
 
 def placements(spread: dict, base: dict) -> list[dict]:
-    """Every combination of the spread's axes, in SPREAD_AXES order with the first axis slowest. Each has all four
-    axes: an axis left out is the base's offset or distance, or 0 for the angle and rotation."""
-    values = [spread[a] if a in spread else [base.get(a, 0.0) if a in ("offset_in", "distance_in") else 0]
-              for a in SPREAD_AXES]
+    """Every combination of the spread's axes, in SPREAD_AXES order with the first axis slowest. Each has all five
+    axes: an axis left out is the base's (spread_ball's: the floor piece's own offset, distance, tip and turn), or 0
+    (the angle; a ball's tip and turn)."""
+    values = [spread[a] if a in spread else [base.get(a, 0.0) if a != "angle_deg" else 0] for a in SPREAD_AXES]
     return [dict(zip(SPREAD_AXES, combo)) for combo in itertools.product(*values)]
 
 
@@ -153,33 +239,77 @@ def _n(x: float) -> str:
     return f"{round(float(x), 2):g}"
 
 
-def label(p: dict, varying: list[str]) -> str:
-    """A placement in words, only its varying axes in SPREAD_AXES order: "6 in left at 30°"."""
+ORIENTATION_AXES = ("rotation_deg", "tip_deg")
+
+
+def worded(varying: list[str], kind: PieceKind | None) -> bool:
+    """Whether a placement's label names how the piece lies: a piece other than a ball, its tip or turn varying."""
+    return kind is not None and kind.form != "ball" and any(a in varying for a in ORIENTATION_AXES)
+
+
+def label(p: dict, varying: list[str], kind: PieceKind | None = None) -> str:
+    """A placement in words, only its varying axes in SPREAD_AXES order: "6 in left at 30°". For a piece other than
+    a ball (`kind`), a varying tip or turn reads as how it lies, its turn from the robot's heading: "6 in left lying
+    across", "standing on end"; a ball's (kind None) reads "turned 45°"."""
     words = []
     for a in SPREAD_AXES:
         if a not in varying:
             continue
         v = p[a]
+        if a in ORIENTATION_AXES and worded(varying, kind):
+            if a == next(b for b in ORIENTATION_AXES if b in varying):     # once, for both
+                words.append(orientation_words(kind, p["tip_deg"], p["rotation_deg"]))
+            continue
         if a == "offset_in":
             words.append("on the center line" if v == 0 else f"{_n(abs(v))} in {'left' if v > 0 else 'right'}")
         elif a == "distance_in":
             words.append(f"{_n(v)} in ahead")
         elif a == "angle_deg":
             words.append(f"at {_n(v)}°")
-        else:
+        elif a == "rotation_deg":
             words.append(f"turned {_n(v)}°")
+        else:
+            words.append(f"tipped {_n(v)}°")
     return " ".join(words)
 
 
+def placement_labels(ps: list[dict], varying: list[str], kind: PieceKind | None = None) -> list[str]:
+    """Each placement's label. Where words for how a piece lies say the same for two placements or more ("lying
+    flat" at every turn of a disc, "standing on end" at tips 80 and 90), each of those gets its tip or turn that
+    differs after them in parentheses: "lying flat (turned 45°)", "standing on end (tipped 80°)"."""
+    out = [label(p, varying, kind) for p in ps]
+    if not worded(varying, kind):
+        return out
+    groups: dict[str, list[int]] = {}
+    for k, lb in enumerate(out):
+        groups.setdefault(lb, []).append(k)
+    for lb, ks in groups.items():
+        if len(ks) < 2:
+            continue
+        differs = [a for a in ORIENTATION_AXES if a in varying and len({ps[k][a] for k in ks}) > 1]
+        for k in ks:
+            extra = [f"turned {_n(ps[k][a])}°" if a == "rotation_deg" else f"tipped {_n(ps[k][a])}°"
+                     for a in differs]
+            out[k] = f"{lb} ({', '.join(extra)})"
+    return out
+
+
 def _joined(items: list[str]) -> str:
-    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
+    """"a, b and c"; "a, b; c, d; and e, f" when an item has a comma of its own (not one in its parentheses:
+    "lying flat (turned 0°), lying flat (turned 45°) and ...")."""
+    if len(items) == 1:
+        return items[0]
+    if any("," in re.sub(r"\([^)]*\)", "", it) for it in items):
+        return f"{'; '.join(items[:-1])}; and {items[-1]}"
+    return f"{', '.join(items[:-1])} and {items[-1]}"
 
 
-def sentence(picked: list[bool], labels: list[str]) -> str:
-    """"picked up 7 of 9; missed at 6 in left at 30° and 6 in right at 30°", or "picked up 9 of 9"."""
+def sentence(picked: list[bool], labels: list[str], at: bool = True) -> str:
+    """"picked up 7 of 9; missed at 6 in left at 30° and 6 in right at 30°", or "picked up 9 of 9". Labels that
+    name how a piece lies (`at` false) read without the "at": "picked up 2 of 3; missed standing on end"."""
     out = f"picked up {sum(picked)} of {len(picked)}"
     missed = [lb for ok, lb in zip(picked, labels) if not ok]
-    return out + (f"; missed at {_joined(missed)}" if missed else "")
+    return out + (f"; missed {'at ' if at else ''}{_joined(missed)}" if missed else "")
 
 
 def _floor_outcome(result) -> str:
@@ -208,7 +338,9 @@ def run_spread(program: Program, base, on_progress=None, cancel: threading.Event
         raise TestFileError(inside)
     ps = placements(spread, found[1])
     names = varying(spread)
-    labels = [label(p, names) for p in ps]
+    kind = spread_kind(world, found[0])
+    labels = placement_labels(ps, names, kind)
+    at = not worded(names, kind)
     base = Path(base)
     tmp = store.new_sweep_folder(base, prefix="spread")
 
@@ -219,13 +351,15 @@ def run_spread(program: Program, base, on_progress=None, cancel: threading.Event
     rows = [{"placement": labels[i], **p, "status": COULDNT_RUN, "picked": False, "outcome": ""}
             for i, p in enumerate(ps)]
     return run_each(tmp, rows, lambda i: TestRun(world, program, placement=ps[i]).run(cancel=cancel), record,
-                    lambda done, cancelled: _finish(tmp, base, spread, ps, labels, done, cancelled), on_progress)
+                    lambda done, cancelled: _finish(tmp, base, spread, ps, labels, at, done, cancelled), on_progress)
 
 
-def _finish(tmp: Path, base: Path, spread: dict, ps: list, labels: list, rows: list, cancelled: bool) -> Path:
+def _finish(tmp: Path, base: Path, spread: dict, ps: list, labels: list, at: bool, rows: list,
+            cancelled: bool) -> Path:
     """Write table.csv and spread.json and put the spread in place."""
     picked = [r["picked"] for r in rows]
-    meta = {"spread": spread, "placements": ps, "picked": picked, "sentence": sentence(picked, labels[:len(rows)])}
+    meta = {"spread": spread, "placements": ps, "picked": picked,
+            "sentence": sentence(picked, labels[:len(rows)], at)}
     if cancelled:
         meta["cancelled"] = True
     try:

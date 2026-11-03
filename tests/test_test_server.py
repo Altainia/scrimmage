@@ -194,6 +194,18 @@ def test_sweep_and_cancel(tmp_path, test_app):
     assert s == 200 and b["ok"]
 
 
+def test_sweep_values_may_be_material_names_for_a_grip(tmp_path, test_app):
+    c = test_app(write_test(tmp_path))
+    s, b = c.call("POST", "/api/test/sweep", {"target": {"block": [0], "key": "volts"}, "values": ["hdpe"]})
+    assert s == 400 and "numbers" in b["error"], b
+    s, b = c.call("POST", "/api/test/sweep", {"target": {"grip": "arm.pad"}, "values": ["hdpe", 0.8, None]})
+    assert s == 400 and "material names or numbers" in b["error"], b
+    s, b = c.call("POST", "/api/test/sweep", {"target": {"grip": "arm.pad"}, "values": ["hdpe", "nitrile"]})
+    assert s == 200, b                # accepted; the worker finds arm is a stock part
+    st = _wait_idle(c)
+    assert "arm is a stock part" in (st["run_error"] or ""), st
+
+
 def test_new_test(tmp_path, test_app):
     robot = write_robot(tmp_path)
     c = test_app(robot)
@@ -651,6 +663,7 @@ def test_setup_field_choice_moves_a_robot_with_its_own_start_pose_to_the_fields_
 # ---- every field, station starters, floor spreads ------------------------------------------------------------------
 
 STATION = Path(__file__).resolve().parents[1] / "examples" / "blocks" / "station"
+REEF = STATION.parent / "reef"
 ON_STATION = """
 [range]
 file = "station"
@@ -670,7 +683,7 @@ def test_every_builtin_field_is_a_choice(tmp_path, test_app):
     from scrimmage.testrange.spec import BUILTIN_RANGES
     c = test_app(write_test(tmp_path))
     f = _state(c)["fields"]
-    assert [x["file"] for x in f] == [None, *BUILTIN_RANGES] and len(f) == 13
+    assert [x["file"] for x in f] == [None, *BUILTIN_RANGES] and len(f) == 14
     assert f[0] == {"file": None, "name": "The plain field", "starts": []}
     station = next(x for x in f if x["file"] == "station")
     assert station == {"file": "station", "name": "A human player station", "starts": ["at_station", "facing_ball"],
@@ -834,3 +847,181 @@ def test_a_spread_that_puts_the_ball_inside_the_robot_is_refused(tmp_path, test_
     from scrimmage.config import build_world, load_config
     world = build_world(load_config(tmp_path / "robot.toml"))
     assert inside_robot(world, {"distance_in": [float(ball["nearest_in"])], "offset_in": [-6.0, 6.0]}) is None
+
+
+def test_grabber_words_preselect():
+    """A body named like a grabber's ("claw", "grabber", "gripper", "jaw") is where a piece should end up too."""
+    from scrimmage.assembler.test_session import GRABBER_WORDS, HOPPER_WORDS, pick_hopper
+    assert GRABBER_WORDS == ("claw", "grabber", "gripper", "jaw")
+    assert HOPPER_WORDS == ("hopper", "intake", "indexer", "claw", "grabber", "gripper", "jaw")
+    assert pick_hopper(["claw.jaw_left", "claw.arm"], {}) == ["claw.jaw_left"]
+    assert pick_hopper(["grabber.mast", "grabber.arm", "grabber.jaw_left", "grabber.jaw_right"], {}) == [
+        "grabber.jaw_left", "grabber.jaw_right"]
+    assert pick_hopper(["Gripper.base", "x.Gripper_pad"], {}) == ["x.Gripper_pad"]
+    assert pick_hopper(["claw.base", "claw.arm"], {"claw": "claw.base"}) == ["claw.base"]   # a part named like one
+
+
+def test_test_it_puts_a_claw_on_the_reef_field():
+    """A part with a grabber-like body starts facing the reef's floor coral; a hook still wins, and a hopper-like body
+    with no grabber body still goes to the station."""
+    import tomllib
+
+    from scrimmage.assembler.test_session import STANDIN_REEF, standin_config
+    assert STANDIN_REEF == {"file": "reef", "start": "facing_coral"}
+    claw = {"import_id": "x", "part": "claw", "origins": {"arm": [0.0, 0.0, 0.0], "jaw": [0.1, 0.0, 0.2]},
+            "attach": None}
+    assert tomllib.loads(standin_config([("parts/claw", claw)], "chassis"))["range"] == STANDIN_REEF
+    both = {"import_id": "x", "part": "front", "origins": {"intake": [0.0, 0.0, 0.0], "jaw": [0.1, 0.0, 0.2]},
+            "attach": None}
+    assert tomllib.loads(standin_config([("parts/front", both)], "chassis"))["range"]["file"] == "reef"
+    hook = {"import_id": "x", "part": "hook", "origins": {"hook_body": [0.1, 0.0, 0.9]}, "attach": "claw.arm"}
+    raw = tomllib.loads(standin_config([("parts/claw", claw), ("parts/hook", hook)], "chassis"))
+    assert raw["range"] == {"file": "ladder", "start": "below"}
+    indexer = {"import_id": "x", "part": "front", "origins": {"Indexer_belt": [0.0, 0.0, 0.0]}, "attach": None}
+    assert tomllib.loads(standin_config([("parts/front", indexer)], "chassis"))["range"]["file"] == "station"
+
+
+def test_a_grabber_on_a_field_with_rods_starts_by_waiting_for_a_hold():
+    """On a field with rods (the reef, which has a station too), a robot with a body named like a grabber's starts
+    by closing that part's jaw-like motors at 4 V (ruling P24), lifting with its lone arm hinge, waiting up to 10 s
+    for any piece held by the part, expecting it held throughout a 2 s wait; without rods, or without a grabber body,
+    the starters are as before."""
+    from scrimmage.assembler.test_session import grabber_starter, starter_blocks, station_starter
+    from scrimmage.blocks.program import block_json
+    pal = {"bodies": ["drive.chassis", "grabber.arm", "grabber.jaw_left", "grabber.jaw_right"],
+           "rods": ["branch_l2", "branch_l3", "branch_l4"], "stations": ["coral_station"],
+           "motors": [{"name": "dt.left", "kind": "wheel"}, {"name": "grabber.arm", "kind": "hinge"},
+                      {"name": "grabber.jaw_left", "kind": "slide"}, {"name": "grabber.Finger_r", "kind": "slide"},
+                      {"name": "lift.jaw", "kind": "slide"}]}
+    held = {"held": {"piece": "any", "by": "grabber"}}
+    want = [{"do": "spin", "motor": "grabber.jaw_left", "volts": 4.0},
+            {"do": "spin", "motor": "grabber.Finger_r", "volts": 4.0},
+            {"do": "wait", "seconds": 1.0},
+            {"do": "move", "joint": "grabber.arm", "to": -30.0, "unit": "deg"},
+            {"do": "wait_until", "until": held, "timeout": 10.0},
+            {"do": "expect", "that": held, "throughout": True},
+            {"do": "wait", "seconds": 2.0}]
+    assert [block_json(b) for b in grabber_starter(pal)] == want
+    assert [block_json(b) for b in starter_blocks(pal)] == want
+    no_rods = {**pal, "rods": []}
+    assert grabber_starter(no_rods) == [] and starter_blocks(no_rods) == station_starter(no_rods)
+    # a part named like a grabber, its bodies plainly named (standin_config sends it to the reef): that part, and the
+    # 1 s wait though it has no jaw-like motor
+    claw = {"bodies": ["drive.chassis", "claw.base", "claw.left"], "parts": ["claw", "drive"], "rods": ["branch_l2"],
+            "stations": ["coral_station"], "motors": [{"name": "claw.lift", "kind": "hinge"}]}
+    by_claw = {"held": {"piece": "any", "by": "claw"}}
+    assert [block_json(b) for b in starter_blocks(claw)] == [
+        {"do": "wait", "seconds": 1.0}, {"do": "move", "joint": "claw.lift", "to": -30.0, "unit": "deg"},
+        {"do": "wait_until", "until": by_claw, "timeout": 10.0},
+        {"do": "expect", "that": by_claw, "throughout": True}, {"do": "wait", "seconds": 2.0}]
+    no_grabber = {**pal, "bodies": ["drive.chassis", "lift.arm"]}
+    assert grabber_starter(no_grabber) == [] and starter_blocks(no_grabber) == station_starter(no_grabber)
+    # ruling P31: with a grabber, the station starter waits until the grabber holds a piece (it holds one, never 5);
+    # without one, until 5 are in the hopper
+    assert [block_json(b) for b in station_starter(no_rods)] == [
+        {"do": "start_feeding", "station": "coral_station"},
+        {"do": "wait_until", "until": held, "timeout": 20.0},
+        {"do": "stop_feeding", "station": "coral_station"}]
+    assert block_json(station_starter(no_grabber)[1])["until"] == {"in_hopper": {"at_least": 5}}
+
+
+def test_the_reef_states_station_starter_waits_for_the_grabber(tmp_path, test_app):
+    st = _state(test_app(_reef_test(tmp_path)))
+    assert st["station_starter"][1] == {"do": "wait_until", "until": {"held": {"piece": "any", "by": "grabber"}},
+                                        "timeout": 20.0}
+
+
+def test_the_reef_palette_lists_its_rods():
+    from scrimmage.blocks.palette import palette
+    from scrimmage.config import build_world, load_config
+    pal = palette(build_world(load_config(REEF / "grabber-standin.toml")), [])
+    assert pal["rods"] == ["branch_l2", "branch_l3", "branch_l4"]
+    assert "grabber.jaw_left" in pal["bodies"]
+
+
+# ---- grips ----------------------------------------------------------------------------------------------------------
+
+def _reef_test(tmp_path, blocks='[[block]]\ndo = "wait"\nseconds = 0.2\n') -> Path:
+    import shutil
+    shutil.copytree(REEF, tmp_path / "reef")
+    t = tmp_path / "reef" / "g.test.toml"
+    t.write_text(f'[test]\nrobot = "grabber-standin.toml"\n{blocks}', encoding="utf-8")
+    return t
+
+
+def _grip(c, body, grip):
+    return c.call("POST", "/api/test/grip", {"body": body, "grip": grip})
+
+
+def test_the_grip_endpoint_writes_the_overlay(test_app, tmp_path):
+    """Setup's grip picker writes the grip into the part folder's own edits (scrimmage-edits.toml), and the robot is
+    built again with it: the palette shows it. A material it doesn't know, a stock part, a body the part doesn't
+    have and one that touches nothing are refused (nothing written); null clears it."""
+    t = _reef_test(tmp_path)
+    c = test_app(t)
+    overlay = tmp_path / "reef" / "parts" / "grabber" / "scrimmage-edits.toml"
+    assert _state(c)["palette"]["grips"] == {"grabber.jaw_left": None, "grabber.jaw_right": None}
+    s, b = _grip(c, "grabber.jaw_left", "nitrile")
+    assert s == 200 and b["ok"], b
+    assert 'grip = "nitrile"' in overlay.read_text(encoding="utf-8")
+    st = _state(c)
+    assert st["palette"]["grips"]["grabber.jaw_left"] == "nitrile" and st["problems"] == []
+    s, b = _grip(c, "grabber.jaw_right", 1.05)          # my own number
+    assert s == 200 and _state(c)["palette"]["grips"]["grabber.jaw_right"] == 1.05
+    before = overlay.read_text(encoding="utf-8")
+    for body, grip, words in (("grabber.jaw_left", "velcro", "isn't a grip material"),
+                              ("grabber.jaw_left", 9.0, "isn't a friction to use"),
+                              ("drive.chassis", "nitrile", "a stock part has its own materials"),
+                              ("grabber.nope", "nitrile", "no body \"nope\" in grabber"),
+                              ("claw.jaw", "nitrile", "no part \"claw\" on this robot"),
+                              ("grabber.arm", "nitrile", "touches nothing"),
+                              ("jaw_left", "nitrile", "<part>.<body>")):
+        s, b = _grip(c, body, grip)
+        assert s == 400 and words in b["error"], (body, b)
+    assert overlay.read_text(encoding="utf-8") == before
+    s, b = _grip(c, "grabber.jaw_left", None)
+    assert s == 200 and "jaw_left" not in overlay.read_text(encoding="utf-8")
+    assert _state(c)["palette"]["grips"]["grabber.jaw_left"] is None
+
+
+def test_the_grip_endpoint_waits_for_a_run(test_app, tmp_path):
+    c = test_app(_reef_test(tmp_path, '[[block]]\ndo = "wait"\nseconds = 20\n'))
+    assert c.call("POST", "/api/test/run", {})[0] == 200
+    s, b = _grip(c, "grabber.jaw_left", "nitrile")
+    assert s == 409 and "in progress" in b["error"], b
+    c.call("POST", "/api/test/cancel", {})
+    _wait_idle(c)
+    assert not (tmp_path / "reef" / "parts" / "grabber" / "scrimmage-edits.toml").exists()
+
+
+def test_the_grip_endpoint_wont_write_what_the_robot_config_overrides(test_app, tmp_path):
+    """A path part's own `grip` in the robot config wins over the folder's: Setup says so instead of writing a grip
+    that would do nothing."""
+    t = _reef_test(tmp_path)
+    robot = t.parent / "grabber-standin.toml"
+    robot.write_text(robot.read_text(encoding="utf-8").replace(
+        'ids = { arm = "PWM:2"', 'grip = { jaw_left = "hdpe" }\nids = { arm = "PWM:2"'), encoding="utf-8")
+    c = test_app(t)
+    assert _state(c)["palette"]["grips"]["grabber.jaw_left"] == "hdpe"
+    s, b = _grip(c, "grabber.jaw_left", "nitrile")
+    assert s == 400 and "grabber-standin.toml" in b["error"] and "change it there" in b["error"], b
+    assert _grip(c, "grabber.jaw_left", None)[0] == 200     # clearing the folder's own grip is always fine
+    assert _grip(c, "grabber.jaw_right", "nitrile")[0] == 200
+
+
+def test_the_state_carries_the_new_palette_keys(test_app, tmp_path):
+    st = _state(test_app(_reef_test(tmp_path)))
+    pal = st["palette"]
+    assert pal["piece"] == "2025-coral" and pal["kinds"]["2025-coral"]["label"] == "coral"
+    assert pal["rods"] == ["branch_l2", "branch_l3", "branch_l4"] and pal["grip_materials"][0][0] == "rubber"
+
+
+def test_a_config_grip_isnt_a_robot_tab_parameter(test_app, tmp_path):
+    t = _reef_test(tmp_path)
+    robot = t.parent / "grabber-standin.toml"
+    robot.write_text(robot.read_text(encoding="utf-8").replace(
+        'ids = { arm = "PWM:2"', 'grip = { jaw_left = "hdpe" }\nids = { arm = "PWM:2"'), encoding="utf-8")
+    c = test_app(robot)
+    s, rs = c.get("/api/robot/state")
+    grabber = next(p for p in rs["parts"] if p["name"] == "grabber")
+    assert "grip" not in grabber["params"], grabber

@@ -119,7 +119,7 @@ export function fieldGeometry(view) {
   const poly = fr.plane ? outline(fr.plane) : [[fr.minx, fr.miny], [fr.maxx, fr.miny], [fr.maxx, fr.maxy], [fr.minx, fr.maxy]];
   const bounds = { minx: fr.minx - MARGIN, maxx: fr.maxx + MARGIN, miny: fr.miny - MARGIN, maxy: fr.maxy + MARGIN };
   const outlines = (v.world_geoms || []).filter((g) => g.type !== "plane")
-    .map((g) => ({ poly: outline(g), rgba: g.rgba, mover: Number.isInteger(g.mover) ? g.mover : -1, name: g.name || "" }))
+    .map((g) => ({ poly: outline(g, v.meshes), rgba: g.rgba, mover: Number.isInteger(g.mover) ? g.mover : -1, name: g.name || "" }))
     .filter((o) => o.poly.length >= 3);
   return { floor: { minx: fr.minx, maxx: fr.maxx, miny: fr.miny, maxy: fr.maxy, poly, bounds }, outlines };
 }

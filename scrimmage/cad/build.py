@@ -25,10 +25,12 @@ Folders. Each part goes to its `folder` (`{cad}/...` expanded, else relative to 
 to `<folder>.tmp` and swapped in, with an `import-origin.toml` marker: the import file's relative path, the
 import_id, each body's origin in the robot frame, and `attach = "<part>.<body>"` when the part hangs on a body of
 another part of this import in the CAD (its root's parent, or the body it hung on when it was made a part; left out
-for a part the robot itself carries). A folder holding files but no marker for this import is
-refused. The import file records the folders each build wrote (`written`); a recorded folder this build doesn't
-write is removed (while its marker and part.toml still say it is that part from this import), so a robot can't
-count those bodies twice. Nothing else is ever deleted: a copy of a part folder is safe.
+for a part the robot itself carries). The folder's own edits (scrimmage-edits.toml, parts/overlay.py: a grip
+material, a mass, ...) are carried into the new folder, so they apply to an imported part as to a plugin-made one.
+A folder holding files but no marker for this import is refused. The import file records the folders each build
+wrote (`written`); a recorded folder this build doesn't write is removed (while its marker and part.toml still say
+it is that part from this import), so a robot can't count those bodies twice. Nothing else is ever deleted: a copy
+of a part folder is safe.
 
 A hand-edited import file whose bodies hang on each other in a ring, or with a joint axis or mount normal of no
 direction, is a CadError in plain words (never a hang or a NaN in a file).
@@ -439,6 +441,14 @@ def part_folder(imp: ImportFile, part: str, import_path: Path) -> Path:
     return _resolve(_folder_text(imp, part), import_path)
 
 
+def body_home(imp: ImportFile, body: str) -> tuple[str, str]:
+    """(part, part body) that import body `body`'s pieces are built into: the part's name (its folder:
+    part_folder) and the body of that part (itself, or the one it is welded to). Raises CadError for bodies that hang
+    on each other in a ring."""
+    tree = _Tree(imp, [])
+    return tree.part_name(tree.part_root(body)), tree.head(body)
+
+
 def _folder_text(imp: ImportFile, part: str) -> str:
     ps = imp.parts.get(part)
     return ps.folder if ps is not None else part
@@ -563,6 +573,14 @@ def write_parts(result: BuildResult, imp: ImportFile, import_path: Path) -> list
             shutil.rmtree(tmp, ignore_errors=True)
             raise CadError(f"Couldn't write the part folder {folder} ({e.strerror or e}): check the folder can be "
                            "written and try again.") from None
+        edits = folder / "scrimmage-edits.toml"     # the student's own edits (a grip material...): kept, unchecked
+        try:                                        # here (a mistake in them shows when the part is loaded)
+            if edits.is_file():
+                shutil.copy2(edits, tmp / edits.name)
+        except OSError as e:
+            shutil.rmtree(tmp, ignore_errors=True)
+            raise CadError(f"Couldn't keep your edits in {edits} ({e.strerror or e}): check the folder can be read "
+                           "and try again.") from None
         _install(tmp, folder)
         out.append(folder)
     kept, msgs = _remove_stale(imp, import_path, targets)

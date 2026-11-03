@@ -408,6 +408,8 @@ kind = "landing"                # where each ball crossed the goal height (or hi
 
 The presets live in `scrimmage/launcher/presets.toml`; every value there has a `# source:` or `# estimate:`
 comment saying where it came from.
+The same file also holds the test range's rigid piece presets (`[piece.*]`) and their surface materials
+(`[surface.*]`); see docs/test-range.md.
 
 | ball preset | diameter | mass | stiffness_n | restitution | inertia_factor |
 |---|---|---|---|---|---|

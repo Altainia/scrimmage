@@ -10,10 +10,12 @@ import mujoco
 import pytest
 
 from range_fixtures import range_cfg, spares_world
+
 from scrimmage.assembler.templates import new_config
 from scrimmage.blocks.conditions import Watch, describe
 from scrimmage.blocks.program import Cond, Program
 from scrimmage.protocol import HalState
+from scrimmage.testrange.pieces import ball_kind
 from scrimmage.world import World
 
 IN = 0.0254
@@ -197,7 +199,11 @@ def test_describe():
     assert describe(Cond("touch", {"robot": "hook", "field": "rung2"})) == "a hook touches rung2"
     assert describe(tilt(above=20.0)) == "the robot tilts more than 20°"
     assert describe(Cond("joint", {"name": "climber.arm", "above": 40.0, "unit": "deg"})) == "climber.arm passes 40°"
-    assert describe(Cond("piece_in", {"body": "intake.hopper", "piece": "any"})) == "a ball reaches intake.hopper"
+    # the kinds unknown: "a piece"; on a field of one ball kind, "a ball" as always
+    assert describe(Cond("piece_in", {"body": "intake.hopper", "piece": "any"})) == "a piece reaches intake.hopper"
+    fuel = {"2026-fuel": ball_kind("2026-fuel", "2026-fuel")}
+    assert describe(Cond("piece_in", {"body": "intake.hopper", "piece": "any"}), kinds=fuel) == \
+        "a ball reaches intake.hopper"
     assert describe(Cond("hanging_from", {"bar": "rung4"})) == "the robot hangs from rung4"
     assert describe(Cond("hanging_from", {"bar": "next bar"})) == "the robot hangs from the next bar"
     assert describe(Cond("touch", {"robot": "hook", "field": "next bar"}), next_bar="rung3") == "a hook touches rung3"

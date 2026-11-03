@@ -40,6 +40,10 @@ moves all of it (the real rung bends most at mid-span). Its posts, `element.<nam
 A box is a welded body `element.<name>` with one box geom, `element.<name>.box`: in ELEMENT_GROUP when it is ground,
 else NON_GROUND_GROUP.
 
+A rod is a welded body `element.<name>` holding one geom, `element.<name>.rod`: a capsule (exact contacts, its
+rounded ends reaching the base and tip) or, for a square section, a box, its axis from base to tip (rod_parts). It is
+structure, not ground.
+
 A switch is body `element.<name>` on one hinge about its local y, `element.<name>.tilt` (positive when its +x end
 goes down), `hinge_height` up, and its bar, `element.<name>.bar`, `bar_drop` below the hinge. It reuses a
 platform's stops (+-`stop_deg`, PLATFORM_STOP_TC, critically damped) and its file's damping. Its CoM is `com_drop`
@@ -57,15 +61,19 @@ high side than these do.
 from __future__ import annotations
 
 import math
+from typing import TYPE_CHECKING
 
 import mujoco
 import numpy as np
 
 from ..parts.field import ELEMENT_GROUP, FIELD_BITS
 from .build import FUNNEL_RGBA, PLATE_FRICTION, RangeLayout, _quat, _rpy
-from .elements import IN, POST, Bar, Box, Bump, Element, Platform, Ramp, Switch
+from .elements import IN, POST, Bar, Box, Bump, Element, Platform, Ramp, Rod, Switch
 from .spec import _rot_z
 from .station import CHUTE_PLATE, CHUTE_WALL_BALLS, Station
+
+if TYPE_CHECKING:
+    from .pieces import PieceKind
 
 __all__ = ["ELEMENT_GROUP", "NON_GROUND_GROUP", "add_chute", "add_element", "fill_layout", "platform_joints",
            "platform_tilt", "switch_joint"]
@@ -151,19 +159,21 @@ def ramp_parts(e: Ramp) -> dict:
     return parts
 
 
-def chute_parts(st: Station, ball_d: float) -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]]:
-    """A station's chute as boxes in the field: (center, rotation, half sizes) for "floor", "wall_left" and
-    "wall_right". The floor's top plane is tangent to a ball resting at the release point and runs down along the
-    heading, `length` from under the release point; the walls stand CHUTE_WALL_BALLS ball diameters above it, the
-    left one on the heading's left. A ball on a slope touches it r sin(slope) back up the slope from under its center,
-    so the floor's high end starts one more ball radius up the slope from that point: a ball set down at the release
-    point lands on the floor's face, not on its top edge."""
+def chute_parts(st: Station, kind: PieceKind) -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """A station's chute for pieces of `kind`, as boxes in the field: (center, rotation, half sizes) for "floor",
+    "wall_left" and "wall_right". The floor's top plane is tangent to the piece resting at the release point
+    (Station.chute_top) and runs down along the heading, `length` from under the release point; the walls stand
+    CHUTE_WALL_BALLS piece extents above it, the left one on the heading's left. A ball on a slope touches it
+    r sin(slope) back up the slope from under its center, so the floor's high end starts one more ball radius up the
+    slope from that point: a ball set down at the release point lands on the floor's face, not on its top edge. A
+    rigid piece touches within its bounding radius of its center, so that radius stands in for r.
+    """
     c = st.chute
     s = math.radians(c.slope_deg)
-    width = st.chute_width(ball_d)
+    width = st.chute_width(kind)
     x, y = st.release[:2]
-    r = ball_d / 2.0
-    top0 = (0.0, st.chute_top(ball_d))                  # in the heading's vertical plane: (along, up)
+    r = kind.ball.diameter / 2.0 if kind.ball is not None else kind.radius
+    top0 = (0.0, st.chute_top(kind))                    # in the heading's vertical plane: (along, up)
     # the ball touches at (-r sin s, z - r cos s); one radius further up the slope is r cos s further back
     back = r * (math.sin(s) + math.cos(s))
     high = (-back, top0[1] + back * math.tan(s))
@@ -171,7 +181,7 @@ def chute_parts(st: Station, ball_d: float) -> dict[str, tuple[np.ndarray, np.nd
     center, rot, (hx, hz) = _slope(high, low, CHUTE_PLATE)
     rz = _rot_z(st.heading_deg)
     origin = np.array([x, y, 0.0])
-    wall_h = CHUTE_WALL_BALLS * ball_d
+    wall_h = CHUTE_WALL_BALLS * kind.extent
     up = rot[:, 2]                                       # the floor's upward normal
     surface = center + up * CHUTE_PLATE / 2.0            # the middle of the floor's top face
     side = CHUTE_PLATE / 2.0 + width / 2.0
@@ -182,11 +192,12 @@ def chute_parts(st: Station, ball_d: float) -> dict[str, tuple[np.ndarray, np.nd
     return {name: (origin + rz @ c3, rz @ rot, np.array(half)) for name, (c3, half) in parts.items()}
 
 
-def add_chute(spec: mujoco.MjSpec, st: Station, ball_d: float) -> None:
-    """Station `st`'s chute (chute_parts) as body `element.<station>.chute`, welded to the world: geoms
-    `element.<station>.chute.floor`, `.wall_left` and `.wall_right`, clear polycarbonate. Structure, not ground."""
+def add_chute(spec: mujoco.MjSpec, st: Station, kind: PieceKind) -> None:
+    """Station `st`'s chute for pieces of `kind` (chute_parts) as body `element.<station>.chute`, welded to the
+    world: geoms `element.<station>.chute.floor`, `.wall_left` and `.wall_right`, clear polycarbonate. Structure, not
+    ground."""
     body = spec.worldbody.add_body(name=f"element.{st.name}.chute")
-    for part, (center, rot, half) in chute_parts(st, ball_d).items():
+    for part, (center, rot, half) in chute_parts(st, kind).items():
         body.add_geom(name=f"element.{st.name}.chute.{part}", type=mujoco.mjtGeom.mjGEOM_BOX, pos=list(center),
                       quat=_quat(rot), size=list(half), rgba=list(FUNNEL_RGBA), friction=list(PLATE_FRICTION),
                       group=NON_GROUND_GROUP, **FIELD_BITS)
@@ -242,6 +253,30 @@ def _pipe(body, name: str, length: float, diameter: float, friction: float, z: f
                   group=NON_GROUND_GROUP, **FIELD_BITS)
 
 
+def rod_parts(e: Rod) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """The rod as one box around its whole extent, in the field: (center, rotation, half sizes). The rotation's z
+    column is the axis from base to tip, x the horizontal across it (the field's x for an upright rod); the halves are
+    the radius twice, then half the length, so a round rod's end caps are inside the box."""
+    axis = e.axis()
+    across = np.cross([0.0, 0.0, 1.0], axis)
+    across = np.array([1.0, 0.0, 0.0]) if np.linalg.norm(across) < 1e-9 else across / np.linalg.norm(across)
+    rot = np.column_stack([across, np.cross(axis, across), axis])
+    center = (np.asarray(e.base, float) + np.asarray(e.tip, float)) / 2.0
+    r = e.diameter / 2.0
+    return center, rot, np.array([r, r, e.length() / 2.0])
+
+
+def _rod(spec: mujoco.MjSpec, e: Rod) -> None:
+    """A welded body with the one geom `element.<name>.rod`, a capsule (or a box) whose axis runs base to tip. A
+    capsule's rounded ends reach the base and tip exactly."""
+    center, rot, (rx, _, hz) = rod_parts(e)
+    body = spec.worldbody.add_body(name=f"element.{e.name}", pos=list(center), quat=_quat(rot))
+    shape = dict(type=mujoco.mjtGeom.mjGEOM_BOX, size=[rx, rx, hz]) if e.section == "square" else dict(
+        type=mujoco.mjtGeom.mjGEOM_CAPSULE, size=[rx, hz - rx, 0.0])
+    body.add_geom(name=f"element.{e.name}.rod", rgba=BAR_RGBA, friction=[e.friction, 0.005, 0.0001],
+                  group=NON_GROUND_GROUP, **shape, **FIELD_BITS)
+
+
 def _upright(body, name: str, center, half, ground: bool, friction: float, rgba=STRUCTURE_RGBA) -> None:
     body.add_geom(name=name, type=mujoco.mjtGeom.mjGEOM_BOX, pos=list(center), size=list(half), rgba=list(rgba),
                   friction=[friction, 0.005, 0.0001], group=ELEMENT_GROUP if ground else NON_GROUND_GROUP,
@@ -291,6 +326,9 @@ def add_element(spec: mujoco.MjSpec, e: Element) -> None:
     if isinstance(e, Switch):
         _switch(spec, e, pos, quat)
         return
+    if isinstance(e, Rod):
+        _rod(spec, e)
+        return
     if isinstance(e, Box):
         body = spec.worldbody.add_body(name=f"element.{e.name}", pos=list(pos), quat=quat)
         sx, sy, sz = e.size
@@ -326,3 +364,4 @@ def fill_layout(layout: RangeLayout, model: mujoco.MjModel, elements) -> None:
     layout.platforms = {e.name: platform_joints(model, e.name) for e in elements if isinstance(e, Platform)}
     layout.switches = {e.name: switch_joint(model, e.name) for e in elements if isinstance(e, Switch)}
     layout.bars = {e.name: [f"element.{e.name}.pipe"] for e in elements if isinstance(e, Bar)}
+    layout.rods = {e.name: e for e in elements if isinstance(e, Rod)}

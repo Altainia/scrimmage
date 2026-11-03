@@ -23,6 +23,18 @@ each:
   agree within a few millimeters over 5 m (tests/test_range_discs.py).
 - Rolling resistance: none. A disc lying flat doesn't roll, and one rolling on its rim is rare enough to leave to
   MuJoCo's own rolling friction.
+
+A field of several kinds (Range.kinds) has them all in the one ledger: each slot has its kind (`kind`, masks
+`ball_form`, `disc_form` and `rolls`), its own bounding `radius` and rest height (`rest_z_of`). The per-step work
+filters the in-play balls by form first, so a ball-only range does the same arithmetic as before (pinned by
+tests/test_range_ledger_golden.py):
+- Flight: drag and lift on balls only, the disc aerodynamics on discs only; a rigid piece flies by gravity alone.
+- Rolling resistance: on every `rolls` slot on the carpet (its center below r + ON_CARPET): a ball, and a rigid tube,
+  ring or cylinder lying on its side (standing or leaning, its center is too high), each with its own r (a tube's
+  outer radius), torque C m g r and inertia about the contact (I about its axis + m r^2).
+- Scoring: a goal counts only its kind (`counted_by`: Goal.kind, else the field's first ball or disc kind), so a coral
+  through an opening doesn't score. Leaving the field is the same for every kind.
+`r` and `rest_z` are Range.piece's kind's (the shooter's and the ball path's).
 """
 
 from __future__ import annotations
@@ -36,10 +48,12 @@ import mujoco
 import numpy as np
 
 from ..disc import aero as disc_aero
-from ..disc.inputs import DEFAULT_AERO, aero_set
-from ..launcher.inputs import Air
-from .build import BALL_BITS, PARK_Z, PARKED_BITS, RangeLayout
+from ..disc.inputs import DEFAULT_AERO, Disc, aero_set
+from ..launcher.inputs import Air, Ball
+from .build import BALL_BITS, PARK_Z, PARKED_BITS, RangeLayout, kind_piece, rest_pose
+from .pieces import PieceKind
 from .spec import FIELD_LENGTH, FIELD_WIDTH, Range
+from .spec import _one_round_kind as one_round_kind
 
 AIRBORNE = 0.001        # m above resting on the floor (center above rest_z) before the air acts on a ball
 TRACK_S = 10.0          # s after its release that a ball's first hit and apex are tracked
@@ -48,6 +62,7 @@ OUT_Z = -1.0            # m: a ball whose center is below this has gone through 
 ON_CARPET = 0.005       # m above resting on the floor (center above r) within which a ball rolls on the carpet
 ROLLING_SPEED = 5e-5    # m/s: a ball rolling slower than this feels no rolling resistance (at rest: it may sleep)
 GRAVITY = 9.81
+ROLLING_SHAPES = ("tube", "ring", "cylinder")    # rigid shapes that roll on their side, as a ball rolls
 NAN = math.nan
 
 
@@ -98,11 +113,26 @@ class Balls:
         m = model
         n = len(layout.ball_names)
         self.n = n
-        self.disc = rng.disc                                    # None for a ball range
-        self.r = rng.piece.diameter / 2.0
-        self.rest_z = self.disc.height / 2.0 if self.disc is not None else self.r     # center height lying at rest
+        self.disc = rng.disc                                    # None for a range without a disc kind
+        self.kinds = rng.kinds
+        self.shooter_kind = rng.piece_kind                      # Range.piece's kind: the shooter's and the ball path's
+        piece = rng.piece
+        if isinstance(piece, PieceKind):                        # no ball or disc kind: the default kind's sizes
+            self.r = piece.radius
+            self.rest_z = rest_pose(rng, self.shooter_kind)[0]
+        else:
+            self.r = piece.diameter / 2.0
+            self.rest_z = self.disc.height / 2.0 if self.disc is not None else self.r     # center height at rest
+        kinds = list(layout.kinds) if len(layout.kinds) == n else [self.shooter_kind] * n
+        self.kind = np.array(kinds, dtype=object)               # each slot's kind's name
+        forms = np.array([rng.kinds[k].form if k in rng.kinds else "ball" for k in kinds], dtype=object)
+        self.ball_form, self.disc_form = forms == "ball", forms == "disc"
+        self.of_shooter = self.kind == self.shooter_kind        # the slots the shooter and its ball path take
+        self._slots(rng, layout)
         self.bodies = np.array([m.body(name).id for name in layout.ball_names], dtype=int)
-        self.geoms = np.array([m.geom(name).id for name in layout.ball_names], dtype=int)
+        self._slot_geoms = [np.arange(m.body_geomadr[b], m.body_geomadr[b] + m.body_geomnum[b]) for b in self.bodies]
+        self.geoms = np.array([g[0] for g in self._slot_geoms], dtype=int)      # each slot's first geom
+        self._one_geom = all(len(g) == 1 for g in self._slot_geoms)
         jnt = m.body_jntadr[self.bodies]
         self._q = m.jnt_qposadr[jnt][:, None] + np.arange(7)    # (n, 7) qpos indices
         self._v = m.jnt_dofadr[jnt][:, None] + np.arange(6)     # (n, 6) qvel indices
@@ -120,11 +150,20 @@ class Balls:
         self._park[:, 2] = PARK_Z
         self._park[:, 3] = 1.0
         self._geom_ball = np.full(m.ngeom, -1, dtype=int)       # geom id -> ball index, -1 for other geoms
-        self._geom_ball[self.geoms] = np.arange(n)
+        for i, g in enumerate(self._slot_geoms):
+            self._geom_ball[g] = i
         self._geom_names = [mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g)
                             or mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, int(m.geom_bodyid[g])) or f"geom {g}"
                             for g in range(m.ngeom)]
+        if not one_round_kind(rng.kinds):       # a piece is named by its kind and number ("coral 1"), not its body
+            for i, g in enumerate(self._slot_geoms):
+                for k in g.tolist():
+                    self._geom_names[k] = self.piece_name(i)
         self.surfaces = [(g.name, g.scoring_surface()) for g in rng.goals]
+        # goal name -> the slots it counts: those of its kind (Goal.kind, else the field's first ball or disc kind)
+        first = next((k.name for k in rng.kinds.values() if k.form != "rigid"), self.shooter_kind)
+        self.counted_by = {g.name: self.kind == (g.kind if g.kind is not None else first) for g in rng.goals}
+        self._counted = [self.counted_by[name] for name, _ in self.surfaces]
         # each scoring surface's reach: no point of its polygon is further than this from its center
         self._reach = [float(np.max(np.linalg.norm(sf.polygon, axis=1))) for _, sf in self.surfaces]
         self._centers = [tuple(float(c) for c in sf.center) for _, sf in self.surfaces]
@@ -138,16 +177,90 @@ class Balls:
         self._released = np.full(n, -np.inf)            # sim time of each ball's last place()
         self._full_bits_at = np.full(n, np.inf)         # sim time a placed ball's bits become BALL_BITS
         self._next_due = math.inf                       # at most the earliest of those
-        area = math.pi * self.r * self.r
-        self._half_rho_a = 0.5 * air.density * area
-        if self.disc is not None:
-            self._roll_torque = self._roll_inertia = 0.0                # a disc lying flat doesn't roll
-            self._aero = rng.aero if rng.aero is not None else aero_set(DEFAULT_AERO)
-        else:
-            ball = rng.ball
-            self._roll_torque = rng.rolling_resistance * ball.mass * GRAVITY * self.r     # N m against the roll
-            self._roll_inertia = (ball.inertia_factor + 1.0) * ball.mass * self.r ** 2   # about the contact point
+        self._flight = [0.5 * air.density * (math.pi * r * r) for r in self._r_list]     # each ball's 1/2 rho A
         self.clear()
+
+    def _slots(self, rng: Range, layout: RangeLayout) -> None:
+        """Each slot's sizes, from its kind: its bounding radius, rest height and orientation (a floor piece's own
+        turn), its flight's ball or disc, and its rolling resistance on the carpet."""
+        n, turns = self.n, rng.floor_turns if len(rng.floor_turns) == len(rng.floor_balls) else None
+        self.radius = np.zeros(n)                               # the bounding sphere's radius (a ball's own)
+        self._rest = np.zeros(n)                                # its center's height set down on the carpet
+        self._quat: list[list[float] | None] = [None] * n      # its orientation set down (None: unturned)
+        self._r = np.zeros(n)                                   # a ball's radius, its flight's and its roll's
+        self._disc_of: list = [None] * n                        # a disc's (Disc, AeroSet)
+        self.rolls = np.zeros(n, dtype=bool)                    # rolls on the carpet: a ball, a tube on its side
+        self._roll_torque, self._roll_inertia = np.zeros(n), np.zeros(n)
+        self._numbers = np.zeros(n, dtype=int)                  # its number among its kind's pieces, from 1
+        seen: dict[str, int] = {}
+        for i, name in enumerate(self.kind.tolist()):
+            seen[name] = seen.get(name, 0) + 1
+            self._numbers[i] = seen[name]
+            kind = rng.kinds.get(name)
+            piece = kind_piece(rng, name)
+            turn = turns[i] if turns is not None and i < layout.n_floor else None
+            self._rest[i], self._quat[i] = rest_pose(rng, name, turn)
+            if isinstance(piece, Ball):
+                r = piece.diameter / 2.0
+                self.radius[i] = self._r[i] = r
+                self.rolls[i] = True
+                self._roll_torque[i] = rng.rolling_resistance * piece.mass * GRAVITY * r     # N m against the roll
+                self._roll_inertia[i] = (piece.inertia_factor + 1.0) * piece.mass * r ** 2   # about the contact point
+            elif isinstance(piece, Disc):
+                self.radius[i] = self._r[i] = piece.diameter / 2.0
+                aero = self._aero_of(rng, name, kind)
+                self._disc_of[i] = (piece, aero)
+            else:
+                self.radius[i] = kind.radius
+                if kind.shape in ROLLING_SHAPES:                # a tube, ring or cylinder rolls on its side
+                    r = kind.reach(kind.orient(90.0, 0.0))      # its outer radius
+                    a = np.asarray(kind.axis, dtype=float)
+                    xx, yy, zz, xy, xz, yz = kind.inertia
+                    i_axis = float(a @ np.array([[xx, xy, xz], [xy, yy, yz], [xz, yz, zz]]) @ a)
+                    self._r[i] = r
+                    self.rolls[i] = True
+                    self._roll_torque[i] = rng.rolling_resistance * kind.mass * GRAVITY * r
+                    self._roll_inertia[i] = i_axis + kind.mass * r ** 2
+                else:
+                    self._r[i] = kind.radius
+        self._rolling = bool((self._roll_torque[self.rolls] > 0.0).any())
+        self._any_ball, self._any_disc = bool(self.ball_form.any()), bool(self.disc_form.any())
+        # the per-step loops read these as Python floats
+        self._r_list, self._torque_list = self._r.tolist(), self._roll_torque.tolist()
+        self._inertia_list = self._roll_inertia.tolist()
+
+    @staticmethod
+    def _aero_of(rng: Range, name: str, kind):
+        if name == rng.piece_kind and rng.aero is not None:
+            return rng.aero
+        return kind.aero if kind is not None and kind.aero is not None else aero_set(DEFAULT_AERO)
+
+    def rest_z_of(self, i: int) -> float:
+        """Piece i's center height set down on the carpet: a ball's radius, a disc's half height lying flat, a rigid
+        piece's lowest point (as it lies: a floor piece's own turn, else its kind's default) plus FLOOR_DROP."""
+        return float(self._rest[i])
+
+    def clearance(self, i: int) -> float:
+        """How far piece i's lowest point is above the carpet as it lies now: a ball's center less its radius, any
+        other piece's less how far below its center its lowest point is, turned as it is."""
+        z = float(self._qpos[i, 2])
+        kind = self.kinds.get(str(self.kind[i]))
+        if kind is None or kind.form == "ball":
+            return z - float(self._r[i])
+        return z - kind.lowest(self._qpos[i, 3:7])
+
+    def rest_quat(self, i: int) -> list[float] | None:
+        """Piece i's orientation set down on the carpet (w, x, y, z), None for a ball's or a flat disc's (unturned)."""
+        return self._quat[i]
+
+    def piece_name(self, i: int) -> str:
+        """What a student reads for piece i: "ball i" on a field of one ball or disc kind (as always), else its kind's
+        plain name and its number among that kind's pieces, from 1 ("coral 1")."""
+        if one_round_kind(self.kinds):
+            return f"ball {i}"
+        name = str(self.kind[i])
+        label = self.kinds[name].label if name in self.kinds else name
+        return f"{label} {int(self._numbers[i])}"
 
     def clear(self) -> None:
         """Every ball spare and parked, its log empty, the counts zero."""
@@ -175,11 +288,15 @@ class Balls:
         self.log[i].outcome = OUTCOME[state]
 
     def _bits(self, i, bits: dict) -> None:
-        """Collision bits of ball(s) i: the geom's, and its body's too (MuJoCo's broadphase filters bodies by the
+        """Collision bits of ball(s) i: its geoms', and its body's too (MuJoCo's broadphase filters bodies by the
         union of their geoms' bits, worked out when the model is compiled)."""
         m = self.model
-        m.geom_contype[self.geoms[i]] = m.body_contype[self.bodies[i]] = bits["contype"]
-        m.geom_conaffinity[self.geoms[i]] = m.body_conaffinity[self.bodies[i]] = bits["conaffinity"]
+        if self._one_geom:
+            g = self.geoms[i]
+        else:       # a rigid piece's geoms (its solids)
+            g = np.concatenate([self._slot_geoms[j] for j in np.atleast_1d(i).tolist()] + [np.zeros(0, dtype=int)])
+        m.geom_contype[g] = m.body_contype[self.bodies[i]] = bits["contype"]
+        m.geom_conaffinity[g] = m.body_conaffinity[self.bodies[i]] = bits["conaffinity"]
 
     def positions(self) -> np.ndarray:
         """(n, 3) ball centers (a copy)."""
@@ -269,21 +386,24 @@ class Balls:
         f = self._in_play()
         if not len(f):
             return
-        if self.disc is not None:
-            self._disc_forces(f)
+        if self._any_disc:
+            self._disc_forces(f[self.disc_form[f]])
+        if not self._any_ball:
             return
-        f = f[self._qpos[f, 2] > self.r + AIRBORNE]
+        f = f[self.ball_form[f]]                       # only balls feel drag and spin lift
+        f = f[self._qpos[f, 2] > self._r[f] + AIRBORNE]
         if not len(f):
             return
         qvel, xmat, air = self._qvel, self._xmat, self.air
-        drag = -self._half_rho_a * air.drag_coefficient
-        lift_r, lift_max, half_rho_a = air.lift_slope * self.r, air.lift_max, self._half_rho_a
+        cd, slope, lift_max, rs, flight = air.drag_coefficient, air.lift_slope, air.lift_max, self._r_list, self._flight
         done, forces = [], []
         for i in f.tolist():
             vx, vy, vz, a, b, c = qvel[i].tolist()     # velocity in the world, angular velocity in the body
             speed = math.sqrt(vx * vx + vy * vy + vz * vz)
             if not speed > 1e-9:
                 continue
+            half_rho_a = flight[i]
+            drag, lift_r = -half_rho_a * cd, slope * rs[i]
             r0, r1, r2, r3, r4, r5, r6, r7, r8 = xmat[i].tolist()
             wx, wy, wz = r0 * a + r1 * b + r2 * c, r3 * a + r4 * b + r5 * c, r6 * a + r7 * b + r8 * c
             wn = math.sqrt(wx * wx + wy * wy + wz * wz)
@@ -295,12 +415,14 @@ class Balls:
             done.append(i)
         if done:
             xfrc[done, :3] = forces
-            self._forced = np.array(done, dtype=int)
+            self._forced = np.union1d(self._forced, done) if len(self._forced) else np.array(done, dtype=int)
 
     def _disc_forces(self, f: np.ndarray) -> None:
-        """aero.forces on every airborne disc of the in-play `f` (see the module docstring): the force and the
+        """aero.forces on every airborne disc of the in-play discs `f` (see the module docstring): the force and the
         world-frame torque into xfrc_applied. The rows written are zeroed next step (apply_flight_forces)."""
-        low = self._qpos[f, 2] <= self.rest_z + AIRBORNE
+        if not len(f):
+            return
+        low = self._qpos[f, 2] <= self._rest[f] + AIRBORNE
         if low.any():       # low and touching something (the carpet, a goal, the robot): not flying
             d = self.data
             touching = np.zeros(self.n, dtype=bool)
@@ -308,12 +430,13 @@ class Balls:
                 ball = self._geom_ball[d.contact.geom[:d.ncon]].ravel()
                 touching[ball[ball >= 0]] = True
             f = f[~(low & touching[f])]
-        disc, aero, rho, rot = self.disc, self._aero, self.air.density, np.zeros(9)
+        rho, rot = self.air.density, np.zeros(9)
         done, rows = [], []
         for i in f.tolist():
             vel = self._qvel[i, :3]
             if not float(vel @ vel) >= disc_aero.V_MIN * disc_aero.V_MIN:
                 continue        # aero.forces is zero there
+            disc, aero = self._disc_of[i]
             mujoco.mju_quat2Mat(rot, self._qpos[i, 3:7])
             r = rot.reshape(3, 3)
             force, torque = disc_aero.forces(disc, aero, rho, vel, r, self._qvel[i, 3:])
@@ -333,28 +456,30 @@ class Balls:
         on for 10 s and more; this torque is the carpet's Coulomb rolling resistance. A ball at rest (rolling slower
         than ROLLING_SPEED, far above a resting ball's ~1e-9 m/s jitter and below MuJoCo's sleep tolerance) gets none,
         so it still falls asleep."""
-        if self._roll_torque <= 0.0:
+        if not self._rolling:
             return
         f = self._in_play()
         if not len(f):
             return
+        f = f[self.rolls[f]]
         # on the carpet and awake: a sleeping ball's velocity is zero (MuJoCo zeroes it), so it doesn't roll
-        f = f[(self._qpos[f, 2] < self.r + ON_CARPET) & (self.data.tree_asleep[self._trees[f]] < 0)]
+        f = f[(self._qpos[f, 2] < self._r[f] + ON_CARPET) & (self.data.tree_asleep[self._trees[f]] < 0)]
         if not len(f):
             return
-        qvel, xmat = self._qvel, self._xmat
-        r2, slow2 = self.r * self.r, ROLLING_SPEED * ROLLING_SPEED
+        qvel, xmat, rs = self._qvel, self._xmat, self._r_list
+        torque, inertia, slow2 = self._torque_list, self._inertia_list, ROLLING_SPEED * ROLLING_SPEED
         done, torques = [], []
         for i in f.tolist():
+            r = rs[i]
             a, b, c = qvel[i, 3:].tolist()             # |omega| is the same in any frame: drop the still balls first
-            if not (a * a + b * b + c * c) * r2 > slow2:
+            if not (a * a + b * b + c * c) * (r * r) > slow2:
                 continue
             m0, m1, m2, m3, m4, m5, _, _, _ = xmat[i].tolist()
             wx, wy = m0 * a + m1 * b + m2 * c, m3 * a + m4 * b + m5 * c    # the roll: horizontal spin, world frame
             wn = math.sqrt(wx * wx + wy * wy)
-            if not wn * self.r > ROLLING_SPEED:
+            if not wn * r > ROLLING_SPEED:
                 continue
-            k = -(min(self._roll_torque, self._roll_inertia * wn / self.model.opt.timestep) / wn)
+            k = -(min(torque[i], inertia[i] * wn / self.model.opt.timestep) / wn)
             torques.append((k * wx, k * wy))
             done.append(i)
         if done:
@@ -395,9 +520,12 @@ class Balls:
         steps = [math.sqrt((x - a) * (x - a) + (y - b) * (y - b) + (z - c) * (z - c))
                  for (x, y, z), (a, b, c) in zip(rows, before)]
         live = [True] * len(balls)
-        for (name, surface), reach, (cx, cy, cz) in zip(self.surfaces, self._reach, self._centers):
+        for (name, surface), reach, (cx, cy, cz), counted in zip(self.surfaces, self._reach, self._centers,
+                                                                 self._counted):
             # a crossing point lies within `reach` of the center and within `step` of `now`: test only those balls
+            # (of the kind the goal counts)
             near = [k for k, ((x, y, z), step) in enumerate(zip(rows, steps)) if live[k] and step > 0.0
+                    and counted[balls[k]]
                     and math.sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy) + (z - cz) * (z - cz))
                     <= reach + step + 1e-9]
             if not near:

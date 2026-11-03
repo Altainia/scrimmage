@@ -28,17 +28,19 @@ import re
 import tempfile
 import threading
 import time
+import tomllib
 from pathlib import Path
 
 import tomlkit
 
 from ..blocks import store
-from ..blocks.palette import palette, problems
+from ..blocks.palette import ANY_PIECE, palette, problems
 from ..blocks.program import Block, Cond, TestFileError, block_json, dumps, from_json, load, to_json
 from ..blocks.run import TestRun, world_for
 from ..blocks.spread import NO_BALL, NO_SPREAD, inside_robot, run_spread
 from ..blocks.sweep import MAX_SWEEP, _kind as sweep_kind, run_sweep
 from ..cad.settings import replace_file
+from ..parts.model import PartError
 from ..testrange.spec import BALL_CHOICE_RANGES, BUILTIN_RANGES, load_range
 from .bench_session import SessionError
 from .edits import add_part, cad_offset
@@ -61,6 +63,12 @@ STARTER_HOPPER_COUNT = 5        # ... on a field with a station: feed until this
 STARTER_FEED_TIMEOUT = 20.0     # s: ... giving up after this long
 STANDIN_RANGE = {"file": "ladder", "start": "below"}   # the stand-in for a part with a hook: in front of the ladder
 STANDIN_STATION = {"file": "station", "start": "at_station"}   # ... with a hopper-like body: at the station's chute
+STANDIN_REEF = {"file": "reef", "start": "facing_coral"}       # ... with a grabber-like body: facing the floor coral
+GRABBER_CLOSE_VOLTS = 4.0       # a grabber's starter closes its jaws at this (a NEO squeezes about 260 N on 300:1)
+GRABBER_CLOSE_S = 1.0           # s: ... waits this long for them to close
+GRABBER_LIFT_DEG = -30.0        # ... lifts with the part's lone arm hinge to this (the reef example's forward and up)
+GRABBER_HOLD_TIMEOUT = 10.0     # s: ... then waits this long for a piece to be held
+GRABBER_WAIT_S = 2.0            # ... then holds it this long, expected held throughout
 PLAIN_FIELD = "The plain field"
 
 
@@ -84,23 +92,58 @@ def _field_choices() -> list[dict]:
 
 def station_starter(pal: dict | None) -> list[Block]:
     """The starter blocks for a field with a station: start feeding from the first, wait until 5 pieces are in the
-    hopper (giving up after 20 s), stop feeding. Empty without a station."""
+    hopper (giving up after 20 s), stop feeding. With a grabber (grabber_part's), wait until the grabber holds a piece
+    instead (ruling P31: a grabber holds one piece, never 5). Empty without a station."""
     stations = (pal or {}).get("stations") or []
     if not stations:
         return []
     first = stations[0]
+    grabber = grabber_part(pal)
+    until = Cond("held", {"piece": ANY_PIECE, "by": grabber}) if grabber \
+        else Cond("in_hopper", {"at_least": STARTER_HOPPER_COUNT})
     return [Block("start_feeding", {"station": first}),
-            Block("wait_until", {"until": Cond("in_hopper", {"at_least": STARTER_HOPPER_COUNT}),
-                                 "timeout": STARTER_FEED_TIMEOUT}),
+            Block("wait_until", {"until": until, "timeout": STARTER_FEED_TIMEOUT}),
             Block("stop_feeding", {"station": first})]
 
 
+def grabber_part(pal: dict | None) -> str | None:
+    """The robot's grabber: the part of its first body named like a grabber's, else its first part named like one
+    (as standin_config sends both to the reef); None without one."""
+    pal = pal or {}
+    grabbers = [b.split(".", 1)[0] for b in pal.get("bodies") or [] if _grabby(b.rsplit(".", 1)[-1])]
+    grabbers += [p for p in pal.get("parts") or [] if _grabby(p)]
+    return grabbers[0] if grabbers else None
+
+
+def grabber_starter(pal: dict | None) -> list[Block]:
+    """The starter blocks for a robot with a grabber (grabber_part's) on a field with rods (the reef). Spin each of that part's motors whose joint is named like a jaw (CLOSE_WORDS) at 4 V, closing the grab (positive
+    volts close, as the reef example's jaws do), and wait 1 s; when the part has one other hinge motor (an arm), move
+    it to -30 degrees to lift the piece (held means off the carpet); wait until any piece is held by the part (giving
+    up after 10 s), then expect it held throughout a 2 s wait. Empty without rods or such a part."""
+    pal = pal or {}
+    part = grabber_part(pal)
+    if not pal.get("rods") or part is None:
+        return []
+    mine = [m for m in pal.get("motors") or [] if m["kind"] != "wheel" and m["name"].startswith(part + ".")]
+    jaws = [m["name"] for m in mine if any(w in m["name"].rsplit(".", 1)[-1].lower() for w in CLOSE_WORDS)]
+    arms = [m["name"] for m in mine if m["kind"] == "hinge" and m["name"] not in jaws]
+    held = Cond("held", {"piece": ANY_PIECE, "by": part})
+    close = [Block("spin", {"motor": j, "volts": GRABBER_CLOSE_VOLTS}) for j in jaws]
+    close.append(Block("wait", {"seconds": GRABBER_CLOSE_S}))
+    if len(arms) == 1:
+        close.append(Block("move", {"joint": arms[0], "to": GRABBER_LIFT_DEG, "unit": "deg"}))
+    return [*close,
+            Block("wait_until", {"until": held, "timeout": GRABBER_HOLD_TIMEOUT}),
+            Block("expect", {"that": copy.deepcopy(held), "throughout": True}),
+            Block("wait", {"seconds": GRABBER_WAIT_S})]
+
+
 def starter_blocks(pal: dict | None) -> list[Block]:
-    """A new test's blocks for a robot with this palette: on a field with a station, the station starter; else drive
-    0.3 m first when it can drive and the field has bars; then a robot whose only mechanism motor is a hinge moves it
-    to 45 degrees, else the first mechanism motor spins at 6 V for 2 s and everything stops; a robot with nothing to
-    move waits 1 s."""
-    feed = station_starter(pal)
+    """A new test's blocks for a robot with this palette: with a grabber on a field with rods, the grabber starter; on
+    a field with a station, the station starter; else drive 0.3 m first when it can drive and the field has bars;
+    then a robot whose only mechanism motor is a hinge moves it to 45 degrees, else the first mechanism motor spins at
+    6 V for 2 s and everything stops; a robot with nothing to move waits 1 s."""
+    feed = grabber_starter(pal) or station_starter(pal)
     if feed:
         return feed
     out = []
@@ -127,18 +170,25 @@ def starter_hooks(pal: dict | None) -> list[str]:
     return [b for b in pal.get("bodies") or [] if _hooky(b) and b not in counted]
 
 
-HOPPER_WORDS = ("hopper", "intake", "indexer")
+GRABBER_WORDS = ("claw", "grabber", "gripper", "jaw")
+CLOSE_WORDS = ("jaw", "claw", "grip", "finger")     # a grabber's joints that close the grab (ruling P24)
+HOPPER_WORDS = ("hopper", "intake", "indexer", *GRABBER_WORDS)     # where a piece should end up: held counts
 
 
 def _hoppery(name: str) -> bool:
     return any(w in name.lower() for w in HOPPER_WORDS)
 
 
+def _grabby(name: str) -> bool:
+    return any(w in name.lower() for w in GRABBER_WORDS)
+
+
 def pick_hopper(bodies: list[str], roots: dict[str, str]) -> list[str]:
     """The hopper bodies among `bodies` ("<part>.<body>" names): those whose own name (after the last dot) contains
-    "hopper", "intake" or "indexer"; when none does, the root body of each part whose name contains one (`roots`:
-    part -> its root body's "<part>.<body>" name), never its other bodies: an intake's roller counted as "in" would
-    make the catch rate look better than it is."""
+    one of HOPPER_WORDS ("hopper", "intake", "indexer", or a grabber's "claw", "grabber", "gripper", "jaw"); when
+    none does, the root body of each part whose name contains one (`roots`: part -> its root body's "<part>.<body>"
+    name), never its other bodies: an intake's roller counted as "in" would make the catch rate look better than it
+    is."""
     own = [b for b in bodies if _hoppery(b.rsplit(".", 1)[-1])]
     return own or [r for part, r in roots.items() if _hoppery(part)]
 
@@ -260,13 +310,19 @@ def standin_config(parts: list[tuple[str, dict]], root_body: str, motor_slots: d
     """The stand-in robot (templates' "standin") carrying the part folders `parts` [(path, cad_marker)] of one CAD
     import where the CAD has them, their motor slots on free IDs (see _place). With a body named like a hook, the robot
     starts in front of the ladder range; else with a hopper body (pick_hopper; `roots`: part name -> its root body's
-    name, or None), at the station range's chute (the Test tab's Setup changes the field)."""
+    name, or None) named like a grabber's (in its own name or its part's), facing the reef field's floor coral; else
+    with any other hopper body, at the station range's chute (the Test tab's Setup changes the field)."""
     doc = tomlkit.parse(new_config("standin"))
     _place(doc, parts, root_body, motor_slots)
     bodies = [f"{m['part']}.{b}" for _, m in parts for b in m["origins"]]
     named = {m["part"] for _, m in parts}
-    field = STANDIN_RANGE if any(_hooky(b) for b in bodies) else STANDIN_STATION if pick_hopper(
-        bodies, {p: f"{p}.{r}" for p, r in (roots or {}).items() if p in named and r}) else None
+    hopper = pick_hopper(bodies, {p: f"{p}.{r}" for p, r in (roots or {}).items() if p in named and r})
+    if any(_hooky(b) for b in bodies):
+        field = STANDIN_RANGE
+    elif any(_grabby(b) for b in hopper):      # a grabber's body, or the root of a part named like one
+        field = STANDIN_REEF
+    else:
+        field = STANDIN_STATION if hopper else None
     if field is not None:
         rng = tomlkit.table()
         rng.update(field)
@@ -446,6 +502,59 @@ class TestSession:
             self._recompute()
             return 200, {"ok": True, "version": self.version}
 
+    # -- the grip ---------------------------------------------------------------------------
+    def grip(self, body: dict) -> tuple[int, dict]:
+        """Setup's grip picker: body {body: "<instance>.<body>", grip: a GRIP_MATERIALS key, a number (my own
+        friction) or null (the default)} written into that path part's folder, in its own edits (parts/grip.py
+        set_grip), which the Part tab edits too. The App then sees the folder change and builds the robot again.
+        400 for a grip, part or body it can't take (nothing is written); 409 while a run, sweep or spread goes."""
+        from ..parts.grip import set_grip
+        name, grip = body.get("body"), body.get("grip")
+        with self._cond:
+            if self._closed:
+                raise SessionError(409, "the test was closed")
+            if self.running is not None:
+                raise SessionError(409, BUSY)
+            world = self._world
+        if not isinstance(name, str) or name.count(".") != 1 or not all(name.split(".")):
+            raise SessionError(400, f'body must be "<part>.<body>", such as "claw.pad_left", not {name!r}')
+        if world is None or world.parts is None:
+            raise SessionError(409, f"fix the robot first: {self._robot_problem or 'it is not made of parts'}")
+        part, b = name.split(".")
+        inst = next((i for i in world.parts.instances if i.name == part), None)
+        if inst is None:
+            raise SessionError(400, f'no part "{part}" on this robot')
+        if inst.source.startswith("stock "):
+            raise SessionError(400, f"{part}: grip is for a part folder's bodies; a stock part has its own materials")
+        found = next((x for x in inst.part.bodies if x.name == b), None)
+        if found is None:
+            raise SessionError(400, f'no body "{b}" in {part}; its bodies: '
+                                    f'{", ".join(x.name for x in inst.part.bodies)}')
+        if grip is not None and not any(g.collide and not g.tread for g in found.geoms):
+            raise SessionError(400, f"{name} touches nothing (no geom collides), so a grip on it does nothing")
+        own = self._config_grip(part)
+        if grip is not None and b in own:       # clearing the folder's own grip is always fine
+            raise SessionError(400, f"{self.robot_path.name} sets {name}'s grip itself (its [[part]] {part}'s "
+                                    "grip), and that wins over the part folder's; change it there")
+        folder = Path(inst.source)
+        try:
+            set_grip(folder.parent if folder.is_file() else folder, b, grip)
+        except PartError as e:
+            raise SessionError(400, str(e)) from None
+        except OSError as e:
+            raise SessionError(400, f"can't write the grip in {folder}: {e.strerror or e}") from None
+        return 200, {"ok": True}
+
+    def _config_grip(self, part: str) -> dict:
+        """The robot config's own `grip` table of [[part]] `part` ({} without one)."""
+        try:
+            raw = tomllib.loads(self.robot_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+            return {}
+        entry = next((e for e in raw.get("part") or [] if isinstance(e, dict) and e.get("name") == part), {})
+        own = entry.get("grip")
+        return own if isinstance(own, dict) else {}
+
     # -- runs -------------------------------------------------------------------------------
     @property
     def busy(self) -> bool:
@@ -463,9 +572,12 @@ class TestSession:
                 sweep_kind(target)
             except ValueError as e:
                 raise SessionError(400, str(e)) from None
+            names = isinstance(target, dict) and "grip" in target       # a grip sweep's values may be material names
             if not isinstance(values, list) or not values or len(values) > MAX_SWEEP or not all(
-                    isinstance(x, (int, float)) and not isinstance(x, bool) for x in values):
-                raise SessionError(400, f"values must be a list of 1 to {MAX_SWEEP} numbers")
+                    (isinstance(x, str) and names) or (isinstance(x, (int, float)) and not isinstance(x, bool))
+                    for x in values):
+                raise SessionError(400, f"values must be a list of 1 to {MAX_SWEEP} " +
+                                   ("material names or numbers" if names else "numbers"))
         with self._cond:
             if self._closed:
                 raise SessionError(409, "the test was closed")

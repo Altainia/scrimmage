@@ -174,14 +174,19 @@ Part (`/api/part/*`; 404 unless a part is open, except upload). Pieces are keyed
         coordinates (base64 little-endian float32 xyz / int32 triangles, as the robot view's meshes); cached per
         source read and robot frame. Plugin mode: one entry per body with meshes (key: the body), in the part frame.
         {pieces: []} while the source can't be read.
-  GET  /api/part/materials         -> {materials: {key: {key, label, density, printed}}, motors: [names]}.
+  GET  /api/part/materials         -> {materials: {key: {key, label, density, printed}}, motors: [names], grips:
+        [[key, label, friction estimate]] (parts/grip.py's materials, for the Grip picker)}.
   POST /api/part/edit              -> body {version, op, args}: scrimmage.cad.edits.apply_edit(op, args) (set_frame
         leaves the frame unchecked unless args has confirmed = true, which "Looks right" sends; plugin
         mode: set_mass {body, kg}, set_collision {body, mode}, set_joint {body, joint: {range?, spring?, damping?,
         frictionloss?}} (null removes one), set_total {kg}; piece edits are 400 "per-piece materials need the STEP:
-        import it instead"). 200 with the state (its messages say what the edit dropped); 400 {field, message} for
-        an edit refused (nothing written); 409 when the settings changed after `version` (another tab, an undo, an
-        outside edit: a build finishing doesn't count) or the part is read-only.
+        import it instead"). Both modes: set_grip {body, grip: a parts/grip.py material key, a number (a measured
+        friction) or null (the default)} writes the body's grip in its part folder's own edits (scrimmage-edits.toml):
+        plugin mode the folder's; import mode the built folder holding that body, not rebuilt (a rebuild keeps it),
+        400 on body for a body built into another's or a part not built yet; both on the history.
+        Each state body carries `grip` (None: the default friction). 200 with the state (its messages say what the
+        edit dropped); 400 {field, message} for an edit refused (nothing written); 409 when the settings changed after
+        `version` (another tab, an undo, an outside edit: a build finishing doesn't count) or the part is read-only.
   POST /api/part/undo, /redo       -> body {version}: a 50-step history of the settings (the build's record of the
         folders it wrote is never undone); 200 with the state ({..., ok: false} when there is nothing to undo).
   POST /api/part/axis              -> body {piece, triangle, kind: round|flat}: cad.axis.fit_axis on the clicked
@@ -430,19 +435,26 @@ Test (`/api/test/*`; 404 "no test is open" unless a test is open, except /api/te
         the test has no floor spread, or 409 (spread.inside_robot) when a placement puts the ball inside the robot.
         The spread is kept (the newest 3) when it ends.
   POST /api/test/cancel            -> {ok: true}; stops the run, sweep or spread under way (a cancelled run is kept).
+  POST /api/test/grip              -> body {body: "<instance>.<body>", grip: a material key | a number | null}: Setup's
+        grip picker writes it in that path part's folder (its scrimmage-edits.toml, as the Part tab's set_grip), and
+        the robot is built again; {ok, version}. 400 (nothing written) for a grip parts/grip.py refuses, a stock
+        part, a body the part doesn't have or that touches nothing, or one the robot config's own [[part]] grip sets;
+        409 while a run, sweep or spread goes.
   GET  /api/test/run/<id>          -> (<id>: "004", "sweep-002/003", "spread-001/002") result.json's fields plus id
         and signals; /view -> view.json; /motion -> motion.bin (application/octet-stream); 404 for a run that isn't
         kept.
   POST /api/test/new               -> body {robot?, from_part?} (default: the open robot): writes <robot
         stem>.test.toml next to it (<stem>-2.test.toml ... when taken) and opens it as /api/app/open does. Its
         blocks are the starter blocks
-        (test_session.starter_blocks: on a field with a station, its station_starter; else drive 0.3 m when the robot
+        (test_session.starter_blocks: with a grabber on a field with rods, close its jaws at 4 V, lift with its arm,
+        wait up to 10 s for a held piece and expect it held through 2 s; on a field with a station, its station_starter; else drive 0.3 m when the robot
         is a tank drive and the field has bars, then a lone hinge motor moved to 45 deg, or the first motor spun at 6 V
         for 2 s and all stopped; else wait 1 s), its hooks the robot's bodies named like a hook and its hopper those
-        named like a hopper ("hopper", "intake" or "indexer"). With from_part: true and a part from a CAD import open
-        ("Test it" in the Part tab): makes <import name>-standin.toml (the standin template carrying the built parts
-        where the CAD has them, in front of the ladder range when a body is named like a hook, else at the station
-        range's chute when one is named like a hopper) and <import name>.test.toml next
+        named like a hopper ("hopper", "intake", "indexer", or a grabber's "claw", "grabber", "gripper", "jaw"). With
+        from_part: true and a part from a CAD import open ("Test it" in the Part tab): makes <import
+        name>-standin.toml (the standin template carrying the built parts where the CAD has them, in front of the
+        ladder range when a body is named like a hook, else facing the reef's floor coral when one is named like a
+        grabber, else at the station range's chute when one is named like a hopper) and <import name>.test.toml next
         to the import's parts/ folder, once each, and opens the test. Pressed again it opens the same test and adds
         the import's built parts the stand-in doesn't have yet, where the CAD has them (it never removes one);
         {ok, added: [their names]}. 409 while the parts are updating, didn't build or the part is read-only, 400
@@ -538,6 +550,7 @@ from tomlkit.exceptions import TOMLKitError
 from .. import robotcode, teamfolders
 from ..config import ConfigError, load_config_text
 from ..lockstep import parse_speed
+from ..parts.assemble import PLACEMENT_KEYS
 from ..parts.model import PartError, load_part
 from ..parts.stock import REGISTRY, _load_all
 from ..scenario import ScenarioError
@@ -1305,11 +1318,10 @@ class App:
         other = ""
         if d is not None and d.doc is not None:
             for p in edits.parts(d.doc):
-                reserved = {"name", "stock", "path", "attach", "pos", "rot", "ids"}
                 parts.append({"name": _plain(p.get("name")), "stock": _plain(p.get("stock")),
                               "path": _plain(p.get("path")), "attach": _plain(p.get("attach")),
                               "pos": _plain(p.get("pos", [0.0, 0.0, 0.0])), "rot": _plain(p.get("rot", [0.0, 0.0, 0.0])),
-                              "params": {k: _plain(v) for k, v in p.items() if k not in reserved},
+                              "params": {k: _plain(v) for k, v in p.items() if k not in PLACEMENT_KEYS},
                               "ids": _plain(p.get("ids", {})),
                               "cad_pos": self._cad_pos(d.doc, _plain(p.get("path")), _plain(p.get("attach"))),
                               "cad": self._cad_info(d.doc, _plain(p.get("path")))})
@@ -2133,6 +2145,14 @@ class App:
                 self._revalidate()
         return status, out
 
+    def test_grip(self, body: dict) -> tuple[int, dict]:
+        with self._lock:
+            self._sync()
+            test = self.need_test()
+            status, out = test.grip(body)
+            self._sync()    # the part folder changed: the robot is built again, and the test's palette with it
+            return status, {**out, "version": test.version}
+
     def test_start(self, kind: str, body: dict) -> tuple[int, dict]:
         with self._lock:
             self._sync()   # the problems as the files are now
@@ -2760,6 +2780,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return app.test_start(path.rsplit("/", 1)[1], body)
             if path == "/api/test/cancel":
                 return 200, test.cancel()
+            if path == "/api/test/grip":
+                return app.test_grip(body)
         raise ApiError(404, "no such endpoint")
 
     def _part_api(self, method: str, url, part) -> tuple:

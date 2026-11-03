@@ -19,6 +19,7 @@ hood and the ball's squeeze are that model, and the range adds a world around it
 - [Lanes, stages, the hopper and the intake](#lanes-stages-the-hopper-and-the-intake)
 - [Beam breaks](#beam-breaks)
 - [Balls in the world](#balls-in-the-world)
+- [Pieces that aren't balls](#pieces-that-arent-balls)
 - [The range file](#the-range-file)
 - [Scenarios: signals, `by_time`, `[range]`, `robot_env`](#scenarios-signals-by_time-range-robot_env)
 - [The report, the viewer and NetworkTables](#the-report-the-viewer-and-networktables)
@@ -164,12 +165,13 @@ fast-mode sample's shooter.
 
 | key | unit | default | meaning |
 |---|---|---|---|
-| `file` | | required | a built-in range (`"2026"`, `"2013"`, `"2026-bump"`, `"2023-charge-station"`, `"terrain-library"`, `"2022-hangar"`, `"2020-switch"`, `"2013-pyramid"`, `"ladder"`, `"ladder-square"`, `"intake"` (one ball on the carpet in front of `[start.facing_ball]`, to try an intake on) or `"station"` (a human player station at the blue alliance wall that feeds balls down a short chute, `[start.at_station]` against it, to try a hopper or an intake on)) or a path to a [range file](#the-range-file), relative to the config. For 2013, `"2013"` is the disc range (shooting discs at the slot goals, the pyramid an obstacle) and `"2013-pyramid"` the climbing range (the pyramid to climb, no goals) |
+| `file` | | required | a built-in range (`"2026"`, `"2013"`, `"2026-bump"`, `"2023-charge-station"`, `"terrain-library"`, `"2022-hangar"`, `"2020-switch"`, `"2013-pyramid"`, `"ladder"`, `"ladder-square"`, `"intake"` (one ball on the carpet in front of `[start.facing_ball]`, to try an intake on), `"station"` (a human player station at the blue alliance wall that feeds balls down a short chute, `[start.at_station]` against it, to try a hopper or an intake on) or `"reef"` (one pipe of the 2025 reef with its L2, L3 and L4 branches, a coral on the carpet in front of `[start.facing_coral]` and a coral station with `[start.at_coral_station]` against it, to try a grabber on)) or a path to a [range file](#the-range-file), relative to the config. For 2013, `"2013"` is the disc range (shooting discs at the slot goals, the pyramid an obstacle) and `"2013-pyramid"` the climbing range (the pyramid to climb, no goals) |
 | `start` | | none | a named start from the range file. The robot starts there. Give either `start` or `[robot] start_pose`, not both |
 | `preload` | balls | 0 | balls already in the hopper at the start of a run. More than the robot holds (the hopper capacity) is an error |
 | `floor_balls` | | `true` | `false`: no floor balls (the range's `[[floor_balls]]` are left out of the world entirely, so the world can't put them out later). Faster runs, and the right choice when the auto never touches them |
 | `ball` | | the range's | a ball preset to use in place of the range's own (`"2017-fuel"`, `"2019-cargo"`, and so on: the names in [docs/launcher.md](launcher.md)). Only a range with a ball takes it (not a disc range). A range with a station refuses a ball that doesn't fit the station's chute (a chute with a set `width` must be wider than the ball). The Test tab's Setup sets this for a stand-in's `intake` and `station` fields |
-| `station` | | none | changes a station's settings for this run: `station = { feeder = { interval = 0.5, stock = 8, spread_yaw_deg = 5.0 } }`. The keys are `interval`, `stock`, `spread_yaw_deg`, `spread_pitch_deg`, `spread_speed`, `spread_position` and `spread_rotation_deg`; any other key, or a station the range doesn't have, is an error. `stock = 0` means "never runs out" (at most 50 balls are fed in one run); a stock can be at most 200 |
+| `piece` | | the range's | a ball preset or a piece preset to use in place of the range's own kind (`"2025-coral"`, `"2023-cube"`, `"2017-fuel"`, and so on: see [Pieces that aren't balls](#pieces-that-arent-balls)). Give `piece` or `ball`, not both: `ball` is the older spelling and takes ball presets only. The Test tab's Setup writes `piece`. It replaces the field's one kind, and only the built-in `intake` and `station` fields take it (a game's field and the `reef` field keep their own pieces) |
+| `station` | | none | changes a station's settings for this run: `station = { feeder = { interval = 0.5, stock = 8, spread_yaw_deg = 5.0 } }`. The keys are `interval`, `stock`, `spread_yaw_deg`, `spread_pitch_deg`, `spread_speed`, `spread_position`, `spread_rotation_deg`, `tip_deg`, `turn_deg`, `spread_tip_deg` and `spread_turn_deg`; any other key, or a station the range doesn't have, is an error. `stock = 0` means "never runs out" (at most 50 balls are fed in one run); a stock can be at most 200 |
 | `seed` | | `1` | the whole number (0 or more) that picks which draw of the spreads the stations feed. The same seed gives the same feeds every run |
 
 A `[range]` replaces the field's center obstacle with the range's own elements, so `[field] obstacle = true` with a
@@ -461,6 +463,173 @@ past the frame of any robot. It still collides with the field, the hub and other
 > **Known limitation:** a very slow shot from deep inside the robot can still be overlapping the robot when the
 > 0.15 s are up. It is then thrown out by the contact solver.
 
+## Pieces that aren't balls
+
+A field can hold game pieces that aren't balls: a pipe, a cone, a cube, a gear, a hatch panel, a tote. Each kind of
+piece is a real rigid body in the same physics as everything else: a pipe rolls on its curved side and stands on its
+end, and a rod really goes through a hollow piece's hole. A field can hold several kinds at once (2023 had cones and cubes). The pieces are named by their kind in everything a student reads ("coral
+3", not an internal body name).
+
+**What isn't a ball stays a stand-in.** Soft pieces (the 2023 cube, the 2024 note) are rigid stand-ins of the right
+size and weight: they don't squash. See [What isn't modeled](#what-isnt-modeled).
+
+### `[range] piece` and the piece presets
+
+`[range] piece = "<preset>"` makes the field's default kind that preset (a ball preset or a piece preset). The kind is
+named after its preset. `ball = "<preset>"` and `disc = "<preset>"` stay as they were. A range file with none of the
+three uses the first `[piece.<name>]` table as its default kind.
+
+The piece presets are in `scrimmage/launcher/presets.toml`, beside the ball presets. Each number there carries a
+`# source:` (the game manual's section) or an `# estimate:` saying how it was estimated.
+
+| preset | what it is | shape |
+|---|---|---|
+| `2025-coral` | the 2025 CORAL, a PVC pipe: 4.5 in outside, 4 in inside, 11 7/8 in long, 0.658 kg | hollow tube |
+| `2023-cone` | the 2023 CONE: an 8 3/8 in square base and a cone 12 13/16 in tall, 0.652 kg | a slab and a cone |
+| `2023-cube` | the 2023 CUBE, 9 1/2 in, 71 g. A rigid stand-in for the fabric cube | box |
+| `2017-gear` | the 2017 GEAR, an 11 in disc 2 in thick, 0.522 kg, without teeth or hole | cylinder |
+| `2019-hatch-panel` | the 2019 HATCH PANEL, 19 in across with a 6 in hole, 3/16 in thick | ring |
+| `2015-tote` | the 2015 TOTE, 26.9 by 16.9 by 12.1 in, 3.54 kg, a solid box | box |
+| `2024-note` | the 2024 NOTE, a ring 14 in across with a 10 in hole, 2 in thick, 235 g. A rigid stand-in for the foam ring | ring |
+
+The coral's mass is the middle of the manual's 1.1 to 1.8 lb; the hatch panel's is from polycarbonate's density; the
+tote's inertia is a solid box's. The file says each one.
+
+### `[piece.<name>]`: a kind of piece
+
+A `[piece.<name>]` table adds a kind to the field. It is one of:
+
+```toml
+[piece.coral]
+preset = "2025-coral"             # a piece preset, or ball = "2026-fuel" (a ball preset), or disc = "2013-frisbee"
+
+[piece.post]                      # or a kind of your own, from shapes and the manual's numbers
+shape = "tube"
+diameter_in = 4.5
+inner_diameter_in = 4.0           # leave it out for a solid tube; a number makes it hollow
+length_in = 11.875
+mass = 0.66                       # kg: required
+material = "pvc"                  # the surface: a [surface.*] preset ...
+# friction = 0.45                 # ... or your own measured number; give one of the two
+label = "post"                    # the plain name students read; left out, the table's name
+```
+
+A preset kind is its preset: it takes no shape keys. A kind written out takes a `shape`, a `mass` and a surface
+(`material` or `friction`), and every length has an `_in` form (give one of the two). Giving both a preset and a shape,
+a shape with a key it doesn't use, no mass, or no surface is an error that names the table and the key.
+
+| `shape` | keys | notes |
+|---|---|---|
+| `sphere` | `diameter` | |
+| `box` | `size` (x, y, z) | the long axis is the box's longest edge |
+| `cylinder` | `diameter`, `length` | a solid round piece |
+| `tube` | `diameter`, `length`, `inner_diameter` | with `inner_diameter` it is hollow (a pipe); without, solid |
+| `ring` | `diameter`, `length`, `inner_diameter` | a tube read as short: a hatch panel, a note |
+| `cone` | `diameter` (base), `tip_diameter` (default 0, a point), `length` | |
+| `compound` | `[[piece.<name>.shapes]]`, `axis`, `hole` | several of the shapes above, each with its `pos` and `rpy_deg` |
+| `cad` | `cad` (a STEP, STL or OBJ file, relative to the range file), `units` (`"m"`, `"mm"` or `"in"`), `axis`, `hole` | an exact shape from CAD |
+
+Every kind also takes `mass` (kg, required), `material` or `friction`, `inertia = [Ixx, Iyy, Izz]` (kg m², left out:
+worked out from the shape at the same density throughout) and `label`.
+
+**Hollow pieces.** A hollow tube or ring is built from 24 convex slices so a rod goes through the hole (the hole is
+very slightly smaller than the number you give: the effective radius is cos(7.5 degrees), about 0.9914 times it). A
+compound or CAD piece with a hole says so with `hole = { diameter = 0.1, length = 0.3 }` (`center` too if it isn't in
+the middle); this is only used to tell if a rod runs through it, for a [seated](test-tab.md#placing-a-piece) check.
+
+**CAD pieces.** `shape = "cad"` reads the file with the same reader as the Part tab, so a piece can come straight from
+the game's CAD. The CAD files carry no mass, so `mass` is required (the manual's weight), and `material` or `friction`
+for the surface. A piece that is not convex is cut into convex parts with `coacd`; without it installed, that is a
+plain error saying so. The piece's size is checked: one more than 3 m across is refused with "the piece is 301 m
+across; check units (m, mm or in)", the usual sign of millimeters read as meters or inches as millimeters.
+
+**The long axis, and flat pieces.** Each kind has a long axis: a tube's, ring's, cylinder's or cone's own, a box's
+longest edge, and for a compound or CAD piece `axis = "x"`, `"y"` or `"z"` (default `"z"`). A kind is **flat** when it
+is shorter along that axis than it is wide across it (a gear, a hatch panel, a note). Its words are "lying flat" and
+"standing on edge", not "standing on end".
+
+**Surfaces.** `material` names a `[surface.*]` preset in `presets.toml`: `pvc` 0.4, `polycarbonate` 0.4, `rubber`
+0.8, `foam` 0.6, `hdpe` 0.25, `polypropylene` 0.3 and `fabric` 0.5. Each is a sliding friction against a hard robot
+part, and **each is an estimate** (the file says how each was chosen): friction against FRC pieces isn't published.
+Replace one with your own number, measured with a sled pull ([how](test-tab.md#grip-material)).
+
+**Contact.** A piece has a firm contact (a stiff spring, so a squeezed piece doesn't creep into the part that holds
+it). The `friction` is the piece's own; a robot part's pad with a grip material has priority, so its friction applies
+([Grip material](test-tab.md#grip-material)).
+
+### Putting kinds on the field
+
+`kind = "<name>"` on a `[[floor_balls]]`, a `[[station]]` or a `[[goal]]` says which kind it uses. Left out, it is the
+default kind (a goal's, the first ball or disc kind).
+
+- **`[[floor_balls]]`** (its pieces, whatever the kind) also takes `tip_deg` and `rotation_deg`, one number each for
+  the whole table. `tip_deg` is how far the piece's long axis is tipped up from lying: 0 lying on its side (the
+  default), 90 standing on end, from -90 to 90. A flat kind with no `tip_deg` lies flat (90). `rotation_deg` turns it
+  about the vertical from the field's +x: 0 is lying in line with +x, 90 across. A piece is set down just above its
+  resting height and settles, so a leaning piece ends wherever physics puts it. Each floor piece must be inside
+  the field by its reach and not overlap another: two are at least the sum of their horizontal reaches apart.
+- **`[[station]]`** feeds any ball or rigid piece (not a disc). The keys `tip_deg` and `turn_deg` give the fed piece's
+  base orientation (the turn is about the vertical from `heading_deg`), and `spread_tip_deg` and `spread_turn_deg`
+  spread each feed by up to ± that much, as `spread_yaw_deg` does. They default to 0 (a flat kind's tip to 90). A
+  ball station is not changed: a ball is fed unturned and draws the same random numbers as before, so old feeds are
+  identical. A non-ball station draws two more numbers per feed (the tip and turn), after the nine it already draws.
+  `spread_rotation_deg` then turns a piece a little more about each axis (the Test tab calls it "extra tumble").
+  Each fed piece is set down just clear of the chute's floor (or at the release point if there is no chute), whatever
+  way it was drawn to lie, so a long piece doesn't start inside the floor. A chute with no `width` is 1.3 times the
+  piece's largest side wide, and its side walls are as tall as that side.
+- **`[[goal]]`** counts balls and discs only. A goal that names a non-ball kind is an error, and on a field with
+  several kinds a goal counts only the ball or disc kind it names. Shooting stays ball and disc only too: the
+  `[shooter]` ball path and its launcher never take a non-ball piece. Pieces that aren't balls are moved only by contact
+  with the student's mechanism.
+
+**Words for how a piece lies.** The Test tab and the floor spread's results name how a piece lies from its tip and
+turn. Tipped up 80 degrees or more: "standing on end" (for a flat kind, "lying flat"). Tipped up 10 or less: "lying
+in line" at a turn of 0, "lying across" at 90 (either way), "lying in line, turned around" at 180, "lying at 45°"
+between; a flat kind at tip 0 is "standing on edge". In between: "leaning 40°, lying across". When a spread would give
+two placements the same words, the words add what differs ("lying flat (turned 45°)").
+
+### Rods
+
+A rod is a field element: a straight round or square rod fixed to the field, such as a peg, a pole, or a coral branch.
+It is an `[[element]]` with `kind = "rod"`; its keys are in [docs/terrain.md](terrain.md#field-elements-in-range-files).
+
+```toml
+[[element]]
+name = "branch_l2"                # the name a test's checks use
+kind = "rod"
+base = [5.2529, 4.0, 0.6404]      # x, y, z (m) of the end that is fixed (or base_in, in inches)
+tip = [5.0240, 4.0, 0.8006]       # x, y, z (m) of the free end the piece slides on from (or tip_in)
+diameter_in = 1.66                # across; a square rod's side
+```
+
+The rod runs from `base` to `tip` at any angle; its length is the distance between them. A round rod's free end is
+rounded and reaches exactly to the tip; a square rod (`section = "square"`) has a flat end. `friction` defaults to 0.6.
+
+**Starts are kept clear of rods.** A rod is a solid thing the robot would begin inside. A start whose robot outline
+lies under a rod that is lower than 0.5 m anywhere is refused, with a message naming the rod. A rod higher than that
+over a start is allowed, since the range doesn't know the robot's height (a branch at reef heights is far above).
+
+### The reef field
+
+The built-in `reef` field is a test field to try a grabber on, not the whole 2025 reef: one pipe, its three branches
+`branch_l2`, `branch_l3` and `branch_l4` at the manual's heights and angles (the two lower ones rise at 35 degrees
+toward the robot; L4 is vertical), a coral on the carpet in front of the robot, and a coral station.
+
+- Starts: `facing_coral` (2.0, 4.0 m facing +x, the coral lying in line 0.63 m ahead) and `at_coral_station` (against
+  the coral station's chute).
+- The heights and angles, and the pipe's size, are from the 2025 manual (section 5.3); the branches' lengths and the
+  pipe's height are estimates from its figures, and the file says so. The post is drawn square and the bends aren't
+  built.
+- The worked example is [`examples/blocks/reef`](../examples/blocks/reef/README.md); the walk-through is
+  [Test a grabber on a coral](getting-started/test-a-mechanism.md#6-test-a-grabber-on-a-coral).
+
+### How the pieces are kept
+
+Every piece, whatever its kind, is a numbered free body in the same list as the balls, `ball.<i>` (the name stays so
+that replay, NetworkTables and older tests keep working). The world knows each slot's kind, and the ball-only parts
+skip the rest: flight, the carpet's rolling resistance, scoring, the launcher's pickup and preload. A piece's body
+origin is its center of mass, so its position is where it balances.
+
 ## The range file
 
 A range file describes a season's field elements: the ball, the goals, the floor balls, the starting positions,
@@ -498,9 +667,10 @@ pose = [3.0, 4.035, 0.0]   # x, y, heading in degrees
 
 ### `[[station]]`: a human player station
 
-A station feeds balls onto the field from a release point, as a human player would: one every `interval` seconds, each
-varying a little. It is built like the bench's `[[inlet]]` ([docs/bench.md](bench.md)), with limits where the inlet
-has standard deviations. Stations feed balls only; a `[[station]]` in a disc range is an error.
+A station feeds balls, or any other kind of rigid [piece](#pieces-that-arent-balls), onto the field from a release
+point, as a human player would: one every `interval` seconds, each varying a little. It is built like the bench's
+`[[inlet]]` ([docs/bench.md](bench.md)), with limits where the inlet has standard deviations. A `[[station]]` in a disc
+range is an error.
 
 ```toml
 [[station]]
@@ -527,7 +697,11 @@ chute = { length = 0.5, slope_deg = 30.0 }
 | `spread_yaw_deg`, `spread_pitch_deg` | degrees | 0 | each feed's heading and pitch vary by up to this much either way |
 | `spread_speed` | m/s | 0 | each feed's speed varies by up to this much either way |
 | `spread_position` or `spread_position_in` | m or in | 0, 0, 0 | a box around the release point, three numbers (along x, y, z): each feed's release point moves by up to this much either way on each axis |
-| `spread_rotation_deg` | degrees | 0, 0, 0 | how much each feed is turned about each axis. A round ball doesn't show it; the key is there for pieces that are not round |
+| `spread_rotation_deg` | degrees | 0, 0, 0 | how much each feed is turned about each axis (roll, pitch, yaw). A round ball doesn't show it; for a piece that isn't round it tumbles it a little |
+| `kind` | | the range's default | the kind of piece it feeds, the name of a `[piece.<name>]` table (or the default kind) |
+| `tip_deg` | degrees | 0 (flat kinds: 90) | the fed piece's tip: 0 lying on its side, 90 standing on end, -90 to 90. A ball ignores it |
+| `turn_deg` | degrees | 0 | the fed piece's turn about the vertical, from `heading_deg` |
+| `spread_tip_deg`, `spread_turn_deg` | degrees | 0 | each feed's tip and turn vary by up to this much either way |
 | `chute` | | none | a sloped floor and two side walls (below) |
 
 **Every spread is plus or minus its value.** `spread_yaw_deg = 5.0` means each ball goes up to 5 degrees left or 5
@@ -541,14 +715,17 @@ changes it.
 
 **The chute** is an optional sloped plate with a wall on each side, built into the world as the body
 `element.<station>.chute`. `length` runs along the slope, `slope_deg` is below horizontal, and `width` is the space
-between the walls (leave it out for 1.3 ball diameters, so a ball of any preset fits). The floor's top starts
-beneath the release point and runs down along the heading; its walls stand one ball diameter tall. The chute is
+between the walls (leave it out for 1.3 times the piece's largest side, a ball's diameter, so a piece of any preset
+fits, however it is turned). The floor's top starts beneath the release point and runs down along the heading; its
+walls stand one largest side tall. The chute is
 refused if its low end would go below the carpet, or it reaches off the field or into an element, an obstacle,
 another station's chute or a start's robot outline (the check uses each chute part's base, so the wall tops leaning out about
 a ball diameter times the sine of the slope over the low end are not counted).
 
-**A feed waits** while another ball on the field is within one ball diameter of the release point, so balls don't
-land on each other. If the release point stays blocked, a test's **feed one** block times out and says so.
+**A feed waits** while another piece on the field is within one ball diameter (for a piece that isn't a ball, its
+bounding radius) of the release point, so pieces don't land on each other. **A fed piece starts just clear of the chute
+floor**: it is turned as drawn from its tip and turn, then set down just above the floor at the height that orientation
+needs, so a long piece does not start inside the floor. If the release point stays blocked, a test's **feed one** block times out and says so.
 
 **How many balls a station feeds.** Each station has its own parked pool of balls (`stock` of them, or 50 when `stock`
 is left out), added to the world when it is built. Because the model is built once, a station can't be restocked
@@ -578,7 +755,8 @@ has its two outposts as stations: see [Where the 2026 numbers come from](#where-
   (goal y) and height (z), its face normal is along x, and `pos` is its center. `rpy_deg` turns it (roll about x,
   then pitch about y, then yaw about z). The 2026 range has the hub's back net as a plate.
 - **Floor balls** are either `grid = { corner, step, count }` (x outer, y inner) or `at = [[x, y], ...]`. Balls lying
-  too close (overlapping), or off the field, are errors.
+  too close (overlapping), or off the field, are errors. A table may name a `kind`, and gives its pieces a `tip_deg` and
+  `rotation_deg` ([how a piece lies](#putting-kinds-on-the-field)).
 - **Starts** are `[start.<name>]` with `pose = [x, y, heading_deg]`.
 - **Slot goals.** `opening = { kind = "rect", width = w, height = h }` is a rectangle: `width` along the goal's y,
   `height` along its x, centered on the goal's origin (so `rim_height` is the slot's center height). With
@@ -592,8 +770,9 @@ has its two outposts as stations: see [Where the 2026 numbers come from](#where-
   disc's inertia; in flight they get the same Hummel force and torque as `scrimmage disc run`'s flight model
   ([docs/disc.md](disc.md)) each physics step. Floor pieces lie flat. A disc range ignores `[carpet]
   rolling_resistance` (a flat disc doesn't roll).
-- **Elements** are `[[element]]` tables: see [docs/terrain.md](terrain.md#field-elements-in-range-files). A start
-  whose robot outline overlaps an element, or a floor ball resting inside one, is an error.
+- **Elements** are `[[element]]` tables: see [docs/terrain.md](terrain.md#field-elements-in-range-files), which has
+  the `rod` kind ([Rods](#rods)). A start whose robot outline overlaps an element, or a floor ball resting inside one,
+  is an error; so is a start under a rod lower than 0.5 m.
 
 The built-in `2013` is the ULTIMATE ASCENT field's goal end:
 [`scrimmage/testrange/ranges/2013.toml`](../scrimmage/testrange/ranges/2013.toml). The blue alliance's four slot
@@ -757,5 +936,10 @@ by `SCRIMMAGE_AUTO`; they run on `configs/fastmode_range.toml` (fast mode) and `
   simulation.
 - **Feeder loads on motors.** The rollers turn as if the balls weren't there.
 - **Ball-to-ball compression.** Balls are rigid spheres with a soft contact; a ball does not squash in the hopper.
-- **Calibration.** Nothing here is calibrated: the ball's stiffness, the wheel's friction and the carpet's rolling
+- **Squishy pieces.** The 2023 cube, the 2024 note and other soft pieces (inflated tubes, foam) are rigid stand-ins of
+  the right size and weight: they don't squash or grip back. Soft pieces are a later project (survey project 5).
+- **Shooting pieces that aren't balls.** The `[shooter]`, the launcher model and goals that count pieces passing an
+  opening stay ball and disc only. A coral, a cone or a tote moves only by contact with the mechanism you test, and a
+  goal that names one is an error.
+- **Calibration.** Nothing here is calibrated: the ball's stiffness, the wheel's friction, a piece's surface and a pad's grip, and the carpet's rolling
   resistance are estimates until you measure your own. See [Measure these first](launcher.md#measure-these-first).

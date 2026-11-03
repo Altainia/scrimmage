@@ -22,7 +22,8 @@ holding balls at an arc length s from 0 (its hopper side) to its path_length, th
 - **Intake.** A `field` ball whose sphere touches the zone box, while the intake roller's inward (positive) surface
   speed is at least min_surface_speed, is collected (parked, `robot`) if the robot has room (the capacity is the
   whole robot's: hopper, stages and launcher) and at least 1 / rate seconds have passed since the last pickup. One
-  ball per pickup; the others touching stay physical and are pushed by the bumper.
+  ball per pickup; the others touching stay physical and are pushed by the bumper. Only the shooter's kind of piece
+  is collected (and preloaded): a field's other pieces stay physical too.
 
 A ball's launcher index (`Launcher.insert` numbers the balls it is fed) maps back to its range ball through `take`.
 The launcher is reached through the shooter (`busy_lanes`, `feed`, `positions`), so the same path feeds a ball
@@ -61,8 +62,8 @@ class BallPath:
         self.config, self.balls, self.shooter = config, balls, shooter
         m = balls.model
         self.lanes = config.lanes
-        self.d = balls.range.piece.diameter     # a ball's, or a disc's: discs lie flat in a row (module notes)
-        self.r = self.d / 2.0
+        self.r = balls.r                        # the shooter's kind's (Balls.r): only its pieces take the path
+        self.d = 2.0 * self.r                   # a ball's, or a disc's: discs lie flat in a row (module notes)
         stages = config.stages
         self._names = [st.name for st in stages]
         self._length = [st.path_length for st in stages]
@@ -112,7 +113,7 @@ class BallPath:
     def preload(self, n: int) -> None:
         """n of the robot's spare ball slots (never a station's pool) into the hopper."""
         b = self.balls
-        slots = [i for i in b.layout.robot_slots if b.state[i] == BallState.SPARE]
+        slots = [i for i in b.layout.robot_slots if b.state[i] == BallState.SPARE and b.of_shooter[i]]
         if n > len(slots) or self.held() + n > self.config.capacity:
             raise ValueError(f"preload {n}: the robot holds at most {self.config.capacity} balls")
         for i in slots[:n]:
@@ -242,7 +243,7 @@ class BallPath:
             return
         if float(b.data.qvel[self._intake_dof]) * it.diameter / 2.0 < it.min_surface_speed:
             return
-        f = np.flatnonzero(b.field)
+        f = np.flatnonzero(b.field & b.of_shooter)                  # only the shooter's kind of piece
         if not len(f):
             return
         center, axes = pose if pose is not None else self.zone_pose()

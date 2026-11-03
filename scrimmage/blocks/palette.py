@@ -2,8 +2,16 @@
 
 The palette lists every name a block can pick, as the world names them: the robot's motors and joints (a hinge reads
 in degrees, a slide in inches, a drive wheel is a `wheel`), its bodies and parts, its hooks, the field's bars,
-elements, game pieces, other surfaces a touch can name (`targets`: the carpet, the walls) and climb levels, whether it
-can drive and how (`drive_kind`: a tank or swerve drive, as drive.py finds them) and the signals a chart can show.
+elements, rods and game pieces, other surfaces a touch can name (`targets`: the carpet, the walls) and climb levels,
+whether it can drive and how (`drive_kind`: a tank or swerve drive, as drive.py finds them) and the signals a chart
+can show (`seated.<rod>` for each rod, in inches, when a piece kind of the field has a hole).
+The field's pieces: `piece` (its default kind's preset), `kinds` (each kind's form, whether it is hollow or flat and the
+plain name a student reads, e.g. "coral"), `floor_kinds` (each floor piece's kind), `piece_labels` (what a student
+reads for each floor piece, "coral 2", as the run's sentences name it) and `station_kinds` (each station's), and every
+preset Setup's piece picker offers (`piece_presets`: balls and pieces). The grips: `grips`, the grip
+material (parts/grip.py) of each body of a path part that touches anything ("<instance>.<body>" -> a material, a
+number or None for the default friction), and `grip_materials`, the materials a picker offers ([key, label,
+friction estimate]).
 Every list is sorted by name except `levels`, which keeps the range's climb order (lowest first), so a picker reads the
 way the robot climbs. `pieces` are the field's game pieces (the floor balls), not the balls parked in the robot's
 slots.
@@ -19,16 +27,18 @@ import mujoco
 
 from ..hal_drive import driven_joints
 from ..launcher.inputs import PRESETS
+from ..parts.grip import GRIP_MATERIALS
 from ..terrain.climb import robot_hooks
 from ..testrange.spec import BALL_CHOICE_RANGES, RangeError, load_range
 from ..testrange.station import OVERRIDE_KEYS, with_overrides
 from .drive import drivetrain
+from .placed import ON_PIECE
 from .spread import NO_BALL, floor_ball, spread_ball
 
 NEXT_BAR = "next bar"     # a hanging_from or touch target: the lowest bar above every bar hung from so far
 ANY_BAR = "any bar"       # a touch target: any of the field's bars
 ANY_HOOK = "hook"         # a touch's robot side: any of the robot's hooks
-ANY_PIECE = "any"         # a piece_in's piece: any game piece
+ANY_PIECE = "any"         # a piece_in's, held's, rests_on's or seated's piece: any game piece
 ALL_MOTORS = "all"        # a stop's motor: every motor
 
 
@@ -83,6 +93,46 @@ def _station_settings(st) -> dict:
     return out
 
 
+def _kinds(rng) -> dict:
+    """Each piece kind of the field: its form ("ball", "disc" or "rigid"), whether it is hollow (a hole a rod goes
+    through) or flat, and its plain name (`label`)."""
+    if rng is None:
+        return {}
+    return {name: {"form": k.form, "hollow": k.hole is not None, "flat": bool(k.flat), "label": k.label}
+            for name, k in rng.kinds.items()}
+
+
+def _grips(world) -> dict:
+    """"<instance>.<body>" -> its grip material (None: the default friction) for each body of a path part (a part
+    folder's, not a stock part's) with a geom that touches anything, a tread's aside: what a grip can be set on."""
+    parts = world.parts
+    if parts is None:
+        return {}
+    out = {}
+    for inst in parts.instances:
+        if inst.source.startswith("stock "):
+            continue
+        for b in inst.part.bodies:
+            if any(g.collide and not g.tread for g in b.geoms):
+                out[f"{inst.name}.{b.name}"] = inst.part.grips.get(b.name)
+    return dict(sorted(out.items()))
+
+
+def _spread_kind_name(world) -> str:
+    """The kind name of the floor spread's piece (the one spread_ball picks)."""
+    i, _ = spread_ball(world)
+    return str(world.test_range.balls.kind[i])
+
+
+def _piece_labels(world, floor_names: list[str]) -> dict:
+    """Each floor piece's body name -> what a student reads for it ("ball 10", "coral 2"), as every sentence names it
+    (balls.piece_name), so a picker never numbers pieces by its sorted list."""
+    tr = getattr(world, "test_range", None)
+    if tr is None:
+        return {}
+    return {name: tr.balls.piece_name(i) for i, name in enumerate(floor_names)}
+
+
 def hook_names(world, hooks: list[str]) -> list[str]:
     """The robot's hooks: the stock climber's (`<inst>.hook<i>`) and the bodies the test names as hooks."""
     return sorted(set(robot_hooks(world.model, world.robot_body)) | set(hooks))
@@ -105,9 +155,13 @@ def palette(world, hooks: list[str]) -> dict:
     signals = ["tilt", *motors, *(f"{n}.current" for n in motors)]
     if hook_list:
         signals.append("hook_load")
+    rods = sorted(layout.rods) if layout is not None else []
+    if rng is not None and any(k.hole is not None for k in rng.kinds.values()):
+        signals += [f"seated.{r}" for r in rods]                   # inches, empty while no piece is on it
     dt = drivetrain(world, driven)
     stations = sorted(rng.stations, key=lambda st: st.name) if rng is not None else []
     ball = floor_ball(world)
+    floor_names = layout.ball_names[:layout.n_floor] if layout is not None else []
     return {
         "motors": [_entry(n, kinds[n]) for n in motors],
         "joints": [_entry(n, k) for n, k in sorted(kinds.items())],
@@ -116,6 +170,7 @@ def palette(world, hooks: list[str]) -> dict:
         "hooks": hook_list,
         "bars": bars,
         "elements": elements,
+        "rods": rods,                       # the field's rods (a reef's branches)
         "pieces": pieces,
         "targets": _targets(world, bar_set | set(elements) | set(pieces)),
         "levels": list(rule.levels) if rule is not None else [],      # lowest first, as the range lists them
@@ -128,9 +183,19 @@ def palette(world, hooks: list[str]) -> dict:
         "balls": sorted(PRESETS["ball"]),
         "ball_choice": rng is not None and rng.path.stem in BALL_CHOICE_RANGES,
         "floor_piece": ball is not None,
-        # where the floor spread's ball lies (in) and the nearest distance ahead Setup offers: {offset_in,
-        # distance_in, nearest_in}, or null
-        "floor_ball": None if ball is None else {k: round(v, 2) for k, v in ball.items()},
+        "piece": rng.kinds[rng.default_kind].preset if rng is not None else None,     # the default kind's
+        "piece_presets": {"balls": sorted(PRESETS["ball"]), "pieces": sorted(PRESETS["piece"])},
+        "kinds": _kinds(rng),
+        "floor_kinds": dict(zip(floor_names, layout.kinds[:layout.n_floor])) if layout is not None else {},
+        "piece_labels": _piece_labels(world, floor_names),
+        "station_kinds": {st.name: st.kind or rng.default_kind for st in stations},
+        "grips": _grips(world),
+        "grip_materials": [[key, label, mu] for key, (label, mu) in GRIP_MATERIALS.items()],
+        # where the floor spread's piece lies (in) and the nearest distance ahead Setup offers: {offset_in,
+        # distance_in, nearest_in, kind (its kind's name), and a piece other than a ball's tip_deg and rotation_deg},
+        # or null
+        "floor_ball": None if ball is None else {**{k: round(v, 2) for k, v in ball.items()},
+                                                 "kind": _spread_kind_name(world)},
     }
 
 
@@ -148,11 +213,14 @@ class _Names:
         self.robot = self.bodies | set(p["parts"]) | set(p["hooks"])
         self.bars = set(p["bars"])
         self.pieces = set(p["pieces"])
+        self.elements = set(p["elements"])
+        self.rods = set(p["rods"])
+        rng = world.parts.range if world.parts is not None else None
+        self.hollow = rng is not None and any(k.hole is not None for k in rng.kinds.values())
         self.field = set(world.contact_names()) | set(p["elements"]) | self.bars
         self.stations = set(p["stations"])
         self.hopper = list(program.hopper or []) if program is not None else []
         self.stock = {}                     # station -> its stock after the test's setup (None: no stock)
-        rng = world.parts.range if world.parts is not None else None
         if rng is not None:
             # only the field's own stations: a name it doesn't have is reported by problems() and leaves the others'
             # settings in force
@@ -212,12 +280,21 @@ def _cond_problems(n: _Names, c) -> list[str]:
         elif a["field"] != ANY_BAR and a["field"] not in n.field and a["field"] not in n.pieces:
             out.append(f'nothing called "{a["field"]}" on this field')
         return out
-    if c.kind == "piece_in":
+    if c.kind in ("piece_in", "held", "rests_on", "seated"):
         out = []
-        if a["body"] not in n.bodies:
+        if c.kind == "rests_on" and a["on"] != ON_PIECE and a["on"] not in n.elements:
+            out.append(f'no element "{a["on"]}" on this field')
+        if c.kind == "seated" and a["on"] not in n.rods:
+            out.append(f'no rod "{a["on"]}" on this field')
+        elif c.kind == "seated" and not n.hollow:
+            out.append("this field's pieces have no hole to go on a rod")
+        if c.kind == "piece_in" and a["body"] not in n.bodies:
             out.append(f'no body "{a["body"]}" on this robot any more')
+        if c.kind == "held" and a["by"] not in n.robot:
+            out.append(f'no body or part "{a["by"]}" on this robot (held by)')
         if a["piece"] == ANY_PIECE:
-            if not n.pieces:
+            # a piece a station feeds can be placed too (rests_on, seated)
+            if not n.pieces and not (c.kind in ("rests_on", "seated") and n.stations):
                 out.append("this field has no game pieces")
         elif a["piece"] not in n.pieces:
             out.append(f'no game piece "{a["piece"]}" on this field')
@@ -225,7 +302,7 @@ def _cond_problems(n: _Names, c) -> list[str]:
     if c.kind == "hanging_from":
         return _bar_problems(n, a["bar"])
     if c.kind in ("in_hopper", "made_it_in") and not n.hopper:
-        return ["pick the hopper in Setup: the bodies a piece lands in"]
+        return ["tick where a piece should end up in Setup: the bodies a piece lands in or is held by"]
     if c.kind == "station_empty":
         name = a["station"]
         if name not in n.stations:
@@ -268,17 +345,17 @@ def _block_problems(n: _Names, b) -> list[str]:
 
 def setup_problems(program, rng) -> list[str]:
     """What the test's setup asks of the field that the field won't do: the messages of the RangeErrors from applying
-    its ball and station settings to `rng` (the file path dropped). Names the field doesn't have are left to
-    problems(), which says them in its own words."""
+    its ball or piece and station settings to `rng` (the file path dropped), e.g. a piece too big for a station's
+    chute. Names the field doesn't have are left to problems(), which says them in its own words."""
     out: list[str] = []
 
     def say(e: RangeError) -> str:
         return str(e).removeprefix(f"{rng.path}: ")
 
-    ball = program.setup.get("ball")
-    if ball is not None and rng.path.stem in BALL_CHOICE_RANGES:
+    ball, piece = program.setup.get("ball"), program.setup.get("piece")
+    if (ball is not None or piece is not None) and rng.path.stem in BALL_CHOICE_RANGES:
         try:
-            rng = load_range(rng.path.as_posix(), rng.path.parent, ball=ball)
+            rng = load_range(rng.path.as_posix(), rng.path.parent, ball=ball, piece=piece)
         except RangeError as e:
             out.append(say(e))
     known = {st.name for st in rng.stations}
@@ -303,6 +380,10 @@ def _setup_level_problems(program, world, n: _Names) -> list[str]:
             out.append("this field keeps its own ball; pick a ball on the intake or station field")
         else:
             out.append("this field has no ball to pick; clear the ball in Setup")
+    if "piece" in setup and rng is None:
+        out.append("the plain field has no piece to pick; clear the piece in Setup")
+    elif "piece" in setup and not n.p["ball_choice"]:
+        out.append("this field keeps its own pieces; pick a piece on the intake or station field")
     out += [f'Setup names a station this field doesn\'t have: "{name}"'
             for name in setup.get("station", {}) if name not in n.stations]
     if setup.get("floor_spread") and spread_ball(world) is None:

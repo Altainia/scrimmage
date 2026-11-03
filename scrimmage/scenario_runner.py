@@ -454,8 +454,8 @@ def _capture_range(session: Session, report: Report, own: bool) -> None:
         return
     report.range = rng.counts()
     logs = rng.ball_log()
-    starts, r = rng.range.floor_balls, rng.balls.r
-    took = [took_part(b, starts[b["id"]] if b["origin"] == "floor" else None, r) for b in logs]
+    starts, r = rng.range.floor_balls, rng.balls.radius      # each piece's own radius
+    took = [took_part(b, starts[b["id"]] if b["origin"] == "floor" else None, float(r[b["id"]])) for b in logs]
     report.balls = [b for b, t in zip(logs, took) if t]
     report.ball_states = [b["outcome"] for b in logs]
     spare = sum(b["outcome"] == "spare" for b in logs)

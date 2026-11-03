@@ -1,0 +1,75 @@
+# A coral grabber written by hand: an arm on a hinge, hanging from a mast at the front bumper, carries two jaws that
+# close on a coral lying in line on the carpet (along the robot's heading), each jaw a pad on a slide with its own
+# motor. Swinging the arm forward and up lifts the coral; swung on over the top to about 145 degrees, the coral's axis
+# tilts down ahead of the robot at 35 degrees, the slope of a 2025 L2 or L3 reef branch, its center at the L2 branch's
+# line (the hinge's 44 cm sets that height), so the robot can drive it onto that branch. It sits in front of the
+# stand-in robot's front bumper (attached at the bumper's face, on the floor). Every number is our choice.
+# Coordinates: x forward, y left, z up, in meters; the origin is on the floor at the bumper's face.
+
+[part]
+name = "grabber"
+format = 1
+
+# The mast: a post up to the arm's hinge, 44 cm up. Only drawn, so it never touches the coral or the field.
+[[body]]
+name = "mast"
+mass = 0.6                    # choice: an aluminum tube and its bracket
+geom = [{ box = [0.04, 0.04, 0.44], pos = [0.0, 0.0, 0.22], color = [0.55, 0.55, 0.6, 1.0], collide = false }]
+
+# The arm turns about y at the top of the mast; at 0 it hangs straight down, its jaws on the carpet. A negative angle
+# swings the jaws forward and up (-90 holds them straight ahead, -145 over the top with the coral sloping down ahead).
+# Geared 100 to 1; its armature is a NEO's rotor (1e-4 kg m^2) seen through the gearing.
+[[body]]
+name = "arm"
+parent = "mast"
+pos = [0.0, 0.0, 0.44]
+mass = 1.0                    # choice: an arm tube and the jaws' carrier plate
+joint = { name = "arm", hinge = "y", range = [-160, 10], armature = 1.0 }
+geom = [
+  { box = [0.03, 0.03, 0.30], pos = [0.0, 0.0, -0.15], color = [0.6, 0.6, 0.65, 1.0], collide = false },   # the arm
+  { box = [0.26, 0.24, 0.02], pos = [0.13, 0.0, -0.31], color = [0.6, 0.6, 0.65, 1.0], collide = false },  # the carrier
+]
+
+# The jaws hang from the carrier on either side of the coral, their pads' centers at the coral's middle height
+# (5.7 cm). Each slides toward the coral (positive volts close it) and is sprung open; open, a 4.5 in coral fits
+# between the pads with 3 cm to spare each side. Each jaw is geared 300 rad of motor per meter of travel (a NEO
+# squeezes about 13 N at 0.2 V, 260 N at 4 V); its armature is the rotor through that gearing (9 kg). The pads are
+# plain boxes 20 cm long, two thirds of the coral, with MuJoCo's default contact (the coral's own firm contact
+# governs, scrimmage/testrange/build.py's RIGID_SOLREF).
+[[body]]
+name = "jaw_left"
+parent = "arm"
+pos = [0.20, 0.0972, -0.3828]
+mass = 0.2                    # choice: a pad and its slide
+joint = { name = "jaw_left", slide = [0, -1, 0], range = [0.0, 0.05], armature = 9.0, spring = { stiffness = 50.0 } }
+geom = [{ box = [0.20, 0.02, 0.08], name = "pad_left", color = [0.2, 0.2, 0.2, 1.0] }]
+
+[[body]]
+name = "jaw_right"
+parent = "arm"
+pos = [0.20, -0.0972, -0.3828]
+mass = 0.2                    # choice: as jaw_left
+joint = { name = "jaw_right", slide = [0, 1, 0], range = [0.0, 0.05], armature = 9.0, spring = { stiffness = 50.0 } }
+geom = [{ box = [0.20, 0.02, 0.08], name = "pad_right", color = [0.2, 0.2, 0.2, 1.0] }]
+
+[[motor]]
+slot = "arm"
+joint = "arm"
+motor = "NEO"
+gearing = 100.0
+
+[[motor]]
+slot = "jaw_left"
+joint = "jaw_left"
+motor = "NEO"
+gearing = 300.0
+
+[[motor]]
+slot = "jaw_right"
+joint = "jaw_right"
+motor = "NEO"
+gearing = 300.0
+
+[[mount]]
+name = "base"
+body = "mast"

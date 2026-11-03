@@ -1,0 +1,71 @@
+[test]
+robot = "grabber-standin.toml"
+hopper = ["grabber.jaw_left", "grabber.jaw_right"]
+chart = ["grabber.arm", "seated.branch_l2"]
+
+[[block]]
+do = "spin"
+motor = "grabber.jaw_left"
+volts = 4.0
+
+[[block]]
+do = "spin"
+motor = "grabber.jaw_right"
+volts = 4.0
+
+[[block]]
+do = "wait"
+seconds = 1.0
+
+[[block]]
+do = "move"
+joint = "grabber.arm"
+to = -30.0
+unit = "deg"
+
+[[block]]
+do = "wait_until"
+until = { held = { piece = "any", by = "grabber" } }
+timeout = 5.0
+
+[[block]]
+do = "expect"
+that = { held = { piece = "any", by = "grabber" } }
+throughout = true
+
+[[block]]
+do = "move"
+joint = "grabber.arm"
+to = -145.0
+unit = "deg"
+
+[[block]]
+do = "drive"
+distance = 2.65
+volts = 3.0
+
+[[block]]
+do = "wait"
+seconds = 0.5
+
+[[block]]
+do = "spin"
+motor = "grabber.jaw_left"
+volts = -2.0
+
+[[block]]
+do = "spin"
+motor = "grabber.jaw_right"
+volts = -2.0
+
+[[block]]
+do = "wait"
+seconds = 2.0
+
+[[block]]
+do = "expect"
+that = { seated = { piece = "any", on = "branch_l2", at_least_in = 3.0 } }
+
+[[block]]
+do = "expect"
+that = { rests_on = { piece = "any", on = "branch_l2" } }

@@ -354,6 +354,12 @@ def test_range_timestep_too_long_rejected():
     with pytest.raises(PartError, match=r"timestep of at most 0.001 s, not 0.002"):
         World(range_cfg(model={"timestep": 0.002}), None)
     World(range_cfg(model={"timestep": 0.0005}), None)
+    # a ball kind is named a ball, a rigid kind a piece
+    with pytest.raises(PartError, match=r"\(2026\.toml, ball '2026-fuel'\)"):
+        World(range_cfg(model={"timestep": 0.002}), None)
+    with pytest.raises(PartError, match=r"\(reef\.toml, piece '2025-coral'\): a range needs a timestep"):
+        World(range_cfg(range={"file": "reef", "start": "facing_coral", "floor_balls": None},
+                        model={"timestep": 0.002}), None)
 
 
 def test_bouncy_ball_rejected():

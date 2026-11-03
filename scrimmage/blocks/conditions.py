@@ -19,6 +19,16 @@ step, and the plain words that name them in a run's outcome.
 - `made_it_in`: the share of the pieces fed so far that are in the hopper, at least P percent (the runner's
   `outcomes`; false while nothing has been fed).
 - `level`: on a range that scores climbs, the climb monitor's scoring level (`climb.level`) is this one.
+- `held`: a game piece (`any` for any piece in play) is held by a robot part or body: off whatever is under it,
+  touching the part and moving with it, for HELD_S (grip_watch.py's HeldTracker, `Watch.held`).
+- `rests_on`: a game piece rests on a field element (or on another piece, `a piece`): the element carries at least
+  half its weight, it is at rest and no robot geom touches it, for REST_S (placed.py's Placed, `Watch.placed`).
+- `seated`: a hollow game piece is on a rod, its hole passed over the rod's tip by at least `at_least_in` inches (the
+  depth read to one decimal, as a student reads it; placed.py's seated_depth).
+
+The words name pieces as a student knows them: any piece by the field's kind ("a coral"; "a ball" on a field of one
+ball or disc kind, as always; "a piece" on a mixed field or when the kinds aren't known), and a named piece by its
+kind and number ("coral 1"; on a field of one ball or disc kind its body name, as always).
 
 "The next bar" is the lowest bar whose top is higher than every bar the robot has hung from so far in this run; the
 lowest bar before the robot has hung from any.
@@ -35,8 +45,11 @@ import mujoco
 import numpy as np
 
 from ..terrain.climb import hold_geoms, robot_hooks
+from ..testrange.spec import _one_round_kind as one_round_kind
 from .feeds import made_it_in
+from .grip_watch import HeldTracker, default_word
 from .palette import ANY_BAR, ANY_HOOK, ANY_PIECE, NEXT_BAR
+from .placed import Placed
 
 HANG_S = 0.1            # s: the hooks carry a quarter of the robot's weight this long to count as hanging
 HANG_SHARE = 0.25       # of the robot's weight
@@ -65,7 +78,16 @@ class Watch:
             self._hook_geoms[name] = set(self._body_geoms(name))
         self._balls = [m.body(n).id for n in layout.ball_names] if layout is not None else []
         self._ball_names = list(layout.ball_names) if layout is not None else []
-        self._hopper = list(program.hopper or [])
+        tr = world.test_range
+        self.kinds = dict(tr.range.kinds) if tr is not None else None     # the field's piece kinds, for the words
+        self.piece_names: dict[str, str] = {}               # a piece's body name -> what a student reads ("coral 1")
+        if tr is not None and not one_round_kind(tr.range.kinds):
+            self.piece_names = {n: tr.balls.piece_name(i) for i, n in enumerate(self._ball_names)}
+        self.hopper = list(program.hopper or [])             # where a piece should end up (the test's hopper)
+        # (balls,) True for each ball or disc: only a rigid piece counts as in when a hopper body holds it (ruling
+        # P26: a ball wedged on a hopper body outside its box is stuck, as always)
+        self.round = np.array([tr.range.kinds[str(k)].form != "rigid" for k in tr.balls.kind], bool) \
+            if tr is not None and self._balls else np.zeros(len(self._balls), bool)
         self.outcomes = None                                # the runner's piece tracker (made_it_in reads it)
         self._sides: dict[str, set[int]] = {}
         self._boxes: dict[str, tuple[int, np.ndarray, np.ndarray]] = {}
@@ -80,6 +102,15 @@ class Watch:
         self._all_hooks = set().union(*self._hook_geoms.values()) if self._hook_geoms else set()
         self._f6 = np.zeros(6)
         self._pairs: set[tuple[int, int]] = set()           # (robot geom, field geom) touching at the last update
+        self.held = HeldTracker(world, self)                # the pieces held, by each part a held condition names
+        for c in _conds(program.blocks, "held"):
+            self.held.track(c.args["by"])
+        # what the pieces rest on, and their seated depths (contacts followed only for a rests_on condition)
+        self.placed = Placed(world, rests=bool(_conds(program.blocks, "rests_on")))
+        if not self.round.all():                            # and by each hopper body: a rigid piece one holds is in
+            for by in self.hopper:
+                self.held.track(by, hopper=True)
+        self.inside = self.hopper_mask()                    # hopper_mask at the last update (feeds.py reads it)
         self._read_tilt()
 
     # ---- every physics step -----------------------------------------------------------------------------------------
@@ -119,6 +150,9 @@ class Watch:
                     self.hung.append(name)
             else:
                 self.hanging.discard(name)
+        self.inside = self.hopper_mask()
+        self.held.update(float(d.time), self.inside | self.round if self.hopper else None)
+        self.placed.update(float(d.time))
 
     def _read_tilt(self) -> None:
         zz = float(self.data.xmat[self.body][8])        # the body's z axis, its world z component
@@ -222,11 +256,15 @@ class Watch:
         inside = np.zeros(len(self._balls), bool)
         if not self._balls:
             return inside
-        for name in self._hopper:
+        for name in self.hopper:
             b, lo, hi = self._box(name)
             local = (d.xpos[self._balls] - d.xpos[b]) @ d.xmat[b].reshape(3, 3)
             inside |= np.all((local >= lo) & (local <= hi), axis=1)
         return inside
+
+    def piece_index(self, name: str) -> int | None:
+        """A condition's piece as a ledger index: None for `any`."""
+        return None if name == ANY_PIECE else self._ball_names.index(name)
 
     def hopper_count(self) -> int:
         """Balls whose center is inside a hopper body's box now, fed or not."""
@@ -271,10 +309,26 @@ class Watch:
         if k == "hanging_from":
             bar = self._bar(a["bar"])
             return bar is not None and bar in self.hanging
+        if k == "held":
+            return self.held.held(self.piece_index(a["piece"]), a["by"])
+        if k == "rests_on":
+            return self.placed.rests_on(self.piece_index(a["piece"]), a["on"])
+        if k == "seated":
+            got = self.placed.seated(a["on"], self.piece_index(a["piece"]))
+            return got is not None and round(got[0] / IN, 1) >= a["at_least_in"]
         if k == "level":
             rank = int(self.climb.get("climb.level", 0))
             return 0 < rank <= len(self._levels) and self._levels[rank - 1] == a["level"]
         raise ValueError(f"unknown condition {k!r}")
+
+
+def _conds(blocks, kind: str) -> list:
+    """The blocks' conditions of `kind`, through repeat bodies."""
+    out = []
+    for b in blocks:
+        out += [v for v in b.args.values() if getattr(v, "kind", None) == kind]
+        out += _conds(b.body, kind)
+    return out
 
 
 # ---- plain words ----------------------------------------------------------------------------------------------------
@@ -283,9 +337,20 @@ def _amount(x: float, unit: str) -> str:
     return f"{x:g}°" if unit == "deg" else f"{x:g} {unit}"
 
 
-def describe(cond, next_bar: str | None = None) -> str:
-    """The condition in plain words, for a run's outcome. `next_bar` names "the next bar" when known."""
+def a_piece(kinds: dict | None) -> str:
+    """Any piece of the field, as a sentence names it: "a coral", "a ball", "a piece"."""
+    word = default_word(kinds)
+    return f"{'an' if word[:1] in 'aeiou' else 'a'} {word}"
+
+
+def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names: dict | None = None) -> str:
+    """The condition in plain words, for a run's outcome. `next_bar` names "the next bar" when known; `kinds` (the
+    field's Range.kinds) names any piece by its kind, `names` a piece by what a student reads (Watch.piece_names)."""
     a, k = cond.args, cond.kind
+    names = names or {}
+
+    def piece(name: str) -> str:
+        return a_piece(kinds) if name == ANY_PIECE else names.get(name, name)
 
     def bar(name: str) -> str:
         return (next_bar or "the next bar") if name == NEXT_BAR else name
@@ -304,8 +369,7 @@ def describe(cond, next_bar: str | None = None) -> str:
         who = "a hook" if a["robot"] == ANY_HOOK else a["robot"]
         return f"{who} touches {bar(a['field'])}"
     if k == "piece_in":
-        what = "a ball" if a["piece"] == ANY_PIECE else a["piece"]
-        return f"{what} reaches {a['body']}"
+        return f"{piece(a['piece'])} reaches {a['body']}"
     if k == "in_hopper":
         if "at_least" in a:
             return f"{a['at_least']} or more pieces are in the hopper"
@@ -318,4 +382,11 @@ def describe(cond, next_bar: str | None = None) -> str:
         return f"the robot hangs from {bar(a['bar'])}"
     if k == "level":
         return f"the robot hangs at {a['level']}"
+    if k == "held":
+        return f"{piece(a['piece'])} is held by {a['by']}"
+    if k == "rests_on":
+        return f"{piece(a['piece'])} rests on {a['on']}"
+    if k == "seated":
+        at = a["at_least_in"]
+        return f"{piece(a['piece'])} is seated {f'at least {at:g} in ' if at else ''}on {a['on']}"
     raise ValueError(f"unknown condition {k!r}")

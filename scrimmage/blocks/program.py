@@ -13,8 +13,9 @@
     motor = "climber.crank"
     volts = 6.0
 
-An optional `[setup]` table sets the field up for the test: ball, seed, station (a human player's settings by name)
-and floor_spread (several placements of the robot on the floor).
+An optional `[setup]` table sets the field up for the test: ball or piece (the field's game piece: a ball preset, or
+any piece or ball preset), seed, station (a human player's settings by name) and floor_spread (several placements of
+the robot on the floor).
 
 A `repeat` block holds its blocks as `[[block.body]]` tables (`[[block.body.body]]` one level in). Only the file's
 shape is checked here (kinds, types, ranges); names are checked against the robot elsewhere.
@@ -50,11 +51,11 @@ UNITS = ("deg", "in", "m")
 DO_KINDS = ("spin", "move", "drive", "stop", "wait", "wait_until", "repeat", "expect",
             "start_feeding", "stop_feeding", "feed_one", "turn")
 COND_KINDS = ("joint", "touch", "tilt", "piece_in", "hanging_from", "level", "in_hopper", "station_empty",
-              "made_it_in")
+              "made_it_in", "held", "rests_on", "seated")
 DRIVE_DIRECTIONS = ("forward", "back", "left", "right")
 _OPPOSITE = {"back": "forward", "left": "right", "right": "left"}     # where a minus distance goes instead
-SPREAD_AXES = ("offset_in", "distance_in", "angle_deg", "rotation_deg")
-SETUP_KEYS = ("ball", "seed", "station", "floor_spread")
+SPREAD_AXES = ("offset_in", "distance_in", "angle_deg", "rotation_deg", "tip_deg")
+SETUP_KEYS = ("ball", "piece", "seed", "station", "floor_spread")
 _STATION_LISTS = ("spread_position", "spread_rotation_deg")
 
 
@@ -193,6 +194,21 @@ def _cond(v, where: str) -> Cond:
         _keys(t, ("robot", "field"), where)
         return Cond(kind, {"robot": _text(t.get("robot"), where, "robot"),
                            "field": _text(t.get("field"), where, "field")})
+    if kind == "rests_on":
+        _keys(t, ("piece", "on"), where)
+        return Cond(kind, {"piece": _text(t.get("piece", "any"), where, "piece"),
+                           "on": _text(t.get("on"), where, "on")})
+    if kind == "seated":
+        _keys(t, ("piece", "on", "at_least_in"), where)
+        at = _num(t.get("at_least_in", 0.0), where, "at_least_in")
+        if at < 0:
+            raise TestFileError(f"{where}: at_least_in can't be negative")
+        return Cond(kind, {"piece": _text(t.get("piece", "any"), where, "piece"),
+                           "on": _text(t.get("on"), where, "on"), "at_least_in": at})
+    if kind == "held":
+        _keys(t, ("piece", "by"), where)
+        return Cond(kind, {"piece": _text(t.get("piece", "any"), where, "piece"),
+                           "by": _text(t.get("by"), where, "by")})
     _keys(t, ("body", "piece"), where)
     return Cond(kind, {"body": _text(t.get("body"), where, "body"),
                        "piece": _text(t.get("piece", "any"), where, "piece")})
@@ -300,8 +316,8 @@ def _strings(v, where: str, what: str) -> list:
 
 
 def _setup(raw: dict) -> dict:
-    """The `[setup]` table, checked: ball, seed, station settings and the floor spread. What the field has (which
-    stations, whether it has a range at all) is checked when the world is built."""
+    """The `[setup]` table, checked: ball or piece, seed, station settings and the floor spread. What the field has
+    (which stations, whether it has a range at all) is checked when the world is built."""
     where = "[setup]"
     extra = [k for k in raw if k not in SETUP_KEYS]
     if extra:
@@ -312,6 +328,14 @@ def _setup(raw: dict) -> dict:
         if not isinstance(ball, str) or ball not in PRESETS["ball"]:
             raise TestFileError(f'{where}: ball {ball!r} isn\'t a ball; balls: {", ".join(PRESETS["ball"])}')
         out["ball"] = ball
+    if "piece" in raw:
+        if "ball" in raw:
+            raise TestFileError(f"{where}: give ball or piece, not both")
+        piece = raw["piece"]
+        if not isinstance(piece, str) or (piece not in PRESETS["piece"] and piece not in PRESETS["ball"]):
+            raise TestFileError(f'{where}: piece {piece!r} isn\'t a piece; pieces: '
+                                f'{", ".join([*PRESETS["piece"], *PRESETS["ball"]])}')
+        out["piece"] = piece
     if "seed" in raw:
         seed = raw["seed"]
         if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= MAX_SEED:
@@ -351,6 +375,11 @@ def _station_setup(name: str, t) -> dict:
             if v > MAX_STOCK:
                 raise TestFileError(f"{where}: {stock_too_big(v)}")
             out[key] = v
+        elif key in ("tip_deg", "turn_deg"):
+            x = _num(v, where, key)
+            if key == "tip_deg" and not -90 <= x <= 90:
+                raise TestFileError(f"{where}: tip_deg must be from -90 to 90")
+            out[key] = x
         else:
             x = _time(v, where, key)
             if key == "interval" and x <= 0:
@@ -369,6 +398,8 @@ def _floor_spread(spread: dict) -> dict:
         out[axis] = [_num(x, where, axis) for x in v]
         if axis == "distance_in" and min(out[axis]) <= 0:
             raise TestFileError(f"{where}: distance_in must be more than 0")
+        if axis == "tip_deg" and not 0 <= min(out[axis]) <= max(out[axis]) <= 90:
+            raise TestFileError(f"{where}: tip_deg must be from 0 to 90")
     return out
 
 

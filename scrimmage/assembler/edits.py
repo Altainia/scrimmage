@@ -13,6 +13,7 @@ from typing import Any
 import tomlkit
 from tomlkit.items import InlineTable, Whitespace
 
+from ..parts.assemble import PLACEMENT_KEYS
 from ..testrange.spec import BUILTIN_RANGES
 from ..testrange.spec import FIELD_LENGTH, FIELD_WIDTH   # m: the generated field, the blue alliance wall at x = 0
 from .tomlutil import plain as _plain
@@ -177,7 +178,7 @@ def set_attach(doc, name: str, attach, pos, rot) -> None:
             _set_value(p, key, _vec(v), after)
 
 
-_RESERVED = {"name", "stock", "path", "attach", "pos", "rot", "ids"}
+_RESERVED = set(PLACEMENT_KEYS)      # a [[part]]'s keys that aren't a parameter (a path part's grip too)
 
 
 def set_params(doc, name: str, params: dict, defaults: dict) -> None:

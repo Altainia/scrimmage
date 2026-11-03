@@ -626,3 +626,104 @@ def test_import_again_on_copied_stls_keeps_the_typed_units(part_app, tmp_path):
 def test_a_source_opened_from_a_path_is_not_copied(part_app):
     c, _ = part_app()
     assert _state(c)["source_copied"] is False
+
+
+def test_the_part_tab_sets_a_grip_in_plugin_mode(part_app, tmp_path):
+    """Plugin mode: set_grip writes the body's grip in the folder's overlay (on the undo history, as every edit);
+    the state's bodies carry it, and a grip it doesn't know is refused on the grip field."""
+    d = _plugin_folder(tmp_path)
+    c, _ = part_app(d)
+    s, st = _edit(c, "set_grip", body="base", grip="nitrile")
+    assert s == 200, st
+    assert tomllib.loads((d / "scrimmage-edits.toml").read_text()) == {"body": {"base": {"grip": "nitrile"}}}
+    base = next(b for b in st["bodies"] if b["name"] == "base")
+    assert base["grip"] == "nitrile" and base["changed"] == ["grip"]
+    assert next(b for b in st["bodies"] if b["name"] == "arm")["grip"] is None
+    assert load_part(d).grips == {"base": "nitrile"}
+    s, b = _edit(c, "set_grip", body="base", grip="velcro")
+    assert s == 400 and b["field"] == "grip" and "isn't a grip material" in b["message"], b
+    s, b = _edit(c, "set_grip", body="nope", grip="nitrile")
+    assert s == 400 and b["field"] == "body"
+    s, st = _edit(c, "set_grip", body="base", grip=0.95)
+    assert s == 200 and next(b for b in st["bodies"] if b["name"] == "base")["grip"] == 0.95
+    s, st = _edit(c, "set_grip", body="base", grip=None)
+    assert s == 200 and not (d / "scrimmage-edits.toml").exists()
+    s, st = _post(c, "/api/part/undo", {"version": st["version"]})
+    assert s == 200 and load_part(d).grips == {"base": 0.95}
+
+
+def test_the_part_tab_sets_a_grip_in_import_mode(part_app, tmp_path):
+    """Import mode: set_grip writes the overlay of the built folder holding the body, with no rebuild; a rebuild
+    keeps it (write_parts copies the folder's edits). A body built into another one's is refused, naming it."""
+    c, _ = part_app()
+    st = _built(c)
+    s, st = _edit(c, "set_grip", body="base_plate", grip="grip-tape")
+    assert s == 200, st
+    assert st["build"]["state"] == "idle"
+    overlay = tmp_path / "parts" / "climber" / "scrimmage-edits.toml"
+    assert tomllib.loads(overlay.read_text()) == {"body": {"base_plate": {"grip": "grip-tape"}}}
+    assert next(b for b in st["bodies"] if b["name"] == "base_plate")["grip"] == "grip-tape"
+    assert next(b for b in st["bodies"] if b["name"] == "arm_A")["grip"] is None
+    s, b = _edit(c, "set_grip", body="arm_A", grip="nitrile")
+    assert s == 400 and b["field"] == "body" and "base_plate" in b["message"], b
+    s, b = _edit(c, "set_grip", body="base_plate", grip=-1)
+    assert s == 400 and b["field"] == "grip", b
+    def ino():
+        try:
+            return (tmp_path / "parts" / "climber" / "part.toml").stat().st_ino
+        except OSError:         # being swapped in
+            return None
+    built = ino()
+    assert _edit(c, "set_material", pieces=[HOOK], material="steel")[0] == 200     # a rebuild
+    end = time.monotonic() + 20
+    while ino() in (built, None):       # until the new folder is swapped in
+        assert time.monotonic() < end
+        time.sleep(0.05)
+    _built(c)
+    assert load_part(tmp_path / "parts" / "climber").grips == {"base_plate": "grip-tape"}
+    s, st = _edit(c, "set_grip", body="base_plate", grip=None)
+    assert s == 200 and not overlay.exists()
+
+
+def test_an_import_grip_is_undone_and_redone(part_app, tmp_path):
+    """Ruling P29: in import mode a grip change goes on the undo history: Undo puts the previous grip back and
+    leaves the earlier settings edit alone; Redo sets the grip again. A grip can't be set while a build runs."""
+    c, _ = part_app()
+    _built(c)
+    assert _edit(c, "set_material", pieces=[HOOK], material="steel")[0] == 200
+    _built(c)
+    overlay = tmp_path / "parts" / "climber" / "scrimmage-edits.toml"
+    assert _edit(c, "set_grip", body="base_plate", grip="nitrile")[0] == 200
+    assert _edit(c, "set_grip", body="base_plate", grip="grip-tape")[0] == 200
+
+    def grip_of(st):
+        return next(b for b in st["bodies"] if b["name"] == "base_plate")["grip"]
+
+    def steel(st):
+        return next(p for p in st["pieces"] if p["key"] == HOOK)["material"] == "steel"
+
+    s, st = _post(c, "/api/part/undo", {"version": _state(c)["version"]})
+    assert s == 200 and grip_of(st) == "nitrile" and steel(st), st
+    s, st = _post(c, "/api/part/undo", {"version": st["version"]})
+    assert s == 200 and grip_of(st) is None and steel(st) and not overlay.exists()
+    s, st = _post(c, "/api/part/redo", {"version": st["version"]})
+    assert s == 200 and grip_of(st) == "nitrile" and steel(st)
+    s, st = _post(c, "/api/part/redo", {"version": st["version"]})
+    assert s == 200 and grip_of(st) == "grip-tape"
+    assert tomllib.loads(overlay.read_text()) == {"body": {"base_plate": {"grip": "grip-tape"}}}
+    s, st = _post(c, "/api/part/undo", {"version": st["version"]})
+    s, st = _post(c, "/api/part/undo", {"version": st["version"]})
+    s, st = _post(c, "/api/part/undo", {"version": st["version"]})     # now the material edit
+    assert s == 200 and grip_of(st) is None and not steel(st)
+
+
+def test_an_import_grip_waits_for_the_build(part_app):
+    c, _ = part_app()
+    _built(c)
+    session = c.app.part
+    with session._lock:
+        session._build = {"state": "building", "message": None}
+        s, b = session.edit({"version": session.version, "op": "set_grip",
+                             "args": {"body": "base_plate", "grip": "nitrile"}})
+        session._build = {"state": "idle", "message": None}
+    assert s == 400 and b["field"] == "body" and "wait for the build" in b["message"], b

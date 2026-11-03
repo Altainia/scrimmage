@@ -611,3 +611,17 @@ def test_dropped_root_joint_names_its_slots_and_couplings_said_once(tmp_path, sr
     assert result.messages.count("The coupling between arm_A and hook_assy was left out: both need joints in the "
                                  "same part.") == 1
     assert not result.parts["right_arm"].part.motors
+
+
+def test_a_rebuild_keeps_the_grip(tmp_path, src):
+    """The folder's own edits (scrimmage-edits.toml, e.g. a grip material) are carried into the rebuilt folder."""
+    from scrimmage.parts.grip import set_grip
+    imp = make(src, tmp_path)
+    _, (folder,) = write(imp, src, tmp_path)
+    (folder / "scrimmage-edits.toml").write_text("# mine\ntotal_mass = 2.0\n", encoding="utf-8")
+    set_grip(folder, "base_plate", "rubber")
+    before = (folder / "scrimmage-edits.toml").read_text()
+    _, (again,) = write(imp, src, tmp_path)
+    assert again == folder and (folder / "scrimmage-edits.toml").read_text() == before
+    part = load_part(folder)
+    assert part.grips == {"base_plate": "rubber"} and sum(b.mass for b in part.bodies) == pytest.approx(2.0)

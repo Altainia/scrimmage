@@ -6,12 +6,16 @@ The setting (a target) is one of
                                                                            first, as a check's place)
     {"robot": "mass" | "com_forward" | "com_left" | "com_up"}              the stand-in chassis' mass / com_offset
     {"mount": "<part>", "axis": "x" | "y" | "z" | "yaw"}                   a [[part]]'s pos (m) / rot yaw (deg)
+    {"grip": "<part>.<body>" | "<part>"}                                   the grip material of a path part's body, or of
+                                                                           every body of the part that touches anything
+                                                                           (values: GRIP_MATERIALS names or numbers)
     {"setup": "seed"}                                                      the test's [setup] seed
     {"station": "<name>", "key": "interval" | "stock" | "spread_..."}      a station's setting in [setup]
-                                                                           (spread_position / spread_rotation_deg:
+                                                                           (or "tip_deg" | "turn_deg";
+                                                                           spread_position / spread_rotation_deg:
                                                                            all three axes at the value)
 
-A block, seed or station value changes the test; a robot or mount value changes a copy of the robot config, written
+A block, seed or station value changes the test; a robot, mount or grip value changes a copy of the robot config, written
 as a hidden temp file next to it (so its meshes and part folders still resolve) and deleted after that run (tried
 again while another program holds it; one still there is named in sweep.json's `problems`). Temp copies and folders
 over an hour old, left by a process that was killed, are removed when a sweep starts. A value that can't build or run
@@ -40,7 +44,9 @@ import tomlkit
 
 from ..cad.settings import REPLACE_WAITS, replace_file
 from ..config import build_world, load_config
+from ..parts.model import PartError, load_part
 from ..testrange.spec import RangeError, load_range
+from ..teamfolders import TeamFolderError, expand
 from ..testrange.station import OVERRIDE_KEYS
 from . import store
 from .program import Program, TestFileError, from_json, to_json
@@ -66,12 +72,16 @@ def _kind(target) -> str:
             return "robot"
         if set(target) == {"mount", "axis"} and isinstance(target["mount"], str) and target["axis"] in AXES:
             return "mount"
+        if set(target) == {"grip"} and isinstance(target["grip"], str) and target["grip"].count(".") <= 1 \
+                and all(target["grip"].split(".")):
+            return "grip"
         if target == {"setup": "seed"}:
             return "setup"
         if set(target) == {"station", "key"} and isinstance(target["station"], str) and target["key"] in STATION_KEYS:
             return "setup"
     raise ValueError(f"can't sweep {target!r}: sweep a block's volts, seconds, to or distance, the robot's mass or "
-                     "center of mass, where a part is mounted, a station's interval, stock or spread, or the seed")
+                     "center of mass, where a part is mounted, a body's grip material, a station's interval, stock, "
+                     "spread, tip or turn, or the seed")
 
 
 def _block_json(blocks: list, place: list) -> dict:
@@ -147,11 +157,48 @@ def _set(table, key: str, i: int | None, value: float) -> None:
     table[key][i] = value
 
 
-def _edit_config(text: str, target: dict, value: float) -> str:
-    """The robot config's text with the target set to value, comments kept."""
+def _check_grip(config: Path, grip: str) -> list[str]:
+    """The bodies a grip sweep of `grip` ("<part>.<body>", or "<part>": every body with a geom that touches anything)
+    sets; raises ValueError when it isn't a path part of the robot (before any run)."""
+    name, _, body = grip.partition(".")
+    part = next((p for p in load_config(config).raw.get("part", []) if p.get("name") == name), None)
+    if part is None:
+        raise ValueError(f"no {'body' if body else 'part'} {grip} on this robot")
+    if "stock" in part:
+        raise ValueError(f"can't sweep the grip of {grip}: {name} is a stock part")
+    try:
+        folder = (config.parent / expand(str(part.get("path")))).resolve()
+        loaded = load_part(folder if folder.is_file() else folder / "part.toml")
+    except (TeamFolderError, PartError) as e:
+        raise ValueError(f"can't sweep the grip of {grip}: {e}") from None
+    names = [b.name for b in loaded.bodies]
+    if body:
+        if body not in names:
+            raise ValueError(f"no body {grip} on this robot; {name}'s bodies: {', '.join(names)} "
+                             f"(or sweep the whole part, {name})")
+        return [body]
+    touching = [b.name for b in loaded.bodies if any(g.collide and not g.tread for g in b.geoms)]
+    if not touching:
+        raise ValueError(f"can't sweep the grip of {name}: no body of it has a geom that touches anything")
+    return touching
+
+
+def _edit_config(text: str, target: dict, value: float | str, bodies: list[str] | None = None) -> str:
+    """The robot config's text with the target set to value, comments kept. `bodies`: a grip target's bodies."""
     doc = tomlkit.parse(text)
     parts = list(doc.get("part", []))
-    if "robot" in target:
+    if "grip" in target:
+        name, _, body = target["grip"].partition(".")
+        part = next((p for p in parts if p.get("name") == name), None)
+        if part is None:
+            raise ValueError(f"no part {name} on this robot")
+        grips = tomlkit.inline_table()
+        if body:
+            grips.update(part.get("grip") or {})            # the part's other bodies keep their grips
+        for b in bodies or [body]:                          # a whole part replaces the part's grips for the run
+            grips[b] = value
+        part["grip"] = grips
+    elif "robot" in target:
         chassis = next((p for p in parts if p.get("stock") == "chassis"), None)
         if chassis is None:
             what = "change the mass of" if target["robot"] == "mass" else "move the center of gravity of"
@@ -217,7 +264,7 @@ def _check_column(c: dict) -> str:
 
 # ---- the sweep ------------------------------------------------------------------------------------------------------
 
-def run_sweep(program: Program, target: dict, values: list[float], base, on_progress=None,
+def run_sweep(program: Program, target: dict, values: list[float | str], base, on_progress=None,
               cancel: threading.Event | None = None) -> Path:
     """Run the test at each value; returns the sweep's folder. `on_progress(k, n, row)` is called after each value
     (k from 1); setting `cancel` ends the run under way and the sweep."""
@@ -226,11 +273,16 @@ def run_sweep(program: Program, target: dict, values: list[float], base, on_prog
         raise ValueError("a sweep needs at least one value")
     if len(values) > MAX_SWEEP:
         raise ValueError(f"a sweep tries at most {MAX_SWEEP} values")
-    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in values):
-        raise ValueError("a sweep's values must be numbers")
-    values = [float(v) for v in values]
+    if kind == "grip":      # material names or numbers; one that isn't a material is that row's message
+        if not all(isinstance(v, str) or (isinstance(v, (int, float)) and not isinstance(v, bool)) for v in values):
+            raise ValueError("a grip sweep's values must be material names or numbers")
+        values = [v if isinstance(v, str) else float(v) for v in values]
+    else:
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in values):
+            raise ValueError("a sweep's values must be numbers")
+        values = [float(v) for v in values]
     config = Path(program.path).parent / program.robot
-    text = None
+    text = bodies = None
     if kind == "block":
         b = _block_json(to_json(program)["blocks"], target["block"])     # the target is there (else it's refused)
         if target["key"] not in b:
@@ -239,11 +291,12 @@ def run_sweep(program: Program, target: dict, values: list[float], base, on_prog
         if "station" in target:
             _check_station(program, config, target["station"])
     else:
+        bodies = _check_grip(config, target["grip"]) if kind == "grip" else None
         text = config.read_text(encoding="utf-8")
-        _edit_config(text, target, values[0])                          # the part or chassis is there
+        _edit_config(text, target, values[0], bodies)                          # the part or chassis is there
 
     base = Path(base)
-    if kind in ("robot", "mount"):
+    if kind in ("robot", "mount", "grip"):
         store.clean_stale(config.parent, (f".{config.stem}.sweep-*.toml",))
     tmp = store.new_sweep_folder(base)
     left: list[str] = []            # temp configs that couldn't be removed
@@ -258,7 +311,7 @@ def run_sweep(program: Program, target: dict, values: list[float], base, on_prog
                 world = world_for(p)
             else:
                 p = program
-                temp = _temp_config(config, _edit_config(text, target, values[i]))
+                temp = _temp_config(config, _edit_config(text, target, values[i], bodies))
                 world = _world(config, temp)
             made[i] = p
             return TestRun(world, p).run(cancel=cancel)
@@ -332,6 +385,10 @@ def _finish(tmp: Path, base: Path, target: dict, values: list, rows: list, left:
     return store.place_sweep(tmp, base, cancelled=cancelled)
 
 
+def _value_text(v) -> str:
+    return v if isinstance(v, str) else f"{v:g}"
+
+
 def _write_table(path: Path, rows: list[dict]) -> None:
     cols: list[str] = []
     for r in rows:
@@ -341,4 +398,4 @@ def _write_table(path: Path, rows: list[dict]) -> None:
         w.writerow(["value", "status", "outcome", "t_end", *cols])
         for r in rows:
             t = "" if r["t_end"] is None else f"{r['t_end']:.3f}"
-            w.writerow([f"{r['value']:g}", r["status"], r["outcome"], t, *(r["checks"].get(c, "") for c in cols)])
+            w.writerow([_value_text(r["value"]), r["status"], r["outcome"], t, *(r["checks"].get(c, "") for c in cols)])

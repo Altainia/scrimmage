@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import signal
 import sys
@@ -567,11 +568,16 @@ def _test_file(path: str) -> Path:
 
 
 def _signal_summary(signals: dict) -> dict:
+    """Each signal's min, max and final value; an empty sample (NaN: a seated depth while no piece is on its rod) is
+    left out of min and max, and a final one is None (JSON has no NaN)."""
     out = {}
     for name, values in signals.items():
         if name == "t" or not values:
             continue
-        out[name] = {"min": min(values), "max": max(values), "final": values[-1]}
+        have = [v for v in values if not math.isnan(v)]
+        final = values[-1]
+        out[name] = {"min": min(have, default=None), "max": max(have, default=None),
+                     "final": None if math.isnan(final) else final}
     return out
 
 
@@ -582,10 +588,13 @@ async def test_run(path: str) -> dict:
     "outcome" (one plain sentence to read to the room), "passed" (finished with every check passed), "t_end"
     (seconds), "checks" (one plain line each, with whether it passed), "hung" (the bars the robot hung from),
     "signals" (each measured signal's min, max and final value), "counts" (on a field with a human player
-    station: fed, in, stuck, missed; else null), "feeds" (one row per fed piece: ball, source, t, outcome "in",
-    "stuck" or "missed", why, t_outcome, body for a stuck piece), "seed" (the stations' seed, or null), and
-    "run_folder", where the run is kept (the app's Test tab replays it). path: an absolute path. A bad test file or
-    robot is a plain error naming the block."""
+    station: fed, in, stuck, missed, and placed when a piece was placed; else null), "feeds" (one row per fed piece:
+    ball, source, t, outcome "in", "placed" (on a rod or element a seated or rests on check names: why is its name),
+    "stuck" or "missed", why, t_outcome, body for a stuck piece), "seed" (the stations' seed, or null), "marks" (the
+    moments the replay marks: {t, kind "slip", text, ball}, such as when a held piece slipped out), "notes" (what the
+    numbers rest on: each gripped body's material and friction, UNCALIBRATED estimates; say them with the outcome)
+    and "run_folder", where the run is kept (the app's Test tab replays it). path: an absolute path. A bad test file
+    or robot is a plain error naming the block."""
     file = _test_file(path)
 
     def work():
@@ -600,7 +609,7 @@ async def test_run(path: str) -> dict:
                 "checks": [{"line": c["line"], "passed": c["passed"]} for c in result.checks],
                 "hung": list(result.hung), "signals": _signal_summary(result.signals),
                 "counts": result.counts, "feeds": result.feeds, "seed": result.seed,
-                "run_folder": str(folder.resolve())}
+                "marks": list(result.marks), "notes": list(result.notes), "run_folder": str(folder.resolve())}
 
     try:
         return await asyncio.to_thread(work)
@@ -609,14 +618,18 @@ async def test_run(path: str) -> dict:
 
 
 @server.tool()
-async def test_sweep(path: str, target: dict, values: list[float]) -> dict:
+async def test_sweep(path: str, target: dict, values: list[float | str]) -> dict:
     """Run a block test several times, changing one number each time, to find which value works. target says what
     changes: {"block": [2], "key": "to"} is the "to" of block 3 (a list of positions, counting from 0, goes inside
     repeats, and key is volts, seconds, to or distance); {"robot": "mass"} is the robot's mass (also com_forward,
     com_left, com_up for the center of mass); {"mount": "arm", "axis": "x"} is where a part is mounted (axis x, y,
-    z or yaw); {"setup": "seed"} is the human player's shuffle (a whole number), and {"station": "feeder", "key":
+    z or yaw); {"grip": "claw"} is the grip material of every body of a path part that touches anything, and
+    {"grip": "claw.pad"} of one body (values are material names such as "hdpe", "nitrile" or "grip-tape", or a
+    measured friction number: "would grip tape help?"; sweeping one pad of several may show no difference, so
+    sweep the part); {"setup": "seed"} is the human player's shuffle (a whole number), and {"station": "feeder", "key":
     "interval"} is a station's interval (also stock, spread_yaw_deg, spread_pitch_deg, spread_speed, spread_position,
-    spread_rotation_deg; the last two set all three axes). values: the numbers to try, in order (at most 12).
+    spread_rotation_deg; the last two set all three axes). values: the numbers
+    (for a grip, material names or numbers) to try, in order (at most 12).
     Returns "rows" (each value's status, outcome, t_end and a passed or failed per check), "sweep_folder" (table.csv
     and sweep.json, each run kept inside; the app's Test tab shows them) and any "problems" to tell the room. A value
     that can't run gets a row saying why; the rest still run. path: an absolute path."""
@@ -648,11 +661,13 @@ async def test_spread(path: str) -> dict:
     """Run a block test once per placement of its floor spread (the test file's [setup] floor_spread, e.g.
     floor_spread = { offset_in = [-6, 0, 6], angle_deg = [0, 30] }: every combination, at most 25), to see which
     placements of the floor ball in front of the robot got it picked up (into a hopper body). The axes are offset_in
-    (left of the robot's center line +, right -), distance_in (ahead), angle_deg (the robot's approach angle) and
-    rotation_deg (the piece turned). Returns "sentence" ("picked up 7 of 9; missed at 6 in left at 30° and 6 in
-    right at 30°", to read to the room), "rows" (each placement's words, its four axes, status, "picked up" yes or
-    no, and outcome) and "spread_folder" (table.csv and spread.json, each run kept inside; the app's Test tab shows
-    them). path: an absolute path."""
+    (left of the robot's center line +, right -), distance_in (ahead), angle_deg (the robot's approach angle),
+    rotation_deg (the piece turned, from the robot's heading for a piece other than a ball) and tip_deg (0 to 90: a
+    coral's axis pitched up from lying; 90 stands it on end). Returns "sentence" ("picked up 7 of 9; missed at 6 in
+    left at 30° and 6 in right at 30°", or for a coral "picked up 2 of 3; missed standing on end", to read to the
+    room), "rows" (each placement's words, its five axes, status, "picked up" yes or no, and outcome) and
+    "spread_folder" (table.csv and spread.json, each run kept inside; the app's Test tab shows them). path: an
+    absolute path."""
     file = _test_file(path)
 
     def work():

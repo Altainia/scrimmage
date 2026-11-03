@@ -5,8 +5,12 @@
                              stopped doesn't count (`_prune_runs`)
         result.json          status, outcome, t_end, checks, hung, started (ISO time), test (the test file's TOML
                              as it ran), sweep (None, or what was swept and the value), feeds (one row per fed
-                             piece), counts (fed, in, stuck, missed; None without stations) and seed (the stations'
-                             seed; None without stations)
+                             piece), counts (fed, in, stuck, missed; None without stations), seed (the stations'
+                             seed; None without stations), marks (moments the replay marks: {t, kind, text,
+                             ball}, e.g. a slip out of a grabber, ball the piece's index), notes (what the numbers
+                             rest on: the grips' UNCALIBRATED frictions, scrimmage/blocks/run.py's run_notes),
+                             seated (each rod with a piece on it at the end: its depth in words) and hopper
+                             (whether the test names where a piece should end up)
         signals.csv          t and each signal, SIGNAL_HZ (scrimmage/blocks/run.py)
         view.json            model_view(world, include_world=True) at the run's start, meshes included
         motion.bin           the movers' poses at MOTION_HZ (below)
@@ -29,6 +33,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import math
 import re
 import shutil
 import struct
@@ -204,12 +209,19 @@ def _write_signals(path: Path, signals: dict) -> None:
             w.writerow([repr(float(v)) for v in row])
 
 
-def _read_signals(path: Path) -> dict[str, list[float]]:
+def _read_signals(path: Path) -> dict[str, list[float | None]]:
+    """Each signal's samples; an empty sample (NaN: a seated depth while no piece is on the rod) is None, as JSON
+    carries it (JSON has no NaN, and the browser's JSON.parse refuses one)."""
     rows = list(csv.reader(io.StringIO(path.read_text(encoding="utf-8"))))
     if not rows:
         return {}
     names, body = rows[0], rows[1:]
-    return {n: [float(r[i]) for r in body] for i, n in enumerate(names)}
+    return {n: [_sample(r[i]) for r in body] for i, n in enumerate(names)}
+
+
+def _sample(text: str) -> float | None:
+    v = float(text)
+    return None if math.isnan(v) else v
 
 
 def _seed(folder: Path):
@@ -241,7 +253,9 @@ def save_run(result, program: Program, base, sweep: dict | None = None) -> Path:
             "status": result.status, "outcome": result.outcome, "t_end": result.t_end, "checks": result.checks,
             "hung": result.hung, "started": getattr(result, "started", "") or _now(),
             "test": dumps(program), "sweep": sweep, "feeds": getattr(result, "feeds", []),
-            "counts": getattr(result, "counts", None), "seed": seed})
+            "counts": getattr(result, "counts", None), "seed": seed, "marks": getattr(result, "marks", []),
+            "notes": getattr(result, "notes", []), "seated": getattr(result, "seated", {}),
+            "hopper": bool(program.hopper)})
         _write_signals(tmp / "signals.csv", result.signals)
         _write_json(tmp / "view.json", result.view)
         write_motion(tmp / "motion.bin", result.motion, len(result.movers))
