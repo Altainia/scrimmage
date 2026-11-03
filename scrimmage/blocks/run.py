@@ -358,7 +358,19 @@ class TestRun:
 
     def run(self, on_sample=None, cancel: threading.Event | None = None) -> RunResult:
         """Play the blocks. `on_sample(t, row)` is called at each signal sample (row: signal -> value); setting
-        `cancel` ends the run at the next physics step."""
+        `cancel` ends the run at the next physics step. The compressor runs throughout a run (C11); afterward the
+        world's closed loop is back to what it was."""
+        air = self.world.pneumatics
+        if air is None:
+            return self._play(on_sample, cancel)
+        before = air.always_closed_loop
+        air.always_closed_loop = True
+        try:
+            return self._play(on_sample, cancel)
+        finally:
+            air.always_closed_loop = before
+
+    def _play(self, on_sample, cancel: threading.Event | None) -> RunResult:
         from ..assembler.view import model_view
         started = datetime.now().astimezone().isoformat(timespec="milliseconds")
         w, m, d = self.world, self.world.model, self.world.data
@@ -367,7 +379,6 @@ class TestRun:
         w.reset()
         self.air = None
         if w.pneumatics is not None:
-            w.pneumatics.always_closed_loop = True       # the compressor runs throughout a run (C11)
             self.air = _Air(w.pneumatics, float(d.time))
         if self.placement is not None:
             self._place(self.placement)

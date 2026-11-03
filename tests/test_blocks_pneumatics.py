@@ -71,9 +71,11 @@ def test_set_cylinder_extends(tmp_path):
                  + f'[[block]]\ndo = "wait_until"\nuntil = {_cyl("extended")}\ntimeout = 2\n'
                  + '[[block]]\ndo = "expect"\nthat = { pressure = { below = 120 } }\n')
     world = world_for(p)
-    result = TestRun(world, p).run()
+    during = set()
+    result = TestRun(world, p).run(on_sample=lambda t, row: during.add(world.pneumatics.always_closed_loop))
     assert result.passed, result.outcome
-    assert world.pneumatics.always_closed_loop
+    assert during == {True}                                     # the compressor runs throughout a run (C11)
+    assert not world.pneumatics.always_closed_loop              # and the world is back as it was afterward
     air = result.air
     assert air["start_psi"] == pytest.approx(120.0)
     assert air["end_psi"] < 120.0
