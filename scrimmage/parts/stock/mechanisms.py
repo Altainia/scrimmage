@@ -143,6 +143,47 @@ register(Stock(
     note="Slots: pivot (motor), encoder (arm turns)."))
 
 
+# ---------------------------------------------------------------- turret
+
+def _turret(p: dict) -> dict:
+    from ..model import PartError
+    lo, hi = p["range"]
+    if not (-360 <= lo and hi <= 360):
+        raise PartError(f"turret: range {[lo, hi]} has an end beyond 360 degrees: keep both ends within +-360")
+    r, m = p["diameter"] / 2, p["mass"]
+    return {
+        "part": {"name": "turret", "format": 1},
+        "body": [
+            {"name": "base", "mass": 0.5,
+             "geom": [{"box": [0.06, 0.06, 0.06], "color": STEEL, "collide": False}]},
+            {"name": "platform", "parent": "base", "mass": m,
+             "joint": {"name": "turn", "hinge": [0, 0, 1], "range": [lo, hi], "frictionloss": p["friction"]},
+             "com": [0, 0, 0], "inertia": [m * r ** 2 / 4, m * r ** 2 / 4, m * r ** 2 / 2],
+             "geom": [{"cylinder": [r, 0.02], "color": ORANGE, "collide": False}]},
+        ],
+        "motor": [{"slot": "turn", "joint": "turn", "motor": p["motor"], "count": p["count"],
+                   "gearing": p["gearing"]}],
+        "encoder": [{"slot": "encoder", "joint": "turn", "ratio": 1.0}],
+        "mount": [{"name": "base", "body": "base"},
+                  {"name": "top", "body": "platform", "pos": [0, 0, p["height"]]}],
+    }
+
+
+register(Stock(
+    "turret", "a flat platform on a vertical axis; carry a launcher on it and turn it to aim",
+    (Param("diameter", "m", 0.3, "the platform's diameter", positive=True),
+     Param("mass", "kg", 2.0, "platform mass", positive=True),
+     Param("height", "m", 0.05, "the top mount's height above the base", min=0.0),
+     Param("range", "deg", [-180.0, 180.0], "lowest and highest allowed angle (each end within +-360)", kind="pair"),
+     _motor_param("motor model"),
+     _count_param("motors driving the turret", 1),
+     Param("gearing", "", 60.0, "motor turns per turret turn", positive=True),
+     Param("friction", "N*m", 0.2, "constant friction torque on the turret's joint", min=0.0)),
+    _turret, slots=("turn", "encoder"), mounts=("base", "top"),
+    note="Slots: turn (motor), encoder (turret turns). 0 faces the part's +x; positive turns left (counter-clockwise "
+         "from above). Attach the launcher to turret.top."))
+
+
 # ---------------------------------------------------------------- flywheel and roller
 
 def _spinner(p: dict, name: str, length: float) -> dict:
