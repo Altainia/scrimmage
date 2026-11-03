@@ -184,7 +184,7 @@ air settles for a few seconds (air leaving a tank cools it, so the gauge creeps 
 
 **The compressor.** Time how long your compressor takes to fill the tanks from empty until it stops. The default
 system (two 574 mL tanks and a VIAIR 90C) takes about 52 s in Scrimmage. To try your own tanks, run a Test-tab test
-whose robot has `start_psi = 0` and that waits until the air pressure is above 114 psi; filling takes longer than a
+whose robot has `start_psi = 0` and that waits until the stored air pressure is above 114 psi; filling takes longer than a
 wait's usual 10 s limit, so give that block `timeout = 120` and the test `time_limit = 150` in the test file.
 
 When you have measured a number, set it in the config (the cylinder's parameters, the `[pneumatics]` keys) and keep a

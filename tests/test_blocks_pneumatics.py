@@ -194,5 +194,5 @@ def test_file_shape(tmp_path):
 
 def test_words():
     assert describe(Cond("cylinder", {"cylinder": "cyl", "is": "extended"})) == "cyl is extended"
-    assert describe(Cond("pressure", {"side": "stored", "above": 80.0})) == "the air pressure is above 80 psi"
-    assert describe(Cond("pressure", {"side": "working", "below": 60.0})) == "the working pressure is below 60 psi"
+    assert describe(Cond("pressure", {"side": "stored", "above": 80.0})) == "the stored air pressure is above 80 psi"
+    assert describe(Cond("pressure", {"side": "working", "below": 60.0})) == "the working air pressure is below 60 psi"

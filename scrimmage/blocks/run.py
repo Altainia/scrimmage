@@ -904,7 +904,7 @@ class TestRun:
             side, psi = ("above", a["above"]) if "above" in a else ("below", a["below"])
             s = self.world.pneumatics.system
             now = s.stored_psi if a["side"] == "stored" else s.working_psi
-            what = "the air pressure" if a["side"] == "stored" else "the working pressure"
+            what = f"the {a['side']} air pressure"      # as the block reads: "stored air pressure above 60 psi"
             return f"expected {what} {side} {psi:g} psi, but it was {now:.1f} psi"
         if k == "station_empty":
             left = self.feeder.left(a["station"]) if self.feeder is not None else None

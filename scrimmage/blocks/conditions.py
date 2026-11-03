@@ -422,7 +422,7 @@ def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names
         return f"{a['cylinder']} is {a['is']}"
     if k == "pressure":
         side, psi = ("above", a["above"]) if "above" in a else ("below", a["below"])
-        what = "the air pressure" if a["side"] == "stored" else "the working pressure"
+        what = f"the {a['side']} air pressure"      # as the block reads: "stored air pressure above 60 psi"
         return f"{what} is {side} {psi:g} psi"
     if k == "station_empty":
         return f"{a['station']} is empty"

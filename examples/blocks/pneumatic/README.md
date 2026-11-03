@@ -42,7 +42,7 @@ scrimmage test run examples/blocks/pneumatic/cycles.test.toml
 
 ```
 finished
-  passed: the air pressure is above 60 psi from 0.3 s on (block 1)
+  passed: the stored air pressure is above 60 psi from 0.3 s on (block 1)
   air: 120 psi at the start, 67 psi at the end, lowest 67 psi at 4.1 s; the compressor ran 2.1 s
   note: Pneumatic numbers are estimates (UNCALIBRATED): see docs/pneumatics.md.
 ```
