@@ -199,3 +199,124 @@ The standing anti-goal applies: **no unnecessary friction**.
 - How the replay marks a slip, and how seated depth shows in the chart.
 
 ## Decisions made during the build
+
+These are the calls made while planning and building, each with what it costs if it was wrong. The first group were
+made in the plan; the rulings after them (P1 to P36) were made as the build met a case the plan didn't cover. None
+changes what the sections above promise.
+
+### Planning decisions
+
+- **One ledger for every piece.** Every piece of every kind is a `ball.<i>` body, with its kind recorded per slot, so
+  replay, NetworkTables and older tests keep working; cost if wrong: a name that says "ball" for a coral, which no
+  student sees (they read "coral 3").
+- **A kind's frame has its origin at its center of mass,** with a full inertia tensor, so a piece's position is where
+  it balances; cost if wrong: a CAD piece's body origin differs from its file's origin by a fixed offset.
+- **Shapes and the hollow tube.** A kind is a sphere, box, cylinder, tube, ring, cone, compound or CAD, and a hollow tube
+  is 24 convex slices (a solid round a 32-sided prism); cost if wrong: a coral's hole is 0.9% narrower than its number
+  and its outside a polygon, a hair off a true circle.
+- **Mass is required** for a written-out kind, with its surface as a material or a number, because CAD files carry no
+  mass; cost if wrong: one more key to type per piece.
+- **Each kind has a long axis,** a flat kind being shorter along it than across, which fixes the words for how it lies;
+  cost if wrong: a CAD piece with an odd axis reads "lying across" when it lies the other way (it can be set with `axis`).
+- **Orientation is a tip then a turn,** the turn of a floor piece about the field's +x and of a spread or station
+  relative to the robot or station heading; cost if wrong: a range file's turn has to be thought of in field terms.
+- **A rigid piece rests at its lowest point plus 5 mm,** so it settles under physics; cost if wrong: a 5 mm drop at the
+  start of every run.
+- **Old size words come from the piece's extent and bounding radius** (a ball's are today's numbers), so chutes and
+  release checks fit any piece and old balls are unchanged; cost if wrong: a chute is a little wide for an odd piece.
+- **A field's default kind is `[range] ball | disc | piece`, else the first `[piece.*]`;** floor pieces, stations and goals
+  take `kind`; cost if wrong: a file that wants a different default has to list it first.
+- **`[setup] piece` and config `[range] piece` replace the field's one kind** on the intake and station fields only,
+  and `ball` stays the old spelling, both together being an error; cost if wrong: a game's field can't have its piece
+  swapped from Setup.
+- **Stations gain tip, turn and their spreads, and a non-ball station draws 11 numbers a feed** (a ball's nine are
+  unchanged); cost if wrong: none for balls; a non-ball station's feeds differ if the order of draws is changed later.
+- **Rods are capsule or box geoms** welded to the field, with the free end exactly at `tip`; cost if wrong: a round rod's
+  tip is rounded, as a real branch's is, and a square rod's is flat.
+- **Held is a set of tests every step** (touching, 1 cm off anything that isn't the robot, 0.05 m/s relative to the part, 0.1
+  s, with how it ended read from what happened last); cost if wrong: a borderline grip reads held or slipped by one
+  step's difference.
+- **Seated depth is how far the rod's tip has gone into the hole,** measured while the rod runs through it (within 30
+  degrees), empty otherwise, and "only N in on: could be knocked off" under a third of the way; cost if wrong: a
+  piece in a grabber reads a depth before it is placed, and a one-third line is a judgment call.
+- **Rests on is half the weight carried, at rest 0.5 s, no robot contact;** cost if wrong: a piece balanced on an edge
+  can read rests-on or not by a hair.
+- **"Where a piece should end up" keeps the `hopper` key** and gains the grabber words, a piece being in when its center
+  is in a ticked body's box or it is held by one; cost if wrong: an old file's key doesn't match its new name.
+- **Grip lives in the part folder's own edits** (`[body.<name>] grip`), set in the Part tab and in Setup, with a robot
+  config's `grip` overriding it for sweeps, and tests don't set it; cost if wrong: two places to look for a grip.
+- **The grabber starter is a short run of blocks** on the reef field for a part with a grabber word and no hook; cost if wrong: a
+  grabber that closes the other way reads "never held" until the sign is flipped.
+- **A slip is marked in the replay and the run keeps notes** (a list of marks, and the UNCALIBRATED grip lines); cost if
+  wrong: none beyond the extra data in `result.json`.
+
+### Rulings during the build
+
+- **P1: the reef range and the grabber part (17a) came right after Task 8,** because later tasks needed them; cost if
+  wrong: none beyond the order.
+- **P2: pieces that are not balls are drawn in the replay,** because corals invisible in a replay defeat the point;
+  cost if wrong: none.
+- **P3: the ball-only golden reuses the kitbot run and adds the intake example,** not a Java run that is skipped in
+  normal runs; cost if wrong: none (a golden that never runs proves nothing).
+- **P4: the held sentence names the part the check named, not the jaw touched last,** and "is held" and "rests" are verbs
+  the runner knows; cost if wrong: wording only.
+- **P5: a spread's new tip column and orientation labels without "at"** ("missed standing on end"), the floor spread's default
+  tip and turn coming from the piece's own pose; cost if wrong: wording only.
+- **P6: the chute tests use the new signature, the sweeps take lists of material names,** and the grab-run helper is shared;
+  cost if wrong: none.
+- **P7: one grip friction table,** so the bench and the test range can't disagree; cost if wrong: bench numbers shift
+  slightly (UNCALIBRATED either way).
+- **P8: the example's coral lies in line, and its spread has no repeated placement,** because a coral lying across can't
+  thread a 35 degree branch; cost if wrong: none.
+- **P9: students read a piece by its kind's plain name and number ("coral 3"),** never "2025-coral" or "ball.12"; cost if
+  wrong: wording only.
+- **P10: the small findings in the pre-build review were settled by the task that owned them;** cost if wrong: a small
+  wording or edge case differs from what the review suggested.
+- **P11: per-kind numbers start at 1,** while the old one-kind "ball k" wording stays; cost if wrong: wording only.
+- **P12: `piece_preset` returns the preset of the kind taken first (ball, then disc, then default);** cost if wrong: none
+  for existing ranges.
+- **P13: a station's default tip for a flat kind is lying flat,** matching the floor; cost if wrong: a default only.
+- **P14: a start under a rod lower than 0.5 m is refused,** and higher rods are allowed, because the range doesn't know
+  the robot's height; cost if wrong: a tall robot started under a rod between 0.5 and 1.4 m isn't caught.
+- **P15: the chute floor's clearance is measured at right angles to the floor, worst case over the spreads,** not the
+  brief's ball-only formula, which would start a coral inside the floor; cost if wrong: a chute floor sits a little lower
+  than a hand calculation expects.
+- **P16: each fed piece is set down just clear of the chute floor from its own orientation;** cost if wrong: a feed
+  starts a little lower than the release point a file names.
+- **P17: when spread labels collide the label adds what differs** ("lying flat, turned 45°"); cost if wrong: wording only.
+- **P18: the inside-the-robot start check tests each piece solid's box against each robot box** (a separating-axis test);
+  cost if wrong: a refusal near a thin part is stricter than it needs to be.
+- **P19: rigid pieces have a firm contact by default,** so a held coral doesn't creep out of a squeeze and read as a slip
+  that isn't there; cost if wrong: piece contacts are a little stiffer than real foam or PVC (UNCALIBRATED anyway).
+- **P20: a jaw-to-jaw handoff is no new evidence and one dropped step doesn't end a hold;** cost if wrong: a real slip is
+  reported one step later.
+- **P21: "what was moving" counts a stopped block and any joint still turning;** cost if wrong: wording only.
+- **P22: a grip on a pad sets its friction, a firm contact and priority 1,** so the pad's friction and a firm contact
+  both apply against any piece; cost if wrong: none beyond P19's.
+- **P23: the reef's branch lengths and post height are labeled estimates scaled from the manual's figure,** and the
+  manual's heights win over Wikipedia's; cost if wrong: branch lengths off by an inch or two, which changes seated
+  depths slightly.
+- **P24: the grabber starter closes the jaws,** each jaw motor at 4 V first, so the starter works on the shipped example;
+  cost if wrong: one sign to flip on some grabbers.
+- **P25: the starter waits a second and lifts with the arm,** because "held" needs the piece off the floor; cost if wrong:
+  on an arm where up is positive the starter swings down and reads "never held" until the angle is flipped.
+- **P26: "held counts as in" applies to non-ball pieces only,** a ball keeping the box rule so the shipped intake spread
+  keeps its results; cost if wrong: a ball held in a claw (not in a box) reads stuck, not in.
+- **P27: the grip picker shows each friction estimate beside its name,** so two materials with the same number read the
+  same; cost if wrong: a slightly longer label.
+- **P28: a grip sweep can target a whole part,** and that is Setup's default, because sweeping one pad of two shows a false
+  "no difference"; cost if wrong: none.
+- **P29: a grip change goes on the Part tab's undo history in import mode too,** matching plugin mode; cost if wrong: none.
+- **P30: station boxes read in pairs and plain words** ("Tipped up", "Facing", "Extra tumble"); cost if wrong: wording only.
+- **P31: on a field with a grabber the station starter waits until a piece is held,** because the hopper starter can never
+  succeed there; cost if wrong: none.
+- **P32: one "Try materials" button per part,** because one per pad suggested a one-pad sweep; cost if wrong: none.
+- **P33: "placed" is a fourth feed outcome** for a piece seated on, or resting on, something a check names, because a seated
+  coral read "missed" over a passed placement check; cost if wrong: none.
+- **P34: a held-throughout check ends, passed, when the piece is set down where a seated or rests-on check names,** or
+  "held throughout the swing, then placed" couldn't be written; cost if wrong: a piece dropped on the named branch from
+  too high still reads as held until it touched.
+- **P35: the example's hinge is at 0.44 m and its spread distance 40 in,** because at 0.50 m the coral can never thread and
+  at 24.8 in a turned coral starts inside the robot; cost if wrong: none.
+- **P36: the plain place run's outcome stays "finished" with its check lines,** since a floor piece is tracked only in a
+  spread; cost if wrong: a student reads three lines instead of one headline, and the example's README says why.

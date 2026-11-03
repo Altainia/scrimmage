@@ -9,7 +9,8 @@ every change is saved at once, there is no Save button.
 
 Contents: [Starting a test](#starting-a-test), [The three columns](#the-three-columns), [How the editor works](#how-the-editor-works),
 [The blocks](#the-blocks), [Feeding from a station](#feeding-from-a-station),
-[Floor spreads](#floor-spreads), [The checks](#the-checks), [Times and limits](#times-and-limits), [Setup](#setup),
+[Floor spreads](#floor-spreads), [The checks](#the-checks), [Holding a piece](#holding-a-piece),
+[Placing a piece](#placing-a-piece), [Grip material](#grip-material), [Times and limits](#times-and-limits), [Setup](#setup),
 [Running, replay and chart](#running-replay-and-chart), [Trying values (sweeps)](#trying-values-sweeps),
 [Kept runs](#kept-runs), [The stand-in robot](#the-stand-in-robot), [The command line and MCP tools](#the-command-line-and-mcp-tools),
 [The examples](#the-examples), [Troubleshooting](#troubleshooting).
@@ -23,6 +24,10 @@ A test is a file that ends in `.test.toml`. Three ways to get one:
 - **From the start page.** Run `scrimmage edit` with no file and press **Test a mechanism**. Press **From a CAD file…**
   to go through the Part tab first, or pick a robot file you already have and press **Make the test**.
 - **An existing test.** `scrimmage edit examples/blocks/ladder_climber/climb.test.toml`.
+
+**A part with a grabber** (a body named claw, grabber, gripper or jaw, and no hook) is put on the **reef** field. Its
+starter closes the grab (each jaw or claw motor at 4 V), waits a second, lifts if there is an arm, waits until a coral
+is held by the grabber, then expects it held throughout and waits 2 s. If your jaws close with negative volts, flip the sign.
 
 A new test starts with blocks that do something on its robot, so you can press **Run** right away: it drives 0.3 m
 first when the robot can drive and the field has bars, then spins the first mechanism motor (or moves a lone hinge to
@@ -91,8 +96,8 @@ bindings, so the motor's slot must have an ID in the robot. See [Troubleshooting
 
 ## Feeding from a station
 
-A human player station is a place on a field where balls come onto the field, one at a time, like a human player
-rolling them down a chute. Pick a field that has one (the **Station** field, or **2026**, which has both outposts) and
+A human player station is a place on a field where balls (or other game pieces, such as a coral) come onto the field, one
+at a time, like a human player rolling or dropping them down a chute. Pick a field that has one (the **Station** field, or **2026**, which has both outposts) and
 the blocks gain a **Station** group:
 
 | Block | What it does |
@@ -104,15 +109,22 @@ the blocks gain a **Station** group:
 Two conditions go with them. **\<station\> is empty** is true when the station has no balls left to feed. **At least
 (or at most) n pieces in the hopper** counts the balls inside the hopper right now.
 
-**The hopper.** The test needs to know where a ball counts as "in". In Setup, **Hopper**, tick the bodies a ball lands
-in. A ball is in when its center is inside one of those bodies' boxes, or when one of them holds it as the run ends
-(a grabber's jaws count too). A new test ticks the bodies named hopper, intake, indexer, claw, grabber, gripper or
-jaw for you. If you use **in the hopper** or **made it in** with nothing ticked, the problem says "pick
-the hopper in Setup".
+**Where a piece should end up.** The test needs to know where a piece counts as "in". In Setup, **Where a piece should
+end up**, tick the bodies a piece lands in or is held by: a hopper, an intake, a claw. A piece is in when its center is
+inside one of those bodies' boxes, or when one of them holds it as the run ends (a grabber's jaws count too; "held" is
+under [Holding a piece](#holding-a-piece)). A new test ticks the bodies named hopper, intake, indexer, claw, grabber,
+gripper or jaw for you. If you use **in the hopper** or **made it in** with nothing ticked, the problem says "tick where
+a piece should end up in Setup". The test file keeps this under `hopper` in `[test]`.
 
-**What happens to each ball.** Every ball the station feeds ends in one of three ways:
+**A ball and any other piece differ in one rule.** A held *piece that isn't a ball* counts as in, wherever the hand
+that holds it is. A *ball* keeps the box rule: it is in only inside a ticked body's box, and a ball resting on a ticked
+body without being inside is stuck. (A ball wedged on top of an intake would otherwise read as "in".)
 
-- **in**: its center is inside a hopper body, or a hopper body holds it.
+**What happens to each piece.** Every piece the station feeds ends in one of four ways:
+
+- **in**: its center is inside a ticked body, or a ticked body holds it (a piece that isn't a ball).
+- **placed**: it is seated on a rod, or resting on a field element, that a seated or rests-on check in your test names
+  (see [Placing a piece](#placing-a-piece)). A coral on a branch is placed, not missed.
 - **stuck**: it is resting on a part of your robot outside the hopper, not moving for half a second. It is called out
   on its own because games limit how many pieces a robot controls, and a stuck piece counts toward that limit. On a
   stand-in robot, the stand-in's own frame and drive don't count (a ball resting on the kitbot's chassis is a miss,
@@ -122,8 +134,10 @@ the hopper in Setup".
   the field, on the floor, or still moving when the run ended.
 
 The sentence at the top of the result adds them up: `17 of 20 made it in (85%); 1 stuck in the robot; 2 missed (1
-bounced out, 1 still moving when the run ended)`. The replay marks each ball's outcome on the timeline and in the
-picture.
+bounced out, 1 still moving when the run ended)`. With placed pieces it reads `3 of 5 made it in (60%); 2 placed on
+peg`, and a test with nothing ticked says `1 of 1 placed on peg`. "Made it in" counts only pieces that were in, never
+placed ones. The replay marks each piece's outcome on the timeline and in the
+picture (a placed piece has its own mark, a square).
 
 **The check.** **At least n% made it in** (under **Check**, plug it into an **expect** block) is true when at least
 that share of the fed balls ended in. Put it last. Only the last block of the test, at the top level, is checked after
@@ -139,7 +153,11 @@ moving read "still moving when the run ended".
 **Station settings.** In Setup, each station has a row of boxes for the field's values: time between balls, stock
 (empty means "never runs out", at most 50 are fed in one run), and the spreads. **Every spread is plus or minus its
 value**: "Left/right angle (± degrees)" of 5 means each ball goes up to 5° either side. A change is saved in the test's
-`[setup]`; the box shows the field's own value until you change it. Stations feed balls only.
+`[setup]`; the box shows the field's own value until you change it. A station that feeds a piece that isn't a ball
+(a coral, say) has three more rows, in plain words: **Tipped up** (0 lying on its side, 90 standing on end; for a flat
+piece 0 is on its edge and 90 lying flat) and **Tipped up varies by** (± degrees), **Facing** (degrees from the way
+the station feeds) and **Facing varies by**, and last **Extra tumble** (± degrees about each axis). Every piece the
+station sets down is placed just clear of the chute floor, whichever way it lies.
 
 **The shuffle (the seed).** The spreads are drawn from a seed, the test's *shuffle*. The same shuffle gives the same
 balls every run, so comparing two hoppers is fair. **New shuffle** picks another, so you can check that a result wasn't
@@ -155,14 +173,15 @@ stop feeding. **Test it** on a stand-in with a hopper-like body picks the Statio
 A ball doesn't always lie where the field puts it: it can be dropped or bumped by another robot, or land badly from a
 station. A **floor spread** runs the test several times with the ball in front of the robot in a different place each
 time, to see which places the mechanism picks up. In Setup, **Floor spread** (on a field with a ball on the floor)
-has four axes. Tick the ones to spread over, and give a from, a to and a number of steps:
+has these axes (five for a piece that isn't a ball). Tick the ones to spread over, and give a from, a to and a number of steps:
 
 | Axis | Moves the ball |
 |---|---|
 | **Offset across (in)** | left (+) or right (-) of the robot's center line |
 | **Distance ahead (in)** | nearer or farther along the robot's heading |
 | **Angle (degrees)** | the robot's start heading turns by this, counterclockwise from above, so it approaches at an angle |
-| **Turned (degrees)** | the ball turned about the vertical. It does nothing to a round ball |
+| **Turned (degrees)** | the ball turned about the vertical. It does nothing to a round ball. For another piece it reads **Facing**: 0 lies in line with the robot's path, 90 across it |
+| **Tipped up (degrees)** | (pieces that aren't balls) the piece's long axis tipped up from lying: 0 lying on its side, 90 standing on end |
 
 The placements are every combination, at most 25 (the count is shown, and a spread over 25 is refused). The robot keeps
 its start. The ball that moves is the floor ball nearest in front of the start (within 30° of its heading and 3 m); an
@@ -171,10 +190,12 @@ refused with a message, since it can't be a real place. Press **Run the spread**
 per placement, "picked up" or not, and each run is kept (the last 3 spreads are kept, apart from sweeps); click a
 row to open its replay. It is saved in the test as `floor_spread = { offset_in = [-6, 0, 6] }` under `[setup]`.
 
-For a piece that isn't a ball, such as a coral, the test file takes a fifth axis, `tip_deg` (0 to 90): the piece's
-long axis pitched up from lying, so `tip_deg = [0, 45, 90]` tries it lying, leaning and standing on end. Its turn is
-then measured from the robot's heading, and an axis you leave out keeps how the field has the piece lying. The results
-name how it lay: "picked up 2 of 3; missed standing on end".
+For a piece that isn't a ball, such as a coral, **Tipped up** is the fifth axis (`tip_deg`, 0 to 90 in the test file):
+`tip_deg = [0, 45, 90]` tries it lying, leaning and standing on end. Its turn is then measured from the robot's
+heading, and an axis you leave out keeps how the field has the piece lying. The results name how it lay in plain
+words: "picked up 2 of 3; missed standing on end". Two placements that would read the same get what differs added
+("lying flat, turned 45°"). A standing piece looks the same turned any way, so a spread over the turn of a piece
+standing on end would give identical rows; try it on its own.
 
 **Misses near a mechanism's edge can be noise.** A ball just at the edge of what a mechanism catches can bounce out at
 scattered points, where moving the ball a tenth of a millimeter flips the result. If one placement misses and its
@@ -191,6 +212,9 @@ A check is a round-ended block that plugs into **wait until**, **repeat until** 
 | **tilt above / below** *n* **°** | The robot leans more (or less) than that from upright. |
 | *joint* **above / below** *number* *unit* | A joint is past that position. |
 | *piece* **in** *body* | A game piece is inside a body of the robot. *any piece* means any of them. |
+| *piece* **is held by** *part or body* | A game piece is held by that part or body of the robot. See [Holding a piece](#holding-a-piece). |
+| *piece* **rests on** *thing on the field* | The field thing carries the piece's weight. See [Placing a piece](#placing-a-piece). |
+| *piece* **is seated at least** *n* **in on** *rod* | A piece with a hole has gone that far onto the rod. See [Placing a piece](#placing-a-piece). |
 | **hanging from** *bar* | The robot's hooks hold it up from that bar. |
 | **holding level** *level* | The robot holds that climb level (the field's own rule, such as the 2022 hangar's). |
 
@@ -209,6 +233,104 @@ resting on it with the wheels still on the carpet, is not hanging.
 **Hooks.** A climber's hooks are bodies. Tick them in **Setup**; see [Setup](#setup). A stock `climber` part's hooks
 always count, and Setup shows them ticked and grayed out. A hook can be any body of a CAD part: see
 [Climbing](climbing.md#the-climber-part).
+
+## Holding a piece
+
+The **held** check, *piece* **is held by** *part or body*, is for grabbers: does the claw keep the coral, however the arm
+moves? It is true for a piece when all of these have held for 0.1 s:
+
+- **Lifted.** The piece's lowest point is at least 1 cm above whatever is under it that isn't the robot (the carpet, a
+  field element).
+- **Slow relative to the part.** It is moving no faster than 0.05 m/s compared with the part it touches, so a piece
+  riding along with a swinging arm is held, and one sliding down the jaws isn't.
+- **Touching.** It touches a geom of that part or body.
+
+A short gap in the touching is forgiven: a piece passing from one jaw to the other is still held, and one step with the
+contact lost doesn't end a hold. A piece you haven't held yet isn't held.
+
+Use it as **wait until** (a grabber closing on a coral) and then as **expect** with **the whole time** ticked, so every
+step from there to the end is checked. A **held throughout** check that fails ends the run, and the sentence says when
+and how:
+
+- `the coral slipped out of claw at 2.3 s while claw.arm was moving` (the contact was lost)
+- `the coral slid in claw at 2.3 s while the robot was driving` (still touching, but moving relative to the part)
+- `the coral was set down on branch_l2 at 4.4 s while nothing was moving` (it came to rest on a thing of the field)
+
+What was moving is the last joint a **spin** or **move** block started or was still turning, or a **drive** or **turn**
+under way, within the second before; "nothing was moving" says no block was. If the piece was never held by that part:
+"the coral was never held by claw". In the replay, a cross under the time slider marks the slip; point at it for the
+words, or click it to jump there with the piece outlined.
+
+**Placing ends the hold, and that is passing.** A held-throughout check is passed (and ends) when the piece is set down
+on a rod or element that a seated or rests-on check in the same test names: the test passes with "held by grabber from
+1.4 s until it was placed on branch_l2 at 4.4 s". Setting it down anywhere else, or dropping it, still fails.
+
+## Placing a piece
+
+Two checks say a piece went where it should.
+
+**Rests on.** *piece* **rests on** *thing* is true when the thing (a shelf, a box, a rod, or "a piece": any other
+piece) carries at least half the piece's weight, the piece has been at rest for 0.5 s, and no part of the robot touches
+it. A piece still in the grabber is not resting. If it fails, the sentence says why ("the coral doesn't rest on
+shelf (a robot body still touches it)").
+
+**Seated.** For a piece with a hole that slides onto a rod (a coral on a branch, a hatch panel on a peg), *piece* **is
+seated at least** *n* **in on** *rod* is about how far onto the rod it is. The seated depth is how far the rod's tip
+has gone into the piece's hole, measured along the rod. It is measured whenever the rod runs through the hole (the
+piece's axis within 30° of the rod's), even while the grabber still holds the piece. Its limit, **could go**, is the
+smaller of the rod's length and the piece's own length. Examples of what a run says:
+
+- `seated 3.5 in of 4.0 in on branch_l2`
+- `seated only 0.8 in on branch_l2 (could be knocked off)`: less than a third of how far it could go. A piece only
+  partly on a rod is held up by almost nothing.
+- a piece lying across a rod, or resting on the rod's end without it in the hole, has no depth. A **seated** check then
+  fails ("the coral isn't on branch_l2"), and **rests on** still works.
+
+The depth is a signal for the chart, `seated.<rod>`, in inches. The line has a gap while no piece is on the rod, and it
+shows the deepest piece when more than one is. After a run, a line under the sentence gives the depth at the end.
+
+A solid piece on a shelf, a tote on a tote, has no depth: use **rests on**.
+
+## Grip material
+
+A grabber's pads are what holds a piece, so how well they grip matters as much as how hard they squeeze. A body of a
+part can be given a **grip material**; the picker is in the Part tab (the Inspector, on a body that touches things) and
+in Setup (a **Grip** group, for the bodies you ticked under **Where a piece should end up**, or named like a grabber). The
+choices, with the friction the simulation uses for each:
+
+| Material | Friction |
+|---|---|
+| Rubber | 0.8 |
+| Nitrile | 0.8 |
+| Grip tape | 1.1 |
+| Polycarbonate | 0.4 |
+| Aluminum | 0.35 |
+| HDPE / UHMW | 0.2 |
+| **My own number** | what you type (above 0, up to 3) |
+
+(Rubber and nitrile are the same estimate, so they act the same: a sweep over both won't show a difference.) The
+picker shows each estimate beside the name. Left alone, a pad keeps the friction its part gives it.
+
+**Every number here is an estimate, marked UNCALIBRATED.** Friction against game pieces isn't published, so these are
+typical ranges. A run that depends on a grip says so in a line under the sentence ("claw.pad_left grip: nitrile,
+friction 0.8 (UNCALIBRATED estimate; measure yours with a sled pull)"), and a test of held, rests-on or seated with
+no grip set says that the pads have the default friction. Never take a grip result as measured.
+
+**How to measure your own friction (a sled pull).** Take a piece of your pad material, or a block covered in it, and
+the piece's surface (a scrap of the pipe, or the piece itself) lying flat on a table. Put weight on the pad block (it can
+be the block itself if you weigh it). Pull the pad block along the surface with a luggage scale, slowly and steadily.
+Read the scale while it slides, not at the first jerk. **Friction = the pull ÷ the block's weight**, in the same unit
+(pull 3.6 N on a 4.0 N block: 0.9). Do it three times and use the middle number. Pick **My own number** and type it.
+
+**What a grip does in the simulation.** A grip sets the friction of every geom of that body that collides (a wheel's
+tread keeps its own). The pad also gets a firm contact and priority over the piece's, so the pad's friction applies and
+not the larger of the two. A piece's own surface (set in its range file) matters too: a rigid piece has a firm contact
+by default, so it doesn't creep through a squeeze. The grip is saved in the part's own edits as `[body.<name>] grip =
+"nitrile"` (or a number) in `scrimmage-edits.toml`, and Undo in the Part tab takes a grip change back, in both
+import and plugin mode. Test files don't set grip; to try it in a robot config, see [parts.md](parts.md).
+
+**Would grip tape help?** Press **Try materials…** in Setup, beside a part's first pad: see
+[Trying values](#trying-values-sweeps).
 
 ## Times and limits
 
@@ -246,14 +368,21 @@ Open **Setup** over the blocks. Its summary shows the hooks, the weight and the 
   puts the old field and start back.
 - **Start.** When the field has more than one start, a picker lists them in words ("At station", "Facing ball"). The
   first one is chosen when you pick the field.
-- **Hopper.** Tick the bodies a ball lands in. See [Feeding from a station](#feeding-from-a-station).
-- **Ball.** On the intake and station fields, the ball to use: the field's own, or any ball preset (a 2017 FUEL, a
-  2019 CARGO and so on). A ball that doesn't fit (too wide for the station's chute, or overlapping the field's floor
-  balls) gives a plain problem in Setup and **Run** stays off until you pick another.
+- **Where a piece should end up.** Tick the bodies a piece lands in or is held by: a hopper, an intake, a claw. See
+  [Feeding from a station](#feeding-from-a-station) and [Holding a piece](#holding-a-piece).
+- **Grip.** For a grabber's pads, a picker of grip materials, and **Try materials…** beside a part's first pad. See
+  [Grip material](#grip-material).
+- **Piece.** On the intake and station fields, the piece to use: the field's own, or any ball (a 2017 FUEL, a 2019
+  CARGO) or other piece (a 2025 coral, a 2023 cone, cube, a 2017 gear, a 2019 hatch panel, a 2015 tote, a 2024 note) from the
+  list. A piece that doesn't fit (too wide for the station's chute, or overlapping the field's floor pieces) gives a
+  plain problem in Setup and **Run** stays off until you pick another. The test file keeps this as `piece` under
+  `[setup]` (older tests with `ball` still work). Soft pieces (the cube, the note) are rigid stand-ins: they don't
+  squash.
 - **Station.** One group of boxes for each station: time between balls, stock, and the spreads (each ± its value).
 - **Shuffle** and **New shuffle**: which draw of the spreads the stations feed.
 - **Floor spread.** Where the floor ball is tried. See [Floor spreads](#floor-spreads).
-- **Add the station blocks.** Adds the starter feeding blocks to a test that has none.
+- **Add the station blocks.** Adds the starter feeding blocks to a test that has none. On a robot with a grabber it adds
+  start feeding, wait until a piece is held by the grabber, stop feeding (the hopper starter can't succeed there).
 - **The robot (weight and center of mass).** These appear when the robot's base is the stock chassis, which a stand-in
   robot always is. **Weight** is everything that isn't one of the robot's parts (frame, battery, bumpers). The center of
   mass is forward, left and up, in meters. These also change the robot file and **Undo** takes them back.
@@ -302,6 +431,12 @@ A sweep runs the test once for each value of one number, to see which works best
    run ended, or any signal, against the value. Click a row to open that run's replay.
 
 A value that can't run gets a row saying why; the others still run. **Stop** keeps the values done so far.
+
+**Try materials…** (beside a part's first pad in Setup) tries a **grip**: the test runs once for each material you
+ticked, on every pad of the part together by default (a pair of pads needs both changed: one slick pad can hide that
+the other grips alone). "Which pads?" lists every pad of the part, then each on its own. The rows say how each
+material ended. The `test_sweep` tool takes the same target: a part (all its pads) or one `<part>.<body>`, with
+material names as the values. Your files don't change.
 
 **A sweep of a spread or the shuffle** shows how often a design misses, not one result. Each row's sentence has the
 counts, such as `17 of 20 made it in (85%)`. Try the same number of values with the seed and a spread of 0 and every
@@ -387,7 +522,8 @@ Open one with `scrimmage edit examples/blocks/intake/intake.test.toml`.
   mecanum drive, say). Use **spin** blocks on the drive motors.
 - **A station run ends "timed out ... its release point stayed blocked".** A ball is sitting at the station's
   release point (the chute's low end is jammed). Look at the replay for what stopped it.
-- **"pick the hopper in Setup".** A block counts balls in the hopper but no body is ticked under **Hopper**.
+- **"tick where a piece should end up in Setup".** A block counts pieces in the hopper but no body is ticked under
+  **Where a piece should end up**.
 - **Run stays off and nothing is wrong on the blocks.** A save the server refused keeps Run off. Look at the status bar
   and **Fix these first**: it says why ("Not saved: ...").
 - **"Busy".** A drive session (the Drive tab), a scenario run or a bench run holds the simulation. Wait for it to finish

@@ -210,6 +210,12 @@ again. If an edit is about a body that has since gone from the CAD, you get a wa
 
 A known limit: parts made by a plugin get no **Try it** slider.
 
+**Grip.** On a body that touches things (not a wheel's tread), the Inspector has a **Grip** picker: what the pads are
+made of, for holding a game piece (rubber, nitrile, grip tape, polycarbonate, aluminum, HDPE / UHMW, or **My own
+number**, a friction you measured). The friction estimates are shown beside the names and are UNCALIBRATED; see [Grip
+material](test-tab.md#grip-material) for how to measure yours. It is saved as `grip` in the body's table of
+`scrimmage-edits.toml`, and **Undo** takes a change back, for a CAD import and for a plugin-made part both.
+
 ## Using the parts in a robot
 
 Open your robot config in the assembler (`scrimmage edit my_robot.toml`). The parts folders show under **Part folders**

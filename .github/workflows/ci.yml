@@ -67,7 +67,9 @@ jobs:
           SCRIMMAGE_SKIP_BROWSER: "1"
         run: >
           pytest tests/test_cad_*.py tests/test_part_overlay.py tests/test_part_server.py
-          tests/test_blocks_*.py tests/test_range_stations.py tests/test_test_server.py tests/test_hal_drive.py
+          tests/test_blocks_*.py tests/test_range_stations.py tests/test_range_pieces.py tests/test_range_kinds.py
+          tests/test_range_rods.py tests/test_range_piece_world.py tests/test_part_grip.py
+          tests/test_test_server.py tests/test_hal_drive.py
           tests/test_climb_hooks_any_body.py -v
 
   # Java robots (Phoenix 6, REVLib): needs a JDK 17; downloads WPILib and the vendor libraries (no ~/wpilib on CI)

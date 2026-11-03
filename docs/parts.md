@@ -31,6 +31,28 @@ kept in a `<name>.import.toml` next to them. For a part folder made by a CAD plu
 joint range, spring, damping, friction, collision, mounts) go in `scrimmage-edits.toml` inside the folder, never in
 `part.toml`. Scrimmage applies that file when it loads the part; `part.toml` stays format 1.
 
+**Grip.** A body's pads can be given a grip material for testing a grabber ("would grip tape help?"). The overlay's body
+table has a `grip` key, and a config's `[[part]]` has `grip` for the same thing:
+
+```toml
+# parts/claw/scrimmage-edits.toml (written by the Part tab's and the Test tab's Grip picker)
+[body.pad_left]
+grip = "nitrile"         # a material: rubber, nitrile, grip-tape, polycarbonate, aluminum, hdpe; or a number
+
+# the robot config: overrides the folder's grip for the bodies it lists
+[[part]]
+name = "claw"
+path = "parts/claw"
+grip = { pad_left = "grip-tape", pad_right = 1.05 }    # 1.05: a friction you measured
+```
+
+Every colliding geom of the body (a wheel's tread is left alone) gets the material's sliding friction, a firm contact and
+contact priority 1, so the pad's friction, not a game piece's, is the one that applies. A number must be above 0 and at
+most 3. A name that isn't a material, a body the part doesn't have, or a stock part is an error that names the file and the
+body; a body with no geom that touches anything is a warning. The friction values (rubber and nitrile 0.8, grip tape
+1.1, polycarbonate 0.4, aluminum 0.35, HDPE / UHMW 0.2) are estimates, **UNCALIBRATED**: see
+[Grip material](test-tab.md#grip-material) for how to measure your own. Test files don't set grip.
+
 ## Putting parts in a robot config
 
 A robot config lists its parts as `[[part]]` entries, next to the usual `[robot]`, `[battery]`,
@@ -61,6 +83,7 @@ ids = { roller = "TalonFX:5" }
 | `attach` | `"<instance>.<mount>"` or `"<instance>.<body>"` of another part (a mount name wins over a body name). Leave it out on exactly one part, the root. |
 | `pos`, `rot` | Offset of the part's root body from what it attaches to. `pos` in meters, `rot` as roll, pitch, yaw in degrees (rotations about the fixed x, y, z axes, applied in that order). Both default to zero. |
 | `ids` | A table of `slot = device`. See "Device IDs". |
+| `grip` | A `path` part only: `grip = { pad_left = "grip-tape", pad_right = 1.05 }`, a grip material or a measured friction for some of the folder's bodies. It overrides the folder's own (`scrimmage-edits.toml`, below). See "Grip". A `stock` part with `grip` is an error. |
 
 **The root part.** The part without `attach` is the robot's root. It gets the free joint (`<name>.free`), and
 `[robot] start_pose = [x, y, heading_deg]` places it; without one a parts robot spawns at `(2.0, 4.035, 0)`
