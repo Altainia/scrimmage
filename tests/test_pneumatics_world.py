@@ -154,9 +154,29 @@ def test_ph_without_the_extension_warns():
     w = World(robot("PH:3"), ROOT)
     msg = ("cyl.valve is on a REV Pneumatic Hub, which needs the lockstep extension "
            "(`--scrimmage-lockstep` for RobotPy, the Gradle init script for Java)")
-    assert w.pneumatics.missing_extension_warnings(hal()) == [msg]
-    assert w.pneumatics.missing_extension_warnings(hal(("ScrimmagePH", "1", {"<solenoids": 0}))) == []
-    assert World(robot("PCM:3"), ROOT).pneumatics.missing_extension_warnings(hal()) == []
+    assert w.pneumatics.missing_hub_warnings(hal()) == [msg]
+    assert w.pneumatics.missing_hub_warnings(hal(("ScrimmagePH", "1", {"<solenoids": 0}))) == []
+    assert World(robot("PCM:3"), ROOT).pneumatics.missing_hub_warnings(hal()) == []
+
+
+def test_ph_on_a_hub_the_robot_never_opened_warns():
+    w = World(robot({"ph": 2, "channel": 3}), ROOT)
+    h = hal(("ScrimmagePH", "1", {"<solenoids": 0}), ("ScrimmagePH", "3", {"<solenoids": 0}))
+    msg = ("cyl.valve: the robot never opened Pneumatic Hub 2 (it opened Pneumatic Hubs 1, 3); "
+           "check the hub's number in the valve's ids")
+    assert w.pneumatics.missing_hub_warnings(h) == [msg]
+    assert w.pneumatics.missing_hub_warnings(hal(("ScrimmagePH", "1", {}))) == [
+        "cyl.valve: the robot never opened Pneumatic Hub 2 (it opened Pneumatic Hub 1); "
+        "check the hub's number in the valve's ids"]
+
+
+def test_missing_hub_warnings_reach_the_world_once():
+    w = World(robot("PH:3"), ROOT)
+    msgs = w.pneumatics.warn_missing_hubs(hal())
+    assert len(msgs) == 1 and msgs[0] in w.warnings
+    w.reset()                                            # a reconnect checks again
+    assert w.pneumatics.warn_missing_hubs(hal()) == msgs
+    assert w.warnings.count(msgs[0]) == 1
 
 
 def test_compressor_loads_battery():

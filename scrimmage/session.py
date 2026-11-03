@@ -20,7 +20,7 @@ from typing import Callable
 
 import mujoco
 
-from .bindings import binds_rev
+from .bindings import binds_ph, binds_rev
 from .bridge import Bridge, robot_language
 from .devicecheck import check_devices, device_notes
 from .config import Config, ConfigError, build_world, load_config, set_sim_mode, sim_mode_unused
@@ -41,16 +41,22 @@ NT_CONNECT_TIMEOUT = 5.0 # wall s to wait for NetworkTables once the robot is re
 PHOENIX_UNPAUSABLE = "Phoenix 6 devices keep running between calls: this session can't pause them"
 # scrimmage-lockstep: 0.2.0 REV helper, 0.3.0 clock at 0, 0.4.0 seed, 0.5.0 sim_values, 0.6.0 clock at 1 us (AdvantageKit)
 LOCKSTEP_VERSION = (0, 6, 0)
+PH_LOCKSTEP_VERSION = (0, 7, 0)   # 0.7.0 relays the REV Pneumatic Hub; needed only by robots with valves on one
 
 
 def lockstep_version_problem(config: Config) -> str | None:
     """Why a RobotPy robot run with `--scrimmage-lockstep` (or binding REV SPARKs, whose helper the package carries), or a
     Java robot while scrimmage-lockstep is installed (the Gradle init script then loads it), can't be simulated:
-    scrimmage-lockstep is missing or older than this scrimmage needs. None for any other config."""
+    scrimmage-lockstep is missing or older than this scrimmage needs. A RobotPy or Java robot with valves on a REV
+    Pneumatic Hub needs PH_LOCKSTEP_VERSION, installed even for Java (only the extension relays a hub). None for any
+    other config."""
     from importlib import metadata
     rp = config.robot_program
     language = robot_language(rp.command) if rp is not None else None
-    if language == "java":
+    need_version, ph = LOCKSTEP_VERSION, binds_ph(config.raw)
+    if ph and language in ("java", "python"):
+        why, need_version = "binds valves on a REV Pneumatic Hub", PH_LOCKSTEP_VERSION
+    elif language == "java":
         why = "runs a Java robot"     # without the extension the init script runs it in real time: nothing to check
     elif language != "python":
         return None
@@ -60,18 +66,18 @@ def lockstep_version_problem(config: Config) -> str | None:
         why = "runs a RobotPy robot with --scrimmage-lockstep"
     else:
         return None
-    need = ".".join(map(str, LOCKSTEP_VERSION))
+    need = ".".join(map(str, need_version))
     try:
         have = metadata.version("scrimmage-lockstep")
     except metadata.PackageNotFoundError:
-        if language == "java":
+        if language == "java" and not ph:
             return None
         return f"{config.path} {why}, which needs scrimmage-lockstep {need} or later, but it isn't installed: `pip install ./lockstep`"
     nums = []
     for part in have.split(".")[:3]:
         digits = "".join(itertools.takewhile(str.isdigit, part))
         nums.append(int(digits) if digits else 0)
-    if tuple(nums + [0] * (3 - len(nums))) < LOCKSTEP_VERSION:
+    if tuple(nums + [0] * (3 - len(nums))) < need_version:
         return (f"{config.path} {why}, which needs scrimmage-lockstep {need} or later (installed: {have}): "
                 "reinstall it with `pip install ./lockstep`")
     return None

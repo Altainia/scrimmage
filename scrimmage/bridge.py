@@ -698,7 +698,7 @@ class Bridge:
                                              self.robot_language)
             msgs += missing_scrimmage_warnings(self.hal, self._scrimmage_expected, self.sim_mode)
             if self.world.pneumatics is not None:
-                msgs += self.world.pneumatics.missing_extension_warnings(self.hal)
+                msgs += self.world.pneumatics.warn_missing_hubs(self.hal)   # in the run's notes too
             for msg in msgs:
                 log.warning("%s", msg)
         if (not self._fast_phoenix_warned and now >= MISSING_AFTER - 1e-6

@@ -839,3 +839,41 @@ def test_java_robot_refuses_an_installed_old_lockstep(tmp_path, monkeypatch):
         raise metadata.PackageNotFoundError(name)
     monkeypatch.setattr(metadata, "version", missing)
     assert session_mod.lockstep_version_problem(cfg) is None   # no extension: the init script runs it in real time
+
+
+PH_VALVE = """
+[[part]]
+name = "cyl"
+stock = "cylinder"
+ids = { valve = "PH:4,5" }
+"""
+
+
+@pytest.mark.parametrize("command", [ROBOTPY_COMMAND, JAVA_COMMAND,
+                                     '["{python}", "-m", "robotpy", "sim", "--nogui", "--ws-client"]'])
+@pytest.mark.parametrize("valve", [PH_VALVE, PH_VALVE.replace('"PH:4,5"', "{ ph = 2, channel = 1 }")])
+def test_valves_on_a_pneumatic_hub_need_lockstep_0_7_0(tmp_path, monkeypatch, command, valve):
+    """Only the 0.7.0 extension relays a REV Pneumatic Hub, so a RobotPy or Java robot with a valve on one needs it
+    (installed, even for Java); other robots keep the 0.6.0 floor."""
+    from importlib import metadata
+    cfg = session_mod.load_config(fake_config(tmp_path, command, valve))
+    monkeypatch.setattr(metadata, "version", lambda name: "0.6.0")
+    problem = session_mod.lockstep_version_problem(cfg)
+    assert problem and "binds valves on a REV Pneumatic Hub" in problem
+    assert "0.7.0 or later (installed: 0.6.0)" in problem and "pip install ./lockstep" in problem
+    monkeypatch.setattr(metadata, "version", lambda name: "0.7.0")
+    assert session_mod.lockstep_version_problem(cfg) is None
+
+    def missing(name):
+        raise metadata.PackageNotFoundError(name)
+    monkeypatch.setattr(metadata, "version", missing)
+    problem = session_mod.lockstep_version_problem(cfg)
+    assert problem and "binds valves on a REV Pneumatic Hub" in problem and "isn't installed" in problem
+
+
+@pytest.mark.parametrize("command", [ROBOTPY_COMMAND, JAVA_COMMAND])
+def test_valves_on_a_pcm_keep_the_0_6_0_floor(tmp_path, monkeypatch, command):
+    from importlib import metadata
+    cfg = session_mod.load_config(fake_config(tmp_path, command, PH_VALVE.replace("PH:", "PCM:")))
+    monkeypatch.setattr(metadata, "version", lambda name: "0.6.0")
+    assert session_mod.lockstep_version_problem(cfg) is None

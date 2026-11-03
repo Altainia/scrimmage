@@ -135,11 +135,28 @@ class PneumaticsRuntime:
         return ([("CTREPCM", str(n), dict(pcm)) for n in self._pcms]
                 + [(PH_TYPE, str(n), dict(hub)) for n in self._hubs])
 
-    def missing_extension_warnings(self, hal: HalState) -> list[str]:
-        """What to say, once the robot has had time to open its modules, when valves are on a REV Pneumatic Hub but
-        the HAL holds no ScrimmagePH device: only the lockstep extension relays a hub."""
-        if not self._hubs or any(typ == PH_TYPE for typ, _ in hal.devices):
-            return []
-        return [f"{v['name']} is on a REV Pneumatic Hub, which needs the lockstep extension "
-                "(`--scrimmage-lockstep` for RobotPy, the Gradle init script for Java)"
-                for v in self._valves.values() if v["module"] == "PH"]
+    def missing_hub_warnings(self, hal: HalState) -> list[str]:
+        """What to say, once the robot has had time to open its modules, about each valve whose REV Pneumatic Hub the
+        HAL holds no ScrimmagePH device for: with none at all, the lockstep extension (the only relay for a hub) isn't
+        loaded; with others there, the robot never opened that hub."""
+        opened = sorted(int(dev) for typ, dev in hal.devices if typ == PH_TYPE and dev.isdigit())
+        out = []
+        for v in self._valves.values():
+            if v["module"] != "PH" or v["id"] in opened:
+                continue
+            if not opened:
+                out.append(f"{v['name']} is on a REV Pneumatic Hub, which needs the lockstep extension "
+                           "(`--scrimmage-lockstep` for RobotPy, the Gradle init script for Java)")
+            else:
+                hubs = f"Pneumatic Hub{'s' if len(opened) > 1 else ''} {', '.join(map(str, opened))}"
+                out.append(f"{v['name']}: the robot never opened Pneumatic Hub {v['id']} (it opened {hubs}); "
+                           "check the hub's number in the valve's ids")
+        return out
+
+    def warn_missing_hubs(self, hal: HalState) -> list[str]:
+        """missing_hub_warnings, each also put in the world's warnings once (so run reports show it); returns them."""
+        msgs = self.missing_hub_warnings(hal)
+        for msg in msgs:
+            if msg not in self.world.warnings:
+                self._warn(msg)
+        return msgs
