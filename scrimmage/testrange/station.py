@@ -14,13 +14,20 @@
     spread_position = [0.0, 0.02, 0.02]    # or spread_position_in; a box around the release point, half sizes
     spread_rotation_deg = [0, 0, 0]        # the ball's turn; it does nothing to a ball (a later piece's)
     chute = { length = 0.6, slope_deg = 25.0, width = 0.3 }   # a sloped floor and two side walls (optional)
+    kind = "coral"                # the field's piece kind it feeds (default: the range's default kind)
+    tip_deg = 0.0                 # the fed piece's tip (0 lying on its side, 90 standing on end), -90 to 90
+    turn_deg = 0.0                # its turn about vertical, from the heading
+    spread_tip_deg = 10.0         # and their spreads, as the others
+    spread_turn_deg = 30.0
 
 The spreads are limits, not standard deviations (the bench's inlet takes standard deviations): a piece never leaves
 a tight chute's limits. The chute's floor top passes under the release point, tangent to a ball resting there, and
 runs down along the heading for `length` at `slope_deg` (its high end reaches a little behind the release point, so
 the ball lands on the floor's face); its side walls stand one ball diameter above the floor. Its `width` is the space
 between the walls, 1.3 ball diameters when left out (so a ball of any preset fits).
-Stations feed balls, not discs.
+Stations feed balls and rigid pieces (a kind, scrimmage/testrange/pieces.py), not discs. The release point's
+clearance is the piece's bounding radius, and a chute is sized for its bounding sphere (`fed_size`: for a ball, its
+diameter), so a release point clear of its own chute stays clear for any piece.
 """
 
 from __future__ import annotations
@@ -31,11 +38,11 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ..launcher.inputs import Ball
 from .elements import IN, ROBOT_OUTLINE, _rect, _separated
-from .spec import FIELD_LENGTH, FIELD_WIDTH, RangeError, _Reader, _rot_z
+from .spec import FIELD_LENGTH, FIELD_WIDTH, RangeError, _Reader, _rot_z, kind_named
 
 if TYPE_CHECKING:
+    from .pieces import PieceKind
     from .spec import Range
 
 DEFAULT_INTERVAL = 1.0      # s between balls (a human player's pace; some are much quicker, so it is a setting)
@@ -49,7 +56,7 @@ OVERRIDE_KEYS = ("interval", "stock", "spread_yaw_deg", "spread_pitch_deg", "spr
                  "spread_rotation_deg")
 _STATION = ("name", "release", "release_in", "heading_deg", "pitch_deg", "speed", "interval", "stock",
             "spread_yaw_deg", "spread_pitch_deg", "spread_speed", "spread_position", "spread_position_in",
-            "spread_rotation_deg", "chute")
+            "spread_rotation_deg", "chute", "kind", "tip_deg", "turn_deg", "spread_tip_deg", "spread_turn_deg")
 _CHUTE = ("width", "length", "slope_deg")
 _TOUCH = 1e-6   # m: a ball resting on a surface is not inside it
 _START_TOUCH = 0.01     # m: a start's bumpers may lie against a chute's low end (its plate's corner reaches past)
@@ -88,6 +95,15 @@ class Station:
     spread_position: tuple[float, float, float] = (0.0, 0.0, 0.0)
     spread_rotation_deg: tuple[float, float, float] = (0.0, 0.0, 0.0)
     chute: Chute | None = None
+    kind: str | None = None     # the kind it feeds; None: the range's default kind
+    tip_deg: float = 0.0        # the fed piece's tip: 0 lying on its side, 90 standing on end
+    turn_deg: float = 0.0       # its turn about vertical, from the heading
+    spread_tip_deg: float = 0.0
+    spread_turn_deg: float = 0.0
+
+    def kind_of(self, rng: Range) -> PieceKind:
+        """The kind this station feeds."""
+        return rng.kinds[self.kind if self.kind is not None else rng.default_kind]
 
     def pool(self) -> int:
         """Balls the station can feed in one run."""
@@ -116,11 +132,23 @@ def _low_end_drop(st: Station, ball_d: float) -> float:
     return -(top - CHUTE_PLATE * math.cos(s))
 
 
-def _station(path, table, i: int, piece, taken: list[str]) -> Station:
+def fed_size(kind: PieceKind) -> float:
+    """The size a station's chute is built for: the diameter of the kind's bounding sphere (a ball's diameter)."""
+    return 2.0 * kind.radius
+
+
+def _piece_words(kind: PieceKind) -> str:
+    """A fed piece in a message: "a 0.1501 m ball" (as always), or "a coral"."""
+    return f"a {kind.ball.diameter} m ball" if kind.ball is not None else f"a {kind.label}"
+
+
+def _station(path, table, i: int, kinds: dict[str, PieceKind], default: str, taken: list[str]) -> Station:
     r = _Reader(path, f"[[station]] #{i + 1}", table, _STATION)
     name = r.text("name")
     r.where = f"[[station]] '{name}'"
-    if not isinstance(piece, Ball):
+    kind_name = r.text("kind") if r.has("kind") else None
+    kind = kind_named(path, r.where, kind_name if kind_name is not None else default, kinds)
+    if kind.form == "disc":
         raise RangeError(f"{path}: {r.where}: stations feed balls; this range's piece is a disc")
     if name in taken:
         raise RangeError(f"{path}: [[station]] '{name}' shares its name with another station, goal, obstacle or "
@@ -145,7 +173,8 @@ def _station(path, table, i: int, piece, taken: list[str]) -> Station:
         raise r.err(stock_too_big(stock))
     rotation = r.nums("spread_rotation_deg", 3, (0.0, 0.0, 0.0))
     spreads = {"spread_yaw_deg": r.num("spread_yaw_deg", 0.0), "spread_pitch_deg": r.num("spread_pitch_deg", 0.0),
-               "spread_speed": r.num("spread_speed", 0.0)}
+               "spread_speed": r.num("spread_speed", 0.0), "spread_tip_deg": r.num("spread_tip_deg", 0.0),
+               "spread_turn_deg": r.num("spread_turn_deg", 0.0)}
     for key, v in (*spreads.items(), ("spread_position", min(spread_position)),
                    ("spread_rotation_deg", min(rotation))):
         if v < 0.0:
@@ -153,13 +182,16 @@ def _station(path, table, i: int, piece, taken: list[str]) -> Station:
     speed = r.num("speed", 0.0)
     if speed < 0.0:
         raise r.err(f"speed must be 0 or more, not {speed!r}")
-    rad = piece.diameter / 2.0
+    tip = r.num("tip_deg", 0.0)
+    if not -90.0 <= tip <= 90.0:
+        raise r.err(f"tip_deg must be from -90 to 90, not {tip}")
+    rad, size = kind.radius, fed_size(kind)
     x, y, z = release
     if not (rad <= x <= FIELD_LENGTH - rad and rad <= y <= FIELD_WIDTH - rad):
         raise r.err(f"release point ({x:.4g}, {y:.4g}) lies off the field (0..{FIELD_LENGTH} x 0..{FIELD_WIDTH} m,"
                     f" center at least {rad:.4g} m inside)")
     if z < rad:
-        raise r.err(f"release point is {z:.4g} m above the carpet; a {piece.diameter} m ball's center needs at"
+        raise r.err(f"release point is {z:.4g} m above the carpet; {_piece_words(kind)}'s center needs at"
                     f" least {rad:.4g} m")
     chute = None
     if r.has("chute"):
@@ -171,26 +203,29 @@ def _station(path, table, i: int, piece, taken: list[str]) -> Station:
                       width=c.num("width", positive=True) if c.has("width") else None)
     st = Station(name=name, release=release, heading_deg=r.num("heading_deg"), pitch_deg=pitch, speed=speed,
                  interval=r.num("interval", DEFAULT_INTERVAL, positive=True), stock=stock, **spreads,
-                 spread_position=spread_position, spread_rotation_deg=rotation, chute=chute)
+                 spread_position=spread_position, spread_rotation_deg=rotation, chute=chute, kind=kind_name,
+                 tip_deg=tip, turn_deg=r.num("turn_deg", 0.0))
     if chute is not None:
-        if chute.width is not None and chute.width <= piece.diameter:
-            raise RangeError(f"{path}: {r.where} chute: {chute.width:.4g} m wide, no wider than the ball"
-                             f" ({piece.diameter} m)")
-        drop = _low_end_drop(st, piece.diameter)
+        if chute.width is not None and chute.width <= size:
+            what = "the ball" if kind.ball is not None else f"the {kind.label}"
+            raise RangeError(f"{path}: {r.where} chute: {chute.width:.4g} m wide, no wider than {what}"
+                             f" ({size} m)")
+        drop = _low_end_drop(st, size)
         if drop > 0.0:
             raise RangeError(f"{path}: {r.where} chute: its low end would be {drop:.2g} m below the carpet; make"
                              " it shorter or less steep")
     return st
 
 
-def parse_stations(path, tables, piece, taken: tuple[str, ...] = ()) -> tuple[Station, ...]:
-    """Read the `[[station]]` tables. `taken` are the names of the goals, obstacles and elements, which a station's
-    name may not repeat."""
+def parse_stations(path, tables, kinds: dict[str, PieceKind], default: str,
+                   taken: tuple[str, ...] = ()) -> tuple[Station, ...]:
+    """Read the `[[station]]` tables, feeding the field's `kinds` (`default` when a station names none). `taken` are
+    the names of the goals, obstacles and elements, which a station's name may not repeat."""
     if not isinstance(tables, list):
         raise RangeError(f"{path}: station must be an array of tables ([[station]])")
     out: list[Station] = []
     for i, t in enumerate(tables):
-        out.append(_station(path, t, i, piece, list(taken) + [s.name for s in out]))
+        out.append(_station(path, t, i, kinds, default, list(taken) + [s.name for s in out]))
     return tuple(out)
 
 
@@ -229,14 +264,15 @@ def check_release_clear(path, rng: Range) -> None:
         return
     from .build_elements import chute_parts
 
-    r = rng.piece.diameter / 2.0
     solids = [(f"element '{e.name}'", _element_boxes(e)) for e in rng.elements]
     solids += [(f"obstacle '{o.name}'", [(np.array(o.pos, float), o.rotation(), np.array(o.size) / 2.0)])
                for o in rng.obstacles]
-    solids += [(f"the chute of station '{s.name}'", list(chute_parts(s, rng.piece.diameter).values()))
+    solids += [(f"the chute of station '{s.name}'", list(chute_parts(s, fed_size(s.kind_of(rng))).values()))
                for s in rng.stations if s.chute is not None]
     _check_chutes(path, rng, solids)
     for st in rng.stations:
+        kind = st.kind_of(rng)
+        r = kind.radius
         p = np.array(st.release)
         for what, boxes in solids:
             for center, rot, half in boxes:
@@ -245,7 +281,8 @@ def check_release_clear(path, rng: Range) -> None:
                     x, y, z = st.release
                     raise RangeError(
                         f"{path}: [[station]] '{st.name}': its release point at ({x:.4g}, {y:.4g}, {z:.4g}) is"
-                        f" inside {what}; move it clear (the ball's center needs {r:.2g} m all round)")
+                        f" inside {what}; move it clear (the {'ball' if kind.ball is not None else kind.label}'s"
+                        f" center needs {r:.2g} m all round)")
 
 
 def _corners(center, rot, half) -> np.ndarray:
@@ -289,7 +326,7 @@ def _check_chutes(path, rng: Range, solids) -> None:
         if st.chute is None:
             continue
         where = f"{path}: [[station]] '{st.name}': its chute"
-        for part, box in chute_parts(st, rng.piece.diameter).items():
+        for part, box in chute_parts(st, fed_size(st.kind_of(rng))).items():
             c = _corners(*box)
             lo, hi = c.min(axis=0), c.max(axis=0)
             if lo[0] < 0.0 or lo[1] < 0.0 or hi[0] > FIELD_LENGTH or hi[1] > FIELD_WIDTH:

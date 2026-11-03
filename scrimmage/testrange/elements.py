@@ -398,9 +398,11 @@ def _on_floor(e: Element, start: bool) -> list[np.ndarray]:
     return [footprint(e)]
 
 
-def check_clear(path, elements, starts: dict, floor_balls: np.ndarray, ball_radius: float) -> None:
-    """Reject a start whose outline overlaps an element standing on the carpet, and a floor ball resting inside one
-    (see _on_floor)."""
+def check_clear(path, elements, starts: dict, floor_balls: np.ndarray, reaches, names=None) -> None:
+    """Reject a start whose outline overlaps an element standing on the carpet, and a floor piece resting inside one
+    (see _on_floor). `reaches` are the floor pieces' reaches across the carpet (a ball's radius), one each or one for
+    all; `names` what a student reads for each ("ball 3", "coral 0"; default "ball <k>")."""
+    reaches = np.broadcast_to(np.asarray(reaches, dtype=float), (len(floor_balls),))
     for sname, (x, y, heading) in starts.items():
         outline = _rect((x, y), heading, ROBOT_OUTLINE, ROBOT_OUTLINE)
         for e in elements:
@@ -412,10 +414,11 @@ def check_clear(path, elements, starts: dict, floor_balls: np.ndarray, ball_radi
     for k, (x, y) in enumerate(floor_balls):
         for e in elements:
             for f in _on_floor(e, start=False):
-                if _gap(f, (x, y)) < ball_radius:
+                if _gap(f, (x, y)) < reaches[k]:
+                    what = names[k] if names is not None else f"ball {k}"
                     raise RangeError(
-                        f"{path}: floor_balls: ball {k} at ({x:.4g}, {y:.4g}) lies on element '{e.name}'; move the"
-                        f" ball off it"
+                        f"{path}: floor_balls: {what} at ({x:.4g}, {y:.4g}) lies on element '{e.name}'; move the"
+                        f" {what.rsplit(' ', 1)[0]} off it"
                     )
 
 
