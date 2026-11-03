@@ -81,20 +81,21 @@ def model_view(world, include_world: bool = False) -> dict:
            "root_mover": body_mover.get(world.robot_body, -1),   # the robot body's index in `movers` (-1: not a mover)
            "com": [float(v) for v in d.subtree_com[world.robot_body]]}   # the robot's CG in the world (the CG marker)
     if include_world:
-        out["world_geoms"] = _world_geoms(world, d, root, ms)
+        out["world_geoms"] = _world_geoms(world, d, root, ms, meshes, remap)
         out["movable"] = world.movable_objects()
     return out
 
 
-def _world_geoms(world, d, root: int, ms) -> list[dict]:
+def _world_geoms(world, d, root: int, ms, meshes: list[dict], remap: dict[int, int]) -> list[dict]:
     """The field: every geom outside the robot's body tree, as {name, type, size, pos, quat, rgba}.
 
     `type` is plane (size = [half_x, half_y]), box (size = [half_x, half_y, half_z]), cylinder (size = [radius,
     half_height, 0]), sphere (size = [radius, 0, 0]), capsule (size = [radius, half_length, 0]) or ellipsoid
     (size = 3 semi-axes). `pos`/`quat` (w, x, y, z) are world-frame at the start pose; `name` is "" for unnamed geoms.
     `mover` indexes the view's `movers` (-1: static); `lpos`/`lquat` are the geom's pose in its mover's frame
-    (identity for static geoms and for geom movers). Mesh and
-    height-field geoms are skipped."""
+    (identity for static geoms and for geom movers). A range piece's mesh geoms (a coral's slices: bodies `ball.<i>`)
+    are `mesh`, `mesh` indexing the view's `meshes` (added to `meshes` and `remap`, shared with the robot's); other
+    mesh and height-field geoms are skipped."""
     m = world.model
     body_mover = {mv.id: i for i, mv in enumerate(ms) if mv.kind == "body"}
     geom_mover = {mv.id: i for i, mv in enumerate(ms) if mv.kind == "geom"}
@@ -103,19 +104,31 @@ def _world_geoms(world, d, root: int, ms) -> list[dict]:
         if int(m.body_rootid[m.geom_bodyid[g]]) == root:
             continue
         kind = _TYPES.get(int(m.geom_type[g]))
-        if kind is None or kind == "mesh":      # hfields and the like have no simple drawing; meshes are robot-only
+        b = int(m.geom_bodyid[g])
+        if kind is None:        # hfields and the like have no simple drawing
             continue
+        idx = None
+        if kind == "mesh":      # a range piece's (the robot's are model_view's own); the field's are left out
+            if not (mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, b) or "").startswith("ball."):
+                continue
+            did = int(m.geom_dataid[g])
+            if did not in remap:
+                remap[did] = len(meshes)
+                meshes.append(_mesh(m, did))
+            idx = remap[did]
         size = [float(v) for v in m.geom_size[g]]
         if kind == "plane":
             size = size[:2]
-        b = int(m.geom_bodyid[g])
         if b in body_mover:
             mover, lpos, lquat = body_mover[b], [float(v) for v in m.geom_pos[g]], [float(v) for v in m.geom_quat[g]]
         else:       # a movable static geom is its own mover; the rest of the field never moves
             mover, lpos, lquat = geom_mover.get(g, -1), [0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]
-        out.append({"name": mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g) or "", "type": kind, "size": size,
-                    "pos": [float(v) for v in d.geom_xpos[g]], "quat": _quat(d.geom_xmat[g]),
-                    "rgba": [float(v) for v in m.geom_rgba[g]], "mover": mover, "lpos": lpos, "lquat": lquat})
+        geom = {"name": mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g) or "", "type": kind, "size": size,
+                "pos": [float(v) for v in d.geom_xpos[g]], "quat": _quat(d.geom_xmat[g]),
+                "rgba": [float(v) for v in m.geom_rgba[g]], "mover": mover, "lpos": lpos, "lquat": lquat}
+        if idx is not None:
+            geom["mesh"] = idx
+        out.append(geom)
     return out
 
 

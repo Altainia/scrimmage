@@ -123,7 +123,7 @@ class Feeder:
         if not len(f):
             return False
         gap = np.linalg.norm(b._qpos[f, :3] - np.array(self.stations[k].release), axis=1)
-        return bool((gap < 2.0 * b.r).any())
+        return bool((gap < 2.0 * b.radius[f]).any())
 
     # ------------------------------------------------------------------------------------------------ reports
 

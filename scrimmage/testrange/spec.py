@@ -274,6 +274,16 @@ class Range:
             return self.ball_preset
         return self.disc_preset if self.disc is not None else self.kinds[self.default_kind].preset
 
+    @property
+    def piece_kind(self) -> str:
+        """The name of the kind `piece` is (the shooter's, and the robot's slots'): the first ball kind, else the
+        first disc kind, else the default."""
+        for form in ("ball", "disc"):
+            name = next((k.name for k in self.kinds.values() if k.form == form), None)
+            if name is not None and (self.ball if form == "ball" else self.disc) is not None:
+                return name
+        return self.default_kind
+
 
 # ---------------------------------------------------------------------------------------------------- parsing
 

@@ -115,8 +115,8 @@ class RangeRuntime:
         balls = self.balls
         balls.clear()
         if s["floor_balls"]:
-            for i, (x, y) in enumerate(self.range.floor_balls):
-                balls.put(i, (float(x), float(y), balls.rest_z), BALL_BITS)
+            for i, (x, y) in enumerate(self.range.floor_balls):     # each at its kind's rest height and turn
+                balls.put(i, (float(x), float(y), balls.rest_z_of(i)), BALL_BITS, quat=balls.rest_quat(i))
         if s["start"] is not None:
             self.world.set_robot_pose(*self.range.starts[s["start"]])
         if self.shooter is not None:     # its clock restarts with the world's
@@ -259,6 +259,6 @@ class RangeRuntime:
         return [log_dict(b) for b in self.balls.log]
 
     def ball_poses(self) -> np.ndarray:
-        """(k, 7) x, y, z and quaternion of the balls in play."""
+        """(k, 7) x, y, z and quaternion of the balls and discs in play (not the rigid pieces)."""
         b = self.balls
-        return self.world.data.qpos[b._q[b.field]]
+        return self.world.data.qpos[b._q[b.field & (b.ball_form | b.disc_form)]]

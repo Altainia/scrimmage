@@ -186,6 +186,9 @@ def parse_shooter(cfg: dict, built, cfg_dir: Path | None) -> ShooterConfig:
         raise _err("needs a [range]: the shooter shoots the range's balls, so add a [range] (see the range files) or "
                    "remove [shooter]")
     rng = built.range
+    if rng.ball is None and rng.disc is None:
+        raise ValueError(f"the robot's [shooter] needs a ball or disc on the field; this field's pieces are: "
+                         f"{', '.join(k.label for k in rng.kinds.values())}")
     kind = sec.get("kind", "ball")
     if kind not in SHOOTER_KINDS:
         raise _err(f"kind must be \"ball\" (a stock launcher part) or \"disc\" (a stock disc_shooter part), not "
