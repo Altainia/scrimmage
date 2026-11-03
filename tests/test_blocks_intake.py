@@ -111,4 +111,5 @@ def test_the_intake_spread_picks_up_the_center_ball(tmp_path):
         rows = {row["placement"]: row for row in csv.DictReader(f)}
     assert list(rows) == ["6 in right", "on the center line", "6 in left"]
     assert rows["on the center line"]["picked up"] == "yes", rows
-    assert sum(json.loads((folder / "spread.json").read_text(encoding="utf-8"))["picked"]) >= 1
+    # only the center ball: a ball wedged on the bin outside its box is stuck, never "held" (ruling P26)
+    assert json.loads((folder / "spread.json").read_text(encoding="utf-8"))["picked"] == [False, True, False]

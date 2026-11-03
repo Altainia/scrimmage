@@ -362,7 +362,7 @@ def _tiny():
                             ball_of_geom=lambda g: of_geom[g], position=lambda i: d.qpos[q:q + 3],
                             velocity=lambda i: v, clearance=lambda i: float(d.qpos[q + 2]) - 0.05)
     world = SimpleNamespace(model=m, data=d, robot_body=m.body("robot").id, test_range=SimpleNamespace(balls=balls))
-    out = Outcomes(world, SimpleNamespace(inside=np.zeros(1, bool), _hopper=[]), standin=False)
+    out = Outcomes(world, SimpleNamespace(inside=np.zeros(1, bool), hopper=[], round=np.ones(1, bool)), standin=False)
     out.track(0, "feeder", 0.0)
 
     def put(x, z):
@@ -415,7 +415,7 @@ def test_a_held_floor_piece_counts_as_picked_up(held_grab):
     assert 1.0 < row["t_outcome"] < result.t_end
 
 
-def test_a_held_piece_by_a_body_not_in_the_list_is_missed(tmp_path):
+def test_a_held_piece_by_a_body_not_in_the_list_is_stuck_not_in(tmp_path):
     """Held by the jaws, but only the grabber's base is where a piece should end up: it didn't make it in. At rest on
     the student's part, it is stuck in the robot, as before."""
     _, _, result = run_grab(tmp_path, hopper=["grabber.base"], floor=True)

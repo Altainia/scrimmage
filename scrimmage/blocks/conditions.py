@@ -78,7 +78,11 @@ class Watch:
         self.piece_names: dict[str, str] = {}               # a piece's body name -> what a student reads ("coral 1")
         if tr is not None and not one_round_kind(tr.range.kinds):
             self.piece_names = {n: tr.balls.piece_name(i) for i, n in enumerate(self._ball_names)}
-        self._hopper = list(program.hopper or [])
+        self.hopper = list(program.hopper or [])             # where a piece should end up (the test's hopper)
+        # (balls,) True for each ball or disc: only a rigid piece counts as in when a hopper body holds it (ruling
+        # P26: a ball wedged on a hopper body outside its box is stuck, as always)
+        self.round = np.array([tr.range.kinds[str(k)].form != "rigid" for k in tr.balls.kind], bool) \
+            if tr is not None and self._balls else np.zeros(len(self._balls), bool)
         self.outcomes = None                                # the runner's piece tracker (made_it_in reads it)
         self._sides: dict[str, set[int]] = {}
         self._boxes: dict[str, tuple[int, np.ndarray, np.ndarray]] = {}
@@ -96,8 +100,9 @@ class Watch:
         self.held = HeldTracker(world, self)                # the pieces held, by each part a held condition names
         for by in _held_by(program.blocks):
             self.held.track(by)
-        for by in self._hopper:                             # and by each hopper body: a piece one holds is in
-            self.held.track(by, hopper=True)
+        if not self.round.all():                            # and by each hopper body: a rigid piece one holds is in
+            for by in self.hopper:
+                self.held.track(by, hopper=True)
         self.inside = self.hopper_mask()                    # hopper_mask at the last update (feeds.py reads it)
         self._read_tilt()
 
@@ -139,7 +144,7 @@ class Watch:
             else:
                 self.hanging.discard(name)
         self.inside = self.hopper_mask()
-        self.held.update(float(d.time), self.inside if self._hopper else None)
+        self.held.update(float(d.time), self.inside | self.round if self.hopper else None)
 
     def _read_tilt(self) -> None:
         zz = float(self.data.xmat[self.body][8])        # the body's z axis, its world z component
@@ -243,7 +248,7 @@ class Watch:
         inside = np.zeros(len(self._balls), bool)
         if not self._balls:
             return inside
-        for name in self._hopper:
+        for name in self.hopper:
             b, lo, hi = self._box(name)
             local = (d.xpos[self._balls] - d.xpos[b]) @ d.xmat[b].reshape(3, 3)
             inside |= np.all((local >= lo) & (local <= hi), axis=1)

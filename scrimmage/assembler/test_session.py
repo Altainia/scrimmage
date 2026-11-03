@@ -103,23 +103,23 @@ def station_starter(pal: dict | None) -> list[Block]:
 
 def grabber_starter(pal: dict | None) -> list[Block]:
     """The starter blocks for a robot with a grabber on a field with rods (the reef): the grabber is the part of its
-    first body named like a grabber's. Spin each of that part's motors whose joint is named like a jaw (CLOSE_WORDS)
-    at 4 V, closing the grab (positive volts close, as the reef example's jaws do), and wait 1 s; when the part has
-    one other hinge motor (an arm), move it to -30 degrees to lift the piece (held means off the carpet); wait until
-    any piece is held by the part (giving up after 10 s), then expect it held throughout a 2 s wait. Empty without
-    rods or such a body."""
+    first body named like a grabber's, else its first part named like one (as standin_config sends both to the reef).
+    Spin each of that part's motors whose joint is named like a jaw (CLOSE_WORDS) at 4 V, closing the grab (positive
+    volts close, as the reef example's jaws do), and wait 1 s; when the part has one other hinge motor (an arm), move
+    it to -30 degrees to lift the piece (held means off the carpet); wait until any piece is held by the part (giving
+    up after 10 s), then expect it held throughout a 2 s wait. Empty without rods or such a part."""
     pal = pal or {}
-    grabbers = [b for b in pal.get("bodies") or [] if _grabby(b.rsplit(".", 1)[-1])]
+    grabbers = [b.split(".", 1)[0] for b in pal.get("bodies") or [] if _grabby(b.rsplit(".", 1)[-1])]
+    grabbers += [p for p in pal.get("parts") or [] if _grabby(p)]
     if not pal.get("rods") or not grabbers:
         return []
-    part = grabbers[0].split(".", 1)[0]
+    part = grabbers[0]
     mine = [m for m in pal.get("motors") or [] if m["kind"] != "wheel" and m["name"].startswith(part + ".")]
     jaws = [m["name"] for m in mine if any(w in m["name"].rsplit(".", 1)[-1].lower() for w in CLOSE_WORDS)]
     arms = [m["name"] for m in mine if m["kind"] == "hinge" and m["name"] not in jaws]
     held = Cond("held", {"piece": ANY_PIECE, "by": part})
     close = [Block("spin", {"motor": j, "volts": GRABBER_CLOSE_VOLTS}) for j in jaws]
-    if close:
-        close.append(Block("wait", {"seconds": GRABBER_CLOSE_S}))
+    close.append(Block("wait", {"seconds": GRABBER_CLOSE_S}))
     if len(arms) == 1:
         close.append(Block("move", {"joint": arms[0], "to": GRABBER_LIFT_DEG, "unit": "deg"}))
     return [*close,

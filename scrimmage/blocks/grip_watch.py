@@ -15,8 +15,8 @@ A held piece may miss its contact for one step (a contact MuJoCo drops for a ste
 in a row, at the first.
 
 The tracker follows every piece in play that touches a part a condition names, so `any` (None) costs no more than a
-named piece; and every hopper body, which counts a piece it holds as in (feeds.py), skipping the pieces in a hopper
-box. When a held piece stops being held it keeps when, how and what kind it was (`lost`):
+named piece; and every hopper body, which counts a rigid piece it holds as in (feeds.py), skipping the balls, discs
+and pieces in a hopper box. When a held piece stops being held it keeps when, how and what kind it was (`lost`):
 - "was set down on <name>": its lowest point came within HELD_CLEAR of something that isn't the robot (named by the
   ray that found it: a field element, a piece, the carpet);
 - "slipped out of": it stopped touching the part, or it moves relative to it mostly downward (falling out of the
@@ -98,7 +98,7 @@ class HeldTracker:
 
     def update(self, t: float, boxed=None) -> None:
         """After a physics step at t (after Watch.update recorded its contacts). `boxed`: (balls,) True for each piece
-        inside a hopper body's box now (Watch.hopper_mask), or None."""
+        a hopper-only name skips now (inside a hopper body's box, or a ball or disc), or None."""
         self.lost_now: float | None = None
         if not self._geoms or self.balls is None:
             return

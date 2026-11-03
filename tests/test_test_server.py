@@ -893,6 +893,15 @@ def test_a_grabber_on_a_field_with_rods_starts_by_waiting_for_a_hold():
     assert [block_json(b) for b in starter_blocks(pal)] == want
     no_rods = {**pal, "rods": []}
     assert grabber_starter(no_rods) == [] and starter_blocks(no_rods) == station_starter(no_rods)
+    # a part named like a grabber, its bodies plainly named (standin_config sends it to the reef): that part, and the
+    # 1 s wait though it has no jaw-like motor
+    claw = {"bodies": ["drive.chassis", "claw.base", "claw.left"], "parts": ["claw", "drive"], "rods": ["branch_l2"],
+            "stations": ["coral_station"], "motors": [{"name": "claw.lift", "kind": "hinge"}]}
+    by_claw = {"held": {"piece": "any", "by": "claw"}}
+    assert [block_json(b) for b in starter_blocks(claw)] == [
+        {"do": "wait", "seconds": 1.0}, {"do": "move", "joint": "claw.lift", "to": -30.0, "unit": "deg"},
+        {"do": "wait_until", "until": by_claw, "timeout": 10.0},
+        {"do": "expect", "that": by_claw, "throughout": True}, {"do": "wait", "seconds": 2.0}]
     no_grabber = {**pal, "bodies": ["drive.chassis", "lift.arm"]}
     assert grabber_starter(no_grabber) == [] and starter_blocks(no_grabber) == station_starter(no_grabber)
 

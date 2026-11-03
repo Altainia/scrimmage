@@ -4,8 +4,10 @@ The runner tracks each piece a station feeds (and, later, a floor piece a spread
 every physics step. A piece's outcome is where it is when the run ends:
 
 - **in**: its center is inside a hopper body's box (Watch.hopper_mask), the robot's ball path took it in (its
-  ledger state is `robot`), or a hopper body holds it (grip_watch.py's HeldTracker: the Watch has it follow every
-  hopper body). The test's hopper is where a piece should end up, a grabber's jaws as much as a bin.
+  ledger state is `robot`), or, for a rigid piece (not a ball or disc), a hopper body holds it (grip_watch.py's
+  HeldTracker: the Watch has it follow every hopper body). The test's hopper is where a piece should end up, a
+  grabber's jaws as much as a bin. A ball keeps the box rule alone (ruling P26): one wedged on a hopper body outside
+  its box is stuck, not held.
 - **stuck**: it touches a robot body that counts, its center outside every hopper body, and has been at rest for at
   least STUCK_S. At rest on the robot means its speed relative to the robot is below balls.AT_REST_SPEED, where
   v_rel = v_ball - (v_robot + w_robot x (p_ball - p_robot)), so a piece wedged on a moving robot still counts. On a
@@ -101,7 +103,8 @@ class Outcomes:
         j = int(m.body_jntadr[world.robot_body])
         self._robot_q = int(m.jnt_qposadr[j]) if j >= 0 else None
         self._robot_v = int(m.jnt_dofadr[j]) if j >= 0 else None
-        self._hopper = set(watch._hopper)                # where a piece should end up: a box, or a hold by one
+        self._hopper = set(watch.hopper)                 # where a piece should end up: a box, or a hold by one
+        self._round = watch.round                        # balls and discs: the box rule only (ruling P26)
         self.pieces: list[_Piece] = []
         self._t: float | None = None
 
@@ -192,7 +195,8 @@ class Outcomes:
             return "in", "", pc.t_gone
         if pc.now_in:
             return "in", "", pc.t_in
-        held = self.watch.held.holders(pc.ball) & self._hopper if self._hopper and state == BallState.FIELD else ()
+        held = (self.watch.held.holders(pc.ball) & self._hopper
+                if self._hopper and state == BallState.FIELD and not self._round[pc.ball] else ())
         if held:
             return "in", "", min(self.watch.held.since(pc.ball, by) for by in held)
         # stuck before bounced out (controller ruling R5): a piece that bounced out of the hopper and came to rest on
