@@ -162,7 +162,6 @@ class _Names:
         self.stations = set(p["stations"])
         self.hopper = list(program.hopper or []) if program is not None else []
         self.stock = {}                     # station -> its stock after the test's setup (None: no stock)
-        rng = world.parts.range if world.parts is not None else None
         if rng is not None:
             # only the field's own stations: a name it doesn't have is reported by problems() and leaves the others'
             # settings in force

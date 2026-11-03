@@ -78,6 +78,13 @@ def test_a_slanted_coral_on_a_slanted_rod():
     assert seated_depth(rod, CORAL, center, flipped)[0] / IN == pytest.approx(6.0)
 
 
+def test_a_coral_threaded_from_the_base_end_counts_only_the_rod_it_covers():
+    """A rod free at its base end: a coral 1.0 in onto it from below reads 1.0 in, not fully seated."""
+    d, could = seated_depth(PEG, CORAL, _low_end_at(1.0 * IN - CORAL_L), EYE)
+    assert d / IN == pytest.approx(1.0) and could / IN == pytest.approx(4.0)
+    assert seated_words(d, could) == "only 1.0 in on: could be knocked off"
+
+
 def test_review_focus_1_lying_across_or_on_the_end_is_empty():
     pos_across = np.array([0.0, 0.0, 4 * IN + 0.5 * IN + 2.25 * IN])          # lying across the peg's tip
     assert seated_depth(PEG, CORAL, pos_across, ACROSS) is None
@@ -106,7 +113,8 @@ def _world(tmp_path, text: str) -> World:
 
 
 def branch_world(tmp_path) -> World:
-    """A 35 degree branch, 11 in long, off a post, as the reef's L2 (a coral on the floor, far off)."""
+    """A 35 degree branch, 11 in long, off a post, as the reef's L2 (its friction too; a coral on the floor, far
+    off)."""
     tip = ", ".join(f"{v:.6f}" for v in BRANCH_TIP)
     return _world(tmp_path, f'''
 [range]
@@ -130,6 +138,7 @@ kind = "rod"
 base = [12.0, 4.0, 0.6]
 tip = [{tip}]
 diameter_in = 1.66
+friction = 0.4
 ''')
 
 
@@ -144,7 +153,8 @@ def test_a_coral_dropped_onto_a_branch_is_seated_and_rests_on_it(tmp_path):
     assert not placed.rests_on(None, "branch")                         # not yet at rest for half a second
     step(w, 2.0, placed)
     depth, could = placed.seated("branch")
-    assert 6 * IN < depth <= could == pytest.approx(11 * IN)          # it slid further down
+    assert could == pytest.approx(11 * IN)
+    assert depth / IN == pytest.approx(10.2, abs=0.3)                  # it slid down until its rim met the post
     assert placed.seated("branch", 0) == (depth, could) and placed.seated("post") is None
     assert placed.rests_on(None, "branch") and placed.rests_on(0, "branch")
     assert not placed.rests_on(None, "post") and not placed.rests_on(None, ON_PIECE)

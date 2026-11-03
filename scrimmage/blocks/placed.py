@@ -19,7 +19,9 @@ THROUGH_DEG), the stretch of the rod the hole spans (s(E) = (E - B) . u, between
 empty, and at both ends of that stretch the hole's axis is within the effective inner radius of the rod's axis: an
 end of the hole on the rod is checked where it is; an end past the rod's tip or base where the tip or base is inside
 the hole (so a coral longer than its branch, its low end against the post, is on it). Then the depth is how far the
-hole has passed over the tip, L - min s(E+-), clipped to 0..could, where `could` (how far it could go) is the
+hole has passed over the rod, the length of the stretch of rod inside it (min(max s, L) - max(min s, 0): from the
+tip, L - min s(E+-), for a piece put on over the tip; a piece threaded on from a free base end, or hanging past it,
+counts only the rod it covers), clipped to 0..could, where `could` (how far it could go) is the
 smaller of L and the hole's length. Otherwise it has no depth (None: a piece lying across a rod, one resting on the
 rod's end without the rod in its hole, a solid piece): the `seated.<rod>` signal is empty then (NaN in a run's
 signals, null once read back as JSON), and a seated check says the piece "isn't on" the rod. It is measured whenever
@@ -69,7 +71,7 @@ def seated_depth(rod, kind, pos: np.ndarray, rot: np.ndarray) -> tuple[float, fl
         if float(np.linalg.norm(off)) > r_in:
             return None
     could = min(length, hole.length)
-    return float(np.clip(length - lo, 0.0, could)), float(could)
+    return float(np.clip(min(hi, length) - max(lo, 0.0), 0.0, could)), float(could)
 
 
 def seated_words(depth: float, could: float) -> str:
@@ -193,7 +195,8 @@ class Placed:
         return f"it has rested only {self._acc.get((i, on), 0.0):.1f} s"
 
     def _read(self) -> dict[str, dict[int, tuple[float, float]]]:
-        """Every rod's seated depths now, by piece (read once per moment)."""
+        """Every rod's seated depths now, by piece. Read once per sim time and kept: a piece moved (Balls.place) without
+        a physics step after it still reads its old depth."""
         t = float(self.data.time)
         if t != self._seen_t:
             self._seen_t = t
