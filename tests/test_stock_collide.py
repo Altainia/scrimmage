@@ -137,18 +137,30 @@ def test_collide_on_roller_moves_a_ball():
     assert moved[True, 1.0] > 0.3 and moved[True, -1.0] < -0.3
 
 
-@pytest.mark.parametrize("role, cfg", [
-    ("stage", lambda: _with(shooter_cfg(), "feeder")),
-    ("intake", lambda: _with(shooter_cfg(), "intake")),
-    ("launcher", lambda: shooter_cfg(launcher={"collide": True})),
-    ("launcher", lambda: _disc_cfg()),
-])
-def test_collide_shooter_stage_errors(role, cfg):
-    part = {"stage": "feeder", "intake": "intake"}.get(role) or cfg()["shooter"]["part"]
+def test_collide_shooter_intake_errors():
+    """Review Focus 5, as ruled: only the [shooter]'s intake roller is refused, since it would push the floor balls
+    its zone collects."""
     with pytest.raises(ValueError) as e:
-        World(cfg(), None)
-    assert str(e.value) == (f"{part} has collide = true but is the [shooter]'s {role}; the ball path moves those "
+        World(_with(shooter_cfg(), "intake"), None)
+    assert str(e.value) == ("intake has collide = true but is the [shooter]'s intake; the ball path moves those "
                             "balls, so leave collide off")
+
+
+def test_colliding_launcher_and_stage_still_shoot():
+    """A colliding launcher (a turret launcher under a trench) and a colliding stage build, and a preloaded ball
+    still runs the ball path and launches: the balls they hold are parked, and a launched ball clears the robot."""
+    cfg = _with(shooter_cfg(launcher={"collide": True, "hood": "fixed", "hood_angle": 50.0,
+                                      "ids": {"shooter": "PWM:2"}},
+                            range={"preload": 2}), "feeder")
+    w = World(cfg, None)
+    m = w.model
+    assert ROBOT in _bits(m, "launcher.wheel") and ROBOT in _bits(m, "feeder.wheel")
+    w.set_robot_pose(1.6, 4.035, 0.0)
+    drive(w, 1.0, p2=0.6)                       # spin up
+    drive(w, 2.0, p2=0.6, p5=1.0, p6=1.0)       # feed
+    rt = w.test_range
+    assert rt.balls.fired
+    assert any(log.launcher_status == "launched" for log in rt.balls.log)
 
 
 def test_collide_on_a_part_off_the_ball_path_is_fine():
@@ -162,7 +174,3 @@ def _with(cfg: dict, part: str) -> dict:
     next(p for p in cfg["part"] if p["name"] == part)["collide"] = True
     return cfg
 
-
-def _disc_cfg() -> dict:
-    from test_range_disc_shooter import disc_cfg
-    return disc_cfg(part={"collide": True})

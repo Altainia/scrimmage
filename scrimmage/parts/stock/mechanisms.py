@@ -26,7 +26,9 @@ def _count_param(doc: str, default: int) -> Param:
 
 
 COLLIDE = Param("collide", "", False, "its geoms touch the field, game pieces and a partner robot (never the "
-                "robot's own parts)", kind="bool")
+                "robot's own parts). Drawing-only geoms never collide: the launcher's hood arc, a disc shooter's "
+                "guide plates, and a push cylinder's barrel (a push cylinder touches nothing even with collide on)",
+                kind="bool")
 
 
 # ---------------------------------------------------------------- elevator
