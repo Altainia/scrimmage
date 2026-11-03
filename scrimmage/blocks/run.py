@@ -39,7 +39,12 @@ from the first block on, so the run's counts and outcome include it.
 A failed `held` check says when the piece was lost and how (grip_watch.py), and what was commanded in the
 SLIP_LOOKBACK_S before: each joint a `spin` started or a `move` was moving (until it got there), and a `drive` or
 `turn` while under way ("the coral slipped out of claw at 2.3 s while claw.arm was moving"), or that the piece was
-never held. That sentence carries its own time, and a lost piece's moment is kept in `marks` for the replay.
+never held. That sentence carries its own time, and a lost piece's moment is kept in `marks` for the replay. A failed
+`rests_on` check says why when the element carries the piece ("the coral doesn't rest on shelf (a robot body still
+touches it)"); a failed `seated` check says the piece isn't on the rod, or how far it is ("the coral is seated only
+0.8 in on branch_l2 (could be knocked off)" under placed.py's KNOCK_OFF_SHARE of how far it could go, else "the coral
+is seated 2.0 in of 4.0 in on branch_l2, less than 3 in"). Each `seated.<rod>` signal is the deepest piece's depth on
+that rod in inches, NaN while none is on it.
 
 A run ends with one status: "finished" (every block played), "check failed", "timed out" (a wait until, a move, a
 drive or a turn), "tipped over" (the robot body's up axis more than TIP_DEG from vertical), "walked off" (the climb
@@ -68,6 +73,7 @@ from .drive import STEER_TIMEOUT, drivetrain
 from .feeds import SETTLE_MAX_S, Outcomes, counts, is_standin, made_it_in, sentence
 from .grip_watch import SLIP_LOOKBACK_S, default_word
 from .palette import ALL_MOTORS, ANY_HOOK, ANY_PIECE, NEXT_BAR, palette, problems
+from .placed import KNOCK_OFF_SHARE, seated_words
 from .program import (DRIVE_TIMEOUT, DRIVE_VOLTS, MOVE_TIMEOUT, REPEAT_MAX, WAIT_TIMEOUT, Program,
                       TestFileError)
 from .spread import NO_BALL, rest_of, spread_ball, start_pose
@@ -86,7 +92,7 @@ MOVING_SPEED = 0.1        # m/s: the robot going across the floor faster than th
 _VERBS = {"passes": ("passing", "to pass"), "goes": ("going", "to go"), "tilts": ("tilting", "to tilt"),
           "touches": ("touching", "to touch"), "reaches": ("reaching", "to reach"), "hangs": ("hanging", "to hang"),
           "are": ("being", "to be"), "is": ("being", "to be"), "made": ("having made", "to have made"),
-          "is held": ("being held", "to be held")}
+          "is held": ("being held", "to be held"), "rests": ("resting", "to rest")}
 
 
 @dataclass
@@ -202,6 +208,7 @@ class TestRun:
         kinds = {j["name"]: j["kind"] for j in pal["joints"]}
         self.drivetrain = drivetrain(world, self.motors)
         self.signal_names = list(pal["signals"])
+        self._seated = {f"seated.{r}": r for r in pal["rods"]}     # a seated signal -> its rod
         self._qadr = {n: int(m.jnt_qposadr[m.joint(n).id]) for n in kinds}
         self._slide = {n: k == "slide" for n, k in kinds.items()}
         self.feeder = world.test_range.feeder if world.test_range is not None else None
@@ -417,6 +424,9 @@ class TestRun:
                 row[name] = watch.tilt
             elif name == "hook_load":
                 row[name] = float(watch.climb.get("climb.hook_load", 0.0))
+            elif name in self._seated:                  # inches; NaN while no piece is on the rod
+                got = watch.placed.seated(self._seated[name])
+                row[name] = got[0] / IN if got is not None else math.nan
             elif name.endswith(".current") and name[:-8] in self.motors:
                 row[name] = float(self.motors[name[:-8]].current)
             else:
@@ -680,6 +690,8 @@ class TestRun:
             return f"the robot wasn't hanging from {bar(a['bar'])}"
         if k == "held":
             return self._not_held(a)
+        if k in ("rests_on", "seated"):
+            return self._not_placed(k, a)
         return f"the robot wasn't hanging at {a['level']}"           # level
 
     def _not_held(self, a: dict) -> str:
@@ -695,6 +707,24 @@ class TestRun:
         what = named or f"the {kind}"
         lost = f"{how} {by}" if how in ("slipped out of", "slid in") else how
         return f"{what} {lost} at {t:.1f} s while {self._moving(t)}"
+
+    def _not_placed(self, k: str, a: dict) -> str:
+        """How a rests_on or seated check failed: "the coral doesn't rest on shelf (a robot body still touches it)";
+        "the coral isn't on branch_l2", "the coral is seated only 0.8 in on branch_l2 (could be knocked off)", or,
+        on but short of what was asked, "the coral is seated 2.0 in of 4.0 in on branch_l2, less than 3 in"."""
+        watch = self.watch
+        i, on = watch.piece_index(a["piece"]), a["on"]
+        what = watch.piece_names.get(a["piece"], a["piece"]) if i is not None else f"the {default_word(watch.kinds)}"
+        if k == "rests_on":
+            why = watch.placed.why_not(i, on)
+            return f"{what} doesn't rest on {on}" + (f" ({why})" if why else "")
+        got = watch.placed.seated(on, i)
+        if got is None:
+            return f"{what} isn't on {on}"
+        depth, could = got
+        if depth < KNOCK_OFF_SHARE * could:
+            return f"{what} is seated only {depth / IN:.1f} in on {on} (could be knocked off)"
+        return f"{what} is {seated_words(depth, could)} on {on}, less than {a['at_least_in']:g} in"
 
     def _moving(self, t: float) -> str:
         """What was commanded (moved, spun or stopped) in the SLIP_LOOKBACK_S before t, most recent first, then

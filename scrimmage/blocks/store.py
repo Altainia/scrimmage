@@ -30,6 +30,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import math
 import re
 import shutil
 import struct
@@ -205,12 +206,19 @@ def _write_signals(path: Path, signals: dict) -> None:
             w.writerow([repr(float(v)) for v in row])
 
 
-def _read_signals(path: Path) -> dict[str, list[float]]:
+def _read_signals(path: Path) -> dict[str, list[float | None]]:
+    """Each signal's samples; an empty sample (NaN: a seated depth while no piece is on the rod) is None, as JSON
+    carries it (JSON has no NaN, and the browser's JSON.parse refuses one)."""
     rows = list(csv.reader(io.StringIO(path.read_text(encoding="utf-8"))))
     if not rows:
         return {}
     names, body = rows[0], rows[1:]
-    return {n: [float(r[i]) for r in body] for i, n in enumerate(names)}
+    return {n: [_sample(r[i]) for r in body] for i, n in enumerate(names)}
+
+
+def _sample(text: str) -> float | None:
+    v = float(text)
+    return None if math.isnan(v) else v
 
 
 def _seed(folder: Path):

@@ -21,6 +21,10 @@ step, and the plain words that name them in a run's outcome.
 - `level`: on a range that scores climbs, the climb monitor's scoring level (`climb.level`) is this one.
 - `held`: a game piece (`any` for any piece in play) is held by a robot part or body: off whatever is under it,
   touching the part and moving with it, for HELD_S (grip_watch.py's HeldTracker, `Watch.held`).
+- `rests_on`: a game piece rests on a field element (or on another piece, `a piece`): the element carries at least
+  half its weight, it is at rest and no robot geom touches it, for REST_S (placed.py's Placed, `Watch.placed`).
+- `seated`: a hollow game piece is on a rod, its hole passed over the rod's tip by at least `at_least_in` inches (the
+  depth read to one decimal, as a student reads it; placed.py's seated_depth).
 
 The words name pieces as a student knows them: any piece by the field's kind ("a coral"; "a ball" on a field of one
 ball or disc kind, as always; "a piece" on a mixed field or when the kinds aren't known), and a named piece by its
@@ -45,6 +49,7 @@ from ..testrange.spec import _one_round_kind as one_round_kind
 from .feeds import made_it_in
 from .grip_watch import HeldTracker, default_word
 from .palette import ANY_BAR, ANY_HOOK, ANY_PIECE, NEXT_BAR
+from .placed import Placed
 
 HANG_S = 0.1            # s: the hooks carry a quarter of the robot's weight this long to count as hanging
 HANG_SHARE = 0.25       # of the robot's weight
@@ -98,8 +103,10 @@ class Watch:
         self._f6 = np.zeros(6)
         self._pairs: set[tuple[int, int]] = set()           # (robot geom, field geom) touching at the last update
         self.held = HeldTracker(world, self)                # the pieces held, by each part a held condition names
-        for by in _held_by(program.blocks):
-            self.held.track(by)
+        for c in _conds(program.blocks, "held"):
+            self.held.track(c.args["by"])
+        # what the pieces rest on, and their seated depths (contacts followed only for a rests_on condition)
+        self.placed = Placed(world, rests=bool(_conds(program.blocks, "rests_on")))
         if not self.round.all():                            # and by each hopper body: a rigid piece one holds is in
             for by in self.hopper:
                 self.held.track(by, hopper=True)
@@ -145,6 +152,7 @@ class Watch:
                 self.hanging.discard(name)
         self.inside = self.hopper_mask()
         self.held.update(float(d.time), self.inside | self.round if self.hopper else None)
+        self.placed.update(float(d.time))
 
     def _read_tilt(self) -> None:
         zz = float(self.data.xmat[self.body][8])        # the body's z axis, its world z component
@@ -303,20 +311,23 @@ class Watch:
             return bar is not None and bar in self.hanging
         if k == "held":
             return self.held.held(self.piece_index(a["piece"]), a["by"])
+        if k == "rests_on":
+            return self.placed.rests_on(self.piece_index(a["piece"]), a["on"])
+        if k == "seated":
+            got = self.placed.seated(a["on"], self.piece_index(a["piece"]))
+            return got is not None and round(got[0] / IN, 1) >= a["at_least_in"]
         if k == "level":
             rank = int(self.climb.get("climb.level", 0))
             return 0 < rank <= len(self._levels) and self._levels[rank - 1] == a["level"]
         raise ValueError(f"unknown condition {k!r}")
 
 
-def _held_by(blocks) -> set[str]:
-    """The parts and bodies the blocks' held conditions name, through repeat bodies."""
-    out = set()
+def _conds(blocks, kind: str) -> list:
+    """The blocks' conditions of `kind`, through repeat bodies."""
+    out = []
     for b in blocks:
-        for v in b.args.values():
-            if getattr(v, "kind", None) == "held":
-                out.add(v.args["by"])
-        out |= _held_by(b.body)
+        out += [v for v in b.args.values() if getattr(v, "kind", None) == kind]
+        out += _conds(b.body, kind)
     return out
 
 
@@ -373,4 +384,9 @@ def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names
         return f"the robot hangs at {a['level']}"
     if k == "held":
         return f"{piece(a['piece'])} is held by {a['by']}"
+    if k == "rests_on":
+        return f"{piece(a['piece'])} rests on {a['on']}"
+    if k == "seated":
+        at = a["at_least_in"]
+        return f"{piece(a['piece'])} is seated {f'at least {at:g} in ' if at else ''}on {a['on']}"
     raise ValueError(f"unknown condition {k!r}")

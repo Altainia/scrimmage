@@ -4,7 +4,7 @@ The palette lists every name a block can pick, as the world names them: the robo
 in degrees, a slide in inches, a drive wheel is a `wheel`), its bodies and parts, its hooks, the field's bars,
 elements, rods and game pieces, other surfaces a touch can name (`targets`: the carpet, the walls) and climb levels,
 whether it can drive and how (`drive_kind`: a tank or swerve drive, as drive.py finds them) and the signals a chart
-can show.
+can show (`seated.<rod>` for each rod, in inches, when a piece kind of the field has a hole).
 Every list is sorted by name except `levels`, which keeps the range's climb order (lowest first), so a picker reads the
 way the robot climbs. `pieces` are the field's game pieces (the floor balls), not the balls parked in the robot's
 slots.
@@ -24,12 +24,13 @@ from ..terrain.climb import robot_hooks
 from ..testrange.spec import BALL_CHOICE_RANGES, RangeError, load_range
 from ..testrange.station import OVERRIDE_KEYS, with_overrides
 from .drive import drivetrain
+from .placed import ON_PIECE
 from .spread import NO_BALL, floor_ball, spread_ball
 
 NEXT_BAR = "next bar"     # a hanging_from or touch target: the lowest bar above every bar hung from so far
 ANY_BAR = "any bar"       # a touch target: any of the field's bars
 ANY_HOOK = "hook"         # a touch's robot side: any of the robot's hooks
-ANY_PIECE = "any"         # a piece_in's or held's piece: any game piece
+ANY_PIECE = "any"         # a piece_in's, held's, rests_on's or seated's piece: any game piece
 ALL_MOTORS = "all"        # a stop's motor: every motor
 
 
@@ -106,6 +107,9 @@ def palette(world, hooks: list[str]) -> dict:
     signals = ["tilt", *motors, *(f"{n}.current" for n in motors)]
     if hook_list:
         signals.append("hook_load")
+    rods = sorted(layout.rods) if layout is not None else []
+    if rng is not None and any(k.hole is not None for k in rng.kinds.values()):
+        signals += [f"seated.{r}" for r in rods]                   # inches, empty while no piece is on it
     dt = drivetrain(world, driven)
     stations = sorted(rng.stations, key=lambda st: st.name) if rng is not None else []
     ball = floor_ball(world)
@@ -117,7 +121,7 @@ def palette(world, hooks: list[str]) -> dict:
         "hooks": hook_list,
         "bars": bars,
         "elements": elements,
-        "rods": sorted(layout.rods) if layout is not None else [],     # the field's rods (a reef's branches)
+        "rods": rods,                       # the field's rods (a reef's branches)
         "pieces": pieces,
         "targets": _targets(world, bar_set | set(elements) | set(pieces)),
         "levels": list(rule.levels) if rule is not None else [],      # lowest first, as the range lists them
@@ -150,6 +154,10 @@ class _Names:
         self.robot = self.bodies | set(p["parts"]) | set(p["hooks"])
         self.bars = set(p["bars"])
         self.pieces = set(p["pieces"])
+        self.elements = set(p["elements"])
+        self.rods = set(p["rods"])
+        rng = world.parts.range if world.parts is not None else None
+        self.hollow = rng is not None and any(k.hole is not None for k in rng.kinds.values())
         self.field = set(world.contact_names()) | set(p["elements"]) | self.bars
         self.stations = set(p["stations"])
         self.hopper = list(program.hopper or []) if program is not None else []
@@ -214,14 +222,21 @@ def _cond_problems(n: _Names, c) -> list[str]:
         elif a["field"] != ANY_BAR and a["field"] not in n.field and a["field"] not in n.pieces:
             out.append(f'nothing called "{a["field"]}" on this field')
         return out
-    if c.kind in ("piece_in", "held"):
+    if c.kind in ("piece_in", "held", "rests_on", "seated"):
         out = []
+        if c.kind == "rests_on" and a["on"] != ON_PIECE and a["on"] not in n.elements:
+            out.append(f'no element "{a["on"]}" on this field')
+        if c.kind == "seated" and a["on"] not in n.rods:
+            out.append(f'no rod "{a["on"]}" on this field')
+        elif c.kind == "seated" and not n.hollow:
+            out.append("this field's pieces have no hole to go on a rod")
         if c.kind == "piece_in" and a["body"] not in n.bodies:
             out.append(f'no body "{a["body"]}" on this robot any more')
         if c.kind == "held" and a["by"] not in n.robot:
             out.append(f'no body or part "{a["by"]}" on this robot (held by)')
         if a["piece"] == ANY_PIECE:
-            if not n.pieces:
+            # a piece a station feeds can be placed too (rests_on, seated)
+            if not n.pieces and not (c.kind in ("rests_on", "seated") and n.stations):
                 out.append("this field has no game pieces")
         elif a["piece"] not in n.pieces:
             out.append(f'no game piece "{a["piece"]}" on this field')

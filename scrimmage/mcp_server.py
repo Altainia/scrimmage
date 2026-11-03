@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import signal
 import sys
@@ -567,11 +568,16 @@ def _test_file(path: str) -> Path:
 
 
 def _signal_summary(signals: dict) -> dict:
+    """Each signal's min, max and final value; an empty sample (NaN: a seated depth while no piece is on its rod) is
+    left out of min and max, and a final one is None (JSON has no NaN)."""
     out = {}
     for name, values in signals.items():
         if name == "t" or not values:
             continue
-        out[name] = {"min": min(values), "max": max(values), "final": values[-1]}
+        have = [v for v in values if not math.isnan(v)]
+        final = values[-1]
+        out[name] = {"min": min(have, default=None), "max": max(have, default=None),
+                     "final": None if math.isnan(final) else final}
     return out
 
 

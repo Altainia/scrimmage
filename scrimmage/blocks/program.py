@@ -50,7 +50,7 @@ UNITS = ("deg", "in", "m")
 DO_KINDS = ("spin", "move", "drive", "stop", "wait", "wait_until", "repeat", "expect",
             "start_feeding", "stop_feeding", "feed_one", "turn")
 COND_KINDS = ("joint", "touch", "tilt", "piece_in", "hanging_from", "level", "in_hopper", "station_empty",
-              "made_it_in", "held")
+              "made_it_in", "held", "rests_on", "seated")
 DRIVE_DIRECTIONS = ("forward", "back", "left", "right")
 _OPPOSITE = {"back": "forward", "left": "right", "right": "left"}     # where a minus distance goes instead
 SPREAD_AXES = ("offset_in", "distance_in", "angle_deg", "rotation_deg", "tip_deg")
@@ -193,6 +193,17 @@ def _cond(v, where: str) -> Cond:
         _keys(t, ("robot", "field"), where)
         return Cond(kind, {"robot": _text(t.get("robot"), where, "robot"),
                            "field": _text(t.get("field"), where, "field")})
+    if kind == "rests_on":
+        _keys(t, ("piece", "on"), where)
+        return Cond(kind, {"piece": _text(t.get("piece", "any"), where, "piece"),
+                           "on": _text(t.get("on"), where, "on")})
+    if kind == "seated":
+        _keys(t, ("piece", "on", "at_least_in"), where)
+        at = _num(t.get("at_least_in", 0.0), where, "at_least_in")
+        if at < 0:
+            raise TestFileError(f"{where}: at_least_in can't be negative")
+        return Cond(kind, {"piece": _text(t.get("piece", "any"), where, "piece"),
+                           "on": _text(t.get("on"), where, "on"), "at_least_in": at})
     if kind == "held":
         _keys(t, ("piece", "by"), where)
         return Cond(kind, {"piece": _text(t.get("piece", "any"), where, "piece"),
