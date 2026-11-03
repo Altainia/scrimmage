@@ -1,0 +1,32 @@
+[test]
+robot = "arm-standin.toml"
+chart = ["lift.extension", "air.psi"]
+
+[[block]]
+do = "expect"
+that = { pressure = { side = "stored", above = 60.0 } }
+throughout = true
+
+[[block]]
+do = "repeat"
+times = 10
+
+[[block.body]]
+do = "set_cylinder"
+cylinder = "lift"
+to = "extend"
+
+[[block.body]]
+do = "wait_until"
+until = { joint = { name = "arm.pivot", above = 60.0, unit = "deg" } }
+timeout = 3.0
+
+[[block.body]]
+do = "set_cylinder"
+cylinder = "lift"
+to = "retract"
+
+[[block.body]]
+do = "wait_until"
+until = { joint = { name = "arm.pivot", below = 5.0, unit = "deg" } }
+timeout = 3.0

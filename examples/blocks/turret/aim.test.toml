@@ -1,0 +1,85 @@
+[test]
+robot = "turret-standin.toml"
+chart = ["aim_error", "turret.turn", "launcher.spin"]
+
+[[block]]
+do = "move"
+joint = "launcher.hood"
+to = 40.0
+unit = "deg"
+
+[[block]]
+do = "spin"
+motor = "launcher.spin"
+volts = 11.0
+
+[[block]]
+do = "aim"
+turret = "turret"
+at = "hub_blue"
+
+[[block]]
+do = "wait"
+seconds = 1.0
+
+[[block]]
+do = "expect"
+that = { aimed = { turret = "turret", at = "hub_blue", within_deg = 5.0 } }
+throughout = true
+
+[[block]]
+do = "spin"
+motor = "hopper_floor.spin"
+volts = 8.0
+
+[[block]]
+do = "spin"
+motor = "feeder.spin"
+volts = 8.0
+
+[[block]]
+do = "wait"
+seconds = 0.4
+
+[[block]]
+do = "stop"
+motor = "feeder.spin"
+
+[[block]]
+do = "stop"
+motor = "hopper_floor.spin"
+
+[[block]]
+do = "wait"
+seconds = 2.0
+
+[[block]]
+do = "expect"
+that = { scored = { goal = "hub_blue", at_least = 3 } }
+
+[[block]]
+do = "turn"
+degrees = 90.0
+
+[[block]]
+do = "wait_until"
+until = { aimed = { turret = "turret", at = "hub_blue", within_deg = 2.0 } }
+timeout = 2.0
+
+[[block]]
+do = "spin"
+motor = "hopper_floor.spin"
+volts = 8.0
+
+[[block]]
+do = "spin"
+motor = "feeder.spin"
+volts = 8.0
+
+[[block]]
+do = "wait"
+seconds = 2.0
+
+[[block]]
+do = "expect"
+that = { scored = { goal = "hub_blue", at_least = 6 } }
