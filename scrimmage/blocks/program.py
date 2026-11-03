@@ -51,13 +51,14 @@ AIMED_DEG = 2.0          # degrees: aimed's default within_deg
 CYLINDER_TO = ("extend", "retract", "off")     # set_cylinder's states ("off": C9, by the valve's kind)
 CYLINDER_IS = ("extended", "retracted")
 PRESSURE_SIDES = ("stored", "working")
+MAX_CLEARS_IN = 19.6     # in: clears' at_least_in; clearance is measured out to 0.5 m (19.7 in), clearance.py
 
 UNITS = ("deg", "in", "m")
 DO_KINDS = ("spin", "move", "drive", "stop", "wait", "wait_until", "repeat", "expect",
             "start_feeding", "stop_feeding", "feed_one", "turn", "aim", "set_cylinder")
 COND_KINDS = ("joint", "touch", "tilt", "piece_in", "hanging_from", "level", "in_hopper", "station_empty",
               "made_it_in", "held", "rests_on", "seated", "scored", "aimed", "cylinder", "pressure",
-              "element")
+              "element", "clears")
 DRIVE_DIRECTIONS = ("forward", "back", "left", "right")
 _OPPOSITE = {"back": "forward", "left": "right", "right": "left"}     # where a minus distance goes instead
 SPREAD_AXES = ("offset_in", "distance_in", "angle_deg", "rotation_deg", "tip_deg")
@@ -222,6 +223,15 @@ def _cond(v, where: str) -> Cond:
         _keys(t, ("element", "above", "below"), where)
         side = _one_of(t, ("above", "below"), where)
         return Cond(kind, {"element": _text(t.get("element"), where, "element"), side: _num(t[side], where, side)})
+    if kind == "clears":
+        _keys(t, ("element", "at_least_in"), where)
+        at = _num(t.get("at_least_in"), where, "at_least_in")
+        if at <= 0:
+            raise TestFileError(f"{where}: at_least_in must be more than 0")
+        if at > MAX_CLEARS_IN:
+            raise TestFileError(f"{where}: at_least_in can be at most {MAX_CLEARS_IN:g}: clearance is measured out "
+                                "to 0.5 m (19.7 in)")
+        return Cond(kind, {"element": _text(t.get("element"), where, "element"), "at_least_in": at})
     if kind == "tilt":
         _keys(t, ("above", "below"), where)
         side = _one_of(t, ("above", "below"), where)

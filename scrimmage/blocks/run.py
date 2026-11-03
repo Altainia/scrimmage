@@ -74,6 +74,12 @@ the lowest and when, how long the compressor ran and when the tanks first fell b
 A field with hinged or sliding elements has each one's `element.<name>` signal: a hinged element's angle (deg) or a
 sliding one's travel (in), 0 at rest; the `element` condition reads it.
 
+Clearance (clearance.py): a test that names a field element in a `clears` condition or as `clearance.<element>` in
+its chart measures the robot's clearance to it after every step (Watch.closest), and only then. The chart's
+`clearance.<element>` is in inches, NaN while nothing is within 0.5 m; the run's `clearance` is each element's
+smallest clearance and when (clearance_lines words it: "closest to trench: 0.8 in at 3.1 s", "trench: never within
+20 in"). A failed `clears` check says the clearance then ("but it was 0.42 in").
+
 A run ends with one status: "finished" (every block played), "check failed", "timed out" (a wait until, a move, a
 drive or a turn), "tipped over" (the robot body's up axis more than TIP_DEG from vertical), "walked off" (the climb
 runner's "hook walked off" rule, scrimmage/climb/run.py's WalkOff), "time limit", "repeat limit" (a repeat until
@@ -97,6 +103,7 @@ from ..movers import mover_poses, movers
 from ..protocol import HalState
 from ..testrange.build import BALL_BITS
 from .aim import TURN, aim_error, aim_target
+from .clearance import NEVER_WITHIN_IN, PREFIX, inches, named
 from .conditions import IN, Watch, _conds, describe, turret_words
 from .drive import STEER_TIMEOUT, drivetrain
 from .feeds import SETTLE_MAX_S, Outcomes, counts, is_standin, made_it_in, sentence
@@ -121,7 +128,8 @@ MOVING_SPEED = 0.1        # m/s: the robot going across the floor faster than th
 _VERBS = {"passes": ("passing", "to pass"), "goes": ("going", "to go"), "tilts": ("tilting", "to tilt"),
           "touches": ("touching", "to touch"), "reaches": ("reaching", "to reach"), "hangs": ("hanging", "to hang"),
           "are": ("being", "to be"), "is": ("being", "to be"), "made": ("having made", "to have made"),
-          "is held": ("being held", "to be held"), "rests": ("resting", "to rest")}
+          "is held": ("being held", "to be held"), "rests": ("resting", "to rest"),
+          "clears": ("clearing", "to clear")}
 
 
 @dataclass
@@ -149,6 +157,9 @@ class RunResult:
     # below_working_t (s; None while the tanks stayed at or above the working pressure), the tanks' gauge psi; and
     # working_psi, the regulator's set pressure, which air_lines' warning names
     air: dict | None = None
+    # each element the test measures (a clears condition or a clearance.<element> chart signal): {min_in, t}, the
+    # smallest clearance (in) and when, both None when it was never within 0.5 m; None when the test measures none
+    clearance: dict[str, dict] | None = None
 
     @property
     def passed(self) -> bool:
@@ -269,6 +280,13 @@ def goal_lines(result: RunResult) -> list[str]:
     return [f"scored {n} in {name}" for name, n in (result.goals or {}).items() if n]
 
 
+def clearance_lines(result: RunResult) -> list[str]:
+    """The run's closest approaches as lines, one per element it measured: "closest to trench: 0.8 in at 3.1 s", or
+    "trench: never within 20 in" (none for a run that measured none)."""
+    return [f"{e}: never within {NEVER_WITHIN_IN} in" if c["min_in"] is None else
+            f"closest to {e}: {c['min_in']:.1f} in at {c['t']:.1f} s" for e, c in (result.clearance or {}).items()]
+
+
 def air_lines(result: RunResult) -> list[str]:
     """The run's air as lines (none without cylinders): "air: 120 psi at the start, 84 psi at the end, lowest 81 psi
     at 14.2 s; the compressor ran 9.0 s", and when the tanks fell below the working pressure, a warning (Review
@@ -350,6 +368,9 @@ class TestRun:
         self._double = {c["name"]: c["double"] for c in pal["cylinders"]}
         self._extension = {f"{c}.extension": c for c in self._double}     # an extension signal -> its cylinder
         self._elements = {f"element.{e['name']}": e["name"] for e in pal["moving_elements"]}   # signal -> element
+        # a clearance signal -> its element: only the elements the test names (Watch.closest measures the same)
+        self._clearance = {f"{PREFIX}{e}": e for e in named(program, pal["elements"])}
+        self.signal_names += list(self._clearance)
         self._qadr = {n: int(m.jnt_qposadr[m.joint(n).id]) for n in kinds}
         self._slide = {n: k == "slide" for n, k in kinds.items()}
         self.feeder = world.test_range.feeder if world.test_range is not None else None
@@ -517,6 +538,7 @@ class TestRun:
             result.goals = dict(tr.counts()["goals"])
         if self.air is not None:
             result.air = dict(self.air.out)
+        result.clearance = watch.closest.result()
         return result
 
     def _see_air(self) -> None:
@@ -622,6 +644,8 @@ class TestRun:
                 row[name] = self.world.pneumatics.extension(self._extension[name]) / IN
             elif name in self._elements:                # deg or in
                 row[name] = watch.element_value(self._elements[name])
+            elif name in self._clearance:               # in; NaN while nothing is within 0.5 m
+                row[name] = inches(watch.closest.now[self._clearance[name]])
             elif name.endswith(".current") and name[:-8] in self.motors:
                 row[name] = float(self.motors[name[:-8]].current)
             else:
@@ -918,6 +942,11 @@ class TestRun:
             unit = watch.units[a["element"]]
             now = round(watch.element_value(a["element"]), 1) + 0.0        # + 0.0: a panel at rest never reads "-0"
             return f"expected {a['element']} {side} {_amount(a[side], unit)}, but it was {_amount(now, unit)}"
+        if k == "clears":
+            c = watch.closest.now[a["element"]]
+            now = f"{c / IN:.2f} in" if math.isfinite(c) else f">{NEVER_WITHIN_IN} in"
+            return (f"expected the robot to clear {a['element']} by at least {_amount(a['at_least_in'], 'in')}, "
+                    f"but it was {now}")
         if k == "station_empty":
             left = self.feeder.left(a["station"]) if self.feeder is not None else None
             return f"{a['station']} wasn't empty" + (f" ({left} left)" if left else "")

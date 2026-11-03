@@ -35,6 +35,9 @@ step, and the plain words that name them in a run's outcome.
   psi.
 - `element`: a hinged field element's angle (degrees) or a sliding one's travel (inches), 0 at rest, is above or below
   N: its `element.<name>` signal.
+- `clears`: the robot keeps at least `at_least_in` inches from a field element: clearance.py's clearance, between
+  every robot geom that collides and the element's geoms, measured after every step (`Watch.closest`) for the
+  elements the test names; nothing within 0.5 m counts as clear.
 
 The words name pieces as a student knows them: any piece by the field's kind ("a coral"; "a ball" on a field of one
 ball or disc kind, as always; "a piece" on a mixed field or when the kinds aren't known), and a named piece by its
@@ -58,6 +61,7 @@ from ..terrain.climb import hold_geoms, robot_hooks
 from ..testrange.elements import moving_units, moving_value
 from ..testrange.spec import _one_round_kind as one_round_kind
 from .aim import aim_error
+from .clearance import Closest, named
 from .feeds import made_it_in
 from .grip_watch import HeldTracker, default_word
 from .palette import ANY_BAR, ANY_GOAL, ANY_HOOK, ANY_PIECE, NEXT_BAR
@@ -88,6 +92,8 @@ class Watch:
         self._levels = list(rng.climb.levels) if rng is not None and rng.climb is not None else []
         self.units = moving_units(rng.elements) if rng is not None else {}    # moving element -> "deg" or "in"
         self._moving = {name: layout.moving[name] for name in self.units}     # moving element -> its qpos address
+        # the clearance to each element a clears condition or the chart names, after every step
+        self.closest = Closest(world, named(program, [e.name for e in rng.elements] if rng is not None else []))
         self._hook_geoms = {name: set(gs) for name, gs in robot_hooks(m, self.body).items()}
         for name in program.hooks:
             self._hook_geoms[name] = set(self._body_geoms(name))
@@ -168,6 +174,7 @@ class Watch:
         self.inside = self.hopper_mask()
         self.held.update(float(d.time), self.inside | self.round if self.hopper else None)
         self.placed.update(float(d.time))
+        self.closest.update(float(d.time))
 
     def _read_tilt(self) -> None:
         zz = float(self.data.xmat[self.body][8])        # the body's z axis, its world z component
@@ -338,6 +345,8 @@ class Watch:
         if k == "element":
             v = self.element_value(a["element"])
             return v > a["above"] if "above" in a else v < a["below"]
+        if k == "clears":
+            return self.closest.now[a["element"]] >= a["at_least_in"] * IN
         if k == "station_empty":
             return bool(self.world.test_range.feeder.empty(a["station"]))
         if k == "made_it_in":
@@ -442,6 +451,8 @@ def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names
         side = "above" if "above" in a else "below"
         unit = (units or {}).get(a["element"])
         return f"{a['element']} is {side} {_amount(a[side], unit) if unit else f'{a[side]:g}'}"
+    if k == "clears":
+        return f"the robot clears {a['element']} by at least {_amount(a['at_least_in'], 'in')}"
     if k == "station_empty":
         return f"{a['station']} is empty"
     if k == "made_it_in":

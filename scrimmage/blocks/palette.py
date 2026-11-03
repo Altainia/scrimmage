@@ -8,7 +8,9 @@ a single), other surfaces a touch can name (`targets`: the carpet, the walls) an
 and how (`drive_kind`: a tank or swerve drive, as drive.py finds them) and the signals a chart can show
 (`seated.<rod>` for each rod, in inches, when a piece kind of the field has a hole; with cylinders, `air.psi` (the
 tanks), `air.working_psi` (the regulator's output) and each cylinder's `<name>.extension` in inches; and
-`element.<name>` for each of the field's hinged or sliding elements, `moving_elements`, in its unit).
+`element.<name>` for each of the field's hinged or sliding elements, `moving_elements`, in its unit). A chart can
+also show `clearance.<element>` (in) for any of `elements`; it isn't in `signals`, as a run measures it only when the
+test names it (clearance.py).
 The field's pieces: `piece` (its default kind's preset), `kinds` (each kind's form, whether it is hollow or flat and the
 plain name a student reads, e.g. "coral"), `floor_kinds` (each floor piece's kind), `piece_labels` (what a student
 reads for each floor piece, "coral 2", as the run's sentences name it) and `station_kinds` (each station's), and every
@@ -375,6 +377,8 @@ def _cond_problems(n: _Names, c) -> list[str]:
         known = f"this field's moving elements: {', '.join(n.moving)}" if n.moving else \
             "this field has no moving elements"
         return [f"{a['element']} isn't a moving element; {known}"]
+    if c.kind == "clears" and a["element"] not in n.elements:
+        return [f'no element "{a["element"]}" on this field']
     if c.kind == "station_empty":
         name = a["station"]
         if name not in n.stations:

@@ -37,7 +37,7 @@ import tomlkit
 from ..blocks import store
 from ..blocks.palette import ANY_PIECE, palette, problems
 from ..blocks.program import Block, Cond, TestFileError, block_json, dumps, from_json, load, to_json
-from ..blocks.run import TestRun, air_lines, goal_lines, world_for
+from ..blocks.run import TestRun, air_lines, clearance_lines, goal_lines, world_for
 from ..blocks.spread import NO_BALL, NO_SPREAD, inside_robot, run_spread
 from ..blocks.sweep import MAX_SWEEP, _kind as sweep_kind, run_sweep
 from ..cad.settings import replace_file
@@ -737,13 +737,13 @@ class TestSession:
 
     def run_result(self, run_id: str) -> dict:
         """A kept run's result.json fields plus id, signals and `lines`: its goal counts and air in the sentences
-        `scrimmage test` prints (run.py goal_lines and air_lines; none for a run without them)."""
+        `scrimmage test` prints (run.py goal_lines, air_lines and clearance_lines; none for a run without them)."""
         try:
             out = store.load_result(self.runs_dir, run_id)
         except FileNotFoundError:
             raise SessionError(404, f"no run {run_id} is kept for this test") from None
-        kept = SimpleNamespace(goals=out.get("goals"), air=out.get("air"))
-        out["lines"] = goal_lines(kept) + air_lines(kept)
+        kept = SimpleNamespace(goals=out.get("goals"), air=out.get("air"), clearance=out.get("clearance"))
+        out["lines"] = goal_lines(kept) + air_lines(kept) + clearance_lines(kept)
         return out
 
     def close(self) -> None:
