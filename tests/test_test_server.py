@@ -916,6 +916,19 @@ def test_a_grabber_on_a_field_with_rods_starts_by_waiting_for_a_hold():
         {"do": "expect", "that": by_claw, "throughout": True}, {"do": "wait", "seconds": 2.0}]
     no_grabber = {**pal, "bodies": ["drive.chassis", "lift.arm"]}
     assert grabber_starter(no_grabber) == [] and starter_blocks(no_grabber) == station_starter(no_grabber)
+    # ruling P31: with a grabber, the station starter waits until the grabber holds a piece (it holds one, never 5);
+    # without one, until 5 are in the hopper
+    assert [block_json(b) for b in station_starter(no_rods)] == [
+        {"do": "start_feeding", "station": "coral_station"},
+        {"do": "wait_until", "until": held, "timeout": 20.0},
+        {"do": "stop_feeding", "station": "coral_station"}]
+    assert block_json(station_starter(no_grabber)[1])["until"] == {"in_hopper": {"at_least": 5}}
+
+
+def test_the_reef_states_station_starter_waits_for_the_grabber(tmp_path, test_app):
+    st = _state(test_app(_reef_test(tmp_path)))
+    assert st["station_starter"][1] == {"do": "wait_until", "until": {"held": {"piece": "any", "by": "grabber"}},
+                                        "timeout": 20.0}
 
 
 def test_the_reef_palette_lists_its_rods():

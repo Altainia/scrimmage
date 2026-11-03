@@ -92,30 +92,38 @@ def _field_choices() -> list[dict]:
 
 def station_starter(pal: dict | None) -> list[Block]:
     """The starter blocks for a field with a station: start feeding from the first, wait until 5 pieces are in the
-    hopper (giving up after 20 s), stop feeding. Empty without a station."""
+    hopper (giving up after 20 s), stop feeding. With a grabber (grabber_part's), wait until the grabber holds a piece
+    instead (ruling P31: a grabber holds one piece, never 5). Empty without a station."""
     stations = (pal or {}).get("stations") or []
     if not stations:
         return []
     first = stations[0]
+    grabber = grabber_part(pal)
+    until = Cond("held", {"piece": ANY_PIECE, "by": grabber}) if grabber \
+        else Cond("in_hopper", {"at_least": STARTER_HOPPER_COUNT})
     return [Block("start_feeding", {"station": first}),
-            Block("wait_until", {"until": Cond("in_hopper", {"at_least": STARTER_HOPPER_COUNT}),
-                                 "timeout": STARTER_FEED_TIMEOUT}),
+            Block("wait_until", {"until": until, "timeout": STARTER_FEED_TIMEOUT}),
             Block("stop_feeding", {"station": first})]
 
 
+def grabber_part(pal: dict | None) -> str | None:
+    """The robot's grabber: the part of its first body named like a grabber's, else its first part named like one
+    (as standin_config sends both to the reef); None without one."""
+    pal = pal or {}
+    grabbers = [b.split(".", 1)[0] for b in pal.get("bodies") or [] if _grabby(b.rsplit(".", 1)[-1])]
+    grabbers += [p for p in pal.get("parts") or [] if _grabby(p)]
+    return grabbers[0] if grabbers else None
+
+
 def grabber_starter(pal: dict | None) -> list[Block]:
-    """The starter blocks for a robot with a grabber on a field with rods (the reef): the grabber is the part of its
-    first body named like a grabber's, else its first part named like one (as standin_config sends both to the reef).
-    Spin each of that part's motors whose joint is named like a jaw (CLOSE_WORDS) at 4 V, closing the grab (positive
+    """The starter blocks for a robot with a grabber (grabber_part's) on a field with rods (the reef). Spin each of that part's motors whose joint is named like a jaw (CLOSE_WORDS) at 4 V, closing the grab (positive
     volts close, as the reef example's jaws do), and wait 1 s; when the part has one other hinge motor (an arm), move
     it to -30 degrees to lift the piece (held means off the carpet); wait until any piece is held by the part (giving
     up after 10 s), then expect it held throughout a 2 s wait. Empty without rods or such a part."""
     pal = pal or {}
-    grabbers = [b.split(".", 1)[0] for b in pal.get("bodies") or [] if _grabby(b.rsplit(".", 1)[-1])]
-    grabbers += [p for p in pal.get("parts") or [] if _grabby(p)]
-    if not pal.get("rods") or not grabbers:
+    part = grabber_part(pal)
+    if not pal.get("rods") or part is None:
         return []
-    part = grabbers[0]
     mine = [m for m in pal.get("motors") or [] if m["kind"] != "wheel" and m["name"].startswith(part + ".")]
     jaws = [m["name"] for m in mine if any(w in m["name"].rsplit(".", 1)[-1].lower() for w in CLOSE_WORDS)]
     arms = [m["name"] for m in mine if m["kind"] == "hinge" and m["name"] not in jaws]

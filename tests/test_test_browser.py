@@ -1238,6 +1238,8 @@ def test_add_the_station_blocks_appends_them(test_page, tmp_path):
                     lambda s: s.split("[[block]]")[0] + '[[block]]\ndo = "wait"\nseconds = 0.5\n')
     page, _ = test_page(path=path)
     _open_setup(page)
+    assert page.inner_text("#test-setup .test-setup-starter .hint") == (
+        "Start feeding, wait until 5 pieces are where a piece should end up, stop feeding: added at the end of the test.")
     page.click("#test-add-station-blocks")
     _wait_file(lambda: len(_file_blocks(path)) == 4, path)
     assert [b["do"] for b in _file_blocks(path)] == ["wait", "start_feeding", "wait_until", "stop_feeding"]
@@ -1464,12 +1466,15 @@ def test_setup_grip_writes_the_parts_overlay_and_offers_try_values(test_page, tm
     _wait_file(lambda: _toml(overlay)["body"]["jaw_left"]["grip"] == 1.05, overlay)
     page.wait_for_function("__scrimmageTest.state.palette.grips['grabber.jaw_left'] === 1.05")
     page.wait_for_function(f"document.querySelector(\"{own}\") && document.querySelector(\"{own}\").value === '1.05'")
-    # Try materials…: the whole part first, one jaw on its own too; materials are ticked, not from and to
-    page.click("#test-setup [data-try='grip-grabber.jaw_left']")
+    # Try materials…: one per part (ruling P32); every pad first, then each pad alone; materials are ticked, not from
+    # and to
+    assert page.locator("#test-setup [data-try^='grip-']").count() == 1
+    page.click("#test-setup [data-try='grip-grabber']")
     page.wait_for_selector("#test-sweep-dialog[open]")
-    assert [c["target"] for c in page.evaluate("__scrimmageTest.sweepFor")] == [{"grip": "grabber"},
-                                                                                {"grip": "grabber.jaw_left"}]
+    assert [c["target"] for c in page.evaluate("__scrimmageTest.sweepFor")] == [
+        {"grip": "grabber"}, {"grip": "grabber.jaw_left"}, {"grip": "grabber.jaw_right"}]
     assert page.is_hidden("#test-sweep-range") and page.is_hidden("#test-sweep-list")
+    assert page.inner_text("#test-sweep-limit") == "The test runs once for each material you tick; your files don't change."
     boxes = page.eval_on_selector_all("#test-sweep-materials input[type=checkbox]", "bs => bs.map(b => b.value)")
     assert boxes == page.evaluate("__scrimmageTest.state.palette.grip_materials.map(m => m[0])")
     for b in boxes:
@@ -1481,10 +1486,14 @@ def test_setup_grip_writes_the_parts_overlay_and_offers_try_values(test_page, tm
     page.wait_for_function("__scrimmageTest.state.sweeps.length === 1 && __scrimmageTest.state.running === null",
                            timeout=180000)
     assert sent[0] == {"target": {"grip": "grabber"}, "values": ["nitrile", "grip-tape"]}
-    # the floor spread offers the coral's tip, and says what tip and turn mean for it
+    # the floor spread offers the coral's tip, and says what tip and facing mean for it (ruling P30)
     assert page.query_selector("#test-spread-tip_deg-on")
-    assert "Tip (degrees, 0 lying, 90 standing)" in page.inner_text("#test-setup .test-setup-floor")
+    floor = page.inner_text("#test-setup .test-setup-floor")
+    assert "Tipped up (degrees: 0 lying, 90 standing)" in floor and "Facing (degrees)" in floor
     assert "standing on end" in page.inner_text("#test-setup .test-setup-floor .hint")
+    # ruling P31: with a grabber, the station blocks wait until it holds a piece
+    assert page.inner_text("#test-setup .test-setup-starter .hint") == (
+        "Start feeding, wait until the grabber holds a piece, stop feeding: added at the end of the test.")
 
 
 MIXED_FIELD = """[range]
@@ -1529,6 +1538,12 @@ def test_a_mixed_field_shows_each_stations_kind(test_page, tmp_path):
     assert page.query_selector("#test-piece") is None                     # this field keeps its own pieces
     for key in ("tip_deg", "turn_deg", "spread_tip_deg", "spread_turn_deg"):
         assert page.query_selector(f"#test-station-feeder-{key}"), key
+    # ruling P30: tip and facing, each with how much it varies, then the extra tumble last
+    labels = page.eval_on_selector_all("#test-setup [data-station='feeder'] .test-setup-grid > :is(label, .test-setup-label)",
+                                       "ls => ls.map(l => l.textContent)")
+    assert labels[-5:] == ["Tipped up (degrees: 0 lying, 90 standing)", "Tipped up varies by (± degrees)",
+                           "Facing (degrees from the feed direction)", "Facing varies by (± degrees)",
+                           "Extra tumble (± degrees)"]
     page.fill("#test-station-feeder-tip_deg", "90")
     page.press("#test-station-feeder-tip_deg", "Enter")
     _wait_file(lambda: _toml(path).get("setup", {}).get("station", {}).get("feeder", {}).get("tip_deg") == 90, path)
@@ -1546,7 +1561,7 @@ def test_the_pieces_setup_meets_wcag_aa(test_page, tmp_path, scheme):
     page.wait_for_selector("#test-spread-tip_deg-on")
     page.wait_for_timeout(200)
     assert page.evaluate(f"({CONTRAST_JS}).check(document.querySelector('#test-setup'))") == []
-    page.click("#test-setup [data-try='grip-grabber.jaw_left']")
+    page.click("#test-setup [data-try='grip-grabber']")
     page.wait_for_selector("#test-sweep-dialog[open]")
     page.wait_for_timeout(200)
     assert page.evaluate(f"({CONTRAST_JS}).check(document.querySelector('#test-sweep-dialog'))") == []

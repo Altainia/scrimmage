@@ -431,17 +431,21 @@ const STATION_BOXES = [
   { key: "spread_speed", label: "Speed (± m/s)", unit: "m/s", upTo: 0.4 },
   { key: "spread_position", label: "Release box (± in)", unit: "in", axes: ["x", "y", "z"], scale: IN, upTo: 2 },
   { key: "spread_rotation_deg", label: "Turned (± degrees)", unit: "°", axes: ["about x", "about y", "about z"], upTo: 90 },
-  // a piece other than a ball's tip and turn (a ball has neither): Try values… goes from and to these
-  { key: "tip_deg", label: "Tip (degrees, 0 lying, 90 standing)", unit: "°", piece: true, from: 0, to: 90 },
-  { key: "turn_deg", label: "Turn (degrees)", unit: "°", piece: true, from: 0, to: 90 },
-  { key: "spread_tip_deg", label: "Tip spread (± degrees)", unit: "°", piece: true, upTo: 30 },
-  { key: "spread_turn_deg", label: "Turn spread (± degrees)", unit: "°", piece: true, upTo: 90 },
 ];
+// a piece other than a ball (ruling P30): its tip and facing (a ball has neither; Try values… goes from and to these
+// two), then the 3-axis spread last, as an extra tumble, so the three can't be mixed up
+const PIECE_BOXES = [
+  { key: "tip_deg", label: "Tipped up (degrees: 0 lying, 90 standing)", unit: "°", from: 0, to: 90 },
+  { key: "spread_tip_deg", label: "Tipped up varies by (± degrees)", unit: "°", upTo: 30 },
+  { key: "turn_deg", label: "Facing (degrees from the feed direction)", unit: "°", from: 0, to: 90 },
+  { key: "spread_turn_deg", label: "Facing varies by (± degrees)", unit: "°", upTo: 90 },
+  { ...STATION_BOXES.at(-1), label: "Extra tumble (± degrees)" },
+];
+const stationBoxes = (piece) => (piece ? [...STATION_BOXES.slice(0, -1), ...PIECE_BOXES] : STATION_BOXES);
 // a flat kind (a disc, a hatch panel) lies flat at a tip of 90: its axis is its face's normal
-const FLAT_TIP = "Tip (degrees, 90 lying flat, 0 on edge)";
-const tipLabel = (kind) => (kind && kind.flat ? FLAT_TIP : "Tip (degrees, 0 lying, 90 standing)");
-const tipWords = (kind) => (kind && kind.flat ? "Tip: 90 is lying flat, 0 standing on its edge."
-  : "Tip: 0 is lying on its side, 90 standing on end.");
+const tipLabel = (kind) => `Tipped up (degrees: ${kind && kind.flat ? "0 on its edge, 90 lying flat" : "0 lying, 90 standing"})`;
+const tipWords = (kind) => (kind && kind.flat ? "Tipped up: 0 is standing on its edge, 90 lying flat."
+  : "Tipped up: 0 is lying on its side, 90 standing on end.");
 const GRABBER = /claw|grabber|gripper|jaw/i;     // test_session.py's GRABBER_WORDS
 // a grip material as its picker shows it (ruling P27): two with the same estimate read the same
 const gripText = ([, label, mu]) => `${label} — ${fmt(mu)}, estimate`;
@@ -454,7 +458,7 @@ const FLOOR_AXES = [
   ["distance_in", "Distance ahead (in)", -12, 12, 3],
   ["angle_deg", "Angle (degrees)", -30, 30, 3],
   ["rotation_deg", "Turned (degrees)", 0, 90, 3],
-  ["tip_deg", "Tip (degrees)", 0, 90, 3],
+  ["tip_deg", "Tipped up (degrees)", 0, 90, 3],
 ];
 // a start's id in words: "at_station" -> "At station"
 const startWords = (id) => { const w = id.replace(/_/g, " "); return w.charAt(0).toUpperCase() + w.slice(1); };
@@ -465,10 +469,12 @@ function floorKind() {
   const k = ball && kinds[ball.kind];
   return k && k.form !== "ball" ? k : null;
 }
-// the floor spread's axes as Setup shows them ([axis, label, ...]): tip for a piece other than a ball only
+// the floor spread's axes as Setup shows them ([axis, label, ...]): for a piece other than a ball, its tip, and its
+// turn read as where it faces (ruling P30, as a station's)
 function floorAxes() {
   const k = floorKind();
-  return FLOOR_AXES.filter(([axis]) => axis !== "tip_deg" || k).map((a) => (a[0] === "tip_deg" ? [a[0], tipLabel(k), ...a.slice(2)] : a));
+  const label = { tip_deg: tipLabel(k), rotation_deg: "Facing (degrees)" };
+  return FLOOR_AXES.filter(([axis]) => axis !== "tip_deg" || k).map((a) => (k && label[a[0]] ? [a[0], label[a[0]], ...a.slice(2)] : a));
 }
 
 // A number box: `blank` (when given) is what an empty box means, and a value equal to it shows empty.
@@ -740,7 +746,8 @@ async function setGrip(body, grip) {
   renderSetupError();
 }
 
-function gripRow(pal, body, i, running) {
+// `first`: the first row of its part, which carries the part's Try materials… (ruling P32: one per part)
+function gripRow(pal, body, i, running, first) {
   const id = `test-grip-${i}`;
   const now = gripShown(pal, body);
   const own = typeof now === "number" || t.gripOwn.has(body);
@@ -784,14 +791,15 @@ function gripRow(pal, body, i, running) {
     row.push(box);
   }
   const part = body.split(".")[0];
-  row.push(h("button", { type: "button", class: "btn btn-small", "data-try": `grip-${body}`, disabled: running,
-    onclick: () => openSweep(gripChoices(pal, body), `${part}'s grip`) }, "Try materials…"));
+  if (first) {
+    row.push(h("button", { type: "button", class: "btn btn-small", "data-try": `grip-${part}`, disabled: running,
+      onclick: () => openSweep(gripChoices(pal, part), `${part}'s grip`) }, "Try materials…"));
+  }
   return [h("label", { for: id, text: body }), h("div", { class: "row" }, ...row)];
 }
 
-// Try materials… for a body: its whole part first (ruling P28), the body on its own second.
-function gripChoices(pal, body) {
-  const part = body.split(".")[0];
+// Try materials… for a part: every pad of it first (ruling P28), then each pad on its own.
+function gripChoices(pal, part) {
   const named = (g) => {
     if (g === null || g === undefined) return "the default friction";
     if (typeof g === "number") return `my own ${fmt(g)}`;
@@ -800,8 +808,11 @@ function gripChoices(pal, body) {
   };
   const pads = Object.keys(pal.grips || {}).filter((b) => b.split(".")[0] === part);
   return [{ label: `Every pad of ${part}: ${pads.map((b) => b.split(".")[1]).join(", ")}`, target: { grip: part }, materials: true },
-    { label: `${body} only`, target: { grip: body }, materials: true, now: named(gripShown(pal, body)) }];
+    ...pads.map((b) => ({ label: `${b} only`, target: { grip: b }, materials: true, now: named(gripShown(pal, b)) }))];
 }
+
+// the station starter waits until the grabber holds a piece (ruling P31: the server's choice, on a robot with one)
+const grabberStarter = (blocks) => (blocks || []).some((b) => b.do === "wait_until" && b.until && "held" in b.until);
 
 // "On the floor: 1 algae, 1 coral" on a field with several kinds (in the kinds' order), else null
 function floorKindsLine(pal) {
@@ -817,7 +828,7 @@ function floorHint() {
   const k = floorKind();
   const what = k ? `the ${k.label}` : "the ball";
   const words = `Run the test with ${what} in front of the robot at each place of a grid, to see which ones it picks up. Tick the axes to spread it over.`;
-  return k ? `${words} ${tipWords(k)} Turned: about the vertical, 0 in line with the robot's path, 90 across it.` : words;
+  return k ? `${words} ${tipWords(k)} Facing: about the vertical, 0 in line with the robot's path, 90 across it.` : words;
 }
 
 function renderSetupError() {
@@ -924,7 +935,8 @@ function renderSetup() {
     parts.push(h("fieldset", { class: "test-setup-grip" },
       h("legend", { text: "Grip" }),
       h("p", { class: "hint", text: "What the pads are made of. Friction values are estimates (UNCALIBRATED); docs/test-tab.md says how to measure yours." }),
-      h("div", { class: "test-setup-grid" }, ...grips.flatMap((b, i) => gripRow(pal, b, i, !!s.running)))));
+      h("div", { class: "test-setup-grid" }, ...grips.flatMap((b, i) => gripRow(pal, b, i, !!s.running,
+        !grips.slice(0, i).some((x) => x.split(".")[0] === b.split(".")[0]))))));
   }
   parts.push(h("fieldset", { class: "test-setup-hooks" },
     h("legend", { text: "Hooks" }),
@@ -964,8 +976,8 @@ function renderSetup() {
       h("legend", { text: `Station: ${name}${several && kind ? ` (${kind.label})` : ""}` }),
       h("p", { class: "hint", text: "How the human player feeds pieces. Each box shows the field's value until you change it; a change is saved in the test. "
         + "Each piece varies by up to ± each spread."
-        + (piece ? ` ${tipWords(kind)} Turn: about the vertical, from the way the station feeds.` : "") }),
-      h("div", { class: "test-setup-grid" }, ...STATION_BOXES.filter((box) => piece || !box.piece)
+        + (piece ? ` ${tipWords(kind)} Facing: about the vertical, from the way the station feeds. Extra tumble turns each piece a little more about each axis.` : "") }),
+      h("div", { class: "test-setup-grid" }, ...stationBoxes(piece)
         .flatMap((box) => stationBox(name, box, chosen[box.key] ?? field[box.key], field[box.key], kind)))));
   }
   if ((pal.stations || []).length) {
@@ -1014,7 +1026,8 @@ function renderSetup() {
   if (s.station_starter && !feeding) {
     parts.push(h("fieldset", { class: "test-setup-starter" },
       h("legend", { text: "Station blocks" }),
-      h("p", { class: "hint", text: "Start feeding, wait until 5 pieces are in the hopper, stop feeding: added at the end of the test." }),
+      h("p", { class: "hint", text: `Start feeding, wait until ${grabberStarter(s.station_starter)
+        ? "the grabber holds a piece" : "5 pieces are where a piece should end up"}, stop feeding: added at the end of the test.` }),
       h("button", { type: "button", id: "test-add-station-blocks", class: "btn btn-small", onclick: addStationBlocks }, "Add the station blocks")));
   }
   if (c) {
@@ -1113,6 +1126,8 @@ function openSweep(choices, what) {
   $("#test-sweep-which-label").textContent = mats ? "Which pads?" : "Which number?";
   $("#test-sweep-range").hidden = mats;
   $("#test-sweep-list-field").hidden = mats;
+  $("#test-sweep-limit").textContent = mats ? "The test runs once for each material you tick; your files don't change."
+    : `Up to ${MAX_SWEEP} values. The test runs once for each; your files don't change.`;
   const list = $("#test-sweep-materials");
   list.hidden = !mats;
   const pal = (t.state && t.state.palette) || {};
