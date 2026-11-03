@@ -78,8 +78,11 @@ def test_the_ledger_steps_as_before():
         got, want = run(), golden[name]
         assert got["counts"] == want["counts"], name
         assert len(got["qpos"]) == len(want["qpos"]), name
-        for q, w in zip(got["qpos"], want["qpos"]):      # within the file's rounding, not across a rounding edge
-            np.testing.assert_allclose(q, w, rtol=0, atol=1e-9, err_msg=name)
+        # Within 1 mm, not the file's 1e-9 rounding: the 2013 discs' flight drifts about 0.2 mm between machines
+        # (CI's Linux runners against the machine that wrote the golden), while a real change in how pieces step
+        # moves them far more and changes the counts, which match exactly.
+        for q, w in zip(got["qpos"], want["qpos"]):
+            np.testing.assert_allclose(q, w, rtol=0, atol=1e-3, err_msg=name)
 
 
 if __name__ == "__main__":
