@@ -6,8 +6,9 @@ elements, rods and game pieces, other surfaces a touch can name (`targets`: the 
 whether it can drive and how (`drive_kind`: a tank or swerve drive, as drive.py finds them) and the signals a chart
 can show (`seated.<rod>` for each rod, in inches, when a piece kind of the field has a hole).
 The field's pieces: `piece` (its default kind's preset), `kinds` (each kind's form, whether it is hollow or flat and the
-plain name a student reads, e.g. "coral"), `floor_kinds` (each floor piece's kind) and `station_kinds` (each station's),
-and every preset Setup's piece picker offers (`piece_presets`: balls and pieces). The grips: `grips`, the grip
+plain name a student reads, e.g. "coral"), `floor_kinds` (each floor piece's kind), `piece_labels` (what a student
+reads for each floor piece, "coral 2", as the run's sentences name it) and `station_kinds` (each station's), and every
+preset Setup's piece picker offers (`piece_presets`: balls and pieces). The grips: `grips`, the grip
 material (parts/grip.py) of each body of a path part that touches anything ("<instance>.<body>" -> a material, a
 number or None for the default friction), and `grip_materials`, the materials a picker offers ([key, label,
 friction estimate]).
@@ -123,6 +124,15 @@ def _spread_kind_name(world) -> str:
     return str(world.test_range.balls.kind[i])
 
 
+def _piece_labels(world, floor_names: list[str]) -> dict:
+    """Each floor piece's body name -> what a student reads for it ("ball 10", "coral 2"), as every sentence names it
+    (balls.piece_name), so a picker never numbers pieces by its sorted list."""
+    tr = getattr(world, "test_range", None)
+    if tr is None:
+        return {}
+    return {name: tr.balls.piece_name(i) for i, name in enumerate(floor_names)}
+
+
 def hook_names(world, hooks: list[str]) -> list[str]:
     """The robot's hooks: the stock climber's (`<inst>.hook<i>`) and the bodies the test names as hooks."""
     return sorted(set(robot_hooks(world.model, world.robot_body)) | set(hooks))
@@ -177,6 +187,7 @@ def palette(world, hooks: list[str]) -> dict:
         "piece_presets": {"balls": sorted(PRESETS["ball"]), "pieces": sorted(PRESETS["piece"])},
         "kinds": _kinds(rng),
         "floor_kinds": dict(zip(floor_names, layout.kinds[:layout.n_floor])) if layout is not None else {},
+        "piece_labels": _piece_labels(world, floor_names),
         "station_kinds": {st.name: st.kind or rng.default_kind for st in stations},
         "grips": _grips(world),
         "grip_materials": [[key, label, mu] for key, (label, mu) in GRIP_MATERIALS.items()],

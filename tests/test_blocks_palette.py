@@ -352,6 +352,32 @@ def test_a_ball_fields_kinds_and_the_plain_field():
     assert plain["piece_presets"]["pieces"] and plain["grip_materials"]
 
 
+def _many_pieces_field(folder, kinds=False):
+    """A field of 12 floor pieces (11 coral after an algae when `kinds`, else 12 algae): more than 10, so a list
+    sorted by name ("ball.10" before "ball.2") numbers them wrong."""
+    at = ", ".join(f"[{4.0 + 0.5 * (k % 6)}, {3.0 + (k // 6)}]" for k in range(12 - kinds))
+    text = 'name = "many"\nball = "2025-algae"\n'
+    if kinds:
+        text += '\n[piece.coral]\npreset = "2025-coral"\n\n[[floor_balls]]\nat = [[3.0, 6.5]]\n'
+    text += f'\n[[floor_balls]]\nat = [{at}]\n' + ('kind = "coral"\n' if kinds else "")
+    path = folder / ("mixed.toml" if kinds else "many.toml")
+    path.write_text("[range]\n" + text + '\n[start.here]\npose = [1.5, 4.0, 0.0]\n', encoding="utf-8")
+    return path
+
+
+def test_piece_labels_name_each_floor_piece_as_the_sentences_do(tmp_path):
+    """More than 10 floor pieces: each body's label is the run's own name for it (balls.piece_name), not its place in
+    the name-sorted list ("ball.10" is ball 10, not ball 2; on a mixed field "ball.10" is coral 10)."""
+    for kinds in (False, True):
+        w = station_world(str(_many_pieces_field(tmp_path, kinds)), "here")
+        pal = palette(w, [])
+        assert len(pal["pieces"]) == 12 and pal["pieces"][2] == "ball.10"
+        assert pal["piece_labels"] == {f"ball.{i}": w.test_range.balls.piece_name(i) for i in range(12)}
+        assert pal["piece_labels"]["ball.10"] == ("coral 10" if kinds else "ball 10")
+        assert pal["piece_labels"]["ball.2"] == ("coral 2" if kinds else "ball 2")
+    assert palette(World(tomllib.loads(new_config("standin")), None), [])["piece_labels"] == {}
+
+
 def test_review_focus_2_a_piece_that_doesnt_fit_is_a_setup_problem():
     """A tote fed from the station field's chute: its release point is too near the wall for the tote's size (a
     setup problem at place [], the file's path left out); a coral fits."""

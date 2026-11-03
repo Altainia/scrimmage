@@ -317,6 +317,30 @@ def test_seated_shows_on_a_field_with_rods_only(test_page):
     assert "cond_seated" not in _flyout_types(page)
 
 
+def test_the_piece_picker_names_more_than_ten_pieces_as_the_sentences_do(test_page, tmp_path):
+    """12 floor pieces: the picker's "ball.10" reads "ball 10" (not its place in the name-sorted list), and on a mixed
+    field "coral 10"; the touch picker's pieces read the same."""
+    from test_blocks_palette import _many_pieces_field
+    page, path = test_page()
+    robot = path.parent / "robot.toml"
+    base = robot.read_text(encoding="utf-8")
+    js = """([type, name]) => {
+      const fl = __scrimmageTest.workspace.getFlyout().getWorkspace();
+      const f = fl.getTopBlocks(true).find(b => b.type === type).getField(name);
+      return Object.fromEntries(f.getOptions(false).map(o => [o[1], o[0]]));
+    }"""
+    for kinds, want in ((False, "ball"), (True, "coral")):
+        field = _many_pieces_field(tmp_path, kinds)
+        robot.write_text(base + f'\n[range]\nfile = "{field.name}"\nstart = "here"\n', encoding="utf-8")
+        page.wait_for_function(f"__scrimmageTest.state.palette && __scrimmageTest.state.palette.pieces.length === 12"
+                               f" && __scrimmageTest.state.palette.piece_labels['ball.10'] === '{want} 10'")
+        labels = page.evaluate(js, ["cond_held", "PIECE"])
+        assert labels["ball.10"] == f"{want} 10" and labels["ball.2"] == f"{want} 2", labels
+        assert labels["ball.11"] == f"{want} 11" and labels["any"] == "any piece", labels
+        touch = page.evaluate(js, ["cond_touch", "FIELD"])
+        assert touch["ball.10"] == f"{want} 10" and touch["ball.2"] == f"{want} 2", touch
+
+
 def _drive_choices(page):
     return page.evaluate("""(() => {
       const fl = __scrimmageTest.workspace.getFlyout().getWorkspace();

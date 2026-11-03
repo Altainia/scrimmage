@@ -60,16 +60,10 @@ const robotSide = () => [...(pal().hooks || []), ...(pal().parts || []), ...(pal
 const fieldSide = () => [...(pal().bars || []), ...(pal().elements || []), ...(pal().pieces || []), ...(pal().targets || [])];
 const has = (xs) => (xs || []).length > 0;
 
-// A floor piece as a student reads it (scrimmage/testrange/balls.py piece_name): "ball 3" on a field of one ball or
-// disc kind, else its kind's plain name and its number among that kind's pieces from 1 ("coral 1"). The value stays
-// the body's name.
+// A floor piece as a student reads it ("ball 10", "coral 2"): the palette's `piece_labels`, the names every sentence uses
+// (scrimmage/testrange/balls.py piece_name). The value stays the body's name.
 function pieceLabel(name) {
-  const p = pal(), kinds = p.kinds || {}, of = p.floor_kinds || {}, names = Object.keys(kinds);
-  if (!(name in of)) return name;
-  const list = p.pieces || [];
-  if (names.length === 1 && kinds[names[0]].form !== "rigid") return `ball ${list.indexOf(name)}`;
-  const same = list.filter((n) => of[n] === of[name]);
-  return `${(kinds[of[name]] || {}).label || of[name]} ${same.indexOf(name) + 1}`;
+  return (pal().piece_labels || {})[name] || name;
 }
 
 const OPTIONS = {
@@ -78,7 +72,7 @@ const OPTIONS = {
   moveJoint: () => choices(motorNames(), "joint"),
   joint: () => choices(jointNames(), "joint"),
   robot: () => choices(robotSide(), "robot", has(pal().hooks) ? ["hook"] : []),
-  field: () => choices(fieldSide(), "field", has(pal().bars) ? ["next bar", "any bar"] : []),
+  field: () => choices(fieldSide(), "field", has(pal().bars) ? ["next bar", "any bar"] : [], pieceLabel),
   body: () => choices(pal().bodies || [], "body"),
   piece: () => choices(pal().pieces || [], "piece", has(pal().pieces) ? ["any"] : [], pieceLabel),
   heldBy: () => choices([...(pal().parts || []), ...(pal().bodies || [])], "robot"),
