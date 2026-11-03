@@ -155,7 +155,7 @@ friction**.
     C = 0.8 dm³/(s·bar), about Cv 0.2, an estimate for FRC's small 5/2 valves (the SMC and Festo kit valves).
   - **Fill step:** each 1 ms step adds the flow and stops at the pressure upstream, so it can't overshoot.
   - **Stability:** every cylinder sub-steps its chambers 10 times per physics step.
-  - **Dead volume:** 1 cm³ at each port.
+  - **Dead volume:** 1 cm³ at each port (5 cm³ after the build: see "Decisions made during the build").
 - **C7 Compressor:** the default is the VIAIR 90C, using AndyMark's bench test of it:
   - **Flow:** 0.88 cfm free air at 0 psi and 7 A, falling to 0.22 cfm at 100 psi and 11 A.
   - **Curve:** straight lines between those points, carried on to 120 psi.
@@ -214,4 +214,88 @@ friction**.
 
 ## Decisions made during the build
 
-(Filled in during the build: each ruling, why, and what it costs if wrong.)
+Each ruling made while building, in the order it was made within its area: what was decided, why, and what it costs
+if it is wrong.
+
+**Turret and aiming**
+- **Wrap-around aiming.** On a turret whose range is more than one turn, *aim* picks the reachable angle that points
+  at the goal nearest the turret's angle now. Under one turn this is the same as C2's clamp. Why: it avoids unwinding
+  the turret for nothing. If wrong: a different choice of which way round to go.
+- **Aim with no motor.** An *aim* on a turret whose motor slot has no ID is a problem sentence before the run (it
+  crashed before). Why: a plain sentence, like a *move* on an unbound joint. If wrong: nothing.
+- **"It stops at …" wording.** The out-of-range sentence ("hub_blue is outside the turret's range (it stops at
+  30°)") only fires on a range under a full turn; the review's "(it stops at 180°)" was an illustration, and a default
+  ±180° turret covers the circle. If wrong: nothing.
+- **What *aimed* reads at a stop.** *aimed* measures where the launcher points (|error| ≤ within), so a goal 1° past a
+  stop, checked within 2°, reads as aimed. Why: C2 read literally. If wrong: a lenient pass at the edge of the range.
+
+**Shooting in the Test tab**
+- **The replay shows the shots.** Goal 2 says so and no task covered it, so Task 10 checked it (it already worked:
+  the launched balls are hidden until launch and then fly). If wrong: a small extra check.
+- **Every motor on a joint is driven.** The Test-tab runner now writes every motor binding on a joint, where it wrote
+  only one per joint before. Why: it was the root cause of slow shots (a launcher's follower got nothing), and a real
+  bug for any joint with several bound motors. If wrong: changed numbers for existing Test-tab runs with multi-motor
+  joints (the suite passes unchanged).
+
+**The pneumatics model**
+- **Air per stroke.** A stroke's air is the swept volume at absolute pressure (it starts empty, at the atmosphere)
+  plus the dead volume at gauge pressure (it starts at one atmosphere), not the plan's gauge-only sum, which
+  undercounts by about 20%. `scrimmage air` uses it. If wrong: a 20% shift in the budget.
+- **Overshoot and the 120 psi rule in the first fix round.** The review's "low tanks can overshoot" and "a switch
+  point above 120 isn't refused" were fixed at once rather than deferred. Why: they broke the plan's constraints (no
+  overshoot; stored ≤ 120). If wrong: one fix round's time.
+- **The budget's number.** The stock cylinder takes about 0.86 L of free air per cycle at 1 cm³ of dead volume (0.889 L
+  at the later 5 cm³); the plan's 0.574 L was an arithmetic slip, and the test computes from the formula. If wrong:
+  nothing.
+- **A Test-tab hook for the compressor.** `PneumaticsRuntime.always_closed_loop` makes the compressor run throughout a
+  Test-tab run (C11). Why: the plan named the behavior but no hook. If wrong: a renamed attribute.
+- **Refill after `reset_robot`.** Putting the robot back without a full reset refills each cylinder's chambers for
+  where its rod is now, keeping the tanks' air. Why: the old air squeezed into the new volumes made a force spike. If
+  wrong: nothing.
+- **Dead volume and armature (Task 9a).** The default dead volume became 5 cm³ per port (the port, its fitting and
+  about 0.3 m of tube; an estimate, UNCALIBRATED), up from C6's 1 cm³, and each cylinder's tendon gets an armature of
+  k_max·dt²/2. Why: a 2 in bore on a light rod went unstable (the rod through its stop, 1700 psi): the air is an
+  explicit spring, and the armature bounds k·dt²/m whatever the load. If wrong: about 0.2 kg of extra inertia along a
+  2 in cylinder's line (0.02 kg on the default).
+- **The extension the air reads.** The air model reads the tendon's length carried forward by this step's motion
+  (`ten_length + dt·(ten_J·qvel)`), with the armature kept. Why: mj_step leaves the length from before it integrated,
+  and an air spring driven from a one-step-old position is unstable at any stiffness. Exact on the free form, first
+  order elsewhere, and cheap. If wrong: a first-order error on curved tendon paths.
+- **Stability test bounds.** The free form may go 3 mm past a stop on the first step (the stop's softness). The push
+  test bounds the fed side's pressure, while the vented side may cushion up to 3 times the working pressure (real
+  compression); its arm is laid out so the cylinder's stroke limits it, within ±1°. The push test asserts that the
+  retract stop holds the arm. If wrong: a looser regression net.
+
+**The cylinder part**
+- **Stiffer end stops.** The tendon and the slide stop with solref [0.002, 1]. Why: the default let 60 psi push the rod
+  2.4 cm past its stroke. If wrong: a slightly stiffer stop than a real cylinder's cushion.
+- **The Robot tab's text box.** The inspector's new "text" parameter kind (the cylinder's `push`) showed a number box;
+  it was fixed in Task 10, outside Task 4's files. If wrong: a wrong input box until then.
+- **The replay's pins.** The model view gives each cylinder its pins as [mover, pos] (mover -1 is the world) and the
+  rod's diameter, as the existing geoms do. If wrong: nothing.
+- **The vec3 box.** The inspector had no box for a three-number parameter (the cylinder's `push_pos`, and the chassis's
+  `com_offset`, which already needed it); Task 10 added it. Why: the push form needs it from the Robot tab. If wrong:
+  a small extra change.
+
+**Robot code**
+- **A disabled robot's solenoids are off.** A single solenoid's cylinder retracts and a double solenoid's holds. Why:
+  that is what FRC hardware does. If wrong: a different hold behavior while disabled.
+- **Hub warnings that reach the student.** A missing or unopened Pneumatic Hub warns once per hub, in the run's notes
+  and the session's warnings, not only in the log. Why: cheap, and it decides whether the student ever sees it. If
+  wrong: one fix round's time.
+- **A Java robot with hub valves and no extension is refused.** It stops at the start with the `pip install ./lockstep`
+  message. Why: its valves could never move. If wrong: a refusal where a warning would do.
+
+**The Test tab**
+- **The air line names the working pressure.** The run's `air` carries `working_psi`, so the warning says the robot's
+  own working pressure. If wrong: nothing.
+- **"off" on an inverted single solenoid retracts.** C9's "off" is about the cylinder, not the coil, and the docs say
+  so. If wrong: a surprise for a student who thinks of "off" as the coil off on an inverted valve.
+
+**Examples**
+- **A 3/4 in bore for the pneumatic arm**, not the plan's 2 in. Why: a 2 in bore spends the tanks in about one cycle
+  (about 4 L per cycle against 4.3 L stored); the README tells the 2 in and 1-1/16 in tries as the lesson. If wrong: a
+  different example cylinder than planned.
+- **The example READMEs' small fixes went into the docs task** (Task 12): the UNCALIBRATED lines in the sample output,
+  plainer wording, and asserts for the times the READMEs state. Why: the docs pass touched them anyway. If wrong:
+  nothing.

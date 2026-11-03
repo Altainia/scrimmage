@@ -21,7 +21,8 @@ TURRET = EXAMPLES / "turret"
 PNEUMATIC = EXAMPLES / "pneumatic"
 
 
-def _parts(path: Path) -> dict:
+def _parts(path: Path) -> tuple[dict, dict]:
+    """The config's raw TOML and its [[part]] tables by name."""
     raw = tomllib.loads(path.read_text(encoding="utf-8"))
     return raw, {p["name"]: p for p in raw["part"]}
 
@@ -59,6 +60,9 @@ def test_turret_example_scores_before_and_after_the_turn(turret):
     assert r.status == "finished", r.outcome
     assert [c["passed"] for c in r.checks] == [True, True, True], r.checks
     assert r.checks[0]["line"].startswith("passed: the turret is aimed at hub_blue within 5° from ")
+    # the README's times: aimed from 1.4 s, 3 scored at 3.8 s, 6 scored at 6.6 s
+    assert [c["t"] for c in r.checks] == [pytest.approx(1.4, abs=0.1), pytest.approx(3.8, abs=0.1),
+                                          pytest.approx(6.6, abs=0.1)]
     assert r.goals == {"hub_blue": 8, "hub_red": 0}         # the README: all 8
     assert goal_lines(r) == ["scored 8 in hub_blue"]
     assert turret["scored_at_turn"] == [4]                  # 4 in before the turn, 4 after
@@ -105,7 +109,10 @@ def test_pneumatic_example_air_lasts_ten_lifts(pneumatic):
     assert pneumatic["lifts"] == 10
     air = r.air
     assert air["below_working_t"] is None
-    assert 65.0 < air["low_psi"] < 69.0                     # the README: lowest 67 psi
+    # the README: 67 psi at the end, lowest 67 psi at 4.1 s; the compressor ran 2.1 s
+    assert air["low_psi"] == pytest.approx(67, abs=0.5) and air["end_psi"] == pytest.approx(67, abs=0.5)
+    assert air["low_t"] == pytest.approx(4.1, abs=0.1)
+    assert air["compressor_s"] == pytest.approx(2.1, abs=0.1)
     assert max(r.signals["lift.extension"]) > 7.9           # the arm's swing uses the whole 8 in. stroke
     assert air_lines(r) == [f"air: 120 psi at the start, {air['end_psi']:.0f} psi at the end, lowest "
                             f"{air['low_psi']:.0f} psi at {air['low_t']:.1f} s; the compressor ran "

@@ -13,10 +13,11 @@ The question the test answers: lift the arm and put it down 10 times in a row. D
 | `arm-standin.toml` | the stand-in box robot with a stock `arm` and a stock `cylinder` (`lift`) pushing it, and a `[pneumatics]` section with the defaults |
 | `cycles.test.toml` | the blocks |
 
-The arm is 0.5 m long. Its pivot is 0.30 m above the chassis's top and points forward. The cylinder has a 3/4 in.
-bore and an 8 in. stroke. It stands almost straight up on the chassis, 0.18 m in front of the pivot, and its rod's end
-is pinned to the arm 0.19 m out from the pivot. Pulled in, the cylinder holds the arm level (0°). Pushed all the way
-out, it lifts the arm to about 76°.
+The arm is 0.5 m long. Its pivot is 0.30 m above the chassis's top and points forward. The cylinder has a 3/4 in. bore
+and an 8 in. stroke. (The bore is the inside diameter of the cylinder's tube, where the air pushes on the piston; the
+stroke is how far the rod moves out; the rod, 1/4 in. here, is the shaft that pushes the arm.) It stands almost straight
+up on the chassis, 0.18 m in front of the pivot, and its rod's end is pinned to the arm 0.19 m out from the pivot.
+Pulled in, the cylinder holds the arm level (0°). Pushed all the way out, it lifts the arm to about 76°.
 
 The air is the defaults: two 574 mL tanks filled to 120 psi before the match, a VIAIR 90C compressor that turns on
 below 95 psi, and a regulator that feeds the cylinder at 60 psi. Under the Test tab the valve needs no device ID and
@@ -43,11 +44,12 @@ scrimmage test run examples/blocks/pneumatic/cycles.test.toml
 finished
   passed: the air pressure is above 60 psi from 0.3 s on (block 1)
   air: 120 psi at the start, 67 psi at the end, lowest 67 psi at 4.1 s; the compressor ran 2.1 s
+  note: Pneumatic numbers are estimates (UNCALIBRATED): see docs/pneumatics.md.
 ```
 
-Each lift and drop takes about 0.4 s, so the 10 are done by 4.1 s. The arm swings fast enough to carry the rod to the
-end of its stroke most times. Every cycle uses about 5 psi from the tanks. The lowest pressure, 67 psi, is at the end,
-so the air lasts, with 7 psi to spare.
+Each lift-and-drop cycle takes about 0.4 s, so the 10 are done by 4.1 s. The arm swings fast enough to carry the rod to
+the end of its stroke most times. Every cycle uses about 5 psi from the tanks. The lowest pressure, 67 psi, is at the
+end, so the air lasts, with 7 psi to spare.
 
 `scrimmage air` gives the air budget for this robot:
 
@@ -60,6 +62,7 @@ Stored air above the working pressure: 4.30 L
 Cycles from the tanks alone: 7
 Compressor air in a 150 s match: 13.2 L
 Cycles per match, tanks and compressor: 29
+Estimates (UNCALIBRATED): see docs/pneumatics.md.
 ```
 
 It says 7 cycles from the tanks, but the test made 10. Two reasons. The tanks start at 120 psi, a little above the
@@ -79,7 +82,7 @@ pressure is 70 psi.
 
 ## The numbers
 
-The first try had a 2 in. bore. It lifts the arm easily, but each cycle takes 4.0 L of air: `scrimmage air` said 1
+The first try had a 2 in. bore. It lifts the arm easily, but each cycle takes about 4 L of air: `scrimmage air` said 1
 cycle from the tanks and 4 in a whole match. In the test the arm got up twice, and the tanks fell to 60 psi at 2.0 s.
 A 1-1/16 in. bore (the stock cylinder's) did better: `scrimmage air` said 4 cycles from the tanks, and the test got
 the arm up 8 times before the tanks fell to 60 psi at 2.7 s.

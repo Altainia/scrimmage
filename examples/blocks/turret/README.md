@@ -25,7 +25,8 @@ scrimmage test run examples/blocks/turret/aim.test.toml
 
 ## The blocks
 
-1. Move the hood to 40° (its joint reads 0 at its lowest stop, so this is its steepest shot).
+1. Move the hood to 40°. This is the hood joint's angle, measured from the hood's lowest stop: 40° is its top stop,
+   where the ball leaves 80° above level (the steepest shot this hood has).
 2. Spin the launcher at 11 V.
 3. Aim the turret at `hub_blue`. It keeps aiming until the end, whatever the robot does.
 4. Wait 1 s for the wheels to spin up.
@@ -62,9 +63,10 @@ somewhere doesn't fail the test. These numbers are estimates from the simulation
 
 ## Change it and run it again
 
-**The hood and the wheels.** We tried the hood at 30°, 35° and 40°, with the wheels at 9, 10, 11 and 12 V. So close
-to the hub, only the steepest shot scores: at 40° all 8 go in at every voltage we tried, at 35° 2 at most, and at 30°
-none. Start the robot farther back (`start_pose` in `turret-standin.toml`) and a lower hood starts to work.
+**The hood and the wheels.** We tried the hood at 30°, 35° and 40° (the hood joint's angles, which send the ball out at
+70°, 75° and 80° above level), with the wheels at 9, 10, 11 and 12 V. So close to the hub, only the steepest shot
+scores: at 40° all 8 go in at every voltage we tried, at 35° 2 at most, and at 30° none. Start the robot farther back
+(`start_pose` in `turret-standin.toml`) and a lower hood starts to work.
 
 **Without the turret.** Delete the aim block (and the two aimed blocks). The turret stays at 0, so after the turn the
 launcher points about 120° away from the hub, and the last 4 shots miss.

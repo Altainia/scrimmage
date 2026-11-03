@@ -546,6 +546,7 @@ class Session:
             **self._phoenix_status(),
             **({"range": {k: v for k, v in w.test_range.counts().items() if k != "ledger"}}
                if w.test_range is not None else {}),
+            **({"pneumatics": w.pneumatics.state()} if w.pneumatics is not None else {}),
         }
 
     def hal(self, device_filter: str = "") -> dict:

@@ -193,7 +193,8 @@ async def set_joystick(port: int, axes: list[float] | None = None, buttons: list
 
 @server.tool()
 async def get_state() -> str:
-    """Ground-truth pose (m, degrees CCW), speed, battery voltage, motor commands/currents, joint positions."""
+    """Ground-truth pose (m, degrees CCW), speed, battery voltage, motor commands/currents, joint positions; with
+    pneumatic cylinders, the air (stored and working psi, compressor on, each rod's extension in inches)."""
     try:
         return _json(_need().state())
     except SessionError as e:

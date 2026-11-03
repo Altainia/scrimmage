@@ -346,3 +346,41 @@ def test_armature_formula():
     slow = World(robot(model={"timestep": 0.002}), ROOT)      # the run's own step sets it
     assert slow.model.opt.timestep == pytest.approx(0.002)
     assert float(slow.model.tendon_armature[tid]) == pytest.approx(k_max * 0.002 ** 2 / 2, rel=1e-9)
+
+
+def test_state_reports_the_air():
+    w = World(robot(), ROOT)
+    w.pneumatics.command("cyl", "extend")
+    run(w, hal(), 1.0)
+    st = w.pneumatics.state()
+    assert set(st) == {"stored_psi", "working_psi", "compressor_on", "cylinders"}
+    assert st["stored_psi"] == pytest.approx(w.pneumatics.system.stored_psi, abs=0.01) and st["stored_psi"] < 120
+    assert st["working_psi"] == pytest.approx(60, abs=0.01)
+    assert st["compressor_on"] is False                 # no robot code turned the closed loop on
+    assert st["cylinders"] == {"cyl": pytest.approx(6.0, abs=0.05)}     # inches: the stock 6 in stroke, all out
+
+
+def test_get_state_has_the_air_only_with_cylinders(tmp_path):
+    """The MCP tool get_state (Session.state) gains a pneumatics block on a robot with cylinders."""
+    import asyncio
+
+    from parts_fake import parts_config
+    from scrimmage.session import Session
+
+    plain = parts_config(tmp_path)
+    with_cyl = tmp_path / "with_cylinder.toml"
+    with_cyl.write_text(plain.read_text() + '\n[[part]]\nname = "cyl"\nstock = "cylinder"\nattach = "drive.top"\n')
+
+    async def state(path):
+        s = Session(path, nt=False)
+        try:
+            await s.start()
+            await s.advance(0.1)
+            return s.state()
+        finally:
+            await s.stop()
+
+    assert "pneumatics" not in asyncio.run(state(plain))
+    air = asyncio.run(state(with_cyl))["pneumatics"]
+    assert air == {"stored_psi": pytest.approx(120, abs=0.01), "working_psi": pytest.approx(60, abs=0.01),
+                   "compressor_on": False, "cylinders": {"cyl": pytest.approx(0, abs=0.01)}}

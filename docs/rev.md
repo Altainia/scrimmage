@@ -36,7 +36,8 @@ RobotPy robots that use `robotpy-rev` work too, through Scrimmage's RobotPy lock
    `robotpy` extra (`pip install -e ".[robotpy]"`), which also brings RobotPy itself and commands2.
 2. Install the extension: `pip install ./lockstep`. It must be version 0.6.0 or later; **reinstall it after updating
    Scrimmage** (`pip install ./lockstep` again). A RobotPy config run with `--scrimmage-lockstep` refuses to start with
-   an older one and says so.
+   an older one and says so. A robot with valves on a REV Pneumatic Hub needs 0.7.0 or later (see
+   [pneumatics.md](pneumatics.md#robot-code)).
 3. Put `--scrimmage-lockstep` in `[robot_program] command`, the usual RobotPy command:
    `command = ["{python}", "-m", "robotpy", "sim", "--nogui", "--ws-client", "--scrimmage-lockstep"]`. Without it the
    REV helper isn't loaded: the run warns that the SPARKs aren't being driven and tells you to add it.

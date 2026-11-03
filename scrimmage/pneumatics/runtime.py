@@ -29,6 +29,7 @@ from ..protocol import HalState
 from .model import AirConfig, AirSystem
 
 PH_TYPE = "ScrimmagePH"     # the lockstep extension's SimDevice per REV Pneumatic Hub: "ScrimmagePH:<module>"
+IN = 0.0254                 # m per inch
 KEYS = ("tanks", "tank_ml", "compressor", "working_psi", "start_psi", "switch_on_psi", "switch_off_psi")
 
 
@@ -81,6 +82,14 @@ class PneumaticsRuntime:
         spec = self._specs[name]
         x = self.tendon_length(name) - spec.length
         return min(max(x, 0.0), spec.stroke)
+
+    def state(self) -> dict:
+        """The air for get_state: the tanks' (stored) and the regulator's (working) pressures in psi, whether the
+        compressor is running, and how far each cylinder's rod is out, in inches."""
+        s = self.system
+        return {"stored_psi": round(s.stored_psi, 2), "working_psi": round(s.working_psi, 2),
+                "compressor_on": s.compressor_on,
+                "cylinders": {n: round(self.extension(n) / IN, 3) for n in self.names}}
 
     def tendon_length(self, name: str) -> float:
         """The cylinder's tendon length (m) now. mj_step leaves ten_length at the position before it integrated,
