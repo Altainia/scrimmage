@@ -66,6 +66,22 @@ def test_describe_lists_parameters_with_units_defaults_and_constraints():
     assert set(REGISTRY) >= {"chassis"}
 
 
+def test_describe_writes_defaults_as_toml():
+    """Each default reads as a robot file writes it: true/false, double-quoted strings, lists, numbers."""
+    import re
+    _load_all()
+    for name in REGISTRY:
+        for line in describe(name).splitlines():
+            m = re.match(r"  (\w+) = (.*?)(?: [^ ]+)?(?: \(.*\))?: ", line)
+            if m is None:
+                continue
+            assert "False" not in m.group(2) and "True" not in m.group(2) and "'" not in m.group(2), line
+    arm = describe("arm")
+    assert '  motor = "KrakenX60" (one of ' in arm and "  collide = false: " in arm
+    assert "  range = [-90.0, 90.0] deg " in arm
+    assert '  push = "": ' in describe("cylinder")
+
+
 def test_unknown_describe_name_lists_the_library():
     with pytest.raises(PartError, match=r"unknown stock part 'nope'; stock parts: .*chassis"):
         describe("nope")
