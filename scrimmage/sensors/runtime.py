@@ -27,7 +27,7 @@ ground to the terrain and climb monitors, and groups 3 to 5 aren't drawn by MuJo
 `_cast` excludes the sensor's own body (the geom a beam is drawn through is most often its own) and, when a cast hits
 the rest of the robot, casts again from just past that hit. A clear path, or a piece or the field first, is one
 mj_ray a step; each robot surface in the way adds one (a box the ray passes through is two: in and out). MAX_CASTS
-bounds a step's casts per sensor. Recasting
+bounds a step's casts per sensor; a sensor that runs out of them is a warning in the world's warnings, once. Recasting
 changes no model setting, so a robot's renders and every other monitor are as before, and it is exact for every
 piece shape (spheres, cylinders, boxes and meshes).
 """
@@ -123,6 +123,7 @@ class SensorRuntime:
         self._gid = np.zeros(1, dtype=np.int32)
         self._pnt = np.zeros(3)
         self.casts = 0                                  # mj_ray calls so far (a cost check)
+        self._out_of_casts: set[str] = set()            # the sensors already warned about running out of casts
         # Nothing seen until the first reading: World.reset reads them (data has no kinematics before mj_forward).
         self._readings = {s.name: self._read(s, None) for s in self.specs}
 
@@ -144,7 +145,7 @@ class SensorRuntime:
             rot = data.xmat[b].reshape(3, 3)
             pnt = data.xpos[b] + rot @ start
             vec = rot @ direction
-            hit = self._cast(data, pnt, vec, reach, s.sees == "pieces", b)
+            hit = self._cast(data, pnt, vec, reach, s.sees == "pieces", b, s.name)
             self._readings[s.name] = self._read(s, hit)
 
     def _read(self, s: SensorSpec, hit) -> Reading:
@@ -161,7 +162,8 @@ class SensorRuntime:
         color = self._colors[piece]
         return Reading(on=True, distance=d, color=color, color_name=nearest_color(color))
 
-    def _cast(self, data, pnt, vec, reach: float, pieces_only: bool, own_body: int) -> tuple[float, int] | None:
+    def _cast(self, data, pnt, vec, reach: float, pieces_only: bool, own_body: int,
+              name: str) -> tuple[float, int] | None:
         """The first thing the ray from `pnt` along unit `vec` hits within `reach` that the sensor sees: (distance,
         the piece's index or -1 for a non-piece), or None. See the module's note on recasting."""
         m, gid, robot, piece = self.model, self._gid, self._robot, self._piece
@@ -180,7 +182,16 @@ class SensorRuntime:
                 return None if pieces_only else (gone, -1)
             gone += SKIP
             start[:] = pnt + gone * vec
+        self._warn_out_of_casts(name)
         return None
+
+    def _warn_out_of_casts(self, name: str) -> None:
+        if name in self._out_of_casts:
+            return
+        self._out_of_casts.add(name)
+        self.world.warnings.append(
+            f'[[sensor]] "{name}": the robot is in its way: its ray met {MAX_CASTS} of the robot\'s surfaces in one '
+            "step, the most a sensor looks past, so it read nothing beyond them; move it or point it clear of the robot")
 
     def sensor_updates(self) -> list[Update]:
         """The HAL inputs for the robot program: a DigitalInput per `dio` (on, inverted when active-low: a beam broken

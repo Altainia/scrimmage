@@ -23,18 +23,34 @@ def _reject_duplicate_devices(*groups) -> None:
     """Two bindings on one device would fight over its inputs/outputs: say which.
 
     A REV SPARK's motor and absolute encoder share its helper device on purpose, so REV bindings are
-    only compared within their own group."""
+    only compared within their own group. A quadrature encoder on channel_a = n is WPILib's Encoder(n, n + 1): it
+    takes DIO n and n + 1 as well, which a sensor, a limit switch or a shooter beam break can't share."""
     seen: dict = {}
     for g, group in enumerate(groups):
         for i, b in enumerate(group, 1):
-            key = (g, b.device_key) if getattr(b, "kind", None) == "REV" else b.device_key
-            other = seen.setdefault(key, (b, _label(b, i)))
-            if other[0] is not b:
-                typ, dev = b.device_key
-                dev = dev.replace("<channel_a=", "encoder channel A ")
-                what = dev if typ == "SimDevice" else f"{typ} {dev}"   # a SimDevice's name says what it is
-                raise ValueError(f"{what} is bound by {other[1]} and {_label(b, i)}: "
-                                 "give each device one binding")
+            for device_key in _device_keys(b):
+                key = (g, device_key) if getattr(b, "kind", None) == "REV" else device_key
+                other = seen.setdefault(key, (b, _label(b, i)))
+                if other[0] is not b:
+                    typ, dev = device_key
+                    dev = dev.replace("<channel_a=", "encoder channel A ")
+                    what = dev if typ == "SimDevice" else f"{typ} {dev}"   # a SimDevice's name says what it is
+                    encoder = next((e for e in (other[0], b) if _quadrature(e) and typ == "DIO"), None)
+                    hint = (f" (an encoder on channel_a = {encoder.channel_a} takes DIO {encoder.channel_a} and "
+                            f"{encoder.channel_a + 1})" if encoder is not None else "")
+                    raise ValueError(f"{what} is bound by {other[1]} and {_label(b, i)}: "
+                                     f"give each device one binding{hint}")
+
+
+def _quadrature(b) -> bool:
+    return isinstance(b, EncoderBinding) and b.kind == "Encoder"
+
+
+def _device_keys(b) -> list:
+    """The devices a binding takes: its device_key, and a quadrature encoder's two DIO channels."""
+    if _quadrature(b):
+        return [b.device_key, ("DIO", str(b.channel_a)), ("DIO", str(b.channel_a + 1))]
+    return [b.device_key]
 
 
 def _label(b, index: int) -> str:

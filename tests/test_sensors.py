@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from range_fixtures import KITBOT, drive, range_cfg, spares_world  # noqa: E402
 from scrimmage.protocol import HalState  # noqa: E402
 from scrimmage.sensors.colors import NAMED_COLORS, nearest_color  # noqa: E402
+from scrimmage.sensors import runtime  # noqa: E402
 from scrimmage.sensors.runtime import SensorRuntime, color_values  # noqa: E402
 from scrimmage.sensors.spec import SensorError, parse_sensors  # noqa: E402
 from scrimmage.testrange.build import BALL_BITS  # noqa: E402
@@ -28,7 +29,7 @@ NO_TOUCH = {"contype": 0, "conaffinity": 0}
 # bumper's face), between the hopper's lip (x 0.22) and the roller (x 0.35), 5 cm up: a 2026 FUEL rolling in on the
 # carpet crosses it, and one pausing on top of the lip (its center 0.25 m out, 0.13 m up) is clear of it.
 MOUTH = {"name": "mouth", "kind": "beam", "body": "intake.frame", "from": [0.32, 0.17, 0.05],
-         "to": [0.32, -0.17, 0.05], "dio": 0}
+         "to": [0.32, -0.17, 0.05], "dio": 4}   # DIO 0 to 3 are the drive's encoders
 
 
 def intake_world(*sensors) -> World:
@@ -212,6 +213,31 @@ def test_a_clear_sensor_casts_one_ray_a_step():
     assert w.sensors.casts - before == 10
 
 
+def test_a_sensor_that_runs_out_of_casts_warns_once_naming_it(monkeypatch):
+    """A beam on the drive's rails (not the chassis) straight down through the chassis's plate: with one cast a
+    step, the plate uses it up. The world's warnings say so once, naming the sensor; a full MAX_CASTS gets past."""
+    w = spares_world(range_cfg())
+    m = w.model
+    plate = next(g for g in range(m.ngeom) if m.geom_bodyid[g] == m.body("drive.chassis").id
+                 and int(m.geom_type[g]) == 6)    # the frame plate, a box
+    pos, half = m.geom_pos[plate], m.geom_size[plate]
+    top, under = pos + [0.0, 0.0, half[2] + 0.02], pos - [0.0, 0.0, half[2] + 0.005]
+    rails = m.body("dt.rails").id
+    assert rails != m.body("drive.chassis").id
+    beam = {"name": "down", "kind": "beam", "body": "dt.rails",
+            "from": body_point(w, "dt.rails", world_point(w, "drive.chassis", top)),
+            "to": body_point(w, "dt.rails", world_point(w, "drive.chassis", under))}
+    attach(w, beam)
+    step(w, 5)
+    assert not any("down" in x for x in w.warnings), "every surface in the way recast within MAX_CASTS"
+    monkeypatch.setattr(runtime, "MAX_CASTS", 1)
+    step(w, 5)
+    said = [x for x in w.warnings if '"down"' in x]
+    assert said == ['[[sensor]] "down": the robot is in its way: its ray met 1 of the robot\'s surfaces in one step, '
+                    "the most a sensor looks past, so it read nothing beyond them; move it or point it clear of the "
+                    "robot"], w.warnings
+
+
 # -------------------------------------------------------------------------------------------------- color sensors
 
 TWO_COLORS = """
@@ -320,6 +346,17 @@ def test_a_fields_colors(tmp_path):
         load_range("c.toml", tmp_path)
 
 
+def test_a_setup_piece_in_place_of_a_red_and_blue_fields_first_kind_takes_its_own_color(tmp_path):
+    """The Test tab's Setup piece replaces the field's default kind, its first [piece.<name>] here: the new ball has
+    its own color (a ball's yellow), not the red it replaced; the blue kind keeps its blue."""
+    from scrimmage.testrange.spec import load_range
+    (tmp_path / "rb.toml").write_text('[range]\nname = "rb"\n[piece.red_cargo]\nball = "2022-cargo"\ncolor = "red"\n'
+                                      '[piece.blue_cargo]\nball = "2022-cargo"\ncolor = "blue"\n', encoding="utf-8")
+    kinds = load_range("rb.toml", tmp_path, piece="2026-fuel").kinds
+    assert nearest_color(piece_color(kinds["red_cargo"])) == "yellow"
+    assert nearest_color(piece_color(kinds["blue_cargo"])) == "blue"
+
+
 # ------------------------------------------------------------------------------------------------- config checks
 
 def test_a_sensor_on_a_body_the_robot_doesnt_have_lists_the_robots_bodies():
@@ -354,6 +391,14 @@ def test_config_mistakes_name_the_sensor_and_the_key(table, words):
     with pytest.raises(SensorError) as e:
         parse_sensors([table])
     assert "[[sensor]]" in str(e.value) and words in str(e.value)
+
+
+@pytest.mark.parametrize("name", ["front beam", "beam-1", "intake.beam", "eye!"])
+def test_a_sensor_name_is_letters_digits_and_underscores(name):
+    t = {"name": name, "kind": "beam", "body": "a.b", "from": [0, 0, 0], "to": [1, 0, 0]}
+    with pytest.raises(SensorError) as e:
+        parse_sensors([t])
+    assert str(e.value) == f'[[sensor]] 1: name must be letters, digits and _ (like a part\'s name), not "{name}"'
 
 
 def test_two_sensors_with_one_name():

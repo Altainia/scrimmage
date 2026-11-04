@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from range_fixtures import range_cfg, shooter_cfg, spares_world  # noqa: E402
+from range_fixtures import KITBOT, range_cfg, shooter_cfg, spares_world  # noqa: E402
 from scrimmage.protocol import HalState  # noqa: E402
 from scrimmage.sensors.runtime import color_values  # noqa: E402
 from scrimmage.sensors.spec import color_device, parse_sensors, sensor_devices  # noqa: E402
@@ -149,6 +149,34 @@ def test_a_sensor_on_a_limit_switchs_dio_or_a_potentiometers_analog_is_an_error(
         world(RANGE, analog=[{"port": 1, "joint": "dt.left_1"}])
     with pytest.raises(ValueError, match=r'DIO 0 is bound by digital #1 and \[\[sensor\]\] "beam"'):
         world(BEAM, digital=[{"channel": 0, "joint": "dt.left_1"}])
+
+
+def encoder_kitbot(**ids) -> list:
+    """KITBOT with its drive's encoder slots given DIO ids, e.g. left_encoder="DIO:0"."""
+    return [KITBOT[0], {**KITBOT[1], "ids": {**KITBOT[1]["ids"], **ids}}]
+
+
+@pytest.mark.parametrize("dio", [0, 1])
+def test_a_sensor_on_either_of_an_encoders_dio_channels_is_an_error_naming_both(dio):
+    """An encoder on channel_a = 0 is WPILib's Encoder(0, 1): it takes DIO 0 and DIO 1."""
+    with pytest.raises(ValueError, match=rf'^DIO {dio} is bound by encoder dt.left_encoder and \[\[sensor\]\] "beam": '
+                                         r"give each device one binding \(an encoder on channel_a = 0 takes DIO 0 and "
+                                         r"1\)$"):
+        world({**BEAM, "dio": dio}, part=encoder_kitbot(left_encoder="DIO:0"))
+
+
+def test_a_limit_switch_or_a_shooter_beam_break_on_an_encoders_dio_is_an_error_too():
+    with pytest.raises(ValueError, match=r"^DIO 3 is bound by encoder dt.right_encoder and digital #1"):
+        world(part=encoder_kitbot(right_encoder="DIO:2"), digital=[{"channel": 3, "joint": "dt.left_1"}])
+    cfg = shooter_cfg(shooter={"beam_break": [{"at": "launcher", "dio": 4}]})
+    cfg["part"][1]["ids"] = {**cfg["part"][1]["ids"], "left_encoder": "DIO:4"}
+    with pytest.raises(ValueError, match=r"^DIO 4 is bound by encoder dt.left_encoder and \[\[shooter.beam_break\]\]"):
+        World(cfg, None)
+
+
+def test_a_sensor_next_to_an_encoders_channels_is_fine():
+    w = world({**BEAM, "dio": 2}, part=encoder_kitbot(left_encoder="DIO:0"))
+    assert w.sensors is not None
 
 
 def test_one_distance_sensors_dio_and_analog_on_the_same_number_are_two_devices():

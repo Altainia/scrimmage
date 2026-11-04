@@ -1,7 +1,7 @@
 """A robot config's `[[sensor]]` tables, checked: beam breaks, distance sensors and color sensors.
 
     [[sensor]]
-    name = "mouth"                  # required, unique: what the Test tab and messages call it
+    name = "mouth"                  # required, unique, letters, digits and _: what the Test tab and messages call it
     kind = "beam"                   # "beam", "distance" or "color"
     body = "intake.frame"           # the robot body it is mounted on, "<part instance>.<body>"
     from = [0.30, 0.17, 0.075]      # beam: its two ends, m in the body's frame (or from_in / to_in, inches)
@@ -35,8 +35,10 @@ world is built (sensors/runtime.py), since only the model knows them.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 
+NAME_RE = re.compile(r"[A-Za-z0-9_]+$")     # as a part's name: it names the chart's sensor.<name> signal
 KINDS = ("beam", "distance", "color")
 SEES = ("pieces", "anything")
 I2C_PORTS = ("onboard", "mxp")
@@ -163,6 +165,9 @@ def parse_sensor(table, index: int) -> SensorSpec:
     if not isinstance(name, str) or not name.strip():
         raise SensorError(f"[[sensor]] {index} needs a name: name = \"<a name>\", what the Test tab calls it"
                           + ("" if name is None else f" (not {plain(name)})"))
+    if not NAME_RE.match(name):
+        raise SensorError(f"[[sensor]] {index}: name must be letters, digits and _ (like a part's name), "
+                          f"not {plain(name)}")
     t = _Table(table, f'[[sensor]] "{name}"')
     kind = table.get("kind")
     if kind is None:

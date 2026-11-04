@@ -254,7 +254,7 @@ def test_a_repeat_or_wait_on_a_color_reads_plainly_when_it_runs_out(tmp_path):
     p = _program(tmp_path, held.replace('do = "repeat"', 'do = "wait_until"').replace("max = 3", "timeout = 0.1")
                  .split("\n  [[block.body]]")[0], MOUTH + EYE)
     outcome = TestRun(world_for(p), p).run().outcome
-    assert "waiting for eye to lose sight of yellow timed out" in outcome, outcome
+    assert "waiting for eye not to see yellow timed out" in outcome, outcome
 
 
 # ---- names ---------------------------------------------------------------------------------------------------------

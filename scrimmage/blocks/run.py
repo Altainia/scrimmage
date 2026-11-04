@@ -142,8 +142,8 @@ _VERBS = {"passes": ("passing", "to pass"), "goes": ("going", "to go"), "tilts":
           "are": ("being", "to be"), "is": ("being", "to be"), "made": ("having made", "to have made"),
           "is held": ("being held", "to be held"), "rests": ("resting", "to rest"),
           "clears": ("clearing", "to clear"), "moved": ("having moved", "to have moved"),
-          # a color sensor's check: "without eye seeing red", "waiting for eye to lose sight of red"
-          "is seeing": ("seeing", "to see"), "isn't seeing": ("losing sight of", "to lose sight of")}
+          # a color sensor's check: "without eye seeing red", "waiting for eye not to see red"
+          "is seeing": ("seeing", "to see"), "isn't seeing": ("losing sight of", "not to see")}
 
 
 @dataclass
