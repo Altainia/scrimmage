@@ -185,7 +185,7 @@ def test_a_real_ds_session_steps_back_and_refuses_ds_changes(tmp_path):
             st = s.state()
             assert st["real_ds"] is True and st["mode"] == "waiting" and st["lockstep"] is False
             assert st["driver_station"] == REAL_DS_WAITING and st["match"] == real_ds_report(s.bridge.hal)
-            assert st["phoenix_unpausable"] is True and "real Driver Station" in st["realtime_reason"]
+            assert st["unpausable"] is True and "real Driver Station" in st["realtime_reason"]
             for call in (lambda: s.set_mode("auto"), lambda: s.set_joystick(0, axes=[0.5]),
                          lambda: s.set_match(station="red1")):
                 with pytest.raises(SessionError, match=REAL_DS_DRIVING):
@@ -323,6 +323,40 @@ def test_serve_launch_refuses_a_taken_ds_port(tmp_path, capsys):
     finally:
         held.close()
     assert e.value.code == 2 and "UDP port 1110 is already in use" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("flags, default, expected", [
+    ([], False, False), ([], True, True), (["--real-ds"], False, True), (["--no-real-ds"], True, False)])
+def test_serve_takes_the_configs_default_and_the_switch_overrides_it(tmp_path, monkeypatch, capsys, flags, default,
+                                                                   expected):
+    """`--real-ds/--no-real-ds`: without either, the config's [driver_station] real; either one overrides it."""
+    import scrimmage.__main__ as cli
+    seen = {}
+
+    def bridge(*a, real_ds, **kw):
+        seen["real_ds"] = real_ds
+        raise ValueError("stop here")
+    monkeypatch.setattr(cli, "Bridge", bridge)
+    cfg = fake_config(tmp_path, f"[driver_station]\nreal = {str(default).lower()}\n")
+    with pytest.raises(SystemExit):
+        cli.main(["serve", str(cfg), *flags, "--no-nt"])
+    assert seen == {"real_ds": expected} and "stop here" in capsys.readouterr().err
+
+
+def test_serve_logs_it_when_following_the_real_ds_fails(caplog):
+    import scrimmage.__main__ as cli
+
+    async def broken():
+        raise RuntimeError("the report broke")
+
+    async def main():
+        task = asyncio.create_task(broken())
+        task.add_done_callback(cli._follow_ended)
+        await asyncio.wait({task})
+        await asyncio.sleep(0)   # the done callback runs on the next turn of the loop
+    with caplog.at_level("ERROR", logger="scrimmage"):
+        asyncio.run(main())
+    assert "following the real Driver Station stopped: the report broke" in caplog.text
 
 
 # ------------------------------------------------------------------------------------------------------ MCP

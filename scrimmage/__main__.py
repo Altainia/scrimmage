@@ -68,8 +68,9 @@ def main(argv: list[str] | None = None) -> None:
     sp.add_argument("--host", default="localhost")
     sp.add_argument("--port", type=int, default=3300)
     sp.add_argument("--no-nt", action="store_true", help="don't use NetworkTables")
-    sp.add_argument("--real-ds", action="store_true",
-                    help="the FRC Driver Station app drives the robot (default: the config's [driver_station] real)")
+    sp.add_argument("--real-ds", action=argparse.BooleanOptionalAction, default=None,
+                    help="the FRC Driver Station app drives the robot, or not with --no-real-ds (default: the "
+                         "config's [driver_station] real)")
     sp.add_argument("-v", "--verbose", action="store_true")
 
     rp = sub.add_parser("run", help="run a scenario file and write a report (exit 0 pass, 1 fail, 2 couldn't run)")
@@ -830,7 +831,7 @@ def _serve(args, ap) -> None:
         if (unused := sim_mode_unused(config, args.sim_mode, launching=args.launch)) is not None:
             logging.getLogger("scrimmage").warning(unused)
         world = build_world(config)
-        real_ds = args.real_ds or config.real_ds
+        real_ds = config.real_ds if args.real_ds is None else args.real_ds
         bridge = Bridge(world, args.host, args.port, log_path=args.log, viewer=args.viewer, nt=not args.no_nt and config.nt,
                         speed=args.speed, step=args.step if args.step is not None else config.step,
                         odometry_topic=config.odometry_topic, nt_port=config.nt_port,
@@ -881,6 +882,7 @@ def _serve(args, ap) -> None:
                 rp = config.robot_program
                 follow = asyncio.create_task(_follow_real_ds(
                     bridge, rp.start_timeout if rp is not None else DS_LISTEN_TIMEOUT, launched=robot is not None))
+                follow.add_done_callback(_follow_ended)
             await task
         finally:
             if follow is not None:
@@ -896,6 +898,12 @@ def _serve(args, ap) -> None:
         print(f"scrimmage: {e}", file=sys.stderr)
         sys.exit(2)
     sys.exit(bridge.exit_code)
+
+
+def _follow_ended(task: asyncio.Task) -> None:
+    """_follow_real_ds stopped: log why, unless serve cancelled it on the way out."""
+    if not task.cancelled() and (e := task.exception()) is not None:
+        logging.getLogger("scrimmage").error("following the real Driver Station stopped: %s", e, exc_info=e)
 
 
 async def _follow_real_ds(bridge: Bridge, timeout: float, launched: bool) -> None:

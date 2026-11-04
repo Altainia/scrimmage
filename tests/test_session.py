@@ -521,12 +521,12 @@ def test_phoenix_robot_runs_in_real_time_and_says_it_cant_pause(tmp_path):
             await s.start()
             await wait_until(lambda: s.bridge.mode == "realtime")
             st = s.status()
-            assert st["realtime_reason"] == REASON and st["phoenix_unpausable"] is True and not st["lockstep"]
+            assert st["realtime_reason"] == REASON and st["unpausable"] is True and not st["lockstep"]
             assert UNPAUSABLE in st["warnings"] and st["lockstep_released_at"] is None
             t0 = time.monotonic()
             r = await s.advance(0.5)
             assert time.monotonic() - t0 >= 0.45
-            assert r["realtime_reason"] == REASON and r["phoenix_unpausable"] is True
+            assert r["realtime_reason"] == REASON and r["unpausable"] is True
             assert r["warning"] == UNPAUSABLE                       # said once, in the first advance
             assert r["foreign_writes"] == [] and r["agent_summary"] is None
             t1 = s.t
@@ -545,8 +545,8 @@ def test_a_session_without_phoenix_devices_has_no_unpausable_warning():
         try:
             await s.start()
             r = await s.advance(0.05)
-            assert r["phoenix_unpausable"] is False and "warning" not in r
-            assert s.status()["phoenix_unpausable"] is False and UNPAUSABLE not in s.status()["warnings"]
+            assert r["unpausable"] is False and "warning" not in r
+            assert s.status()["unpausable"] is False and UNPAUSABLE not in s.status()["warnings"]
         finally:
             await s.stop()
     run(main())

@@ -41,7 +41,7 @@ def test_java_session_runs_in_real_time_and_loads_agent():
         s = Session(PROBE / "scrimmage.toml", nt=False)
         try:
             st = await s.start()
-            assert st["lockstep"] is False and st["phoenix_unpausable"] is True   # Phoenix 6: real time
+            assert st["lockstep"] is False and st["unpausable"] is True   # Phoenix 6: real time
             for _ in range(100):  # Gradle forward the JVM's output a little behind the connection
                 text = "\n".join(l["text"] for l in s.console()["lines"])
                 if "scrimmage agent: loaded" in text:

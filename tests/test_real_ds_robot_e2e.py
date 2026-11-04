@@ -156,14 +156,19 @@ def test_serve_logs_what_the_real_ds_does(tmp_path):
     reader.start()
     ds = FakeDS()
 
-    def until(text: str, timeout: float = 60) -> None:
+    seen = 0   # where the last match ended: each DS line is looked for only after the one before it
+
+    def until(text: str, timeout: float = 60, ordered: bool = True) -> None:
+        nonlocal seen
+        start = seen if ordered else 0
         deadline = time.monotonic() + timeout
-        while text not in "".join(out) and proc.poll() is None and time.monotonic() < deadline:
+        while (at := "".join(out).find(text, start)) < 0 and proc.poll() is None and time.monotonic() < deadline:
             time.sleep(0.1)
-        assert text in "".join(out), "".join(out)[-3000:]
+        assert at >= 0, "".join(out)[-3000:]
+        seen = max(seen, at + len(text))
     try:
-        until("robot program connected")
-        until(REAL_DS_WAITING)
+        until("robot program connected", ordered=False)   # these two come in either order
+        until(REAL_DS_WAITING, ordered=False)
         ds.set(True, "teleop", "red2")
         ds.start()
         until("Driver Station: teleop enabled")

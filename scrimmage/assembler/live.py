@@ -698,7 +698,7 @@ class LiveManager:
             self._update_devices(session)
             b = session.bridge
             with self._lock:
-                self._speed_locked = b.realtime_reason if b.phoenix else None
+                self._speed_locked = b.realtime_reason if b.frees_clock else None
             for sig in self._signals:
                 try:
                     signals[sig.name] = sig.read(session)

@@ -713,7 +713,7 @@ class Session:
     def _phoenix_status(self) -> dict:
         b = self.bridge
         return {"realtime_reason": b.realtime_reason if b is not None else None,
-                "phoenix_unpausable": self._unpausable(),
+                "unpausable": self._unpausable(),
                 "foreign_writes": [dict(f) for f in b.foreign_writes.values()] if b is not None else [],
                 "agent_summary": self.agent_summary()}
 

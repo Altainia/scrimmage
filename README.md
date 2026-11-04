@@ -691,7 +691,7 @@ own.
 A session holds the robot program between `advance` calls only in lockstep. A robot with Phoenix 6 devices runs in
 real time, so the session can't pause it: the robot program, its Talons and physics keep running between calls,
 and `advance(seconds)` waits until physics has moved on that far. `session_status` reports
-`phoenix_unpausable: true` with the warning "Phoenix 6 devices keep running between calls: this session can't
+`unpausable: true` with the warning "Phoenix 6 devices keep running between calls: this session can't
 pause them", and the first `advance` result carries the same `warning`. Set the robot's mode (disabled, say)
 before a long pause if it shouldn't keep driving.
 
