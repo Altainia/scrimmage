@@ -8,6 +8,10 @@ costs nothing extra). Each sensor is a ray in its body's frame:
   - a distance or color sensor casts from `at` along `toward`, max_range long, and reads the first piece it hits
     (sees = "pieces") or the first thing that isn't the robot (sees = "anything").
 
+Either way the field blocks it: a wall, a goal, an obstacle, a field element or the carpet in front of a piece hides
+it, as it would from a real beam. A pieces-only sensor that hits the field first reads nothing (a beam clear, a
+distance sensor its max_range).
+
 Pieces are the range's `ball.<i>` bodies: balls, discs and rigid pieces alike. A sensor never sees its own robot (the
 robot body's whole tree).
 
@@ -21,10 +25,9 @@ How the robot and the field are left out: MuJoCo's mj_ray excludes one body (`bo
 not a body's tree, and the field, the robot and the pieces share geom group 0 (groups 1 and 2 mean structure and
 ground to the terrain and climb monitors, and groups 3 to 5 aren't drawn by MuJoCo's renderer by default). So
 `_cast` excludes the sensor's own body (the geom a beam is drawn through is most often its own) and, when a cast hits
-a geom it mustn't see (the rest of the robot; or, for pieces only, anything that isn't a piece), casts again from
-just past that hit. A clear path, or a piece first, is one mj_ray a step; each unwanted surface in the way adds one
-(a box the ray passes through is two: in and out). Pieces-only casts skip the field's static geoms
-(flg_static = 0), so the carpet and walls cost nothing. MAX_CASTS bounds a step's casts per sensor. Recasting
+the rest of the robot, casts again from just past that hit. A clear path, or a piece or the field first, is one
+mj_ray a step; each robot surface in the way adds one (a box the ray passes through is two: in and out). MAX_CASTS
+bounds a step's casts per sensor. Recasting
 changes no model setting, so a robot's renders and every other monitor are as before, and it is exact for every
 piece shape (spheres, cylinders, boxes and meshes).
 """
@@ -43,10 +46,14 @@ from .spec import COLOR_MAX_RANGE, SensorError, SensorSpec
 END_SLOP = 0.001    # m: a beam reaches this far past each end, so a piece resting exactly on an end reads broken on
                     # every step (a resting piece settles by far less than this) and never flickers
 SKIP = 1e-6         # m: a recast starts this far past a hit it skipped
-MAX_CASTS = 32      # a sensor's most casts in one step (unwanted surfaces in the way); past them it sees nothing
+MAX_CASTS = 32      # a sensor's most casts in one step (robot surfaces in the way); past them it sees nothing
 # A REV Color Sensor V3's values (spec C5, estimates): brightness 1 at 2 cm, 0.5 at 6 cm, nothing past 10 cm,
-# straight lines between; full scale FULL_SCALE. With nothing in front it reads the dark carpet: DARK.
+# straight lines between. With nothing in front it reads the dark carpet: DARK.
+# estimate: FULL_SCALE, the count at full brightness, is our choice for every channel (the proximity's 11-bit 2047);
+# the real sensor's raw color counts go far higher. What the robot code's SimDevice gets is decided where the values
+# are sent (the HAL bindings).
 FULL_SCALE = 2047
+GRAY_REFLECTANCE = 0.3  # estimate: how much IR something that isn't a piece (the carpet, a wall) returns, of a piece's
 BRIGHTNESS = ((0.0, 1.0), (0.02, 1.0), (0.06, 0.5), (COLOR_MAX_RANGE, 0.0))
 DARK = {"Red": 12, "Green": 14, "Blue": 12, "IR": 8}    # estimate: a dark gray carpet, a few counts in each channel
 
@@ -70,12 +77,13 @@ def brightness(distance: float | None) -> float:
 
 def color_values(reading: Reading) -> dict[str, int]:
     """A color sensor's Red, Green, Blue, IR and Proximity (0 to FULL_SCALE): a piece's color scaled by its
-    brightness, IR the brightness itself; proximity 2047 at contact falling to 0 at 10 cm along a straight line (an
-    estimate of REV's curve), for whatever it hits. With no piece in front the colors are DARK's."""
-    b = brightness(reading.distance) if reading.color is not None else 0.0
+    brightness; IR the brightness of whatever it hits (a piece's in full, anything else's times GRAY_REFLECTANCE);
+    proximity 2047 at contact falling to 0 at 10 cm along a straight line (an estimate of REV's curve), for whatever
+    it hits. With no piece in front the colors are DARK's."""
+    b = brightness(reading.distance)
     rgb = reading.color or (0.0, 0.0, 0.0)
     out = {ch: max(DARK[ch], round(FULL_SCALE * b * c)) for ch, c in zip(("Red", "Green", "Blue"), rgb)}
-    out["IR"] = max(DARK["IR"], round(FULL_SCALE * b))
+    out["IR"] = max(DARK["IR"], round(FULL_SCALE * b * (1.0 if reading.color is not None else GRAY_REFLECTANCE)))
     d = reading.distance
     out["Proximity"] = 0 if d is None else round(FULL_SCALE * max(0.0, 1.0 - d / COLOR_MAX_RANGE))
     return out
@@ -121,7 +129,7 @@ class SensorRuntime:
 
     def reading(self, name: str) -> Reading:
         if name not in self._readings:
-            raise KeyError(f"no sensor {name!r}; the robot's sensors: {', '.join(self.names)}")
+            raise SensorError(f'the robot has no sensor "{name}"; its sensors: {", ".join(self.names)}')
         return self._readings[name]
 
     def reset(self) -> None:
@@ -158,15 +166,15 @@ class SensorRuntime:
         start[:] = pnt
         for _ in range(MAX_CASTS):
             self.casts += 1
-            x = mujoco.mj_ray(m, data, start, vec, None, 0 if pieces_only else 1, own_body, gid)
+            x = mujoco.mj_ray(m, data, start, vec, None, 1, own_body, gid)
             if x < 0.0 or gone + x > reach:
                 return None
             gone += x
             g = int(gid[0])
             if piece[g] >= 0:
                 return gone, piece[g]
-            if not pieces_only and not robot[g]:
-                return gone, -1
+            if not robot[g]:        # the field: it blocks the view; only a sensor that sees anything reads it
+                return None if pieces_only else (gone, -1)
             gone += SKIP
             start[:] = pnt + gone * vec
         return None

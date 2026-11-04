@@ -73,11 +73,6 @@ class SensorSpec:
     volts_per_m: float = DEFAULT_VOLTS_PER_M
     threshold: float | None = None          # m: a distance sensor's on distance (default length / 2); None otherwise
 
-    @property
-    def end(self) -> tuple[float, float, float]:
-        """The far end, body frame: a beam's `to`; a ray's start plus max_range along it."""
-        return tuple(s + self.length * d for s, d in zip(self.start, self.direction))
-
 
 class _Table:
     def __init__(self, table: dict, where: str):
@@ -102,7 +97,7 @@ class _Table:
             raise self.err(f"needs {key} = [x, y, z]: {what}, in meters in the body's frame (or {key}_in, inches)")
         v, given, scale = self._metric(key)
         if not (isinstance(v, list) and len(v) == 3 and all(_finite(c) for c in v)):
-            raise self.err(f"{given} must be [x, y, z], 3 numbers, not {v!r}")
+            raise self.err(f"{given} must be [x, y, z], 3 numbers, not {plain(v)}")
         return tuple(float(c) * scale for c in v)
 
     def length(self, key: str, default: float | None) -> float | None:
@@ -110,7 +105,7 @@ class _Table:
             return default
         v, given, scale = self._metric(key)
         if not _finite(v) or v <= 0:
-            raise self.err(f"{given} must be a distance more than 0, not {v!r}")
+            raise self.err(f"{given} must be a distance more than 0, not {plain(v)}")
         return float(v) * scale
 
     def channel(self, key: str) -> int | None:
@@ -118,14 +113,27 @@ class _Table:
         if v is None:
             return None
         if isinstance(v, bool) or not isinstance(v, int) or v < 0:
-            raise self.err(f"{key} must be a channel number (a whole number, 0 or more), not {v!r}")
+            raise self.err(f"{key} must be a channel number (a whole number, 0 or more), not {plain(v)}")
         return v
 
     def choice(self, key: str, choices: tuple[str, ...], default: str | None) -> str | None:
         v = self.t.get(key, default)
         if v is not None and v not in choices:
-            raise self.err(f"{key} must be " + " or ".join(f'"{c}"' for c in choices) + f", not {v!r}")
+            raise self.err(f"{key} must be " + " or ".join(f'"{c}"' for c in choices) + f", not {plain(v)}")
         return v
+
+
+def plain(v) -> str:
+    """A config value as a student wrote it in TOML: "laser", [0, 0], true; a table as {...}."""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, str):
+        return f'"{v}"'
+    if isinstance(v, list):
+        return "[" + ", ".join(plain(c) for c in v) + "]"
+    if isinstance(v, dict):
+        return "{" + ", ".join(f"{k} = {plain(c)}" for k, c in v.items()) + "}"
+    return f"{v:g}" if isinstance(v, float) else str(v)
 
 
 def _finite(v) -> bool:
@@ -143,21 +151,24 @@ def _unit(v, t: _Table, key: str) -> tuple[float, float, float]:
 def parse_sensor(table, index: int) -> SensorSpec:
     """One [[sensor]] table (`index` counting from 1, for a sensor with no name yet)."""
     if not isinstance(table, dict):
-        raise SensorError(f"[[sensor]] {index} must be a table, not {table!r}")
+        raise SensorError(f"[[sensor]] {index} must be a table, not {plain(table)}")
     name = table.get("name")
     if not isinstance(name, str) or not name.strip():
         raise SensorError(f"[[sensor]] {index} needs a name: name = \"<a name>\", what the Test tab calls it"
-                          + ("" if name is None else f" (not {name!r})"))
+                          + ("" if name is None else f" (not {plain(name)})"))
     t = _Table(table, f'[[sensor]] "{name}"')
     kind = table.get("kind")
+    if kind is None:
+        raise t.err('needs kind = "beam", "distance" or "color"')
     if kind not in KINDS:
-        raise t.err("kind must be " + ", ".join(f'"{k}"' for k in KINDS[:-1]) + f' or "{KINDS[-1]}", not {kind!r}')
+        raise t.err("kind must be " + ", ".join(f'"{k}"' for k in KINDS[:-1]) + f' or "{KINDS[-1]}", not {plain(kind)}')
     unknown = [k for k in table if k not in KEYS[kind]]
     if unknown:
-        raise t.err(f"unknown key {unknown[0]!r} for a {kind} sensor; its keys: {', '.join(KEYS[kind])}")
+        raise t.err(f"unknown key '{unknown[0]}' for a {kind} sensor; its keys: {', '.join(KEYS[kind])}")
     body = table.get("body")
     if not isinstance(body, str) or not body:
-        raise t.err(f'needs body = "<part>.<body>": the robot body it is mounted on (not {body!r})')
+        raise t.err('needs body = "<part>.<body>": the robot body it is mounted on'
+                    + ("" if body is None else f" (not {plain(body)})"))
     kw: dict = {"name": name, "kind": kind, "body": body}
     if kind == "beam":
         a, b = t.point("from", "one end of the beam"), t.point("to", "the beam's other end")
@@ -169,7 +180,7 @@ def parse_sensor(table, index: int) -> SensorSpec:
             raise t.err("needs toward = [x, y, z]: the direction it looks, in the body's frame")
         toward = table["toward"]
         if not (isinstance(toward, list) and len(toward) == 3 and all(_finite(c) for c in toward)):
-            raise t.err(f"toward must be a direction [x, y, z], 3 numbers, not {toward!r}")
+            raise t.err(f"toward must be a direction [x, y, z], 3 numbers, not {plain(toward)}")
         reach = t.length("max_range", DEFAULT_MAX_RANGE[kind])
         if kind == "color" and reach > COLOR_MAX_RANGE + 1e-12:
             raise t.err(f"max_range is {reach:g} m: a color sensor sees 10 cm at most (max_range = 0.10)")
@@ -177,7 +188,7 @@ def parse_sensor(table, index: int) -> SensorSpec:
     kw["dio"] = t.channel("dio")
     if "active_low" in table:
         if not isinstance(table["active_low"], bool):
-            raise t.err(f"active_low must be true or false, not {table['active_low']!r}")
+            raise t.err(f"active_low must be true or false, not {plain(table['active_low'])}")
         if kw["dio"] is None:
             raise t.err("active_low goes with dio: give dio = <channel> too, or leave active_low out")
         kw["active_low"] = table["active_low"]
@@ -186,7 +197,7 @@ def parse_sensor(table, index: int) -> SensorSpec:
         if "volts_per_m" in table:
             v = table["volts_per_m"]
             if not _finite(v) or v <= 0:
-                raise t.err(f"volts_per_m must be a number more than 0, not {v!r}")
+                raise t.err(f"volts_per_m must be a number more than 0, not {plain(v)}")
             if kw["analog"] is None:
                 raise t.err("volts_per_m goes with analog: give analog = <channel> too, or leave volts_per_m out")
             kw["volts_per_m"] = float(v)

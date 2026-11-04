@@ -112,10 +112,11 @@ unnecessary friction.**
 
 - **D1 Leaving the robot out (Task 1):** `mj_ray` excludes one body or whole geom groups, and the robot, the field and
   the pieces share group 0 (groups 1 and 2 mean structure and ground to the terrain and climb monitors; MuJoCo's
-  renderer hides 3 to 5). So a sensor excludes its own body and, past a hit it mustn't see (the rest of the robot, or
-  anything but a piece for `sees = "pieces"`), casts again from just past it. A clear path or a piece first is one
-  `mj_ray` a step; each unwanted surface in the way adds one, at most 32 a step. Pieces-only casts skip static
-  geoms, so the carpet and walls cost nothing. No model setting changes, so renders and the monitors are as before.
+  renderer hides 3 to 5). So a sensor excludes its own body and, past a hit on the rest of the robot, casts again
+  from just past it. A clear path, or a piece or the field first, is one `mj_ray` a step; each robot surface in the
+  way adds one, at most 32 a step. No model setting changes, so renders and the monitors are as before. The field
+  blocks every ray, `sees = "pieces"` too: a wall, goal, obstacle, field element or the carpet in front of a piece
+  hides it, as it would from a real beam, and a pieces-only sensor that hits the field first reads nothing.
 - **D2 When a reading is taken (Task 1):** after `mj_step`, from the kinematics `mj_step` computed at the start of
   the step. The sensor and what it hits come from one pass, so they agree; the reading is 1 ms old. Recomputing the
   kinematics would cost a pass a step and write into the data.
@@ -128,7 +129,10 @@ unnecessary friction.**
   balls, white discs, off-white rigid pieces. The presets have no color of their own. A robot config's `[range] ball`
   keeps the range file's `[range] color`.
 - **D6 Color sensor values (Task 1):** proximity falls along a straight line from 2047 at contact to 0 at 10 cm,
-  whatever it hits. Red, green, blue and IR stay at the dark carpet's few counts unless a piece is in front. With
-  `sees = "anything"`, something that isn't a piece gives a distance and a proximity but no color.
+  whatever it hits. IR follows the brightness of whatever it hits (C5): a piece's in full, anything else's times a
+  gray reflectance of 0.3 (an estimate), so IR and proximity agree. Red, green and blue stay at the dark carpet's few
+  counts unless a piece is in front. With `sees = "anything"`, something that isn't a piece gives a distance, IR and
+  a proximity but no color. Full brightness is 2047 counts in every channel, an estimate: the real sensor's raw color
+  counts go far higher, and Task 2 decides what the SimDevice gets.
 - **D7 Pieces out of play (Task 1):** a parked piece is 20 m under the field, so no sensor sees it. That includes the
   balls a `[shooter]` holds, since its hopper is a count, not bodies.

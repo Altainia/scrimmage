@@ -175,6 +175,36 @@ def test_a_distance_sensor_that_sees_anything_reads_the_field_but_never_the_robo
     assert w.sensors.reading("pieces").distance == pytest.approx(2.0), "pieces only: the carpet isn't one"
 
 
+def test_the_field_hides_a_piece_behind_it():
+    """A wall between a pieces-only sensor and a ball hides the ball (a real beam can't see through a wall); the
+    same ball on this side of the wall is seen, and a sensor that sees anything reads the wall."""
+    w = spares_world(range_cfg())
+    rear = world_point(w, "drive.chassis", [-0.42, 0.0, 0.0])
+    rear[2] = 0.12
+    back = body_dir(w, "drive.chassis", [-1.0, 0.0, 0.0])
+    at = body_point(w, "drive.chassis", rear)
+    attach(w, {"name": "s", "kind": "distance", "body": "drive.chassis", "at": at, "toward": back},
+           {"name": "any", "kind": "distance", "body": "drive.chassis", "at": at, "toward": back, "sees": "anything"},
+           {"name": "beam", "kind": "beam", "body": "drive.chassis", "from": at,
+            "to": body_point(w, "drive.chassis", [-0.5, rear[1], rear[2]])})
+    assert 0.5 < rear[0] < 1.9, "the blue alliance wall (x = 0) is within 2 m behind the robot"
+    r = w.test_range.balls.r
+    w.test_range.balls.put(0, [-0.3, rear[1], rear[2]], NO_TOUCH)     # behind the wall
+    step(w)
+    assert w.sensors.reading("s").distance == pytest.approx(2.0) and not w.sensors.reading("beam").on
+    wall = w.sensors.reading("any").distance
+    assert wall < rear[0] + 0.01
+    w.test_range.balls.put(0, [rear[0] - 0.5 - r, rear[1], rear[2]], NO_TOUCH)    # on this side
+    step(w)
+    assert w.sensors.reading("s").distance == pytest.approx(0.5, abs=0.001)
+
+
+def test_reading_an_unknown_sensor():
+    w, _ = _ahead_world(kind="distance")
+    with pytest.raises(SensorError, match='the robot has no sensor "nope"; its sensors: s'):
+        w.sensors.reading("nope")
+
+
 def test_a_clear_sensor_casts_one_ray_a_step():
     w, _ = _ahead_world(kind="distance")
     before = w.sensors.casts
@@ -257,9 +287,13 @@ def test_a_color_sensor_with_nothing_in_front_sees_nothing(tmp_path):
         got = w.sensors.reading(name)
         assert not got.on and got.color is None and got.color_name is None, name
         values = color_values(got)
-        assert max(values["Red"], values["Green"], values["Blue"], values["IR"]) < 50, name
-        assert values["Proximity"] == 0 or name == "floor", name
+        assert max(values["Red"], values["Green"], values["Blue"]) < 50, name
+        if name != "floor":
+            assert values["IR"] < 50 and values["Proximity"] == 0, name
     assert w.sensors.reading("floor").distance == pytest.approx(0.05, abs=0.002), "the carpet, read as a distance"
+    # IR and proximity follow what it hits, the carpet a gray (GRAY_REFLECTANCE), so they agree; colors stay dark.
+    floor = color_values(w.sensors.reading("floor"))
+    assert 200 < floor["IR"] < 600 and floor["Proximity"] > 0
 
 
 def test_piece_colors():
@@ -299,9 +333,11 @@ def test_a_sensor_on_a_body_the_robot_doesnt_have_lists_the_robots_bodies():
 
 @pytest.mark.parametrize("table, words", [
     ({"kind": "beam", "body": "a.b", "from": [0, 0, 0], "to": [1, 0, 0]}, "needs a name"),
-    ({"name": "x", "kind": "laser", "body": "a.b"}, "kind must be"),
+    ({"name": "x", "kind": "laser", "body": "a.b"}, 'kind must be "beam", "distance" or "color", not "laser"'),
+    ({"name": "x", "body": "a.b"}, 'needs kind = "beam", "distance" or "color"'),
     ({"name": "x", "kind": "beam", "body": "a.b", "to": [1, 0, 0]}, "needs from"),
-    ({"name": "x", "kind": "beam", "body": "a.b", "from": [0, 0], "to": [1, 0, 0]}, "from must be"),
+    ({"name": "x", "kind": "beam", "body": "a.b", "from": [0, 0], "to": [1, 0, 0]},
+     "from must be [x, y, z], 3 numbers, not [0, 0]"),
     ({"name": "x", "kind": "beam", "body": "a.b", "from": [0, 0, 0], "to": [0, 0, 0]}, "same point"),
     ({"name": "x", "kind": "beam", "body": "a.b", "from": [0, 0, 0], "to": [1, 0, 0], "sees": "anything"},
      "unknown key 'sees'"),
