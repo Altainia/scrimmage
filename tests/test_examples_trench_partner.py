@@ -59,10 +59,10 @@ def test_trench_example_clears_stowed():
     assert r.status == "finished", r.outcome
     assert [c["line"] for c in r.checks] == \
         ["passed: the robot clears trench_arm by at least 0.5 in from 0.3 s on (block 1)"]
-    # the README: closest 2.9 in at 2.5 s, the elevator's top under the trench's arm
+    # the README: closest 2.89 in at 2.5 s, the elevator's top under the trench's arm
     assert r.clearance["trench_arm"]["min_in"] == pytest.approx(2.9, abs=0.05)
     assert r.clearance["trench_arm"]["t"] == pytest.approx(2.5, abs=0.1)
-    assert clearance_lines(r) == ["closest to trench_arm: 2.9 in at 2.5 s"]
+    assert clearance_lines(r) == ["closest to trench_arm: 2.89 in at 2.5 s"]
     # it went all the way through: its back bumper (0.43 m behind its center) past the trench's far face
     arm = next(e for e in load_range("2026-trench", ".").elements if e.name == "trench_arm")
     assert xs[-1] - 0.43 > arm.center[0] + arm.size[0] / 2
@@ -83,7 +83,7 @@ def test_trench_example_raised_arm_fails():
     assert r.status == "check failed", r.outcome
     assert r.outcome == ("a check failed (block 2): expected the robot to clear trench_arm by at least 0.5 in, but it "
                          "was 0.45 in at 1.7 s")
-    assert clearance_lines(r) == ["closest to trench_arm: 0.4 in at 1.7 s"]
+    assert clearance_lines(r) == ["closest to trench_arm: 0.45 in at 1.7 s"]
     assert max(r.signals["arm.pivot"]) > 89.0                   # the arm was up
     assert max(tip) == pytest.approx(0.64, abs=0.01)            # the README: its tip about 0.64 m (25 in) up
 

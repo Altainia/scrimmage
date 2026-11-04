@@ -81,7 +81,7 @@ A robot with a partner robot (the config's `[partner]`, or Setup's partner: setu
 Clearance (clearance.py): a test that names a field element in a `clears` condition or as `clearance.<element>` in
 its chart measures the robot's clearance to it after every step (Watch.closest), and only then. The chart's
 `clearance.<element>` is in inches, NaN while nothing is within 0.5 m; the run's `clearance` is each element's
-smallest clearance and when (clearance_lines words it: "closest to trench: 0.8 in at 3.1 s", "trench: never within
+smallest clearance and when (clearance_lines words it: "closest to trench: 0.82 in at 3.1 s", "trench: never within
 20 in"). A failed `clears` check says the clearance then ("but it was 0.42 in").
 
 A run ends with one status: "finished" (every block played), "check failed", "timed out" (a wait until, a move, a
@@ -319,10 +319,10 @@ def goal_lines(result: RunResult) -> list[str]:
 
 
 def clearance_lines(result: RunResult) -> list[str]:
-    """The run's closest approaches as lines, one per element it measured: "closest to trench: 0.8 in at 3.1 s", or
+    """The run's closest approaches as lines, one per element it measured: "closest to trench: 0.82 in at 3.1 s", or
     "trench: never within 20 in" (none for a run that measured none)."""
     return [f"{e}: never within {NEVER_WITHIN_IN} in" if c["min_in"] is None else
-            f"closest to {e}: {c['min_in']:.1f} in at {c['t']:.1f} s" for e, c in (result.clearance or {}).items()]
+            f"closest to {e}: {c['min_in']:.2f} in at {c['t']:.1f} s" for e, c in (result.clearance or {}).items()]
 
 
 def air_lines(result: RunResult) -> list[str]:

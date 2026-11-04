@@ -2,9 +2,9 @@
 
 A test opens in robot mode: the robot document is the test's `robot`, and the App keeps it in step with the file
 (an assembler edit, an outside edit, Import again). The session holds the test's Program, the palette and problems of
-the robot as it is now and its hints, which never stop a run (`refresh`, called by the App whenever it validates the robot), and one run, sweep or floor
-spread at a time on a worker thread ("test-run", "test-sweep", "test-spread"), which holds the SimLock as "test" while
-it runs.
+the robot as it is now and its hints, which never stop a run (`refresh`, called by the App whenever it validates the
+robot), and one run, sweep or floor spread at a time on a worker thread ("test-run", "test-sweep", "test-spread"),
+which holds the SimLock as "test" while it runs.
 
 Every change bumps one `version`, which the page long-polls. A save is refused (409) when the test changed after the
 version the page sent (`_changed_at`): a run's progress doesn't make the page's version stale. An outside edit of the

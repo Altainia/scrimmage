@@ -97,7 +97,7 @@ def test_clearance_under_a_box(tmp_path):
     assert r.signals["clearance.box"][-1] == pytest.approx(want / IN, abs=0.001 / IN)
     low = r.clearance["box"]
     assert low["min_in"] == pytest.approx(want / IN, abs=0.05) and low["t"] is not None
-    assert clearance_lines(r) == [f"closest to box: {low['min_in']:.1f} in at {low['t']:.1f} s"]
+    assert clearance_lines(r) == [f"closest to box: {low['min_in']:.2f} in at {low['t']:.1f} s"]
 
 
 def test_clearance_far(tmp_path):
@@ -207,7 +207,7 @@ def test_clearance_reaches_the_cli_and_the_kept_run(tmp_path, capsys, monkeypatc
         main(["test", "run", str(program.path), "--out", str(tmp_path / "runs")])
     out = capsys.readouterr().out
     assert e.value.code == 0, out
-    line = re.search(r"^  (closest to box: \d+\.\d in at \d+\.\d s)$", out, re.M)
+    line = re.search(r"^  (closest to box: \d+\.\d\d in at \d+\.\d s)$", out, re.M)
     assert line, out
     kept = store.load_result(tmp_path / "runs", "001")
     assert set(kept["clearance"]) == {"box"}

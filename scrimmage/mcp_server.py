@@ -601,7 +601,7 @@ async def test_run(path: str) -> dict:
     cylinders weaker from then on; null if never), and working_psi; else null), "air_lines" (the air in words),
     "clearance" (each field element the test measures, in a clears check or a clearance.<element> chart signal:
     min_in, its smallest clearance in inches, and t, when; both null when it was never within 0.5 m (20 in); null
-    when it measures none), "clearance_lines" (those in words: "closest to trench: 0.8 in at 3.1 s") and
+    when it measures none), "clearance_lines" (those in words: "closest to trench: 0.82 in at 3.1 s") and
     "run_folder", where the run is kept (the app's Test tab replays it). path: an absolute path. A bad test file
     or robot is a plain error naming the block."""
     file = _test_file(path)

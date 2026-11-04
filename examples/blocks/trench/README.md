@@ -38,7 +38,7 @@ scrimmage test run examples/blocks/trench/clear.test.toml
 ```
 finished
   passed: the robot clears trench_arm by at least 0.5 in from 0.3 s on (block 1)
-  closest to trench_arm: 2.9 in at 2.5 s
+  closest to trench_arm: 2.89 in at 2.5 s
 ```
 
 The robot fits with 2.9 in to spare. The closest part is the top of the elevator, while it is under the trench's arm.
@@ -53,7 +53,7 @@ and the driver didn't stow the arm. Its tip is then about 0.64 m (25 in) up, hig
 ```
 a check failed (block 2): expected the robot to clear trench_arm by at least 0.5 in, but it was 0.45 in at 1.7 s
   failed (block 2): expected the robot to clear trench_arm by at least 0.5 in, but it was 0.45 in at 1.7 s
-  closest to trench_arm: 0.4 in at 1.7 s
+  closest to trench_arm: 0.45 in at 1.7 s
 ```
 
 The arm's tip gets within 0.5 in of the front of the trench at 1.7 s, and the check stops the run right there. That

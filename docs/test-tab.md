@@ -44,7 +44,8 @@ first when the robot can drive and the field has bars, then spins the first mech
 - **Middle: your test.** Above the blocks is **Setup**, folded away until you open it (its summary shows the hooks, the
   robot's weight and the field).
 - **Right: the run.** **Fix these first** (when there are problems), **Good to know** (hints that don't stop a
-  run), **Run** and **Stop**, then the result: what happened in one sentence, each check, the replay, the chart, and the list of kept runs.
+  run), **Run** and **Stop**, then the result: what happened in one sentence, each check, the replay, the chart, and
+  the list of kept runs.
 
 The bottom bar says whether the test is saved and how many blocks it has.
 
@@ -479,7 +480,7 @@ It is the smallest distance between any part of the robot that collides and any 
   `clearance counts only parts that collide: arm and elevator have collide off, so they aren't measured (set collide
   = true on them)`.
 - **It is measured out to 0.5 m (19.7 in).** Farther away it reads as clear, so *n* can be at most 19.6 in.
-- **The result** gets a line for each element the test measures: `closest to trench_arm: 2.9 in at 2.5 s`, or
+- **The result** gets a line for each element the test measures: `closest to trench_arm: 2.89 in at 2.5 s`, or
   `trench_arm: never within 20 in` when nothing came within 0.5 m. A failed check says the clearance then: `expected
   the robot to clear trench_arm by at least 0.5 in, but it was 0.45 in at 1.7 s`. A touch reads 0.
 - **The chart** can show `clearance.<element>` in inches, with a gap while nothing is within 0.5 m. Clearance is

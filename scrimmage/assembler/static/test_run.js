@@ -9,7 +9,7 @@
 //             button for each stuck one; for a run with a piece on a rod at the end, its depth in words ("seated
 //             3.5 in of 4.0 in on branch_l2"); the goal counts, how the air went and how close the robot came to
 //             each field element the test measures, as `scrimmage test` prints them (the result's lines: "Scored 5
-//             in hub_blue.", "Air: 120 psi at the start, …", "Closest to trench: 0.8 in at 3.1 s."); and the run's
+//             in hub_blue.", "Air: 120 psi at the start, …", "Closest to trench: 0.82 in at 3.1 s."); and the run's
 //             notes (what its numbers rest on: an UNCALIBRATED grip) as a list
 //   Replay    live3d.js's LiveView draws the view (a cylinder between its pins); motion.bin's frames move it. Play /
 //             Pause, speed (¼× to 2×), a scrubber with the time, and under it a mark per fed piece at its feed time, its shape and color its

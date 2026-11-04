@@ -410,10 +410,11 @@ Test (`/api/test/*`; 404 "no test is open" unless a test is open, except /api/te
   GET  /api/test/state[?since=N]   -> {version, path, test: the test as JSON (scrimmage/blocks/program.py to_json),
         palette (scrimmage/blocks/palette.py; null when the robot doesn't load), problems: [{place, message}] (a
         robot that doesn't load is one problem at place []), hints: [{place, message}] (palette.hints: what the
-        test can run with but should know; never a reason to refuse a run), running: null|{kind: run|sweep|spread, progress: 0..1},
-        runs: list_runs (newest first; a sweep's runs have ids "sweep-NNN/NNN", a spread's "spread-NNN/NNN";
-        cancelled: Stop ended it), sweeps: [{id, target, values, cancelled, problems, rows}] (newest first), spreads:
-        list_spreads ([{id, spread, placements, picked, sentence, cancelled, rows}], newest first), file_error: why
+        test can run with but should know; never a reason to refuse a run), running: null|{kind: run|sweep|spread,
+        progress: 0..1}, runs: list_runs (newest first; a sweep's runs have ids "sweep-NNN/NNN", a spread's
+        "spread-NNN/NNN"; cancelled: Stop ended it), sweeps: [{id, target, values, cancelled, problems, rows}]
+        (newest first), spreads: list_spreads ([{id, spread, placements, picked, sentence, cancelled, rows}], newest
+        first), file_error: why
         the file as edited outside can't be read (the last good test is kept) or null, run_error: why the last run,
         sweep or spread couldn't run or null, last: {kind, id} of the last run, sweep or spread this editor made, or
         null, fields: test_session.field_choices() (the plain field {file: null, name, starts: []}, then every
