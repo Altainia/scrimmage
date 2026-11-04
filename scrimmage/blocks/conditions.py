@@ -478,7 +478,7 @@ def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names
         return f"the robot clears {a['element']} by at least {_amount(a['at_least_in'], 'in')}"
     if k == "sensor":
         if a.get("sees") is not None:
-            verb = "sees" if a["is"] == "on" else "doesn't see"
+            verb = "is seeing" if a["is"] == "on" else "isn't seeing"
             return f"{a['sensor']} {verb} {a['sees']}"
         return f"{a['sensor']} is {a['is']}"
     if k == "partner_lifted":

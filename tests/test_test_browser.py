@@ -2124,9 +2124,11 @@ def test_the_sensor_check_round_trips_exactly_and_shows_its_color_for_a_color_se
         {"sensor": {"sensor": "eye", "is": "on"}}]
     assert page.evaluate("__scrimmageTest.toJSON()") == st
     assert _sees_shown(page) == [["mouth", False], ["eye", True], ["eye", True]]
+    # what the blocks read: their shown fields (toString counts hidden ones too)
     texts = page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).filter(b => b.type === 'cond_sensor')"
-                          ".map(b => b.toString())")
-    assert texts[1] == "sensor eye is off seeing red", texts
+                          ".map(b => b.inputList.flatMap(i => i.fieldRow).filter(f => f.isVisible())"
+                          ".map(f => f.getText()).join(' '))")
+    assert texts == ["sensor mouth is on", "sensor eye isn't seeing red", "sensor eye is seeing a piece"], texts
     # picking the beam break hides the color; a color sensor shows it again
     page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).filter(b => b.type === 'cond_sensor')[2]"
                   ".setFieldValue('mouth', 'SENSOR')")
@@ -2145,13 +2147,13 @@ def test_a_sensor_check_from_the_palette_saves_as_the_test_file_reads_it(test_pa
 
 
 def test_the_replay_draws_the_beam_lit_once_it_broke(test_page, tmp_path):
-    from test_blocks_sensors import MOUTH, STOP_AT_THE_BEAM
-    page, _ = test_page(path=_sensor_test(tmp_path, STOP_AT_THE_BEAM, MOUTH))
+    from test_blocks_sensors import EYE, MOUTH, STOP_AT_THE_BEAM
+    page, _ = test_page(path=_sensor_test(tmp_path, STOP_AT_THE_BEAM, MOUTH + EYE))
     run = _run(page, "001")
     assert run["status"] == "finished", run
-    [start] = page.evaluate("__scrimmageTest.replay.sensors")
-    assert start["name"] == "mouth" and start["lit"] is False
-    a, b = start["a"], start["b"]
+    start = {s["name"]: s for s in page.evaluate("__scrimmageTest.replay.sensors")}
+    assert sorted(start) == ["eye", "mouth"] and not start["mouth"]["lit"] and not start["eye"]["lit"]
+    a, b = start["mouth"]["a"], start["mouth"]["b"]
     assert sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5 == pytest.approx(0.34, abs=1e-6)   # from to to
     box = page.locator("#test-scrub").bounding_box()
     y = box["y"] + box["height"] / 2
@@ -2159,9 +2161,14 @@ def test_the_replay_draws_the_beam_lit_once_it_broke(test_page, tmp_path):
     page.mouse.down()
     page.mouse.move(box["x"] + box["width"] + 20, y, steps=5)
     page.mouse.up()
-    [end] = page.evaluate("__scrimmageTest.replay.sensors")
-    assert end["lit"] is True
-    assert end["a"][0] > a[0] + 0.3                       # it rides on the intake, which drove forward
-    # charted by default, saying what its numbers mean
+    end = {s["name"]: s for s in page.evaluate("__scrimmageTest.replay.sensors")}
+    assert end["mouth"]["lit"] and end["eye"]["lit"]      # the beam broken; the eye seeing the ball under it
+    assert end["mouth"]["a"][0] > a[0] + 0.3              # it rides on the intake, which drove forward
+    # charted by default, each saying what its numbers mean
     titles = page.evaluate("[...document.querySelectorAll('.test-plot-title')].map(t => t.textContent)")
-    assert "sensor.mouth (1 = broken)" in titles, titles
+    colors = ", ".join(f"{i} {c}" for i, c in enumerate(page.evaluate("__scrimmageTest.state.palette.sensor_colors")))
+    assert "sensor.mouth (1 = broken)" in titles and f"sensor.eye ({colors})" in titles, titles
+    assert colors.startswith("0 red, 1 blue, 2 yellow")
+    # the color sensor saw nothing at first (an empty sample, a gap in its line), then the yellow ball
+    eye = _result(page, "001")["signals"]["sensor.eye"]
+    assert eye[0] is None and eye[-1] == 2

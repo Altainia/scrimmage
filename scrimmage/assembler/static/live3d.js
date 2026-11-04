@@ -266,8 +266,8 @@ export class LiveView {
       sn.lit = lit;
       sn.mesh.material.color.setHex(lit ? SENSOR_ON : SENSOR_OFF);
       sn.mesh.material.opacity = lit ? 1 : SENSOR_OFF_OPACITY;
+      this.requestRender();
     }
-    this.requestRender();
   }
 
   sensorShapes() {

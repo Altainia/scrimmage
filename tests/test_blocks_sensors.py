@@ -156,7 +156,7 @@ def test_sensor_signals_by_kind(tmp_path):
     assert pal["sensors"] == [{"name": "eye", "kind": "color"}, {"name": "mouth", "kind": "beam"},
                               {"name": "range", "kind": "distance"}]
     assert pal["sensor_colors"] == list(NAMED_COLORS)
-    assert pal["signals"][-3:] == ["sensor.eye", "sensor.mouth", "sensor.range"]
+    assert {"sensor.eye", "sensor.mouth", "sensor.range"} <= set(pal["signals"])
     result = TestRun(world, p).run()
     assert set(result.signals["sensor.mouth"]) == {0.0}
     assert all(math.isnan(v) for v in result.signals["sensor.eye"])
@@ -166,15 +166,23 @@ def test_sensor_signals_by_kind(tmp_path):
     assert 0 < reach < 2.0 / 0.0254
 
 
-def test_a_color_sensors_signal_is_the_index_of_the_color_it_sees(tmp_path):
-    from scrimmage.blocks.run import sensor_value
-    from scrimmage.sensors.runtime import Reading
-    p = _program(tmp_path, "", EYE)
-    world = world_for(p)
-    world.sensors._readings["eye"] = Reading(on=True, distance=0.03, color=(0.9, 0.1, 0.1), color_name="red")
-    assert sensor_value(world, "eye") == 0.0
-    world.sensors._readings["eye"] = Reading(on=True, distance=0.03, color=(0.95, 0.85, 0.1), color_name="yellow")
-    assert sensor_value(world, "eye") == float(list(NAMED_COLORS).index("yellow"))
+def test_a_red_ball_reads_red_and_its_signal_is_reds_index(tmp_path):
+    """The intake field with its ball colored red (a range file's [range] color, spec D5): the color sensor over the
+    mouth sees red once the beam has stopped the ball, and its signal is red's index."""
+    field = (ROOT / "scrimmage" / "testrange" / "ranges" / "intake.toml").read_text(encoding="utf-8")
+    field = field.replace('ball = "2026-fuel" ', 'ball = "2026-fuel"\ncolor = "red" ', 1)
+    assert 'color = "red"' in field
+    (tmp_path / "red.toml").write_text(field, encoding="utf-8")
+    _robot(tmp_path, MOUTH + EYE)
+    robot = tmp_path / "robot.toml"
+    robot.write_text(robot.read_text(encoding="utf-8").replace('file = "intake"', 'file = "red.toml"'),
+                     encoding="utf-8")
+    p = loads('[test]\nrobot = "robot.toml"\n' + STOP_AT_THE_BEAM
+              + _expect('{ sensor = "eye", is = "on", sees = "red" }')
+              + _expect('{ sensor = "eye", is = "off", sees = "yellow" }'), tmp_path / "red.test.toml")
+    result = TestRun(world_for(p), p).run()
+    assert result.passed, result.outcome
+    assert result.signals["sensor.eye"][-1] == float(list(NAMED_COLORS).index("red"))
 
 
 def test_a_robot_without_sensors_has_no_sensor_signals(tmp_path):
@@ -217,8 +225,25 @@ def test_a_bad_sensor_condition_says_what(tmp_path, cond, words):
 def test_describe_words_a_sensor_check():
     assert describe(Cond("sensor", {"sensor": "beam", "is": "on", "sees": None})) == "beam is on"
     assert describe(Cond("sensor", {"sensor": "beam", "is": "off", "sees": None})) == "beam is off"
-    assert describe(Cond("sensor", {"sensor": "color", "is": "on", "sees": "red"})) == "color sees red"
-    assert describe(Cond("sensor", {"sensor": "color", "is": "off", "sees": "red"})) == "color doesn't see red"
+    assert describe(Cond("sensor", {"sensor": "color", "is": "on", "sees": "red"})) == "color is seeing red"
+    assert describe(Cond("sensor", {"sensor": "color", "is": "off", "sees": "red"})) == "color isn't seeing red"
+
+
+def test_a_repeat_or_wait_on_a_color_reads_plainly_when_it_runs_out(tmp_path):
+    """A color sensor's check in the run's sentences: never a double negative."""
+    repeat = ('[[block]]\ndo = "repeat"\nuntil = { sensor = { sensor = "eye", is = "on", sees = "red" } }\nmax = 3\n'
+              '\n  [[block.body]]\n  do = "wait"\n  seconds = 0.01\n')
+    p = _program(tmp_path, repeat, EYE)
+    assert TestRun(world_for(p), p).run().outcome.endswith("stopped after 3 times without eye seeing red")
+    held = STOP_AT_THE_BEAM + ('[[block]]\ndo = "repeat"\nuntil = { sensor = { sensor = "eye", is = "off", '
+                               'sees = "yellow" } }\nmax = 3\n\n  [[block.body]]\n  do = "wait"\n  seconds = 0.01\n')
+    p = _program(tmp_path, held, MOUTH + EYE)
+    outcome = TestRun(world_for(p), p).run().outcome
+    assert outcome.endswith("stopped after 3 times without eye losing sight of yellow"), outcome
+    p = _program(tmp_path, held.replace('do = "repeat"', 'do = "wait_until"').replace("max = 3", "timeout = 0.1")
+                 .split("\n  [[block.body]]")[0], MOUTH + EYE)
+    outcome = TestRun(world_for(p), p).run().outcome
+    assert "waiting for eye to lose sight of yellow timed out" in outcome, outcome
 
 
 # ---- names ---------------------------------------------------------------------------------------------------------

@@ -31,7 +31,7 @@ const COND = "Condition";
 // Names the tests use that the palette may not have (a joint renamed on Import again): a picker keeps offering them
 // so the block keeps its value (and shows the problem) instead of quietly picking another name. Rebuilt by setUsed.
 const KINDS_OF_NAME = { motor: "robot", joint: "robot", robot: "robot", body: "robot", turret: "robot", cylinder: "robot",
-  sensor: "robot",
+  sensor: "robot", color: "robot",
   field: "field", piece: "field", bar: "field", level: "field", station: "field", element: "field", rod: "field",
   goal: "field", moving: "field", cleared: "field" };
 let used = {};
@@ -71,8 +71,6 @@ const has = (xs) => (xs || []).length > 0;
 const cylinderNames = () => (pal().cylinders || []).map((c) => c.name);
 const movingNames = () => (pal().moving_elements || []).map((e) => e.name);
 const sensorNames = () => (pal().sensors || []).map((s) => s.name);
-// a sensor check's color: any (sees nothing written), else one of the named colors (scrimmage/sensors/colors.py)
-const SENSOR_COLORS = ["red", "blue", "yellow", "orange", "green", "purple", "white", "gray"];
 const ANY_GOAL = [["any goal", "any"]];   // a scored check's goal: every goal together (palette.py ANY_GOAL)
 
 // A floor piece as a student reads it ("ball 10", "coral 2"): the palette's `piece_labels`, the names every sentence uses
@@ -102,8 +100,8 @@ const OPTIONS = {
   cylinder: () => choices(cylinderNames(), "cylinder"),
   moving: () => choices(movingNames(), "moving"),
   sensor: () => choices(sensorNames(), "sensor"),
-  sees: () => [["seeing any color", "any"],
-    ...(pal().sensor_colors || SENSOR_COLORS).map((c) => [`seeing ${c}`, c])],
+  // a color sensor's check: a piece of any color (no sees in the file), or one of the palette's named colors
+  sees: () => choices(pal().sensor_colors || [], "color", [["a piece", "any"]]),
   cleared: () => choices(pal().elements || [], "cleared"),
   // left and right only on a swerve robot (or when the test already has one)
   heading: () => [["forward", "forward"], ["back", "back"],
@@ -116,7 +114,10 @@ const SIDES = [["above", "above"], ["below", "below"]];
 const CYLINDER_TO = [["extend", "extend"], ["retract", "retract"], ["off", "off"]];
 const CYLINDER_IS = [["extended", "extended"], ["retracted", "retracted"]];
 const AIR_SIDES = [["stored", "stored"], ["working", "working"]];
-const SENSOR_IS = [["on", "on"], ["off", "off"]];
+// A sensor check's on or off, and the same choice worded for a color sensor. Given as functions: Blockly takes the
+// words a list's options share ("is", "seeing") out into labels of their own, which wouldn't hide with the picker.
+const SENSOR_IS = () => [["is on", "on"], ["is off", "off"]];
+const SENSOR_SEEING = () => [["is seeing", "on"], ["isn't seeing", "off"]];
 
 // A joint picker's validator: picking a joint that slides (or turns) switches a unit that doesn't fit it.
 function fitUnit(unitField) {
@@ -141,11 +142,16 @@ function elementUnit(value) {
   return value;
 }
 
-// A sensor check's color picker shows only for a color sensor (or when the check already names a color). A validator
-// runs before its field takes the value, so the field being set gives its new value.
+// A sensor check reads "sensor mouth is on" for a beam break or distance sensor, and "sensor eye is seeing red" (or
+// "isn't seeing a piece") for a color sensor, or when the check already names a color. IS and SEEING are the same
+// choice (on or off) worded both ways, kept equal; one of them shows. A validator runs before its field takes the
+// value, so the field being set gives its new value.
 function showSees(block, sensor, sees) {
   const s = (pal().sensors || []).find((x) => x.name === sensor);
-  block.getField("SEES").setVisible((s ? s.kind === "color" : false) || sees !== "any");
+  const color = (s ? s.kind === "color" : false) || sees !== "any";
+  block.getField("IS").setVisible(!color);
+  block.getField("SEEING").setVisible(color);
+  block.getField("SEES").setVisible(color);
   if (block.rendered) block.queueRender();
 }
 
@@ -419,25 +425,32 @@ const CONDS = {
     json: (b) => ({ partner_moved: { at_least_in: b.getFieldValue("MOVED") } }),
   },
   sensor: {
-    def: { message0: "sensor %1 is %2 %3",
-      args0: [dd("SENSOR", OPTIONS.sensor), dd("IS", SENSOR_IS), dd("SEES", OPTIONS.sees)],
-      tooltip: "One of the robot's sensors is on: a beam break while something breaks its beam, a distance sensor "
-        + "while something is closer than its threshold, a color sensor while it sees a piece (of this color, when "
-        + "you pick one; off with a color: it isn't seeing that color)." },
-    fields: (a) => ({ SENSOR: a.sensor, IS: a.is, SEES: a.sees || "any" }),
+    def: { message0: "sensor %1 %2 %3 %4",
+      args0: [dd("SENSOR", OPTIONS.sensor), dd("IS", SENSOR_IS), dd("SEEING", SENSOR_SEEING), dd("SEES", OPTIONS.sees)],
+      tooltip: "One of the robot's sensors: a beam break is on while something breaks its beam, a distance sensor "
+        + "while something is closer than its threshold. A color sensor is seeing a piece within its range (of "
+        + "this color, when you pick one)." },
+    fields: (a) => ({ SENSOR: a.sensor, IS: a.is, SEEING: a.is, SEES: a.sees || "any" }),
     json: (b) => ({ sensor: { sensor: b.getFieldValue("SENSOR"), is: b.getFieldValue("IS"),
       ...(b.getFieldValue("SEES") === "any" ? {} : { sees: b.getFieldValue("SEES") }) } }),
     init(b) {
-      b.getField("SENSOR").setValidator(function (v) {
+      const watch = (field, show) => b.getField(field).setValidator(function (v) {
         const block = this.getSourceBlock();
-        if (block) showSees(block, v, block.getFieldValue("SEES"));
+        if (block) show(block, v);
         return v;
       });
-      b.getField("SEES").setValidator(function (v) {
-        const block = this.getSourceBlock();
-        if (block) showSees(block, block.getFieldValue("SENSOR"), v);
-        return v;
-      });
+      watch("SENSOR", (block, v) => showSees(block, v, block.getFieldValue("SEES")));
+      watch("SEES", (block, v) => showSees(block, block.getFieldValue("SENSOR"), v));
+      // on or off, worded either way: the two pickers stay equal (`syncing`: the other one is being set to match,
+      // as a validator sees the value before its field has it)
+      let syncing = false;
+      const match = (other) => (block, v) => {
+        if (syncing || block.getFieldValue(other) === v) return;
+        syncing = true;
+        try { block.setFieldValue(v, other); } finally { syncing = false; }
+      };
+      watch("IS", match("SEEING"));
+      watch("SEEING", match("IS"));
       showSees(b, b.getFieldValue("SENSOR"), b.getFieldValue("SEES"));
     },
   },
@@ -550,7 +563,7 @@ function rememberNames(blocks) {
       if (kind === "cylinder") remember("cylinder", a.cylinder);
       if (kind === "element") remember("moving", a.element);
       if (kind === "clears") remember("cleared", a.element);
-      if (kind === "sensor") remember("sensor", a.sensor);
+      if (kind === "sensor") { remember("sensor", a.sensor); remember("color", a.sees); }
     }
     rememberNames(b.body);
   }
