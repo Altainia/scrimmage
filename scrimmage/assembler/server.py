@@ -414,9 +414,8 @@ Test (`/api/test/*`; 404 "no test is open" unless a test is open, except /api/te
         progress: 0..1}, runs: list_runs (newest first; a sweep's runs have ids "sweep-NNN/NNN", a spread's
         "spread-NNN/NNN"; cancelled: Stop ended it), sweeps: [{id, target, values, cancelled, problems, rows}]
         (newest first), spreads: list_spreads ([{id, spread, placements, picked, sentence, cancelled, rows}], newest
-        first), file_error: why
-        the file as edited outside can't be read (the last good test is kept) or null, run_error: why the last run,
-        sweep or spread couldn't run or null, last: {kind, id} of the last run, sweep or spread this editor made, or
+        first), file_error: why the file as edited outside can't be read (the last good test is kept) or null,
+        run_error: why the last run, sweep or spread couldn't run or null, last: {kind, id} of the last run, sweep or spread this editor made, or
         null, fields: test_session.field_choices() (the plain field {file: null, name, starts: []}, then every
         built-in range: {file, name, starts (file order), disc, ball_choice, stations}), station_starter: the starter
         feed blocks for the robot's field (start feeding from its first station, wait until 5 are in the hopper
