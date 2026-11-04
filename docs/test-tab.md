@@ -336,13 +336,18 @@ typical ranges. A run that depends on a grip says so in a line under the sentenc
 friction 0.8 (UNCALIBRATED estimate; measure yours with a sled pull)"), and a test of held, rests-on or seated with
 no grip set says what the pads have instead ("grip: the pads have MuJoCo's default friction 1.0 — about grip tape's;
 the larger of pad and piece applies — an UNCALIBRATED estimate; ...", or the friction `part.toml` gives them). Never take
-a grip result as measured.
+a grip result from a material or the default as measured.
 
-**How to measure your own friction (a sled pull).** Take a piece of your pad material, or a block covered in it, and
-the piece's surface (a scrap of the pipe, or the piece itself) lying flat on a table. Put weight on the pad block (it can
-be the block itself if you weigh it). Pull the pad block along the surface with a luggage scale, slowly and steadily.
-Read the scale while it slides, not at the first jerk. **Friction = the pull ÷ the block's weight**, in the same unit
-(pull 3.6 N on a 4.0 N block: 0.9). Do it three times and use the middle number. Pick **My own number** and type it.
+**How to measure your own friction (a sled pull).** Glue your pad material to the bottom of a small weighted sled and
+pull it with a luggage scale across the piece's surface (a scrap of the pipe, or the piece itself) lying flat, reading
+the scale while it slides steadily, not at the first jerk. **Friction = the pull ÷ the sled's weight** (pull 3.6 N on
+a 4.0 N sled: 0.9). [Measuring: sled pull](measuring.md#sled-pull) has the picture, the steps and a form to print.
+Then either pick **My own number** and type the average, or write the trials in a friction measurement file and name
+it as the body's grip: `[body.pad] grip = "pad.measure.toml"` (relative to the part's folder), or `grip = { pad =
+"pad.measure.toml" }` on the robot config's `[[part]]` (relative to the config). With a file, the run's line names it:
+"claw.pad grip: measured, friction 0.8 (pad.measure.toml, J. Smith, 2026-11-10, 3 trials)". A file whose pulls aren't
+good enough yet (fewer than 3, or disagreeing by more than 15%) is still used, and the line says why and keeps
+UNCALIBRATED.
 
 **What a grip does in the simulation.** A grip sets the friction of every geom of that body that collides (a wheel's
 tread keeps its own). The pad also gets a firm contact and priority over the piece's, so the pad's friction applies and
@@ -429,7 +434,8 @@ turned its closed loop on, and the pressure switch still starts and stops it.
 **The run's air.** A robot with cylinders adds a line to the result, such as `air: 120 psi at the start, 84 psi at the
 end, lowest 81 psi at 14.2 s; the compressor ran 9.0 s`. If the tanks fell below the working pressure it warns: `the
 tanks fell below the 60 psi working pressure at 2.0 s: the cylinders pushed weaker from then on`. The notes say
-`Pneumatic numbers are estimates (UNCALIBRATED): see docs/pneumatics.md.`
+`UNCALIBRATED: pneumatic numbers are estimates (lift valve conductance); see docs/pneumatics.md.`, naming each
+cylinder's valve (a measured one with its file, who measured it, when and from how many trials).
 
 **The chart** gets `air.psi` (the tanks), `air.working_psi` (after the regulator) and each cylinder's
 `<name>.extension` (how far its rod is out, in inches). **The replay** draws each cylinder's barrel and rod between its
@@ -591,8 +597,10 @@ Open **Setup** over the blocks. Its summary shows the hooks, the weight and the 
   CARGO) or other piece (a 2025 coral, a 2023 cone, cube, a 2017 gear, a 2019 hatch panel, a 2015 tote, a 2024 note) from the
   list. A piece that doesn't fit (too wide for the station's chute, or overlapping the field's floor pieces) gives a
   plain problem in Setup and **Run** stays off until you pick another. The test file keeps this as `piece` under
-  `[setup]` (older tests with `ball` still work). Soft pieces (the cube, the note) are rigid stand-ins: they don't
-  squash.
+  `[setup]` (older tests with `ball` still work). A measured ball goes in the test file by hand: `ball =
+  "fuel.measure.toml"` under `[setup]`, a ball measurement file with a `base` preset, relative to the test file
+  ([measuring.md](measuring.md#using-a-measurement)); its measured numbers replace the preset's. Soft pieces (the
+  cube, the note) are rigid stand-ins: they don't squash.
 - **Station.** One group of boxes for each station: time between balls, stock, and the spreads (each ± its value).
 - **Shuffle** and **New shuffle**: which draw of the spreads the stations feed.
 - **Floor spread.** Where the floor ball is tried. See [Floor spreads](#floor-spreads).

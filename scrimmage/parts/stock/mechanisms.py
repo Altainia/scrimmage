@@ -250,6 +250,8 @@ register(Stock(
      Param("friction", "N", 8.0, "seal friction (estimate, UNCALIBRATED)", min=0.0),
      Param("conductance", "m^3/(s*Pa)", DEFAULT_CONDUCTANCE,
            "the valve's sonic conductance, how freely air flows (estimate, UNCALIBRATED)", positive=True),
+     Param("measured", "", "", "a cylinder measurement file (\"deploy.measure.toml\", relative to the robot config) "
+           "whose timed strokes fit the conductance; empty for the conductance above", kind="text"),
      Param("mass", "kg", 0.25, "the barrel's mass (UNCALIBRATED)", positive=True),
      Param("rod_mass", "kg", 0.1, "the rod's mass (UNCALIBRATED)", positive=True),
      Param("push", "", "", "\"<part>.<body>\" the rod's end is pinned to (a stock arm's \"arm.arm\"); empty for a "

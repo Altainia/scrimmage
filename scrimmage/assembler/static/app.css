@@ -1184,3 +1184,55 @@ dialog.start-dialog { width: auto; max-width: 96vw; }
 .blocklyDropDownDiv.blocklyDropDownDiv { background-color: var(--panel); border-color: var(--line-strong); }
 .blocklyDropDownDiv .blocklyMenuItem { color: var(--text); }
 .blocklyDropDownDiv .blocklyMenuItemHighlight { background-color: var(--hover); }
+
+/* -- the Measure tab: one measurement file's tests, the steps and picture, and the trials ------------------------ */
+.measure-layout { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--panel); }
+.measure-tests { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.measure-test { font: inherit; font-size: 13px; color: var(--text); background: var(--panel); border: 1px solid var(--line-strong);
+  border-radius: var(--radius); padding: 5px 12px; cursor: pointer; }
+.measure-test:hover { border-color: var(--accent); }
+.measure-test.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-strong); }
+.measure-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(300px, 38%) minmax(0, 1fr); }
+.measure-how, .measure-entry { overflow: auto; min-height: 0; padding: 14px 18px; }
+.measure-how { border-right: 1px solid var(--line); }
+.measure-title { font-size: 20px; margin: 0 0 2px; }
+.measure-gives { margin: 0 0 10px; color: var(--muted); }
+/* the pictures are black on white (they print), so they keep a white card in the dark theme too */
+.measure-picture { margin: 0 0 10px; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 6px; }
+.measure-picture svg { display: block; width: 100%; height: auto; }
+.measure-sub { font-size: 13px; font-weight: 700; margin: 12px 0 6px; }
+.measure-list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 1.4; }
+.measure-actions { gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.measure-actions a.btn { text-decoration: none; }
+.measure-header { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px 14px; }
+.measure-field label { display: block; font-weight: 600; font-size: 12.5px; margin-bottom: 3px; }
+.measure-field input, .measure-field select { width: 100%; }
+.measure-setup { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px 16px; }
+.measure-setup-row .row { justify-content: flex-start; margin-top: 4px; }
+.measure-setup-row .row > input, .measure-setup-row .row > select { flex: none; }
+.measure-setup-row .hint { margin: 1px 0 0; }
+.measure-text { width: 14em; }
+.measure-num { width: 6.5em; font-variant-numeric: tabular-nums; }
+.measure-unit { color: var(--muted); font-size: 12.5px; }
+.measure-table-wrap { overflow-x: auto; }
+.measure-trials { border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.measure-trials th, .measure-trials td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.measure-trials td { vertical-align: middle; }
+.measure-trials th { background: var(--subtle); font-weight: 600; }
+.measure-trials th .hint { display: block; font-weight: 400; max-width: 16em; }
+.measure-col { gap: 6px; }
+.measure-col > select { flex: none; }
+.measure-n { color: var(--muted); text-align: center; }
+.measure-value { white-space: nowrap; }
+.measure-none { padding: 10px 8px !important; }
+.measure-off { background: var(--warn-soft); }
+.measure-off-flag { color: var(--warn-text); font-weight: 600; white-space: nowrap; }
+#measure-add { margin-top: 6px; }
+.measure-summary { margin-top: 10px; }
+.measure-summary p { margin: 4px 0; font-size: 13px; }
+.measure-field-summary { margin-bottom: 8px; }
+.measure-line { font-size: 14px !important; }
+.measure-verdict { font-weight: 600; }
+.measure-warnings { margin: 2px 0 0; padding-left: 20px; color: var(--warn-text); font-size: 12.5px; }
+.measure-fit-rows { margin: 6px 0; }
+@media (max-width: 900px) { .measure-body { grid-template-columns: minmax(0, 1fr); } .measure-how { border-right: 0; } }

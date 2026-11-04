@@ -135,7 +135,7 @@ def test_apply_overrides_rejects_unknown():
 def test_every_input_is_sweepable():
     base = parse_setup(raw())
     for sec in dataclasses.fields(Setup):
-        if sec.name == "dt":
+        if sec.name in ("dt", "provenance"):  # provenance: where measured numbers came from, not an input
             continue
         obj = getattr(base, sec.name)
         for f in dataclasses.fields(obj):

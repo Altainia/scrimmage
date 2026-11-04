@@ -1,21 +1,10 @@
 """Browser end-to-end tests of `scrimmage edit` (headless Chromium through Playwright).
 
-Marked `browser`. They skip, with a reason, when `playwright` isn't importable, when no usable Chromium is found, or
-when SCRIMMAGE_SKIP_BROWSER=1. With SCRIMMAGE_REQUIRE_BROWSER=1 (set on CI) a missing playwright or Chromium fails them
-instead, so CI can't pass with the browser tests silently skipped.
-
-Chromium: CI runs `python -m playwright install --with-deps chromium` for the pinned playwright version (see the
-`dev` extra in pyproject.toml), and the tests then use that build. Locally the order is:
-  1. SCRIMMAGE_CHROMIUM=<path to a chrome / chrome-headless-shell executable> (always wins);
-  2. the build the installed playwright expects, when it is in the cache (~/.cache/ms-playwright, or
-     PLAYWRIGHT_BROWSERS_PATH);
-  3. the newest cached chromium_headless_shell-* / chromium-* build, whatever its revision (an older or newer
-     Chromium is fine for these tests).
-WebGL goes through SwiftShader (software), so no GPU is needed.
+Marked `browser`; the headless Chromium (the `browser` fixture), and when these tests skip or fail for want of
+it, are in browser_harness.py.
 
 Set SCRIMMAGE_README_SHOT=<file.png> to also run the test that writes the README screenshot (docs/img/assembler.png).
 """
-import glob
 import os
 import queue
 import re
@@ -27,56 +16,11 @@ from pathlib import Path
 
 import pytest
 
+from browser_harness import GL_ARGS, _unavailable, browser  # noqa: F401  (the fixture; see there)
+
 pytestmark = pytest.mark.browser
 
 REPO = Path(__file__).resolve().parent.parent
-GL_ARGS = ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
-
-
-def _find_chromium(sync_playwright) -> str | None:
-    env = os.environ.get("SCRIMMAGE_CHROMIUM")
-    if env:
-        return env if Path(env).is_file() else None
-    try:
-        with sync_playwright() as p:
-            default = p.chromium.executable_path
-        if default and Path(default).is_file():
-            return default
-    except Exception:
-        pass
-    root = Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or Path.home() / ".cache" / "ms-playwright")
-    for pattern in ("chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell",
-                    "chromium-*/chrome-linux*/chrome"):
-        found = sorted(glob.glob(str(root / pattern)), key=lambda s: int(re.search(r"-(\d+)/", s).group(1)))
-        if found:
-            return found[-1]
-    return None
-
-
-def _unavailable(reason: str):
-    """Skip for a missing browser, or fail when SCRIMMAGE_REQUIRE_BROWSER=1."""
-    if os.environ.get("SCRIMMAGE_REQUIRE_BROWSER") == "1":
-        pytest.fail(f"SCRIMMAGE_REQUIRE_BROWSER=1 but the browser tests can't run: {reason}")
-    pytest.skip(reason)
-
-
-@pytest.fixture(scope="module")
-def browser():
-    if os.environ.get("SCRIMMAGE_SKIP_BROWSER") == "1":
-        pytest.skip("SCRIMMAGE_SKIP_BROWSER=1")
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        _unavailable("playwright is not installed (pip install -e '.[dev]')")
-    exe = _find_chromium(sync_playwright)
-    with sync_playwright() as p:
-        try:
-            b = p.chromium.launch(headless=True, args=GL_ARGS, **({"executable_path": exe} if exe else {}))
-        except Exception as e:  # no browser installed, or one that cannot start
-            _unavailable(f"no usable Chromium (run `python -m playwright install chromium` or set SCRIMMAGE_CHROMIUM): "
-                        f"{str(e).splitlines()[0]}")
-        yield b
-        b.close()
 
 
 class Server:
@@ -713,6 +657,7 @@ pos = [0.0, 0.0, -0.1]
 def test_a_vec3_parameter_is_three_number_boxes_saved_as_a_list(make_page, tmp_path):
     """A stock part's [x, y, z] parameter (the push cylinder's push_pos) has a box per number; a change saves the three
     as a list, and text that isn't a number is an error that isn't sent."""
+    from playwright.sync_api import expect
     from scrimmage.assembler.templates import new_config
     (tmp_path / "robot.toml").write_text(new_config("standin") + """
 [[part]]
@@ -740,13 +685,14 @@ push_pos = [0.2, 0.0, 0.0]
     [cyl] = [x for x in tomllib.loads(cfg.read_text())["part"] if x["name"] == "cyl"]
     assert cyl["push_pos"] == [0.25, 0, 0]
     assert not page.locator('[data-field="cyl/param:push_pos"] .error').count()
+    # the save's own refresh of the state re-renders the inspector (which clears an error shown before it lands), and
+    # the state can arrive by the poll before the save finishes: wait for "saved" before typing
+    expect(page.locator("#saved")).to_have_text("✓ All changes saved")
     before = cfg.read_bytes()
     page.fill("#insp-p-push_pos-1", "")
     page.type("#insp-p-push_pos-1", "1-")
     page.keyboard.press("Enter")
-    e = page.locator('[data-field="cyl/param:push_pos"] .error')
-    e.wait_for()
-    assert e.inner_text().strip() == "Enter a number."
+    expect(page.locator('[data-field="cyl/param:push_pos"] .error')).to_have_text("Enter a number.")
     page.wait_for_timeout(500)
     assert cfg.read_bytes() == before
 

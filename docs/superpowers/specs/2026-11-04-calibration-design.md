@@ -1,0 +1,360 @@
+# Calibration: measuring, averaging and fitting (sub-project 25)
+
+## Intent
+
+Scrimmage marks its results UNCALIBRATED because most of its numbers are estimates: a ball's squeeze and bounce,
+the friction of a wheel or a pad, a pneumatic valve's flow. The docs say how to measure several of them, but a
+student who measures has nowhere to put the trials, nothing that averages them or spots a bad reading, and no way
+to fit the numbers that can only be found by comparing a real shot with the model. Their result still says
+UNCALIBRATED afterward.
+
+The owner asked for:
+- **A measurement file per mechanism.**
+- **A command that fits the uncertain inputs to measured outcomes and reports the fit.**
+- **Labels showing which numbers are measured and which are estimates**, so a result drops UNCALIBRATED only when
+  its numbers were measured.
+- **Illustrated how-to pages:** each test shows a picture of what is measured and how.
+- **A printable form for each test,** with room for several trials that are averaged, to account for error.
+
+The owner told me to answer the design questions myself; every call is under "My calls".
+
+The audience is high-school students with a bathroom scale, a tape measure, a spring scale and a phone that films
+slow motion, and their mentors. The standing anti-goal applies: **no unnecessary friction**.
+
+## Goals
+
+1. **Six tests**, each with an illustration, plain steps, a printable form, a page in the web app to enter trials,
+   and a way to turn trials into a number:
+   - **Ball size and mass:** a kitchen scale and a tape around the ball. Gives `mass` and `diameter`.
+   - **Ball squeeze:** a bathroom scale and two boards. Gives `stiffness_n`.
+   - **Ball drop:** an 18 in drop filmed against a ruler. Gives `restitution`.
+   - **Sled pull:** a spring scale pulling a weighted sled. Gives a sliding friction for any two materials: a wheel's
+     tread on a ball, a grip pad on a piece, a piece on the carpet.
+   - **Launcher shot:** a level shot filmed in slow motion against tape marks, at two or more wheel speeds. It is fit
+     with the launcher model to give the ball's `stiffness_n` and the wheel's `friction`.
+   - **Cylinder stroke:** a stroke filmed or timed, with the rod's load. It is fit with the pneumatic model to give
+     the valve's `conductance`.
+2. **A measurement file**, `<name>.measure.toml`:
+   - **What it holds:** what was measured, who measured it and when, the tools, and every trial's raw readings in
+     the units the student read them in (lb, oz, kg, g, in, mm, N).
+   - **What it adds:** the averages and the fit are worked out from the trials each time the file is read, so
+     they can never go stale.
+3. **`scrimmage measure`:**
+   - **Reading a file:** `scrimmage measure <file>` prints each trial's value, then the average, the lowest, the
+     highest and the spread, with a warning when the trials disagree. For a launcher or cylinder file it also prints
+     the fit: the fitted numbers and each trial's measured value against the model's.
+   - **Printing a form:** `scrimmage measure form <test> [-o form.html]` writes a printable blank form.
+4. **Using a measurement.** A measurement file can stand in wherever its number is used today:
+   - **Balls:** a launcher setup's `[ball]` and a range's ball take `measured = "<file>"` on top of a preset, and
+     the file's measured fields replace the preset's.
+   - **Wheels:** a launcher setup's `[wheels]` takes `measured = "<file>"`.
+   - **Grip and surfaces:** a grip and a piece's surface friction take a measurement file in place of a material or
+     a number.
+   - **Cylinders:** a stock cylinder takes `measured = "<file>"`.
+5. **Labels:** a result names what it rests on.
+   - **Where:** the launcher model's report and charts, the Test tab's run notes, a bench's last line, the MCP
+     results and `scrimmage air`.
+   - **What it says:** which numbers are measured (from which file, by whom, when, and from how many trials) and
+     which are still estimates.
+   - **When UNCALIBRATED goes away:** the word appears only while an input that matters is still an estimate. For a
+     launcher those inputs are the ball's stiffness, its bounce and the wheel's friction. For a grip it's the pad's
+     friction, and for a cylinder its valve.
+6. **The Measure tab** in the web app (`scrimmage edit <file>.measure.toml`, or "Measure something" on the start
+   page). For the chosen test it shows:
+   - the illustration and the steps;
+   - a table to type trials into, with the average, spread and warnings updating as you type;
+   - Save, which writes the measurement file;
+   - "Print a blank form";
+   - for the launcher and cylinder tests, "Fit" with its results.
+7. **Docs:**
+   - **docs/measuring.md:** one section per test, with the illustration, the steps, a link to the form, what the
+     number feeds, and how the averaging and the fit work.
+   - **Pointers:** the existing "measure your own" passages point to it (launcher.md, test-tab.md, pneumatics.md,
+     test-range.md, bench.md).
+
+## Non-goals
+
+- **Other fits:** fitting a disc launcher, a drivetrain, climbing hooks or field elements. The measurement file is
+  built so a later test can be added, and the docs say which are not yet covered.
+- **A shared library of measured presets** across teams: a later step, and the file format allows it.
+- **Reading video automatically.** The student counts frames and reads tape marks; the page shows how.
+- **Statistics beyond what a student can check by hand** (C3).
+
+## Anti-goals
+
+- **No measured value may be worse than the estimate it replaces without saying so.** A fit that doesn't match
+  (large leftover error, a number pinned at its limit, too few trials) says so in plain words and doesn't drop the
+  UNCALIBRATED label.
+- **No change for files that use no measurement:** every existing output stays byte-for-byte except the
+  UNCALIBRATED line's wording, which becomes more specific (C7).
+- **No unit traps.** Every reading names its unit in its key, and a missing or unknown unit is an error that lists
+  the ones allowed.
+
+## Constraints
+
+- **No new dependencies:** no scipy. The fits use a bounded one- and two-parameter search in numpy.
+- **Same models:** a fit runs the same model the simulator uses (scrimmage/launcher's Launcher, scrimmage/pneumatics'
+  AirSystem), so a fitted number means the same thing in a run.
+- **Pictures:** illustrations are hand-made SVG files (docs/img/measure/*.svg) that work in the docs, the web app and
+  the forms, and read clearly in black-and-white print.
+- **Forms:** printable HTML at US Letter and A4 (CSS print rules), black-and-white friendly, with no scripts needed
+  to print.
+- **Spellings and wording:** American spellings and plain words.
+
+## My calls (the owner can overrule any)
+
+**Averaging and spread**
+- **C1 Trials:** a form has room for 8 trials. 3 is the least the averaging accepts (fewer reads "take at least 3").
+  5 is recommended.
+- **C2 What a trial gives:** each trial gives one value; the result is the mean of the trials. The spread is the
+  highest minus the lowest, as a percent of the mean.
+- **C3 Warnings, kept to what a student can check by hand on the form:**
+  - **Spread too wide:** a spread over 15% says "your trials disagree by 22%: measure again or take more trials".
+  - **Outlier:** a trial more than twice the average distance from the mean is flagged, "trial 4 looks off: check
+    it". It is not dropped automatically.
+  - **The form's own boxes:** average, lowest, highest, spread %, and a box to tick when the spread is under 15%.
+- **C4 Units:** each reading's key ends in its unit (`force_lb`, `force_kg`, `force_n`, `drop_in`, `drop_mm`,
+  `mass_g`, `mass_oz`...). Scale readings in kg or lb are treated as force (×9.81, ×4.448).
+
+**Tests**
+- **C5 Squeeze:**
+  - **The ideal reading:** the force at a squeeze to 75% of the diameter. The top board's weight presses on the ball
+    too, so it is part of the force: put the bottom board and the ball on the scale and zero (tare) it, then put the
+    top board on and press; the reading is the squeeze force.
+  - **A scale that can't be zeroed:** the trial (or `[squeeze_setup]`) gives `tare_<unit>`, the reading with only
+    the bottom board and the ball on it, which is subtracted (the form has a box for it).
+  - **A different squeeze:** a trial may give its own `squeezed_to` height; it's converted to the 25% force with the
+    ball's `stiffness_exponent` (1.5 by default).
+- **C6 Drop:**
+  - **Formula:** `restitution = sqrt(bounce / drop)`, both measured to the bottom of the ball.
+  - **Height:** the model's foam is tuned for an 18 in drop, so other drop heights are allowed but warned.
+  - **Floor:** the floor kind is recorded, and carpet is warned (the model expects a hard floor).
+- **C7 Label wording:** UNCALIBRATED stays as the word for "something that matters is an estimate". The line lists
+  the estimates by name. When everything that matters is measured, it reads "Calibrated from measurements: ..."
+  (files, dates, trial counts).
+- **C8 Launcher fit:**
+  - **One number at a time:** shots can't tell a ball's stiffness from a wheel's friction (in the model both speed
+    the ball up in the same way at every wheel speed), so a fit gives one of them.
+    - **The ball's squeeze measured** (`[shot_setup] ball = "<ball .measure.toml>"`, a ball file with a squeeze
+      test, or the shots' setup's own `[ball] measured` ball file): stiffness is fixed at it, and the wheel's
+      `friction` is fit (0.2 to 2.0).
+    - **Otherwise:** the ball's `stiffness_n` is fit (0.25× to 4× the setup's, on a log scale), with the wheel
+      friction at the setup's (its `[wheels] measured` friction file's, when it names one), and it says "Measure the
+      ball's squeeze (the squeeze test) to fit wheel friction too."
+  - **A fitted number means the same in a run as in the fit.** The shots' setup is read as a run reads it: its ball
+    file (or `[shot_setup] ball` in its place) and its friction file are applied whole, through the run's own
+    use.apply_ball and use.apply_wheels, so the ball's mass, diameter and bounce match the run's, not only its
+    squeeze. A launcher file named there is passed over: a setup may name the very file its shots are in.
+  - **A squeeze or sled pull that isn't good is still held,** as a run uses it, and the fit isn't good: "the
+    ball's squeeze isn't good enough: 2 trials; take at least 3". A setup naming such a ball file and the shots
+    loads, its label UNCALIBRATED.
+  - **The ball the run uses:** a `[shot_setup] ball` the shots' setup's own `[ball] measured` doesn't name is
+    warned: "name it in the setup's [ball] measured too, so a run uses the ball the shots were fit with" (for a
+    stiffness fit, name the shots file there instead). A setup's `[ball] measured` naming a launcher file takes the
+    measured numbers of the ball file its shots were fit with, with the fitted stiffness; named by both sections,
+    the ball takes the ball file's numbers and the wheels the fitted friction.
+  - **A shot under 20 frames** between the marks is warned by its number: "shot 3: 12 frames between the marks; 20
+    or more fits better".
+  - **A fit is reused** while none of the files it read (the shots, the setup, the ball and friction files) has
+    changed, so a robot's [shooter] doesn't fit again at each world build.
+  - **Goal:** minimize the root-mean-square relative error of horizontal exit speed over the shots.
+  - **Search:** a 9-point scan, then a golden-section search between the best point's neighbors.
+  - **One wheel speed only:** still fit, with a warning: "shots at two or more wheel speeds check the fit".
+  - **The band:** the fitted number's values whose RMS error is within the shots' resolution of the best one's. A
+    shot's resolution is max(1 frame / its frames, 2%), and the shots' combine as an RMS. Found from the scan's
+    points, then bisection. Reported with the value ("stiffness 118 N, anywhere from 113 to 127 N fits your shots").
+  - **A good fit:** RMS error under 5%, the fitted number not within 5% of its search limit, and its band within
+    ±15% of it. Otherwise the fit is reported but keeps the UNCALIBRATED label.
+    - **A band too wide:** "your shots hardly depend on the ball's stiffness at these wheel speeds: shoot at a higher
+      wheel speed (where the ball's grip, not the wheel's speed, sets the exit speed)" (or "the wheel friction").
+      Higher, not lower: in the model a slow wheel sets the exit speed itself (shots at 50 rps barely move with
+      either number); a fast one slips, and the grip sets it.
+    - **Shots faster than the model gives** (missed by 5% or more, every shot slower in the model): "the model's
+      ball can't go this fast at these wheel speeds: check the wheel speed you wrote and the mark spacing".
+  - **How to film:** one ball with the wheel already steady, and the wheel speed written as measured (a tachometer
+    or the robot's log), not the setpoint. The marks are vertical lines on a board a few inches behind the ball's
+    path, the first near the exit; the phone films square-on from at least 10 times as far in front of the path as
+    the board is behind it; and the marks are spaced so the ball takes 20 or more frames between them (24 in at
+    960 fps).
+  - **A shot's speed is horizontal:** the vertical marks a measured horizontal distance apart give the ball's
+    horizontal speed, the tape mark spacing × fps / frames counted. It is compared with the model's horizontal
+    exit speed, its exit speed × cos(its launch angle) (the ball's own launch angle, not the hood's setting if they
+    differ).
+- **C9 Cylinder fit:**
+  - **Parameter:** `conductance`, from 0.1× to 10× the default, by bisection on a log scale. The stroke time falls
+    as the conductance rises; a test checks this for a light, a heavy and a vertical load.
+  - **What's matched:** the measured extend time, from the valve opening to the rod at full stroke, averaged over
+    the strokes (`time_s`, or `frames` with `fps`).
+  - **The model:** the pneumatic AirSystem plus a one-body rod model, stepped at 1 ms between the end stops. The
+    rod's mass (`rod_mass`, else the stock 0.1 kg) plus the stated load mass, seal friction (a Coulomb force that
+    holds the rod until the air pushes past it), and gravity if the file says the stroke is vertical (the cylinder
+    lifts the load). A model that can't finish the stroke even at 10× is an error: "the model's cylinder can't lift
+    its load" (or "push past its seals' friction") "at 60 psi: check the bore, load_mass, friction and working_psi".
+  - **The band:** every conductance whose model time is within the timing's resolution of the measured time. A
+    stroke's resolution is 1 frame / fps when counted in frames, else 0.01 s; the strokes' combine as an RMS. It is
+    never less than 2% of the time. Reported with the value ("valve conductance 1.60, anywhere from 1.45 to 1.79
+    fits your strokes (dm^3/(s bar))").
+  - **A good fit:** the strokes' average good (at least 3, agreeing within 15%), the model's time within 5% of it,
+    the conductance not within 5% of a search limit, and its band within ±15% of it. Otherwise the fit is reported
+    but keeps the UNCALIBRATED label.
+    - **At a search limit:** "at the edge of what it tries: check your strokes and the cylinder's size", with "the
+      model's cylinder can't stroke this fast" (or "strokes faster than this even with the slowest valve it
+      tries"). There is no band warning: the edge is the problem.
+    - **A band too wide, two causes:** the dependence d = d ln(time) / d ln(conductance) at the fit decides which.
+      It is about 1 for a free rod, whose time the air's flow sets, and near 0 under a heavy load. If the best
+      timing could pass (2% / d ≤ 15%), the timing is the cause: "a 0.07 s stroke is too quick to time this
+      closely: film it and count frames at the phone's highest frame rate". Otherwise the load is: "your stroke
+      time hardly depends on the valve: the load (lifted straight up) sets it: time a lighter stroke".
+- **C10 Sled pull:** `friction = pull force / weight on the sled`, read at a steady slide (not the first jerk; the
+  page says so). The file names the two materials ("wheel tread: 40A", "FUEL"), so a reader knows where it applies.
+
+**Where measurements are used**
+- **C11 Which files point to which:** a measurement file says what it measured (`kind`, and `base` for a ball: the
+  preset it measured). Pointing a ball setting at a friction file is an error that names both.
+- **C12 Paths:** a measurement file path is resolved relative to the file that names it.
+
+**The Measure tab**
+- **C13 Tab rules:** a Measure tab like the others. It opens for `.measure.toml`, and the start page's "Measure
+  something" makes a new file in the folder. It saves each change on its own, like the other tabs (see the
+  decisions below).
+
+## Left to the builder
+
+- The internal module layout (suggested: `scrimmage/measure/`), and how provenance travels with each input.
+- The SVG artwork, within the constraints.
+- The exact form layout and wording, within the plain-words rule.
+
+## Decisions made during the build
+
+Each ruling from the build, in the order made, grouped by area: what was decided, why, and what it costs if it's
+wrong.
+
+**Pictures and forms**
+- **The SVGs live once in `scrimmage/measure/img/`** (package data, for the forms and the Measure tab), and
+  `docs/img/measure/` holds copies a test keeps identical. Why: the docs need repo-relative images, the forms and the
+  web tab need packaged ones. Cost if wrong: a duplicated file set, guarded by the test.
+- **Public constants in `tests_direct` and the fits** (their readings, setup keys and limits), so the forms build
+  their columns from them. Why: a form can't drift from what the file takes. Cost if wrong: nothing.
+- **The shot form has no average boxes**, and one `@page` margin rule serves Letter and A4. Why: shots at different
+  wheel speeds aren't averaged, they are fit. Cost if wrong: nothing.
+- **The blank form page `/forms/<test>.html` needs no session token.** Why: it is static and holds no file data.
+  Cost if wrong: nothing.
+
+**Measurement files and units**
+- **Provenance carries `why`**, the reason a measurement isn't good ("2 trials: take at least 3", "trials disagree by
+  22%", a fit's reason). Why: the labels name it. Cost if wrong: one field.
+- **`units.reading` takes an optional reading name, `where=` and `required=`**, and uses exact unit constants rather
+  than C4's rounded ones. Why: a drop row has two lengths, and errors name their place. Cost if wrong: nothing.
+- **The squeeze tares the scale with the bottom board and the ball on it** (or records `tare`), replacing "minus the
+  top board's weight" (C5 fixed). Why: the top board's weight presses on the ball and is part of the squeeze; the
+  old rule was about 11% wrong. Cost if wrong: nothing.
+- **A tare and a sled's weight take mass units too** (g, oz, read on a kitchen scale, converted with standard
+  gravity). Why: friendlier than the global constraint's force-only rule. Cost if wrong: nothing.
+- **Plain settings keep their unit in their name** (`working_psi`, `fps`, `wheel_rps`, `hood_deg`); the unit-suffix
+  rule is for readings. Why: they are numbers set once, not readings off a scale or a ruler. Cost if wrong: nothing.
+- **`by` and `date` are optional** (left out when blank); the labels read naturally without them, and `scrimmage
+  measure` warns. Why: a blank header must never block the Measure tab's autosave. Cost if wrong: some files'
+  provenance without who or when.
+
+**Averaging**
+- **A measurement that isn't good is used in a run, but its result stays UNCALIBRATED and says why.** The stats
+  wording became "a run uses it, but its result stays UNCALIBRATED until then". Why: Task 4 built it that way, and a
+  student sees their number in use with the reason it isn't trusted yet. Cost if wrong: nothing.
+- **A size trial that looks off is named by its own number** when some trials give only a mass (the CLI and the
+  tab). Why: "trial 6" must mean the sixth row on the form. Cost if wrong: nothing.
+
+**The launcher fit**
+- **One number at a time.** With the ball's squeeze measured (`[shot_setup] ball`, or the setup's own measured
+  ball), the stiffness is held and the wheel friction is fit; otherwise the stiffness alone is fit at the setup's
+  friction, saying "Measure the ball's squeeze (the squeeze test) to fit wheel friction too." (C8 updated). Why: shots
+  can't tell a stiffer ball from a grippier wheel (a two-number fit could be 8 to 11% off yet "good"); this is
+  honest about it, and fast. Cost if wrong: no fit of both at once.
+- **The shots' setup is loaded without its own measurements applied.** Why: no loop between a fit and the setup that
+  names it. Cost if wrong: nothing.
+  - **Reversed in the final review: the setup's ball and friction files are applied whole, as a run applies them**
+    (only a launcher file is passed over, which is the loop). Why: the reviewer fit wheel friction to shots from a
+    fully measured setup (a 260 g ball, not the preset's 215 g); the fit used the ball file's squeeze but the
+    preset's mass, so the setup naming the fit missed its own shots by 4% under a "Calibrated" label. Cost if wrong:
+    nothing; a round-trip test now checks a run reproduces the shots within 1%.
+- **A fit reports its band**, the values whose RMS error stays within the shots' frame-count resolution (max(1 frame
+  / frames, 2%)), and is good only with the band within ±15% (and RMS under 5%, not at an edge); otherwise "your
+  shots hardly depend on ...". Why: wheel-limited shots can't tell the number. Cost if wrong: more not-good fits.
+  - **The advice is "shoot at a HIGHER wheel speed** (where the ball's grip, not the wheel's speed, sets the exit
+    speed)", correcting the first ruling's "lower". Why: in the model a slow wheel sets the exit speed itself.
+    Cost if wrong: nothing.
+- **A good friction file in the shots' setup `[wheels] measured` is used**; only launcher files there are passed
+  over. Why: only those make the loop. Cost if wrong: nothing.
+  - **Reversed in the final review: a squeeze or sled pull is held whenever a run would use it, good or not;** one
+    that isn't good makes the fit not good, saying why. Before, a squeeze that wasn't good was skipped (the stiffness
+    fit instead), so a setup naming that ball and the shots was refused ("its shots' ball squeeze isn't measured")
+    though the run uses that squeeze. Why: the fit and the run must hold the same number, and the earlier "a
+    measurement that isn't good is used in a run" ruling says the run uses it. Cost if wrong: nothing.
+- **A setup's `[ball] measured` naming a launcher file takes the ball file the shots were fit with**, with the fitted
+  stiffness (or, named by both sections, the ball file's numbers alone). Why: size and drop measurements and a
+  shot-fit stiffness can then be used together, and the ball's mass in a run is the fit's. Cost if wrong: one more
+  file read when a setup loads.
+- **Launcher fits are cached** by the launcher file's resolved path, checked against the modification time and size
+  of every file the fit read. Why: a robot [shooter] built many times re-fit each time. Cost if wrong: nothing.
+- **One shared `single_pass(setup, rps, lane, kP=None)`** in scrimmage/launcher serves the fit and `launcher aim`
+  (aim's output byte-identical). Why: one model, not two copies. Cost if wrong: nothing.
+- **The fit compares horizontal speed**: the model's exit speed × cos(its launch angle) against vertical tape marks a
+  horizontal distance apart, on a board just behind the path near the exit, the phone square-on 10 or more times as
+  far back, the marks spaced for 20 or more frames (C8 updated). Why: a level shot is impossible with a fixed hood
+  angle, and comparing the full exit speed was about 29% low at 45°. Cost if wrong: a small gravity and drag error
+  over the marks (start them near the exit).
+
+**The cylinder fit**
+- **A band too wide names its cause** by d ln(time) / d ln(conductance): under 0.5, "the load sets it: time a
+  lighter stroke", else "too quick to time this closely: film it and count frames". Why: the two causes need
+  different fixes. Cost if wrong: nothing.
+  - **Corrected in the fix round: the cause is whether the best timing could pass.** If 2% ÷ d (the band the best
+    timing, read to 2%, would give) is within 15%, the timing is the cause ("film it and count frames"); otherwise
+    the load is ("time a lighter stroke"). Why: a fixed d threshold misjudged the cause when both applied. Cost if
+    wrong: nothing.
+- **`[stroke_setup]` takes an optional `rod_mass`** (the stock 0.1 kg by default); C9 updated with the band and
+  causes. Why: a heavier rod is part of what the air moves. Cost if wrong: nothing.
+
+**Using measurements**
+- **The bench's `[piece]` doesn't take a measurement in this project**, and its line keeps the estimate wording with
+  no provenance. Why: its table differs from `[ball]`, and goal 4 didn't list the bench. Cost if wrong: bench
+  results stay "estimates" after a ball is measured (a can-wait).
+- **`[surface.*]` presets can't be files; `[piece.*] friction` takes one.** Why: only presets.toml has that table.
+  Cost if wrong: nothing.
+- **A number and a measurement for the same key is an error; a launcher file named in the section whose number it
+  didn't fit is an error saying where to name it; a range ball takes a ball file with a `base`.** Why: no silent
+  mixes. Cost if wrong: nothing.
+- **The sweepable-fields test skips `provenance`.** Why: it is a field-list test, not output. Cost if wrong:
+  nothing.
+- **Sweeping `ball.preset` with a measured file re-checks the swept preset against the file's base.** Why: the same
+  rule as a single setup. Cost if wrong: an error where a silent mix used to pass.
+
+**Labels**
+- **The disc report's wording changes only if what matters can be named without new disc provenance.** Why: disc
+  fits are out of scope. Cost if wrong: nothing.
+- **The air budget's label names what it rests on** (the compressor's flow, the pressure switch's points, the tank
+  and dead volumes) and never reads "Calibrated" from a valve measurement. Why: the budget doesn't use the
+  conductance. Cost if wrong: nothing.
+- **The chart footer wraps above 135 characters** (it was 120), so every no-measurement line (the launcher's 122, the
+  disc's 127) stays on one line as before; longer measured lines wrap. Why: the new estimate wording is longer.
+  Cost if wrong: a one-line PNG some 40 px wider than before.
+- **A measured piece friction is named in a Test-tab run's notes,** as a grip is ("crate piece: measured, friction
+  0.8 (...)"). Why: a student should see it measured. Cost if wrong: nothing.
+- **A stock cylinder whose bore, rod, stroke, friction or rod_mass differ from its stroke file's is warned** ("the
+  strokes were fit with friction 8 N, but this cylinder has 12 N"), in the robot's warnings. Why: the valve's fit
+  was for the cylinder timed. Cost if wrong: nothing.
+- **The implementer's other label calls stand**: the pneumatic note starts "UNCALIBRATED:", grip notes are per pad,
+  the disc names its inputs without provenance, `aim` carries provenance, the bench picture's text shrinks to fit.
+  Why: each reads plainly and keeps existing output. Cost if wrong: nothing.
+
+**The worked examples**
+- **The worked launcher example fits the ball's stiffness** (91 N, anywhere from 81 to 103 N, 1.9%: good), not the
+  wheel's friction. Why: examples/launcher shoots a Power Cell and the example ball file measures FUEL, so no
+  squeeze file fits that setup; its README says how to fit friction. Cost if wrong: a less complete example.
+- **`examples/measure/hooded-measured.toml` duplicates `hooded.toml` from `[wheels]` on**, kept identical by a
+  test, and the code's UNCALIBRATED pointer to docs/launcher.md "Measure these first" stays (that section now points
+  to measuring.md). Why: setups can't include each other, and existing output stays unchanged. Cost if wrong:
+  nothing.
+
+**The Measure tab**
+- **It saves each change on its own** (after a short pause), like every other tab: no Save button and no
+  unsaved-edits prompt. Why: C13 said "like the other tabs", and none prompt. Cost if wrong: nothing.

@@ -12,7 +12,7 @@ from scrimmage.disc.flight import fly, matrix_from_quat
 from scrimmage.disc.inputs import DiscConfigError, load_setup, parse_setup
 from scrimmage.disc.launcher import ExitedDisc, DiscEnergy
 from scrimmage.disc.run import METRIC_KEYS, exit_to_flight_state, run_setup
-from scrimmage.launcher.report import UNCALIBRATED
+from scrimmage.disc.report import DISC_UNCALIBRATED as UNCALIBRATED
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples" / "disc"
 NAMES = ("linear.toml", "arc.toml", "pinch.toml")

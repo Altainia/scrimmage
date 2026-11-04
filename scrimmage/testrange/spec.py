@@ -32,6 +32,11 @@ is the first `[piece.<name>]` table. Each `[piece.<name>]` adds a kind (a preset
 order after the default. `[[floor_balls]]`, `[[station]]` and `[[goal]]` take `kind = "<name>"` (left out: the
 default kind; a goal's, the first ball or disc kind). Goals count balls and discs only.
 
+A ball preset may be a ball measurement file instead (`ball = "fuel.measure.toml"`, relative to the range file, in
+`[range]` or a `[piece.<name>]`): its `base` preset with the fields it measured in place (scrimmage/measure/use.py),
+the kind named after the preset. A shape's `friction` may be a friction measurement file the same way. The kind keeps
+each measured number's provenance (`PieceKind.provenance`).
+
 `Range.ball` and `Range.disc` are the first ball and disc kind's Ball and Disc (None when there is none);
 `Range.piece` is the ball, else the disc, else the default kind. A ball-only range (`ball = "..."` and no
 `[piece.*]`) is one ball kind, read as it always was.
@@ -59,6 +64,7 @@ import numpy as np
 from ..disc.inputs import DEFAULT_AERO, AeroSet, Disc, DiscConfigError, aero_set, disc_preset
 from ..disc.inputs import PRESETS as DISC_PRESETS
 from ..launcher.inputs import PRESETS, Ball, LauncherConfigError, _build_section
+from ..measure.use import is_measurement
 from ..teamfolders import TeamFolderError, expand
 
 if TYPE_CHECKING:
@@ -611,7 +617,7 @@ def _range_piece(path: Path, name: str) -> PieceKind:
 
 def _kinds(path: Path, raw: dict, rng: _Reader) -> tuple[dict[str, PieceKind], str]:
     """The field's kinds, the default first, and the default's name."""
-    from .pieces import ball_kind, disc_kind, parse_kind  # pieces.py imports this module
+    from .pieces import ball_kind, disc_kind, measured_ball_kind, parse_kind  # pieces.py imports this module
 
     given = [k for k in ("ball", "disc", "piece") if rng.has(k)]
     if given == ["ball", "disc"]:
@@ -629,7 +635,10 @@ def _kinds(path: Path, raw: dict, rng: _Reader) -> tuple[dict[str, PieceKind], s
         raise rng.err("is missing its game piece: give ball = \"<ball preset>\", piece = \"<piece preset>\" or a "
                       "[piece.<name>] table")
     kinds: dict[str, PieceKind] = {}
-    if given == ["ball"]:
+    if given == ["ball"] and is_measurement(rng.text("ball")):
+        kind = measured_ball_kind(None, rng.text("ball"), path.parent, f"{path}: [range]")
+        kinds[kind.name] = kind
+    elif given == ["ball"]:
         preset = rng.text("ball")
         _ball(path, preset)
         kinds[preset] = ball_kind(preset, preset)
@@ -709,7 +718,8 @@ def load_range(ref: str, base_dir: Path, ball: str | None = None, piece: str | N
     """`ref` is a built-in range's name (BUILTIN_RANGES) or a path relative to `base_dir`. With `ball`, the file is
     read with its [range] ball replaced (all the checks run again; a disc range refuses). With `piece` (a ball or
     piece preset), its default kind is replaced the same way: the [range] ball, disc or piece, or, when the default
-    is the first [piece.<name>] table, that table (keeping its name, so what names it still finds it)."""
+    is the first [piece.<name>] table, that table (keeping its name, so what names it still finds it). A `ball` that is
+    a measurement file (`fuel.measure.toml`) is found from `base_dir`, the folder of the file that names it."""
     if ball is not None and piece is not None:
         raise RangeError("give ball or piece, not both")
     try:
@@ -726,6 +736,8 @@ def load_range(ref: str, base_dir: Path, ball: str | None = None, piece: str | N
         raw = tomllib.loads(text)
     except tomllib.TOMLDecodeError as e:  # also a start (or any table) given twice
         raise RangeError(f"{path}: {e}") from e
+    if is_measurement(ball):
+        ball = str((Path(base_dir) / ball).resolve())
     if ball is not None:
         table = raw.get("range")
         if isinstance(table, dict) and "disc" in table:

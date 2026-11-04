@@ -73,7 +73,8 @@ def test_run_prints_uncalibrated_first(tmp_path, capsys):
     main(["launcher", "run", str(p), "--out", str(tmp_path / "o")])
     out = capsys.readouterr().out
     assert out.splitlines()[0] == UNCALIBRATED
-    assert UNCALIBRATED == "UNCALIBRATED: estimates from preset material numbers, not fitted to measurements."
+    assert UNCALIBRATED == ("UNCALIBRATED: estimates from preset material numbers, not fitted to measurements "
+                            "(ball stiffness, bounce, wheel friction).")
     assert "exit_speed" in out and "shaft.added_inertia" not in out
     assert (tmp_path / "o" / "results.csv").exists()
 

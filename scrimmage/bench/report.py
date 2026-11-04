@@ -16,6 +16,7 @@ import numpy as np
 
 from ..launcher.flight import Landing, fly_state
 from ..launcher.inputs import PRESETS, Air, Goal
+from ..measure import labels
 from .run import BenchResult, PieceOutcome
 
 # path colors by outcome (RGB): out green, jammed red, escaped orange, timed out gray
@@ -38,9 +39,24 @@ def uncalibrated(result: BenchResult) -> str:
     return bench_uncalibrated(result.bench)
 
 
+ESTIMATES = "UNCALIBRATED: estimates from preset numbers, not measurements"
+_MATTERS = {"squishy": labels.SQUISHY_BENCH, "rigid": labels.RIGID_BENCH}
+
+
+def bench_matters(bench) -> tuple[str, ...]:
+    """What a bench's results rest on: its piece's stiffness and the friction it uses."""
+    return _MATTERS[bench.piece.kind]
+
+
+def bench_estimates(bench) -> str:
+    """A bench's estimates in a line: its pictures' and charts' UNCALIBRATED line. A bench takes no measurement file
+    yet, so it names its estimates only."""
+    return labels.line({}, bench_matters(bench), estimates=ESTIMATES)
+
+
 def bench_uncalibrated(bench) -> str:
     """The UNCALIBRATED line for a bench: what is estimated and what to measure first, for its kind of piece."""
-    return f"UNCALIBRATED: estimates from preset numbers, not measurements; {_MEASURE[bench.piece.kind]}."
+    return f"{bench_estimates(bench)}; {_MEASURE[bench.piece.kind]}."
 
 
 def _name(s: str) -> str:

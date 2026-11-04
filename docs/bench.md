@@ -7,8 +7,9 @@ student's idea becomes something the room can see run, the weak ones are ruled o
 winner's dimensions (gaps, wheel spacing, squeeze, hood shape, where a bar goes) are narrowed before CAD starts.
 
 > **Every result is labeled `UNCALIBRATED`**, pictures included. The ball, tread and material numbers are estimates until you measure
-> your own. Use the bench to compare ideas with each other and to see trends ("a tighter gap, a faster shot"); trust
-> the differences before the absolute numbers. See [How accurate is this?](#how-accurate-is-this)
+> your own ([measuring.md](measuring.md)). Use the bench to compare ideas with each other and to see trends ("a
+> tighter gap, a faster shot"); trust the differences before the absolute numbers. See
+> [How accurate is this?](#how-accurate-is-this)
 
 - [The flow](#the-flow)
 - [A first bench file](#a-first-bench-file)
@@ -145,8 +146,8 @@ It prints, in about three seconds:
 5 of 5 left through `shot` at 7.4 m/s ± 0.0, 6° down
 the `top` shaft drops 14% and recovers in 0.05 s (the worse of 2 shafts)
 a piece takes 0.19 s from the inlet to the outlet
-UNCALIBRATED: estimates from preset numbers, not measurements; measure the ball's stiffness (a squeeze test) and
-its bounce (a drop test) first; see docs/launcher.md, "Measure these first".
+UNCALIBRATED: estimates from preset numbers, not measurements (ball stiffness, tread friction); measure the ball's
+stiffness (a squeeze test) and its bounce (a drop test) first; see docs/launcher.md, "Measure these first".
 ```
 
 **The bench frame.** x is forward (the usual way pieces leave), z is up, y is across. Lengths are meters, or inches
@@ -364,8 +365,9 @@ The piece decides how every contact it has is worked out.
 Discs (the 2013 Frisbee and an Ultra-Star preset, with their own flight) come in a later step, once the disc launcher
 model is merged. A custom rigid `shape = "disc"` (a short cylinder) works now.
 
-Ball presets come from `scrimmage/launcher/presets.toml`; their sources and how to measure your own ball are in
-[docs/launcher.md](launcher.md#presets-and-their-sources). A squishy custom ball (a sphere with no preset) gives
+Ball presets come from `scrimmage/launcher/presets.toml`; their sources are in
+[docs/launcher.md](launcher.md#presets-and-their-sources), and how to measure your own ball in
+[docs/measuring.md](measuring.md). A squishy custom ball (a sphere with no preset) gives
 `stiffness_n` and `restitution`; left out, the nearest preset's are used, with a warning.
 
 ## The format reference
@@ -614,7 +616,7 @@ sections replace the included ones; the same name defined in two included files 
 `material` on a plate, bar, curve or CAD part: `polycarbonate`, `aluminum`, `steel`, `UHMW`, `nitrile`, or a tread name. Each
 gives a friction against foam and against rigid pieces; all are estimates
 (`scrimmage/bench/presets.toml` says how each was estimated). Replace them with a sled pull of your own part and
-piece.
+piece ([measuring.md](measuring.md#sled-pull)).
 
 ### `[sweep]` and `[[chart]]`
 
@@ -842,8 +844,10 @@ faster.
 
 **What is not modeled.** Parts are rigid (no bending, no breaking); the bench reports loads only. Squishy pieces are
 balls only. Air drag inside the bench is ignored (it matters only in `[flight]`). Ball, tread and material numbers are
-estimates: **UNCALIBRATED**. Measure the ball's stiffness (a squeeze test) and bounce (a drop test) first
-([docs/launcher.md](launcher.md#measure-these-first)), then the tread's friction (a sled pull).
+estimates: **UNCALIBRATED**. Measure the ball's stiffness (a squeeze test) and bounce (a drop test) first, then the
+tread's friction (a sled pull): [measuring.md](measuring.md) has each test. The bench doesn't take a measurement file
+yet: type a measured `stiffness_n` or `restitution` into the `[piece]` (the averages `scrimmage measure` prints). Its
+last line still says UNCALIBRATED, since it can't tell a typed number from an estimate.
 
 ## CAD
 

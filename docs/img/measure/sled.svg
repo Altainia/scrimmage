@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300" role="img" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="black">
+  <title>Sled pull: a weighted sled pulled across a surface at a steady slide by a spring scale</title>
+  <!-- the sled, its load, and the material on its bottom -->
+  <text x="125" y="128" text-anchor="middle">weigh the sled and its load</text>
+  <rect x="82" y="150" width="40" height="40" fill="#bbbbbb" stroke="black" stroke-width="2"/>
+  <rect x="128" y="164" width="44" height="26" fill="#bbbbbb" stroke="black" stroke-width="2"/>
+  <rect x="60" y="190" width="130" height="42" fill="white" stroke="black" stroke-width="2.5"/>
+  <rect x="60" y="232" width="130" height="8" fill="#777777" stroke="black" stroke-width="1.5"/>
+  <!-- the cord and the spring scale -->
+  <line x1="190" y1="212" x2="240" y2="212" stroke="black" stroke-width="2"/>
+  <circle cx="246" cy="212" r="6" fill="white" stroke="black" stroke-width="2"/>
+  <rect x="252" y="200" width="110" height="24" rx="5" fill="white" stroke="black" stroke-width="2.5"/>
+  <path d="M270,200 v8 M285,200 v8 M300,200 v12 M315,200 v8 M330,200 v8 M345,200 v12" stroke="black" stroke-width="1.5"/>
+  <rect x="296" y="210" width="8" height="10" fill="black"/>
+  <text x="307" y="190" text-anchor="middle">spring scale</text>
+  <circle cx="370" cy="212" r="8" fill="white" stroke="black" stroke-width="2"/>
+  <!-- the pull -->
+  <line x1="378" y1="212" x2="448" y2="212" stroke="black" stroke-width="3"/>
+  <polygon points="462,212 444,202 444,222" fill="black"/>
+  <text x="470" y="160" text-anchor="end">pull it level,</text>
+  <text x="470" y="179" text-anchor="end">slowly and steadily</text>
+  <!-- the surface -->
+  <line x1="20" y1="240" x2="460" y2="240" stroke="black" stroke-width="3"/>
+  <path d="M30,240 l-10,12 M50,240 l-10,12 M70,240 l-10,12 M90,240 l-10,12 M110,240 l-10,12 M130,240 l-10,12 M150,240 l-10,12 M170,240 l-10,12 M190,240 l-10,12 M210,240 l-10,12 M230,240 l-10,12 M250,240 l-10,12 M270,240 l-10,12 M290,240 l-10,12 M310,240 l-10,12 M330,240 l-10,12 M350,240 l-10,12 M370,240 l-10,12 M390,240 l-10,12 M410,240 l-10,12 M430,240 l-10,12 M450,240 l-10,12" stroke="#777777" stroke-width="1.5"/>
+  <text x="20" y="274">sliding: the sled's bottom</text>
+  <text x="20" y="293">on: the surface it slides on</text>
+  <text x="470" y="274" text-anchor="end">read it while it slides,</text>
+  <text x="470" y="293" text-anchor="end">not the first jerk</text>
+</svg>

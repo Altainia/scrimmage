@@ -1,15 +1,23 @@
 """An air budget: how many strokes a robot's tanks and compressor can pay for in a match.
 
-Estimates (UNCALIBRATED). Each stroke fills one side of a cylinder from the regulator at the working pressure. The
-swept volume starts empty, so it fills at absolute pressure; the dead volume (the port and fitting space) starts at
-one atmosphere, so only the gauge pressure adds air. All counted as free air (air at one atmosphere).
+Estimates (UNCALIBRATED; its last line names what it rests on, BUDGET_MATTERS). Each stroke fills one side of a
+cylinder from the regulator at the working pressure. The swept volume starts empty, so it fills at absolute pressure;
+the dead volume (the port and fitting space) starts at one atmosphere, so only the gauge pressure adds air. All
+counted as free air (air at one atmosphere).
 """
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
 
+from ..measure.labels import line
 from .model import ATM, CFM, COMPRESSORS, PSI, AirConfig, CylinderSpec
+
+
+# What a budget rests on. A valve's measured conductance doesn't enter it (a budget counts air, not how fast it
+# flows), and none of these takes a measurement file yet, so a budget is always UNCALIBRATED.
+BUDGET_MATTERS = ("compressor flow", "pressure switch points", "tank volume", "dead volume")
+BUDGET_LINE = f"{line({}, BUDGET_MATTERS, estimates='UNCALIBRATED: estimates')}; see docs/pneumatics.md."
 
 
 @dataclass(frozen=True)
@@ -57,5 +65,5 @@ def format_budget(b: Budget) -> str:
               f"Compressor air in a {b.match_s:g} s match: {b.compressor_l_per_match:.1f} L"
               + (" (no compressor)" if c.compressor == "none" else ""),
               f"Cycles per match, tanks and compressor: {b.cycles_per_match:.0f}",
-              "Estimates (UNCALIBRATED): see docs/pneumatics.md."]
+              BUDGET_LINE]
     return "\n".join(lines)

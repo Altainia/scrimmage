@@ -207,7 +207,8 @@ def main(argv: list[str] | None = None) -> None:
     ep.add_argument("file", type=Path, nargs="?",
                     help="robot config or scenario TOML to edit (a scenario has a top-level config key or [[step]]s), "
                          "a bench file or a folder of them (an idea session, on the Bench tab), or a .step/.stp/.stl/"
-                         ".obj file, an import file or a part folder (the Part tab)")
+                         ".obj file, an import file or a part folder (the Part tab), or a <name>.measure.toml "
+                         "measurement file (the Measure tab)")
     ep.add_argument("--new", choices=("swerve", "swerve-rev", "differential"), help="write a starting robot config to FILE first")
     ep.add_argument("--new-scenario", action="store_true", help="write a starting scenario to FILE first (with --robot)")
     ep.add_argument("--robot", type=Path, metavar="CONFIG",
@@ -217,6 +218,14 @@ def main(argv: list[str] | None = None) -> None:
     ep.add_argument("--no-browser", action="store_true", help="print the URL instead of opening a browser")
     ep.add_argument("-v", "--verbose", action="store_true")
 
+    # listed here for the help; its arguments (a file, or the form and new commands) are parsed by measure/cli.py
+    sub.add_parser("measure", help="measurements: read a <name>.measure.toml file (its averages and fit), print a "
+                                   "blank form, or start a file (docs/measuring.md)")
+
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["measure"]:
+        from .measure.cli import main as measure
+        sys.exit(measure(argv[1:]))
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S")
@@ -306,10 +315,12 @@ def _aim(args) -> None:
         if args.java_class is not None and not re.fullmatch(r"([A-Za-z_]\w*\.)*[A-Za-z_]\w*", args.java_class):
             raise ValueError(f"--java-class {args.java_class!r}: want a class name with its package, pkg.Name")
         distances = _distances(args.distances)
+        model = aim.load_model(args.config, args.goal, args.hood_step)
         rows = aim.aim_table(args.config, args.goal, distances, hood_step_deg=args.hood_step,
-                              on_unreachable=lambda msg: print(f"scrimmage: warning: {msg}", file=sys.stderr))
-        from .launcher.report import UNCALIBRATED
-        print(UNCALIBRATED)
+                              on_unreachable=lambda msg: print(f"scrimmage: warning: {msg}", file=sys.stderr),
+                              model=model)
+        label = aim.calibration(model)
+        print(label)
         print(aim.to_csv(rows).replace(",", "  "), end="")
         if args.csv is not None:
             args.csv.write_text(aim.to_csv(rows), encoding="utf-8")
@@ -319,7 +330,7 @@ def _aim(args) -> None:
             command = (f"scrimmage launcher aim CONFIG --goal {args.goal} --distances {args.distances}"
                        f"{'' if args.hood_step == 2.0 else f' --hood-step {args.hood_step:g}'} "
                        f"--java FILE --java-class {args.java_class}")
-            args.java.write_text(aim.to_java(rows, args.java_class, command), encoding="utf-8")
+            args.java.write_text(aim.to_java(rows, args.java_class, command, label), encoding="utf-8")
             print(f"wrote {args.java}")
     except (ValueError, OSError) as e:    # AimError, ConfigError and PartError are ValueErrors
         print(f"scrimmage: {e}", file=sys.stderr)
@@ -346,9 +357,10 @@ def _launcher(args) -> None:
         out = args.out or args.file.parent / f"{args.file.stem}-results"
         out.mkdir(parents=True, exist_ok=True)
         report.write_csv(rows, out / "results.csv")
-        print(report.format_table(rows))
+        label = report.calibration(setups)
+        print(report.format_table(rows, label=label))
         print(f"wrote {out / 'results.csv'}")
-        paths = report.write_charts(rows, charts, out, [s.goal for s in setups])
+        paths = report.write_charts(rows, charts, out, [s.goal for s in setups], footer=label)
     except (LauncherConfigError, OSError) as e:
         print(f"scrimmage: {e}", file=sys.stderr)
         sys.exit(2)
@@ -461,7 +473,7 @@ def _bench_many(args) -> None:
 
     from .bench import compare, gallery
     from .bench.pictures import PICTURE_TRACE_HZ
-    from .bench.report import headlines
+    from .bench.report import bench_estimates, headlines
     from .bench.run import BenchRunError
     from .bench.spec import BenchError
     from .launcher import report
@@ -487,7 +499,8 @@ def _bench_many(args) -> None:
                 print(compare.format_table(rows, bench))
                 print(f"wrote {out / 'results.csv'}")
                 charts = bench.charts or compare.default_charts(list(bench.sweep))
-                paths = report.write_charts(rows, charts, out, None, compare.BENCH_METRICS, compare.CHART_KINDS)
+                paths = report.write_charts(rows, charts, out, None, compare.BENCH_METRICS, compare.CHART_KINDS,
+                                            footer=bench_estimates(bench))
                 print(report.NO_MATPLOTLIB if paths is None else "\n".join(f"wrote {p}" for p in paths))
             elif args.bench_command == "compare":
                 from .bench.run import run_bench

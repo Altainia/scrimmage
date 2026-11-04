@@ -15,7 +15,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from ..render import new_renderer
-from .report import STATUS_COLORS, STATUS_WORDS
+from .report import ESTIMATES, STATUS_COLORS, STATUS_WORDS, bench_estimates
 from .run import BenchResult
 
 # view -> (azimuth, elevation, the world axes across and up the picture)
@@ -31,7 +31,7 @@ PATH_ORDER = ("timed_out", "out", "escaped", "jammed")  # later ones drawn on to
 MOVES_ACROSS = 0.01     # m: a top view is drawn when the paths span more than this across y
 PICTURE_TRACE_HZ = 240.0  # what `bench run` samples paths and the trace at, for smooth paths and a smooth GIF
 UNCALIBRATED_INK = (170, 40, 40)  # dark red, as the launcher model's charts' footer; not the jammed paths' red
-PICTURE_UNCALIBRATED = "UNCALIBRATED: estimates from preset numbers, not measurements"
+PICTURE_UNCALIBRATED = ESTIMATES   # a picture's line when its bench isn't known; picture_uncalibrated(bench) else
 OUTLINE_APART = 0.6     # a piece's outlines are at least this many piece sizes apart (the later pose wins)
 
 
@@ -275,8 +275,22 @@ def _draw_outlines(draw: ImageDraw.ImageDraw, result: BenchResult, frame: _Frame
                     draw.polygon(shape, outline=STATUS_COLORS[status], width=width)
 
 
-def _uncalibrated(draw: ImageDraw.ImageDraw, xy, font, anchor: str = "lm") -> None:
-    draw.text(xy, PICTURE_UNCALIBRATED, font=font, fill=UNCALIBRATED_INK, anchor=anchor)
+def picture_uncalibrated(bench) -> str:
+    """The UNCALIBRATED line a bench's pictures carry: the bench line's estimates, without what to measure."""
+    return bench_estimates(bench)
+
+
+def _fitted(draw: ImageDraw.ImageDraw, text: str, px: int, room: float):
+    """The font at `px`, or smaller (to 8 px), so `text` fits in `room` pixels."""
+    font = _font(px)
+    while px > 8 and draw.textlength(text, font=font) > room:
+        px -= 1
+        font = _font(px)
+    return font
+
+
+def _uncalibrated(draw: ImageDraw.ImageDraw, xy, px: int, text: str, room: float, anchor: str = "lm") -> None:
+    draw.text(xy, text, font=_fitted(draw, text, px, room), fill=UNCALIBRATED_INK, anchor=anchor)
 
 
 def _shape_labels(result: BenchResult, frame: _Frame, u: float) -> dict[str, tuple[tuple[float, float], str]]:
@@ -389,7 +403,7 @@ def path_picture(result: BenchResult, view: str = "side", width: int = 1280, hei
     # legend band: a line sample per outcome, the outlet box, and a scale bar; UNCALIBRATED under them
     y = height - bottom + 32 * u
     draw.rectangle([0, height - bottom, width, height], fill=(240, 242, 246))
-    _uncalibrated(draw, (20 * u, height - 22 * u), small)
+    _uncalibrated(draw, (20 * u, height - 22 * u), int(24 * u), picture_uncalibrated(b), width - 40 * u)
     x = 20 * u
     for status in PATH_ORDER + ("stuck_at_inlet",):
         if status not in counts:
@@ -457,8 +471,10 @@ def _time_label(draw: ImageDraw.ImageDraw, t: float, height: int, x: float = 0.0
     _label(draw, (x + height / 30, y + height / 40), f"t = {t:.3f} s", _font(max(12, height // 10)), anchor="la")
 
 
-def pass_sheet(frames: list[tuple[float, np.ndarray]], columns: int = 4) -> np.ndarray:
-    """The frames in a grid, left to right, each with its time in large type, and UNCALIBRATED under them."""
+def pass_sheet(frames: list[tuple[float, np.ndarray]], columns: int = 4,
+               label: str = PICTURE_UNCALIBRATED) -> np.ndarray:
+    """The frames in a grid, left to right, each with its time in large type, and `label` (the UNCALIBRATED line)
+    under them."""
     cols = min(columns, len(frames))
     rows = math.ceil(len(frames) / cols)
     h, w = frames[0][1].shape[:2]
@@ -470,22 +486,23 @@ def pass_sheet(frames: list[tuple[float, np.ndarray]], columns: int = 4) -> np.n
         sheet.paste(Image.fromarray(img), (x, y))
         draw.rectangle([x, y, x + w - 1, y + h - 1], outline=(200, 204, 212), width=2)
         _time_label(draw, t, h, x, y)
-    _uncalibrated(draw, (band / 2, rows * h + band / 2), _font(max(12, int(band * 0.55))))
+    _uncalibrated(draw, (band / 2, rows * h + band / 2), max(12, int(band * 0.55)), label, cols * w - band)
     return np.asarray(sheet)
 
 
-def write_gif(frames: list[tuple[float, np.ndarray]], path: Path, fps: float = 15) -> Path:
-    """An endless GIF of the frames, each stamped with its simulated time and UNCALIBRATED."""
+def write_gif(frames: list[tuple[float, np.ndarray]], path: Path, fps: float = 15,
+              label: str = PICTURE_UNCALIBRATED) -> Path:
+    """An endless GIF of the frames, each stamped with its simulated time and `label` (the UNCALIBRATED line)."""
     path = Path(path)
     images = []
     for t, img in frames:
         im = Image.fromarray(img)
         draw = ImageDraw.Draw(im)
         _time_label(draw, t, im.height)
-        font = _font(max(10, im.height // 22))
-        box = draw.textbbox((im.width / 2, im.height - 6), PICTURE_UNCALIBRATED, font=font, anchor="mb")
+        font = _fitted(draw, label, max(10, im.height // 22), im.width - 16)
+        box = draw.textbbox((im.width / 2, im.height - 6), label, font=font, anchor="mb")
         draw.rectangle([box[0] - 6, box[1] - 4, box[2] + 6, box[3] + 4], fill=(255, 255, 255))
-        _uncalibrated(draw, (im.width / 2, im.height - 6), font, anchor="mb")
+        draw.text((im.width / 2, im.height - 6), label, font=font, fill=UNCALIBRATED_INK, anchor="mb")
         images.append(im.convert("P", palette=Image.Palette.ADAPTIVE))
     images[0].save(path, save_all=True, append_images=images[1:], duration=int(round(1000 / fps)), loop=0)
     return path
@@ -504,7 +521,8 @@ def write_pictures(result: BenchResult, out_dir: Path) -> list[Path]:
     sheet = pass_frames(result, frames=8)
     if sheet:
         p = out_dir / "pass.png"
-        Image.fromarray(pass_sheet(sheet, columns=4)).save(p)
+        label = picture_uncalibrated(result.bench)
+        Image.fromarray(pass_sheet(sheet, columns=4, label=label)).save(p)
         written.append(p)
-        written.append(write_gif(pass_frames(result, frames=40), out_dir / "pass.gif"))
+        written.append(write_gif(pass_frames(result, frames=40), out_dir / "pass.gif", label=label))
     return written

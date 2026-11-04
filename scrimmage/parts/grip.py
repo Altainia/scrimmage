@@ -3,7 +3,8 @@ help?"). A part folder's own edits (scrimmage-edits.toml, parts/overlay.py) name
 (`set_grip`); a config's path part may override it:
 
     [body.pad_left]                       # scrimmage-edits.toml
-    grip = "nitrile"                      # a GRIP_MATERIALS key, or a number: my own (a measured) friction
+    grip = "nitrile"                      # a GRIP_MATERIALS key, a number: my own (a measured) friction, or a
+    #                                       friction measurement file, "pad.measure.toml" (relative to this file)
 
     [[part]]                              # the robot config
     path = "parts/claw"
@@ -30,6 +31,7 @@ import tomllib
 from dataclasses import replace
 from pathlib import Path
 
+from ..measure.use import is_measurement
 from .model import Part, PartError
 
 GRIP_PRIORITY = 1                     # above a piece's (and every field geom's) 0, as the climber's hooks
@@ -69,8 +71,26 @@ def _number(x) -> bool:
     return isinstance(x, (int, float)) and not isinstance(x, bool)
 
 
-def grip_friction(grip: str | float, where: str) -> float:
-    """The sliding friction of `grip`: a GRIP_MATERIALS key, or a number above 0 and at most MY_OWN_MAX (my own)."""
+def measured_grip(grip: str, where: str, base) -> tuple[float, object]:
+    """The sliding friction a friction measurement file `grip` gives (found from `base`, the folder of the file that
+    names it), and its Provenance (measure/file.py)."""
+    from ..measure.file import MeasureError
+    from ..measure.use import friction_value
+    try:
+        mu, prov = friction_value(grip, where, base=base, key="grip", needs="a grip")
+    except MeasureError as e:
+        raise PartError(str(e)) from None
+    if not (math.isfinite(mu) and 0 < mu <= MY_OWN_MAX):
+        raise PartError(f"{where}: grip = \"{grip}\" measures a friction of {mu:g}, which isn't one to use: above 0 "
+                        f"and at most {MY_OWN_MAX:g}; check its sled pulls")
+    return mu, prov
+
+
+def grip_friction(grip: str | float, where: str, base=None) -> float:
+    """The sliding friction of `grip`: a GRIP_MATERIALS key, a number above 0 and at most MY_OWN_MAX (my own), or a
+    friction measurement file (`pad.measure.toml`, found from `base`: measured_grip)."""
+    if is_measurement(grip):
+        return measured_grip(grip, where, base if base is not None else Path("."))[0]
     if _number(grip):
         if not (math.isfinite(grip) and 0 < grip <= MY_OWN_MAX):
             raise PartError(f"{where}: grip {grip!r} isn't a friction to use; give a number above 0 and at most "
@@ -83,30 +103,38 @@ def grip_friction(grip: str | float, where: str) -> float:
                     "a number (a measured friction)")
 
 
-def apply_grip(part: Part, grips: dict[str, str | float], where: str) -> tuple[Part, list[str]]:
+def apply_grip(part: Part, grips: dict[str, str | float], where: str, base=None) -> tuple[Part, list[str]]:
     """The part with each body of `grips` (body -> grip) given its material, and warnings. An unknown body is a
-    PartError; a body that touches nothing is a warning (its grip does nothing)."""
+    PartError; a body that touches nothing is a warning (its grip does nothing). A measurement file is found from
+    `base`, the folder of the file that names it (default the part's folder), and its provenance kept in the part's
+    grip_provenance."""
     if not isinstance(grips, dict):
         raise PartError(f"{where}: grip must be a table of body = material, not {grips!r}")
+    base = base if base is not None else part.base_dir if part.base_dir is not None else Path(".")
     names = [b.name for b in part.bodies]
+    frictions, provenance = {}, {}
     for name, grip in grips.items():
         if name not in names:
             raise PartError(f"{where}: grip: no body {name!r} in the part; bodies: {', '.join(names)}")
-        grip_friction(grip, f"{where}: body {name}")
+        if is_measurement(grip):
+            frictions[name], provenance[name] = measured_grip(grip, f"{where}: body {name}", base)
+        else:
+            frictions[name] = grip_friction(grip, f"{where}: body {name}")
     warns: list[str] = []
     bodies = []
     for b in part.bodies:
         if b.name not in grips:
             bodies.append(b)
             continue
-        mu = grip_friction(grips[b.name], f"{where}: body {b.name}")
+        mu = frictions[b.name]
         touch = [g.collide and not g.tread for g in b.geoms]
         if not any(touch):
             warns.append(f"{where}: body {b.name} has no geom that touches anything, so its grip does nothing")
         bodies.append(replace(b, geoms=[replace(g, friction=mu, priority=GRIP_PRIORITY, solref=GRIP_SOLREF) if t
                                         else g for g, t in zip(b.geoms, touch)]))
+    kept = {k: p for k, p in part.grip_provenance.items() if k not in grips}
     out = replace(part, bodies=bodies, warnings=list(part.warnings) + warns,
-                  grips={**part.grips, **copy.deepcopy(grips)})
+                  grips={**part.grips, **copy.deepcopy(grips)}, grip_provenance={**kept, **provenance})
     return out, warns
 
 
@@ -117,7 +145,7 @@ def set_grip(folder: Path, body: str, grip: str | float | None) -> None:
     from ..cad.settings import replace_file
     from .overlay import OVERLAY
     if grip is not None:
-        grip_friction(grip, f"body {body}")
+        grip_friction(grip, f"body {body}", Path(folder))
         if _number(grip):
             grip = float(grip)
     path = Path(folder) / OVERLAY
@@ -154,6 +182,14 @@ def set_grip(folder: Path, body: str, grip: str | float | None) -> None:
         raise
 
 
+def measured_label(mu: float | None, prov) -> str:
+    """A measured grip's words: its friction, the file it came from, and why it isn't good enough when it isn't."""
+    from ..measure.labels import not_good, source
+    friction = f", friction {mu:g}" if mu is not None else ""
+    said = f"measured{friction} ({source(prov)})"
+    return said if prov.good else f"{said}, {not_good(prov)} (UNCALIBRATED)"
+
+
 def _label(grip: str | float) -> str:
     if _number(grip):
         return f"my own number, friction {float(grip):g} (UNCALIBRATED unless you measured it)"
@@ -188,5 +224,14 @@ def grip_notes(world) -> list[str]:
     built = getattr(world, "parts", None)
     if built is None:
         return []
-    return [f"{inst.name}.{body} grip: {_label(grip)}" for inst in built.instances
-            for body, grip in inst.part.grips.items()]
+    out = []
+    for inst in built.instances:
+        for body, grip in inst.part.grips.items():
+            prov = inst.part.grip_provenance.get(body)
+            if prov is None:
+                out.append(f"{inst.name}.{body} grip: {_label(grip)}")
+                continue
+            mu = next((g.friction for b in inst.part.bodies if b.name == body for g in b.geoms
+                       if g.priority == GRIP_PRIORITY), None)    # None: the body touches nothing
+            out.append(f"{inst.name}.{body} grip: {measured_label(mu, prov)}")
+    return out

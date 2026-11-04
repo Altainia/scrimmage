@@ -7,7 +7,7 @@ a ball fed at the setup's entry speed into the lane nearest the middle, the shaf
 velocity loop (kP AIM_KP, a stand-in for the robot's own gains: the dip a ball causes is recovered at that rate),
 then flown by `fly()`. The robot is taken as stationary and the ball's path unobstructed (the rim's edge and the
 funnel are not modeled); a lane off the middle lands that far to the side. An estimate from the launcher model's
-preset numbers, so UNCALIBRATED.
+preset numbers, so UNCALIBRATED, unless its ball and wheels are measured (calibration()).
 """
 
 from __future__ import annotations
@@ -24,15 +24,13 @@ import numpy as np
 from ..config import load_config
 from ..launcher.flight import Landing, fly
 from ..launcher.inputs import Setup
-from ..launcher.model import FedBall, Launcher
-from ..launcher.shaft import VelocityController
+from ..launcher.single import single_pass
 from ..parts.assemble import assemble
 from .shooter import parse_shooter
 
 AIM_KP = 0.5            # V per wheel rps of error: the velocity loop holding the shaft while a ball passes
 RPS_TOLERANCE = 0.01    # the wheel speed is solved to this (rps)
 HIT_TOLERANCE = 0.02    # m: the solved shot must cross the goal height this close to the goal center
-MAX_PASS_S = 1.0        # s: a ball still in the launcher after this long is not coming out
 ROW_FIELDS = ("distance", "wheel_rps", "hood_deg", "flight_s", "apex")
 UNREACHABLE = "unreachable"
 
@@ -62,7 +60,15 @@ class AimModel:
     hood_angles: tuple[float, ...]    # the angles tried: one for a fixed hood
 
 
+def calibration(model: AimModel) -> str:
+    """The table's UNCALIBRATED line: what its setup measured (the range's ball, the shooter's setup file)."""
+    from ..launcher import report
+    return report.calibration([model.setup])
+
+
 def load_model(config_path: Path, goal: str, hood_step_deg: float = 2.0) -> AimModel:
+    if hood_step_deg <= 0.0:
+        raise AimError(f"hood_step_deg must be positive, not {hood_step_deg:g}")
     cfg = load_config(config_path)
     if "shooter" not in cfg.raw:
         raise AimError(f"{config_path}: no [shooter]: the aiming table is made from the robot's launcher")
@@ -108,18 +114,10 @@ def _setup(model: AimModel, hood_deg: float, distance: float) -> Setup:
 def _land(model: AimModel, hood_deg: float, rps: float, distance: float = 0.0) -> Landing | None:
     """One ball through the launcher with the shaft held at rps, then flown; None if it does not come out."""
     setup = _setup(model, hood_deg, distance)
-    launcher = Launcher(setup)
-    launcher.shaft.speed = 2.0 * math.pi * rps
-    ctrl = VelocityController(dataclasses.replace(setup.control, target_rps=rps, kP=AIM_KP), setup.shaft)
-    fed = FedBall(0.0, model.lane, setup.feed.entry_speed, setup.ball)
-    shot = launcher.insert(fed, 0.0)
-    dt = launcher.default_dt()
-    exits = [] if shot is None else [shot]
-    while not exits and launcher.in_contact() and launcher.time < MAX_PASS_S:
-        exits = launcher.step(dt, ctrl.voltage(launcher.shaft))
-    if not exits or exits[0].status != "launched":
+    shot = single_pass(setup, rps, model.lane, kP=AIM_KP)
+    if shot is None or shot.status != "launched":
         return None
-    return fly(exits[0], setup, setup.ball)
+    return fly(shot, setup, setup.ball)
 
 
 def _cross(model: AimModel, hood_deg: float, rps: float) -> float | None:
@@ -187,14 +185,15 @@ def choose(found: list[AimRow], previous: AimRow | None) -> AimRow | None:
 
 def aim_table(config_path: Path, goal: str, distances: list[float], *, hood_step_deg: float = 2.0,
               rps_range: tuple[float, float] = (10.0, 120.0),
-              on_unreachable: Callable[[str], None] | None = None) -> list[AimRow]:
+              on_unreachable: Callable[[str], None] | None = None,
+              model: AimModel | None = None) -> list[AimRow]:
     """A row per distance. A distance nothing reaches gets an UNREACHABLE row (NaN values), and `on_unreachable` is
-    called once with a message naming them and the reachable range; AimError only when none is reachable."""
+    called once with a message naming them and the reachable range; AimError only when none is reachable. `model`:
+    load_model's, when the caller has loaded it already (for its label)."""
     if not distances:
         raise AimError("no distances")
-    if hood_step_deg <= 0.0:
-        raise AimError(f"hood_step_deg must be positive, not {hood_step_deg:g}")
-    model = load_model(config_path, goal, hood_step_deg)
+    if model is None:
+        model = load_model(config_path, goal, hood_step_deg)
     rows = []
     previous = None     # the last reachable row
     for d in distances:
@@ -228,9 +227,10 @@ def to_csv(rows: list[AimRow]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def to_java(rows: list[AimRow], class_name: str, command: str) -> str:
+def to_java(rows: list[AimRow], class_name: str, command: str, label: str | None = None) -> str:
     """A `final` class with `ROWS`, one {distance, wheel_rps, hood_deg, flight_s, apex} row per distance. The header
-    gives `command` as the command that made it."""
+    gives `command` as the command that made it, and `label` (the launcher's UNCALIBRATED line by default; the setup's
+    own, calibration(model), says what was measured)."""
     from ..launcher.report import UNCALIBRATED
     package, _, name = class_name.rpartition(".")
     body = ",\n".join(
@@ -242,7 +242,7 @@ def to_java(rows: list[AimRow], class_name: str, command: str) -> str:
         "// angle whose ball crosses the goal's rim height descending at its center, the time from exit to that",
         "// crossing, and the ball's highest point.",
         f"// Made by: {command}",
-        f"// {UNCALIBRATED}",
+        f"// {UNCALIBRATED if label is None else label}",
         *([f"package {package};", ""] if package else []),
         f"public final class {name} {{",
         f"    private {name}() {{}}",

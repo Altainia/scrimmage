@@ -50,7 +50,7 @@ from ..testrange.spec import RangeError, load_range
 from ..teamfolders import TeamFolderError, expand
 from ..testrange.station import OVERRIDE_KEYS
 from . import store
-from .program import Program, TestFileError, from_json, to_json
+from .program import Program, TestFileError, found_setup, from_json, to_json
 from .run import TestRun, _where, setup_config, world_for
 
 MAX_SWEEP = 12
@@ -247,7 +247,7 @@ def _world(config: Path, tmp: Path, program: Program):
     does); an error names the config, not the temp copy."""
     try:
         cfg = load_config(tmp)
-        return build_world(replace(cfg, raw=setup_config(cfg.raw, program.setup, cfg.dir)))
+        return build_world(replace(cfg, raw=setup_config(cfg.raw, found_setup(program), cfg.dir)))
     except (ValueError, OSError) as e:
         msg = str(e)
         for s in (str(tmp.resolve()), str(tmp), tmp.name):

@@ -5,9 +5,9 @@ The test range puts your robot on a field with **goals** (last season's hub), **
 decides where each ball goes and whether it scores. It builds on the [launcher model](launcher.md): the wheel, the
 hood and the ball's squeeze are that model, and the range adds a world around it.
 
-> **The numbers are estimates until you measure your own balls and wheels.** The launcher model's results are
-> labeled `UNCALIBRATED` for that reason, and so are the aiming tables made from it. Trust the trends (a bigger
-> flywheel recovers faster) before the absolute numbers (7.4 m/s).
+> **The numbers are estimates until you measure your own balls and wheels** ([measuring.md](measuring.md)). The
+> launcher model's results are labeled `UNCALIBRATED` for that reason, and so are the aiming tables made from it.
+> Trust the trends (a bigger flywheel recovers faster) before the absolute numbers (7.4 m/s).
 
 - [What you get](#what-you-get)
 - [Putting a robot on the range](#putting-a-robot-on-the-range)
@@ -170,7 +170,7 @@ fast-mode sample's shooter.
 | `start` | | none | a named start from the range file. The robot starts there. Give either `start` or `[robot] start_pose`, not both |
 | `preload` | balls | 0 | balls already in the hopper at the start of a run. More than the robot holds (the hopper capacity) is an error |
 | `floor_balls` | | `true` | `false`: no floor balls (the range's `[[floor_balls]]` are left out of the world entirely, so the world can't put them out later). Faster runs, and the right choice when the auto never touches them |
-| `ball` | | the range's | a ball preset to use in place of the range's own (`"2017-fuel"`, `"2019-cargo"`, and so on: the names in [docs/launcher.md](launcher.md)). Only a range with a ball takes it (not a disc range). A range with a station refuses a ball that doesn't fit the station's chute (a chute with a set `width` must be wider than the ball). The Test tab's Setup sets this for a stand-in's `intake` and `station` fields |
+| `ball` | | the range's | a ball preset to use in place of the range's own (`"2017-fuel"`, `"2019-cargo"`, and so on: the names in [docs/launcher.md](launcher.md)). Or a ball measurement file with a `base` preset (`"fuel.measure.toml"`, relative to the config): the base preset's ball with the measured numbers in place ([measuring.md](measuring.md#using-a-measurement)). Only a range with a ball takes it (not a disc range). A range with a station refuses a ball that doesn't fit the station's chute (a chute with a set `width` must be wider than the ball). The Test tab's Setup sets this for a stand-in's `intake` and `station` fields |
 | `piece` | | the range's | a ball preset or a piece preset to use in place of the range's own kind (`"2025-coral"`, `"2023-cube"`, `"2017-fuel"`, and so on: see [Pieces that aren't balls](#pieces-that-arent-balls)). Give `piece` or `ball`, not both: `ball` is the older spelling and takes ball presets only. The Test tab's Setup writes `piece`. It replaces the field's one kind, and only the built-in `intake` and `station` fields take it (a game's field and the `reef` field keep their own pieces) |
 | `station` | | none | changes a station's settings for this run: `station = { feeder = { interval = 0.5, stock = 8, spread_yaw_deg = 5.0 } }`. The keys are `interval`, `stock`, `spread_yaw_deg`, `spread_pitch_deg`, `spread_speed`, `spread_position`, `spread_rotation_deg`, `tip_deg`, `turn_deg`, `spread_tip_deg` and `spread_turn_deg`; any other key, or a station the range doesn't have, is an error. `stock = 0` means "never runs out" (at most 50 balls are fed in one run); a stock can be at most 200 |
 | `seed` | | `1` | the whole number (0 or more) that picks which draw of the spreads the stations feed. The same seed gives the same feeds every run |
@@ -503,7 +503,7 @@ A `[piece.<name>]` table adds a kind to the field. It is one of:
 
 ```toml
 [piece.coral]
-preset = "2025-coral"             # a piece preset, or ball = "2026-fuel" (a ball preset), or disc = "2013-frisbee"
+preset = "2025-coral"             # a piece preset, or ball = "2026-fuel" (a ball preset, or a ball file), or disc = "2013-frisbee"
 
 [piece.post]                      # or a kind of your own, from shapes and the manual's numbers
 shape = "tube"
@@ -512,7 +512,7 @@ inner_diameter_in = 4.0           # leave it out for a solid tube; a number make
 length_in = 11.875
 mass = 0.66                       # kg: required
 material = "pvc"                  # the surface: a [surface.*] preset ...
-# friction = 0.45                 # ... or your own measured number; give one of the two
+# friction = 0.45                 # ... or your own measured number, or a friction file; give one of the two
 label = "post"                    # the plain name students read; left out, the table's name
 ```
 
@@ -553,7 +553,10 @@ is shorter along that axis than it is wide across it (a gear, a hatch panel, a n
 **Surfaces.** `material` names a `[surface.*]` preset in `presets.toml`: `pvc` 0.4, `polycarbonate` 0.4, `rubber`
 0.8, `foam` 0.6, `hdpe` 0.25, `polypropylene` 0.3 and `fabric` 0.5. Each is a sliding friction against a hard robot
 part, and **each is an estimate** (the file says how each was chosen): friction against FRC pieces isn't published.
-Replace one with your own number, measured with a sled pull ([how](test-tab.md#grip-material)).
+Replace one with your own number, measured with a sled pull ([how](measuring.md#sled-pull)): `friction = 0.45`, or
+`friction = "pvc.measure.toml"`, a friction measurement file relative to the range file, so the piece's surface is
+named as measured. The `[surface.*]` presets themselves can't be measured files. A ball kind takes a ball measurement
+file the same way: `ball = "fuel.measure.toml"` (with a `base` preset).
 
 **Contact.** A piece has a firm contact (a stiff spring, so a squeezed piece doesn't creep into the part that holds
 it). The `friction` is the piece's own; a robot part's pad with a grip material has priority, so its friction applies
@@ -969,4 +972,5 @@ by `SCRIMMAGE_AUTO`; they run on `configs/fastmode_range.toml` (fast mode) and `
   opening stay ball and disc only. A coral, a cone or a tote moves only by contact with the mechanism you test, and a
   goal that names one is an error.
 - **Calibration.** Nothing here is calibrated: the ball's stiffness, the wheel's friction, a piece's surface and a pad's grip, and the carpet's rolling
-  resistance are estimates until you measure your own. See [Measure these first](launcher.md#measure-these-first).
+  resistance are estimates until you measure your own. See [measuring.md](measuring.md) for the ball, the wheel, a
+  piece's surface and a pad (the carpet's rolling resistance has no test there yet).

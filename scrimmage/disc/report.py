@@ -5,12 +5,13 @@ import math
 from pathlib import Path
 
 from ..launcher import report
-from ..launcher.report import UNCALIBRATED
+from ..measure import labels
 from .inputs import DiscSetup, load_setup
 from .run import METRIC_KEYS, exit_table
 from .sweep import run_all, run_one
 
 CHART_KINDS = ("line", "shaft")
+DISC_UNCALIBRATED = labels.line({}, labels.DISC) + "."   # a disc setup takes no measurement file yet
 
 
 def run_and_write(path: Path, out: Path, sweep: bool) -> list[Path] | None:
@@ -24,14 +25,14 @@ def run_and_write(path: Path, out: Path, sweep: bool) -> list[Path] | None:
     charts = charts if sweep else [c for c in charts if c.get("kind") != "line"]
     out.mkdir(parents=True, exist_ok=True)
     report.write_csv(rows, out / "results.csv", METRIC_KEYS)
-    table = report.format_table(rows, METRIC_KEYS)
+    table = report.format_table(rows, METRIC_KEYS, label=DISC_UNCALIBRATED)
     print(table)
     print(f"wrote {out / 'results.csv'}")
     (out / "summary.md").write_text(
-        f"# Disc launcher: {Path(path).name}\n\n{UNCALIBRATED}\n\n```\n{table.split(chr(10), 1)[1]}\n```\n\n"
+        f"# Disc launcher: {Path(path).name}\n\n{DISC_UNCALIBRATED}\n\n```\n{table.split(chr(10), 1)[1]}\n```\n\n"
         "Columns are explained in docs/disc.md, \"Reading results.csv\".\n", encoding="utf-8")
     print(f"wrote {out / 'summary.md'}")
-    return report.write_charts(rows, charts or [c for c in report.default_charts(keys) if c["kind"] in CHART_KINDS], out, None, METRIC_KEYS, CHART_KINDS)
+    return report.write_charts(rows, charts or [c for c in report.default_charts(keys) if c["kind"] in CHART_KINDS], out, None, METRIC_KEYS, CHART_KINDS, footer=DISC_UNCALIBRATED)
 
 
 def exit_table_text(setup: DiscSetup, rpms: list[float]) -> str:
@@ -47,4 +48,4 @@ def exit_table_text(setup: DiscSetup, rpms: list[float]) -> str:
         fit = f"exit speed = {slope:.3g} x wheel surface speed (least squares through the origin)"
     else:
         fit = "no disc launched: no fit (exit speed = nan x wheel surface speed)"
-    return "\n".join([UNCALIBRATED, line(header), *(line(c) for c in cells), fit])
+    return "\n".join([DISC_UNCALIBRATED, line(header), *(line(c) for c in cells), fit])

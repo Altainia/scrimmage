@@ -149,6 +149,7 @@ class Part:
     cylinders: list[CylinderSpec] = field(default_factory=list)   # the stock cylinder's only (D2); not in part.toml.
     # Its pins name the part's own bodies, or (pin_b, the push form) another part's body as "<instance>.<body>";
     # length None means the pins' distance at the assembled pose. Each cylinder's valve is the slot VALVE_SLOT.
+    grip_provenance: dict = field(default_factory=dict)  # body -> the Provenance of a grip from a measurement file
 
     def slot_kinds(self) -> dict[str, str]:
         out = {s.slot: "motor" for s in self.motors}

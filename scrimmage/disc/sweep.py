@@ -29,7 +29,7 @@ def apply_overrides(raw: dict, overrides: dict[str, object]) -> dict:
     return out
 
 
-_disc = dict(load=load_setup, parse=parse_setup, overrides=apply_overrides, error=DiscConfigError)
+_disc = dict(load=load_setup, parse=parse_setup, overrides=apply_overrides, error=DiscConfigError, measured=None)
 
 
 def setups_for(path: Path) -> list[tuple[dict, DiscSetup]]:

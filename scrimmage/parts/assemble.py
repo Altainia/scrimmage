@@ -175,7 +175,21 @@ def _instances(cfg: dict, cfg_dir: Path) -> list[Instance]:
             if "grip" in e:
                 raise PartError(f"{where}: grip is for a part folder's bodies; a stock part has its own materials")
             checked = stock_params(str(e["stock"]), params, where)
+            measured = checked.get("measured") if e["stock"] == "cylinder" else ""
+            provenance, notes = None, []
+            if measured:
+                from ..measure.file import MeasureError
+                from ..measure.use import apply_cylinder
+                try:
+                    params, provenance, notes = apply_cylinder(params, measured, where, base=cfg_dir,
+                                                               cylinder=checked)
+                except MeasureError as err:
+                    raise PartError(str(err)) from None
+                checked = stock_params(str(e["stock"]), params, where)
             part, source = build_stock(str(e["stock"]), params, where), f"stock {e['stock']}"
+            if provenance is not None:
+                part.cylinders = [dataclasses.replace(c, provenance=provenance) for c in part.cylinders]
+                part.warnings = [*part.warnings, *notes]
         else:
             if params:
                 raise PartError(f"{where}: {', '.join(repr(k) for k in params)} isn't a key of a path part "
@@ -190,7 +204,7 @@ def _instances(cfg: dict, cfg_dir: Path) -> list[Instance]:
                 raise PartError(f"{where}: {err}") from None
             if "grip" in e:     # over the folder's own (its scrimmage-edits.toml)
                 from .grip import apply_grip
-                part, _ = apply_grip(part, e["grip"], where)
+                part, _ = apply_grip(part, e["grip"], where, base=cfg_dir)
         attach = e.get("attach")
         if attach is not None and not (isinstance(attach, str) and attach.count(".") == 1 and all(attach.split("."))):
             raise PartError(f"{where}: attach must be \"<part>.<mount or body>\", not {attach!r}")

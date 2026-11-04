@@ -1,0 +1,36 @@
+# The intake's deploy cylinder: five strokes filmed in slow motion, which fit the valve's flow (its conductance) to
+# the pneumatic model.
+#
+#   scrimmage measure examples/measure/intake-deploy.measure.toml
+#
+# Each stroke is counted in frames, from the valve's light on the Pneumatic Hub coming on to the rod at full stroke.
+
+[measure]
+kind = "cylinder"
+about = "the intake's deploy cylinder"
+by = "J. Smith"
+date = 2026-11-13
+tools = "phone at 240 fps, kitchen scale for the intake's moving part"
+
+[stroke_setup]
+bore_in = 1.0625                  # the cylinder's label: 1-1/16 in bore, 5/16 in rod, 6 in stroke
+rod_in = 0.3125
+stroke_in = 6
+load_mass_lb = 2                  # the intake's moving part, which slides out level (so vertical stays false)
+working_psi = 60
+fps = 240
+
+[[stroke]]
+frames = 59
+
+[[stroke]]
+frames = 61
+
+[[stroke]]
+frames = 60
+
+[[stroke]]
+frames = 62
+
+[[stroke]]
+frames = 60

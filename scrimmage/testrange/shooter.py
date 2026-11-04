@@ -31,7 +31,7 @@ import numpy as np
 
 from ..disc import inputs as disc_inputs
 from ..disc.launcher import DiscLauncher, ExitedDisc
-from ..launcher.inputs import LauncherConfigError, Setup, _build_section, check_lane, parse_setup
+from ..launcher.inputs import LauncherConfigError, Setup, _build_section, apply_measured, check_lane, parse_setup
 from ..launcher.model import ExitedBall, FedBall, Launcher
 from ..motors import get_motor
 from ..parts.model import quat_from_rpy
@@ -146,9 +146,11 @@ def _setup_file(path: Path) -> dict:
     return {k: v for k, v in raw.items() if k not in IGNORED_SECTIONS}
 
 
-def _check_file(raw: dict, where: str, name: str, given: dict, rng, art: bool, p: dict) -> None:
+def _check_file(raw: dict, path: Path, name: str, given: dict, rng, art: bool, p: dict) -> None:
     """A setup file's values for what the part or the range gives must agree with them. Its [launcher] height is
-    ignored: the launcher's height is where the part is mounted (a standalone setup file always has one)."""
+    ignored: the launcher's height is where the part is mounted (a standalone setup file always has one). `raw` has
+    its measurement files applied (parse_shooter)."""
+    where = f"setup {path}"
     if "ball" in raw:
         try:
             ball = _build_section("ball", raw["ball"])
@@ -244,17 +246,32 @@ def parse_shooter(cfg: dict, built, cfg_dir: Path | None) -> ShooterConfig:
                                  f"({PART_KEYS[(section, k)]} = {p[PART_KEYS[(section, k)]]}); leave it out")
 
     raw: dict = {}
+    path = None
+    measured: dict = {}  # the setup file's measured numbers' provenance
     if "setup" in sec:
         ref = sec["setup"]
         if not isinstance(ref, str):
             raise _err(f"setup must be a path to a launcher setup file, not {ref!r}")
         path = Path(cfg_dir if cfg_dir is not None else ".") / ref
         raw = _setup_file(path)
-        _check_file(raw, f"setup {path}", name, given, rng, art, p)
+        try:  # its [ball] and [wheels] measured files, found from it, read together (a launcher file may be both's)
+            raw, measured = apply_measured(raw, path)
+        except LauncherConfigError as e:
+            raise _err(str(e)) from None
+        _check_file(raw, path, name, given, rng, art, p)
     for section in INLINE_SECTIONS:
         if section in sec:
             base = raw.get(section, {})
-            raw[section] = {**(base if isinstance(base, dict) else {}), **sec[section]}
+            base = base if isinstance(base, dict) else {}
+            inline = dict(sec[section])
+            if isinstance(inline.get("measured"), str):  # found from the robot config, the file that names it
+                inline["measured"] = str(Path(cfg_dir if cfg_dir is not None else ".") / inline["measured"])
+                # it replaces what the setup file's own measurement gave
+                base = {k: v for k, v in base.items() if f"{section}.{k}" not in measured}
+                measured = {k: v for k, v in measured.items() if not k.startswith(f"{section}.")}
+            measured = {k: v for k, v in measured.items()      # an inline number replaces a measured one
+                        if not (k.startswith(f"{section}.") and k.split(".", 1)[1] in inline)}
+            raw[section] = {**base, **inline}
 
     lanes = sec.get("lanes", [0.0])
     if not (isinstance(lanes, list) and lanes
@@ -285,9 +302,14 @@ def parse_shooter(cfg: dict, built, cfg_dir: Path | None) -> ShooterConfig:
     raw["goal"] = dict(GOAL_PLACEHOLDER)
     raw["feed"] = {"lanes": list(lanes)}
     try:
-        setup = parse_setup(raw)
+        setup = parse_setup(raw, path)
     except LauncherConfigError as e:
         raise _err(f"(the launcher model's inputs): {e}") from None
+    ball_kind = next(k for k in rng.kinds.values() if k.form == "ball")
+    ball = {f"ball.{k}": v for k, v in ball_kind.provenance.items()}  # the range's ball: the shooter shoots it
+    wheels = {k: v for k, v in measured.items() if not k.startswith("ball.")}
+    if ball or wheels:
+        setup = dataclasses.replace(setup, provenance={**ball, **wheels, **setup.provenance})
     return ShooterConfig(part=name, setup=setup, lanes=lanes, hood=p["hood"], hood_range=p["hood_range"],
                          hood_angle=p["hood_angle"], capacity=capacity, stages=stages, intake=intake,
                          beam_breaks=beams)

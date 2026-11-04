@@ -4,9 +4,9 @@
 against, and the ball's flight to the goal. Use it to compare designs before you build them: how much squish, how
 heavy a flywheel, what wheel speed, what hood angle.
 
-> **Every number it prints is labeled `UNCALIBRATED`.** The ball and wheel numbers are estimates until you measure
-> your own (see [Measure these first](#measure-these-first)). Trust the trends ("more flywheel, smaller dip") before
-> the absolute numbers ("7.4 m/s").
+> **Its results are labeled `UNCALIBRATED`** while the ball and wheel numbers are estimates. Measure your own (see
+> [Measure these first](#measure-these-first)) and the label names what is measured. Until then, trust the trends
+> ("more flywheel, smaller dip") before the absolute numbers ("7.4 m/s").
 
 - [Quick start](#quick-start)
 - [What is modeled](#what-is-modeled)
@@ -212,26 +212,22 @@ the 4 m goal. With the estimated ball, that is the grip limit, not the hood.
 
 ## Measure these first
 
-In order of how much they matter. Put your numbers in your setup file's `[ball]` and `[wheels]` sections; they
-override the preset.
+In order of how much they matter. [docs/measuring.md](measuring.md) has each test's picture, steps and printable
+form, how to write the trials in a measurement file, and how Scrimmage averages and fits them. Name the file in your
+setup's `[ball]` or `[wheels]` (`measured = "fuel.measure.toml"`), or type the number in yourself; either overrides
+the preset.
 
-1. **Ball stiffness (`ball.stiffness_n`): a squeeze test.** You need a bathroom scale, two flat boards and a ruler.
-   Put the ball between the boards on the scale. Press down on the top board until the ball is squeezed to 75% of
-   its diameter (a 7 in. Power Cell to 5.25 in.; a 5.9 in. FUEL to 4.4 in.). Read the scale, subtract the top
-   board's weight, and convert to newtons (kg x 9.81, or lb x 4.45). That is `stiffness_n`. Measure several balls:
-   they vary, and foam balls get firmer as they age.
-2. **Bounce (`ball.restitution`): a drop test.** Drop the ball from 0.46 m (18 in., measured to the bottom of the
-   ball) onto a hard floor (concrete or a steel plate, not carpet). Film it against a ruler and read the bounce
-   height h to the bottom of the ball. `restitution = sqrt(h / 0.46)`. The drop height matters: the model's foam
-   bounces differently at different speeds, and it is set up for this one.
-3. **Exit speed, later: a flat shot on slow-motion video.** Once the launcher is built, shoot level with a ruler or
-   tape marks in view and film at 240 fps. The distance the ball moves between two frames, times the frame rate, is
-   the exit speed. Compare it with the model at the same wheel speed, and adjust the least certain input
-   (stiffness, then wheel friction) until they agree. Do it at two wheel speeds, one low and one high, to see where
-   your knee is.
-
-Wheel friction can be measured with a sled pull: a ball pressed against a slab of your wheel's tread, pulled
-sideways with a spring scale. Friction = pull force / pressing force.
+1. **Ball stiffness (`ball.stiffness_n`): a [squeeze test](measuring.md#ball-squeeze).** A bathroom scale, two flat
+   boards and a ruler: the force that squeezes the ball to 75% of its diameter (a 7 in. Power Cell to 5.25 in.; a
+   5.9 in. FUEL to 4.4 in.). Measure several balls: they vary, and foam balls get firmer as they age.
+2. **Bounce (`ball.restitution`): a [drop test](measuring.md#ball-drop).** An 18 in. (0.46 m) drop onto a hard
+   floor, filmed against a ruler: `restitution = sqrt(bounce / drop)`, both to the bottom of the ball. The drop
+   height matters: the model's foam bounces differently at different speeds, and it is set up for this one.
+3. **Wheel friction (`wheels.friction`): a [sled pull](measuring.md#sled-pull)** of your wheel's tread on the ball's
+   material.
+4. **Exit speed, later: [filmed shots](measuring.md#launcher-shot).** Once the launcher is built, film one ball at a
+   time crossing tape marks, at two or more wheel speeds. `scrimmage measure` fits the ball's stiffness to the shots
+   (or the wheel's friction, with the squeeze measured) and says how well the model matches them.
 
 ## Inputs
 
@@ -245,6 +241,7 @@ a preset (`preset = "name"`); keys you set yourself override it.
 | key | unit | default | meaning |
 |---|---|---|---|
 | `preset` | | | `2020-power-cell`, `2022-cargo`, `2026-fuel`, `2016-boulder`, `2017-fuel`, `2019-cargo`, `2025-algae`, `2014-ball`, `2010-soccer-ball` or `2012-basketball` |
+| `measured` | | none | a measurement file, relative to this setup: a ball file (its measured `diameter`, `mass`, `stiffness_n` and `restitution` replace the preset's; its `base` must match the `preset` when both are given; with no `preset`, the base is used) or a launcher file that fit the stiffness. A key given here too is an error. See [measuring.md](measuring.md#using-a-measurement) |
 | `diameter` | m | required | |
 | `mass` | kg | required | |
 | `stiffness_n` | N | required | force to squeeze the ball by 25% of its diameter between flat plates. The most influential input |
@@ -257,6 +254,7 @@ a preset (`preset = "name"`); keys you set yourself override it.
 | key | unit | default | meaning |
 |---|---|---|---|
 | `preset` | | | `30A`, `35A`, `40A`, `45A` or `60A` (sets durometer and friction) |
+| `measured` | | none | a measurement file, relative to this setup: a friction file (its sled pulls give `friction`) or a launcher file that fit the friction. See [measuring.md](measuring.md#using-a-measurement) |
 | `diameter` | m | required | |
 | `width` | m | required | width of each wheel (or of the roller) |
 | `durometer` | Shore A | required | tread hardness |
@@ -442,8 +440,11 @@ Friction against FRC balls isn't published; the presets follow the trend that so
 
 ## Results
 
-The table's first line is always the UNCALIBRATED label. Then one row per run (one per sweep combination), with the
-swept values first. `results.csv` has the same columns. Averages are over the launched balls.
+The table's first line is always the label, the charts' footer too: UNCALIBRATED with what is still an estimate
+(the ball's stiffness, its bounce, the wheel's friction), and what was measured with its file, who measured it, when
+and from how many trials. With all three measured, and good enough, it reads "Calibrated from measurements: ...". A
+swept number is an estimate. Then one row per run (one per sweep combination), with the swept values first.
+`results.csv` has the same columns. Averages are over the launched balls.
 
 | column | meaning |
 |---|---|

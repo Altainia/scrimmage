@@ -7,8 +7,9 @@ how fast it fires, whether the air lasts a match, and what the compressor costs 
 
 **Every pneumatic number here is an estimate (UNCALIBRATED).** The defaults come from FRC rules, vendor data and
 common FRC parts (each source is below), not from measuring a real robot. Runs that use cylinders say so in their
-notes: `Pneumatic numbers are estimates (UNCALIBRATED): see docs/pneumatics.md.` [Measure your own](#measure-your-own)
-says how to check them against your robot.
+notes, naming each cylinder's valve: `UNCALIBRATED: pneumatic numbers are estimates (lift valve conductance); see
+docs/pneumatics.md.` A cylinder whose valve is measured (`measured = "<file>"`) is named with its file instead.
+[Measure your own](#measure-your-own) says how to check them against your robot.
 
 **Pressures are in psi.** Everything else in Scrimmage is in meters, kilograms, seconds and degrees, but every FRC
 pneumatic part and rule is written in psi, so pressures are the one exception. Scrimmage's psi is gauge pressure (what
@@ -115,7 +116,7 @@ Each is an estimate (UNCALIBRATED) unless it is an FRC rule.
 | Cylinder size | 1-1/16 in bore, 5/16 in rod, 6 in stroke | the `cylinder` part's `bore`, `rod`, `stroke` | Common Bimba sizes in FRC. |
 | Seal friction | 8 N | the part's `friction` | An estimate. |
 | Barrel and rod mass | 0.25 kg and 0.1 kg | the part's `mass`, `rod_mass` | Estimates. |
-| Valve flow | sonic conductance C = 0.8 dm³/(s·bar) (about Cv 0.2), critical ratio b = 0.3 | the part's `conductance`, in m³/(s·Pa): 0.8 dm³/(s·bar) is `8e-9` | The ISO 6358 flow model. The value is an estimate for FRC's small 5/2 valves (the SMC and Festo valves in the kits). |
+| Valve flow | sonic conductance C = 0.8 dm³/(s·bar) (about Cv 0.2), critical ratio b = 0.3 | the part's `conductance`, in m³/(s·Pa): 0.8 dm³/(s·bar) is `8e-9`; or `measured`, a file of timed strokes ([Measure your own](#measure-your-own)) | The ISO 6358 flow model. The value is an estimate for FRC's small 5/2 valves (the SMC and Festo valves in the kits). |
 | Dead volume | 5 cm³ at each port | not a setting | An estimate: the port, its fitting and about 0.3 m of 5/32 in inside-diameter tube. |
 | Match length for the budget | 150 s | `scrimmage air --match-seconds` | An FRC match's 2 min 30 s. |
 
@@ -141,7 +142,7 @@ Stored air above the working pressure: 4.30 L
 Cycles from the tanks alone: 7
 Compressor air in a 150 s match: 13.2 L
 Cycles per match, tanks and compressor: 29
-Estimates (UNCALIBRATED): see docs/pneumatics.md.
+UNCALIBRATED: estimates (compressor flow, pressure switch points, tank volume, dead volume); see docs/pneumatics.md.
 ```
 
 The tanks' 4.30 L pay for 4.30 / 0.597, about 7 cycles, and with the compressor's 13.2 L, (4.30 + 13.2) / 0.597,
@@ -165,13 +166,26 @@ test lifts its arm 10 times on the tanks where the budget says 7; its README com
 
 The defaults are estimates. Two checks with things every team has tell you how close they are for your robot.
 
-**How fast a cylinder fires.** Film the cylinder firing with a phone's slow-motion video (240 frames a second is
-common), with the robot enabled and at its working pressure. Count the frames from the first movement to the end of
-the stroke and divide by the frame rate. Then try the same in Scrimmage: a Test-tab run with a **set** block and a
-**wait until** *cylinder is extended* block gives the time (the chart's `<name>.extension` shows the stroke). If the
-real one is slower, the valve or the tubing lets less air through than the estimate: lower the part's `conductance`
-roughly in proportion (half as fast, about half the conductance) and run again. Put the real load on the rod in both,
-since a heavy arm is slower than a bare rod.
+**How fast a cylinder fires: the valve's flow.** Film the cylinder firing with a phone's slow-motion video (240
+frames a second is common), with the robot enabled and at its working pressure, and count the frames from the
+valve's light (or the Pneumatic Hub channel's) coming on to the rod at full stroke. Write the strokes, the cylinder's
+size and its load in a cylinder measurement file: `scrimmage measure` fits the valve's `conductance` so the
+pneumatic model strokes in the same time, and says how closely your timing pins it down. Then name the file on the
+cylinder, `measured = "deploy.measure.toml"` (relative to the robot config), in place of a `conductance`:
+
+```toml
+[[part]]
+name = "deploy"
+stock = "cylinder"
+attach = "drive.top"
+ids = { valve = "PH:3" }
+measured = "deploy.measure.toml"   # its strokes fit the valve's conductance
+```
+
+The run's notes then name the file, who measured it, when and from how many strokes. [Measuring: cylinder
+stroke](measuring.md#cylinder-stroke) has the picture, the steps, the form to print and how the fit works, and
+`examples/measure/intake-deploy.measure.toml` is a worked example. Put the real load on the rod: a heavy or vertical
+load sets the time itself, and then the valve hardly matters (the fit says "time a lighter stroke").
 
 **How much air a cycle uses.** With the compressor off (unplugged, or `disable()` on it in robot code) and the tanks
 full, read the gauge on the stored side. Fire the cylinder N times (10 is enough), each stroke all the way, and read
@@ -188,8 +202,10 @@ system (two 574 mL tanks and a VIAIR 90C) takes about 50 s in Scrimmage. To try 
 whose robot has `start_psi = 0` and that waits until the stored air pressure is above 114 psi; filling takes longer than a
 wait's usual 10 s limit, so give that block `timeout = 120` and the test `time_limit = 150` in the test file.
 
-When you have measured a number, set it in the config (the cylinder's parameters, the `[pneumatics]` keys) and keep a
-note of how you measured it.
+When you have measured another number, set it in the config (the cylinder's parameters, the `[pneumatics]` keys) and
+keep a note of how you measured it. The air budget's line always names its estimates (the compressor's flow, the
+pressure switch's points, the tank and dead volumes), so a measured valve doesn't make `scrimmage air` read
+calibrated: the budget counts air, not how fast it flows.
 
 ## Robot code
 

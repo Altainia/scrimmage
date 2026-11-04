@@ -2,15 +2,26 @@
 
 import csv
 import math
+import textwrap
 from pathlib import Path
 
+from ..measure import labels
 from .inputs import Goal, LauncherConfigError
 from .run import METRIC_KEYS, RunResult
 
-UNCALIBRATED = "UNCALIBRATED: estimates from preset material numbers, not fitted to measurements."
+UNCALIBRATED = labels.line({}, labels.LAUNCHER) + "."   # the line for setups that use no measurement
+FOOTER_WIDTH = 135   # characters: a longer chart footer wraps, below the chart, so it doesn't widen the PNG; every
+#   no-measurement line (the launcher's 122, the disc's 127) fits on one, as before measurements
 NO_MATPLOTLIB = "charts need matplotlib: pip install matplotlib"
 
 Rows = list[tuple[dict, RunResult]]
+
+
+def calibration(setups) -> str:
+    """The line for runs of `setups` (each with its `provenance`): which of the ball's stiffness, its bounce and the
+    wheel's friction were measured, and from which file, and which are still estimates. A number measured in some
+    runs only (a swept one) reads as an estimate."""
+    return labels.line(labels.common([s.provenance for s in setups]), labels.LAUNCHER) + "."
 
 
 def _fmt(v) -> str:
@@ -35,13 +46,13 @@ def _cells(rows: Rows, metrics=METRIC_KEYS) -> tuple[list[str], list[list[str]]]
     return header, body
 
 
-def format_table(rows: Rows, metrics=METRIC_KEYS) -> str:
-    """UNCALIBRATED, then a header and one line per row: the swept values and `metrics` (the rows' `.metrics`): the ball
-    launcher's by default, the disc launcher and the bench pass their own."""
+def format_table(rows: Rows, metrics=METRIC_KEYS, label: str = UNCALIBRATED) -> str:
+    """`label` (UNCALIBRATED, or calibration()'s line), then a header and one line per row: the swept values and
+    `metrics` (the rows' `.metrics`): the ball launcher's by default, the disc launcher and the bench pass their own."""
     header, body = _cells(rows, metrics)
     widths = [max(len(h), *(len(r[i]) for r in body)) if body else len(h) for i, h in enumerate(header)]
     line = lambda cells: "  ".join(c.rjust(w) for c, w in zip(cells, widths)).rstrip()
-    return "\n".join([UNCALIBRATED, line(header), *(line(r) for r in body)])
+    return "\n".join([label, line(header), *(line(r) for r in body)])
 
 
 def write_csv(rows: Rows, path: Path, metrics=METRIC_KEYS) -> None:
@@ -89,10 +100,10 @@ def label(combo: dict) -> str:
 
 
 def write_charts(rows: Rows, charts: list[dict], out_dir: Path, goals: list[Goal] | None = None,
-                 metrics=METRIC_KEYS, kinds=CHART_KINDS) -> list[Path] | None:
-    """Write one PNG per chart; None when matplotlib is missing. `goals` (aligned with rows) sizes the landing circle.
-    The disc launcher passes its own `metrics` and `kinds` (line and shaft: its shots have no ball landing); the bench
-    passes its own metrics and line charts only."""
+                 metrics=METRIC_KEYS, kinds=CHART_KINDS, *, footer: str) -> list[Path] | None:
+    """Write one PNG per chart, `footer` (the result's own UNCALIBRATED line: calibration()'s for a ball launcher,
+    the disc's or the bench's) under it, wrapped at FOOTER_WIDTH; None when matplotlib is missing. `goals` (aligned with rows) sizes the landing circle. The disc launcher passes its own `metrics` and
+    `kinds` (line and shaft: its shots have no ball landing); the bench passes its own metrics and line charts only."""
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -108,7 +119,11 @@ def write_charts(rows: Rows, charts: list[dict], out_dir: Path, goals: list[Goal
     written: list[Path] = []
 
     def save(fig, name: str) -> None:
-        fig.text(0.5, 0.005, UNCALIBRATED, ha="center", va="bottom", fontsize=7, color="#a33")
+        lines = textwrap.wrap(footer, FOOTER_WIDTH)
+        if len(lines) == 1:
+            fig.text(0.5, 0.005, footer, ha="center", va="bottom", fontsize=7, color="#a33")
+        else:   # under the figure, where the tight bounding box makes room for it
+            fig.text(0.5, 0.0, "\n".join(lines), ha="center", va="top", fontsize=7, color="#a33")
         path = out_dir / name
         n = 2
         while path in written:

@@ -473,7 +473,7 @@ async def bench_sweep(path: str, out_dir: str | None = None) -> list:
 
     def _sweep_locked(file, out):
         from .bench import compare
-        from .bench.report import bench_uncalibrated
+        from .bench.report import bench_estimates, bench_uncalibrated
         from .bench.run import run_bench
         from .bench.spec import BenchError
         from .launcher import report
@@ -484,7 +484,7 @@ async def bench_sweep(path: str, out_dir: str | None = None) -> list:
         out.mkdir(parents=True, exist_ok=True)
         report.write_csv(rows, out / "results.csv", compare.BENCH_METRICS)
         charts = report.write_charts(rows, bench.charts or compare.default_charts(list(bench.sweep)), out, None,
-                                     compare.BENCH_METRICS, compare.CHART_KINDS)
+                                     compare.BENCH_METRICS, compare.CHART_KINDS, footer=bench_estimates(bench))
         info = {"rows": _metric_rows(rows), "out_dir": str(out.resolve()), "warnings": _warnings([bench]),
                 "uncalibrated": bench_uncalibrated(bench)}
         if charts is None:
@@ -594,8 +594,9 @@ async def test_run(path: str) -> dict:
     ball, source, t, outcome "in", "placed" (on a rod or element a seated or rests on check names: why is its name),
     "stuck" or "missed", why, t_outcome, body for a stuck piece), "seed" (the stations' seed, or null), "marks" (the
     moments the replay marks: {t, kind "slip", text, ball}, such as when a held piece slipped out), "notes" (what the
-    numbers rest on: each gripped body's material and friction, and on a robot with cylinders that the pneumatic
-    numbers are estimates, all UNCALIBRATED; say them with the outcome),
+    numbers rest on: each gripped body's material and friction, and on a robot with cylinders each valve's
+    conductance; UNCALIBRATED while one is an estimate, else measured, naming the file, who, when and how many trials;
+    say them with the outcome),
     "goals" (on a field with a shooter: the balls scored in each goal, else null), "air" (on a robot with cylinders:
     start_psi, end_psi, low_psi, low_t, compressor_s, below_working_t (when the tanks fell below working_psi, the
     cylinders weaker from then on; null if never), and working_psi; else null), "air_lines" (the air in words),
