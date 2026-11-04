@@ -241,7 +241,7 @@ a preset (`preset = "name"`); keys you set yourself override it.
 | key | unit | default | meaning |
 |---|---|---|---|
 | `preset` | | | `2020-power-cell`, `2022-cargo`, `2026-fuel`, `2016-boulder`, `2017-fuel`, `2019-cargo`, `2025-algae`, `2014-ball`, `2010-soccer-ball` or `2012-basketball` |
-| `measured` | | none | a measurement file, relative to this setup: a ball file (its measured `diameter`, `mass`, `stiffness_n` and `restitution` replace the preset's; its `base` must be the `preset`) or a launcher file that fit the stiffness. A key given here too is an error. See [measuring.md](measuring.md#using-a-measurement) |
+| `measured` | | none | a measurement file, relative to this setup: a ball file (its measured `diameter`, `mass`, `stiffness_n` and `restitution` replace the preset's; its `base` must match the `preset` when both are given; with no `preset`, the base is used) or a launcher file that fit the stiffness. A key given here too is an error. See [measuring.md](measuring.md#using-a-measurement) |
 | `diameter` | m | required | |
 | `mass` | kg | required | |
 | `stiffness_n` | N | required | force to squeeze the ball by 25% of its diameter between flat plates. The most influential input |

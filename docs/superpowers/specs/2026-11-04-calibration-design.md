@@ -201,7 +201,8 @@ slow motion, and their mentors. The standing anti-goal applies: **no unnecessary
 
 **The Measure tab**
 - **C13 Tab rules:** a Measure tab like the others. It opens for `.measure.toml`, and the start page's "Measure
-  something" makes a new file in the folder. Unsaved edits get the same prompt as the other tabs.
+  something" makes a new file in the folder. It saves each change on its own, like the other tabs (see the
+  decisions below).
 
 ## Left to the builder
 
@@ -276,6 +277,10 @@ wrong.
 - **A band too wide names its cause** by d ln(time) / d ln(conductance): under 0.5, "the load sets it: time a
   lighter stroke", else "too quick to time this closely: film it and count frames". Why: the two causes need
   different fixes. Cost if wrong: nothing.
+  - **Corrected in the fix round: the cause is whether the best timing could pass.** If 2% ÷ d (the band the best
+    timing, read to 2%, would give) is within 15%, the timing is the cause ("film it and count frames"); otherwise
+    the load is ("time a lighter stroke"). Why: a fixed d threshold misjudged the cause when both applied. Cost if
+    wrong: nothing.
 - **`[stroke_setup]` takes an optional `rod_mass`** (the stock 0.1 kg by default); C9 updated with the band and
   causes. Why: a heavier rod is part of what the air moves. Cost if wrong: nothing.
 
@@ -302,6 +307,15 @@ wrong.
 - **The implementer's other label calls stand**: the pneumatic note starts "UNCALIBRATED:", grip notes are per pad,
   the disc names its inputs without provenance, `aim` carries provenance, the bench picture's text shrinks to fit.
   Why: each reads plainly and keeps existing output. Cost if wrong: nothing.
+
+**The worked examples**
+- **The worked launcher example fits the ball's stiffness** (91 N, anywhere from 81 to 103 N, 1.9%: good), not the
+  wheel's friction. Why: examples/launcher shoots a Power Cell and the example ball file measures FUEL, so no
+  squeeze file fits that setup; its README says how to fit friction. Cost if wrong: a less complete example.
+- **`examples/measure/hooded-measured.toml` duplicates `hooded.toml` from `[wheels]` on**, kept identical by a
+  test, and the code's UNCALIBRATED pointer to docs/launcher.md "Measure these first" stays (that section now points
+  to measuring.md). Why: setups can't include each other, and existing output stays unchanged. Cost if wrong:
+  nothing.
 
 **The Measure tab**
 - **It saves each change on its own** (after a short pause), like every other tab: no Save button and no

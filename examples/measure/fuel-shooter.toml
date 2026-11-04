@@ -17,6 +17,7 @@ measured = "tread-on-fuel.measure.toml"   # its sled pulls give the friction
 diameter = 0.1016                # 4 in. wheels
 roller = true                    # a stack of wheels side by side, acting as one 5 in. wide roller
 width = 0.127
+
 [shaft]
 wheel_inertia = 0.0006           # the wheels, hubs and shaft (kg m^2): about 0.5 kg of wheels at a 2 in. radius
 added_inertia = 0.002            # a flywheel on the same shaft (kg m^2)

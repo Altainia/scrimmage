@@ -47,7 +47,7 @@ points, then a golden-section search between the best point's neighbors. It mini
 shot's relative error, (model - measured) / measured; a ball the model doesn't launch counts as an error of 1.
 
 The band: every value whose RMS error is within the shots' resolution of the best one's fits the shots as well as
-the numbers can tell. A shot's resolution is one frame in the frames counted, or 2% if that is less (a speed read
+the numbers can tell. A shot's resolution is one frame in the frames counted, but never better than 2% (a speed read
 off video is no better than that), and the shots' resolutions combine as a root mean square. The band is found from
 the scan's points, then by bisection out to where the error rises past it.
 

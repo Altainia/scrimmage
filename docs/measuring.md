@@ -461,7 +461,7 @@ loop holding it, run once per wheel speed and hood angle, with no ball-to-ball s
 **The search** tries 9 values across the range, then narrows in between the best one's neighbors. It looks for the
 value whose model speeds miss your shots by the least, as a root mean square of each shot's miss in percent.
 
-**The band.** A shot's speed is read to one frame in the frames it spans (25 frames: 4%), or 2% if that is less. The
+**The band.** A shot's speed is read to one frame in the frames it spans (25 frames: 4%), but never better than 2%. The
 band is every value that fits the shots as well as that can tell: "stiffness 91 N, anywhere from 81 to 103 N fits
 your shots".
 

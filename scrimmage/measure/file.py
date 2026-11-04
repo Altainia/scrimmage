@@ -9,7 +9,7 @@
     base = "2026-fuel"            # the preset it measured (a ball's must be a launcher ball preset)
 
     [squeeze_setup]               # a test's settings, read once for all its trials
-    board_lb = 1.0
+    tare_lb = 1.2
 
     [[squeeze]]                   # one table per trial, readings in the units they were read in
     force_lb = 9.8
