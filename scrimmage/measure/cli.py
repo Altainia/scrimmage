@@ -17,7 +17,6 @@ from pathlib import Path
 from . import fit_cylinder, fit_launcher, forms, tests_direct
 from .file import KIND_TESTS, MeasureError, MeasureFile, load
 from .stats import summary, why
-from .units import unit_of
 from .use import SUFFIX
 
 USAGE = "scrimmage measure FILE | form TEST [-o PATH] | new TEST PATH"
@@ -31,20 +30,8 @@ FIELD = {
     "friction": ("friction", lambda v: f"{v:.3f}"),
     "time": ("stroke time", lambda v: f"{v:.3f} s"),
 }
-# each direct test's fields, and the readings that give a trial each one (a size trial may give a mass only)
-GIVES = {
-    "size": {"mass": ("mass",), "diameter": ("circumference", "diameter")},
-    "squeeze": {"stiffness_n": ()},
-    "drop": {"restitution": ()},
-    "sled": {"friction": ()},
-}
-
-
-def trial_rows(test: str, field: str, rows: list[dict]) -> list[int]:
-    """The trials (0-based) that give a direct test's `field` a value, in order: the trials its per-trial values and
-    outliers count (a size trial may give a mass only)."""
-    keys = GIVES[test][field]
-    return [i for i, row in enumerate(rows) if not keys or any(unit_of(k, n) is not None for k in row for n in keys)]
+# each direct test's fields (the trials each value came from are its summary's `trials`: a size trial may only weigh)
+GIVES = {"size": ("mass", "diameter"), "squeeze": ("stiffness_n",), "drop": ("restitution",), "sled": ("friction",)}
 
 
 def shot_words(result) -> tuple[str, str]:
@@ -89,11 +76,12 @@ def _verdict(good: bool, reason: str) -> str:
 def _direct(mf: MeasureFile, test: str, measured: dict) -> tuple[list[str], list[str]]:
     """A direct test's lines, and why each field that isn't good isn't."""
     rows = mf.trials[test]
-    gives = {f: keys for f, keys in GIVES[test].items() if f in measured}  # a size test may weigh only
+    gives = [f for f in GIVES[test] if f in measured]  # a size test may weigh only
     readings = _readings(rows)
     columns: dict[str, list[str]] = {}
     for field in gives:
-        shown = dict(zip(trial_rows(test, field, rows), measured[field][1]))
+        s, values = measured[field]
+        shown = dict(zip(s.trials, values))   # the trials that gave this field (a size trial may only weigh)
         columns[field] = [FIELD[field][1](shown[i]) if i in shown else "" for i in range(len(rows))]
     table = [[str(i + 1), *(_cell(row.get(k, "")) for k in readings), *(columns[f][i] for f in gives)]
              for i, row in enumerate(rows)]

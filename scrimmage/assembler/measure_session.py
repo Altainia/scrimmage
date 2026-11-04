@@ -43,6 +43,7 @@ from .test_session import replace_text
 
 STALE = "the measurement file changed outside this page (another tab, or an outside edit)"
 HEADER = ("about", "by", "date", "tools", "base")
+OPTIONAL = ("about", "tools")   # [measure]'s optional text (base is left out when blank)
 FITS = ("shot", "stroke")
 
 
@@ -208,8 +209,10 @@ def _without_path(e: Exception, path: Path) -> str:
     return str(e).replace(f"{path}: ", "").replace(f"{path} ", "this file ")
 
 
-def _field_json(field: str, s, values: list[float], trials: list[int]) -> dict:
+def _field_json(field: str, s, values: list[float]) -> dict:
+    """A field's summary for the page; its rows are the trials that gave it a value (s.trials)."""
     show = cli.FIELD[field][1]
+    trials = s.trials
     return {"field": field, "what": cli.FIELD[field][0], "mean": s.mean, "low": s.low, "high": s.high,
             "spread": s.spread, "n": s.n, "good": s.good, "why": why(s), "warnings": list(s.warnings),
             "outliers": [trials[i] for i in s.outliers],
@@ -227,9 +230,7 @@ def _direct(mf: MeasureFile, test: str) -> list[dict]:
         except MeasureError:
             pass
     measured = tests_direct.values(dataclasses.replace(mf, trials=trials))
-    rows = mf.trials[test]
-    return [_field_json(field, *measured[field], cli.trial_rows(test, field, rows))
-            for field in cli.GIVES[test] if field in measured]
+    return [_field_json(field, *measured[field]) for field in cli.GIVES[test] if field in measured]
 
 
 def summarize(mf: MeasureFile) -> dict:
@@ -241,7 +242,7 @@ def summarize(mf: MeasureFile) -> dict:
         try:
             if test in mf.trials and test == "stroke":
                 times, _ = fit_cylinder.trial_times(mf, mf.settings.get("stroke_setup", {}))
-                fields = [_field_json("time", summary(times), times, list(range(len(times))))]
+                fields = [_field_json("time", summary(times), times)]
             elif test in mf.trials and test != "shot":
                 fields = _direct(mf, test)
         except MeasureError as e:
@@ -320,8 +321,9 @@ def _new_table(values: dict):
 
 def apply(doc, raw: dict, origins: dict[str, list], kind: str) -> None:
     """Make the tomlkit document `doc` (the file as it is) hold `raw` (unwire's)."""
-    _sync(doc["measure"], {"kind": doc["measure"]["kind"], **{k: v for k, v in raw["measure"].items()
-                                                              if k != "kind"}}, ())
+    head = doc["measure"]   # an optional line left blank isn't added (by and date are required: always written)
+    _sync(head, {"kind": head["kind"], **{k: v for k, v in raw["measure"].items()
+                                          if k != "kind" and not (v == "" and k in OPTIONAL and k not in head)}}, ())
     for test in KIND_TESTS[kind]:
         t = forms.TEST[test]
         name = f"{test}_setup"
@@ -450,7 +452,8 @@ class MeasureSession:
             if self.kind is None or self.raw is None:
                 raise SessionError(409, f"fix the file first: {self.file_error}")
             if v < self._changed_at or _sig(self.path) != self._sig:
-                return 409, {"ok": False, "error": STALE, "state": self._state()}
+                return 409, {"ok": False, "error": STALE, "errors": [{"field": "status", "message": STALE}],
+                             "state": self._state()}
             _, raw, origins = self._typed(body)
             doc = tomlkit.parse(self._sig.decode("utf-8"))
             apply(doc, raw, origins, self.kind)
@@ -480,9 +483,14 @@ class MeasureSession:
 
 def new_text(kind: str) -> str:
     """A starter file for a kind: its first test's (forms.starter_toml)."""
-    if kind not in KIND_TESTS:
+    if not isinstance(kind, str) or kind not in KIND_TESTS:
         raise SessionError(400, f"measure must be {_kinds()}")
     return forms.starter_toml(KIND_TESTS[kind][0])
+
+
+def kinds() -> list[dict]:
+    """What a measurement file can measure, for the start page: each kind and its tests' titles."""
+    return [{"kind": k, "tests": [forms.TEST[t].title for t in tests]} for k, tests in KIND_TESTS.items()]
 
 
 def _kinds() -> str:

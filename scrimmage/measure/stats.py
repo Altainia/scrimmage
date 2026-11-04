@@ -23,6 +23,7 @@ class Summary:
     spread: float  # (high - low) / mean: 0.22 is 22%
     n: int
     outliers: list[int]  # 0-based indexes (into the values) of the trials that look off
+    trials: list[int]  # 0-based: the trial each value came from (a size trial may only weigh, so give no diameter)
     warnings: list[str]  # plain sentences, trials numbered from 1
     good: bool  # at least 3 trials, spread at most 15%
 
@@ -51,8 +52,8 @@ def summary(values, trials=None) -> Summary:
     if len(number) != n:
         raise ValueError("summary needs one trial number per value")
     warnings += [f"trial {number[i] + 1} looks off: check it" for i in outliers]
-    return Summary(mean=mean, low=low, high=high, spread=spread, n=n, outliers=outliers, warnings=warnings,
-                   good=n >= MIN_TRIALS and spread <= MAX_SPREAD)
+    return Summary(mean=mean, low=low, high=high, spread=spread, n=n, outliers=outliers, trials=number,
+                   warnings=warnings, good=n >= MIN_TRIALS and spread <= MAX_SPREAD)
 
 
 def why(s: Summary) -> str:

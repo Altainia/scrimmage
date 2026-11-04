@@ -27,7 +27,8 @@ API contract (all bodies JSON; every /api/* request needs header X-Scrimmage-Tok
 App (`/api/app/*`; in every mode):
   GET  /api/app/state              -> {mode: start|robot|bench|part|measure, path, display_path, test, recent: [{path,
         kind: robot|scenario|test|measure|session|import, t}] (newest first, see recent.py), examples: [stems of examples/bench/*.toml],
-        needs_folder: "cad"|"code"|null, back: {path, display_path}|null}. back: in part mode, the robot config (or
+        needs_folder: "cad"|"code"|null, back: {path, display_path}|null, measure_kinds: [{kind, tests: [title]}]
+        (what "Measure something" offers: file.KIND_TESTS, each test by its form's title)}. back: in part mode, the robot config (or
         scenario) that was open when an import made for it was opened (its import file in that robot's parts/, as the
         library's Import CAD... makes it): "Back to the robot" opens it again; null otherwise. path is the opened
         file (the scenario in scenario mode, the test with a test open), session folder,
@@ -972,7 +973,8 @@ class App:
         return {"mode": mode, "test": test, "path": str(p) if p is not None else None,
                 "display_path": self._display(p) if p is not None else "", "recent": recent.recent(),
                 "back": {"path": str(back), "display_path": self._display(back)} if back is not None else None,
-                "examples": bench_session.examples(), "needs_folder": unset[0] if unset else None}
+                "examples": bench_session.examples(), "needs_folder": unset[0] if unset else None,
+                "measure_kinds": measure_session.kinds()}
 
     def _needs_folder(self) -> tuple[str, str] | None:
         """The team folder the open robot file (or the scenario's `config`) names that this computer hasn't set."""

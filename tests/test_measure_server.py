@@ -322,6 +322,7 @@ def test_a_save_after_an_outside_edit_is_refused_with_the_new_state(tmp_path, me
     assert new["file"]["tests"]["squeeze"]["trials"][1]["cells"]["force"]["value"] == 19.5
     s, b = c.call("POST", "/api/measure/save", {"file": st["file"], "version": st["version"]})
     assert s == 409 and b["state"]["version"] == new["version"], b
+    assert b["errors"] == [{"field": "status", "message": b["error"]}]   # the page's api() keeps a body with errors
     assert "19.5" in p.read_text(encoding="utf-8")
 
 
@@ -423,3 +424,64 @@ def test_measure_something_makes_a_starter_file_and_opens_it(tmp_path, measure_a
     assert s == 400 and "already exists" in b["error"], b
     s, b = c.call("POST", "/api/app/new", {"kind": "measure", "path": "x", "measure": "spin"})
     assert s == 400 and "ball, friction, launcher or cylinder" in b["error"], b
+
+
+def test_a_starter_saved_with_its_date_blank_is_refused_and_blank_lines_arent_added(tmp_path, measure_app):
+    p = tmp_path / "fuel.measure.toml"
+    p.write_text('[measure]\nkind = "ball"\nby = "J. Smith"\ndate = 2026-11-10\n', encoding="utf-8")
+    c = measure_app(p)
+    st = _state(c)
+    f = st["file"]
+    f["measure"]["date"] = ""
+    s, b = c.call("POST", "/api/measure/save", {"file": f, "version": st["version"]})
+    assert s == 400 and "date must be a date like 2026-11-10" in b["error"], b
+    # about and tools left blank aren't added; a blank name is written (by is required), and the file still reads
+    f["measure"].update(date="2026-11-10", by="")
+    f["tests"]["squeeze"]["trials"] = [_trial(_force(19.0))]
+    s, b = c.call("POST", "/api/measure/save", {"file": f, "version": st["version"]})
+    assert s == 200, b
+    head = tomllib.loads(p.read_text(encoding="utf-8"))["measure"]
+    assert "about" not in head and "tools" not in head and head["by"] == ""
+    assert load(p).trials["squeeze"] == [{"force_lb": 19.0}]
+    # the starter's own blank lines stay as they were
+    starter = tmp_path / "new.measure.toml"
+    starter.write_text(forms.starter_toml("squeeze"), encoding="utf-8")
+    c.post("/api/app/open", {"path": str(starter)})
+    st = _state(c)
+    st["file"]["tests"]["squeeze"]["trials"] = [_trial(_force(19.0))]
+    s, b = c.call("POST", "/api/measure/save", {"file": st["file"], "version": st["version"]})
+    assert s == 200, b
+    head = tomllib.loads(starter.read_text(encoding="utf-8"))["measure"]
+    assert head["about"] == "" and head["tools"] == "" and head["by"] == ""
+
+
+def test_a_save_that_cant_be_written_says_so(tmp_path, measure_app, monkeypatch):
+    p = _ball(tmp_path)
+    c = measure_app(p)
+    st = _state(c)
+
+    def refuse(path, text):
+        raise PermissionError(13, "Permission denied")
+    monkeypatch.setattr("scrimmage.assembler.measure_session.replace_text", refuse)
+    s, b = c.call("POST", "/api/measure/save", {"file": st["file"], "version": st["version"]})
+    assert s == 400 and b["error"] == "can't write fuel.measure.toml: Permission denied", b
+    assert p.read_text(encoding="utf-8") == BALL
+
+
+def test_the_measure_routes_need_the_token(tmp_path, measure_app):
+    c = measure_app(_ball(tmp_path))
+    assert c.get("/api/measure/state", token=None)[0] == 403
+    for route in ("summary", "fit", "save"):
+        assert c.call("POST", f"/api/measure/{route}", {}, token=None)[0] == 403
+        assert c.call("POST", f"/api/measure/{route}", {}, token="wrong")[0] == 403
+
+
+def test_the_start_page_is_told_the_kinds_and_a_bad_kind_is_refused(tmp_path, measure_app):
+    c = measure_app()
+    kinds = c.get("/api/app/state")[1]["measure_kinds"]
+    assert [k["kind"] for k in kinds] == list(KIND_TESTS)
+    assert kinds[0]["tests"] == [forms.TEST[t].title for t in KIND_TESTS["ball"]]
+    for bad in ("spin", None, 3):
+        s, b = c.call("POST", "/api/app/new", {"kind": "measure", "path": "x", **({"measure": bad} if bad else {})})
+        assert s == 400 and "ball, friction, launcher or cylinder" in b["error"], b
+    assert not list(tmp_path.glob("*.measure.toml"))

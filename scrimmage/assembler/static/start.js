@@ -10,13 +10,6 @@
 import { api, h, notice, sessionToken } from "./app.js";
 
 const KIND = { robot: "Robot", scenario: "Scenario", session: "Idea session", bench: "Idea", folder: "Folder", import: "Part", cad: "CAD file", measure: "Measurement" };
-// What a measurement file can measure (scrimmage/measure/file.py KIND_TESTS), for "Measure something"
-const MEASURE = [
-  { kind: "ball", label: "A ball: its size and mass, squeeze and bounce" },
-  { kind: "friction", label: "Friction: one material sliding on another (a sled pull)" },
-  { kind: "launcher", label: "A launcher: shots filmed in slow motion, fit to the model" },
-  { kind: "cylinder", label: "A cylinder: a stroke timed or filmed, fit to the air model" },
-];
 export const CAD_FILE = /\.(step|stp|stl|obj)$/i;
 
 // A CAD file sent to POST /api/part/upload: {status, data} (data is the part's state on 200). With a part open it
@@ -191,7 +184,9 @@ export async function showStart(root, { canGoBack, onBack, cadFor = null }) {
 
   // Measure something: which kind, and a name; the file starts from the kind's starter (scrimmage measure new)
   function measureForm() {
-    const what = h("select", { id: "start-measure-kind" }, ...MEASURE.map((x) => h("option", { value: x.kind }, x.label)));
+    // each kind the server's measurement files take, with its tests (scrimmage/measure/file.py KIND_TESTS)
+    const what = h("select", { id: "start-measure-kind" }, ...(app.measure_kinds || []).map((x) =>
+      h("option", { value: x.kind }, `A ${x.kind} file: ${x.tests.join(", ")}`)));
     const name = h("input", { id: "start-measure-name", type: "text", autocomplete: "off" });
     const create = () => {
       const n = name.value.trim();

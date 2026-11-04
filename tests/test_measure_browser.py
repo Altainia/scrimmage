@@ -210,6 +210,11 @@ def test_fit_shows_the_fit_and_each_shot_against_the_model(measure_page, tmp_pat
     # a change to the shots says the fit is old
     page.locator("#measure-trials input[data-reading=wheel_rps]").first.fill("51")
     assert "press Fit again" in page.inner_text("#measure-fit-result")
+    # and a change made while it fits does too, once it is done
+    page.click("#measure-fit")
+    page.locator("#measure-trials input[data-reading=wheel_rps]").first.fill("50")
+    page.wait_for_function("!__scrimmageMeasure.store.fitting", timeout=60000)
+    assert "press Fit again" in page.inner_text("#measure-fit-result")
 
 
 def test_the_tab_reads_in_the_dark_theme(measure_page):
@@ -235,3 +240,29 @@ def test_fit_shows_a_cylinder_s_fit_against_its_strokes(measure_page, tmp_path):
     text = page.inner_text("#measure-fit-result")
     assert want.band_text in text, text
     assert f"the model's takes {want.model_time:.3f} s, off by {want.error * 100:+.1f}%" in text
+
+
+def test_an_outside_edit_while_a_change_waits_shows_the_file_and_says_so(measure_page):
+    page, path = measure_page(text=BALL + "\n[[squeeze]]\nforce_lb = 19.0\n")
+    _pick(page, "squeeze")
+    page.fill("#measure-trials input[data-reading=force]", "18.0")   # waits 600 ms to be saved
+    path.write_text(BALL + "\n[[squeeze]]\nforce_lb = 21.5\n", encoding="utf-8")
+    # the waiting save is refused (409, the file changed after the page read it): the page shows the file as saved
+    page.wait_for_function("[...document.querySelectorAll('#notices .notice')].some((n) => "
+                           "n.textContent.includes('so it shows the saved version'))")
+    page.wait_for_function("document.querySelector('#measure-trials input[data-reading=force]').value === '21.5'")
+    assert page.inner_text("#measure-saved") == "✓ All changes saved"
+    page.evaluate("__scrimmageMeasure.saved")
+    assert load(path).trials["squeeze"] == [{"force_lb": 21.5}]   # the outside edit stands
+
+
+def test_a_change_waiting_to_save_is_sent_when_the_page_goes_away(measure_page):
+    page, path = measure_page()
+    _pick(page, "size")
+    _type_trials(page, [142], reading="mass")
+    page.goto("about:blank")   # well inside the 600 ms wait: pagehide sends it
+    for _ in range(50):
+        if "size" in load(path).trials:
+            break
+        page.wait_for_timeout(100)
+    assert load(path).trials["size"] == [{"mass_g": 142}]

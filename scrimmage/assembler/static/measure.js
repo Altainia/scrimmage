@@ -16,7 +16,7 @@
 // 409 (the file changed meanwhile) shows the saved version and says so. Test hook: window.__scrimmageMeasure {store,
 // saved (saves now, and resolves when every save is done), summarized (a promise for the summary under way)}.
 
-import { $, h, api, notice, registerTab, setTab, showPath } from "./app.js";
+import { $, h, api, notice, registerTab, sessionToken, setTab, showPath } from "./app.js";
 
 const SUMMARY_DELAY = 300;
 const SAVE_DELAY = 600;
@@ -40,6 +40,7 @@ export const m = {
 let summaryTimer = null, summarySeq = 0, summarizing = Promise.resolve();
 let saveTimer = null, saving = Promise.resolve();
 let polled = null;              // the newest version the long poll has seen
+let later = null;               // a state the long poll brought while a save was under way: applied after it
 const ownVersions = new Set();  // the versions this page's saves made
 
 const testOf = (name) => m.state.tests.find((t) => t.name === name);
@@ -57,6 +58,7 @@ function canon(file) {
   return JSON.stringify({ measure: file.measure, tests });
 }
 const copy = (x) => JSON.parse(JSON.stringify(x));
+const why = (data, status) => data.error || (data.errors && data.errors[0] && data.errors[0].message) || `the server answered ${status}`;
 
 // -- the units over each column ------------------------------------------------------------------
 function columnUnits(test) {
@@ -100,7 +102,7 @@ async function summarize() {
   const { status, data } = await api("POST", "/api/measure/summary", { file: m.file });
   if (seq !== summarySeq) return;   // overtaken by a newer one
   if (status === 200) { m.summary = data.tests; m.summaryError = null; }
-  else m.summaryError = data.error || `the server answered ${status}`;
+  else m.summaryError = why(data, status);
   renderSummary();
 }
 
@@ -134,11 +136,24 @@ async function save() {
       render();
       return;
     }
-    m.saveError = data.error || `the server answered ${status}`;
+    m.saveError = why(data, status);
   } finally {
     m.saving = false;
     renderStatus();
+    const s = later;
+    later = null;
+    if (s) applyState(s);
   }
+}
+
+// The page is going away (closed, reloaded, or another file opened from the start page) with a change still
+// waiting: send it now, in a request that outlives the page.
+function saveOnLeaving() {
+  if (!saveTimer || !editable() || notNumbers()) return;
+  clearTimeout(saveTimer); saveTimer = null;
+  fetch("/api/measure/save", { method: "POST", keepalive: true,
+    headers: { "X-Scrimmage-Token": sessionToken(), "Content-Type": "application/json" },
+    body: JSON.stringify({ file: m.file, version: m.state.version }) }).catch(() => {});
 }
 
 // The first trial or setup box that holds something other than a number where a number goes, in words.
@@ -166,11 +181,12 @@ function notNumbers() {
 async function fit() {
   if (!editable() || m.fitting) return;
   const test = m.test;
+  const asked = canon(m.file);
   m.fitting = true; renderFit();
   try {
     const { status, data } = await api("POST", "/api/measure/fit", { file: m.file, test });
-    m.fit[test] = status === 200 ? data : { error: data.error || `the server answered ${status}` };
-    m.fitStale[test] = false;
+    m.fit[test] = status === 200 ? data : { error: why(data, status) };
+    m.fitStale[test] = canon(m.file) !== asked;   // the trials changed while it fit
   } finally {
     m.fitting = false;
     renderFit();
@@ -184,7 +200,8 @@ function applyState(s) {
   const prev = m.state;
   if (prev && s.version <= prev.version) return;
   if (ownVersions.has(s.version)) { m.state = s; return; }
-  if (prev && waiting()) return;
+  if (m.saving) { later = s; return; }   // after the save: it may be the save's own, or a refusal shows it
+  if (prev && saveTimer) return;          // the waiting save is refused (409) and shows it
   m.state = s;
   if (prev && canon(s.file) !== m.saved) notice("The file changed outside this page, so it was read again.", "info", "measure");
   adopt(s.file);
@@ -484,7 +501,9 @@ export async function initMeasure() {
   setTab("measure");
   $("#measure-add").addEventListener("click", addTrial);
   $("#measure-fit").addEventListener("click", () => fit());
-  $("#tab-measure").addEventListener("focusout", () => flush());   // a box left: save it now
+  // focus leaving the tab (Start page, another window) saves at once; moving between boxes waits for typing to stop
+  $("#tab-measure").addEventListener("focusout", (e) => { if (!e.relatedTarget || !$("#tab-measure").contains(e.relatedTarget)) flush(); });
+  window.addEventListener("pagehide", saveOnLeaving);
   const app = await api("GET", "/api/app/state");
   if (app.status === 200) m.appPath = app.data.display_path || app.data.path || "";
   await pollLoop();
