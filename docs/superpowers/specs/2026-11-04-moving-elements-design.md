@@ -189,7 +189,8 @@ if it is wrong.
   drives over a lowered drawbridge or a cheval plate, and the terrain signals must count it as floor. If wrong: one
   more key.
 - **Breakaway holds.** The joint's friction gets the stops' stiffness (`solref_friction = PLATFORM_STOP_TC`), so a
-  push under the breakaway holds the panel still instead of letting it creep. If wrong: nothing.
+  push under the breakaway holds the panel still instead of letting it creep. Why: with MuJoCo's soft default, a
+  steady push under the breakaway slowly moves the panel, which a real latch or detent doesn't. If wrong: nothing.
 
 **Collisions**
 - **Only the `[shooter]`'s intake refuses `collide = true`.** The launcher and the stages may collide. Why: the
@@ -200,11 +201,22 @@ if it is wrong.
   plates both ways. If wrong: nothing.
 
 **Clearance**
-- **`at_least_in` is at most 19.6 in.** Why: clearance is measured out to 0.5 m (19.7 in), so a larger limit would
-  always pass. If wrong: nothing.
+- **`at_least_in` is at most 19.6 in.** Why: clearance is measured out to 0.5 m (19.7 in), and anything farther
+  reads as clear, so a larger limit could pass a robot closer than it asks. If wrong: nothing.
 - **The chart's picker offers `clearance.<element>` for every field element.** It isn't among the palette's signals,
-  because a run measures it only when the test names it, so the picker lists it under "From the next run:". If
-  wrong: nothing.
+  because a run measures it only when the test names it, so the picker lists it under "From the next run:". Why:
+  measuring every element on every step would slow every run, and a signal listed with the others would show an
+  empty line until the next run. If wrong: nothing.
+- **A clearance test on a robot with stock parts whose collide is off gets a note and a hint.** The run's notes and
+  the Test tab's new hints (under **Good to know**, over Run) say "clearance counts only parts that collide: arm and
+  elevator have collide off, so they aren't measured (set collide = true on them)". A hint, not a problem: Run stays
+  on. Why: those parts aren't measured, so a raised arm with collide off passes through the trench and the check
+  passes on the chassis's clearance, with nothing to say so; but a robot may leave an intake off on purpose and only
+  want its frame's clearance, so it mustn't refuse the run. If wrong: a note on tests whose uncounted parts are
+  nowhere near the element, and one more list (`hints`) in the Test tab's state.
+- **A clearance reads to two decimals** in both the closest line ("closest to trench_arm: 0.45 in at 1.7 s") and a
+  failed check ("but it was 0.45 in"). Why: one decimal could say "at least 0.5 in, but it was 0.5 in" for 0.47, and
+  the two lines must agree. If wrong: one more digit to read.
 
 **Partner robot**
 - **The brake comes from the motor model.** Each wheel's damping is the back-EMF of the stock differential's default
@@ -212,22 +224,27 @@ if it is wrong.
   the world uses for a braked motor: about 0.293 N·m·s/rad a wheel. Not the plan's 20 N·m·s/rad, which locks the
   wheels. Why: a braked FRC drive resists through back-EMF, not a lock (C7 asked for "the back-EMF a braked drive
   gives"). If wrong: a softer brake than a team's that also has friction brakes.
-- **`mass` is the whole partner.** The chassis carries the mass less the drive's own. If wrong: nothing.
+- **`mass` is the whole partner.** The chassis carries the mass less the drive's own. Why: a team knows its robot's
+  whole weight. If wrong: nothing.
 - **The brake test asks for coast ≥ 1.5 × braked.** A braked CIM drive rolls when shoved; measured about 1.8 at 3, 6
-  and 12 V. If wrong: a weaker brake-versus-coast contrast than the plan imagined.
+  and 12 V. Why: the back-EMF brake rolls farther than the plan's locked wheels did, and 1.5 still tells a braked
+  drive from a coasting one with room for small model changes. If wrong: a weaker brake-versus-coast contrast than
+  the plan imagined.
 
 **Ranges**
 - **The trench's arm is `trench_arm`.** Why: Task 8's example names it, and Task 6 hadn't pinned it. If wrong:
   nothing.
-- **The defenses stand in a line across the field (y), crossed along +x**, as on the real OUTER WORKS. If wrong: only
+- **The defenses stand in a line across the field (y), crossed along +x**, as on the real OUTER WORKS. Why: a robot
+  crosses each one the way it would in a 2016 match, and the starts can sit side by side before them. If wrong: only
   positions.
 - **No drawbridge start force or sally port return spring.** Both need a spring preloaded against a stop, and a
-  moving element's rest must lie within its range. A `preload` key can wait. If wrong: a drawbridge that takes
+  moving element's rest must lie within its range. A `preload` key can wait. Why: no test in this project needs the
+  2 lb start, and a preload is a new key and a new spring model for one number. If wrong: a drawbridge that takes
   about 5.7 lb at its top edge to hold flat, and no 2 lb start.
 
 **Test tab**
 - **The palette says whether there is a partner** (`palette()["partner"]`, true when the world has one), which the
-  checks' menu reads. If wrong: nothing.
+  checks' menu reads. Why: the partner checks need to know whether one exists to offer them. If wrong: nothing.
 - **The palette and sweeps take the test's `[setup]`.** `palette()` takes it (and reports `robot_partner`, the robot
   file's own), and a sweep's world applies `setup_config`. Why: Setup's partner never reached a run (a palette built
   without `[setup]` refused Run), and sweeps ignored the whole `[setup]` (ball, piece, station, seed, partner), a bug
@@ -236,8 +253,8 @@ if it is wrong.
 
 **Docs and examples**
 - **The examples' READMEs say only what their tests check.** The partner push's speeds ("about 1 m/s", "about 2
-  m/s") became "slower" and "much faster", and the raised arm's tip height (0.64 m) gained an assertion. If wrong:
-  nothing.
+  m/s") became "slower" and "much faster", and the raised arm's tip height (0.64 m) gained an assertion. Why: a
+  number a test doesn't check drifts with the model and nobody notices. If wrong: nothing.
 - **Stale lines fixed on the way.** test-range.md's "No turret" (the stock turret exists since sub-project 23) is
-  gone, and parts.md's stock part listings were regenerated from `scrimmage parts` (they gain `collide`). If wrong:
-  nothing.
+  gone, and parts.md's stock part listings were regenerated from `scrimmage parts` (they gain `collide`). Why: a
+  student reads the docs, not the code. If wrong: nothing.
