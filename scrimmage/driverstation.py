@@ -17,9 +17,9 @@ GAME_DATA_MAX = 64            # the HAL keeps up to 64 bytes
 def check_game_data(value, where: str) -> str:
     if not isinstance(value, str):
         raise ValueError(f"{where} game_data must be text, not {value!r}")
-    if len(value) > GAME_DATA_MAX:
-        raise ValueError(f"{where} game_data is {len(value)} characters long; it can be at most {GAME_DATA_MAX} "
-                         "characters")
+    if len(value.encode("utf-8")) > GAME_DATA_MAX:
+        raise ValueError(f"{where} game_data must be at most {GAME_DATA_MAX} bytes ({GAME_DATA_MAX} letters or "
+                         "digits)")
     return value
 
 

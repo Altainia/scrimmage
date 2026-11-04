@@ -155,7 +155,7 @@ def test_merged_names_the_allowed_values():
     with pytest.raises(ValueError, match="red1, red2, red3, blue1, blue2, blue3"):
         MatchSettings().merged({"station": "red4"}, "[match]")
     with pytest.raises(ValueError, match="station, fms, timer, auto_seconds, teleop_seconds"):
-        MatchSettings().merged({"colour": "red"}, "[match]")
+        MatchSettings().merged({"alliance": "red"}, "[match]")
 
 
 def test_merged_applies_keys_over_the_values():
@@ -165,10 +165,13 @@ def test_merged_applies_keys_over_the_values():
     assert base.station == "red1"                       # a copy
 
 
-def test_game_data_is_at_most_64_characters():
+def test_game_data_is_at_most_64_bytes():
     assert check_game_data("x" * GAME_DATA_MAX, "here") == "x" * 64
-    with pytest.raises(ValueError, match="here.*64 characters"):
+    with pytest.raises(ValueError, match=r"here.*at most 64 bytes \(64 letters or digits\)"):
         check_game_data("x" * 65, "here")
+    assert check_game_data("é" * 32, "here") == "é" * 32        # 2 bytes each in UTF-8: 64 bytes
+    with pytest.raises(ValueError, match="64 bytes"):           # 40 characters, but 80 bytes: the HAL keeps 64
+        check_game_data("é" * 40, "here")
     with pytest.raises(ValueError, match="here"):
         check_game_data(3, "here")
     ds = DriverStationState()
