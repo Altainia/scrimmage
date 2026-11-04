@@ -102,7 +102,6 @@ def test_five_squeezes_show_their_average_then_an_outlier_is_flagged(measure_pag
     _pick(page, "squeeze")
     lbs = [18.8, 19.0, 19.2, 18.9, 19.1]
     _type_trials(page, lbs)
-    assert page.inner_text("#measure-saved") == "Not saved yet: press Save"
     _settled(page)
     want = stats.summary([x * LB for x in lbs])
     summary = page.inner_text("#measure-summary")
@@ -119,24 +118,29 @@ def test_five_squeezes_show_their_average_then_an_outlier_is_flagged(measure_pag
     assert "looks off: check it" in flagged.inner_text()
     summary = page.inner_text("#measure-summary")
     assert "trial 6 looks off: check it" in summary and "Not good enough yet" in summary
-    assert "squeeze" not in load(path).trials   # nothing written yet
+    page.evaluate("__scrimmageMeasure.saved")
+    assert [r["force_lb"] for r in load(path).trials["squeeze"]] == [*lbs, 30]   # flagged, never dropped
 
 
-def test_save_writes_the_trials_and_a_reload_shows_them(measure_page):
+def _saved_on_its_own(page):
+    """Wait for the save that follows typing (600 ms after the last change), without asking for it."""
+    page.wait_for_function("document.querySelector('#measure-saved').textContent === 'Saving…'")
+    page.wait_for_function("document.querySelector('#measure-saved').textContent === '✓ All changes saved'")
+
+
+def test_typed_trials_save_on_their_own_and_a_reload_shows_them(measure_page):
     page, path = measure_page()
     _pick(page, "squeeze")
     _type_trials(page, [9.8, 9.9, 10.0])
     page.select_option("#measure-trials th select[data-unit=force]", "kg")
+    page.locator("#measure-tools").press_sequentially(" ")   # still typing in a box: not saved until it stops
     page.fill("#measure-tools", "the blue bathroom scale")
-    page.click("#measure-save")
-    page.evaluate("__scrimmageMeasure.saved")
-    page.wait_for_function("document.querySelector('#measure-saved').textContent === '✓ All changes saved'")
+    _saved_on_its_own(page)
     text = path.read_text(encoding="utf-8")
     assert text.startswith("# the practice bin's ball\n")
     raw = tomllib.loads(text)
     assert raw["squeeze"] == [{"force_kg": 9.8}, {"force_kg": 9.9}, {"force_kg": 10.0}]
     assert raw["measure"]["tools"] == "the blue bathroom scale"
-    assert not page.evaluate("__scrimmage.unsaved()")
     page.reload()
     page.wait_for_function(READY)
     _pick(page, "squeeze")
@@ -145,11 +149,9 @@ def test_save_writes_the_trials_and_a_reload_shows_them(measure_page):
     assert page.input_value("#measure-trials th select[data-unit=force]") == "kg"
     assert page.input_value("#measure-tools") == "the blue bathroom scale"
     assert "average" in page.inner_text("#measure-summary")
-    # removing a trial and saving takes it out of the file
+    # removing a trial takes it out of the file
     page.click("#measure-trials button[aria-label='Remove trial 2']")
-    page.click("#measure-save")
-    page.evaluate("__scrimmageMeasure.saved")
-    page.wait_for_function("document.querySelector('#measure-saved').textContent === '✓ All changes saved'")
+    _saved_on_its_own(page)
     assert [r["force_kg"] for r in load(path).trials["squeeze"]] == [9.8, 10.0]
 
 
@@ -164,23 +166,15 @@ def test_print_opens_the_blank_form(measure_page):
     assert form.content().count("<script") == 0 and form.locator("table.trials tr").count() == forms.ROWS + 1
 
 
-def test_unsaved_trials_ask_before_the_start_page_opens_another_file(measure_page, tmp_path):
+def test_leaving_a_box_saves_it_at_once(measure_page):
     page, path = measure_page()
-    other = tmp_path / "deploy.measure.toml"
-    other.write_text(forms.starter_toml("stroke"), encoding="utf-8")
     _pick(page, "size")
     _type_trials(page, [142], reading="mass")
-    assert page.evaluate("__scrimmage.unsaved()")
-    page.click("#start-link")
-    page.click("[data-key=browse]")
-    asked = []
-    page.once("dialog", lambda d: (asked.append(d.message), d.dismiss()))
-    page.click("#start-browse [data-entry='deploy.measure.toml']")
-    page.wait_for_function("true")
-    assert asked == ["Your changes aren't saved. Open the other file without saving them?"]
-    st = page.evaluate("fetch('/api/app/state', {headers: {'X-Scrimmage-Token': "
-                       "new URLSearchParams(location.hash.slice(1)).get('token')}}).then(r => r.json())")
-    assert st["path"] == str(path.resolve())
+    page.click("#start-link")   # the box loses focus: saved now, before the start page could open another file
+    # well inside the 600 ms the save would wait after typing stops
+    page.wait_for_function("document.querySelector('#measure-saved').textContent === '✓ All changes saved'",
+                           timeout=450)
+    assert load(path).trials["size"] == [{"mass_g": 142}]
     page.click("#start-back")
     assert page.input_value("#measure-trials input[data-reading=mass]") == "142"
 

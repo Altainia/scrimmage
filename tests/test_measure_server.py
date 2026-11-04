@@ -204,6 +204,14 @@ def test_a_size_trial_that_only_weighs_lines_up_with_its_row(tmp_path, measure_a
     fields = {f["field"]: f for f in b["tests"]["size"]["fields"]}
     assert [r["trial"] for r in fields["mass"]["rows"]] == [0, 1, 2]
     assert [r["trial"] for r in fields["diameter"]["rows"]] == [0, 2]
+    # a diameter far off in the last of 7 trials (trial 2 only weighs): flagged on its own row, named trial 7
+    tapes = [18.5, None, 18.6, 18.4, 18.5, 18.6, 24.0]
+    rows = [_trial({"mass": {"unit": "g", "value": 216},
+                    **({"circumference": {"unit": "in", "value": c}} if c else {})}) for c in tapes]
+    _, b = c.call("POST", "/api/measure/summary", {"file": _file(st, rows, test="size")})
+    (dia,) = [f for f in b["tests"]["size"]["fields"] if f["field"] == "diameter"]
+    assert dia["outliers"] == [6] and [r["trial"] for r in dia["rows"] if r["outlier"]] == [6]
+    assert "trial 7 looks off: check it" in dia["warnings"]
 
 
 def test_a_stroke_file_summarizes_its_times(tmp_path, measure_app):

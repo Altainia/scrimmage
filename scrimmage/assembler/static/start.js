@@ -7,7 +7,7 @@
 // ("Measure something": which kind, and a name; the Measure tab opens on it). After an
 // open or new the server has already swapped what it holds, so the page reloads itself (see /api/app/* in
 // scrimmage/assembler/server.py).
-import { api, confirmLeave, h, notice, sessionToken, stay } from "./app.js";
+import { api, h, notice, sessionToken } from "./app.js";
 
 const KIND = { robot: "Robot", scenario: "Scenario", session: "Idea session", bench: "Idea", folder: "Folder", import: "Part", cad: "CAD file", measure: "Measurement" };
 // What a measurement file can measure (scrimmage/measure/file.py KIND_TESTS), for "Measure something"
@@ -65,10 +65,8 @@ function reload() {
 }
 
 async function post(path, body) {
-  if (!confirmLeave()) return false;   // a tab's changes that aren't saved: ask first
   const { status, data } = await api("POST", path, body);
   if (status === 200 && data.ok) { reload(); return true; }
-  stay();
   const why = (data.errors && data.errors[0] && data.errors[0].message) || data.error || `the server answered ${status}`;
   notice(status === 409 ? `Can't switch right now: ${why}` : why, "error", "start");
   return false;
@@ -140,12 +138,10 @@ export async function showStart(root, { canGoBack, onBack, cadFor = null }) {
       const files = [...(fileList || [])];
       const problem = cadFilesProblem(files);
       if (problem) { notice(problem, "error", "start"); return; }
-      if (!confirmLeave()) return;
       drop.classList.add("busy");
       drop.querySelector("p").textContent = `Reading ${filesName(files)}…`;
       const { status, data } = await uploadCad(files);
       if (status === 200) { reload(); return; }
-      stay();
       drop.classList.remove("busy");
       drop.querySelector("p").textContent = dropText;
       const why = (data.errors && data.errors[0] && data.errors[0].message) || data.error || `the server answered ${status}`;

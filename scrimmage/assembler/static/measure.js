@@ -3,24 +3,26 @@
 //
 //   Top        the file's tests (a ball file: size, squeeze, drop); one is shown at a time.
 //   Left       the test's picture, what you need and the steps (the printed form's).
-//   Right      Save, "Print a blank form" (the test's form page, /forms/<test>.html) and, for shots and strokes,
-//              Fit; who measured, when, with what; the setup (once for all trials); the trials, each reading with a
-//              unit picker over its column, the value each trial gives and a flag on a trial that looks off; then
-//              the average, lowest, highest, spread and warnings, and the fit.
+//   Right      "Print a blank form" (the test's form page, /forms/<test>.html) and, for shots and strokes, Fit; who
+//              measured, when, with what; the setup (once for all trials); the trials, each reading with a unit
+//              picker over its column, the value each trial gives and a flag on a trial that looks off; then the
+//              average, lowest, highest, spread and warnings, and the fit.
 //   Status     saved or not.
 //
-// The page keeps its own copy of the file (`m.file`) and sends it to /api/measure/summary 300 ms after the last
-// change: the summary is the server's (the same code as `scrimmage measure`), from the trials as typed. Nothing is
-// written until Save. While there are changes that aren't saved, leaving the page (or opening something else from
-// the start page) asks first. Test hook: window.__scrimmageMeasure {store, saved (a promise for the save under way),
-// summarized (a promise for the summary under way), unsaved()}.
+// The page keeps its own copy of the file (`m.file`). It sends it to /api/measure/summary 300 ms after the last
+// change (the summary is the server's: the same code as `scrimmage measure`), and saves it, like every tab, 600 ms
+// after the last change, or at once when a box loses focus or the tab is left (/api/measure/save keeps the file's
+// comments). A box that holds something other than a number where a number goes holds the save back and says so. A
+// 409 (the file changed meanwhile) shows the saved version and says so. Test hook: window.__scrimmageMeasure {store,
+// saved (saves now, and resolves when every save is done), summarized (a promise for the summary under way)}.
 
 import { $, h, api, notice, registerTab, setTab, showPath } from "./app.js";
 
 const SUMMARY_DELAY = 300;
+const SAVE_DELAY = 600;
 
 export const m = {
-  state: null,        // /api/measure/state
+  state: null,        // /api/measure/state (its version: the file as this page last saved or read it)
   file: null,         // the file as edited here
   saved: "",          // canon() of the file as saved
   test: null,         // the test shown
@@ -35,12 +37,15 @@ export const m = {
   appPath: "",
 };
 
-let summaryTimer = null, summarySeq = 0, summarizing = Promise.resolve(), saving = Promise.resolve();
+let summaryTimer = null, summarySeq = 0, summarizing = Promise.resolve();
+let saveTimer = null, saving = Promise.resolve();
+let polled = null;              // the newest version the long poll has seen
+const ownVersions = new Set();  // the versions this page's saves made
 
 const testOf = (name) => m.state.tests.find((t) => t.name === name);
 const shown = () => testOf(m.test);
 const editable = () => !!m.file;
-export const unsaved = () => editable() && canon(m.file) !== m.saved;
+const waiting = () => !!saveTimer || m.saving;
 
 // The file without blank cells, as text: two files that would write the same are the same.
 function canon(file) {
@@ -74,11 +79,20 @@ function adopt(file) {
 function changed() {
   m.saveError = null;
   if (m.test && m.fit[m.test]) m.fitStale[m.test] = true;
-  renderStatus();
-  renderFit();
   clearTimeout(summaryTimer);
   summaryTimer = setTimeout(() => { summaryTimer = null; summarizing = summarize(); }, SUMMARY_DELAY);
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { saveTimer = null; queueSave(); }, SAVE_DELAY);
+  renderStatus();
+  renderFit();
 }
+
+// Save now (a change waiting), and wait for every save under way.
+function flush() {
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; queueSave(); }
+  return saving;
+}
+function queueSave() { saving = saving.then(save, save); }
 
 async function summarize() {
   if (!editable()) return;
@@ -90,43 +104,34 @@ async function summarize() {
   renderSummary();
 }
 
-// The trials' origins once the file holds them in order: each test's first n trials are the file's n.
-function rebase(state) {
-  for (const [name, part] of Object.entries(m.file.tests)) {
-    const n = state.file ? state.file.tests[name].trials.length : 0;
-    part.trials.forEach((row, i) => { row.origin = i < n ? i : null; });
-  }
-}
-
 async function save() {
-  if (!editable() || m.saving) return;
+  if (!editable() || canon(m.file) === m.saved) { renderStatus(); return; }
   const bad = notNumbers();
   if (bad) { m.saveError = bad; renderStatus(); return; }
-  clearTimeout(summaryTimer);
+  const sent = copy(m.file);
+  const rows = Object.fromEntries(Object.entries(m.file.tests).map(([t, p]) => [t, p.trials.slice()]));
   m.saving = true; m.saveError = null; renderStatus();
-  const sent = canon(m.file);
   try {
-    const { status, data } = await api("POST", "/api/measure/save", { file: m.file, version: m.state.version });
+    const { status, data } = await api("POST", "/api/measure/save", { file: sent, version: m.state.version });
     if (status === 200 && data.ok) {
-      const { status: st, data: s } = await api("GET", "/api/measure/state");
-      if (st !== 200) return;
-      m.state = s;
-      if (canon(m.file) === sent) {   // the file as saved, its trials numbered as the file has them
-        adopt(s.file);
-        m.summary = s.summary;
-      } else {                        // typed in while it saved: still to save
-        rebase(s);
-        m.saved = canon(s.file);
-        changed();
+      ownVersions.add(data.version);
+      m.state = { ...m.state, version: data.version };
+      // the file now holds the trials sent, in order: number them as the file does (trials typed meanwhile too)
+      for (const part of Object.values(sent.tests)) part.trials.forEach((row, i) => { row.origin = i; });
+      m.saved = canon(sent);
+      for (const [t, part] of Object.entries(m.file.tests)) {
+        part.trials.forEach((row) => { const i = rows[t].indexOf(row); row.origin = i >= 0 ? i : null; });
       }
-      render();
       return;
     }
-    if (status === 409 && data.state) {   // the file changed outside: keep what is typed here, Save again writes it
+    if (status === 409 && data.state) {   // the file changed outside this page: show it as saved
+      clearTimeout(saveTimer); saveTimer = null;
       m.state = data.state;
-      if (data.state.file) rebase(data.state);
-      m.saved = data.state.file ? canon(data.state.file) : "";
-      notice("The file changed outside this page. What you typed is still here: press Save again to write it over the file.", "warn", "measure");
+      adopt(data.state.file);
+      m.summary = data.state.summary;
+      m.summaryError = null;
+      notice("The file changed outside this page (another tab, or an outside edit), so it shows the saved version.", "warn", "measure");
+      render();
       return;
     }
     m.saveError = data.error || `the server answered ${status}`;
@@ -172,25 +177,21 @@ async function fit() {
   }
 }
 
-// A state from the long poll; false while a save is under way (the save reads the state it made itself).
+// A state from the long poll. Our own saves' only move the version on; a change this page didn't make (an outside
+// edit, another tab) is shown when nothing here waits to be saved, else the waiting save is refused (409) and shows it.
 function applyState(s) {
-  if (m.saving) return false;
+  polled = s.version;
   const prev = m.state;
-  if (prev && s.version <= prev.version) return true;
+  if (prev && s.version <= prev.version) return;
+  if (ownVersions.has(s.version)) { m.state = s; return; }
+  if (prev && waiting()) return;
   m.state = s;
-  if (!prev || !unsaved()) {
-    if (prev && canon(s.file) !== m.saved) notice("The file changed outside this page, so it was read again.", "info", "measure");
-    adopt(s.file);
-    m.summary = s.summary;
-    m.summaryError = null;
-  } else {
-    notice("The file changed outside this page. What you typed is still here: Save writes it over the file.", "warn", "measure");
-    if (s.file) rebase(s);
-    m.saved = s.file ? canon(s.file) : "";
-  }
+  if (prev && canon(s.file) !== m.saved) notice("The file changed outside this page, so it was read again.", "info", "measure");
+  adopt(s.file);
+  m.summary = s.summary;
+  m.summaryError = null;
   if (!m.test || !testOf(m.test)) m.test = pickTest();
   render();
-  return true;
 }
 
 // The first test with trials, else the first.
@@ -202,10 +203,10 @@ function pickTest() {
 
 async function pollLoop() {
   for (;;) {
-    const since = m.state ? `?since=${m.state.version}` : "";
+    const since = polled !== null ? `?since=${polled}` : "";
     const { status, data } = await api("GET", "/api/measure/state" + since);
-    if (status !== 200) await new Promise((r) => setTimeout(r, status === 403 ? 10000 : 2000));
-    else if (!applyState(data)) await new Promise((r) => setTimeout(r, 200));
+    if (status === 200) applyState(data);
+    else await new Promise((r) => setTimeout(r, status === 403 ? 10000 : 2000));
   }
 }
 
@@ -220,7 +221,7 @@ function render() {
     : "";
   renderTests();
   renderHow();
-  for (const id of ["#measure-save", "#measure-add"]) $(id).disabled = !editable();
+  $("#measure-add").disabled = !editable();
   const t = shown();
   $("#measure-print").href = t ? `/forms/${t.name}.html` : "#";
   $("#measure-fit").hidden = !(t && t.fit);
@@ -459,9 +460,8 @@ function renderStatus() {
   const el = $("#measure-saved");
   if (!m.state) return;
   if (!editable()) { el.textContent = "Can't be edited here"; el.className = "saved saved-warn"; return; }
-  if (m.saving) { el.textContent = "Saving…"; el.className = "saved saved-busy"; return; }
   if (m.saveError) { el.textContent = `Not saved: ${m.saveError}`; el.className = "saved saved-bad"; return; }
-  if (unsaved()) { el.textContent = "Not saved yet: press Save"; el.className = "saved saved-warn"; return; }
+  if (waiting()) { el.textContent = "Saving…"; el.className = "saved saved-busy"; return; }
   el.textContent = "✓ All changes saved";
   el.className = "saved saved-ok";
 }
@@ -479,18 +479,12 @@ function addTrial() {
 }
 
 export async function initMeasure() {
-  window.__scrimmageMeasure = { store: m, get saved() { return saving; }, get summarized() { return summarizing; }, unsaved };
-  registerTab("measure", { renderTop, undo() {}, redo() {}, onShow: render, unsaved });
+  window.__scrimmageMeasure = { store: m, get saved() { return flush(); }, get summarized() { return summarizing; } };
+  registerTab("measure", { renderTop, undo() {}, redo() {}, onShow: render, onHide: flush });
   setTab("measure");
-  $("#measure-save").addEventListener("click", () => { saving = save(); });
   $("#measure-add").addEventListener("click", addTrial);
   $("#measure-fit").addEventListener("click", () => fit());
-  document.addEventListener("keydown", (e) => {
-    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "s" && !$("#tab-measure").hidden) {
-      e.preventDefault();
-      saving = save();
-    }
-  });
+  $("#tab-measure").addEventListener("focusout", () => flush());   // a box left: save it now
   const app = await api("GET", "/api/app/state");
   if (app.status === 200) m.appPath = app.data.display_path || app.data.path || "";
   await pollLoop();

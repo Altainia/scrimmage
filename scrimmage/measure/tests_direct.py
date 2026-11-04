@@ -122,6 +122,7 @@ def _with(s: Summary, warnings: list[str]) -> Summary:
 
 def _size(t: _Test) -> dict:
     mass, diameter = [], []
+    mass_trials, diameter_trials = [], []   # the trials each value came from: a trial may only weigh
     for i, row in enumerate(t.rows):
         m = t.trial(i, "mass", required=False)
         c = t.trial(i, "circumference", required=False)
@@ -133,13 +134,15 @@ def _size(t: _Test) -> dict:
             raise t.err(i, f"has no reading: write {_keys(TRIAL['size'])}")
         if m is not None:
             mass.append(m)
+            mass_trials.append(i)
         if c is not None or d is not None:
             diameter.append(c / math.pi if c is not None else d)
+            diameter_trials.append(i)
     out = {}
     if mass:
-        out["mass"] = (summary(mass), mass)
+        out["mass"] = (summary(mass, mass_trials), mass)
     if diameter:
-        out["diameter"] = (summary(diameter), diameter)
+        out["diameter"] = (summary(diameter, diameter_trials), diameter)
     return out
 
 

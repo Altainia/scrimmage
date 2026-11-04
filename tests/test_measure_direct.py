@@ -113,6 +113,11 @@ def test_no_outlier_can_be_flagged_below_5_trials(values, flagged):
     assert stats.summary(values).outliers == flagged
 
 
+def test_a_summary_names_trials_by_the_numbers_it_is_given():
+    s = stats.summary([1.0, 1.0, 1.0, 1.0, 1.0, 9.0], trials=[0, 2, 3, 4, 5, 6])
+    assert s.outliers == [5] and "trial 7 looks off: check it" in s.warnings
+
+
 def test_a_wide_spread_warns_in_percent():
     s = stats.summary([9.0, 10.0, 11.2])
     assert not s.good

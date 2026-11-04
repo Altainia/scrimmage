@@ -71,6 +71,15 @@ def test_a_size_test_lines_up_each_trials_mass_and_diameter(tmp_path, capsys):
     assert "mass: average 216.0 g" in out and "diameter: average" in out and "(3 trials)" in out
 
 
+def test_a_size_trial_that_looks_off_is_named_by_its_own_number(tmp_path, capsys):
+    """A size test whose trial 2 only weighs: the diameter far off in trial 7 is called trial 7, not trial 6."""
+    tapes = [18.5, None, 18.6, 18.4, 18.5, 18.6, 24.0]
+    body = "".join(f"\n[[size]]\nmass_g = 216\n" + (f"circumference_in = {c}\n" if c else "") for c in tapes)
+    assert _run(_ball(tmp_path, body)) == 1
+    out = capsys.readouterr().out
+    assert "warning: trial 7 looks off: check it" in out and "trial 6 looks off" not in out
+
+
 def test_every_test_of_a_ball_file_is_reported(tmp_path, capsys):
     body = (_squeezes(9.8, 9.6, 9.9) + '\n[drop_setup]\ndrop_in = 18\nfloor = "carpet"\n'
             + "".join(f"\n[[drop]]\nbounce_in = {b}\n" for b in (6.5, 6.6, 6.4)))

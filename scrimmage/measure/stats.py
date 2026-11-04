@@ -22,13 +22,15 @@ class Summary:
     high: float
     spread: float  # (high - low) / mean: 0.22 is 22%
     n: int
-    outliers: list[int]  # 0-based indexes of the trials that look off
+    outliers: list[int]  # 0-based indexes (into the values) of the trials that look off
     warnings: list[str]  # plain sentences, trials numbered from 1
     good: bool  # at least 3 trials, spread at most 15%
 
 
-def summary(values) -> Summary:
-    """The mean, lowest, highest, spread and warnings of one value per trial."""
+def summary(values, trials=None) -> Summary:
+    """The mean, lowest, highest, spread and warnings of one value per trial. `trials` (0-based, one per value) are
+    the trials the values came from, for the warnings' numbers, when not every trial gives one (a size trial may
+    only weigh); by default the values are trials 1, 2, 3 ..."""
     values = [float(v) for v in values]
     if not values:
         raise ValueError("summary needs at least one trial")
@@ -45,7 +47,10 @@ def summary(values) -> Summary:
                         "a run uses it, but its result stays UNCALIBRATED until then")
     if spread > MAX_SPREAD:
         warnings.append(f"your trials disagree by {spread:.0%}: measure again or take more trials")
-    warnings += [f"trial {i + 1} looks off: check it" for i in outliers]
+    number = list(trials) if trials is not None else list(range(n))
+    if len(number) != n:
+        raise ValueError("summary needs one trial number per value")
+    warnings += [f"trial {number[i] + 1} looks off: check it" for i in outliers]
     return Summary(mean=mean, low=low, high=high, spread=spread, n=n, outliers=outliers, warnings=warnings,
                    good=n >= MIN_TRIALS and spread <= MAX_SPREAD)
 
