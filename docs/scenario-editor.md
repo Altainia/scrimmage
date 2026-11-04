@@ -32,12 +32,15 @@ The tabs only show when a scenario is open; a robot-only session shows just the 
 ## The page
 
 - **Header:** the description, the robot config (a dropdown of the configs in `configs/` and next to the scenario,
-  plus **Open in Robot tab**), the speed (`1x`, `max` or another number) and **Require lockstep**.
+  plus **Open in Robot tab**), the speed (`1x`, `max` or another number), **Require lockstep**, and the **Match**
+  row: the scenario's `[match]` (Station, FMS attached, Match timer, Auto length, Teleop length). Each starts at
+  "robot config's", which leaves that key to the config. See [match data](match.md).
 - **Steps (left):** each step with its name, mode, duration and start time, a bar drawn to scale, icons for
   checks and screenshots, and a pass/fail dot from the latest run. **Add step** inserts after the selected step;
   the buttons below move, duplicate and delete it, and steps can be dragged to reorder.
-- **Step editor (center):** name, mode (disabled, auto, teleop, test) and duration; joystick inputs; checks;
-  screenshots and an optional contact sheet.
+- **Step editor (center):** name, mode (disabled, auto, teleop, test), duration and game data; joystick inputs;
+  checks; screenshots and an optional contact sheet. An empty Game data box keeps what the step before left (the box
+  shows it, such as `keeps "R"`), and **Clear it here** clears it for this step and the ones after.
 - **Run (right):** Run, Stop, a speed override, live progress, the report and recent runs.
 
 ## Walkthrough

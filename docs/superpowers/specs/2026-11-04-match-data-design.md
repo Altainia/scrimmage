@@ -39,7 +39,8 @@ the alliance is always blue, and the match time is always unknown.
 
 - **Defaults keep today's frames:** station blue1, FMS off, game data empty and the timer off (match time -1). A
   scenario or config without `[match]` sends exactly what it sends now.
-- **The halsim_ws fields:** `>game_data` (a string; the HAL keeps up to 64 bytes), `>station` ("red1".."blue3"),
+- **The halsim_ws fields:** `>game_data` (a string; the HAL keeps up to 64 bytes, so game data is limited to 64
+  UTF-8 bytes, not 64 characters), `>station` ("red1".."blue3"),
   `>fms` (bool) and `>match_time` (seconds).
 - **Wording and tests:** American spellings and plain words. Tests run with `.venv/bin/python -m pytest`, never
   `uv run` in the repo root.
@@ -53,7 +54,7 @@ the alliance is always blue, and the match time is always unknown.
 - **Per step, `game_data = "R"`:** sent when the step starts. It stays until a later step changes it (`""` clears
   it), the way the field's data stays for the match.
 - **The scenario editor:** shows and edits `[match]` and a step's game data.
-- **Errors:** an unknown station names the six, and game data over 64 characters says so.
+- **Errors:** an unknown station names the six, and game data over 64 bytes (UTF-8, as the HAL counts) says so.
 
 ### The match timer
 
@@ -129,3 +130,35 @@ Each decision gives the choice, the reason, and what it costs if it is wrong.
   `>fms` through halsim_ws (`getGameSpecificMessage`, `getAlliance`, `getLocation`, `isFMSAttached`,
   `getMatchTime`). Java is checked through the existing Java end-to-end harness. If a field doesn't arrive, the
   ruling and its workaround go here.
+
+## Decisions (from the build)
+
+- **M8. A restart is the same match:**
+  - **restart_robot (MCP and Python sessions)** keeps the game data and the match settings: the new robot program
+    hears the game data on its first frame. Only a session reset (M3) or a new scenario (M4) clears it.
+  - **The Drive tab's restart** (the robot code panel restarting a running robot on new IDs) keeps the tab's station,
+    FMS and timer settings, the game data box and the robot's game data. `Session.start(match=, game_data=)` gives
+    the new session them from the robot's first frame.
+  - **Start, and Restart after an error,** begin a new session from the config's `[match]` with an empty box: the
+    session had ended.
+  - **Cost:** a student who wants a fresh match after a code change presses Stop and Start.
+- **M9. What a recording saves:**
+  - **`[match]`:** the settings in effect at Record, every key that differs from the default or from the config's.
+    Writing the keys that differ from the config's too (not only from the default) means a replay on the same config
+    hears the same match, and the file shows every setting that isn't plain.
+  - **Steps:** a game data change starts a new recorded step, as a mode change does, so each step's `game_data` is
+    exact.
+  - **Changes during a recording:** station, FMS and timer changes made after Record aren't saved. The docs say to set
+    them before Record.
+  - **Cost:** a recording that changes station part way through replays with the first station. Fixing it needs a
+    per-step `[match]`, which no real match has.
+- **M10. The Drive tab's game data box:** has no length limit of its own. A browser `maxlength` counts characters,
+  not bytes, so the server's 64-byte check and its error message are the only limit.
+- **M11. The Drive tab has no Auto and Teleop length fields:** the lengths are rarely changed and a config's or
+  scenario's `[match]` or `set_match` sets them. Fewer controls keep the station bar small.
+- **M12. The example's checks (M6):** `examples/robotpy_hubshift` gives each hub change a 0.2 s step centered on its
+  boundary, 0.1 s of margin each side, and checks the long steps between with `not_contains`. The robot sees each
+  match time one loop (20 ms) after it is sent, so its changes land 20 ms after each boundary, inside the margin.
+- **M13. Java (M7):** `tests/java_probe` gained a `PROBE_MODE=match` that prints the game data and the alliance in
+  teleop; the other modes are unchanged, so no copy was needed. `getGameSpecificMessage()` and `getAlliance()`
+  arrive in Java as in RobotPy.

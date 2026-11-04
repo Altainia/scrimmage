@@ -138,7 +138,8 @@ async def stop_session() -> str:
 
 @server.tool()
 async def restart_robot() -> str:
-    """Restart the robot program (e.g. after editing its code) and reset the world to t=0, disabled."""
+    """Restart the robot program (e.g. after editing its code) and reset the world to t=0, disabled. The game data
+    and match settings stay: a restart is the same match."""
     try:
         return _json(await _need().restart_robot())
     except SessionError as e:
@@ -192,7 +193,8 @@ async def set_match(station: str | None = None, fms: bool | None = None, timer: 
     fms: whether the field (FMS) is attached (isFMSAttached).
     timer: true counts the match time down in sim time while enabled, from auto_seconds when Auto starts and from
         teleop_seconds when Teleop starts; it holds while disabled. false sends -1 (getMatchTime).
-    game_data: the field's game data, up to 64 characters, e.g. "R" (getGameSpecificMessage); "" clears it.
+    game_data: the field's game data, up to 64 bytes (64 plain letters, digits or punctuation), e.g. "R"
+        (getGameSpecificMessage); "" clears it.
     auto_seconds, teleop_seconds: each phase's length, from the next time it starts (2026: 20 and 140)."""
     try:
         return _json(_need().set_match(station, fms, timer, game_data, auto_seconds, teleop_seconds))

@@ -145,6 +145,37 @@ def probe_config(tmp_path, **env) -> Path:
     return p
 
 
+def test_java_reads_the_match_data(tmp_path):
+    """Spec M7 for Java: PROBE_MODE=match prints DriverStation.getGameSpecificMessage() and the alliance in teleop.
+    The session's set_match(station="red2", game_data="R") reaches it, and a cleared game data does too."""
+    cfg = probe_config(tmp_path, PROBE_MODE="match")
+    match_line = re.compile(r"match data='([^']*)' alliance=(\w+)")
+
+    async def prints_until(s: Session, want: tuple, timeout: float = 10.0) -> list[tuple]:
+        for _ in range(int(timeout / 0.1)):   # Gradle forward the JVM's output a little behind
+            got = match_line.findall("\n".join(l["text"] for l in s.console()["lines"]))
+            if want in got:
+                return got
+            await s.advance(0.1)
+        raise AssertionError(f"no {want} print within {timeout} s; got {got}")
+
+    async def main():
+        s = Session(cfg, nt=False)
+        try:
+            await s.start()
+            s.set_mode("teleop")
+            await prints_until(s, ("", "Blue"))      # the defaults: no game data, blue1
+            s.set_match(station="red2", game_data="R")
+            await prints_until(s, ("R", "Red"))
+            assert s.state()["match"]["game_data"] == "R"
+            s.set_match(game_data="")
+            got = await prints_until(s, ("", "Red"))
+            assert got == [("", "Blue"), ("R", "Red"), ("", "Red")], got
+        finally:
+            await s.stop()
+    asyncio.run(main())
+
+
 def test_safety_net_catches_unguarded_writes(tmp_path):
     """With the agent disabled, the probe's setRawRotorPosition(5.0) reaches the device: scrimmage notices."""
     cfg = probe_config(tmp_path, PROBE_MODE="write", JAVA_TOOL_OPTIONS="-Dscrimmage.agent.disable=true")

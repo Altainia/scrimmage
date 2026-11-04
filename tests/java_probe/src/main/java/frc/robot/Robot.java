@@ -10,13 +10,15 @@ import com.ctre.phoenix6.hardware.Pigeon2;
 import com.ctre.phoenix6.hardware.TalonFX;
 import com.ctre.phoenix6.signals.InvertedValue;
 import com.ctre.phoenix6.signals.NeutralModeValue;
+import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.TimedRobot;
 import java.util.function.Supplier;
 
 /** Test robot for scrimmage's Java tests. PROBE_MODE selects behavior:
  *  "read"  - print positions each loop (default)
  *  "write" - also write sim state every loop, like a robot-side sim model
- *  "mm"    - TalonFX 1 runs Motion Magic to 20 rotations when enabled; prints every 100 ms of robot time */
+ *  "mm"    - TalonFX 1 runs Motion Magic to 20 rotations when enabled; prints every 100 ms of robot time
+ *  "match" - in teleop, prints the game data and alliance once, and again when the game data changes */
 public class Robot extends TimedRobot {
   private final TalonFX motor = new TalonFX(1);
   private final TalonFX inverted = new TalonFX(4);
@@ -24,6 +26,7 @@ public class Robot extends TimedRobot {
   private final Pigeon2 pigeon = new Pigeon2(3);
   private final String mode = System.getenv().getOrDefault("PROBE_MODE", "read");
   private int loops = 0;
+  private String gameData = null;   // "match": the game data last printed
 
   public Robot() {
     var brake = new TalonFXConfiguration();
@@ -71,8 +74,24 @@ public class Robot extends TimedRobot {
     }
   }
 
+  private void matchPeriodic() {
+    if (!DriverStation.isTeleopEnabled()) {
+      return;
+    }
+    String data = DriverStation.getGameSpecificMessage();
+    if (!data.equals(gameData)) {
+      gameData = data;
+      System.out.printf("match data='%s' alliance=%s%n", data,
+          DriverStation.getAlliance().map(Enum::name).orElse("none"));
+    }
+  }
+
   @Override
   public void robotPeriodic() {
+    if (mode.equals("match")) {
+      matchPeriodic();
+      return;
+    }
     if (mode.equals("mm")) {
       motionMagicPeriodic();
       return;
