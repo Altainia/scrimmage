@@ -131,4 +131,7 @@ def test_after_the_ds_stops_the_state_follows_the_latest_report(run):
     hal, after = run["hal_after_stop"], run["after_stop"]
     expected = "connected" if hal.get(">ds") is True else REAL_DS_WAITING
     assert after["driver_station"] == expected, (after, hal)
-    assert after["mode"] in ("disabled", "waiting"), (after, hal)   # the extension's 100 ms auto-disable
+    # The behavior seen, pinned: if these fail, the extension changed, and docs/driver-station.md (what scrimmage
+    # shows when the DS stops) must change with it.
+    assert hal.get(">ds") is True, hal
+    assert after["mode"] == "disabled", (after, hal)   # the extension's 100 ms auto-disable

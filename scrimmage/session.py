@@ -389,10 +389,11 @@ class Session:
         b = self._require_started()
         if self.robot is None and not self.attach:
             raise SessionError("the session has no robot program to restart")
-        game_data = b.ds.game_data
-        b.ds.clear()
-        if game_data:   # the field's data stays for the match, so the new program hears it on its first frame (M2)
-            b.ds.set_game_data(game_data)
+        if not self.real_ds:   # the real DS keeps its own match data; scrimmage's DS is inactive
+            game_data = b.ds.game_data
+            b.ds.clear()
+            if game_data:   # the field's data stays for the match, so the new program hears it on its first frame (M2)
+                b.ds.set_game_data(game_data)
         if self.attach:
             if env:
                 raise SessionError("attach mode: scrimmage doesn't launch the robot program, so it can't set its "

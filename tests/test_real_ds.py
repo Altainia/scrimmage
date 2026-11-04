@@ -123,6 +123,8 @@ def test_real_ds_none_takes_the_configs_default(tmp_path):
 
 
 # ------------------------------------------------------------------------------------------------------ the ports
+# These bind UDP 1110 and TCP 1740 on the whole machine (the DS protocol's fixed ports), as a real-DS robot program
+# does: run the real-DS tests serially, or one test's port takes another's.
 @pytest.mark.parametrize("kind,port", [(socket.SOCK_DGRAM, 1110), (socket.SOCK_STREAM, 1740)])
 def test_a_port_in_use_stops_the_start_before_the_robot_launches(tmp_path, kind, port):
     held = socket.socket(socket.AF_INET, kind)
