@@ -450,6 +450,12 @@ ones an `ids` table accepts.) `configs/kitbot.toml` is fully commented. In brief
 | `[[digital]] channel = 9` | `DigitalInput`, active-low by default | true while the joint is in `[min, max]` |
 | a cylinder's `valve = "PCM:3"` (or `"PCM:4,5"`) | `Solenoid(PneumaticsModuleType.CTREPCM, 3)` (or a `DoubleSolenoid`) reads `<output`; the PCM's `<closed_loop` (on once the module is made; `Compressor.disable()` turns it off) runs the compressor | the cylinder's valve: extend, retract or hold; sends the PCM `>pressure_switch`, `>on` and `>current` |
 | a cylinder's `valve = "PH:3"` (or `"PH:4,5"`) | the same on a REV Pneumatic Hub, relayed by the lockstep extension (0.7.0 or later); `getPressure()` reads 0 | the same, into the hub's switch, compressor and current |
+| `[[sensor]] kind = "beam"`, `dio = 4` | `DigitalInput(4)`, active-low by default | false while a game piece breaks the beam from `from` to `to` |
+| `[[sensor]] kind = "distance"`, `analog = 0` (or `dio`) | `AnalogInput(0)` voltage (or a `DigitalInput`) | `volts_per_m` × the distance to the first piece (or anything) it sees, 0 to 5 V (or on closer than `threshold`) |
+| `[[sensor]] kind = "color"`, `i2c = "mxp"` | REVLib's `ColorSensorV3(I2C.Port.kMXP)`: SimDevice `REV Color Sensor V3[1,82]` | the color, IR and proximity of the piece in front, within 10 cm |
+
+`[[sensor]]` tables (beam breaks, distance sensors and color sensors that see game pieces) go in the config next to
+the `[[part]]`s, each on a robot body: see [docs/sensors.md](docs/sensors.md).
 
 Motor types include `CIM, MiniCIM, Bag, Vex775Pro, NEO, NEO550, NeoVortex, Falcon500(FOC), KrakenX60(FOC)`.
 The constants come from WPILib's `DCMotor`. For anything else, pass a table:
@@ -1008,6 +1014,8 @@ scrimmage/cad/    CAD to part: reading STEP/STL, bodies, mass, import files, bui
 scrimmage/parts/  part format (model.py), assembler (assemble.py), field, device IDs, stock/ parts library
 scrimmage/pneumatics/  the air system: tanks, compressor, regulator and cylinders (model.py), in the world
                    (runtime.py), the air budget (budget.py, scrimmage air)
+scrimmage/sensors/  [[sensor]] beam breaks, distance and color sensors: the tables (spec.py), the named colors
+                   (colors.py), reading them every step and the robot's inputs (runtime.py)
 docs/getting-started/  first-steps guides: install, try a mechanism idea, run and test your robot code
 docs/usability-future-work.md  rough edges found writing those guides, as possible future work
 docs/parts.md      part.toml reference, [[part]] entries, stock parts
@@ -1025,14 +1033,15 @@ docs/disc.md       the disc launcher and disc flight (scrimmage disc): models, l
 docs/bench.md      the component bench (scrimmage bench): the flow, the file format, results, accuracy
 docs/test-range.md the test range: goals, balls, shooters, range files, aiming tables
 docs/pneumatics.md air cylinders: the air model, its numbers and sources, measuring your own, robot code (PCM, PH)
+docs/sensors.md    [[sensor]] beam breaks, distance and color sensors: keys, readings, piece colors, robot code
 docs/terrain.md    field elements (bumps, ramps, platforms), terrain signals, scrimmage terrain sweep
 docs/climbing.md   bars, the climber part, climb signals, scrimmage climb run and its scripts, the climb scenario
 freecad/           the FreeCAD workbench add-on (Scrimmage/), installed by `scrimmage freecad install`
 configs/           robot configs built from parts (kitbot, swerve, elevator_arm, fastmode, disc_robot,
                    climber_robot)
 scenarios/         scenario files (steps, checks, screenshots)
-examples/          blocks/ (Test tab examples: an intake, a station, a reef grabber, a ladder climber, a turret
-                   shooter, a pneumatic arm); RobotPy kitbot robot program; Java swerve (Phoenix 6) project; Java fast-mode
+examples/          blocks/ (Test tab examples: an intake, an intake that stops on a beam break, a station, a reef
+                   grabber, a ladder climber, a turret shooter, a pneumatic arm, a trench, a partner push); RobotPy kitbot robot program; Java swerve (Phoenix 6) project; Java fast-mode
                    (AdvantageKit) project; Java build.gradle notes; launcher/ and disc/ setups; measure/ measurement
                    files; climb/ scripts
 shims/             CANMotor/CANEncoder shims for vendor controllers (Python tested, Java template)

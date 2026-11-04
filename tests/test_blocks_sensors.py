@@ -137,6 +137,10 @@ def test_a_failed_sensor_check_says_what_it_read(tmp_path):
     p = _program(tmp_path, _expect('{ sensor = "eye", is = "on", sees = "red" }'), EYE)
     result = TestRun(world_for(p), p).run()
     assert "expected eye to see red, but it saw no piece" in result.outcome, result.outcome
+    p = _program(tmp_path, _expect('{ sensor = "eye", is = "on" }'), EYE)
+    result = TestRun(world_for(p), p).run()
+    assert "expected eye to see a piece, but it saw no piece" in result.outcome, result.outcome
+    assert result.checks[0]["text"] == "eye is seeing a piece", result.checks
 
 
 def test_a_waiting_sensor_check_is_worded_while_it_waits(tmp_path):
@@ -227,6 +231,13 @@ def test_describe_words_a_sensor_check():
     assert describe(Cond("sensor", {"sensor": "beam", "is": "off", "sees": None})) == "beam is off"
     assert describe(Cond("sensor", {"sensor": "color", "is": "on", "sees": "red"})) == "color is seeing red"
     assert describe(Cond("sensor", {"sensor": "color", "is": "off", "sees": "red"})) == "color isn't seeing red"
+    # a color sensor's check with no color reads as the block does: "seeing a piece"
+    color = {"color": "color", "beam": "beam"}
+    assert describe(Cond("sensor", {"sensor": "color", "is": "on", "sees": None}), sensors=color) == \
+        "color is seeing a piece"
+    assert describe(Cond("sensor", {"sensor": "color", "is": "off", "sees": None}), sensors=color) == \
+        "color isn't seeing a piece"
+    assert describe(Cond("sensor", {"sensor": "beam", "is": "on", "sees": None}), sensors=color) == "beam is on"
 
 
 def test_a_repeat_or_wait_on_a_color_reads_plainly_when_it_runs_out(tmp_path):

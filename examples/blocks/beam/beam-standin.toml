@@ -1,0 +1,70 @@
+# Stand-in box robot: the kitbot's chassis and drive, for trying a part on its own.
+# Edit it with `scrimmage edit {this file}`, or by hand: the assembler only touches [[part]] tables.
+
+[model]
+timestep = 0.001
+
+[robot]
+standin = true   # the stand-in robot: a piece resting on its chassis or drive isn't stuck in your robot
+# Where the robot starts: pick it in the Robot tab ("Where it starts"), which writes
+# start_pose = [x (m), y (m), heading (deg)], field coordinates from the blue corner.
+
+[battery]
+nominal_voltage = 12.5
+resistance = 0.02
+
+[lockstep]
+step = 0.005
+
+# How scrimmage starts your robot program (uncomment and adjust; "{python}" = the Python running scrimmage).
+# [robot_program]
+# command = ["{python}", "-m", "robotpy", "sim", "--nogui", "--ws-client", "--scrimmage-lockstep"]
+# cwd = "../my_robot_project"
+# Or use the Robot code panel in `scrimmage edit`: it writes this for Java or Python.
+
+[telemetry]
+odometry = "/SmartDashboard/Field/Robot"   # NT topic with the robot's own pose estimate (Field2d)
+
+# ---- Parts ---------------------------------------------------------------------------
+# Each [[part]] is a stock part (or path = "<part folder>") with its parameters, where it attaches
+# ("<instance>.<mount>"), and the device ID of each slot in `ids`.
+
+[[part]]
+name = "drive"
+stock = "chassis"
+# Attach your part to drive.top, or to wherever its CAD has it. Set mass to what the rest of the robot weighs and
+# com_offset to move the robot's center of mass [forward, left, up] in meters.
+mass = 45.0
+com_offset = [0.0, 0.0, 0.0]
+ids = { gyro = { device = "ADXRS450[0]", axis = "x", cw_positive = true } }
+
+[[part]]
+name = "dt"
+stock = "differential"    # 3 wheels per side, 6 in, the middle ones 3 mm lower (drop center)
+attach = "drive.center"
+ids = { left = "PWM:0", right = "PWM:1", left_encoder = { channel_a = 0, counts_per_rev = 2048 }, right_encoder = { channel_a = 2, counts_per_rev = 2048 } }
+
+[[part]]
+name = "intake"
+path = "parts/intake"
+attach = "drive.chassis"
+pos = [0.43, 0.0, 0.0]    # on the floor at the front bumper's face (a 0.7 m frame's half length and the 8 cm bumper)
+ids = { roller = "PWM:2" }
+
+# ---- Sensors -------------------------------------------------------------------------
+# A beam break across the bin, from one side wall to the other, 8 cm off the carpet and 12 cm in front of the back
+# wall (in the intake's coordinates: x forward from the bumper's face, y left, z up, in meters). A ball resting in the
+# bin breaks it; a ball on the carpet in front of the robot, or still on the lip, doesn't. The robot code reads it as
+# DigitalInput 4 (the drive's encoders use DIO 0 to 3): false while broken, as an IR beam-break receiver reads.
+
+[[sensor]]
+name = "bin"
+kind = "beam"
+body = "intake.hopper"
+from = [0.12, 0.17, 0.08]
+to = [0.12, -0.17, 0.08]
+dio = 4
+
+[range]
+file = "intake"
+start = "facing_ball"

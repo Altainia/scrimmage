@@ -152,3 +152,23 @@ unnecessary friction.**
   `<init`, and halsim_ws_client drops values for one that doesn't exist yet); a color sensor the robot program hasn't
   created 2 s after connecting is a warning in the run's notes, naming the port and the other port if the robot used
   that one.
+- **D10 How a sensor check reads (Task 3):** the block reads "sensor mouth is on" for a beam break or a distance
+  sensor, and "sensor eye is seeing red" or "isn't seeing red" for a color sensor (or "is seeing a piece" for any
+  color), both states in plain words. The editor takes the color names from the palette the server sends
+  (`sensor_colors`), with no copy of the list in the page's code. Why: the check reads as a plain sentence whichever
+  state it names, and a second list in JavaScript could drift from `NAMED_COLORS`. Cost: nothing.
+- **D11 Sensors on the chart and in the views (Task 3):** every `sensor.<name>` signal is drawn at first (unless the
+  test's `chart` line names others); a distance or color sensor's line is drawn out to its `max_range`; the Drive tab's
+  live view draws the lines too, never lit. Why: a sensor is something the student added to look at, and a line to
+  `max_range` shows where it can see. The live view has no run signals to light them from. Cost: nothing.
+- **D12 A color sensor's check with no color (Task 4):** `describe()` and the failure read "eye is seeing a piece" and
+  "expected eye to see a piece, but it saw no piece", as the block reads, not "eye is on". `describe()` takes the
+  sensors' kinds (`TestRun._describe` passes them). Why: the run's words should match the block's. Cost: nothing.
+- **D13 The example's beam is in the bin (Task 4):** `examples/blocks/beam` puts its beam break across the bin, where
+  the ball ends up, not at the mouth. Why: at the mouth the beam breaks when the ball first gets under the roller, and
+  stopping there leaves the ball on the carpet in front of the lip (tried: the hopper check fails), which the README
+  shows as its first change. Cost: nothing.
+- **D14 Java's color sensor name (Task 4):** the docs say Java REVLib's `ColorSensorV3` creates the same SimDevice
+  (`REV Color Sensor V3[<port>,82]`, from `SimDevice.create(name, port, address)` read in REVLib-java 2026.0.5's
+  class file) but hasn't been run in Scrimmage. Why: only RobotPy was checked live (D8). Cost: a Java team may meet
+  a mismatch first; the run's notes name a missing color sensor (D9).

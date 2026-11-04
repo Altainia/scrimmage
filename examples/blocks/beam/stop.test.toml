@@ -1,0 +1,40 @@
+[test]
+robot = "beam-standin.toml"
+hopper = ["intake.hopper"]
+chart = ["intake.roller", "sensor.bin"]
+
+[[block]]
+do = "spin"
+motor = "intake.roller"
+volts = 6.0
+
+[[block]]
+do = "spin"
+motor = "dt.left_2"
+volts = 4.0
+
+[[block]]
+do = "spin"
+motor = "dt.right_2"
+volts = 4.0
+
+[[block]]
+do = "wait_until"
+until = { sensor = { sensor = "bin", is = "on" } }
+timeout = 5.0
+
+[[block]]
+do = "stop"
+motor = "all"
+
+[[block]]
+do = "wait"
+seconds = 1.0
+
+[[block]]
+do = "expect"
+that = { sensor = { sensor = "bin", is = "on" } }
+
+[[block]]
+do = "expect"
+that = { piece_in = { body = "intake.hopper", piece = "any" } }

@@ -11,7 +11,7 @@ Contents: [Starting a test](#starting-a-test), [The three columns](#the-three-co
 [The blocks](#the-blocks), [Feeding from a station](#feeding-from-a-station),
 [Floor spreads](#floor-spreads), [The checks](#the-checks), [Holding a piece](#holding-a-piece),
 [Placing a piece](#placing-a-piece), [Grip material](#grip-material), [Shooting](#shooting), [Aiming](#aiming),
-[Pneumatics](#pneumatics), [Moving field elements](#moving-field-elements),
+[Pneumatics](#pneumatics), [Sensors](#sensors), [Moving field elements](#moving-field-elements),
 [Clearance to a field element](#clearance-to-a-field-element), [A partner robot](#a-partner-robot),
 [Times and limits](#times-and-limits), [Setup](#setup),
 [Running, replay and chart](#running-replay-and-chart), [Trying values (sweeps)](#trying-values-sweeps),
@@ -234,6 +234,7 @@ A check is a round-ended block that plugs into **wait until**, **repeat until** 
 | **robot clears** *element* **by at least** *n* **in** | Nothing on the robot that collides comes closer to that part of the field. See [Clearance to a field element](#clearance-to-a-field-element). |
 | **partner is lifted at least** *n* **in**, optionally **level within** *n* **°** | The partner robot's lowest frame corner is that high above where it rested (and it tilts no more than that). See [A partner robot](#a-partner-robot). |
 | **partner moved at least** *n* **in** | The partner robot's center has gone that far across the floor. See [A partner robot](#a-partner-robot). |
+| **sensor** *sensor* **is on / off**, or **is seeing / isn't seeing** *color* | One of the robot's `[[sensor]]`s: a beam break is on while broken, a distance sensor while something is closer than its threshold, a color sensor while it sees a piece (of that color). See [Sensors](#sensors). |
 
 **What "touches" can name.** On the robot side: **any hook**, one of the hooks, a part, or a body. On the field side:
 
@@ -449,6 +450,44 @@ In the test file:
 | `{ cylinder = { cylinder = "lift", is = "extended" } }` | `cylinder`: a cylinder part's name. `is`: `"extended"` or `"retracted"`. |
 | `{ pressure = { side = "stored", above = 60 } }` | `side`: `"stored"` (the default) or `"working"`. `above` or `below`: psi, 0 or more. |
 
+## Sensors
+
+A robot with `[[sensor]]` tables in its config (beam breaks, distance sensors and color sensors; see
+[sensors.md](sensors.md)) has a **sensor** check for them. It needs no robot code and no channel: the Test tab reads
+the sensor itself.
+
+- **sensor** *mouth* **is on** (or **is off**), for a beam break or a distance sensor. A beam break is on while a piece
+  breaks its beam. A distance sensor is on while what it sees is closer than its `threshold` (half its `max_range`
+  unless the config says).
+- **sensor** *eye* **is seeing** *red* (or **isn't seeing** *red*), for a color sensor. Pick **a piece** for any color,
+  or one of the named colors (red, blue, yellow, orange, green, purple, white, gray). A color sensor sees a piece
+  within its `max_range` (10 cm at most), and **is seeing red** is true while the piece it sees is nearest red of those
+  colors. **isn't seeing red** is true with nothing in front, or a piece of another color.
+- **Wait for it.** **wait until sensor bin is on**, then **stop** the intake's roller, is what robot code does with a
+  beam break. `examples/blocks/beam` does just that.
+- **A failed check says what the sensor read:** `expected bin on, but it was off (clear)`, `expected range on, but it
+  read 78.7 in (it is on closer than 39.4 in)`, `expected eye to see red, but it saw a blue piece`, or `expected eye to
+  see a piece, but it saw no piece`.
+- **Problems** before a run: a robot with no sensors (`this robot has no sensors; add a [[sensor]] to its config`), a
+  name the robot doesn't have (`hopper isn't a sensor; the robot's sensors: bin, eye`), or a color on a sensor that
+  can't see one (`bin is a beam break, which can't see colors; only a color sensor can see red`).
+
+**The chart** gets `sensor.<name>` for each sensor, drawn at first (unless the test's `chart` line names others): 0
+or 1 for a beam break (1 while broken), inches for a distance sensor (its `max_range` with nothing in range), and for
+a color sensor the number of the color it sees, with a gap while it sees none. The chart's key says which number is which color: 0 red, 1 blue, 2 yellow, 3 orange, 4
+green, 5 purple, 6 white, 7 gray.
+
+**The replay** draws each sensor as a thin line: a beam break from end to end, a distance or color sensor from where
+it looks out to its `max_range`. The line is lit while the sensor is on. The Drive tab's live view draws the same
+lines, never lit.
+
+In the test file:
+
+| Form | Keys |
+|---|---|
+| `{ sensor = { sensor = "bin", is = "on" } }` | `sensor`: one of the robot's `[[sensor]]` names. `is`: `"on"` or `"off"`. |
+| `{ sensor = { sensor = "eye", is = "on", sees = "red" } }` | `sees`, a color sensor only: `"red"`, `"blue"`, `"yellow"`, `"orange"`, `"green"`, `"purple"`, `"white"` or `"gray"`. Left out, any piece. `is = "off"` with `sees` is "isn't seeing" that color. |
+
 ## Moving field elements
 
 A field with a `hinged` or `sliding` element (a door, a flap, a portcullis, a spinning wheel; see
@@ -636,9 +675,9 @@ run early. Then:
   load and the drive wheels' angles are in the picker but not drawn at first (the wheel angles just keep growing, which
   tells you little about a mechanism). A seated depth (`seated.branch_l2`, in inches) has a gap while no piece is on
   its rod. A field's moving elements (`element.<name>`), a partner robot (`partner.height`, `partner.tilt`,
-  `partner.moved`) and the clearances (`clearance.<element>`, listed under **From the next run:**) are there too:
-  see [Moving field elements](#moving-field-elements), [A partner robot](#a-partner-robot) and
-  [Clearance to a field element](#clearance-to-a-field-element).
+  `partner.moved`), the robot's sensors (`sensor.<name>`) and the clearances (`clearance.<element>`, listed under
+  **From the next run:**) are there too: see [Moving field elements](#moving-field-elements),
+  [A partner robot](#a-partner-robot), [Sensors](#sensors) and [Clearance to a field element](#clearance-to-a-field-element).
 - **Compare.** Pick another run in **compare with** to draw both on the same chart, for example before and after a
   change. Under the chart, each run's sentence is shown one above the other.
 
@@ -721,10 +760,14 @@ absolute path. **`test_spread`** runs the floor spread. The agent writes the `.t
 
 ## The examples
 
-Eight worked examples are in `examples/blocks/`. Each has a README with the story, the blocks and how to change them.
+Nine worked examples are in `examples/blocks/`. Each has a README with the story, the blocks and how to change them.
 
 - **`examples/blocks/intake`**, a roller and bin that take a ball off the carpet. Run it and it finishes at 3.3 s
   with the ball in the bin. The README has a sweep of the roller's voltage.
+- **`examples/blocks/beam`**, the same intake with a beam break across its bin. The roller spins and the robot drives
+  at the ball until the beam breaks, then everything stops. The beam breaks at 2.0 s, when the ball rolls into the
+  bin, and the run finishes at 3.0 s with the ball resting in the bin. The README moves the beam to the intake's mouth,
+  where it breaks too soon and leaves the ball outside, and tries the roller's voltage.
 - **`examples/blocks/station`**, a bin over the whole top of a stand-in robot, with its bumpers against the human player
   station's chute. It starts feeding, waits until 5 balls are in, stops, and expects at least 80% of the fed balls to
   have made it in. Its station has a small spread, so the shuffle means something. The README tells of the first try

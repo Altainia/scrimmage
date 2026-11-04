@@ -384,6 +384,10 @@ exactly like a limit switch.
 
 Two beam breaks can't share a DIO, and a beam break can't use a channel a `[[digital]]` entry already has.
 
+These beam breaks are the only way to sense a ball the `[shooter]` holds: its hopper is a count, not balls in the
+world, so a [`[[sensor]]`](sensors.md) can't see them. A `[[sensor]]` sees the balls in the world (on the carpet, in
+your own intake), and can't share a DIO with a `[[shooter.beam_break]]` either.
+
 ## Balls in the world
 
 Every ball is a MuJoCo free body: `ball.0`, `ball.1` and so on, one for each floor ball and one for each hopper slot
@@ -514,6 +518,7 @@ mass = 0.66                       # kg: required
 material = "pvc"                  # the surface: a [surface.*] preset ...
 # friction = 0.45                 # ... or your own measured number, or a friction file; give one of the two
 label = "post"                    # the plain name students read; left out, the table's name
+color = "white"                   # what a color sensor reads, and how it is drawn: a named color or [r, g, b]
 ```
 
 A preset kind is its preset: it takes no shape keys. A kind written out takes a `shape`, a `mass` and a surface
@@ -532,7 +537,14 @@ a shape with a key it doesn't use, no mass, or no surface is an error that names
 | `cad` | `cad` (a STEP, STL or OBJ file, relative to the range file), `units` (`"m"`, `"mm"` or `"in"`), `axis`, `hole` | an exact shape from CAD |
 
 Every kind also takes `mass` (kg, required), `material` or `friction`, `inertia = [Ixx, Iyy, Izz]` (kg m², left out:
-worked out from the shape at the same density throughout) and `label`.
+worked out from the shape at the same density throughout), `label` and `color`.
+
+**A kind's color.** `color` is one of the named colors (`"red"`, `"blue"`, `"yellow"`, `"orange"`, `"green"`,
+`"purple"`, `"white"`, `"gray"`) or `[r, g, b]`, each 0 to 1. The piece is drawn in it, and a
+[color sensor](sensors.md#piece-colors) reads it. A preset kind takes it too, so a 2022 field can have red and blue
+cargo as two kinds (`ball = "2022-cargo"` and `color = "red"` in one, `"blue"` in the other). Left out, a ball is
+yellow, a disc white and a rigid piece off-white, as they were always drawn. A range file's `[range]` takes `color` for
+its own `ball`, `disc` or `piece`.
 
 **Hollow pieces.** A hollow tube or ring is built from 24 convex slices so a rod goes through the hole (the hole is
 very slightly smaller than the number you give: the effective radius is cos(7.5 degrees), about 0.9914 times it). A

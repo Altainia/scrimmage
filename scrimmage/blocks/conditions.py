@@ -427,10 +427,11 @@ def turret_words(name: str) -> str:
 
 
 def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names: dict | None = None,
-             units: dict | None = None) -> str:
+             units: dict | None = None, sensors: dict | None = None) -> str:
     """The condition in plain words, for a run's outcome. `next_bar` names "the next bar" when known; `kinds` (the
     field's Range.kinds) names any piece by its kind, `names` a piece by what a student reads (Watch.piece_names),
-    `units` a moving element's unit (Watch.units; a number alone when not known)."""
+    `units` a moving element's unit (Watch.units; a number alone when not known), `sensors` each [[sensor]]'s kind
+    by name (a color sensor's check with no color reads "is seeing a piece", as its block does)."""
     a, k = cond.args, cond.kind
     names = names or {}
 
@@ -477,9 +478,9 @@ def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names
     if k == "clears":
         return f"the robot clears {a['element']} by at least {_amount(a['at_least_in'], 'in')}"
     if k == "sensor":
-        if a.get("sees") is not None:
+        if a.get("sees") is not None or (sensors or {}).get(a["sensor"]) == "color":
             verb = "is seeing" if a["is"] == "on" else "isn't seeing"
-            return f"{a['sensor']} {verb} {a['sees']}"
+            return f"{a['sensor']} {verb} {a['sees'] or 'a piece'}"
         return f"{a['sensor']} is {a['is']}"
     if k == "partner_lifted":
         level = a.get("level_within_deg")

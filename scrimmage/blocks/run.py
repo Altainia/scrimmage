@@ -1081,9 +1081,7 @@ class TestRun:
             return (f"expected {name} {want}, but it read {r.distance / IN:.1f} in (it is on closer than "
                     f"{spec.threshold / IN:.1f} in)")
         saw = f"{'an' if r.color_name[0] in 'aeiou' else 'a'} {r.color_name} piece" if r.on else "no piece"
-        if a.get("sees") is None:
-            return f"expected {name} {want}, but it saw {saw}"
-        return f"expected {name} {'' if want == 'on' else 'not '}to see {a['sees']}, but it saw {saw}"
+        return f"expected {name} {'' if want == 'on' else 'not '}to see {a['sees'] or 'a piece'}, but it saw {saw}"
 
     def _not_held(self, a: dict) -> str:
         """How a held check failed: when and how the piece was lost, and what was moving in the second before; or
@@ -1145,9 +1143,11 @@ class TestRun:
         return " and ".join(words) if words else "nothing was moving"
 
     def _describe(self, cond) -> str:
-        """describe() with this run's next bar, the field's piece words and its moving elements' units."""
-        w = self.watch
-        return describe(cond, w.next_bar(), w.kinds, w.piece_names, w.units)
+        """describe() with this run's next bar, the field's piece words, its moving elements' units and the robot's
+        sensors' kinds."""
+        w, sensors = self.watch, getattr(self.world, "sensors", None)
+        kinds = {s.name: s.kind for s in sensors.specs} if sensors is not None else None
+        return describe(cond, w.next_bar(), w.kinds, w.piece_names, w.units, kinds)
 
     def _fail(self, check: dict, cond, t: float) -> None:
         check.update(passed=False, t=t, failure=self._failure(cond))

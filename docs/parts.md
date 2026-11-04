@@ -208,6 +208,24 @@ switch_off_psi = 115
 An unknown key is an error that lists these. `scrimmage air <config>` gives the robot's air budget: see
 [pneumatics.md](pneumatics.md#the-air-budget-scrimmage-air).
 
+### Sensors: `[[sensor]]`
+
+Beam breaks, distance sensors and REV Color Sensor V3s that see game pieces are `[[sensor]]` tables in the robot
+config, not part slots. Each is mounted on one of the robot's bodies by name (`body = "intake.hopper"`), so they work
+on stock parts and CAD parts alike, with no change to the part:
+
+```toml
+[[sensor]]
+name = "bin"
+kind = "beam"                 # "beam", "distance" or "color"
+body = "intake.hopper"        # "<part>.<body>"
+from = [0.12, 0.17, 0.08]     # the beam's two ends, m in the body's frame
+to = [0.12, -0.17, 0.08]
+dio = 4                       # the robot code's DigitalInput
+```
+
+Every key, what each kind reads and the robot code are in [sensors.md](sensors.md).
+
 ### Inspecting a robot
 
 ```bash
