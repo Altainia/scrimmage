@@ -32,6 +32,7 @@ RECOMMENDED = 5  # trials recommended (C1)
 # average distance, which needs more than 2 x OUTLIER_DISTANCES trials (stats.py).
 OUTLIER_TRIALS = math.floor(2 * OUTLIER_DISTANCES) + 1
 PICTURE_MM = 115  # the picture's printed width: a 15-unit label in a 480-unit-wide picture prints at 10 pt
+SETUP_ACROSS = 3  # setup readings to a row
 UNIT_WORDS = {"n": "N"}  # how a unit is printed on a form, where it isn't its key's spelling
 ABOUT = {"ball": "a FUEL ball from the practice bin", "friction": "40A tread on a FUEL ball",  # a starter's example
          "launcher": "the practice robot's shooter", "cylinder": "the intake's deploy cylinder"}
@@ -121,7 +122,9 @@ TEST: dict[str, Test] = {
         need=("a ruler or tape measure, 18 in or more, upright against a wall",
               "a phone that films slow motion", "a hard floor: concrete, tile or wood, not carpet"),
         steps=("Tape the ruler upright against the wall, its zero on a hard floor (not carpet).",
-               "Hold the ball with its bottom at 18 in on the ruler, and start filming against the ruler.",
+               "Set the phone square-on to the ruler, level with where the top of the bounce will be (about 6 in "
+               "up), and start filming.",
+               "Hold the ball against the ruler with its bottom at 18 in.",
                "Let go without pushing it.",
                "In the video, find the top of the first bounce and read the ruler at the bottom of the ball: "
                "write the bounce.",
@@ -153,16 +156,16 @@ TEST: dict[str, Test] = {
         title="Launcher shot",
         gives="the ball's stiffness, or the wheel's friction (with the ball's squeeze measured), fit to the "
               "launcher model",
-        need=("a phone that films slow motion, at its highest frame rate", "tape for two marks, 24 in or more apart",
-              "a tachometer, or the robot's log, for the wheel speed", "the launcher's setup file"),
-        steps=("Put two tape marks on the wall behind the ball's path, level with it and 24 in or more apart: "
-               "12 in at 240 fps is too few frames for a good fit.",
-               "Set the phone to its highest frame rate, square to the marks and far enough back to see both.",
-               "Spin the wheel up and let it settle. Write the wheel speed you measured, not the setpoint.",
+        need=("a phone that films slow motion", "a board and tape", "a tachometer or the robot's log",
+              "the launcher's setup file"),
+        steps=("Tape two vertical marks on a board a few inches behind the ball's path, the first near the exit.",
+               f"Space them for {fit_launcher.GOOD_FRAMES} or more frames: 24 in at 960 fps, about 8 ft at 240 fps.",
+               "Set the phone to its highest frame rate, square-on, 10 or more times as far in front of the path as "
+               "the board is behind it.",
+               "Let the wheel settle; write the speed you measured, not the setpoint.",
                "Feed ONE ball and film it.",
-               "In the video, count the frames the ball takes from one mark to the next.",
-               f"Shoot at two or more wheel speeds, {fit_launcher.SECOND_SPEED - 1:.0%} or more apart, a few shots "
-               "at each."),
+               "Count the frames from mark to mark (its speed across, not up).",
+               f"Shoot at two or more wheel speeds, {fit_launcher.SECOND_SPEED - 1:.0%} or more apart."),
         setup=(_plain(fit_launcher.SETUP_TEXT, "setup", "the launcher setup file the shots were taken on",
                       "shooter.toml"),
                _plain(fit_launcher.SETUP_TEXT, "ball", "the ball's squeeze test file, to fit the wheel's friction",
@@ -174,7 +177,7 @@ TEST: dict[str, Test] = {
         trial=(_plain(fit_launcher.SHOT_NUMBERS, "wheel_rps", "the wheel speed you measured", 50),
                _plain(fit_launcher.SHOT_NUMBERS, "hood_deg", "only if not the setup box's", optional=True),
                _r(_SHOT, "frames", "frames from one mark to the next", 70)),
-        value="speed", formula="marks × fps ÷ frames",
+        value="speed across", formula="marks × fps ÷ frames: in or mm (the marks' unit) per second",
         summaries=(),
         note="Scrimmage fits the shots to the launcher model: they aren't averaged. Shots at two or more wheel "
              "speeds check the fit."),
@@ -185,9 +188,10 @@ TEST: dict[str, Test] = {
               "a phone that films slow motion (or a stopwatch, for a slow stroke)"),
         steps=("Write the cylinder's size, its load and the working pressure in the setup box.",
                "Start with the rod all the way in and the tanks full.",
-               "Time the stroke from the valve opening (the click) to the rod at full stroke.",
-               "A quick stroke (under 0.2 s) needs filming: count the frames from the click to the rod stopping. "
-               "A stopwatch can't time it closely enough.",
+               "Time the stroke from the valve's light (or the Pneumatic Hub channel's) coming on to the rod at full "
+               "stroke. Don't time it by the click: a slow-motion video's sound is unreliable.",
+               "A quick stroke (under 0.2 s) needs filming: count the frames from the light coming on to the rod "
+               "stopping. A stopwatch can't time it closely enough.",
                "Repeat for the next trial."),
         setup=(_r(_CYL, "bore", "the piston's diameter", 1.0625, "in"),
                _r(_CYL, "rod", "the rod's diameter", 0.3125, "in"),
@@ -195,10 +199,12 @@ TEST: dict[str, Test] = {
                _r(_CYL, "load_mass", "what the rod moves, besides itself", 2, "lb", optional=True),
                _r(_CYL, "rod_mass", "the rod's own mass (else 100 g)", 100, "g", optional=True),
                _r(_CYL, "friction", "the seals' friction (else 8 N)", 8, "n", optional=True),
-               _plain(fit_cylinder.SETUP_ONLY, "vertical", "true if the rod lifts its load straight up", False),
-               _plain(fit_cylinder.SETUP_ONLY, "working_psi", "the regulator's working pressure (else 60)", 60),
-               Reading(name="fps", quantity=None, what="the camera's frame rate, if filmed", optional=True)),
-        trial=(_r(fit_cylinder.STROKE_READINGS, "time", "valve opening to full stroke", 0.21, "s"),
+               _plain(fit_cylinder.SETUP_ONLY, "vertical", "true if the rod lifts its load straight up (else "
+                      "false)", False, optional=True),
+               _plain(fit_cylinder.SETUP_ONLY, "working_psi", "the regulator's working pressure (else 60)", 60,
+                      optional=True),
+               _plain(fit_cylinder.STROKE_NUMBERS, "fps", "the camera's frame rate, if filmed", optional=True)),
+        trial=(_r(fit_cylinder.STROKE_READINGS, "time", "light on to full stroke", 0.21, "s"),
                _r(fit_cylinder.STROKE_READINGS, "frames", "or frames, filmed", optional=True)),
         value="time", formula="frames ÷ fps, or the time you read",
         summaries=("time",),
@@ -254,7 +260,7 @@ th { font-size: 9.5pt; }
 .small { font-weight: normal; font-size: 8.5pt; }
 .setup td { height: 8.5mm; font-size: 9.5pt; }
 .setup { table-layout: fixed; }
-.trials td { height: 6.4mm; }
+.trials td { height: 6mm; }
 .trials .n { width: 10mm; text-align: center; vertical-align: middle; }
 .summary { display: flex; align-items: center; gap: 2mm; margin-top: 1.5mm; break-inside: avoid; }
 .summary .name { font-weight: bold; width: 25mm; }
@@ -281,17 +287,16 @@ def _label(r: Reading) -> str:
 
 
 def _setup_table(test: str, t: Test) -> str:
-    """The setup box: two readings to a row, each with a blank to write in."""
+    """The setup box: three readings to a row, each with a blank to write in."""
     cells = [f'<td class="label">{_label(r)}</td><td></td>' for r in t.setup]
     if test == "squeeze":
         cells.append('<td class="label"><b>the gap to press to</b><br><span class="small">the ball\'s diameter '
                      '× 0.75</span></td><td>______ × 0.75 = ______</td>')
     if not cells:
         return ""
-    if len(cells) % 2:
-        cells.append('<td class="label"></td><td></td>')
-    rows = "".join(f"<tr>{a}{b}</tr>" for a, b in zip(cells[::2], cells[1::2]))
-    cols = '<col style="width: 33%"><col style="width: 17%">' * 2
+    cells += ['<td class="label"></td><td></td>'] * (-len(cells) % SETUP_ACROSS)
+    rows = "".join(f"<tr>{''.join(cells[i:i + SETUP_ACROSS])}</tr>" for i in range(0, len(cells), SETUP_ACROSS))
+    cols = '<col style="width: 22%"><col style="width: 11.3%">' * SETUP_ACROSS
     return (f'<h2>Setup: once for all trials <span class="small">(circle the unit you used)</span></h2>'
             f'<table class="setup"><colgroup>{cols}</colgroup>{rows}</table>')
 

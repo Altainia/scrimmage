@@ -1,22 +1,29 @@
-"""The launcher shot fit (spec C8): a ball's `stiffness_n` or a wheel's `friction`, fit so the launcher model's exit
-speeds match filmed shots.
+"""The launcher shot fit (spec C8): a ball's `stiffness_n` or a wheel's `friction`, fit so the launcher model's
+horizontal exit speeds match filmed shots.
 
     [shot_setup]
     setup = "shooter.toml"        # the launcher setup the shots were taken on, relative to this file
     ball = "fuel.measure.toml"    # optional: the ball's squeeze test, so the shots fit the wheel's friction
-    marks_in = 12                 # the tape marks' spacing, and the camera's frame rate, once for all shots
-    fps = 240
+    marks_in = 24                 # the tape marks' spacing, and the camera's frame rate, once for all shots
+    fps = 960
 
     [[shot]]                      # one table per shot
     wheel_rps = 50                # the wheel speed it was shot at, held steady (wheel rotations per second)
     hood_deg = 45                 # optional: the hood's exit angle, else the setup's
-    frames = 10.5                 # frames counted while the ball crosses from one mark to the next
+    frames = 64.5                 # frames counted while the ball crosses from one mark to the next
 
-A shot's exit speed is the mark spacing times fps over the frames counted. `marks_<unit>`, `fps` and `hood_deg` may
-be given once in [shot_setup] or in a shot for that shot alone.
+The marks are vertical lines taped a measured horizontal distance apart, on a board just behind the ball's path, so
+a shot gives the ball's horizontal speed: the mark spacing times fps over the frames counted. The model's is its
+exit speed times the cosine of its launch angle (the ball's own, which may differ from the hood's setting); the
+fit compares the two. `marks_<unit>`, `fps` and `hood_deg` may be given once in [shot_setup] or in a shot for that
+shot alone.
 
 Film one ball with the wheel already steady, and write the wheel speed you measured (a tachometer or the robot's
-log), not the setpoint.
+log), not the setpoint. Tape the marks on a board within a few inches behind the ball's path, the first one close to
+the exit, and film square-on from at least 10 times as far in front of the path as the board is behind it (so the
+ball, nearer the camera than the marks, isn't read early or late against them). Space the marks so the ball takes
+20 or more frames between them: 24 in at 960 fps; at 240 fps a mark spacing that far gives about 16 frames, so
+the marks go further apart or the frame rate up.
 
 One number is fit, never both: in the model a stiffer ball and a grippier wheel speed a ball up in the same way at
 every wheel speed, so shots alone can't tell them apart. With the ball's squeeze measured (a ball file with a good
@@ -74,6 +81,7 @@ TOLERANCE = 1e-3  # the search stops when its bracket is this narrow (as a fract
 RESOLUTION = 0.02  # a shot's speed is read to no better than this fraction, however many frames it spans
 BAND = 0.15  # a good fit's band is within this fraction of its value either way
 BISECTIONS = 8  # steps finding each end of the band between two scan points
+GOOD_FRAMES = 20  # a shot should span this many frames or more between the marks (the forms say so)
 SQUEEZE_SENTENCE = "Measure the ball's squeeze (the squeeze test) to fit wheel friction too."
 
 SHOT_NUMBERS = ("wheel_rps", "hood_deg", "fps")  # plain numbers, their unit in their name
@@ -87,8 +95,9 @@ _GOLDEN = (math.sqrt(5.0) - 1.0) / 2.0
 class LauncherFit:
     stiffness_n: float  # the ball's, N: fitted, or the squeeze test's
     friction: float  # the wheel's: fitted, or the setup's
-    rms_error: float  # root mean square relative error of the shots' exit speeds: 0.03 is 3%
-    per_shot: list[tuple[float, float]]  # (measured, model) exit speed per shot in file order, m/s; model NaN if no launch
+    rms_error: float  # root mean square relative error of the shots' horizontal speeds: 0.03 is 3%
+    per_shot: list[tuple[float, float]]  # (measured, model) horizontal speed per shot, in file order, m/s; model NaN
+    #   if the model ball isn't launched
     fitted: tuple[str, ...]  # ("friction",) with the squeeze measured, else ("stiffness_n",)
     warnings: list[str]  # plain sentences
     band: tuple[float, float]  # (low, high): the fitted number's values that fit the shots as well as they can tell
@@ -105,13 +114,15 @@ class _Shot:
     speed: float  # measured, m/s
 
 
-def exit_speed(setup: Setup, wheel_rps: float, hood_deg: float | None = None) -> float:
-    """The model's exit speed (m/s) for one ball through `setup` with the wheel at `wheel_rps` (and the hood at
-    `hood_deg`, else the setup's); NaN if the ball isn't launched."""
+def horizontal_speed(setup: Setup, wheel_rps: float, hood_deg: float | None = None) -> float:
+    """The model's horizontal exit speed (m/s), speed x cos(launch angle), for one ball through `setup` with the wheel
+    at `wheel_rps` (and the hood at `hood_deg`, else the setup's); NaN if the ball isn't launched."""
     if hood_deg is not None:
         setup = dataclasses.replace(setup, hood=dataclasses.replace(setup.hood, exit_angle_deg=hood_deg))
     shot = single_pass(setup, wheel_rps, min(setup.feed.lanes, key=abs))
-    return shot.speed if shot is not None and shot.status == "launched" else math.nan
+    if shot is None or shot.status != "launched":
+        return math.nan
+    return shot.speed * math.cos(math.radians(shot.launch_deg))
 
 
 # ------------------------------------------------------------------------------------------------ reading the file
@@ -361,11 +372,11 @@ def fit(mf: MeasureFile) -> LauncherFit:
     cache: dict[tuple[float, float], list[float]] = {}
 
     def model(k: float, f: float) -> list[float]:
-        """Each shot's model exit speed at stiffness k and friction f."""
+        """Each shot's model horizontal exit speed at stiffness k and friction f."""
         if (k, f) not in cache:
             trial = dataclasses.replace(setup, ball=dataclasses.replace(setup.ball, stiffness_n=k),
                                         wheels=dataclasses.replace(setup.wheels, friction=f))
-            by_condition = {c: exit_speed(trial, *c) for c in conditions}
+            by_condition = {c: horizontal_speed(trial, *c) for c in conditions}
             cache[(k, f)] = [by_condition[(s.wheel_rps, s.hood_deg)] for s in shots]
         return cache[(k, f)]
 
@@ -426,7 +437,7 @@ def fit(mf: MeasureFile) -> LauncherFit:
                         "higher wheel speed (where the ball's grip, not the wheel's speed, sets the exit speed)")
         why.append(f"the shots hardly depend on the {name}")
     if rms >= GOOD_RMS:
-        warnings.append(f"the model's exit speeds miss your shots by {rms:.1%} (root mean square); a good fit is "
+        warnings.append(f"the model's horizontal speeds miss your shots by {rms:.1%} (root mean square); a good fit is "
                         f"under {GOOD_RMS:.0%}: check your shots and the launcher setup")
         why.append(f"the model misses the shots by {rms:.0%}")
         if all(math.isnan(m) or m < s.speed for s, m in zip(shots, speeds)):

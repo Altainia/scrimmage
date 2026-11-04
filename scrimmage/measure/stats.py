@@ -42,7 +42,7 @@ def summary(values) -> Summary:
     warnings = []
     if n < MIN_TRIALS:
         warnings.append(f"take at least {MIN_TRIALS} trials (this has {n}): "
-                        "the average isn't used in a run until then")
+                        "a run uses it, but its result stays UNCALIBRATED until then")
     if spread > MAX_SPREAD:
         warnings.append(f"your trials disagree by {spread:.0%}: measure again or take more trials")
     warnings += [f"trial {i + 1} looks off: check it" for i in outliers]

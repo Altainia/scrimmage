@@ -15,8 +15,9 @@ strokes.
     [[stroke]]                    # one table per stroke
     time_s = 0.21                 # from the valve opening to the rod at full stroke
 
-The time is measured from the valve opening (the solenoid clicks, or the program's command in the robot's log) to
-the rod at full stroke. A stroke may give `frames` (counted from the click to the rod stopping) with `fps`, in
+The time is measured from the valve opening (its light, or the Pneumatic Hub channel's, coming on; or the program's
+command in the robot's log) to the rod at full stroke: a slow-motion video's sound is too unreliable to time the
+click by. A stroke may give `frames` (counted from the light coming on to the rod stopping) with `fps`, in
 [stroke_setup] once for all strokes or in the stroke for that stroke alone, instead of `time_s`. The strokes'
 times are averaged (at least 3 strokes, agreeing within 15%).
 
@@ -74,6 +75,7 @@ SETUP_READINGS = {"bore": "length", "rod": "length", "stroke": "length", "load_m
                   "friction": "force"}
 SETUP_ONLY = ("vertical", "working_psi")  # plain, once for all strokes
 STROKE_READINGS = {"time": "time", "frames": "frames"}  # a stroke's: one of them, with fps for frames
+STROKE_NUMBERS = ("fps",)  # plain, in [stroke_setup] once or in a stroke for that stroke alone
 _LENGTHS = ("bore", "rod", "stroke")
 
 
@@ -144,7 +146,7 @@ def _check_keys(mf: MeasureFile, setup: dict, rows: list[dict]) -> None:
     for key in setup:
         if unit_of(key, "time") is not None or unit_of(key, "frames") is not None:
             raise MeasureError(f"{mf.path}: {key} goes in each [[stroke]], not in [stroke_setup]")
-        if key in (*SETUP_ONLY, "fps") or any(unit_of(key, n) is not None for n in SETUP_READINGS):
+        if key in (*SETUP_ONLY, *STROKE_NUMBERS) or any(unit_of(key, n) is not None for n in SETUP_READINGS):
             continue
         raise MeasureError(f"{mf.path}: unknown key '{key}' in [stroke_setup]; it takes bore_<unit>, rod_<unit>, "
                            "stroke_<unit>, load_mass_<unit>, rod_mass_<unit>, vertical, working_psi, "
@@ -154,7 +156,7 @@ def _check_keys(mf: MeasureFile, setup: dict, rows: list[dict]) -> None:
             if key in SETUP_ONLY or any(unit_of(key, n) is not None for n in SETUP_READINGS):
                 raise MeasureError(f"{mf.path}: {key} goes in [stroke_setup], once for all strokes, not in "
                                    f"[[stroke]] trial {i + 1}")
-            if key != "fps" and unit_of(key, "time") is None and unit_of(key, "frames") is None:
+            if key not in STROKE_NUMBERS and not any(unit_of(key, n) is not None for n in STROKE_READINGS):
                 raise MeasureError(f"{mf.path}: unknown reading '{key}' in [[stroke]] trial {i + 1}; it takes "
                                    "time_s, or frames and fps")
 

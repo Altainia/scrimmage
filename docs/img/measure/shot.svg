@@ -1,34 +1,41 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300" role="img" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="black">
-  <title>Launcher shot: one ball filmed crossing two tape marks far apart, and the frames between them counted</title>
+  <title>Launcher shot: one ball filmed crossing two vertical marks on a board just behind its path, the frames between them counted</title>
   <!-- the marks' spacing -->
-  <line x1="212" y1="32" x2="388" y2="32" stroke="black" stroke-width="2"/>
-  <polygon points="200,32 212,26 212,38" fill="black"/>
-  <polygon points="400,32 388,26 388,38" fill="black"/>
-  <text x="300" y="22" text-anchor="middle">24 in or more apart</text>
-  <!-- the two tape marks on the wall -->
-  <line x1="200" y1="42" x2="200" y2="150" stroke="#888888" stroke-width="6"/>
-  <line x1="400" y1="42" x2="400" y2="150" stroke="#888888" stroke-width="6"/>
-  <text x="200" y="168" text-anchor="middle">mark 1</text>
-  <text x="400" y="168" text-anchor="middle">mark 2</text>
+  <line x1="182" y1="28" x2="398" y2="28" stroke="black" stroke-width="2"/>
+  <polygon points="170,28 182,22 182,34" fill="black"/>
+  <polygon points="410,28 398,22 398,34" fill="black"/>
+  <text x="290" y="17" text-anchor="middle">20+ frames apart (24 in at 960 fps)</text>
+  <!-- the board just behind the path, and its two vertical marks -->
+  <rect x="140" y="38" width="320" height="140" fill="#eeeeee" stroke="#777777" stroke-width="2"/>
+  <line x1="170" y1="40" x2="170" y2="176" stroke="#555555" stroke-width="5"/>
+  <line x1="410" y1="40" x2="410" y2="176" stroke="#555555" stroke-width="5"/>
+  <text x="290" y="148" text-anchor="middle">count the frames</text>
+  <text x="290" y="167" text-anchor="middle">between the marks</text>
   <!-- the launcher: its wheel and hood -->
-  <rect x="20" y="96" width="70" height="80" rx="6" fill="white" stroke="black" stroke-width="2.5"/>
-  <circle cx="62" cy="122" r="20" fill="#dddddd" stroke="black" stroke-width="2.5"/>
-  <path d="M62,122 l0,-20 M62,122 l17,10 M62,122 l-17,10" stroke="black" stroke-width="2"/>
-  <path d="M40,96 Q62,78 104,106" fill="none" stroke="black" stroke-width="3"/>
-  <!-- the ball's path and the ball at each mark -->
-  <line x1="106" y1="110" x2="462" y2="110" stroke="#777777" stroke-width="2" stroke-dasharray="2 5"/>
-  <circle cx="200" cy="110" r="13" fill="#bbbbbb" stroke="black" stroke-width="2.5"/>
-  <circle cx="400" cy="110" r="13" fill="white" stroke="black" stroke-width="2.5" stroke-dasharray="5 3"/>
-  <text x="300" y="194" text-anchor="middle">count the frames from</text>
-  <text x="300" y="213" text-anchor="middle">one mark to the next</text>
-  <!-- the phone on its stand -->
-  <rect x="280" y="232" width="40" height="24" rx="4" fill="white" stroke="black" stroke-width="2.5"/>
-  <circle cx="300" cy="244" r="5" fill="black"/>
-  <path d="M300,256 v10 M300,266 l-16,24 M300,266 l16,24 M300,266 v24" stroke="black" stroke-width="2"/>
-  <text x="330" y="262">film at the highest</text>
-  <text x="330" y="281">frame rate</text>
-  <text x="20" y="200">one ball, the wheel</text>
-  <text x="20" y="219">already steady:</text>
-  <text x="20" y="238">write the speed</text>
-  <text x="20" y="257">you measured</text>
+  <rect x="20" y="118" width="64" height="62" rx="6" fill="white" stroke="black" stroke-width="2.5"/>
+  <circle cx="56" cy="138" r="16" fill="#dddddd" stroke="black" stroke-width="2.5"/>
+  <path d="M56,138 l0,-16 M56,138 l14,8 M56,138 l-14,8" stroke="black" stroke-width="2"/>
+  <path d="M36,118 Q60,100 96,116" fill="none" stroke="black" stroke-width="3"/>
+  <!-- the ball's path, up and across the marks, and the ball at each mark -->
+  <line x1="92" y1="122" x2="466" y2="44" stroke="#666666" stroke-width="2" stroke-dasharray="2 5"/>
+  <circle cx="170" cy="105.7" r="11" fill="#bbbbbb" stroke="black" stroke-width="2.5"/>
+  <circle cx="410" cy="55.7" r="11" fill="white" stroke="black" stroke-width="2.5" stroke-dasharray="5 3"/>
+  <text x="20" y="204">one ball, the wheel</text>
+  <text x="20" y="223">already steady:</text>
+  <text x="20" y="242">write the speed</text>
+  <text x="20" y="261">you measured</text>
+  <!-- seen from above: the board, the path a few inches in front of it, and the phone far back, square-on -->
+  <text x="236" y="206">seen from above:</text>
+  <line x1="250" y1="220" x2="470" y2="220" stroke="#777777" stroke-width="6"/>
+  <text x="470" y="207" text-anchor="end">board</text>
+  <line x1="250" y1="232" x2="470" y2="232" stroke="#666666" stroke-width="2" stroke-dasharray="2 5"/>
+  <circle cx="420" cy="232" r="5" fill="#bbbbbb" stroke="black" stroke-width="1.5"/>
+  <text x="470" y="250" text-anchor="end">path</text>
+  <rect x="345" y="280" width="30" height="10" rx="2" fill="white" stroke="black" stroke-width="2"/>
+  <text x="384" y="291">phone</text>
+  <line x1="300" y1="242" x2="300" y2="278" stroke="black" stroke-width="2"/>
+  <polygon points="300,234 294,246 306,246" fill="black"/>
+  <polygon points="300,286 294,274 306,274" fill="black"/>
+  <text x="292" y="262" text-anchor="end">10× the gap</text>
+  <text x="292" y="281" text-anchor="end">or more</text>
 </svg>

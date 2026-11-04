@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300" role="img" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="black">
-  <title>Cylinder stroke: the time from the valve opening to the rod at full stroke, with its load</title>
+  <title>Cylinder stroke: the time from the valve's light coming on to the rod at full stroke, with its load</title>
   <!-- the valve and its air lines -->
   <rect x="88" y="22" width="104" height="32" rx="4" fill="#eeeeee" stroke="black" stroke-width="2.5"/>
   <text x="140" y="44" text-anchor="middle">valve</text>
@@ -24,8 +24,8 @@
   <line x1="60" y1="222" x2="420" y2="222" stroke="black" stroke-width="2.5"/>
   <path d="M60,210 v24 M420,210 v24" stroke="black" stroke-width="2.5"/>
   <text x="240" y="213" text-anchor="middle">time</text>
-  <text x="60" y="252">valve opens</text>
-  <text x="60" y="271">(the click)</text>
+  <text x="60" y="252">the valve's light</text>
+  <text x="60" y="271">comes on</text>
   <text x="420" y="252" text-anchor="end">rod at</text>
   <text x="420" y="271" text-anchor="end">full stroke</text>
   <text x="240" y="294" text-anchor="middle">under 0.2 s? film it and count the frames</text>

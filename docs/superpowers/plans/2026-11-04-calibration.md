@@ -36,7 +36,7 @@ printable forms, and a Measure tab.
 ## Review Focus
 
 1. **Two trials of very different size** (5 lb and 15 lb). The average is reported, with "take at least 3 trials"
-   and no value used in a run (the file reads as not good enough). Test: Task 1.
+   and the file reads as not good enough: a run uses it, but its result stays UNCALIBRATED until then. Test: Task 1.
 2. **A launcher file with shots at one wheel speed only:** it still fits, warning "shots at two or more wheel
    speeds check the fit". Test: Task 2.
 3. **A fit pinned at its search limit:** reported, flagged "at the edge of what it tries: check your shots", and the

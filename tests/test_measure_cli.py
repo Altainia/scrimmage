@@ -6,7 +6,7 @@ from scrimmage.measure import forms
 from scrimmage.measure.fit_cylinder import Stroke, stroke_time
 from scrimmage.pneumatics.model import DEFAULT_CONDUCTANCE
 
-from test_measure_launcher_fit import WITH_BALL, _ball_file, _frames, _measure, _synthetic
+from measure_helpers import WITH_BALL, ball_file, frames, measure_file, synthetic
 
 HEADER = '[measure]\nkind = "ball"\nabout = "a FUEL ball"\nby = "J. Smith"\ndate = 2026-11-10\nbase = "2026-fuel"\n'
 
@@ -52,7 +52,7 @@ def test_two_trials_of_very_different_size_are_averaged_and_not_good(tmp_path, c
     assert "warning: take at least 3 trials (this has 2)" in out
     assert "warning: your trials disagree by 100%" in out
     assert "not good enough yet: stiffness_n (2 trials: take at least 3; trials disagree by 100%)" in out
-    assert "keeps the UNCALIBRATED label" in out
+    assert "A run that names this file uses it, but its result stays UNCALIBRATED until then." in out
 
 
 def test_a_trial_that_looks_off_is_flagged(tmp_path, capsys):
@@ -102,6 +102,13 @@ def test_a_missing_file_exits_2(tmp_path, capsys):
     assert "gone.measure.toml: no such file" in capsys.readouterr().err
 
 
+def test_a_file_that_isnt_text_exits_2(tmp_path, capsys):
+    p = tmp_path / "photo.measure.toml"
+    p.write_bytes(b"\xff\xd8\xff\xe0 a photo")
+    assert _run(p) == 2
+    assert "photo.measure.toml isn't a text file" in capsys.readouterr().err
+
+
 def test_a_folder_exits_2(tmp_path, capsys):
     assert _run(tmp_path) == 2
     assert capsys.readouterr().err.startswith("scrimmage: ")
@@ -110,11 +117,11 @@ def test_a_folder_exits_2(tmp_path, capsys):
 # ---------------------------------------------------------------------------------------------------------- fits
 
 def test_a_good_launcher_fit_prints_each_shot_against_the_model_and_its_band(tmp_path, capsys):
-    mf = _synthetic(tmp_path, 120.0, 0.95, [50.0, 80.0])
+    mf = synthetic(tmp_path, 120.0, 0.95, [50.0, 80.0])
     assert _run(mf.path) == 0
     out = capsys.readouterr().out
     assert "shot: fits the ball's stiffness to your shots (the wheel friction held at 0.95)" in out
-    assert "speed" in out and "model off by" in out
+    assert "speed across" in out and "model off by" in out
     assert "fit: stiffness 12" in out and "N, anywhere from " in out and "N fits your shots" in out
     assert "the model misses your shots by" in out
     assert "warning: Measure the ball's squeeze (the squeeze test) to fit wheel friction too." in out
@@ -122,8 +129,8 @@ def test_a_good_launcher_fit_prints_each_shot_against_the_model_and_its_band(tmp
 
 
 def test_a_launcher_fit_with_the_squeeze_measured_fits_the_wheel_friction(tmp_path, capsys):
-    _ball_file(tmp_path, [118.0, 120.0, 122.0])
-    mf = _synthetic(tmp_path, 120.0, 1.1, [50.0, 80.0], header=WITH_BALL)
+    ball_file(tmp_path, [118.0, 120.0, 122.0])
+    mf = synthetic(tmp_path, 120.0, 1.1, [50.0, 80.0], header=WITH_BALL)
     assert _run(mf.path) == 0
     out = capsys.readouterr().out
     assert "fits the wheel's friction to your shots (the ball's stiffness held at 120 N, from its squeeze test)" in out
@@ -131,7 +138,7 @@ def test_a_launcher_fit_with_the_squeeze_measured_fits_the_wheel_friction(tmp_pa
 
 
 def test_a_launcher_fit_at_the_edge_says_why_and_exits_1(tmp_path, capsys):
-    mf = _measure(tmp_path, [(50.0, _frames(1.5)), (80.0, _frames(2.0))])
+    mf = measure_file(tmp_path, [(50.0, frames(1.5)), (80.0, frames(2.0))])
     assert _run(mf.path) == 1
     out = capsys.readouterr().out
     assert "is at the edge of what it tries: check your shots" in out
@@ -229,4 +236,14 @@ def test_measure_with_no_file_exits_2(capsys):
 def test_measure_is_listed_in_the_help(capsys):
     with pytest.raises(SystemExit):
         main(["--help"])
-    assert "measure" in capsys.readouterr().out
+    out = " ".join(capsys.readouterr().out.split())
+    assert ("measure measurements: read a <name>.measure.toml file (its averages and fit), print a blank form, or "
+            "start a file (docs/measuring.md)") in out
+
+
+def test_measure_help_lists_its_commands(capsys):
+    assert _run("--help") == 0
+    out = " ".join(capsys.readouterr().out.split())
+    assert "usage: scrimmage measure FILE | form TEST [-o PATH] | new TEST PATH" in out
+    assert "scrimmage measure form TEST [-o PATH] writes a printable blank form" in out
+    assert "The tests: size, squeeze, drop, sled, shot, stroke." in out

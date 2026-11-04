@@ -66,7 +66,8 @@ def test_an_averaged_form_has_the_summary_boxes_and_the_value_formula(test):
 
 def test_the_shot_form_works_out_each_speed_and_says_why_it_has_no_average():
     page = forms.form_html("shot")
-    assert "<th>speed<br><span class=\"small\">marks × fps ÷ frames</span></th>" in page
+    assert ('<th>speed across<br><span class="small">marks × fps ÷ frames: in or mm (the marks\' unit) per '
+            'second</span></th>') in page
     assert '<div class="box">average</div>' not in page
     assert "Scrimmage fits the shots to the launcher model: they aren't averaged." in page
     assert "two or more, 10% or more apart" in page
@@ -86,11 +87,14 @@ def test_the_outlier_count_follows_the_averaging_rule():
 TEACHES = {
     "size": ("widest part", "circumference", "calipers", "kitchen scale"),
     "squeeze": ("bottom board", "zero the scale", "tare", "75% of the ball's diameter", "read the scale"),
-    "drop": ("18 in", "not carpet", "bottom of the ball", "film", "against the ruler"),
+    "drop": ("18 in", "not carpet", "bottom of the ball", "filming", "against the ruler",
+             "level with where the top of the bounce will be"),
     "sled": ("steadily", "not the first jerk", "Weigh the sled"),
-    "shot": ("ONE ball", "not the setpoint", "let it settle", "highest frame rate", "24 in or more",
-             "12 in at 240 fps", "count the frames", "two or more wheel speeds"),
-    "stroke": ("valve opening", "full stroke", "under 0.2 s", "count the frames", "stopwatch can't time it"),
+    "shot": ("ONE ball", "not the setpoint", "settle", "highest frame rate", "vertical marks",
+             "a few inches behind the ball's path", "20 or more frames", "24 in at 960 fps", "square-on",
+             "10 or more times as far", "Count the frames", "speed across", "two or more wheel speeds"),
+    "stroke": ("light", "Pneumatic Hub", "by the click", "full stroke", "under 0.2 s",
+               "count the frames", "stopwatch can't time it"),
 }
 
 
@@ -113,7 +117,7 @@ def test_the_forms_ask_for_every_reading_the_files_take():
             | set(fit_launcher.SETUP_NUMBERS))
     assert _names(forms.TEST["shot"]) == shot
     stroke = (set(fit_cylinder.SETUP_READINGS) | set(fit_cylinder.SETUP_ONLY) | set(fit_cylinder.STROKE_READINGS)
-              | {"fps"})
+              | set(fit_cylinder.STROKE_NUMBERS))
     assert _names(forms.TEST["stroke"]) == stroke
 
 
@@ -173,7 +177,7 @@ def test_the_stroke_starters_examples_fit_when_uncommented(tmp_path):
 
 
 def test_the_shot_starters_examples_fit_when_uncommented(tmp_path):
-    from test_measure_launcher_fit import SETUP
+    from measure_helpers import SETUP
     (tmp_path / "shooter.toml").write_text(SETUP, encoding="utf-8")
     p = tmp_path / "shots.measure.toml"
     p.write_text(_uncommented(forms.starter_toml("shot"), drop=("ball =",)), encoding="utf-8")
@@ -241,15 +245,39 @@ def test_the_pictures_are_one_per_test():
 
 @pytest.mark.browser
 @pytest.mark.parametrize("paper", ["Letter", "A4"])
-def test_every_form_prints_on_one_page(browser, paper):
+def test_every_form_prints_on_one_page_with_room_to_spare(browser, paper):
+    # 10 mm more bottom margin than the form asks for, so another browser's fonts have room
+    tighter = "<style>@page { margin-bottom: 21mm; }</style></head>"
     page = browser.new_page()
     try:
         for test in forms.TESTS:
-            page.set_content(forms.form_html(test))
+            page.set_content(forms.form_html(test).replace("</head>", tighter))
             pdf = page.pdf(format=paper)
             assert len(re.findall(rb"/Type\s*/Page\b", pdf)) == 1, f"the {test} form prints on more than one page"
     finally:
         page.close()
 
 
-from test_assembler_browser import browser  # noqa: E402,F401  (the headless Chromium fixture)
+from browser_harness import browser  # noqa: E402,F401  (the headless Chromium fixture)
+
+
+def _rects(root, fill):
+    return [el for el in root.iter("{http://www.w3.org/2000/svg}rect") if el.get("fill") == fill]
+
+
+def test_the_squeeze_pictures_ball_is_drawn_to_the_75_percent_gap():
+    root = ET.parse(IMG / "squeeze.svg").getroot()
+    top, bottom = sorted(_rects(root, "#cccccc"), key=lambda el: float(el.get("y")))
+    gap = float(bottom.get("y")) - (float(top.get("y")) + float(top.get("height")))
+    ball = next(root.iter("{http://www.w3.org/2000/svg}circle"))  # the ball before the squeeze
+    assert 2 * float(ball.get("r")) * 0.75 == pytest.approx(gap)
+    assert "ruler" in "".join(root.itertext())
+
+
+def test_the_shot_pictures_path_rises_across_vertical_marks():
+    root = ET.parse(IMG / "shot.svg").getroot()
+    lines = list(root.iter("{http://www.w3.org/2000/svg}line"))
+    marks = [el for el in lines if el.get("x1") == el.get("x2") and el.get("stroke") == "#555555"]
+    assert len(marks) == 2
+    path = next(el for el in lines if el.get("stroke-dasharray") == "2 5")
+    assert float(path.get("y2")) < float(path.get("y1"))  # up and across

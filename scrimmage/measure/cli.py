@@ -114,7 +114,7 @@ def _shot(mf: MeasureFile) -> tuple[list[str], list[str]]:
         held = f"the wheel friction held at {result.friction:.2f}"
         what = "the ball's stiffness"
     lines = [f"shot: fits {what} to your shots ({held})",
-             *_table(["shot", *readings, "speed", "model", "model off by"], table),
+             *_table(["shot", *readings, "speed across", "model", "model off by"], table),
              f"  fit: {result.band_text}",
              f"  the model misses your shots by {result.rms_error:.1%} (root mean square)",
              *(f"  warning: {w}" for w in result.warnings),
@@ -163,8 +163,8 @@ def report(mf: MeasureFile) -> tuple[str, bool]:
         sections.append("\n".join(lines))
         problems += bad
     if problems:
-        end = (f"Not good enough yet: {'; '.join(problems)}. A run that names this file keeps the UNCALIBRATED "
-               "label until it is.")
+        end = (f"Not good enough yet: {'; '.join(problems)}. A run that names this file uses it, but its result "
+               "stays UNCALIBRATED until then.")
     else:
         end = "Good enough to use: a run that names this file shows these numbers as measured."
     return "\n\n".join(["\n".join(head), *sections, end]), not problems

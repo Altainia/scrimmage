@@ -143,7 +143,7 @@ slow motion, and their mentors. The standing anti-goal applies: **no unnecessary
       "Measure the ball's squeeze (the squeeze test) to fit wheel friction too."
   - **The shots' setup** is read without its own measurements applied, except those two files for the number that
     isn't fit. A launcher file named there is passed over: a setup may name the very file its shots are in.
-  - **Goal:** minimize the root-mean-square relative error of exit speed over the shots.
+  - **Goal:** minimize the root-mean-square relative error of horizontal exit speed over the shots.
   - **Search:** a 9-point scan, then a golden-section search between the best point's neighbors.
   - **One wheel speed only:** still fit, with a warning: "shots at two or more wheel speeds check the fit".
   - **The band:** the fitted number's values whose RMS error is within the shots' resolution of the best one's. A
@@ -158,8 +158,14 @@ slow motion, and their mentors. The standing anti-goal applies: **no unnecessary
     - **Shots faster than the model gives** (missed by 5% or more, every shot slower in the model): "the model's
       ball can't go this fast at these wheel speeds: check the wheel speed you wrote and the mark spacing".
   - **How to film:** one ball with the wheel already steady, and the wheel speed written as measured (a tachometer
-    or the robot's log), not the setpoint.
-  - **A shot's exit speed:** the tape mark spacing × fps / frames counted.
+    or the robot's log), not the setpoint. The marks are vertical lines on a board a few inches behind the ball's
+    path, the first near the exit; the phone films square-on from at least 10 times as far in front of the path as
+    the board is behind it; and the marks are spaced so the ball takes 20 or more frames between them (24 in at
+    960 fps).
+  - **A shot's speed is horizontal:** the vertical marks a measured horizontal distance apart give the ball's
+    horizontal speed, the tape mark spacing × fps / frames counted. It is compared with the model's horizontal
+    exit speed, its exit speed × cos(its launch angle) (the ball's own launch angle, not the hood's setting if they
+    differ).
 - **C9 Cylinder fit:**
   - **Parameter:** `conductance`, from 0.1× to 10× the default, by bisection on a log scale. The stroke time falls
     as the conductance rises; a test checks this for a light, a heavy and a vertical load.

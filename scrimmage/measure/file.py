@@ -108,6 +108,8 @@ def load(path) -> MeasureFile:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise MeasureError(f"{path}: no such file") from None
+    except UnicodeDecodeError:
+        raise MeasureError(f"{path} isn't a text file: a measurement file is TOML text (UTF-8)") from None
     except tomllib.TOMLDecodeError as e:
         raise MeasureError(f"{path} isn't valid TOML: {e}") from None
 
