@@ -11,8 +11,8 @@ from scrimmage.measure.file import MeasureError
 from scrimmage.measure.fit_launcher import SQUEEZE_SENTENCE, exit_speed, fit
 
 INCH = 0.0254
-MARKS_IN = 12.0
-FPS = 240.0
+MARKS_IN = 24.0  # marks two feet apart filmed at 960 fps: each shot spans 60 to 80 frames, so a speed read to 2%
+FPS = 960.0
 
 # A one-wheel hooded launcher shooting the 2026 FUEL ball (examples/launcher/hooded.toml, with the hood gap made for
 # a 5.9 in. ball: a 1.6 in. squeeze, 27% of it). Its numbers are the presets': stiffness_n 80, wheel friction 0.95.
@@ -203,7 +203,7 @@ def test_shots_slower_than_any_stiffness_gives_are_at_the_edge_and_not_good(tmp_
     result = fit(_measure(tmp_path, [(50.0, _frames(1.5)), (80.0, _frames(2.0))]))
     assert result.stiffness_n == pytest.approx(20.0)  # a quarter of the preset's 80 N
     assert not result.good
-    assert any("the ball's stiffness_n, 20 N, is at the edge of what it tries: check your shots" in w
+    assert any("the ball's stiffness, 20 N, is at the edge of what it tries: check your shots" in w
                for w in result.warnings)
 
 
@@ -212,7 +212,53 @@ def test_shots_faster_than_any_stiffness_gives_are_not_good(tmp_path):
     # its limit, and the miss itself makes it not good.
     result = fit(_measure(tmp_path, FAST))
     assert not result.good
-    assert any("miss your shots by 4" in w for w in result.warnings)
+    assert result.rms_error > 0.3
+    assert any("miss your shots by" in w for w in result.warnings)
+    assert ("the model's ball can't go this fast at these wheel speeds: check the wheel speed you wrote and the mark "
+            "spacing") in result.warnings
+
+
+def test_shots_that_hardly_depend_on_the_stiffness_are_not_good(tmp_path):
+    # At 50 rps the wheel's speed, not the ball, sets the exit speed: a wide range of stiffness fits the shots.
+    result = fit(_synthetic(tmp_path, 120.0, 0.95, [50.0, 50.0, 50.0]))
+    assert result.fitted == ("stiffness_n",)
+    assert not result.good
+    assert result.band[0] < 0.85 * result.stiffness_n or result.band[1] > 1.15 * result.stiffness_n
+    assert any("your shots hardly depend on the ball's stiffness at these wheel speeds" in w for w in result.warnings)
+    assert "hardly depend" in result.why
+
+
+def test_shots_that_hardly_depend_on_the_friction_are_not_good(tmp_path):
+    _ball_file(tmp_path, [120.0, 120.0, 120.0])
+    result = fit(_synthetic(tmp_path, 120.0, 1.1, [50.0, 50.0, 50.0], header=WITH_BALL))
+    assert result.fitted == ("friction",)
+    assert not result.good
+    assert any("your shots hardly depend on the wheel friction at these wheel speeds" in w for w in result.warnings)
+
+
+def test_a_good_fit_has_a_narrow_band(tmp_path):
+    result = fit(_synthetic(tmp_path, 120.0, 0.95, [50.0, 80.0]))
+    low, high = result.band
+    assert 0.85 * result.stiffness_n <= low < result.stiffness_n < high <= 1.15 * result.stiffness_n
+    assert result.band_text == (f"stiffness {result.stiffness_n:.0f} N, anywhere from {low:.0f} to {high:.0f} N fits "
+                                "your shots")
+    assert result.good
+
+
+def test_a_setup_whose_wheels_name_a_sled_test_fits_stiffness_at_that_friction(tmp_path):
+    (tmp_path / "tread.measure.toml").write_text(
+        '[measure]\nkind = "friction"\nby = "J. Smith"\ndate = 2026-11-10\n\n'
+        '[sled_setup]\nsliding = "wheel tread: 35A"\non = "FUEL"\nsled_lb = 5.0\n'
+        + "".join("\n[[sled]]\npull_lb = 5.5\n" for _ in range(3)), encoding="utf-8")
+    mf = _synthetic(tmp_path, 120.0, 1.1, [50.0, 80.0])
+    (tmp_path / "shooter.toml").write_text(SETUP.replace('preset = "35A"\n',
+                                                         'preset = "35A"\nmeasured = "tread.measure.toml"\n'),
+                                           encoding="utf-8")
+    result = fit(mf)
+    assert result.fitted == ("stiffness_n",)
+    assert result.friction == pytest.approx(1.1)
+    assert result.stiffness_n == pytest.approx(120.0, rel=0.05)
+    assert result.good
 
 
 def test_six_shots_fit_within_10_seconds(tmp_path):

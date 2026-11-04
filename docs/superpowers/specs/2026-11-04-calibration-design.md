@@ -139,15 +139,26 @@ slow motion, and their mentors. The standing anti-goal applies: **no unnecessary
       test, or the shots' setup's own `[ball] measured` ball file): stiffness is fixed at it, and the wheel's
       `friction` is fit (0.2 to 2.0).
     - **Otherwise:** the ball's `stiffness_n` is fit (0.25× to 4× the setup's, on a log scale), with the wheel
-      friction at the setup's, and it says "Measure the ball's squeeze (the squeeze test) to fit wheel friction
-      too."
-  - **The shots' setup** is read without its own measurements applied (only its `[ball] measured` ball file, for
-    the squeeze): a setup may name the very file its shots are in.
+      friction at the setup's (its `[wheels] measured` friction file's, when that is a good sled test), and it says
+      "Measure the ball's squeeze (the squeeze test) to fit wheel friction too."
+  - **The shots' setup** is read without its own measurements applied, except those two files for the number that
+    isn't fit. A launcher file named there is passed over: a setup may name the very file its shots are in.
   - **Goal:** minimize the root-mean-square relative error of exit speed over the shots.
   - **Search:** a 9-point scan, then a golden-section search between the best point's neighbors.
   - **One wheel speed only:** still fit, with a warning: "shots at two or more wheel speeds check the fit".
-  - **A good fit:** RMS error under 5%, and the fitted number not within 5% of its search limit. Otherwise the fit
-    is reported but keeps the UNCALIBRATED label.
+  - **The band:** the fitted number's values whose RMS error is within the shots' resolution of the best one's. A
+    shot's resolution is max(1 frame / its frames, 2%), and the shots' combine as an RMS. Found from the scan's
+    points, then bisection. Reported with the value ("stiffness 118 N, anywhere from 96 to 140 N fits your shots").
+  - **A good fit:** RMS error under 5%, the fitted number not within 5% of its search limit, and its band within
+    ±15% of it. Otherwise the fit is reported but keeps the UNCALIBRATED label.
+    - **A band too wide:** "your shots hardly depend on the ball's stiffness at these wheel speeds: shoot at a higher
+      wheel speed (where the ball's grip, not the wheel's speed, sets the exit speed)" (or "the wheel friction").
+      Higher, not lower: in the model a slow wheel sets the exit speed itself (shots at 50 rps barely move with
+      either number); a fast one slips, and the grip sets it.
+    - **Shots faster than the model gives** (missed by 5% or more, every shot slower in the model): "the model's
+      ball can't go this fast at these wheel speeds: check the wheel speed you wrote and the mark spacing".
+  - **How to film:** one ball with the wheel already steady, and the wheel speed written as measured (a tachometer
+    or the robot's log), not the setpoint.
   - **A shot's exit speed:** the tape mark spacing × fps / frames counted.
 - **C9 Cylinder fit:**
   - **Parameter:** `conductance`, from 0.1× to 10× the default, by bisection.

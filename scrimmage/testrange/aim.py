@@ -24,15 +24,13 @@ import numpy as np
 from ..config import load_config
 from ..launcher.flight import Landing, fly
 from ..launcher.inputs import Setup
-from ..launcher.model import FedBall, Launcher
-from ..launcher.shaft import VelocityController
+from ..launcher.single import single_pass
 from ..parts.assemble import assemble
 from .shooter import parse_shooter
 
 AIM_KP = 0.5            # V per wheel rps of error: the velocity loop holding the shaft while a ball passes
 RPS_TOLERANCE = 0.01    # the wheel speed is solved to this (rps)
 HIT_TOLERANCE = 0.02    # m: the solved shot must cross the goal height this close to the goal center
-MAX_PASS_S = 1.0        # s: a ball still in the launcher after this long is not coming out
 ROW_FIELDS = ("distance", "wheel_rps", "hood_deg", "flight_s", "apex")
 UNREACHABLE = "unreachable"
 
@@ -108,18 +106,10 @@ def _setup(model: AimModel, hood_deg: float, distance: float) -> Setup:
 def _land(model: AimModel, hood_deg: float, rps: float, distance: float = 0.0) -> Landing | None:
     """One ball through the launcher with the shaft held at rps, then flown; None if it does not come out."""
     setup = _setup(model, hood_deg, distance)
-    launcher = Launcher(setup)
-    launcher.shaft.speed = 2.0 * math.pi * rps
-    ctrl = VelocityController(dataclasses.replace(setup.control, target_rps=rps, kP=AIM_KP), setup.shaft)
-    fed = FedBall(0.0, model.lane, setup.feed.entry_speed, setup.ball)
-    shot = launcher.insert(fed, 0.0)
-    dt = launcher.default_dt()
-    exits = [] if shot is None else [shot]
-    while not exits and launcher.in_contact() and launcher.time < MAX_PASS_S:
-        exits = launcher.step(dt, ctrl.voltage(launcher.shaft))
-    if not exits or exits[0].status != "launched":
+    shot = single_pass(setup, rps, model.lane, kP=AIM_KP)
+    if shot is None or shot.status != "launched":
         return None
-    return fly(exits[0], setup, setup.ball)
+    return fly(shot, setup, setup.ball)
 
 
 def _cross(model: AimModel, hood_deg: float, rps: float) -> float | None:
