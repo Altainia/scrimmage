@@ -210,7 +210,8 @@ if it is wrong.
 - **A clearance test on a robot with stock parts whose collide is off gets a note and a hint.** The run's notes and
   the Test tab's new hints (under **Good to know**, over Run) say "clearance counts only parts that collide: arm and
   elevator have collide off, so they aren't measured (set collide = true on them)". A hint, not a problem: Run stays
-  on. Why: those parts aren't measured, so a raised arm with collide off passes through the trench and the check
+  on. A push cylinder isn't named: it is drawn only and never collides, so collide = true wouldn't help. Why: those
+  parts aren't measured, so a raised arm with collide off passes through the trench and the check
   passes on the chassis's clearance, with nothing to say so; but a robot may leave an intake off on purpose and only
   want its frame's clearance, so it mustn't refuse the run. If wrong: a note on tests whose uncounted parts are
   nowhere near the element, and one more list (`hints`) in the Test tab's state.

@@ -164,6 +164,33 @@ def test_trench_no_uncounted_note_when_every_part_collides(tmp_path):
     assert hints(program, world) == []
 
 
+PUSH_CYLINDER = """
+[[part]]
+name = "cyl"
+stock = "cylinder"
+attach = "elevator.carriage"
+pos = [0.0, 0.0, -0.1]
+push = "arm.arm"
+push_pos = [0.2, 0.0, 0.0]
+ids = { valve = "PCM:0" }
+
+"""
+
+
+def test_trench_push_cylinder_isnt_named(tmp_path):
+    """A push cylinder is drawn only and never collides, so "set collide = true" would be wrong for it: a robot whose
+    only collide-off stock part is a push cylinder gets no note and no hint."""
+    cfg = (TRENCH / "trench-standin.toml").read_text(encoding="utf-8")
+    path = _trench_copy(tmp_path, cfg.replace("[range]", PUSH_CYLINDER + "[range]"))
+    program = load(path)
+    world = world_for(program)
+    cyl = next(i for i in world.parts.instances if i.name == "cyl")
+    assert cyl.stock_params["collide"] is False and cyl.stock_params["push"] == "arm.arm"
+    _, _, r = _run(path)
+    assert not any("clearance counts" in n for n in r.notes), r.notes
+    assert hints(program, world) == []
+
+
 def _push(name: str, text: str | None = None):
     path = PARTNER / f"{name}.test.toml"
     return _run(path, text)

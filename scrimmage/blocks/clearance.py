@@ -91,11 +91,14 @@ def named(program, elements) -> list[str]:
 
 
 def uncounted(world) -> list[str]:
-    """The robot's stock parts with collide off, sorted: their geoms touch nothing, so clearance doesn't count them."""
+    """The robot's stock parts with collide off, sorted: their geoms touch nothing, so clearance doesn't count them. A
+    push cylinder (a cylinder with `push` set) is left out: it is drawn only and never collides, so collide = true
+    wouldn't help."""
     parts = world.parts
     if parts is None:
         return []
-    return sorted(i.name for i in parts.instances if i.stock_params.get("collide") is False)
+    return sorted(i.name for i in parts.instances if i.stock_params.get("collide") is False
+                  and not (i.source == "stock cylinder" and i.stock_params.get("push")))
 
 
 def _and(names: list[str]) -> str:
