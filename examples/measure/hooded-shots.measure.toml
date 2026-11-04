@@ -1,0 +1,45 @@
+# Shots from the hooded Power Cell launcher of examples/launcher/hooded.toml, filmed in slow motion: they fit the
+# ball's stiffness to the launcher model.
+#
+#   scrimmage measure examples/measure/hooded-shots.measure.toml
+#
+# No ball file is named here, so the shots fit the ball's stiffness with the wheel friction at the setup's (0.95,
+# an estimate). See README.md here for what the fit says and why.
+
+[measure]
+kind = "launcher"
+about = "the hooded Power Cell launcher, shooting one ball at a time"
+by = "J. Smith"
+date = 2026-11-12
+tools = "phone at 240 fps, a board with two tape marks 24 in apart, the robot's log for the wheel speed"
+
+[shot_setup]
+setup = "../launcher/hooded.toml" # the launcher setup the shots were taken on, relative to this file
+marks_in = 24                     # two vertical tape marks 24 in apart, on a board just behind the ball's path
+fps = 240                         # the phone's slow-motion frame rate
+
+# Each shot: one ball fed with the wheel already steady, the wheel speed read from the robot's log (not the
+# setpoint), and the frames counted while the ball crosses from one mark to the next.
+[[shot]]
+wheel_rps = 69.5
+frames = 25
+
+[[shot]]
+wheel_rps = 70.2
+frames = 25
+
+[[shot]]
+wheel_rps = 70.0
+frames = 24
+
+[[shot]]
+wheel_rps = 80.3
+frames = 25
+
+[[shot]]
+wheel_rps = 79.6
+frames = 24
+
+[[shot]]
+wheel_rps = 80.1
+frames = 25

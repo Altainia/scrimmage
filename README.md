@@ -818,15 +818,33 @@ scrimmage launcher sweep examples/launcher/flywheel_squish.toml    # every combi
 ```
 
 Results are labeled UNCALIBRATED: the ball and wheel numbers are estimates until you measure your own ball (a
-bathroom-scale squeeze and a drop test). The `exit_slip_pct` column says whether more RPM still buys exit speed or
-the shot is grip-limited. Inputs, presets and their sources, what is accurate and what isn't, and a worked example
-are in [docs/launcher.md](docs/launcher.md).
+bathroom-scale squeeze and a drop test; see [Measuring your own numbers](#measuring-your-own-numbers)). The
+`exit_slip_pct` column says whether more RPM still buys exit speed or the shot is grip-limited. Inputs, presets and
+their sources, what is accurate and what isn't, and a worked example are in [docs/launcher.md](docs/launcher.md).
 
 `scrimmage disc` does the same for a disc (Frisbee) launcher, 2013 style: wheels and a fence on the disc's rim, then
 the disc's flight as a wing (lift, drag, precession) to a slot goal on the wall. `disc run`, `sweep` and `table` take
 a setup like `examples/disc/linear.toml`; the inertia, rim stiffness and tread friction are estimates until measured.
 On the 2013 test range, `scrimmage run scenarios/disc_auto_line.toml` shoots a robot's 4 preloaded discs from the
 auto line into the HIGH goal. See [docs/disc.md](docs/disc.md).
+
+## Measuring your own numbers
+
+Six tests with things every team has (a kitchen scale, a bathroom scale, a spring scale, a phone that films slow
+motion) measure the numbers Scrimmage estimates: a ball's size, squeeze and bounce, a sliding friction, and, fit to
+the model, a launcher's shots and a cylinder's stroke. Write the trials in a `<name>.measure.toml` file (or type them
+into the Measure tab of `scrimmage edit`), and name the file in a launcher setup, a range, a test or a robot config:
+the result's label then says which numbers are measured, and reads "Calibrated from measurements" once all that
+matter are.
+
+```bash
+scrimmage measure form squeeze -o squeeze-form.html          # a printable blank form for one test
+scrimmage measure new squeeze fuel.measure.toml              # a starter measurement file
+scrimmage measure examples/measure/fuel.measure.toml         # the trials, averages, spread, warnings and any fit
+```
+
+Each test's picture, steps and form, the averaging and the fits are in [docs/measuring.md](docs/measuring.md);
+`examples/measure` has a worked example of each kind.
 
 ## Component bench (try a mechanism idea)
 
@@ -983,6 +1001,7 @@ scrimmage/        bridge (asyncio WebSocket server + real-time loop), world, bin
                    sessions, scenario runner, MCP server, CLI
 scrimmage/freecad_tools.py  FreeCAD add-on install/zip and headless export (scrimmage freecad)
 scrimmage/launcher/  hooded ball launcher model, presets, sweeps and reports (scrimmage launcher)
+scrimmage/measure/  measurement files, averaging, the launcher and cylinder fits, forms (scrimmage measure)
 scrimmage/bench/  the component bench: bench files, contact laws, runs, pictures, compare and gallery
 scrimmage/blocks/ the Test tab's blocks: test files, what a robot offers, running, kept runs, sweeps (scrimmage test)
 scrimmage/cad/    CAD to part: reading STEP/STL, bodies, mass, import files, building part folders (Part tab)
@@ -1001,6 +1020,7 @@ docs/drive.md      the Drive tab: driving live, keyboard and gamepad maps, recor
 docs/freecad.md    FreeCAD exporter: install, preparing an Assembly, the panel, troubleshooting
 docs/fast-mode.md  fast mode for CTRE robots: setup, settings mapping, fidelity limits
 docs/launcher.md   the launcher model (scrimmage launcher): inputs, presets, accuracy, examples
+docs/measuring.md  measuring your own numbers (scrimmage measure): the six tests, forms, averaging, fits, labels
 docs/disc.md       the disc launcher and disc flight (scrimmage disc): models, limits, what to measure, examples
 docs/bench.md      the component bench (scrimmage bench): the flow, the file format, results, accuracy
 docs/test-range.md the test range: goals, balls, shooters, range files, aiming tables
@@ -1013,7 +1033,8 @@ configs/           robot configs built from parts (kitbot, swerve, elevator_arm,
 scenarios/         scenario files (steps, checks, screenshots)
 examples/          blocks/ (Test tab examples: an intake, a station, a reef grabber, a ladder climber, a turret
                    shooter, a pneumatic arm); RobotPy kitbot robot program; Java swerve (Phoenix 6) project; Java fast-mode
-                   (AdvantageKit) project; Java build.gradle notes; launcher/ and disc/ setups; climb/ scripts
+                   (AdvantageKit) project; Java build.gradle notes; launcher/ and disc/ setups; measure/ measurement
+                   files; climb/ scripts
 shims/             CANMotor/CANEncoder shims for vendor controllers (Python tested, Java template)
 tools/plot_run.py  plots a --log CSV
 tests/             unit + end-to-end tests; tests/models/kitbot.xml is the hand-written-model fixture

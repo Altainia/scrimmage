@@ -1,0 +1,34 @@
+# How well a 40A wheel tread grips FUEL: a sled pull.
+#
+#   scrimmage measure examples/measure/tread-on-fuel.measure.toml
+#
+# A strip of the shooter wheels' tread is glued to the bottom of a small board (the sled), with weights on top. It is
+# pulled with a luggage scale across FUEL foam: three FUEL balls cut in half, glued flat side down to a board.
+
+[measure]
+kind = "friction"
+about = "40A wheel tread on FUEL"
+by = "J. Smith"
+date = 2026-11-11
+tools = "luggage scale, kitchen scale, a sled with weights"
+
+[sled_setup]
+sled_g = 2270                     # the sled and its weights, on a kitchen scale (5.0 lb)
+sliding = "wheel tread: 40A"      # the material on the sled's bottom
+on = "FUEL"                       # what it slides on
+
+# Each pull read while the sled slides steadily, not the first jerk that starts it moving.
+[[sled]]
+pull_lb = 4.4
+
+[[sled]]
+pull_lb = 4.6
+
+[[sled]]
+pull_lb = 4.3
+
+[[sled]]
+pull_lb = 4.5
+
+[[sled]]
+pull_lb = 4.7

@@ -1,0 +1,53 @@
+# A hooded launcher for the 2026 FUEL ball, with the ball and the wheel tread measured: the report reads
+# "Calibrated from measurements".
+#
+#   scrimmage launcher run examples/measure/fuel-shooter.toml
+#
+# It is examples/launcher/hooded.toml with a FUEL ball, 40A tread and a hood gap made for a 5.9 in. ball. The ball's
+# size, mass, stiffness and bounce come from fuel.measure.toml, and the tread's friction from tread-on-fuel.measure.toml
+# (both relative to this file). See docs/launcher.md for what each input means, and docs/measuring.md for the tests.
+
+[ball]
+preset = "2026-fuel"             # the numbers fuel.measure.toml doesn't measure (the inertia factor) come from it
+measured = "fuel.measure.toml"   # its size, squeeze and drop trials give diameter, mass, stiffness_n and restitution
+
+[wheels]
+preset = "40A"                   # Shore 40A tread
+measured = "tread-on-fuel.measure.toml"   # its sled pulls give the friction
+diameter = 0.1016                # 4 in. wheels
+roller = true                    # a stack of wheels side by side, acting as one 5 in. wide roller
+width = 0.127
+[shaft]
+wheel_inertia = 0.0006           # the wheels, hubs and shaft (kg m^2): about 0.5 kg of wheels at a 2 in. radius
+added_inertia = 0.002            # a flywheel on the same shaft (kg m^2)
+motor = "KrakenX60"
+motor_count = 1
+gearing = 1.0                    # direct drive: one motor turn per wheel turn
+
+[control]
+target_rps = 66.7                # 4000 rpm at the wheel
+kP = 0.2                         # volts per rps of error; kV comes from the motor when left out, kS is 0
+stator_limit = 80.0              # amps, per motor (as set on each Talon)
+supply_limit = 60.0              # amps, per motor
+
+[hood]
+gap = 0.11                       # 4.3 in.: the 5.9 in. ball is squeezed by 1.6 in., 27% of its diameter
+entry_deg = 240.0                # where the ball enters, measured round the shaft (the default)
+exit_angle_deg = 50.0            # the ball leaves 50 degrees above horizontal; the wrap is 240 - 140 = 100 degrees
+friction = 0.5                   # polycarbonate on foam: an estimate
+
+[launcher]
+height = 0.6                     # shaft height above the floor
+width = 0.2                      # inside width, between the side plates: each feed lane +- D/2 must fit
+
+[goal]
+# The same stand-in goal as hooded.toml: a level ring the ball must drop through.
+distance = 4.0                   # straight ahead of the launcher
+height = 2.5                     # about 98 in. up
+diameter = 0.76                  # 30 in. across
+
+[feed]
+count = 5
+rate = 5.0                       # balls per second offered by the hopper
+rule = "wait_for_speed"          # feed only when the wheel is back within tolerance of its target
+tolerance = 0.05

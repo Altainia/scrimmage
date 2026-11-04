@@ -148,7 +148,7 @@ slow motion, and their mentors. The standing anti-goal applies: **no unnecessary
   - **One wheel speed only:** still fit, with a warning: "shots at two or more wheel speeds check the fit".
   - **The band:** the fitted number's values whose RMS error is within the shots' resolution of the best one's. A
     shot's resolution is max(1 frame / its frames, 2%), and the shots' combine as an RMS. Found from the scan's
-    points, then bisection. Reported with the value ("stiffness 118 N, anywhere from 96 to 140 N fits your shots").
+    points, then bisection. Reported with the value ("stiffness 118 N, anywhere from 113 to 127 N fits your shots").
   - **A good fit:** RMS error under 5%, the fitted number not within 5% of its search limit, and its band within
     ±15% of it. Otherwise the fit is reported but keeps the UNCALIBRATED label.
     - **A band too wide:** "your shots hardly depend on the ball's stiffness at these wheel speeds: shoot at a higher
@@ -211,4 +211,98 @@ slow motion, and their mentors. The standing anti-goal applies: **no unnecessary
 
 ## Decisions made during the build
 
-(Filled in during the build.)
+Each ruling from the build, in the order made, grouped by area: what was decided, why, and what it costs if it's
+wrong.
+
+**Pictures and forms**
+- **The SVGs live once in `scrimmage/measure/img/`** (package data, for the forms and the Measure tab), and
+  `docs/img/measure/` holds copies a test keeps identical. Why: the docs need repo-relative images, the forms and the
+  web tab need packaged ones. Cost if wrong: a duplicated file set, guarded by the test.
+- **Public constants in `tests_direct` and the fits** (their readings, setup keys and limits), so the forms build
+  their columns from them. Why: a form can't drift from what the file takes. Cost if wrong: nothing.
+- **The shot form has no average boxes**, and one `@page` margin rule serves Letter and A4. Why: shots at different
+  wheel speeds aren't averaged, they are fit. Cost if wrong: nothing.
+- **The blank form page `/forms/<test>.html` needs no session token.** Why: it is static and holds no file data.
+  Cost if wrong: nothing.
+
+**Measurement files and units**
+- **Provenance carries `why`**, the reason a measurement isn't good ("2 trials: take at least 3", "trials disagree by
+  22%", a fit's reason). Why: the labels name it. Cost if wrong: one field.
+- **`units.reading` takes an optional reading name, `where=` and `required=`**, and uses exact unit constants rather
+  than C4's rounded ones. Why: a drop row has two lengths, and errors name their place. Cost if wrong: nothing.
+- **The squeeze tares the scale with the bottom board and the ball on it** (or records `tare`), replacing "minus the
+  top board's weight" (C5 fixed). Why: the top board's weight presses on the ball and is part of the squeeze; the
+  old rule was about 11% wrong. Cost if wrong: nothing.
+- **A tare and a sled's weight take mass units too** (g, oz, read on a kitchen scale, converted with standard
+  gravity). Why: friendlier than the global constraint's force-only rule. Cost if wrong: nothing.
+- **Plain settings keep their unit in their name** (`working_psi`, `fps`, `wheel_rps`, `hood_deg`); the unit-suffix
+  rule is for readings. Why: they are numbers set once, not readings off a scale or a ruler. Cost if wrong: nothing.
+- **`by` and `date` are optional** (left out when blank); the labels read naturally without them, and `scrimmage
+  measure` warns. Why: a blank header must never block the Measure tab's autosave. Cost if wrong: some files'
+  provenance without who or when.
+
+**Averaging**
+- **A measurement that isn't good is used in a run, but its result stays UNCALIBRATED and says why.** The stats
+  wording became "a run uses it, but its result stays UNCALIBRATED until then". Why: Task 4 built it that way, and a
+  student sees their number in use with the reason it isn't trusted yet. Cost if wrong: nothing.
+- **A size trial that looks off is named by its own number** when some trials give only a mass (the CLI and the
+  tab). Why: "trial 6" must mean the sixth row on the form. Cost if wrong: nothing.
+
+**The launcher fit**
+- **One number at a time.** With the ball's squeeze measured (`[shot_setup] ball`, or the setup's own measured
+  ball), the stiffness is held and the wheel friction is fit; otherwise the stiffness alone is fit at the setup's
+  friction, saying "Measure the ball's squeeze (the squeeze test) to fit wheel friction too." (C8 updated). Why: shots
+  can't tell a stiffer ball from a grippier wheel (a two-number fit could be 8 to 11% off yet "good"); this is
+  honest about it, and fast. Cost if wrong: no fit of both at once.
+- **The shots' setup is loaded without its own measurements applied.** Why: no loop between a fit and the setup that
+  names it. Cost if wrong: nothing.
+- **A fit reports its band**, the values whose RMS error stays within the shots' frame-count resolution (max(1 frame
+  / frames, 2%)), and is good only with the band within ±15% (and RMS under 5%, not at an edge); otherwise "your
+  shots hardly depend on ...". Why: wheel-limited shots can't tell the number. Cost if wrong: more not-good fits.
+  - **The advice is "shoot at a HIGHER wheel speed** (where the ball's grip, not the wheel's speed, sets the exit
+    speed)", correcting the first ruling's "lower". Why: in the model a slow wheel sets the exit speed itself.
+    Cost if wrong: nothing.
+- **A good friction file in the shots' setup `[wheels] measured` is used**; only launcher files there are passed
+  over. Why: only those make the loop. Cost if wrong: nothing.
+- **One shared `single_pass(setup, rps, lane, kP=None)`** in scrimmage/launcher serves the fit and `launcher aim`
+  (aim's output byte-identical). Why: one model, not two copies. Cost if wrong: nothing.
+- **The fit compares horizontal speed**: the model's exit speed × cos(its launch angle) against vertical tape marks a
+  horizontal distance apart, on a board just behind the path near the exit, the phone square-on 10 or more times as
+  far back, the marks spaced for 20 or more frames (C8 updated). Why: a level shot is impossible with a fixed hood
+  angle, and comparing the full exit speed was about 29% low at 45°. Cost if wrong: a small gravity and drag error
+  over the marks (start them near the exit).
+
+**The cylinder fit**
+- **A band too wide names its cause** by d ln(time) / d ln(conductance): under 0.5, "the load sets it: time a
+  lighter stroke", else "too quick to time this closely: film it and count frames". Why: the two causes need
+  different fixes. Cost if wrong: nothing.
+- **`[stroke_setup]` takes an optional `rod_mass`** (the stock 0.1 kg by default); C9 updated with the band and
+  causes. Why: a heavier rod is part of what the air moves. Cost if wrong: nothing.
+
+**Using measurements**
+- **The bench's `[piece]` doesn't take a measurement in this project**, and its line keeps the estimate wording with
+  no provenance. Why: its table differs from `[ball]`, and goal 4 didn't list the bench. Cost if wrong: bench
+  results stay "estimates" after a ball is measured (a can-wait).
+- **`[surface.*]` presets can't be files; `[piece.*] friction` takes one.** Why: only presets.toml has that table.
+  Cost if wrong: nothing.
+- **A number and a measurement for the same key is an error; a launcher file named in the section whose number it
+  didn't fit is an error saying where to name it; a range ball takes a ball file with a `base`.** Why: no silent
+  mixes. Cost if wrong: nothing.
+- **The sweepable-fields test skips `provenance`.** Why: it is a field-list test, not output. Cost if wrong:
+  nothing.
+- **Sweeping `ball.preset` with a measured file re-checks the swept preset against the file's base.** Why: the same
+  rule as a single setup. Cost if wrong: an error where a silent mix used to pass.
+
+**Labels**
+- **The disc report's wording changes only if what matters can be named without new disc provenance.** Why: disc
+  fits are out of scope. Cost if wrong: nothing.
+- **The air budget's label names what it rests on** (the compressor's flow, the pressure switch's points, the tank
+  and dead volumes) and never reads "Calibrated" from a valve measurement. Why: the budget doesn't use the
+  conductance. Cost if wrong: nothing.
+- **The implementer's other label calls stand**: the pneumatic note starts "UNCALIBRATED:", grip notes are per pad,
+  the disc names its inputs without provenance, `aim` carries provenance, the bench picture's text shrinks to fit.
+  Why: each reads plainly and keeps existing output. Cost if wrong: nothing.
+
+**The Measure tab**
+- **It saves each change on its own** (after a short pause), like every other tab: no Save button and no
+  unsaved-edits prompt. Why: C13 said "like the other tabs", and none prompt. Cost if wrong: nothing.

@@ -1,0 +1,74 @@
+# A 2026 FUEL ball from the practice bin: its size and mass, its squeeze and its bounce.
+#
+#   scrimmage measure examples/measure/fuel.measure.toml
+#
+# See docs/measuring.md for how each test is done, and README.md here for what this file shows.
+
+[measure]
+kind = "ball"
+about = "a FUEL ball from the practice bin"
+by = "J. Smith"
+date = 2026-11-10
+tools = "kitchen scale, soft tape measure, bathroom scale, two plywood boards, ruler, phone at 240 fps"
+base = "2026-fuel"                # the ball preset this ball is: the numbers not measured here come from it
+
+# Size and mass: weighed on a kitchen scale, then a tape around the widest part. The ball is turned between trials.
+[[size]]
+mass_g = 215
+circumference_in = 18.6
+
+[[size]]
+mass_g = 217
+circumference_in = 18.5
+
+[[size]]
+mass_g = 216
+circumference_in = 18.7
+
+[[size]]
+mass_g = 214
+circumference_in = 18.5
+
+[[size]]
+mass_g = 216
+circumference_in = 18.6
+
+# Squeeze: the bottom board and the ball on the bathroom scale, the scale zeroed, then the top board pressed down to
+# a gap of 4.4 in (75% of the ball's 5.9 in). The reading is the force: no tare, since the scale was zeroed.
+[[squeeze]]
+force_lb = 27.4
+
+[[squeeze]]
+force_lb = 28.6
+
+[[squeeze]]
+force_lb = 26.8
+
+[[squeeze]]
+force_lb = 28.0
+
+[[squeeze]]
+force_lb = 27.6
+
+# Drop: from 18 in (to the bottom of the ball) onto the shop's concrete floor, filmed against a ruler.
+[drop_setup]
+drop_in = 18
+floor = "concrete"
+
+[[drop]]
+bounce_in = 6.5
+
+[[drop]]
+bounce_in = 6.75
+
+[[drop]]
+bounce_in = 6.25
+
+[[drop]]
+bounce_in = 6.5
+
+[[drop]]
+bounce_in = 6.75
+
+[[drop]]
+bounce_in = 5.5                   # low: scrimmage measure flags it ("trial 6 looks off"); see README.md

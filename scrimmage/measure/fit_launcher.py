@@ -101,7 +101,7 @@ class LauncherFit:
     fitted: tuple[str, ...]  # ("friction",) with the squeeze measured, else ("stiffness_n",)
     warnings: list[str]  # plain sentences
     band: tuple[float, float]  # (low, high): the fitted number's values that fit the shots as well as they can tell
-    band_text: str  # "stiffness 118 N, anywhere from 96 to 140 N fits your shots"
+    band_text: str  # "stiffness 118 N, anywhere from 113 to 127 N fits your shots"
     good: bool  # RMS under 5%, the fitted number not at the edge of its range, its band within 15% of it
     why: str  # empty when good, else why not, in a few words
 
@@ -352,7 +352,11 @@ def fit(mf: MeasureFile) -> LauncherFit:
         path = mf.path.parent / ball_name
         if not path.is_file():
             raise MeasureError(f"{where}: no such file (looked in {path.resolve()})")
-        squeezed, _ = _squeeze(load(path), where, required=True)
+        try:
+            ball = load(path)
+        except MeasureError as e:
+            raise MeasureError(f"{where}: {e}") from None
+        squeezed, _ = _squeeze(ball, where, required=True)
     elif "ball" in measured:
         found, where = _setup_file(setup_path, "ball", measured["ball"])
         if found is not None and found.kind == "ball":

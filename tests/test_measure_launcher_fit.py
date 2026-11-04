@@ -76,6 +76,15 @@ def test_a_ball_file_must_have_a_good_squeeze(tmp_path):
         fit(mf)
 
 
+def test_a_ball_file_that_can_t_be_read_is_named_with_the_shot_setup_that_names_it(tmp_path):
+    _setup(tmp_path)
+    mf = _measure(tmp_path, [(60.0, 10.0)], header=WITH_BALL)
+    (tmp_path / "fuel.measure.toml").write_text("[measure]\nkind = \"ball\"\nwho = \"J. Smith\"\n", encoding="utf-8")
+    with pytest.raises(MeasureError, match=r"\[shot_setup\] ball = \"fuel.measure.toml\": .*fuel.measure.toml: "
+                                           r"unknown key 'who' in \[measure\]"):
+        fit(mf)
+
+
 def test_a_shot_s_exit_speed_is_the_mark_spacing_times_fps_over_the_frames(tmp_path):
     mf = _measure(tmp_path, [(60.0, 10.0)])
     assert fit(mf).per_shot[0][0] == pytest.approx(MARKS_IN * INCH * FPS / 10.0)
