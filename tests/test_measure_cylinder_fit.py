@@ -47,8 +47,14 @@ def _raw(tmp_path, text):
     return file.load(p)
 
 
-def test_stroke_time_falls_as_conductance_rises():
-    times = [stroke_time(_stroke(), DEFAULT_CONDUCTANCE * r) for r in (0.1, 0.3, 1.0, 2.0, 3.0, 10.0)]
+def _band_warnings(f):
+    return [w for w in f.warnings if "hardly depends" in w or "too quick" in w]
+
+
+@pytest.mark.parametrize("load_lb, vertical", [(2.0, False), (40 / LB, False), (5 / LB, True)])
+def test_stroke_time_falls_as_conductance_rises(load_lb, vertical):
+    s = _stroke(load_lb, vertical)
+    times = [stroke_time(s, DEFAULT_CONDUCTANCE * r) for r in (0.1, 0.3, 1.0, 2.0, 3.0, 10.0)]
     assert all(a > b for a, b in zip(times, times[1:]))
 
 
@@ -80,6 +86,28 @@ def test_a_quick_stroke_timed_in_seconds_is_not_timed_closely_enough(tmp_path):
     assert fit(_file(tmp_path, [slower] * 3)).good
 
 
+def test_a_loaded_stroke_by_stopwatch_needs_filming_and_filmed_it_is_good(tmp_path):
+    # the time depends on the valve less than a free rod's, but a frame count could still pin it down
+    setup = SETUP.replace("load_mass_lb = 2", "load_mass_kg = 5")
+    timed = fit(_file(tmp_path, [0.1136] * 3, setup=setup))
+    assert not timed.good
+    assert timed.why == "the strokes aren't timed closely enough"
+    assert any("film it and count frames" in w for w in timed.warnings)
+    filmed = fit(_raw(tmp_path, setup + "fps = 240\n" + "\n[[stroke]]\nframes = 27.26\n" * 3))
+    assert filmed.good, filmed.warnings
+
+
+def test_the_rod_mass_can_be_given(tmp_path):
+    t = 0.1
+    stock = fit(_file(tmp_path, [t] * 3))
+    same = fit(_file(tmp_path, [t] * 3, setup=SETUP + "rod_mass_kg = 0.1\n"))
+    heavier = fit(_file(tmp_path, [t] * 3, setup=SETUP + "rod_mass_g = 900\n"))
+    assert same.conductance == pytest.approx(stock.conductance)
+    assert heavier.conductance > stock.conductance  # a heavier rod takes a freer valve for the same time
+    with pytest.raises(MeasureError, match=r"\[stroke_setup\]: rod_mass must be above 0"):
+        fit(_file(tmp_path, [t] * 3, setup=SETUP + "rod_mass_kg = 0\n"))
+
+
 def test_a_stroke_faster_than_the_model_can_go_is_at_the_edge(tmp_path):
     fastest = stroke_time(_stroke(), 10 * DEFAULT_CONDUCTANCE)
     f = fit(_file(tmp_path, [0.5 * fastest] * 3))
@@ -87,6 +115,7 @@ def test_a_stroke_faster_than_the_model_can_go_is_at_the_edge(tmp_path):
     assert f.conductance == pytest.approx(10 * DEFAULT_CONDUCTANCE)
     assert any("at the edge" in w for w in f.warnings)
     assert any("can't stroke this fast" in w for w in f.warnings)
+    assert _band_warnings(f) == []  # the edge is the problem; its band says nothing more
     assert "edge" in f.why
 
 
@@ -97,6 +126,7 @@ def test_a_stroke_slower_than_the_slowest_valve_is_at_the_edge(tmp_path):
     assert f.conductance == pytest.approx(0.1 * DEFAULT_CONDUCTANCE)
     assert any("at the edge" in w for w in f.warnings)
     assert any("even with the slowest valve it tries" in w for w in f.warnings)
+    assert _band_warnings(f) == []
 
 
 def test_a_vertical_stroke_with_a_load_is_slower(tmp_path):
@@ -164,6 +194,8 @@ def test_the_time_resolution_widens_the_band(tmp_path):
      ["rod must be thinner than the bore"]),
     (SETUP.replace("load_mass_lb = 2", "load_mass_kg = 200") + "vertical = true\n\n[[stroke]]\ntime_s = 0.1\n",
      ["[stroke_setup]", "can't lift its load at 60 psi"]),
+    (SETUP + "friction_n = 1000\n\n[[stroke]]\ntime_s = 0.1\n",
+     ["[stroke_setup]", "can't push past its seals' friction at 60 psi"]),
 ])
 def test_errors_name_the_file_table_and_trial(tmp_path, text, words):
     with pytest.raises(MeasureError) as e:

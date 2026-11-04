@@ -6,6 +6,7 @@ strokes.
     rod_in = 0.3125
     stroke_in = 6
     load_mass_lb = 2              # optional: what the rod moves, besides itself (0 if left out)
+    rod_mass_g = 100              # optional: the rod's own mass (the stock cylinder's 0.1 kg if left out)
     vertical = false              # true if the rod extends straight up, lifting its load
     working_psi = 60              # the regulator's working pressure (60 if left out)
     friction_n = 8                # the seals' friction (8 N if left out)
@@ -21,10 +22,10 @@ times are averaged (at least 3 strokes, agreeing within 15%).
 
 The model: the simulator's own air system (scrimmage/pneumatics/model.py), its tanks full and the regulator at
 `working_psi`, with the valve switched from retract to extend at time zero and the rod starting at rest, fully in.
-The rod is one body, its own mass (ROD_MASS, the stock cylinder's) plus the load, pushed by the air's force, held
-back by the seals' friction (a steady force against the motion, and holding the rod still while the air's push is
-less than it), and, when vertical, by the weight of the rod and load. It is stepped at 1 ms, between end stops at
-0 and the stroke, until the rod reaches full stroke.
+The rod is one body, its own mass (`rod_mass`, else ROD_MASS, the stock cylinder's) plus the load, pushed by the
+air's force, held back by the seals' friction (a steady force against the motion, and holding the rod still while
+the air's push is less than it), and, when vertical, by the weight of the rod and load. It is stepped at 1 ms,
+between end stops at 0 and the stroke, until the rod reaches full stroke.
 
 The search: the stroke time falls as the conductance rises (more air in, and out, each second), so the fit is a
 bisection on a log scale over 0.1x to 10x DEFAULT_CONDUCTANCE. A measured time slower than the model's slowest, or
@@ -36,9 +37,12 @@ combine as a root mean square, and it is never less than 2% of the time.
 
 A fit is good when the strokes' average is good (at least 3, agreeing within 15%), the model's time is within 5% of
 it, the conductance is not within 5% of a search limit, and the band is within 15% of it either way. A wider band
-has one of two causes, and the warning names it. The stroke time may hardly depend on the valve (a 1% freer valve
-takes less than 0.5% off it): a heavy load, or a vertical one, sets the time instead, so time a lighter stroke. Or
-the stroke is too quick for its timing: 0.01 s is 14% of a 0.07 s stroke, so film it and count frames.
+has one of two causes, and the warning names it. The cause is found from how much of the time a 1% freer valve
+takes off it, in % (its dependence on the valve: about 1 for a free rod, whose time the air's flow sets, near 0
+under a heavy load). The best timing, read to 2%, gives a band of about 2% over that dependence. If that would be
+within 15%, the timing is the cause: the stroke is too quick to time this closely (0.01 s is 14% of a 0.07 s
+stroke), so film it and count frames. If not, no timing would do: the load sets the time, so time a lighter stroke.
+A fit at the edge of its range gets no band warning: the edge is the problem.
 """
 
 import math
@@ -60,15 +64,12 @@ GOOD_ERROR = 0.05  # a good fit's model time is within this fraction of the meas
 EDGE = 0.05  # a fitted conductance within this fraction of a search limit is at the edge
 BAND = 0.15  # a good fit's band is within this fraction of its value either way
 TIME_RESOLUTION = 0.01  # s: a stroke timed in seconds is read to no better than this
-RESOLUTION = 0.02  # a stroke time is read to no better than this fraction of it, however it was timed
-# The band's too wide: the time hardly depends on the valve when a 1% freer valve takes less than this many % off
-# it (a free rod's time falls about 1% for each 1%, the air's flow sets it); else the timing is too coarse.
-DEPENDENCE = 0.5
-STEP = 0.01  # the step (as a fraction of the log range) either side of the fit that measures that dependence
+RESOLUTION_FLOOR = 0.02  # a stroke time is read to no better than this fraction of it, however it was timed
+STEP = 0.01  # the step (a fraction of the log range) either side of the fit measuring how the time depends on it
 BISECTIONS = 40  # steps of each bisection on the log scale: (log 100) / 2^40 is far finer than needed
 
 _NAME = "cylinder"
-_SETUP_READINGS = ("bore", "rod", "stroke", "load_mass", "friction")  # each with its unit: bore_in
+_SETUP_READINGS = ("bore", "rod", "stroke", "load_mass", "rod_mass", "friction")  # each with its unit: bore_in
 _SETUP_ONLY = ("vertical", "working_psi")  # plain, once for all strokes
 _LENGTHS = ("bore", "rod", "stroke")
 
@@ -143,7 +144,8 @@ def _check_keys(mf: MeasureFile, setup: dict, rows: list[dict]) -> None:
         if key in (*_SETUP_ONLY, "fps") or any(unit_of(key, n) is not None for n in _SETUP_READINGS):
             continue
         raise MeasureError(f"{mf.path}: unknown key '{key}' in [stroke_setup]; it takes bore_<unit>, rod_<unit>, "
-                           "stroke_<unit>, load_mass_<unit>, vertical, working_psi, friction_<unit>, fps")
+                           "stroke_<unit>, load_mass_<unit>, rod_mass_<unit>, vertical, working_psi, "
+                           "friction_<unit>, fps")
     for i, row in enumerate(rows):
         for key in row:
             if key in _SETUP_ONLY or any(unit_of(key, n) is not None for n in _SETUP_READINGS):
@@ -169,6 +171,10 @@ def _stroke(mf: MeasureFile, table: dict) -> Stroke:
     load = reading(table, "mass", "load_mass", where=where, required=False) or 0.0
     if load < 0:
         raise MeasureError(f"{where}: load_mass can't be below 0")
+    rod_mass = reading(table, "mass", "rod_mass", where=where, required=False)
+    rod_mass = ROD_MASS if rod_mass is None else rod_mass
+    if rod_mass <= 0:
+        raise MeasureError(f"{where}: rod_mass must be above 0")
     friction = reading(table, "force", "friction", where=where, required=False)
     friction = FRICTION_N if friction is None else friction
     if friction < 0:
@@ -184,7 +190,7 @@ def _stroke(mf: MeasureFile, table: dict) -> Stroke:
         AirConfig(compressor="none", working_psi=psi)
     except ValueError as e:
         raise MeasureError(f"{where}: {e}") from None
-    return Stroke(bore=lengths["bore"], rod=lengths["rod"], stroke=lengths["stroke"], mass=ROD_MASS + load,
+    return Stroke(bore=lengths["bore"], rod=lengths["rod"], stroke=lengths["stroke"], mass=rod_mass + load,
                   vertical=vertical, working_psi=psi, friction_n=friction)
 
 
@@ -273,7 +279,7 @@ def fit(mf: MeasureFile) -> CylinderFit:
     best = _crossing(time_at, measured)
     conductance, model_time = value(best), time_at(best)
     error = (model_time - measured) / measured
-    resolution = max(math.sqrt(sum(r * r for r in resolutions) / len(resolutions)), RESOLUTION * measured)
+    resolution = max(math.sqrt(sum(r * r for r in resolutions) / len(resolutions)), RESOLUTION_FLOOR * measured)
     band = (value(_crossing(time_at, measured + resolution)), value(_crossing(time_at, measured - resolution)))
 
     def show(c: float) -> str:  # dm^3/(s bar), the unit valve makers print
@@ -285,7 +291,8 @@ def fit(mf: MeasureFile) -> CylinderFit:
     why = []
     if not average.good:
         why.append(summary_why(average))
-    if _at_edge(conductance, lo, hi):
+    at_edge = _at_edge(conductance, lo, hi)
+    if at_edge:
         warnings.append(f"the valve conductance, {show(conductance)} dm^3/(s bar), is at the edge of what it tries: "
                         f"check your strokes and the cylinder's size (it tries {show(lo)} to {show(hi)})")
         why.append("the fit is at the edge of what it tries")
@@ -297,10 +304,13 @@ def fit(mf: MeasureFile) -> CylinderFit:
             warnings.append(f"the model's cylinder strokes faster than this even with the slowest valve it tries: "
                             f"its slowest is {time_at(0.0):.3f} s, and your strokes average {measured:.3f} s: check "
                             "the load_mass and friction, and that the time stops when the rod reaches full stroke")
-    if band[0] < (1.0 - BAND) * conductance or band[1] > (1.0 + BAND) * conductance:
+    if not at_edge and (band[0] < (1.0 - BAND) * conductance or band[1] > (1.0 + BAND) * conductance):
+        # How much of the time a 1% freer valve takes off it, in %: about 1 for a free rod (the air's flow sets
+        # the time), near 0 under a heavy load. The best timing (the 2% floor) gives a band of about the floor over
+        # this either way; if even that is too wide, the load is the cause, else the timing is.
         a, b = max(best - STEP, 0.0), min(best + STEP, 1.0)
         dependence = math.log(time_at(a) / time_at(b)) / math.log(value(b) / value(a))
-        if dependence < DEPENDENCE:
+        if dependence <= 0.0 or RESOLUTION_FLOOR / dependence > BAND:
             warnings.append(f"{band_text}: your stroke time hardly depends on the valve: the load"
                             f"{' (lifted straight up)' if setup.vertical else ''} sets it: time a lighter stroke")
             why.append("the stroke time hardly depends on the valve")

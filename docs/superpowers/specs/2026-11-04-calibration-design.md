@@ -161,11 +161,30 @@ slow motion, and their mentors. The standing anti-goal applies: **no unnecessary
     or the robot's log), not the setpoint.
   - **A shot's exit speed:** the tape mark spacing × fps / frames counted.
 - **C9 Cylinder fit:**
-  - **Parameter:** `conductance`, from 0.1× to 10× the default, by bisection.
-  - **What's matched:** the measured extend time, from the valve opening to the rod at full stroke.
-  - **The model:** the pneumatic AirSystem plus a one-body rod model (rod mass plus the stated load mass, seal
-    friction, and gravity if the file says the stroke is vertical).
-  - **A good fit:** within 5%.
+  - **Parameter:** `conductance`, from 0.1× to 10× the default, by bisection on a log scale. The stroke time falls
+    as the conductance rises; a test checks this for a light, a heavy and a vertical load.
+  - **What's matched:** the measured extend time, from the valve opening to the rod at full stroke, averaged over
+    the strokes (`time_s`, or `frames` with `fps`).
+  - **The model:** the pneumatic AirSystem plus a one-body rod model, stepped at 1 ms between the end stops. The
+    rod's mass (`rod_mass`, else the stock 0.1 kg) plus the stated load mass, seal friction (a Coulomb force that
+    holds the rod until the air pushes past it), and gravity if the file says the stroke is vertical (the cylinder
+    lifts the load). A model that can't finish the stroke even at 10× is an error: "the model's cylinder can't lift
+    its load" (or "push past its seals' friction") "at 60 psi: check the bore, load_mass, friction and working_psi".
+  - **The band:** every conductance whose model time is within the timing's resolution of the measured time. A
+    stroke's resolution is 1 frame / fps when counted in frames, else 0.01 s; the strokes' combine as an RMS. It is
+    never less than 2% of the time. Reported with the value ("valve conductance 1.60, anywhere from 1.45 to 1.79
+    fits your strokes (dm^3/(s bar))").
+  - **A good fit:** the strokes' average good (at least 3, agreeing within 15%), the model's time within 5% of it,
+    the conductance not within 5% of a search limit, and its band within ±15% of it. Otherwise the fit is reported
+    but keeps the UNCALIBRATED label.
+    - **At a search limit:** "at the edge of what it tries: check your strokes and the cylinder's size", with "the
+      model's cylinder can't stroke this fast" (or "strokes faster than this even with the slowest valve it
+      tries"). There is no band warning: the edge is the problem.
+    - **A band too wide, two causes:** the dependence d = d ln(time) / d ln(conductance) at the fit decides which.
+      It is about 1 for a free rod, whose time the air's flow sets, and near 0 under a heavy load. If the best
+      timing could pass (2% / d ≤ 15%), the timing is the cause: "a 0.07 s stroke is too quick to time this
+      closely: film it and count frames at the phone's highest frame rate". Otherwise the load is: "your stroke
+      time hardly depends on the valve: the load (lifted straight up) sets it: time a lighter stroke".
 - **C10 Sled pull:** `friction = pull force / weight on the sled`, read at a steady slide (not the first jerk; the
   page says so). The file names the two materials ("wheel tread: 40A", "FUEL"), so a reader knows where it applies.
 
