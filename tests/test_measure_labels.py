@@ -37,6 +37,14 @@ def test_all_measured_and_good_is_calibrated():
     assert "UNCALIBRATED" not in got
 
 
+def test_a_measurement_without_who_or_when_names_its_file_and_trials():
+    anon = dataclasses.replace(FUEL, by="", date="")
+    got = line({"ball.stiffness_n": anon, "ball.restitution": anon, "wheels.friction": TREAD}, LAUNCHER)
+    assert got.startswith("Calibrated from measurements: ball stiffness and bounce (fuel.measure.toml, 5 trials); ")
+    dated = dataclasses.replace(FUEL, by="")
+    assert "(fuel.measure.toml, 2026-11-10, 5 trials)" in line({"ball.stiffness_n": dated}, LAUNCHER)
+
+
 def test_a_measurement_that_is_not_good_is_an_estimate_and_says_why():
     got = line({"ball.stiffness_n": SHORT, "ball.restitution": FUEL, "wheels.friction": TREAD}, LAUNCHER)
     assert got.startswith("UNCALIBRATED: still estimates: ball stiffness (fuel.measure.toml, not good enough: 2 "

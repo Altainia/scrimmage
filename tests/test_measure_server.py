@@ -426,33 +426,32 @@ def test_measure_something_makes_a_starter_file_and_opens_it(tmp_path, measure_a
     assert s == 400 and "ball, friction, launcher or cylinder" in b["error"], b
 
 
-def test_a_starter_saved_with_its_date_blank_is_refused_and_blank_lines_arent_added(tmp_path, measure_app):
+def test_trials_save_with_the_header_blank_and_blank_lines_arent_added(tmp_path, measure_app):
+    """A student types trials before who and when: a blank header never holds a save back."""
     p = tmp_path / "fuel.measure.toml"
-    p.write_text('[measure]\nkind = "ball"\nby = "J. Smith"\ndate = 2026-11-10\n', encoding="utf-8")
+    p.write_text('[measure]\nkind = "ball"\n', encoding="utf-8")
     c = measure_app(p)
     st = _state(c)
     f = st["file"]
-    f["measure"]["date"] = ""
-    s, b = c.call("POST", "/api/measure/save", {"file": f, "version": st["version"]})
-    assert s == 400 and "date must be a date like 2026-11-10" in b["error"], b
-    # about and tools left blank aren't added; a blank name is written (by is required), and the file still reads
-    f["measure"].update(date="2026-11-10", by="")
+    assert f["measure"] == {"about": "", "by": "", "date": "", "tools": "", "base": ""}
     f["tests"]["squeeze"]["trials"] = [_trial(_force(19.0))]
     s, b = c.call("POST", "/api/measure/save", {"file": f, "version": st["version"]})
     assert s == 200, b
-    head = tomllib.loads(p.read_text(encoding="utf-8"))["measure"]
-    assert "about" not in head and "tools" not in head and head["by"] == ""
-    assert load(p).trials["squeeze"] == [{"force_lb": 19.0}]
-    # the starter's own blank lines stay as they were
+    assert tomllib.loads(p.read_text(encoding="utf-8")) == {"measure": {"kind": "ball"},
+                                                             "squeeze": [{"force_lb": 19.0}]}
+    # a starter with its date cleared: saved, its own lines kept (blank), the trials written
     starter = tmp_path / "new.measure.toml"
     starter.write_text(forms.starter_toml("squeeze"), encoding="utf-8")
     c.post("/api/app/open", {"path": str(starter)})
     st = _state(c)
+    st["file"]["measure"]["date"] = ""
     st["file"]["tests"]["squeeze"]["trials"] = [_trial(_force(19.0))]
     s, b = c.call("POST", "/api/measure/save", {"file": st["file"], "version": st["version"]})
     assert s == 200, b
     head = tomllib.loads(starter.read_text(encoding="utf-8"))["measure"]
-    assert head["about"] == "" and head["tools"] == "" and head["by"] == ""
+    assert head["date"] == "" and head["about"] == "" and head["by"] == "" and head["tools"] == ""
+    mf = load(starter)
+    assert mf.date == "" and mf.trials["squeeze"] == [{"force_lb": 19.0}]
 
 
 def test_a_save_that_cant_be_written_says_so(tmp_path, measure_app, monkeypatch):

@@ -15,7 +15,8 @@
     force_lb = 9.8
 
 A kind has its own tests: a ball has size, squeeze and drop; a friction has sled; a launcher has shot; a cylinder
-has stroke. Each test may have a `[<test>_setup]` table. The file keeps the readings as written; the averages and
+has stroke. Each test may have a `[<test>_setup]` table. Only `kind` is required: who measured it and when are
+asked for (the labels name them), but a file without them still reads, so trials can be typed in first. The file keeps the readings as written; the averages and
 fits are worked out from them each time it is read (stats.py, tests_direct.py and the fits), so they never go stale.
 """
 
@@ -47,8 +48,8 @@ _HEADER = ("kind", "about", "by", "date", "tools", "base")
 class MeasureFile:
     kind: str
     about: str
-    by: str
-    date: str  # ISO, 2026-11-10
+    by: str  # "" when not given
+    date: str  # ISO, 2026-11-10; "" when not given
     tools: str
     base: str | None  # the ball's or wheel's preset that was measured
     trials: dict[str, list[dict]]  # test name -> one table of raw readings per trial, in file order
@@ -60,8 +61,8 @@ class MeasureFile:
 class Provenance:
     """Where a measured number came from, carried with it to the labels."""
     file: Path
-    by: str
-    date: str
+    by: str  # "" when not given
+    date: str  # "" when not given
     trials: int
     good: bool
     why: str = ""  # empty when good, else why not: "2 trials: take at least 3", "trials disagree by 22%"
@@ -88,9 +89,10 @@ def _text(path: Path, table: dict, key: str, *, required: bool) -> str:
 
 
 def _date(path: Path, table: dict) -> str:
-    if "date" not in table:
-        raise MeasureError(f"{path}: [measure] is missing required key 'date'")
-    v = table["date"]
+    """The date as ISO text; "" when it isn't given (left out, or left blank)."""
+    v = table.get("date", "")
+    if v == "":
+        return ""
     if isinstance(v, datetime.date) and not isinstance(v, datetime.datetime):
         return v.isoformat()
     if isinstance(v, str):
@@ -161,6 +163,6 @@ def parse(raw: dict, path) -> MeasureFile:
             raise MeasureError(f"{path}: unknown table '{key}'; a {kind} file has {_listing(valid)}")
 
     return MeasureFile(kind=kind, about=_text(path, head, "about", required=False),
-                       by=_text(path, head, "by", required=True), date=_date(path, head),
+                       by=_text(path, head, "by", required=False), date=_date(path, head),
                        tools=_text(path, head, "tools", required=False), base=base, trials=trials,
                        settings=settings, path=path)

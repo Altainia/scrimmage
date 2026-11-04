@@ -43,7 +43,7 @@ from .test_session import replace_text
 
 STALE = "the measurement file changed outside this page (another tab, or an outside edit)"
 HEADER = ("about", "by", "date", "tools", "base")
-OPTIONAL = ("about", "tools")   # [measure]'s optional text (base is left out when blank)
+OPTIONAL = ("about", "by", "date", "tools")   # [measure]'s text a blank box doesn't add (base: removed when blank)
 FITS = ("shot", "stroke")
 
 
@@ -321,7 +321,7 @@ def _new_table(values: dict):
 
 def apply(doc, raw: dict, origins: dict[str, list], kind: str) -> None:
     """Make the tomlkit document `doc` (the file as it is) hold `raw` (unwire's)."""
-    head = doc["measure"]   # an optional line left blank isn't added (by and date are required: always written)
+    head = doc["measure"]   # a line left blank isn't added; one the file has (a starter's) is kept, blank
     _sync(head, {"kind": head["kind"], **{k: v for k, v in raw["measure"].items()
                                           if k != "kind" and not (v == "" and k in OPTIONAL and k not in head)}}, ())
     for test in KIND_TESTS[kind]:

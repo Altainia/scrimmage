@@ -138,9 +138,15 @@ def _stroke(mf: MeasureFile) -> tuple[list[str], list[str]]:
 def report(mf: MeasureFile) -> tuple[str, bool]:
     """The printed report of a measurement file, and whether all of it is good enough to use."""
     about = f": {mf.about}" if mf.about else ""
+    who = " ".join(x for x in (f"by {mf.by}" if mf.by else "", f"on {mf.date}" if mf.date else "") if x)
     head = [f"{mf.path}: a {mf.kind} measurement{about}",
-            f"measured by {mf.by or '(no name)'} on {mf.date}" + (f" with {mf.tools}" if mf.tools else "")
+            f"measured {who or '(who and when not given)'}" + (f" with {mf.tools}" if mf.tools else "")
             + (f" (the {mf.base} preset)" if mf.base else "")]
+    missing = [(what, example) for what, example, given in (("who measured it", 'by = "J. Smith"', mf.by),
+                                                             ("the date", "date = 2026-11-10", mf.date)) if not given]
+    if missing:
+        head.append(f"warning: add {' and '.join(w for w, _ in missing)} to [measure] "
+                    f"({', '.join(e for _, e in missing)}): the labels name them")
     tests = [t for t in KIND_TESTS[mf.kind] if t in mf.trials]
     if not tests:
         listed = " or ".join(f"[[{t}]]" for t in KIND_TESTS[mf.kind])

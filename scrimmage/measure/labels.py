@@ -51,8 +51,10 @@ def _and(words: list[str]) -> str:
 
 
 def source(p: Provenance) -> str:
-    """Where a measurement came from: "fuel.measure.toml, J. Smith, 2026-11-10, 5 trials"."""
-    return f"{p.file.name}, {p.by}, {p.date}, {p.trials} trial{'' if p.trials == 1 else 's'}"
+    """Where a measurement came from: "fuel.measure.toml, J. Smith, 2026-11-10, 5 trials"; who and when are left
+    out when the file doesn't give them ("fuel.measure.toml, 5 trials")."""
+    trials = f"{p.trials} trial{'' if p.trials == 1 else 's'}"
+    return ", ".join([p.file.name, *(x for x in (p.by, p.date) if x), trials])
 
 
 def not_good(p: Provenance) -> str:

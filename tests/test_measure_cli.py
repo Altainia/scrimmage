@@ -80,6 +80,20 @@ def test_a_size_trial_that_looks_off_is_named_by_its_own_number(tmp_path, capsys
     assert "warning: trial 7 looks off: check it" in out and "trial 6 looks off" not in out
 
 
+def test_a_file_without_who_or_when_warns_but_is_judged_on_its_trials(tmp_path, capsys):
+    p = tmp_path / "fuel.measure.toml"
+    p.write_text('[measure]\nkind = "ball"\n' + _squeezes(9.8, 9.6, 9.9), encoding="utf-8")
+    assert _run(p) == 0
+    out = capsys.readouterr().out
+    assert "measured (who and when not given)" in out
+    assert 'warning: add who measured it and the date to [measure] (by = "J. Smith", date = 2026-11-10)' in out
+    p.write_text('[measure]\nkind = "ball"\nby = "J. Smith"\n' + _squeezes(9.8, 9.6, 9.9), encoding="utf-8")
+    assert _run(p) == 0
+    out = capsys.readouterr().out
+    assert "measured by J. Smith with" not in out and "measured by J. Smith\n" in out
+    assert "warning: add the date to [measure] (date = 2026-11-10): the labels name them" in out
+
+
 def test_every_test_of_a_ball_file_is_reported(tmp_path, capsys):
     body = (_squeezes(9.8, 9.6, 9.9) + '\n[drop_setup]\ndrop_in = 18\nfloor = "carpet"\n'
             + "".join(f"\n[[drop]]\nbounce_in = {b}\n" for b in (6.5, 6.6, 6.4)))

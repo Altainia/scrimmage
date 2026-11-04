@@ -135,6 +135,14 @@ def test_load_reads_the_header_and_trials(tmp_path):
     assert mf.settings == {}
 
 
+def test_who_measured_it_and_when_may_be_left_out_or_blank(tmp_path):
+    """A student types trials before the header: a file without by and date (or with them blank) still reads."""
+    left_out = BALL_HEADER.replace('by = "J. Smith"\n', "").replace("date = 2026-11-10\n", "")
+    for header in (left_out, BALL_HEADER.replace('"J. Smith"', '""').replace("2026-11-10", '""')):
+        mf = file.load(_write(tmp_path, header + "[[size]]\nmass_g = 216\n"))
+        assert (mf.by, mf.date) == ("", "")
+
+
 def test_a_date_may_be_text(tmp_path):
     p = _write(tmp_path, BALL_HEADER.replace("2026-11-10", '"2026-11-10"') + "[[size]]\nmass_g = 216\n")
     assert file.load(p).date == "2026-11-10"
@@ -142,7 +150,7 @@ def test_a_date_may_be_text(tmp_path):
 
 @pytest.mark.parametrize("change, message", [
     (("kind = \"ball\"", "kind = \"bounce\""), "kind must be one of ball, friction, launcher, cylinder"),
-    (("by = \"J. Smith\"\n", ""), "missing required key 'by'"),
+    (("by = \"J. Smith\"", "by = 3"), "by must be text, not 3"),
     (("2026-11-10", "\"Nov 10\""), "date must be a date like 2026-11-10"),
     (("base = \"2026-fuel\"", "base = \"2026-fool\""), "base '2026-fool' isn't a ball preset"),
     (("tools =", "tool ="), "unknown key 'tool' in [measure]"),
