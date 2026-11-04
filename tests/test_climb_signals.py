@@ -382,7 +382,7 @@ class FakeSession:
 
     def __init__(self, world: World):
         self.world, self.robot = world, None
-        self.bridge = SimpleNamespace(ds=SimpleNamespace(clear_joysticks=lambda: None), hal=HalState())
+        self.bridge = SimpleNamespace(ds=SimpleNamespace(clear_joysticks=lambda: None, game_data=""), hal=HalState())
 
     @property
     def t(self) -> float:
