@@ -135,14 +135,28 @@ slow motion, and their mentors. The standing anti-goal applies: **no unnecessary
 - **C8 Launcher fit:**
   - **One number at a time:** shots can't tell a ball's stiffness from a wheel's friction (in the model both speed
     the ball up in the same way at every wheel speed), so a fit gives one of them.
-    - **The ball's squeeze measured** (`[shot_setup] ball = "<ball .measure.toml>"`, a ball file with a good squeeze
+    - **The ball's squeeze measured** (`[shot_setup] ball = "<ball .measure.toml>"`, a ball file with a squeeze
       test, or the shots' setup's own `[ball] measured` ball file): stiffness is fixed at it, and the wheel's
       `friction` is fit (0.2 to 2.0).
     - **Otherwise:** the ball's `stiffness_n` is fit (0.25× to 4× the setup's, on a log scale), with the wheel
-      friction at the setup's (its `[wheels] measured` friction file's, when that is a good sled test), and it says
-      "Measure the ball's squeeze (the squeeze test) to fit wheel friction too."
-  - **The shots' setup** is read without its own measurements applied, except those two files for the number that
-    isn't fit. A launcher file named there is passed over: a setup may name the very file its shots are in.
+      friction at the setup's (its `[wheels] measured` friction file's, when it names one), and it says "Measure the
+      ball's squeeze (the squeeze test) to fit wheel friction too."
+  - **A fitted number means the same in a run as in the fit.** The shots' setup is read as a run reads it: its ball
+    file (or `[shot_setup] ball` in its place) and its friction file are applied whole, through the run's own
+    use.apply_ball and use.apply_wheels, so the ball's mass, diameter and bounce match the run's, not only its
+    squeeze. A launcher file named there is passed over: a setup may name the very file its shots are in.
+  - **A squeeze or sled pull that isn't good is still held,** as a run uses it, and the fit isn't good: "the
+    ball's squeeze isn't good enough: 2 trials; take at least 3". A setup naming such a ball file and the shots
+    loads, its label UNCALIBRATED.
+  - **The ball the run uses:** a `[shot_setup] ball` the shots' setup's own `[ball] measured` doesn't name is
+    warned: "name it in the setup's [ball] measured too, so a run uses the ball the shots were fit with" (for a
+    stiffness fit, name the shots file there instead). A setup's `[ball] measured` naming a launcher file takes the
+    measured numbers of the ball file its shots were fit with, with the fitted stiffness; named by both sections,
+    the ball takes the ball file's numbers and the wheels the fitted friction.
+  - **A shot under 20 frames** between the marks is warned by its number: "shot 3: 12 frames between the marks; 20
+    or more fits better".
+  - **A fit is reused** while none of the files it read (the shots, the setup, the ball and friction files) has
+    changed, so a robot's [shooter] doesn't fit again at each world build.
   - **Goal:** minimize the root-mean-square relative error of horizontal exit speed over the shots.
   - **Search:** a 9-point scan, then a golden-section search between the best point's neighbors.
   - **One wheel speed only:** still fit, with a warning: "shots at two or more wheel speeds check the fit".
@@ -257,6 +271,11 @@ wrong.
   honest about it, and fast. Cost if wrong: no fit of both at once.
 - **The shots' setup is loaded without its own measurements applied.** Why: no loop between a fit and the setup that
   names it. Cost if wrong: nothing.
+  - **Reversed in the final review: the setup's ball and friction files are applied whole, as a run applies them**
+    (only a launcher file is passed over, which is the loop). Why: the reviewer fit wheel friction to shots from a
+    fully measured setup (a 260 g ball, not the preset's 215 g); the fit used the ball file's squeeze but the
+    preset's mass, so the setup naming the fit missed its own shots by 4% under a "Calibrated" label. Cost if wrong:
+    nothing; a round-trip test now checks a run reproduces the shots within 1%.
 - **A fit reports its band**, the values whose RMS error stays within the shots' frame-count resolution (max(1 frame
   / frames, 2%)), and is good only with the band within ±15% (and RMS under 5%, not at an edge); otherwise "your
   shots hardly depend on ...". Why: wheel-limited shots can't tell the number. Cost if wrong: more not-good fits.
@@ -265,6 +284,17 @@ wrong.
     Cost if wrong: nothing.
 - **A good friction file in the shots' setup `[wheels] measured` is used**; only launcher files there are passed
   over. Why: only those make the loop. Cost if wrong: nothing.
+  - **Reversed in the final review: a squeeze or sled pull is held whenever a run would use it, good or not;** one
+    that isn't good makes the fit not good, saying why. Before, a squeeze that wasn't good was skipped (the stiffness
+    fit instead), so a setup naming that ball and the shots was refused ("its shots' ball squeeze isn't measured")
+    though the run uses that squeeze. Why: the fit and the run must hold the same number, and the earlier "a
+    measurement that isn't good is used in a run" ruling says the run uses it. Cost if wrong: nothing.
+- **A setup's `[ball] measured` naming a launcher file takes the ball file the shots were fit with**, with the fitted
+  stiffness (or, named by both sections, the ball file's numbers alone). Why: size and drop measurements and a
+  shot-fit stiffness can then be used together, and the ball's mass in a run is the fit's. Cost if wrong: one more
+  file read when a setup loads.
+- **Launcher fits are cached** by the launcher file's resolved path, checked against the modification time and size
+  of every file the fit read. Why: a robot [shooter] built many times re-fit each time. Cost if wrong: nothing.
 - **One shared `single_pass(setup, rps, lane, kP=None)`** in scrimmage/launcher serves the fit and `launcher aim`
   (aim's output byte-identical). Why: one model, not two copies. Cost if wrong: nothing.
 - **The fit compares horizontal speed**: the model's exit speed × cos(its launch angle) against vertical tape marks a
@@ -304,6 +334,14 @@ wrong.
 - **The air budget's label names what it rests on** (the compressor's flow, the pressure switch's points, the tank
   and dead volumes) and never reads "Calibrated" from a valve measurement. Why: the budget doesn't use the
   conductance. Cost if wrong: nothing.
+- **The chart footer wraps above 135 characters** (it was 120), so every no-measurement line (the launcher's 122, the
+  disc's 127) stays on one line as before; longer measured lines wrap. Why: the new estimate wording is longer.
+  Cost if wrong: a one-line PNG some 40 px wider than before.
+- **A measured piece friction is named in a Test-tab run's notes,** as a grip is ("crate piece: measured, friction
+  0.8 (...)"). Why: a student should see it measured. Cost if wrong: nothing.
+- **A stock cylinder whose bore, rod, stroke, friction or rod_mass differ from its stroke file's is warned** ("the
+  strokes were fit with friction 8 N, but this cylinder has 12 N"), in the robot's warnings. Why: the valve's fit
+  was for the cylinder timed. Cost if wrong: nothing.
 - **The implementer's other label calls stand**: the pneumatic note starts "UNCALIBRATED:", grip notes are per pad,
   the disc names its inputs without provenance, `aim` carries provenance, the bench picture's text shrinks to fit.
   Why: each reads plainly and keeps existing output. Cost if wrong: nothing.

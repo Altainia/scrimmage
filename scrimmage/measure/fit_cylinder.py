@@ -161,6 +161,16 @@ def _check_keys(mf: MeasureFile, setup: dict, rows: list[dict]) -> None:
                                    "time_s, or frames and fps")
 
 
+def cylinder_of(mf: MeasureFile) -> dict[str, float]:
+    """The cylinder a stroke file's strokes were timed on, in a stock cylinder's units (m, N, kg): its bore, rod,
+    stroke, friction and rod_mass, the defaults filled in as the fit fills them."""
+    table = mf.settings.get("stroke_setup", {})
+    s = _stroke(mf, table)
+    rod_mass = reading(table, "mass", "rod_mass", where=f"{mf.path}: [stroke_setup]", required=False)
+    return {"bore": s.bore, "rod": s.rod, "stroke": s.stroke, "friction": s.friction_n,
+            "rod_mass": ROD_MASS if rod_mass is None else rod_mass}
+
+
 def _stroke(mf: MeasureFile, table: dict) -> Stroke:
     where = f"{mf.path}: [stroke_setup]"
     lengths = {}

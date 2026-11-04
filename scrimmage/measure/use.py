@@ -20,12 +20,16 @@ setting and the file's kind.
 
 A launcher file fits one number (fit_launcher.py): the ball's stiffness, or, with the ball's squeeze measured, the
 wheel's friction. Named by `[ball] measured` it gives the stiffness when that is what it fit; by `[wheels] measured`
-the friction likewise. It may be named by both, and each takes the number it gives.
+the friction likewise. It may be named by both, and each takes the number it gives. Named by `[ball] measured` it
+also gives the measured numbers of the ball file its shots were fit with (`[shot_setup] ball`, or its setup's own),
+so the run's ball is the fit's: a fitted number means the same in a run as in the fit. A fit is run again only when
+one of the files it read changes.
 
 A file whose trials or fit aren't good enough is still used, its provenance marked not good with why; the labels
 keep UNCALIBRATED for it. Each function here only reads: it returns the new values and their provenance.
 """
 
+import math
 from pathlib import Path
 
 from .file import MeasureError, MeasureFile, Provenance, load, provenance
@@ -75,24 +79,53 @@ def _fit_provenance(mf: MeasureFile, test: str, result) -> Provenance:
                       why=result.why)
 
 
-def _launcher(mf: MeasureFile, field: str, where: str, key: str, name: str, *, shared: bool,
-              fits: dict | None) -> dict:
-    """{field: (value, provenance)} from a launcher file's fit, empty when it fit the other number and the file is
-    `shared` (named by the other section too, which takes that number); otherwise that is an error. `fits` (resolved
-    path -> LauncherFit) holds fits already run, so a file named twice is fit once."""
+def launcher_fit(mf: MeasureFile, where: str, key: str, name: str, *, fits: dict | None = None):
+    """A launcher file's fit (fit_launcher.fit), reused while none of the files it read has changed: a robot's
+    [shooter] and a sweep's rows load the same setup many times. `fits` (resolved path -> LauncherFit) holds fits
+    already run in one load, so a file named twice is fit once even if it changes in between."""
     from . import fit_launcher  # runs the launcher model
 
     known = mf.path.resolve()
     if fits is not None and known in fits:
-        result = fits[known]
+        return fits[known]
+    stamped = _FITS.get(known)
+    if stamped is not None and stamped[0] == _stamps(stamped[1].inputs):
+        result = stamped[1]
     else:
         result = _fitted(fit_launcher.fit, mf, where, key, name)
-        if fits is not None:
-            fits[known] = result
+        _FITS[known] = (_stamps(result.inputs), result)
+    if fits is not None:
+        fits[known] = result
+    return result
+
+
+_FITS: dict = {}  # resolved launcher file -> (its inputs' stamps, its fit)
+
+
+def _stamps(paths) -> tuple:
+    """Each file's modification time and size (None when it's gone), to tell when a fit's inputs change."""
+    out = []
+    for p in paths:
+        try:
+            st = Path(p).stat()
+            out.append((p, st.st_mtime_ns, st.st_size))
+        except OSError:
+            out.append((p, None, None))
+    return tuple(out)
+
+
+def _launcher(mf: MeasureFile, field: str, where: str, key: str, name: str, *, shared: bool,
+              fits: dict | None) -> tuple[dict, MeasureFile | None]:
+    """{field: (value, provenance)} from a launcher file's fit, and the ball file the shots were fit with (None if
+    none, or for the wheels). The ball file comes with the ball's number so a run's ball is the one the fit used.
+    The number is left out when the fit gave the other one and the file is `shared` (named by the other section
+    too, which takes that number); otherwise that is an error."""
+    result = launcher_fit(mf, where, key, name, fits=fits)
+    ball = load(result.ball_file) if field == "stiffness_n" and result.ball_file is not None else None
     if field in result.fitted:
-        return {field: (getattr(result, field), _fit_provenance(mf, "shot", result))}
+        return {field: (getattr(result, field), _fit_provenance(mf, "shot", result))}, ball
     if shared:
-        return {}
+        return {}, ball
     if field == "stiffness_n":
         raise MeasureError(f"{where}: {key} = \"{name}\" fits the wheel's friction, not the ball's stiffness (its "
                            "shots' ball squeeze is measured): name it in [wheels] measured, and the ball file in "
@@ -128,16 +161,20 @@ def apply_ball(fields: dict, path: str, where: str, *, base=".", key: str = "mea
     `fits`: the fits already run (see _launcher)."""
     mf = open_file(path, base, where, key, ("ball", "launcher") if launcher else ("ball",), "a ball")
     fields = dict(fields)
+    got, ball_file = {}, None
     if mf.kind == "launcher":
-        got = _launcher(mf, "stiffness_n", where, key, path, shared=shared, fits=fits)
-        return _replace(fields, got, where, key, path)
+        got, mf = _launcher(mf, "stiffness_n", where, key, path, shared=shared, fits=fits)
+        if mf is None:
+            return _replace(fields, got, where, key, path)
+        ball_file = mf.path.name
     preset = fields.get("preset")
     if mf.base is not None and preset is not None and preset != mf.base:
-        raise MeasureError(f"{where}: {key} = \"{path}\" measured a {mf.base} ball, but the preset is {preset}: make "
-                           "them the same, or leave the preset out to use the file's")
+        what = f"measured a {mf.base} ball" if ball_file is None else f"was fit with a {mf.base} ball ({ball_file})"
+        raise MeasureError(f"{where}: {key} = \"{path}\" {what}, but the preset is {preset}: make them the same, or "
+                           "leave the preset out to use the file's")
     if preset is None and mf.base is not None:
         fields["preset"] = mf.base
-    return _replace(fields, _direct(mf, BALL_FIELDS, where, key, path), where, key, path)
+    return _replace(fields, {**_direct(mf, BALL_FIELDS, where, key, path), **got}, where, key, path)
 
 
 def apply_wheels(fields: dict, path: str, where: str, *, base=".", key: str = "measured", shared: bool = False,
@@ -145,7 +182,7 @@ def apply_wheels(fields: dict, path: str, where: str, *, base=".", key: str = "m
     """A `[wheels]` table's keys (without `measured`) with the friction of the file `path` in place, and its
     provenance. `shared`: the ball names the same launcher file. `fits`: the fits already run (see _launcher)."""
     mf = open_file(path, base, where, key, ("friction", "launcher"), "a wheel")
-    got = (_launcher(mf, "friction", where, key, path, shared=shared, fits=fits) if mf.kind == "launcher"
+    got = (_launcher(mf, "friction", where, key, path, shared=shared, fits=fits)[0] if mf.kind == "launcher"
            else _direct(mf, ("friction",), where, key, path))
     return _replace(dict(fields), got, where, key, path)
 
@@ -158,14 +195,27 @@ def friction_value(path: str, where: str, *, base=".", key: str = "friction",
     return value, prov
 
 
-def apply_cylinder(params: dict, path: str, where: str, *, base=".",
-                   key: str = "measured") -> tuple[dict, Provenance]:
-    """A stock cylinder's parameters with the conductance a cylinder file's strokes fit, and its provenance."""
-    from .fit_cylinder import fit
+CYLINDER_UNITS = {"bore": "m", "rod": "m", "stroke": "m", "friction": "N", "rod_mass": "kg"}
+
+
+def apply_cylinder(params: dict, path: str, where: str, *, base=".", key: str = "measured",
+                   cylinder: dict | None = None) -> tuple[dict, Provenance, list[str]]:
+    """A stock cylinder's parameters with the conductance a cylinder file's strokes fit, its provenance, and a
+    warning for each of the cylinder's numbers (`cylinder`: its checked parameters, the defaults filled in) that
+    isn't the one the strokes were timed on: the valve fit there may not fit here."""
+    from .fit_cylinder import cylinder_of, fit
 
     mf = open_file(path, base, where, key, ("cylinder",), "a cylinder")
     if "conductance" in params:
         raise MeasureError(f"{where}: conductance is given and also measured by {key} = \"{path}\": give one (leave "
                            "conductance out to use the measurement)")
     result = _fitted(fit, mf, where, key, path)
-    return {**params, "conductance": result.conductance}, _fit_provenance(mf, "stroke", result)
+    warnings = []
+    if cylinder is not None:
+        timed = cylinder_of(mf)
+        for name, unit in CYLINDER_UNITS.items():
+            if name in cylinder and not math.isclose(timed[name], cylinder[name], rel_tol=1e-6):
+                warnings.append(f"{key} = \"{path}\": the strokes were fit with {name} {timed[name]:.4g} {unit}, but "
+                                f"this cylinder has {cylinder[name]:.4g} {unit}: the valve's fit may not fit it (give "
+                                f"it the strokes' {name}, or time this one)")
+    return {**params, "conductance": result.conductance}, _fit_provenance(mf, "stroke", result), warnings

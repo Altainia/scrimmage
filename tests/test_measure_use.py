@@ -204,7 +204,9 @@ def test_a_launcher_file_with_the_squeeze_measured_gives_the_wheels_friction(tmp
     from test_measure_launcher_fit import WITH_BALL
     mf = _synthetic(tmp_path, 120.0, 1.1, [50.0, 50.0, 50.0, 80.0, 80.0, 80.0], header=WITH_BALL)
     fields, prov = apply_ball({"preset": "2026-fuel"}, mf.path.name, "[ball]", base=tmp_path, shared=True)
-    assert fields == {"preset": "2026-fuel"} and prov == {}
+    # named by both sections, the ball is the one the shots were fit with: its squeeze, from its ball file
+    assert fields == {"preset": "2026-fuel", "stiffness_n": pytest.approx(120.0)}
+    assert prov["stiffness_n"].file == tmp_path / "fuel.measure.toml"
     with pytest.raises(MeasureError, match="fits the wheel's friction, not the ball's stiffness"):
         apply_ball({"preset": "2026-fuel"}, mf.path.name, "[ball]", base=tmp_path)
     p = tmp_path / "shooter.toml"
@@ -423,6 +425,20 @@ def test_a_stock_cylinder_takes_its_conductance_from_a_file(tmp_path):
     assert plain.conductance == DEFAULT_CONDUCTANCE and plain.provenance is None
 
 
+def test_a_stock_cylinder_unlike_the_one_timed_is_warned(tmp_path):
+    from scrimmage.parts.assemble import assemble
+    name = cylinder_file(tmp_path, [0.2] * 3)
+    def mine(built):
+        return [w for w in built.warnings if w.startswith("cyl: ")]
+    assert mine(assemble(robot(measured=name), tmp_path)) == []  # the stock cylinder is the one timed
+    built = assemble(robot(measured=name, friction=12.0, stroke=0.2), tmp_path)
+    assert mine(built) == [
+        f'cyl: measured = "{name}": the strokes were fit with stroke 0.1524 m, but this cylinder has 0.2 m: the '
+        "valve's fit may not fit it (give it the strokes' stroke, or time this one)",
+        f'cyl: measured = "{name}": the strokes were fit with friction 8 N, but this cylinder has 12 N: the valve\'s '
+        "fit may not fit it (give it the strokes' friction, or time this one)"]
+
+
 def test_a_stock_cylinder_measured_errors(tmp_path):
     from scrimmage.parts.assemble import assemble
     from scrimmage.parts.model import PartError
@@ -496,7 +512,7 @@ def test_a_shared_launcher_file_is_fit_once_even_in_a_sweep(tmp_path, monkeypatc
     load_setup(p)
     assert len(calls) == 1
     rows = setups_for(p)
-    assert len(calls) == 2  # setups_for's own load; its three rows reuse it
+    assert len(calls) == 1  # setups_for's own load and its three rows reuse it: none of its files changed
     assert all(s.ball.stiffness_n == pytest.approx(120.0, rel=0.03) and list(s.provenance) == ["ball.stiffness_n"]
                for _, s in rows)
 
@@ -531,12 +547,137 @@ def test_the_in_world_shooter_takes_a_shared_launcher_file(tmp_path):
     (tmp_path / "mine.toml").write_text(f'[ball]\npreset = "2026-fuel"\nmeasured = "{mf.path.name}"\n'
                                         f'[wheels]\npreset = "35A"\nmeasured = "{mf.path.name}"\n', encoding="utf-8")
     wheels = {"durometer": 35.0, "positions": [-0.08, 0.08], "width": 0.05}
-    w = World(shooter_cfg(shooter={"setup": "mine.toml", "wheels": wheels}), tmp_path)
+    # the range shoots the ball the shots were fit with, as the setup's [ball] (the launcher file's ball) says
+    w = World(shooter_cfg(shooter={"setup": "mine.toml", "wheels": wheels}, range={"ball": "fuel.measure.toml"}),
+              tmp_path)
     s = w.test_range.shooter.config.setup
-    assert s.wheels.friction == pytest.approx(1.1, rel=0.03) and list(s.provenance) == ["wheels.friction"]
+    assert s.wheels.friction == pytest.approx(1.1, rel=0.03)
+    assert sorted(s.provenance) == ["ball.stiffness_n", "wheels.friction"]
     (tmp_path / "mine.toml").write_text('[ball]\npreset = "2026-fuel"\nmeasured = "gone.measure.toml"\n',
                                         encoding="utf-8")
     with pytest.raises(ValueError) as e:
         World(shooter_cfg(shooter={"setup": "mine.toml", "wheels": wheels}), tmp_path)
     assert f"{tmp_path / 'mine.toml'}: [ball]: measured = \"gone.measure.toml\": no such file" in str(e.value)
     assert str(e.value).count(str(tmp_path / "mine.toml")) == 1
+
+
+# ------------------------------------------------------------------- a fitted number means the same in a run
+
+def _full_ball(folder: Path, squeezes=(120.0, 120.0, 120.0), name="ball.measure.toml") -> str:
+    """A FUEL ball file measuring size (a mass well off the preset's), squeeze (unless `squeezes` is empty) and
+    drop."""
+    rows = "".join("\n[[size]]\nmass_g = 260\ncircumference_in = 18.6\n" for _ in range(3))
+    rows += "".join(f"\n[[squeeze]]\nforce_n = {f}\n" for f in squeezes)
+    rows += '\n[drop_setup]\ndrop_in = 18\nfloor = "concrete"\n' + "\n[[drop]]\nbounce_in = 9\n" * 3
+    (folder / name).write_text(HEAD.format(kind="ball") + 'base = "2026-fuel"\n' + rows, encoding="utf-8")
+    return name
+
+
+def _round_trip(tmp_path, truth_ball: str, truth_wheels: str, run_ball: str, run_wheels: str, speeds):
+    """Shots made by the model from a setup (`truth_*`: lines added to its [ball] and [wheels]), fit, and the setup
+    a run uses (`run_*`), naming the fit: the shots' measured and the run's horizontal speeds, and the fit."""
+    from measure_helpers import FPS, HEADER, MARKS_IN, SETUP
+    from scrimmage.measure.file import load
+    from scrimmage.measure.fit_launcher import fit, horizontal_speed
+
+    def setup_text(ball, wheels):
+        return (SETUP.replace('preset = "2026-fuel"\n', f'preset = "2026-fuel"\n{ball}')
+                .replace('preset = "35A"\n', f'preset = "35A"\n{wheels}'))
+    (tmp_path / "truth.toml").write_text(setup_text(truth_ball, truth_wheels), encoding="utf-8")
+    truth = load_setup(tmp_path / "truth.toml")[0]
+    rows = "".join(f"\n[[shot]]\nwheel_rps = {rps}\nframes = {MARKS_IN * INCH * FPS / horizontal_speed(truth, rps)!r}\n"
+                   for rps in speeds)
+    (tmp_path / "shooter.measure.toml").write_text(
+        HEADER + f'ball = "ball.measure.toml"\nmarks_in = {MARKS_IN}\nfps = {FPS}\n' + rows, encoding="utf-8")
+    (tmp_path / "shooter.toml").write_text(setup_text(run_ball, run_wheels), encoding="utf-8")
+    result = fit(load(tmp_path / "shooter.measure.toml"))
+    run = load_setup(tmp_path / "shooter.toml")[0]
+    return truth, run, result, [(speed, horizontal_speed(run, rps)) for rps, (speed, _) in zip(speeds,
+                                                                                               result.per_shot)]
+
+
+def test_a_fitted_wheel_friction_means_the_same_in_a_run_as_in_the_fit(tmp_path):
+    # The final review's experiment: a fully measured ball (its mass 260 g, not the preset's) and shots that fit the
+    # wheel's friction; a run naming the fit missed the shots by 4% under a Calibrated label, the fit having used
+    # only the ball's squeeze. Now the fit applies the whole ball file, as a run does.
+    _full_ball(tmp_path)
+    truth, run, result, speeds = _round_trip(
+        tmp_path, 'measured = "ball.measure.toml"\n', "friction = 1.1\n",
+        'measured = "ball.measure.toml"\n', 'measured = "shooter.measure.toml"\n', [50.0, 65.0, 80.0])
+    assert run.ball.mass == pytest.approx(0.26) and run.ball.mass != pytest.approx(FUEL["mass"])
+    assert run.ball == truth.ball
+    assert result.fitted == ("friction",) and result.good and result.warnings == []
+    assert result.band[0] <= run.wheels.friction <= result.band[1]
+    for measured, model in speeds:
+        assert model == pytest.approx(measured, rel=0.01)
+    from scrimmage.measure.labels import LAUNCHER, line
+    assert line(run.provenance, LAUNCHER).startswith("Calibrated from measurements")
+
+
+def test_a_fitted_stiffness_brings_the_ball_it_was_fit_with_to_a_run(tmp_path):
+    # Size and drop measured, the stiffness fit from shots: [shot_setup] ball names the ball file, and a setup's
+    # [ball] measured naming the shots takes the ball file's numbers with the fitted stiffness.
+    _full_ball(tmp_path, squeezes=())
+    truth, run, result, speeds = _round_trip(
+        tmp_path, 'measured = "ball.measure.toml"\nstiffness_n = 120.0\n', "",
+        'measured = "shooter.measure.toml"\n', "", [50.0, 65.0, 80.0])
+    assert result.fitted == ("stiffness_n",) and result.good
+    assert run.ball.mass == pytest.approx(0.26)
+    assert run.ball.restitution == truth.ball.restitution and run.ball.diameter == truth.ball.diameter
+    assert result.band[0] <= run.ball.stiffness_n <= result.band[1]
+    assert run.provenance["ball.restitution"].file == tmp_path / "ball.measure.toml"
+    assert run.provenance["ball.stiffness_n"].file == tmp_path / "shooter.measure.toml"
+    for measured, model in speeds:
+        assert model == pytest.approx(measured, rel=0.01)
+
+
+def test_a_setup_whose_ball_squeeze_isn_t_good_loads_with_its_shots(tmp_path):
+    # The run uses the squeeze that isn't good, as the fit did; its label stays UNCALIBRATED and says why.
+    _full_ball(tmp_path, squeezes=(118.0, 122.0))
+    _, run, result, speeds = _round_trip(
+        tmp_path, 'measured = "ball.measure.toml"\n', "friction = 1.1\n",
+        'measured = "ball.measure.toml"\n', 'measured = "shooter.measure.toml"\n', [50.0, 65.0, 80.0])
+    assert run.ball.stiffness_n == pytest.approx(120.0)
+    assert not result.good and "squeeze isn't good enough" in result.why
+    from scrimmage.measure.labels import LAUNCHER, line
+    label = line(run.provenance, LAUNCHER)
+    assert label.startswith("UNCALIBRATED: still estimates: ball stiffness (ball.measure.toml, not good enough: "
+                            "2 trials; take at least 3)")
+    for measured, model in speeds:
+        assert model == pytest.approx(measured, rel=0.01)
+
+
+def test_a_launcher_fit_is_reused_until_a_file_it_read_changes(tmp_path, monkeypatch):
+    import os
+    from scrimmage.measure import fit_launcher
+    calls = []
+    real = fit_launcher.fit
+    monkeypatch.setattr(fit_launcher, "fit", lambda mf: calls.append(mf.path) or real(mf))
+    _ball_file(tmp_path, [118.0, 120.0, 122.0])
+    from test_measure_launcher_fit import WITH_BALL
+    mf = _synthetic(tmp_path, 120.0, 1.1, [50.0, 80.0], header=WITH_BALL)
+    p = tmp_path / "shooter.toml"
+    p.write_text(p.read_text().replace('preset = "35A"\n', f'preset = "35A"\nmeasured = "{mf.path.name}"\n')
+                 .replace('preset = "2026-fuel"\n', 'preset = "2026-fuel"\nmeasured = "fuel.measure.toml"\n'))
+    first = load_setup(p)[0]
+    load_setup(p)
+    assert len(calls) == 1
+    ball = tmp_path / "fuel.measure.toml"
+    ball.write_text(ball.read_text().replace("force_n = 122.0", "force_n = 140.0"))
+    os.utime(ball, ns=(ball.stat().st_atime_ns, ball.stat().st_mtime_ns + 1_000_000))
+    second = load_setup(p)[0]
+    assert len(calls) == 2  # the ball file changed, so the fit ran again
+    assert second.wheels.friction != first.wheels.friction
+
+
+def test_a_launcher_file_s_ball_must_be_the_setup_s_preset(tmp_path):
+    _full_ball(tmp_path, squeezes=())
+    _round_trip(tmp_path, 'measured = "ball.measure.toml"\nstiffness_n = 120.0\n', "",
+                'measured = "shooter.measure.toml"\n', "", [50.0, 80.0])
+    p = tmp_path / "shooter.toml"
+    other = tmp_path / "other.toml"
+    other.write_text(p.read_text().replace('preset = "2026-fuel"', 'preset = "2022-cargo"'), encoding="utf-8")
+    with pytest.raises(LauncherConfigError, match=r'\[ball\]: measured = "shooter.measure.toml" was fit with a '
+                                                  r'2026-fuel ball \(ball.measure.toml\), but the preset is '
+                                                  "2022-cargo"):
+        load_setup(other)

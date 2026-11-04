@@ -91,7 +91,8 @@ Save button. A box with something other than a number where a number goes holds 
 A measurement file is a TOML text file whose name ends in `.measure.toml`. It holds what was measured, and every
 trial's readings in the units you read them in. It never holds the averages or the fits: those are worked out from
 the trials each time the file is read, so they can't go stale. `scrimmage measure new <test> <file>` starts one with
-the test's keys written in as comments:
+the test's keys written in as comments. It takes a test (`squeeze`, `shot`), where the tab's **Measure something**
+takes a kind of file (a ball, a launcher): a ball file made for one test can hold the others too.
 
 ```bash
 scrimmage measure new squeeze fuel.measure.toml
@@ -334,7 +335,7 @@ cos of its launch angle).
 | key | in | meaning |
 |---|---|---|
 | `setup` | `[shot_setup]` | required: the launcher setup file the shots were taken on, relative to this file |
-| `ball` | `[shot_setup]` | optional: a ball file with a good squeeze test, so the shots fit the wheel's friction |
+| `ball` | `[shot_setup]` | optional: the ball file of the ball shot; with a squeeze test, the shots fit the wheel's friction |
 | `marks_<unit>` | `[shot_setup]` or a shot | the tape marks' spacing |
 | `fps` | `[shot_setup]` or a shot | the camera's frame rate |
 | `hood_deg` | `[shot_setup]` or a shot | optional: the hood's exit angle, if not the setup's |
@@ -445,15 +446,42 @@ UNCALIBRATED and says why:
 **One number at a time.** In the model a stiffer ball and a grippier wheel speed a ball up in the same way at every
 wheel speed, so shots alone can't tell them apart. So a fit gives one of them:
 
-- **With the ball's squeeze measured** (`[shot_setup] ball = "<ball file>"`, a ball file with a good squeeze test,
-  or the shots' setup's own `[ball] measured` ball file), the stiffness is held at it, and the shots fit the wheel's
+- **With the ball's squeeze measured** (`[shot_setup] ball = "<ball file>"`, a ball file with a squeeze test, or the
+  shots' setup's own `[ball] measured` ball file), the stiffness is held at it, and the shots fit the wheel's
   `friction` (it tries 0.2 to 2.0).
 - **Otherwise** the shots fit the ball's `stiffness_n` (it tries a quarter of the setup's to 4 times it), with the
-  wheel friction at the setup's (or its `[wheels] measured` sled file's, when that is good), and it says "Measure the
-  ball's squeeze (the squeeze test) to fit wheel friction too."
+  wheel friction at the setup's (or its `[wheels] measured` sled file's), and it says "Measure the ball's squeeze
+  (the squeeze test) to fit wheel friction too."
 
-The shots' setup is read as written, without its own measurements, except those two files. A launcher file named
-there is passed over, so a setup may name the very file its shots are in.
+**The fit uses the ball a run uses.** The shots' setup is read the way a run reads it: its ball file (or
+`[shot_setup] ball` in its place) gives the ball's mass, size and bounce as well as its squeeze, and its friction file
+the wheel's friction. So a number the shots fit means the same thing when a run uses it. A launcher file named there
+is passed over, so a setup may name the very file its shots are in.
+
+- **A squeeze or sled pull that isn't good enough is still used,** as a run uses it, and the fit isn't good until it
+  is: "not good enough yet: the ball's squeeze isn't good enough: 2 trials; take at least 3".
+- **Name the same ball in the setup.** A `[shot_setup] ball` the setup's own `[ball] measured` doesn't name gets
+  "name it in the setup's [ball] measured too, so a run uses the ball the shots were fit with".
+- **A shot under 20 frames** between the marks gets "shot 3: 12 frames between the marks; 20 or more fits better".
+
+**Size and drop measured, the stiffness fit from shots.** Name the ball file (size and drop, no squeeze) in
+`[shot_setup] ball`, and the shots file in the setup's `[ball] measured`:
+
+```toml
+# shooter.measure.toml
+[shot_setup]
+setup = "shooter.toml"
+ball = "fuel.measure.toml"     # size and drop trials: the shots fit the stiffness of this ball
+
+# shooter.toml
+[ball]
+preset = "2026-fuel"
+measured = "shooter.measure.toml"   # the fitted stiffness, with fuel.measure.toml's mass, size and bounce
+```
+
+A `[ball] measured` naming a launcher file brings the ball file its shots were fit with, so the run's ball is the
+fit's. Named in both `[ball]` and `[wheels]` (a friction fit), the ball takes its ball file's numbers and the wheels
+the fitted friction.
 
 **The model** is the launcher's own: one ball fed with the wheel already at the shot's speed and the setup's speed
 loop holding it, run once per wheel speed and hood angle, with no ball-to-ball spread.
@@ -521,7 +549,7 @@ A measurement file stands in wherever its number is used. Its path is relative t
 
 | where | key | takes | gives |
 |---|---|---|---|
-| a launcher setup's `[ball]` ([launcher.md](launcher.md#ball)) | `measured = "fuel.measure.toml"` | a ball file, or a launcher file that fit the stiffness | the fields it measured, in place of the preset's: `diameter`, `mass`, `stiffness_n`, `restitution` |
+| a launcher setup's `[ball]` ([launcher.md](launcher.md#ball)) | `measured = "fuel.measure.toml"` | a ball file, or a launcher file | the fields it measured, in place of the preset's: `diameter`, `mass`, `stiffness_n`, `restitution`; a launcher file, the stiffness it fit with its ball file's fields |
 | a launcher setup's `[wheels]` ([launcher.md](launcher.md#wheels)) | `measured = "tread.measure.toml"` | a friction file, or a launcher file that fit the friction | `friction` |
 | a range's `[range] ball` and a `[piece.<name>] ball` ([test-range.md](test-range.md#range)) | `ball = "fuel.measure.toml"` | a ball file with a `base` preset | the base preset's ball with the measured fields in place |
 | a test's Setup ball (`[setup] ball`, [test-tab.md](test-tab.md#setup)) | `ball = "fuel.measure.toml"` | a ball file with a `base` preset | the same |
@@ -545,7 +573,10 @@ The rules:
   used.
 - **A launcher file goes in the section whose number it fit**: `[ball] measured` when it fit the stiffness, `[wheels]
   measured` when it fit the friction. Named in the other one, it is an error that says where to name it. Naming the
-  same file in both is fine: each takes the number it gives.
+  same file in both is fine: each takes the number it gives. In `[ball]` it also brings the measured numbers of the
+  ball file its shots were fit with ([How the launcher fit works](#how-the-launcher-fit-works)).
+- **A stock cylinder unlike the one timed is warned**: "the strokes were fit with friction 8 N, but this cylinder
+  has 12 N" (for its bore, rod, stroke, friction and rod_mass).
 - **A number and a measurement for the same key is an error**: "stiffness_n is given and also measured by measured =
   "fuel.measure.toml": give one (leave stiffness_n out to use the measurement)".
 - **The wrong kind of file is an error** that names the setting and the file's kind: "[ball]: measured =
@@ -570,6 +601,9 @@ wheel's friction; for a grip, the pad's friction; for a cylinder, its valve. The
 
 Who and when are left out of the label when the file doesn't give them. A swept number is an estimate (a sweep
 tries several values, so none of them is the measured one).
+
+A field piece whose friction is measured gets its own line in the Test tab's run notes, as a grip does: "crate
+piece: measured, friction 0.8 (pvc.measure.toml, J. Smith, 2026-11-10, 3 trials)".
 
 **The air budget always names its estimates.** `scrimmage air` counts how much air the cylinders use and the
 compressor makes, which rests on the compressor's flow, the pressure switch's points and the tank and dead volumes,

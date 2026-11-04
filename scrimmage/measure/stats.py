@@ -1,11 +1,11 @@
 """Averaging trials, with checks a student can redo by hand on the printed form.
 
 Each trial gives one value; the result is their mean. The spread is the highest minus the lowest, as a fraction of
-the mean. Fewer than 3 trials, or a spread over 15%, makes the average not good enough to use in a run (it is still
-reported). A trial more than twice the average distance from the mean is flagged as an outlier; it is never dropped.
-An outlier needs at least 5 trials: one trial's distance from the mean is at most half the sum of all the trials'
-distances (the distances above the mean balance those below), so at most n/2 times the average distance, and n/2 is
-more than 2 only from 5 trials up.
+the mean. Fewer than 3 trials, or a spread over 15%, makes the average not good enough: a run uses it, but its
+result stays UNCALIBRATED. A trial more than twice the average distance from the mean is flagged as an outlier; it
+is never dropped. An outlier needs at least 5 trials: one trial's distance from the mean is at most half the sum of
+all the trials' distances (the distances above the mean balance those below), so at most n/2 times the average
+distance, and n/2 is more than 2 only from 5 trials up.
 """
 
 from dataclasses import dataclass
@@ -57,7 +57,8 @@ def summary(values, trials=None) -> Summary:
 
 
 def why(s: Summary) -> str:
-    """Why a summary isn't good enough to use in a run, in a few words; empty when it is good."""
+    """Why a summary isn't good enough (a run uses it, but its result stays UNCALIBRATED), in a few words; empty when
+    it is good."""
     reasons = []
     if s.n < MIN_TRIALS:
         reasons.append(f"{s.n} trial{'s' if s.n != 1 else ''}: take at least {MIN_TRIALS}")

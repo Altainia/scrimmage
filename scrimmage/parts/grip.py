@@ -182,7 +182,7 @@ def set_grip(folder: Path, body: str, grip: str | float | None) -> None:
         raise
 
 
-def _measured_label(mu: float | None, prov) -> str:
+def measured_label(mu: float | None, prov) -> str:
     """A measured grip's words: its friction, the file it came from, and why it isn't good enough when it isn't."""
     from ..measure.labels import not_good, source
     friction = f", friction {mu:g}" if mu is not None else ""
@@ -233,5 +233,5 @@ def grip_notes(world) -> list[str]:
                 continue
             mu = next((g.friction for b in inst.part.bodies if b.name == body for g in b.geoms
                        if g.priority == GRIP_PRIORITY), None)    # None: the body touches nothing
-            out.append(f"{inst.name}.{body} grip: {_measured_label(mu, prov)}")
+            out.append(f"{inst.name}.{body} grip: {measured_label(mu, prov)}")
     return out

@@ -366,6 +366,10 @@ def measured_raw(raw: dict, setup: Setup, path: Path | None = None) -> tuple[dic
         fields |= {k.split(".", 1)[1]: getattr(getattr(setup, section), k.split(".", 1)[1])
                    for k in setup.provenance if k.startswith(f"{section}.")}
         mf = load(base / name)  # read when `setup` was parsed, so it is there and well formed
+        if section == "ball" and mf.kind == "launcher":  # its fit's ball file, if any, gave the ball's numbers
+            from ..measure.use import launcher_fit
+            ball_file = launcher_fit(mf, f"[{section}]", "measured", name).ball_file  # reused, not fit again
+            mf = load(ball_file) if ball_file is not None else mf
         if section == "ball" and mf.kind == "ball" and mf.base is not None:
             fields.setdefault("preset", mf.base)
             bases[section] = (name, mf.base)

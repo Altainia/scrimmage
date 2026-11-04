@@ -176,7 +176,7 @@ TEST: dict[str, Test] = {
                f"Shoot at two or more wheel speeds, {fit_launcher.SECOND_SPEED - 1:.0%} or more apart."),
         setup=(_plain(fit_launcher.SETUP_TEXT, "setup", "the launcher setup file the shots were taken on",
                       "shooter.toml"),
-               _plain(fit_launcher.SETUP_TEXT, "ball", "the ball's squeeze test file, to fit the wheel's friction",
+               _plain(fit_launcher.SETUP_TEXT, "ball", "the ball's file: its squeeze fits the wheel's friction",
                       "fuel.measure.toml", optional=True),
                _r(_SHOT, "marks", "the tape marks' spacing", 24, "in"),
                _plain(fit_launcher.SETUP_NUMBERS, "fps", "the camera's frame rate", 960),

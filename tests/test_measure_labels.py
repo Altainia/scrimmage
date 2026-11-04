@@ -177,6 +177,21 @@ def test_run_notes_take_the_cylinders_from_the_world():
                      "5 trials); see docs/pneumatics.md."]
 
 
+def test_run_notes_name_a_measured_piece_friction(tmp_path):
+    from scrimmage.blocks.run import run_notes
+    from scrimmage.testrange.spec import load_range
+    from test_measure_use import friction_file, range_file
+    name = friction_file(tmp_path / "m")
+    range_file(tmp_path, pieces='\n[piece.crate]\nshape = "box"\nsize = [0.2, 0.2, 0.2]\nmass = 1.0\n'
+                                f'friction = "m/{name}"\n\n[piece.cone]\nshape = "box"\nsize = [0.2, 0.2, 0.2]\n'
+                                'mass = 1.0\nfriction = 0.5\n')
+    rng = load_range("mine.toml", tmp_path)
+    world = type("W", (), {"test_range": type("T", (), {"range": rng})(), "parts": None})()
+    program = type("P", (), {"blocks": [], "chart": [], "path": "t.test.toml"})()
+    assert run_notes(world, program) == ["crate piece: measured, friction 0.8 (tread.measure.toml, J. Smith, "
+                                         "2026-11-10, 3 trials)"]
+
+
 def test_the_grip_note_without_and_with_a_measurement(tmp_path):
     from scrimmage.parts.grip import grip_notes
     from scrimmage.parts.model import load_part
@@ -234,6 +249,17 @@ def test_a_bench_sweep_chart_carries_the_bench_line(tmp_path, monkeypatch, capsy
     want = bench_estimates(load_bench(f))
     assert want.startswith("UNCALIBRATED: estimates from preset numbers, not measurements (")
     assert footers and set(footers) == {want}
+
+
+def test_a_no_measurement_chart_footer_stays_on_one_line(tmp_path, monkeypatch):
+    from scrimmage.disc.report import DISC_UNCALIBRATED
+    from scrimmage.launcher import report, sweep
+    footers = _footers(monkeypatch)
+    rows, _ = sweep.run_one(shooter(tmp_path))
+    for line_ in (report.UNCALIBRATED, DISC_UNCALIBRATED):
+        assert len(line_) <= report.FOOTER_WIDTH
+        report.write_charts(rows, [{"kind": "shaft"}], tmp_path / "out", footer=line_)
+    assert footers == [report.UNCALIBRATED, DISC_UNCALIBRATED]  # unwrapped
 
 
 def test_a_long_chart_footer_wraps(tmp_path, monkeypatch):

@@ -316,15 +316,28 @@ def pneumatic_note(cylinders) -> str:
     return f"{line(inputs, keys, estimates=PNEUMATIC_ESTIMATES)}; see docs/pneumatics.md."
 
 
+def piece_notes(world) -> list[str]:
+    """One line per field piece whose friction a measurement file gives ([piece.<name>] friction = "<file>"), worded
+    as a measured grip's: "crate piece: measured, friction 0.8 (tread.measure.toml, J. Smith, 2026-11-10, 3
+    trials)"."""
+    from ..parts.grip import measured_label
+    tr = getattr(world, "test_range", None)
+    kinds = getattr(getattr(tr, "range", None), "kinds", None) or {}
+    return [f"{kind.name} piece: {measured_label(kind.friction, kind.provenance['friction'])}"
+            for kind in kinds.values() if "friction" in kind.provenance]
+
+
 def run_notes(world, program: Program) -> list[str]:
     """What the run's numbers rest on: a line per gripped body (parts/grip.py's grip_notes); a test of held, rests on
-    or seated with no grip anywhere gets default_grip_note, so its grip isn't read as measured either. A robot with
-    cylinders gets pneumatic_note. A test that measures an element's clearance, on a robot with stock parts whose
-    collide is off, gets clearance.uncounted_note: those parts aren't measured."""
+    or seated with no grip anywhere gets default_grip_note, so its grip isn't read as measured either. A field piece
+    whose friction is measured gets piece_notes' line. A robot with cylinders gets pneumatic_note. A test that
+    measures an element's clearance, on a robot with stock parts whose collide is off, gets clearance.uncounted_note:
+    those parts aren't measured."""
     from ..parts.grip import grip_notes
     notes = grip_notes(world)
     if not notes and any(_conds(program.blocks, k) for k in GRIP_CONDITIONS):
         notes = [default_grip_note(world)]
+    notes += piece_notes(world)
     if getattr(world, "pneumatics", None) is not None:
         notes.append(pneumatic_note(world.parts.cylinders))
     uncounted = uncounted_note(world, program)

@@ -68,7 +68,8 @@ flatter shot (9 m/s across) needs the marks about 30 in apart at 240 fps, or a 9
 
 **Only the stiffness.** The fit can't give the wheel's friction too: the shots can't tell a stiffer ball from a
 grippier wheel. To fit the friction instead, squeeze-test the Power Cell (a ball file with `base =
-"2020-power-cell"`) and name it in `[shot_setup] ball`.
+"2020-power-cell"`) and name it in `[shot_setup] ball`, and in the `[ball] measured` of the setup a run uses, so the
+run's ball is the one the shots were fit with.
 
 ## The cylinder's strokes
 

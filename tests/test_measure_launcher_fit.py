@@ -17,9 +17,17 @@ from measure_helpers import truth as _truth
 from measure_helpers import write_setup as _setup
 
 
+def _setup_names_the_ball(tmp_path, name="fuel.measure.toml"):
+    """The shots' setup names the ball file in its own [ball] measured too, as a run would."""
+    (tmp_path / "shooter.toml").write_text(SETUP.replace('preset = "2026-fuel"\n',
+                                                         f'preset = "2026-fuel"\nmeasured = "{name}"\n'),
+                                           encoding="utf-8")
+
+
 def test_with_the_squeeze_measured_the_shots_fit_the_wheel_friction(tmp_path):
     _ball_file(tmp_path, [118.0, 120.0, 122.0])
     mf = _synthetic(tmp_path, 120.0, 1.1, [50.0, 50.0, 50.0, 80.0, 80.0, 80.0], header=WITH_BALL)
+    _setup_names_the_ball(tmp_path)
     result = fit(mf)
     assert result.fitted == ("friction",)
     assert result.stiffness_n == pytest.approx(120.0)
@@ -63,16 +71,56 @@ def test_a_setup_that_names_this_launcher_file_is_read_without_it(tmp_path):
     assert result.stiffness_n == pytest.approx(120.0, rel=0.05)
 
 
-def test_a_ball_file_must_have_a_good_squeeze(tmp_path):
+def test_a_squeeze_that_isn_t_good_is_held_as_a_run_holds_it_and_the_fit_isn_t_good(tmp_path):
+    # A run uses a squeeze that isn't good (its label stays UNCALIBRATED), so the fit holds it too.
+    _ball_file(tmp_path, [118.0, 122.0])
+    mf = _synthetic(tmp_path, 120.0, 1.1, [50.0, 80.0], header=WITH_BALL)
+    _setup_names_the_ball(tmp_path)
+    result = fit(mf)
+    assert result.fitted == ("friction",)
+    assert result.stiffness_n == pytest.approx(120.0)
+    assert result.friction == pytest.approx(1.1, rel=0.03)
+    assert not result.good
+    assert result.why == "the ball's squeeze isn't good enough: 2 trials; take at least 3"
+    assert ("the ball's squeeze (fuel.measure.toml) isn't good enough: 2 trials; take at least 3. The fit holds it, "
+            "as a run does, so the fit isn't good until it is") in result.warnings
+
+
+def test_a_sled_pull_that_isn_t_good_is_held_and_the_fit_isn_t_good(tmp_path):
+    (tmp_path / "tread.measure.toml").write_text(
+        '[measure]\nkind = "friction"\n\n[sled_setup]\nsliding = "wheel tread: 35A"\non = "FUEL"\nsled_lb = 5.0\n'
+        + "".join("\n[[sled]]\npull_lb = 5.5\n" for _ in range(2)), encoding="utf-8")
+    mf = _synthetic(tmp_path, 120.0, 1.1, [50.0, 80.0])
+    (tmp_path / "shooter.toml").write_text(SETUP.replace('preset = "35A"\n',
+                                                         'preset = "35A"\nmeasured = "tread.measure.toml"\n'),
+                                           encoding="utf-8")
+    result = fit(mf)
+    assert result.fitted == ("stiffness_n",)
+    assert result.friction == pytest.approx(1.1)
+    assert not result.good
+    assert result.why == "the wheel's sled pull isn't good enough: 2 trials; take at least 3"
+
+
+def test_a_ball_named_only_by_the_shots_says_to_name_it_in_the_setup(tmp_path):
+    _ball_file(tmp_path, [120.0, 120.0, 120.0])
+    _ball_file(tmp_path, [100.0, 100.0, 100.0], name="other.measure.toml")
+    mf = _synthetic(tmp_path, 120.0, 1.1, [50.0, 80.0], header=WITH_BALL)
+    warning = ('[shot_setup] ball = "fuel.measure.toml" isn\'t the ball the setup names: name it in the setup\'s '
+               '[ball] measured too, so a run uses the ball the shots were fit with')
+    assert warning in fit(mf).warnings  # the setup names no ball file
+    _setup_names_the_ball(tmp_path, "other.measure.toml")
+    assert warning in fit(mf).warnings  # the setup names another
+    _setup_names_the_ball(tmp_path)
+    assert warning not in fit(mf).warnings
+
+
+def test_a_ball_file_must_be_a_ball_measurement(tmp_path):
     _setup(tmp_path)
-    _ball_file(tmp_path, [120.0, 125.0])
     mf = _measure(tmp_path, [(60.0, 10.0)], header=WITH_BALL)
-    with pytest.raises(MeasureError, match=r"ball = \"fuel.measure.toml\" has a squeeze that isn't good enough "
-                                           r"to use \(2 trials: take at least 3\)"):
-        fit(mf)
     (tmp_path / "fuel.measure.toml").write_text('[measure]\nkind = "friction"\nby = "J. Smith"\n'
                                                 'date = 2026-11-10\n', encoding="utf-8")
-    with pytest.raises(MeasureError, match="is a friction measurement; the fit needs a ball measurement"):
+    with pytest.raises(MeasureError, match=r"\[shot_setup\]: ball = \"fuel.measure.toml\" is a friction measurement; "
+                                           "a ball needs a ball measurement"):
         fit(mf)
 
 
@@ -80,7 +128,7 @@ def test_a_ball_file_that_can_t_be_read_is_named_with_the_shot_setup_that_names_
     _setup(tmp_path)
     mf = _measure(tmp_path, [(60.0, 10.0)], header=WITH_BALL)
     (tmp_path / "fuel.measure.toml").write_text("[measure]\nkind = \"ball\"\nwho = \"J. Smith\"\n", encoding="utf-8")
-    with pytest.raises(MeasureError, match=r"\[shot_setup\] ball = \"fuel.measure.toml\": .*fuel.measure.toml: "
+    with pytest.raises(MeasureError, match=r"\[shot_setup\]: ball = \"fuel.measure.toml\": .*fuel.measure.toml: "
                                            r"unknown key 'who' in \[measure\]"):
         fit(mf)
 
@@ -93,6 +141,7 @@ def test_a_shot_s_exit_speed_is_the_mark_spacing_times_fps_over_the_frames(tmp_p
 def test_shots_at_one_wheel_speed_still_fit_with_a_warning(tmp_path):
     _ball_file(tmp_path, [120.0, 120.0, 120.0])
     mf = _synthetic(tmp_path, 120.0, 1.1, [80.0, 80.0, 80.0], header=WITH_BALL)
+    _setup_names_the_ball(tmp_path)
     result = fit(mf)
     assert result.friction == pytest.approx(1.1, rel=0.03)
     assert result.warnings == ["the shots are all at one wheel speed (80 rps): shots at two or more wheel speeds "
@@ -237,3 +286,10 @@ def test_only_a_launcher_file_has_shots_to_fit(tmp_path):
                  encoding="utf-8")
     with pytest.raises(MeasureError, match="is a ball measurement: only a launcher file has shots to fit"):
         fit(file.load(p))
+
+
+def test_a_shot_spanning_too_few_frames_is_warned_by_its_number(tmp_path):
+    result = fit(_measure(tmp_path, [(60.0, 70.0), (80.0, 12.0), (80.0, 19.5)]))
+    assert [w for w in result.warnings if w.startswith("shot ")] == [
+        "shot 2: 12 frames between the marks; 20 or more fits better",
+        "shot 3: 19.5 frames between the marks; 20 or more fits better"]

@@ -3,7 +3,7 @@ horizontal exit speeds match filmed shots.
 
     [shot_setup]
     setup = "shooter.toml"        # the launcher setup the shots were taken on, relative to this file
-    ball = "fuel.measure.toml"    # optional: the ball's squeeze test, so the shots fit the wheel's friction
+    ball = "fuel.measure.toml"    # optional: the ball file (its squeeze test fits the wheel's friction)
     marks_in = 24                 # the tape marks' spacing, and the camera's frame rate, once for all shots
     fps = 960
 
@@ -26,14 +26,18 @@ ball, nearer the camera than the marks, isn't read early or late against them). 
 the marks go further apart or the frame rate up.
 
 One number is fit, never both: in the model a stiffer ball and a grippier wheel speed a ball up in the same way at
-every wheel speed, so shots alone can't tell them apart. With the ball's squeeze measured (a ball file with a good
-squeeze test, named by `ball` here or by the setup's own `[ball] measured`), stiffness is fixed at it and the wheel
-friction is fit. Otherwise the ball's stiffness is fit, with the wheel friction at the setup's: its `[wheels]
-measured` friction file's (a sled test) when it names a good one, else the setup's number.
+every wheel speed, so shots alone can't tell them apart. With the ball's squeeze measured (a ball file with a squeeze
+test, named by `ball` here or by the setup's own `[ball] measured`), stiffness is fixed at it and the wheel friction
+is fit. Otherwise the ball's stiffness is fit, with the wheel friction at the setup's: its `[wheels] measured`
+friction file's (a sled test) when it names one, else the setup's number.
 
-The setup is read as written, without its own measurements applied, except the two files above for the numbers that
-aren't fit: a setup may name this very file, and applying it here would go round in a circle, so a launcher file
-named there is passed over.
+A fitted number must mean the same in a run as in the fit, so the shots' setup is read as a run reads it: its ball
+file (or `ball` here, in its place) and its friction file are applied whole, through use.apply_ball and
+use.apply_wheels, mass, diameter and bounce with the squeeze. A launcher file named there is passed over: a setup may
+name this very file, and applying it would go round in a circle. A squeeze or sled pull that isn't good is used all
+the same, as a run uses it, and the fit isn't good until it is. A ball named here that the setup's own `[ball]
+measured` doesn't name is warned: a run of that setup would use another ball. A setup that names this file in its
+`[ball] measured` takes the ball file's numbers with the fitted stiffness (use.py), so it needs no other.
 
 The model is the launcher's own: one ball fed at the setup's entry speed into the feed lane nearest the middle, with
 the wheel spinning at the shot's speed when it enters and the setup's own velocity loop holding it as the ball
@@ -53,8 +57,9 @@ the scan's points, then by bisection out to where the error rises past it.
 
 A fit is good with an RMS error under 5%, the fitted number not within 5% of its search limit (a fit pinned at a
 limit means the shots ask for more than it tries: often a miscounted frame or a wrong setup), and its band within
-15% of it either way (a wider band means the shots hardly depend on that number at their wheel speeds). Shots all at
-one wheel speed still fit, with a warning: shots at a second speed check that the model follows the launcher's speed.
+15% of it either way (a wider band means the shots hardly depend on that number at their wheel speeds), and the
+squeeze or sled pull it holds good. Shots all at one wheel speed still fit, with a warning: shots at a second speed
+check that the model follows the launcher's speed. A shot under 20 frames between the marks is warned by its number.
 """
 
 import dataclasses
@@ -66,10 +71,9 @@ from pathlib import Path
 from ..launcher.inputs import LauncherConfigError, Setup, load_setup
 from ..launcher.model import Launcher
 from ..launcher.single import single_pass
-from .file import MeasureError, MeasureFile, load
-from .stats import why as summary_why
-from .tests_direct import values
+from .file import MeasureError, MeasureFile, Provenance
 from .units import reading, unit_of
+from .use import apply_ball, apply_wheels, open_file
 
 STIFFNESS_RANGE = (0.25, 4.0)  # times the setup's stiffness_n
 FRICTION_RANGE = (0.2, 2.0)
@@ -104,6 +108,8 @@ class LauncherFit:
     band_text: str  # "stiffness 118 N, anywhere from 113 to 127 N fits your shots"
     good: bool  # RMS under 5%, the fitted number not at the edge of its range, its band within 15% of it
     why: str  # empty when good, else why not, in a few words
+    ball_file: Path | None = None  # the ball file the shots were fit with (its measured numbers applied), resolved
+    inputs: tuple[Path, ...] = ()  # every file the fit read, resolved: this one, the setup and its measurements
 
 
 @dataclass(frozen=True)
@@ -166,9 +172,30 @@ def _text(mf: MeasureFile, table: dict, key: str) -> str | None:
     return v
 
 
-def _load_setup(mf: MeasureFile, table: dict) -> tuple[Setup, Path, dict[str, str]]:
-    """The shots' setup as written (its own measurements not applied), its path, and the measurement files its
-    sections name (`{"ball": "fuel.measure.toml"}`)."""
+@dataclass(frozen=True)
+class _Inputs:
+    """The shots' setup as a run would use it (its ball file and friction file applied, a launcher file passed
+    over) and what the fit needs to know of it."""
+    setup: Setup
+    provenance: dict[str, Provenance]  # "ball.stiffness_n" -> the file it came from, as Setup.provenance
+    ball_file: Path | None  # the ball file applied, resolved
+    setup_ball: Path | None  # the file the setup's own [ball] measured names, resolved
+    files: tuple[Path, ...]  # every file read, resolved (for the cache)
+
+
+def _open_named(name, base: Path, where: str, key: str, kinds: tuple[str, ...], needs: str):
+    """The file `key = name` names, opened as a run opens it; None when it is a launcher file (perhaps this one:
+    applying it would go round in a circle)."""
+    if not isinstance(name, str):
+        return None  # the setup's own error, given when a run loads it
+    found = open_file(name, base, where, key, kinds + ("launcher",), needs)
+    return None if found.kind == "launcher" else found
+
+
+def _load_setup(mf: MeasureFile, table: dict) -> _Inputs:
+    """The shots' setup with its measurement files applied the way a run applies them (use.apply_ball and
+    use.apply_wheels), except a launcher file, which is passed over; `[shot_setup] ball` takes the place of the
+    setup's own ball file."""
     name = _text(mf, table, "setup")
     if name is None:
         raise MeasureError(f"{mf.path}: [shot_setup] is missing required key 'setup': the launcher setup file the "
@@ -181,61 +208,43 @@ def _load_setup(mf: MeasureFile, table: dict) -> tuple[Setup, Path, dict[str, st
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except (tomllib.TOMLDecodeError, OSError) as e:
         raise MeasureError(f"{where}: {e}") from None
-    measured = {}
+    files = [mf.path.resolve(), path.resolve()]
+    raw, provenance = dict(raw), {}
+    named = {}  # section -> the file its `measured` names, as written
     for section in ("ball", "wheels"):
         t = raw.get(section)
         if isinstance(t, dict) and "measured" in t:
-            t = dict(t)
-            m = t.pop("measured")
-            raw = {**raw, section: t}
-            if isinstance(m, str):
-                measured[section] = m
+            named[section] = t["measured"]
+            raw[section] = {k: v for k, v in t.items() if k != "measured"}
+
+    ball_name = _text(mf, table, "ball")
+    if ball_name is not None:
+        ball_at = (mf.path.parent, f"{mf.path}: [shot_setup]", "ball", ball_name)
+    elif _open_named(named.get("ball"), path.parent, f"{path}: [ball]", "measured", ("ball",), "a ball"):
+        ball_at = (path.parent, f"{path}: [ball]", "measured", named["ball"])
+    else:
+        ball_at = None
+    ball_file = None
+    if ball_at is not None:
+        base, at, key, file_name = ball_at
+        raw["ball"], got = apply_ball(raw.get("ball", {}), file_name, at, base=base, key=key, launcher=False)
+        provenance |= {f"ball.{k}": p for k, p in got.items()}
+        ball_file = (base / file_name).resolve()
+        files.append(ball_file)
+    if _open_named(named.get("wheels"), path.parent, f"{path}: [wheels]", "measured", ("friction",), "a wheel"):
+        raw["wheels"], got = apply_wheels(raw.get("wheels", {}), named["wheels"], f"{path}: [wheels]",
+                                          base=path.parent)
+        provenance |= {f"wheels.{k}": p for k, p in got.items()}
+        files.append((path.parent / named["wheels"]).resolve())
+
+    setup_ball = named.get("ball")
+    setup_ball = (path.parent / setup_ball).resolve() if isinstance(setup_ball, str) else None
     try:
-        return load_setup(raw)[0], path, measured
+        setup = load_setup(raw)[0]
     except LauncherConfigError as e:
         raise MeasureError(f"{where}: {e}") from None
-
-
-def _setup_file(setup_path: Path, section: str, name: str) -> tuple[MeasureFile | None, str]:
-    """The measurement file a setup's `[section] measured` names, read once, and the words that place it. None when
-    it is missing (the setup's own error, given when the setup is used) or a launcher file (perhaps this one)."""
-    where = f"{setup_path}: [{section}] measured = \"{name}\""
-    path = setup_path.parent / name
-    if not path.is_file():
-        return None, where
-    try:
-        found = load(path)
-    except MeasureError as e:
-        raise MeasureError(f"{where}: {e}") from None
-    return (None if found.kind == "launcher" else found), where
-
-
-def _squeeze(ball: MeasureFile, where: str, *, required: bool) -> tuple[float | None, str]:
-    """A ball file's squeeze-test stiffness (N), or None with a warning (or an error, when `required`) saying why."""
-    problem = None
-    if ball.kind != "ball":
-        problem = f"is a {ball.kind} measurement; the fit needs a ball measurement with a squeeze test"
-    elif "stiffness_n" not in (vals := values(ball)):
-        problem = "has no [[squeeze]] trials, so it doesn't measure the ball's stiffness"
-    elif not vals["stiffness_n"][0].good:
-        problem = f"has a squeeze that isn't good enough to use ({summary_why(vals['stiffness_n'][0])})"
-    if problem is None:
-        return vals["stiffness_n"][0].mean, ""
-    if required:
-        raise MeasureError(f"{where} {problem}")
-    return None, f"{where} {problem}, so the ball's stiffness is fit instead"
-
-
-def _sled(found: MeasureFile, where: str, setup_friction: float) -> tuple[float | None, str]:
-    """A friction file's sled-test friction, or None with a warning saying why it isn't used."""
-    vals = values(found)
-    if "friction" not in vals:
-        return None, f"{where} has no [[sled]] trials, so the setup's wheel friction {setup_friction:g} is used"
-    s = vals["friction"][0]
-    if not s.good:
-        return None, (f"{where} has a sled pull that isn't good enough to use ({summary_why(s)}), so the setup's "
-                      f"wheel friction {setup_friction:g} is used")
-    return s.mean, ""
+    return _Inputs(setup=setup, provenance=provenance, ball_file=ball_file, setup_ball=setup_ball,
+                   files=tuple(files))
 
 
 def _shots(mf: MeasureFile, setup: Setup, table: dict) -> list[_Shot]:
@@ -341,36 +350,31 @@ def fit(mf: MeasureFile) -> LauncherFit:
         raise MeasureError(f"{mf.path}: a launcher file needs its shots, each written as a [[shot]] table")
     table = mf.settings.get("shot_setup", {})
     _check_keys(mf, table, mf.trials["shot"])
-    setup, setup_path, measured = _load_setup(mf, table)
+    inputs = _load_setup(mf, table)
+    setup = inputs.setup
     shots = _shots(mf, setup, table)
     warnings: list[str] = []
+    why: list[str] = []
 
-    squeezed = None
-    ball_name = _text(mf, table, "ball")
-    if ball_name is not None:
-        where = f"{mf.path}: [shot_setup] ball = \"{ball_name}\""
-        path = mf.path.parent / ball_name
-        if not path.is_file():
-            raise MeasureError(f"{where}: no such file (looked in {path.resolve()})")
-        try:
-            ball = load(path)
-        except MeasureError as e:
-            raise MeasureError(f"{where}: {e}") from None
-        squeezed, _ = _squeeze(ball, where, required=True)
-    elif "ball" in measured:
-        found, where = _setup_file(setup_path, "ball", measured["ball"])
-        if found is not None and found.kind == "ball":
-            squeezed, note = _squeeze(found, where, required=False)
-            if note:
-                warnings.append(note)
+    squeezed = setup.ball.stiffness_n if "ball.stiffness_n" in inputs.provenance else None
     friction = setup.wheels.friction
-    if squeezed is None and "wheels" in measured:
-        found, where = _setup_file(setup_path, "wheels", measured["wheels"])
-        if found is not None and found.kind == "friction":
-            sled, note = _sled(found, where, friction)
-            friction = friction if sled is None else sled
-            if note:
-                warnings.append(note)
+    held, test = ("ball.stiffness_n", "squeeze") if squeezed is not None else ("wheels.friction", "sled pull")
+    owner = "ball" if squeezed is not None else "wheel"
+    held_from = inputs.provenance.get(held)
+    if held_from is not None and not held_from.good:
+        reason = held_from.why.replace(": ", "; ")
+        warnings.append(f"the {owner}'s {test} ({held_from.file.name}) isn't good enough: {reason}. The fit holds "
+                        "it, as a run does, so the fit isn't good until it is")
+        why.append(f"the {owner}'s {test} isn't good enough: {reason}")
+    ball_name = _text(mf, table, "ball")
+    if ball_name is not None and inputs.setup_ball not in (inputs.ball_file, mf.path.resolve()):
+        name_it = ("it in the setup's [ball] measured too" if squeezed is not None
+                   else f"{mf.path.name} in the setup's [ball] measured (it brings the ball file's numbers)")
+        warnings.append(f"[shot_setup] ball = \"{ball_name}\" isn't the ball the setup names: name {name_it}, so a "
+                        "run uses the ball the shots were fit with")
+    for i, s in enumerate(shots):
+        if s.frames < GOOD_FRAMES:
+            warnings.append(f"shot {i + 1}: {s.frames:g} frames between the marks; {GOOD_FRAMES} or more fits better")
 
     conditions = sorted({(s.wheel_rps, s.hood_deg) for s in shots})
     cache: dict[tuple[float, float], list[float]] = {}
@@ -427,7 +431,6 @@ def fit(mf: MeasureFile) -> LauncherFit:
     band_text = (f"{plain} {show(fitted_value)}{unit}, anywhere from {show(band[0])} to {show(band[1])}{unit} fits "
                  "your shots")
 
-    why = []
     slow, fast = min(s.wheel_rps for s in shots), max(s.wheel_rps for s in shots)
     if fast < SECOND_SPEED * slow:
         at = f"{slow:g} rps" if slow == fast else f"{slow:g} to {fast:g} rps"
@@ -453,4 +456,5 @@ def fit(mf: MeasureFile) -> LauncherFit:
                         f"{', '.join(map(str, missed))}: check the setup's hood gap and wheel")
     return LauncherFit(stiffness_n=k, friction=f, rms_error=rms,
                        per_shot=[(s.speed, m) for s, m in zip(shots, speeds)], fitted=fitted,
-                       warnings=warnings, band=band, band_text=band_text, good=not why, why="; ".join(why))
+                       warnings=warnings, band=band, band_text=band_text, good=not why, why="; ".join(why),
+                       ball_file=inputs.ball_file, inputs=inputs.files)
