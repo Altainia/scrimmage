@@ -1,4 +1,4 @@
-"""Scenario files: a sequence of steps (DS mode, duration, joysticks) with checks and screenshots."""
+"""Scenario files: a sequence of steps (DS mode, duration, joysticks, game data) with checks and screenshots."""
 
 from __future__ import annotations
 
@@ -12,21 +12,21 @@ from pathlib import Path
 import mujoco
 
 from .checks import CHECK_KINDS, ScenarioError, build_check
-from .driverstation import MODES
+from .driverstation import MODES, MatchSettings, check_game_data
 from .lockstep import parse_speed
 from .render import VIEWS_HELP, check_camera, check_sheet_size, check_size
 from .teamfolders import TeamFolderError, expand
 from .tracks import Track, TrackError, load_track
 
-TOP_KEYS = {"config", "description", "speed", "require_lockstep", "range", "robot_env", "step"}
+TOP_KEYS = {"config", "description", "speed", "require_lockstep", "range", "robot_env", "match", "step"}
 RANGE_KEYS = ("file", "start", "preload", "floor_balls")   # a scenario's [range]: the config's, for this run
-STEP_KEYS = {"name", "mode", "duration", "axes", "buttons", "povs", "check", "screenshot", "contact_sheet",
-             "inputs"}
+STEP_KEYS = {"name", "mode", "duration", "game_data", "axes", "buttons", "povs", "check", "screenshot",
+             "contact_sheet", "inputs"}
 SHOT_KEYS = {"view", "at", "width", "height", "camera"}
 SHEET_KEYS = {"frames", "view", "width", "height"}
 
 __all__ = ["ScenarioError", "Shot", "SheetSpec", "Step", "Scenario", "load_scenario", "validate", "config_for",
-           "range_file"]
+           "match_for", "range_file"]
 
 
 @dataclass
@@ -58,6 +58,7 @@ class Step:
     screenshots: list[Shot] = field(default_factory=list)
     contact_sheet: SheetSpec | None = None
     inputs: Track | None = None
+    game_data: str | None = None    # sent when the step starts; None leaves the robot's as it was
 
 
 @dataclass
@@ -70,6 +71,7 @@ class Scenario:
     steps: list[Step]
     range: dict | None = None       # [range] keys over the config's for this run (file made absolute unless built in)
     robot_env: dict[str, str] = field(default_factory=dict)   # merged into the robot program's environment
+    match: dict = field(default_factory=dict)   # [match] keys over the config's for this run (checked at load)
 
 
 def _keys(d: dict, allowed: set[str], where: str) -> None:
@@ -173,6 +175,12 @@ def load_scenario_raw(raw: dict, path: str | Path) -> Scenario:
         dur = s.get("duration")
         if not _is_num(dur) or dur <= 0:
             raise ScenarioError(f"{sw}: duration must be a positive number of seconds, not {dur!r}")
+        game_data = None
+        if "game_data" in s:
+            try:
+                game_data = check_game_data(s["game_data"], f"{sw}:")
+            except ValueError as e:
+                raise ScenarioError(str(e)) from None
         track = None
         if "inputs" in s:
             if not isinstance(s["inputs"], str):
@@ -238,9 +246,9 @@ def load_scenario_raw(raw: dict, path: str | Path) -> Scenario:
                 raise ScenarioError(f"{csw}: {e}") from None
         steps.append(Step(name, s["mode"], float(dur), _ports(s.get("axes", {}), sw, "axes"),
                           _ports(s.get("buttons", {}), sw, "buttons"), _ports(s.get("povs", {}), sw, "povs"),
-                          checks, shots, sheet, track))
+                          checks, shots, sheet, track, game_data))
     return Scenario(path, (path.parent / config_ref).resolve(), str(raw.get("description", "")), speed, req, steps,
-                    _range(raw, path, where), _robot_env(raw, where))
+                    _range(raw, path, where), _robot_env(raw, where), _match(raw, where))
 
 
 def _by_time(spec, duration: float, where: str) -> None:
@@ -293,6 +301,21 @@ def _robot_env(raw: dict, where: str) -> dict[str, str]:
     return {str(k): v for k, v in env.items()}
 
 
+def _match(raw: dict, where: str) -> dict:
+    """The scenario's [match] as written, once MatchSettings takes it."""
+    table = raw.get("match", {})
+    try:
+        MatchSettings().merged(table, f"{where}: [match]")
+    except ValueError as e:
+        raise ScenarioError(str(e)) from None
+    return dict(table)
+
+
+def match_for(scenario: Scenario, config) -> MatchSettings:
+    """The match settings a run sends: the scenario's [match] keys over the config's (M4)."""
+    return config.match.merged(scenario.match, f"{scenario.path.name}: [match]")
+
+
 def range_file(ref: str) -> Path:
     """A [range] file as a path: a built-in range's own file, else `ref` (already absolute in a Scenario)."""
     from .testrange.spec import BUILTIN_RANGES
@@ -322,9 +345,12 @@ def _check_range(config, raw: dict, where: str) -> None:
 def config_for(scenario: Scenario, config):
     """The config a scenario runs on its own session: the scenario's [range] keys over the config's (its start
     replacing any [robot] start_pose) and its robot_env over the robot program's environment. `config` itself is
-    left as it was. A [range] on a config without one, a [range] value the config's range or robot can't take (its
-    start, preload), and a robot_env with no robot program to give it to are ScenarioErrors naming the scenario; a
-    mistake in the config's own [range] is left for building the world to report as the config's."""
+    left as it was. Its [match] goes over the config's too, so the robot hears the station from its first frame. A
+    [range] on a config without one, a [range] value the config's range or robot can't take (its start, preload),
+    and a robot_env with no robot program to give it to are ScenarioErrors naming the scenario; a mistake in the
+    config's own [range] is left for building the world to report as the config's."""
+    if scenario.match:
+        config = dataclasses.replace(config, match=match_for(scenario, config))
     if not scenario.range and not scenario.robot_env:
         return config
     where = scenario.path.name

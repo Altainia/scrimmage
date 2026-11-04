@@ -18,7 +18,7 @@ from scrimmage.robot_process import RobotProcess  # noqa: E402
 TESTS = Path(__file__).resolve().parent
 FAKE = str(TESTS / "fake_robot.toml")
 TOOLS = {"start_session", "stop_session", "restart_robot", "session_status", "advance", "set_mode", "set_joystick",
-         "get_state", "get_hal", "get_console", "nt_list", "nt_get", "set_pose", "push", "move_body", "screenshot",
+         "set_match", "get_state", "get_hal", "get_console", "nt_list", "nt_get", "set_pose", "push", "move_body", "screenshot",
          "contact_sheet", "run_scenario", "robot_parts"}
 
 SCENARIO = f"""config = "{FAKE}"
@@ -55,6 +55,10 @@ def test_tools_drive_a_session():
                 r = await c.call_tool("start_session", {"config": FAKE})
                 assert r.is_error and "replace" in r.content[0].text
                 assert text(await c.call_tool("set_mode", {"mode": "teleop"}))["mode"] == "teleop"
+                m = text(await c.call_tool("set_match", {"station": "red1", "game_data": "B"}))["match"]
+                assert m["station"] == "red1" and m["game_data"] == "B" and m["fms"] is False
+                r = await c.call_tool("set_match", {"station": "red4"})
+                assert r.is_error and "red1, red2" in r.content[0].text
                 assert text(await c.call_tool("advance", {"seconds": 0.1}))["t"] == pytest.approx(0.1)
                 r = await c.call_tool("advance", {"seconds": 61})
                 assert r.is_error and "60" in r.content[0].text

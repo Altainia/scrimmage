@@ -1,5 +1,5 @@
 // The Drive tab: drive the open robot live. Start / Stop the session (POST /api/live/start|stop), the Driver
-// Station bar (mode, Enable / Disable, joystick ports 0-5 fed by the keyboard or browser gamepads), sim controls
+// Station bar (mode, Enable / Disable, the match: station, FMS, match timer and game data, joystick ports 0-5 fed by the keyboard or browser gamepads), sim controls
 // (Pause / Resume, Step, speed), the live 3D view with a HUD, and the readouts (pose, speed, battery, motors,
 // joints, up to 4 plotted signals, console tail). See the docstring of scrimmage/assembler/server.py for the API
 // and the stream protocol.
@@ -36,6 +36,7 @@ const MAX_AXES = 12, MAX_BUTTONS = 32, MAX_POVS = 12;   // what the server takes
 const MODES = ["teleop", "auto", "test"];
 const RTF_WINDOW = 1000;          // ms of wall time the real-time factor is measured over
 const MODE_SETTLE = 1000;         // ms a mode sent from this page outranks an older chosen_mode from the server
+const MATCH_CONTROLS = { station: "#drive-station", fms: "#drive-fms", timer: "#drive-timer", game_data: "#drive-game-data" };
 const STATE_TEXT = {
   idle: "Not started", starting: "Starting the robot program…", running: "Running", paused: "Paused",
   stopped: "Stopped", error: "Error",
@@ -52,6 +53,7 @@ const drive = {
   lastFrame: null,
   mode: "teleop",       // the chosen mode (the effective one is "disabled" while not enabled)
   modeSent: null,       // {mode, at}: a mode this page just sent; the server's chosen_mode catches up shortly
+  matchSent: {},        // key -> {value, at}: a match setting this page just sent, likewise
   port0Default: true,   // port 0 still holds the keyboard it got at load (a gamepad connected later takes it)
   startProblem: null,   // why the robot can't be driven (/api/live/info's start_problem): Start is disabled
   startError: null,     // why the last Start press failed (busy, bad speed, no answer); Start stays usable
@@ -320,6 +322,30 @@ function sessionBegan(prev) {
   sendPicks(true);
 }
 
+// The match controls show the session's settings and game data box (state.match, from the config's [match] at
+// Start); they work only while a session is live. The server sends the box to the robot when it is enabled in Teleop.
+function sendMatch(key, value) {
+  if (cmd("match", { [key]: value })) drive.matchSent[key] = { value, at: performance.now() };
+}
+
+function renderMatch(s) {
+  const m = isLive(s) && s.match;
+  const station = $("#drive-station");
+  if (s.stations && station.options.length !== s.stations.length) {
+    station.replaceChildren(...s.stations.map((st) => h("option", { value: st }, st)));
+  }
+  for (const [key, id] of Object.entries(MATCH_CONTROLS)) {
+    const el = $(id);
+    el.disabled = !m;
+    if (!m) continue;
+    const sent = drive.matchSent[key];
+    if (sent && sent.value !== m[key] && performance.now() - sent.at < MODE_SETTLE) continue;
+    delete drive.matchSent[key];
+    if (el.type === "checkbox") el.checked = !!m[key];
+    else if (document.activeElement !== el) el.value = m[key];
+  }
+}
+
 const fmtT = (t) => (typeof t === "number" ? `${t.toFixed(3)} s` : "—");
 
 function rtfText(s) {
@@ -367,6 +393,7 @@ function render() {
   $("#drive-save").disabled = !s.can_save || drive.saving;
   $("#drive-pokes").classList.toggle("off", !active);
   if (drive.field) drive.field.setEnabled(active);   // drags only while a session is starting, running or paused
+  renderMatch(s);
   renderHud(s);
   renderReadouts($("#drive-values"), s);
   if (drive.view) drive.view.setScore(s.readouts && s.readouts.range);
@@ -387,6 +414,8 @@ function renderHud(s) {
     badge,
     h("span", { class: "hud-item", text: rtfText(s) }),
   ];
+  const match = live && s.readouts && s.readouts.match;
+  if (match && match.timer && match.match_time >= 0) items.splice(3, 0, h("span", { class: "hud-item", text: `match ${match.match_time.toFixed(1)} s` }));
   if (drive.started && !drive.connected) items.push(h("span", { class: "hud-item hud-bad", text: "reconnecting…" }));
   $("#drive-hud").replaceChildren(...items);
 }
@@ -669,6 +698,9 @@ export function initDrive() {
       render();
     });
   }
+  $("#drive-station").addEventListener("change", (e) => sendMatch("station", e.target.value));
+  for (const key of ["fms", "timer"]) $(MATCH_CONTROLS[key]).addEventListener("change", (e) => sendMatch(key, e.target.checked));
+  $("#drive-game-data").addEventListener("change", (e) => sendMatch("game_data", e.target.value));
   $("#drive-enable").addEventListener("click", () => cmd("enable"));
   $("#drive-disable").addEventListener("click", () => cmd("disable"));
   $("#drive-pause").addEventListener("click", () => cmd(drive.state && drive.state.paused ? "resume" : "pause"));

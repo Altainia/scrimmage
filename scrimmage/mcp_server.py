@@ -138,7 +138,8 @@ async def stop_session() -> str:
 
 @server.tool()
 async def restart_robot() -> str:
-    """Restart the robot program (e.g. after editing its code) and reset the world to t=0, disabled."""
+    """Restart the robot program (e.g. after editing its code) and reset the world to t=0, disabled. The game data
+    and match settings stay: a restart is the same match."""
     try:
         return _json(await _need().restart_robot())
     except SessionError as e:
@@ -182,6 +183,26 @@ async def set_mode(mode: str) -> str:
 
 
 @server.tool()
+async def set_match(station: str | None = None, fms: bool | None = None, timer: bool | None = None,
+                    game_data: str | None = None, auto_seconds: float | None = None,
+                    teleop_seconds: float | None = None) -> str:
+    """Set what the Driver Station tells the robot about the match; leave out what shouldn't change. Sent on the
+    next advance, in any mode (no wait for Teleop, unlike the Drive tab's box); get_state reports it under "match".
+
+    station: the alliance and driver station, red1-red3 or blue1-blue3 (getAlliance, getLocation).
+    fms: whether the field (FMS) is attached (isFMSAttached).
+    timer: true counts the match time down in sim time while enabled, from auto_seconds when Auto starts and from
+        teleop_seconds when Teleop starts; it holds while disabled. false sends -1 (getMatchTime).
+    game_data: the field's game data, up to 64 bytes (64 plain letters, digits or punctuation), e.g. "R"
+        (getGameSpecificMessage); "" clears it.
+    auto_seconds, teleop_seconds: each phase's length, from the next time it starts (2026: 20 and 140)."""
+    try:
+        return _json(_need().set_match(station, fms, timer, game_data, auto_seconds, teleop_seconds))
+    except SessionError as e:
+        raise _fail(e) from None
+
+
+@server.tool()
 async def set_joystick(port: int, axes: list[float] | None = None, buttons: list[bool] | None = None,
                        povs: list[int] | None = None) -> str:
     """Set a joystick (port 0-5): axes in [-1, 1], buttons (index 0 = button 1), POV angles (-1 = centered)."""
@@ -193,9 +214,10 @@ async def set_joystick(port: int, axes: list[float] | None = None, buttons: list
 
 @server.tool()
 async def get_state() -> str:
-    """Ground-truth pose (m, degrees CCW), speed, battery voltage, motor commands/currents, joint positions; with
-    pneumatic cylinders, the air (stored and working psi, compressor on, each rod's extension_m in meters); with a
-    [partner] robot, its height_in, tilt_deg and moved_in from where it settled."""
+    """Ground-truth pose (m, degrees CCW), speed, battery voltage, motor commands/currents, joint positions, the
+    match data the Driver Station sends (see set_match); with pneumatic cylinders, the air (stored and working psi,
+    compressor on, each rod's extension_m in meters); with a [partner] robot, its height_in, tilt_deg and moved_in
+    from where it settled."""
     try:
         return _json(_need().state())
     except SessionError as e:

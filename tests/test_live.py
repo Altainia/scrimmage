@@ -563,3 +563,87 @@ def test_rev_problem_is_published_as_an_error_notice_once():
     mgr._check_rev(session)
     mgr._check_rev(session)
     assert notices(pub) == [{"kind": "error", "text": problem}]
+
+
+def test_the_game_data_box_is_sent_on_a_teleop_enable(running):
+    """M5: the box's value reaches the robot when it is enabled in Teleop, and at once when edited there; edited
+    while enabled in Auto, it waits for Teleop."""
+    mgr, _, _ = running
+    ds = mgr._session.bridge.ds
+    mgr.command({"cmd": "mode", "mode": "teleop"})
+    mgr.command({"cmd": "match", "game_data": "R"})
+    wait_for(lambda: mgr.status()["match"]["game_data"] == "R", 5, "the box")
+    assert ds.game_data == ""   # disabled: the box waits
+    mgr.command({"cmd": "enable"})
+    wait_for(lambda: ds.game_data == "R", 5, "R on the enable")
+    mgr.command({"cmd": "match", "game_data": "B"})
+    wait_for(lambda: ds.game_data == "B", 5, "B at once")
+    mgr.command({"cmd": "mode", "mode": "auto"})
+    mgr.command({"cmd": "match", "game_data": "R"})
+    wait_for(lambda: mgr.status()["match"]["game_data"] == "R" and mgr.status()["mode"] == "auto", 5, "auto")
+    time.sleep(0.3)
+    assert ds.game_data == "B"   # enabled in Auto: the change waits for Teleop
+    mgr.command({"cmd": "mode", "mode": "teleop"})
+    wait_for(lambda: ds.game_data == "R", 5, "R in Teleop")
+    # clean up while enabled in Teleop, so the robot's game data clears too (a box cleared while disabled would leave
+    # the robot with "R" for the later tests on this shared session)
+    mgr.command({"cmd": "match", "game_data": ""})
+    wait_for(lambda: mgr.status()["match"]["game_data"] == "" and ds.game_data == "", 5, "the game data cleared")
+    mgr.command({"cmd": "disable"})
+    wait_for(lambda: not mgr.status()["enabled"], 5, "disabled")
+
+
+def test_the_match_command_sets_the_station_fms_and_timer(running):
+    mgr, _, _ = running
+    ds = mgr._session.bridge.ds
+    assert mgr.status()["match"] == {"station": "blue1", "fms": False, "timer": False, "auto_seconds": 20.0,
+                                     "teleop_seconds": 140.0, "game_data": ""}
+    assert mgr.status()["stations"] == ["red1", "red2", "red3", "blue1", "blue2", "blue3"]
+    for bad in ({"cmd": "match", "station": "green1"}, {"cmd": "match", "fms": "yes"},
+                {"cmd": "match", "auto_seconds": 0}, {"cmd": "match", "game_data": "x" * 65},
+                {"cmd": "match", "period": 3}):
+        with pytest.raises(LiveError):
+            mgr.command(bad)
+    mgr.command({"cmd": "match", "station": "red2", "fms": True, "timer": True})
+    wait_for(lambda: mgr.status()["match"]["station"] == "red2", 5, "the station")
+    assert ds.match.station == "red2" and ds.match.fms and ds.match.timer
+    assert mgr.status()["match"]["fms"] and mgr.status()["match"]["timer"]
+    mgr.command({"cmd": "match", "station": "blue1", "fms": False, "timer": False})
+    wait_for(lambda: ds.match.station == "blue1" and not ds.match.fms and not ds.match.timer, 5, "back")
+
+
+def test_a_restart_keeps_the_match_settings_and_the_game_data(tmp_path, monkeypatch):
+    """A Drive tab restart (the robot's IDs changed) is the same match, as restart_robot is: the station, FMS and
+    timer settings, the game data box and the robot's game data all stay. A new Start goes back to the config's."""
+    monkeypatch.setattr(session_mod, "NT_CONNECT_TIMEOUT", 0.5)
+    mgr = LiveManager(SimLock(), lambda kind, msg: None)
+    mgr.start(config_copy(tmp_path))
+    try:
+        wait_for(lambda: mgr.status()["state"] in ("running", "error"), 30, "the session to run")
+        assert mgr.status()["state"] == "running", mgr.status()
+        mgr.command({"cmd": "match", "station": "red2", "fms": True, "timer": True, "auto_seconds": 15,
+                     "game_data": "R"})
+        mgr.command({"cmd": "mode", "mode": "teleop"})
+        mgr.command({"cmd": "enable"})
+        wait_for(lambda: mgr._session is not None and mgr._session.bridge.ds.game_data == "R", 5, "R sent")
+        kept = {"station": "red2", "fms": True, "timer": True, "auto_seconds": 15.0, "teleop_seconds": 140.0,
+                "game_data": "R"}
+        assert mgr.status()["match"] == kept
+        old = mgr._session
+        mgr.restart()
+        wait_for(lambda: mgr.devices()["restart"] == "restarted" and mgr.status()["state"] == "running"
+                 and mgr._session is not None and mgr._session is not old, 30, "the restart")
+        assert mgr.status()["match"] == kept
+        ds = mgr._session.bridge.ds
+        assert (ds.match.station, ds.match.fms, ds.match.timer, ds.match.auto_seconds) == ("red2", True, True, 15.0)
+        assert ds.game_data == "R" and not mgr.status()["enabled"]   # the robot has it from its first frame
+        mgr.stop()
+        assert mgr.join(10)
+        mgr.start(config_copy(tmp_path))   # a Start of its own: the config's [match] and an empty box
+        wait_for(lambda: mgr.status()["state"] == "running" and mgr._session is not None, 30, "a new start")
+        assert mgr.status()["match"] == {"station": "blue1", "fms": False, "timer": False, "auto_seconds": 20.0,
+                                         "teleop_seconds": 140.0, "game_data": ""}
+        assert mgr._session.bridge.ds.game_data == ""
+    finally:
+        mgr.stop()
+        assert mgr.join(10)

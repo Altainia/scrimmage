@@ -330,9 +330,10 @@ Robot (`/api/robot/*`):
         up to 25 s.
 Scenario (`/api/scenario/*`; 404 while no scenario is open, except /api/scenario/open):
   GET  /api/scenario/state[?since=N] -> {version, path, display_path, read_only, read_only_reason, robot_problem,
-        top: {config, description, speed, require_lockstep}, steps: [{name, mode, duration, start_t, axes, buttons,
-        povs, checks: [{kind, spec}], shots: [{view?, at?, width?, height?, camera?}], sheet}], errors, warnings,
-        can_undo, can_redo}; each step also has inputs: the track CSV's path as written, or null. Long-polls like /api/robot/state.
+        top: {config, description, speed, require_lockstep, match}, steps: [{name, mode, duration, game_data,
+        start_t, axes, buttons, povs, checks: [{kind, spec}], shots: [{view?, at?, width?, height?, camera?}],
+        sheet}], errors, warnings, can_undo, can_redo}; each step also has inputs: the track CSV's path as written,
+        or null. match: the [match] table as written ({} without one). Long-polls like /api/robot/state.
         top and steps are read from the document as written (null / {} / [] where a key is absent), so they are
         listed even when the scenario is invalid. start_t is the step's start time (the sum of the earlier
         durations). axes/buttons/povs: {"<port>": [values]}. A check with other than exactly one key has kind null
@@ -358,6 +359,9 @@ Scenario (`/api/scenario/*`; 404 while no scenario is open, except /api/scenario
         delete_step     {step}
         move_step       {step, to}
         set_step        {step, fields: {name?, mode?, duration?}}   a null name removes it
+        match           {key, value}               a [match] key (station / fms / timer / auto_seconds /
+                                                   teleop_seconds); null removes it, and the table with its last key
+        game_data       {step, value}              the step's game_data (after duration); null removes it
         inputs_file     {step, path}               inputs = "<file>.csv" (drops the step's axes/buttons/povs);
                                                    null path removes it
         trim_track      {step, start, end}         cut the step's track to start..end (0 <= start < end <=
@@ -490,8 +494,10 @@ docstring gives the file's JSON (`file`):
 Live (`/api/live/*`; one simulation at a time: a drive session, a scenario run, a bench job or a test run):
   GET  /api/live/info              -> {port, status, run_active, can_start, start_problem}: port is the stream's
         WebSocket port; status is the session's {state: idle|starting|running|paused|stopped|error, error, config,
-        t, mode, chosen_mode, enabled, paused, speed, speed_locked, recording, pokes, can_save} (mode is the
-        effective mode, "disabled" while not enabled; chosen_mode is the one Enable runs); run_active is true while a
+        t, mode, chosen_mode, enabled, paused, speed, speed_locked, recording, pokes, can_save, match, stations} (mode
+        is the effective mode, "disabled" while not enabled; chosen_mode is the one Enable runs; match is the
+        session's {station, fms, timer, auto_seconds, teleop_seconds, game_data} with game_data the Drive tab's box,
+        null before the session runs; stations lists the six); run_active is true while a
         scenario run is in progress; can_start is false when the robot document can't be driven (it doesn't load
         or has no [robot_program]), with start_problem saying why in Start's own words (else null). start_picked
         is false while a [[part]] robot has neither [robot] start_pose nor [range] start (Start then asks).
@@ -537,7 +543,8 @@ nothing sent. Then the server sends:
   {"type": "notice", kind, text}: e.g. a refused command (queued; none are dropped while the page keeps up).
 The page sends {"type": "input", "ports": {"<port>": {axes, buttons, povs}}} and {"type": "cmd", "cmd": ...}
 (mode, enable, disable, pause, resume, step, speed, set_pose, push, move_body, reset, record_start, record_stop,
-signals); a bad command comes back as an error notice, malformed messages (JSON nested too deeply to parse among
+signals, match: any of station, fms, timer, auto_seconds, teleop_seconds and game_data, the box that reaches the robot
+while it is enabled in Teleop); a bad command comes back as an error notice, malformed messages (JSON nested too deeply to parse among
 them) are ignored; before the token, a malformed first message is refused like a wrong token. When the last page's
 socket closes, every port is zeroed and the robot disabled and paused until a page reconnects.
 
@@ -1933,6 +1940,7 @@ class App:
         res = self.scenario_result
         raw = sc.doc.unwrap() if sc.doc is not None else {}
         top = {k: raw.get(k) for k in ("config", "description", "speed", "require_lockstep")}
+        top["match"] = raw["match"] if isinstance(raw.get("match"), dict) else {}
         steps = []
         t = 0.0
         for s in raw.get("step", []) if isinstance(raw.get("step"), list) else []:
@@ -1947,7 +1955,8 @@ class App:
                     checks.append({"kind": None, "spec": c})
             shots = s.get("screenshot", [])
             sheet = s.get("contact_sheet")
-            steps.append({"name": s.get("name"), "mode": s.get("mode"), "duration": s.get("duration"), "start_t": t,
+            steps.append({"name": s.get("name"), "mode": s.get("mode"), "duration": s.get("duration"),
+                          "game_data": s.get("game_data"), "start_t": t,
                           "inputs": s.get("inputs") if isinstance(s.get("inputs"), str) else None,
                           **{k: s.get(k) if isinstance(s.get(k), dict) else {} for k in ("axes", "buttons", "povs")},
                           "checks": checks,
@@ -2015,6 +2024,8 @@ class App:
             "delete_step": lambda d: e.delete_step(d, b.get("step")),
             "move_step": lambda d: e.move_step(d, b.get("step"), b.get("to")),
             "set_step": lambda d: e.set_step(d, b.get("step"), b.get("fields") or {}),
+            "match": lambda d: e.set_match(d, b.get("key"), b.get("value")),
+            "game_data": lambda d: e.set_step_game_data(d, b.get("step"), b.get("value")),
             "inputs_file": lambda d: e.set_inputs_file(d, b.get("step"), b.get("path")),
             "trim_track": lambda d: made.append(e.trim_track(d, b.get("step"), b.get("start"), b.get("end"), scenario_path)),
             "inputs": lambda d: e.set_inputs(d, b.get("step"), b.get("kind"), b.get("port"), b.get("values")),

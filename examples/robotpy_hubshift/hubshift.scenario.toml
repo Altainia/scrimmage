@@ -1,0 +1,116 @@
+# A 2026 match for the hub-shift example (robot.py): Auto, the short pause, then Teleop with the field's game data
+# "R" (red's hub is inactive first). The robot is red1, so its hub should be inactive in Shifts 1 and 3 and active
+# everywhere else. The robot prints "hub active" or "hub inactive" each time its answer changes.
+#   scrimmage run examples/robotpy_hubshift/hubshift.scenario.toml
+#
+# The robot's answer changes on the match time, so each change gets a short 0.2 s step of its own, centered on the
+# change (0.1 s of margin each side, more than the robot's 20 ms loop), and the long steps between check that nothing
+# changes. Teleop's steps add up to its 140 s.
+config = "hubshift.toml"
+description = "Hub shifts (2026): red1 with game data R is inactive in Shifts 1 and 3"
+
+[match]
+station = "red1"
+timer = true                # the match time counts down: 20 s in Auto, 140 s in Teleop
+
+[[step]]
+name = "before the match"
+mode = "disabled"
+duration = 1.0
+  [[step.check]]
+  console = { contains = "hub inactive", not_contains = "hub active" }
+
+[[step]]
+name = "auto"
+mode = "auto"
+duration = 20.0
+  [[step.check]]
+  console = { contains = "hub active", not_contains = "hub inactive" }
+
+[[step]]
+name = "the pause"           # between Auto and Teleop, the robot is disabled
+mode = "disabled"
+duration = 3.0
+  [[step.check]]
+  console = { contains = "hub inactive", not_contains = "hub active" }
+
+# Teleop, by match time left. 140 to 130.1 s: the transition, both hubs active
+[[step]]
+name = "transition"
+mode = "teleop"
+duration = 9.9
+game_data = "R"             # the field's letter; it stays for the rest of the match
+  [[step.check]]
+  console = { contains = "hub active", not_contains = "hub inactive" }
+
+# Teleop, 130.1 to 129.9 s: Shift 1 starts at 130 s and our hub goes inactive
+[[step]]
+name = "shift 1 starts"
+mode = "teleop"
+duration = 0.2
+  [[step.check]]
+  console = { contains = "hub inactive", not_contains = "hub active" }
+
+# Teleop, 129.9 to 105.1 s: inactive
+[[step]]
+name = "shift 1"
+mode = "teleop"
+duration = 24.8
+  [[step.check]]
+  console = { not_contains = "hub active" }
+
+# Teleop, 105.1 to 104.9 s: Shift 2 starts at 105 s and our hub goes active
+[[step]]
+name = "shift 2 starts"
+mode = "teleop"
+duration = 0.2
+  [[step.check]]
+  console = { contains = "hub active", not_contains = "hub inactive" }
+
+# Teleop, 104.9 to 80.1 s: active
+[[step]]
+name = "shift 2"
+mode = "teleop"
+duration = 24.8
+  [[step.check]]
+  console = { not_contains = "hub inactive" }
+
+# Teleop, 80.1 to 79.9 s: Shift 3 starts at 80 s and our hub goes inactive
+[[step]]
+name = "shift 3 starts"
+mode = "teleop"
+duration = 0.2
+  [[step.check]]
+  console = { contains = "hub inactive", not_contains = "hub active" }
+
+# Teleop, 79.9 to 55.1 s: inactive
+[[step]]
+name = "shift 3"
+mode = "teleop"
+duration = 24.8
+  [[step.check]]
+  console = { not_contains = "hub active" }
+
+# Teleop, 55.1 to 54.9 s: Shift 4 starts at 55 s and our hub goes active
+[[step]]
+name = "shift 4 starts"
+mode = "teleop"
+duration = 0.2
+  [[step.check]]
+  console = { contains = "hub active", not_contains = "hub inactive" }
+
+# Teleop, 54.9 to 30.1 s: active
+[[step]]
+name = "shift 4"
+mode = "teleop"
+duration = 24.8
+  [[step.check]]
+  console = { not_contains = "hub inactive" }
+
+# Teleop, 30.1 to 0 s: active, with no change at 30 s
+[[step]]
+name = "end game"
+mode = "teleop"
+duration = 30.1
+  [[step.check]]
+  console = { not_contains = "hub inactive" }

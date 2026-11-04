@@ -1,0 +1,29 @@
+# The hub-shift example's robot: a chassis with nothing on it, run by robot.py (RobotPy). The robot doesn't drive; it
+# only reads the match data and prints whether its hub is active. Paths are relative to this file.
+#   scrimmage run examples/robotpy_hubshift/hubshift.scenario.toml
+
+[model]
+timestep = 0.001
+
+[robot]
+start_pose = [3.0, 4.0, 0.0]
+
+[lockstep]
+step = 0.005
+
+[robot_program]
+command = ["{python}", "-m", "robotpy", "sim", "--nogui", "--ws-client", "--scrimmage-lockstep"]
+cwd = "."
+
+[[part]]
+name = "drive"
+stock = "chassis"
+length = 0.66
+width = 0.6
+mass = 47.0
+frame_height = 0.1
+
+# The Drive tab and MCP sessions start from this [match]. The scenario sets its own.
+[match]
+station = "red1"
+timer = true

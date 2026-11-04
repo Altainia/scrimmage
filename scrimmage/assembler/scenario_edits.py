@@ -1,7 +1,8 @@
 """Pure edit operations on a scenario's tomlkit document: top-level keys, [[step]] tables and what is nested in
 them. Every function mutates the document it is given and raises `EditError(field, message)` for a rejected
-edit; field ids are `scenario/<key>`, `step<i>/<key>`, `step<i>/check<j>/<key>`, `step<i>/shot<j>/<key>` and
-`step<i>/sheet/<key>` (0-based). Whether the result is a valid scenario is `load_scenario_text`'s call."""
+edit; field ids are `scenario/<key>`, `scenario/match.<key>`, `step<i>/<key>`, `step<i>/check<j>/<key>`,
+`step<i>/shot<j>/<key>` and `step<i>/sheet/<key>` (0-based). Whether the result is a valid scenario is
+`load_scenario_text`'s call."""
 
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ import tomlkit
 from tomlkit.items import AoT, InlineTable, Table
 
 from ..checks import CHECK_KINDS
+from ..driverstation import MATCH_KEYS
 from ..tracks import Sample, TrackError, load_track, write_track
 from .edits import EditError
 from .tomlutil import (
@@ -23,6 +25,7 @@ from .tomlutil import (
 
 TOP_ORDER = ("config", "description", "speed", "require_lockstep")
 STEP_KEYS = ("name", "mode", "duration")
+AFTER_DURATION = ("game_data", "duration", "mode", "name")   # where a key that follows the step's duration goes
 INPUT_KINDS = ("axes", "buttons", "povs")
 SHOT_KEYS = ("view", "at", "width", "height", "camera")
 SHEET_KEYS = ("frames", "view", "width", "height")
@@ -60,6 +63,48 @@ def set_top(doc, key: str, value) -> None:
         dict.__setitem__(doc, key, item)
     else:
         set_value(doc, key, value, earlier)
+
+
+def set_match(doc, key: str, value) -> None:
+    """Set one key of the `[match]` table (made before the first step when there is none); `None` removes the
+    key, and the table with its last key. Values are only type-checked here: the loader judges a station."""
+    if key not in MATCH_KEYS:
+        raise EditError("scenario/match", f"unknown [match] key {key!r}; use {', '.join(MATCH_KEYS)}")
+    at = f"scenario/match.{key}"
+    if value is not None:
+        if key == "station" and not isinstance(value, str):
+            raise EditError(at, "station must be text such as \"red1\"")
+        if key in ("fms", "timer") and not isinstance(value, bool):
+            raise EditError(at, f"{key} must be true or false")
+        if key.endswith("_seconds") and not _is_num(value):
+            raise EditError(at, f"{key} must be a number of seconds")
+    cur = doc.get("match")
+    if cur is not None and not isinstance(cur, (Table, InlineTable)):
+        raise EditError("scenario/match", "match isn't written as a [match] table; edit the file by hand")
+    if value is None:
+        if cur is not None:
+            cur.pop(key, None)
+            if not len(cur) and isinstance(cur, Table):
+                remove_table(doc, "match")
+            elif not len(cur):
+                del doc["match"]
+        return
+    if cur is None:
+        t = tomlkit.table()
+        t[key] = value
+        insert_table(doc, "match", t, before=("step",))
+        return
+    if isinstance(cur, InlineTable):    # `match = { ... }`: written again in key order
+        keys = {k: v.unwrap() if hasattr(v, "unwrap") else v for k, v in cur.items()}
+        keys[key] = value
+        order = [k for k in MATCH_KEYS if k in keys] + [k for k in keys if k not in MATCH_KEYS]
+        set_value(doc, "match", inline({k: keys[k] for k in order}))
+        return
+    earlier = tuple(reversed(MATCH_KEYS[:MATCH_KEYS.index(key)]))
+    if key not in cur and not any(k in cur for k in earlier):
+        insert_first(cur, key, value)
+    else:
+        set_value(cur, key, value, earlier)
 
 
 # ---- steps ------------------------------------------------------------------------------------------------
@@ -184,6 +229,18 @@ def set_step(doc, i: int, fields: dict) -> None:
             set_value(t, k, v, after[k])
 
 
+def set_step_game_data(doc, i: int, value) -> None:
+    """Step `i`'s `game_data` (after `duration`), sent when the step starts; `None` removes it, and "" clears
+    what the robot has."""
+    t = _step(doc, i)
+    if value is None:
+        t.pop("game_data", None)
+        return
+    if not isinstance(value, str):
+        raise EditError(f"step{i}/game_data", "game_data must be text")
+    set_value(t, "game_data", value, AFTER_DURATION[1:])
+
+
 # ---- joystick inputs --------------------------------------------------------------------------------------
 
 def _port(i: int, kind: str, port) -> str:
@@ -238,7 +295,7 @@ def set_inputs(doc, i: int, kind: str, port: int, values) -> None:
         return
     new = inline(dict(sorted(ports.items(), key=lambda kv: int(kv[0]))))
     prior = INPUT_KINDS[:INPUT_KINDS.index(kind)]
-    set_value(t, kind, new, tuple(reversed(prior)) + ("duration", "mode", "name"))
+    set_value(t, kind, new, tuple(reversed(prior)) + AFTER_DURATION)
 
 
 # ---- input tracks -----------------------------------------------------------------------------------------
@@ -254,7 +311,7 @@ def set_inputs_file(doc, i: int, path: str | None) -> None:
         raise EditError(f"step{i}/inputs", "inputs must be the path of a .csv file")
     for k in INPUT_KINDS:
         t.pop(k, None)
-    set_value(t, "inputs", path, ("duration", "mode", "name"))
+    set_value(t, "inputs", path, AFTER_DURATION)
 
 
 def _write_new_csv(dest_dir: Path, stem: str, samples: list[Sample]) -> Path:

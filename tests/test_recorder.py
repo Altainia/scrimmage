@@ -229,3 +229,42 @@ def test_a_failed_restore_keeps_the_old_recording_in_the_staging_folder(tmp_path
     assert len(stages) == 1 and str(stages[0]) in str(e.value)
     assert (stages[0] / "old.toml").read_text() == old_toml   # nothing lost
     assert (tmp_path / "drive" / "step1.csv").read_text() == "old\n"   # the folder went back
+
+
+def test_game_data_and_match_settings(tmp_path):
+    """A step carries game_data only when what the robot had at its start differs from the step before (from ""
+    for the first); [match] holds the settings that differ from the defaults."""
+    rec = DriveRecorder(STEP)
+    ports = pi([0.0], [False])
+    rec.start(0.0, "auto", ports, game_data="", match={"station": "red2", "fms": False, "timer": False,
+                                                       "auto_seconds": 20.0, "teleop_seconds": 140.0})
+    rec.sample(5 * STEP, "teleop", ports, game_data="R")
+    rec.sample(10 * STEP, "disabled", ports, game_data="R")
+    rec.sample(12 * STEP, "teleop", ports, game_data="R")
+    rec.sample(15 * STEP, "teleop", ports, game_data="B")   # edited during Teleop: a step of its own
+    rec.stop(20 * STEP)
+    save(rec, tmp_path)
+    sc = load_scenario(tmp_path / "drive.toml")
+    assert [s.mode for s in sc.steps] == ["auto", "teleop", "disabled", "teleop", "teleop"]
+    text = (tmp_path / "drive.toml").read_text()
+    assert [s.game_data for s in sc.steps] == [None, "R", None, None, "B"]
+    assert text.count("game_data") == 2
+    assert sc.match == {"station": "red2"}
+
+
+def test_match_keys_that_differ_from_the_config_are_saved(tmp_path):
+    """The tab put the station back to blue1 over a config's red3: the recording says so, or a replay would use
+    the config's."""
+    rec = DriveRecorder(STEP, config_match={"station": "red3", "fms": False, "timer": True, "auto_seconds": 20.0,
+                                            "teleop_seconds": 140.0})
+    rec.start(0.0, "teleop", pi([0.0]), match={"station": "blue1", "fms": False, "timer": True,
+                                               "auto_seconds": 20.0, "teleop_seconds": 140.0})
+    rec.stop(5 * STEP)
+    save(rec, tmp_path)
+    assert load_scenario(tmp_path / "drive.toml").match == {"station": "blue1", "timer": True}
+
+
+def test_no_match_table_with_the_defaults(tmp_path):
+    save(make(tmp_path), tmp_path)
+    text = (tmp_path / "drive.toml").read_text()
+    assert "[match]" not in text and "game_data" not in text

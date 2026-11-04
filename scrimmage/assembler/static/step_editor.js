@@ -1,6 +1,6 @@
-// The step editor (center of the Scenario tab): name / mode / duration, joystick inputs per port (or, for a step
-// with an input track, trackplot.js's track panel), the checks with one form per kind, screenshots and the
-// contact sheet. Every change posts one scenario edit; each field
+// The step editor (center of the Scenario tab): name / mode / duration / game data, joystick inputs per port (or,
+// for a step with an input track, trackplot.js's track panel), the checks with one form per kind, screenshots and
+// the contact sheet. Every change posts one scenario edit; each field
 // carries data-fields with its field ids so errors render beside it (scenario.js renderErrors).
 
 import { h, fmt } from "./app.js";
@@ -168,7 +168,27 @@ function headSection(i, step) {
   const startT = h("p", { class: "hint ed-start", text: `Starts at ${+step.start_t.toFixed(3)} s` });
   return h("section", { class: "ed-section ed-head", dataset: { fields: `step${i} step${i}/step` } },
     h("div", { class: "field-msgs" }),
-    h("div", { class: "ed-head-grid" }, name, modeField, h("div", {}, dur, startT)));
+    h("div", { class: "ed-head-grid" }, name, modeField, h("div", {}, dur, startT), gameDataField(i, step)));
+}
+
+// The game data sent when the step starts. Without a game_data the robot keeps what the step before left it (the
+// box shows that as its placeholder); "" clears it.
+function gameDataField(i, step) {
+  const set = (value) => scEdit("game_data", { step: i, value });
+  let before = "";
+  for (const s of sc.state.steps.slice(0, i)) if (typeof s.game_data === "string") before = s.game_data;
+  const own = step.game_data;
+  const f = textField(`step${i}/game_data`, "ed-game-data", "game_data", "Game data", typeof own === "string" ? own : "",
+    (v) => set(v || null),
+    { placeholder: own === "" ? "cleared" : before ? `keeps ${JSON.stringify(before)}` : "none" });
+  if (own === "") {
+    f.insertBefore(h("button", { type: "button", class: "linklike", dataset: { key: "game-data-keep" }, onclick: () => set(null) },
+      before ? `Keep ${JSON.stringify(before)} instead` : "Don't clear"), f.querySelector(":scope > .field-msgs"));
+  } else if (own == null && before) {
+    f.insertBefore(h("button", { type: "button", class: "linklike", dataset: { key: "game-data-clear" }, onclick: () => set("") },
+      "Clear it here"), f.querySelector(":scope > .field-msgs"));
+  }
+  return f;
 }
 
 // -- joystick inputs -----------------------------------------------------------------------------------

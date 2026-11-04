@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from . import java_tools
+from .driverstation import MatchSettings
 from .teamfolders import TeamFolderError, expand
 from .lockstep import DEFAULT_STEP
 
@@ -80,6 +81,7 @@ class Config:
     nt_port: int = 5810
     step_timeout: float = 10.0
     nt: bool = True           # [telemetry] nt = false: the robot program serves no NetworkTables, so don't wait for it
+    match: MatchSettings = field(default_factory=MatchSettings)   # what a session sends as the Driver Station
 
     @property
     def dir(self) -> Path:
@@ -162,9 +164,14 @@ def load_config_text(text: str, path: str | Path) -> Config:
         raise ConfigError(f"[telemetry] nt must be true or false (false: the robot program serves no NetworkTables), "
                           f"not {nt!r}")
 
+    try:
+        match = MatchSettings().merged(_table(raw, "match"), "[match]")
+    except ValueError as e:
+        raise ConfigError(str(e)) from None
+
     sess = _table(raw, "session")
     return Config(path, raw, step, program, odometry or None, nt_port,
-                  _number(sess, "step_timeout", 10.0, "session"), nt)
+                  _number(sess, "step_timeout", 10.0, "session"), nt, match)
 
 
 # Keys a binding entry reads without a default, and the entries that read them (for a KeyError's message).

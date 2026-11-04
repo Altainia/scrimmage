@@ -109,12 +109,13 @@ def test_scenario_state_shape_on_shipped_scenarios(served, repo_copy, name):
     assert not s["read_only"] and s["read_only_reason"] is None and s["robot_problem"] is None
     assert s["errors"] == [] and s["can_undo"] is False and s["can_redo"] is False
     assert s["top"] == {"config": raw["config"], "description": raw.get("description"), "speed": raw.get("speed"),
-                        "require_lockstep": raw.get("require_lockstep")}
+                        "require_lockstep": raw.get("require_lockstep"), "match": raw.get("match", {})}
     assert len(s["steps"]) == len(raw["step"])
     t = 0.0
     for got, want in zip(s["steps"], raw["step"]):
-        assert set(got) == {"name", "mode", "duration", "start_t", "inputs", "axes", "buttons", "povs", "checks",
-                            "shots", "sheet"}
+        assert set(got) == {"name", "mode", "duration", "game_data", "start_t", "inputs", "axes", "buttons", "povs",
+                            "checks", "shots", "sheet"}
+        assert got["game_data"] == want.get("game_data")
         assert (got["name"], got["mode"], got["duration"]) == (want.get("name"), want["mode"], want["duration"])
         assert got["start_t"] == pytest.approx(t)
         t += want["duration"]
@@ -225,6 +226,40 @@ def test_edit_round_trip(served, repo_copy):
     assert 'description = "changed"' in path.read_text()
     assert c.post("/api/scenario/redo")[1]["ok"] and path.read_text() == original
     assert c.post("/api/scenario/redo")[1] == {"ok": False, "errors": [{"field": "status", "message": "nothing to redo"}]}
+
+
+def test_match_and_game_data_ops_and_state(served, tmp_path):
+    path = fake_scenario(tmp_path)
+    original = path.read_text()
+    c = served(path)
+    s = c.get("/api/scenario/state")[1]
+    assert s["top"]["match"] == {} and [st["game_data"] for st in s["steps"]] == [None, None]
+
+    def edit(op, **fields):
+        return c.post("/api/scenario/edit", {"op": op, **fields})[1]
+
+    assert edit("match", key="station", value="red1")["ok"]
+    assert edit("match", key="timer", value=True)["ok"]
+    assert edit("game_data", step=1, value="B")["ok"]
+    s = c.get("/api/scenario/state")[1]
+    assert s["top"]["match"] == {"station": "red1", "timer": True} and s["errors"] == []
+    assert [st["game_data"] for st in s["steps"]] == [None, "B"]
+    raw = tomllib.loads(path.read_text())
+    assert raw["match"] == {"station": "red1", "timer": True} and raw["step"][1]["game_data"] == "B"
+    # bad values are problems on their fields, and nothing is written
+    before = path.read_text()
+    r = edit("match", key="station", value="red4")
+    assert r["ok"] is False and r["errors"][0]["field"] == "scenario/match.station"
+    assert "red1, red2" in r["errors"][0]["message"]
+    r = edit("game_data", step=0, value="x" * 65)
+    assert r["ok"] is False and r["errors"][0]["field"] == "step0/game_data" and "64 bytes" in r["errors"][0]["message"]
+    r = edit("match", key="fms", value="yes")
+    assert r["ok"] is False and r["errors"][0]["field"] == "scenario/match.fms"
+    assert path.read_text() == before
+    # removing them gives back the file
+    assert edit("game_data", step=1, value=None)["ok"]
+    assert edit("match", key="station", value=None)["ok"] and edit("match", key="timer", value=None)["ok"]
+    assert path.read_text() == original
 
 
 def test_rejected_edits_give_field_errors_and_keep_the_file(served, repo_copy):

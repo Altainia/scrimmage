@@ -164,11 +164,19 @@ description = "what this run shows"     # optional
 speed = "max"                           # optional: "max" (default) or a real-time factor
 require_lockstep = true                 # optional (default true)
 
+[match]                                 # optional, over the config's [match]: what the Driver Station sends
+station = "red1"                        # red1-red3 or blue1-blue3 (default "blue1")
+fms = false                             # FMS attached (default false)
+timer = true                            # count the match time down (default false: -1)
+auto_seconds = 20                       # each phase's length (defaults 20 and 140)
+teleop_seconds = 140
+
 [[step]]
 name = "auto"                           # optional
 mode = "auto"                           # disabled, auto, teleop or test
 duration = 9.0                          # seconds of simulated time
 axes = { 0 = [0.0, 0.5] }               # optional joysticks, by port 0-5: axes, buttons, povs
+game_data = "R"                         # optional: the field's game data from this step on ("" clears it)
 
   [[step.check]]                        # one check per [[step.check]], each with exactly one key from the table
   pose = { x = 4.0, y = 5.035, heading = 90, tol_xy = 0.3, tol_heading = 4 }
@@ -181,6 +189,8 @@ axes = { 0 = [0.0, 0.5] }               # optional joysticks, by port 0-5: axes,
 ```
 
 Joystick inputs are reset to neutral (zero axes, no buttons, POV centered) at the start of each step.
+The `[match]` table and `game_data` (the station, FMS, match timer and the field's game data, such as 2026's `R` or
+`B`) are in [docs/match.md](docs/match.md).
 Steps run back to back in one simulation, so a robot driven in step 1 starts step 2 where it stopped.
 
 | Check | Meaning |
@@ -255,12 +265,13 @@ edit the robot code, `restart_robot()`, repeat. The agent launches your robot wi
 |---|---|
 | `start_session` | Start a session from a config (`attach`, `viewer`, `speed`, `replace`). Starts held at t=0, disabled. |
 | `stop_session` | Stop the session and the robot program. |
-| `restart_robot` | Relaunch the robot program (after editing code, or after a crash) and reset the world to t=0. |
+| `restart_robot` | Relaunch the robot program (after editing code, or after a crash) and reset the world to t=0. The game data stays. |
 | `session_status` | Whether a session is running, lockstep is active, and which HAL devices exist. |
 | `advance` | Run forward `seconds` (at most 60), then hold. Returns state and new console lines. |
 | `set_mode` | Driver Station mode: disabled, auto, teleop or test. |
 | `set_joystick` | Set axes, buttons and POVs on a port 0-5. |
-| `get_state` | Ground-truth pose, speed, battery, motor commands and currents, joint positions; on a robot with air cylinders, the air (`pneumatics`: stored and working psi, whether the compressor is on, each rod's extension in meters, `extension_m`). |
+| `set_match` | The match data the Driver Station sends: `station`, `fms`, `timer`, `game_data`, `auto_seconds`, `teleop_seconds` ([docs/match.md](docs/match.md)). |
+| `get_state` | Ground-truth pose, speed, battery, motor commands and currents, joint positions, the match data (`match`); on a robot with air cylinders, the air (`pneumatics`: stored and working psi, whether the compressor is on, each rod's extension in meters, `extension_m`). |
 | `get_hal` | Raw HAL values the robot reported, with an optional device filter. |
 | `get_console` | Robot console lines with simulated timestamps. |
 | `nt_list`, `nt_get` | List and read NetworkTables topics. |
@@ -463,7 +474,7 @@ The constants come from WPILib's `DCMotor`. For anything else, pass a table:
 Brake/coast at neutral is modeled: brake shorts the motor for back-EMF braking, and coast opens it.
 Disabled robots output neutral, the same as on a real roboRIO.
 
-Three more sections tell Scrimmage how to run the robot (all optional). This is an example: the values come from `configs/kitbot.toml`, plus optional keys with their defaults (`start_timeout` 30, `nt_port` 5810, `[session] step_timeout` 10):
+Four more sections tell Scrimmage how to run the robot (all optional). This is an example: the values come from `configs/kitbot.toml`, plus optional keys with their defaults (`start_timeout` 30, `nt_port` 5810, `[session] step_timeout` 10):
 
 ```toml
 [robot_program]                  # how `serve --launch`, scenarios and agents start the robot
@@ -480,6 +491,10 @@ nt = true                        # false: the robot program serves no NetworkTab
 
 [session]
 step_timeout = 10                # seconds the robot may take to finish one lockstep step before it is declared stuck
+
+[match]                          # what scenarios, the Drive tab and agents send as the Driver Station (docs/match.md)
+station = "blue1"                # red1-red3 or blue1-blue3
+timer = false                    # true: count the match time down; fms, auto_seconds and teleop_seconds can go here too
 ```
 
 `sim_mode` (and `--sim-mode` on `serve` and `run`, which overrides it) only sets the robot's environment
@@ -1036,13 +1051,14 @@ docs/pneumatics.md air cylinders: the air model, its numbers and sources, measur
 docs/sensors.md    [[sensor]] beam breaks, distance and color sensors: keys, readings, piece colors, robot code
 docs/terrain.md    field elements (bumps, ramps, platforms), terrain signals, scrimmage terrain sweep
 docs/climbing.md   bars, the climber part, climb signals, scrimmage climb run and its scripts, the climb scenario
+docs/match.md      match data: [match] (station, FMS, the match timer), game data, robot code, Drive tab, set_match
 freecad/           the FreeCAD workbench add-on (Scrimmage/), installed by `scrimmage freecad install`
 configs/           robot configs built from parts (kitbot, swerve, elevator_arm, fastmode, disc_robot,
                    climber_robot)
 scenarios/         scenario files (steps, checks, screenshots)
 examples/          blocks/ (Test tab examples: an intake, an intake that stops on a beam break, a station, a reef
                    grabber, a ladder climber, a turret shooter, a pneumatic arm, a trench, a partner push); RobotPy
-                   kitbot robot program; Java swerve (Phoenix 6) project; Java fast-mode (AdvantageKit) project; Java
+                   kitbot robot program; robotpy_hubshift/ (2026 hub shifts from game data); Java swerve (Phoenix 6) project; Java fast-mode (AdvantageKit) project; Java
                    build.gradle notes; launcher/ and disc/ setups; measure/ measurement files; climb/ scripts
 shims/             CANMotor/CANEncoder shims for vendor controllers (Python tested, Java template)
 tools/plot_run.py  plots a --log CSV

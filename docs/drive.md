@@ -22,6 +22,8 @@ Open a robot config (or a scenario: its **Drive this robot** button opens the Dr
 Click **Start**. Scrimmage launches the config's `[robot_program]` (the same command `scrimmage run` uses), connects
 to it and shows the robot in the live view. The status line at the bottom reads Not started, Starting the robot
 program, Running, Paused, Stopped or Error. **Stop** ends the session; after an error, **Restart** starts again.
+When the robot code panel restarts a running robot on new IDs, the Match settings and game data stay (a restart is
+the same match); a new Start, or Restart after an error, begins again from the config's `[match]`.
 
 The Robot tab's **Robot code** panel can start the session too: its **Drive** button asks where the robot starts
 (there is no default), then opens this tab and starts. Where the robot code panel's device check finds devices that don't
@@ -47,6 +49,12 @@ The controls are in the left column.
   typing never drives the robot or enables it) and while the Save dialog is open.
 - **Joysticks:** ports 0 to 5, each set to None, the Keyboard or a gamepad (below). Small bars show each port's
   axes and buttons, so you can see what the robot is being sent.
+- **Match:** the **Station** menu (red1 to blue3), the **Game data** box, and the **FMS attached** and **Match timer**
+  checkboxes. They start at the robot config's `[match]` when you press Start. The station, FMS and timer reach the
+  robot at once. The game data box works like the real Driver Station's: the robot gets it each time it is enabled in
+  Teleop, and a change made while it is enabled in Teleop is sent when you press **Enter** or leave the box. There
+  are no fields for the Auto and Teleop lengths: set `auto_seconds` and `teleop_seconds` in the config's `[match]`.
+  See [match data](match.md#in-the-drive-tab).
 
 ## Keyboard and gamepad
 
@@ -97,8 +105,8 @@ If the robot code uses **Phoenix 6** devices, the speed is locked at 1x with the
 Phoenix 6's own simulation runs on the wall clock: the robot runs in real time, not lockstep. Pause and Step can't
 stop it: the robot program and physics keep running.
 
-A small bar over the view shows the sim time, the mode, whether the robot is enabled, and how fast the simulation is
-running against real time.
+A small bar over the view shows the sim time, the mode, whether the robot is enabled, the match time (while the
+Match timer is on), and how fast the simulation is running against real time.
 
 ## Poking the robot
 
@@ -127,7 +135,9 @@ same names the scenario checks use.
 ## Recording and saving
 
 1. Press **Record**. Everything from the next robot step is recorded: the joystick inputs of every port and the mode
-   changes (a new scenario step starts each time the effective mode changes, including Enable and Disable).
+   changes (a new scenario step starts each time the effective mode changes, including Enable and Disable, and each
+   time the robot's game data changes). The match settings you have when you press Record become the scenario's
+   `[match]`: station, FMS and timer changes made during the recording aren't saved, so set them before Record.
 2. Drive. Press **Record** again to stop.
 3. Press **Save as scenario...**, enter a file name (for example `scenarios/my_drive.toml`) and Save. A scenario
    that exists is not overwritten unless you confirm, and only an earlier recording is ever replaced (a scenario

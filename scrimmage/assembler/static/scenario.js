@@ -1,5 +1,5 @@
 // The Scenario tab: its store, the long poll of /api/scenario/state, scenario edits (one edit per change, each
-// with the version), the header (description, robot config, speed, lockstep), error placement, the status bar
+// with the version), the header (description, robot config, speed, lockstep, [match]), error placement, the status bar
 // and the hooks for richer controls (fieldpick.js's field picker); report.js is the run panel and report.
 // See the docstring of scrimmage/assembler/server.py for the API contract.
 //
@@ -16,6 +16,8 @@ import { poseTools } from "./fieldpick.js";
 import { initRunPanel, runs } from "./report.js";
 
 export const MODES = ["disabled", "auto", "teleop", "test"];
+export const STATIONS = ["red1", "red2", "red3", "blue1", "blue2", "blue3"];
+const MATCH_KEYS = ["station", "fms", "timer", "auto_seconds", "teleop_seconds"];
 
 export const sc = {
   state: null,        // /api/scenario/state
@@ -353,6 +355,8 @@ function renderHeader() {
   const lock = h("input", { id: "sc-lockstep", type: "checkbox", checked: top.require_lockstep !== false, dataset: { key: "lockstep" } });
   lock.addEventListener("change", () => scEdit("top", { key: "require_lockstep", value: lock.checked }));
 
+  const matchField = renderMatch(top.match || {});
+
   const fs = h("div", { class: "sc-head-grid" },
     field("scenario/description", "sc-desc", "Description", desc, { extraClass: "sc-field sc-desc" }),
     h("div", { class: "field sc-field sc-robot", dataset: { fields: "scenario/config" } },
@@ -363,7 +367,8 @@ function renderHeader() {
     h("div", { class: "field sc-field sc-lock", dataset: { fields: "scenario/require_lockstep" } },
       h("span", { class: "field-label" }, "Lockstep"),
       h("label", { class: "check-label", for: "sc-lockstep" }, lock, "Require lockstep"),
-      h("div", { class: "field-msgs" })));
+      h("div", { class: "field-msgs" })),
+    matchField);
   // "Open in Robot tab" and "Drive this robot" stay usable when the scenario is read-only (that's where the fix is)
   for (const el of fs.querySelectorAll("input, select, .seg-btn")) el.disabled = !!s.read_only;
   root.replaceChildren(fs);
@@ -374,6 +379,49 @@ function renderHeader() {
       el.focus();
     }
   }
+}
+
+// The [match] row: each control empty ("robot config's") leaves that key to the robot config, which the scenario's
+// keys go over when it runs.
+function renderMatch(m) {
+  const set = (key, value) => scEdit("match", { key, value });
+  const CONFIG = "robot config's";
+  const station = h("select", { id: "sc-station", dataset: { key: "match-station" } },
+    h("option", { value: "" }, CONFIG), ...STATIONS.map((st) => h("option", { value: st }, st)));
+  if (m.station != null && !STATIONS.includes(m.station)) station.append(h("option", { value: String(m.station) }, String(m.station)));
+  station.value = m.station != null ? String(m.station) : "";
+  station.addEventListener("change", () => set("station", station.value || null));
+  const onOff = (key) => {
+    const el = h("select", { id: `sc-${key}`, dataset: { key: `match-${key}` } },
+      h("option", { value: "" }, CONFIG), h("option", { value: "true" }, "on"), h("option", { value: "false" }, "off"));
+    el.value = typeof m[key] === "boolean" ? String(m[key]) : "";
+    el.addEventListener("change", () => set(key, el.value === "" ? null : el.value === "true"));
+    return el;
+  };
+  let f;
+  const seconds = (key, label) => {
+    const have = typeof m[key] === "number" ? m[key] : null;
+    const el = markDirty(h("input", { id: `sc-${key}`, type: "number", min: "0.1", step: "any", inputmode: "decimal",
+      value: have !== null ? String(have) : "", placeholder: "config's", dataset: { key: `match-${key}` } }));
+    onCommit(el, () => {
+      if (badNumber(el)) { localError(f, `${label} must be a number`); return; }
+      clean(el);
+      const raw = el.value.trim();
+      const v = raw === "" ? null : Number(raw);
+      if (v !== have) set(key, v);
+    });
+    return h("span", { class: "with-unit" }, el, h("span", { class: "unit" }, "s"));
+  };
+  const item = (id, label, control) => h("div", { class: "match-item" }, h("label", { for: id }, label), control);
+  const ids = ["scenario/match", ...MATCH_KEYS.map((k) => `scenario/match.${k}`)];
+  f = h("div", { class: "field sc-field sc-match", role: "group", "aria-labelledby": "sc-match-label", dataset: { fields: ids.join(" ") } },
+    h("span", { id: "sc-match-label", class: "field-label" }, "Match"),
+    h("div", { class: "row match-row" },
+      item("sc-station", "Station", station), item("sc-fms", "FMS attached", onOff("fms")),
+      item("sc-timer", "Match timer", onOff("timer")), item("sc-auto_seconds", "Auto length", seconds("auto_seconds", "Auto length")),
+      item("sc-teleop_seconds", "Teleop length", seconds("teleop_seconds", "Teleop length"))),
+    h("div", { class: "field-msgs" }));
+  return f;
 }
 
 // -- boot -----------------------------------------------------------------------------------------
