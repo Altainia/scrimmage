@@ -134,7 +134,7 @@ class DriverStationState:
         self.mode = "disabled"
         self.clear_joysticks()
         self._entering, self._entry, self._time = False, None, -1.0
-        self.game_data = ""
+        self.game_data, self._extra_keys = "", False
         self.changed = True
 
     @property
@@ -144,6 +144,8 @@ class DriverStationState:
 
     def _tick(self, now: float) -> None:
         m, before = self.mode, self._seen_mode
+        if self._entry is not None and now < self._entry:   # the world clock was reset (a reconnect): carry on from the last time
+            self._entry = now - (self._length - max(self._time, 0.0))
         if m in PHASES and (self._entering or m != before):
             self._entry = now
             self._length = self.match.auto_seconds if m == "auto" else self.match.teleop_seconds

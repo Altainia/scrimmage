@@ -137,6 +137,6 @@ def test_back_to_back_scenarios_each_start_with_their_own_match(tmp_path, sent):
         finally:
             await s.stop()
     rep2, got2, rep3, got3 = asyncio.run(main())
-    assert got2 and all(d[">station"] == "blue2" and d[">game_data"] == "" for _, d in got2)
+    assert got2 and all(d[">station"] == "blue2" and d.get(">game_data", "") == "" for _, d in got2)
     assert rep2.to_dict()["steps"][0]["game_data"] == ""
     assert got3 and all(d[">station"] == "blue1" for _, d in got3)    # no [match]: the config's

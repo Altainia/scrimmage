@@ -494,7 +494,7 @@ step_timeout = 10                # seconds the robot may take to finish one lock
 
 [match]                          # what scenarios, the Drive tab and agents send as the Driver Station (docs/match.md)
 station = "blue1"                # red1-red3 or blue1-blue3
-timer = false                    # true: count the match time down (fms, auto_seconds, teleop_seconds too)
+timer = false                    # true: count the match time down; fms, auto_seconds and teleop_seconds can go here too
 ```
 
 `sim_mode` (and `--sim-mode` on `serve` and `run`, which overrides it) only sets the robot's environment

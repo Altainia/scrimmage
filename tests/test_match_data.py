@@ -93,6 +93,30 @@ def test_rounded_to_a_millisecond():
     assert match_time(ds, 0.1 + 0.2) == 19.7
 
 
+def test_the_match_time_carries_on_when_the_world_clock_resets():
+    ds = DriverStationState(active=True)
+    ds.set_match(timer=True)
+    ds.set_mode("teleop")
+    assert match_time(ds, 30.0) == 140.0
+    assert match_time(ds, 40.0) == 130.0
+    t = match_time(ds, 0.0)                             # a reconnect restarts the clock
+    assert 129.0 < t <= 130.0
+    assert match_time(ds, 1.0) == pytest.approx(t - 1.0)
+    ds.set_mode("disabled")
+    held = match_time(ds, 2.0)
+    assert match_time(ds, 0.0) == held and held <= 140.0   # a held value stays held across a reset
+
+
+def test_clear_resets_the_extra_keys_and_a_restore_brings_them_back():
+    ds = DriverStationState(active=True)
+    ds.set_game_data("R")
+    assert ">game_data" in ds_data(ds, 0.0)
+    ds.clear()
+    assert ">game_data" not in ds_data(ds, 0.0) and ">fms" not in ds_data(ds, 0.0)
+    ds.set_game_data("R")
+    assert ds_data(ds, 0.0)[">game_data"] == "R"
+
+
 def test_with_the_timer_off_it_is_always_minus_one():
     ds = DriverStationState(active=True)
     for mode, now in (("auto", 0.0), ("auto", 5.0), ("disabled", 6.0), ("teleop", 7.0), ("teleop", 300.0),
@@ -134,7 +158,7 @@ def test_clear_keeps_the_settings_and_drops_the_game_data_and_the_time():
     assert ds.mode == "disabled" and ds.game_data == ""
     assert ds.match.station == "red3" and ds.match.timer is True
     d = ds_data(ds, 1.0)
-    assert d[">game_data"] == "" and d[">match_time"] == -1 and d[">station"] == "red3"
+    assert ">game_data" not in d and d[">match_time"] == -1 and d[">station"] == "red3"
 
 
 @pytest.mark.parametrize("table, key", [

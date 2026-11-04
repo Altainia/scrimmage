@@ -401,7 +401,7 @@ function renderMatch(m) {
   let f;
   const seconds = (key, label) => {
     const have = typeof m[key] === "number" ? m[key] : null;
-    const el = markDirty(h("input", { id: `sc-${key}`, type: "number", min: "0", step: "any", inputmode: "decimal",
+    const el = markDirty(h("input", { id: `sc-${key}`, type: "number", min: "0.1", step: "any", inputmode: "decimal",
       value: have !== null ? String(have) : "", placeholder: "config's", dataset: { key: `match-${key}` } }));
     onCommit(el, () => {
       if (badNumber(el)) { localError(f, `${label} must be a number`); return; }

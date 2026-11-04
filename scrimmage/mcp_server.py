@@ -187,7 +187,7 @@ async def set_match(station: str | None = None, fms: bool | None = None, timer: 
                     game_data: str | None = None, auto_seconds: float | None = None,
                     teleop_seconds: float | None = None) -> str:
     """Set what the Driver Station tells the robot about the match; leave out what shouldn't change. Sent on the
-    next advance; get_state reports it under "match".
+    next advance, in any mode (no wait for Teleop, unlike the Drive tab's box); get_state reports it under "match".
 
     station: the alliance and driver station, red1-red3 or blue1-blue3 (getAlliance, getLocation).
     fms: whether the field (FMS) is attached (isFMSAttached).

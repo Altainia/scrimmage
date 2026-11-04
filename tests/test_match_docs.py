@@ -122,5 +122,6 @@ def test_the_other_docs_point_here():
         assert words in drive, words
     doc = text()
     assert "`scrimmage serve` ignores `[match]`" in doc
-    for words in ("press **Enter** or\n  leave the box", "**aren't saved**", "no fields for the Auto and Teleop lengths"):
-        assert words in doc, words
+    flat = " ".join(doc.split())
+    for words in ("press **Enter** or leave the box", "**aren't saved**", "no fields for the Auto and Teleop lengths"):
+        assert words in flat, words

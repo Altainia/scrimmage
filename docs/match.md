@@ -181,7 +181,7 @@ empty box keeps what the step before left (the box shows it, such as `keeps "R"`
 
 | Tool | What it does |
 |---|---|
-| `set_match` | Set any of `station`, `fms`, `timer`, `game_data`, `auto_seconds` and `teleop_seconds`; leave out what shouldn't change. Sent on the next advance. |
+| `set_match` | Set any of `station`, `fms`, `timer`, `game_data`, `auto_seconds` and `teleop_seconds`; leave out what shouldn't change. Sent on the next advance, in any mode (no wait for Teleop, unlike the Drive tab's box). |
 | `get_state` | Its `match` has the station, FMS, timer and lengths, the `game_data`, and `match_time`: the match time last sent. |
 
 An agent's session starts from the config's `[match]`. `set_match(game_data="R")` sends the game data at once, in any
