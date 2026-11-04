@@ -51,6 +51,8 @@ from ..disc.inputs import PRESETS as DISC_PRESETS
 from ..disc.inputs import AeroSet, Disc, DiscConfigError, aero_set, disc_preset
 from ..launcher import inputs as launcher_inputs
 from ..launcher.inputs import PRESETS, Ball, LauncherConfigError, _build_section
+from ..measure.file import MeasureError
+from ..measure.use import apply_ball, friction_value, is_measurement
 from .elements import IN, _length
 from .spec import RangeError, _Reader
 
@@ -310,6 +312,9 @@ class PieceKind:
     flat: bool
     label: str = ""  # the plain name a student reads ("coral"); left empty, display_name(name)
     shape: str = ""  # "ball", "disc" or one of SHAPES
+    # what a measurement file gave (measure/use.py): a ball's "stiffness_n" and the like, a rigid piece's "friction",
+    # each the file's Provenance. Empty when nothing is measured.
+    provenance: dict = field(default_factory=dict)
 
     def __post_init__(self):
         if not self.label:
@@ -589,6 +594,9 @@ def parse_kind(path, name: str, table: dict, base_dir: Path) -> PieceKind:
         extra = [k for k in r.t if k not in (source, "aero", "label")]
         if extra:
             raise r.err(f"{extra[0]} doesn't go with {source} = {r.raw(source)!r}: a preset kind is its preset")
+        if source == "ball" and is_measurement(r.text("ball")):  # its errors name the file and the table
+            kind = measured_ball_kind(name, r.text("ball"), base_dir, f"{path}: {r.where}")
+            return replace(kind, label=label) if label else kind
         try:
             if source == "ball":
                 kind = ball_kind(name, r.text("ball"))
@@ -602,6 +610,7 @@ def parse_kind(path, name: str, table: dict, base_dir: Path) -> PieceKind:
     shape = _shape_name(r, SHAPES)
     _check_shape_keys(r, shape)
     mass = r.num("mass", positive=True)
+    measured = None
     if r.has("material") and r.has("friction"):
         raise r.err("has both material and friction; give one: material = \"<surface>\", or friction = <number> "
                     "for your own measured number")
@@ -610,6 +619,12 @@ def parse_kind(path, name: str, table: dict, base_dir: Path) -> PieceKind:
             friction = surface_friction(r.text("material"))
         except RangeError as e:
             raise r.err(str(e)) from None
+    elif r.has("friction") and is_measurement(r.raw("friction")):
+        try:
+            friction, measured = friction_value(r.raw("friction"), f"{path}: {r.where}", base=base_dir,
+                                                needs="a piece's surface")
+        except MeasureError as e:
+            raise RangeError(str(e)) from None
     elif r.has("friction"):
         friction = r.num("friction", positive=True)
     else:
@@ -623,7 +638,8 @@ def parse_kind(path, name: str, table: dict, base_dir: Path) -> PieceKind:
         solids, own = _cad(r, base_dir)
     else:
         solids, hole, axis = _simple(r, shape)
-    return _finish(r, name, shape, solids, mass, friction, axis, hole, inertia, own, label)
+    kind = _finish(r, name, shape, solids, mass, friction, axis, hole, inertia, own, label)
+    return replace(kind, provenance={"friction": measured}) if measured is not None else kind
 
 
 def _default_aero() -> str:
@@ -647,6 +663,24 @@ def ball_kind(name: str, preset: str) -> PieceKind:
     except LauncherConfigError as e:  # pragma: no cover - the shipped presets are complete
         raise RangeError(str(e)) from e
     return ball_kind_of(name, preset, ball)
+
+
+def measured_ball_kind(name: str | None, file: str, base_dir: Path, where: str, key: str = "ball") -> PieceKind:
+    """A kind that is a ball file's ball (`<key> = "<file>"`, found from `base_dir`): the file's base preset with its
+    measured fields in place, their provenance kept. Named `name`, else after the preset."""
+    try:
+        fields, provenance = apply_ball({}, file, where, base=base_dir, key=key, launcher=False)
+    except MeasureError as e:
+        raise RangeError(str(e)) from None
+    preset = fields.get("preset")
+    if preset is None:
+        raise RangeError(f"{where}: {key} = \"{file}\" needs its [measure] base, the ball preset it measured "
+                         "(base = \"2026-fuel\"), for the numbers it doesn't measure")
+    try:
+        ball = _build_section("ball", fields)
+    except LauncherConfigError as e:
+        raise RangeError(f"{where}: {key} = \"{file}\": {e}") from None
+    return replace(ball_kind_of(name or preset, preset, ball), provenance=provenance)
 
 
 def ball_kind_of(name: str, preset: str | None, ball: Ball) -> PieceKind:

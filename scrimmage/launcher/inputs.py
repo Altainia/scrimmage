@@ -1,6 +1,9 @@
 """Launcher setup inputs: the dataclasses, loading a setup TOML, presets, and dotted-key overrides.
 
 All units are SI; angles are degrees (keys end in `_deg`); `target_rps` is wheel-shaft rotations per second.
+
+`[ball]` and `[wheels]` take `measured = "<file>.measure.toml"`, relative to the setup file: the numbers the file
+measured replace the preset's (scrimmage/measure/use.py), and `Setup.provenance` says where each came from.
 """
 
 import copy
@@ -8,7 +11,7 @@ import dataclasses
 import tomllib
 import types
 import typing
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..motors import MOTORS
@@ -165,6 +168,9 @@ class Setup:
     spread: Spread
     results: Results
     dt: float | None = None
+    # "ball.stiffness_n" -> the measurement file a number came from (measure/file.py's Provenance): `measured` in
+    # [ball] or [wheels]. Empty when no number was measured; not compared or shown, so such a setup is as before.
+    provenance: dict = field(default_factory=dict, compare=False, repr=False)
 
 
 # Ranges checked after parsing: (section, key, test, what the value must be). Optional keys left unset (None) are
@@ -219,8 +225,9 @@ def _check_ranges(setup: Setup) -> None:
 
 
 SECTIONS: dict[str, type] = {
-    f.name: f.type for f in dataclasses.fields(Setup) if f.name != "dt"
+    f.name: f.type for f in dataclasses.fields(Setup) if f.name not in ("dt", "provenance")
 }
+MEASURED_SECTIONS = ("ball", "wheels")  # the sections that take `measured = "<file>.measure.toml"` (measure/use.py)
 _TOP_LEVEL = set(SECTIONS) | {"dt", "sweep", "chart"}
 
 
@@ -284,6 +291,9 @@ def _build_section(section: str, table):
     if not isinstance(table, dict):
         raise LauncherConfigError(f"[{section}] must be a table, not {table!r}")
     table = dict(table)
+    if "measured" in table and section in MEASURED_SECTIONS:
+        raise LauncherConfigError(f"[{section}] measured: a measurement file is read in a launcher setup file's "
+                                  f"[{section}]; here give the measured numbers themselves")
     valid = {f.name: f for f in dataclasses.fields(cls)}
     for key in table:
         if key not in valid and not (key == "preset" and section in PRESETS):
@@ -311,18 +321,49 @@ def _build_section(section: str, table):
     return cls(**{k: _coerce(v, hints[k], section, k) for k, v in values.items()})
 
 
-def parse_setup(raw: dict) -> Setup:
-    """Build a `Setup` from a raw dict (the parsed TOML), applying presets and defaults."""
+def apply_measured(raw: dict, path: Path | None = None) -> tuple[dict, dict]:
+    """`raw` with each `[ball]` and `[wheels]` `measured = "<file>"` replaced by the numbers the file measured, and
+    their provenance ("ball.stiffness_n" -> Provenance). `path` is the setup file: the files are found from its
+    folder (else the working folder) and its errors name it. No `measured`: `raw` itself and {}."""
+    named = {s: raw[s]["measured"] for s in MEASURED_SECTIONS if isinstance(raw.get(s), dict) and "measured" in raw[s]}
+    if not named:
+        return raw, {}
+    from ..measure.file import MeasureError
+    from ..measure.use import apply_ball, apply_wheels
+
+    base = Path(path).parent if path is not None else Path(".")
+    for section, name in named.items():
+        if not isinstance(name, str):
+            raise LauncherConfigError(f"[{section}] measured must be a measurement file's path in quotes "
+                                      f"(\"tread.measure.toml\"), not {name!r}")
+    shared = len(named) == 2 and (base / named["ball"]).resolve() == (base / named["wheels"]).resolve()
+    out, provenance = dict(raw), {}
+    for section, name in named.items():
+        where = f"{path}: [{section}]" if path is not None else f"[{section}]"
+        fields = {k: v for k, v in raw[section].items() if k != "measured"}
+        apply = apply_ball if section == "ball" else apply_wheels
+        try:
+            out[section], got = apply(fields, name, where, base=base, shared=shared)
+        except MeasureError as e:
+            raise LauncherConfigError(str(e)) from None
+        provenance |= {f"{section}.{k}": p for k, p in got.items()}
+    return out, provenance
+
+
+def parse_setup(raw: dict, path: Path | None = None) -> Setup:
+    """Build a `Setup` from a raw dict (the parsed TOML), applying measurements (`path`, the setup file, finds them:
+    apply_measured), presets and defaults."""
     for key in raw:
         if key not in _TOP_LEVEL:
             raise _unknown_section(key)
+    raw, provenance = apply_measured(raw, path)
     parts = {name: _build_section(name, raw.get(name, {})) for name in SECTIONS}
     dt = raw.get("dt")
     if dt is not None:
         dt = _coerce(dt, float, "setup", "dt")
         if dt <= 0:
             raise LauncherConfigError(f"dt must be positive, not {dt!r}")
-    setup = Setup(**parts, dt=dt)
+    setup = Setup(**parts, dt=dt, provenance=provenance)
     _check_ranges(setup)
     if setup.shaft.motor not in MOTORS:
         raise LauncherConfigError(
@@ -383,13 +424,14 @@ def apply_overrides(raw: dict, overrides: dict[str, object]) -> dict:
 def load_setup(source: Path | dict) -> tuple[Setup, dict[str, list], list[dict]]:
     """Load a setup from a TOML path or a dict. Returns the setup, the raw `[sweep]` table and the `[[chart]]` list."""
     if isinstance(source, dict):
-        raw = source
+        raw, path = source, None
     else:
+        path = Path(source)
         try:
-            raw = tomllib.loads(Path(source).read_text(encoding="utf-8"))
+            raw = tomllib.loads(path.read_text(encoding="utf-8"))
         except tomllib.TOMLDecodeError as e:
             raise LauncherConfigError(f"{source}: {e}") from None
-    setup = parse_setup(raw)
+    setup = parse_setup(raw, path)
     sweep = raw.get("sweep", {})
     if not isinstance(sweep, dict):
         raise LauncherConfigError(f"[sweep] must be a table, not {sweep!r}")

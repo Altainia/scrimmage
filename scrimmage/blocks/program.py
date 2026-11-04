@@ -33,6 +33,7 @@ from pathlib import Path
 
 from ..climb.run import SETTLE_S
 from ..launcher.inputs import PRESETS
+from ..measure.use import is_measurement
 from ..testrange.station import MAX_STOCK, OVERRIDE_KEYS, stock_too_big
 
 TIME_LIMIT = 60.0        # s: the whole run ends here
@@ -97,6 +98,21 @@ class Program:
     setup: dict = field(default_factory=dict)
     hopper: list | None = None      # None: the file names none; []: the student cleared it (kept, so Setup
                                     # doesn't preselect one again)
+
+
+def found_setup(program: Program) -> dict:
+    """The test's setup with a ball that is a measurement file (`ball = "fuel.measure.toml"`, relative to the test
+    file) given as its whole path, for the config it goes into; a TestFileError when the file isn't there."""
+    ball = program.setup.get("ball")
+    if not is_measurement(ball):
+        return program.setup
+    from ..measure.file import MeasureError
+    from ..measure.use import find
+    try:
+        path = find(ball, Path(program.path).parent, f"{program.path}: [setup]", "ball")
+    except MeasureError as e:
+        raise TestFileError(str(e)) from None
+    return {**program.setup, "ball": str(path.resolve())}
 
 
 # ---- reading --------------------------------------------------------------------------------------------------------
@@ -399,7 +415,7 @@ def _setup(raw: dict) -> dict:
     out: dict = {}
     if "ball" in raw:
         ball = raw["ball"]
-        if not isinstance(ball, str) or ball not in PRESETS["ball"]:
+        if not isinstance(ball, str) or (ball not in PRESETS["ball"] and not is_measurement(ball)):
             raise TestFileError(f'{where}: ball {ball!r} isn\'t a ball; balls: {", ".join(PRESETS["ball"])}')
         out["ball"] = ball
     if "piece" in raw:

@@ -136,6 +136,7 @@ class CylinderSpec:
     pin_a: tuple[str, tuple] | None = None
     pin_b: tuple[str, tuple] | None = None
     length: float | None = None
+    provenance: object = None       # the conductance's measurement file (measure/file.py's Provenance), or None
 
 
 class _Chamber:

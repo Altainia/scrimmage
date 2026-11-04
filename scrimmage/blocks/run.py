@@ -116,7 +116,7 @@ from .grip_watch import SET_DOWN, SLIP_LOOKBACK_S, default_word
 from .palette import ALL_MOTORS, ANY_GOAL, ANY_HOOK, ANY_PIECE, NEXT_BAR, palette, problems
 from .placed import KNOCK_OFF_SHARE, ON_PIECE, seated_words
 from .program import (DRIVE_TIMEOUT, DRIVE_VOLTS, MOVE_TIMEOUT, REPEAT_MAX, WAIT_TIMEOUT, Program,
-                      TestFileError)
+                      TestFileError, found_setup)
 from .spread import NO_BALL, rest_of, spread_ball, start_pose
 
 MOTION_HZ = 30            # mover poses a second, for the replay
@@ -275,7 +275,7 @@ def world_for(program: Program):
     from ..config import ConfigError, build_world, load_config
     config = load_config(Path(program.path).parent / program.robot)
     try:
-        return build_world(replace(config, raw=setup_config(config.raw, program.setup, config.dir)))
+        return build_world(replace(config, raw=setup_config(config.raw, found_setup(program), config.dir)))
     except ConfigError as e:
         text = str(e)
         if not isinstance(program.setup.get("partner"), dict) or STARTS_INSIDE not in text:

@@ -684,6 +684,7 @@ parameters:
   stroke = 0.1524 m (greater than 0): how far the rod travels (6 in)
   friction = 8.0 N (at least 0.0): seal friction (estimate, UNCALIBRATED)
   conductance = 8e-09 m^3/(s*Pa) (greater than 0): the valve's sonic conductance, how freely air flows (estimate, UNCALIBRATED)
+  measured = "": a cylinder measurement file ("deploy.measure.toml", relative to the robot config) whose timed strokes fit the conductance; empty for the conductance above
   mass = 0.25 kg (greater than 0): the barrel's mass (UNCALIBRATED)
   rod_mass = 0.1 kg (greater than 0): the rod's mass (UNCALIBRATED)
   push = "": "<part>.<body>" the rod's end is pinned to (a stock arm's "arm.arm"); empty for a free rod with its own mount

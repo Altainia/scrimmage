@@ -1,10 +1,11 @@
 """Run a launcher setup, or every combination of its `[sweep]` table."""
 
+import dataclasses
 import itertools
 import tomllib
 from pathlib import Path
 
-from .inputs import LauncherConfigError, Setup, apply_overrides, load_setup, parse_setup
+from .inputs import LauncherConfigError, Setup, apply_measured, apply_overrides, load_setup, parse_setup
 from .report import label
 from .run import RunResult, run_setup
 
@@ -23,18 +24,25 @@ def run_one(path: Path, load=load_setup, run=run_setup) -> tuple[list[tuple[dict
 
 
 def setups_for(path: Path, load=load_setup, parse=parse_setup, overrides=apply_overrides,
-               error=LauncherConfigError) -> list[tuple[dict, Setup]]:
+               error=LauncherConfigError, measured=apply_measured) -> list[tuple[dict, Setup]]:
     """Parse every combination of the file's `[sweep]`, before any runs: a bad one raises `error` (the launcher's
     LauncherConfigError) prefixed with that combination (`hood.exit_angle_deg=160: ...`). The disc launcher passes
-    its own load, parse, overrides and error class."""
+    its own load, parse, overrides and error class, and measured=None. The setup's measurement files are read once,
+    before the combinations; a swept number replaces a measured one, and its provenance goes."""
     _, sweep, _ = load(path)  # validates the setup and the sweep keys
     raw = tomllib.loads(Path(path).read_text(encoding="utf-8"))
+    provenance = {}
+    if measured is not None:
+        raw, provenance = measured(raw, Path(path))
     out = []
     for combo in combinations(sweep):
         try:
-            out.append((combo, parse(overrides(raw, combo))))
+            setup = parse(overrides(raw, combo))
         except error as e:
             raise error(f"{label(combo)}: {e}") from None
+        if provenance:
+            setup = dataclasses.replace(setup, provenance={k: p for k, p in provenance.items() if k not in combo})
+        out.append((combo, setup))
     return out
 
 

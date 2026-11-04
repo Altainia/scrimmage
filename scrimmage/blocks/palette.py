@@ -455,7 +455,12 @@ def setup_problems(program, rng) -> list[str]:
     def say(e: RangeError) -> str:
         return str(e).removeprefix(f"{rng.path}: ")
 
-    ball, piece = program.setup.get("ball"), program.setup.get("piece")
+    from .program import TestFileError, found_setup
+    try:
+        ball = found_setup(program).get("ball")
+    except TestFileError as e:
+        return [str(e)]
+    piece = program.setup.get("piece")
     if (ball is not None or piece is not None) and rng.path.stem in BALL_CHOICE_RANGES:
         try:
             rng = load_range(rng.path.as_posix(), rng.path.parent, ball=ball, piece=piece)
