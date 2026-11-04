@@ -30,7 +30,7 @@ scrimmage-mcp = "scrimmage.mcp_server:main"
 [tool.setuptools]
 packages = ["scrimmage", "scrimmage.parts", "scrimmage.parts.stock", "scrimmage.assembler", "scrimmage.launcher",
             "scrimmage.testrange", "scrimmage.disc", "scrimmage.bench", "scrimmage.cad", "scrimmage.blocks", "scrimmage.climb", "scrimmage.terrain",
-            "scrimmage.pneumatics"]
+            "scrimmage.pneumatics", "scrimmage.measure"]
 
 [tool.setuptools.package-data]
 scrimmage = ["java/**/*", "assembler/static/**/*", "launcher/*.toml", "disc/*.toml", "testrange/ranges/*.toml",

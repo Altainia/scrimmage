@@ -1,0 +1,47 @@
+"""Averaging trials, with checks a student can redo by hand on the printed form.
+
+Each trial gives one value; the result is their mean. The spread is the highest minus the lowest, as a fraction of
+the mean. Fewer than 3 trials, or a spread over 15%, makes the average not good enough to use in a run (it is still
+reported). A trial more than twice the average distance from the mean is flagged as an outlier; it is never dropped.
+"""
+
+from dataclasses import dataclass
+
+MIN_TRIALS = 3
+MAX_SPREAD = 0.15  # (highest - lowest) / mean
+OUTLIER_DISTANCES = 2.0  # how many mean absolute deviations from the mean flag a trial
+
+
+@dataclass(frozen=True, kw_only=True)
+class Summary:
+    mean: float
+    low: float
+    high: float
+    spread: float  # (high - low) / mean: 0.22 is 22%
+    n: int
+    outliers: list[int]  # 0-based indexes of the trials that look off
+    warnings: list[str]  # plain sentences, trials numbered from 1
+    good: bool  # at least 3 trials, spread at most 15%
+
+
+def summary(values) -> Summary:
+    """The mean, lowest, highest, spread and warnings of one value per trial."""
+    values = [float(v) for v in values]
+    if not values:
+        raise ValueError("summary needs at least one trial")
+    n = len(values)
+    mean = sum(values) / n
+    low, high = min(values), max(values)
+    spread = (high - low) / abs(mean) if mean else (0.0 if high == low else float("inf"))
+    distance = sum(abs(v - mean) for v in values) / n
+    outliers = [i for i, v in enumerate(values) if abs(v - mean) > OUTLIER_DISTANCES * distance]
+
+    warnings = []
+    if n < MIN_TRIALS:
+        warnings.append(f"take at least {MIN_TRIALS} trials (this has {n}): "
+                        "the average isn't used in a run until then")
+    if spread > MAX_SPREAD:
+        warnings.append(f"your trials disagree by {spread:.0%}: measure again or take more trials")
+    warnings += [f"trial {i + 1} looks off: check it" for i in outliers]
+    return Summary(mean=mean, low=low, high=high, spread=spread, n=n, outliers=outliers, warnings=warnings,
+                   good=n >= MIN_TRIALS and spread <= MAX_SPREAD)
