@@ -23,7 +23,7 @@ import mujoco
 from .bindings import binds_ph, binds_rev
 from .bridge import Bridge, robot_language
 from .devicecheck import check_devices, device_notes
-from .driverstation import check_game_data
+from .driverstation import MatchSettings, check_game_data
 from .config import Config, ConfigError, build_world, load_config, set_sim_mode, sim_mode_unused
 from .lockstep import Pacer
 from .movers import Mover, mover_poses, movers
@@ -182,7 +182,9 @@ class Session:
         return self.bridge is not None and self.bridge.mode == "lockstep"
 
     # ------------------------------------------------------------------ lifecycle
-    async def start(self) -> dict:
+    async def start(self, *, match: MatchSettings | None = None, game_data: str = "") -> dict:
+        """`match` and `game_data`: what the Driver Station sends from the robot's first frame (default: the config's
+        [match] and no game data); the Drive tab's restart passes the match it had."""
         cfg = self.config
         if self._task is not None:
             raise SessionError("this session has already been started")
@@ -204,7 +206,9 @@ class Session:
         except ValueError as e:
             raise SessionError(f"{cfg.path}: {e}") from None
         self.bridge.ds.active = True
-        self.bridge.ds.match = cfg.match
+        self.bridge.ds.match = match if match is not None else cfg.match
+        if game_data:
+            self.bridge.ds.set_game_data(game_data)
         self.bridge.agent_state = self.agent_state
         self.bridge.rev_state = self.rev_state
         self.bridge.robot_language = self.robot_language()

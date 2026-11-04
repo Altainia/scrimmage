@@ -120,6 +120,8 @@ class LiveManager:
         # the match settings (MATCH_KEYS) and the game data box, from the session's start (None until then); the box
         # reaches the robot while it is enabled in Teleop (M5)
         self._match: dict | None = None
+        # the robot's game data when the last session ended (restart() keeps it with _match: the same match)
+        self._robot_game_data = ""
         # the device check of the latest session (written on the loop, under the lock; the rows stay after it ends)
         self._devices_changed = threading.Condition(self._lock)
         self._dev_version, self._dev_rows, self._dev_t, self._dev_settled = 0, [], 0.0, False
@@ -177,13 +179,17 @@ class LiveManager:
             self._state, self._error, self._config_path, self._step = "starting", None, config_path, None
             self._t, self._mode, self._enabled, self._paused = 0.0, "teleop", False, False
             self._speed, self._speed_locked = speed, None
+            # restart() keeps the match settings, the box and the robot's game data: a restart is the same match,
+            # as restart_robot keeps the game data
+            kept = (dict(self._match), self._robot_game_data) if restarting and self._match is not None else None
             self._recorder, self._start_pose, self._match = None, None, None
+            self._robot_game_data = ""
             self._dev_rows, self._dev_t, self._dev_settled = [], 0.0, False
             self._restart, self._restart_problem = ("restarted" if restarting else None), None
             self._devices_bump()
             self._reset_loop_state()
             self._thread = threading.Thread(target=self._work, name="live", daemon=True,
-                                            args=(config_path, speed, self._stopping))
+                                            args=(config_path, speed, self._stopping, kept))
             self._thread.start()
         self._publish_state(force=True)
 
@@ -392,10 +398,10 @@ class LiveManager:
 
     # -- worker ---------------------------------------------------------------------------------------------
 
-    def _work(self, config_path: Path, speed, stopping: threading.Event) -> None:
+    def _work(self, config_path: Path, speed, stopping: threading.Event, kept: tuple | None = None) -> None:
         error = None
         try:
-            asyncio.run(self._main(config_path, speed, stopping))
+            asyncio.run(self._main(config_path, speed, stopping, kept))
         except _Stopped:
             pass
         except BaseException as e:  # noqa: BLE001 - the worker must always settle the session
@@ -412,7 +418,7 @@ class LiveManager:
             self._devices_bump()
         self._publish_state(force=True)
 
-    async def _main(self, config_path: Path, speed, stopping: threading.Event) -> None:
+    async def _main(self, config_path: Path, speed, stopping: threading.Event, kept: tuple | None) -> None:
         with self._lock:
             self._loop, self._wake = asyncio.get_running_loop(), asyncio.Event()
         session = Session(config_path, speed=speed)
@@ -421,16 +427,24 @@ class LiveManager:
             self._step = session.config.step
             self._recorder = DriveRecorder(session.config.step, dataclasses.asdict(session.config.match))
         try:
-            await self._until_stopped(session.start(), stopping)
+            if kept is not None:
+                await self._until_stopped(session.start(
+                    match=MatchSettings(**{k: kept[0][k] for k in MATCH_KEYS}), game_data=kept[1]), stopping)
+            else:
+                await self._until_stopped(session.start(), stopping)
             self._session = session
             self._rev_noticed = False
             session.set_mode("disabled")
             with self._lock:
-                self._match = {**dataclasses.asdict(session.bridge.ds.match), "game_data": ""}
+                self._match = {**dataclasses.asdict(session.bridge.ds.match),
+                               "game_data": kept[0]["game_data"] if kept is not None else ""}
             self._set_state("running")
             await self._run(session, stopping)
         finally:
             self._session = None   # stopping: state messages keep the last readouts
+            if session.bridge is not None:
+                with self._lock:
+                    self._robot_game_data = session.bridge.ds.game_data
             self._update_console(session)
             await asyncio.shield(session.stop())
             self._update_console(session)

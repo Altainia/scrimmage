@@ -18,8 +18,8 @@ def check_game_data(value, where: str) -> str:
     if not isinstance(value, str):
         raise ValueError(f"{where} game_data must be text, not {value!r}")
     if len(value.encode("utf-8")) > GAME_DATA_MAX:
-        raise ValueError(f"{where} game_data must be at most {GAME_DATA_MAX} bytes ({GAME_DATA_MAX} letters or "
-                         "digits)")
+        raise ValueError(f"{where} game_data must be at most {GAME_DATA_MAX} bytes ({GAME_DATA_MAX} plain letters, "
+                         "digits or punctuation)")
     return value
 
 

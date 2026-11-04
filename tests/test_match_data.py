@@ -167,7 +167,7 @@ def test_merged_applies_keys_over_the_values():
 
 def test_game_data_is_at_most_64_bytes():
     assert check_game_data("x" * GAME_DATA_MAX, "here") == "x" * 64
-    with pytest.raises(ValueError, match=r"here.*at most 64 bytes \(64 letters or digits\)"):
+    with pytest.raises(ValueError, match=r"here.*at most 64 bytes \(64 plain letters, digits or punctuation\)"):
         check_game_data("x" * 65, "here")
     assert check_game_data("é" * 32, "here") == "é" * 32        # 2 bytes each in UTF-8: 64 bytes
     with pytest.raises(ValueError, match="64 bytes"):           # 40 characters, but 80 bytes: the HAL keeps 64
