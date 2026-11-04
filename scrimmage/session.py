@@ -45,6 +45,7 @@ PHOENIX_UNPAUSABLE = "Phoenix 6 devices keep running between calls: this session
 REAL_DS_UNPAUSABLE = "the real Driver Station keeps the robot running between calls: this session can't pause it"
 DS_SOCKET_ENV = "SCRIMMAGE_DS_SOCKET"   # set to 1 for a real-DS launch: the Gradle init script then keeps the DS socket
 DS_UDP_PORT, DS_TCP_PORT = 1110, 1740   # the DS protocol's fixed ports, where the robot listens for the real DS
+REAL_DS_INPUTS = f"this session can't change the Driver Station's inputs: {REAL_DS_DRIVING}"
 DS_LISTEN_TIMEOUT = 30.0                # wall s an attached robot program has to listen on UDP 1110 (no start_timeout)
 NOT_LISTENING = ("the robot program isn't listening for the Driver Station (UDP 1110): RobotPy needs --ds-socket; "
                  "Java needs wpi.sim.addDriverstation()")
@@ -522,7 +523,7 @@ class Session:
     # ------------------------------------------------------------------ driver inputs
     def _not_real_ds(self) -> None:
         if self.real_ds:
-            raise SessionError(f"this session can't change the Driver Station's inputs: {REAL_DS_DRIVING}")
+            raise SessionError(REAL_DS_INPUTS)
 
     def set_mode(self, mode: str) -> dict:
         self._require_started()

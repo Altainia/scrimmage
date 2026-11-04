@@ -231,12 +231,24 @@
     <h2 id="drive-ds-title" class="col-title">Driver Station</h2>
     <div class="scroll">
       <div class="ds-section">
+        <div class="ds-source">
+          <label class="ds-label" for="drive-ds-source">Driver Station</label>
+          <select id="drive-ds-source">
+            <option value="page">Scrimmage (this page)</option>
+            <option value="real">The FRC Driver Station app</option>
+          </select>
+        </div>
         <div class="row">
           <button type="button" id="drive-start" class="btn btn-primary">Start</button>
           <button type="button" id="drive-stop" class="btn" disabled>Stop</button>
         </div>
       </div>
       <div class="ds-section">
+        <div id="drive-real-ds" class="ds-real" role="status" hidden>
+          <strong class="ds-real-title">The FRC Driver Station is driving</strong>
+          <span id="drive-real-ds-state" class="mode-chip ds-real-state"></span>
+          <span id="drive-real-ds-match" class="ds-real-match"></span>
+        </div>
         <span class="field-label ds-label" id="drive-mode-label">Mode</span>
         <div class="mode-seg" role="group" aria-labelledby="drive-mode-label">
           <button type="button" class="mode-btn mode-teleop" data-key="mode-teleop" aria-pressed="true">Teleop</button>
@@ -247,7 +259,7 @@
           <button type="button" id="drive-enable" class="btn ds-enable-btn" title="Enable (Enter)" disabled>Enable</button>
           <button type="button" id="drive-disable" class="btn ds-disable-btn" title="Disable (Space)" disabled>Disable</button>
         </div>
-        <p class="hint">Enter enables, Space disables.</p>
+        <p class="hint" id="drive-keys-hint">Enter enables, Space disables.</p>
       </div>
       <div class="ds-section">
         <h3 class="ds-label">Match</h3>
@@ -261,7 +273,7 @@
           <label class="check-label"><input type="checkbox" id="drive-fms" disabled> FMS attached</label>
           <label class="check-label"><input type="checkbox" id="drive-timer" disabled> Match timer</label>
         </div>
-        <p class="hint">Game data reaches the robot when it is enabled in Teleop.</p>
+        <p class="hint" id="drive-match-hint">Game data reaches the robot when it is enabled in Teleop.</p>
       </div>
       <div class="ds-section">
         <h3 class="ds-label">Record</h3>

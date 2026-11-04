@@ -607,6 +607,11 @@ dialog.run-viewer { width: auto; max-width: 94vw; max-height: 92vh; }
 .ds-section { padding: 10px 14px 12px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .ds-label { font-size: 12.5px; font-weight: 700; margin: 0; font-family: var(--font); }
 .ds-section .hint { margin: 0; }
+.ds-source { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+.ds-source select { width: 100%; font-size: 12.5px; padding: 3px 4px; }
+.ds-real { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; padding: 6px 8px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--subtle); font-size: 12.5px; }
+.ds-real-state { border-radius: 10px; padding: 0 8px; font-weight: 700; }
+.ds-real-match { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .ds-enable { gap: 8px; }
 .ds-enable-btn.on { background: var(--m-teleop-soft); border-color: var(--m-teleop); color: var(--m-teleop-text); font-weight: 700; }
 .ds-disable-btn:not(:disabled) { color: var(--error); border-color: var(--error-line); font-weight: 600; }

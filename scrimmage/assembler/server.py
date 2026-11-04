@@ -492,7 +492,8 @@ docstring gives the file's JSON (`file`):
         needs no token, so a plain link opens it. 404 for a test that isn't one.
 
 Live (`/api/live/*`; one simulation at a time: a drive session, a scenario run, a bench job or a test run):
-  GET  /api/live/info              -> {port, status, run_active, can_start, start_problem}: port is the stream's
+  GET  /api/live/info              -> {port, status, run_active, can_start, start_problem, start_picked,
+        real_ds_default}: port is the stream's
         WebSocket port; status is the session's {state: idle|starting|running|paused|stopped|error, error, config,
         t, mode, chosen_mode, enabled, paused, speed, speed_locked, recording, pokes, can_save, match, stations} (mode
         is the effective mode, "disabled" while not enabled; chosen_mode is the one Enable runs; match is the
@@ -501,11 +502,18 @@ Live (`/api/live/*`; one simulation at a time: a drive session, a scenario run, 
         scenario run is in progress; can_start is false when the robot document can't be driven (it doesn't load
         or has no [robot_program]), with start_problem saying why in Start's own words (else null). start_picked
         is false while a [[part]] robot has neither [robot] start_pose nor [range] start (Start then asks).
+        real_ds_default is the robot config's [driver_station] real (false when it doesn't load): where the Drive
+        tab's Driver Station choice starts. status.real_ds is true while (and after) a session the FRC Driver Station
+        app drives; its mode, enabled and match then come from the robot's own reports (real_ds_report), and
+        status.driver_station is "connected" or "waiting for the Driver Station".
   GET  /api/live/view              -> model_view(world, include_world=True) of the robot document (movers and
         movable included; frames list poses in its movers order), or {} when the robot config doesn't load.
   GET  /api/live/signals           -> signals(world) of the robot document, or {}.
-  POST /api/live/start             -> body {speed?, discard_recording?} (speed: a positive number, default 1, or
-        "max"): drives the robot document's config. {ok: true}; 200 {ok: false, errors: [{field: "status",
+  POST /api/live/start             -> body {speed?, discard_recording?, real_ds?} (speed: a positive number,
+        default 1, or "max"; real_ds: true when the FRC Driver Station app drives, null or absent for the config's
+        [driver_station] real): drives the robot document's config. While the real DS drives, the stream's mode,
+        enable, disable, match, pause, resume, step and record_start commands and its inputs are refused with a
+        notice saying why. {ok: true}; 200 {ok: false, errors: [{field: "status",
         message}]} when the robot config doesn't load, has no [robot_program] or the speed is bad; 200 {ok: false,
         errors: [{field: "start/unpicked", message: "Pick where the robot starts first"}]} while start_picked is
         false (only the page asks: the CLI, the agent and the loader keep their default start); 200 {ok: false,
@@ -2442,11 +2450,12 @@ class App:
                                        "mode": st["mode"], "range": st.get("range")})   # None: no test range
 
     def live_info(self) -> dict:
-        _, _, problem = self._drivable()
+        _, cfg, problem = self._drivable()
         with self._lock:
             picked = self._start_problem() is None
         return {"port": self.hub.port, "status": self.live.status(), "run_active": self.runs.running,
-                "can_start": problem is None, "start_problem": problem, "start_picked": picked}
+                "can_start": problem is None, "start_problem": problem, "start_picked": picked,
+                "real_ds_default": cfg is not None and cfg.real_ds}
 
     def _drivable(self):
         """(config path, config, None) when the robot document can be driven, else (None, None, why not)."""
@@ -2472,6 +2481,9 @@ class App:
         discard = body.get("discard_recording", False)
         if not isinstance(discard, bool):
             raise ApiError(400, "discard_recording must be true or false")
+        real_ds = body.get("real_ds")
+        if real_ds is not None and not isinstance(real_ds, bool):
+            raise ApiError(400, "real_ds must be true, false or null")
         # under the lock from the robot check to the start: no scenario open or edit switches the robot document
         # in between (LiveManager never calls back into the app, so holding it here can't deadlock)
         with self._lock:
@@ -2494,7 +2506,7 @@ class App:
                               f"{cfg.step / speed:g} s of wall time or more, and the robot's 2 s watchdog would "
                               "release the clock")
             try:
-                self.live.start(path, speed, discard_recording=discard)
+                self.live.start(path, speed, discard_recording=discard, real_ds=real_ds)
             except SimBusy as e:
                 raise ApiError(409, str(e)) from None
             except UnsavedRecording as e:
@@ -2506,7 +2518,7 @@ class App:
     def robot_check(self, body: dict) -> tuple[int, dict]:
         """Start and check devices: Drive's start (refused the same ways), disabled until someone enables it in
         Drive; /api/robot/devices then fills in."""
-        return self.live_start({k: body[k] for k in ("speed", "discard_recording") if k in body})
+        return self.live_start({k: body[k] for k in ("speed", "discard_recording", "real_ds") if k in body})
 
     def live_stop(self) -> dict:
         self.live.stop()

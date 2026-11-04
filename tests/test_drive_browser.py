@@ -333,3 +333,77 @@ def test_the_match_controls_start_from_the_config_and_set_the_station(drive_page
     page.wait_for_function("/match \\d/.test(document.querySelector('#drive-hud').textContent)")
     page.click("#drive-disable")
     stop(page)
+
+
+# ---- the FRC Driver Station app drives (sub-project 28) -------------------------------------------------------
+
+REAL_DS_OFF = ["[data-key='mode-teleop']", "[data-key='mode-auto']", "[data-key='mode-test']", "#drive-enable",
+               "#drive-disable", "#drive-station", "#drive-fms", "#drive-timer", "#drive-game-data", "#drive-port-0",
+               "#drive-pause", "#drive-step", "#drive-record", "#drive-ds-source"]
+
+
+def assert_real_ds_controls_off(page):
+    for sel in REAL_DS_OFF:
+        assert page.is_disabled(sel), sel
+        assert page.get_attribute(sel, "title"), sel   # the tooltip says why
+    assert "FRC Driver Station" in page.get_attribute("#drive-enable", "title")
+    assert "real time" in page.get_attribute("#drive-pause", "title")
+    assert "Recording" in page.get_attribute("#drive-record", "title")
+    assert "stop and start again" in page.get_attribute("#drive-ds-source", "title")
+
+
+def test_the_frc_driver_station_choice_turns_the_page_controls_off(drive_page):
+    """The fake robot has no DS socket, so the bar waits for the Driver Station; the page's DS controls are off, and
+    the page sends nothing the server refuses (no error notices, even with Enter and W pressed)."""
+    page = drive_page()
+    assert page.input_value("#drive-ds-source") == "page" and page.is_hidden("#drive-real-ds")
+    page.select_option("#drive-ds-source", "real")
+    start(page)
+    page.wait_for_function("__scrimmage.live.state.real_ds === true")
+    assert_real_ds_controls_off(page)
+    bar = page.text_content("#drive-real-ds")
+    assert "The FRC Driver Station is driving" in bar and "Waiting for the Driver Station" in bar, bar
+    assert "Driver Station app" in page.text_content("#drive-keys-hint")
+    page.click("#drive-hud")
+    page.keyboard.press("Enter")
+    page.keyboard.down("w")
+    page.wait_for_timeout(600)
+    page.keyboard.up("w")
+    assert not page.evaluate("__scrimmage.live.state.enabled")
+    assert not page.query_selector("#notices .notice-error"), page.text_content("#notices")
+    stop(page)
+    assert page.is_enabled("#drive-ds-source") and page.is_hidden("#drive-real-ds")
+    assert page.input_value("#drive-ds-source") == "real"   # the student's pick stays for the next Start
+
+
+def test_the_bar_follows_the_frc_driver_station(drive_page, tmp_path):
+    """A real RobotPy program with the DS socket and tests/fake_ds.py as the FRC Driver Station app: the choice starts
+    from the config's [driver_station] real, and the read-only bar goes from waiting to teleop enabled at red2."""
+    for mod in ("wpilib", "halsim_ws", "halsim_ds_socket", "scrimmage_lockstep"):
+        pytest.importorskip(mod)
+    from fake_ds import FakeDS
+    from test_real_ds_robot_e2e import CONFIG
+    cfg = tmp_path / "real_ds_probe.toml"
+    cfg.write_text(CONFIG + "\n[driver_station]\nreal = true\n")
+    page = drive_page(cfg)
+    assert page.input_value("#drive-ds-source") == "real"
+    start(page)
+    page.wait_for_function("__scrimmage.live.state.real_ds === true")
+    assert_real_ds_controls_off(page)
+    assert "Waiting for the Driver Station" in page.text_content("#drive-real-ds")
+    ds = FakeDS()
+    try:
+        ds.set(True, "teleop", "red2", fms=True)
+        ds.start()
+        page.wait_for_function("document.querySelector('#drive-real-ds-state').textContent === 'Teleop enabled'")
+        bar = page.text_content("#drive-real-ds")
+        assert "Station red2" in bar and "FMS attached" in bar, bar
+        assert page.evaluate("__scrimmage.live.state.enabled") and "Enabled" in page.text_content("#drive-hud")
+        assert page.input_value("#drive-station") == "red2" and page.is_checked("#drive-fms")
+        assert_real_ds_controls_off(page)
+        ds.set(False, "teleop", "red2", fms=True)
+        page.wait_for_function("document.querySelector('#drive-real-ds-state').textContent === 'Disabled'")
+        assert not page.query_selector("#notices .notice-error"), page.text_content("#notices")
+    finally:
+        ds.stop()
+    stop(page)

@@ -647,3 +647,57 @@ def test_a_restart_keeps_the_match_settings_and_the_game_data(tmp_path, monkeypa
     finally:
         mgr.stop()
         assert mgr.join(10)
+
+
+# ---- the FRC Driver Station app drives (sub-project 28) -------------------------------------------------------
+
+def test_a_real_ds_session_refuses_the_ds_commands_and_shows_the_ds(tmp_path, monkeypatch):
+    """With real_ds the page can't drive: mode, enable, disable, match, the joystick feed, pause, step and record are
+    refused with the reason; the state says the real DS drives, waiting for it (the fake robot has no DS socket),
+    and the speed is locked with the real DS's real-time reason. Leaving the page doesn't disable or pause it."""
+    from scrimmage.driverstation import REAL_DS_DRIVING, REAL_DS_WAITING
+    monkeypatch.setattr(session_mod, "NT_CONNECT_TIMEOUT", 0.5)
+    pub = []
+    mgr = LiveManager(SimLock(), lambda kind, msg: pub.append((kind, msg)))
+    mgr.start(config_copy(tmp_path), real_ds=True)
+    try:
+        wait_for(lambda: mgr.status()["state"] in ("running", "error"), 30, "the session to run")
+        st = mgr.status()
+        assert st["state"] == "running" and st["real_ds"] is True, st
+        assert st["driver_station"] == REAL_DS_WAITING and st["mode"] == "waiting" and st["enabled"] is False
+        assert set(st["match"]) >= {"connected", "station", "fms", "match_time"}
+        for c in ({"cmd": "mode", "mode": "auto"}, {"cmd": "enable"}, {"cmd": "disable"},
+                  {"cmd": "match", "station": "red1"}, {"cmd": "pause"}, {"cmd": "resume"}, {"cmd": "step", "n": 1},
+                  {"cmd": "record_start"}):
+            with pytest.raises(LiveError, match=REAL_DS_DRIVING):
+                mgr.command(c)
+        with pytest.raises(LiveError, match=REAL_DS_DRIVING):
+            mgr.input({"0": {"axes": [0.5]}})
+        s = fresh_state(pub, mgr, lambda s: s["readouts"] is not None and s["speed_locked"])
+        assert s["real_ds"] is True and s["readouts"]["real_ds"] is True and "real Driver Station" in s["speed_locked"]
+        assert s["driver_station"] == REAL_DS_WAITING
+        mgr.client_gone()
+        t0 = mgr.status()["t"]
+        wait_for(lambda: mgr.status()["t"] > t0 + 0.2, 5, "the clock to keep running")
+        assert mgr.status()["paused"] is False and mgr.status()["state"] == "running"
+        assert not [n for n in notices(pub) if n["kind"] == "error"], notices(pub)
+    finally:
+        mgr.stop()
+        assert mgr.join(10)
+    assert mgr.status()["real_ds"] is True   # the last session's, until the next Start
+
+
+def test_the_real_ds_choice_starts_from_the_config(tmp_path, monkeypatch):
+    """real_ds=None takes the config's [driver_station] real; True or False overrides it (D3)."""
+    monkeypatch.setattr(session_mod, "NT_CONNECT_TIMEOUT", 0.5)
+    cfg = config_copy(tmp_path)
+    cfg.write_text(cfg.read_text() + "\n[driver_station]\nreal = true\n")
+    mgr = LiveManager(SimLock(), lambda kind, msg: None)
+    for choice, expected in ((None, True), (False, False)):
+        mgr.start(cfg, real_ds=choice)
+        try:
+            wait_for(lambda: mgr.status()["state"] in ("running", "error"), 30, "the session to run")
+            assert mgr.status()["state"] == "running" and mgr.status()["real_ds"] is expected, mgr.status()
+        finally:
+            mgr.stop()
+            assert mgr.join(10)
