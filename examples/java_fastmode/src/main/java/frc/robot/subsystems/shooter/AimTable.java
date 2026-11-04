@@ -3,7 +3,7 @@
 // angle whose ball crosses the goal's rim height descending at its center, the time from exit to that
 // crossing, and the ball's highest point.
 // Made by: scrimmage launcher aim CONFIG --goal hub_blue --distances 1.5:6.0:0.25 --java FILE --java-class frc.robot.subsystems.shooter.AimTable
-// UNCALIBRATED: estimates from preset material numbers, not fitted to measurements.
+// UNCALIBRATED: estimates from preset material numbers, not fitted to measurements (ball stiffness, bounce, wheel friction).
 package frc.robot.subsystems.shooter;
 
 public final class AimTable {

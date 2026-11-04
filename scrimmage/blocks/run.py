@@ -304,20 +304,29 @@ def default_grip_note(world) -> str:
     return f"grip: the pads have the friction part.toml gives them ({each}); {_LARGER} — {_GRIP_ADVICE}"
 
 
-PNEUMATIC_NOTE = "Pneumatic numbers are estimates (UNCALIBRATED): see docs/pneumatics.md."
+PNEUMATIC_ESTIMATES = "UNCALIBRATED: pneumatic numbers are estimates"
+
+
+def pneumatic_note(cylinders) -> str:
+    """What a robot's air rests on: each cylinder's valve conductance, measured (its CylinderSpec's provenance, from a
+    stock cylinder's `measured` file) or still an estimate."""
+    from ..measure.labels import line
+    keys = tuple(f"{c.name} valve conductance" for c in cylinders)
+    inputs = {k: c.provenance for k, c in zip(keys, cylinders)}
+    return f"{line(inputs, keys, estimates=PNEUMATIC_ESTIMATES)}; see docs/pneumatics.md."
 
 
 def run_notes(world, program: Program) -> list[str]:
     """What the run's numbers rest on: a line per gripped body (parts/grip.py's grip_notes); a test of held, rests on
     or seated with no grip anywhere gets default_grip_note, so its grip isn't read as measured either. A robot with
-    cylinders gets PNEUMATIC_NOTE. A test that measures an element's clearance, on a robot with stock parts whose
+    cylinders gets pneumatic_note. A test that measures an element's clearance, on a robot with stock parts whose
     collide is off, gets clearance.uncounted_note: those parts aren't measured."""
     from ..parts.grip import grip_notes
     notes = grip_notes(world)
     if not notes and any(_conds(program.blocks, k) for k in GRIP_CONDITIONS):
         notes = [default_grip_note(world)]
     if getattr(world, "pneumatics", None) is not None:
-        notes.append(PNEUMATIC_NOTE)
+        notes.append(pneumatic_note(world.parts.cylinders))
     uncounted = uncounted_note(world, program)
     if uncounted is not None:
         notes.append(uncounted)

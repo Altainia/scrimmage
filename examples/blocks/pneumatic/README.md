@@ -44,7 +44,7 @@ scrimmage test run examples/blocks/pneumatic/cycles.test.toml
 finished
   passed: the stored air pressure is above 60 psi from 0.3 s on (block 1)
   air: 120 psi at the start, 67 psi at the end, lowest 67 psi at 4.0 s; the compressor ran 2.1 s
-  note: Pneumatic numbers are estimates (UNCALIBRATED): see docs/pneumatics.md.
+  note: UNCALIBRATED: pneumatic numbers are estimates (lift valve conductance); see docs/pneumatics.md.
 ```
 
 Each lift-and-drop cycle takes about 0.4 s, so the 10 are done by 4.0 s. The arm swings fast enough to carry the rod to
@@ -62,7 +62,7 @@ Stored air above the working pressure: 4.30 L
 Cycles from the tanks alone: 7
 Compressor air in a 150 s match: 13.2 L
 Cycles per match, tanks and compressor: 29
-Estimates (UNCALIBRATED): see docs/pneumatics.md.
+UNCALIBRATED: estimates (lift valve conductance); see docs/pneumatics.md.
 ```
 
 It says 7 cycles from the tanks, but the test made 10. Two reasons. The tanks start at 120 psi, a little above the

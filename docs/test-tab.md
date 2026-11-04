@@ -429,7 +429,8 @@ turned its closed loop on, and the pressure switch still starts and stops it.
 **The run's air.** A robot with cylinders adds a line to the result, such as `air: 120 psi at the start, 84 psi at the
 end, lowest 81 psi at 14.2 s; the compressor ran 9.0 s`. If the tanks fell below the working pressure it warns: `the
 tanks fell below the 60 psi working pressure at 2.0 s: the cylinders pushed weaker from then on`. The notes say
-`Pneumatic numbers are estimates (UNCALIBRATED): see docs/pneumatics.md.`
+`UNCALIBRATED: pneumatic numbers are estimates (lift valve conductance); see docs/pneumatics.md.`, naming each
+cylinder's valve (a measured one with its file, who measured it, when and from how many trials).
 
 **The chart** gets `air.psi` (the tanks), `air.working_psi` (after the regulator) and each cylinder's
 `<name>.extension` (how far its rod is out, in inches). **The replay** draws each cylinder's barrel and rod between its

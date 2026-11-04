@@ -306,10 +306,12 @@ def _aim(args) -> None:
         if args.java_class is not None and not re.fullmatch(r"([A-Za-z_]\w*\.)*[A-Za-z_]\w*", args.java_class):
             raise ValueError(f"--java-class {args.java_class!r}: want a class name with its package, pkg.Name")
         distances = _distances(args.distances)
+        model = aim.load_model(args.config, args.goal, args.hood_step)
         rows = aim.aim_table(args.config, args.goal, distances, hood_step_deg=args.hood_step,
-                              on_unreachable=lambda msg: print(f"scrimmage: warning: {msg}", file=sys.stderr))
-        from .launcher.report import UNCALIBRATED
-        print(UNCALIBRATED)
+                              on_unreachable=lambda msg: print(f"scrimmage: warning: {msg}", file=sys.stderr),
+                              model=model)
+        label = aim.calibration(model)
+        print(label)
         print(aim.to_csv(rows).replace(",", "  "), end="")
         if args.csv is not None:
             args.csv.write_text(aim.to_csv(rows), encoding="utf-8")
@@ -319,7 +321,7 @@ def _aim(args) -> None:
             command = (f"scrimmage launcher aim CONFIG --goal {args.goal} --distances {args.distances}"
                        f"{'' if args.hood_step == 2.0 else f' --hood-step {args.hood_step:g}'} "
                        f"--java FILE --java-class {args.java_class}")
-            args.java.write_text(aim.to_java(rows, args.java_class, command), encoding="utf-8")
+            args.java.write_text(aim.to_java(rows, args.java_class, command, label), encoding="utf-8")
             print(f"wrote {args.java}")
     except (ValueError, OSError) as e:    # AimError, ConfigError and PartError are ValueErrors
         print(f"scrimmage: {e}", file=sys.stderr)
@@ -346,9 +348,10 @@ def _launcher(args) -> None:
         out = args.out or args.file.parent / f"{args.file.stem}-results"
         out.mkdir(parents=True, exist_ok=True)
         report.write_csv(rows, out / "results.csv")
-        print(report.format_table(rows))
+        label = report.calibration(setups)
+        print(report.format_table(rows, label=label))
         print(f"wrote {out / 'results.csv'}")
-        paths = report.write_charts(rows, charts, out, [s.goal for s in setups])
+        paths = report.write_charts(rows, charts, out, [s.goal for s in setups], footer=label)
     except (LauncherConfigError, OSError) as e:
         print(f"scrimmage: {e}", file=sys.stderr)
         sys.exit(2)

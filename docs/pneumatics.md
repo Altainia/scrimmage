@@ -7,8 +7,9 @@ how fast it fires, whether the air lasts a match, and what the compressor costs 
 
 **Every pneumatic number here is an estimate (UNCALIBRATED).** The defaults come from FRC rules, vendor data and
 common FRC parts (each source is below), not from measuring a real robot. Runs that use cylinders say so in their
-notes: `Pneumatic numbers are estimates (UNCALIBRATED): see docs/pneumatics.md.` [Measure your own](#measure-your-own)
-says how to check them against your robot.
+notes, naming each cylinder's valve: `UNCALIBRATED: pneumatic numbers are estimates (lift valve conductance); see
+docs/pneumatics.md.` A cylinder whose valve is measured (`measured = "<file>"`) is named with its file instead.
+[Measure your own](#measure-your-own) says how to check them against your robot.
 
 **Pressures are in psi.** Everything else in Scrimmage is in meters, kilograms, seconds and degrees, but every FRC
 pneumatic part and rule is written in psi, so pressures are the one exception. Scrimmage's psi is gauge pressure (what
@@ -141,7 +142,7 @@ Stored air above the working pressure: 4.30 L
 Cycles from the tanks alone: 7
 Compressor air in a 150 s match: 13.2 L
 Cycles per match, tanks and compressor: 29
-Estimates (UNCALIBRATED): see docs/pneumatics.md.
+UNCALIBRATED: estimates (lift valve conductance); see docs/pneumatics.md.
 ```
 
 The tanks' 4.30 L pay for 4.30 / 0.597, about 7 cycles, and with the compressor's 13.2 L, (4.30 + 13.2) / 0.597,

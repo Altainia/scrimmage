@@ -442,8 +442,10 @@ Friction against FRC balls isn't published; the presets follow the trend that so
 
 ## Results
 
-The table's first line is always the UNCALIBRATED label. Then one row per run (one per sweep combination), with the
-swept values first. `results.csv` has the same columns. Averages are over the launched balls.
+The table's first line is always the label, the charts' footer too: UNCALIBRATED with what is still an estimate
+(the ball's stiffness, its bounce, the wheel's friction), and what was measured with its file, who measured it, when
+and from how many trials. With all three measured, and good enough, it reads "Calibrated from measurements: ...". A
+swept number is an estimate. Then one row per run (one per sweep combination), with the swept values first. `results.csv` has the same columns. Averages are over the launched balls.
 
 | column | meaning |
 |---|---|

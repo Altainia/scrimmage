@@ -184,9 +184,10 @@ def set_grip(folder: Path, body: str, grip: str | float | None) -> None:
 
 def _measured_label(mu: float | None, prov) -> str:
     """A measured grip's words: its friction, the file it came from, and why it isn't good enough when it isn't."""
+    from ..measure.labels import not_good, source
     friction = f", friction {mu:g}" if mu is not None else ""
-    said = f"measured{friction} ({prov.file.name}, {prov.by}, {prov.date}, {prov.trials} trials)"
-    return said if prov.good else f"{said}, not good enough: {prov.why} (UNCALIBRATED)"
+    said = f"measured{friction} ({source(prov)})"
+    return said if prov.good else f"{said}, {not_good(prov)} (UNCALIBRATED)"
 
 
 def _label(grip: str | float) -> str:

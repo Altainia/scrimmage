@@ -37,7 +37,7 @@ with code 2; the message names the bad key and lists the valid ones.
 
 ```
 $ scrimmage disc run examples/disc/linear.toml
-UNCALIBRATED: estimates from preset material numbers, not fitted to measurements.
+UNCALIBRATED: estimates from preset material numbers, not fitted to measurements (disc inertia, rim stiffness, tread friction).
 exit_speed  spin_rpm  advance_ratio  yaw_deg  speed_drop_pct  min_speed_pct  burst_s  flight_time  apex_m  landing_m  wall_height_m  wall_lateral_m  scored  fired  launched  jammed  unfed
      10.51     714.4          0.994   0.7039           11.79           86.8    1.623        2.632   3.235      12.78          2.899         0.09186       4      4         4       0      0
 ```
@@ -60,7 +60,7 @@ launcher.tilt_deg  exit_speed  ...  wall_height_m  wall_lateral_m  scored  fired
 
 ```
 $ scrimmage disc table examples/disc/linear.toml --rpm 2000:6000:1000
-UNCALIBRATED: estimates from preset material numbers, not fitted to measurements.
+UNCALIBRATED: estimates from preset material numbers, not fitted to measurements (disc inertia, rim stiffness, tread friction).
  rpm  surface_m_s  exit_speed   ratio  spin_rpm  advance_ratio
 2000        10.64       4.829  0.4539     330.3          1.001
 3000        15.96       7.234  0.4533     491.2         0.9935

@@ -87,7 +87,8 @@ def test_set_cylinder_extends(tmp_path):
     lines = air_lines(result)
     assert len(lines) == 1
     assert lines[0].startswith("air: 120 psi at the start, ")
-    assert "Pneumatic numbers are estimates (UNCALIBRATED): see docs/pneumatics.md." in result.notes
+    assert ("UNCALIBRATED: pneumatic numbers are estimates (cyl valve conductance); see docs/pneumatics.md."
+            in result.notes)
 
 
 def test_air_runs_out(tmp_path):

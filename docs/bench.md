@@ -145,8 +145,8 @@ It prints, in about three seconds:
 5 of 5 left through `shot` at 7.4 m/s ± 0.0, 6° down
 the `top` shaft drops 14% and recovers in 0.05 s (the worse of 2 shafts)
 a piece takes 0.19 s from the inlet to the outlet
-UNCALIBRATED: estimates from preset numbers, not measurements; measure the ball's stiffness (a squeeze test) and
-its bounce (a drop test) first; see docs/launcher.md, "Measure these first".
+UNCALIBRATED: estimates from preset numbers, not measurements (ball stiffness, tread friction); measure the ball's
+stiffness (a squeeze test) and its bounce (a drop test) first; see docs/launcher.md, "Measure these first".
 ```
 
 **The bench frame.** x is forward (the usual way pieces leave), z is up, y is across. Lengths are meters, or inches

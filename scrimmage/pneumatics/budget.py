@@ -1,13 +1,14 @@
 """An air budget: how many strokes a robot's tanks and compressor can pay for in a match.
 
-Estimates (UNCALIBRATED). Each stroke fills one side of a cylinder from the regulator at the working pressure. The
-swept volume starts empty, so it fills at absolute pressure; the dead volume (the port and fitting space) starts at
-one atmosphere, so only the gauge pressure adds air. All counted as free air (air at one atmosphere).
+Estimates (UNCALIBRATED; its line names each cylinder's valve, measured or not). Each stroke fills one side of a
+cylinder from the regulator at the working pressure. The swept volume starts empty, so it fills at absolute pressure;
+the dead volume (the port and fitting space) starts at one atmosphere, so only the gauge pressure adds air. All
+counted as free air (air at one atmosphere).
 """
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .model import ATM, CFM, COMPRESSORS, PSI, AirConfig, CylinderSpec
 
@@ -21,6 +22,7 @@ class Budget:
     cycles_per_match: float
     config: AirConfig
     match_s: float
+    provenance: dict = field(default_factory=dict)  # cylinder name -> its conductance's Provenance, or None
 
 
 def _cycle_l(config: AirConfig, c: CylinderSpec) -> float:
@@ -44,7 +46,8 @@ def budget(config: AirConfig, cylinders: list[CylinderSpec], match_s: float = 15
         mid = (config.switch_on_psi + config.switch_off_psi) / 2
         compressor = comp.flow_cfm(mid) * CFM * match_s * 1000.0
     return Budget(per_cycle, stored, stored / total if total else math.inf, compressor,
-                  (stored + compressor) / total if total else math.inf, config, match_s)
+                  (stored + compressor) / total if total else math.inf, config, match_s,
+                  {c.name: c.provenance for c in cylinders})
 
 
 def format_budget(b: Budget) -> str:
@@ -57,5 +60,13 @@ def format_budget(b: Budget) -> str:
               f"Compressor air in a {b.match_s:g} s match: {b.compressor_l_per_match:.1f} L"
               + (" (no compressor)" if c.compressor == "none" else ""),
               f"Cycles per match, tanks and compressor: {b.cycles_per_match:.0f}",
-              "Estimates (UNCALIBRATED): see docs/pneumatics.md."]
+              _label(b)]
     return "\n".join(lines)
+
+
+def _label(b: Budget) -> str:
+    """The budget's UNCALIBRATED line: each cylinder's valve conductance, measured or still an estimate."""
+    from ..measure.labels import line
+    keys = tuple(f"{name} valve conductance" for name in b.per_cycle_l)
+    inputs = {k: b.provenance.get(name) for k, name in zip(keys, b.per_cycle_l)}
+    return f"{line(inputs, keys, estimates='UNCALIBRATED: estimates')}; see docs/pneumatics.md."
