@@ -1,16 +1,19 @@
 # Terrain: bumps, ramps and tilting platforms
 
-A range file can put **field elements** on the field: bumps, ramps and a tilting platform. The robot drives over them
-in the MuJoCo world like any other surface, and **terrain signals** tell a scenario how far it left the ground, how
-far it tilted and whether it tipped over or got stuck. **`scrimmage terrain sweep`** drives a robot straight over
-one element at a range of speeds, with no robot program, and reports the fastest speed it takes it safely: the
-"bump speed limit" a team puts in its auto.
+A range file can put **field elements** on the field: bumps, ramps, a tilting platform, and [moving
+elements](#moving-elements-hinged-and-sliding) a robot works (a door, a flap, a portcullis, a spinning wheel). The
+robot drives over them in the MuJoCo world like any other surface, and **terrain signals** tell a scenario how far it
+left the ground, how far it tilted and whether it tipped over or got stuck. **`scrimmage terrain sweep`** drives a
+robot straight over one element at a range of speeds, with no robot program, and reports the fastest speed it takes it
+safely: the "bump speed limit" a team puts in its auto.
 
 > **The contact numbers are estimates.** The tread stiffness, the HDPE's friction and the platform's damping
 > aren't measured (see [Estimates](#estimates)). Trust the trends (raising the elevator lowers the speed limit)
 > before the absolute numbers (2 m/s).
 
 - [Field elements in range files](#field-elements-in-range-files)
+- [Moving elements: hinged and sliding](#moving-elements-hinged-and-sliding)
+- [The 2016 defenses](#the-2016-defenses)
 - [The terrain signals](#the-terrain-signals)
 - [Approach angle and breakover](#approach-angle-and-breakover)
 - [`scrimmage terrain sweep`](#scrimmage-terrain-sweep)
@@ -33,6 +36,8 @@ has an inch form, `<key>_in` (give one of the two). `friction` (default 0.6) is 
 | `box` | a static block: structure (a truss) or, with `ground = true`, floor (a floor protector, a step) | `size` (`[x, y, z]`), `base_height` (its bottom, default 0), `ground` (default false) |
 | `rod` | a straight round or square rod fixed to the field between two ends, at any angle: a peg, a pole, a coral branch. A hollow [piece](test-range.md#pieces-that-arent-balls) can slide onto it | `base`, `tip` (x, y, z points, in m; or `base_in`, `tip_in`), `diameter` (across; a square rod's side), `section` (`"round"`, the default, or `"square"`), `friction`. No `center` or `yaw_deg`: its ends place it |
 | `switch` | a bar hanging below a hinge about its own y, which tilts under a hanging robot (2020's GENERATOR SWITCH) | `hinge_height`, `bar_length`, `bar_drop` (hinge to the bar's axis), `diameter` (default 1.66 in), `mass`, `com_drop` (its CoM below the hinge), `stop_deg`, `damping`, `level_deg` |
+| `hinged` | a panel (a box, or a disc) on a hinge along one of its edges or through its center, with stops, a spring, damping and a breakaway: a door, a flap, a drawbridge, a spinning wheel | see [Moving elements](#moving-elements-hinged-and-sliding) |
+| `sliding` | a box on a straight slide, with stops, a spring, damping and a breakaway: a portcullis, a touchpad, a spring peg | see [Moving elements](#moving-elements-hinged-and-sliding) |
 
 A rod's round free end is rounded and reaches exactly to `tip`. Bars, rods, switches and boxes that aren't ground are structure, not floor: they are drawn and collide, but the terrain
 signals don't count them as the ground (geom group 1, not the ground's 2), so a robot parked under a bar reads the
@@ -61,9 +66,101 @@ The built-in ranges with elements:
 | `reef` | one pipe of the 2025 REEF with its `branch_l2`, `branch_l3` and `branch_l4` rods at the manual's heights and angles, a coral and a coral station, to try a grabber on ([docs/test-range.md](test-range.md#the-reef-field)) |
 | `2013-pyramid` | the 2013 PYRAMID's twelve rungs at 30, 60 and 90 in (`l1_s` to `l3_e`; its legs aren't built) and floor protection, `[start.approach]`  (for climbing; the built-in `2013` is the disc range, its pyramid only obstacles) |
 
-Everything is built from boxes and capsules (the bars): the live view and the renderer draw them with no meshes. A platform is two hinged
-bodies (the real double hinge: level, the deck rests on both axes; tilted, it turns about the low one), its stops
-the joints' limits at `max_tilt_deg`.
+Everything is built from boxes and capsules (the bars), and a moving disc from a cylinder: the live view and the
+renderer draw them with no meshes. A platform is two hinged bodies (the real double hinge: level, the deck rests on
+both axes; tilted, it turns about the low one), its stops the joints' limits at `max_tilt_deg`.
+
+## Moving elements: hinged and sliding
+
+A `hinged` or `sliding` element is a panel that a robot pushes, pulls, lifts or spins. It collides with robots, game
+pieces and a [partner robot](test-tab.md#a-partner-robot) like any other element, the live view and replays draw it
+moving, and its joint shows in `get_state` (`element.<name>.hinge` or `element.<name>.slide`). A robot's stock
+elevator or arm only touches it with [`collide = true`](parts.md#stock-parts-that-collide).
+
+Both kinds take the common keys (`name`, `kind`, `center`, `yaw_deg`, `friction`) and these. Every length also has
+an `_in` form.
+
+| key | kinds | unit | default | meaning |
+|---|---|---|---|---|
+| `mass` | both | kg | required | the panel's mass, all of it moving (a uniform box or disc) |
+| `base_height` | both | m | 0 | the panel's bottom above the carpet, as described |
+| `size` | `sliding`, and a `hinged` box | m | required | `[x, y, z]`, along the element's own x, y and z |
+| `shape` | `hinged` | | `"box"` | `"box"` (takes `size`) or `"disc"` (takes `diameter` and `thickness`; it lies flat, its axis up) |
+| `diameter`, `thickness` | `hinged` disc | m | required | the disc's |
+| `hinge` | `hinged` | | required | the edge it turns on, the panel as described: `"bottom"` or `"top"` (about the element's y), `"left"` (+y side) or `"right"` (-y side), `"front"` (+x end) or `"back"` (-x end) (about z), or `"center"` (through its center) |
+| `axis` | `hinged` (`"center"` only) | | the panel's thinnest axis | `"x"`, `"y"` or `"z"`: the axis a center hinge turns about. Left out, the thinnest one: a disc's own axis, so a disc spins flat like a wheel |
+| `axis` | `sliding` | | required | `"x"`, `"y"` or `"z"`: the direction it slides, in the element's frame |
+| `range_deg` | `hinged` | deg | none (no stops) | `[lo, hi]`, its stops. Leave it out for a panel that turns freely (a spinning wheel) |
+| `range` | `sliding` | m | required | `[lo, hi]`, its stops along the slide (or `range_in`) |
+| `rest_deg` | `hinged` | deg | 0 | where its spring rests. It must lie within `range_deg` |
+| `rest` | `sliding` | m | 0 | where its spring rests (or `rest_in`). It must lie within `range` |
+| `stiffness` | both | N·m/deg (`hinged`), N/m (`sliding`) | 0 (no spring) | the spring pulling it back to rest. Per degree on a hinge, so it reads like a door spring's rating |
+| `damping` | both | N·m·s/rad (`hinged`), N·s/m (`sliding`) | critical, or 0.05 | with a spring, left out it is critical damping for the panel (it settles at rest without swinging past). With no spring it is 0.05 (an estimate: enough to settle a panel knocked loose, not enough to feel) |
+| `breakaway` | both | N·m (`hinged`), N (`sliding`) | 0 | the push it takes to move it (see below) |
+| `ground` | both | | `false` | `true` makes it floor for the terrain signals, as a box's `ground`: a drawbridge a robot drives over |
+
+All angles and travel are measured from the panel **as described** (its `size` and `base_height`, before it turns).
+The element is built at its rest position, and its signal reads 0 there.
+
+**Which way is positive.** Positive is a right-hand turn about the hinge's axis, or travel along the slide's axis,
+in the element's frame (turned by `yaw_deg`):
+
+| `hinge` | turns about | positive |
+|---|---|---|
+| `"bottom"` | its bottom edge, along y | the top tips toward +x |
+| `"top"` | its top edge, along y | the bottom swings toward -x |
+| `"left"`, `"right"`, `"front"`, `"back"` | that edge, along z | counter-clockwise seen from above |
+| `"center"` | its `axis` through its center | a right-hand turn about that axis: counter-clockwise seen from above for a flat disc (z); about y, the +x end goes down |
+| (sliding) | its `axis` | along +x, +y or +z |
+
+So a door that should swing only toward -x on its `"left"` hinge has `range_deg = [-90, 0]`.
+
+**Breakaway** is MuJoCo's joint friction (frictionloss). It is the push needed to start the panel moving **and to
+keep it moving**: the model has no separate starting and sliding friction. A push under it holds the panel still
+(its friction is as stiff as the stops). On a hinge it is a torque: a force F at a distance r from the hinge is
+F × r.
+
+**Stops** are stiff (a 5 ms time constant, an estimate, the same as a platform's) and critically damped, so a panel
+lands on its stop without a bounce. Gravity acts on every panel: a portcullis on a vertical slide with no spring
+rests on its lower stop, and lifting it takes its weight.
+
+**No preload.** A spring's rest must lie within the stops, so a spring can't be wound up against a stop. A door that
+takes a set force before it starts to move (the 2016 drawbridge's 2 lb) or a return spring that holds a door shut
+(the 2016 sally port's) can't be described yet.
+
+**Starts and floor balls.** A panel standing on the carpet (`base_height` 0) blocks a start and floor balls, as a
+box does; one raised off the carpet doesn't, so a robot may start under it. Both use the panel as described.
+
+A double door is two elements; a panel on more than one joint, or a latch that holds a door open, isn't modeled.
+
+## The 2016 defenses
+
+The built-in range `2016-defenses` has four of the 2016 FIRST STRONGHOLD DEFENSES that move, each on its 3 in
+PLATFORM, from the 2016 Game Manual, section 2.2.2.1. They stand in a line across the field (along y), each at
+x = 4.0 m and crossed along +x, as on the real OUTER WORKS; the spacing between them is ours. Each has a start 1.5 m
+before its near ramp, facing it: `[start.portcullis]`, `[start.sally_port]`, `[start.drawbridge]` and
+`[start.cheval_de_frise]`.
+
+| defense | element | how it moves | the numbers |
+|---|---|---|---|
+| portcullis | `portcullis` (`sliding`, up along z), between two posts | lift it from its bottom edge | 2.27 kg, no spring or breakaway, so it takes its weight to lift: the manual's "approximately 5 lbs." (5 lb = 2.27 kg). A 5 in gap under it (manual). Its 43 x 30 in size and its 24 in of travel are estimates |
+| sally port | `sally_port` (`hinged`, `"left"`, `range_deg = [-90, 0]`) | swings only toward -x | a breakaway of 8.135 N·m: the manual's 1.5 lb at its outer edge, 48 in from the hinge. 48 x 24 x 1/4 in (manual); its 6 kg mass is an estimate |
+| drawbridge | `drawbridge` (`hinged`, `"bottom"`, `range_deg = [-90, 0]`, `ground = true`) | lowered toward -x, then driven over | a spring that stands it back up: pressed flat, its top edge takes about 25 N (5.7 lb; the manual's maximum is 5 lb). 37 in tall and 1/4 in thick (manual); its 41 in width, 7.5 kg, spring (0.65 N·m/deg) and damping (3 N·m·s/rad) are estimates |
+| cheval de frise | `cheval_1` to `cheval_4` (`hinged`, `"center"`, `axis = "y"`) | each plate tilts about a pipe across the lane | 24 x 12 x 1/2 in plates (manual), resting on alternate sides at ±23.6° (1 and 3 with the far end down). Pressing one level takes 1 lb at its edge (manual). Their spacing, height, 3 kg mass and spring are estimates |
+
+Things to know:
+
+- **The doors open toward the robot.** A robot driving in along +x presses the sally port and the drawbridge against
+  their closed stops. They open by being pulled toward the robot (-x), or, for the drawbridge, by leaning on its top
+  edge until it tips down, as on the real field.
+- **The drawbridge has no 2 lb start.** The manual's 2 lb to begin moving needs a spring preloaded against the
+  closed stop (see **No preload** under [Moving elements](#moving-elements-hinged-and-sliding)). Here the spring
+  only just beats the door's weight near upright, so a light pull starts it, and the push grows to about 5.7 lb at
+  its top edge to hold it flat. The sally port's return spring isn't modeled either.
+- **The cheval plates spring back toward rest.** Pressed down, a plate returns to its own side; it doesn't tip over
+  to the other side, as a weighted real plate can.
+- Every number cites its source on its line in `scrimmage/testrange/ranges/2016-defenses.toml`, or says it is an
+  estimate or our choice.
 
 ## The terrain signals
 
@@ -89,6 +186,7 @@ scrubbing sideways in a turn loses contact on most physics steps while still on 
 | `robot.stranded` | 1 once fewer than 2 tread wheels have been down for more than 0.5 s of physics steps on which the robot touches something (balls, an element's edge). Steps in the air pause the clock; two wheels down reset it, and so does hanging from a bar or a switch (touching one and no ground; see `scrimmage/terrain/climb.py`). |
 | `robot.tipped` | 1 once tilt passes 60 deg, latched until the world resets |
 | `element.<name>.angle` (deg) | a platform's tilt, positive when its +x end is down |
+| `element.<name>` (deg or in) | a hinged element's angle (degrees, unwrapped, so three turns read 1080) or a sliding one's travel (inches), 0 at rest, [positive as above](#moving-elements-hinged-and-sliding) |
 
 The thresholds are named constants in `scrimmage/terrain/monitor.py`: `TIP_DEG` 60, `STRANDED_S` 0.5,
 `STRANDED_WHEELS` 2, `WHEEL_DOWN_GAP` 0.005.
@@ -238,6 +336,12 @@ These numbers aren't measured. Each is marked "estimate" where it is set.
   settles in one or two swings after a robot drives off (match video), which 20 to 50 gives.
 - **Platform stops**: the hinges' limits at +-`max_tilt_deg`, stiff (a 5 ms time constant) and critically damped, so
   the deck lands on its stop without a bounce. How the real stops work isn't drawn.
+- **Moving elements' stops and damping**: their stops are a platform's (above). With no spring and no `damping`
+  given, a panel has 0.05 N·m·s/rad (or N·s/m), enough to settle a panel knocked loose.
+- **The built-in moving elements**: the 2016 defenses' sizes, masses and springs (above; each marked in the range
+  file), the 2020 CONTROL PANEL's 8 kg (its two 1/4 in polycarbonate discs) and its 0.2 N·m breakaway (a lazy susan
+  bearing's drag, not published), and the 2026 TRENCH arm's 47 x 18 in section (the manual gives its 22.25 in
+  clearance and 50.34 in opening, not the arm's size).
 - **The sweep's driver** is ideal: each wheel holds its speed with no motor torque limit (traction limits it), as a
   robot's velocity loop does within its motors' torque. A robot whose drive motors can't hold speed up the ramp is
   slower there than the sweep says. So `crossed`, and a faster run that bashes over an element the robot can't
@@ -248,6 +352,9 @@ These numbers aren't measured. Each is marked "estimate" where it is set.
 ## What isn't modeled
 
 - Suspension, or treads deforming beyond a contact stiffness. No stock drivetrain has suspension.
-- Mechanisms hitting the field: an elevator or arm is mass only, so it can't catch on a TRENCH bar.
+- Mechanisms hitting the field, unless they say so: a stock elevator or arm touches nothing until its part has
+  [`collide = true`](parts.md#stock-parts-that-collide); then it catches on a TRENCH arm like a real one.
+- A moving element's separate starting and sliding friction, a spring preloaded against a stop, a latch that holds a
+  door open, and a panel on more than one joint ([Moving elements](#moving-elements-hinged-and-sliding)).
 - FUEL's squash: a ball is a stiff sphere, so a robot rides up on it rather than crushing it.
 - The CHARGE STATION's hinged ramps: these turn with the deck rather than sliding on the floor.

@@ -20,6 +20,7 @@ hood and the ball's squeeze are that model, and the range adds a world around it
 - [Beam breaks](#beam-breaks)
 - [Balls in the world](#balls-in-the-world)
 - [Pieces that aren't balls](#pieces-that-arent-balls)
+- [The trench field](#the-trench-field)
 - [The range file](#the-range-file)
 - [Scenarios: signals, `by_time`, `[range]`, `robot_env`](#scenarios-signals-by_time-range-robot_env)
 - [The report, the viewer and NetworkTables](#the-report-the-viewer-and-networktables)
@@ -455,7 +456,8 @@ When the launcher model says a ball has left, the sim places it at the launcher'
 plus the robot's own velocity at that point (and the robot's spin), and the backspin from the wheel. The exit happens
 inside a physics step, so the ball is placed where it would have been at the step's start and flies on from there.
 
-**Launch clearance.** The launcher's own geometry doesn't collide, but the robot's frame and bumpers do, and an exit
+**Launch clearance.** The launcher's own geometry doesn't collide (unless its part has
+[`collide = true`](parts.md#stock-parts-that-collide)), but the robot's frame and bumpers do, and an exit
 point can sit inside them. A launched ball therefore **ignores its own robot for 0.15 s** (`LAUNCH_CLEAR_S` in
 `scrimmage/testrange/launch.py`), then collides with everything. 0.15 s is about 1 m of flight at a slow 7 m/s shot,
 past the frame of any robot. It still collides with the field, the hub and other balls from the start.
@@ -630,10 +632,31 @@ that replay, NetworkTables and older tests keep working). The world knows each s
 skip the rest: flight, the carpet's rolling resistance, scoring, the launcher's pickup and preload. A piece's body
 origin is its center of mass, so its position is where it balances.
 
+## The trench field
+
+The built-in `2026-trench` field is one 2026 REBUILT TRENCH, to find out whether a robot fits under it: does it clear
+the arm with its elevator down and its arm stowed, and by how much? It has no hub, bump or FUEL around it.
+
+- **The elements.** `trench_arm`, a box across the top whose underside is 22.25 in above the carpet, standing on two
+  side structures, `trench_side_left` (+y) and `trench_side_right` (-y), with the 50.34 in opening between them. The
+  TRENCH stands against the guardrail (y = 0), at the same x as `2026-bump`'s BUMP (on the hub's line).
+- **The start.** `[start.approach]` faces the opening (heading 0 drives through it along +x), centered on it, 1.5 m
+  before its near face.
+- **The numbers.** The 22.25 in clearance, the 50.34 in opening and the TRENCH's 47.0 in depth, 65.65 in width and
+  40.25 in height are the 2026 manual's (section 5.6). The arm's 47 x 18 in section is an estimate: the manual gives
+  no arm size, so the arm is taken to fill the whole depth and the height above the opening. The two sides are taken
+  to be equal. The pivoting arm of the far-side TRENCHES isn't modeled: this arm is fixed.
+- **Your robot must collide to hit it.** A stock elevator or arm passes through the arm unless its part has
+  [`collide = true`](parts.md#stock-parts-that-collide). The Test tab's
+  [*robot clears*](test-tab.md#clearance-to-a-field-element) check measures how close the robot comes.
+- The worked example is [`examples/blocks/trench`](../examples/blocks/trench/README.md): a stand-in robot with an
+  elevator and an arm that clears the arm by 2.9 in stowed, and hits it with the arm raised.
+
 ## The range file
 
 A range file describes a season's field elements: the ball, the goals, the floor balls, the starting positions,
-the carpet and the elements robots drive over (bumps, ramps, a tilting platform: `[[element]]` tables, described in
+the carpet and the elements robots drive over or work (bumps, ramps, a tilting platform, doors and other moving
+panels: `[[element]]` tables, described in
 [docs/terrain.md](terrain.md#field-elements-in-range-files)). SI units, angles in degrees (keys end in `_deg`), WPILib field coordinates (blue alliance wall at
 x = 0, z up) on the generated field of 16.54 by 8.07 m. The built-in `2026` is
 [`scrimmage/testrange/ranges/2026.toml`](../scrimmage/testrange/ranges/2026.toml); copy it to make your own and
@@ -929,11 +952,12 @@ by `SCRIMMAGE_AUTO`; they run on `configs/fastmode_range.toml` (fast mode) and `
 
 ## What isn't modeled
 
-- **No turret.** A swerve robot aims by rotating the whole robot; the launcher shoots along the robot's x.
 - **The hub's exits and the active/inactive timing.** A scored ball is counted and then parked and hidden; the hub's
   funnel and its internal exits and the game's hub-activation rules are not modeled. Every goal always scores.
-- **Trenches.** The 2026 range has its four bumps ([docs/terrain.md](terrain.md)) but not the TRENCH structures:
-  a robot drives through where a trench arm is.
+- **Trenches on the full field.** The `2026` range has its four bumps ([docs/terrain.md](terrain.md)) but not the
+  TRENCH structures: a robot drives through where a trench arm is. One TRENCH is in its own range, `2026-trench`,
+  to drive under (below). Putting the trenches in `2026` would change every existing run on it (balls roll into
+  them), so that waits for a change that updates those results on purpose.
 - **Restocking over a match.** A station feeds the balls it started with (its `stock`, or at most 50) and then stops.
   A human player who gets balls back from the field and feeds them again isn't modeled; it comes up with match
   simulation.

@@ -104,7 +104,9 @@ corner mounts (`front_left`, `front_right`, `back_left`, `back_right`) are at th
 floor. A module attached at a corner mount therefore sits with its wheel on the carpet.
 
 **Collisions.** Robot geoms collide with the field (carpet, walls, the `obstacle`), never with each other.
-That is why parts can overlap without fighting. A geom with `collide = false` doesn't touch the field either.
+That is why parts can overlap without fighting. A geom with `collide = false` doesn't touch the field either. The
+stock mechanisms (an elevator, an arm, a launcher...) touch nothing unless the part sets `collide = true`: see
+[Stock parts that collide](#stock-parts-that-collide).
 The field geoms are named `carpet`, `wall_blue`, `wall_red`, `wall_right`, `wall_left` and `obstacle`, which
 is what `must_touch` and `never_touch` take. `[field] obstacle = false` removes the obstacle. Under the
 hood, robot geoms use MuJoCo contact bits `contype = 2, conaffinity = 1` and the field uses `1` and `2`.
@@ -289,7 +291,7 @@ Other keys:
 |---|---|---|
 | `axis` | `"z"` | Cylinders only: `"x"`, `"y"` or `"z"`. A wheel on a `y` axle is `axis = "y"`. On any other shape it is an error ("axis is for cylinders only; turn other shapes with rot"): use `rot`. |
 | `pos`, `rot` | zero | The geom's offset in its body's frame (m, degrees). |
-| `collide` | `true` | `false` makes a geom visual only: it touches nothing. Use it for everything but the parts that really touch the field (wheels, bumpers). |
+| `collide` | `true` | `false` makes a geom visual only: it touches nothing. Use it for everything but the parts that really touch the field (wheels, bumpers). (This is a part.toml geom's key. A stock part has one `collide` setting for the whole part: see [Stock parts that collide](#stock-parts-that-collide).) |
 | `friction` | MuJoCo's 1.0 | Sliding friction coefficient, greater than 0. (Torsional and rolling friction are fixed small values.) |
 | `color` | gray | `[r, g, b, a]`, each 0 to 1. |
 | `condim` | MuJoCo's 3 | Contact dimensions: `1`, `3`, `4` (adds torsional friction, good for wheels) or `6`. |
@@ -474,8 +476,9 @@ Things worth knowing when you set the stock parts' parameters, or model the same
   newtons felt at the carriage. Stages are joints named `stage1`, `stage2`, ..., `carriage`, coupled so they
   move together.
 - **Arm.** Positive raises the tip, and 0 degrees is horizontal pointing forward.
-- **Climber.** The one stock mechanism whose geoms collide: tubes, hooks and latches touch the field's bars (the
-  other mechanisms are visual only, so an elevator passes through a bar). The telescope is the elevator's slide
+- **Climber.** The one stock mechanism whose geoms always collide: tubes, hooks and latches touch the field's bars
+  (the other mechanisms touch nothing unless they set `collide = true`, so by default an elevator passes through a
+  bar). The telescope is the elevator's slide
   chain (joints `stage1`, ..., `tip`). Each hook is an open J of capsules opening toward +x, its mouth below: hang
   the robot on the crown, and let go by unloading the hook, lifting its tip clear of the bar and moving it off. A
   latch is a sprung finger across the mouth that a bar entering pushes open and that shuts behind it; with
@@ -516,6 +519,52 @@ Things worth knowing when you set the stock parts' parameters, or model the same
   `push`.
 - **Differential.** The right side is mirrored: its motor and encoder are inverted, as on a real robot, so robot
   code that doesn't call `setInverted` drives the sides in opposite directions.
+
+## Stock parts that collide
+
+A stock elevator, arm, turret, cylinder, flywheel, roller, launcher or disc shooter is built with `collide = false`:
+it has mass and joints, but its geoms touch nothing, so it passes through a TRENCH arm or a bar. Set `collide = true`
+on the part to make it touch the field, game pieces and a [partner robot](test-tab.md#a-partner-robot), like a folder
+part's geoms. It still never touches the robot's own parts. In the Robot tab it is a checkbox in the part's stock
+form.
+
+```toml
+[[part]]
+name = "elevator"
+stock = "elevator"
+attach = "drive.center"
+collide = true          # it can hit the trench
+```
+
+| key | default | meaning |
+|---|---|---|
+| `collide` | `false` | `true`: every geom of the part touches the field, game pieces and a partner robot, except the drawing-only ones below |
+
+Which geoms collide with `collide = true`:
+
+| part | geoms that collide | drawn only |
+|---|---|---|
+| `elevator` | every stage | |
+| `arm` | the pivot block and the arm | |
+| `turret` | the base and the platform | |
+| `cylinder` | the barrel and the rod (the free form) | a push cylinder's barrel: a cylinder with `push` set touches nothing, even with `collide = true` |
+| `flywheel`, `roller` | the frame and the wheel | |
+| `launcher` | the side plates and the wheel | the hood's arc: the launcher model, not contact, carries the ball round it |
+| `disc_shooter` | the frame, the wheels and the fence | the guide plates above and below the disc |
+
+Things to know:
+
+- **Why it is off by default.** Every colliding geom costs a little each physics step, and an existing robot keeps
+  the results it had.
+- **A `[shooter]`'s intake can't collide.** A roller with `collide = true` that is also the `[shooter]`'s intake is an
+  error naming the part, such as `intake has collide = true but is the [shooter]'s intake; the ball path moves those
+  balls, so leave collide off`. Its roller would push the floor balls the intake zone collects. The launcher and the
+  stages may collide: the balls they hold are parked and touch nothing, and a launched ball ignores the robot for its
+  first 0.15 s ([docs/test-range.md](test-range.md#launching-a-ball)).
+- **Clearance and touches.** Only colliding parts count for the Test tab's
+  [*robot clears*](test-tab.md#clearance-to-a-field-element) check and its **touches** check.
+- **Climbing.** A stock part with `collide = true` counts for `climb.extension` and `climb.height`, which count every
+  colliding geom ([docs/climbing.md](climbing.md)), and it can catch on a bar.
 
 ## Stock parts
 
@@ -558,6 +607,7 @@ parameters:
   gearing = 50.0 (greater than 0): motor turns per arm turn
   spring_stiffness = 0.0 N*m/rad (at least 0.0): torsion spring (gas spring or counterbalance) stiffness
   spring_rest = 0.0 deg: angle at which the spring is relaxed (a spring is added whenever this or the stiffness is non-zero)
+  collide = False: its geoms touch the field, game pieces and a partner robot (never the robot's own parts). Drawing-only geoms never collide: the launcher's hood arc, a disc shooter's guide plates, and a push cylinder's barrel (a push cylinder touches nothing even with collide on)
 
 slots: pivot, encoder
 mounts: base, tip
@@ -639,6 +689,7 @@ parameters:
   push = '': "<part>.<body>" the rod's end is pinned to (a stock arm's "arm.arm"); empty for a free rod with its own mount
   push_pos = [0.0, 0.0, 0.0] m ([x, y, z]): where on the push body the rod's end is pinned, in that body's frame
   length = 0.0 m (at least 0.0): pin to pin when retracted; 0 takes it from the assembled pose (push) or 0.3 x stroke + 0.05 m (free)
+  collide = False: its geoms touch the field, game pieces and a partner robot (never the robot's own parts). Drawing-only geoms never collide: the launcher's hood arc, a disc shooter's guide plates, and a push cylinder's barrel (a push cylinder touches nothing even with collide on)
 
 slots: valve
 mounts: base, rod
@@ -689,6 +740,7 @@ parameters:
   spool_radius = 0.022 m (greater than 0): radius the rope winds on
   friction = 5.0 N (at least 0.0): constant sliding friction, in newtons felt at the carriage
   width = 0.3 m (at least 0.1): side-to-side width of the stages
+  collide = False: its geoms touch the field, game pieces and a partner robot (never the robot's own parts). Drawing-only geoms never collide: the launcher's hood arc, a disc shooter's guide plates, and a push cylinder's barrel (a push cylinder touches nothing even with collide on)
 
 slots: lift, encoder
 mounts: base, carriage
@@ -709,6 +761,7 @@ parameters:
   motor = 'KrakenX60' (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): motor model
   count = 1 (a whole number, at least 1): motors driving the wheel
   gearing = 1.0 (greater than 0): motor turns per wheel turn
+  collide = False: its geoms touch the field, game pieces and a partner robot (never the robot's own parts). Drawing-only geoms never collide: the launcher's hood arc, a disc shooter's guide plates, and a push cylinder's barrel (a push cylinder touches nothing even with collide on)
 
 slots: spin
 mounts: base
@@ -729,6 +782,7 @@ parameters:
   motor = 'KrakenX60' (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): motor model
   count = 1 (a whole number, at least 1): motors driving the wheel
   gearing = 1.0 (greater than 0): motor turns per wheel turn
+  collide = False: its geoms touch the field, game pieces and a partner robot (never the robot's own parts). Drawing-only geoms never collide: the launcher's hood arc, a disc shooter's guide plates, and a push cylinder's barrel (a push cylinder touches nothing even with collide on)
 
 slots: spin
 mounts: base
@@ -818,6 +872,7 @@ parameters:
   count = 1 (a whole number, at least 1): motors driving the turret
   gearing = 60.0 (greater than 0): motor turns per turret turn
   friction = 0.2 N*m (at least 0.0): constant friction torque on the turret's joint
+  collide = False: its geoms touch the field, game pieces and a partner robot (never the robot's own parts). Drawing-only geoms never collide: the launcher's hood arc, a disc shooter's guide plates, and a push cylinder's barrel (a push cylinder touches nothing even with collide on)
 
 slots: turn, encoder
 mounts: base, top

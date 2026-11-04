@@ -8,6 +8,7 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from scrimmage.blocks.palette import problems
@@ -68,12 +69,23 @@ def test_trench_example_clears_stowed():
 
 
 def test_trench_example_raised_arm_fails():
-    _, _, r = _run(TRENCH / "raised.test.toml")
+    tip = []
+
+    def top(t, row):        # the arm's highest point (m): its box's top corner
+        m, d = world.model, world.data
+        arm = m.body("arm.arm").id
+        tip.append(max(float(d.geom_xpos[g][2] + np.abs(d.geom_xmat[g].reshape(3, 3)[2]) @ m.geom_size[g])
+                       for g in range(m.ngeom) if m.geom_bodyid[g] == arm))
+
+    program = load(TRENCH / "raised.test.toml")
+    world = world_for(program)
+    r = TestRun(world, program).run(on_sample=top)
     assert r.status == "check failed", r.outcome
     assert r.outcome == ("a check failed (block 2): expected the robot to clear trench_arm by at least 0.5 in, but it "
                          "was 0.45 in at 1.7 s")
     assert clearance_lines(r) == ["closest to trench_arm: 0.4 in at 1.7 s"]
     assert max(r.signals["arm.pivot"]) > 89.0                   # the arm was up
+    assert max(tip) == pytest.approx(0.64, abs=0.01)            # the README: its tip about 0.64 m (25 in) up
 
 
 def test_trench_example_raised_arm_hits_without_the_check():

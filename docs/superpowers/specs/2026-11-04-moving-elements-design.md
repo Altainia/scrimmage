@@ -176,4 +176,68 @@ teams running robot code in scenarios. The standing anti-goal applies: **no unne
 
 ## Decisions made during the build
 
-(Filled in during the build.)
+Each ruling made while building, in the order it was made within its area: what was decided, why, and what it costs
+if it is wrong.
+
+**Moving elements**
+- **The door test pushes deterministically.** Task 2's test pushes the door with a robot driving into it (or a force
+  on the door's body if a drive couldn't reach it reliably). Why: the plan left two options open. If wrong: nothing.
+- **A center hinge's `axis`.** `hinge = "center"` takes an optional `axis` (`"x"`, `"y"` or `"z"`; left out, the
+  panel's thinnest axis). Why: the cheval de frise's plates tilt about a horizontal axis, and C1 gave a center hinge
+  only the thinnest one. If wrong: one more key.
+- **`ground` on moving elements.** `hinged` and `sliding` take `ground` (default false), as a box does. Why: a robot
+  drives over a lowered drawbridge or a cheval plate, and the terrain signals must count it as floor. If wrong: one
+  more key.
+- **Breakaway holds.** The joint's friction gets the stops' stiffness (`solref_friction = PLATFORM_STOP_TC`), so a
+  push under the breakaway holds the panel still instead of letting it creep. If wrong: nothing.
+
+**Collisions**
+- **Only the `[shooter]`'s intake refuses `collide = true`.** The launcher and the stages may collide. Why: the
+  intake's roller would push the floor balls its zone collects, but the balls a launcher or a stage holds are parked
+  and touch nothing, and launched balls ignore the robot at first; a turret launcher under a trench is the use case.
+  The plan's Review Focus 5 went further than C5. If wrong: a colliding stage can touch a floor ball near it.
+- **The launcher's side plates and wheel collide; only the hood's arc is drawn only.** Why: C5's line listed the side
+  plates both ways. If wrong: nothing.
+
+**Clearance**
+- **`at_least_in` is at most 19.6 in.** Why: clearance is measured out to 0.5 m (19.7 in), so a larger limit would
+  always pass. If wrong: nothing.
+- **The chart's picker offers `clearance.<element>` for every field element.** It isn't among the palette's signals,
+  because a run measures it only when the test names it, so the picker lists it under "From the next run:". If
+  wrong: nothing.
+
+**Partner robot**
+- **The brake comes from the motor model.** Each wheel's damping is the back-EMF of the stock differential's default
+  motors, count and gearing (Kt·Ke·n²/R × motors per side ÷ wheels per side, with the drive's efficiency), the formula
+  the world uses for a braked motor: about 0.293 N·m·s/rad a wheel. Not the plan's 20 N·m·s/rad, which locks the
+  wheels. Why: a braked FRC drive resists through back-EMF, not a lock (C7 asked for "the back-EMF a braked drive
+  gives"). If wrong: a softer brake than a team's that also has friction brakes.
+- **`mass` is the whole partner.** The chassis carries the mass less the drive's own. If wrong: nothing.
+- **The brake test asks for coast ≥ 1.5 × braked.** A braked CIM drive rolls when shoved; measured about 1.8 at 3, 6
+  and 12 V. If wrong: a weaker brake-versus-coast contrast than the plan imagined.
+
+**Ranges**
+- **The trench's arm is `trench_arm`.** Why: Task 8's example names it, and Task 6 hadn't pinned it. If wrong:
+  nothing.
+- **The defenses stand in a line across the field (y), crossed along +x**, as on the real OUTER WORKS. If wrong: only
+  positions.
+- **No drawbridge start force or sally port return spring.** Both need a spring preloaded against a stop, and a
+  moving element's rest must lie within its range. A `preload` key can wait. If wrong: a drawbridge that takes
+  about 5.7 lb at its top edge to hold flat, and no 2 lb start.
+
+**Test tab**
+- **The palette says whether there is a partner** (`palette()["partner"]`, true when the world has one), which the
+  checks' menu reads. If wrong: nothing.
+- **The palette and sweeps take the test's `[setup]`.** `palette()` takes it (and reports `robot_partner`, the robot
+  file's own), and a sweep's world applies `setup_config`. Why: Setup's partner never reached a run (a palette built
+  without `[setup]` refused Run), and sweeps ignored the whole `[setup]` (ball, piece, station, seed, partner), a bug
+  from before this project; fixed outside the task's files. If wrong: changed sweep results for tests that set
+  `[setup]`, which were wrong before.
+
+**Docs and examples**
+- **The examples' READMEs say only what their tests check.** The partner push's speeds ("about 1 m/s", "about 2
+  m/s") became "slower" and "much faster", and the raised arm's tip height (0.64 m) gained an assertion. If wrong:
+  nothing.
+- **Stale lines fixed on the way.** test-range.md's "No turret" (the stock turret exists since sub-project 23) is
+  gone, and parts.md's stock part listings were regenerated from `scrimmage parts` (they gain `collide`). If wrong:
+  nothing.

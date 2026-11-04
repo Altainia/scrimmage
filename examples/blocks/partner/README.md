@@ -46,12 +46,12 @@ finished
   passed: the partner moved at least 60 in at 2.3 s (block 2)
 ```
 
-The robot speeds up over the 16 in gap and hits the partner's bumper at about 0.7 s. Then it pushes it the rest of
-the 2 s, at about 1 m/s. By the end the partner has moved 63 in. The check asks for 60, a little less, so a small
+The robot speeds up over the 16 in gap and hits the partner's bumper at about 0.7 s. Then it pushes it for the rest
+of the 2 s, slower than it was driving on its own. By the end the partner has moved 63 in. The check asks for 60, a little less, so a small
 change doesn't fail the test.
 
-A coasting partner (`coast.test.toml`) moves 112 in in the same 2 s, about 1.8 times as far: the robot pushes it at
-about 2 m/s. Brake mode doesn't stop a partner from being pushed, but it slows the push down a lot. The coasting
+A coasting partner (`coast.test.toml`) moves 112 in in the same 2 s, about 1.8 times as far: the robot pushes it
+much faster. Brake mode doesn't stop a partner from being pushed, but it slows the push down a lot. The coasting
 partner also keeps rolling after the robot stops; the braked one stops within about 8 in.
 
 These numbers are estimates from the simulation, not from a real robot. The brake is an estimate too: the partner's

@@ -199,6 +199,12 @@ Signals for `at_end` and `always`:
 - `joint.<name>.position`, `joint.<name>.velocity`
 - `hal:<type>/<device>/<key>`, a raw HAL value such as `hal:PWM/0/<speed` (`<` is robot output, `>` is input)
 - `nt:<topic>`, a NetworkTables value such as `nt:/SmartDashboard/Gyro deg`
+- on a range with field elements, the terrain signals (`robot.tilt`, `robot.tipped`, ...) and `element.<name>`: a
+  door's or other hinged element's angle (degrees) or a sliding one's travel (inches), 0 at rest
+  ([docs/terrain.md](docs/terrain.md#the-terrain-signals)); on a test range, `score`, `fired`, `held` and `on_field`
+  ([docs/test-range.md](docs/test-range.md)); with bars, the climb signals ([docs/climbing.md](docs/climbing.md))
+- with a [partner robot](#a-partner-robot), `partner.height` (in: its frame's lowest corner above where it rested),
+  `partner.tilt` (degrees from level) and `partner.moved` (in: how far its center has gone across the floor)
 
 Signal values are compared as plain values: a true/false value (an NT boolean, for example) matches
 `equals = true` / `equals = false`, and an array value (an NT `double[]`, for example) compares as a list, so
@@ -388,7 +394,9 @@ ids = { drive = "TalonFX:3", steer = "TalonFX:4", encoder = "CANcoder:10" }
 - Some slots drive more than one motor: the elevator's `lift` has `count = 2` motors by default, the
   differential's `left` and `right` have 2 each. Give such a slot one ID (all its motors move together as one
   device) or a list with one ID per motor (`lift = ["TalonFX:5", "TalonFX:6"]`).
-- Robot geoms collide with the field and the obstacle, never with each other.
+- Robot geoms collide with the field and the obstacle, never with each other. A stock mechanism (an elevator, an
+  arm, a launcher...) touches nothing unless its part sets `collide = true`
+  ([docs/parts.md](docs/parts.md#stock-parts-that-collide)).
 
 Mechanisms attach the same way, to a chassis mount or to another mechanism. An elevator on the chassis with an
 arm on its carriage:
@@ -866,10 +874,11 @@ the sum FRC teams make by hand. Every pneumatic number is an estimate (UNCALIBRA
 ## Terrain: bumps, ramps and tipping over
 
 A range file can also put bumps, ramps and a tilting platform (the 2023 CHARGE STATION) on the field, and the robot
-drives over them. Scenario checks on `robot.ground_gap`, `robot.tilt`, `robot.tipped` and `robot.stranded` fail an
-auto that takes the 2026 BUMP too fast, lands on the FUEL, or tips with its elevator up. `scrimmage terrain sweep`
-drives a config's robot straight over an element at a range of speeds, with no robot program, and gives the fastest
-safe speed: the number to put in your auto.
+drives over them. Doors and other panels on a hinge or a slide (the 2016 defenses, the 2020 CONTROL PANEL) move when
+the robot works them, and `2026-trench` has a TRENCH to drive under. Scenario checks on `robot.ground_gap`,
+`robot.tilt`, `robot.tipped` and `robot.stranded` fail an auto that takes the 2026 BUMP too fast, lands on the FUEL,
+or tips with its elevator up. `scrimmage terrain sweep` drives a config's robot straight over an element at a range of
+speeds, with no robot program, and gives the fastest safe speed: the number to put in your auto.
 
 ```bash
 scrimmage terrain sweep configs/fastmode_bump.toml --element bump --speeds 0.5:4:0.25
@@ -895,6 +904,35 @@ scrimmage run scenarios/climb_high.toml      # the same climb by a robot program
 `scenarios/climb_high.toml` runs the climber robot with the test suite's fake robot as its program, playing timed
 setpoints (from `climb run` of `examples/climb/high.toml`) held by position loops on the climbers' encoders; it
 checks the robot scores HIGH's 10 points by 9 s, still holds them at the end and its hooks never carry more than 4 kN. See [docs/climbing.md](docs/climbing.md).
+
+## A partner robot
+
+A robot config's `[partner]` puts a second robot on the field with no robot program: a stock chassis on a 6-wheel tank
+drive that just sits there, to push, lift or get stuck on. It collides with your robot, the field and game pieces.
+Your robot must be built from `[[part]]` entries.
+
+```toml
+[partner]
+start = [4.0, 4.0, 0.0]     # x (m), y (m), heading (deg), field coordinates like [robot] start_pose
+brake = true
+```
+
+| key | unit | default | meaning |
+|---|---|---|---|
+| `start` | m, m, deg | required | where its center starts and which way it faces, like `[robot] start_pose` |
+| `length`, `width` | m | 0.7, 0.7 | its frame without bumpers, at least 0.4 m each (its wheels fit inside) |
+| `mass` | kg | 60 | the whole partner, bumpers and battery included (an estimate of a full robot). It must be more than its drive's 2.5 kg |
+| `bumper_clearance` | m | 0.02 | its bumpers' bottom above the carpet |
+| `brake` | | `true` | `true`: its drive is in brake mode; `false`: its wheels coast |
+
+**Brake mode is not a lock.** A braked drive resists being pushed through its motors' back-EMF, and so does the
+partner: two CIMs a side through 10.71 to 1 give each wheel 0.29 N·m·s/rad of damping (an estimate, from the motor
+model the robot's own motors use). A shoved braked partner still rolls, only slower.
+
+Its signals (above) read from where it rested 0.3 s after a reset. A partner whose outline (frame plus bumpers)
+overlaps the robot's start or a field element on the carpet is an error: `[partner] starts inside the robot (their
+outlines overlap by 0.20 m)`. No part of the robot can be named `partner`. In the Test tab, Setup's **Partner robot**
+puts one ahead of your robot without editing the config: see [docs/test-tab.md](docs/test-tab.md#a-partner-robot).
 
 ## Tests
 
