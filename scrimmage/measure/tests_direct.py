@@ -34,19 +34,19 @@ DROP_TOLERANCE = 0.05  # a drop height further than this fraction from 18 in is 
 IDEAL_SQUEEZE = 0.25  # the fraction of the diameter stiffness_n is defined at
 
 # Each test's readings: name -> quantity. Trial readings are per trial; settings may also go in [<test>_setup].
-_TRIAL = {
+TRIAL = {
     "size": {"mass": "mass", "circumference": "length", "diameter": "length"},
     "squeeze": {"force": "force"},
     "drop": {"bounce": "length"},
     "sled": {"pull": "force"},
 }
-_SETTING = {
+SETTING = {
     "size": {},
     "squeeze": {"tare": "weight", "squeezed_to": "length"},
     "drop": {"drop": "length"},
     "sled": {"sled": "weight"},
 }
-_SETUP_TEXT = {"size": (), "squeeze": (), "drop": ("floor",), "sled": ("sliding", "on")}
+SETUP_TEXT = {"size": (), "squeeze": (), "drop": ("floor",), "sled": ("sliding", "on")}
 _SOFT_FLOOR = re.compile(r"\b(carpet|rug|turf|mat|foam tile)s?\b", re.IGNORECASE)
 
 
@@ -72,9 +72,9 @@ class _Test:
         self.mf, self.test = mf, test
         self.rows = mf.trials[test]
         self.setup = mf.settings.get(f"{test}_setup", {})
-        _check_keys(mf, f"[{test}_setup]", self.setup, _SETTING[test], _SETUP_TEXT[test])
+        _check_keys(mf, f"[{test}_setup]", self.setup, SETTING[test], SETUP_TEXT[test])
         for i, row in enumerate(self.rows):
-            _check_keys(mf, self.label(i), row, _TRIAL[test] | _SETTING[test], setup_text=_SETUP_TEXT[test],
+            _check_keys(mf, self.label(i), row, TRIAL[test] | SETTING[test], setup_text=SETUP_TEXT[test],
                         setup=f"{test}_setup")
 
     def label(self, i: int) -> str:
@@ -87,14 +87,14 @@ class _Test:
         return MeasureError(f"{self.where(i)} {msg}")
 
     def trial(self, i: int, name: str, *, required: bool = True) -> float | None:
-        v = reading(self.rows[i], _TRIAL[self.test][name], name, where=self.where(i), required=required)
+        v = reading(self.rows[i], TRIAL[self.test][name], name, where=self.where(i), required=required)
         if v is not None and v < 0:
             raise self.err(i, f"has a negative {name} reading")
         return v
 
     def setting(self, i: int, name: str, *, required: bool = True) -> float | None:
         """A setting from trial i, else from [<test>_setup]."""
-        quantity = _SETTING[self.test][name]
+        quantity = SETTING[self.test][name]
         v = reading(self.rows[i], quantity, name, where=self.where(i), required=False)
         if v is None:
             v = reading(self.setup, quantity, name, where=f"{self.mf.path}: [{self.test}_setup]", required=False)
@@ -130,7 +130,7 @@ def _size(t: _Test) -> dict:
             given = [k for k in row if unit_of(k, "circumference") is not None or unit_of(k, "diameter") is not None]
             raise t.err(i, f"gives {' and '.join(given)}: give a circumference or a diameter, not both")
         if m is None and c is None and d is None:
-            raise t.err(i, f"has no reading: write {_keys(_TRIAL['size'])}")
+            raise t.err(i, f"has no reading: write {_keys(TRIAL['size'])}")
         if m is not None:
             mass.append(m)
         if c is not None or d is not None:

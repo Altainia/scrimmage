@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300" role="img" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="black">
+  <title>Ball size: a tape around the ball's widest part, and the ball on a kitchen scale</title>
+  <!-- the ball, with the tape around its widest part -->
+  <circle cx="115" cy="130" r="75" fill="white" stroke="black" stroke-width="2.5"/>
+  <path d="M40,130 A75,15 0 0 1 190,130" fill="none" stroke="#999999" stroke-width="3" stroke-dasharray="6 5"/>
+  <path d="M40,130 A75,15 0 0 0 190,130" fill="none" stroke="#666666" stroke-width="8"/>
+  <!-- the tape's end, out to its case -->
+  <path d="M188,136 L222,196" fill="none" stroke="#666666" stroke-width="8"/>
+  <rect x="205" y="192" width="44" height="38" rx="6" fill="#dddddd" stroke="black" stroke-width="2"/>
+  <!-- calipers' diameter, across the top -->
+  <line x1="40" y1="40" x2="40" y2="122" stroke="#777777" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <line x1="190" y1="40" x2="190" y2="122" stroke="#777777" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <line x1="50" y1="40" x2="180" y2="40" stroke="black" stroke-width="2"/>
+  <polygon points="40,40 52,34 52,46" fill="black"/>
+  <polygon points="190,40 178,34 178,46" fill="black"/>
+  <text x="115" y="28" text-anchor="middle">or calipers: diameter</text>
+  <text x="20" y="262">tape around the widest part:</text>
+  <text x="20" y="282">read the circumference</text>
+  <!-- the kitchen scale -->
+  <circle cx="370" cy="110" r="60" fill="white" stroke="black" stroke-width="2.5"/>
+  <rect x="300" y="170" width="140" height="10" fill="#bbbbbb" stroke="black" stroke-width="2"/>
+  <path d="M290,180 L450,180 L440,232 L300,232 Z" fill="white" stroke="black" stroke-width="2.5"/>
+  <rect x="332" y="192" width="76" height="28" fill="#eeeeee" stroke="black" stroke-width="2"/>
+  <text x="370" y="212" text-anchor="middle">142 g</text>
+  <text x="370" y="262" text-anchor="middle">kitchen scale:</text>
+  <text x="370" y="282" text-anchor="middle">read the mass (g or oz)</text>
+</svg>

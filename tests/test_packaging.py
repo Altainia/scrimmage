@@ -18,3 +18,13 @@ def test_package_data_covers_the_static_and_range_files():
     assert "assembler/static/**/*" in data and "testrange/ranges/*.toml" in data
     assert (ROOT / "scrimmage/assembler/static/vendor/blockly.min.js").is_file()
     assert (ROOT / "scrimmage/assembler/static/vendor/blockly-media").is_dir()
+
+
+def test_package_data_covers_the_measure_pictures():
+    from scrimmage.measure import forms
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert "measure/img/*.svg" in pyproject["tool"]["setuptools"]["package-data"]["scrimmage"]
+    found = sorted(p.name for p in (ROOT / "scrimmage/measure/img").glob("*.svg"))
+    assert found == sorted(f"{t}.svg" for t in forms.TESTS)
+    for test in forms.TESTS:
+        assert forms.picture(test).startswith("<svg")  # read as package data, not from the repo

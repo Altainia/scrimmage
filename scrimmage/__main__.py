@@ -217,6 +217,14 @@ def main(argv: list[str] | None = None) -> None:
     ep.add_argument("--no-browser", action="store_true", help="print the URL instead of opening a browser")
     ep.add_argument("-v", "--verbose", action="store_true")
 
+    # listed here for the help; its arguments (a file, or the form and new commands) are parsed by measure/cli.py
+    sub.add_parser("measure", help="measurements: read a <name>.measure.toml file (its averages and fit), print a "
+                                   "blank form, or start a file (docs/measuring.md)")
+
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["measure"]:
+        from .measure.cli import main as measure
+        sys.exit(measure(argv[1:]))
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S")

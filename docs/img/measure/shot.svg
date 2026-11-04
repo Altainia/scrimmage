@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300" role="img" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="black">
+  <title>Launcher shot: one ball filmed crossing two tape marks far apart, and the frames between them counted</title>
+  <!-- the marks' spacing -->
+  <line x1="212" y1="32" x2="388" y2="32" stroke="black" stroke-width="2"/>
+  <polygon points="200,32 212,26 212,38" fill="black"/>
+  <polygon points="400,32 388,26 388,38" fill="black"/>
+  <text x="300" y="22" text-anchor="middle">24 in or more apart</text>
+  <!-- the two tape marks on the wall -->
+  <line x1="200" y1="42" x2="200" y2="150" stroke="#888888" stroke-width="6"/>
+  <line x1="400" y1="42" x2="400" y2="150" stroke="#888888" stroke-width="6"/>
+  <text x="200" y="168" text-anchor="middle">mark 1</text>
+  <text x="400" y="168" text-anchor="middle">mark 2</text>
+  <!-- the launcher: its wheel and hood -->
+  <rect x="20" y="96" width="70" height="80" rx="6" fill="white" stroke="black" stroke-width="2.5"/>
+  <circle cx="62" cy="122" r="20" fill="#dddddd" stroke="black" stroke-width="2.5"/>
+  <path d="M62,122 l0,-20 M62,122 l17,10 M62,122 l-17,10" stroke="black" stroke-width="2"/>
+  <path d="M40,96 Q62,78 104,106" fill="none" stroke="black" stroke-width="3"/>
+  <!-- the ball's path and the ball at each mark -->
+  <line x1="106" y1="110" x2="462" y2="110" stroke="#777777" stroke-width="2" stroke-dasharray="2 5"/>
+  <circle cx="200" cy="110" r="13" fill="#bbbbbb" stroke="black" stroke-width="2.5"/>
+  <circle cx="400" cy="110" r="13" fill="white" stroke="black" stroke-width="2.5" stroke-dasharray="5 3"/>
+  <text x="300" y="194" text-anchor="middle">count the frames from</text>
+  <text x="300" y="213" text-anchor="middle">one mark to the next</text>
+  <!-- the phone on its stand -->
+  <rect x="280" y="232" width="40" height="24" rx="4" fill="white" stroke="black" stroke-width="2.5"/>
+  <circle cx="300" cy="244" r="5" fill="black"/>
+  <path d="M300,256 v10 M300,266 l-16,24 M300,266 l16,24 M300,266 v24" stroke="black" stroke-width="2"/>
+  <text x="330" y="262">film at the highest</text>
+  <text x="330" y="281">frame rate</text>
+  <text x="20" y="200">one ball, the wheel</text>
+  <text x="20" y="219">already steady:</text>
+  <text x="20" y="238">write the speed</text>
+  <text x="20" y="257">you measured</text>
+</svg>

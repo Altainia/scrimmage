@@ -69,8 +69,11 @@ STEP = 0.01  # the step (a fraction of the log range) either side of the fit mea
 BISECTIONS = 40  # steps of each bisection on the log scale: (log 100) / 2^40 is far finer than needed
 
 _NAME = "cylinder"
-_SETUP_READINGS = ("bore", "rod", "stroke", "load_mass", "rod_mass", "friction")  # each with its unit: bore_in
-_SETUP_ONLY = ("vertical", "working_psi")  # plain, once for all strokes
+# [stroke_setup]'s readings, each with its unit in its key (bore_in): name -> quantity
+SETUP_READINGS = {"bore": "length", "rod": "length", "stroke": "length", "load_mass": "mass", "rod_mass": "mass",
+                  "friction": "force"}
+SETUP_ONLY = ("vertical", "working_psi")  # plain, once for all strokes
+STROKE_READINGS = {"time": "time", "frames": "frames"}  # a stroke's: one of them, with fps for frames
 _LENGTHS = ("bore", "rod", "stroke")
 
 
@@ -141,14 +144,14 @@ def _check_keys(mf: MeasureFile, setup: dict, rows: list[dict]) -> None:
     for key in setup:
         if unit_of(key, "time") is not None or unit_of(key, "frames") is not None:
             raise MeasureError(f"{mf.path}: {key} goes in each [[stroke]], not in [stroke_setup]")
-        if key in (*_SETUP_ONLY, "fps") or any(unit_of(key, n) is not None for n in _SETUP_READINGS):
+        if key in (*SETUP_ONLY, "fps") or any(unit_of(key, n) is not None for n in SETUP_READINGS):
             continue
         raise MeasureError(f"{mf.path}: unknown key '{key}' in [stroke_setup]; it takes bore_<unit>, rod_<unit>, "
                            "stroke_<unit>, load_mass_<unit>, rod_mass_<unit>, vertical, working_psi, "
                            "friction_<unit>, fps")
     for i, row in enumerate(rows):
         for key in row:
-            if key in _SETUP_ONLY or any(unit_of(key, n) is not None for n in _SETUP_READINGS):
+            if key in SETUP_ONLY or any(unit_of(key, n) is not None for n in SETUP_READINGS):
                 raise MeasureError(f"{mf.path}: {key} goes in [stroke_setup], once for all strokes, not in "
                                    f"[[stroke]] trial {i + 1}")
             if key != "fps" and unit_of(key, "time") is None and unit_of(key, "frames") is None:
@@ -194,7 +197,7 @@ def _stroke(mf: MeasureFile, table: dict) -> Stroke:
                   vertical=vertical, working_psi=psi, friction_n=friction)
 
 
-def _times(mf: MeasureFile, table: dict) -> tuple[list[float], list[float]]:
+def trial_times(mf: MeasureFile, table: dict) -> tuple[list[float], list[float]]:
     """Each stroke's time (s) and its resolution (s)."""
     times, resolutions = [], []
     for i, row in enumerate(mf.trials["stroke"]):
@@ -255,7 +258,7 @@ def fit(mf: MeasureFile) -> CylinderFit:
     table = mf.settings.get("stroke_setup", {})
     _check_keys(mf, table, mf.trials["stroke"])
     setup = _stroke(mf, table)
-    times, resolutions = _times(mf, table)
+    times, resolutions = trial_times(mf, table)
     average = summary(times)
     measured = average.mean
     warnings = list(average.warnings)

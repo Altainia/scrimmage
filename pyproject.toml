@@ -34,7 +34,7 @@ packages = ["scrimmage", "scrimmage.parts", "scrimmage.parts.stock", "scrimmage.
 
 [tool.setuptools.package-data]
 scrimmage = ["java/**/*", "assembler/static/**/*", "launcher/*.toml", "disc/*.toml", "testrange/ranges/*.toml",
-              "bench/*.toml"]
+              "bench/*.toml", "measure/img/*.svg"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

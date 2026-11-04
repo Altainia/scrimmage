@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300" role="img" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="black">
+  <title>Cylinder stroke: the time from the valve opening to the rod at full stroke, with its load</title>
+  <!-- the valve and its air lines -->
+  <rect x="88" y="22" width="104" height="32" rx="4" fill="#eeeeee" stroke="black" stroke-width="2.5"/>
+  <text x="140" y="44" text-anchor="middle">valve</text>
+  <path d="M55,90 V38 H88 M225,90 V38 H192" fill="none" stroke="black" stroke-width="2"/>
+  <!-- the barrel, the piston at full stroke, the rod and its load -->
+  <rect x="40" y="90" width="200" height="50" fill="white" stroke="black" stroke-width="2.5"/>
+  <rect x="218" y="92" width="10" height="46" fill="#999999" stroke="black" stroke-width="1.5"/>
+  <rect x="228" y="108" width="152" height="14" fill="#cccccc" stroke="black" stroke-width="2"/>
+  <rect x="250" y="80" width="60" height="70" fill="none" stroke="#777777" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <rect x="380" y="80" width="60" height="70" fill="#dddddd" stroke="black" stroke-width="2.5"/>
+  <text x="410" y="120" text-anchor="middle">load</text>
+  <text x="280" y="70" text-anchor="middle">rod in</text>
+  <text x="410" y="70" text-anchor="middle">full stroke</text>
+  <!-- the stroke -->
+  <line x1="262" y1="172" x2="368" y2="172" stroke="black" stroke-width="2"/>
+  <polygon points="250,172 262,166 262,178" fill="black"/>
+  <polygon points="380,172 368,166 368,178" fill="black"/>
+  <line x1="250" y1="152" x2="250" y2="180" stroke="#777777" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <line x1="380" y1="152" x2="380" y2="180" stroke="#777777" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <text x="315" y="196" text-anchor="middle">stroke</text>
+  <!-- the time that is read -->
+  <line x1="60" y1="222" x2="420" y2="222" stroke="black" stroke-width="2.5"/>
+  <path d="M60,210 v24 M420,210 v24" stroke="black" stroke-width="2.5"/>
+  <text x="240" y="213" text-anchor="middle">time</text>
+  <text x="60" y="252">valve opens</text>
+  <text x="60" y="271">(the click)</text>
+  <text x="420" y="252" text-anchor="end">rod at</text>
+  <text x="420" y="271" text-anchor="end">full stroke</text>
+  <text x="240" y="294" text-anchor="middle">under 0.2 s? film it and count the frames</text>
+</svg>

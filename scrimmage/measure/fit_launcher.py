@@ -76,9 +76,10 @@ BAND = 0.15  # a good fit's band is within this fraction of its value either way
 BISECTIONS = 8  # steps finding each end of the band between two scan points
 SQUEEZE_SENTENCE = "Measure the ball's squeeze (the squeeze test) to fit wheel friction too."
 
-_NUMBERS = ("wheel_rps", "hood_deg", "fps")  # plain numbers, their unit in their name
-_SETUP_NUMBERS = ("hood_deg", "fps")
-_SETUP_TEXT = ("setup", "ball")
+SHOT_NUMBERS = ("wheel_rps", "hood_deg", "fps")  # plain numbers, their unit in their name
+SHOT_READINGS = {"marks": "length", "frames": "frames"}  # readings with their unit in their key: name -> quantity
+SETUP_NUMBERS = ("hood_deg", "fps")  # what [shot_setup] takes: these, its text, and marks_<unit>
+SETUP_TEXT = ("setup", "ball")
 _GOLDEN = (math.sqrt(5.0) - 1.0) / 2.0
 
 
@@ -125,22 +126,22 @@ def _number(table: dict, key: str, where: str) -> float | None:
 
 
 def _is_reading(key: str) -> bool:
-    return unit_of(key, "marks") is not None or unit_of(key, "frames") is not None
+    return any(unit_of(key, name) is not None for name in SHOT_READINGS)
 
 
 def _check_keys(mf: MeasureFile, setup: dict, rows: list[dict]) -> None:
     for key in setup:
         if key == "wheel_rps" or unit_of(key, "frames") is not None:
             raise MeasureError(f"{mf.path}: {key} goes in each [[shot]], not in [shot_setup]")
-        if key not in _SETUP_TEXT and key not in _SETUP_NUMBERS and unit_of(key, "marks") is None:
+        if key not in SETUP_TEXT and key not in SETUP_NUMBERS and unit_of(key, "marks") is None:
             raise MeasureError(f"{mf.path}: unknown key '{key}' in [shot_setup]; it takes setup, ball, "
                                "marks_<unit>, fps, hood_deg")
     for i, row in enumerate(rows):
         for key in row:
-            if key in _SETUP_TEXT:
+            if key in SETUP_TEXT:
                 raise MeasureError(f"{mf.path}: {key} goes in [shot_setup], once for all shots, not in [[shot]] "
                                    f"trial {i + 1}")
-            if key not in _NUMBERS and not _is_reading(key):
+            if key not in SHOT_NUMBERS and not _is_reading(key):
                 raise MeasureError(f"{mf.path}: unknown reading '{key}' in [[shot]] trial {i + 1}; it takes "
                                    "wheel_rps, hood_deg, marks_<unit>, frames, fps")
 

@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 340" role="img" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="black">
+  <title>Ball squeeze: the ball between two boards on a bathroom scale, pressed to 75% of its diameter</title>
+  <!-- the ball before the squeeze, and its diameter -->
+  <circle cx="70" cy="70" r="40" fill="white" stroke="black" stroke-width="2.5"/>
+  <line x1="70" y1="30" x2="132" y2="30" stroke="#777777" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <line x1="70" y1="110" x2="132" y2="110" stroke="#777777" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <line x1="125" y1="40" x2="125" y2="100" stroke="black" stroke-width="2"/>
+  <polygon points="125,30 119,42 131,42" fill="black"/>
+  <polygon points="125,110 119,98 131,98" fill="black"/>
+  <text x="20" y="134">the ball's diameter</text>
+  <!-- press down -->
+  <line x1="300" y1="56" x2="300" y2="110" stroke="black" stroke-width="3"/>
+  <polygon points="300,124 290,106 310,106" fill="black"/>
+  <text x="314" y="80">press down, level</text>
+  <!-- the top board, the ball squeezed, the bottom board -->
+  <rect x="200" y="126" width="200" height="16" fill="#cccccc" stroke="black" stroke-width="2"/>
+  <ellipse cx="300" cy="187" rx="68" ry="45" fill="white" stroke="black" stroke-width="2.5"/>
+  <rect x="200" y="232" width="200" height="16" fill="#cccccc" stroke="black" stroke-width="2"/>
+  <!-- the gap between the boards -->
+  <line x1="168" y1="142" x2="198" y2="142" stroke="#777777" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <line x1="168" y1="232" x2="198" y2="232" stroke="#777777" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <line x1="180" y1="154" x2="180" y2="220" stroke="black" stroke-width="2"/>
+  <polygon points="180,142 174,154 186,154" fill="black"/>
+  <polygon points="180,232 174,220 186,220" fill="black"/>
+  <text x="168" y="170" text-anchor="end">gap between</text>
+  <text x="168" y="189" text-anchor="end">the boards:</text>
+  <text x="168" y="208" text-anchor="end">75% of the</text>
+  <text x="168" y="227" text-anchor="end">diameter</text>
+  <!-- the bathroom scale -->
+  <rect x="200" y="250" width="200" height="38" rx="6" fill="white" stroke="black" stroke-width="2.5"/>
+  <rect x="218" y="258" width="58" height="22" fill="#eeeeee" stroke="black" stroke-width="2"/>
+  <text x="247" y="275" text-anchor="middle">9.8</text>
+  <line x1="247" y1="306" x2="247" y2="292" stroke="black" stroke-width="2"/>
+  <polygon points="247,282 241,294 253,294" fill="black"/>
+  <text x="260" y="306">read the scale here</text>
+  <text x="240" y="332" text-anchor="middle">first zero the scale with the bottom board and the ball on it</text>
+</svg>

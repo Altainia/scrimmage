@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 320" role="img" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="black">
+  <title>Ball drop: the ball dropped from 18 in onto a hard floor, filmed against a ruler, its bounce read</title>
+  <!-- the ruler, 0 at the floor, 11 units to the inch -->
+  <rect x="40" y="58" width="26" height="222" fill="white" stroke="black" stroke-width="2"/>
+  <path d="M56,269 H66 M56,258 H66 M56,247 H66 M56,236 H66 M56,225 H66 M46,214 H66 M56,203 H66 M56,192 H66 M56,181 H66 M56,170 H66 M56,159 H66 M46,148 H66 M56,137 H66 M56,126 H66 M56,115 H66 M56,104 H66 M56,93 H66 M46,82 H66 M56,71 H66 M56,60 H66" stroke="black" stroke-width="1.5"/>
+  <text x="34" y="277" text-anchor="end">0</text>
+  <text x="34" y="219" text-anchor="end">6</text>
+  <text x="34" y="153" text-anchor="end">12</text>
+  <text x="34" y="87" text-anchor="end">18</text>
+  <text x="53" y="48" text-anchor="middle">in</text>
+  <!-- the ball let go with its bottom at 18 in -->
+  <line x1="66" y1="82" x2="176" y2="82" stroke="black" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <circle cx="150" cy="56" r="26" fill="#dddddd" stroke="black" stroke-width="2.5"/>
+  <text x="190" y="62">let go: 18 in to the</text>
+  <text x="190" y="81">bottom of the ball</text>
+  <!-- its path down to the floor and back up -->
+  <path d="M152,86 Q162,200 186,276 Q206,214 228,184" fill="none" stroke="#777777" stroke-width="2" stroke-dasharray="2 5"/>
+  <polygon points="186,278 180,264 192,266" fill="#777777"/>
+  <!-- the top of the bounce -->
+  <line x1="66" y1="181" x2="262" y2="181" stroke="black" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <circle cx="236" cy="155" r="26" fill="white" stroke="black" stroke-width="2.5" stroke-dasharray="7 4"/>
+  <text x="272" y="168">read the bounce here,</text>
+  <text x="272" y="187">to the bottom of the ball</text>
+  <!-- the phone filming it -->
+  <rect x="408" y="208" width="40" height="66" rx="6" fill="white" stroke="black" stroke-width="2.5"/>
+  <circle cx="428" cy="222" r="5" fill="black"/>
+  <text x="398" y="232" text-anchor="end">film it against</text>
+  <text x="398" y="251" text-anchor="end">the ruler</text>
+  <!-- the hard floor -->
+  <line x1="20" y1="280" x2="460" y2="280" stroke="black" stroke-width="3"/>
+  <path d="M30,280 l-10,12 M50,280 l-10,12 M70,280 l-10,12 M90,280 l-10,12 M110,280 l-10,12 M130,280 l-10,12 M150,280 l-10,12 M170,280 l-10,12 M190,280 l-10,12 M210,280 l-10,12 M230,280 l-10,12 M250,280 l-10,12 M270,280 l-10,12 M290,280 l-10,12 M310,280 l-10,12 M330,280 l-10,12 M350,280 l-10,12 M370,280 l-10,12 M390,280 l-10,12 M410,280 l-10,12 M430,280 l-10,12 M450,280 l-10,12" stroke="#777777" stroke-width="1.5"/>
+  <text x="240" y="312" text-anchor="middle">a hard floor (concrete, tile or wood), not carpet</text>
+</svg>
