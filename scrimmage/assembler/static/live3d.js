@@ -8,6 +8,10 @@
 // geoms: a barrel (the bore's diameter, the retracted length long) from pin a toward pin b, and the rod (its
 // diameter) the rest of the way, placed again with every frame. cylinderShapes() gives each one's drawn lengths.
 //
+// A sensor (view.sensors, assembler/view.py: a beam break, distance or color sensor) is a thin line between its two
+// pins, placed again with every frame, drawn faint and lit (bright) while lightSensors() says it is on.
+// sensorShapes() gives each one's ends in the world and whether it is lit.
+//
 // A mover below PARK_Z_HIDE (a parked ball sits at z = -20) is hidden. outline(i) draws mover i (a piece the Test
 // tab's replay points at) with a colored rim, a larger back-faced copy of its geoms; outline(-1) takes it off.
 // setScore(range) draws the test range's counts
@@ -33,6 +37,8 @@ const SOFTWARE_MS = 66;   // about 15 drawings a second
 const OUTLINE = 0xd6336c, OUTLINE_SCALE = 1.5;   // outline(i)'s rim: a pink that stands out from a yellow ball and the field
 const BARREL_RGBA = [0.55, 0.55, 0.6, 1], ROD_RGBA = [0.8, 0.7, 0.35, 1];   // the stock cylinder's steel and brass
 const UP = new THREE.Vector3(0, 1, 0);   // three's cylinders run along y
+const SENSOR_RADIUS = 0.003;   // m: a sensor's drawn line
+const SENSOR_OFF = 0x9aa4ad, SENSOR_ON = 0xff2d2d, SENSOR_OFF_OPACITY = 0.6;   // a faint gray line; a bright red one
 
 // Is WebGL drawn in software here? Asked once, from a throwaway context, before the real renderer picks antialiasing.
 let softwareGL = null;
@@ -101,6 +107,7 @@ export class LiveView {
     this.outlines = [];       // the outline(i) rim's meshes (their geometries are the mover's own)
     this.outlined = -1;
     this.cylinders = [];      // {spec (the view's), barrel, rod (meshes), lengths: [barrel, rod] as drawn}
+    this.sensors = [];        // {spec (the view's), mesh, lit, ends: [a, b] in the world as drawn}
     this.floorInfo = { pos: [8, 4, 0], size: [8, 4] };
     this.rootMover = 0;
     this.mode = "follow";
@@ -132,6 +139,7 @@ export class LiveView {
     this.model.clear();
     this.groups = [];
     this.cylinders = [];
+    this.sensors = [];
   }
 
   setModel(view) {
@@ -187,6 +195,14 @@ export class LiveView {
     };
     this.cylinders = (view.cylinders || []).map((c) => ({ spec: c, barrel: tube(c.bore / 2, BARREL_RGBA),
       rod: tube(c.rod / 2, ROD_RGBA), lengths: [0, 0] }));
+    this.sensors = (view.sensors || []).map((sp) => {
+      const geo = new THREE.CylinderGeometry(SENSOR_RADIUS, SENSOR_RADIUS, 1, 8);
+      const mat = new THREE.MeshBasicMaterial({ color: SENSOR_OFF, transparent: true, opacity: SENSOR_OFF_OPACITY });
+      this.disposables.push(geo, mat);
+      const mesh = new THREE.Mesh(geo, mat);
+      stat.add(mesh);
+      return { spec: sp, mesh, lit: false, ends: [[0, 0, 0], [0, 0, 0]] };
+    });
     this.placeCylinders();
     this.rootMover = Number.isInteger(view.root_mover) ? view.root_mover : -1;   // -1: follow falls back to the floor
     this.lastSeq = -1;
@@ -207,13 +223,17 @@ export class LiveView {
     this.requestRender();
   }
 
-  // Each cylinder between its pins where the mover groups are now: the barrel from pin a, the rod on to pin b.
+  // A pin ([mover, pos], assembler/view.py) where its mover group is now.
+  pin([mover, pos]) {
+    const v = new THREE.Vector3(pos[0], pos[1], pos[2]);
+    const g = mover >= 0 ? this.groups[mover] : null;   // -1: a body that never moves, pos in the world
+    return g ? v.applyQuaternion(g.quaternion).add(g.position) : v;
+  }
+
+  // Each cylinder between its pins where the mover groups are now: the barrel from pin a, the rod on to pin b; and
+  // each sensor's line between its two pins.
   placeCylinders() {
-    const pin = ([mover, pos]) => {
-      const v = new THREE.Vector3(pos[0], pos[1], pos[2]);
-      const g = mover >= 0 ? this.groups[mover] : null;   // -1: a body that never moves, pos in the world
-      return g ? v.applyQuaternion(g.quaternion).add(g.position) : v;
-    };
+    const pin = (p) => this.pin(p);
     const place = (mesh, from, along, start, length) => {
       mesh.visible = length > 1e-6;
       mesh.position.copy(from).addScaledVector(along, start + length / 2);
@@ -229,6 +249,29 @@ export class LiveView {
       place(c.rod, a, along, barrel, rod);
       c.lengths = [barrel, rod];
     }
+    for (const sn of this.sensors) {
+      const a = pin(sn.spec.a), b = pin(sn.spec.b), along = b.clone().sub(a);
+      const length = along.length();
+      if (length < 1e-9) along.set(1, 0, 0); else along.divideScalar(length);
+      place(sn.mesh, a, along, 0, length);
+      sn.ends = [a.toArray(), b.toArray()];
+    }
+  }
+
+  // Light each sensor whose `on(spec)` is true (the replay's sensor.<name> signal at the frame shown); dim the rest.
+  lightSensors(on) {
+    for (const sn of this.sensors) {
+      const lit = !!on(sn.spec);
+      if (lit === sn.lit) continue;
+      sn.lit = lit;
+      sn.mesh.material.color.setHex(lit ? SENSOR_ON : SENSOR_OFF);
+      sn.mesh.material.opacity = lit ? 1 : SENSOR_OFF_OPACITY;
+    }
+    this.requestRender();
+  }
+
+  sensorShapes() {
+    return this.sensors.map((sn) => ({ name: sn.spec.name, lit: sn.lit, a: sn.ends[0], b: sn.ends[1] }));
   }
 
   cylinderShapes() {

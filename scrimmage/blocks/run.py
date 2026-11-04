@@ -78,6 +78,11 @@ A robot with a partner robot (the config's `[partner]`, or Setup's partner: setu
 `partner.height` (in), `partner.tilt` (deg) and `partner.moved` (in), read from where the partner settled
 (parts/partner.py); the `partner_lifted` and `partner_moved` conditions read them.
 
+A robot with [[sensor]]s has each one's `sensor.<name>` signal: 0 or 1 for a beam break (1 while broken), the
+distance in inches for a distance sensor (its max_range with nothing in range), and for a color sensor the index in
+NAMED_COLORS of the color it sees (NaN while it sees none). The `sensor` condition reads the same readings, and the
+replay lights each sensor's line from its signal.
+
 Clearance (clearance.py): a test that names a field element in a `clears` condition or as `clearance.<element>` in
 its chart measures the robot's clearance to it after every step (Watch.closest), and only then. The chart's
 `clearance.<element>` is in inches, NaN while nothing is within 0.5 m; the run's `clearance` is each element's
@@ -106,6 +111,7 @@ from ..hal_drive import MotorDrive, driven_joints, position_volts
 from ..movers import mover_poses, movers
 from ..parts.partner import SIGNALS as PARTNER_SIGNALS, STARTS_INSIDE
 from ..protocol import HalState
+from ..sensors.colors import NAMED_COLORS
 from ..testrange.build import BALL_BITS
 from .aim import TURN, aim_error, aim_target
 from .clearance import NEVER_WITHIN_IN, PREFIX, inches, named, uncounted_note
@@ -128,13 +134,15 @@ EPS = 1e-9
 MOVING_DEG_S = 5.0        # a joint turning faster than this (a hinge), our call, was moving at a slip
 MOVING_IN_S = 0.5         # ... or sliding faster than this (a slide), our call
 MOVING_SPEED = 0.1        # m/s: the robot going across the floor faster than this was driving at a slip, our call
+COLOR_NAMES = list(NAMED_COLORS)     # a color sensor's signal is its color's index here (palette's sensor_colors)
 
 # The verbs describe() uses, as "-ing" (after "without") and "to ..." (after "waiting for").
 _VERBS = {"passes": ("passing", "to pass"), "goes": ("going", "to go"), "tilts": ("tilting", "to tilt"),
           "touches": ("touching", "to touch"), "reaches": ("reaching", "to reach"), "hangs": ("hanging", "to hang"),
           "are": ("being", "to be"), "is": ("being", "to be"), "made": ("having made", "to have made"),
           "is held": ("being held", "to be held"), "rests": ("resting", "to rest"),
-          "clears": ("clearing", "to clear"), "moved": ("having moved", "to have moved")}
+          "clears": ("clearing", "to clear"), "moved": ("having moved", "to have moved"),
+          "sees": ("seeing", "to see"), "doesn't see": ("not seeing", "not to see")}
 
 
 @dataclass
@@ -205,6 +213,18 @@ def _recast(text: str, form: int) -> str:
 
 def _amount(x: float, unit: str) -> str:
     return f"{x:g}°" if unit == "deg" else f"{x:g} {unit}"
+
+
+def sensor_value(world, name: str) -> float:
+    """Sensor `name`'s chart signal now: 0 or 1 for a beam break (1 broken), inches for a distance sensor, and for a
+    color sensor the index in NAMED_COLORS of the color it sees (NaN: none)."""
+    kind = next(s.kind for s in world.sensors.specs if s.name == name)
+    r = world.sensors.reading(name)
+    if kind == "beam":
+        return 1.0 if r.on else 0.0
+    if kind == "distance":
+        return r.distance / IN
+    return float(COLOR_NAMES.index(r.color_name)) if r.on else math.nan
 
 
 def setup_config(raw: dict, setup: dict, cfg_dir: Path | None = None) -> dict:
@@ -443,6 +463,7 @@ class TestRun:
         # a clearance signal -> its element: only the elements the test names (Watch.closest measures the same)
         self._clearance = {f"{PREFIX}{e}": e for e in named(program, pal["elements"])}
         self.signal_names += list(self._clearance)
+        self._sensors = {f"sensor.{s['name']}": s["name"] for s in pal["sensors"]}     # a sensor signal -> its sensor
         self._qadr = {n: int(m.jnt_qposadr[m.joint(n).id]) for n in kinds}
         self._slide = {n: k == "slide" for n, k in kinds.items()}
         self.feeder = world.test_range.feeder if world.test_range is not None else None
@@ -720,6 +741,8 @@ class TestRun:
                 row[name] = inches(watch.closest.now[self._clearance[name]])
             elif name in PARTNER_SIGNALS:               # in, deg, in
                 row[name] = self.world.partner.read(name)
+            elif name in self._sensors:                 # 0/1, in, or a color's index (NaN: none)
+                row[name] = sensor_value(self.world, self._sensors[name])
             elif name.endswith(".current") and name[:-8] in self.motors:
                 row[name] = float(self.motors[name[:-8]].current)
             else:
@@ -1021,6 +1044,8 @@ class TestRun:
             now = f"{c / IN:.2f} in" if math.isfinite(c) else f">{NEVER_WITHIN_IN} in"
             return (f"expected the robot to clear {a['element']} by at least {_amount(a['at_least_in'], 'in')}, "
                     f"but it was {now}")
+        if k == "sensor":
+            return self._sensor_failure(a)
         if k == "partner_lifted":
             p, level = self.world.partner, a.get("level_within_deg")
             want = f"at least {_amount(a['at_least_in'], 'in')}" + (
@@ -1043,6 +1068,21 @@ class TestRun:
         if k in ("rests_on", "seated"):
             return self._not_placed(k, a)
         return f"the robot wasn't hanging at {a['level']}"           # level
+
+    def _sensor_failure(self, a: dict) -> str:
+        """What a sensor read instead: a beam broken or clear, a distance, the color seen."""
+        name, want = a["sensor"], a["is"]
+        spec = next(s for s in self.world.sensors.specs if s.name == name)
+        r = self.world.sensors.reading(name)
+        if spec.kind == "beam":
+            return f"expected {name} {want}, but it was {'on (broken)' if r.on else 'off (clear)'}"
+        if spec.kind == "distance":
+            return (f"expected {name} {want}, but it read {r.distance / IN:.1f} in (it is on closer than "
+                    f"{spec.threshold / IN:.1f} in)")
+        saw = f"{'an' if r.color_name[0] in 'aeiou' else 'a'} {r.color_name} piece" if r.on else "no piece"
+        if a.get("sees") is None:
+            return f"expected {name} {want}, but it saw {saw}"
+        return f"expected {name} {'' if want == 'on' else 'not '}to see {a['sees']}, but it saw {saw}"
 
     def _not_held(self, a: dict) -> str:
         """How a held check failed: when and how the piece was lost, and what was moving in the second before; or

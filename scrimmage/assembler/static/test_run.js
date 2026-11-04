@@ -11,7 +11,9 @@
 //             each field element the test measures, as `scrimmage test` prints them (the result's lines: "Scored 5
 //             in hub_blue.", "Air: 120 psi at the start, …", "Closest to trench: 0.82 in at 3.1 s."); and the run's
 //             notes (what its numbers rest on: an UNCALIBRATED grip) as a list
-//   Replay    live3d.js's LiveView draws the view (a cylinder between its pins); motion.bin's frames move it. Play /
+//   Replay    live3d.js's LiveView draws the view (a cylinder between its pins, a sensor's line lit while the run's
+//             sensor.<name> signal says it was on: a beam broken, a distance closer than its threshold, a color
+//             sensor seeing a piece); motion.bin's frames move it. Play /
 //             Pause, speed (¼× to 2×), a scrubber with the time, and under it a mark per fed piece at its feed time, its shape and color its
 //             outcome (in: filled; placed on the field: a square; stuck: a diamond, the warning color; missed:
 //             hollow). A click on a mark or a stuck
@@ -36,9 +38,9 @@
 //
 // When a new run is kept (a run ends), it is shown. Test hook: window.__scrimmageTest.replay (test.js) is replay():
 // {time, playing, runId, view (the LiveView or null), cylinders (LiveView.cylinderShapes(): [{name, barrel, rod}]
-// drawn lengths in m, or null), chart: {signals, runs: [shown, compared or null]}, feeds (the
-// shown run's), marks (the shown run's), outlined (the ball index of the piece outlined, or null), feedColors: {in,
-// placed, stuck, missed, bg}, markColors: {slip, bg}},
+// drawn lengths in m, or null), sensors (LiveView.sensorShapes(): [{name, lit, a, b}], or null), chart: {signals,
+// runs: [shown, compared or null]}, feeds (the shown run's), marks (the shown run's), outlined (the ball index of
+// the piece outlined, or null), feedColors: {in, placed, stuck, missed, bg}, markColors: {slip, bg}},
 // window.__scrimmageTest.sweep is sweepShown(): {id, rows, y, points: [[value, y], ...]} or null, and
 // window.__scrimmageTest.spread is spreadShown(): {id, rows, sentence} or null.
 
@@ -93,6 +95,7 @@ export function replay() {
   return {
     time: rp.time, playing: rp.playing, runId: rp.run ? rp.run.id : null, view: rp.view,
     cylinders: rp.view ? rp.view.cylinderShapes() : null,
+    sensors: rp.view ? rp.view.sensorShapes() : null,
     chart: { signals: rp.run ? shownSignals() : [], runs: [rp.run ? rp.run.id : null, rp.compare ? rp.compare.id : null],
       colors: (({ run, compare, bg }) => ({ run, compare, bg }))(tokens()) },
     feeds: rp.run ? feedsOf(rp.run.result) : null, marks: rp.run ? marksOf(rp.run.result) : null, outlined: rp.outlined,
@@ -451,8 +454,30 @@ function setTime(t) {
   const k = frameAt(rp.time);
   const { n, poses } = rp.run.motion;
   if (rp.view && k >= 0) rp.view.applyFrame({ poses: poses.subarray(k * n * 7, (k + 1) * n * 7), n, seq: k });
+  if (rp.view) rp.view.lightSensors((spec) => sensorOn(spec, signalAt(`sensor.${spec.name}`, rp.time)));
   renderPlayer();
   drawChart();
+}
+
+// The shown run's sample of a signal at time t (the last at or before it); null when it has none.
+function signalAt(name, t) {
+  const sig = rp.run.result.signals || {}, times = sig.t || [], vs = sig[name];
+  if (!vs || !times.length || times[0] > t + 1e-9) return null;
+  let lo = 0, hi = times.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (times[mid] <= t + 1e-9) lo = mid; else hi = mid - 1;
+  }
+  return vs[lo];
+}
+
+// A sensor is on from its signal (scrimmage/blocks/run.py sensor_value): a beam broken (1), a distance sensor closer
+// than its threshold, a color sensor seeing a piece (a color's index; null while it sees none).
+function sensorOn(spec, v) {
+  if (v == null) return false;
+  if (spec.kind === "beam") return v >= 0.5;
+  if (spec.kind === "distance") return v < spec.threshold_in;
+  return true;
 }
 
 function renderPlayer() {
@@ -513,6 +538,9 @@ function unitOf(name) {
   if (name.endsWith(".current")) return "A";
   if (name === "hook_load") return "N";
   if (name.startsWith("seated.") || name.startsWith("clearance.")) return "in";
+  const sn = name.startsWith("sensor.") && ((rp.state && rp.state.palette && rp.state.palette.sensors) || [])
+    .find((x) => `sensor.${x.name}` === name);
+  if (sn) return sensorUnit(sn.kind);
   if (name === "partner.height" || name === "partner.moved") return "in";
   if (name === "partner.tilt") return "°";
   const pal = rp.state && rp.state.palette;
@@ -520,6 +548,15 @@ function unitOf(name) {
   if (e) return e.unit === "deg" ? "°" : e.unit;
   const j = pal && (pal.joints || []).find((x) => x.name === name);
   return j ? (j.unit === "deg" ? "°" : j.unit) : "";
+}
+
+// What a sensor's chart reads in: a beam break is 1 while broken, a distance sensor inches, a color sensor the
+// number of the color it sees (the palette's sensor_colors: 0 red, 1 blue, ...).
+function sensorUnit(kind) {
+  if (kind === "beam") return "1 = broken";
+  if (kind === "distance") return "in";
+  const colors = (rp.state && rp.state.palette && rp.state.palette.sensor_colors) || [];
+  return colors.map((c, i) => `${i} ${c}`).join(", ");
 }
 
 // The clearances the picker offers for the next run: each field element's the shown run didn't measure.

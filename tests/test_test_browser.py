@@ -2072,3 +2072,96 @@ def test_a_clears_run_shows_its_clearance_line_and_the_chart_offers_the_others(t
     assert "clearance.drawbridge" in _result(page, "002")["signals"]
     assert "clearance.drawbridge" in page.evaluate("__scrimmageTest.replay.chart.signals")
     assert page.get_attribute(sel, "aria-pressed") == "true"
+
+
+# ---- sensors (sub-project 26) ---------------------------------------------------------------------------------------
+SENSOR_CHECKS = """
+[[block]]
+do = "wait_until"
+until = { sensor = { sensor = "mouth", is = "on" } }
+timeout = 3.0
+
+[[block]]
+do = "expect"
+that = { sensor = { sensor = "eye", is = "off", sees = "red" } }
+
+[[block]]
+do = "expect"
+that = { sensor = { sensor = "eye", is = "on" } }
+throughout = true
+"""
+
+
+def _sensor_test(tmp_path, blocks, sensors=None):
+    from test_blocks_sensors import EYE, MOUTH, _robot
+    _robot(tmp_path, MOUTH + EYE if sensors is None else sensors)
+    path = tmp_path / "t.test.toml"
+    path.write_text(f'[test]\nrobot = "robot.toml"\n{blocks}', encoding="utf-8")
+    return path
+
+
+def _sees_shown(page):
+    """Each sensor check's sensor, and whether its color picker shows."""
+    return page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).filter(b => b.type === 'cond_sensor')"
+                         ".map(b => [b.getFieldValue('SENSOR'), b.getField('SEES').isVisible()])")
+
+
+def test_the_sensor_check_shows_only_on_a_robot_with_sensors(test_page, tmp_path):
+    page, _ = test_page()
+    assert "cond_sensor" not in _flyout_types(page)
+    page, _ = test_page(path=_sensor_test(tmp_path, SPIN.replace("arm.pivot", "intake.roller")))
+    assert "cond_sensor" in _flyout_types(page)
+    options = page.evaluate("__scrimmageTest.workspace.getFlyout().getWorkspace().getTopBlocks(true)"
+                            ".find(b => b.type === 'cond_sensor').getField('SENSOR').getOptions(false).map(o => o[1])")
+    assert options == ["eye", "mouth"]
+
+
+def test_the_sensor_check_round_trips_exactly_and_shows_its_color_for_a_color_sensor(test_page, tmp_path):
+    page, _ = test_page(path=_sensor_test(tmp_path, SENSOR_CHECKS))
+    st = page.evaluate("__scrimmageTest.state.test")
+    assert [b.get("until", b.get("that")) for b in st["blocks"]] == [
+        {"sensor": {"sensor": "mouth", "is": "on"}}, {"sensor": {"sensor": "eye", "is": "off", "sees": "red"}},
+        {"sensor": {"sensor": "eye", "is": "on"}}]
+    assert page.evaluate("__scrimmageTest.toJSON()") == st
+    assert _sees_shown(page) == [["mouth", False], ["eye", True], ["eye", True]]
+    texts = page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).filter(b => b.type === 'cond_sensor')"
+                          ".map(b => b.toString())")
+    assert texts[1] == "sensor eye is off seeing red", texts
+    # picking the beam break hides the color; a color sensor shows it again
+    page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).filter(b => b.type === 'cond_sensor')[2]"
+                  ".setFieldValue('mouth', 'SENSOR')")
+    assert _sees_shown(page)[2] == ["mouth", False]
+
+
+def test_a_sensor_check_from_the_palette_saves_as_the_test_file_reads_it(test_page, tmp_path):
+    from scrimmage.blocks.program import load
+    page, path = test_page(path=_sensor_test(tmp_path, '[[block]]\ndo = "wait"\nseconds = 0.2\n'))
+    page.evaluate(BUILD_FROM_FLYOUT, [["expect", "cond_sensor"]])
+    page.wait_for_function("__scrimmageTest.state.test.blocks.length === 2")
+    page.wait_for_function("document.querySelector('#test-saved').textContent === '✓ All changes saved'")
+    that = load(path).blocks[1].args["that"]
+    assert (that.kind, that.args) == ("sensor", {"sensor": "eye", "is": "on", "sees": None})
+    assert page.evaluate("__scrimmageTest.toJSON()") == page.evaluate("__scrimmageTest.state.test")
+
+
+def test_the_replay_draws_the_beam_lit_once_it_broke(test_page, tmp_path):
+    from test_blocks_sensors import MOUTH, STOP_AT_THE_BEAM
+    page, _ = test_page(path=_sensor_test(tmp_path, STOP_AT_THE_BEAM, MOUTH))
+    run = _run(page, "001")
+    assert run["status"] == "finished", run
+    [start] = page.evaluate("__scrimmageTest.replay.sensors")
+    assert start["name"] == "mouth" and start["lit"] is False
+    a, b = start["a"], start["b"]
+    assert sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5 == pytest.approx(0.34, abs=1e-6)   # from to to
+    box = page.locator("#test-scrub").bounding_box()
+    y = box["y"] + box["height"] / 2
+    page.mouse.move(box["x"] + 4, y)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] + 20, y, steps=5)
+    page.mouse.up()
+    [end] = page.evaluate("__scrimmageTest.replay.sensors")
+    assert end["lit"] is True
+    assert end["a"][0] > a[0] + 0.3                       # it rides on the intake, which drove forward
+    # charted by default, saying what its numbers mean
+    titles = page.evaluate("[...document.querySelectorAll('.test-plot-title')].map(t => t.textContent)")
+    assert "sensor.mouth (1 = broken)" in titles, titles

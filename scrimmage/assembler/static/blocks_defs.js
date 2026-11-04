@@ -8,7 +8,7 @@
 //                                  pickers has something to pick: aim needs a turret and a goal, scored a goal, the
 //                                  cylinder blocks and the air pressure check a cylinder, the element check a hinged
 //                                  or sliding field element, clears a field element, the partner checks a partner
-//                                  robot)
+//                                  robot, the sensor check one of the robot's [[sensor]]s)
 //   testToWorkspace(test, ws)      replaces the workspace's blocks with the test's (one stack, top to bottom)
 //   appendBlocks(ws, blocks)       joins blocks (the test JSON's) below the test's last block
 //   workspaceToTest(ws)            the test JSON of the workspace: the test is the stack that holds the test's first
@@ -31,6 +31,7 @@ const COND = "Condition";
 // Names the tests use that the palette may not have (a joint renamed on Import again): a picker keeps offering them
 // so the block keeps its value (and shows the problem) instead of quietly picking another name. Rebuilt by setUsed.
 const KINDS_OF_NAME = { motor: "robot", joint: "robot", robot: "robot", body: "robot", turret: "robot", cylinder: "robot",
+  sensor: "robot",
   field: "field", piece: "field", bar: "field", level: "field", station: "field", element: "field", rod: "field",
   goal: "field", moving: "field", cleared: "field" };
 let used = {};
@@ -69,6 +70,9 @@ const fieldSide = () => [...(pal().bars || []), ...(pal().elements || []), ...(p
 const has = (xs) => (xs || []).length > 0;
 const cylinderNames = () => (pal().cylinders || []).map((c) => c.name);
 const movingNames = () => (pal().moving_elements || []).map((e) => e.name);
+const sensorNames = () => (pal().sensors || []).map((s) => s.name);
+// a sensor check's color: any (sees nothing written), else one of the named colors (scrimmage/sensors/colors.py)
+const SENSOR_COLORS = ["red", "blue", "yellow", "orange", "green", "purple", "white", "gray"];
 const ANY_GOAL = [["any goal", "any"]];   // a scored check's goal: every goal together (palette.py ANY_GOAL)
 
 // A floor piece as a student reads it ("ball 10", "coral 2"): the palette's `piece_labels`, the names every sentence uses
@@ -97,6 +101,9 @@ const OPTIONS = {
   scoredGoal: () => choices(pal().goals || [], "goal", ANY_GOAL),
   cylinder: () => choices(cylinderNames(), "cylinder"),
   moving: () => choices(movingNames(), "moving"),
+  sensor: () => choices(sensorNames(), "sensor"),
+  sees: () => [["seeing any color", "any"],
+    ...(pal().sensor_colors || SENSOR_COLORS).map((c) => [`seeing ${c}`, c])],
   cleared: () => choices(pal().elements || [], "cleared"),
   // left and right only on a swerve robot (or when the test already has one)
   heading: () => [["forward", "forward"], ["back", "back"],
@@ -109,6 +116,7 @@ const SIDES = [["above", "above"], ["below", "below"]];
 const CYLINDER_TO = [["extend", "extend"], ["retract", "retract"], ["off", "off"]];
 const CYLINDER_IS = [["extended", "extended"], ["retracted", "retracted"]];
 const AIR_SIDES = [["stored", "stored"], ["working", "working"]];
+const SENSOR_IS = [["on", "on"], ["off", "off"]];
 
 // A joint picker's validator: picking a joint that slides (or turns) switches a unit that doesn't fit it.
 function fitUnit(unitField) {
@@ -131,6 +139,14 @@ function elementUnit(value) {
   const e = (pal().moving_elements || []).find((x) => x.name === value);
   if (block && block.getField("UNIT")) block.setFieldValue(e ? UNIT_TEXT[e.unit] : "", "UNIT");
   return value;
+}
+
+// A sensor check's color picker shows only for a color sensor (or when the check already names a color). A validator
+// runs before its field takes the value, so the field being set gives its new value.
+function showSees(block, sensor, sees) {
+  const s = (pal().sensors || []).find((x) => x.name === sensor);
+  block.getField("SEES").setVisible((s ? s.kind === "color" : false) || sees !== "any");
+  if (block.rendered) block.queueRender();
 }
 
 // partner_lifted's level box: the degrees show only while it is ticked.
@@ -402,6 +418,29 @@ const CONDS = {
     fields: (a) => ({ MOVED: a.at_least_in }),
     json: (b) => ({ partner_moved: { at_least_in: b.getFieldValue("MOVED") } }),
   },
+  sensor: {
+    def: { message0: "sensor %1 is %2 %3",
+      args0: [dd("SENSOR", OPTIONS.sensor), dd("IS", SENSOR_IS), dd("SEES", OPTIONS.sees)],
+      tooltip: "One of the robot's sensors is on: a beam break while something breaks its beam, a distance sensor "
+        + "while something is closer than its threshold, a color sensor while it sees a piece (of this color, when "
+        + "you pick one; off with a color: it isn't seeing that color)." },
+    fields: (a) => ({ SENSOR: a.sensor, IS: a.is, SEES: a.sees || "any" }),
+    json: (b) => ({ sensor: { sensor: b.getFieldValue("SENSOR"), is: b.getFieldValue("IS"),
+      ...(b.getFieldValue("SEES") === "any" ? {} : { sees: b.getFieldValue("SEES") }) } }),
+    init(b) {
+      b.getField("SENSOR").setValidator(function (v) {
+        const block = this.getSourceBlock();
+        if (block) showSees(block, v, block.getFieldValue("SEES"));
+        return v;
+      });
+      b.getField("SEES").setValidator(function (v) {
+        const block = this.getSourceBlock();
+        if (block) showSees(block, block.getFieldValue("SENSOR"), v);
+        return v;
+      });
+      showSees(b, b.getFieldValue("SENSOR"), b.getFieldValue("SEES"));
+    },
+  },
   station_empty: {
     def: { message0: "%1 is empty", args0: [dd("STATION", OPTIONS.station)],
       tooltip: "The station has no pieces left to feed." },
@@ -475,6 +514,7 @@ export function toolbox(p) {
   if (has(p.moving_elements)) out.push(item(condType("element")));
   if (has(p.elements)) out.push(item(condType("clears")));
   if (p.partner) out.push(item(condType("partner_lifted")), item(condType("partner_moved")));
+  if (has(p.sensors)) out.push(item(condType("sensor")));
   out.push(item(condType("in_hopper")), item(condType("made_it_in")));
   return { kind: "flyoutToolbox", contents: out };
 }
@@ -510,6 +550,7 @@ function rememberNames(blocks) {
       if (kind === "cylinder") remember("cylinder", a.cylinder);
       if (kind === "element") remember("moving", a.element);
       if (kind === "clears") remember("cleared", a.element);
+      if (kind === "sensor") remember("sensor", a.sensor);
     }
     rememberNames(b.body);
   }

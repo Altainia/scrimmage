@@ -10,7 +10,10 @@ and how (`drive_kind`: a tank or swerve drive, as drive.py finds them) and the s
 tanks), `air.working_psi` (the regulator's output) and each cylinder's `<name>.extension` in inches; and
 `element.<name>` for each of the field's hinged or sliding elements, `moving_elements`, in its unit; and with a
 partner robot, `partner: true`, `partner.height` and `partner.moved` in inches and `partner.tilt` in degrees: the
-world's own partner (`robot_partner`), unless the test's [setup] partner, given, says otherwise). A
+world's own partner (`robot_partner`), unless the test's [setup] partner, given, says otherwise; and
+`sensor.<name>` for each of the robot's [[sensor]]s, `sensors` ({name, kind}): 0 or 1 for a beam break (1 broken),
+inches for a distance sensor, and for a color sensor the index in `sensor_colors` (the named colors a `sees` can
+pick) of the color it sees, NaN while it sees none). A
 chart can also show `clearance.<element>` (in) for any of `elements`; it isn't in `signals`, as a run measures it
 only when the test names it (clearance.py).
 The field's pieces: `piece` (its default kind's preset), `kinds` (each kind's form, whether it is hollow or flat and the
@@ -38,6 +41,7 @@ from ..hal_drive import driven_joints
 from ..launcher.inputs import PRESETS
 from ..parts.grip import GRIP_MATERIALS
 from ..parts.partner import SIGNALS as PARTNER_SIGNALS
+from ..sensors.colors import NAMED_COLORS
 from ..terrain.climb import robot_hooks
 from ..testrange.elements import moving_units
 from ..testrange.spec import BALL_CHOICE_RANGES, RangeError, load_range
@@ -164,6 +168,13 @@ def cylinders(world) -> list[dict]:
     return [{"name": n, "double": n in doubles} for n in sorted(world.pneumatics.names)]
 
 
+def sensors(world) -> list[dict]:
+    """The robot's [[sensor]]s, sorted by name: {"name", "kind"} ("beam", "distance" or "color")."""
+    if getattr(world, "sensors", None) is None:
+        return []
+    return sorted(({"name": s.name, "kind": s.kind} for s in world.sensors.specs), key=lambda s: s["name"])
+
+
 def palette(world, hooks: list[str], setup: dict | None = None) -> dict:
     """The names and signals a test can use on `world`. `setup` (the test's [setup]) decides the partner robot when
     it names one (a table: there is one; false: there is none), as world_for builds it: the Test tab's world is the
@@ -196,6 +207,8 @@ def palette(world, hooks: list[str], setup: dict | None = None) -> dict:
     partner = setup["partner"] is not False if setup and "partner" in setup else robot_partner
     if partner:
         signals += list(PARTNER_SIGNALS)                           # in, deg, in: from where it settled
+    sens = sensors(world)
+    signals += [f"sensor.{s['name']}" for s in sens]               # 0/1 (beam), in (distance), a color's index
     dt = drivetrain(world, driven)
     stations = sorted(rng.stations, key=lambda st: st.name) if rng is not None else []
     ball = floor_ball(world)
@@ -214,6 +227,8 @@ def palette(world, hooks: list[str], setup: dict | None = None) -> dict:
         "goals": sorted(g.name for g in rng.goals) if rng is not None else [],
         "turrets": turrets(world),          # stock turrets' instances: each turns `<inst>.turn`
         "cylinders": cyls,                  # pneumatic cylinders: {name, double}
+        "sensors": sens,                    # the robot's [[sensor]]s: {name, kind}
+        "sensor_colors": list(NAMED_COLORS),    # what a color sensor's sees can name; sensor.<name>'s index into it
         "rods": rods,                       # the field's rods (a reef's branches)
         "pieces": pieces,
         "targets": _targets(world, bar_set | set(elements) | set(pieces)),
@@ -263,6 +278,7 @@ class _Names:
         self.goals = list(p["goals"])
         self.turrets = list(p["turrets"])
         self.cylinders = [c["name"] for c in p["cylinders"]]
+        self.sensors = {s["name"]: s["kind"] for s in p["sensors"]}
         self.partner = p["partner"]
         rng = world.parts.range if world.parts is not None else None
         self.hollow = rng is not None and any(k.hole is not None for k in rng.kinds.values())
@@ -338,6 +354,21 @@ def _cylinder_problems(n: _Names, name: str, doing: str) -> list[str]:
     return []
 
 
+KIND_WORDS = {"beam": "a beam break", "distance": "a distance sensor", "color": "a color sensor"}
+
+
+def _sensor_problems(n: _Names, name: str, sees: str | None) -> list[str]:
+    """A sensor condition's sensor: one of the robot's [[sensor]]s; and `sees` only on a color sensor."""
+    if not n.sensors:
+        return ["this robot has no sensors; add a [[sensor]] to its config"]
+    if name not in n.sensors:
+        return [f"{name} isn't a sensor; the robot's sensors: {', '.join(n.sensors)}"]
+    if sees is not None and n.sensors[name] != "color":
+        return [f"{name} is {KIND_WORDS[n.sensors[name]]}, which can't see colors; only a color sensor can see "
+                f"{sees}"]
+    return []
+
+
 def _cond_problems(n: _Names, c) -> list[str]:
     a = c.args
     if c.kind == "joint":
@@ -397,6 +428,8 @@ def _cond_problems(n: _Names, c) -> list[str]:
         return [f"{a['element']} isn't a moving element; {known}"]
     if c.kind == "clears" and a["element"] not in n.elements:
         return [f'no element "{a["element"]}" on this field']
+    if c.kind == "sensor":
+        return _sensor_problems(n, a["sensor"], a.get("sees"))
     if c.kind in ("partner_lifted", "partner_moved") and not n.partner:
         return ["there's no partner robot; add one in Setup"]
     if c.kind == "station_empty":

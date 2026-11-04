@@ -10,6 +10,8 @@ import numpy as np
 from ..movers import movers as _movers
 from ..parts.model import quat_from_rpy
 
+IN = 0.0254     # m per inch
+
 _TYPES = {int(mujoco.mjtGeom.mjGEOM_BOX): "box", int(mujoco.mjtGeom.mjGEOM_CYLINDER): "cylinder",
           int(mujoco.mjtGeom.mjGEOM_SPHERE): "sphere", int(mujoco.mjtGeom.mjGEOM_CAPSULE): "capsule",
           int(mujoco.mjtGeom.mjGEOM_ELLIPSOID): "ellipsoid", int(mujoco.mjtGeom.mjGEOM_MESH): "mesh",
@@ -80,7 +82,8 @@ def model_view(world, include_world: bool = False) -> dict:
            "mounts": mounts, "floor": floor, "movers": [{"kind": mv.kind, "name": mv.name} for mv in ms],
            "root_mover": body_mover.get(world.robot_body, -1),   # the robot body's index in `movers` (-1: not a mover)
            "com": [float(v) for v in d.subtree_com[world.robot_body]],   # the robot's CG in the world (the CG marker)
-           "cylinders": _cylinders(world, d, body_mover)}
+           "cylinders": _cylinders(world, d, body_mover),
+           "sensors": _sensors(world, d, body_mover)}
     if include_world:
         out["world_geoms"] = _world_geoms(world, d, root, ms, meshes, remap)
         out["movable"] = world.movable_objects()
@@ -102,6 +105,30 @@ def _cylinders(world, d, body_mover: dict[int, int]) -> list[dict]:
             pins.append([mover, [float(v) for v in pos]])
         out.append({"name": cy.name, "a": pins[0], "b": pins[1], "bore": cy.bore, "rod": cy.rod,
                     "retracted": float(cy.length), "stroke": cy.stroke})
+    return out
+
+
+def _sensors(world, d, body_mover: dict[int, int]) -> list[dict]:
+    """Each [[sensor]] (sensors/spec.py) for the replay to draw as a line, lit while on: {name, kind, a, b}, and a
+    distance sensor's threshold_in (it is on closer than that). A beam break's line runs from its `from` to its `to`; a
+    distance or color sensor's from `at` along `toward`, max_range long. a and b are pins as _cylinders' are: [mover,
+    pos], pos in that mover's frame; or, on a body that never moves (mover -1), its fixed world position."""
+    if getattr(world, "sensors", None) is None:
+        return []
+    m = world.model
+    out = []
+    for s in world.sensors.specs:
+        b = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, s.body)
+        mover = body_mover.get(b, -1)
+        start = np.asarray(s.start, float)
+        pins = []
+        for local in (start, start + s.length * np.asarray(s.direction, float)):
+            pos = local if mover >= 0 else d.xpos[b] + d.xmat[b].reshape(3, 3) @ local
+            pins.append([mover, [float(v) for v in pos]])
+        entry = {"name": s.name, "kind": s.kind, "a": pins[0], "b": pins[1]}
+        if s.kind == "distance":
+            entry["threshold_in"] = s.threshold / IN
+        out.append(entry)
     return out
 
 

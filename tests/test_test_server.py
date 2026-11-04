@@ -1176,3 +1176,30 @@ def test_no_hint_without_a_clearance(tmp_path, test_app):
     """The stock arm has collide off, but a test that measures no clearance has no hint."""
     st = _state(test_app(write_test(tmp_path)))
     assert st["problems"] == [] and st["hints"] == []
+
+
+# ---- sensors (sub-project 26) ---------------------------------------------------------------------------------------
+def test_a_sensor_run_keeps_its_sensors_in_the_view_and_its_signal_in_the_result(tmp_path, test_app):
+    """The palette lists the robot's sensors; the replay's view lists each one's line as two pins on its mover, and
+    the run's result has its sensor.<name> signal (the replay lights the line from it)."""
+    from test_blocks_sensors import MOUTH, STOP_AT_THE_BEAM, _robot
+    _robot(tmp_path, MOUTH)
+    t = tmp_path / "t.test.toml"
+    t.write_text(f'[test]\nrobot = "robot.toml"\n{STOP_AT_THE_BEAM}', encoding="utf-8")
+    c = test_app(t)
+    pal = _state(c)["palette"]
+    assert pal["sensors"] == [{"name": "mouth", "kind": "beam"}] and "sensor.mouth" in pal["signals"]
+    s, b = c.call("POST", "/api/test/run", {})
+    assert s == 200, b
+    [run] = _wait_idle(c)["runs"]
+    assert run["status"] == "finished", run
+    s, view = c.get(f"/api/test/run/{run['id']}/view")
+    assert s == 200
+    [mouth] = view["sensors"]
+    movers = [m["name"] for m in view["movers"]]
+    assert mouth["name"] == "mouth" and mouth["kind"] == "beam"
+    assert movers[mouth["a"][0]] == movers[mouth["b"][0]] == "intake.frame"
+    assert mouth["a"][1] == pytest.approx([0.32, 0.17, 0.05]) and mouth["b"][1] == pytest.approx([0.32, -0.17, 0.05])
+    s, res = c.get(f"/api/test/run/{run['id']}")
+    assert s == 200
+    assert set(res["signals"]["sensor.mouth"]) == {0.0, 1.0} and res["signals"]["sensor.mouth"][-1] == 1.0
