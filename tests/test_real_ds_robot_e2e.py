@@ -5,6 +5,11 @@ tests/match_probe_py prints what the robot reads. scrimmage sends no DS frames a
 import asyncio
 import json
 import re
+import socket
+import subprocess
+import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -135,3 +140,40 @@ def test_after_the_ds_stops_the_state_follows_the_latest_report(run):
     # shows when the DS stops) must change with it.
     assert hal.get(">ds") is True, hal
     assert after["mode"] == "disabled", (after, hal)   # the extension's 100 ms auto-disable
+
+
+def test_serve_logs_what_the_real_ds_does(tmp_path):
+    """D1: `serve --real-ds --launch` adds --ds-socket, and logs the DS's mode changes from the robot's reports."""
+    cfg = tmp_path / "real_ds_probe.toml"
+    cfg.write_text(CONFIG)
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    proc = subprocess.Popen([sys.executable, "-m", "scrimmage", "serve", str(cfg), "--real-ds", "--launch", "--no-nt",
+                             "--port", str(port)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    out: list[str] = []
+    reader = threading.Thread(target=lambda: out.extend(proc.stdout), daemon=True)
+    reader.start()
+    ds = FakeDS()
+
+    def until(text: str, timeout: float = 60) -> None:
+        deadline = time.monotonic() + timeout
+        while text not in "".join(out) and proc.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.1)
+        assert text in "".join(out), "".join(out)[-3000:]
+    try:
+        until("robot program connected")
+        until(REAL_DS_WAITING)
+        ds.set(True, "teleop", "red2")
+        ds.start()
+        until("Driver Station: teleop enabled")
+        ds.set(False, "auto", "red2")
+        until("Driver Station: disabled")
+        ds.set(True, "auto", "red2")
+        until("Driver Station: auto enabled")
+    finally:
+        ds.stop()
+        proc.terminate()
+        proc.wait(timeout=20)
+        reader.join(timeout=5)
+

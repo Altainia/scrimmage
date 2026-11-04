@@ -1,6 +1,8 @@
 // scrimmage Gradle init script. scrimmage runs:   ./gradlew -I <this file> simulateJava
 // It changes nothing in the project's files. For every project using GradleRIO it:
 //   - loads only the HALSim WebSocket client (sim GUI, DS socket, WS server, XRP off): scrimmage is the DS
+//   - with SCRIMMAGE_DS_SOCKET=1 (a real-DS session), also loads the DS socket, adding it if the project has none:
+//     the FRC Driver Station is the DS
 //   - appends the scrimmage_lockstep HALSim extension (SCRIMMAGE_LOCKSTEP_SO) to HALSIM_EXTENSIONS
 //   - loads the sim-write guard agent (SCRIMMAGE_AGENT_JAR) so robot-side sim models can't fight the physics
 //   - writes the robot's console to SCRIMMAGE_CONSOLE_FILE when scrimmage sets it: Gradle's own console passes task
@@ -8,6 +10,7 @@
 // HALSIMWS_HOST/HALSIMWS_PORT reach the robot JVM through the ./gradlew environment.
 def lockstepSo = System.getenv("SCRIMMAGE_LOCKSTEP_SO")
 def consoleFile = System.getenv("SCRIMMAGE_CONSOLE_FILE")
+final boolean DS_SOCKET = System.getenv("SCRIMMAGE_DS_SOCKET") == "1"
 // The agent jar: scrimmage passes SCRIMMAGE_AGENT_JAR; hand-run, fall back to where `scrimmage java build` puts
 // it (java_tools.agent_jar_path(): $SCRIMMAGE_CACHE, else ~/.cache/scrimmage/java).
 def agentJar = System.getenv("SCRIMMAGE_AGENT_JAR")
@@ -18,6 +21,7 @@ if (!agentJar) {
 }
 final boolean AGENT_FOUND = new File(agentJar).exists()
 final String WS_CLIENT = "Sim Websockets Client"
+final String DS_SOCKET_EXT = "Use Real DriverStation"   // GradleRIO's name for wpi.sim.addDriverstation()
 final List<String> SIM_TASKS = ["simulateJavaRelease", "simulateJavaDebug"]
 final Map<Task, OutputStream> consoleStreams = [:]
 
@@ -28,7 +32,11 @@ allprojects { p ->
             if (sim.halExtensions.findByName(WS_CLIENT) == null) {
                 sim.addWebsocketsClient()               // addX() throws if that name already exists
             }
-            sim.halExtensions.all { it.defaultEnabled.set(it.name == WS_CLIENT) }
+            if (DS_SOCKET && sim.halExtensions.findByName(DS_SOCKET_EXT) == null) {
+                sim.addDriverstation()
+            }
+            def wanted = DS_SOCKET ? [WS_CLIENT, DS_SOCKET_EXT] : [WS_CLIENT]
+            sim.halExtensions.all { it.defaultEnabled.set(it.name in wanted) }
             // GradleRIO reads sim.environment when the sim task runs: make scrimmage's host/port win over a
             // project's own wpi.sim.envVar(...) (only when scrimmage set them; hand-run use keeps the project's).
             ["HALSIMWS_HOST", "HALSIMWS_PORT"].each { k ->

@@ -25,7 +25,7 @@ from .bridge import Bridge, robot_language
 from .devicecheck import check_devices, device_notes
 from .driverstation import (REAL_DS_DRIVING, REAL_DS_WAITING, MatchSettings, check_game_data,
                             real_ds_report)
-from .config import Config, ConfigError, build_world, load_config, set_sim_mode, sim_mode_unused
+from .config import Config, ConfigError, RobotProgram, build_world, load_config, set_sim_mode, sim_mode_unused
 from .lockstep import Pacer
 from .movers import Mover, mover_poses, movers
 from .render import Renderer, check_sheet_size, check_size, RenderUnavailable, contact_sheet, to_png
@@ -145,6 +145,17 @@ def ds_ports_problem() -> str | None:
     return None
 
 
+def real_ds_program(rp: RobotProgram) -> RobotProgram:
+    """The robot program, told to listen for the real DS: RobotPy through --ds-socket, Java through the init script."""
+    return dataclasses.replace(rp, command=with_ds_socket(rp.command), env={**rp.env, DS_SOCKET_ENV: "1"})
+
+
+def ds_socket_problem() -> str | None:
+    """NOT_LISTENING if nothing listens for the Driver Station on UDP 1110. Check it once the robot program has
+    started: binding the port while it starts could take it from the robot."""
+    return NOT_LISTENING if _port_free(socket.SOCK_DGRAM, DS_UDP_PORT) else None
+
+
 def connect_timeout_hint(command: list[str], cwd) -> str:
     """What to add to "the robot program didn't connect" when the command is Gradle's wrapper."""
     if Path(command[0]).name not in ("gradlew", "gradlew.bat"):
@@ -181,8 +192,7 @@ class Session:
         self.real_ds = self.config.real_ds if real_ds is None else bool(real_ds)
         rp = self.config.robot_program
         if self.real_ds and rp is not None and not attach:
-            # the robot program listens for the real DS: RobotPy through --ds-socket, Java through the init script
-            rp = dataclasses.replace(rp, command=with_ds_socket(rp.command), env={**rp.env, DS_SOCKET_ENV: "1"})
+            rp = real_ds_program(rp)
             self.config = dataclasses.replace(self.config, robot_program=rp)
         self._ds_notes: list[str] = []          # the real-DS listening check's note
         self._ds_watch: asyncio.Task | None = None
@@ -304,9 +314,9 @@ class Session:
 
         async def watch():
             await asyncio.sleep(timeout)
-            if _port_free(socket.SOCK_DGRAM, DS_UDP_PORT):
-                log.warning("%s", NOT_LISTENING)
-                self._ds_notes.append(NOT_LISTENING)
+            if (note := ds_socket_problem()) is not None:
+                log.warning("%s", note)
+                self._ds_notes.append(note)
         self._ds_watch = asyncio.create_task(watch())
 
     async def _wait_ready(self) -> None:

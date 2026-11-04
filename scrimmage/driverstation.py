@@ -198,3 +198,12 @@ def real_ds_report(hal) -> dict:
     if ">game_data" in d:
         out["game_data"] = d[">game_data"]
     return out
+
+
+def real_ds_line(report: dict) -> str:
+    """One log line for a real_ds_report: "Driver Station: teleop enabled", "... disabled", or REAL_DS_WAITING."""
+    if not report["connected"]:
+        return REAL_DS_WAITING
+    if report["mode"] == "disabled":
+        return "Driver Station: disabled (E-stopped)" if report["estop"] else "Driver Station: disabled"
+    return f"Driver Station: {report['mode']} enabled"

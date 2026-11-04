@@ -6,6 +6,10 @@ import asyncio
 import csv
 import json
 import socket
+import subprocess
+import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -13,8 +17,9 @@ import pytest
 import scrimmage.session as session_mod
 from fake_ds import joystick_tag
 from fake_robot import wait_until
+from scrimmage.__main__ import REAL_DS_HAND_START
 from scrimmage.config import ConfigError, load_config, load_config_text
-from scrimmage.driverstation import REAL_DS_DRIVING, REAL_DS_WAITING, real_ds_report
+from scrimmage.driverstation import REAL_DS_DRIVING, REAL_DS_WAITING, real_ds_line, real_ds_report
 from scrimmage.protocol import HalState
 from scrimmage.robotcode import ROBOTPY_ARGS, with_ds_socket
 from scrimmage.scenario import load_scenario
@@ -79,6 +84,16 @@ def test_the_report_follows_the_robots_driver_station_values():
     stopped = real_ds_report(hal(**{**SPIKE, ">enabled": False, ">estop": True}))
     assert stopped["mode"] == "disabled" and stopped["estop"] is True
     assert real_ds_report(hal(**{**SPIKE, ">game_data": "B"}))["game_data"] == "B"
+
+
+def test_the_log_line_says_what_the_real_ds_is_doing():
+    assert real_ds_line(real_ds_report(HalState())) == REAL_DS_WAITING
+    assert real_ds_line(real_ds_report(hal(**SPIKE))) == "Driver Station: teleop enabled"
+    assert real_ds_line(real_ds_report(hal(**{**SPIKE, ">autonomous": True}))) == "Driver Station: auto enabled"
+    assert real_ds_line(real_ds_report(hal(**{**SPIKE, ">test": True}))) == "Driver Station: test enabled"
+    assert real_ds_line(real_ds_report(hal(**{**SPIKE, ">enabled": False}))) == "Driver Station: disabled"
+    assert (real_ds_line(real_ds_report(hal(**{**SPIKE, ">enabled": False, ">estop": True})))
+            == "Driver Station: disabled (E-stopped)")
 
 
 # ------------------------------------------------------------------------------------------------------ the launch
@@ -245,6 +260,69 @@ def test_a_scenario_refuses_an_open_real_ds_session(tmp_path):
         finally:
             await s.stop()
     assert asyncio.run(main()).error == REAL_DS_REFUSED
+
+
+# ------------------------------------------------------------------------------------------------------ the CLI
+def test_run_refuses_the_real_ds(tmp_path, capsys):
+    from scrimmage.__main__ import main
+    with pytest.raises(SystemExit) as e:
+        main(["run", str(scenario(tmp_path, fake_config(tmp_path))), "--real-ds", "--out", str(tmp_path / "out")])
+    assert e.value.code == 2 and REAL_DS_REFUSED in capsys.readouterr().err
+    assert not (tmp_path / "out").exists()
+
+
+def serve_until(args: list, want: list[str], timeout: float = 30) -> str:
+    """`scrimmage serve ARGS` (stdout and stderr together) until every text in `want` has been printed, then stopped."""
+    proc = subprocess.Popen([sys.executable, "-m", "scrimmage", "serve", *map(str, args), "--no-nt"], cwd=TESTS,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    out: list[str] = []
+    reader = threading.Thread(target=lambda: out.extend(proc.stdout), daemon=True)
+    reader.start()
+    deadline = time.monotonic() + timeout
+    try:
+        while not all(w in "".join(out) for w in want) and proc.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.1)
+    finally:
+        proc.terminate()
+        proc.wait(timeout=10)
+        reader.join(timeout=5)
+    return "".join(out)
+
+
+def free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def test_serve_without_launch_says_what_to_add_and_waits_for_the_ds(tmp_path):
+    """D1: serve starts no robot program, so it prints the one line each language needs."""
+    text = serve_until([fake_config(tmp_path), "--real-ds", "--port", free_port()],
+                       ["--ds-socket", "wpi.sim.addDriverstation()", REAL_DS_WAITING])
+    assert "RobotPy" in text and "--ds-socket" in text, text
+    assert "Java" in text and "wpi.sim.addDriverstation()" in text, text
+    assert REAL_DS_HAND_START in text and REAL_DS_WAITING in text, text
+
+
+def test_serve_launch_tells_the_robot_to_listen_and_checks_it_does(tmp_path):
+    """The fake robot has no DS socket: after the start timeout, serve says what the robot program needs."""
+    text = serve_until([fake_config(tmp_path, start_timeout=1), "--real-ds", "--launch", "--port", free_port()],
+                       [NOT_LISTENING])
+    assert "robot program connected" in text and REAL_DS_WAITING in text, text
+    assert NOT_LISTENING in text, text
+    assert REAL_DS_HAND_START not in text   # the lines to add are for serve without --launch
+
+
+def test_serve_launch_refuses_a_taken_ds_port(tmp_path, capsys):
+    from scrimmage.__main__ import main
+    held = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    held.bind(("0.0.0.0", 1110))
+    try:
+        with pytest.raises(SystemExit) as e:
+            main(["serve", str(fake_config(tmp_path)), "--real-ds", "--launch", "--no-nt"])
+    finally:
+        held.close()
+    assert e.value.code == 2 and "UDP port 1110 is already in use" in capsys.readouterr().err
 
 
 # ------------------------------------------------------------------------------------------------------ MCP
