@@ -1,0 +1,176 @@
+"""Sensors in a World: each [[sensor]]'s beam or ray cast every physics step, after mj_step, and its reading kept.
+
+World makes a SensorRuntime only for a robot with [[sensor]] tables (world.sensors is None otherwise, and stepping
+costs nothing extra). Each sensor is a ray in its body's frame:
+
+  - a beam break casts from `from` toward `to`, |to - from| long, plus END_SLOP at each end, and reads broken while a
+    game piece is on it;
+  - a distance or color sensor casts from `at` along `toward`, max_range long, and reads the first piece it hits
+    (sees = "pieces") or the first thing that isn't the robot (sees = "anything").
+
+Pieces are the range's `ball.<i>` bodies: balls, discs and rigid pieces alike. A sensor never sees its own robot (the
+robot body's whole tree).
+
+When a reading is taken: after mj_step, from the poses mj_step computed at the start of the step (data.xpos, xmat and
+geom_xpos are the kinematics of the state the step began from; mj_step integrates qpos afterwards). The sensor's body
+and every geom it can hit come from that one pass, so the ray and what it hits agree exactly; the reading is of the
+state 1 ms (one timestep) back. Recomputing the kinematics (mj_kinematics) would cost a pass per step and write into
+data, and a 1 ms lag is far below what a beam break or a color sensor's own response time is (both are ideal here).
+
+How the robot and the field are left out: MuJoCo's mj_ray excludes one body (`bodyexclude`) or whole geom groups,
+not a body's tree, and the field, the robot and the pieces share geom group 0 (groups 1 and 2 mean structure and
+ground to the terrain and climb monitors, and groups 3 to 5 aren't drawn by MuJoCo's renderer by default). So
+`_cast` excludes the sensor's own body (the geom a beam is drawn through is most often its own) and, when a cast hits
+a geom it mustn't see (the rest of the robot; or, for pieces only, anything that isn't a piece), casts again from
+just past that hit. A clear path, or a piece first, is one mj_ray a step; each unwanted surface in the way adds one
+(a box the ray passes through is two: in and out). Pieces-only casts skip the field's static geoms
+(flg_static = 0), so the carpet and walls cost nothing. MAX_CASTS bounds a step's casts per sensor. Recasting
+changes no model setting, so a robot's renders and every other monitor are as before, and it is exact for every
+piece shape (spheres, cylinders, boxes and meshes).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import mujoco
+import numpy as np
+
+from ..bindings import Update
+from .colors import nearest_color
+from .spec import COLOR_MAX_RANGE, SensorError, SensorSpec
+
+END_SLOP = 0.001    # m: a beam reaches this far past each end, so a piece resting exactly on an end reads broken on
+                    # every step (a resting piece settles by far less than this) and never flickers
+SKIP = 1e-6         # m: a recast starts this far past a hit it skipped
+MAX_CASTS = 32      # a sensor's most casts in one step (unwanted surfaces in the way); past them it sees nothing
+# A REV Color Sensor V3's values (spec C5, estimates): brightness 1 at 2 cm, 0.5 at 6 cm, nothing past 10 cm,
+# straight lines between; full scale FULL_SCALE. With nothing in front it reads the dark carpet: DARK.
+FULL_SCALE = 2047
+BRIGHTNESS = ((0.0, 1.0), (0.02, 1.0), (0.06, 0.5), (COLOR_MAX_RANGE, 0.0))
+DARK = {"Red": 12, "Green": 14, "Blue": 12, "IR": 8}    # estimate: a dark gray carpet, a few counts in each channel
+
+
+@dataclass(frozen=True)
+class Reading:
+    on: bool                                        # broken (beam), closer than threshold (distance), sees a piece
+    distance: float | None                          # m: a distance sensor's (max_range with nothing in range); a
+                                                    # color sensor's to what it sees (None: nothing); None for a beam
+    color: tuple[float, float, float] | None = None     # the piece's color (r, g, b, 0 to 1) a color sensor sees
+    color_name: str | None = None                   # its nearest named color (colors.NAMED_COLORS)
+
+
+def brightness(distance: float | None) -> float:
+    """How bright a piece reads to a color sensor at `distance` (m): 1 up close, 0 past 10 cm (spec C5)."""
+    if distance is None:
+        return 0.0
+    xs, ys = zip(*BRIGHTNESS)
+    return float(np.interp(distance, xs, ys, right=0.0))
+
+
+def color_values(reading: Reading) -> dict[str, int]:
+    """A color sensor's Red, Green, Blue, IR and Proximity (0 to FULL_SCALE): a piece's color scaled by its
+    brightness, IR the brightness itself; proximity 2047 at contact falling to 0 at 10 cm along a straight line (an
+    estimate of REV's curve), for whatever it hits. With no piece in front the colors are DARK's."""
+    b = brightness(reading.distance) if reading.color is not None else 0.0
+    rgb = reading.color or (0.0, 0.0, 0.0)
+    out = {ch: max(DARK[ch], round(FULL_SCALE * b * c)) for ch, c in zip(("Red", "Green", "Blue"), rgb)}
+    out["IR"] = max(DARK["IR"], round(FULL_SCALE * b))
+    d = reading.distance
+    out["Proximity"] = 0 if d is None else round(FULL_SCALE * max(0.0, 1.0 - d / COLOR_MAX_RANGE))
+    return out
+
+
+class SensorRuntime:
+    def __init__(self, world, specs: list[SensorSpec]):
+        m = world.model
+        self.world, self.model, self.specs = world, m, list(specs)
+        root = int(m.body_rootid[world.robot_body])
+        robot = [b for b in range(m.nbody) if int(m.body_rootid[b]) == root]
+        names = [mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, b) for b in robot]
+        self._bodies = []
+        for s in self.specs:
+            b = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, s.body)
+            if b not in robot:
+                raise SensorError(f'[[sensor]] "{s.name}": body "{s.body}" isn\'t one of the robot\'s bodies; its '
+                                  f"bodies: {', '.join(n for n in names if n)}")
+            self._bodies.append(b)
+        self._robot = (m.body_rootid[m.geom_bodyid] == root).tolist()      # per geom: part of the robot
+        # Per geom: the piece (ball index) it belongs to, -1 for every other geom; and each piece's color.
+        rng = world.test_range
+        if rng is not None:
+            from ..testrange.pieces import piece_color
+            balls = rng.balls
+            self._piece = balls.ball_of_geom(np.arange(m.ngeom)).tolist()
+            self._colors = [piece_color(balls.kinds[k]) for k in balls.kind]
+        else:
+            self._piece, self._colors = [-1] * m.ngeom, []
+        self._start = [np.asarray(s.start, dtype=float) - (END_SLOP * np.asarray(s.direction) if s.kind == "beam"
+                                                           else 0.0) for s in self.specs]
+        self._dir = [np.asarray(s.direction, dtype=float) for s in self.specs]
+        self._reach = [s.length + (2 * END_SLOP if s.kind == "beam" else 0.0) for s in self.specs]
+        self._gid = np.zeros(1, dtype=np.int32)
+        self._pnt = np.zeros(3)
+        self.casts = 0                                  # mj_ray calls so far (a cost check)
+        # Nothing seen until the first reading: World.reset reads them (data has no kinematics before mj_forward).
+        self._readings = {s.name: self._read(s, None) for s in self.specs}
+
+    @property
+    def names(self) -> list[str]:
+        return [s.name for s in self.specs]
+
+    def reading(self, name: str) -> Reading:
+        if name not in self._readings:
+            raise KeyError(f"no sensor {name!r}; the robot's sensors: {', '.join(self.names)}")
+        return self._readings[name]
+
+    def reset(self) -> None:
+        self.update(self.world.data)
+
+    def update(self, data: mujoco.MjData) -> None:
+        """Read every sensor from `data`'s kinematics (after mj_step: the state the step began from)."""
+        for s, b, start, direction, reach in zip(self.specs, self._bodies, self._start, self._dir, self._reach):
+            rot = data.xmat[b].reshape(3, 3)
+            pnt = data.xpos[b] + rot @ start
+            vec = rot @ direction
+            hit = self._cast(data, pnt, vec, reach, s.sees == "pieces", b)
+            self._readings[s.name] = self._read(s, hit)
+
+    def _read(self, s: SensorSpec, hit) -> Reading:
+        if s.kind == "beam":
+            return Reading(on=hit is not None, distance=None)
+        if s.kind == "distance":
+            d = s.length if hit is None else min(hit[0], s.length)
+            return Reading(on=d < s.threshold, distance=d)
+        if hit is None:
+            return Reading(on=False, distance=None)
+        d, piece = hit
+        if piece < 0:      # sees = "anything": something that isn't a piece is in front, and has no color to read
+            return Reading(on=False, distance=d)
+        color = self._colors[piece]
+        return Reading(on=True, distance=d, color=color, color_name=nearest_color(color))
+
+    def _cast(self, data, pnt, vec, reach: float, pieces_only: bool, own_body: int) -> tuple[float, int] | None:
+        """The first thing the ray from `pnt` along unit `vec` hits within `reach` that the sensor sees: (distance,
+        the piece's index or -1 for a non-piece), or None. See the module's note on recasting."""
+        m, gid, robot, piece = self.model, self._gid, self._robot, self._piece
+        start, gone = self._pnt, 0.0
+        start[:] = pnt
+        for _ in range(MAX_CASTS):
+            self.casts += 1
+            x = mujoco.mj_ray(m, data, start, vec, None, 0 if pieces_only else 1, own_body, gid)
+            if x < 0.0 or gone + x > reach:
+                return None
+            gone += x
+            g = int(gid[0])
+            if piece[g] >= 0:
+                return gone, piece[g]
+            if not pieces_only and not robot[g]:
+                return gone, -1
+            gone += SKIP
+            start[:] = pnt + gone * vec
+        return None
+
+    def sensor_updates(self) -> list[Update]:
+        """The HAL inputs for the robot program (its DigitalInputs, AnalogInputs and color sensors): none yet."""
+        return []

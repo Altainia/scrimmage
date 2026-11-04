@@ -144,6 +144,15 @@ class World:
         if self.parts is not None and self.parts.partner is not None:
             from .parts.partner import PartnerMonitor
             self.partner = PartnerMonitor(self, self.parts.partner)
+        # The robot's [[sensor]] beam breaks, distance and color sensors (scrimmage/sensors): read every physics step
+        # after mj_step; None for a robot without one, and stepping costs nothing extra.
+        self.sensors = None
+        if "sensor" in cfg:
+            from .sensors.spec import parse_sensors
+            specs = parse_sensors(cfg["sensor"])
+            if specs:
+                from .sensors.runtime import SensorRuntime
+                self.sensors = SensorRuntime(self, specs)
         self.reset()
 
     def terrain_monitor(self):
@@ -195,6 +204,8 @@ class World:
             self.climb.reset()
         if self.partner is not None:
             self.partner.reset()
+        if self.sensors is not None:
+            self.sensors.reset()
 
     def reset_robot(self) -> None:
         """Put the robot's joints (its pose and every mechanism) back to qpos0 at rest, the robot at its start pose;
@@ -340,6 +351,8 @@ class World:
             self.climb.after_physics()
         if self.partner is not None:
             self.partner.after_physics()
+        if self.sensors is not None:
+            self.sensors.update(self.data)
 
     def _bus_voltage(self, rng) -> float:
         """The battery's terminal voltage this step: V = nominal - R * (the supply current every motor draws at V).
@@ -441,6 +454,8 @@ class World:
             ups += self.test_range.sensor_updates(hal)
         if self.pneumatics is not None:
             ups += self.pneumatics.sensor_updates()
+        if self.sensors is not None:
+            ups += self.sensors.sensor_updates()
         return ups
 
     def robot_pose(self) -> tuple[float, float, float]:

@@ -10,6 +10,7 @@ shapes or from CAD:
     length_in = 11.875
     mass = 0.7                    # kg, required: CAD files carry no mass
     material = "pvc"              # a [surface.*] preset, or friction = <number> (my own number)
+    color = "white"               # optional, any kind: a named color or [r, g, b] (piece_color)
 
 `tube` and `ring` take `diameter`, `length` and an optional `inner_diameter` (a ring is a short tube); `cylinder` is
 a solid tube; `cone` takes `diameter` (its base), `tip_diameter` (default 0, a point) and `length`; `box` takes
@@ -77,8 +78,9 @@ _LIE_DEG = 10.0  # a tip at or below this is lying (flat kinds: standing on edge
 _KIND = ("preset", "ball", "disc", "aero", "shape", "diameter", "inner_diameter", "tip_diameter", "length",
          "size", "mass", "material", "friction", "axis", "inertia", "shapes", "cad", "units", "hole")
 _LENGTHS = ("diameter", "inner_diameter", "tip_diameter", "length", "size")
-_KIND_ALL = _KIND + tuple(k + "_in" for k in _LENGTHS) + ("label",)
-# The keys each shape takes beyond shape, mass, material, friction, inertia and label (lengths also as <key>_in).
+_KIND_ALL = _KIND + tuple(k + "_in" for k in _LENGTHS) + ("label", "color")
+# The keys each shape takes beyond shape, mass, material, friction, inertia, label and color (lengths also as
+# <key>_in).
 _SHAPE_KEYS = {
     "sphere": ("diameter",),
     "box": ("size",),
@@ -95,6 +97,12 @@ _HOLE = ("diameter", "diameter_in", "length", "length_in", "center", "center_in"
 _AXES = {"x": (1, 0, 0), "y": (0, 1, 0), "z": (0, 0, 1)}
 _UNITS = ("m", "mm", "in")
 _IDENTITY = (1.0, 0.0, 0.0, 0.0)
+# How each form is drawn when its kind gives no `color` (r, g, b, a): a ball yellow, a disc white, a rigid piece (a
+# coral, a cone...) off-white. A color sensor reads the same color (piece_color).
+BALL_RGBA = (0.95, 0.85, 0.1, 1.0)
+DISC_RGBA = (0.95, 0.95, 0.95, 1.0)
+PIECE_RGBA = (0.92, 0.9, 0.84, 1.0)
+_FORM_RGBA = {"ball": BALL_RGBA, "disc": DISC_RGBA, "rigid": PIECE_RGBA}
 
 
 class _KindReader(_Reader):
@@ -315,6 +323,7 @@ class PieceKind:
     # what a measurement file gave (measure/use.py): a ball's "stiffness_n" and the like, a rigid piece's "friction",
     # each the file's Provenance. Empty when nothing is measured.
     provenance: dict = field(default_factory=dict)
+    color: tuple[float, float, float] | None = None  # the field's `color` (r, g, b); None: the form's (piece_color)
 
     def __post_init__(self):
         if not self.label:
@@ -576,10 +585,32 @@ def _cad(r: _Reader, base_dir: Path) -> tuple[list[Solid], Inertial]:
     return solids, combine([mesh_inertial(p.v, p.f, 1.0) for p in src.pieces])
 
 
+def piece_color(kind: PieceKind) -> tuple[float, float, float]:
+    """The kind's color (r, g, b, each 0 to 1): its `color`, else how its form is drawn. It is drawn this color."""
+    return kind.color if kind.color is not None else _FORM_RGBA[kind.form][:3]
+
+
+def parse_color_key(where: str, value) -> tuple[float, float, float]:
+    """A field's `color` (a named color or [r, g, b]), its mistakes a RangeError naming `where`."""
+    from ..sensors.colors import parse_color
+    try:
+        return parse_color(value, where)
+    except ValueError as e:
+        raise RangeError(str(e)) from None
+
+
 def parse_kind(path, name: str, table: dict, base_dir: Path) -> PieceKind:
-    """A `[piece.<name>]` table: a preset (`preset`, `ball` or `disc`) or a shape. Raises RangeError."""
+    """A `[piece.<name>]` table: a preset (`preset`, `ball` or `disc`) or a shape, with an optional `color` (a named
+    color or [r, g, b]). Raises RangeError."""
     path = Path(path)
     r = _KindReader(path, f"[piece.{name}]", table, _KIND_ALL)
+    kind = _parse_kind(path, name, r, base_dir)
+    if r.has("color"):
+        return replace(kind, color=parse_color_key(f"{path}: {r.where}", r.raw("color")))
+    return kind
+
+
+def _parse_kind(path: Path, name: str, r: _KindReader, base_dir: Path) -> PieceKind:
     label = r.text("label") if r.has("label") else ""
     given = [k for k in ("preset", "ball", "disc", "shape") if r.has(k)]
     if not given:
@@ -591,7 +622,7 @@ def parse_kind(path, name: str, table: dict, base_dir: Path) -> PieceKind:
     if r.has("aero") and source != "disc":
         raise r.err("aero is a disc's aerodynamics; only a disc kind takes it")
     if source != "shape":
-        extra = [k for k in r.t if k not in (source, "aero", "label")]
+        extra = [k for k in r.t if k not in (source, "aero", "label", "color")]
         if extra:
             raise r.err(f"{extra[0]} doesn't go with {source} = {r.raw(source)!r}: a preset kind is its preset")
         if source == "ball" and is_measurement(r.text("ball")):  # its errors name the file and the table

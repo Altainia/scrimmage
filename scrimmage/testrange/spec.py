@@ -32,6 +32,11 @@ is the first `[piece.<name>]` table. Each `[piece.<name>]` adds a kind (a preset
 order after the default. `[[floor_balls]]`, `[[station]]` and `[[goal]]` take `kind = "<name>"` (left out: the
 default kind; a goal's, the first ball or disc kind). Goals count balls and discs only.
 
+A kind's `color` (in its `[piece.<name>]`, or `[range] color` for the [range] ball, disc or piece) is a named color
+(scrimmage/sensors/colors.py: red, blue, yellow, orange, green, purple, white, gray) or [r, g, b], each 0 to 1. The
+piece is drawn that color and a color sensor reads it; left out, a ball is yellow, a disc white and a rigid piece
+off-white (pieces.piece_color), as they were always drawn.
+
 A ball preset may be a ball measurement file instead (`ball = "fuel.measure.toml"`, relative to the range file, in
 `[range]` or a `[piece.<name>]`): its `base` preset with the fields it measured in place (scrimmage/measure/use.py),
 the kind named after the preset. A shape's `friction` may be a friction measurement file the same way. The kind keeps
@@ -55,7 +60,7 @@ from __future__ import annotations
 
 import math
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -354,7 +359,7 @@ class _Reader:
 
 
 _TOP = ("range", "goal", "floor_balls", "start", "carpet", "obstacle", "element", "climb", "station", "piece")
-_RANGE = ("name", "ball", "disc", "aero", "piece")
+_RANGE = ("name", "ball", "disc", "aero", "piece", "color")
 _GOAL = ("name", "pos", "heading_deg", "rim_height", "tilt_deg", "opening", "funnel", "body", "plate", "slot",
          "kind")
 _OPENING = ("kind", "sides", "across_flats", "rotation_deg", "diameter", "width", "height")
@@ -650,6 +655,12 @@ def _kinds(path: Path, raw: dict, rng: _Reader) -> tuple[dict[str, PieceKind], s
     elif given == ["piece"]:
         kind = _range_piece(path, rng.text("piece"))
         kinds[kind.name] = kind
+    if rng.has("color"):        # the [range] ball's, disc's or piece's color (pieces.py's piece_color)
+        if not given:
+            raise rng.err("color goes with its ball, disc or piece; give a [piece.<name>] its color there")
+        from .pieces import parse_color_key
+        default = next(iter(kinds.values()))
+        kinds[default.name] = replace(default, color=parse_color_key(f"{path}: [range]", rng.raw("color")))
     for name, t in tables.items():
         if name in kinds:
             raise RangeError(f"{path}: [piece.{name}] has the same name as [range] {given[0]}; give it another name")
