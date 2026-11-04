@@ -486,8 +486,8 @@ It is the smallest distance between any part of the robot that collides and any 
   only measured for the elements a test names (in a **robot clears** check or in its chart), so the chart's picker
   lists each field element's clearance under **From the next run:**. Picking one puts it in the test's chart, and
   the next run measures it.
-- **Timing.** It is measured after every physics step, from where the parts were at the start of that step: 1 ms
-  behind.
+- **Timing.** It is measured after every physics step, from where the parts were at the start of that step: one
+  physics step behind (1 ms at the default step).
 
 In the test file:
 

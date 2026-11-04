@@ -151,8 +151,8 @@ before its near ramp, facing it: `[start.portcullis]`, `[start.sally_port]`, `[s
 Things to know:
 
 - **The doors open toward the robot.** A robot driving in along +x presses the sally port and the drawbridge against
-  their closed stops. They open by being pulled toward the robot (-x), or, for the drawbridge, by leaning on its top
-  edge until it tips down, as on the real field.
+  their closed stops. They open by being pulled toward the robot (-x), or, for the drawbridge, by pressing its top
+  edge down once it has started toward you, as on the real field.
 - **The drawbridge has no 2 lb start.** The manual's 2 lb to begin moving needs a spring preloaded against the
   closed stop (see **No preload** under [Moving elements](#moving-elements-hinged-and-sliding)). Here the spring
   only just beats the door's weight near upright, so a light pull starts it, and the push grows to about 5.7 lb at
