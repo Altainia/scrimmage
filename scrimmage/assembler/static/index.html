@@ -18,6 +18,7 @@
     <button type="button" role="tab" id="tab-btn-bench" class="tab" aria-controls="tab-bench" aria-selected="false" tabindex="-1" hidden>Bench</button>
     <button type="button" role="tab" id="tab-btn-part" class="tab" aria-controls="tab-part" aria-selected="false" tabindex="-1" hidden>Part</button>
     <button type="button" role="tab" id="tab-btn-test" class="tab" aria-controls="tab-test" aria-selected="false" tabindex="-1" hidden>Test</button>
+    <button type="button" role="tab" id="tab-btn-measure" class="tab" aria-controls="tab-measure" aria-selected="false" tabindex="-1" hidden>Measure</button>
   </nav>
   <div class="file" id="file-path" title="The file this tab edits">Loading…</div>
   <div class="topbar-actions">
@@ -458,6 +459,42 @@
 <footer class="statusbar" id="test-status">
   <span id="test-saved" class="saved">Loading…</span>
   <span id="test-count" class="stat"></span>
+</footer>
+</div>
+
+<div id="tab-measure" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-measure" hidden>
+<div id="measure-banner" class="banner banner-readonly" role="status" hidden></div>
+<main class="measure-layout">
+  <nav id="measure-tests" class="measure-tests" aria-label="Which test"></nav>
+  <div class="measure-body">
+    <section class="measure-how" aria-labelledby="measure-title">
+      <h1 id="measure-title" class="measure-title">Loading…</h1>
+      <p id="measure-gives" class="measure-gives"></p>
+      <figure id="measure-picture" class="measure-picture"></figure>
+      <h2 class="measure-sub">You need</h2>
+      <ul id="measure-need" class="measure-list"></ul>
+      <h2 class="measure-sub">Steps</h2>
+      <ol id="measure-steps" class="measure-list"></ol>
+    </section>
+    <section class="measure-entry" aria-label="Your measurements">
+      <div class="row measure-actions">
+        <button type="button" id="measure-save" class="btn btn-primary">Save</button>
+        <a id="measure-print" class="btn" target="_blank" rel="noopener">Print a blank form</a>
+        <button type="button" id="measure-fit" class="btn" hidden>Fit</button>
+      </div>
+      <div id="measure-header" class="measure-header"></div>
+      <div id="measure-setup"></div>
+      <h2 class="measure-sub">Trials</h2>
+      <div class="measure-table-wrap"><table id="measure-trials" class="measure-trials"></table></div>
+      <div class="row"><button type="button" id="measure-add" class="btn btn-small">Add a trial</button></div>
+      <p id="measure-extra" class="hint" hidden></p>
+      <section id="measure-summary" class="measure-summary" aria-live="polite" aria-label="Average and spread"></section>
+      <section id="measure-fit-result" class="measure-summary" aria-live="polite" aria-label="The fit" hidden></section>
+    </section>
+  </div>
+</main>
+<footer class="statusbar" id="measure-status">
+  <span id="measure-saved" class="saved">Loading…</span>
 </footer>
 </div>
 

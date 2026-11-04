@@ -9,7 +9,7 @@
 //   scrimmage:mount-picked detail {name}      the 3D view reports a clicked mount "<instance>.<mount>"
 //   scrimmage:hover        detail {name, source}  an instance is hovered in the tree or the 3D view (null = none)
 //   scrimmage:tab          detail {tab}       the shown tab changed ("robot" | "scenario" | "drive" | "bench" | "part" |
-//                                             "test")
+//                                             "test" | "measure")
 //   scrimmage:code         detail {state}     the robot code panel loaded /api/robot/code (code.js)
 // The 3D view (view3d.js, loaded on its own so a WebGL failure can't break the page) selects a part with
 // select(name) and sets store.view3d once it is running.
@@ -86,12 +86,29 @@ export async function apiFile(path) {
 // -- tabs ----------------------------------------------------------------------------------------
 // The Robot tab is this file's; the Scenario tab (scenario.js) registers itself with registerTab when a
 // scenario is open, the Test tab (test.js) when a test is open, the Drive tab (drive.js) always:
-// {renderTop(), undo(), redo(), onShow(), onHide()?}.
-const TABS = ["robot", "scenario", "drive", "bench", "part", "test"];
+// {renderTop(), undo(), redo(), onShow(), onHide()?, unsaved()?}. unsaved() is true while the tab holds changes it
+// hasn't saved (the Measure tab saves with its Save button): leaving the page, or opening something else from the
+// start page (confirmLeave), asks first.
+const TABS = ["robot", "scenario", "drive", "bench", "part", "test", "measure"];
 const tabHooks = {};
 let tab = "robot";
 
 export function currentTab() { return tab; }
+
+let leaving = false;   // the student said to leave without saving: the page is on its way to another file
+export const unsavedWork = () => !leaving && Object.values(tabHooks).some((t) => t.unsaved && t.unsaved());
+// Before opening something else: true to go ahead (nothing unsaved, or the student said to leave it); stay() undoes
+// it when the open is refused.
+export function confirmLeave() {
+  if (!unsavedWork()) return true;
+  if (!window.confirm("Your changes aren't saved. Open the other file without saving them?")) return false;
+  leaving = true;
+  return true;
+}
+export function stay() { leaving = false; }
+window.addEventListener("beforeunload", (e) => {
+  if (unsavedWork()) { e.preventDefault(); e.returnValue = ""; }
+});
 
 export function registerTab(name, hooks) {
   tabHooks[name] = hooks;
@@ -506,7 +523,8 @@ function onKey(e) {
 
 // -- start page and modes ------------------------------------------------------------------------
 // The server holds one thing at a time: "robot" (today's tabs), "bench" (an idea session), "part" (a CAD import or a
-// plugin part folder: the Part tab) or "start" (nothing; only the start page). The "Start page" link shows the start page client-side; the server's mode only changes when
+// plugin part folder: the Part tab), "measure" (a measurement file: the Measure tab) or "start" (nothing; only the
+// start page). The "Start page" link shows the start page client-side; the server's mode only changes when
 // something is opened or made there (the page then reloads).
 let startShown = false;
 // The start page from the Robot tab's "Import CAD…": straight to "New part from CAD", the part going in parts/ next to
@@ -562,6 +580,16 @@ function bootTest() {
   import("./test.js").then((m) => m.initTest()).catch((e) => {
     console.error(e);
     notice(`The Test tab failed to load: ${e.message || e}`, "error");
+  });
+}
+
+function bootMeasure() {
+  // like the Bench tab: shown at once, measure.js registers its real hooks when it has loaded
+  registerTab("measure", { renderTop() {}, undo() {}, redo() {}, onShow() {} });
+  setTab("measure");
+  import("./measure.js").then((m) => m.initMeasure()).catch((e) => {
+    console.error(e);
+    notice(`The Measure tab failed to load: ${e.message || e}`, "error");
   });
 }
 
@@ -621,6 +649,7 @@ async function boot() {
     get tab() { return tab; },
     setTab: (name) => setTab(name),
     render: () => renderAll(),      // tests: a redraw (as a state arriving does) at a moment they choose
+    unsaved: () => unsavedWork(),
   };
   if (!token) {
     notice("This page needs the link scrimmage edit printed (it carries a #token=…). Open that link.", "error");
@@ -647,6 +676,11 @@ async function boot() {
     $("#start-link").hidden = false;
     if (data.back) backButton(data.back);
     bootPart();
+  } else if (mode === "measure") {
+    $("#tab-btn-robot").hidden = true;
+    $("#tab-btn-drive").hidden = true;
+    $("#start-link").hidden = false;
+    bootMeasure();
   } else {
     $("#start-link").hidden = false;
     bootRobot();

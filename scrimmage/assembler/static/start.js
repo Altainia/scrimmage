@@ -3,12 +3,20 @@
 // lists what was opened recently, browses folders, makes a new robot, scenario, idea session or part from CAD (Browse
 // for a .step/.stl/.obj file or a folder of them, or drop one on the page), and sets this computer's team folders
 // ({cad} and {code}), and starts a block test of a mechanism ("Test a mechanism": a robot file gets a test at once; a
-// CAD file goes through the Part tab, whose Test it makes the stand-in robot and the test). After an
+// CAD file goes through the Part tab, whose Test it makes the stand-in robot and the test), and makes a measurement file
+// ("Measure something": which kind, and a name; the Measure tab opens on it). After an
 // open or new the server has already swapped what it holds, so the page reloads itself (see /api/app/* in
 // scrimmage/assembler/server.py).
-import { api, h, notice, sessionToken } from "./app.js";
+import { api, confirmLeave, h, notice, sessionToken, stay } from "./app.js";
 
-const KIND = { robot: "Robot", scenario: "Scenario", session: "Idea session", bench: "Idea", folder: "Folder", import: "Part", cad: "CAD file" };
+const KIND = { robot: "Robot", scenario: "Scenario", session: "Idea session", bench: "Idea", folder: "Folder", import: "Part", cad: "CAD file", measure: "Measurement" };
+// What a measurement file can measure (scrimmage/measure/file.py KIND_TESTS), for "Measure something"
+const MEASURE = [
+  { kind: "ball", label: "A ball: its size and mass, squeeze and bounce" },
+  { kind: "friction", label: "Friction: one material sliding on another (a sled pull)" },
+  { kind: "launcher", label: "A launcher: shots filmed in slow motion, fit to the model" },
+  { kind: "cylinder", label: "A cylinder: a stroke timed or filmed, fit to the air model" },
+];
 export const CAD_FILE = /\.(step|stp|stl|obj)$/i;
 
 // A CAD file sent to POST /api/part/upload: {status, data} (data is the part's state on 200). With a part open it
@@ -57,8 +65,10 @@ function reload() {
 }
 
 async function post(path, body) {
+  if (!confirmLeave()) return false;   // a tab's changes that aren't saved: ask first
   const { status, data } = await api("POST", path, body);
   if (status === 200 && data.ok) { reload(); return true; }
+  stay();
   const why = (data.errors && data.errors[0] && data.errors[0].message) || data.error || `the server answered ${status}`;
   notice(status === 409 ? `Can't switch right now: ${why}` : why, "error", "start");
   return false;
@@ -130,10 +140,12 @@ export async function showStart(root, { canGoBack, onBack, cadFor = null }) {
       const files = [...(fileList || [])];
       const problem = cadFilesProblem(files);
       if (problem) { notice(problem, "error", "start"); return; }
+      if (!confirmLeave()) return;
       drop.classList.add("busy");
       drop.querySelector("p").textContent = `Reading ${filesName(files)}…`;
       const { status, data } = await uploadCad(files);
       if (status === 200) { reload(); return; }
+      stay();
       drop.classList.remove("busy");
       drop.querySelector("p").textContent = dropText;
       const why = (data.errors && data.errors[0] && data.errors[0].message) || data.error || `the server answered ${status}`;
@@ -179,6 +191,28 @@ export async function showStart(root, { canGoBack, onBack, cadFor = null }) {
       h("div", { class: "dialog-actions" },
         h("button", { type: "button", class: "btn", onclick: () => newBox.replaceChildren() }, "Cancel"))));
     document.getElementById("start-test-cad").focus();
+  }
+
+  // Measure something: which kind, and a name; the file starts from the kind's starter (scrimmage measure new)
+  function measureForm() {
+    const what = h("select", { id: "start-measure-kind" }, ...MEASURE.map((x) => h("option", { value: x.kind }, x.label)));
+    const name = h("input", { id: "start-measure-name", type: "text", autocomplete: "off" });
+    const create = () => {
+      const n = name.value.trim();
+      if (!n) { notice("Type a name first.", "warn", "start"); name.focus(); return; }
+      post("/api/app/new", { kind: "measure", path: n, measure: what.value });
+    };
+    name.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); create(); } });
+    newBox.replaceChildren(h("form", { class: "start-form", novalidate: true, onsubmit: (e) => e.preventDefault() },
+      h("p", { class: "start-hint", text: "Measure a real number so your results stop saying UNCALIBRATED: each test shows a picture, "
+        + "the steps and a form to print, then you type your trials in and see the average." }),
+      h("div", {}, h("label", { for: "start-measure-kind", text: "What are you measuring?" }), what),
+      h("div", {}, h("label", { for: "start-measure-name", text: "File name" }), name,
+        h("p", { class: "start-hint", text: "A name such as fuel (.measure.toml is added). It is made here." })),
+      h("div", { class: "dialog-actions" },
+        h("button", { type: "button", class: "btn", onclick: () => newBox.replaceChildren() }, "Cancel"),
+        h("button", { type: "button", class: "btn btn-primary", id: "start-measure-create", onclick: create }, "Create"))));
+    what.focus();
   }
 
   async function newForm(kind) {
@@ -233,7 +267,8 @@ export async function showStart(root, { canGoBack, onBack, cadFor = null }) {
         h("button", { type: "button", class: "btn", dataset: { key: "new-scenario" }, onclick: () => newForm("scenario") }, "New scenario"),
         h("button", { type: "button", class: "btn", dataset: { key: "new-session" }, onclick: () => newForm("session") }, "New idea session"),
         h("button", { type: "button", class: "btn", dataset: { key: "new-part" }, onclick: () => cadForm(cadFor) }, "New part from CAD"),
-        h("button", { type: "button", class: "btn", dataset: { key: "test-mechanism" }, onclick: () => testForm() }, "Test a mechanism")),
+        h("button", { type: "button", class: "btn", dataset: { key: "test-mechanism" }, onclick: () => testForm() }, "Test a mechanism"),
+        h("button", { type: "button", class: "btn", dataset: { key: "measure" }, onclick: () => measureForm() }, "Measure something")),
       newBox),
     h("section", { class: "start-card" }, h("h2", { text: "Open a file or folder" }),
       h("div", { class: "start-buttons" }, h("button", { type: "button", class: "btn", dataset: { key: "browse" }, onclick: () => browse(null) }, "Browse…")),

@@ -207,7 +207,8 @@ def main(argv: list[str] | None = None) -> None:
     ep.add_argument("file", type=Path, nargs="?",
                     help="robot config or scenario TOML to edit (a scenario has a top-level config key or [[step]]s), "
                          "a bench file or a folder of them (an idea session, on the Bench tab), or a .step/.stp/.stl/"
-                         ".obj file, an import file or a part folder (the Part tab)")
+                         ".obj file, an import file or a part folder (the Part tab), or a <name>.measure.toml "
+                         "measurement file (the Measure tab)")
     ep.add_argument("--new", choices=("swerve", "swerve-rev", "differential"), help="write a starting robot config to FILE first")
     ep.add_argument("--new-scenario", action="store_true", help="write a starting scenario to FILE first (with --robot)")
     ep.add_argument("--robot", type=Path, metavar="CONFIG",

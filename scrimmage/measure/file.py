@@ -112,7 +112,13 @@ def load(path) -> MeasureFile:
         raise MeasureError(f"{path} isn't a text file: a measurement file is TOML text (UTF-8)") from None
     except tomllib.TOMLDecodeError as e:
         raise MeasureError(f"{path} isn't valid TOML: {e}") from None
+    return parse(raw, path)
 
+
+def parse(raw: dict, path) -> MeasureFile:
+    """Check a measurement file's shape from its parsed TOML (`raw`), read from (or to be written to) `path`; the
+    Measure tab checks the trials typed in before they are saved this way."""
+    path = Path(path)
     head = raw.get("measure")
     if not isinstance(head, dict):
         raise MeasureError(f"{path}: needs a [measure] table saying what was measured (kind, by, date)")

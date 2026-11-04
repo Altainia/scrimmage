@@ -23,7 +23,7 @@ from .use import SUFFIX
 USAGE = "scrimmage measure FILE | form TEST [-o PATH] | new TEST PATH"
 
 # what each measured field is, and how its value is shown
-_FIELD = {
+FIELD = {
     "mass": ("mass", lambda v: f"{v * 1000:.1f} g"),
     "diameter": ("diameter", lambda v: f"{v * 1000:.1f} mm ({v / 0.0254:.2f} in)"),
     "stiffness_n": ("stiffness_n, the force that squeezes the ball by 25%", lambda v: f"{v:.1f} N"),
@@ -32,12 +32,27 @@ _FIELD = {
     "time": ("stroke time", lambda v: f"{v:.3f} s"),
 }
 # each direct test's fields, and the readings that give a trial each one (a size trial may give a mass only)
-_GIVES = {
+GIVES = {
     "size": {"mass": ("mass",), "diameter": ("circumference", "diameter")},
     "squeeze": {"stiffness_n": ()},
     "drop": {"restitution": ()},
     "sled": {"friction": ()},
 }
+
+
+def trial_rows(test: str, field: str, rows: list[dict]) -> list[int]:
+    """The trials (0-based) that give a direct test's `field` a value, in order: the trials its per-trial values and
+    outliers count (a size trial may give a mass only)."""
+    keys = GIVES[test][field]
+    return [i for i, row in enumerate(rows) if not keys or any(unit_of(k, n) is not None for k in row for n in keys)]
+
+
+def shot_words(result) -> tuple[str, str]:
+    """What a shot fit fits ("the wheel's friction"), and what it holds and at what, in words."""
+    if "friction" in result.fitted:
+        return ("the wheel's friction",
+                f"the ball's stiffness held at {result.stiffness_n:.0f} N, from its squeeze test")
+    return "the ball's stiffness", f"the wheel friction held at {result.friction:.2f}"
 
 
 def _cell(v) -> str:
@@ -61,7 +76,7 @@ def _readings(rows: list[dict]) -> list[str]:
 
 
 def _summary_line(field: str, s) -> str:
-    show = _FIELD[field][1]
+    show = FIELD[field][1]
     trials = f"{s.n} trial{'s' if s.n != 1 else ''}"
     return (f"  {field}: average {show(s.mean)}, lowest {show(s.low)}, highest {show(s.high)}, "
             f"spread {s.spread:.0%} ({trials})")
@@ -74,18 +89,16 @@ def _verdict(good: bool, reason: str) -> str:
 def _direct(mf: MeasureFile, test: str, measured: dict) -> tuple[list[str], list[str]]:
     """A direct test's lines, and why each field that isn't good isn't."""
     rows = mf.trials[test]
-    gives = {f: keys for f, keys in _GIVES[test].items() if f in measured}  # a size test may weigh only
+    gives = {f: keys for f, keys in GIVES[test].items() if f in measured}  # a size test may weigh only
     readings = _readings(rows)
     columns: dict[str, list[str]] = {}
-    for field, keys in gives.items():
-        s, vals = measured[field]
-        shown = iter(_FIELD[field][1](v) for v in vals)
-        columns[field] = [next(shown) if not keys or any(unit_of(k, n) is not None for k in row for n in keys)
-                          else "" for row in rows]
+    for field in gives:
+        shown = dict(zip(trial_rows(test, field, rows), measured[field][1]))
+        columns[field] = [FIELD[field][1](shown[i]) if i in shown else "" for i in range(len(rows))]
     table = [[str(i + 1), *(_cell(row.get(k, "")) for k in readings), *(columns[f][i] for f in gives)]
              for i, row in enumerate(rows)]
     head = ["trial", *readings, *gives]
-    lines = [f"{test}: gives {', '.join(_FIELD[f][0] for f in gives)}", *_table(head, table)]
+    lines = [f"{test}: gives {', '.join(FIELD[f][0] for f in gives)}", *_table(head, table)]
     problems = []
     for field in gives:
         s = measured[field][0]
@@ -107,12 +120,7 @@ def _shot(mf: MeasureFile) -> tuple[list[str], list[str]]:
         off = "" if math.isnan(model) else f"{(model - measured) / measured:+.1%}"
         table.append([str(i + 1), *(_cell(row.get(k, "")) for k in readings), f"{measured:.2f} m/s", model_text,
                       off])
-    if "friction" in result.fitted:
-        held = f"the ball's stiffness held at {result.stiffness_n:.0f} N, from its squeeze test"
-        what = "the wheel's friction"
-    else:
-        held = f"the wheel friction held at {result.friction:.2f}"
-        what = "the ball's stiffness"
+    what, held = shot_words(result)
     lines = [f"shot: fits {what} to your shots ({held})",
              *_table(["shot", *readings, "speed across", "model", "model off by"], table),
              f"  fit: {result.band_text}",
@@ -127,7 +135,7 @@ def _stroke(mf: MeasureFile) -> tuple[list[str], list[str]]:
     rows = mf.trials["stroke"]
     times, _ = fit_cylinder.trial_times(mf, mf.settings.get("stroke_setup", {}))
     readings = _readings(rows)
-    table = [[str(i + 1), *(_cell(row.get(k, "")) for k in readings), _FIELD["time"][1](t)]
+    table = [[str(i + 1), *(_cell(row.get(k, "")) for k in readings), FIELD["time"][1](t)]
              for i, (row, t) in enumerate(zip(rows, times))]
     lines = ["stroke: fits the valve's conductance to your strokes",
              *_table(["stroke", *readings, "time"], table),

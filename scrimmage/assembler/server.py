@@ -8,6 +8,7 @@ The app holds one thing at a time (`mode`):
         robot document is its [test] `robot`.
   "bench": an idea session, a folder of bench files (the Bench tab; see bench_session.py).
   "part": a CAD import or a plugin-made part folder (the Part tab; see part_session.py).
+  "measure": a measurement file, `<name>.measure.toml` (the Measure tab; see measure_session.py).
   "start": nothing (`scrimmage edit` with no FILE): the start page opens or creates something.
 classify(): "import" for a .step/.stp/.stl/.obj file, a folder holding a part.toml, or a .toml with a top-level
 [import] table (an import file); any other folder is a session; a file is a test when it has a top-level [test]
@@ -24,8 +25,8 @@ API contract (all bodies JSON; every /api/* request needs header X-Scrimmage-Tok
 127.0.0.1 or localhost, else 403):
 
 App (`/api/app/*`; in every mode):
-  GET  /api/app/state              -> {mode: start|robot|bench|part, path, display_path, test, recent: [{path, kind:
-        robot|scenario|test|session|import, t}] (newest first, see recent.py), examples: [stems of examples/bench/*.toml],
+  GET  /api/app/state              -> {mode: start|robot|bench|part|measure, path, display_path, test, recent: [{path,
+        kind: robot|scenario|test|measure|session|import, t}] (newest first, see recent.py), examples: [stems of examples/bench/*.toml],
         needs_folder: "cad"|"code"|null, back: {path, display_path}|null}. back: in part mode, the robot config (or
         scenario) that was open when an import made for it was opened (its import file in that robot's parts/, as the
         library's Import CAD... makes it): "Back to the robot" opens it again; null otherwise. path is the opened
@@ -52,10 +53,11 @@ App (`/api/app/*`; in every mode):
         progress, or this editor's bench job (below) is queued or running (never because another process, the
         agent or the CLI, holds the session's run lock). Every version keeps counting up across the switch, so
         open long polls return; the page reloads itself after it. Opening remembers the path in the recent list (a bench file as its folder).
-  POST /api/app/new                -> body {kind: robot|scenario|session|import, path, template?, robot?}: writes a
-        robot config from a template (template: swerve|swerve-rev|differential), a scenario for the robot config
-        `robot` (its `config` relative to the scenario's folder) or makes the session folder, then opens it as /open
-        does. kind import ("New part from CAD"): path is the Browse-picked source (a CAD file, or a folder of STL/OBJ
+  POST /api/app/new                -> body {kind: robot|scenario|session|measure|import, path, template?, robot?,
+        measure?}: writes a robot config from a template (template: swerve|swerve-rev|differential), a scenario for
+        the robot config `robot` (its `config` relative to the scenario's folder), a measurement file (kind measure:
+        `measure` is ball|friction|launcher|cylinder, the file the starter for its first test, forms.starter_toml;
+        .measure.toml is added to a name without it) or makes the session folder, then opens it as /open does. kind import ("New part from CAD"): path is the Browse-picked source (a CAD file, or a folder of STL/OBJ
         files), referenced in place; its import file goes in parts/ next to it, or in the parts/ folder next to the
         robot config `robot` when given (an existing one naming that source is opened); 400 when path isn't a CAD
         file or such a folder.
@@ -461,6 +463,29 @@ Test (`/api/test/*`; 404 "no test is open" unless a test is open, except /api/te
         {ok, added: [their names]}. 409 while the parts are updating, didn't build or the part is read-only, 400
         with no part open or in plugin mode.
 
+Measure (`/api/measure/*`; 404 "no measurement file is open" unless one is). See measure_session.py, whose
+docstring gives the file's JSON (`file`):
+  GET  /api/measure/state[?since=N] -> {version, path, name, kind, tests: [{name, title, gives, need, steps, picture
+        (the SVG), setup, trial: [{name, what, optional, type: reading|number|text|bool, units: [{unit, label}],
+        unit (the starter's)}], value, formula, note, fit}] (the kind's tests, from forms.TEST), bases (the ball
+        presets; [] for another kind), file (null when the file can't be edited), file_error (why not, or a shape
+        problem; null), summary: {<test>: {error, fields: [{field, what, mean, low, high, spread, n, good, why,
+        warnings, outliers, shown: {mean, low, high}, rows: [{trial, value, shown, outlier}]}]}} (the file as saved)};
+        long-polls like /api/robot/state, reading the file again each second.
+  POST /api/measure/summary        -> body {file}: {tests: the summary of the trials as typed}; nothing is written.
+        400 for a file the JSON can't make (a bad date, a missing name); a reading problem is that test's `error`.
+  POST /api/measure/fit            -> body {file, test: shot|stroke}: the fit of the trials as typed, with the
+        numbers `scrimmage measure` prints: shot {what, held, value, band, band_text, rms_error, good, why, warnings,
+        rows: [{measured, model, off}] (horizontal speeds, m/s; model and off null when the model ball isn't
+        launched)}; stroke {conductance, band, band_text, model_time, measured_time, off (the model's time
+        against the strokes' average: 0.03 is 3% slow), good, why, warnings}.
+        400 with why it can't fit.
+  POST /api/measure/save           -> body {file, version}: writes the file with tomlkit, changing only what changed
+        (its comments stay). {ok, version}; 400 for a file the JSON can't make; 409 {error, state} when the file
+        changed after `version`; 409 when the file can't be edited here (file_error).
+  GET  /forms/<test>.html          -> the test's printable blank form (forms.form_html); like the static files it
+        needs no token, so a plain link opens it. 404 for a test that isn't one.
+
 Live (`/api/live/*`; one simulation at a time: a drive session, a scenario run, a bench job or a test run):
   GET  /api/live/info              -> {port, status, run_active, can_start, start_problem}: port is the stream's
         WebSocket port; status is the session's {state: idle|starting|running|paused|stopped|error, error, config,
@@ -561,8 +586,8 @@ from ..tracks import TrackError, load_track
 from ..cad import CadError
 from ..cad.build import part_folder
 from ..cad.names import sanitize
-from . import (bench_session, edits, library, part_session, recent, scenario_edits, scenario_validate, templates,
-               test_session, validate)
+from . import (bench_session, edits, library, measure_session, part_session, recent, scenario_edits,
+               scenario_validate, templates, test_session, validate)
 from .bench_session import BenchJobs, BenchSession, SessionError
 from .doc import ConfigDoc, FileChanged
 from .edits import EditError
@@ -572,9 +597,12 @@ from .runs import RunBusy, RunManager
 from .signals import signals
 from .simlock import SimBusy, SimLock
 from .stream import StreamHub
+from .measure_session import MeasureSession
 from .test_session import TestSession
 from .view import model_view
 from ..blocks.program import Program as TestProgram, TestFileError, dumps as dumps_test
+from ..measure import forms
+from ..measure.use import SUFFIX
 
 STATIC = Path(__file__).resolve().parent / "static"
 POLL_SECONDS = 25.0
@@ -585,6 +613,8 @@ NO_ROBOT = "no robot is open"
 NO_SESSION = "no idea session is open"
 NO_PART = "no part is open"
 NO_TEST = "no test is open"
+NO_MEASURE = "no measurement file is open"
+_FORM = re.compile(r"/forms/([a-z]+)\.html")
 ROBOT_TEMPLATES = ("swerve", "swerve-rev", "differential")
 UNPICKED = "Pick where the robot starts first"
 NOT_BUILT = ("The robot code hasn't been built on this computer yet. Build it first (Build now, under Ready to "
@@ -683,19 +713,23 @@ def start_sentence(pose) -> str:
 
 _IMPORT_HEADER = re.compile(r"(?m)^[ \t]*\[[ \t]*import[ \t]*\]")
 _TEST_HEADER = re.compile(r"(?m)^[ \t]*\[[ \t]*test[ \t]*\]")
+_MEASURE_HEADER = re.compile(r"(?m)^[ \t]*\[[ \t]*measure[ \t]*\]")
 
 
 def classify(path) -> str:
     """"import" for a CAD file (.step/.stp/.stl/.obj), a folder holding a part.toml, or a file with a top-level
-    [import] table; "session" for another folder (of bench files); for a file, "test" when it has a top-level [test]
+    [import] table; "session" for another folder (of bench files); for a file, "measure" when its name ends in
+    .measure.toml or it has a top-level [measure] table (a measurement file), "test" when it has a top-level [test]
     table (a block test), else "scenario" when it has a top-level `config` key or a [[step]] array, else "bench"
     when it has a top-level [bench] table, else "robot". A file that isn't valid TOML is judged by its lines (an
-    [import] header; a [test] header; a [[step]] header or `config =` before the first table; then a [bench]
-    header)."""
+    [import] header; a [measure] header; a [test] header; a [[step]] header or `config =` before the first table;
+    then a [bench] header)."""
     if part_session.is_part_target(path):
         return "import"
     if Path(path).is_dir():
         return "session"
+    if Path(path).name.lower().endswith(SUFFIX):
+        return "measure"
     try:
         text = Path(path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
@@ -705,6 +739,8 @@ def classify(path) -> str:
     except tomllib.TOMLDecodeError:
         if _IMPORT_HEADER.search(text):
             return "import"
+        if _MEASURE_HEADER.search(text):
+            return "measure"
         if _TEST_HEADER.search(text):
             return "test"
         first_table = _TABLE.search(text)
@@ -714,6 +750,8 @@ def classify(path) -> str:
         return "bench" if _BENCH_HEADER.search(text) else "robot"
     if isinstance(raw.get("import"), dict):
         return "import"
+    if isinstance(raw.get("measure"), dict):
+        return "measure"
     if isinstance(raw.get("test"), dict):
         return "test"
     if "config" in raw or "step" in raw:
@@ -730,8 +768,9 @@ def _info_json(info) -> dict:
 
 
 def remember_opened(path: Path) -> None:
-    """Put an opened file in the start page's recent list: a robot, a scenario, a test, a session (a bench file's
-    folder) or an import (a CAD file's import file, an import-made folder's, or a plugin part folder)."""
+    """Put an opened file in the start page's recent list: a robot, a scenario, a test, a measurement file, a session
+    (a bench file's folder) or an import (a CAD file's import file, an import-made folder's, or a plugin part
+    folder)."""
     kind = classify(path)
     if kind == "import":
         return   # App.remember_part does, once the import file is known
@@ -759,6 +798,7 @@ class App:
         self.test: TestSession | None = None      # the block test (robot mode; its robot is the robot document)
         self.bench: BenchSession | None = None    # the idea session (bench mode)
         self.part = None                          # the PartSession or PluginSession (part mode)
+        self.measure: MeasureSession | None = None   # the measurement file (measure mode)
         self.back: Path | None = None             # part mode: the robot config (or scenario) the part was opened from
         self._back_parts: Path | None = None      # ... and that robot's parts/ folder, where its imports go
         self._com: tuple | None = None            # (world, its CG) for the robot state
@@ -797,12 +837,14 @@ class App:
     # -- what is open -----------------------------------------------------------------------
     @property
     def mode(self) -> str:
-        """"bench" (an idea session), "part" (a CAD import or plugin part folder), "robot" (a robot config, a
-        scenario or a test) or "start" (nothing)."""
+        """"bench" (an idea session), "part" (a CAD import or plugin part folder), "measure" (a measurement file),
+        "robot" (a robot config, a scenario or a test) or "start" (nothing)."""
         if self.bench is not None:
             return "bench"
         if self.part is not None:
             return "part"
+        if self.measure is not None:
+            return "measure"
         return "robot" if self.robot is not None or self.scenario is not None or self.test is not None else "start"
 
     def _load(self, path: Path | None, initial: bool = False, kind: str | None = None,
@@ -817,9 +859,11 @@ class App:
         floor = 0 if initial else 1 + max(self.robot_version, self.scenario.version if self.scenario else 0,
                                           self.bench.version if self.bench else 0,
                                           self.part.version if self.part else 0,
-                                          self.test.version if self.test else 0)
+                                          self.test.version if self.test else 0,
+                                          self.measure.version if self.measure else 0)
         doc = ConfigDoc(path) if kind in ("robot", "scenario") else None
         test = TestSession(path, self.simlock, floor) if kind == "test" else None   # TestFileError: nothing replaced
+        measure = MeasureSession(path, floor) if kind == "measure" else None
         # "Back to the robot": an import made for the open robot (its parts go in that robot's parts/, as Import CAD...
         # does) leads back to it; another import opened from the part leads back too while it is made for that robot
         back = robot_parts = None
@@ -841,6 +885,7 @@ class App:
         self.robot, self.robot_missing, self._robot_target, self._robot_ver = None, NO_ROBOT, None, floor
         self.scenario, self.extra_folders = None, []
         old_test, self.test = self.test, test
+        old_measure, self.measure = self.measure, measure
         if kind == "robot":
             doc.version = floor
             self.robot, self.robot_missing = doc, None
@@ -858,6 +903,8 @@ class App:
             old_part.close()
         if old_test is not None:
             old_test.close()
+        if old_measure is not None:
+            old_measure.close()
 
     def need_robot(self) -> None:
         """404 unless a robot config or scenario is open (the Robot, Scenario and Drive tabs' routes)."""
@@ -870,6 +917,12 @@ class App:
             if self.test is None:
                 raise ApiError(404, NO_TEST)
             return self.test
+
+    def need_measure(self) -> MeasureSession:
+        with self._lock:
+            if self.measure is None:
+                raise ApiError(404, NO_MEASURE)
+            return self.measure
 
     def need_bench(self) -> BenchSession:
         with self._lock:
@@ -911,6 +964,7 @@ class App:
         with self._lock:
             mode = self.mode
             p = self.bench.folder if mode == "bench" else self.part.path if mode == "part" \
+                else self.measure.path if mode == "measure" \
                 else (self.test or self.scenario or self.robot).path if mode == "robot" else None
             unset = self._needs_folder()
             back = self.back if mode == "part" else None
@@ -1057,15 +1111,18 @@ class App:
         return 200, self.part.state()
 
     def new(self, body: dict) -> dict:
-        """Write a new robot config (from a template), scenario (for a robot config) or session folder, then open
-        it. A path that exists is refused; a robot or scenario path without .toml gets it."""
+        """Write a new robot config (from a template), scenario (for a robot config), measurement file (a kind's
+        starter) or session folder, then open it. A path that exists is refused; a robot or scenario path without
+        .toml gets it, and a measurement file's name without .measure.toml gets that."""
         kind = body.get("kind")
         if kind == "import":
             return self.new_import(body)
-        if kind not in ("robot", "scenario", "session"):
-            raise ApiError(400, "kind must be robot, scenario, session or import")
+        if kind not in ("robot", "scenario", "session", "measure"):
+            raise ApiError(400, "kind must be robot, scenario, session, measure or import")
         p = self._user_path(body.get("path"), "a file or folder path")
-        if kind != "session" and p.suffix.lower() != ".toml":
+        if kind == "measure" and not p.name.lower().endswith(SUFFIX):
+            p = p.with_name(p.name.removesuffix(".toml") + SUFFIX)
+        elif kind not in ("session", "measure") and p.suffix.lower() != ".toml":
             p = p.with_name(p.name + ".toml")
         if p.exists():
             raise ApiError(400, f"{self._display(p)} already exists; choose another name")
@@ -1080,6 +1137,11 @@ class App:
             if not robot.is_file() or classify(robot) != "robot":
                 raise ApiError(400, f"{self._display(robot)} is not a robot config")
             text = templates.new_scenario(self._portable(robot, p.parent))
+        elif kind == "measure":
+            try:
+                text = measure_session.new_text(body.get("measure"))
+            except SessionError as e:
+                raise ApiError(400, e.message) from None
         try:
             if text is None:
                 p.mkdir(parents=True)
@@ -2137,6 +2199,17 @@ class App:
             if test.wait(since, end):
                 return self.need_test().state()   # another file opened meanwhile: its state (or 404)
 
+    # -- measure ----------------------------------------------------------------------------
+    def wait_measure_state(self, since: int | None) -> dict:
+        """The measurement file's state once its version moves from `since` (or after POLL_SECONDS); each second the
+        file is read again, so an outside edit shows."""
+        end = time.monotonic() + POLL_SECONDS
+        while True:
+            measure = self.need_measure()
+            measure.reload_if_changed()
+            if measure.wait(since, end):
+                return self.need_measure().state()   # another file opened meanwhile: its state (or 404)
+
     def test_save(self, body: dict) -> tuple[int, dict]:
         with self._lock:
             self._sync()
@@ -2644,6 +2717,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._part_api(method, url, app.need_part())
         if path.startswith("/api/test/"):
             return self._test_api(method, url)
+        if path.startswith("/api/measure/"):
+            return self._measure_api(method, url)
         if path.startswith(("/api/robot/", "/api/scenario/", "/api/live/")):
             app.need_robot()
         if method == "GET":
@@ -2785,6 +2860,21 @@ class _Handler(BaseHTTPRequestHandler):
                 return app.test_grip(body)
         raise ApiError(404, "no such endpoint")
 
+    def _measure_api(self, method: str, url) -> tuple:
+        app, path = self.app, url.path
+        if method == "GET" and path == "/api/measure/state":
+            return 200, app.wait_measure_state(self._since(url))
+        measure = app.need_measure()
+        if method == "POST":
+            body = self._body()
+            if path == "/api/measure/summary":
+                return 200, measure.check(body)
+            if path == "/api/measure/fit":
+                return 200, measure.fit(body)
+            if path == "/api/measure/save":
+                return measure.save(body)
+        raise ApiError(404, "no such endpoint")
+
     def _part_api(self, method: str, url, part) -> tuple:
         path = url.path
         if method == "GET":
@@ -2807,6 +2897,12 @@ class _Handler(BaseHTTPRequestHandler):
         raise ApiError(404, "no such endpoint")
 
     def _static(self, urlpath: str) -> None:
+        form = _FORM.fullmatch(urlpath)
+        if form is not None:   # a blank form to print: a plain link opens it, so it needs no token (it holds no data)
+            if form.group(1) not in forms.TEST:
+                raise ApiError(404, "not found")
+            self._send(200, forms.form_html(form.group(1)).encode("utf-8"), _TYPES[".html"])
+            return
         rel = "index.html" if urlpath in ("", "/") else urlpath.lstrip("/")
         root = STATIC.resolve()
         try:
