@@ -309,3 +309,27 @@ def test_a_gamepad_connected_after_load_takes_port_0(drive_page):
     page.wait_for_function("[...document.querySelector('#drive-port-0').options].some((o) => o.value === '0')")
     assert page.input_value("#drive-port-0") == "keyboard"
     assert page.evaluate("__scrimmage.live.assignments") == {"0": "keyboard"}
+
+
+def test_the_match_controls_start_from_the_config_and_set_the_station(drive_page, tmp_path):
+    cfg = config_copy(tmp_path)
+    cfg.write_text(cfg.read_text() + '\n[match]\nstation = "red3"\ntimer = true\n')
+    page = drive_page(cfg)
+    start(page)
+    page.wait_for_function("document.querySelector('#drive-station').value === 'red3'")
+    assert page.is_checked("#drive-timer") and not page.is_checked("#drive-fms")
+    assert page.input_value("#drive-game-data") == ""
+    page.select_option("#drive-station", "blue2")
+    page.wait_for_function("__scrimmage.live.state.readouts.match.station === 'blue2'")
+    page.check("#drive-fms")
+    page.wait_for_function("__scrimmage.live.state.readouts.match.fms === true")
+    page.click("[data-key='mode-teleop']")
+    page.fill("#drive-game-data", "R")
+    page.press("#drive-game-data", "Tab")
+    page.wait_for_function("__scrimmage.live.state.match.game_data === 'R'")
+    assert page.evaluate("__scrimmage.live.state.readouts.match.game_data") == ""   # disabled: it waits
+    page.click("#drive-enable")
+    page.wait_for_function("__scrimmage.live.state.readouts.match.game_data === 'R'")
+    page.wait_for_function("/match \\d/.test(document.querySelector('#drive-hud').textContent)")
+    page.click("#drive-disable")
+    stop(page)

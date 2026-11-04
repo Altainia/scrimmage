@@ -1,4 +1,5 @@
-"""Drive recorder: turns a stream of (time, mode, joystick inputs) into a scenario whose steps hold input tracks."""
+"""Drive recorder: turns a stream of (time, mode, joystick inputs, game data) into a scenario whose steps hold input
+tracks, with the match settings as its [match]."""
 
 from __future__ import annotations
 
@@ -7,12 +8,13 @@ import os
 import re
 import shutil
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 import tomlkit
 
+from scrimmage.driverstation import MATCH_KEYS, MatchSettings
 from scrimmage.tracks import PortInputs, Sample, write_track
 
 __all__ = ["DriveRecorder", "RecordingError"]
@@ -58,33 +60,40 @@ def _remove(p: Path) -> None:
 class _Segment:
     mode: str
     start: float
+    game_data: str = ""   # what the robot had at the segment's start
     end: float | None = None
     events: list[tuple[float, dict[int, PortInputs]]] = field(default_factory=list)
 
 
 class DriveRecorder:
-    def __init__(self, step: float):
+    def __init__(self, step: float, config_match: dict | None = None):
         self.step = step
         self.recording = False
         self.saved = False   # save() has written this recording (until the next start())
         self.pokes = 0
         self._segments: list[_Segment] = []
+        self._config_match = config_match if config_match is not None else asdict(MatchSettings())
+        self._match: dict = {}
 
-    def start(self, t: float, mode: str, ports: dict[int, PortInputs]) -> None:
+    def start(self, t: float, mode: str, ports: dict[int, PortInputs], game_data: str = "",
+              match: dict | None = None) -> None:
+        """`match` is the match settings (MATCH_KEYS) in effect: the recording's [match]."""
         self._segments = []
         self.pokes = 0
         self.recording = True
         self.saved = False
-        self._open(t, mode, ports)
+        self._match = dict(match) if match is not None else dict(self._config_match)
+        self._open(t, mode, ports, game_data)
 
-    def sample(self, t: float, mode: str, ports: dict[int, PortInputs]) -> None:
-        """From sim time ``t`` on, the effective mode and inputs are these; unchanged samples are dropped."""
+    def sample(self, t: float, mode: str, ports: dict[int, PortInputs], game_data: str = "") -> None:
+        """From sim time ``t`` on, the effective mode, inputs and game data are these; unchanged samples are dropped.
+        A new mode or game data starts a step."""
         if not self.recording:
             return
         cur = self._segments[-1]
-        if mode != cur.mode:
+        if mode != cur.mode or game_data != cur.game_data:
             cur.end = t
-            self._open(t, mode, ports)
+            self._open(t, mode, ports, game_data)
         elif ports != cur.events[-1][1]:
             cur.events.append((t, copy.deepcopy(ports)))
 
@@ -101,8 +110,15 @@ class DriveRecorder:
     def empty(self) -> bool:
         return not self._timed()
 
-    def _open(self, t: float, mode: str, ports: dict[int, PortInputs]) -> None:
-        self._segments.append(_Segment(mode, t, None, [(t, copy.deepcopy(ports))]))
+    def _open(self, t: float, mode: str, ports: dict[int, PortInputs], game_data: str) -> None:
+        self._segments.append(_Segment(mode, t, game_data, None, [(t, copy.deepcopy(ports))]))
+
+    def _match_table(self) -> dict:
+        """The keys that differ from the defaults, and those that differ from the config's (else a replay would take
+        the config's)."""
+        default = asdict(MatchSettings())
+        return {k: v for k in MATCH_KEYS if (v := self._match.get(k)) is not None
+                and (v != default[k] or v != self._config_match.get(k))}
 
     def _duration(self, seg: _Segment) -> float:
         end = seg.end if seg.end is not None else seg.events[-1][0]
@@ -159,6 +175,12 @@ class DriveRecorder:
                                 f"x={x:.3f}, y={y:.3f}, heading={h:.1f}\N{DEGREE SIGN}"))
         doc.add("description", "Recorded drive")
         doc.add("config", rel_config)
+        match = self._match_table()
+        if match:
+            table = tomlkit.table()
+            for k, v in match.items():
+                table.add(k, v)
+            doc.add("match", table)
         steps = tomlkit.aot()
         path.parent.mkdir(parents=True, exist_ok=True)
         stage = Path(tempfile.mkdtemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp"))
@@ -166,12 +188,16 @@ class DriveRecorder:
         try:
             tracks = stage / "tracks"
             tracks.mkdir()
+            had = ""   # the game data at the previous step's start
             for k, (seg, duration) in enumerate(segments, 1):
                 write_track(tracks / f"step{k}.csv", self._samples(seg, duration))
                 t = tomlkit.table()
                 t.add("name", f"{seg.mode} {k}")
                 t.add("mode", seg.mode)
                 t.add("duration", duration)
+                if seg.game_data != had:
+                    t.add("game_data", seg.game_data)
+                    had = seg.game_data
                 t.add("inputs", f"{path.stem}/step{k}.csv")
                 steps.append(t)
             doc.add("step", steps)

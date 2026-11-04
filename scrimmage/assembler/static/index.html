@@ -250,6 +250,20 @@
         <p class="hint">Enter enables, Space disables.</p>
       </div>
       <div class="ds-section">
+        <h3 class="ds-label">Match</h3>
+        <div class="ds-match">
+          <label class="port-label" for="drive-station">Station</label>
+          <select id="drive-station" disabled></select>
+          <label class="port-label" for="drive-game-data">Game data</label>
+          <input type="text" id="drive-game-data" maxlength="64" autocomplete="off" spellcheck="false" placeholder="e.g. R" disabled>
+        </div>
+        <div class="row ds-match-checks">
+          <label class="check-label"><input type="checkbox" id="drive-fms" disabled> FMS attached</label>
+          <label class="check-label"><input type="checkbox" id="drive-timer" disabled> Match timer</label>
+        </div>
+        <p class="hint">Game data reaches the robot when it is enabled in Teleop.</p>
+      </div>
+      <div class="ds-section">
         <h3 class="ds-label">Record</h3>
         <div class="row ds-record">
           <button type="button" id="drive-record" class="btn drive-record" aria-pressed="false" title="Record the inputs and modes from the next step" disabled>● Record</button>

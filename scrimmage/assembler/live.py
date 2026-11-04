@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import dataclasses
 import logging
 import math
 import struct
@@ -17,6 +18,7 @@ from .. import robot_process
 from ..bridge import MISSING_AFTER
 from ..checks import consume_peaks, resolve_signal
 from ..devicecheck import check_devices
+from ..driverstation import MATCH_KEYS, STATIONS, MatchSettings, check_game_data
 from ..session import Session
 from ..tracks import PortInputs
 from .recorder import DriveRecorder, RecordingError
@@ -115,6 +117,9 @@ class LiveManager:
         self._speed_locked: str | None = None
         self._recorder: DriveRecorder | None = None
         self._start_pose: tuple[float, float, float] | None = None
+        # the match settings (MATCH_KEYS) and the game data box, from the session's start (None until then); the box
+        # reaches the robot while it is enabled in Teleop (M5)
+        self._match: dict | None = None
         # the device check of the latest session (written on the loop, under the lock; the rows stay after it ends)
         self._devices_changed = threading.Condition(self._lock)
         self._dev_version, self._dev_rows, self._dev_t, self._dev_settled = 0, [], 0.0, False
@@ -172,7 +177,7 @@ class LiveManager:
             self._state, self._error, self._config_path, self._step = "starting", None, config_path, None
             self._t, self._mode, self._enabled, self._paused = 0.0, "teleop", False, False
             self._speed, self._speed_locked = speed, None
-            self._recorder, self._start_pose = None, None
+            self._recorder, self._start_pose, self._match = None, None, None
             self._dev_rows, self._dev_t, self._dev_settled = [], 0.0, False
             self._restart, self._restart_problem = ("restarted" if restarting else None), None
             self._devices_bump()
@@ -220,6 +225,7 @@ class LiveManager:
                     "config": str(self._config_path) if self._config_path is not None else None,
                     "t": round(self._t, 4), "mode": self._effective_mode(),
                     "chosen_mode": self._mode, "enabled": self._enabled,
+                    "match": dict(self._match) if self._match is not None else None, "stations": list(STATIONS),
                     "paused": self._paused, "speed": self._speed, "speed_locked": self._speed_locked,
                     "recording": rec is not None and rec.recording, "pokes": rec.pokes if rec is not None else 0,
                     "can_save": rec is not None and not rec.empty and self._state not in ("idle", "starting")}
@@ -369,6 +375,19 @@ class LiveManager:
                     or not all(isinstance(n, str) for n in names)):
                 raise LiveError(f"names must be a list of at most {MAX_SIGNALS} signal names")
             return {"cmd": name, "names": list(names)}
+        if name == "match":
+            out = {k: v for k, v in cmd.items() if k != "cmd"}
+            unknown = set(out) - {*MATCH_KEYS, "game_data"}
+            if unknown:
+                raise LiveError(f"match has no key {sorted(unknown)[0]!r}; the keys are {', '.join(MATCH_KEYS)}, "
+                                "game_data")
+            try:
+                MatchSettings().merged({k: v for k, v in out.items() if k != "game_data"}, "match:")
+                if "game_data" in out:
+                    check_game_data(out["game_data"], "match:")
+            except ValueError as e:
+                raise LiveError(str(e)) from None
+            return {"cmd": name, **out}
         raise LiveError(f"unknown command {name!r}")
 
     # -- worker ---------------------------------------------------------------------------------------------
@@ -400,12 +419,14 @@ class LiveManager:
         session.set_speed(speed)   # the --speed rule for this config's step
         with self._lock:
             self._step = session.config.step
-            self._recorder = DriveRecorder(session.config.step)
+            self._recorder = DriveRecorder(session.config.step, dataclasses.asdict(session.config.match))
         try:
             await self._until_stopped(session.start(), stopping)
             self._session = session
             self._rev_noticed = False
             session.set_mode("disabled")
+            with self._lock:
+                self._match = {**dataclasses.asdict(session.bridge.ds.match), "game_data": ""}
             self._set_state("running")
             await self._run(session, stopping)
         finally:
@@ -483,7 +504,7 @@ class LiveManager:
             self._applied[port] = pi
         with self._lock:
             if self._recorder is not None and self._recorder.recording:
-                self._recorder.sample(t, self._effective_mode(), self._applied)
+                self._recorder.sample(t, self._effective_mode(), self._applied, session.bridge.ds.game_data)
 
     def _effective_mode(self) -> str:  # lock held
         return self._mode if self._enabled else "disabled"
@@ -514,6 +535,16 @@ class LiveManager:
                     self._enabled = name == "enable"
                 mode = self._effective_mode()
             session.set_mode(mode)
+            self._send_game_data(session)
+        elif name == "match":
+            settings = {k: v for k, v in cmd.items() if k in MATCH_KEYS}
+            if settings:
+                session.set_match(**settings)
+            with self._lock:
+                self._match.update(dataclasses.asdict(session.bridge.ds.match))
+                if "game_data" in cmd:
+                    self._match["game_data"] = cmd["game_data"]
+            self._send_game_data(session)
         elif name in ("pause", "resume"):
             with self._lock:
                 self._paused = name == "pause"
@@ -545,7 +576,8 @@ class LiveManager:
             pose = session.state()["pose"]
             with self._lock:
                 self._start_pose = (pose["x"], pose["y"], pose["heading_deg"])
-                self._recorder.start(session.t, self._effective_mode(), self._applied)
+                self._recorder.start(session.t, self._effective_mode(), self._applied, session.bridge.ds.game_data,
+                                     {k: self._match[k] for k in MATCH_KEYS})
         elif name == "record_stop":
             with self._lock:
                 self._recorder.stop(session.t)
@@ -559,6 +591,14 @@ class LiveManager:
             self._signals = signals
             for msg in bad:
                 self._notice("error", msg)
+
+    def _send_game_data(self, session: Session) -> None:
+        """The game data box to the robot while it is enabled in Teleop, as the real DS sends it (M5); sent only when
+        it differs, so a box left empty keeps the default frames."""
+        with self._lock:
+            box = self._match["game_data"] if self._effective_mode() == "teleop" else None
+        if box is not None and box != session.bridge.ds.game_data:
+            session.set_match(game_data=box)
 
     def _poked(self) -> None:
         self._dirty = True

@@ -494,8 +494,10 @@ docstring gives the file's JSON (`file`):
 Live (`/api/live/*`; one simulation at a time: a drive session, a scenario run, a bench job or a test run):
   GET  /api/live/info              -> {port, status, run_active, can_start, start_problem}: port is the stream's
         WebSocket port; status is the session's {state: idle|starting|running|paused|stopped|error, error, config,
-        t, mode, chosen_mode, enabled, paused, speed, speed_locked, recording, pokes, can_save} (mode is the
-        effective mode, "disabled" while not enabled; chosen_mode is the one Enable runs); run_active is true while a
+        t, mode, chosen_mode, enabled, paused, speed, speed_locked, recording, pokes, can_save, match, stations} (mode
+        is the effective mode, "disabled" while not enabled; chosen_mode is the one Enable runs; match is the
+        session's {station, fms, timer, auto_seconds, teleop_seconds, game_data} with game_data the Drive tab's box,
+        null before the session runs; stations lists the six); run_active is true while a
         scenario run is in progress; can_start is false when the robot document can't be driven (it doesn't load
         or has no [robot_program]), with start_problem saying why in Start's own words (else null). start_picked
         is false while a [[part]] robot has neither [robot] start_pose nor [range] start (Start then asks).
@@ -541,7 +543,8 @@ nothing sent. Then the server sends:
   {"type": "notice", kind, text}: e.g. a refused command (queued; none are dropped while the page keeps up).
 The page sends {"type": "input", "ports": {"<port>": {axes, buttons, povs}}} and {"type": "cmd", "cmd": ...}
 (mode, enable, disable, pause, resume, step, speed, set_pose, push, move_body, reset, record_start, record_stop,
-signals); a bad command comes back as an error notice, malformed messages (JSON nested too deeply to parse among
+signals, match: any of station, fms, timer, auto_seconds, teleop_seconds and game_data, the box that reaches the robot
+while it is enabled in Teleop); a bad command comes back as an error notice, malformed messages (JSON nested too deeply to parse among
 them) are ignored; before the token, a malformed first message is refused like a wrong token. When the last page's
 socket closes, every port is zeroed and the robot disabled and paused until a page reconnects.
 

@@ -563,3 +563,47 @@ def test_rev_problem_is_published_as_an_error_notice_once():
     mgr._check_rev(session)
     mgr._check_rev(session)
     assert notices(pub) == [{"kind": "error", "text": problem}]
+
+
+def test_the_game_data_box_is_sent_on_a_teleop_enable(running):
+    """M5: the box's value reaches the robot when it is enabled in Teleop, and at once when edited there; edited
+    while enabled in Auto, it waits for Teleop."""
+    mgr, _, _ = running
+    ds = mgr._session.bridge.ds
+    mgr.command({"cmd": "mode", "mode": "teleop"})
+    mgr.command({"cmd": "match", "game_data": "R"})
+    wait_for(lambda: mgr.status()["match"]["game_data"] == "R", 5, "the box")
+    assert ds.game_data == ""   # disabled: the box waits
+    mgr.command({"cmd": "enable"})
+    wait_for(lambda: ds.game_data == "R", 5, "R on the enable")
+    mgr.command({"cmd": "match", "game_data": "B"})
+    wait_for(lambda: ds.game_data == "B", 5, "B at once")
+    mgr.command({"cmd": "mode", "mode": "auto"})
+    mgr.command({"cmd": "match", "game_data": "R"})
+    wait_for(lambda: mgr.status()["match"]["game_data"] == "R" and mgr.status()["mode"] == "auto", 5, "auto")
+    time.sleep(0.3)
+    assert ds.game_data == "B"   # enabled in Auto: the change waits for Teleop
+    mgr.command({"cmd": "mode", "mode": "teleop"})
+    wait_for(lambda: ds.game_data == "R", 5, "R in Teleop")
+    mgr.command({"cmd": "disable"})
+    mgr.command({"cmd": "match", "game_data": ""})
+    wait_for(lambda: mgr.status()["match"]["game_data"] == "", 5, "the box cleared")
+
+
+def test_the_match_command_sets_the_station_fms_and_timer(running):
+    mgr, _, _ = running
+    ds = mgr._session.bridge.ds
+    assert mgr.status()["match"] == {"station": "blue1", "fms": False, "timer": False, "auto_seconds": 20.0,
+                                     "teleop_seconds": 140.0, "game_data": ""}
+    assert mgr.status()["stations"] == ["red1", "red2", "red3", "blue1", "blue2", "blue3"]
+    for bad in ({"cmd": "match", "station": "green1"}, {"cmd": "match", "fms": "yes"},
+                {"cmd": "match", "auto_seconds": 0}, {"cmd": "match", "game_data": "x" * 65},
+                {"cmd": "match", "period": 3}):
+        with pytest.raises(LiveError):
+            mgr.command(bad)
+    mgr.command({"cmd": "match", "station": "red2", "fms": True, "timer": True})
+    wait_for(lambda: mgr.status()["match"]["station"] == "red2", 5, "the station")
+    assert ds.match.station == "red2" and ds.match.fms and ds.match.timer
+    assert mgr.status()["match"]["fms"] and mgr.status()["match"]["timer"]
+    mgr.command({"cmd": "match", "station": "blue1", "fms": False, "timer": False})
+    wait_for(lambda: ds.match.station == "blue1" and not ds.match.fms and not ds.match.timer, 5, "back")
