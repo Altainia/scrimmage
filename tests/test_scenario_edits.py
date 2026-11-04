@@ -587,3 +587,70 @@ def test_trim_track_needs_inputs_and_a_loadable_track(tmp_path):
     assert e.value.field == "step0/inputs"
     with pytest.raises(EditError):
         se.trim_track(d, 2, 0, 1, p)
+
+
+# ---- [match] and a step's game data --------------------------------------------------------------------------
+
+def test_set_match_adds_a_table_before_the_steps_in_key_order():
+    out = run(COMMENTED, lambda d: se.set_match(d, "timer", True), lambda d: se.set_match(d, "station", "red1"))
+    assert tomllib.loads(out)["match"] == {"station": "red1", "timer": True}
+    assert out.index("[match]") < out.index('station = "red1"') < out.index("timer = true") < out.index("[[step]]")
+    assert out.index("# --- section: setup ---") < out.index("[match]")
+    assert_blocks(out)
+    assert load_scenario_text(out, FAKE_PATH).match == {"station": "red1", "timer": True}
+
+
+def test_set_match_changes_in_place_and_an_empty_table_goes():
+    t = run(COMMENTED, lambda d: se.set_match(d, "station", "red1"))
+    t = t.replace('station = "red1"', 'station = "red1"  # our spot')
+    out = run(t, lambda d: se.set_match(d, "station", "blue3"), lambda d: se.set_match(d, "auto_seconds", 15))
+    assert 'station = "blue3"  # our spot' in out and tomllib.loads(out)["match"]["auto_seconds"] == 15
+    out = run(out, lambda d: se.set_match(d, "station", None), lambda d: se.set_match(d, "auto_seconds", None))
+    assert "match" not in tomllib.loads(out) and "[match]" not in out
+    assert out == COMMENTED
+
+
+def test_set_match_edits_an_inline_table():
+    t = COMMENTED.replace('description = "d"\n', 'description = "d"\nmatch = { station = "red2" }\n')
+    out = run(t, lambda d: se.set_match(d, "fms", True))
+    assert 'match = { station = "red2", fms = true }' in out
+    out = run(out, lambda d: se.set_match(d, "station", None), lambda d: se.set_match(d, "fms", None))
+    assert out == COMMENTED
+
+
+def test_set_match_rejects_bad_input():
+    d = tomlkit.parse(COMMENTED)
+    for key, val, field in (("alliance", "red", "scenario/match"), ("station", 1, "scenario/match.station"),
+                            ("fms", "yes", "scenario/match.fms"), ("timer", 1, "scenario/match.timer"),
+                            ("teleop_seconds", True, "scenario/match.teleop_seconds")):
+        with pytest.raises(EditError) as e:
+            se.set_match(d, key, val)
+        assert e.value.field == field
+    d = tomlkit.parse(COMMENTED.replace('description = "d"\n', 'description = "d"\nmatch = "red1"\n'))
+    with pytest.raises(EditError) as e:
+        se.set_match(d, "station", "red1")
+    assert e.value.field == "scenario/match"
+
+
+def test_set_step_game_data_goes_after_duration_and_goes_away():
+    out = run(COMMENTED, lambda d: se.set_step_game_data(d, 1, "R"))
+    assert tomllib.loads(out)["step"][1]["game_data"] == "R"
+    assert out.index('mode = "auto"\nduration = 2.0\ngame_data = "R"\n  # check one') > 0
+    assert_blocks(out)
+    assert [s.game_data for s in load_scenario_text(out, FAKE_PATH).steps] == [None, "R", None]
+    out = run(out, lambda d: se.set_step_game_data(d, 1, ""))
+    assert tomllib.loads(out)["step"][1]["game_data"] == ""        # empty clears what the robot has
+    assert run(out, lambda d: se.set_step_game_data(d, 1, None)) == COMMENTED
+    out = run(INPUT_STEP, lambda d: se.set_step_game_data(d, 0, "B"), lambda d: se.set_inputs_file(d, 0, "x.csv"),
+              load=False)
+    assert out.index("duration") < out.index("game_data") < out.index("inputs")
+
+
+def test_set_step_game_data_rejects_bad_input():
+    d = tomlkit.parse(COMMENTED)
+    with pytest.raises(EditError) as e:
+        se.set_step_game_data(d, 0, 3)
+    assert e.value.field == "step0/game_data"
+    with pytest.raises(EditError) as e:
+        se.set_step_game_data(d, 9, "R")
+    assert e.value.field == "step9/step"

@@ -42,6 +42,11 @@ def test_real_scenarios_are_ok():
      "step0/check0/check"),
     (HEAD, "status"),
     ("this is = not toml [", "status"),
+    (HEAD + '[match]\nstation = "red4"\n' + STEP, "scenario/match.station"),
+    (HEAD + '[match]\nauto_seconds = -1\n' + STEP, "scenario/match.auto_seconds"),
+    (HEAD + '[match]\nalliance = "red"\n' + STEP, "scenario/match"),
+    (HEAD + STEP + "game_data = 3\n", "step0/game_data"),
+    (HEAD + STEP + 'game_data = "' + "x" * 65 + '"\n', "step0/game_data"),
 ])
 def test_load_errors_map_to_fields(text, field):
     r, fs = fields(text)

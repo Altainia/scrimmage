@@ -1,10 +1,10 @@
 """Candidate scenario text -> the real loader, the robot config's world and `validate` -> errors keyed by GUI field.
 
-Field ids (0-based indices; the runner's messages are 1-based): `scenario/<key>`, `step<i>/<key>`,
-`step<i>/check<j>/<kind>` or `step<i>/check<j>/<kind>.<subkey>` when the message names one key inside the check
-(`step1/check0/pose.tol_xy`, `step0/check2/always.signal`), `step<i>/shot<j>/<key>`, `step<i>/sheet/<key>`; anything
-that can't be placed is `status`. A broken robot config or missing config file sets `robot_problem` and gives a
-single `status` error "fix the robot first: ..."."""
+Field ids (0-based indices; the runner's messages are 1-based): `scenario/<key>`, `scenario/match.<key>`,
+`step<i>/<key>`, `step<i>/check<j>/<kind>` or `step<i>/check<j>/<kind>.<subkey>` when the message names one key
+inside the check (`step1/check0/pose.tol_xy`, `step0/check2/always.signal`), `step<i>/shot<j>/<key>`,
+`step<i>/sheet/<key>`; anything that can't be placed is `status`. A broken robot config or missing config file
+sets `robot_problem` and gives a single `status` error "fix the robot first: ..."."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from pathlib import Path
 
 from ..checks import ScenarioError
 from ..config import ConfigError, build_world, load_config
+from ..driverstation import MATCH_KEYS
 from ..scenario import (SHEET_KEYS, SHOT_KEYS, STEP_KEYS, TOP_KEYS, config_for, load_scenario_raw,
                         load_scenario_text, validate)
 from .validate import FieldError, Result as _BaseResult
@@ -75,6 +76,9 @@ def _map_load_error(message: str, path, raw: dict) -> list[FieldError]:
     message = _strip_path(message, path)
     if message.startswith(where + ": "):
         rest = message[len(where) + 2:]
+        if rest.startswith("[match] "):
+            key = _key_in(rest[len("[match] "):], MATCH_KEYS)
+            return [FieldError(f"scenario/match.{key}" if key else "scenario/match", message)]
         key = _key_in(rest, TOP_KEYS)
         if key:
             return [FieldError(f"scenario/{key}", message)]

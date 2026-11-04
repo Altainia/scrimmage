@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import logging
 import math
@@ -19,7 +20,7 @@ from .checks import (CRASH_PATTERN, Check, CheckResult, ConsoleCheck, build_chec
                      tick_checks)
 from .config import ConfigError, build_world, load_config
 from .render import contact_sheet, to_png
-from .scenario import Scenario, ScenarioError, config_for, no_range_message, range_file, validate
+from .scenario import Scenario, ScenarioError, config_for, match_for, no_range_message, range_file, validate
 from .session import Session, SessionError
 
 log = logging.getLogger("scrimmage")
@@ -69,6 +70,7 @@ class StepReport:
     screenshots: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
     interrupted: str | None = None   # "step interrupted at t=..." when the robot program failed mid-step
+    game_data: str = ""              # the game data the robot had during the step
 
     @property
     def passed(self) -> bool:
@@ -76,7 +78,7 @@ class StepReport:
 
     def to_dict(self) -> dict:
         return {"name": self.name, "mode": self.mode, "start_t": self.start_t, "end_t": self.end_t,
-                "passed": self.passed, "interrupted": self.interrupted,
+                "game_data": self.game_data, "passed": self.passed, "interrupted": self.interrupted,
                 "checks": [c.to_dict() for c in self.checks], "screenshots": self.screenshots,
                 "skipped": self.skipped}
 
@@ -143,7 +145,8 @@ class Report:
         if self.notes:
             md += [f"> Note: {n}" for n in self.notes] + [""]
         for s in self.steps:
-            md += [f"## {s.name} ({s.mode}, t={s.start_t:.2f}–{s.end_t:.2f} s)", ""]
+            data = f", game data {json.dumps(s.game_data, ensure_ascii=False)}" if s.game_data else ""
+            md += [f"## {s.name} ({s.mode}, t={s.start_t:.2f}–{s.end_t:.2f} s{data})", ""]
             md += [f"- {'✅' if c.passed else '❌'} {c.message}" for c in s.checks]
             md += [f"- ❌ {s.interrupted}"] if s.interrupted else []
             md += [f"- skipped: {x}" for x in s.skipped]
@@ -369,6 +372,11 @@ async def _run_scenario(scenario: Scenario, out_dir: Path, speed, session: Sessi
             if scenario.robot_env and session.attach:
                 raise ScenarioError(f"{scenario.path.name}: robot_env can't reach the robot program: this session "
                                     "attaches to a robot program it doesn't launch; set the variables yourself")
+            # the scenario's [match] over the config's, with no game data (M4), for the robot's first frame
+            ds = session.bridge.ds
+            ds.set_match(**dataclasses.asdict(match_for(scenario, session.config)))
+            if ds.game_data:
+                ds.set_game_data("")
             rng = session.world.test_range
             if rng is not None:     # the bridge resets the world when the robot reconnects: reset() keeps these
                 rng.clear_overrides()
@@ -586,6 +594,9 @@ async def _run_step(session: Session, step, index: int, out_dir: Path, rep: Step
     start = session.t
     if track is not None:
         apply_track(0.0)
+    if step.game_data is not None:      # it stays until a later step changes it
+        session.bridge.ds.set_game_data(step.game_data)
+    rep.game_data = session.bridge.ds.game_data
     session.set_mode(step.mode)
     consume_peaks(session.world)     # the step's checks see the terrain and climb signals from its start
     for c in checks:

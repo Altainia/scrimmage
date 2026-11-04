@@ -330,9 +330,10 @@ Robot (`/api/robot/*`):
         up to 25 s.
 Scenario (`/api/scenario/*`; 404 while no scenario is open, except /api/scenario/open):
   GET  /api/scenario/state[?since=N] -> {version, path, display_path, read_only, read_only_reason, robot_problem,
-        top: {config, description, speed, require_lockstep}, steps: [{name, mode, duration, start_t, axes, buttons,
-        povs, checks: [{kind, spec}], shots: [{view?, at?, width?, height?, camera?}], sheet}], errors, warnings,
-        can_undo, can_redo}; each step also has inputs: the track CSV's path as written, or null. Long-polls like /api/robot/state.
+        top: {config, description, speed, require_lockstep, match}, steps: [{name, mode, duration, game_data,
+        start_t, axes, buttons, povs, checks: [{kind, spec}], shots: [{view?, at?, width?, height?, camera?}],
+        sheet}], errors, warnings, can_undo, can_redo}; each step also has inputs: the track CSV's path as written,
+        or null. match: the [match] table as written ({} without one). Long-polls like /api/robot/state.
         top and steps are read from the document as written (null / {} / [] where a key is absent), so they are
         listed even when the scenario is invalid. start_t is the step's start time (the sum of the earlier
         durations). axes/buttons/povs: {"<port>": [values]}. A check with other than exactly one key has kind null
@@ -358,6 +359,9 @@ Scenario (`/api/scenario/*`; 404 while no scenario is open, except /api/scenario
         delete_step     {step}
         move_step       {step, to}
         set_step        {step, fields: {name?, mode?, duration?}}   a null name removes it
+        match           {key, value}               a [match] key (station / fms / timer / auto_seconds /
+                                                   teleop_seconds); null removes it, and the table with its last key
+        game_data       {step, value}              the step's game_data (after duration); null removes it
         inputs_file     {step, path}               inputs = "<file>.csv" (drops the step's axes/buttons/povs);
                                                    null path removes it
         trim_track      {step, start, end}         cut the step's track to start..end (0 <= start < end <=
@@ -1933,6 +1937,7 @@ class App:
         res = self.scenario_result
         raw = sc.doc.unwrap() if sc.doc is not None else {}
         top = {k: raw.get(k) for k in ("config", "description", "speed", "require_lockstep")}
+        top["match"] = raw["match"] if isinstance(raw.get("match"), dict) else {}
         steps = []
         t = 0.0
         for s in raw.get("step", []) if isinstance(raw.get("step"), list) else []:
@@ -1947,7 +1952,8 @@ class App:
                     checks.append({"kind": None, "spec": c})
             shots = s.get("screenshot", [])
             sheet = s.get("contact_sheet")
-            steps.append({"name": s.get("name"), "mode": s.get("mode"), "duration": s.get("duration"), "start_t": t,
+            steps.append({"name": s.get("name"), "mode": s.get("mode"), "duration": s.get("duration"),
+                          "game_data": s.get("game_data"), "start_t": t,
                           "inputs": s.get("inputs") if isinstance(s.get("inputs"), str) else None,
                           **{k: s.get(k) if isinstance(s.get(k), dict) else {} for k in ("axes", "buttons", "povs")},
                           "checks": checks,
@@ -2015,6 +2021,8 @@ class App:
             "delete_step": lambda d: e.delete_step(d, b.get("step")),
             "move_step": lambda d: e.move_step(d, b.get("step"), b.get("to")),
             "set_step": lambda d: e.set_step(d, b.get("step"), b.get("fields") or {}),
+            "match": lambda d: e.set_match(d, b.get("key"), b.get("value")),
+            "game_data": lambda d: e.set_step_game_data(d, b.get("step"), b.get("value")),
             "inputs_file": lambda d: e.set_inputs_file(d, b.get("step"), b.get("path")),
             "trim_track": lambda d: made.append(e.trim_track(d, b.get("step"), b.get("start"), b.get("end"), scenario_path)),
             "inputs": lambda d: e.set_inputs(d, b.get("step"), b.get("kind"), b.get("port"), b.get("values")),

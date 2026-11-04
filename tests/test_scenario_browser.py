@@ -221,3 +221,31 @@ def test_report_shows_ball_table(browser, tmp_path):
         ctx.close()
         srv.stop()
     assert not logs, logs
+
+
+def test_match_station_and_a_steps_game_data_write_the_file(scenario_page):
+    page, scn = scenario_page("fake_pass.toml")
+    v = _version(page)
+    page.select_option("#sc-station", "red1")
+    _wait_edit(page, v)
+    assert page.evaluate("__scrimmage.scenario.state.top.match") == {"station": "red1"}
+    assert '[match]\nstation = "red1"\n' in scn.read_text()
+
+    page.click("#step-row-1")
+    page.wait_for_selector("#step-row-1.selected")
+    v = _version(page)
+    page.fill("#ed-game-data", "B")
+    page.keyboard.press("Enter")
+    _wait_edit(page, v)
+    assert page.evaluate("__scrimmage.scenario.state.steps[1].game_data") == "B"
+    assert 'duration = 1.0\ngame_data = "B"\n' in scn.read_text()
+
+    # step 1's box says it has none; a bad length is refused beside the Match row
+    page.click("#step-row-0")
+    page.wait_for_selector("#ed-game-data[placeholder='none']")
+    before = scn.read_text()
+    page.fill("#sc-auto_seconds", "-1")
+    page.keyboard.press("Enter")
+    page.wait_for_selector(".sc-match .field-msgs .error")
+    assert "auto_seconds must be a positive number" in page.inner_text(".sc-match .field-msgs")
+    assert scn.read_text() == before
