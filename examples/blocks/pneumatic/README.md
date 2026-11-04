@@ -62,7 +62,7 @@ Stored air above the working pressure: 4.30 L
 Cycles from the tanks alone: 7
 Compressor air in a 150 s match: 13.2 L
 Cycles per match, tanks and compressor: 29
-UNCALIBRATED: estimates (lift valve conductance); see docs/pneumatics.md.
+UNCALIBRATED: estimates (compressor flow, pressure switch points, tank volume, dead volume); see docs/pneumatics.md.
 ```
 
 It says 7 cycles from the tanks, but the test made 10. Two reasons. The tanks start at 120 psi, a little above the

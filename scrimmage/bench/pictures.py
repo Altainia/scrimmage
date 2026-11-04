@@ -15,8 +15,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from ..render import new_renderer
-from ..measure import labels
-from .report import ESTIMATES, STATUS_COLORS, STATUS_WORDS, bench_matters
+from .report import ESTIMATES, STATUS_COLORS, STATUS_WORDS, bench_estimates
 from .run import BenchResult
 
 # view -> (azimuth, elevation, the world axes across and up the picture)
@@ -278,7 +277,7 @@ def _draw_outlines(draw: ImageDraw.ImageDraw, result: BenchResult, frame: _Frame
 
 def picture_uncalibrated(bench) -> str:
     """The UNCALIBRATED line a bench's pictures carry: the bench line's estimates, without what to measure."""
-    return labels.line({}, bench_matters(bench), estimates=ESTIMATES)
+    return bench_estimates(bench)
 
 
 def _fitted(draw: ImageDraw.ImageDraw, text: str, px: int, room: float):

@@ -142,7 +142,7 @@ Stored air above the working pressure: 4.30 L
 Cycles from the tanks alone: 7
 Compressor air in a 150 s match: 13.2 L
 Cycles per match, tanks and compressor: 29
-UNCALIBRATED: estimates (lift valve conductance); see docs/pneumatics.md.
+UNCALIBRATED: estimates (compressor flow, pressure switch points, tank volume, dead volume); see docs/pneumatics.md.
 ```
 
 The tanks' 4.30 L pay for 4.30 / 0.597, about 7 cycles, and with the compressor's 13.2 L, (4.30 + 13.2) / 0.597,

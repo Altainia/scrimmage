@@ -48,10 +48,15 @@ def bench_matters(bench) -> tuple[str, ...]:
     return _MATTERS[bench.piece.kind]
 
 
+def bench_estimates(bench) -> str:
+    """A bench's estimates in a line: its pictures' and charts' UNCALIBRATED line. A bench takes no measurement file
+    yet, so it names its estimates only."""
+    return labels.line({}, bench_matters(bench), estimates=ESTIMATES)
+
+
 def bench_uncalibrated(bench) -> str:
-    """The UNCALIBRATED line for a bench: what is estimated and what to measure first, for its kind of piece. A bench
-    takes no measurement file yet, so it names its estimates only."""
-    return f"{labels.line({}, bench_matters(bench), estimates=ESTIMATES)}; {_MEASURE[bench.piece.kind]}."
+    """The UNCALIBRATED line for a bench: what is estimated and what to measure first, for its kind of piece."""
+    return f"{bench_estimates(bench)}; {_MEASURE[bench.piece.kind]}."
 
 
 def _name(s: str) -> str:

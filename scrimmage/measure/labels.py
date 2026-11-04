@@ -9,8 +9,8 @@
 - **All measured and good:** "Calibrated from measurements: ball stiffness and bounce (fuel.measure.toml, ...);
   wheel friction (tread.measure.toml, ...)".
 
-A measurement that isn't good counts as an estimate and says why: "ball stiffness (fuel.measure.toml: not good
-enough: 2 trials: take at least 3)". The line has no closing period, so a caller can add its own ending.
+A measurement that isn't good counts as an estimate and says why: "ball stiffness (fuel.measure.toml, not good
+enough: 2 trials; take at least 3)". The line has no closing period, so a caller can add its own ending.
 """
 
 from __future__ import annotations
@@ -56,8 +56,8 @@ def source(p: Provenance) -> str:
 
 
 def not_good(p: Provenance) -> str:
-    """Why a measurement counts as an estimate: "not good enough: 2 trials: take at least 3"."""
-    return f"not good enough: {p.why}" if p.why else "not good enough"
+    """Why a measurement counts as an estimate: "not good enough: 2 trials; take at least 3" (one colon)."""
+    return f"not good enough: {p.why.replace(': ', '; ')}" if p.why else "not good enough"
 
 
 def _grouped(keys, inputs) -> list[tuple[Provenance | None, list[str]]]:
@@ -79,7 +79,7 @@ def line(inputs: dict[str, Provenance | None], matters: tuple[str, ...], *, esti
     if len(good) == len(matters):
         return f"Calibrated from measurements: {measured}"
     # the plain estimates together, and the not-good measurements by their file, saying why
-    still = [", ".join(names(ks)) if p is None else f"{_and(names(ks))} ({p.file.name}: {not_good(p)})"
+    still = [", ".join(names(ks)) if p is None else f"{_and(names(ks))} ({p.file.name}, {not_good(p)})"
              for p, ks in _grouped([k for k in matters if k not in good], prov)]
     text = f"UNCALIBRATED: still estimates: {', '.join(still)}"
     return f"{text}. Measured: {measured}" if measured else text

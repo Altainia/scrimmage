@@ -473,7 +473,7 @@ async def bench_sweep(path: str, out_dir: str | None = None) -> list:
 
     def _sweep_locked(file, out):
         from .bench import compare
-        from .bench.report import bench_uncalibrated
+        from .bench.report import bench_estimates, bench_uncalibrated
         from .bench.run import run_bench
         from .bench.spec import BenchError
         from .launcher import report
@@ -484,7 +484,7 @@ async def bench_sweep(path: str, out_dir: str | None = None) -> list:
         out.mkdir(parents=True, exist_ok=True)
         report.write_csv(rows, out / "results.csv", compare.BENCH_METRICS)
         charts = report.write_charts(rows, bench.charts or compare.default_charts(list(bench.sweep)), out, None,
-                                     compare.BENCH_METRICS, compare.CHART_KINDS)
+                                     compare.BENCH_METRICS, compare.CHART_KINDS, footer=bench_estimates(bench))
         info = {"rows": _metric_rows(rows), "out_dir": str(out.resolve()), "warnings": _warnings([bench]),
                 "uncalibrated": bench_uncalibrated(bench)}
         if charts is None:

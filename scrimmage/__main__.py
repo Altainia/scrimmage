@@ -464,7 +464,7 @@ def _bench_many(args) -> None:
 
     from .bench import compare, gallery
     from .bench.pictures import PICTURE_TRACE_HZ
-    from .bench.report import headlines
+    from .bench.report import bench_estimates, headlines
     from .bench.run import BenchRunError
     from .bench.spec import BenchError
     from .launcher import report
@@ -490,7 +490,8 @@ def _bench_many(args) -> None:
                 print(compare.format_table(rows, bench))
                 print(f"wrote {out / 'results.csv'}")
                 charts = bench.charts or compare.default_charts(list(bench.sweep))
-                paths = report.write_charts(rows, charts, out, None, compare.BENCH_METRICS, compare.CHART_KINDS)
+                paths = report.write_charts(rows, charts, out, None, compare.BENCH_METRICS, compare.CHART_KINDS,
+                                            footer=bench_estimates(bench))
                 print(report.NO_MATPLOTLIB if paths is None else "\n".join(f"wrote {p}" for p in paths))
             elif args.bench_command == "compare":
                 from .bench.run import run_bench

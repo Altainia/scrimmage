@@ -39,10 +39,10 @@ def test_all_measured_and_good_is_calibrated():
 
 def test_a_measurement_that_is_not_good_is_an_estimate_and_says_why():
     got = line({"ball.stiffness_n": SHORT, "ball.restitution": FUEL, "wheels.friction": TREAD}, LAUNCHER)
-    assert got.startswith("UNCALIBRATED: still estimates: ball stiffness (fuel.measure.toml: not good enough: 2 "
-                          "trials: take at least 3). Measured: ball bounce (fuel.measure.toml")
+    assert got.startswith("UNCALIBRATED: still estimates: ball stiffness (fuel.measure.toml, not good enough: 2 "
+                          "trials; take at least 3). Measured: ball bounce (fuel.measure.toml")
     alone = line({"ball.stiffness_n": SHORT}, LAUNCHER)
-    assert alone == ("UNCALIBRATED: still estimates: ball stiffness (fuel.measure.toml: not good enough: 2 trials: "
+    assert alone == ("UNCALIBRATED: still estimates: ball stiffness (fuel.measure.toml, not good enough: 2 trials; "
                      "take at least 3), ball bounce, wheel friction")
 
 
@@ -76,7 +76,7 @@ def test_the_launcher_run_report_with_a_measurement(tmp_path, capsys, monkeypatc
     first = capsys.readouterr().out.splitlines()[0]
     assert first == ("UNCALIBRATED: still estimates: wheel friction. Measured: ball stiffness and bounce "
                      "(fuel.measure.toml, J. Smith, 2026-11-10, 3 trials).")
-    assert footers and set(footers) == {first}         # each chart's footer is the same line
+    assert footers and {f.replace("\n", " ") for f in footers} == {first}  # each chart's footer: the line, wrapped
 
     both = shooter(tmp_path, ball=f'measured = "{ball_file(tmp_path)}"\n',
                    wheels=f'measured = "{friction_file(tmp_path)}"\n', name="both.toml")
@@ -190,18 +190,68 @@ def test_the_grip_note_without_and_with_a_measurement(tmp_path):
     short = claw(tmp_path / "short", '[body.pad]\ngrip = "pad.measure.toml"\n')
     friction_file(short, pulls=(4.0, 4.0), name="pad.measure.toml")
     assert note(short) == ("claw.pad grip: measured, friction 0.8 (pad.measure.toml, J. Smith, 2026-11-10, 2 trials), "
-                           "not good enough: 2 trials: take at least 3 (UNCALIBRATED)")
+                           "not good enough: 2 trials; take at least 3 (UNCALIBRATED)")
 
 
-def test_the_air_budget_without_and_with_a_measurement():
+def test_the_air_budget_names_what_it_rests_on_and_never_reads_calibrated():
+    """A budget counts air, not how fast it flows: a measured valve doesn't calibrate it."""
     from scrimmage.pneumatics.budget import budget, format_budget
     from scrimmage.pneumatics.model import AirConfig
     plain = format_budget(budget(AirConfig(), [_cylinder("cyl")]))
-    assert plain.splitlines()[-1] == "UNCALIBRATED: estimates (cyl valve conductance); see docs/pneumatics.md."
-    measured = format_budget(budget(AirConfig(), [_cylinder("cyl", SHORT)]))
-    assert measured.splitlines()[:-1] == plain.splitlines()[:-1]
-    assert measured.splitlines()[-1] == ("UNCALIBRATED: still estimates: cyl valve conductance (fuel.measure.toml: "
-                                         "not good enough: 2 trials: take at least 3); see docs/pneumatics.md.")
-    good = format_budget(budget(AirConfig(), [_cylinder("cyl", TREAD)]))
-    assert good.splitlines()[-1] == ("Calibrated from measurements: cyl valve conductance (tread.measure.toml, A. Lee, "
-                                     "2026-11-12, 4 trials); see docs/pneumatics.md.")
+    assert plain.splitlines()[-1] == ("UNCALIBRATED: estimates (compressor flow, pressure switch points, tank volume, "
+                                      "dead volume); see docs/pneumatics.md.")
+    assert format_budget(budget(AirConfig(), [_cylinder("cyl", TREAD)])) == plain
+
+
+# ------------------------------------------------------------------------- footers and a measured range ball
+
+def _footers(monkeypatch) -> list[str]:
+    from matplotlib.figure import Figure
+    seen = []
+    real = Figure.text
+    monkeypatch.setattr(Figure, "text", lambda self, x, y, s, *a, **k: (seen.append(s), real(self, x, y, s, *a,
+                                                                                                 **k))[1])
+    return seen
+
+
+def test_a_bench_sweep_chart_carries_the_bench_line(tmp_path, monkeypatch, capsys):
+    from scrimmage.__main__ import main
+    from scrimmage.bench.report import bench_estimates
+    from scrimmage.bench.spec import load_bench
+    from test_bench_gallery import _one_car, _write
+    footers = _footers(monkeypatch)
+    f = _write(tmp_path, "car.toml", _one_car() + '\n[sweep]\n"shaft.top.target_rps" = [30, 45]\n')
+    main(["bench", "sweep", str(f)])
+    capsys.readouterr()
+    want = bench_estimates(load_bench(f))
+    assert want.startswith("UNCALIBRATED: estimates from preset numbers, not measurements (")
+    assert footers and set(footers) == {want}
+
+
+def test_a_long_chart_footer_wraps(tmp_path, monkeypatch):
+    from scrimmage.launcher import report, sweep
+    footers = _footers(monkeypatch)
+    rows, setups = sweep.run_one(shooter(tmp_path))
+    long = report.calibration([type("S", (), {"provenance": {"ball.stiffness_n": FUEL, "ball.restitution": SHORT,
+                                                             "wheels.friction": TREAD}})()])
+    assert len(long) > report.FOOTER_WIDTH
+    (png,) = report.write_charts(rows, [{"kind": "shaft"}], tmp_path / "out", footer=long)
+    (text,) = footers
+    assert all(len(ln) <= report.FOOTER_WIDTH for ln in text.split("\n")) and text.replace("\n", " ") == long
+    from PIL import Image
+    with Image.open(png) as im:
+        assert im.width < 1000            # 7 x 100 dpi, not as wide as the line
+
+
+def test_the_aiming_line_names_a_measured_range_ball(tmp_path):
+    import tomlkit
+
+    from range_fixtures import shooter_cfg
+    from scrimmage.testrange import aim
+    name = ball_file(tmp_path)
+    cfg = tmp_path / "robot.toml"
+    cfg.write_text(tomlkit.dumps(shooter_cfg(launcher={"hood_gap": 0.10}, range={"ball": name})), encoding="utf-8")
+    model = aim.load_model(cfg, "hub_blue", 10.0)
+    assert {"ball.stiffness_n", "ball.restitution"} <= set(model.setup.provenance)
+    assert aim.calibration(model) == ("UNCALIBRATED: still estimates: wheel friction. Measured: ball stiffness and "
+                                      "bounce (fuel.measure.toml, J. Smith, 2026-11-10, 3 trials).")
