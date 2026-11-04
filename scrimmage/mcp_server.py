@@ -24,7 +24,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from .config import ConfigError
 from .lockstep import parse_speed
 from .scenario import ScenarioError, load_scenario
-from .scenario_runner import run_scenario as _run_scenario
+from .scenario_runner import REAL_DS_REFUSED, run_scenario as _run_scenario
 from .session import Session, SessionError
 
 MAX_ADVANCE = 60.0
@@ -34,7 +34,8 @@ INSTRUCTIONS = """\
 scrimmage simulates a WPILib (FRC) robot program in a physics world. Typical loop:
 start_session(config=<robot config .toml>) -> set_mode("auto") -> advance(seconds) -> screenshot("top") / get_state()
 -> edit robot code -> restart_robot() -> repeat. The simulation is held (paused, robot code included) between calls,
-so take your time (except robots with Phoenix 6 devices: they run in real time and keep running between calls). Every result includes t, the simulated time in seconds. Pokes (set_pose, push, move_body) change
+so take your time (except robots with Phoenix 6 devices, and sessions the FRC Driver Station app drives
+(start_session(real_ds=true)): they run in real time and keep running between calls). Every result includes t, the simulated time in seconds. Pokes (set_pose, push, move_body) change
 physics only; the robot's own odometry isn't told. run_scenario runs a scenario file's checks and returns its report.
 
 The component bench (bench_check, bench_run, bench_sweep, bench_compare, bench_gallery, bench_focus) tries a mechanism idea with
@@ -101,13 +102,16 @@ def _check_seconds(seconds: float) -> None:
 
 @server.tool()
 async def start_session(config: str, attach: bool = False, viewer: bool = False, replace: bool = False,
-                        speed: str | float = "max", sim_mode: str | None = None) -> str:
+                        speed: str | float = "max", sim_mode: str | None = None, real_ds: bool | None = None) -> str:
     """Start simulating a robot program. config: path to a robot config TOML (model, bindings, [robot_program]);
     a relative path is resolved against the MCP server's working directory, so prefer an absolute path.
     attach: wait for a robot program you start yourself instead of launching one. viewer: open a 3D window.
     speed: "max" (default) or a real-time factor (a number), used while advancing. replace: stop a running session
     first. sim_mode: "fast" or "phoenix", overriding the config's [robot_program] sim_mode (fast mode needs robot
-    code that checks Scrimmage.fastMode()). The session starts held at t=0, disabled."""
+    code that checks Scrimmage.fastMode()). real_ds: true lets the FRC Driver Station app drive the robot (the robot
+    program listens for it; scrimmage then runs in real time and refuses set_mode, set_joystick and set_match), false
+    makes scrimmage the Driver Station; leave it out for the config's [driver_station] real. The session starts held
+    at t=0, disabled."""
     global _session
     async with _lock():
         if _session is not None:
@@ -117,7 +121,7 @@ async def start_session(config: str, attach: bool = False, viewer: bool = False,
             await old.stop()
         try:
             s = Session(Path(config).expanduser(), attach=attach, viewer=viewer, speed=parse_speed(str(speed)),
-                        sim_mode=sim_mode)
+                        sim_mode=sim_mode, real_ds=real_ds)
             result = await s.start()
         except (SessionError, ConfigError, ValueError) as e:
             raise _fail(e) from None
@@ -321,12 +325,14 @@ async def contact_sheet(seconds: float, frames: int = 8, view: str = "follow", w
 
 
 @server.tool()
-async def run_scenario(path: str, out_dir: str | None = None) -> list:
+async def run_scenario(path: str, out_dir: str | None = None, real_ds: bool | None = None) -> list:
     """Run a scenario file (steps, checks, screenshots). Uses the current session if its config matches (the robot
     is restarted); with no session open, runs standalone in its own session (an open session with another config is
     an error: stop_session first). Returns the report (with mode "session" or
     "standalone") and up to 6 of its screenshots. out_dir defaults to runs/<scenario>-mcp, relative to the server's
-    working directory, and is overwritten each run."""
+    working directory, and is overwritten each run. real_ds=true is refused: the scenario is the Driver Station."""
+    if real_ds:
+        raise ToolError(REAL_DS_REFUSED)
     try:
         sc = load_scenario(Path(path).expanduser())
     except (ScenarioError, ConfigError) as e:

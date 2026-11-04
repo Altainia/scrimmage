@@ -76,8 +76,8 @@ class LockstepDriver:
     extension to step the robot clock (>step_seq = n) and wait for <done_seq >= n. Everything travels on
     the one WebSocket in order, so once done_seq arrives, that step's motor outputs are already in hal.
 
-    Phoenix 6 devices end it: their simulation follows the wall clock, so between steps the driver frees the robot's
-    clock (Bridge.release_for_phoenix) and the bridge carries on in real time.
+    Phoenix 6 devices end it, and the real Driver Station does at once: they follow the wall clock, so between steps
+    the driver frees the robot's clock (Bridge.release_lockstep) and the bridge carries on in real time.
     """
 
     def __init__(self, bridge: Bridge, conn: int, max_lag: float):
@@ -137,7 +137,7 @@ class LockstepDriver:
         b._restart_clock()
         b._rewind_log()  # drop rows logged in real time before the hand-off
         self.seq = int(self._get("<done_seq", 0) or 0)  # the extension keeps counting across reconnects
-        if await self._release_for_phoenix():  # Phoenix 6 devices appeared while it engaged (robot constructor)
+        if await self._release():  # Phoenix 6 devices appeared while it engaged (robot constructor)
             return
         b._lockstep_engaged(self)
         wall0, sim0 = time.monotonic(), w.time
@@ -157,26 +157,28 @@ class LockstepDriver:
     async def step_once(self, timeout: float | None = None) -> str:
         """One lockstep step: physics, per-tick extras, sensors, then the robot program.
         Returns "ok", "done", "disconnected", "timeout" (no ack within `timeout` wall seconds), or "released"
-        (Phoenix 6 devices are present, so the robot's clock now runs free: no step was taken, or it was the last)."""
+        (Phoenix 6 devices are present or the real DS drives the robot, so the robot's clock now runs free: no step was
+        taken, or it was the last)."""
         if not self.b._connected(self.conn):
             return "disconnected"
-        if await self._release_for_phoenix():
+        if await self._release():
             return "released"
         self._stepping = True
         try:
             r = await self._step(timeout)
         finally:
             self._stepping = False
-        if r == "ok" and await self._release_for_phoenix():
+        if r == "ok" and await self._release():
             return "released"
         return r
 
-    async def _release_for_phoenix(self) -> bool:
-        """Free the robot's clock if Phoenix 6 devices have appeared; True once it is free."""
+    async def _release(self) -> bool:
+        """Free the robot's clock if Phoenix 6 devices have appeared or the real DS drives the robot; True once it is
+        free."""
         b = self.b
-        if b.phoenix and b._connected(self.conn):
-            await b.release_for_phoenix()
-        return b.phoenix_released
+        if b.frees_clock and b._connected(self.conn):
+            await b.release_lockstep()
+        return b.clock_freed
 
     async def _step(self, timeout: float | None) -> str:
         b, w = self.b, self.b.world
@@ -239,14 +241,14 @@ class LockstepDriver:
         b = self.b
         n = 0
         while b._connected(self.conn):
-            if b.phoenix_released or (not self._stepping and await self._release_for_phoenix()):
+            if b.clock_freed or (not self._stepping and await self._release()):
                 return
             n += 1
             await b._send([frame(*LOCKSTEP_DEVICE, {">keepalive": n})])
             # a disconnect wakes this at once (b.disconnected is set by the handler), as do Phoenix 6 devices, and
             # the step in flight when they appeared freeing the clock
             wake = [asyncio.ensure_future(b.disconnected.wait()),
-                    asyncio.ensure_future(b._phoenix_released_event.wait())]
+                    asyncio.ensure_future(b._clock_freed_event.wait())]
             if not b.phoenix:
                 wake.append(asyncio.ensure_future(b._phoenix_seen_event.wait()))
             try:

@@ -1,4 +1,5 @@
-"""Driver Station state that scrimmage sends to the robot program when it, not a human, is the DS."""
+"""Driver Station state that scrimmage sends to the robot program when it, not a human, is the DS, and what the robot
+reports back when the real FRC Driver Station app drives it instead."""
 
 from __future__ import annotations
 
@@ -12,6 +13,8 @@ PHASES = ("auto", "teleop")   # the modes with a match timer
 STATIONS = ("red1", "red2", "red3", "blue1", "blue2", "blue3")
 MATCH_KEYS = ("station", "fms", "timer", "auto_seconds", "teleop_seconds")
 GAME_DATA_MAX = 64            # the HAL keeps up to 64 bytes
+REAL_DS_DRIVING = "the FRC Driver Station is driving"   # why a real-DS session refuses mode, joystick and match changes
+REAL_DS_WAITING = "waiting for the Driver Station"      # a real-DS session before (or without) a connected DS
 
 
 def check_game_data(value, where: str) -> str:
@@ -172,3 +175,26 @@ class DriverStationState:
         data[">new_data"] = True
         out.append(frame("DriverStation", "", data))
         return out
+
+
+def real_ds_report(hal) -> dict:
+    """What the real Driver Station is doing, from the robot program's own ("DriverStation", "") reports (its DS
+    socket extension sets them from the DS's packets). Until the latest report has `>ds` true the mode is "waiting".
+    game_data is there only if the robot reports it."""
+    d = hal.devices.get(("DriverStation", ""), {})
+    connected = d.get(">ds") is True
+    if not connected:
+        mode = "waiting"
+    elif not d.get(">enabled"):
+        mode = "disabled"
+    elif d.get(">autonomous"):
+        mode = "auto"
+    elif d.get(">test"):
+        mode = "test"
+    else:
+        mode = "teleop"
+    out = {"connected": connected, "mode": mode, "estop": bool(d.get(">estop", False)),
+           "station": d.get(">station"), "fms": bool(d.get(">fms", False)), "match_time": d.get(">match_time", -1.0)}
+    if ">game_data" in d:
+        out["game_data"] = d[">game_data"]
+    return out

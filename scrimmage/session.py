@@ -23,12 +23,14 @@ import mujoco
 from .bindings import binds_ph, binds_rev
 from .bridge import Bridge, robot_language
 from .devicecheck import check_devices, device_notes
-from .driverstation import MatchSettings, check_game_data
+from .driverstation import (REAL_DS_DRIVING, REAL_DS_WAITING, MatchSettings, check_game_data,
+                            real_ds_report)
 from .config import Config, ConfigError, build_world, load_config, set_sim_mode, sim_mode_unused
 from .lockstep import Pacer
 from .movers import Mover, mover_poses, movers
 from .render import Renderer, check_sheet_size, check_size, RenderUnavailable, contact_sheet, to_png
 from .robot_process import RobotProcess
+from .robotcode import with_ds_socket
 from .world import World
 
 log = logging.getLogger("scrimmage")
@@ -40,6 +42,12 @@ NT_CONNECT_TIMEOUT = 5.0 # wall s to wait for NetworkTables once the robot is re
 
 
 PHOENIX_UNPAUSABLE = "Phoenix 6 devices keep running between calls: this session can't pause them"
+REAL_DS_UNPAUSABLE = "the real Driver Station keeps the robot running between calls: this session can't pause it"
+DS_SOCKET_ENV = "SCRIMMAGE_DS_SOCKET"   # set to 1 for a real-DS launch: the Gradle init script then keeps the DS socket
+DS_UDP_PORT, DS_TCP_PORT = 1110, 1740   # the DS protocol's fixed ports, where the robot listens for the real DS
+DS_LISTEN_TIMEOUT = 30.0                # wall s an attached robot program has to listen on UDP 1110 (no start_timeout)
+NOT_LISTENING = ("the robot program isn't listening for the Driver Station (UDP 1110): RobotPy needs --ds-socket; "
+                 "Java needs wpi.sim.addDriverstation()")
 # scrimmage-lockstep: 0.2.0 REV helper, 0.3.0 clock at 0, 0.4.0 seed, 0.5.0 sim_values, 0.6.0 clock at 1 us (AdvantageKit)
 LOCKSTEP_VERSION = (0, 6, 0)
 PH_LOCKSTEP_VERSION = (0, 7, 0)   # 0.7.0 relays the REV Pneumatic Hub; needed only by robots with valves on one
@@ -115,6 +123,28 @@ def _listening(host: str, port: int) -> bool:
         return False
 
 
+def _port_free(kind: int, port: int) -> bool:
+    """Can this computer's DS port be bound now (nothing listens on it)? TCP binds as libuv does (SO_REUSEADDR), so
+    a closed connection's leftovers don't count."""
+    with socket.socket(socket.AF_INET, kind) as sock:
+        if kind == socket.SOCK_STREAM:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind(("0.0.0.0", port))
+        except OSError:
+            return False
+    return True
+
+
+def ds_ports_problem() -> str | None:
+    """Why a real-DS robot program can't listen for the Driver Station here: one of its ports is taken."""
+    for kind, name, port in ((socket.SOCK_DGRAM, "UDP", DS_UDP_PORT), (socket.SOCK_STREAM, "TCP", DS_TCP_PORT)):
+        if not _port_free(kind, port):
+            return (f"{name} port {port} is already in use, so the robot program can't listen for the Driver Station: "
+                    "stop the other real Driver Station session or robot program (only one can listen per computer)")
+    return None
+
+
 def connect_timeout_hint(command: list[str], cwd) -> str:
     """What to add to "the robot program didn't connect" when the command is Gradle's wrapper."""
     if Path(command[0]).name not in ("gradlew", "gradlew.bat"):
@@ -132,10 +162,11 @@ class Session:
     def __init__(self, config: Config | str | Path, *, attach: bool = False, viewer: bool = False,
                  speed: float | None = None, nt: bool = True, port: int | None = None,
                  log_path: Path | None = None, robot_log: Path | None = None, picture_sizes=(),
-                 sim_mode: str | None = None):
+                 sim_mode: str | None = None, real_ds: bool | None = None):
         """`picture_sizes`: (width, height) pairs pictures will be taken at; their renderers are built during start(),
         before the robot program runs (building one holds Python's GIL, which would stall a held robot's keep-alives
-        for seconds with slow software GL)."""
+        for seconds with slow software GL). `real_ds`: the FRC Driver Station app drives the robot instead of
+        scrimmage (None: the config's [driver_station] real)."""
         self.config = config if isinstance(config, Config) else load_config(config)
         if sim_mode is not None and self.config is config and config.robot_program is not None:
             # the caller's Config stays as it was: set_sim_mode changes the robot program's mode and environment
@@ -147,7 +178,14 @@ class Session:
         if not attach and self.config.robot_program is None:
             raise SessionError(f"{self.config.path} has no [robot_program] section: add one (see configs/kitbot.toml), "
                                "or attach to a robot program you start yourself")
+        self.real_ds = self.config.real_ds if real_ds is None else bool(real_ds)
         rp = self.config.robot_program
+        if self.real_ds and rp is not None and not attach:
+            # the robot program listens for the real DS: RobotPy through --ds-socket, Java through the init script
+            rp = dataclasses.replace(rp, command=with_ds_socket(rp.command), env={**rp.env, DS_SOCKET_ENV: "1"})
+            self.config = dataclasses.replace(self.config, robot_program=rp)
+        self._ds_notes: list[str] = []          # the real-DS listening check's note
+        self._ds_watch: asyncio.Task | None = None
         if rp is not None and not attach:
             from . import java_tools
             missing = java_tools.agent_missing_message(self.config.path, rp.command,
@@ -190,6 +228,8 @@ class Session:
             raise SessionError("this session has already been started")
         if not self.attach and (problem := lockstep_version_problem(cfg)):
             raise SessionError(problem)
+        if self.real_ds and not self.attach and (problem := ds_ports_problem()):
+            raise SessionError(problem)
         if not self.attach and self.nt and _listening("127.0.0.1", cfg.nt_port):
             # The robot program we launch would serve NT there too, and each would read the other's values.
             raise SessionError(f"NetworkTables port {cfg.nt_port} is already in use (another robot program "
@@ -202,10 +242,11 @@ class Session:
             self.bridge = Bridge(self.world, self.host, self.port, held=True, viewer=self.viewer, nt=self.nt,
                                  log_path=self.log_path, step=cfg.step, speed=None,
                                  odometry_topic=cfg.odometry_topic, nt_port=cfg.nt_port,
-                                 sim_mode=cfg.robot_program.sim_mode if cfg.robot_program is not None else None)
+                                 sim_mode=cfg.robot_program.sim_mode if cfg.robot_program is not None else None,
+                                 real_ds=self.real_ds)
         except ValueError as e:
             raise SessionError(f"{cfg.path}: {e}") from None
-        self.bridge.ds.active = True
+        self.bridge.ds.active = not self.real_ds   # the real DS's own packets reach the robot program
         self.bridge.ds.match = match if match is not None else cfg.match
         if game_data:
             self.bridge.ds.set_game_data(game_data)
@@ -232,6 +273,9 @@ class Session:
             if not self.attach:
                 await self._launch()
             await self._wait_ready()
+            if self.attach:
+                rp = cfg.robot_program
+                self._watch_ds_socket(rp.start_timeout if rp is not None else DS_LISTEN_TIMEOUT)
             await self._wait_nt()
         except BaseException:
             await asyncio.shield(self.stop())  # the SessionError already carries the console tail
@@ -246,6 +290,24 @@ class Session:
             await self.robot.start(self.bridge.bound_port)
         except RuntimeError as e:
             raise SessionError(str(e)) from None
+        self._watch_ds_socket(rp.start_timeout)
+
+    def _watch_ds_socket(self, timeout: float) -> None:
+        """Real DS: once `timeout` wall seconds have passed, check that the robot program listens on UDP 1110 (the
+        port can't be bound), and say what it needs if not. Checked once, late: binding it while the robot program
+        starts could take it from the robot."""
+        if not self.real_ds:
+            return
+        if self._ds_watch is not None:
+            self._ds_watch.cancel()
+        self._ds_notes.clear()
+
+        async def watch():
+            await asyncio.sleep(timeout)
+            if _port_free(socket.SOCK_DGRAM, DS_UDP_PORT):
+                log.warning("%s", NOT_LISTENING)
+                self._ds_notes.append(NOT_LISTENING)
+        self._ds_watch = asyncio.create_task(watch())
 
     async def _wait_ready(self) -> None:
         b = self.bridge
@@ -293,6 +355,8 @@ class Session:
             await asyncio.sleep(0.05)
 
     async def stop(self) -> None:
+        if self._ds_watch is not None:
+            self._ds_watch.cancel()
         if self.robot is not None:
             await self.robot.stop()
             self.robot.close()
@@ -426,23 +490,32 @@ class Session:
             warnings.append(self.release_message())
         if self._unpausable() and not self._unpausable_said:
             self._unpausable_said = True
-            warnings.append(PHOENIX_UNPAUSABLE)
+            warnings.append(self._unpausable_message())
         if warnings:
             result["warning"] = "; ".join(warnings)
         return result
 
     def _unpausable(self) -> bool:
-        """A held session whose Phoenix 6 devices keep running between calls (they follow the wall clock)."""
+        """A held session that keeps running between calls: its Phoenix 6 devices or the real DS follow the wall
+        clock."""
         b = self.bridge
-        return b is not None and b.held and b.phoenix
+        return b is not None and b.held and b.frees_clock
+
+    def _unpausable_message(self) -> str:
+        return PHOENIX_UNPAUSABLE if self.bridge.phoenix else REAL_DS_UNPAUSABLE
 
     def release_message(self) -> str:
         return (f"the robot program's clock ran free at t={self.bridge.lockstep_released_at:.3f} "
                 "(scrimmage stalled for more than 2 s); results aren't repeatable")
 
     # ------------------------------------------------------------------ driver inputs
+    def _not_real_ds(self) -> None:
+        if self.real_ds:
+            raise SessionError(f"this session can't change the Driver Station's inputs: {REAL_DS_DRIVING}")
+
     def set_mode(self, mode: str) -> dict:
         self._require_started()
+        self._not_real_ds()
         try:
             self.bridge.ds.set_mode(mode)
         except ValueError as e:
@@ -451,6 +524,7 @@ class Session:
 
     def set_joystick(self, port: int, axes=None, buttons=None, povs=None) -> dict:
         self._require_started()
+        self._not_real_ds()
         try:
             self.bridge.ds.set_joystick(port, axes, buttons, povs)
         except ValueError as e:
@@ -461,6 +535,7 @@ class Session:
                   teleop_seconds=None) -> dict:
         """Change any of the match settings and the game data (None keeps each); sent on the next DS frame."""
         ds = self._require_started().ds
+        self._not_real_ds()
         changes = {k: v for k, v in (("station", station), ("fms", fms), ("timer", timer),
                                      ("auto_seconds", auto_seconds), ("teleop_seconds", teleop_seconds))
                    if v is not None}
@@ -560,11 +635,18 @@ class Session:
         w = self.world
         self._require_started()
         x, y, yaw = w.robot_pose()
+        if self.real_ds:    # what the real DS is doing, per the robot program's own reports
+            report = real_ds_report(self.bridge.hal)
+            ds = {"mode": report["mode"], "match": report, "real_ds": True,
+                  "driver_station": "connected" if report["connected"] else REAL_DS_WAITING}
+        else:
+            ds = {"mode": self.bridge.ds.mode,
+                  "match": {**dataclasses.asdict(self.bridge.ds.match), "game_data": self.bridge.ds.game_data,
+                            "match_time": self.bridge.ds.sent_match_time},
+                  "real_ds": False}
         return {
             "t": round(w.time, 4),
-            "mode": self.bridge.ds.mode,
-            "match": {**dataclasses.asdict(self.bridge.ds.match), "game_data": self.bridge.ds.game_data,
-                      "match_time": self.bridge.ds.sent_match_time},
+            **ds,
             "lockstep": self.lockstep,
             "lockstep_released_at": self._released_at(),
             "pose": {"x": round(x, 4), "y": round(y, 4), "heading_deg": round(math.degrees(yaw), 2)},
@@ -602,10 +684,12 @@ class Session:
             robot = {"running": self.robot.running, "returncode": self.robot.returncode,
                      "command": self.robot.command}
         return {"t": round(self.t, 4), "lockstep": self.lockstep, "lockstep_released_at": self._released_at(),
+                "real_ds": self.real_ds,
                 "connected": b is not None and b.ws is not None,
                 "port": b.bound_port if b is not None else None, "robot": robot,
                 "devices": sorted(f"{t}/{d}" for t, d in b.hal.devices) if b is not None else [],
-                "warnings": [*self.world.warnings, *self.phoenix_warnings()], "rev_state": self.rev_state(),
+                "warnings": [*self.world.warnings, *self.phoenix_warnings(), *self._ds_notes],
+                "rev_state": self.rev_state(),
                 **self._device_status(), **self._phoenix_status()}
 
     def _device_status(self) -> dict:
@@ -626,7 +710,7 @@ class Session:
         """What to say about this session's Phoenix 6 devices: they can't be paused, and they don't belong in fast
         mode."""
         b = self.bridge
-        out = [PHOENIX_UNPAUSABLE] if self._unpausable() else []
+        out = [self._unpausable_message()] if self._unpausable() else []
         if b is not None and (msg := b.fast_phoenix_message) is not None:
             out.append(msg)
         return out

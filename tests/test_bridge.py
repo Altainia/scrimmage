@@ -516,7 +516,7 @@ def test_phoenix_appearing_during_a_held_step_starts_real_time_physics_at_once()
                 await asyncio.sleep(0.05)                # the hold woke, saw the step, and waits again
                 driver._stepping = False
                 t0, w0 = bridge.world.time, time.monotonic()
-                assert await driver._release_for_phoenix()   # what the step does as it ends
+                assert await driver._release()   # what the step does as it ends
                 await wait_until(lambda: bridge.world.time > t0)
                 return time.monotonic() - w0
     waited = asyncio.run(main())
