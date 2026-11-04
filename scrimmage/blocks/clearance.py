@@ -11,6 +11,9 @@ collides and any geom of the element.
   each other (the others are skipped). Nothing within DISTMAX reads math.inf; a touch or an overlap reads 0.0.
 - **Cost:** the geom lists are worked out once per model. A run measures an element only when its test names it: a
   `clears` condition, or `clearance.<name>` in the test's chart (named()).
+- **Parts it leaves out:** a test that measures an element on a robot with stock parts whose collide is off gets
+  uncounted_note, a run note and a Test-tab hint naming them: a raised arm with collide off passes through the
+  element unmeasured, and the number read would be the chassis's.
 """
 
 from __future__ import annotations
@@ -85,6 +88,35 @@ def named(program, elements) -> list[str]:
     known = set(elements)
     out |= {s[len(PREFIX):] for s in program.chart or [] if s.startswith(PREFIX) and s[len(PREFIX):] in known}
     return sorted(out)
+
+
+def uncounted(world) -> list[str]:
+    """The robot's stock parts with collide off, sorted: their geoms touch nothing, so clearance doesn't count them."""
+    parts = world.parts
+    if parts is None:
+        return []
+    return sorted(i.name for i in parts.instances if i.stock_params.get("collide") is False)
+
+
+def _and(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+def uncounted_note(world, program) -> str | None:
+    """When the test measures an element (named()) and the robot has stock parts with collide off: "clearance counts
+    only parts that collide: arm and elevator have collide off, so they aren't measured (set collide = true on
+    them)". None otherwise."""
+    rng = world.parts.range if world.parts is not None else None
+    if not named(program, [e.name for e in rng.elements] if rng is not None else []):
+        return None
+    off = uncounted(world)
+    if not off:
+        return None
+    if len(off) == 1:
+        return (f"clearance counts only parts that collide: {off[0]} has collide off, so it isn't measured "
+                "(set collide = true on it)")
+    return (f"clearance counts only parts that collide: {_and(off)} have collide off, so they aren't measured "
+            "(set collide = true on them)")
 
 
 class Closest:

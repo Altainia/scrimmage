@@ -43,8 +43,8 @@ first when the robot can drive and the field has bars, then spins the first mech
   and **Check**. A block only shows up when the robot has something for it (no motors, no **spin** block).
 - **Middle: your test.** Above the blocks is **Setup**, folded away until you open it (its summary shows the hooks, the
   robot's weight and the field).
-- **Right: the run.** **Fix these first** (when there are problems), **Run** and **Stop**, then the result: what
-  happened in one sentence, each check, the replay, the chart, and the list of kept runs.
+- **Right: the run.** **Fix these first** (when there are problems), **Good to know** (hints that don't stop a
+  run), **Run** and **Stop**, then the result: what happened in one sentence, each check, the replay, the chart, and the list of kept runs.
 
 The bottom bar says whether the test is saved and how many blocks it has.
 
@@ -474,7 +474,10 @@ It is the smallest distance between any part of the robot that collides and any 
 
 - **Only parts that collide count**: the chassis and its bumpers, parts from CAD, and stock parts with
   [`collide = true`](parts.md#stock-parts-that-collide). A stock elevator or arm without it touches nothing, so it
-  doesn't count (and passes through the trench).
+  doesn't count (and passes through the trench). When the robot has stock parts with collide off, the test gets a
+  hint under **Good to know** (over **Run**; it doesn't stop the run) and a note on each run that names them:
+  `clearance counts only parts that collide: arm and elevator have collide off, so they aren't measured (set collide
+  = true on them)`.
 - **It is measured out to 0.5 m (19.7 in).** Farther away it reads as clear, so *n* can be at most 19.6 in.
 - **The result** gets a line for each element the test measures: `closest to trench_arm: 2.9 in at 2.5 s`, or
   `trench_arm: never within 20 in` when nothing came within 0.5 m. A failed check says the clearance then: `expected

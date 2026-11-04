@@ -1160,8 +1160,19 @@ def test_a_clears_run_has_the_clearance_line(tmp_path, test_app):
                                blocks=blocks))
     st = _state(c)
     assert st["problems"] == [] and {"name": "portcullis", "unit": "in"} in st["palette"]["moving_elements"]
+    # the stock arm has collide off: a hint says it isn't measured, and the run still goes
+    uncounted = ("clearance counts only parts that collide: arm has collide off, so it isn't measured (set collide "
+                 "= true on it)")
+    assert st["hints"] == [{"place": [], "message": uncounted}]
     assert c.call("POST", "/api/test/run", {})[0] == 200
     [run] = _wait_idle(c, timeout=120)["runs"]
     s, res = c.get(f"/api/test/run/{run['id']}")
     assert s == 200
     assert [ln for ln in res["lines"] if "portcullis" in ln] == ["portcullis: never within 20 in"], res["lines"]
+    assert uncounted in res["notes"]
+
+
+def test_no_hint_without_a_clearance(tmp_path, test_app):
+    """The stock arm has collide off, but a test that measures no clearance has no hint."""
+    st = _state(test_app(write_test(tmp_path)))
+    assert st["problems"] == [] and st["hints"] == []

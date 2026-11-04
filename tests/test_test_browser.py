@@ -1985,6 +1985,16 @@ def test_the_new_checks_from_the_palette_save_as_the_test_file_reads_them(test_p
     assert page.evaluate("__scrimmageTest.toJSON()") == page.evaluate("__scrimmageTest.state.test")
 
 
+def test_a_clearance_hint_shows_and_run_stays_on(test_page, tmp_path):
+    """Fix 1: the stock arm has collide off, so a clears check on it shows a hint, not a problem: Run stays on."""
+    page, _ = test_page(path=_defenses_test(tmp_path, '[[block]]\ndo = "expect"\n'
+                                                      'that = { clears = { element = "portcullis", at_least_in = 1.0 } }\n'))
+    page.wait_for_selector("#test-hints-wrap:not([hidden])")
+    assert "arm has collide off, so it isn't measured" in page.inner_text("#test-hints")
+    assert page.is_hidden("#test-problems-wrap")
+    assert page.is_enabled("#test-run")
+
+
 def _partner_setup(path):
     return _toml(path).get("setup", {}).get("partner")
 

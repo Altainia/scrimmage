@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from scrimmage.blocks.palette import problems
+from scrimmage.blocks.palette import hints, problems
 from scrimmage.blocks.program import load, loads
 from scrimmage.blocks.run import TestRun, clearance_lines, world_for
 from scrimmage.testrange.spec import load_range
@@ -120,6 +120,48 @@ def test_trench_example_taller_elevator(tmp_path):
     _, _, r = _run(tmp_path / "clear.test.toml", (TRENCH / "clear.test.toml").read_text(encoding="utf-8"))
     assert r.status == "finished", r.outcome
     assert r.clearance["trench_arm"]["min_in"] == pytest.approx(1.0, abs=0.15)
+
+
+def _trench_copy(tmp_path: Path, cfg: str) -> Path:
+    """The trench example's raised test beside `cfg` (the robot config's text) in tmp_path."""
+    (tmp_path / "trench-standin.toml").write_text(cfg, encoding="utf-8")
+    path = tmp_path / "raised.test.toml"
+    path.write_text((TRENCH / "raised.test.toml").read_text(encoding="utf-8"), encoding="utf-8")
+    return path
+
+
+UNCOUNTED = ("clearance counts only parts that collide: arm and elevator have collide off, so they aren't measured "
+             "(set collide = true on them)")
+
+
+def test_trench_raised_with_collide_off_says_so(tmp_path):
+    """Fix 1: with collide off on the elevator and the arm, the raised arm passes through the trench unmeasured: the
+    run passes on the chassis's clearance, and its notes and the Test tab's hints say the parts aren't counted."""
+    cfg = (TRENCH / "trench-standin.toml").read_text(encoding="utf-8")
+    assert cfg.count("collide = true\n") == 2
+    path = _trench_copy(tmp_path, cfg.replace("collide = true\n", "collide = false\n"))
+    program, world, r = _run(path)
+    assert r.passed, r.outcome
+    assert UNCOUNTED in r.notes
+    assert hints(program, world) == [{"place": [], "message": UNCOUNTED}]
+    assert problems(program, world) == []
+
+
+def test_trench_no_uncounted_note_when_every_part_collides(tmp_path):
+    program, world, r = _run(TRENCH / "raised.test.toml")
+    assert not any("clearance counts" in n for n in r.notes), r.notes
+    assert hints(program, world) == []
+    # a robot with no stock parts but its chassis and drive (neither has a collide setting): no note either
+    cfg = (TRENCH / "trench-standin.toml").read_text(encoding="utf-8")
+    head = cfg[:cfg.index("[[part]]\nname = \"elevator\"")]
+    path = _trench_copy(tmp_path, head + cfg[cfg.index("[range]"):])
+    text = path.read_text(encoding="utf-8")
+    block = '[[block]]\ndo = "move"\njoint = "arm.pivot"\nto = 90.0\nunit = "deg"\n\n'
+    assert block in text
+    path.write_text(text.replace(block, "").replace(', "arm.pivot"', ""), encoding="utf-8")
+    program, world, r = _run(path)
+    assert not any("clearance counts" in n for n in r.notes), r.notes
+    assert hints(program, world) == []
 
 
 def _push(name: str, text: str | None = None):

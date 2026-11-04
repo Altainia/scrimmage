@@ -3,8 +3,8 @@
 //
 //   Left       the palette: Blockly's flyout (Move, Wait, Repeat, Check), filled from the robot's own names
 //   Middle     the test: Blockly's workspace; the stack with the most blocks is the test
-//   Right      the run: the problems that keep it from running, Run (and Stop while it runs), and the runs
-//              (test_run.js: the shown run's outcome, replay and chart, and the kept runs)
+//   Right      the run: the problems that keep it from running, the hints that don't, Run (and Stop while it runs),
+//              and the runs (test_run.js: the shown run's outcome, replay and chart, and the kept runs)
 //   Status     saved or not, how many blocks
 //   Setup      (folded away over the blocks) the field and its start, the robot's weight and center of mass (when its
 //              root part is the stock chassis) and where each part is mounted, which change the robot file through
@@ -325,6 +325,10 @@ function renderProblems() {
       h("span", { text: p.message }));
   }));
   $("#test-problems-wrap").hidden = !list.length;
+  // hints (the state's): what the test can run with but should know; they never keep Run from running
+  const hints = (t.state && t.state.hints) || [];
+  $("#test-hints").replaceChildren(...hints.map((p) => h("li", { text: p.message })));
+  $("#test-hints-wrap").hidden = !hints.length;
   const s = t.state;
   $("#test-run").disabled = !s || !!list.length || !!s.running;
   $("#test-run").title = list.length ? "Fix the problems first" : "";

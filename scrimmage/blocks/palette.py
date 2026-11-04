@@ -26,7 +26,8 @@ slots.
 
 `problems()` checks a test's names against that: one plain sentence per bad name, at the block's place (0-based
 indices, through repeat bodies). A test written before Import again renamed a part shows its blocks' problems here
-and doesn't run; nothing crashes.
+and doesn't run; nothing crashes. `hints()` says what a test can run with but should know: a clearance it measures
+that leaves out the robot's stock parts with collide off (clearance.uncounted_note). A hint never stops a run.
 """
 
 from __future__ import annotations
@@ -42,6 +43,7 @@ from ..testrange.elements import moving_units
 from ..testrange.spec import BALL_CHOICE_RANGES, RangeError, load_range
 from ..testrange.station import OVERRIDE_KEYS, with_overrides
 from .aim import turrets
+from .clearance import uncounted_note
 from .drive import drivetrain
 from .placed import ON_PIECE
 from .spread import NO_BALL, floor_ball, spread_ball
@@ -513,3 +515,11 @@ def problems(program, world) -> list[dict]:
 
     walk(program.blocks, [])
     return out
+
+
+def hints(program, world) -> list[dict]:
+    """[{"place": [], "message": str}]: what the test can run with but should know (it never stops a run): a clearance
+    it measures on a robot with stock parts whose collide is off, which leaves them out (clearance.uncounted_note).
+    Empty otherwise."""
+    note = uncounted_note(world, program)
+    return [] if note is None else [{"place": [], "message": note}]

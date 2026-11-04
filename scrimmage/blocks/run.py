@@ -108,7 +108,7 @@ from ..parts.partner import SIGNALS as PARTNER_SIGNALS
 from ..protocol import HalState
 from ..testrange.build import BALL_BITS
 from .aim import TURN, aim_error, aim_target
-from .clearance import NEVER_WITHIN_IN, PREFIX, inches, named
+from .clearance import NEVER_WITHIN_IN, PREFIX, inches, named, uncounted_note
 from .conditions import IN, Watch, _conds, describe, turret_words
 from .drive import STEER_TIMEOUT, drivetrain
 from .feeds import SETTLE_MAX_S, Outcomes, counts, is_standin, made_it_in, sentence
@@ -298,13 +298,17 @@ PNEUMATIC_NOTE = "Pneumatic numbers are estimates (UNCALIBRATED): see docs/pneum
 def run_notes(world, program: Program) -> list[str]:
     """What the run's numbers rest on: a line per gripped body (parts/grip.py's grip_notes); a test of held, rests on
     or seated with no grip anywhere gets default_grip_note, so its grip isn't read as measured either. A robot with
-    cylinders gets PNEUMATIC_NOTE."""
+    cylinders gets PNEUMATIC_NOTE. A test that measures an element's clearance, on a robot with stock parts whose
+    collide is off, gets clearance.uncounted_note: those parts aren't measured."""
     from ..parts.grip import grip_notes
     notes = grip_notes(world)
     if not notes and any(_conds(program.blocks, k) for k in GRIP_CONDITIONS):
         notes = [default_grip_note(world)]
     if getattr(world, "pneumatics", None) is not None:
         notes.append(PNEUMATIC_NOTE)
+    uncounted = uncounted_note(world, program)
+    if uncounted is not None:
+        notes.append(uncounted)
     return notes
 
 
