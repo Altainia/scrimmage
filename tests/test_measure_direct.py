@@ -53,6 +53,25 @@ def test_an_unknown_unit_or_two_units_error():
         units.reading({"force_lb": "10"}, "force")
 
 
+def test_a_weight_takes_force_and_mass_units():
+    assert units.reading({"tare_lb": 1}, "weight", "tare") == pytest.approx(LB)
+    assert units.reading({"tare_kg": 1}, "weight", "tare") == pytest.approx(9.80665)
+    assert units.reading({"tare_g": 1000}, "weight", "tare") == pytest.approx(9.80665)
+    assert units.reading({"tare_oz": 16}, "weight", "tare") == pytest.approx(LB)
+    assert units.reading({"tare_n": 3}, "weight", "tare") == 3
+
+
+def test_an_uppercase_unit_says_units_are_lowercase():
+    with pytest.raises(MeasureError, match="units are lowercase: write force_lb"):
+        units.reading({"force_LB": 10}, "force")
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf")])
+def test_a_reading_that_isnt_a_finite_number_is_an_error(value):
+    with pytest.raises(MeasureError, match="trial 2: force_lb must be a number"):
+        units.reading({"force_lb": value}, "force", where="x.measure.toml: [[squeeze]] trial 2")
+
+
 def test_an_optional_reading_may_be_left_out():
     assert units.reading({}, "length", "squeezed_to", required=False) is None
 
@@ -82,6 +101,16 @@ def test_one_trial_twice_the_rest_is_flagged_not_dropped():
     assert s.outliers == [3]
     assert "trial 4 looks off: check it" in s.warnings
     assert s.n == 10 and s.mean == pytest.approx(11.0)  # still counted
+
+
+@pytest.mark.parametrize("values, flagged", [
+    ([10.0, 10.0, 100.0], []),
+    ([10.0, 10.0, 10.0, 100.0], []),  # exactly twice the average distance: not more than
+    ([10.0, 10.0, 10.0, 10.0, 100.0], [4]),
+])
+def test_no_outlier_can_be_flagged_below_5_trials(values, flagged):
+    # One trial's distance from the mean is at most n/2 times the average distance; n/2 > 2 needs n >= 5.
+    assert stats.summary(values).outliers == flagged
 
 
 def test_a_wide_spread_warns_in_percent():
@@ -159,7 +188,21 @@ def test_provenance_carries_the_file_and_trial_count(tmp_path):
     p = _write(tmp_path, BALL_HEADER + "[[size]]\nmass_g = 216\n[[size]]\nmass_g = 215\n[[size]]\nmass_g = 217\n")
     mf = file.load(p)
     summary, _ = tests_direct.values(mf)["mass"]
-    assert file.provenance(mf, summary) == Provenance(file=p, by="J. Smith", date="2026-11-10", trials=3, good=True)
+    assert file.provenance(mf, summary) == Provenance(file=p, by="J. Smith", date="2026-11-10", trials=3, good=True,
+                                                      why="")
+
+
+def test_provenance_says_why_it_isnt_good(tmp_path):
+    p = _write(tmp_path, BALL_HEADER + "[[size]]\nmass_g = 100\n[[size]]\nmass_g = 122\n")
+    mf = file.load(p)
+    summary, _ = tests_direct.values(mf)["mass"]
+    prov = file.provenance(mf, summary)
+    assert not prov.good and prov.why == "2 trials: take at least 3; trials disagree by 20%"
+
+
+def test_an_empty_trial_list_is_an_error(tmp_path):
+    with pytest.raises(MeasureError, match=r"fuel.measure.toml: squeeze has no trials"):
+        file.load(_write(tmp_path, "squeeze = []\n" + BALL_HEADER))
 
 
 # ---------------------------------------------------------------------------------------------------- direct tests
@@ -194,9 +237,9 @@ def test_size_needs_one_reading_of_each_kind(tmp_path):
         tests_direct.values(file.load(p))
 
 
-def test_squeeze_at_75_percent_minus_the_board(tmp_path):
+def test_squeeze_at_75_percent_minus_the_tare(tmp_path):
     rows = "".join(f"\n[[squeeze]]\nforce_lb = {f}\n" for f in [9.8, 10.1, 10.0, 9.9, 10.2])
-    p = _write(tmp_path, BALL_HEADER + "\n[squeeze_setup]\nboard_lb = 1.0\n" + rows)
+    p = _write(tmp_path, BALL_HEADER + "\n[squeeze_setup]\ntare_lb = 1.0\n" + rows)
     summary, per_trial = tests_direct.values(file.load(p))["stiffness_n"]
     assert summary.mean == pytest.approx(8.999 * LB, rel=1e-3)
     assert summary.mean == pytest.approx(40.03, rel=1e-3)
@@ -212,17 +255,27 @@ def test_squeeze_to_another_height_converts_with_the_exponent(tmp_path):
     assert summary.mean == pytest.approx(30 * (0.25 / 0.20) ** 1.5)
 
 
-def test_squeeze_uses_the_measured_diameter_over_the_preset(tmp_path):
-    text = BALL_HEADER.replace('base = "2026-fuel"\n', "") + """
-[[size]]
-diameter_in = 6
+SIZE3 = "".join("\n[[size]]\ndiameter_in = 6\n" for _ in range(3))
+SQUEEZE_TO_4_8 = "".join("\n[[squeeze]]\nforce_n = 30\nsqueezed_to_in = 4.8\n" for _ in range(3))
 
-[[squeeze]]
-force_n = 30
-squeezed_to_in = 4.8
-"""
+
+def test_squeeze_uses_a_good_measured_diameter_over_the_preset(tmp_path):
+    summary, _ = tests_direct.values(file.load(_write(tmp_path, BALL_HEADER + SIZE3 + SQUEEZE_TO_4_8)))["stiffness_n"]
+    assert summary.mean == pytest.approx(30 * (0.25 / 0.20) ** 1.5)
+    assert summary.warnings == []
+
+
+def test_squeeze_falls_back_to_the_preset_when_the_size_isnt_good(tmp_path):
+    d = PRESETS["ball"]["2026-fuel"]["diameter"]
+    text = BALL_HEADER + "\n[[size]]\ndiameter_in = 6\n" + SQUEEZE_TO_4_8
+    summary, _ = tests_direct.values(file.load(_write(tmp_path, text)))["stiffness_n"]
+    assert summary.mean == pytest.approx(30 * (0.25 / (1 - 4.8 * INCH / d)) ** 1.5)
+    assert any("2026-fuel preset's diameter" in w and "1 trial: take at least 3" in w for w in summary.warnings)
+
+    text = BALL_HEADER.replace('base = "2026-fuel"\n', "") + "\n[[size]]\ndiameter_in = 6\n" + SQUEEZE_TO_4_8
     summary, _ = tests_direct.values(file.load(_write(tmp_path, text)))["stiffness_n"]
     assert summary.mean == pytest.approx(30 * (0.25 / 0.20) ** 1.5)
+    assert any("isn't good enough" in w for w in summary.warnings)
 
 
 def test_squeeze_to_a_height_needs_a_diameter(tmp_path):
@@ -231,10 +284,28 @@ def test_squeeze_to_a_height_needs_a_diameter(tmp_path):
         tests_direct.values(file.load(_write(tmp_path, text)))
 
 
-def test_a_board_heavier_than_the_reading_is_an_error(tmp_path):
-    p = _write(tmp_path, BALL_HEADER + "[squeeze_setup]\nboard_lb = 3\n[[squeeze]]\nforce_lb = 2\n")
-    with pytest.raises(MeasureError, match=r"\[\[squeeze\]\] trial 1 reads less than the top board"):
+def test_a_tare_heavier_than_the_reading_is_an_error(tmp_path):
+    p = _write(tmp_path, BALL_HEADER + "[squeeze_setup]\ntare_lb = 3\n[[squeeze]]\nforce_lb = 2\n")
+    with pytest.raises(MeasureError, match=r"\[\[squeeze\]\] trial 1 reads no more than the tare: zero the scale"):
         tests_direct.values(file.load(p))
+
+
+def test_a_tare_read_on_a_kitchen_scale_in_grams(tmp_path):
+    rows = "".join("\n[[squeeze]]\nforce_n = 40\ntare_g = 500\n" for _ in range(3))
+    summary, _ = tests_direct.values(file.load(_write(tmp_path, BALL_HEADER + rows)))["stiffness_n"]
+    assert summary.mean == pytest.approx(40 - 0.5 * 9.80665)
+
+
+@pytest.mark.parametrize("rows, message", [
+    ("[[squeeze]]\nforce_n = 30\nsqueezed_to_in = 0\n", "is squeezed to 0: squeezed_to is the gap between the boards"),
+    ("[[squeeze]]\nforce_n = 30\nsqueezed_to_in = 7\n", "isn't less than the ball's diameter"),
+    ("[drop_setup]\ndrop_in = 0\n[[drop]]\nbounce_in = 0\n", "drop height of 0: measure from the floor"),
+    ("[drop_setup]\ndrop_in = 18\n[[drop]]\nbounce_in = 6\nfloor = \"tile\"\n",
+     r"floor goes in \[drop_setup\], once for all trials, not in \[\[drop\]\] trial 1"),
+])
+def test_messages_say_what_to_do(tmp_path, rows, message):
+    with pytest.raises(MeasureError, match=message):
+        tests_direct.values(file.load(_write(tmp_path, BALL_HEADER + rows)))
 
 
 def test_drop_gives_restitution(tmp_path):
@@ -249,7 +320,7 @@ def test_a_drop_on_carpet_or_from_another_height_warns(tmp_path):
     rows = "".join("\n[[drop]]\nbounce_in = 6.48\n" for _ in range(3))
     p = _write(tmp_path, BALL_HEADER + "\n[drop_setup]\ndrop_in = 18\nfloor = \"Carpet\"\n" + rows)
     summary, _ = tests_direct.values(file.load(p))["restitution"]
-    assert any("carpet" in w and "hard floor" in w for w in summary.warnings)
+    assert any("soft floor (Carpet)" in w and "hard floor" in w for w in summary.warnings)
     assert summary.good  # a warning, not a reason to refuse it
 
     p = _write(tmp_path, BALL_HEADER + "\n[drop_setup]\ndrop_in = 36\nfloor = \"concrete\"\n" + rows)
@@ -300,3 +371,39 @@ pull_lb = 2.0
 def test_a_file_with_only_fit_tests_has_no_direct_values(tmp_path):
     p = _write(tmp_path, '[measure]\nkind = "cylinder"\nby = "J. Smith"\ndate = 2026-11-10\n[[stroke]]\ntime_s = 0.4\n')
     assert tests_direct.values(file.load(p)) == {}
+
+
+@pytest.mark.parametrize("floor, warned", [
+    ("rug", True), ("artificial turf", True), ("gym mat", True), ("foam tiles", True), ("Foam Tile", True),
+    ("matte concrete", False), ("tile", False), ("wood", False),
+])
+def test_soft_floors_warn(tmp_path, floor, warned):
+    rows = "".join("\n[[drop]]\nbounce_in = 6.48\n" for _ in range(3))
+    p = _write(tmp_path, BALL_HEADER + f"\n[drop_setup]\ndrop_in = 18\nfloor = \"{floor}\"\n" + rows)
+    summary, _ = tests_direct.values(file.load(p))["restitution"]
+    assert any("soft floor" in w for w in summary.warnings) == warned
+
+
+def test_a_sled_weight_of_zero_says_to_weigh_it(tmp_path):
+    p = _write(tmp_path, FRICTION_HEADER + "sled_lb = 0\n[[sled]]\npull_lb = 2\n")
+    with pytest.raises(MeasureError, match="sled weight of 0: weigh the sled"):
+        tests_direct.values(file.load(p))
+
+
+def test_a_sled_weighed_on_a_kitchen_scale(tmp_path):
+    rows = "".join("\n[[sled]]\npull_lb = 1.0\n" for _ in range(3))
+    p = _write(tmp_path, FRICTION_HEADER + "sled_oz = 40\n" + rows)  # 40 oz is 2.5 lb
+    summary, _ = tests_direct.values(file.load(p))["friction"]
+    assert summary.mean == pytest.approx(0.4, rel=1e-6)
+
+
+FRICTION_HEADER = """\
+[measure]
+kind = "friction"
+by = "J. Smith"
+date = 2026-11-10
+
+[sled_setup]
+sliding = "wheel tread: 40A"
+on = "FUEL"
+"""

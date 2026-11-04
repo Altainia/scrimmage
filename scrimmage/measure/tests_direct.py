@@ -2,26 +2,31 @@
 
 - **size** (a ball): `mass`, and `diameter` from a tape around the ball (circumference / pi) or read directly.
 - **squeeze** (a ball): `stiffness_n`, the force to squeeze the ball by 25% of its diameter between flat boards.
-  The ideal trial squeezes it to 75% of its diameter; the reading is the scale's force minus the top board's weight
-  (`board_<unit>`). A trial squeezed to another height (`squeezed_to_<unit>`, the gap between the boards) is
-  converted to 25% with the ball's `stiffness_exponent` (force grows as squeeze^exponent; 1.5 unless the base
-  preset says otherwise): F25 = F * (0.25 / squeeze)^exponent. That needs the ball's diameter: the file's own size
-  trials, else its base preset's.
+  The ideal trial squeezes it to 75% of its diameter. The top board's weight presses on the ball too, so it is part
+  of the force: the bottom board and the ball go on the scale, the scale is zeroed, then the top board goes on and
+  is pressed, and the reading is the force. A scale that can't be zeroed gives `tare_<unit>`, its reading with only
+  the bottom board and the ball on it, which is subtracted. A trial squeezed to another height
+  (`squeezed_to_<unit>`, the gap between the boards) is converted to 25% with the ball's `stiffness_exponent`
+  (force grows as squeeze^exponent; 1.5 unless the base preset says otherwise): F25 = F * (0.25 / squeeze)^exponent.
+  That needs the ball's diameter: the file's own size trials when they are good, else its base preset's.
 - **drop** (a ball): `restitution = sqrt(bounce / drop)`, both heights to the bottom of the ball. The model's foam
-  is tuned for an 18 in drop on a hard floor, so another height, or a carpet floor (`floor = "..."`), is warned.
-- **sled** (a friction): `friction = pull / sled weight`, the spring scale read at a steady slide. The setup names
-  the two materials: `sliding` (on the sled's bottom) and `on` (what it slides on).
+  is tuned for an 18 in drop on a hard floor, so another height, or a soft floor (`floor = "..."`: carpet, a rug,
+  turf, a mat, foam tiles), is warned.
+- **sled** (a friction): `friction = pull / sled weight`, the spring scale read at a steady slide; the weight may be
+  read on a kitchen scale in g or oz (units.py). The setup names the two materials: `sliding` (on the sled's
+  bottom) and `on` (what it slides on).
 
-A test's settings (the board, the squeeze height, the drop height, the sled's weight) may be given once in its
+A test's settings (the tare, the squeeze height, the drop height, the sled's weight) may be given once in its
 `[<test>_setup]` table, or in a trial for that trial alone. Every value is averaged by stats.summary.
 """
 
 import dataclasses
 import math
+import re
 
 from ..launcher.inputs import PRESETS
 from .file import MeasureError, MeasureFile
-from .stats import Summary, summary
+from .stats import Summary, summary, why
 from .units import UNITS, reading, unit_of
 
 DROP_HEIGHT = 18 * 0.0254  # the drop the model's foam is tuned for (m)
@@ -37,21 +42,25 @@ _TRIAL = {
 }
 _SETTING = {
     "size": {},
-    "squeeze": {"board": "force", "squeezed_to": "length"},
+    "squeeze": {"tare": "weight", "squeezed_to": "length"},
     "drop": {"drop": "length"},
-    "sled": {"sled": "force"},
+    "sled": {"sled": "weight"},
 }
 _SETUP_TEXT = {"size": (), "squeeze": (), "drop": ("floor",), "sled": ("sliding", "on")}
+_SOFT_FLOOR = re.compile(r"\b(carpet|rug|turf|mat|foam tile)s?\b", re.IGNORECASE)
 
 
 def _keys(names: dict[str, str]) -> str:
     return ", ".join(f"{n}_<unit>" if n not in UNITS[q] else n for n, q in names.items())
 
 
-def _check_keys(mf: MeasureFile, label: str, table: dict, names: dict[str, str], text: tuple[str, ...] = ()):
+def _check_keys(mf: MeasureFile, label: str, table: dict, names: dict[str, str], text: tuple[str, ...] = (),
+                setup_text: tuple[str, ...] = (), setup: str = ""):
     for key in table:
         if key in text or any(unit_of(key, n) is not None for n in names):
             continue
+        if key in setup_text:
+            raise MeasureError(f"{mf.path}: {key} goes in [{setup}], once for all trials, not in {label}")
         valid = _keys(names) + "".join(f", {t}" for t in text)
         raise MeasureError(f"{mf.path}: unknown reading '{key}' in {label}; it takes {valid}")
 
@@ -65,7 +74,8 @@ class _Test:
         self.setup = mf.settings.get(f"{test}_setup", {})
         _check_keys(mf, f"[{test}_setup]", self.setup, _SETTING[test], _SETUP_TEXT[test])
         for i, row in enumerate(self.rows):
-            _check_keys(mf, self.label(i), row, _TRIAL[test] | _SETTING[test])
+            _check_keys(mf, self.label(i), row, _TRIAL[test] | _SETTING[test], setup_text=_SETUP_TEXT[test],
+                        setup=f"{test}_setup")
 
     def label(self, i: int) -> str:
         return f"[[{self.test}]] trial {i + 1}"
@@ -137,25 +147,45 @@ def _preset(mf: MeasureFile) -> dict:
     return PRESETS["ball"].get(mf.base, {}) if mf.base else {}
 
 
-def _squeeze(t: _Test, diameter: float | None) -> dict:
+def _diameter(mf: MeasureFile, size: tuple[Summary, list[float]] | None) -> tuple[float | None, list[str]]:
+    """The ball's diameter for squeeze heights, and a warning when the measured one isn't good enough to use."""
+    preset = _preset(mf).get("diameter")
+    if size is None:
+        return preset, []
+    s = size[0]
+    if s.good:
+        return s.mean, []
+    if preset is not None:
+        return preset, [f"the squeeze heights use the {mf.base} preset's diameter, because the [[size]] diameter "
+                        f"isn't good enough ({why(s)})"]
+    return s.mean, [f"the squeeze heights use the [[size]] diameter, which isn't good enough ({why(s)}): "
+                    "measure it again, or give a base preset in [measure]"]
+
+
+def _squeeze(t: _Test, size: tuple[Summary, list[float]] | None) -> dict:
     exponent = _preset(t.mf).get("stiffness_exponent", 1.5)
-    values = []
+    diameter, diameter_warnings = _diameter(t.mf, size)
+    values, heights_used = [], False
     for i in range(len(t.rows)):
-        force = t.trial(i, "force") - (t.setting(i, "board", required=False) or 0.0)
+        force = t.trial(i, "force") - (t.setting(i, "tare", required=False) or 0.0)
         if force <= 0:
-            raise t.err(i, "reads less than the top board weighs: the force is the scale's reading minus the board")
+            raise t.err(i, "reads no more than the tare: zero the scale with the bottom board and the ball on it, "
+                           "then put the top board on and press")
         height = t.setting(i, "squeezed_to", required=False)
         if height is not None:
+            if height == 0:
+                raise t.err(i, "is squeezed to 0: squeezed_to is the gap between the boards when you read the "
+                               "scale, about 75% of the ball's diameter")
             if diameter is None:
                 raise t.err(i, "is squeezed to a height, which needs the ball's diameter: add [[size]] trials or "
                                "a base preset in [measure]")
-            squeeze = 1.0 - height / diameter
-            if not 0 < squeeze < 1:
+            if height >= diameter:
                 raise t.err(i, f"is squeezed to {height / 0.0254:.3g} in, which isn't less than the ball's "
-                               f"diameter ({diameter / 0.0254:.3g} in)")
-            force *= (IDEAL_SQUEEZE / squeeze) ** exponent
+                               f"diameter ({diameter / 0.0254:.3g} in): measure the gap between the boards")
+            force *= (IDEAL_SQUEEZE / (1.0 - height / diameter)) ** exponent
+            heights_used = True
         values.append(force)
-    return {"stiffness_n": (summary(values), values)}
+    return {"stiffness_n": (_with(summary(values), diameter_warnings if heights_used else []), values)}
 
 
 def _drop(t: _Test) -> dict:
@@ -163,7 +193,8 @@ def _drop(t: _Test) -> dict:
     for i in range(len(t.rows)):
         drop, bounce = t.setting(i, "drop"), t.trial(i, "bounce")
         if drop <= 0:
-            raise t.err(i, "has a drop height of 0")
+            raise t.err(i, "has a drop height of 0: measure from the floor to the bottom of the ball before you "
+                           "let go (drop_in = 18)")
         if bounce > drop:
             raise t.err(i, "bounces higher than the drop: measure both to the bottom of the ball")
         values.append(math.sqrt(bounce / drop))
@@ -177,9 +208,9 @@ def _drop(t: _Test) -> dict:
     if floor is None:
         warnings.append("say what floor it bounced on (floor = \"concrete\" in [drop_setup]): the model expects a "
                         "hard floor")
-    elif "carpet" in floor.lower():
-        warnings.append("a ball bounces lower on carpet than on the hard floor the model expects: drop it on "
-                        "concrete, tile or wood")
+    elif _SOFT_FLOOR.search(floor):
+        warnings.append(f"a ball bounces lower on a soft floor ({floor}) than on the hard floor the model expects: "
+                        "drop it on concrete, tile or wood")
     return {"restitution": (_with(summary(values), warnings), values)}
 
 
@@ -190,7 +221,7 @@ def _sled(t: _Test) -> dict:
     for i in range(len(t.rows)):
         weight = t.setting(i, "sled")
         if weight <= 0:
-            raise t.err(i, "has a sled weight of 0")
+            raise t.err(i, "has a sled weight of 0: weigh the sled with its load on a scale (sled_lb = 5)")
         values.append(t.trial(i, "pull") / weight)
     return {"friction": (summary(values), values)}
 
@@ -202,8 +233,7 @@ def values(mf: MeasureFile) -> dict[str, tuple[Summary, list[float]]]:
     if "size" in mf.trials:
         out |= _size(_Test(mf, "size"))
     if "squeeze" in mf.trials:
-        diameter = out["diameter"][0].mean if "diameter" in out else _preset(mf).get("diameter")
-        out |= _squeeze(_Test(mf, "squeeze"), diameter)
+        out |= _squeeze(_Test(mf, "squeeze"), out.get("diameter"))
     if "drop" in mf.trials:
         out |= _drop(_Test(mf, "drop"))
     if "sled" in mf.trials:

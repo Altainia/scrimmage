@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..launcher.inputs import PRESETS
+from .stats import why
 
 
 class MeasureError(ValueError):
@@ -63,11 +64,12 @@ class Provenance:
     date: str
     trials: int
     good: bool
+    why: str = ""  # empty when good, else why not: "2 trials: take at least 3", "trials disagree by 22%"
 
 
 def provenance(mf: MeasureFile, summary) -> Provenance:
     """The provenance of a number averaged from `mf`'s trials (`summary` is a stats.Summary)."""
-    return Provenance(file=mf.path, by=mf.by, date=mf.date, trials=summary.n, good=summary.good)
+    return Provenance(file=mf.path, by=mf.by, date=mf.date, trials=summary.n, good=summary.good, why=why(summary))
 
 
 def _listing(names) -> str:
@@ -133,6 +135,9 @@ def load(path) -> MeasureFile:
         if key in tests:
             if not isinstance(value, list) or not all(isinstance(row, dict) for row in value):
                 raise MeasureError(f"{path}: {key} must be trials written as [[{key}]] tables")
+            if not value:
+                raise MeasureError(f"{path}: {key} has no trials: write each trial as a [[{key}]] table, "
+                                   "or leave the test out")
             trials[key] = value
         elif key.endswith("_setup") and key[:-len("_setup")] in tests:
             if not isinstance(value, dict):

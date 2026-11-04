@@ -3,6 +3,9 @@
 Each trial gives one value; the result is their mean. The spread is the highest minus the lowest, as a fraction of
 the mean. Fewer than 3 trials, or a spread over 15%, makes the average not good enough to use in a run (it is still
 reported). A trial more than twice the average distance from the mean is flagged as an outlier; it is never dropped.
+An outlier needs at least 5 trials: one trial's distance from the mean is at most half the sum of all the trials'
+distances (the distances above the mean balance those below), so at most n/2 times the average distance, and n/2 is
+more than 2 only from 5 trials up.
 """
 
 from dataclasses import dataclass
@@ -45,3 +48,13 @@ def summary(values) -> Summary:
     warnings += [f"trial {i + 1} looks off: check it" for i in outliers]
     return Summary(mean=mean, low=low, high=high, spread=spread, n=n, outliers=outliers, warnings=warnings,
                    good=n >= MIN_TRIALS and spread <= MAX_SPREAD)
+
+
+def why(s: Summary) -> str:
+    """Why a summary isn't good enough to use in a run, in a few words; empty when it is good."""
+    reasons = []
+    if s.n < MIN_TRIALS:
+        reasons.append(f"{s.n} trial{'s' if s.n != 1 else ''}: take at least {MIN_TRIALS}")
+    if s.spread > MAX_SPREAD:
+        reasons.append(f"trials disagree by {s.spread:.0%}")
+    return "; ".join(reasons)

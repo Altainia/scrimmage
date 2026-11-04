@@ -118,8 +118,11 @@ slow motion, and their mentors. The standing anti-goal applies: **no unnecessary
 
 **Tests**
 - **C5 Squeeze:**
-  - **The ideal reading:** the force at a squeeze to 75% of the diameter, minus the top board's weight (the form
-    has a box for it).
+  - **The ideal reading:** the force at a squeeze to 75% of the diameter. The top board's weight presses on the ball
+    too, so it is part of the force: put the bottom board and the ball on the scale and zero (tare) it, then put the
+    top board on and press; the reading is the squeeze force.
+  - **A scale that can't be zeroed:** the trial (or `[squeeze_setup]`) gives `tare_<unit>`, the reading with only
+    the bottom board and the ball on it, which is subtracted (the form has a box for it).
   - **A different squeeze:** a trial may give its own `squeezed_to` height; it's converted to the 25% force with the
     ball's `stiffness_exponent` (1.5 by default).
 - **C6 Drop:**
