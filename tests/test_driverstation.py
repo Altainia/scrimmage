@@ -9,7 +9,7 @@ def test_frames_carry_mode_and_joysticks():
     ds = DriverStationState(active=True)
     ds.set_mode("auto")
     ds.set_joystick(0, axes=[0.0, -0.5], buttons=[True, False])
-    frames = [json.loads(f) for f in ds.frames()]
+    frames = [json.loads(f) for f in ds.frames(0.0)]
     assert frames[0] == {"type": "Joystick", "device": "0",
                          "data": {">axes": [0.0, -0.5], ">buttons": [True, False], ">povs": [-1]}}
     dsf = frames[-1]["data"]
@@ -21,7 +21,7 @@ def test_disabled_and_clear():
     ds.set_mode("teleop")
     ds.set_joystick(1, axes=[1.0])
     ds.clear()
-    frames = [json.loads(f) for f in ds.frames()]
+    frames = [json.loads(f) for f in ds.frames(0.0)]
     assert frames[-1]["data"][">enabled"] is False
     assert frames[0]["device"] == "1" and frames[0]["data"][">axes"] == [0.0]  # neutral, not left as it was
 
@@ -32,7 +32,7 @@ def test_clear_joysticks_sends_neutral_inputs_for_used_ports():
     ds.changed = False
     ds.clear_joysticks()
     assert ds.changed
-    frames = [json.loads(f) for f in ds.frames()]
+    frames = [json.loads(f) for f in ds.frames(0.0)]
     assert frames[0] == {"type": "Joystick", "device": "0",
                          "data": {">axes": [0.0, 0.0], ">buttons": [False, False, False], ">povs": [-1]}}
 

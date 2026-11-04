@@ -722,7 +722,7 @@ class Bridge:
         if self.ds.active and (self.ds.changed or now - t.ds >= DS_PERIOD):
             t.ds = now
             self.ds.changed = False
-            await self._send(self.ds.frames())
+            await self._send(self.ds.frames(now))
         if now - t.log >= LOG_PERIOD:
             t.log = now
             self._log_row(now, mode)

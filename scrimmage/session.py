@@ -23,6 +23,7 @@ import mujoco
 from .bindings import binds_ph, binds_rev
 from .bridge import Bridge, robot_language
 from .devicecheck import check_devices, device_notes
+from .driverstation import check_game_data
 from .config import Config, ConfigError, build_world, load_config, set_sim_mode, sim_mode_unused
 from .lockstep import Pacer
 from .movers import Mover, mover_poses, movers
@@ -203,6 +204,7 @@ class Session:
         except ValueError as e:
             raise SessionError(f"{cfg.path}: {e}") from None
         self.bridge.ds.active = True
+        self.bridge.ds.match = cfg.match
         self.bridge.agent_state = self.agent_state
         self.bridge.rev_state = self.rev_state
         self.bridge.robot_language = self.robot_language()
@@ -319,7 +321,10 @@ class Session:
         b = self._require_started()
         if self.robot is None and not self.attach:
             raise SessionError("the session has no robot program to restart")
+        game_data = b.ds.game_data
         b.ds.clear()
+        if game_data:   # the field's data stays for the match, so the new program hears it on its first frame (M2)
+            b.ds.set_game_data(game_data)
         if self.attach:
             if env:
                 raise SessionError("attach mode: scrimmage doesn't launch the robot program, so it can't set its "
@@ -448,6 +453,24 @@ class Session:
             raise SessionError(str(e)) from None
         return self.state()
 
+    def set_match(self, station=None, fms=None, timer=None, game_data=None, auto_seconds=None,
+                  teleop_seconds=None) -> dict:
+        """Change any of the match settings and the game data (None keeps each); sent on the next DS frame."""
+        ds = self._require_started().ds
+        changes = {k: v for k, v in (("station", station), ("fms", fms), ("timer", timer),
+                                     ("auto_seconds", auto_seconds), ("teleop_seconds", teleop_seconds))
+                   if v is not None}
+        try:
+            ds.match.merged(changes, "set_match:")      # check everything before changing anything
+            if game_data is not None:
+                check_game_data(game_data, "set_match:")
+            ds.set_match(**changes)
+            if game_data is not None:
+                ds.set_game_data(game_data)
+        except ValueError as e:
+            raise SessionError(str(e)) from None
+        return self.state()
+
     # ------------------------------------------------------------------ pokes (physics only; robot code isn't told)
     def set_pose(self, x: float, y: float, heading_deg: float) -> dict:
         """Teleport the robot. Physics only: robot code isn't told directly, but its gyro sees the heading jump."""
@@ -536,6 +559,8 @@ class Session:
         return {
             "t": round(w.time, 4),
             "mode": self.bridge.ds.mode,
+            "match": {**dataclasses.asdict(self.bridge.ds.match), "game_data": self.bridge.ds.game_data,
+                      "match_time": self.bridge.ds.sent_match_time},
             "lockstep": self.lockstep,
             "lockstep_released_at": self._released_at(),
             "pose": {"x": round(x, 4), "y": round(y, 4), "heading_deg": round(math.degrees(yaw), 2)},
