@@ -534,8 +534,10 @@ it tilted no more than that many degrees. **partner moved at least** *n* **in** 
 no partner they are a problem: "there's no partner robot; add one in Setup".
 
 **Where it starts.** A partner that starts overlapping your robot's start (a 0.9 m square) or a field element on
-the carpet is refused before the run: `[partner] starts inside the robot (their outlines overlap by 0.20 m)`, or
-`[partner] starts inside element portcullis_platform (their outlines overlap by 0.12 m)`. Move it.
+the carpet is refused before the run:
+`the partner robot (Setup) starts inside the robot (their outlines overlap by 0.20 m)`, or
+`the partner robot (Setup) starts inside element portcullis_platform (their outlines overlap by 0.12 m)`. Move it. A
+partner from the robot file's `[partner]` says `[partner] starts inside ...` instead.
 
 In the test file:
 

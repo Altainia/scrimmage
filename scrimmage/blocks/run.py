@@ -104,7 +104,7 @@ import numpy as np
 from ..climb.run import SETTLE_S, WalkOff
 from ..hal_drive import MotorDrive, driven_joints, position_volts
 from ..movers import mover_poses, movers
-from ..parts.partner import SIGNALS as PARTNER_SIGNALS
+from ..parts.partner import SIGNALS as PARTNER_SIGNALS, STARTS_INSIDE
 from ..protocol import HalState
 from ..testrange.build import BALL_BITS
 from .aim import TURN, aim_error, aim_target
@@ -264,11 +264,23 @@ def _range_setup(raw: dict, setup: dict) -> dict:
     return {**raw, "range": rng}
 
 
+SETUP_STARTS_INSIDE = "the partner robot (Setup) starts inside "
+
+
 def world_for(program: Program):
-    """The World of the test's robot config (its `robot`, relative to the test file), with the test's setup applied."""
-    from ..config import build_world, load_config
+    """The World of the test's robot config (its `robot`, relative to the test file), with the test's setup applied.
+    When Setup places the partner and it starts inside the robot or an element, the TestFileError says Setup's partner
+    ("the partner robot (Setup) starts inside the robot (their outlines overlap by 0.20 m)"), not the config's
+    [partner]: the student only ticked Setup."""
+    from ..config import ConfigError, build_world, load_config
     config = load_config(Path(program.path).parent / program.robot)
-    return build_world(replace(config, raw=setup_config(config.raw, program.setup, config.dir)))
+    try:
+        return build_world(replace(config, raw=setup_config(config.raw, program.setup, config.dir)))
+    except ConfigError as e:
+        text = str(e)
+        if not isinstance(program.setup.get("partner"), dict) or STARTS_INSIDE not in text:
+            raise
+        raise TestFileError(SETUP_STARTS_INSIDE + text.split(STARTS_INSIDE, 1)[1]) from None
 
 
 GRIP_CONDITIONS = ("held", "rests_on", "seated")     # a test of these rests on the grip's friction

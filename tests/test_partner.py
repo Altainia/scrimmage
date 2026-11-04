@@ -223,6 +223,38 @@ def test_setup_partner_ahead(tmp_path):
             _program(tmp_path, bad)
 
 
+def test_setups_partner_overlap_errors_name_setup(tmp_path):
+    """Fix 6: a partner Setup places inside the robot or an element is refused in Setup's words, not [partner]'s."""
+    with pytest.raises(TestFileError) as e:
+        world_for(_program(tmp_path, "partner = { ahead_in = 20 }"))
+    assert str(e.value) == "the partner robot (Setup) starts inside the robot (their outlines overlap by 0.37 m)"
+    (tmp_path / "gate.toml").write_text("""
+[range]
+name = "a portcullis"
+ball = "2026-fuel"
+
+[start.here]
+pose = [2.5, 4.0, 0.0]
+
+[[element]]
+name = "portcullis"
+kind = "sliding"
+center = [5.0, 4.0]
+axis = "z"
+size = [0.1, 1.0, 0.8]
+range = [0, 0.5]
+mass = 2.27
+""", encoding="utf-8")
+    on_range = '\n[range]\nfile = "gate.toml"\nstart = "here"\n'
+    with pytest.raises(TestFileError) as e:
+        world_for(_program(tmp_path, "partner = { ahead_in = 106.3 }", robot=on_range))
+    assert str(e.value) == ("the partner robot (Setup) starts inside element portcullis (their outlines overlap by "
+                            "0.10 m)")
+    # the config's own [partner], with Setup leaving it alone, keeps the [partner] words
+    with pytest.raises(ValueError, match=r"\[partner\] starts inside the robot"):
+        world_for(_program(tmp_path, "", robot="\n[partner]\nstart = [2.68, 4.035, 0]\n"))
+
+
 def test_partner_conditions(tmp_path):
     expect_moved = '[[block]]\ndo = "expect"\nthat = { partner_moved = { at_least_in = 2.0 } }\n'
     program = _program(tmp_path, "partner = { ahead_in = 40 }",

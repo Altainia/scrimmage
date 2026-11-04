@@ -196,6 +196,9 @@ def _overlap(a: np.ndarray, b: np.ndarray) -> float:
     return float(depth)
 
 
+STARTS_INSIDE = "[partner] starts inside "    # check_start's refusals begin so; run.world_for words Setup's its own way
+
+
 def check_start(info: PartnerInfo, robot_start: tuple[float, float, float], elements=()) -> None:
     """The partner's outline (frame plus bumpers) may not overlap the robot's start outline (ROBOT_OUTLINE) or any
     element standing on the carpet (testrange/elements.py's _on_floor, as a start's robot outline is checked)."""
@@ -205,11 +208,11 @@ def check_start(info: PartnerInfo, robot_start: tuple[float, float, float], elem
     rx, ry, rh = robot_start
     depth = _overlap(mine, _rect((rx, ry), rh, ROBOT_OUTLINE, ROBOT_OUTLINE))
     if depth > 1e-9:
-        raise PartError(f"[partner] starts inside the robot (their outlines overlap by {depth:.2f} m)")
+        raise PartError(f"{STARTS_INSIDE}the robot (their outlines overlap by {depth:.2f} m)")
     for e in elements:
         depth = max((_overlap(mine, f) for f in _on_floor(e, start=True)), default=0.0)
         if depth > 1e-9:
-            raise PartError(f"[partner] starts inside element {e.name} (their outlines overlap by {depth:.2f} m)")
+            raise PartError(f"{STARTS_INSIDE}element {e.name} (their outlines overlap by {depth:.2f} m)")
 
 
 # ---- its signals ----------------------------------------------------------------------------------------------------
