@@ -1,0 +1,55 @@
+# A ball intake written by hand: a roller across the front grabs a ball and rolls it up over a lip into a bin. It
+# sits in front of the stand-in robot's front bumper (attached at the bumper's face, on the floor). Every number is
+# our choice. Coordinates: x forward, y left, z up, in meters; the origin is on the floor at the bumper's face.
+
+[part]
+name = "intake"
+format = 1
+
+# The frame: two side arms that carry the roller's axle. They are only drawn, so they never touch the ball.
+[[body]]
+name = "frame"
+mass = 0.6                    # choice: two aluminum arms and their brackets
+geom = [
+  { box = [0.37, 0.01, 0.04], pos = [0.185, 0.195, 0.17], color = [0.55, 0.55, 0.6, 1.0], collide = false },
+  { box = [0.37, 0.01, 0.04], pos = [0.185, -0.195, 0.17], color = [0.55, 0.55, 0.6, 1.0], collide = false },
+]
+
+# The bin the ball ends up in: a floor 3 cm above the carpet with a round 2 cm lip along its front edge, two side walls,
+# a back wall against the bumper and a lid. Pushed by the robot alone, a ball rolls away from the lip; once over it,
+# the lip keeps the ball in when the robot stops, and the lid keeps a ball coming in fast from bouncing out.
+[[body]]
+name = "hopper"
+parent = "frame"
+mass = 1.0                    # choice: a polycarbonate bin
+geom = [
+  { box = [0.22, 0.38, 0.01], pos = [0.12, 0.0, 0.035], color = [0.75, 0.8, 0.85, 0.6] },   # floor, z 0.03 to 0.04
+  { cylinder = [0.01, 0.38], axis = "y", pos = [0.22, 0.0, 0.05], color = [0.75, 0.8, 0.85, 0.6] }, # lip, a round rod up to z 0.06
+  { box = [0.22, 0.01, 0.18], pos = [0.12, 0.185, 0.13], color = [0.75, 0.8, 0.85, 0.6] },  # left wall, up to z 0.22
+  { box = [0.22, 0.01, 0.18], pos = [0.12, -0.185, 0.13], color = [0.75, 0.8, 0.85, 0.6] }, # right wall
+  { box = [0.01, 0.38, 0.18], pos = [0.015, 0.0, 0.13], color = [0.75, 0.8, 0.85, 0.6] },   # back wall
+  { box = [0.22, 0.38, 0.01], pos = [0.12, 0.0, 0.215], color = [0.75, 0.8, 0.85, 0.6] },   # lid, z 0.21 to 0.22
+]
+
+# The roller, ahead of the lip, its underside 14 cm up: a 15 cm ball fits under it only by squeezing a little. Spinning
+# forward (positive volts), its underside moves back toward the robot, so it pulls the ball in under it and then rolls
+# it up over the lip.
+[[body]]
+name = "roller"
+parent = "frame"
+pos = [0.35, 0.0, 0.17]
+mass = 0.3                    # choice: a 6 cm roller with a grippy sleeve
+com = [0.0, 0.0, 0.0]
+inertia = [0.0002, 0.000135, 0.0002]   # about the axle: 1/2 m r^2 for a 3 cm radius
+joint = { name = "roller", hinge = "y" }
+geom = [{ cylinder = [0.03, 0.36], axis = "y", color = [0.95, 0.5, 0.1, 1.0], friction = 1.2 }]
+
+[[motor]]
+slot = "roller"
+joint = "roller"
+motor = "NEO"
+gearing = 3.0                 # choice: 3 to 1, about 3 m/s at the roller's surface at 6 V (the default), 4 m/s at 8 V
+
+[[mount]]
+name = "base"
+body = "frame"

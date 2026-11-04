@@ -42,6 +42,11 @@ step, and the plain words that name them in a run's outcome.
   lowest frame corner above where it settled), and, with `level_within_deg`, its tilt is within that of level.
 - `partner_moved`: the partner robot has gone at least `at_least_in` inches across the floor from where it settled
   (`partner.moved`).
+- `sensor`: one of the robot's [[sensor]]s is on or off, as the world read it at the last physics step
+  (sensors/runtime.py, spec C6): a beam break is on while broken, a distance sensor while closer than its threshold,
+  a color sensor while a piece is within its range. With `sees`, a color sensor is on only while the piece it sees
+  is nearest that named color (colors.nearest_color); `is = "off"` with `sees` holds while it doesn't see that color
+  (nothing in range, or a piece of another color).
 
 The words name pieces as a student knows them: any piece by the field's kind ("a coral"; "a ball" on a field of one
 ball or disc kind, as always; "a piece" on a mixed field or when the kinds aren't known), and a named piece by its
@@ -351,6 +356,8 @@ class Watch:
             return v > a["above"] if "above" in a else v < a["below"]
         if k == "clears":
             return self.closest.now[a["element"]] >= a["at_least_in"] * IN
+        if k == "sensor":
+            return sensor_on(self.world, a["sensor"], a.get("sees")) == (a["is"] == "on")
         if k == "partner_lifted":
             p = self.world.partner
             level = a.get("level_within_deg")
@@ -387,6 +394,12 @@ def cylinder_at(world, name: str, end: str) -> bool:
     return x <= CYLINDER_TOL_IN * IN
 
 
+def sensor_on(world, name: str, sees: str | None = None) -> bool:
+    """The robot's sensor `name` is on now (with `sees`: on, and the piece it sees nearest that named color)."""
+    r = world.sensors.reading(name)
+    return r.on and (sees is None or r.color_name == sees)
+
+
 def _conds(blocks, kind: str) -> list:
     """The blocks' conditions of `kind`, through repeat bodies."""
     out = []
@@ -414,10 +427,11 @@ def turret_words(name: str) -> str:
 
 
 def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names: dict | None = None,
-             units: dict | None = None) -> str:
+             units: dict | None = None, sensors: dict | None = None) -> str:
     """The condition in plain words, for a run's outcome. `next_bar` names "the next bar" when known; `kinds` (the
     field's Range.kinds) names any piece by its kind, `names` a piece by what a student reads (Watch.piece_names),
-    `units` a moving element's unit (Watch.units; a number alone when not known)."""
+    `units` a moving element's unit (Watch.units; a number alone when not known), `sensors` each [[sensor]]'s kind
+    by name (a color sensor's check with no color reads "is seeing a piece", as its block does)."""
     a, k = cond.args, cond.kind
     names = names or {}
 
@@ -463,6 +477,11 @@ def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names
         return f"{a['element']} is {side} {_amount(a[side], unit) if unit else f'{a[side]:g}'}"
     if k == "clears":
         return f"the robot clears {a['element']} by at least {_amount(a['at_least_in'], 'in')}"
+    if k == "sensor":
+        if a.get("sees") is not None or (sensors or {}).get(a["sensor"]) == "color":
+            verb = "is seeing" if a["is"] == "on" else "isn't seeing"
+            return f"{a['sensor']} {verb} {a['sees'] or 'a piece'}"
+        return f"{a['sensor']} is {a['is']}"
     if k == "partner_lifted":
         level = a.get("level_within_deg")
         return (f"the partner is lifted at least {_amount(a['at_least_in'], 'in')}"

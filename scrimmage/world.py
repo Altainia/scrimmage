@@ -23,17 +23,34 @@ def _reject_duplicate_devices(*groups) -> None:
     """Two bindings on one device would fight over its inputs/outputs: say which.
 
     A REV SPARK's motor and absolute encoder share its helper device on purpose, so REV bindings are
-    only compared within their own group."""
+    only compared within their own group. A quadrature encoder on channel_a = n is WPILib's Encoder(n, n + 1): it
+    takes DIO n and n + 1 as well, which a sensor, a limit switch or a shooter beam break can't share."""
     seen: dict = {}
     for g, group in enumerate(groups):
         for i, b in enumerate(group, 1):
-            key = (g, b.device_key) if getattr(b, "kind", None) == "REV" else b.device_key
-            other = seen.setdefault(key, (b, _label(b, i)))
-            if other[0] is not b:
-                typ, dev = b.device_key
-                dev = dev.replace("<channel_a=", "encoder channel A ")
-                raise ValueError(f"{typ} {dev} is bound by {other[1]} and {_label(b, i)}: "
-                                 "give each device one binding")
+            for device_key in _device_keys(b):
+                key = (g, device_key) if getattr(b, "kind", None) == "REV" else device_key
+                other = seen.setdefault(key, (b, _label(b, i)))
+                if other[0] is not b:
+                    typ, dev = device_key
+                    dev = dev.replace("<channel_a=", "encoder channel A ")
+                    what = dev if typ == "SimDevice" else f"{typ} {dev}"   # a SimDevice's name says what it is
+                    encoder = next((e for e in (other[0], b) if _quadrature(e) and typ == "DIO"), None)
+                    hint = (f" (an encoder on channel_a = {encoder.channel_a} takes DIO {encoder.channel_a} and "
+                            f"{encoder.channel_a + 1})" if encoder is not None else "")
+                    raise ValueError(f"{what} is bound by {other[1]} and {_label(b, i)}: "
+                                     f"give each device one binding{hint}")
+
+
+def _quadrature(b) -> bool:
+    return isinstance(b, EncoderBinding) and b.kind == "Encoder"
+
+
+def _device_keys(b) -> list:
+    """The devices a binding takes: its device_key, and a quadrature encoder's two DIO channels."""
+    if _quadrature(b):
+        return [b.device_key, ("DIO", str(b.channel_a)), ("DIO", str(b.channel_a + 1))]
+    return [b.device_key]
 
 
 def _label(b, index: int) -> str:
@@ -123,8 +140,15 @@ class World:
         elif "pneumatics" in cfg:
             from .pneumatics.runtime import parse_section
             parse_section(cfg["pneumatics"])      # checked all the same, so a mistake shows before a cylinder is added
+        # The robot's [[sensor]] beam breaks, distance and color sensors (scrimmage/sensors): checked here, so their
+        # channels join the duplicate check; built (self.sensors) below.
+        sensor_specs = []
+        if "sensor" in cfg:
+            from .sensors.spec import parse_sensors, sensor_devices
+            sensor_specs = parse_sensors(cfg["sensor"])
         _reject_duplicate_devices(self.motors, self.encoders, self.gyros, self.analogs, self.digitals,
-                                  self.test_range.devices() if self.test_range is not None else [])
+                                  self.test_range.devices() if self.test_range is not None else [],
+                                  sensor_devices(sensor_specs) if sensor_specs else [])
         # The terrain signals (scrimmage/terrain): read every physics step on a range with field elements, or once a
         # scenario asks for one (terrain_monitor()); otherwise None, and stepping costs nothing extra.
         self.terrain = None
@@ -144,6 +168,12 @@ class World:
         if self.parts is not None and self.parts.partner is not None:
             from .parts.partner import PartnerMonitor
             self.partner = PartnerMonitor(self, self.parts.partner)
+        # The robot's [[sensor]] beam breaks, distance and color sensors (scrimmage/sensors): read every physics step
+        # after mj_step; None for a robot without one, and stepping costs nothing extra.
+        self.sensors = None
+        if sensor_specs:
+            from .sensors.runtime import SensorRuntime
+            self.sensors = SensorRuntime(self, sensor_specs)
         self.reset()
 
     def terrain_monitor(self):
@@ -195,6 +225,8 @@ class World:
             self.climb.reset()
         if self.partner is not None:
             self.partner.reset()
+        if self.sensors is not None:
+            self.sensors.reset()
 
     def reset_robot(self) -> None:
         """Put the robot's joints (its pose and every mechanism) back to qpos0 at rest, the robot at its start pose;
@@ -340,6 +372,8 @@ class World:
             self.climb.after_physics()
         if self.partner is not None:
             self.partner.after_physics()
+        if self.sensors is not None:
+            self.sensors.update(self.data)
 
     def _bus_voltage(self, rng) -> float:
         """The battery's terminal voltage this step: V = nominal - R * (the supply current every motor draws at V).
@@ -441,6 +475,8 @@ class World:
             ups += self.test_range.sensor_updates(hal)
         if self.pneumatics is not None:
             ups += self.pneumatics.sensor_updates()
+        if self.sensors is not None:
+            ups += self.sensors.sensor_updates()
         return ups
 
     def robot_pose(self) -> tuple[float, float, float]:

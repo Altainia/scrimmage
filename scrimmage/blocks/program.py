@@ -34,6 +34,7 @@ from pathlib import Path
 from ..climb.run import SETTLE_S
 from ..launcher.inputs import PRESETS
 from ..measure.use import is_measurement
+from ..sensors.colors import NAMED_COLORS
 from ..testrange.station import MAX_STOCK, OVERRIDE_KEYS, stock_too_big
 
 TIME_LIMIT = 60.0        # s: the whole run ends here
@@ -55,13 +56,14 @@ CYLINDER_TO = ("extend", "retract", "off")     # set_cylinder's states ("off": C
 CYLINDER_IS = ("extended", "retracted")
 PRESSURE_SIDES = ("stored", "working")
 MAX_CLEARS_IN = 19.6     # in: clears' at_least_in; clearance is measured out to 0.5 m (19.7 in), clearance.py
+SENSOR_IS = ("on", "off")
 
 UNITS = ("deg", "in", "m")
 DO_KINDS = ("spin", "move", "drive", "stop", "wait", "wait_until", "repeat", "expect",
             "start_feeding", "stop_feeding", "feed_one", "turn", "aim", "set_cylinder")
 COND_KINDS = ("joint", "touch", "tilt", "piece_in", "hanging_from", "level", "in_hopper", "station_empty",
               "made_it_in", "held", "rests_on", "seated", "scored", "aimed", "cylinder", "pressure",
-              "element", "clears", "partner_lifted", "partner_moved")
+              "element", "clears", "partner_lifted", "partner_moved", "sensor")
 DRIVE_DIRECTIONS = ("forward", "back", "left", "right")
 _OPPOSITE = {"back": "forward", "left": "right", "right": "left"}     # where a minus distance goes instead
 SPREAD_AXES = ("offset_in", "distance_in", "angle_deg", "rotation_deg", "tip_deg")
@@ -252,6 +254,14 @@ def _cond(v, where: str) -> Cond:
             raise TestFileError(f"{where}: at_least_in can be at most {MAX_CLEARS_IN:g}: clearance is measured out "
                                 "to 0.5 m (19.7 in)")
         return Cond(kind, {"element": _text(t.get("element"), where, "element"), "at_least_in": at})
+    if kind == "sensor":        # a [[sensor]] of the robot is on (broken, near, seeing a piece) or off
+        _keys(t, ("sensor", "is", "sees"), where)
+        if t.get("is") not in SENSOR_IS:
+            raise TestFileError(f'{where}: is must be "on" or "off", not {t.get("is")!r}')
+        sees = t.get("sees")
+        if sees is not None and sees not in NAMED_COLORS:
+            raise TestFileError(f"{where}: sees must be one of the colors {', '.join(NAMED_COLORS)}, not {sees!r}")
+        return Cond(kind, {"sensor": _text(t.get("sensor"), where, "sensor"), "is": t["is"], "sees": sees})
     if kind == "partner_lifted":
         _keys(t, ("at_least_in", "level_within_deg"), where)
         a = {"at_least_in": _num(t.get("at_least_in"), where, "at_least_in")}
@@ -569,7 +579,8 @@ def load(path) -> Program:
 def _cond_json(c: Cond):
     if c.kind in ("hanging_from", "level", "station_empty"):
         return {c.kind: next(iter(c.args.values()))}
-    return {c.kind: {k: v for k, v in c.args.items() if v is not None}}     # partner_lifted's level is optional
+    # partner_lifted's level and sensor's sees are optional
+    return {c.kind: {k: v for k, v in c.args.items() if v is not None}}
 
 
 def block_json(b: Block) -> dict:

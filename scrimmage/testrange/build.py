@@ -77,7 +77,7 @@ from ..launcher.inputs import Ball
 from ..measure.file import MeasureError
 from ..measure.use import is_measurement, open_file
 from ..parts.field import FIELD_BITS
-from .pieces import PieceKind
+from .pieces import PieceKind, piece_color
 from .spec import BUILTIN_RANGES, Goal, Obstacle, Range, RangeError, RectOpening, load_range
 from .station import DEFAULT_SEED, check_seed, with_overrides
 
@@ -111,8 +111,6 @@ PLATE_FRICTION = [0.3, 0.005, 0.0001]   # as the field's walls
 # estimate: a polyethylene disc on polycarbonate and aluminum; no measurement found. 0.4 is the middle of the
 # 0.3-0.5 guessed for it, and the disc preset's rim_damping_ratio 0.25 bounces at 0.44 (scrimmage/disc/presets.toml).
 DISC_RESTITUTION = 0.4
-DISC_RGBA = [0.95, 0.95, 0.95, 1.0]
-PIECE_RGBA = [0.92, 0.9, 0.84, 1.0]     # a rigid piece (a coral, a cone...): off-white
 SLOT_PITCH = 0.2                # m between parked slots' (x, y), in rows of SLOT_ROW from the blue right corner
 SLOT_ROW = 80
 
@@ -357,7 +355,7 @@ def add_range(spec: mujoco.MjSpec, rng: Range, n_slots: int, *, floor_balls: boo
             b.mass, b.ipos, b.fullinertia, b.explicitinertial = how["mass"], [0, 0, 0], list(how["inertia"]), True
             b.add_freejoint(name=name)
             for k, geom in enumerate(how["geoms"]):
-                b.add_geom(name=f"{name}.{k}", density=0, **geom, rgba=list(PIECE_RGBA), **how["contact"], **bits)
+                b.add_geom(name=f"{name}.{k}", density=0, **geom, rgba=how["rgba"], **how["contact"], **bits)
         names.append(name)
     station_slots, start = {}, n_floor + n_slots
     for st in rng.stations:
@@ -408,16 +406,18 @@ def _slot_body(spec: mujoco.MjSpec, rng: Range, name: str, first: str, timestep:
     """How the slots of kind `name` are built: a ball or disc as one geom ("round"), a rigid piece as its solids,
     each mesh added once (named after the kind's first slot, `first`) and shared by every slot of the kind."""
     piece = kind_piece(rng, name)
+    # Its drawn color: the kind's own (a field's `color`), else its form's (pieces.py's BALL_RGBA and the others).
+    rgba = [*piece_color(rng.kinds[name]), 1.0]
     if isinstance(piece, Disc):
         r = piece.diameter / 2.0
         return {"round": True, "mass": piece.mass, "inertia": [piece.ixx, piece.ixx, piece.izz],
                 "contact": ball_contact(piece, timestep),
-                "geom": {"type": mujoco.mjtGeom.mjGEOM_CYLINDER, "size": [r, piece.height / 2.0, 0], "rgba": DISC_RGBA}}
+                "geom": {"type": mujoco.mjtGeom.mjGEOM_CYLINDER, "size": [r, piece.height / 2.0, 0], "rgba": rgba}}
     if isinstance(piece, Ball):
         r = piece.diameter / 2.0
         return {"round": True, "mass": piece.mass, "inertia": [piece.inertia_factor * piece.mass * r * r] * 3,
                 "contact": ball_contact(piece, timestep),
-                "geom": {"type": mujoco.mjtGeom.mjGEOM_SPHERE, "size": [r, 0, 0], "rgba": [0.95, 0.85, 0.1, 1.0]}}
+                "geom": {"type": mujoco.mjtGeom.mjGEOM_SPHERE, "size": [r, 0, 0], "rgba": rgba}}
     kind = rng.kinds[name]
     geoms = []
     for k, s in enumerate(kind.solids):
@@ -431,7 +431,7 @@ def _slot_body(spec: mujoco.MjSpec, rng: Range, name: str, first: str, timestep:
             geoms.append({"type": mujoco.mjtGeom.mjGEOM_BOX, "size": list(s.size), "pos": list(s.pos),
                           "quat": list(s.quat)})
     return {"round": False, "mass": kind.mass, "inertia": list(kind.inertia), "contact": rigid_contact(kind),
-            "geoms": geoms}
+            "geoms": geoms, "rgba": rgba}
 
 
 def _capacity(cfg: dict) -> int | None:
