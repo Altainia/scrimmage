@@ -1,4 +1,5 @@
-"""The launcher shot fit: a ball's stiffness and a wheel's friction fit to filmed shots' exit speeds (spec C8)."""
+"""The launcher shot fit: a wheel's friction (the ball's squeeze measured) or else a ball's stiffness, fit to filmed
+shots' exit speeds (spec C8)."""
 import dataclasses
 import time
 
@@ -7,7 +8,7 @@ import pytest
 from scrimmage.launcher.inputs import load_setup
 from scrimmage.measure import file
 from scrimmage.measure.file import MeasureError
-from scrimmage.measure.fit_launcher import exit_speed, fit
+from scrimmage.measure.fit_launcher import SQUEEZE_SENTENCE, exit_speed, fit
 
 INCH = 0.0254
 MARKS_IN = 12.0
@@ -15,9 +16,8 @@ FPS = 240.0
 
 # A one-wheel hooded launcher shooting the 2026 FUEL ball (examples/launcher/hooded.toml, with the hood gap made for
 # a 5.9 in. ball: a 1.6 in. squeeze, 27% of it). Its numbers are the presets': stiffness_n 80, wheel friction 0.95.
-# The squeeze is chosen so neither test speed is near the wheel's own surface speed limit: at a 0.12 m gap the
-# 50 rps shot is, its exit speed hardly moves with stiffness or friction, and the 80 rps shot alone can't tell a
-# stiffer ball from a grippier wheel past the model's own 0.03% step-to-step jitter.
+# The squeeze is chosen so neither test speed is near the wheel's own surface speed limit, where the exit speed
+# hardly moves with stiffness or friction.
 SETUP = """\
 [ball]
 preset = "2026-fuel"
@@ -95,17 +95,29 @@ def _measure(tmp_path, shots, header=HEADER):
     return file.load(p)
 
 
-def _synthetic(tmp_path, stiffness_n, friction, speeds):
+def _synthetic(tmp_path, stiffness_n, friction, speeds, header=HEADER):
     truth = _truth(_setup(tmp_path), stiffness_n, friction)
-    return _measure(tmp_path, [(rps, _frames(exit_speed(truth, rps))) for rps in speeds])
+    return _measure(tmp_path, [(rps, _frames(exit_speed(truth, rps))) for rps in speeds], header=header)
 
 
-def test_the_fit_recovers_the_stiffness_and_friction_the_shots_were_made_with(tmp_path):
-    mf = _synthetic(tmp_path, 120.0, 1.1, [50.0, 50.0, 50.0, 80.0, 80.0, 80.0])
+def _ball_file(tmp_path, squeezes_n, name="fuel.measure.toml"):
+    """A ball file whose squeeze trials read `squeezes_n` (N, at a 25% squeeze)."""
+    rows = "".join(f"\n[[squeeze]]\nforce_n = {f}\n" for f in squeezes_n)
+    (tmp_path / name).write_text('[measure]\nkind = "ball"\nby = "J. Smith"\ndate = 2026-11-10\n'
+                                 'base = "2026-fuel"\n' + rows, encoding="utf-8")
+    return name
+
+
+WITH_BALL = HEADER + 'ball = "fuel.measure.toml"\n'
+
+
+def test_with_the_squeeze_measured_the_shots_fit_the_wheel_friction(tmp_path):
+    _ball_file(tmp_path, [118.0, 120.0, 122.0])
+    mf = _synthetic(tmp_path, 120.0, 1.1, [50.0, 50.0, 50.0, 80.0, 80.0, 80.0], header=WITH_BALL)
     result = fit(mf)
-    assert result.fitted == ("stiffness_n", "friction")
-    assert result.stiffness_n == pytest.approx(120.0, rel=0.05)
-    assert result.friction == pytest.approx(1.1, rel=0.05)
+    assert result.fitted == ("friction",)
+    assert result.stiffness_n == pytest.approx(120.0)
+    assert result.friction == pytest.approx(1.1, rel=0.03)
     assert result.rms_error < 0.01
     assert result.good and result.why == "" and result.warnings == []
     assert len(result.per_shot) == 6
@@ -113,38 +125,103 @@ def test_the_fit_recovers_the_stiffness_and_friction_the_shots_were_made_with(tm
         assert model == pytest.approx(measured, rel=0.02)
 
 
+def test_without_the_squeeze_the_shots_fit_the_stiffness_and_say_how_to_fit_friction(tmp_path):
+    mf = _synthetic(tmp_path, 120.0, 0.95, [50.0, 80.0])  # the setup's own friction, 0.95
+    result = fit(mf)
+    assert result.fitted == ("stiffness_n",)
+    assert result.stiffness_n == pytest.approx(120.0, rel=0.05)
+    assert result.friction == 0.95
+    assert result.warnings == [SQUEEZE_SENTENCE]
+    assert result.good
+
+
+def test_a_setup_whose_ball_names_a_squeeze_fits_friction(tmp_path):
+    _ball_file(tmp_path, [120.0, 120.0, 120.0])
+    mf = _synthetic(tmp_path, 120.0, 1.1, [50.0, 80.0])
+    (tmp_path / "shooter.toml").write_text(SETUP.replace('preset = "2026-fuel"\n',
+                                                         'preset = "2026-fuel"\nmeasured = "fuel.measure.toml"\n'),
+                                           encoding="utf-8")
+    result = fit(mf)
+    assert result.fitted == ("friction",)
+    assert result.friction == pytest.approx(1.1, rel=0.03)
+
+
+def test_a_setup_that_names_this_launcher_file_is_read_without_it(tmp_path):
+    # The setup may name the shots' own file (as Task 4 allows); the fit reads the setup as written, no loop.
+    mf = _synthetic(tmp_path, 120.0, 0.95, [50.0, 80.0])
+    (tmp_path / "shooter.toml").write_text(SETUP.replace('preset = "2026-fuel"\n',
+                                                         'preset = "2026-fuel"\nmeasured = "shooter.measure.toml"\n'),
+                                           encoding="utf-8")
+    result = fit(mf)
+    assert result.fitted == ("stiffness_n",)
+    assert result.stiffness_n == pytest.approx(120.0, rel=0.05)
+
+
+def test_a_ball_file_must_have_a_good_squeeze(tmp_path):
+    _setup(tmp_path)
+    _ball_file(tmp_path, [120.0, 125.0])
+    mf = _measure(tmp_path, [(60.0, 10.0)], header=WITH_BALL)
+    with pytest.raises(MeasureError, match=r"ball = \"fuel.measure.toml\" has a squeeze that isn't good enough "
+                                           r"to use \(2 trials: take at least 3\)"):
+        fit(mf)
+    (tmp_path / "fuel.measure.toml").write_text('[measure]\nkind = "friction"\nby = "J. Smith"\n'
+                                                'date = 2026-11-10\n', encoding="utf-8")
+    with pytest.raises(MeasureError, match="is a friction measurement; the fit needs a ball measurement"):
+        fit(mf)
+
+
 def test_a_shot_s_exit_speed_is_the_mark_spacing_times_fps_over_the_frames(tmp_path):
     mf = _measure(tmp_path, [(60.0, 10.0)])
     assert fit(mf).per_shot[0][0] == pytest.approx(MARKS_IN * INCH * FPS / 10.0)
 
 
-def test_shots_at_one_wheel_speed_fit_only_the_stiffness_and_say_why(tmp_path):
-    # Review Focus 2: friction stays at the setup's own 0.95.
-    mf = _synthetic(tmp_path, 120.0, 0.95, [80.0, 80.0, 80.0])
+def test_shots_at_one_wheel_speed_still_fit_with_a_warning(tmp_path):
+    _ball_file(tmp_path, [120.0, 120.0, 120.0])
+    mf = _synthetic(tmp_path, 120.0, 1.1, [80.0, 80.0, 80.0], header=WITH_BALL)
     result = fit(mf)
-    assert result.fitted == ("stiffness_n",)
-    assert result.stiffness_n == pytest.approx(120.0, rel=0.05)
-    assert result.friction == 0.95
-    assert any("shoot at a second wheel speed to fit friction too" in w for w in result.warnings)
-    assert result.good  # the stiffness fits; friction just isn't fit
+    assert result.friction == pytest.approx(1.1, rel=0.03)
+    assert result.warnings == ["the shots are all at one wheel speed (80 rps): shots at two or more wheel speeds "
+                               "check the fit"]
+    assert result.good
 
 
-def test_shots_faster_than_any_setting_gives_are_at_the_edge_and_not_good(tmp_path):
-    # Review Focus 3: 14 and 20 m/s from a 4 in. wheel at 50 and 80 rps (its surface moves at 16 and 26 m/s).
-    mf = _measure(tmp_path, [(50.0, _frames(14.0)), (80.0, _frames(20.0))])
-    result = fit(mf)
+FAST = [(50.0, _frames(14.0)), (80.0, _frames(20.0))]  # a 4 in. wheel's surface moves at 16 and 26 m/s there
+
+
+def test_shots_faster_than_any_friction_gives_are_at_the_edge_and_not_good(tmp_path):
+    # Review Focus 3: the model gives at most about 7 and 12 m/s at these speeds.
+    _ball_file(tmp_path, [120.0, 120.0, 120.0])
+    result = fit(_measure(tmp_path, FAST, header=WITH_BALL))
+    assert result.friction == pytest.approx(2.0)
     assert not result.good
-    assert any("at the edge of what it tries: check your shots" in w for w in result.warnings)
+    assert any("the wheel friction, 2.00, is at the edge of what it tries: check your shots" in w
+               for w in result.warnings)
     assert "edge" in result.why
 
 
-def test_six_shots_fit_within_20_seconds(tmp_path):
-    mf = _synthetic(tmp_path, 120.0, 1.1, [40.0, 50.0, 60.0, 70.0, 80.0, 90.0])
+def test_shots_slower_than_any_stiffness_gives_are_at_the_edge_and_not_good(tmp_path):
+    result = fit(_measure(tmp_path, [(50.0, _frames(1.5)), (80.0, _frames(2.0))]))
+    assert result.stiffness_n == pytest.approx(20.0)  # a quarter of the preset's 80 N
+    assert not result.good
+    assert any("the ball's stiffness_n, 20 N, is at the edge of what it tries: check your shots" in w
+               for w in result.warnings)
+
+
+def test_shots_faster_than_any_stiffness_gives_are_not_good(tmp_path):
+    # The model's exit speed here is highest at about 200 N and falls beyond it, so the fit stops there, short of
+    # its limit, and the miss itself makes it not good.
+    result = fit(_measure(tmp_path, FAST))
+    assert not result.good
+    assert any("miss your shots by 4" in w for w in result.warnings)
+
+
+def test_six_shots_fit_within_10_seconds(tmp_path):
+    _ball_file(tmp_path, [120.0, 120.0, 120.0])
+    mf = _synthetic(tmp_path, 120.0, 1.1, [40.0, 50.0, 60.0, 70.0, 80.0, 90.0], header=WITH_BALL)
     start = time.perf_counter()
     result = fit(mf)
-    assert time.perf_counter() - start < 20.0
-    assert result.stiffness_n == pytest.approx(120.0, rel=0.05)
-    assert result.friction == pytest.approx(1.1, rel=0.05)
+    assert time.perf_counter() - start < 10.0
+    assert result.friction == pytest.approx(1.1, rel=0.03)
 
 
 def test_a_shot_may_set_its_hood_angle_and_the_setup_table_its_camera(tmp_path):
@@ -177,6 +254,8 @@ def test_shot_readings_are_checked(tmp_path):
     _setup(tmp_path)
     cases = [
         ("wheel_rps = 60\nmarks_in = 12\nframes = 10\nfps = 240\nspeed = 3\n", "unknown reading 'speed'"),
+        ('wheel_rps = 60\nmarks_in = 12\nframes = 10\nfps = 240\nball = "fuel.measure.toml"\n',
+         "ball goes in \\[shot_setup\\]"),
         ("marks_in = 12\nframes = 10\nfps = 240\n", "trial 1 has no wheel_rps"),
         ("wheel_rps = 60\nmarks = 12\nframes = 10\nfps = 240\n", "marks needs its unit"),
         ("wheel_rps = 60\nmarks_in = 12\nfps = 240\n", "no frames reading"),

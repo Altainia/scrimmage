@@ -37,8 +37,8 @@ printable forms, and a Measure tab.
 
 1. **Two trials of very different size** (5 lb and 15 lb). The average is reported, with "take at least 3 trials"
    and no value used in a run (the file reads as not good enough). Test: Task 1.
-2. **A launcher file with shots at one wheel speed only:** only stiffness is fit, and the report says why. Test:
-   Task 2.
+2. **A launcher file with shots at one wheel speed only:** it still fits, warning "shots at two or more wheel
+   speeds check the fit". Test: Task 2.
 3. **A fit pinned at its search limit:** reported, flagged "at the edge of what it tries: check your shots", and the
    UNCALIBRATED label kept. Test: Task 2.
 4. **A ball setting pointed at a friction file:** an error naming both the setting and the file's kind. Test:
@@ -92,7 +92,7 @@ printable forms, and a Measure tab.
 
 **Interfaces:**
 - **`[shot_setup]`:** `setup = "<launcher setup file>"` (the launcher being measured, relative to the measure
-  file).
+  file), and optionally `ball = "<ball .measure.toml>"` (its squeeze, so friction is fit).
 - **`[[shot]]`:** each shot has `wheel_rps`, `hood_deg` (optional, defaulting to the setup's), a tape mark spacing
   (`marks_in`/`marks_mm`), `frames` and `fps`.
 - **`fit(mf) -> LauncherFit`:**
@@ -102,10 +102,11 @@ printable forms, and a Measure tab.
     one ball (reuse its code path; read `scrimmage/launcher/run.py`).
 - [ ] **Step 1: Write the failing tests.**
   - **Synthetic shots:** use the model itself with the 2026-fuel ball at `stiffness_n = 120` and wheel friction 1.1
-    as "truth", at 50 and 80 rps. The fit recovers both within 5% from the default preset start.
-  - **Review Focus 2:** one wheel speed only fits stiffness alone, with the sentence.
+    as "truth", at 50 and 80 rps. Given the true stiffness by a ball file, the fit recovers friction within 3%;
+    given the true friction (no ball file), it recovers stiffness within 5%, with the squeeze sentence (C8).
+  - **Review Focus 2:** one wheel speed still fits, with the warning.
   - **Review Focus 3:** shots faster than any setting can give are flagged "at the edge", and good = False.
-  - **Time limit:** a fit of 6 shots finishes within 20 s on the dev machine (`pytest.mark.slow` only if the repo has
+  - **Time limit:** a fit of 6 shots finishes within 10 s on the dev machine (`pytest.mark.slow` only if the repo has
     that mark).
 - [ ] **Step 2–4: Implement and run** them. Expected: PASS.
 - [ ] **Step 5: Commit:** `git commit -m "measure: fit a launcher's ball stiffness and wheel friction to filmed shots"`

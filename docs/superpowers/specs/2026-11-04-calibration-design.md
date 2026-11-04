@@ -133,14 +133,21 @@ slow motion, and their mentors. The standing anti-goal applies: **no unnecessary
   the estimates by name. When everything that matters is measured, it reads "Calibrated from measurements: ..."
   (files, dates, trial counts).
 - **C8 Launcher fit:**
-  - **Parameters:** the ball's `stiffness_n` (search range 0.25× to 4× the preset) and the wheel's `friction` (0.2
-    to 2.0).
+  - **One number at a time:** shots can't tell a ball's stiffness from a wheel's friction (in the model both speed
+    the ball up in the same way at every wheel speed), so a fit gives one of them.
+    - **The ball's squeeze measured** (`[shot_setup] ball = "<ball .measure.toml>"`, a ball file with a good squeeze
+      test, or the shots' setup's own `[ball] measured` ball file): stiffness is fixed at it, and the wheel's
+      `friction` is fit (0.2 to 2.0).
+    - **Otherwise:** the ball's `stiffness_n` is fit (0.25× to 4× the setup's, on a log scale), with the wheel
+      friction at the setup's, and it says "Measure the ball's squeeze (the squeeze test) to fit wheel friction
+      too."
+  - **The shots' setup** is read without its own measurements applied (only its `[ball] measured` ball file, for
+    the squeeze): a setup may name the very file its shots are in.
   - **Goal:** minimize the root-mean-square relative error of exit speed over the shots.
-  - **Search:** a 9 × 9 log/linear grid, then a local refinement.
-  - **One wheel speed only:** with only one wheel speed measured, only stiffness is fit (friction stays at its
-    current value) and it says why ("shoot at a second wheel speed to fit friction too").
-  - **A good fit:** RMS error under 5%, and neither number within 5% of its search limit. Otherwise the fit is
-    reported but keeps the UNCALIBRATED label.
+  - **Search:** a 9-point scan, then a golden-section search between the best point's neighbors.
+  - **One wheel speed only:** still fit, with a warning: "shots at two or more wheel speeds check the fit".
+  - **A good fit:** RMS error under 5%, and the fitted number not within 5% of its search limit. Otherwise the fit
+    is reported but keeps the UNCALIBRATED label.
   - **A shot's exit speed:** the tape mark spacing × fps / frames counted.
 - **C9 Cylinder fit:**
   - **Parameter:** `conductance`, from 0.1× to 10× the default, by bisection.
