@@ -33,6 +33,7 @@ RECOMMENDED = 5  # trials recommended (C1)
 OUTLIER_TRIALS = math.floor(2 * OUTLIER_DISTANCES) + 1
 PICTURE_MM = 115  # the picture's printed width: a 15-unit label in a 480-unit-wide picture prints at 10 pt
 SETUP_ACROSS = 3  # setup readings to a row
+TYPICAL_SPEED = 9.0  # m/s: a typical shot's horizontal speed (the fit's test shots are 7 to 10 m/s across)
 UNIT_WORDS = {"n": "N"}  # how a unit is printed on a form, where it isn't its key's spelling
 ABOUT = {"ball": "a FUEL ball from the practice bin", "friction": "40A tread on a FUEL ball",  # a starter's example
          "launcher": "the practice robot's shooter", "cylinder": "the intake's deploy cylinder"}
@@ -74,6 +75,12 @@ def _plain(names, name: str, what: str, example=None, optional: bool = False) ->
     if name not in names:
         raise ValueError(f"{name} isn't one of {names}")
     return Reading(name=name, quantity=None, what=what, example=example, optional=optional)
+
+
+def spacing_in(fps: float) -> int:
+    """The mark spacing (in, rounded up to 6 in) that a shot TYPICAL_SPEED across crosses in GOOD_FRAMES frames at
+    `fps`: the shot form's example."""
+    return math.ceil(fit_launcher.GOOD_FRAMES * TYPICAL_SPEED / fps / 0.0254 / 6) * 6
 
 
 _T, _S, _TEXT = tests_direct.TRIAL, tests_direct.SETTING, tests_direct.SETUP_TEXT
@@ -122,7 +129,7 @@ TEST: dict[str, Test] = {
         need=("a ruler or tape measure, 18 in or more, upright against a wall",
               "a phone that films slow motion", "a hard floor: concrete, tile or wood, not carpet"),
         steps=("Tape the ruler upright against the wall, its zero on a hard floor (not carpet).",
-               "Set the phone square-on to the ruler, level with where the top of the bounce will be (about 6 in "
+               "Set the phone square-on to the ruler, level with where the top of the bounce will be (about 6.5 in "
                "up), and start filming.",
                "Hold the ball against the ruler with its bottom at 18 in.",
                "Let go without pushing it.",
@@ -131,7 +138,7 @@ TEST: dict[str, Test] = {
                "Repeat for the next trial."),
         setup=(_r(_S["drop"], "drop", "the drop, floor to the bottom of the ball (18 in)", 18, "in"),
                _plain(_TEXT["drop"], "floor", "what the floor is", "concrete")),
-        trial=(_r(_T["drop"], "bounce", "the top of the bounce, floor to the bottom of the ball", 7.0, "in"),),
+        trial=(_r(_T["drop"], "bounce", "the top of the bounce, floor to the bottom of the ball", 6.5, "in"),),
         value="restitution", formula="√(bounce ÷ drop)",
         summaries=("restitution",)),
     "sled": Test(
@@ -159,7 +166,8 @@ TEST: dict[str, Test] = {
         need=("a phone that films slow motion", "a board and tape", "a tachometer or the robot's log",
               "the launcher's setup file"),
         steps=("Tape two vertical marks on a board a few inches behind the ball's path, the first near the exit.",
-               f"Space them for {fit_launcher.GOOD_FRAMES} or more frames: 24 in at 960 fps, about 8 ft at 240 fps.",
+               f"Space them for {fit_launcher.GOOD_FRAMES} or more frames: for a shot about {TYPICAL_SPEED:g} m/s "
+               f"across, {spacing_in(240)} in at 240 fps (24 in at 960 fps gives far more).",
                "Set the phone to its highest frame rate, square-on, 10 or more times as far in front of the path as "
                "the board is behind it.",
                "Let the wheel settle; write the speed you measured, not the setpoint.",
@@ -177,7 +185,8 @@ TEST: dict[str, Test] = {
         trial=(_plain(fit_launcher.SHOT_NUMBERS, "wheel_rps", "the wheel speed you measured", 50),
                _plain(fit_launcher.SHOT_NUMBERS, "hood_deg", "only if not the setup box's", optional=True),
                _r(_SHOT, "frames", "frames from one mark to the next", 70)),
-        value="speed across", formula="marks × fps ÷ frames: in or mm (the marks' unit) per second",
+        value="speed across",
+        formula=f"marks × fps ÷ frames: the marks' unit ({', '.join(UNITS['length'])}) per second",
         summaries=(),
         note="Scrimmage fits the shots to the launcher model: they aren't averaged. Shots at two or more wheel "
              "speeds check the fit."),

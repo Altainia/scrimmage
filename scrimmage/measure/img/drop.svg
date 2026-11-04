@@ -13,15 +13,15 @@
   <circle cx="93" cy="56" r="26" fill="#dddddd" stroke="black" stroke-width="2.5"/>
   <text x="134" y="62">let go beside the ruler: 18 in</text>
   <text x="134" y="81">to the bottom of the ball</text>
-  <!-- the top of the bounce, read at the ruler, the phone level with it -->
-  <circle cx="93" cy="155" r="26" fill="white" stroke="black" stroke-width="2.5" stroke-dasharray="7 4"/>
-  <line x1="66" y1="181" x2="404" y2="181" stroke="black" stroke-width="1.5" stroke-dasharray="5 4"/>
-  <text x="134" y="152">read the bounce here, at its top:</text>
-  <text x="134" y="171">to the bottom of the ball</text>
-  <rect x="408" y="148" width="40" height="66" rx="6" fill="white" stroke="black" stroke-width="2.5"/>
-  <circle cx="428" cy="181" r="5" fill="black"/>
-  <text x="450" y="238" text-anchor="end">film it, the phone level</text>
-  <text x="450" y="257" text-anchor="end">with the top of the bounce</text>
+  <!-- the top of the bounce, 6.5 in (11 units to the inch), read at the ruler, the phone level with it -->
+  <circle cx="93" cy="182.5" r="26" fill="white" stroke="black" stroke-width="2.5" stroke-dasharray="7 4"/>
+  <line x1="66" y1="208.5" x2="404" y2="208.5" stroke="black" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="134" y="180">read the bounce here, at its top:</text>
+  <text x="134" y="199">to the bottom of the ball</text>
+  <rect x="408" y="184" width="40" height="50" rx="6" fill="white" stroke="black" stroke-width="2.5"/>
+  <circle cx="428" cy="208.5" r="5" fill="black"/>
+  <text x="450" y="253" text-anchor="end">film it, the phone level</text>
+  <text x="450" y="272" text-anchor="end">with the top of the bounce</text>
   <!-- the hard floor -->
   <line x1="20" y1="280" x2="460" y2="280" stroke="black" stroke-width="3"/>
   <path d="M30,280 l-10,12 M50,280 l-10,12 M70,280 l-10,12 M90,280 l-10,12 M110,280 l-10,12 M130,280 l-10,12 M150,280 l-10,12 M170,280 l-10,12 M190,280 l-10,12 M210,280 l-10,12 M230,280 l-10,12 M250,280 l-10,12 M270,280 l-10,12 M290,280 l-10,12 M310,280 l-10,12 M330,280 l-10,12 M350,280 l-10,12 M370,280 l-10,12 M390,280 l-10,12 M410,280 l-10,12 M430,280 l-10,12 M450,280 l-10,12" stroke="#777777" stroke-width="1.5"/>

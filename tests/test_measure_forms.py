@@ -13,6 +13,7 @@ REPO = Path(__file__).resolve().parent.parent
 IMG = REPO / "scrimmage" / "measure" / "img"
 DOCS_IMG = REPO / "docs" / "img" / "measure"
 PT = 25.4 / 72  # mm
+INCH = 0.0254
 
 
 def test_the_forms_cover_every_test():
@@ -66,7 +67,7 @@ def test_an_averaged_form_has_the_summary_boxes_and_the_value_formula(test):
 
 def test_the_shot_form_works_out_each_speed_and_says_why_it_has_no_average():
     page = forms.form_html("shot")
-    assert ('<th>speed across<br><span class="small">marks × fps ÷ frames: in or mm (the marks\' unit) per '
+    assert ('<th>speed across<br><span class="small">marks × fps ÷ frames: the marks\' unit (in, mm, cm, m) per '
             'second</span></th>') in page
     assert '<div class="box">average</div>' not in page
     assert "Scrimmage fits the shots to the launcher model: they aren't averaged." in page
@@ -281,3 +282,22 @@ def test_the_shot_pictures_path_rises_across_vertical_marks():
     assert len(marks) == 2
     path = next(el for el in lines if el.get("stroke-dasharray") == "2 5")
     assert float(path.get("y2")) < float(path.get("y1"))  # up and across
+
+
+def test_the_shot_forms_spacing_example_gives_enough_frames_but_not_far_more():
+    step = forms.TEST["shot"].steps[1]
+    assert f"about {forms.TYPICAL_SPEED:g} m/s across, {forms.spacing_in(240)} in at 240 fps" in step
+    frames = forms.spacing_in(240) * INCH * 240 / forms.TYPICAL_SPEED
+    assert fit_launcher.GOOD_FRAMES <= frames <= 1.5 * fit_launcher.GOOD_FRAMES
+    assert 24 * INCH * 960 / forms.TYPICAL_SPEED >= fit_launcher.GOOD_FRAMES  # the 960 fps example
+
+
+def test_the_drop_picture_step_and_example_agree_on_the_bounce():
+    root = ET.parse(IMG / "drop.svg").getroot()
+    circles = list(root.iter("{http://www.w3.org/2000/svg}circle"))
+    bounce = next(el for el in circles if el.get("stroke-dasharray"))
+    bottom = float(bounce.get("cy")) + float(bounce.get("r"))
+    floor, per_inch = 280.0, 11.0  # the picture's ruler: 0 at the floor line, 11 units to the inch
+    example = next(r for r in forms.TEST["drop"].trial if r.name == "bounce").example
+    assert (floor - bottom) / per_inch == pytest.approx(example)
+    assert f"about {example:g} in up" in " ".join(forms.TEST["drop"].steps)
