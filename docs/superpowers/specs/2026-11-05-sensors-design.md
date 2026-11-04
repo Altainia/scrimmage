@@ -172,3 +172,14 @@ unnecessary friction.**
   (`REV Color Sensor V3[<port>,82]`, from `SimDevice.create(name, port, address)` read in REVLib-java 2026.0.5's
   class file) but hasn't been run in Scrimmage. Why: only RobotPy was checked live (D8). Cost: a Java team may meet
   a mismatch first; the run's notes name a missing color sensor (D9).
+- **D15 An encoder's DIO channels (final review):** a quadrature encoder on `channel_a = n` takes DIO n and n + 1 in
+  the duplicate-device check, so a sensor, a `[[digital]]` limit switch or a shooter beam break on either is an error
+  naming both, with a note of the encoder's two channels. The config has no `channel_b`: scrimmage matches an encoder
+  by its first channel, and the second is WPILib's `Encoder(n, n + 1)`. Why: with sensors, a DIO the drive's encoder
+  already takes is easy to pick, and the clash breaks both the sensor and the encoder without saying why. Cost: an
+  encoder wired to two channels not side by side can't be described; none can be today either.
+- **D16 A color sensor's chart signal (Task 3):** `sensor.<name>` for a color sensor is the index of the color it
+  sees in `sensor_colors` (the palette's list of `NAMED_COLORS`: 0 red, 1 blue, ... 7 gray), with a gap while it sees
+  none, not the color's name as Goal 3 said. The chart's key names each number's color. Why: every chart signal is a
+  number a line can be drawn through, and the index keeps the color sensor on the same chart as the others. Cost: the
+  chart's line reads as a number, so the key is needed to read it.

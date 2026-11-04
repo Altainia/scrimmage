@@ -52,8 +52,8 @@ pos = [0.43, 0.0, 0.0]    # on the floor at the front bumper's face (a 0.7 m fra
 ids = { roller = "PWM:2" }
 
 # ---- Sensors -------------------------------------------------------------------------
-# A beam break across the bin, from one side wall to the other, 8 cm off the carpet and 12 cm in front of the back
-# wall (in the intake's coordinates: x forward from the bumper's face, y left, z up, in meters). A ball resting in the
+# A beam break across the bin, from one side wall to the other, 8 cm off the carpet and 12 cm in front of the bumper's
+# face (in the intake's coordinates: x forward from the bumper's face, y left, z up, in meters). A ball resting in the
 # bin breaks it; a ball on the carpet in front of the robot, or still on the lip, doesn't. The robot code reads it as
 # DigitalInput 4 (the drive's encoders use DIO 0 to 3): false while broken, as an IR beam-break receiver reads.
 

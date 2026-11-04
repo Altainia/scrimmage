@@ -1041,9 +1041,9 @@ configs/           robot configs built from parts (kitbot, swerve, elevator_arm,
                    climber_robot)
 scenarios/         scenario files (steps, checks, screenshots)
 examples/          blocks/ (Test tab examples: an intake, an intake that stops on a beam break, a station, a reef
-                   grabber, a ladder climber, a turret shooter, a pneumatic arm, a trench, a partner push); RobotPy kitbot robot program; Java swerve (Phoenix 6) project; Java fast-mode
-                   (AdvantageKit) project; Java build.gradle notes; launcher/ and disc/ setups; measure/ measurement
-                   files; climb/ scripts
+                   grabber, a ladder climber, a turret shooter, a pneumatic arm, a trench, a partner push); RobotPy
+                   kitbot robot program; Java swerve (Phoenix 6) project; Java fast-mode (AdvantageKit) project; Java
+                   build.gradle notes; launcher/ and disc/ setups; measure/ measurement files; climb/ scripts
 shims/             CANMotor/CANEncoder shims for vendor controllers (Python tested, Java template)
 tools/plot_run.py  plots a --log CSV
 tests/             unit + end-to-end tests; tests/models/kitbot.xml is the hand-written-model fixture

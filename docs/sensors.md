@@ -67,7 +67,7 @@ Every sensor:
 
 | key | default | meaning |
 |---|---|---|
-| `name` | required | its name: what the Test tab, the chart (`sensor.<name>`) and messages call it. Two sensors can't share a name |
+| `name` | required | its name: what the Test tab, the chart (`sensor.<name>`) and messages call it. Letters, digits and `_`, as a part's name; two sensors can't share a name |
 | `kind` | required | `"beam"` (a beam break), `"distance"` (a distance sensor) or `"color"` (a REV Color Sensor V3) |
 | `body` | required | the robot body it is mounted on, `"<part>.<body>"`. A body the robot doesn't have is an error that lists the robot's bodies |
 
@@ -116,7 +116,9 @@ a reading is 1 ms behind the physics: far less than any real sensor's own respon
 from `at` along `toward`, `max_range` long. On that line:
 
 - **The robot is never in the way.** A sensor looks through its own robot's parts, so a beam drawn through a plate, or
-  a sensor mounted inside a bracket, still sees a piece beyond it.
+  a sensor mounted inside a bracket, still sees a piece beyond it. It looks past at most 32 of the robot's surfaces
+  (a box it passes through is two); a sensor with more in its way reads nothing past them, and scrimmage warns once,
+  naming it.
 - **The field always is.** The walls, goals, obstacles, the field's moving elements and the carpet block every
   sensor, `sees = "pieces"` too: a piece behind a wall is hidden, as it would be from a real beam. A pieces-only sensor
   that hits the field first reads nothing there.
@@ -175,7 +177,9 @@ A color sensor reads a piece kind's color:
 
 - **Otherwise, the color its form was always drawn in:** a ball yellow, a disc white, a rigid piece off-white.
 
-The piece is drawn in the same color in the viewer and the replay.
+The piece is drawn in the same color in the viewer and the replay. A **Piece** picked in the Test tab's Setup in place
+of a field's first `[piece.<name>]` (the red cargo of a red and blue field) takes the new piece's own color, not red;
+one in place of a range file's `[range]` ball keeps its `[range] color`.
 
 `color` is one of the named colors below, or `[r, g, b]` with each 0 to 1. The Test tab's **is seeing** names the
 nearest of them to the color the sensor reads (the straight-line distance between the two colors' r, g and b), so a
@@ -204,9 +208,10 @@ Robot code reads the sensors with the same classes as on a real robot:
 | a color sensor's `i2c` | REVLib's `ColorSensorV3(I2C.Port.kOnboard)` or `(I2C.Port.kMXP)` | `getColor()`, `getRawColor()`, `getIR()`, `getProximity()` |
 
 **Channels can't clash.** A sensor's DIO, analog input or I2C port can't be one that a `[[digital]]` or `[[analog]]`
-entry, a `[[shooter.beam_break]]` or another sensor already uses: that is an error naming both. The drive's encoders
-use DIO channels too (an encoder on `channel_a = 0` takes DIO 0 and 1), and so do a robot's other `DigitalInput`s:
-pick a channel your robot code doesn't use for anything else.
+entry, a `[[shooter.beam_break]]`, an encoder or another sensor already uses: that is an error naming both. An encoder
+on `channel_a = 0` (`"DIO:0"` in a part's `ids`) is `Encoder(0, 1)` and takes DIO 0 and 1, so a sensor on either is an
+error. A robot's other `DigitalInput`s use DIO channels too: pick a channel your robot code doesn't use for anything
+else.
 
 **The color sensor's port.** The I2C port is `I2C.Port.kOnboard` (0) for `i2c = "onboard"` and `I2C.Port.kMXP` (1) for
 `i2c = "mxp"`. Scrimmage writes the values of REVLib's simulated device, `REV Color Sensor V3[1,82]` on the MXP port
@@ -310,5 +315,8 @@ Each mistake names the sensor and the key, for example:
 - `[[sensor]] "bin": body "intake.base" isn't one of the robot's bodies; its bodies: drive.chassis, dt.rails, ...`
 - `[[sensor]] "eye": max_range is 0.2 m: a color sensor sees 10 cm at most (max_range = 0.10)`
 - `[[sensor]] "range": threshold (3 m) is past max_range (2 m); make it shorter`
+- `[[sensor]] 2: name must be letters, digits and _ (like a part's name), not "front beam"`
 - `[[sensor]] "bin": unknown key 'sees' for a beam sensor; its keys: name, kind, body, from, from_in, to, to_in, dio, active_low`
 - `REV Color Sensor V3[1,82] is bound by [[sensor]] "eye" and [[sensor]] "eye2": give each device one binding`
+- `DIO 1 is bound by encoder dt.left_encoder and [[sensor]] "bin": give each device one binding (an encoder on
+  channel_a = 0 takes DIO 0 and 1)`

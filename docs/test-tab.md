@@ -474,12 +474,16 @@ the sensor itself.
 
 **The chart** gets `sensor.<name>` for each sensor, drawn at first (unless the test's `chart` line names others): 0
 or 1 for a beam break (1 while broken), inches for a distance sensor (its `max_range` with nothing in range), and for
-a color sensor the number of the color it sees, with a gap while it sees none. The chart's key says which number is which color: 0 red, 1 blue, 2 yellow, 3 orange, 4
-green, 5 purple, 6 white, 7 gray.
+a color sensor the number of the color it sees, with a gap while it sees none. The chart's key says which number is
+which color: 0 red, 1 blue, 2 yellow, 3 orange, 4 green, 5 purple, 6 white, 7 gray.
 
 **The replay** draws each sensor as a thin line: a beam break from end to end, a distance or color sensor from where
 it looks out to its `max_range`. The line is lit while the sensor is on. The Drive tab's live view draws the same
 lines, never lit.
+
+**A blink too short to see.** The chart and the replay take each sensor 50 times a second (every 20 ms), but a wait
+or a check reads it every physics step (1 ms at the default step). So a beam broken for less than 20 ms, by a fast
+piece, can end a **wait until sensor bin is on** while the chart shows it never broke.
 
 In the test file:
 

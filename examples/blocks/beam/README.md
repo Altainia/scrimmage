@@ -77,9 +77,9 @@ of the run: it never flickers clear.
 The chart shows `sensor.bin` (the test's `chart` line names it): 0 until 2.0 s, and 1 from then on. In the replay, the
 beam is drawn as a line across the bin, lit from 2.0 s.
 
-The robot code that does the same, with the beam break on DIO 4 and the roller on PWM 2 (as `beam-standin.toml`
-binds them). The beam break reads `false` while the beam is broken, as an IR beam-break receiver does
-([sensors.md](../../../docs/sensors.md#robot-code) has more):
+The robot code for the stopping half (blocks 4 and 5 for the roller; the drive is left to you), with the beam break
+on DIO 4 and the roller on PWM 2 (as `beam-standin.toml` binds them). The beam break reads `false` while the beam is
+broken, as an IR beam-break receiver does ([sensors.md](../../../docs/sensors.md#robot-code) has more):
 
 ```python
 import wpilib
