@@ -110,8 +110,10 @@ Notes:
   jumps when a second bar is hooked: it is then measured about the new bar.
 - **A margin contact counts as touched:** MuJoCo reports a contact a little before the surfaces meet, so
   `climb.hanging` can read 1 a step before the last wheel lifts.
-- **Extension and height count colliding geoms only.** A stock elevator or arm is built collide = false, so it shows
-  in neither, even when it is what breaks G106; it also passes through bars.
+- **Extension and height count colliding geoms only.** A stock elevator or arm is built `collide = false` unless
+  its part says `collide = true` ([docs/parts.md](parts.md#stock-parts-that-collide)). With it off it shows in
+  neither, even when it is what breaks G106, and it passes through bars; with it on it counts for both and can catch
+  on a bar.
 
 ## `scrimmage climb run`
 
@@ -309,8 +311,9 @@ From the research notes (Chief Delphi threads, team binders and the 2022 manual;
 
 ## Known limits
 
-- **Existing mechanisms don't collide.** A stock elevator, arm or launcher is collide = false: it passes through bars
-  and doesn't count for `climb.extension` or `climb.height`. Only the climber part collides.
+- **Other mechanisms collide only when they say so.** A stock elevator, arm or launcher is `collide = false` by
+  default: it passes through bars and doesn't count for `climb.extension` or `climb.height`. Set `collide = true` on
+  the part ([docs/parts.md](parts.md#stock-parts-that-collide)) to count it. The climber part always collides.
 - **Chain and rope aren't modeled** (2024's chain, 2017's rope): they need cable simulation.
 - **2013's sequential rule isn't checked**: `"lowest-point"` scores where the robot is, not how it got there.
 - **No state machine**: a script waits on simple conditions; an auto-climb that reacts to the swing has to be

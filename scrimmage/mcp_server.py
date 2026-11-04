@@ -194,7 +194,8 @@ async def set_joystick(port: int, axes: list[float] | None = None, buttons: list
 @server.tool()
 async def get_state() -> str:
     """Ground-truth pose (m, degrees CCW), speed, battery voltage, motor commands/currents, joint positions; with
-    pneumatic cylinders, the air (stored and working psi, compressor on, each rod's extension_m in meters)."""
+    pneumatic cylinders, the air (stored and working psi, compressor on, each rod's extension_m in meters); with a
+    [partner] robot, its height_in, tilt_deg and moved_in from where it settled."""
     try:
         return _json(_need().state())
     except SessionError as e:
@@ -597,7 +598,10 @@ async def test_run(path: str) -> dict:
     numbers are estimates, all UNCALIBRATED; say them with the outcome),
     "goals" (on a field with a shooter: the balls scored in each goal, else null), "air" (on a robot with cylinders:
     start_psi, end_psi, low_psi, low_t, compressor_s, below_working_t (when the tanks fell below working_psi, the
-    cylinders weaker from then on; null if never), and working_psi; else null), "air_lines" (the air in words) and
+    cylinders weaker from then on; null if never), and working_psi; else null), "air_lines" (the air in words),
+    "clearance" (each field element the test measures, in a clears check or a clearance.<element> chart signal:
+    min_in, its smallest clearance in inches, and t, when; both null when it was never within 0.5 m (20 in); null
+    when it measures none), "clearance_lines" (those in words: "closest to trench: 0.82 in at 3.1 s") and
     "run_folder", where the run is kept (the app's Test tab replays it). path: an absolute path. A bad test file
     or robot is a plain error naming the block."""
     file = _test_file(path)
@@ -616,6 +620,7 @@ async def test_run(path: str) -> dict:
                 "counts": result.counts, "feeds": result.feeds, "seed": result.seed,
                 "marks": list(result.marks), "notes": list(result.notes), "goals": result.goals,
                 "air": result.air, "air_lines": blocks_run.air_lines(result),
+                "clearance": result.clearance, "clearance_lines": blocks_run.clearance_lines(result),
                 "run_folder": str(folder.resolve())}
 
     try:

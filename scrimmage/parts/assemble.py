@@ -19,6 +19,7 @@ from .model import Body, Geom, Part, PartError, load_part, model_timestep, quat_
 from ..pneumatics.model import ATM, MAX_WORKING_PSI, PSI, CylinderSpec
 
 if TYPE_CHECKING:
+    from .partner import PartnerInfo
     from ..testrange.build import RangeLayout
     from ..testrange.spec import Range
 
@@ -102,6 +103,7 @@ class Built:
     layout: RangeLayout | None = None
     tread_geoms: list[str] = field(default_factory=list)   # every geom with tread = true, by its full name
     cylinders: list[CylinderSpec] = field(default_factory=list)   # named by instance; full body names, length set
+    partner: PartnerInfo | None = None      # the config's [partner] (parts/partner.py): not part of the robot
 
 
 def _qmul(p, q) -> np.ndarray:
@@ -128,6 +130,19 @@ def parse_start_pose(value, default=None) -> tuple[float, float, float] | None:
     if not ok:
         raise ValueError(f"[robot] start_pose must be [x, y, heading_deg], 3 finite numbers, not {value!r}")
     return tuple(float(v) for v in value)
+
+
+def _start(cfg: dict, section) -> tuple[float, float, float]:
+    """Where a parts robot starts: its [range] start, else [robot] start_pose, else DEFAULT_START_POSE."""
+    if section is not None and section.start is not None:
+        return section.start_pose()
+    return parse_start_pose(cfg.get("robot", {}).get("start_pose"), DEFAULT_START_POSE)
+
+
+def robot_start(cfg: dict, cfg_dir: Path | None) -> tuple[float, float, float]:
+    """(x, y, heading_deg) a parts robot's config starts it at (see _start), its [range] read from `cfg_dir`."""
+    from ..testrange.build import parse_range_section
+    return _start(cfg, parse_range_section(cfg, cfg_dir) if "range" in cfg else None)
 
 
 def _vec3(e: dict, key: str, where: str) -> tuple[float, float, float]:
@@ -332,14 +347,22 @@ def _set_treads(built: Built, timestep: float) -> None:
     """Give every tread geom its contact (tread_solref), in the compiled model and the spec, and list them in
     built.tread_geoms. The stiffness and damping are the part's tread_stiffness and tread_damping (a stock
     drivetrain's parameters), else TREAD_STIFFNESS and TREAD_DAMPING. A tread geom with its own solref keeps it."""
+    built.tread_geoms.extend(_tread_contacts(built, built.instances, timestep))
+    if built.partner is not None:       # the partner's wheels get the same contact, but aren't the robot's
+        _tread_contacts(built, built.partner.parts, timestep)
+
+
+def _tread_contacts(built: Built, insts: list[Instance], timestep: float) -> list[str]:
+    """Set each tread geom's contact (see _set_treads) of `insts`; their full names."""
     m = built.model
-    for inst in built.instances:
+    names = []
+    for inst in insts:
         for b in inst.part.bodies:
             for i, g in enumerate(b.geoms):
                 if not g.tread:
                     continue
                 name = f"{inst.name}.{tread_name(b.name, i)}"
-                built.tread_geoms.append(name)
+                names.append(name)
                 if g.solref is not None:
                     continue
                 gid = m.geom(name).id
@@ -351,6 +374,7 @@ def _set_treads(built: Built, timestep: float) -> None:
                 m.geom_solref[gid], m.geom_solimp[gid], m.geom_solmix[gid] = solref, solimp, TREAD_SOLMIX
                 sg = built.spec.geom(name)
                 sg.solref, sg.solimp, sg.solmix = solref, solimp, TREAD_SOLMIX
+    return names
 
 
 # A cylinder's end stops. MuJoCo's default soft limit (0.02 s) lets 60 psi on the stock 1-1/16 in bore (about 240 N)
@@ -417,6 +441,21 @@ def _add_cylinders(spec: mujoco.MjSpec, insts: list[Instance], by_name: dict[str
     return out
 
 
+def _add_couplings(spec: mujoco.MjSpec, prefix: str, part: Part) -> None:
+    """The part's couplings as joint equalities, its joints named "<prefix>.<joint>".
+
+    MuJoCo regularizes a joint equality q1 = c q2 with both joints' inverse inertias, unscaled by c, while the
+    constraint itself weighs joint 2 by c^2: with |c| < 1 a light joint 2 (a pinion driving a rack at 0.02 m/rad)
+    makes the coupling far too soft. So each coupling is written with |c| >= 1 (b = r a, or a = b / r), and
+    near-hard (solimp 0.9999)."""
+    for cp in part.couplings:
+        a, b = (f"{prefix}.{j}" for j in cp.joints)
+        dep, drv, c = (b, a, cp.ratio) if abs(cp.ratio) >= 1 else (a, b, 1.0 / cp.ratio)
+        spec.add_equality(type=mujoco.mjtEq.mjEQ_JOINT, name1=dep, name2=drv,
+                          data=[0, c] + [0] * (mujoco.mjNEQDATA - 2), solref=[0.002, 1],
+                          solimp=[0.9999, 0.9999, 0.001, 0.5, 2])
+
+
 def _moving_body(m: mujoco.MjModel, b: int) -> int:
     """The body itself if it has a joint, else its nearest ancestor that does (the world if none)."""
     while b != 0 and m.body_jntnum[b] == 0:
@@ -477,9 +516,7 @@ def assemble(cfg: dict, cfg_dir: Path) -> Built:
             spec.option.timestep = timestep
     add_field(spec, field_cfg, obstacle_default=section is None)
 
-    pose = parse_start_pose(cfg.get("robot", {}).get("start_pose"), DEFAULT_START_POSE)
-    if section is not None and section.start is not None:
-        pose = section.start_pose()
+    pose = _start(cfg, section)
     root = insts[0]
     for inst in insts:
         child = part_spec(inst.part, inst.where)
@@ -502,20 +539,20 @@ def assemble(cfg: dict, cfg_dir: Path) -> Built:
             spec.add_equality(type=mujoco.mjtEq.mjEQ_CONNECT, name1=f"{inst.name}.{lp.body1}",
                               name2=f"{inst.name}.{lp.body2}", objtype=mujoco.mjtObj.mjOBJ_BODY,
                               data=[*lp.pos] + [0] * (mujoco.mjNEQDATA - 3), solref=[0.002, 1])
-        # MuJoCo regularizes a joint equality q1 = c q2 with both joints' inverse inertias, unscaled by c, while the
-        # constraint itself weighs joint 2 by c^2: with |c| < 1 a light joint 2 (a pinion driving a rack at 0.02 m/rad)
-        # makes the coupling far too soft. So each coupling is written with |c| >= 1 (b = r a, or a = b / r), and
-        # near-hard (solimp 0.9999)
-        for cp in inst.part.couplings:
-            a, b = (f"{inst.name}.{j}" for j in cp.joints)
-            dep, drv, c = (b, a, cp.ratio) if abs(cp.ratio) >= 1 else (a, b, 1.0 / cp.ratio)
-            spec.add_equality(type=mujoco.mjtEq.mjEQ_JOINT, name1=dep, name2=drv,
-                              data=[0, c] + [0] * (mujoco.mjNEQDATA - 2), solref=[0.002, 1], solimp=[0.9999, 0.9999, 0.001, 0.5, 2])
+        _add_couplings(spec, inst.name, inst.part)
     cylinders = _add_cylinders(spec, insts, by_name, timestep if timestep is not None else spec.option.timestep)
     layout = None
     if section is not None:
         from ..testrange.build import add_range
         layout = add_range(spec, section.range, section.capacity, floor_balls=section.floor_balls)
+    partner = None
+    if "partner" in cfg:
+        from .partner import add_partner, check_start
+        if "partner" in by_name:
+            raise PartError(f"{by_name['partner'].where}: the part name 'partner' is the [partner] robot's; rename "
+                            "the part")
+        partner = add_partner(spec, cfg)
+        check_start(partner, pose, section.range.elements if section is not None else ())
     try:
         model = spec.compile()
     except ValueError as e:
@@ -528,7 +565,7 @@ def assemble(cfg: dict, cfg_dir: Path) -> Built:
     built = Built(model, spec, f"{root.name}.{rb.name}", insts,
                   root_offset=(tuple(np.array(root.pos) + _rot(rb.pos, rq)),
                                tuple(_qmul(rq, quat_from_rpy(rb.rot)))),
-                  range=None if section is None else section.range, layout=layout)
+                  range=None if section is None else section.range, layout=layout, partner=partner)
     _set_treads(built, timestep if timestep is not None else spec.option.timestep)
     _resolve_cylinders(built, cylinders)
     for inst in insts:

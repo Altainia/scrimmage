@@ -15,7 +15,8 @@ SIGNALS_HELP = ("battery, speed, motor.<name>.current|command, joint.<name>.posi
                 "robot.ground_gap|wheels_down|air_time|pitch|roll|tilt|z|stranded|tipped, "
                 "climb.hanging|level|points|swing|hook_load|extension|height, climb.hook.<hook>.load, "
                 "hal:<type>/<device>/<key>, nt:<topic>, and on a test range score, score.<goal>, fired, held, on_field, "
-                "element.<platform>.angle")
+                "element.<platform>.angle, element.<hinged or sliding element>, and with a [partner] partner.height|"
+                "tilt|moved")
 RANGE_SIGNALS = ("score", "fired", "held", "on_field")   # and score.<goal>: read from the range's counts()
 
 
@@ -97,21 +98,40 @@ def _robot_signal(name: str, world) -> Signal:
 
 
 def _element_signal(name: str, world) -> Signal:
-    from .testrange.elements import Platform
-    elem, _, field = name[len("element."):].rpartition(".")
+    """element.<platform>.angle, a platform's tilt (deg); element.<name>, a hinged element's angle (deg) or a sliding
+    one's travel (in), 0 at rest."""
+    from .testrange.elements import Platform, moving_units, moving_value
     rng = getattr(world, "test_range", None)
     elements = list(rng.range.elements) if rng is not None else []
+    units = moving_units(elements)
+    rest = name[len("element."):]
+    if rest in units:
+        qadr, unit = world.parts.layout.moving[rest], units[rest]
+        return Signal(name, lambda s: moving_value(float(s.world.data.qpos[qadr]), unit))
+    elem, _, field = rest.rpartition(".")
     platforms = [e.name for e in elements if isinstance(e, Platform)]
+    known = f"platforms: {', '.join(platforms) or 'none'}; moving elements: {', '.join(units) or 'none'}"
     if field != "angle" or not elem:
-        raise ScenarioError(f"unknown signal {name!r}: use element.<platform>.angle; platforms: "
-                            f"{', '.join(platforms) or 'none'}")
+        raise ScenarioError(f"unknown signal {name!r}: use element.<platform>.angle or element.<moving element>; "
+                            f"{known}")
     if elem not in platforms:
         kinds = {e.name: type(e).__name__.lower() for e in elements}
-        why = (f"element {elem!r} is a {kinds[elem]}, not a platform: only a platform tilts" if elem in kinds else
+        why = (f"{elem!r} is a {kinds[elem]} element: read it as element.{elem}" if elem in units else
+               f"element {elem!r} is a {kinds[elem]}, not a platform: only a platform tilts" if elem in kinds else
                f"no platform {elem!r}")
-        raise ScenarioError(f"signal {name!r}: {why}; platforms: {', '.join(platforms) or 'none'}")
+        raise ScenarioError(f"signal {name!r}: {why}; {known}")
     world.terrain_monitor()
     return Signal(name, lambda s: s.world.terrain.platform_angle(elem))
+
+
+def _partner_signal(name: str, world) -> Signal:
+    """partner.height (in), partner.tilt (deg) and partner.moved (in): the [partner] robot's (parts/partner.py)."""
+    from .parts.partner import SIGNALS
+    if name not in SIGNALS:
+        raise ScenarioError(f"unknown signal {name!r}: the partner signals are {', '.join(SIGNALS)}")
+    if getattr(world, "partner", None) is None:
+        raise ScenarioError(f"{name} needs a partner robot: add [partner] to the config (see README.md)")
+    return Signal(name, lambda s: s.world.partner.read(name))
 
 
 def _climb_signal(name: str, world) -> Signal:
@@ -148,6 +168,8 @@ def resolve_signal(name: str, world) -> Signal:
         return _element_signal(name, world)
     if name.startswith("climb."):
         return _climb_signal(name, world)
+    if name.startswith("partner."):
+        return _partner_signal(name, world)
     if name == "battery":
         return Signal(name, lambda s: s.world.vbatt)
     if name == "speed":

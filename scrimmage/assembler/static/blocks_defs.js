@@ -6,7 +6,9 @@
 //   defineBlocks(names)            registers the block types once; `names()` answers the current palette (or null)
 //   toolbox(palette)               the flyout's contents: Move, Wait, Repeat, Check (a block only when every one of its
 //                                  pickers has something to pick: aim needs a turret and a goal, scored a goal, the
-//                                  cylinder blocks and the air pressure check a cylinder)
+//                                  cylinder blocks and the air pressure check a cylinder, the element check a hinged
+//                                  or sliding field element, clears a field element, the partner checks a partner
+//                                  robot)
 //   testToWorkspace(test, ws)      replaces the workspace's blocks with the test's (one stack, top to bottom)
 //   appendBlocks(ws, blocks)       joins blocks (the test JSON's) below the test's last block
 //   workspaceToTest(ws)            the test JSON of the workspace: the test is the stack that holds the test's first
@@ -30,7 +32,7 @@ const COND = "Condition";
 // so the block keeps its value (and shows the problem) instead of quietly picking another name. Rebuilt by setUsed.
 const KINDS_OF_NAME = { motor: "robot", joint: "robot", robot: "robot", body: "robot", turret: "robot", cylinder: "robot",
   field: "field", piece: "field", bar: "field", level: "field", station: "field", element: "field", rod: "field",
-  goal: "field" };
+  goal: "field", moving: "field", cleared: "field" };
 let used = {};
 const resetUsed = () => {
   used = Object.fromEntries(Object.keys(KINDS_OF_NAME).map((k) => [k, new Set()]));
@@ -66,6 +68,7 @@ const robotSide = () => [...(pal().hooks || []), ...(pal().parts || []), ...(pal
 const fieldSide = () => [...(pal().bars || []), ...(pal().elements || []), ...(pal().pieces || []), ...(pal().targets || [])];
 const has = (xs) => (xs || []).length > 0;
 const cylinderNames = () => (pal().cylinders || []).map((c) => c.name);
+const movingNames = () => (pal().moving_elements || []).map((e) => e.name);
 const ANY_GOAL = [["any goal", "any"]];   // a scored check's goal: every goal together (palette.py ANY_GOAL)
 
 // A floor piece as a student reads it ("ball 10", "coral 2"): the palette's `piece_labels`, the names every sentence uses
@@ -93,6 +96,8 @@ const OPTIONS = {
   goal: () => choices(pal().goals || [], "goal"),
   scoredGoal: () => choices(pal().goals || [], "goal", ANY_GOAL),
   cylinder: () => choices(cylinderNames(), "cylinder"),
+  moving: () => choices(movingNames(), "moving"),
+  cleared: () => choices(pal().elements || [], "cleared"),
   // left and right only on a swerve robot (or when the test already has one)
   heading: () => [["forward", "forward"], ["back", "back"],
     ...(pal().drive_kind === "swerve" || used.sideways ? [["left", "left"], ["right", "right"]] : [])],
@@ -116,6 +121,22 @@ function fitUnit(unitField) {
     if (j && j.unit === "deg" && unit !== "deg") block.setFieldValue("deg", unitField);
     return value;
   };
+}
+
+// An element check's validator: the unit shown follows the element picked (° for a hinged one, in for a sliding one;
+// nothing for a name the field doesn't have).
+const UNIT_TEXT = { deg: "°", in: "in", m: "m" };
+function elementUnit(value) {
+  const block = this.getSourceBlock();
+  const e = (pal().moving_elements || []).find((x) => x.name === value);
+  if (block && block.getField("UNIT")) block.setFieldValue(e ? UNIT_TEXT[e.unit] : "", "UNIT");
+  return value;
+}
+
+// partner_lifted's level box: the degrees show only while it is ticked.
+function showLevel(block, on) {
+  for (const f of ["WITHIN", "DEG"]) block.getField(f).setVisible(on);
+  if (block.rendered) block.queueRender();
 }
 
 const dd = (name, options) => ({ type: "field_dropdown", name, options });
@@ -338,6 +359,49 @@ const CONDS = {
     fields: (a) => ({ AIR: a.side || "stored", ...("above" in a ? { SIDE: "above", PSI: a.above } : { SIDE: "below", PSI: a.below }) }),
     json: (b) => ({ pressure: { side: b.getFieldValue("AIR"), [b.getFieldValue("SIDE")]: b.getFieldValue("PSI") } }),
   },
+  element: {
+    def: { message0: "%1 is %2 %3 %4",
+      args0: [dd("ELEMENT", OPTIONS.moving), dd("SIDE", SIDES), num("VALUE", 10), { type: "field_label", name: "UNIT", text: "" }],
+      tooltip: "Where a moving part of the field is: how far a hinged one has swung (degrees) or a sliding one has "
+        + "moved (inches), from where it rests." },
+    fields: (a) => ({ ELEMENT: a.element, ...("above" in a ? { SIDE: "above", VALUE: a.above } : { SIDE: "below", VALUE: a.below }) }),
+    json: (b) => ({ element: { element: b.getFieldValue("ELEMENT"), [b.getFieldValue("SIDE")]: b.getFieldValue("VALUE") } }),
+    init(b) {
+      const f = b.getField("ELEMENT");
+      f.setValidator(elementUnit);
+      elementUnit.call(f, f.getValue());
+    },
+  },
+  clears: {
+    def: { message0: "robot clears %1 by at least %2 in",
+      args0: [dd("ELEMENT", OPTIONS.cleared), num("CLEAR", 2, { min: 0.1, max: 19.6 })],
+      tooltip: "Nothing on the robot comes closer to this part of the field than this many inches (measured out to "
+        + "about 20 in)." },
+    fields: (a) => ({ ELEMENT: a.element, CLEAR: a.at_least_in }),
+    json: (b) => ({ clears: { element: b.getFieldValue("ELEMENT"), at_least_in: b.getFieldValue("CLEAR") } }),
+  },
+  partner_lifted: {
+    def: { message0: "partner is lifted at least %1 in %2 level within %3 %4",
+      args0: [num("LIFT", 2, { min: 0.1 }), { type: "field_checkbox", name: "LEVEL", checked: false },
+        num("WITHIN", 5, { min: 0.1 }), { type: "field_label", name: "DEG", text: "°" }],
+      tooltip: "The partner robot's lowest corner is at least this high above where it rested. Tick level within to "
+        + "also want it tilted no more than that many degrees." },
+    fields: (a) => ({ LIFT: a.at_least_in, LEVEL: a.level_within_deg != null,
+      ...(a.level_within_deg != null ? { WITHIN: a.level_within_deg } : {}) }),
+    json: (b) => ({ partner_lifted: { at_least_in: b.getFieldValue("LIFT"),
+      ...(b.getFieldValue("LEVEL") === "TRUE" ? { level_within_deg: b.getFieldValue("WITHIN") } : {}) } }),
+    init(b) {
+      const f = b.getField("LEVEL");
+      f.setValidator(function (v) { showLevel(this.getSourceBlock(), v === true || v === "TRUE"); return v; });
+      showLevel(b, f.getValueBoolean());
+    },
+  },
+  partner_moved: {
+    def: { message0: "partner moved at least %1 in", args0: [num("MOVED", 6, { min: 0.1 })],
+      tooltip: "The partner robot's center has gone at least this far across the floor from where it rested." },
+    fields: (a) => ({ MOVED: a.at_least_in }),
+    json: (b) => ({ partner_moved: { at_least_in: b.getFieldValue("MOVED") } }),
+  },
   station_empty: {
     def: { message0: "%1 is empty", args0: [dd("STATION", OPTIONS.station)],
       tooltip: "The station has no pieces left to feed." },
@@ -408,6 +472,9 @@ export function toolbox(p) {
   if (has(p.goals)) out.push(item(condType("scored")));
   if (aimOk) out.push(item(condType("aimed")));
   if (cylinders) out.push(item(condType("cylinder")), item(condType("pressure")));
+  if (has(p.moving_elements)) out.push(item(condType("element")));
+  if (has(p.elements)) out.push(item(condType("clears")));
+  if (p.partner) out.push(item(condType("partner_lifted")), item(condType("partner_moved")));
   out.push(item(condType("in_hopper")), item(condType("made_it_in")));
   return { kind: "flyoutToolbox", contents: out };
 }
@@ -441,6 +508,8 @@ function rememberNames(blocks) {
       if (kind === "scored" && a.goal !== "any") remember("goal", a.goal);
       if (kind === "aimed") { remember("turret", a.turret); remember("goal", a.at); }
       if (kind === "cylinder") remember("cylinder", a.cylinder);
+      if (kind === "element") remember("moving", a.element);
+      if (kind === "clears") remember("cleared", a.element);
     }
     rememberNames(b.body);
   }
@@ -572,7 +641,6 @@ function blockJson(b) {
 export const headOf = (ws) => header.get(ws) || {};
 export function setHead(ws, patch) { header.set(ws, { ...headOf(ws), ...patch }); }
 
-const UNIT_TEXT = { deg: "°", in: "in", m: "m" };
 export function sweepNumber(b) {
   if (!b || b.isInFlyout) return null;
   if (b.type === "spin") return { key: "volts", field: "VOLTS", unit: "V" };

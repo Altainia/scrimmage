@@ -61,6 +61,25 @@ inertia = 18.7               # estimate: a uniform 45 kg deck 88 in long, m L^2 
 com_height_in = 11.0         # estimate: not published; just under the deck top
 damping = 20.0               # estimate: not published; the low end of the CHARGE STATION estimate (2023-charge-station.toml)
 
+# The FRC 2020 INFINITE RECHARGE CONTROL PANEL, the wheel a robot spins (ROTATION CONTROL, three to five turns) on the
+# TRENCH: 2020 manual 3.5.1 (https://firstfrc.blob.core.windows.net/frc2020/Manual/Sections/Section03.pdf; the text
+# as mirrored at https://frc-game-manual-rst.readthedocs.io/en/latest/gen/section_3.html), "a 2 in. (~5 cm) tall,
+# 2 ft. 8 in. (~81 cm) diameter disk", "attached to the TRENCH via a 12 in. (~30 cm) Lazy Susan Bearing", "The bottom
+# edge of the CONTROL PANEL is located 2 ft. 6 1/4 in. (~77 cm) above the carpet." Only the wheel is built, turning
+# freely on a vertical axis (no stops); the TRENCH under it and its color wedges aren't.
+[[element]]
+name = "control_panel"
+kind = "hinged"
+center = [7.0, 5.5]          # choice: anywhere clear on the field
+shape = "disc"
+diameter_in = 32.0           # source: 2020 manual 3.5.1, 2 ft 8 in diameter
+thickness_in = 2.0           # source: 2020 manual 3.5.1, 2 in tall
+base_height_in = 30.25       # source: 2020 manual 3.5.1, its bottom edge 2 ft 6 1/4 in above the carpet
+hinge = "center"
+axis = "z"                   # source: 2020 manual 3.5.1, on a lazy susan bearing: it turns flat, about the vertical
+mass = 8.0                   # estimate: its two 1/4 in polycarbonate discs (2020 manual 3.5.1) at 1200 kg/m^3 are 7.9 kg
+breakaway = 0.2              # estimate: not published; a lazy susan bearing's drag, small beside a robot's wheel on the rim
+
 # Starts: before the generic ramp, facing it along its length from the -x side.
 [start.approach]
 pose = [1.4, 2.0, 0.0]       # choice: 1.1 m from the robot's center to the ramp's foot (x 3.5 - 0.3 - 0.15 / tan 12 deg = 2.49), its front about 0.6 m from it

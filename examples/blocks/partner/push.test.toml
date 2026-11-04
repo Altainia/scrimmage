@@ -1,0 +1,15 @@
+[test]
+robot = "partner-standin.toml"
+chart = ["partner.moved", "partner.tilt", "partner.height"]
+
+[setup]
+partner = { ahead_in = 50.0, brake = true }
+
+[[block]]
+do = "drive"
+seconds = 2.0
+volts = 6.0
+
+[[block]]
+do = "expect"
+that = { partner_moved = { at_least_in = 60.0 } }

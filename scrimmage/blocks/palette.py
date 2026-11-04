@@ -7,7 +7,12 @@ cylinders (`cylinders`: each one's name and whether its valve is a double soleno
 a single), other surfaces a touch can name (`targets`: the carpet, the walls) and climb levels, whether it can drive
 and how (`drive_kind`: a tank or swerve drive, as drive.py finds them) and the signals a chart can show
 (`seated.<rod>` for each rod, in inches, when a piece kind of the field has a hole; with cylinders, `air.psi` (the
-tanks), `air.working_psi` (the regulator's output) and each cylinder's `<name>.extension` in inches).
+tanks), `air.working_psi` (the regulator's output) and each cylinder's `<name>.extension` in inches; and
+`element.<name>` for each of the field's hinged or sliding elements, `moving_elements`, in its unit; and with a
+partner robot, `partner: true`, `partner.height` and `partner.moved` in inches and `partner.tilt` in degrees: the
+world's own partner (`robot_partner`), unless the test's [setup] partner, given, says otherwise). A
+chart can also show `clearance.<element>` (in) for any of `elements`; it isn't in `signals`, as a run measures it
+only when the test names it (clearance.py).
 The field's pieces: `piece` (its default kind's preset), `kinds` (each kind's form, whether it is hollow or flat and the
 plain name a student reads, e.g. "coral"), `floor_kinds` (each floor piece's kind), `piece_labels` (what a student
 reads for each floor piece, "coral 2", as the run's sentences name it) and `station_kinds` (each station's), and every
@@ -21,7 +26,8 @@ slots.
 
 `problems()` checks a test's names against that: one plain sentence per bad name, at the block's place (0-based
 indices, through repeat bodies). A test written before Import again renamed a part shows its blocks' problems here
-and doesn't run; nothing crashes.
+and doesn't run; nothing crashes. `hints()` says what a test can run with but should know: a clearance it measures
+that leaves out the robot's stock parts with collide off (clearance.uncounted_note). A hint never stops a run.
 """
 
 from __future__ import annotations
@@ -31,10 +37,13 @@ import mujoco
 from ..hal_drive import driven_joints
 from ..launcher.inputs import PRESETS
 from ..parts.grip import GRIP_MATERIALS
+from ..parts.partner import SIGNALS as PARTNER_SIGNALS
 from ..terrain.climb import robot_hooks
+from ..testrange.elements import moving_units
 from ..testrange.spec import BALL_CHOICE_RANGES, RangeError, load_range
 from ..testrange.station import OVERRIDE_KEYS, with_overrides
 from .aim import turrets
+from .clearance import uncounted_note
 from .drive import drivetrain
 from .placed import ON_PIECE
 from .spread import NO_BALL, floor_ball, spread_ball
@@ -54,14 +63,17 @@ def _robot_bodies(world) -> list[int]:
 
 
 def _joints(world) -> dict[str, str]:
-    """Joint name -> kind ("hinge", "slide" or "wheel"), for every named hinge and slide."""
+    """Joint name -> kind ("hinge", "slide" or "wheel"), for every named hinge and slide but the partner robot's
+    wheels (it has no motors, and no block turns them)."""
     m = world.model
     tread_bodies = {int(m.geom_bodyid[m.geom(g).id]) for g in (world.parts.tread_geoms if world.parts else ())}
+    partner = getattr(world, "partner", None)
+    partner_root = int(m.body_rootid[partner.body]) if partner is not None else -1
     out = {}
     names = world.joint_states()
     for j in range(m.njnt):
         name = m.joint(j).name
-        if name not in names:
+        if name not in names or int(m.body_rootid[m.jnt_bodyid[j]]) == partner_root:
             continue
         if int(m.jnt_type[j]) == int(mujoco.mjtJoint.mjJNT_SLIDE):
             out[name] = "slide"
@@ -152,7 +164,10 @@ def cylinders(world) -> list[dict]:
     return [{"name": n, "double": n in doubles} for n in sorted(world.pneumatics.names)]
 
 
-def palette(world, hooks: list[str]) -> dict:
+def palette(world, hooks: list[str], setup: dict | None = None) -> dict:
+    """The names and signals a test can use on `world`. `setup` (the test's [setup]) decides the partner robot when
+    it names one (a table: there is one; false: there is none), as world_for builds it: the Test tab's world is the
+    robot config's own, built without the test's setup."""
     m = world.model
     kinds = _joints(world)
     driven = driven_joints(world)
@@ -175,6 +190,12 @@ def palette(world, hooks: list[str]) -> dict:
     cyls = cylinders(world)
     if cyls:
         signals += ["air.psi", "air.working_psi", *(f"{c['name']}.extension" for c in cyls)]     # psi, psi, in
+    moving = moving_units(rng.elements) if rng is not None else {}
+    signals += [f"element.{n}" for n in moving]                    # deg (hinged) or in (sliding), 0 at rest
+    robot_partner = getattr(world, "partner", None) is not None
+    partner = setup["partner"] is not False if setup and "partner" in setup else robot_partner
+    if partner:
+        signals += list(PARTNER_SIGNALS)                           # in, deg, in: from where it settled
     dt = drivetrain(world, driven)
     stations = sorted(rng.stations, key=lambda st: st.name) if rng is not None else []
     ball = floor_ball(world)
@@ -187,6 +208,9 @@ def palette(world, hooks: list[str]) -> dict:
         "hooks": hook_list,
         "bars": bars,
         "elements": elements,
+        "moving_elements": [{"name": n, "unit": u} for n, u in moving.items()],     # hinged ("deg"), sliding ("in")
+        "partner": partner,                 # a partner robot ([partner], or Setup's partner)
+        "robot_partner": robot_partner,     # the world's own partner: the Test tab's is the robot config's [partner]
         "goals": sorted(g.name for g in rng.goals) if rng is not None else [],
         "turrets": turrets(world),          # stock turrets' instances: each turns `<inst>.turn`
         "cylinders": cyls,                  # pneumatic cylinders: {name, double}
@@ -225,7 +249,7 @@ class _Names:
     """The names a test can use on this world, for checking."""
 
     def __init__(self, world, hooks: list[str], program=None):
-        p = palette(world, hooks)
+        p = palette(world, hooks, program.setup if program is not None else None)
         self.p = p
         self.joints = {j["name"]: j["kind"] for j in p["joints"]}
         self.motors = {j["name"] for j in p["motors"]}
@@ -234,10 +258,12 @@ class _Names:
         self.bars = set(p["bars"])
         self.pieces = set(p["pieces"])
         self.elements = set(p["elements"])
+        self.moving = [e["name"] for e in p["moving_elements"]]
         self.rods = set(p["rods"])
         self.goals = list(p["goals"])
         self.turrets = list(p["turrets"])
         self.cylinders = [c["name"] for c in p["cylinders"]]
+        self.partner = p["partner"]
         rng = world.parts.range if world.parts is not None else None
         self.hollow = rng is not None and any(k.hole is not None for k in rng.kinds.values())
         self.field = set(world.contact_names()) | set(p["elements"]) | self.bars
@@ -365,6 +391,14 @@ def _cond_problems(n: _Names, c) -> list[str]:
         return _cylinder_problems(n, a["cylinder"], "check")
     if c.kind == "pressure":
         return [] if n.cylinders else ["this robot has no air system (no cylinder)"]
+    if c.kind == "element" and a["element"] not in n.moving:
+        known = f"this field's moving elements: {', '.join(n.moving)}" if n.moving else \
+            "this field has no moving elements"
+        return [f"{a['element']} isn't a moving element; {known}"]
+    if c.kind == "clears" and a["element"] not in n.elements:
+        return [f'no element "{a["element"]}" on this field']
+    if c.kind in ("partner_lifted", "partner_moved") and not n.partner:
+        return ["there's no partner robot; add one in Setup"]
     if c.kind == "station_empty":
         name = a["station"]
         if name not in n.stations:
@@ -481,3 +515,11 @@ def problems(program, world) -> list[dict]:
 
     walk(program.blocks, [])
     return out
+
+
+def hints(program, world) -> list[dict]:
+    """[{"place": [], "message": str}]: what the test can run with but should know (it never stops a run): a clearance
+    it measures on a robot with stock parts whose collide is off, which leaves them out (clearance.uncounted_note).
+    Empty otherwise."""
+    note = uncounted_note(world, program)
+    return [] if note is None else [{"place": [], "message": note}]

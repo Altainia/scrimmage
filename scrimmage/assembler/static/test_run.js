@@ -7,8 +7,9 @@
 //             feeds and counts), "Fed pieces: 17 in · 1 stuck · 2 missed" ("17 in · 2 placed · …" when pieces
 //             were placed on the field; no "0 in" when the test names no hopper) and a "Show the stuck piece"
 //             button for each stuck one; for a run with a piece on a rod at the end, its depth in words ("seated
-//             3.5 in of 4.0 in on branch_l2"); the goal counts and how the air went, as `scrimmage test` prints
-//             them (the result's lines: "Scored 5 in hub_blue.", "Air: 120 psi at the start, …"); and the run's
+//             3.5 in of 4.0 in on branch_l2"); the goal counts, how the air went and how close the robot came to
+//             each field element the test measures, as `scrimmage test` prints them (the result's lines: "Scored 5
+//             in hub_blue.", "Air: 120 psi at the start, …", "Closest to trench: 0.82 in at 3.1 s."); and the run's
 //             notes (what its numbers rest on: an UNCALIBRATED grip) as a list
 //   Replay    live3d.js's LiveView draws the view (a cylinder between its pins); motion.bin's frames move it. Play /
 //             Pause, speed (¼× to 2×), a scrubber with the time, and under it a mark per fed piece at its feed time, its shape and color its
@@ -21,7 +22,10 @@
 //             drive wheels), the run
 //             "compared with" (default: the run before it) drawn faded and dashed, the replay's time marked; a
 //             click on a plot moves the replay there. An empty sample (null: a seated depth while no piece is on
-//             its rod) breaks the line
+//             its rod, a clearance while nothing is within 20 in) breaks the line. A field element's clearance is
+//             measured only when the test names it, so the picker also offers `clearance.<element>` for each field
+//             element the run didn't measure: picking one puts it in the test's `chart` (with the signals shown
+//             now, so they stay the default), and the next run measures it
 //   Runs      the kept runs, newest first, each with its outcome (a stopped one says so); a click shows it
 //   Sweep     over the shown run when it is one of a sweep's (and when a sweep has just finished): what it tried,
 //             a row per value (the value, the outcome, each check) and a chart of when the run ended, or a signal's
@@ -53,6 +57,8 @@ const rp = {
   compare: null,      // the compared run's result, once loaded
   results: new Map(), // "id|started" -> result (a kept run never changes; an id comes back if the runs folder is emptied)
   picked: null,       // the signals the student picked (a Set), or null for the default
+  chartOf: () => null,    // the test's chart as on screen (initRunPanel's chart)
+  setChart: () => {},     // writes the test's chart (null for none)
   time: 0,
   playing: false,
   speed: 1,
@@ -130,6 +136,7 @@ export function update(state) {
   renderCompare();
   renderSweep();
   renderSpread();
+  if (rp.run) renderSignals();      // the test's chart or the field's elements may have changed
 }
 
 function clear() {
@@ -505,23 +512,55 @@ function unitOf(name) {
   if (name === "tilt") return "°";
   if (name.endsWith(".current")) return "A";
   if (name === "hook_load") return "N";
-  if (name.startsWith("seated.")) return "in";
+  if (name.startsWith("seated.") || name.startsWith("clearance.")) return "in";
+  if (name === "partner.height" || name === "partner.moved") return "in";
+  if (name === "partner.tilt") return "°";
   const pal = rp.state && rp.state.palette;
+  const e = name.startsWith("element.") && pal && (pal.moving_elements || []).find((x) => `element.${x.name}` === name);
+  if (e) return e.unit === "deg" ? "°" : e.unit;
   const j = pal && (pal.joints || []).find((x) => x.name === name);
   return j ? (j.unit === "deg" ? "°" : j.unit) : "";
 }
 
+// The clearances the picker offers for the next run: each field element's the shown run didn't measure.
+function nextRunSignals() {
+  const have = new Set(available());
+  const pal = (rp.state && rp.state.palette) || {};
+  return rp.run ? (pal.elements || []).map((e) => `clearance.${e}`).filter((s) => !have.has(s)) : [];
+}
+
+// A clearance for the next run in (or out of) the test's chart. The first one keeps the signals shown now as the
+// default: a chart line lists every signal shown by default.
+function toggleNextRun(s) {
+  const chart = rp.chartOf();
+  const now = chart ? [...chart] : shownSignals();
+  const out = now.includes(s) ? now.filter((x) => x !== s) : [...now, s];
+  rp.setChart(out.length ? out : null);
+  renderSignals();
+}
+
 function renderSignals() {
+  const box = $("#test-signals");
   const shown = new Set(shownSignals());
-  $("#test-signals").replaceChildren(...available().map((s) => h("button", {
-    type: "button", class: "test-signal", "aria-pressed": String(shown.has(s)), "data-signal": s, text: s,
-    onclick: () => {
-      const now = new Set(shownSignals());
-      if (now.has(s)) now.delete(s); else now.add(s);
-      rp.picked = now;
-      renderSignals();
-      drawChart();
-    } })));
+  const next = nextRunSignals();
+  const chart = new Set(rp.chartOf() || []);
+  const key = JSON.stringify([available(), [...shown], next, next.filter((s) => chart.has(s))]);
+  if (box.dataset.key === key) return;
+  box.dataset.key = key;
+  const focused = document.activeElement && box.contains(document.activeElement) ? document.activeElement.dataset.signal : null;
+  const button = (s, pressed, onclick, extra = {}) => h("button", {
+    type: "button", class: "test-signal", "aria-pressed": String(pressed), "data-signal": s, text: s, onclick, ...extra });
+  box.replaceChildren(...available().map((s) => button(s, shown.has(s), () => {
+    const now = new Set(shownSignals());
+    if (now.has(s)) now.delete(s); else now.add(s);
+    rp.picked = now;
+    renderSignals();
+    drawChart();
+  })), ...(next.length ? [h("span", { class: "test-signals-next", text: "From the next run:" })] : []),
+  ...next.map((s) => button(s, chart.has(s), () => toggleNextRun(s),
+    { title: "Measured from the next run: this puts it in the test's chart" })));
+  const again = focused && [...box.querySelectorAll("[data-signal]")].find((b) => b.dataset.signal === focused);
+  if (again) again.focus();
 }
 
 function tokens() {
@@ -867,7 +906,10 @@ function renderSpread() {
 }
 
 // -- boot ----------------------------------------------------------------------------------------------------------
-export function initRunPanel() {
+// `chart()`: the test's chart as on screen; `setChart(list)`: writes it (the picker's clearances for the next run).
+export function initRunPanel({ chart, setChart } = {}) {
+  if (chart) rp.chartOf = chart;
+  if (setChart) rp.setChart = setChart;
   $("#test-play").addEventListener("click", () => (rp.playing ? pause() : play()));
   $("#test-scrub").addEventListener("input", (e) => setTime(Number(e.target.value)));
   $("#test-speed").addEventListener("change", (e) => { rp.speed = Number(e.target.value) || 1; });

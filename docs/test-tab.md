@@ -11,7 +11,9 @@ Contents: [Starting a test](#starting-a-test), [The three columns](#the-three-co
 [The blocks](#the-blocks), [Feeding from a station](#feeding-from-a-station),
 [Floor spreads](#floor-spreads), [The checks](#the-checks), [Holding a piece](#holding-a-piece),
 [Placing a piece](#placing-a-piece), [Grip material](#grip-material), [Shooting](#shooting), [Aiming](#aiming),
-[Pneumatics](#pneumatics), [Times and limits](#times-and-limits), [Setup](#setup),
+[Pneumatics](#pneumatics), [Moving field elements](#moving-field-elements),
+[Clearance to a field element](#clearance-to-a-field-element), [A partner robot](#a-partner-robot),
+[Times and limits](#times-and-limits), [Setup](#setup),
 [Running, replay and chart](#running-replay-and-chart), [Trying values (sweeps)](#trying-values-sweeps),
 [Kept runs](#kept-runs), [The stand-in robot](#the-stand-in-robot), [The command line and MCP tools](#the-command-line-and-mcp-tools),
 [The examples](#the-examples), [Troubleshooting](#troubleshooting).
@@ -41,8 +43,9 @@ first when the robot can drive and the field has bars, then spins the first mech
   and **Check**. A block only shows up when the robot has something for it (no motors, no **spin** block).
 - **Middle: your test.** Above the blocks is **Setup**, folded away until you open it (its summary shows the hooks, the
   robot's weight and the field).
-- **Right: the run.** **Fix these first** (when there are problems), **Run** and **Stop**, then the result: what
-  happened in one sentence, each check, the replay, the chart, and the list of kept runs.
+- **Right: the run.** **Fix these first** (when there are problems), **Good to know** (hints that don't stop a
+  run), **Run** and **Stop**, then the result: what happened in one sentence, each check, the replay, the chart, and
+  the list of kept runs.
 
 The bottom bar says whether the test is saved and how many blocks it has.
 
@@ -227,6 +230,10 @@ A check is a round-ended block that plugs into **wait until**, **repeat until** 
 | *turret* **aimed at** *goal* **within** *n* **°** | The turret's launcher points within *n*° of the goal's center. See [Aiming](#aiming). |
 | *cylinder* **is** *extended or retracted* | The cylinder's rod is all the way out, or all the way in. See [Pneumatics](#pneumatics). |
 | *stored or working* **air pressure above / below** *n* **psi** | The air in the tanks (stored), or after the regulator (working), is above or below that. See [Pneumatics](#pneumatics). |
+| *element* **is above / below** *n* *unit* | A moving part of the field (a door, a flap, a portcullis) has swung (°) or slid (in) past that from where it rests. See [Moving field elements](#moving-field-elements). |
+| **robot clears** *element* **by at least** *n* **in** | Nothing on the robot that collides comes closer to that part of the field. See [Clearance to a field element](#clearance-to-a-field-element). |
+| **partner is lifted at least** *n* **in**, optionally **level within** *n* **°** | The partner robot's lowest frame corner is that high above where it rested (and it tilts no more than that). See [A partner robot](#a-partner-robot). |
+| **partner moved at least** *n* **in** | The partner robot's center has gone that far across the floor. See [A partner robot](#a-partner-robot). |
 
 **What "touches" can name.** On the robot side: **any hook**, one of the hooks, a part, or a body. On the field side:
 
@@ -436,6 +443,110 @@ In the test file:
 | `{ cylinder = { cylinder = "lift", is = "extended" } }` | `cylinder`: a cylinder part's name. `is`: `"extended"` or `"retracted"`. |
 | `{ pressure = { side = "stored", above = 60 } }` | `side`: `"stored"` (the default) or `"working"`. `above` or `below`: psi, 0 or more. |
 
+## Moving field elements
+
+A field with a `hinged` or `sliding` element (a door, a flap, a portcullis, a spinning wheel; see
+[docs/terrain.md](terrain.md#moving-elements-hinged-and-sliding)) has a check for each and a chart signal. The
+built-in fields with them are `2016-defenses` (the portcullis, the sally port, the drawbridge and the cheval de
+frise) and `terrain-library` (the 2020 CONTROL PANEL wheel, `control_panel`).
+
+- *element* **is above / below** *n* *unit* reads how far the element has moved from where it rests: **°** for a
+  hinged one, **in** for a sliding one (the unit switches when you pick the element). Its sign is the element's own,
+  as [docs/terrain.md](terrain.md#moving-elements-hinged-and-sliding) gives it for each hinge. The sally port opens
+  toward negative angles, so "sally_port is below -60°" means it is more than 60° open.
+- **The chart** gets `element.<name>` for each one. A hinged angle keeps counting past a full turn: three turns of
+  the CONTROL PANEL read 1080°.
+- A **touches** check can name a moving element like any other part of the field.
+- Naming an element that doesn't move is a problem: `portcullis_post_left isn't a moving element; this field's
+  moving elements: cheval_1, cheval_2, cheval_3, cheval_4, drawbridge, portcullis, sally_port`.
+
+In the test file:
+
+| Form | Keys |
+|---|---|
+| `{ element = { element = "portcullis", above = 12 } }` | `element`: a hinged or sliding element of the field. `above` or `below`: in degrees for a hinged one, inches for a sliding one, 0 at rest. |
+
+## Clearance to a field element
+
+**robot clears** *element* **by at least** *n* **in** answers "does my robot fit under the trench, and by how much?".
+It is the smallest distance between any part of the robot that collides and any part of that element. Put it in an
+**expect** block with **the whole time** ticked to check a whole drive. The worked example is
+[`examples/blocks/trench`](../examples/blocks/trench/README.md).
+
+- **Only parts that collide count**: the chassis and its bumpers, parts from CAD, and stock parts with
+  [`collide = true`](parts.md#stock-parts-that-collide). A stock elevator or arm without it touches nothing, so it
+  doesn't count (and passes through the trench). When the robot has stock parts with collide off, the test gets a
+  hint under **Good to know** (over **Run**; it doesn't stop the run) and a note on each run that names them:
+  `clearance counts only parts that collide: arm and elevator have collide off, so they aren't measured (set collide
+  = true on them)`.
+- **It is measured out to 0.5 m (19.7 in).** Farther away it reads as clear, so *n* can be at most 19.6 in.
+- **The result** gets a line for each element the test measures: `closest to trench_arm: 2.89 in at 2.5 s`, or
+  `trench_arm: never within 20 in` when nothing came within 0.5 m. A failed check says the clearance then: `expected
+  the robot to clear trench_arm by at least 0.5 in, but it was 0.45 in at 1.7 s`. A touch reads 0.
+- **The chart** can show `clearance.<element>` in inches, with a gap while nothing is within 0.5 m. Clearance is
+  only measured for the elements a test names (in a **robot clears** check or in its chart), so the chart's picker
+  lists each field element's clearance under **From the next run:**. Picking one puts it in the test's chart, and
+  the next run measures it.
+- **Timing.** It is measured after every physics step, from where the parts were at the start of that step: one
+  physics step behind (1 ms at the default step).
+
+In the test file:
+
+| Form | Keys |
+|---|---|
+| `{ clears = { element = "trench_arm", at_least_in = 0.5 } }` | `element`: any element of the field. `at_least_in`: inches, more than 0 and at most 19.6. |
+
+## A partner robot
+
+A partner robot is a second robot on the field with no robot program: it just sits there, to be pushed, lifted or
+driven around (a robot that died on the field, a partner to buddy-lift, a robot in your way). It is a 6-wheel tank
+drive on the stock chassis, and it collides with your robot, the field and game pieces. The worked example is
+[`examples/blocks/partner`](../examples/blocks/partner/README.md).
+
+**In Setup**, tick **A partner robot** under **Partner robot**:
+
+| Box | Default | What it does |
+|---|---|---|
+| **Ahead of my robot by** | 60 in | how far its center is ahead of your robot's start, along the way your robot faces |
+| **Facing** | the same way | **the same way**, **toward me** (turned 180°) or **sideways** (turned 90°) |
+| **Drive: brakes on** | on | on: its drive is in brake mode; off: its wheels coast |
+
+If the robot file has its own `[partner]` ([README](../README.md#a-partner-robot)), Setup shows it ticked, where the
+robot file puts it, until you change it here. Unticking it then keeps the robot file's partner out of this test.
+
+**Brake mode is not a lock.** A braked FRC drive resists being pushed through its motors' back-EMF, so a shoved
+braked robot still rolls, only slower. The partner's brake is worked out from its motors: two CIMs a side through
+10.71 to 1, as the stock tank drive has, which gives each wheel 0.29 N·m·s/rad of damping (an estimate from the motor
+model, not a measurement). In the worked example a braked partner is pushed 63 in in 2 s, a coasting one 112 in,
+about 1.8 times as far. A robot that also has friction brakes would be harder to push.
+
+**The signals** are in the chart, all measured from where the partner rested 0.3 s after the start (the
+[settle](#times-and-limits)):
+
+| Signal | Meaning |
+|---|---|
+| `partner.height` (in) | how far the lowest corner of its frame has risen. From where it rested, not from the carpet, so its bumper clearance doesn't count as lift. |
+| `partner.tilt` (°) | how far it leans from level |
+| `partner.moved` (in) | how far its center has gone across the floor |
+
+**The checks.** **partner is lifted at least** *n* **in** reads `partner.height`; tick **level within** to also want
+it tilted no more than that many degrees. **partner moved at least** *n* **in** reads `partner.moved`. On a test with
+no partner they are a problem: "there's no partner robot; add one in Setup".
+
+**Where it starts.** A partner that starts overlapping your robot's start (a 0.9 m square) or a field element on
+the carpet is refused before the run:
+`the partner robot (Setup) starts inside the robot (their outlines overlap by 0.20 m)`, or
+`the partner robot (Setup) starts inside element portcullis_platform (their outlines overlap by 0.12 m)`. Move it. A
+partner from the robot file's `[partner]` says `[partner] starts inside ...` instead.
+
+In the test file:
+
+| Form | Keys |
+|---|---|
+| `[setup]` `partner = { ahead_in = 50, heading_deg = 0, brake = true }` | `ahead_in`: inches, required. `heading_deg`: degrees, turned from your robot's heading, default 0. `brake`: `true` (the default) or `false`. Or `partner = false` for no partner, even when the robot file has one. |
+| `{ partner_lifted = { at_least_in = 2, level_within_deg = 5 } }` | `at_least_in`: inches, more than 0. `level_within_deg`: degrees, more than 0, optional. |
+| `{ partner_moved = { at_least_in = 60 } }` | `at_least_in`: inches, more than 0. |
+
 ## Times and limits
 
 - **Times include the 0.3 s settle.** Before the first block, the robot rests on the carpet for 0.3 s with every motor
@@ -485,6 +596,7 @@ Open **Setup** over the blocks. Its summary shows the hooks, the weight and the 
 - **Station.** One group of boxes for each station: time between balls, stock, and the spreads (each ± its value).
 - **Shuffle** and **New shuffle**: which draw of the spreads the stations feed.
 - **Floor spread.** Where the floor ball is tried. See [Floor spreads](#floor-spreads).
+- **Partner robot.** A second robot with no program, ahead of yours. See [A partner robot](#a-partner-robot).
 - **Add the station blocks.** Adds the starter feeding blocks to a test that has none. On a robot with a grabber it adds
   start feeding, wait until a piece is held by the grabber, stop feeding (the hopper starter can't succeed there).
 - **The robot (weight and center of mass).** These appear when the robot's base is the stock chassis, which a stand-in
@@ -515,7 +627,10 @@ run early. Then:
   the signals the test names in its `chart` line, or else the tilt and the joints a block drives. Motor currents, hook
   load and the drive wheels' angles are in the picker but not drawn at first (the wheel angles just keep growing, which
   tells you little about a mechanism). A seated depth (`seated.branch_l2`, in inches) has a gap while no piece is on
-  its rod.
+  its rod. A field's moving elements (`element.<name>`), a partner robot (`partner.height`, `partner.tilt`,
+  `partner.moved`) and the clearances (`clearance.<element>`, listed under **From the next run:**) are there too:
+  see [Moving field elements](#moving-field-elements), [A partner robot](#a-partner-robot) and
+  [Clearance to a field element](#clearance-to-a-field-element).
 - **Compare.** Pick another run in **compare with** to draw both on the same chart, for example before and after a
   change. Under the chart, each run's sentence is shown one above the other.
 
@@ -535,6 +650,9 @@ A sweep runs the test once for each value of one number, to see which works best
    run ended, or any signal, against the value. Click a row to open that run's replay.
 
 A value that can't run gets a row saying why; the others still run. **Stop** keeps the values done so far.
+
+**Every row uses the test's Setup.** A sweep of the weight, a mount or a grip runs each value on the field the test's
+Setup describes (its piece, station, shuffle and partner robot), as a single run does.
 
 **Try materials…** (beside a part's first pad in Setup) tries a **grip**: the test runs once for each material you
 ticked, on every pad of the part together by default (a pair of pads needs both changed: one slick pad can hide that
@@ -595,7 +713,7 @@ absolute path. **`test_spread`** runs the floor spread. The agent writes the `.t
 
 ## The examples
 
-Six worked examples are in `examples/blocks/`. Each has a README with the story, the blocks and how to change them.
+Eight worked examples are in `examples/blocks/`. Each has a README with the story, the blocks and how to change them.
 
 - **`examples/blocks/intake`**, a roller and bin that take a ball off the carpet. Run it and it finishes at 3.3 s
   with the ball in the bin. The README has a sweep of the roller's voltage.
@@ -625,6 +743,14 @@ Six worked examples are in `examples/blocks/`. Each has a README with the story,
   down 10 times and checks the air stays above the 60 psi working pressure (the lowest is 67 psi). The README compares
   the run with `scrimmage air`'s budget, and tells of the first try, whose 2 in bore used the air up in about one
   cycle.
+- **`examples/blocks/trench`**, a stand-in robot with a stock elevator and an arm on its carriage, both
+  `collide = true`, on the `2026-trench` field. It drives under the trench stowed and checks it clears `trench_arm`
+  by at least 0.5 in the whole time: the closest it comes is 2.9 in, the elevator's top under the arm. With the arm
+  raised first, the check fails at 1.7 s, before the arm hits; without the check the arm runs into the trench and the
+  robot stops. The README tries how high the arm can be (up to 50°) and a taller elevator.
+- **`examples/blocks/partner`**, a stand-in robot pushing a partner robot set in Setup. It drives into it at 6 V for
+  2 s and checks the partner moved at least 60 in: a braked partner moves 63 in, a coasting one 112 in. The README
+  tries other voltages and a partner turned sideways, which hardly moves.
 
 Open one with `scrimmage edit examples/blocks/intake/intake.test.toml`.
 

@@ -104,7 +104,9 @@ corner mounts (`front_left`, `front_right`, `back_left`, `back_right`) are at th
 floor. A module attached at a corner mount therefore sits with its wheel on the carpet.
 
 **Collisions.** Robot geoms collide with the field (carpet, walls, the `obstacle`), never with each other.
-That is why parts can overlap without fighting. A geom with `collide = false` doesn't touch the field either.
+That is why parts can overlap without fighting. A geom with `collide = false` doesn't touch the field either. The
+stock mechanisms (an elevator, an arm, a launcher...) touch nothing unless the part sets `collide = true`: see
+[Stock parts that collide](#stock-parts-that-collide).
 The field geoms are named `carpet`, `wall_blue`, `wall_red`, `wall_right`, `wall_left` and `obstacle`, which
 is what `must_touch` and `never_touch` take. `[field] obstacle = false` removes the obstacle. Under the
 hood, robot geoms use MuJoCo contact bits `contype = 2, conaffinity = 1` and the field uses `1` and `2`.
@@ -289,7 +291,7 @@ Other keys:
 |---|---|---|
 | `axis` | `"z"` | Cylinders only: `"x"`, `"y"` or `"z"`. A wheel on a `y` axle is `axis = "y"`. On any other shape it is an error ("axis is for cylinders only; turn other shapes with rot"): use `rot`. |
 | `pos`, `rot` | zero | The geom's offset in its body's frame (m, degrees). |
-| `collide` | `true` | `false` makes a geom visual only: it touches nothing. Use it for everything but the parts that really touch the field (wheels, bumpers). |
+| `collide` | `true` | `false` makes a geom visual only: it touches nothing. Use it for everything but the parts that really touch the field (wheels, bumpers). (This is a part.toml geom's key. A stock part has one `collide` setting for the whole part: see [Stock parts that collide](#stock-parts-that-collide).) |
 | `friction` | MuJoCo's 1.0 | Sliding friction coefficient, greater than 0. (Torsional and rolling friction are fixed small values.) |
 | `color` | gray | `[r, g, b, a]`, each 0 to 1. |
 | `condim` | MuJoCo's 3 | Contact dimensions: `1`, `3`, `4` (adds torsional friction, good for wheels) or `6`. |
@@ -474,8 +476,9 @@ Things worth knowing when you set the stock parts' parameters, or model the same
   newtons felt at the carriage. Stages are joints named `stage1`, `stage2`, ..., `carriage`, coupled so they
   move together.
 - **Arm.** Positive raises the tip, and 0 degrees is horizontal pointing forward.
-- **Climber.** The one stock mechanism whose geoms collide: tubes, hooks and latches touch the field's bars (the
-  other mechanisms are visual only, so an elevator passes through a bar). The telescope is the elevator's slide
+- **Climber.** The one stock mechanism whose geoms always collide: tubes, hooks and latches touch the field's bars
+  (the other mechanisms touch nothing unless they set `collide = true`, so by default an elevator passes through a
+  bar). The telescope is the elevator's slide
   chain (joints `stage1`, ..., `tip`). Each hook is an open J of capsules opening toward +x, its mouth below: hang
   the robot on the crown, and let go by unloading the hook, lifting its tip clear of the bar and moving it off. A
   latch is a sprung finger across the mouth that a bar entering pushes open and that shuts behind it; with
@@ -517,6 +520,52 @@ Things worth knowing when you set the stock parts' parameters, or model the same
 - **Differential.** The right side is mirrored: its motor and encoder are inverted, as on a real robot, so robot
   code that doesn't call `setInverted` drives the sides in opposite directions.
 
+## Stock parts that collide
+
+A stock elevator, arm, turret, cylinder, flywheel, roller, launcher or disc shooter is built with `collide = false`:
+it has mass and joints, but its geoms touch nothing, so it passes through a TRENCH arm or a bar. Set `collide = true`
+on the part to make it touch the field, game pieces and a [partner robot](test-tab.md#a-partner-robot), like a folder
+part's geoms. It still never touches the robot's own parts. In the Robot tab it is a checkbox in the part's stock
+form.
+
+```toml
+[[part]]
+name = "elevator"
+stock = "elevator"
+attach = "drive.center"
+collide = true          # it can hit the trench
+```
+
+| key | default | meaning |
+|---|---|---|
+| `collide` | `false` | `true`: every geom of the part touches the field, game pieces and a partner robot, except the drawing-only ones below |
+
+Which geoms collide with `collide = true`:
+
+| part | geoms that collide | drawn only |
+|---|---|---|
+| `elevator` | every stage | |
+| `arm` | the pivot block and the arm | |
+| `turret` | the base and the platform | |
+| `cylinder` | the barrel and the rod (the free form) | a push cylinder's barrel: a cylinder with `push` set touches nothing, even with `collide = true` |
+| `flywheel`, `roller` | the frame and the wheel | |
+| `launcher` | the side plates and the wheel | the hood's arc: the launcher model, not contact, carries the ball round it |
+| `disc_shooter` | the frame, the wheels and the fence | the guide plates above and below the disc |
+
+Things to know:
+
+- **Why it is off by default.** Every colliding geom costs a little each physics step, and an existing robot keeps
+  the results it had.
+- **A `[shooter]`'s intake can't collide.** A roller with `collide = true` that is also the `[shooter]`'s intake is an
+  error naming the part, such as `intake has collide = true but is the [shooter]'s intake; the ball path moves those
+  balls, so leave collide off`. Its roller would push the floor balls the intake zone collects. The launcher and the
+  stages may collide: the balls they hold are parked and touch nothing, and a launched ball ignores the robot for its
+  first 0.15 s ([docs/test-range.md](test-range.md#launching-a-ball)).
+- **Clearance and touches.** Only colliding parts count for the Test tab's
+  [*robot clears*](test-tab.md#clearance-to-a-field-element) check and its **touches** check.
+- **Climbing.** A stock part with `collide = true` counts for `climb.extension` and `climb.height`, which count every
+  colliding geom ([docs/climbing.md](climbing.md)), and it can catch on a bar.
+
 ## Stock parts
 
 This section is generated from `scrimmage parts <name>` and pasted here. **`scrimmage parts` is the live
@@ -553,11 +602,12 @@ parameters:
   mass = 2.0 kg (greater than 0): arm mass
   com = 0.0 m (at least 0.0, limited by other parameters): center of mass distance from the pivot; 0 means half the length. Only the center-of-mass point moves: the inertia stays that of a uniform bar of this mass and length
   range = [-90.0, 90.0] deg ([min, max] with min < max): lowest and highest allowed angle
-  motor = 'KrakenX60' (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): motor model
+  motor = "KrakenX60" (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): motor model
   count = 1 (a whole number, at least 1): motors driving the pivot
   gearing = 50.0 (greater than 0): motor turns per arm turn
   spring_stiffness = 0.0 N*m/rad (at least 0.0): torsion spring (gas spring or counterbalance) stiffness
   spring_rest = 0.0 deg: angle at which the spring is relaxed (a spring is added whenever this or the stiffness is non-zero)
+  collide = false: its geoms touch the field, game pieces and a partner robot (never the robot's own parts). Drawing-only geoms never collide: the launcher's hood arc, a disc shooter's guide plates, and a push cylinder's barrel (a push cylinder touches nothing even with collide on)
 
 slots: pivot, encoder
 mounts: base, tip
@@ -593,27 +643,27 @@ parameters:
   stages = 2 (a whole number, at least 1, at most 4): moving tubes including the tip (the tip is stage 'tip', the others stage1, stage2, ...)
   base_length = 0.6 m (greater than 0): length of every tube (estimate)
   travel = 0.6 m (greater than 0, limited by other parameters): total extension of the tip from fully retracted; each tube keeps 0.1 m inside the one below
-  rigging = 'continuous' (one of continuous, cascade): continuous or cascade, as the elevator's
+  rigging = "continuous" (one of continuous, cascade): continuous or cascade, as the elevator's
   tube = 0.0508 m (greater than 0): outer size of the square base tube; each stage is 1/4 in smaller
   stage_mass = 0.6 kg (greater than 0): mass of the base tube and of each intermediate tube (estimate: 2 in 1/16 wall aluminum, 0.86 kg/m, plus hardware)
   tip_mass = 0.8 kg (greater than 0): mass of the tip tube with its hooks and bracket (estimate)
-  motor = 'KrakenX60' (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): extend motor model
+  motor = "KrakenX60" (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): extend motor model
   count = 1 (a whole number, at least 1): motors driving the telescope
   gearing = 20.0 (greater than 0): motor turns per spool turn (estimate)
   spool_radius = 0.015 m (greater than 0): radius the rope winds on (estimate)
   friction = 5.0 N (at least 0.0): constant sliding friction, in newtons felt at the tip
   hook_throat = 0.048164 m (greater than 0): the throat's clear width between the stem and the tip; default the 2022 rung's 1.66 in OD plus 6 mm
   hook_depth = 0.1 m (greater than 0): how far the hook's tip reaches below the throat's top (estimate)
-  hook_material = 'steel' (one of steel, polycarbonate, uhmw, nitrile): sets the hook's friction on the bar: steel 0.5, polycarbonate 0.35, uhmw 0.15, nitrile 1.0 (estimates)
+  hook_material = "steel" (one of steel, polycarbonate, uhmw, nitrile): sets the hook's friction on the bar: steel 0.5, polycarbonate 0.35, uhmw 0.15, nitrile 1.0 (estimates)
   hook_count = 1 (a whole number, at least 1, at most 2): hooks across the arm (1 or 2)
   hook_spacing = 0.2 m (greater than 0): distance between two hooks along the bar (estimate)
-  latch = 'passive' (one of none, passive, released): none; passive: a spring latch across each hook's mouth that the bar pushes open and that snaps shut behind it; released: the same, plus a motor slot release that opens it
+  latch = "passive" (one of none, passive, released): none; passive: a spring latch across each hook's mouth that the bar pushes open and that snaps shut behind it; released: the same, plus a motor slot release that opens it
   latch_spring = 0.3 N*m/rad (greater than 0): the latch's torsion spring (estimate)
-  release_motor = 'NEO550' (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): release motor model
+  release_motor = "NEO550" (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): release motor model
   release_gearing = 5.0 (greater than 0): release motor turns per latch turn (estimate)
-  pivot = 'none' (one of none, articulated): none, or articulated: a hinge at the base on a motor (slots pivot, pivot_encoder)
+  pivot = "none" (one of none, articulated): none, or articulated: a hinge at the base on a motor (slots pivot, pivot_encoder)
   pivot_range = [-30.0, 30.0] deg ([min, max] with min < max): the pivot's limits; 0 is upright, positive leans the tip toward +x, the side the hooks open to (estimate)
-  pivot_motor = 'KrakenX60' (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): pivot motor model
+  pivot_motor = "KrakenX60" (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): pivot motor model
   pivot_count = 1 (a whole number, at least 1): motors driving the pivot
   pivot_gearing = 100.0 (greater than 0): pivot motor turns per climber turn (estimate)
 
@@ -636,9 +686,10 @@ parameters:
   conductance = 8e-09 m^3/(s*Pa) (greater than 0): the valve's sonic conductance, how freely air flows (estimate, UNCALIBRATED)
   mass = 0.25 kg (greater than 0): the barrel's mass (UNCALIBRATED)
   rod_mass = 0.1 kg (greater than 0): the rod's mass (UNCALIBRATED)
-  push = '': "<part>.<body>" the rod's end is pinned to (a stock arm's "arm.arm"); empty for a free rod with its own mount
+  push = "": "<part>.<body>" the rod's end is pinned to (a stock arm's "arm.arm"); empty for a free rod with its own mount
   push_pos = [0.0, 0.0, 0.0] m ([x, y, z]): where on the push body the rod's end is pinned, in that body's frame
   length = 0.0 m (at least 0.0): pin to pin when retracted; 0 takes it from the assembled pose (push) or 0.3 x stroke + 0.05 m (free)
+  collide = false: its geoms touch the field, game pieces and a partner robot (never the robot's own parts). Drawing-only geoms never collide: the launcher's hood arc, a disc shooter's guide plates, and a push cylinder's barrel (a push cylinder touches nothing even with collide on)
 
 slots: valve
 mounts: base, rod
@@ -657,7 +708,7 @@ parameters:
   wheels_per_side = 3 (a whole number, at least 2, at most 6): wheels on each side, spread evenly front to back
   wheel_diameter = 0.1524 m (greater than 0): wheel diameter
   drop_center = 0.003 m (at least 0.0): how far the middle wheel of an odd count sits below the others
-  motor = 'CIM' (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): motor model
+  motor = "CIM" (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): motor model
   motors_per_side = 2 (a whole number, at least 1): motors on each side
   gearing = 10.71 (greater than 0): motor turns per wheel turn
   efficiency = 0.9 (greater than 0): drivetrain efficiency
@@ -680,15 +731,16 @@ Slots: lift (motor), encoder (spool turns). The elevator stands up from its base
 parameters:
   travel = 1.0 m (greater than 0): total carriage travel from fully lowered to fully raised
   stages = 1 (a whole number, at least 1, at most 4): number of moving stages including the carriage (the carriage is stage 'carriage', the others are stage1, stage2, ...)
-  rigging = 'continuous' (one of continuous, cascade): continuous: the carriage moves at the rope speed, full force at the carriage, and the first stage moves at 1/stages of it; cascade: the first stage moves at the rope speed and the carriage at stages x rope speed, with 1/stages of the force (carriage height = spool turns x 2 pi r x stages)
+  rigging = "continuous" (one of continuous, cascade): continuous: the carriage moves at the rope speed, full force at the carriage, and the first stage moves at 1/stages of it; cascade: the first stage moves at the rope speed and the carriage at stages x rope speed, with 1/stages of the force (carriage height = spool turns x 2 pi r x stages)
   carriage_mass = 3.0 kg (greater than 0): mass of the carriage and what it carries
   stage_mass = 1.5 kg (greater than 0): mass of the base and of each intermediate stage
-  motor = 'KrakenX60' (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): motor model
+  motor = "KrakenX60" (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): motor model
   count = 2 (a whole number, at least 1): motors driving the lift
   gearing = 9.0 (greater than 0): motor turns per spool turn
   spool_radius = 0.022 m (greater than 0): radius the rope winds on
   friction = 5.0 N (at least 0.0): constant sliding friction, in newtons felt at the carriage
   width = 0.3 m (at least 0.1): side-to-side width of the stages
+  collide = false: its geoms touch the field, game pieces and a partner robot (never the robot's own parts). Drawing-only geoms never collide: the launcher's hood arc, a disc shooter's guide plates, and a push cylinder's barrel (a push cylinder touches nothing even with collide on)
 
 slots: lift, encoder
 mounts: base, carriage
@@ -706,9 +758,10 @@ parameters:
   mass = 0.5 kg (greater than 0): wheel mass
   moi = 0.0 kg*m^2 (at least 0.0): moment of inertia about the axle; 0 means a solid disc, 1/2 m r^2
   width = 0.05 m (greater than 0): wheel thickness along the axle
-  motor = 'KrakenX60' (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): motor model
+  motor = "KrakenX60" (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): motor model
   count = 1 (a whole number, at least 1): motors driving the wheel
   gearing = 1.0 (greater than 0): motor turns per wheel turn
+  collide = false: its geoms touch the field, game pieces and a partner robot (never the robot's own parts). Drawing-only geoms never collide: the launcher's hood arc, a disc shooter's guide plates, and a push cylinder's barrel (a push cylinder touches nothing even with collide on)
 
 slots: spin
 mounts: base
@@ -726,9 +779,10 @@ parameters:
   mass = 0.3 kg (greater than 0): wheel mass
   moi = 0.0 kg*m^2 (at least 0.0): moment of inertia about the axle; 0 means a solid disc, 1/2 m r^2
   length = 0.4 m (greater than 0): roller length along the axle
-  motor = 'KrakenX60' (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): motor model
+  motor = "KrakenX60" (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): motor model
   count = 1 (a whole number, at least 1): motors driving the wheel
   gearing = 1.0 (greater than 0): motor turns per wheel turn
+  collide = false: its geoms touch the field, game pieces and a partner robot (never the robot's own parts). Drawing-only geoms never collide: the launcher's hood arc, a disc shooter's guide plates, and a push cylinder's barrel (a push cylinder touches nothing even with collide on)
 
 slots: spin
 mounts: base
@@ -742,12 +796,12 @@ swerve/MAXSwerve: REV MAXSwerve module, 3 in wheel, NEO drive and NEO 550 steer
 Real MAXSwerve modules use REV SPARK controllers: bind the drive and steer slots with SparkMax:<id> (or SparkFlex:<id>) and the encoder slot, the steer SPARK's absolute encoder, with SparkMaxAbs:<id> (or SparkFlexAbs:<id>). The ratio choices are the pinion teeth (12T, 13T or 14T); REV's MAXSwerve template uses 14T. The Through Bore encoder reads the module clockwise-positive, so robot code inverts it, as REV's template does.
 
 parameters:
-  ratio = '14T' (one of 12T, 13T, 14T or a number greater than 0): drive gear ratio (motor turns per wheel turn): 12T = 5.5, 13T = 5.08, 14T = 4.71, or your own number
+  ratio = "14T" (one of 12T, 13T, 14T or a number greater than 0): drive gear ratio (motor turns per wheel turn): 12T = 5.5, 13T = 5.08, 14T = 4.71, or your own number
   steer_ratio = 46.423645320197046 (greater than 0): steer motor turns per module turn
-  drive_motor = 'NEO' (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): drive motor model
-  steer_motor = 'NEO550' (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): steer motor model
-  drive_invert = False: invert the drive motor
-  steer_invert = False: invert the steer motor
+  drive_motor = "NEO" (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): drive motor model
+  steer_motor = "NEO550" (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): steer motor model
+  drive_invert = false: invert the drive motor
+  steer_invert = false: invert the steer motor
   wheel_friction = 1.2 (greater than 0): wheel-to-carpet sliding friction coefficient
   wheel_width = 0.04 m (greater than 0): tread width
   tread_stiffness = 200000.0 N/m (greater than 0): each wheel's tread stiffness (estimate: TPU or Colson-like tread on a 4 in wheel, about 1e5 to 3e5)
@@ -764,12 +818,12 @@ mounts: none
 swerve/MK4i: SDS MK4i swerve module (inverted steer motor), 4 in wheel
 
 parameters:
-  ratio = 'L2' (one of L1, L2, L3 or a number greater than 0): drive gear ratio (motor turns per wheel turn): L1 = 8.14, L2 = 6.75, L3 = 6.12, or your own number
+  ratio = "L2" (one of L1, L2, L3 or a number greater than 0): drive gear ratio (motor turns per wheel turn): L1 = 8.14, L2 = 6.75, L3 = 6.12, or your own number
   steer_ratio = 21.428571428571427 (greater than 0): steer motor turns per module turn
-  drive_motor = 'KrakenX60' (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): drive motor model
-  steer_motor = 'KrakenX60' (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): steer motor model
-  drive_invert = False: invert the drive motor
-  steer_invert = True: invert the steer motor
+  drive_motor = "KrakenX60" (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): drive motor model
+  steer_motor = "KrakenX60" (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): steer motor model
+  drive_invert = false: invert the drive motor
+  steer_invert = true: invert the steer motor
   wheel_friction = 1.2 (greater than 0): wheel-to-carpet sliding friction coefficient
   wheel_width = 0.04 m (greater than 0): tread width
   tread_stiffness = 200000.0 N/m (greater than 0): each wheel's tread stiffness (estimate: TPU or Colson-like tread on a 4 in wheel, about 1e5 to 3e5)
@@ -786,12 +840,12 @@ mounts: none
 swerve/MK4n: SDS MK4n swerve module (narrow), 4 in wheel
 
 parameters:
-  ratio = 'L2+' (one of L1+, L2+, L3+ or a number greater than 0): drive gear ratio (motor turns per wheel turn): L1+ = 7.13, L2+ = 5.9, L3+ = 5.36, or your own number
+  ratio = "L2+" (one of L1+, L2+, L3+ or a number greater than 0): drive gear ratio (motor turns per wheel turn): L1+ = 7.13, L2+ = 5.9, L3+ = 5.36, or your own number
   steer_ratio = 18.75 (greater than 0): steer motor turns per module turn
-  drive_motor = 'KrakenX60' (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): drive motor model
-  steer_motor = 'KrakenX60' (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): steer motor model
-  drive_invert = False: invert the drive motor
-  steer_invert = True: invert the steer motor
+  drive_motor = "KrakenX60" (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): drive motor model
+  steer_motor = "KrakenX60" (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): steer motor model
+  drive_invert = false: invert the drive motor
+  steer_invert = true: invert the steer motor
   wheel_friction = 1.2 (greater than 0): wheel-to-carpet sliding friction coefficient
   wheel_width = 0.04 m (greater than 0): tread width
   tread_stiffness = 200000.0 N/m (greater than 0): each wheel's tread stiffness (estimate: TPU or Colson-like tread on a 4 in wheel, about 1e5 to 3e5)
@@ -814,10 +868,11 @@ parameters:
   mass = 2.0 kg (greater than 0): platform mass
   height = 0.05 m (at least 0.0): the top mount's height above the base
   range = [-180.0, 180.0] deg ([min, max] with min < max): lowest and highest allowed angle (each end within +-360)
-  motor = 'KrakenX60' (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): motor model
+  motor = "KrakenX60" (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): motor model
   count = 1 (a whole number, at least 1): motors driving the turret
   gearing = 60.0 (greater than 0): motor turns per turret turn
   friction = 0.2 N*m (at least 0.0): constant friction torque on the turret's joint
+  collide = false: its geoms touch the field, game pieces and a partner robot (never the robot's own parts). Drawing-only geoms never collide: the launcher's hood arc, a disc shooter's guide plates, and a push cylinder's barrel (a push cylinder touches nothing even with collide on)
 
 slots: turn, encoder
 mounts: base, top

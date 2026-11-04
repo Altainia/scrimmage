@@ -5,6 +5,7 @@ A builder takes validated parameters and returns part.toml-shaped data; build_st
 from __future__ import annotations
 
 import importlib
+import json
 import math
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -191,6 +192,17 @@ def _constraints(p: Param) -> str:
     return ", ".join(parts)
 
 
+def _toml(v) -> str:
+    """A default as a robot file writes it: true/false, a quoted string, a list in brackets, a number."""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, str):
+        return json.dumps(v)          # a JSON string is a TOML basic string
+    if isinstance(v, (list, tuple)):
+        return "[" + ", ".join(_toml(x) for x in v) + "]"
+    return repr(v)
+
+
 def describe(name: str | None) -> str:
     _load_all()
     if name is None:
@@ -203,7 +215,7 @@ def describe(name: str | None) -> str:
         lines += [s.note, ""]
     lines.append("parameters:")
     for p in s.params:
-        value = repr(list(p.default) if p.kind in ("pair", "vec3") else p.default)
+        value = _toml(p.default)
         if p.unit:
             value += f" {p.unit}"
         constraints = _constraints(p)

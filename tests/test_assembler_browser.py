@@ -751,6 +751,28 @@ push_pos = [0.2, 0.0, 0.0]
     assert cfg.read_bytes() == before
 
 
+def test_collide_is_a_checkbox_saved_as_true(make_page, tmp_path):
+    """A stock mechanism's collide is a checkbox, off by default; ticking it saves collide = true."""
+    from scrimmage.assembler.templates import new_config
+    (tmp_path / "robot.toml").write_text(new_config("standin") + """
+[[part]]
+name = "lift"
+stock = "elevator"
+attach = "drive.top"
+""", encoding="utf-8")
+    page, cfg = make_page(None)
+    page.evaluate("__scrimmage.select('lift')")
+    page.wait_for_selector("#insp-p-collide")
+    box = page.locator("#insp-p-collide")
+    assert box.get_attribute("type") == "checkbox" and not box.is_checked()
+    box.check()
+    page.wait_for_function("__scrimmage.state.parts.find(p => p.name === 'lift').params.collide === true")
+    import tomllib
+    [lift] = [x for x in tomllib.loads(cfg.read_text())["part"] if x["name"] == "lift"]
+    assert lift["collide"] is True
+    assert page.locator("#insp-p-collide").is_checked()
+
+
 def test_rev_short_form_is_kept_as_a_string_in_the_inspector(make_page):
     page, cfg = make_page(None, "--new", "swerve-rev")
     page.evaluate("__scrimmage.select('fr')")   # its encoder is a plain short form (no offset)

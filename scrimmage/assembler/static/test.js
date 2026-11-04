@@ -3,8 +3,8 @@
 //
 //   Left       the palette: Blockly's flyout (Move, Wait, Repeat, Check), filled from the robot's own names
 //   Middle     the test: Blockly's workspace; the stack with the most blocks is the test
-//   Right      the run: the problems that keep it from running, Run (and Stop while it runs), and the runs
-//              (test_run.js: the shown run's outcome, replay and chart, and the kept runs)
+//   Right      the run: the problems that keep it from running, the hints that don't, Run (and Stop while it runs),
+//              and the runs (test_run.js: the shown run's outcome, replay and chart, and the kept runs)
 //   Status     saved or not, how many blocks
 //   Setup      (folded away over the blocks) the field and its start, the robot's weight and center of mass (when its
 //              root part is the stock chassis) and where each part is mounted, which change the robot file through
@@ -12,9 +12,10 @@
 //              or a body ticked as where a piece should end up), which /api/test/grip writes in that part folder's
 //              own edits at once, as the Part tab's Grip row does; and the test's own (saved in the test): where a
 //              piece should end up (the hopper: starter_hopper's preselection until changed) and its hooks, and its
-//              [setup]: the piece (on the intake and station fields), each station's settings, the shuffle (seed) and
-//              the floor spread (Run the spread: /api/test/spread). On a field with a station and a test with no feed
-//              block, "Add the station blocks" appends station_starter.
+//              [setup]: the piece (on the intake and station fields), each station's settings, the shuffle (seed),
+//              the floor spread (Run the spread: /api/test/spread) and the partner robot (where it starts, which way
+//              it faces, its brakes). On a field with a station and a test with no feed block, "Add the station
+//              blocks" appends station_starter.
 //
 // "Try values…" (a block's context menu, for its number; or beside a number in Setup) opens the sweep form: from, to
 // and steps, or typed values, at most 12; /api/test/sweep runs them and test_run.js shows the table and its chart.
@@ -324,6 +325,10 @@ function renderProblems() {
       h("span", { text: p.message }));
   }));
   $("#test-problems-wrap").hidden = !list.length;
+  // hints (the state's): what the test can run with but should know; they never keep Run from running
+  const hints = (t.state && t.state.hints) || [];
+  $("#test-hints").replaceChildren(...hints.map((p) => h("li", { text: p.message })));
+  $("#test-hints-wrap").hidden = !hints.length;
   const s = t.state;
   $("#test-run").disabled = !s || !!list.length || !!s.running;
   $("#test-run").title = list.length ? "Fix the problems first" : "";
@@ -553,6 +558,58 @@ function newShuffle() {
   while (seed === now) seed = 1 + Math.floor(Math.random() * MAX_SHUFFLE);
   s.seed = seed;
   setTest({ setup: s });
+}
+
+// Setup's partner robot, [setup] partner: a table puts one ahead of the robot; false hides the robot config's own
+// [partner] (the palette's robot_partner); with neither key the config decides.
+const FACING = [[0, "the same way"], [180, "toward me"], [90, "sideways"]];
+const PARTNER = { ahead_in: 60, heading_deg: 0, brake: true };      // a new partner's: 60 in ahead, facing the same way
+const ownPartner = () => !!(t.state && t.state.palette && t.state.palette.robot_partner);
+function partnerOn() {
+  const p = (headOf(t.ws).setup || {}).partner;
+  return p === undefined ? ownPartner() : p !== false;
+}
+function setPartnerOn(on) {
+  const s = setupOf();
+  if (on) { if (ownPartner()) delete s.partner; else s.partner = { ...PARTNER }; }
+  else if (ownPartner()) s.partner = false;
+  else delete s.partner;
+  setTest({ setup: s });
+}
+function setPartner(key, v) {
+  const s = setupOf();
+  s.partner = { ...PARTNER, ...(s.partner && typeof s.partner === "object" ? s.partner : {}), [key]: v };
+  setTest({ setup: s });
+}
+
+function partnerBox() {
+  const on = partnerOn();
+  const p = { ...PARTNER, ...((headOf(t.ws).setup || {}).partner || {}) };
+  const own = ownPartner() && !((headOf(t.ws).setup || {}).partner);     // the config's, placed where it says
+  const parts = [h("legend", { text: "Partner robot" }),
+    h("p", { class: "hint", text: "A second robot with no program of its own, to push, lift or drive around. "
+      + "It starts ahead of your robot, along the way your robot faces." }),
+    h("label", { class: "test-hook", for: "test-partner" },
+      h("input", { type: "checkbox", id: "test-partner", checked: on, onchange: (e) => setPartnerOn(e.target.checked) }),
+      h("span", { text: "A partner robot" }))];
+  if (on) {
+    if (own) parts.push(h("p", { class: "hint", text: "Where the robot file's [partner] puts it, until you change it here." }));
+    const facing = FACING.some(([deg]) => deg === p.heading_deg) ? FACING : [...FACING, [p.heading_deg, `turned ${fmt(p.heading_deg)}°`]];
+    const sel = h("select", { id: "test-partner-facing", onchange: (e) => setPartner("heading_deg", Number(e.target.value)) },
+      ...facing.map(([deg, text]) => h("option", { value: String(deg), text })));
+    sel.value = String(p.heading_deg);
+    parts.push(h("div", { class: "test-setup-grid" },
+      h("label", { for: "test-partner-ahead", text: "Ahead of my robot by" }),
+      h("div", { class: "row" }, numberBox("test-partner-ahead", p.ahead_in, "Partner robot: ahead of my robot by (in)",
+        (v) => setPartner("ahead_in", v)), h("span", { text: "in" })),
+      h("label", { for: "test-partner-facing", text: "Facing" }), sel,
+      h("span", { class: "test-setup-label", text: "Drive" }),
+      h("label", { class: "test-hook", for: "test-partner-brake" },
+        h("input", { type: "checkbox", id: "test-partner-brake", checked: p.brake !== false,
+          onchange: (e) => setPartner("brake", e.target.checked) }),
+        h("span", { text: "brakes on" }))));
+  }
+  return h("fieldset", { class: "test-setup-partner" }, ...parts);
 }
 
 const hasFeed = () => !!t.ws && t.ws.getAllBlocks(false).some((b) => FEED_KINDS.includes(b.type));
@@ -865,7 +922,7 @@ function renderSetup() {
     canon(fs || {}) === t.floorFor ? null : fs, pal.station_settings || {},
     pal.ball || null, pal.balls || [], !!pal.ball_choice, !!pal.floor_piece, s.station_starter, feeding, !!s.running,
     pal.piece || null, pal.piece_presets || null, pal.kinds || {}, pal.floor_kinds || {}, pal.station_kinds || {},
-    pal.floor_ball || null, pal.grips || {}, pal.grip_materials || [], [...t.gripOwn], [...t.gripSent],
+    pal.floor_ball || null, !!pal.robot_partner, pal.grips || {}, pal.grip_materials || [], [...t.gripOwn], [...t.gripSent],
     (s.fields || []).length, t.robot ? [t.robot.version, t.robot.parts, ro] : null, !!t.stock, t.setupError]);
   if (key === t.setupKey) return;
   const focused = document.activeElement && body.contains(document.activeElement) ? document.activeElement.id : null;
@@ -1013,6 +1070,7 @@ function renderSetup() {
       h("div", { class: "row" }, h("span", { id: "test-spread-count", class: "test-spread-count", role: "status" }),
         h("button", { type: "button", id: "test-spread-run", class: "btn btn-small", onclick: runSpread }, "Run the spread"))));
   }
+  parts.push(partnerBox());
   const left = leftovers(pal, setup);
   if (left.length) {
     parts.push(h("fieldset", { class: "test-setup-leftover" },
@@ -1238,7 +1296,7 @@ export async function initTest() {
   dlg.querySelector("form").addEventListener("submit", submitSweep);
   for (const b of dlg.querySelectorAll("[data-close]")) b.addEventListener("click", () => dlg.close());
   $("#test-stop").addEventListener("click", stop);
-  initRunPanel();
+  initRunPanel({ chart: () => (t.ws ? headOf(t.ws).chart || null : null), setChart: (c) => setTest({ chart: c }) });
   while (!t.state) {
     await refresh();
     if (!t.state) await new Promise((r) => setTimeout(r, 2000));

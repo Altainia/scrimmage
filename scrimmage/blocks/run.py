@@ -71,6 +71,19 @@ output) and each cylinder's `<name>.extension` (in), and the run's `air`: the ta
 the lowest and when, how long the compressor ran and when the tanks first fell below the working pressure
 (air_lines words it).
 
+A field with hinged or sliding elements has each one's `element.<name>` signal: a hinged element's angle (deg) or a
+sliding one's travel (in), 0 at rest; the `element` condition reads it.
+
+A robot with a partner robot (the config's `[partner]`, or Setup's partner: setup_config) has the signals
+`partner.height` (in), `partner.tilt` (deg) and `partner.moved` (in), read from where the partner settled
+(parts/partner.py); the `partner_lifted` and `partner_moved` conditions read them.
+
+Clearance (clearance.py): a test that names a field element in a `clears` condition or as `clearance.<element>` in
+its chart measures the robot's clearance to it after every step (Watch.closest), and only then. The chart's
+`clearance.<element>` is in inches, NaN while nothing is within 0.5 m; the run's `clearance` is each element's
+smallest clearance and when (clearance_lines words it: "closest to trench: 0.82 in at 3.1 s", "trench: never within
+20 in"). A failed `clears` check says the clearance then ("but it was 0.42 in").
+
 A run ends with one status: "finished" (every block played), "check failed", "timed out" (a wait until, a move, a
 drive or a turn), "tipped over" (the robot body's up axis more than TIP_DEG from vertical), "walked off" (the climb
 runner's "hook walked off" rule, scrimmage/climb/run.py's WalkOff), "time limit", "repeat limit" (a repeat until
@@ -91,9 +104,11 @@ import numpy as np
 from ..climb.run import SETTLE_S, WalkOff
 from ..hal_drive import MotorDrive, driven_joints, position_volts
 from ..movers import mover_poses, movers
+from ..parts.partner import SIGNALS as PARTNER_SIGNALS, STARTS_INSIDE
 from ..protocol import HalState
 from ..testrange.build import BALL_BITS
 from .aim import TURN, aim_error, aim_target
+from .clearance import NEVER_WITHIN_IN, PREFIX, inches, named, uncounted_note
 from .conditions import IN, Watch, _conds, describe, turret_words
 from .drive import STEER_TIMEOUT, drivetrain
 from .feeds import SETTLE_MAX_S, Outcomes, counts, is_standin, made_it_in, sentence
@@ -118,7 +133,8 @@ MOVING_SPEED = 0.1        # m/s: the robot going across the floor faster than th
 _VERBS = {"passes": ("passing", "to pass"), "goes": ("going", "to go"), "tilts": ("tilting", "to tilt"),
           "touches": ("touching", "to touch"), "reaches": ("reaching", "to reach"), "hangs": ("hanging", "to hang"),
           "are": ("being", "to be"), "is": ("being", "to be"), "made": ("having made", "to have made"),
-          "is held": ("being held", "to be held"), "rests": ("resting", "to rest")}
+          "is held": ("being held", "to be held"), "rests": ("resting", "to rest"),
+          "clears": ("clearing", "to clear"), "moved": ("having moved", "to have moved")}
 
 
 @dataclass
@@ -146,6 +162,9 @@ class RunResult:
     # below_working_t (s; None while the tanks stayed at or above the working pressure), the tanks' gauge psi; and
     # working_psi, the regulator's set pressure, which air_lines' warning names
     air: dict | None = None
+    # each element the test measures (a clears condition or a clearance.<element> chart signal): {min_in, t}, the
+    # smallest clearance (in) and when, both None when it was never within 0.5 m; None when the test measures none
+    clearance: dict[str, dict] | None = None
 
     @property
     def passed(self) -> bool:
@@ -188,11 +207,40 @@ def _amount(x: float, unit: str) -> str:
     return f"{x:g}°" if unit == "deg" else f"{x:g} {unit}"
 
 
-def setup_config(raw: dict, setup: dict) -> dict:
+def setup_config(raw: dict, setup: dict, cfg_dir: Path | None = None) -> dict:
     """A copy of the config dict with the test's `[setup]` ball or piece, station settings and seed in its `[range]`
     (a station's settings add to, and replace, the config's own; a ball or piece replaces the config's own, whichever
-    it gave). Nothing to set leaves `raw` as it is. On the plain field (no `[range]`) the seed is dropped: it only
-    picks the stations' draws, and there are none."""
+    it gave), and its partner as a `[partner]` (setup_partner). Nothing to set leaves `raw` as it is. On the plain
+    field (no `[range]`) the seed is dropped: it only picks the stations' draws, and there are none. `cfg_dir` is the
+    config's folder, where a partner's robot start reads the config's own range file from."""
+    raw = _range_setup(raw, setup)
+    if "partner" in setup:
+        raw = setup_partner(raw, setup["partner"], cfg_dir)
+    return raw
+
+
+def setup_partner(raw: dict, partner, cfg_dir: Path | None) -> dict:
+    """A copy of the config dict with Setup's partner: false drops the config's `[partner]`; a table puts the
+    partner's center `ahead_in` ahead of the robot's start along its heading, turned `heading_deg` from it, its brake
+    as given (the config's `[partner]` keeps its other settings)."""
+    if partner is False:
+        return {k: v for k, v in raw.items() if k != "partner"}
+    from ..parts.assemble import robot_start
+    try:
+        x, y, heading = robot_start(raw, cfg_dir)
+    except ValueError as e:     # the config's own mistake (its [range], its start_pose), which building it says too
+        raise TestFileError(f"Setup's partner needs the robot's start: {e}") from None
+    h, ahead = math.radians(heading), partner["ahead_in"] * IN
+    have = raw.get("partner")
+    out = {**(have if isinstance(have, dict) else {}),
+           "start": [x + ahead * math.cos(h), y + ahead * math.sin(h), heading + partner.get("heading_deg", 0.0)]}
+    if "brake" in partner:
+        out["brake"] = partner["brake"]
+    return {**raw, "partner": out}
+
+
+def _range_setup(raw: dict, setup: dict) -> dict:
+    """setup_config's `[range]` part: the ball or piece, the station settings and the seed."""
     values = {k: setup[k] for k in ("ball", "piece", "station", "seed") if k in setup}
     if not isinstance(raw.get("range"), dict):
         values.pop("seed", None)
@@ -216,11 +264,23 @@ def setup_config(raw: dict, setup: dict) -> dict:
     return {**raw, "range": rng}
 
 
+SETUP_STARTS_INSIDE = "the partner robot (Setup) starts inside "
+
+
 def world_for(program: Program):
-    """The World of the test's robot config (its `robot`, relative to the test file), with the test's setup applied."""
-    from ..config import build_world, load_config
+    """The World of the test's robot config (its `robot`, relative to the test file), with the test's setup applied.
+    When Setup places the partner and it starts inside the robot or an element, the TestFileError says Setup's partner
+    ("the partner robot (Setup) starts inside the robot (their outlines overlap by 0.20 m)"), not the config's
+    [partner]: the student only ticked Setup."""
+    from ..config import ConfigError, build_world, load_config
     config = load_config(Path(program.path).parent / program.robot)
-    return build_world(replace(config, raw=setup_config(config.raw, program.setup)))
+    try:
+        return build_world(replace(config, raw=setup_config(config.raw, program.setup, config.dir)))
+    except ConfigError as e:
+        text = str(e)
+        if not isinstance(program.setup.get("partner"), dict) or STARTS_INSIDE not in text:
+            raise
+        raise TestFileError(SETUP_STARTS_INSIDE + text.split(STARTS_INSIDE, 1)[1]) from None
 
 
 GRIP_CONDITIONS = ("held", "rests_on", "seated")     # a test of these rests on the grip's friction
@@ -250,13 +310,17 @@ PNEUMATIC_NOTE = "Pneumatic numbers are estimates (UNCALIBRATED): see docs/pneum
 def run_notes(world, program: Program) -> list[str]:
     """What the run's numbers rest on: a line per gripped body (parts/grip.py's grip_notes); a test of held, rests on
     or seated with no grip anywhere gets default_grip_note, so its grip isn't read as measured either. A robot with
-    cylinders gets PNEUMATIC_NOTE."""
+    cylinders gets PNEUMATIC_NOTE. A test that measures an element's clearance, on a robot with stock parts whose
+    collide is off, gets clearance.uncounted_note: those parts aren't measured."""
     from ..parts.grip import grip_notes
     notes = grip_notes(world)
     if not notes and any(_conds(program.blocks, k) for k in GRIP_CONDITIONS):
         notes = [default_grip_note(world)]
     if getattr(world, "pneumatics", None) is not None:
         notes.append(PNEUMATIC_NOTE)
+    uncounted = uncounted_note(world, program)
+    if uncounted is not None:
+        notes.append(uncounted)
     return notes
 
 
@@ -264,6 +328,13 @@ def goal_lines(result: RunResult) -> list[str]:
     """The run's goal counts as lines, "scored 5 in hub_blue", one per goal with a ball in it (none without a
     [shooter])."""
     return [f"scored {n} in {name}" for name, n in (result.goals or {}).items() if n]
+
+
+def clearance_lines(result: RunResult) -> list[str]:
+    """The run's closest approaches as lines, one per element it measured: "closest to trench: 0.82 in at 3.1 s", or
+    "trench: never within 20 in" (none for a run that measured none)."""
+    return [f"{e}: never within {NEVER_WITHIN_IN} in" if c["min_in"] is None else
+            f"closest to {e}: {c['min_in']:.2f} in at {c['t']:.1f} s" for e, c in (result.clearance or {}).items()]
 
 
 def air_lines(result: RunResult) -> list[str]:
@@ -335,7 +406,7 @@ class TestRun:
         # written as robot code writes it, through its own binding
         self._drive = {n: [MotorDrive(mb) for mb in world.motors if mb.qadr == b.qadr]
                        for n, b in self.motors.items()}
-        pal = palette(world, list(program.hooks))
+        pal = palette(world, list(program.hooks), program.setup)
         kinds = {j["name"]: j["kind"] for j in pal["joints"]}
         self.drivetrain = drivetrain(world, self.motors)
         self.signal_names = list(pal["signals"])
@@ -346,6 +417,10 @@ class TestRun:
         self._seated = {f"seated.{r}": r for r in pal["rods"]}     # a seated signal -> its rod
         self._double = {c["name"]: c["double"] for c in pal["cylinders"]}
         self._extension = {f"{c}.extension": c for c in self._double}     # an extension signal -> its cylinder
+        self._elements = {f"element.{e['name']}": e["name"] for e in pal["moving_elements"]}   # signal -> element
+        # a clearance signal -> its element: only the elements the test names (Watch.closest measures the same)
+        self._clearance = {f"{PREFIX}{e}": e for e in named(program, pal["elements"])}
+        self.signal_names += list(self._clearance)
         self._qadr = {n: int(m.jnt_qposadr[m.joint(n).id]) for n in kinds}
         self._slide = {n: k == "slide" for n, k in kinds.items()}
         self.feeder = world.test_range.feeder if world.test_range is not None else None
@@ -513,6 +588,7 @@ class TestRun:
             result.goals = dict(tr.counts()["goals"])
         if self.air is not None:
             result.air = dict(self.air.out)
+        result.clearance = watch.closest.result()
         return result
 
     def _see_air(self) -> None:
@@ -616,6 +692,12 @@ class TestRun:
                 row[name] = self.world.pneumatics.system.working_psi
             elif name in self._extension:
                 row[name] = self.world.pneumatics.extension(self._extension[name]) / IN
+            elif name in self._elements:                # deg or in
+                row[name] = watch.element_value(self._elements[name])
+            elif name in self._clearance:               # in; NaN while nothing is within 0.5 m
+                row[name] = inches(watch.closest.now[self._clearance[name]])
+            elif name in PARTNER_SIGNALS:               # in, deg, in
+                row[name] = self.world.partner.read(name)
             elif name.endswith(".current") and name[:-8] in self.motors:
                 row[name] = float(self.motors[name[:-8]].current)
             else:
@@ -907,6 +989,25 @@ class TestRun:
             now = s.stored_psi if a["side"] == "stored" else s.working_psi
             what = f"the {a['side']} air pressure"      # as the block reads: "stored air pressure above 60 psi"
             return f"expected {what} {side} {psi:g} psi, but it was {now:.1f} psi"
+        if k == "element":
+            side = "above" if "above" in a else "below"
+            unit = watch.units[a["element"]]
+            now = round(watch.element_value(a["element"]), 1) + 0.0        # + 0.0: a panel at rest never reads "-0"
+            return f"expected {a['element']} {side} {_amount(a[side], unit)}, but it was {_amount(now, unit)}"
+        if k == "clears":
+            c = watch.closest.now[a["element"]]
+            now = f"{c / IN:.2f} in" if math.isfinite(c) else f">{NEVER_WITHIN_IN} in"
+            return (f"expected the robot to clear {a['element']} by at least {_amount(a['at_least_in'], 'in')}, "
+                    f"but it was {now}")
+        if k == "partner_lifted":
+            p, level = self.world.partner, a.get("level_within_deg")
+            want = f"at least {_amount(a['at_least_in'], 'in')}" + (
+                f" (level within {_amount(level, 'deg')})" if level is not None else "")
+            up = round(p.height(), 1) + 0.0                 # + 0.0: a partner at rest never reads "-0"
+            return f"expected the partner lifted {want}, but it was {up:g} in up, {p.tilt():.1f}° from level"
+        if k == "partner_moved":
+            return (f"expected the partner to move at least {_amount(a['at_least_in'], 'in')}, "
+                    f"but it moved {self.world.partner.moved():.1f} in")
         if k == "station_empty":
             left = self.feeder.left(a["station"]) if self.feeder is not None else None
             return f"{a['station']} wasn't empty" + (f" ({left} left)" if left else "")
@@ -981,9 +1082,9 @@ class TestRun:
         return " and ".join(words) if words else "nothing was moving"
 
     def _describe(self, cond) -> str:
-        """describe() with this run's next bar and the field's piece words."""
+        """describe() with this run's next bar, the field's piece words and its moving elements' units."""
         w = self.watch
-        return describe(cond, w.next_bar(), w.kinds, w.piece_names)
+        return describe(cond, w.next_bar(), w.kinds, w.piece_names, w.units)
 
     def _fail(self, check: dict, cond, t: float) -> None:
         check.update(passed=False, t=t, failure=self._failure(cond))

@@ -18,7 +18,7 @@ from scrimmage.testrange.spec import BUILTIN_RANGES, load_range
 from scrimmage.world import World
 
 GROUND = np.array([1 if g == ELEMENT_GROUP else 0 for g in range(6)], dtype=np.uint8)
-NEW_RANGES = ("2026-bump", "2023-charge-station", "terrain-library")
+NEW_RANGES = ("2026-bump", "2023-charge-station", "terrain-library", "2026-trench", "2016-defenses")
 LEVEL_DEG = 2.5      # 2023 manual 5.4: LEVEL is within about 2.5 deg of the carpet
 
 

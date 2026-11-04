@@ -14,8 +14,10 @@
     volts = 6.0
 
 An optional `[setup]` table sets the field up for the test: ball or piece (the field's game piece: a ball preset, or
-any piece or ball preset), seed, station (a human player's settings by name) and floor_spread (several placements of
-the robot on the floor).
+any piece or ball preset), seed, station (a human player's settings by name), floor_spread (several placements of
+the robot on the floor) and partner (a passive partner robot: `{ ahead_in = 60, heading_deg = 0, brake = true }`, its
+center that far ahead of the robot's start along the robot's heading, turned heading_deg from it; or false for none,
+even when the robot config has a [partner]).
 
 A `repeat` block holds its blocks as `[[block.body]]` tables (`[[block.body.body]]` one level in). Only the file's
 shape is checked here (kinds, types, ranges); names are checked against the robot elsewhere.
@@ -51,16 +53,19 @@ AIMED_DEG = 2.0          # degrees: aimed's default within_deg
 CYLINDER_TO = ("extend", "retract", "off")     # set_cylinder's states ("off": C9, by the valve's kind)
 CYLINDER_IS = ("extended", "retracted")
 PRESSURE_SIDES = ("stored", "working")
+MAX_CLEARS_IN = 19.6     # in: clears' at_least_in; clearance is measured out to 0.5 m (19.7 in), clearance.py
 
 UNITS = ("deg", "in", "m")
 DO_KINDS = ("spin", "move", "drive", "stop", "wait", "wait_until", "repeat", "expect",
             "start_feeding", "stop_feeding", "feed_one", "turn", "aim", "set_cylinder")
 COND_KINDS = ("joint", "touch", "tilt", "piece_in", "hanging_from", "level", "in_hopper", "station_empty",
-              "made_it_in", "held", "rests_on", "seated", "scored", "aimed", "cylinder", "pressure")
+              "made_it_in", "held", "rests_on", "seated", "scored", "aimed", "cylinder", "pressure",
+              "element", "clears", "partner_lifted", "partner_moved")
 DRIVE_DIRECTIONS = ("forward", "back", "left", "right")
 _OPPOSITE = {"back": "forward", "left": "right", "right": "left"}     # where a minus distance goes instead
 SPREAD_AXES = ("offset_in", "distance_in", "angle_deg", "rotation_deg", "tip_deg")
-SETUP_KEYS = ("ball", "piece", "seed", "station", "floor_spread")
+SETUP_KEYS = ("ball", "piece", "seed", "station", "floor_spread", "partner")
+PARTNER_SETUP_KEYS = ("ahead_in", "heading_deg", "brake")
 _STATION_LISTS = ("spread_position", "spread_rotation_deg")
 
 
@@ -217,6 +222,36 @@ def _cond(v, where: str) -> Cond:
         if psi < 0:
             raise TestFileError(f"{where}: {limit} is a pressure in psi and can't be negative")
         return Cond(kind, {"side": side, limit: psi})
+    if kind == "element":     # in the element's unit: degrees for a hinged one, inches for a sliding one
+        _keys(t, ("element", "above", "below"), where)
+        side = _one_of(t, ("above", "below"), where)
+        return Cond(kind, {"element": _text(t.get("element"), where, "element"), side: _num(t[side], where, side)})
+    if kind == "clears":
+        _keys(t, ("element", "at_least_in"), where)
+        at = _num(t.get("at_least_in"), where, "at_least_in")
+        if at <= 0:
+            raise TestFileError(f"{where}: at_least_in must be more than 0")
+        if at > MAX_CLEARS_IN:
+            raise TestFileError(f"{where}: at_least_in can be at most {MAX_CLEARS_IN:g}: clearance is measured out "
+                                "to 0.5 m (19.7 in)")
+        return Cond(kind, {"element": _text(t.get("element"), where, "element"), "at_least_in": at})
+    if kind == "partner_lifted":
+        _keys(t, ("at_least_in", "level_within_deg"), where)
+        a = {"at_least_in": _num(t.get("at_least_in"), where, "at_least_in")}
+        if a["at_least_in"] <= 0:
+            raise TestFileError(f"{where}: at_least_in must be more than 0")
+        level = t.get("level_within_deg")
+        if level is not None:
+            level = _num(level, where, "level_within_deg")
+            if level <= 0:
+                raise TestFileError(f"{where}: level_within_deg must be more than 0")
+        return Cond(kind, {**a, "level_within_deg": level})
+    if kind == "partner_moved":
+        _keys(t, ("at_least_in",), where)
+        at = _num(t.get("at_least_in"), where, "at_least_in")
+        if at <= 0:
+            raise TestFileError(f"{where}: at_least_in must be more than 0")
+        return Cond(kind, {"at_least_in": at})
     if kind == "tilt":
         _keys(t, ("above", "below"), where)
         side = _one_of(t, ("above", "below"), where)
@@ -394,6 +429,28 @@ def _setup(raw: dict) -> dict:
         n = placement_count(out)
         if n > MAX_PLACEMENTS:
             raise TestFileError(f"{where}: the floor spread tries {n} placements; at most {MAX_PLACEMENTS}")
+    if "partner" in raw:
+        out["partner"] = _partner_setup(raw["partner"])
+    return out
+
+
+def _partner_setup(t) -> dict | bool:
+    """`[setup] partner`: {ahead_in, heading_deg (0: facing the robot's way), brake (true)}, or false for none."""
+    where = "[setup] partner"
+    if t is False:
+        return False
+    if not isinstance(t, dict):
+        raise TestFileError(f"{where} must be a table like partner = {{ ahead_in = 60 }}, or false for none")
+    _keys(t, PARTNER_SETUP_KEYS, where)
+    if "ahead_in" not in t:
+        raise TestFileError(f"{where}: needs ahead_in, how far ahead of the robot's start the partner's center is")
+    out: dict = {"ahead_in": _num(t["ahead_in"], where, "ahead_in")}
+    if "heading_deg" in t:
+        out["heading_deg"] = _num(t["heading_deg"], where, "heading_deg")
+    if "brake" in t:
+        if not isinstance(t["brake"], bool):
+            raise TestFileError(f"{where}: brake must be true or false")
+        out["brake"] = t["brake"]
     return out
 
 
@@ -494,7 +551,7 @@ def load(path) -> Program:
 def _cond_json(c: Cond):
     if c.kind in ("hanging_from", "level", "station_empty"):
         return {c.kind: next(iter(c.args.values()))}
-    return {c.kind: dict(c.args)}
+    return {c.kind: {k: v for k, v in c.args.items() if v is not None}}     # partner_lifted's level is optional
 
 
 def block_json(b: Block) -> dict:

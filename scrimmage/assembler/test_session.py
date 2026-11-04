@@ -2,9 +2,9 @@
 
 A test opens in robot mode: the robot document is the test's `robot`, and the App keeps it in step with the file
 (an assembler edit, an outside edit, Import again). The session holds the test's Program, the palette and problems of
-the robot as it is now (`refresh`, called by the App whenever it validates the robot), and one run, sweep or floor
-spread at a time on a worker thread ("test-run", "test-sweep", "test-spread"), which holds the SimLock as "test" while
-it runs.
+the robot as it is now and its hints, which never stop a run (`refresh`, called by the App whenever it validates the
+robot), and one run, sweep or floor spread at a time on a worker thread ("test-run", "test-sweep", "test-spread"),
+which holds the SimLock as "test" while it runs.
 
 Every change bumps one `version`, which the page long-polls. A save is refused (409) when the test changed after the
 version the page sent (`_changed_at`): a run's progress doesn't make the page's version stale. An outside edit of the
@@ -35,9 +35,9 @@ from types import SimpleNamespace
 import tomlkit
 
 from ..blocks import store
-from ..blocks.palette import ANY_PIECE, palette, problems
+from ..blocks.palette import ANY_PIECE, hints, palette, problems
 from ..blocks.program import Block, Cond, TestFileError, block_json, dumps, from_json, load, to_json
-from ..blocks.run import TestRun, air_lines, goal_lines, world_for
+from ..blocks.run import TestRun, air_lines, clearance_lines, goal_lines, world_for
 from ..blocks.spread import NO_BALL, NO_SPREAD, inside_robot, run_spread
 from ..blocks.sweep import MAX_SWEEP, _kind as sweep_kind, run_sweep
 from ..cad.settings import replace_file
@@ -401,6 +401,7 @@ class TestSession:
         self.palette: dict | None = None
         self.starter_hopper: list[str] = []      # what Setup ticks for a test with no hopper (starter_hopper)
         self.problems: list[dict] = []
+        self.hints: list[dict] = []          # what the test can run with but should know (palette.hints)
         self.file_error: str | None = None   # the test file as it is on disk can't be read (an outside edit)
         self.run_error: str | None = None    # why the last run, sweep or spread couldn't run
         self.running: dict | None = None     # {"kind": "run" | "sweep" | "spread", "progress": 0..1}
@@ -429,20 +430,23 @@ class TestSession:
         self._cond.notify_all()
 
     # -- the robot and the file -------------------------------------------------------------
-    def _names(self) -> tuple[dict | None, list[dict]]:
+    def _names(self) -> tuple[dict | None, list[dict], list[dict]]:
+        """The palette, the problems and the hints."""
         if self._world is None:
-            return None, [{"place": [], "message": self._robot_problem or "the robot isn't loaded"}]
+            return None, [{"place": [], "message": self._robot_problem or "the robot isn't loaded"}], []
         try:
-            return palette(self._world, list(self.program.hooks)), problems(self.program, self._world)
+            # the robot config's world, with the test's setup's partner (world_for builds a run's with it)
+            pal = palette(self._world, list(self.program.hooks), self.program.setup)
+            return pal, problems(self.program, self._world), hints(self.program, self._world)
         except Exception as e:   # a robot the palette can't read must not take the Test tab down
             log.exception("test palette")
-            return None, [{"place": [], "message": f"can't read the robot's motors and joints ({e})"}]
+            return None, [{"place": [], "message": f"can't read the robot's motors and joints ({e})"}], []
 
     def _recompute(self) -> None:
-        pal, probs = self._names()
+        pal, probs, tips = self._names()
         hopper = starter_hopper(pal, part_roots(self._world)) if pal is not None else []
-        if (pal, probs, hopper) != (self.palette, self.problems, self.starter_hopper):
-            self.palette, self.problems, self.starter_hopper = pal, probs, hopper
+        if (pal, probs, tips, hopper) != (self.palette, self.problems, self.hints, self.starter_hopper):
+            self.palette, self.problems, self.hints, self.starter_hopper = pal, probs, tips, hopper
             self._bump()
 
     def refresh(self, world, robot_problem: str | None) -> None:
@@ -710,7 +714,7 @@ class TestSession:
     def state(self) -> dict:
         with self._cond:
             out = {"version": self.version, "path": str(self.path), "test": to_json(self.program),
-                   "palette": self.palette, "problems": self.problems, "running": self.running,
+                   "palette": self.palette, "problems": self.problems, "hints": self.hints, "running": self.running,
                    "file_error": self.file_error, "run_error": self.run_error, "last": self.last,
                    "starter_hopper": list(self.starter_hopper),
                    "station_starter": [block_json(b) for b in station_starter(self.palette)] or None}
@@ -737,13 +741,13 @@ class TestSession:
 
     def run_result(self, run_id: str) -> dict:
         """A kept run's result.json fields plus id, signals and `lines`: its goal counts and air in the sentences
-        `scrimmage test` prints (run.py goal_lines and air_lines; none for a run without them)."""
+        `scrimmage test` prints (run.py goal_lines, air_lines and clearance_lines; none for a run without them)."""
         try:
             out = store.load_result(self.runs_dir, run_id)
         except FileNotFoundError:
             raise SessionError(404, f"no run {run_id} is kept for this test") from None
-        kept = SimpleNamespace(goals=out.get("goals"), air=out.get("air"))
-        out["lines"] = goal_lines(kept) + air_lines(kept)
+        kept = SimpleNamespace(goals=out.get("goals"), air=out.get("air"), clearance=out.get("clearance"))
+        out["lines"] = goal_lines(kept) + air_lines(kept) + clearance_lines(kept)
         return out
 
     def close(self) -> None:

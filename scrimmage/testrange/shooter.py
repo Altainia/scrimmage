@@ -376,6 +376,11 @@ def _intake(table, by_name: dict) -> Intake | None:
         return None
     _keys(table, INTAKE_KEYS, "intake")
     inst = _spinner(table.get("part"), by_name, "intake", ("stock roller",), "")
+    if inst.stock_params.get("collide"):
+        # its roller would push the floor balls the zone collects; the launcher and the stages may collide (the
+        # balls they hold are parked and touch nothing, and a launched ball clears the robot)
+        raise ValueError(f"{inst.name} has collide = true but is the [shooter]'s intake; the ball path moves those "
+                         "balls, so leave collide off")
     body, mpos, mrot = _mount_frame(table.get("at"), by_name, "intake")
     pos, size = table.get("pos"), table.get("size")
     if not (isinstance(pos, list) and len(pos) == 3 and all(_number(v) for v in pos)):

@@ -547,6 +547,7 @@ class Session:
             **({"range": {k: v for k, v in w.test_range.counts().items() if k != "ledger"}}
                if w.test_range is not None else {}),
             **({"pneumatics": w.pneumatics.state()} if w.pneumatics is not None else {}),
+            **({"partner": w.partner.state()} if getattr(w, "partner", None) is not None else {}),
         }
 
     def hal(self, device_filter: str = "") -> dict:

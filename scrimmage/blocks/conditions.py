@@ -33,6 +33,15 @@ step, and the plain words that name them in a run's outcome.
   0), as the air system's extension reads it (pneumatics/runtime.py).
 - `pressure`: the air system's stored (the tanks') or working (the regulator's output) pressure is above or below N
   psi.
+- `element`: a hinged field element's angle (degrees) or a sliding one's travel (inches), 0 at rest, is above or below
+  N: its `element.<name>` signal.
+- `clears`: the robot keeps at least `at_least_in` inches from a field element: clearance.py's clearance, between
+  every robot geom that collides and the element's geoms, measured after every step (`Watch.closest`) for the
+  elements the test names; nothing within 0.5 m counts as clear.
+- `partner_lifted`: the partner robot's frame is lifted at least `at_least_in` inches (its `partner.height`: the
+  lowest frame corner above where it settled), and, with `level_within_deg`, its tilt is within that of level.
+- `partner_moved`: the partner robot has gone at least `at_least_in` inches across the floor from where it settled
+  (`partner.moved`).
 
 The words name pieces as a student knows them: any piece by the field's kind ("a coral"; "a ball" on a field of one
 ball or disc kind, as always; "a piece" on a mixed field or when the kinds aren't known), and a named piece by its
@@ -53,8 +62,10 @@ import mujoco
 import numpy as np
 
 from ..terrain.climb import hold_geoms, robot_hooks
+from ..testrange.elements import moving_units, moving_value
 from ..testrange.spec import _one_round_kind as one_round_kind
 from .aim import aim_error
+from .clearance import Closest, named
 from .feeds import made_it_in
 from .grip_watch import HeldTracker, default_word
 from .palette import ANY_BAR, ANY_GOAL, ANY_HOOK, ANY_PIECE, NEXT_BAR
@@ -83,6 +94,10 @@ class Watch:
             self.mon = world.climb_monitor(list(program.hooks))
         rng = parts.range if parts is not None else None
         self._levels = list(rng.climb.levels) if rng is not None and rng.climb is not None else []
+        self.units = moving_units(rng.elements) if rng is not None else {}    # moving element -> "deg" or "in"
+        self._moving = {name: layout.moving[name] for name in self.units}     # moving element -> its qpos address
+        # the clearance to each element a clears condition or the chart names, after every step
+        self.closest = Closest(world, named(program, [e.name for e in rng.elements] if rng is not None else []))
         self._hook_geoms = {name: set(gs) for name, gs in robot_hooks(m, self.body).items()}
         for name in program.hooks:
             self._hook_geoms[name] = set(self._body_geoms(name))
@@ -163,6 +178,7 @@ class Watch:
         self.inside = self.hopper_mask()
         self.held.update(float(d.time), self.inside | self.round if self.hopper else None)
         self.placed.update(float(d.time))
+        self.closest.update(float(d.time))
 
     def _read_tilt(self) -> None:
         zz = float(self.data.xmat[self.body][8])        # the body's z axis, its world z component
@@ -282,6 +298,10 @@ class Watch:
         goals = tr.counts()["goals"] if tr is not None else {}
         return sum(goals.values()) if goal == ANY_GOAL else int(goals.get(goal, 0))
 
+    def element_value(self, name: str) -> float:
+        """Moving element `name`'s signal now: degrees for a hinged one, inches for a sliding one, 0 at rest."""
+        return moving_value(float(self.data.qpos[self._moving[name]]), self.units[name])
+
     def hopper_count(self) -> int:
         """Balls whose center is inside a hopper body's box now, fed or not."""
         return int(self.hopper_mask().sum())
@@ -326,6 +346,17 @@ class Watch:
             s = self.world.pneumatics.system
             psi = s.stored_psi if a["side"] == "stored" else s.working_psi
             return psi > a["above"] if "above" in a else psi < a["below"]
+        if k == "element":
+            v = self.element_value(a["element"])
+            return v > a["above"] if "above" in a else v < a["below"]
+        if k == "clears":
+            return self.closest.now[a["element"]] >= a["at_least_in"] * IN
+        if k == "partner_lifted":
+            p = self.world.partner
+            level = a.get("level_within_deg")
+            return p.height() >= a["at_least_in"] and (level is None or p.tilt() <= level)
+        if k == "partner_moved":
+            return self.world.partner.moved() >= a["at_least_in"]
         if k == "station_empty":
             return bool(self.world.test_range.feeder.empty(a["station"]))
         if k == "made_it_in":
@@ -382,9 +413,11 @@ def turret_words(name: str) -> str:
     return "the turret" if name == "turret" else f"turret {name}"
 
 
-def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names: dict | None = None) -> str:
+def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names: dict | None = None,
+             units: dict | None = None) -> str:
     """The condition in plain words, for a run's outcome. `next_bar` names "the next bar" when known; `kinds` (the
-    field's Range.kinds) names any piece by its kind, `names` a piece by what a student reads (Watch.piece_names)."""
+    field's Range.kinds) names any piece by its kind, `names` a piece by what a student reads (Watch.piece_names),
+    `units` a moving element's unit (Watch.units; a number alone when not known)."""
     a, k = cond.args, cond.kind
     names = names or {}
 
@@ -424,6 +457,18 @@ def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names
         side, psi = ("above", a["above"]) if "above" in a else ("below", a["below"])
         what = f"the {a['side']} air pressure"      # as the block reads: "stored air pressure above 60 psi"
         return f"{what} is {side} {psi:g} psi"
+    if k == "element":
+        side = "above" if "above" in a else "below"
+        unit = (units or {}).get(a["element"])
+        return f"{a['element']} is {side} {_amount(a[side], unit) if unit else f'{a[side]:g}'}"
+    if k == "clears":
+        return f"the robot clears {a['element']} by at least {_amount(a['at_least_in'], 'in')}"
+    if k == "partner_lifted":
+        level = a.get("level_within_deg")
+        return (f"the partner is lifted at least {_amount(a['at_least_in'], 'in')}"
+                + (f" (level within {_amount(level, 'deg')})" if level is not None else ""))
+    if k == "partner_moved":
+        return f"the partner moved at least {_amount(a['at_least_in'], 'in')}"
     if k == "station_empty":
         return f"{a['station']} is empty"
     if k == "made_it_in":

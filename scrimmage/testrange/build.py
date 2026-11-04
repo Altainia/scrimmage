@@ -131,6 +131,8 @@ class RangeLayout:
     bars: dict[str, list[str]] = field(default_factory=dict)
     # switch name -> the qpos address of its hinge (build_elements.switch_joint)
     switches: dict[str, int] = field(default_factory=dict)
+    # hinged or sliding element name -> the qpos address of its joint (build_elements.moving_joint), 0 at rest
+    moving: dict[str, int] = field(default_factory=dict)
     # rod name -> the Rod (what a piece's seated depth along it is measured against)
     rods: dict = field(default_factory=dict)
     kinds: list[str] = field(default_factory=list)     # each ball.<i>'s piece kind (Range.kinds)

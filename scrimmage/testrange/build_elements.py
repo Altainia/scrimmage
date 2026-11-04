@@ -51,6 +51,18 @@ below the hinge, so it hangs level; its inertia about the CoM is an estimate, a 
 as tall as its drop, m (bar_length^2 + bar_drop^2) / 12 (the 2020 manual gives only the mass and the CoM). The frame
 that carries the bar is not built: only the bar collides.
 
+A hinged or sliding element is body `element.<name>` with one geom, `element.<name>.panel` (a box, or a cylinder
+for a disc), on joint `element.<name>.hinge` (about the hinge's axis, elements.hinge_axis) or `element.<name>.slide`
+(along its local axis). The body is built at rest (turned `rest_deg` about the hinge, or moved `rest` along the
+slide, from the panel as described), so the joint reads 0 at rest: the spring's springref is 0 and the stops are the
+file's range less the rest. Positive is a right-hand turn about the axis (C3), or travel along it: about +y for
+"bottom" and "top" (a panel on its bottom edge tips its top toward +x; one hung from its top edge swings its bottom
+toward -x), about +z for the side and end edges and a flat disc (counter-clockwise seen from above), along +x, +y or
++z for a slide. The stops are a platform's (PLATFORM_STOP_TC, critically damped); without `range_deg` a hinged panel
+turns freely. The breakaway is the joint's frictionloss, its solref as stiff as the stops so a push under it holds.
+The panel is a uniform box or disc of the element's mass. It is structure (NON_GROUND_GROUP) or, with `ground`,
+ground (ELEMENT_GROUP).
+
 The stops are the joints' limits at +-`max_tilt_deg`, stiff (PLATFORM_STOP_TC) and critically damped, so the deck
 lands on its stop without a bounce; the seats at 0 are the same kind of limit. Each joint carries the range file's
 `damping` (an estimate there). The ramps hang off the deck's ends and turn with it: on the real station they are
@@ -68,15 +80,16 @@ import numpy as np
 
 from ..parts.field import ELEMENT_GROUP, FIELD_BITS
 from .build import FUNNEL_RGBA, PLATE_FRICTION, RangeLayout, _quat, _rpy
-from .elements import IN, POST, Bar, Box, Bump, Element, Platform, Ramp, Rod, Switch
+from .elements import (IN, POST, Bar, Box, Bump, Element, Hinged, Platform, Ramp, Rod, Sliding, Switch, hinge_axis,
+                       panel_center, panel_inertia, panel_size)
 from .spec import _rot_z
 from .station import CHUTE_PLATE, CHUTE_WALL_BALLS, Station
 
 if TYPE_CHECKING:
     from .pieces import PieceKind
 
-__all__ = ["ELEMENT_GROUP", "NON_GROUND_GROUP", "add_chute", "add_element", "fill_layout", "platform_joints",
-           "platform_tilt", "switch_joint"]
+__all__ = ["ELEMENT_GROUP", "NON_GROUND_GROUP", "add_chute", "add_element", "fill_layout", "moving_joint",
+           "panel_parts", "platform_joints", "platform_tilt", "switch_joint"]
 
 # Structure the robot can touch but doesn't drive on: bars, switches and boxes that aren't ground. Not ELEMENT_GROUP
 # (the ground), and drawn by default (MuJoCo draws groups 0 to 2).
@@ -313,6 +326,65 @@ def _switch(spec: mujoco.MjSpec, e: Switch, pos, quat) -> None:
     _pipe(body, f"element.{e.name}.bar", e.bar_length, e.diameter, e.friction, z=-e.bar_drop)
 
 
+def _axis_angle(axis, angle: float) -> np.ndarray:
+    q = np.zeros(4)
+    mujoco.mju_axisAngle2Quat(q, np.asarray(axis, float), angle)
+    return q
+
+
+def _rest_frame(e: Hinged | Sliding) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """The moving body's origin and quaternion in the element's frame at rest (joint 0), and the panel's center in
+    the body's frame: a hinged panel's body is at its hinge, turned `rest_deg` about it from the panel as described;
+    a sliding panel's is at its center, `rest` along its axis."""
+    if isinstance(e, Hinged):
+        point, axis = hinge_axis(e)
+        return point, _axis_angle(axis, math.radians(e.rest_deg)), panel_center(e) - point
+    return panel_center(e) + e.rest * np.eye(3)["xyz".index(e.axis)], np.array([1.0, 0.0, 0.0, 0.0]), np.zeros(3)
+
+
+def panel_parts(e: Hinged | Sliding) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """The panel at rest as one box (a disc's bounding box) in the element's frame: (center, rotation, half sizes)."""
+    origin, quat, arm = _rest_frame(e)
+    rot = np.zeros(9)
+    mujoco.mju_quat2Mat(rot, quat)
+    rot = rot.reshape(3, 3)
+    size = panel_size(e) if isinstance(e, Hinged) else e.size
+    return origin + rot @ arm, rot, np.asarray(size, float) / 2.0
+
+
+def _moving(spec: mujoco.MjSpec, e: Hinged | Sliding, pos, quat) -> None:
+    """Body `element.<name>` on joint `element.<name>.hinge` or `.slide`, 0 at rest (see the module docstring)."""
+    origin, turn, arm = _rest_frame(e)
+    at = np.zeros(4)
+    mujoco.mju_mulQuat(at, np.asarray(quat, float), turn)
+    body = spec.worldbody.add_body(name=f"element.{e.name}", pos=list(pos + _turn(quat, origin)), quat=list(at))
+    body.mass, body.ipos, body.inertia, body.explicitinertial = e.mass, list(arm), list(panel_inertia(e)), True
+    hinged = isinstance(e, Hinged)
+    if hinged:
+        axis = hinge_axis(e)[1]
+        span = e.range_deg
+        lo_hi = None if span is None else [a - e.rest_deg for a in span]
+        if lo_hi is not None and not spec.compiler.degree:    # joint ranges' unit
+            lo_hi = [math.radians(a) for a in lo_hi]
+        stiffness = math.degrees(e.stiffness)     # N m/deg to N m/rad
+    else:
+        axis = np.eye(3)["xyz".index(e.axis)]
+        lo_hi = [a - e.rest for a in e.range]
+        stiffness = e.stiffness
+    limits = {"limited": False} if lo_hi is None else {"limited": True, "range": lo_hi,
+                                                        "solref_limit": [PLATFORM_STOP_TC, 1.0]}
+    body.add_joint(name=f"element.{e.name}.{'hinge' if hinged else 'slide'}",
+                   type=mujoco.mjtJoint.mjJNT_HINGE if hinged else mujoco.mjtJoint.mjJNT_SLIDE, axis=list(axis),
+                   stiffness=stiffness, springref=0.0, damping=e.damping, frictionloss=e.breakaway,
+                   solref_friction=[PLATFORM_STOP_TC, 1.0], **limits)
+    shape = (dict(type=mujoco.mjtGeom.mjGEOM_CYLINDER, size=[e.diameter / 2.0, e.thickness / 2.0, 0.0])
+             if hinged and e.shape == "disc" else
+             dict(type=mujoco.mjtGeom.mjGEOM_BOX, size=list(np.asarray(panel_size(e) if hinged else e.size) / 2.0)))
+    body.add_geom(name=f"element.{e.name}.panel", pos=list(arm), rgba=list(STRUCTURE_RGBA),
+                  friction=[e.friction, 0.005, 0.0001], group=ELEMENT_GROUP if e.ground else NON_GROUND_GROUP,
+                  **shape, **FIELD_BITS)
+
+
 def add_element(spec: mujoco.MjSpec, e: Element) -> None:
     """The element's bodies and geoms into `spec` (see the module docstring)."""
     pos = np.array([e.center[0], e.center[1], 0.0])
@@ -328,6 +400,9 @@ def add_element(spec: mujoco.MjSpec, e: Element) -> None:
         return
     if isinstance(e, Rod):
         _rod(spec, e)
+        return
+    if isinstance(e, (Hinged, Sliding)):
+        _moving(spec, e, pos, quat)
         return
     if isinstance(e, Box):
         body = spec.worldbody.add_body(name=f"element.{e.name}", pos=list(pos), quat=quat)
@@ -358,10 +433,16 @@ def switch_joint(model: mujoco.MjModel, name: str) -> int:
     return int(model.jnt_qposadr[model.joint(f"element.{name}.tilt").id])
 
 
+def moving_joint(model: mujoco.MjModel, e: Hinged | Sliding) -> int:
+    """The qpos address of a hinged or sliding element's joint (radians or m from its rest)."""
+    return int(model.jnt_qposadr[model.joint(f"element.{e.name}.{'hinge' if isinstance(e, Hinged) else 'slide'}").id])
+
+
 def fill_layout(layout: RangeLayout, model: mujoco.MjModel, elements) -> None:
-    """The layout's element records, once the model is compiled: platforms' and switches' joint addresses, and each
-    bar's pipe geoms."""
+    """The layout's element records, once the model is compiled: platforms', switches' and moving elements' joint
+    addresses, and each bar's pipe geoms."""
     layout.platforms = {e.name: platform_joints(model, e.name) for e in elements if isinstance(e, Platform)}
     layout.switches = {e.name: switch_joint(model, e.name) for e in elements if isinstance(e, Switch)}
     layout.bars = {e.name: [f"element.{e.name}.pipe"] for e in elements if isinstance(e, Bar)}
     layout.rods = {e.name: e for e in elements if isinstance(e, Rod)}
+    layout.moving = {e.name: moving_joint(model, e) for e in elements if isinstance(e, (Hinged, Sliding))}
