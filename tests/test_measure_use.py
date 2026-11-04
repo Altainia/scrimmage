@@ -440,3 +440,103 @@ def test_a_stock_cylinder_measured_errors(tmp_path):
 def test_friction_value_reads_a_sled_file(tmp_path):
     value, prov = friction_value(friction_file(tmp_path), "here", base=tmp_path)
     assert value == pytest.approx(0.8) and prov.trials == 3
+
+
+# ------------------------------------------------------------------------------------------------ review round 1
+
+def test_a_test_setup_ball_pointed_at_a_friction_file(tmp_path):
+    from scrimmage.assembler.templates import new_config
+    from scrimmage.blocks.program import TestFileError, loads
+    from scrimmage.blocks.run import world_for
+    (tmp_path / "robot.toml").write_text(new_config("standin") + '\n[range]\nfile = "intake"\n', encoding="utf-8")
+    name = friction_file(tmp_path / "m")
+    path = tmp_path / "t.test.toml"
+    path.write_text(f'[test]\nrobot = "robot.toml"\n\n[setup]\nball = "m/{name}"\n', encoding="utf-8")
+    with pytest.raises(TestFileError) as e:
+        world_for(loads(path.read_text(encoding="utf-8"), path))
+    assert str(e.value) == (f'{path}: [setup]: ball = "m/tread.measure.toml" is a friction measurement; a ball needs '
+                            "a ball measurement")
+
+
+def test_a_config_range_ball_pointed_at_a_friction_file(tmp_path):
+    from scrimmage.assembler.templates import new_config
+    from scrimmage.config import ConfigError, build_world, load_config
+    name = friction_file(tmp_path / "m")
+    robot = tmp_path / "robot.toml"
+    robot.write_text(new_config("standin") + f'\n[range]\nfile = "intake"\nball = "m/{name}"\n', encoding="utf-8")
+    with pytest.raises(ConfigError) as e:
+        build_world(load_config(robot))
+    assert str(e.value) == (f'{robot}: [range]: ball = "m/tread.measure.toml" is a friction measurement; a ball '
+                            "needs a ball measurement")
+    ball_file(tmp_path / "m")
+    robot.write_text(new_config("standin") + '\n[range]\nfile = "intake"\nball = "m/fuel.measure.toml"\n',
+                     encoding="utf-8")
+    w = build_world(load_config(robot))
+    assert w.test_range.range.ball.stiffness_n == pytest.approx(120.0)
+
+
+def test_the_setup_ball_message_names_measurement_files(tmp_path):
+    from scrimmage.blocks.program import TestFileError, loads
+    path = tmp_path / "t.test.toml"
+    with pytest.raises(TestFileError, match=r'or a ball measurement file \("fuel.measure.toml"\)'):
+        loads('[test]\nrobot = "robot.toml"\n\n[setup]\nball = "beachball"\n', path)
+
+
+def test_a_shared_launcher_file_is_fit_once_even_in_a_sweep(tmp_path, monkeypatch):
+    from scrimmage.launcher.sweep import setups_for
+    from scrimmage.measure import fit_launcher
+    calls = []
+    real = fit_launcher.fit
+    monkeypatch.setattr(fit_launcher, "fit", lambda mf: calls.append(mf.path) or real(mf))
+    mf = _synthetic(tmp_path, 120.0, 0.95, [50.0, 50.0, 50.0, 80.0, 80.0, 80.0])
+    p = tmp_path / "shooter.toml"
+    p.write_text(p.read_text().replace('preset = "2026-fuel"\n', f'preset = "2026-fuel"\nmeasured = "{mf.path.name}"\n')
+                 .replace('preset = "35A"\n', f'preset = "35A"\nmeasured = "{mf.path.name}"\n')
+                 + '\n[sweep]\n"hood.gap" = [0.10, 0.11, 0.12]\n')
+    load_setup(p)
+    assert len(calls) == 1
+    rows = setups_for(p)
+    assert len(calls) == 2  # setups_for's own load; its three rows reuse it
+    assert all(s.ball.stiffness_n == pytest.approx(120.0, rel=0.03) and list(s.provenance) == ["ball.stiffness_n"]
+               for _, s in rows)
+
+
+def test_sweeping_the_ball_preset_of_a_measured_ball(tmp_path):
+    from scrimmage.launcher.sweep import setups_for
+    name = ball_file(tmp_path)
+    p = shooter(tmp_path, ball=f'measured = "{name}"\n')
+    p.write_text(p.read_text() + '\n[sweep]\n"ball.preset" = ["2026-fuel"]\n')
+    assert setups_for(p)[0][1].ball.stiffness_n == pytest.approx(120.0)
+    p.write_text(p.read_text().replace('["2026-fuel"]', '["2026-fuel", "2022-cargo"]'))
+    with pytest.raises(LauncherConfigError, match=r'ball.preset=2022-cargo: \[ball\] preset 2022-cargo isn\'t the '
+                                                  r'2026-fuel ball that measured = "fuel.measure.toml" measured'):
+        setups_for(p)
+
+
+def test_load_range_finds_a_ball_file_from_a_relative_folder(tmp_path, monkeypatch):
+    from scrimmage.testrange.spec import load_range
+    name = ball_file(tmp_path / "balls")
+    plain = range_file(tmp_path / "other", 'ball = "2026-fuel"\n')
+    monkeypatch.chdir(tmp_path)
+    rng = load_range(plain.as_posix(), Path("balls"), ball=name)
+    assert rng.kinds["2026-fuel"].provenance["stiffness_n"].file == tmp_path / "balls" / name
+
+
+def test_the_in_world_shooter_takes_a_shared_launcher_file(tmp_path):
+    from range_fixtures import shooter_cfg
+    from scrimmage.world import World
+    from test_measure_launcher_fit import WITH_BALL
+    _ball_file(tmp_path, [118.0, 120.0, 122.0])
+    mf = _synthetic(tmp_path, 120.0, 1.1, [50.0, 50.0, 50.0, 80.0, 80.0, 80.0], header=WITH_BALL)
+    (tmp_path / "mine.toml").write_text(f'[ball]\npreset = "2026-fuel"\nmeasured = "{mf.path.name}"\n'
+                                        f'[wheels]\npreset = "35A"\nmeasured = "{mf.path.name}"\n', encoding="utf-8")
+    wheels = {"durometer": 35.0, "positions": [-0.08, 0.08], "width": 0.05}
+    w = World(shooter_cfg(shooter={"setup": "mine.toml", "wheels": wheels}), tmp_path)
+    s = w.test_range.shooter.config.setup
+    assert s.wheels.friction == pytest.approx(1.1, rel=0.03) and list(s.provenance) == ["wheels.friction"]
+    (tmp_path / "mine.toml").write_text('[ball]\npreset = "2026-fuel"\nmeasured = "gone.measure.toml"\n',
+                                        encoding="utf-8")
+    with pytest.raises(ValueError) as e:
+        World(shooter_cfg(shooter={"setup": "mine.toml", "wheels": wheels}), tmp_path)
+    assert f"{tmp_path / 'mine.toml'}: [ball]: measured = \"gone.measure.toml\": no such file" in str(e.value)
+    assert str(e.value).count(str(tmp_path / "mine.toml")) == 1

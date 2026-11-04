@@ -75,12 +75,20 @@ def _fit_provenance(mf: MeasureFile, test: str, result) -> Provenance:
                       why=result.why)
 
 
-def _launcher(mf: MeasureFile, field: str, where: str, key: str, name: str, *, shared: bool) -> dict:
+def _launcher(mf: MeasureFile, field: str, where: str, key: str, name: str, *, shared: bool,
+              fits: dict | None) -> dict:
     """{field: (value, provenance)} from a launcher file's fit, empty when it fit the other number and the file is
-    `shared` (named by the other section too, which takes that number); otherwise that is an error."""
-    from .fit_launcher import fit  # runs the launcher model
+    `shared` (named by the other section too, which takes that number); otherwise that is an error. `fits` (resolved
+    path -> LauncherFit) holds fits already run, so a file named twice is fit once."""
+    from . import fit_launcher  # runs the launcher model
 
-    result = _fitted(fit, mf, where, key, name)
+    known = mf.path.resolve()
+    if fits is not None and known in fits:
+        result = fits[known]
+    else:
+        result = _fitted(fit_launcher.fit, mf, where, key, name)
+        if fits is not None:
+            fits[known] = result
     if field in result.fitted:
         return {field: (getattr(result, field), _fit_provenance(mf, "shot", result))}
     if shared:
@@ -112,15 +120,17 @@ def _replace(fields: dict, got: dict, where: str, key: str, name: str) -> tuple[
 
 
 def apply_ball(fields: dict, path: str, where: str, *, base=".", key: str = "measured", shared: bool = False,
-               launcher: bool = True) -> tuple[dict, dict[str, Provenance]]:
+               launcher: bool = True, fits: dict | None = None) -> tuple[dict, dict[str, Provenance]]:
     """A `[ball]` table's keys (`preset` and its own numbers, without `measured`) with the measured fields of the
     file `path` in place, and each measured field's provenance. A ball file's `base` must be the table's preset when
     both are given; with no preset, its base becomes the preset. `shared`: the wheels name the same launcher file.
-    `launcher`: a launcher file is taken too (a range's ball isn't on a launcher, so it takes a ball file only)."""
+    `launcher`: a launcher file is taken too (a range's ball isn't on a launcher, so it takes a ball file only).
+    `fits`: the fits already run (see _launcher)."""
     mf = open_file(path, base, where, key, ("ball", "launcher") if launcher else ("ball",), "a ball")
     fields = dict(fields)
     if mf.kind == "launcher":
-        return _replace(fields, _launcher(mf, "stiffness_n", where, key, path, shared=shared), where, key, path)
+        got = _launcher(mf, "stiffness_n", where, key, path, shared=shared, fits=fits)
+        return _replace(fields, got, where, key, path)
     preset = fields.get("preset")
     if mf.base is not None and preset is not None and preset != mf.base:
         raise MeasureError(f"{where}: {key} = \"{path}\" measured a {mf.base} ball, but the preset is {preset}: make "
@@ -130,12 +140,12 @@ def apply_ball(fields: dict, path: str, where: str, *, base=".", key: str = "mea
     return _replace(fields, _direct(mf, BALL_FIELDS, where, key, path), where, key, path)
 
 
-def apply_wheels(fields: dict, path: str, where: str, *, base=".", key: str = "measured",
-                 shared: bool = False) -> tuple[dict, dict[str, Provenance]]:
+def apply_wheels(fields: dict, path: str, where: str, *, base=".", key: str = "measured", shared: bool = False,
+                 fits: dict | None = None) -> tuple[dict, dict[str, Provenance]]:
     """A `[wheels]` table's keys (without `measured`) with the friction of the file `path` in place, and its
-    provenance. `shared`: the ball names the same launcher file."""
+    provenance. `shared`: the ball names the same launcher file. `fits`: the fits already run (see _launcher)."""
     mf = open_file(path, base, where, key, ("friction", "launcher"), "a wheel")
-    got = (_launcher(mf, "friction", where, key, path, shared=shared) if mf.kind == "launcher"
+    got = (_launcher(mf, "friction", where, key, path, shared=shared, fits=fits) if mf.kind == "launcher"
            else _direct(mf, ("friction",), where, key, path))
     return _replace(dict(fields), got, where, key, path)
 

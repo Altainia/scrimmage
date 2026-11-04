@@ -102,17 +102,18 @@ class Program:
 
 def found_setup(program: Program) -> dict:
     """The test's setup with a ball that is a measurement file (`ball = "fuel.measure.toml"`, relative to the test
-    file) given as its whole path, for the config it goes into; a TestFileError when the file isn't there."""
+    file) given as its whole path, for the config it goes into; a TestFileError when the file isn't there or isn't a
+    ball measurement."""
     ball = program.setup.get("ball")
     if not is_measurement(ball):
         return program.setup
     from ..measure.file import MeasureError
-    from ..measure.use import find
+    from ..measure.use import open_file
     try:
-        path = find(ball, Path(program.path).parent, f"{program.path}: [setup]", "ball")
+        mf = open_file(ball, Path(program.path).parent, f"{program.path}: [setup]", "ball", ("ball",), "a ball")
     except MeasureError as e:
         raise TestFileError(str(e)) from None
-    return {**program.setup, "ball": str(path.resolve())}
+    return {**program.setup, "ball": str(mf.path.resolve())}
 
 
 # ---- reading --------------------------------------------------------------------------------------------------------
@@ -416,7 +417,8 @@ def _setup(raw: dict) -> dict:
     if "ball" in raw:
         ball = raw["ball"]
         if not isinstance(ball, str) or (ball not in PRESETS["ball"] and not is_measurement(ball)):
-            raise TestFileError(f'{where}: ball {ball!r} isn\'t a ball; balls: {", ".join(PRESETS["ball"])}')
+            raise TestFileError(f'{where}: ball {ball!r} isn\'t a ball; balls: {", ".join(PRESETS["ball"])}, or a '
+                                'ball measurement file ("fuel.measure.toml")')
         out["ball"] = ball
     if "piece" in raw:
         if "ball" in raw:

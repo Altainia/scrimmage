@@ -337,17 +337,40 @@ def apply_measured(raw: dict, path: Path | None = None) -> tuple[dict, dict]:
             raise LauncherConfigError(f"[{section}] measured must be a measurement file's path in quotes "
                                       f"(\"tread.measure.toml\"), not {name!r}")
     shared = len(named) == 2 and (base / named["ball"]).resolve() == (base / named["wheels"]).resolve()
-    out, provenance = dict(raw), {}
+    out, provenance, fits = dict(raw), {}, {}  # fits: a launcher file named by both sections is fit once
     for section, name in named.items():
         where = f"{path}: [{section}]" if path is not None else f"[{section}]"
         fields = {k: v for k, v in raw[section].items() if k != "measured"}
         apply = apply_ball if section == "ball" else apply_wheels
         try:
-            out[section], got = apply(fields, name, where, base=base, shared=shared)
+            out[section], got = apply(fields, name, where, base=base, shared=shared, fits=fits)
         except MeasureError as e:
             raise LauncherConfigError(str(e)) from None
         provenance |= {f"{section}.{k}": p for k, p in got.items()}
     return out, provenance
+
+
+def measured_raw(raw: dict, setup: Setup, path: Path | None = None) -> tuple[dict, dict[str, tuple[str, str]]]:
+    """`raw` with each `measured` replaced by the numbers `setup` (parsed from `raw`) took from it, without reading
+    the files' fits again: a sweep's rows reuse them. Also each section whose ball file has a base preset:
+    {"ball": (the file as named, its base)}, for a swept preset to be checked against."""
+    from ..measure.file import load
+    base = Path(path).parent if path is not None else Path(".")
+    out, bases = dict(raw), {}
+    for section in MEASURED_SECTIONS:
+        table = raw.get(section)
+        if not (isinstance(table, dict) and "measured" in table):
+            continue
+        name = table["measured"]
+        fields = {k: v for k, v in table.items() if k != "measured"}
+        fields |= {k.split(".", 1)[1]: getattr(getattr(setup, section), k.split(".", 1)[1])
+                   for k in setup.provenance if k.startswith(f"{section}.")}
+        mf = load(base / name)  # read when `setup` was parsed, so it is there and well formed
+        if section == "ball" and mf.kind == "ball" and mf.base is not None:
+            fields.setdefault("preset", mf.base)
+            bases[section] = (name, mf.base)
+        out[section] = fields
+    return out, bases
 
 
 def parse_setup(raw: dict, path: Path | None = None) -> Setup:

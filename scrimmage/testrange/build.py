@@ -75,7 +75,7 @@ import numpy as np
 from ..disc.inputs import Disc
 from ..launcher.inputs import Ball
 from ..measure.file import MeasureError
-from ..measure.use import find, is_measurement
+from ..measure.use import is_measurement, open_file
 from ..parts.field import FIELD_BITS
 from .pieces import PieceKind
 from .spec import BUILTIN_RANGES, Goal, Obstacle, Range, RangeError, RectOpening, load_range
@@ -473,11 +473,13 @@ def parse_range_section(cfg: dict, cfg_dir: Path | None) -> RangeSection | None:
     if ball is not None and piece is not None:
         raise PartError("[range]: give ball or piece, not both")
     asked = "ball" if ball is not None else "piece" if piece is not None else None
-    if is_measurement(ball):
+    if is_measurement(ball):   # checked here, so a mistake names the config's [range] and the path as written
         try:
-            find(ball, Path(cfg_dir) if cfg_dir is not None else Path("."), "[range]", "ball")
+            mf = open_file(ball, Path(cfg_dir) if cfg_dir is not None else Path("."), "[range]", "ball", ("ball",),
+                           "a ball")
         except MeasureError as e:
             raise PartError(str(e)) from None
+        ball = str(mf.path.resolve())
     try:
         rng = load_range(ref, Path(cfg_dir) if cfg_dir is not None else Path("."), ball, piece)
     except RangeError as e:

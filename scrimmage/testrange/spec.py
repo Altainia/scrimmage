@@ -737,7 +737,7 @@ def load_range(ref: str, base_dir: Path, ball: str | None = None, piece: str | N
     except tomllib.TOMLDecodeError as e:  # also a start (or any table) given twice
         raise RangeError(f"{path}: {e}") from e
     if is_measurement(ball):
-        ball = str(Path(base_dir) / ball)
+        ball = str((Path(base_dir) / ball).resolve())
     if ball is not None:
         table = raw.get("range")
         if isinstance(table, dict) and "disc" in table:
