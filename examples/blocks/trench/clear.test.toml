@@ -1,0 +1,13 @@
+[test]
+robot = "trench-standin.toml"
+chart = ["clearance.trench_arm", "arm.pivot"]
+
+[[block]]
+do = "expect"
+that = { clears = { element = "trench_arm", at_least_in = 0.5 } }
+throughout = true
+
+[[block]]
+do = "drive"
+distance = 4.0
+volts = 4.0

@@ -1,0 +1,75 @@
+# Stand-in box robot: the kitbot's chassis and drive, for trying a part on its own.
+# Edit it with `scrimmage edit {this file}`, or by hand: the assembler only touches [[part]] tables.
+
+[model]
+timestep = 0.001
+
+[robot]
+standin = true   # the stand-in robot: a piece resting on its chassis or drive isn't stuck in your robot
+# Where the robot starts: pick it in the Robot tab ("Where it starts"), which writes
+# start_pose = [x (m), y (m), heading (deg)], field coordinates from the blue corner.
+
+[battery]
+nominal_voltage = 12.5
+resistance = 0.02
+
+[lockstep]
+step = 0.005
+
+# How scrimmage starts your robot program (uncomment and adjust; "{python}" = the Python running scrimmage).
+# [robot_program]
+# command = ["{python}", "-m", "robotpy", "sim", "--nogui", "--ws-client", "--scrimmage-lockstep"]
+# cwd = "../my_robot_project"
+# Or use the Robot code panel in `scrimmage edit`: it writes this for Java or Python.
+
+[telemetry]
+odometry = "/SmartDashboard/Field/Robot"   # NT topic with the robot's own pose estimate (Field2d)
+
+# ---- Parts ---------------------------------------------------------------------------
+# Each [[part]] is a stock part (or path = "<part folder>") with its parameters, where it attaches
+# ("<instance>.<mount>"), and the device ID of each slot in `ids`.
+
+[[part]]
+name = "drive"
+stock = "chassis"
+# Attach your part to drive.top, or to wherever its CAD has it. Set mass to what the rest of the robot weighs and
+# com_offset to move the robot's center of mass [forward, left, up] in meters.
+mass = 45.0
+com_offset = [0.0, 0.0, 0.0]
+ids = { gyro = { device = "ADXRS450[0]", axis = "x", cw_positive = true } }
+
+[[part]]
+name = "dt"
+stock = "differential"    # 3 wheels per side, 6 in, the middle ones 3 mm lower (drop center)
+attach = "drive.center"
+ids = { left = "PWM:0", right = "PWM:1", left_encoder = { channel_a = 0, counts_per_rev = 2048 }, right_encoder = { channel_a = 2, counts_per_rev = 2048 } }
+
+# ---- Elevator and arm ----------------------------------------------------------------
+# A stock elevator, 3 stages and 0.6 m of travel, standing on the chassis's top at its center. Lowered, its stages are
+# 0.35 m tall, so its top is 0.49 m (19.3 in) above the carpet: under the TRENCH's 22.25 in. A stock arm, 0.5 m long,
+# on the elevator's carriage, pointing forward. 0 is level, positive raises the tip; its range starts at 0, so with
+# its motor off it rests level on that stop. collide = true on both: they touch the field (a stock part touches
+# nothing unless it says so), and the Test tab measures their clearance to the TRENCH.
+
+[[part]]
+name = "elevator"
+stock = "elevator"
+attach = "drive.top"
+stages = 3
+travel = 0.6
+collide = true
+ids = { lift = "PWM:2" }
+
+[[part]]
+name = "arm"
+stock = "arm"
+attach = "elevator.carriage"
+range = [0.0, 90.0]
+collide = true
+ids = { pivot = "PWM:3" }
+
+# One 2026 TRENCH, its arm's underside 22.25 in up. The robot starts 1.5 m before it, centered on the opening and
+# facing through it.
+[range]
+file = "2026-trench"
+start = "approach"
