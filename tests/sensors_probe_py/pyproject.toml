@@ -1,0 +1,11 @@
+# RobotPy project file for scrimmage's RobotPy sensors test robot (see robot.py).
+
+[tool.robotpy]
+
+robotpy_version = "2026.2.2"
+
+components = [
+    "sim",
+]
+
+requires = ["robotpy-rev>=2026.0.4,<2027"]

@@ -40,8 +40,9 @@ import mujoco
 import numpy as np
 
 from ..bindings import Update
+from ..protocol import HalState
 from .colors import nearest_color
-from .spec import COLOR_MAX_RANGE, SensorError, SensorSpec
+from .spec import COLOR_MAX_RANGE, I2C_PORTS, SensorError, SensorSpec, color_device
 
 END_SLOP = 0.001    # m: a beam reaches this far past each end, so a piece resting exactly on an end reads broken on
                     # every step (a resting piece settles by far less than this) and never flickers
@@ -50,9 +51,11 @@ MAX_CASTS = 32      # a sensor's most casts in one step (robot surfaces in the w
 # A REV Color Sensor V3's values (spec C5, estimates): brightness 1 at 2 cm, 0.5 at 6 cm, nothing past 10 cm,
 # straight lines between. With nothing in front it reads the dark carpet: DARK.
 # estimate: FULL_SCALE, the count at full brightness, is our choice for every channel (the proximity's 11-bit 2047);
-# the real sensor's raw color counts go far higher. What the robot code's SimDevice gets is decided where the values
-# are sent (the HAL bindings).
+# the real sensor's raw color counts go far higher. The SimDevice gets these counts as they are (spec D8): REVLib's
+# getColor() divides each by their sum, so it reads the piece's color whatever the scale.
 FULL_SCALE = 2047
+MAX_VOLTS = 5.0     # an AnalogInput reads 0 to 5 V
+PORT_WORDS = {"onboard": "onboard", "mxp": "MXP"}
 GRAY_REFLECTANCE = 0.3  # estimate: how much IR something that isn't a piece (the carpet, a wall) returns, of a piece's
 BRIGHTNESS = ((0.0, 1.0), (0.02, 1.0), (0.06, 0.5), (COLOR_MAX_RANGE, 0.0))
 DARK = {"Red": 12, "Green": 14, "Blue": 12, "IR": 8}    # estimate: a dark gray carpet, a few counts in each channel
@@ -180,5 +183,38 @@ class SensorRuntime:
         return None
 
     def sensor_updates(self) -> list[Update]:
-        """The HAL inputs for the robot program (its DigitalInputs, AnalogInputs and color sensors): none yet."""
-        return []
+        """The HAL inputs for the robot program: a DigitalInput per `dio` (on, inverted when active-low: a beam broken
+        or a distance closer than its threshold), an AnalogInput per `analog` (volts_per_m times the distance, 0 to
+        5 V) and a REV Color Sensor V3's SimDevice per `i2c` (color_values)."""
+        ups: list[Update] = []
+        for s in self.specs:
+            got = self._readings[s.name]
+            if s.analog is not None:
+                ups.append(("AI", str(s.analog), {">voltage": min(MAX_VOLTS, max(0.0, s.volts_per_m * got.distance))}))
+            if s.dio is not None:
+                ups.append(("DIO", str(s.dio), {"<>value": (not got.on) if s.active_low else got.on}))
+            if s.i2c is not None:
+                ups.append((*color_device(s.i2c), {f">{k}": v for k, v in color_values(got).items()}))
+        return ups
+
+    def color_sensors(self) -> dict[tuple[str, str], SensorSpec]:
+        """The color sensors the robot program reads, by their SimDevice's (type, device)."""
+        return {color_device(s.i2c): s for s in self.specs if s.i2c is not None}
+
+    def missing_color_sensors(self, hal: HalState, after: float) -> list[str]:
+        """What to say, `after` s from connecting (time for the robot to create its devices), about each color sensor
+        whose SimDevice the robot program hasn't created (put in the world's warnings too, once, so run reports show
+        it)."""
+        out = []
+        for key, s in self.color_sensors().items():
+            if key in hal.devices:
+                continue
+            others = [p for p in I2C_PORTS if p != s.i2c and color_device(p) in hal.devices]
+            msg = (f'[[sensor]] "{s.name}" is a REV Color Sensor V3 on the {PORT_WORDS[s.i2c]} I2C port, but the robot '
+                   f"program hasn't created one there {after:g} s after connecting"
+                   + (f" (it has one on the {PORT_WORDS[others[0]]} port)" if others else "")
+                   + "; check the port the robot code gives ColorSensorV3 and the sensor's i2c")
+            out.append(msg)
+            if msg not in self.world.warnings:
+                self.world.warnings.append(msg)
+        return out

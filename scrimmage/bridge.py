@@ -326,6 +326,9 @@ class Bridge:
         self._rev_unbound: set[DeviceKey] = set()   # SPARKs nothing binds, reported this connection
         self._rev_present: set[DeviceKey] = set()   # ScrimmageREV helpers seen this connection
         self._ph_present: set[DeviceKey] = set()    # ScrimmagePH devices (REV Pneumatic Hubs) seen this connection
+        # The [[sensor]] color sensors' SimDevices (REV Color Sensor V3), and those seen this connection
+        self._color_expected = set(world.sensors.color_sensors()) if world.sensors is not None else set()
+        self._color_present: set[DeviceKey] = set()
         self._rev_checked = False        # REV sim availability reported for the current connection
         self.rev_state: Callable[[], str | None] = lambda: None  # "unavailable: <reason>" per the agent (console)
         # (device, key) -> pending suspect: first value and time, latest value, how many
@@ -388,6 +391,10 @@ class Bridge:
                 if got[0][0] == PH_TYPE and got[0] not in self._ph_present:
                     # The extension creates it when the robot opens the hub, with no <init: resend the hub's inputs
                     self._ph_present.add(got[0])
+                    self.cache.forget(*got[0])
+                if got[0] in self._color_expected and got[0] not in self._color_present:
+                    # REVLib creates it with the ColorSensorV3, with no <init: resend the color sensor's values
+                    self._color_present.add(got[0])
                     self.cache.forget(*got[0])
                 self._check_inputs(*got)
                 if got[0] == LOCKSTEP_DEVICE:
@@ -611,6 +618,7 @@ class Bridge:
         self._rev_unbound = set()
         self._rev_present = set()
         self._ph_present = set()
+        self._color_present = set()
         self._rev_checked = False
         self._ticks = _Ticks()
         self.recorder.reset()
@@ -699,6 +707,8 @@ class Bridge:
             msgs += missing_scrimmage_warnings(self.hal, self._scrimmage_expected, self.sim_mode)
             if self.world.pneumatics is not None:
                 msgs += self.world.pneumatics.warn_missing_hubs(self.hal)   # in the run's notes too
+            if self.world.sensors is not None:
+                msgs += self.world.sensors.missing_color_sensors(self.hal, MISSING_AFTER)   # in the run's notes too
             for msg in msgs:
                 log.warning("%s", msg)
         if (not self._fast_phoenix_warned and now >= MISSING_AFTER - 1e-6

@@ -136,3 +136,19 @@ unnecessary friction.**
   counts go far higher, and Task 2 decides what the SimDevice gets.
 - **D7 Pieces out of play (Task 1):** a parked piece is 20 m under the field, so no sensor sees it. That includes the
   balls a `[shooter]` holds, since its hopper is a count, not bodies.
+- **D8 What the color sensor's SimDevice gets (Task 2):** the counts of D6 as they are, full brightness 2047 in each
+  of Red, Green, Blue and IR, and Proximity 0 to 2047. REVLib's `getRawColor()` returns these values and `getColor()`
+  divides each by the sum of the three, so `getColor()` reads the piece's color over its sum whatever the full scale:
+  a red piece's (0.9, 0.1, 0.1) reads (0.818, 0.091, 0.091), and a `ColorMatch` on `getColor()` works. Robot code
+  that compares raw counts with a real sensor's (which go far higher than 2047) needs its own thresholds here; the
+  docs (Task 4) say so. Checked live with RobotPy 2026.2.2 and robotpy-rev 2026.0.4: halsim_ws_client relays a SimDevice
+  whose name has no `<type>:` prefix as type `SimDevice` with its full name as the device
+  (`REV Color Sensor V3[1,82]`), and its values as `>Red`, `>Green`, `>Blue`, `>IR` and `>Proximity`.
+- **D9 The robot's inputs (Task 2):** a `dio` reads `on` (a beam broken, a distance closer than its threshold),
+  inverted when `active_low`; an `analog` reads `volts_per_m` times the distance, clamped to 0–5 V (past
+  `max_range`, the max's voltage). Every sensor channel (DIO, AI and each color sensor's I2C port) joins the
+  duplicate-device check with the bindings and the shooter's beam breaks, so two on one channel is an error naming
+  both. When the robot program creates the color sensor, scrimmage resends its values at once (a SimDevice sends no
+  `<init`, and halsim_ws_client drops values for one that doesn't exist yet); a color sensor the robot program hasn't
+  created 2 s after connecting is a warning in the run's notes, naming the port and the other port if the robot used
+  that one.

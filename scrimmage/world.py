@@ -32,7 +32,8 @@ def _reject_duplicate_devices(*groups) -> None:
             if other[0] is not b:
                 typ, dev = b.device_key
                 dev = dev.replace("<channel_a=", "encoder channel A ")
-                raise ValueError(f"{typ} {dev} is bound by {other[1]} and {_label(b, i)}: "
+                what = dev if typ == "SimDevice" else f"{typ} {dev}"   # a SimDevice's name says what it is
+                raise ValueError(f"{what} is bound by {other[1]} and {_label(b, i)}: "
                                  "give each device one binding")
 
 
@@ -123,8 +124,15 @@ class World:
         elif "pneumatics" in cfg:
             from .pneumatics.runtime import parse_section
             parse_section(cfg["pneumatics"])      # checked all the same, so a mistake shows before a cylinder is added
+        # The robot's [[sensor]] beam breaks, distance and color sensors (scrimmage/sensors): checked here, so their
+        # channels join the duplicate check; built (self.sensors) below.
+        sensor_specs = []
+        if "sensor" in cfg:
+            from .sensors.spec import parse_sensors, sensor_devices
+            sensor_specs = parse_sensors(cfg["sensor"])
         _reject_duplicate_devices(self.motors, self.encoders, self.gyros, self.analogs, self.digitals,
-                                  self.test_range.devices() if self.test_range is not None else [])
+                                  self.test_range.devices() if self.test_range is not None else [],
+                                  sensor_devices(sensor_specs) if sensor_specs else [])
         # The terrain signals (scrimmage/terrain): read every physics step on a range with field elements, or once a
         # scenario asks for one (terrain_monitor()); otherwise None, and stepping costs nothing extra.
         self.terrain = None
@@ -147,12 +155,9 @@ class World:
         # The robot's [[sensor]] beam breaks, distance and color sensors (scrimmage/sensors): read every physics step
         # after mj_step; None for a robot without one, and stepping costs nothing extra.
         self.sensors = None
-        if "sensor" in cfg:
-            from .sensors.spec import parse_sensors
-            specs = parse_sensors(cfg["sensor"])
-            if specs:
-                from .sensors.runtime import SensorRuntime
-                self.sensors = SensorRuntime(self, specs)
+        if sensor_specs:
+            from .sensors.runtime import SensorRuntime
+            self.sensors = SensorRuntime(self, sensor_specs)
         self.reset()
 
     def terrain_monitor(self):

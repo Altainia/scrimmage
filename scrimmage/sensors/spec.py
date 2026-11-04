@@ -40,6 +40,7 @@ from dataclasses import dataclass
 KINDS = ("beam", "distance", "color")
 SEES = ("pieces", "anything")
 I2C_PORTS = ("onboard", "mxp")
+I2C_PORT_NUMBERS = {"onboard": 0, "mxp": 1}     # WPILib's I2C.Port: kOnboard 0, kMXP 1
 IN = 0.0254                     # m per inch
 DEFAULT_MAX_RANGE = {"distance": 2.0, "color": 0.10}    # m (spec C3; a REV Color Sensor V3 sees about 10 cm)
 COLOR_MAX_RANGE = 0.10          # m: a color sensor's longest range (spec C5: nothing past 10 cm)
@@ -51,6 +52,12 @@ KEYS = {
     "distance": _COMMON + _LOOK + ("dio", "active_low", "threshold", "threshold_in", "analog", "volts_per_m"),
     "color": _COMMON + _LOOK + ("i2c",),
 }
+
+
+# A REV Color Sensor V3's SimDevice, as REVLib names it ("REV Color Sensor V3[<port>,82]", 82 its I2C address 0x52)
+# and halsim_ws_client relays it: a SimDevice name with no "<type>:" prefix comes as type "SimDevice" (checked live
+# with RobotPy 2026.2.2 and robotpy-rev 2026.0.4; its values are >Red, >Green, >Blue, >IR and >Proximity).
+COLOR_DEVICE = "REV Color Sensor V3[{port},82]"
 
 
 class SensorError(ValueError):
@@ -221,3 +228,29 @@ def parse_sensors(tables) -> list[SensorSpec]:
             raise SensorError(f'two sensors named "{s.name}"; give each [[sensor]] its own name')
         specs.append(s)
     return specs
+
+
+def color_device(i2c: str) -> tuple[str, str]:
+    """The (type, device) of a REV Color Sensor V3 on I2C port `i2c` ("onboard" or "mxp") over HALSim WebSocket."""
+    return "SimDevice", COLOR_DEVICE.format(port=I2C_PORT_NUMBERS[i2c])
+
+
+@dataclass(frozen=True)
+class SensorDevice:
+    """A device a sensor gives the robot program, for World's duplicate-device check."""
+    device_key: tuple[str, str]     # (type, device) over HALSim WebSocket: ("DIO", "0"), ("AI", "1"), a color sensor
+    label: str                      # what the check's message calls it: [[sensor]] "<name>"
+
+
+def sensor_devices(specs: list[SensorSpec]) -> list[SensorDevice]:
+    """Every DIO, AI and color sensor the sensors give the robot program, in the config's order."""
+    out = []
+    for s in specs:
+        label = f'[[sensor]] "{s.name}"'
+        if s.analog is not None:
+            out.append(SensorDevice(("AI", str(s.analog)), label))
+        if s.dio is not None:
+            out.append(SensorDevice(("DIO", str(s.dio)), label))
+        if s.i2c is not None:
+            out.append(SensorDevice(color_device(s.i2c), label))
+    return out
