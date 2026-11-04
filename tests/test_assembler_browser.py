@@ -657,6 +657,7 @@ pos = [0.0, 0.0, -0.1]
 def test_a_vec3_parameter_is_three_number_boxes_saved_as_a_list(make_page, tmp_path):
     """A stock part's [x, y, z] parameter (the push cylinder's push_pos) has a box per number; a change saves the three
     as a list, and text that isn't a number is an error that isn't sent."""
+    from playwright.sync_api import expect
     from scrimmage.assembler.templates import new_config
     (tmp_path / "robot.toml").write_text(new_config("standin") + """
 [[part]]
@@ -684,13 +685,14 @@ push_pos = [0.2, 0.0, 0.0]
     [cyl] = [x for x in tomllib.loads(cfg.read_text())["part"] if x["name"] == "cyl"]
     assert cyl["push_pos"] == [0.25, 0, 0]
     assert not page.locator('[data-field="cyl/param:push_pos"] .error').count()
+    # the save's own refresh of the state re-renders the inspector (which clears an error shown before it lands), and
+    # the state can arrive by the poll before the save finishes: wait for "saved" before typing
+    expect(page.locator("#saved")).to_have_text("✓ All changes saved")
     before = cfg.read_bytes()
     page.fill("#insp-p-push_pos-1", "")
     page.type("#insp-p-push_pos-1", "1-")
     page.keyboard.press("Enter")
-    e = page.locator('[data-field="cyl/param:push_pos"] .error')
-    e.wait_for()
-    assert e.inner_text().strip() == "Enter a number."
+    expect(page.locator('[data-field="cyl/param:push_pos"] .error')).to_have_text("Enter a number.")
     page.wait_for_timeout(500)
     assert cfg.read_bytes() == before
 

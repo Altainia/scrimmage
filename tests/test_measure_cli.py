@@ -178,12 +178,12 @@ def _stroke_file(tmp_path, times):
 
 
 def test_a_good_cylinder_fit_prints_the_strokes_the_average_and_the_band(tmp_path, capsys):
-    assert _run(_stroke_file(tmp_path, ["time_s = 0.31", "frames = 75", "time_s = 0.30"])) == 0
+    assert _run(_stroke_file(tmp_path, ["time_s = 0.31", "frames = 74", "time_s = 0.30"])) == 0
     out = capsys.readouterr().out
     assert "stroke: fits the valve's conductance to your strokes" in out
     rows = [ln.split() for ln in out.splitlines() if ln.strip()[:1].isdigit()]
-    assert rows[1] == ["2", "75", "0.312", "s"]  # 75 frames at 240 fps
-    assert "time: average 0.307 s, lowest 0.300 s, highest 0.312 s, spread 4% (3 trials)" in out
+    assert rows[1] == ["2", "74", "0.308", "s"]  # 74 frames at 240 fps
+    assert "time: average 0.306 s, lowest 0.300 s, highest 0.310 s, spread 3% (3 trials)" in out
     assert "fit: valve conductance " in out and "fits your strokes (dm^3/(s bar))" in out
     assert "the model's stroke takes 0.3" in out
 

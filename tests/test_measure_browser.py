@@ -228,11 +228,11 @@ def test_fit_shows_a_cylinder_s_fit_against_its_strokes(measure_page, tmp_path):
     p = tmp_path / "deploy.measure.toml"
     p.write_text('[measure]\nkind = "cylinder"\nby = "J. Smith"\ndate = 2026-11-10\n\n[stroke_setup]\n'
                  "bore_in = 1.0625\nrod_in = 0.3125\nstroke_in = 6\nload_mass_lb = 2\nvertical = true\nfps = 240\n\n"
-                 "[[stroke]]\ntime_s = 0.31\n\n[[stroke]]\nframes = 75\n\n[[stroke]]\ntime_s = 0.30\n",
+                 "[[stroke]]\ntime_s = 0.31\n\n[[stroke]]\nframes = 74\n\n[[stroke]]\ntime_s = 0.30\n",
                  encoding="utf-8")
     page, _ = measure_page(p)
     assert page.input_value("#measure-setup select[data-reading=vertical]") == "true"
-    assert "time: average 0.307 s, lowest 0.300 s, highest 0.312 s, spread 4% (3 trials)" in \
+    assert "time: average 0.306 s, lowest 0.300 s, highest 0.310 s, spread 3% (3 trials)" in \
         page.inner_text("#measure-summary")
     page.click("#measure-fit")
     page.wait_for_function("document.querySelector('#measure-fit-result .measure-verdict')", timeout=60000)
