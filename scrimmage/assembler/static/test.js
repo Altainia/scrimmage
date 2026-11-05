@@ -25,8 +25,8 @@
 // Every change is saved (500 ms after the last one) through /api/test/save with the state's version; a 409 (the file
 // changed meanwhile) shows the saved version again and says so. Problems from the state show as a warning on their
 // block and in the list above Run, with this page's own (a save the server refused, an empty condition socket, blocks
-// not joined to the test); Run is off while there are any, and runs only the test as it is on screen. Blockly's theme follows the page's (light or dark),
-// its colors read from app.css's tokens.
+// not joined to the test); Run is off while there are any, and runs only the test as it is on screen. Blockly's
+// theme follows the page's (theme.js: light or dark), its colors read from app.css's tokens.
 //
 // Test hook: window.__scrimmageTest {workspace, state, toJSON(), saved: a promise for the save under way (or
 // resolved), replay: test_run.js's replay(), sweep: test_run.js's sweepShown(), spread: its spreadShown(), robot: the
@@ -39,6 +39,7 @@ import { initRunPanel, update as updateRuns, replay, sweepShown, spreadShown } f
 import { defineBlocks, toolbox, testToWorkspace, workspaceToTest, placeOf, incomplete, looseStacks, setUsed, STYLES,
   headOf, setHead, sweepNumber, appendBlocks, showUnits } from "./blocks_defs.js";
 import { units } from "./units.js";
+import { theme as pageTheme } from "./theme.js";
 
 const SAVE_DELAY = 500;     // ms after the last change
 const MAX_SWEEP = 12;       // scrimmage/blocks/sweep.py's
@@ -88,20 +89,18 @@ function loadScript(src) {
   });
 }
 
-const dark = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
-
-// The Blockly theme for the page's theme, from app.css's tokens (read when that theme is first shown).
+// The Blockly theme for the page's theme (theme.js), from app.css's tokens (read when that theme is first shown).
 const themes = {};
+let followsTheme = null;      // theme.js's onChange, once for every workspace inject() makes
 function theme() {
-  const name = dark && dark.matches ? "scrimmage-dark" : "scrimmage-light";
+  const name = pageTheme.isDark() ? "scrimmage-dark" : "scrimmage-light";
   if (!themes[name]) themes[name] = makeTheme(name);
   return themes[name];
 }
 
 function makeTheme(name) {
   const B = window.Blockly;
-  const css = getComputedStyle(document.documentElement);
-  const v = (name) => css.getPropertyValue(name).trim();
+  const v = (token) => pageTheme.color(token);
   const style = (cat) => ({ colourPrimary: v(`--block-${cat}`), colourTertiary: v(`--block-${cat}-3`) });
   return B.Theme.defineTheme(name, {
     base: B.Themes.Classic,
@@ -119,7 +118,7 @@ function makeTheme(name) {
       cursorColour: v("--accent-text"),
       markerColour: v("--accent-text"),
     },
-    fontStyle: { family: v("--font"), weight: "600", size: 11 },
+    fontStyle: { family: getComputedStyle(document.documentElement).getPropertyValue("--font").trim(), weight: "600", size: 11 },
   });
 }
 
@@ -145,7 +144,7 @@ function inject() {
   t.shownUnits = units.system;
   t.ws.addChangeListener(onChange);
   registerTryValues();
-  if (dark && dark.addEventListener) dark.addEventListener("change", () => t.ws.setTheme(theme()));
+  if (!followsTheme) followsTheme = pageTheme.onChange(() => { if (t.ws) t.ws.setTheme(theme()); });
   new ResizeObserver(() => { B.svgResize(t.ws); fitHeads(); }).observe(box);
 }
 

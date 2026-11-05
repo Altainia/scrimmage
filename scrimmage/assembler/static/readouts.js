@@ -6,6 +6,7 @@
 
 import { h } from "./app.js";
 import { units } from "./units.js";
+import { theme } from "./theme.js";
 
 const fmt = (v, digits) => (typeof v === "number" && isFinite(v) ? v.toFixed(digits) : "—");
 // A measure in the chosen units (units.js), to `digits` places kept (the rows don't jump about at 10 Hz)
@@ -116,13 +117,15 @@ export function renderReadouts(root, state) {
 }
 
 // One signal's values over the last `seconds` of sim time. push(t, value) adds a sample (a t that goes back, as
-// in a new session, starts over; null values leave a gap); draw() paints the canvas.
+// in a new session, starts over; null values leave a gap); draw() paints the canvas, again when the theme changes
+// (until the canvas leaves the page).
 export class Plot {
   constructor(canvas, seconds = 10) {
     this.canvas = canvas;
     this.seconds = seconds;
     this.t = [];
     this.v = [];
+    const off = theme.onChange(() => { if (canvas.isConnected) this.draw(); else off(); });
   }
 
   clear() {
@@ -166,11 +169,11 @@ export class Plot {
     const X = (t) => ((t - t0) / this.seconds) * w;
     const Y = (v) => pad + (1 - (v - lo) / (hi - lo)) * (hgt - 2 * pad);
     if (lo < 0 && hi > 0) {   // the zero line
-      g.strokeStyle = "#d0d5dc";
+      g.strokeStyle = theme.color("--plot-zero");
       g.lineWidth = 1;
       g.beginPath(); g.moveTo(0, Y(0)); g.lineTo(w, Y(0)); g.stroke();
     }
-    g.strokeStyle = "#2b6cb0";
+    g.strokeStyle = theme.color("--accent-text");
     g.lineWidth = 1.5;
     g.beginPath();
     let pen = false;
@@ -181,7 +184,7 @@ export class Plot {
       pen = true;
     }
     g.stroke();
-    g.fillStyle = "#656d76";
+    g.fillStyle = theme.color("--muted");
     g.font = "10.5px system-ui, sans-serif";
     g.fillText(String(+hi.toPrecision(4)), 3, 11);
     g.fillText(String(+lo.toPrecision(4)), 3, hgt - 3);

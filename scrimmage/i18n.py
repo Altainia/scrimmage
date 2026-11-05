@@ -53,6 +53,9 @@ log = logging.getLogger("scrimmage.i18n")
 # The plural categories each language uses, and the rule that picks one for a count (CLDR's, for whole and decimal
 # counts as Python holds them). A language looks up its own tag, then its base language ("en-GB" -> "en"). One
 # without rules uses "other" for every count, with a warning. A contributor adding a language adds its rule here.
+# The page doesn't use these: i18n.js picks a form with the browser's Intl.PluralRules (CLDR too). So a rule added
+# here must give the same categories as CLDR's for that language, or the page and the server would ask a catalog
+# for different forms.
 PLURAL_RULES: dict[str, tuple[tuple[str, ...], Callable[[float], str]]] = {
     "en": (("one", "other"), lambda n: "one" if n == 1 else "other"),
 }

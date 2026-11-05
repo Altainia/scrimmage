@@ -1,9 +1,9 @@
-// The user's settings (scrimmage/settings.py) as the page has them: GET /api/settings, shared by units.js (Units)
-// and i18n.js (Language), so one request and one poll serve both.
+// The user's settings (scrimmage/settings.py) as the page has them: GET /api/settings, shared by units.js (Units),
+// i18n.js (Language) and theme.js (Theme), so one request and one poll serve them all.
 //   load()              fetch them (app.js awaits it before the tabs start)
-//   save(changes)       save {units?, language?}; resolves to null, or the server's error text
+//   save(changes)       save {units?, language?, theme?}; resolves to null, or the server's error text
 //   watch()             poll every 2 s, so a change made elsewhere (another tab, browser, editor or by hand) arrives
-//   onSettings(fn)      fn(answer) for each answer kept: units.js and i18n.js take their parts from it
+//   onSettings(fn)      fn(answer) for each answer kept: units.js, i18n.js and theme.js take their parts from it
 //   onWarning(fn)       fn(text) when a settings warning appears or changes (not for one load() found before)
 
 let warning = null;
@@ -25,7 +25,10 @@ async function request(method, body) {
   }
 }
 
+let shown = {};      // the answer the takers last had
+
 function apply(data) {
+  shown = data;
   const hadWarning = warning;
   warning = data.warning || null;
   for (const fn of [...takers]) {
@@ -40,8 +43,12 @@ function apply(data) {
 
 // Requests are numbered: a GET sent before a save() was answered can carry the old setting (a poll that left just
 // before the POST and came back just after it), so its answer is dropped, as is any GET answered while a save() is
-// still on its way.
-let sent = 0, settled = 0, saving = 0, latestSave = 0;   // latestSave: two save()s answered out of order, the later wins
+// still on its way. Two save()s answered out of order: each setting is taken from the later save that changed it
+// (a Units save answered after a newer Language save still shows the new units), and the rest from the later one.
+let sent = 0, settled = 0, saving = 0;
+let newest = 0;            // the latest save() answered
+const answered = {};       // setting -> the latest save() answered that changed it
+const PART_OF = { catalog: "language" };   // an answer's catalog goes with its language
 
 export async function load() {
   const n = ++sent;
@@ -57,7 +64,14 @@ export async function save(changes) {
   try { res = await request("POST", changes); } finally { saving--; settled = ++sent; }
   const { status, data } = res;
   if (status !== 200) return data.error || `the server answered ${status}`;
-  if (n > latestSave) { latestSave = n; apply(data); }
+  const kept = { ...shown };
+  for (const [key, value] of Object.entries(data)) {
+    const setting = PART_OF[key] || key;
+    if (setting in changes ? n > (answered[setting] || 0) : n > newest) kept[key] = value;
+  }
+  for (const setting of Object.keys(changes)) answered[setting] = Math.max(answered[setting] || 0, n);
+  newest = Math.max(newest, n);
+  apply(kept);      // the takers act only on what changed
   return null;
 }
 

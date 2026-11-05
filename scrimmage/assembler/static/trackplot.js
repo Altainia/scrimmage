@@ -6,8 +6,10 @@
 
 import { h, api, fmt } from "./app.js";
 import { scEdit, sc } from "./scenario.js";
+import { theme } from "./theme.js";
 
-const COLORS = ["#2b6cb0", "#e8590c", "#1a7f37", "#8250df", "#c62828", "#0a7ea4", "#9a6700", "#d6336c"];
+// one color per column, app.css's --series-1 to --series-8 (the legend's swatches are the same tokens)
+const COLORS = [1, 2, 3, 4, 5, 6, 7, 8].map((k) => `--series-${k}`);
 const AXES_H = 110, LANE_H = 14, TIME_H = 18, PAD_L = 34, PAD_R = 8;
 
 let cache = { key: null, data: null };   // the last track fetched (re-renders of the same version don't refetch)
@@ -42,16 +44,17 @@ function drawTrack(canvas, track, cols) {
   const ctx = canvas.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = "#fafbfc";
+  const c = theme.color;
+  ctx.fillStyle = c("--subtle-2");
   ctx.fillRect(0, 0, W, H);
   const t = track.t;
   const dur = typeof track.duration === "number" && track.duration > 0 ? track.duration : (t.length ? t[t.length - 1] : 1) || 1;
   const X = (tt) => PAD_L + (tt / dur) * (W - PAD_L - PAD_R);
   const Y = (v) => 6 + (1 - (v + 1) / 2) * (AXES_H - 12);
   // the axis grid: -1, 0, 1
-  ctx.font = "10px system-ui, sans-serif"; ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillStyle = "#59616b";
+  ctx.font = "10px system-ui, sans-serif"; ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillStyle = c("--plot-label");
   for (const v of [-1, 0, 1]) {
-    ctx.strokeStyle = v === 0 ? "#c9d1d9" : "#e6e9ed"; ctx.lineWidth = 1;
+    ctx.strokeStyle = c(v === 0 ? "--plot-axis" : "--plot-grid"); ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(PAD_L, Math.round(Y(v)) + 0.5); ctx.lineTo(W - PAD_R, Math.round(Y(v)) + 0.5); ctx.stroke();
     ctx.fillText(String(v), PAD_L - 5, Y(v));
   }
@@ -66,7 +69,7 @@ function drawTrack(canvas, track, cols) {
     ctx.stroke();
   };
   cols.axes.forEach((name, k) => {
-    ctx.strokeStyle = COLORS[k % COLORS.length]; ctx.lineWidth = 1.5;
+    ctx.strokeStyle = c(COLORS[k % COLORS.length]); ctx.lineWidth = 1.5;
     step(track.series[name], Y);
   });
   // button / POV lanes: filled while pressed
@@ -74,9 +77,9 @@ function drawTrack(canvas, track, cols) {
     const y = AXES_H + k * LANE_H;
     const values = track.series[name];
     const pov = /\.pov\d+$/.test(name);
-    ctx.fillStyle = "#59616b"; ctx.textAlign = "right"; ctx.fillText(name.replace("button", "b"), PAD_L - 5, y + LANE_H / 2);
-    ctx.fillStyle = "#eef0f3"; ctx.fillRect(PAD_L, y + 2, W - PAD_L - PAD_R, LANE_H - 4);
-    ctx.fillStyle = COLORS[(cols.axes.length + k) % COLORS.length];
+    ctx.fillStyle = c("--plot-label"); ctx.textAlign = "right"; ctx.fillText(name.replace("button", "b"), PAD_L - 5, y + LANE_H / 2);
+    ctx.fillStyle = c("--sunken"); ctx.fillRect(PAD_L, y + 2, W - PAD_L - PAD_R, LANE_H - 4);
+    ctx.fillStyle = c(COLORS[(cols.axes.length + k) % COLORS.length]);
     values.forEach((v, j) => {
       const on = pov ? v !== -1 : !!v;
       if (!on) return;
@@ -86,10 +89,10 @@ function drawTrack(canvas, track, cols) {
   });
   // time ticks
   const yT = AXES_H + cols.lanes.length * LANE_H;
-  ctx.fillStyle = "#59616b"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+  ctx.fillStyle = c("--plot-label"); ctx.textAlign = "center"; ctx.textBaseline = "top";
   const every = dur > 20 ? 5 : dur > 8 ? 2 : dur > 3 ? 1 : 0.5;
   for (let s = 0; s <= dur + 1e-9; s += every) {
-    ctx.strokeStyle = "#c9d1d9"; ctx.beginPath(); ctx.moveTo(X(s) + 0.5, yT); ctx.lineTo(X(s) + 0.5, yT + 3); ctx.stroke();
+    ctx.strokeStyle = c("--plot-axis"); ctx.beginPath(); ctx.moveTo(X(s) + 0.5, yT); ctx.lineTo(X(s) + 0.5, yT + 3); ctx.stroke();
     ctx.fillText(`${+s.toFixed(1)} s`, X(s), yT + 4);
   }
 }
@@ -107,9 +110,10 @@ export async function trackPanel(stepIndex, step) {
       "aria-label": `Input track: ${cols.axes.length} moving axes, ${cols.lanes.length} button or POV lanes` });
     const ro = new ResizeObserver(() => { if (canvas.isConnected) drawTrack(canvas, res.track, cols); else ro.disconnect(); });
     ro.observe(canvas);
+    const off = theme.onChange(() => { if (canvas.isConnected) drawTrack(canvas, res.track, cols); else off(); });
     parts.push(canvas);
     const legend = [...cols.axes].map((name, k) => h("span", { class: "track-key" },
-      h("span", { class: "track-swatch", style: `background:${COLORS[k % COLORS.length]}` }), name));
+      h("span", { class: "track-swatch", style: `background:var(${COLORS[k % COLORS.length]})` }), name));
     if (cols.quiet) legend.push(h("span", { class: "muted", text: `${cols.quiet} other column${cols.quiet === 1 ? "" : "s"} stay${cols.quiet === 1 ? "s" : ""} at rest` }));
     if (!cols.axes.length && !cols.lanes.length) legend.unshift(h("span", { class: "muted", text: "Every input stays at rest in this track." }));
     parts.push(h("div", { class: "track-legend" }, ...legend));

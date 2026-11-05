@@ -28,13 +28,15 @@
 // {x, y} of a visible spot on that piece (with `along` or `across`, a robot-frame direction, only on triangles whose normal is
 // across it: a round side), or null when it isn't drawn or is hidden behind others; screenPoint(pieceKey) is where
 // the piece's first vertex is drawn (it follows Try it); scene is {drawn, faint, meshes, triangles, arrows (bodies
-// whose joint axis is drawn), mounts, lowest (the drawn pieces' lowest robot z at zero pose)}.
+// whose joint axis is drawn), mounts, lowest (the drawn pieces' lowest robot z at zero pose), background (#rrggbb:
+// --sunken in the page's theme)}.
 
 import * as THREE from "three";
 import { OrbitControls } from "./vendor/OrbitControls.js";
 import { $, h, notice } from "./app.js";
 import { part, onPart, onView, select, bodyColor, view3d } from "./part.js";
 import { decode } from "./scene3d.js";
+import { theme } from "./theme.js";
 import { toRobot, cadToRobot, dirToRobot, normalize, bodyPoses, apply } from "./part_frame.js";
 
 const SELECTED = new THREE.Color(0x2f7ff0);
@@ -122,8 +124,7 @@ export function initPartView() {
   document.addEventListener("keydown", (e) => {
     if (pick && e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancelPick(); }
   }, true);
-  const dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)");
-  if (dark && dark.addEventListener) dark.addEventListener("change", () => { setBackground(); requestRender(); });
+  theme.onChange(() => { setBackground(); requestRender(); });
 
   const hook = window.__scrimmagePart;
   hook.screenPos = screenPos;
@@ -139,8 +140,7 @@ export function initPartView() {
 }
 
 function setBackground() {
-  const css = getComputedStyle(document.documentElement).getPropertyValue("--sunken").trim() || "#eef0f3";
-  scene.background = new THREE.Color(css);
+  scene.background = new THREE.Color(theme.color("--sunken") || "#eef0f3");
 }
 
 // -- building ---------------------------------------------------------------------------------------------
@@ -580,5 +580,6 @@ function sceneInfo() {
     triangles += m.triPiece.length;
   }
   const box = solidBox();
-  return { drawn, faint, meshes: meshes.length, triangles, arrows: [...arrows], mounts: mountsDrawn, lowest: box ? box.min[2] : null };
+  return { drawn, faint, meshes: meshes.length, triangles, arrows: [...arrows], mounts: mountsDrawn, lowest: box ? box.min[2] : null,
+    background: scene.background ? `#${scene.background.getHexString()}` : null };
 }

@@ -7,10 +7,12 @@
 // conventions) and the robot geoms at the start pose (their projected outline is the robot's footprint).
 // fieldGeometry(view) and drawField(ctx, geometry, toCanvas) draw the field itself (floor, a grid in the chosen units,
 // world geoms, axes); the Drive tab's mini-field (minifield.js) and the robot code panel's start picker (code.js)
-// draw with them too, the start picker also with drawSides (the plain red / blue field) and robotFootprint.
+// draw with them too, the start picker also with drawSides (the plain red / blue field) and robotFootprint. Their
+// colors are app.css's --field-* tokens (theme.color), so each drawing redraws on theme.onChange.
 
 import { h, api, fmt, showMeasure, readMeasure, measureError } from "./app.js";
 import { units } from "./units.js";
+import { theme } from "./theme.js";
 import { sc } from "./scenario.js";
 
 const DEFAULT_TOL_XY = 0.1, DEFAULT_TOL_H = 5;   // checks.py's defaults
@@ -159,20 +161,21 @@ export function drawField(ctx, geometry, toCanvas) {
   const [ox] = toCanvas(0, 0), [ux] = toCanvas(1, 0);
   const scale = ux - ox;   // pixels per meter
   const grid = fieldGrid();
-  fieldPoly(ctx, toCanvas, fr.poly, "#f7f8fa", "#aeb6c0");
+  const c = theme.color;
+  fieldPoly(ctx, toCanvas, fr.poly, c("--field-floor"), c("--field-edge"));
   ctx.save();
   ctx.beginPath();
   fr.poly.forEach(([x, y], k) => { const [px, py] = toCanvas(x, y); if (k) ctx.lineTo(px, py); else ctx.moveTo(px, py); });
   ctx.closePath();
   ctx.clip();
-  ctx.strokeStyle = "#e6e9ed";
+  ctx.strokeStyle = c("--field-grid");
   ctx.lineWidth = 1;
   const [, top] = toCanvas(0, fr.maxy), [, bottom] = toCanvas(0, fr.miny), [left] = toCanvas(fr.minx, 0), [right] = toCanvas(fr.maxx, 0);
   for (const { at } of gridLabels(fr.minx, fr.maxx, 1, grid)) { const [px] = toCanvas(at, 0); ctx.beginPath(); ctx.moveTo(px + 0.5, top); ctx.lineTo(px + 0.5, bottom); ctx.stroke(); }
   for (const { at } of gridLabels(fr.miny, fr.maxy, 1, grid)) { const [, py] = toCanvas(0, at); ctx.beginPath(); ctx.moveTo(left, py + 0.5); ctx.lineTo(right, py + 0.5); ctx.stroke(); }
   ctx.restore();
   // the grid's labels along the bottom and left edges (every other line when they would crowd)
-  ctx.fillStyle = "#59616b";
+  ctx.fillStyle = c("--plot-label");
   ctx.font = "10px system-ui, sans-serif";
   const every = grid.step * scale < 30 ? 2 : 1;
   ctx.textAlign = "center"; ctx.textBaseline = "top";
@@ -189,9 +192,9 @@ export function drawField(ctx, geometry, toCanvas) {
   const [lx, ly] = toCanvas(fr.minx, fr.miny);
   ctx.translate(lx + 12, ly - 12);
   ctx.lineWidth = 2;
-  ctx.strokeStyle = "#c62828"; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(26, 0); ctx.stroke();
-  ctx.strokeStyle = "#1a7f37"; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -26); ctx.stroke();
-  ctx.fillStyle = "#1f2328"; ctx.font = "600 10px system-ui, sans-serif"; ctx.textBaseline = "middle"; ctx.textAlign = "left";
+  ctx.strokeStyle = c("--field-axis-x"); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(26, 0); ctx.stroke();
+  ctx.strokeStyle = c("--field-axis-y"); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -26); ctx.stroke();
+  ctx.fillStyle = c("--text"); ctx.font = "600 10px system-ui, sans-serif"; ctx.textBaseline = "middle"; ctx.textAlign = "left";
   ctx.fillText("x", 29, 0); ctx.textAlign = "center"; ctx.fillText("y", 0, -33);
   ctx.restore();
 }
@@ -199,18 +202,18 @@ export function drawField(ctx, geometry, toCanvas) {
 // The plain field's halves: blue (x below the middle, the blue alliance wall at x = 0) and red, with the center
 // line and BLUE / RED labels, over the floor drawField drew. The start picker uses it when no [range] is chosen.
 export function drawSides(ctx, geometry, toCanvas) {
-  const fr = geometry.floor, mid = (fr.minx + fr.maxx) / 2;
-  fieldPoly(ctx, toCanvas, [[fr.minx, fr.miny], [mid, fr.miny], [mid, fr.maxy], [fr.minx, fr.maxy]], "rgba(43,108,176,.16)", null);
-  fieldPoly(ctx, toCanvas, [[mid, fr.miny], [fr.maxx, fr.miny], [fr.maxx, fr.maxy], [mid, fr.maxy]], "rgba(198,40,40,.14)", null);
+  const fr = geometry.floor, mid = (fr.minx + fr.maxx) / 2, c = theme.color;
+  fieldPoly(ctx, toCanvas, [[fr.minx, fr.miny], [mid, fr.miny], [mid, fr.maxy], [fr.minx, fr.maxy]], c("--field-blue", 0.16), null);
+  fieldPoly(ctx, toCanvas, [[mid, fr.miny], [fr.maxx, fr.miny], [fr.maxx, fr.maxy], [mid, fr.maxy]], c("--field-red", 0.14), null);
   const [mx, top] = toCanvas(mid, fr.maxy), [, bottom] = toCanvas(mid, fr.miny);
   ctx.save();
-  ctx.setLineDash([6, 4]); ctx.strokeStyle = "#57606a"; ctx.lineWidth = 1;
+  ctx.setLineDash([6, 4]); ctx.strokeStyle = c("--field-line"); ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(mx + 0.5, top); ctx.lineTo(mx + 0.5, bottom); ctx.stroke();
   ctx.setLineDash([]);
   ctx.font = "700 12px system-ui, sans-serif"; ctx.textBaseline = "top";
   const [lx, ly] = toCanvas(fr.minx, fr.maxy), [rx] = toCanvas(fr.maxx, fr.maxy);
-  ctx.fillStyle = "#1f5592"; ctx.textAlign = "left"; ctx.fillText("BLUE", lx + 6, ly + 5);
-  ctx.fillStyle = "#a12020"; ctx.textAlign = "right"; ctx.fillText("RED", rx - 6, ly + 5);
+  ctx.fillStyle = c("--accent-strong"); ctx.textAlign = "left"; ctx.fillText("BLUE", lx + 6, ly + 5);
+  ctx.fillStyle = c("--field-red-text"); ctx.textAlign = "right"; ctx.fillText("RED", rx - 6, ly + 5);
   ctx.restore();
 }
 
@@ -340,18 +343,19 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
   function draw() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = "#dfe3e8";
+    const c = theme.color;
+    ctx.fillStyle = c("--field-surround");
     ctx.fillRect(0, 0, W, H);
     drawField(ctx, geo, toPx);
     const poly = (pts, fill, stroke, width = 1, dash = null) => fieldPoly(ctx, toPx, pts, fill, stroke, width, dash);
     // the robot at its start pose
-    for (const p of robot) poly(p, "rgba(43,108,176,.12)", null);
+    for (const p of robot) poly(p, c("--accent-text", 0.12), null);
     if (robotHull.length >= 3) {
-      poly(robotHull, "rgba(43,108,176,.16)", "#2b6cb0", 1.5);
+      poly(robotHull, c("--accent-text", 0.16), c("--accent-text"), 1.5);
       const cx = robotHull.reduce((s, q) => s + q[0], 0) / robotHull.length, cy = robotHull.reduce((s, q) => s + q[1], 0) / robotHull.length;
       const below = Math.min(...robotHull.map((q) => q[1]));
       const [px, py] = toPx(cx, below);
-      ctx.fillStyle = "#1f5592"; ctx.font = "600 10px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+      ctx.fillStyle = c("--accent-strong"); ctx.font = "600 10px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "top";
       ctx.fillText("start", px, py + 3);
     }
     // the other pose checks, as ghosts
@@ -361,12 +365,13 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
   }
 
   function marker(m, { ghost = false } = {}) {
-    const color = ghost ? "rgba(87,96,106,.75)" : "#2b6cb0";
+    const c = theme.color;
+    const color = ghost ? c("--field-line", 0.75) : c("--accent-text");
     // only x or only y: a line across the field
     if (m.x === null || m.y === null) {
       if (ghost) return;
       ctx.save();
-      ctx.strokeStyle = color; ctx.fillStyle = "rgba(43,108,176,.12)"; ctx.setLineDash([6, 4]); ctx.lineWidth = 1.5;
+      ctx.strokeStyle = color; ctx.fillStyle = c("--accent-text", 0.12); ctx.setLineDash([6, 4]); ctx.lineWidth = 1.5;
       const t = m.tol_xy * scale;
       if (m.x !== null) { const [px] = toPx(m.x, 0); ctx.fillRect(px - t, 0, 2 * t, H); ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, H); ctx.stroke(); }
       else { const [, py] = toPx(0, m.y); ctx.fillRect(0, py - t, W, 2 * t); ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(W, py); ctx.stroke(); }
@@ -380,10 +385,10 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
       const cx = Math.min(W - 10, Math.max(10, px)), cy = Math.min(H - 10, Math.max(10, py));
       const ang = Math.atan2(py - cy, px - cx);
       ctx.save();
-      ctx.fillStyle = "#c62828"; ctx.translate(cx, cy); ctx.rotate(ang);
+      ctx.fillStyle = c("--error"); ctx.translate(cx, cy); ctx.rotate(ang);
       ctx.beginPath(); ctx.moveTo(8, 0); ctx.lineTo(-6, -6); ctx.lineTo(-6, 6); ctx.closePath(); ctx.fill();
       ctx.restore();
-      ctx.fillStyle = "#c62828"; ctx.font = "600 11px system-ui, sans-serif";
+      ctx.fillStyle = c("--error"); ctx.font = "600 11px system-ui, sans-serif";
       ctx.textAlign = cx > W / 2 ? "right" : "left"; ctx.textBaseline = cy > H / 2 ? "bottom" : "top";
       ctx.fillText(`target (${units.fmt(m.x, "field")}, ${units.fmt(m.y, "field")}) is off the field`, cx + (cx > W / 2 ? -14 : 14), cy + (cy > H / 2 ? -8 : 8));
       return;
@@ -393,20 +398,20 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
     if (m.heading !== null && m.heading !== undefined) {
       const a = -m.heading * Math.PI / 180, t = Math.min(m.tol_heading, 180) * Math.PI / 180;
       ctx.beginPath(); ctx.moveTo(px, py); ctx.arc(px, py, R, a - t, a + t); ctx.closePath();
-      ctx.fillStyle = ghost ? "rgba(87,96,106,.12)" : "rgba(232,89,12,.22)"; ctx.fill();
-      ctx.strokeStyle = ghost ? "rgba(87,96,106,.5)" : "rgba(232,89,12,.8)"; ctx.lineWidth = 1; ctx.stroke();
+      ctx.fillStyle = ghost ? c("--field-line", 0.12) : c("--field-aim", 0.22); ctx.fill();
+      ctx.strokeStyle = ghost ? c("--field-line", 0.5) : c("--field-aim", 0.8); ctx.lineWidth = 1; ctx.stroke();
       ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + R * Math.cos(a), py + R * Math.sin(a));
-      ctx.strokeStyle = ghost ? color : "#e8590c"; ctx.lineWidth = 2; ctx.stroke();
+      ctx.strokeStyle = ghost ? color : c("--field-aim"); ctx.lineWidth = 2; ctx.stroke();
       ctx.save(); ctx.translate(px + R * Math.cos(a), py + R * Math.sin(a)); ctx.rotate(a);
       ctx.beginPath(); ctx.moveTo(4, 0); ctx.lineTo(-5, -4); ctx.lineTo(-5, 4); ctx.closePath();
-      ctx.fillStyle = ghost ? color : "#e8590c"; ctx.fill(); ctx.restore();
+      ctx.fillStyle = ghost ? color : c("--field-aim"); ctx.fill(); ctx.restore();
     }
     ctx.beginPath(); ctx.arc(px, py, r, 0, 2 * Math.PI);
-    ctx.fillStyle = ghost ? "rgba(87,96,106,.10)" : "rgba(43,108,176,.18)"; ctx.fill();
+    ctx.fillStyle = ghost ? c("--field-line", 0.1) : c("--accent-text", 0.18); ctx.fill();
     ctx.setLineDash(ghost ? [4, 3] : []); ctx.strokeStyle = color; ctx.lineWidth = ghost ? 1 : 1.5; ctx.stroke(); ctx.setLineDash([]);
     ctx.beginPath(); ctx.arc(px, py, ghost ? 2.5 : 3.5, 0, 2 * Math.PI); ctx.fillStyle = color; ctx.fill();
     if (ghost) {
-      ctx.fillStyle = "#3d444d"; ctx.font = "600 10px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+      ctx.fillStyle = c("--field-ghost-text"); ctx.font = "600 10px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
       ctx.fillText(`step ${m.label}`, px + Math.max(r, 4) * 0.75 + 3, py - Math.max(r, 4) * 0.75 - 1);
     }
   }
@@ -496,7 +501,8 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
     toScreen: (x, y) => { const rc = canvas.getBoundingClientRect(); const [px, py] = toPx(x, y); return { x: rc.left + px, y: rc.top + py }; },
     get value() { return { ...cur }; },
   };
-  d.addEventListener("close", () => { delete window.__scrimmage.fieldPick; offUnits(); }, { once: true });
+  const offTheme = theme.onChange(() => draw());
+  d.addEventListener("close", () => { delete window.__scrimmage.fieldPick; offUnits(); offTheme(); }, { once: true });
   draw();
   d.showModal();
   canvas.focus();

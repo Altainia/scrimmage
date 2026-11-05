@@ -58,7 +58,11 @@ def scan(root: Path = PACKAGE) -> tuple[list[Source], list[str]]:
     for path in files:
         shown = path.resolve().relative_to(base).as_posix()
         text = path.read_text(encoding="utf-8")
-        calls = _python_calls(text) if path.suffix == ".py" else _js_calls(text)
+        try:
+            calls = _python_calls(text) if path.suffix == ".py" else _js_calls(text)
+        except SyntaxError as e:     # a file being edited: say so, and scan the rest
+            errors.append(f"{shown}:{e.lineno or 1}: isn't valid Python ({e.msg})")
+            continue
         for line, kind, args, context, error in calls:
             where = f"{shown}:{line}"
             if error:

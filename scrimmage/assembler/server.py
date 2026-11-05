@@ -69,17 +69,18 @@ App (`/api/app/*`; in every mode):
 
 Settings (`/api/settings`; in every mode). The user's settings (scrimmage/settings.py), shared by every editor and the
 CLI on this computer:
-  GET  /api/settings               -> {units: imperial|metric, table, language, languages, catalog, warning}: the
+  GET  /api/settings               -> {units: imperial|metric, table, language, languages, catalog, theme, warning}: the
         Units setting (`scrimmage --units` wins over the file for its run), the unit table every display formats with
         (units.table_json(): {systems, kinds, units: {system: {kind: {name, factor, decimals}}}, aliases, keys,
         lengths}), the Language setting (a tag of languages; `--language` wins likewise), languages {tag: name}
         (i18n.languages(): en-US, then each catalog in scrimmage/locales/), the language's catalog (i18n.catalog_json:
-        its entries that differ from the American English source; {} for en-US), and why the settings file is
-        being ignored, in whole or for one setting (it can't be read, isn't TOML or has a bad value: the defaults
-        apply), else null. The file is read again when it changes on disk; the page polls this every few seconds to
+        its entries that differ from the American English source; {} for en-US), the Theme setting
+        (system|light|dark: index.html is served with it on <html data-theme>, so the first paint is in it), and why
+        the settings file is being ignored, in whole or for one setting (it can't be read, isn't TOML or has a bad
+        value: the defaults apply), else null. The file is read again when it changes on disk; the page polls this every few seconds to
         pick that up.
-  POST /api/settings               -> body {units?, language?}: saves them in the settings file (and, under
-        `--units` or `--language`, for this run too); answers as GET does. 400 for another value or neither.
+  POST /api/settings               -> body {units?, language?, theme?}: saves them in the settings file (and, under
+        `--units` or `--language`, for this run too); answers as GET does. 400 for another value or none of them.
 
 Bench (`/api/bench/*`; 404 unless an idea session is open). `file` is an idea's file name in the session folder:
   GET  /api/bench/state[?since=N]  -> {version, folder, display_folder, stage: file|null, lock: {source, file, pid,
@@ -1017,10 +1018,11 @@ class App:
     def settings_state(self) -> dict:
         language = settings.current_language()
         return {"units": settings.current_units(), "table": units.table_json(), "language": language,
-                "languages": i18n.languages(), "catalog": i18n.catalog_json(language), "warning": settings.problem()}
+                "languages": i18n.languages(), "catalog": i18n.catalog_json(language), "theme": settings.load().theme,
+                "warning": settings.problem()}
 
     def set_settings(self, body: dict) -> dict:
-        """Save the Units or Language setting (or both). Under `scrimmage --units` or `--language` the menu still
+        """Save the Units, Language or Theme setting (or several). Under `scrimmage --units` or `--language` the menu still
         switches: this run follows it too."""
         changes = {}
         try:
@@ -1028,8 +1030,10 @@ class App:
                 changes["units"] = settings.check_units(body["units"])
             if "language" in body:
                 changes["language"] = settings.check_language(body["language"])
+            if "theme" in body:
+                changes["theme"] = settings.check_theme(body["theme"])
             if not changes:
-                raise ValueError("send units or language to change")
+                raise ValueError("send units, language or theme to change")
             settings.save(**changes)
         except ValueError as e:
             raise ApiError(400, str(e)) from None
@@ -2982,4 +2986,7 @@ class _Handler(BaseHTTPRequestHandler):
             raise ApiError(404, "not found") from None
         if not target.is_file():
             raise ApiError(404, "not found")
-        self._send(200, target.read_bytes(), _TYPES.get(target.suffix.lower(), "application/octet-stream"))
+        body = target.read_bytes()
+        if rel == "index.html":    # the page starts in the Theme setting: no light flash before theme.js runs
+            body = body.replace(b'data-theme="system"', f'data-theme="{settings.load().theme}"'.encode(), 1)
+        self._send(200, body, _TYPES.get(target.suffix.lower(), "application/octet-stream"))

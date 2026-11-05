@@ -379,6 +379,13 @@ def test_template_finds_the_literal_sources(tree):
     ]
 
 
+def test_a_python_file_that_doesnt_parse_is_an_error_not_a_crash(tree):
+    (tree / "broken.py").write_text("from scrimmage.i18n import t\n\ndef f(:\n    t('Never seen')\n")
+    found, errors = i18n_tool.scan(tree)
+    assert "Color" in {s.key for s in found} and "Never seen" not in {s.key for s in found}   # the rest still scanned
+    assert [e for e in errors if e.startswith("pkg/broken.py")] == ["pkg/broken.py:3: isn't valid Python (invalid syntax)"]
+
+
 def test_template_cli_lists_and_writes_a_starter(tree, tmp_path):
     out = tmp_path / "xx.json"
     run = subprocess.run([sys.executable, "-m", "scrimmage", "i18n", "template", "--root", str(tree),

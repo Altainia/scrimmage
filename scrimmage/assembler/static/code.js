@@ -31,13 +31,17 @@
 
 import { $, h, api, edit, post, undo, notice, setTab, store, fmt, select, showMeasure, readMeasure, measureError } from "./app.js";
 import { units } from "./units.js";
+import { theme } from "./theme.js";
 import { markDirty, clean, onCommit, badNumber } from "./inspector.js";
 import { browseList } from "./start.js";
 import { fieldGeometry, drawField, drawSides, fieldPoly, robotFootprint } from "./fieldpick.js";
 
-// The robot is drawn in a color nothing on a field uses (dark slate, a white triangle), so it can't be mistaken
-// for the plain field's amber practice box or a game piece, on either alliance's half.
-const ROBOT = { fill: "rgba(36,41,47,.82)", stroke: "#0d1117", tri: "#ffffff", ghostFill: "rgba(36,41,47,.35)" };
+// The robot is drawn in a color nothing on a field uses (dark slate with a white triangle; light gray with a dark one
+// in the dark theme: app.css --field-robot*), so it can't be mistaken for the plain field's amber practice box or a
+// game piece, on either alliance's half.
+const ROBOT = { fill: ["--field-robot", 0.82], stroke: ["--field-robot-edge"], tri: ["--field-robot-mark"],
+  ghostFill: ["--field-robot", 0.35] };
+const robotColor = (which) => theme.color(...ROBOT[which]);
 
 const ICON = { true: "✅", false: "⚠️", null: "ℹ️" };
 const ICON_WORD = { true: "Ready", false: "Missing", null: "Good to know" };
@@ -499,8 +503,8 @@ const place = (pts, [x, y, deg]) => {
 function drawRobot(ctx, toPx, foot, pose, { ghost = false } = {}) {
   const body = foot.length >= 3 ? foot : [[-0.4, -0.4], [0.4, -0.4], [0.4, 0.4], [-0.4, 0.4]];
   const at = place(body, pose), tri = place(triangleOf(body), pose);
-  fieldPoly(ctx, toPx, at, ghost ? ROBOT.ghostFill : ROBOT.fill, ROBOT.stroke, 2, ghost ? [5, 3] : null);
-  fieldPoly(ctx, toPx, tri, ROBOT.tri, ROBOT.stroke, 1);
+  fieldPoly(ctx, toPx, at, robotColor(ghost ? "ghostFill" : "fill"), robotColor("stroke"), 2, ghost ? [5, 3] : null);
+  fieldPoly(ctx, toPx, tri, robotColor("tri"), robotColor("stroke"), 1);
   return { footprint: at, triangle: tri };
 }
 
@@ -515,7 +519,7 @@ function labelBoxes(ctx, geo, toPx) {
     const [px, py] = toPx(cx, cy);
     ctx.save();
     ctx.font = "600 11px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillStyle = "#1f2328";
+    ctx.fillStyle = theme.color("--text");
     ctx.fillText(label, px, py);
     ctx.restore();
     out.push(label);
@@ -540,7 +544,7 @@ function drawPicture() {
   const ctx = els.canvas.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const toPx = (x, y) => [(x - b.minx) * scale, (b.maxy - y) * scale];
-  ctx.fillStyle = "#dfe3e8"; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = theme.color("--field-surround"); ctx.fillRect(0, 0, W, H);
   drawField(ctx, geo, toPx);
   const labels = labelBoxes(ctx, geo, toPx);
   if (s.start.range === null) drawSides(ctx, geo, toPx);
@@ -610,7 +614,7 @@ async function openPicker() {
       }
       resolve(ok);
     };
-    d.onclose = () => { delete window.__scrimmage.startPicker; offUnits(); finish(false); };
+    d.onclose = () => { delete window.__scrimmage.startPicker; offUnits(); offTheme(); finish(false); };
 
     const err = h("ul", { id: "sp-errors", class: "error-list", role: "alert", hidden: true });
     const showErrors = (errors) => {
@@ -645,6 +649,7 @@ async function openPicker() {
       for (const el of kept) el.dispatchEvent(new Event("input"));
       draw();   // the grid's labels are in the chosen units
     });
+    const offTheme = theme.onChange(() => draw());
     for (const [el, k] of [[xIn, "x"], [yIn, "y"], [hIn, "heading"]]) {
       el.addEventListener("input", () => {
         if (el.validity.badInput || el.value.trim() === "") return;
@@ -679,7 +684,7 @@ async function openPicker() {
 
     function draw() {
       ctx.clearRect(0, 0, W, H);
-      ctx.fillStyle = "#dfe3e8"; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = theme.color("--field-surround"); ctx.fillRect(0, 0, W, H);
       drawField(ctx, geo, toPx);
       labelBoxes(ctx, geo, toPx);
       if (code.state.start.range === null) drawSides(ctx, geo, toPx);
@@ -956,6 +961,7 @@ export function initCode() {
   window.__scrimmage.code = { get state() { return code.state; }, get devices() { return code.devices; }, get picking() { return !!picking; },
     picture: null, show: () => showCode(true), showDevices };
   units.onChange(() => render());   // the Exact position line (the battery boxes keep what is being typed)
+  theme.onChange(() => drawPicture());   // the start's picture, in the theme's colors
   $("#center-3d").addEventListener("click", () => showCode(false));
   $("#center-code").addEventListener("click", () => showCode(true));
   $(".center-switch").addEventListener("keydown", (e) => {

@@ -46,6 +46,7 @@
 
 import { $, h, api, apiFile } from "./app.js";
 import { units } from "./units.js";
+import { theme } from "./theme.js";
 
 const MOTION_MAGIC = "SCRM", MOTION_VERSION = 1, HEADER = 14;   // struct "<4sHII"
 const CHART_H = 92, PAD_L = 44, PAD_R = 8, PAD_T = 6, TICKS_H = 16;
@@ -389,13 +390,12 @@ function renderMarks() {
 }
 
 function markColors() {
-  return { slip: getComputedStyle(document.documentElement).getPropertyValue("--slip-mark").trim(), bg: behind($("#test-slip-marks")) };
+  return { slip: theme.color("--slip-mark"), bg: behind($("#test-slip-marks")) };
 }
 
 // the colors the marks draw with, and the color behind them (#rrggbb), for the 3:1 check
 function feedColors() {
-  const css = getComputedStyle(document.documentElement);
-  const v = (n) => css.getPropertyValue(n).trim();
+  const v = (n) => theme.color(n);
   return { in: v("--feed-in"), placed: v("--feed-placed"), stuck: v("--feed-stuck"), missed: v("--feed-missed"),
     bg: behind($("#test-feed-marks")) };
 }
@@ -615,10 +615,9 @@ function renderSignals() {
 }
 
 function tokens() {
-  const css = getComputedStyle(document.documentElement);
-  const v = (n) => css.getPropertyValue(n).trim();
+  const v = (n) => theme.color(n);
   return { run: v("--accent-text"), compare: v("--chart-compare"), grid: v("--line"), text: v("--muted"), mark: v("--text"),
-    bg: v("--subtle"), font: v("--font") };
+    bg: v("--subtle"), font: getComputedStyle(document.documentElement).getPropertyValue("--font").trim() };
 }
 
 function drawChart() {
@@ -997,6 +996,5 @@ export function initRunPanel({ chart, setChart } = {}) {
     $("#test-chart").replaceChildren();
     if (rp.run) { drawChart(); renderSweep(); }
   });
-  const dark = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
-  if (dark && dark.addEventListener) dark.addEventListener("change", () => { drawChart(); drawSweep(); });
+  theme.onChange(() => { drawChart(); drawSweep(); });   // the colors are the theme's
 }

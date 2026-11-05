@@ -19,6 +19,7 @@ import { renderTree } from "./tree.js";
 import { renderInspector, placeErrors } from "./inspector.js";
 import { units } from "./units.js";
 import { i18n, t } from "./i18n.js";
+import { theme } from "./theme.js";
 
 // The hash carries the token and the tab: "#token=…" or "#scenario&token=…" ("#robot&token=…", "#drive&token=…").
 const hashParams = () => new URLSearchParams(location.hash.slice(1));
@@ -518,10 +519,12 @@ export const UNIT = { "kg*m^2": "kg·m²", deg: "°", "N*m/rad": "N·m/rad" };
 // -- settings menu ------------------------------------------------------------------------------
 // The header's Settings menu: one row per setting, each a group of [data-setting][data-value] buttons. A change
 // applies at once here and, through settings.js's poll, in every other open editor. Language's choices are the
-// catalogs the server has (i18n.languages), each named in its own language.
+// catalogs the server has (i18n.languages), each named in its own language. Theme's are System (the computer's
+// light or dark mode), Light and Dark (theme.js).
 const SETTINGS = {
   units: { now: () => units.system, set: (v) => units.set(v), onChange: units.onChange },
   language: { now: () => i18n.lang, set: (v) => i18n.setLanguage(v), onChange: i18n.onChange },
+  theme: { now: () => theme.choice, set: (v) => theme.setTheme(v), onChange: theme.onChange },
 };
 
 function initSettings() {
@@ -555,6 +558,10 @@ function renderSettings() {
       return b;
     }));
   }
+  $("#settings-theme-label").textContent = t("Theme");      // (a Language change calls this too)
+  const themes = { system: t("System", { context: "theme" }), light: t("Light", { context: "theme" }),
+    dark: t("Dark", { context: "theme" }) };
+  for (const b of $("#settings-theme").children) b.textContent = themes[b.dataset.value];
   for (const b of document.querySelectorAll("#settings-menu [data-setting]")) {
     b.setAttribute("aria-pressed", String(SETTINGS[b.dataset.setting].now() === b.dataset.value));
   }

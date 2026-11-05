@@ -115,7 +115,7 @@ table { border-collapse: collapse; width: 100%; font-size: 1.05rem; }
 th, td { border-bottom: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
 th { background: var(--band); }
 td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-code { font-size: 0.95em; background: var(--band); padding: 0 4px; border-radius: 3px; }
+code { font-size: 0.95em; background: var(--band); padding: 0 4px; border-radius: 2px; }   /* app.css --radius-sm */
 """
 
 

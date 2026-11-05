@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en-US">
+<html lang="en-US" data-theme="system">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -42,6 +42,15 @@
           <div class="seg" id="settings-language" role="group" aria-labelledby="settings-language-label">
             <!-- one button per language the server has (app.js renderSettings) -->
             <button type="button" class="seg-btn" data-setting="language" data-value="en-US" lang="en-US" aria-pressed="true">English (US)</button>
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label" id="settings-theme-label">Theme</span>
+          <div class="seg" id="settings-theme" role="group" aria-labelledby="settings-theme-label">
+            <!-- the words are app.js renderSettings's (translated) -->
+            <button type="button" class="seg-btn" data-setting="theme" data-value="system" aria-pressed="true">System</button>
+            <button type="button" class="seg-btn" data-setting="theme" data-value="light" aria-pressed="false">Light</button>
+            <button type="button" class="seg-btn" data-setting="theme" data-value="dark" aria-pressed="false">Dark</button>
           </div>
         </div>
         <p class="settings-note">For every tab, and every editor on this computer.</p>

@@ -1,7 +1,8 @@
-"""The user's settings, kept per computer so every tab, every browser and the CLI agree: Units and Language.
+"""The user's settings, kept per computer so every tab, every browser and the CLI agree: Units, Language and Theme.
 
     units = "imperial"     # or "metric": how the web app and server-built text show values (scrimmage/units.py)
     language = "en-US"     # or "en-GB", or another catalog's tag: the language they are written in (scrimmage/i18n.py)
+    theme = "system"       # or "light" or "dark": the web app's colors (System follows the computer's dark mode)
 
 The file is `<config dir>/scrimmage/settings.toml`: `$XDG_CONFIG_HOME` (else `~/.config`) on Linux, `%APPDATA%` on
 Windows, `~/Library/Application Support` on macOS. `$SCRIMMAGE_CONFIG` names the folder instead (the tests use it).
@@ -29,6 +30,7 @@ import tomlkit
 from tomlkit.exceptions import TOMLKitError
 
 SYSTEMS = ("imperial", "metric")
+THEMES = ("system", "light", "dark")
 FILE = "settings.toml"
 log = logging.getLogger("scrimmage.settings")
 
@@ -37,9 +39,10 @@ log = logging.getLogger("scrimmage.settings")
 class Settings:
     units: str = "imperial"   # FRC is imperial
     language: str = "en-US"   # the source text's own (i18n.SOURCE)
+    theme: str = "system"     # the computer's light or dark mode, as before there was a choice
 
 
-DEFAULTS = "imperial units and American English"
+DEFAULTS = "imperial units, American English and the System theme"
 _lock = threading.Lock()
 _cache: tuple[tuple, Settings, str | None] | None = None   # (the file's stat, what it says, its problem)
 _override: str | None = None
@@ -67,6 +70,12 @@ def check_units(value) -> str:
     if not isinstance(value, str) or value.strip().lower() not in SYSTEMS:
         shown = f'"{value}"' if isinstance(value, str) else repr(value)
         raise ValueError(f'units must be "imperial" or "metric", not {shown}')
+    return value.strip().lower()
+
+
+def check_theme(value) -> str:
+    if not isinstance(value, str) or value.strip().lower() not in THEMES:
+        raise ValueError(f'theme must be "system", "light" or "dark", not {_shown(value)}')
     return value.strip().lower()
 
 
@@ -109,6 +118,12 @@ def _read(path: Path) -> tuple[Settings, str | None]:
             from .i18n import languages
             problems.append(f"{path}: language = {_shown(data['language'])} isn't one of Scrimmage's languages "
                             f"({', '.join(languages())}); using American English (en-US)")
+    if "theme" in data:
+        try:
+            found["theme"] = check_theme(data["theme"])
+        except ValueError:
+            problems.append(f"{path}: theme = {_shown(data['theme'])} isn't system, light or dark; "
+                            "using the System theme")
     return Settings(**found), "; ".join(problems) or None
 
 
@@ -155,6 +170,8 @@ def save(**changes) -> None:
         changes["units"] = check_units(changes["units"])
     if "language" in changes:
         changes["language"] = check_language(changes["language"])
+    if "theme" in changes:
+        changes["theme"] = check_theme(changes["theme"])
     global _cache
     path = settings_path()
     with _lock:
