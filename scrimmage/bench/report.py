@@ -10,8 +10,8 @@ Units and Language: the headlines and summary.txt are in the Units and Language 
 settings, through units.fixed()). The CSVs stay SI, their columns named by unit (speed_m_s), and the tables' column
 names are the CSVs'. The UNCALIBRATED line is measure/labels.py's, as the pictures carry it, all of it in the Language.
 The Bench tab doesn't read summary.txt's words: summary.json, written beside it, holds no words, only how many
-headline lines summary.txt has after its title block, whether the last is the UNCALIBRATED line, and whether the
-energy check failed (spec L2, L3).
+lines summary.txt's title block takes, how many headline lines follow it, whether the last is the UNCALIBRATED line,
+and whether the energy check failed (spec L2, L3).
 """
 
 import csv
@@ -400,21 +400,36 @@ def write_results(result: BenchResult, out_dir: Path) -> Path:
     with i18n.for_people():     # summary.txt is for people: in the Units and Language settings (an MCP run's too)
         heads = headlines(result, lands)
         (out_dir / "summary.txt").write_text(_summary(result, heads, tables), encoding="utf-8")
-    # summary.txt's layout as data (machine JSON: no words, nothing in the Units setting): how many headline lines
-    # follow the title block's blank line, whether the last of them is the UNCALIBRATED line, and the energy check
-    data = {"headlines": len(heads), "uncalibrated": True, "energy_failed": energy_failures(result) > 0}
+        title_lines = _title_lines(result.bench)
+    # summary.txt's layout as data (machine JSON: no words, nothing in the Units setting): how many lines the title
+    # block takes (its notes may hold blank lines), how many headline lines follow its blank line, whether the last
+    # of them is the UNCALIBRATED line, and the energy check
+    data = {"title_lines": title_lines, "headlines": len(heads), "uncalibrated": True,
+            "energy_failed": energy_failures(result) > 0}
     (out_dir / SUMMARY_DATA).write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
     return out_dir
 
 
-def _summary(result: BenchResult, heads: list[str], tables) -> str:
-    """summary.txt's text; `heads` is headlines()'."""
-    b = result.bench
+def _title(b) -> list[str]:
+    """summary.txt's title block: the bench's name and author, its idea, its notes (which may run over lines)."""
     text = [b.name + (f" ({b.author})" if b.author else "")]
     if b.idea:
         text.append(t('idea: "{idea}"', idea=b.idea))
     if b.notes:
         text.append(b.notes)
+    return text
+
+
+def _title_lines(b) -> int:
+    """The lines summary.txt's title block takes as a reader splits the file (str.splitlines): the headlines start
+    after them and one blank line."""
+    return len(("\n".join(_title(b)) + "\n\n").splitlines()) - 1
+
+
+def _summary(result: BenchResult, heads: list[str], tables) -> str:
+    """summary.txt's text; `heads` is headlines()'."""
+    b = result.bench
+    text = _title(b)
     text += ["", *heads, *(t("warning: {warning}", warning=w) for w in b.warnings), ""]
     titles = {"pieces": t("Pieces"), "shafts": t("Shafts"), "loads": t("Loads (normal contact force on each part)"),
               "landings": t("Landings (the launcher model's ball flight, from the outlet)")}

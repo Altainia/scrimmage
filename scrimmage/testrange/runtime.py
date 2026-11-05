@@ -31,6 +31,7 @@ import math
 import mujoco
 import numpy as np
 
+from .. import i18n
 from ..bindings import Update
 from ..disc.inputs import DiscAir
 from ..launcher.inputs import _build_section
@@ -100,16 +101,19 @@ class RangeRuntime:
         given = {"start": start, "preload": preload, "floor_balls": floor_balls, "seed": seed}
         new = {k: v for k, v in given.items() if v is not None}
         if start is not None and start not in self.range.starts:
-            raise ValueError(f"start {start!r} isn't a start of range {self.range.name!r}; its starts: "
-                             f"{', '.join(self.range.starts) or 'none'}")
+            raise ValueError(i18n.t("start {start} isn't a start of range {name}; its starts: {starts}",
+                                    start=repr(start), name=repr(self.range.name),
+                                    starts=', '.join(self.range.starts) or i18n.t("none")))
         if seed is not None:
             check_seed(seed)
         n_slots = len(self.layout.robot_slots)
         if preload is not None and not 0 <= preload <= n_slots:
-            raise ValueError(f"preload {preload}: the robot holds at most {n_slots} balls")
+            raise ValueError(i18n.t("preload {preload}: the robot holds at most {n_slots} balls",
+                                    preload=preload, n_slots=n_slots))
         if floor_balls and self.layout.n_floor == 0 and len(self.range.floor_balls):
-            raise ValueError("floor_balls: this world was built with [range] floor_balls = false, so it has no floor "
-                             "balls to put out; set floor_balls = true in the config (or the scenario's [range])")
+            raise ValueError(i18n.t("floor_balls: this world was built with [range] floor_balls = false, so it "
+                                    "has no floor balls to put out; set floor_balls = true in the config (or the "
+                                    "scenario's [range])"))
         self._overrides.update(new)
         s = self.settings()
         balls = self.balls

@@ -128,17 +128,23 @@ def _summary_data(out: Path | None) -> dict:
 
 def _summary(out: Path | None) -> tuple[list[str], str | None]:
     """(headlines, UNCALIBRATED line) from a results folder's summary.txt, by position, never by their words (spec
-    L3): the `headlines` lines summary.json counts after the title block's blank line, the last of them the
-    UNCALIBRATED line. Without summary.json (an older folder), the lines up to the next blank one, the last taken as
-    the UNCALIBRATED line. ([], None) when there is none."""
+    L3): the `headlines` lines summary.json counts after the title block (its `title_lines` lines, notes with blank
+    lines included) and one blank line, the last of them the UNCALIBRATED line. A summary.json without title_lines
+    (written before it) counts from the file's first blank line. Without summary.json (an older folder), the lines
+    from the first blank line up to the next, the last taken as the UNCALIBRATED line. ([], None) when there is
+    none."""
     try:
         lines = (out / "summary.txt").read_text(encoding="utf-8").splitlines() if out is not None else []
     except (OSError, UnicodeDecodeError):
         return [], None
-    if "" not in lines:
-        return [], None
-    block = lines[lines.index("") + 1:]
     data = _summary_data(out)
+    title = data.get("title_lines")
+    if isinstance(title, int) and not isinstance(title, bool) and 0 < title < len(lines) and lines[title] == "":
+        block = lines[title + 1:]
+    elif "" in lines:
+        block = lines[lines.index("") + 1:]
+    else:
+        return [], None
     count = data.get("headlines")
     if isinstance(count, int) and not isinstance(count, bool):
         heads = block[:count] if 0 < count <= len(block) and "" not in block[:count] else []

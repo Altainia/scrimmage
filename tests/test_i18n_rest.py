@@ -122,8 +122,10 @@ def test_write_results_writes_summary_json_without_words(gb, tmp_path, units):
     result = run_bench(load_bench(PINCH))
     out = write_results(result, tmp_path / "r")
     heads = headlines(result)
-    assert json.loads((out / "summary.json").read_text(encoding="utf-8")) == \
-        {"headlines": len(heads), "uncalibrated": True, "energy_failed": False}
+    data = json.loads((out / "summary.json").read_text(encoding="utf-8"))
+    title = data.pop("title_lines")
+    assert data == {"headlines": len(heads), "uncalibrated": True, "energy_failed": False}
+    assert (out / "summary.txt").read_text(encoding="utf-8").splitlines()[title:title + 2] == ["", heads[0]]
     assert heads[-1].startswith("NOT YET MEASURED: ")
     assert _summary(out) == (heads, heads[-1])
     summary = (out / "summary.txt").read_text(encoding="utf-8")

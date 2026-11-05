@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Literal
 
+from . import i18n
 from .bindings import CTRE_DEVICES, resolve_device_key
 from .bridge import (MISSING_AFTER, PHOENIX_NAME, REV_LABEL, REV_NAME, REV_OWN_NAME, REV_TYPE, SCRIMMAGE_TYPES,
                      rev_unhelped)
@@ -86,16 +87,18 @@ def check_devices(world, hal: HalState, robot_time: float) -> list[DeviceRow]:
             rows.append(_scrimmage_row(slot, key, hal, bound_keys, robot_time))
         else:
             rows.append(DeviceRow(slot, _plain_kind(b, what), None, None, "not_checked", [],
-                                  f"{slot} is not checked: scrimmage only checks Phoenix 6, REV SPARK and "
-                                  "fast-mode devices"))
+                                  i18n.t("{slot} is not checked: scrimmage only checks Phoenix 6, REV SPARK and "
+                                         "fast-mode devices", slot=slot)))
     for (label, ident), _ in sorted(made.items(), key=lambda kv: (kv[0][0], kv[0][1])):
         if (label, ident) not in bound_can:
             rows.append(DeviceRow(None, label, None, _ident(label, ident), "extra", [],
-                                  f"the robot code made {_ident(label, ident)}, but nothing in the config uses it"))
+                                  i18n.t("the robot code made {device}, but nothing in the config uses it",
+                                         device=_ident(label, ident))))
     for typ, name in sorted(d for d in hal.devices if d[0] in SCRIMMAGE_TYPES):
         if (typ, name) not in bound_keys:
             rows.append(DeviceRow(None, _scrimmage_kind(typ), None, f"{typ}:{name}", "extra", [],
-                                  f"the robot code made {typ}:{name}, but nothing in the config uses it"))
+                                  i18n.t("the robot code made {device}, but nothing in the config uses it",
+                                         device=f"{typ}:{name}")))
     return rows
 
 
@@ -112,49 +115,62 @@ def _can_row(slot, can, key, hal, made, bound_can, robot_time) -> DeviceRow:
     label, ident = can
     want = _ident(label, ident)
     if resolve_device_key(hal, key) is not None:
-        return DeviceRow(slot, label, want, want, "ok", [], f"{slot}: {want} is there")
+        return DeviceRow(slot, label, want, want, "ok", [],
+                         i18n.t("{slot}: {device} is there", slot=slot, device=want))
     sources = made.get(can)
     if sources and label in REV_LABEL.values() and rev_unhelped(hal, [key]):
         return DeviceRow(slot, label, want, None, "missing", [],
-                         f"{slot} expects {want}: the robot code made it, but scrimmage's REV helper is not "
-                         "driving it, so it runs with no physics (the scrimmage add-on for REV motor controllers may not be "
-                         "loaded in the robot program)")
+                         i18n.t("{slot} expects {device}: the robot code made it, but scrimmage's REV helper is not "
+                                "driving it, so it runs with no physics (the scrimmage add-on for REV motor "
+                                "controllers may not be loaded in the robot program)", slot=slot, device=want))
     if sources:   # same device under another name
         return DeviceRow(slot, label, want, want, "missing", [],
-                         f"{slot} expects {want}, but the robot code made it under a different device name: the robot "
-                         "file needs to use the name the robot code gave it")
+                         i18n.t("{slot} expects {device}, but the robot code made it under a different device name: "
+                                "the robot file needs to use the name the robot code gave it", slot=slot, device=want))
     if robot_time < MISSING_AFTER - 1e-6:
         return DeviceRow(slot, label, want, None, "waiting", [],
-                         f"{slot} expects {want}; the robot code has not made it yet")
+                         i18n.t("{slot} expects {device}; the robot code has not made it yet", slot=slot, device=want))
     others = sorted(lb for (lb, i) in made if i == ident and lb != label and (lb, i) not in bound_can)
     if others:
         other = _ident(others[0], ident)
         return DeviceRow(slot, label, want, other, "other_type", [],
-                         f"{slot} expects {want}, but the robot code made {other} with that ID: check the "
-                         f"device type of {slot} in the part inspector")
+                         i18n.t("{slot} expects {device}, but the robot code made {other} with that ID: check the "
+                                "device type of {slot} in the part inspector", slot=slot, device=want, other=other))
     near = sorted(((abs(i - ident), i) for (lb, i) in made if lb == label and (lb, i) not in bound_can))
     suggest = [_ident(label, i) for _, i in near]
-    tail = (f"; it made {_join(suggest)}, which nothing uses" if suggest else
-            "; it made no " + label + " at all" if not any(lb == label for lb, _ in made) else "")
-    return DeviceRow(slot, label, want, None, "missing", suggest,
-                     f"{slot} expects {want}, but the robot code made no {want}{tail}")
+    if suggest:
+        note = i18n.t("{slot} expects {device}, but the robot code made no {device}; it made {made}, which nothing "
+                      "uses", slot=slot, device=want, made=_join(suggest))
+    elif not any(lb == label for lb, _ in made):
+        note = i18n.t("{slot} expects {device}, but the robot code made no {device}; it made no {kind} at all",
+                      slot=slot, device=want, kind=label)
+    else:
+        note = i18n.t("{slot} expects {device}, but the robot code made no {device}", slot=slot, device=want)
+    return DeviceRow(slot, label, want, None, "missing", suggest, note)
 
 
 def _scrimmage_row(slot, key, hal, bound_keys, robot_time) -> DeviceRow:
     typ, name = key
     want, kind = f"{typ}:{name}", _scrimmage_kind(typ)
     if key in hal.devices:
-        return DeviceRow(slot, kind, want, want, "ok", [], f"{slot}: {want} is there")
+        return DeviceRow(slot, kind, want, want, "ok", [], i18n.t("{slot}: {device} is there", slot=slot, device=want))
     if robot_time < MISSING_AFTER - 1e-6:
-        return DeviceRow(slot, kind, want, None, "waiting", [], f"{slot} expects {want}; the robot code has not made it yet")
+        return DeviceRow(slot, kind, want, None, "waiting", [],
+                         i18n.t("{slot} expects {device}; the robot code has not made it yet", slot=slot, device=want))
     suggest = sorted(f"{t}:{d}" for t, d in hal.devices if t == typ and (t, d) not in bound_keys)
-    tail = f"; it made {_join(suggest)}, which nothing uses" if suggest else ""
-    return DeviceRow(slot, kind, want, None, "missing", suggest,
-                     f"{slot} expects {want}, but the robot code never made it (the fast simulation devices){tail}")
+    if suggest:
+        note = i18n.t("{slot} expects {device}, but the robot code never made it (the fast simulation devices); it "
+                      "made {made}, which nothing uses", slot=slot, device=want, made=_join(suggest))
+    else:
+        note = i18n.t("{slot} expects {device}, but the robot code never made it (the fast simulation devices)",
+                      slot=slot, device=want)
+    return DeviceRow(slot, kind, want, None, "missing", suggest, note)
 
 
 def _join(names: list[str], most: int = 3) -> str:
-    return ", ".join(names) if len(names) <= most else f"{', '.join(names[:most])} and {len(names) - most} more"
+    if len(names) <= most:
+        return ", ".join(names)
+    return i18n.t("{names} and {count} more", names=", ".join(names[:most]), count=len(names) - most)
 
 
 def device_notes(rows: list[DeviceRow], final: bool = False) -> list[str]:
@@ -166,11 +182,11 @@ def device_notes(rows: list[DeviceRow], final: bool = False) -> list[str]:
     if checked and all(r.status == "missing" and not r.suggest for r in checked) \
             and not any(r.status in ("extra", "other_type") for r in rows):
         names = _join([r.expected for r in checked], most=6)
-        return [f"the robot code made none of the devices the robot file expects ({names})"]
+        return [i18n.t("the robot code made none of the devices the robot file expects ({devices})", devices=names)]
     out = []
     for r in rows:
         if r.status == "waiting" and final:
-            out.append(f"{r.slot}'s {r.expected} wasn't made yet when the run ended")
+            out.append(i18n.t("{slot}'s {device} wasn't made yet when the run ended", slot=r.slot, device=r.expected))
         elif r.status in ("missing", "other_type"):
             out.append(r.note)
         elif r.status == "extra" and r.made not in named:

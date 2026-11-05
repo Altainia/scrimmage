@@ -46,6 +46,7 @@ from dataclasses import dataclass, field, replace
 
 import numpy as np
 
+from .. import i18n
 from .spec import RangeError, _Reader
 
 IN = 0.0254  # m per inch
@@ -363,19 +364,19 @@ def _length(r: _Reader, key: str, default: float | None = None, *, positive: boo
             signed: bool = False) -> float:
     """`key` (m) or `<key>_in` (in): positive, or with `positive` false 0 or more, or with `signed` either sign."""
     if r.has(key) and r.has(key + "_in"):
-        raise r.err(f"has both {key} and {key}_in; give one")
+        raise r.err(i18n.t("has both {key} and {key}_in; give one", key=key))
     if r.has(key + "_in"):
         v = r.num(key + "_in", positive=positive) * IN
     else:
         v = r.num(key, default, positive=positive)
     if not positive and not signed and v < 0.0:
-        raise r.err(f"{key} must be 0 or more, not {v!r}")
+        raise r.err(i18n.t("{key} must be 0 or more, not {value}", key=key, value=repr(v)))
     return v
 
 
 def _center(r: _Reader) -> tuple[float, float]:
     if r.has("center") and r.has("center_in"):
-        raise r.err("has both center and center_in; give one")
+        raise r.err(i18n.t("has both center and center_in; give one"))
     if r.has("center_in"):
         return tuple(x * IN for x in r.nums("center_in", 2))
     return r.nums("center", 2)
@@ -384,7 +385,7 @@ def _center(r: _Reader) -> tuple[float, float]:
 def _bool(r: _Reader, key: str, default: bool) -> bool:
     v = r.t.get(key, default)
     if not isinstance(v, bool):
-        raise r.err(f"{key} must be true or false, not {v!r}")
+        raise r.err(i18n.t("{key} must be true or false, not {value}", key=key, value=repr(v)))
     return v
 
 
@@ -392,19 +393,20 @@ def _climbing(r: _Reader, kind: str, kw: dict) -> None:
     """A bar's, box's or switch's keys beyond the lengths."""
     if kind == "bar":
         if not kw["length"] > max(kw["diameter"], 2.0 * POST):
-            raise r.err(f"length {kw['length']:.4g} m must be more than the pipe's diameter and its two posts")
+            raise r.err(i18n.t("length {length} m must be more than the pipe's diameter and its two posts",
+                               length=f"{kw['length']:.4g}"))
         kw["posts"] = _bool(r, "posts", True)
         kw["stiffness"] = r.num("stiffness", positive=True) if r.has("stiffness") else None
         if r.has("damping") and kw["stiffness"] is None:
-            raise r.err("has damping but no stiffness: damping is the sprung slide's; give stiffness (N/m) too, or "
-                        "leave damping out for a rigid bar")
+            raise r.err(i18n.t("has damping but no stiffness: damping is the sprung slide's; give stiffness (N/m) "
+                               "too, or leave damping out for a rigid bar"))
         kw["damping"] = r.num("damping", 0.0)
         if kw["damping"] < 0.0:
-            raise r.err(f"damping must be 0 or more, not {kw['damping']!r}")
+            raise r.err(i18n.t("damping must be 0 or more, not {damping}", damping=repr(kw['damping'])))
         kw["level"] = r.text("level") if r.has("level") else None
         kw["section"] = r.text("section") if r.has("section") else "round"
         if kw["section"] not in ("round", "square"):
-            raise r.err(f"section must be \"round\" or \"square\", not {kw['section']!r}")
+            raise r.err(i18n.t("section must be \"round\" or \"square\", not {section}", section=repr(kw['section'])))
     elif kind == "box":
         kw["size"] = _size(r)
         kw["ground"] = _bool(r, "ground", False)
@@ -412,17 +414,18 @@ def _climbing(r: _Reader, kind: str, kw: dict) -> None:
         for key in ("mass", "stop_deg", "damping", "level_deg"):
             kw[key] = r.num(key, positive=True)
         if not kw["stop_deg"] < 90.0:
-            raise r.err(f"stop_deg must be below 90, not {kw['stop_deg']!r}")
+            raise r.err(i18n.t("stop_deg must be below 90, not {stop_deg}", stop_deg=repr(kw['stop_deg'])))
         if not kw["bar_length"] > kw["diameter"]:
-            raise r.err(f"bar_length {kw['bar_length']:.4g} m must be more than the pipe's diameter")
+            raise r.err(i18n.t("bar_length {bar_length} m must be more than the pipe's diameter",
+                               bar_length=f"{kw['bar_length']:.4g}"))
         if not kw["bar_drop"] > kw["diameter"] / 2.0:
-            raise r.err(f"bar_drop {kw['bar_drop']:.4g} m must be more than the pipe's radius: the bar hangs below "
-                        "the hinge")
+            raise r.err(i18n.t("bar_drop {bar_drop} m must be more than the pipe's radius: the bar hangs below "
+                               "the hinge", bar_drop=f"{kw['bar_drop']:.4g}"))
 
 
 def _size(r: _Reader) -> tuple[float, float, float]:
     if r.has("size") == r.has("size_in"):
-        raise r.err("needs one of size = [x, y, z] (m) or size_in = [x, y, z] (in)")
+        raise r.err(i18n.t("needs one of size = [x, y, z] (m) or size_in = [x, y, z] (in)"))
     return r.nums("size", 3, positive=True) if r.has("size") else tuple(
         v * IN for v in r.nums("size_in", 3, positive=True))
 
@@ -430,7 +433,7 @@ def _size(r: _Reader) -> tuple[float, float, float]:
 def _not_negative(r: _Reader, key: str, default: float) -> float:
     v = r.num(key, default)
     if v < 0.0:
-        raise r.err(f"{key} must be 0 or more, not {v!r}")
+        raise r.err(i18n.t("{key} must be 0 or more, not {value}", key=key, value=repr(v)))
     return v
 
 
@@ -438,14 +441,15 @@ def _span(r: _Reader, key: str, unit: str) -> tuple[float, float]:
     """`range_deg` [lo, hi], or `range` [lo, hi] (m) or `range_in` (in): lo below hi."""
     lo, hi = _lengths(r, key, "lo, hi") if key == "range" else r.nums(key, 2)
     if not lo < hi:
-        raise r.err(f"{key} [{lo:g}, {hi:g}] must run from low to high: [lo, hi] in {unit}")
+        raise r.err(i18n.t("{key} [{lo}, {hi}] must run from low to high: [lo, hi] in {unit}",
+                           key=key, lo=f"{lo:g}", hi=f"{hi:g}", unit=unit))
     return lo, hi
 
 
 def _axis(r: _Reader) -> str:
     v = r.text("axis")
     if v not in AXES:
-        raise r.err(f"axis must be \"x\", \"y\" or \"z\" (in the element's frame), not {v!r}")
+        raise r.err(i18n.t("axis must be \"x\", \"y\" or \"z\" (in the element's frame), not {value}", value=repr(v)))
     return v
 
 
@@ -462,23 +466,25 @@ def _moving(r: _Reader, kind: str, kw: dict) -> Hinged | Sliding:
     if kind == "hinged":
         kw["shape"] = r.text("shape") if r.has("shape") else "box"
         if kw["shape"] not in SHAPES:
-            raise r.err(f"shape must be \"box\" or \"disc\", not {kw['shape']!r}")
+            raise r.err(i18n.t("shape must be \"box\" or \"disc\", not {shape}", shape=repr(kw['shape'])))
         if kw["shape"] == "box":
             given = [k for k in ("diameter", "diameter_in", "thickness", "thickness_in") if r.has(k)]
             if given:
-                raise r.err(f"has {given[0]}, which only a disc takes; a box takes size, or give shape = \"disc\"")
+                raise r.err(i18n.t("has {given}, which only a disc takes; a box takes size, or give shape = "
+                                   "\"disc\"", given=given[0]))
             kw["size"] = _size(r)
         else:
             if r.has("size") or r.has("size_in"):
-                raise r.err("has size, which only a box takes; a disc takes diameter and thickness")
+                raise r.err(i18n.t("has size, which only a box takes; a disc takes diameter and thickness"))
             kw["diameter"], kw["thickness"] = _length(r, "diameter"), _length(r, "thickness")
         kw["hinge"] = r.text("hinge")
         if kw["hinge"] not in HINGES:
-            raise r.err(f"hinge must be one of {', '.join(HINGES)}, not {kw['hinge']!r}")
+            raise r.err(i18n.t("hinge must be one of {hinges}, not {hinge}",
+                               hinges=', '.join(HINGES), hinge=repr(kw['hinge'])))
         if r.has("axis"):
             if kw["hinge"] != "center":
-                raise r.err(f"has axis, which only a \"center\" hinge takes; an edge hinge's axis is its edge "
-                            f"(hinge = {kw['hinge']!r})")
+                raise r.err(i18n.t("has axis, which only a \"center\" hinge takes; an edge hinge's axis is its "
+                                   "edge (hinge = {hinge})", hinge=repr(kw['hinge'])))
             kw["axis"] = _axis(r)
         kw["range_deg"] = _span(r, "range_deg", "degrees") if r.has("range_deg") else None
         kw["rest_deg"] = r.num("rest_deg", 0.0)
@@ -491,7 +497,8 @@ def _moving(r: _Reader, kind: str, kw: dict) -> Hinged | Sliding:
         span, rest, key = kw["range"], kw["rest"], "rest"
     if span is not None and not span[0] <= rest <= span[1]:
         rkey = "range_deg" if kind == "hinged" else "range"
-        raise r.err(f"{key} {rest:g} is outside {rkey} [{span[0]:g}, {span[1]:g}]; give a {key} within it")
+        raise r.err(i18n.t("{key} {rest} is outside {rkey} [{low}, {high}]; give a {key} within it",
+                           key=key, rest=f"{rest:g}", rkey=rkey, low=f"{span[0]:g}", high=f"{span[1]:g}"))
     return (Hinged if kind == "hinged" else Sliding)(**kw)
 
 
@@ -500,11 +507,11 @@ def _lengths(r: _Reader, key: str, names: str) -> tuple[float, ...]:
     ("lo, hi")."""
     n = len(names.split(", "))
     if r.has(key) and r.has(key + "_in"):
-        raise r.err(f"has both {key} and {key}_in; give one")
+        raise r.err(i18n.t("has both {key} and {key}_in; give one", key=key))
     if r.has(key + "_in"):
         return tuple(v * IN for v in r.nums(key + "_in", n))
     if not r.has(key):
-        raise r.err(f"needs one of {key} = [{names}] (m) or {key}_in = [{names}] (in)")
+        raise r.err(i18n.t("needs one of {key} = [{names}] (m) or {key}_in = [{names}] (in)", key=key, names=names))
     return r.nums(key, n)
 
 
@@ -515,12 +522,14 @@ def _rod(r: _Reader, name: str) -> Rod:
               friction=r.num("friction", DEFAULT_FRICTION, positive=True))
     kw["section"] = r.text("section") if r.has("section") else "round"
     if kw["section"] not in ("round", "square"):
-        raise r.err(f"section must be \"round\" or \"square\", not {kw['section']!r}")
+        raise r.err(i18n.t("section must be \"round\" or \"square\", not {section}", section=repr(kw['section'])))
     e = Rod(**kw)
     if e.length() < 1e-9:
-        raise RangeError(f"{r.path}: {r.where}: base and tip are the same point; a rod needs two ends")
+        raise RangeError(i18n.t("{path}: {where}: base and tip are the same point; a rod needs two ends",
+                                path=r.path, where=r.where))
     if e.diameter > e.length():
-        raise RangeError(f"{r.path}: {r.where}: diameter {e.diameter:.4g} m is longer than the rod")
+        raise RangeError(i18n.t("{path}: {where}: diameter {diameter} m is longer than the rod",
+                                path=r.path, where=r.where, diameter=f"{e.diameter:.4g}"))
     return e
 
 
@@ -530,7 +539,8 @@ def _element(path, table, i: int) -> Element:
     where = f"element '{name}'"
     kind = _Reader(path, where, table, _ALL).text("kind")
     if kind not in _CLASSES:
-        raise RangeError(f"{path}: {where} has unknown kind '{kind}'; kinds: {', '.join(_CLASSES)}")
+        raise RangeError(i18n.t("{path}: {where} has unknown kind '{kind}'; kinds: {kinds}",
+                                path=path, where=where, kind=kind, kinds=', '.join(_CLASSES)))
     valid = _COMMON + tuple(k + s for k in _LENGTHS[kind] for s in ("", "_in")) + _OTHER[kind]
     if kind == "rod":    # its ends place it
         valid = tuple(k for k in valid if k not in ("center", "center_in", "yaw_deg"))
@@ -553,7 +563,7 @@ def _element(path, table, i: int) -> Element:
             kw[key] = r.num(key, positive=True)
     for key in ("ramp_deg", "max_tilt_deg"):
         if key in kw and not kw[key] < 90.0:
-            raise r.err(f"{key} must be below 90, not {kw[key]!r}")
+            raise r.err(i18n.t("{key} must be below 90, not {value}", key=key, value=repr(kw[key])))
     e = _CLASSES[kind](**kw)
     if isinstance(e, Bump):
         _check_bump(r, e)
@@ -564,22 +574,25 @@ def _check_bump(r: _Reader, e: Bump) -> None:
     """The profile is the crest, then each ramp down at ramp_deg to the lip's height, then the lip to the toe: its
     depth has to come out within BUMP_FIT of the given depth."""
     if not e.lip < e.height:
-        raise r.err(f"lip {e.lip:.4g} m must be lower than the height {e.height:.4g} m")
+        raise r.err(i18n.t("lip {lip} m must be lower than the height {height} m",
+                           lip=f"{e.lip:.4g}", height=f"{e.height:.4g}"))
     profile = e.crest + 2.0 * (e.height - e.lip) / math.tan(math.radians(e.ramp_deg))
     if abs(profile - e.depth) > BUMP_FIT:
-        raise r.err(f"depth {e.depth:.4g} m doesn't fit the profile: crest, height, lip and ramp_deg give "
-                    f"{profile:.4g} m from toe to toe; fix one of them")
+        raise r.err(i18n.t("depth {depth} m doesn't fit the profile: crest, height, lip and ramp_deg give "
+                           "{profile} m from toe to toe; fix one of them",
+                           depth=f"{e.depth:.4g}", profile=f"{profile:.4g}"))
 
 
 def parse_elements(path, tables) -> tuple[Element, ...]:
     """Read the `[[element]]` tables; the names must be unique."""
     if not isinstance(tables, list):
-        raise RangeError(f"{path}: element must be an array of tables ([[element]])")
+        raise RangeError(i18n.t("{path}: element must be an array of tables ([[element]])", path=path))
     out: list[Element] = []
     for i, t in enumerate(tables):
         e = _element(path, t, i)
         if any(e.name == o.name for o in out):
-            raise RangeError(f"{path}: two elements named '{e.name}'; element names must be unique")
+            raise RangeError(i18n.t("{path}: two elements named '{name}'; element names must be unique",
+                                    path=path, name=e.name))
         out.append(e)
     return tuple(out)
 
@@ -589,42 +602,47 @@ def parse_climb(path, table, elements: tuple[Element, ...]) -> tuple[ClimbRule |
     leveled = [e for e in elements if isinstance(e, Bar) and e.level is not None]
     if table is None:
         if leveled:
-            raise RangeError(f"{path}: bar '{leveled[0].name}' has level '{leveled[0].level}' but the range has no "
-                             f"[climb]; add [climb] with rule and levels, or drop the bar's level")
+            raise RangeError(i18n.t("{path}: bar '{name}' has level '{level}' but the range has no [climb]; add "
+                                    "[climb] with rule and levels, or drop the bar's level",
+                                    path=path, name=leveled[0].name, level=leveled[0].level))
         return None, elements
     r = _Reader(path, "[climb]", table, ("rule", "levels", "level_bonus", "switch"))
     rule = r.text("rule")
     if rule not in CLIMB_RULES:
-        raise r.err(f"has unknown rule '{rule}'; rules: {', '.join(CLIMB_RULES)}")
+        raise r.err(i18n.t("has unknown rule '{rule}'; rules: {rules}",
+                           rule=rule, rules=', '.join(CLIMB_RULES)))
     raw = r.raw("levels")
     if not isinstance(raw, dict) or not raw:
-        raise r.err(f"levels must be a table of level name = points, lowest first, like {{ LOW = 4, MID = 6 }}, "
-                    f"not {raw!r}")
+        raise r.err(i18n.t("levels must be a table of level name = points, lowest first, like {{ LOW = 4, MID = 6 "
+                           "}}, not {raw}", raw=repr(raw)))
     lv = _Reader(path, "[climb] levels", raw, tuple(raw))
     levels = {name: lv.num(name) for name in raw}
     points = list(levels.values())
     if any(p < 0.0 for p in points) or any(b <= a for a, b in zip(points, points[1:])):
-        raise r.err(f"levels must be listed lowest first, each worth more points than the one before (and none "
-                    f"below 0), not {levels}")
+        raise r.err(i18n.t("levels must be listed lowest first, each worth more points than the one before (and "
+                           "none below 0), not {levels}", levels=levels))
     if rule == "hang":
         name = r.text("switch")
         if not any(e.name == name for e in elements):
-            raise r.err(f"switch '{name}' isn't an element of the range; name a kind = \"switch\" element")
+            raise r.err(i18n.t("switch '{name}' isn't an element of the range; name a kind = \"switch\" element",
+                               name=name))
         if not any(e.name == name and isinstance(e, Switch) for e in elements):
-            raise r.err(f"switch '{name}' isn't a switch; name a kind = \"switch\" element")
+            raise r.err(i18n.t("switch '{name}' isn't a switch; name a kind = \"switch\" element", name=name))
         bonus = r.num("level_bonus")
         if bonus < 0.0:
-            raise r.err(f"level_bonus must be 0 or more, not {bonus!r}")
+            raise r.err(i18n.t("level_bonus must be 0 or more, not {bonus}", bonus=repr(bonus)))
         climb = ClimbRule(rule=rule, levels=levels, level_bonus=bonus, switch=name)
     else:
         extra = [k for k in ("switch", "level_bonus") if r.has(k)]
         if extra:
-            raise r.err(f"has {extra[0]}, which only the \"hang\" rule takes; drop it or use rule = \"hang\"")
+            raise r.err(i18n.t("has {extra}, which only the \"hang\" rule takes; drop it or use rule = \"hang\"",
+                               extra=extra[0]))
         climb = ClimbRule(rule=rule, levels=levels)
     for e in leveled:
         if e.level not in levels:
-            raise RangeError(f"{path}: bar '{e.name}' has level '{e.level}', which isn't one of the [climb] levels: "
-                             f"{', '.join(levels)}")
+            raise RangeError(i18n.t("{path}: bar '{name}' has level '{level}', which isn't one of the [climb] "
+                                    "levels: {levels}",
+                                    path=path, name=e.name, level=e.level, levels=', '.join(levels)))
     return climb, tuple(replace(e, points=levels[e.level]) if e in leveled else e for e in elements)
 
 
@@ -706,17 +724,19 @@ def check_clear(path, elements, starts: dict, floor_balls: np.ndarray, reaches, 
         for e in elements:
             if any(not _separated(outline, f) for f in _on_floor(e, start=True)):
                 raise RangeError(
-                    f"{path}: start '{sname}' at ({x:.4g}, {y:.4g}) overlaps element '{e.name}'; move the start"
-                    f" clear of it (a {ROBOT_OUTLINE} m square robot outline is assumed)"
+                    i18n.t("{path}: start '{start}' at ({x}, {y}) overlaps element '{name}'; move the start "
+                           "clear of it (a {robot_outline} m square robot outline is assumed)", path=path,
+                           start=sname, x=f"{x:.4g}", y=f"{y:.4g}", name=e.name, robot_outline=ROBOT_OUTLINE)
                 )
     for k, (x, y) in enumerate(floor_balls):
         for e in elements:
             for f in _on_floor(e, start=False):
                 if _gap(f, (x, y)) < reaches[k]:
-                    what = names[k] if names is not None else f"ball {k}"
+                    what = names[k] if names is not None else i18n.t("ball {number}", number=k)
                     raise RangeError(
-                        f"{path}: floor_balls: {what} at ({x:.4g}, {y:.4g}) lies on element '{e.name}'; move the"
-                        f" {what.rsplit(' ', 1)[0]} off it"
+                        i18n.t("{path}: floor_balls: {what} at ({x}, {y}) lies on element '{name}'; move the "
+                               "{piece} off it", path=path, what=what, x=f"{x:.4g}", y=f"{y:.4g}", name=e.name,
+                               piece=what.rsplit(' ', 1)[0])
                     )
 
 

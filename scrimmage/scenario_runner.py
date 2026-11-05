@@ -704,7 +704,10 @@ async def _run_steps(session: Session, scenario: Scenario, report: Report, out_d
     if (msg := session.bridge.fast_phoenix_message) is not None:
         report.notes.append(Said(msg, _shown_now(lambda: session.bridge.fast_phoenix_message)))
     if session.robot is not None or session.attach:   # a robot program: say which expected devices it never made
-        report.notes.extend(device_notes(check_devices(session.world, session.bridge.hal, session.t), final=True))
+        rows = check_devices(session.world, session.bridge.hal, session.t)
+        shown = _shown_now(lambda: device_notes(check_devices(session.world, session.bridge.hal, session.t),
+                                                final=True))()    # the same notes in the Language setting
+        report.notes.extend(Said(note, lambda s=s: s) for note, s in zip(device_notes(rows, final=True), shown))
     if not any(step.checks for step in scenario.steps):
         report.notes.append(_said(NO_CHECKS_NOTE))
     await _console_settle(session, hooks)   # for "no crash in console"
@@ -895,8 +898,9 @@ def _implicit(session: Session, scenario: Scenario, report: Report, console_star
         return
     agent = session.agent_state()
     language = session.robot_language()
-    msg = " ".join(fwn.message(dev, writes, agent, language) for dev, writes in fwn.by_device(fw).items())
-    if summary:
-        msg += f" Agent: {summary}"
-    report.implicit.append(CheckResult("no foreign sim writes", False, msg,
-                                       first_failure_t=min(f["first_t"] for f in fw)))
+
+    def explained() -> str:       # the agent's summary is its console's words, as it wrote them
+        msg = " ".join(fwn.message(dev, writes, agent, language) for dev, writes in fwn.by_device(fw).items())
+        return t("{writes} Agent: {summary}", writes=msg, summary=summary) if summary else msg
+    report.implicit.append(said("no foreign sim writes", False, explained(), _shown_now(explained),
+                                None, None, min(f["first_t"] for f in fw)))

@@ -41,6 +41,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from .. import i18n
+
 PSI = 6894.757            # Pa per psi
 ATM = 101325.0            # Pa
 T_AIR = 293.15            # K
@@ -100,23 +102,26 @@ class AirConfig:
 
     def __post_init__(self):
         if self.tanks < 1:
-            raise ValueError("The air system needs at least one tank.")
+            raise ValueError(i18n.t("The air system needs at least one tank."))
         if self.tank_ml <= 0:
-            raise ValueError("A tank's volume must be more than zero.")
+            raise ValueError(i18n.t("A tank's volume must be more than zero."))
         if self.working_psi > MAX_WORKING_PSI:
-            raise ValueError(f"The working pressure is {self.working_psi:g} psi; FRC allows at most "
-                             f"{MAX_WORKING_PSI:g} psi on the working side (the regulator rule).")
+            raise ValueError(i18n.t("The working pressure is {working_psi} psi; FRC allows at most "
+                                    "{max_working_psi} psi on the working side (the regulator rule).",
+                                    working_psi=f"{self.working_psi:g}", max_working_psi=f"{MAX_WORKING_PSI:g}"))
         if self.start_psi > MAX_STORED_PSI:
-            raise ValueError(f"The start pressure is {self.start_psi:g} psi; FRC allows at most "
-                             f"{MAX_STORED_PSI:g} psi stored.")
+            raise ValueError(i18n.t("The start pressure is {start_psi} psi; FRC allows at most {max_stored_psi} "
+                                    "psi stored.",
+                                    start_psi=f"{self.start_psi:g}", max_stored_psi=f"{MAX_STORED_PSI:g}"))
         if self.switch_off_psi > MAX_STORED_PSI:
-            raise ValueError(f"The switch stops the compressor at {self.switch_off_psi:g} psi; FRC allows at most "
-                             f"{MAX_STORED_PSI:g} psi stored.")
+            raise ValueError(i18n.t("The switch stops the compressor at {switch_off_psi} psi; FRC allows at most "
+                                    "{max_stored_psi} psi stored.",
+                                    switch_off_psi=f"{self.switch_off_psi:g}", max_stored_psi=f"{MAX_STORED_PSI:g}"))
         if self.switch_on_psi >= self.switch_off_psi:
-            raise ValueError("The pressure switch must turn on below the pressure where it turns off.")
+            raise ValueError(i18n.t("The pressure switch must turn on below the pressure where it turns off."))
         if self.compressor != "none" and self.compressor not in COMPRESSORS:
-            raise ValueError(f"Unknown compressor {self.compressor!r}; use one of "
-                             f"{', '.join(COMPRESSORS)} or \"none\".")
+            raise ValueError(i18n.t("Unknown compressor {compressor}; use one of {compressors} or \"none\".",
+                                    compressor=repr(self.compressor), compressors=', '.join(COMPRESSORS)))
 
 
 @dataclass(frozen=True)
@@ -202,9 +207,11 @@ class AirSystem:
 
     def set_valve(self, name: str, state: str):
         if name not in self._specs:
-            raise ValueError(f"No cylinder named {name!r}; the cylinders are {', '.join(self._specs) or 'none'}.")
+            raise ValueError(i18n.t("No cylinder named {name}; the cylinders are {cylinders}.",
+                                    name=repr(name), cylinders=', '.join(self._specs) or i18n.t("none")))
         if state not in _STATES:
-            raise ValueError(f"A valve state is one of {', '.join(_STATES)}, not {state!r}.")
+            raise ValueError(i18n.t("A valve state is one of {states}, not {state}.",
+                                    states=', '.join(_STATES), state=repr(state)))
         self._valves[name] = state
 
     # --- readings (gauge psi) ---------------------------------------------------------------------------------

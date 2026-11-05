@@ -712,7 +712,7 @@ first swept key. Charts need matplotlib; without it the table and CSV are still 
 | File | What |
 |---|---|
 | `summary.txt` | the headlines and every table below |
-| `summary.json` | no words: how many headline lines `summary.txt` has, that the last is the UNCALIBRATED line, and whether the energy check failed (the Bench tab reads the headlines from `summary.txt` by position; a results folder from before `summary.json` shows its headlines, but no failed energy check) |
+| `summary.json` | no words: how many lines the title block of `summary.txt` takes, how many headline lines follow it, that the last is the UNCALIBRATED line, and whether the energy check failed (the Bench tab reads the headlines from `summary.txt` by position; a results folder from before `summary.json` shows its headlines, but no failed energy check) |
 | `pieces.csv` | each piece: outcome, outlet, times, exit speed, elevation, yaw, spin, tilt, exit slip, peak force, the energy check |
 | `shafts.csv` | each shaft: target, lowest speed, worst drop (%), recovery time, back to speed before the next piece, peak current, energy per piece |
 | `loads.csv` | each shape: peak contact force (N), peak impulse in one pass (N s), and where |

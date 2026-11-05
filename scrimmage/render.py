@@ -150,8 +150,8 @@ class Renderer:
             cam.distance = 1.08 * half / math.tan(fovy / 2)
         elif view == "free":
             if "lookat" not in c:
-                raise ValueError("the free view needs camera = {lookat: [x, y, z]} (and optionally distance, "
-                                 "azimuth, elevation)")
+                raise ValueError(t("the free view needs camera = {{lookat: [x, y, z]}} (and optionally distance, "
+                                   "azimuth, elevation)"))
             cam.type = mujoco.mjtCamera.mjCAMERA_FREE
             cam.lookat[:] = [float(v) for v in c["lookat"]]
             cam.distance = float(c.get("distance", 3.0))

@@ -27,7 +27,8 @@ UNITS = {"m": 1.0, "mm": 0.001, "in": IN}
 class BenchError(ValueError):
     """A bench file problem; the message names the bad key and, where there is a short list, the valid ones. `key` is
     the dotted key of the field at fault (`wheel.top.diameter`, else the entry `wheel.top`), None when unknown.
-    `code` says what the problem is for code that mustn't read its words ("no_coacd", "no_convex_pieces")."""
+    `code` says what the problem is for code that mustn't read its words ("no_coacd", "no_convex_pieces",
+    "no_entry")."""
 
     def __init__(self, message: str, key: str | None = None, code: str | None = None):
         super().__init__(message)
@@ -968,7 +969,8 @@ def _check_path(raw: dict, dotted: str) -> tuple[str, str | None, str]:
         known = list(raw.get("shaft", {})) if section == "shaft" else [e.get("name") for e in raw.get(section, [])]
         if name not in known:
             raise BenchError(i18n.t("no {section} named '{name}' in '{dotted}'; {section}s: {known}", section=section,
-                                    name=name, dotted=dotted, known=", ".join(known) or i18n.t("(none)")))
+                                    name=name, dotted=dotted, known=", ".join(known) or i18n.t("(none)")),
+                             code="no_entry")
     return section, name, key
 
 

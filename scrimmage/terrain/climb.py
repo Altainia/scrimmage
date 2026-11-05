@@ -59,6 +59,7 @@ import re
 import mujoco
 import numpy as np
 
+from .. import i18n
 from ..parts.field import ELEMENT_GROUP
 
 CLIMB_SIGNALS = ("hanging", "level", "points", "swing", "hook_load", "extension", "height")
@@ -124,7 +125,8 @@ class ClimbMonitor:
             bodies = [b for b in range(m.nbody) if m.body(b).name == name and m.body_rootid[b] == root]
             if not bodies:
                 names = [m.body(b).name for b in range(m.nbody) if m.body_rootid[b] == root and m.body(b).name]
-                raise ValueError(f"hook body '{name}' isn't a body of the robot; its bodies: {', '.join(names)}")
+                raise ValueError(i18n.t("hook body '{name}' isn't a body of the robot; its bodies: {names}",
+                                        name=name, names=', '.join(names)))
             hooks[name] = [g for g in range(m.ngeom) if m.geom_bodyid[g] == bodies[0]
                            and (m.geom_contype[g] or m.geom_conaffinity[g])]
         self.hooks: list[str] = list(hooks)

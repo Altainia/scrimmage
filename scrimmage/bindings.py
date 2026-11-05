@@ -12,6 +12,7 @@ from typing import Any
 import mujoco
 import numpy as np
 
+from . import i18n
 from .motors import DCMotor, MOTORS, _m, get_motor
 from .protocol import HalState
 
@@ -23,9 +24,9 @@ LIMIT_EPS = 1e-3          # a joint this close to its range end counts as on the
 def _joint(model: mujoco.MjModel, name: str) -> tuple[int, int]:
     jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)
     if jid < 0:
-        raise ValueError(f"Joint '{name}' not found in the MuJoCo model")
+        raise ValueError(i18n.t("Joint '{name}' not found in the MuJoCo model", name=name))
     if int(model.jnt_type[jid]) not in (int(mujoco.mjtJoint.mjJNT_HINGE), int(mujoco.mjtJoint.mjJNT_SLIDE)):
-        raise ValueError(f"Joint '{name}' must be a hinge or slide joint")
+        raise ValueError(i18n.t("Joint '{name}' must be a hinge or slide joint", name=name))
     return int(model.jnt_qposadr[jid]), int(model.jnt_dofadr[jid])
 
 
@@ -41,14 +42,15 @@ def _ctre_device(cfg: dict, kind: str) -> str:
     spec = str(cfg["ctre"])
     name, sep, ident = spec.partition(":")
     if name not in CTRE_DEVICES or not sep:
-        raise ValueError(f"ctre = {spec!r}: expected \"<Kind>:<id>\" with Kind one of "
-                         f"{', '.join(CTRE_DEVICES)} (e.g. \"TalonFX:1\")")
+        raise ValueError(i18n.t("ctre = {spec}: expected \"<Kind>:<id>\" with Kind one of {devices} (e.g. "
+                                "\"TalonFX:1\")", spec=repr(spec), devices=', '.join(CTRE_DEVICES)))
     want = _CTRE_KIND_FOR[kind]
     if name != want:
-        raise ValueError(f"ctre = {spec!r} in a [[{kind}]] binding: only {want} is supported there")
+        raise ValueError(i18n.t("ctre = {spec} in a [[{kind}]] binding: only {want} is supported there",
+                                spec=repr(spec), kind=kind, want=want))
     ident = ident.strip()
     if not ident.isdigit() or not 0 <= int(ident) <= 62:
-        raise ValueError(f"ctre = {spec!r}: the CAN id must be an integer 0-62")
+        raise ValueError(i18n.t("ctre = {spec}: the CAN id must be an integer 0-62", spec=repr(spec)))
     if "device" in cfg:
         return str(cfg["device"])
     return f"{CTRE_DEVICES[name]}[{int(ident)}]"
@@ -92,13 +94,16 @@ def _rev_device(cfg: dict, kind: str) -> str:
     name, sep, ident = spec.partition(":")
     allowed = _REV_KINDS_FOR[kind]
     if not sep or (name not in allowed and name not in REV_DEVICES and name.removesuffix("Abs") not in REV_DEVICES):
-        raise ValueError(f"rev = {spec!r}: expected \"<Kind>:<id>\" with Kind one of "
-                         f"{', '.join(allowed)} (e.g. \"{next(iter(allowed))}:1\")")
+        raise ValueError(i18n.t("rev = {spec}: expected \"<Kind>:<id>\" with Kind one of {allowed} (e.g. "
+                                "\"{next}:1\")", spec=repr(spec), allowed=', '.join(allowed),
+                                next=next(iter(allowed))))
     if name not in allowed:
-        raise ValueError(f"rev = {spec!r} in a [[{kind}]] binding: only {' or '.join(allowed)} is supported there")
+        raise ValueError(i18n.t("rev = {spec} in a [[{kind}]] binding: only {allowed} is supported there",
+                                spec=repr(spec), kind=kind,
+                                allowed=i18n.t(" or ", context="list separator").join(allowed)))
     ident = ident.strip()
     if not ident.isdigit() or not 0 <= int(ident) <= 62:
-        raise ValueError(f"rev = {spec!r}: the CAN id must be an integer 0-62")
+        raise ValueError(i18n.t("rev = {spec}: the CAN id must be an integer 0-62", spec=repr(spec)))
     return f"{allowed[name]}[{int(ident)}]"
 
 
@@ -106,14 +111,16 @@ def _scrimmage_name(cfg: dict) -> str:
     """The fast-mode device name in `scrimmage = "<name>"` (any non-empty string without spaces)."""
     name = cfg["scrimmage"]
     if not isinstance(name, str) or not name or any(c.isspace() for c in name):
-        raise ValueError(f"scrimmage = {name!r}: expected a non-empty device name without spaces (e.g. \"fl_drive\")")
+        raise ValueError(i18n.t("scrimmage = {name}: expected a non-empty device name without spaces (e.g. "
+                                "\"fl_drive\")", name=repr(name)))
     return name
 
 
 def _one_of(cfg: dict, keys: tuple[str, ...], what: str) -> None:
     given = [k for k in keys if k in cfg]
     if len(given) > 1:
-        raise ValueError(f"{what} sets {' and '.join(given)}: give only one of {', '.join(keys)}")
+        raise ValueError(i18n.t("{what} sets {given}: give only one of {keys}", what=what,
+                                given=i18n.t(" and ", context="list separator").join(given), keys=', '.join(keys)))
 
 
 def resolve_device_key(hal: HalState, key: tuple[str, str]) -> str | None:
@@ -237,7 +244,7 @@ class MotorBinding:
 
     def __init__(self, cfg: dict, model: mujoco.MjModel):
         self.name = cfg.get("name", cfg["joint"])
-        _one_of(cfg, ("pwm", "can", "ctre", "rev", "scrimmage"), f"motor '{self.name}'")
+        _one_of(cfg, ("pwm", "can", "ctre", "rev", "scrimmage"), i18n.t("motor '{name}'", name=self.name))
         if "pwm" in cfg:
             self.kind, self.device = "PWM", str(cfg["pwm"])
         elif "can" in cfg:
@@ -249,8 +256,9 @@ class MotorBinding:
         elif "scrimmage" in cfg:
             self.kind, self.device = "Scrimmage", _scrimmage_name(cfg)
         else:
-            raise ValueError(f"motor '{self.name}' needs pwm = <port>, can = \"<Device[id]>\", "
-                             f"ctre = \"TalonFX:<id>\", rev = \"SparkMax:<id>\" or scrimmage = \"<name>\"")
+            raise ValueError(i18n.t("motor '{name}' needs pwm = <port>, can = \"<Device[id]>\", ctre = "
+                                    "\"TalonFX:<id>\", rev = \"SparkMax:<id>\" or scrimmage = \"<name>\"",
+                                    name=self.name))
         self.device_key = ({"REV": "ScrimmageREV", "Scrimmage": "ScrimmageMotor", "PWM": "PWM"}.get(self.kind, "CANMotor"),
                            self.device)
         self.model = model
@@ -271,11 +279,11 @@ class MotorBinding:
         self.limits = None                                # (lower, upper) joint range when limits = true (REV)
         if cfg.get("limits", False):
             if self.kind != "REV":
-                raise ValueError(f"motor '{self.name}': limits = true is only for rev motors")
+                raise ValueError(i18n.t("motor '{name}': limits = true is only for rev motors", name=self.name))
             jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, cfg["joint"])
             if not model.jnt_limited[jid]:
-                raise ValueError(f"motor '{self.name}': limits = true needs joint '{cfg['joint']}' to have a range "
-                                 "(range=\"lo hi\" in the MJCF)")
+                raise ValueError(i18n.t("motor '{name}': limits = true needs joint '{joint}' to have a range "
+                                        "(range=\"lo hi\" in the MJCF)", name=self.name, joint=cfg['joint']))
             self.limits = (float(model.jnt_range[jid][0]), float(model.jnt_range[jid][1]))
         # live values, useful for logging
         self.command = 0.0
@@ -451,7 +459,8 @@ class EncoderBinding:
     same frame as the CANcoder's `>rawPositionInput` (the fast-mode library applies the CANcoder's own config)."""
 
     def __init__(self, cfg: dict, model: mujoco.MjModel):
-        _one_of(cfg, ("channel_a", "can", "ctre", "rev", "scrimmage"), f"encoder on '{cfg.get('joint')}'")
+        _one_of(cfg, ("channel_a", "can", "ctre", "rev", "scrimmage"), i18n.t("encoder on '{joint}'",
+                                                                              joint=cfg.get("joint")))
         self.name = cfg.get("name")
         self.qadr, self.dadr = _joint(model, cfg["joint"])
         # encoder revolutions per joint revolution (e.g. gear_ratio if the encoder is on the motor)
@@ -474,8 +483,8 @@ class EncoderBinding:
             self.kind, self.device = "Scrimmage", _scrimmage_name(cfg)
             self.offset = float(cfg.get("offset", 0.0))
         else:
-            raise ValueError("encoder needs channel_a = <dio>, can = \"<Device[id]>\", ctre = \"CANcoder:<id>\", "
-                             "rev = \"SparkMaxAbs:<id>\" or scrimmage = \"<name>\"")
+            raise ValueError(i18n.t("encoder needs channel_a = <dio>, can = \"<Device[id]>\", ctre = "
+                                    "\"CANcoder:<id>\", rev = \"SparkMaxAbs:<id>\" or scrimmage = \"<name>\""))
         # HALSim names quadrature Encoders by index, so their key matches on <channel_a (see resolve_device_key)
         self.device_key = (("Encoder", f"<channel_a={self.channel_a}") if self.kind == "Encoder"
                            else ({"REV": "ScrimmageREV", "Scrimmage": "ScrimmageEncoder"}.get(self.kind, "CANEncoder"), self.device))
@@ -528,7 +537,7 @@ class GyroBinding:
 
     def __init__(self, cfg: dict, model: mujoco.MjModel):
         self.name = cfg.get("name")
-        _one_of(cfg, ("ctre", "scrimmage", "device"), "gyro")
+        _one_of(cfg, ("ctre", "scrimmage", "device"), i18n.t("gyro"))
         self.scrimmage = "scrimmage" in cfg
         if "ctre" in cfg:
             self.typ, self.device = "CANGyro", _ctre_device(cfg, "gyro")
@@ -543,7 +552,7 @@ class GyroBinding:
         self.device_key = (self.typ, self.device)
         bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, cfg["body"])
         if bid < 0:
-            raise ValueError(f"Body '{cfg['body']}' not found")
+            raise ValueError(i18n.t("Body '{body}' not found", body=cfg['body']))
         self.body = bid
         axis = cfg.get("axis", "x")  # which angle_*/rate_* values the device uses for yaw
         self.angle_value = str(cfg.get("angle", f"angle_{axis}"))

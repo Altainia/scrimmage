@@ -135,7 +135,8 @@ def apply_grip(part: Part, grips: dict[str, str | float], where: str, base=None)
         mu = frictions[b.name]
         touch = [g.collide and not g.tread for g in b.geoms]
         if not any(touch):
-            warns.append(f"{where}: body {b.name} has no geom that touches anything, so its grip does nothing")
+            warns.append(t("{where}: body {body} has no geom that touches anything, so its grip does nothing",
+                           where=where, body=b.name))
         bodies.append(replace(b, geoms=[replace(g, friction=mu, priority=GRIP_PRIORITY, solref=GRIP_SOLREF) if t
                                         else g for g, t in zip(b.geoms, touch)]))
     kept = {k: p for k, p in part.grip_provenance.items() if k not in grips}

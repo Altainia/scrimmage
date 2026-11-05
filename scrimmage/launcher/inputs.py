@@ -14,6 +14,8 @@ import typing
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .. import i18n
+from ..i18n import N_
 from ..motors import MOTORS
 
 PRESETS: dict[str, dict[str, dict]] = tomllib.loads(
@@ -173,18 +175,18 @@ class Setup:
     provenance: dict = field(default_factory=dict, compare=False, repr=False)
 
 
-# Ranges checked after parsing: (section, key, test, what the value must be). Optional keys left unset (None) are
-# skipped. contact.py keeps its own physics-side guards as well.
-_POSITIVE = (lambda v: v > 0.0, "positive")
-_NON_NEGATIVE = (lambda v: v >= 0.0, "zero or more")
+# Ranges checked after parsing: (section, key, test, what the value must be, marked N_()). Optional keys left unset
+# (None) are skipped. contact.py keeps its own physics-side guards as well.
+_POSITIVE = (lambda v: v > 0.0, N_("positive"))
+_NON_NEGATIVE = (lambda v: v >= 0.0, N_("zero or more"))
 _RANGES: list[tuple[str, str, object, str]] = [
     *(("ball", k, *_POSITIVE) for k in ("diameter", "mass", "stiffness_n", "stiffness_exponent", "inertia_factor")),
-    ("ball", "restitution", lambda v: 0.0 < v <= 1.0, "above 0 and at most 1"),
+    ("ball", "restitution", lambda v: 0.0 < v <= 1.0, N_("above 0 and at most 1")),
     *(("wheels", k, *_POSITIVE) for k in ("diameter", "width")),
-    ("wheels", "durometer", lambda v: 0.0 < v < 100.0, "above 0 and below 100"),
+    ("wheels", "durometer", lambda v: 0.0 < v < 100.0, N_("above 0 and below 100")),
     ("wheels", "friction", *_NON_NEGATIVE),
     *(("shaft", k, *_NON_NEGATIVE) for k in ("wheel_inertia", "added_inertia")),
-    ("shaft", "motor_count", lambda v: v >= 1, "at least 1"),
+    ("shaft", "motor_count", lambda v: v >= 1, N_("at least 1")),
     ("shaft", "gearing", *_POSITIVE),
     *(("control", k, *_POSITIVE) for k in ("stator_limit", "supply_limit")),
     ("battery", "nominal_voltage", *_POSITIVE),
@@ -207,8 +209,10 @@ def check_lane(lane: float, diameter: float, width: float, where: str) -> None:
     """A ball fed at `lane` (m across the shaft) must lie between the side plates: |lane| + D / 2 <= width / 2."""
     if abs(lane) + diameter / 2.0 > width / 2.0 + 1e-12:
         raise LauncherConfigError(
-            f"{where} {lane} does not fit: a ball of diameter {diameter} there reaches {abs(lane) + diameter / 2.0:.4g}"
-            f" m from the center, outside the launcher's width {width} (+-{width / 2.0:.4g} m)"
+            i18n.t("{where} {lane} does not fit: a ball of diameter {diameter} there reaches {reach} m from the "
+                   "center, outside the launcher's width {width} (+-{half} m)", where=where, lane=lane,
+                   diameter=diameter, reach=f"{abs(lane) + diameter / 2.0:.4g}", width=width,
+                   half=f"{width / 2.0:.4g}")
         )
 
 
@@ -216,11 +220,13 @@ def _check_ranges(setup: Setup) -> None:
     for section, key, ok, what in _RANGES:
         value = getattr(getattr(setup, section), key)
         if value is not None and not ok(value):
-            raise LauncherConfigError(f"[{section}] {key} must be {what}, not {value}")
+            raise LauncherConfigError(i18n.t("[{section}] {key} must be {what}, not {value}",
+                                             section=section, key=key, what=i18n.translated(what), value=value))
     shaft = setup.shaft
     if shaft.wheel_inertia + shaft.added_inertia <= 0.0:
         raise LauncherConfigError(
-            f"[shaft] wheel_inertia + added_inertia must be positive, not {shaft.wheel_inertia + shaft.added_inertia}"
+            i18n.t("[shaft] wheel_inertia + added_inertia must be positive, not {inertia}",
+                   inertia=shaft.wheel_inertia + shaft.added_inertia)
         )
 
 
@@ -238,13 +244,15 @@ def _valid_keys(section: str) -> list[str]:
 
 def _unknown_section(name: str) -> LauncherConfigError:
     return LauncherConfigError(
-        f"unknown section [{name}]; valid sections: {', '.join(sorted(_TOP_LEVEL))}"
+        i18n.t("unknown section [{name}]; valid sections: {sections}",
+               name=name, sections=', '.join(sorted(_TOP_LEVEL)))
     )
 
 
 def _unknown_key(section: str, key: str) -> LauncherConfigError:
     return LauncherConfigError(
-        f"unknown key '{key}' in [{section}]; valid keys: {', '.join(_valid_keys(section))}"
+        i18n.t("unknown key '{key}' in [{section}]; valid keys: {keys}",
+               key=key, section=section, keys=', '.join(_valid_keys(section)))
     )
 
 
@@ -256,19 +264,21 @@ def _coerce(value, tp, section: str, key: str):
     where = f"[{section}] {key}"
     if tp is float:
         if not _is_number(value):
-            raise LauncherConfigError(f"{where} must be a number, not {value!r}")
+            raise LauncherConfigError(i18n.t("{where} must be a number, not {value}", where=where, value=repr(value)))
         return float(value)
     if tp is int:
         if isinstance(value, bool) or not isinstance(value, int):
-            raise LauncherConfigError(f"{where} must be a whole number, not {value!r}")
+            raise LauncherConfigError(i18n.t("{where} must be a whole number, not {value}",
+                                             where=where, value=repr(value)))
         return value
     if tp is str:
         if not isinstance(value, str):
-            raise LauncherConfigError(f"{where} must be text, not {value!r}")
+            raise LauncherConfigError(i18n.t("{where} must be text, not {value}", where=where, value=repr(value)))
         return value
     if tp is bool:
         if not isinstance(value, bool):
-            raise LauncherConfigError(f"{where} must be true or false, not {value!r}")
+            raise LauncherConfigError(i18n.t("{where} must be true or false, not {value}",
+                                             where=where, value=repr(value)))
         return value
     origin = typing.get_origin(tp)
     args = typing.get_args(tp)
@@ -277,11 +287,13 @@ def _coerce(value, tp, section: str, key: str):
         return _coerce(value, inner, section, key)
     if origin is tuple:
         if not isinstance(value, (list, tuple)):
-            raise LauncherConfigError(f"{where} must be a list of numbers, not {value!r}")
+            raise LauncherConfigError(i18n.t("{where} must be a list of numbers, not {value}",
+                                             where=where, value=repr(value)))
         if len(args) == 2 and args[1] is not Ellipsis and len(value) != len(args):
-            raise LauncherConfigError(f"{where} must have {len(args)} numbers, not {value!r}")
+            raise LauncherConfigError(i18n.t("{where} must have {count} numbers, not {value}",
+                                             where=where, count=len(args), value=repr(value)))
         if not value:
-            raise LauncherConfigError(f"{where} must not be empty")
+            raise LauncherConfigError(i18n.t("{where} must not be empty", where=where))
         return tuple(_coerce(v, float, section, key) for v in value)
     raise AssertionError(f"unhandled type {tp!r}")  # pragma: no cover
 
@@ -289,11 +301,13 @@ def _coerce(value, tp, section: str, key: str):
 def _build_section(section: str, table):
     cls = SECTIONS[section]
     if not isinstance(table, dict):
-        raise LauncherConfigError(f"[{section}] must be a table, not {table!r}")
+        raise LauncherConfigError(i18n.t("[{section}] must be a table, not {table}",
+                                         section=section, table=repr(table)))
     table = dict(table)
     if "measured" in table and section in MEASURED_SECTIONS:
-        raise LauncherConfigError(f"[{section}] measured: a measurement file is read in a launcher setup file's "
-                                  f"[{section}]; here give the measured numbers themselves")
+        raise LauncherConfigError(i18n.t("[{section}] measured: a measurement file is read in a launcher setup "
+                                         "file's [{section}]; here give the measured numbers themselves",
+                                         section=section))
     valid = {f.name: f for f in dataclasses.fields(cls)}
     for key in table:
         if key not in valid and not (key == "preset" and section in PRESETS):
@@ -304,7 +318,8 @@ def _build_section(section: str, table):
         known = PRESETS.get(section, {})
         if not isinstance(name, str) or name not in known:
             raise LauncherConfigError(
-                f"[{section}] unknown preset {name!r}; known {section} presets: {', '.join(known)}"
+                i18n.t("[{section}] unknown preset {name}; known {section} presets: {known}",
+                       section=section, name=repr(name), known=', '.join(known))
             )
         values.update(known[name])
     values.update(table)
@@ -315,8 +330,8 @@ def _build_section(section: str, table):
     ]
     if missing:
         raise LauncherConfigError(
-            f"[{section}] missing required key(s): {', '.join(missing)}; valid keys: "
-            f"{', '.join(_valid_keys(section))}"
+            i18n.t("[{section}] missing required key(s): {missing}; valid keys: {keys}",
+                   section=section, missing=', '.join(missing), keys=', '.join(_valid_keys(section)))
         )
     return cls(**{k: _coerce(v, hints[k], section, k) for k, v in values.items()})
 
@@ -334,8 +349,9 @@ def apply_measured(raw: dict, path: Path | None = None) -> tuple[dict, dict]:
     base = Path(path).parent if path is not None else Path(".")
     for section, name in named.items():
         if not isinstance(name, str):
-            raise LauncherConfigError(f"[{section}] measured must be a measurement file's path in quotes "
-                                      f"(\"tread.measure.toml\"), not {name!r}")
+            raise LauncherConfigError(i18n.t("[{section}] measured must be a measurement file's path in quotes "
+                                             "(\"tread.measure.toml\"), not {name}", section=section,
+                                             name=repr(name)))
     shared = len(named) == 2 and (base / named["ball"]).resolve() == (base / named["wheels"]).resolve()
     out, provenance, fits = dict(raw), {}, {}  # fits: a launcher file named by both sections is fit once
     for section, name in named.items():
@@ -389,20 +405,22 @@ def parse_setup(raw: dict, path: Path | None = None) -> Setup:
     if dt is not None:
         dt = _coerce(dt, float, "setup", "dt")
         if dt <= 0:
-            raise LauncherConfigError(f"dt must be positive, not {dt!r}")
+            raise LauncherConfigError(i18n.t("dt must be positive, not {dt}", dt=repr(dt)))
     setup = Setup(**parts, dt=dt, provenance=provenance)
     _check_ranges(setup)
     if setup.shaft.motor not in MOTORS:
         raise LauncherConfigError(
-            f"[shaft] unknown motor {setup.shaft.motor!r}; known motors: {', '.join(sorted(MOTORS))}"
+            i18n.t("[shaft] unknown motor {motor}; known motors: {motors}",
+                   motor=repr(setup.shaft.motor), motors=', '.join(sorted(MOTORS)))
         )
     feed = setup.feed
     if feed.rule not in FEED_RULES:
-        raise LauncherConfigError(f"[feed] unknown rule {feed.rule!r}; valid rules: {', '.join(FEED_RULES)}")
+        raise LauncherConfigError(i18n.t("[feed] unknown rule {rule}; valid rules: {rules}",
+                                         rule=repr(feed.rule), rules=', '.join(FEED_RULES)))
     if feed.count < 1:
-        raise LauncherConfigError(f"[feed] count must be at least 1, not {feed.count}")
+        raise LauncherConfigError(i18n.t("[feed] count must be at least 1, not {count}", count=feed.count))
     if feed.rate <= 0.0:
-        raise LauncherConfigError(f"[feed] rate must be positive, not {feed.rate}")
+        raise LauncherConfigError(i18n.t("[feed] rate must be positive, not {rate}", rate=feed.rate))
     for lane in feed.lanes:
         check_lane(lane, setup.ball.diameter, setup.launcher.width, "[feed] lanes: lane")
     # The hood wraps from where the ball enters (entry_deg, fixed on the robot) round to where it leaves
@@ -410,18 +428,19 @@ def parse_setup(raw: dict, path: Path | None = None) -> Setup:
     wrap = setup.hood.entry_deg - (setup.hood.exit_angle_deg + 90.0)
     if wrap <= 0:
         raise LauncherConfigError(
-            f"[hood] wrap must be positive: entry_deg {setup.hood.entry_deg} minus exit angle "
-            f"{setup.hood.exit_angle_deg + 90.0} (exit_angle_deg + 90) is {wrap}; "
-            "lower exit_angle_deg or raise entry_deg"
+            i18n.t("[hood] wrap must be positive: entry_deg {entry_deg} minus exit angle {exit_plus_90} "
+                   "(exit_angle_deg + 90) is {wrap}; lower exit_angle_deg or raise entry_deg",
+                   entry_deg=setup.hood.entry_deg, exit_plus_90=setup.hood.exit_angle_deg + 90.0, wrap=wrap)
         )
     # The flares are the angles the hood's ends open at, not arcs of the wrap; a wrap shorter than the flares' ramps
     # is fine (the squeeze then peaks below the full delta, see launcher/model.py).
     flare = setup.hood.flare_deg
     if not 0.0 < flare < 90.0:
-        raise LauncherConfigError(f"[hood] flare_deg must be above 0 and below 90, not {flare}")
+        raise LauncherConfigError(i18n.t("[hood] flare_deg must be above 0 and below 90, not {flare}", flare=flare))
     exit_flare = setup.hood.exit_flare_deg
     if exit_flare is not None and not 0.0 < exit_flare < 90.0:
-        raise LauncherConfigError(f"[hood] exit_flare_deg must be above 0 and below 90, not {exit_flare}")
+        raise LauncherConfigError(i18n.t("[hood] exit_flare_deg must be above 0 and below 90, not {exit_flare}",
+                                         exit_flare=exit_flare))
     return setup
 
 
@@ -461,12 +480,13 @@ def load_setup(source: Path | dict) -> tuple[Setup, dict[str, list], list[dict]]
     setup = parse_setup(raw, path)
     sweep = raw.get("sweep", {})
     if not isinstance(sweep, dict):
-        raise LauncherConfigError(f"[sweep] must be a table, not {sweep!r}")
+        raise LauncherConfigError(i18n.t("[sweep] must be a table, not {sweep}", sweep=repr(sweep)))
     for dotted, values in sweep.items():
         _check_key(dotted)
         if not isinstance(values, list) or not values:
-            raise LauncherConfigError(f"[sweep] {dotted} must be a non-empty list of values, not {values!r}")
+            raise LauncherConfigError(i18n.t("[sweep] {dotted} must be a non-empty list of values, not {values}",
+                                             dotted=dotted, values=repr(values)))
     charts = raw.get("chart", [])
     if not isinstance(charts, list) or not all(isinstance(c, dict) for c in charts):
-        raise LauncherConfigError("[[chart]] must be a list of tables")
+        raise LauncherConfigError(i18n.t("[[chart]] must be a list of tables"))
     return setup, dict(sweep), list(charts)

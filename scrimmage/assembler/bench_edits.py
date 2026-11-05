@@ -51,8 +51,8 @@ def _check_key(doc, dotted: str) -> tuple[str, str | None, str]:
         return _check_path(raw, dotted)
     except BenchError as e:
         msg = str(e)
-        if "no " in msg and " named " in msg:
-            msg += "; if it comes from an included file, override it first"
+        if e.code == "no_entry":
+            msg = i18n.t("{problem}; if it comes from an included file, override it first", problem=msg)
         raise _err(dotted, msg) from None
 
 
@@ -212,11 +212,12 @@ def _users(doc, section: str, name: str) -> list[str]:
     """Descriptions of what in the file refers to this entry by name."""
     out: list[str] = []
     if section == "shaft":
-        out += [f"wheel '{w.get('name')}'" for w in doc.get("wheel", []) if w.get("shaft") == name]
+        out += [i18n.t("wheel '{name}'", name=w.get("name")) for w in doc.get("wheel", []) if w.get("shaft") == name]
         for c in doc.get("cad", []):
             if name in dict(c.get("slots", {})).values():
-                out.append(f"CAD part '{c.get('name')}'")
-        out += [f"shaft '{n}' (coupled_to)" for n, s in doc.get("shaft", {}).items() if s.get("coupled_to") == name]
+                out.append(i18n.t("CAD part '{name}'", name=c.get("name")))
+        out += [i18n.t("shaft '{name}' (coupled_to)", name=n) for n, s in doc.get("shaft", {}).items()
+                if s.get("coupled_to") == name]
     if section == "outlet" and doc.get("flight", {}).get("outlet") == name:
         out.append("[flight]")
     return out

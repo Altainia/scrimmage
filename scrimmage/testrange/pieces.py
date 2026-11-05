@@ -47,6 +47,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .. import i18n
 from ..cad.mass import Inertial, combine, mesh_inertial
 from ..disc.inputs import PRESETS as DISC_PRESETS
 from ..disc.inputs import AeroSet, Disc, DiscConfigError, aero_set, disc_preset
@@ -426,7 +427,7 @@ def _finish(r: _Reader, name: str, shape: str, solids: list[Solid], mass: float,
     `hole_at` is (diameter, length or None, center or None) in the shape's frame."""
     parts = combine([_inertial(s) for s in solids]) if own is None or own.mass <= 0 else own
     if not parts.mass > 0:
-        raise r.err("has no volume: its shapes are flat or broken")
+        raise r.err(i18n.t("has no volume: its shapes are flat or broken"))
     com = np.asarray(parts.com, dtype=float)
     tensor = parts.tensor * (mass / parts.mass)
     lo = np.min([_lo_hi(s)[0] for s in solids], axis=0)
@@ -434,7 +435,7 @@ def _finish(r: _Reader, name: str, shape: str, solids: list[Solid], mass: float,
     sides = hi - lo
     extent = float(sides.max())
     if extent > MAX_EXTENT:
-        raise r.err(f"the piece is {_meters(extent)} m across; check units (m, mm or in)")
+        raise r.err(i18n.t("the piece is {meters} m across; check units (m, mm or in)", meters=_meters(extent)))
     moved = tuple(s.moved(np.eye(3), -com) for s in solids)
     i = int(np.argmax(axis))
     hole = None
@@ -467,7 +468,7 @@ def _lo_hi(s: Solid) -> tuple[np.ndarray, np.ndarray]:
 
 def _vec(r: _Reader, key: str, default: tuple) -> tuple:
     if r.has(key) and r.has(key + "_in"):
-        raise r.err(f"has both {key} and {key}_in; give one")
+        raise r.err(i18n.t("has both {key} and {key}_in; give one", key=key))
     if r.has(key + "_in"):
         return tuple(x * IN for x in r.nums(key + "_in", 3))
     return r.nums(key, 3, default)
@@ -484,7 +485,7 @@ def _simple(r: _Reader, shape: str) -> tuple[list[Solid], tuple | None, tuple | 
         return [Solid("sphere", (_length(r, "diameter") / 2,), (0.0, 0.0, 0.0), _IDENTITY)], None, (0, 0, 1)
     if shape == "box":
         if r.has("size") == r.has("size_in"):
-            raise r.err("needs one of size = [x, y, z] (m) or size_in = [x, y, z] (in)")
+            raise r.err(i18n.t("needs one of size = [x, y, z] (m) or size_in = [x, y, z] (in)"))
         size = r.nums("size", 3, positive=True) if r.has("size") else tuple(
             v * IN for v in r.nums("size_in", 3, positive=True))
         axis = [0, 0, 0]
@@ -494,12 +495,14 @@ def _simple(r: _Reader, shape: str) -> tuple[list[Solid], tuple | None, tuple | 
     if shape == "cone":
         tip = _length(r, "tip_diameter", 0.0, positive=False)
         if not tip < d:
-            raise r.err(f"tip_diameter {tip:.4g} m must be smaller than diameter {d:.4g} m")
+            raise r.err(i18n.t("tip_diameter {tip} m must be smaller than diameter {diameter} m",
+                               tip=f"{tip:.4g}", diameter=f"{d:.4g}"))
         return [_round(d / 2, tip / 2, length)], None, (0, 0, 1)
     if shape in ("tube", "ring") and _has(r, "inner_diameter"):
         inner = _length(r, "inner_diameter")
         if not inner < d:
-            raise r.err(f"inner_diameter {inner:.4g} m must be smaller than diameter {d:.4g} m")
+            raise r.err(i18n.t("inner_diameter {inner} m must be smaller than diameter {diameter} m",
+                               inner=f"{inner:.4g}", diameter=f"{d:.4g}"))
         return _slices(d / 2, inner / 2, length), (inner, length, (0.0, 0.0, 0.0)), (0, 0, 1)
     return [_round(d / 2, d / 2, length)], None, (0, 0, 1)
 
@@ -512,13 +515,15 @@ def _check_shape_keys(r: _Reader, shape: str) -> None:
     for key in r.t:
         base = key[:-3] if key.endswith("_in") else key
         if base in _SHAPED and base not in _SHAPE_KEYS[shape]:
-            raise r.err(f"{key} isn't used by a {shape}; a {shape} takes {', '.join(_SHAPE_KEYS[shape])}")
+            raise r.err(i18n.t("{key} isn't used by a {shape}; a {shape} takes {keys}",
+                               key=key, shape=shape, keys=', '.join(_SHAPE_KEYS[shape])))
 
 
 def _shape_name(r: _Reader, choices: tuple[str, ...]) -> str:
     shape = r.text("shape")
     if shape not in choices:
-        raise r.err(f"shape must be one of {', '.join(choices)}, not {shape!r}")
+        raise r.err(i18n.t("shape must be one of {choices}, not {shape}",
+                           choices=', '.join(choices), shape=repr(shape)))
     return shape
 
 
@@ -527,7 +532,7 @@ def _axis(r: _Reader) -> tuple:
         return (0, 0, 1)
     a = r.raw("axis")
     if not isinstance(a, str) or a not in _AXES:
-        raise r.err(f"axis must be \"x\", \"y\" or \"z\", not {a!r}")
+        raise r.err(i18n.t("axis must be \"x\", \"y\" or \"z\", not {axis}", axis=repr(a)))
     return _AXES[a]
 
 
@@ -543,7 +548,7 @@ def _hole(r: _Reader, path: Path, name: str) -> tuple | None:
 def _compound(r: _Reader, path: Path, name: str) -> list[Solid]:
     raw = r.raw("shapes")
     if not isinstance(raw, list) or not raw:
-        raise r.err("shapes must list at least one shape ([[piece.<name>.shapes]] tables)")
+        raise r.err(i18n.t("shapes must list at least one shape ([[piece.<name>.shapes]] tables)"))
     out = []
     for i, t in enumerate(raw):
         e = _KindReader(path, f"[piece.{name}] shapes #{i + 1}", t, _ENTRY)
@@ -565,7 +570,8 @@ def _cad(r: _Reader, base_dir: Path) -> tuple[list[Solid], Inertial]:
     if r.has("units"):
         units = r.text("units")
         if units not in _UNITS:
-            raise r.err(f"units must be one of {', '.join(_UNITS)}, not {units!r}")
+            raise r.err(i18n.t("units must be one of {choices}, not {units}",
+                               choices=', '.join(_UNITS), units=repr(units)))
     file = Path(r.text("cad"))
     try:
         src = load_source(file if file.is_absolute() else Path(base_dir) / file, units)
@@ -574,7 +580,8 @@ def _cad(r: _Reader, base_dir: Path) -> tuple[list[Solid], Inertial]:
     lo = np.min([p.v.min(axis=0) for p in src.pieces], axis=0)
     hi = np.max([p.v.max(axis=0) for p in src.pieces], axis=0)
     if float((hi - lo).max()) > MAX_EXTENT:  # before the split, which a units mistake would make slow
-        raise r.err(f"the piece is {_meters(float((hi - lo).max()))} m across; check units (m, mm or in)")
+        raise r.err(i18n.t("the piece is {meters} m across; check units (m, mm or in)",
+                           meters=_meters(float((hi - lo).max()))))
     solids = []
     for p in src.pieces:
         try:
@@ -615,17 +622,19 @@ def _parse_kind(path: Path, name: str, r: _KindReader, base_dir: Path) -> PieceK
     label = r.text("label") if r.has("label") else ""
     given = [k for k in ("preset", "ball", "disc", "shape") if r.has(k)]
     if not given:
-        raise r.err("needs a shape (one of " + ", ".join(SHAPES) + "), or preset = \"<piece preset>\", ball = "
-                    "\"<ball preset>\" or disc = \"<disc preset>\"")
+        raise r.err(i18n.t("needs a shape (one of {shapes}), or preset = \"<piece preset>\", ball = \"<ball "
+                           "preset>\" or disc = \"<disc preset>\"", shapes=", ".join(SHAPES)))
     if len(given) > 1:
-        raise r.err(f"has both {given[0]} and {given[1]}; a kind is a preset or a shape: give one")
+        raise r.err(i18n.t("has both {first} and {second}; a kind is a preset or a shape: give one",
+                           first=given[0], second=given[1]))
     source = given[0]
     if r.has("aero") and source != "disc":
-        raise r.err("aero is a disc's aerodynamics; only a disc kind takes it")
+        raise r.err(i18n.t("aero is a disc's aerodynamics; only a disc kind takes it"))
     if source != "shape":
         extra = [k for k in r.t if k not in (source, "aero", "label", "color")]
         if extra:
-            raise r.err(f"{extra[0]} doesn't go with {source} = {r.raw(source)!r}: a preset kind is its preset")
+            raise r.err(i18n.t("{extra} doesn't go with {source} = {raw}: a preset kind is its preset",
+                               extra=extra[0], source=source, raw=repr(r.raw(source))))
         if source == "ball" and is_measurement(r.text("ball")):  # its errors name the file and the table
             kind = measured_ball_kind(name, r.text("ball"), base_dir, f"{path}: {r.where}")
             return replace(kind, label=label) if label else kind
@@ -644,8 +653,8 @@ def _parse_kind(path: Path, name: str, r: _KindReader, base_dir: Path) -> PieceK
     mass = r.num("mass", positive=True)
     measured = None
     if r.has("material") and r.has("friction"):
-        raise r.err("has both material and friction; give one: material = \"<surface>\", or friction = <number> "
-                    "for your own measured number")
+        raise r.err(i18n.t("has both material and friction; give one: material = \"<surface>\", or friction = "
+                           "<number> for your own measured number"))
     if r.has("material"):
         try:
             friction = surface_friction(r.text("material"))
@@ -660,7 +669,8 @@ def _parse_kind(path: Path, name: str, r: _KindReader, base_dir: Path) -> PieceK
     elif r.has("friction"):
         friction = r.num("friction", positive=True)
     else:
-        raise r.err("needs a surface: material = \"<surface preset>\", or friction = <number> for your own number")
+        raise r.err(i18n.t("needs a surface: material = \"<surface preset>\", or friction = <number> for your own "
+                           "number"))
     inertia = r.nums("inertia", 3, positive=True) if r.has("inertia") else None
     own = None
     if shape == "compound":
@@ -689,7 +699,8 @@ def _surface_friction_of_balls() -> float:
 def ball_kind(name: str, preset: str) -> PieceKind:
     """A kind that is a launcher ball preset."""
     if preset not in PRESETS["ball"]:
-        raise RangeError(f"unknown ball preset {preset!r}; known ball presets: {', '.join(PRESETS['ball'])}")
+        raise RangeError(i18n.t("unknown ball preset {preset}; known ball presets: {presets}",
+                                preset=repr(preset), presets=', '.join(PRESETS['ball'])))
     try:
         ball = _build_section("ball", {"preset": preset})
     except LauncherConfigError as e:  # pragma: no cover - the shipped presets are complete
@@ -706,8 +717,9 @@ def measured_ball_kind(name: str | None, file: str, base_dir: Path, where: str, 
         raise RangeError(str(e)) from None
     preset = fields.get("preset")
     if preset is None:
-        raise RangeError(f"{where}: {key} = \"{file}\" needs its [measure] base, the ball preset it measured "
-                         "(base = \"2026-fuel\"), for the numbers it doesn't measure")
+        raise RangeError(i18n.t("{where}: {key} = \"{file}\" needs its [measure] base, the ball preset it "
+                                "measured (base = \"2026-fuel\"), for the numbers it doesn't measure",
+                                where=where, key=key, file=file))
     try:
         ball = _build_section("ball", fields)
     except LauncherConfigError as e:
@@ -728,10 +740,11 @@ def ball_kind_of(name: str, preset: str | None, ball: Ball) -> PieceKind:
 def disc_kind(name: str, preset: str, aero: str) -> PieceKind:
     """A kind that is a disc preset, flying with aero set `aero`."""
     if preset not in DISC_PRESETS.get("disc", {}):
-        raise RangeError(f"unknown disc preset {preset!r}; known disc presets: "
-                         f"{', '.join(DISC_PRESETS.get('disc', {}))}")
+        raise RangeError(i18n.t("unknown disc preset {preset}; known disc presets: {presets}",
+                                preset=repr(preset), presets=', '.join(DISC_PRESETS.get('disc', {}))))
     if aero not in DISC_PRESETS.get("aero", {}):
-        raise RangeError(f"unknown aero set {aero!r}; known aero sets: {', '.join(DISC_PRESETS.get('aero', {}))}")
+        raise RangeError(i18n.t("unknown aero set {aero}; known aero sets: {sets}",
+                                aero=repr(aero), sets=', '.join(DISC_PRESETS.get('aero', {}))))
     try:
         disc, air = disc_preset(preset), aero_set(aero)
     except DiscConfigError as e:  # pragma: no cover - the shipped presets are complete
@@ -747,7 +760,8 @@ def kind_preset(name: str) -> PieceKind:
     """A `[piece.*]` preset (launcher/presets.toml) as a kind named after it."""
     known = PRESETS.get("piece", {})
     if name not in known:
-        raise RangeError(f"unknown piece preset {name!r}; known piece presets: {', '.join(known) or 'none yet'}")
+        raise RangeError(i18n.t("unknown piece preset {name}; known piece presets: {presets}",
+                                name=repr(name), presets=', '.join(known) or i18n.t("none yet")))
     return replace(parse_kind(PRESETS_PATH, name, known[name], PRESETS_PATH.parent), preset=name)
 
 
@@ -755,7 +769,8 @@ def surface_friction(name: str) -> float:
     """A `[surface.*]` preset's sliding friction (launcher/presets.toml)."""
     known = PRESETS.get("surface", {})
     if name not in known:
-        raise RangeError(f"material {name!r} isn't a surface preset; known surfaces: {', '.join(known) or 'none yet'}")
+        raise RangeError(i18n.t("material {name} isn't a surface preset; known surfaces: {surfaces}",
+                                name=repr(name), surfaces=', '.join(known) or i18n.t("none yet")))
     return float(known[name]["friction"])
 
 

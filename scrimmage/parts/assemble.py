@@ -129,7 +129,8 @@ def parse_start_pose(value, default=None) -> tuple[float, float, float] | None:
     ok = (isinstance(value, (list, tuple)) and len(value) == 3
           and all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in value))
     if not ok:
-        raise ValueError(f"[robot] start_pose must be [x, y, heading_deg], 3 finite numbers, not {value!r}")
+        raise ValueError(t("[robot] start_pose must be [x, y, heading_deg], 3 finite numbers, not {value}",
+                           value=repr(value)))
     return tuple(float(v) for v in value)
 
 

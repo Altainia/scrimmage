@@ -30,6 +30,8 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .. import i18n
+
 DEFAULT_TIMEOUT = 10.0       # s: a step's wait gives up after this long unless the step sets `timeout`
 JOINT_TOL = 0.005            # m or rad: joint_at's default tolerance (5 mm, 0.3 deg)
 SWING_PHASES = ("forward_zero", "backward_zero", "forward_peak", "backward_peak")
@@ -101,20 +103,22 @@ class Script:
 
 def _num(v, where: str, what: str) -> float:
     if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
-        raise ScriptError(f"{where}: {what} must be a number, not {v!r}")
+        raise ScriptError(i18n.t("{where}: {what} must be a number, not {value}",
+                                 where=where, what=what, value=repr(v)))
     return float(v)
 
 
 def _keys(t: dict, allowed: tuple, where: str) -> None:
     extra = [k for k in t if k not in allowed]
     if extra:
-        raise ScriptError(f"{where}: unknown key {extra[0]!r}; allowed: {', '.join(allowed)}")
+        raise ScriptError(i18n.t("{where}: unknown key {extra}; allowed: {allowed}",
+                                 where=where, extra=repr(extra[0]), allowed=', '.join(allowed)))
 
 
 def _angle(t: dict, key: str, where: str) -> float | None:
     """t[key], or t[key_deg] in radians; None if neither."""
     if key in t and f"{key}_deg" in t:
-        raise ScriptError(f"{where}: give {key} or {key}_deg, not both")
+        raise ScriptError(i18n.t("{where}: give {key} or {key}_deg, not both", where=where, key=key))
     if f"{key}_deg" in t:
         return math.radians(_num(t[f"{key}_deg"], where, f"{key}_deg"))
     if key in t:
@@ -125,101 +129,112 @@ def _angle(t: dict, key: str, where: str) -> float | None:
 def _joint(t: dict, where: str) -> str:
     j = t.get("joint")
     if not isinstance(j, str) or not j:
-        raise ScriptError(f"{where}: needs joint = \"<part>.<joint>\" (a name from the robot's joints)")
+        raise ScriptError(i18n.t("{where}: needs joint = \"<part>.<joint>\" (a name from the robot's joints)",
+                                 where=where))
     return j
 
 
 def _drive(t, where: str) -> Drive:
     if not isinstance(t, dict):
-        raise ScriptError(f"{where}: a drive is a table, {{ joint = \"...\", to = <position> }} or "
-                          f"{{ joint = \"...\", voltage = <V> }}")
+        raise ScriptError(i18n.t("{where}: a drive is a table, {{ joint = \"...\", to = <position> }} or {{ joint "
+                                 "= \"...\", voltage = <V> }}", where=where))
     _keys(t, ("joint", "to", "to_deg", "voltage", "max_voltage"), where)
     joint = _joint(t, where)
     to = _angle(t, "to", where)
     volts = _num(t["voltage"], where, "voltage") if "voltage" in t else None
     if (to is None) == (volts is None):
-        raise ScriptError(f"{where}: give the drive one of to (a position), to_deg or voltage")
+        raise ScriptError(i18n.t("{where}: give the drive one of to (a position), to_deg or voltage", where=where))
     cap = None
     if "max_voltage" in t:
         if to is None:
-            raise ScriptError(f"{where}: max_voltage caps a position loop (to): remove it from a voltage drive")
+            raise ScriptError(i18n.t("{where}: max_voltage caps a position loop (to): remove it from a voltage "
+                                     "drive", where=where))
         cap = _num(t["max_voltage"], where, "max_voltage")
         if cap <= 0.0:
-            raise ScriptError(f"{where}: max_voltage must be above 0 V")
+            raise ScriptError(i18n.t("{where}: max_voltage must be above 0 V", where=where))
     return Drive(joint, to, volts, cap)
 
 
 def _release(v, where: str) -> tuple[tuple[str | None, float], ...]:
     def output(x) -> float:
-        out = _num(x, where, "the release output")
+        out = _num(x, where, i18n.t("the release output"))
         if not -1.0 <= out <= 1.0:
-            raise ScriptError(f"{where}: the release output must be -1 to 1, not {out:g}")
+            raise ScriptError(i18n.t("{where}: the release output must be -1 to 1, not {out}",
+                                     where=where, out=f"{out:g}"))
         return out
     if isinstance(v, dict):
         _keys(v, ("joint", "output"), where)
         if "output" not in v:
-            raise ScriptError(f"{where}: release = {{ joint = \"<latch joint>\", output = <-1 to 1> }}")
+            raise ScriptError(i18n.t("{where}: release = {{ joint = \"<latch joint>\", output = <-1 to 1> }}",
+                                     where=where))
         return ((_joint(v, where), output(v["output"])),)
     return ((None, output(v)),)
 
 
 def _wait(t, where: str) -> Wait:
     if not isinstance(t, dict) or len(t) != 1 or next(iter(t)) not in WAIT_KINDS:
-        raise ScriptError(f"{where}: wait is one of {{ time = <s> }}, {{ joint_at = {{ joint, value, tol }} }}, "
-                          f"{{ swing_phase = \"{SWING_PHASES[0]}\" }}, {{ hook_contact = \"<bar>\" }} or "
-                          f"{{ level = \"<level>\" }}")
+        raise ScriptError(i18n.t("{where}: wait is one of {{ time = <s> }}, {{ joint_at = {{ joint, value, tol }} "
+                                 "}}, {{ swing_phase = \"{phase}\" }}, {{ hook_contact = \"<bar>\" }} or "
+                                 "{{ level = \"<level>\" }}", where=where, phase=SWING_PHASES[0]))
     kind, v = next(iter(t.items()))
     if kind == "time":
-        s = _num(v, where, "wait time")
+        s = _num(v, where, i18n.t("wait time"))
         if s < 0.0:
-            raise ScriptError(f"{where}: wait time must be 0 s or more")
+            raise ScriptError(i18n.t("{where}: wait time must be 0 s or more", where=where))
         return Wait("time", time=s)
     if kind == "joint_at":
         if not isinstance(v, dict):
-            raise ScriptError(f"{where}: joint_at = {{ joint = \"...\", value = <position>, tol = <tolerance> }}")
+            raise ScriptError(i18n.t("{where}: joint_at = {{ joint = \"...\", value = <position>, tol = "
+                                     "<tolerance> }}", where=where))
         _keys(v, ("joint", "value", "value_deg", "tol", "tol_deg"), where)
         value = _angle(v, "value", where)
         if value is None:
-            raise ScriptError(f"{where}: joint_at needs value (or value_deg)")
+            raise ScriptError(i18n.t("{where}: joint_at needs value (or value_deg)", where=where))
         tol = _angle(v, "tol", where)
         tol = JOINT_TOL if tol is None else tol
         if tol <= 0.0:
-            raise ScriptError(f"{where}: joint_at's tol must be above 0")
+            raise ScriptError(i18n.t("{where}: joint_at's tol must be above 0", where=where))
         return Wait("joint_at", joint=_joint(v, where), value=value, tol=tol)
     if kind == "hook_contact" and isinstance(v, dict):
         _keys(v, ("bar", "hook"), where)
         bar, hook = v.get("bar"), v.get("hook", "")
         if not isinstance(bar, str) or not bar or not isinstance(hook, str):
-            raise ScriptError(f"{where}: hook_contact = {{ bar = \"<bar>\", hook = \"<part>\" }}")
+            raise ScriptError(i18n.t("{where}: hook_contact = {{ bar = \"<bar>\", hook = \"<part>\" }}", where=where))
         return Wait(kind, name=bar, hook=hook)
     if not isinstance(v, str) or not v:
-        raise ScriptError(f"{where}: {kind} names a {'phase' if kind == 'swing_phase' else kind.split('_')[-1]}")
+        if kind == "swing_phase":
+            raise ScriptError(i18n.t("{where}: swing_phase names a phase", where=where))
+        if kind == "hook_contact":
+            raise ScriptError(i18n.t("{where}: hook_contact names a contact", where=where))
+        raise ScriptError(i18n.t("{where}: level names a level", where=where))
     if kind == "swing_phase" and v not in SWING_PHASES:
-        raise ScriptError(f"{where}: swing_phase {v!r} isn't one of {', '.join(SWING_PHASES)}")
+        raise ScriptError(i18n.t("{where}: swing_phase {value} isn't one of {phases}",
+                                 where=where, value=repr(v), phases=', '.join(SWING_PHASES)))
     return Wait(kind, name=v)
 
 
 def _step(i: int, t, where: str) -> Step:
     if not isinstance(t, dict):
-        raise ScriptError(f"{where}: a step is a table ([[step]])")
+        raise ScriptError(i18n.t("{where}: a step is a table ([[step]])", where=where))
     _keys(t, ("name", "drive", "release", "wait", "timeout"), where)
     name = t.get("name", f"step {i}")
     if not isinstance(name, str):
-        raise ScriptError(f"{where}: name must be a string")
+        raise ScriptError(i18n.t("{where}: name must be a string", where=where))
     raw = t.get("drive", [])
     drives = tuple(_drive(d, where) for d in (raw if isinstance(raw, list) else [raw]))
     joints = [d.joint for d in drives]
     if len(set(joints)) != len(joints):
-        raise ScriptError(f"{where}: drives the same joint twice")
+        raise ScriptError(i18n.t("{where}: drives the same joint twice", where=where))
     release = _release(t["release"], where) if "release" in t else ()
     wait = _wait(t["wait"], where) if "wait" in t else None
     timeout = DEFAULT_TIMEOUT
     if "timeout" in t:
         timeout = _num(t["timeout"], where, "timeout")
         if timeout <= 0.0:
-            raise ScriptError(f"{where}: timeout must be above 0 s")
+            raise ScriptError(i18n.t("{where}: timeout must be above 0 s", where=where))
     if wait is not None and wait.kind == "time" and wait.time > timeout:
-        raise ScriptError(f"{where}: waits {wait.time:g} s but times out after {timeout:g} s: raise timeout")
+        raise ScriptError(i18n.t("{where}: waits {time} s but times out after {timeout} s: raise timeout",
+                                 where=where, time=f"{wait.time:g}", timeout=f"{timeout:g}"))
     return Step(i, name, drives, release, wait, timeout)
 
 
@@ -227,10 +242,11 @@ def parse_script(raw: dict, path: str = "<script>") -> Script:
     _keys(raw, ("goal", "limits", "step"), path)
     goal = raw.get("goal")
     if goal is not None and (not isinstance(goal, str) or not goal):
-        raise ScriptError(f"{path}: goal names a level of the range's [climb] levels, e.g. goal = \"HIGH\"")
+        raise ScriptError(i18n.t("{path}: goal names a level of the range's [climb] levels, e.g. goal = \"HIGH\"",
+                                 path=path))
     lim = raw.get("limits", {})
     if not isinstance(lim, dict):
-        raise ScriptError(f"{path}: [limits] is a table")
+        raise ScriptError(i18n.t("{path}: [limits] is a table", path=path))
     _keys(lim, ("extension_in", "height_in", "hit_force"), f"{path} [limits]")
     limits = Limits(
         extension=_num(lim.get("extension_in", G107_EXTENSION / 0.0254), path, "extension_in") * 0.0254,
@@ -239,11 +255,12 @@ def parse_script(raw: dict, path: str = "<script>") -> Script:
     for key, value in (("extension_in", limits.extension), ("height_in", limits.height),
                        ("hit_force", limits.hit_force)):
         if value <= 0:
-            raise ScriptError(f"{path} [limits]: {key} must be above 0")
+            raise ScriptError(i18n.t("{path} [limits]: {key} must be above 0", path=path, key=key))
     steps = raw.get("step")
     if not isinstance(steps, list) or not steps:
-        raise ScriptError(f"{path}: a climb script needs at least one [[step]]")
-    return Script(tuple(_step(i, s, f"{path} step {i}") for i, s in enumerate(steps, start=1)), goal, limits, path)
+        raise ScriptError(i18n.t("{path}: a climb script needs at least one [[step]]", path=path))
+    return Script(tuple(_step(i, s, i18n.t("{path} step {number}", path=path, number=i))
+                        for i, s in enumerate(steps, start=1)), goal, limits, path)
 
 
 def load_script(path) -> Script:
@@ -251,5 +268,5 @@ def load_script(path) -> Script:
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as e:
-        raise ScriptError(f"{path}: not valid TOML: {e}") from None
+        raise ScriptError(i18n.t("{path}: not valid TOML: {error}", path=path, error=e)) from None
     return parse_script(raw, str(path))

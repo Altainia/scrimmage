@@ -31,6 +31,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .. import i18n
 from .balls import Balls
 from .build import BALL_BITS, RangeLayout, _quat, _rpy
 from .pieces import _matrix, _quat as _piece_quat
@@ -83,7 +84,8 @@ class Feeder:
     def _index(self, name: str) -> int:
         k = self._k.get(name)
         if k is None:
-            raise ValueError(f"no station {name!r}; this range's stations: {', '.join(self._k) or 'none'}")
+            raise ValueError(i18n.t("no station {name}; this range's stations: {stations}",
+                                    name=repr(name), stations=', '.join(self._k) or i18n.t("none")))
         return k
 
     # ------------------------------------------------------------------------------------------------ commands

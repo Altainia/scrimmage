@@ -75,6 +75,7 @@ and a quarter of it at 0.02 D, where the grip is weak and the ball slow.
 import math
 from dataclasses import dataclass, field
 
+from .. import i18n
 from .contact import (
     FRICTION_SLIP_SPEED, Split, _damping, rolling_loss_torque, split_squeeze, wheel_contact_fraction, wheel_stiffness,
 )
@@ -216,8 +217,9 @@ class Launcher:
         wrap = self.setup.hood.entry_deg - (exit_angle_deg + 90.0)
         if wrap <= 0.0:
             raise LauncherConfigError(
-                f"hood angle {exit_angle_deg}: the wrap, entry_deg {self.setup.hood.entry_deg} less "
-                f"{exit_angle_deg + 90.0} (exit_angle_deg + 90), is {wrap}; it must be above 0"
+                i18n.t("hood angle {exit_angle_deg}: the wrap, entry_deg {entry_deg} less {exit_plus_90} "
+                       "(exit_angle_deg + 90), is {wrap}; it must be above 0", exit_angle_deg=exit_angle_deg,
+                       entry_deg=self.setup.hood.entry_deg, exit_plus_90=exit_angle_deg + 90.0, wrap=wrap)
             )
         return self.r_path * math.radians(wrap)
 

@@ -8,6 +8,7 @@ import copy
 from functools import partial
 from pathlib import Path
 
+from .. import i18n
 from ..launcher import sweep as ball
 from .inputs import _SECTIONS, DiscConfigError, DiscSetup, load_setup, parse_setup
 from .run import RunResult, run_setup
@@ -22,7 +23,8 @@ def apply_overrides(raw: dict, overrides: dict[str, object]) -> dict:
             continue
         section, _, key = dotted.partition(".")
         if section not in _SECTIONS or not key:
-            raise DiscConfigError(f"[sweep] {dotted!r} is not section.key; sections: {', '.join(_SECTIONS)}, or dt")
+            raise DiscConfigError(i18n.t("[sweep] {dotted} is not section.key; sections: {sections}, or dt",
+                                         dotted=repr(dotted), sections=', '.join(_SECTIONS)))
         tables = out.setdefault(section, {})
         for table in tables if isinstance(tables, list) else [tables]:
             table[key] = copy.deepcopy(value)
@@ -37,7 +39,8 @@ def setups_for(path: Path) -> list[tuple[dict, DiscSetup]]:
     _, sweep, _ = load_setup(path)
     for dotted, values in sweep.items():
         if not isinstance(values, list) or not values:
-            raise DiscConfigError(f"[sweep] {dotted} must be a non-empty list of values, not {values!r}")
+            raise DiscConfigError(i18n.t("[sweep] {dotted} must be a non-empty list of values, not {values}",
+                                         dotted=dotted, values=repr(values)))
     return ball.setups_for(path, **_disc)
 
 

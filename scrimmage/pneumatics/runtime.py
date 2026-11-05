@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import mujoco
 
+from .. import i18n
 from ..bindings import Update
 from ..protocol import HalState
 from .model import AirConfig, AirSystem
@@ -36,10 +37,11 @@ def parse_section(section: dict | None) -> AirConfig:
     """The config's [pneumatics] table as an AirConfig (the defaults for keys left out)."""
     section = section or {}
     if not isinstance(section, dict):
-        raise ValueError("[pneumatics] must be a table")
+        raise ValueError(i18n.t("[pneumatics] must be a table"))
     for k in section:
         if k not in KEYS:
-            raise ValueError(f"[pneumatics]: unknown key {k!r}; the keys are {', '.join(KEYS)}")
+            raise ValueError(i18n.t("[pneumatics]: unknown key {key}; the keys are {keys}",
+                                    key=repr(k), keys=', '.join(KEYS)))
     return AirConfig(**section)
 
 

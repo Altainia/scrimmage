@@ -513,8 +513,11 @@ def parse_range_section(cfg: dict, cfg_dir: Path | None) -> RangeSection | None:
             else:
                 check_timestep(timestep)
         except ValueError as e:
-            word = "ball" if kind.form == "ball" else "piece"
-            raise PartError(f"[range] ({rng.path.name}, {word} {kind.preset or name!r}): {e}") from None
+            if kind.form == "ball":
+                raise PartError(i18n.t("[range] ({file}, ball {preset}): {error}", file=rng.path.name,
+                                       preset=repr(kind.preset or name), error=e)) from None
+            raise PartError(i18n.t("[range] ({file}, piece {preset}): {error}", file=rng.path.name,
+                                   preset=repr(kind.preset or name), error=e)) from None
     start = sec.get("start")
     if start is not None:
         if not isinstance(start, str) or start not in rng.starts:
