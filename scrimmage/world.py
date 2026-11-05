@@ -11,6 +11,7 @@ import numpy as np
 
 from .bindings import AnalogBinding, DigitalBinding, EncoderBinding, GyroBinding, MotorBinding, Update
 from .motors import Battery
+from . import i18n
 from .i18n import t
 from .parts.assemble import parse_start_pose
 from .protocol import HalState
@@ -80,26 +81,31 @@ class World:
         rcfg = cfg.get("robot", {})
         self.parts = None
         if "part" not in cfg and "mjcf" not in mcfg:
-            hint = " (did you mean [[part]]?)" if "parts" in cfg else ""
-            raise ValueError("describe the robot with [[part]] entries (see docs/parts.md) or "
-                             f"[model] mjcf = <file>{hint}")
+            if "parts" in cfg:
+                raise ValueError(t("describe the robot with [[part]] entries (see docs/parts.md) or [model] mjcf = "
+                                   "<file> (did you mean [[part]]?)"))
+            raise ValueError(t("describe the robot with [[part]] entries (see docs/parts.md) or [model] mjcf = <file>"))
         if "range" in cfg and "part" not in cfg:
             from .parts.model import PartError
-            raise PartError("a range needs a robot built from [[part]]: [model] mjcf robots can't have a [range]")
+            raise PartError(i18n.t("a range needs a robot built from [[part]]: [model] mjcf robots can't have a "
+                                   "[range]"))
         if "partner" in cfg and "part" not in cfg:
             from .parts.model import PartError
-            raise PartError("a [partner] robot needs a robot built from [[part]]: [model] mjcf robots can't have one")
+            raise PartError(i18n.t("a [partner] robot needs a robot built from [[part]]: [model] mjcf robots "
+                                   "can't have one"))
         start_pose = parse_start_pose(rcfg.get("start_pose"))
         self.warnings: list[str] = []
         if "part" in cfg:
             if "mjcf" in mcfg:
-                raise ValueError("use either [model] mjcf = <hand-written model> or [[part]] entries, not both")
+                raise ValueError(i18n.t("use either [model] mjcf = <hand-written model> or [[part]] entries, not "
+                                        "both"))
             for k in ("motor", "encoder", "gyro"):
                 if cfg.get(k):
-                    raise ValueError(f"[[{k}]] entries don't go with [[part]]: give the part's slot an ID in its "
-                                     "ids table instead")
+                    raise ValueError(i18n.t("[[{key}]] entries don't go with [[part]]: give the part's slot an ID "
+                                            "in its ids table instead", key=k))
             if "body" in rcfg:
-                raise ValueError("[robot] body is set by the root part when the robot is built from [[part]]")
+                raise ValueError(i18n.t("[robot] body is set by the root part when the robot is built from "
+                                        "[[part]]"))
             from .parts.assemble import assemble
             self.parts = assemble(cfg, cfg_dir)
             self.model = self.parts.model
@@ -117,7 +123,7 @@ class World:
         self.robot_body_name = body_name
         self.robot_body = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, body_name)
         if self.robot_body < 0:
-            raise ValueError(f"robot body '{body_name}' not in model")
+            raise ValueError(i18n.t("robot body '{body_name}' not in model", body_name=body_name))
         self.start_pose = start_pose  # (x, y, heading_deg) or None to use the MJCF pose; parts bake it into qpos0
         jnt = self.model.body_jntadr[self.robot_body]
         self.free_qadr = int(self.model.jnt_qposadr[jnt]) if (
@@ -282,7 +288,7 @@ class World:
         For a parts robot (x, y, heading) is where the start-pose frame goes, like [robot] start_pose: the root
         part's pos and rot are applied below it, so the root body ends up offset from (x, y)."""
         if self.free_qadr is None:
-            raise ValueError("the robot body has no free joint, so it can't be moved")
+            raise ValueError(i18n.t("the robot body has no free joint, so it can't be moved"))
         q = self.free_qadr
         h = math.radians(heading_deg) / 2
         frame_q = np.array([math.cos(h), 0, 0, math.sin(h)])
@@ -339,7 +345,7 @@ class World:
         quat = [math.cos(h), 0, 0, math.sin(h)]
         b = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, name)
         if b == self.robot_body:
-            raise ValueError("that's the robot: use set_pose to move it")
+            raise ValueError(i18n.t("that's the robot: use set_pose to move it"))
         if name in self.movable_objects():
             j = int(m.body_jntadr[b]) if b >= 0 else -1
             if j >= 0 and int(m.jnt_type[j]) == int(mujoco.mjtJoint.mjJNT_FREE):
@@ -349,12 +355,14 @@ class World:
             else:
                 g = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, name)
                 if g < 0 or m.geom_bodyid[g] != 0:
-                    raise ValueError(f"{name!r} can't be moved; movable objects: {', '.join(self.movable_objects())}")
+                    raise ValueError(i18n.t("{name} can't be moved; movable objects: {items}",
+                                            name=repr(name), items=', '.join(self.movable_objects())))
                 m.geom_pos[g] = [x, y, z]
                 m.geom_quat[g] = quat
             mujoco.mj_forward(m, self.data)
             return
-        raise ValueError(f"no movable object {name!r}; movable objects: {', '.join(self.movable_objects()) or 'none'}")
+        raise ValueError(i18n.t("no movable object {name}; movable objects: {value}",
+                                name=repr(name), value=', '.join(self.movable_objects()) or t("none")))
 
     def step(self, hal: HalState) -> None:
         """Advance one physics timestep using the robot program's latest outputs."""
