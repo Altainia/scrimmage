@@ -25,11 +25,12 @@ UNITS = {"m": 1.0, "mm": 0.001, "in": IN}
 
 class BenchError(ValueError):
     """A bench file problem; the message names the bad key and, where there is a short list, the valid ones. `key` is
-    the dotted key of the field at fault (`wheel.top.diameter`, else the entry `wheel.top`), None when unknown."""
+    the dotted key of the field at fault (`wheel.top.diameter`, else the entry `wheel.top`), None when unknown.
+    `code` says what the problem is for code that mustn't read its words ("no_coacd", "no_convex_pieces")."""
 
-    def __init__(self, message: str, key: str | None = None):
+    def __init__(self, message: str, key: str | None = None, code: str | None = None):
         super().__init__(message)
-        self.key = key
+        self.key, self.code = key, code
 
 
 _frozen = dict(frozen=True, kw_only=True)

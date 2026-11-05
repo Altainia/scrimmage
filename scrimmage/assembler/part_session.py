@@ -450,7 +450,7 @@ class PartSession(_Session):
         problem = self._src_problem
         self._src_problem, self._build = keep
         if src is None:
-            raise SessionError(400, problem or "the CAD file can't be read")
+            raise SessionError(400, problem or i18n.t("the CAD file can't be read"))
         return src
 
     def _use(self, src) -> None:

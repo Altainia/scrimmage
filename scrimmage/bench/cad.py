@@ -223,9 +223,9 @@ def convex_pieces(mesh_path: Path, units: str) -> list[Path]:
         bigger = f"{100 * (hull / own - 1):.0f}%" if own > 0 else "far"
         raise BenchError(f"mesh {mesh_path} is concave (its hull is {bigger} bigger than it), so it has to be split "
                          "into convex pieces, which needs coacd: pip install scrimmage[bench]. (Run as it is, its "
-                         "hollows would be filled in.)") from None
+                         "hollows would be filled in.)", code="no_coacd") from None
     if not pieces:
-        raise BenchError(f"mesh {mesh_path}: coacd found no convex pieces in it")
+        raise BenchError(f"mesh {mesh_path}: coacd found no convex pieces in it", code="no_convex_pieces")
     try:
         return _write_pieces(home, pieces)
     except OSError as e:

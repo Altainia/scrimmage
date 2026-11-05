@@ -34,20 +34,18 @@ def _and(names: list[str]) -> str:
     return names[0] if len(names) == 1 else i18n.t("{names} and {last}", names=", ".join(names[:-1]), last=names[-1])
 
 
-def _target(imp: ImportFile, text: str) -> dict:
-    """What a build message is about: the body or piece it starts with, else the robot frame."""
-    if text.startswith("The weights typed in "):
-        name = text[len("The weights typed in "):].split(" ")[0]
-        # the message names a body, or a part (then its root body)
-        if name in imp.bodies:
+def _target(imp: ImportFile, note) -> dict:
+    """What a build message is about (build.Note.about, not its words: spec L3): its body or piece, a part's root
+    bodies, else the robot frame."""
+    kind, name = getattr(note, "about", None) or (None, None)
+    if kind == "part":
+        if name in imp.bodies:       # a part is named by its root body unless it was given a name
             return {"kind": "body", "keys": [name]}
         roots = [n for n, b in imp.bodies.items() if b.part == name]
         if roots:
             return {"kind": "body", "keys": roots}
-    for kind, names in (("body", imp.bodies), ("piece", imp.pieces)):
-        for n in names:
-            if text.startswith(n + " ") or text.startswith(n + ":") or text.startswith(n + "'"):
-                return {"kind": kind, "keys": [n]}
+    if kind == "body" and name in imp.bodies or kind == "piece" and name in imp.pieces:
+        return {"kind": kind, "keys": [name]}
     return {"kind": "frame", "keys": []}
 
 
@@ -108,5 +106,5 @@ def checklist(imp: ImportFile, src: Source, result: BuildResult, guessed: Iterab
         items.append(Item("todo", i18n.t("Check which way is up and forward for the robot"), {"kind": "frame", "keys": []}))
 
     for m in result.messages:
-        items.append(Item("error" if "weighs nothing" in m else "check", m, _target(imp, m)))
+        items.append(Item("error" if getattr(m, "error", False) else "check", str(m), _target(imp, m)))
     return items
