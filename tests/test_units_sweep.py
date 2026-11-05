@@ -107,7 +107,8 @@ ALLOWED = [
     ("measure/fit_cylinder.py", "the model's cylinder can't {", MACHINE + " (also a robot file's load error)"),
     ("parts/partner.py", "must be at least {", "checks the partner's file numbers (meters), named by key"),
     ("parts/partner.py", "mass must be more than its drive's {", "checks the partner's file numbers (kg), named by key"),
-    ("parts/partner.py", 'return f"{depth:.2f} m"', MACHINE),
+    ("parts/partner.py", "(their outlines overlap by {depth:.2f} m)",
+     "a robot config's [partner] start, in meters as written (machine text); the Test tab words Setup's own"),
     ("assembler/edits.py", "is off the field ({FIELD_LENGTH:g} m by {FIELD_WIDTH:g} m)",
      "checks a robot file's start pose, written in meters (the page's pickers keep it on the field)"),
 ]
