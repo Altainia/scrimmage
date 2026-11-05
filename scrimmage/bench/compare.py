@@ -16,6 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .. import i18n
 from ..launcher import report as launcher_report
 from ..launcher.inputs import LauncherConfigError
 from ..launcher.report import check_charts, label
@@ -96,7 +97,7 @@ def sweep_benches(path: Path, sweep: dict[str, list] | None = None) -> tuple[Ben
         try:
             bench = parse_bench({**raw, "sweep": sweep}, bench.base_dir)
         except BenchError as e:
-            raise BenchError(f"{path}: {e}", e.key) from None
+            raise BenchError(i18n.t("{path}: {error}", path=path, error=e), e.key) from None
     check_bench_charts(bench)
     out = []
     for combo in combinations(bench.sweep):
@@ -104,7 +105,8 @@ def sweep_benches(path: Path, sweep: dict[str, list] | None = None) -> tuple[Ben
             b = parse_bench(with_overrides(bench.raw, combo), bench.base_dir)
             check_clear(build_bench(b))
         except BenchError as e:
-            raise BenchError(f"{path}: {label(combo)}: {e}") from None
+            raise BenchError(i18n.t("{path}: {combination}: {error}", path=path, combination=label(combo), error=e)) \
+                from None
         out.append((combo, b))
     return bench, out
 
@@ -120,7 +122,7 @@ def same_feed(paths: list[Path], feed_from: Path | None = None) -> list[Bench]:
     checked before anything runs."""
     paths = [Path(p) for p in paths]
     if len(paths) < 2:
-        raise BenchError(f"compare needs at least two bench files, got {len(paths)}")
+        raise BenchError(i18n.t("compare needs at least two bench files, got {n}", n=len(paths)))
     source = load_bench(feed_from if feed_from is not None else paths[0])
     piece = _absolute_paths({"piece": source.raw["piece"]}, source.base_dir)["piece"]  # a mesh path stays its file's
     inlets = copy.deepcopy(source.raw.get("inlet", []))
@@ -134,7 +136,8 @@ def same_feed(paths: list[Path], feed_from: Path | None = None) -> list[Bench]:
             b = parse_bench(raw, own.base_dir)
             check_clear(build_bench(b))
         except BenchError as e:
-            raise BenchError(f"{p}, with the piece and feed of {feed_from or paths[0]}: {e}") from None
+            raise BenchError(i18n.t("{path}, with the piece and feed of {source}: {error}", path=p,
+                                    source=feed_from or paths[0], error=e)) from None
         out.append(b)
     return out
 

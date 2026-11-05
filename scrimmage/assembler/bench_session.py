@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import contextlib
 import csv
+import json
 import logging
 import re
 import threading
@@ -26,7 +27,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 from .. import i18n
-from ..measure.labels import MARK
 from ..bench import run as bench_run
 from ..bench import session
 from ..bench.build import build_bench
@@ -34,7 +34,7 @@ from ..bench.compare import BENCH_METRICS
 from ..bench.fields import fields_payload
 from ..bench.pictures import picture_line
 from ..bench.problems import collect_problems
-from ..bench.report import bench_uncalibrated
+from ..bench.report import SUMMARY_DATA, bench_uncalibrated
 from ..bench.spec import (_LISTS, _SECTIONS, _SINGLES, BenchError, _check_path, _read_toml,
                           _resolve_includes)
 from . import bench_edits
@@ -116,23 +116,24 @@ def _refused(field: str, message: str) -> tuple[int, dict]:
     return 200, {"ok": False, "errors": [{"field": field, "message": message}]}
 
 
-def _summary(out: Path | None) -> tuple[list[str], str | None]:
-    """(headlines, UNCALIBRATED line) from a results folder's summary.txt: the lines after the title block, through
-    the UNCALIBRATED line `bench run` ends them with. ([], None) when there is none."""
+def _summary_data(out: Path | None) -> dict:
+    """A results folder's summary.json (bench/report.py's SUMMARY_DATA, written beside summary.txt): its headlines,
+    the UNCALIBRATED line they end with, and whether the energy check failed, as data, so nothing here reads
+    summary.txt's words (they are in the Language of whoever ran it; spec L3). {} without a readable one."""
     try:
-        lines = (out / "summary.txt").read_text(encoding="utf-8").splitlines() if out is not None else []
-    except (OSError, UnicodeDecodeError):
+        data = json.loads((out / SUMMARY_DATA).read_text(encoding="utf-8")) if out is not None else {}
+    except (OSError, UnicodeDecodeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _summary(out: Path | None) -> tuple[list[str], str | None]:
+    """(headlines, UNCALIBRATED line) from a results folder's summary.json. ([], None) when there is none."""
+    data = _summary_data(out)
+    heads, unc = data.get("headlines"), data.get("uncalibrated")
+    if not isinstance(heads, list) or not all(isinstance(h, str) for h in heads) or not isinstance(unc, str):
         return [], None
-    if "" not in lines:
-        return [], None
-    heads = []
-    for line in lines[lines.index("") + 1:]:
-        heads.append(line)
-        if line.startswith(MARK):           # the label's mark, the same in every language
-            return heads, line
-        if not line:
-            break
-    return [], None
+    return heads, unc
 
 
 def _result_files(kind: str, out: Path | None) -> tuple[list[str], Path | None]:
@@ -174,13 +175,9 @@ def _table(path: Path | None) -> dict | None:
 
 
 def _energy_failed(out: Path | None) -> bool:
-    """Whether the results folder's summary.txt says the energy check failed (its "Energy check:" line, written by
-    report.write_results for every run, whoever ran it). False without one."""
-    try:
-        lines = (out / "summary.txt").read_text(encoding="utf-8").splitlines() if out is not None else []
-    except (OSError, UnicodeDecodeError):
-        return False
-    return any(line.startswith("Energy check:") and not line.startswith("Energy check: ok") for line in lines)
+    """Whether the results folder's summary.json says the energy check failed (written by report.write_results for
+    every run, whoever ran it). False without one."""
+    return _summary_data(out).get("energy_failed") is True
 
 
 class _Idea:

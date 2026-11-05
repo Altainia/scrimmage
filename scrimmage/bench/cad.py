@@ -30,6 +30,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
+from .. import i18n
 from ..parts.assemble import AXIS_TURN, TREAD_STIFFNESS
 from ..parts.model import Body, Part, PartError, load_part, quat_from_rpy
 from .spec import UNITS, Bench, BenchError, Cad
@@ -56,9 +57,9 @@ def read_mesh(path: Path) -> tuple[np.ndarray, np.ndarray]:
     try:
         data = path.read_bytes()
     except FileNotFoundError:
-        raise BenchError(f"mesh file not found: {path}") from None
+        raise BenchError(i18n.t("mesh file not found: {path}", path=path)) from None
     except OSError as e:
-        raise BenchError(f"can't read mesh {path}: {e}") from None
+        raise BenchError(i18n.t("can't read mesh {path}: {error}", path=path, error=e)) from None
     if suffix == ".stl":
         tris = _stl(data, path)
         v, inv = np.unique(tris.reshape(-1, 3), axis=0, return_inverse=True)
@@ -66,9 +67,10 @@ def read_mesh(path: Path) -> tuple[np.ndarray, np.ndarray]:
     elif suffix == ".obj":
         v, f = _obj(data, path)
     else:
-        raise BenchError(f"mesh {path} is not an STL or OBJ file (export it from CAD as .stl or .obj)")
+        raise BenchError(i18n.t("mesh {path} is not an STL or OBJ file (export it from CAD as .stl or .obj)",
+                                path=path))
     if not len(f):
-        raise BenchError(f"mesh {path} has no triangles")
+        raise BenchError(i18n.t("mesh {path} has no triangles", path=path))
     return v, f
 
 
@@ -82,10 +84,10 @@ def _stl(data: bytes, path: Path) -> np.ndarray:
     try:
         text = data.decode("ascii")
     except UnicodeDecodeError:
-        raise BenchError(f"mesh {path} is neither a binary nor a text STL") from None
+        raise BenchError(i18n.t("mesh {path} is neither a binary nor a text STL", path=path)) from None
     pts = [tuple(float(x) for x in ln.split()[1:4]) for ln in text.splitlines() if ln.strip().startswith("vertex")]
     if len(pts) % 3:
-        raise BenchError(f"mesh {path}: a text STL's vertices must come in threes")
+        raise BenchError(i18n.t("mesh {path}: a text STL's vertices must come in threes", path=path))
     return np.array(pts, dtype=float).reshape(-1, 3, 3)
 
 
@@ -103,10 +105,11 @@ def _obj(data: bytes, path: Path) -> tuple[np.ndarray, np.ndarray]:
                 idx = [k - 1 if k > 0 else len(v) + k for k in idx]
                 f += [(idx[0], idx[j], idx[j + 1]) for j in range(1, len(idx) - 1)]
         except (ValueError, IndexError):
-            raise BenchError(f"mesh {path} line {i}: can't read {ln.strip()!r}") from None
+            raise BenchError(i18n.t("mesh {path} line {n}: can't read {text}", path=path, n=i,
+                                    text=repr(ln.strip()))) from None
     v, f = np.array(v, dtype=float).reshape(-1, 3), np.array(f, dtype=int).reshape(-1, 3)
     if len(f) and (f.min() < 0 or f.max() >= len(v)):
-        raise BenchError(f"mesh {path}: a face names a vertex that isn't there")
+        raise BenchError(i18n.t("mesh {path}: a face names a vertex that isn't there", path=path))
     return v, f
 
 
@@ -135,11 +138,11 @@ def check_closed(v: np.ndarray, f: np.ndarray, path: Path) -> None:
     twice = {tuple(e) for e, n in zip(directed, dcount) if n > 1}  # one edge run the same way by two faces
     wound = len({tuple(sorted(e)) for e in twice})
     if open_edges or wound:
-        what = ", ".join(x for x in (f"{open_edges} open edges" if open_edges else "",
-                                     f"{wound} edges inconsistently wound" if wound else "") if x)
-        raise BenchError(f"mesh {path} isn't a closed solid ({what}): export it as a closed solid (a part's body, "
-                         "not a surface or a few faces; in Inventor, Save Copy As STL from the part, not a sketch "
-                         "or surface)")
+        what = ", ".join(x for x in (i18n.t("{n} open edges", n=open_edges) if open_edges else "",
+                                     i18n.t("{n} edges inconsistently wound", n=wound) if wound else "") if x)
+        raise BenchError(i18n.t("mesh {path} isn't a closed solid ({what}): export it as a closed solid (a part's "
+                                "body, not a surface or a few faces; in Inventor, Save Copy As STL from the part, not "
+                                "a sketch or surface)", path=path, what=what))
 
 
 def write_obj(path: Path, v: np.ndarray, f: np.ndarray) -> None:
@@ -161,7 +164,8 @@ def hull_volume(v: np.ndarray, f: np.ndarray, path: Path) -> float:
     try:
         return float(spec.compile().body_mass[1])
     except ValueError as e:
-        raise BenchError(f"mesh {path} is flat or broken (MuJoCo: {e}); export the part as a closed solid") from None
+        raise BenchError(i18n.t("mesh {path} is flat or broken (MuJoCo: {error}); export the part as a closed solid",
+                                path=path, error=e)) from None
 
 
 def cache_key(mesh_path: Path, units: str) -> str:
@@ -205,7 +209,8 @@ def convex_pieces(mesh_path: Path, units: str) -> list[Path]:
     else coacd's split, cached (see the module's notes). `units` keys the cache: it is "m", "mm" or "in"."""
     mesh_path = Path(mesh_path)
     if units not in UNITS:
-        raise BenchError(f"units must be one of {', '.join(UNITS)}, not {units!r}")
+        raise BenchError(i18n.t("units must be one of {choices}, not {value}", choices=", ".join(UNITS),
+                                value=repr(units)))
     v, f = weld(*read_mesh(mesh_path))
     check_closed(v, f, mesh_path)
     hull, own = hull_volume(v, f, mesh_path), volume(v, f)
@@ -220,12 +225,14 @@ def convex_pieces(mesh_path: Path, units: str) -> list[Path]:
     try:
         pieces = _split(v, f)
     except ImportError:
-        bigger = f"{100 * (hull / own - 1):.0f}%" if own > 0 else "far"
-        raise BenchError(f"mesh {mesh_path} is concave (its hull is {bigger} bigger than it), so it has to be split "
-                         "into convex pieces, which needs coacd: pip install scrimmage[bench]. (Run as it is, its "
-                         "hollows would be filled in.)", code="no_coacd") from None
+        how = i18n.t("{percent}% bigger", percent=f"{100 * (hull / own - 1):.0f}") if own > 0 else \
+            i18n.t("far bigger")
+        raise BenchError(i18n.t("mesh {path} is concave (its hull is {how} than it), so it has to be split into "
+                                "convex pieces, which needs coacd: pip install scrimmage[bench]. (Run as it is, its "
+                                "hollows would be filled in.)", path=mesh_path, how=how), code="no_coacd") from None
     if not pieces:
-        raise BenchError(f"mesh {mesh_path}: coacd found no convex pieces in it", code="no_convex_pieces")
+        raise BenchError(i18n.t("mesh {path}: coacd found no convex pieces in it", path=mesh_path),
+                         code="no_convex_pieces")
     try:
         return _write_pieces(home, pieces)
     except OSError as e:
@@ -286,12 +293,14 @@ def place(c: Cad) -> Placement:
     try:
         part = out.part = load_part(c.part)
     except PartError as e:
-        raise BenchError(f"[[cad]] '{c.name}': can't load its part folder {c.part}: {e}") from None
+        raise BenchError(i18n.t("[[cad]] '{name}': can't load its part folder {folder}: {error}", name=c.name,
+                                folder=c.part, error=e)) from None
     motor = {s.slot: s for s in part.motors}
     for slot in c.slots:
         if slot not in motor:
-            raise BenchError(f"[[cad]] '{c.name}' slots: the part has no motor slot {slot!r}; its motor slots: "
-                             f"{', '.join(motor) or '(none)'}")
+            raise BenchError(i18n.t("[[cad]] '{name}' slots: the part has no motor slot {slot}; its motor slots: "
+                                    "{slots}", name=c.name, slot=repr(slot),
+                                    slots=", ".join(motor) or i18n.t("(none)")))
     driven = {motor[s].joint: (motor[s], shaft) for s, shaft in c.slots.items()}
     unused = {s.joint: s.slot for s in part.motors if s.slot not in c.slots}
     root_q = np.array(quat_from_rpy(c.rot_deg))
@@ -309,12 +318,14 @@ def place(c: Cad) -> Placement:
         if j is not None and j.name in driven:
             slot, shaft = driven[j.name]
             if carrier is not None:
-                raise BenchError(f"[[cad]] '{c.name}': joint '{j.name}' (slot '{slot.slot}') rides on a body that "
-                                 f"turns with shaft '{carrier}'; a bench shaft turns about a fixed line, so give only "
-                                 "the outer joint a shaft")
+                raise BenchError(i18n.t("[[cad]] '{name}': joint '{joint}' (slot '{slot}') rides on a body that "
+                                        "turns with shaft '{shaft}'; a bench shaft turns about a fixed line, so give "
+                                        "only the outer joint a shaft", name=c.name, joint=j.name, slot=slot.slot,
+                                        shaft=carrier))
             if j.kind != "hinge":
-                raise BenchError(f"[[cad]] '{c.name}': slot '{slot.slot}' drives joint '{j.name}', a slide; bench "
-                                 "shafts turn, so give slots only to hinge joints")
+                raise BenchError(i18n.t("[[cad]] '{name}': slot '{slot}' drives joint '{joint}', a slide; bench "
+                                        "shafts turn, so give slots only to hinge joints", name=c.name,
+                                        slot=slot.slot, joint=j.name))
             axis = _rot(q, j.axis) * (-1.0 if slot.invert else 1.0)
             out.anchors.append((shaft, f"[[cad]] '{c.name}' joint '{j.name}'", p, axis / np.linalg.norm(axis)))
             carrier = shaft
@@ -363,7 +374,7 @@ def add_cad(spec: mujoco.MjSpec, pl: Placement, bench: Bench, shapes) -> tuple[d
         try:
             files = convex_pieces(c.mesh, c.units)
         except BenchError as e:
-            raise BenchError(f"[[cad]] '{c.name}': {e}") from None
+            raise BenchError(i18n.t("[[cad]] '{name}': {error}", name=c.name, error=e)) from None
         q = quat_from_rpy(c.rot_deg)
         for i, f in enumerate(files):
             mesh = _add_mesh(spec, f"cad:{c.name}:{i}", f, UNITS[c.units])
@@ -399,7 +410,8 @@ def add_cad(spec: mujoco.MjSpec, pl: Placement, bench: Bench, shapes) -> tuple[d
             try:
                 kws = _geom_kw(g, pl.part.base_dir)
             except BenchError as e:
-                raise BenchError(f"[[cad]] '{c.name}' body '{b.name}': {e}") from None
+                raise BenchError(i18n.t("[[cad]] '{name}' body '{body}': {error}", name=c.name, body=b.name,
+                                        error=e)) from None
             for i, (kw, file) in enumerate(kws):
                 gname = f"cad:{c.name}:{b.name}:{k}:{i}"
                 if file is not None:

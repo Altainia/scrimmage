@@ -112,7 +112,7 @@ def test_jammed_and_escaped_are_counted(pinch):
 def test_write_results_tables(pinch, tmp_path):
     out = write_results(pinch, tmp_path / "r")
     names = sorted(p.name for p in out.iterdir())
-    assert names == ["loads.csv", "pieces.csv", "shafts.csv", "summary.txt"]
+    assert names == ["loads.csv", "pieces.csv", "shafts.csv", "summary.json", "summary.txt"]
     summary = (out / "summary.txt").read_text()
     for line in headlines(pinch):
         assert line in summary

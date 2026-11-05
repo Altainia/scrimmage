@@ -9,4 +9,10 @@ MISSING_EXTRA = 'Reading CAD files needs the cad extra: pip install "scrimmage[c
 
 
 class CadError(ValueError):
-    """A problem the student can fix; the message is one plain sentence saying what's wrong and what to do."""
+    """A problem the student can fix; the message is one plain sentence saying what's wrong and what to do.
+    `field` is the setting at fault ("custom_density", "infill", "material"), for code that mustn't read the
+    message's words (spec L3); None when unknown."""
+
+    def __init__(self, message: str = "", field: str | None = None):
+        super().__init__(message)
+        self.field = field

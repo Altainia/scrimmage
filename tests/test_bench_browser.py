@@ -3,6 +3,7 @@
 The fixtures (Chromium lookup, the Server helper) live in tests/test_assembler_browser.py. The session folder holds
 copies of examples/bench/bounce_bar.toml and pinch_car.toml; bounce bar is the newer, so it starts on stage.
 """
+import json
 import os
 import re
 import shutil
@@ -21,12 +22,14 @@ UNC = "UNCALIBRATED: estimates from preset numbers, not measurements; measure."
 
 
 def _fake_results(folder: Path, stem: str, title: str, heads: list[str], energy: str = "ok", gif: bool = True) -> Path:
-    """A results folder as `bench run` writes it: summary.txt and small real pictures."""
+    """A results folder as `bench run` writes it: summary.txt, summary.json and small real pictures."""
     from PIL import Image
     out = folder / f"{stem}-results"
     out.mkdir(exist_ok=True)
     (out / "summary.txt").write_text(f"{title}\nidea: \"x\"\n\n" + "\n".join(heads) + f"\n{UNC}\n\n"
                                      f"Energy check: {energy} (a failure means the simulation is wrong, not the design)\n")
+    (out / "summary.json").write_text(json.dumps({"headlines": [*heads, UNC], "uncalibrated": UNC,
+                                                  "energy_failed": energy != "ok"}))
     Image.new("RGB", (40, 20), (200, 30, 30)).save(out / "path_side.png")
     if gif:
         Image.new("RGB", (40, 20), (30, 30, 200)).save(out / "pass.gif")

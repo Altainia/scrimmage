@@ -8,11 +8,13 @@ what to measure. Names from the bench file are in backticks.
 Units and Language: the headlines and summary.txt are in the Units and Language settings when they are written
 (scrimmage/units.py, i18n.py; the MCP tools return the headlines in meters and American English, as before the
 settings, through units.fixed()). The CSVs stay SI, their columns named by unit (speed_m_s), and the tables' column
-names are the CSVs'. The UNCALIBRATED line is measure/labels.py's, as the pictures carry it, in the Language but with
-its mark, "UNCALIBRATED", in every language: summary.txt's readers (the Bench tab) find the headlines' end by it.
+names are the CSVs'. The UNCALIBRATED line is measure/labels.py's, as the pictures carry it, all of it in the Language.
+The Bench tab doesn't read summary.txt's words: summary.json, written beside it, holds the headlines, the UNCALIBRATED
+line and whether the energy check failed, as data (spec L3).
 """
 
 import csv
+import json
 import math
 from collections import Counter
 from pathlib import Path
@@ -378,8 +380,12 @@ def _text_table(header: list[str], rows: list[list[str]]) -> str:
     return "\n".join([fmt.format(*header), *(fmt.format(*r) for r in rows)])
 
 
+SUMMARY_DATA = "summary.json"   # summary.txt's headlines as data, for the Bench tab (it never reads summary.txt's words)
+
+
 def write_results(result: BenchResult, out_dir: Path) -> Path:
-    """summary.txt (the headlines and tables), pieces.csv, shafts.csv, loads.csv, and with [flight] landings.csv."""
+    """summary.txt (the headlines and tables), summary.json (SUMMARY_DATA), pieces.csv, shafts.csv, loads.csv, and
+    with [flight] landings.csv."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     lands = landings(result)
@@ -391,19 +397,23 @@ def write_results(result: BenchResult, out_dir: Path) -> Path:
             w.writerow(header)
             w.writerows(rows)
     with i18n.for_people():     # summary.txt is for people: in the Units and Language settings (an MCP run's too)
-        (out_dir / "summary.txt").write_text(_summary(result, lands, tables), encoding="utf-8")
+        heads = headlines(result, lands)
+        (out_dir / "summary.txt").write_text(_summary(result, heads, tables), encoding="utf-8")
+    # the same headlines as data: the Bench tab shows them without finding them by their words
+    data = {"headlines": heads, "uncalibrated": heads[-1], "energy_failed": energy_failures(result) > 0}
+    (out_dir / SUMMARY_DATA).write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     return out_dir
 
 
-def _summary(result: BenchResult, lands, tables) -> str:
-    """summary.txt's text (the Bench tab reads its headlines back)."""
+def _summary(result: BenchResult, heads: list[str], tables) -> str:
+    """summary.txt's text; `heads` is headlines()'."""
     b = result.bench
     text = [b.name + (f" ({b.author})" if b.author else "")]
     if b.idea:
         text.append(t('idea: "{idea}"', idea=b.idea))
     if b.notes:
         text.append(b.notes)
-    text += ["", *headlines(result, lands), *(t("warning: {warning}", warning=w) for w in b.warnings), ""]
+    text += ["", *heads, *(t("warning: {warning}", warning=w) for w in b.warnings), ""]
     titles = {"pieces": t("Pieces"), "shafts": t("Shafts"), "loads": t("Loads (normal contact force on each part)"),
               "landings": t("Landings (the launcher model's ball flight, from the outlet)")}
     for name, table in tables.items():

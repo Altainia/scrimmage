@@ -1,5 +1,6 @@
 """The Bench tab's server side: an idea session (a folder of bench files) behind /api/bench/*."""
 
+import json
 import shutil
 import threading
 import time
@@ -10,6 +11,12 @@ import pytest
 from scrimmage.assembler.server import App
 from scrimmage.bench import session
 from test_assembler_server import Client
+
+
+def _summary_data(out, heads, energy_failed=False):
+    """summary.json as bench/report.py's write_results writes it beside summary.txt: what the Bench tab reads."""
+    (out / "summary.json").write_text(json.dumps({"headlines": heads, "uncalibrated": heads[-1],
+                                                  "energy_failed": energy_failed}))
 
 ROOT = Path(__file__).resolve().parent.parent
 BENCH = ROOT / "examples" / "bench"
@@ -253,6 +260,8 @@ def test_latest_from_log_and_file_route(bench, tmp_path):
     (out / "summary.txt").write_text('pinch car (Sam)\nidea: "x"\n\n3 of 3 got out through `goal`\n'
                                      "UNCALIBRATED: estimates from preset numbers, not measurements; measure.\n"
                                      "warning: w\n\nPieces\n")
+    _summary_data(out, ["3 of 3 got out through `goal`",
+                        "UNCALIBRATED: estimates from preset numbers, not measurements; measure."])
     (out / "path_side.png").write_bytes(b"\x89PNG fake")
     session.log_event(folder, "run", [folder / "pinch_car.toml"], out, "agent", True)
     st = _wait_for(c, lambda st: _idea(st, "pinch_car.toml")["latest"])
@@ -566,10 +575,12 @@ def test_energy_failure_shows_in_latest_for_every_source(bench, monkeypatch, tmp
     out.mkdir()
     (out / "summary.txt").write_text("b (A)\n\n3 of 3 out\nUNCALIBRATED: x\n\nEnergy check: pieces 0 gained energy "
                                      "from nowhere (a failure means the simulation is wrong, not the design)\n")
+    _summary_data(out, ["3 of 3 out", "UNCALIBRATED: x"], energy_failed=True)
     session.log_event(folder, "run", [folder / "bounce_bar.toml"], out, "agent", True)
     st = _wait_for(c, lambda st: _idea(st, "bounce_bar.toml")["latest"])
     assert _idea(st, "bounce_bar.toml")["latest"]["energy_failed"] is True
     (out / "summary.txt").write_text("b (A)\n\n3 of 3 out\nUNCALIBRATED: x\n\nEnergy check: ok (a failure ...)\n")
+    _summary_data(out, ["3 of 3 out", "UNCALIBRATED: x"])
     assert _idea(_state(c), "bounce_bar.toml")["latest"]["energy_failed"] is False
 
 
@@ -648,6 +659,7 @@ def test_set_several_keys_is_one_edit(bench):
 def _fake_run(out, headline):
     out.mkdir(parents=True, exist_ok=True)
     (out / "summary.txt").write_text(f"pinch car (Sam)\n\n{headline}\nUNCALIBRATED: estimates; measure.\n\nPieces\n")
+    _summary_data(out, [headline, "UNCALIBRATED: estimates; measure."])
     (out / "path_side.png").write_bytes(b"\x89PNG run")
 
 

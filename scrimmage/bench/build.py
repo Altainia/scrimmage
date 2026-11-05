@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 import mujoco
 import numpy as np
 
+from .. import i18n
 from ..parts.assemble import TREAD_DAMPING, TREAD_IMPEDANCE, TREAD_STIFFNESS, tread_solref
 from ..parts.model import quat_from_rpy
 from . import cad as cadmod
@@ -191,9 +192,9 @@ def _check_names(bench: Bench) -> None:
                         ("curve", bench.curves), ("cad", bench.cads)):
         for it in items:
             if it.name in seen:
-                raise BenchError(f"[[{kind}]] '{it.name}' has the same name as [[{seen[it.name]}]] '{it.name}'; "
-                                 "shape names must be unique across wheels, plates, bars, curves and CAD (loads are "
-                                 "reported by name)")
+                raise BenchError(i18n.t("[[{kind}]] '{name}' has the same name as [[{other}]] '{name}'; shape names "
+                                        "must be unique across wheels, plates, bars, curves and CAD (loads are "
+                                        "reported by name)", kind=kind, name=it.name, other=seen[it.name]))
             seen[it.name] = kind
 
 
@@ -212,9 +213,10 @@ def _add_shafts(spec: mujoco.MjSpec, bench: Bench, shapes: _Shapes,
         for label, center, ax in lines[1:]:
             off = center - origin
             if abs(np.dot(ax, axis)) < 1 - 1e-9 or np.linalg.norm(off - (off @ axis) * axis) > 1e-6:
-                raise BenchError(f"{label} is on shaft '{name}' but not on its axis (the line through "
-                                 f"{lines[0][0]} along {tuple(float(x) for x in axis)}); wheels on one "
-                                 "shaft turn on one axis, so give it the same axis and a center on that line")
+                raise BenchError(i18n.t("{what} is on shaft '{shaft}' but not on its axis (the line through {first} "
+                                        "along {axis}); wheels on one shaft turn on one axis, so give it the same "
+                                        "axis and a center on that line", what=label, shaft=name,
+                                        first=lines[0][0], axis=tuple(float(x) for x in axis)))
         q = _quat_z_to(axis)
         R = _mat(q)
         j = shaft.wheel_inertia + shaft.added_inertia
@@ -283,8 +285,8 @@ def build_bench(bench: Bench) -> Built:
     piece = bench.piece
     n_pool = sum(i.count for i in bench.inlets)
     if n_pool > POOL_MAX:
-        raise BenchError(f"the inlets send {n_pool} pieces in all; a bench holds at most {POOL_MAX} "
-                         "(lower an [[inlet]] count)")
+        raise BenchError(i18n.t("the inlets send {n} pieces in all; a bench holds at most {most} (lower an [[inlet]] "
+                                "count)", n=n_pool, most=POOL_MAX))
     dt = bench.run.timestep if bench.run.timestep is not None else TIMESTEP[piece.kind]
 
     spec = mujoco.MjSpec()
@@ -322,7 +324,7 @@ def build_bench(bench: Bench) -> Built:
     try:
         m = spec.compile()
     except ValueError as e:
-        raise BenchError(f"building the bench: {e}") from None
+        raise BenchError(i18n.t("building the bench: {error}", error=e)) from None
     d = mujoco.MjData(m)
     mujoco.mj_kinematics(m, d)
     boxes = [_aabb(m, m.geom(g).id, d.geom_xpos[m.geom(g).id], d.geom_xmat[m.geom(g).id].reshape(3, 3))
@@ -331,7 +333,7 @@ def build_bench(bench: Bench) -> Built:
     outlet_boxes = {o.name: _box(o.center, o.size) for o in bench.outlets}
     boxes += list(inlet_boxes.values()) + list(outlet_boxes.values())
     if not boxes:
-        raise BenchError("the bench has no shapes, inlets or outlets; add at least one")
+        raise BenchError(i18n.t("the bench has no shapes, inlets or outlets; add at least one"))
     # bounds cover the inlets and outlets too, so a piece spawning or leaving there is never counted as escaped
     lo = np.min([b[0] for b in boxes], axis=0) - BOUNDS_MARGIN
     hi = np.max([b[1] for b in boxes], axis=0) + BOUNDS_MARGIN
@@ -362,7 +364,7 @@ def build_bench(bench: Bench) -> Built:
     try:
         m = spec.compile()
     except ValueError as e:
-        raise BenchError(f"building the bench: {e}") from None
+        raise BenchError(i18n.t("building the bench: {error}", error=e)) from None
 
     lay = BenchLayout(bounds=(lo, hi), outlet_boxes=outlet_boxes, inlet_boxes=inlet_boxes, parked=parked,
                       inlet_margin=piece.size[0] / 2 if piece.shape == "sphere" else 0.0)
@@ -395,9 +397,10 @@ def check_clear(built: Built) -> None:
         for g, shape in lay.shape_of_geom.items():
             depth = lay.inlet_margin - mujoco.mj_geomDistance(m, d, probe, g, lay.inlet_margin + 0.01, None)
             if depth > 1e-6:
-                raise BenchError(f"inlet '{inlet}' overlaps shape '{shape}' by {depth * 1000:.1f} mm: a piece spawned "
-                                 "there would start inside it; move the inlet or the shape (the zone, grown by the "
-                                 "piece's own size, must clear every shape)", f"inlet.{inlet}")
+                raise BenchError(i18n.t("inlet '{inlet}' overlaps shape '{shape}' by {depth} mm: a piece spawned "
+                                        "there would start inside it; move the inlet or the shape (the zone, grown "
+                                        "by the piece's own size, must clear every shape)", inlet=inlet,
+                                        shape=shape, depth=f"{depth * 1000:.1f}"), f"inlet.{inlet}")
 
 
 OVERLAP_MIN = 0.002  # m: a moving part this far into another shape is worth a warning (touching is fine)
@@ -436,5 +439,6 @@ def overlap_warnings(built: Built, bench: Bench) -> list[Problem]:
                 seen.add((s1, s2))
                 (k1, n1), (k2, n2) = entry[s1], entry[s2]
                 out.append(Problem("warning", f"{k1}.{n1}",
-                                   f"{k1} '{n1}' and {k2} '{n2}' overlap by {-dist * 1000:.0f} mm"))
+                                   i18n.t("{kind} '{name}' and {other_kind} '{other}' overlap by {depth} mm", kind=k1,
+                                          name=n1, other_kind=k2, other=n2, depth=f"{-dist * 1000:.0f}")))
     return out

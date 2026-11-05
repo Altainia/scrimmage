@@ -13,7 +13,7 @@ from typing import NamedTuple
 
 import numpy as np
 
-from ..i18n import N_
+from ..i18n import N_, t
 from . import CadError
 
 
@@ -46,16 +46,17 @@ def density(material: str, infill: float | None = None, custom: float | None = N
     materials are `rho * (0.25 + 0.75 * infill)`, with infill (0 to 1) defaulting to 0.4."""
     if material == "custom":
         if custom is None or not math.isfinite(custom) or custom <= 0:
-            raise CadError("A custom material needs a density above zero (kg per cubic meter): enter one.")
+            raise CadError(t("A custom material needs a density above zero (kg per cubic meter): enter one."),
+                           field="custom_density")
         return float(custom)
     mat = MATERIALS.get(material)
     if mat is None:
-        raise CadError(f"Unknown material '{material}': pick one from the list.")
+        raise CadError(t("Unknown material '{material}': pick one from the list.", material=material), field="material")
     if not mat.printed:
         return mat.density
     fill = DEFAULT_INFILL if infill is None else infill
     if not math.isfinite(fill) or not 0 <= fill <= 1:
-        raise CadError("Infill must be between 0 and 100 percent: enter a smaller number.")
+        raise CadError(t("Infill must be between 0 and 100 percent: enter a smaller number."), field="infill")
     return mat.density * (SHELL_SHARE + (1 - SHELL_SHARE) * fill)
 
 

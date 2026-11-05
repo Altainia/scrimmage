@@ -177,7 +177,7 @@ def _set_material(imp, a):
     try:
         density(mat, infill, custom)
     except CadError as e:
-        _fail("custom_density" if mat == "custom" and "density" in str(e) else "infill", str(e))
+        _fail(e.field or "infill", str(e))
     for k in keys:
         p = imp.pieces[k]
         p.material, p.infill, p.custom_density, p.mass = mat, infill, custom, None

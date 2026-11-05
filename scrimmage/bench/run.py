@@ -41,6 +41,7 @@ from dataclasses import dataclass, field
 import mujoco
 import numpy as np
 
+from .. import i18n
 from ..launcher.inputs import BatteryIn, Control
 from ..launcher.inputs import Shaft as LauncherShaft
 from ..launcher.shaft import ShaftModel, VelocityController
@@ -424,8 +425,9 @@ class _Run:
     # ---------------------------------------------------------------------------------------------- loop
 
     def _blew_up(self, t: float, what: str) -> BenchRunError:
-        return BenchRunError(f"the run blew up at t = {t:.4f} s: {what}. A contact may be far too stiff for the "
-                             f"timestep ({self.dt:g} s): check the piece's stiffness and the [run] timestep")
+        return BenchRunError(i18n.t("the run blew up at t = {t} s: {what}. A contact may be far too stiff for the "
+                                    "timestep ({dt} s): check the piece's stiffness and the [run] timestep",
+                                    t=f"{t:.4f}", what=what, dt=f"{self.dt:g}"))
 
     def check_inputs(self, t: float) -> list[tuple[float, int]]:
         """Before a step: the forces about to be applied must be finite (a NaN contact force is named here, before
@@ -437,9 +439,10 @@ class _Run:
             for _, i in speeds:
                 if not (np.isfinite(d.xfrc_applied[lay.piece_bodies[i]]).all()
                         and np.isfinite(d.qfrc_applied[self.vadr[i]]).all()):
-                    raise self._blew_up(t, f"piece {i} has a non-finite contact force")
-            raise self._blew_up(t, "a shaft or bar has a non-finite force"
-                                   + (f" (piece {max(speeds)[1]} was the fastest in the bench)" if speeds else ""))
+                    raise self._blew_up(t, i18n.t("piece {n} has a non-finite contact force", n=i))
+            raise self._blew_up(t, i18n.t("a shaft or bar has a non-finite force (piece {n} was the fastest in the "
+                                          "bench)", n=max(speeds)[1]) if speeds else
+                                i18n.t("a shaft or bar has a non-finite force"))
         return speeds
 
     def check(self, t: float, before: list[tuple[float, int]]) -> None:
@@ -451,17 +454,18 @@ class _Run:
         nan = [i for s_, i in speeds if not math.isfinite(s_)]
         fast = [(s_, i) for s_, i in speeds if s_ > BLOWUP_SPEED]
         if bad > self.badqacc:
-            what = (f"piece {max(before)[1]} (the fastest, at {max(before)[0]:.1f} m/s) was in the bench when "
-                    "MuJoCo's accelerations went bad" if before else
-                    "no piece was in the bench, but MuJoCo's accelerations went bad")
+            what = (i18n.t("piece {n} (the fastest, at {speed} m/s) was in the bench when MuJoCo's accelerations "
+                           "went bad", n=max(before)[1], speed=f"{max(before)[0]:.1f}") if before else
+                    i18n.t("no piece was in the bench, but MuJoCo's accelerations went bad"))
         elif nan:
-            what = f"piece {nan[0]} has a non-finite velocity"
+            what = i18n.t("piece {n} has a non-finite velocity", n=nan[0])
         elif fast:
             s_, i = max(fast)
-            what = f"piece {i} is moving at {s_:.0f} m/s (over {BLOWUP_SPEED:.0f})"
+            what = i18n.t("piece {n} is moving at {speed} m/s (over {most})", n=i, speed=f"{s_:.0f}",
+                          most=f"{BLOWUP_SPEED:.0f}")
         elif not (np.isfinite(d.qpos).all() and np.isfinite(d.qvel).all()):
-            what = (f"piece {max(before)[1]} (the fastest) was in the bench when the state went non-finite"
-                    if before else "no piece was in the bench, but the model's state went non-finite")
+            what = (i18n.t("piece {n} (the fastest) was in the bench when the state went non-finite", n=max(before)[1])
+                    if before else i18n.t("no piece was in the bench, but the model's state went non-finite"))
         else:
             return
         raise self._blew_up(t, what)

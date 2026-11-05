@@ -12,9 +12,9 @@
 A measurement that isn't good counts as an estimate and says why: "ball stiffness (fuel.measure.toml, not good
 enough: 2 trials; take at least 3)". The line has no closing period, so a caller can add its own ending.
 
-The words are in the Language setting, but the label's own word, MARK ("UNCALIBRATED"), is the same in every
-language: the Bench tab finds the headlines' end in summary.txt by it, and people and agents read it as the flag it
-is. A caller's own `estimates` wording is N_() text without it.
+The words are in the Language setting, the label's own word ("UNCALIBRATED") too: nothing finds a line by it (the
+Bench tab reads a run's headlines from summary.json, spec L3). A caller's own `estimates` wording is N_() text
+without it.
 """
 
 from __future__ import annotations
@@ -22,13 +22,12 @@ from __future__ import annotations
 from ..i18n import N_, t, tn, translated
 from .file import Provenance
 
-MARK = "UNCALIBRATED"
 ESTIMATES = N_("estimates from preset material numbers, not fitted to measurements")
 
 
 def marked(text: str) -> str:
     """`text` (in the user's language) after the label's mark: "UNCALIBRATED: <text>"."""
-    return f"{MARK}: {text}"
+    return t("UNCALIBRATED: {text}", text=text)
 
 # what matters for each result (spec goal 5); a grip's pads and a cylinder's valve are named by their callers
 LAUNCHER = ("ball.stiffness_n", "ball.restitution", "wheels.friction")
