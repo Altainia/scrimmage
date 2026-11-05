@@ -10,7 +10,7 @@ import math
 from ...motors import MOTORS
 from ...pneumatics.model import DEFAULT_CONDUCTANCE
 from . import Param, Stock, register
-from ...i18n import N_
+from ...i18n import N_, t
 
 STEEL = [0.55, 0.55, 0.6, 1.0]
 ORANGE = [0.95, 0.5, 0.1, 1.0]
@@ -161,7 +161,8 @@ def _turret(p: dict) -> dict:
     from ..model import PartError
     lo, hi = p["range"]
     if not (-360 <= lo and hi <= 360):
-        raise PartError(f"turret: range {[lo, hi]} has an end beyond 360 degrees: keep both ends within +-360")
+        raise PartError(t("turret: range {range} has an end beyond 360 degrees: keep both ends within +-360",
+                          range=[lo, hi]))
     r, m = p["diameter"] / 2, p["mass"]
     return {
         "part": {"name": "turret", "format": 1},
@@ -220,15 +221,15 @@ def _cylinder(p: dict) -> dict:
         cylinder["length"] = p["length"]
     if push:
         if push.count(".") != 1 or not all(push.split(".")):
-            raise PartError(f"cylinder: push must be \"<part>.<body>\" (the body the rod's end is pinned to), "
-                            f"not {push!r}")
+            raise PartError(t("cylinder: push must be \"<part>.<body>\" (the body the rod's end is pinned to), not "
+                              "{push}", push=repr(push)))
         cylinder["pin_b"] = {"body": push, "pos": p["push_pos"]}
         return {"part": {"name": "cylinder", "format": 1},
                 "body": [{"name": "barrel", "mass": p["mass"] + p["rod_mass"], "geom": [barrel]}],
                 "cylinder": cylinder, "mount": [{"name": "base", "body": "barrel"}]}
     if any(p["push_pos"]):
-        raise PartError("cylinder: push_pos places the rod's end on the part named by push; set push too, "
-                        "or remove push_pos")
+        raise PartError(t("cylinder: push_pos places the rod's end on the part named by push; set push too, or "
+                          "remove push_pos"))
     rod_len = 0.8 * length
     cylinder["pin_b"] = {"body": "rod"}
     cylinder["length"] = length
@@ -431,8 +432,8 @@ def disc_wheel_spots(p: dict) -> list[dict]:
     from ..model import PartError
     n = p["wheel_count"]
     if p["layout"] == "arc" and n != 1:
-        raise PartError(f"disc_shooter: an arc has one wheel (the fence curves round it); wheel_count is {n}, make "
-                        "it 1")
+        raise PartError(t("disc_shooter: an arc has one wheel (the fence curves round it); wheel_count is {count}, "
+                          "make it 1", count=n))
     sides = ("right", "left") if p["layout"] == "pinch" else (p["wheel_side"],)
     spots = []
     for s, side in enumerate(sides):

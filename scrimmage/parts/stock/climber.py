@@ -28,7 +28,7 @@ from ...motors import MOTORS
 from ..model import PartError
 from . import Param, Stock, register
 from .mechanisms import slide_chain
-from ...i18n import N_
+from ...i18n import N_, t
 
 IN = 0.0254
 STEEL = [0.55, 0.55, 0.6, 1.0]
@@ -112,11 +112,13 @@ def hook_seat(p: dict) -> tuple[float, float]:
 def _check_hook(p: dict, where: str = "climber") -> None:
     w, depth = p["hook_throat"], p["hook_depth"]
     if w <= THROAT_CLEARANCE:                           # the seat and latch geometry assume a bar of OD w - clearance
-        raise PartError(f"{where}: hook_throat {w} m leaves no room for a bar: make it more than "
-                        f"{THROAT_CLEARANCE} m (the bar's OD plus {THROAT_CLEARANCE * 1000:g} mm)")
+        raise PartError(t("{where}: hook_throat {throat} m leaves no room for a bar: make it more than {least} m (the "
+                          "bar's OD plus {mm} mm)", where=where, throat=w, least=THROAT_CLEARANCE,
+                          mm=f"{THROAT_CLEARANCE * 1000:g}"), where=where, field="param:hook_throat")
     if depth <= w / 2 + HOOK_RADIUS:
-        raise PartError(f"{where}: hook_depth {depth} m leaves no tip on the hook: make it more than "
-                        f"{w / 2 + HOOK_RADIUS:.4f} m (half the throat plus the hook's radius)")
+        raise PartError(t("{where}: hook_depth {depth} m leaves no tip on the hook: make it more than {least} m (half "
+                          "the throat plus the hook's radius)", where=where, depth=depth,
+                          least=f"{w / 2 + HOOK_RADIUS:.4f}"), where=where, field="param:hook_depth")
     if p["latch"] == "none":
         return
     f = _hook_frame(p)
@@ -124,8 +126,9 @@ def _check_hook(p: dict, where: str = "climber") -> None:
     reach = w + bar_r + LATCH_RADIUS + LATCH_MARGIN     # the latch's length plus the bar's and its own radius
     need = math.sqrt(reach ** 2 - f["rho"] ** 2) + w / 2 - (hook_seat(p)[1] - f["center"][1])
     if depth < need:
-        raise PartError(f"{where}: hook_depth {depth} m is too short for the latch to close under a seated bar: "
-                        f"make it at least {math.ceil(need * 1000) / 1000} m, or set latch = \"none\"")
+        raise PartError(t("{where}: hook_depth {depth} m is too short for the latch to close under a seated bar: make "
+                          "it at least {least} m, or set latch = \"none\"", where=where, depth=depth,
+                          least=math.ceil(need * 1000) / 1000), where=where, field="param:hook_depth")
 
 
 def _hook(p: dict, i: int, y: float) -> tuple[list[dict], dict | None]:
@@ -158,8 +161,9 @@ def _hook(p: dict, i: int, y: float) -> tuple[list[dict], dict | None]:
 def _climber(p: dict) -> dict:
     n, L = p["stages"], p["base_length"]
     if p["tube"] - n * NEST < 0.01:
-        raise PartError(f"climber: a {p['tube']} m base tube leaves the tip tube under 1 cm with {n} stages "
-                        f"nested {NEST:.4f} m smaller each: make tube at least {n * NEST + 0.01:.4f} m")
+        raise PartError(t("climber: a {tube} m base tube leaves the tip tube under 1 cm with {stages} stages nested "
+                          "{nest} m smaller each: make tube at least {least} m", tube=p["tube"], stages=n,
+                          nest=f"{NEST:.4f}", least=f"{n * NEST + 0.01:.4f}"))
     _check_hook(p)
     f = _hook_frame(p)
     ys = [0.0] if p["hook_count"] == 1 else [p["hook_spacing"] / 2, -p["hook_spacing"] / 2]

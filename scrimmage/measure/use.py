@@ -148,7 +148,7 @@ def _replace(fields: dict, got: dict, where: str, key: str, name: str) -> tuple[
     clash = [k for k in got if k in fields]
     if clash:
         raise MeasureError(f"{where}: {clash[0]} is given and also measured by {key} = \"{name}\": give one (leave "
-                           f"{clash[0]} out to use the measurement)")
+                           f"{clash[0]} out to use the measurement)", key=clash[0])
     return {**fields, **{k: v for k, (v, _) in got.items()}}, {k: p for k, (_, p) in got.items()}
 
 
@@ -208,7 +208,7 @@ def apply_cylinder(params: dict, path: str, where: str, *, base=".", key: str = 
     mf = open_file(path, base, where, key, ("cylinder",), "a cylinder")
     if "conductance" in params:
         raise MeasureError(f"{where}: conductance is given and also measured by {key} = \"{path}\": give one (leave "
-                           "conductance out to use the measurement)")
+                           "conductance out to use the measurement)", key="conductance")
     result = _fitted(fit, mf, where, key, path)
     warnings = []
     if cylinder is not None:

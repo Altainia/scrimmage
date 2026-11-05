@@ -1411,7 +1411,8 @@ class App:
         res, problem = self.scenario_result, self.scenario_robot_problem
         first = i18n.t("fix the robot first: {why}", why=problem)
         self.scenario_errors = [{"field": e.field, "message": first if e.code == scenario_validate.ROBOT_FIRST else
-                                 e.message} for e in res.errors]
+                                 e.message, **({"detail": e.detail} if e.detail is not None else {})}
+                                for e in res.errors]    # detail: without its where, for beside its field
         self.scenario_read_only_reason = self.scenario.read_only_reason or (first if res.robot_problem else None)
         self._scenario_lang = i18n.current_language()
 
@@ -2048,7 +2049,9 @@ class App:
         sc = self._need_scenario()
         res = self.scenario_result
         if self._scenario_lang != i18n.current_language():
-            self._scenario_words()      # the Language setting changed since: the same errors in its words
+            # the Language setting changed since: the errors again, in its words (the file is the same)
+            self._set_scenario_result(scenario_validate.check(sc.text, sc.path))
+            res = self.scenario_result
         raw = sc.doc.unwrap() if sc.doc is not None else {}
         top = {k: raw.get(k) for k in ("config", "description", "speed", "require_lockstep")}
         top["match"] = raw["match"] if isinstance(raw.get("match"), dict) else {}

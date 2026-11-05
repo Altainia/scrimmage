@@ -30,7 +30,12 @@ from .stats import why
 
 
 class MeasureError(ValueError):
-    """A measurement file problem; the message names the file, the table and the key."""
+    """A measurement file problem; the message names the file, the table and the key. `key`: the robot file's key it
+    is about when that isn't the one naming the file (a value given and also measured), for the Robot tab's field."""
+
+    def __init__(self, message: str = "", *, key: str | None = None):
+        super().__init__(message)
+        self.key = key
 
 
 KIND_TESTS: dict[str, tuple[str, ...]] = {

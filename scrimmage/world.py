@@ -11,6 +11,7 @@ import numpy as np
 
 from .bindings import AnalogBinding, DigitalBinding, EncoderBinding, GyroBinding, MotorBinding, Update
 from .motors import Battery
+from .i18n import t
 from .parts.assemble import parse_start_pose
 from .protocol import HalState
 
@@ -36,10 +37,22 @@ def _reject_duplicate_devices(*groups) -> None:
                     dev = dev.replace("<channel_a=", "encoder channel A ")
                     what = dev if typ == "SimDevice" else f"{typ} {dev}"   # a SimDevice's name says what it is
                     encoder = next((e for e in (other[0], b) if _quadrature(e) and typ == "DIO"), None)
-                    hint = (f" (an encoder on channel_a = {encoder.channel_a} takes DIO {encoder.channel_a} and "
-                            f"{encoder.channel_a + 1})" if encoder is not None else "")
-                    raise ValueError(f"{what} is bound by {other[1]} and {_label(b, i)}: "
-                                     f"give each device one binding{hint}")
+                    from .parts.model import PartError
+                    said = {"device": what, "a": other[1], "b": _label(b, i)}
+                    if encoder is not None:
+                        message = t("{device} is bound by {a} and {b}: give each device one binding (an encoder on "
+                                    "channel_a = {channel} takes DIO {channel} and {next})", **said,
+                                    channel=encoder.channel_a, next=encoder.channel_a + 1)
+                    else:
+                        message = t("{device} is bound by {a} and {b}: give each device one binding", **said)
+                    raise PartError(message, fields=_slot_field(other[0]) + _slot_field(b))
+
+
+def _slot_field(b) -> tuple:
+    """The Robot tab's field of a [[part]] slot's binding (named "<part>.<slot>" or "<part>.<slot>[i]"), for
+    PartError.fields; () for a binding written by hand."""
+    part, dot, slot = (getattr(b, "name", None) or "").partition(".")
+    return ((part, "ids:" + slot.split("[")[0]),) if dot and part and slot else ()
 
 
 def _quadrature(b) -> bool:

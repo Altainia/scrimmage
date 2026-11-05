@@ -32,7 +32,8 @@ from dataclasses import replace
 from pathlib import Path
 
 from ..measure.use import is_measurement
-from .model import Part, PartError
+from ..i18n import t
+from .model import Part, PartError, Where
 
 GRIP_PRIORITY = 1                     # above a piece's (and every field geom's) 0, as the climber's hooks
 GRIP_SOLREF = (0.004, 1.0)            # a rigid piece's firm contact (testrange/build.py, RIGID_SOLREF); a pad's own
@@ -79,10 +80,11 @@ def measured_grip(grip: str, where: str, base) -> tuple[float, object]:
     try:
         mu, prov = friction_value(grip, where, base=base, key="grip", needs="a grip")
     except MeasureError as e:
-        raise PartError(str(e)) from None
+        raise PartError(str(e), where=where) from None
     if not (math.isfinite(mu) and 0 < mu <= MY_OWN_MAX):
-        raise PartError(f"{where}: grip = \"{grip}\" measures a friction of {mu:g}, which isn't one to use: above 0 "
-                        f"and at most {MY_OWN_MAX:g}; check its sled pulls")
+        raise PartError(t("{where}: grip = \"{grip}\" measures a friction of {mu}, which isn't one to use: above 0 and "
+                          "at most {most}; check its sled pulls", where=where, grip=grip, mu=f"{mu:g}",
+                          most=f"{MY_OWN_MAX:g}"), where=where)
     return mu, prov
 
 
@@ -93,14 +95,15 @@ def grip_friction(grip: str | float, where: str, base=None) -> float:
         return measured_grip(grip, where, base if base is not None else Path("."))[0]
     if _number(grip):
         if not (math.isfinite(grip) and 0 < grip <= MY_OWN_MAX):
-            raise PartError(f"{where}: grip {grip!r} isn't a friction to use; give a number above 0 and at most "
-                            f"{MY_OWN_MAX:g} (a measured friction)")
+            raise PartError(t("{where}: grip {grip} isn't a friction to use; give a number above 0 and at most {most} "
+                              "(a measured friction)", where=where, grip=repr(grip), most=f"{MY_OWN_MAX:g}"),
+                            where=where)
         return float(grip)
     if isinstance(grip, str) and grip in GRIP_MATERIALS:
         return GRIP_MATERIALS[grip][1]
     shown = f'"{grip}"' if isinstance(grip, str) else repr(grip)
-    raise PartError(f"{where}: grip {shown} isn't a grip material; pick one of {', '.join(GRIP_MATERIALS)}, or give "
-                    "a number (a measured friction)")
+    raise PartError(t("{where}: grip {grip} isn't a grip material; pick one of {materials}, or give a number (a "
+                      "measured friction)", where=where, grip=shown, materials=", ".join(GRIP_MATERIALS)), where=where)
 
 
 def apply_grip(part: Part, grips: dict[str, str | float], where: str, base=None) -> tuple[Part, list[str]]:
@@ -109,17 +112,20 @@ def apply_grip(part: Part, grips: dict[str, str | float], where: str, base=None)
     `base`, the folder of the file that names it (default the part's folder), and its provenance kept in the part's
     grip_provenance."""
     if not isinstance(grips, dict):
-        raise PartError(f"{where}: grip must be a table of body = material, not {grips!r}")
+        raise PartError(t("{where}: grip must be a table of body = material, not {grip}", where=where, grip=repr(grips)),
+                        where=where)
     base = base if base is not None else part.base_dir if part.base_dir is not None else Path(".")
     names = [b.name for b in part.bodies]
     frictions, provenance = {}, {}
     for name, grip in grips.items():
         if name not in names:
-            raise PartError(f"{where}: grip: no body {name!r} in the part; bodies: {', '.join(names)}")
+            raise PartError(t("{where}: grip: no body {body} in the part; bodies: {bodies}", where=where,
+                              body=repr(name), bodies=", ".join(names)), where=where)
+        at = Where(f"{where}: body {name}", getattr(where, "part", None))
         if is_measurement(grip):
-            frictions[name], provenance[name] = measured_grip(grip, f"{where}: body {name}", base)
+            frictions[name], provenance[name] = measured_grip(grip, at, base)
         else:
-            frictions[name] = grip_friction(grip, f"{where}: body {name}")
+            frictions[name] = grip_friction(grip, at)
     warns: list[str] = []
     bodies = []
     for b in part.bodies:

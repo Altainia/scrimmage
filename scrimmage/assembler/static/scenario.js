@@ -236,7 +236,9 @@ function renderFooter() {
 }
 
 // The runner's messages start with where they are ("x.toml, step 2 (auto), check 1, console: "); beside the
-// field that's already clear.
+// field that's already clear. The server sends `detail`, the message without it (in the Language setting, so the
+// page doesn't read its words, spec L3); stripWhere is for a message that has none (an American English one).
+export const besideField = (e) => e.detail ?? stripWhere(e.message);
 const WHERE = /^[^:]*?\.toml(?:, step \d+(?: \([^)]*\))?)?(?:, (?:screenshot \d+|contact_sheet|check \d+|pose|odometry_error|at_end|always|by_time|console|never_touch|must_touch))*: /;
 export const stripWhere = (m) => String(m).replace(WHERE, "");
 
@@ -275,7 +277,7 @@ export function renderErrors() {
       }
     }
     if (!box) { left.push([e, kind]); return; }
-    box.append(h("p", { class: kind === "error" ? "error" : "warning", role: kind === "error" ? "alert" : null, text: stripWhere(e.message) }));
+    box.append(h("p", { class: kind === "error" ? "error" : "warning", role: kind === "error" ? "alert" : null, text: besideField(e) }));
     if (kind === "error") box.parentElement.classList.add("has-error");
   };
   for (const e of [...s.errors, ...sc.lastErrors]) put(e, "error");
@@ -289,7 +291,7 @@ export function renderErrors() {
       h("span", { class: "message-kind", text: kind === "error" ? t("Error") : t("Warning") }),
       st ? h("button", { type: "button", class: "linklike", onclick: () => selectStep(i, { focus: true }),
         text: st.name ? t("Step {n} {name}", { n: i + 1, name: st.name }) : t("Step {n}", { n: i + 1 }) }) : null,
-      h("span", { text: st ? stripWhere(e.message) : e.message })));
+      h("span", { text: st ? besideField(e) : e.message })));
   }
   list.hidden = !list.children.length;
   renderFooter();

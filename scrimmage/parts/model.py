@@ -23,8 +23,42 @@ ZERO3 = (0.0, 0.0, 0.0)
 VALVE_SLOT = "valve"                             # a cylinder's valve slot (a part has at most one cylinder)
 
 
+class Where(str):
+    """A [[part]] entry's place, as messages name it ("parts[2] 'fl'"), knowing the entry's name: the prefix of its
+    fields on the Robot tab (`part`, None when the entry has no name that is text)."""
+    part: str | None
+
+    def __new__(cls, text: str, part: str | None = None):
+        s = super().__new__(cls, text)
+        s.part = part
+        return s
+
+
+def fields_at(where, field: str = "part") -> tuple[tuple[str, str], ...]:
+    """The Robot tab's (part, field) a mistake at `where` (a Where) is about; () when it has no part name."""
+    part = getattr(where, "part", None)
+    return ((part, field),) if part is not None else ()
+
+
 class PartError(ValueError):
-    """A mistake in a part or a [[part]] entry. The message names where and which key."""
+    """A mistake in a part or a [[part]] entry. The message names where and which key. `fields` says which of the
+    Robot tab's fields it is about, (part name, field) pairs ("ids:<slot>", "ids", "attach", "name", "param:<name>",
+    "part"): assembler/validate.py places it by them, not by its words (spec L3), so the message can be translated.
+    `where=` (a Where) and `field=` give the one field; a mistake that names no part has none (the status line)."""
+
+    def __init__(self, message: str = "", *, where=None, field: str = "part", fields=()):
+        super().__init__(message)
+        self.fields = tuple(fields) or fields_at(where, field)
+
+
+class Noted(str):
+    """A warning (text) that knows the Robot tab's fields it is about, as PartError.fields."""
+    fields: tuple
+
+    def __new__(cls, text: str, fields=()):
+        s = super().__new__(cls, text)
+        s.fields = tuple(fields)
+        return s
 
 
 def model_timestep(cfg: dict, default: float | None = None) -> float | None:
