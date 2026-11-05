@@ -107,6 +107,11 @@ function unitsChanged(sys) {
     if (el) { el.focus(); try { el.setSelectionRange(keep.start, keep.end); } catch { /* not a text box */ } }
   }
   if (editable()) summarizing = summarize();
+  refit();
+}
+// The fit's words (its band, "stiffness 20.6 lbf ...") are the server's, in the Units setting it fit in: fit again.
+async function refit() {
+  for (const test of Object.keys(m.fit)) if (m.fit[test] && !m.fit[test].error) await fit(test);
 }
 function adopt(file) {
   m.file = file ? copy(file) : null;
@@ -216,9 +221,8 @@ function notNumbers() {
   return null;
 }
 
-async function fit() {
+async function fit(test = m.test) {
   if (!editable() || m.fitting) return;
-  const test = m.test;
   const asked = canon(m.file);
   m.fitting = true; renderFit();
   try {

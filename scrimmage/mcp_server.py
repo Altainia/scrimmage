@@ -331,7 +331,7 @@ async def run_scenario(path: str, out_dir: str | None = None, real_ds: bool | No
     an error: stop_session first). Returns the report (with mode "session" or
     "standalone") and up to 6 of its screenshots. out_dir defaults to runs/<scenario>-mcp, relative to the server's
     working directory, and is overwritten each run. real_ds=true is refused: the scenario is the Driver Station.
-    Check messages with a length are in Imperial (ft) whatever the Units setting; report.md follows the setting."""
+    Check messages are in meters whatever the Units setting; report.md follows the setting."""
     if real_ds:
         raise ToolError(REAL_DS_REFUSED)
     try:
@@ -394,11 +394,12 @@ def _bench_recorded(kind: str, files: list[Path], out: Path, folder: Path | None
 
 
 def _machine_headlines(result) -> list[str]:
-    """A bench run's headlines in units.MACHINE, whatever the Units setting: an MCP result doesn't change with it (the
-    files the tool writes, summary.txt and the pictures, are in the setting, as the Bench tab's)."""
+    """A bench run's headlines as they were before the Units setting (meters, m/s, N), whatever the setting: an MCP
+    result doesn't change with it (the files the tool writes, summary.txt and the pictures, are in the setting, as the
+    Bench tab's)."""
     from . import units
     from .bench.report import headlines
-    with units.fixed(units.MACHINE):
+    with units.fixed("metric"):   # report.py's headline helpers write metric exactly as they always did
         return headlines(result)
 
 
@@ -456,7 +457,7 @@ async def bench_focus(path: str, keys: list[str]) -> str:
 @server.tool()
 async def bench_run(path: str, out_dir: str | None = None) -> list:
     """Run a bench file (ignoring its [sweep]): returns the headlines (plain words for the room, UNCALIBRATED last;
-    in Imperial units whatever the Units setting, while summary.txt and the pictures follow the setting),
+    in meters, m/s and N whatever the Units setting, while summary.txt and the pictures follow the setting),
     then the side path picture (the mechanism with every piece's path, green out, red jammed, orange escaped), a top
     view when pieces move across, and the pass contact sheet (frames of one piece going through). Show the room the
     pictures and read them the headlines. path: an absolute path. out_dir (absolute) defaults to

@@ -67,7 +67,7 @@ def test_runner_failure_has_measured_values(tmp_path):
                                    tmp_path / "out"))
     assert rep.exit_code == 1
     pose = rep.steps[0].checks[0]
-    assert not pose.passed and "3.28 ft from target" in pose.message   # report.json: units.MACHINE
+    assert not pose.passed and "1.00 m from target" in pose.message
 
 
 def test_runner_crash_is_a_failed_check(tmp_path):

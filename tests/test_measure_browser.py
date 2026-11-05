@@ -236,6 +236,14 @@ def test_fit_shows_the_fit_and_each_shot_against_the_model(measure_page, tmp_pat
     rows = page.locator("#measure-fit-result tbody tr").all_inner_texts()
     assert len(rows) == 2 and units.fmt(want.per_shot[0][0], "speed") in rows[0]   # ft/s: the Units setting
     assert all(math.isfinite(m) for m, _ in want.per_shot)
+    assert "lbf" in want.band_text
+    # a Units change fits again, so the fit's words (the server's) are in the new units
+    from browser_harness import page_units
+    page_units(page, "metric")
+    page.wait_for_function("document.querySelector('#measure-fit-result').textContent.includes(' N fits your shots')",
+                           timeout=60000)
+    assert "m/s" in page.locator("#measure-fit-result tbody tr").first.inner_text()
+    assert "press Fit again" not in page.inner_text("#measure-fit-result")
     # a change to the shots says the fit is old
     page.locator("#measure-trials input[data-reading=wheel_rps]").first.fill("51")
     assert "press Fit again" in page.inner_text("#measure-fit-result")

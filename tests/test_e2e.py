@@ -59,7 +59,7 @@ def test_wrong_target_fails_with_measured_values(tmp_path):
     r = cli("run", ROOT / "tests" / "scenarios" / "kitbot_auto_wrong_target.toml", "--out", out)
     assert r.returncode == 1, r.stdout + r.stderr[-2000:]
     pose = json.loads((out / "report.json").read_text())["steps"][1]["checks"][0]
-    assert not pose["passed"] and "ft from target" in pose["message"] and pose["measured"]["x"] < 5
+    assert not pose["passed"] and "m from target" in pose["message"] and pose["measured"]["x"] < 5
 
 
 def test_runs_are_repeatable(tmp_path):

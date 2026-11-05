@@ -130,12 +130,21 @@ def test_the_gallery_table_in_both_systems(pinch, units):
     assert "exit speed (m/s)" in _table_html(rows) and "hardest hit (N)" in _table_html(rows)
 
 
-def test_mcp_bench_headlines_are_in_imperial_whatever_the_setting(pinch, units):
+def test_mcp_bench_headlines_are_in_meters_whatever_the_setting(pinch, hooded_flight, units):
+    """The MCP tools' headlines are main's text exactly, in m/s, N and m, under either setting."""
     from scrimmage.mcp_server import _bench_ideas, _machine_headlines
-    units("metric")
-    assert "ft/s" in _machine_headlines(pinch)[0]
-    assert "ft/s" in _bench_ideas([pinch], [EXAMPLES / "pinch_car.toml"])[0]["headlines"][0]
-    assert "m/s" in headlines(pinch)[0]   # outside the MCP answer, the setting
+    hit = dataclasses.replace(pinch, loads={s: LoadStats(shape=s, peak_force_n=f, peak_impulse_ns=0.0, at=None)
+                                            for s, f in {"top": 50.0, "bottom": 200.0}.items()})
+    for system in ("imperial", "metric"):
+        units(system)
+        lines = _machine_headlines(hit)
+        assert re.fullmatch(r"3 of 3 left through `shot` at \d+\.\d m/s ± \d+\.\d, \d+° down", lines[0]), lines
+        assert any(x.endswith("up to 200 N, 4.0 times a typical other part's (50 N)") for x in lines), lines
+        assert any("ring 3.0 m away, 2.0 m up (they come down through its height " in x
+                   for x in _machine_headlines(hooded_flight))
+        assert _bench_ideas([hit], [EXAMPLES / "pinch_car.toml"])[0]["headlines"] == lines
+    units("imperial")
+    assert "ft/s" in headlines(pinch)[0]   # outside the MCP answer, the setting
 
 
 # ----------------------------------------------------------------------------------------- scenario reports
@@ -154,16 +163,20 @@ def _pose_result():
     return check.end(SimpleNamespace(world=_World((3.81 + 0.3048, 1.0, 0.0))))
 
 
+MAIN_POSE = ("pose: 0.30 m from target, heading off by 0.0° (x=4.11, y=1.00, heading=0.0°); allowed 0.1524 m, "
+             "5°")   # main's text, which report.json and MCP results keep
+
+
 def test_a_pose_check_message_in_feet_and_meters(units):
     r = _pose_result()
-    shown_i = r.shown()
-    assert shown_i == "pose: 1 ft from target, heading off by 0.0° (x=13.5 ft, y=3.28 ft, heading=0.0°); allowed 0.5 ft, 5°"
+    assert r.shown() == ("pose: 1 ft from target, heading off by 0.0° (x=13.5 ft, y=3.281 ft, heading=0.0°); allowed "
+                         "0.5 ft, 5°")
     units("metric")
-    assert r.shown() == ("pose: 0.305 m from target, heading off by 0.0° (x=4.115 m, y=1 m, heading=0.0°); allowed "
-                         "0.152 m, 5°")
-    # the machine message is the same whatever the setting (report.json, the MCP result)
-    assert r.message == shown_i and _pose_result().message == shown_i
-    assert r.to_dict()["message"] == shown_i and r.to_dict(shown=True)["message"] == r.shown()
+    assert r.shown() == ("pose: 0.3048 m from target, heading off by 0.0° (x=4.1148 m, y=1 m, heading=0.0°); "
+                         "allowed 0.1524 m, 5°")
+    # the machine message is main's whatever the setting (report.json, the MCP result)
+    assert r.message == MAIN_POSE and _pose_result().message == MAIN_POSE
+    assert r.to_dict()["message"] == MAIN_POSE and r.to_dict(shown=True)["message"] == r.shown()
     assert "words" not in r.to_dict()
 
 
@@ -172,10 +185,10 @@ def test_an_odometry_check_message_in_both_systems(units):
     check = OdometryErrorCheck({"max": 0.1}, "step 1")
     link = SimpleNamespace(odometry=lambda: (1.0, 2.0, 0.0))
     r = check.end(SimpleNamespace(world=_World((1.0 + 0.0508, 2.0, 0.0)), bridge=SimpleNamespace(nt_link=link)))
-    assert r.shown() == "odometry 0.17 ft from ground truth at the end; allowed 0.33 ft"
+    assert r.shown() == "odometry 0.167 ft from ground truth at the end; allowed 0.328 ft"
     units("metric")
-    assert r.shown() == "odometry 0.051 m from ground truth at the end; allowed 0.1 m"
-    assert r.message == "odometry 0.17 ft from ground truth at the end; allowed 0.33 ft"
+    assert r.shown() == "odometry 0.0508 m from ground truth at the end; allowed 0.1 m"
+    assert r.message == "odometry 0.051 m from ground truth at the end; allowed 0.1 m"   # main's text
 
 
 def test_report_md_follows_the_setting_and_report_json_stays_fixed(units, tmp_path):
@@ -193,10 +206,10 @@ def test_report_md_follows_the_setting_and_report_json_stays_fixed(units, tmp_pa
     units("metric")
     report().write(tmp_path)
     md = (tmp_path / "report.md").read_text()
-    assert "0.305 m from target" in md and "| x m | y m |" in md and "exit m/s" in md
+    assert "0.3048 m from target" in md and "| x m | y m |" in md and "exit m/s" in md
     assert "rest at (6.00, 2.00) m" in md and "apex 1.50 m vs rim 1.83 m (hub)" in md
     machine = json.loads((tmp_path / "report.json").read_text())["steps"][0]["checks"][0]["message"]
-    assert machine.startswith("pose: 1 ft from target")
+    assert machine == MAIN_POSE
     units("imperial")
     report().write(tmp_path)
     md = (tmp_path / "report.md").read_text()

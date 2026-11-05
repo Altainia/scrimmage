@@ -49,7 +49,6 @@ A fit at the edge of its range gets no band warning: the edge is the problem.
 import math
 from dataclasses import dataclass
 
-from .. import units
 from ..pneumatics.model import DEFAULT_CONDUCTANCE, AirConfig, AirSystem, CylinderSpec
 from .file import MeasureError, MeasureFile
 from .stats import summary
@@ -289,9 +288,10 @@ def fit(mf: MeasureFile) -> CylinderFit:
 
     if math.isinf(time_at(1.0)):
         what = "lift its load" if setup.vertical else "push past its seals' friction"
-        at = units.fmt(setup.working_psi * units.LBF / units.IN ** 2, "pressure")
-        raise MeasureError(f"{mf.path}: [stroke_setup]: the model's cylinder can't {what} at {at}: check the bore, "
-                           "load_mass, friction and working_psi")
+        # in psi whatever the Units setting: working_psi is the file's key, and this is also raised while a robot
+        # config loads (measure/use.py), into report.json and MCP errors
+        raise MeasureError(f"{mf.path}: [stroke_setup]: the model's cylinder can't {what} at {setup.working_psi:g} "
+                           "psi: check the bore, load_mass, friction and working_psi")
 
     best = _crossing(time_at, measured)
     conductance, model_time = value(best), time_at(best)

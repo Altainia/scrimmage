@@ -6,7 +6,8 @@ part taking the hardest hits (when one stands out), the shaft that slows most, a
 what to measure. Names from the bench file are in backticks.
 
 Units: the headlines and summary.txt's tables are in the Units setting when they are written (scrimmage/units.py;
-the MCP tools build their headlines in units.MACHINE). The CSVs stay SI, their columns named by unit (speed_m_s).
+the MCP tools return the headlines in meters, as before the setting). The CSVs stay SI, their columns named by unit
+(speed_m_s).
 """
 
 import csv
