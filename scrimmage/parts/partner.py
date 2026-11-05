@@ -201,7 +201,9 @@ STARTS_INSIDE = "[partner] starts inside "    # check_start's refusals begin so;
 
 
 def _by(depth: float) -> str:
-    """An overlap in words, in the Units setting: "4.72 in" or "120 mm"."""
+    """An overlap in words, in the Units setting: "4.72 in" or "120 mm" (machine text: the old "0.12 m")."""
+    if units.is_machine():
+        return f"{depth:.2f} m"
     return units.fmt(depth, "length", fewer=1)
 
 

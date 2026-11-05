@@ -87,9 +87,9 @@ def _sweep_rows(tmp_path, name):
         return list(csv.DictReader(f))
 
 
-def test_a_sweeps_table_is_written_in_imperial_whatever_the_setting(tmp_path, units):
-    imperial = _sweep_rows(tmp_path, "a")
-    assert imperial[0]["outcome"].startswith("drive (block 1) didn't reach 16.4 ft in 0.3 s"), imperial
+def test_a_sweeps_table_is_written_as_it_always_was_whatever_the_setting(tmp_path, units):
+    imperial = _sweep_rows(tmp_path, "a")      # a drive's words were meters before the setting, and still are
+    assert imperial[0]["outcome"].startswith("drive (block 1) didn't reach 5 m in 0.3 s (went "), imperial
     units("metric")
     assert _sweep_rows(tmp_path, "b") == imperial
 
@@ -109,7 +109,7 @@ def test_a_spreads_table_and_sentence_are_written_in_imperial(tmp_path, units):
         assert [r["placement"] for r in csv.DictReader(f)] == ["on the center line", "30 in left"]
 
 
-def test_mcp_test_run_answers_in_imperial_whatever_the_setting(tmp_path, units):
+def test_mcp_test_run_answers_as_it_always_did_whatever_the_setting(tmp_path, units):
     import asyncio
     import pytest
     pytest.importorskip("mcp")
@@ -119,4 +119,4 @@ def test_mcp_test_run_answers_in_imperial_whatever_the_setting(tmp_path, units):
         units(system)
         (tmp_path / name).mkdir()
         info = asyncio.run(mcp_server.test_run(str(write_test(tmp_path / name, DRIVE))))
-        assert info["outcome"].startswith("drive (block 1) didn't reach 16.4 ft in 0.3 s"), (system, info["outcome"])
+        assert info["outcome"].startswith("drive (block 1) didn't reach 5 m in 0.3 s (went "), (system, info["outcome"])

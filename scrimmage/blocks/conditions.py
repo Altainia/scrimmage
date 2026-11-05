@@ -419,9 +419,12 @@ KEY_KINDS = {"in": ("length", units.KEY_UNITS["length"]["in"]), "m": ("length", 
 
 def _amount(x: float, unit: str, fewer: int = 0) -> str:
     """`x` in a test file's unit ("deg", "in", "m" or "psi") in words, in the Units setting: "90°", "3 in" or
-    "76.2 mm", "60 psi" or "413.7 kPa". A joint's "m" is a robot length (in or mm). `fewer`: units.fmt's."""
+    "76.2 mm", "60 psi" or "413.7 kPa". A joint's "m" is a robot length (in or mm). `fewer`: units.fmt's.
+    Machine text (units.machine_text) is the file's own number and unit, as before the setting: "0.5 m"."""
     if unit == "deg":
         return f"{x:g}°"
+    if units.is_machine():
+        return f"{x:g} {unit}"
     if unit not in KEY_KINDS:
         return f"{x:g} {unit}"
     kind, si = KEY_KINDS[unit]

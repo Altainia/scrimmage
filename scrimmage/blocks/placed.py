@@ -79,7 +79,11 @@ def seated_words(depth: float, could: float) -> str:
     """A seated depth (m) in plain words, in the Units setting: "seated 3.5 in of 4 in" (or "seated 89 mm of
     102 mm"); under KNOCK_OFF_SHARE of how far it could go, "only 0.8 in on: could be knocked off"."""
     if depth < KNOCK_OFF_SHARE * could:
+        if units.is_machine():
+            return f"only {depth / IN:.1f} in on: could be knocked off"
         return f"only {units.fmt(depth, 'length', fewer=2)} on: could be knocked off"
+    if units.is_machine():                  # the old words, kept for machine text (units.machine_text)
+        return f"seated {depth / IN:.1f} in of {could / IN:.1f} in"
     return f"seated {units.fmt(depth, 'length', fewer=2)} of {units.fmt(could, 'length', fewer=2)}"
 
 

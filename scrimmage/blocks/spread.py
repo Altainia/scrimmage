@@ -241,7 +241,9 @@ def _n(x: float) -> str:
 
 
 def _inches(x: float) -> str:
-    """An `_in` axis's inches in words, in the Units setting: "6 in" or "152 mm"."""
+    """An `_in` axis's inches in words, in the Units setting: "6 in" or "152 mm" (machine text: the old "6 in")."""
+    if units.is_machine():
+        return f"{_n(x)} in"
     return units.fmt(float(x) * IN, "length", fewer=1)
 
 
@@ -345,7 +347,7 @@ def run_spread(program: Program, base, on_progress=None, cancel: threading.Event
     ps = placements(spread, found[1])
     names = varying(spread)
     kind = spread_kind(world, found[0])
-    with units.fixed(units.MACHINE):        # table.csv's and spread.json's words in one fixed system
+    with units.machine_text():        # table.csv's and spread.json's words as they always were
         labels = placement_labels(ps, names, kind)
     at = not worded(names, kind)
     base = Path(base)
@@ -357,7 +359,7 @@ def run_spread(program: Program, base, on_progress=None, cancel: threading.Event
 
     rows = [{"placement": labels[i], **p, "status": COULDNT_RUN, "picked": False, "outcome": ""}
             for i, p in enumerate(ps)]
-    with units.fixed(units.MACHINE):
+    with units.machine_text():
         return run_each(tmp, rows, lambda i: TestRun(world, program, placement=ps[i]).run(cancel=cancel), record,
                         lambda done, cancelled: _finish(tmp, base, spread, ps, labels, at, done, cancelled),
                         on_progress)

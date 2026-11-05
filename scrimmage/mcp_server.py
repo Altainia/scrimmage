@@ -651,7 +651,7 @@ async def test_run(path: str) -> dict:
 
     def work():
         from . import units
-        with units.fixed(units.MACHINE):      # the words in one fixed system, whatever the Units setting
+        with units.machine_text():      # the words as they always were, whatever the Units setting
             return _test_run(file)
 
     try:

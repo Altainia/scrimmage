@@ -51,7 +51,9 @@ that rod in inches, NaN while none is on it; the run's `seated` says each rod's 
 Units: the signals keep fixed units (the ones named here: inches, psi, degrees, newtons), as signals.csv and the MCP
 tools have them, whatever the Units setting; the Test tab converts them for its chart. The words (the outcome, the
 check failures, `seated`, `lines`) are written in the Units setting when the run is made (units.fmt; the examples
-here are Imperial's), and a run already made keeps the units it was written in.
+here are Imperial's), and a run already made keeps the units it was written in. Machine text (MCP test_run, and a
+sweep's or spread's table.csv) is written inside units.machine_text(): the words as they were before the setting
+existed, whatever it is (inches and psi with one decimal, and meters for a drive, a "m" joint and the partner).
 
 Shooting: on a range with a `[shooter]` the range's launcher model runs as it does under robot code, so spinning
 the launcher and its stages shoots the balls the robot holds. Every motor of a joint is written (a launcher's
@@ -378,6 +380,9 @@ def goal_lines(result: RunResult) -> list[str]:
 def clearance_lines(result: RunResult) -> list[str]:
     """The run's closest approaches as lines, one per element it measured: "closest to trench: 0.82 in at 3.1 s", or
     "trench: never within 20 in" (none for a run that measured none)."""
+    if units.is_machine():                  # the old words, kept for machine text (units.machine_text)
+        return [f"{e}: never within {NEVER_WITHIN_IN} in" if c["min_in"] is None else
+                f"closest to {e}: {c['min_in']:.2f} in at {c['t']:.1f} s" for e, c in (result.clearance or {}).items()]
     return [f"{e}: never within {_amount(NEVER_WITHIN_IN, 'in')}" if c["min_in"] is None else
             f"closest to {e}: {_amount(c['min_in'], 'in', fewer=1)} at {c['t']:.1f} s"
             for e, c in (result.clearance or {}).items()]
@@ -391,7 +396,7 @@ def air_lines(result: RunResult) -> list[str]:
     if a is None:
         return []
     def psi(x: float) -> str:
-        return _amount(x, "psi", fewer=1)
+        return f"{x:.0f} psi" if units.is_machine() else _amount(x, "psi", fewer=1)
 
     lines = [f"air: {psi(a['start_psi'])} at the start, {psi(a['end_psi'])} at the end, lowest "
              f"{psi(a['low_psi'])} at {a['low_t']:.1f} s; the compressor ran {a['compressor_s']:.1f} s"]
@@ -971,6 +976,9 @@ class TestRun:
             gone = float(np.linalg.norm(d.xpos[self.world.robot_body][:2] - act["from"]))
             done = gone >= abs(a["distance"]) - EPS
             if not done and elapsed >= timeout - EPS:
+                if units.is_machine():          # the old words, kept for machine text (units.machine_text)
+                    raise _End("timed out", f"{self._drive_name(a)} ({_where(place)}) didn't reach "
+                                            f"{abs(a['distance']):g} m in {timeout:g} s (went {gone:.2f} m)")
                 raise _End("timed out", f"{self._drive_name(a)} ({_where(place)}) didn't reach "
                                         f"{units.fmt(abs(a['distance']), 'field')} in {timeout:g} s "
                                         f"(went {units.fmt(gone, 'field', fewer=1)})")
@@ -992,6 +1000,8 @@ class TestRun:
         q = float(self.world.data.qpos[self._qadr[joint]])
         if unit == "deg":
             return _amount(round(math.degrees(q), 1) + 0.0, unit)
+        if units.is_machine():                  # the old words: the file's unit, to 0.1
+            return _amount(round(q / IN if unit == "in" else q, 1), unit)
         return units.fmt(q, "length", fewer=2)
 
     def _failure(self, cond) -> str:
@@ -1037,6 +1047,8 @@ class TestRun:
         if k == "cylinder":
             out = self.world.pneumatics.extension(a["cylinder"]) / IN
             stroke = next(c.stroke for c in self.world.parts.cylinders if c.name == a["cylinder"]) / IN
+            if units.is_machine():
+                return f"expected {a['cylinder']} {a['is']}, but its rod was out {out:.1f} in of {round(stroke, 1):g} in"
             return (f"expected {a['cylinder']} {a['is']}, but its rod was out {_amount(out, 'in', fewer=2)} of "
                     f"{_amount(stroke, 'in', fewer=2)}")
         if k == "pressure":
@@ -1044,18 +1056,23 @@ class TestRun:
             s = self.world.pneumatics.system
             now = s.stored_psi if a["side"] == "stored" else s.working_psi
             what = f"the {a['side']} air pressure"      # as the block reads: "stored air pressure above 60 psi"
+            if units.is_machine():
+                return f"expected {what} {side} {psi:g} psi, but it was {now:.1f} psi"
             return f"expected {what} {side} {_amount(psi, 'psi')}, but it was {_amount(now, 'psi')}"
         if k == "element":
             side = "above" if "above" in a else "below"
             unit = watch.units[a["element"]]
             now = watch.element_value(a["element"])
-            if unit == "deg":
+            if unit == "deg" or units.is_machine():                    # machine text: the old words, to 0.1
                 now = round(now, 1) + 0.0                                 # + 0.0: a panel at rest never reads "-0"
             return (f"expected {a['element']} {side} {_amount(a[side], unit)}, "
                     f"but it was {_amount(now, unit, fewer=2)}")
         if k == "clears":
             c = watch.closest.now[a["element"]]
-            now = units.fmt(c, "length", fewer=1) if math.isfinite(c) else f">{_amount(NEVER_WITHIN_IN, 'in')}"
+            if units.is_machine():
+                now = f"{c / IN:.2f} in" if math.isfinite(c) else f">{NEVER_WITHIN_IN} in"
+            else:
+                now = units.fmt(c, "length", fewer=1) if math.isfinite(c) else f">{_amount(NEVER_WITHIN_IN, 'in')}"
             return (f"expected the robot to clear {a['element']} by at least {_amount(a['at_least_in'], 'in')}, "
                     f"but it was {now}")
         if k == "sensor":
@@ -1064,11 +1081,15 @@ class TestRun:
             p, level = self.world.partner, a.get("level_within_deg")
             want = f"at least {_amount(a['at_least_in'], 'in')}" + (
                 f" (level within {_amount(level, 'deg')})" if level is not None else "")
+            if units.is_machine():
+                up = round(p.height(), 1) + 0.0             # + 0.0: a partner at rest never reads "-0"
+                return f"expected the partner lifted {want}, but it was {up:g} in up, {p.tilt():.1f}° from level"
             return (f"expected the partner lifted {want}, but it was {_amount(p.height(), 'in', fewer=2)} up, "
                     f"{p.tilt():.1f}° from level")
         if k == "partner_moved":
-            return (f"expected the partner to move at least {_amount(a['at_least_in'], 'in')}, "
-                    f"but it moved {_amount(self.world.partner.moved(), 'in', fewer=2)}")
+            moved = (f"{self.world.partner.moved():.1f} in" if units.is_machine()
+                     else _amount(self.world.partner.moved(), 'in', fewer=2))
+            return f"expected the partner to move at least {_amount(a['at_least_in'], 'in')}, but it moved {moved}"
         if k == "station_empty":
             left = self.feeder.left(a["station"]) if self.feeder is not None else None
             return f"{a['station']} wasn't empty" + (f" ({left} left)" if left else "")
@@ -1091,6 +1112,9 @@ class TestRun:
         if spec.kind == "beam":
             return f"expected {name} {want}, but it was {'on (broken)' if r.on else 'off (clear)'}"
         if spec.kind == "distance":
+            if units.is_machine():
+                return (f"expected {name} {want}, but it read {r.distance / IN:.1f} in (it is on closer than "
+                        f"{spec.threshold / IN:.1f} in)")
             return (f"expected {name} {want}, but it read {units.fmt(r.distance, 'length', fewer=2)} (it is on "
                     f"closer than {units.fmt(spec.threshold, 'length', fewer=2)})")
         saw = f"{'an' if r.color_name[0] in 'aeiou' else 'a'} {r.color_name} piece" if r.on else "no piece"
@@ -1139,6 +1163,8 @@ class TestRun:
             return f"{what} isn't on {on}"
         depth, could = got
         if depth < KNOCK_OFF_SHARE * could:
+            if units.is_machine():
+                return f"{what} is seated only {depth / IN:.1f} in on {on} (could be knocked off)"
             return f"{what} is seated only {units.fmt(depth, 'length', fewer=2)} on {on} (could be knocked off)"
         return f"{what} is {seated_words(depth, could)} on {on}, less than {_amount(a['at_least_in'], 'in')}"
 
@@ -1189,7 +1215,8 @@ class TestRun:
             return f"turning {a['degrees']:g}°"
         way = f" {a['direction']}" if "direction" in a else ""
         if "distance" in a:
-            return f"driving{way} {units.fmt(a['distance'], 'field')}"
+            return f"driving{way} {a['distance']:g} m" if units.is_machine() else \
+                f"driving{way} {units.fmt(a['distance'], 'field')}"
         return f"driving{way} for {a['seconds']:g} s"
 
     def _under_way(self) -> str:

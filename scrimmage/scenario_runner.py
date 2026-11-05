@@ -115,7 +115,8 @@ class Report:
         return 2 if self.error is not None else (0 if self.passed else 1)
 
     def to_dict(self, shown: bool = False) -> dict:
-        """report.json: the checks' messages in units.MACHINE; with `shown`, in the Units setting (the Scenario tab)."""
+        """report.json: the checks' machine messages (their old text, in meters); with `shown`, in the Units setting
+        (the Scenario tab)."""
         d = {"scenario": self.scenario, "description": self.description, "passed": self.passed,
              "exit_code": self.exit_code, "error": self.error, "lockstep": self.lockstep,
              "steps": [s.to_dict(shown) for s in self.steps], "implicit": [c.to_dict(shown) for c in self.implicit],

@@ -9,7 +9,8 @@ for poses, field picks and drive distances; see docs/superpowers/specs/2026-11-0
 
 The page's formatter (static/units.js) uses this same table, sent by table_json() in GET /api/settings, so the two
 can't drift apart. Angle, time, current and voltage read the same in both systems. Machine-readable output (MCP
-results, report.json, CSVs, files) stays SI and never comes through here.
+results, report.json, CSVs) never changes with the setting: numbers stay SI (or the unit their key names), and text
+is what it was before the setting existed (see MACHINE and machine_text below).
 """
 
 from __future__ import annotations
@@ -91,11 +92,14 @@ KEY_UNITS: dict[str, dict[str, float]] = {
 }
 
 
-# Machine-readable text (a sweep's or spread's table.csv, MCP results) is written in one fixed system, whatever the
-# setting: Imperial, the Test tab's words before the setting existed (inches, psi). `with fixed(MACHINE):` makes it
-# the default for the code inside (this thread or task only), so the words built there needn't be passed a system.
+# Machine-readable text (a sweep's or spread's table.csv, MCP results) never changes with the setting: each area
+# writes exactly what it wrote before the setting existed. `with fixed(system):` makes `system` the default for the
+# code inside (this thread or task only), so the words built there needn't be passed a system. The Test tab's
+# machine text goes further: inside `with machine_text():` its sites write their old f-strings (is_machine()),
+# since some were meters ("didn't reach 5 m") and some kept trailing zeros ("4.0 in"), which no one system gives.
 MACHINE = "imperial"
 _fixed: ContextVar[str | None] = ContextVar("units_fixed", default=None)
+_machine: ContextVar[bool] = ContextVar("units_machine", default=False)
 
 
 @contextmanager
@@ -108,6 +112,24 @@ def fixed(system: str):
         yield
     finally:
         _fixed.reset(token)
+
+
+@contextmanager
+def machine_text():
+    """The Test tab's machine text (a sweep's or spread's table.csv, MCP test_run): inside the `with`, the sites
+    that check is_machine() write the words they wrote before the Units setting existed, byte for byte, and the
+    rest format in MACHINE."""
+    token = _machine.set(True)
+    try:
+        with fixed(MACHINE):
+            yield
+    finally:
+        _machine.reset(token)
+
+
+def is_machine() -> bool:
+    """Inside machine_text(): write the old, fixed words."""
+    return _machine.get()
 
 
 def current_system() -> str:
