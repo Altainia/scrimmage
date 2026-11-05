@@ -1108,6 +1108,26 @@ def test_the_inspector_shows_and_takes_the_chosen_units(make_page):
     assert elevator()["travel"] == pytest.approx(0.9)
 
 
+def test_a_refusal_stays_through_a_redraw(make_page):
+    """A refused box (the other system's unit) keeps its text and message when the inspector is redrawn just after
+    (the 3D view or a state arriving: CI saw the view's redraw drop both); a units change drops them."""
+    page, cfg = make_page("elevator_arm.toml")
+    page.evaluate("__scrimmage.select('elevator')")
+    page.wait_for_selector("#insp-p-travel")
+    page_units(page, "metric")
+    page.wait_for_function("document.querySelector('#insp-p-travel').value === '1000'")
+    page.fill("#insp-p-travel", "40 in")
+    page.keyboard.press("Enter")
+    err = page.locator('[data-field="elevator/param:travel"] .error')
+    err.wait_for()
+    page.evaluate("__scrimmage.render()")
+    assert "Units is set to Metric, so type mm here, not in" in err.inner_text()
+    assert page.input_value("#insp-p-travel") == "40 in"
+    page_units(page, "imperial")
+    page.wait_for_function(f"document.querySelector('#insp-p-travel').value === '{_shown(1.0, 'length', 'imperial')}'")
+    assert err.count() == 0
+
+
 def test_switching_units_never_changes_the_robot_file(make_page):
     """Review Focus 1: the setting is display only. Switching (and the redraws it makes) writes nothing."""
     page, cfg = make_page("elevator_arm.toml")

@@ -34,6 +34,10 @@ export function placeErrors(st, errors, warnings) {
     box.append(h("p", { class: kind === "error" ? "error" : "warning", role: kind === "error" ? "alert" : null, text: stripPrefix(e.message) }));
     if (kind === "error") box.parentElement.classList.add("has-error");
   };
+  for (const [fid, r] of liveRefusals(st)) {
+    const fieldEl = root.querySelector(`[data-field="${CSS.escape(fid)}"]`);
+    if (fieldEl) showRefusal(fieldEl, r.message);
+  }
   errors.forEach((e) => put(e, "error"));
   warnings.forEach((w) => put(w, "warning"));
   return left;
@@ -77,8 +81,9 @@ export const badNumber = (...inputs) => inputs.some((i) => (i.validity && i.vali
 // (see renderInspector) doesn't fire "change". Every commit function cleans its inputs. A box the re-render removes
 // fires "change" in Chromium; it is ignored like its blur (the half-typed text goes on in the new box).
 export function onCommit(el, fn) {
-  el.addEventListener("change", () => { if (!rerendering && el.isConnected) fn(); });
-  el.addEventListener("blur", () => { if (el.dataset.dirty && !rerendering && el.isConnected) fn(); });
+  const commit = () => { forgetRefusal(el); fn(); };
+  el.addEventListener("change", () => { if (!rerendering && el.isConnected) commit(); });
+  el.addEventListener("blur", () => { if (el.dataset.dirty && !rerendering && el.isConnected) commit(); });
   el.addEventListener("keydown", (e) => { if (e.key === "Enter" && el.tagName === "INPUT" && el.type !== "checkbox") { e.preventDefault(); el.blur(); } });
   return el;
 }
@@ -88,17 +93,55 @@ function onGroupCommit(group, commit) {
   group.addEventListener("focusout", (e) => {
     if (rerendering || !group.isConnected) return;
     if (e.relatedTarget && group.contains(e.relatedTarget)) return;
-    if ([...group.querySelectorAll("input")].some((i) => i.dataset.dirty)) commit();
+    if ([...group.querySelectorAll("input")].some((i) => i.dataset.dirty)) { forgetRefusal(group); commit(); }
   });
   group.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && e.target.tagName === "INPUT") { e.preventDefault(); commit(); }
+    if (e.key === "Enter" && e.target.tagName === "INPUT") { e.preventDefault(); forgetRefusal(group); commit(); }
   });
 }
 
-function localError(fieldEl, message) {
+// A refusal made here (a box's text that can't be sent: "Enter a number.", the other system's unit) is not in the
+// state, so a redraw (a state, the 3D view or a units change arriving just after it) would drop it and the refused
+// text. Each is kept with that text and put back by the redraws of the same robot version, part and units; a new
+// version (an edit sent, from this box or another), another part or a units change (the message names the old
+// system) drops it, and the box's next commit replaces it.
+const refusals = new Map();   // field id -> { message, texts: {data-key: text}, part, version, system }
+
+function showRefusal(fieldEl, message) {
   const box = fieldEl.querySelector(":scope > .field-msgs");
   box.replaceChildren(h("p", { class: "error", role: "alert", text: message }));
   fieldEl.classList.add("has-error");
+}
+
+function localError(fieldEl, message) {
+  showRefusal(fieldEl, message);
+  const texts = {};
+  for (const i of fieldEl.querySelectorAll("input[data-key]")) if (i.dataset.dirty) texts[i.dataset.key] = i.value;
+  refusals.set(fieldEl.dataset.field, { message, texts, part: store.selected,
+    version: store.state && store.state.version, system: units.system });
+}
+
+const forgetRefusal = (el) => { const f = el.closest("[data-field]"); if (f) refusals.delete(f.dataset.field); };
+
+// The refusals still standing for what `st` shows: a redraw puts back their text (restoreRefusedText) and
+// placeErrors their message.
+function liveRefusals(st) {
+  const version = st.state && st.state.version;
+  for (const [fid, r] of refusals) {
+    if (r.part !== st.selected || r.version !== version || r.system !== units.system) refusals.delete(fid);
+  }
+  return refusals;
+}
+
+function restoreRefusedText(root, st) {
+  for (const [fid, r] of liveRefusals(st)) {
+    const fieldEl = root.querySelector(`[data-field="${CSS.escape(fid)}"]`);
+    if (!fieldEl) { refusals.delete(fid); continue; }
+    for (const [key, text] of Object.entries(r.texts)) {
+      const el = fieldEl.querySelector(`input[data-key="${CSS.escape(key)}"]`);
+      if (el) { el.value = text; el.dataset.dirty = "1"; }
+    }
+  }
 }
 
 const unit = (u) => UNIT[u] || u;
@@ -129,6 +172,7 @@ export function renderInspector(st) {
   rerendering = true;
   try { root.replaceChildren(fs); } finally { rerendering = false; }
   if (switched) root.scrollTop = 0;
+  restoreRefusedText(root, st);
 
   if (keep) {
     const el = root.querySelector(`[data-key="${CSS.escape(keep.key)}"]`);
