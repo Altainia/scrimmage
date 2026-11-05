@@ -60,6 +60,10 @@ const ownVersions = new Set();
 const ownJobs = new Map();   // job id -> {kind, file, key?, done?}
 const jobFailures = new Map();   // file -> {error, t}
 let busy = 0;
+// This page's last edits that went in one after another, of one idea: from the version the first was sent against
+// to the version the last made. A value typed while they were on their way (at a version in between) was typed
+// against nothing but them, so it is sent against `to`, not refused as stale by this page's own edit.
+let ownRun = null;   // {file, from, to}
 
 // -- helpers ---------------------------------------------------------------------------------------
 const ideaOf = (file) => (bench.state ? bench.state.ideas.find((i) => i.file === file) || null : null);
@@ -208,13 +212,20 @@ function failed(data, status) {
 async function post(path, body, field, file = bench.shown) {
   busy++;
   try {
-    const { status, data } = await api("POST", path, { file, version: bench.state.version, ...body });
+    const sent = { file, version: bench.state.version, ...body };
+    const refusalBefore = bench.errors;
+    const { status, data } = await api("POST", path, sent);
     if (status === 200 && data.ok) {
       ownVersions.add(data.version);
+      const chained = ownRun && ownRun.file === file && sent.version === ownRun.to;
+      ownRun = path.endsWith("/edit") ? { file, from: chained ? ownRun.from : sent.version, to: data.version } : null;
       changes.set(file, { own: true, t: now() });
-      bench.errors = { file: null, list: [] };
-      bench.typed.clear();
-      bench.typedAt.clear();
+      // a refusal made while this edit was on its way ("5 in" typed in Metric) is about later text: it stays, with
+      // its text, until that box commits; the rest is now what the file says
+      const later = bench.errors !== refusalBefore && bench.errors.file === file ? bench.errors : null;
+      const stays = new Set(later ? later.list.map((e) => e.field) : []);
+      bench.errors = later || { file: null, list: [] };
+      for (const m of [bench.typed, bench.typedAt]) for (const k of [...m.keys()]) if (!stays.has(k)) m.delete(k);
       await refresh();
       return true;
     }
@@ -222,6 +233,7 @@ async function post(path, body, field, file = bench.shown) {
       notice(`Nothing to ${path.endsWith("undo") ? "undo" : "redo"} for ${ideaName(file)}.`, "info");
       return false;
     }
+    ownRun = null;
     const errors = failed(data, status);
     if (status !== 200 || data.version !== undefined) {
       // stale (the idea changed since this page saw it: says which field wasn't saved), read-only or gone: reload
@@ -236,6 +248,7 @@ async function post(path, body, field, file = bench.shown) {
       return false;
     }
     bench.errors = { file, list: errors.map((e) => ({ ...e, field: e.field === "status" && field ? field : meters(e.field) })) };
+    if (field) bench.typedAt.set(field, sent.version);   // the refused value stays tied to the version it was typed at
     render();
     const shown = document.querySelector("#tab-bench .field-msg.error");
     if (shown) shown.scrollIntoView({ block: "nearest" });
@@ -266,9 +279,12 @@ export function setKeys(pairs, version = null, file = null, field = null) {
       leftStage(target, shown);
       return false;
     }
-    const v = Number.isInteger(version) ? version : bench.state.version;
+    let v = Number.isInteger(version) ? version : bench.state.version;
+    if (ownRun && ownRun.file === target && v >= ownRun.from && v < ownRun.to) v = ownRun.to;
     bench.typed.set(shown, list.value !== undefined ? list.value : list[0][1]);   // kept in its box if refused
-    bench.typedAt.set(shown, v);
+    // not tied to `v` until it is refused (post): while it is on its way, the long poll can bring the version this
+    // edit makes and redraw first, and a box stamped with `v` then would send the next value typed as stale
+    bench.typedAt.delete(shown);
     const body = list.length === 1 && shown === list[0][0]
       ? { op: "set", key: valueOf(list[0][0]).sendKey, value: list[0][1], version: v }
       : { op: "set", values: Object.fromEntries(list.map(([k, x]) => [valueOf(k).sendKey, x])), field: shown, version: v };

@@ -363,6 +363,42 @@ def test_a_length_shows_in_the_units_and_is_written_as_the_file_writes_it(make_b
     assert _diameters(f)["top"] == {"diameter_in": 5.0}
 
 
+def test_a_value_typed_while_an_edit_is_on_its_way_is_saved(make_bench_page, tmp_path, units):
+    """CI (a slow runner): the long poll brought an edit's new version, and redrew, before the edit's answer did. The
+    box was stamped with the version the edit was typed at, so the next value typed in it was refused as stale by
+    the page's own edit; a refusal made meanwhile was dropped by that answer; and a value typed in another box while
+    an edit was on its way was refused as stale too."""
+    units("metric")
+    page = make_bench_page()
+    _on_stage(page, "bounce bar")
+    f = tmp_path / "kickoff" / "bounce_bar.toml"
+    page.evaluate("""() => { const f = window.fetch; window.fetch = async (u, o) => { const r = await f(u, o);
+      if (String(u).includes('/api/bench/edit')) await new Promise(z => setTimeout(z, 800)); return r; }; }""")
+    page.click("#bench-showall")
+    top, bottom = ("#bench-all input[data-key='wheel.%s.diameter']" % w for w in ("top", "bottom"))
+    page.wait_for_selector(bottom)
+    v = page.evaluate("__scrimmageBench.state.version")
+    page.fill(bottom, "12 cm")
+    page.press(bottom, "Enter")
+    page.wait_for_function("(v) => __scrimmageBench.state.version > v", arg=v)   # the poll's, before the answer
+    page.fill(bottom, "5 in")                   # refused while the edit is on its way: its answer keeps the refusal
+    page.press(bottom, "Enter")
+    msg = "#bench-all [data-field='wheel.bottom.diameter'] .field-msg.error"
+    page.wait_for_selector(msg)
+    page.wait_for_timeout(1200)
+    assert "Units is set to Metric" in page.text_content(msg, timeout=1000)
+    assert page.input_value(bottom) == "5 in"
+    page.fill(bottom, "110")
+    page.press(bottom, "Enter")
+    _wait_file(f, lambda t: _diameters(f)["bottom"] == {"diameter": 0.11})
+    page.fill(top, "127")
+    page.press(top, "Enter")
+    page.fill(bottom, "115")                    # typed while the top's edit is on its way
+    page.press(bottom, "Enter")
+    _wait_file(f, lambda t: _diameters(f)["bottom"] == {"diameter": 0.115})
+    assert _diameters(f)["top"] == {"diameter": 0.127}
+
+
 # -- the shape editor (Edit shape) ------------------------------------------------------------------------------------
 def _wait_file(f: Path, pred, timeout=5.0) -> str:
     deadline = time.time() + timeout
