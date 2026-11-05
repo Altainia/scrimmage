@@ -1052,7 +1052,8 @@ class TestRun:
             out = self.world.pneumatics.extension(a["cylinder"]) / IN
             stroke = next(c.stroke for c in self.world.parts.cylinders if c.name == a["cylinder"]) / IN
             if units.is_machine():
-                return f"expected {a['cylinder']} {a['is']}, but its rod was out {out:.1f} in of {round(stroke, 1):g} in"
+                return (f"expected {a['cylinder']} {a['is']}, but its rod was out {out:.1f} in of "
+                        f"{round(stroke, 1):g} in")
             return (f"expected {a['cylinder']} {a['is']}, but its rod was out {_amount(out, 'in', fewer=2)} of "
                     f"{_amount(stroke, 'in', fewer=2)}")
         if k == "pressure":

@@ -30,7 +30,6 @@ from dataclasses import dataclass, field
 import mujoco
 import numpy as np
 
-from .. import units
 from .model import PartError, quat_from_rpy
 
 PARTNER_KEYS = ("length", "width", "mass", "bumper_clearance", "brake", "start")

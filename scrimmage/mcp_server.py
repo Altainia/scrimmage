@@ -51,8 +51,8 @@ Each run is kept next to the test file, where the app's Test tab can replay it.
 
 Results are in fixed units whatever the web app's Units setting (Imperial or Metric): numbers are SI unless a key
 names its unit (min_in, extension_m); run_scenario's messages are in meters, the bench headlines in m/s, N and m,
-and test_run's words in inches and psi (a drive's distance in meters). Files written for people (report.md, summary.txt, pictures) follow the
-setting.
+and test_run's words in inches and psi (a drive's distance in meters). Files written for people (report.md,
+summary.txt, pictures) follow the setting.
 """
 
 

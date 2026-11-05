@@ -3,10 +3,10 @@ rate the web app shows goes through the Units setting (static/units.js, scrimmag
 
 The sweep reads the string literals of the web app's JavaScript, its page (index.html) and the Python modules that
 write its words and reports. It finds a unit after a number ("0.5 m", `${x} in`), a unit in brackets ("speed
-(m/s)") and, in the JavaScript, a string that is just a unit ("kg"). Each hit must be in ALLOWED with its reason; a new one fails, so a
-new display site names its kind instead (units.fmt(si, "length")). Angles, time, current and voltage read the same
-in both systems, so they aren't looked for. An entry that no longer matches anything fails too, to keep the list
-true.
+(m/s)") and, in the JavaScript, a string that is just a unit ("kg"). Each hit must be in ALLOWED with its reason; a
+new one fails, so a new display site names its kind instead (units.fmt(si, "length")). Angles, time, current and
+voltage read the same in both systems, so they aren't looked for. An entry that no longer matches anything fails too,
+to keep the list true.
 
 Not swept: units.js and units.py (the table itself), and the Python modules that check files (blocks/program.py,
 bench/spec.py, ...): their messages name the file's own keys and numbers, which stay in the file's units."""
@@ -84,7 +84,7 @@ ALLOWED = [
     ("blocks/run.py", 'return f"{x:.0f} psi" if units.is_machine()', MACHINE),
     ("blocks/run.py", "far, went = f\"{abs(a['distance']):g} m\", f\"{gone:.2f} m\"", MACHINE),
     ("blocks/run.py", "didn't reach {far} in {timeout:g} s", "reach a distance in a time, not inches"),
-    ("blocks/run.py", "but its rod was out {out:.1f} in of {round(stroke, 1):g} in", MACHINE),
+    ("blocks/run.py", "but its rod was out {out:.1f} in of \"", MACHINE),
     ("blocks/run.py", 'return f"expected {what} {side} {psi:g} psi, but it was {now:.1f} psi"', MACHINE),
     ("blocks/run.py", "now = f\"{c / IN:.2f} in\" if math.isfinite(c) else f\">{NEVER_WITHIN_IN} in\"", MACHINE),
     ("blocks/run.py", "but it was {up:g} in up", MACHINE),
@@ -106,7 +106,8 @@ ALLOWED = [
     ("launcher/report.py", '"lateral (m)"', "known gap: the launcher model's own charts (docs/settings.md)"),
     ("measure/fit_cylinder.py", "the model's cylinder can't {", MACHINE + " (also a robot file's load error)"),
     ("parts/partner.py", "must be at least {", "checks the partner's file numbers (meters), named by key"),
-    ("parts/partner.py", "mass must be more than its drive's {", "checks the partner's file numbers (kg), named by key"),
+    ("parts/partner.py", "mass must be more than its drive's {",
+     "checks the partner's file numbers (kg), named by key"),
     ("parts/partner.py", "(their outlines overlap by {depth:.2f} m)",
      "a robot config's [partner] start, in meters as written (machine text); the Test tab words Setup's own"),
     ("assembler/edits.py", "is off the field ({FIELD_LENGTH:g} m by {FIELD_WIDTH:g} m)",
