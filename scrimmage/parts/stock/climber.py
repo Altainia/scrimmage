@@ -255,7 +255,8 @@ register(Stock(
      Param("pivot_count", "", 1, N_("motors driving the pivot"), kind="int", min=1),
      Param("pivot_gearing", "", 100.0, N_("pivot motor turns per climber turn (estimate)"), positive=True)),
     _climber, slots=("extend", "extend_encoder"), mounts=("base", "tip"),
-    note=N_("Slots: extend (motor) and extend_encoder (spool turns); release (motor) with latch = \"released\"; pivot "
-         "(motor) and pivot_encoder (climber turns) with pivot = \"articulated\". Hook geoms are named "
+    note=N_("Slots: extend (motor) and extend_encoder (spool turns); release (motor) with {latch_setting}; pivot "
+         "(motor) and pivot_encoder (climber turns) with {pivot_setting}. Hook geoms are named "
          "<part>.hook<i>.stem, .crown<k>, .tip and .latch; the bracket carrying them <part>.bracket. The climber "
-         "stands up from its base mount, retracted; the hooks open toward +x and hold a bar running along y.")))
+         "stands up from its base mount, retracted; the hooks open toward +x and hold a bar running along y."),
+    note_keys=(("latch_setting", 'latch = "released"'), ("pivot_setting", 'pivot = "articulated"'))))

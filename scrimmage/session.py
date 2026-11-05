@@ -880,8 +880,8 @@ class Session:
         self._require_started()
         link = self.bridge.nt_link
         if link is None:
-            raise SessionError(t("NetworkTables isn't available in this session (install scrimmage{nt_table}, and "
-                                 "don't start the session with nt=False)", nt_table="[nt]"))
+            raise SessionError(t("NetworkTables isn't available in this session (install {nt_extra}, and don't start "
+                                 "the session with {nt_off})", nt_extra="scrimmage[nt]", nt_off="nt=False"))
         return link
 
     def nt_list(self, prefix: str = "/") -> dict:

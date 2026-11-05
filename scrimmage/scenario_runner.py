@@ -46,8 +46,9 @@ PHOENIX_LOCKSTEP = N_("Phoenix 6 devices: this robot runs in real time, not lock
 # D3: a scenario is the Driver Station, so a run refuses the real one, and ignores a config's default
 REAL_DS_REFUSED = N_("a scenario run can't use the real Driver Station: the scenario is the Driver Station here (it "
                      "sets the modes and joysticks); run it without the real Driver Station")
-CONFIG_REAL_DS_NOTE = N_("the config's [driver_station] real = true is ignored here: in a scenario run, scrimmage is "
-                         "the Driver Station")
+CONFIG_REAL_DS_NOTE = N_("the config's {driver_station_table} {real_setting} is ignored here: in a scenario run, "
+                         "scrimmage is the Driver Station")
+CONFIG_REAL_DS_KEYS = {"driver_station_table": "[driver_station]", "real_setting": "real = true"}
 LOCKSTEP_REQUIRED = N_("lockstep is required but the robot program didn't load the scrimmage_lockstep extension "
                        "(RobotPy: add --scrimmage-lockstep to {robot_program_table} command; or set "
                        "{require_lockstep_setting})")
@@ -472,7 +473,7 @@ async def _run_scenario(scenario: Scenario, out_dir: Path, speed, session: Sessi
         if own:
             config = config_for(scenario, load_config(scenario.config_path))
             if config.real_ds:
-                report.notes.append(_said(CONFIG_REAL_DS_NOTE))
+                report.notes.append(_said(CONFIG_REAL_DS_NOTE, **CONFIG_REAL_DS_KEYS))
             session = Session(config, speed=scenario.speed if speed is UNSET else speed,
                               log_path=out_dir / "run.csv", robot_log=out_dir / "robot.log",
                               picture_sizes=picture_sizes(scenario), sim_mode=sim_mode, real_ds=False)
@@ -665,9 +666,9 @@ async def _run_steps(session: Session, scenario: Scenario, report: Report, out_d
                          telemetry_table="[telemetry]", nt_setting="nt = false")
             if session_off:
                 return t("this scenario checks NetworkTables values (nt: signals or odometry_error), but this session "
-                         "was started without NetworkTables (nt=False)")
+                         "was started without NetworkTables ({nt_off})", nt_off="nt=False")
             return t("this scenario checks NetworkTables values (nt: signals or odometry_error), but NetworkTables "
-                     "isn't available: install scrimmage{nt_table} (pyntcore)", nt_table="[nt]")
+                     "isn't available: install {nt_extra} (pyntcore)", nt_extra="scrimmage[nt]")
         report.error = Said(f"this scenario checks NetworkTables values (nt: signals or odometry_error), but {why}",
                             words)
         return

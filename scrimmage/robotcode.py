@@ -236,8 +236,8 @@ def _check_robotpy(info: ProjectInfo) -> Check:
         ok = False
     if ok:
         return Check("robotpy", True, i18n.t("RobotPy is installed in {own}", own=own))
-    return Check("robotpy", False, i18n.t("RobotPy isn't installed in {own}: run {python} -m pip install "
-                                          "\"{robotpy_sim}\"", own=own, python=python, robotpy_sim="robotpy[sim]"))
+    return Check("robotpy", False, i18n.t("RobotPy isn't installed in {own}: run {command}", own=own,
+                                          command=f'{python} -m pip install "robotpy[sim]"'))
 
 
 def checklist(info: ProjectInfo) -> list[Check]:

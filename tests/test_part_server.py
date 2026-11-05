@@ -19,7 +19,7 @@ import pytest
 from scrimmage.assembler import part_session, recent
 from scrimmage.assembler.server import App, classify
 from scrimmage.bench.cad import write_obj
-from scrimmage.cad import MISSING_EXTRA, CadError
+from scrimmage.cad import CadError, missing_extra
 from scrimmage.cad.frame import to_robot
 from scrimmage.cad.settings import read_import
 from scrimmage.cad.source import load_source
@@ -411,12 +411,12 @@ def test_import_made_folder_opens_its_import(part_app, tmp_path):
 
 def test_missing_extra_reported_not_crash(part_app, monkeypatch, tmp_path):
     def missing(*a, **k):
-        raise CadError(MISSING_EXTRA)
+        raise CadError(missing_extra())
     monkeypatch.setattr(part_session, "load_source", missing)
     c, _ = part_app()
     st = _state(c)
-    assert st["read_only_reason"] == MISSING_EXTRA and st["build"]["state"] == "failed"
-    assert st["build"]["message"] == MISSING_EXTRA and st["pieces"] == []
+    assert st["read_only_reason"] == missing_extra() and st["build"]["state"] == "failed"
+    assert st["build"]["message"] == missing_extra() and st["pieces"] == []
     assert _edit(c, "set_material", pieces=[HOOK], material="steel")[0] == 409
     assert c.get("/api/part/view") == (200, {"pieces": []})
     monkeypatch.undo()

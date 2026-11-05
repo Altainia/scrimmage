@@ -291,8 +291,8 @@ class MotorBinding:
             jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, cfg["joint"])
             if not model.jnt_limited[jid]:
                 raise ValueError(i18n.t("motor '{name}': {limits_setting} needs joint '{joint}' to have a range "
-                                        "(range=\"{lo_hi}\" in the MJCF)", name=self.name, joint=cfg['joint'],
-                                        limits_setting="limits = true", lo_hi="lo hi"))
+                                        "({range_setting} in the MJCF)", name=self.name, joint=cfg['joint'],
+                                        limits_setting="limits = true", range_setting='range="lo hi"'))
             self.limits = (float(model.jnt_range[jid][0]), float(model.jnt_range[jid][1]))
         # live values, useful for logging
         self.command = 0.0

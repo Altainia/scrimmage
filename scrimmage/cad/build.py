@@ -439,9 +439,8 @@ def _collision(imp, n, h, vs, meshes, R, msgs) -> list[Geom]:
             pieces = convex_split(v, f)
         except BenchError as e:
             if e.code == "no_coacd":
-                text = t("{body} is concave, and touching things as shaped needs coacd to split it: pip install "
-                         "scrimmage{bench_table}. It touches things as a simple box until then.", body=n,
-                         bench_table="[bench]")
+                text = t("{body} is concave, and touching things as shaped needs coacd to split it: {install}. It "
+                         "touches things as a simple box until then.", body=n, install="pip install scrimmage[bench]")
             elif e.code == "no_convex_pieces":
                 text = t("{body} couldn't be split into convex pieces to touch things as shaped: pick simple instead. "
                          "It touches things as a simple box until then.", body=n)

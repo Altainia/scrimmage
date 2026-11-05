@@ -228,9 +228,9 @@ def convex_pieces(mesh_path: Path, units: str) -> list[Path]:
         how = i18n.t("{percent}% bigger", percent=f"{100 * (hull / own - 1):.0f}") if own > 0 else \
             i18n.t("far bigger")
         raise BenchError(i18n.t("mesh {path} is concave (its hull is {how} than it), so it has to be split into "
-                                "convex pieces, which needs coacd: pip install scrimmage{bench_table}. (Run as it "
-                                "is, its hollows would be filled in.)", path=mesh_path, how=how,
-                                bench_table="[bench]"), code="no_coacd") from None
+                                "convex pieces, which needs coacd: {install}. (Run as it is, its hollows would be "
+                                "filled in.)", path=mesh_path, how=how, install="pip install scrimmage[bench]"),
+                         code="no_coacd") from None
     if not pieces:
         raise BenchError(i18n.t("mesh {path}: coacd found no convex pieces in it", path=mesh_path),
                          code="no_convex_pieces")

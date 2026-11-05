@@ -4,7 +4,7 @@ A STEP file goes through cascadio (OpenCASCADE) to a GLB in a temp folder, which
 nesting of sub-assemblies; the result is one `Piece` per mesh with its world transform applied. STL/OBJ files are
 one piece each, scaled from `units` to meters. Nothing is rotated: pieces stay in the CAD file's own axes (the
 robot frame is chosen later). `cascadio` and `trimesh` are imported inside the functions that need them, only here,
-so the rest of `scrimmage.cad` loads without the `cad` extra; a missing one raises `CadError(MISSING_EXTRA)`.
+so the rest of `scrimmage.cad` loads without the `cad` extra; a missing one raises `CadError(missing_extra())`.
 """
 
 import json
@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 
 from .. import i18n
-from . import MISSING_EXTRA, CadError
+from . import CadError, missing_extra
 
 UNITS = {"m": 1.0, "mm": 0.001, "in": 0.0254}
 TOL_LINEAR = 0.2        # tessellation, in the STEP file's own units
@@ -108,7 +108,7 @@ def _load_step(path: Path) -> Source:
         import cascadio
         import trimesh
     except ImportError:
-        raise CadError(i18n.translated(MISSING_EXTRA)) from None
+        raise CadError(missing_extra()) from None
     unreadable = CadError(i18n.t("Could not read {name} as a STEP file: re-export it from CAD and try again.",
                                  name=path.name))
     with tempfile.TemporaryDirectory(prefix="scrimmage-cad-") as tmp:

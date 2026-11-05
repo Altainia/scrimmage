@@ -282,11 +282,11 @@ export async function showStart(root, { canGoBack, onBack, cadFor = null }) {
 const TEAM = {
   cad: { title: () => t("CAD folder:"), why: () => t("Robot files and part folders the CAD students make live here."),
     ask: () => t("Where is your team's CAD on this computer?"),
-    points: () => t("The open robot file points into the team's CAD folder ({{cad}}), and this computer doesn't know where that is yet. Pick it once; scrimmage remembers it on this computer. Until then the robot can't be edited."),
+    points: () => t("The open robot file points into the team's CAD folder ({token}), and this computer doesn't know where that is yet. Pick it once; scrimmage remembers it on this computer. Until then the robot can't be edited.", { token: "{cad}" }),
     saved: (path) => t("Saved: this computer's CAD folder is {path}.", { path }) },
   code: { title: () => t("Code folder:"), why: () => t("The robot code (the programmers' projects) lives here."),
     ask: () => t("Where is your team's code on this computer?"),
-    points: () => t("The open robot file points into the team's code folder ({{code}}), and this computer doesn't know where that is yet. Pick it once; scrimmage remembers it on this computer. Until then the robot can't be edited."),
+    points: () => t("The open robot file points into the team's code folder ({token}), and this computer doesn't know where that is yet. Pick it once; scrimmage remembers it on this computer. Until then the robot can't be edited.", { token: "{code}" }),
     saved: (path) => t("Saved: this computer's code folder is {path}.", { path }) },
 };
 

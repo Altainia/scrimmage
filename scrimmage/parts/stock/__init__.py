@@ -10,7 +10,7 @@ import math
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from ...i18n import N_, t
+from ...i18n import N_, t, translated
 from ..assemble import TREAD_DAMPING, TREAD_STIFFNESS
 from ..model import Part, PartError, part_from_dict
 
@@ -36,6 +36,11 @@ class Param:
     max: float | Callable[[dict], float] | None = None
     choices: tuple | None = None
     positive: bool = False
+    doc_keys: tuple = ()        # (placeholder, what a student types) pairs that fill `doc`'s {placeholders}
+
+    def shown_doc(self, lang: str | None = None) -> str:
+        """`doc` (N_() text) in `lang` (default: the Language setting), its typed keys and values filled in."""
+        return translated(self.doc, lang=lang, **dict(self.doc_keys))
 
     def __post_init__(self):
         if self.kind not in KINDS:
@@ -55,6 +60,15 @@ class Stock:
     slots: tuple[str, ...]
     mounts: tuple[str, ...]
     note: str = ""
+    doc_keys: tuple = ()        # (placeholder, what a student types) pairs for `doc`'s {placeholders}
+    note_keys: tuple = ()       # the same for `note`
+
+    def shown_doc(self, lang: str | None = None) -> str:
+        """`doc` (N_() text) in `lang` (default: the Language setting), its typed keys and values filled in."""
+        return translated(self.doc, lang=lang, **dict(self.doc_keys))
+
+    def shown_note(self, lang: str | None = None) -> str:
+        return translated(self.note, lang=lang, **dict(self.note_keys))
 
 
 # A drivetrain's wheels: their geoms say tread = true, and the assembler reads these two (parts/assemble.py).
@@ -214,14 +228,14 @@ def _toml(v) -> str:
 def describe(name: str | None) -> str:
     _load_all()
     if name is None:
-        return "\n".join(f"{s.name:20} {s.doc}" for s in sorted(REGISTRY.values(), key=lambda s: s.name))
+        return "\n".join(f"{s.name:20} {s.shown_doc()}" for s in sorted(REGISTRY.values(), key=lambda s: s.name))
     s = REGISTRY.get(name)
     if s is None:
         raise PartError(t("unknown stock part {name}; stock parts: {parts}", name=repr(name),
                           parts=", ".join(sorted(REGISTRY))))
-    lines = [f"{s.name}: {s.doc}", ""]
+    lines = [f"{s.name}: {s.shown_doc()}", ""]
     if s.note:
-        lines += [s.note, ""]
+        lines += [s.shown_note(), ""]
     lines.append("parameters:")
     for p in s.params:
         value = _toml(p.default)
@@ -230,6 +244,6 @@ def describe(name: str | None) -> str:
         constraints = _constraints(p)
         if constraints:
             value += f" ({constraints})"
-        lines.append(f"  {p.name} = {value}: {p.doc}")
+        lines.append(f"  {p.name} = {value}: {p.shown_doc()}")
     lines += ["", f"slots: {', '.join(s.slots) or 'none'}", f"mounts: {', '.join(s.mounts) or 'none'}"]
     return "\n".join(lines)

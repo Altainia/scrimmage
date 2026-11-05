@@ -4,7 +4,8 @@ translator would translate it, and the student would then type something the loa
 Those go in as {placeholders}: `kind = "{kind}"` or {kind_setting}, {range_table}, `{command}`.
 
 The scan reads every source as `scrimmage i18n template` finds it, and flags a quoted token ("…" or `…`) or a
-[table] / [[table]] header that isn't a single {placeholder}. ALLOWED lists the sources that keep one, each with why.
+[table] / [[table]] header that isn't a single {placeholder}, a key = value (or key=value) setting with its key
+written out, and a {{literal brace}} group. ALLOWED lists, per file, the tokens a source may keep, each with why.
 """
 import re
 
@@ -12,39 +13,38 @@ from scrimmage import i18n
 from scrimmage.i18n_tool import scan
 
 FIELD = re.compile(r"\{[A-Za-z_]\w*\}")
+SETTING = re.compile(r"[A-Za-z_][\w.]* ?= ?(?!=)[^\s,;)]+")
 TABLE = re.compile(r"\[\[?([A-Za-z_<{][\w.<>{}\-]*)\]\]?")
 
-# source (as the catalog keys it, without a context) -> why it may keep a quoted or bracketed token
+# Notation, not a setting: a time or a position written as math beside a placeholder ("at t={t}", "x={x}",
+# "t={start}–{end} s", "heading={heading}°"). Nobody types it into a file; a translation keeps the letters.
+NOTATION = re.compile(r"(?:t|x|y|z|heading)=\{[A-Za-z_]\w*\}(?:–\{[A-Za-z_]\w*\})?[°:]?$")
+
+# (file, token) -> why that source may keep that token. Each entry is one token in one file's source, exactly; only UI
+# labels and headings (translated with what they name) and prose formulas (words around "=", translated as words).
+LABEL = "a UI label quoted in the words, translated with the label it names; nobody types it into a file"
+FORMULA = "prose: a formula or a form described in words around \"=\", translated as words, never typed as written"
 ALLOWED = {
-    # UI labels, quoted in the words: they are translated with the label they name, and nobody types them in a file
-    'Plug a check into "wait until" (from Check).': "a block's label, translated with the block",
-    'Plug a check into "repeat until" (from Check).': "a block's label, translated with the block",
-    'Plug a check into "expect" (from Check).': "a block's label, translated with the block",
-    "The parts go in the parts folder next to {robot}. When you're done, click \"Back to the robot\".":
-        "a button's label, translated with the button",
-    # N_() constants pinned as the shown text by tests that predate this gate (cad, real DS): a placeholder there
-    # needs those tests' constants to change
-    'Reading CAD files needs the cad extra: pip install "scrimmage[cad]"':
-        "MISSING_EXTRA: tests compare the shown message to the constant (test_cad_mass, test_cad_source, test_part_server)",
-    "the config's [driver_station] real = true is ignored here: in a scenario run, scrimmage is the Driver Station":
-        "CONFIG_REAL_DS_NOTE: test_real_ds compares the run's note to the constant",
-}
-# Stock part and bench docs: N_() data shown through a generic translated(p.doc), written as documentation of
-# the part's own keys and slots (many identifiers, not only these tokens); the translating guide (6b) says to keep
-# what is in quotes and brackets. Listed by the start of the source.
-ALLOWED_PREFIXES = {
-    "Slots: ": "a stock part's slots doc (N_() data, shown with translated())",
-    "a cylinder measurement file (": "a stock part's parameter doc (N_() data)",
-    '"<part>.<body>" the rod': "a stock part's parameter doc (N_() data)",
-    "hooded shooter: ": "a stock part's doc (N_() data)",
-    "planar disc shooter: ": "a stock part's doc (N_() data)",
-    "The Part tab opens on it. When its parts are up to date, click \"Test it\"": "a button's label, translated "
-                                                                                  "with the button",
-    "Robot files say \"in the CAD folder\" or \"in the code folder\"": "the folder picker's labels, translated with them",
-    "Exit numbers are for each file's first outlet. \"Worst shaft drop\"": "the gallery table's column names, "
-                                                                           "translated with them",
-    "measure the ball's stiffness (a squeeze test)": "the bench report's UNCALIBRATED words name a docs heading "
-                                                      "(\"Measure these first\"), translated with the docs",
+    ("scrimmage/assembler/static/blocks_defs.js", '"wait until"'): LABEL + " (the block)",
+    ("scrimmage/assembler/static/blocks_defs.js", '"repeat until"'): LABEL + " (the block)",
+    ("scrimmage/assembler/static/blocks_defs.js", '"expect"'): LABEL + " (the block)",
+    ("scrimmage/assembler/static/start.js", '"Back to the robot"'): LABEL + " (the button)",
+    ("scrimmage/assembler/static/start.js", '"Test it"'): LABEL + " (the button)",
+    ("scrimmage/assembler/static/start.js", '"in the CAD folder"'): LABEL + " (the folder picker's)",
+    ("scrimmage/assembler/static/start.js", '"in the code folder"'): LABEL + " (the folder picker's)",
+    ("scrimmage/bench/gallery.py", '"Worst shaft drop"'): LABEL + " (the gallery table's column)",
+    ("scrimmage/bench/gallery.py", '"hardest hit"'): LABEL + " (a headline's words)",
+    ("scrimmage/bench/report.py", '"Measure these first"'): "a heading of docs/launcher.md, translated with the docs",
+    ("scrimmage/assembler/static/app.js", "token=…"): "what the printed link carries (#token=…), shown, never typed",
+    ("scrimmage/assembler/static/index.html", "direction = heading"): FORMULA,
+    ("scrimmage/bench/spec.py", "name = shaft"): FORMULA + " (slot name = shaft name)",
+    ("scrimmage/testrange/elements.py", "name = points"): FORMULA + " (level name = points)",
+    ("scrimmage/disc/inputs.py", "fence_radius = R_wheel"): FORMULA + " (fence_radius = R_wheel + D - compression)",
+    ("scrimmage/parts/model.py", "b = ratio"): FORMULA + " (b = ratio * a)",
+    ("scrimmage/measure/forms.py", "Spread = (highest"): FORMULA + " (Spread = (highest − lowest) ÷ average)",
+    ("scrimmage/parts/stock/mechanisms.py", "height = spool"): FORMULA + " (a stock part's doc)",
+    ("scrimmage/parts/stock/mechanisms.py", "angle = hood_range[0]"): FORMULA + " (exit angle = hood_range[0] + …)",
+    ("scrimmage/parts/stock/mechanisms.py", "angle = tilt_range[0]"): FORMULA + " (launch angle = tilt_range[0] + …)",
 }
 
 
@@ -53,8 +53,17 @@ def _tokens(text: str) -> list[str]:
     out, i = [], 0
     while i < len(text):
         c = text[i]
-        if text.startswith("{{", i) or text.startswith("}}", i):
-            i += 2
+        if text.startswith("{{", i):            # a literal brace: a TOML inline table or a {cad}-style folder token
+            j = text.find("}}", i + 2)
+            j = len(text) if j < 0 else j + 2
+            out.append(text[i:j])
+            i = j
+            continue
+        m = SETTING.match(text, i)
+        if m and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] in "_.}")):
+            if not NOTATION.match(m.group(0)):
+                out.append(m.group(0))         # key = value or key=value, the key written out
+            i = m.end()
             continue
         if c in '"`':
             j = text.find(c, i + 1)
@@ -74,37 +83,36 @@ def _tokens(text: str) -> list[str]:
     return out
 
 
-def _flagged() -> dict[str, tuple[list[str], str]]:
+def _flagged() -> list[tuple[str, str, str, str]]:
+    """(file, line, token, source) for each token a source keeps."""
     sources, _ = scan()
-    out = {}
+    out = []
     for s in sources:
         key = s.key.split(i18n.CONTEXT)[-1]
         for text in key.split(i18n.PLURAL) if s.plural else [key]:
-            found = _tokens(text)
-            if found:
-                out[key] = (found, s.where[0])
+            for token in _tokens(text):
+                where = s.where[0]
+                out.append((where.rsplit(":", 1)[0], where, token, key))
     return out
 
 
-def _allowed(key: str) -> bool:
-    return key in ALLOWED or any(key.startswith(p) for p in ALLOWED_PREFIXES)
-
-
 def test_no_source_holds_what_a_student_types():
-    bad = {k: v for k, v in _flagged().items() if not _allowed(k)}
-    assert not bad, "\n".join(f"{where}: {found} in {key!r}" for key, (found, where) in bad.items())
+    bad = [f for f in _flagged() if (f[0], f[2]) not in ALLOWED]
+    assert not bad, "\n".join(f"{where}: {token} in {key!r}" for _, where, token, key in bad)
 
 
 def test_every_allowed_entry_is_still_needed():
-    flagged = _flagged()
-    stale = [k for k in ALLOWED if k not in flagged]
-    stale += [p for p in ALLOWED_PREFIXES if not any(k.startswith(p) for k in flagged)]
-    assert not stale, stale
+    found = {(f[0], f[2]) for f in _flagged()}
+    assert not [k for k in ALLOWED if k not in found]
 
 
 def test_the_scan_finds_the_tokens_it_should():
-    assert _tokens('needs kind = "beam", "distance" or "color"') == ['"beam"', '"distance"', '"color"']
+    assert _tokens('needs kind = "beam", "distance" or "color"') == ['kind = "beam"', '"distance"', '"color"']
     assert _tokens('kind must be "{ball}" or "{disc}", not {kind}') == []
     assert _tokens("{where}: [shooter] must be a table; see [[goal]] and [{section}]") == ["[shooter]", "[[goal]]"]
     assert _tokens("run `scrimmage java build`, then `{command}`") == ["`scrimmage java build`"]
-    assert _tokens("give [x, y, z] or {{ sides, across_flats }}") == []
+    assert _tokens("give [x, y, z] or {sides_form}") == []
+    assert _tokens("points into the team's CAD folder ({{cad}})") == ["{{cad}}"]
+    assert _tokens("don't start the session with nt=False; or set limits = true") == ["nt=False", "limits = true"]
+    assert _tokens("{key} = {value}: expected {form}") == []
+    assert _tokens("{name} was {value} at t={t} (x={x}, heading={heading}°, t={start}–{end} s)") == []

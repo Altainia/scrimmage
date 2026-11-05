@@ -17,13 +17,14 @@ import pytest
 import scrimmage.session as session_mod
 from fake_ds import joystick_tag
 from fake_robot import wait_until
+from scrimmage import i18n
 from scrimmage.__main__ import REAL_DS_HAND_START
 from scrimmage.config import ConfigError, load_config, load_config_text
 from scrimmage.driverstation import REAL_DS_DRIVING, REAL_DS_WAITING, real_ds_line, real_ds_report
 from scrimmage.protocol import HalState
 from scrimmage.robotcode import ROBOTPY_ARGS, with_ds_socket
 from scrimmage.scenario import load_scenario
-from scrimmage.scenario_runner import CONFIG_REAL_DS_NOTE, REAL_DS_REFUSED, run_scenario
+from scrimmage.scenario_runner import CONFIG_REAL_DS_KEYS, CONFIG_REAL_DS_NOTE, REAL_DS_REFUSED, run_scenario
 from scrimmage.session import Session, SessionError
 
 TESTS = Path(__file__).resolve().parent
@@ -245,7 +246,10 @@ def test_a_scenario_ignores_the_configs_real_ds_with_a_note(tmp_path):
     sc = load_scenario(scenario(tmp_path, fake_config(tmp_path, "[driver_station]\nreal = true\n")))
     rep = asyncio.run(run_scenario(sc, tmp_path / "out"))
     assert rep.exit_code == 0, rep.to_dict()
-    assert CONFIG_REAL_DS_NOTE in rep.notes and rep.lockstep is True
+    note = i18n.translated(CONFIG_REAL_DS_NOTE, lang=i18n.SOURCE, **CONFIG_REAL_DS_KEYS)   # the note as built
+    assert note == "the config's [driver_station] real = true is ignored here: in a scenario run, scrimmage is the " \
+        "Driver Station"
+    assert note in rep.notes and rep.lockstep is True
 
 
 def test_a_scenario_refuses_an_open_real_ds_session(tmp_path):

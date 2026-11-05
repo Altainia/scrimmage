@@ -252,12 +252,13 @@ register(Stock(
      Param("friction", "N", 8.0, N_("seal friction (estimate, UNCALIBRATED)"), min=0.0),
      Param("conductance", "m^3/(s*Pa)", DEFAULT_CONDUCTANCE,
            N_("the valve's sonic conductance, how freely air flows (estimate, UNCALIBRATED)"), positive=True),
-     Param("measured", "", "", N_("a cylinder measurement file (\"deploy.measure.toml\", relative to the robot config) "
-           "whose timed strokes fit the conductance; empty for the conductance above"), kind="text"),
+     Param("measured", "", "", N_("a cylinder measurement file (\"{example}\", relative to the robot config) "
+           "whose timed strokes fit the conductance; empty for the conductance above"), kind="text",
+           doc_keys=(("example", "deploy.measure.toml"),)),
      Param("mass", "kg", 0.25, N_("the barrel's mass (UNCALIBRATED)"), positive=True),
      Param("rod_mass", "kg", 0.1, N_("the rod's mass (UNCALIBRATED)"), positive=True),
-     Param("push", "", "", N_("\"<part>.<body>\" the rod's end is pinned to (a stock arm's \"arm.arm\"); empty for a "
-           "free rod with its own mount"), kind="text"),
+     Param("push", "", "", N_("\"{form}\" the rod's end is pinned to (a stock arm's \"{example}\"); empty for a "
+           "free rod with its own mount"), kind="text", doc_keys=(("form", "<part>.<body>"), ("example", "arm.arm"))),
      Param("push_pos", "m", [0.0, 0.0, 0.0], N_("where on the push body the rod's end is pinned, in that body's frame"),
            kind="vec3"),
      Param("length", "m", 0.0, N_("pin to pin when retracted; 0 takes it from the assembled pose (push) or "
@@ -385,7 +386,7 @@ def _launcher(p: dict) -> dict:
 
 register(Stock(
     "launcher", N_("hooded shooter: a wheel on a horizontal shaft and a hood around it, articulated or fixed; "
-    "the test range's [shooter] runs it with sub-project 8's launcher model"),
+    "the test range's {shooter_table} runs it with sub-project 8's launcher model"),
     (Param("wheel_diameter", "m", 0.1016, N_("shooter wheel diameter"), positive=True),
      Param("width", "m", 0.3, N_("inside width between the side plates; every lane's ball must fit"), positive=True),
      Param("wheel_moi", "kg*m^2", 0.002, N_("the wheels, hubs and shaft's moment of inertia about the shaft"),
@@ -412,7 +413,8 @@ register(Stock(
     note=N_("Slots: shooter (motor on joint spin), hood (motor) and hood_encoder (hood turns), the last two only with "
          "an articulated hood. The base's origin is on the shaft (x forward, z up, the shaft along y). The hood "
          "joint reads 0 at the low stop: exit angle = hood_range[0] + the joint's angle. In the world the "
-         "[shooter] section's launcher model runs the shaft and the spin joint mirrors it.")))
+         "{shooter_table} section's launcher model runs the shaft and the spin joint mirrors it."),
+    doc_keys=(("shooter_table", "[shooter]"),), note_keys=(("shooter_table", "[shooter]"),)))
 
 
 # ---------------------------------------------------------------- disc shooter
@@ -527,8 +529,8 @@ def _disc_shooter(p: dict) -> dict:
 
 register(Stock(
     "disc_shooter", N_("planar disc shooter: wheels driving a flat disc along a channel against a fence (or a second "
-    "row of wheels), the channel tilted to the launch angle, fixed or on a motor; the test range's [shooter] "
-    "kind = \"disc\" runs it with the disc launcher model"),
+    "row of wheels), the channel tilted to the launch angle, fixed or on a motor; the test range's {shooter_table} "
+    "{kind_setting} runs it with the disc launcher model"),
     (Param("layout", "", "linear", N_("linear: wheels in a row on one side, a straight fence on the other; arc: one "
            "wheel with a fence curved round it; pinch: wheels on both sides, no fence"), kind="str",
            choices=("linear", "arc", "pinch")),
@@ -573,4 +575,7 @@ register(Stock(
          "(motor) and tilt_encoder (channel turns) with an articulated tilt. The channel body's origin is the disc's center at the entry: x downrange, "
          "y left, z normal to the channel (the disc's axis); it is the base's frame pitched up by the launch angle "
          "about y. The tilt joint reads 0 at the low stop: launch angle = tilt_range[0] + the joint's angle. In the "
-         "world the [shooter] section's disc launcher model runs the wheel shafts and the spin joints mirror them.")))
+         "world the {shooter_table} section's disc launcher model runs the wheel shafts and the spin joints mirror "
+         "them."),
+    doc_keys=(("shooter_table", "[shooter]"), ("kind_setting", 'kind = "disc"')),
+    note_keys=(("shooter_table", "[shooter]"),)))
