@@ -334,7 +334,10 @@ def test_two_runs_give_identical_physics(velocity_runs):
     spin = a.phase("spin")
     assert spin[-1]["shooter_v"] > 100.0, spin[-1]          # the flywheel is spinning under velocity control
     assert len(a.rows) > 100 and a.rows == b.rows
-    assert len(a.prints) > 10 and a.prints == b.prints
+    # "logged" is when scrimmage read the line from the robot's pipe, which a slow runner can make one step late;
+    # what the robot printed, and its own clock, must match (another test checks logged against t)
+    printed = lambda run: [{k: v for k, v in p.items() if k != "logged"} for p in run.prints]  # noqa: E731
+    assert len(a.prints) > 10 and printed(a) == printed(b)
 
 
 @pytest.fixture(scope="module")
