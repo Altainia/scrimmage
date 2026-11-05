@@ -15,6 +15,12 @@
 // start picker (code.js) first while nobody has picked where the robot starts.
 // The stream is the page's one connection (sharedStream), shared with the run panel's Watch view.
 //
+// The Driver Station choice (#drive-ds-source, before Start; it starts from the config's [driver_station] real and is
+// fixed while a session runs): with "The FRC Driver Station app" the real DS drives the robot. The bar then says so
+// and shows what the robot reports (mode, enabled, station, FMS, match time); Mode, Enable / Disable, the Match
+// inputs, the joystick ports, Pause / Step and Record are off, with tooltips saying why, and the page sends no
+// joystick inputs or DS commands.
+//
 // Keys on the Drive tab: Enter enables (unless a button has focus: Enter presses it), Space always disables (even on a
 // focused button); neither while typing in a text box or while a dialog is open.
 // While the device check (code.js) has devices that don't match the model, a line under the banner says how many,
@@ -37,6 +43,16 @@ const MODES = ["teleop", "auto", "test"];
 const RTF_WINDOW = 1000;          // ms of wall time the real-time factor is measured over
 const MODE_SETTLE = 1000;         // ms a mode sent from this page outranks an older chosen_mode from the server
 const MATCH_CONTROLS = { station: "#drive-station", fms: "#drive-fms", timer: "#drive-timer", game_data: "#drive-game-data" };
+// What is off while the FRC Driver Station app drives, and why (the tooltips); the server refuses these commands too.
+const REAL_DS_WHY = "The FRC Driver Station app is driving: use it instead";
+const REAL_DS_NO_PAUSE = "The FRC Driver Station runs the robot in real time, so it can't be paused";
+const REAL_DS_NO_RECORD = "Recording doesn't work while the FRC Driver Station app is driving";
+const REAL_DS_OFF = new Set(["mode", "enable", "disable", "match", "pause", "resume", "step", "record_start"]);
+const REAL_DS_MODE_TEXT = { teleop: "Teleop enabled", auto: "Auto enabled", test: "Test enabled", disabled: "Disabled" };
+const KEYS_HINT = "Enter enables, Space disables.";
+const REAL_DS_KEYS_HINT = "Enable in the Driver Station app. There, Enter disables and Space is the E-stop.";
+const MATCH_HINT = "Game data reaches the robot when it is enabled in Teleop.";
+const REAL_DS_MATCH_HINT = "The Driver Station app sets the match. Its game data isn't shown here.";
 const STATE_TEXT = {
   idle: "Not started", starting: "Starting the robot program…", running: "Running", paused: "Paused",
   stopped: "Stopped", error: "Error",
@@ -59,6 +75,8 @@ const drive = {
   startError: null,     // why the last Start press failed (busy, bad speed, no answer); Start stays usable
   notBuilt: false,      // it failed because the Java code hasn't built (start/not_built): the banner links Build now
   posting: false,       // a Start request is on its way
+  startTaken: false,    // the server took a Start, and no state message since has said it is starting (or ended)
+  starts: 0,            // Starts the server has taken (so a late answer about an earlier one is ignored)
   messages: 0,          // state messages received from the stream
   picks: new Array(SIGNALS).fill(""),
   sentPicks: "[]",
@@ -69,6 +87,8 @@ const drive = {
   field: null,          // the poke panel's MiniField
   movers: null,         // {root, objects: [[name, mover index]]} from the live view
   saving: false,        // a save request is on its way
+  realDsDefault: false, // the config's [driver_station] real (/api/live/info): where the Driver Station choice starts
+  dsTouched: false,     // the student picked the Driver Station choice themselves
 };
 
 const isLive = (s) => !!s && (s.state === "running" || s.state === "paused");
@@ -80,7 +100,24 @@ function send(obj) {
 
 function cmd(name, fields = {}) {
   if (!isLive(drive.state)) return false;
+  if (realDs(drive.state) && REAL_DS_OFF.has(name)) return false;   // the FRC Driver Station app has these
   return send({ type: "cmd", cmd: name, ...fields });
+}
+
+// The FRC Driver Station app drives the session that is starting, running or paused: the server says so once the
+// session runs (state.real_ds); while Start is on its way and while it starts, the choice it was started with (the
+// server refuses inputs from the moment it takes the Start).
+function realDs(s) {
+  if (isLive(s)) return !!s.real_ds;
+  return (isActive(s) || drive.posting || drive.startTaken) && $("#drive-ds-source").value === "real";
+}
+
+// A control's tooltip: `why` while it is off for a reason, else its own title from the page.
+function setWhy(el, why) {
+  if (el.dataset.title === undefined) el.dataset.title = el.getAttribute("title") || "";
+  const t = why || el.dataset.title;
+  if (t) el.title = t;
+  else el.removeAttribute("title");
 }
 
 // The mini-field's pokes also go while the robot program starts: the session applies them once it runs.
@@ -111,7 +148,7 @@ function pollInputs() {
 
 function inputTick() {
   const ports = pollInputs();
-  if (drive.connected) send({ type: "input", ports });
+  if (drive.connected && !realDs(drive.state)) send({ type: "input", ports });
   if (currentTab() === "drive") renderPortBars(ports);
 }
 
@@ -149,7 +186,7 @@ const sourceValue = (src) => (src === undefined || src === null ? "" : String(sr
 function assignPort(port, value) {
   const src = value === "" ? null : value === KEYBOARD ? KEYBOARD : Number(value);
   drive.router.assign(port, src);
-  if (src === null && drive.connected) {
+  if (src === null && drive.connected && !realDs(drive.state)) {
     send({ type: "input", ports: { [port]: zeroInputs() } });   // the robot sees the stick let go at once
   }
   renderPortBars({});
@@ -288,6 +325,8 @@ function onState(s) {
   if (s.source !== undefined && s.source !== "live") return;
   const prev = drive.state;
   drive.state = s;
+  if (s.state !== "idle" && s.state !== "stopped") drive.startTaken = false;
+  else if (drive.startTaken) checkStartEnded();
   if (isLive(s) && !isLive(prev)) sessionBegan(prev);
   if (!isLive(s)) drive.rtf = [];
   else if (!s.paused) {
@@ -334,6 +373,18 @@ function renderMatch(s) {
   if (s.stations && station.options.length !== s.stations.length) {
     station.replaceChildren(...s.stations.map((st) => h("option", { value: st }, st)));
   }
+  const real = realDs(s);
+  $("#drive-match-hint").textContent = real ? REAL_DS_MATCH_HINT : MATCH_HINT;
+  for (const id of Object.values(MATCH_CONTROLS)) setWhy($(id), real ? REAL_DS_WHY : "");
+  if (real) {   // read-only: what the robot reports from the real DS (it doesn't report the game data)
+    for (const id of Object.values(MATCH_CONTROLS)) $(id).disabled = true;
+    if (!m) return;
+    station.value = m.station || "";
+    $("#drive-fms").checked = !!m.fms;
+    $("#drive-timer").checked = typeof m.match_time === "number" && m.match_time >= 0;
+    $("#drive-game-data").value = "";
+    return;
+  }
   for (const [key, id] of Object.entries(MATCH_CONTROLS)) {
     const el = $(id);
     el.disabled = !m;
@@ -357,23 +408,69 @@ function rtfText(s) {
   return dw > 0 ? `${(dt / dw).toFixed(2)}× real time` : "…";
 }
 
+function renderSource(s) {
+  const sel = $("#drive-ds-source");
+  if (isLive(s)) sel.value = s.real_ds ? "real" : "page";   // a reloaded page shows the session's choice
+  else if (!isActive(s) && !drive.dsTouched) sel.value = drive.realDsDefault ? "real" : "page";
+  sel.disabled = isActive(s) || drive.posting;
+  setWhy(sel, isActive(s) ? "Fixed while the robot runs: to change it, stop and start again" : "");
+}
+
+function realDsText(m) {
+  if (!m || !m.connected) return "Waiting for the Driver Station";
+  const text = REAL_DS_MODE_TEXT[m.mode] || m.mode;
+  return m.mode === "disabled" && m.estop ? `${text} (E-stopped)` : text;
+}
+
+// The bar's read-only line while the FRC Driver Station app drives: what the robot reports it is doing.
+function renderRealDs(s, real) {
+  const box = $("#drive-real-ds");
+  box.hidden = !real;
+  $("#drive-keys-hint").textContent = real ? REAL_DS_KEYS_HINT : KEYS_HINT;
+  if (!real) return;
+  const m = isLive(s) ? s.match : null;
+  const st = $("#drive-real-ds-state");
+  st.textContent = realDsText(m);
+  st.className = `mode-chip ds-real-state mode-${m && m.connected && m.mode !== "disabled" ? m.mode : "disabled"}`;
+  const parts = [];
+  if (m && m.connected) {
+    if (m.station && m.station !== "unknown") parts.push(`Station ${m.station}`);
+    if (m.fms) parts.push("FMS attached");
+    if (typeof m.match_time === "number" && m.match_time >= 0) parts.push(`match time ${m.match_time.toFixed(1)} s`);
+  }
+  $("#drive-real-ds-match").textContent = parts.join(" · ");
+  $("#drive-real-ds-match").hidden = !parts.length;
+}
+
 function render() {
   const s = drive.state || { state: "idle" };
   const live = isLive(s), active = isActive(s);
+  renderSource(s);
+  const real = realDs(s);
   $("#drive-start").disabled = active || drive.posting || !!drive.startProblem;
   $("#drive-stop").disabled = !active;
   for (const m of MODES) {
     const b = document.querySelector(`#drive-ds [data-key="mode-${m}"]`);
-    b.setAttribute("aria-pressed", String(drive.mode === m));
+    b.setAttribute("aria-pressed", String(real ? live && s.mode === m : drive.mode === m));
+    b.disabled = real;
+    setWhy(b, real ? REAL_DS_WHY : "");
   }
-  $("#drive-enable").disabled = !live || s.enabled;
-  $("#drive-disable").disabled = !live;
+  $("#drive-enable").disabled = !live || s.enabled || real;
+  $("#drive-disable").disabled = !live || real;
+  for (const id of ["#drive-enable", "#drive-disable"]) setWhy($(id), real ? REAL_DS_WHY : "");
   $("#drive-enable").classList.toggle("on", live && !!s.enabled);
+  for (let p = 0; p < PORTS; p++) {
+    const sel = $(`#drive-port-${p}`);
+    sel.disabled = real;
+    setWhy(sel, real ? REAL_DS_WHY : "");
+  }
+  renderRealDs(s, real);
   const pause = $("#drive-pause");
-  pause.disabled = !live;
+  pause.disabled = !live || real;
   pause.textContent = live && s.paused ? "Resume" : "Pause";
   pause.setAttribute("aria-pressed", String(live && !!s.paused));
-  $("#drive-step").disabled = !live;
+  $("#drive-step").disabled = !live || real;
+  for (const id of ["#drive-pause", "#drive-step"]) setWhy($(id), real ? REAL_DS_NO_PAUSE : "");
   const speed = $("#drive-speed");
   if (live && document.activeElement !== speed) {
     const want = s.speed === null ? "max" : String(s.speed);
@@ -387,6 +484,8 @@ function render() {
   for (const id of ["#push-go", "#drive-reset", "#drive-record"]) $(id).disabled = !live;
   const rec = live && !!s.recording;
   const recBtn = $("#drive-record");
+  if (real) recBtn.disabled = true;
+  setWhy(recBtn, real ? REAL_DS_NO_RECORD : "");
   recBtn.setAttribute("aria-pressed", String(rec));
   recBtn.classList.toggle("recording", rec);
   recBtn.textContent = rec ? `● REC · ${pluralPokes(s.pokes || 0)}` : "● Record";
@@ -410,12 +509,12 @@ function renderHud(s) {
     : h("span", { class: "hud-badge hud-disabled", text: "Disabled" });
   const items = [
     h("span", { class: "hud-item", text: `t ${fmtT(live ? s.t : null)}` }),
-    h("span", { class: `hud-item mode-chip hud-mode mode-${live ? s.mode : "disabled"}`, text: mode }),
+    h("span", { class: `hud-item mode-chip hud-mode mode-${live && MODES.includes(s.mode) ? s.mode : "disabled"}`, text: mode }),
     badge,
     h("span", { class: "hud-item", text: rtfText(s) }),
   ];
   const match = live && s.readouts && s.readouts.match;
-  if (match && match.timer && match.match_time >= 0) items.splice(3, 0, h("span", { class: "hud-item", text: `match ${match.match_time.toFixed(1)} s` }));
+  if (match && (match.timer || s.real_ds) && match.match_time >= 0) items.splice(3, 0, h("span", { class: "hud-item", text: `match ${match.match_time.toFixed(1)} s` }));
   if (drive.started && !drive.connected) items.push(h("span", { class: "hud-item hud-bad", text: "reconnecting…" }));
   $("#drive-hud").replaceChildren(...items);
 }
@@ -472,8 +571,11 @@ async function startSession(discard = false) {
     await loadView();
     const sp = $("#drive-speed").value;
     const { status, data } = await api("POST", "/api/live/start",
-      { speed: sp === "max" ? "max" : Number(sp), discard_recording: discard });
+      { speed: sp === "max" ? "max" : Number(sp), discard_recording: discard, real_ds: $("#drive-ds-source").value === "real" });
     if (status === 200 && data.ok) {
+      drive.startTaken = true;
+      drive.starts++;
+      checkStartEnded();
       drive.consoleSeq = null;
       for (const p of drive.plots) p.plot.clear();
       return;
@@ -498,6 +600,18 @@ async function startSession(discard = false) {
   if (await pickStart()) startSession(discard);
 }
 
+// After a taken Start, the session may start and end before the page hears of it (the stream sends only the latest
+// state, so "starting" can be skipped): ask the server. It marks a Start "starting" before it answers, so an idle or
+// stopped session now means it has ended, and the idle page shouldn't look like a real-DS session any more.
+async function checkStartEnded() {
+  const start = drive.starts;
+  const { status, data } = await api("GET", "/api/live/info");
+  if (status === 200 && drive.startTaken && drive.starts === start && ["idle", "stopped"].includes(data.status.state)) {
+    drive.startTaken = false;
+    render();
+  }
+}
+
 // The robot code panel's Drive button: the Drive tab, and a start when nothing is running yet.
 export async function driveFromPanel() {
   setTab("drive");
@@ -516,6 +630,7 @@ async function refreshInfo() {
   const { status, data } = await api("GET", "/api/live/info");
   if (status !== 200) return null;
   drive.startProblem = data.can_start ? null : data.start_problem || "this robot can't be driven";
+  drive.realDsDefault = !!data.real_ds_default;
   // a state message that came meanwhile is newer than this status; else keep the last readouts until the next one
   if (drive.messages === seen) onState({ ...(drive.state || {}), ...data.status });
   else render();
@@ -679,6 +794,11 @@ export function initDrive() {
   window.addEventListener("gamepaddisconnected", refreshPadOptions);
   setInterval(refreshPadOptions, 1000);   // some browsers report gamepads only by polling
 
+  $("#drive-ds-source").addEventListener("change", (e) => {
+    drive.dsTouched = true;
+    e.target.dataset.touched = "1";   // the robot code panel's Start and check devices sends the pick too
+    render();
+  });
   $("#drive-start").addEventListener("click", () => startSession());
   $("#drive-restart").addEventListener("click", () => startSession());
   $("#discard-form").addEventListener("submit", (e) => {

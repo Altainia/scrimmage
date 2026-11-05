@@ -82,6 +82,7 @@ class Config:
     step_timeout: float = 10.0
     nt: bool = True           # [telemetry] nt = false: the robot program serves no NetworkTables, so don't wait for it
     match: MatchSettings = field(default_factory=MatchSettings)   # what a session sends as the Driver Station
+    real_ds: bool = False     # [driver_station] real = true: the FRC Driver Station app drives the robot by default
 
     @property
     def dir(self) -> Path:
@@ -169,9 +170,18 @@ def load_config_text(text: str, path: str | Path) -> Config:
     except ValueError as e:
         raise ConfigError(str(e)) from None
 
+    ds = _table(raw, "driver_station")
+    for key in ds:
+        if key != "real":
+            raise ConfigError(f"[driver_station] has no key {key!r}; the only key is real")
+    real_ds = ds.get("real", False)
+    if not isinstance(real_ds, bool):
+        raise ConfigError(f"[driver_station] real must be true or false (true: the FRC Driver Station app drives the "
+                          f"robot), not {real_ds!r}")
+
     sess = _table(raw, "session")
     return Config(path, raw, step, program, odometry or None, nt_port,
-                  _number(sess, "step_timeout", 10.0, "session"), nt, match)
+                  _number(sess, "step_timeout", 10.0, "session"), nt, match, real_ds)
 
 
 # Keys a binding entry reads without a default, and the entries that read them (for a KeyError's message).

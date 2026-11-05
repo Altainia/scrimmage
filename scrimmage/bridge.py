@@ -17,7 +17,7 @@ from websockets.protocol import State as WsState
 from .bindings import CTRE_DEVICES, REV_DEVICES, resolve_device_key
 from .config import DEFAULT_ODOMETRY
 from . import foreign_writes as fwn
-from .driverstation import DriverStationState
+from .driverstation import DriverStationState, real_ds_report
 from .lockstep import DEFAULT_STEP, LOCKSTEP_DEVICE, LockstepDriver, physics_steps_per_step
 from .nt_reader import NetworkTablesLink, NTUnavailable
 from .pneumatics.runtime import PH_TYPE
@@ -37,6 +37,8 @@ VIEWER_PERIOD = 1 / 60   # wall-clock seconds between viewer refreshes
 DETECT_WINDOW = 2.0      # wall seconds after connecting to wait for the lockstep extension
 PHOENIX_MARK = " (v6)["  # Phoenix 6 SimDevice names: "Talon FX (v6)[1]", "CANcoder (v6)[2]", ...
 REALTIME_REASON = "Phoenix 6 simulation runs on the wall clock, so this robot runs in real time (not lockstep)"
+REAL_DS_REASON = ("the real Driver Station talks to the robot program on the wall clock, so this robot runs in real "
+                  "time (not lockstep)")
 PHOENIX_BOOT = 1.0       # simulated seconds a Phoenix device may take to boot and re-assert its initial values
 MISSING_AFTER = 2.0      # simulated seconds after connecting before a configured Phoenix device counts as missing
 # "<Kind> (v6)[<id>]" anywhere in a device name, not followed by a sub-device ("/Rotor Sensor")
@@ -277,8 +279,10 @@ class Bridge:
     def __init__(self, world: World, host: str = "localhost", port: int = 3300, *,
                  log_path: Path | None = None, viewer: bool = False, nt: bool = True,
                  speed: float | None = 1.0, step: float = DEFAULT_STEP, held: bool = False,
-                 odometry_topic: str | None = DEFAULT_ODOMETRY, nt_port: int = 5810, sim_mode: str | None = None):
+                 odometry_topic: str | None = DEFAULT_ODOMETRY, nt_port: int = 5810, sim_mode: str | None = None,
+                 real_ds: bool = False):
         self.world = world
+        self.real_ds = real_ds           # the FRC Driver Station app drives the robot: lockstep is freed on connect
         self.sim_mode = sim_mode         # the robot program's [robot_program] sim_mode, when scrimmage launched it
         self.speed = speed               # real-time factor; None = as fast as possible (lockstep only)
         self.step = step
@@ -306,12 +310,13 @@ class Bridge:
         self.hal = HalState()
         self.cache = OutboundCache()
         self.phoenix = False             # a Phoenix 6 device appeared on the current connection
-        self.phoenix_released = False    # ... so scrimmage freed the robot's clock: this connection runs in real time
+        self.clock_freed = False         # Phoenix 6 or the real DS made scrimmage free the robot's clock: this
+                                         # connection runs in real time
         self.robot_behind = 0.0          # ... and the longest the robot program has been behind real time since (s)
         self.physics_skips = 0           # times real-time physics fell MAX_LAG behind and skipped ahead (connection)
         self.physics_skipped = 0.0       # ... and the simulated time it skipped (s)
         self._phoenix_seen_event = asyncio.Event()  # wakes a held driver to release the clock
-        self._phoenix_released_event = asyncio.Event()  # wakes a held driver whose in-flight step released it
+        self._clock_freed_event = asyncio.Event()  # wakes a held driver whose in-flight step freed the clock
         self._fast_phoenix_warned = False
         self.foreign_writes: dict[str, dict] = {}  # "type/device key" -> first sighting and count
         self._watched = phoenix_inputs(world)
@@ -360,11 +365,11 @@ class Bridge:
         self.disconnected.clear()
         self.hal = HalState()
         self.sim_values_seen: set[tuple[str, str, str]] = set()  # distinct SimDevice values heard of (connection)
-        self.phoenix = self.phoenix_released = False
+        self.phoenix = self.clock_freed = False
         self._initial = {}
         self._heard = set()
         self._phoenix_seen_event.clear()
-        self._phoenix_released_event.clear()
+        self._clock_freed_event.clear()
         self._scrimmage_present.clear()
         self._restart_clock()
         if self._logf:
@@ -410,15 +415,23 @@ class Bridge:
             self.disconnected.set()
             self.lockstep_changed.set()  # wake a driver waiting on this connection
 
-    # ---------------------------------------------------------------- Phoenix 6: real time, foreign writes
+    # ---------------------------------------------------------------- Phoenix 6 and the real DS: real time
+    @property
+    def frees_clock(self) -> bool:
+        """The robot's clock must run free on this connection: Phoenix 6 devices are present, or the real Driver
+        Station drives the robot. Both follow the wall clock."""
+        return self.phoenix or self.real_ds
+
     @property
     def effective_speed(self) -> float | None:
-        """The speed the run goes at: the configured one, or 1x (real time) once Phoenix 6 devices are present."""
-        return 1.0 if self.phoenix else self.speed
+        """The speed the run goes at: the configured one, or 1x (real time) with Phoenix 6 devices or the real DS."""
+        return 1.0 if self.frees_clock else self.speed
 
     @property
     def realtime_reason(self) -> str | None:
-        return REALTIME_REASON if self.phoenix else None
+        if self.phoenix:
+            return REALTIME_REASON
+        return REAL_DS_REASON if self.real_ds else None
 
     def phoenix_names(self) -> list[str]:
         """The Phoenix 6 devices the robot program has created ("Talon FX (v6)[1]", ...), sorted."""
@@ -435,18 +448,19 @@ class Bridge:
         self.phoenix = True
         self._phoenix_seen_event.set()
 
-    async def release_for_phoenix(self) -> None:
-        """Phoenix 6 simulation follows the wall clock, so free the robot's clock (>engage false) and run physics in
-        real time for the rest of this connection. Callers make sure no lockstep step is in flight."""
-        if self.phoenix_released:
+    async def release_lockstep(self) -> None:
+        """Phoenix 6 simulation and the real Driver Station follow the wall clock (frees_clock), so free the robot's
+        clock (>engage false) and run physics in real time for the rest of this connection. Callers make sure no
+        lockstep step is in flight."""
+        if self.clock_freed:
             return
         self._mark_released()
-        self._phoenix_released_event.set()
+        self._clock_freed_event.set()
         await self._send([frame(*LOCKSTEP_DEVICE, {">engage": False})])
         if not self.held and self.speed != 1.0:
-            log.warning("%s", REALTIME_REASON)
+            log.warning("%s", self.realtime_reason)
         else:
-            log.info("%s", REALTIME_REASON)
+            log.info("%s", self.realtime_reason)
         self._set_mode("realtime")
 
     def _scrimmage_seen(self, dev: DeviceKey) -> None:
@@ -526,13 +540,13 @@ class Bridge:
     def _mark_released(self) -> None:
         """The robot's clock runs free from here: count how far behind it falls from its next frame on (the hold
         before this isn't a stall)."""
-        self.phoenix_released = True
+        self.clock_freed = True
         self.cache.track_lag()
 
     def _behind(self, seconds: float) -> None:
         """The robot program was `seconds` behind (silent that long, or relaying a value that long superseded): kept
         while it runs in real time, where a robot that falls behind runs differently from one that keeps up."""
-        if self.phoenix_released:
+        if self.clock_freed:
             self.robot_behind = max(self.robot_behind, seconds)
 
     def settle_foreign_writes(self) -> None:
@@ -566,8 +580,8 @@ class Bridge:
 
     def _lockstep_released(self) -> None:
         """The extension let the robot's clock run free on its own (its 2 s watchdog): scrimmage stalled. Not when
-        scrimmage freed it on purpose for Phoenix 6 devices."""
-        if self.phoenix:
+        scrimmage freed it on purpose (Phoenix 6 devices, the real DS)."""
+        if self.frees_clock:
             return
         if self.held and self.driver is not None and not self.done.is_set() and self.lockstep_released_at is None:
             self.lockstep_released_at = self.world.time
@@ -607,7 +621,7 @@ class Bridge:
         self.world.reset()
         self.lockstep_released_at = None
         self.cache.reset()
-        if self.phoenix_released:        # still in real time (attach mode's reset): keep counting from here
+        if self.clock_freed:             # still in real time (attach mode's reset): keep counting from here
             self.cache.track_lag()
         self.foreign_writes = {}
         self._suspects = {}
@@ -718,41 +732,42 @@ class Bridge:
         if now - t.refresh >= FULL_REFRESH:
             t.refresh = now
             self.cache.clear()
-        mode = self.ds.mode if self.ds.active else "external"
         if self.ds.active and (self.ds.changed or now - t.ds >= DS_PERIOD):
             t.ds = now
             self.ds.changed = False
             await self._send(self.ds.frames(now))
         if now - t.log >= LOG_PERIOD:
             t.log = now
+            mode = real_ds_report(self.hal)["mode"] if self.real_ds else self.ds.mode if self.ds.active else "external"
             self._log_row(now, mode)
         self._sync_viewer()
 
     # ---------------------------------------------------------------- drivers
     async def _run_realtime(self, conn: int) -> str:
         """Step physics to keep pace with the wall clock. Returns "lockstep" as soon as the robot program
-        shows the lockstep extension (unless Phoenix 6 devices keep it in real time), "done" if it must stop, or
-        "disconnected"."""
+        shows the lockstep extension (unless Phoenix 6 devices or the real DS keep it in real time), "done" if it must
+        stop, or "disconnected"."""
         w = self.world
         wall0, sim0 = time.monotonic(), w.time
         last_sensor = -math.inf
         decided = False
         while self._connected(conn):
-            if LOCKSTEP_DEVICE in self.hal.devices and not self.phoenix_released:
-                if not self.phoenix:
+            if LOCKSTEP_DEVICE in self.hal.devices and not self.clock_freed:
+                if not self.frees_clock:
                     return "lockstep"
-                await self.release_for_phoenix()   # Phoenix 6 devices appeared before lockstep engaged
-            if self.phoenix_released:
+                await self.release_lockstep()   # Phoenix 6 devices appeared before lockstep engaged, or the real DS
+            if self.clock_freed:
                 decided = True                     # released on purpose: real time whatever the speed
             if not decided and time.monotonic() - wall0 > DETECT_WINDOW:
                 decided = True
-                if self.speed != 1.0 and not self.held:
+                if self.speed != 1.0 and not self.held and not self.real_ds:
                     log.error("--speed %s needs the scrimmage_lockstep extension, but the robot program didn't "
                               "load it (RobotPy: add --scrimmage-lockstep)", "max" if self.speed is None else self.speed)
                     self.exit_code = 2
                     self.done.set()
                     return "done"
-                log.info("lockstep extension not loaded; running in real time")
+                log.info("lockstep extension not loaded; %s", REAL_DS_REASON if self.real_ds
+                         else "running in real time")
                 self._set_mode("realtime")
             target = time.monotonic() - wall0
             lag = target - (w.time - sim0)

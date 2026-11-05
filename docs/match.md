@@ -192,8 +192,10 @@ keeps that station (`get_state` shows it).
 ## `scrimmage serve` and a real Driver Station
 
 `scrimmage serve` ignores `[match]`: there the WPILib simulation GUI is the Driver Station, so set the alliance,
-game data and match time in its window. A real NI Driver Station (coming next) will ignore `[match]` too, for the same
-reason: it is the Driver Station then.
+game data and match time in its window. A session the FRC Driver Station app drives (`[driver_station] real = true`,
+or the Drive tab's **The FRC Driver Station app**) ignores `[match]` too, for the same reason: the app is the Driver
+Station then. It sends the station, FMS, game data and match time from its own Practice timer. See
+[driving with the FRC Driver Station app](driver-station.md).
 
 ## Errors
 

@@ -24,6 +24,7 @@ from . import java_tools, teamfolders
 JAVA_COMMAND = ["./gradlew", "-I", "{scrimmage_java}/scrimmage.init.gradle", "simulateJava"]
 ROBOTPY_ARGS = ["-m", "robotpy", "sim", "--nogui", "--ws-client", "--scrimmage-lockstep"]
 DETAIL_LINES = 20
+DS_SOCKET_ARG = "--ds-socket"   # RobotPy sim's flag for WPILib's DS socket extension (the real Driver Station)
 LOCKSTEP_DIR = Path(__file__).resolve().parent.parent / "lockstep"
 
 # vendordep "name" -> the name teams use. Anything else is shown as written; WPILib's own and scrimmage's are hidden.
@@ -124,6 +125,18 @@ def program_table(info: ProjectInfo) -> dict:
     else:
         raise ValueError(info.summary)
     return {"command": command, "cwd": teamfolders.relativize(info.folder)}
+
+
+def with_ds_socket(command: list[str]) -> list[str]:
+    """A RobotPy command (`... -m robotpy ... sim ...`, as ROBOTPY_ARGS) with --ds-socket after `sim`, so the robot
+    program listens for the real Driver Station; any other command, or one that has it already, unchanged."""
+    if DS_SOCKET_ARG in command:
+        return list(command)
+    for i in range(len(command) - 1):
+        if command[i] == "-m" and command[i + 1] == "robotpy" and "sim" in command[i + 2:]:
+            at = command.index("sim", i + 2) + 1
+            return [*command[:at], DS_SOCKET_ARG, *command[at:]]
+    return list(command)
 
 
 def _lockstep_state(python: Path | None) -> tuple[str | None, bool]:

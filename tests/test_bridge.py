@@ -179,6 +179,22 @@ def test_speed_other_than_real_time_needs_lockstep(monkeypatch, caplog):
     asyncio.run(main())
 
 
+def test_real_ds_runs_real_time_whatever_the_speed_without_the_extension(monkeypatch, caplog):
+    monkeypatch.setattr(bridge_mod, "DETECT_WINDOW", 0.2)
+    caplog.set_level(logging.INFO, logger="scrimmage")
+
+    async def main():
+        port = next_port()
+        bridge = make_bridge(port, speed=None, real_ds=True)
+        async with running(bridge):
+            async with FakeRobot(port):
+                await asyncio.sleep(0.5)
+                assert not bridge.done.is_set() and bridge.exit_code != 2
+        assert "needs the scrimmage_lockstep extension" not in caplog.text
+        assert bridge_mod.REAL_DS_REASON in caplog.text
+    asyncio.run(main())
+
+
 def test_lockstep_max_speed_beats_real_time():
     async def main():
         port = next_port()
@@ -516,7 +532,7 @@ def test_phoenix_appearing_during_a_held_step_starts_real_time_physics_at_once()
                 await asyncio.sleep(0.05)                # the hold woke, saw the step, and waits again
                 driver._stepping = False
                 t0, w0 = bridge.world.time, time.monotonic()
-                assert await driver._release_for_phoenix()   # what the step does as it ends
+                assert await driver._release()   # what the step does as it ends
                 await wait_until(lambda: bridge.world.time > t0)
                 return time.monotonic() - w0
     waited = asyncio.run(main())

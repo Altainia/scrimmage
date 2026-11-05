@@ -18,8 +18,8 @@ from .. import robot_process
 from ..bridge import MISSING_AFTER
 from ..checks import consume_peaks, resolve_signal
 from ..devicecheck import check_devices
-from ..driverstation import MATCH_KEYS, STATIONS, MatchSettings, check_game_data
-from ..session import Session
+from ..driverstation import MATCH_KEYS, REAL_DS_DRIVING, REAL_DS_WAITING, STATIONS, MatchSettings, check_game_data
+from ..session import REAL_DS_INPUTS, Session
 from ..tracks import PortInputs
 from .recorder import DriveRecorder, RecordingError
 from .simlock import SimLock
@@ -38,6 +38,12 @@ SETTLED_AFTER = MISSING_AFTER + 1.0   # robot seconds: every device the code mak
 DEVICES_WAIT = 25.0                  # s a devices long-poll waits for a change
 SIMPLE = ("enable", "disable", "pause", "resume", "reset", "record_start", "record_stop")
 ENDED = ("stopped", "error")
+# what a session the FRC Driver Station app drives refuses (D6, D7): the DS's own controls, and what needs the clock held
+REAL_DS_NO_PAUSE = f"this session can't be paused or stepped: {REAL_DS_DRIVING}, in real time"
+REAL_DS_NO_RECORD = f"this session can't be recorded: {REAL_DS_DRIVING}"
+REAL_DS_REFUSES = {"mode": REAL_DS_INPUTS, "enable": REAL_DS_INPUTS, "disable": REAL_DS_INPUTS,
+                   "match": REAL_DS_INPUTS, "pause": REAL_DS_NO_PAUSE, "resume": REAL_DS_NO_PAUSE,
+                   "step": REAL_DS_NO_PAUSE, "record_start": REAL_DS_NO_RECORD}
 
 
 class LiveError(ValueError):
@@ -115,6 +121,10 @@ class LiveManager:
         self._t, self._mode, self._enabled, self._paused = 0.0, "teleop", False, False
         self._speed: float | None = 1.0
         self._speed_locked: str | None = None
+        # the FRC Driver Station app drives (Session.real_ds): None from start() until the session has read its config
+        # (start()'s real_ds, or the config's [driver_station] real); the last session's stays after it ends
+        self._real_ds: bool | None = False
+        self._ds_report: dict | None = None   # the real DS's latest real_ds_report (the session's state() match)
         self._recorder: DriveRecorder | None = None
         self._start_pose: tuple[float, float, float] | None = None
         # the match settings (MATCH_KEYS) and the game data box, from the session's start (None until then); the box
@@ -153,10 +163,11 @@ class LiveManager:
     # -- public ---------------------------------------------------------------------------------------------
 
     def start(self, config_path: Path | str, speed: float | None = 1.0, discard_recording: bool = False,
-              *, restarting: bool = False) -> None:
+              *, restarting: bool = False, real_ds: bool | None = None) -> None:
         """Start a live session on `config_path`'s robot program; raises SimBusy when a scenario run holds the
         simulation, LiveError when a session is already live (or `speed` is bad), and UnsavedRecording (a LiveError)
-        when the last session left a recording that was never saved, unless `discard_recording`."""
+        when the last session left a recording that was never saved, unless `discard_recording`. `real_ds`: the FRC
+        Driver Station app drives the robot (None: the config's [driver_station] real); fixed for the session."""
         if speed is not None:
             speed = _number("speed", speed)
             if speed <= 0:
@@ -179,6 +190,7 @@ class LiveManager:
             self._state, self._error, self._config_path, self._step = "starting", None, config_path, None
             self._t, self._mode, self._enabled, self._paused = 0.0, "teleop", False, False
             self._speed, self._speed_locked = speed, None
+            self._real_ds, self._ds_report = (None if real_ds is None else bool(real_ds)), None
             # restart() keeps the match settings, the box and the robot's game data: a restart is the same match,
             # as restart_robot keeps the game data
             kept = (dict(self._match), self._robot_game_data) if restarting and self._match is not None else None
@@ -189,7 +201,7 @@ class LiveManager:
             self._devices_bump()
             self._reset_loop_state()
             self._thread = threading.Thread(target=self._work, name="live", daemon=True,
-                                            args=(config_path, speed, self._stopping, kept))
+                                            args=(config_path, speed, self._stopping, kept, self._real_ds))
             self._thread.start()
         self._publish_state(force=True)
 
@@ -227,14 +239,22 @@ class LiveManager:
     def status(self) -> dict:
         with self._lock:
             rec = self._recorder
-            return {"state": self._state, "error": self._error,
-                    "config": str(self._config_path) if self._config_path is not None else None,
-                    "t": round(self._t, 4), "mode": self._effective_mode(),
-                    "chosen_mode": self._mode, "enabled": self._enabled,
-                    "match": dict(self._match) if self._match is not None else None, "stations": list(STATIONS),
-                    "paused": self._paused, "speed": self._speed, "speed_locked": self._speed_locked,
-                    "recording": rec is not None and rec.recording, "pokes": rec.pokes if rec is not None else 0,
-                    "can_save": rec is not None and not rec.empty and self._state not in ("idle", "starting")}
+            out = {"state": self._state, "error": self._error,
+                   "config": str(self._config_path) if self._config_path is not None else None,
+                   "t": round(self._t, 4), "mode": self._effective_mode(),
+                   "chosen_mode": self._mode, "enabled": self._enabled,
+                   "match": dict(self._match) if self._match is not None else None, "stations": list(STATIONS),
+                   "paused": self._paused, "speed": self._speed, "speed_locked": self._speed_locked,
+                   "recording": rec is not None and rec.recording, "pokes": rec.pokes if rec is not None else 0,
+                   "can_save": rec is not None and not rec.empty and self._state not in ("idle", "starting"),
+                   "real_ds": self._real_ds is True}
+            if self._real_ds:   # what the real DS is doing, per the robot program's own reports
+                report = self._ds_report
+                mode = report["mode"] if report is not None else "waiting"
+                out |= {"mode": mode, "enabled": mode in MODES, "match": dict(report) if report is not None else None,
+                        "driver_station": "connected" if report is not None and report["connected"]
+                        else REAL_DS_WAITING}
+            return out
 
     def devices(self, since: int | None = None, timeout: float = DEVICES_WAIT) -> dict:
         """The device check of the session (devicecheck.check_devices as dicts), updated while it runs; the last
@@ -257,7 +277,7 @@ class LiveManager:
             rec = self._recorder
             if rec is not None and not rec.empty and not rec.saved:
                 raise UnsavedRecording(UNSAVED)
-            path, speed = self._config_path, self._speed
+            path, speed, real_ds = self._config_path, self._speed, self._real_ds
             self._restart, self._restart_problem = "restarting", None
             self._devices_bump()
 
@@ -273,7 +293,7 @@ class LiveManager:
                 failed("the robot didn't stop within 30 s, so it wasn't started again")
                 return
             try:
-                self.start(path, speed, restarting=True)
+                self.start(path, speed, restarting=True, real_ds=real_ds)
             except Exception as e:  # noqa: BLE001 - a scenario run took the simulation, the editor is closing...
                 log.warning("live: restarting the session failed: %s", e)
                 failed(str(e) or type(e).__name__)
@@ -285,6 +305,8 @@ class LiveManager:
         with self._lock:
             if not self._live:
                 raise LiveError("no drive session is live")
+            if self._real_ds and cmd["cmd"] in REAL_DS_REFUSES:
+                raise LiveError(REAL_DS_REFUSES[cmd["cmd"]])
             self._commands.append(cmd)
         self._wake_loop()
 
@@ -302,6 +324,8 @@ class LiveManager:
             parsed[port] = _port_inputs(port, data)
         now = time.monotonic()
         with self._lock:
+            if self._live and self._real_ds:
+                raise LiveError(REAL_DS_INPUTS)
             for port, pi in parsed.items():
                 self._inputs[port] = pi
                 self._input_wall[port] = now
@@ -313,7 +337,7 @@ class LiveManager:
             for port, pi in self._inputs.items():
                 self._inputs[port] = _neutral(pi)
                 self._fresh.add(port)
-            if not self._live:
+            if not self._live or self._real_ds:   # the real DS drives on, as it does with no page open
                 return
             self._commands.extend([{"cmd": "disable"}, {"cmd": "pause"}])
         self._wake_loop()
@@ -398,10 +422,11 @@ class LiveManager:
 
     # -- worker ---------------------------------------------------------------------------------------------
 
-    def _work(self, config_path: Path, speed, stopping: threading.Event, kept: tuple | None = None) -> None:
+    def _work(self, config_path: Path, speed, stopping: threading.Event, kept: tuple | None = None,
+              real_ds: bool | None = False) -> None:
         error = None
         try:
-            asyncio.run(self._main(config_path, speed, stopping, kept))
+            asyncio.run(self._main(config_path, speed, stopping, kept, real_ds))
         except _Stopped:
             pass
         except BaseException as e:  # noqa: BLE001 - the worker must always settle the session
@@ -418,12 +443,14 @@ class LiveManager:
             self._devices_bump()
         self._publish_state(force=True)
 
-    async def _main(self, config_path: Path, speed, stopping: threading.Event, kept: tuple | None) -> None:
+    async def _main(self, config_path: Path, speed, stopping: threading.Event, kept: tuple | None,
+                    real_ds: bool | None) -> None:
         with self._lock:
             self._loop, self._wake = asyncio.get_running_loop(), asyncio.Event()
-        session = Session(config_path, speed=speed)
+        session = Session(config_path, speed=speed, real_ds=real_ds)
         session.set_speed(speed)   # the --speed rule for this config's step
         with self._lock:
+            self._real_ds = session.real_ds
             self._step = session.config.step
             self._recorder = DriveRecorder(session.config.step, dataclasses.asdict(session.config.match))
         try:
@@ -434,10 +461,11 @@ class LiveManager:
                 await self._until_stopped(session.start(), stopping)
             self._session = session
             self._rev_noticed = False
-            session.set_mode("disabled")
-            with self._lock:
-                self._match = {**dataclasses.asdict(session.bridge.ds.match),
-                               "game_data": kept[0]["game_data"] if kept is not None else ""}
+            if not session.real_ds:
+                session.set_mode("disabled")
+                with self._lock:
+                    self._match = {**dataclasses.asdict(session.bridge.ds.match),
+                                   "game_data": kept[0]["game_data"] if kept is not None else ""}
             self._set_state("running")
             await self._run(session, stopping)
         finally:
@@ -511,7 +539,7 @@ class LiveManager:
                     if pi != zero:
                         self._inputs[port] = zero
                         self._fresh.add(port)
-            changed = {p: self._inputs[p] for p in self._fresh}
+            changed = {p: self._inputs[p] for p in self._fresh} if not session.real_ds else {}
             self._fresh.clear()
         for port, pi in sorted(changed.items()):
             session.set_joystick(port, axes=pi.axes, buttons=pi.buttons, povs=pi.povs)
@@ -541,6 +569,8 @@ class LiveManager:
 
     def _apply(self, session: Session, cmd: dict) -> None:
         name = cmd["cmd"]
+        if session.real_ds and name in REAL_DS_REFUSES:   # queued (by client_gone, say) before the choice was known
+            return
         if name in ("mode", "enable", "disable"):
             with self._lock:
                 if name == "mode":
@@ -698,7 +728,9 @@ class LiveManager:
             self._update_devices(session)
             b = session.bridge
             with self._lock:
-                self._speed_locked = b.realtime_reason if b.phoenix else None
+                self._speed_locked = b.realtime_reason if b.frees_clock else None
+                if session.real_ds:
+                    self._ds_report = dict(self._readouts["match"])
             for sig in self._signals:
                 try:
                     signals[sig.name] = sig.read(session)

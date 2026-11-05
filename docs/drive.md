@@ -12,6 +12,9 @@ Contents: [Starting a session](#starting-a-session), [The Driver Station](#the-d
 [Input tracks (the CSV format)](#input-tracks-the-csv-format), [Watching scenario runs](#watching-scenario-runs),
 [Safety](#safety), [One simulation at a time](#one-simulation-at-a-time), [Troubleshooting](#troubleshooting).
 
+To drive with the real FRC Driver Station app and your team's gamepad instead of this page, pick **The FRC Driver
+Station app** before Start: see [driving with the FRC Driver Station app](driver-station.md).
+
 ## Starting a session
 
 ```bash
@@ -40,6 +43,11 @@ One **robot step** is the config's `[lockstep] step` (20 ms by default). Everyth
 ## The Driver Station
 
 The controls are in the left column.
+
+- **Driver Station** (above Start): **Scrimmage (this page)**, the controls below, or **The FRC Driver Station
+  app**. It starts at the config's `[driver_station] real` and is fixed while the robot runs: to change it, stop
+  and start again. With the app, a box says "The FRC Driver Station is driving" with what the app is doing, and
+  the controls below, Pause, Step and Record are off. See [the FRC Driver Station app](driver-station.md).
 
 - **Mode:** Teleop, Auto or Test. Pick it before you enable; the robot program sees the mode you chose. Changing
   the mode while the robot is enabled switches the robot to the new mode at once.
@@ -104,6 +112,8 @@ Above the live view:
 If the robot code uses **Phoenix 6** devices, the speed is locked at 1x with the reason shown next to it, because
 Phoenix 6's own simulation runs on the wall clock: the robot runs in real time, not lockstep. Pause and Step can't
 stop it: the robot program and physics keep running.
+The same happens when the FRC Driver Station app drives (it talks to the robot on the wall clock); then Pause and
+Step are off.
 
 A small bar over the view shows the sim time, the mode, whether the robot is enabled, the match time (while the
 Match timer is on), and how fast the simulation is running against real time.
@@ -228,7 +238,10 @@ be refused: the page follows it at once, while the session keeps driving the rob
 - **Start is disabled:** read the reason beside it (the robot config doesn't load, or has no `[robot_program]`).
 - **The robot ignores the keyboard:** it must be enabled; check the port is set to Keyboard and that the focus isn't
   in a text box (click the live view first).
-- **The speed stays at 1x:** the robot uses Phoenix 6 devices; see [Simulation controls](#simulation-controls).
+- **The speed stays at 1x:** the robot uses Phoenix 6 devices; see [Simulation controls](#simulation-controls). Or
+  the FRC Driver Station app drives it, which runs in real time too ([driver-station.md](driver-station.md)).
+- **Mode, Enable and the joystick ports are off:** the Driver Station choice is **The FRC Driver Station app**. Use
+  the app, or stop and pick **Scrimmage (this page)**.
 - **"N devices don't match the model":** your code made different CAN IDs or device types than the robot file expects. **see Robot code** opens the device table, which can apply the matches.
 - **Error status:** the robot program failed to start or exited; the console shows its output. **Restart** after fixing it.
 - **Gamepad not listed:** press a button on it with the page focused; browsers hide gamepads until then.

@@ -41,6 +41,11 @@ PHOENIX_SLOW = 0.8
 # or relaying values that long superseded (12 robot loops; a 2-core machine with spare CPU stays under 0.11 s)
 ROBOT_BEHIND = 0.25
 PHOENIX_LOCKSTEP = "Phoenix 6 devices: this robot runs in real time, not lockstep"
+# D3: a scenario is the Driver Station, so a run refuses the real one, and ignores a config's default
+REAL_DS_REFUSED = ("a scenario run can't use the real Driver Station: the scenario is the Driver Station here (it sets "
+                   "the modes and joysticks); run it without the real Driver Station")
+CONFIG_REAL_DS_NOTE = ("the config's [driver_station] real = true is ignored here: in a scenario run, scrimmage is the "
+                       "Driver Station")
 
 
 def phoenix_slow_note(speed: float | None, skips: int = 0, skipped: float = 0.0) -> str:
@@ -327,15 +332,17 @@ def picture_sizes(scenario: Scenario) -> list[tuple[int, int]]:
 
 async def run_scenario(scenario: Scenario, out_dir: Path, *, speed=UNSET, session: Session | None = None,
                        progress: Callable[[dict], None] | None = None, cancel=None,
-                       watch: Callable[[Session, float], None] | None = None, sim_mode: str | None = None) -> Report:
+                       watch: Callable[[Session, float], None] | None = None, sim_mode: str | None = None,
+                       real_ds: bool | None = None) -> Report:
     """Runs the scenario. ``progress(event)`` gets step_start / tick / console / done dicts; ``cancel`` is a
     threading.Event checked between advances (when set the session stops and the report's error is
     "stopped by the user"); ``watch(session, t)`` is called after every robot step (a live view's frames).
-    ``sim_mode`` ("fast" / "phoenix") overrides the config's, for a session this run starts."""
+    ``sim_mode`` ("fast" / "phoenix") overrides the config's, for a session this run starts. ``real_ds=True`` (the
+    real Driver Station) is refused: the report's error says why."""
     hooks = _Hooks(progress, cancel, watch)
     done = {"type": "done", "passed": False}
     try:
-        report = await _run_scenario(scenario, out_dir, speed, session, hooks, sim_mode)
+        report = await _run_scenario(scenario, out_dir, speed, session, hooks, sim_mode, real_ds)
         done["passed"] = report.passed
         if report.error is not None:
             done["error"] = report.error
@@ -348,18 +355,24 @@ async def run_scenario(scenario: Scenario, out_dir: Path, *, speed=UNSET, sessio
 
 
 async def _run_scenario(scenario: Scenario, out_dir: Path, speed, session: Session | None, hooks: _Hooks,
-                        sim_mode: str | None = None) -> Report:
+                        sim_mode: str | None = None, real_ds: bool | None = None) -> Report:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     report = Report(scenario.path.name, scenario.description)
     own = session is None
     console_start = 0  # this run's first console line (a passed-in session may have older ones)
+    if real_ds or (session is not None and session.real_ds):
+        report.error = REAL_DS_REFUSED
+        report.write(out_dir)
+        return report
     try:
         if own:
             config = config_for(scenario, load_config(scenario.config_path))
+            if config.real_ds:
+                report.notes.append(CONFIG_REAL_DS_NOTE)
             session = Session(config, speed=scenario.speed if speed is UNSET else speed,
                               log_path=out_dir / "run.csv", robot_log=out_dir / "robot.log",
-                              picture_sizes=picture_sizes(scenario), sim_mode=sim_mode)
+                              picture_sizes=picture_sizes(scenario), sim_mode=sim_mode, real_ds=False)
             validate(scenario, build_world(config))
             await hooks.until_cancelled(session.start())
         else:
@@ -507,7 +520,7 @@ def terrain_notes(world, noted: dict) -> list[str]:
 async def _run_steps(session: Session, scenario: Scenario, report: Report, out_dir: Path, console_start: int,
                      hooks: _Hooks) -> None:
     report.lockstep = session.lockstep
-    if scenario.require_lockstep and not (session.lockstep or session.bridge.phoenix_released):
+    if scenario.require_lockstep and not (session.lockstep or session.bridge.clock_freed):
         report.error = ("lockstep is required but the robot program didn't load the scrimmage_lockstep extension "
                         "(RobotPy: add --scrimmage-lockstep to [robot_program] command; or set "
                         "require_lockstep = false)")
@@ -548,7 +561,7 @@ async def _run_steps(session: Session, scenario: Scenario, report: Report, out_d
         finally:    # on every exit of the step: a robot that tipped and then lost its program is still noted
             report.notes.extend(terrain_notes(session.world, noted))
     report.notes.extend(session.world.warnings)
-    if session.bridge.phoenix_released:
+    if session.bridge.clock_freed:
         report.lockstep = False   # Phoenix 6 devices freed the robot's clock
     if session.bridge.realtime_reason:
         report.effective_speed = session.bridge.effective_speed
@@ -686,11 +699,11 @@ async def _console_settle(session: Session, hooks: _Hooks) -> None:
 
 def _implicit(session: Session, scenario: Scenario, report: Report, console_start: int) -> None:
     session.bridge.settle_foreign_writes()  # judge writes from the last robot loop too
-    if (scenario.require_lockstep and session.bridge.phoenix_released
+    if (scenario.require_lockstep and session.bridge.clock_freed
             and (fast_phoenix := session.bridge.fast_phoenix_message) is not None):
         # In fast mode a Phoenix 6 device is a robot-code mistake, not a choice: the release fails the check.
         report.implicit.append(CheckResult("lockstep stayed engaged", False, fast_phoenix))
-    elif scenario.require_lockstep and session.bridge.phoenix_released:   # Phoenix mode: released on purpose
+    elif scenario.require_lockstep and session.bridge.clock_freed:   # Phoenix mode: released on purpose
         report.implicit.append(CheckResult("lockstep stayed engaged", True, PHOENIX_LOCKSTEP))
     elif scenario.require_lockstep:
         released = session.bridge.lockstep_released_at is not None

@@ -11,8 +11,10 @@ from pathlib import Path
 
 import pytest
 
+from fake_ds import FakeDS
 from phoenix_runs import machine_too_slow
 from scrimmage import java_tools
+from scrimmage.driverstation import REAL_DS_WAITING
 from scrimmage.session import Session
 
 TESTS = Path(__file__).resolve().parent
@@ -39,7 +41,7 @@ def test_java_session_runs_in_real_time_and_loads_agent():
         s = Session(PROBE / "scrimmage.toml", nt=False)
         try:
             st = await s.start()
-            assert st["lockstep"] is False and st["phoenix_unpausable"] is True   # Phoenix 6: real time
+            assert st["lockstep"] is False and st["unpausable"] is True   # Phoenix 6: real time
             for _ in range(100):  # Gradle forward the JVM's output a little behind the connection
                 text = "\n".join(l["text"] for l in s.console()["lines"])
                 if "scrimmage agent: loaded" in text:
@@ -47,6 +49,7 @@ def test_java_session_runs_in_real_time_and_loads_agent():
                 await asyncio.sleep(0.1)
             assert "scrimmage agent: loaded" in text
             assert "libhalsim_gui" not in text           # init script turned the template's GUI off
+            assert "halsim_ds_socket" not in text        # ...and the probe's DS socket, without SCRIMMAGE_DS_SOCKET
             assert any(d.startswith("CANMotor/Talon FX (v6)[1]") for d in st["devices"])
             t0 = s.t
             r = await s.advance(0.5)
@@ -145,19 +148,23 @@ def probe_config(tmp_path, **env) -> Path:
     return p
 
 
+MATCH_LINE = re.compile(r"match data='([^']*)' alliance=(\w+)")
+
+
+async def prints_until(s: Session, want: tuple, timeout: float = 10.0) -> list[tuple]:
+    """PROBE_MODE=match's prints, once `want` (game data, alliance) is among them."""
+    for _ in range(int(timeout / 0.1)):   # Gradle forward the JVM's output a little behind
+        got = MATCH_LINE.findall("\n".join(l["text"] for l in s.console()["lines"]))
+        if want in got:
+            return got
+        await s.advance(0.1)
+    raise AssertionError(f"no {want} print within {timeout} s; got {got}")
+
+
 def test_java_reads_the_match_data(tmp_path):
     """Spec M7 for Java: PROBE_MODE=match prints DriverStation.getGameSpecificMessage() and the alliance in teleop.
     The session's set_match(station="red2", game_data="R") reaches it, and a cleared game data does too."""
     cfg = probe_config(tmp_path, PROBE_MODE="match")
-    match_line = re.compile(r"match data='([^']*)' alliance=(\w+)")
-
-    async def prints_until(s: Session, want: tuple, timeout: float = 10.0) -> list[tuple]:
-        for _ in range(int(timeout / 0.1)):   # Gradle forward the JVM's output a little behind
-            got = match_line.findall("\n".join(l["text"] for l in s.console()["lines"]))
-            if want in got:
-                return got
-            await s.advance(0.1)
-        raise AssertionError(f"no {want} print within {timeout} s; got {got}")
 
     async def main():
         s = Session(cfg, nt=False)
@@ -172,6 +179,68 @@ def test_java_reads_the_match_data(tmp_path):
             got = await prints_until(s, ("", "Red"))
             assert got == [("", "Blue"), ("R", "Red"), ("", "Red")], got
         finally:
+            await s.stop()
+    asyncio.run(main())
+
+
+async def follow_the_fake_ds(s: Session, ds: FakeDS, want: tuple | None) -> dict:
+    """Start the session, then the fake DS (teleop enabled at red2, with the FMS, game data "B"); the state once the
+    robot reports teleop (and PROBE_MODE=match has printed `want`, unless None)."""
+    await s.start()
+    assert s.state()["driver_station"] == REAL_DS_WAITING
+    ds.set(True, "teleop", "red2", fms=True)
+    ds.start()
+    ds.send_game_data("B")
+    if want is not None:
+        await prints_until(s, want, timeout=20)
+    for _ in range(200):
+        if s.state()["mode"] == "teleop":
+            break
+        await s.advance(0.1)
+    return s.state()
+
+
+def test_java_follows_the_real_ds(tmp_path):
+    """Sub-project 28: with real_ds the init script keeps the probe's wpi.sim.addDriverstation(). A fake DS enables
+    teleop at red2 and sends game data "B": the probe prints them, and scrimmage shows the DS from the robot's reports."""
+    cfg = probe_config(tmp_path, PROBE_MODE="match")
+
+    async def main():
+        s = Session(cfg, real_ds=True, nt=False)
+        ds = FakeDS()
+        try:
+            st = await follow_the_fake_ds(s, ds, ("B", "Red"))
+            assert st["real_ds"] is True and st["driver_station"] == "connected", st
+            assert st["mode"] == "teleop" and st["match"]["station"] == "red2" and st["match"]["fms"] is True, st
+            assert ds.replies() > 0
+            text = "\n".join(l["text"] for l in s.console(0)["lines"])
+            assert "halsim_ds_socket" in text and "libhalsim_gui" not in text
+        finally:
+            ds.stop()
+            await s.stop()
+    asyncio.run(main())
+
+
+def test_the_init_script_adds_the_ds_socket_when_the_project_has_none(tmp_path):
+    """A project without wpi.sim.addDriverstation(): with real_ds the init script adds it."""
+    import shutil
+    proj = tmp_path / "proj"
+    shutil.copytree(PROBE, proj, ignore=shutil.ignore_patterns("build", ".gradle"))
+    bg = proj / "build.gradle"
+    assert "wpi.sim.addDriverstation()\n" in bg.read_text()
+    bg.write_text(bg.read_text().replace("wpi.sim.addDriverstation()\n", ""))
+    cfg = proj / "scrimmage.toml"
+    cfg.write_text(cfg.read_text().replace('"../models/', f'"{TESTS / "models"}/'))
+
+    async def main():
+        s = Session(cfg, real_ds=True, nt=False)
+        ds = FakeDS()
+        try:
+            st = await follow_the_fake_ds(s, ds, None)
+            assert st["driver_station"] == "connected" and st["mode"] == "teleop", st
+            assert ds.replies() > 0
+        finally:
+            ds.stop()
             await s.stop()
     asyncio.run(main())
 

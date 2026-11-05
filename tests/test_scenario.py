@@ -166,7 +166,7 @@ def test_nt_check_without_nt_says_why(world, config_nt, session_nt, words):
     from scrimmage.scenario_runner import Report, _run_steps
     step = SimpleNamespace(name="s", checks=[{"at_end": {"signal": "nt:/SmartDashboard/x", "equals": 1}}])
     session = SimpleNamespace(lockstep=True, world=world, nt=session_nt, config=SimpleNamespace(nt=config_nt),
-                              bridge=SimpleNamespace(nt_link=None, phoenix_released=False))
+                              bridge=SimpleNamespace(nt_link=None, clock_freed=False))
     report = Report("x", "")
     asyncio.run(_run_steps(session, SimpleNamespace(require_lockstep=False, steps=[step]), report, Path("."), 0, None))
     assert words in report.error and "NetworkTables" in report.error

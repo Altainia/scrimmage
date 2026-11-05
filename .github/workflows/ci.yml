@@ -29,8 +29,8 @@ jobs:
           pip install -e ".[dev,nt,mcp,cad,bench]"
           pip install ./lockstep
       # the e2e and extension tests skip themselves without these; fail here instead so CI never passes on skipped tests
-      - name: Check RobotPy, robotpy-rev, commands2 and the lockstep extension are importable
-        run: python -c "import wpilib, halsim_ws, scrimmage_lockstep, mcp, ntcore, rev, commands2"
+      - name: Check RobotPy, the DS socket, robotpy-rev, commands2 and the lockstep extension are importable
+        run: python -c "import wpilib, halsim_ws, halsim_ds_socket, scrimmage_lockstep, mcp, ntcore, rev, commands2"
       # the assembler's browser tests drive headless Chromium (WebGL through SwiftShader); the playwright version is
       # pinned in the dev extra, so this downloads the Chromium build that version expects
       - name: Install Chromium for the browser tests

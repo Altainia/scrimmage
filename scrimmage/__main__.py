@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import dataclasses
 import errno
 import logging
 import math
 import re
 import signal
 import sys
+import time
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -17,14 +19,20 @@ from pathlib import Path
 from .bindings import binds_rev
 from .bridge import Bridge, robot_language
 from .config import SIM_MODES, ConfigError, build_world, load_config, set_sim_mode, sim_mode_unused
+from .driverstation import real_ds_line, real_ds_report
 from .lockstep import DEFAULT_STEP, parse_speed
 from .robot_process import RobotProcess
 from .scenario import ScenarioError, load_scenario, validate
-from .scenario_runner import UNSET, run_scenario
+from .scenario_runner import REAL_DS_REFUSED, UNSET, run_scenario
 
 
 SIM_MODE_HELP = ("fast: set SCRIMMAGE_MODE=fast for the robot program (overrides [robot_program] sim_mode); "
                  "bindings are unchanged, and the robot code must check Scrimmage.fastMode()")
+# serve --real-ds without --launch: the robot program is started by hand, so it needs the DS socket line itself
+REAL_DS_HAND_START = ("the FRC Driver Station drives this robot: start the robot program listening for it\n"
+                      "  RobotPy: add --ds-socket after sim (python -m robotpy sim --ds-socket --ws-client)\n"
+                      "  Java: add wpi.sim.addDriverstation() to build.gradle (under scrimmage's init script, set "
+                      "SCRIMMAGE_DS_SOCKET=1 instead)")
 
 
 def _speed(text: str) -> float | None:
@@ -60,6 +68,9 @@ def main(argv: list[str] | None = None) -> None:
     sp.add_argument("--host", default="localhost")
     sp.add_argument("--port", type=int, default=3300)
     sp.add_argument("--no-nt", action="store_true", help="don't use NetworkTables")
+    sp.add_argument("--real-ds", action=argparse.BooleanOptionalAction, default=None,
+                    help="the FRC Driver Station app drives the robot, or not with --no-real-ds (default: the "
+                         "config's [driver_station] real)")
     sp.add_argument("-v", "--verbose", action="store_true")
 
     rp = sub.add_parser("run", help="run a scenario file and write a report (exit 0 pass, 1 fail, 2 couldn't run)")
@@ -67,6 +78,7 @@ def main(argv: list[str] | None = None) -> None:
     rp.add_argument("--out", type=Path, help="report directory (default runs/<scenario>-<timestamp>)")
     rp.add_argument("--sim-mode", choices=SIM_MODES, help=SIM_MODE_HELP)
     rp.add_argument("--speed", type=_speed, default=UNSET, help='override the scenario\'s speed ("max" or a factor)')
+    rp.add_argument("--real-ds", action="store_true", help="refused: in a scenario run, the scenario is the Driver Station")
     rp.add_argument("-v", "--verbose", action="store_true")
 
     jp = sub.add_parser("java", help="Java support: build the agent and the fast-mode library, print the init "
@@ -819,10 +831,12 @@ def _serve(args, ap) -> None:
         if (unused := sim_mode_unused(config, args.sim_mode, launching=args.launch)) is not None:
             logging.getLogger("scrimmage").warning(unused)
         world = build_world(config)
+        real_ds = config.real_ds if args.real_ds is None else args.real_ds
         bridge = Bridge(world, args.host, args.port, log_path=args.log, viewer=args.viewer, nt=not args.no_nt and config.nt,
                         speed=args.speed, step=args.step if args.step is not None else config.step,
                         odometry_topic=config.odometry_topic, nt_port=config.nt_port,
-                        sim_mode=config.robot_program.sim_mode if args.launch and config.robot_program else None)
+                        sim_mode=config.robot_program.sim_mode if args.launch and config.robot_program else None,
+                        real_ds=real_ds)
     except (ConfigError, ValueError) as e:
         ap.error(str(e))
     _log_warnings(world)
@@ -834,14 +848,20 @@ def _serve(args, ap) -> None:
                                                     rev=binds_rev(config.raw))
         if missing:
             ap.error(missing)
-        from .session import lockstep_version_problem
+        from .session import ds_ports_problem, lockstep_version_problem, real_ds_program
         if problem := lockstep_version_problem(config):
             ap.error(problem)
+        if real_ds:
+            if problem := ds_ports_problem():
+                ap.error(problem)
+            config = dataclasses.replace(config, robot_program=real_ds_program(config.robot_program))
+    elif real_ds:
+        print(REAL_DS_HAND_START, flush=True)
 
-    robot = None
+    robot = follow = None
 
     async def go() -> None:
-        nonlocal robot
+        nonlocal robot, follow
         task = asyncio.create_task(bridge.run())
         bridge.agent_state = lambda: robot.agent_state() if robot is not None else None
         bridge.rev_state = lambda: robot.rev_state if robot is not None else None
@@ -857,8 +877,16 @@ def _serve(args, ap) -> None:
                 p = config.robot_program
                 robot = RobotProcess(p.command, p.cwd, p.env, clock=lambda: world.time, echo=True)
                 await robot.start(bridge.bound_port)
+            if real_ds:
+                from .session import DS_LISTEN_TIMEOUT
+                rp = config.robot_program
+                follow = asyncio.create_task(_follow_real_ds(
+                    bridge, rp.start_timeout if rp is not None else DS_LISTEN_TIMEOUT, launched=robot is not None))
+                follow.add_done_callback(_follow_ended)
             await task
         finally:
+            if follow is not None:
+                follow.cancel()
             if robot is not None:
                 await robot.stop()
 
@@ -872,7 +900,36 @@ def _serve(args, ap) -> None:
     sys.exit(bridge.exit_code)
 
 
+def _follow_ended(task: asyncio.Task) -> None:
+    """_follow_real_ds stopped: log why, unless serve cancelled it on the way out."""
+    if not task.cancelled() and (e := task.exception()) is not None:
+        logging.getLogger("scrimmage").error("following the real Driver Station stopped: %s", e, exc_info=e)
+
+
+async def _follow_real_ds(bridge: Bridge, timeout: float, launched: bool) -> None:
+    """serve with the real DS: log what the DS is doing, from the robot program's own reports. Once `timeout` wall
+    seconds have passed since the launch (or since the robot program connected, when serve didn't launch it), say so
+    if the robot program isn't listening for the DS."""
+    from .session import ds_socket_problem
+    log = logging.getLogger("scrimmage")
+    check_at = time.monotonic() + timeout if launched else None
+    last = None
+    while True:
+        if check_at is None and bridge.ws is not None:
+            check_at = time.monotonic() + timeout
+        if check_at is not None and time.monotonic() >= check_at:
+            check_at = math.inf
+            if (note := ds_socket_problem()) is not None:
+                log.warning("%s", note)
+        if (line := real_ds_line(real_ds_report(bridge.hal))) != last:
+            last = line
+            log.info("%s", line)
+        await asyncio.sleep(0.1)
+
+
 def _run(args, ap) -> int:
+    if args.real_ds:
+        ap.error(REAL_DS_REFUSED)
     try:
         scenario = load_scenario(args.scenario)
         config = load_config(scenario.config_path)
