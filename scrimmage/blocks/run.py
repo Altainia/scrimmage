@@ -977,11 +977,11 @@ class TestRun:
             done = gone >= abs(a["distance"]) - EPS
             if not done and elapsed >= timeout - EPS:
                 if units.is_machine():          # the old words, kept for machine text (units.machine_text)
-                    raise _End("timed out", f"{self._drive_name(a)} ({_where(place)}) didn't reach "
-                                            f"{abs(a['distance']):g} m in {timeout:g} s (went {gone:.2f} m)")
-                raise _End("timed out", f"{self._drive_name(a)} ({_where(place)}) didn't reach "
-                                        f"{units.fmt(abs(a['distance']), 'field')} in {timeout:g} s "
-                                        f"(went {units.fmt(gone, 'field', fewer=1)})")
+                    far, went = f"{abs(a['distance']):g} m", f"{gone:.2f} m"
+                else:
+                    far, went = units.fmt(abs(a["distance"]), "field"), units.fmt(gone, "field", fewer=1)
+                raise _End("timed out", f"{self._drive_name(a)} ({_where(place)}) didn't reach {far} in {timeout:g} s "
+                                        f"(went {went})")
         else:
             done = act["rolling"] is not None and t - act["rolling"] >= a["seconds"] - EPS
         if done:
