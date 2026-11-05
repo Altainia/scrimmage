@@ -21,6 +21,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .. import i18n
 from ..cad.fit import WHEEL_CONDIM, WHEEL_FRICTION, convex_split, fit_box, fit_wheel, rot_z_to
 from .model import Part, PartError, part_from_dict, part_to_dict, quat_from_rpy
 
@@ -37,15 +38,16 @@ def _err(msg: str) -> PartError:
 
 def _check_keys(table, allowed, where: str) -> None:
     if not isinstance(table, dict):
-        raise _err(f"{where} must be a table")
+        raise _err(i18n.t("{where} must be a table", where=where))
     for k in table:
         if k not in allowed:
-            raise _err(f"unknown key {k!r} in {where}; allowed: {', '.join(allowed)}")
+            raise _err(i18n.t("unknown key {key} in {where}; allowed: {allowed}",
+                              key=repr(k), where=where, allowed=', '.join(allowed)))
 
 
 def _number(x, what: str) -> float:
     if isinstance(x, bool) or not isinstance(x, (int, float)) or not np.isfinite(x) or x <= 0:
-        raise _err(f"{what} must be a number above 0, not {x!r}")
+        raise _err(i18n.t("{what} must be a number above 0, not {value}", what=what, value=repr(x)))
     return float(x)
 
 
@@ -81,12 +83,13 @@ def _collision(b: dict, orig, mode: str, base_dir, warn: list[str]) -> None:
     try:
         m = _mesh(orig, base_dir)
     except Exception as e:                      # BenchError: a missing or unreadable mesh
-        warn.append(f"{OVERLAY}: body {orig.name}: collision {mode!r} needs its mesh, which can't be read ({e}); "
-                    "its collision was left as it was")
+        warn.append(i18n.t("{overlay}: body {name}: collision {mode} needs its mesh, which can't be read "
+                           "({error}); its collision was left as it was",
+                           overlay=OVERLAY, name=orig.name, mode=repr(mode), error=e))
         return
     if m is None:
-        warn.append(f"{OVERLAY}: body {orig.name} has no mesh to fit collision {mode!r} to; its collision was left "
-                    "as it was")
+        warn.append(i18n.t("{overlay}: body {name} has no mesh to fit collision {mode} to; its collision was left "
+                           "as it was", overlay=OVERLAY, name=orig.name, mode=repr(mode)))
         return
     v, f = m
     geoms: list[dict] = []
@@ -106,8 +109,9 @@ def _collision(b: dict, orig, mode: str, base_dir, warn: list[str]) -> None:
                 g["rot"] = list(rot_z_to(axis))
             geoms = [g]
         else:
-            warn.append(f"{OVERLAY}: body {orig.name} is set to touch things as a wheel, but a wheel needs a hinge "
-                        "(it turns); it touches things as a simple box instead")
+            warn.append(i18n.t("{overlay}: body {name} is set to touch things as a wheel, but a wheel needs a "
+                               "hinge (it turns); it touches things as a simple box instead",
+                               overlay=OVERLAY, name=orig.name))
     elif mode == "shaped":
         geoms = _shaped(orig.name, v, f, base_dir, warn)
     if not geoms:
@@ -134,8 +138,8 @@ def _shaped(name: str, v: np.ndarray, f: np.ndarray, base_dir, warn: list[str]) 
     try:
         pieces = convex_split(v, f)
     except Exception as e:                      # BenchError: no coacd, an open mesh, no pieces
-        warn.append(f"{OVERLAY}: body {name} can't touch things as shaped ({e}); it touches things as a simple box "
-                    "instead")
+        warn.append(i18n.t("{overlay}: body {name} can't touch things as shaped ({error}); it touches things as a "
+                           "simple box instead", overlay=OVERLAY, name=name, error=e))
         return []
 
     def write(folder: Path) -> list[Path]:
@@ -153,8 +157,8 @@ def _shaped(name: str, v: np.ndarray, f: np.ndarray, base_dir, warn: list[str]) 
         return [{"mesh": (rel / f"{tag}_{i:03d}.obj").as_posix()} for i in range(len(pieces))]
     except OSError:
         from ..cad.fit import SHAPED_CACHE
-        warn.append(f"{OVERLAY}: body {name}: the part folder can't be written, so its shaped collision pieces are "
-                    "kept in the temporary folder instead")
+        warn.append(i18n.t("{overlay}: body {name}: the part folder can't be written, so its shaped collision "
+                           "pieces are kept in the temporary folder instead", overlay=OVERLAY, name=name))
         return [{"mesh": p.as_posix()} for p in write(SHAPED_CACHE / "overlay")]
 
 
@@ -168,11 +172,12 @@ def apply_overlay(part: Part, edits: dict, source: str) -> tuple[Part, list[str]
     fixed: set[str] = set()
     bodies = edits.get("body", {})
     if not isinstance(bodies, dict):
-        raise _err("[body.<name>] tables expected")
+        raise _err(i18n.t("[body.<name>] tables expected"))
     for name, e in bodies.items():
         _check_keys(e, BODY_KEYS, f"[body.{name}]")
         if name not in by_name:
-            warns.append(f"{OVERLAY}: body {name} is no longer in the part; its edits were dropped")
+            warns.append(i18n.t("{overlay}: body {name} is no longer in the part; its edits were dropped",
+                                overlay=OVERLAY, name=name))
             continue
         b = by_name[name]
         if "mass" in e:
@@ -182,13 +187,15 @@ def apply_overlay(part: Part, edits: dict, source: str) -> tuple[Part, list[str]
         if "collision" in e:
             mode = e["collision"]
             if mode not in COLLISION:
-                raise _err(f"[body.{name}] collision must be one of {', '.join(COLLISION)}, not {mode!r}")
+                raise _err(i18n.t("[body.{name}] collision must be one of {collision}, not {mode}",
+                                  name=name, collision=', '.join(COLLISION), mode=repr(mode)))
             _collision(b, orig[name], mode, part.base_dir, warns)
         if "joint" in e:
             je = e["joint"]
             _check_keys(je, JOINT_KEYS, f"[body.{name}.joint]")
             if "joint" not in b:
-                warns.append(f"{OVERLAY}: body {name} has no joint; its joint edits were dropped")
+                warns.append(i18n.t("{overlay}: body {name} has no joint; its joint edits were dropped",
+                                    overlay=OVERLAY, name=name))
             else:
                 b["joint"].update(je)
     if "total_mass" in edits:
@@ -197,16 +204,17 @@ def apply_overlay(part: Part, edits: dict, source: str) -> tuple[Part, list[str]
         left = total - sum(b["mass"] for b in d["body"] if b["name"] in fixed)
         old = sum(b["mass"] for b in free)
         if not free:
-            warns.append(f"{OVERLAY}: total_mass was ignored: every body has its own mass")
+            warns.append(i18n.t("{overlay}: total_mass was ignored: every body has its own mass", overlay=OVERLAY))
         elif old > 0:
             if left <= 0:
-                raise _err(f"total_mass {total} kg is no more than the masses set on the bodies; raise it")
+                raise _err(i18n.t("total_mass {total} kg is no more than the masses set on the bodies; raise it",
+                                  total=total))
             for b in free:
                 _set_mass(b, b["mass"] * left / old)
     for key in ("motor", "encoder", "gyro", "mount"):
         if key in edits:
             if not isinstance(edits[key], list) or not all(isinstance(x, dict) for x in edits[key]):
-                raise _err(f"[[{key}]] entries expected")
+                raise _err(i18n.t("[[{key}]] entries expected", key=key))
             d.setdefault(key, []).extend(copy.deepcopy(edits[key]))
     out = part_from_dict(d, source, part.base_dir)
     grips = {name: e["grip"] for name, e in bodies.items() if "grip" in e and name in by_name}

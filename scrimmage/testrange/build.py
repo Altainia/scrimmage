@@ -72,6 +72,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
+from .. import i18n
 from ..disc.inputs import Disc
 from ..i18n import N_
 from ..launcher.inputs import Ball
@@ -157,7 +158,7 @@ def damping_ratio(e: float) -> float:
     """The contact damping ratio whose push-only bounce has restitution e, for 0 < e < 1 (see the module
     docstring); a ValueError outside that."""
     if not 0.0 < e < 1.0:
-        raise ValueError(f"a damping ratio needs a restitution above 0 and below 1, not {e!r}")
+        raise ValueError(i18n.t("a damping ratio needs a restitution above 0 and below 1, not {error}", error=repr(e)))
 
     def bounce(z):
         return math.exp(-z * (math.pi - 2.0 * math.asin(z)) / math.sqrt(1.0 - z * z))
@@ -176,9 +177,10 @@ def restitution(piece: Ball | Disc) -> float:
 def check_timestep(timestep: float) -> None:
     """A ValueError when the timestep is too long for the range's ball contacts (see the module docstring)."""
     if timestep > MAX_TIMESTEP + 1e-12:
-        raise ValueError(f"a range needs a timestep of at most {MAX_TIMESTEP:g} s, not {timestep:g}: its ball "
-                         "contacts are stiff enough to stop a fast ball at a 2 cm plate, and a longer step lets them "
-                         "gain energy or let the ball through")
+        raise ValueError(i18n.t("a range needs a timestep of at most {max_timestep} s, not {timestep}: its ball "
+                                "contacts are stiff enough to stop a fast ball at a 2 cm plate, and a longer step "
+                                "lets them gain energy or let the ball through",
+                                max_timestep=f"{MAX_TIMESTEP:g}", timestep=f"{timestep:g}"))
 
 
 def check_contact(ball: Ball | Disc, timestep: float) -> None:
@@ -186,8 +188,9 @@ def check_contact(ball: Ball | Disc, timestep: float) -> None:
     docstring)."""
     check_timestep(timestep)
     if not 0.0 < restitution(ball) <= MAX_RESTITUTION:
-        raise ValueError(f"the ball's restitution {restitution(ball):g} is outside the range's contact model "
-                         f"(above 0 and at most {MAX_RESTITUTION:g}): a bouncier ball gains energy on fast hits")
+        raise ValueError(i18n.t("the ball's restitution {restitution} is outside the range's contact model (above "
+                                "0 and at most {max_restitution}): a bouncier ball gains energy on fast hits",
+                                restitution=f"{restitution(ball):g}", max_restitution=f"{MAX_RESTITUTION:g}"))
 
 
 def ball_contact(ball: Ball | Disc, timestep: float) -> dict:
@@ -447,7 +450,7 @@ def _capacity(cfg: dict) -> int | None:
     default = DISC_CAPACITY if isinstance(shooter, dict) and shooter.get("kind") == "disc" else 0
     cap = hopper.get("capacity", default) if isinstance(hopper, dict) else None
     if isinstance(cap, bool) or not isinstance(cap, int) or cap < 0:
-        raise PartError(f"[shooter] hopper capacity must be a whole number of balls, not {cap!r}")
+        raise PartError(i18n.t("[shooter] hopper capacity must be a whole number of balls, not {cap}", cap=repr(cap)))
     return cap
 
 
@@ -458,21 +461,23 @@ def parse_range_section(cfg: dict, cfg_dir: Path | None) -> RangeSection | None:
     if sec is None:
         return None
     if not isinstance(sec, dict):
-        raise PartError("[range] must be a table")
+        raise PartError(i18n.t("[range] must be a table"))
     for k in sec:
         if k not in RANGE_KEYS:
-            raise PartError(f"[range]: unknown key {k!r}; allowed: {', '.join(RANGE_KEYS)}")
+            raise PartError(i18n.t("[range]: unknown key {key}; allowed: {range_keys}",
+                                   key=repr(k), range_keys=', '.join(RANGE_KEYS)))
     ref = sec.get("file")
     if not isinstance(ref, str):
-        raise PartError(f"[range] file must be a built-in range's name ({', '.join(BUILTIN_RANGES)}) or a path "
-                        f"relative to the config, not {ref!r}")
+        raise PartError(i18n.t("[range] file must be a built-in range's name ({builtin_ranges}) or a path "
+                               "relative to the config, not {ref}",
+                               builtin_ranges=', '.join(BUILTIN_RANGES), ref=repr(ref)))
     ball, piece = sec.get("ball"), sec.get("piece")
     if ball is not None and not isinstance(ball, str):
-        raise PartError(f"[range] ball must be a ball preset's name, not {ball!r}")
+        raise PartError(i18n.t("[range] ball must be a ball preset's name, not {ball}", ball=repr(ball)))
     if piece is not None and not isinstance(piece, str):
-        raise PartError(f"[range] piece must be a piece or ball preset's name, not {piece!r}")
+        raise PartError(i18n.t("[range] piece must be a piece or ball preset's name, not {piece}", piece=repr(piece)))
     if ball is not None and piece is not None:
-        raise PartError("[range]: give ball or piece, not both")
+        raise PartError(i18n.t("[range]: give ball or piece, not both"))
     asked = "ball" if ball is not None else "piece" if piece is not None else None
     if is_measurement(ball):   # checked here, so a mistake names the config's [range] and the path as written
         try:
@@ -513,21 +518,24 @@ def parse_range_section(cfg: dict, cfg_dir: Path | None) -> RangeSection | None:
     start = sec.get("start")
     if start is not None:
         if not isinstance(start, str) or start not in rng.starts:
-            raise PartError(f"[range] start: {start!r} isn't a start of range {rng.name!r}; its starts: "
-                            f"{', '.join(rng.starts) or 'none'}")
+            raise PartError(i18n.t("[range] start: {start} isn't a start of range {name}; its starts: {starts}",
+                                   start=repr(start), name=repr(rng.name),
+                                   starts=', '.join(rng.starts) or i18n.t("none")))
         if cfg.get("robot", {}).get("start_pose") is not None:
-            raise PartError("[range] start and [robot] start_pose both place the robot: give one")
+            raise PartError(i18n.t("[range] start and [robot] start_pose both place the robot: give one"))
     preload = sec.get("preload", 0)
     if isinstance(preload, bool) or not isinstance(preload, int) or preload < 0:
-        raise PartError(f"[range] preload must be a whole number of balls (0 or more), not {preload!r}")
+        raise PartError(i18n.t("[range] preload must be a whole number of balls (0 or more), not {preload}",
+                               preload=repr(preload)))
     floor = sec.get("floor_balls", True)
     if not isinstance(floor, bool):
-        raise PartError(f"[range] floor_balls must be true or false, not {floor!r}")
+        raise PartError(i18n.t("[range] floor_balls must be true or false, not {floor}", floor=repr(floor)))
     capacity = _capacity(cfg)
     if preload > 0 and capacity is None:
-        raise PartError(f"[range] preload = {preload}: the robot has no [shooter] to hold balls; set preload = 0")
+        raise PartError(i18n.t("[range] preload = {preload}: the robot has no [shooter] to hold balls; set "
+                               "preload = 0", preload=preload))
     capacity = capacity or 0
     if preload > capacity:
-        raise PartError(f"[range] preload = {preload} is more balls than the robot holds "
-                        f"([shooter] hopper capacity = {capacity})")
+        raise PartError(i18n.t("[range] preload = {preload} is more balls than the robot holds ([shooter] hopper "
+                               "capacity = {capacity})", preload=preload, capacity=capacity))
     return RangeSection(range=rng, start=start, preload=preload, floor_balls=floor, capacity=capacity, seed=seed)

@@ -170,6 +170,12 @@ class RunManager:
         self._on_change()
 
     def _work(self, run_id: str, scenario, out_dir: Path, speed, cancel: threading.Event) -> None:
+        """The run, as MCP's run_scenario runs it: its machine text (report.json) in American English, inside
+        i18n.machine(); report.md and the page's words (to_dict(shown=True)) in the Language setting (spec L2)."""
+        with i18n.machine():
+            self._work_guarded(run_id, scenario, out_dir, speed, cancel)
+
+    def _work_guarded(self, run_id: str, scenario, out_dir: Path, speed, cancel: threading.Event) -> None:
         def progress(e: dict) -> None:
             kind = e.get("type")
             if kind == "step_start":
@@ -195,7 +201,8 @@ class RunManager:
         def finish(r: dict) -> None:
             try:
                 if report is not None:
-                    r["report"] = report.to_dict(shown=True)   # the checks in the Units setting
+                    with i18n.for_people():
+                        r["report"] = report.to_dict(shown=True)   # the checks in the Units and Language settings
                     if report.error is not None:
                         # "stopped" only when the stop is why it ended; any other error shows as itself
                         r["state"] = "stopped" if report.error == STOPPED else "error"

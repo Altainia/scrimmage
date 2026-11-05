@@ -171,8 +171,8 @@ def _check_agent() -> Check:
     if problem is None:
         return Check("agent", True, i18n.t("scrimmage's Java helper is built"))
     old = java_tools.agent_jar_path().exists()
-    return Check("agent", False, "scrimmage's Java helper is out of date: build it again." if old
-                 else "scrimmage's Java helper isn't built yet: build it (once per computer).", fix="build_agent")
+    return Check("agent", False, i18n.t("scrimmage's Java helper is out of date: build it again.") if old
+                 else i18n.t("scrimmage's Java helper isn't built yet: build it (once per computer)."), fix="build_agent")
 
 
 def built_at(folder: Path) -> float | None:
@@ -226,7 +226,7 @@ def _check_realtime(info: ProjectInfo) -> Check:
 
 def _check_robotpy(info: ProjectInfo) -> Check:
     python = info.python or Path(sys.executable)
-    own = "this project's Python environment (.venv)" if info.python else "scrimmage's Python"
+    own = i18n.t("this project's Python environment (.venv)") if info.python else i18n.t("scrimmage's Python")
     try:
         r = subprocess.run([str(python), "-c", "import robotpy"], capture_output=True, timeout=60,
                            stdin=subprocess.DEVNULL)
@@ -309,9 +309,12 @@ def _stream(cmd: list[str], cwd: Path | None, env: dict | None, out: Callable[[s
     return code, list(tail)
 
 
-def _failed(check_id: str, message: str, tail: list[str], fix: str, code: int = 1) -> Check:
+def _failed(check_id: str, failed: str, advice: str, tail: list[str], fix: str, code: int = 1) -> Check:
+    """`failed`: the sentence saying what didn't work; `advice`: the sentences after it (what it needs, what to try),
+    kept when the step was stopped for taking too long."""
+    message = i18n.t("{failed} {advice}", failed=failed, advice=advice)
     if code == TIMED_OUT:
-        message = i18n.t("This took too long and was stopped. {advice}", advice=message.split(". ", 1)[-1])
+        message = i18n.t("This took too long and was stopped. {advice}", advice=advice)
     elif code == CANCELLED:
         message = i18n.t("This was stopped before it finished: scrimmage edit was closed. Try again.")
     return Check(check_id, False, message, fix=fix, detail="\n".join(tail[-DETAIL_LINES:]))
@@ -324,7 +327,9 @@ def run_fix(fix: str, info: ProjectInfo, out: Callable[[str], None], cancel: thr
     if fix == "build_agent":
         code, tail = _stream([sys.executable, "-m", "scrimmage", "java", "build"], None, None, out, **kw)
         if code != 0:
-            return _failed("agent", i18n.t("Building scrimmage's Java helper didn't work. It needs Java (WPILib) and the internet the first time. The last lines are below."), tail, fix, code)
+            return _failed("agent", i18n.t("Building scrimmage's Java helper didn't work."),
+                           i18n.t("It needs Java (WPILib) and the internet the first time. The last lines are below."),
+                           tail, fix, code)
         return _check_agent()
     if fix == "gradle_build":
         env = dict(os.environ)
@@ -335,7 +340,9 @@ def run_fix(fix: str, info: ProjectInfo, out: Callable[[str], None], cancel: thr
         wrapper = "gradlew.bat" if sys.platform == "win32" else "./gradlew"
         code, tail = _stream([wrapper, "build"], info.folder, env, out, GRADLE_TIMEOUT, **kw)
         if code != 0:
-            return _failed("gradle_built", i18n.t("The robot code didn't build. The first build needs the internet to download libraries, and the right Java. The last lines are below."), tail, fix, code)
+            return _failed("gradle_built", i18n.t("The robot code didn't build."),
+                           i18n.t("The first build needs the internet to download libraries, and the right Java. The "
+                                  "last lines are below."), tail, fix, code)
         return _check_gradle_built(info)
     if fix == "install_lockstep":
         python = str(info.python or sys.executable)
@@ -344,6 +351,8 @@ def run_fix(fix: str, info: ProjectInfo, out: Callable[[str], None], cancel: thr
             return Check("lockstep", False, i18n.t("scrimmage can't find its lockstep folder (it isn't running from its downloaded copy). From the scrimmage folder, run: {by_hand}", by_hand=by_hand), fix=fix)
         code, tail = _stream([python, "-m", "pip", "install", str(LOCKSTEP_DIR)], None, None, out, **kw)
         if code != 0:
-            return _failed("lockstep", i18n.t("Installing the fast-simulation add-on didn't work. It needs the internet and a C++ compiler the first time. To try by hand, run: {by_hand}", by_hand=by_hand), tail, fix, code)
+            return _failed("lockstep", i18n.t("Installing the fast-simulation add-on didn't work."),
+                           i18n.t("It needs the internet and a C++ compiler the first time. To try by hand, run: "
+                                  "{by_hand}", by_hand=by_hand), tail, fix, code)
         return _check_lockstep(info)
     return Check(fix, False, i18n.t("scrimmage doesn't know how to fix \"{fix}\".", fix=fix))

@@ -14,6 +14,8 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+from . import i18n
+
 JAVA_DIR = Path(__file__).resolve().parent / "java"
 WPILIB_GLOB = str(Path.home() / "wpilib" / "*" / "jdk")
 ASM_VERSION = "9.10.1"
@@ -96,13 +98,21 @@ def agent_missing_message(config_path, command: list[str], rev: bool = False) ->
     if not any("scrimmage.init.gradle" in c for c in command):
         return None
     jar = agent_jar_path()
-    needs = " with REV SPARKs (they only simulate through the agent)" if rev else ""
     if not jar.exists():
-        return (f"{config_path} runs a Java robot program{needs}, but the scrimmage Java agent isn't built "
-                f"(missing {jar}): run `scrimmage java build` (needs the WPILib JDK)")
+        if rev:
+            return i18n.t("{config} runs a Java robot program with REV SPARKs (they only simulate through the agent), "
+                          "but the scrimmage Java agent isn't built (missing {jar}): run `scrimmage java build` (needs "
+                          "the WPILib JDK)", config=config_path, jar=jar)
+        return i18n.t("{config} runs a Java robot program, but the scrimmage Java agent isn't built (missing {jar}): "
+                      "run `scrimmage java build` (needs the WPILib JDK)", config=config_path, jar=jar)
     if agent_jar_version(jar) != AGENT_VERSION:
-        return (f"{config_path} runs a Java robot program{needs}, but the scrimmage Java agent at {jar} is out of "
-                "date (built by an older scrimmage): run `scrimmage java build` (needs the WPILib JDK)")
+        if rev:
+            return i18n.t("{config} runs a Java robot program with REV SPARKs (they only simulate through the agent), "
+                          "but the scrimmage Java agent at {jar} is out of date (built by an older scrimmage): run "
+                          "`scrimmage java build` (needs the WPILib JDK)", config=config_path, jar=jar)
+        return i18n.t("{config} runs a Java robot program, but the scrimmage Java agent at {jar} is out of date (built "
+                      "by an older scrimmage): run `scrimmage java build` (needs the WPILib JDK)", config=config_path,
+                      jar=jar)
     return None
 
 

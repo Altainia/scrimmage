@@ -15,7 +15,6 @@ from typing import Callable
 from . import foreign_writes as fwn
 from . import i18n, units
 from .bindings import binds_rev
-from .bridge import REALTIME_REASON
 from .devicecheck import check_devices, device_notes
 from .checks import (CRASH_PATTERN, Check, CheckResult, ConsoleCheck, Said, build_check, consume_peaks, said, shown,
                      tick_checks)
@@ -34,7 +33,8 @@ TICK_PERIOD = 0.25  # sim seconds between progress "tick" events
 STOPPED = "stopped by the user"
 # the Java agent's summary line, or the RobotPy REV helper's (scrimmage_lockstep)
 AGENT_IGNORED = re.compile(r"scrimmage (agent|rev helper): ignored (\d+) robot-side sim writes \((.*)\)$")
-PHOENIX_NOTE = REALTIME_REASON + "; results are close but not byte-identical"
+PHOENIX_NOTE = N_("Phoenix 6 simulation runs on the wall clock, so this robot runs in real time (not lockstep); "
+                  "results are close but not byte-identical")    # (N_(): _said())
 # (N_(): report.json keeps the text itself; report.md and the Scenario tab show it in the Language setting, _said())
 NO_CHECKS_NOTE = N_("this scenario has no checks, so passing only means the robot program ran: add a check (where "
                     "the robot ends up, say) to test something")
@@ -57,6 +57,15 @@ LOCKSTEP_REQUIRED = N_("lockstep is required but the robot program didn't load t
 def _said(text: str) -> Said:
     """A constant marked with N_(): itself in report.json, in the Language setting where it is shown."""
     return Said(text, lambda: translated(text))
+
+
+def _shown_now(words: Callable[[], str]) -> Callable[[], str]:
+    """`words()` in the Language setting now, kept for when it is shown: a session's words (the bridge's, a released
+    clock), which can't be built again once the run is over. Called where the run's own text is the machine text
+    (inside i18n.machine(), as the web app's runs and MCP's are), `words()` itself is report.json's."""
+    with i18n.for_people():
+        text = words()
+    return lambda: text
 
 
 def _plain(text):
@@ -680,14 +689,14 @@ async def _run_steps(session: Session, scenario: Scenario, report: Report, out_d
         report.lockstep = False   # Phoenix 6 devices freed the robot's clock
     if session.bridge.realtime_reason:
         report.effective_speed = session.bridge.effective_speed
-        report.notes.append(PHOENIX_NOTE)
+        report.notes.append(_said(PHOENIX_NOTE))
         speed, b = session.phoenix_speed, session.bridge
         if b.physics_skips or (speed is not None and speed < PHOENIX_SLOW):
             report.notes.append(phoenix_slow_note(speed, b.physics_skips, b.physics_skipped))
         if session.bridge.robot_behind > ROBOT_BEHIND:
             report.notes.append(robot_behind_note(session.bridge.robot_behind))
     if (msg := session.bridge.fast_phoenix_message) is not None:
-        report.notes.append(msg)
+        report.notes.append(Said(msg, _shown_now(lambda: session.bridge.fast_phoenix_message)))
     if session.robot is not None or session.attach:   # a robot program: say which expected devices it never made
         report.notes.extend(device_notes(check_devices(session.world, session.bridge.hal, session.t), final=True))
     if not any(step.checks for step in scenario.steps):
@@ -819,14 +828,16 @@ def _implicit(session: Session, scenario: Scenario, report: Report, console_star
     if (scenario.require_lockstep and session.bridge.clock_freed
             and (fast_phoenix := session.bridge.fast_phoenix_message) is not None):
         # In fast mode a Phoenix 6 device is a robot-code mistake, not a choice: the release fails the check.
-        report.implicit.append(CheckResult("lockstep stayed engaged", False, fast_phoenix))
+        report.implicit.append(said("lockstep stayed engaged", False, fast_phoenix,
+                                    _shown_now(lambda: session.bridge.fast_phoenix_message)))
     elif scenario.require_lockstep and session.bridge.clock_freed:   # Phoenix mode: released on purpose
         report.implicit.append(said("lockstep stayed engaged", True, PHOENIX_LOCKSTEP,
                                     lambda: translated(PHOENIX_LOCKSTEP)))
     elif scenario.require_lockstep:
         released = session.bridge.lockstep_released_at is not None
-        if released:    # (the session's words, shared with MCP: as they are)
-            report.implicit.append(CheckResult("lockstep stayed engaged", False, session.release_message()))
+        if released:    # (the session's words: report.json's as the run made them, shown in the Language)
+            report.implicit.append(said("lockstep stayed engaged", False, session.release_message(),
+                                        _shown_now(session.release_message)))
         else:
             report.implicit.append(said("lockstep stayed engaged", True, "the robot program's clock stayed in lockstep",
                                         lambda: t("the robot program's clock stayed in lockstep")))
@@ -851,8 +862,8 @@ def _implicit(session: Session, scenario: Scenario, report: Report, console_star
                                                   line=crash.text)))
     if binds_rev(session.config.raw):
         problem = session.rev_problem()
-        if problem:     # (the session's words, shared with MCP: as they are)
-            report.implicit.append(CheckResult("REV simulation available", False, problem))
+        if problem:     # (the session's words: report.json's as the run made them, shown in the Language)
+            report.implicit.append(said("REV simulation available", False, problem, _shown_now(session.rev_problem)))
         elif session.robot_language() == "python":
             report.implicit.append(said("REV simulation available", True,
                                         "the scrimmage REV helper reported no robotpy-rev problem",

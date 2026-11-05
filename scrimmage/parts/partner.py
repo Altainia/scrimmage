@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 import mujoco
 import numpy as np
 
+from .. import i18n
 from .model import PartError, quat_from_rpy
 
 PARTNER_KEYS = ("length", "width", "mass", "bumper_clearance", "brake", "start")
@@ -81,7 +82,7 @@ class PartnerInfo:
 
 def _number(v, key: str) -> float:
     if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
-        raise PartError(f"[partner] {key} must be a number, not {v!r}")
+        raise PartError(i18n.t("[partner] {key} must be a number, not {value}", key=key, value=repr(v)))
     return float(v)
 
 
@@ -91,32 +92,36 @@ def parse_partner(cfg: dict) -> PartnerSpec | None:
     if sec is None:
         return None
     if not isinstance(sec, dict):
-        raise PartError("[partner] must be a table")
+        raise PartError(i18n.t("[partner] must be a table"))
     extra = [k for k in sec if k not in PARTNER_KEYS]
     if extra:
-        raise PartError(f"[partner]: unknown key {extra[0]!r}; allowed: {', '.join(PARTNER_KEYS)}")
+        raise PartError(i18n.t("[partner]: unknown key {extra}; allowed: {partner_keys}",
+                               extra=repr(extra[0]), partner_keys=', '.join(PARTNER_KEYS)))
     start = sec.get("start")
     if start is None:
-        raise PartError("[partner] needs start = [x, y, heading_deg]: where the partner robot starts")
+        raise PartError(i18n.t("[partner] needs start = [x, y, heading_deg]: where the partner robot starts"))
     if not (isinstance(start, list) and len(start) == 3 and all(
             isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in start)):
-        raise PartError(f"[partner] start must be [x, y, heading_deg], 3 finite numbers, not {start!r}")
+        raise PartError(i18n.t("[partner] start must be [x, y, heading_deg], 3 finite numbers, not {start}",
+                               start=repr(start)))
     kw: dict = {"start": tuple(float(v) for v in start)}
     for key in ("length", "width"):
         if key in sec:
             kw[key] = _number(sec[key], key)
             if kw[key] < MIN_SIZE:
-                raise PartError(f"[partner] {key} must be at least {MIN_SIZE:g} m (its drive's wheels fit inside the "
-                                f"frame), not {kw[key]:g}")
+                raise PartError(i18n.t("[partner] {key} must be at least {min_size} m (its drive's wheels fit "
+                                       "inside the frame), not {value}",
+                                       key=key, min_size=f"{MIN_SIZE:g}", value=f"{kw[key]:g}"))
     for key in ("mass", "bumper_clearance"):
         if key in sec:
             kw[key] = _number(sec[key], key)
             if kw[key] <= 0:
-                raise PartError(f"[partner] {key} must be more than 0, not {kw[key]:g}")
+                raise PartError(i18n.t("[partner] {key} must be more than 0, not {value}", key=key,
+                                       value=f"{kw[key]:g}"))
     if "brake" in sec:
         if not isinstance(sec["brake"], bool):
-            raise PartError(f"[partner] brake must be true (its wheels braked) or false (coasting), "
-                            f"not {sec['brake']!r}")
+            raise PartError(i18n.t("[partner] brake must be true (its wheels braked) or false (coasting), not "
+                                   "{brake}", brake=repr(sec['brake'])))
         kw["brake"] = sec["brake"]
     return PartnerSpec(**kw)
 
@@ -130,7 +135,8 @@ def _parts(p: PartnerSpec) -> tuple:
     drive = build_stock("differential", dparams, where)
     drive_mass = sum(b.mass for b in drive.bodies)
     if p.mass <= drive_mass:
-        raise PartError(f"[partner] mass must be more than its drive's {drive_mass:g} kg, not {p.mass:g}")
+        raise PartError(i18n.t("[partner] mass must be more than its drive's {drive_mass} kg, not {mass}",
+                               drive_mass=f"{drive_mass:g}", mass=f"{p.mass:g}"))
     cparams = {"length": p.length, "width": p.width, "mass": p.mass - drive_mass,
                "bumper_clearance": p.bumper_clearance}
     chassis = build_stock("chassis", cparams, where)
