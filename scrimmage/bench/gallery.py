@@ -4,6 +4,9 @@ The gallery runs every bench file in a folder (not its subfolders) once, ignorin
 its author, its one-line idea, its side path picture (embedded as base64 PNG, so the file can be put on a projector
 or emailed on its own) and its headlines, then a table comparing every idea. A file that doesn't load or run is
 listed with its problem rather than stopping the gallery: one typo shouldn't cost the room the rest of the session.
+
+The gallery is for people: its words are in the Units and Language settings when it is written (a translation's text
+is put in as it is, with what goes into it escaped). The UNCALIBRATED line is report.py's, untranslated.
 """
 
 import base64
@@ -18,7 +21,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from .. import units
+from .. import i18n, units
+from ..i18n import t
 from .compare import idea_labels, metrics
 from .pictures import PICTURE_TRACE_HZ, path_picture
 from .report import headlines, uncalibrated
@@ -122,14 +126,15 @@ code { font-size: 0.95em; background: var(--band); padding: 0 4px; border-radius
 def _idea_html(e: Entry, label: str, anchor: str) -> str:
     if e.result is None:
         return (f'<section id="{anchor}"><h2>{html.escape(e.file.name)}</h2>'
-                f'<p class="problem">This file did not run: {html.escape(e.problem or "")}</p></section>')
+                f'<p class="problem">{t("This file did not run: {problem}", problem=html.escape(e.problem or ""))}</p>'
+                '</section>')
     b, lines = e.result.bench, headlines(e.result)
     parts = [f'<section id="{anchor}"><h2>{html.escape(label)}</h2>']
     if b.author:
         parts.append(f'<p class="author">{html.escape(b.author)}</p>')
     if b.idea:
         parts.append(f"<blockquote>“{html.escape(b.idea)}”</blockquote>")
-    alt = f"{b.name} from the side, with every piece's path"
+    alt = t("{name} from the side, with every piece's path", name=b.name)
     parts.append(f'<img alt="{html.escape(alt)}" src="data:image/png;base64,'
                  f'{_png64(path_picture(e.result, "side", *GALLERY_SIZE))}">')
     parts.append('<ul class="head">' + "".join(f"<li>{_words(x)}</li>" for x in lines[:-1]) + "</ul>")
@@ -140,32 +145,35 @@ def _idea_html(e: Entry, label: str, anchor: str) -> str:
 
 
 def _table_html(entries: list[tuple[Entry, str, str]]) -> str:
-    head = ("idea", "author", "got out", f"exit speed ({units.unit_name('speed')})", "direction", "didn't get out",
-            "worst shaft drop", f"hardest hit ({units.unit_name('force')})")
+    head = (t("idea"), t("author"), t("got out"), t("exit speed ({unit})", unit=units.unit_name("speed")),
+            t("direction"), t("didn't get out"), t("worst shaft drop"),
+            t("hardest hit ({unit})", unit=units.unit_name("force")))
     speed_of = lambda v: units.to_display(v, "speed")   # noqa: E731 - the Units setting, as the headlines
     trs = []
     for e, label, anchor in entries:
         if e.result is None:
             trs.append(f'<tr><td><a href="#{anchor}">{html.escape(e.file.name)}</a></td>'
-                       f'<td colspan="{len(head) - 1}">did not run</td></tr>')
+                       f'<td colspan="{len(head) - 1}">{t("did not run")}</td></tr>')
             continue
         r, m = e.result, metrics(e.result)
         n = len(r.pieces)
         main = r.bench.outlets[0].name if r.bench.outlets else "-"
         speed = _num(speed_of(m["exit_speed"])) + ("" if math.isnan(m["exit_speed_sd"])
                                                    else f" ± {speed_of(m['exit_speed_sd']):.1f}")
-        way = "–" if math.isnan(m["elevation_deg"]) else f"{m['elevation_deg']:.0f}° up" if m["elevation_deg"] >= 0.5 \
-            else f"{-m['elevation_deg']:.0f}° down" if m["elevation_deg"] <= -0.5 else "level"
+        e_deg = m["elevation_deg"]
+        way = "–" if math.isnan(e_deg) else t("{deg}° up", deg=f"{e_deg:.0f}") if e_deg >= 0.5 \
+            else t("{deg}° down", deg=f"{-e_deg:.0f}") if e_deg <= -0.5 else t("level")
         stuck = n - m["out"] - m["out_other"]
         cells = [f'<a href="#{anchor}">{html.escape(label)}</a>', html.escape(r.bench.author),
-                 f"{m['out']} of {n} through <code>{html.escape(main)}</code>"
-                 + (f", {m['out_other']} elsewhere" if m["out_other"] else ""),
+                 (t("{out} of {n} through {outlet}, {other} elsewhere", out=m["out"], n=n, other=m["out_other"],
+                    outlet=f"<code>{html.escape(main)}</code>") if m["out_other"] else
+                  t("{out} of {n} through {outlet}", out=m["out"], n=n, outlet=f"<code>{html.escape(main)}</code>")),
                  speed, way, str(stuck), _num(m["speed_drop_pct"], 0, "%"),
                  _num(units.to_display(m["peak_load_n"], "force"), 0)]
         numeric = {3, 5, 6, 7}
         trs.append("<tr>" + "".join(f'<td class="n">{c}</td>' if i in numeric else f"<td>{c}</td>"
                                     for i, c in enumerate(cells)) + "</tr>")
-    return ('<div class="wrap"><table><tr>' + "".join(f"<th>{h}</th>" for h in head) + "</tr>"
+    return ('<div class="wrap"><table><tr>' + "".join(f"<th>{html.escape(h, quote=False)}</th>" for h in head) + "</tr>"
             + "".join(trs) + "</table></div>")
 
 
@@ -173,26 +181,31 @@ def gallery_html(folder: Path, entries: list[Entry]) -> str:
     ran = [e.result for e in entries if e.result is not None]
     labels = iter(idea_labels(ran))
     named = [(e, next(labels) if e.result is not None else e.file.name, f"idea-{i + 1}") for i, e in enumerate(entries)]
-    title = f"Bench gallery: {Path(folder).resolve().name}"
+    title = t("Bench gallery: {folder}", folder=Path(folder).resolve().name)
     warn = (uncalibrated(ran[0]) if ran else "UNCALIBRATED: estimates from preset numbers, not measurements.")
     kinds = {r.bench.piece.kind for r in ran}
     if len(kinds) > 1:
         warn = "UNCALIBRATED: estimates from preset numbers, not measurements; see docs/bench.md."
     body = [f"<h1>{html.escape(title)}</h1>",
-            f'<p class="sub">{len(entries)} ideas, made {date.today().isoformat()} with scrimmage bench gallery. '
-            "Paths: green left through an outlet, red jammed, orange escaped, gray still inside or never got in.</p>",
-            f'<p class="warn">{_words(warn)} Compare ideas with each other; trust the differences before the '
-            "numbers.</p>",
+            '<p class="sub">' + html.escape(t(
+                "{count} ideas, made {date} with scrimmage bench gallery. Paths: green left through an outlet, red "
+                "jammed, orange escaped, gray still inside or never got in.", count=len(entries),
+                date=date.today().isoformat()), quote=False) + "</p>",
+            f'<p class="warn">{_words(warn)} '
+            + html.escape(t("Compare ideas with each other; trust the differences before the numbers."), quote=False)
+            + "</p>",
             "<nav><ol>" + "".join(f'<li><a href="#{a}">{html.escape(lab)}</a>'
                                   + (f" ({html.escape(e.result.bench.author)})"
                                      if e.result is not None and e.result.bench.author else "")
                                   + "</li>" for e, lab, a in named) + "</ol></nav>"]
     body += [_idea_html(e, lab, a) for e, lab, a in named]
-    body += ['<section id="compare"><h2>Every idea</h2>', _table_html(named),
-             '<p class="sub">Exit numbers are for each file\'s first outlet. "Worst shaft drop" is the largest dip in '
-             'a shaft\'s speed as a piece goes through; "hardest hit" the largest contact force on any one part.</p>'
+    body += [f'<section id="compare"><h2>{html.escape(t("Every idea"), quote=False)}</h2>', _table_html(named),
+             '<p class="sub">' + html.escape(t(
+                 "Exit numbers are for each file's first outlet. \"Worst shaft drop\" is the largest dip in a "
+                 "shaft's speed as a piece goes through; \"hardest hit\" the largest contact force on any one "
+                 "part."), quote=False) + "</p>"
              "</section>"]
-    return ("<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
+    return (f"<!doctype html>\n<html lang=\"{i18n.current_language()}\"><head><meta charset=\"utf-8\">"
             '<meta name="viewport" content="width=device-width, initial-scale=1">'
             f"<title>{html.escape(title)}</title><style>{CSS}</style></head>"
             f"<body><main>{''.join(body)}</main></body></html>\n")

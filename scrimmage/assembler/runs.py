@@ -12,7 +12,7 @@ from typing import Callable
 
 import tomlkit
 
-from .. import robot_process
+from .. import i18n, robot_process
 from ..scenario import ScenarioError, load_scenario_text
 from ..scenario_runner import STOPPED, UNSET, run_scenario
 from .simlock import SimBusy, SimLock
@@ -50,7 +50,7 @@ class RunManager:
         scenario_path = Path(scenario_path).resolve()
         with self._lock:
             if self._running:
-                raise RunBusy("a run is already in progress")
+                raise RunBusy(i18n.t("a run is already in progress"))
             try:
                 self._simlock.acquire("run")
             except SimBusy as e:
@@ -67,7 +67,7 @@ class RunManager:
         try:
             doc = tomlkit.parse(text)
             if not isinstance(doc.get("config"), str):
-                raise ScenarioError(f"{scenario_path.name}: config = \"<robot config .toml>\" is required")
+                raise ScenarioError(i18n.t("{name}: config = \"<robot config .toml>\" is required", name=scenario_path.name))
             doc["config"] = str((scenario_path.parent / doc["config"]).resolve())
             snapshot_text = tomlkit.dumps(doc)
             scenario = load_scenario_text(snapshot_text, scenario_path)
@@ -84,13 +84,15 @@ class RunManager:
             try:
                 out_dir.mkdir(parents=True)
             except OSError as e:
-                raise ScenarioError(f"can't make the run folder {out_dir}: {e.strerror or e}") from None
+                raise ScenarioError(i18n.t("can't make the run folder {folder}: {why}", folder=out_dir,
+                                           why=e.strerror or e)) from None
             try:
                 snapshot = out_dir / "scenario.toml"
                 snapshot.write_text(snapshot_text)
             except OSError as e:
                 shutil.rmtree(out_dir, ignore_errors=True)
-                raise ScenarioError(f"can't write the run folder {out_dir}: {e.strerror or e}") from None
+                raise ScenarioError(i18n.t("can't write the run folder {folder}: {why}", folder=out_dir,
+                                           why=e.strerror or e)) from None
             # `scenario` is the snapshot's text (config made absolute); its path stays the student's file, so the
             # report is titled with their scenario's name rather than "scenario.toml"
             self._dirs[run_id] = out_dir

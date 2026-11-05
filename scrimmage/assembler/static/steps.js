@@ -5,8 +5,9 @@
 import { h, notice } from "./app.js";
 import { scEdit, selectStep, stepOfField, sc } from "./scenario.js";
 import { icon, guard } from "./step_editor.js";
+import { t, tn } from "./i18n.js";
 
-const t3 = (t) => `${+t.toFixed(3)}`;
+const t3 = (secs) => `${+secs.toFixed(3)}`;
 const dur = (d) => (typeof d === "number" && d > 0 ? d : 0);
 
 let dragFrom = null;
@@ -28,7 +29,7 @@ export function renderTimeline(st) {
   const ro = !!s.read_only;
   const sel = st.selected;
 
-  const list = h("ol", { class: "steps", role: "listbox", "aria-label": "Steps" });
+  const list = h("ol", { class: "steps", role: "listbox", "aria-label": t("Steps") });
   steps.forEach((step, i) => {
     const mode = typeof step.mode === "string" ? step.mode : "?";
     const known = ["disabled", "auto", "teleop", "test"].includes(mode);
@@ -41,25 +42,24 @@ export function renderTimeline(st) {
       id: `step-row-${i}`, class: `step-row${i === sel ? " selected" : ""}${bad.has(i) ? " has-errors" : ""}`,
       role: "option", "aria-selected": String(i === sel), tabindex: i === sel ? "0" : "-1", draggable: ro ? null : "true",
       dataset: { step: String(i) },
-      "aria-label": `Step ${i + 1}${step.name ? ` ${step.name}` : ""}, ${mode}, ${t3(d)} seconds from ${t3(step.start_t)}`
-        + `${step.checks.length ? `, ${step.checks.length} checks` : ""}${bad.has(i) ? ", has errors" : ""}`,
+      "aria-label": rowLabel(i, step, mode, d, bad.has(i)),
       onclick: () => selectStep(i, { focus: true }),
       onkeydown: (e) => onRowKey(e, i, steps.length, ro),
     },
-      h("span", { class: "grip", "aria-hidden": "true", title: "Drag to reorder" }, icon("grip")),
+      h("span", { class: "grip", "aria-hidden": "true", title: t("Drag to reorder") }, icon("grip")),
       h("div", { class: "step-main" },
         h("div", { class: "step-line" },
           h("span", { class: "step-num" }, `${i + 1}`),
-          h("span", { class: `step-name${step.name ? "" : " unnamed"}`, text: step.name || `step ${i + 1}` }),
+          h("span", { class: `step-name${step.name ? "" : " unnamed"}`, text: step.name || t("step {n}", { n: i + 1 }) }),
           h("span", { class: `chip mode-chip mode-${known ? mode : "unknown"}`, text: mode })),
         h("div", { class: "step-line step-meta" },
-          h("span", { class: "time", title: `Runs ${t3(d)} s, from ${t3(step.start_t)} s to ${t3(step.start_t + d)} s` },
-            h("strong", {}, `${t3(d)} s`), h("span", { class: "muted" }, `  from ${t3(step.start_t)} s`)),
+          h("span", { class: "time", title: t("Runs {seconds} s, from {from} s to {to} s", { seconds: t3(d), from: t3(step.start_t), to: t3(step.start_t + d) }) },
+            h("strong", {}, t("{seconds} s", { seconds: t3(d) })), h("span", { class: "muted" }, "  ", t("from {seconds} s", { seconds: t3(step.start_t) }))),
           h("span", { class: "badges" },
-            step.checks.length ? h("span", { class: "badge", title: `${step.checks.length} check${step.checks.length === 1 ? "" : "s"}` }, icon("check"), String(step.checks.length)) : null,
-            shots ? h("span", { class: "badge", title: `${step.shots.length} screenshot${step.shots.length === 1 ? "" : "s"}${step.sheet ? " and a contact sheet" : ""}` }, icon("camera"), String(shots)) : null,
-            bad.has(i) ? h("span", { class: "dot dot-error", title: "This step has errors" }) : null,
-            result ? h("span", { class: `dot run-dot run-${result}`, title: `Last run: ${result === "pass" ? "passed" : "failed"}` }) : null)),
+            step.checks.length ? h("span", { class: "badge", title: tn("{count} check", "{count} checks", step.checks.length) }, icon("check"), String(step.checks.length)) : null,
+            shots ? h("span", { class: "badge", title: step.sheet ? tn("{count} screenshot and a contact sheet", "{count} screenshots and a contact sheet", step.shots.length) : tn("{count} screenshot", "{count} screenshots", step.shots.length) }, icon("camera"), String(shots)) : null,
+            bad.has(i) ? h("span", { class: "dot dot-error", title: t("This step has errors") }) : null,
+            result ? h("span", { class: `dot run-dot run-${result}`, title: result === "pass" ? t("Last run: passed") : t("Last run: failed") }) : null)),
         h("div", { class: "bar", "aria-hidden": "true" },
           h("span", { class: `bar-fill mode-bg-${known ? mode : "unknown"}`, style: `left:${left}%;width:${Math.max(width, 0.8)}%` }))));
     if (!ro) {
@@ -86,21 +86,21 @@ export function renderTimeline(st) {
   const btn = (label, ic, onclick, disabled, extra = "") => h("button", {
     type: "button", class: `btn btn-small ${extra}`, "aria-label": label, title: label, disabled: disabled || ro, onclick, dataset: { key: `tl-${ic}` },
   }, icon(ic));
-  const tools = h("div", { class: "timeline-tools", role: "toolbar", "aria-label": "Step actions" },
+  const tools = h("div", { class: "timeline-tools", role: "toolbar", "aria-label": t("Step actions") },
     h("button", {
       type: "button", class: "btn btn-small btn-primary-soft", disabled: ro, dataset: { key: "tl-add" },
       onclick: () => addStep(),
-    }, icon("plus"), " Add step"),
+    }, icon("plus"), " ", t("Add step")),
     h("span", { class: "spacer" }),
-    btn("Move the step up (Alt+↑)", "up", () => move(sel, sel - 1), sel === null || sel === 0),
-    btn("Move the step down (Alt+↓)", "down", () => move(sel, sel + 1), sel === null || sel >= n - 1),
-    btn("Duplicate the step", "copy", () => duplicate(sel), sel === null),
-    btn("Delete the step", "trash", () => remove(sel), sel === null || n <= 1, "btn-danger"));
+    btn(t("Move the step up (Alt+↑)"), "up", () => move(sel, sel - 1), sel === null || sel === 0),
+    btn(t("Move the step down (Alt+↓)"), "down", () => move(sel, sel + 1), sel === null || sel >= n - 1),
+    btn(t("Duplicate the step"), "copy", () => duplicate(sel), sel === null),
+    btn(t("Delete the step"), "trash", () => remove(sel), sel === null || n <= 1, "btn-danger"));
 
   guard(() => root.replaceChildren(...[
-    total ? h("div", { class: "timeline-total" }, h("span", {}, `${n} step${n === 1 ? "" : "s"}`), h("span", {}, `${t3(total)} s in all`)) : null,
+    total ? h("div", { class: "timeline-total" }, h("span", {}, tn("{count} step", "{count} steps", n)), h("span", {}, t("{seconds} s in all", { seconds: t3(total) }))) : null,
     list,
-    n ? null : h("p", { class: "empty" }, "No steps yet."),
+    n ? null : h("p", { class: "empty" }, t("No steps yet.")),
     tools].filter(Boolean)));
   if (focusRow && sel !== null) root.querySelector(`[data-step="${sel}"]`)?.focus();
   else if (focusKey) {
@@ -108,6 +108,17 @@ export function renderTimeline(st) {
     if (el && !el.disabled) el.focus();
     else if (sel !== null) root.querySelector(`[data-step="${sel}"]`)?.focus();
   }
+}
+
+// A row's label for a screen reader: "Step 2 intake, auto, 1.5 seconds from 2, 3 checks, has errors"
+function rowLabel(i, step, mode, d, bad) {
+  const params = { n: i + 1, name: step.name, mode, seconds: t3(d), from: t3(step.start_t) };
+  let label = step.name ? t("Step {n} {name}, {mode}, {seconds} seconds from {from}", params)
+    : t("Step {n}, {mode}, {seconds} seconds from {from}", params);
+  // (a list of clauses, each a whole phrase)
+  if (step.checks.length) label += tn(", {count} check", ", {count} checks", step.checks.length);
+  if (bad) label += t(", has errors");
+  return label;
 }
 
 function clearDrop(root) {
@@ -157,6 +168,7 @@ async function remove(i) {
   const name = s.steps[i] && s.steps[i].name;
   const r = await scEdit("delete_step", { step: i });
   if (r.ok) {
-    notice(`Deleted step ${i + 1}${name ? ` (${name})` : ""}. Press Ctrl+Z (or Undo) to bring it back.`, "info");
+    notice(name ? t("Deleted step {n} ({name}). Press Ctrl+Z (or Undo) to bring it back.", { n: i + 1, name })
+      : t("Deleted step {n}. Press Ctrl+Z (or Undo) to bring it back.", { n: i + 1 }), "info");
   }
 }

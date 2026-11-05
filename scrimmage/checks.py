@@ -1,9 +1,11 @@
 """Signals a scenario can check, and the checks themselves. Checks read the session duck-typed (world,
 bridge.hal, robot, nt_value), so they can be unit-tested without a robot program.
 
-Units: a check whose message has a length (pose, odometry_error) words it twice, through `said()`: `message` as it
-always was (meters), for report.json and the MCP result, which don't change with the Units setting, and `shown()` in
-the setting, for report.md, the terminal and the Scenario tab. A signal's own value is shown as the signal gives it."""
+Units and Language: every check result words its message twice, through `said()`: `message` as it always was
+(American English, meters), for report.json and the MCP result, which don't change with the settings, and `shown()`
+in the Units and Language settings, for report.md and the Scenario tab (the terminal's is American English). A
+signal's own value is shown as the signal gives it. ScenarioError's messages (a scenario file's problems) stay
+American English: the Scenario tab places them on their fields by their words, as the CLI prints them."""
 
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ from dataclasses import field as dc_field
 from typing import Any, Callable
 
 from . import units
+from .i18n import t, tn
 
 # Python tracebacks and Java stack traces in the robot console
 CRASH_PATTERN = re.compile(r"^Traceback \(most recent call last\)|^Exception in thread|^\s+at [\w.$<>]+\(.*\)\s*$",
@@ -226,7 +229,7 @@ class CheckResult:
     words: Callable[[], str] | None = dc_field(default=None, repr=False, compare=False)   # see said()
 
     def shown(self) -> str:
-        """The message in the Units setting (report.md, the terminal, the page); `message` is the machine one."""
+        """The message in the Units and Language settings (report.md, the page); `message` is the machine one."""
         return self.words() if self.words is not None else self.message
 
     def to_dict(self, shown: bool = False) -> dict:
@@ -237,9 +240,30 @@ class CheckResult:
 
 
 def said(check: str, passed: bool, message: str, words: Callable[[], str], *rest) -> CheckResult:
-    """A CheckResult whose message has units: `message` the machine text, as it was before the Units setting (report.json
-    and MCP results don't change with it), and `words` to build it in the Units setting when it is shown."""
+    """A CheckResult worded twice: `message` the machine text, as it was before the Units and Language settings
+    (report.json and MCP results don't change with them), and `words` to build it in the settings when it is shown."""
     return CheckResult(check, passed, message, *rest, words=words)
+
+
+class Said(str):
+    """Text worded twice, as a CheckResult's message is (said()): the str itself is the machine text (report.json, MCP
+    results), and `words()` builds it in the Units and Language settings when it is shown (shown())."""
+
+    def __new__(cls, text: str, words: Callable[[], str]):
+        s = super().__new__(cls, text)
+        s.words = words
+        return s
+
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self, memo):
+        return self
+
+
+def shown(text):
+    """`text` as it is shown: a Said's words, else the text itself (None stays None)."""
+    return text.words() if isinstance(text, Said) else text
 
 
 def _far(v: float) -> str:
@@ -314,10 +338,11 @@ class PoseCheck(Check):
                f"allowed {self.tol_xy:g} m, {self.tol_h:g}°")
 
         def words() -> str:
-            where = f"(x={_far(x)}, y={_far(y)}, heading={hdg:.1f}°)"
-            return (f"pose within {_far(dist)} and {dh:.1f}° of target {where}" if ok else
-                    f"pose: {_far(dist)} from target, heading off by {dh:.1f}° {where}; "
-                    f"allowed {_far(self.tol_xy)}, {self.tol_h:g}°")
+            at = {"x": _far(x), "y": _far(y), "heading": f"{hdg:.1f}", "dist": _far(dist), "off": f"{dh:.1f}"}
+            if ok:
+                return t("pose within {dist} and {off}° of target (x={x}, y={y}, heading={heading}°)", **at)
+            return t("pose: {dist} from target, heading off by {off}° (x={x}, y={y}, heading={heading}°); "
+                     "allowed {tol_xy}, {tol_heading}°", tol_xy=_far(self.tol_xy), tol_heading=f"{self.tol_h:g}", **at)
         return said(self.label, ok, msg, words, measured, expected)
 
 
@@ -453,13 +478,29 @@ class SignalCheck(Check):
     def _missing(self, session, at_end: bool) -> str:
         name = self.signal.name
         if name.startswith("hal:"):
-            seen = ", ".join(f"{t}/{d}" for t, d in sorted(session.bridge.hal.devices)) or "none"
+            seen = ", ".join(f"{typ}/{d}" for typ, d in sorted(session.bridge.hal.devices)) or "none"
             return f"no HAL value {name}; devices seen: {seen}"
         return f"{name} has no value" + (" at the end of the step" if at_end else "")
+
+    def _missing_words(self, session, at_end: bool) -> Callable[[], str]:
+        """_missing() in the Language setting, when it is called."""
+        name = self.signal.name
+        if name.startswith("hal:"):
+            seen = ", ".join(f"{typ}/{d}" for typ, d in sorted(session.bridge.hal.devices))
+            return lambda: t("no HAL value {name}; devices seen: {seen}", name=name, seen=seen or t("none"))
+        if at_end:
+            return lambda: t("{name} has no value at the end of the step", name=name)
+        return lambda: t("{name} has no value", name=name)
 
     def _sampled(self) -> str:
         if self.uses_nt and self.nt_period is not None:
             return f" (sampled at {self.nt_period:g} s hold points)"
+        return ""
+
+    def _sampled_words(self) -> str:
+        """_sampled() in the Language setting: a clause the sentence ends with."""
+        if self.uses_nt and self.nt_period is not None:
+            return t(" (sampled at {period} s hold points)", period=f"{self.nt_period:g}")
         return ""
 
     def end(self, session) -> CheckResult:
@@ -467,25 +508,48 @@ class SignalCheck(Check):
             if not self.seen:
                 self.tick(session, getattr(session, "t", 0.0))
             ok = self.first_fail is None
+            name, expected = self.signal.name, self._expected()
             if ok:
                 measured = self.last if self.equals is not None else self.extreme
-                return CheckResult(self.label, True, f"{self.signal.name} stayed {self._expected()}{self._sampled()}",
-                                   measured, self._expected())
+                return said(self.label, True, f"{self.signal.name} stayed {self._expected()}{self._sampled()}",
+                            lambda: t("{name} stayed {expected}", name=name, expected=expected) + self._sampled_words(),
+                            measured, self._expected())
             if self.worst_excess is None:
                 msg = f"{self._missing(session, False)} (first at t={self.first_missing}); expected {self._expected()}"
+                missing = self._missing_words(session, False)
+                first = self.first_missing
+
+                def words() -> str:
+                    return t("{missing} (first at t={t}); expected {expected}", missing=missing(), t=first,
+                             expected=expected) + self._sampled_words()
             else:
                 msg = (f"{self.signal.name} was {_show(self.worst)} at t={self.worst_t} (first out of range at "
                        f"t={self.first_num_fail}); expected {self._expected()}")
                 if self.n_missing:
                     msg += f"; no value at {self.n_missing} ticks (first at t={self.first_missing})"
+                worst, worst_t, first_num, n_missing, first_missing = (
+                    _show(self.worst), self.worst_t, self.first_num_fail, self.n_missing, self.first_missing)
+
+                def words() -> str:
+                    text = t("{name} was {value} at t={t} (first out of range at t={first}); expected {expected}",
+                             name=name, value=worst, t=worst_t, first=first_num, expected=expected)
+                    if n_missing:
+                        text += tn("; no value at {count} tick (first at t={first})",
+                                   "; no value at {count} ticks (first at t={first})", n_missing, first=first_missing)
+                    return text + self._sampled_words()
             msg += self._sampled()
-            return CheckResult(self.label, False, msg, self.worst, self._expected(), self.first_fail)
+            return said(self.label, False, msg, words, self.worst, self._expected(), self.first_fail)
         v = self.signal.read(session)
+        expected = self._expected()
         if v is None:
-            return CheckResult(self.label, False, self._missing(session, True), None, self._expected())
+            return said(self.label, False, self._missing(session, True), self._missing_words(session, True), None,
+                        self._expected())
         ok = self._ok(v)
-        return CheckResult(self.label, ok, f"{self.signal.name} = {_show(v)} at the end; expected {self._expected()}",
-                           v, self._expected())
+        name, value = self.signal.name, _show(v)
+        return said(self.label, ok, f"{self.signal.name} = {_show(v)} at the end; expected {self._expected()}",
+                    lambda: t("{name} = {value} at the end; expected {expected}", name=name, value=value,
+                              expected=expected),
+                    v, self._expected())
 
 
 class OdometryErrorCheck(Check):
@@ -528,18 +592,25 @@ class OdometryErrorCheck(Check):
         if self.when == "end":
             e = self._err(session)
             if e is None:
-                return CheckResult(self.label, False, "no odometry on NetworkTables ([telemetry] odometry)", None, self.max)
+                return said(self.label, False, "no odometry on NetworkTables ([telemetry] odometry)", _no_odometry,
+                            None, self.max)
             return said(self.label, e <= self.max,
                         f"odometry {e:.3f} m from ground truth at the end; allowed {self.max:g} m",
-                        lambda: f"odometry {_far(e)} from ground truth at the end; allowed {_far(self.max)}",
+                        lambda: t("odometry {error} from ground truth at the end; allowed {max}", error=_far(e),
+                                  max=_far(self.max)),
                         round(e, 4), self.max)
         if self.missing and self.worst == 0.0:
-            return CheckResult(self.label, False, "no odometry on NetworkTables ([telemetry] odometry)", None, self.max)
+            return said(self.label, False, "no odometry on NetworkTables ([telemetry] odometry)", _no_odometry, None,
+                        self.max)
         ok = self.first_fail is None
         worst = self.worst
         return said(self.label, ok, f"odometry error peaked at {worst:.3f} m; allowed {self.max:g} m",
-                    lambda: f"odometry error peaked at {_far(worst)}; allowed {_far(self.max)}",
+                    lambda: t("odometry error peaked at {error}; allowed {max}", error=_far(worst), max=_far(self.max)),
                     round(worst, 4), self.max, self.first_fail)
+
+
+def _no_odometry() -> str:
+    return t("no odometry on NetworkTables ([telemetry] odometry)")
 
 
 class ContactCheck(Check):
@@ -562,7 +633,13 @@ class ContactCheck(Check):
         touched = self.first_t is not None
         ok = touched if self.must else not touched
         msg = (f"touched {self.target} at t={self.first_t}" if touched else f"never touched {self.target}")
-        return CheckResult(self.label, ok, msg, touched, self.must, None if self.must else self.first_t)
+        target, first = self.target, self.first_t
+
+        def words() -> str:
+            if touched:
+                return t("touched {target} at t={t}", target=target, t=first)
+            return t("never touched {target}", target=target)
+        return said(self.label, ok, msg, words, touched, self.must, None if self.must else self.first_t)
 
 
 class ConsoleCheck(Check):
@@ -606,12 +683,19 @@ class ConsoleCheck(Check):
     def end(self, session) -> CheckResult:
         self._scan(session)
         if self.contains is not None and not self.matched:
-            return CheckResult(self.label, False, f"no console line matched /{self.contains.pattern}/ "
-                               f"({self.count} lines in the step)", None, self.contains.pattern)
+            pattern, count = self.contains.pattern, self.count
+            return said(self.label, False, f"no console line matched /{self.contains.pattern}/ "
+                        f"({self.count} lines in the step)",
+                        lambda: tn("no console line matched /{pattern}/ ({count} line in the step)",
+                                   "no console line matched /{pattern}/ ({count} lines in the step)", count,
+                                   pattern=pattern),
+                        None, self.contains.pattern)
         if self.bad is not None:
-            return CheckResult(self.label, False,
-                               f"console line matched /{self.not_contains.pattern}/: {self.bad}", self.bad, None)
-        return CheckResult(self.label, True, "console as expected")
+            pattern, bad = self.not_contains.pattern, self.bad
+            return said(self.label, False, f"console line matched /{self.not_contains.pattern}/: {self.bad}",
+                        lambda: t("console line matched /{pattern}/: {line}", pattern=pattern, line=bad),
+                        self.bad, None)
+        return said(self.label, True, "console as expected", lambda: t("console as expected"))
 
 
 class ByTimeCheck(Check):
@@ -655,15 +739,27 @@ class ByTimeCheck(Check):
         expected = f"{self.cond._expected()} by t={by}"
         if self.reached is not None:
             st, v = self.reached
-            return CheckResult(self.label, True, f"{name} reached {_show(v)} at t={_show(st)} (by {by})", v, expected)
+            return said(self.label, True, f"{name} reached {_show(v)} at t={_show(st)} (by {by})",
+                        lambda: t("{name} reached {value} at t={t} (by {by})", name=name, value=_show(v), t=_show(st),
+                                  by=by),
+                        v, expected)
         fail_t = round(self.start + self.t, 4)
         if self.last is None or self.last[1] is None:
             at = f" at t={_show(self.last[0])}" if self.last is not None else ""
-            return CheckResult(self.label, False, f"{name} has no value{at}; expected {expected}", None, expected,
-                               fail_t)
+            last = self.last
+
+            def words() -> str:
+                if last is None:
+                    return t("{name} has no value; expected {expected}", name=name, expected=expected)
+                return t("{name} has no value at t={t}; expected {expected}", name=name, t=_show(last[0]),
+                         expected=expected)
+            return said(self.label, False, f"{name} has no value{at}; expected {expected}", words, None, expected,
+                        fail_t)
         st, v = self.last
-        return CheckResult(self.label, False, f"{name} was {_show(v)} at t={_show(st)}; expected {expected}", v,
-                           expected, fail_t)
+        return said(self.label, False, f"{name} was {_show(v)} at t={_show(st)}; expected {expected}",
+                    lambda: t("{name} was {value} at t={t}; expected {expected}", name=name, value=_show(v),
+                              t=_show(st), expected=expected),
+                    v, expected, fail_t)
 
 
 def tick_checks(checks, session, t: float) -> None:

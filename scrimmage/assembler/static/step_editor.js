@@ -7,6 +7,7 @@ import { h, fmt, showMeasure, readMeasure, measureError } from "./app.js";
 import { units } from "./units.js";
 import { MODES, scEdit, hooks, sc } from "./scenario.js";
 import { trackPanel } from "./trackplot.js";
+import { t } from "./i18n.js";
 
 // -- shared form helpers (also used by the header in scenario.js) --------------------------------
 let rerendering = false;   // removing a focused input must not commit it
@@ -69,13 +70,13 @@ export function icon(name) {
     joystick: "M8 9V5 M8 4.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z M3 10h10v3.5H3z",
   };
   // the HTML parser puts <svg> in the SVG namespace; the markup is only these constant paths
-  const t = document.createElement("template");
-  t.innerHTML = `<svg viewBox="0 0 16 16" class="icon icon-${name}" aria-hidden="true"><path d="${paths[name] || ""}"/></svg>`;
-  return t.content.firstChild;
+  const tpl = document.createElement("template");
+  tpl.innerHTML = `<svg viewBox="0 0 16 16" class="icon icon-${name}" aria-hidden="true"><path d="${paths[name] || ""}"/></svg>`;
+  return tpl.content.firstChild;
 }
 
 const num = (v) => typeof v === "number" && isFinite(v);
-const isNumText = (t) => t !== "" && isFinite(Number(t));
+const isNumText = (text) => text !== "" && isFinite(Number(text));
 
 // A number box for one key of a table value. onValue(number | null) — null when emptied. With a `kind` (units.js)
 // it is a text box in the chosen units ("12.5" or "12.5 ft"), and the value stays SI.
@@ -91,9 +92,9 @@ function numBox({ id, key, value, placeholder, min, max, step = "any", label, fi
       v = readMeasure(el, kind);
       if (measureError(v)) { localError(fieldEl(), measureError(v)); return; }
     } else {
-      if (badNumber(el)) { localError(fieldEl(), `${label || key} must be a number`); return; }
-      const t = el.value.trim();
-      v = t === "" ? null : Number(t);
+      if (badNumber(el)) { localError(fieldEl(), t("{label} must be a number", { label: label || key })); return; }
+      const text = el.value.trim();
+      v = text === "" ? null : Number(text);
     }
     clean(el);
     if (v === (num(value) ? value : null)) return;
@@ -144,13 +145,13 @@ export function renderStepEditor(st) {
   const step = i === null ? null : s.steps[i];
   if (!step) {
     lastStep = null;
-    title.textContent = "Step";
-    root.replaceChildren(h("p", { class: "empty" }, "Add a step on the left to start the scenario."));
+    title.textContent = t("Step");
+    root.replaceChildren(h("p", { class: "empty" }, t("Add a step on the left to start the scenario.")));
     return;
   }
   const switched = lastStep !== i;
   lastStep = i;
-  title.textContent = `Step ${i + 1}${step.name ? ` · ${step.name}` : ""}`;
+  title.textContent = step.name ? t("Step {n} · {name}", { n: i + 1, name: step.name }) : t("Step {n}", { n: i + 1 });
   const fs = h("fieldset", { class: "ed", disabled: s.read_only },
     headSection(i, step), step.inputs ? trackSection(i, step) : inputsSection(i, step), checksSection(i, step), shotsSection(i, step));
   root.replaceChildren(fs);
@@ -167,19 +168,19 @@ export function renderStepEditor(st) {
 // -- name, mode, duration ----------------------------------------------------------------------------
 function headSection(i, step) {
   const setStep = (fields) => scEdit("set_step", { step: i, fields });
-  const name = textField(`step${i}/name`, "ed-name", "name", "Name", step.name,
-    (v) => setStep({ name: v || null }), { placeholder: `step ${i + 1}`, mono: false });
+  const name = textField(`step${i}/name`, "ed-name", "name", t("Name"), step.name,
+    (v) => setStep({ name: v || null }), { placeholder: t("step {n}", { n: i + 1 }), mono: false });
   const modeField = h("div", { class: "field", role: "group", "aria-labelledby": "ed-mode-label", dataset: { fields: `step${i}/mode` } },
-    h("span", { id: "ed-mode-label", class: "field-label" }, "Mode"),
+    h("span", { id: "ed-mode-label", class: "field-label" }, t("Mode")),
     h("div", { class: "mode-seg" }, ...MODES.map((m) => h("button", {
       type: "button", class: `mode-btn mode-${m}`, "aria-pressed": String(step.mode === m), dataset: { key: `mode-${m}` },
       onclick: () => { if (step.mode !== m) setStep({ mode: m }); },
     }, m))),
-    !MODES.includes(step.mode) && step.mode != null ? h("p", { class: "hint", text: `The file says mode = ${JSON.stringify(step.mode)}.` }) : null,
+    !MODES.includes(step.mode) && step.mode != null ? h("p", { class: "hint", text: t("The file says mode = {mode}.", { mode: JSON.stringify(step.mode) }) }) : null,
     h("div", { class: "field-msgs" }));
-  const dur = numField(`step${i}/duration`, "ed-duration", "duration", "Duration", step.duration,
+  const dur = numField(`step${i}/duration`, "ed-duration", "duration", t("Duration"), step.duration,
     (v) => setStep({ duration: v }), { unit: "s", min: 0 });
-  const startT = h("p", { class: "hint ed-start", text: `Starts at ${+step.start_t.toFixed(3)} s` });
+  const startT = h("p", { class: "hint ed-start", text: t("Starts at {seconds} s", { seconds: +step.start_t.toFixed(3) }) });
   return h("section", { class: "ed-section ed-head", dataset: { fields: `step${i} step${i}/step` } },
     h("div", { class: "field-msgs" }),
     h("div", { class: "ed-head-grid" }, name, modeField, h("div", {}, dur, startT), gameDataField(i, step)));
@@ -192,15 +193,15 @@ function gameDataField(i, step) {
   let before = "";
   for (const s of sc.state.steps.slice(0, i)) if (typeof s.game_data === "string") before = s.game_data;
   const own = step.game_data;
-  const f = textField(`step${i}/game_data`, "ed-game-data", "game_data", "Game data", typeof own === "string" ? own : "",
+  const f = textField(`step${i}/game_data`, "ed-game-data", "game_data", t("Game data"), typeof own === "string" ? own : "",
     (v) => set(v || null),
-    { placeholder: own === "" ? "cleared" : before ? `keeps ${JSON.stringify(before)}` : "none" });
+    { placeholder: own === "" ? t("cleared") : before ? t("keeps {value}", { value: JSON.stringify(before) }) : t("none") });
   if (own === "") {
     f.insertBefore(h("button", { type: "button", class: "linklike", dataset: { key: "game-data-keep" }, onclick: () => set(null) },
-      before ? `Keep ${JSON.stringify(before)} instead` : "Don't clear"), f.querySelector(":scope > .field-msgs"));
+      before ? t("Keep {value} instead", { value: JSON.stringify(before) }) : t("Don't clear")), f.querySelector(":scope > .field-msgs"));
   } else if (own == null && before) {
     f.insertBefore(h("button", { type: "button", class: "linklike", dataset: { key: "game-data-clear" }, onclick: () => set("") },
-      "Clear it here"), f.querySelector(":scope > .field-msgs"));
+      t("Clear it here")), f.querySelector(":scope > .field-msgs"));
   }
   return f;
 }
@@ -213,8 +214,8 @@ function inputsSection(i, step) {
   for (const p of sc.extraPorts.get(i) || []) ports.add(p);
   const sorted = [...ports].filter((p) => p >= 0 && p <= 5).sort((a, b) => a - b);
   const free = [0, 1, 2, 3, 4, 5].filter((p) => !ports.has(p));
-  const add = h("select", { id: "ed-add-port", class: "add-select", "aria-label": "Add a joystick port", dataset: { key: "add-port" } },
-    h("option", { value: "" }, "Add port ▾"), ...free.map((p) => h("option", { value: String(p) }, `Port ${p}`)));
+  const add = h("select", { id: "ed-add-port", class: "add-select", "aria-label": t("Add a joystick port"), dataset: { key: "add-port" } },
+    h("option", { value: "" }, t("Add port ▾")), ...free.map((p) => h("option", { value: String(p) }, t("Port {n}", { n: p }))));
   add.addEventListener("change", () => {
     if (add.value === "") return;
     const p = Number(add.value);
@@ -225,19 +226,19 @@ function inputsSection(i, step) {
     const first = root.querySelector(`[data-port="${p}"] button`);
     if (first) first.focus();
   });
-  return section(["Joystick inputs", h("span", { class: "ed-sub" }, "held for the whole step")],
+  return section([t("Joystick inputs"), h("span", { class: "ed-sub" }, t("held for the whole step"))],
     `step${i}/axes step${i}/buttons step${i}/povs`,
     sorted.length ? h("div", { class: "ports" }, ...sorted.map((p) => portCard(i, step, p)))
-      : h("p", { class: "empty empty-small" }, "No joystick input in this step: every port is neutral."),
+      : h("p", { class: "empty empty-small" }, t("No joystick input in this step: every port is neutral.")),
     free.length ? h("div", { class: "ed-actions" }, add) : null);
 }
 
 // A step with an input track: the track panel (loaded after the editor is drawn) in place of the constant inputs.
 function trackSection(i, step) {
-  const body = h("p", { class: "muted track-loading" }, "Loading the track…");
+  const body = h("p", { class: "muted track-loading" }, t("Loading the track…"));
   trackPanel(i, step).then((el) => { if (body.isConnected) body.replaceWith(el); },
-    (e) => { if (body.isConnected) body.replaceWith(h("p", { class: "error", text: `Couldn't show the track: ${e.message || e}` })); });
-  return section(["Input track", h("span", { class: "ed-sub" }, "replayed step for step")], `step${i}/inputs`, body);
+    (e) => { if (body.isConnected) body.replaceWith(h("p", { class: "error", text: t("Couldn't show the track: {why}", { why: e.message || e }) })); });
+  return section([t("Input track"), h("span", { class: "ed-sub" }, t("replayed step for step"))], `step${i}/inputs`, body);
 }
 
 function portCard(i, step, port) {
@@ -248,76 +249,86 @@ function portCard(i, step, port) {
   const axisRows = axes.map((v, n) => {
     const id = `ax-${port}-${n}`;
     const val = num(v) ? v : 0;
-    const slider = h("input", { type: "range", min: "-1", max: "1", step: "0.05", value: String(val), "aria-label": `Port ${port} axis ${n}`,
+    const slider = h("input", { type: "range", min: "-1", max: "1", step: "0.05", value: String(val), "aria-label": t("Port {port} axis {n}", { port, n }),
       dataset: { key: `${id}-r` } });
     const box = markDirty(h("input", { id, type: "number", min: "-1", max: "1", step: "0.05", value: fmt(val), class: "axis-num",
-      "aria-label": `Port ${port} axis ${n} value`, dataset: { key: id } }));
+      "aria-label": t("Port {port} axis {n} value", { port, n }), dataset: { key: id } }));
     const commit = (x) => { const next = [...axes]; next[n] = x; set("axes", next); };
     slider.addEventListener("input", () => { box.value = slider.value; });
     slider.addEventListener("change", () => commit(Number(slider.value)));
     let row;
     onCommit(box, () => {
-      if (badNumber(box) || box.value.trim() === "") { localError(row, "an axis is a number between -1 and 1"); return; }
+      if (badNumber(box) || box.value.trim() === "") { localError(row, t("an axis is a number between -1 and 1")); return; }
       clean(box);
       const x = Number(box.value);
       if (x !== val) commit(x);
     });
-    row = h("div", { class: "axis-row field" }, h("span", { class: "idx" }, `Axis ${n}`), slider, box, h("div", { class: "field-msgs" }));
+    row = h("div", { class: "axis-row field" }, h("span", { class: "idx" }, t("Axis {n}", { n })), slider, box, h("div", { class: "field-msgs" }));
     return row;
   });
 
   const btns = buttons.map((b, n) => h("button", {
-    type: "button", class: "toggle", "aria-pressed": String(b === true), title: `Button ${n + 1}${b ? " (held)" : ""}`, dataset: { key: `bt-${port}-${n}` },
+    type: "button", class: "toggle", "aria-pressed": String(b === true), title: b ? t("Button {n} (held)", { n: n + 1 }) : t("Button {n}", { n: n + 1 }), dataset: { key: `bt-${port}-${n}` },
     onclick: () => { const next = [...buttons]; next[n] = !(b === true); set("buttons", next); },
   }, String(n + 1)));
 
   const povRows = povs.map((v, n) => {
     const id = `pov-${port}-${n}`;
-    const compass = h("div", { class: "compass", role: "group", "aria-label": `Port ${port} POV ${n}` },
+    const compass = h("div", { class: "compass", role: "group", "aria-label": t("Port {port} POV {n}", { port, n }) },
       ...POV_DIRS.map(([deg, glyph]) => h("button", {
-        type: "button", class: "compass-btn", "aria-pressed": String(v === deg), title: deg === -1 ? "Released (-1)" : `${deg}°`,
-        "aria-label": deg === -1 ? "released" : `${deg} degrees`, dataset: { key: `${id}-${deg}` },
+        type: "button", class: "compass-btn", "aria-pressed": String(v === deg), title: deg === -1 ? t("Released (-1)") : `${deg}°`,
+        "aria-label": deg === -1 ? t("released") : t("{deg} degrees", { deg }), dataset: { key: `${id}-${deg}` },
         onclick: () => { if (v !== deg) { const next = [...povs]; next[n] = deg; set("povs", next); } },
       }, glyph)));
     let row;
-    const box = numBox({ id, key: id, value: v, label: `POV ${n}`, int: true, min: -1, max: 359, fieldEl: () => row,
+    const box = numBox({ id, key: id, value: v, label: t("POV {n}", { n }), int: true, min: -1, max: 359, fieldEl: () => row,
       onValue: (x) => { const next = [...povs]; next[n] = x === null ? -1 : x; set("povs", next); } });
-    row = h("div", { class: "pov-row field" }, h("span", { class: "idx" }, `POV ${n}`), compass,
+    row = h("div", { class: "pov-row field" }, h("span", { class: "idx" }, t("POV {n}", { n })), compass,
       h("span", { class: "with-unit" }, box, h("span", { class: "unit" }, "°")), h("div", { class: "field-msgs" }));
     return row;
   });
 
-  const plusMinus = (kind, list, fresh, what) => h("span", { class: "pm" },
-    h("button", { type: "button", class: "btn btn-small", "aria-label": `Add ${what} on port ${port}`, onclick: () => set(kind, [...list, fresh]) }, `+ ${what}`),
-    list.length ? h("button", { type: "button", class: "btn btn-small btn-ghost", "aria-label": `Remove the last ${what} on port ${port}`,
-      onclick: () => set(kind, list.slice(0, -1)) }, `− ${what}`) : null);
+  // words per kind: [add's label, remove's label, the add button, the remove button]
+  const WORDS = {
+    axes: () => [t("Add axis on port {port}", { port }), t("Remove the last axis on port {port}", { port }), t("+ axis"), t("− axis")],
+    buttons: () => [t("Add button on port {port}", { port }), t("Remove the last button on port {port}", { port }), t("+ button"), t("− button")],
+    povs: () => [t("Add POV on port {port}", { port }), t("Remove the last POV on port {port}", { port }), t("+ POV"), t("− POV")],
+  };
+  const plusMinus = (kind, list, fresh) => {
+    const [addLabel, removeLabel, addText, removeText] = WORDS[kind]();
+    return h("span", { class: "pm" },
+      h("button", { type: "button", class: "btn btn-small", "aria-label": addLabel, onclick: () => set(kind, [...list, fresh]) }, addText),
+      list.length ? h("button", { type: "button", class: "btn btn-small btn-ghost", "aria-label": removeLabel,
+        onclick: () => set(kind, list.slice(0, -1)) }, removeText) : null);
+  };
 
   return h("div", { class: "port", dataset: { port: key } },
-    h("div", { class: "port-head" }, icon("joystick"), h("strong", {}, `Port ${port}`)),
-    h("div", { class: "port-kind" }, h("div", { class: "port-kind-head" }, h("span", { class: "kind-label" }, "Axes"), plusMinus("axes", axes, 0, "axis")),
-      axisRows.length ? axisRows : h("p", { class: "muted small" }, "none (−1 … 1 each)")),
-    h("div", { class: "port-kind" }, h("div", { class: "port-kind-head" }, h("span", { class: "kind-label" }, "Buttons"), plusMinus("buttons", buttons, false, "button")),
-      btns.length ? h("div", { class: "toggles" }, btns) : h("p", { class: "muted small" }, "none (1 is the first button)")),
-    h("div", { class: "port-kind" }, h("div", { class: "port-kind-head" }, h("span", { class: "kind-label" }, "POVs"), plusMinus("povs", povs, -1, "POV")),
-      povRows.length ? povRows : h("p", { class: "muted small" }, "none (−1 is released)")));
+    h("div", { class: "port-head" }, icon("joystick"), h("strong", {}, t("Port {n}", { n: port }))),
+    h("div", { class: "port-kind" }, h("div", { class: "port-kind-head" }, h("span", { class: "kind-label" }, t("Axes")), plusMinus("axes", axes, 0)),
+      axisRows.length ? axisRows : h("p", { class: "muted small" }, t("none (−1 … 1 each)"))),
+    h("div", { class: "port-kind" }, h("div", { class: "port-kind-head" }, h("span", { class: "kind-label" }, t("Buttons")), plusMinus("buttons", buttons, false)),
+      btns.length ? h("div", { class: "toggles" }, btns) : h("p", { class: "muted small" }, t("none (1 is the first button)"))),
+    h("div", { class: "port-kind" }, h("div", { class: "port-kind-head" }, h("span", { class: "kind-label" }, t("POVs")), plusMinus("povs", povs, -1)),
+      povRows.length ? povRows : h("p", { class: "muted small" }, t("none (−1 is released)"))));
 }
 
 // -- checks ----------------------------------------------------------------------------------------------
 export const CHECK_KINDS = ["pose", "odometry_error", "at_end", "always", "by_time", "must_touch", "never_touch", "console"];
-const CHECK_LABEL = {
-  pose: "Pose at the end", odometry_error: "Odometry error", at_end: "Signal at the end", always: "Signal throughout",
-  by_time: "Signal by a time", must_touch: "Must touch", never_touch: "Never touch", console: "Console output",
-};
-const CHECK_DOC = {
-  pose: "Where the robot is when the step ends (on the field, heading in degrees).",
-  odometry_error: "How far the robot's own odometry (on NetworkTables) is from where it really is.",
-  at_end: "A signal's value when the step ends.",
-  always: "A signal's value on every tick of the step.",
-  by_time: "A signal reaches a value at some point up to t seconds into the step (e.g. 8 scored by 15 s).",
-  must_touch: "The robot touches this geom or body at some point in the step.",
-  never_touch: "The robot never touches this geom or body in the step.",
-  console: "A line the robot program prints during the step (a regular expression).",
-};
+// (functions: the words are in the language of the moment)
+const CHECK_LABEL = () => ({
+  pose: t("Pose at the end"), odometry_error: t("Odometry error"), at_end: t("Signal at the end"), always: t("Signal throughout"),
+  by_time: t("Signal by a time"), must_touch: t("Must touch"), never_touch: t("Never touch"), console: t("Console output"),
+});
+const CHECK_DOC = () => ({
+  pose: t("Where the robot is when the step ends (on the field, heading in degrees)."),
+  odometry_error: t("How far the robot's own odometry (on NetworkTables) is from where it really is."),
+  at_end: t("A signal's value when the step ends."),
+  always: t("A signal's value on every tick of the step."),
+  by_time: t("A signal reaches a value at some point up to t seconds into the step (e.g. 8 scored by 15 s)."),
+  must_touch: t("The robot touches this geom or body at some point in the step."),
+  never_touch: t("The robot never touches this geom or body in the step."),
+  console: t("A line the robot program prints during the step (a regular expression)."),
+});
 
 function defaultSpec(kind, step) {
   const contacts = (sc.signals && sc.signals.contacts) || [];
@@ -333,27 +344,30 @@ function defaultSpec(kind, step) {
 
 function checksSection(i, step) {
   const noContacts = !((sc.signals && sc.signals.contacts) || []).length;
-  const add = h("select", { id: "ed-add-check", class: "add-select", "aria-label": "Add a check", dataset: { key: "add-check" } },
-    h("option", { value: "" }, "Add check ▾"), ...CHECK_KINDS.map((k) => {
+  const labels = CHECK_LABEL();
+  const add = h("select", { id: "ed-add-check", class: "add-select", "aria-label": t("Add a check"), dataset: { key: "add-check" } },
+    h("option", { value: "" }, t("Add check ▾")), ...CHECK_KINDS.map((k) => {
       const off = noContacts && (k === "must_touch" || k === "never_touch");
-      return h("option", { value: k, disabled: off, title: off ? "This robot's world has nothing to touch (or it doesn't load)" : null },
-        `${CHECK_LABEL[k]} (${k})${off ? " (nothing to touch)" : ""}`);
+      return h("option", { value: k, disabled: off, title: off ? t("This robot's world has nothing to touch (or it doesn't load)") : null },
+        off ? t("{label} ({kind}) (nothing to touch)", { label: labels[k], kind: k }) : t("{label} ({kind})", { label: labels[k], kind: k }));
     }));
   add.addEventListener("change", () => {
     const k = add.value;
     add.value = "";
     if (k) scEdit("add_check", { step: i, kind: k, spec: defaultSpec(k, step) });
   });
-  return section(["Checks", h("span", { class: "ed-sub" }, "judged at the end of the step")], `step${i}/check`,
+  return section([t("Checks"), h("span", { class: "ed-sub" }, t("judged at the end of the step"))], `step${i}/check`,
     step.checks.length ? h("div", { class: "cards" }, ...step.checks.map((c, j) => checkCard(i, j, c)))
-      : h("p", { class: "empty empty-small" }, "No checks: this step only drives the robot."),
+      : h("p", { class: "empty empty-small" }, t("No checks: this step only drives the robot.")),
     h("div", { class: "ed-actions" }, add));
 }
 
+// `what`: "check" or "screenshot" (a key, not words)
 function cardHead(title, kindText, fieldIds, onDelete, what) {
+  const del = what === "check" ? t("Delete this check") : t("Delete this screenshot");
   return [h("div", { class: "card-head" },
     h("strong", {}, title), kindText ? h("code", { class: "kind" }, kindText) : null,
-    h("button", { type: "button", class: "btn btn-small btn-ghost card-del", "aria-label": `Delete this ${what}`, title: `Delete this ${what}`, onclick: onDelete }, icon("trash"))),
+    h("button", { type: "button", class: "btn btn-small btn-ghost card-del", "aria-label": del, title: del, onclick: onDelete }, icon("trash"))),
   h("div", { class: "field-msgs" })];
 }
 
@@ -362,8 +376,8 @@ function checkCard(i, j, c) {
   const del = () => scEdit("delete_check", { step: i, check: j });
   if (!c.kind || !CHECK_KINDS.includes(c.kind)) {
     return h("div", { class: "card", dataset: { fields: `${base} ${base}/check` } },
-      ...cardHead(`Check ${j + 1}`, c.kind || "?", base, del, "check"),
-      h("p", { class: "hint", text: "This check isn't one of the kinds the editor knows; change it in a text editor or delete it." }),
+      ...cardHead(t("Check {n}", { n: j + 1 }), c.kind || "?", base, del, "check"),
+      h("p", { class: "hint", text: t("This check isn't one of the kinds the editor knows; change it in a text editor or delete it.") }),
       h("pre", { class: "raw", text: JSON.stringify(c.spec) }));
   }
   const kind = c.kind;
@@ -389,7 +403,7 @@ function checkCard(i, j, c) {
     if (extra) body = h("div", {}, body, extra);
   } else if (kind === "odometry_error") {
     const when = h("select", { id: id("when"), dataset: { key: id("when") } },
-      h("option", { value: "end" }, "at the end of the step"), h("option", { value: "always" }, "on every tick"));
+      h("option", { value: "end" }, t("at the end of the step")), h("option", { value: "always" }, t("on every tick")));
     when.value = tableSpec.when === "always" ? "always" : "end";
     when.addEventListener("change", () => setKey("when", when.value === "end" ? null : when.value));
     body = h("div", { class: "form-grid" },
@@ -400,21 +414,21 @@ function checkCard(i, j, c) {
   } else if (kind === "must_touch" || kind === "never_touch") {
     const value = typeof spec === "string" ? spec : "";
     const custom = hooks.contactInput ? hooks.contactInput({ value, id: id("target"), onValue: (v) => setSpec(v), kind }) : contactPicker(id("target"), value, (v) => setSpec(v));
-    body = custom ? field(`${base}/${kind}`, id("target"), "Geom or body", custom)
-      : textField(`${base}/${kind}`, id("target"), id("target"), "Geom or body", value, (v) => setSpec(v),
-        { list: "sc-contact-list", placeholder: "a geom or body name" });
+    body = custom ? field(`${base}/${kind}`, id("target"), t("Geom or body"), custom)
+      : textField(`${base}/${kind}`, id("target"), id("target"), t("Geom or body"), value, (v) => setSpec(v),
+        { list: "sc-contact-list", placeholder: t("a geom or body name") });
   } else {   // console
     body = h("div", { class: "form-grid form-grid-wide" },
-      textField(fid("contains"), id("contains"), id("contains"), "Contains", tableSpec.contains, (v) => setKey("contains", v),
-        { placeholder: "text or regex a line must match" }),
-      textField(fid("not_contains"), id("not_contains"), id("not_contains"), "Doesn't contain", tableSpec.not_contains,
-        (v) => setKey("not_contains", v), { placeholder: "text or regex no line may match" }));
+      textField(fid("contains"), id("contains"), id("contains"), t("Contains"), tableSpec.contains, (v) => setKey("contains", v),
+        { placeholder: t("text or regex a line must match") }),
+      textField(fid("not_contains"), id("not_contains"), id("not_contains"), t("Doesn't contain"), tableSpec.not_contains,
+        (v) => setKey("not_contains", v), { placeholder: t("text or regex no line may match") }));
   }
   // must/never_touch put `<base>/<kind>` on their one field; the others take it on the card
   const cardIds = kind === "must_touch" || kind === "never_touch" ? `${base} ${base}/check` : `${base} ${base}/check ${base}/${kind}`;
   return h("div", { class: `card card-check card-${kind}`, dataset: { fields: cardIds } },
-    ...cardHead(CHECK_LABEL[kind], kind, base, del, "check"),
-    h("p", { class: "doc", text: CHECK_DOC[kind] }),
+    ...cardHead(CHECK_LABEL()[kind], kind, base, del, "check"),
+    h("p", { class: "doc", text: CHECK_DOC()[kind] }),
     body);
 }
 
@@ -423,10 +437,10 @@ function checkCard(i, j, c) {
 function signalPicker(id, value, onValue) {
   const s = sc.signals || {};
   const groups = [
-    ["Robot", s.fixed || []],
-    ["Motors", (s.motors || []).flatMap((m) => [`${m}.current`, `${m}.command`])],
-    ["Joints", (s.joints || []).flatMap((j) => [`${j}.position`, `${j}.velocity`])],
-    ["Test range", s.range || []],
+    [t("Robot"), s.fixed || []],
+    [t("Motors"), (s.motors || []).flatMap((m) => [`${m}.current`, `${m}.command`])],
+    [t("Joints"), (s.joints || []).flatMap((j) => [`${j}.position`, `${j}.velocity`])],
+    [t("Test range"), s.range || []],
   ].filter(([, names]) => names.length);
   const known = groups.some(([, names]) => names.includes(value));
   const text = markDirty(h("input", { id, type: "text", value, list: "sc-signal-list", autocomplete: "off", spellcheck: "false",
@@ -436,10 +450,10 @@ function signalPicker(id, value, onValue) {
     const v = text.value.trim();
     if (v !== value) onValue(v);
   });
-  const pick = h("select", { id: `${id}-pick`, class: "picker", "aria-label": "Choose a signal", dataset: { key: `${id}-pick` } },
-    h("option", { value: "" }, known ? "Change ▾" : "Choose ▾"),
+  const pick = h("select", { id: `${id}-pick`, class: "picker", "aria-label": t("Choose a signal"), dataset: { key: `${id}-pick` } },
+    h("option", { value: "" }, known ? t("Change ▾") : t("Choose ▾")),
     ...groups.map(([label, names]) => h("optgroup", { label }, ...names.map((n) => h("option", { value: n }, n)))),
-    h("optgroup", { label: "Type it in" },
+    h("optgroup", { label: t("Type it in") },
       h("option", { value: "hal:" }, "hal:<type>/<device>/<key>…"), h("option", { value: "nt:/" }, "nt:/<topic>…")));
   pick.addEventListener("change", () => {
     const v = pick.value;
@@ -464,8 +478,8 @@ function contactPicker(id, value, onValue) {
   const names = (sc.signals && sc.signals.contacts) || [];
   if (!names.length) return null;
   const sel = h("select", { id, class: "mono", dataset: { key: id } },
-    !value ? h("option", { value: "", disabled: true }, "(choose)") : null,
-    value && !names.includes(value) ? h("option", { value }, `${value} (not in this world)`) : null,
+    !value ? h("option", { value: "", disabled: true }, t("(choose)")) : null,
+    value && !names.includes(value) ? h("option", { value }, t("{name} (not in this world)", { name: value })) : null,
     ...names.map((n) => h("option", { value: n }, n)));
   sel.value = value;
   sel.addEventListener("change", () => { if (sel.value && sel.value !== value) onValue(sel.value); });
@@ -473,20 +487,20 @@ function contactPicker(id, value, onValue) {
 }
 
 // equals takes a bool, a number or text: "true"/"false" are booleans, numeric text a number.
-function parseEquals(t) {
-  if (t === "true") return true;
-  if (t === "false") return false;
-  return isNumText(t) ? Number(t) : t;
+function parseEquals(text) {
+  if (text === "true") return true;
+  if (text === "false") return false;
+  return isNumText(text) ? Number(text) : text;
 }
 
 function signalForm(kind, spec, setKey, fid, id) {
   const sigValue = typeof spec.signal === "string" ? spec.signal : "";
   const custom = hooks.signalInput ? hooks.signalInput({ value: sigValue, id: id("signal"), onValue: (v) => setKey("signal", v), kind }) : null;
-  const signal = field(fid("signal"), id("signal"), "Signal", custom || signalPicker(id("signal"), sigValue, (v) => setKey("signal", v)),
-    { hint: "Choose one of this robot's signals, or type hal:<type>/<device>/<key> or nt:/<topic>." });
+  const signal = field(fid("signal"), id("signal"), t("Signal"), custom || signalPicker(id("signal"), sigValue, (v) => setKey("signal", v)),
+    { hint: t("Choose one of this robot's signals, or type hal:<type>/<device>/<key> or nt:/<topic>.") });
   const eqText = spec.equals === undefined ? "" : String(spec.equals);
   const eq = textField(fid("equals"), id("equals"), id("equals"), "equals", eqText, (v) => setKey("equals", v === "" ? null : parseEquals(v)),
-    { placeholder: "true, 3, or text" });
+    { placeholder: t("true, 3, or text") });
   const fields = [
     numField(fid("min"), id("min"), id("min"), "min", spec.min, (v) => setKey("min", v)),
     numField(fid("max"), id("max"), id("max"), "max", spec.max, (v) => setKey("max", v)),
@@ -494,16 +508,16 @@ function signalForm(kind, spec, setKey, fid, id) {
   ];
   if (kind === "at_end" || kind === "by_time") {
     fields.push(numField(fid("approx"), id("approx"), id("approx"), "approx", spec.approx, (v) => setKey("approx", v)),
-      numField(fid("tol"), id("tol"), id("tol"), "tol", spec.tol, (v) => setKey("tol", v), { min: 0, hint: "with approx" }));
+      numField(fid("tol"), id("tol"), id("tol"), "tol", spec.tol, (v) => setKey("tol", v), { min: 0, hint: t("with approx") }));
   }
   if (kind === "by_time") {
-    fields.unshift(numField(fid("t"), id("t"), id("t"), "by t", spec.t, (v) => setKey("t", v), { unit: "s", min: 0, hint: "seconds into the step" }));
+    fields.unshift(numField(fid("t"), id("t"), id("t"), t("by t"), spec.t, (v) => setKey("t", v), { unit: "s", min: 0, hint: t("seconds into the step") }));
   }
   const note = {
-    at_end: "Pass when the value is within min … max, equals a value, or is approx ± tol.",
-    always: "Pass when every sample is within min … max, or equals a value.",
-    by_time: "Pass when, at some point up to t seconds into the step, the value is within min … max, equals a value, or is approx ± tol.",
-  }[kind];
+    at_end: () => t("Pass when the value is within min … max, equals a value, or is approx ± tol."),
+    always: () => t("Pass when every sample is within min … max, or equals a value."),
+    by_time: () => t("Pass when, at some point up to t seconds into the step, the value is within min … max, equals a value, or is approx ± tol."),
+  }[kind]();
   return h("div", {}, signal,
     h("p", { class: "hint form-note" }, note),
     h("div", { class: "form-grid" }, ...fields));
@@ -513,28 +527,28 @@ function signalForm(kind, spec, setKey, fid, id) {
 // The view picker: the built-in views, then the model's own cameras (camera:<name>).
 function viewOptions(current, { free = true } = {}) {
   const cams = ((sc.signals && sc.signals.cameras) || []).map((c) => `camera:${c}`);
-  const views = [["follow", "follow the robot"], ["top", "top (whole field)"]];
-  if (free) views.push(["free", "free camera"]);
-  const out = [h("optgroup", { label: "Views" }, ...views.map(([v, label]) => h("option", { value: v }, label))),
-    h("optgroup", { label: "Model cameras" }, ...(cams.length ? cams.map((c) => h("option", { value: c }, c))
-      : [h("option", { value: "", disabled: true }, "(this model has no cameras)")]))];
+  const views = [["follow", t("follow the robot")], ["top", t("top (whole field)")]];
+  if (free) views.push(["free", t("free camera")]);
+  const out = [h("optgroup", { label: t("Views") }, ...views.map(([v, label]) => h("option", { value: v }, label))),
+    h("optgroup", { label: t("Model cameras") }, ...(cams.length ? cams.map((c) => h("option", { value: c }, c))
+      : [h("option", { value: "", disabled: true }, t("(this model has no cameras)"))]))];
   if (current && !views.some(([v]) => v === current) && !cams.includes(current)) {
-    out.push(h("option", { value: current }, `${current} (not in this model)`));
+    out.push(h("option", { value: current }, t("{name} (not in this model)", { name: current })));
   }
   return out;
 }
 
 function shotsSection(i, step) {
   const addShot = h("button", { type: "button", class: "btn btn-small", onclick: () => scEdit("add_shot", { step: i, spec: { view: "follow" } }) },
-    icon("plus"), " Add screenshot");
+    icon("plus"), " ", t("Add screenshot"));
   const sheetOn = h("input", { type: "checkbox", id: "ed-sheet-on", checked: !!step.sheet, dataset: { key: "sheet-on" } });
   sheetOn.addEventListener("change", () => scEdit("sheet", { step: i, spec: sheetOn.checked ? { frames: 8 } : null }));
-  return section("Screenshots", `step${i}/shot`,
+  return section(t("Screenshots"), `step${i}/shot`,
     step.shots.length ? h("div", { class: "cards" }, ...step.shots.map((sh, j) => shotCard(i, j, sh, step))) : null,
     h("div", { class: "ed-actions" }, addShot),
     h("div", { class: "sheet", dataset: { fields: `step${i}/sheet` } },
-      h("label", { class: "check-label", for: "ed-sheet-on" }, sheetOn, h("strong", {}, "Contact sheet"),
-        h("span", { class: "muted" }, " — one image with frames from across the step")),
+      h("label", { class: "check-label", for: "ed-sheet-on" }, sheetOn, h("strong", {}, t("Contact sheet")),
+        h("span", { class: "muted" }, " — ", t("one image with frames from across the step"))),
       h("div", { class: "field-msgs" }),
       step.sheet ? sheetForm(i, step.sheet) : null));
 }
@@ -552,8 +566,8 @@ function shotCard(i, j, sh, step) {
     else set({ view: v, ...(view === "free" ? { camera: null } : {}) });
   });
   const at = sh.at === undefined ? "end" : sh.at;
-  const atSel = h("select", { id: id("at-kind"), "aria-label": "When", dataset: { key: id("at-kind") } },
-    h("option", { value: "end" }, "end of the step"), h("option", { value: "time" }, "a time into the step"));
+  const atSel = h("select", { id: id("at-kind"), "aria-label": t("When"), dataset: { key: id("at-kind") } },
+    h("option", { value: "end" }, t("end of the step")), h("option", { value: "time" }, t("a time into the step")));
   atSel.value = num(at) ? "time" : "end";
   atSel.addEventListener("change", () => set({ at: atSel.value === "end" ? null : 0 }));
   let atField;
@@ -568,7 +582,7 @@ function shotCard(i, j, sh, step) {
     numField(`${base}/width`, id("width"), id("width"), "width", sh.width, (v) => set({ width: v }), { unit: "px", placeholder: "960", int: true }),
     numField(`${base}/height`, id("height"), id("height"), "height", sh.height, (v) => set({ height: v }), { unit: "px", placeholder: "600", int: true }));
   return h("div", { class: "card card-shot", dataset: { fields: base } },
-    ...cardHead(`Screenshot ${j + 1}`, null, base, () => scEdit("delete_shot", { step: i, shot: j }), "screenshot"),
+    ...cardHead(t("Screenshot {n}", { n: j + 1 }), null, base, () => scEdit("delete_shot", { step: i, shot: j }), "screenshot"),
     grid,
     view === "free" ? cameraForm(base, id, sh.camera, (cam) => set({ camera: cam })) : null);
 }
@@ -591,8 +605,8 @@ function cameraForm(base, id, camera, setCam) {
   return h("div", { class: "camera", dataset: { fields: `${base}/camera` } },
     h("div", { class: "field-msgs" }),
     h("div", { class: "form-grid" },
-      h("div", { class: "field field-span", role: "group", "aria-label": "Camera looks at", dataset: { fields: `${base}/camera.lookat` } },
-        h("span", { class: "field-label" }, `camera lookat (${units.name("field")})`), lookat, h("div", { class: "field-msgs" })),
+      h("div", { class: "field field-span", role: "group", "aria-label": t("Camera looks at"), dataset: { fields: `${base}/camera.lookat` } },
+        h("span", { class: "field-label" }, t("camera lookat ({unit})", { unit: units.name("field") })), lookat, h("div", { class: "field-msgs" })),
       numField(`${base}/camera.distance`, id("distance"), id("distance"), "distance", cam.distance, (v) => put("distance", v), { kind: "field" }),
       numField(`${base}/camera.azimuth`, id("azimuth"), id("azimuth"), "azimuth", cam.azimuth, (v) => put("azimuth", v), { unit: "°" }),
       numField(`${base}/camera.elevation`, id("elevation"), id("elevation"), "elevation", cam.elevation, (v) => put("elevation", v), { unit: "°" })));
@@ -609,6 +623,6 @@ function sheetForm(i, sheet) {
   return h("div", { class: "form-grid" },
     numField(`${base}/frames`, id("frames"), id("frames"), "frames", sheet.frames, (v) => set({ frames: v }), { placeholder: "8", min: 1, max: 16, int: true }),
     field(`${base}/view`, id("view"), "view", viewSel),
-    numField(`${base}/width`, id("width"), id("width"), "frame width", sheet.width, (v) => set({ width: v }), { unit: "px", placeholder: "480", int: true }),
-    numField(`${base}/height`, id("height"), id("height"), "frame height", sheet.height, (v) => set({ height: v }), { unit: "px", placeholder: "300", int: true }));
+    numField(`${base}/width`, id("width"), id("width"), t("frame width"), sheet.width, (v) => set({ width: v }), { unit: "px", placeholder: "480", int: true }),
+    numField(`${base}/height`, id("height"), id("height"), t("frame height"), sheet.height, (v) => set({ height: v }), { unit: "px", placeholder: "300", int: true }));
 }

@@ -26,11 +26,12 @@ import {
   editOp, redraw, keepTyping, restoreTyping,
 } from "./bench.js";
 import { browseList } from "./start.js";
+import { t, live, liveAttr } from "./i18n.js";
 
 const SINGLE = ["bench", "piece", "run", "flight"];
-const ADD = [   // [section, button label]
-  ["wheel", "Wheel"], ["plate", "Plate"], ["bar", "Bar"], ["curve", "Hood (curve)"], ["inlet", "Inlet"],
-  ["outlet", "Outlet"], ["cad", "CAD part"], ["shaft", "Shaft"],
+const ADD = [   // [section, button label] (a function: the words of the moment)
+  ["wheel", () => t("Wheel")], ["plate", () => t("Plate")], ["bar", () => t("Bar")], ["curve", () => t("Hood (curve)")],
+  ["inlet", () => t("Inlet")], ["outlet", () => t("Outlet")], ["cad", () => t("CAD part")], ["shaft", () => t("Shaft")],
 ];
 const HOVER = new THREE.Color(0x5b8fd6);
 const SELECTED = new THREE.Color(0x1d6fd6);
@@ -106,9 +107,9 @@ function renderEditor() {
   if (!ed.open) return;
   if (!bench.editing || bench.shown !== bench.editing) { closeEditor(); return; }
   const i = shownIdea();
-  $("#bench-editor-name").textContent = i ? `Editing ${i.name}` : "Editing";
+  $("#bench-editor-name").textContent = i ? t("Editing {name}", { name: i.name }) : t("Editing");
   if (!bench.idea || !bench.fields) {
-    $("#bench-inspector-body").replaceChildren(h("p", { class: "hint", text: "Loading…" }));
+    $("#bench-inspector-body").replaceChildren(h("p", { class: "hint", text: t("Loading…") }));
     return;
   }
   if (ed.selected && !exists(ed.selected) && !ed.busy) ed.selected = ed.fallback && exists(ed.fallback) ? ed.fallback : null;
@@ -133,8 +134,8 @@ function renderEntries(i) {
       dataset: { entry: key }, "aria-pressed": String(key === ed.selected), onclick: () => select(key) },
       h("span", { class: "bench-entry-kind", text: section === "curve" ? "hood" : section }),
       h("strong", { text: name === null ? "" : name }),
-      inc ? h("span", { class: "bench-entry-from", text: `from ${inc}` }) : null,
-      bad ? h("span", { class: "dot dot-error", title: "has problems" }) : null));
+      inc ? h("span", { class: "bench-entry-from", text: t("from {file}", { file: inc }) }) : null,
+      bad ? h("span", { class: "dot dot-error", title: t("has problems") }) : null));
   });
   $("#bench-entries").replaceChildren(...list);
 }
@@ -143,8 +144,8 @@ function drawInspector(i, readOnly) {
   const body = $("#bench-inspector-body");
   const title = $("#bench-inspector-title");
   if (!ed.selected || !exists(ed.selected)) {
-    title.textContent = ed.selected ? "Saving…" : "Nothing selected";
-    body.replaceChildren(h("p", { class: "hint bench-empty", text: "Click a shape in the view, or a part in the list, to change it." }));
+    title.textContent = ed.selected ? t("Saving…") : t("Nothing selected");
+    body.replaceChildren(h("p", { class: "hint bench-empty", text: t("Click a shape in the view, or a part in the list, to change it.") }));
     return;
   }
   const { section, name } = splitEntry(ed.selected);
@@ -161,25 +162,25 @@ function drawInspector(i, readOnly) {
   }
   if (inc) {
     head.push(h("div", { class: "bench-from-row" },
-      h("span", { class: "bench-from", text: `from ${inc}` }),
+      h("span", { class: "bench-from", text: t("from {file}", { file: inc }) }),
       h("button", { type: "button", class: "btn btn-primary-soft", id: "bench-override", disabled: readOnly,
-        title: `Copy it into ${bench.shown}, so this idea's own copy can be changed (${inc} stays as it is)`,
-        onclick: () => override(section, name) }, "Edit here instead")),
-    h("p", { class: "hint", text: `It comes from ${inc}, so it can't be changed here. Edit here instead copies it into this idea's file.` }));
+        title: t("Copy it into {file}, so this idea's own copy can be changed ({from} stays as it is)", { file: bench.shown, from: inc }),
+        onclick: () => override(section, name) }, t("Edit here instead"))),
+    h("p", { class: "hint", text: t("It comes from {file}, so it can't be changed here. Edit here instead copies it into this idea's file.", { file: inc }) }));
   }
   if (!SINGLE.includes(section)) {
     // keyed like a field box, so half-typed text survives a redraw for this file and entry only
     const nameBox = h("input", { id: "bench-rename-name", type: "text", value: name, autocomplete: "off", spellcheck: "false",
-      disabled: readOnly || !!inc, "aria-label": `new name for ${section} ${name}`,
+      disabled: readOnly || !!inc, "aria-label": t("new name for {section} {name}", { section, name }),
       dataset: { key: `${key}#rename`, file: bench.shown, orig: name, version: String(bench.state.version) } });
     nameBox.value = name;
     const go = () => rename(section, name, nameBox.value.trim());
     nameBox.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go(); } });
     head.push(h("div", { class: "row bench-insp-actions" },
       nameBox,
-      h("button", { type: "button", class: "btn", id: "bench-rename", disabled: readOnly || !!inc, onclick: go }, "Rename"),
+      h("button", { type: "button", class: "btn", id: "bench-rename", disabled: readOnly || !!inc, onclick: go }, t("Rename")),
       h("button", { type: "button", class: "btn btn-danger", id: "bench-delete", disabled: readOnly || !!inc || !own(section, name),
-        onclick: () => remove(section, name) }, "Delete")));
+        onclick: () => remove(section, name) }, t("Delete"))));
   }
   const keys = keysOf(section).filter((k) => k !== "name" || section === "bench");
   body.replaceChildren(...head, ...msgs,
@@ -205,7 +206,7 @@ async function add(section, fields = null) {
   try { ok = await editOp({ op: "add", section, name, ...(fields ? { fields } : {}) }, key); } finally { ed.busy--; }
   if (!ok) {
     const why = bench.errors.list.map((e) => e.message).join("; ");
-    if (why) notice(`Can't add the ${section}: ${why}`, "error", "bench-add");
+    if (why) notice(t("Can't add the {section}: {why}", { section, why }), "error", "bench-add");
     if (ed.selected === key) ed.selected = ed.fallback && exists(ed.fallback) ? ed.fallback : null;
     renderEditor();
   }
@@ -250,14 +251,14 @@ function relPath(abs) {
 function openCad() {
   cadFolder = null;
   $("#bench-cad-mesh").value = "";
-  $("#bench-cad-chosen").textContent = "No part folder chosen.";
+  $("#bench-cad-chosen").textContent = t("No part folder chosen.");
   $("#bench-cad-units").replaceChildren(...((bench.fields && bench.fields.choices.units) || ["m", "mm", "in"]).map((u) => h("option", { value: u }, u)));
   $("#bench-cad-units").value = "mm";
   $("#bench-cad-errors").hidden = true;
   $("#bench-cad-dialog").showModal();
   browseList($("#bench-cad-browse"), bench.state.folder, { noticeId: "bench-cad",
-    folderButton: { key: "part", label: "Use this part", title: "Use this folder (from the FreeCAD exporter) as the part",
-      onclick: (e) => { cadFolder = e.path; $("#bench-cad-mesh").value = ""; $("#bench-cad-chosen").textContent = `Part folder: ${relPath(e.path)}`; } } });
+    folderButton: { key: "part", label: t("Use this part"), title: t("Use this folder (from the FreeCAD exporter) as the part"),
+      onclick: (e) => { cadFolder = e.path; $("#bench-cad-mesh").value = ""; $("#bench-cad-chosen").textContent = t("Part folder: {folder}", { folder: relPath(e.path) }); } } });
 }
 
 async function addCad(e) {
@@ -268,7 +269,7 @@ async function addCad(e) {
   if (mesh) fields = { mesh, units: $("#bench-cad-units").value };
   else if (cadFolder) fields = { part: relPath(cadFolder) };
   else {
-    errs.replaceChildren(h("li", { text: "Choose a part folder, or type the path of a mesh file." }));
+    errs.replaceChildren(h("li", { text: t("Choose a part folder, or type the path of a mesh file.") }));
     errs.hidden = false;
     return;
   }
@@ -284,14 +285,14 @@ function initView() {
   } catch {
     renderer = false;
     host.replaceChildren(h("p", { class: "view-placeholder" },
-      "The 3D view needs WebGL, which this browser didn't provide. The list of parts and the fields still work."));
+      t("The 3D view needs WebGL, which this browser didn't provide. The list of parts and the fields still work.")));
     return;
   }
   renderer.setPixelRatio(window.devicePixelRatio || 1);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.domElement.className = "view-canvas";
   renderer.domElement.setAttribute("role", "img");
-  renderer.domElement.setAttribute("aria-label", "3D view of the idea. Drag to orbit, right-drag to pan, scroll to zoom; click a shape to change it.");
+  liveAttr(renderer.domElement, "aria-label", () => t("3D view of the idea. Drag to orbit, right-drag to pan, scroll to zoom; click a shape to change it."));
   scene = new THREE.Scene();
   scene.background = new THREE.Color(theme.color("--watch-bg"));   // the page's theme (app.css)
   theme.onChange(() => { scene.background.set(theme.color("--watch-bg")); requestRender(); });
@@ -312,15 +313,17 @@ function initView() {
   tip = h("div", { class: "view-tip", hidden: true });
   empty = h("p", { class: "view-placeholder", id: "bench-editor-empty", hidden: true });
   const tools = h("div", { class: "view-tools" },
-    h("button", { type: "button", class: "btn", id: "bench-edit-zoom", title: "Zoom in on the selected shape", onclick: () => frame(ed.selected) }, "Zoom to selected"),
-    h("button", { type: "button", class: "btn", id: "bench-edit-frame", title: "Fit the whole bench in the view", onclick: () => frame() }, "Frame"));
+    liveAttr(h("button", { type: "button", class: "btn", id: "bench-edit-zoom", onclick: () => frame(ed.selected) }, live(() => t("Zoom to selected"))),
+      "title", () => t("Zoom in on the selected shape")),
+    liveAttr(h("button", { type: "button", class: "btn", id: "bench-edit-frame", onclick: () => frame() }, live(() => t("Frame", { context: "verb" }))),
+      "title", () => t("Fit the whole bench in the view")));
   host.replaceChildren(renderer.domElement, tools, tip, empty);
   new ResizeObserver(resize).observe(host);
   resize();
   const cv = renderer.domElement;
   cv.addEventListener("webglcontextlost", (e) => {
     e.preventDefault();
-    host.replaceChildren(h("p", { class: "view-placeholder", role: "alert" }, "The 3D view lost its graphics context — reload the page. The fields still work."));
+    host.replaceChildren(h("p", { class: "view-placeholder", role: "alert" }, t("The 3D view lost its graphics context — reload the page. The fields still work.")));
   });
   cv.addEventListener("pointermove", onMove);
   cv.addEventListener("pointerleave", () => setHover(null));
@@ -409,8 +412,8 @@ function build(view) {
   if (empty) {
     const i = shownIdea();
     const msg = !view.geoms && i && i.problems.some((p) => p.level === "error")
-      ? "No 3D view while the idea has errors: fix them in the fields (the list shows which part)."
-      : !(view.geoms || []).length && !(view.boxes || []).length ? "Nothing to show yet: add a shape." : "";
+      ? t("No 3D view while the idea has errors: fix them in the fields (the list shows which part).")
+      : !(view.geoms || []).length && !(view.boxes || []).length ? t("Nothing to show yet: add a shape.") : "";
     empty.textContent = msg;
     empty.hidden = !msg;
   }
@@ -527,9 +530,9 @@ function hit(e, shapesOnly = false) {
 
 function onMove(e) {
   if (e.buttons) return;   // orbiting
-  const t = hit(e);
-  setHover(t);
-  if (t) {
+  const target = hit(e);
+  setHover(target);
+  if (target) {
     const r = $("#bench-editor-view").getBoundingClientRect();
     tip.textContent = t;
     tip.style.left = `${e.clientX - r.left + 12}px`;
@@ -542,8 +545,8 @@ function onUp(e) {
   const d = down;
   down = null;
   if (!d || d.button !== 0 || Math.hypot(e.clientX - d.x, e.clientY - d.y) > CLICK_SLOP) return;
-  const t = hit(e);
-  if (t) select(t);
+  const target = hit(e);
+  if (target) select(target);
 }
 
 function toScreen(v) {
@@ -566,39 +569,39 @@ function screenPos(name) {
 // -- boot -------------------------------------------------------------------------------------------------------------
 function buildDom() {
   const add = h("div", { id: "bench-add", class: "bench-add", role: "group", "aria-labelledby": "bench-add-title" },
-    h("h2", { id: "bench-add-title", class: "bench-sub", text: "Add" }),
+    h("h2", { id: "bench-add-title", class: "bench-sub" }, live(() => t("Add"))),
     h("div", { class: "bench-add-buttons" }, ...ADD.map(([section, label]) => h("button", { type: "button", class: "btn",
-      dataset: { add: section }, onclick: () => (section === "cad" ? openCad() : add_(section)) }, label))));
+      dataset: { add: section }, onclick: () => (section === "cad" ? openCad() : add_(section)) }, live(label)))));
   const editor = h("section", { id: "bench-editor", class: "bench-editor", hidden: true, "aria-labelledby": "bench-editor-name" },
     h("header", { class: "bench-editor-head" },
-      h("button", { type: "button", class: "btn btn-big", id: "bench-edit-back", onclick: () => closeEditor() }, "← Back to the stage"),
-      h("h1", { id: "bench-editor-name", class: "bench-editor-name", tabindex: "-1", text: "Editing" }),
-      h("p", { class: "muted bench-editor-help", text: "Drag to turn, right-drag to move, scroll to zoom. Click a shape to change it. Every change is saved at once; Undo takes it back." })),
+      h("button", { type: "button", class: "btn btn-big", id: "bench-edit-back", onclick: () => closeEditor() }, live(() => t("← Back to the stage"))),
+      h("h1", { id: "bench-editor-name", class: "bench-editor-name", tabindex: "-1", text: t("Editing") }),
+      h("p", { class: "muted bench-editor-help" }, live(() => t("Drag to turn, right-drag to move, scroll to zoom. Click a shape to change it. Every change is saved at once; Undo takes it back.")))),
     h("div", { class: "bench-editor-body" },
-      h("nav", { class: "bench-editor-side", "aria-label": "Parts of the idea" }, add,
-        h("h2", { class: "bench-sub", text: "Parts" }),
-        h("ul", { id: "bench-entries", class: "bench-entries" })),
+      liveAttr(h("nav", { class: "bench-editor-side" }, add,
+        h("h2", { class: "bench-sub" }, live(() => t("Parts"))),
+        h("ul", { id: "bench-entries", class: "bench-entries" })), "aria-label", () => t("Parts of the idea")),
       h("div", { id: "bench-editor-view", class: "bench-editor-view" }),
       h("aside", { id: "bench-inspector", class: "bench-inspector", dataset: { benchFields: "" }, "aria-labelledby": "bench-inspector-title" },
-        h("h2", { id: "bench-inspector-title", class: "bench-inspector-title", tabindex: "-1", text: "Nothing selected" }),
+        h("h2", { id: "bench-inspector-title", class: "bench-inspector-title", tabindex: "-1", text: t("Nothing selected") }),
         h("div", { id: "bench-inspector-body", class: "scroll bench-inspector-body" }))));
   $("#tab-bench").append(editor);
 
   const units = h("select", { id: "bench-cad-units" });
   const dialog = h("dialog", { id: "bench-cad-dialog", "aria-labelledby": "bench-cad-title" },
     h("form", { method: "dialog", novalidate: true, onsubmit: addCad },
-      h("h2", { id: "bench-cad-title", text: "Add a CAD part" }),
-      h("p", { class: "hint", text: "A part folder from the FreeCAD exporter (its wheels can be driven by the bench's shafts), or a mesh file, which stays fixed." }),
-      h("div", { class: "field" }, h("label", { text: "A part folder" }),
+      h("h2", { id: "bench-cad-title" }, live(() => t("Add a CAD part"))),
+      h("p", { class: "hint" }, live(() => t("A part folder from the FreeCAD exporter (its wheels can be driven by the bench's shafts), or a mesh file, which stays fixed."))),
+      h("div", { class: "field" }, h("label", {}, live(() => t("A part folder"))),
         h("div", { id: "bench-cad-browse", class: "bench-cad-browse" }),
-        h("p", { id: "bench-cad-chosen", class: "hint", text: "No part folder chosen." })),
-      h("div", { class: "field" }, h("label", { for: "bench-cad-mesh", text: "or a mesh file (STL or OBJ), its path from the idea's folder" }),
+        h("p", { id: "bench-cad-chosen", class: "hint", text: t("No part folder chosen.") })),
+      h("div", { class: "field" }, h("label", { for: "bench-cad-mesh" }, live(() => t("or a mesh file (STL or OBJ), its path from the idea's folder"))),
         h("div", { class: "row" }, h("input", { id: "bench-cad-mesh", type: "text", autocomplete: "off", spellcheck: "false", placeholder: "parts/bracket.stl" }),
-          h("label", { for: "bench-cad-units", class: "unit", text: "drawn in" }), units)),
+          h("label", { for: "bench-cad-units", class: "unit" }, live(() => t("drawn in"))), units)),
       h("ul", { id: "bench-cad-errors", class: "error-list", role: "alert", hidden: true }),
       h("div", { class: "dialog-actions" },
-        h("button", { type: "button", class: "btn", onclick: () => $("#bench-cad-dialog").close() }, "Cancel"),
-        h("button", { type: "submit", class: "btn btn-primary", id: "bench-cad-go" }, "Add it"))));
+        h("button", { type: "button", class: "btn", onclick: () => $("#bench-cad-dialog").close() }, live(() => t("Cancel"))),
+        h("button", { type: "submit", class: "btn btn-primary", id: "bench-cad-go" }, live(() => t("Add it"))))));
   document.body.append(dialog);
 }
 const add_ = (section) => add(section);

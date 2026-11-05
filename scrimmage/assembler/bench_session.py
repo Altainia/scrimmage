@@ -25,6 +25,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from .. import i18n
 from ..bench import run as bench_run
 from ..bench import session
 from ..bench.build import build_bench
@@ -95,6 +96,19 @@ def _sig(p: Path):
 def _is_bench(p: Path) -> bool:
     from .server import classify   # server imports this module
     return classify(p) == "bench"
+
+
+def _stale_words(outside: bool, what: tuple) -> str:
+    """Why an edit, undo or redo wasn't saved (the idea changed since the page saw it), as a whole sentence."""
+    if what[0] == "edit":
+        if outside:
+            return i18n.t("the agent changed this idea; your edit to {field} wasn't saved", field=what[1])
+        return i18n.t("this idea changed (on another page?); your edit to {field} wasn't saved", field=what[1])
+    if what[0] == "undo":
+        return i18n.t("the agent changed this idea; your undo wasn't saved") if outside else \
+            i18n.t("this idea changed (on another page?); your undo wasn't saved")
+    return i18n.t("the agent changed this idea; your redo wasn't saved") if outside else \
+        i18n.t("this idea changed (on another page?); your redo wasn't saved")
 
 
 def _refused(field: str, message: str) -> tuple[int, dict]:
@@ -488,13 +502,13 @@ class BenchSession:
     def _check_open(self) -> None:
         """409 for a request that got this session before an open replaced it (lock held)."""
         if self._closed:
-            raise SessionError(409, "the idea session was closed")
+            raise SessionError(409, i18n.t("the idea session was closed"))
 
     def _need(self, file) -> _Idea:
         self._check_open()
         idea = self.ideas.get(file) if isinstance(file, str) else None
         if idea is None:
-            raise SessionError(404, f"no idea {file!r} in this session")
+            raise SessionError(404, i18n.t("no idea {file} in this session", file=repr(file)))
         return idea
 
     def view(self, file) -> dict:
@@ -555,16 +569,16 @@ class BenchSession:
             raise SessionError(400, "version (the integer from the state) is required")
         return v
 
-    def _fresh(self, idea: _Idea, version: int, what: str) -> tuple[int, dict] | None:
-        """None when the page saw the idea as it is now; else the refusal saying the edit wasn't saved."""
+    def _fresh(self, idea: _Idea, version: int, what: tuple) -> tuple[int, dict] | None:
+        """None when the page saw the idea as it is now; else the refusal saying the edit wasn't saved. `what` is
+        ("edit", field), ("undo",) or ("redo",)."""
         if not idea.doc.path.exists():   # deleted outside: never write it back
             self._drop(idea.file)
-            raise SessionError(404, f"the idea {idea.file} was deleted")
+            raise SessionError(404, i18n.t("the idea {file} was deleted", file=idea.file))
         self._reload(idea)
         if idea.changed_at <= version:
             return None
-        who = "the agent changed this idea" if idea.by == "outside" else "this idea changed (on another page?)"
-        code, body = _refused("status", f"{who}; {what} wasn't saved")
+        code, body = _refused("status", _stale_words(idea.by == "outside", what))
         return code, {**body, "version": self.version}
 
     def _op(self, op, b: dict, idea: _Idea):
@@ -594,15 +608,15 @@ class BenchSession:
         field, fn = ops[op]
         return str(field), fn
 
-    def _write(self, idea: _Idea, text: str, do: Callable[[], object], what: str, prefix: str = "",
-               rename: Callable[[str], str] = lambda f: f):
-        """Check `text` (what `do` writes) under the writing rule, then write it. `rename` maps an error's field to
-        the one the page shows it under."""
+    def _write(self, idea: _Idea, text: str, do: Callable[[], object], what: tuple,
+               say: Callable[[str], str] = lambda m: m, rename: Callable[[str], str] = lambda f: f):
+        """Check `text` (what `do` writes) under the writing rule, then write it. `say` words a problem it would make
+        ("can't undo: ..."); `rename` maps an error's field to the one the page shows it under."""
         found = collect_problems(idea.doc.path, text)
         errs = [p for p in found[1] if p.level == "error"]
         if len(errs) > idea.errors:
-            return 200, {"ok": False, "errors": [{"field": rename(_meters(p.key) or "status"), "message": prefix + p.message}
-                                                 for p in errs]}
+            return 200, {"ok": False, "errors": [{"field": rename(_meters(p.key) or "status"),
+                                                  "message": say(p.message)} for p in errs]}
         old = idea.raw
         try:
             do()
@@ -611,7 +625,7 @@ class BenchSession:
         except EditError as e:
             return _refused(e.field, e.message)
         except OSError as e:
-            return _refused("status", f"can't write the file: {e}")
+            return _refused("status", i18n.t("can't write the file: {why}", why=e))
         idea.check(found)
         self._changed(idea, old, "page")
         return 200, {"ok": True, "version": self.version}
@@ -620,7 +634,7 @@ class BenchSession:
         with self._lock:
             idea = self._need(body.get("file"))
             field, fn = self._op(body.get("op"), body, idea)
-            what = f"your edit to {field}"
+            what = ("edit", field)
             stale = self._fresh(idea, self._version(body), what)
             if stale is not None:
                 return stale
@@ -636,44 +650,48 @@ class BenchSession:
                 return group if group and (f in own or f == "status") else f
             for key in keys:
                 if body.get("op") == "set" and isinstance(key, str) and key.endswith(".name") and key != "bench.name":
-                    return _refused(group or key, "a name is changed with rename, which also renames what refers to it")
+                    return _refused(group or key, i18n.t("a name is changed with rename, which also renames what "
+                                                         "refers to it"))
             try:
                 candidate = idea.doc.apply(fn)
             except EditError as e:
                 return _refused(rename(_meters(e.field) or e.field), e.message)
             except (TypeError, ValueError, AttributeError, KeyError, IndexError) as e:   # malformed client values
-                return _refused(group or "status", f"bad edit: {e}")
+                return _refused(group or "status", i18n.t("bad edit: {why}", why=e))
             return self._write(idea, candidate, lambda: idea.doc.commit(candidate), what, rename=rename)
 
     def history(self, which: str, body: dict) -> tuple[int, dict]:
         with self._lock:
             idea = self._need(body.get("file"))
-            stale = self._fresh(idea, self._version(body), f"your {which}")
+            stale = self._fresh(idea, self._version(body), (which,))
             if stale is not None:
                 return stale
             if idea.doc.read_only_reason is not None:
                 raise SessionError(409, idea.doc.read_only_reason)
             target = idea.doc.peek_undo() if which == "undo" else idea.doc.peek_redo()
             if target is None:
-                return _refused("status", f"nothing to {which}")
+                return _refused("status", i18n.t("nothing to undo") if which == "undo" else i18n.t("nothing to redo"))
             do = idea.doc.undo if which == "undo" else idea.doc.redo
-            return self._write(idea, target, do, f"your {which}", prefix=f"can't {which}: ")
+            say = (lambda m: i18n.t("can't undo: {why}", why=m)) if which == "undo" else \
+                (lambda m: i18n.t("can't redo: {why}", why=m))
+            return self._write(idea, target, do, (which,), say=say)
 
     def new_idea(self, body: dict) -> tuple[int, dict]:
         """A new bench file named from `name` (made unique), from the blank bench or an example; it goes on stage."""
         name, author, text = body.get("name"), body.get("author") or "", body.get("idea") or ""
         if not isinstance(name, str) or not name.strip():
-            return _refused("name", "give the idea a name")
+            return _refused("name", i18n.t("give the idea a name"))
         if not isinstance(author, str) or not isinstance(text, str):
-            return _refused("status", "author and idea must be text")
+            return _refused("status", i18n.t("author and idea must be text"))
         example = body.get("example") or None
         if example is not None and example not in examples():
-            return _refused("example", f"no example {example!r}; examples: {', '.join(examples())}")
+            return _refused("example", i18n.t("no example {example}; examples: {examples}", example=repr(example),
+                                              examples=", ".join(examples())))
         try:
             content = bench_edits.new_bench_text(name.strip(), author.strip(), text.strip(),
                                                  EXAMPLES / f"{example}.toml" if example else None)
         except OSError as e:
-            return _refused("example", f"can't read the example: {e}")
+            return _refused("example", i18n.t("can't read the example: {why}", why=e))
         stem = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") or "idea"
         with self._lock:   # the poll doesn't see the file before it is an idea of ours
             self._check_open()
@@ -687,7 +705,7 @@ class BenchSession:
                 except FileExistsError:
                     n += 1
                 except OSError as e:
-                    return _refused("status", f"can't write {path.name}: {e}")
+                    return _refused("status", i18n.t("can't write {name}: {why}", name=path.name, why=e))
             idea = _Idea(path)
             self.ideas[path.name] = idea
             self._changed(idea, idea.raw, "page")
@@ -768,14 +786,15 @@ class BenchJobs:
                 idea, errs = self._runnable(s, body.get("file"))
                 key, values = body.get("key"), body.get("values")
                 if not isinstance(key, str) or not key:
-                    errs.append({"field": "key", "message": "key must be a dotted key, e.g. wheel.top.diameter"})
+                    errs.append({"field": "key",
+                                 "message": i18n.t("key must be a dotted key, e.g. wheel.top.diameter")})
                 else:
                     try:
                         _check_path(s._merged(idea, idea.raw), key)
                     except BenchError as e:
                         errs.append({"field": "key", "message": str(e)})
                 if not isinstance(values, list) or not values:
-                    errs.append({"field": "values", "message": "values must be a non-empty list"})
+                    errs.append({"field": "values", "message": i18n.t("values must be a non-empty list")})
                 if errs:
                     return 200, {"ok": False, "errors": errs}
                 path = idea.doc.path
@@ -785,11 +804,11 @@ class BenchJobs:
                 names = body.get("files")
                 if not isinstance(names, list) or not all(isinstance(n, str) for n in names) \
                         or len(set(names)) < 2:
-                    return _refused("files", "compare needs two or more different ideas")
+                    return _refused("files", i18n.t("compare needs two or more different ideas"))
                 errs, files = [], []
                 for name in dict.fromkeys(names):
                     idea, bad = self._runnable(s, name)
-                    errs += [{**e, "message": f"{idea.file}: {e['message']}"} for e in bad]
+                    errs += [{**e, "message": i18n.t("{file}: {why}", file=idea.file, why=e["message"])} for e in bad]
                     files.append(idea.doc.path)
                 if errs:
                     return 200, {"ok": False, "errors": errs}
@@ -802,9 +821,9 @@ class BenchJobs:
                 raise SessionError(404, f"no bench job {kind!r}")
         with self._cond:
             if s._closed:   # an open replaced the session after the checks above (see gate())
-                raise SessionError(409, "the idea session was closed")
+                raise SessionError(409, i18n.t("the idea session was closed"))
             if self._stop.is_set():
-                raise SessionError(409, "the editor is closing")
+                raise SessionError(409, i18n.t("the editor is closing"))
             self._seq += 1
             job = {"id": f"{kind}-{self._seq}", "kind": kind, "files": [f.name for f in files] if kind != "gallery"
                    else [], "state": "queued", "error": None, "out": str(out)}

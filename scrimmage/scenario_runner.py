@@ -17,8 +17,9 @@ from . import units
 from .bindings import binds_rev
 from .bridge import REALTIME_REASON
 from .devicecheck import check_devices, device_notes
-from .checks import (CRASH_PATTERN, Check, CheckResult, ConsoleCheck, build_check, consume_peaks,
+from .checks import (CRASH_PATTERN, Check, CheckResult, ConsoleCheck, Said, build_check, consume_peaks, said, shown,
                      tick_checks)
+from .i18n import N_, t, tn, translated
 from .config import ConfigError, build_world, load_config
 from .render import contact_sheet, to_png
 from .scenario import Scenario, ScenarioError, config_for, match_for, no_range_message, range_file, validate
@@ -34,19 +35,33 @@ STOPPED = "stopped by the user"
 # the Java agent's summary line, or the RobotPy REV helper's (scrimmage_lockstep)
 AGENT_IGNORED = re.compile(r"scrimmage (agent|rev helper): ignored (\d+) robot-side sim writes \((.*)\)$")
 PHOENIX_NOTE = REALTIME_REASON + "; results are close but not byte-identical"
-NO_CHECKS_NOTE = ("this scenario has no checks, so passing only means the robot program ran: add a check (where the "
-                  "robot ends up, say) to test something")
+# (N_(): report.json keeps the text itself; report.md and the Scenario tab show it in the Language setting, _said())
+NO_CHECKS_NOTE = N_("this scenario has no checks, so passing only means the robot program ran: add a check (where "
+                    "the robot ends up, say) to test something")
 # Below this fraction of real time, or skipping ahead at all, a Phoenix 6 run's physics is reported as not keeping up
 PHOENIX_SLOW = 0.8
 # A Phoenix 6 robot program further behind real time than this (s) is reported as not keeping up: silent that long,
 # or relaying values that long superseded (12 robot loops; a 2-core machine with spare CPU stays under 0.11 s)
 ROBOT_BEHIND = 0.25
-PHOENIX_LOCKSTEP = "Phoenix 6 devices: this robot runs in real time, not lockstep"
+PHOENIX_LOCKSTEP = N_("Phoenix 6 devices: this robot runs in real time, not lockstep")
 # D3: a scenario is the Driver Station, so a run refuses the real one, and ignores a config's default
-REAL_DS_REFUSED = ("a scenario run can't use the real Driver Station: the scenario is the Driver Station here (it sets "
-                   "the modes and joysticks); run it without the real Driver Station")
-CONFIG_REAL_DS_NOTE = ("the config's [driver_station] real = true is ignored here: in a scenario run, scrimmage is the "
-                       "Driver Station")
+REAL_DS_REFUSED = N_("a scenario run can't use the real Driver Station: the scenario is the Driver Station here (it "
+                     "sets the modes and joysticks); run it without the real Driver Station")
+CONFIG_REAL_DS_NOTE = N_("the config's [driver_station] real = true is ignored here: in a scenario run, scrimmage is "
+                         "the Driver Station")
+LOCKSTEP_REQUIRED = N_("lockstep is required but the robot program didn't load the scrimmage_lockstep extension "
+                       "(RobotPy: add --scrimmage-lockstep to [robot_program] command; or set "
+                       "require_lockstep = false)")
+
+
+def _said(text: str) -> Said:
+    """A constant marked with N_(): itself in report.json, in the Language setting where it is shown."""
+    return Said(text, lambda: translated(text))
+
+
+def _plain(text):
+    """report.json's text: a Said as the plain str it is (None stays None)."""
+    return None if text is None else str(text)
 
 
 def phoenix_slow_note(speed: float | None, skips: int = 0, skipped: float = 0.0) -> str:
@@ -54,13 +69,37 @@ def phoenix_slow_note(speed: float | None, skips: int = 0, skipped: float = 0.0)
     simulated seconds in all): a run that loses a second to a few skips still averages 0.9x."""
     kept = f"{speed:.1f}x real time" if speed is not None else "part of real time"
     jumps = f" and skipped ahead {skipped:.2f} s ({skips} time{'' if skips == 1 else 's'})" if skips else ""
-    return (f"physics on this computer kept up with only {kept}: physics fell behind real time{jumps}, so results "
+    text = (f"physics on this computer kept up with only {kept}: physics fell behind real time{jumps}, so results "
             "may differ from a run that keeps up")
+    at = {"speed": f"{speed:.1f}" if speed is not None else None, "skipped": f"{skipped:.2f}"}
+
+    def words() -> str:
+        if skips and speed is not None:
+            return tn("physics on this computer kept up with only {speed}x real time: physics fell behind real time "
+                      "and skipped ahead {skipped} s ({count} time), so results may differ from a run that keeps up",
+                      "physics on this computer kept up with only {speed}x real time: physics fell behind real time "
+                      "and skipped ahead {skipped} s ({count} times), so results may differ from a run that keeps up",
+                      skips, speed=at["speed"], skipped=at["skipped"])
+        if skips:
+            return tn("physics on this computer kept up with only part of real time: physics fell behind real time "
+                      "and skipped ahead {skipped} s ({count} time), so results may differ from a run that keeps up",
+                      "physics on this computer kept up with only part of real time: physics fell behind real time "
+                      "and skipped ahead {skipped} s ({count} times), so results may differ from a run that keeps up",
+                      skips, skipped=at["skipped"])
+        if speed is not None:
+            return t("physics on this computer kept up with only {speed}x real time: physics fell behind real time, "
+                     "so results may differ from a run that keeps up", speed=at["speed"])
+        return t("physics on this computer kept up with only part of real time: physics fell behind real time, so "
+                 "results may differ from a run that keeps up")
+    return Said(text, words)
 
 
 def robot_behind_note(seconds: float) -> str:
-    return (f"the robot program fell {seconds:.2f} s behind real time (silent, or relaying values that long out of "
-            "date): Phoenix 6 runs on the wall clock, so its timing may differ from a run that keeps up")
+    return Said(f"the robot program fell {seconds:.2f} s behind real time (silent, or relaying values that long out of "
+                "date): Phoenix 6 runs on the wall clock, so its timing may differ from a run that keeps up",
+                lambda: t("the robot program fell {seconds} s behind real time (silent, or relaying values that long "
+                          "out of date): Phoenix 6 runs on the wall clock, so its timing may differ from a run that "
+                          "keeps up", seconds=f"{seconds:.2f}"))
 
 
 OUTPUT_FILES = {"csv": "run.csv", "robot_log": "robot.log", "report": "report.json", "report_md": "report.md"}
@@ -83,10 +122,11 @@ class StepReport:
         return self.interrupted is None and all(c.passed for c in self.checks)
 
     def to_dict(self, shown: bool = False) -> dict:
+        say = _shown if shown else _plain
         return {"name": self.name, "mode": self.mode, "start_t": self.start_t, "end_t": self.end_t,
-                "game_data": self.game_data, "passed": self.passed, "interrupted": self.interrupted,
+                "game_data": self.game_data, "passed": self.passed, "interrupted": say(self.interrupted),
                 "checks": [c.to_dict(shown) for c in self.checks], "screenshots": self.screenshots,
-                "skipped": self.skipped}
+                "skipped": [say(x) for x in self.skipped]}
 
 
 @dataclass
@@ -115,58 +155,75 @@ class Report:
         return 2 if self.error is not None else (0 if self.passed else 1)
 
     def to_dict(self, shown: bool = False) -> dict:
-        """report.json: the checks' machine messages (their old text, in meters); with `shown`, in the Units setting
-        (the Scenario tab)."""
+        """report.json: the machine messages (their old text: American English, in meters); with `shown`, in the
+        Units and Language settings (the Scenario tab)."""
+        say = _shown if shown else _plain
         d = {"scenario": self.scenario, "description": self.description, "passed": self.passed,
-             "exit_code": self.exit_code, "error": self.error, "lockstep": self.lockstep,
+             "exit_code": self.exit_code, "error": say(self.error), "lockstep": self.lockstep,
              "steps": [s.to_dict(shown) for s in self.steps], "implicit": [c.to_dict(shown) for c in self.implicit],
-             "effective_speed": self.effective_speed, "notes": self.notes,
+             "effective_speed": self.effective_speed, "notes": [say(n) for n in self.notes],
              "console_tail": self.console_tail, "files": self.files}
         if self.range is not None:      # a run on a test range; other reports keep their keys
             d.update(range=self.range, balls=self.balls, ball_states=self.ball_states, ball_summary=self.ball_summary)
         return d
 
     def summary(self) -> str:
+        """The terminal's summary (the CLI prints it in American English, inside i18n.fixed())."""
         if self.error is not None:
-            return f"ERROR  {self.scenario}: {self.error}"
+            return f"ERROR  {self.scenario}: {_shown(self.error)}"
         lines = [f"{'PASS' if self.passed else 'FAIL'}  {self.scenario}"]
         for s in self.steps:
             for c in s.checks:
                 lines.append(f"  {'ok  ' if c.passed else 'FAIL'} [{s.name}] {c.shown()}")
             if s.interrupted:
-                lines.append(f"  FAIL [{s.name}] {s.interrupted}")
+                lines.append(f"  FAIL [{s.name}] {_shown(s.interrupted)}")
         for c in self.implicit:
             if not c.passed:
                 lines.append(f"  FAIL {c.shown()}")
-        lines += [f"  note: {n}" for n in self.notes]
+        lines += [f"  note: {_shown(n)}" for n in self.notes]
         return "\n".join(lines)
 
     def write(self, out_dir: Path) -> None:
         self.files = {k: v for k, v in OUTPUT_FILES.items()
                       if k in ("report", "report_md") or (out_dir / v).exists()}
         (out_dir / "report.json").write_text(json.dumps(self.to_dict(), indent=2, default=str))
-        md = [f"# {'PASS' if self.passed else ('ERROR' if self.error else 'FAIL')}: {self.scenario}", ""]
+        # report.md is for people: in the Units and Language settings
+        if self.passed:
+            head = t("PASS: {scenario}", scenario=self.scenario)
+        elif self.error:
+            head = t("ERROR: {scenario}", scenario=self.scenario)
+        else:
+            head = t("FAIL: {scenario}", scenario=self.scenario)
+        md = [f"# {head}", ""]
         if self.description:
             md += [self.description, ""]
         if self.error:
-            md += [f"**Couldn't run:** {self.error}", ""]
+            md += [t("**Couldn't run:** {error}", error=_shown(self.error)), ""]
         if self.notes:
-            md += [f"> Note: {n}" for n in self.notes] + [""]
+            md += ["> " + t("Note: {note}", note=_shown(n)) for n in self.notes] + [""]
         for s in self.steps:
-            data = f", game data {json.dumps(s.game_data, ensure_ascii=False)}" if s.game_data else ""
-            md += [f"## {s.name} ({s.mode}, t={s.start_t:.2f}–{s.end_t:.2f} s{data})", ""]
+            at = {"name": s.name, "mode": s.mode, "start": f"{s.start_t:.2f}", "end": f"{s.end_t:.2f}"}
+            if s.game_data:
+                title = t("{name} ({mode}, t={start}–{end} s, game data {data})",
+                          data=json.dumps(s.game_data, ensure_ascii=False), **at)
+            else:
+                title = t("{name} ({mode}, t={start}–{end} s)", **at)
+            md += [f"## {title}", ""]
             md += [f"- {'✅' if c.passed else '❌'} {c.shown()}" for c in s.checks]
-            md += [f"- ❌ {s.interrupted}"] if s.interrupted else []
-            md += [f"- skipped: {x}" for x in s.skipped]
+            md += [f"- ❌ {_shown(s.interrupted)}"] if s.interrupted else []
+            md += ["- " + t("skipped: {what}", what=_shown(x)) for x in s.skipped]
             md += [""] + [f"![{p}]({p})" for p in s.screenshots] + [""]
         if self.range is not None:
             md += _score_md(self.range) + _balls_md(self.balls, self.ball_summary or {})
         bad = [c for c in self.implicit if not c.passed]
         if bad:
-            md += ["## Robot program", ""] + [f"- ❌ {c.shown()}" for c in bad] + [""]
+            md += ["## " + t("Robot program"), ""] + [f"- ❌ {c.shown()}" for c in bad] + [""]
         if self.console_tail:
-            md += ["## Console (last lines)", "", "```", *self.console_tail, "```", ""]
+            md += ["## " + t("Console (last lines)"), "", "```", *self.console_tail, "```", ""]
         (out_dir / "report.md").write_text("\n".join(md))
+
+
+_shown = shown
 
 
 def _f(v, fmt: str = ".2f") -> str:
@@ -180,8 +237,9 @@ def _fu(v, kind: str, fmt: str = ".2f") -> str:
 
 def _score_md(c: dict) -> list[str]:
     goals = ", ".join(f"{g} {n}" for g, n in c["goals"].items())
-    return ["## Score", "", f"- score: {c['score']} ({goals})", f"- fired: {c['fired']}", f"- held: {c['held']}",
-            f"- on the field: {c['on_field']}", ""]
+    return ["## " + t("Score"), "", "- " + t("score: {score} ({goals})", score=c["score"], goals=goals),
+            "- " + t("fired: {count}", count=c["fired"]), "- " + t("held: {count}", count=c["held"]),
+            "- " + t("on the field: {count}", count=c["on_field"]), ""]
 
 
 def _ball_result(b: dict) -> str:
@@ -189,31 +247,39 @@ def _ball_result(b: dict) -> str:
     launcher kept it; what it hit first after its release; and for a ball fired that didn't score, how high it got
     against the rim of the goal nearest its release."""
     out, pos = b["outcome"], b.get("last_pos")
-    text = ""
+    parts = []
     if out == "scored":
-        text = f"{b['goal']} at t={_f(b['scored_t'])}"
+        parts.append(t("{goal} at t={t}", goal=b["goal"], t=_f(b["scored_t"])))
     elif out == "stuck":
-        text = f"launcher: {b['launcher_status']}"
+        parts.append(t("launcher: {status}", status=b["launcher_status"]))
     elif pos is not None:
         u = units.unit_name("field")
         xyz = f"({_fu(pos[0], 'field')}, {_fu(pos[1], 'field')}, {_fu(pos[2], 'field')}) {u}"
-        text = {"out_of_field": f"left at {xyz}", "in_flight": f"flying at {xyz}",
-                "on_field": f"rest at ({_fu(pos[0], 'field')}, {_fu(pos[1], 'field')}) {u}" if b.get("at_rest")
-                else f"moving at {xyz}"}.get(out, xyz)
+        if out == "out_of_field":
+            parts.append(t("left at {where}", where=xyz))
+        elif out == "in_flight":
+            parts.append(t("flying at {where}", where=xyz))
+        elif out == "on_field" and b.get("at_rest"):
+            parts.append(t("rest at {where}", where=f"({_fu(pos[0], 'field')}, {_fu(pos[1], 'field')}) {u}"))
+        elif out == "on_field":
+            parts.append(t("moving at {where}", where=xyz))
+        else:
+            parts.append(xyz)
     if b.get("first_hit"):
-        text += f"{'; ' if text else ''}first hit {b['first_hit']}"
+        parts.append(t("first hit {what}", what=b["first_hit"]))
     if out != "scored" and b.get("fired_t") is not None and b.get("apex_z") is not None and b.get("nearest_goal"):
         u = units.unit_name("field")
-        text += (f"{'; ' if text else ''}apex {_fu(b['apex_z'], 'field')} {u} vs rim "
-                 f"{_fu(b.get('rim_height'), 'field')} {u} ({b['nearest_goal']})")
-    return text
+        parts.append(t("apex {apex} vs rim {rim} ({goal})", apex=f"{_fu(b['apex_z'], 'field')} {u}",
+                       rim=f"{_fu(b.get('rim_height'), 'field')} {u}", goal=b["nearest_goal"]))
+    return "; ".join(parts)
 
 
 def _ball_columns() -> list[str]:
     """The ball table's header, in the Units setting (report.js's)."""
     f, v = units.unit_name("field"), units.unit_name("speed")
-    return ["#", "fired t", f"x {f}", f"y {f}", "heading", f"vx {v}", f"vy {v}", "ω °/s", "hood °", "rps", f"exit {v}",
-            "spin rpm", "slip", "outcome", "goal and time / rest point / first hit"]
+    return ["#", t("fired t"), f"x {f}", f"y {f}", t("heading"), f"vx {v}", f"vy {v}", "ω °/s", t("hood °"), "rps",
+            t("exit {unit}", unit=v), t("spin rpm"), t("slip"), t("outcome"),
+            t("goal and time / rest point / first hit")]
 
 
 def _ball_row(b: dict) -> list[str]:
@@ -229,24 +295,23 @@ def not_listed(summary: dict) -> str:
     """The line under the ball table for the balls it leaves out (report.js says the same)."""
     parts = []
     if summary.get("untouched"):
-        n = summary["untouched"]
-        parts.append(f"{n} floor ball{'s' if n != 1 else ''} untouched (still where the range put "
-                     f"{'them' if n != 1 else 'it'})")
+        parts.append(tn("{count} floor ball untouched (still where the range put it)",
+                        "{count} floor balls untouched (still where the range put them)", summary["untouched"]))
     if summary.get("spare"):
-        n = summary["spare"]
-        parts.append(f"{n} spare ball{'s' if n != 1 else ''} (unused slots, or floor balls turned off)")
-    return "Not listed: " + "; ".join(parts) + "." if parts else ""
+        parts.append(tn("{count} spare ball (unused slots, or floor balls turned off)",
+                        "{count} spare balls (unused slots, or floor balls turned off)", summary["spare"]))
+    return t("Not listed: {balls}.", balls="; ".join(parts)) if parts else ""
 
 
 def _balls_md(balls: list[dict], summary: dict) -> list[str]:
     """One row per ball that took part; the untouched floor balls and the spares counted under the table."""
-    md = ["## Balls", ""]
+    md = ["## " + t("Balls"), ""]
     if balls:
         columns = _ball_columns()
         md += ["| " + " | ".join(columns) + " |", "|" + "---|" * len(columns)]
         md += ["| " + " | ".join(_ball_row(b)) + " |" for b in balls]
     else:
-        md += ["No ball took part."]
+        md += [t("No ball took part.")]
     if line := not_listed(summary):
         md += ["", line]
     return md + [""]
@@ -377,14 +442,14 @@ async def _run_scenario(scenario: Scenario, out_dir: Path, speed, session: Sessi
     own = session is None
     console_start = 0  # this run's first console line (a passed-in session may have older ones)
     if real_ds or (session is not None and session.real_ds):
-        report.error = REAL_DS_REFUSED
+        report.error = _said(REAL_DS_REFUSED)
         report.write(out_dir)
         return report
     try:
         if own:
             config = config_for(scenario, load_config(scenario.config_path))
             if config.real_ds:
-                report.notes.append(CONFIG_REAL_DS_NOTE)
+                report.notes.append(_said(CONFIG_REAL_DS_NOTE))
             session = Session(config, speed=scenario.speed if speed is UNSET else speed,
                               log_path=out_dir / "run.csv", robot_log=out_dir / "robot.log",
                               picture_sizes=picture_sizes(scenario), sim_mode=sim_mode, real_ds=False)
@@ -417,7 +482,7 @@ async def _run_scenario(scenario: Scenario, out_dir: Path, speed, session: Sessi
         hooks.check()
     except _Stopped:
         _drop_overrides(session, own)
-        report.error = STOPPED
+        report.error = _stopped()
         await asyncio.shield(session.stop())
         report.write(out_dir)
         return report
@@ -442,7 +507,8 @@ async def _run_scenario(scenario: Scenario, out_dir: Path, speed, session: Sessi
             await asyncio.shield(session.stop())
     except BaseException as e:
         interrupted = isinstance(e, (asyncio.CancelledError, KeyboardInterrupt))
-        report.error = "interrupted" if interrupted else f"unexpected error: {e!r}"
+        report.error = (Said("interrupted", lambda: t("interrupted")) if interrupted else
+                        Said(f"unexpected error: {e!r}", lambda why=repr(e): t("unexpected error: {why}", why=why)))
         try:
             _capture_range(session, report, own)
         except Exception as e2:  # don't hide the exception that got us here
@@ -509,6 +575,12 @@ def moved_joints(joints: dict[str, tuple[float, float]]) -> str:
     return ", with " + ", ".join(moved) if moved else ""
 
 
+def _moved_words(joints: dict[str, tuple[float, float]]) -> str:
+    """moved_joints() in the Language setting."""
+    moved = [f"joint.{n}.position = {pos:.3g}" for n, (pos, rest) in joints.items() if abs(pos - rest) > JOINT_MOVED]
+    return t(", with {joints}", joints=", ".join(moved)) if moved else ""
+
+
 def terrain_notes(world, noted: dict) -> list[str]:
     """Notes for the tipping and stranding the terrain monitor latched since the last call. Each is noted once per
     latch: `noted` remembers the events already reported, so a world reset (which clears the monitor) lets a later
@@ -521,24 +593,37 @@ def terrain_notes(world, noted: dict) -> list[str]:
     tip, strand = terrain.first_tipped, terrain.first_stranded
     if tip is not None and tip != noted.get("tipped"):
         noted["tipped"] = tip
-        t, tilt, (x, y, _) = tip
-        notes.append(f"the robot tipped over at t={t:.2f} s (tilt {tilt:.0f}°, at x={x:.2f}, y={y:.2f})"
-                     f"{moved_joints(terrain.tipped_joints)}")
+        at, tilt, (x, y, _) = tip
+        joints = dict(terrain.tipped_joints)
+        notes.append(Said(f"the robot tipped over at t={at:.2f} s (tilt {tilt:.0f}°, at x={x:.2f}, y={y:.2f})"
+                          f"{moved_joints(joints)}",
+                          lambda at=at, tilt=tilt, x=x, y=y, joints=joints:
+                          t("the robot tipped over at t={t} s (tilt {tilt}°, at x={x}, y={y})", t=f"{at:.2f}",
+                            tilt=f"{tilt:.0f}", x=f"{x:.2f}", y=f"{y:.2f}") + _moved_words(joints)))
     if strand is not None and strand != noted.get("stranded"):
         noted["stranded"] = strand
-        t, what = strand
-        notes.append(f"the robot was stranded at t={t:.2f} s, resting on {what}"
-                     f"{moved_joints(terrain.stranded_joints)}")
+        at, what = strand
+        joints = dict(terrain.stranded_joints)
+        notes.append(Said(f"the robot was stranded at t={at:.2f} s, resting on {what}{moved_joints(joints)}",
+                          lambda at=at, what=what, joints=joints:
+                          t("the robot was stranded at t={t} s, resting on {what}", t=f"{at:.2f}", what=what)
+                          + _moved_words(joints)))
     return notes
+
+
+def _stopped() -> Said:
+    return Said(STOPPED, lambda: t("stopped by the user"))
+
+
+def _interrupted(at: float) -> Said:
+    return Said(f"step interrupted at t={at:.3f}", lambda: t("step interrupted at t={t}", t=f"{at:.3f}"))
 
 
 async def _run_steps(session: Session, scenario: Scenario, report: Report, out_dir: Path, console_start: int,
                      hooks: _Hooks) -> None:
     report.lockstep = session.lockstep
     if scenario.require_lockstep and not (session.lockstep or session.bridge.clock_freed):
-        report.error = ("lockstep is required but the robot program didn't load the scrimmage_lockstep extension "
-                        "(RobotPy: add --scrimmage-lockstep to [robot_program] command; or set "
-                        "require_lockstep = false)")
+        report.error = _said(LOCKSTEP_REQUIRED)
         return
     if session.bridge.nt_link is None and any(build_check(c, session.world, s.name).uses_nt
                                               for s in scenario.steps for c in s.checks):
@@ -548,7 +633,19 @@ async def _run_steps(session: Session, scenario: Scenario, report: Report, out_d
             why = "this session was started without NetworkTables (nt=False)"
         else:
             why = "NetworkTables isn't available: install scrimmage[nt] (pyntcore)"
-        report.error = f"this scenario checks NetworkTables values (nt: signals or odometry_error), but {why}"
+        config_off, session_off = not session.config.nt, not session.nt
+
+        def words() -> str:
+            if config_off:
+                return t("this scenario checks NetworkTables values (nt: signals or odometry_error), but the config "
+                         "sets [telemetry] nt = false, and these checks need NetworkTables")
+            if session_off:
+                return t("this scenario checks NetworkTables values (nt: signals or odometry_error), but this session "
+                         "was started without NetworkTables (nt=False)")
+            return t("this scenario checks NetworkTables values (nt: signals or odometry_error), but NetworkTables "
+                     "isn't available: install scrimmage[nt] (pyntcore)")
+        report.error = Said(f"this scenario checks NetworkTables values (nt: signals or odometry_error), but {why}",
+                            words)
         return
     noted: dict = {}
     for i, step in enumerate(scenario.steps, 1):
@@ -561,17 +658,17 @@ async def _run_steps(session: Session, scenario: Scenario, report: Report, out_d
             await _run_step(session, step, i, out_dir, rep, hooks)
         except _Stopped:
             rep.end_t = round(session.t, 4)
-            rep.interrupted = f"step interrupted at t={session.t:.3f}"
-            report.error = STOPPED
+            rep.interrupted = _interrupted(session.t)
+            report.error = _stopped()
             return
         except SessionError as e:
             rep.end_t = round(session.t, 4)
-            rep.interrupted = f"step interrupted at t={session.t:.3f}"
+            rep.interrupted = _interrupted(session.t)
             report.implicit.append(CheckResult("robot program running", False, str(e), first_failure_t=e.t))
             break
         except BaseException:
             rep.end_t = round(session.t, 4)
-            rep.interrupted = f"step interrupted at t={session.t:.3f}"
+            rep.interrupted = _interrupted(session.t)
             raise
         finally:    # on every exit of the step: a robot that tipped and then lost its program is still noted
             report.notes.extend(terrain_notes(session.world, noted))
@@ -591,7 +688,7 @@ async def _run_steps(session: Session, scenario: Scenario, report: Report, out_d
     if session.robot is not None or session.attach:   # a robot program: say which expected devices it never made
         report.notes.extend(device_notes(check_devices(session.world, session.bridge.hal, session.t), final=True))
     if not any(step.checks for step in scenario.steps):
-        report.notes.append(NO_CHECKS_NOTE)
+        report.notes.append(_said(NO_CHECKS_NOTE))
     await _console_settle(session, hooks)   # for "no crash in console"
     _implicit(session, scenario, report, console_start)
     if session.robot is not None:
@@ -677,7 +774,8 @@ async def _run_step(session: Session, step, index: int, out_dir: Path, rep: Step
                     png = await session.screenshot_png(shot.view, width=shot.width, height=shot.height,
                                                        camera=shot.camera)
                 except SessionError as e:
-                    rep.skipped.append(f"screenshot {name}: {e}")
+                    rep.skipped.append(Said(f"screenshot {name}: {e}", lambda name=name, why=str(e):
+                                            t("screenshot {name}: {why}", name=name, why=why)))
                 else:
                     (out_dir / name).write_bytes(png)
                     rep.screenshots.append(name)
@@ -689,7 +787,8 @@ async def _run_step(session: Session, step, index: int, out_dir: Path, rep: Step
                     sheet_frames.append((session.t, img))
                 except SessionError as e:
                     if not any("contact sheet" in s for s in rep.skipped):
-                        rep.skipped.append(f"contact sheet: {e}")
+                        rep.skipped.append(Said(f"contact sheet: {e}", lambda why=str(e):
+                                                t("contact sheet: {why}", why=why)))
     if any(c.uses_nt for c in checks):
         await hooks.sleep(NT_SETTLE, raising=False)
         for c in tick_nt:
@@ -719,40 +818,60 @@ def _implicit(session: Session, scenario: Scenario, report: Report, console_star
         # In fast mode a Phoenix 6 device is a robot-code mistake, not a choice: the release fails the check.
         report.implicit.append(CheckResult("lockstep stayed engaged", False, fast_phoenix))
     elif scenario.require_lockstep and session.bridge.clock_freed:   # Phoenix mode: released on purpose
-        report.implicit.append(CheckResult("lockstep stayed engaged", True, PHOENIX_LOCKSTEP))
+        report.implicit.append(said("lockstep stayed engaged", True, PHOENIX_LOCKSTEP,
+                                    lambda: translated(PHOENIX_LOCKSTEP)))
     elif scenario.require_lockstep:
         released = session.bridge.lockstep_released_at is not None
-        report.implicit.append(CheckResult(
-            "lockstep stayed engaged", not released,
-            session.release_message() if released else "the robot program's clock stayed in lockstep"))
+        if released:    # (the session's words, shared with MCP: as they are)
+            report.implicit.append(CheckResult("lockstep stayed engaged", False, session.release_message()))
+        else:
+            report.implicit.append(said("lockstep stayed engaged", True, "the robot program's clock stayed in lockstep",
+                                        lambda: t("the robot program's clock stayed in lockstep")))
     if session.robot is not None:
         if any(c.check == "robot program running" for c in report.implicit):
             pass  # a failure is already recorded
         elif session.robot.running:
-            report.implicit.append(CheckResult("robot program running", True, "the robot program kept running"))
+            report.implicit.append(said("robot program running", True, "the robot program kept running",
+                                        lambda: t("the robot program kept running")))
         else:
-            report.implicit.append(CheckResult("robot program running", False,
-                                               f"the robot program exited (code {session.robot.returncode})"))
+            code = session.robot.returncode
+            report.implicit.append(said("robot program running", False, f"the robot program exited (code {code})",
+                                        lambda: t("the robot program exited (code {code})", code=code)))
         crash = next((l for l in session.robot.since(console_start) if CRASH_PATTERN.search(l.text)), None)
-        report.implicit.append(CheckResult(
-            "no crash in console", crash is None,
-            "no stack trace in the console" if crash is None else
-            f"stack trace in the console at t={crash.t:.3f}: {crash.text}"))
+        if crash is None:
+            report.implicit.append(said("no crash in console", True, "no stack trace in the console",
+                                        lambda: t("no stack trace in the console")))
+        else:
+            report.implicit.append(said("no crash in console", False,
+                                        f"stack trace in the console at t={crash.t:.3f}: {crash.text}",
+                                        lambda: t("stack trace in the console at t={t}: {line}", t=f"{crash.t:.3f}",
+                                                  line=crash.text)))
     if binds_rev(session.config.raw):
         problem = session.rev_problem()
-        report.implicit.append(CheckResult("REV simulation available", problem is None,
-                                           problem or ("the scrimmage REV helper reported no robotpy-rev problem"
-                                                   if session.robot_language() == "python" else
-                                                   "the scrimmage agent reported no REVLib problem")))
+        if problem:     # (the session's words, shared with MCP: as they are)
+            report.implicit.append(CheckResult("REV simulation available", False, problem))
+        elif session.robot_language() == "python":
+            report.implicit.append(said("REV simulation available", True,
+                                        "the scrimmage REV helper reported no robotpy-rev problem",
+                                        lambda: t("the scrimmage REV helper reported no robotpy-rev problem")))
+        else:
+            report.implicit.append(said("REV simulation available", True,
+                                        "the scrimmage agent reported no REVLib problem",
+                                        lambda: t("the scrimmage agent reported no REVLib problem")))
     fw = list(session.bridge.foreign_writes.values())
     summary = session.agent_summary()
     if not fw:
-        report.implicit.append(CheckResult("no foreign sim writes", True,
-                                           "robot code left scrimmage's simulated sensor values alone"))
+        report.implicit.append(said("no foreign sim writes", True,
+                                    "robot code left scrimmage's simulated sensor values alone",
+                                    lambda: t("robot code left scrimmage's simulated sensor values alone")))
         m = AGENT_IGNORED.match(summary or "")
         if m:
-            report.notes.append(f"the scrimmage {m.group(1)} neutralized {m.group(2)} robot-side sim writes "
-                                f"({m.group(3)})")
+            who, n, what = m.groups()
+            report.notes.append(Said(f"the scrimmage {who} neutralized {n} robot-side sim writes ({what})",
+                                     lambda: t("the scrimmage agent neutralized {n} robot-side sim writes ({what})",
+                                               n=n, what=what) if who == "agent" else
+                                     t("the scrimmage rev helper neutralized {n} robot-side sim writes ({what})",
+                                       n=n, what=what)))
         return
     agent = session.agent_state()
     language = session.robot_language()

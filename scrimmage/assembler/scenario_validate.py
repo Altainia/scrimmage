@@ -4,7 +4,9 @@ Field ids (0-based indices; the runner's messages are 1-based): `scenario/<key>`
 `step<i>/<key>`, `step<i>/check<j>/<kind>` or `step<i>/check<j>/<kind>.<subkey>` when the message names one key
 inside the check (`step1/check0/pose.tol_xy`, `step0/check2/always.signal`), `step<i>/shot<j>/<key>`,
 `step<i>/sheet/<key>`; anything that can't be placed is `status`. A broken robot config or missing config file
-sets `robot_problem` and gives a single `status` error "fix the robot first: ..."."""
+sets `robot_problem` and gives a single `status` error "fix the robot first: ..." (code ROBOT_FIRST, spec L3: the
+server words it again with its own robot problem). The loader's and validate's messages stay American English: they
+are placed on their fields by their words here, and the CLI prints them."""
 
 from __future__ import annotations
 
@@ -19,7 +21,10 @@ from ..config import ConfigError, build_world, load_config
 from ..driverstation import MATCH_KEYS
 from ..scenario import (SHEET_KEYS, SHOT_KEYS, STEP_KEYS, TOP_KEYS, config_for, load_scenario_raw,
                         load_scenario_text, validate)
+from .. import i18n
 from .validate import FieldError, Result as _BaseResult
+
+ROBOT_FIRST = "robot_first"     # FieldError.code of the "fix the robot first" error
 
 
 @dataclass
@@ -231,7 +236,8 @@ def check(text: str, path) -> Result:
         if load_errors:   # the scenario's own errors first; the robot is looked at once they are fixed
             return Result(False, load_errors, [], None)
         problem = str(e) if isinstance(e, ConfigError) else f"{type(e).__name__}: {e}"
-        return Result(False, [FieldError("status", f"fix the robot first: {problem}")], [], None, scn, problem)
+        return Result(False, [FieldError("status", i18n.t("fix the robot first: {why}", why=problem), ROBOT_FIRST)], [],
+                      None, scn, problem)
     errors = list(load_errors)
     try:
         for i, step in loaded:

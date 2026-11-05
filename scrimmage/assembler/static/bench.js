@@ -25,6 +25,7 @@
 
 import { $, h, api, apiFile, notice, serial, registerTab, setTab, showPath, fmt, UNIT } from "./app.js";
 import { units } from "./units.js";
+import { t, onChange } from "./i18n.js";
 
 export const FOCUS_SHOWN = 6;
 
@@ -49,8 +50,24 @@ export const stageHooks = { edit: null };
 const listeners = [];
 export function onBench(fn) { listeners.push(fn); }
 
-const WHO = { agent: "the agent", cli: "someone at the command line", page: "this page" };
-const VERB = { run: "ran", sweep: "swept", compare: "compared", gallery: "put in the gallery" };
+// who did something (a source key) in words; an unknown source as it is
+const who = (source) => ({ agent: () => t("the agent"), cli: () => t("someone at the command line"), page: () => t("this page") }[source]
+  || (() => source || t("someone")))();
+// "{who} ran this {ago}", by the kind of job (a key)
+const DID = {
+  run: (p) => t("{who} ran this {ago}", p), sweep: (p) => t("{who} swept this {ago}", p),
+  compare: (p) => t("{who} compared this {ago}", p), gallery: (p) => t("{who} put in the gallery this {ago}", p),
+};
+// a job (a kind key) as the thing being run, and the notices when it ends
+const JOB = { gallery: () => t("the gallery"), sweep: () => t("the sweep"), compare: () => t("the compare") };
+const JOB_FAILED = {
+  run: (why) => t("The run failed: {why}", { why }), sweep: (why) => t("The sweep failed: {why}", { why }),
+  compare: (why) => t("The compare failed: {why}", { why }), gallery: (why) => t("The gallery failed: {why}", { why }),
+};
+const JOB_DONE = {
+  sweep: () => t("The sweep finished; its picture is on the stage."), compare: () => t("The compare finished; its picture is on the stage."),
+  gallery: () => t("The gallery finished; its picture is on the stage."),
+};
 const SINGLE = ["bench", "piece", "run", "flight"];
 const now = () => Date.now() / 1000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -75,11 +92,11 @@ function ideaName(file) {
   return i ? i.name : base(file).replace(/\.toml$/, "");
 }
 
-function ago(t) {
-  const s = Math.max(0, Math.round(now() - t));
-  if (s < 60) return `${s} s ago`;
-  if (s < 3600) return `${Math.round(s / 60)} min ago`;
-  return `${Math.round(s / 3600)} h ago`;
+function ago(when) {
+  const s = Math.max(0, Math.round(now() - when));
+  if (s < 60) return t("{n} s ago", { n: s });
+  if (s < 3600) return t("{n} min ago", { n: Math.round(s / 60) });
+  return t("{n} h ago", { n: Math.round(s / 3600) });
 }
 
 // "wheel.top.diameter" -> {section: "wheel", name: "top", k: "diameter", def: fields["wheel.diameter"]}
@@ -103,12 +120,12 @@ export function entryOf(raw, section, name) {
 // setting (U3); `kind` (units.js) is what it is shown and typed in, or null for a key shown as the file has it.
 function valueOf(key) {
   const { section, name, k, def } = parseKey(key);
-  const t = entryOf(bench.idea && bench.idea.merged, section, name) || {};
+  const vt = entryOf(bench.idea && bench.idea.merged, section, name) || {};
   const kind = kindOf(key);
-  if (def && def.length && t[k] === undefined && t[`${k}_in`] !== undefined) {
-    return { value: t[`${k}_in`], inches: true, sendKey: `${key}_in`, kind };
+  if (def && def.length && vt[k] === undefined && vt[`${k}_in`] !== undefined) {
+    return { value: vt[`${k}_in`], inches: true, sendKey: `${key}_in`, kind };
   }
-  return { value: t[k], inches: false, sendKey: key, kind };
+  return { value: vt[k], inches: false, sendKey: key, kind };
 }
 
 // -- units: a key's number in the Units setting -------------------------------------------------------------------
@@ -124,17 +141,17 @@ function kindOf(key) {
 const isNumber = (x) => typeof x === "number" && Number.isFinite(x);
 const each = (v, f) => (Array.isArray(v) ? v.map((x) => (isNumber(x) ? f(x) : x)) : isNumber(v) ? f(v) : v);
 // a value as the file writes it, in SI (and back: to 1 µm, or a millionth of an inch)
-const siOf = (t, v) => each(v, (x) => (t.inches ? units.fromKey(x, "in") : x));
-const fileOf = (t, si) => each(si, (x) => round6(t.inches ? units.toKey(x, "in") : x));
+const siOf = (vt, v) => each(v, (x) => (vt.inches ? units.fromKey(x, "in") : x));
+const fileOf = (vt, si) => each(si, (x) => round6(vt.inches ? units.toKey(x, "in") : x));
 // a number's text in a box (no unit), and a whole value's ("1, 2, 3"), in the Units setting
-const shownNumber = (t, x) => (t.kind ? units.shown(siOf(t, x), t.kind) : fmt(x));
-const shownValue = (t, v) => (t.kind && v != null && typeof v !== "string" ? (Array.isArray(v) ? v.map((x) => shownNumber(t, x)).join(", ") : shownNumber(t, v)) : show(v));
-const unitOf = (t, def) => (t.kind ? units.name(t.kind) : t.inches ? "in" : def && def.unit ? UNIT[def.unit] || def.unit : "");
+const shownNumber = (vt, x) => (vt.kind ? units.shown(siOf(vt, x), vt.kind) : fmt(x));
+const shownValue = (vt, v) => (vt.kind && v != null && typeof v !== "string" ? (Array.isArray(v) ? v.map((x) => shownNumber(vt, x)).join(", ") : shownNumber(vt, v)) : show(v));
+const unitOf = (vt, def) => (vt.kind ? units.name(vt.kind) : vt.inches ? "in" : def && def.unit ? UNIT[def.unit] || def.unit : "");
 
 // What a box of a key with a kind holds, as the file writes it: "" -> null (remove); a number, or a list "1, 2, 3",
 // each typed in the Units setting ("4", "4 in", "100 mm"). A part still showing `orig`'s text keeps the file's own
 // number (`file`), so a list with one number changed writes the others back exactly.
-function parseMeasured(text, t, orig, file) {
+function parseMeasured(text, vt, orig, file) {
   const s = text.trim();
   if (s === "") return { value: null };
   const list = /^\[/.test(s) || s.includes(",");
@@ -146,9 +163,9 @@ function parseMeasured(text, t, orig, file) {
   const out = [];
   for (const [j, x] of parts.entries()) {
     if (parts.length === was.length && x === was[j] && isNumber(exact[j])) { out.push(exact[j]); continue; }
-    const v = units.parse(x, t.kind);
+    const v = units.parse(x, vt.kind);
     if (typeof v === "object") return { error: v.error };
-    out.push(fileOf(t, v));
+    out.push(fileOf(vt, v));
   }
   return { value: out.length === 1 && !list ? out[0] : out };
 }
@@ -180,7 +197,7 @@ function parseTyped(text, numeric) {
   if (numeric) {
     const parts = s.replace(/^\[|\]$/g, "").split(/[\s,]+/).filter(Boolean);
     const nums = parts.map(num);
-    if (nums.some((n) => Number.isNaN(n))) return { error: "type a number (or numbers separated by commas)" };
+    if (nums.some((n) => Number.isNaN(n))) return { error: t("type a number (or numbers separated by commas)") };
     return { value: parts.length === 1 && !/^\[/.test(s) ? nums[0] : nums };
   }
   if (s === "true" || s === "false") return { value: s === "true" };
@@ -206,7 +223,7 @@ const show = (v) => (Array.isArray(v) ? v.map(fmt).join(", ") : typeof v === "bo
 // -- edits -------------------------------------------------------------------------------------------
 function failed(data, status) {
   return data.errors && data.errors.length ? data.errors
-    : [{ field: "status", message: data.error || `the server answered ${status}` }];
+    : [{ field: "status", message: data.error || t("the server answered {status}", { status }) }];
 }
 
 async function post(path, body, field, file = bench.shown) {
@@ -230,7 +247,7 @@ async function post(path, body, field, file = bench.shown) {
       return true;
     }
     if (status === 200 && !(data.errors && data.errors.length)) {   // undo/redo with nothing to undo or redo
-      notice(`Nothing to ${path.endsWith("undo") ? "undo" : "redo"} for ${ideaName(file)}.`, "info");
+      notice(path.endsWith("undo") ? t("Nothing to undo for {name}.", { name: ideaName(file) }) : t("Nothing to redo for {name}.", { name: ideaName(file) }), "info");
       return false;
     }
     ownRun = null;
@@ -294,7 +311,7 @@ export function setKeys(pairs, version = null, file = null, field = null) {
 // One edit of the shown idea other than `set` (add, remove, rename, override), in turn with the others.
 export const editOp = (body, field = null) => serial(() => (bench.state && bench.shown ? post("/api/bench/edit", body, field) : false));
 function leftStage(file, key) {
-  notice(`${ideaName(file)} left the stage, so your edit to ${key} wasn't saved`, "warn", "bench-left");
+  notice(t("{name} left the stage, so your edit to {key} wasn't saved", { name: ideaName(file), key }), "warn", "bench-left");
 }
 const undo = () => serial(() => (bench.shown ? post("/api/bench/undo", {}) : false));
 const redo = () => serial(() => (bench.shown ? post("/api/bench/redo", {}) : false));
@@ -316,7 +333,7 @@ async function run() {
   jobFailures.delete(file);
   const r = await job("/api/bench/run", { file }, { kind: "run", files: [file] });
   if (r === true) return;
-  notice(`Can't run ${ideaName(file)}: ${r.map((e) => e.message).join("; ")}`, "error", "bench-run");
+  notice(t("Can't run {name}: {why}", { name: ideaName(file), why: r.map((e) => e.message).join("; ") }), "error", "bench-run");
   bench.errors = { file, list: r.map((e) => ({ ...e, field: meters(e.field) })) };
   render();
 }
@@ -354,7 +371,8 @@ async function applyState(s, force = false) {
   const about = bench.resultShown ? s.result.files.find((f) => files.has(f)) : null;
   bench.shown = bench.editing || bench.pick || about || (files.has(s.stage) ? s.stage : (s.ideas[0] ? s.ideas[0].file : null));
   if (old && !files.has(old)) {
-    notice(`${old} was deleted or renamed outside; showing ${bench.shown ? ideaName(bench.shown) : "nothing (no ideas left)"}`, "info", "bench-gone");
+    notice(bench.shown ? t("{file} was deleted or renamed outside; showing {name}", { file: old, name: ideaName(bench.shown) })
+      : t("{file} was deleted or renamed outside; showing nothing (no ideas left)", { file: old }), "info", "bench-gone");
   }
   if (old !== bench.shown) { bench.errors = { file: null, list: [] }; bench.typed.clear(); bench.typedAt.clear(); bench.gif = false; }
   await loadIdea(seq, own);
@@ -409,24 +427,25 @@ async function jobsLoop() {
 
 async function finished(j, mine) {
   if (j.state === "failed") {
-    for (const f of j.files) jobFailures.set(f, { error: j.error || "it stopped with no reason given", t: now() });
+    for (const f of j.files) jobFailures.set(f, { error: j.error || t("it stopped with no reason given"), t: now() });
     if (mine.win) mine.win.close();
-    notice(`The ${j.kind} failed: ${j.error || "no reason given"}`, "error");
+    const why = j.error || t("no reason given");
+    notice(JOB_FAILED[j.kind] ? JOB_FAILED[j.kind](why) : t("The {kind} failed: {why}", { kind: j.kind, why }), "error");
     renderStage();
     return;
   }
   if (j.kind === "gallery" && j.out) {
     const { blob } = await apiFile(`/api/bench/file?path=${encodeURIComponent(j.out)}`);
-    if (!blob) { notice("The gallery was written, but this page couldn't read it.", "error"); return; }
+    if (!blob) { notice(t("The gallery was written, but this page couldn't read it."), "error"); return; }
     if (mine.win && !mine.win.closed) {
       const url = URL.createObjectURL(new Blob([blob], { type: "text/html" }));
       mine.win.opener = null;   // the gallery page gets no handle on this page (its link holds the token)
       mine.win.location = url;
       setTimeout(() => URL.revokeObjectURL(url), 60000);   // long enough for the new tab to load it
-    } else notice(`The gallery is ready: ${j.out}`, "info");
+    } else notice(t("The gallery is ready: {file}", { file: j.out }), "info");
     return;
   }
-  if (j.kind !== "run") notice(`The ${j.kind} finished; its picture is on the stage.`, "info");
+  if (j.kind !== "run") notice(JOB_DONE[j.kind] ? JOB_DONE[j.kind]() : t("The {kind} finished; its picture is on the stage.", { kind: j.kind }), "info");
   renderStage();
 }
 
@@ -458,42 +477,44 @@ function stagePictures(lt, result) {
 
 // A sweep's or compare's table header in plain words (a swept key stays as the file writes it, its values too). The
 // CSV is SI: exit speed and peak load are shown in the Units setting, to 4 significant figures, as the CSV has them.
-const COLUMN = { idea: "idea", out: "got out", jammed: "jammed", exit_speed: () => `exit speed (${units.name("speed")})`,
-  elevation_deg: "elevation (°)", spin_rps: "spin (turns/s)", speed_drop_pct: "speed drop (%)", peak_load_n: () => `peak load (${units.name("force")})` };
+const COLUMN = { idea: () => t("idea"), out: () => t("got out"), jammed: () => t("jammed"),
+  exit_speed: () => t("exit speed ({unit})", { unit: units.name("speed") }), elevation_deg: () => t("elevation (°)"),
+  spin_rps: () => t("spin (turns/s)"), speed_drop_pct: () => t("speed drop (%)"),
+  peak_load_n: () => t("peak load ({unit})", { unit: units.name("force") }) };
 const COLUMN_KIND = { exit_speed: "speed", peak_load_n: "force" };
-const columnName = (c) => (typeof COLUMN[c] === "function" ? COLUMN[c]() : COLUMN[c]);
+const columnName = (c) => (COLUMN[c] ? COLUMN[c]() : undefined);
 
 function renderTable(result) {
   const wrap = $("#bench-table-wrap");
-  const t = result && result.table;
-  wrap.hidden = !t || !t.rows.length;
+  const vt = result && result.table;
+  wrap.hidden = !vt || !vt.rows.length;
   if (wrap.hidden) { $("#bench-table").replaceChildren(); return; }
   const cell = (x, c) => {
     if (x === "nan") return "–";
-    const kind = COLUMN_KIND[t.columns[c]], v = Number(x);
+    const kind = COLUMN_KIND[vt.columns[c]], v = Number(x);
     return kind && x !== "" && Number.isFinite(v) ? String(+units.toDisplay(v, kind).toPrecision(4)) : x;
   };
   $("#bench-table").replaceChildren(
-    h("thead", {}, h("tr", {}, ...t.columns.map((c) => h("th", { scope: "col", class: COLUMN[c] ? "" : "mono", text: columnName(c) || c })))),
-    h("tbody", {}, ...t.rows.map((r) => h("tr", {}, ...r.map((x, c) => h("td", { text: cell(x, c) }))))));
+    h("thead", {}, h("tr", {}, ...vt.columns.map((c) => h("th", { scope: "col", class: COLUMN[c] ? "" : "mono", text: columnName(c) || c })))),
+    h("tbody", {}, ...vt.rows.map((r) => h("tr", {}, ...r.map((x, c) => h("td", { text: cell(x, c) }))))));
 }
 
-const listOf = (xs) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+const listOf = (xs) => (xs.length < 2 ? xs.join("") : t("{list} and {last}", { list: xs.slice(0, -1).join(", "), last: xs[xs.length - 1] }));
 
 // The stage's words for the session's result: {name, author, idea, changed, failed}.
 function resultWords(r) {
   const names = r.files.map(ideaName);
   const authors = [...new Set(r.files.map((f) => (ideaOf(f) || {}).author).filter(Boolean))];
-  const who = WHO[r.source] || r.source || "someone";
+  const by = who(r.source);
   const keys = r.table ? r.table.columns.filter((c) => !COLUMN[c]) : [];
   if (r.kind === "compare") {
-    return { name: `Comparing ${listOf(names) || "ideas"}`, author: listOf(authors) || "someone",
-      idea: `Each idea with the same piece and feed${names.length ? ` (from ${names[0]})` : ""}.`,
-      changed: r.t ? `${who} compared these ${ago(r.t)}` : "", failed: "The comparison failed" };
+    return { name: names.length ? t("Comparing {names}", { names: listOf(names) }) : t("Comparing ideas"), author: listOf(authors) || t("someone"),
+      idea: names.length ? t("Each idea with the same piece and feed (from {name}).", { name: names[0] }) : t("Each idea with the same piece and feed."),
+      changed: r.t ? t("{who} compared these {ago}", { who: by, ago: ago(r.t) }) : "", failed: (why) => t("The comparison failed: {why}", { why }) };
   }
-  return { name: `${names[0] || "An idea"}, swept`, author: listOf(authors) || "someone",
-    idea: keys.length ? `How it does at each value of ${listOf(keys)}.` : "How it does at each value swept.",
-    changed: r.t ? `${who} swept this ${ago(r.t)}` : "", failed: "The sweep failed" };
+  return { name: names[0] ? t("{name}, swept", { name: names[0] }) : t("An idea, swept"), author: listOf(authors) || t("someone"),
+    idea: keys.length ? t("How it does at each value of {keys}.", { keys: listOf(keys) }) : t("How it does at each value swept."),
+    changed: r.t ? t("{who} swept this {ago}", { who: by, ago: ago(r.t) }) : "", failed: (why) => t("The sweep failed: {why}", { why }) };
 }
 
 // -- rendering --------------------------------------------------------------------------------------------
@@ -518,8 +539,8 @@ function renderTop() {
 function changedLine(i) {
   const lt = i.latest;
   const ch = changes.get(i.file);
-  const ran = lt && lt.t ? { t: lt.t, text: `${WHO[lt.source] || lt.source || "someone"} ${VERB[lt.kind] || "ran"} this ${ago(lt.t)}` } : null;
-  const ed = ch ? { t: ch.t, text: `${ch.own ? "edited on this page" : "changed outside this page"} ${ago(ch.t)}` } : null;
+  const ran = lt && lt.t ? { t: lt.t, text: (DID[lt.kind] || DID.run)({ who: who(lt.source), ago: ago(lt.t) }) } : null;
+  const ed = ch ? { t: ch.t, text: ch.own ? t("edited on this page {ago}", { ago: ago(ch.t) }) : t("changed outside this page {ago}", { ago: ago(ch.t) }) } : null;
   const last = ran && ed ? (ran.t >= ed.t ? ran : ed) : ran || ed;
   return last ? last.text : "";
 }
@@ -530,25 +551,25 @@ function renderStage() {
   const i = shownIdea();
   const lockEl = $("#bench-lock");
   lockEl.hidden = !s.lock;
-  if (s.lock) lockEl.textContent = `${WHO[s.lock.source] || s.lock.source || "someone"} is running ${s.lock.file ? ideaName(s.lock.file) : "a bench"}`;
+  if (s.lock) lockEl.textContent = t("{who} is running {what}", { who: who(s.lock.source), what: s.lock.file ? ideaName(s.lock.file) : t("a bench") });
   const ro = $("#bench-readonly");
   ro.hidden = !(i && i.read_only_reason);
-  ro.textContent = i && i.read_only_reason ? `This idea can't be changed here until its file is fixed: ${i.read_only_reason}` : "";
+  ro.textContent = i && i.read_only_reason ? t("This idea can't be changed here until its file is fixed: {why}", { why: i.read_only_reason }) : "";
   for (const b of ["#bench-run", "#bench-change-run", "#bench-sweep"]) $(b).disabled = !i || !!i.read_only_reason;
   $("#bench-compare").disabled = s.ideas.length < 2;
   $("#bench-edit").disabled = !i || !stageHooks.edit;
-  $("#bench-edit").title = stageHooks.edit ? "Edit the shape in 3D" : "Edit the shape in 3D (coming next)";
+  $("#bench-edit").title = stageHooks.edit ? t("Edit the shape in 3D") : t("Edit the shape in 3D (coming next)");
   // a result is on stage: Run, Edit shape and Change it act on one of its ideas, so they say which, on the buttons
   // (set before the no-ideas return, so they never keep a deleted idea's name)
   const named = bench.resultShown && s.result && i ? i.name : null;
-  $("#bench-run").textContent = named ? `Run ${named}` : "Run";
-  $("#bench-change-run").textContent = named ? `Run ${named}` : "Run";
-  $("#bench-edit").textContent = named ? `Edit ${named}'s shape` : "Edit shape";
-  $("#bench-change-title").textContent = named ? `Change it: ${named}` : "Change it";
+  $("#bench-run").textContent = named ? t("Run {name}", { name: named }) : t("Run");
+  $("#bench-change-run").textContent = named ? t("Run {name}", { name: named }) : t("Run");
+  $("#bench-edit").textContent = named ? t("Edit {name}'s shape", { name: named }) : t("Edit shape");
+  $("#bench-change-title").textContent = named ? t("Change it: {name}", { name: named }) : t("Change it");
   if (!i) {
-    $("#bench-name").textContent = "No ideas yet";
+    $("#bench-name").textContent = t("No ideas yet");
     $("#bench-author").textContent = "";
-    $("#bench-idea").textContent = "Press New idea to start one.";
+    $("#bench-idea").textContent = t("Press New idea to start one.");
     $("#bench-changed").textContent = "";
     $("#bench-headlines").replaceChildren();
     renderTable(null);
@@ -560,11 +581,11 @@ function renderStage() {
   const r = bench.resultShown ? s.result : null;   // the session's sweep or compare, in place of the idea's run
   const words = r ? resultWords(r) : null;
   $("#bench-name").textContent = words ? words.name : i.name;
-  $("#bench-author").textContent = words ? words.author : i.author || "someone";
+  $("#bench-author").textContent = words ? words.author : i.author || t("someone");
   $("#bench-idea").textContent = words ? words.idea : i.idea || "";
   $("#bench-changed").textContent = words ? words.changed : changedLine(i);
-  $("#bench-run").title = r ? `Run ${i.name} on its own` : "";
-  if (r && stageHooks.edit) $("#bench-edit").title = `Edit the shape of ${i.name} in 3D`;
+  $("#bench-run").title = r ? t("Run {name} on its own", { name: i.name }) : "";
+  if (r && stageHooks.edit) $("#bench-edit").title = t("Edit the shape of {name} in 3D", { name: i.name });
 
   // running: this page's jobs for the idea, queued or running (the server always settles them)
   const mine = bench.jobs.find((j) => (j.state === "queued" || j.state === "running")
@@ -572,10 +593,10 @@ function renderStage() {
   const runEl = $("#bench-running");
   runEl.hidden = !mine;
   if (mine) {
-    const what = mine.kind === "gallery" ? "the gallery" : mine.kind === "run" ? i.name : `the ${mine.kind}`;
-    runEl.textContent = mine.state === "running" ? `Running ${what}…`
-      : s.lock && s.lock.source !== "page" ? `Waiting: ${WHO[s.lock.source] || "someone"} is running ${s.lock.file ? ideaName(s.lock.file) : "a bench"}`
-        : `Waiting to run ${what}…`;
+    const what = mine.kind === "run" ? i.name : JOB[mine.kind] ? JOB[mine.kind]() : mine.kind;
+    runEl.textContent = mine.state === "running" ? t("Running {what}…", { what })
+      : s.lock && s.lock.source !== "page" ? t("Waiting: {who} is running {what}", { who: who(s.lock.source), what: s.lock.file ? ideaName(s.lock.file) : t("a bench") })
+        : t("Waiting to run {what}…", { what });
   }
 
   const lt = r ? null : i.latest;
@@ -583,20 +604,20 @@ function renderStage() {
   const fail = $("#bench-failure");
   const jf = r ? null : jobFailures.get(i.file);
   let why = null;
-  if (r && r.ok === false) why = `${words.failed}: ${r.error || "no reason given"}`;
-  else if (jf && (!lt || !lt.t || jf.t > lt.t)) why = `The run failed: ${jf.error}`;
-  else if (lt && lt.ok === false) why = `The run failed: ${lt.error || "no reason given"}`;
+  if (r && r.ok === false) why = words.failed(r.error || t("no reason given"));
+  else if (jf && (!lt || !lt.t || jf.t > lt.t)) why = t("The run failed: {why}", { why: jf.error });
+  else if (lt && lt.ok === false) why = t("The run failed: {why}", { why: lt.error || t("no reason given") });
   else if (lt && lt.energy_failed) {
-    why = "This run went wrong inside the simulation (its energy check failed), so its numbers can't be trusted. "
-      + "It is not a verdict on the design: run it again, or ask the agent to look.";
+    why = t("This run went wrong inside the simulation (its energy check failed), so its numbers can't be trusted. It is not a verdict on the design: run it again, or ask the agent to look.");
   }
   fail.hidden = !why;
   fail.textContent = why || "";
 
-  const heads = lt ? lt.headlines.filter((x) => !x.startsWith("UNCALIBRATED")) : [];
+  // the UNCALIBRATED line (the headlines' last) is shown once, on its own line (L3: the server's field, not its words)
+  const heads = lt ? lt.headlines.filter((x) => x !== lt.uncalibrated) : [];
   $("#bench-headlines").replaceChildren(...heads.map((x) => h("li", {}, ...ticks(x))));
   if (r && r.ok !== false && !(r.table && r.table.rows.length)) {
-    $("#bench-headlines").append(h("li", { class: "bench-head-note", text: `Its numbers are in ${base(r.out)}.` }));
+    $("#bench-headlines").append(h("li", { class: "bench-head-note", text: t("Its numbers are in {file}.", { file: base(r.out) }) }));
   }
   renderTable(r);
   $("#bench-noresult").hidden = !!shownResult;
@@ -616,7 +637,8 @@ function renderStage() {
   const img = $("#bench-picture");
   if (url) {
     if (img.getAttribute("src") !== url) img.src = url;
-    img.alt = r ? `${words.name}: the chart` : bench.gif ? `${i.name}: a piece going through, moving` : `${i.name}: the paths of the pieces, from the side`;
+    img.alt = r ? t("{name}: the chart", { name: words.name }) : bench.gif ? t("{name}: a piece going through, moving", { name: i.name })
+      : t("{name}: the paths of the pieces, from the side", { name: i.name });
     img.hidden = false;
     $("#bench-nopicture").hidden = true;
   } else if (url === null && path && !img.hidden) {
@@ -625,7 +647,7 @@ function renderStage() {
     img.hidden = true;
     img.removeAttribute("src");
     $("#bench-nopicture").hidden = false;
-    $("#bench-nopicture").textContent = path && url === "" ? "The picture couldn't be loaded." : shownResult ? "This result has no picture." : "No picture yet. Press Run to see it work.";
+    $("#bench-nopicture").textContent = path && url === "" ? t("The picture couldn't be loaded.") : shownResult ? t("This result has no picture.") : t("No picture yet. Press Run to see it work.");
   }
 }
 
@@ -634,7 +656,7 @@ function renderStage() {
 // Units setting, whatever unit the file writes the key in)
 const STEP = { degrees: 5 };
 const STEP_SI = { imperial: { length: 0.0127, field: 0.1524 }, metric: { length: 0.01, field: 0.1 } };
-const stepOf = (t, def) => (t.kind ? (STEP_SI[units.system] || STEP_SI.metric)[t.kind] || null : (def && STEP[def.unit]) || null);
+const stepOf = (vt, def) => (vt.kind ? (STEP_SI[units.system] || STEP_SI.metric)[vt.kind] || null : (def && STEP[def.unit]) || null);
 const AXES = ["x", "y", "z"];
 const round6 = (x) => Math.round(x * 1e6) / 1e6;
 const isNum = (x) => typeof x === "number" && Number.isFinite(x);
@@ -678,46 +700,46 @@ function vectorOf(key) {
 
 function vectorBoxes(key, id, disabled) {
   const { k, def } = parseKey(key);
-  const t = vectorOf(key);
-  const step = stepOf(t, def);   // SI for a key with a kind
+  const vt = vectorOf(key);
+  const step = stepOf(vt, def);   // SI for a key with a kind
   const typed = bench.typed.has(key) ? bench.typed.get(key) : undefined;
-  const cur = typed !== undefined ? typed : t.value;
-  const comp = (j) => (t.n === 1 ? (Array.isArray(cur) ? cur[0] : cur) : Array.isArray(cur) ? cur[j] : undefined);
-  const baseOf = (j) => (t.base == null ? null : t.n === 1 ? t.base : t.base[j]);
+  const cur = typed !== undefined ? typed : vt.value;
+  const comp = (j) => (vt.n === 1 ? (Array.isArray(cur) ? cur[0] : cur) : Array.isArray(cur) ? cur[j] : undefined);
+  const baseOf = (j) => (vt.base == null ? null : vt.n === 1 ? vt.base : vt.base[j]);
   const boxes = [];
-  const row = h("div", { class: t.n === 1 ? "vec vec-1" : "vec" });
+  const row = h("div", { class: vt.n === 1 ? "vec vec-1" : "vec" });
   const commit = () => {
     if (boxes.some((b) => !live(b))) return;
     const texts = boxes.map((b) => b.value.trim());
     let v;
     if (texts.every((x) => x === "")) {
-      if (t.ends) return;
+      if (vt.ends) return;
       v = null;
     } else {
       // a box still showing the file's number keeps it exactly; another is typed in the Units setting (with a kind)
       const read = (x, j) => {
         if (x === "") return baseOf(j);
-        if (!t.kind) return NUM_RE.test(x) ? Number(x) : NaN;
+        if (!vt.kind) return NUM_RE.test(x) ? Number(x) : NaN;
         if (x === boxes[j].dataset.orig && isNum(comp(j))) return comp(j);
-        const v = units.parse(x, t.kind);
-        return typeof v === "object" ? v : fileOf(t, v);
+        const v = units.parse(x, vt.kind);
+        return typeof v === "object" ? v : fileOf(vt, v);
       };
       const vals = texts.map(read);
       const bad = vals.find((x) => x && typeof x === "object");
       if (bad || vals.some((x) => !isNum(x))) {
-        const message = bad ? bad.error : t.n === 1 ? "type a number" : "type a number in each box";
+        const message = bad ? bad.error : vt.n === 1 ? t("type a number") : t("type a number in each box");
         bench.errors = { file: bench.shown, list: [{ field: key, message }] };
-        bench.typed.set(key, t.n === 1 ? texts[0] : texts);
+        bench.typed.set(key, vt.n === 1 ? texts[0] : texts);
         bench.typedAt.set(key, Math.min(...boxes.map((b) => Number(b.dataset.typedAt || b.dataset.version))));
         render();
         return;
       }
-      v = t.n === 1 ? vals[0] : vals;
+      v = vt.n === 1 ? vals[0] : vals;
     }
     if (row.dataset.sent === JSON.stringify(v)) return;
     row.dataset.sent = JSON.stringify(v);
     const version = Math.min(...boxes.map((b) => Number(b.dataset.typedAt || b.dataset.version)));
-    const pairs = v === null ? [[key, null]] : t.write(v);
+    const pairs = v === null ? [[key, null]] : vt.write(v);
     for (const b of boxes) b.dataset.orig = b.value;   // sent: the redraw shows the saved value, as fieldRow's
     setKeys(pairs, version, boxes[0].dataset.file, key);
   };
@@ -730,14 +752,14 @@ function vectorBoxes(key, id, disabled) {
       : now2.base.map((x, m) => (m === j ? add(x) : x));
     return now2.write(v);
   }, null, bench.shown, key);
-  const unit = unitOf(t, def);
-  const stepText = !step ? "" : t.kind ? `${units.number(units.toDisplay(step, t.kind), 4)} ${unit}` : `${fmt(step)} ${def.unit === "degrees" ? "°" : unit}`;
-  for (let j = 0; j < t.n; j++) {
+  const unit = unitOf(vt, def);
+  const stepText = !step ? "" : vt.kind ? `${units.number(units.toDisplay(step, vt.kind), 4)} ${unit}` : `${fmt(step)} ${def.unit === "degrees" ? "°" : unit}`;
+  for (let j = 0; j < vt.n; j++) {
     const c = comp(j);
-    const text = c == null ? "" : typeof c === "string" ? c : shownNumber(t, c);
-    const box = h("input", { id: `${id}-${j}`, type: "text", class: "bench-vnum", inputmode: t.kind ? null : "decimal", autocomplete: "off",
-      spellcheck: "false", disabled, dataset: { key: `${key}#${j}` }, "aria-label": t.n === 1 ? k : `${k} ${AXES[j]}`,
-      placeholder: baseOf(j) != null && t.value === undefined ? shownNumber(t, baseOf(j)) : "" });
+    const text = c == null ? "" : typeof c === "string" ? c : shownNumber(vt, c);
+    const box = h("input", { id: `${id}-${j}`, type: "text", class: "bench-vnum", inputmode: vt.kind ? null : "decimal", autocomplete: "off",
+      spellcheck: "false", disabled, dataset: { key: `${key}#${j}` }, "aria-label": vt.n === 1 ? k : `${k} ${AXES[j]}`,
+      placeholder: baseOf(j) != null && vt.value === undefined ? shownNumber(vt, baseOf(j)) : "" });
     box.value = text;
     box.dataset.orig = text;
     box.dataset.file = bench.shown;
@@ -747,15 +769,17 @@ function vectorBoxes(key, id, disabled) {
     box.addEventListener("change", () => { if (live(box)) commit(); });
     box.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } });
     boxes.push(box);
-    const can = !!step && !disabled && t.base != null;
+    const can = !!step && !disabled && vt.base != null;
     const btn = (sign) => h("button", { type: "button", class: "nudge", dataset: { step: sign > 0 ? "+" : "-", axis: String(j) },
-      disabled: !can, title: `${sign > 0 ? "+" : "−"}${stepText}`, "aria-label": `${t.n === 1 ? k : `${k} ${AXES[j]}`} ${sign > 0 ? "plus" : "minus"} ${stepText}`,
+      disabled: !can, title: `${sign > 0 ? "+" : "−"}${stepText}`,
+      "aria-label": sign > 0 ? t("{what} plus {step}", { what: vt.n === 1 ? k : `${k} ${AXES[j]}`, step: stepText })
+        : t("{what} minus {step}", { what: vt.n === 1 ? k : `${k} ${AXES[j]}`, step: stepText }),
       onclick: () => nudge(j, sign) }, sign > 0 ? "+" : "−");
     row.append(h("div", { class: "vec-cell" },
-      t.n === 1 ? null : h("span", { class: "vec-axis", text: AXES[j] }),
+      vt.n === 1 ? null : h("span", { class: "vec-axis", text: AXES[j] }),
       h("div", { class: "nudge-group" }, step ? btn(-1) : null, box, step ? btn(1) : null)));
   }
-  return { control: row, unitText: unit, note: t.ends ? "the middle of the bar: moving it moves both ends" : null, firstId: `${id}-0` };
+  return { control: row, unitText: unit, note: vt.ends ? t("the middle of the bar: moving it moves both ends") : null, firstId: `${id}-0` };
 }
 
 // One field: label, help, the box (a list for choices, a number box with its unit, a text box; with `vectors`,
@@ -790,14 +814,14 @@ export function fieldRow(key, { focus = false, prefix = null, vectors = false } 
     const opts = choiceList(def.choices);
     const cur = typed !== undefined ? typed : value;
     box = h("select", { id, dataset: { key }, disabled },
-      h("option", { value: "" }, def.default != null ? `(not set: ${def.default})` : "(not set)"),
+      h("option", { value: "" }, def.default != null ? t("(not set: {value})", { value: def.default }) : t("(not set)")),
       ...opts.map((o) => h("option", { value: o }, o)),
       cur != null && !opts.includes(cur) ? h("option", { value: cur }, cur) : null);
     box.value = cur == null ? "" : String(cur);
     box.addEventListener("change", () => { if (live(box)) commit(box.value === "" ? null : box.value); });
   } else if (typeof (value ?? def?.default) === "boolean") {
     box = h("select", { id, dataset: { key }, disabled },
-      h("option", { value: "" }, "(not set)"), h("option", { value: "true" }, "yes"), h("option", { value: "false" }, "no"));
+      h("option", { value: "" }, t("(not set)")), h("option", { value: "true" }, t("yes")), h("option", { value: "false" }, t("no")));
     const cur = typed !== undefined ? typed : value;
     box.value = cur == null ? "" : String(cur);
     box.addEventListener("change", () => { if (live(box)) commit(box.value === "" ? null : box.value === "true"); });
@@ -807,7 +831,7 @@ export function fieldRow(key, { focus = false, prefix = null, vectors = false } 
     const dflt = def && def.default != null ? shownValue({ kind: vt.kind, inches: false }, def.default) : "";   // in meters
     box = h("input", { id, type: "text", dataset: { key }, disabled, autocomplete: "off", spellcheck: "false",
       inputmode: numeric && !Array.isArray(value) && !vt.kind ? "decimal" : null,
-      placeholder: dflt ? `${dflt} if left out` : "", class: numeric ? "bench-num" : "bench-text" });
+      placeholder: dflt ? t("{value} if left out", { value: dflt }) : "", class: numeric ? "bench-num" : "bench-text" });
     box.value = text;
     box.dataset.orig = text;
     const go = () => {
@@ -836,7 +860,7 @@ export function fieldRow(key, { focus = false, prefix = null, vectors = false } 
     h("label", { for: vec ? vec.firstId : id, class: "bench-label" }, label, vec && unitText ? h("span", { class: "unit", text: ` (${unitText})` }) : null),
     vec ? vec.control : h("div", { class: "with-unit" }, box, unitText ? h("span", { class: "unit", text: unitText }) : null),
     vec && vec.note ? h("p", { class: "hint", text: vec.note }) : def ? h("p", { class: "hint", text: def.help }) : null,
-    inc ? h("p", { class: "hint", text: `comes from ${inc}; change it there` }) : null,
+    inc ? h("p", { class: "hint", text: t("comes from {file}; change it there", { file: inc }) }) : null,
     ...msgs);
 }
 
@@ -897,18 +921,18 @@ function drawChange() {
 
   const focus = $("#bench-focus");
   if (!i || !bench.idea) {
-    focus.replaceChildren(h("p", { class: "hint", text: i ? "Loading…" : "" }));
+    focus.replaceChildren(h("p", { class: "hint", text: i ? t("Loading…") : "" }));
     $("#bench-all").replaceChildren();
     $("#bench-problems").replaceChildren();
     return;
   }
   const keys = [...new Set(i.focus)].slice(0, FOCUS_SHOWN);
   focus.replaceChildren(...(keys.length ? keys.map((k) => fieldRow(k, { focus: true }))
-    : [h("p", { class: "hint bench-empty", text: "Nothing talked about yet. Change a number in Show all, or ask the agent to pin some here." })]));
+    : [h("p", { class: "hint bench-empty", text: t("Nothing talked about yet. Change a number in Show all, or ask the agent to pin some here.") })]));
 
   const all = $("#bench-all");
   all.hidden = !bench.showAll;
-  $("#bench-showall").textContent = bench.showAll ? "Hide all" : "Show all";
+  $("#bench-showall").textContent = bench.showAll ? t("Hide all") : t("Show all");
   $("#bench-showall").setAttribute("aria-expanded", String(bench.showAll));
   if (bench.showAll) {
     all.replaceChildren(...entries().map(({ section, name }) => h("fieldset", { class: "bench-group", dataset: { entry: name === null ? section : `${section}.${name}` } },
@@ -918,11 +942,11 @@ function drawChange() {
 
   const probs = $("#bench-problems");
   const list = [...i.problems];
-  if (bench.errors.file === bench.shown) for (const e of bench.errors.list) list.push({ level: "error", key: e.field, message: `not saved: ${e.message}` });
+  if (bench.errors.file === bench.shown) for (const e of bench.errors.list) list.push({ level: "error", key: e.field, message: t("not saved: {why}", { why: e.message }) });
   probs.replaceChildren(...(list.length ? list.map((p) => h("li", { class: `message message-${p.level === "error" ? "error" : "warning"}` },
-    h("span", { class: "message-kind", text: p.level === "error" ? "Error" : "Warning" }),
+    h("span", { class: "message-kind", text: p.level === "error" ? t("Error") : t("Warning") }),
     p.key ? h("span", { class: "mono bench-problem-key", text: p.key }) : null,
-    h("span", { text: p.message }))) : [h("li", { class: "hint", text: "No problems." })]));
+    h("span", { text: p.message }))) : [h("li", { class: "hint", text: t("No problems.") })]));
 
   restoreTyping(keep, "#bench-change");
 }
@@ -933,21 +957,21 @@ function renderStrip() {
   const others = s.ideas.filter((i) => bench.resultShown || i.file !== bench.shown);
   const r = s.result;
   const card = r && !bench.resultShown ? h("button", { type: "button", class: "bench-card bench-card-result", dataset: { result: r.kind },
-    title: "Put the newest result back on the stage",
+    title: t("Put the newest result back on the stage"),
     onclick: () => { bench.pick = null; bench.pickResult = true; applyState(bench.state, true); } },
-  h("span", { class: "bench-thumb bench-thumb-empty", text: r.kind === "compare" ? "comparison" : "sweep" }),
-  h("strong", { class: "bench-card-name", text: r.kind === "compare" ? "The comparison" : "The sweep" }),
+  h("span", { class: "bench-thumb bench-thumb-empty", text: r.kind === "compare" ? t("comparison") : t("sweep") }),
+  h("strong", { class: "bench-card-name", text: r.kind === "compare" ? t("The comparison") : t("The sweep") }),
   h("span", { class: "bench-card-author", text: listOf(r.files.map(ideaName)) })) : null;
   $("#bench-strip").replaceChildren(...(card ? [card] : []), ...(others.length ? others.map((i) => {
     const lt = i.latest;
     const url = picture(lt && lt.pictures ? lt.pictures.path_side : null, lt ? `${lt.t}` : "");
     return h("button", { type: "button", class: "bench-card", dataset: { file: i.file }, title: i.idea || i.name,
       onclick: () => { bench.pick = i.file; bench.pickResult = false; applyState(bench.state, true); } },
-      url ? h("img", { class: "bench-thumb", src: url, alt: "" }) : h("span", { class: "bench-thumb bench-thumb-empty", text: lt ? "" : "not run" }),
+      url ? h("img", { class: "bench-thumb", src: url, alt: "" }) : h("span", { class: "bench-thumb bench-thumb-empty", text: lt ? "" : t("not run") }),
       h("strong", { class: "bench-card-name", text: i.name }),
       h("span", { class: "bench-card-author", text: i.author || "" }),
-      i.problems.some((p) => p.level === "error") ? h("span", { class: "dot dot-error", title: "has problems" }) : null);
-  }) : [h("p", { class: "hint", text: "Other ideas in this folder show here." })]));
+      i.problems.some((p) => p.level === "error") ? h("span", { class: "dot dot-error", title: t("has problems") }) : null);
+  }) : [h("p", { class: "hint", text: t("Other ideas in this folder show here.") })]));
 }
 
 // -- session tools ----------------------------------------------------------------------------------------
@@ -964,7 +988,7 @@ function initDialogs() {
   // New idea
   $("#bench-new").addEventListener("click", () => {
     const sel = $("#bench-new-from");
-    sel.replaceChildren(h("option", { value: "" }, "Blank"), ...bench.examples.map((x) => h("option", { value: x }, `the ${x.replace(/_/g, " ")} example`)));
+    sel.replaceChildren(h("option", { value: "" }, t("Blank")), ...bench.examples.map((x) => h("option", { value: x }, t("the {name} example", { name: x.replace(/_/g, " ") }))));
     for (const id of ["#bench-new-name", "#bench-new-author", "#bench-new-idea"]) $(id).value = "";
     dialogErrors("#bench-new-errors", []);
     $("#bench-new-dialog").showModal();
@@ -973,7 +997,7 @@ function initDialogs() {
   $("#bench-new-dialog form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const body = { name: $("#bench-new-name").value.trim(), author: $("#bench-new-author").value.trim(), idea: $("#bench-new-idea").value.trim() };
-    if (!body.name) { dialogErrors("#bench-new-errors", [{ message: "Give the idea a name first." }]); $("#bench-new-name").focus(); return; }
+    if (!body.name) { dialogErrors("#bench-new-errors", [{ message: t("Give the idea a name first.") }]); $("#bench-new-name").focus(); return; }
     if ($("#bench-new-from").value) body.example = $("#bench-new-from").value;
     const { status, data } = await api("POST", "/api/bench/new_idea", body);
     if (status === 200 && data.ok) {
@@ -1000,17 +1024,17 @@ function initDialogs() {
   const fillRange = () => {
     const key = $("#bench-sweep-key").value;
     if (!key) return;
-    const t = valueOf(key);
+    const vt = valueOf(key);
     const { def } = parseKey(key);
-    const now = t.kind ? units.toDisplay(siOf(t, t.value), t.kind) : t.value;   // From and To are in the Units setting
+    const now = vt.kind ? units.toDisplay(siOf(vt, vt.value), vt.kind) : vt.value;   // From and To are in the Units setting
     $("#bench-sweep-from").value = fmt(+(now * 0.8).toPrecision(4));
     $("#bench-sweep-to").value = fmt(+(now * 1.2).toPrecision(4));
-    $("#bench-sweep-unit").textContent = `Now ${t.kind ? units.fmt(siOf(t, t.value), t.kind) : `${fmt(t.value)} ${unitOf(t, def)}`}. ${def ? def.help : ""}`;
+    $("#bench-sweep-unit").textContent = `${t("Now {value}.", { value: vt.kind ? units.fmt(siOf(vt, vt.value), vt.kind) : `${fmt(vt.value)} ${unitOf(vt, def)}` })} ${def ? def.help : ""}`;
   };
   $("#bench-sweep").addEventListener("click", () => {
     const keys = sweepKeys();
     $("#bench-sweep-key").replaceChildren(...keys.map((k) => h("option", { value: k }, k)));
-    dialogErrors("#bench-sweep-errors", keys.length ? [] : [{ message: "This idea has no numbers to sweep." }]);
+    dialogErrors("#bench-sweep-errors", keys.length ? [] : [{ message: t("This idea has no numbers to sweep.") }]);
     fillRange();
     $("#bench-sweep-dialog").showModal();
   });
@@ -1019,26 +1043,26 @@ function initDialogs() {
   $("#bench-sweep-dialog form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const key = $("#bench-sweep-key").value;
-    const t = key ? valueOf(key) : {};
+    const vt = key ? valueOf(key) : {};
     // a number, or with a kind, one in the Units setting ("4", "4 in"): From and To in its shown unit
     const typed = (sel) => {
       const x = $(sel).value.trim();
-      if (!t.kind || x === "") return Number(x);
-      const v = units.parse(x, t.kind);
-      return typeof v === "object" ? NaN : units.toDisplay(v, t.kind);
+      if (!vt.kind || x === "") return Number(x);
+      const v = units.parse(x, vt.kind);
+      return typeof v === "object" ? NaN : units.toDisplay(v, vt.kind);
     };
     const a = typed("#bench-sweep-from"), b = typed("#bench-sweep-to");
     const n = Number($("#bench-sweep-steps").value);
     const errs = [];
-    if (!key) errs.push({ message: "Pick a number to sweep." });
-    if (!Number.isFinite(a) || !Number.isFinite(b) || $("#bench-sweep-from").value.trim() === "" || $("#bench-sweep-to").value.trim() === "") errs.push({ message: "From and To must be numbers." });
-    if (!Number.isInteger(n) || n < 2 || n > 25) errs.push({ message: "Steps must be a whole number from 2 to 25." });
+    if (!key) errs.push({ message: t("Pick a number to sweep.") });
+    if (!Number.isFinite(a) || !Number.isFinite(b) || $("#bench-sweep-from").value.trim() === "" || $("#bench-sweep-to").value.trim() === "") errs.push({ message: t("From and To must be numbers.") });
+    if (!Number.isInteger(n) || n < 2 || n > 25) errs.push({ message: t("Steps must be a whole number from 2 to 25.") });
     if (errs.length) { dialogErrors("#bench-sweep-errors", errs); return; }
     const values = Array.from({ length: n }, (_, k) => {
       const v = +(a + ((b - a) * k) / (n - 1)).toPrecision(6);
-      return t.kind ? fileOf(t, units.fromDisplay(v, t.kind)) : v;   // written as the file writes the key
+      return vt.kind ? fileOf(vt, units.fromDisplay(v, vt.kind)) : v;   // written as the file writes the key
     });
-    const sendKey = t.sendKey;
+    const sendKey = vt.sendKey;
     const file = bench.shown;
     const r = await job("/api/bench/sweep", { file, key: sendKey, values }, { kind: "sweep", files: [file], key: sendKey });
     if (r === true) $("#bench-sweep-dialog").close();
@@ -1057,7 +1081,7 @@ function initDialogs() {
   $("#bench-compare-dialog form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const files = [...document.querySelectorAll("#bench-compare-list input:checked")].map((x) => x.value);
-    if (files.length < 2) { dialogErrors("#bench-compare-errors", [{ message: "Tick two or more ideas." }]); return; }
+    if (files.length < 2) { dialogErrors("#bench-compare-errors", [{ message: t("Tick two or more ideas.") }]); return; }
     const r = await job("/api/bench/compare", { files }, { kind: "compare", files });
     if (r === true) $("#bench-compare-dialog").close();
     else dialogErrors("#bench-compare-errors", r);
@@ -1066,12 +1090,12 @@ function initDialogs() {
   // Gallery: write it, then open it in a new tab (opened now, while the click still allows a new window)
   $("#bench-gallery").addEventListener("click", async () => {
     const win = window.open("", "_blank");
-    if (win) win.document.title = "Making the gallery…";
+    if (win) win.document.title = t("Making the gallery…");
     const r = await job("/api/bench/gallery", {}, { kind: "gallery", files: [], win });
     if (r !== true) {
       if (win) win.close();
-      notice(`Can't make the gallery: ${r.map((x) => x.message).join("; ")}`, "error");
-    } else notice("Making the gallery: every idea is run once. It opens in a new tab when it is ready.", "info");
+      notice(t("Can't make the gallery: {why}", { why: r.map((x) => x.message).join("; ") }), "error");
+    } else notice(t("Making the gallery: every idea is run once. It opens in a new tab when it is ready."), "info");
   });
 }
 
@@ -1092,10 +1116,11 @@ export async function initBench() {
   $("#bench-edit").addEventListener("click", () => { if (stageHooks.edit && bench.shown) stageHooks.edit(bench.shown); });
   initDialogs();
   units.onChange(() => render());   // a half-typed box keeps its text (keepTyping), then read in the new units
+  onChange(() => { render(); refresh(); });   // likewise; the server's words (problems, refusals) asked for again
   $("#bench-change").dataset.benchFields = "";
   const [f, app] = await Promise.all([api("GET", "/api/bench/fields"), api("GET", "/api/app/state")]);
   if (f.status === 200) bench.fields = f.data;
-  else notice("Couldn't load the field help; editing is off until the page is reloaded.", "error");
+  else notice(t("Couldn't load the field help; editing is off until the page is reloaded."), "error");
   if (app.status === 200) bench.examples = app.data.examples || [];
   setInterval(() => {   // keep "... ago" current
     const i = shownIdea();
@@ -1104,7 +1129,7 @@ export async function initBench() {
   // the shape editor: loaded on its own, so a failure there leaves the stage working (Edit stays off)
   import("./bench_edit.js").then((m) => m.initEdit()).catch((e) => {
     console.error(e);
-    notice(`The shape editor failed to load: ${e.message || e}`, "error");
+    notice(t("The shape editor failed to load: {why}", { why: e.message || e }), "error");
   });
   jobsLoop();
   await pollLoop();

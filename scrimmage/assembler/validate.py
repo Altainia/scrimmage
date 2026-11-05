@@ -13,6 +13,7 @@ from ..config import ConfigError, build_world, load_config_text
 class FieldError:
     field: str
     message: str
+    code: str | None = field(default=None, compare=False)   # what the error is, for code that mustn't read its words
 
 
 @dataclass

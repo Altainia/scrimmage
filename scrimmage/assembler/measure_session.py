@@ -32,6 +32,8 @@ from pathlib import Path
 
 import tomlkit
 
+from .. import i18n
+from ..i18n import translated
 from ..launcher.inputs import PRESETS
 from ..measure import cli, fit_cylinder, fit_launcher, forms, tests_direct
 from ..measure.file import KIND_TESTS, MeasureError, MeasureFile, parse
@@ -41,7 +43,8 @@ from . import tomlutil
 from .bench_session import SessionError
 from .test_session import replace_text
 
-STALE = "the measurement file changed outside this page (another tab, or an outside edit)"
+def _stale() -> str:
+    return i18n.t("the measurement file changed outside this page (another tab, or an outside edit)")
 HEADER = ("about", "by", "date", "tools", "base")
 OPTIONAL = ("about", "by", "date", "tools")   # [measure]'s text a blank box doesn't add (base: removed when blank)
 FITS = ("shot", "stroke")
@@ -59,7 +62,8 @@ def reading_json(r: forms.Reading) -> dict:
     """A reading as the page draws it: its box, and the units its key may end in (the unit picker). `unit` is the
     form's; the page picks a new column's by its quantity and the Units setting (measure.js defaultUnit)."""
     units = list(UNITS[r.quantity]) if r.quantity else []
-    return {"name": r.name, "what": r.what, "optional": r.optional, "type": _type(r), "quantity": r.quantity,
+    return {"name": r.name, "what": translated(r.what), "optional": r.optional, "type": _type(r),
+            "quantity": r.quantity,
             "units": [{"unit": u, "label": forms.UNIT_WORDS.get(u, u)} for u in units],
             "unit": (r.unit or units[0]) if units else ""}
 
@@ -68,18 +72,24 @@ def _fields(test: str) -> list[dict]:
     """The values a test's trials give, each with its column's name: what the summary averages."""
     t = forms.TEST[test]
     fields = ("time",) if test == "stroke" else tuple(cli.GIVES.get(test, ()))
-    return [{"field": f, "label": label} for f, label in zip(fields, t.summaries)]
+    return [{"field": f, "label": translated(label)} for f, label in zip(fields, t.summaries)]
+
+
+def test_json(test: str) -> dict:
+    """A test as the page shows it: forms.TEST's words (in the Language setting), picture and readings, the values
+    its trials give, and whether it is fit (shots, strokes) rather than averaged."""
+    return _test_json(test, i18n.current_language())
 
 
 @functools.cache
-def test_json(test: str) -> dict:
-    """A test as the page shows it: forms.TEST's words, picture and readings, the values its trials give, and
-    whether it is fit (shots, strokes) rather than averaged. (Cached: the page only reads it.)"""
+def _test_json(test: str, lang: str) -> dict:
+    """test_json() in `lang` (cached by language: the page only reads it)."""
     t = forms.TEST[test]
-    return {"name": test, "title": t.title, "gives": t.gives, "need": list(t.need), "steps": list(t.steps),
+    return {"name": test, "title": translated(t.title), "gives": translated(t.gives),
+            "need": [translated(x) for x in t.need], "steps": [translated(x) for x in t.steps],
             "picture": forms.picture(test), "setup": [reading_json(r) for r in t.setup],
-            "trial": [reading_json(r) for r in t.trial], "fields": _fields(test), "value": t.value,
-            "formula": t.formula, "note": t.note, "fit": test in FITS}
+            "trial": [reading_json(r) for r in t.trial], "fields": _fields(test), "value": translated(t.value),
+            "formula": translated(t.formula), "note": translated(t.note) if t.note else "", "fit": test in FITS}
 
 
 def _exact(r: forms.Reading, key: str) -> str | None:
@@ -420,7 +430,7 @@ class MeasureSession:
     def _typed(self, body: dict) -> tuple[MeasureFile, dict, dict]:
         """The file as typed in the page (body["file"]): checked, not written."""
         if self.kind is None or self.raw is None:
-            raise SessionError(409, f"fix the file first: {self.file_error}")
+            raise SessionError(409, i18n.t("fix the file first: {why}", why=self.file_error))
         raw, origins = unwire(body.get("file"), self.kind)
         try:
             return parse(raw, self.path), raw, origins
@@ -449,11 +459,12 @@ class MeasureSession:
             raise SessionError(400, "version (the integer from the state) is required")
         with self._cond:
             if self._closed:
-                raise SessionError(409, "the measurement file was closed")
+                raise SessionError(409, i18n.t("the measurement file was closed"))
             if self.kind is None or self.raw is None:
-                raise SessionError(409, f"fix the file first: {self.file_error}")
+                raise SessionError(409, i18n.t("fix the file first: {why}", why=self.file_error))
             if v < self._changed_at or _sig(self.path) != self._sig:
-                return 409, {"ok": False, "error": STALE, "errors": [{"field": "status", "message": STALE}],
+                stale = _stale()
+                return 409, {"ok": False, "error": stale, "errors": [{"field": "status", "message": stale}],
                              "state": self._state()}
             _, raw, origins = self._typed(body)
             doc = tomlkit.parse(self._sig.decode("utf-8"))
@@ -462,7 +473,8 @@ class MeasureSession:
             try:
                 replace_text(self.path, text)
             except OSError as e:
-                raise SessionError(400, f"can't write {self.path.name}: {e.strerror or e}") from None
+                raise SessionError(400, i18n.t("can't write {name}: {why}", name=self.path.name,
+                                               why=e.strerror or e)) from None
             self._sig = _sig(self.path)
             self._read()
             self._bump(changed=True)

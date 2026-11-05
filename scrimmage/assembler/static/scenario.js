@@ -15,6 +15,7 @@ import { renderStepEditor, field, onCommit, markDirty, clean, badNumber, localEr
 import { poseTools } from "./fieldpick.js";
 import { initRunPanel, runs } from "./report.js";
 import { units } from "./units.js";
+import { t, tn, onChange } from "./i18n.js";
 
 export const MODES = ["disabled", "auto", "teleop", "test"];
 export const STATIONS = ["red1", "red2", "red3", "blue1", "blue2", "blue3"];
@@ -49,7 +50,7 @@ async function mutate(path, body, source = null) {
   const s = sc.state;
   if (!s) return { ok: false, errors: [] };
   if (s.read_only) {
-    notice(`This scenario is read-only: ${s.read_only_reason}`, "warn");
+    notice(t("This scenario is read-only: {why}", { why: s.read_only_reason }), "warn");
     return { ok: false, errors: [] };
   }
   busy++; renderFooter();
@@ -62,7 +63,7 @@ async function mutate(path, body, source = null) {
       return { ok: true, version: data.version };
     }
     const errors = data.errors && data.errors.length ? data.errors
-      : [{ field: "status", message: data.error || `request failed (${status})` }];
+      : [{ field: "status", message: data.error || t("request failed ({status})", { status }) }];
     if (status === 409) {
       notice(errors.map((e) => e.message).join("; "), "warn");
       sc.lastErrors = [];
@@ -115,8 +116,7 @@ function apply(s, force = false) {
     sc.extraPorts.clear();
     sc.selected = null;
   } else if (prev && s.version !== prev.version && !ownVersions.has(s.version) && !busy && content(s) !== content(prev)) {
-    notice("The scenario changed outside this page (the file was edited, or another tab), so it was reloaded. "
-      + "Undo history starts again from here.", "info");
+    notice(t("The scenario changed outside this page (the file was edited, or another tab), so it was reloaded. Undo history starts again from here."), "info");
     sc.lastErrors = [];
   }
   const robotMoved = !prev || prev.top.config !== s.top.config || prev.robot_problem !== s.robot_problem;
@@ -194,7 +194,7 @@ function render() {
   if (currentTab() === "scenario") renderTop();
   const banner = $("#sc-banner");
   banner.hidden = !s.read_only;
-  $("#sc-banner-text").textContent = s.read_only ? `Read-only: ${s.read_only_reason}` : "";
+  $("#sc-banner-text").textContent = s.read_only ? t("Read-only: {why}", { why: s.read_only_reason }) : "";
   $("#sc-banner-robot").hidden = !s.robot_problem;
   $("#tab-scenario").classList.toggle("read-only", !!s.read_only);
   guard(() => {
@@ -213,25 +213,25 @@ function renderTop() {
   $("#redo").disabled = !s.can_redo || s.read_only;
 }
 
-const fmtT = (t) => `${+t.toFixed(3)} s`;
+const fmtT = (secs) => t("{seconds} s", { seconds: +secs.toFixed(3) });
 
 function renderFooter() {
   const s = sc.state;
   const el = $("#sc-saved");
   if (!s) return;
-  if (s.read_only) { el.textContent = "Read-only"; el.className = "saved saved-warn"; }
-  else if (busy) { el.textContent = "Saving…"; el.className = "saved saved-busy"; }
-  else if (sc.lastErrors.length) { el.textContent = "Last change not saved (see the error)"; el.className = "saved saved-bad"; }
-  else { el.textContent = "✓ All changes saved"; el.className = "saved saved-ok"; }
+  if (s.read_only) { el.textContent = t("Read-only"); el.className = "saved saved-warn"; }
+  else if (busy) { el.textContent = t("Saving…"); el.className = "saved saved-busy"; }
+  else if (sc.lastErrors.length) { el.textContent = t("Last change not saved (see the error)"); el.className = "saved saved-bad"; }
+  else { el.textContent = t("✓ All changes saved"); el.className = "saved saved-ok"; }
   const n = s.steps.length;
   const last = s.steps[n - 1];
   const total = last ? last.start_t + (typeof last.duration === "number" && last.duration > 0 ? last.duration : 0) : 0;
-  $("#sc-total").textContent = `${n} step${n === 1 ? "" : "s"} · ${fmtT(total)} in all`;
+  $("#sc-total").textContent = tn("{count} step · {time} in all", "{count} steps · {time} in all", n, { time: fmtT(total) });
   const ne = s.errors.length + sc.lastErrors.length, nw = s.warnings.length;
   const parts = [];
-  if (ne) parts.push(`${ne} error${ne === 1 ? "" : "s"}`);
-  if (nw) parts.push(`${nw} warning${nw === 1 ? "" : "s"}`);
-  $("#sc-problems").textContent = parts.length ? parts.join(" · ") : "No problems";
+  if (ne) parts.push(tn("{count} error", "{count} errors", ne));
+  if (nw) parts.push(tn("{count} warning", "{count} warnings", nw));
+  $("#sc-problems").textContent = parts.length ? parts.join(" · ") : t("No problems");
   $("#sc-problems").className = `stat ${ne ? "stat-bad" : nw ? "stat-warn" : "stat-ok"}`;
 }
 
@@ -286,9 +286,9 @@ export function renderErrors() {
     const i = stepOfField(e.field);
     const st = i !== null ? s.steps[i] : null;
     list.append(h("div", { class: `message message-${kind}`, role: kind === "error" ? "alert" : null },
-      h("span", { class: "message-kind", text: kind === "error" ? "Error" : "Warning" }),
+      h("span", { class: "message-kind", text: kind === "error" ? t("Error") : t("Warning") }),
       st ? h("button", { type: "button", class: "linklike", onclick: () => selectStep(i, { focus: true }),
-        text: `Step ${i + 1}${st.name ? ` ${st.name}` : ""}` }) : null,
+        text: st.name ? t("Step {n} {name}", { n: i + 1, name: st.name }) : t("Step {n}", { n: i + 1 }) }) : null,
       h("span", { text: st ? stripWhere(e.message) : e.message })));
   }
   list.hidden = !list.children.length;
@@ -305,7 +305,7 @@ function renderHeader() {
   const act = document.activeElement;
   headerKeep = act && root.contains(act) && act.dataset.key ? { key: act.dataset.key, dirty: act.dataset.dirty ? act.value : null } : null;
 
-  const desc = markDirty(h("input", { id: "sc-desc", type: "text", value: top.description ?? "", placeholder: "What this scenario checks",
+  const desc = markDirty(h("input", { id: "sc-desc", type: "text", value: top.description ?? "", placeholder: t("What this scenario checks"),
     autocomplete: "off", dataset: { key: "desc" } }));
   onCommit(desc, () => {
     const v = desc.value.trim();
@@ -317,35 +317,35 @@ function renderHeader() {
   const cfgSel = h("select", { id: "sc-config", dataset: { key: "config" } });
   const options = [...(sc.configs || [])];
   if (typeof top.config === "string" && !options.includes(top.config)) options.unshift(top.config);
-  if (top.config == null) cfgSel.append(h("option", { value: "", disabled: true }, "(none set)"));
+  if (top.config == null) cfgSel.append(h("option", { value: "", disabled: true }, t("(none set)")));
   for (const c of options) cfgSel.append(h("option", { value: c }, c));
   cfgSel.value = top.config ?? "";
   cfgSel.addEventListener("change", () => {
     if (cfgSel.value && cfgSel.value !== top.config) scEdit("top", { key: "config", value: cfgSel.value });
   });
-  const openRobot = h("button", { type: "button", class: "btn", onclick: () => setTab("robot", { focus: true }) }, "Open in Robot tab");
-  const driveRobot = h("button", { type: "button", id: "sc-drive", class: "btn", title: "Drive this robot live in the Drive tab",
-    onclick: () => setTab("drive", { focus: true }) }, "Drive this robot");
+  const openRobot = h("button", { type: "button", class: "btn", onclick: () => setTab("robot", { focus: true }) }, t("Open in Robot tab"));
+  const driveRobot = h("button", { type: "button", id: "sc-drive", class: "btn", title: t("Drive this robot live in the Drive tab"),
+    onclick: () => setTab("drive", { focus: true }) }, t("Drive this robot"));
 
   // speed: absent means "max" (the runner's default)
   const sp = top.speed ?? "max";
   const isMax = sp === "max", isOne = sp === 1;
   const speedNum = markDirty(h("input", { id: "sc-speed", type: "number", min: "0", step: "any", inputmode: "decimal",
-    value: typeof sp === "number" && sp !== 1 ? String(sp) : "", placeholder: "other", "aria-label": "Speed, times real time",
+    value: typeof sp === "number" && sp !== 1 ? String(sp) : "", placeholder: t("other"), "aria-label": t("Speed, times real time"),
     dataset: { key: "speed" } }));
   const speedField = h("div", { class: "field sc-field", role: "group", "aria-labelledby": "sc-speed-label", dataset: { fields: "scenario/speed" } },
-    h("span", { id: "sc-speed-label", class: "field-label" }, "Speed"),
+    h("span", { id: "sc-speed-label", class: "field-label" }, t("Speed")),
     h("div", { class: "row speed-row" },
       h("div", { class: "seg" },
-        h("button", { type: "button", class: "seg-btn", "aria-pressed": String(isOne), title: "Real time",
+        h("button", { type: "button", class: "seg-btn", "aria-pressed": String(isOne), title: t("Real time"),
           onclick: () => { if (!isOne) scEdit("top", { key: "speed", value: 1 }); } }, "1×"),
-        h("button", { type: "button", class: "seg-btn", "aria-pressed": String(isMax), title: "As fast as the computer can go",
+        h("button", { type: "button", class: "seg-btn", "aria-pressed": String(isMax), title: t("As fast as the computer can go"),
           onclick: () => { if (!isMax) scEdit("top", { key: "speed", value: "max" }); } }, "max")),
       h("span", { class: "with-unit" }, speedNum, h("span", { class: "unit" }, "×"))),
     h("div", { class: "field-msgs" }));
   onCommit(speedNum, () => {
     const raw = speedNum.value.trim();
-    if (badNumber(speedNum)) { localError(speedField, "speed must be a number"); return; }
+    if (badNumber(speedNum)) { localError(speedField, t("speed must be a number")); return; }
     clean(speedNum);
     if (raw === "") return;
     const v = Number(raw);
@@ -359,15 +359,15 @@ function renderHeader() {
   const matchField = renderMatch(top.match || {});
 
   const fs = h("div", { class: "sc-head-grid" },
-    field("scenario/description", "sc-desc", "Description", desc, { extraClass: "sc-field sc-desc" }),
+    field("scenario/description", "sc-desc", t("Description"), desc, { extraClass: "sc-field sc-desc" }),
     h("div", { class: "field sc-field sc-robot", dataset: { fields: "scenario/config" } },
-      h("label", { for: "sc-config", class: "field-label" }, "Robot config"),
+      h("label", { for: "sc-config", class: "field-label" }, t("Robot config")),
       h("div", { class: "row" }, cfgSel, openRobot, driveRobot),
       h("div", { class: "field-msgs" })),
     speedField,
     h("div", { class: "field sc-field sc-lock", dataset: { fields: "scenario/require_lockstep" } },
-      h("span", { class: "field-label" }, "Lockstep"),
-      h("label", { class: "check-label", for: "sc-lockstep" }, lock, "Require lockstep"),
+      h("span", { class: "field-label" }, t("Lockstep")),
+      h("label", { class: "check-label", for: "sc-lockstep" }, lock, t("Require lockstep")),
       h("div", { class: "field-msgs" })),
     matchField);
   // "Open in Robot tab" and "Drive this robot" stay usable when the scenario is read-only (that's where the fix is)
@@ -386,7 +386,7 @@ function renderHeader() {
 // keys go over when it runs.
 function renderMatch(m) {
   const set = (key, value) => scEdit("match", { key, value });
-  const CONFIG = "robot config's";
+  const CONFIG = t("robot config's");
   const station = h("select", { id: "sc-station", dataset: { key: "match-station" } },
     h("option", { value: "" }, CONFIG), ...STATIONS.map((st) => h("option", { value: st }, st)));
   if (m.station != null && !STATIONS.includes(m.station)) station.append(h("option", { value: String(m.station) }, String(m.station)));
@@ -394,7 +394,7 @@ function renderMatch(m) {
   station.addEventListener("change", () => set("station", station.value || null));
   const onOff = (key) => {
     const el = h("select", { id: `sc-${key}`, dataset: { key: `match-${key}` } },
-      h("option", { value: "" }, CONFIG), h("option", { value: "true" }, "on"), h("option", { value: "false" }, "off"));
+      h("option", { value: "" }, CONFIG), h("option", { value: "true" }, t("on")), h("option", { value: "false" }, t("off")));
     el.value = typeof m[key] === "boolean" ? String(m[key]) : "";
     el.addEventListener("change", () => set(key, el.value === "" ? null : el.value === "true"));
     return el;
@@ -403,9 +403,9 @@ function renderMatch(m) {
   const seconds = (key, label) => {
     const have = typeof m[key] === "number" ? m[key] : null;
     const el = markDirty(h("input", { id: `sc-${key}`, type: "number", min: "0.1", step: "any", inputmode: "decimal",
-      value: have !== null ? String(have) : "", placeholder: "config's", dataset: { key: `match-${key}` } }));
+      value: have !== null ? String(have) : "", placeholder: t("config's"), dataset: { key: `match-${key}` } }));
     onCommit(el, () => {
-      if (badNumber(el)) { localError(f, `${label} must be a number`); return; }
+      if (badNumber(el)) { localError(f, t("{label} must be a number", { label })); return; }
       clean(el);
       const raw = el.value.trim();
       const v = raw === "" ? null : Number(raw);
@@ -416,11 +416,11 @@ function renderMatch(m) {
   const item = (id, label, control) => h("div", { class: "match-item" }, h("label", { for: id }, label), control);
   const ids = ["scenario/match", ...MATCH_KEYS.map((k) => `scenario/match.${k}`)];
   f = h("div", { class: "field sc-field sc-match", role: "group", "aria-labelledby": "sc-match-label", dataset: { fields: ids.join(" ") } },
-    h("span", { id: "sc-match-label", class: "field-label" }, "Match"),
+    h("span", { id: "sc-match-label", class: "field-label" }, t("Match")),
     h("div", { class: "row match-row" },
-      item("sc-station", "Station", station), item("sc-fms", "FMS attached", onOff("fms")),
-      item("sc-timer", "Match timer", onOff("timer")), item("sc-auto_seconds", "Auto length", seconds("auto_seconds", "Auto length")),
-      item("sc-teleop_seconds", "Teleop length", seconds("teleop_seconds", "Teleop length"))),
+      item("sc-station", t("Station"), station), item("sc-fms", t("FMS attached"), onOff("fms")),
+      item("sc-timer", t("Match timer"), onOff("timer")), item("sc-auto_seconds", t("Auto length"), seconds("auto_seconds", t("Auto length"))),
+      item("sc-teleop_seconds", t("Teleop length"), seconds("teleop_seconds", t("Teleop length")))),
     h("div", { class: "field-msgs" }));
   return f;
 }
@@ -470,7 +470,7 @@ export async function showScenario() {
 
 async function boot() {
   const { status, data } = await api("GET", "/api/scenario/state");
-  if (status !== 200) { notice(`Couldn't load the scenario: ${data.errors[0].message}`, "error"); return false; }
+  if (status !== 200) { notice(t("Couldn't load the scenario: {why}", { why: data.errors[0].message }), "error"); return false; }
   $("#sc-banner-robot").addEventListener("click", () => setTab("robot", { focus: true }));
   // the robot version the signals below are loaded for, so the very first robot edit reloads them too
   sc.robotVersion = store.state ? store.state.version : null;
@@ -494,6 +494,7 @@ async function boot() {
   apply(data);
   registerTab("scenario", { renderTop, undo: scUndo, redo: scRedo, onShow: () => { renderTop(); } });
   units.onChange(() => render());   // the step editor keeps what is half typed (renderStepEditor)
+  onChange(() => { render(); refresh(true); });   // likewise; the server's words (errors, read-only reason) again
   pollLoop();
   initRunPanel();
   return true;

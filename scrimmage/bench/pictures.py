@@ -16,7 +16,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .. import units
 from ..render import new_renderer
-from .report import ESTIMATES, STATUS_COLORS, STATUS_WORDS, bench_estimates
+from ..i18n import t
+from .report import ESTIMATES, STATUS_COLORS, bench_estimates, status_words
 from .run import BenchResult
 
 # view -> (azimuth, elevation, the world axes across and up the picture)
@@ -360,7 +361,7 @@ def path_picture(result: BenchResult, view: str = "side", width: int = 1280, hei
         _dashed_rect(draw, ((x0, y0), (x1, y1)), OUTLET_INK, max(2, int(4 * u)), int(14 * u))
         cx = min(max((x0 + x1) / 2, 80 * u), width - 80 * u)
         cy = min(max(y0 + 22 * u, top + 20 * u), height - bottom - 20 * u)
-        _label(draw, (cx, cy), f"outlet: {name}", small, OUTLET_INK)
+        _label(draw, (cx, cy), t("outlet: {name}", name=name), small, OUTLET_INK)
     inlet_labels = []
     for inlet in b.inlets:
         (x0, y0), (x1, y1) = _box_px(frame, *lay.inlet_boxes[inlet.name])
@@ -403,11 +404,12 @@ def path_picture(result: BenchResult, view: str = "side", width: int = 1280, hei
         if top < y < height - bottom:
             _label(draw, (x, y), text, small, anchor=anchor)
     for name, (x, y), anchor in inlet_labels:
-        _label(draw, (x, y), f"in: {name}", small, INLET_INK, anchor=anchor)
+        _label(draw, (x, y), t("in: {name}", name=name), small, INLET_INK, anchor=anchor)
 
     # title band
     draw.rectangle([0, 0, width, top], fill=(240, 242, 246))
-    draw.text((20 * u, 12 * u), f"{b.name}: {'side view' if view == 'side' else 'from above'}", font=big, fill=INK)
+    title = t("{name}: side view", name=b.name) if view == "side" else t("{name}: from above", name=b.name)
+    draw.text((20 * u, 12 * u), title, font=big, fill=INK)
     if b.idea or b.author:
         idea = (f"{b.author}: " if b.author else "") + (f'"{b.idea}"' if b.idea else "")
         draw.text((20 * u, 58 * u), idea, font=mid, fill=(70, 70, 85))
@@ -416,11 +418,12 @@ def path_picture(result: BenchResult, view: str = "side", width: int = 1280, hei
     draw.rectangle([0, height - bottom, width, height], fill=(240, 242, 246))
     _uncalibrated(draw, (20 * u, height - 22 * u), int(24 * u), picture_uncalibrated(b), width - 40 * u)
     x = 20 * u
+    words = status_words()      # the picture is for people: in the Language setting
     for status in PATH_ORDER + ("stuck_at_inlet",):
         if status not in counts:
             continue
         draw.line([(x, y), (x + 44 * u, y)], fill=STATUS_COLORS[status], width=width_px)
-        text = f"{STATUS_WORDS[status]}: {counts[status]}"
+        text = t("{status}: {count}", status=words[status], count=counts[status])
         draw.text((x + 54 * u, y), text, font=mid, fill=INK, anchor="lm")
         x += 54 * u + draw.textlength(text, font=mid) + 30 * u
     meters, scale_text = scale_bar(0.2 * width / frame.scale)

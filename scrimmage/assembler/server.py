@@ -858,6 +858,7 @@ class App:
         self.scenario_read_only_reason: str | None = None
         self.scenario_robot_problem: str | None = None
         self.scenario_errors: list[dict] = []
+        self._scenario_lang: str | None = None    # the language scenario_errors and the read-only reason are in
         self.test: TestSession | None = None      # the block test (robot mode; its robot is the robot document)
         self.bench: BenchSession | None = None    # the idea session (bench mode)
         self.part = None                          # the PartSession or PluginSession (part mode)
@@ -1398,15 +1399,20 @@ class App:
             problem = self.robot_missing   # our own words: "was deleted", "has a TOML error", ...
         problem = self._rel(problem)
         self.scenario_robot_problem = problem
-        old = f"fix the robot first: {res.robot_problem}" if res.robot_problem else None
-        self.scenario_errors = [{"field": e.field,
-                                 "message": f"fix the robot first: {problem}" if e.message == old else e.message}
-                                for e in res.errors]
-        self.scenario_read_only_reason = self.scenario.read_only_reason or (
-            f"fix the robot first: {problem}" if res.robot_problem else None)
+        self._scenario_words()
         if bump and self._scenario_signature() != before:
             self.scenario.version += 1   # the page's next state shows the new errors / read-only state
         self._changed.notify_all()
+
+    def _scenario_words(self) -> None:
+        """The scenario's errors and read-only reason in the Language setting: the robot's problem in our words (L3:
+        scenario_validate marks its "fix the robot first" error with a code, not by its text)."""
+        res, problem = self.scenario_result, self.scenario_robot_problem
+        first = i18n.t("fix the robot first: {why}", why=problem)
+        self.scenario_errors = [{"field": e.field, "message": first if e.code == scenario_validate.ROBOT_FIRST else
+                                 e.message} for e in res.errors]
+        self.scenario_read_only_reason = self.scenario.read_only_reason or (first if res.robot_problem else None)
+        self._scenario_lang = i18n.current_language()
 
     def _refusal(self, res: scenario_validate.Result) -> list[dict] | None:
         """Why a candidate scenario can't be written, or None. A valid file only takes a valid candidate; an invalid
@@ -2040,6 +2046,8 @@ class App:
     def scenario_state(self) -> dict:
         sc = self._need_scenario()
         res = self.scenario_result
+        if self._scenario_lang != i18n.current_language():
+            self._scenario_words()      # the Language setting changed since: the same errors in its words
         raw = sc.doc.unwrap() if sc.doc is not None else {}
         top = {k: raw.get(k) for k in ("config", "description", "speed", "require_lockstep")}
         top["match"] = raw["match"] if isinstance(raw.get("match"), dict) else {}
