@@ -238,3 +238,46 @@ def test_worker_threads_go_through_the_guard():
               for n in ast.walk(f)}
     calls = [n for n in ast.walk(tree) if isinstance(n, ast.Attribute) and n.attr in ("to_thread", "run_in_executor")]
     assert calls and all(id(n) in inside for n in calls), [n.lineno for n in calls if id(n) not in inside]
+
+
+def _page_run(work: Path) -> dict:
+    """Runs as the web app's Scenario tab starts them (assembler/runs.py), each on its own worker thread: the fake
+    robot's scenario, and one whose robot file binds PWM 0 twice (a ConfigError worded with t(), with no
+    Said of its own: only the run's guard keeps report.json's error American English)."""
+    from scrimmage.assembler.runs import RunManager
+    work.mkdir()
+    bad = work / "bad_robot.toml"
+    bad.write_text(FAKE.read_text(encoding="utf-8").replace("models/kitbot.xml", str(TESTS / "models" / "kitbot.xml"))
+                   .replace("pwm = 1\n", "pwm = 0\n"), encoding="utf-8")
+    out = {}
+    for name, text, state in (("a", SCENARIO, "failed"), ("b", SCENARIO.replace(str(FAKE), str(bad)), "error")):
+        scenario = work / f"{name}.toml"
+        scenario.write_text(text, encoding="utf-8")
+        runs = RunManager(lambda: None, runs_dir=work / "runs")
+        runs.start(scenario, text)
+        assert runs.join(60)
+        (r,) = runs.runs()["runs"]
+        assert r["state"] == state, r
+        folder = Path(r["out_dir"])
+        files = _files(folder, ["report.json", "run.csv"])
+        out |= {f"{name}/{k}": re.sub(rb"/(us|zz)/runs/[ab]-[0-9-]+", b"RUN",
+                                      _steady(v.decode()).encode()).replace(b"/zz/", b"/us/")
+                for k, v in files.items()}
+        out[f"{name}/report.md"] = (folder / "report.md").read_text(encoding="utf-8")
+        out[f"{name}/shown"] = json.dumps(r["report"])
+    return out
+
+
+def test_a_web_app_run_writes_report_json_in_american_english(pseudo, tmp_path):
+    """The web app's run is MCP's: inside i18n.machine(), so report.json is the same bytes in any language, while
+    report.md and the page's words (the run's to_dict(shown=True)) follow the setting."""
+    pseudo("en-US")
+    us = _page_run(tmp_path / "us")
+    pseudo("en-GB")
+    zz = _page_run(tmp_path / "zz")
+    assert b"PWM 0 is bound by motor left_drive and motor right_drive" in us["b/report.json"]
+    for key in ("a/report.json", "a/run.csv", "b/report.json"):
+        assert zz[key] == us[key], key
+        assert b"ZZ" not in zz[key], key
+    assert not any("ZZ" in v for k, v in us.items() if isinstance(v, str))
+    assert "ZZ" in zz["a/report.md"] and "ZZ" in zz["a/shown"]
