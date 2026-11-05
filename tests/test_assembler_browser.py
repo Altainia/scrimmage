@@ -1128,6 +1128,24 @@ def test_a_refusal_stays_through_a_redraw(make_page):
     assert err.count() == 0
 
 
+def test_a_whole_number_refusal_keeps_its_text_through_a_redraw(make_page):
+    """An int box given "2.5" is refused; a redraw keeps the text with the message, and a no-op commit (Enter again
+    on the same text) keeps the message."""
+    page, cfg = make_page("elevator_arm.toml")
+    page.evaluate("__scrimmage.select('elevator')")
+    page.wait_for_selector("#insp-p-stages")
+    page.fill("#insp-p-stages", "2.5")
+    page.keyboard.press("Enter")
+    err = page.locator('[data-field="elevator/param:stages"] .error')
+    err.wait_for()
+    page.evaluate("__scrimmage.render()")
+    assert "Enter a whole number." in err.inner_text()
+    assert page.input_value("#insp-p-stages") == "2.5"
+    page.focus("#insp-p-stages")
+    page.keyboard.press("Enter")
+    assert "Enter a whole number." in err.inner_text()
+
+
 def test_switching_units_never_changes_the_robot_file(make_page):
     """Review Focus 1: the setting is display only. Switching (and the redraws it makes) writes nothing."""
     page, cfg = make_page("elevator_arm.toml")

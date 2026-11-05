@@ -81,7 +81,15 @@ export const badNumber = (...inputs) => inputs.some((i) => (i.validity && i.vali
 // (see renderInspector) doesn't fire "change". Every commit function cleans its inputs. A box the re-render removes
 // fires "change" in Chromium; it is ignored like its blur (the half-typed text goes on in the new box).
 export function onCommit(el, fn) {
-  const commit = () => { forgetRefusal(el); fn(); };
+  // A refusal stands until the commit does something: sends a value, or the box no longer holds the refused text.
+  // A no-op commit (the same text again, an empty box) keeps the message beside the text it is about.
+  const commit = () => {
+    const f = el.closest("[data-field]"), before = f && refusals.get(f.dataset.field);
+    fn();
+    const now = f && refusals.get(f.dataset.field);
+    if (now && now === before && el.dataset.key in now.texts && el.value === now.texts[el.dataset.key]) return;
+    if (now === before) forgetRefusal(el);
+  };
   el.addEventListener("change", () => { if (!rerendering && el.isConnected) commit(); });
   el.addEventListener("blur", () => { if (el.dataset.dirty && !rerendering && el.isConnected) commit(); });
   el.addEventListener("keydown", (e) => { if (e.key === "Enter" && el.tagName === "INPUT" && el.type !== "checkbox") { e.preventDefault(); el.blur(); } });
@@ -395,10 +403,10 @@ function paramField(n, p, value) {
     });
     onCommit(num, () => {
       if (badNumber(num)) return localError(num.closest(".field"), "Enter a number.");
-      clean(num);
-      if (num.value.trim() === "") return;
+      if (num.value.trim() === "") { clean(num); return; }
       const v = Number(num.value);
       if (!isFinite(v)) return localError(num.closest(".field"), "Enter a number.");
+      clean(num);
       send(v);
     });
     control = h("div", { class: "with-unit" }, sel, num, reset);
@@ -438,10 +446,11 @@ function paramField(n, p, value) {
     onCommit(inp, () => {
       const v = readNumber(inp, kind);
       if (measureError(v)) return localError(inp.closest(".field"), isInt ? "Enter a whole number." : measureError(v));
+      if (v !== null && (!isFinite(v) || (isInt && !Number.isInteger(v)))) {   // refused: the text stays dirty, so the refusal keeps it
+        return localError(inp.closest(".field"), isInt ? "Enter a whole number." : "Enter a number.");
+      }
       clean(inp);
-      if (v === null) return send(null);   // empty box = the default
-      if (!isFinite(v) || (isInt && !Number.isInteger(v))) return localError(inp.closest(".field"), isInt ? "Enter a whole number." : "Enter a number.");
-      send(v);
+      send(v);   // an empty box (null) = the default
     });
     control = withUnit(inp);
   }
