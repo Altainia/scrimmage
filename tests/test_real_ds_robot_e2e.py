@@ -21,6 +21,7 @@ pytest.importorskip("scrimmage_lockstep")
 
 from fake_ds import FakeDS  # noqa: E402
 from scrimmage.driverstation import REAL_DS_DRIVING, REAL_DS_WAITING  # noqa: E402
+import scrimmage.session  # noqa: E402
 from scrimmage.session import NOT_LISTENING, Session, SessionError  # noqa: E402
 
 TESTS = Path(__file__).resolve().parent
@@ -42,7 +43,6 @@ start_pose = [3.0, 4.0, 0.0]
 [robot_program]
 command = ["{{python}}", "-m", "robotpy", "sim", "--nogui", "--ws-client", "--scrimmage-lockstep"]
 cwd = "{PROBE}"
-start_timeout = 3
 
 [telemetry]
 nt = false
@@ -89,6 +89,8 @@ def run(tmp_path_factory) -> dict:
             await s.advance(3.0)
             out |= {"state": s.state(), "hal": s.hal("DriverStation").get("DriverStation/", {}),
                    "replies": ds.replies(), "sent": [json.loads(f)["type"] for f in sent]}
+            # only after the robot printed teleop output: the check binds UDP 1110, safe once the robot has bound it
+            out["socket_problem"] = scrimmage.session.ds_socket_problem()
             try:
                 s.set_mode("auto")
                 out["refused"] = None
@@ -109,6 +111,7 @@ def run(tmp_path_factory) -> dict:
 
 
 def test_a_listening_robot_gets_no_not_listening_note(run):
+    assert run["socket_problem"] is None
     assert NOT_LISTENING not in run["warnings"]
 
 
