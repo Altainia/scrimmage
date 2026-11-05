@@ -78,7 +78,7 @@ def measured_grip(grip: str, where: str, base) -> tuple[float, object]:
     from ..measure.file import MeasureError
     from ..measure.use import friction_value
     try:
-        mu, prov = friction_value(grip, where, base=base, key="grip", needs="a grip")
+        mu, prov = friction_value(grip, where, base=base, key="grip", needs=N_("a grip"))
     except MeasureError as e:
         raise PartError(str(e), where=where) from None
     if not (math.isfinite(mu) and 0 < mu <= MY_OWN_MAX):

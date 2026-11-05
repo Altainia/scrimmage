@@ -51,6 +51,7 @@ from ..cad.mass import Inertial, combine, mesh_inertial
 from ..disc.inputs import PRESETS as DISC_PRESETS
 from ..disc.inputs import AeroSet, Disc, DiscConfigError, aero_set, disc_preset
 from ..launcher import inputs as launcher_inputs
+from ..i18n import N_
 from ..launcher.inputs import PRESETS, Ball, LauncherConfigError, _build_section
 from ..measure.file import MeasureError
 from ..measure.use import apply_ball, friction_value, is_measurement
@@ -653,7 +654,7 @@ def _parse_kind(path: Path, name: str, r: _KindReader, base_dir: Path) -> PieceK
     elif r.has("friction") and is_measurement(r.raw("friction")):
         try:
             friction, measured = friction_value(r.raw("friction"), f"{path}: {r.where}", base=base_dir,
-                                                needs="a piece's surface")
+                                                needs=N_("a piece's surface"))
         except MeasureError as e:
             raise RangeError(str(e)) from None
     elif r.has("friction"):

@@ -380,7 +380,7 @@ def _text_table(header: list[str], rows: list[list[str]]) -> str:
     return "\n".join([fmt.format(*header), *(fmt.format(*r) for r in rows)])
 
 
-SUMMARY_DATA = "summary.json"   # summary.txt's headlines as data, for the Bench tab (it never reads summary.txt's words)
+SUMMARY_DATA = "summary.json"   # summary.txt's headlines as data, for the Bench tab (it never reads their words)
 
 
 def write_results(result: BenchResult, out_dir: Path) -> Path:

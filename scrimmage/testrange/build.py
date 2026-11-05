@@ -73,6 +73,7 @@ import mujoco
 import numpy as np
 
 from ..disc.inputs import Disc
+from ..i18n import N_
 from ..launcher.inputs import Ball
 from ..measure.file import MeasureError
 from ..measure.use import is_measurement, open_file
@@ -476,7 +477,7 @@ def parse_range_section(cfg: dict, cfg_dir: Path | None) -> RangeSection | None:
     if is_measurement(ball):   # checked here, so a mistake names the config's [range] and the path as written
         try:
             mf = open_file(ball, Path(cfg_dir) if cfg_dir is not None else Path("."), "[range]", "ball", ("ball",),
-                           "a ball")
+                           N_("a ball"))
         except MeasureError as e:
             raise PartError(str(e)) from None
         ball = str(mf.path.resolve())

@@ -261,7 +261,8 @@ class _Table:
         self.section, self.label, self.t = section, label, table
         self.prefix = section if name is None else f"{section}.{name}"  # the dotted key of this table
         if not isinstance(table, dict):
-            raise BenchError(i18n.t("{table} must be a table, not {value}", table=label, value=repr(table)), self.prefix)
+            raise BenchError(i18n.t("{table} must be a table, not {value}", table=label, value=repr(table)),
+                             self.prefix)
         valid = _valid_keys(section)
         for key in table:
             if key not in valid:

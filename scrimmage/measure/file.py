@@ -25,6 +25,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from .. import i18n
 from ..launcher.inputs import PRESETS
 from .stats import why
 
@@ -85,11 +86,12 @@ def _listing(names) -> str:
 def _text(path: Path, table: dict, key: str, *, required: bool) -> str:
     if key not in table:
         if required:
-            raise MeasureError(f"{path}: [measure] is missing required key '{key}'")
+            raise MeasureError(i18n.t("{path}: [measure] is missing required key '{key}'", path=path, key=key))
         return ""
     v = table[key]
     if not isinstance(v, str):
-        raise MeasureError(f"{path}: [measure] {key} must be text, not {v!r}")
+        raise MeasureError(i18n.t("{path}: [measure] {key} must be text, not {value}", path=path, key=key,
+                                  value=repr(v)))
     return v
 
 
@@ -105,7 +107,8 @@ def _date(path: Path, table: dict) -> str:
             return datetime.date.fromisoformat(v).isoformat()
         except ValueError:
             pass
-    raise MeasureError(f"{path}: [measure] date must be a date like 2026-11-10, not {v!r}")
+    raise MeasureError(i18n.t("{path}: [measure] date must be a date like 2026-11-10, not {value}", path=path,
+                              value=repr(v)))
 
 
 def load(path) -> MeasureFile:
@@ -114,11 +117,12 @@ def load(path) -> MeasureFile:
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        raise MeasureError(f"{path}: no such file") from None
+        raise MeasureError(i18n.t("{path}: no such file", path=path)) from None
     except UnicodeDecodeError:
-        raise MeasureError(f"{path} isn't a text file: a measurement file is TOML text (UTF-8)") from None
+        raise MeasureError(i18n.t("{path} isn't a text file: a measurement file is TOML text (UTF-8)",
+                                  path=path)) from None
     except tomllib.TOMLDecodeError as e:
-        raise MeasureError(f"{path} isn't valid TOML: {e}") from None
+        raise MeasureError(i18n.t("{path} isn't valid TOML: {error}", path=path, error=e)) from None
     return parse(raw, path)
 
 
@@ -128,18 +132,21 @@ def parse(raw: dict, path) -> MeasureFile:
     path = Path(path)
     head = raw.get("measure")
     if not isinstance(head, dict):
-        raise MeasureError(f"{path}: needs a [measure] table saying what was measured (kind, by, date)")
+        raise MeasureError(i18n.t("{path}: needs a [measure] table saying what was measured (kind, by, date)",
+                                  path=path))
     unknown = [k for k in head if k not in _HEADER]
     if unknown:
-        raise MeasureError(f"{path}: unknown key '{unknown[0]}' in [measure]; valid keys: {_listing(_HEADER)}")
+        raise MeasureError(i18n.t("{path}: unknown key '{key}' in [measure]; valid keys: {keys}", path=path,
+                                  key=unknown[0], keys=_listing(_HEADER)))
     kind = _text(path, head, "kind", required=True)
     if kind not in KIND_TESTS:
-        raise MeasureError(f"{path}: [measure] kind must be one of {_listing(KIND_TESTS)}, not {kind!r}")
+        raise MeasureError(i18n.t("{path}: [measure] kind must be one of {kinds}, not {value}", path=path,
+                                  kinds=_listing(KIND_TESTS), value=repr(kind)))
     base = _text(path, head, "base", required=False) or None
     if kind == "ball" and base is not None:
         if base not in PRESETS["ball"]:
-            raise MeasureError(f"{path}: [measure] base '{base}' isn't a ball preset; "
-                               f"one of {_listing(PRESETS['ball'])}")
+            raise MeasureError(i18n.t("{path}: [measure] base '{base}' isn't a ball preset; one of {presets}",
+                                      path=path, base=base, presets=_listing(PRESETS["ball"])))
 
     tests = KIND_TESTS[kind]
     trials: dict[str, list[dict]] = {}
@@ -149,23 +156,28 @@ def parse(raw: dict, path) -> MeasureFile:
             continue
         if key in tests:
             if not isinstance(value, list) or not all(isinstance(row, dict) for row in value):
-                raise MeasureError(f"{path}: {key} must be trials written as [[{key}]] tables")
+                raise MeasureError(i18n.t("{path}: {key} must be trials written as [[{key}]] tables", path=path,
+                                          key=key))
             if not value:
-                raise MeasureError(f"{path}: {key} has no trials: write each trial as a [[{key}]] table, "
-                                   "or leave the test out")
+                raise MeasureError(i18n.t("{path}: {key} has no trials: write each trial as a [[{key}]] table, or "
+                                          "leave the test out", path=path, key=key))
             trials[key] = value
         elif key.endswith("_setup") and key[:-len("_setup")] in tests:
             if not isinstance(value, dict):
-                raise MeasureError(f"{path}: {key} must be a [{key}] table")
+                raise MeasureError(i18n.t("{path}: {key} must be a [{key}] table", path=path, key=key))
             settings[key] = value
         elif key in TEST_KIND or (key.endswith("_setup") and key[:-len("_setup")] in TEST_KIND):
             test = key.removesuffix("_setup")
-            shown = f"[{key}]" if key.endswith("_setup") else f"[[{key}]]"
-            what = f"for the {test} test, a {TEST_KIND[test]}" if key.endswith("_setup") else f"a {TEST_KIND[test]}"
-            raise MeasureError(f"{path}: {shown} is {what} test; a {kind} file has {_listing(tests)}")
+            if key.endswith("_setup"):
+                raise MeasureError(i18n.t("{path}: [{key}] is for the {test} test, a {other} test; a {kind} file has "
+                                          "{tests}", path=path, key=key, test=test, other=TEST_KIND[test], kind=kind,
+                                          tests=_listing(tests)))
+            raise MeasureError(i18n.t("{path}: [[{key}]] is a {other} test; a {kind} file has {tests}", path=path,
+                                      key=key, other=TEST_KIND[test], kind=kind, tests=_listing(tests)))
         else:
             valid = ["measure", *tests, *(f"{t}_setup" for t in tests)]
-            raise MeasureError(f"{path}: unknown table '{key}'; a {kind} file has {_listing(valid)}")
+            raise MeasureError(i18n.t("{path}: unknown table '{key}'; a {kind} file has {tables}", path=path, key=key,
+                                      kind=kind, tables=_listing(valid)))
 
     return MeasureFile(kind=kind, about=_text(path, head, "about", required=False),
                        by=_text(path, head, "by", required=False), date=_date(path, head),

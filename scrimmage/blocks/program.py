@@ -119,7 +119,8 @@ def found_setup(program: Program) -> dict:
     from ..measure.file import MeasureError
     from ..measure.use import open_file
     try:
-        mf = open_file(ball, Path(program.path).parent, f"{program.path}: [setup]", "ball", ("ball",), "a ball")
+        mf = open_file(ball, Path(program.path).parent, f"{program.path}: [setup]", "ball", ("ball",),
+                       i18n.N_("a ball"))
     except MeasureError as e:
         raise TestFileError(str(e)) from None
     return {**program.setup, "ball": str(mf.path.resolve())}

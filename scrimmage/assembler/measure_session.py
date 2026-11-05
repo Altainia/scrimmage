@@ -217,14 +217,14 @@ def unwire(body, kind: str) -> tuple[dict, dict[str, list]]:
 # ----------------------------------------------------------------------------------------------------- summaries
 
 def _without_path(e: Exception, path: Path) -> str:
-    return str(e).replace(f"{path}: ", "").replace(f"{path} ", "this file ")
+    return str(e).replace(f"{path}: ", "").replace(f"{path} ", i18n.t("this file") + " ")
 
 
 def _field_json(field: str, s, values: list[float]) -> dict:
     """A field's summary for the page; its rows are the trials that gave it a value (s.trials)."""
     show = cli.FIELD[field][1]
     trials = s.trials
-    return {"field": field, "what": cli.FIELD[field][0], "mean": s.mean, "low": s.low, "high": s.high,
+    return {"field": field, "what": translated(cli.FIELD[field][0]), "mean": s.mean, "low": s.low, "high": s.high,
             "spread": s.spread, "n": s.n, "good": s.good, "why": why(s), "warnings": list(s.warnings),
             "outliers": [trials[i] for i in s.outliers],
             "shown": {"mean": show(s.mean), "low": show(s.low), "high": show(s.high)},

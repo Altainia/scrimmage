@@ -14,7 +14,7 @@ import math
 import sys
 from pathlib import Path
 
-from .. import units
+from .. import i18n, units
 from . import fit_cylinder, fit_launcher, forms, tests_direct
 from .file import KIND_TESTS, MeasureError, MeasureFile, load
 from .stats import summary, why
@@ -31,14 +31,15 @@ def _shown(kind: str, more: int = 0):
     return show
 
 
-# what each measured field is, and how its value is shown (a ball's mass a place finer than the table's: 0.474 lb)
+# what each measured field is (N_(): the Measure tab shows it translated()), and how its value is shown (a ball's
+# mass a place finer than the table's: 0.474 lb)
 FIELD = {
-    "mass": ("mass", _shown("mass", 1)),
-    "diameter": ("diameter", _shown("length")),
-    "stiffness_n": ("stiffness_n, the force that squeezes the ball by 25%", _shown("force")),
-    "restitution": ("restitution, the bounce", lambda v: f"{v:.3f}"),
-    "friction": ("friction", lambda v: f"{v:.3f}"),
-    "time": ("stroke time", lambda v: f"{v:.3f} s"),
+    "mass": (i18n.N_("mass"), _shown("mass", 1)),
+    "diameter": (i18n.N_("diameter"), _shown("length")),
+    "stiffness_n": (i18n.N_("stiffness_n, the force that squeezes the ball by 25%"), _shown("force")),
+    "restitution": (i18n.N_("restitution, the bounce"), lambda v: f"{v:.3f}"),
+    "friction": (i18n.N_("friction"), lambda v: f"{v:.3f}"),
+    "time": (i18n.N_("stroke time"), lambda v: f"{v:.3f} s"),
 }
 # each direct test's fields (the trials each value came from are its summary's `trials`: a size trial may only weigh)
 GIVES = {"size": ("mass", "diameter"), "squeeze": ("stiffness_n",), "drop": ("restitution",), "sled": ("friction",)}
@@ -47,9 +48,10 @@ GIVES = {"size": ("mass", "diameter"), "squeeze": ("stiffness_n",), "drop": ("re
 def shot_words(result) -> tuple[str, str]:
     """What a shot fit fits ("the wheel's friction"), and what it holds and at what, in words."""
     if "friction" in result.fitted:
-        return ("the wheel's friction",
-                f"the ball's stiffness held at {_shown('force', -1)(result.stiffness_n)}, from its squeeze test")
-    return "the ball's stiffness", f"the wheel friction held at {result.friction:.2f}"
+        return (i18n.t("the wheel's friction"),
+                i18n.t("the ball's stiffness held at {value}, from its squeeze test",
+                       value=_shown("force", -1)(result.stiffness_n)))
+    return i18n.t("the ball's stiffness"), i18n.t("the wheel friction held at {value}", value=f"{result.friction:.2f}")
 
 
 def _cell(v) -> str:

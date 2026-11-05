@@ -99,7 +99,8 @@ Bench (`/api/bench/*`; 404 unless an idea session is open). `file` is an idea's 
         file (a sweep or compare never replaces it), null when none: {kind: "run", ok, error, t, source, out,
         headlines: [the summary's headline lines, the UNCALIBRATED line last; [] without a summary], uncalibrated:
         always the UNCALIBRATED line (in the Language), energy_failed: true when the run's summary.json says the
-        energy check failed (the simulation, not the design, is wrong; the same signal whoever ran it; ok stays as logged),
+        energy check failed (the simulation, not the design, is wrong; the same signal whoever ran it; ok stays as
+        logged),
         pictures: {path_side, pass_gif} (absolute paths for /api/bench/file, null when absent)}.
         result: the session's result, from the newest sweep or compare event in the log (any source), null when
         none: {kind: sweep|compare, files: [the idea file names it concerns: the swept idea, or the compared ones

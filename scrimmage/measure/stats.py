@@ -10,6 +10,8 @@ distance, and n/2 is more than 2 only from 5 trials up.
 
 from dataclasses import dataclass
 
+from ..i18n import t, tn
+
 MIN_TRIALS = 3
 MAX_SPREAD = 0.15  # (highest - lowest) / mean
 OUTLIER_DISTANCES = 2.0  # how many mean absolute deviations from the mean flag a trial
@@ -44,14 +46,15 @@ def summary(values, trials=None) -> Summary:
 
     warnings = []
     if n < MIN_TRIALS:
-        warnings.append(f"take at least {MIN_TRIALS} trials (this has {n}): "
-                        "a run uses it, but its result stays UNCALIBRATED until then")
+        warnings.append(t("take at least {min} trials (this has {n}): a run uses it, but its result stays "
+                          "UNCALIBRATED until then", min=MIN_TRIALS, n=n))
     if spread > MAX_SPREAD:
-        warnings.append(f"your trials disagree by {spread:.0%}: measure again or take more trials")
+        warnings.append(t("your trials disagree by {spread}: measure again or take more trials",
+                          spread=f"{spread:.0%}"))
     number = list(trials) if trials is not None else list(range(n))
     if len(number) != n:
         raise ValueError("summary needs one trial number per value")
-    warnings += [f"trial {number[i] + 1} looks off: check it" for i in outliers]
+    warnings += [t("trial {n} looks off: check it", n=number[i] + 1) for i in outliers]
     return Summary(mean=mean, low=low, high=high, spread=spread, n=n, outliers=outliers, trials=number,
                    warnings=warnings, good=n >= MIN_TRIALS and spread <= MAX_SPREAD)
 
@@ -61,7 +64,8 @@ def why(s: Summary) -> str:
     it is good."""
     reasons = []
     if s.n < MIN_TRIALS:
-        reasons.append(f"{s.n} trial{'s' if s.n != 1 else ''}: take at least {MIN_TRIALS}")
+        reasons.append(tn("{count} trial: take at least {min}", "{count} trials: take at least {min}", s.n,
+                          min=MIN_TRIALS))
     if s.spread > MAX_SPREAD:
-        reasons.append(f"trials disagree by {s.spread:.0%}")
+        reasons.append(t("trials disagree by {spread}", spread=f"{s.spread:.0%}"))
     return "; ".join(reasons)

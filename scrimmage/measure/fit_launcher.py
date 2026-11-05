@@ -68,7 +68,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from .. import units
+from .. import i18n, units
 from ..launcher.inputs import LauncherConfigError, Setup, load_setup
 from ..launcher.model import Launcher
 from ..launcher.single import single_pass
@@ -87,7 +87,7 @@ RESOLUTION = 0.02  # a shot's speed is read to no better than this fraction, how
 BAND = 0.15  # a good fit's band is within this fraction of its value either way
 BISECTIONS = 8  # steps finding each end of the band between two scan points
 GOOD_FRAMES = 20  # a shot should span this many frames or more between the marks (the forms say so)
-SQUEEZE_SENTENCE = "Measure the ball's squeeze (the squeeze test) to fit wheel friction too."
+SQUEEZE_SENTENCE = i18n.N_("Measure the ball's squeeze (the squeeze test) to fit wheel friction too.")  # translated()
 
 SHOT_NUMBERS = ("wheel_rps", "hood_deg", "fps")  # plain numbers, their unit in their name
 SHOT_READINGS = {"marks": "length", "frames": "frames"}  # readings with their unit in their key: name -> quantity
@@ -139,7 +139,7 @@ def _number(table: dict, key: str, where: str) -> float | None:
         return None
     v = table[key]
     if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
-        raise MeasureError(f"{where}: {key} must be a number, not {v!r}")
+        raise MeasureError(i18n.t("{where}: {key} must be a number, not {value}", where=where, key=key, value=repr(v)))
     return float(v)
 
 
@@ -150,18 +150,20 @@ def _is_reading(key: str) -> bool:
 def _check_keys(mf: MeasureFile, setup: dict, rows: list[dict]) -> None:
     for key in setup:
         if key == "wheel_rps" or unit_of(key, "frames") is not None:
-            raise MeasureError(f"{mf.path}: {key} goes in each [[shot]], not in [shot_setup]")
+            raise MeasureError(i18n.t("{path}: {key} goes in each [[shot]], not in [shot_setup]", path=mf.path,
+                                      key=key))
         if key not in SETUP_TEXT and key not in SETUP_NUMBERS and unit_of(key, "marks") is None:
-            raise MeasureError(f"{mf.path}: unknown key '{key}' in [shot_setup]; it takes setup, ball, "
-                               "marks_<unit>, fps, hood_deg")
+            raise MeasureError(i18n.t("{path}: unknown key '{key}' in [shot_setup]; it takes setup, ball, "
+                                      "marks_<unit>, fps, hood_deg", path=mf.path, key=key))
     for i, row in enumerate(rows):
         for key in row:
             if key in SETUP_TEXT:
-                raise MeasureError(f"{mf.path}: {key} goes in [shot_setup], once for all shots, not in [[shot]] "
-                                   f"trial {i + 1}")
+                raise MeasureError(i18n.t("{path}: {key} goes in [shot_setup], once for all shots, not in [[shot]] "
+                                          "trial {n}", path=mf.path, key=key, n=i + 1))
             if key not in SHOT_NUMBERS and not _is_reading(key):
-                raise MeasureError(f"{mf.path}: unknown reading '{key}' in [[shot]] trial {i + 1}; it takes "
-                                   "wheel_rps, hood_deg, marks_<unit>, frames, fps")
+                raise MeasureError(i18n.t("{path}: unknown reading '{key}' in [[shot]] trial {n}; it takes "
+                                          "wheel_rps, hood_deg, marks_<unit>, frames, fps", path=mf.path, key=key,
+                                          n=i + 1))
 
 
 def _text(mf: MeasureFile, table: dict, key: str) -> str | None:
@@ -169,7 +171,8 @@ def _text(mf: MeasureFile, table: dict, key: str) -> str | None:
         return None
     v = table[key]
     if not isinstance(v, str):
-        raise MeasureError(f"{mf.path}: [shot_setup] {key} must be text, not {v!r}")
+        raise MeasureError(i18n.t("{path}: [shot_setup] {key} must be text, not {value}", path=mf.path, key=key,
+                                  value=repr(v)))
     return v
 
 
@@ -199,16 +202,16 @@ def _load_setup(mf: MeasureFile, table: dict) -> _Inputs:
     setup's own ball file."""
     name = _text(mf, table, "setup")
     if name is None:
-        raise MeasureError(f"{mf.path}: [shot_setup] is missing required key 'setup': the launcher setup file the "
-                           "shots were taken on")
+        raise MeasureError(i18n.t("{path}: [shot_setup] is missing required key 'setup': the launcher setup file "
+                                  "the shots were taken on", path=mf.path))
     path = mf.path.parent / name
     where = f"{mf.path}: [shot_setup] setup = \"{name}\""
     if not path.is_file():
-        raise MeasureError(f"{where}: no such file (looked in {path.resolve()})")
+        raise MeasureError(i18n.t("{where}: no such file (looked in {path})", where=where, path=path.resolve()))
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except (tomllib.TOMLDecodeError, OSError) as e:
-        raise MeasureError(f"{where}: {e}") from None
+        raise MeasureError(i18n.t("{where}: {error}", where=where, error=e)) from None
     files = [mf.path.resolve(), path.resolve()]
     raw, provenance = dict(raw), {}
     named = {}  # section -> the file its `measured` names, as written
@@ -221,7 +224,7 @@ def _load_setup(mf: MeasureFile, table: dict) -> _Inputs:
     ball_name = _text(mf, table, "ball")
     if ball_name is not None:
         ball_at = (mf.path.parent, f"{mf.path}: [shot_setup]", "ball", ball_name)
-    elif _open_named(named.get("ball"), path.parent, f"{path}: [ball]", "measured", ("ball",), "a ball"):
+    elif _open_named(named.get("ball"), path.parent, f"{path}: [ball]", "measured", ("ball",), i18n.N_("a ball")):
         ball_at = (path.parent, f"{path}: [ball]", "measured", named["ball"])
     else:
         ball_at = None
@@ -232,7 +235,8 @@ def _load_setup(mf: MeasureFile, table: dict) -> _Inputs:
         provenance |= {f"ball.{k}": p for k, p in got.items()}
         ball_file = (base / file_name).resolve()
         files.append(ball_file)
-    if _open_named(named.get("wheels"), path.parent, f"{path}: [wheels]", "measured", ("friction",), "a wheel"):
+    if _open_named(named.get("wheels"), path.parent, f"{path}: [wheels]", "measured", ("friction",),
+                   i18n.N_("a wheel")):
         raw["wheels"], got = apply_wheels(raw.get("wheels", {}), named["wheels"], f"{path}: [wheels]",
                                           base=path.parent)
         provenance |= {f"wheels.{k}": p for k, p in got.items()}
@@ -243,7 +247,7 @@ def _load_setup(mf: MeasureFile, table: dict) -> _Inputs:
     try:
         setup = load_setup(raw)[0]
     except LauncherConfigError as e:
-        raise MeasureError(f"{where}: {e}") from None
+        raise MeasureError(i18n.t("{where}: {error}", where=where, error=e)) from None
     return _Inputs(setup=setup, provenance=provenance, ball_file=ball_file, setup_ball=setup_ball,
                    files=tuple(files))
 
@@ -253,7 +257,7 @@ def _shots(mf: MeasureFile, setup: Setup, table: dict) -> list[_Shot]:
     here = f"{mf.path}: [shot_setup]"
     shots = []
     for i, row in enumerate(rows):
-        where = f"{mf.path}: [[shot]] trial {i + 1}"
+        where = i18n.t("{path}: [[shot]] trial {n}", path=mf.path, n=i + 1)
 
         def either(read):  # the shot's own reading, else [shot_setup]'s
             v = read(row, where)
@@ -261,19 +265,21 @@ def _shots(mf: MeasureFile, setup: Setup, table: dict) -> list[_Shot]:
 
         rps = _number(row, "wheel_rps", where)
         if rps is None:
-            raise MeasureError(f"{where} has no wheel_rps: the wheel speed it was shot at (rotations per second)")
+            raise MeasureError(i18n.t("{where} has no wheel_rps: the wheel speed it was shot at (rotations per "
+                                      "second)", where=where))
         frames = reading(row, "frames", where=where)
         marks = either(lambda t, w: reading(t, "length", "marks", where=w, required=False))
         if marks is None:
-            raise MeasureError(f"{where} has no marks: give the tape marks' spacing once in [shot_setup] or in "
-                               "the shot, as marks_<unit>")
+            raise MeasureError(i18n.t("{where} has no marks: give the tape marks' spacing once in [shot_setup] or in "
+                                      "the shot, as marks_<unit>", where=where))
         fps = either(lambda t, w: _number(t, "fps", w))
         if fps is None:
-            raise MeasureError(f"{where} has no fps: give the camera's frame rate once in [shot_setup] or in the "
-                               "shot (fps = 240)")
+            raise MeasureError(i18n.t("{where} has no fps: give the camera's frame rate once in [shot_setup] or in "
+                                      "the shot (fps = 240)", where=where))
         for name, v in (("wheel_rps", rps), ("frames", frames), ("marks", marks), ("fps", fps)):
             if v <= 0:
-                raise MeasureError(f"{where}: {name} must be above 0, not {v:g}")
+                raise MeasureError(i18n.t("{where}: {name} must be above 0, not {value}", where=where, name=name,
+                                          value=f"{v:g}"))
         hood = either(lambda t, w: _number(t, "hood_deg", w))
         if hood is None:
             hood = setup.hood.exit_angle_deg
@@ -281,7 +287,8 @@ def _shots(mf: MeasureFile, setup: Setup, table: dict) -> list[_Shot]:
             try:
                 Launcher(dataclasses.replace(setup, hood=dataclasses.replace(setup.hood, exit_angle_deg=hood)))
             except LauncherConfigError as e:
-                raise MeasureError(f"{where}: hood_deg {hood:g} doesn't fit the setup's hood: {e}") from None
+                raise MeasureError(i18n.t("{where}: hood_deg {hood} doesn't fit the setup's hood: {error}",
+                                          where=where, hood=f"{hood:g}", error=e)) from None
         shots.append(_Shot(wheel_rps=rps, hood_deg=hood, frames=frames, speed=marks * fps / frames))
     return shots
 
@@ -346,9 +353,11 @@ def fit(mf: MeasureFile) -> LauncherFit:
     """Fit the wheel's friction (the ball's squeeze measured) or else the ball's stiffness_n to a launcher file's
     shots (spec C8)."""
     if mf.kind != "launcher":
-        raise MeasureError(f"{mf.path} is a {mf.kind} measurement: only a launcher file has shots to fit")
+        raise MeasureError(i18n.t("{path} is a {kind} measurement: only a launcher file has shots to fit",
+                                  path=mf.path, kind=mf.kind))
     if "shot" not in mf.trials:
-        raise MeasureError(f"{mf.path}: a launcher file needs its shots, each written as a [[shot]] table")
+        raise MeasureError(i18n.t("{path}: a launcher file needs its shots, each written as a [[shot]] table",
+                                  path=mf.path))
     table = mf.settings.get("shot_setup", {})
     _check_keys(mf, table, mf.trials["shot"])
     inputs = _load_setup(mf, table)
@@ -359,23 +368,32 @@ def fit(mf: MeasureFile) -> LauncherFit:
 
     squeezed = setup.ball.stiffness_n if "ball.stiffness_n" in inputs.provenance else None
     friction = setup.wheels.friction
-    held, test = ("ball.stiffness_n", "squeeze") if squeezed is not None else ("wheels.friction", "sled pull")
-    owner = "ball" if squeezed is not None else "wheel"
+    held = "ball.stiffness_n" if squeezed is not None else "wheels.friction"
     held_from = inputs.provenance.get(held)
     if held_from is not None and not held_from.good:
-        reason = held_from.why.replace(": ", "; ")
-        warnings.append(f"the {owner}'s {test} ({held_from.file.name}) isn't good enough: {reason}. The fit holds "
-                        "it, as a run does, so the fit isn't good until it is")
-        why.append(f"the {owner}'s {test} isn't good enough: {reason}")
+        reason, file = held_from.why.replace(": ", "; "), held_from.file.name
+        if squeezed is not None:
+            warnings.append(i18n.t("the ball's squeeze ({file}) isn't good enough: {reason}. The fit holds it, as a "
+                                   "run does, so the fit isn't good until it is", file=file, reason=reason))
+            why.append(i18n.t("the ball's squeeze isn't good enough: {reason}", reason=reason))
+        else:
+            warnings.append(i18n.t("the wheel's sled pull ({file}) isn't good enough: {reason}. The fit holds it, as "
+                                   "a run does, so the fit isn't good until it is", file=file, reason=reason))
+            why.append(i18n.t("the wheel's sled pull isn't good enough: {reason}", reason=reason))
     ball_name = _text(mf, table, "ball")
     if ball_name is not None and inputs.setup_ball not in (inputs.ball_file, mf.path.resolve()):
-        name_it = ("it in the setup's [ball] measured too" if squeezed is not None
-                   else f"{mf.path.name} in the setup's [ball] measured (it brings the ball file's numbers)")
-        warnings.append(f"[shot_setup] ball = \"{ball_name}\" isn't the ball the setup names: name {name_it}, so a "
-                        "run uses the ball the shots were fit with")
+        if squeezed is not None:
+            warnings.append(i18n.t("[shot_setup] ball = \"{ball}\" isn't the ball the setup names: name it in the "
+                                   "setup's [ball] measured too, so a run uses the ball the shots were fit with",
+                                   ball=ball_name))
+        else:
+            warnings.append(i18n.t("[shot_setup] ball = \"{ball}\" isn't the ball the setup names: name {file} in the "
+                                   "setup's [ball] measured (it brings the ball file's numbers), so a run uses the "
+                                   "ball the shots were fit with", ball=ball_name, file=mf.path.name))
     for i, s in enumerate(shots):
         if s.frames < GOOD_FRAMES:
-            warnings.append(f"shot {i + 1}: {s.frames:g} frames between the marks; {GOOD_FRAMES} or more fits better")
+            warnings.append(i18n.t("shot {n}: {frames} frames between the marks; {good} or more fits better", n=i + 1,
+                                   frames=f"{s.frames:g}", good=GOOD_FRAMES))
 
     conditions = sorted({(s.wheel_rps, s.hood_deg) for s in shots})
     cache: dict[tuple[float, float], list[float]] = {}
@@ -398,7 +416,7 @@ def fit(mf: MeasureFile) -> LauncherFit:
 
         def speeds_at(x: float) -> list[float]:
             return model(k, value(x))
-        name, unit, digits, scale = "wheel friction", "", 2, 1.0
+        unit, digits, scale = "", 2, 1.0
     else:
         lo, hi = (setup.ball.stiffness_n * r for r in STIFFNESS_RANGE)
         f = friction
@@ -409,10 +427,10 @@ def fit(mf: MeasureFile) -> LauncherFit:
         def speeds_at(x: float) -> list[float]:
             return model(value(x), f)
         # in the Units setting, to a place coarser than the table's: 118 N, 26.5 lbf
-        name, unit = "ball's stiffness", " " + units.unit_name("force")
+        unit = " " + units.unit_name("force")
         digits = max(0, units.TABLE[units.current_system()]["force"].decimals - 1)
         scale = units.to_display(1.0, "force")
-        warnings.append(SQUEEZE_SENTENCE)
+        warnings.append(i18n.translated(SQUEEZE_SENTENCE))
 
     def cost(x: float) -> float:
         return _rms(shots, speeds_at(x))
@@ -431,33 +449,51 @@ def fit(mf: MeasureFile) -> LauncherFit:
     def show(v: float) -> str:
         return f"{v * scale:.{digits}f}"
 
-    plain = "stiffness" if squeezed is None else "wheel friction"
-    band_text = (f"{plain} {show(fitted_value)}{unit}, anywhere from {show(band[0])} to {show(band[1])}{unit} fits "
-                 "your shots")
+    nums = dict(value=show(fitted_value), low=show(band[0]), high=show(band[1]), unit=unit)
+    if squeezed is None:
+        band_text = i18n.t("stiffness {value}{unit}, anywhere from {low} to {high}{unit} fits your shots", **nums)
+    else:
+        band_text = i18n.t("wheel friction {value}{unit}, anywhere from {low} to {high}{unit} fits your shots", **nums)
 
     slow, fast = min(s.wheel_rps for s in shots), max(s.wheel_rps for s in shots)
     if fast < SECOND_SPEED * slow:
-        at = f"{slow:g} rps" if slow == fast else f"{slow:g} to {fast:g} rps"
-        warnings.append(f"the shots are all at one wheel speed ({at}): shots at two or more wheel speeds check the fit")
+        at = i18n.t("{speed} rps", speed=f"{slow:g}") if slow == fast else \
+            i18n.t("{slow} to {fast} rps", slow=f"{slow:g}", fast=f"{fast:g}")
+        warnings.append(i18n.t("the shots are all at one wheel speed ({at}): shots at two or more wheel speeds check "
+                               "the fit", at=at))
     if _at_edge(fitted_value, lo, hi):
-        warnings.append(f"the {name}, {show(fitted_value)}{unit}, is at the edge of what it tries: check your shots "
-                        f"(it tries {show(lo)} to {show(hi)}{unit})")
-        why.append("the fit is at the edge of what it tries")
+        edge = dict(value=show(fitted_value), low=show(lo), high=show(hi), unit=unit)
+        if squeezed is None:
+            warnings.append(i18n.t("the ball's stiffness, {value}{unit}, is at the edge of what it tries: check your "
+                                   "shots (it tries {low} to {high}{unit})", **edge))
+        else:
+            warnings.append(i18n.t("the wheel friction, {value}{unit}, is at the edge of what it tries: check your "
+                                   "shots (it tries {low} to {high}{unit})", **edge))
+        why.append(i18n.t("the fit is at the edge of what it tries"))
     if band[0] < (1.0 - BAND) * fitted_value or band[1] > (1.0 + BAND) * fitted_value:
-        warnings.append(f"{band_text}: your shots hardly depend on the {name} at these wheel speeds: shoot at a "
-                        "higher wheel speed (where the ball's grip, not the wheel's speed, sets the exit speed)")
-        why.append(f"the shots hardly depend on the {name}")
+        if squeezed is None:
+            warnings.append(i18n.t("{band}: your shots hardly depend on the ball's stiffness at these wheel speeds: "
+                                   "shoot at a higher wheel speed (where the ball's grip, not the wheel's speed, sets "
+                                   "the exit speed)", band=band_text))
+            why.append(i18n.t("the shots hardly depend on the ball's stiffness"))
+        else:
+            warnings.append(i18n.t("{band}: your shots hardly depend on the wheel friction at these wheel speeds: "
+                                   "shoot at a higher wheel speed (where the ball's grip, not the wheel's speed, sets "
+                                   "the exit speed)", band=band_text))
+            why.append(i18n.t("the shots hardly depend on the wheel friction"))
     if rms >= GOOD_RMS:
-        warnings.append(f"the model's horizontal speeds miss your shots by {rms:.1%} (root mean square); a good fit is "
-                        f"under {GOOD_RMS:.0%}: check your shots and the launcher setup")
-        why.append(f"the model misses the shots by {rms:.0%}")
+        warnings.append(i18n.t("the model's horizontal speeds miss your shots by {rms} (root mean square); a good fit "
+                               "is under {good}: check your shots and the launcher setup", rms=f"{rms:.1%}",
+                               good=f"{GOOD_RMS:.0%}"))
+        why.append(i18n.t("the model misses the shots by {rms}", rms=f"{rms:.0%}"))
         if all(math.isnan(m) or m < s.speed for s, m in zip(shots, speeds)):
-            warnings.append("the model's ball can't go this fast at these wheel speeds: check the wheel speed you "
-                            "wrote and the mark spacing")
+            warnings.append(i18n.t("the model's ball can't go this fast at these wheel speeds: check the wheel speed "
+                                   "you wrote and the mark spacing"))
     missed = [i + 1 for i, m in enumerate(speeds) if math.isnan(m)]
     if missed:
-        warnings.append(f"the model's ball doesn't leave the launcher for shot{'s' if len(missed) > 1 else ''} "
-                        f"{', '.join(map(str, missed))}: check the setup's hood gap and wheel")
+        warnings.append(i18n.tn("the model's ball doesn't leave the launcher for shot {shots}: check the setup's hood "
+                                "gap and wheel", "the model's ball doesn't leave the launcher for shots {shots}: check "
+                                "the setup's hood gap and wheel", len(missed), shots=", ".join(map(str, missed))))
     return LauncherFit(stiffness_n=k, friction=f, rms_error=rms,
                        per_shot=[(s.speed, m) for s, m in zip(shots, speeds)], fitted=fitted,
                        warnings=warnings, band=band, band_text=band_text, good=not why, why="; ".join(why),
