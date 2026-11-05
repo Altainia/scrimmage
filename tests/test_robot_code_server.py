@@ -125,8 +125,10 @@ def test_code_not_a_project_writes_nothing(tmp_path, start):
     c = start(cfg)
     s, b = c.call("POST", "/api/robot/code", {"folder": "notes"})
     assert s == 400 and b["ok"] is False
+    # problem_text (since 0c6e465) is the same refusal as the finished sentence the page shows
     assert b["errors"] == [{"field": "status", "message": "nothing here scrimmage can start: no build.gradle or "
-                                                          "robot.py"}]
+                                                          "robot.py",
+                            "problem_text": "Nothing here scrimmage can start: no build.gradle or robot.py."}]
     s, b = c.call("POST", "/api/robot/code", {"folder": "gone"})
     assert s == 400 and "not a folder" in b["error"]
     assert cfg.read_text() == before and c.get("/api/robot/state")[1]["can_undo"] is False

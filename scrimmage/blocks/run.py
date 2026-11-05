@@ -117,7 +117,7 @@ from .. import i18n, units
 from ..climb.run import SETTLE_S, WalkOff
 from ..hal_drive import MotorDrive, driven_joints, position_volts
 from ..movers import mover_poses, movers
-from ..parts.partner import SIGNALS as PARTNER_SIGNALS, STARTS_INSIDE, PartnerOverlap
+from ..parts.partner import SIGNALS as PARTNER_SIGNALS, PartnerOverlap
 from ..protocol import HalState
 from ..sensors.colors import NAMED_COLORS
 from ..testrange.build import BALL_BITS
@@ -294,9 +294,6 @@ def _range_setup(raw: dict, setup: dict) -> dict:
     return {**raw, "range": rng}
 
 
-SETUP_STARTS_INSIDE = "the partner robot (Setup) starts inside "
-
-
 def world_for(program: Program):
     """The World of the test's robot config (its `robot`, relative to the test file), with the test's setup applied.
     When Setup places the partner and it starts inside the robot or an element, the TestFileError says Setup's partner
@@ -307,22 +304,30 @@ def world_for(program: Program):
     try:
         return build_world(replace(config, raw=setup_config(config.raw, found_setup(program), config.dir)))
     except ConfigError as e:
-        text = str(e)
-        if not isinstance(program.setup.get("partner"), dict) or STARTS_INSIDE not in text:
+        overlap = partner_overlap(e)
+        if not isinstance(program.setup.get("partner"), dict) or overlap is None:
             raise
-        # build_world re-raises partner.check_start's PartnerOverlap `from None`: it is the ConfigError's context
-        raise TestFileError(setup_partner_words(text, e.__context__)) from None
+        raise TestFileError(setup_partner_words(overlap)) from None
 
 
-def setup_partner_words(text: str, cause) -> str:
-    """Setup's partner refusal from the config's `text` ("[partner] starts inside ... by 0.20 m)"): in the Units
-    setting when `cause` is the PartnerOverlap it came from ("... by 7.87 in)"), else (and in machine text) the
-    config's words, meters as before the setting."""
-    if isinstance(cause, PartnerOverlap) and not units.is_machine():
-        by = units.fmt(cause.depth, "length", fewer=1)
-        return i18n.t("the partner robot (Setup) starts inside {what} (their outlines overlap by {by})",
-                      what=cause.what, by=by)
-    return SETUP_STARTS_INSIDE + text.split(STARTS_INSIDE, 1)[1]
+def partner_overlap(e: BaseException) -> PartnerOverlap | None:
+    """The PartnerOverlap a ConfigError came from (build_world re-raises partner.check_start's `from None`, so it is
+    the error's context), found by its type, never by its words (L3); None for any other error."""
+    seen = 0
+    cause = e
+    while cause is not None and seen < 8:
+        if isinstance(cause, PartnerOverlap):
+            return cause
+        cause, seen = cause.__cause__ or cause.__context__, seen + 1
+    return None
+
+
+def setup_partner_words(overlap: PartnerOverlap) -> str:
+    """Setup's partner refusal from the config's PartnerOverlap: in the Units setting ("... by 7.87 in)"), or in
+    machine text in meters, as the config's own refusal was before the setting ("... by 0.20 m)")."""
+    by = f"{overlap.depth:.2f} m" if units.is_machine() else units.fmt(overlap.depth, "length", fewer=1)
+    return i18n.t("the partner robot (Setup) starts inside {what} (their outlines overlap by {by})",
+                  what=overlap.what, by=by)
 
 
 GRIP_CONDITIONS = ("held", "rests_on", "seated")     # a test of these rests on the grip's friction

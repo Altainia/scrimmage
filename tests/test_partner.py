@@ -309,21 +309,28 @@ def test_partner_conditions(tmp_path):
 
 
 def test_setup_partner_words_fall_back_to_the_configs_meters(units):
-    """Setup's partner refusal is in the Units setting only from a PartnerOverlap; any other cause (and machine text)
-    keeps the config's words, meters as before the setting."""
+    """Setup's partner refusal is in the Units setting, from the PartnerOverlap's fields; machine text keeps the
+    config's meters, as before the setting. It is found by its type, never by its words (L3)."""
     from scrimmage import units as u
-    from scrimmage.blocks.run import setup_partner_words
+    from scrimmage.blocks.run import partner_overlap, setup_partner_words
+    from scrimmage.config import ConfigError
     from scrimmage.parts.model import PartError
     from scrimmage.parts.partner import PartnerOverlap
     overlap = PartnerOverlap("the robot", 0.2)
-    text = f"robot.toml: {overlap}"
     assert str(overlap) == "[partner] starts inside the robot (their outlines overlap by 0.20 m)"
-    assert setup_partner_words(text, overlap) == \
+    assert setup_partner_words(overlap) == \
         "the partner robot (Setup) starts inside the robot (their outlines overlap by 7.87 in)"
     meters = "the partner robot (Setup) starts inside the robot (their outlines overlap by 0.20 m)"
-    assert setup_partner_words(text, PartError("something else")) == meters
-    assert setup_partner_words(text, None) == meters
     with u.machine_text():
-        assert setup_partner_words(text, overlap) == meters
+        assert setup_partner_words(overlap) == meters
     units("metric")
-    assert setup_partner_words(text, overlap).endswith("overlap by 200 mm)")
+    assert setup_partner_words(overlap).endswith("overlap by 200 mm)")
+    # the ConfigError build_world raises keeps the PartnerOverlap as its context; any other error has none
+    try:
+        try:
+            raise overlap
+        except PartError as e:
+            raise ConfigError(f"robot.toml: {e}") from None
+    except ConfigError as e:
+        assert partner_overlap(e) is overlap
+    assert partner_overlap(ConfigError("[partner] starts inside the robot (their outlines overlap by 0.20 m)")) is None
