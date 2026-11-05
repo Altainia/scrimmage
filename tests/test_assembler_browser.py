@@ -576,6 +576,48 @@ def test_the_field_picker_shows_and_takes_the_chosen_units(scenario_page):
     assert spec()["x"] == 6.5 and spec()["tol_xy"] == 0.3048
 
 
+_RECORD_LABELS = """() => {
+  // every fillText on the field picker's canvas, to read the grid's labels back (a canvas has no DOM text)
+  window.__fieldTexts = [];
+  const real = CanvasRenderingContext2D.prototype.fillText;
+  CanvasRenderingContext2D.prototype.fillText = function (text, ...rest) {
+    if (this.canvas.id === "field-canvas") window.__fieldTexts.push(String(text));
+    return real.call(this, text, ...rest);
+  };
+}"""
+
+
+def test_the_field_drawings_grid_is_in_the_chosen_units(scenario_page):
+    """Units (Settings): the field drawing's grid is every 5 ft, labeled in feet, in Imperial (1 m lines labeled in
+    feet would read badly), and every 1 m, labeled in meters, in Metric; an open picker redraws on a change."""
+    page, _ = scenario_page("fake_fail.toml")
+    page.evaluate(_RECORD_LABELS)
+    page.click("#step-row-1")
+    page.click("[data-key='pick-1-1']")
+    page.wait_for_selector("#field-dialog[open]")
+    texts = page.evaluate("window.__fieldTexts")
+    assert "5" in texts and "10" in texts, texts
+    assert any(t.endswith(" ft") for t in texts) and not any(t.endswith(" m") for t in texts), texts
+    shown = {int(t.split()[0]) for t in texts if t.split()[0].isdigit()}
+    assert shown and all(n % 5 == 0 for n in shown), texts       # every 5 ft, never 1, 2, 3 ...
+    # the same drawing, as numbers: lines every 5 ft (1.524 m), and the last label names the unit
+    grid = page.evaluate("""async () => {
+      const f = await import('./fieldpick.js');
+      return [f.fieldGrid('imperial'), f.gridLabels(0, 16.5, 1, f.fieldGrid('imperial'), true),
+              f.fieldGrid('metric'), f.gridLabels(0, 8.2, 2, f.fieldGrid('metric'), true)];
+    }""")
+    assert grid[0] == {"step": 1.524, "size": 5, "unit": "ft"}
+    assert [lb["text"] for lb in grid[1]] == ["0", "5", "10", "15", "20", "25", "30", "35", "40", "45", "50 ft"]
+    assert abs(grid[1][-1]["at"] - 15.24) < 1e-9
+    assert [lb["text"] for lb in grid[3]] == ["0", "2", "4", "6", "8 m"]
+    page.evaluate("window.__fieldTexts = []")
+    page_units(page, "metric")
+    page.wait_for_function("window.__fieldTexts.some((t) => t.endsWith(' m'))")
+    texts = page.evaluate("window.__fieldTexts")
+    assert not any(t.endswith(" ft") for t in texts), texts
+    assert {"1", "2", "3"} <= set(texts) or {"2", "4", "6"} <= set(texts), texts   # 1 m lines (every other when small)
+
+
 def test_scenario_run_fail_fix_with_field_picker_then_pass(scenario_page):
     page, scn = scenario_page("fake_fail.toml")
     page_units(page, "metric")      # the numbers below are meters

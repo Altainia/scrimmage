@@ -5,7 +5,7 @@
 //
 // Field geometry comes from /api/scenario/view: world_geoms (see view.py's _world_geoms for the size
 // conventions) and the robot geoms at the start pose (their projected outline is the robot's footprint).
-// fieldGeometry(view) and drawField(ctx, geometry, toCanvas) draw the field itself (floor, 1 m grid, meter labels,
+// fieldGeometry(view) and drawField(ctx, geometry, toCanvas) draw the field itself (floor, a grid in the chosen units,
 // world geoms, axes); the Drive tab's mini-field (minifield.js) and the robot code panel's start picker (code.js)
 // draw with them too, the start picker also with drawSides (the plain red / blue field) and robotFootprint.
 
@@ -134,12 +134,31 @@ export function fieldPoly(ctx, toCanvas, pts, fill, stroke, width = 1, dash = nu
   if (stroke) { ctx.setLineDash(dash || []); ctx.strokeStyle = stroke; ctx.lineWidth = width; ctx.stroke(); ctx.setLineDash([]); }
 }
 
-// Draws the floor with a 1 m grid and meter labels, the world geoms and an x / y legend. toCanvas(x, y) -> [px, py]
-// in the context's (CSS pixel) coordinates; the caller paints the background.
+// The field's grid in the chosen units: a line every 5 ft in Imperial (1 m lines labeled in feet would read badly),
+// every 1 m in Metric. {step: meters between lines, size: the step in the shown unit, unit}.
+export function fieldGrid(system = units.system) {
+  return system === "imperial" ? { step: 5 * 0.3048, size: 5, unit: "ft" } : { step: 1, size: 1, unit: "m" };
+}
+
+// The labels along one edge from lo to hi (meters): [{at: meters, text}], every `every` grid steps. With `named`,
+// the last one names the unit ("50 ft"), so the drawing says what its numbers are (the bottom edge's: the left
+// edge's labels are right-aligned into the narrow border, where a unit wouldn't fit).
+export function gridLabels(lo, hi, every, grid = fieldGrid(), named = false) {
+  const out = [];
+  for (let k = Math.ceil(lo / grid.step / every - 1e-9) * every; k * grid.step <= hi + 1e-9; k += every) {
+    out.push({ at: k * grid.step, text: `${k * grid.size}` });
+  }
+  if (named && out.length) out[out.length - 1].text += ` ${grid.unit}`;
+  return out;
+}
+
+// Draws the floor with a grid and its labels in the chosen units (fieldGrid), the world geoms and an x / y legend.
+// toCanvas(x, y) -> [px, py] in the context's (CSS pixel) coordinates; the caller paints the background.
 export function drawField(ctx, geometry, toCanvas) {
   const { floor: fr, outlines } = geometry;
   const [ox] = toCanvas(0, 0), [ux] = toCanvas(1, 0);
   const scale = ux - ox;   // pixels per meter
+  const grid = fieldGrid();
   fieldPoly(ctx, toCanvas, fr.poly, "#f7f8fa", "#aeb6c0");
   ctx.save();
   ctx.beginPath();
@@ -149,17 +168,17 @@ export function drawField(ctx, geometry, toCanvas) {
   ctx.strokeStyle = "#e6e9ed";
   ctx.lineWidth = 1;
   const [, top] = toCanvas(0, fr.maxy), [, bottom] = toCanvas(0, fr.miny), [left] = toCanvas(fr.minx, 0), [right] = toCanvas(fr.maxx, 0);
-  for (let x = Math.ceil(fr.minx); x <= fr.maxx; x++) { const [px] = toCanvas(x, 0); ctx.beginPath(); ctx.moveTo(px + 0.5, top); ctx.lineTo(px + 0.5, bottom); ctx.stroke(); }
-  for (let y = Math.ceil(fr.miny); y <= fr.maxy; y++) { const [, py] = toCanvas(0, y); ctx.beginPath(); ctx.moveTo(left, py + 0.5); ctx.lineTo(right, py + 0.5); ctx.stroke(); }
+  for (const { at } of gridLabels(fr.minx, fr.maxx, 1, grid)) { const [px] = toCanvas(at, 0); ctx.beginPath(); ctx.moveTo(px + 0.5, top); ctx.lineTo(px + 0.5, bottom); ctx.stroke(); }
+  for (const { at } of gridLabels(fr.miny, fr.maxy, 1, grid)) { const [, py] = toCanvas(0, at); ctx.beginPath(); ctx.moveTo(left, py + 0.5); ctx.lineTo(right, py + 0.5); ctx.stroke(); }
   ctx.restore();
-  // meter labels along the bottom and left edges
+  // the grid's labels along the bottom and left edges (every other line when they would crowd)
   ctx.fillStyle = "#59616b";
   ctx.font = "10px system-ui, sans-serif";
-  const every = scale < 30 ? 2 : 1;
+  const every = grid.step * scale < 30 ? 2 : 1;
   ctx.textAlign = "center"; ctx.textBaseline = "top";
-  for (let x = Math.ceil(fr.minx / every) * every; x <= fr.maxx + 1e-9; x += every) { const [px, py] = toCanvas(x, fr.miny); ctx.fillText(`${x}`, px, py + 3 + MARGIN * scale * 0.25); }
+  for (const { at, text } of gridLabels(fr.minx, fr.maxx, every, grid, true)) { const [px, py] = toCanvas(at, fr.miny); ctx.fillText(text, px, py + 3 + MARGIN * scale * 0.25); }
   ctx.textAlign = "right"; ctx.textBaseline = "middle";
-  for (let y = Math.ceil(fr.miny / every) * every; y <= fr.maxy + 1e-9; y += every) { const [px, py] = toCanvas(fr.minx, y); ctx.fillText(`${y}`, px - 4 - MARGIN * scale * 0.2, py); }
+  for (const { at, text } of gridLabels(fr.miny, fr.maxy, every, grid)) { const [px, py] = toCanvas(fr.minx, at); ctx.fillText(text, px - 4 - MARGIN * scale * 0.2, py); }
   // the world's boxes, cylinders, ...
   for (const o of outlines) {
     const [r, gg, bb, a] = (o.rgba || [0.6, 0.6, 0.6, 1]).map((c, k) => (k < 3 ? Math.round(c * 255) : c));

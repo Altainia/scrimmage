@@ -643,6 +643,7 @@ async function openPicker() {
       const kept = [xIn, yIn].filter(typing);
       sync({ keepTyping: true });
       for (const el of kept) el.dispatchEvent(new Event("input"));
+      draw();   // the grid's labels are in the chosen units
     });
     for (const [el, k] of [[xIn, "x"], [yIn, "y"], [hIn, "heading"]]) {
       el.addEventListener("input", () => {
