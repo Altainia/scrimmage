@@ -140,7 +140,7 @@ export function initPartView() {
 }
 
 function setBackground() {
-  scene.background = new THREE.Color(theme.color("--sunken") || "#eef0f3");
+  scene.background = new THREE.Color(theme.color("--sunken"));
 }
 
 // -- building ---------------------------------------------------------------------------------------------

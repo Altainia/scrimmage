@@ -1,64 +1,65 @@
 /* scrimmage assembler: a calm, neutral theme with one accent color, light or dark.
-   Each color token is light-dark(light, dark): the root's color-scheme picks one, so the dark values are written
-   once.
+   The tokens below are the light theme. The @supports block after them makes each color token light-dark(light,
+   dark), the root's color-scheme picking one, so each dark value is written once (and each light half matches the
+   value here: tests/test_theme_browser.py checks).
    The Theme setting (theme.js) is <html data-theme>: System follows the computer's dark mode, Light and Dark don't.
    JS reads a token through theme.color() (a raw read would see the light-dark() text). In the dark theme status is
    still icons and bold words. */
 :root {
-  --bg: light-dark(#f4f5f7, #0d1117);
-  --panel: light-dark(#ffffff, #161b22);
-  --line: light-dark(#e1e4e8, #30363d);
-  --line-strong: light-dark(#c9ced6, #4d5560);
-  --text: light-dark(#1f2328, #e6edf3);
-  --muted: light-dark(#656d76, #9da7b3);
-  --accent: light-dark(#2b6cb0, #2f6fd0);
-  --accent-soft: light-dark(#e8f0fa, #15294a);
-  --accent-strong: light-dark(#1f5592, #9ccbff);
-  --error: light-dark(#c62828, #ff8f87);
-  --error-soft: light-dark(#fdecec, #3a1a1d);
-  --warn: light-dark(#9a6700, #e3b341);
-  --warn-soft: light-dark(#fff6dd, #33270a);
-  --ok: light-dark(#1a7f37, #56d364);
-  --ok-soft: light-dark(#e3f4e8, #12301b);
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --line: #e1e4e8;
+  --line-strong: #c9ced6;
+  --text: #1f2328;
+  --muted: #656d76;
+  --accent: #2b6cb0;
+  --accent-soft: #e8f0fa;
+  --accent-strong: #1f5592;
+  --error: #c62828;
+  --error-soft: #fdecec;
+  --warn: #9a6700;
+  --warn-soft: #fff6dd;
+  --ok: #1a7f37;
+  --ok-soft: #e3f4e8;
   /* the accent as text (links, busy); --accent is also a background under white text */
-  --accent-text: light-dark(#2b6cb0, #6cb6ff);
-  --accent-hover: light-dark(#1f5592, #255fb8);
-  --accent-line: light-dark(#c5d8ef, #24477a);
-  --error-line: light-dark(#e6b3b3, #8b3a3a);
-  --error-tint: light-dark(#fffafa, #23151a);
-  --error-strong: light-dark(#8c1d1d, #ffb3ad);
-  --warn-text: light-dark(#6b4a00, #f2cc60);         /* text on --warn-soft */
-  --warn-line: light-dark(#f0d58c, #6b5310);
+  --accent-text: #2b6cb0;
+  --accent-hover: #1f5592;
+  --accent-line: #c5d8ef;
+  --error-line: #e6b3b3;
+  --error-tint: #fffafa;
+  --error-strong: #8c1d1d;
+  --warn-text: #6b4a00;         /* text on --warn-soft */
+  --warn-line: #f0d58c;
   --warn-mark: #d4a017;         /* a warning's stripe or dot (no text on it) */
-  --subtle: light-dark(#f6f8fa, #1c2129);            /* wells: consoles, code, table heads */
-  --subtle-2: light-dark(#fafbfc, #1a1f27);
-  --sunken: light-dark(#eef0f3, #0f141a);            /* the 3D view's surround, bar tracks, chips */
-  --hover: light-dark(#f0f4f9, #1f2630);
-  --selected: light-dark(#f7faff, #172235);
-  --overlay: light-dark(rgba(255, 255, 255, .92), rgba(22, 27, 34, .92));   /* a panel over the 3D view */
-  --overlay-90: light-dark(rgba(255, 255, 255, .9), rgba(22, 27, 34, .9));
+  --subtle: #f6f8fa;            /* wells: consoles, code, table heads */
+  --subtle-2: #fafbfc;
+  --sunken: #eef0f3;            /* the 3D view's surround, bar tracks, chips */
+  --hover: #f0f4f9;
+  --selected: #f7faff;
+  --overlay: rgba(255, 255, 255, .92);   /* a panel over the 3D view */
+  --overlay-90: rgba(255, 255, 255, .9);
   /* near-grays kept exactly as the light theme always had them */
-  --chip: light-dark(#f0f2f5, #262c34); --track: light-dark(#eceff3, #0f141a); --run-chip: light-dark(#eef1f4, #262c34);
-  --img-bg: light-dark(#e6e9ed, #0f141a); --watch-bg: light-dark(#e9ecf0, #0f141a);
-  --ok-tint: light-dark(#eef8f1, #12301b); --hover-2: light-dark(#f3f6fa, #1f2630);
-  --faint-2: light-dark(#b0b6bd, #6e7681);
-  --faint: light-dark(#a3aab3, #6e7681);
-  --placeholder: light-dark(#59616b, #9da7b3);
+  --chip: #f0f2f5; --track: #eceff3; --run-chip: #eef1f4;
+  --img-bg: #e6e9ed; --watch-bg: #e9ecf0;
+  --ok-tint: #eef8f1; --hover-2: #f3f6fa;
+  --faint-2: #b0b6bd;
+  --faint: #a3aab3;
+  --placeholder: #59616b;
   --hud-on: #1a7f37;
   /* driver-station modes */
-  --m-disabled: light-dark(#57606a, #b1bac4); --m-disabled-soft: light-dark(#eaeef2, #262c34);
-  --m-auto: light-dark(#6f42c1, #c8a7ff);     --m-auto-soft: light-dark(#f1ebfc, #2a1f45);
-  --m-teleop: light-dark(#1a7f37, #56d364);   --m-teleop-soft: light-dark(#e3f4e8, #12301b);
-  --m-test: light-dark(#b35900, #ffa657);     --m-test-soft: light-dark(#fff0df, #3a2410);
+  --m-disabled: #57606a; --m-disabled-soft: #eaeef2;
+  --m-auto: #6f42c1;     --m-auto-soft: #f1ebfc;
+  --m-teleop: #1a7f37;   --m-teleop-soft: #e3f4e8;
+  --m-test: #b35900;     --m-test-soft: #fff0df;
   /* the teleop and test colors as text on their soft tints, a shade darker for 4.5:1 (the bars keep the above) */
-  --m-teleop-text: light-dark(#197a35, #56d364); --m-test-text: light-dark(#a85400, #ffa657);
+  --m-teleop-text: #197a35; --m-test-text: #a85400;
   /* the Test tab's block colors (white text on them, 4.5:1), and each one's darker edge */
-  --block-move: light-dark(#2f6bc4, #2b64b8);   --block-move-3: light-dark(#22508f, #1d4685);
-  --block-wait: light-dark(#a8580f, #9c5410);   --block-wait-3: light-dark(#7a400b, #6e3b0a);
-  --block-repeat: light-dark(#1f7f43, #1d7a40); --block-repeat-3: light-dark(#165c30, #145a2d);
-  --block-check: light-dark(#7448c0, #6c42b8);  --block-check-3: light-dark(#54338c, #4b2e80);
+  --block-move: #2f6bc4;   --block-move-3: #22508f;
+  --block-wait: #a8580f;   --block-wait-3: #7a400b;
+  --block-repeat: #1f7f43; --block-repeat-3: #165c30;
+  --block-check: #7448c0;  --block-check-3: #54338c;
   /* the Test tab chart's compared run: a lighter gray than the run's line, still 3:1 on --subtle (dashed besides) */
-  --chart-compare: light-dark(#7d8590, #768390);
+  --chart-compare: #7d8590;
   /* the Test tab replay's fed-piece marks, each 3:1 on --panel: in (filled), placed (a square), stuck (a diamond),
      missed (hollow) */
   --feed-in: var(--accent-text);
@@ -67,33 +68,33 @@
   --slip-mark: var(--warn);      /* a slip's cross under the scrubber */
   --feed-missed: var(--muted);
   /* canvas drawings (theme.color): the field pictures (fieldpick.js drawField, the start picker, the mini-field) */
-  --field-surround: light-dark(#dfe3e8, #0f141a);   /* around the floor */
-  --field-floor: light-dark(#f7f8fa, #1c2129);
-  --field-edge: light-dark(#aeb6c0, #4d5560);
-  --field-grid: light-dark(#e6e9ed, #262c34);
-  --field-axis-x: light-dark(#c62828, #ff7b72);
-  --field-axis-y: light-dark(#1a7f37, #56d364);
-  --field-blue: light-dark(#2b6cb0, #4493f8);       /* the alliance halves (a tint of each) */
-  --field-red: light-dark(#c62828, #f85149);
-  --field-red-text: light-dark(#a12020, #ff9492);   /* the BLUE label is --accent-strong */
-  --field-line: light-dark(#57606a, #8b949e);       /* the center line, other checks' ghosts */
-  --field-ghost-text: light-dark(#3d444d, #c9d1d9);
-  --field-aim: light-dark(#e8590c, #f0883e);        /* a heading being aimed, a robot or piece being dragged */
+  --field-surround: #dfe3e8;   /* around the floor */
+  --field-floor: #f7f8fa;
+  --field-edge: #aeb6c0;
+  --field-grid: #e6e9ed;
+  --field-axis-x: #c62828;
+  --field-axis-y: #1a7f37;
+  --field-blue: #2b6cb0;       /* the alliance halves (a tint of each) */
+  --field-red: #c62828;
+  --field-red-text: #a12020;   /* the BLUE label is --accent-strong */
+  --field-line: #57606a;       /* the center line, other checks' ghosts */
+  --field-ghost-text: #3d444d;
+  --field-aim: #e8590c;        /* a heading being aimed, a robot or piece being dragged */
   --field-piece: #d4a017;
-  --field-piece-edge: light-dark(#8a6500, #e3b341);
+  --field-piece-edge: #8a6500;
   /* the robot code panel's robot: dark slate with a white triangle, or light with a dark one, unlike any piece */
-  --field-robot: light-dark(#24292f, #d0d7de);
-  --field-robot-edge: light-dark(#0d1117, #f0f6fc);
-  --field-robot-mark: light-dark(#ffffff, #0d1117);
+  --field-robot: #24292f;
+  --field-robot-edge: #0d1117;
+  --field-robot-mark: #ffffff;
   /* plots (trackplot.js, readouts.js): labels, grid lines and one color per input-track column */
-  --plot-label: light-dark(#59616b, #9da7b3);
-  --plot-grid: light-dark(#e6e9ed, #30363d);
-  --plot-axis: light-dark(#c9d1d9, #4d5560);
-  --plot-zero: light-dark(#d0d5dc, #4d5560);
-  --series-1: light-dark(#2b6cb0, #6cb6ff); --series-2: light-dark(#e8590c, #f0883e);
-  --series-3: light-dark(#1a7f37, #56d364); --series-4: light-dark(#8250df, #bc8cff);
-  --series-5: light-dark(#c62828, #ff7b72); --series-6: light-dark(#0a7ea4, #39c5cf);
-  --series-7: light-dark(#9a6700, #e3b341); --series-8: light-dark(#d6336c, #f778ba);
+  --plot-label: #59616b;
+  --plot-grid: #e6e9ed;
+  --plot-axis: #c9d1d9;
+  --plot-zero: #d0d5dc;
+  --series-1: #2b6cb0; --series-2: #e8590c;
+  --series-3: #1a7f37; --series-4: #8250df;
+  --series-5: #c62828; --series-6: #0a7ea4;
+  --series-7: #9a6700; --series-8: #d6336c;
   /* three radii (L8): small marks and chips, controls and fields, panels and cards */
   --radius-sm: 2px;
   --radius: 4px;
@@ -101,6 +102,100 @@
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   color-scheme: light dark;    /* System (and before theme.js has run) */
+}
+/* The dark values: where light-dark() works (not before Chromium 123, Firefox 120 or Safari 17.5), each color
+   token is light-dark(light, dark), the light half the same as above. Elsewhere the page is always light, even
+   with Dark chosen. */
+@supports (color: light-dark(#000, #fff)) {
+  :root {
+    --bg: light-dark(#f4f5f7, #0d1117);
+    --panel: light-dark(#ffffff, #161b22);
+    --line: light-dark(#e1e4e8, #30363d);
+    --line-strong: light-dark(#c9ced6, #4d5560);
+    --text: light-dark(#1f2328, #e6edf3);
+    --muted: light-dark(#656d76, #9da7b3);
+    --accent: light-dark(#2b6cb0, #2f6fd0);
+    --accent-soft: light-dark(#e8f0fa, #15294a);
+    --accent-strong: light-dark(#1f5592, #9ccbff);
+    --error: light-dark(#c62828, #ff8f87);
+    --error-soft: light-dark(#fdecec, #3a1a1d);
+    --warn: light-dark(#9a6700, #e3b341);
+    --warn-soft: light-dark(#fff6dd, #33270a);
+    --ok: light-dark(#1a7f37, #56d364);
+    --ok-soft: light-dark(#e3f4e8, #12301b);
+    --accent-text: light-dark(#2b6cb0, #6cb6ff);
+    --accent-hover: light-dark(#1f5592, #255fb8);
+    --accent-line: light-dark(#c5d8ef, #24477a);
+    --error-line: light-dark(#e6b3b3, #8b3a3a);
+    --error-tint: light-dark(#fffafa, #23151a);
+    --error-strong: light-dark(#8c1d1d, #ffb3ad);
+    --warn-text: light-dark(#6b4a00, #f2cc60);
+    --warn-line: light-dark(#f0d58c, #6b5310);
+    --subtle: light-dark(#f6f8fa, #1c2129);
+    --subtle-2: light-dark(#fafbfc, #1a1f27);
+    --sunken: light-dark(#eef0f3, #0f141a);
+    --hover: light-dark(#f0f4f9, #1f2630);
+    --selected: light-dark(#f7faff, #172235);
+    --overlay: light-dark(rgba(255, 255, 255, .92), rgba(22, 27, 34, .92));
+    --overlay-90: light-dark(rgba(255, 255, 255, .9), rgba(22, 27, 34, .9));
+    --chip: light-dark(#f0f2f5, #262c34);
+    --track: light-dark(#eceff3, #0f141a);
+    --run-chip: light-dark(#eef1f4, #262c34);
+    --img-bg: light-dark(#e6e9ed, #0f141a);
+    --watch-bg: light-dark(#e9ecf0, #0f141a);
+    --ok-tint: light-dark(#eef8f1, #12301b);
+    --hover-2: light-dark(#f3f6fa, #1f2630);
+    --faint-2: light-dark(#b0b6bd, #6e7681);
+    --faint: light-dark(#a3aab3, #6e7681);
+    --placeholder: light-dark(#59616b, #9da7b3);
+    --m-disabled: light-dark(#57606a, #b1bac4);
+    --m-disabled-soft: light-dark(#eaeef2, #262c34);
+    --m-auto: light-dark(#6f42c1, #c8a7ff);
+    --m-auto-soft: light-dark(#f1ebfc, #2a1f45);
+    --m-teleop: light-dark(#1a7f37, #56d364);
+    --m-teleop-soft: light-dark(#e3f4e8, #12301b);
+    --m-test: light-dark(#b35900, #ffa657);
+    --m-test-soft: light-dark(#fff0df, #3a2410);
+    --m-teleop-text: light-dark(#197a35, #56d364);
+    --m-test-text: light-dark(#a85400, #ffa657);
+    --block-move: light-dark(#2f6bc4, #2b64b8);
+    --block-move-3: light-dark(#22508f, #1d4685);
+    --block-wait: light-dark(#a8580f, #9c5410);
+    --block-wait-3: light-dark(#7a400b, #6e3b0a);
+    --block-repeat: light-dark(#1f7f43, #1d7a40);
+    --block-repeat-3: light-dark(#165c30, #145a2d);
+    --block-check: light-dark(#7448c0, #6c42b8);
+    --block-check-3: light-dark(#54338c, #4b2e80);
+    --chart-compare: light-dark(#7d8590, #768390);
+    --field-surround: light-dark(#dfe3e8, #0f141a);
+    --field-floor: light-dark(#f7f8fa, #1c2129);
+    --field-edge: light-dark(#aeb6c0, #4d5560);
+    --field-grid: light-dark(#e6e9ed, #262c34);
+    --field-axis-x: light-dark(#c62828, #ff7b72);
+    --field-axis-y: light-dark(#1a7f37, #56d364);
+    --field-blue: light-dark(#2b6cb0, #4493f8);
+    --field-red: light-dark(#c62828, #f85149);
+    --field-red-text: light-dark(#a12020, #ff9492);
+    --field-line: light-dark(#57606a, #8b949e);
+    --field-ghost-text: light-dark(#3d444d, #c9d1d9);
+    --field-aim: light-dark(#e8590c, #f0883e);
+    --field-piece-edge: light-dark(#8a6500, #e3b341);
+    --field-robot: light-dark(#24292f, #d0d7de);
+    --field-robot-edge: light-dark(#0d1117, #f0f6fc);
+    --field-robot-mark: light-dark(#ffffff, #0d1117);
+    --plot-label: light-dark(#59616b, #9da7b3);
+    --plot-grid: light-dark(#e6e9ed, #30363d);
+    --plot-axis: light-dark(#c9d1d9, #4d5560);
+    --plot-zero: light-dark(#d0d5dc, #4d5560);
+    --series-1: light-dark(#2b6cb0, #6cb6ff);
+    --series-2: light-dark(#e8590c, #f0883e);
+    --series-3: light-dark(#1a7f37, #56d364);
+    --series-4: light-dark(#8250df, #bc8cff);
+    --series-5: light-dark(#c62828, #ff7b72);
+    --series-6: light-dark(#0a7ea4, #39c5cf);
+    --series-7: light-dark(#9a6700, #e3b341);
+    --series-8: light-dark(#d6336c, #f778ba);
+  }
 }
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"] { color-scheme: dark; }

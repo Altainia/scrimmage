@@ -7,7 +7,7 @@
 // parts attach; in "pick in 3D" mode (the Add dialog's button) they become clickable targets. The "CG" button shows the
 // robot's center of gravity (the view's com) as an orange ball with a line down to the floor.
 //
-// For tests: window.__scrimmage.scene is {instances, meshes, mounts, cg (the CG marker is shown)}; window.__scrimmage.screenPos(name) gives the
+// For tests: window.__scrimmage.scene is {instances, meshes, mounts, cg (the CG marker is shown), background}; window.__scrimmage.screenPos(name) gives the
 // client {x, y} of a mount ("<instance>.<mount>") or of an instance's center, or null when off screen;
 // window.__scrimmage.gpuMemory() is three's count of live GPU geometries and textures.
 
@@ -15,6 +15,7 @@ import * as THREE from "three";
 import { OrbitControls } from "./vendor/OrbitControls.js";
 import { $, h, store, select, attachGroups } from "./app.js";
 import { meshGeometry, primitive, setPose, geomMaterial, buildFloor } from "./scene3d.js";
+import { theme } from "./theme.js";
 
 const HOVER = new THREE.Color(0x5b8fd6);     // emissive tints
 const SELECTED = new THREE.Color(0x1d6fd6);
@@ -49,7 +50,8 @@ export function initView() {
   renderer.domElement.setAttribute("role", "img");
 
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xe9ecf0);
+  scene.background = new THREE.Color(theme.color("--watch-bg"));   // the page's theme (app.css)
+  theme.onChange(() => { scene.background.set(theme.color("--watch-bg")); requestRender(); });
   const hemi = new THREE.HemisphereLight(0xffffff, 0x8a8f96, 2.0);
   hemi.position.set(0, 0, 1);                  // sky is +z
   scene.add(hemi);
@@ -113,7 +115,7 @@ export function initView() {
   Object.defineProperty(window.__scrimmage, "scene", {
     configurable: true, enumerable: true,
     get: () => ({ instances: [...built.instances], meshes: built.geoms.length, mounts: built.mounts.length,
-      cg: !!(built.cg && built.cg.visible) }),
+      cg: !!(built.cg && built.cg.visible), background: `#${scene.background.getHexString()}` }),
   });
   window.__scrimmage.screenPos = screenPos;
   window.__scrimmage.frameRobot = frameRobot;

@@ -20,6 +20,7 @@ import * as THREE from "three";
 import { OrbitControls } from "./vendor/OrbitControls.js";
 import { $, h, api, notice } from "./app.js";
 import { meshGeometry, primitive, setPose, geomMaterial } from "./scene3d.js";
+import { theme } from "./theme.js";
 import {
   bench, stageHooks, onBench, render, fieldRow, entries, keysOf, dotted, included, entryOf, shownIdea,
   editOp, redraw, keepTyping, restoreTyping,
@@ -292,7 +293,8 @@ function initView() {
   renderer.domElement.setAttribute("role", "img");
   renderer.domElement.setAttribute("aria-label", "3D view of the idea. Drag to orbit, right-drag to pan, scroll to zoom; click a shape to change it.");
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xe9ecf0);
+  scene.background = new THREE.Color(theme.color("--watch-bg"));   // the page's theme (app.css)
+  theme.onChange(() => { scene.background.set(theme.color("--watch-bg")); requestRender(); });
   const hemi = new THREE.HemisphereLight(0xffffff, 0x8a8f96, 2.0);
   hemi.position.set(0, 0, 1);
   const sun = new THREE.DirectionalLight(0xffffff, 1.6);
@@ -615,6 +617,7 @@ export function initEdit() {
     get boxes() { return built.boxes.map((b) => b.userData.instance); },
     get outlined() { return [...new Set(built.geoms.filter((g) => g.userData.outline && g.userData.outline.visible).map((g) => g.userData.instance))]; },
     screenPos,
+    get background() { return scene ? `#${scene.background.getHexString()}` : null; },
     posOf: (instance) => { const g = built.geoms.find((x) => x.userData.instance === instance); return g ? g.position.toArray() : null; },
   };
   window.addEventListener("keydown", (e) => {

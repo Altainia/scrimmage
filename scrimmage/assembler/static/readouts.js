@@ -125,7 +125,10 @@ export class Plot {
     this.seconds = seconds;
     this.t = [];
     this.v = [];
-    const off = theme.onChange(() => { if (canvas.isConnected) this.draw(); else off(); });
+    let shown = false;     // the canvas has been on the page: once it has left, the listener goes
+    const off = theme.onChange(() => {
+      if (canvas.isConnected) { shown = true; this.draw(); } else if (shown) off();
+    });
   }
 
   clear() {

@@ -110,7 +110,11 @@ export async function trackPanel(stepIndex, step) {
       "aria-label": `Input track: ${cols.axes.length} moving axes, ${cols.lanes.length} button or POV lanes` });
     const ro = new ResizeObserver(() => { if (canvas.isConnected) drawTrack(canvas, res.track, cols); else ro.disconnect(); });
     ro.observe(canvas);
-    const off = theme.onChange(() => { if (canvas.isConnected) drawTrack(canvas, res.track, cols); else off(); });
+    // redrawn in a new theme; dropped once the canvas has been on the page and left it (not before it is put there)
+    let shown = false;
+    const off = theme.onChange(() => {
+      if (canvas.isConnected) { shown = true; drawTrack(canvas, res.track, cols); } else if (shown) off();
+    });
     parts.push(canvas);
     const legend = [...cols.axes].map((name, k) => h("span", { class: "track-key" },
       h("span", { class: "track-swatch", style: `background:var(${COLORS[k % COLORS.length]})` }), name));

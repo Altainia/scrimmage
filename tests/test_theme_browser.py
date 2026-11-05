@@ -1,5 +1,6 @@
 """The Theme setting (System, Light or Dark) in headless Chromium: the Settings menu's row, theme.js and every page
-reader of the theme (Blockly, the Part tab's 3D background, the Test tab's chart), and the radius tokens (L8).
+reader of the theme (Blockly, the 3D views' backgrounds, the Test tab's chart), the light fallback for browsers
+without light-dark(), and the radius tokens (L8).
 
 The fixtures (Chromium lookup, the Server helper) live in tests/test_assembler_browser.py.
 """
@@ -11,7 +12,9 @@ import pytest
 import test_part_browser as part_tests
 import test_test_browser as test_tests
 from scrimmage import settings
-from test_assembler_browser import Server, browser  # noqa: F401  (fixtures)
+from test_assembler_browser import Server, browser, make_page  # noqa: F401  (fixtures)
+from test_bench_browser import make_bench_page  # noqa: F401  (fixture)
+from test_drive_browser import drive_page  # noqa: F401  (fixture)
 
 pytestmark = pytest.mark.browser
 
@@ -226,6 +229,56 @@ def test_the_part_tabs_3d_background_follows_a_switch(browser, tmp_path, monkeyp
         close()
 
 
+WATCH_LIGHT, WATCH_DARK = "#e9ecf0", "#0f141a"     # app.css --watch-bg
+
+
+def _follows(page, hook):
+    """The 3D view whose background `hook` reads goes dark and back with the setting."""
+    assert page.evaluate(hook) == WATCH_LIGHT
+    _save_theme(page, "dark")
+    page.wait_for_function(f"{hook} === {WATCH_DARK!r}")
+    _save_theme(page, "light")
+    page.wait_for_function(f"{hook} === {WATCH_LIGHT!r}")
+
+
+def test_the_assembler_3d_background_follows_a_switch(make_page):
+    page, _ = make_page(None, "--new", "swerve")
+    _follows(page, "__scrimmage.scene.background")
+
+
+def test_the_drive_3d_background_follows_a_switch(drive_page):
+    page = drive_page()
+    page.wait_for_function("__scrimmage.live3d")
+    _follows(page, "__scrimmage.live3d.background")
+
+
+def test_the_bench_3d_background_follows_a_switch(make_bench_page):
+    page = make_bench_page()
+    page.click("#bench-edit")
+    page.wait_for_function("__scrimmageBench.editor && __scrimmageBench.editor.instances.length > 0")
+    _follows(page, "__scrimmageBench.editor.background")
+
+
+# -- browsers without light-dark(): the light theme --------------------------------------------------------------
+def test_without_light_dark_the_page_is_light(open_page):
+    """app.css with its @supports test made false (as in a browser without light-dark()): every token is its light
+    value, even with Dark chosen, and the colors still work."""
+    page = open_page("dark")
+    _choose(page, "dark")
+    assert _bg(page) == DARK_BG
+    page.evaluate("""async () => {
+      const css = await (await fetch('app.css')).text();
+      const old = css.replace('@supports (color: light-dark(#000, #fff))', '@supports (color: no-such-color(1))');
+      if (old === css) throw new Error('no @supports block');
+      document.head.append(Object.assign(document.createElement('style'), { textContent: old }));
+      document.querySelector('link[href="app.css"]').remove();
+    }""")
+    assert page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()") == "#f4f5f7"
+    assert _bg(page) == LIGHT_BG
+    assert page.evaluate("getComputedStyle(document.body).color") == "rgb(31, 35, 40)"      # --text, light
+    assert page.evaluate("T.color('--field-surround')") == "#dfe3e8"
+
+
 # -- the sources: tokens and radii ----------------------------------------------------------------------------------
 def _css() -> str:
     return (STATIC / "app.css").read_text(encoding="utf-8")
@@ -235,14 +288,22 @@ def test_canvas_colors_are_tokens():
     """Every color a script draws with is an app.css token read through theme.color, so it follows the theme. The
     exceptions are data, not theme: the Part tab's body colors and the world's own geom colors (from the model)."""
     tokens = set(re.findall(r"^\s*(--[\w-]+):", _css(), re.M)) | set(re.findall(r";\s*(--[\w-]+):", _css()))
-    allowed = {("part.js", "PALETTE"), ("fieldpick.js", "o.poly"), ("theme.js", ""), ("part3d.js", "|| \"#eef0f3\""),
+    allowed = {("part.js", "PALETTE"), ("fieldpick.js", "o.poly"), ("theme.js", ""),
                ("test_run.js", 'return "#ffffff"')}
+    # three.js colors given as numbers: the selection and marker tints stay as they are in both themes (bright
+    # enough on either background, and the same as the 2D drawings' accents)
+    numeric_allowed = {("view3d.js", "HOVER"), ("view3d.js", "SELECTED"), ("view3d.js", "PICK"), ("view3d.js", "CG"),
+                       ("bench_edit.js", "HOVER"), ("bench_edit.js", "SELECTED"), ("part3d.js", "SELECTED")}
     found = []
     for js in sorted(STATIC.glob("*.js")):
         for n, line in enumerate(js.read_text(encoding="utf-8").splitlines(), 1):
             code = line.split("//")[0]
             if re.search(r"""["'`]#[0-9a-fA-F]{3,8}(?![\w-])|rgba?\(""", code) and \
                     not any(js.name == f and marker in line for f, marker in allowed):
+                found.append(f"{js.name}:{n}: {line.strip()}")
+            three = re.search(r"THREE\.Color\(|setClearColor|\.background\b", code)
+            if three and re.search(r"0x[0-9a-fA-F]{6}", code) and \
+                    not any(js.name == f and re.match(rf"\s*const {marker} =", line) for f, marker in numeric_allowed):
                 found.append(f"{js.name}:{n}: {line.strip()}")
             for name in re.findall(r"""(?:color|\bc|robotColor)\(\s*["'](--[\w-]+)""", code):
                 assert name in tokens, f"{js.name}:{n}: {name} isn't in app.css"
@@ -261,8 +322,18 @@ def test_radii_are_the_three_tokens():
 
 def test_the_dark_values_are_written_once():
     """The tokens hold light-dark(light, dark), and the theme is the root's color-scheme: no second block of dark
-    values to keep in step with the first."""
-    css = _css()
+    values to keep in step with the first. The plain values before it (the fallback where light-dark() doesn't
+    work) are each pair's light half, so the two can't drift."""
+    css = re.sub(r"/\*.*?\*/", "", _css(), flags=re.S)
+    plain = css[css.index(":root {"):css.index("\n}\n", css.index(":root {"))]
+    block = css[css.index("@supports (color: light-dark(#000, #fff)) {"):]
+    block = block[:block.index("\n}\n")]
+    value = r"(?:rgba?\([^)]*\)|[^,()])+?"
+    pairs = re.findall(rf"(--[\w-]+):\s*light-dark\(({value}),\s*{value}\);", block)
+    assert len(pairs) > 60 and "light-dark(" not in plain
+    fallback = dict(re.findall(r"(--[\w-]+):\s*([^;]+);", plain))
+    for name, light in pairs:
+        assert fallback.get(name) == light, name
     assert "prefers-color-scheme: dark) {\n  :root {" not in css
     assert css.count("light-dark(") > 60
     assert ':root[data-theme="light"] { color-scheme: light; }' in css
