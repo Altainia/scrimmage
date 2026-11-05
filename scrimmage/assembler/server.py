@@ -261,7 +261,7 @@ Robot (`/api/robot/*`):
                 where the robot starts and on which field (the fields but 2026 are the Test tab Setup's).
                 range "2026" writes [range] file = "2026" (another range's named start goes), null removes [range]
                 (the plain field); absent keeps the config's (one naming another range keeps it). pose writes
-                [robot] start_pose (x, y in m from the blue corner, rounded to mm; heading in degrees, (-180, 180])
+                [robot] start_pose (x, y in m from the blue corner, rounded to 1 µm; heading in degrees, (-180, 180])
                 and removes [range] start; named writes [range] start and removes start_pose (the loader refuses
                 both); a null pose or named clears the start. keep_pose true (the Test tab's field picker) with
                 named keeps a start_pose still on the field instead of writing named. floor_balls false writes

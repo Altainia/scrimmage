@@ -29,7 +29,7 @@
 // meters), labels: [the field's boxes labeled in it]} while a start is shown}; window.__scrimmage.startPicker = {toScreen(x, y) -> page pixels, value} while the
 // picker is open.
 
-import { $, h, api, edit, post, undo, notice, setTab, store, fmt, select } from "./app.js";
+import { $, h, api, edit, post, undo, notice, setTab, store, fmt, select, showMeasure, readMeasure, measureError } from "./app.js";
 import { units } from "./units.js";
 import { markDirty, clean, onCommit, badNumber } from "./inspector.js";
 import { browseList } from "./start.js";
@@ -630,30 +630,26 @@ async function openPicker() {
     const [xIn, xF, xU] = num("sp-x", "x (from the blue wall)", units.name("field"), null, "field");
     const [yIn, yF, yU] = num("sp-y", "y (from the right side, seen from blue)", units.name("field"), null, "field");
     const [hIn, hF] = num("sp-heading", "facing", "°", "1");
-    // a typed x or y that isn't a field length: what to type instead (OK says it)
-    const typedError = (el) => (el.type === "text" && el.dataset.error) || null;
+    // a box being typed in (its text isn't what it showed): kept across a change of units
+    const typing = (el) => document.activeElement === el && el.value.trim() !== el.dataset.shown;
     const sync = ({ keepTyping = false } = {}) => {
-      for (const [el, k] of [[xIn, "x"], [yIn, "y"]]) {
-        if (keepTyping && document.activeElement === el && el.value.trim() !== el.dataset.shown) continue;
-        el.value = el.dataset.shown = cur[k] === null ? "" : units.shown(cur[k], "field");
-        el.dataset.si = String(cur[k]);
-        delete el.dataset.error;
-      }
+      for (const [el, k] of [[xIn, "x"], [yIn, "y"]]) if (!(keepTyping && typing(el))) showMeasure(el, cur[k], "field");
       hIn.value = fmt(round(cur.heading, 1));
     };
-    // Units changed in another tab or editor while this is open: show the boxes in the new units
+    // Units changed in another tab or editor while this is open: the boxes show the new units. Text being typed in
+    // stays and now means the new units, as in the inspector and the step editor (it is read again here and at OK).
     const offUnits = units.onChange(() => {
       xU.textContent = yU.textContent = units.name("field");
+      const kept = [xIn, yIn].filter(typing);
       sync({ keepTyping: true });
+      for (const el of kept) el.dispatchEvent(new Event("input"));
     });
     for (const [el, k] of [[xIn, "x"], [yIn, "y"], [hIn, "heading"]]) {
       el.addEventListener("input", () => {
         if (el.validity.badInput || el.value.trim() === "") return;
         if (k !== "heading") {
-          // the box back to what it showed: its exact value, not that rounding of it
-          const v = el.value.trim() === el.dataset.shown ? Number(el.dataset.si) : units.parse(el.value, "field");
-          if (typeof v !== "number") { el.dataset.error = v.error; return; }
-          delete el.dataset.error;
+          const v = readMeasure(el, "field");   // not a field length yet: OK says what to type
+          if (typeof v !== "number") return;
           cur[k] = v;
         } else cur[k] = Number(el.value);
         if (k !== "heading" && cur.x !== null && cur.y === null) cur.y = (geo.floor.miny + geo.floor.maxy) / 2;
@@ -801,10 +797,16 @@ async function openPicker() {
         h("button", { type: "submit", id: "sp-ok", class: "btn btn-primary" }, "OK")));
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const bad = [xIn, yIn, hIn].find((el) => el.validity.badInput || typedError(el));
-      if (bad) { showErrors([{ message: typedError(bad) || `${bad.getAttribute("aria-label")} must be a number` }]); bad.focus(); return; }
+      if (hIn.validity.badInput) { showErrors([{ message: `${hIn.getAttribute("aria-label")} must be a number` }]); hIn.focus(); return; }
+      // x and y as their boxes say now (an empty box keeps the picked value)
+      for (const [el, k] of [[xIn, "x"], [yIn, "y"]]) {
+        const v = readMeasure(el, "field");
+        if (measureError(v)) { showErrors([{ message: measureError(v) }]); el.focus(); return; }
+        if (v !== null) cur[k] = v;
+      }
       if (cur.x === null || cur.y === null || !placed) { showErrors([{ message: "Click the field where the robot starts first." }]); return; }
-      if (await apply({ pose: [round(cur.x, 3), round(cur.y, 3), round(normDeg(cur.heading), 1)] })) finish(true);
+      // to 1 µm: fine enough that a typed 11.5 ft (3.5052 m) reads back as typed, coarse enough for no float noise
+      if (await apply({ pose: [round(cur.x, 6), round(cur.y, 6), round(normDeg(cur.heading), 1)] })) finish(true);
     });
     d.replaceChildren(form);
     layout(); renderTop(); sync(); draw();
@@ -952,6 +954,7 @@ export function showCode(on) {
 export function initCode() {
   window.__scrimmage.code = { get state() { return code.state; }, get devices() { return code.devices; }, get picking() { return !!picking; },
     picture: null, show: () => showCode(true), showDevices };
+  units.onChange(() => render());   // the Exact position line (the battery boxes keep what is being typed)
   $("#center-3d").addEventListener("click", () => showCode(false));
   $("#center-code").addEventListener("click", () => showCode(true));
   $(".center-switch").addEventListener("keydown", (e) => {

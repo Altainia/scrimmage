@@ -9,7 +9,7 @@
 // world geoms, axes); the Drive tab's mini-field (minifield.js) and the robot code panel's start picker (code.js)
 // draw with them too, the start picker also with drawSides (the plain red / blue field) and robotFootprint.
 
-import { h, api, fmt } from "./app.js";
+import { h, api, fmt, showMeasure, readMeasure, measureError } from "./app.js";
 import { units } from "./units.js";
 import { sc } from "./scenario.js";
 
@@ -282,10 +282,7 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
   const FIELD_KEYS = new Set(["x", "y", "tol_xy"]);
   const fieldUnits = [];   // the field-length unit labels, renamed when the setting changes
   const show = (el, k) => {
-    if (!FIELD_KEYS.has(k)) { el.value = cur[k] === null ? "" : fmt(cur[k]); return; }
-    el.value = el.dataset.shown = cur[k] === null ? "" : units.shown(cur[k], "field");
-    el.dataset.si = String(cur[k]);
-    delete el.dataset.error;
+    if (FIELD_KEYS.has(k)) showMeasure(el, cur[k], "field"); else el.value = cur[k] === null ? "" : fmt(cur[k]);
   };
   const box = (k, label, unit, placeholder) => {
     const kind = FIELD_KEYS.has(k) ? "field" : null;
@@ -295,10 +292,8 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
     el.addEventListener("input", () => {
       if (el.validity.badInput) return;
       const t = el.value.trim();
-      if (!kind || t === "") { cur[k] = t === "" ? null : Number(t); delete el.dataset.error; draw(); return; }
-      const v = t === el.dataset.shown && el.dataset.si !== "null" ? Number(el.dataset.si) : units.parse(t, kind);
-      if (typeof v !== "number") { el.dataset.error = v.error; return; }
-      delete el.dataset.error;
+      const v = !kind ? (t === "" ? null : Number(t)) : readMeasure(el, kind);
+      if (measureError(v)) return;   // not a field length yet: OK says what to type
       cur[k] = v;
       draw();
     });
@@ -309,12 +304,14 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
   const [xIn, xF] = box("x", "x"), [yIn, yF] = box("y", "y"), [hIn, hF] = box("heading", "heading", "°", "none");
   const [txIn, txF] = box("tol_xy", "tol_xy", null, units.shown(DEFAULT_TOL_XY, "field", 0)), [thIn, thF] = box("tol_heading", "tol_heading", "°", String(DEFAULT_TOL_H));
   const syncBoxes = () => { show(xIn, "x"); show(yIn, "y"); show(hIn, "heading"); };
-  // Units changed in another tab or editor while this is open: the boxes and labels follow (not one being typed in)
+  // Units changed in another tab or editor while this is open: the boxes and labels follow. Text being typed in
+  // stays and now means the new units, as in the inspector and the step editor (it is read again here and at OK).
   const offUnits = units.onChange(() => {
     for (const u of fieldUnits) u.textContent = units.name("field");
     txIn.placeholder = units.shown(DEFAULT_TOL_XY, "field", 0);
     for (const [el, k] of [[xIn, "x"], [yIn, "y"], [txIn, "tol_xy"]]) {
-      if (document.activeElement !== el || el.value.trim() === el.dataset.shown) show(el, k);
+      if (document.activeElement === el && el.value.trim() !== el.dataset.shown) el.dispatchEvent(new Event("input"));
+      else show(el, k);
     }
     draw();
   });
@@ -458,12 +455,19 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
     h("div", { class: "dialog-actions" }, h("button", { type: "button", id: "fp-cancel", class: "btn", onclick: close }, "Cancel"), ok));
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    const bad = [xIn, yIn, hIn, txIn, thIn].find((el) => el.validity.badInput || el.dataset.error);
-    if (bad) { err.textContent = bad.dataset.error || `${bad.getAttribute("aria-label")} must be a number`; err.hidden = false; bad.focus(); return; }
+    const bad = [hIn, thIn].find((el) => el.validity.badInput);
+    if (bad) { err.textContent = `${bad.getAttribute("aria-label")} must be a number`; err.hidden = false; bad.focus(); return; }
+    // x, y and tol_xy as their boxes say now
+    for (const [el, k] of [[xIn, "x"], [yIn, "y"], [txIn, "tol_xy"]]) {
+      const v = readMeasure(el, "field");
+      if (measureError(v)) { err.textContent = measureError(v); err.hidden = false; el.focus(); return; }
+      cur[k] = v;
+    }
     const next = { ...spec };
     for (const k of KEYS) {
       if (cur[k] === null) delete next[k];
-      else next[k] = k === "heading" || k === "tol_heading" ? round(cur[k], 2) : round(cur[k], 4);
+      // lengths to 1 µm: a typed 6.55 ft (1.99644 m) reads back as typed, with no float noise in the file
+      else next[k] = k === "heading" || k === "tol_heading" ? round(cur[k], 2) : round(cur[k], 6);
     }
     close();
     if (JSON.stringify(next) !== JSON.stringify(spec)) setSpec(next);

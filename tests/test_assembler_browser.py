@@ -548,11 +548,32 @@ def test_the_field_picker_shows_and_takes_the_chosen_units(scenario_page):
     v = page.evaluate("__scrimmage.scenario.state.version")
     page.click("#fp-ok")
     page.wait_for_function(f"__scrimmage.scenario.state.version === {v + 1}")
-    spec = page.evaluate("__scrimmage.scenario.state.steps[1].checks[1].spec")
-    assert spec["x"] == 1.9812 and spec["tol_xy"] == 0.3048
-    page.click("[data-key='pick-1-1']")
-    page.wait_for_selector("#field-dialog[open]")
+    spec = lambda: page.evaluate("__scrimmage.scenario.state.steps[1].checks[1].spec")  # noqa: E731
+    assert spec()["x"] == 1.9812 and spec()["tol_xy"] == 0.3048
+
+    def pick():
+        page.click("[data-key='pick-1-1']")
+        page.wait_for_selector("#field-dialog[open]")
+
+    def ok():
+        v = page.evaluate("__scrimmage.scenario.state.version")
+        page.click("#fp-ok")
+        page.wait_for_function(f"__scrimmage.scenario.state.version === {v + 1}")
+    pick()
     assert page.input_value("#fp-x") == "6.5"
+    page.fill("#fp-x", "6.55")                           # reads back as typed, not as the saved meters rounded
+    ok()
+    assert spec()["x"] == 1.99644
+    pick()
+    assert page.input_value("#fp-x") == "6.55"
+    # Units changes while a box is half typed: the text stays and means the new units (as in the inspector)
+    page.fill("#fp-x", "6.5")
+    page.focus("#fp-x")
+    page_units(page, "metric")
+    page.wait_for_function("document.querySelector(\"label[for='fp-x'] .unit\").textContent === 'm'")
+    assert page.input_value("#fp-x") == "6.5" and page.input_value("#fp-tol-xy") == "0.3048"
+    ok()
+    assert spec()["x"] == 6.5 and spec()["tol_xy"] == 0.3048
 
 
 def test_scenario_run_fail_fix_with_field_picker_then_pass(scenario_page):
@@ -1001,6 +1022,7 @@ def test_the_inspector_shows_and_takes_the_chosen_units(make_page):
     assert page.input_value("#insp-pos-2") == _shown(0.12, "length", "imperial")
     assert page.inner_text('[data-field="elevator/pos"] .field-label .unit').strip() == "in"
     assert page.get_attribute('#inspector [aria-label^="Increase z by"]', "aria-label") == "Increase z by 0.25 in"
+    assert page.get_attribute("#insp-pos-0", "aria-label") == "Offset x (inches)"
     assert page.inner_text("#mass").endswith(" lb")
     # a typed offset in inches is saved in meters; the boxes not changed keep the file's exact values
     v = page.evaluate("__scrimmage.state.version")
@@ -1026,6 +1048,7 @@ def test_the_inspector_shows_and_takes_the_chosen_units(make_page):
     assert page.inner_text('[data-field="elevator/pos"] .field-label .unit').strip() == "mm"
     assert page.inner_text("#mass").endswith(" kg")
     assert page.get_attribute('#inspector [aria-label^="Increase z by"]', "aria-label") == "Increase z by 10 mm"
+    assert page.get_attribute("#insp-pos-0", "aria-label") == "Offset x (millimeters)"
     v = page.evaluate("__scrimmage.state.version")
     page.keyboard.press("Enter")                                 # the kept text is now millimeters
     page.wait_for_function(f"__scrimmage.state.version > {v}")

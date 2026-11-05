@@ -5,7 +5,7 @@
 // field ids), so errors and warnings render beside it; placeErrors returns the ones that have no field here.
 
 import { $, h, edit, store, stockMeta, folderMeta, attachGroups, fillAttachSelect, fmt, UNIT, mountsOf, notice,
-  showMeasure, readMeasure, measureError } from "./app.js";
+  showMeasure, readMeasure, measureError, lengthWords } from "./app.js";
 import { units } from "./units.js";
 
 const NUDGE = { pos: { imperial: 0.00635, metric: 0.01 }, rot: 5 };   // 1/4 in or 10 mm; 5 degrees
@@ -243,7 +243,7 @@ function vecInputs(n, key, value) {
   const inputs = [];
   const cells = axes.map((ax, i) => {
     const id = `insp-${key}-${i}`;
-    const inp = numberInput(id, `${key}:${i}`, (value || [0, 0, 0])[i], { kind, label: `${key === "pos" ? "Offset" : "Rotation"} ${ax} (${key === "pos" ? u : "degrees"})` });
+    const inp = numberInput(id, `${key}:${i}`, (value || [0, 0, 0])[i], { kind, label: `${key === "pos" ? "Offset" : "Rotation"} ${ax} (${key === "pos" ? lengthWords() : "degrees"})` });
     inputs.push(inp);
     const nudge = (sign) => h("button", {
       type: "button", class: "nudge", "aria-label": `${sign > 0 ? "Increase" : "Decrease"} ${ax} by ${step}`,

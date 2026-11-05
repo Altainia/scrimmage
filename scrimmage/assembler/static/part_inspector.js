@@ -25,7 +25,7 @@
 // over the view and Esc (or Cancel) stops it. "Try it" only moves the drawing (part.tryit): it never makes an edit.
 // Points and axes go to the server in CAD coordinates; part_frame.js converts them from and to the robot frame.
 
-import { h, api, notice, DEFAULT_GRIP } from "./app.js";
+import { h, api, notice, DEFAULT_GRIP, lengthWords } from "./app.js";
 import { part, view3d, addSection, editOp, select, render, live, field, box, number, matLabel, kg, cog, expectBody,
   onPart, measure, shownMeasure, boxMeasure } from "./part.js";
 import { units } from "./units.js";
@@ -256,9 +256,6 @@ const why = (data) => sentence((data.errors && data.errors[0] && data.errors[0].
 const fmtNum = (x, digits = 3) => (typeof x === "number" && isFinite(x) ? String(+x.toFixed(digits)) : "");
 // A weight box's placeholder: the weight it has now, to three significant digits in the chosen units
 const placeholderMass = (m) => (typeof m === "number" && isFinite(m) ? String(+units.toDisplay(m, "mass").toPrecision(3)) : "");
-// The length unit in words, for a hint ("in inches")
-const LENGTH_WORDS = { in: "inches", mm: "millimeters" };
-const lengthWords = () => LENGTH_WORDS[units.name("length")] || units.name("length");
 // Plugin mode: say on a field whether its value was changed here (in scrimmage-edits.toml) or comes from the CAD
 // plugin (the state's body.changed lists the overlay's keys), as data-from="here" | "plugin" and a line.
 function origin(c, b, keys, row) {

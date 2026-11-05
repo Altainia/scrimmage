@@ -506,6 +506,9 @@ export function readMeasure(el, kind) {
   return units.parse(t, kind);
 }
 export const measureError = (v) => (v !== null && typeof v === "object" ? v.error : null);
+// The length unit in words, for a hint or an aria label ("in inches", "Offset x (millimeters)")
+const LENGTH_WORDS = { in: "inches", mm: "millimeters" };
+export const lengthWords = () => LENGTH_WORDS[units.name("length")] || units.name("length");
 
 // A Grip picker's entry for a pad with no grip set (the Part and Test tabs; scrimmage/blocks/run.py DEFAULT_GRIP_NOTE)
 export const DEFAULT_GRIP = "Default — 1.0 (MuJoCo's default; the larger of pad and piece applies)";
