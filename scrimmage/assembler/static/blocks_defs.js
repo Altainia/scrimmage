@@ -19,11 +19,26 @@
 //   placeOf(ws) / incomplete(ws)   block -> its place ([i, j, ...] as problems() gives them); the blocks that can't be
 //                                  saved yet (an empty condition socket) or aren't joined to the test
 //   headOf(ws) / setHead(ws, p)    the test's header (robot, hooks, ...) as workspaceToTest writes it / changed
-//   sweepNumber(block)             the block's number a sweep can try ({key, field, unit}: scrimmage/blocks/sweep.py's
-//                                  block keys), or null
+//   sweepNumber(block)             the block's number a sweep can try ({key, field, unit, scale}: scrimmage/blocks/
+//                                  sweep.py's block keys; scale: the file's unit per shown unit), or null
+//   showUnits(ws, from)            shows every block's lengths and pressures again after a Units change (`from`: the
+//                                  system they were shown in)
 //
 // A block keeps the settings it has no box for (a move's timeout, a repeat until's max, a drive's volts) in
 // `block.data`, so the round trip test -> workspace -> test is exact.
+//
+// Lengths and pressures show in the Units setting (static/units.js), while the test file keeps its own units (spec
+// U4): a block's `unit` ("deg", "in" or "m"; a joint's length is a robot length, shown in in or mm), the `_in` keys
+// (inches), the pressure check's psi, and a drive's distance in meters (a field length: ft or m).
+//   - Loading, each number is shown converted, and block.data's DISPLAY keeps the file's number and unit beside
+//     what was shown. Saving, a number still showing that writes the file's own number and unit back, so a test
+//     nobody edited is written as it was, byte for byte.
+//   - A number typed is written in the file's unit: an `_in` key typed as 101.6 mm writes 4. A move or a joint check
+//     keeps the length unit its file had ("m" stays meters, shown in in or mm); one that had none (new, or turned
+//     from degrees) gets the system's, "in" in Imperial and "m" in Metric. Each is rounded to a millionth of its unit
+//     (1 µm in meters).
+
+import { units } from "./units.js";
 
 export const STYLES = { move: "move_blocks", wait: "wait_blocks", repeat: "repeat_blocks", check: "check_blocks" };
 const COND = "Condition";
@@ -109,7 +124,8 @@ const OPTIONS = {
 };
 const TURNS = [["left", "left"], ["right", "right"]];
 const HOPPER_SIDES = [["or more", "at_least"], ["or fewer", "at_most"]];
-const UNITS = [["°", "deg"], ["in", "in"], ["m", "m"]];
+const LEN = "len";      // the UNIT picker's length (the file's own length unit is kept in block.data's DISPLAY)
+const UNITS = () => [["°", "deg"], [units.name("length"), LEN]];
 const SIDES = [["above", "above"], ["below", "below"]];
 const CYLINDER_TO = [["extend", "extend"], ["retract", "retract"], ["off", "off"]];
 const CYLINDER_IS = [["extended", "extended"], ["retracted", "retracted"]];
@@ -126,20 +142,124 @@ function fitUnit(unitField) {
     if (loading || !block) return value;
     const j = (pal().joints || []).find((x) => x.name === value);
     const unit = block.getFieldValue(unitField);
-    if (j && j.unit === "in" && unit === "deg") block.setFieldValue("in", unitField);
+    if (j && j.unit === "in" && unit === "deg") block.setFieldValue(LEN, unitField);
     if (j && j.unit === "deg" && unit !== "deg") block.setFieldValue("deg", unitField);
     return value;
   };
 }
 
-// An element check's validator: the unit shown follows the element picked (° for a hinged one, in for a sliding one;
-// nothing for a name the field doesn't have).
-const UNIT_TEXT = { deg: "°", in: "in", m: "m" };
+// An element check's validator: the unit shown follows the element picked (° for a hinged one, in or mm for a
+// sliding one; nothing for a name the field doesn't have).
+const movingElement = (name) => (pal().moving_elements || []).find((x) => x.name === name) || null;
+const sliding = (name) => { const e = movingElement(name); return !!e && e.unit === "in"; };
 function elementUnit(value) {
   const block = this.getSourceBlock();
-  const e = (pal().moving_elements || []).find((x) => x.name === value);
-  if (block && block.getField("UNIT")) block.setFieldValue(e ? UNIT_TEXT[e.unit] : "", "UNIT");
+  const e = movingElement(value);
+  if (block && block.getField("UNIT")) block.setFieldValue(e ? (e.unit === "deg" ? "°" : units.name("length")) : "", "UNIT");
   return value;
+}
+
+// -- display units (see the top) ----------------------------------------------------------------------------------------
+const DISPLAY = "_display";     // block.data's {field: {file, unit, shown, system}}: the file's number as loaded
+const FILE_SI = { in: 0.0254, m: 1, psi: 6894.757293168361 };     // the SI value of one of a test file's units
+const label = (name) => ({ type: "field_label", name, text: "" });
+// The numbers a block shows in the Units setting, by block type: field -> {kind, unit: the file's (null: the UNIT
+// picker's), label: the field_label naming the shown unit, min/max in the file's unit, json(a) / on(b): whether
+// the number is a length (or pressure) in the block's JSON / on the block now, else it is shown as it is}.
+const MEASURES = {
+  move: { TO: { kind: "length", unit: null, json: (a) => a.unit !== "deg", on: (b) => b.getFieldValue("UNIT") === LEN } },
+  drive: { AMOUNT: { kind: "field", unit: "m", json: (a) => !("seconds" in a), on: (b) => b.getFieldValue("WHAT") === "distance" } },
+  cond_joint: { VALUE: { kind: "length", unit: null, json: (a) => a.unit !== "deg", on: (b) => b.getFieldValue("UNIT") === LEN } },
+  cond_seated: { DEPTH: { kind: "length", unit: "in", label: "DEPTH_UNIT" } },
+  cond_pressure: { PSI: { kind: "pressure", unit: "psi", label: "PSI_UNIT" } },
+  cond_element: { VALUE: { kind: "length", unit: "in", json: (a) => sliding(a.element), on: (b) => sliding(b.getFieldValue("ELEMENT")) } },
+  cond_clears: { CLEAR: { kind: "length", unit: "in", label: "CLEAR_UNIT", min: 0.1, max: 19.6 } },
+  cond_partner_lifted: { LIFT: { kind: "length", unit: "in", label: "LIFT_UNIT", min: 0.1 } },
+  cond_partner_moved: { MOVED: { kind: "length", unit: "in", label: "MOVED_UNIT", min: 0.1 } },
+};
+// A new block's number in each system (the palette's), [imperial, metric]: round numbers in the units shown
+const DEFAULTS = { drive: { AMOUNT: [1, 0.3] }, cond_seated: { DEPTH: [3, 75] }, cond_pressure: { PSI: [60, 400] },
+  cond_clears: { CLEAR: [2, 50] }, cond_partner_lifted: { LIFT: [2, 50] }, cond_partner_moved: { MOVED: [6, 150] } };
+const systemDefaults = (type) => Object.fromEntries(Object.entries(DEFAULTS[type] || {})
+  .map(([f, [imperial, metric]]) => [f, units.system === "metric" ? metric : imperial]));
+
+function dataOf(b) {
+  try { return b.data ? JSON.parse(b.data) : {}; } catch { return {}; }
+}
+const factor = (kind, system) => (units.table ? units.table.units[system][kind].factor : 1);
+const shownOf = (file, unit, kind) => Number(units.shown(file * FILE_SI[unit], kind));
+const lengthUnit = (system) => (system === "metric" ? "m" : "in");
+
+// A measured field's number for the file, {value, unit}: the file's own while the block still shows what it loaded
+// (in `system`, the units it is shown in), else what is shown in the file's unit; a number that isn't a length now
+// (degrees, seconds, a hinged element) as it is.
+function stored(b, field, system = units.system) {
+  const m = MEASURES[b.type][field];
+  const v = b.getFieldValue(field);
+  if (m.on && !m.on(b)) return { value: v, unit: m.unit === null ? "deg" : m.unit };
+  const memo = (dataOf(b)[DISPLAY] || {})[field];
+  if (memo && memo.system === system && memo.shown === v) return { value: memo.file, unit: memo.unit };
+  const unit = m.unit || (memo ? memo.unit : lengthUnit(system));
+  return { value: Number((v / factor(m.kind, system) / FILE_SI[unit]).toFixed(6)), unit };
+}
+
+// Block state (testToWorkspace's) with its measured numbers shown in the Units setting, and DISPLAY kept.
+function showState(st, a) {
+  const ms = MEASURES[st.type];
+  if (!ms) return st;
+  const memo = {};
+  for (const [field, m] of Object.entries(ms)) {
+    const file = st.fields[field];
+    if ((m.json && !m.json(a)) || typeof file !== "number" || !isFinite(file)) continue;
+    const unit = m.unit || a.unit;
+    st.fields[field] = shownOf(file, unit, m.kind);
+    memo[field] = { file, unit, shown: st.fields[field], system: units.system };
+  }
+  if (Object.keys(memo).length) st.data = JSON.stringify({ ...(st.data ? JSON.parse(st.data) : {}), [DISPLAY]: memo });
+  return st;
+}
+
+// A block's unit labels, limits and pickers as the Units setting names them.
+function unitLabels(b) {
+  for (const [field, m] of Object.entries(MEASURES[b.type] || {})) {
+    if (m.label) b.getField(m.label).setValue(units.name(m.kind));
+    const f = b.getField(field);
+    const shown = (x) => +(x * FILE_SI[m.unit] * factor(m.kind, units.system)).toPrecision(6);
+    if (m.min !== undefined) f.setMin(shown(m.min));
+    if (m.max !== undefined) f.setMax(shown(m.max));
+  }
+  for (const name of ["UNIT", "WHAT"]) {      // a picker whose words come from the setting: its shown words again
+    const f = b.getField(name);
+    if (!f || !(f instanceof window.Blockly.FieldDropdown)) continue;
+    const v = f.getValue();
+    f.selectedOption = f.getOptions(false).find((o) => o[1] === v) || f.selectedOption;
+    f.forceRerender();
+  }
+  if (b.type === "cond_element") elementUnit.call(b.getField("ELEMENT"), b.getFieldValue("ELEMENT"));
+}
+
+export function showUnits(ws, from) {
+  const B = window.Blockly;
+  B.Events.disable();
+  try {
+    for (const b of ws.getAllBlocks(false)) {
+      const ms = MEASURES[b.type];
+      if (ms) {
+        const data = dataOf(b), memo = {};
+        const now = Object.entries(ms).filter(([, m]) => !m.on || m.on(b)).map(([field, m]) => [field, m, stored(b, field, from)]);
+        unitLabels(b);
+        for (const [field, m, { value, unit }] of now) {
+          memo[field] = { file: value, unit, shown: shownOf(value, unit, m.kind), system: units.system };
+          b.setFieldValue(memo[field].shown, field);
+        }
+        if (Object.keys(memo).length) data[DISPLAY] = memo; else delete data[DISPLAY];
+        b.data = Object.keys(data).length ? JSON.stringify(data) : null;
+      } else unitLabels(b);
+    }
+  } finally {
+    B.Events.enable();
+  }
+  ws.clearUndo();       // its steps hold numbers in the old units
 }
 
 // A sensor check reads "sensor mouth is on" for a beam break or distance sensor, and "sensor eye is seeing red" (or
@@ -178,19 +298,19 @@ const KINDS = {
     def: { message0: "move %1 to %2 %3", args0: [dd("JOINT", OPTIONS.moveJoint), num("TO", 40), dd("UNIT", UNITS)],
       style: STYLES.move, ...stmt, tooltip: "Drive a joint to this position and wait until it gets there." },
     keys: ["joint", "to", "unit"],
-    fields: (a) => ({ JOINT: a.joint, TO: a.to, UNIT: a.unit }),
-    args: (b) => ({ joint: b.getFieldValue("JOINT"), to: b.getFieldValue("TO"), unit: b.getFieldValue("UNIT") }),
+    fields: (a) => ({ JOINT: a.joint, TO: a.to, UNIT: a.unit === "deg" ? "deg" : LEN }),
+    args: (b) => { const to = stored(b, "TO"); return { joint: b.getFieldValue("JOINT"), to: to.value, unit: to.unit }; },
     init(b) { b.getField("JOINT").setValidator(fitUnit("UNIT")); },
   },
   drive: {
     def: { message0: "drive %1 %2 %3",
-      args0: [dd("DIR", OPTIONS.heading), num("AMOUNT", 0.3), dd("WHAT", [["m", "distance"], ["s", "seconds"]])],
+      args0: [dd("DIR", OPTIONS.heading), num("AMOUNT", 1), dd("WHAT", () => [[units.name("field"), "distance"], ["s", "seconds"]])],
       style: STYLES.move, ...stmt, tooltip: "Drive the robot this far, or for this long. Forward with a minus distance drives back." },
     keys: ["distance", "seconds", "direction"],
     fields: (a) => ({ DIR: a.direction || "forward",
       ...("seconds" in a ? { AMOUNT: a.seconds, WHAT: "seconds" } : { AMOUNT: a.distance, WHAT: "distance" }) }),
     // forward is what no direction means: only the others are written (a file that says forward keeps it, from block.data)
-    args: (b) => ({ [b.getFieldValue("WHAT")]: b.getFieldValue("AMOUNT"),
+    args: (b) => ({ [b.getFieldValue("WHAT")]: stored(b, "AMOUNT").value,
       ...(b.getFieldValue("DIR") === "forward" ? {} : { direction: b.getFieldValue("DIR") }) }),
     extra: (a) => (a.direction === "forward" ? { direction: "forward" } : {}),
     drop: (b) => (b.getFieldValue("WHAT") === "seconds" ? ["timeout"] : []),   // a timeout only goes with a distance
@@ -304,10 +424,9 @@ const CONDS = {
   joint: {
     def: { message0: "%1 %2 %3 %4", args0: [dd("NAME", OPTIONS.joint), dd("SIDE", SIDES), num("VALUE", 40), dd("UNIT", UNITS)],
       tooltip: "Where a joint is." },
-    fields: (a) => ("above" in a ? { NAME: a.name, SIDE: "above", VALUE: a.above, UNIT: a.unit }
-      : { NAME: a.name, SIDE: "below", VALUE: a.below, UNIT: a.unit }),
-    json: (b) => ({ joint: { name: b.getFieldValue("NAME"), [b.getFieldValue("SIDE")]: b.getFieldValue("VALUE"),
-      unit: b.getFieldValue("UNIT") } }),
+    fields: (a) => ({ NAME: a.name, ...("above" in a ? { SIDE: "above", VALUE: a.above } : { SIDE: "below", VALUE: a.below }),
+      UNIT: a.unit === "deg" ? "deg" : LEN }),
+    json: (b) => { const v = stored(b, "VALUE"); return { joint: { name: b.getFieldValue("NAME"), [b.getFieldValue("SIDE")]: v.value, unit: v.unit } }; },
     init(b) { b.getField("NAME").setValidator(fitUnit("UNIT")); },
   },
   piece_in: {
@@ -329,12 +448,12 @@ const CONDS = {
     json: (b) => ({ rests_on: { piece: b.getFieldValue("PIECE"), on: b.getFieldValue("ON") } }),
   },
   seated: {
-    def: { message0: "%1 is seated at least %2 in on %3",
-      args0: [dd("PIECE", OPTIONS.piece), num("DEPTH", 3, { min: 0 }), dd("ON", OPTIONS.rod)],
-      tooltip: "A game piece with a hole is on a rod, its hole passed over the rod's tip by at least this many inches." },
+    def: { message0: "%1 is seated at least %2 %3 on %4",
+      args0: [dd("PIECE", OPTIONS.piece), num("DEPTH", 3, { min: 0 }), label("DEPTH_UNIT"), dd("ON", OPTIONS.rod)],
+      tooltip: "A game piece with a hole is on a rod, its hole passed over the rod's tip by at least this much." },
     fields: (a) => ({ PIECE: a.piece, DEPTH: a.at_least_in, ON: a.on }),
     json: (b) => ({ seated: { piece: b.getFieldValue("PIECE"), on: b.getFieldValue("ON"),
-      at_least_in: b.getFieldValue("DEPTH") } }),
+      at_least_in: stored(b, "DEPTH").value } }),
   },
   hanging_from: {
     def: { message0: "hanging from %1", args0: [dd("BAR", OPTIONS.bar)],
@@ -376,18 +495,19 @@ const CONDS = {
     json: (b) => ({ cylinder: { cylinder: b.getFieldValue("CYLINDER"), is: b.getFieldValue("IS") } }),
   },
   pressure: {
-    def: { message0: "%1 air pressure %2 %3 psi", args0: [dd("AIR", AIR_SIDES), dd("SIDE", SIDES), num("PSI", 60, { min: 0 })],
+    def: { message0: "%1 air pressure %2 %3 %4",
+      args0: [dd("AIR", AIR_SIDES), dd("SIDE", SIDES), num("PSI", 60, { min: 0 }), label("PSI_UNIT")],
       tooltip: "The air pressure in the tanks (stored), or after the regulator, which the cylinders get (working)." },
     fields: (a) => ({ AIR: a.side || "stored", ...("above" in a ? { SIDE: "above", PSI: a.above } : { SIDE: "below", PSI: a.below }) }),
-    json: (b) => ({ pressure: { side: b.getFieldValue("AIR"), [b.getFieldValue("SIDE")]: b.getFieldValue("PSI") } }),
+    json: (b) => ({ pressure: { side: b.getFieldValue("AIR"), [b.getFieldValue("SIDE")]: stored(b, "PSI").value } }),
   },
   element: {
     def: { message0: "%1 is %2 %3 %4",
       args0: [dd("ELEMENT", OPTIONS.moving), dd("SIDE", SIDES), num("VALUE", 10), { type: "field_label", name: "UNIT", text: "" }],
       tooltip: "Where a moving part of the field is: how far a hinged one has swung (degrees) or a sliding one has "
-        + "moved (inches), from where it rests." },
+        + "moved, from where it rests." },
     fields: (a) => ({ ELEMENT: a.element, ...("above" in a ? { SIDE: "above", VALUE: a.above } : { SIDE: "below", VALUE: a.below }) }),
-    json: (b) => ({ element: { element: b.getFieldValue("ELEMENT"), [b.getFieldValue("SIDE")]: b.getFieldValue("VALUE") } }),
+    json: (b) => ({ element: { element: b.getFieldValue("ELEMENT"), [b.getFieldValue("SIDE")]: stored(b, "VALUE").value } }),
     init(b) {
       const f = b.getField("ELEMENT");
       f.setValidator(elementUnit);
@@ -395,22 +515,24 @@ const CONDS = {
     },
   },
   clears: {
-    def: { message0: "robot clears %1 by at least %2 in",
-      args0: [dd("ELEMENT", OPTIONS.cleared), num("CLEAR", 2, { min: 0.1, max: 19.6 })],
-      tooltip: "Nothing on the robot comes closer to this part of the field than this many inches (measured out to "
-        + "about 20 in)." },
+    def: { message0: "robot clears %1 by at least %2 %3",
+      args0: [dd("ELEMENT", OPTIONS.cleared), num("CLEAR", 2), label("CLEAR_UNIT")] },
     fields: (a) => ({ ELEMENT: a.element, CLEAR: a.at_least_in }),
-    json: (b) => ({ clears: { element: b.getFieldValue("ELEMENT"), at_least_in: b.getFieldValue("CLEAR") } }),
+    json: (b) => ({ clears: { element: b.getFieldValue("ELEMENT"), at_least_in: stored(b, "CLEAR").value } }),
+    init(b) {
+      b.setTooltip(() => "Nothing on the robot comes closer to this part of the field than this (measured out to about "
+        + `${units.fmt(20 * FILE_SI.in, "length")}).`);
+    },
   },
   partner_lifted: {
-    def: { message0: "partner is lifted at least %1 in %2 level within %3 %4",
-      args0: [num("LIFT", 2, { min: 0.1 }), { type: "field_checkbox", name: "LEVEL", checked: false },
+    def: { message0: "partner is lifted at least %1 %2 %3 level within %4 %5",
+      args0: [num("LIFT", 2), label("LIFT_UNIT"), { type: "field_checkbox", name: "LEVEL", checked: false },
         num("WITHIN", 5, { min: 0.1 }), { type: "field_label", name: "DEG", text: "°" }],
       tooltip: "The partner robot's lowest corner is at least this high above where it rested. Tick level within to "
         + "also want it tilted no more than that many degrees." },
     fields: (a) => ({ LIFT: a.at_least_in, LEVEL: a.level_within_deg != null,
       ...(a.level_within_deg != null ? { WITHIN: a.level_within_deg } : {}) }),
-    json: (b) => ({ partner_lifted: { at_least_in: b.getFieldValue("LIFT"),
+    json: (b) => ({ partner_lifted: { at_least_in: stored(b, "LIFT").value,
       ...(b.getFieldValue("LEVEL") === "TRUE" ? { level_within_deg: b.getFieldValue("WITHIN") } : {}) } }),
     init(b) {
       const f = b.getField("LEVEL");
@@ -419,10 +541,10 @@ const CONDS = {
     },
   },
   partner_moved: {
-    def: { message0: "partner moved at least %1 in", args0: [num("MOVED", 6, { min: 0.1 })],
+    def: { message0: "partner moved at least %1 %2", args0: [num("MOVED", 6), label("MOVED_UNIT")],
       tooltip: "The partner robot's center has gone at least this far across the floor from where it rested." },
     fields: (a) => ({ MOVED: a.at_least_in }),
-    json: (b) => ({ partner_moved: { at_least_in: b.getFieldValue("MOVED") } }),
+    json: (b) => ({ partner_moved: { at_least_in: stored(b, "MOVED").value } }),
   },
   sensor: {
     def: { message0: "sensor %1 %2 %3 %4",
@@ -483,10 +605,15 @@ export function defineBlocks(namesFn) {
   }
   B.defineBlocksWithJsonArray(defs);
   // the joint pickers' validators (JSON can't carry a function)
+  // and the unit labels and limits of the blocks with a length or pressure (before a block's numbers are set)
   for (const [type, k] of [...Object.entries(KINDS), ...Object.entries(CONDS).map(([n, c]) => [condType(n), c])]) {
-    if (!k.init) continue;
+    if (!k.init && !MEASURES[type]) continue;
     const base = B.Blocks[type].init;
-    B.Blocks[type].init = function () { base.call(this); k.init(this); };
+    B.Blocks[type].init = function () {
+      base.call(this);
+      if (MEASURES[type]) unitLabels(this);
+      if (k.init) k.init(this);
+    };
   }
 }
 
@@ -497,9 +624,12 @@ export function toolbox(p) {
   const touchOk = has([...(p.hooks || []), ...(p.parts || []), ...(p.bodies || [])])
     && has([...(p.bars || []), ...(p.elements || []), ...(p.pieces || []), ...(p.targets || [])]);
   const cond = (kind, fields = {}) => ({ block: { type: condType(kind), fields } });
+  const item = (type, extra = {}) => {
+    const fields = systemDefaults(type);
+    return { kind: "block", type, ...(Object.keys(fields).length ? { fields } : {}), ...extra };
+  };
   const waitCond = touchOk ? cond("touch") : cond("tilt", { SIDE: "below", ANGLE: 10 });
   const repeatCond = bars && has(p.hooks) ? cond("hanging_from") : cond("tilt", { SIDE: "above", ANGLE: 45 });
-  const item = (type, extra = {}) => ({ kind: "block", type, ...extra });
   const out = [{ kind: "label", text: "Move" }];
   if (motors) out.push(item("spin"), item("move"));
   if (p.drive) out.push(item("drive"), item("turn"));
@@ -573,7 +703,7 @@ function condState(c) {
   if (!c || typeof c !== "object") return null;
   const [kind, a] = Object.entries(c)[0] || [];
   const spec = CONDS[kind];
-  return spec ? { type: condType(kind), fields: spec.fields(a) } : null;
+  return spec ? showState({ type: condType(kind), fields: spec.fields(a) }, a) : null;
 }
 
 function blockState(b) {
@@ -588,7 +718,7 @@ function blockState(b) {
   if (k.cond) { const c = condState(b[k.cond[1]]); if (c) inputs[k.cond[0]] = { block: c }; }
   if (k.body && (b.body || []).length) inputs.DO = { block: chain(b.body) };
   if (Object.keys(inputs).length) st.inputs = inputs;
-  return st;
+  return showState(st, b);
 }
 
 function chain(blocks) {
@@ -685,6 +815,7 @@ function blockJson(b) {
   const k = KINDS[b.type];
   let extra = {};
   try { extra = b.data ? JSON.parse(b.data) : {}; } catch { extra = {}; }
+  delete extra[DISPLAY];
   for (const key of k.drop ? k.drop(b) : []) delete extra[key];
   const out = { do: b.type === "repeat_until" ? "repeat" : b.type, ...extra, ...(k.args ? k.args(b) : {}) };
   if (k.cond) out[k.cond[1]] = condJson(b.getInputTargetBlock(k.cond[0]));
@@ -698,10 +829,16 @@ export function setHead(ws, patch) { header.set(ws, { ...headOf(ws), ...patch })
 export function sweepNumber(b) {
   if (!b || b.isInFlyout) return null;
   if (b.type === "spin") return { key: "volts", field: "VOLTS", unit: "V" };
-  if (b.type === "move") return { key: "to", field: "TO", unit: UNIT_TEXT[b.getFieldValue("UNIT")] || "" };
+  // a length: in the file's unit (the saved test's: the sweep runs it), per unit shown
+  const scale = (field, kind) => +(1 / factor(kind, units.system) / FILE_SI[stored(b, field).unit]).toPrecision(15);
+  if (b.type === "move") {
+    return b.getFieldValue("UNIT") === "deg" ? { key: "to", field: "TO", unit: "°" }
+      : { key: "to", field: "TO", unit: units.name("length"), scale: scale("TO", "length") };
+  }
   if (b.type === "wait") return { key: "seconds", field: "SECONDS", unit: "s" };
   if (b.type === "drive") {
-    return b.getFieldValue("WHAT") === "seconds" ? { key: "seconds", field: "AMOUNT", unit: "s" } : { key: "distance", field: "AMOUNT", unit: "m" };
+    return b.getFieldValue("WHAT") === "seconds" ? { key: "seconds", field: "AMOUNT", unit: "s" }
+      : { key: "distance", field: "AMOUNT", unit: units.name("field"), scale: scale("AMOUNT", "field") };
   }
   return null;
 }

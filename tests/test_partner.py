@@ -130,7 +130,7 @@ def test_partner_overlap_errors(tmp_path):
     # the stand-in starts at (2.0, 4.035), heading 0: a 0.9 m outline; the partner's frame plus bumpers is 0.86 m
     with pytest.raises(PartError) as e:
         _world(tmp_path, "\n[partner]\nstart = [2.68, 4.035, 0]\n")
-    assert str(e.value) == "[partner] starts inside the robot (their outlines overlap by 0.20 m)"
+    assert str(e.value) == "[partner] starts inside the robot (their outlines overlap by 7.87 in)"
     _world(tmp_path, "\n[partner]\nstart = [2.88, 4.035, 0]\n")     # just touching: allowed
 
     (tmp_path / "gate.toml").write_text("""
@@ -163,7 +163,7 @@ mass = 1
     on_range = '\n[range]\nfile = "gate.toml"\nstart = "here"\n'
     with pytest.raises(PartError) as e:
         _world(tmp_path, on_range + "\n[partner]\nstart = [5.2, 4.0, 0]\n")
-    assert str(e.value) == "[partner] starts inside element portcullis (their outlines overlap by 0.10 m)"
+    assert str(e.value) == "[partner] starts inside element portcullis (their outlines overlap by 3.94 in)"
     _world(tmp_path, on_range + "\n[partner]\nstart = [5.0, 6.0, 0]\n")     # under a raised panel: allowed
 
     for bad, msg in (("start = [4, 4, 0]\nmass_kg = 50", "unknown key 'mass_kg'; allowed: length, width, mass, "
@@ -227,7 +227,7 @@ def test_setups_partner_overlap_errors_name_setup(tmp_path):
     """Fix 6: a partner Setup places inside the robot or an element is refused in Setup's words, not [partner]'s."""
     with pytest.raises(TestFileError) as e:
         world_for(_program(tmp_path, "partner = { ahead_in = 20 }"))
-    assert str(e.value) == "the partner robot (Setup) starts inside the robot (their outlines overlap by 0.37 m)"
+    assert str(e.value) == "the partner robot (Setup) starts inside the robot (their outlines overlap by 14.65 in)"
     (tmp_path / "gate.toml").write_text("""
 [range]
 name = "a portcullis"
@@ -249,7 +249,7 @@ mass = 2.27
     with pytest.raises(TestFileError) as e:
         world_for(_program(tmp_path, "partner = { ahead_in = 106.3 }", robot=on_range))
     assert str(e.value) == ("the partner robot (Setup) starts inside element portcullis (their outlines overlap by "
-                            "0.10 m)")
+                            "3.94 in)")
     # the config's own [partner], with Setup leaving it alone, keeps the [partner] words
     with pytest.raises(ValueError, match=r"\[partner\] starts inside the robot"):
         world_for(_program(tmp_path, "", robot="\n[partner]\nstart = [2.68, 4.035, 0]\n"))
@@ -266,7 +266,7 @@ def test_partner_conditions(tmp_path):
     program = _program(tmp_path, "partner = { ahead_in = 60 }", expect_moved)      # nothing pushes it
     r = TestRun(world_for(program), program).run()
     assert r.status == "check failed"
-    assert r.checks[0]["failure"].startswith("expected the partner to move at least 2 in, but it moved 0.0 in")
+    assert r.checks[0]["failure"].startswith("expected the partner to move at least 2 in, but it moved 0 in")
 
     lifted = Cond("partner_lifted", {"at_least_in": 4.0, "level_within_deg": 5.0})
     assert describe(lifted) == "the partner is lifted at least 4 in (level within 5°)"

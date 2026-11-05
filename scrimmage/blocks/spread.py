@@ -38,6 +38,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
+from .. import units
 from ..testrange.build import default_tip, rest_pose
 from ..testrange.pieces import PieceKind, orientation_words
 from . import store
@@ -214,10 +215,10 @@ def inside_robot(world, spread: dict) -> str | None:
         hit = (np.linalg.norm(near - c[:, None, :], axis=2) < radii[:, None] - 1e-3).any()
         if hit or _boxes_overlap((bc + at, ba, bh), lo, hi):
             side = "" if p["offset_in"] == 0 else \
-                f", {_n(abs(p['offset_in']))} in {'left' if p['offset_in'] > 0 else 'right'}"
+                f", {_inches(abs(p['offset_in']))} {'left' if p['offset_in'] > 0 else 'right'}"
             what = "ball" if kind is None else kind.label
-            return (f"the floor spread puts the {what} inside the robot at {_n(p['distance_in'])} in ahead{side}: "
-                    f"start the distance at {_nearest_in(world, i, p, boxes)} in or more")
+            return (f"the floor spread puts the {what} inside the robot at {_inches(p['distance_in'])} ahead{side}: "
+                    f"start the distance at {_inches(_nearest_in(world, i, p, boxes))} or more")
     return None
 
 
@@ -237,6 +238,11 @@ def varying(spread: dict) -> list[str]:
 
 def _n(x: float) -> str:
     return f"{round(float(x), 2):g}"
+
+
+def _inches(x: float) -> str:
+    """An `_in` axis's inches in words, in the Units setting: "6 in" or "152 mm"."""
+    return units.fmt(float(x) * IN, "length", fewer=1)
 
 
 ORIENTATION_AXES = ("rotation_deg", "tip_deg")
@@ -261,9 +267,9 @@ def label(p: dict, varying: list[str], kind: PieceKind | None = None) -> str:
                 words.append(orientation_words(kind, p["tip_deg"], p["rotation_deg"]))
             continue
         if a == "offset_in":
-            words.append("on the center line" if v == 0 else f"{_n(abs(v))} in {'left' if v > 0 else 'right'}")
+            words.append("on the center line" if v == 0 else f"{_inches(abs(v))} {'left' if v > 0 else 'right'}")
         elif a == "distance_in":
-            words.append(f"{_n(v)} in ahead")
+            words.append(f"{_inches(v)} ahead")
         elif a == "angle_deg":
             words.append(f"at {_n(v)}°")
         elif a == "rotation_deg":

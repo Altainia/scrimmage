@@ -88,13 +88,14 @@ def test_trench_example_raised_arm_fails():
     assert max(tip) == pytest.approx(0.64, abs=0.01)            # the README: its tip about 0.64 m (25 in) up
 
 
-def test_trench_example_raised_arm_hits_without_the_check():
+def test_trench_example_raised_arm_hits_without_the_check(units):
+    units("metric")
     path = TRENCH / "raised.test.toml"
     text = path.read_text(encoding="utf-8")
     assert CLEARS in text
     _, world, r = _run(path, text.replace(CLEARS, ""))
     assert r.status == "timed out", r.outcome
-    assert r.outcome == "drive (block 2) didn't reach 4 m in 10 s (went 1.50 m)"
+    assert r.outcome == "drive (block 2) didn't reach 4 m in 10 s (went 1.5 m)"
     assert r.clearance["trench_arm"]["min_in"] == 0.0
     assert r.clearance["trench_arm"]["t"] == pytest.approx(1.7, abs=0.1)
     m, d = world.model, world.data

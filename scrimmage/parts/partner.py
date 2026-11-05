@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 import mujoco
 import numpy as np
 
+from .. import units
 from .model import PartError, quat_from_rpy
 
 PARTNER_KEYS = ("length", "width", "mass", "bumper_clearance", "brake", "start")
@@ -199,6 +200,11 @@ def _overlap(a: np.ndarray, b: np.ndarray) -> float:
 STARTS_INSIDE = "[partner] starts inside "    # check_start's refusals begin so; run.world_for words Setup's its own way
 
 
+def _by(depth: float) -> str:
+    """An overlap in words, in the Units setting: "4.72 in" or "120 mm"."""
+    return units.fmt(depth, "length", fewer=1)
+
+
 def check_start(info: PartnerInfo, robot_start: tuple[float, float, float], elements=()) -> None:
     """The partner's outline (frame plus bumpers) may not overlap the robot's start outline (ROBOT_OUTLINE) or any
     element standing on the carpet (testrange/elements.py's _on_floor, as a start's robot outline is checked)."""
@@ -208,11 +214,11 @@ def check_start(info: PartnerInfo, robot_start: tuple[float, float, float], elem
     rx, ry, rh = robot_start
     depth = _overlap(mine, _rect((rx, ry), rh, ROBOT_OUTLINE, ROBOT_OUTLINE))
     if depth > 1e-9:
-        raise PartError(f"{STARTS_INSIDE}the robot (their outlines overlap by {depth:.2f} m)")
+        raise PartError(f"{STARTS_INSIDE}the robot (their outlines overlap by {_by(depth)})")
     for e in elements:
         depth = max((_overlap(mine, f) for f in _on_floor(e, start=True)), default=0.0)
         if depth > 1e-9:
-            raise PartError(f"{STARTS_INSIDE}element {e.name} (their outlines overlap by {depth:.2f} m)")
+            raise PartError(f"{STARTS_INSIDE}element {e.name} (their outlines overlap by {_by(depth)})")
 
 
 # ---- its signals ----------------------------------------------------------------------------------------------------

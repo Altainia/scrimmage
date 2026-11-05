@@ -66,6 +66,7 @@ import math
 import mujoco
 import numpy as np
 
+from .. import units
 from ..terrain.climb import hold_geoms, robot_hooks
 from ..testrange.elements import moving_units, moving_value
 from ..testrange.spec import _one_round_kind as one_round_kind
@@ -411,8 +412,19 @@ def _conds(blocks, kind: str) -> list:
 
 # ---- plain words ----------------------------------------------------------------------------------------------------
 
-def _amount(x: float, unit: str) -> str:
-    return f"{x:g}°" if unit == "deg" else f"{x:g} {unit}"
+# a test file's own units (a block's `unit`, an `_in` key, psi) -> the kind they are shown as
+KEY_KINDS = {"in": "length", "m": "length", "psi": "pressure"}
+
+
+def _amount(x: float, unit: str, fewer: int = 0) -> str:
+    """`x` in a test file's unit ("deg", "in", "m" or "psi") in words, in the Units setting: "90°", "3 in" or
+    "76.2 mm", "60 psi" or "413.7 kPa". A joint's "m" is a robot length (in or mm). `fewer`: units.fmt's."""
+    if unit == "deg":
+        return f"{x:g}°"
+    if unit not in KEY_KINDS:
+        return f"{x:g} {unit}"
+    si = x if unit == "m" else units.from_display(x, KEY_KINDS[unit], "imperial")
+    return units.fmt(si, KEY_KINDS[unit], fewer=fewer)
 
 
 def a_piece(kinds: dict | None) -> str:
@@ -470,7 +482,7 @@ def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names
     if k == "pressure":
         side, psi = ("above", a["above"]) if "above" in a else ("below", a["below"])
         what = f"the {a['side']} air pressure"      # as the block reads: "stored air pressure above 60 psi"
-        return f"{what} is {side} {psi:g} psi"
+        return f"{what} is {side} {_amount(psi, 'psi')}"
     if k == "element":
         side = "above" if "above" in a else "below"
         unit = (units or {}).get(a["element"])
@@ -502,5 +514,6 @@ def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names
         return f"{piece(a['piece'])} rests on {a['on']}"
     if k == "seated":
         at = a["at_least_in"]
-        return f"{piece(a['piece'])} is seated {f'at least {at:g} in ' if at else ''}on {a['on']}"
+        depth = f"at least {_amount(at, 'in')} " if at else ""
+        return f"{piece(a['piece'])} is seated {depth}on {a['on']}"
     raise ValueError(f"unknown condition {k!r}")

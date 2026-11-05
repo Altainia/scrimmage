@@ -277,10 +277,14 @@ volts = 0.0
     assert r.t_end == pytest.approx(SETTLE_S + 4 * 0.001, abs=1e-6)       # rounds 2 to 5, one a step
 
 
-def test_drive_times_out(tmp_path):
+def test_drive_times_out(tmp_path, units):
+    units("metric")
     r = run(tmp_path, '[[block]]\ndo = "drive"\ndistance = 5.0\ntimeout = 0.3\n')
     assert r.status == "timed out"
-    assert re.fullmatch(r"drive \(block 1\) didn't reach 5 m in 0\.3 s \(went 0\.\d\d m\)", r.outcome), r.outcome
+    assert re.fullmatch(r"drive \(block 1\) didn't reach 5 m in 0\.3 s \(went 0\.\d\d? m\)", r.outcome), r.outcome
+    units("imperial")      # the same run's words in feet
+    r = run(tmp_path, '[[block]]\ndo = "drive"\ndistance = 5.0\ntimeout = 0.3\n')
+    assert re.fullmatch(r"drive \(block 1\) didn't reach 16\.4 ft in 0\.3 s \(went \d\.\d ft\)", r.outcome), r.outcome
 
 
 def test_move_timeout_says_where_the_joint_stopped(tmp_path):

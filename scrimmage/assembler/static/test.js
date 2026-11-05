@@ -33,10 +33,12 @@
 // robot state Setup shows, sweepFor: the sweep form's numbers, trySweep(blockId): opens the sweep form for that
 // block's number}.
 
-import { $, h, api, notice, registerTab, setTab, showPath, currentTab, store, DEFAULT_GRIP } from "./app.js";
+import { $, h, api, notice, registerTab, setTab, showPath, currentTab, store, DEFAULT_GRIP, showMeasure, readMeasure,
+  measureError, lengthWords } from "./app.js";
 import { initRunPanel, update as updateRuns, replay, sweepShown, spreadShown } from "./test_run.js";
 import { defineBlocks, toolbox, testToWorkspace, workspaceToTest, placeOf, incomplete, looseStacks, setUsed, STYLES,
-  headOf, setHead, sweepNumber, appendBlocks } from "./blocks_defs.js";
+  headOf, setHead, sweepNumber, appendBlocks, showUnits } from "./blocks_defs.js";
+import { units } from "./units.js";
 
 const SAVE_DELAY = 500;     // ms after the last change
 const MAX_SWEEP = 12;       // scrimmage/blocks/sweep.py's
@@ -59,6 +61,7 @@ const t = {
   setupError: null,   // the last robot edit Setup made that the server refused
   setupKey: null,     // what Setup drew last (see renderSetup)
   sweepFor: null,     // the sweep form's numbers: [{label, target, value, unit, block, from, to, scale (file per shown)}]
+  shownUnits: null,   // the Units setting the blocks show their numbers in
   hopperSet: false,   // the student changed the hopper in Setup (no longer starter_hopper's preselection)
   floor: null,        // the floor spread's boxes as typed (floorDraft), for the test's floor_spread `floorFor`
   floorFor: null,
@@ -138,7 +141,8 @@ function inject() {
     move: { scrollbars: true, drag: true, wheel: true },
     zoom: { controls: true, wheel: false, startScale: 1.0 },
   });
-  t.toolboxKey = canon(t.state.palette);
+  t.toolboxKey = toolboxKey(t.state.palette);
+  t.shownUnits = units.system;
   t.ws.addChangeListener(onChange);
   registerTryValues();
   if (dark && dark.addEventListener) dark.addEventListener("change", () => t.ws.setTheme(theme()));
@@ -159,6 +163,22 @@ function show(test) {
   t.synced = canon(test);
   t.base = t.state.version;
   check();
+}
+
+// The flyout's blocks show the palette's names and the Units setting's numbers.
+const toolboxKey = (palette) => canon([palette, units.system]);
+
+// A Units change: the blocks, the flyout and Setup show their numbers in the new units; the test file is unchanged.
+function unitsChanged() {
+  if (t.ws) {
+    showUnits(t.ws, t.shownUnits || units.system);
+    t.toolboxKey = toolboxKey(t.state.palette);
+    t.ws.updateToolbox(toolbox(t.state.palette));
+    fitHeads();
+  }
+  t.shownUnits = units.system;
+  t.setupKey = null;
+  renderSetup();
 }
 
 // -- saving -----------------------------------------------------------------------------------------------------------
@@ -233,7 +253,7 @@ function apply(s, reload = false) {
   t.state = s;
   if (t.ws) {
     setUsed([s.test, workspaceToTest(t.ws)]);
-    const key = canon(s.palette);
+    const key = toolboxKey(s.palette);
     if (key !== t.toolboxKey) {
       t.toolboxKey = key;
       t.ws.updateToolbox(toolbox(s.palette));
@@ -420,21 +440,22 @@ const isDrivetrain = (p) => !!(p.stock && t.stock && t.stock[p.stock] && t.stock
 const mounted = () => (t.robot ? (t.robot.parts || []).filter((p) => p.attach && !isDrivetrain(p)) : []);
 const AXES = [["x", 0, "pos", "forward"], ["y", 1, "pos", "left"], ["z", 2, "pos", "up"], ["yaw", 2, "rot", "turned"]];
 const fmt = (v) => String(+Number(v).toPrecision(6));
-const IN = 0.0254;            // m per inch
+const IN = 0.0254;            // m per inch: an `_in` key's unit
+const round6 = (x) => Number(x.toFixed(6));       // a typed value as saved: to a millionth of its unit (1 µm in m)
 const MAX_SPREAD = 25;        // scrimmage/blocks/program.py's MAX_PLACEMENTS
 const MAX_SHUFFLE = 999999;   // New shuffle's seeds: 1 to this
 const DEFAULT_SEED = 1;       // scrimmage/testrange/station.py's: the shuffle of a test with no seed
 const FEED_KINDS = ["start_feeding", "stop_feeding", "feed_one"];
 // a station's numbers (scrimmage/testrange/station.py's OVERRIDE_KEYS): key, label, unit on screen, a list key's
-// three axes, and what Try values… goes up to from a spread of 0. Every spread is ± its value; the release box is in
-// inches here and meters in the file.
+// three axes, and what Try values… goes up to from a spread of 0 (in the unit shown). Every spread is ± its value;
+// the speed and the release box (`kind`) are in the Units setting here and SI in the file.
 const STATION_BOXES = [
   { key: "interval", label: "Time between pieces (s)", unit: "s" },
   { key: "stock", label: "Stock (empty: never runs out)", unit: "" },
   { key: "spread_yaw_deg", label: "Left/right angle (± degrees)", unit: "°", upTo: 10 },
   { key: "spread_pitch_deg", label: "Up/down angle (± degrees)", unit: "°", upTo: 10 },
-  { key: "spread_speed", label: "Speed (± m/s)", unit: "m/s", upTo: 0.4 },
-  { key: "spread_position", label: "Release box (± in)", unit: "in", axes: ["x", "y", "z"], scale: IN, upTo: 2 },
+  { key: "spread_speed", label: "Speed", kind: "speed", upTo: [1.3, 0.4] },
+  { key: "spread_position", label: "Release box", kind: "length", axes: ["x", "y", "z"], upTo: [2, 50] },
   { key: "spread_rotation_deg", label: "Turned (± degrees)", unit: "°", axes: ["about x", "about y", "about z"], upTo: 90 },
 ];
 // a piece other than a ball (ruling P30): its tip and facing (a ball has neither; Try values… goes from and to these
@@ -446,7 +467,9 @@ const PIECE_BOXES = [
   { key: "spread_turn_deg", label: "Facing varies by (± degrees)", unit: "°", upTo: 90 },
   { ...STATION_BOXES.at(-1), label: "Extra tumble (± degrees)" },
 ];
-const stationBoxes = (piece) => (piece ? [...STATION_BOXES.slice(0, -1), ...PIECE_BOXES] : STATION_BOXES);
+const stationBoxes = (piece) => (piece ? [...STATION_BOXES.slice(0, -1), ...PIECE_BOXES] : STATION_BOXES)
+  .map((box) => (box.kind ? { ...box, label: `${box.label} (± ${units.name(box.kind)})`, unit: units.name(box.kind),
+    upTo: box.upTo[units.system === "metric" ? 1 : 0] } : box));
 // a flat kind (a disc, a hatch panel) lies flat at a tip of 90: its axis is its face's normal
 const tipLabel = (kind) => `Tipped up (degrees: ${kind && kind.flat ? "0 on its edge, 90 lying flat" : "0 lying, 90 standing"})`;
 const tipWords = (kind) => (kind && kind.flat ? "Tipped up: 0 is standing on its edge, 90 lying flat."
@@ -457,10 +480,12 @@ const gripText = ([, label, mu]) => `${label} — ${fmt(mu)}, estimate`;
 const OWN = "own";      // the grip picker's "My own number…"
 // the floor spread's axes (scrimmage/blocks/spread.py's SPREAD_AXES): label, and from, to, steps when ticked: around
 // where the field's ball lies (palette.floor_ball; offset and distance), never nearer than its nearest_in
-// tip_deg (a piece other than a ball's) is from 0 to 90 whatever the piece's own
+// tip_deg (a piece other than a ball's) is from 0 to 90 whatever the piece's own. The offset and distance are inches
+// in the file and the Units setting's length on screen (LENGTH_AXES).
+const LENGTH_AXES = ["offset_in", "distance_in"];
 const FLOOR_AXES = [
-  ["offset_in", "Offset across (in)", -6, 6, 3],
-  ["distance_in", "Distance ahead (in)", -12, 12, 3],
+  ["offset_in", "Offset across", -6, 6, 3],
+  ["distance_in", "Distance ahead", -12, 12, 3],
   ["angle_deg", "Angle (degrees)", -30, 30, 3],
   ["rotation_deg", "Turned (degrees)", 0, 90, 3],
   ["tip_deg", "Tipped up (degrees)", 0, 90, 3],
@@ -479,7 +504,8 @@ function floorKind() {
 function floorAxes() {
   const k = floorKind();
   const label = { tip_deg: tipLabel(k), rotation_deg: "Facing (degrees)" };
-  return FLOOR_AXES.filter(([axis]) => axis !== "tip_deg" || k).map((a) => (k && label[a[0]] ? [a[0], label[a[0]], ...a.slice(2)] : a));
+  return FLOOR_AXES.filter(([axis]) => axis !== "tip_deg" || k).map((a) => (k && label[a[0]] ? [a[0], label[a[0]], ...a.slice(2)]
+    : LENGTH_AXES.includes(a[0]) ? [a[0], `${a[1]} (${units.name("length")})`, ...a.slice(2)] : a));
 }
 
 // A number box: `blank` (when given) is what an empty box means, and a value equal to it shows empty.
@@ -498,6 +524,29 @@ function numberBox(id, value, label, commit, blank = null) {
   el.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); send(); } });
   return el;
 }
+
+// A box for a length, weight or speed (`kind`) in the Units setting: `si` shows in the unit chosen, and commit gets
+// SI, rounded as typed values are; the exact value it showed while its text is unchanged.
+function measureBox(id, si, kind, label, commit) {
+  const el = h("input", { id, class: "test-num", inputmode: "decimal", autocomplete: "off", "aria-label": label });
+  showMeasure(el, si, kind);
+  el.dataset.orig = el.value;
+  const send = () => {
+    if (el.value.trim() === el.dataset.orig) return;
+    const v = readMeasure(el, kind);
+    const why = v === null ? `type a number in ${units.name(kind)}` : measureError(v);
+    if (why) { t.setupError = `${label}: ${why}`; renderSetupError(); el.value = el.dataset.orig; return; }
+    el.dataset.orig = el.value.trim();
+    commit(round6(v));
+  };
+  el.addEventListener("change", send);
+  el.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); send(); } });
+  return el;
+}
+
+// Try values… for an SI number shown in the Units setting: from and to in the unit shown, sent in SI
+const measured = (label, target, si, kind, extra = {}) => ({ label, target, value: units.toDisplay(Number(si), kind),
+  unit: units.name(kind), scale: units.fromDisplay(1, kind), ...extra });
 
 // Robot edits go one at a time, each built (`make()`) from the robot as the last one left it, with its version: two
 // boxes changed quickly don't undo each other or come back stale.
@@ -564,6 +613,7 @@ function newShuffle() {
 // [partner] (the palette's robot_partner); with neither key the config decides.
 const FACING = [[0, "the same way"], [180, "toward me"], [90, "sideways"]];
 const PARTNER = { ahead_in: 60, heading_deg: 0, brake: true };      // a new partner's: 60 in ahead, facing the same way
+// (ahead_in is inches in the file, whatever the Units setting: a typed 101.6 mm writes 4)
 const ownPartner = () => !!(t.state && t.state.palette && t.state.palette.robot_partner);
 function partnerOn() {
   const p = (headOf(t.ws).setup || {}).partner;
@@ -600,8 +650,9 @@ function partnerBox() {
     sel.value = String(p.heading_deg);
     parts.push(h("div", { class: "test-setup-grid" },
       h("label", { for: "test-partner-ahead", text: "Ahead of my robot by" }),
-      h("div", { class: "row" }, numberBox("test-partner-ahead", p.ahead_in, "Partner robot: ahead of my robot by (in)",
-        (v) => setPartner("ahead_in", v)), h("span", { text: "in" })),
+      h("div", { class: "row" }, measureBox("test-partner-ahead", p.ahead_in * IN, "length",
+        `Partner robot: ahead of my robot by (${units.name("length")})`, (v) => setPartner("ahead_in", round6(v / IN))),
+      h("span", { text: units.name("length") })),
       h("label", { for: "test-partner-facing", text: "Facing" }), sel,
       h("span", { class: "test-setup-label", text: "Drive" }),
       h("label", { class: "test-hook", for: "test-partner-brake" },
@@ -623,40 +674,57 @@ function addStationBlocks() {
 
 // -- the floor spread: a draft of the boxes ({axis: {on, from, to, steps}}), written to the test when it makes at
 // most MAX_SPREAD runs
+// (offset and distance: inches in the file, in the Units setting's length in the boxes)
+const floorKey = (fs) => canon([fs, units.system]);
 function floorDraft() {
   const fs = (headOf(t.ws).setup || {}).floor_spread || {};
-  const key = canon(fs);
+  const key = floorKey(fs);
   if (t.floor && t.floorFor === key) return t.floor;
   t.floorFor = key;
   const ball = floorBall() || {};
   t.floor = Object.fromEntries(FLOOR_AXES.map(([axis, , from, to, steps]) => {
+    const text = (x) => (LENGTH_AXES.includes(axis) ? units.shown(x * IN, "length") : fmt(x));
     const v = fs[axis];
-    if (v && v.length) return [axis, { on: true, from: fmt(v[0]), to: fmt(v[v.length - 1]), steps: String(v.length) }];
+    if (v && v.length) return [axis, { on: true, from: text(v[0]), to: text(v[v.length - 1]), steps: String(v.length) }];
     const base = axis === "tip_deg" ? 0 : ball[axis] ?? 0;
     let lo = base + from, hi = base + to;
     if (axis === "distance_in" && ball.nearest_in !== undefined && lo < ball.nearest_in) {
       lo = ball.nearest_in;
       hi = Math.max(hi, lo + (to - from));
     }
-    return [axis, { on: false, from: fmt(Math.round(lo)), to: fmt(Math.round(hi)), steps: String(steps) }];
+    // in metric, round millimeters (the inches' 1 in steps would show as 25.4 mm)
+    const round = (x) => (LENGTH_AXES.includes(axis) && units.system === "metric"
+      ? units.shown(Math.round(units.toDisplay(x * IN, "length") / 10) * 10 / 1000, "length") : text(Math.round(x)));
+    return [axis, { on: false, from: round(lo), to: round(hi), steps: String(steps) }];
   }));
   return t.floor;
 }
 
 // The draft's lists and run count ({spread, runs}), or {error} saying what is wrong.
 function floorSpread(draft) {
+  const fs = (headOf(t.ws).setup || {}).floor_spread || {};
   const spread = {};
   let runs = 1;
   for (const [axis, label] of floorAxes()) {
     const d = draft[axis];
     if (!d.on) continue;
-    const a = Number(d.from), b = Number(d.to), n = Number(d.steps);
-    if (d.from.trim() === "" || d.to.trim() === "" || !isFinite(a) || !isFinite(b)) return { error: `${label}: type a number in from and to` };
+    const length = LENGTH_AXES.includes(axis);
+    // a length's from and to in inches (the file's), as typed in the unit shown; the file's own while unchanged
+    const inches = (k) => {
+      const shown = fs[axis] && fs[axis].length ? units.shown((k === "from" ? fs[axis][0] : fs[axis][fs[axis].length - 1]) * IN, "length") : null;
+      if (shown !== null && d[k].trim() === shown) return k === "from" ? fs[axis][0] : fs[axis][fs[axis].length - 1];
+      const si = units.parse(d[k], "length");
+      return typeof si === "number" ? round6(si / IN) : NaN;
+    };
+    const a = length ? inches("from") : Number(d.from), b = length ? inches("to") : Number(d.to), n = Number(d.steps);
+    if (d.from.trim() === "" || d.to.trim() === "" || !isFinite(a) || !isFinite(b)) {
+      return { error: `${label}: type a number in from and to${length ? ` (in ${units.name("length")})` : ""}` };
+    }
     if (!Number.isInteger(n) || n < 1) return { error: `${label}: steps is a whole number, 1 or more` };
     // nearest_in alone, ignoring the offset: stricter than the server's exact check, which is fine as a quick warning
     const nearest = floorBall() && floorBall().nearest_in;
     if (axis === "distance_in" && nearest !== undefined && nearest !== null && Math.min(a, b) < nearest) {
-      return { error: `${label}: ${nearest} in or more (nearer, the ball starts inside the robot)` };
+      return { error: `${label}: ${units.fmt(nearest * IN, "length")} or more (nearer, the ball starts inside the robot)` };
     }
     spread[axis] = n === 1 ? [a] : Array.from({ length: n }, (_, k) => +(a + ((b - a) * k) / (n - 1)).toPrecision(6));
     runs *= n;
@@ -684,7 +752,7 @@ function floorChanged() {
   const s = setupOf();
   if (Object.keys(r.spread).length) s.floor_spread = r.spread; else delete s.floor_spread;
   if (canon(s.floor_spread || {}) === canon((headOf(t.ws).setup || {}).floor_spread || {})) return;
-  t.floorFor = canon(s.floor_spread || {});
+  t.floorFor = floorKey(s.floor_spread || {});
   setTest({ setup: s });
 }
 
@@ -717,11 +785,12 @@ function stationChoice(name, box, value) {
   }
   if (box.key === "interval") return { label: box.label, target, value, unit: "s" };
   if (box.from !== undefined) return { label: box.label, target, value, unit: box.unit, from: box.from, to: box.to };
-  // a list: the sweep sets all three axes to the value; the release box is tried in inches, as its boxes show it
-  const scale = box.scale || 1;
-  const v = +((box.axes ? Math.max(...value) : value) / scale).toPrecision(6);
+  // a list: the sweep sets all three axes to the value; the speed and the release box are tried in the unit shown
+  const si = box.axes ? Math.max(...value) : value;
+  const v = box.kind ? +units.toDisplay(si, box.kind).toPrecision(6) : si;
   const label = box.axes ? `${box.label.replace(/ \(.*/, "")}, every axis (± ${box.unit})` : box.label;
-  return { label, target, value: v, unit: box.unit, from: 0, to: v > 0 ? 2 * v : box.upTo, ...(box.scale ? { scale } : {}) };
+  return { label, target, value: v, unit: box.unit, from: 0, to: v > 0 ? 2 * v : box.upTo,
+    ...(box.kind ? { scale: units.fromDisplay(1, box.kind) } : {}) };
 }
 
 function stationBox(name, box, setting, field, kind) {
@@ -730,20 +799,21 @@ function stationBox(name, box, setting, field, kind) {
   const tryIt = h("button", { type: "button", class: "btn btn-small", "data-try": `station-${name}-${box.key}`,
     onclick: () => openSweep([stationChoice(name, box, setting)], `${name}'s ${box.label.replace(/ \(.*/, "").toLowerCase()}`) }, "Try values…");
   if (!box.axes) {
+    const label = `${name}: ${box.label}`, commit = (v) => setStation(name, box.key, v);
     return [h("label", { for: id, text: box.label }),
-      h("div", { class: "row" }, numberBox(id, setting, `${name}: ${box.label}`, (v) => setStation(name, box.key, v),
-        box.key === "stock" ? 0 : null), tryIt)];
+      h("div", { class: "row" }, box.kind ? measureBox(id, setting, box.kind, label, commit)
+        : numberBox(id, setting, label, commit, box.key === "stock" ? 0 : null), tryIt)];
   }
-  const scale = box.scale || 1;
   return [h("span", { class: "test-setup-label", text: box.label }),
     h("div", { class: "row test-com" }, ...box.axes.flatMap((word, i) => [
       h("label", { for: `${id}-${i}`, text: word }),
-      numberBox(`${id}-${i}`, setting[i] / scale, `${name}: ${box.label} ${word}`, (v) => {
-        const now = (((headOf(t.ws).setup || {}).station || {})[name] || {})[box.key] || field;
-        const next = [...now].map(Number);
-        next[i] = +(v * scale).toPrecision(6);
-        setStation(name, box.key, next);
-      })]), tryIt)];
+      (box.kind ? (...a) => measureBox(a[0], a[1], box.kind, a[2], a[3]) : numberBox)(`${id}-${i}`, Number(setting[i]),
+        `${name}: ${box.label} ${word}`, (v) => {
+          const now = (((headOf(t.ws).setup || {}).station || {})[name] || {})[box.key] || field;
+          const next = [...now].map(Number);
+          next[i] = v;
+          setStation(name, box.key, next);
+        })]), tryIt)];
 }
 
 // The test's [setup] settings this field can't use, as [key, words, clear(setup)]: a station it doesn't have, a ball
@@ -909,7 +979,7 @@ function renderSetup() {
   const c = chassis();
   const sum = [`hooks: ${[...mine, ...counted].length ? [...counted, ...mine].join(", ") : "none"}`];
   if (hopper.size) sum.push(`hopper: ${[...hopper].join(", ")}`);
-  if (c) sum.push(`robot ${fmt(mass(c))} kg`);
+  if (c) sum.push(`robot ${units.fmt(mass(c), "mass")}`);
   if (t.robot) sum.push(t.robot.range ? `field: ${t.robot.range}` : "plain field");
   $("#test-setup-sum").textContent = `· ${sum.join(" · ")}`;
   if (!open) { t.setupKey = null; return; }      // filled in when it is opened
@@ -919,11 +989,11 @@ function renderSetup() {
   // the floor spread's boxes show its draft: the spread the draft wrote is nothing new to draw
   const { floor_spread: fs, ...drawn } = setup;
   const key = canon([pal.bodies || [], [...mine], [...counted], [...hopper], drawn,
-    canon(fs || {}) === t.floorFor ? null : fs, pal.station_settings || {},
+    floorKey(fs || {}) === t.floorFor ? null : fs, pal.station_settings || {},
     pal.ball || null, pal.balls || [], !!pal.ball_choice, !!pal.floor_piece, s.station_starter, feeding, !!s.running,
     pal.piece || null, pal.piece_presets || null, pal.kinds || {}, pal.floor_kinds || {}, pal.station_kinds || {},
     pal.floor_ball || null, !!pal.robot_partner, pal.grips || {}, pal.grip_materials || [], [...t.gripOwn], [...t.gripSent],
-    (s.fields || []).length, t.robot ? [t.robot.version, t.robot.parts, ro] : null, !!t.stock, t.setupError]);
+    (s.fields || []).length, t.robot ? [t.robot.version, t.robot.parts, ro] : null, !!t.stock, t.setupError, units.system]);
   if (key === t.setupKey) return;
   const focused = document.activeElement && body.contains(document.activeElement) ? document.activeElement.id : null;
   if (focused && document.activeElement.matches("input.test-num") && document.activeElement.value !== document.activeElement.dataset.orig) return;
@@ -1091,7 +1161,8 @@ function renderSetup() {
   if (c) {
     const [f, l, u] = com(c);
     const send = (key, v) => robotEdit(() => ({ op: "params", name: c.name, params: { [key]: v } }));
-    const comBox = (i, word, v) => numberBox(`test-com-${word}`, v, `Center of mass ${word} (m)`, (x) => robotEdit((r) => {
+    const L = units.name("length");
+    const comBox = (i, word, v) => measureBox(`test-com-${word}`, v, "length", `Center of mass ${word} (${L})`, (x) => robotEdit((r) => {
       const now = partNamed(r, c.name);
       if (!now) return null;
       const off = com(now); off[i] = x;
@@ -1102,39 +1173,45 @@ function renderSetup() {
       h("p", { class: "hint", text: "Weight: everything that isn't one of the robot's parts (frame, battery, bumpers). "
         + "The Robot tab's Undo takes changes back." }),
       h("div", { class: "test-setup-grid" },
-        h("label", { for: "test-mass", text: "Weight (kg)" }),
-        h("div", { class: "row" }, numberBox("test-mass", mass(c), "Weight (kg)", (v) => send("mass", v)),
+        h("label", { for: "test-mass", text: `Weight (${units.name("mass")})` }),
+        h("div", { class: "row" }, measureBox("test-mass", mass(c), "mass", `Weight (${units.name("mass")})`, (v) => send("mass", v)),
           h("button", { type: "button", class: "btn btn-small", "data-try": "mass", disabled: ro,
-            onclick: () => openSweep([{ label: "Weight", target: { robot: "mass" }, value: mass(c), unit: "kg" }], "the robot's weight") }, "Try values…")),
-        h("span", { class: "test-setup-label", text: "Center of mass (m)" }),
+            onclick: () => openSweep([measured("Weight", { robot: "mass" }, mass(c), "mass")], "the robot's weight") }, "Try values…")),
+        h("span", { class: "test-setup-label", text: `Center of mass (${L})` }),
         h("div", { class: "row test-com" },
           h("label", { for: "test-com-forward", text: "forward" }), comBox(0, "forward", f),
           h("label", { for: "test-com-left", text: "left" }), comBox(1, "left", l),
           h("label", { for: "test-com-up", text: "up" }), comBox(2, "up", u),
           h("button", { type: "button", class: "btn btn-small", "data-try": "com", disabled: ro,
-            onclick: () => openSweep([["forward", 0], ["left", 1], ["up", 2]].map(([w, i]) => ({ label: `Center of mass ${w}`,
-              target: { robot: `com_${w}` }, value: com(c)[i], unit: "m" })), "the robot's center of mass") }, "Try values…")))));
+            onclick: () => openSweep([["forward", 0], ["left", 1], ["up", 2]].map(([w, i]) => measured(`Center of mass ${w}`,
+              { robot: `com_${w}` }, com(c)[i], "length")), "the robot's center of mass") }, "Try values…")))));
   }
   const ms = mounted();
   if (ms.length) {
+    const L = units.name("length");
     parts.push(h("fieldset", { class: "test-setup-mounts" },
       h("legend", { text: "Where the parts are mounted" }),
-      h("p", { class: "hint", text: "How far each part is moved from where it attaches: forward (x), left (y), up (z) in meters, turned (yaw) in degrees." }),
+      h("p", { class: "hint", text: `How far each part is moved from where it attaches: forward (x), left (y), up (z) in ${lengthWords()}, turned (yaw) in degrees.` }),
       h("table", { class: "test-mounts" },
-        h("thead", {}, h("tr", {}, h("th", { text: "Part" }), ...AXES.map(([a]) => h("th", { text: a === "yaw" ? "yaw (°)" : `${a} (m)` })), h("th", {}))),
+        h("thead", {}, h("tr", {}, h("th", { text: "Part" }), ...AXES.map(([a]) => h("th", { text: a === "yaw" ? "yaw (°)" : `${a} (${L})` })), h("th", {}))),
         h("tbody", {}, ...ms.map((p) => h("tr", { "data-part": p.name },
           h("th", { scope: "row", title: `on ${p.attach}`, text: p.name }),
-          ...AXES.map(([a, i, key, word]) => h("td", {}, numberBox(`test-mount-${p.name}-${a}`, p[key][i],
-            `${p.name} ${word} (${a === "yaw" ? "°" : "m"})`, (v) => robotEdit((r) => {
-            const now = partNamed(r, p.name);
-            if (!now) return null;
-            const pos = [...now.pos].map(Number), rot = [...now.rot].map(Number);
-            (key === "pos" ? pos : rot)[i] = v;
-            return { op: "attach", name: p.name, attach: now.attach, pos, rot };
-          })))),
+          ...AXES.map(([a, i, key, word]) => {
+            const label = `${p.name} ${word} (${a === "yaw" ? "°" : L})`;
+            const commit = (v) => robotEdit((r) => {
+              const now = partNamed(r, p.name);
+              if (!now) return null;
+              const pos = [...now.pos].map(Number), rot = [...now.rot].map(Number);
+              (key === "pos" ? pos : rot)[i] = v;
+              return { op: "attach", name: p.name, attach: now.attach, pos, rot };
+            });
+            return h("td", {}, a === "yaw" ? numberBox(`test-mount-${p.name}-${a}`, p[key][i], label, commit)
+              : measureBox(`test-mount-${p.name}-${a}`, Number(p[key][i]), "length", label, commit));
+          }),
           h("td", {}, h("button", { type: "button", class: "btn btn-small", "data-try": `mount-${p.name}`, disabled: ro,
-            onclick: () => openSweep(AXES.map(([a, i, key, word]) => ({ label: `${word} (${a})`, target: { mount: p.name, axis: a },
-              value: Number(p[key][i]), unit: a === "yaw" ? "°" : "m" })), `where ${p.name} is mounted`) }, "Try values…"))))))));
+            onclick: () => openSweep(AXES.map(([a, i, key, word]) => (a === "yaw"
+              ? { label: `${word} (${a})`, target: { mount: p.name, axis: a }, value: Number(p[key][i]), unit: "°" }
+              : measured(`${word} (${a})`, { mount: p.name, axis: a }, p[key][i], "length"))), `where ${p.name} is mounted`) }, "Try values…"))))))));
   }
   const note = !t.robot ? h("p", { class: "hint", text: "Loading the robot…" })
     : t.robot.read_only ? h("p", { class: "hint", text: `The robot file can't be changed here: ${t.robot.read_only_reason}` }) : null;
@@ -1169,7 +1246,8 @@ function tryBlock(id) {
   const b = t.ws && t.ws.getBlockById(id);
   const n = sweepNumber(b);
   if (!n || !placeOf(t.ws).has(id)) return;
-  openSweep([{ label: n.key, target: { key: n.key }, block: id, value: Number(b.getFieldValue(n.field)), unit: n.unit }],
+  openSweep([{ label: n.key, target: { key: n.key }, block: id, value: Number(b.getFieldValue(n.field)), unit: n.unit,
+    ...(n.scale ? { scale: n.scale } : {}) }],
     `“${b.toString()}”`);
 }
 
@@ -1258,7 +1336,7 @@ async function submitSweep(e) {
     target = { block: place, key: c.target.key };
   }
   $("#test-sweep-go").disabled = true;
-  const sent = c.scale ? values.map((v) => +(v * c.scale).toPrecision(6)) : values;    // the file's unit
+  const sent = c.scale ? values.map((v) => +(v * c.scale).toPrecision(9)) : values;    // the file's unit
   const { status, data } = await api("POST", "/api/test/sweep", { target, values: sent });
   $("#test-sweep-go").disabled = false;
   if (status !== 200) {
@@ -1297,6 +1375,7 @@ export async function initTest() {
   for (const b of dlg.querySelectorAll("[data-close]")) b.addEventListener("click", () => dlg.close());
   $("#test-stop").addEventListener("click", stop);
   initRunPanel({ chart: () => (t.ws ? headOf(t.ws).chart || null : null), setChart: (c) => setTest({ chart: c }) });
+  units.onChange(unitsChanged);
   while (!t.state) {
     await refresh();
     if (!t.state) await new Promise((r) => setTimeout(r, 2000));
