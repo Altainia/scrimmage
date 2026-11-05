@@ -563,7 +563,7 @@ class TestSession:
         except PartError as e:
             raise SessionError(400, str(e)) from None
         except OSError as e:
-            raise SessionError(400, i18n.t("can't write the grip in {folder}: {value}",
+            raise SessionError(400, i18n.t("can't write the grip in {folder}: {why}",
                                            folder=folder, why=e.strerror or e)) from None
         return 200, {"ok": True}
 
@@ -732,7 +732,7 @@ class TestSession:
 
     def state(self) -> dict:
         with self._cond:
-            if self._world is not None and self._lang != i18n.current_language():
+            if self._lang != i18n.current_language():
                 self._recompute()           # the Language setting changed: the problems and hints in its words
             out = {"version": self.version, "path": str(self.path), "test": to_json(self.program),
                    "palette": self.palette, "problems": self.problems, "hints": self.hints, "running": self.running,

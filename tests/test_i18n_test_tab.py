@@ -31,7 +31,8 @@ GB = {
     "drive ({where}) didn't reach {far} in {timeout} s (went {went})":
         "the drive ({where}) fell short of {far} in {timeout} s (it went {went})",
     "the test can't run on this robot yet:": "this test can't run on this robot yet:",
-    "{count} of {fed} made it in ({percent}%)": "{count} of {fed} got in ({percent} per cent)",
+    "the robot isn't loaded": "the robot hasn't loaded",
+    "{made} of {fed} made it in ({percent}%)": "{made} of {fed} got in ({percent} per cent)",
 }
 
 EXPECT_TILT = """
@@ -159,3 +160,26 @@ def test_an_mcp_refusal_from_the_file_is_american_english_in_en_gb(tmp_path, gb)
         with pytest.raises(mcp_server.ToolError) as e:
             asyncio.run(call)
         assert str(e.value) == "block 1: seconds can't be negative"
+
+
+def test_the_cli_prints_american_english_in_en_gb(tmp_path, gb, capsys, monkeypatch):
+    """The ruling: `scrimmage test run` prints the CLI's words, run.py's outcome and check lines among them, in
+    American English whatever the Language setting (units still follow it)."""
+    from test_blocks_run import _cli
+    monkeypatch.setenv("SCRIMMAGE_RECENT", str(tmp_path / "recent.json"))
+    monkeypatch.setenv("SCRIMMAGE_CACHE", str(tmp_path / "cache"))
+    assert i18n.t("block {n}", n=1) == "block no. 1"
+    assert _cli(["test", "run", str(write_test(tmp_path, EXPECT_TILT))]) == 1
+    out = capsys.readouterr().out
+    assert "a check failed (block 2): expected the robot to tilt more than 45°" in out, out
+    assert "block no." not in out
+
+
+
+def test_the_robot_isnt_loaded_problem_follows_the_language(tmp_path, gb, language):
+    """With no robot world (it didn't load), the state's fallback problem is made again after a switch too."""
+    from scrimmage.assembler.test_session import TestSession
+    session = TestSession(write_test(tmp_path, EXPECT_TILT), simlock=None)
+    assert session.state()["problems"][0]["message"] == "the robot hasn't loaded"
+    language("en-US")
+    assert session.state()["problems"][0]["message"] == "the robot isn't loaded"

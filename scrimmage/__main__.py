@@ -20,6 +20,7 @@ from .bindings import binds_rev
 from .bridge import Bridge, robot_language
 from .config import SIM_MODES, ConfigError, build_world, load_config, set_sim_mode, sim_mode_unused
 from .driverstation import real_ds_line, real_ds_report
+from . import i18n
 from .i18n import languages
 from .lockstep import DEFAULT_STEP, parse_speed
 from .robot_process import RobotProcess
@@ -304,7 +305,8 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "disc":
         _disc(args)
     elif args.command == "bench":
-        _bench(args)
+        with i18n.fixed():          # the CLI's printed words stay American English (spec non-goals); units don't
+            _bench(args)
     elif args.command == "air":
         _air(args)
     elif args.command == "terrain":
@@ -312,7 +314,8 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "climb":
         _climb(args)
     elif args.command == "test":
-        _test(args)
+        with i18n.fixed():          # run.py's outcome and lines too, as the CLI's own
+            _test(args)
     elif args.command == "model":
         _model(args)
     elif args.command == "parts":
@@ -323,7 +326,9 @@ def main(argv: list[str] | None = None) -> None:
         from . import i18n_tool
         sys.exit(i18n_tool.main(args))
     else:
-        sys.exit(_run(args, rp))
+        with i18n.fixed():
+            code = _run(args, rp)
+        sys.exit(code)
 
 
 def _java(args) -> None:

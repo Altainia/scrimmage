@@ -376,13 +376,13 @@ function jumpTo(f) {
   showPiece(f.ball, feedWhen(f));
 }
 
-// Move the replay to t and outline piece `ball` there (none when it isn't one of the run's movers).
-function showPiece(ball, t) {
+// Move the replay to `time` and outline piece `ball` there (none when it isn't one of the run's movers).
+function showPiece(ball, time) {
   pause();
   const mover = ball == null ? -1 : rp.run.movers.indexOf(`ball.${ball}`);
   rp.outlined = mover >= 0 ? ball : null;
   if (rp.view) rp.view.outline(mover);
-  setTime(t);
+  setTime(time);
 }
 
 // -- the moments the replay marks (a slip) ---------------------------------------------------------------------------
@@ -452,20 +452,20 @@ function renderList() {
 }
 
 // -- the replay ----------------------------------------------------------------------------------------------------
-function frameAt(t) {
+function frameAt(time) {
   const times = rp.run.motion.times;
   let lo = 0, hi = times.length - 1;
   if (hi < 0) return -1;
-  while (lo < hi) {   // the last frame at or before t
+  while (lo < hi) {   // the last frame at or before time
     const mid = (lo + hi + 1) >> 1;
-    if (times[mid] <= t + 1e-9) lo = mid; else hi = mid - 1;
+    if (times[mid] <= time + 1e-9) lo = mid; else hi = mid - 1;
   }
   return lo;
 }
 
-function setTime(t) {
+function setTime(time) {
   if (!rp.run) return;
-  rp.time = Math.max(start(), Math.min(end(), t));
+  rp.time = Math.max(start(), Math.min(end(), time));
   const k = frameAt(rp.time);
   const { n, poses } = rp.run.motion;
   if (rp.view && k >= 0) rp.view.applyFrame({ poses: poses.subarray(k * n * 7, (k + 1) * n * 7), n, seq: k });
@@ -474,14 +474,14 @@ function setTime(t) {
   drawChart();
 }
 
-// The shown run's sample of a signal at time t (the last at or before it); null when it has none.
-function signalAt(name, t) {
+// The shown run's sample of a signal at `time` (the last at or before it); null when it has none.
+function signalAt(name, time) {
   const sig = rp.run.result.signals || {}, times = sig.t || [], vs = sig[name];
-  if (!vs || !times.length || times[0] > t + 1e-9) return null;
+  if (!vs || !times.length || times[0] > time + 1e-9) return null;
   let lo = 0, hi = times.length - 1;
   while (lo < hi) {
     const mid = (lo + hi + 1) >> 1;
-    if (times[mid] <= t + 1e-9) lo = mid; else hi = mid - 1;
+    if (times[mid] <= time + 1e-9) lo = mid; else hi = mid - 1;
   }
   return vs[lo];
 }
@@ -695,7 +695,7 @@ function plot(canvas, name, cmp, tEnd, tk) {
   if (hi - lo < 1e-6) { lo -= 1; hi += 1; }
   const t0 = start();
   const plotH = H - TICKS_H - PAD_T;
-  const X = (t) => PAD_L + ((t - t0) / Math.max(1e-9, tEnd - t0)) * (W - PAD_L - PAD_R);
+  const X = (time) => PAD_L + ((time - t0) / Math.max(1e-9, tEnd - t0)) * (W - PAD_L - PAD_R);
   const Y = (v) => PAD_T + (1 - (v - lo) / (hi - lo)) * plotH;
   ctx.font = `10px ${tk.font}`;
   ctx.lineWidth = 1;
