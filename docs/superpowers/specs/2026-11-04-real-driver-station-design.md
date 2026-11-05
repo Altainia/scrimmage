@@ -117,3 +117,27 @@ Each decision gives the choice, the reason, and what it costs if it is wrong.
   - **Cost:** if the extension never clears `>ds`, a stopped DS shows its last state, and the docs say so.
 - **D6. Display only:** scrimmage never acts on the real DS's state. Its physics and scoring don't depend on the mode.
 - **D7. The choice is fixed per session.** It is made before Start; to change it, stop and start again.
+
+## Rulings during the build
+
+Made while building (decide-and-document); docs/driver-station.md follows them.
+
+- **The texts:** `REAL_DS_DRIVING` ("the FRC Driver Station is driving") and `REAL_DS_WAITING` ("waiting for the
+  Driver Station") are constants in scrimmage/driverstation.py, shared by the session, the Drive tab and the docs
+  test.
+- **D4 as observed:** the robot program doesn't report `>game_data` back (RobotPy 2026.2.2). The robot still reads
+  the DS's game data, but scrimmage can't show it; the Drive tab's Game data box stays empty, with a hint.
+- **D5 as observed:** when the DS stops, the extension disables the robot within 100 ms but keeps `>ds` true. So
+  scrimmage shows "connected", disabled, with the last station and FMS; "waiting" shows only before a first
+  connection. The e2e test pins this.
+- **`serve --real-ds/--no-real-ds`:** the default is the config's `[driver_station] real`, and `--no-real-ds`
+  turns a config's default off.
+- **Java by hand:** the init script turns the DS socket on only with `SCRIMMAGE_DS_SOCKET=1` (scrimmage sets it
+  when it launches), and otherwise turns a project's own `addDriverstation()` off.
+- **The Drive tab's labels:** the choice is "Scrimmage (this page)" or "The FRC Driver Station app" (Goal 7's
+  "Real Driver Station"). The robot code panel's Start and check devices sends the Drive tab's choice once the
+  student has picked it there, else the config's default.
+- **Match timer:** in a real-DS session the Drive tab's Match timer box is checked whenever the DS sends a match
+  time; the report has no separate timer flag.
+- **The not-listening note** goes to the log (the terminal) and `status()["warnings"]`; the Drive tab keeps showing
+  "Waiting for the Driver Station".

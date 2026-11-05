@@ -69,7 +69,8 @@ To drive by hand, use the two-terminal form above.
 see [examples/java/README.md](examples/java/README.md).
 
 `serve` options: `--launch`, `--viewer`, `--speed` (a real-time factor or `max`), `--step`, `--log FILE.csv`,
-`--host`, `--port` (default 3300), `--sim-mode fast|phoenix` (see below), `--no-nt` and `-v`.
+`--host`, `--port` (default 3300), `--sim-mode fast|phoenix` (see below), `--no-nt`, `--real-ds`/`--no-real-ds` (the
+FRC Driver Station app drives the robot: [docs/driver-station.md](docs/driver-station.md)) and `-v`.
 
 ### Headless runs: scenario files
 
@@ -263,7 +264,7 @@ edit the robot code, `restart_robot()`, repeat. The agent launches your robot wi
 
 | Tool | What it does |
 |---|---|
-| `start_session` | Start a session from a config (`attach`, `viewer`, `speed`, `replace`). Starts held at t=0, disabled. |
+| `start_session` | Start a session from a config (`attach`, `viewer`, `speed`, `replace`, `sim_mode`, `real_ds`). Starts held at t=0, disabled. `real_ds=true` lets the FRC Driver Station app drive the robot, in real time ([docs/driver-station.md](docs/driver-station.md)); left out, it takes the config's `[driver_station] real`. |
 | `stop_session` | Stop the session and the robot program. |
 | `restart_robot` | Relaunch the robot program (after editing code, or after a crash) and reset the world to t=0. The game data stays. |
 | `session_status` | Whether a session is running, lockstep is active, and which HAL devices exist. |
@@ -495,6 +496,9 @@ step_timeout = 10                # seconds the robot may take to finish one lock
 [match]                          # what scenarios, the Drive tab and agents send as the Driver Station (docs/match.md)
 station = "blue1"                # red1-red3 or blue1-blue3
 timer = false                    # true: count the match time down; fms, auto_seconds and teleop_seconds can go here too
+
+[driver_station]
+real = false                     # true: the FRC Driver Station app drives the robot (docs/driver-station.md)
 ```
 
 `sim_mode` (and `--sim-mode` on `serve` and `run`, which overrides it) only sets the robot's environment
@@ -602,7 +606,9 @@ creates is reported as a fast-mode problem.
 project it:
 
 - loads only the HALSim WebSocket client (the sim GUI, DS socket, WS server and XRP extensions are off,
-  because Scrimmage is the Driver Station);
+  because Scrimmage is the Driver Station). With `SCRIMMAGE_DS_SOCKET=1`, which Scrimmage sets when the FRC Driver
+  Station app drives ([docs/driver-station.md](docs/driver-station.md)), it also turns on the DS socket, adding
+  `wpi.sim.addDriverstation()`'s extension if the project has none;
 - appends the lockstep extension to `HALSIM_EXTENSIONS`, so Scrimmage holds the robot clock;
 - puts Scrimmage's host and port in the sim environment, over any `wpi.sim.envVar(...)` in your project
   (it prints a note when it overrides one);
@@ -694,6 +700,10 @@ and `advance(seconds)` waits until physics has moved on that far. `session_statu
 `unpausable: true` with the warning "Phoenix 6 devices keep running between calls: this session can't
 pause them", and the first `advance` result carries the same `warning`. Set the robot's mode (disabled, say)
 before a long pause if it shouldn't keep driving.
+
+A session the FRC Driver Station app drives (`real_ds=true`) runs in real time too, with the warning "the real
+Driver Station keeps the robot running between calls: this session can't pause it"; there the app sets the mode
+([docs/driver-station.md](docs/driver-station.md)).
 
 ## Fast mode (CTRE robots)
 
@@ -796,7 +806,9 @@ Xbox controller's sticks) or a gamepad, with a Driver Station bar (mode, Enable 
 Pause / Step / speed controls, a live 3D view, readouts and plots of any signal. Poke the robot (drag it, drag a game
 piece, push it) to set up situations, then **Record** a drive and **Save as scenario**: the scenario replays your
 exact inputs from a CSV input track, ready for checks. Inputs go to zero if the page stops sending them, and closing
-the page disables the robot. The Scenario tab can **Watch** a run in 3D. See [docs/drive.md](docs/drive.md).
+the page disables the robot. The Scenario tab can **Watch** a run in 3D. See [docs/drive.md](docs/drive.md). To
+practice with the real FRC Driver Station app and your team's gamepad instead, see
+[docs/driver-station.md](docs/driver-station.md).
 
 ## Parts from FreeCAD
 
@@ -1052,6 +1064,7 @@ docs/sensors.md    [[sensor]] beam breaks, distance and color sensors: keys, rea
 docs/terrain.md    field elements (bumps, ramps, platforms), terrain signals, scrimmage terrain sweep
 docs/climbing.md   bars, the climber part, climb signals, scrimmage climb run and its scripts, the climb scenario
 docs/match.md      match data: [match] (station, FMS, the match timer), game data, robot code, Drive tab, set_match
+docs/driver-station.md  driving with the FRC Driver Station app: turning it on, Windows setup, ports, what's off
 freecad/           the FreeCAD workbench add-on (Scrimmage/), installed by `scrimmage freecad install`
 configs/           robot configs built from parts (kitbot, swerve, elevator_arm, fastmode, disc_robot,
                    climber_robot)
