@@ -26,6 +26,7 @@
 
 import { $, h, api, notice, serial, registerTab, setTab, showPath, sessionToken } from "./app.js";
 import { uploadCad, cadFilesProblem, filesName } from "./start.js";
+import { units } from "./units.js";
 
 export const part = {
   state: null,        // /api/part/state
@@ -60,12 +61,15 @@ const pieceOf = (key) => part.state.pieces.find((p) => p.key === key) || null;
 const bodyOf = (name) => part.state.bodies.find((b) => b.name === name) || null;
 export const tail = (key) => String(key).split("/").pop();
 
+// A weight in the chosen units (units.js): two places from 10 up, else three significant digits (a screw's weight).
 export function kg(x) {
   if (typeof x !== "number" || !isFinite(x)) return "—";
-  return `${x >= 10 ? x.toFixed(2) : x === 0 ? "0" : String(+x.toPrecision(3))} kg`;
+  const v = units.toDisplay(x, "mass");
+  return `${v >= 10 ? v.toFixed(2) : v === 0 ? "0" : String(+v.toPrecision(3))} ${units.name("mass")}`;
 }
-const mm = (v) => (Math.abs(v) < 5e-4 ? 0 : v).toFixed(3);   // never "-0.000"
-export const cog = (c) => (c ? `x ${mm(c[0])}, y ${mm(c[1])}, z ${mm(c[2])} m` : "none (no weight)");
+// A point (the center of gravity, a pivot): to 0.001 in or 0.1 mm, never "-0"
+const len = (v) => units.number(units.toDisplay(v, "length"), units.name("length") === "in" ? 3 : 1);
+export const cog = (c) => (c ? `x ${len(c[0])}, y ${len(c[1])}, z ${len(c[2])} ${units.name("length")}` : "none (no weight)");
 
 // -- edits ------------------------------------------------------------------------------------------
 async function mutate(path, body) {
@@ -482,6 +486,33 @@ export function box(attrs, commit) {
   return el;
 }
 
+// A typed measure (units.js kind) in SI, or null for an empty box; NaN (and a local message, nothing sent) for
+// text that isn't one. As number(): the comma rule, the typed minus sign; a number may end with its unit ("4 in").
+export function measure(text, name, kind) {
+  text = text.trim().replace(/\u2212/g, "-");
+  if (text === "") return null;
+  let message = null;
+  if (THOUSANDS.test(text)) {
+    const whole = text.replace(",", ""), dec = text.replace(",", ".");
+    message = `"${text}" could mean ${whole} or ${dec}. Type it without the comma.`;
+  }
+  const v = message ? null : units.parse(text.replace(/^([+-]?\d*),/, "$1."), kind);
+  if (v !== null && typeof v === "object") message = v.error;
+  if (message) {
+    part.errors = [{ field: name, message }];
+    render();
+    return NaN;
+  }
+  return v;
+}
+
+// A box's text for an SI measure (units.js shown), and the box's value back: its saved SI value while its text is
+// still the shown one, so a row of boxes saved together writes back the ones not changed exactly as they were.
+export const shownMeasure = (si, kind) => (typeof si === "number" && isFinite(si) ? units.shown(si, kind) : "");
+export function boxMeasure(el, si, name, kind) {
+  return el.value.trim() === shownMeasure(si, kind) && typeof si === "number" ? si : measure(el.value, name, kind);
+}
+
 // A typed number, or null for an empty box; NaN (and a local message, nothing sent) for text that isn't one.
 // The boxes are text boxes, not type=number: a number box reads "1." as "1", so a redraw mid-typing would turn
 // "1." then "5" into 15. A comma counts as the decimal point, except before exactly three digits: "7,850" could
@@ -511,8 +542,8 @@ export function matLabel(key, short = false) {
   const m = part.materials && part.materials.materials[key];
   if (!m) return key;
   if (short) return m.label;
-  const g = (m.density / 1000).toFixed(2);
-  return m.printed ? `${m.label}, ${g} g/cm³ solid` : `${m.label} (${g} g/cm³)`;
+  const g = units.fmt(m.density, "density");
+  return m.printed ? `${m.label}, ${g} solid` : `${m.label} (${g})`;
 }
 
 const noticed = new WeakSet();   // refused edits whose unplaced messages were already shown as notices
@@ -596,6 +627,7 @@ export async function initPart() {
   window.__scrimmagePart = { store: part, screenPos: () => null, scene: { drawn: [], faint: [], meshes: 0 }, render: () => render() };
   await import("./part_inspector.js");   // its sections (it imports this file, so not at the top)
   registerTab("part", { renderTop, undo, redo, onShow: render });
+  units.onChange(() => render());   // renderInspector keeps what is half typed
   setTab("part");
   $("#part-new-body").addEventListener("click", () => {
     const ps = selectedPieces();

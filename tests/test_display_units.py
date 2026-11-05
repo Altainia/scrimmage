@@ -54,6 +54,9 @@ def test_fmt_trims_zeros_and_rounds_within_the_decimals():
     assert fmt(-0.1016, "length", "imperial") == "-4 in"
     assert fmt(1e6, "field", "metric") == "1000000 m"          # huge values are written out, not 1e+06
     assert fmt(1e6, "field", "imperial") == "3280839.9 ft"
+    # past the default 28-digit Decimal context: still written out, not an InvalidOperation
+    assert fmt(1e25, "field", "metric") == "10000000000000000000000000 m"
+    assert fmt(-1e300, "length", "metric") == "-1" + "0" * 303 + " mm"
     # a tie (as written) rounds away from zero, in units.js too, so the page and the server agree
     assert fmt(0.125, "time", "metric") == "0.13 s"
     assert fmt(-0.125, "time", "metric") == "-0.13 s"

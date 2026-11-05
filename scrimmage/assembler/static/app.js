@@ -385,7 +385,7 @@ function renderSaved() {
 function renderStatus() {
   const s = store.state;
   renderSaved();
-  $("#mass").textContent = s.mass_kg == null ? "Mass: —" : `Mass: ${s.mass_kg.toFixed(1)} kg`;
+  $("#mass").textContent = s.mass_kg == null ? "Mass: —" : `Mass: ${units.number(units.toDisplay(s.mass_kg, "mass"), 1)} ${units.name("mass")}`;
   $("#cg").textContent = cgText(s.com);
   $("#cg").title = s.com ? "The robot's center of gravity at its start pose, from the floor at the frame's center" : "";
   $("#counts").textContent = s.bodies == null ? "" : `${s.bodies} bodies · ${s.joints} joints`;
@@ -398,15 +398,17 @@ function renderStatus() {
 }
 export { renderErrors, renderStatus };
 
-// "CG: 0.31 m up, 0.02 m forward" (meters, two decimals) from the state's com, with ", 0.03 m left" (or right) when
-// that rounds to 0.01 m or more; "" without one. Each side comes from the rounded value: never "0.00 m back".
+// "CG: 12.2 in up, 0.8 in forward" (or "310 mm up, 20 mm forward": to 0.1 in or 1 mm, about today's 1 cm) from the
+// state's com, with ", 1.2 in left" (or right) when the rounded value isn't 0. Each side comes from the rounded value.
+const CG_DECIMALS = { in: 1, mm: 0 };
 export function cgText(com) {
   if (!com) return "";
-  const r = (v) => Number(v.toFixed(2)) || 0;     // || 0: -0 reads as 0
-  const m = (v) => Math.abs(r(v)).toFixed(2);
+  const u = units.name("length"), d = CG_DECIMALS[u] ?? 2;
+  const r = (v) => Number(units.toDisplay(v, "length").toFixed(d)) || 0;     // || 0: -0 reads as 0
+  const m = (v) => `${Math.abs(r(v)).toFixed(d)} ${u}`;
   const side = r(com.left);
-  return `CG: ${m(com.height)} m up, ${m(com.forward)} m ${r(com.forward) < 0 ? "back" : "forward"}`
-    + (side ? `, ${m(com.left)} m ${side < 0 ? "right" : "left"}` : "");
+  return `CG: ${m(com.height)} up, ${m(com.forward)} ${r(com.forward) < 0 ? "back" : "forward"}`
+    + (side ? `, ${m(com.left)} ${side < 0 ? "right" : "left"}` : "");
 }
 
 // -- helpers shared by the library and inspector ------------------------------------------------
@@ -487,6 +489,23 @@ export function fmt(v) {
   if (typeof v !== "number" || !isFinite(v)) return v === null || v === undefined ? "" : String(v);
   return String(+v.toPrecision(10));
 }
+
+// A number box for a measure (units.js kinds): it shows `si` in the chosen units and remembers it, and
+// readMeasure gives back that exact SI value while the text is still what it showed (so a box saved without being
+// changed, beside one that was, writes what the file had), null for an empty box, else what units.parse makes of
+// the text: SI, or {error} saying what to type.
+export function showMeasure(el, si, kind) {
+  el.value = el.dataset.shown = units.shown(si, kind);
+  if (typeof si === "number" && isFinite(si)) el.dataset.si = String(si); else delete el.dataset.si;
+  return el;
+}
+export function readMeasure(el, kind) {
+  const t = el.value.trim();
+  if (t === "") return null;
+  if (el.dataset.si !== undefined && t === el.dataset.shown) return Number(el.dataset.si);
+  return units.parse(t, kind);
+}
+export const measureError = (v) => (v !== null && typeof v === "object" ? v.error : null);
 
 // A Grip picker's entry for a pad with no grip set (the Part and Test tabs; scrimmage/blocks/run.py DEFAULT_GRIP_NOTE)
 export const DEFAULT_GRIP = "Default — 1.0 (MuJoCo's default; the larger of pad and piece applies)";
@@ -615,6 +634,7 @@ function bootRobot() {
   });
   loadLibrary();
   pollLoop();
+  units.onChange(() => renderAll());   // the inspector keeps what is half typed (renderInspector)
   // the Scenario tab: loaded on its own (like the 3D view) so a failure there can't break the Robot tab
   import("./scenario.js").then((m) => m.initScenario()).catch((e) => {
     console.error(e);

@@ -172,3 +172,26 @@ def test_a_bad_settings_file_shows_one_warning(browser, tmp_path):
     finally:
         ctx.close()
         srv.stop()
+
+
+def test_a_poll_answered_after_a_change_doesnt_undo_it(page):
+    """A GET that left before set()'s POST but is answered after it carries the old setting: it is dropped."""
+    got = page.evaluate("""async () => {
+      const real = window.fetch;
+      let open; const gate = new Promise((r) => { open = r; });
+      window.fetch = async (url, opts) => {
+        const res = await real(url, opts);
+        if ((opts.method || 'GET') === 'GET') await gate;   // the server answered (Imperial); held back
+        return res;
+      };
+      try {
+        const poll = U.load();
+        await new Promise((r) => setTimeout(r, 300));
+        await U.set('metric');
+        open();
+        await poll;
+        return U.units.system;
+      } finally { window.fetch = real; }
+    }""")
+    assert got == "metric"
+    assert page.evaluate("U.load().then(() => U.units.system)") == "metric"

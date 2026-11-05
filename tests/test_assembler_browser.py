@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from browser_harness import GL_ARGS, _unavailable, browser  # noqa: F401  (the fixture; see there)
+from browser_harness import GL_ARGS, _unavailable, browser, page_units  # noqa: F401  (the fixture; see there)
 
 pytestmark = pytest.mark.browser
 
@@ -265,14 +265,22 @@ def test_cg_text_and_marker(make_page):
     page, _ = make_page("kitbot.toml")
     page.wait_for_function("document.querySelector('#cg').textContent.startsWith('CG: ')")
     com = page.evaluate("__scrimmage.state.com")
-    assert re.fullmatch(r"CG: \d+\.\d\d m up, \d+\.\d\d m (forward|back)", page.inner_text("#cg"))
-    assert page.inner_text("#cg").startswith(f"CG: {com['height']:.2f} m up, ")
-    # left/right shows from 0.01 m; each side comes from the rounded value (never "0.00 m back")
+    # inches (the default, Imperial) to 0.1 in
+    assert re.fullmatch(r"CG: \d+\.\d in up, \d+\.\d in (forward|back)", page.inner_text("#cg"))
+    assert page.inner_text("#cg").startswith(f"CG: {com['height'] / 0.0254:.1f} in up, ")
+    # left/right shows from 0.1 in (1 mm); each side comes from the rounded value (never "0.0 in back")
+    cases = "[[0.31, 0.02, 0.03], [0.31, -0.001, -0.001], [0.2, -0.005, -0.012], [0.2, 0.001, 0.006]]"
+    texts = page.evaluate(f"""async () => {{ const {{ cgText }} = await import('./app.js');
+      return {cases}.map(([height, forward, left]) => cgText({{ height, forward, left }})); }}""")
+    assert texts == ["CG: 12.2 in up, 0.8 in forward, 1.2 in left", "CG: 12.2 in up, 0.0 in forward",
+                     "CG: 7.9 in up, 0.2 in back, 0.5 in right", "CG: 7.9 in up, 0.0 in forward, 0.2 in left"]
+    # Metric: to 1 mm, and the status bar follows the setting at once
+    page.evaluate("async () => (await import('./units.js')).set('metric')")
+    page.wait_for_function("document.querySelector('#cg').textContent.includes(' mm up')")
+    assert page.inner_text("#cg").startswith(f"CG: {com['height'] * 1000:.0f} mm up, ")
     texts = page.evaluate("""async () => { const { cgText } = await import('./app.js');
-      return [[0.31, 0.02, 0.03], [0.31, -0.004, -0.004], [0.2, -0.005, -0.012], [0.2, 0.004, 0.006]]
-        .map(([height, forward, left]) => cgText({ height, forward, left })); }""")
-    assert texts == ["CG: 0.31 m up, 0.02 m forward, 0.03 m left", "CG: 0.31 m up, 0.00 m forward",
-                     "CG: 0.20 m up, 0.01 m back, 0.01 m right", "CG: 0.20 m up, 0.00 m forward, 0.01 m left"]
+      return [[0.31, 0.02, 0.03], [0.31, -0.0004, -0.0004]].map(([height, forward, left]) => cgText({ height, forward, left })); }""")
+    assert texts == ["CG: 310 mm up, 20 mm forward, 30 mm left", "CG: 310 mm up, 0 mm forward"]
     assert page.evaluate("__scrimmage.scene.cg") is False and page.get_attribute("#view-cg", "aria-pressed") == "false"
     page.click("#view-cg")
     page.wait_for_function("__scrimmage.scene.cg === true")
@@ -290,6 +298,7 @@ def test_import_cad_from_the_library_places_it_by_cad(make_page, tmp_path, monke
     monkeypatch.setenv("SCRIMMAGE_CACHE", str(tmp_path / "cache"))
     shutil.copy(REPO / "tests" / "data" / "cad" / "climber.step", tmp_path / "climber.step")
     page, cfg = make_page("kitbot.toml")
+    page_units(page, "metric")      # the nudge below is 10 mm
     page.click("#lib-import-cad")
     page.wait_for_selector("#start-cad-for")
     page.click("#start-cad-browse-btn")
@@ -405,6 +414,7 @@ def test_context_loss_message(make_page):
 
 def test_bad_text_in_number_boxes_is_an_error_and_not_sent(make_page):
     page, cfg = make_page("elevator_arm.toml")
+    page_units(page, "metric")      # the messages below name mm
     page.evaluate("__scrimmage.select('elevator')")
     page.wait_for_selector("#insp-pos-0")
     before = cfg.read_bytes()
@@ -415,7 +425,7 @@ def test_bad_text_in_number_boxes_is_an_error_and_not_sent(make_page):
     page.keyboard.press("Enter")
     err = page.locator('[data-field="elevator/pos"] .error')
     err.wait_for()
-    assert err.inner_text().strip() == "Enter a number."
+    assert err.inner_text().strip() == '"-" isn\'t a unit for this: type a number in mm'
     page.wait_for_timeout(500)
     assert cfg.read_bytes() == before
 
@@ -425,7 +435,7 @@ def test_bad_text_in_number_boxes_is_an_error_and_not_sent(make_page):
     page.click('button[aria-label="Increase y by 10 mm"]')
     page.wait_for_timeout(500)
     assert cfg.read_bytes() == before
-    assert page.locator('[data-field="elevator/pos"] .error').inner_text().strip() == "Enter a number."
+    assert page.locator('[data-field="elevator/pos"] .error').inner_text().strip() == '"e" isn\'t a unit for this: type a number in mm'
 
     # a float parameter and a pair
     for sel, fid in (("#insp-p-travel", "elevator/param:travel"),):
@@ -434,7 +444,7 @@ def test_bad_text_in_number_boxes_is_an_error_and_not_sent(make_page):
         page.keyboard.press("Enter")
         e = page.locator(f'[data-field="{fid}"] .error')
         e.wait_for()
-        assert e.inner_text().strip() == "Enter a number."
+        assert e.inner_text().strip() == '"-" isn\'t a unit for this: type a number in mm'
     page.evaluate("__scrimmage.select('arm')")
     page.wait_for_selector("#insp-p-range-1")
     page.fill("#insp-p-range-1", "")
@@ -442,7 +452,7 @@ def test_bad_text_in_number_boxes_is_an_error_and_not_sent(make_page):
     page.keyboard.press("Enter")
     e = page.locator('[data-field="arm/param:range"] .error')
     e.wait_for()
-    assert e.inner_text().strip() == "Enter a number."
+    assert e.inner_text().strip() == '"-" isn\'t a unit for this: type a number in °'
     page.wait_for_timeout(500)
     assert cfg.read_bytes() == before
 
@@ -521,8 +531,33 @@ def _run(page, state: str):
     assert page.evaluate("__scrimmage.scenario.runs[0].state") == state
 
 
+def test_the_field_picker_shows_and_takes_the_chosen_units(scenario_page):
+    """Units (Settings): the field picker's x, y and tol_xy are feet (the default) or meters; the file keeps meters,
+    and a value typed reads back as typed."""
+    page, scn = scenario_page("fake_fail.toml")
+    page.click("#step-row-1")
+    page.click("[data-key='pick-1-1']")
+    page.wait_for_selector("#field-dialog[open]")
+    assert page.inner_text("label[for='fp-x'] .unit") == "ft" and page.inner_text("label[for='fp-tol-xy'] .unit") == "ft"
+    page.fill("#fp-heading", "")
+    page.fill("#fp-x", "6.5")
+    page.fill("#fp-tol-xy", "1 m")                       # the other system's unit: refused at OK, saying why
+    page.click("#fp-ok")
+    assert "Units is set to Imperial, so type ft here, not m" in page.inner_text("#field-dialog .error")
+    page.fill("#fp-tol-xy", "1 ft")
+    v = page.evaluate("__scrimmage.scenario.state.version")
+    page.click("#fp-ok")
+    page.wait_for_function(f"__scrimmage.scenario.state.version === {v + 1}")
+    spec = page.evaluate("__scrimmage.scenario.state.steps[1].checks[1].spec")
+    assert spec["x"] == 1.9812 and spec["tol_xy"] == 0.3048
+    page.click("[data-key='pick-1-1']")
+    page.wait_for_selector("#field-dialog[open]")
+    assert page.input_value("#fp-x") == "6.5"
+
+
 def test_scenario_run_fail_fix_with_field_picker_then_pass(scenario_page):
     page, scn = scenario_page("fake_fail.toml")
+    page_units(page, "metric")      # the numbers below are meters
     page.click("#step-row-1")
 
     # run: the pose check fails, with the runner's own message, and step 2's timeline dot turns red
@@ -674,10 +709,11 @@ push = "arm.arm"
 push_pos = [0.2, 0.0, 0.0]
 """, encoding="utf-8")
     page, cfg = make_page(None)
+    page_units(page, "metric")      # the boxes below are millimeters
     page.evaluate("__scrimmage.select('cyl')")
     page.wait_for_selector("#insp-p-push_pos-2")
-    assert [page.input_value(f"#insp-p-push_pos{k}") for k in ("", "-1", "-2")] == ["0.2", "0", "0"]
-    page.fill("#insp-p-push_pos", "0.25")
+    assert [page.input_value(f"#insp-p-push_pos{k}") for k in ("", "-1", "-2")] == ["200", "0", "0"]
+    page.fill("#insp-p-push_pos", "250")
     page.keyboard.press("Enter")
     page.wait_for_function("JSON.stringify(__scrimmage.state.parts.find(p => p.name === 'cyl').params.push_pos)"
                            " === '[0.25,0,0]'")
@@ -692,7 +728,7 @@ push_pos = [0.2, 0.0, 0.0]
     page.fill("#insp-p-push_pos-1", "")
     page.type("#insp-p-push_pos-1", "1-")
     page.keyboard.press("Enter")
-    expect(page.locator('[data-field="cyl/param:push_pos"] .error')).to_have_text("Enter a number.")
+    expect(page.locator('[data-field="cyl/param:push_pos"] .error')).to_have_text(re.compile("isn't a unit for this: type a number in mm"))
     page.wait_for_timeout(500)
     assert cfg.read_bytes() == before
 
@@ -909,6 +945,7 @@ def test_a_redraw_while_typing_neither_commits_early_nor_loses_the_text(make_pag
     """Half-typed text in an inspector box survives a redraw (a state arriving) without being committed, and the
     student's Enter then commits the whole value exactly once."""
     page, _ = make_page("kitbot.toml")
+    page_units(page, "metric")      # the boxes below are millimeters
     posts = []
     page.on("request", lambda r: posts.append(r.post_data_json) if r.url.endswith("/api/robot/edit") and r.method == "POST" else None)
     page.evaluate("__scrimmage.select('dt')")
@@ -922,14 +959,15 @@ def test_a_redraw_while_typing_neither_commits_early_nor_loses_the_text(make_pag
     page.keyboard.type("5")
     page.evaluate("__scrimmage.render()")          # again between the last key and Enter
     page.keyboard.press("Enter")
-    page.wait_for_function("__scrimmage.state.parts.find(p => p.name === 'dt').pos[0] === 0.15")
+    page.wait_for_function("__scrimmage.state.parts.find(p => p.name === 'dt').pos[0] === 0.00015")
     page.wait_for_timeout(300)
-    assert [(p["op"], p["pos"][0]) for p in posts] == [("attach", 0.15)]
+    assert [(p["op"], p["pos"][0]) for p in posts] == [("attach", 0.00015)]
 
 
 def test_a_redraw_after_a_trailing_point_keeps_the_decimal(make_page):
     """"1." then a redraw then "5" commits 1.5, not 15: the boxes are text boxes, so the redraw keeps "1." as typed."""
     page, _ = make_page("kitbot.toml")
+    page_units(page, "metric")      # the boxes below are millimeters
     posts = []
     page.on("request", lambda r: posts.append(r.post_data_json) if r.url.endswith("/api/robot/edit") and r.method == "POST" else None)
     page.evaluate("__scrimmage.select('dt')")
@@ -940,6 +978,80 @@ def test_a_redraw_after_a_trailing_point_keeps_the_decimal(make_page):
     assert page.input_value("#insp-pos-0") == "1."
     page.keyboard.type("5")
     page.keyboard.press("Enter")
-    page.wait_for_function("__scrimmage.state.parts.find(p => p.name === 'dt').pos[0] === 1.5")
+    page.wait_for_function("__scrimmage.state.parts.find(p => p.name === 'dt').pos[0] === 0.0015")
     page.wait_for_timeout(300)
-    assert [(p["op"], p["pos"][0]) for p in posts] == [("attach", 1.5)]
+    assert [(p["op"], p["pos"][0]) for p in posts] == [("attach", 0.0015)]
+
+
+def _shown(si: float, kind: str, system: str) -> str:
+    """What a units.js number box shows for `si` (units.shown: two places more than fmt)."""
+    from scrimmage.units import TABLE, number, to_display
+    return number(to_display(si, kind, system), TABLE[system][kind].decimals + 2)
+
+
+def test_the_inspector_shows_and_takes_the_chosen_units(make_page):
+    """Units (Settings): offsets and stock parameters show and take inches (the default) or millimeters, the status
+    bar's mass follows, the file keeps meters, and a box not changed writes back exactly what the file had."""
+    import tomllib
+    page, cfg = make_page("elevator_arm.toml")
+    elevator = lambda: next(p for p in tomllib.loads(cfg.read_text())["part"] if p["name"] == "elevator")  # noqa: E731
+    page.evaluate("__scrimmage.select('elevator')")
+    page.wait_for_selector("#insp-pos-0")
+    assert page.input_value("#insp-pos-0") == "3.93701"          # 0.1 m
+    assert page.input_value("#insp-pos-2") == _shown(0.12, "length", "imperial")
+    assert page.inner_text('[data-field="elevator/pos"] .field-label .unit').strip() == "in"
+    assert page.get_attribute('#inspector [aria-label^="Increase z by"]', "aria-label") == "Increase z by 0.25 in"
+    assert page.inner_text("#mass").endswith(" lb")
+    # a typed offset in inches is saved in meters; the boxes not changed keep the file's exact values
+    v = page.evaluate("__scrimmage.state.version")
+    page.fill("#insp-pos-0", "4")
+    page.keyboard.press("Enter")
+    page.wait_for_function(f"__scrimmage.state.version > {v}")
+    assert elevator()["pos"] == [0.1016, 0.0, 0.12]
+    # a stock parameter in meters is a length: "4 in" may say its unit
+    page.fill("#insp-p-travel", "40 in")
+    v = page.evaluate("__scrimmage.state.version")
+    page.keyboard.press("Enter")
+    page.wait_for_function(f"__scrimmage.state.version > {v}")
+    assert elevator()["travel"] == pytest.approx(1.016)
+    assert "in" in page.inner_text('[data-field="elevator/param:travel"] .unit')
+
+    # Review Focus 4: switching while typing keeps the box and its text; the rest follows at once
+    page.fill("#insp-pos-1", "12")
+    page.focus("#insp-pos-1")
+    page_units(page, "metric")
+    page.wait_for_function("document.querySelector('#insp-pos-0').value === '101.6'")
+    assert page.input_value("#insp-pos-1") == "12"
+    assert page.evaluate("document.activeElement.id") == "insp-pos-1"
+    assert page.inner_text('[data-field="elevator/pos"] .field-label .unit').strip() == "mm"
+    assert page.inner_text("#mass").endswith(" kg")
+    assert page.get_attribute('#inspector [aria-label^="Increase z by"]', "aria-label") == "Increase z by 10 mm"
+    v = page.evaluate("__scrimmage.state.version")
+    page.keyboard.press("Enter")                                 # the kept text is now millimeters
+    page.wait_for_function(f"__scrimmage.state.version > {v}")
+    assert elevator()["pos"] == [0.1016, 0.012, 0.12]
+    # the other system's unit is refused, saying why
+    page.fill("#insp-p-travel", "40 in")
+    page.keyboard.press("Enter")
+    err = page.locator('[data-field="elevator/param:travel"] .error')
+    err.wait_for()
+    assert "Units is set to Metric, so type mm here, not in" in err.inner_text()
+    page.fill("#insp-p-travel", "900")
+    v = page.evaluate("__scrimmage.state.version")
+    page.keyboard.press("Enter")
+    page.wait_for_function(f"__scrimmage.state.version > {v}")
+    assert elevator()["travel"] == pytest.approx(0.9)
+
+
+def test_switching_units_never_changes_the_robot_file(make_page):
+    """Review Focus 1: the setting is display only. Switching (and the redraws it makes) writes nothing."""
+    page, cfg = make_page("elevator_arm.toml")
+    page.evaluate("__scrimmage.select('elevator')")
+    page.wait_for_selector("#insp-pos-0")
+    before = cfg.read_bytes()
+    for system in ("metric", "imperial", "metric"):
+        page_units(page, system)
+        page.focus("#insp-pos-0")
+        page.keyboard.press("Enter")                             # Enter on a box not changed sends nothing new
+    page.wait_for_timeout(500)
+    assert cfg.read_bytes() == before

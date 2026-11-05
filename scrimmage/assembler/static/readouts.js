@@ -5,8 +5,11 @@
 // (no session yet) it says so. Rows are reused between calls, so it is cheap at 10 Hz.
 
 import { h } from "./app.js";
+import { units } from "./units.js";
 
 const fmt = (v, digits) => (typeof v === "number" && isFinite(v) ? v.toFixed(digits) : "—");
+// A measure in the chosen units (units.js), to `digits` places kept (the rows don't jump about at 10 Hz)
+const measure = (v, kind, digits) => (typeof v === "number" && isFinite(v) ? `${units.toDisplay(v, kind).toFixed(digits)} ${units.name(kind)}` : "—");
 
 // A bar from -1 to 1 filled from the center (command), or from 0 to max (current).
 function bar(kind) {
@@ -58,8 +61,8 @@ class Readouts {
     this.empty.hidden = !!r;
     if (!r) return;
     const p = r.pose || {};
-    this.pose.textContent = `x ${fmt(p.x, 2)} m · y ${fmt(p.y, 2)} m · ${fmt(p.heading_deg, 1)}°`;
-    this.speed.textContent = `${fmt(r.speed, 2)} m/s`;
+    this.pose.textContent = `x ${measure(p.x, "field", 2)} · y ${measure(p.y, "field", 2)} · ${fmt(p.heading_deg, 1)}°`;
+    this.speed.textContent = measure(r.speed, "speed", 2);
     this.battery.textContent = `${fmt(r.battery, 2)} V`;
     const sc = r.range;   // the test range's counts, when the robot is on one
     this.scoreTitle.hidden = this.score.hidden = !sc;

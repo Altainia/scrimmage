@@ -15,7 +15,7 @@ results, report.json, CSVs, files) stays SI and never comes through here.
 from __future__ import annotations
 
 import math
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, localcontext
 from typing import NamedTuple
 
 from .settings import SYSTEMS, current_units
@@ -116,7 +116,10 @@ def number(shown: float, decimals: int) -> str:
     """`shown` to `decimals` places, trailing zeros trimmed, never "-0". It rounds the number as written (its
     shortest form: 6.35, not the binary 6.34999...), a tie away from zero, as units.js does, so the page and the
     server write the same text: 0.25 in is 6.4 mm."""
-    q = Decimal(repr(abs(shown))).quantize(Decimal(1).scaleb(-decimals), rounding=ROUND_HALF_UP)
+    d = Decimal(repr(abs(shown)))
+    with localcontext() as ctx:   # enough digits for any finite float (the default 28 can't quantize 1e25)
+        ctx.prec = max(28, d.adjusted() + decimals + 2)
+        q = d.quantize(Decimal(1).scaleb(-decimals), rounding=ROUND_HALF_UP)
     text = f"{q:f}"
     if "." in text:
         text = text.rstrip("0").rstrip(".")

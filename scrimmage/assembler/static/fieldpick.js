@@ -10,6 +10,7 @@
 // draw with them too, the start picker also with drawSides (the plain red / blue field) and robotFootprint.
 
 import { h, api, fmt } from "./app.js";
+import { units } from "./units.js";
 import { sc } from "./scenario.js";
 
 const DEFAULT_TOL_XY = 0.1, DEFAULT_TOL_H = 5;   // checks.py's defaults
@@ -276,25 +277,47 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
   canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
   const ctx = canvas.getContext("2d");
 
-  // the number boxes (blank = leave the key out)
+  // the number boxes (blank = leave the key out); x, y and tol_xy are field lengths in the chosen units (units.js),
+  // in text boxes so "12.5 ft" can be typed too, and a box back at the text it showed keeps its exact value
+  const FIELD_KEYS = new Set(["x", "y", "tol_xy"]);
+  const fieldUnits = [];   // the field-length unit labels, renamed when the setting changes
+  const show = (el, k) => {
+    if (!FIELD_KEYS.has(k)) { el.value = cur[k] === null ? "" : fmt(cur[k]); return; }
+    el.value = el.dataset.shown = cur[k] === null ? "" : units.shown(cur[k], "field");
+    el.dataset.si = String(cur[k]);
+    delete el.dataset.error;
+  };
   const box = (k, label, unit, placeholder) => {
-    const el = h("input", { id: `fp-${k.replace("_", "-")}`, type: "number", step: "any", inputmode: "decimal", class: "fp-num",
-      value: cur[k] === null ? "" : fmt(cur[k]), placeholder: placeholder ?? "", "aria-label": label });
+    const kind = FIELD_KEYS.has(k) ? "field" : null;
+    const el = h("input", { id: `fp-${k.replace("_", "-")}`, type: kind ? "text" : "number", step: kind ? null : "any", inputmode: "decimal",
+      autocomplete: kind ? "off" : null, class: "fp-num", placeholder: placeholder ?? "", "aria-label": label });
+    show(el, k);
     el.addEventListener("input", () => {
       if (el.validity.badInput) return;
       const t = el.value.trim();
-      cur[k] = t === "" ? null : Number(t);
+      if (!kind || t === "") { cur[k] = t === "" ? null : Number(t); delete el.dataset.error; draw(); return; }
+      const v = t === el.dataset.shown && el.dataset.si !== "null" ? Number(el.dataset.si) : units.parse(t, kind);
+      if (typeof v !== "number") { el.dataset.error = v.error; return; }
+      delete el.dataset.error;
+      cur[k] = v;
       draw();
     });
-    return [el, h("label", { class: "fp-field", for: el.id }, h("span", { class: "fp-label" }, label), h("span", { class: "with-unit" }, el, h("span", { class: "unit" }, unit)))];
+    const u = h("span", { class: "unit" }, kind ? units.name(kind) : unit);
+    if (kind) fieldUnits.push(u);
+    return [el, h("label", { class: "fp-field", for: el.id }, h("span", { class: "fp-label" }, label), h("span", { class: "with-unit" }, el, u))];
   };
-  const [xIn, xF] = box("x", "x", "m"), [yIn, yF] = box("y", "y", "m"), [hIn, hF] = box("heading", "heading", "°", "none");
-  const [txIn, txF] = box("tol_xy", "tol_xy", "m", String(DEFAULT_TOL_XY)), [thIn, thF] = box("tol_heading", "tol_heading", "°", String(DEFAULT_TOL_H));
-  const syncBoxes = () => {
-    xIn.value = cur.x === null ? "" : fmt(cur.x);
-    yIn.value = cur.y === null ? "" : fmt(cur.y);
-    hIn.value = cur.heading === null ? "" : fmt(cur.heading);
-  };
+  const [xIn, xF] = box("x", "x"), [yIn, yF] = box("y", "y"), [hIn, hF] = box("heading", "heading", "°", "none");
+  const [txIn, txF] = box("tol_xy", "tol_xy", null, units.shown(DEFAULT_TOL_XY, "field", 0)), [thIn, thF] = box("tol_heading", "tol_heading", "°", String(DEFAULT_TOL_H));
+  const syncBoxes = () => { show(xIn, "x"); show(yIn, "y"); show(hIn, "heading"); };
+  // Units changed in another tab or editor while this is open: the boxes and labels follow (not one being typed in)
+  const offUnits = units.onChange(() => {
+    for (const u of fieldUnits) u.textContent = units.name("field");
+    txIn.placeholder = units.shown(DEFAULT_TOL_XY, "field", 0);
+    for (const [el, k] of [[xIn, "x"], [yIn, "y"], [txIn, "tol_xy"]]) {
+      if (document.activeElement !== el || el.value.trim() === el.dataset.shown) show(el, k);
+    }
+    draw();
+  });
   const readout = h("span", { class: "fp-readout muted", "aria-live": "off" }, " ");
   const err = h("p", { class: "error", role: "alert", hidden: true });
 
@@ -346,7 +369,7 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
       ctx.restore();
       ctx.fillStyle = "#c62828"; ctx.font = "600 11px system-ui, sans-serif";
       ctx.textAlign = cx > W / 2 ? "right" : "left"; ctx.textBaseline = cy > H / 2 ? "bottom" : "top";
-      ctx.fillText(`target (${fmt(m.x)}, ${fmt(m.y)}) is off the field`, cx + (cx > W / 2 ? -14 : 14), cy + (cy > H / 2 ? -8 : 8));
+      ctx.fillText(`target (${units.fmt(m.x, "field")}, ${units.fmt(m.y, "field")}) is off the field`, cx + (cx > W / 2 ? -14 : 14), cy + (cy > H / 2 ? -8 : 8));
       return;
     }
     const r = Math.max(m.tol_xy * scale, 2);
@@ -396,7 +419,7 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
   canvas.addEventListener("pointermove", (e) => {
     const [px, py] = at(e);
     const [x, y] = toField(px, py);
-    readout.textContent = `x ${x.toFixed(2)} m, y ${y.toFixed(2)} m`;
+    readout.textContent = `x ${units.fmt(x, "field")}, y ${units.fmt(y, "field")}`;
     if (!drag) return;
     if (!drag.aiming && Math.hypot(px - drag.px, py - drag.py) < 6) return;
     drag.aiming = true;
@@ -435,8 +458,8 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
     h("div", { class: "dialog-actions" }, h("button", { type: "button", id: "fp-cancel", class: "btn", onclick: close }, "Cancel"), ok));
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    const bad = [xIn, yIn, hIn, txIn, thIn].find((el) => el.validity.badInput);
-    if (bad) { err.textContent = `${bad.getAttribute("aria-label")} must be a number`; err.hidden = false; bad.focus(); return; }
+    const bad = [xIn, yIn, hIn, txIn, thIn].find((el) => el.validity.badInput || el.dataset.error);
+    if (bad) { err.textContent = bad.dataset.error || `${bad.getAttribute("aria-label")} must be a number`; err.hidden = false; bad.focus(); return; }
     const next = { ...spec };
     for (const k of KEYS) {
       if (cur[k] === null) delete next[k];
@@ -450,7 +473,7 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
     toScreen: (x, y) => { const rc = canvas.getBoundingClientRect(); const [px, py] = toPx(x, y); return { x: rc.left + px, y: rc.top + py }; },
     get value() { return { ...cur }; },
   };
-  d.addEventListener("close", () => { delete window.__scrimmage.fieldPick; }, { once: true });
+  d.addEventListener("close", () => { delete window.__scrimmage.fieldPick; offUnits(); }, { once: true });
   draw();
   d.showModal();
   canvas.focus();

@@ -67,3 +67,9 @@ def browser():
                         f"{str(e).splitlines()[0]}")
         yield b
         b.close()
+
+
+def page_units(page, system: str) -> None:
+    """Set the Units setting from the open page (as the Settings menu does): saved, and applied there at once."""
+    assert page.evaluate("async (s) => (await import('./units.js')).set(s)", system) is None
+    assert page.evaluate("async () => (await import('./units.js')).units.system") == system

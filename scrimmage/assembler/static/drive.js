@@ -27,7 +27,8 @@
 // with "see Robot code" (the panel's device table).
 // Test hook: window.__scrimmage.live = {state, frames, lastFrame: {t, poses}, connected, plots, assignments}.
 
-import { $, h, api, notice, registerTab, setTab, showPath, currentTab, store } from "./app.js";
+import { $, h, api, notice, registerTab, setTab, showPath, currentTab, store, showMeasure, readMeasure, measureError } from "./app.js";
+import { units } from "./units.js";
 import { sharedStream } from "./livestream.js";
 import { LiveView } from "./live3d.js";
 import { InputRouter, KEYBOARD, isEditable, isDrivingKey } from "./gamepad.js";
@@ -640,13 +641,26 @@ async function refreshInfo() {
 // -- pokes and recording ----------------------------------------------------------------------------------------
 const pluralPokes = (n) => `${n} poke${n === 1 ? "" : "s"}`;
 
+// The push force box shows the force in the chosen units (it is sent in newtons). A change of units redraws it,
+// unless it is being typed in.
+let pushForce = 100;   // N
+function showPushForce() {
+  const el = $("#push-force");
+  $("#push-force-unit").textContent = units.name("force");
+  if (document.activeElement === el && el.value.trim() !== el.dataset.shown) return;
+  showMeasure(el, pushForce, "force");
+}
+
 function push() {
   const read = (id) => { const el = $(id); return el.validity.badInput || el.value.trim() === "" ? NaN : Number(el.value); };
-  const force = read("#push-force"), dir = read("#push-dir"), dur = read("#push-duration");
+  const typed = readMeasure($("#push-force"), "force");
+  const force = typeof typed === "number" ? typed : NaN, dir = read("#push-dir"), dur = read("#push-duration");
   if (![force, dir, dur].every(Number.isFinite) || dur <= 0) {
-    notice("Push needs a force (N), a direction (°) and a duration above 0 s.", "warn");
+    const why = measureError(typed) ? `${measureError(typed)}. ` : "";
+    notice(`${why}Push needs a force (${units.name("force")}), a direction (°) and a duration above 0 s.`, "warn");
     return;
   }
+  pushForce = force;
   cmd("push", { force_n: force, direction_deg: dir, duration_s: dur });
 }
 
@@ -837,6 +851,12 @@ export function initDrive() {
     poke("move_body", { name, x, y, yaw_deg: o ? Math.round(o.yaw * 10) / 10 : 0 });
   });
   $("#push-go").addEventListener("click", push);
+  $("#push-force").addEventListener("change", (e) => {
+    const v = readMeasure(e.target, "force");
+    if (typeof v === "number") pushForce = v;
+  });
+  showPushForce();
+  units.onChange(() => { showPushForce(); render(); });
   $("#drive-reset").addEventListener("click", () => cmd("reset"));
   $("#drive-record").addEventListener("click", () => cmd(drive.state && drive.state.recording ? "record_stop" : "record_start"));
   $("#drive-save").addEventListener("click", openSaveDialog);

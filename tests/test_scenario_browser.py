@@ -210,6 +210,13 @@ def test_report_shows_ball_table(browser, tmp_path):
         page.wait_for_selector("#rp-balls")
         rows = page.eval_on_selector_all("#rp-balls tbody tr", "rs => rs.map(r => r.querySelector('.rp-outcome').textContent)")
         assert rows == ["held", "held", "held"], rows
+        # positions and speeds in the chosen units (Imperial, the default), and at once in the other
+        head = page.inner_text("#rp-balls thead")
+        assert "x ft" in head and "vx ft/s" in head and "exit ft/s" in head
+        from browser_harness import page_units
+        page_units(page, "metric")
+        page.wait_for_function("document.querySelector('#rp-balls thead').textContent.includes('x m')")
+        assert "vx m/s" in page.inner_text("#rp-balls thead")
         score = page.inner_text("#rp-score")
         assert "hub_blue: 0" in score and "held: 3" in score and "fired: 0" in score
         # the floor balls are off (not in the world), and the robot holds 4: one slot is spare, and the OUTPOSTS'
@@ -249,3 +256,51 @@ def test_match_station_and_a_steps_game_data_write_the_file(scenario_page):
     page.wait_for_selector(".sc-match .field-msgs .error")
     assert "auto_seconds must be a positive number" in page.inner_text(".sc-match .field-msgs")
     assert scn.read_text() == before
+
+
+def test_a_pose_check_shows_and_takes_the_chosen_units(scenario_page):
+    """Units (Settings): a pose check's x, y and tol_xy are field lengths, feet (the default) or meters; the file keeps
+    meters, a typed x reads back as typed (Review Focus 1), and switching writes nothing."""
+    from browser_harness import page_units
+    page, scn = scenario_page("fake_pass.toml")
+    page.click("#step-row-1")
+    v = _version(page)
+    page.select_option("#ed-add-check", "pose")
+    _wait_edit(page, v)
+    j = page.evaluate("__scrimmage.scenario.state.steps[1].checks.length - 1")
+    spec = lambda: page.evaluate(f"__scrimmage.scenario.state.steps[1].checks[{j}].spec")  # noqa: E731
+    x, y, tol = f"#ck-1-{j}-x", f"#ck-1-{j}-y", f"#ck-1-{j}-tol_xy"
+    page.wait_for_selector(x)
+    assert page.inner_text(f'[data-fields="step1/check{j}/pose.x"] .unit') == "ft"
+    assert page.get_attribute(tol, "placeholder") == "0.33"            # 0.1 m
+    v = _version(page)
+    page.fill(x, "12.5")
+    page.keyboard.press("Enter")
+    _wait_edit(page, v)
+    assert spec()["x"] == 3.81 and spec()["y"] == 0
+    assert "x = 3.81" in scn.read_text()
+    assert page.input_value(x) == "12.5"                               # reads back as typed
+    v = _version(page)
+    page.fill(tol, "6 in")
+    page.keyboard.press("Enter")
+    page.wait_for_selector(f'[data-fields="step1/check{j}/pose.tol_xy"] .error')
+    assert "isn't a unit for this" in page.inner_text(f'[data-fields="step1/check{j}/pose.tol_xy"] .error')
+    page.fill(tol, "0.5 ft")
+    page.keyboard.press("Enter")
+    _wait_edit(page, v)
+    assert spec()["tol_xy"] == pytest.approx(0.1524)
+    saved = scn.read_text()
+
+    page.fill(y, "2")                                                  # half typed when the setting changes
+    page.focus(y)
+    page_units(page, "metric")
+    page.wait_for_function(f"document.querySelector('{x}').value === '3.81'")
+    assert page.inner_text(f'[data-fields="step1/check{j}/pose.x"] .unit') == "m"
+    assert page.input_value(y) == "2" and page.evaluate("document.activeElement.id") == f"ck-1-{j}-y"
+    assert scn.read_text() == saved
+    v = _version(page)
+    page.keyboard.press("Enter")                                       # now meters
+    _wait_edit(page, v)
+    assert spec()["y"] == 2
+    page_units(page, "imperial")
+    page.wait_for_function(f"document.querySelector('{x}').value === '12.5'")

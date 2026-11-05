@@ -14,6 +14,7 @@ import { renderTimeline } from "./steps.js";
 import { renderStepEditor, field, onCommit, markDirty, clean, badNumber, localError, guard, currentCommit } from "./step_editor.js";
 import { poseTools } from "./fieldpick.js";
 import { initRunPanel, runs } from "./report.js";
+import { units } from "./units.js";
 
 export const MODES = ["disabled", "auto", "teleop", "test"];
 export const STATIONS = ["red1", "red2", "red3", "blue1", "blue2", "blue3"];
@@ -492,6 +493,7 @@ async function boot() {
   };
   apply(data);
   registerTab("scenario", { renderTop, undo: scUndo, redo: scRedo, onShow: () => { renderTop(); } });
+  units.onChange(() => render());   // the step editor keeps what is half typed (renderStepEditor)
   pollLoop();
   initRunPanel();
   return true;

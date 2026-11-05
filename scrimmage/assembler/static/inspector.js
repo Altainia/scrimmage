@@ -4,9 +4,15 @@
 // Each change posts one edit. Every field's container carries data-field="<instance>/<key>" (the server's
 // field ids), so errors and warnings render beside it; placeErrors returns the ones that have no field here.
 
-import { $, h, edit, store, stockMeta, folderMeta, attachGroups, fillAttachSelect, fmt, UNIT, mountsOf, notice } from "./app.js";
+import { $, h, edit, store, stockMeta, folderMeta, attachGroups, fillAttachSelect, fmt, UNIT, mountsOf, notice,
+  showMeasure, readMeasure, measureError } from "./app.js";
+import { units } from "./units.js";
 
-const NUDGE = { pos: 0.01, rot: 5 };          // 10 mm, 5 degrees
+const NUDGE = { pos: { imperial: 0.00635, metric: 0.01 }, rot: 5 };   // 1/4 in or 10 mm; 5 degrees
+const nudgeStep = (key) => (key === "pos" ? NUDGE.pos[units.system] ?? 0.01 : NUDGE.rot);
+// A stock parameter's unit (parts/stock) as a units.js kind: shown and typed in the chosen units. The others
+// (kg*m^2, N*m/rad, m^3/(s*Pa)) are shown as the part declares them.
+const PARAM_KIND = { m: "length", kg: "mass", N: "force", "N*m": "torque", "N/m": "spring", deg: "angle" };
 const SHORT = { TalonFX: ["motor", "ctre"], CANcoder: ["encoder", "ctre"], Pigeon2: ["gyro", "ctre"], PWM: ["motor", "pwm"], DIO: ["encoder", "channel_a"],
   SparkMax: ["motor", "rev"], SparkFlex: ["motor", "rev"], SparkMaxAbs: ["encoder", "rev"], SparkFlexAbs: ["encoder", "rev"] };
 const slotModes = new Map();                  // "<inst>/<slot>" -> "short" | "table" | "list" chosen locally
@@ -48,8 +54,17 @@ export function clean(...els) { for (const el of els) delete el.dataset.dirty; }
 
 // A text box for a number, not type=number: a number box reads "1." as "1", so the re-render (which carries the
 // half-typed text into the new box) would turn "1." then "5" into 15.
-function numberInput(id, key, value, { label } = {}) {
-  return markDirty(h("input", { id, type: "text", inputmode: "decimal", autocomplete: "off", value: fmt(value), dataset: { key }, "aria-label": label }));
+// With a `kind` it shows and reads the value in the chosen units (showMeasure / readMeasure).
+function numberInput(id, key, value, { label, kind } = {}) {
+  const el = markDirty(h("input", { id, type: "text", inputmode: "decimal", autocomplete: "off", value: fmt(value), dataset: { key }, "aria-label": label }));
+  return kind ? showMeasure(el, value, kind) : el;
+}
+
+// A box's value: a number (SI for a `kind`), null when empty, or {error}.
+function readNumber(el, kind) {
+  if (kind) return readMeasure(el, kind);
+  if (badNumber(el)) return { error: "Enter a number." };
+  return el.value.trim() === "" ? null : Number(el.value);
 }
 
 // Text that isn't a number ("0.1-", "1e"): check it before using .value. A type=number box (code.js) reports it
@@ -170,8 +185,10 @@ function placementSection(part) {
     const attach = sel.value === "" ? null : sel.value;
     const vals = {};
     for (const k of ["pos", "rot"]) {
-      if (badNumber(...vecs[k].inputs)) { localError(vecs[k].fieldEl, "Enter a number."); return; }
-      vals[k] = vecs[k].inputs.map((i) => (i.value.trim() === "" ? 0 : Number(i.value)));
+      const read = vecs[k].inputs.map((i) => readNumber(i, k === "pos" ? "length" : null));
+      const bad = read.map(measureError).find(Boolean);
+      if (bad) { localError(vecs[k].fieldEl, bad); return; }
+      vals[k] = read.map((v) => (v === null ? 0 : v));
       if (vals[k].some((v) => !isFinite(v))) { localError(vecs[k].fieldEl, "Enter numbers (leave a box empty for 0)."); return; }
     }
     clean(...vecs.pos.inputs, ...vecs.rot.inputs);
@@ -220,19 +237,22 @@ function cadLine(part) {
 
 function vecInputs(n, key, value) {
   const axes = key === "pos" ? ["x", "y", "z"] : ["roll", "pitch", "yaw"];
-  const u = key === "pos" ? "m" : "°";
+  const kind = key === "pos" ? "length" : null;
+  const u = key === "pos" ? units.name("length") : "°";
+  const step = key === "pos" ? units.fmt(nudgeStep(key), "length") : "5°";
   const inputs = [];
   const cells = axes.map((ax, i) => {
     const id = `insp-${key}-${i}`;
-    const inp = numberInput(id, `${key}:${i}`, (value || [0, 0, 0])[i], { label: `${key === "pos" ? "Offset" : "Rotation"} ${ax} (${key === "pos" ? "meters" : "degrees"})` });
+    const inp = numberInput(id, `${key}:${i}`, (value || [0, 0, 0])[i], { kind, label: `${key === "pos" ? "Offset" : "Rotation"} ${ax} (${key === "pos" ? u : "degrees"})` });
     inputs.push(inp);
     const nudge = (sign) => h("button", {
-      type: "button", class: "nudge", "aria-label": `${sign > 0 ? "Increase" : "Decrease"} ${ax} by ${key === "pos" ? "10 mm" : "5°"}`,
+      type: "button", class: "nudge", "aria-label": `${sign > 0 ? "Increase" : "Decrease"} ${ax} by ${step}`,
       onclick: () => {
-        if (badNumber(inp)) { localError(inp.closest(".field"), "Enter a number."); return; }
-        const cur = inp.value.trim() === "" ? 0 : Number(inp.value);
-        if (!isFinite(cur)) return;
-        inp.value = fmt(Math.round((cur + sign * NUDGE[key]) * 1e6) / 1e6);
+        const cur = readNumber(inp, kind);
+        if (measureError(cur)) { localError(inp.closest(".field"), measureError(cur)); return; }
+        const next = Math.round(((cur ?? 0) + sign * nudgeStep(key)) * 1e6) / 1e6;
+        if (!isFinite(next)) return;
+        if (kind) showMeasure(inp, next, kind); else inp.value = fmt(next);
         inp.dispatchEvent(new Event("change"));
       },
     }, sign > 0 ? "+" : "−");
@@ -244,7 +264,7 @@ function vecInputs(n, key, value) {
   const fieldEl = h("div", { class: "field", dataset: { field: `${n}/${key}` }, role: "group", "aria-label": title },
     h("span", { class: "field-label" }, title, h("span", { class: "unit" }, ` ${u}`)),
     h("div", { class: "vec" }, cells),
-    h("p", { class: "hint" }, key === "pos" ? "From the mount, in the mount's frame. ± moves 10 mm." : "Roll, pitch, yaw about fixed x, y, z. ± turns 5°."),
+    h("p", { class: "hint" }, key === "pos" ? `From the mount, in the mount's frame. ± moves ${step}.` : "Roll, pitch, yaw about fixed x, y, z. ± turns 5°."),
     h("div", { class: "field-msgs" }));
   return { inputs, fieldEl, wire: (fn) => inputs.forEach((i) => onCommit(i, fn)) };
 }
@@ -266,13 +286,20 @@ function paramsSection(part, meta) {
   return sec;
 }
 
+// A parameter's kind (PARAM_KIND) for a number it shows in the chosen units; null for one shown as declared.
+const paramKind = (p) => (["float", "pair", "vec3"].includes(p.kind) && PARAM_KIND[p.unit]) || null;
+// The unit a parameter is shown in.
+const paramUnit = (p) => (paramKind(p) ? units.name(paramKind(p)) : unit(p.unit));
+
 function hintFor(p) {
   const bits = [];
-  const d = p.kind === "pair" ? p.default.map(fmt).join(" to ") : p.kind === "vec3" ? `[${p.default.map(fmt).join(", ")}]` : p.kind === "bool" ? (p.default ? "on" : "off") : fmt(p.default);
-  bits.push(`default ${d}${p.unit && p.kind !== "bool" ? " " + unit(p.unit) : ""}`);
+  const k = paramKind(p);
+  const num = k ? (v) => units.shown(v, k, 0) : fmt;   // as fmt rounds it, without the unit (it follows once)
+  const d = p.kind === "pair" ? p.default.map(num).join(" to ") : p.kind === "vec3" ? `[${p.default.map(num).join(", ")}]` : p.kind === "bool" ? (p.default ? "on" : "off") : num(p.default);
+  bits.push(`default ${d}${p.unit && p.kind !== "bool" ? " " + paramUnit(p) : ""}`);
   if (p.positive) bits.push("more than 0");
-  if (p.min !== null && p.min !== undefined) bits.push(`at least ${fmt(p.min)}`);
-  if (p.max !== null && p.max !== undefined) bits.push(`at most ${fmt(p.max)}`);
+  if (p.min !== null && p.min !== undefined) bits.push(`at least ${k ? units.fmt(p.min, k) : fmt(p.min)}`);
+  if (p.max !== null && p.max !== undefined) bits.push(`at most ${k ? units.fmt(p.max, k) : fmt(p.max)}`);
   if (p.max_depends) bits.push("maximum depends on other parameters");
   return bits.join(" · ");
 }
@@ -288,7 +315,9 @@ function paramField(n, p, value) {
     onclick: () => send(null),
   }, "Reset");
   let control;
-  const withUnit = (el) => h("div", { class: "with-unit" }, el, p.unit ? h("span", { class: "unit" }, unit(p.unit)) : null, reset);
+  const kind = paramKind(p);
+  const unitSpan = () => (p.unit ? h("span", { class: "unit" }, paramUnit(p)) : null);
+  const withUnit = (el) => h("div", { class: "with-unit" }, el, unitSpan(), reset);
 
   if (p.kind === "bool") {
     const cb = h("input", { id, type: "checkbox", checked: !!cur, dataset: { key: `param:${p.name}` } });
@@ -330,41 +359,43 @@ function paramField(n, p, value) {
     });
     control = h("div", { class: "with-unit" }, sel, num, reset);
   } else if (p.kind === "pair") {
-    const a = numberInput(id, `param:${p.name}:0`, cur[0], { label: `${p.name} low (${p.unit || "value"})` });
-    const b = numberInput(`${id}-1`, `param:${p.name}:1`, cur[1], { label: `${p.name} high (${p.unit || "value"})` });
+    const a = numberInput(id, `param:${p.name}:0`, cur[0], { kind, label: `${p.name} low (${paramUnit(p) || "value"})` });
+    const b = numberInput(`${id}-1`, `param:${p.name}:1`, cur[1], { kind, label: `${p.name} high (${paramUnit(p) || "value"})` });
     const commit = () => {
-      if (badNumber(a, b)) return localError(a.closest(".field"), "Enter a number.");
-      const va = Number(a.value), vb = Number(b.value);
-      if (a.value.trim() === "" || b.value.trim() === "" || !isFinite(va) || !isFinite(vb)) {
+      const [va, vb] = [readNumber(a, kind), readNumber(b, kind)];
+      const bad = measureError(va) || measureError(vb);
+      if (bad) return localError(a.closest(".field"), bad);
+      if (va === null || vb === null || !isFinite(va) || !isFinite(vb)) {
         return localError(a.closest(".field"), "Enter both numbers.");
       }
       clean(a, b);
       send([va, vb]);
     };
     onCommit(a, commit); onCommit(b, commit);
-    control = h("div", { class: "with-unit" }, a, h("span", { class: "muted" }, "to"), b, p.unit ? h("span", { class: "unit" }, unit(p.unit)) : null, reset);
+    control = h("div", { class: "with-unit" }, a, h("span", { class: "muted" }, "to"), b, unitSpan(), reset);
   } else if (p.kind === "vec3") {   // [x, y, z]: three numbers, sent together
     const boxes = ["x", "y", "z"].map((axis, k) => numberInput(k ? `${id}-${k}` : id, `param:${p.name}:${k}`, cur[k],
-      { label: `${p.name} ${axis} (${p.unit || "value"})` }));
+      { kind, label: `${p.name} ${axis} (${paramUnit(p) || "value"})` }));
     const commit = () => {
-      if (badNumber(...boxes)) return localError(boxes[0].closest(".field"), "Enter a number.");
-      const v = boxes.map((b) => Number(b.value));
-      if (boxes.some((b) => b.value.trim() === "") || !v.every(isFinite)) {
+      const v = boxes.map((b) => readNumber(b, kind));
+      const bad = v.map(measureError).find(Boolean);
+      if (bad) return localError(boxes[0].closest(".field"), bad);
+      if (v.some((x) => x === null) || !v.every(isFinite)) {
         return localError(boxes[0].closest(".field"), "Enter all three numbers.");
       }
       clean(...boxes);
       send(v);
     };
     for (const b of boxes) onCommit(b, commit);
-    control = h("div", { class: "with-unit" }, ...boxes, p.unit ? h("span", { class: "unit" }, unit(p.unit)) : null, reset);
+    control = h("div", { class: "with-unit" }, ...boxes, unitSpan(), reset);
   } else {   // float, int
     const isInt = p.kind === "int";
-    const inp = numberInput(id, `param:${p.name}`, cur);
+    const inp = numberInput(id, `param:${p.name}`, cur, { kind });
     onCommit(inp, () => {
-      if (badNumber(inp)) return localError(inp.closest(".field"), isInt ? "Enter a whole number." : "Enter a number.");
+      const v = readNumber(inp, kind);
+      if (measureError(v)) return localError(inp.closest(".field"), isInt ? "Enter a whole number." : measureError(v));
       clean(inp);
-      if (inp.value.trim() === "") return send(null);   // empty box = the default
-      const v = Number(inp.value);
+      if (v === null) return send(null);   // empty box = the default
       if (!isFinite(v) || (isInt && !Number.isInteger(v))) return localError(inp.closest(".field"), isInt ? "Enter a whole number." : "Enter a number.");
       send(v);
     });

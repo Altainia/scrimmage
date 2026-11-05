@@ -440,3 +440,34 @@ def test_a_real_ds_start_that_ends_before_its_answer_leaves_the_page_idle(drive_
     page.wait_for_selector("#drive-real-ds", state="hidden", timeout=10000)
     assert page.is_enabled("#drive-ds-source") and page.is_enabled("#drive-start")
     assert "Driver Station app" not in page.text_content("#drive-keys-hint")
+
+
+def test_the_readouts_and_the_push_force_follow_the_units(drive_page):
+    """Units (Settings): the pose (feet or meters), the speed and the push force (lbf or N, sent in newtons) follow
+    the setting, at once while driving."""
+    from browser_harness import page_units
+    page = drive_page()
+    assert page.input_value("#push-force") == "22.4809"                # 100 N, in lbf (the default, Imperial)
+    assert page.inner_text("#push-force-unit") == "lbf"
+    page.evaluate("""() => { const send = WebSocket.prototype.send; window.sent = [];
+      WebSocket.prototype.send = function (d) { window.sent.push(d); return send.call(this, d); }; }""")
+    pushes = lambda: page.evaluate(  # noqa: E731
+        "window.sent.map((d) => { try { return JSON.parse(d); } catch { return null; } }).filter((m) => m && m.cmd === 'push')")
+    start(page)
+    page.wait_for_function("document.querySelector('#drive-readouts').textContent.includes(' ft ·')")
+    assert "ft/s" in page.text_content("#drive-readouts")
+    page.fill("#push-force", "50")
+    page.click("#push-go")
+    page.wait_for_function("window.sent.some((d) => d.includes('\"push\"'))")
+    assert pushes()[-1]["force_n"] == pytest.approx(50 * 4.4482216152605)
+
+    page_units(page, "metric")
+    page.wait_for_function("document.querySelector('#drive-readouts').textContent.includes(' m ·')")
+    assert "m/s" in page.text_content("#drive-readouts")
+    assert page.inner_text("#push-force-unit") == "N"
+    assert page.input_value("#push-force") == "222.411"                # the force just pushed, now in newtons
+    page.fill("#push-force", "100 N")
+    page.click("#push-go")
+    page.wait_for_function("window.sent.filter((d) => d.includes('\"push\"')).length === 2")
+    assert pushes()[-1]["force_n"] == 100
+    stop(page)

@@ -11,6 +11,7 @@
 // run is no longer shown) and text files (.md, .txt, .log, .json) are shown as text. Nothing else is opened.
 
 import { h, $, api, apiFile, notice, serial } from "./app.js";
+import { units } from "./units.js";
 import { sc, selectStep, rerenderTimeline } from "./scenario.js";
 import { sharedStream } from "./livestream.js";
 
@@ -268,7 +269,7 @@ function renderProgress(r) {
 let reportKey = null;
 
 function renderReport(r) {
-  const key = r && r.state !== "running" ? `${r.id}:${r.state}` : null;
+  const key = r && r.state !== "running" ? `${r.id}:${r.state}:${units.system}` : null;   // redrawn when Units changes
   if (key === reportKey) return;
   reportKey = key;
   if (!key) { el.report.hidden = true; el.report.replaceChildren(); return; }
@@ -353,7 +354,10 @@ function scoreBlock(c) {
 }
 
 const f = (v, d = 2) => (typeof v === "number" && isFinite(v) ? v.toFixed(d) : "–");
-const BALL_COLUMNS = ["#", "fired t", "x", "y", "heading", "vx", "vy", "ω °/s", "hood °", "rps", "exit m/s", "spin rpm", "slip", "outcome", "goal and time / rest point / first hit"];
+// a position or a speed in the chosen units (units.js), to `d` places
+const fu = (v, kind, d = 2) => f(typeof v === "number" ? units.toDisplay(v, kind) : v, d);
+const ballColumns = () => ["#", "fired t", `x ${units.name("field")}`, `y ${units.name("field")}`, "heading", `vx ${units.name("speed")}`,
+  `vy ${units.name("speed")}`, "ω °/s", "hood °", "rps", `exit ${units.name("speed")}`, "spin rpm", "slip", "outcome", "goal and time / rest point / first hit"];
 
 // Where a ball ended up (as the report.md table says it): the goal and time it scored, where it left the field or
 // came to rest, or why the launcher kept it; and what it hit first after its release.
@@ -363,14 +367,15 @@ export function ballResult(b) {
   if (b.outcome === "scored") text = `${b.goal} at t=${f(b.scored_t)}`;
   else if (b.outcome === "stuck") text = `launcher: ${b.launcher_status}`;
   else if (p) {
-    const xyz = `(${f(p[0])}, ${f(p[1])}, ${f(p[2])})`;
+    const u = units.name("field");
+    const xyz = `(${fu(p[0], "field")}, ${fu(p[1], "field")}, ${fu(p[2], "field")}) ${u}`;
     text = { out_of_field: `left at ${xyz}`, in_flight: `flying at ${xyz}`,
-      on_field: b.at_rest ? `rest at (${f(p[0])}, ${f(p[1])})` : `moving at ${xyz}` }[b.outcome] || xyz;
+      on_field: b.at_rest ? `rest at (${fu(p[0], "field")}, ${fu(p[1], "field")}) ${u}` : `moving at ${xyz}` }[b.outcome] || xyz;
   }
   if (b.first_hit) text += `${text ? "; " : ""}first hit ${b.first_hit}`;
   // a ball fired that missed: how high it got against the nearest goal's rim (as report.md's)
   if (b.outcome !== "scored" && b.fired_t != null && b.apex_z != null && b.nearest_goal)
-    text += `${text ? "; " : ""}apex ${f(b.apex_z)} m vs rim ${f(b.rim_height)} m (${b.nearest_goal})`;
+    text += `${text ? "; " : ""}apex ${fu(b.apex_z, "field")} ${units.name("field")} vs rim ${fu(b.rim_height, "field")} ${units.name("field")} (${b.nearest_goal})`;
   return text;
 }
 
@@ -389,13 +394,13 @@ function ballsBlock(shown, sum) {
   const pose = (b) => b.robot_pose || [null, null, null];
   const vel = (b) => b.robot_velocity || [null, null, null];
   const rows = shown.map((b) => h("tr", { class: `rp-ball rp-ball-${b.outcome}`, dataset: { ball: String(b.id) } },
-    ...[String(b.id), f(b.fired_t), f(pose(b)[0]), f(pose(b)[1]), f(pose(b)[2], 1), f(vel(b)[0]), f(vel(b)[1]), f(vel(b)[2], 1),
-      f(b.hood_deg, 1), f(b.shooter_rps, 1), f(b.exit_speed), f(b.spin_rpm, 0), f(b.exit_slip)].map((t) => h("td", { class: "num", text: t })),
+    ...[String(b.id), f(b.fired_t), fu(pose(b)[0], "field"), fu(pose(b)[1], "field"), f(pose(b)[2], 1), fu(vel(b)[0], "speed"), fu(vel(b)[1], "speed"), f(vel(b)[2], 1),
+      f(b.hood_deg, 1), f(b.shooter_rps, 1), fu(b.exit_speed, "speed"), f(b.spin_rpm, 0), f(b.exit_slip)].map((t) => h("td", { class: "num", text: t })),
     h("td", { class: "rp-outcome", text: b.outcome }), h("td", { text: ballResult(b) })));
   return h("details", { id: "rp-balls", class: "rp-balls", open: true },
     h("summary", {}, `Balls (${shown.length})`),
     shown.length ? h("div", { class: "rp-table-wrap" }, h("table", { class: "rp-table" },
-      h("thead", {}, h("tr", {}, ...BALL_COLUMNS.map((c) => h("th", { scope: "col", text: c })))),
+      h("thead", {}, h("tr", {}, ...ballColumns().map((c) => h("th", { scope: "col", text: c })))),
       h("tbody", {}, ...rows))) : h("p", { class: "muted small" }, "No ball took part."),
     note ? h("p", { class: "muted small rp-not-listed", text: note }) : null);
 }
@@ -510,6 +515,7 @@ export async function initRunPanel() {
     renderControls();
     updateStepStatus();
   });
+  units.onChange(() => render());
   await loadRuns();
   pollRuns();
 }

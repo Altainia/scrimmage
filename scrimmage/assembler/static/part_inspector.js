@@ -8,8 +8,8 @@
 //   joint        one body: "Moves: no (welded) / turns / slides" relative to its parent, the axis (picked in the
 //                3D view, or snapped to x, y or z; a new turn or slide is saved only then), "More" (range, spring,
 //                damping, friction) and "Try it"
-//   slots        one body: its motor (count, gear ratio, spool diameter for a slide, in inches or mm; stored in
-//                meters), encoder (none, on the joint, on the motor) and gyro
+//   slots        one body: its motor (count, gear ratio, spool diameter for a slide, in the chosen units; stored
+//                in meters), encoder (none, on the joint, on the motor) and gyro
 //   mounts       one body: the spots another part bolts on ("Add mount": click a flat face, then name it)
 //   collision    one body: how it touches things, with a one-click suggestion for hooks and wheels (never applied
 //                by itself), and for a body that touches things its grip material (set_grip: the pads' friction, the
@@ -27,7 +27,8 @@
 
 import { h, api, notice, DEFAULT_GRIP } from "./app.js";
 import { part, view3d, addSection, editOp, select, render, live, field, box, number, matLabel, kg, cog, expectBody,
-  onPart } from "./part.js";
+  onPart, measure, shownMeasure, boxMeasure } from "./part.js";
+import { units } from "./units.js";
 import { toRobot, cadToRobot, robotToCad, dirToCad, dirToRobot, normalize, tryRange, turnFront, floorAndCenter,
   otherAxes, upIndex } from "./part_frame.js";
 
@@ -120,20 +121,21 @@ addSection({
     if (one === "custom" || (customAsked && sel.value !== "-")) {
       if (one !== "custom") sel.value = "custom";
       const dens = box({ id: "part-density", type: "text", inputmode: "decimal",
-        value: one === "custom" && ps[0].custom_density != null ? String(ps[0].custom_density) : "", placeholder: "2700" }, (text) => {
-        const v = number(text, "custom_density");
+        value: one === "custom" ? shownMeasure(ps[0].custom_density, "density") : "", placeholder: units.shown(2700, "density", 0) }, (text) => {
+        const v = measure(text, "custom_density", "density");
         if (!Number.isNaN(v)) send("custom", { custom_density: v });
       });
-      rows.push(field("Density", h("span", { class: "with-unit" }, dens, h("span", { class: "unit", text: "kg per cubic meter" })), "custom_density",
-        "Aluminum is 2700, steel 7850, polycarbonate 1200."));
+      const d = (x) => units.shown(x, "density", 0);
+      rows.push(field("Density", h("span", { class: "with-unit" }, dens, h("span", { class: "unit", text: units.name("density") })), "custom_density",
+        `Aluminum is ${d(2700)}, steel ${d(7850)}, polycarbonate ${d(1200)}.`));
       rows[rows.length - 1].querySelector("label").htmlFor = "part-density";
     }
     if (c.sel.kind === "piece") {
       const typed = new Set(ps.map((p) => p.typed_mass));
       const t = typed.size === 1 ? [...typed][0] : null;
       const w = box({ id: "part-weight", type: "text", inputmode: "decimal",
-        value: t == null ? "" : String(t), placeholder: ps.length === 1 && ps[0].mass != null ? String(+ps[0].mass.toPrecision(3)) : "" }, async (text) => {
-        const v = number(text, "kg");
+        value: shownMeasure(t, "mass"), placeholder: ps.length === 1 ? placeholderMass(ps[0].mass) : "" }, async (text) => {
+        const v = measure(text, "kg", "mass");
         if (Number.isNaN(v)) return;
         for (const k of keys) {   // one edit per piece: set_mass names one piece
           const r = await editOp("set_mass", { piece: k, kg: v });
@@ -141,7 +143,7 @@ addSection({
         }
       });
       rows.push(field(ps.length > 1 ? "or type a weight (each piece)" : "or type a weight",
-        h("span", { class: "with-unit" }, w, h("span", { class: "unit", text: "kg" })), "kg",
+        h("span", { class: "with-unit" }, w, h("span", { class: "unit", text: units.name("mass") })), "kg",
         "A typed weight wins over the material. Empty it to use the material again."));
       rows[rows.length - 1].querySelector("label").htmlFor = "part-weight";
     }
@@ -172,11 +174,11 @@ addSection({
     rows.push(h("p", { class: "part-line" }, "Center of gravity ", h("span", { class: "mono", text: cog(b.com) })));
     if (b.typed_mass !== undefined || c.plugin) {
       const w = box({ id: "part-body-weight", type: "text", inputmode: "decimal",
-        value: b.typed_mass == null ? "" : String(b.typed_mass), placeholder: b.mass != null ? String(+b.mass.toPrecision(3)) : "" }, (text) => {
-        const v = number(text, "kg");
+        value: shownMeasure(b.typed_mass, "mass"), placeholder: placeholderMass(b.mass) }, (text) => {
+        const v = measure(text, "kg", "mass");
         if (!Number.isNaN(v)) editOp("set_mass", { body: b.name, kg: v });
       });
-      rows.push(origin(c, b, ["mass"], field("or type its weight", h("span", { class: "with-unit" }, w, h("span", { class: "unit", text: "kg" })), "kg",
+      rows.push(origin(c, b, ["mass"], field("or type its weight", h("span", { class: "with-unit" }, w, h("span", { class: "unit", text: units.name("mass") })), "kg",
         c.plugin ? "A typed weight wins over the one the CAD plugin wrote." : "A typed weight wins over its pieces' materials. Empty it to use them again.")));
       rows[rows.length - 1].querySelector("label").htmlFor = "part-body-weight";
     }
@@ -252,6 +254,11 @@ const rt = () => toRobot(part.state.frame);
 const sentence = (m) => { const t = String(m || "").trim(); return t ? t[0].toUpperCase() + t.slice(1) : t; };
 const why = (data) => sentence((data.errors && data.errors[0] && data.errors[0].message) || data.error || "That didn't work");
 const fmtNum = (x, digits = 3) => (typeof x === "number" && isFinite(x) ? String(+x.toFixed(digits)) : "");
+// A weight box's placeholder: the weight it has now, to three significant digits in the chosen units
+const placeholderMass = (m) => (typeof m === "number" && isFinite(m) ? String(+units.toDisplay(m, "mass").toPrecision(3)) : "");
+// The length unit in words, for a hint ("in inches")
+const LENGTH_WORDS = { in: "inches", mm: "millimeters" };
+const lengthWords = () => LENGTH_WORDS[units.name("length")] || units.name("length");
 // Plugin mode: say on a field whether its value was changed here (in scrimmage-edits.toml) or comes from the CAD
 // plugin (the state's body.changed lists the overlay's keys), as data-from="here" | "plugin" and a line.
 function origin(c, b, keys, row) {
@@ -426,7 +433,7 @@ function saveJoint(name, kind, anchor, axis) {
   return editOp("set_joint", () => {
     const b = bodyOf(name);
     const j = b.joint;
-    if (j && j.kind !== kind && (j.range || j.spring)) notice("The range and spring were cleared: a turn is in degrees and a slide in meters.", "info");
+    if (j && j.kind !== kind && (j.range || j.spring)) notice(`The range and spring were cleared: a turn is in degrees and a slide in ${lengthWords()}.`, "info");
     const spec = !j ? { kind, anchor, axis } : jointSpec(j, j.kind === kind ? { anchor, axis } : { kind, anchor, axis, range: null, spring: null });
     return { body: name, parent: b.parent, joint: spec };
   });
@@ -470,19 +477,20 @@ function snap(name, i) {
 }
 
 // The pivot point typed as numbers, for a hinge with no round face to click (or snapped, which puts it through the
-// center of gravity): robot meters, as the inspector shows points. One box commits all three.
+// center of gravity): in the robot frame, in the chosen units, as the inspector shows points. One box commits all
+// three; a box not changed keeps its exact value.
 function pivotRow(b) {
   const now = cadToRobot(rt(), b.joint.anchor);
-  const els = ["x", "y", "z"].map((a, i) => box({ id: `part-pivot-${a}`, type: "text", inputmode: "decimal", value: fmtNum(now[i], 4),
-    "aria-label": `Pivot point ${AXIS_WORDS[i]}, meters` }, () => {
-    const vals = els.map((e) => number(e.value, "pivot"));
+  const els = ["x", "y", "z"].map((a, i) => box({ id: `part-pivot-${a}`, type: "text", inputmode: "decimal", value: shownMeasure(now[i], "length"),
+    "aria-label": `Pivot point ${AXIS_WORDS[i]}, ${lengthWords()}` }, () => {
+    const vals = els.map((e, k) => boxMeasure(e, now[k], "pivot", "length"));
     if (vals.some((v) => Number.isNaN(v))) return;
     if (vals.some((v) => v === null)) { part.errors = [{ field: "pivot", message: "Type all three numbers: x, y and z." }]; render(); return; }
     patchJoint(b.name, { anchor: robotToCad(rt(), vals) });
   }));
   const row = field("Pivot point", h("span", { class: "with-unit part-pivot" },
-    ...els.flatMap((el, i) => [h("span", { class: "unit", text: "xyz"[i] }), el]), h("span", { class: "unit", text: "m" })), "pivot",
-    "Where it turns, in meters: x forward, y left, z up. Type it when there's no round face to click.");
+    ...els.flatMap((el, i) => [h("span", { class: "unit", text: "xyz"[i] }), el]), h("span", { class: "unit", text: units.name("length") })), "pivot",
+    `Where it turns, in ${lengthWords()}: x forward, y left, z up. Type it when there's no round face to click.`);
   row.querySelector("label").htmlFor = "part-pivot-x";
   return row;
 }
@@ -501,20 +509,22 @@ function tryIt(b, label = "Try it") {
   const [lo, hi] = tryRange(j);
   const v = Math.min(hi, Math.max(lo, part.tryit.get(b.name) || 0));
   const id = `part-try-${b.name}`;
-  const unit = slide ? " m" : "°";
-  const out = h("output", { for: id, class: "part-try-out", text: `${fmtNum(v)}${unit}` });
+  // the slider runs in meters (or degrees); its text is in the chosen units
+  const said = (x) => (slide ? units.fmt(x, "length") : `${fmtNum(x)}°`);
+  const spoken = (x) => (slide ? `${units.shown(x, "length", 0)} ${lengthWords()}` : `${fmtNum(x)} degrees`);
+  const out = h("output", { for: id, class: "part-try-out", text: said(v) });
   const input = h("input", { type: "range", id, min: String(lo), max: String(hi), step: slide ? "0.005" : "1",
-    "aria-valuetext": `${fmtNum(v)}${slide ? " meters" : " degrees"}` });
+    "aria-valuetext": spoken(v) });
   input.value = String(v);
   input.addEventListener("input", () => {
     const x = +input.value;
     part.tryit.set(b.name, x);
-    out.textContent = `${fmtNum(x)}${unit}`;
-    input.setAttribute("aria-valuetext", `${fmtNum(x)}${slide ? " meters" : " degrees"}`);
+    out.textContent = said(x);
+    input.setAttribute("aria-valuetext", spoken(x));
     if (view3d.pose) view3d.pose();
   });
   const zero = h("button", { type: "button", class: "linklike", onclick: () => {
-    part.tryit.delete(b.name); input.value = "0"; out.textContent = `0${unit}`; if (view3d.pose) view3d.pose();
+    part.tryit.delete(b.name); input.value = "0"; out.textContent = said(0); if (view3d.pose) view3d.pose();
   } }, "back to 0");
   return h("div", { class: "field part-try", dataset: { field: `try-${b.name}` } },
     h("label", { class: "field-label", for: id, text: `${label}: ${b.name} ${KIND_WORDS[j.kind]}` }),
@@ -526,15 +536,21 @@ function tryIt(b, label = "Try it") {
 const pairDraft = new Map();   // "<body>:range" / "<body>:spring" -> the two boxes' text while only one is typed
 function jointMore(c, b) {
   const j = b.joint, slide = j.kind === "slide", plugin = c.plugin;
-  const u = slide ? { pos: "m", k: "N/m", d: "N·s/m", f: "N" } : { pos: "°", k: "N·m/rad", d: "N·m·s/rad", f: "N·m" };
+  // kinds (units.js) for the ones shown in the chosen units; null: as written (degrees, and the per-radian and
+  // damping units, which have no imperial form here)
+  const k = slide ? { pos: "length", k: "spring", d: null, f: "force" } : { pos: null, k: null, d: null, f: "torque" };
+  const u = slide ? { pos: units.name("length"), k: units.name("spring"), d: "N·s/m", f: units.name("force") }
+    : { pos: "°", k: "N·m/rad", d: "N·m·s/rad", f: units.name("torque") };
+  const shownAs = (x, kind, digits) => (kind ? shownMeasure(x, kind) : fmtNum(x, digits));
+  const readAs = (el, saved, kind, name) => (kind ? boxMeasure(el, saved, name, kind) : number(el.value, name));
   const rows = [];
   // two boxes that are saved together (range: from and to; spring: stiffness and rest); one typed alone waits
-  const pair = (which, saved, ids, send, waitText) => {
+  const pair = (which, saved, ids, kinds, send, waitText) => {
     const key = `${b.name}:${which}`, d = pairDraft.get(key);
-    const text = d || (saved ? saved.map((x) => fmtNum(x, 4)) : ["", ""]);
+    const text = d || (saved ? saved.map((x, i) => shownAs(x, kinds[i], 4)) : ["", ""]);
     const els = ids.map(([id, extra], i) => box({ id, type: "text", inputmode: "decimal", value: text[i], ...extra }, () => {
       const now = els.map((e) => e.value.trim());
-      const vals = now.map((t) => number(t, which));
+      const vals = els.map((e, n) => readAs(e, saved ? saved[n] : null, kinds[n], which));
       if (vals.some((v) => Number.isNaN(v))) return;
       pairDraft.set(key, now);
       const r = send(vals);
@@ -548,15 +564,16 @@ function jointMore(c, b) {
   };
   const rangeWait = plugin ? "Type the other end too, or empty both to go back to the CAD plugin's range."
     : "Type the other end too, or empty both for no limit.";
-  const range = pair("range", j.range, [["part-range-from", { placeholder: "no limit" }], ["part-range-to", { placeholder: "no limit", "aria-label": "Range to" }]],
+  const range = pair("range", j.range, [["part-range-from", { placeholder: "no limit" }], ["part-range-to", { placeholder: "no limit", "aria-label": "Range to" }]], [k.pos, k.pos],
     ([a, z]) => ((a === null) !== (z === null) ? null : patchJoint(b.name, { range: a === null ? null : [a, z] })),
     rangeWait);
   const rangeRow = field("Range: from", h("span", { class: "with-unit part-pair" }, range.els[0], h("span", { class: "unit", text: `${u.pos} to` }), range.els[1], h("span", { class: "unit", text: u.pos })), "range",
     range.waiting ? rangeWait
-      : slide ? "How far it slides each way, in meters from where the CAD shows it." : "How far it turns each way, in degrees from where the CAD shows it.");
+      : slide ? `How far it slides each way, in ${lengthWords()} from where the CAD shows it.` : "How far it turns each way, in degrees from where the CAD shows it.");
   rangeRow.querySelector("label").htmlFor = "part-range-from";
   rows.push(origin(c, b, ["range"], rangeRow));
-  const spring = pair("spring", j.spring, [["part-spring", { placeholder: "none" }], ["part-spring-rest", { placeholder: "0", "aria-label": `Spring rest (${u.pos})` }]],
+  const springSaved = j.spring && !Array.isArray(j.spring) ? [j.spring.stiffness, j.spring.rest] : j.spring;
+  const spring = pair("spring", springSaved, [["part-spring", { placeholder: "none" }], ["part-spring-rest", { placeholder: "0", "aria-label": `Spring rest (${u.pos})` }]], [k.k, k.pos],
     ([k, r]) => (k === null && r !== null ? null
       : patchJoint(b.name, { spring: k === null ? null : plugin ? { stiffness: k, rest: r || 0 } : [k, r || 0] })),
     "Type the stiffness too.");
@@ -564,9 +581,9 @@ function jointMore(c, b) {
     spring.waiting ? "Type the stiffness too." : "Pulls it back toward its rest position. Empty means no spring.");
   springRow.querySelector("label").htmlFor = "part-spring";
   rows.push(origin(c, b, ["spring"], springRow));
-  for (const [key, label, unitText, hint] of [["damping", "Damping", u.d, "Slows it more the faster it moves."], ["frictionloss", "Friction", u.f, "A steady drag that holds it until pushed hard enough."]]) {
-    const el = box({ id: `part-${key}`, type: "text", inputmode: "decimal", value: j[key] ? fmtNum(j[key], 5) : "", placeholder: "0" }, (text) => {
-      const v = number(text, key);
+  for (const [key, label, unitText, kind, hint] of [["damping", "Damping", u.d, k.d, "Slows it more the faster it moves."], ["frictionloss", "Friction", u.f, k.f, "A steady drag that holds it until pushed hard enough."]]) {
+    const el = box({ id: `part-${key}`, type: "text", inputmode: "decimal", value: j[key] ? shownAs(j[key], kind, 5) : "", placeholder: "0" }, () => {
+      const v = readAs(el, j[key], kind, key);
       if (!Number.isNaN(v)) patchJoint(b.name, { [key]: plugin ? v : v || 0 });
     });
     const row = field(label, h("span", { class: "with-unit" }, el, h("span", { class: "unit", text: unitText })), key, hint);
@@ -667,8 +684,6 @@ addSection({
 
 // -- motor, encoder, gyro --------------------------------------------------------------------------------------
 let draft = null;       // the motor being set up but not saved yet: {body, motor, count, ratio, spool}
-let spoolUnit = "in";   // how the spool diameter is shown (it is stored in meters)
-const SPOOL = { in: 0.0254, mm: 0.001 };
 
 function motorRows(c, b) {
   const j = b.joint, slide = j.kind === "slide", saved = b.motor;
@@ -719,18 +734,16 @@ function motorRows(c, b) {
       slide ? "Motor turns per spool turn." : "Motor turns per turn of the joint."));
     rows[rows.length - 1].querySelector("label").htmlFor = "part-motor-ratio";
     if (slide) {
-      const k = SPOOL[spoolUnit];
+      // in the chosen units (Settings), stored in meters
+      const example = units.name("length") === "mm" ? 0.025 : 0.0254;   // 25 mm or 1 in
       const spool = box({ id: "part-spool", type: "text", inputmode: "decimal",
-        value: cur.spool ? fmtNum(cur.spool / k, 4) : "", placeholder: spoolUnit === "in" ? "1" : "25" }, (text) => {
-        const v = number(text, "spool_diameter");
+        value: cur.spool ? shownMeasure(cur.spool, "length") : "", placeholder: units.shown(example, "length", 0) }, () => {
+        const v = boxMeasure(spool, cur.spool, "spool_diameter", "length");
         if (Number.isNaN(v)) return;
-        if (v === null || v <= 0) { part.errors = [{ field: "spool_diameter", message: "Type the spool's diameter, such as 1 (inch)." }]; render(); return; }
-        send({ spool: v * SPOOL[spoolUnit] });
+        if (v === null || v <= 0) { part.errors = [{ field: "spool_diameter", message: `Type the spool's diameter, such as ${units.fmt(example, "length")}.` }]; render(); return; }
+        send({ spool: v });
       });
-      const unit = h("span", { class: "seg", role: "group", "aria-label": "Spool diameter unit" },
-        ...["in", "mm"].map((u) => h("button", { type: "button", class: "seg-btn", id: `part-spool-${u}`, "aria-pressed": String(spoolUnit === u),
-          onclick: () => { spoolUnit = u; render(); } }, u)));
-      rows.push(field("Spool diameter", h("span", { class: "with-unit" }, spool, unit), "spool_diameter",
+      rows.push(field("Spool diameter", h("span", { class: "with-unit" }, spool, h("span", { class: "unit", text: units.name("length") })), "spool_diameter",
         "The drum the rope or belt winds on."));
       rows[rows.length - 1].querySelector("label").htmlFor = "part-spool";
     }

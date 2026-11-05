@@ -5,7 +5,8 @@
 // them. A site names its kind (scrimmage/units.py KINDS): "length" for anything on a robot or mechanism, "field"
 // for poses, field picks and drive distances.
 //   fmt(0.1016, "length")        "4 in" or "101.6 mm"
-//   toDisplay(si, kind)          the number shown (an input's value);  fromDisplay(v, kind) back to SI
+//   toDisplay(si, kind)          the number in the shown unit;  fromDisplay(v, kind) back to SI
+//   shown(si, kind)              an input box's text for si ("4", two more places than fmt)
 //   name(kind)                   "in" or "mm"
 //   parse(text, kind)            a typed "4", "4 in" or "100mm" in SI, or {error} saying plainly what to type
 //   toKey(si, "in") / fromKey    a file key with its own unit (`diameter_in`, a measure file's `force_lb`): it keeps
@@ -47,17 +48,27 @@ function apply(data) {
   }
 }
 
+// Requests are numbered: a GET sent before a set() was answered can carry the old setting (a poll that left just
+// before the POST and came back just after it), so its answer is dropped, as is any GET answered while a set() is
+// still on its way.
+let sent = 0, settled = 0, setting = 0, latestSet = 0;   // latestSet: two set()s answered out of order, the later wins
+
 export async function load() {
+  const n = ++sent;
   const { status, data } = await request("GET");
-  if (status === 200) apply(data);
+  if (status === 200 && !setting && n > settled) apply(data);
   return status === 200;
 }
 
 // Save the setting; resolves to null, or the server's error text.
 export async function set(next) {
-  const { status, data } = await request("POST", { units: next });
+  const n = ++sent;
+  setting++;
+  let res;
+  try { res = await request("POST", { units: next }); } finally { setting--; settled = ++sent; }
+  const { status, data } = res;
   if (status !== 200) return data.error || `the server answered ${status}`;
-  apply(data);
+  if (n > latestSet) { latestSet = n; apply(data); }
   return null;
 }
 
@@ -102,6 +113,13 @@ export function number(v, decimals) {
   else text = (Math.round(Number(`${a}e${decimals}`)) / 10 ** decimals).toFixed(decimals);
   if (text.includes(".")) text = text.replace(/0+$/, "").replace(/\.$/, "");
   return text === "0" || v >= 0 ? text : `-${text}`;
+}
+
+// The number an input box shows for `si` (no unit name; "" for none): two more places than fmt, so a typed value
+// reads back as typed. A box whose text is still this is unchanged: save its SI value, not this rounding of it.
+export function shown(si, kind, extra = 2) {
+  if (typeof si !== "number" || !Number.isFinite(si)) return si === null || si === undefined ? "" : String(si);
+  return number(toDisplay(si, kind), unit(kind).decimals + extra);
 }
 
 export function fmt(si, kind) {
@@ -157,6 +175,6 @@ export const units = {
   get system() { return system; },
   get table() { return table; },
   get warning() { return warning; },
-  load, set, watch, onChange, fmt, toDisplay, fromDisplay, name, parse, number, toKey, fromKey,
+  load, set, watch, onChange, fmt, shown, toDisplay, fromDisplay, name, parse, number, toKey, fromKey,
 };
 export default units;
