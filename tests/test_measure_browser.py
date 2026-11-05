@@ -8,6 +8,7 @@ import tomllib
 import pytest
 
 from measure_helpers import synthetic
+from scrimmage import units
 from scrimmage.measure import fit_cylinder, fit_launcher, forms, stats
 from scrimmage.measure.file import load
 from test_assembler_browser import Server, browser  # noqa: F401  (fixtures)
@@ -104,11 +105,11 @@ def test_five_squeezes_show_their_average_then_an_outlier_is_flagged(measure_pag
     _type_trials(page, lbs)
     _settled(page)
     want = stats.summary([x * LB for x in lbs])
-    summary = page.inner_text("#measure-summary")
-    assert f"average {want.mean:.1f} N" in summary and "spread 2% (5 trials)" in summary, summary
+    summary = page.inner_text("#measure-summary")   # in the Units setting: Imperial
+    assert f"average {want.mean / LB:.2f} lbf" in summary and "spread 2% (5 trials)" in summary, summary
     assert "Good enough to use" in summary
     values = page.locator("#measure-trials td.measure-value").all_inner_texts()
-    assert values == [f"{x * LB:.1f} N" for x in lbs]
+    assert values == [f"{x:.2f} lbf" for x in lbs]
     assert page.locator(".measure-off-flag").count() == 0
     # a sixth trial far off: flagged, kept, and the spread warns
     _type_trials(page, [30.0])
@@ -120,6 +121,34 @@ def test_five_squeezes_show_their_average_then_an_outlier_is_flagged(measure_pag
     assert "trial 6 looks off: check it" in summary and "Not good enough yet" in summary
     page.evaluate("__scrimmageMeasure.saved")
     assert [r["force_lb"] for r in load(path).trials["squeeze"]] == [*lbs, 30]   # flagged, never dropped
+
+
+def test_a_new_columns_unit_follows_the_units_setting(measure_page):
+    """A reading's unit picker stays (it is the file's key), and a column with nothing typed yet starts in the Units
+    setting's unit: in and lb in Imperial, mm, kg and N in Metric. A column with trials keeps its unit, and the
+    summary is shown again in the new units."""
+    from browser_harness import page_units
+    page, path = measure_page()
+    unit = lambda r: page.input_value(f"#measure-trials th select[data-unit={r}]")   # noqa: E731
+    _pick(page, "size")
+    assert (unit("mass"), unit("circumference")) == ("lb", "in")
+    _pick(page, "squeeze")
+    assert unit("force") == "lb" and page.input_value("#measure-setup select[data-unit=tare]") == "lb"
+    page_units(page, "metric")
+    page.wait_for_function("document.querySelector('#measure-trials th select[data-unit=force]').value === 'n'")
+    assert page.input_value("#measure-setup select[data-unit=tare]") == "n"
+    _pick(page, "size")
+    assert (unit("mass"), unit("circumference")) == ("kg", "mm")
+    _type_trials(page, [0.215, 0.217], reading="mass")
+    _settled(page)
+    assert "average 0.2160 kg" in page.inner_text("#measure-summary")
+    page_units(page, "imperial")   # the mass column has trials: it stays in kg; the empty one follows
+    page.wait_for_function("document.querySelector('#measure-trials th select[data-unit=circumference]').value === 'in'")
+    assert unit("mass") == "kg"
+    _settled(page)
+    page.wait_for_function("document.querySelector('#measure-summary').textContent.includes('average 0.476 lb')")
+    page.evaluate("__scrimmageMeasure.saved")
+    assert tomllib.loads(path.read_text(encoding="utf-8"))["size"] == [{"mass_kg": 0.215}, {"mass_kg": 0.217}]
 
 
 def _saved_on_its_own(page):
@@ -169,14 +198,14 @@ def test_print_opens_the_blank_form(measure_page):
 def test_leaving_a_box_saves_it_at_once(measure_page):
     page, path = measure_page()
     _pick(page, "size")
-    _type_trials(page, [142], reading="mass")
+    _type_trials(page, [0.31], reading="mass")   # a new column in the Units setting's unit: lb
     page.click("#start-link")   # the box loses focus: saved now, before the start page could open another file
     # well inside the 600 ms the save would wait after typing stops
     page.wait_for_function("document.querySelector('#measure-saved').textContent === '✓ All changes saved'",
                            timeout=450)
-    assert load(path).trials["size"] == [{"mass_g": 142}]
+    assert load(path).trials["size"] == [{"mass_lb": 0.31}]
     page.click("#start-back")
-    assert page.input_value("#measure-trials input[data-reading=mass]") == "142"
+    assert page.input_value("#measure-trials input[data-reading=mass]") == "0.31"
 
 
 def test_measure_something_makes_a_file_and_opens_it(measure_page, tmp_path):
@@ -205,8 +234,16 @@ def test_fit_shows_the_fit_and_each_shot_against_the_model(measure_page, tmp_pat
     assert want.band_text in text and "Good enough to use" in text
     assert "Fits the ball's stiffness to your shots (the wheel friction held at 0.95)." in text
     rows = page.locator("#measure-fit-result tbody tr").all_inner_texts()
-    assert len(rows) == 2 and f"{want.per_shot[0][0]:.2f} m/s" in rows[0]
+    assert len(rows) == 2 and units.fmt(want.per_shot[0][0], "speed") in rows[0]   # ft/s: the Units setting
     assert all(math.isfinite(m) for m, _ in want.per_shot)
+    assert "lbf" in want.band_text
+    # a Units change fits again, so the fit's words (the server's) are in the new units
+    from browser_harness import page_units
+    page_units(page, "metric")
+    page.wait_for_function("document.querySelector('#measure-fit-result').textContent.includes(' N fits your shots')",
+                           timeout=60000)
+    assert "m/s" in page.locator("#measure-fit-result tbody tr").first.inner_text()
+    assert "press Fit again" not in page.inner_text("#measure-fit-result")
     # a change to the shots says the fit is old
     page.locator("#measure-trials input[data-reading=wheel_rps]").first.fill("51")
     assert "press Fit again" in page.inner_text("#measure-fit-result")
@@ -259,10 +296,10 @@ def test_an_outside_edit_while_a_change_waits_shows_the_file_and_says_so(measure
 def test_a_change_waiting_to_save_is_sent_when_the_page_goes_away(measure_page):
     page, path = measure_page()
     _pick(page, "size")
-    _type_trials(page, [142], reading="mass")
+    _type_trials(page, [0.31], reading="mass")
     page.goto("about:blank")   # well inside the 600 ms wait: pagehide sends it
     for _ in range(50):
         if "size" in load(path).trials:
             break
         page.wait_for_timeout(100)
-    assert load(path).trials["size"] == [{"mass_g": 142}]
+    assert load(path).trials["size"] == [{"mass_lb": 0.31}]

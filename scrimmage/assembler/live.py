@@ -613,6 +613,9 @@ class LiveManager:
             session.move_body(cmd["name"], cmd["x"], cmd["y"], yaw_deg=cmd["yaw_deg"])
             self._poked()
         elif name == "reset":
+            # at rest at its start pose: a push still running ends here (else it shoves the robot off again)
+            session.world.set_robot_force(0.0, 0.0)
+            self._push_until = None
             session.reset_robot()
             self._poked()
         elif name == "record_start":

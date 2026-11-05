@@ -29,7 +29,8 @@
 // meters), labels: [the field's boxes labeled in it]} while a start is shown}; window.__scrimmage.startPicker = {toScreen(x, y) -> page pixels, value} while the
 // picker is open.
 
-import { $, h, api, edit, post, undo, notice, setTab, store, fmt, select } from "./app.js";
+import { $, h, api, edit, post, undo, notice, setTab, store, fmt, select, showMeasure, readMeasure, measureError } from "./app.js";
+import { units } from "./units.js";
 import { markDirty, clean, onCommit, badNumber } from "./inspector.js";
 import { browseList } from "./start.js";
 import { fieldGeometry, drawField, drawSides, fieldPoly, robotFootprint } from "./fieldpick.js";
@@ -188,7 +189,7 @@ function render() {
   const open = els.exact.open;
   els.exact.replaceChildren(h("summary", {}, "Exact position"),
     h("p", { class: "start-numbers" }, st.pose
-      ? `x ${fmt(st.pose[0])} m · y ${fmt(st.pose[1])} m · facing ${fmt(st.pose[2])}°` : "As written in the robot file.",
+      ? `x ${units.fmt(st.pose[0], "field")} · y ${units.fmt(st.pose[1], "field")} · facing ${fmt(st.pose[2])}°` : "As written in the robot file.",
     st.named ? ` (the named start ${st.named})` : "",
     ` · field: ${st.range === null ? FIELD_NAME.plain : st.range === "2026" ? FIELD_NAME[2026] : st.range}`,
     st.range === "2026" && !st.floor_balls ? " · no balls on the floor" : ""));
@@ -609,7 +610,7 @@ async function openPicker() {
       }
       resolve(ok);
     };
-    d.onclose = () => { delete window.__scrimmage.startPicker; finish(false); };
+    d.onclose = () => { delete window.__scrimmage.startPicker; offUnits(); finish(false); };
 
     const err = h("ul", { id: "sp-errors", class: "error-list", role: "alert", hidden: true });
     const showErrors = (errors) => {
@@ -619,22 +620,39 @@ async function openPicker() {
     const canvas = h("canvas", { id: "start-field-canvas", class: "field-canvas", tabindex: "0", role: "application",
       "aria-label": "Field, seen from above. Click where the robot starts; keep the button down and drag to turn it. Arrow keys move it, [ and ] turn it." });
     const ctx = canvas.getContext("2d");
-    const num = (id, label, unit, step) => {
-      const el = h("input", { id, type: "number", step, inputmode: "decimal", class: "fp-num", "aria-label": label });
-      return [el, h("label", { class: "fp-field", for: id }, h("span", { class: "fp-label sp-label" }, label), h("span", { class: "with-unit" }, el, h("span", { class: "unit" }, unit)))];
+    // x and y are field lengths in the chosen units (units.js): text boxes, so "12.5 ft" can be typed too
+    const num = (id, label, unit, step, kind) => {
+      const el = kind ? h("input", { id, type: "text", inputmode: "decimal", autocomplete: "off", class: "fp-num", "aria-label": label })
+        : h("input", { id, type: "number", step, inputmode: "decimal", class: "fp-num", "aria-label": label });
+      const u = h("span", { class: "unit" }, unit);
+      return [el, h("label", { class: "fp-field", for: id }, h("span", { class: "fp-label sp-label" }, label), h("span", { class: "with-unit" }, el, u)), u];
     };
-    const [xIn, xF] = num("sp-x", "x (from the blue wall)", "m", "0.01");
-    const [yIn, yF] = num("sp-y", "y (from the right side, seen from blue)", "m", "0.01");
+    const [xIn, xF, xU] = num("sp-x", "x (from the blue wall)", units.name("field"), null, "field");
+    const [yIn, yF, yU] = num("sp-y", "y (from the right side, seen from blue)", units.name("field"), null, "field");
     const [hIn, hF] = num("sp-heading", "facing", "°", "1");
-    const sync = () => {
-      xIn.value = cur.x === null ? "" : fmt(round(cur.x, 3));
-      yIn.value = cur.y === null ? "" : fmt(round(cur.y, 3));
+    // a box being typed in (its text isn't what it showed): kept across a change of units
+    const typing = (el) => document.activeElement === el && el.value.trim() !== el.dataset.shown;
+    const sync = ({ keepTyping = false } = {}) => {
+      for (const [el, k] of [[xIn, "x"], [yIn, "y"]]) if (!(keepTyping && typing(el))) showMeasure(el, cur[k], "field");
       hIn.value = fmt(round(cur.heading, 1));
     };
+    // Units changed in another tab or editor while this is open: the boxes show the new units. Text being typed in
+    // stays and now means the new units, as in the inspector and the step editor (it is read again here and at OK).
+    const offUnits = units.onChange(() => {
+      xU.textContent = yU.textContent = units.name("field");
+      const kept = [xIn, yIn].filter(typing);
+      sync({ keepTyping: true });
+      for (const el of kept) el.dispatchEvent(new Event("input"));
+      draw();   // the grid's labels are in the chosen units
+    });
     for (const [el, k] of [[xIn, "x"], [yIn, "y"], [hIn, "heading"]]) {
       el.addEventListener("input", () => {
         if (el.validity.badInput || el.value.trim() === "") return;
-        cur[k] = Number(el.value);
+        if (k !== "heading") {
+          const v = readMeasure(el, "field");   // not a field length yet: OK says what to type
+          if (typeof v !== "number") return;
+          cur[k] = v;
+        } else cur[k] = Number(el.value);
         if (k !== "heading" && cur.x !== null && cur.y === null) cur.y = (geo.floor.miny + geo.floor.maxy) / 2;
         if (k !== "heading" && cur.y !== null && cur.x === null) cur.x = (geo.floor.minx + geo.floor.maxx) / 2;
         draw();
@@ -642,7 +660,7 @@ async function openPicker() {
     }
     const exact = h("details", { id: "sp-exact", class: "sp-exact" }, h("summary", {}, "Exact position"),
       h("div", { class: "fp-row" }, xF, yF, hF),
-      h("p", { class: "hint", text: "Meters from the blue alliance's corner of the field; facing 0° is toward the red wall, 90° to the left." }));
+      h("p", { class: "hint", text: "Measured from the blue alliance's corner of the field; facing 0° is toward the red wall, 90° to the left." }));
     const top = h("div", { class: "sp-top" });
 
     function layout() {
@@ -780,10 +798,16 @@ async function openPicker() {
         h("button", { type: "submit", id: "sp-ok", class: "btn btn-primary" }, "OK")));
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const bad = [xIn, yIn, hIn].find((el) => el.validity.badInput);
-      if (bad) { showErrors([{ message: `${bad.getAttribute("aria-label")} must be a number` }]); bad.focus(); return; }
+      if (hIn.validity.badInput) { showErrors([{ message: `${hIn.getAttribute("aria-label")} must be a number` }]); hIn.focus(); return; }
+      // x and y as their boxes say now (an empty box keeps the picked value)
+      for (const [el, k] of [[xIn, "x"], [yIn, "y"]]) {
+        const v = readMeasure(el, "field");
+        if (measureError(v)) { showErrors([{ message: measureError(v) }]); el.focus(); return; }
+        if (v !== null) cur[k] = v;
+      }
       if (cur.x === null || cur.y === null || !placed) { showErrors([{ message: "Click the field where the robot starts first." }]); return; }
-      if (await apply({ pose: [round(cur.x, 3), round(cur.y, 3), round(normDeg(cur.heading), 1)] })) finish(true);
+      // to 1 µm: fine enough that a typed 11.5 ft (3.5052 m) reads back as typed, coarse enough for no float noise
+      if (await apply({ pose: [round(cur.x, 6), round(cur.y, 6), round(normDeg(cur.heading), 1)] })) finish(true);
     });
     d.replaceChildren(form);
     layout(); renderTop(); sync(); draw();
@@ -931,6 +955,7 @@ export function showCode(on) {
 export function initCode() {
   window.__scrimmage.code = { get state() { return code.state; }, get devices() { return code.devices; }, get picking() { return !!picking; },
     picture: null, show: () => showCode(true), showDevices };
+  units.onChange(() => render());   // the Exact position line (the battery boxes keep what is being typed)
   $("#center-3d").addEventListener("click", () => showCode(false));
   $("#center-code").addEventListener("click", () => showCode(true));
   $(".center-switch").addEventListener("keydown", (e) => {

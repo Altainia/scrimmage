@@ -17,6 +17,7 @@
 // saved (saves now, and resolves when every save is done), summarized (a promise for the summary under way)}.
 
 import { $, h, api, notice, registerTab, sessionToken, setTab, showPath } from "./app.js";
+import { units } from "./units.js";
 
 const SUMMARY_DELAY = 300;
 const SAVE_DELAY = 600;
@@ -61,14 +62,56 @@ const copy = (x) => JSON.parse(JSON.stringify(x));
 const why = (data, status) => data.error || (data.errors && data.errors[0] && data.errors[0].message) || `the server answered ${status}`;
 
 // -- the units over each column ------------------------------------------------------------------
+// A reading's unit before one is picked or typed (a new column, a setup box): the Units setting's, where the reading
+// takes it (a key's unit is the file's: the picker stays, and what is typed is in the unit it shows). Measure files
+// have no pressure reading, so no psi or kPa here; a force read on a scale is lb in Imperial and N in Metric.
+const SYSTEM_UNITS = { imperial: { length: "in", mass: "lb", force: "lb", weight: "lb" },
+  metric: { length: "mm", mass: "kg", force: "n", weight: "n" } };
+export function defaultUnit(r, sys = units.system) {
+  const u = (SYSTEM_UNITS[sys] || {})[r.quantity];
+  return u && r.units.some((x) => x.unit === u) ? u : r.unit;
+}
+const usedUnits = (test, name) => new Set(m.file.tests[test].trials.map((row) => row.cells[name])
+  .filter((c) => c && c.value !== null && c.value !== "").map((c) => c.unit));
 function columnUnits(test) {
   const t = testOf(test), out = {};
   for (const r of t.trial) {
     if (!r.units.length) continue;
-    const used = new Set(m.file.tests[test].trials.map((row) => row.cells[r.name]).filter((c) => c && c.value !== null && c.value !== "").map((c) => c.unit));
-    out[r.name] = used.size === 1 ? [...used][0] : used.size ? "mixed" : r.unit;
+    const used = usedUnits(test, r.name);
+    out[r.name] = used.size === 1 ? [...used][0] : used.size ? "mixed" : defaultUnit(r);
   }
   return out;
+}
+// The Units setting changed (from `was`): an empty column still on the old default takes the new one; the summary's
+// numbers and the fit's speeds are shown again in the new units. A box being typed in keeps its focus and caret.
+let unitsWas = null;
+function unitsChanged(sys) {
+  const was = unitsWas;
+  unitsWas = sys;
+  if (!m.state || !m.file) return;
+  for (const t of m.state.tests) {
+    const cols = m.units[t.name];
+    if (!cols) continue;
+    for (const r of t.trial) {
+      if (r.units.length && !usedUnits(t.name, r.name).size && cols[r.name] === defaultUnit(r, was)) cols[r.name] = defaultUnit(r, sys);
+    }
+  }
+  const act = document.activeElement;
+  const keep = act && act.closest && act.closest("#tab-measure") && act.getAttribute("aria-label")
+    ? { label: act.getAttribute("aria-label"), start: act.selectionStart, end: act.selectionEnd } : null;
+  renderSetup();
+  renderTrials();
+  renderFit();
+  if (keep) {
+    const el = [...document.querySelectorAll("#tab-measure [aria-label]")].find((x) => x.getAttribute("aria-label") === keep.label);
+    if (el) { el.focus(); try { el.setSelectionRange(keep.start, keep.end); } catch { /* not a text box */ } }
+  }
+  if (editable()) summarizing = summarize();
+  refit();
+}
+// The fit's words (its band, "stiffness 20.6 lbf ...") are the server's, in the Units setting it fit in: fit again.
+async function refit() {
+  for (const test of Object.keys(m.fit)) if (m.fit[test] && !m.fit[test].error) await fit(test);
 }
 function adopt(file) {
   m.file = file ? copy(file) : null;
@@ -178,9 +221,8 @@ function notNumbers() {
   return null;
 }
 
-async function fit() {
+async function fit(test = m.test) {
   if (!editable() || m.fitting) return;
-  const test = m.test;
   const asked = canon(m.file);
   m.fitting = true; renderFit();
   try {
@@ -347,7 +389,7 @@ function renderSetup() {
   if (!editable() || !t || !t.setup.length) { box.replaceChildren(); return; }
   const part = m.file.tests[t.name].setup;
   const rows = t.setup.map((r) => {
-    const unitOf = () => (part.cells[r.name] ? part.cells[r.name].unit : r.unit);
+    const unitOf = () => (part.cells[r.name] ? part.cells[r.name].unit : defaultUnit(r));
     const picker = unitPicker(r, unitOf(), `${r.name} unit`, (u) => {
       part.cells[r.name] = { unit: u, value: part.cells[r.name] ? part.cells[r.name].value : null };
       changed();
@@ -365,12 +407,12 @@ function renderTrials() {
   const t = shown();
   if (!editable() || !t) { table.replaceChildren(); $("#measure-extra").hidden = true; return; }
   const part = m.file.tests[t.name];
-  const units = m.units[t.name];
+  const cols = m.units[t.name];
   const head = h("tr", {}, h("th", { text: "trial" }),
     ...t.trial.map((r) => h("th", {},
       h("div", { class: "row measure-col" }, h("strong", { text: r.name }),
-        unitPicker(r, units[r.name], `${r.name} unit`, (u) => {
-          units[r.name] = u;
+        unitPicker(r, cols[r.name], `${r.name} unit`, (u) => {
+          cols[r.name] = u;
           for (const row of part.trials) if (row.cells[r.name]) row.cells[r.name].unit = u;
           changed();
         })),
@@ -379,7 +421,7 @@ function renderTrials() {
     h("th", { class: "measure-flag-head" }, h("span", { class: "visually-hidden", text: "check" })), h("th", {}, h("span", { class: "visually-hidden", text: "remove" })));
   const body = part.trials.map((row, i) => h("tr", { dataset: { trial: String(i) } },
     h("td", { class: "measure-n", text: String(i + 1) }),
-    ...t.trial.map((r) => h("td", {}, valueBox(r, row, `${r.name}, trial ${i + 1}`, () => (units[r.name] === "mixed" ? r.unit : units[r.name])))),
+    ...t.trial.map((r) => h("td", {}, valueBox(r, row, `${r.name}, trial ${i + 1}`, () => (cols[r.name] === "mixed" ? defaultUnit(r) : cols[r.name])))),
     ...t.fields.map((f) => h("td", { class: "measure-value", dataset: { field: f.field } })),
     h("td", { class: "measure-flag" }),
     h("td", {}, h("button", { type: "button", class: "btn btn-small btn-ghost", "aria-label": `Remove trial ${i + 1}`, title: "Remove this trial",
@@ -461,8 +503,8 @@ function renderFit() {
       h("p", { text: `The model misses your shots by ${(r.rms_error * 100).toFixed(1)}% (root mean square).` }),
       h("table", { class: "measure-trials measure-fit-rows" },
         h("thead", {}, h("tr", {}, ...["shot", "speed across", "model", "model off by"].map((x) => h("th", { text: x })))),
-        h("tbody", {}, ...r.rows.map((row, i) => h("tr", {}, h("td", { text: String(i + 1) }), h("td", { text: `${row.measured.toFixed(2)} m/s` }),
-          h("td", { text: row.model === null ? "not launched" : `${row.model.toFixed(2)} m/s` }),
+        h("tbody", {}, ...r.rows.map((row, i) => h("tr", {}, h("td", { text: String(i + 1) }), h("td", { text: units.fmt(row.measured, "speed") }),
+          h("td", { text: row.model === null ? "not launched" : units.fmt(row.model, "speed") }),
           h("td", { text: row.off === null ? "" : signed(row.off) }))))));
   } else {
     out.push(h("p", { text: "Fits the valve's conductance to your strokes." }),
@@ -504,6 +546,8 @@ export async function initMeasure() {
   // focus leaving the tab (Start page, another window) saves at once; moving between boxes waits for typing to stop
   $("#tab-measure").addEventListener("focusout", (e) => { if (!e.relatedTarget || !$("#tab-measure").contains(e.relatedTarget)) flush(); });
   window.addEventListener("pagehide", saveOnLeaving);
+  unitsWas = units.system;
+  units.onChange(unitsChanged);
   const app = await api("GET", "/api/app/state");
   if (app.status === 200) m.appPath = app.data.display_path || app.data.path || "";
   await pollLoop();

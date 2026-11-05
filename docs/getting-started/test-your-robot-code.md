@@ -42,7 +42,7 @@ duration = 5.0
   at = "end"
 ```
 
-Positions are in meters on the field. The robot starts where you picked in the Robot tab's **Robot code** panel
+Positions in the file are in meters on the field (the Scenario tab shows them in your Units setting). The robot starts where you picked in the Robot tab's **Robot code** panel
 (**Where it starts**; a new robot file has no start until you pick one, and the Scenario tab's **Run** asks first). A **starter scenario has no checks, so it always passes** (its report says so): add at least
 one.
 
@@ -54,7 +54,7 @@ scrimmage run sim/scenarios/auto.toml
 
 ```
 PASS  auto.toml
-  ok   [auto] pose within 0.02 m and 0.1° of target (x=2.98, y=4.04, heading=89.9°)
+  ok   [auto] pose within 0.065 ft and 0.1° of target (x=9.779 ft, y=13.251 ft, heading=89.9°)
   ok   [auto] battery stayed >= 7
 report: runs/auto-20261031-114956/report.md
 ```
@@ -64,8 +64,11 @@ drove:
 
 ```
 FAIL  auto.toml
-  FAIL [auto] pose: 1.02 m from target, heading off by 0.1° (x=2.98, y=4.04, heading=89.9°); allowed 0.2 m, 6°
+  FAIL [auto] pose: 3.345 ft from target, heading off by 0.1° (x=9.779 ft, y=13.251 ft, heading=89.9°); allowed 0.656 ft, 6°
 ```
+
+The printed lines and `report.md` are in the **Units** setting (feet unless you pick Metric: see
+[settings](../settings.md)); the scenario file and `report.json` stay in meters.
 
 If your code made different devices than the robot file expects (a CAN ID that doesn't match, say), `report.md`,
 `report.json` and the printed summary say so in a note, for example that the robot file's TalonFX 21 wasn't made and

@@ -224,6 +224,7 @@ def test_ball_result_compares_a_misses_apex_with_the_rim(live_page):
       return [ballResult(b), ballResult({ ...b, fired_t: null, apex_z: null, nearest_goal: null, first_hit: null }),
               ballResult({ ...b, outcome: 'scored', goal: 'hub_blue', scored_t: 2 })];
     }""")
-    assert r[0] == "rest at (6.10, 4.20); first hit hub_blue.funnel_0; apex 1.70 m vs rim 1.83 m (hub_blue)"
-    assert r[1] == "rest at (6.10, 4.20)"
+    # in the chosen units: feet (the default, Imperial) here
+    assert r[0] == "rest at (20.01, 13.78) ft; first hit hub_blue.funnel_0; apex 5.58 ft vs rim 6.00 ft (hub_blue)"
+    assert r[1] == "rest at (20.01, 13.78) ft"
     assert "apex" not in r[2]

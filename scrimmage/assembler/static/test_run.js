@@ -45,6 +45,7 @@
 // window.__scrimmageTest.spread is spreadShown(): {id, rows, sentence} or null.
 
 import { $, h, api, apiFile } from "./app.js";
+import { units } from "./units.js";
 
 const MOTION_MAGIC = "SCRM", MOTION_VERSION = 1, HEADER = 14;   // struct "<4sHII"
 const CHART_H = 92, PAD_L = 44, PAD_R = 8, PAD_T = 6, TICKS_H = 16;
@@ -96,7 +97,8 @@ export function replay() {
     time: rp.time, playing: rp.playing, runId: rp.run ? rp.run.id : null, view: rp.view,
     cylinders: rp.view ? rp.view.cylinderShapes() : null,
     sensors: rp.view ? rp.view.sensorShapes() : null,
-    chart: { signals: rp.run ? shownSignals() : [], runs: [rp.run ? rp.run.id : null, rp.compare ? rp.compare.id : null],
+    chart: { signals: rp.run ? shownSignals() : [], titles: [...$("#test-chart").querySelectorAll(".test-plot-title")].map((e) => e.textContent),
+      runs: [rp.run ? rp.run.id : null, rp.compare ? rp.compare.id : null],
       colors: (({ run, compare, bg }) => ({ run, compare, bg }))(tokens()) },
     feeds: rp.run ? feedsOf(rp.run.result) : null, marks: rp.run ? marksOf(rp.run.result) : null, outlined: rp.outlined,
     feedColors: feedColors(), markColors: markColors(),
@@ -533,10 +535,14 @@ function defaultSignals() {
 
 const shownSignals = () => (rp.picked ? available().filter((s) => rp.picked.has(s)) : defaultSignals());
 
+// A signal's unit on the wire: the run's signals keep the units signals.csv and the MCP tools have (inches, psi,
+// newtons, degrees), whatever the Units setting; the chart shows each in the setting's (shownUnit, toShown).
 function unitOf(name) {
   if (name === "tilt") return "°";
   if (name.endsWith(".current")) return "A";
   if (name === "hook_load") return "N";
+  if (name === "air.psi" || name === "air.working_psi") return "psi";
+  if (name.endsWith(".extension")) return "in";
   if (name.startsWith("seated.") || name.startsWith("clearance.")) return "in";
   const sn = name.startsWith("sensor.") && ((rp.state && rp.state.palette && rp.state.palette.sensors) || [])
     .find((x) => `sensor.${x.name}` === name);
@@ -548,6 +554,14 @@ function unitOf(name) {
   if (e) return e.unit === "deg" ? "°" : e.unit;
   const j = pal && (pal.joints || []).find((x) => x.name === name);
   return j ? (j.unit === "deg" ? "°" : j.unit) : "";
+}
+
+const WIRE = { in: ["length", 0.0254], psi: ["pressure", 6894.757293168361], N: ["force", 1] };   // [kind, SI per one]
+const shownUnit = (name) => { const u = unitOf(name), w = WIRE[u]; return w ? units.name(w[0]) : u; };
+// a function from the signal's wire value to the value shown (null stays null: no sample)
+function toShown(name) {
+  const w = WIRE[unitOf(name)];
+  return w ? (v) => (v == null ? v : units.toDisplay(v * w[1], w[0])) : (v) => v;
 }
 
 // What a sensor's chart reads in: a beam break is 1 while broken, a distance sensor inches, a color sensor the
@@ -625,7 +639,7 @@ function drawChart() {
         setTime(start() + Math.max(0, Math.min(1, x)) * (Number(c.dataset.tend) - start()));
       });
       return h("div", { class: "test-plot-wrap" },
-        h("div", { class: "test-plot-title", text: `${name}${unitOf(name) ? ` (${unitOf(name)})` : ""}` }), c);
+        h("div", { class: "test-plot-title", text: `${name}${shownUnit(name) ? ` (${shownUnit(name)})` : ""}` }), c);
     }));
     canvases = [...box.querySelectorAll("canvas")];
   }
@@ -651,8 +665,10 @@ function plot(canvas, name, cmp, tEnd, tk) {
     canvas.style.height = `${H}px`;
   }
   canvas.dataset.tend = String(tEnd);
-  const run = rp.run.result.signals;
-  const other = cmp && name in cmp.signals ? cmp.signals : null;
+  const shown = toShown(name);
+  const series = (sig) => ({ t: sig.t, [name]: sig[name].map(shown) });     // in the units shown
+  const run = series(rp.run.result.signals);
+  const other = cmp && name in cmp.signals ? series(cmp.signals) : null;
   canvas.dataset.series = String(other ? 2 : 1);
   canvas.setAttribute("aria-label", `${name} over time, ${runName(rp.run.id)}${other ? ` and ${runName(cmp.id)}` : ""}`);
   const ctx = canvas.getContext("2d");
@@ -709,21 +725,40 @@ function plot(canvas, name, cmp, tEnd, tk) {
 
 
 // -- the sweep -----------------------------------------------------------------------------------------------------
-const ROBOT_WORDS = { mass: "the robot's weight (kg)", com_forward: "the robot's center of mass, forward (m)",
-  com_left: "the robot's center of mass, left (m)", com_up: "the robot's center of mass, up (m)" };
-const AXIS_WORDS = { x: "forward (x, m)", y: "left (y, m)", z: "up (z, m)", yaw: "turned (yaw, °)" };
-const KEY_UNITS = { volts: "V", seconds: "s", distance: "m" };
-// a station's settings as a sweep tries them (the release box in inches, as Setup shows it; the file has meters)
+// What a sweep tried, in words, with the unit shown (L: the Units setting's, filled in by unitWords)
+const ROBOT_WORDS = { mass: "the robot's weight (M)", com_forward: "the robot's center of mass, forward (L)",
+  com_left: "the robot's center of mass, left (L)", com_up: "the robot's center of mass, up (L)" };
+const AXIS_WORDS = { x: "forward (x, L)", y: "left (y, L)", z: "up (z, L)", yaw: "turned (yaw, °)" };
+const KEY_UNITS = { volts: () => "V", seconds: () => "s", distance: () => units.name("field") };
 const STATION_WORDS = { interval: "time between pieces (s)", stock: "stock", spread_yaw_deg: "left/right angle (± °)",
-  spread_pitch_deg: "up/down angle (± °)", spread_speed: "speed (± m/s)", spread_position: "release box (± in)",
+  spread_pitch_deg: "up/down angle (± °)", spread_speed: "speed (± S)", spread_position: "release box (± L)",
   spread_rotation_deg: "turned (± °)" };
-const IN = 0.0254;            // m per inch
+const unitWords = (text) => text.replace(/\b([LMS])\)/g, (_, k) => `${units.name({ L: "length", M: "mass", S: "speed" }[k])})`);
 const isGrip = (sw) => !!(sw.target && "grip" in sw.target);
-// a sweep row's value as the table and chart show it: the release box's meters in inches; a grip's material names
-// (not numbers) are placed in order, one step apart, and labeled with the name
-const rowValue = (sw, r) => (isGrip(sw) ? sw.rows.indexOf(r) : sw.target && sw.target.key === "spread_position" && "station" in sw.target
-  ? +(Number(r.value) / IN).toPrecision(6) : Number(r.value));
-const rowText = (sw, r) => (sw.target && sw.target.key === "spread_position" && "station" in sw.target ? String(rowValue(sw, r)) : r.value);
+const FILE_SI = { in: 0.0254, m: 1 };     // a block's length units in the test file
+// A sweep's number as the file has it: [kind, SI per one of the file's unit], or null for one shown as it is
+// (degrees, seconds, volts, the shuffle). The robot file and a station keep SI; a block, its own unit.
+function targetMeasure(target) {
+  if (!target) return null;
+  if ("robot" in target) return target.robot === "mass" ? ["mass", 1] : ["length", 1];
+  if ("mount" in target) return target.axis === "yaw" ? null : ["length", 1];
+  if ("station" in target) return target.key === "spread_position" ? ["length", 1] : target.key === "spread_speed" ? ["speed", 1] : null;
+  if ("block" in target) {
+    if (target.key === "distance") return ["field", 1];
+    const b = blockAt(rp.state && rp.state.test, target.block);
+    return target.key === "to" && b && FILE_SI[b.unit] ? ["length", FILE_SI[b.unit]] : null;
+  }
+  return null;
+}
+// a sweep row's value as the table and chart show it: a length, weight or speed in the units shown (to 5 figures:
+// the sweep keeps 6, so 100 lb tried reads 100, not 99.9999); a grip's material names (not numbers) are placed in
+// order, one step apart, and labeled with the name
+function rowValue(sw, r) {
+  if (isGrip(sw)) return sw.rows.indexOf(r);
+  const m = targetMeasure(sw.target);
+  return m ? +units.toDisplay(Number(r.value) * m[1], m[0]).toPrecision(5) : Number(r.value);
+}
+const rowText = (sw, r) => (targetMeasure(sw.target) ? String(rowValue(sw, r)) : r.value);
 
 // The block at a place in the test JSON (0-based, through repeat bodies), or null.
 function blockAt(test, place) {
@@ -742,13 +777,14 @@ function targetText(target) {
   if (!target) return "";
   if ("block" in target) {
     const b = blockAt(rp.state && rp.state.test, target.block);
-    const unit = target.key === "to" ? (b && b.unit === "deg" ? "°" : b ? b.unit : "") : KEY_UNITS[target.key] || "";
+    const unit = target.key === "to" ? (b && b.unit === "deg" ? "°" : b && FILE_SI[b.unit] ? units.name("length") : b ? b.unit : "")
+      : KEY_UNITS[target.key] ? KEY_UNITS[target.key]() : "";
     return `${blockWords(b)} (block ${target.block.map((i) => i + 1).join(" in ")}): ${target.key}${unit ? ` (${unit})` : ""}`;
   }
-  if ("robot" in target) return ROBOT_WORDS[target.robot] || target.robot;
+  if ("robot" in target) return ROBOT_WORDS[target.robot] ? unitWords(ROBOT_WORDS[target.robot]) : target.robot;
   if ("grip" in target) return `grip material of ${target.grip}`;
-  if ("mount" in target) return `where ${target.mount} is mounted: ${AXIS_WORDS[target.axis] || target.axis}`;
-  if ("station" in target) return `${target.station}: ${STATION_WORDS[target.key] || target.key}`;
+  if ("mount" in target) return `where ${target.mount} is mounted: ${AXIS_WORDS[target.axis] ? unitWords(AXIS_WORDS[target.axis]) : target.axis}`;
+  if ("station" in target) return `${target.station}: ${STATION_WORDS[target.key] ? unitWords(STATION_WORDS[target.key]) : target.key}`;
   if (target.setup === "seed") return "the shuffle";
   return "";
 }
@@ -776,7 +812,7 @@ function renderSweep() {
   note.textContent = notes.join(" ");
   const checks = checkColumns(sw);
   const table = $("#test-sweep-table");
-  const key = JSON.stringify([sw.id, sw.rows, checks, rp.shownId, (rp.state.runs || []).map((r) => r.id)]);
+  const key = JSON.stringify([sw.id, sw.rows, checks, rp.shownId, (rp.state.runs || []).map((r) => r.id), units.system]);
   if (table.dataset.key !== key) {
     table.dataset.key = key;
     table.replaceChildren(
@@ -800,7 +836,7 @@ function renderSweep() {
   }
   const sel = $("#test-sweep-y");
   const signals = ((rp.state.palette && rp.state.palette.signals) || []);
-  const opts = [["t_end", "when the run ended (s)"], ...signals.map((s) => [s, `${s} at the end${unitOf(s) ? ` (${unitOf(s)})` : ""}`])];
+  const opts = [["t_end", "when the run ended (s)"], ...signals.map((s) => [s, `${s} at the end${shownUnit(s) ? ` (${shownUnit(s)})` : ""}`])];
   const okey = opts.map((o) => o.join("=")).join("|");
   if (sel.dataset.key !== okey) {
     sel.replaceChildren(...opts.map(([v, text]) => h("option", { value: v, text })));
@@ -818,7 +854,7 @@ function sweepPoints(sw) {
     const x = rowValue(sw, r);
     if (rp.sweepY === "t_end") { if (r.t_end !== "" && r.t_end != null) out.push([x, Number(r.t_end)]); return; }
     const fin = rp.sweepFinals.get(resultKey(rowRun(sw, k)));
-    if (fin && rp.sweepY in fin) out.push([x, fin[rp.sweepY]]);
+    if (fin && rp.sweepY in fin) out.push([x, toShown(rp.sweepY)(fin[rp.sweepY])]);
   });
   return out;
 }
@@ -957,6 +993,10 @@ export function initRunPanel({ chart, setChart } = {}) {
   new ResizeObserver(() => drawChart()).observe($("#test-chart"));
   new ResizeObserver(() => drawSweep()).observe($("#test-sweep-wrap"));
   $("#test-sweep-y").addEventListener("change", (e) => { rp.sweepY = e.target.value || "t_end"; drawSweep(); });
+  units.onChange(() => {          // the chart and the sweep in the new units: its titles drawn again
+    $("#test-chart").replaceChildren();
+    if (rp.run) { drawChart(); renderSweep(); }
+  });
   const dark = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
   if (dark && dark.addEventListener) dark.addEventListener("change", () => { drawChart(); drawSweep(); });
 }

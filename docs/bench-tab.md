@@ -58,7 +58,8 @@ The stage is the newest idea: the one that was edited or run last, by anyone. It
   page ...");
 - the side picture, full width: the wheels, bars and hoods, the path of every ball, and where it left. **Pass GIF**
   switches to the animation of one ball going through, and back;
-- the headline results in large type, for example "3 of 3 left through `goal` at 3.4 m/s ± 0.2, 35° up", and always
+- the headline results in large type, for example "3 of 3 left through `goal` at 11.2 ft/s ± 0.7, 35° up" (in the
+  [Units setting](settings.md)), and always
   a separate `UNCALIBRATED` line;
 - **Run** (run this idea now) and **Edit shape**.
 

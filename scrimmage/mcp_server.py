@@ -48,6 +48,12 @@ Block tests (test_run, test_sweep, test_spread) try a mechanism on a robot with 
 (<name>.test.toml) with your own file tools, then test_run it. test_sweep tries one number in the test or the robot at
 several values; test_spread tries the floor ball at each placement of the test's floor spread. Pass absolute paths.
 Each run is kept next to the test file, where the app's Test tab can replay it.
+
+Results are in fixed units whatever the web app's Units setting (Imperial or Metric): numbers are SI unless a key
+names its unit (min_in, extension_m); run_scenario's messages are in meters, the bench headlines in m/s, N and m,
+and the words of test_run, test_sweep and test_spread in inches and psi (a drive's distance, a block whose unit is
+"m" and Setup's partner overlap in meters). Files written for people (report.md, summary.txt, pictures) follow the
+setting.
 """
 
 
@@ -330,7 +336,8 @@ async def run_scenario(path: str, out_dir: str | None = None, real_ds: bool | No
     is restarted); with no session open, runs standalone in its own session (an open session with another config is
     an error: stop_session first). Returns the report (with mode "session" or
     "standalone") and up to 6 of its screenshots. out_dir defaults to runs/<scenario>-mcp, relative to the server's
-    working directory, and is overwritten each run. real_ds=true is refused: the scenario is the Driver Station."""
+    working directory, and is overwritten each run. real_ds=true is refused: the scenario is the Driver Station.
+    Check messages are in meters whatever the Units setting; report.md follows the setting."""
     if real_ds:
         raise ToolError(REAL_DS_REFUSED)
     try:
@@ -392,10 +399,21 @@ def _bench_recorded(kind: str, files: list[Path], out: Path, folder: Path | None
     return session.recorded(folder or files[0].parent, kind, files, out, "agent")
 
 
+def _machine_headlines(result) -> list[str]:
+    """A bench run's headlines as they were before the Units setting (meters, m/s, N), whatever the setting: an MCP
+    result doesn't change with it (the files the tool writes, summary.txt and the pictures, are in the setting, as the
+    Bench tab's)."""
+    from . import units
+    from .bench.report import headlines
+    with units.fixed("metric"):   # report.py's headline helpers write metric exactly as they always did
+        return headlines(result)
+
+
 def _bench_ideas(results, files) -> list[dict]:
-    from .bench.report import energy_failures, headlines
+    from .bench.report import energy_failures
     return [{"file": str(f), "name": r.bench.name, "author": r.bench.author, "idea": r.bench.idea,
-             "headlines": headlines(r), "energy_failures": energy_failures(r)} for f, r in zip(files, results)]
+             "headlines": _machine_headlines(r), "energy_failures": energy_failures(r)}
+            for f, r in zip(files, results)]
 
 
 def _warnings(benches) -> list[str]:
@@ -444,7 +462,8 @@ async def bench_focus(path: str, keys: list[str]) -> str:
 
 @server.tool()
 async def bench_run(path: str, out_dir: str | None = None) -> list:
-    """Run a bench file (ignoring its [sweep]): returns the headlines (plain words for the room, UNCALIBRATED last),
+    """Run a bench file (ignoring its [sweep]): returns the headlines (plain words for the room, UNCALIBRATED last;
+    in meters, m/s and N whatever the Units setting, while summary.txt and the pictures follow the setting),
     then the side path picture (the mechanism with every piece's path, green out, red jammed, orange escaped), a top
     view when pieces move across, and the pass contact sheet (frames of one piece going through). Show the room the
     pictures and read them the headlines. path: an absolute path. out_dir (absolute) defaults to
@@ -461,14 +480,14 @@ async def bench_run(path: str, out_dir: str | None = None) -> list:
 
     def _run_locked(file, want):
         from .bench.pictures import PICTURE_TRACE_HZ, write_pictures
-        from .bench.report import energy_failures, headlines, write_results
+        from .bench.report import energy_failures, write_results
         from .bench.run import run_bench
         from .bench.spec import load_bench
         from .render import RenderUnavailable
         bench = load_bench(file)
         result = run_bench(bench, trace_hz=PICTURE_TRACE_HZ)
         out = write_results(result, want)
-        info = {"name": bench.name, "author": bench.author, "idea": bench.idea, "headlines": headlines(result),
+        info = {"name": bench.name, "author": bench.author, "idea": bench.idea, "headlines": _machine_headlines(result),
                 "warnings": _warnings([bench]), "energy_failures": energy_failures(result),
                 "out_dir": str(out.resolve())}
         try:
@@ -512,7 +531,8 @@ async def bench_sweep(path: str, out_dir: str | None = None) -> list:
         out.mkdir(parents=True, exist_ok=True)
         report.write_csv(rows, out / "results.csv", compare.BENCH_METRICS)
         charts = report.write_charts(rows, bench.charts or compare.default_charts(list(bench.sweep)), out, None,
-                                     compare.BENCH_METRICS, compare.CHART_KINDS, footer=bench_estimates(bench))
+                                     compare.BENCH_METRICS, compare.CHART_KINDS, footer=bench_estimates(bench),
+                                     shown=compare.SHOWN)
         info = {"rows": _metric_rows(rows), "out_dir": str(out.resolve()), "warnings": _warnings([bench]),
                 "uncalibrated": bench_uncalibrated(bench)}
         if charts is None:
@@ -636,26 +656,33 @@ async def test_run(path: str) -> dict:
     file = _test_file(path)
 
     def work():
-        from .blocks import program as blocks_program
-        from .blocks import run as blocks_run
-        from .blocks import store as blocks_store
-        program = blocks_program.load(file)
-        result = blocks_run.TestRun(blocks_run.world_for(program), program).run()
-        folder = blocks_store.save_run(result, program, blocks_store.runs_dir(file))
-        return {"status": result.status, "outcome": result.outcome, "passed": result.passed,
-                "t_end": result.t_end,
-                "checks": [{"line": c["line"], "passed": c["passed"]} for c in result.checks],
-                "hung": list(result.hung), "signals": _signal_summary(result.signals),
-                "counts": result.counts, "feeds": result.feeds, "seed": result.seed,
-                "marks": list(result.marks), "notes": list(result.notes), "goals": result.goals,
-                "air": result.air, "air_lines": blocks_run.air_lines(result),
-                "clearance": result.clearance, "clearance_lines": blocks_run.clearance_lines(result),
-                "run_folder": str(folder.resolve())}
+        from . import units
+        with units.machine_text():      # the words as they always were, whatever the Units setting
+            return _test_run(file)
 
     try:
         return await asyncio.to_thread(work)
     except _test_errors() as e:
         raise ToolError(str(e)) from None
+
+
+def _test_run(file) -> dict:
+    """test_run's work: run the test, keep the run, and answer."""
+    from .blocks import program as blocks_program
+    from .blocks import run as blocks_run
+    from .blocks import store as blocks_store
+    program = blocks_program.load(file)
+    result = blocks_run.TestRun(blocks_run.world_for(program), program).run()
+    folder = blocks_store.save_run(result, program, blocks_store.runs_dir(file))
+    return {"status": result.status, "outcome": result.outcome, "passed": result.passed,
+            "t_end": result.t_end,
+            "checks": [{"line": c["line"], "passed": c["passed"]} for c in result.checks],
+            "hung": list(result.hung), "signals": _signal_summary(result.signals),
+            "counts": result.counts, "feeds": result.feeds, "seed": result.seed,
+            "marks": list(result.marks), "notes": list(result.notes), "goals": result.goals,
+            "air": result.air, "air_lines": blocks_run.air_lines(result),
+            "clearance": result.clearance, "clearance_lines": blocks_run.clearance_lines(result),
+            "run_folder": str(folder.resolve())}
 
 
 @server.tool()
@@ -681,8 +708,10 @@ async def test_sweep(path: str, target: dict, values: list[float | str]) -> dict
         from .blocks import program as blocks_program
         from .blocks import store as blocks_store
         from .blocks.sweep import run_sweep
+        from . import units
         program = blocks_program.load(file)
-        folder = run_sweep(program, target, values, blocks_store.runs_dir(file))
+        with units.machine_text():      # refusals too, as they always were, whatever the Units setting
+            folder = run_sweep(program, target, values, blocks_store.runs_dir(file))
         with open(folder / "table.csv", newline="", encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         meta = json.loads((folder / "sweep.json").read_text(encoding="utf-8"))
@@ -716,7 +745,9 @@ async def test_spread(path: str) -> dict:
         from .blocks import program as blocks_program
         from .blocks import store as blocks_store
         from .blocks.spread import run_spread
-        folder = run_spread(blocks_program.load(file), blocks_store.runs_dir(file))
+        from . import units
+        with units.machine_text():      # refusals too ("inside the robot"), as they always were, whatever the setting
+            folder = run_spread(blocks_program.load(file), blocks_store.runs_dir(file))
         with open(folder / "table.csv", newline="", encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         meta = json.loads((folder / "spread.json").read_text(encoding="utf-8"))

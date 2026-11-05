@@ -265,7 +265,8 @@ def _pose(v) -> list[float]:
     h %= 360.0
     if h > 180.0:
         h -= 360.0   # (-180, 180]
-    return [round(x, 3), round(y, 3), round(h, 1) + 0.0]
+    # to 1 µm, not 1 mm: a start typed in feet (11.5 ft = 3.5052 m) reads back as typed
+    return [round(x, 6), round(y, 6), round(h, 1) + 0.0]
 
 
 def _valid_start_pose(doc) -> bool:

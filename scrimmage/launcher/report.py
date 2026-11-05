@@ -5,6 +5,7 @@ import math
 import textwrap
 from pathlib import Path
 
+from .. import units
 from ..measure import labels
 from .inputs import Goal, LauncherConfigError
 from .run import METRIC_KEYS, RunResult
@@ -100,10 +101,13 @@ def label(combo: dict) -> str:
 
 
 def write_charts(rows: Rows, charts: list[dict], out_dir: Path, goals: list[Goal] | None = None,
-                 metrics=METRIC_KEYS, kinds=CHART_KINDS, *, footer: str) -> list[Path] | None:
+                 metrics=METRIC_KEYS, kinds=CHART_KINDS, *, footer: str,
+                 shown: dict[str, str] | None = None) -> list[Path] | None:
     """Write one PNG per chart, `footer` (the result's own UNCALIBRATED line: calibration()'s for a ball launcher,
     the disc's or the bench's) under it, wrapped at FOOTER_WIDTH; None when matplotlib is missing. `goals` (aligned with rows) sizes the landing circle. The disc launcher passes its own `metrics` and
-    `kinds` (line and shaft: its shots have no ball landing); the bench passes its own metrics and line charts only."""
+    `kinds` (line and shaft: its shots have no ball landing); the bench passes its own metrics and line charts only.
+    `shown` ({metric: units kind}, the bench's) charts those metrics in the Units setting, the unit on the axis
+    ("exit_speed (ft/s)"); the CSV beside them stays SI."""
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -137,13 +141,15 @@ def write_charts(rows: Rows, charts: list[dict], out_dir: Path, goals: list[Goal
         kind = spec.get("kind")
         if kind == "line":
             x, y, series = spec.get("x"), spec.get("y"), spec.get("series")
+            y_kind = (shown or {}).get(y)
             fig, ax = plt.subplots(figsize=(7, 4.5))
             # Swept values may be lists (robot.velocity, feed.lanes), which can't be hashed or ordered: group and
             # place them by repr, in first-seen order.
             groups: dict[str, tuple[object, list]] = {}
             for c, r in rows:
                 s_val = c[series] if series else None
-                groups.setdefault(repr(s_val), (s_val, []))[1].append((c[x], r.metrics[y]))
+                v = r.metrics[y]
+                groups.setdefault(repr(s_val), (s_val, []))[1].append((c[x], units.to_display(v, y_kind) if y_kind else v))
             numeric = all(isinstance(c[x], (int, float)) and not isinstance(c[x], bool) for c, _ in rows)
             order = list(dict.fromkeys(repr(c[x]) for c, _ in rows)) if not numeric else []
             ticks = {repr(c[x]): c[x] for c, _ in rows}
@@ -153,7 +159,7 @@ def write_charts(rows: Rows, charts: list[dict], out_dir: Path, goals: list[Goal
             if not numeric:
                 ax.set_xticks(range(len(order)), [_fmt(ticks[o]) for o in order])
             ax.set_xlabel(x)
-            ax.set_ylabel(y)
+            ax.set_ylabel(f"{y} ({units.unit_name(y_kind)})" if y_kind else y)
             if series:
                 ax.legend()
             ax.grid(alpha=0.3)

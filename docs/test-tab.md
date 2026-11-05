@@ -299,7 +299,7 @@ has gone into the piece's hole, measured along the rod. It is measured whenever 
 piece's axis within 30° of the rod's), even while the grabber still holds the piece. Its limit, **could go**, is the
 smaller of the rod's length and the piece's own length. Examples of what a run says:
 
-- `seated 3.5 in of 4.0 in on branch_l2`
+- `seated 3.5 in of 4 in on branch_l2`
 - `seated only 0.8 in on branch_l2 (could be knocked off)`: less than a third of how far it could go. A piece only
   partly on a rod is held up by almost nothing.
 - a piece lying across a rod, or resting on the rod's end without it in the hole, has no depth. A **seated** check then
@@ -584,8 +584,8 @@ no partner they are a problem: "there's no partner robot; add one in Setup".
 
 **Where it starts.** A partner that starts overlapping your robot's start (a 0.9 m square) or a field element on
 the carpet is refused before the run:
-`the partner robot (Setup) starts inside the robot (their outlines overlap by 0.20 m)`, or
-`the partner robot (Setup) starts inside element portcullis_platform (their outlines overlap by 0.12 m)`. Move it. A
+`the partner robot (Setup) starts inside the robot (their outlines overlap by 7.87 in)`, or
+`the partner robot (Setup) starts inside element portcullis_platform (their outlines overlap by 4.72 in)`. Move it. A
 partner from the robot file's `[partner]` says `[partner] starts inside ...` instead.
 
 In the test file:

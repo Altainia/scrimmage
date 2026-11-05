@@ -7,7 +7,8 @@ two wheels that squeeze a ball, a hood, a bar that bounces pieces up. No robot c
 
 You describe the idea in a short text file (a "bench file"), and a page in your browser (the Bench tab) lets you
 change it and run it. Scrimmage feeds game pieces into the idea and draws where every piece went, with a few
-plain-word results such as "3 of 3 left through `goal` at 7.4 m/s, 6° down".
+plain-word results such as "3 of 3 left through `goal` at 24.3 ft/s, 6° down". (Numbers are in the **Units**
+setting, Imperial unless you pick Metric in **Settings**: see [settings](../settings.md).)
 
 > **Every result says `UNCALIBRATED`.** The numbers for the ball and the wheel treads are estimates until someone
 > measures the real ones. Use the results to compare ideas with each other ("the round hood shoots higher than the
@@ -28,7 +29,7 @@ on the Bench tab, with your copy of the hooded shooter. The command keeps runnin
 terminal, so open a second terminal for anything else.
 
 **2. Run it.** Press the blue **Run** button. In a few seconds you'll see the side picture of the shooter with the path
-of every ball, and big result lines such as `10 of 10 left through shot at 8.8 m/s ± 0.0, 53° up`. A yellow
+of every ball, and big result lines such as `10 of 10 left through shot at 28.8 ft/s ± 0.0, 53° up`. A yellow
 `UNCALIBRATED` line says the numbers are estimates. **Pass GIF** under the picture plays one ball going through.
 
 **3. Change one number.** Press **Show all** in the **Change it** panel on the right, find the group headed
@@ -36,7 +37,7 @@ of every ball, and big result lines such as `10 of 10 left through shot at 8.8 m
 number is written into `my-ideas/slower.toml`. While you are there, find the group headed **bench**, its `name` (the idea's title)
 and `author`, and type your own: a name such as `slower hood`, and `Ava`.
 
-**4. Run again.** Press **Run**. The balls now leave at about 4.9 m/s instead of 8.8. That is the whole loop: change,
+**4. Run again.** Press **Run**. The balls now leave at about 16 ft/s instead of 28.8. That is the whole loop: change,
 run, look. The numbers you change float to the top of the panel, so the next change is one click away.
 
 **5. Move something.** Press **Edit shape**. You see the shooter in 3D. Click the hood to select it, and use the **-**
@@ -62,7 +63,7 @@ scrimmage bench run examples/bench/hooded.toml
 You'll see a few result lines, then where the pictures went:
 
 ```
-10 of 10 left through `shot` at 8.8 m/s ± 0.0, 53° up
+10 of 10 left through `shot` at 28.8 ft/s ± 0.0, 53° up
 ...
 wrote examples/bench/hooded-results/ (summary.txt, the CSVs, path_side.png, pass.png, pass.gif)
 ```
@@ -96,8 +97,8 @@ one page with every idea, who it's from, its picture and its numbers. It opens i
 
 | A result line like | Means |
 |---|---|
-| `3 of 3 left through goal at 7.4 m/s ± 0.2, 35° up` | Where the pieces went, how fast, and at what angle (0° is straight ahead). The `± 0.2` is how much they varied. |
-| `the kicker takes the hardest hits: up to 222 N` | The part that gets hit hardest. Worth making strong in CAD. |
+| `3 of 3 left through goal at 24.3 ft/s ± 0.7, 35° up` | Where the pieces went, how fast, and at what angle (0° is straight ahead). The `± 0.7` is how much they varied. |
+| `the kicker takes the hardest hits: up to 50 lbf` | The part that gets hit hardest. Worth making strong in CAD. |
 | `the top shaft drops 14% and recovers in 0.05 s` | How much each piece slows the wheels. A big drop means the next piece goes out slower: try a flywheel. |
 | `2 of 3 jammed` | Pieces stopped inside. The picture shows where. |
 

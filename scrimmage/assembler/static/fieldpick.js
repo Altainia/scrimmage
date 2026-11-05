@@ -5,11 +5,12 @@
 //
 // Field geometry comes from /api/scenario/view: world_geoms (see view.py's _world_geoms for the size
 // conventions) and the robot geoms at the start pose (their projected outline is the robot's footprint).
-// fieldGeometry(view) and drawField(ctx, geometry, toCanvas) draw the field itself (floor, 1 m grid, meter labels,
+// fieldGeometry(view) and drawField(ctx, geometry, toCanvas) draw the field itself (floor, a grid in the chosen units,
 // world geoms, axes); the Drive tab's mini-field (minifield.js) and the robot code panel's start picker (code.js)
 // draw with them too, the start picker also with drawSides (the plain red / blue field) and robotFootprint.
 
-import { h, api, fmt } from "./app.js";
+import { h, api, fmt, showMeasure, readMeasure, measureError } from "./app.js";
+import { units } from "./units.js";
 import { sc } from "./scenario.js";
 
 const DEFAULT_TOL_XY = 0.1, DEFAULT_TOL_H = 5;   // checks.py's defaults
@@ -133,12 +134,31 @@ export function fieldPoly(ctx, toCanvas, pts, fill, stroke, width = 1, dash = nu
   if (stroke) { ctx.setLineDash(dash || []); ctx.strokeStyle = stroke; ctx.lineWidth = width; ctx.stroke(); ctx.setLineDash([]); }
 }
 
-// Draws the floor with a 1 m grid and meter labels, the world geoms and an x / y legend. toCanvas(x, y) -> [px, py]
-// in the context's (CSS pixel) coordinates; the caller paints the background.
+// The field's grid in the chosen units: a line every 5 ft in Imperial (1 m lines labeled in feet would read badly),
+// every 1 m in Metric. {step: meters between lines, size: the step in the shown unit, unit}.
+export function fieldGrid(system = units.system) {
+  return system === "imperial" ? { step: 5 * 0.3048, size: 5, unit: "ft" } : { step: 1, size: 1, unit: "m" };
+}
+
+// The labels along one edge from lo to hi (meters): [{at: meters, text}], every `every` grid steps. With `named`,
+// the last one names the unit ("50 ft"), so the drawing says what its numbers are (the bottom edge's: the left
+// edge's labels are right-aligned into the narrow border, where a unit wouldn't fit).
+export function gridLabels(lo, hi, every, grid = fieldGrid(), named = false) {
+  const out = [];
+  for (let k = Math.ceil(lo / grid.step / every - 1e-9) * every; k * grid.step <= hi + 1e-9; k += every) {
+    out.push({ at: k * grid.step, text: `${k * grid.size}` });
+  }
+  if (named && out.length) out[out.length - 1].text += ` ${grid.unit}`;
+  return out;
+}
+
+// Draws the floor with a grid and its labels in the chosen units (fieldGrid), the world geoms and an x / y legend.
+// toCanvas(x, y) -> [px, py] in the context's (CSS pixel) coordinates; the caller paints the background.
 export function drawField(ctx, geometry, toCanvas) {
   const { floor: fr, outlines } = geometry;
   const [ox] = toCanvas(0, 0), [ux] = toCanvas(1, 0);
   const scale = ux - ox;   // pixels per meter
+  const grid = fieldGrid();
   fieldPoly(ctx, toCanvas, fr.poly, "#f7f8fa", "#aeb6c0");
   ctx.save();
   ctx.beginPath();
@@ -148,17 +168,17 @@ export function drawField(ctx, geometry, toCanvas) {
   ctx.strokeStyle = "#e6e9ed";
   ctx.lineWidth = 1;
   const [, top] = toCanvas(0, fr.maxy), [, bottom] = toCanvas(0, fr.miny), [left] = toCanvas(fr.minx, 0), [right] = toCanvas(fr.maxx, 0);
-  for (let x = Math.ceil(fr.minx); x <= fr.maxx; x++) { const [px] = toCanvas(x, 0); ctx.beginPath(); ctx.moveTo(px + 0.5, top); ctx.lineTo(px + 0.5, bottom); ctx.stroke(); }
-  for (let y = Math.ceil(fr.miny); y <= fr.maxy; y++) { const [, py] = toCanvas(0, y); ctx.beginPath(); ctx.moveTo(left, py + 0.5); ctx.lineTo(right, py + 0.5); ctx.stroke(); }
+  for (const { at } of gridLabels(fr.minx, fr.maxx, 1, grid)) { const [px] = toCanvas(at, 0); ctx.beginPath(); ctx.moveTo(px + 0.5, top); ctx.lineTo(px + 0.5, bottom); ctx.stroke(); }
+  for (const { at } of gridLabels(fr.miny, fr.maxy, 1, grid)) { const [, py] = toCanvas(0, at); ctx.beginPath(); ctx.moveTo(left, py + 0.5); ctx.lineTo(right, py + 0.5); ctx.stroke(); }
   ctx.restore();
-  // meter labels along the bottom and left edges
+  // the grid's labels along the bottom and left edges (every other line when they would crowd)
   ctx.fillStyle = "#59616b";
   ctx.font = "10px system-ui, sans-serif";
-  const every = scale < 30 ? 2 : 1;
+  const every = grid.step * scale < 30 ? 2 : 1;
   ctx.textAlign = "center"; ctx.textBaseline = "top";
-  for (let x = Math.ceil(fr.minx / every) * every; x <= fr.maxx + 1e-9; x += every) { const [px, py] = toCanvas(x, fr.miny); ctx.fillText(`${x}`, px, py + 3 + MARGIN * scale * 0.25); }
+  for (const { at, text } of gridLabels(fr.minx, fr.maxx, every, grid, true)) { const [px, py] = toCanvas(at, fr.miny); ctx.fillText(text, px, py + 3 + MARGIN * scale * 0.25); }
   ctx.textAlign = "right"; ctx.textBaseline = "middle";
-  for (let y = Math.ceil(fr.miny / every) * every; y <= fr.maxy + 1e-9; y += every) { const [px, py] = toCanvas(fr.minx, y); ctx.fillText(`${y}`, px - 4 - MARGIN * scale * 0.2, py); }
+  for (const { at, text } of gridLabels(fr.miny, fr.maxy, every, grid)) { const [px, py] = toCanvas(fr.minx, at); ctx.fillText(text, px - 4 - MARGIN * scale * 0.2, py); }
   // the world's boxes, cylinders, ...
   for (const o of outlines) {
     const [r, gg, bb, a] = (o.rgba || [0.6, 0.6, 0.6, 1]).map((c, k) => (k < 3 ? Math.round(c * 255) : c));
@@ -276,25 +296,44 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
   canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
   const ctx = canvas.getContext("2d");
 
-  // the number boxes (blank = leave the key out)
+  // the number boxes (blank = leave the key out); x, y and tol_xy are field lengths in the chosen units (units.js),
+  // in text boxes so "12.5 ft" can be typed too, and a box back at the text it showed keeps its exact value
+  const FIELD_KEYS = new Set(["x", "y", "tol_xy"]);
+  const fieldUnits = [];   // the field-length unit labels, renamed when the setting changes
+  const show = (el, k) => {
+    if (FIELD_KEYS.has(k)) showMeasure(el, cur[k], "field"); else el.value = cur[k] === null ? "" : fmt(cur[k]);
+  };
   const box = (k, label, unit, placeholder) => {
-    const el = h("input", { id: `fp-${k.replace("_", "-")}`, type: "number", step: "any", inputmode: "decimal", class: "fp-num",
-      value: cur[k] === null ? "" : fmt(cur[k]), placeholder: placeholder ?? "", "aria-label": label });
+    const kind = FIELD_KEYS.has(k) ? "field" : null;
+    const el = h("input", { id: `fp-${k.replace("_", "-")}`, type: kind ? "text" : "number", step: kind ? null : "any", inputmode: "decimal",
+      autocomplete: kind ? "off" : null, class: "fp-num", placeholder: placeholder ?? "", "aria-label": label });
+    show(el, k);
     el.addEventListener("input", () => {
       if (el.validity.badInput) return;
       const t = el.value.trim();
-      cur[k] = t === "" ? null : Number(t);
+      const v = !kind ? (t === "" ? null : Number(t)) : readMeasure(el, kind);
+      if (measureError(v)) return;   // not a field length yet: OK says what to type
+      cur[k] = v;
       draw();
     });
-    return [el, h("label", { class: "fp-field", for: el.id }, h("span", { class: "fp-label" }, label), h("span", { class: "with-unit" }, el, h("span", { class: "unit" }, unit)))];
+    const u = h("span", { class: "unit" }, kind ? units.name(kind) : unit);
+    if (kind) fieldUnits.push(u);
+    return [el, h("label", { class: "fp-field", for: el.id }, h("span", { class: "fp-label" }, label), h("span", { class: "with-unit" }, el, u))];
   };
-  const [xIn, xF] = box("x", "x", "m"), [yIn, yF] = box("y", "y", "m"), [hIn, hF] = box("heading", "heading", "°", "none");
-  const [txIn, txF] = box("tol_xy", "tol_xy", "m", String(DEFAULT_TOL_XY)), [thIn, thF] = box("tol_heading", "tol_heading", "°", String(DEFAULT_TOL_H));
-  const syncBoxes = () => {
-    xIn.value = cur.x === null ? "" : fmt(cur.x);
-    yIn.value = cur.y === null ? "" : fmt(cur.y);
-    hIn.value = cur.heading === null ? "" : fmt(cur.heading);
-  };
+  const [xIn, xF] = box("x", "x"), [yIn, yF] = box("y", "y"), [hIn, hF] = box("heading", "heading", "°", "none");
+  const [txIn, txF] = box("tol_xy", "tol_xy", null, units.shown(DEFAULT_TOL_XY, "field", 0)), [thIn, thF] = box("tol_heading", "tol_heading", "°", String(DEFAULT_TOL_H));
+  const syncBoxes = () => { show(xIn, "x"); show(yIn, "y"); show(hIn, "heading"); };
+  // Units changed in another tab or editor while this is open: the boxes and labels follow. Text being typed in
+  // stays and now means the new units, as in the inspector and the step editor (it is read again here and at OK).
+  const offUnits = units.onChange(() => {
+    for (const u of fieldUnits) u.textContent = units.name("field");
+    txIn.placeholder = units.shown(DEFAULT_TOL_XY, "field", 0);
+    for (const [el, k] of [[xIn, "x"], [yIn, "y"], [txIn, "tol_xy"]]) {
+      if (document.activeElement === el && el.value.trim() !== el.dataset.shown) el.dispatchEvent(new Event("input"));
+      else show(el, k);
+    }
+    draw();
+  });
   const readout = h("span", { class: "fp-readout muted", "aria-live": "off" }, " ");
   const err = h("p", { class: "error", role: "alert", hidden: true });
 
@@ -346,7 +385,7 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
       ctx.restore();
       ctx.fillStyle = "#c62828"; ctx.font = "600 11px system-ui, sans-serif";
       ctx.textAlign = cx > W / 2 ? "right" : "left"; ctx.textBaseline = cy > H / 2 ? "bottom" : "top";
-      ctx.fillText(`target (${fmt(m.x)}, ${fmt(m.y)}) is off the field`, cx + (cx > W / 2 ? -14 : 14), cy + (cy > H / 2 ? -8 : 8));
+      ctx.fillText(`target (${units.fmt(m.x, "field")}, ${units.fmt(m.y, "field")}) is off the field`, cx + (cx > W / 2 ? -14 : 14), cy + (cy > H / 2 ? -8 : 8));
       return;
     }
     const r = Math.max(m.tol_xy * scale, 2);
@@ -396,7 +435,7 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
   canvas.addEventListener("pointermove", (e) => {
     const [px, py] = at(e);
     const [x, y] = toField(px, py);
-    readout.textContent = `x ${x.toFixed(2)} m, y ${y.toFixed(2)} m`;
+    readout.textContent = `x ${units.fmt(x, "field")}, y ${units.fmt(y, "field")}`;
     if (!drag) return;
     if (!drag.aiming && Math.hypot(px - drag.px, py - drag.py) < 6) return;
     drag.aiming = true;
@@ -435,12 +474,19 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
     h("div", { class: "dialog-actions" }, h("button", { type: "button", id: "fp-cancel", class: "btn", onclick: close }, "Cancel"), ok));
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    const bad = [xIn, yIn, hIn, txIn, thIn].find((el) => el.validity.badInput);
+    const bad = [hIn, thIn].find((el) => el.validity.badInput);
     if (bad) { err.textContent = `${bad.getAttribute("aria-label")} must be a number`; err.hidden = false; bad.focus(); return; }
+    // x, y and tol_xy as their boxes say now
+    for (const [el, k] of [[xIn, "x"], [yIn, "y"], [txIn, "tol_xy"]]) {
+      const v = readMeasure(el, "field");
+      if (measureError(v)) { err.textContent = measureError(v); err.hidden = false; el.focus(); return; }
+      cur[k] = v;
+    }
     const next = { ...spec };
     for (const k of KEYS) {
       if (cur[k] === null) delete next[k];
-      else next[k] = k === "heading" || k === "tol_heading" ? round(cur[k], 2) : round(cur[k], 4);
+      // lengths to 1 µm: a typed 6.55 ft (1.99644 m) reads back as typed, with no float noise in the file
+      else next[k] = k === "heading" || k === "tol_heading" ? round(cur[k], 2) : round(cur[k], 6);
     }
     close();
     if (JSON.stringify(next) !== JSON.stringify(spec)) setSpec(next);
@@ -450,7 +496,7 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
     toScreen: (x, y) => { const rc = canvas.getBoundingClientRect(); const [px, py] = toPx(x, y); return { x: rc.left + px, y: rc.top + py }; },
     get value() { return { ...cur }; },
   };
-  d.addEventListener("close", () => { delete window.__scrimmage.fieldPick; }, { once: true });
+  d.addEventListener("close", () => { delete window.__scrimmage.fieldPick; offUnits(); }, { once: true });
   draw();
   d.showModal();
   canvas.focus();

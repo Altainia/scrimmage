@@ -3,7 +3,8 @@
 // the contact sheet. Every change posts one scenario edit; each field
 // carries data-fields with its field ids so errors render beside it (scenario.js renderErrors).
 
-import { h, fmt } from "./app.js";
+import { h, fmt, showMeasure, readMeasure, measureError } from "./app.js";
+import { units } from "./units.js";
 import { MODES, scEdit, hooks, sc } from "./scenario.js";
 import { trackPanel } from "./trackplot.js";
 
@@ -11,8 +12,9 @@ import { trackPanel } from "./trackplot.js";
 let rerendering = false;   // removing a focused input must not commit it
 
 export function guard(fn) {
+  const was = rerendering;     // a guard inside a guard (render -> renderTimeline) leaves the outer one on
   rerendering = true;
-  try { fn(); } finally { rerendering = false; }
+  try { fn(); } finally { rerendering = was; }
 }
 
 // A labeled field: `fieldIds` (one id or a list) say which errors render in its .field-msgs.
@@ -42,7 +44,8 @@ export function onCommit(el, fn) {
     committing = el.dataset.key ? { key: el.dataset.key, value: el.value } : null;
     try { fn(); } finally { committing = null; }
   };
-  el.addEventListener("change", run);
+  // (not while a re-render removes it: Chromium fires change on a focused, dirty box as it goes)
+  el.addEventListener("change", () => { if (!rerendering) run(); });
   el.addEventListener("blur", () => { if (el.dataset.dirty && !rerendering && el.isConnected) run(); });
   el.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && el.tagName === "INPUT" && el.type !== "checkbox") { e.preventDefault(); el.blur(); }
@@ -74,25 +77,36 @@ export function icon(name) {
 const num = (v) => typeof v === "number" && isFinite(v);
 const isNumText = (t) => t !== "" && isFinite(Number(t));
 
-// A number box for one key of a table value. onValue(number | null) — null when emptied.
-function numBox({ id, key, value, placeholder, min, max, step = "any", label, fieldEl, onValue, int = false }) {
-  const el = markDirty(h("input", { id, type: "number", step: int ? "1" : step, inputmode: int ? "numeric" : "decimal",
-    value: num(value) ? fmt(value) : "", placeholder, min, max, "aria-label": label, dataset: { key } }));
+// A number box for one key of a table value. onValue(number | null) — null when emptied. With a `kind` (units.js)
+// it is a text box in the chosen units ("12.5" or "12.5 ft"), and the value stays SI.
+function numBox({ id, key, value, placeholder, min, max, step = "any", label, fieldEl, onValue, int = false, kind = null }) {
+  const el = markDirty(kind
+    ? h("input", { id, type: "text", inputmode: "decimal", autocomplete: "off", placeholder, "aria-label": label, dataset: { key } })
+    : h("input", { id, type: "number", step: int ? "1" : step, inputmode: int ? "numeric" : "decimal",
+      value: num(value) ? fmt(value) : "", placeholder, min, max, "aria-label": label, dataset: { key } }));
+  if (kind) showMeasure(el, num(value) ? value : null, kind);
   onCommit(el, () => {
-    if (badNumber(el)) { localError(fieldEl(), `${label || key} must be a number`); return; }
+    let v;
+    if (kind) {
+      v = readMeasure(el, kind);
+      if (measureError(v)) { localError(fieldEl(), measureError(v)); return; }
+    } else {
+      if (badNumber(el)) { localError(fieldEl(), `${label || key} must be a number`); return; }
+      const t = el.value.trim();
+      v = t === "" ? null : Number(t);
+    }
     clean(el);
-    const t = el.value.trim();
-    const v = t === "" ? null : Number(t);
     if (v === (num(value) ? value : null)) return;
     onValue(v);
   });
   return el;
 }
 
-// A field with a number box; returns the field element.
-function numField(fieldIds, id, key, label, value, onValue, { unit, placeholder, hint, min, max, int } = {}) {
+// A field with a number box; returns the field element. A `kind` shows it in the chosen units (and names them).
+function numField(fieldIds, id, key, label, value, onValue, { unit, placeholder, hint, min, max, int, kind } = {}) {
   let f;
-  const box = numBox({ id, key, value, placeholder, min, max, int, label, fieldEl: () => f, onValue });
+  if (kind) unit = units.name(kind);
+  const box = numBox({ id, key, value, placeholder, min, max, int, label, fieldEl: () => f, onValue, kind });
   f = field(fieldIds, id, label, unit ? h("span", { class: "with-unit" }, box, h("span", { class: "unit" }, unit)) : box, { hint, extraClass: "field-num" });
   return f;
 }
@@ -295,7 +309,7 @@ const CHECK_LABEL = {
   by_time: "Signal by a time", must_touch: "Must touch", never_touch: "Never touch", console: "Console output",
 };
 const CHECK_DOC = {
-  pose: "Where the robot is when the step ends (field meters, heading in degrees).",
+  pose: "Where the robot is when the step ends (on the field, heading in degrees).",
   odometry_error: "How far the robot's own odometry (on NetworkTables) is from where it really is.",
   at_end: "A signal's value when the step ends.",
   always: "A signal's value on every tick of the step.",
@@ -366,10 +380,10 @@ function checkCard(i, j, c) {
   let body;
   if (kind === "pose") {
     body = h("div", { class: "form-grid" },
-      numField(fid("x"), id("x"), id("x"), "x", tableSpec.x, (v) => setKey("x", v), { unit: "m" }),
-      numField(fid("y"), id("y"), id("y"), "y", tableSpec.y, (v) => setKey("y", v), { unit: "m" }),
+      numField(fid("x"), id("x"), id("x"), "x", tableSpec.x, (v) => setKey("x", v), { kind: "field" }),
+      numField(fid("y"), id("y"), id("y"), "y", tableSpec.y, (v) => setKey("y", v), { kind: "field" }),
       numField(fid("heading"), id("heading"), id("heading"), "heading", tableSpec.heading, (v) => setKey("heading", v), { unit: "°" }),
-      numField(fid("tol_xy"), id("tol_xy"), id("tol_xy"), "tol_xy", tableSpec.tol_xy, (v) => setKey("tol_xy", v), { unit: "m", placeholder: "0.1", min: 0 }),
+      numField(fid("tol_xy"), id("tol_xy"), id("tol_xy"), "tol_xy", tableSpec.tol_xy, (v) => setKey("tol_xy", v), { kind: "field", placeholder: units.shown(0.1, "field", 0) }),
       numField(fid("tol_heading"), id("tol_heading"), id("tol_heading"), "tol_heading", tableSpec.tol_heading, (v) => setKey("tol_heading", v), { unit: "°", placeholder: "5", min: 0 }));
     const extra = hooks.poseTools ? hooks.poseTools({ step: i, check: j, spec: tableSpec, setSpec }) : null;
     if (extra) body = h("div", {}, body, extra);
@@ -379,7 +393,7 @@ function checkCard(i, j, c) {
     when.value = tableSpec.when === "always" ? "always" : "end";
     when.addEventListener("change", () => setKey("when", when.value === "end" ? null : when.value));
     body = h("div", { class: "form-grid" },
-      numField(fid("max"), id("max"), id("max"), "max", tableSpec.max, (v) => setKey("max", v), { unit: "m", min: 0 }),
+      numField(fid("max"), id("max"), id("max"), "max", tableSpec.max, (v) => setKey("max", v), { kind: "field" }),
       field(fid("when"), id("when"), "when", when));
   } else if (kind === "at_end" || kind === "always" || kind === "by_time") {
     body = signalForm(kind, tableSpec, setKey, fid, id);
@@ -569,7 +583,7 @@ function cameraForm(base, id, camera, setCam) {
   };
   const lookat = h("div", { class: "vec" }, ...["x", "y", "z"].map((ax, n) => {
     let cell;
-    const box = numBox({ id: id(`la-${ax}`), key: id(`la-${ax}`), value: la[n], label: `lookat ${ax}`, fieldEl: () => cell.closest(".field"),
+    const box = numBox({ id: id(`la-${ax}`), key: id(`la-${ax}`), value: la[n], label: `lookat ${ax}`, kind: "field", fieldEl: () => cell.closest(".field"),
       onValue: (v) => { const next = [...la]; next[n] = v === null ? 0 : v; put("lookat", next); } });
     cell = h("label", { class: "vec-cell" }, h("span", { class: "vec-axis" }, ax), box);
     return cell;
@@ -578,8 +592,8 @@ function cameraForm(base, id, camera, setCam) {
     h("div", { class: "field-msgs" }),
     h("div", { class: "form-grid" },
       h("div", { class: "field field-span", role: "group", "aria-label": "Camera looks at", dataset: { fields: `${base}/camera.lookat` } },
-        h("span", { class: "field-label" }, "camera lookat (m)"), lookat, h("div", { class: "field-msgs" })),
-      numField(`${base}/camera.distance`, id("distance"), id("distance"), "distance", cam.distance, (v) => put("distance", v), { unit: "m", min: 0 }),
+        h("span", { class: "field-label" }, `camera lookat (${units.name("field")})`), lookat, h("div", { class: "field-msgs" })),
+      numField(`${base}/camera.distance`, id("distance"), id("distance"), "distance", cam.distance, (v) => put("distance", v), { kind: "field" }),
       numField(`${base}/camera.azimuth`, id("azimuth"), id("azimuth"), "azimuth", cam.azimuth, (v) => put("azimuth", v), { unit: "°" }),
       numField(`${base}/camera.elevation`, id("elevation"), id("elevation"), "elevation", cam.elevation, (v) => put("elevation", v), { unit: "°" })));
 }

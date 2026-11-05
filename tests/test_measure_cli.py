@@ -29,7 +29,8 @@ def _squeezes(*forces_lb) -> str:
 
 # ------------------------------------------------------------------------------------------------- reading a file
 
-def test_a_good_file_prints_each_trial_the_summary_and_exits_0(tmp_path, capsys):
+def test_a_good_file_prints_each_trial_the_summary_and_exits_0(tmp_path, capsys, units):
+    units("metric")   # the wording in newtons; tests/test_display_units_bench.py has both systems
     p = _ball(tmp_path, _squeezes(9.8, 9.6, 9.9, 9.7, 9.8))
     assert _run(p) == 0
     out = capsys.readouterr().out
@@ -44,7 +45,8 @@ def test_a_good_file_prints_each_trial_the_summary_and_exits_0(tmp_path, capsys)
     assert out.rstrip().endswith("Good enough to use: a run that names this file shows these numbers as measured.")
 
 
-def test_two_trials_of_very_different_size_are_averaged_and_not_good(tmp_path, capsys):
+def test_two_trials_of_very_different_size_are_averaged_and_not_good(tmp_path, capsys, units):
+    units("metric")   # the wording in newtons; tests/test_display_units_bench.py has both systems
     p = _ball(tmp_path, _squeezes(5, 15))
     assert _run(p) == 1
     out = capsys.readouterr().out
@@ -60,15 +62,16 @@ def test_a_trial_that_looks_off_is_flagged(tmp_path, capsys):
     assert "warning: trial 5 looks off: check it" in capsys.readouterr().out
 
 
-def test_a_size_test_lines_up_each_trials_mass_and_diameter(tmp_path, capsys):
+def test_a_size_test_lines_up_each_trials_mass_and_diameter(tmp_path, capsys, units):
+    units("metric")   # the wording in newtons; tests/test_display_units_bench.py has both systems
     body = ("\n[[size]]\nmass_g = 215\ncircumference_in = 18.5\n\n[[size]]\nmass_g = 217\n"
             "\n[[size]]\nmass_g = 216\ndiameter_mm = 150\n\n[[size]]\ncircumference_in = 18.6\n")
     assert _run(_ball(tmp_path, body)) == 0
     out = capsys.readouterr().out
     rows = [ln.split() for ln in out.splitlines() if ln.strip()[:1].isdigit()]
-    assert rows[1] == ["2", "217", "217.0", "g"]  # a mass only: no diameter
-    assert rows[3][:2] == ["4", "18.6"] and rows[3][-3:] == ["mm", "(5.92", "in)"]
-    assert "mass: average 216.0 g" in out and "diameter: average" in out and "(3 trials)" in out
+    assert rows[1] == ["2", "217", "0.2170", "kg"]  # a mass only: no diameter
+    assert rows[3][:2] == ["4", "18.6"] and rows[3][-2:] == ["150.4", "mm"]
+    assert "mass: average 0.2160 kg" in out and "diameter: average" in out and "(3 trials)" in out
 
 
 def test_a_size_trial_that_looks_off_is_named_by_its_own_number(tmp_path, capsys):
@@ -139,7 +142,8 @@ def test_a_folder_exits_2(tmp_path, capsys):
 
 # ---------------------------------------------------------------------------------------------------------- fits
 
-def test_a_good_launcher_fit_prints_each_shot_against_the_model_and_its_band(tmp_path, capsys):
+def test_a_good_launcher_fit_prints_each_shot_against_the_model_and_its_band(tmp_path, capsys, units):
+    units("metric")   # the wording in newtons; tests/test_display_units_bench.py has both systems
     mf = synthetic(tmp_path, 120.0, 0.95, [50.0, 80.0])
     assert _run(mf.path) == 0
     out = capsys.readouterr().out
@@ -151,7 +155,8 @@ def test_a_good_launcher_fit_prints_each_shot_against_the_model_and_its_band(tmp
     assert "good enough to use" in out
 
 
-def test_a_launcher_fit_with_the_squeeze_measured_fits_the_wheel_friction(tmp_path, capsys):
+def test_a_launcher_fit_with_the_squeeze_measured_fits_the_wheel_friction(tmp_path, capsys, units):
+    units("metric")   # the wording in newtons; tests/test_display_units_bench.py has both systems
     ball_file(tmp_path, [118.0, 120.0, 122.0])
     mf = synthetic(tmp_path, 120.0, 1.1, [50.0, 80.0], header=WITH_BALL)
     assert _run(mf.path) == 0

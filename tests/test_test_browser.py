@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from scrimmage.assembler.templates import new_config
+from browser_harness import page_units
 from test_assembler_browser import CONTRAST_JS, Server, browser  # noqa: F401  (fixtures)
 
 pytestmark = pytest.mark.browser
@@ -483,9 +484,10 @@ def _click_field(page, block_js, field):
     page.mouse.click(box["x"], box["y"])
 
 
-def test_a_save_the_server_refuses_shows_on_its_block_and_nothing_runs(test_page):
+def test_a_save_the_server_refuses_shows_on_its_block_and_nothing_runs(test_page, units):
     """-0.5 m is fine, -0.5 s isn't: the server refuses the save, the drive block says why, and Run stays off (the
     file still holds the last good test, which Run must not run)."""
+    units("metric")
     page, path = test_page("""
 [[block]]
 do = "wait"
@@ -943,6 +945,8 @@ def _wait_file(pred, path, timeout=15.0):
 def test_setup_changes_the_stand_ins_weight_and_mounts_in_the_robot_file_and_the_hooks_in_the_test(test_page):
     page, path = test_page()
     assert page.evaluate("document.querySelector('#test-setup').open") is False      # folded away at first
+    page.wait_for_function("document.querySelector('#test-setup summary').textContent.includes('robot 99.21 lb')")
+    page_units(page, "metric")      # the rest in the robot file's own units, kg and m (mm here)
     page.wait_for_function("document.querySelector('#test-setup summary').textContent.includes('robot 45 kg')")
     page.click("#test-setup summary")
     page.wait_for_selector("#test-mass")
@@ -951,13 +955,13 @@ def test_setup_changes_the_stand_ins_weight_and_mounts_in_the_robot_file_and_the
     page.press("#test-mass", "Enter")
     _wait_file(lambda: _robot_part(path, "drive").get("mass") == 30.0, path)
     page.wait_for_function("__scrimmageTest.robot.can_undo")          # the Robot tab's Undo takes it back
-    page.fill("#test-com-up", "0.1")
+    page.fill("#test-com-up", "100")
     page.press("#test-com-up", "Enter")
     _wait_file(lambda: _robot_part(path, "drive").get("com_offset") == [0.0, 0.0, 0.1], path)
     # the arm's mount, but not the drivetrain's (the Robot tab moves that)
     assert page.locator("#test-setup tr[data-part='arm']").count() == 1
     assert page.locator("#test-setup tr[data-part='dt']").count() == 0
-    page.fill("#test-mount-arm-x", "0.05")
+    page.fill("#test-mount-arm-x", "50")
     page.press("#test-mount-arm-x", "Enter")
     _wait_file(lambda: _robot_part(path, "arm").get("pos") == [0.05, 0.0, 0.0], path)
     assert _robot_part(path, "arm")["attach"] == "drive.top"
@@ -1016,11 +1020,16 @@ def test_setup_try_values_sweeps_the_robots_weight(test_page):
     page.click("#test-setup [data-try='mass']")
     page.wait_for_selector("#test-sweep-dialog[open]")
     assert page.is_hidden("#test-sweep-which-field")
-    page.fill("#test-sweep-list", "40, 50")
+    page.fill("#test-sweep-list", "100, 110")          # in lb (Imperial): sent in kg
     page.click("#test-sweep-go")
     page.wait_for_function("__scrimmageTest.sweep && __scrimmageTest.sweep.rows === 2"
                            " && __scrimmageTest.state.running === null")
-    assert "the robot's weight (kg)" in page.inner_text("#test-sweep-title")
+    assert "the robot's weight (lb)" in page.inner_text("#test-sweep-title")
+    assert page.eval_on_selector_all("#test-sweep-table .test-sweep-value", "bs => bs.map(b => b.textContent)") == ["100", "110"]
+    assert [p[0] for p in page.evaluate("__scrimmageTest.sweep.points")] == [100, 110]
+    page_units(page, "metric")
+    page.wait_for_function("document.querySelector('#test-sweep-title').textContent.includes(\"the robot's weight (kg)\")")
+    assert page.eval_on_selector_all("#test-sweep-table .test-sweep-value", "bs => bs.map(b => b.textContent)") == ["45.359", "49.895"]
     assert _robot_part(path, "drive")["mass"] == 45.0       # a sweep changes a copy, never the file
 
 
@@ -1679,8 +1688,12 @@ def test_the_seated_line_has_a_gap_while_off_the_rod(test_page, tmp_path):
     assert page.evaluate(COLUMN_HITS, [plot, ts[0], ts[first // 2]]) == 0
     assert page.evaluate(COLUMN_HITS, [plot, ts[0], ts[-1] - 0.3]) > 0     # (the check sees the line where it is)
     # the latest depth in words beside the outcome; the plot in inches
-    assert page.inner_text("#test-seated") == "seated 4.0 in of 4.0 in on peg"
+    assert page.inner_text("#test-seated") == "seated 4 in of 4 in on peg"
     assert page.inner_text("#test-chart .test-plot-title") == "seated.peg (in)"
+    # in Metric the chart's axis is in mm (the signal stays inches on the wire), at once
+    page_units(page, "metric")
+    page.wait_for_function("document.querySelector('#test-chart .test-plot-title').textContent === 'seated.peg (mm)'")
+    assert _result(page, "001")["signals"]["seated.peg"][-1] == pytest.approx(4.0, abs=0.05)
     # the fed coral is placed on the peg (controller ruling P33), not missed: the sentence, the summary and its mark
     assert page.inner_text("#test-outcome") == "1 of 1 placed on peg."
     # no hopper named: no "0 in" (as the sentence)
@@ -2172,3 +2185,143 @@ def test_the_replay_draws_the_beam_lit_once_it_broke(test_page, tmp_path):
     # the color sensor saw nothing at first (an empty sample, a gap in its line), then the yellow ball
     eye = _result(page, "001")["signals"]["sensor.eye"]
     assert eye[0] is None and eye[-1] == 2
+
+
+# ---- display units (sub-project 20a): the blocks, Setup and the chart in the Units setting ---------------------------
+UNIT_BLOCKS = """
+[[block]]
+do = "move"
+joint = "arm.pivot"
+to = 0.1016
+unit = "m"
+
+[[block]]
+do = "drive"
+distance = 0.3
+
+[[block]]
+do = "expect"
+that = { pressure = { side = "stored", above = 60.0 } }
+""" + ELEMENT_BLOCKS.replace("[setup]\npartner = { ahead_in = 80, heading_deg = 180.0, brake = false }\n", "")
+
+SHOWN = """(() => {
+  const ws = __scrimmageTest.workspace, b = (type, i = 0) => ws.getAllBlocks(false).filter((x) => x.type === type)[i];
+  return {
+    move: [b('move').getFieldValue('TO'), b('move').getField('UNIT').getText()],
+    drive: [b('drive').getFieldValue('AMOUNT'), b('drive').getField('WHAT').getText()],
+    pressure: [b('cond_pressure').getFieldValue('PSI'), b('cond_pressure').getField('PSI_UNIT').getText()],
+    element: [b('cond_element').getFieldValue('VALUE'), b('cond_element').getField('UNIT').getText()],
+    clears: b('cond_clears').toString(),
+    moved: b('cond_partner_moved').toString(),
+  };
+})()"""
+
+
+def test_the_blocks_show_the_chosen_units_and_write_the_files_own(test_page, tmp_path):
+    """U4: the file keeps "m", "in" and psi; the blocks show in or mm, ft or m, psi or kPa. A test nobody edits is
+    written as it was, whatever the setting; a number typed is written in the file's unit (Review Focus 2)."""
+    page, path = test_page(path=_defenses_test(tmp_path, UNIT_BLOCKS))
+    before = path.read_bytes()
+    saved = page.evaluate("__scrimmageTest.state.test")
+    assert page.evaluate(SHOWN) == {
+        "move": [4, "in"], "drive": [0.9843, "ft"], "pressure": [60, "psi"], "element": [6.5, "in"],
+        "clears": "robot clears trench (not on the field) by at least 2.5 in", "moved": "partner moved at least 10 in"}
+    assert page.evaluate("__scrimmageTest.toJSON()") == saved
+    page_units(page, "metric")
+    page.wait_for_function("__scrimmageTest.workspace.getAllBlocks(false).find((b) => b.type === 'move').getFieldValue('TO') === 101.6")
+    assert page.evaluate(SHOWN) == {
+        "move": [101.6, "mm"], "drive": [0.3, "m"], "pressure": [413.685, "kPa"], "element": [165.1, "mm"],
+        "clears": "robot clears trench (not on the field) by at least 63.5 mm", "moved": "partner moved at least 254 mm"}
+    assert page.evaluate("__scrimmageTest.toJSON()") == saved      # switching writes nothing
+    page.wait_for_timeout(1000)
+    assert path.read_bytes() == before
+    # typed in Metric: an `_in` key in inches, a move's "m" kept, a pressure in psi
+    page.evaluate("""(() => {
+      const ws = __scrimmageTest.workspace, b = (type) => ws.getAllBlocks(false).find((x) => x.type === type);
+      b('cond_partner_moved').setFieldValue(101.6, 'MOVED');
+      b('move').setFieldValue(50, 'TO');
+      b('cond_pressure').setFieldValue(275.8, 'PSI');
+    })()""")
+    _wait_file(lambda: _file_blocks(path)[-1]["that"] == {"partner_moved": {"at_least_in": 4.0}}, path)
+    blocks = _file_blocks(path)
+    assert blocks[0] == {"do": "move", "joint": "arm.pivot", "to": 0.05, "unit": "m"}
+    assert blocks[1] == {"do": "drive", "distance": 0.3}                   # untouched: as it was
+    assert blocks[2]["that"] == {"pressure": {"side": "stored", "above": 40.001408}}
+    assert blocks[-1]["that"] == {"partner_moved": {"at_least_in": 4.0}}
+    # and read back in Imperial as typed
+    page_units(page, "imperial")
+    page.wait_for_function("__scrimmageTest.workspace.getAllBlocks(false).find((b) => b.type === 'cond_partner_moved').getFieldValue('MOVED') === 4")
+    assert page.evaluate(SHOWN)["move"] == [1.9685, "in"]
+
+
+def test_a_new_move_in_metric_writes_meters(test_page, units):
+    units("metric")
+    page, path = test_page('[[block]]\ndo = "move"\njoint = "arm.pivot"\nto = 30.0\nunit = "deg"\n')
+    page.evaluate("""(() => {
+      const b = __scrimmageTest.workspace.getAllBlocks(false).find((x) => x.type === 'move');
+      b.setFieldValue('len', 'UNIT');
+      b.setFieldValue(25, 'TO');
+    })()""")
+    _wait_file(lambda: _file_blocks(path)[0] == {"do": "move", "joint": "arm.pivot", "to": 0.025, "unit": "m"}, path)
+    assert page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).find((x) => x.type === 'move').getField('UNIT').getText()") == "mm"
+
+
+def test_setups_partner_distance_typed_in_metric_writes_inches(test_page, tmp_path, units):
+    """Review Focus 2 for a Test file key: ahead_in typed as 101.6 mm writes ahead_in = 4.0, and reads back."""
+    units("metric")
+    page, path = test_page(path=_defenses_test(tmp_path, '[setup]\npartner = { ahead_in = 80 }\n\n' + SPIN.lstrip()))
+    _open_setup(page)
+    assert page.input_value("#test-partner-ahead") == "2032"
+    assert page.get_attribute("#test-partner-ahead", "aria-label") == "Partner robot: ahead of my robot by (mm)"
+    page.fill("#test-partner-ahead", "101.6")
+    page.press("#test-partner-ahead", "Enter")
+    _wait_file(lambda: (_partner_setup(path) or {}).get("ahead_in") == 4.0, path)
+    page.wait_for_function("document.querySelector('#test-partner-ahead').value === '101.6'")
+    page_units(page, "imperial")
+    page.wait_for_function("document.querySelector('#test-partner-ahead').value === '4'")
+    page.fill("#test-partner-ahead", "2 ft")
+    page.press("#test-partner-ahead", "Enter")
+    _wait_file(lambda: (_partner_setup(path) or {}).get("ahead_in") == 24.0, path)
+
+
+def test_the_floor_spread_keeps_its_values_across_a_units_change(test_page, tmp_path):
+    """Steps half typed when Units changes: the untouched from and to (inches in the file) are shown again in mm, and
+    Enter writes what was meant, not 6 in read as 6 mm."""
+    path = _example(tmp_path, "intake", "spread.test.toml")
+    page, _ = test_page(path=path)
+    _open_setup(page)
+    page.wait_for_selector("#test-spread-count")
+    assert _toml(path)["setup"]["floor_spread"]["offset_in"] == [-6.0, 0.0, 6.0]
+    assert [page.input_value(f"#test-spread-offset_in-{k}") for k in ("from", "to")] == ["-6", "6"]
+    page.fill("#test-spread-offset_in-steps", "5")                  # half typed: Setup isn't drawn again
+    page_units(page, "metric")
+    page.wait_for_function("document.querySelector('#test-spread-offset_in-to').value === '152.4'")
+    assert page.input_value("#test-spread-offset_in-from") == "-152.4"
+    assert page.input_value("#test-spread-offset_in-steps") == "5"
+    assert page.get_attribute("#test-spread-offset_in-on", "id")      # (still there)
+    page.press("#test-spread-offset_in-steps", "Enter")
+    _wait_file(lambda: _toml(path)["setup"]["floor_spread"]["offset_in"] == [-6.0, -3.0, 0.0, 3.0, 6.0], path)
+    page.wait_for_function("document.querySelector('#test-spread-count').textContent === '5 runs'")
+
+
+def test_a_number_being_typed_in_a_block_when_units_change_is_read_as_typed(test_page, tmp_path):
+    """The block's editor is open with "2" (inches) when Units changes to Metric: it is committed as 2 in, then shown
+    as 50.8 mm; never read as 2 mm."""
+    page, path = test_page(path=_defenses_test(tmp_path, UNIT_BLOCKS))
+    move = "__scrimmageTest.workspace.getAllBlocks(false).find((b) => b.type === 'move')"
+    _click_field(page, move, "TO")
+    page.wait_for_selector(".blocklyHtmlInput")
+    page.keyboard.press("Control+A")
+    page.keyboard.type("2")
+    page_units(page, "metric")
+    page.wait_for_function(f"({move}).getFieldValue('TO') === 50.8")
+    _wait_file(lambda: _file_blocks(path)[0] == {"do": "move", "joint": "arm.pivot", "to": 0.0508, "unit": "m"}, path)
+    assert page.locator(".blocklyHtmlInput").count() == 0 or not page.is_visible(".blocklyHtmlInput")
+
+
+def test_a_partner_distance_typed_in_inches_is_written_as_typed(test_page, tmp_path):
+    page, path = test_page(path=_defenses_test(tmp_path, '[setup]\npartner = { ahead_in = 80 }\n\n' + SPIN.lstrip()))
+    _open_setup(page)
+    page.fill("#test-partner-ahead", "3.33333")
+    page.press("#test-partner-ahead", "Enter")
+    _wait_file(lambda: (_partner_setup(path) or {}).get("ahead_in") == 3.33333, path)

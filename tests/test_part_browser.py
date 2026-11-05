@@ -13,6 +13,7 @@ import numpy as np
 
 import pytest
 
+from browser_harness import page_units
 from test_assembler_browser import Server, browser  # noqa: F401  (fixtures)
 
 pytestmark = pytest.mark.browser
@@ -340,8 +341,7 @@ def test_neo_on_a_sliding_arm_writes_its_gearing(part_page):
     page.select_option("#part-motor", "NEO")
     _type(page, "#part-motor-ratio", "25")
     page.wait_for_function("document.querySelector('#part-motor-ratio').dataset.orig === '25'")
-    page.click("#part-spool-in")
-    _edit(page, lambda: _type(page, "#part-spool", "1"))
+    _edit(page, lambda: _type(page, "#part-spool", "1"))          # inches: Units is Imperial (the default)
     m = _body(page, "arm_A")["motor"]
     assert m["motor"] == "NEO" and m["ratio"] == 25 and m["spool_diameter"] == pytest.approx(0.0254)
     text = _wait_file(lambda: next(iter(sorted(imp.parent.glob("*/part.toml"))), None), lambda t: "NEO" in t)
@@ -434,6 +434,7 @@ def test_a_redraw_while_typing_keeps_the_text_and_commits_it_once(part_page):
     """Half-typed text in a Part tab box survives a redraw (a state arriving) without being committed, and the
     student's Enter then commits the whole value exactly once (a box refilled by the redraw fires no "change")."""
     page, _ = part_page
+    page_units(page, "metric")      # the weights below are kilograms
     posts = []
     page.on("request", lambda r: posts.append(r.post_data_json) if r.url.endswith("/api/part/edit") and r.method == "POST" else None)
     _pick_body(page, "arm_A")
@@ -455,6 +456,7 @@ def test_a_redraw_while_typing_keeps_the_text_and_commits_it_once(part_page):
 def test_a_redraw_after_a_trailing_point_keeps_the_decimal(part_page):
     """"1." then a redraw then "5" saves 1.5, not 15: the boxes are text boxes, so the redraw carries "1." over as it is."""
     page, imp = part_page
+    page_units(page, "metric")      # the weights below are kilograms
     posts = []
     page.on("request", lambda r: posts.append(r.post_data_json) if r.url.endswith("/api/part/edit") and r.method == "POST" else None)
     _pick_body(page, "arm_A")
@@ -476,16 +478,18 @@ def test_a_redraw_after_a_trailing_point_keeps_the_decimal(part_page):
 
 def test_text_that_isnt_a_number_is_refused_and_not_sent(part_page):
     page, imp = part_page
+    page_units(page, "metric")      # the weights below are kilograms
     posts = []
     page.on("request", lambda r: posts.append(r.post_data_json) if r.url.endswith("/api/part/edit") and r.method == "POST" else None)
     _pick_body(page, "arm_A")
     page.wait_for_selector("#part-body-weight")
     saved = imp.read_text()
-    for bad in ("1.5kg", "0x10", "1-"):
+    for bad, why in (("1.5lb", "so type kg here, not lb"), ("0x10", "isn't a unit for this"), ("1-", "isn't a unit for this"),
+                     ("kg", "Type a number in kg")):
         _type(page, "#part-body-weight", bad)
         msg = page.locator('#part-inspector [data-field="kg"] .error')
         msg.wait_for()
-        assert "isn't a number" in msg.inner_text()
+        assert why in msg.inner_text()
     page.wait_for_timeout(300)
     assert posts == [] and imp.read_text() == saved
     # a comma counts as the decimal point
@@ -500,14 +504,16 @@ def test_text_that_isnt_a_number_is_refused_and_not_sent(part_page):
 
 
 def test_a_snapped_hinge_takes_a_typed_pivot_point(part_page):
-    """With no round face to click, snap the axis and type where it turns: robot meters, saved as CAD meters."""
+    """With no round face to click, snap the axis and type where it turns: in the robot frame (here in millimeters),
+    saved as CAD meters."""
     from scrimmage.cad.frame import RobotFrame, to_robot
     page, imp = part_page
+    page_units(page, "metric")      # the pivot is typed in millimeters
     _pick_body(page, "hook_assy")
     page.select_option("#part-joint-kind", "hinge")
     _edit(page, lambda: page.click("#part-snap-x"))
     page.wait_for_selector("#part-pivot-x")
-    for box, text in (("x", "0.05"), ("y", "-0.1"), ("z", "0.83")):
+    for box, text in (("x", "50"), ("y", "-100"), ("z", "830")):
         _edit(page, lambda: _type(page, f"#part-pivot-{box}", text))
     f = page.evaluate("__scrimmagePart.store.state.frame")
     R, t = to_robot(RobotFrame(f["up"], f["front"], f["floor"], f["center"], f["skip"]))
@@ -546,6 +552,7 @@ def test_plugin_part_shows_and_clears_what_was_changed_here(browser, tmp_path, m
         page.goto(srv.url)
         page.wait_for_function("window.__scrimmagePart && __scrimmagePart.store.state"
                                " && __scrimmagePart.store.state.mode === 'plugin'")
+        page_units(page, "metric")  # the weights below are kilograms
         _pick_body(page, "roller")
         weight = page.locator('#part-inspector [data-field="kg"]')
         weight.wait_for()
@@ -750,3 +757,46 @@ def test_the_part_tab_grip_row_sets_the_overlay(part_page):
         page.click("#undo")
     page.wait_for_function("__scrimmagePart.store.state.bodies.find(b => b.name === 'base_plate').grip === 'nitrile'")
     assert page.input_value("#part-grip") == "nitrile"
+
+
+def test_the_part_tab_shows_and_takes_the_chosen_units(part_page):
+    """Units (Settings): weights show and take pounds (the default) or kilograms; the file keeps kilograms; a typed
+    weight reads back as typed (Review Focus 1); switching while the tab is open redraws it at once and keeps the box
+    being typed in (Review Focus 4)."""
+    from test_assembler_browser import _shown
+    page, imp = part_page
+    mass = lambda: tomllib.loads(imp.read_text())["bodies"]["arm_A"]["mass"]  # noqa: E731
+    _pick_body(page, "arm_A")
+    page.wait_for_selector("#part-body-weight")
+    assert page.inner_text('#part-inspector [data-field="kg"] .unit') == "lb"
+    assert page.inner_text("#part-body-mass").endswith(" lb")
+    assert page.inner_text("#part-inspector .mono").endswith(" in")    # the center of gravity
+    _edit(page, lambda: _type(page, "#part-body-weight", "2.5"))
+    assert mass() == pytest.approx(2.5 * 0.45359237)
+    assert page.input_value("#part-body-weight") == "2.5"              # reads back as typed
+    assert page.inner_text("#part-body-mass") == "2.5 lb"
+
+    page.click("#part-body-weight", click_count=3)
+    page.keyboard.type("1.2")                                          # half typed: not committed
+    page_units(page, "metric")
+    page.wait_for_function("document.querySelector('#part-inspector [data-field=\"kg\"] .unit').textContent === 'kg'")
+    assert page.input_value("#part-body-weight") == "1.2"
+    assert page.evaluate("document.activeElement.id") == "part-body-weight"
+    assert page.inner_text("#part-body-mass").endswith(" kg")
+    assert page.inner_text("#part-inspector .mono").endswith(" mm")
+    assert mass() == pytest.approx(2.5 * 0.45359237)                   # switching wrote nothing
+    _edit(page, lambda: page.keyboard.press("Enter"))                  # the kept text is now kilograms
+    assert mass() == 1.2
+    saved = imp.read_text()
+    page_units(page, "imperial")
+    page.wait_for_function(f"document.querySelector('#part-body-weight').value === {_shown(1.2, 'mass', 'imperial')!r}")
+    page.wait_for_timeout(300)
+    assert imp.read_text() == saved
+    # a typed unit is fine; the other system's is refused, saying why
+    page_units(page, "metric")
+    _edit(page, lambda: _type(page, "#part-body-weight", "1.25 kg"))
+    assert _body(page, "arm_A")["typed_mass"] == 1.25
+    _type(page, "#part-body-weight", "3 lb")
+    msg = page.locator('#part-inspector [data-field="kg"] .error')
+    msg.wait_for()
+    assert "Units is set to Metric, so type kg here, not lb" in msg.inner_text()

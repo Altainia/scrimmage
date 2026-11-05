@@ -14,6 +14,7 @@ import math
 import sys
 from pathlib import Path
 
+from .. import units
 from . import fit_cylinder, fit_launcher, forms, tests_direct
 from .file import KIND_TESTS, MeasureError, MeasureFile, load
 from .stats import summary, why
@@ -21,11 +22,20 @@ from .use import SUFFIX
 
 USAGE = "scrimmage measure FILE | form TEST [-o PATH] | new TEST PATH"
 
-# what each measured field is, and how its value is shown
+
+def _shown(kind: str, more: int = 0):
+    """A measured value in the Units setting, to the table's places (plus `more`) kept, so a column lines up."""
+    def show(v: float) -> str:
+        unit = units.TABLE[units.current_system()][kind]
+        return f"{units.to_display(v, kind):.{unit.decimals + more}f} {unit.name}"
+    return show
+
+
+# what each measured field is, and how its value is shown (a ball's mass a place finer than the table's: 0.474 lb)
 FIELD = {
-    "mass": ("mass", lambda v: f"{v * 1000:.1f} g"),
-    "diameter": ("diameter", lambda v: f"{v * 1000:.1f} mm ({v / 0.0254:.2f} in)"),
-    "stiffness_n": ("stiffness_n, the force that squeezes the ball by 25%", lambda v: f"{v:.1f} N"),
+    "mass": ("mass", _shown("mass", 1)),
+    "diameter": ("diameter", _shown("length")),
+    "stiffness_n": ("stiffness_n, the force that squeezes the ball by 25%", _shown("force")),
     "restitution": ("restitution, the bounce", lambda v: f"{v:.3f}"),
     "friction": ("friction", lambda v: f"{v:.3f}"),
     "time": ("stroke time", lambda v: f"{v:.3f} s"),
@@ -38,7 +48,7 @@ def shot_words(result) -> tuple[str, str]:
     """What a shot fit fits ("the wheel's friction"), and what it holds and at what, in words."""
     if "friction" in result.fitted:
         return ("the wheel's friction",
-                f"the ball's stiffness held at {result.stiffness_n:.0f} N, from its squeeze test")
+                f"the ball's stiffness held at {_shown('force', -1)(result.stiffness_n)}, from its squeeze test")
     return "the ball's stiffness", f"the wheel friction held at {result.friction:.2f}"
 
 
@@ -104,9 +114,9 @@ def _shot(mf: MeasureFile) -> tuple[list[str], list[str]]:
     readings = _readings(rows)
     table = []
     for i, (row, (measured, model)) in enumerate(zip(rows, result.per_shot)):
-        model_text = "not launched" if math.isnan(model) else f"{model:.2f} m/s"
+        model_text = "not launched" if math.isnan(model) else _shown("speed")(model)
         off = "" if math.isnan(model) else f"{(model - measured) / measured:+.1%}"
-        table.append([str(i + 1), *(_cell(row.get(k, "")) for k in readings), f"{measured:.2f} m/s", model_text,
+        table.append([str(i + 1), *(_cell(row.get(k, "")) for k in readings), _shown("speed")(measured), model_text,
                       off])
     what, held = shot_words(result)
     lines = [f"shot: fits {what} to your shots ({held})",

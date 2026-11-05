@@ -68,6 +68,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from .. import units
 from ..launcher.inputs import LauncherConfigError, Setup, load_setup
 from ..launcher.model import Launcher
 from ..launcher.single import single_pass
@@ -397,7 +398,7 @@ def fit(mf: MeasureFile) -> LauncherFit:
 
         def speeds_at(x: float) -> list[float]:
             return model(k, value(x))
-        name, unit, digits = "wheel friction", "", 2
+        name, unit, digits, scale = "wheel friction", "", 2, 1.0
     else:
         lo, hi = (setup.ball.stiffness_n * r for r in STIFFNESS_RANGE)
         f = friction
@@ -407,7 +408,10 @@ def fit(mf: MeasureFile) -> LauncherFit:
 
         def speeds_at(x: float) -> list[float]:
             return model(value(x), f)
-        name, unit, digits = "ball's stiffness", " N", 0
+        # in the Units setting, to a place coarser than the table's: 118 N, 26.5 lbf
+        name, unit = "ball's stiffness", " " + units.unit_name("force")
+        digits = max(0, units.TABLE[units.current_system()]["force"].decimals - 1)
+        scale = units.to_display(1.0, "force")
         warnings.append(SQUEEZE_SENTENCE)
 
     def cost(x: float) -> float:
@@ -425,7 +429,7 @@ def fit(mf: MeasureFile) -> LauncherFit:
     speeds = model(k, f)
 
     def show(v: float) -> str:
-        return f"{v:.{digits}f}"
+        return f"{v * scale:.{digits}f}"
 
     plain = "stiffness" if squeezed is None else "wheel friction"
     band_text = (f"{plain} {show(fitted_value)}{unit}, anywhere from {show(band[0])} to {show(band[1])}{unit} fits "

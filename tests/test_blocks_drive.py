@@ -122,7 +122,8 @@ def test_a_turn_that_cant_finish_says_how_far_it_got(tmp_path):
     assert re.fullmatch(r"turn \(block 1\) didn't turn 90° in 1 s \(turned -?\d+°\)", r.outcome), r.outcome
 
 
-def test_a_drive_that_cant_finish_names_its_direction(swerve_world):
+def test_a_drive_that_cant_finish_names_its_direction(swerve_world, units):
+    units("metric")
     r = run(swerve_world, '[[block]]\ndo = "drive"\ndirection = "left"\ndistance = 5.0\ntimeout = 1\n')
     assert r.status == "timed out", r.outcome
     assert r.outcome.startswith("drive left (block 1) didn't reach 5 m in 1 s (went "), r.outcome

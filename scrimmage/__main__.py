@@ -24,6 +24,7 @@ from .lockstep import DEFAULT_STEP, parse_speed
 from .robot_process import RobotProcess
 from .scenario import ScenarioError, load_scenario, validate
 from .scenario_runner import REAL_DS_REFUSED, UNSET, run_scenario
+from .settings import SYSTEMS, set_override
 
 
 SIM_MODE_HELP = ("fast: set SCRIMMAGE_MODE=fast for the robot program (overrides [robot_program] sim_mode); "
@@ -52,8 +53,21 @@ def _port(text: str) -> int:
     return n
 
 
+def _leading_units(argv: list[str]) -> tuple[str | None, list[str]]:
+    """The global `--units X` (or `--units=X`) before the command, and the rest: taken off first, so that
+    `scrimmage --units metric measure ...` still reaches measure's own parser."""
+    if argv[:1] == ["--units"] and len(argv) > 1:
+        return argv[1], argv[2:]
+    if argv[:1] and argv[0].startswith("--units="):
+        return argv[0].split("=", 1)[1], argv[1:]
+    return None, argv
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="scrimmage", description="Simulate a WPILib robot program in a MuJoCo world.")
+    ap.add_argument("--units", choices=SYSTEMS,
+                    help="show values in imperial or metric units for this run (default: the Units setting, which "
+                         "the editor's Settings menu sets)")
     sub = ap.add_subparsers(dest="command", required=True)
 
     sp = sub.add_parser("serve", help="run the world for a robot program you drive yourself (WPILib sim GUI)")
@@ -235,6 +249,11 @@ def main(argv: list[str] | None = None) -> None:
                                    "blank form, or start a file (docs/measuring.md)")
 
     argv = sys.argv[1:] if argv is None else argv
+    units, argv = _leading_units(argv)
+    if units is not None:
+        if units not in SYSTEMS:
+            ap.error(f"argument --units: invalid choice: {units!r} (choose from {', '.join(SYSTEMS)})")
+        set_override(units)
     if argv[:1] == ["measure"]:
         from .measure.cli import main as measure
         sys.exit(measure(argv[1:]))
@@ -512,7 +531,7 @@ def _bench_many(args) -> None:
                 print(f"wrote {out / 'results.csv'}")
                 charts = bench.charts or compare.default_charts(list(bench.sweep))
                 paths = report.write_charts(rows, charts, out, None, compare.BENCH_METRICS, compare.CHART_KINDS,
-                                            footer=bench_estimates(bench))
+                                            footer=bench_estimates(bench), shown=compare.SHOWN)
                 print(report.NO_MATPLOTLIB if paths is None else "\n".join(f"wrote {p}" for p in paths))
             elif args.bench_command == "compare":
                 from .bench.run import run_bench
@@ -713,7 +732,8 @@ def _print_export(s: dict) -> None:
     print(f"  loops: {s['loops']}, couplings: {s['couplings']}")
     print(f"  slots: {names(s['slots'])}")
     print(f"  mounts: {names(s['mounts'])}")
-    print(f"  mass: {s['mass_kg']:.3f} kg")
+    from . import units
+    print(f"  mass: {units.fmt(s['mass_kg'], 'mass')}")
     for w in s["warnings"]:
         print(f"warning: {w}")
 

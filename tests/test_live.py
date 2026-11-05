@@ -203,6 +203,20 @@ def test_pokes(running):
     assert mgr.status()["state"] == "running"
 
 
+def test_reset_ends_a_push(running):
+    """Reset puts the robot back at rest: a push still running stops there, not pushing it off again."""
+    mgr, pub, _ = running
+    mgr.command({"cmd": "push", "force_n": 400, "direction_deg": 90, "duration_s": 30})
+    world = mgr._session.world
+    wait_for(lambda: world.data.xfrc_applied[world.robot_body, 1] != 0, 5, "the push force")
+    mgr.command({"cmd": "reset"})
+    wait_for(lambda: world.data.xfrc_applied[world.robot_body, 1] == 0, 5, "the push force to clear")
+    t = mgr.status()["t"]
+    wait_for(lambda: mgr.status()["t"] > t + 0.3)
+    pose = readouts(pub)["pose"]
+    assert abs(pose["x"] - 2.0) < 0.01 and abs(pose["y"] - 4.035) < 0.01
+
+
 def test_signals(running):
     mgr, pub, _ = running
     n = len(notices(pub))

@@ -242,8 +242,10 @@ def test_drive_asks_for_start_first(code_page, tmp_path):
 
 
 def test_pick_start_shows_sentence_and_triangle(code_page, tmp_path):
+    from browser_harness import page_units
     cfg = _robot(tmp_path)
     page = code_page(cfg)
+    page_units(page, "metric")      # the numbers below are meters
     assert page.text_content("#start-sentence").strip() == "Not picked yet"
     assert page.is_hidden("#start-canvas")
     page.click("#start-pick")
@@ -669,3 +671,69 @@ def test_check_devices_takes_the_drive_tabs_driver_station_choice(code_page, tmp
         assert ("FRC Driver Station app" in page.text_content("#code-run-status")) is want, pick
         page.click("#code-stop")
         page.wait_for_selector("#code-stop", state="hidden", timeout=30000)
+
+
+def test_the_start_picker_shows_and_takes_the_chosen_units(code_page, tmp_path):
+    """Units (Settings): the start pose's x and y are field lengths, feet (the default) or meters; the file keeps
+    meters, a typed value reads back exactly as typed, and a box not changed keeps its exact value."""
+    from browser_harness import page_units
+    cfg = _robot(tmp_path)
+    page = code_page(cfg)
+
+    def reopen():
+        page.click("#start-pick")
+        page.wait_for_selector("#start-dialog[open]")
+        page.click("#sp-exact summary")
+
+    def ok():
+        page.click("#sp-ok")
+        page.wait_for_selector("#start-dialog", state="hidden")
+
+    page.click("#start-pick")
+    page.wait_for_selector("#start-dialog[open]")
+    page.check("#sp-field-plain")
+    page.wait_for_function("window.__scrimmage && __scrimmage.code.state.start.range === null")
+    _place(page, 2.5, 3.0, 4.0, 3.0)
+    page.click("#sp-exact summary")
+    assert page.inner_text("#sp-exact .fp-field .unit") == "ft"
+    assert float(page.input_value("#sp-x")) == pytest.approx(2.5 / 0.3048, abs=0.1)
+    page.fill("#sp-y", "11.5 ft")
+    ok()
+    pose = _raw(cfg)["robot"]["start_pose"]
+    assert pose[1] == 3.5052 and pose[0] == pytest.approx(2.5, abs=0.03)
+    page.click("#start-exact summary")
+    assert "11.5 ft" in page.text_content("#start-exact")
+    # read back as typed, not as the saved meters rounded
+    for typed in ("11.5", "12.34"):
+        reopen()
+        page.fill("#sp-y", typed)
+        ok()
+        reopen()
+        assert page.input_value("#sp-y") == typed
+        page.click("#sp-cancel")
+    assert _raw(cfg)["robot"]["start_pose"][1] == 3.761232
+
+    page_units(page, "metric")
+    page.wait_for_function("document.querySelector('#start-exact').textContent.includes('3.761 m')")
+    # the other system's unit is refused, saying why; emptied again, the box is no longer an error
+    reopen()
+    assert page.input_value("#sp-y") == "3.76123"
+    pose = _raw(cfg)["robot"]["start_pose"]
+    page.fill("#sp-x", "8 ft")
+    page.click("#sp-ok")
+    page.wait_for_selector("#sp-errors:not([hidden])")
+    assert "Units is set to Metric, so type m here, not ft" in page.text_content("#sp-errors")
+    page.fill("#sp-x", "")
+    ok()
+    assert _raw(cfg)["robot"]["start_pose"] == pose
+
+    # Units changes while a box is half typed: the text stays and means the new units (as in the inspector)
+    page_units(page, "imperial")
+    reopen()
+    page.fill("#sp-y", "6.5")
+    page.focus("#sp-y")
+    page_units(page, "metric")
+    page.wait_for_function("document.querySelector('#sp-exact .fp-field .unit').textContent === 'm'")
+    assert page.input_value("#sp-y") == "6.5"
+    ok()
+    assert _raw(cfg)["robot"]["start_pose"][1] == 6.5

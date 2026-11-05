@@ -56,9 +56,9 @@ def step(w, seconds: float, placed: Placed | None = None) -> None:
 def test_seated_depth_on_a_vertical_rod():
     d, could = seated_depth(PEG, CORAL, _low_end_at(0.5 * IN), EYE)
     assert d / IN == pytest.approx(3.5) and could / IN == pytest.approx(4.0)
-    assert seated_words(d, could) == "seated 3.5 in of 4.0 in"
+    assert seated_words(d, could) == "seated 3.5 in of 4 in"
     assert seated_words(0.8 * IN, 4 * IN) == "only 0.8 in on: could be knocked off"
-    assert seated_words(1.4 * IN, 4 * IN) == "seated 1.4 in of 4.0 in"       # a third of 4 in is 1.33 in
+    assert seated_words(1.4 * IN, 4 * IN) == "seated 1.4 in of 4 in"       # a third of 4 in is 1.33 in
     assert KNOCK_OFF_SHARE == pytest.approx(1 / 3)
 
 
@@ -83,7 +83,7 @@ def test_a_coral_threaded_from_the_base_end_counts_only_the_rod_it_covers():
     """A rod free at its base end: a coral 1.0 in onto it from below reads 1.0 in, not fully seated."""
     d, could = seated_depth(PEG, CORAL, _low_end_at(1.0 * IN - CORAL_L), EYE)
     assert d / IN == pytest.approx(1.0) and could / IN == pytest.approx(4.0)
-    assert seated_words(d, could) == "only 1.0 in on: could be knocked off"
+    assert seated_words(d, could) == "only 1 in on: could be knocked off"
 
 
 def test_review_focus_1_lying_across_or_on_the_end_is_empty():
@@ -320,8 +320,8 @@ def test_seated_and_rests_on_checks_in_a_run(peg_run):
     assert lines[0].startswith("passed: a coral is seated at least 3 in on peg")
     assert lines[1].startswith("passed: a coral rests on pad")
     assert r.status == "check failed"
-    assert "the coral is seated 4.0 in of 4.0 in on peg, less than 5 in" in r.outcome
-    assert r.seated == {"peg": "seated 4.0 in of 4.0 in"}                  # the depth at the end, for the run panel
+    assert "the coral is seated 4 in of 4 in on peg, less than 5 in" in r.outcome
+    assert r.seated == {"peg": "seated 4 in of 4 in"}                  # the depth at the end, for the run panel
 
 
 def test_a_fed_coral_seated_on_the_peg_is_placed_not_missed(peg_run):
@@ -418,7 +418,7 @@ def test_the_knocked_off_and_not_on_sentences():
         said = TestRun._not_placed(run, "seated", {"piece": "any", "on": "branch_l2", "at_least_in": 3.0})
         assert said == {"none": "the coral isn't on branch_l2",
                         "low": "the coral is seated only 0.8 in on branch_l2 (could be knocked off)",
-                        "short": "the coral is seated 2.0 in of 4.0 in on branch_l2, less than 3 in"}[name]
+                        "short": "the coral is seated 2 in of 4 in on branch_l2, less than 3 in"}[name]
     named = SimpleNamespace(piece_index=lambda p: 0, kinds={"coral": CORAL}, piece_names={"ball.0": "coral 1"},
                             placed=SimpleNamespace(why_not=lambda i, on: ""))
     assert TestRun._not_placed(SimpleNamespace(watch=named), "rests_on",

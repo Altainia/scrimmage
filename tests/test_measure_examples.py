@@ -43,9 +43,10 @@ def test_the_fuel_ball(reports):
     v = values(mf)
     assert {k: s.n for k, (s, _) in v.items()} == {"mass": 5, "diameter": 5, "stiffness_n": 5, "restitution": 6}
     assert all(s.good for s, _ in v.values())
-    assert "mass: average 215.6 g, lowest 214.0 g, highest 217.0 g, spread 1% (5 trials)" in text
-    assert "diameter: average 150.2 mm (5.91 in)" in text
-    assert "stiffness_n: average 123.1 N, lowest 119.2 N, highest 127.2 N, spread 7% (5 trials)" in text
+    # the reports are printed in the default Units setting, Imperial
+    assert "mass: average 0.475 lb, lowest 0.472 lb, highest 0.478 lb, spread 1% (5 trials)" in text
+    assert "diameter: average 5.914 in" in text
+    assert "stiffness_n: average 27.68 lbf, lowest 26.80 lbf, highest 28.60 lbf, spread 7% (5 trials)" in text
     assert "restitution: average 0.595, lowest 0.553, highest 0.612, spread 10% (6 trials)" in text
     # the README's one flagged trial: flagged, not dropped, and the drop still good
     assert re.findall(r"warning: .*", text) == ["warning: trial 6 looks off: check it"]
@@ -66,7 +67,7 @@ def test_the_hooded_shots_fit_the_stiffness_well(reports):
     assert result.rms_error < fit_launcher.GOOD_RMS
     low, high = result.band
     assert (1 - fit_launcher.BAND) * result.stiffness_n <= low and high <= (1 + fit_launcher.BAND) * result.stiffness_n
-    assert "fit: stiffness 91 N, anywhere from 81 to 103 N fits your shots" in text
+    assert "fit: stiffness 20.6 lbf, anywhere from 18.2 to 23.1 lbf fits your shots" in text
     assert "the model misses your shots by 1.9% (root mean square)" in text
     # each shot spans 20 frames or more (the advice it follows), at two wheel speeds 10% or more apart
     mf = load(HERE / "hooded-shots.measure.toml")

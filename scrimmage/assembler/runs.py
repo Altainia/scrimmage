@@ -193,7 +193,7 @@ class RunManager:
         def finish(r: dict) -> None:
             try:
                 if report is not None:
-                    r["report"] = report.to_dict()
+                    r["report"] = report.to_dict(shown=True)   # the checks in the Units setting
                     if report.error is not None:
                         # "stopped" only when the stop is why it ended; any other error shows as itself
                         r["state"] = "stopped" if report.error == STOPPED else "error"

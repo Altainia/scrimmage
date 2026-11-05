@@ -89,7 +89,7 @@ scrimmage bench run examples/bench/pinch_car.toml
 In about a second you should see lines ending like this:
 
 ```
-3 of 3 left through `shot` at 6.9 m/s ± 0.0, 5° down
+3 of 3 left through `shot` at 22.7 ft/s ± 0.0, 5° down
 ...
 wrote examples/bench/pinch_car-results/ (summary.txt, the CSVs, path_side.png, pass.png, pass.gif)
 ```

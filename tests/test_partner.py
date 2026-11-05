@@ -126,7 +126,9 @@ def test_brake_resists_more_than_coast(tmp_path):
 
 
 def test_partner_overlap_errors(tmp_path):
-    """Review Focus 3: a partner placed overlapping the robot's start or an element on the carpet is refused."""
+    """Review Focus 3: a partner placed overlapping the robot's start or an element on the carpet is refused. A
+    config's [partner] is refused in meters, as its start is written, whatever the Units setting (an agent's
+    start_session and report.json see it so); the Test tab words Setup's partner in the setting (below)."""
     # the stand-in starts at (2.0, 4.035), heading 0: a 0.9 m outline; the partner's frame plus bumpers is 0.86 m
     with pytest.raises(PartError) as e:
         _world(tmp_path, "\n[partner]\nstart = [2.68, 4.035, 0]\n")
@@ -227,7 +229,7 @@ def test_setups_partner_overlap_errors_name_setup(tmp_path):
     """Fix 6: a partner Setup places inside the robot or an element is refused in Setup's words, not [partner]'s."""
     with pytest.raises(TestFileError) as e:
         world_for(_program(tmp_path, "partner = { ahead_in = 20 }"))
-    assert str(e.value) == "the partner robot (Setup) starts inside the robot (their outlines overlap by 0.37 m)"
+    assert str(e.value) == "the partner robot (Setup) starts inside the robot (their outlines overlap by 14.65 in)"
     (tmp_path / "gate.toml").write_text("""
 [range]
 name = "a portcullis"
@@ -249,7 +251,7 @@ mass = 2.27
     with pytest.raises(TestFileError) as e:
         world_for(_program(tmp_path, "partner = { ahead_in = 106.3 }", robot=on_range))
     assert str(e.value) == ("the partner robot (Setup) starts inside element portcullis (their outlines overlap by "
-                            "0.10 m)")
+                            "3.94 in)")
     # the config's own [partner], with Setup leaving it alone, keeps the [partner] words
     with pytest.raises(ValueError, match=r"\[partner\] starts inside the robot"):
         world_for(_program(tmp_path, "", robot="\n[partner]\nstart = [2.68, 4.035, 0]\n"))
@@ -266,7 +268,7 @@ def test_partner_conditions(tmp_path):
     program = _program(tmp_path, "partner = { ahead_in = 60 }", expect_moved)      # nothing pushes it
     r = TestRun(world_for(program), program).run()
     assert r.status == "check failed"
-    assert r.checks[0]["failure"].startswith("expected the partner to move at least 2 in, but it moved 0.0 in")
+    assert r.checks[0]["failure"].startswith("expected the partner to move at least 2 in, but it moved 0 in")
 
     lifted = Cond("partner_lifted", {"at_least_in": 4.0, "level_within_deg": 5.0})
     assert describe(lifted) == "the partner is lifted at least 4 in (level within 5°)"
@@ -304,3 +306,24 @@ def test_partner_conditions(tmp_path):
     alone = _program(tmp_path, "", expect_moved)
     assert [p["message"] for p in problems(alone, world_for(alone))] == [
         "there's no partner robot; add one in Setup"]
+
+
+def test_setup_partner_words_fall_back_to_the_configs_meters(units):
+    """Setup's partner refusal is in the Units setting only from a PartnerOverlap; any other cause (and machine text)
+    keeps the config's words, meters as before the setting."""
+    from scrimmage import units as u
+    from scrimmage.blocks.run import setup_partner_words
+    from scrimmage.parts.model import PartError
+    from scrimmage.parts.partner import PartnerOverlap
+    overlap = PartnerOverlap("the robot", 0.2)
+    text = f"robot.toml: {overlap}"
+    assert str(overlap) == "[partner] starts inside the robot (their outlines overlap by 0.20 m)"
+    assert setup_partner_words(text, overlap) == \
+        "the partner robot (Setup) starts inside the robot (their outlines overlap by 7.87 in)"
+    meters = "the partner robot (Setup) starts inside the robot (their outlines overlap by 0.20 m)"
+    assert setup_partner_words(text, PartError("something else")) == meters
+    assert setup_partner_words(text, None) == meters
+    with u.machine_text():
+        assert setup_partner_words(text, overlap) == meters
+    units("metric")
+    assert setup_partner_words(text, overlap).endswith("overlap by 200 mm)")

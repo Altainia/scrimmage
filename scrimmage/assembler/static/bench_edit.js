@@ -8,7 +8,7 @@
 //   Entries     every entry of the idea (the shapes, and the shafts, piece and run settings that have no shape), so
 //               each can be selected without the view.
 //   Inspector   the selected entry: every key with its help, unit and choices (bench.js fieldRow, with number boxes
-//               and - + for points, sizes and angles: 10 mm and 5 degree steps), Rename and Delete. An entry from an
+//               and - + for points, sizes and angles: 0.5 in or 10 mm, and 5 degree steps), Rename and Delete. An entry from an
 //               included file is read-only, with "from <file>" and Edit here instead (override).
 //   Add         wheel, plate, bar, hood (curve), inlet, outlet, CAD part (a part folder or a mesh file) and shaft.
 //

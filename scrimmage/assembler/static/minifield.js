@@ -13,6 +13,7 @@
 // Test hook: window.__scrimmage.miniField = {toScreen(x, y) -> {x, y} page pixels, robot, objects, enabled}.
 
 import { fieldGeometry, drawField, fieldPoly, outline, hull } from "./fieldpick.js";
+import { units } from "./units.js";
 
 const DRAG_PX = 6;          // a press that moves less than this is a click
 const OBJECT_HIT_PX = 5;    // extra grab margin around an object's marker
@@ -37,6 +38,7 @@ export class MiniField {
     canvas.addEventListener("pointercancel", () => { this.drag = null; this.draw(); });
     this.observer = new ResizeObserver(() => this.layout());
     this.observer.observe(canvas.parentElement || canvas);
+    units.onChange(() => this.draw());   // the grid's labels are in the chosen units
     const self = this;
     if (window.__scrimmage) {
       window.__scrimmage.miniField = {

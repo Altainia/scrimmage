@@ -288,6 +288,8 @@ def fit(mf: MeasureFile) -> CylinderFit:
 
     if math.isinf(time_at(1.0)):
         what = "lift its load" if setup.vertical else "push past its seals' friction"
+        # in psi whatever the Units setting: working_psi is the file's key, and this is also raised while a robot
+        # config loads (measure/use.py), into report.json and MCP errors
         raise MeasureError(f"{mf.path}: [stroke_setup]: the model's cylinder can't {what} at {setup.working_psi:g} "
                            "psi: check the bore, load_mass, friction and working_psi")
 

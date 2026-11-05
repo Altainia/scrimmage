@@ -45,8 +45,15 @@ never held. That sentence carries its own time, and a lost piece's moment is kep
 `rests_on` check says why when the element carries the piece ("the coral doesn't rest on shelf (a robot body still
 touches it)"); a failed `seated` check says the piece isn't on the rod, or how far it is ("the coral is seated only
 0.8 in on branch_l2 (could be knocked off)" under placed.py's KNOCK_OFF_SHARE of how far it could go, else "the coral
-is seated 2.0 in of 4.0 in on branch_l2, less than 3 in"). Each `seated.<rod>` signal is the deepest piece's depth on
+is seated 2 in of 4 in on branch_l2, less than 3 in"). Each `seated.<rod>` signal is the deepest piece's depth on
 that rod in inches, NaN while none is on it; the run's `seated` says each rod's depth at the end in words.
+
+Units: the signals keep fixed units (the ones named here: inches, psi, degrees, newtons), as signals.csv and the MCP
+tools have them, whatever the Units setting; the Test tab converts them for its chart. The words (the outcome, the
+check failures, `seated`, `lines`) are written in the Units setting when the run is made (units.fmt; the examples
+here are Imperial's), and a run already made keeps the units it was written in. Machine text (MCP test_run, and a
+sweep's or spread's table.csv) is written inside units.machine_text(): the words as they were before the setting
+existed, whatever it is (inches and psi with one decimal, and meters for a drive, a "m" joint and the partner).
 
 Shooting: on a range with a `[shooter]` the range's launcher model runs as it does under robot code, so spinning
 the launcher and its stages shoots the balls the robot holds. Every motor of a joint is written (a launcher's
@@ -106,16 +113,17 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
+from .. import units
 from ..climb.run import SETTLE_S, WalkOff
 from ..hal_drive import MotorDrive, driven_joints, position_volts
 from ..movers import mover_poses, movers
-from ..parts.partner import SIGNALS as PARTNER_SIGNALS, STARTS_INSIDE
+from ..parts.partner import SIGNALS as PARTNER_SIGNALS, STARTS_INSIDE, PartnerOverlap
 from ..protocol import HalState
 from ..sensors.colors import NAMED_COLORS
 from ..testrange.build import BALL_BITS
 from .aim import TURN, aim_error, aim_target
 from .clearance import NEVER_WITHIN_IN, PREFIX, inches, named, uncounted_note
-from .conditions import IN, Watch, _conds, describe, turret_words
+from .conditions import IN, Watch, _amount, _conds, describe, turret_words
 from .drive import STEER_TIMEOUT, drivetrain
 from .feeds import SETTLE_MAX_S, Outcomes, counts, is_standin, made_it_in, sentence
 from .grip_watch import SET_DOWN, SLIP_LOOKBACK_S, default_word
@@ -212,10 +220,6 @@ def _recast(text: str, form: int) -> str:
     return " ".join(words)
 
 
-def _amount(x: float, unit: str) -> str:
-    return f"{x:g}°" if unit == "deg" else f"{x:g} {unit}"
-
-
 def sensor_value(world, name: str) -> float:
     """Sensor `name`'s chart signal now: 0 or 1 for a beam break (1 broken), inches for a distance sensor, and for a
     color sensor the index in NAMED_COLORS of the color it sees (NaN: none)."""
@@ -291,8 +295,8 @@ SETUP_STARTS_INSIDE = "the partner robot (Setup) starts inside "
 def world_for(program: Program):
     """The World of the test's robot config (its `robot`, relative to the test file), with the test's setup applied.
     When Setup places the partner and it starts inside the robot or an element, the TestFileError says Setup's partner
-    ("the partner robot (Setup) starts inside the robot (their outlines overlap by 0.20 m)"), not the config's
-    [partner]: the student only ticked Setup."""
+    ("the partner robot (Setup) starts inside the robot (their outlines overlap by 7.87 in)", in the Units setting;
+    machine text keeps the old 0.20 m), not the config's [partner]: the student only ticked Setup."""
     from ..config import ConfigError, build_world, load_config
     config = load_config(Path(program.path).parent / program.robot)
     try:
@@ -301,7 +305,18 @@ def world_for(program: Program):
         text = str(e)
         if not isinstance(program.setup.get("partner"), dict) or STARTS_INSIDE not in text:
             raise
-        raise TestFileError(SETUP_STARTS_INSIDE + text.split(STARTS_INSIDE, 1)[1]) from None
+        # build_world re-raises partner.check_start's PartnerOverlap `from None`: it is the ConfigError's context
+        raise TestFileError(setup_partner_words(text, e.__context__)) from None
+
+
+def setup_partner_words(text: str, cause) -> str:
+    """Setup's partner refusal from the config's `text` ("[partner] starts inside ... by 0.20 m)"): in the Units
+    setting when `cause` is the PartnerOverlap it came from ("... by 7.87 in)"), else (and in machine text) the
+    config's words, meters as before the setting."""
+    if isinstance(cause, PartnerOverlap) and not units.is_machine():
+        by = units.fmt(cause.depth, "length", fewer=1)
+        return f"{SETUP_STARTS_INSIDE}{cause.what} (their outlines overlap by {by})"
+    return SETUP_STARTS_INSIDE + text.split(STARTS_INSIDE, 1)[1]
 
 
 GRIP_CONDITIONS = ("held", "rests_on", "seated")     # a test of these rests on the grip's friction
@@ -376,8 +391,12 @@ def goal_lines(result: RunResult) -> list[str]:
 def clearance_lines(result: RunResult) -> list[str]:
     """The run's closest approaches as lines, one per element it measured: "closest to trench: 0.82 in at 3.1 s", or
     "trench: never within 20 in" (none for a run that measured none)."""
-    return [f"{e}: never within {NEVER_WITHIN_IN} in" if c["min_in"] is None else
-            f"closest to {e}: {c['min_in']:.2f} in at {c['t']:.1f} s" for e, c in (result.clearance or {}).items()]
+    if units.is_machine():                  # the old words, kept for machine text (units.machine_text)
+        return [f"{e}: never within {NEVER_WITHIN_IN} in" if c["min_in"] is None else
+                f"closest to {e}: {c['min_in']:.2f} in at {c['t']:.1f} s" for e, c in (result.clearance or {}).items()]
+    return [f"{e}: never within {_amount(NEVER_WITHIN_IN, 'in')}" if c["min_in"] is None else
+            f"closest to {e}: {_amount(c['min_in'], 'in', fewer=1)} at {c['t']:.1f} s"
+            for e, c in (result.clearance or {}).items()]
 
 
 def air_lines(result: RunResult) -> list[str]:
@@ -387,10 +406,13 @@ def air_lines(result: RunResult) -> list[str]:
     a = result.air
     if a is None:
         return []
-    lines = [f"air: {a['start_psi']:.0f} psi at the start, {a['end_psi']:.0f} psi at the end, lowest "
-             f"{a['low_psi']:.0f} psi at {a['low_t']:.1f} s; the compressor ran {a['compressor_s']:.1f} s"]
+    def psi(x: float) -> str:
+        return f"{x:.0f} psi" if units.is_machine() else _amount(x, "psi", fewer=1)
+
+    lines = [f"air: {psi(a['start_psi'])} at the start, {psi(a['end_psi'])} at the end, lowest "
+             f"{psi(a['low_psi'])} at {a['low_t']:.1f} s; the compressor ran {a['compressor_s']:.1f} s"]
     if a["below_working_t"] is not None:
-        lines.append(f"the tanks fell below the {a['working_psi']:g} psi working pressure at "
+        lines.append(f"the tanks fell below the {_amount(a['working_psi'], 'psi')} working pressure at "
                      f"{a['below_working_t']:.1f} s: the cylinders pushed weaker from then on")
     return lines
 
@@ -965,8 +987,12 @@ class TestRun:
             gone = float(np.linalg.norm(d.xpos[self.world.robot_body][:2] - act["from"]))
             done = gone >= abs(a["distance"]) - EPS
             if not done and elapsed >= timeout - EPS:
-                raise _End("timed out", f"{self._drive_name(a)} ({_where(place)}) didn't reach "
-                                        f"{abs(a['distance']):g} m in {timeout:g} s (went {gone:.2f} m)")
+                if units.is_machine():          # the old words, kept for machine text (units.machine_text)
+                    far, went = f"{abs(a['distance']):g} m", f"{gone:.2f} m"
+                else:
+                    far, went = units.fmt(abs(a["distance"]), "field"), units.fmt(gone, "field", fewer=1)
+                raise _End("timed out", f"{self._drive_name(a)} ({_where(place)}) didn't reach {far} in {timeout:g} s "
+                                        f"(went {went})")
         else:
             done = act["rolling"] is not None and t - act["rolling"] >= a["seconds"] - EPS
         if done:
@@ -980,10 +1006,14 @@ class TestRun:
         return f"drive {a['direction']}" if "direction" in a else "drive"
 
     def _value(self, joint: str, unit: str) -> str:
-        """A joint's position now in `unit`, in words (`38.2°`)."""
+        """A joint's position now in words (`38.2°`, `1.5 in` or `38 mm`): degrees for a `unit` of "deg", else
+        a length in the Units setting."""
         q = float(self.world.data.qpos[self._qadr[joint]])
-        v = math.degrees(q) if unit == "deg" else q / IN if unit == "in" else q
-        return _amount(round(v, 1), unit)
+        if unit == "deg":
+            return _amount(round(math.degrees(q), 1) + 0.0, unit)
+        if units.is_machine():                  # the old words: the file's unit, to 0.1
+            return _amount(round(q / IN if unit == "in" else q, 1), unit)
+        return units.fmt(q, "length", fewer=2)
 
     def _failure(self, cond) -> str:
         """What happened instead of `cond`, in words."""
@@ -1028,21 +1058,33 @@ class TestRun:
         if k == "cylinder":
             out = self.world.pneumatics.extension(a["cylinder"]) / IN
             stroke = next(c.stroke for c in self.world.parts.cylinders if c.name == a["cylinder"]) / IN
-            return f"expected {a['cylinder']} {a['is']}, but its rod was out {out:.1f} in of {round(stroke, 1):g} in"
+            if units.is_machine():
+                return (f"expected {a['cylinder']} {a['is']}, but its rod was out {out:.1f} in of "
+                        f"{round(stroke, 1):g} in")
+            return (f"expected {a['cylinder']} {a['is']}, but its rod was out {_amount(out, 'in', fewer=2)} of "
+                    f"{_amount(stroke, 'in', fewer=2)}")
         if k == "pressure":
             side, psi = ("above", a["above"]) if "above" in a else ("below", a["below"])
             s = self.world.pneumatics.system
             now = s.stored_psi if a["side"] == "stored" else s.working_psi
             what = f"the {a['side']} air pressure"      # as the block reads: "stored air pressure above 60 psi"
-            return f"expected {what} {side} {psi:g} psi, but it was {now:.1f} psi"
+            if units.is_machine():
+                return f"expected {what} {side} {psi:g} psi, but it was {now:.1f} psi"
+            return f"expected {what} {side} {_amount(psi, 'psi')}, but it was {_amount(now, 'psi')}"
         if k == "element":
             side = "above" if "above" in a else "below"
             unit = watch.units[a["element"]]
-            now = round(watch.element_value(a["element"]), 1) + 0.0        # + 0.0: a panel at rest never reads "-0"
-            return f"expected {a['element']} {side} {_amount(a[side], unit)}, but it was {_amount(now, unit)}"
+            now = watch.element_value(a["element"])
+            if unit == "deg" or units.is_machine():                    # machine text: the old words, to 0.1
+                now = round(now, 1) + 0.0                                 # + 0.0: a panel at rest never reads "-0"
+            return (f"expected {a['element']} {side} {_amount(a[side], unit)}, "
+                    f"but it was {_amount(now, unit, fewer=2)}")
         if k == "clears":
             c = watch.closest.now[a["element"]]
-            now = f"{c / IN:.2f} in" if math.isfinite(c) else f">{NEVER_WITHIN_IN} in"
+            if units.is_machine():
+                now = f"{c / IN:.2f} in" if math.isfinite(c) else f">{NEVER_WITHIN_IN} in"
+            else:
+                now = units.fmt(c, "length", fewer=1) if math.isfinite(c) else f">{_amount(NEVER_WITHIN_IN, 'in')}"
             return (f"expected the robot to clear {a['element']} by at least {_amount(a['at_least_in'], 'in')}, "
                     f"but it was {now}")
         if k == "sensor":
@@ -1051,11 +1093,15 @@ class TestRun:
             p, level = self.world.partner, a.get("level_within_deg")
             want = f"at least {_amount(a['at_least_in'], 'in')}" + (
                 f" (level within {_amount(level, 'deg')})" if level is not None else "")
-            up = round(p.height(), 1) + 0.0                 # + 0.0: a partner at rest never reads "-0"
-            return f"expected the partner lifted {want}, but it was {up:g} in up, {p.tilt():.1f}° from level"
+            if units.is_machine():
+                up = round(p.height(), 1) + 0.0             # + 0.0: a partner at rest never reads "-0"
+                return f"expected the partner lifted {want}, but it was {up:g} in up, {p.tilt():.1f}° from level"
+            return (f"expected the partner lifted {want}, but it was {_amount(p.height(), 'in', fewer=2)} up, "
+                    f"{p.tilt():.1f}° from level")
         if k == "partner_moved":
-            return (f"expected the partner to move at least {_amount(a['at_least_in'], 'in')}, "
-                    f"but it moved {self.world.partner.moved():.1f} in")
+            moved = (f"{self.world.partner.moved():.1f} in" if units.is_machine()
+                     else _amount(self.world.partner.moved(), 'in', fewer=2))
+            return f"expected the partner to move at least {_amount(a['at_least_in'], 'in')}, but it moved {moved}"
         if k == "station_empty":
             left = self.feeder.left(a["station"]) if self.feeder is not None else None
             return f"{a['station']} wasn't empty" + (f" ({left} left)" if left else "")
@@ -1078,8 +1124,11 @@ class TestRun:
         if spec.kind == "beam":
             return f"expected {name} {want}, but it was {'on (broken)' if r.on else 'off (clear)'}"
         if spec.kind == "distance":
-            return (f"expected {name} {want}, but it read {r.distance / IN:.1f} in (it is on closer than "
-                    f"{spec.threshold / IN:.1f} in)")
+            if units.is_machine():
+                return (f"expected {name} {want}, but it read {r.distance / IN:.1f} in (it is on closer than "
+                        f"{spec.threshold / IN:.1f} in)")
+            return (f"expected {name} {want}, but it read {units.fmt(r.distance, 'length', fewer=2)} (it is on "
+                    f"closer than {units.fmt(spec.threshold, 'length', fewer=2)})")
         saw = f"{'an' if r.color_name[0] in 'aeiou' else 'a'} {r.color_name} piece" if r.on else "no piece"
         return f"expected {name} {'' if want == 'on' else 'not '}to see {a['sees'] or 'a piece'}, but it saw {saw}"
 
@@ -1114,7 +1163,7 @@ class TestRun:
     def _not_placed(self, k: str, a: dict) -> str:
         """How a rests_on or seated check failed: "the coral doesn't rest on shelf (a robot body still touches it)";
         "the coral isn't on branch_l2", "the coral is seated only 0.8 in on branch_l2 (could be knocked off)", or,
-        on but short of what was asked, "the coral is seated 2.0 in of 4.0 in on branch_l2, less than 3 in"."""
+        on but short of what was asked, "the coral is seated 2 in of 4 in on branch_l2, less than 3 in"."""
         watch = self.watch
         i, on = watch.piece_index(a["piece"]), a["on"]
         what = watch.piece_names.get(a["piece"], a["piece"]) if i is not None else f"the {default_word(watch.kinds)}"
@@ -1126,8 +1175,10 @@ class TestRun:
             return f"{what} isn't on {on}"
         depth, could = got
         if depth < KNOCK_OFF_SHARE * could:
-            return f"{what} is seated only {depth / IN:.1f} in on {on} (could be knocked off)"
-        return f"{what} is {seated_words(depth, could)} on {on}, less than {a['at_least_in']:g} in"
+            if units.is_machine():
+                return f"{what} is seated only {depth / IN:.1f} in on {on} (could be knocked off)"
+            return f"{what} is seated only {units.fmt(depth, 'length', fewer=2)} on {on} (could be knocked off)"
+        return f"{what} is {seated_words(depth, could)} on {on}, less than {_amount(a['at_least_in'], 'in')}"
 
     def _moving(self, t: float) -> str:
         """What was commanded (moved, spun or stopped) in the SLIP_LOOKBACK_S before t, most recent first, then
@@ -1176,7 +1227,8 @@ class TestRun:
             return f"turning {a['degrees']:g}°"
         way = f" {a['direction']}" if "direction" in a else ""
         if "distance" in a:
-            return f"driving{way} {a['distance']:g} m"
+            return f"driving{way} {a['distance']:g} m" if units.is_machine() else \
+                f"driving{way} {units.fmt(a['distance'], 'field')}"
         return f"driving{way} for {a['seconds']:g} s"
 
     def _under_way(self) -> str:

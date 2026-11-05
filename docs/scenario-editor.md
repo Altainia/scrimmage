@@ -76,7 +76,9 @@ keeps what you typed so you can correct it.
 (`2/3 auto`), the simulated time and the robot program's console lines as they arrive. Only one run goes at a time.
 
 The report shows each step with every check's result and the runner's own message (for example
-`pose: 66.46 m from target, heading off by 0.0°; allowed 0.1 m, 5°`), the console tail, screenshot thumbnails (click to enlarge), contact
+`pose: 218.045 ft from target, heading off by 0.0° (x=6.562 ft, y=13.238 ft, heading=0.0°); allowed 0.328 ft,
+5°`, in the
+[Units setting](settings.md); `report.json` keeps meters), the console tail, screenshot thumbnails (click to enlarge), contact
 sheets and the report folder path with links to `report.md`, `report.json` and the log. The step dots in the left
 column follow the steps by name, so after a reorder or rename a dot only shows where the run still matches.
 Recent runs of this session are listed under the report; click one to read it.

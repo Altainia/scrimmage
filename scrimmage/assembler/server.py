@@ -67,6 +67,16 @@ App (`/api/app/*`; in every mode):
         (the robot code panel asks where the robot starts). A scenario's `config` is written as `{cad}/...` (or
         `{code}/...`) when a team folder holds the robot config but not the scenario.
 
+Settings (`/api/settings`; in every mode). The user's settings (scrimmage/settings.py), shared by every editor and the
+CLI on this computer:
+  GET  /api/settings               -> {units: imperial|metric, table, warning}: the Units setting (`scrimmage --units`
+        wins over the file for its run), the unit table every display formats with (units.table_json(): {systems,
+        kinds, units: {system: {kind: {name, factor, decimals}}}, aliases, keys, lengths}), and why the settings file is
+        being ignored (it can't be read, isn't TOML or has a bad value: the defaults apply), else null. The file is
+        read again when it changes on disk; the page polls this every few seconds to pick that up.
+  POST /api/settings               -> body {units}: saves it in the settings file (and, under `--units`, for this
+        run too); answers as GET does. 400 for another value.
+
 Bench (`/api/bench/*`; 404 unless an idea session is open). `file` is an idea's file name in the session folder:
   GET  /api/bench/state[?since=N]  -> {version, folder, display_folder, stage: file|null, lock: {source, file, pid,
         since}|null, ideas: [{file, name, author, idea, read_only_reason, problems: [{level: error|warning, key,
@@ -251,7 +261,7 @@ Robot (`/api/robot/*`):
                 where the robot starts and on which field (the fields but 2026 are the Test tab Setup's).
                 range "2026" writes [range] file = "2026" (another range's named start goes), null removes [range]
                 (the plain field); absent keeps the config's (one naming another range keeps it). pose writes
-                [robot] start_pose (x, y in m from the blue corner, rounded to mm; heading in degrees, (-180, 180])
+                [robot] start_pose (x, y in m from the blue corner, rounded to 1 µm; heading in degrees, (-180, 180])
                 and removes [range] start; named writes [range] start and removes start_pose (the loader refuses
                 both); a null pose or named clears the start. keep_pose true (the Test tab's field picker) with
                 named keeps a start_pose still on the field instead of writing named. floor_balls false writes
@@ -589,7 +599,7 @@ import mujoco
 import tomlkit
 from tomlkit.exceptions import TOMLKitError
 
-from .. import robotcode, teamfolders
+from .. import robotcode, settings, teamfolders, units
 from ..config import ConfigError, load_config_text
 from ..lockstep import parse_speed
 from ..parts.assemble import PLACEMENT_KEYS
@@ -999,6 +1009,22 @@ class App:
                 if unset is not None:
                     return unset
         return None
+
+    def settings_state(self) -> dict:
+        return {"units": settings.current_units(), "table": units.table_json(), "warning": settings.problem()}
+
+    def set_settings(self, body: dict) -> dict:
+        """Save the Units setting. Under `scrimmage --units` the menu still switches: this run follows it too."""
+        try:
+            system = settings.check_units(body.get("units"))
+            settings.save(units=system)
+        except ValueError as e:
+            raise ApiError(400, str(e)) from None
+        except OSError as e:
+            raise ApiError(500, f"can't save {settings.settings_path()}: {e.strerror or e}") from None
+        if settings.overridden():
+            settings.set_override(system)
+        return self.settings_state()
 
     def get_folders(self) -> dict:
         known = teamfolders.folders()
@@ -2715,6 +2741,10 @@ class _Handler(BaseHTTPRequestHandler):
         app, path = self.app, url.path
         if path.startswith("/api/app/"):
             return self._app_api(method, url)
+        if path == "/api/settings":
+            if method == "POST":
+                return 200, app.set_settings(self._body())
+            return 200, app.settings_state()
         if path.startswith("/api/bench/"):
             return self._bench_api(method, url, app.need_bench())
         if path == "/api/part/upload" and method == "POST":
