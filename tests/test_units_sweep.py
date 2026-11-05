@@ -30,7 +30,7 @@ END = r"(?![\w/·³^*])"
 PROSE = r"(?<! in(?= (?:the|a|an|all|front|line|order|place|it|its|this|that|which|your|my|one|3D)\b))"
 AFTER_NUMBER = re.compile(r"[\d}]\s?" + UNITS + END + PROSE)   # "0.5 m", `${x} in`, "4 in of", not "3 in the test"
 IN_BRACKETS = re.compile(r"\(" + UNITS + r"\)")               # "exit speed (m/s)"
-JUST_A_UNIT = re.compile(r"^" + UNITS + r"$")                 # "kg"
+JUST_A_UNIT = re.compile(r"^\s*" + UNITS + r"\s*$")         # "kg", and " m" in `fmt(v) + " m"`
 FORMAT_SPEC = re.compile(r"\.\d+[gfe]\b")                    # ".3g" is a format, not 3 grams
 
 KEY = "a file's, a key's or the wire's own unit (U3, U4; signals keep fixed units), not text in the setting"
@@ -41,11 +41,13 @@ CHOOSES = "chooses or names the unit by the setting"
 # (file, a piece of the hit's source line, why it is allowed)
 ALLOWED = [
     # JavaScript
-    ("bench.js", 'const KINDS = { m: "length", "m/s": "speed"', "fields.toml's unit names, mapped to their kinds"),
+    ("bench.js", 'const KINDS = { m: "length", "m/s": "speed", kg: "mass", N: "force", "N/m": "spring" }',
+     "fields.toml's unit names, mapped to their kinds"),
     ("bench.js", 'return def.unit === "m" && FIELD_KEYS', "fields.toml's unit names, mapped to their kinds"),
-    ("bench.js", "const siOf = (t, v)", KEY),
-    ("bench.js", "const fileOf = (t, si)", KEY),
-    ("bench.js", "const unitOf = (t, def)", KEY + " (an _in key's form)"),
+    ("bench.js", 'const siOf = (t, v) => each(v, (x) => (t.inches ? units.fromKey(x, "in")', KEY),
+    ("bench.js", 'const fileOf = (t, si) => each(si, (x) => round6(t.inches ? units.toKey(x, "in")', KEY),
+    ("bench.js", 'const unitOf = (t, def) => (t.kind ? units.name(t.kind) : t.inches ? "in"',
+     KEY + " (an _in key's form)"),
     ("bench.js", 'def.unit === "degrees" || def.unit === "m"', "fields.toml's unit names"),
     ("bench_edit.js", '["m", "mm", "in"]', "a CAD file's own units, chosen when it is imported"),
     ("bench_edit.js", '$("#bench-cad-units").value = "mm"', "a CAD file's own units, chosen when it is imported"),
@@ -58,15 +60,20 @@ ALLOWED = [
     ("blocks_defs.js", 'cond_clears: { CLEAR: { kind: "length", unit: "in"', KEY),
     ("blocks_defs.js", 'cond_partner_lifted: { LIFT: { kind: "length", unit: "in"', KEY),
     ("blocks_defs.js", 'cond_partner_moved: { MOVED: { kind: "length", unit: "in"', KEY),
-    ("blocks_defs.js", 'const lengthUnit = (system) =>', KEY + " (a new move's unit, by the setting)"),
+    ("blocks_defs.js", 'const lengthUnit = (system) => (system === "metric" ? "m" : "in")',
+     KEY + " (a new move's unit, by the setting)"),
     ("blocks_defs.js", 'message0: "%1 in %2"', WORD + " (a piece in a body)"),
-    ("fieldpick.js", 'return system === "imperial" ? { step: 5 * 0.3048', CHOOSES + " (the field's grid)"),
-    ("inspector.js", 'const PARAM_KIND = { m: "length"', "stock params' unit names, mapped to their kinds"),
-    ("measure.js", "const SYSTEM_UNITS = { imperial:", "a new measure column's file unit, by the setting"),
+    ("fieldpick.js", '{ step: 5 * 0.3048, size: 5, unit: "ft" } : { step: 1, size: 1, unit: "m" }',
+     CHOOSES + " (the field's grid)"),
+    ("inspector.js", 'const PARAM_KIND = { m: "length", kg: "mass", N: "force", "N*m": "torque", "N/m": "spring"',
+     "stock params' unit names, mapped to their kinds"),
+    ("measure.js", 'const SYSTEM_UNITS = { imperial: { length: "in", mass: "lb", force: "lb", weight: "lb" }',
+     "a new measure column's file unit, by the setting"),
     ("measure.js", 'metric: { length: "mm", mass: "kg"', "a new measure column's file unit, by the setting"),
     ("part.js", 'units.name("length") === "in" ? 3 : 1', CHOOSES + " (decimals)"),
     ("part_inspector.js", 'const v = measure(text, "kg", "mass")', "an edit's key name, not shown"),
-    ("part_inspector.js", '"kg",', "an edit's key name, not shown"),
+    ("part_inspector.js", 'h("span", { class: "unit", text: units.name("mass") })), "kg",',
+     "an edit's key name, not shown"),
     ("part_inspector.js", 'units.name("length") === "mm" ? 0.025 : 0.0254', CHOOSES + " (a round example)"),
     ("test_run.js", "`${c.in} in`", "pieces in (a count), not inches"),
     ("test_run.js", 'if (name === "hook_load") return "N"', KEY),
@@ -80,7 +87,7 @@ ALLOWED = [
     ("blocks/placed.py", 'return f"seated {depth / IN:.1f} in of {could / IN:.1f} in"', MACHINE),
     ("blocks/run.py", 'f"{e}: never within {NEVER_WITHIN_IN} in"', MACHINE),
     ("blocks/run.py", "f\"closest to {e}: {c['min_in']:.2f} in at {c['t']:.1f} s\" for e, c in", MACHINE),
-    ("blocks/run.py", "scored {", "balls scored in a goal, not inches"),
+    ("blocks/run.py", 'f"scored {n} in {name}"', "balls scored in a goal, not inches"),
     ("blocks/run.py", 'return f"{x:.0f} psi" if units.is_machine()', MACHINE),
     ("blocks/run.py", "far, went = f\"{abs(a['distance']):g} m\", f\"{gone:.2f} m\"", MACHINE),
     ("blocks/run.py", "didn't reach {far} in {timeout:g} s", "reach a distance in a time, not inches"),
@@ -104,9 +111,11 @@ ALLOWED = [
     ("bench/pictures.py", 'return n * units.FT, f"{n:g} ft"', CHOOSES + " (the scale bar)"),
     ("launcher/report.py", '"downrange (m)"', "known gap: the launcher model's own charts (docs/settings.md)"),
     ("launcher/report.py", '"lateral (m)"', "known gap: the launcher model's own charts (docs/settings.md)"),
-    ("measure/fit_cylinder.py", "the model's cylinder can't {", MACHINE + " (also a robot file's load error)"),
-    ("parts/partner.py", "must be at least {", "checks the partner's file numbers (meters), named by key"),
-    ("parts/partner.py", "mass must be more than its drive's {",
+    ("measure/fit_cylinder.py", 'at {setup.working_psi:g} " "psi: check the bore',
+     MACHINE + " (also a robot file's load error)"),
+    ("parts/partner.py", "must be at least {MIN_SIZE:g} m (its drive's",
+     "checks the partner's file numbers (meters), named by key"),
+    ("parts/partner.py", "mass must be more than its drive's {drive_mass:g} kg,",
      "checks the partner's file numbers (kg), named by key"),
     ("parts/partner.py", "(their outlines overlap by {depth:.2f} m)",
      "a robot config's [partner] start, in meters as written (machine text); the Test tab words Setup's own"),
@@ -164,7 +173,8 @@ def js_strings(text: str):
 
 
 def py_strings(text: str):
-    """(line, text) of each string literal in Python `text` but docstrings; an f-string's {...} reads as "}"."""
+    """(line, text, source) of each string literal in Python `text` but docstrings; an f-string's {...} reads as "}",
+    and the source is the literal as written (all its lines, joined)."""
     tree = ast.parse(text)
     skip = set()
     for node in ast.walk(tree):
@@ -175,13 +185,14 @@ def py_strings(text: str):
     for node in ast.walk(tree):
         if isinstance(node, ast.JoinedStr):
             skip.update(id(v) for v in node.values)
-            yield node.lineno, "".join(v.value if isinstance(v, ast.Constant) else "}" for v in node.values)
+            yield (node.lineno, "".join(v.value if isinstance(v, ast.Constant) else "}" for v in node.values),
+                   " ".join(ast.get_source_segment(text, node).split()))
         elif isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in skip:
-            yield node.lineno, node.value
+            yield node.lineno, node.value, " ".join(ast.get_source_segment(text, node).split())
 
 
 def hits():
-    """[(file, line number, source line, what matched)] for every unit found."""
+    """[(file, line number, source line (in Python, then the whole literal), what matched)] for every unit found."""
     found = []
     for path in sorted(STATIC.glob("*.js")):
         if path.name == "units.js":
@@ -197,16 +208,20 @@ def hits():
     for name in PY:
         text = (ROOT / "scrimmage" / name).read_text(encoding="utf-8")
         lines = text.splitlines()
-        for ln, s in py_strings(text):
+        for ln, s, source in py_strings(text):
             s = FORMAT_SPEC.sub("", s)
-            for m in [*AFTER_NUMBER.finditer(s), *IN_BRACKETS.finditer(s)]:
-                found.append((name, ln, lines[ln - 1], m.group(0)))
+            for m in [*AFTER_NUMBER.finditer(s), *IN_BRACKETS.finditer(s)]:      # the line, and the whole literal
+                found.append((name, ln, f"{lines[ln - 1]} ‖ {source}", m.group(0)))
     return found
 
 
 def _allowed(hit) -> tuple | None:
-    name, _, line, _ = hit
-    return next((a for a in ALLOWED if a[0] == name and a[1] in line), None)
+    """The ALLOWED entry for `hit`: its piece is on the hit's line and holds the unit found, so a new unit added on
+    an allowed line isn't allowed with it."""
+    name, _, line, what = hit
+    unit = re.sub(r"^[\d}(]\s?|\)$", "", what.strip())
+    return next((a for a in ALLOWED if a[0] == name and a[1] in line and re.search(
+        r"(?<![\w/·])" + re.escape(unit) + r"(?![\w/·³^*])", a[1])), None)
 
 
 def test_no_hard_coded_units_are_left():
@@ -223,10 +238,11 @@ def test_every_allowed_entry_still_matches():
 
 def test_the_sweep_finds_a_hard_coded_unit():
     """The scanners themselves: what a display site that skipped units.js would look like is found."""
-    js = 'const a = `x ${v} m`; // "4 in" in a comment\nconst b = "speed (m/s)", re = /"/, c = "kg";\n'
+    js = ('const a = `x ${v} m`; // "4 in" in a comment\nconst b = "speed (m/s)", re = /"/, c = "kg";\n'
+          'const d = v.toFixed(2) + " m", e = fmt(v) + " in", f = "pieces in the robot";\n')
     got = [m.group(0) for _, s in js_strings(js)
            for m in [*AFTER_NUMBER.finditer(s), *IN_BRACKETS.finditer(s), *JUST_A_UNIT.finditer(s)]]
-    assert got == ["} m", "(m/s)", "kg"]
+    assert got == ["} m", "(m/s)", "kg", " m", " in"]
     py = 'def f(x):\n    """4 in, a docstring"""\n    return f"{x:.2f} in", "%.3g" % x, "in the robot"\n'
-    got = [m.group(0) for _, s in py_strings(py) for m in AFTER_NUMBER.finditer(FORMAT_SPEC.sub("", s))]
+    got = [m.group(0) for _, s, _ in py_strings(py) for m in AFTER_NUMBER.finditer(FORMAT_SPEC.sub("", s))]
     assert got == ["} in"]

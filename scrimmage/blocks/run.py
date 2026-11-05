@@ -117,7 +117,7 @@ from .. import units
 from ..climb.run import SETTLE_S, WalkOff
 from ..hal_drive import MotorDrive, driven_joints, position_volts
 from ..movers import mover_poses, movers
-from ..parts.partner import SIGNALS as PARTNER_SIGNALS, STARTS_INSIDE
+from ..parts.partner import SIGNALS as PARTNER_SIGNALS, STARTS_INSIDE, PartnerOverlap
 from ..protocol import HalState
 from ..sensors.colors import NAMED_COLORS
 from ..testrange.build import BALL_BITS
@@ -305,11 +305,18 @@ def world_for(program: Program):
         text = str(e)
         if not isinstance(program.setup.get("partner"), dict) or STARTS_INSIDE not in text:
             raise
-        rest = text.split(STARTS_INSIDE, 1)[1]
-        cause = e.__context__       # partner.check_start's refusal, with its depth in meters
-        if not units.is_machine() and isinstance(getattr(cause, "depth", None), float):
-            rest = f"{cause.what} (their outlines overlap by {units.fmt(cause.depth, 'length', fewer=1)})"
-        raise TestFileError(SETUP_STARTS_INSIDE + rest) from None
+        # build_world re-raises partner.check_start's PartnerOverlap `from None`: it is the ConfigError's context
+        raise TestFileError(setup_partner_words(text, e.__context__)) from None
+
+
+def setup_partner_words(text: str, cause) -> str:
+    """Setup's partner refusal from the config's `text` ("[partner] starts inside ... by 0.20 m)"): in the Units
+    setting when `cause` is the PartnerOverlap it came from ("... by 7.87 in)"), else (and in machine text) the
+    config's words, meters as before the setting."""
+    if isinstance(cause, PartnerOverlap) and not units.is_machine():
+        by = units.fmt(cause.depth, "length", fewer=1)
+        return f"{SETUP_STARTS_INSIDE}{cause.what} (their outlines overlap by {by})"
+    return SETUP_STARTS_INSIDE + text.split(STARTS_INSIDE, 1)[1]
 
 
 GRIP_CONDITIONS = ("held", "rests_on", "seated")     # a test of these rests on the grip's friction

@@ -54,7 +54,7 @@ scrimmage run sim/scenarios/auto.toml
 
 ```
 PASS  auto.toml
-  ok   [auto] pose within 0.066 ft and 0.1° of target (x=9.777 ft, y=13.255 ft, heading=89.9°)
+  ok   [auto] pose within 0.065 ft and 0.1° of target (x=9.779 ft, y=13.251 ft, heading=89.9°)
   ok   [auto] battery stayed >= 7
 report: runs/auto-20261031-114956/report.md
 ```
@@ -64,7 +64,7 @@ drove:
 
 ```
 FAIL  auto.toml
-  FAIL [auto] pose: 3.346 ft from target, heading off by 0.1° (x=9.777 ft, y=13.255 ft, heading=89.9°); allowed 0.656 ft, 6°
+  FAIL [auto] pose: 3.345 ft from target, heading off by 0.1° (x=9.779 ft, y=13.251 ft, heading=89.9°); allowed 0.656 ft, 6°
 ```
 
 The printed lines and `report.md` are in the **Units** setting (feet unless you pick Metric: see

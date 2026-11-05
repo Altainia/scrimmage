@@ -293,8 +293,9 @@ says which in its `mode` field (`"session"` or `"standalone"`). In a session, th
 
 **Units.** Tool results are in fixed units whatever the web app's Units setting: numbers are SI (meters, kg, N, m/s)
 unless a key names its unit (`min_in`, `extension_m`), `run_scenario`'s check messages are in meters, the bench
-headlines in m/s, N and meters, and `test_run`'s words in inches and psi (a drive's distance in meters), exactly as
-before the setting existed. Files written for people (`report.md`, a bench run's `summary.txt` and pictures) follow
+headlines in m/s, N and meters, and the words of `test_run`, `test_sweep` and `test_spread` in inches and psi
+(a drive's distance, a block whose `unit` is "m" and Setup's partner overlap in meters), exactly as before the
+setting existed. Files written for people (`report.md`, a bench run's `summary.txt` and pictures) follow
 the setting ([docs/settings.md](docs/settings.md#what-never-changes-machine-output)).
 
 `scrimmage-mcp` speaks MCP over stdio and has no flags (it doesn't print help). Give agents absolute paths for configs and scenarios: relative ones resolve against the MCP server's working directory.

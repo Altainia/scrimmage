@@ -3,9 +3,10 @@ lines, air and clearance lines, a setup refusal, and a sweep's and a spread's ta
 setting existed, byte for byte, under Imperial and under Metric.
 
 MAIN holds the text main (before the setting) wrote for each case below, captured by running main's code on the same
-files (sub-project 20a, Task 5). It is pinned here so the check needs no copy of main. The cases are the example
-block tests, changed so each reaches a line that names a unit: meters (a drive, a move or joint check in "m", the
-partner's overlap), inches with their trailing zeros ("0.0 in", "11.0 in", "120.0 psi") and psi."""
+files (sub-project 20a, Task 5; the two spread refusals in its fix round). It is pinned here so the check needs no
+copy of main. The cases are the example block tests, changed so each reaches a line that names a unit: meters (a
+drive, a move or joint check in "m", the partner's overlap), inches with their trailing zeros ("0.0 in", "11.0 in",
+"120.0 psi") and psi."""
 from __future__ import annotations
 
 import asyncio
@@ -38,10 +39,20 @@ CASES = {
                 'that = { joint = { name = "elevator.stage1", above = 0.5, unit = "m" } }\n'),
 }
 
+# the same, run through MCP test_spread: its refusals, made before any run, are machine text too
+SPREADS = {
+    "spread inside the robot": ("intake", "spread.test.toml",
+                                [("floor_spread = { offset_in = [-6.0, 0.0, 6.0] }",
+                                  "floor_spread = { distance_in = [1.0] }")]),
+    "spread partner overlap": ("intake", "spread.test.toml",
+                               [("floor_spread = { offset_in = [-6.0, 0.0, 6.0] }",
+                                 "floor_spread = { offset_in = [0.0] }\npartner = { ahead_in = 5.0 }")]),
+}
+
 
 def case_file(tmp: Path, name: str) -> Path:
     """The case's example folder copied into `tmp`, with its test file changed; the test file's path."""
-    folder, test, change = CASES[name]
+    folder, test, change = {**CASES, **SPREADS}[name]
     work = tmp / name.replace(" ", "_")
     shutil.copytree(EXAMPLES / folder, work, ignore=shutil.ignore_patterns("*-runs"))
     path = work / test
@@ -73,6 +84,12 @@ def machine_text(tmp: Path) -> dict:
     shutil.copytree(EXAMPLES / "intake", tmp / "intake", ignore=shutil.ignore_patterns("*-runs"))
     spread = asyncio.run(mcp_server.test_spread(str(tmp / "intake" / "spread.test.toml")))
     out["spread"] = [spread["sentence"], (Path(spread["spread_folder"]) / "table.csv").read_text(encoding="utf-8")]
+    for name in SPREADS:
+        try:
+            spread = asyncio.run(mcp_server.test_spread(str(case_file(tmp, name))))
+            out[name] = [spread["sentence"], (Path(spread["spread_folder"]) / "table.csv").read_text(encoding="utf-8")]
+        except mcp_server.ToolError as e:
+            out[name] = {"error": str(e)}
     return out
 
 
@@ -152,6 +169,10 @@ MAIN: dict = {
          "on the center line,0,59.06,0,0,0,finished,yes,1 of 1 made it in (100%)\n"
          "6 in left,6,59.06,0,0,0,timed out,no,waiting for a ball to reach intake.hopper timed out at 7.3 s (block 3); "
          "0 of 1 made it in (0%); 1 stuck in the robot\n"],
+    "spread inside the robot":
+        {"error": "the floor spread puts the ball inside the robot at 1 in ahead: start the distance at 36 in or more"},
+    "spread partner overlap":
+        {"error": "the partner robot (Setup) starts inside the robot (their outlines overlap by 0.75 m)"},
 }
 
 

@@ -306,3 +306,24 @@ def test_partner_conditions(tmp_path):
     alone = _program(tmp_path, "", expect_moved)
     assert [p["message"] for p in problems(alone, world_for(alone))] == [
         "there's no partner robot; add one in Setup"]
+
+
+def test_setup_partner_words_fall_back_to_the_configs_meters(units):
+    """Setup's partner refusal is in the Units setting only from a PartnerOverlap; any other cause (and machine text)
+    keeps the config's words, meters as before the setting."""
+    from scrimmage import units as u
+    from scrimmage.blocks.run import setup_partner_words
+    from scrimmage.parts.model import PartError
+    from scrimmage.parts.partner import PartnerOverlap
+    overlap = PartnerOverlap("the robot", 0.2)
+    text = f"robot.toml: {overlap}"
+    assert str(overlap) == "[partner] starts inside the robot (their outlines overlap by 0.20 m)"
+    assert setup_partner_words(text, overlap) == \
+        "the partner robot (Setup) starts inside the robot (their outlines overlap by 7.87 in)"
+    meters = "the partner robot (Setup) starts inside the robot (their outlines overlap by 0.20 m)"
+    assert setup_partner_words(text, PartError("something else")) == meters
+    assert setup_partner_words(text, None) == meters
+    with u.machine_text():
+        assert setup_partner_words(text, overlap) == meters
+    units("metric")
+    assert setup_partner_words(text, overlap).endswith("overlap by 200 mm)")

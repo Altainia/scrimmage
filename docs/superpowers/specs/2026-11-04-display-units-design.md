@@ -134,13 +134,17 @@ Each ruling is recorded in the build ledger with its reason and cost; the user-f
   MCP `test_run` words and a sweep's or spread's `table.csv` (inches and psi, with a drive's distance, a "m" joint and
   the partner's overlap in meters), written inside `units.machine_text()`. It also holds for scenario `report.json`
   and the MCP `run_scenario` check messages (meters), and for the MCP bench headlines (m/s, N, m). A robot config's
-  `[partner]` refusal is in meters too. Task 5 checked the Test tab against main on every example test plus eleven
+  `[partner]` refusal is in meters too, and so are MCP `test_sweep` and `test_spread`'s refusals (a spread's "inside
+  the robot" in inches, Setup's partner overlap in meters). Task 5 checked the Test tab against main on every example test plus eleven
   cases that reach each unit-bearing line, and `tests/test_units_machine_text.py` pins main's text.
 - **Human files follow the setting when written:** MCP `bench_run` and `bench_compare` write `summary.txt` and their
   pictures in the room's setting; only the text returned to the agent is fixed.
 - **The Measure tab's new-column defaults:** lb or kg for mass, lbf (`lb`) or N for force.
 - **The field drawing's grid:** every 5 ft, labeled in feet, in Imperial; every 1 m in Metric.
 - **A units change clears the Test tab's undo history** (its steps hold numbers in the old units).
+- **-0° is shown as 0°.** A joint's angle in a Test-tab message (`_value`) adds `+ 0.0` after rounding, so a joint at
+  rest reads "0°" where main could say "-0°", in machine text too. A deliberate fix, harmless to anything reading it.
 - **Known gaps, for a later cleanup:** the Test tab's sweep and spread tables show inches whatever the setting (they
   come from the fixed `table.csv`); the launcher model's own charts and the CLI's printed sweep and compare tables
-  keep their fixed units; a bench sweep's chart axis and the stage's swept-key column show the file's form.
+  keep their fixed units; a bench sweep's chart axis and the stage's swept-key column show the file's form; a run kept
+  inside a sweep or spread shows the table's old words (they are written once, during the run).

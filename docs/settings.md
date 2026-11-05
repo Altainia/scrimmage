@@ -99,8 +99,13 @@ before the setting existed, so nothing that reads it breaks:
   is inches, a test's `signals.csv` keeps inches, psi and degrees, and a bench `results.csv` has `speed_m_s`.
 - **A scenario's `report.json`** and the MCP `run_scenario` result keep their check messages in meters ("pose:
   0.40 m from target").
-- **The Test tab's machine text** keeps its old words: the MCP `test_run` outcome and check lines, and a sweep's or
-  floor spread's `table.csv`, are in inches and psi as they always were (and meters for a drive's distance).
+- **The Test tab's machine text** keeps its old words: the MCP `test_run`, `test_sweep` and `test_spread` results
+  (their outcomes, check lines and refusals) and a sweep's or floor spread's `table.csv`. They are in inches and psi
+  as they always were, with one decimal where they had one ("120.0 psi", "0.0 in"), except for three things that
+  were always in meters:
+  - a drive's distance ("didn't reach 4 m in 0.5 s (went 0.43 m)");
+  - a move or joint check whose block `unit` is "m" ("stopped at 0 m short of 0.5 m");
+  - Setup's partner overlap ("the partner robot (Setup) starts inside the robot (their outlines overlap by 0.75 m)").
 - **The MCP bench headlines** (`bench_run`, `bench_compare`) stay in m/s, newtons and meters. The files those tools
   write for people (`summary.txt`, the pictures) follow the setting, so the Bench tab shows them in your units.
 - **A message about a file's own numbers** names them in the file's units: a robot config's `[partner]` that starts
@@ -142,6 +147,8 @@ line, and the default is used.
 
 - **The Test tab's sweep and floor spread tables** show inches whatever the setting. They are read from the run's
   `table.csv`, which keeps its old words (above). `scrimmage test spread` prints the same table.
+- **A run kept inside a sweep or a floor spread**, opened from its row, shows those same old words (its outcome and
+  checks, such as "didn't reach 4 m"), whatever the setting: they are written once, during the run, for the table.
 - **The launcher model's own output** (`scrimmage launcher run`: its table and its downrange and lateral charts) and
   the tables `scrimmage bench sweep` and `scrimmage bench compare` print keep their fixed units (m, m/s, N).
 - **A bench sweep's From and To boxes** follow the setting, but the sweep chart's x axis and the stage table's

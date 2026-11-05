@@ -128,12 +128,19 @@ def test_machine_output_is_what_the_code_keeps():
     from test_units_machine_text import MAIN
     doc = flat(text())
     assert MAIN["drive"]["outcome"].endswith("m in 0.5 s (went 0.43 m)")
-    assert "(and meters for a drive's distance)" in doc and "in inches and psi as they always were" in doc
+    assert "in inches and psi as they always were" in doc
+    for case in ("drive", "move m", "partner overlap"):    # the three always in meters, quoted as main wrote them
+        outcome = MAIN[case].get("outcome") or MAIN[case]["error"]
+        assert re.search(r"\d m\b", outcome), case
+    assert "(\"didn't reach 4 m in 0.5 s (went 0.43 m)\")" in doc and '("stopped at 0 m short of 0.5 m")' in doc
+    assert '("the partner robot (Setup) starts inside the robot (their outlines overlap by 0.75 m)")' in doc
+    assert MAIN["spread partner overlap"]["error"] == \
+        "the partner robot (Setup) starts inside the robot (their outlines overlap by 0.75 m)"
     assert '("pose: 0.40 m from target")' in doc
     assert units.MACHINE == "imperial"
     for known in ("**The Test tab's sweep and floor spread tables**", "**The launcher model's own output**",
                   "**A bench sweep's From and To boxes**", "**Changing Units clears the Test tab's undo history**",
-                  "**Another open tab or editor**"):
+                  "**Another open tab or editor**", "**A run kept inside a sweep or a floor spread**"):
         assert known in doc, known
 
 
@@ -148,3 +155,28 @@ def test_the_readme_and_the_agents_are_told():
     assert "MCP results, `report.json` and JSON and CSV numbers keep fixed units whatever the setting" in readme
     assert "Tool results are in fixed units whatever the web app's Units setting" in readme
     assert "Results are in fixed units whatever the web app's Units setting" in mcp_server.INSTRUCTIONS
+
+
+def test_the_quoted_pose_lines_are_what_the_check_prints():
+    """The getting-started scenario's printed lines and the scenario editor's example are the pose check's own words
+    in Imperial (the default), for a robot at (2.9805, 4.0388) facing 89.9° (the docs' 0.02 m, x=2.98, y=4.04)."""
+    import math
+    from types import SimpleNamespace
+
+    from scrimmage.checks import PoseCheck
+
+    def words(at, spec):
+        session = SimpleNamespace(world=SimpleNamespace(robot_pose=lambda: at))
+        return PoseCheck(spec, "doc").end(session)
+
+    at = (2.9805, 4.0388, math.radians(89.9))
+    target = {"x": 3.0, "y": 4.035, "heading": 90, "tol_xy": 0.2, "tol_heading": 6}
+    ok, fail = words(at, target), words(at, {**target, "x": 4.0})
+    assert ok.message == "pose within 0.02 m and 0.1° of target (x=2.98, y=4.04, heading=89.9°)"   # report.json
+    assert fail.message.startswith("pose: 1.02 m from target")
+    doc = (ROOT / "docs" / "getting-started" / "test-your-robot-code.md").read_text(encoding="utf-8")
+    assert f"  ok   [auto] {ok.shown()}\n" in doc
+    assert f"  FAIL [auto] {fail.shown()}\n" in doc
+    far = words((2.0, 4.035, 0.0), {"x": 68.46, "y": 4.035, "heading": 0})
+    assert far.message.startswith("pose: 66.46 m from target")
+    assert f"`{far.shown()}`" in flat((ROOT / "docs" / "scenario-editor.md").read_text(encoding="utf-8"))

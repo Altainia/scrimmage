@@ -51,8 +51,9 @@ Each run is kept next to the test file, where the app's Test tab can replay it.
 
 Results are in fixed units whatever the web app's Units setting (Imperial or Metric): numbers are SI unless a key
 names its unit (min_in, extension_m); run_scenario's messages are in meters, the bench headlines in m/s, N and m,
-and test_run's words in inches and psi (a drive's distance in meters). Files written for people (report.md,
-summary.txt, pictures) follow the setting.
+and the words of test_run, test_sweep and test_spread in inches and psi (a drive's distance, a block whose unit is
+"m" and Setup's partner overlap in meters). Files written for people (report.md, summary.txt, pictures) follow the
+setting.
 """
 
 
@@ -707,8 +708,10 @@ async def test_sweep(path: str, target: dict, values: list[float | str]) -> dict
         from .blocks import program as blocks_program
         from .blocks import store as blocks_store
         from .blocks.sweep import run_sweep
+        from . import units
         program = blocks_program.load(file)
-        folder = run_sweep(program, target, values, blocks_store.runs_dir(file))
+        with units.machine_text():      # refusals too, as they always were, whatever the Units setting
+            folder = run_sweep(program, target, values, blocks_store.runs_dir(file))
         with open(folder / "table.csv", newline="", encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         meta = json.loads((folder / "sweep.json").read_text(encoding="utf-8"))
@@ -742,7 +745,9 @@ async def test_spread(path: str) -> dict:
         from .blocks import program as blocks_program
         from .blocks import store as blocks_store
         from .blocks.spread import run_spread
-        folder = run_spread(blocks_program.load(file), blocks_store.runs_dir(file))
+        from . import units
+        with units.machine_text():      # refusals too ("inside the robot"), as they always were, whatever the setting
+            folder = run_spread(blocks_program.load(file), blocks_store.runs_dir(file))
         with open(folder / "table.csv", newline="", encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         meta = json.loads((folder / "spread.json").read_text(encoding="utf-8"))
