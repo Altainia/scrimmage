@@ -57,7 +57,8 @@ PARSE = [
     ("length", "0", 0.0, 0.0),
     ("length", "1e6", 25400.0, 1000.0),
     ("length", ".5 in", 0.0127, "Units is set to Metric, so type mm here, not in (or change Units in Settings)"),
-    ("length", "4 m", '"m" isn\'t a unit for this: type a number in in', '"m" isn\'t a unit for this: type a number in mm'),
+    ("length", "4 m", "Units is set to Imperial, so type in here, not m (or change Units in Settings)", 4.0),
+    ("length", "4 lb", '"lb" isn\'t a unit for this: type a number in in', '"lb" isn\'t a unit for this: type a number in mm'),
     ("length", "", "Type a number in in", "Type a number in mm"),
     ("length", "four", "Type a number in in", "Type a number in mm"),
     ("field", "12.5 ft", 3.81, "Units is set to Metric, so type m here, not ft (or change Units in Settings)"),
@@ -95,6 +96,33 @@ def test_parse_both_systems(page):
                 assert g == {"error": want}, (system, case)
             else:
                 assert g == pytest.approx(want, rel=1e-9), (system, case)
+
+
+# Any length unit of the chosen system works in a length or field box (a tolerance typed "6 in", a sensor range
+# "2 ft"); the other system's are refused as any other unit of theirs is
+LENGTHS = [
+    ("field", "6 in", 0.1524, "Units is set to Metric, so type m here, not in (or change Units in Settings)"),
+    ("field", '6"', 0.1524, "Units is set to Metric, so type m here, not in (or change Units in Settings)"),
+    ("length", "1.5 ft", 0.4572, "Units is set to Metric, so type mm here, not ft (or change Units in Settings)"),
+    ("length", "2 cm", "Units is set to Imperial, so type in here, not cm (or change Units in Settings)", 0.02),
+    ("length", "0.3 m", "Units is set to Imperial, so type in here, not m (or change Units in Settings)", 0.3),
+    ("field", "30 cm", "Units is set to Imperial, so type ft here, not cm (or change Units in Settings)", 0.3),
+    ("field", "100 mm", "Units is set to Imperial, so type ft here, not mm (or change Units in Settings)", 0.1),
+    ("field", "12", 3.6576, 12.0),
+    ("speed", "3 in", '"in" isn\'t a unit for this: type a number in ft/s', '"in" isn\'t a unit for this: type a number in m/s'),
+]
+
+
+def test_a_length_box_takes_any_length_unit_of_the_system(page):
+    for column, system in ((2, "imperial"), (3, "metric")):
+        _switch(page, system)
+        got = page.evaluate("(cases) => cases.map(([k, t]) => U.parse(t, k))", [[c[0], c[1]] for c in LENGTHS])
+        for case, g in zip(LENGTHS, got):
+            want = case[column]
+            if isinstance(want, str):
+                assert g == {"error": want}, (system, case)
+            else:
+                assert g == pytest.approx(want, rel=1e-12), (system, case)
 
 
 def test_typed_values_round_trip(page):

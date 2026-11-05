@@ -135,8 +135,11 @@ const squash = (s) => s.replace(/\s+/g, "").toLowerCase();
 const NUMBER = /^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)\s*(.*?)\s*$/i;
 const SYSTEM_NAME = { imperial: "Imperial", metric: "Metric" };
 
+const LENGTH_KINDS = ["length", "field"];
+
 // What a typed value means, in SI: a bare number is in the shown unit; a number may also end with that unit
-// ("4 in", "100mm"). The other system's unit is refused, not converted, so a typo never slips in silently.
+// ("4 in", "100mm"), or, in a length or field box, any length unit of the system ("6 in" where ft is shown, "2 cm"
+// where mm is). The other system's unit is refused, not converted, so a typo never slips in silently.
 export function parse(text, kind) {
   const u = unit(kind);
   const m = NUMBER.exec(String(text ?? ""));
@@ -148,11 +151,18 @@ export function parse(text, kind) {
   if (!said || !table) return fromDisplay(v, kind);
   const names = (n) => (table.aliases[n] || [n]).map(squash);
   if (names(u.name).includes(said)) return fromDisplay(v, kind);
+  const lengths = LENGTH_KINDS.includes(kind) && table.lengths ? table.lengths : null;
+  if (lengths) {
+    const mine = Object.keys(lengths[system] || {}).find((n) => names(n).includes(said));
+    if (mine) return clean(v * lengths[system][mine]);
+  }
+  const refuse = (o) => ({ error: `Units is set to ${SYSTEM_NAME[system]}, so type ${u.name} here, not ${o} (or change Units in Settings)` });
   for (const other of table.systems) {
+    if (other === system) continue;
     const o = table.units[other][kind];
-    if (other !== system && o.name !== u.name && names(o.name).includes(said)) {
-      return { error: `Units is set to ${SYSTEM_NAME[system]}, so type ${u.name} here, not ${o.name} (or change Units in Settings)` };
-    }
+    if (o.name !== u.name && names(o.name).includes(said)) return refuse(o.name);
+    const theirs = lengths && Object.keys(lengths[other] || {}).find((n) => names(n).includes(said));
+    if (theirs) return refuse(theirs);
   }
   return { error: `"${m[2]}" isn't a unit for this: type a number${want}` };
 }

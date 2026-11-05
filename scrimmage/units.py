@@ -65,7 +65,7 @@ for _system in SYSTEMS:   # the same in both systems
 # What a typed value may end with for each unit, besides its name (compared ignoring case and spaces; see units.js
 # parse). A unit of the other system is refused with a plain message, never converted.
 ALIASES: dict[str, list[str]] = {
-    "in": ["in", "inch", "inches", '"'], "mm": ["mm"], "ft": ["ft", "foot", "feet", "'"], "m": ["m"],
+    "in": ["in", "inch", "inches", '"'], "mm": ["mm"], "cm": ["cm"], "ft": ["ft", "foot", "feet", "'"], "m": ["m"],
     "ft/s": ["ft/s", "fps"], "m/s": ["m/s"], "lb": ["lb", "lbs"], "kg": ["kg"], "lbf": ["lbf", "lb", "lbs"],
     "N": ["N"], "in·lbf": ["in·lbf", "in-lbf", "inlbf", "in*lbf", "in·lb", "in-lb", "inlb", "lbf·in", "lbf-in"],
     "N·m": ["N·m", "Nm", "N-m", "N*m"], "psi": ["psi"], "kPa": ["kPa"],
@@ -73,6 +73,10 @@ ALIASES: dict[str, list[str]] = {
     "lbf/in": ["lbf/in", "lb/in"], "N/m": ["N/m"], "°": ["°", "deg", "degrees"], "s": ["s", "sec"],
     "A": ["A"], "V": ["V"],
 }
+
+# The length units a length or field box takes, by system: the SI value of one. A box takes any of its system's
+# ("6 in" in a tolerance shown in ft, "2 cm" in one shown in mm); the other system's are refused (units.js parse).
+LENGTHS: dict[str, dict[str, float]] = {"imperial": {"in": IN, "ft": FT}, "metric": {"mm": 0.001, "cm": 0.01, "m": 1.0}}
 
 # The units a file's key can name (`diameter_in`, a measure file's `force_lb`), by quantity: the SI value (degrees
 # for an angle) of one. The page writes such a key in its own unit whatever the setting (U3; units.js toKey).
@@ -126,14 +130,16 @@ def number(shown: float, decimals: int) -> str:
     return text if text == "0" or shown >= 0 else "-" + text
 
 
-def fmt(value_si: float | None, kind: str, system: str | None = None) -> str:
-    """`value_si` in the system's unit (default: the setting), with its unit name: "4 in", "101.6 mm", "90°"."""
+def fmt(value_si: float | None, kind: str, system: str | None = None, fewer: int = 0) -> str:
+    """`value_si` in the system's unit (default: the setting), with its unit name: "4 in", "101.6 mm", "90°".
+    `fewer` shows that many fewer decimals than the table's (never below none), for a reading rather than a
+    setting: a seated depth's "1.5 in" or "38 mm"."""
     unit = _unit(kind, system)
     if value_si is None:
         return ""
     if not math.isfinite(value_si):
         return str(value_si)
-    text = number(to_display(value_si, kind, system), unit.decimals)
+    text = number(to_display(value_si, kind, system), max(0, unit.decimals - fewer))
     return f"{text}{unit.name}" if unit.name == "°" else f"{text} {unit.name}"
 
 
@@ -145,5 +151,6 @@ def table_json() -> dict:
         "units": {s: {k: {"name": u.name, "factor": u.factor_from_si, "decimals": u.decimals}
                       for k, u in TABLE[s].items()} for s in SYSTEMS},
         "aliases": ALIASES,
+        "lengths": LENGTHS,
         "keys": KEY_UNITS,
     }
