@@ -2242,7 +2242,7 @@ def test_the_blocks_show_the_chosen_units_and_write_the_files_own(test_page, tmp
       b('move').setFieldValue(50, 'TO');
       b('cond_pressure').setFieldValue(275.8, 'PSI');
     })()""")
-    page.evaluate("__scrimmageTest.saved")
+    _wait_file(lambda: _file_blocks(path)[-1]["that"] == {"partner_moved": {"at_least_in": 4.0}}, path)
     blocks = _file_blocks(path)
     assert blocks[0] == {"do": "move", "joint": "arm.pivot", "to": 0.05, "unit": "m"}
     assert blocks[1] == {"do": "drive", "distance": 0.3}                   # untouched: as it was
@@ -2262,8 +2262,7 @@ def test_a_new_move_in_metric_writes_meters(test_page, units):
       b.setFieldValue('len', 'UNIT');
       b.setFieldValue(25, 'TO');
     })()""")
-    page.evaluate("__scrimmageTest.saved")
-    assert _file_blocks(path)[0] == {"do": "move", "joint": "arm.pivot", "to": 0.025, "unit": "m"}
+    _wait_file(lambda: _file_blocks(path)[0] == {"do": "move", "joint": "arm.pivot", "to": 0.025, "unit": "m"}, path)
     assert page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).find((x) => x.type === 'move').getField('UNIT').getText()") == "mm"
 
 
@@ -2283,3 +2282,46 @@ def test_setups_partner_distance_typed_in_metric_writes_inches(test_page, tmp_pa
     page.fill("#test-partner-ahead", "2 ft")
     page.press("#test-partner-ahead", "Enter")
     _wait_file(lambda: (_partner_setup(path) or {}).get("ahead_in") == 24.0, path)
+
+
+def test_the_floor_spread_keeps_its_values_across_a_units_change(test_page, tmp_path):
+    """Steps half typed when Units changes: the untouched from and to (inches in the file) are shown again in mm, and
+    Enter writes what was meant, not 6 in read as 6 mm."""
+    path = _example(tmp_path, "intake", "spread.test.toml")
+    page, _ = test_page(path=path)
+    _open_setup(page)
+    page.wait_for_selector("#test-spread-count")
+    assert _toml(path)["setup"]["floor_spread"]["offset_in"] == [-6.0, 0.0, 6.0]
+    assert [page.input_value(f"#test-spread-offset_in-{k}") for k in ("from", "to")] == ["-6", "6"]
+    page.fill("#test-spread-offset_in-steps", "5")                  # half typed: Setup isn't drawn again
+    page_units(page, "metric")
+    page.wait_for_function("document.querySelector('#test-spread-offset_in-to').value === '152.4'")
+    assert page.input_value("#test-spread-offset_in-from") == "-152.4"
+    assert page.input_value("#test-spread-offset_in-steps") == "5"
+    assert page.get_attribute("#test-spread-offset_in-on", "id")      # (still there)
+    page.press("#test-spread-offset_in-steps", "Enter")
+    _wait_file(lambda: _toml(path)["setup"]["floor_spread"]["offset_in"] == [-6.0, -3.0, 0.0, 3.0, 6.0], path)
+    page.wait_for_function("document.querySelector('#test-spread-count').textContent === '5 runs'")
+
+
+def test_a_number_being_typed_in_a_block_when_units_change_is_read_as_typed(test_page, tmp_path):
+    """The block's editor is open with "2" (inches) when Units changes to Metric: it is committed as 2 in, then shown
+    as 50.8 mm; never read as 2 mm."""
+    page, path = test_page(path=_defenses_test(tmp_path, UNIT_BLOCKS))
+    move = "__scrimmageTest.workspace.getAllBlocks(false).find((b) => b.type === 'move')"
+    _click_field(page, move, "TO")
+    page.wait_for_selector(".blocklyHtmlInput")
+    page.keyboard.press("Control+A")
+    page.keyboard.type("2")
+    page_units(page, "metric")
+    page.wait_for_function(f"({move}).getFieldValue('TO') === 50.8")
+    _wait_file(lambda: _file_blocks(path)[0] == {"do": "move", "joint": "arm.pivot", "to": 0.0508, "unit": "m"}, path)
+    assert page.locator(".blocklyHtmlInput").count() == 0 or not page.is_visible(".blocklyHtmlInput")
+
+
+def test_a_partner_distance_typed_in_inches_is_written_as_typed(test_page, tmp_path):
+    page, path = test_page(path=_defenses_test(tmp_path, '[setup]\npartner = { ahead_in = 80 }\n\n' + SPIN.lstrip()))
+    _open_setup(page)
+    page.fill("#test-partner-ahead", "3.33333")
+    page.press("#test-partner-ahead", "Enter")
+    _wait_file(lambda: (_partner_setup(path) or {}).get("ahead_in") == 3.33333, path)

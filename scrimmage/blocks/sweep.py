@@ -43,6 +43,7 @@ from pathlib import Path
 
 import tomlkit
 
+from .. import units
 from ..cad.settings import REPLACE_WAITS, replace_file
 from ..config import build_world, load_config
 from ..parts.model import PartError, load_part
@@ -328,8 +329,9 @@ def run_sweep(program: Program, target: dict, values: list[float | str], base, o
         return made[i], {"target": target, "value": values[i], "index": i}
 
     rows = [{"value": v, "status": COULDNT_RUN, "outcome": "", "t_end": None, "checks": {}} for v in values]
-    return run_each(tmp, rows, attempt, record, lambda done, cancelled: _finish(
-        tmp, base, target, values, done, left, cancelled), on_progress)
+    with units.fixed(units.MACHINE):      # table.csv's words (outcomes, check columns) in one fixed system
+        return run_each(tmp, rows, attempt, record, lambda done, cancelled: _finish(
+            tmp, base, target, values, done, left, cancelled), on_progress)
 
 
 def run_each(tmp: Path, rows: list[dict], attempt, record, finish, on_progress=None) -> Path:

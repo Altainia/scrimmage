@@ -12,8 +12,9 @@ import { trackPanel } from "./trackplot.js";
 let rerendering = false;   // removing a focused input must not commit it
 
 export function guard(fn) {
+  const was = rerendering;     // a guard inside a guard (render -> renderTimeline) leaves the outer one on
   rerendering = true;
-  try { fn(); } finally { rerendering = false; }
+  try { fn(); } finally { rerendering = was; }
 }
 
 // A labeled field: `fieldIds` (one id or a list) say which errors render in its .field-msgs.
@@ -43,7 +44,8 @@ export function onCommit(el, fn) {
     committing = el.dataset.key ? { key: el.dataset.key, value: el.value } : null;
     try { fn(); } finally { committing = null; }
   };
-  el.addEventListener("change", run);
+  // (not while a re-render removes it: Chromium fires change on a focused, dirty box as it goes)
+  el.addEventListener("change", () => { if (!rerendering) run(); });
   el.addEventListener("blur", () => { if (el.dataset.dirty && !rerendering && el.isConnected) run(); });
   el.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && el.tagName === "INPUT" && el.type !== "checkbox") { e.preventDefault(); el.blur(); }

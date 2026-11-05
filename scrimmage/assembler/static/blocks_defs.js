@@ -240,6 +240,8 @@ function unitLabels(b) {
 
 export function showUnits(ws, from) {
   const B = window.Blockly;
+  // a number being typed in a block's editor: committed first, as typed (in the units it was typed in)
+  ws.hideChaff();
   B.Events.disable();
   try {
     for (const b of ws.getAllBlocks(false)) {

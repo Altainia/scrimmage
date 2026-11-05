@@ -67,3 +67,56 @@ def test_a_placement_label_in_both_systems(units):
     assert label(p, axes) == "6 in left 12 in ahead at 30°"
     units("metric")
     assert label(p, axes) == "152 mm left 305 mm ahead at 30°"
+
+
+# ---- machine text: a sweep's or spread's table.csv and MCP's test_run are in one fixed system (Imperial) ------------
+DRIVE = '[[block]]\ndo = "drive"\ndistance = 5.0\ntimeout = 0.3\n'
+
+
+def _sweep_rows(tmp_path, name):
+    import csv
+    from scrimmage.blocks.program import loads
+    from scrimmage.blocks.sweep import run_sweep
+    from test_blocks_run import write_test
+    folder = tmp_path / name
+    folder.mkdir()
+    path = write_test(folder, DRIVE)
+    out = run_sweep(loads(path.read_text(encoding="utf-8"), path), {"block": [0], "key": "distance"}, [5.0],
+                    folder / "runs")
+    with open(out / "table.csv", newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+def test_a_sweeps_table_is_written_in_imperial_whatever_the_setting(tmp_path, units):
+    imperial = _sweep_rows(tmp_path, "a")
+    assert imperial[0]["outcome"].startswith("drive (block 1) didn't reach 16.4 ft in 0.3 s"), imperial
+    units("metric")
+    assert _sweep_rows(tmp_path, "b") == imperial
+
+
+def test_a_spreads_table_and_sentence_are_written_in_imperial(tmp_path, units):
+    import csv
+    import json
+    from scrimmage.blocks.program import loads
+    from scrimmage.blocks.spread import run_spread
+    from test_blocks_spread import spread_test
+    units("metric")
+    path = spread_test(tmp_path, "offset_in = [0, 30]")
+    out = run_spread(loads(path.read_text(encoding="utf-8"), path), path.parent / "runs")
+    assert json.loads((out / "spread.json").read_text(encoding="utf-8"))["sentence"] == \
+        "picked up 1 of 2; missed at 30 in left"
+    with open(out / "table.csv", newline="", encoding="utf-8") as f:
+        assert [r["placement"] for r in csv.DictReader(f)] == ["on the center line", "30 in left"]
+
+
+def test_mcp_test_run_answers_in_imperial_whatever_the_setting(tmp_path, units):
+    import asyncio
+    import pytest
+    pytest.importorskip("mcp")
+    from scrimmage import mcp_server
+    from test_blocks_run import write_test
+    for system, name in (("imperial", "a"), ("metric", "b")):
+        units(system)
+        (tmp_path / name).mkdir()
+        info = asyncio.run(mcp_server.test_run(str(write_test(tmp_path / name, DRIVE))))
+        assert info["outcome"].startswith("drive (block 1) didn't reach 16.4 ft in 0.3 s"), (system, info["outcome"])

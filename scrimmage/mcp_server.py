@@ -636,26 +636,33 @@ async def test_run(path: str) -> dict:
     file = _test_file(path)
 
     def work():
-        from .blocks import program as blocks_program
-        from .blocks import run as blocks_run
-        from .blocks import store as blocks_store
-        program = blocks_program.load(file)
-        result = blocks_run.TestRun(blocks_run.world_for(program), program).run()
-        folder = blocks_store.save_run(result, program, blocks_store.runs_dir(file))
-        return {"status": result.status, "outcome": result.outcome, "passed": result.passed,
-                "t_end": result.t_end,
-                "checks": [{"line": c["line"], "passed": c["passed"]} for c in result.checks],
-                "hung": list(result.hung), "signals": _signal_summary(result.signals),
-                "counts": result.counts, "feeds": result.feeds, "seed": result.seed,
-                "marks": list(result.marks), "notes": list(result.notes), "goals": result.goals,
-                "air": result.air, "air_lines": blocks_run.air_lines(result),
-                "clearance": result.clearance, "clearance_lines": blocks_run.clearance_lines(result),
-                "run_folder": str(folder.resolve())}
+        from . import units
+        with units.fixed(units.MACHINE):      # the words in one fixed system, whatever the Units setting
+            return _test_run(file)
 
     try:
         return await asyncio.to_thread(work)
     except _test_errors() as e:
         raise ToolError(str(e)) from None
+
+
+def _test_run(file) -> dict:
+    """test_run's work: run the test, keep the run, and answer."""
+    from .blocks import program as blocks_program
+    from .blocks import run as blocks_run
+    from .blocks import store as blocks_store
+    program = blocks_program.load(file)
+    result = blocks_run.TestRun(blocks_run.world_for(program), program).run()
+    folder = blocks_store.save_run(result, program, blocks_store.runs_dir(file))
+    return {"status": result.status, "outcome": result.outcome, "passed": result.passed,
+            "t_end": result.t_end,
+            "checks": [{"line": c["line"], "passed": c["passed"]} for c in result.checks],
+            "hung": list(result.hung), "signals": _signal_summary(result.signals),
+            "counts": result.counts, "feeds": result.feeds, "seed": result.seed,
+            "marks": list(result.marks), "notes": list(result.notes), "goals": result.goals,
+            "air": result.air, "air_lines": blocks_run.air_lines(result),
+            "clearance": result.clearance, "clearance_lines": blocks_run.clearance_lines(result),
+            "run_folder": str(folder.resolve())}
 
 
 @server.tool()

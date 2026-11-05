@@ -412,8 +412,9 @@ def _conds(blocks, kind: str) -> list:
 
 # ---- plain words ----------------------------------------------------------------------------------------------------
 
-# a test file's own units (a block's `unit`, an `_in` key, psi) -> the kind they are shown as
-KEY_KINDS = {"in": "length", "m": "length", "psi": "pressure"}
+# a test file's own units (a block's `unit`, an `_in` key, psi) -> (the kind they are shown as, the SI value of one)
+KEY_KINDS = {"in": ("length", units.KEY_UNITS["length"]["in"]), "m": ("length", 1.0),
+             "psi": ("pressure", units.LBF / units.IN ** 2)}
 
 
 def _amount(x: float, unit: str, fewer: int = 0) -> str:
@@ -423,8 +424,8 @@ def _amount(x: float, unit: str, fewer: int = 0) -> str:
         return f"{x:g}°"
     if unit not in KEY_KINDS:
         return f"{x:g} {unit}"
-    si = x if unit == "m" else units.from_display(x, KEY_KINDS[unit], "imperial")
-    return units.fmt(si, KEY_KINDS[unit], fewer=fewer)
+    kind, si = KEY_KINDS[unit]
+    return units.fmt(x * si, kind, fewer=fewer)
 
 
 def a_piece(kinds: dict | None) -> str:

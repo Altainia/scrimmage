@@ -15,6 +15,8 @@ results, report.json, CSVs, files) stays SI and never comes through here.
 from __future__ import annotations
 
 import math
+from contextlib import contextmanager
+from contextvars import ContextVar
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 from typing import NamedTuple
 
@@ -89,8 +91,27 @@ KEY_UNITS: dict[str, dict[str, float]] = {
 }
 
 
+# Machine-readable text (a sweep's or spread's table.csv, MCP results) is written in one fixed system, whatever the
+# setting: Imperial, the Test tab's words before the setting existed (inches, psi). `with fixed(MACHINE):` makes it
+# the default for the code inside (this thread or task only), so the words built there needn't be passed a system.
+MACHINE = "imperial"
+_fixed: ContextVar[str | None] = ContextVar("units_fixed", default=None)
+
+
+@contextmanager
+def fixed(system: str):
+    """Format in `system` by default inside the `with`, instead of the Units setting."""
+    if system not in TABLE:
+        raise ValueError(f"unknown unit system {system!r}; imperial or metric")
+    token = _fixed.set(system)
+    try:
+        yield
+    finally:
+        _fixed.reset(token)
+
+
 def _unit(kind: str, system: str | None) -> Unit:
-    system = current_units() if system is None else system
+    system = (_fixed.get() or current_units()) if system is None else system
     if system not in TABLE:
         raise ValueError(f"unknown unit system {system!r}; imperial or metric")
     if kind not in TABLE[system]:

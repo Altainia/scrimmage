@@ -345,7 +345,8 @@ def run_spread(program: Program, base, on_progress=None, cancel: threading.Event
     ps = placements(spread, found[1])
     names = varying(spread)
     kind = spread_kind(world, found[0])
-    labels = placement_labels(ps, names, kind)
+    with units.fixed(units.MACHINE):        # table.csv's and spread.json's words in one fixed system
+        labels = placement_labels(ps, names, kind)
     at = not worded(names, kind)
     base = Path(base)
     tmp = store.new_sweep_folder(base, prefix="spread")
@@ -356,8 +357,10 @@ def run_spread(program: Program, base, on_progress=None, cancel: threading.Event
 
     rows = [{"placement": labels[i], **p, "status": COULDNT_RUN, "picked": False, "outcome": ""}
             for i, p in enumerate(ps)]
-    return run_each(tmp, rows, lambda i: TestRun(world, program, placement=ps[i]).run(cancel=cancel), record,
-                    lambda done, cancelled: _finish(tmp, base, spread, ps, labels, at, done, cancelled), on_progress)
+    with units.fixed(units.MACHINE):
+        return run_each(tmp, rows, lambda i: TestRun(world, program, placement=ps[i]).run(cancel=cancel), record,
+                        lambda done, cancelled: _finish(tmp, base, spread, ps, labels, at, done, cancelled),
+                        on_progress)
 
 
 def _finish(tmp: Path, base: Path, spread: dict, ps: list, labels: list, at: bool, rows: list,

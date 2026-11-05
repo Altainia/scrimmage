@@ -88,8 +88,8 @@ export function onChange(fn) {
   return () => listeners.delete(fn);
 }
 
-function unit(kind) {
-  const u = table && table.units[system] && table.units[system][kind];
+function unit(kind, sys = system) {
+  const u = table && table.units[sys] && table.units[sys][kind];
   if (!u) {
     if (table) throw new Error(`unknown kind "${kind}"; one of ${table.kinds.join(", ")}`);
     return { name: "", factor: 1, decimals: 10 };   // the table hasn't loaded: SI, unnamed
@@ -102,7 +102,7 @@ const clean = (x) => (Number.isFinite(x) ? +x.toPrecision(15) : x);
 
 export function name(kind) { return unit(kind).name; }
 export function toDisplay(si, kind) { return clean(si * unit(kind).factor); }
-export function fromDisplay(v, kind) { return clean(v / unit(kind).factor); }
+export function fromDisplay(v, kind, sys = system) { return clean(v / unit(kind, sys).factor); }
 
 // v to `decimals` places, trailing zeros trimmed, never "-0": the number as written rounded (6.35, not the binary
 // 6.3499...), a tie away from zero, as scrimmage/units.py number() does
@@ -139,26 +139,27 @@ const LENGTH_KINDS = ["length", "field"];
 
 // What a typed value means, in SI: a bare number is in the shown unit; a number may also end with that unit
 // ("4 in", "100mm"), or, in a length or field box, any length unit of the system ("6 in" where ft is shown, "2 cm"
-// where mm is). The other system's unit is refused, not converted, so a typo never slips in silently.
-export function parse(text, kind) {
-  const u = unit(kind);
+// where mm is). The other system's unit is refused, not converted, so a typo never slips in silently. `sys`: the
+// system the text was typed in, when it isn't the setting now (text kept across a Units change).
+export function parse(text, kind, sys = system) {
+  const u = unit(kind, sys);
   const m = NUMBER.exec(String(text ?? ""));
   const want = u.name ? ` in ${u.name}` : "";
   if (!m) return { error: `Type a number${want}` };
   const v = Number(m[1]);
   if (!Number.isFinite(v)) return { error: `Type a number${want}` };
   const said = squash(m[2]);
-  if (!said || !table) return fromDisplay(v, kind);
+  if (!said || !table) return fromDisplay(v, kind, sys);
   const names = (n) => (table.aliases[n] || [n]).map(squash);
-  if (names(u.name).includes(said)) return fromDisplay(v, kind);
+  if (names(u.name).includes(said)) return fromDisplay(v, kind, sys);
   const lengths = LENGTH_KINDS.includes(kind) && table.lengths ? table.lengths : null;
   if (lengths) {
-    const mine = Object.keys(lengths[system] || {}).find((n) => names(n).includes(said));
-    if (mine) return clean(v * lengths[system][mine]);
+    const mine = Object.keys(lengths[sys] || {}).find((n) => names(n).includes(said));
+    if (mine) return clean(v * lengths[sys][mine]);
   }
-  const refuse = (o) => ({ error: `Units is set to ${SYSTEM_NAME[system]}, so type ${u.name} here, not ${o} (or change Units in Settings)` });
+  const refuse = (o) => ({ error: `Units is set to ${SYSTEM_NAME[sys]}, so type ${u.name} here, not ${o} (or change Units in Settings)` });
   for (const other of table.systems) {
-    if (other === system) continue;
+    if (other === sys) continue;
     const o = table.units[other][kind];
     if (o.name !== u.name && names(o.name).includes(said)) return refuse(o.name);
     const theirs = lengths && Object.keys(lengths[other] || {}).find((n) => names(n).includes(said));

@@ -177,6 +177,7 @@ function unitsChanged() {
     fitHeads();
   }
   t.shownUnits = units.system;
+  floorUnits();
   t.setupKey = null;
   renderSetup();
 }
@@ -526,8 +527,9 @@ function numberBox(id, value, label, commit, blank = null) {
 }
 
 // A box for a length, weight or speed (`kind`) in the Units setting: `si` shows in the unit chosen, and commit gets
-// SI, rounded as typed values are; the exact value it showed while its text is unchanged.
-function measureBox(id, si, kind, label, commit) {
+// SI (or `toFile(si)`, a key with its own unit), rounded once, to a millionth of that unit; the exact value it showed
+// while its text is unchanged.
+function measureBox(id, si, kind, label, commit, toFile = (x) => x) {
   const el = h("input", { id, class: "test-num", inputmode: "decimal", autocomplete: "off", "aria-label": label });
   showMeasure(el, si, kind);
   el.dataset.orig = el.value;
@@ -537,7 +539,7 @@ function measureBox(id, si, kind, label, commit) {
     const why = v === null ? `type a number in ${units.name(kind)}` : measureError(v);
     if (why) { t.setupError = `${label}: ${why}`; renderSetupError(); el.value = el.dataset.orig; return; }
     el.dataset.orig = el.value.trim();
-    commit(round6(v));
+    commit(round6(toFile(v)));
   };
   el.addEventListener("change", send);
   el.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); send(); } });
@@ -545,7 +547,7 @@ function measureBox(id, si, kind, label, commit) {
 }
 
 // Try values… for an SI number shown in the Units setting: from and to in the unit shown, sent in SI
-const measured = (label, target, si, kind, extra = {}) => ({ label, target, value: units.toDisplay(Number(si), kind),
+const measured = (label, target, si, kind, extra = {}) => ({ label, target, value: +units.toDisplay(Number(si), kind).toPrecision(6),
   unit: units.name(kind), scale: units.fromDisplay(1, kind), ...extra });
 
 // Robot edits go one at a time, each built (`make()`) from the robot as the last one left it, with its version: two
@@ -651,7 +653,7 @@ function partnerBox() {
     parts.push(h("div", { class: "test-setup-grid" },
       h("label", { for: "test-partner-ahead", text: "Ahead of my robot by" }),
       h("div", { class: "row" }, measureBox("test-partner-ahead", p.ahead_in * IN, "length",
-        `Partner robot: ahead of my robot by (${units.name("length")})`, (v) => setPartner("ahead_in", round6(v / IN))),
+        `Partner robot: ahead of my robot by (${units.name("length")})`, (v) => setPartner("ahead_in", v), (si) => si / IN),
       h("span", { text: units.name("length") })),
       h("label", { for: "test-partner-facing", text: "Facing" }), sel,
       h("span", { class: "test-setup-label", text: "Drive" }),
@@ -674,13 +676,15 @@ function addStationBlocks() {
 
 // -- the floor spread: a draft of the boxes ({axis: {on, from, to, steps}}), written to the test when it makes at
 // most MAX_SPREAD runs
-// (offset and distance: inches in the file, in the Units setting's length in the boxes)
-const floorKey = (fs) => canon([fs, units.system]);
+// (offset and distance: inches in the file, in the Units setting's length in the boxes, `t.floorSystem`'s: a Units
+// change converts the draft, floorUnits)
+const floorKey = (fs) => canon(fs);
 function floorDraft() {
   const fs = (headOf(t.ws).setup || {}).floor_spread || {};
   const key = floorKey(fs);
   if (t.floor && t.floorFor === key) return t.floor;
   t.floorFor = key;
+  t.floorSystem = units.system;
   const ball = floorBall() || {};
   t.floor = Object.fromEntries(FLOOR_AXES.map(([axis, , from, to, steps]) => {
     const text = (x) => (LENGTH_AXES.includes(axis) ? units.shown(x * IN, "length") : fmt(x));
@@ -732,6 +736,35 @@ function floorSpread(draft) {
   if (!Object.keys(spread).length) return { error: `Tick an axis to spread the ${floorKind() ? "piece" : "ball"} over`, spread, runs: 0 };
   if (runs > MAX_SPREAD) return { error: `${runs} runs: at most ${MAX_SPREAD} runs; use fewer steps`, runs };
   return { spread, runs };
+}
+
+// A Units change: the draft's lengths in the new units (the file's own value shown again where a box still shows
+// it), in the boxes too, even when Setup isn't drawn again (another box is half typed); a box being typed in keeps
+// its text, which then means the new units.
+function floorUnits() {
+  const from = t.floorSystem;
+  t.floorSystem = units.system;
+  if (!t.floor || !from || from === units.system) return;
+  const fs = (headOf(t.ws).setup || {}).floor_spread || {};
+  for (const axis of LENGTH_AXES) {
+    const d = t.floor[axis], file = fs[axis] && fs[axis].length ? { from: fs[axis][0], to: fs[axis][fs[axis].length - 1] } : {};
+    for (const k of ["from", "to"]) {
+      let next = d[k];
+      if (file[k] !== undefined && d[k].trim() === shownIn(file[k] * IN, from)) next = units.shown(file[k] * IN, "length");
+      else {
+        const si = units.parse(d[k], "length", from);
+        if (typeof si === "number") next = units.shown(si, "length");
+      }
+      d[k] = next;
+      const el = document.getElementById(`test-spread-${axis}-${k}`);
+      if (el && el !== document.activeElement) el.value = el.dataset.orig = next;
+    }
+  }
+}
+// what units.shown gave for `si` in `system` (the draft's text before a Units change)
+function shownIn(si, system) {
+  const u = units.table.units[system].length;
+  return units.number(+(si * u.factor).toPrecision(15), u.decimals + 2);
 }
 
 function floorChanged() {
