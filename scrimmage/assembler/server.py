@@ -303,12 +303,13 @@ Robot (`/api/robot/*`):
   POST /api/robot/folder           -> body {path}; adds a parts folder to the library. A relative path resolves
         against the config's directory (~ is expanded); it must be an existing directory (else 400).
         Returns {ok: true}.
-  GET  /api/robot/code             -> {folder, display_folder, cwd, problem, info, checks, start, battery,
-        build_failed}: the
+  GET  /api/robot/code             -> {folder, display_folder, cwd, problem, problem_text, info, checks, start,
+        battery, build_failed}: the
         robot code panel. cwd is [robot_program] cwd as written (null without a [robot_program]); folder the
         absolute folder it names (display_folder relative to the working directory when under it), null when
         there is no program or a team folder isn't set. problem says why the code can't be used (an unset team
-        folder, a folder that isn't there, a folder with no robot project: robotcode.detect's summary), else null.
+        folder, a folder that isn't there, a folder with no robot project: robotcode.detect's summary), else null;
+        problem_text: the same as a finished sentence, which the page shows as it is.
         info: robotcode.ProjectInfo {folder, kind: java|robotpy, vendors, tuner_swerve, python, summary} or null;
         checks: robotcode.checklist [{id, ok: true|false|null (information), message, fix: build_agent|
         gradle_build|install_lockstep|null, detail}] ([] without info; they run programs, so this takes a moment).
@@ -1007,7 +1008,7 @@ class App:
 
     def _user_path(self, path, what: str) -> Path:
         if not isinstance(path, str) or not path.strip():
-            raise ApiError(400, f"path must be {what}")
+            raise ApiError(400, i18n.t("path must be {what}", what=what))
         p = Path(path).expanduser()
         return (p if p.is_absolute() else self.cwd / p).resolve()
 
@@ -1074,7 +1075,7 @@ class App:
         except ValueError as e:
             raise ApiError(400, str(e)) from None
         except OSError as e:
-            raise ApiError(500, f"can't save {settings.settings_path()}: {e.strerror or e}") from None
+            raise ApiError(500, i18n.t("can't save {path}: {why}", path=settings.settings_path(), why=e.strerror or e)) from None
         if "units" in changes and settings.overridden():
             settings.set_override(changes["units"])
         if "language" in changes and settings.language_overridden():
@@ -1090,7 +1091,7 @@ class App:
         """Remember where a team folder is on this computer; what is open is read again with it."""
         name, path = body.get("name"), body.get("path")
         if name not in teamfolders.FOLDERS:
-            raise ApiError(400, f"name must be one of {', '.join(teamfolders.FOLDERS)}")
+            raise ApiError(400, i18n.t("name must be one of {choices}", choices=', '.join(teamfolders.FOLDERS)))
         p = None
         if path is not None:
             p = self._user_path(path, "a folder path")
@@ -1099,7 +1100,7 @@ class App:
         try:
             teamfolders.set_folder(name, p)
         except OSError as e:
-            raise ApiError(500, f"can't save the team folders: {e.strerror or e}") from None
+            raise ApiError(500, i18n.t("can't save the team folders: {why}", why=e.strerror or e)) from None
         with self._lock:
             if self.mode == "robot":
                 if self.robot is not None and self.robot.doc is not None:
@@ -1167,7 +1168,7 @@ class App:
         if body.get("robot") is not None:
             robot = self._user_path(body.get("robot"), "the robot config the part is for")
             if not robot.is_file() or classify(robot) != "robot":
-                raise ApiError(400, f"{self._display(robot)} is not a robot config")
+                raise ApiError(400, i18n.t("{path} is not a robot config", path=self._display(robot)))
             parts_dir = robot.parent / "parts"
         return self.open_path(str(p), kind="import", parts_dir=parts_dir)
 
@@ -1216,7 +1217,7 @@ class App:
         if kind == "import":
             return self.new_import(body)
         if kind not in ("robot", "scenario", "session", "measure"):
-            raise ApiError(400, "kind must be robot, scenario, session, measure or import")
+            raise ApiError(400, i18n.t("kind must be robot, scenario, session, measure or import"))
         p = self._user_path(body.get("path"), "a file or folder path")
         if kind == "measure" and not p.name.lower().endswith(SUFFIX):
             p = p.with_name(p.name.removesuffix(".toml") + SUFFIX)
@@ -1228,12 +1229,12 @@ class App:
         text = None
         if kind == "robot":
             if body.get("template") not in ROBOT_TEMPLATES:
-                raise ApiError(400, f"template must be one of {', '.join(ROBOT_TEMPLATES)}")
+                raise ApiError(400, i18n.t("template must be one of {choices}", choices=', '.join(ROBOT_TEMPLATES)))
             text = templates.new_config(body["template"])
         elif kind == "scenario":
             robot = self._user_path(body.get("robot"), "the robot config the scenario runs")
             if not robot.is_file() or classify(robot) != "robot":
-                raise ApiError(400, f"{self._display(robot)} is not a robot config")
+                raise ApiError(400, i18n.t("{path} is not a robot config", path=self._display(robot)))
             text = templates.new_scenario(self._portable(robot, p.parent))
         elif kind == "measure":
             try:
@@ -1290,7 +1291,7 @@ class App:
                     return
             except OSError:
                 pass
-        raise ApiError(409, "a drive session is live")
+        raise ApiError(409, i18n.t("a drive session is live"))
 
     def _detach(self, reason: str, target: Path | None, initial: bool) -> bool:
         """No robot document, for `reason`; True when that changed."""
@@ -1307,8 +1308,8 @@ class App:
         target = self._scenario_config(sc)
         if target is None:
             if sc.doc is None:
-                reason = (f"the scenario {sc.path.name} has a TOML error, so its robot config isn't known; "
-                          "fix the scenario in a text editor")
+                reason = i18n.t("the scenario {name} has a TOML error, so its robot config isn't known; fix the scenario "
+                                "in a text editor", name=sc.path.name)
             else:
                 unset = unset_folder(_plain(sc.doc.get("config")))
                 reason = unset[1] if unset else 'this scenario names no robot config (config = "<robot config .toml>")'
@@ -1377,7 +1378,8 @@ class App:
             return None
         if self.robot is None:
             return self._rel(self.robot_missing)
-        return self._rel(f"{self.robot.path.name} has errors: " + "; ".join(e.message for e in self.result.errors))
+        return self._rel(i18n.t("{name} has errors: {errors}", name=self.robot.path.name,
+                                errors="; ".join(e.message for e in self.result.errors)))
 
     def _scenario_signature(self):
         r = self.scenario_result
@@ -1449,12 +1451,12 @@ class App:
         """`current` is a callable giving the document's version after a sync."""
         v = body.get("version")
         if not isinstance(v, int) or isinstance(v, bool):
-            raise ApiError(400, "version (the integer from the state) is required")
+            raise ApiError(400, i18n.t("version (the integer from the state) is required"))
         before = current()
         if self._sync() and current() != before:
             raise ApiError(409, FileChanged().message)
         if v != current():
-            raise ApiError(409, "the file changed (another tab?); the page has reloaded it")
+            raise ApiError(409, i18n.t("the file changed (another tab?); the page has reloaded it"))
 
     def _display(self, path: Path) -> str:
         try:
@@ -1656,7 +1658,7 @@ class App:
 
     def add_folder(self, path) -> dict:
         if not isinstance(path, str) or not path.strip():
-            raise ApiError(400, "path must be a folder path")
+            raise ApiError(400, i18n.t("path must be a folder path"))
         p = Path(path).expanduser()
         with self._lock:
             if not p.is_absolute():
@@ -1717,8 +1719,7 @@ class App:
             motor_slots = {m.name for m in world.motors} if world is not None else None
             return lambda doc: edits.set_motor(doc, b.get("slot"), motor_slots=motor_slots,
                                                **{k: b[k] for k in ("neutral", "invert") if k in b})
-        raise ApiError(400, f"unknown op {op!r} (add, remove, rename, attach, params, ids, start, battery, "
-                            "match_devices, motor)")
+        raise ApiError(400, i18n.t("unknown op {op} (add, remove, rename, attach, params, ids, start, battery, match_devices, motor)", op=repr(op)))
 
     def edit(self, body: dict) -> tuple[int, dict]:
         with self._lock:
@@ -1797,7 +1798,7 @@ class App:
                 self._sync()
                 raise ApiError(409, e.message) from None
             except OSError as e:
-                raise ApiError(500, f"can't write the file: {e}") from None
+                raise ApiError(500, i18n.t("can't write the file: {why}", why=e)) from None
             self._revalidate()
             self._revalidate_scenario(bump=True)
             return 200, {"ok": True, "version": self.robot.version}
@@ -1819,21 +1820,27 @@ class App:
         except ValueError:   # another drive (Windows)
             return target.as_posix()
 
-    def _program_folder(self) -> tuple[str | None, Path | None, str | None]:
+    def _program_folder(self, sentence: bool = False) -> tuple[str | None, Path | None, str | None]:
         """(the [robot_program] cwd as written, the folder it names, why it can't be used) for the robot document;
-        all None without a [robot_program]. Called with self._lock held."""
+        all None without a [robot_program]. With `sentence`, why is a finished sentence (the robot code panel shows
+        it as it is). Called with self._lock held."""
         raw = self.robot.doc.unwrap() if self.robot is not None and self.robot.doc is not None else {}
         rp = raw.get("robot_program")
         if not isinstance(rp, dict):
             return None, None, None
         cwd = rp.get("cwd", ".")
         if not isinstance(cwd, str):
-            return None, None, i18n.t("[robot_program] cwd must be a folder path, not {cwd}", cwd=repr(cwd))
+            return None, None, (i18n.t("[robot_program] cwd must be a folder path, not {cwd}.", cwd=repr(cwd)) if sentence
+                                else i18n.t("[robot_program] cwd must be a folder path, not {cwd}", cwd=repr(cwd)))
         try:
             folder = (self.robot.path.parent / teamfolders.expand(cwd)).resolve()
         except teamfolders.TeamFolderError as e:
-            return cwd, None, str(e)
+            why = str(e)    # teamfolders' words (the loader's too), not translated: made a sentence here
+            return cwd, None, (why[:1].upper() + why[1:] + ("" if why.endswith(".") else ".")) if sentence else why
         if not folder.is_dir():
+            if sentence:
+                return cwd, folder, i18n.t("The robot code folder {path} isn't there (was it moved?): pick it again.",
+                                           path=self._display(folder))
             return cwd, folder, i18n.t("the robot code folder {path} isn't there (was it moved?): pick it again",
                                        path=self._display(folder))
         return cwd, folder, None
@@ -1903,12 +1910,13 @@ class App:
             cwd, folder, problem = self._program_folder()
             out = {"folder": str(folder) if folder is not None else None,
                    "display_folder": self._display(folder) if folder is not None else None,
-                   "cwd": cwd, "problem": problem, "info": None, "checks": [], "start": self._start(),
-                   "battery": self._battery(), "build_failed": False}
+                   "cwd": cwd, "problem": problem, "problem_text": self._program_folder(sentence=True)[2], "info": None,
+                   "checks": [], "start": self._start(), "battery": self._battery(), "build_failed": False}
         if folder is not None and problem is None:   # outside the lock: the checks run programs
             info = robotcode.detect(folder)
             if info.kind is None:
                 out["problem"] = info.summary
+                out["problem_text"] = i18n.t("Nothing here scrimmage can start: no build.gradle or robot.py.")
             else:
                 out["info"] = _info_json(info)
                 failed = self._failed_build(folder)
@@ -1979,7 +1987,7 @@ class App:
         """Run one readiness fix (robotcode.run_fix) on the fix worker: one at a time."""
         fix = body.get("fix")
         if fix not in FIXES:
-            raise ApiError(400, f"fix must be one of {', '.join(FIXES)}")
+            raise ApiError(400, i18n.t("fix must be one of {choices}", choices=', '.join(FIXES)))
         with self._lock:
             _, folder, problem = self._program_folder()
         if folder is None or problem is not None:
@@ -2026,7 +2034,7 @@ class App:
     # -- scenario ---------------------------------------------------------------------------
     def _need_scenario(self) -> ConfigDoc:
         if self.scenario is None:
-            raise ApiError(404, "no scenario is open (scrimmage edit was given a robot config)")
+            raise ApiError(404, i18n.t("no scenario is open (scrimmage edit was given a robot config)"))
         return self.scenario
 
     def scenario_state(self) -> dict:
@@ -2074,10 +2082,10 @@ class App:
             try:
                 i = int(step)
             except (TypeError, ValueError):
-                raise ApiError(400, "step must be an integer") from None
+                raise ApiError(400, i18n.t("step must be an integer")) from None
             s = steps[i] if 0 <= i < len(steps) and isinstance(steps[i], dict) else None
             if s is None or not isinstance(s.get("inputs"), str):
-                raise ApiError(404, f"step {i} has no input track")
+                raise ApiError(404, i18n.t("step {step} has no input track", step=i))
             try:
                 track = load_track(sc.path.parent / s["inputs"])
             except TrackError as e:
@@ -2132,7 +2140,7 @@ class App:
             "sheet": lambda d: e.set_sheet(d, b.get("step"), b.get("spec")),
         }
         if op not in ops:
-            raise ApiError(400, f"unknown op {op!r} ({', '.join(ops)})")
+            raise ApiError(400, i18n.t("unknown op {op} ({choices})", op=repr(op), choices=', '.join(ops)))
         return ops[op]
 
     def _check_config_change(self, sc: ConfigDoc, text: str) -> None:
@@ -2179,7 +2187,7 @@ class App:
                 except EditError as e:
                     return 200, {"ok": False, "errors": [{"field": e.field, "message": e.message}]}
                 except OSError as e:
-                    return 200, {"ok": False, "errors": [{"field": "status", "message": f"can't write the file: {e}"}]}
+                    return 200, {"ok": False, "errors": [{"field": "status", "message": i18n.t("can't write the file: {why}", why=e)}]}
                 committed = True
             finally:
                 if not committed:
@@ -2208,7 +2216,7 @@ class App:
                 self._sync()
                 raise ApiError(409, e.message) from None
             except OSError as e:
-                raise ApiError(500, f"can't write the file: {e}") from None
+                raise ApiError(500, i18n.t("can't write the file: {why}", why=e)) from None
             self._scenario_changed(res)
             return 200, {"ok": True, "version": sc.version}
 
@@ -2267,20 +2275,20 @@ class App:
         """Make `path` the scenario document, as if it had been given to `scrimmage edit`; the robot document
         follows its config."""
         if not isinstance(path, str) or not path.strip():
-            raise ApiError(400, "path must be a scenario file path")
+            raise ApiError(400, i18n.t("path must be a scenario file path"))
         p = Path(path).expanduser()
         p = (p if p.is_absolute() else self.cwd / p).resolve()
         if not p.is_file() or classify(p) != "scenario":
-            raise ApiError(400, f"{self._display(p)} is not a scenario file")
+            raise ApiError(400, i18n.t("{path} is not a scenario file", path=self._display(p)))
         if self.runs.running:
-            raise ApiError(409, "a scenario run is in progress")
+            raise ApiError(409, i18n.t("a scenario run is in progress"))
         with self._lock:
             if self.test is not None and self.test.busy:
-                raise ApiError(409, "a test run is in progress")
+                raise ApiError(409, i18n.t("a test run is in progress"))
             try:
                 doc = ConfigDoc(p)
             except OSError as e:
-                raise ApiError(400, f"can't read {self._display(p)}: {e.strerror or e}") from None
+                raise ApiError(400, i18n.t("can't read {path}: {why}", path=self._display(p), why=e.strerror or e)) from None
             self._check_live_robot(self._scenario_config(doc))   # a live session keeps its robot document
             if self.scenario is not None:
                 doc.version = self.scenario.version + 1   # the page's long poll sees the new document
@@ -2348,12 +2356,12 @@ class App:
         if body.get("robot") is not None:
             robot = self._user_path(body.get("robot"), "the robot config the test is for")
             if not robot.is_file() or classify(robot) != "robot":
-                raise ApiError(400, f"{self._display(robot)} is not a robot config")
+                raise ApiError(400, i18n.t("{path} is not a robot config", path=self._display(robot)))
         else:
             with self._lock:
                 robot = self.robot.path if self.mode == "robot" and self.robot is not None else None
             if robot is None:
-                raise ApiError(400, "say which robot config the test is for (robot)")
+                raise ApiError(400, i18n.t("say which robot config the test is for (robot)"))
         with self._lock:
             self._check_can_open()
         text = self._starter_test(robot)
@@ -2363,9 +2371,9 @@ class App:
                 if test_session.write_new(p, text):
                     break
             except OSError as e:
-                raise ApiError(400, f"can't write {self._display(p)}: {e.strerror or e}") from None
+                raise ApiError(400, i18n.t("can't write {path}: {why}", path=self._display(p), why=e.strerror or e)) from None
         else:
-            raise ApiError(400, f"there are too many tests of {robot.name} already; delete some")
+            raise ApiError(400, i18n.t("there are too many tests of {name} already; delete some", name=robot.name))
         return self.open_path(str(p))
 
     def _starter_test(self, robot: Path, folder: Path | None = None) -> str:
@@ -2435,9 +2443,9 @@ class App:
             if not test.exists():
                 test_session.write_new(test, self._starter_test(standin, home))
         except OSError as e:
-            raise ApiError(400, f"can't write next to {self._display(home)}: {e.strerror or e}") from None
+            raise ApiError(400, i18n.t("can't write next to {path}: {why}", path=self._display(home), why=e.strerror or e)) from None
         except (ValueError, KeyError, TypeError) as e:   # a hand-edited stand-in that can't be read as one
-            raise ApiError(409, f"can't add the new parts to {standin.name}: {e}") from None
+            raise ApiError(409, i18n.t("can't add the new parts to {name}: {why}", name=standin.name, why=e)) from None
         return {**self.open_path(str(test)), "added": added}
 
     # -- runs -------------------------------------------------------------------------------
@@ -2501,7 +2509,7 @@ class App:
         run_id, _, name = rest.partition("/")
         p = self.runs.file(run_id, name) if run_id and name else None
         if p is None:
-            raise ApiError(404, "no such run file")
+            raise ApiError(404, i18n.t("no such run file"))
         return p
 
     # -- live -------------------------------------------------------------------------------
@@ -2566,10 +2574,10 @@ class App:
 
         discard = body.get("discard_recording", False)
         if not isinstance(discard, bool):
-            raise ApiError(400, "discard_recording must be true or false")
+            raise ApiError(400, i18n.t("discard_recording must be true or false"))
         real_ds = body.get("real_ds")
         if real_ds is not None and not isinstance(real_ds, bool):
-            raise ApiError(400, "real_ds must be true, false or null")
+            raise ApiError(400, i18n.t("real_ds must be true, false or null"))
         # under the lock from the robot check to the start: no scenario open or edit switches the robot document
         # in between (LiveManager never calls back into the app, so holding it here can't deadlock)
         with self._lock:
@@ -2615,10 +2623,10 @@ class App:
     def save_recording(self, body: dict) -> tuple[int, dict]:
         path = body.get("path")
         if not isinstance(path, str) or not path.strip():
-            raise ApiError(400, "path must be a file path")
+            raise ApiError(400, i18n.t("path must be a file path"))
         overwrite = body.get("overwrite", False)
         if not isinstance(overwrite, bool):
-            raise ApiError(400, "overwrite must be true or false")
+            raise ApiError(400, i18n.t("overwrite must be true or false"))
         p = Path(path).expanduser()
         p = (p if p.is_absolute() else self.cwd / p).resolve()
         config = self.live.status()["config"]
@@ -2744,16 +2752,16 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             n = int(self.headers.get("Content-Length") or 0)
         except ValueError:
-            raise ApiError(400, "bad Content-Length") from None
+            raise ApiError(400, i18n.t("bad Content-Length")) from None
         if n > MAX_BODY:
-            raise ApiError(413, "request too large")
+            raise ApiError(413, i18n.t("request too large"))
         raw = self.rfile.read(n) if n else b"{}"
         try:
             body = json.loads(raw or b"{}")
         except ValueError:
-            raise ApiError(400, "body is not JSON") from None
+            raise ApiError(400, i18n.t("body is not JSON")) from None
         if not isinstance(body, dict):
-            raise ApiError(400, "body must be a JSON object")
+            raise ApiError(400, i18n.t("body must be a JSON object"))
         return body
 
     def _handle(self, method: str) -> None:
@@ -2763,12 +2771,12 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             if url.path.startswith("/api/"):
                 if not self._authorized():
-                    raise ApiError(403, "missing or wrong token")
+                    raise ApiError(403, i18n.t("missing or wrong token"))
                 self._send(*self._api(method, url))
             elif method in ("GET", "HEAD"):
                 self._static(url.path)
             else:
-                raise ApiError(405, "method not allowed")
+                raise ApiError(405, i18n.t("method not allowed"))
         except (ApiError, SessionError) as e:
             self._send(e.status, {"ok": False, "error": e.message,
                                   "errors": [{"field": getattr(e, "field", "status"), "message": e.message}]})
@@ -2797,7 +2805,7 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             return int(since) if since is not None else None
         except ValueError:
-            raise ApiError(400, "since must be an integer") from None
+            raise ApiError(400, i18n.t("since must be an integer")) from None
 
     def _api(self, method: str, url) -> tuple:
         app, path = self.app, url.path
@@ -2813,7 +2821,7 @@ class _Handler(BaseHTTPRequestHandler):
             try:
                 n = int(self.headers.get("Content-Length") or 0)
             except ValueError:
-                raise ApiError(400, "bad Content-Length") from None
+                raise ApiError(400, i18n.t("bad Content-Length")) from None
             if n > part_session.MAX_UPLOAD:   # (not read: a body this large may be cut off)
                 raise ApiError(413, i18n.t("that file is too large to upload (over 512 MB)"))
             body = _Bounded(self.rfile, n)
@@ -2823,9 +2831,9 @@ class _Handler(BaseHTTPRequestHandler):
                     try:
                         files = [(f["name"], f["size"]) for f in json.loads(unquote(self.headers["X-Files"]))]
                     except (ValueError, TypeError, KeyError):
-                        raise ApiError(400, "X-Files must be a list of {name, size}") from None
+                        raise ApiError(400, i18n.t("X-Files must be a list of {{name, size}}")) from None
                     if not files:
-                        raise ApiError(400, "no files were sent")
+                        raise ApiError(400, i18n.t("no files were sent"))
                 return app.upload(body, n, self.headers.get("X-Filename"), files,
                                   again=self.headers.get("X-Import-Again") == "1")
             finally:
@@ -2902,7 +2910,7 @@ class _Handler(BaseHTTPRequestHandler):
                 return 200, app.live_stop()
             if path == "/api/live/save_recording":
                 return app.save_recording(body)
-        raise ApiError(404, "no such endpoint")
+        raise ApiError(404, i18n.t("no such endpoint"))
 
     def _app_api(self, method: str, url) -> tuple:
         app, path = self.app, url.path
@@ -2918,7 +2926,7 @@ class _Handler(BaseHTTPRequestHandler):
             return 200, app.get_folders()
         if method == "POST" and path == "/api/app/folders":
             return 200, app.set_folder(self._body())
-        raise ApiError(404, "no such endpoint")
+        raise ApiError(404, i18n.t("no such endpoint"))
 
     def _bench_api(self, method: str, url, bench: BenchSession) -> tuple:
         path, q = url.path, parse_qs(url.query)
@@ -2946,7 +2954,7 @@ class _Handler(BaseHTTPRequestHandler):
                 return bench.new_idea(body)
             if path in ("/api/bench/run", "/api/bench/sweep", "/api/bench/compare", "/api/bench/gallery"):
                 return self.app.bench_jobs.submit(bench, path.rsplit("/", 1)[1], body)
-        raise ApiError(404, "no such endpoint")
+        raise ApiError(404, i18n.t("no such endpoint"))
 
     def _test_api(self, method: str, url) -> tuple:
         app, path = self.app, url.path
@@ -2962,7 +2970,7 @@ class _Handler(BaseHTTPRequestHandler):
                     try:
                         data = test.run_file(rest[:-len(what) - 1], what).read_bytes()
                     except FileNotFoundError:   # pruned meanwhile
-                        raise ApiError(404, "that run is no longer kept") from None
+                        raise ApiError(404, i18n.t("that run is no longer kept")) from None
                     return 200, data, ctype
             return 200, test.run_result(rest)
         if method == "POST":
@@ -2975,7 +2983,7 @@ class _Handler(BaseHTTPRequestHandler):
                 return 200, test.cancel()
             if path == "/api/test/grip":
                 return app.test_grip(body)
-        raise ApiError(404, "no such endpoint")
+        raise ApiError(404, i18n.t("no such endpoint"))
 
     def _measure_api(self, method: str, url) -> tuple:
         app, path = self.app, url.path
@@ -2990,7 +2998,7 @@ class _Handler(BaseHTTPRequestHandler):
                 return 200, measure.fit(body)
             if path == "/api/measure/save":
                 return measure.save(body)
-        raise ApiError(404, "no such endpoint")
+        raise ApiError(404, i18n.t("no such endpoint"))
 
     def _part_api(self, method: str, url, part) -> tuple:
         path = url.path
@@ -3011,13 +3019,13 @@ class _Handler(BaseHTTPRequestHandler):
                 return 200, part.axis(body)
             if path == "/api/part/reimport":
                 return part.reimport(body)
-        raise ApiError(404, "no such endpoint")
+        raise ApiError(404, i18n.t("no such endpoint"))
 
     def _static(self, urlpath: str) -> None:
         form = _FORM.fullmatch(urlpath)
         if form is not None:   # a blank form to print: a plain link opens it, so it needs no token (it holds no data)
             if form.group(1) not in forms.TEST:
-                raise ApiError(404, "not found")
+                raise ApiError(404, i18n.t("not found"))
             self._send(200, forms.form_html(form.group(1)).encode("utf-8"), _TYPES[".html"])
             return
         rel = "index.html" if urlpath in ("", "/") else urlpath.lstrip("/")
@@ -3026,9 +3034,9 @@ class _Handler(BaseHTTPRequestHandler):
             target = (root / rel).resolve()
             target.relative_to(root)
         except (ValueError, OSError):
-            raise ApiError(404, "not found") from None
+            raise ApiError(404, i18n.t("not found")) from None
         if not target.is_file():
-            raise ApiError(404, "not found")
+            raise ApiError(404, i18n.t("not found"))
         body = target.read_bytes()
         if rel == "index.html":    # the page starts in the Theme setting: no light flash before theme.js runs
             body = body.replace(b'data-theme="system"', f'data-theme="{settings.load().theme}"'.encode(), 1)

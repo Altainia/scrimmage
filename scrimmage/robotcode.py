@@ -112,7 +112,7 @@ def detect(folder: Path) -> ProjectInfo:
     if (folder / "robot.py").is_file():
         vendors = _robotpy_vendors(folder)
         return ProjectInfo(folder, "robotpy", vendors, False, _venv_python(folder), " · ".join(["Python (RobotPy)", *vendors]))
-    return ProjectInfo(folder, None, [], False, None, "nothing here scrimmage can start: no build.gradle or robot.py")
+    return ProjectInfo(folder, None, [], False, None, i18n.t("nothing here scrimmage can start: no build.gradle or robot.py"))
 
 
 def program_table(info: ProjectInfo) -> dict:
@@ -262,7 +262,7 @@ def _stream(cmd: list[str], cwd: Path | None, env: dict | None, out: Callable[[s
         p = subprocess.Popen(cmd, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                              start_new_session=sys.platform != "win32", stderr=subprocess.STDOUT, text=True, errors="replace")
     except OSError as e:
-        line = f"can't run {cmd[0]}: {e.strerror or e}"
+        line = i18n.t("can't run {program}: {why}", program=cmd[0], why=e.strerror or e)
         out(line)
         return 127, [line]
     stopped = threading.Event()
@@ -299,11 +299,11 @@ def _stream(cmd: list[str], cwd: Path | None, env: dict | None, out: Callable[[s
         finished.set()
         timer.cancel()
     if cancelled.is_set():
-        line = "this was stopped (scrimmage edit was closed)"
+        line = i18n.t("this was stopped (scrimmage edit was closed)")
         out(line)
         return CANCELLED, [*tail, line][-DETAIL_LINES:]
     if stopped.is_set():
-        line = "this took too long and was stopped"
+        line = i18n.t("this took too long and was stopped")
         out(line)
         return TIMED_OUT, [*tail, line][-DETAIL_LINES:]
     return code, list(tail)

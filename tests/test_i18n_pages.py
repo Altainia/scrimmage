@@ -205,3 +205,17 @@ def test_a_recording_that_exists_says_so_by_its_type():
     from scrimmage.assembler.live import LiveError, RecordingTaken
     from scrimmage.assembler.recorder import RecordingError, RecordingExists
     assert issubclass(RecordingExists, RecordingError) and issubclass(RecordingTaken, LiveError)
+
+
+def test_the_code_panels_problem_comes_as_a_finished_sentence(start, tmp_path):
+    """The page shows problem_text as it is (no capitalizing or full stop added in JS, so a translation's own
+    punctuation stays); problem keeps its old words for the API."""
+    cfg = _robot(tmp_path)
+    cfg.write_text(cfg.read_text() + '\n[robot_program]\ncommand = ["./gradlew"]\ncwd = "moved"\n')
+    c = start(cfg)
+    b = c.get("/api/robot/code")[1]
+    assert b["problem"].startswith("the robot code folder moved isn't there")
+    assert b["problem_text"] == "The robot code folder moved isn't there (was it moved?): pick it again."
+    (tmp_path / "moved").mkdir()
+    b = c.get("/api/robot/code")[1]
+    assert b["problem_text"] == "Nothing here scrimmage can start: no build.gradle or robot.py."

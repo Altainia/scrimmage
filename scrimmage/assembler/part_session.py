@@ -795,7 +795,7 @@ class PartSession(_Session):
                 path = self._source_path()
             units = self.imp.units if self.imp is not None and (again or path == self._source_path()) else None
         if path is None:
-            raise SessionError(400, self._src_problem or "this import names no CAD file")
+            raise SessionError(400, self._src_problem or i18n.t("this import names no CAD file"))
         try:
             src = load_source(path, units)   # outside the lock: a big STEP takes a while
         except CadError as e:

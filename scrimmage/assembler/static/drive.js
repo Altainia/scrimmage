@@ -509,7 +509,8 @@ function render() {
 
 function renderHud(s) {
   const live = isLive(s);
-  const mode = live ? modeWord(s.mode) : "—";
+  // the chip says the mode Enable runs (the badge beside it says whether it is enabled), so "Disabled" isn't said twice
+  const mode = live ? modeWord(s.mode === "disabled" && MODES.includes(s.chosen_mode) ? s.chosen_mode : s.mode) : "—";
   const badge = live && s.enabled ? h("span", { class: "hud-badge hud-enabled", text: t("Enabled") })
     : h("span", { class: "hud-badge hud-disabled", text: t("Disabled") });
   const items = [

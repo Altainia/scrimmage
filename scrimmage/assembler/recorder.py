@@ -14,6 +14,7 @@ from pathlib import Path
 
 import tomlkit
 
+from scrimmage import i18n
 from scrimmage.driverstation import MATCH_KEYS, MatchSettings
 from scrimmage.tracks import PortInputs, Sample, write_track
 
@@ -148,27 +149,24 @@ class DriveRecorder:
         path, config = Path(path), Path(config)
         segments = self._timed()
         if not segments:
-            raise RecordingError("nothing was recorded")
+            raise RecordingError(i18n.t("nothing was recorded"))
         if path.suffix != ".toml":
-            raise RecordingError(f"{path.name} must end in .toml")
+            raise RecordingError(i18n.t("{name} must end in .toml", name=path.name))
         folder = path.parent / path.stem
         # an overwrite replaces only an earlier recording: NAME.toml starting with the marker line, and its
         # NAME/ folder of step CSVs (none of these refusals ends in "already exists": there's nothing to confirm)
         is_recording = path.is_file() and not path.is_symlink() and _is_recording(path)
         if (path.exists() or path.is_symlink()) and not is_recording:
-            raise RecordingError(f"{path.name} is not a recording made in the Drive tab, so it can't be replaced; "
-                                 "choose another name")
+            raise RecordingError(i18n.t("{name} is not a recording made in the Drive tab, so it can't be replaced; choose another name", name=path.name))
         if folder.exists() or folder.is_symlink():
             if not is_recording:
-                raise RecordingError(f"the folder {folder.name} exists without a recording {path.name}, so it "
-                                     "can't be replaced; choose another name")
+                raise RecordingError(i18n.t("the folder {name} exists without a recording {recording}, so it can't be replaced; choose another name", name=folder.name, recording=path.name))
             if not _recorder_made(folder):
-                raise RecordingError(f"the folder {folder.name} holds more than a recording's step CSVs, so it "
-                                     "can't be replaced; choose another name")
+                raise RecordingError(i18n.t("the folder {name} holds more than a recording's step CSVs, so it can't be replaced; choose another name", name=folder.name))
         if path.exists() and not overwrite:
-            raise RecordingExists(f"{path.name} already exists")
+            raise RecordingExists(i18n.t("{name} already exists", name=path.name))
         if folder.exists() and not overwrite:
-            raise RecordingExists(f"{folder.name} already exists")
+            raise RecordingExists(i18n.t("{name} already exists", name=folder.name))
         try:
             rel_config = Path(os.path.relpath(config.resolve(), path.parent.resolve())).as_posix()
         except ValueError:   # different drive
@@ -211,8 +209,7 @@ class DriveRecorder:
                 self._install(stage, tracks, folder, toml_tmp, path)
             except _RestoreFailed as e:
                 keep_stage = True
-                raise RecordingError(f"can't write {path.name} ({e.__cause__}), and the old recording couldn't be "
-                                     f"put back: it is kept in {stage}") from e.__cause__
+                raise RecordingError(i18n.t("can't write {name} ({cause}), and the old recording couldn't be put back: it is kept in {stage}", name=path.name, cause=e.__cause__, stage=stage)) from e.__cause__
         finally:
             if not keep_stage:
                 shutil.rmtree(stage, ignore_errors=True)

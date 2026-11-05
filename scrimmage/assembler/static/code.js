@@ -182,10 +182,11 @@ function render() {
   els.browse.textContent = s.cwd === null ? t("Browse…") : t("Change…");
   els.summary.hidden = !s.info;
   els.summary.replaceChildren(...(s.info ? [h("span", { class: "muted", text: t("Found:") + " " }), h("strong", { text: s.info.summary })] : []));
-  const problem = code.postError || s.problem;
+  // the panel's own problem comes as a finished sentence (problem_text); a refused folder pick is the refusal's words
+  const problem = code.postError || s.problem_text || s.problem;
   els.problem.hidden = !problem;
   els.problem.replaceChildren(...(problem ? [h("strong", { text: (code.postError ? t("Not used.") : t("Can't use the robot code.")) + " " }),
-    h("span", { text: upper(problem) + (/[.!?]$/.test(problem) ? "" : ".") }),
+    h("span", { text: code.postError ? upper(code.postError) + (/[.!?]$/.test(code.postError) ? "" : ".") : problem }),
     h("p", { class: "hint", text: t("Pick the folder that holds the robot project: build.gradle for Java, robot.py for Python (RobotPy).") })] : []));
   // 2. the checklist
   renderChecks();

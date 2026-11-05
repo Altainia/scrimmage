@@ -144,16 +144,24 @@ export function tn(singular, plural, count, params = {}) {
 
 // -- words that write themselves again ---------------------------------------------------------------------------
 const lives = new Set();     // [WeakRef(node or element), write]: dropped once the page has let go of the node
+let added = 0;
+
+function keep(target, write) {
+  lives.add([new WeakRef(target), write]);
+  if (++added % 200 === 0) {     // dialogs built on every open add their words each time: let go of the gone ones
+    for (const item of lives) if (!item[0].deref()) lives.delete(item);
+  }
+}
 
 export function live(fn) {
   const node = document.createTextNode(fn());
-  lives.add([new WeakRef(node), (n) => { n.data = fn(); }]);
+  keep(node, (n) => { n.data = fn(); });
   return node;
 }
 
 export function liveAttr(el, name, fn) {
   el.setAttribute(name, fn());
-  lives.add([new WeakRef(el), (e) => e.setAttribute(name, fn())]);
+  keep(el, (e) => e.setAttribute(name, fn()));
   return el;
 }
 

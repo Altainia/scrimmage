@@ -299,7 +299,7 @@ class LiveManager:
             self.stop()
             if not self.join(30):
                 log.warning("live: the session didn't stop in 30 s; not restarting it")
-                failed("the robot didn't stop within 30 s, so it wasn't started again")
+                failed(i18n.t("the robot didn't stop within 30 s, so it wasn't started again"))
                 return
             try:
                 self.start(path, speed, restarting=True, real_ds=real_ds)
