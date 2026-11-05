@@ -115,7 +115,7 @@ Scrimmage reads what the app is doing from the robot program's own reports: the 
 E-stop, the station, whether the FMS is attached, and the match time. It never acts on them: the physics and the
 scoring are the same whatever the mode.
 
-- **The Drive tab:** a box at the top of the Driver Station column says "The FRC Driver Station is driving", with
+- **The Drive tab:** a box under Start, above the Mode buttons, says "The FRC Driver Station is driving", with
   the mode ("Waiting for the Driver Station", "Teleop enabled", "Auto enabled", "Test enabled", "Disabled" or
   "Disabled (E-stopped)") and a line such as "Station red2 · FMS attached · match time 12.3 s". The Match section
   shows the station and FMS, read-only. Its **Match timer** box is checked whenever the app sends a match time. The
@@ -185,7 +185,7 @@ Poking the robot (dragging it, pushing it, moving game pieces) and **Reset robot
   an agent's `session_status` lists it under `warnings`. The Drive tab itself keeps saying "Waiting for the Driver
   Station".
 - **Stuck on "Waiting for the Driver Station":** check the app's Team Number (`127.0.0.1` or `localhost` on the same
-  PC, the simulation computer's IP otherwise), and the firewall on both computers (the three ports above).
+  PC, the simulation computer's IP otherwise; to be confirmed on a real Driver Station), and the firewall on both computers (the three ports above).
 - **The app connects, but the robot doesn't move:** enable it in the app, and check that the gamepad shows in the
   app's USB tab (the joystick order there is the robot's port order).
 - **Agents' set_mode is refused:** the session is a real-DS one. Start it again with `real_ds=false` to drive from

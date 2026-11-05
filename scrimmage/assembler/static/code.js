@@ -854,7 +854,14 @@ async function checkDevices(discard = false) {
     const { status, data } = await api("POST", "/api/robot/check", { discard_recording: discard, real_ds: realDs });
     const errors = data.errors || [];
     if (status === 200 && data.ok) {
-      code.run = { kind: "ok", text: "The robot is running, disabled, so scrimmage can see the devices your code makes. Enable it in the Drive tab to drive it." };
+      // the pick, else the config's default (a Drive tab pick not made yet)
+      let driven = realDs;
+      if (driven === null) {
+        const info = await api("GET", "/api/live/info");
+        driven = info.status === 200 && !!info.data.real_ds_default;
+      }
+      const enable = driven ? "Enable it in the FRC Driver Station app." : "Enable it in the Drive tab to drive it.";
+      code.run = { kind: "ok", text: `The robot is running, disabled, so scrimmage can see the devices your code makes. ${enable}` };
     } else if (errors.some((e) => e.field === "start/unpicked")) {
       await loadState();
       if (await pickStart()) return checkDevices(discard);

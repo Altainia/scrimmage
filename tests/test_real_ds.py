@@ -143,9 +143,6 @@ def test_real_ds_none_takes_the_configs_default(tmp_path):
 @pytest.mark.parametrize("kind,port", [(socket.SOCK_DGRAM, 1110), (socket.SOCK_STREAM, 1740)])
 def test_a_port_in_use_stops_the_start_before_the_robot_launches(tmp_path, kind, port):
     held = socket.socket(socket.AF_INET, kind)
-    held.bind(("0.0.0.0", port))
-    if kind == socket.SOCK_STREAM:
-        held.listen()
 
     async def main():
         s = Session(fake_config(tmp_path), real_ds=True, nt=False)
@@ -156,6 +153,9 @@ def test_a_port_in_use_stops_the_start_before_the_robot_launches(tmp_path, kind,
         finally:
             await s.stop()
     try:
+        held.bind(("0.0.0.0", port))
+        if kind == socket.SOCK_STREAM:
+            held.listen()
         asyncio.run(main())
     finally:
         held.close()
@@ -316,8 +316,8 @@ def test_serve_launch_tells_the_robot_to_listen_and_checks_it_does(tmp_path):
 def test_serve_launch_refuses_a_taken_ds_port(tmp_path, capsys):
     from scrimmage.__main__ import main
     held = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    held.bind(("0.0.0.0", 1110))
     try:
+        held.bind(("0.0.0.0", 1110))
         with pytest.raises(SystemExit) as e:
             main(["serve", str(fake_config(tmp_path)), "--real-ds", "--launch", "--no-nt"])
     finally:

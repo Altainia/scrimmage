@@ -760,13 +760,14 @@ class Bridge:
                 decided = True                     # released on purpose: real time whatever the speed
             if not decided and time.monotonic() - wall0 > DETECT_WINDOW:
                 decided = True
-                if self.speed != 1.0 and not self.held:
+                if self.speed != 1.0 and not self.held and not self.real_ds:
                     log.error("--speed %s needs the scrimmage_lockstep extension, but the robot program didn't "
                               "load it (RobotPy: add --scrimmage-lockstep)", "max" if self.speed is None else self.speed)
                     self.exit_code = 2
                     self.done.set()
                     return "done"
-                log.info("lockstep extension not loaded; running in real time")
+                log.info("lockstep extension not loaded; %s", REAL_DS_REASON if self.real_ds
+                         else "running in real time")
                 self._set_mode("realtime")
             target = time.monotonic() - wall0
             lag = target - (w.time - sim0)

@@ -13,6 +13,7 @@ import logging
 import math
 import os
 import socket
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -128,7 +129,7 @@ def _port_free(kind: int, port: int) -> bool:
     """Can this computer's DS port be bound now (nothing listens on it)? TCP binds as libuv does (SO_REUSEADDR), so
     a closed connection's leftovers don't count."""
     with socket.socket(socket.AF_INET, kind) as sock:
-        if kind == socket.SOCK_STREAM:
+        if kind == socket.SOCK_STREAM and sys.platform != "win32":   # on Windows it lets a bind succeed over a listener
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             sock.bind(("0.0.0.0", port))

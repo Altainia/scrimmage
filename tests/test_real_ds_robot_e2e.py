@@ -21,7 +21,7 @@ pytest.importorskip("scrimmage_lockstep")
 
 from fake_ds import FakeDS  # noqa: E402
 from scrimmage.driverstation import REAL_DS_DRIVING, REAL_DS_WAITING  # noqa: E402
-from scrimmage.session import Session, SessionError  # noqa: E402
+from scrimmage.session import NOT_LISTENING, Session, SessionError  # noqa: E402
 
 TESTS = Path(__file__).resolve().parent
 PROBE = TESTS / "match_probe_py"
@@ -42,6 +42,7 @@ start_pose = [3.0, 4.0, 0.0]
 [robot_program]
 command = ["{{python}}", "-m", "robotpy", "sim", "--nogui", "--ws-client", "--scrimmage-lockstep"]
 cwd = "{PROBE}"
+start_timeout = 3
 
 [telemetry]
 nt = false
@@ -99,11 +100,16 @@ def run(tmp_path_factory) -> dict:
             out["hal_after_stop"] = s.hal("DriverStation").get("DriverStation/", {})
             text = "\n".join(line["text"] for line in s.console(0)["lines"])
             out["console"] = text
+            out["warnings"] = s.status()["warnings"]
             return out
         finally:
             ds.stop()
             await s.stop()
     return asyncio.run(main())
+
+
+def test_a_listening_robot_gets_no_not_listening_note(run):
+    assert NOT_LISTENING not in run["warnings"]
 
 
 def test_the_robot_reads_the_real_ds(run):

@@ -665,5 +665,7 @@ def test_check_devices_takes_the_drive_tabs_driver_station_choice(code_page, tmp
         page.click("#code-check-devices")
         page.wait_for_selector("#code-stop:visible", timeout=60000)
         assert _live_real_ds(page) is want, pick
+        page.wait_for_function("document.querySelector('#code-run-status').textContent.includes('Enable it in')")
+        assert ("FRC Driver Station app" in page.text_content("#code-run-status")) is want, pick
         page.click("#code-stop")
         page.wait_for_selector("#code-stop", state="hidden", timeout=30000)
