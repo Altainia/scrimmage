@@ -4,7 +4,7 @@ import sys
 import pytest
 
 from scrimmage.__main__ import main
-from scrimmage.launcher.report import UNCALIBRATED
+from scrimmage.launcher.report import uncalibrated
 from scrimmage.launcher.run import METRIC_KEYS
 from scrimmage.launcher.sweep import combinations
 
@@ -72,8 +72,8 @@ def test_run_prints_uncalibrated_first(tmp_path, capsys):
     p = write(tmp_path, SWEEP)  # run ignores [sweep]
     main(["launcher", "run", str(p), "--out", str(tmp_path / "o")])
     out = capsys.readouterr().out
-    assert out.splitlines()[0] == UNCALIBRATED
-    assert UNCALIBRATED == ("UNCALIBRATED: estimates from preset material numbers, not fitted to measurements "
+    assert out.splitlines()[0] == uncalibrated()
+    assert uncalibrated() == ("UNCALIBRATED: estimates from preset material numbers, not fitted to measurements "
                             "(ball stiffness, bounce, wheel friction).")
     assert "exit_speed" in out and "shaft.added_inertia" not in out
     assert (tmp_path / "o" / "results.csv").exists()
@@ -96,7 +96,7 @@ def test_csv_columns_and_repeatable(tmp_path, capsys):
     assert lines[0].split(",") == ["shaft.added_inertia", "hood.exit_angle_deg", *METRIC_KEYS]
     assert len(lines) == 5
     out = capsys.readouterr().out
-    assert out.splitlines()[0] == UNCALIBRATED
+    assert out.splitlines()[0] == uncalibrated()
 
 
 def test_charts_written(tmp_path, capsys):

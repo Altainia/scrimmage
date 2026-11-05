@@ -14,25 +14,26 @@ PHASES = ("auto", "teleop")   # the modes with a match timer
 STATIONS = ("red1", "red2", "red3", "blue1", "blue2", "blue3")
 MATCH_KEYS = ("station", "fms", "timer", "auto_seconds", "teleop_seconds")
 GAME_DATA_MAX = 64            # the HAL keeps up to 64 bytes
-REAL_DS_DRIVING = "the FRC Driver Station is driving"   # why a real-DS session refuses mode, joystick and match changes
+REAL_DS_DRIVING = "the FRC Driver Station is driving"   # the words every real-DS refusal ends with (tests check them)
 REAL_DS_WAITING = "waiting for the Driver Station"      # a real-DS session before (or without) a connected DS
 
 
 class SettingError(ValueError):
-    """A bad match setting; `key` is the setting it is about (None: the table itself), so a page can place it on
-    its field without reading the words."""
+    """A bad match setting or game data: "<where> <detail>". `key` is the setting it is about (None: the table
+    itself) and `detail` the message without its where, so a page can place it on its field and show it there
+    without reading the words."""
 
-    def __init__(self, message: str, key: str | None = None):
-        super().__init__(message)
-        self.key = key
+    def __init__(self, where: str, detail: str, key: str | None = None):
+        super().__init__(f"{where} {detail}")
+        self.key, self.detail = key, detail
 
 
 def check_game_data(value, where: str) -> str:
     if not isinstance(value, str):
-        raise ValueError(t("{where} game_data must be text, not {value}", where=where, value=repr(value)))
+        raise SettingError(where, t("game_data must be text, not {value}", value=repr(value)), "game_data")
     if len(value.encode("utf-8")) > GAME_DATA_MAX:
-        raise ValueError(t("{where} game_data must be at most {most} bytes ({most} plain letters, digits or "
-                           "punctuation)", where=where, most=GAME_DATA_MAX))
+        raise SettingError(where, t("game_data must be at most {most} bytes ({most} plain letters, digits or "
+                                    "punctuation)", most=GAME_DATA_MAX), "game_data")
     return value
 
 
@@ -50,23 +51,23 @@ class MatchSettings:
         """A copy with `table`'s keys applied over these values. A bad key or value raises a ValueError that starts
         with `where`."""
         if not isinstance(table, dict):
-            raise SettingError(t("{where} must be a table, not {value}", where=where, value=repr(table)))
+            raise SettingError(where, t("must be a table, not {value}", value=repr(table)))
         changes = {}
         for key, v in table.items():
             if key not in MATCH_KEYS:
-                raise SettingError(t("{where} has no key {key}; the keys are {keys}", where=where, key=repr(key),
-                                     keys=", ".join(MATCH_KEYS)))
-            said = {"where": where, "key": key, "value": repr(v)}
+                raise SettingError(where, t("has no key {key}; the keys are {keys}", key=repr(key),
+                                            keys=", ".join(MATCH_KEYS)))
+            said = {"key": key, "value": repr(v)}
             if key == "station":
                 if v not in STATIONS:
-                    raise SettingError(t("{where} station must be one of {stations}, not {value}", **said,
-                                         stations=", ".join(STATIONS)), key)
+                    raise SettingError(where, t("station must be one of {stations}, not {value}", **said,
+                                                stations=", ".join(STATIONS)), key)
             elif key in ("fms", "timer"):
                 if not isinstance(v, bool):
-                    raise SettingError(t("{where} {key} must be true or false, not {value}", **said), key)
+                    raise SettingError(where, t("{key} must be true or false, not {value}", **said), key)
             else:
                 if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v <= 0:
-                    raise SettingError(t("{where} {key} must be a positive number of seconds, not {value}", **said),
+                    raise SettingError(where, t("{key} must be a positive number of seconds, not {value}", **said),
                                        key)
                 v = float(v)
             changes[key] = v

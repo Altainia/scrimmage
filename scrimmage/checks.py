@@ -390,6 +390,7 @@ class SignalCheck(Check):
             self.signal = resolve_signal(str(spec["signal"]), world)
         except ScenarioError as e:
             e.key = e.key or "signal"       # the Scenario tab shows it on the signal's box
+            e.detail = e.detail or str(e)   # it says no where: all of it goes beside the box
             raise
         self.min, self.max = _num(spec, "min", where), _num(spec, "max", where)
         self.equals = spec.get("equals")

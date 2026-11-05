@@ -413,13 +413,6 @@ def _slots(h, bs, msgs) -> tuple[list[MotorSlot], list[EncoderSlot]]:
     return motors, encoders
 
 
-def _bench_code(message: str) -> str | None:
-    """The code of a BenchError raised without one (bench/cad.py gives its own): read from its American English."""
-    if "needs coacd" in message:
-        return "no_coacd"
-    return "no_convex_pieces" if "no convex pieces" in message else None
-
-
 def _collision(imp, n, h, vs, meshes, R, msgs) -> list[Geom]:
     """Body `n`'s collision geoms in part body `h`'s frame (vs: n's pieces in that frame)."""
     mode = imp.bodies[n].collision
@@ -445,11 +438,10 @@ def _collision(imp, n, h, vs, meshes, R, msgs) -> list[Geom]:
         try:
             pieces = convex_split(v, f)
         except BenchError as e:
-            code = e.code or _bench_code(str(e))
-            if code == "no_coacd":
+            if e.code == "no_coacd":
                 text = t("{body} is concave, and touching things as shaped needs coacd to split it: pip install "
                          "scrimmage[bench]. It touches things as a simple box until then.", body=n)
-            elif code == "no_convex_pieces":
+            elif e.code == "no_convex_pieces":
                 text = t("{body} couldn't be split into convex pieces to touch things as shaped: pick simple instead. "
                          "It touches things as a simple box until then.", body=n)
             else:

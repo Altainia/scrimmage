@@ -236,11 +236,9 @@ function renderFooter() {
 }
 
 // The runner's messages start with where they are ("x.toml, step 2 (auto), check 1, console: "); beside the
-// field that's already clear. The server sends `detail`, the message without it (in the Language setting, so the
-// page doesn't read its words, spec L3); stripWhere is for a message that has none (an American English one).
-export const besideField = (e) => e.detail ?? stripWhere(e.message);
-const WHERE = /^[^:]*?\.toml(?:, step \d+(?: \([^)]*\))?)?(?:, (?:screenshot \d+|contact_sheet|check \d+|pose|odometry_error|at_end|always|by_time|console|never_touch|must_touch))*: /;
-export const stripWhere = (m) => String(m).replace(WHERE, "");
+// field that's already clear, so the server sends `detail`, the message without it, in the Language setting (spec
+// L3: the page never reads the words). A message with no where has none: it is shown whole.
+export const besideField = (e) => e.detail ?? e.message;
 
 // Where a field id can show: itself, then without a ".<key>" suffix, then its check / screenshot / sheet,
 // then its step.

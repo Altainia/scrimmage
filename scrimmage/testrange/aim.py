@@ -231,7 +231,7 @@ def to_java(rows: list[AimRow], class_name: str, command: str, label: str | None
     """A `final` class with `ROWS`, one {distance, wheel_rps, hood_deg, flight_s, apex} row per distance. The header
     gives `command` as the command that made it, and `label` (the launcher's UNCALIBRATED line by default; the setup's
     own, calibration(model), says what was measured)."""
-    from ..launcher.report import UNCALIBRATED
+    from ..launcher.report import uncalibrated
     package, _, name = class_name.rpartition(".")
     body = ",\n".join(
         "        {" + ", ".join(f"{getattr(r, f):.4f}" for f in ROW_FIELDS) + "}" for r in rows if r.status == "ok")
@@ -242,7 +242,7 @@ def to_java(rows: list[AimRow], class_name: str, command: str, label: str | None
         "// angle whose ball crosses the goal's rim height descending at its center, the time from exit to that",
         "// crossing, and the ball's highest point.",
         f"// Made by: {command}",
-        f"// {UNCALIBRATED if label is None else label}",
+        f"// {uncalibrated() if label is None else label}",
         *([f"package {package};", ""] if package else []),
         f"public final class {name} {{",
         f"    private {name}() {{}}",

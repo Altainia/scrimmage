@@ -81,7 +81,8 @@ class Scenario:
 def _keys(d: dict, allowed: set[str], where: str, at: str) -> None:
     for k in d:
         if k not in allowed:
-            raise bad(where, t("unknown key {key}; allowed: {allowed}", key=repr(k), allowed=", ".join(sorted(allowed))),
+            raise bad(where, t("unknown key {key}; allowed: {allowed}", key=repr(k),
+                               allowed=", ".join(sorted(allowed))),
                       field=f"{at}{k}")
 
 
@@ -200,7 +201,7 @@ def load_scenario_raw(raw: dict, path: str | Path, *, first_step: int = 1) -> Sc
             try:
                 game_data = check_game_data(s["game_data"], f"{sw}:")
             except ValueError as e:
-                raise ScenarioError(str(e), field=f"{at_step}game_data") from None
+                raise ScenarioError(str(e), field=f"{at_step}game_data", detail=getattr(e, "detail", None)) from None
         track = None
         if "inputs" in s:
             inputs = f"{at_step}inputs"
@@ -350,7 +351,8 @@ def _match(raw: dict, where: str) -> dict:
         MatchSettings().merged(table, f"{where}: [match]")
     except ValueError as e:
         key = getattr(e, "key", None)
-        raise ScenarioError(str(e), field=f"scenario/match.{key}" if key else "scenario/match") from None
+        raise ScenarioError(str(e), field=f"scenario/match.{key}" if key else "scenario/match",
+                            detail=getattr(e, "detail", None)) from None
     return dict(table)
 
 
@@ -400,7 +402,8 @@ def config_for(scenario: Scenario, config):
     raw = copy.deepcopy(config.raw)
     if scenario.range:
         if "range" not in raw:
-            raise ScenarioError(no_range_message(config.path))
+            raise ScenarioError(no_range_message(config.path), field="scenario/range",
+                                detail=no_range_message(config.path))
         raw["range"] = {**raw["range"], **scenario.range}
         if "start" in scenario.range and isinstance(raw.get("robot"), dict):
             raw["robot"].pop("start_pose", None)

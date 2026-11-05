@@ -31,7 +31,7 @@ GB = {
     "at = {at} is beyond the step's {duration} s": "ZZ {duration} < {at}",
     "unknown signal {signal}; signals are {signals}": "ZZ {signal}",
     "{key} must be a number, not {value}": "ZZ {value} {key}",
-    "{where} station must be one of {stations}, not {value}": "ZZ {value} {where}",
+    "station must be one of {stations}, not {value}": "ZZ {value}",
 }
 
 
@@ -81,10 +81,10 @@ def test_a_warning_lands_on_its_field_in_another_language(gb, tmp_path):
     (HEAD + STEP.replace('"auto"', '"bogus"'), "step0/mode", "ZZ 'bogus' (disabled, auto, teleop, test)"),
     (HEAD + STEP + '  [[step.screenshot]]\n  at = 5.0\n', "step0/shot0/at", "ZZ 1 < 5.0"),
     (HEAD + STEP + '  [[step.check]]\n  at_end = { signal = "nope", min = 1 }\n', "step0/check0/at_end.signal",
-     None),      # a signal's error says no where
+     "ZZ 'nope'"),      # a signal's error says no where: all of it is its detail
     (HEAD + STEP + '  [[step.check]]\n  at_end = { signal = "battery", min = "x" }\n', "step0/check0/at_end.min",
      "ZZ 'x' min"),
-    (HEAD + '[match]\nstation = "red4"\n' + STEP, "scenario/match.station", None),
+    (HEAD + '[match]\nstation = "red4"\n' + STEP, "scenario/match.station", "ZZ 'red4'"),
 ])
 def test_a_scenario_error_lands_on_its_field_in_another_language(gb, text, field, detail):
     r = sv.check(text, SCENARIO)
@@ -92,7 +92,7 @@ def test_a_scenario_error_lands_on_its_field_in_another_language(gb, text, field
     e = r.errors[0]
     assert "ZZ" in e.message, e.message
     assert e.detail == detail
-    if detail is not None:
+    if field.startswith("step0/") and detail != e.message:      # a message with its where
         assert "A ZZ 1 x.toml" in e.message      # the where, in the language's own order
 
 

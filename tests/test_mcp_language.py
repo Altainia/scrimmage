@@ -136,6 +136,18 @@ def _mcp_runs(work: Path) -> dict:
 
     async def go():
         async with Client(mcp_server.server) as c:
+            # refusals worded with t() and no guard of their own: only the tool's guard keeps them American English
+            refused = []
+            r = await c.call_tool("start_session", {"config": "/nonexistent/robot.toml"})
+            refused.append(r.content[0].text)
+            r = await c.call_tool("start_session", {"config": str(FAKE)})
+            assert not r.is_error, r.content[0].text
+            r = await c.call_tool("set_mode", {"mode": "bogus"})
+            refused.append(r.content[0].text)
+            r = await c.call_tool("set_match", {"station": "red9"})
+            refused.append(r.content[0].text)
+            await c.call_tool("stop_session", {})
+            out["refused"] = "\n".join(json.loads(x)["error"] if x.startswith("{") else x for x in refused)
             scenario = work / "a.toml"
             scenario.write_text(SCENARIO, encoding="utf-8")
             r = await c.call_tool("run_scenario", {"path": str(scenario), "out_dir": str(work / "run")})
@@ -167,7 +179,8 @@ def test_mcp_machine_text_is_the_same_bytes_in_any_language(pseudo, tmp_path):
     us = _mcp_runs(tmp_path / "us")
     pseudo("en-GB")
     zz = _mcp_runs(tmp_path / "zz")
-    for key in ("run_scenario", "bench_run", "test_run"):
+    assert "/nonexistent/robot.toml" in us["refused"] and "'bogus'" in us["refused"] and "'red9'" in us["refused"]
+    for key in ("refused", "run_scenario", "bench_run", "test_run"):
         assert zz[key].replace("/zz/", "/us/") == us[key], key
         assert "ZZ" not in zz[key], key
     for key in ("run", "bench", "test"):
@@ -179,14 +192,14 @@ def test_mcp_machine_text_is_the_same_bytes_in_any_language(pseudo, tmp_path):
     assert "ZZ" in zz["report.md"] and "ZZ" in zz["summary.txt"]       # the files for people follow the setting
 
 
-def _cli_run(work: Path, capsys) -> dict:
+def _cli_run(work: Path, capsys, lang: str) -> dict:
     from scrimmage import __main__ as cli
     from scrimmage import settings
     scenario = work / "a.toml"
     work.mkdir()
     scenario.write_text(SCENARIO, encoding="utf-8")
     with pytest.raises(SystemExit) as e:
-        cli.main(["--language", "en-GB", "run", str(scenario), "--out", str(work / "run")])
+        cli.main(["--language", lang, "run", str(scenario), "--out", str(work / "run")])
     settings.set_language_override(None)
     assert e.value.code == 1        # some checks fail
     printed = capsys.readouterr()
@@ -197,9 +210,9 @@ def _cli_run(work: Path, capsys) -> dict:
 
 def test_the_cli_is_american_english_in_any_language(pseudo, tmp_path, capsys):
     pseudo("en-US")
-    us = _cli_run(tmp_path / "us", capsys)
+    us = _cli_run(tmp_path / "us", capsys, "en-US")     # the baseline: American English throughout
     pseudo("en-GB")
-    zz = _cli_run(tmp_path / "zz", capsys)
+    zz = _cli_run(tmp_path / "zz", capsys, "en-GB")
     assert us.keys() == zz.keys() and {"report.json", "report.md", "run.csv"} <= us.keys()
     assert us["out"] and "FAIL" in us["out"]
     for key, value in zz.items():
@@ -214,3 +227,14 @@ def test_the_cli_is_american_english_in_any_language(pseudo, tmp_path, capsys):
         assert value == want, key
     assert "ZZ" not in zz["err"]
     shutil.rmtree(tmp_path, ignore_errors=True)
+
+
+def test_worker_threads_go_through_the_guard():
+    """asyncio.to_thread in mcp_server.py only inside _in_thread, which enters i18n.machine() in the worker."""
+    import ast
+    import inspect
+    tree = ast.parse(inspect.getsource(mcp_server))
+    inside = {id(n) for f in ast.walk(tree) if isinstance(f, ast.AsyncFunctionDef) and f.name == "_in_thread"
+              for n in ast.walk(f)}
+    calls = [n for n in ast.walk(tree) if isinstance(n, ast.Attribute) and n.attr in ("to_thread", "run_in_executor")]
+    assert calls and all(id(n) in inside for n in calls), [n.lineno for n in calls if id(n) not in inside]

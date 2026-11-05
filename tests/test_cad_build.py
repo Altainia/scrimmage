@@ -310,7 +310,7 @@ def test_shaped_collision_uses_convex_pieces(tmp_path, src):
 def test_shaped_without_coacd_falls_back_with_message(monkeypatch, tmp_path, src):
     def no_coacd(path, units):
         raise BenchError(f"mesh {path} is concave, so it has to be split into convex pieces, which needs coacd: "
-                         "pip install scrimmage[bench].")
+                         "pip install scrimmage[bench].", code="no_coacd")
     monkeypatch.setattr("scrimmage.bench.cad.convex_pieces", no_coacd)
     imp = edit(make(src, tmp_path), "set_collision", body="base_plate", mode="shaped")
     result = build_parts(imp, src)
@@ -572,7 +572,7 @@ def test_no_direction_is_a_plain_error(tmp_path, src):
 
 def test_coacd_finding_no_pieces_does_not_say_install(monkeypatch, tmp_path, src):
     def nothing(path, units):
-        raise BenchError(f"mesh {path}: coacd found no convex pieces in it")
+        raise BenchError(f"mesh {path}: coacd found no convex pieces in it", code="no_convex_pieces")
     monkeypatch.setattr("scrimmage.bench.cad.convex_pieces", nothing)
     imp = edit(make(src, tmp_path), "set_collision", body="base_plate", mode="shaped")
     result = build_parts(imp, src)

@@ -6,13 +6,14 @@ import textwrap
 from pathlib import Path
 
 from .. import units
-from .. import i18n
 from ..measure import labels
 from .inputs import Goal, LauncherConfigError
 from .run import METRIC_KEYS, RunResult
 
-with i18n.fixed():      # made once, at import: the CLI's line, American English (it prints nothing else)
-    UNCALIBRATED = labels.line({}, labels.LAUNCHER) + "."   # the line for setups that use no measurement
+def uncalibrated() -> str:
+    """The line for setups that use no measurement, in the language now (American English in the CLI)."""
+    return labels.line({}, labels.LAUNCHER) + "."
+
 FOOTER_WIDTH = 135   # characters: a longer chart footer wraps, below the chart, so it doesn't widen the PNG; every
 #   no-measurement line (the launcher's 122, the disc's 127) fits on one, as before measurements
 NO_MATPLOTLIB = "charts need matplotlib: pip install matplotlib"
@@ -49,9 +50,10 @@ def _cells(rows: Rows, metrics=METRIC_KEYS) -> tuple[list[str], list[list[str]]]
     return header, body
 
 
-def format_table(rows: Rows, metrics=METRIC_KEYS, label: str = UNCALIBRATED) -> str:
-    """`label` (UNCALIBRATED, or calibration()'s line), then a header and one line per row: the swept values and
+def format_table(rows: Rows, metrics=METRIC_KEYS, label: str | None = None) -> str:
+    """`label` (default uncalibrated(), or calibration()'s line), then a header and one line per row: the swept values and
     `metrics` (the rows' `.metrics`): the ball launcher's by default, the disc launcher and the bench pass their own."""
+    label = uncalibrated() if label is None else label
     header, body = _cells(rows, metrics)
     widths = [max(len(h), *(len(r[i]) for r in body)) if body else len(h) for i, h in enumerate(header)]
     line = lambda cells: "  ".join(c.rjust(w) for c, w in zip(cells, widths)).rstrip()
