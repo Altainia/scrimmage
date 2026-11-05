@@ -281,11 +281,11 @@ def test_a_pose_check_shows_and_takes_the_chosen_units(scenario_page):
     assert "x = 3.81" in scn.read_text()
     assert page.input_value(x) == "12.5"                               # reads back as typed
     v = _version(page)
-    page.fill(tol, "6 in")
+    page.fill(tol, "15 cm")                                            # the other system's length: refused
     page.keyboard.press("Enter")
     page.wait_for_selector(f'[data-fields="step1/check{j}/pose.tol_xy"] .error')
-    assert "isn't a unit for this" in page.inner_text(f'[data-fields="step1/check{j}/pose.tol_xy"] .error')
-    page.fill(tol, "0.5 ft")
+    assert "Units is set to Imperial" in page.inner_text(f'[data-fields="step1/check{j}/pose.tol_xy"] .error')
+    page.fill(tol, "6 in")                                             # any length of the system: 6 in where ft shows
     page.keyboard.press("Enter")
     _wait_edit(page, v)
     assert spec()["tol_xy"] == pytest.approx(0.1524)
