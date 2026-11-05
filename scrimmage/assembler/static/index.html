@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-US">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -35,6 +35,13 @@
           <div class="seg" role="group" aria-labelledby="settings-units-label">
             <button type="button" class="seg-btn" data-setting="units" data-value="imperial" aria-pressed="true">Imperial</button>
             <button type="button" class="seg-btn" data-setting="units" data-value="metric" aria-pressed="false">Metric</button>
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label" id="settings-language-label">Language</span>
+          <div class="seg" id="settings-language" role="group" aria-labelledby="settings-language-label">
+            <!-- one button per language the server has (app.js renderSettings) -->
+            <button type="button" class="seg-btn" data-setting="language" data-value="en-US" lang="en-US" aria-pressed="true">English (US)</button>
           </div>
         </div>
         <p class="settings-note">For every tab, and every editor on this computer.</p>

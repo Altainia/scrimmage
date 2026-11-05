@@ -69,13 +69,17 @@ App (`/api/app/*`; in every mode):
 
 Settings (`/api/settings`; in every mode). The user's settings (scrimmage/settings.py), shared by every editor and the
 CLI on this computer:
-  GET  /api/settings               -> {units: imperial|metric, table, warning}: the Units setting (`scrimmage --units`
-        wins over the file for its run), the unit table every display formats with (units.table_json(): {systems,
-        kinds, units: {system: {kind: {name, factor, decimals}}}, aliases, keys, lengths}), and why the settings file is
-        being ignored (it can't be read, isn't TOML or has a bad value: the defaults apply), else null. The file is
-        read again when it changes on disk; the page polls this every few seconds to pick that up.
-  POST /api/settings               -> body {units}: saves it in the settings file (and, under `--units`, for this
-        run too); answers as GET does. 400 for another value.
+  GET  /api/settings               -> {units: imperial|metric, table, language, languages, catalog, warning}: the
+        Units setting (`scrimmage --units` wins over the file for its run), the unit table every display formats with
+        (units.table_json(): {systems, kinds, units: {system: {kind: {name, factor, decimals}}}, aliases, keys,
+        lengths}), the Language setting (a tag of languages; `--language` wins likewise), languages {tag: name}
+        (i18n.languages(): en-US, then each catalog in scrimmage/locales/), the language's catalog (i18n.catalog_json:
+        its entries that differ from the American English source; {} for en-US), and why the settings file is
+        being ignored, in whole or for one setting (it can't be read, isn't TOML or has a bad value: the defaults
+        apply), else null. The file is read again when it changes on disk; the page polls this every few seconds to
+        pick that up.
+  POST /api/settings               -> body {units?, language?}: saves them in the settings file (and, under
+        `--units` or `--language`, for this run too); answers as GET does. 400 for another value or neither.
 
 Bench (`/api/bench/*`; 404 unless an idea session is open). `file` is an idea's file name in the session folder:
   GET  /api/bench/state[?since=N]  -> {version, folder, display_folder, stage: file|null, lock: {source, file, pid,
@@ -599,7 +603,7 @@ import mujoco
 import tomlkit
 from tomlkit.exceptions import TOMLKitError
 
-from .. import robotcode, settings, teamfolders, units
+from .. import i18n, robotcode, settings, teamfolders, units
 from ..config import ConfigError, load_config_text
 from ..lockstep import parse_speed
 from ..parts.assemble import PLACEMENT_KEYS
@@ -1011,19 +1015,30 @@ class App:
         return None
 
     def settings_state(self) -> dict:
-        return {"units": settings.current_units(), "table": units.table_json(), "warning": settings.problem()}
+        language = settings.current_language()
+        return {"units": settings.current_units(), "table": units.table_json(), "language": language,
+                "languages": i18n.languages(), "catalog": i18n.catalog_json(language), "warning": settings.problem()}
 
     def set_settings(self, body: dict) -> dict:
-        """Save the Units setting. Under `scrimmage --units` the menu still switches: this run follows it too."""
+        """Save the Units or Language setting (or both). Under `scrimmage --units` or `--language` the menu still
+        switches: this run follows it too."""
+        changes = {}
         try:
-            system = settings.check_units(body.get("units"))
-            settings.save(units=system)
+            if "units" in body:
+                changes["units"] = settings.check_units(body["units"])
+            if "language" in body:
+                changes["language"] = settings.check_language(body["language"])
+            if not changes:
+                raise ValueError("send units or language to change")
+            settings.save(**changes)
         except ValueError as e:
             raise ApiError(400, str(e)) from None
         except OSError as e:
             raise ApiError(500, f"can't save {settings.settings_path()}: {e.strerror or e}") from None
-        if settings.overridden():
-            settings.set_override(system)
+        if "units" in changes and settings.overridden():
+            settings.set_override(changes["units"])
+        if "language" in changes and settings.language_overridden():
+            settings.set_language_override(changes["language"])
         return self.settings_state()
 
     def get_folders(self) -> dict:

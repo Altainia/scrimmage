@@ -46,13 +46,15 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.fixture(autouse=True)
 def _settings(tmp_path_factory, monkeypatch):
-    """Every test starts with no settings file (so the product default, imperial, applies) and no `--units`
-    override. A server or CLI the test starts inherits $SCRIMMAGE_CONFIG."""
+    """Every test starts with no settings file (so the product defaults, imperial and en-US, apply) and no
+    `--units` or `--language` override. A server or CLI the test starts inherits $SCRIMMAGE_CONFIG."""
     from scrimmage import settings
     monkeypatch.setenv("SCRIMMAGE_CONFIG", str(tmp_path_factory.mktemp("config")))
     settings.set_override(None)
+    settings.set_language_override(None)
     yield
     settings.set_override(None)
+    settings.set_language_override(None)
 
 
 @pytest.fixture
@@ -61,6 +63,13 @@ def units():
     test starts see it too)."""
     from scrimmage import settings
     return lambda system: settings.save(units=system)
+
+
+@pytest.fixture
+def language():
+    """language("en-GB") sets the Language setting for this test, as units() sets Units."""
+    from scrimmage import settings
+    return lambda tag: settings.save(language=tag)
 
 
 def _no_freecad() -> bool:

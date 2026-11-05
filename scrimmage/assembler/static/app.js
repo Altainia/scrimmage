@@ -18,6 +18,7 @@ import { renderLibrary, initLibrary } from "./library.js";
 import { renderTree } from "./tree.js";
 import { renderInspector, placeErrors } from "./inspector.js";
 import { units } from "./units.js";
+import { i18n, t } from "./i18n.js";
 
 // The hash carries the token and the tab: "#token=…" or "#scenario&token=…" ("#robot&token=…", "#drive&token=…").
 const hashParams = () => new URLSearchParams(location.hash.slice(1));
@@ -516,8 +517,12 @@ export const UNIT = { "kg*m^2": "kg·m²", deg: "°", "N*m/rad": "N·m/rad" };
 
 // -- settings menu ------------------------------------------------------------------------------
 // The header's Settings menu: one row per setting, each a group of [data-setting][data-value] buttons. A change
-// applies at once here and, through units.js's poll, in every other open editor.
-const SETTINGS = { units: { now: () => units.system, set: (v) => units.set(v), onChange: units.onChange } };
+// applies at once here and, through settings.js's poll, in every other open editor. Language's choices are the
+// catalogs the server has (i18n.languages), each named in its own language.
+const SETTINGS = {
+  units: { now: () => units.system, set: (v) => units.set(v), onChange: units.onChange },
+  language: { now: () => i18n.lang, set: (v) => i18n.setLanguage(v), onChange: i18n.onChange },
+};
 
 function initSettings() {
   const btn = $("#settings-btn"), menu = $("#settings-menu");
@@ -527,18 +532,29 @@ function initSettings() {
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !menu.hidden) { show(false); btn.focus(); }
   });
-  for (const b of menu.querySelectorAll("[data-setting]")) {
-    b.addEventListener("click", async () => {
-      const why = await SETTINGS[b.dataset.setting].set(b.dataset.value);
-      if (why) notice(`Couldn't change the setting: ${why}`, "error");
-      renderSettings();
-    });
-  }
+  menu.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-setting]");
+    if (!b) return;
+    const why = await SETTINGS[b.dataset.setting].set(b.dataset.value);
+    if (why) notice(t("Couldn't change the setting: {why}", { why }), "error");
+    renderSettings();
+  });
   for (const s of Object.values(SETTINGS)) s.onChange(renderSettings);
   renderSettings();
 }
 
 function renderSettings() {
+  const group = $("#settings-language");
+  const tags = Object.keys(i18n.languages);
+  if ([...group.children].map((b) => b.dataset.value).join() !== tags.join()) {
+    group.replaceChildren(...tags.map((tag) => {
+      const b = document.createElement("button");
+      Object.assign(b, { type: "button", className: "seg-btn", textContent: i18n.languages[tag] });
+      Object.assign(b.dataset, { setting: "language", value: tag });
+      b.lang = tag;
+      return b;
+    }));
+  }
   for (const b of document.querySelectorAll("#settings-menu [data-setting]")) {
     b.setAttribute("aria-pressed", String(SETTINGS[b.dataset.setting].now() === b.dataset.value));
   }
@@ -695,7 +711,8 @@ async function boot() {
   $("#undo").addEventListener("click", () => tabUndo());
   $("#redo").addEventListener("click", () => tabRedo());
   document.addEventListener("keydown", onKey);
-  // the unit table before any tab renders a value (units.js); without it, values show in SI
+  // the settings before any tab renders (settings.js, through units.load): the unit table, without which values show
+  // in SI, and the language's catalog
   const [{ status, data }] = await Promise.all([api("GET", "/api/app/state"), units.load()]);
   initSettings();
   units.watch();
