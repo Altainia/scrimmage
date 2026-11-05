@@ -15,6 +15,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
+import shutil
 import sys
 import tempfile
 import threading
@@ -74,7 +75,7 @@ def _read(path: Path) -> tuple[Settings, str | None]:
     try:
         data = tomllib.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, tomllib.TOMLDecodeError) as e:
-        return Settings(), f"{path} isn't valid TOML ({e}); using imperial units"
+        return Settings(), f"{path} isn't valid TOML ({e}); using imperial units (changing a setting replaces it, keeping a copy as {path.name}.bad)"
     if "units" not in data:
         return Settings(), None
     try:
@@ -132,6 +133,13 @@ def save(**changes) -> None:
             doc = tomlkit.parse(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, TOMLKitError):   # missing or broken: start again
             doc = tomlkit.document()
+            if path.is_file():      # not valid TOML: keep it beside the new one
+                bad = path.with_name(path.name + ".bad")
+                try:
+                    shutil.copyfile(path, bad)
+                    log.warning("%s isn't valid TOML; it was replaced, and the old file kept as %s", path, bad)
+                except OSError:
+                    pass
         for name, value in changes.items():
             doc[name] = value
         path.parent.mkdir(parents=True, exist_ok=True)

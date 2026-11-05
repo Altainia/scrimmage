@@ -699,7 +699,8 @@ async function boot() {
   const [{ status, data }] = await Promise.all([api("GET", "/api/app/state"), units.load()]);
   initSettings();
   units.watch();
-  if (units.warning) notice(units.warning, "warn");
+  if (units.warning) notice(units.warning, "warn", "settings-warning");
+  units.onWarning((text) => notice(text, "warn", "settings-warning"));
   const mode = status === 200 ? data.mode : "robot";   // without an answer, behave as before (it reports its own errors)
   window.__scrimmage.mode = mode;
   store.appPath = data.display_path || data.path || "";

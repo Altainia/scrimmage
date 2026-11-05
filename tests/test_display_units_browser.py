@@ -202,6 +202,35 @@ def test_a_bad_settings_file_shows_one_warning(browser, tmp_path):
         srv.stop()
 
 
+def test_a_failed_first_load_catches_up_on_the_next_poll(browser, tmp_path):
+    f = settings.settings_dir() / "settings.toml"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text('units = "furlongs"\n')
+    srv = Server(None, cwd=tmp_path)
+    ctx = browser.new_context()
+    try:
+        p = ctx.new_page()
+        failed = []
+
+        def first_fails(route):
+            if route.request.method == "GET" and not failed:
+                failed.append(1)
+                route.abort()
+            else:
+                route.continue_()
+        p.route("**/api/settings", first_fails)
+        p.goto(srv.url)
+        p.wait_for_function("window.__scrimmage && __scrimmage.mode")
+        assert failed
+        p.wait_for_selector(".notice-warn", timeout=15000)     # the 2 s poll found the warning
+        assert "isn't imperial or metric" in p.text_content(".notice-warn")
+        assert p.evaluate("import('./units.js').then((m) => m.units.fmt(0.1016, 'length'))") == "4 in"
+        assert p.locator(".notice-warn").count() == 1
+    finally:
+        ctx.close()
+        srv.stop()
+
+
 def test_a_poll_answered_after_a_change_doesnt_undo_it(page):
     """A GET that left before set()'s POST but is answered after it carries the old setting: it is dropped."""
     got = page.evaluate("""async () => {

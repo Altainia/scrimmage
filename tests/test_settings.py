@@ -110,6 +110,21 @@ def test_a_bad_file_falls_back_to_imperial_with_one_warning(caplog, text, why):
     # fixing the file clears it, and saving over a broken file writes a good one
     save(units="metric")
     assert load().units == "metric" and settings.problem() is None
+    if "valid TOML" in why:     # the broken file is kept beside it
+        assert f.with_name("settings.toml.bad").read_bytes() == (text if isinstance(text, bytes) else text.encode())
+
+
+def test_save_keeps_a_broken_file_as_bad_and_overwrites_an_older_copy():
+    f = settings_dir() / "settings.toml"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    bad = f.with_name("settings.toml.bad")
+    bad.write_text("older")
+    f.write_text("units = metric\n")
+    assert "settings.toml.bad" in (settings.problem() or "")
+    save(units="metric")
+    assert bad.read_text() == "units = metric\n" and load().units == "metric"
+    save(units="imperial")      # a good file is not copied
+    assert bad.read_text() == "units = metric\n"
 
 
 def test_an_unreadable_file_falls_back(caplog):

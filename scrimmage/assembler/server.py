@@ -71,7 +71,7 @@ Settings (`/api/settings`; in every mode). The user's settings (scrimmage/settin
 CLI on this computer:
   GET  /api/settings               -> {units: imperial|metric, table, warning}: the Units setting (`scrimmage --units`
         wins over the file for its run), the unit table every display formats with (units.table_json(): {systems,
-        kinds, units: {system: {kind: {name, factor, decimals}}}, aliases, keys}), and why the settings file is
+        kinds, units: {system: {kind: {name, factor, decimals}}}, aliases, keys, lengths}), and why the settings file is
         being ignored (it can't be read, isn't TOML or has a bad value: the defaults apply), else null. The file is
         read again when it changes on disk; the page polls this every few seconds to pick that up.
   POST /api/settings               -> body {units}: saves it in the settings file (and, under `--units`, for this

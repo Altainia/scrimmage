@@ -732,7 +732,8 @@ def _print_export(s: dict) -> None:
     print(f"  loops: {s['loops']}, couplings: {s['couplings']}")
     print(f"  slots: {names(s['slots'])}")
     print(f"  mounts: {names(s['mounts'])}")
-    print(f"  mass: {s['mass_kg']:.3f} kg")
+    from . import units
+    print(f"  mass: {units.fmt(s['mass_kg'], 'mass')}")
     for w in s["warnings"]:
         print(f"warning: {w}")
 

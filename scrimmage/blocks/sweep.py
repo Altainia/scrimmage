@@ -329,6 +329,7 @@ def run_sweep(program: Program, target: dict, values: list[float | str], base, o
         return made[i], {"target": target, "value": values[i], "index": i}
 
     rows = [{"value": v, "status": COULDNT_RUN, "outcome": "", "t_end": None, "checks": {}} for v in values]
+    # on_progress must stay numeric: anything built inside machine_text() is machine text
     with units.machine_text():      # table.csv's words (outcomes, check columns) as they always were
         return run_each(tmp, rows, attempt, record, lambda done, cancelled: _finish(
             tmp, base, target, values, done, left, cancelled), on_progress)

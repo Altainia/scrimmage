@@ -359,6 +359,7 @@ def run_spread(program: Program, base, on_progress=None, cancel: threading.Event
 
     rows = [{"placement": labels[i], **p, "status": COULDNT_RUN, "picked": False, "outcome": ""}
             for i, p in enumerate(ps)]
+    # on_progress must stay numeric: anything built inside machine_text() is machine text
     with units.machine_text():
         return run_each(tmp, rows, lambda i: TestRun(world, program, placement=ps[i]).run(cancel=cancel), record,
                         lambda done, cancelled: _finish(tmp, base, spread, ps, labels, at, done, cancelled),

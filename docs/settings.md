@@ -87,8 +87,8 @@ Everything written for people to read, at the moment it is written:
   Setup, chart titles and failure text, the Bench tab's boxes and stage table, and the Measure tab's new columns;
 - `report.md` beside a scenario run, a bench run's `summary.txt`, its charts and the scale bar on its pictures, and a
   bench folder's gallery page;
-- the text the command line prints: `scrimmage run`'s check lines, `scrimmage test run`, `scrimmage bench run`
-  and `scrimmage measure`.
+- the text the command line prints: `scrimmage run`'s check lines, `scrimmage test run`, `scrimmage bench run`,
+  `scrimmage measure` and `scrimmage freecad export` (its mass line).
 
 ## What never changes: machine output
 
@@ -149,6 +149,9 @@ line, and the default is used.
   `table.csv`, which keeps its old words (above). `scrimmage test spread` prints the same table.
 - **A run kept inside a sweep or a floor spread**, opened from its row, shows those same old words (its outcome and
   checks, such as "didn't reach 4 m"), whatever the setting: they are written once, during the run, for the table.
+- **A run an agent made with MCP `test_run`**, then opened in the Test tab, shows its check lines in the fixed agent
+  text (inches and psi, with a drive's distance in meters), whatever the setting: the run is saved inside machine
+  text.
 - **The launcher model's own output** (`scrimmage launcher run`: its table and its downrange and lateral charts) and
   the tables `scrimmage bench sweep` and `scrimmage bench compare` print keep their fixed units (m, m/s, N).
 - **A bench sweep's From and To boxes** follow the setting, but the sweep chart's x axis and the stage table's

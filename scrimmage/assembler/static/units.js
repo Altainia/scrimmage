@@ -20,6 +20,7 @@ let table = null;
 let system = "imperial";
 let warning = null;
 const listeners = new Set();
+const warners = new Set();
 
 function token() { return new URLSearchParams(location.hash.slice(1)).get("token") || ""; }
 
@@ -37,13 +38,19 @@ async function request(method, body) {
 }
 
 function apply(data) {
+  const hadTable = table !== null, was = system, hadWarning = warning;
   table = data.table || table;
   warning = data.warning || null;
-  const was = system;
   system = data.units || system;
-  if (system !== was) {
+  // the first load() may have failed: the table arriving later changes every shown value too
+  if (system !== was || (!hadTable && table)) {
     for (const fn of [...listeners]) {
       try { fn(system); } catch (e) { console.error(e); }
+    }
+  }
+  if (warning && warning !== hadWarning) {
+    for (const fn of [...warners]) {
+      try { fn(warning); } catch (e) { console.error(e); }
     }
   }
 }
@@ -81,6 +88,12 @@ export function watch(ms = 2000) {
   };
   watching = setTimeout(tick, ms);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+}
+
+// fn(text) when a settings warning appears or changes (not for the one load() found before anyone listened)
+export function onWarning(fn) {
+  warners.add(fn);
+  return () => warners.delete(fn);
 }
 
 export function onChange(fn) {
@@ -186,6 +199,6 @@ export const units = {
   get system() { return system; },
   get table() { return table; },
   get warning() { return warning; },
-  load, set, watch, onChange, fmt, shown, toDisplay, fromDisplay, name, parse, number, toKey, fromKey,
+  load, set, watch, onChange, onWarning, fmt, shown, toDisplay, fromDisplay, name, parse, number, toKey, fromKey,
 };
 export default units;
