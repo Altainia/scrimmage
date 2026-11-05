@@ -12,7 +12,7 @@ from .mass import MATERIALS, density
 from .names import sanitize
 from .frame import AXES, RobotFrame
 from .settings import (COLLISIONS, BodySettings, EncoderSettings, ImportFile, JointSettings, MotorSettings,
-                       MountSettings, PartSettings, _mentions, drop_couplings, remove_empty_bodies)
+                       MountSettings, PartSettings, _mentions, body_things, drop_couplings, remove_empty_bodies)
 from .source import STEP_SUFFIXES, UNITS
 from .. import i18n
 from ..motors import MOTORS
@@ -91,7 +91,7 @@ def _clear_joint(imp, name, msgs):
     b.joint = b.motor = b.encoder = None
     if gone:
         msgs.append(i18n.tn("{name}'s {items} was dropped", "{name}'s {items} were dropped", len(gone), name=name,
-                            items=i18n.t(" and ").join(gone)))
+                            items=i18n.t(" and ", context="list separator").join(body_things(gone))))
     if drop_couplings(imp, name):
         msgs.append(i18n.t("A coupling that used {name} was dropped, because {name} no longer has a joint", name=name))
 
@@ -243,7 +243,7 @@ def _merge_bodies(imp, a):
                              ("mounts", ob.mounts)) if has]
     if gone:
         msgs.append(i18n.tn("{name}'s {items} was dropped in the merge", "{name}'s {items} were dropped in the merge",
-                            len(gone), name=other, items=", ".join(gone)))
+                            len(gone), name=other, items=", ".join(body_things(gone))))
     if any(_mentions(c, other) for c in imp.couplings + imp.loops):
         msgs.append(i18n.t("The couplings and loops that used {name} were dropped", name=other))
     del imp.bodies[other]

@@ -14,8 +14,9 @@ from test_assembler_server import Client
 
 
 def _summary_data(out, heads, energy_failed=False):
-    """summary.json as bench/report.py's write_results writes it beside summary.txt: what the Bench tab reads."""
-    (out / "summary.json").write_text(json.dumps({"headlines": heads, "uncalibrated": heads[-1],
+    """summary.json as bench/report.py's write_results writes it beside summary.txt (no words: how many headline
+    lines summary.txt has, and the flags), for the Bench tab."""
+    (out / "summary.json").write_text(json.dumps({"headlines": len(heads), "uncalibrated": True,
                                                   "energy_failed": energy_failed}))
 
 ROOT = Path(__file__).resolve().parent.parent

@@ -91,37 +91,48 @@ def test_a_bench_problem_follows_the_language_and_keeps_its_key(gb, tmp_path):
     assert us.key == p.key
 
 
-def test_the_bench_tab_reads_a_runs_headlines_from_summary_json_not_their_words(gb, tmp_path):
+def test_the_bench_tab_reads_a_runs_headlines_by_position_not_their_words(gb, tmp_path):
     """summary.txt in another language (its UNCALIBRATED and Energy check lines translated) still gives the Bench tab
-    its headlines and the energy flag: they come from summary.json."""
+    its headlines and the energy flag: summary.json counts the headline lines and holds the flags, no words."""
     from scrimmage.assembler.bench_session import _energy_failed, _summary
     from scrimmage.measure.labels import marked
     unc = marked("estimates")
     assert unc == "NOT YET MEASURED: estimates"
     out = tmp_path / "r"
     out.mkdir()
-    (out / "summary.txt").write_text(f"b (A)\n\n3 of 3 out\n{unc}\n\nEnergy: sound\n", encoding="utf-8")
-    assert _summary(out) == ([], None) and _energy_failed(out) is False     # no summary.json: no words are read
-    (out / "summary.json").write_text(json.dumps({"headlines": ["3 of 3 out", unc], "uncalibrated": unc,
-                                                  "energy_failed": True}), encoding="utf-8")
+    (out / "summary.txt").write_text(f"b (A)\n\n3 of 3 out\n{unc}\nwarning: w\n\nEnergy: sound\n",
+                                     encoding="utf-8")
+    # an older folder, no summary.json: the block after the title by position; no energy flag
+    assert _summary(out) == (["3 of 3 out", unc, "warning: w"], "warning: w") and _energy_failed(out) is False
+    (out / "summary.json").write_text(json.dumps({"headlines": 2, "uncalibrated": True, "energy_failed": True}),
+                                      encoding="utf-8")
     assert _summary(out) == (["3 of 3 out", unc], unc)
     assert _energy_failed(out) is True
     with i18n.fixed():
         assert marked("estimates") == "UNCALIBRATED: estimates"
 
 
-def test_write_results_writes_summary_json_beside_summary_txt(gb, tmp_path):
+def test_write_results_writes_summary_json_without_words(gb, tmp_path, units):
+    """summary.json is machine JSON: the same bytes in any Language and Units setting (summary.txt follows them)."""
+    from scrimmage.assembler.bench_session import _summary
     from scrimmage.bench.report import headlines, write_results
     from scrimmage.bench.run import run_bench
     from scrimmage.bench.spec import load_bench
+    units("metric")
     result = run_bench(load_bench(PINCH))
     out = write_results(result, tmp_path / "r")
-    data = json.loads((out / "summary.json").read_text(encoding="utf-8"))
     heads = headlines(result)
-    assert data == {"headlines": heads, "uncalibrated": heads[-1], "energy_failed": False}
+    assert json.loads((out / "summary.json").read_text(encoding="utf-8")) == \
+        {"headlines": len(heads), "uncalibrated": True, "energy_failed": False}
     assert heads[-1].startswith("NOT YET MEASURED: ")
+    assert _summary(out) == (heads, heads[-1])
     summary = (out / "summary.txt").read_text(encoding="utf-8")
-    assert all(h in summary for h in heads) and "Energy: sound" in summary
+    assert "Energy: sound" in summary
+    data = (out / "summary.json").read_bytes()
+    units("imperial")
+    with i18n.fixed():
+        other = write_results(result, tmp_path / "us")
+    assert (other / "summary.json").read_bytes() == data
 
 
 # ---------------------------------------------------------------------------------------------------------- measure

@@ -28,7 +28,7 @@ def _fake_results(folder: Path, stem: str, title: str, heads: list[str], energy:
     out.mkdir(exist_ok=True)
     (out / "summary.txt").write_text(f"{title}\nidea: \"x\"\n\n" + "\n".join(heads) + f"\n{UNC}\n\n"
                                      f"Energy check: {energy} (a failure means the simulation is wrong, not the design)\n")
-    (out / "summary.json").write_text(json.dumps({"headlines": [*heads, UNC], "uncalibrated": UNC,
+    (out / "summary.json").write_text(json.dumps({"headlines": len(heads) + 1, "uncalibrated": True,
                                                   "energy_failed": energy != "ok"}))
     Image.new("RGB", (40, 20), (200, 30, 30)).save(out / "path_side.png")
     if gif:

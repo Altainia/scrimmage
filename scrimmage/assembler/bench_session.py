@@ -117,9 +117,8 @@ def _refused(field: str, message: str) -> tuple[int, dict]:
 
 
 def _summary_data(out: Path | None) -> dict:
-    """A results folder's summary.json (bench/report.py's SUMMARY_DATA, written beside summary.txt): its headlines,
-    the UNCALIBRATED line they end with, and whether the energy check failed, as data, so nothing here reads
-    summary.txt's words (they are in the Language of whoever ran it; spec L3). {} without a readable one."""
+    """A results folder's summary.json (bench/report.py's SUMMARY_DATA, written beside summary.txt): summary.txt's
+    layout and the energy check as data, no words. {} without a readable one (a folder from before it)."""
     try:
         data = json.loads((out / SUMMARY_DATA).read_text(encoding="utf-8")) if out is not None else {}
     except (OSError, UnicodeDecodeError, ValueError):
@@ -128,12 +127,26 @@ def _summary_data(out: Path | None) -> dict:
 
 
 def _summary(out: Path | None) -> tuple[list[str], str | None]:
-    """(headlines, UNCALIBRATED line) from a results folder's summary.json. ([], None) when there is none."""
-    data = _summary_data(out)
-    heads, unc = data.get("headlines"), data.get("uncalibrated")
-    if not isinstance(heads, list) or not all(isinstance(h, str) for h in heads) or not isinstance(unc, str):
+    """(headlines, UNCALIBRATED line) from a results folder's summary.txt, by position, never by their words (spec
+    L3): the `headlines` lines summary.json counts after the title block's blank line, the last of them the
+    UNCALIBRATED line. Without summary.json (an older folder), the lines up to the next blank one, the last taken as
+    the UNCALIBRATED line. ([], None) when there is none."""
+    try:
+        lines = (out / "summary.txt").read_text(encoding="utf-8").splitlines() if out is not None else []
+    except (OSError, UnicodeDecodeError):
         return [], None
-    return heads, unc
+    if "" not in lines:
+        return [], None
+    block = lines[lines.index("") + 1:]
+    data = _summary_data(out)
+    count = data.get("headlines")
+    if isinstance(count, int) and not isinstance(count, bool):
+        heads = block[:count] if 0 < count <= len(block) and "" not in block[:count] else []
+    else:
+        heads = block[:block.index("")] if "" in block else block
+    if not heads:
+        return [], None
+    return heads, (None if data.get("uncalibrated") is False else heads[-1])
 
 
 def _result_files(kind: str, out: Path | None) -> tuple[list[str], Path | None]:

@@ -45,6 +45,11 @@ def is_measurement(value) -> bool:
     return isinstance(value, str) and value.endswith(SUFFIX)
 
 
+def _or() -> str:
+    """The separator in a list of choices ("ball or launcher"), in the Language."""
+    return i18n.t(" or ", context="list separator")
+
+
 def find(name: str, base, where: str, key: str) -> Path:
     """The path of the measurement file `<key> = "<name>"` names, found from `base`, the folder of the file that names
     it (C12); an error naming the place, the key and where it looked when it isn't there."""
@@ -67,7 +72,7 @@ def open_file(name: str, base, where: str, key: str, kinds: tuple[str, ...], nee
     if mf.kind not in kinds:
         raise MeasureError(i18n.t("{where}: {key} = \"{name}\" is a {kind} measurement; {needs} needs a {kinds} "
                                   "measurement", where=where, key=key, name=name, kind=mf.kind,
-                                  needs=i18n.translated(needs), kinds=i18n.t(" or ").join(kinds)))
+                                  needs=i18n.translated(needs), kinds=_or().join(kinds)))
     return mf
 
 
@@ -144,9 +149,9 @@ def _direct(mf: MeasureFile, fields: tuple[str, ...], where: str, key: str, name
     """{field: (mean, provenance)} of a ball or friction file's averaged trials."""
     got = {k: (s.mean, provenance(mf, s)) for k, (s, _) in values(mf).items() if k in fields}
     if not got:
-        tests = i18n.t(" or ").join(f"[[{t}]]" for t in mf.trials) or i18n.t("trials")
+        tests = _or().join(f"[[{t}]]" for t in mf.trials) or i18n.t("trials")
         raise MeasureError(i18n.t("{where}: {key} = \"{name}\" has no {tests} that measure {fields}", where=where,
-                                  key=key, name=name, tests=tests, fields=i18n.t(" or ").join(fields)))
+                                  key=key, name=name, tests=tests, fields=_or().join(fields)))
     return got
 
 

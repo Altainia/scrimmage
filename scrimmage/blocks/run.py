@@ -616,7 +616,7 @@ class TestRun:
                     z = float(d.subtree_com[w.robot_body][2])
                     if walk.see(t, bool(watch.climb.get("climb.hanging", 0)), float(watch.climb.get(
                             "climb.hook_load", 0.0)), z, on_ground, touched) == "hook walked off":
-                        bars = i18n.t(" and ").join(walk.left) or i18n.t("its bar")
+                        bars = i18n.t(" and ", context="list separator").join(walk.left) or i18n.t("its bar")
                         raise _End("walked off", i18n.t("a hook walked off {bars} at {t} s", bars=bars, t=f"{t:.1f}"))
         except _End as e:
             result.status, ending = e.status, e.ending
@@ -1265,7 +1265,7 @@ class TestRun:
             if joints else []
         words += [i18n.t("the robot was driving") if n == "drive" else i18n.t("the robot was turning")
                   for n in recent if n not in joints]
-        return i18n.t(" and ").join(words) if words else i18n.t("nothing was moving")
+        return i18n.t(" and ", context="list separator").join(words) if words else i18n.t("nothing was moving")
 
     def _describe(self, cond, form: str = "is") -> str:
         """describe() with this run's next bar, the field's piece words, its moving elements' units and the robot's

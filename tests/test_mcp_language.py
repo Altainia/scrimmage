@@ -161,6 +161,7 @@ def _mcp_runs(work: Path) -> dict:
             assert not r.is_error, r.content[0].text
             out["bench_run"] = r.content[0].text.replace(str(work), "WORK")
             out["bench"] = {p.name: p.read_bytes() for p in sorted((work / "bench").glob("*.csv"))}
+            out["bench"]["summary.json"] = (work / "bench" / "summary.json").read_bytes()   # machine JSON: no words
             out["summary.txt"] = (work / "bench" / "summary.txt").read_text(encoding="utf-8")
             (work / "t").mkdir()
             r = await c.call_tool("test_run", {"path": str(write_test(work / "t", MOVE_45))})
@@ -174,10 +175,13 @@ def _mcp_runs(work: Path) -> dict:
     return out
 
 
-def test_mcp_machine_text_is_the_same_bytes_in_any_language(pseudo, tmp_path):
+def test_mcp_machine_text_is_the_same_bytes_in_any_language(pseudo, units, tmp_path):
+    """...and in any Units setting: the baseline is metric, the pseudo-catalog run imperial."""
     pseudo("en-US")
+    units("metric")
     us = _mcp_runs(tmp_path / "us")
     pseudo("en-GB")
+    units("imperial")
     zz = _mcp_runs(tmp_path / "zz")
     assert "/nonexistent/robot.toml" in us["refused"] and "'bogus'" in us["refused"] and "'red9'" in us["refused"]
     for key in ("refused", "run_scenario", "bench_run", "test_run"):

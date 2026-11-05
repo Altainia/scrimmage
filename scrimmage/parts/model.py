@@ -484,8 +484,8 @@ def part_from_dict(d: dict, source: str, base_dir: Path | None) -> Part:
 
     def need_joint(j, where):
         if j not in seen_joints:
-            raise c.err(where, i18n.t("no joint {joint}; the part's joints: {value}",
-                                      joint=repr(j), value=', '.join(joints) or i18n.t("none")))
+            raise c.err(where, i18n.t("no joint {joint}; the part's joints: {joints}",
+                                      joint=repr(j), joints=', '.join(joints) or i18n.t("none")))
         return j
 
     loops = []

@@ -117,8 +117,8 @@ def _load_step(path: Path) -> Source:
         try:
             shutil.copyfile(path, src)
         except OSError as e:
-            raise CadError(i18n.t("Could not open {name}: {value}. Check the file and try again.",
-                                  name=path.name, value=e.strerror or e)) from None
+            raise CadError(i18n.t("Could not open {name}: {error}. Check the file and try again.",
+                                  name=path.name, error=e.strerror or e)) from None
         try:
             cascadio.step_to_glb(str(src), str(glb), tol_linear=TOL_LINEAR, tol_angular=TOL_ANGULAR)
             raw = glb.read_bytes()

@@ -600,16 +600,16 @@ def write_parts(result: BuildResult, imp: ImportFile, import_path: Path) -> list
                 from None
         except OSError as e:
             shutil.rmtree(tmp, ignore_errors=True)
-            raise CadError(t("Couldn't write the part folder {folder} ({value}): check the folder can be written "
-                             "and try again.", folder=folder, value=e.strerror or e)) from None
+            raise CadError(t("Couldn't write the part folder {folder} ({error}): check the folder can be written "
+                             "and try again.", folder=folder, error=e.strerror or e)) from None
         edits = folder / "scrimmage-edits.toml"     # the student's own edits (a grip material...): kept, unchecked
         try:                                        # here (a mistake in them shows when the part is loaded)
             if edits.is_file():
                 shutil.copy2(edits, tmp / edits.name)
         except OSError as e:
             shutil.rmtree(tmp, ignore_errors=True)
-            raise CadError(t("Couldn't keep your edits in {edits} ({value}): check the folder can be read and try "
-                             "again.", edits=edits, value=e.strerror or e)) from None
+            raise CadError(t("Couldn't keep your edits in {edits} ({error}): check the folder can be read and try "
+                             "again.", edits=edits, error=e.strerror or e)) from None
         _install(tmp, folder)
         out.append(folder)
     kept, msgs = _remove_stale(imp, import_path, targets)
@@ -634,7 +634,7 @@ def _install(tmp: Path, folder: Path) -> None:
             raise
     except OSError as e:
         shutil.rmtree(tmp, ignore_errors=True)
-        raise CadError(t("Couldn't replace the part folder {folder} ({value}): close anything using it (Explorer, "
-                         "an editor) and try again.", folder=folder, value=e.strerror or e)) from None
+        raise CadError(t("Couldn't replace the part folder {folder} ({error}): close anything using it (Explorer, "
+                         "an editor) and try again.", folder=folder, error=e.strerror or e)) from None
     if old is not None:
         shutil.rmtree(old, ignore_errors=True)

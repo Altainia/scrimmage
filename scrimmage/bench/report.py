@@ -9,8 +9,9 @@ Units and Language: the headlines and summary.txt are in the Units and Language 
 (scrimmage/units.py, i18n.py; the MCP tools return the headlines in meters and American English, as before the
 settings, through units.fixed()). The CSVs stay SI, their columns named by unit (speed_m_s), and the tables' column
 names are the CSVs'. The UNCALIBRATED line is measure/labels.py's, as the pictures carry it, all of it in the Language.
-The Bench tab doesn't read summary.txt's words: summary.json, written beside it, holds the headlines, the UNCALIBRATED
-line and whether the energy check failed, as data (spec L3).
+The Bench tab doesn't read summary.txt's words: summary.json, written beside it, holds no words, only how many
+headline lines summary.txt has after its title block, whether the last is the UNCALIBRATED line, and whether the
+energy check failed (spec L2, L3).
 """
 
 import csv
@@ -380,7 +381,7 @@ def _text_table(header: list[str], rows: list[list[str]]) -> str:
     return "\n".join([fmt.format(*header), *(fmt.format(*r) for r in rows)])
 
 
-SUMMARY_DATA = "summary.json"   # summary.txt's headlines as data, for the Bench tab (it never reads their words)
+SUMMARY_DATA = "summary.json"   # summary.txt's layout as data, for the Bench tab (it never reads their words)
 
 
 def write_results(result: BenchResult, out_dir: Path) -> Path:
@@ -399,9 +400,10 @@ def write_results(result: BenchResult, out_dir: Path) -> Path:
     with i18n.for_people():     # summary.txt is for people: in the Units and Language settings (an MCP run's too)
         heads = headlines(result, lands)
         (out_dir / "summary.txt").write_text(_summary(result, heads, tables), encoding="utf-8")
-    # the same headlines as data: the Bench tab shows them without finding them by their words
-    data = {"headlines": heads, "uncalibrated": heads[-1], "energy_failed": energy_failures(result) > 0}
-    (out_dir / SUMMARY_DATA).write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    # summary.txt's layout as data (machine JSON: no words, nothing in the Units setting): how many headline lines
+    # follow the title block's blank line, whether the last of them is the UNCALIBRATED line, and the energy check
+    data = {"headlines": len(heads), "uncalibrated": True, "energy_failed": energy_failures(result) > 0}
+    (out_dir / SUMMARY_DATA).write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
     return out_dir
 
 

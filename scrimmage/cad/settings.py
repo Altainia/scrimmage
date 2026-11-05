@@ -25,6 +25,14 @@ from .names import sanitize, unique
 from .source import Source
 
 COLLISIONS = ("none", "wheel", "shaped", "simple")
+# what a body can carry, in words for the notes that say what was dropped (N_(): body_things() translates them)
+BODY_THINGS = {"joint": i18n.N_("joint"), "motor": i18n.N_("motor"), "encoder": i18n.N_("encoder"),
+               "gyro": i18n.N_("gyro"), "mounts": i18n.N_("mounts")}
+
+
+def body_things(keys: list[str]) -> list[str]:
+    """BODY_THINGS' words for `keys` ("joint", "motor", ...), in the Language."""
+    return [i18n.translated(BODY_THINGS[k]) for k in keys]
 
 
 @dataclass
@@ -334,7 +342,7 @@ def read_import(path: Path) -> ImportFile:
     except tomllib.TOMLDecodeError as e:
         raise CadError(i18n.t("{name} isn't valid TOML: {error}", name=Path(path).name, error=e)) from None
     except OSError as e:
-        raise CadError(i18n.t("Can't read {name}: {value}", name=Path(path).name, value=e.strerror or e)) from None
+        raise CadError(i18n.t("Can't read {name}: {error}", name=Path(path).name, error=e.strerror or e)) from None
     return ImportFile.from_dict(data)
 
 
@@ -385,8 +393,9 @@ def remove_empty_bodies(imp: ImportFile) -> tuple[ImportFile, list[str]]:
                                  ("mounts", b.mounts)) if has]
         msg = i18n.t("{name} is no longer in the CAD", name=name)
         if gone:
-            what = gone[0] if len(gone) == 1 else i18n.t("{names} and {last}", names=", ".join(gone[:-1]),
-                                                         last=gone[-1])
+            words = body_things(gone)
+            what = words[0] if len(words) == 1 else i18n.t("{names} and {last}", names=", ".join(words[:-1]),
+                                                           last=words[-1])
             msg = i18n.tn("{name} is no longer in the CAD; its {items} was dropped",
                           "{name} is no longer in the CAD; its {items} were dropped", len(gone), name=name, items=what)
         if b.parent is None and heir is not None and imp.bodies[heir].joint is not None:

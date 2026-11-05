@@ -15,6 +15,7 @@ from typing import Callable
 from . import foreign_writes as fwn
 from . import i18n, units
 from .bindings import binds_rev
+from .bridge import REALTIME_REASON
 from .devicecheck import check_devices, device_notes
 from .checks import (CRASH_PATTERN, Check, CheckResult, ConsoleCheck, Said, build_check, consume_peaks, said, shown,
                      tick_checks)
@@ -33,8 +34,6 @@ TICK_PERIOD = 0.25  # sim seconds between progress "tick" events
 STOPPED = "stopped by the user"
 # the Java agent's summary line, or the RobotPy REV helper's (scrimmage_lockstep)
 AGENT_IGNORED = re.compile(r"scrimmage (agent|rev helper): ignored (\d+) robot-side sim writes \((.*)\)$")
-PHOENIX_NOTE = N_("Phoenix 6 simulation runs on the wall clock, so this robot runs in real time (not lockstep); "
-                  "results are close but not byte-identical")    # (N_(): _said())
 # (N_(): report.json keeps the text itself; report.md and the Scenario tab show it in the Language setting, _said())
 NO_CHECKS_NOTE = N_("this scenario has no checks, so passing only means the robot program ran: add a check (where "
                     "the robot ends up, say) to test something")
@@ -57,6 +56,13 @@ LOCKSTEP_REQUIRED = N_("lockstep is required but the robot program didn't load t
 def _said(text: str) -> Said:
     """A constant marked with N_(): itself in report.json, in the Language setting where it is shown."""
     return Said(text, lambda: translated(text))
+
+
+def _phoenix_note() -> Said:
+    """The run's note for Phoenix 6's real time: the bridge's REALTIME_REASON (one source for both) and what it
+    means for the results."""
+    return Said(f"{REALTIME_REASON}; results are close but not byte-identical",
+                lambda: t("{reason}; results are close but not byte-identical", reason=translated(REALTIME_REASON)))
 
 
 def _shown_now(words: Callable[[], str]) -> Callable[[], str]:
@@ -689,7 +695,7 @@ async def _run_steps(session: Session, scenario: Scenario, report: Report, out_d
         report.lockstep = False   # Phoenix 6 devices freed the robot's clock
     if session.bridge.realtime_reason:
         report.effective_speed = session.bridge.effective_speed
-        report.notes.append(_said(PHOENIX_NOTE))
+        report.notes.append(_phoenix_note())
         speed, b = session.phoenix_speed, session.bridge
         if b.physics_skips or (speed is not None and speed < PHOENIX_SLOW):
             report.notes.append(phoenix_slow_note(speed, b.physics_skips, b.physics_skipped))
