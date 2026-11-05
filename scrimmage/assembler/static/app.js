@@ -17,6 +17,7 @@
 import { renderLibrary, initLibrary } from "./library.js";
 import { renderTree } from "./tree.js";
 import { renderInspector, placeErrors } from "./inspector.js";
+import { units } from "./units.js";
 
 // The hash carries the token and the tab: "#token=…" or "#scenario&token=…" ("#robot&token=…", "#drive&token=…").
 const hashParams = () => new URLSearchParams(location.hash.slice(1));
@@ -491,6 +492,36 @@ export function fmt(v) {
 export const DEFAULT_GRIP = "Default — 1.0 (MuJoCo's default; the larger of pad and piece applies)";
 export const UNIT = { "kg*m^2": "kg·m²", deg: "°", "N*m/rad": "N·m/rad" };
 
+// -- settings menu ------------------------------------------------------------------------------
+// The header's Settings menu: one row per setting, each a group of [data-setting][data-value] buttons. A change
+// applies at once here and, through units.js's poll, in every other open editor.
+const SETTINGS = { units: { now: () => units.system, set: (v) => units.set(v), onChange: units.onChange } };
+
+function initSettings() {
+  const btn = $("#settings-btn"), menu = $("#settings-menu");
+  const show = (open) => { menu.hidden = !open; btn.setAttribute("aria-expanded", String(open)); };
+  btn.addEventListener("click", () => show(menu.hidden));
+  document.addEventListener("click", (e) => { if (!menu.hidden && !e.target.closest(".settings-wrap")) show(false); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !menu.hidden) { show(false); btn.focus(); }
+  });
+  for (const b of menu.querySelectorAll("[data-setting]")) {
+    b.addEventListener("click", async () => {
+      const why = await SETTINGS[b.dataset.setting].set(b.dataset.value);
+      if (why) notice(`Couldn't change the setting: ${why}`, "error");
+      renderSettings();
+    });
+  }
+  for (const s of Object.values(SETTINGS)) s.onChange(renderSettings);
+  renderSettings();
+}
+
+function renderSettings() {
+  for (const b of document.querySelectorAll("#settings-menu [data-setting]")) {
+    b.setAttribute("aria-pressed", String(SETTINGS[b.dataset.setting].now() === b.dataset.value));
+  }
+}
+
 // -- boot ---------------------------------------------------------------------------------------
 function onKey(e) {
   const mod = e.ctrlKey || e.metaKey;
@@ -641,7 +672,11 @@ async function boot() {
   $("#undo").addEventListener("click", () => tabUndo());
   $("#redo").addEventListener("click", () => tabRedo());
   document.addEventListener("keydown", onKey);
-  const { status, data } = await api("GET", "/api/app/state");
+  // the unit table before any tab renders a value (units.js); without it, values show in SI
+  const [{ status, data }] = await Promise.all([api("GET", "/api/app/state"), units.load()]);
+  initSettings();
+  units.watch();
+  if (units.warning) notice(units.warning, "warn");
   const mode = status === 200 ? data.mode : "robot";   // without an answer, behave as before (it reports its own errors)
   window.__scrimmage.mode = mode;
   store.appPath = data.display_path || data.path || "";

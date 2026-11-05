@@ -24,6 +24,7 @@ from .lockstep import DEFAULT_STEP, parse_speed
 from .robot_process import RobotProcess
 from .scenario import ScenarioError, load_scenario, validate
 from .scenario_runner import REAL_DS_REFUSED, UNSET, run_scenario
+from .settings import SYSTEMS, set_override
 
 
 SIM_MODE_HELP = ("fast: set SCRIMMAGE_MODE=fast for the robot program (overrides [robot_program] sim_mode); "
@@ -52,8 +53,21 @@ def _port(text: str) -> int:
     return n
 
 
+def _leading_units(argv: list[str]) -> tuple[str | None, list[str]]:
+    """The global `--units X` (or `--units=X`) before the command, and the rest: taken off first, so that
+    `scrimmage --units metric measure ...` still reaches measure's own parser."""
+    if argv[:1] == ["--units"] and len(argv) > 1:
+        return argv[1], argv[2:]
+    if argv[:1] and argv[0].startswith("--units="):
+        return argv[0].split("=", 1)[1], argv[1:]
+    return None, argv
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="scrimmage", description="Simulate a WPILib robot program in a MuJoCo world.")
+    ap.add_argument("--units", choices=SYSTEMS,
+                    help="show values in imperial or metric units for this run (default: the Units setting, which "
+                         "the editor's Settings menu sets)")
     sub = ap.add_subparsers(dest="command", required=True)
 
     sp = sub.add_parser("serve", help="run the world for a robot program you drive yourself (WPILib sim GUI)")
@@ -235,6 +249,11 @@ def main(argv: list[str] | None = None) -> None:
                                    "blank form, or start a file (docs/measuring.md)")
 
     argv = sys.argv[1:] if argv is None else argv
+    units, argv = _leading_units(argv)
+    if units is not None:
+        if units not in SYSTEMS:
+            ap.error(f"argument --units: invalid choice: {units!r} (choose from {', '.join(SYSTEMS)})")
+        set_override(units)
     if argv[:1] == ["measure"]:
         from .measure.cli import main as measure
         sys.exit(measure(argv[1:]))

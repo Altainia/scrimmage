@@ -16,6 +16,9 @@ def pytest_configure(config):
     if "SCRIMMAGE_FOLDERS" not in os.environ:    # likewise the team folders ({cad}, {code}) set on this computer
         import tempfile
         os.environ["SCRIMMAGE_FOLDERS"] = os.path.join(tempfile.mkdtemp(prefix="scrimmage-folders-"), "folders.json")
+    # likewise the user settings (Units): never the user's own; each test then gets a fresh folder (_settings below)
+    import tempfile
+    os.environ["SCRIMMAGE_CONFIG"] = tempfile.mkdtemp(prefix="scrimmage-config-")
     config.addinivalue_line("markers", "java: needs the WPILib JDK and Gradle (skipped when SCRIMMAGE_SKIP_JAVA=1)")
     config.addinivalue_line("markers", "network: downloads from the internet (skips itself if the download fails)")
     config.addinivalue_line("markers", "freecad: needs headless FreeCAD (skipped when SCRIMMAGE_SKIP_FREECAD=1 or none is found)")
@@ -39,6 +42,25 @@ def pytest_collection_modifyitems(config, items):
         for item in items:
             if "freecad" in item.keywords:
                 item.add_marker(skip)
+
+
+@pytest.fixture(autouse=True)
+def _settings(tmp_path_factory, monkeypatch):
+    """Every test starts with no settings file (so the product default, imperial, applies) and no `--units`
+    override. A server or CLI the test starts inherits $SCRIMMAGE_CONFIG."""
+    from scrimmage import settings
+    monkeypatch.setenv("SCRIMMAGE_CONFIG", str(tmp_path_factory.mktemp("config")))
+    settings.set_override(None)
+    yield
+    settings.set_override(None)
+
+
+@pytest.fixture
+def units():
+    """units("metric") sets the Units setting for this test (in its own settings file, so servers and CLIs the
+    test starts see it too)."""
+    from scrimmage import settings
+    return lambda system: settings.save(units=system)
 
 
 def _no_freecad() -> bool:

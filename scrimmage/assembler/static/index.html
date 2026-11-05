@@ -26,6 +26,20 @@
     <button type="button" id="start-link" class="btn" title="Open or create something else" hidden>Start page</button>
     <button type="button" id="undo" class="btn" title="Undo (Ctrl+Z)" disabled>Undo</button>
     <button type="button" id="redo" class="btn" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
+    <div class="settings-wrap">
+      <button type="button" id="settings-btn" class="btn" aria-expanded="false" aria-controls="settings-menu">Settings</button>
+      <div id="settings-menu" class="settings-menu" role="group" aria-label="Settings" hidden>
+        <!-- one row per setting (app.js initSettings): a label and its choices -->
+        <div class="settings-row">
+          <span class="settings-label" id="settings-units-label">Units</span>
+          <div class="seg" role="group" aria-labelledby="settings-units-label">
+            <button type="button" class="seg-btn" data-setting="units" data-value="imperial" aria-pressed="true">Imperial</button>
+            <button type="button" class="seg-btn" data-setting="units" data-value="metric" aria-pressed="false">Metric</button>
+          </div>
+        </div>
+        <p class="settings-note">For every tab, and every editor on this computer.</p>
+      </div>
+    </div>
   </div>
 </header>
 
