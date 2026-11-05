@@ -200,11 +200,13 @@ def _overlap(a: np.ndarray, b: np.ndarray) -> float:
 STARTS_INSIDE = "[partner] starts inside "    # check_start's refusals begin so; run.world_for words Setup's its own way
 
 
-def _by(depth: float) -> str:
-    """An overlap in words, in the Units setting: "4.72 in" or "120 mm" (machine text: the old "0.12 m")."""
-    if units.is_machine():
-        return f"{depth:.2f} m"
-    return units.fmt(depth, "length", fewer=1)
+def _overlapping(what: str, depth: float) -> PartError:
+    """check_start's refusal: in meters, as a robot config's [partner] start is written (and as MCP results and
+    report.json have always had it). It carries `what` and `depth` (m), so the Test tab can word Setup's partner in
+    the Units setting (blocks/run.py world_for)."""
+    e = PartError(f"{STARTS_INSIDE}{what} (their outlines overlap by {depth:.2f} m)")
+    e.what, e.depth = what, depth
+    return e
 
 
 def check_start(info: PartnerInfo, robot_start: tuple[float, float, float], elements=()) -> None:
@@ -216,11 +218,11 @@ def check_start(info: PartnerInfo, robot_start: tuple[float, float, float], elem
     rx, ry, rh = robot_start
     depth = _overlap(mine, _rect((rx, ry), rh, ROBOT_OUTLINE, ROBOT_OUTLINE))
     if depth > 1e-9:
-        raise PartError(f"{STARTS_INSIDE}the robot (their outlines overlap by {_by(depth)})")
+        raise _overlapping("the robot", depth)
     for e in elements:
         depth = max((_overlap(mine, f) for f in _on_floor(e, start=True)), default=0.0)
         if depth > 1e-9:
-            raise PartError(f"{STARTS_INSIDE}element {e.name} (their outlines overlap by {_by(depth)})")
+            raise _overlapping(f"element {e.name}", depth)
 
 
 # ---- its signals ----------------------------------------------------------------------------------------------------

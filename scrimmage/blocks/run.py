@@ -295,8 +295,8 @@ SETUP_STARTS_INSIDE = "the partner robot (Setup) starts inside "
 def world_for(program: Program):
     """The World of the test's robot config (its `robot`, relative to the test file), with the test's setup applied.
     When Setup places the partner and it starts inside the robot or an element, the TestFileError says Setup's partner
-    ("the partner robot (Setup) starts inside the robot (their outlines overlap by 0.20 m)"), not the config's
-    [partner]: the student only ticked Setup."""
+    ("the partner robot (Setup) starts inside the robot (their outlines overlap by 7.87 in)", in the Units setting;
+    machine text keeps the old 0.20 m), not the config's [partner]: the student only ticked Setup."""
     from ..config import ConfigError, build_world, load_config
     config = load_config(Path(program.path).parent / program.robot)
     try:
@@ -305,7 +305,11 @@ def world_for(program: Program):
         text = str(e)
         if not isinstance(program.setup.get("partner"), dict) or STARTS_INSIDE not in text:
             raise
-        raise TestFileError(SETUP_STARTS_INSIDE + text.split(STARTS_INSIDE, 1)[1]) from None
+        rest = text.split(STARTS_INSIDE, 1)[1]
+        cause = e.__context__       # partner.check_start's refusal, with its depth in meters
+        if not units.is_machine() and isinstance(getattr(cause, "depth", None), float):
+            rest = f"{cause.what} (their outlines overlap by {units.fmt(cause.depth, 'length', fewer=1)})"
+        raise TestFileError(SETUP_STARTS_INSIDE + rest) from None
 
 
 GRIP_CONDITIONS = ("held", "rests_on", "seated")     # a test of these rests on the grip's friction

@@ -126,11 +126,13 @@ def test_brake_resists_more_than_coast(tmp_path):
 
 
 def test_partner_overlap_errors(tmp_path):
-    """Review Focus 3: a partner placed overlapping the robot's start or an element on the carpet is refused."""
+    """Review Focus 3: a partner placed overlapping the robot's start or an element on the carpet is refused. A
+    config's [partner] is refused in meters, as its start is written, whatever the Units setting (an agent's
+    start_session and report.json see it so); the Test tab words Setup's partner in the setting (below)."""
     # the stand-in starts at (2.0, 4.035), heading 0: a 0.9 m outline; the partner's frame plus bumpers is 0.86 m
     with pytest.raises(PartError) as e:
         _world(tmp_path, "\n[partner]\nstart = [2.68, 4.035, 0]\n")
-    assert str(e.value) == "[partner] starts inside the robot (their outlines overlap by 7.87 in)"
+    assert str(e.value) == "[partner] starts inside the robot (their outlines overlap by 0.20 m)"
     _world(tmp_path, "\n[partner]\nstart = [2.88, 4.035, 0]\n")     # just touching: allowed
 
     (tmp_path / "gate.toml").write_text("""
@@ -163,7 +165,7 @@ mass = 1
     on_range = '\n[range]\nfile = "gate.toml"\nstart = "here"\n'
     with pytest.raises(PartError) as e:
         _world(tmp_path, on_range + "\n[partner]\nstart = [5.2, 4.0, 0]\n")
-    assert str(e.value) == "[partner] starts inside element portcullis (their outlines overlap by 3.94 in)"
+    assert str(e.value) == "[partner] starts inside element portcullis (their outlines overlap by 0.10 m)"
     _world(tmp_path, on_range + "\n[partner]\nstart = [5.0, 6.0, 0]\n")     # under a raised panel: allowed
 
     for bad, msg in (("start = [4, 4, 0]\nmass_kg = 50", "unknown key 'mass_kg'; allowed: length, width, mass, "
