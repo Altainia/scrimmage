@@ -2779,7 +2779,8 @@ class _Handler(BaseHTTPRequestHandler):
                 raise ApiError(405, i18n.t("method not allowed"))
         except (ApiError, SessionError) as e:
             self._send(e.status, {"ok": False, "error": e.message,
-                                  "errors": [{"field": getattr(e, "field", "status"), "message": e.message}]})
+                                  "errors": [{"field": getattr(e, "field", "status"), "message": e.message,
+                                              **getattr(e, "detail", {})}]})
         except (BrokenPipeError, ConnectionResetError):
             pass
         except Exception as e:   # never take the server down on a request

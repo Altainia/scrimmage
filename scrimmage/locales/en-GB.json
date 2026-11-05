@@ -11,5 +11,6 @@
   "distance from each frame edge to a corner mount (module center)": "distance from each frame edge to a corner mount (module centre)",
   "Weight {weight} · center of gravity {cg}": "Weight {weight} · centre of gravity {cg}",
   "center of gravity": "centre of gravity",
-  "the start must be [x, y, heading]: meters from the blue corner, and degrees": "the start must be [x, y, heading]: metres from the blue corner, and degrees"
+  "the start must be [x, y, heading]: meters from the blue corner, and degrees": "the start must be [x, y, heading]: metres from the blue corner, and degrees",
+  "\"{name}\" slides, so give it in inches or meters, not degrees": "\"{name}\" slides, so give it in inches or metres, not degrees"
 }

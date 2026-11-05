@@ -38,7 +38,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
-from .. import units
+from .. import i18n, units
 from ..testrange.build import default_tip, rest_pose
 from ..testrange.pieces import PieceKind, orientation_words
 from . import store
@@ -47,8 +47,14 @@ from .program import SPREAD_AXES, Program, TestFileError
 SPREAD_CONE_DEG = 30.0    # the spread's ball is within this of the start's heading (our call)
 SPREAD_REACH = 3.0        # m: ... and no further than this from the start (our call)
 IN = 0.0254              # m per inch (conditions.IN; not imported: conditions imports the palette, which imports this)
-NO_BALL = "the floor spread needs a ball on the floor in front of the robot's start"
-NO_SPREAD = "this test has no floor spread: set one in Setup ([setup] floor_spread)"
+def no_ball() -> str:
+    return i18n.t("the floor spread needs a ball on the floor in front of the robot's start")
+
+
+def no_spread() -> str:
+    return i18n.t("this test has no floor spread: set one in Setup ([setup] floor_spread)")
+
+
 COULDNT_RUN = "couldn't run"
 
 
@@ -214,11 +220,16 @@ def inside_robot(world, spread: dict) -> str | None:
         near = np.clip(c[:, None, :], lo, hi)                       # (m, boxes, 3)
         hit = (np.linalg.norm(near - c[:, None, :], axis=2) < radii[:, None] - 1e-3).any()
         if hit or _boxes_overlap((bc + at, ba, bh), lo, hi):
-            side = "" if p["offset_in"] == 0 else \
-                f", {_inches(abs(p['offset_in']))} {'left' if p['offset_in'] > 0 else 'right'}"
-            what = "ball" if kind is None else kind.label
-            return (f"the floor spread puts the {what} inside the robot at {_inches(p['distance_in'])} ahead{side}: "
-                    f"start the distance at {_inches(_nearest_in(world, i, p, boxes))} or more")
+            q = dict(piece=i18n.t("ball") if kind is None else kind.label, ahead=_inches(p["distance_in"]),
+                     nearest=_inches(_nearest_in(world, i, p, boxes)), across=_inches(abs(p["offset_in"])))
+            if p["offset_in"] == 0:
+                return i18n.t("the floor spread puts the {piece} inside the robot at {ahead} ahead: start the distance "
+                              "at {nearest} or more", **q)
+            if p["offset_in"] > 0:
+                return i18n.t("the floor spread puts the {piece} inside the robot at {ahead} ahead, {across} left: "
+                              "start the distance at {nearest} or more", **q)
+            return i18n.t("the floor spread puts the {piece} inside the robot at {ahead} ahead, {across} right: start "
+                          "the distance at {nearest} or more", **q)
     return None
 
 
@@ -335,12 +346,12 @@ def run_spread(program: Program, base, on_progress=None, cancel: threading.Event
     from .sweep import run_each
     spread = program.setup.get("floor_spread")
     if not spread:
-        raise TestFileError(NO_SPREAD)
+        raise TestFileError(no_spread())
     world = world_for(program)
     check_problems(program, world)          # the test's problems (a spread with no ball among them), before any run
     found = spread_ball(world)
     if found is None:
-        raise TestFileError(NO_BALL)
+        raise TestFileError(no_ball())
     inside = inside_robot(world, spread)
     if inside is not None:
         raise TestFileError(inside)

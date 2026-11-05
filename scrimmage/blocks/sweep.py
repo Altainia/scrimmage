@@ -43,7 +43,7 @@ from pathlib import Path
 
 import tomlkit
 
-from .. import units
+from .. import i18n, units
 from ..cad.settings import REPLACE_WAITS, replace_file
 from ..config import build_world, load_config
 from ..parts.model import PartError, load_part
@@ -81,9 +81,9 @@ def _kind(target) -> str:
             return "setup"
         if set(target) == {"station", "key"} and isinstance(target["station"], str) and target["key"] in STATION_KEYS:
             return "setup"
-    raise ValueError(f"can't sweep {target!r}: sweep a block's volts, seconds, to or distance, the robot's mass or "
-                     "center of mass, where a part is mounted, a body's grip material, a station's interval, stock, "
-                     "spread, tip or turn, or the seed")
+    raise ValueError(i18n.t("can't sweep {target}: sweep a block's volts, seconds, to or distance, the robot's mass "
+                            "or center of mass, where a part is mounted, a body's grip material, a station's "
+                            "interval, stock, spread, tip or turn, or the seed", target=repr(target)))
 
 
 def _block_json(blocks: list, place: list) -> dict:
@@ -92,12 +92,14 @@ def _block_json(blocks: list, place: list) -> dict:
     for depth, i in enumerate(place):
         where = _where(tuple(place[:depth + 1]))
         if i < 0 or i >= len(blocks):
-            raise TestFileError(f"there's no {where.split(' inside ')[0]}" +
-                                (f" inside {_where(tuple(place[:depth]))}" if depth else ""))
+            missing = i18n.t("block {n}", n=i + 1)
+            raise TestFileError(i18n.t("there's no {block} inside {where}", block=missing,
+                                       where=_where(tuple(place[:depth]))) if depth
+                                else i18n.t("there's no {block}", block=missing))
         b = blocks[i]
         if depth < len(place) - 1:
             if b["do"] != "repeat":
-                raise TestFileError(f"{where} isn't a repeat, so it has no blocks inside")
+                raise TestFileError(i18n.t("{where} isn't a repeat, so it has no blocks inside", where=where))
             blocks = b["body"]
     return b
 
@@ -106,14 +108,14 @@ def _edit_program(program: Program, place: list, key: str, value: float) -> Prog
     d = to_json(program)
     b = _block_json(d["blocks"], place)
     if key not in b:
-        raise TestFileError(f"{_where(tuple(place))} has no {key}")
+        raise TestFileError(i18n.t("{block} has no {key}", block=_where(tuple(place)), key=key))
     b[key] = value
     return from_json(d, program.path)
 
 
 def _whole(value: float, what: str) -> int:
     if value != int(value):
-        raise TestFileError(f"{what} must be a whole number")
+        raise TestFileError(i18n.t("{what} must be a whole number", what=what))
     return int(value)
 
 
@@ -138,14 +140,15 @@ def _check_station(program: Program, config: Path, name: str) -> None:
     raw = load_config(config).raw
     sec = raw.get("range")
     if not isinstance(sec, dict) or not isinstance(sec.get("file"), str):
-        raise ValueError("this robot is on the plain field, which has no stations")
+        raise ValueError(i18n.t("this robot is on the plain field, which has no stations"))
     try:
         rng = load_range(sec["file"], config.parent)
     except RangeError as e:
         raise ValueError(str(e)) from None
     names = [s.name for s in rng.stations]
     if name not in names:
-        raise ValueError(f"the field has no station '{name}'; its stations: {', '.join(names) or 'none'}")
+        raise ValueError(i18n.t("the field has no station '{name}'; its stations: {names}",
+                                name=name, names=", ".join(names) or i18n.t("none")))
 
 
 def _set(table, key: str, i: int | None, value: float) -> None:
@@ -165,23 +168,25 @@ def _check_grip(config: Path, grip: str) -> list[str]:
     name, _, body = grip.partition(".")
     part = next((p for p in load_config(config).raw.get("part", []) if p.get("name") == name), None)
     if part is None:
-        raise ValueError(f"no {'body' if body else 'part'} {grip} on this robot")
+        raise ValueError(i18n.t("no body {grip} on this robot", grip=grip) if body
+                         else i18n.t("no part {grip} on this robot", grip=grip))
     if "stock" in part:
-        raise ValueError(f"can't sweep the grip of {grip}: {name} is a stock part")
+        raise ValueError(i18n.t("can't sweep the grip of {grip}: {name} is a stock part", grip=grip, name=name))
     try:
         folder = (config.parent / expand(str(part.get("path")))).resolve()
         loaded = load_part(folder if folder.is_file() else folder / "part.toml")
     except (TeamFolderError, PartError) as e:
-        raise ValueError(f"can't sweep the grip of {grip}: {e}") from None
+        raise ValueError(i18n.t("can't sweep the grip of {grip}: {why}", grip=grip, why=e)) from None
     names = [b.name for b in loaded.bodies]
     if body:
         if body not in names:
-            raise ValueError(f"no body {grip} on this robot; {name}'s bodies: {', '.join(names)} "
-                             f"(or sweep the whole part, {name})")
+            raise ValueError(i18n.t("no body {grip} on this robot; {name}'s bodies: {names} (or sweep the whole part, "
+                                    "{name})", grip=grip, name=name, names=', '.join(names)))
         return [body]
     touching = [b.name for b in loaded.bodies if any(g.collide and not g.tread for g in b.geoms)]
     if not touching:
-        raise ValueError(f"can't sweep the grip of {name}: no body of it has a geom that touches anything")
+        raise ValueError(i18n.t("can't sweep the grip of {name}: no body of it has a geom that touches anything",
+                                name=name))
     return touching
 
 
@@ -193,7 +198,7 @@ def _edit_config(text: str, target: dict, value: float | str, bodies: list[str] 
         name, _, body = target["grip"].partition(".")
         part = next((p for p in parts if p.get("name") == name), None)
         if part is None:
-            raise ValueError(f"no part {name} on this robot")
+            raise ValueError(i18n.t("no part {name} on this robot", name=name))
         grips = tomlkit.inline_table()
         if body:
             grips.update(part.get("grip") or {})            # the part's other bodies keep their grips
@@ -203,14 +208,16 @@ def _edit_config(text: str, target: dict, value: float | str, bodies: list[str] 
     elif "robot" in target:
         chassis = next((p for p in parts if p.get("stock") == "chassis"), None)
         if chassis is None:
-            what = "change the mass of" if target["robot"] == "mass" else "move the center of gravity of"
-            raise ValueError(f"this robot has no stand-in chassis (stock = \"chassis\") to {what}")
+            raise ValueError(i18n.t('this robot has no stand-in chassis (stock = "chassis") to change the mass of')
+                             if target["robot"] == "mass" else
+                             i18n.t('this robot has no stand-in chassis (stock = "chassis") to move the center of '
+                                    'gravity of'))
         i = ROBOT_KEYS[target["robot"]]
         _set(chassis, "mass" if i is None else "com_offset", i, value)
     else:
         part = next((p for p in parts if p.get("name") == target["mount"]), None)
         if part is None:
-            raise ValueError(f"the robot has no part named {target['mount']!r}")
+            raise ValueError(i18n.t("the robot has no part named {mount}", mount=repr(target['mount'])))
         key, i = AXES[target["axis"]]
         _set(part, key, i, value)
     return tomlkit.dumps(doc)
@@ -274,23 +281,23 @@ def run_sweep(program: Program, target: dict, values: list[float | str], base, o
     (k from 1); setting `cancel` ends the run under way and the sweep."""
     kind = _kind(target)
     if not isinstance(values, (list, tuple)) or not values:
-        raise ValueError("a sweep needs at least one value")
+        raise ValueError(i18n.t("a sweep needs at least one value"))
     if len(values) > MAX_SWEEP:
-        raise ValueError(f"a sweep tries at most {MAX_SWEEP} values")
+        raise ValueError(i18n.t("a sweep tries at most {max} values", max=MAX_SWEEP))
     if kind == "grip":      # material names or numbers; one that isn't a material is that row's message
         if not all(isinstance(v, str) or (isinstance(v, (int, float)) and not isinstance(v, bool)) for v in values):
-            raise ValueError("a grip sweep's values must be material names or numbers")
+            raise ValueError(i18n.t("a grip sweep's values must be material names or numbers"))
         values = [v if isinstance(v, str) else float(v) for v in values]
     else:
         if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in values):
-            raise ValueError("a sweep's values must be numbers")
+            raise ValueError(i18n.t("a sweep's values must be numbers"))
         values = [float(v) for v in values]
     config = Path(program.path).parent / program.robot
     text = bodies = None
     if kind == "block":
         b = _block_json(to_json(program)["blocks"], target["block"])     # the target is there (else it's refused)
         if target["key"] not in b:
-            raise TestFileError(f"{_where(tuple(target['block']))} has no {target['key']}")
+            raise TestFileError(i18n.t("{block} has no {key}", block=_where(tuple(target['block'])), key=target['key']))
     elif kind == "setup":
         if "station" in target:
             _check_station(program, config, target["station"])

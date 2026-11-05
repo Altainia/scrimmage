@@ -51,12 +51,14 @@ TABLE_ROWS = 40   # a sweep's table on the stage shows its first rows; results.c
 
 
 class SessionError(Exception):
-    """A request the session refuses: `status` is the HTTP status (400, 404, 409)."""
+    """A request the session refuses: `status` is the HTTP status (400, 404, 409); `detail`, codes the page reads
+    instead of the message's words (spec L3)."""
 
-    def __init__(self, status: int, message: str):
+    def __init__(self, status: int, message: str, detail: dict | None = None):
         super().__init__(message)
         self.status = status
         self.message = message
+        self.detail = detail or {}      # more about it, sent beside the message (the Test tab's refused block)
 
 
 def examples() -> list[str]:

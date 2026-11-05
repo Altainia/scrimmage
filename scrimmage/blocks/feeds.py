@@ -38,6 +38,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .. import i18n
 from ..testrange.balls import AT_REST_SPEED, BallState
 
 STUCK_S = 0.5           # s at rest on the robot to be stuck (the spec's number); also how long a piece rests to settle
@@ -277,8 +278,13 @@ def _placed_words(rows: list[dict]) -> str:
         if r["outcome"] == "placed":
             on[r["why"]] = on.get(r["why"], 0) + 1
     if len(on) == 1:
-        return f"on {next(iter(on))}"
-    return "(" + ", ".join(f"{n} on {where}" for where, n in on.items()) + ")"
+        return i18n.t("on {place}", place=next(iter(on)))
+    return "(" + ", ".join(i18n.t("{count} on {place}", count=n, place=where) for where, n in on.items()) + ")"
+
+
+# a missed piece's why (a row's `why`, kept as it is) in the counts sentence's words
+_MISSED_WHY = {"bounced out": lambda n: i18n.t("{count} bounced out", count=n),
+               "still moving when the run ended": lambda n: i18n.t("{count} still moving when the run ended", count=n)}
 
 
 def sentence(rows: list[dict], hopper: bool = True) -> str:
@@ -289,19 +295,21 @@ def sentence(rows: list[dict], hopper: bool = True) -> str:
         return ""
     c = counts(rows)
     placed = c.get("placed", 0)
+    parts = []
     if placed and not hopper:
-        out = f"{placed} of {c['fed']} placed {_placed_words(rows)}"
+        parts.append(i18n.t("{placed} of {fed} placed {where}", placed=placed, fed=c["fed"], where=_placed_words(rows)))
         if c["in"]:
-            out += f"; {c['in']} made it in"
+            parts.append(i18n.t("{count} made it in", count=c["in"]))
     else:
         pct = math.floor(100.0 * c["in"] / c["fed"] + 0.5)
-        out = f"{c['in']} of {c['fed']} made it in ({pct}%)"
+        parts.append(i18n.t("{made} of {fed} made it in ({percent}%)", made=c["in"], fed=c["fed"], percent=pct))
         if placed:
-            out += f"; {placed} placed {_placed_words(rows)}"
+            parts.append(i18n.t("{count} placed {where}", count=placed, where=_placed_words(rows)))
     if c["stuck"]:
-        out += f"; {c['stuck']} stuck in the robot"
+        parts.append(i18n.t("{count} stuck in the robot", count=c["stuck"]))
     if c["missed"]:
-        whys = [f"{n} {why}" for why in ("bounced out", "still moving when the run ended")
+        whys = [_MISSED_WHY[why](n) for why in _MISSED_WHY
                 if (n := sum(r["outcome"] == "missed" and r["why"] == why for r in rows))]
-        out += f"; {c['missed']} missed" + (f" ({', '.join(whys)})" if whys else "")
-    return out
+        parts.append(i18n.t("{count} missed ({whys})", count=c["missed"], whys=", ".join(whys)) if whys
+                     else i18n.t("{count} missed", count=c["missed"]))
+    return "; ".join(parts)

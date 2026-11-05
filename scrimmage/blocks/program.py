@@ -31,6 +31,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .. import i18n
 from ..climb.run import SETTLE_S
 from ..launcher.inputs import PRESETS
 from ..measure.use import is_measurement
@@ -73,7 +74,13 @@ _STATION_LISTS = ("spread_position", "spread_rotation_deg")
 
 
 class TestFileError(ValueError):
+    """A test file (or test JSON) that can't be read. One about a block also has its `place` (0-based, outermost
+    first, as problems() gives them) and its `problem`, the message without the block's words (for the Test tab)."""
     __test__ = False     # not a pytest class
+
+    def __init__(self, message: str, place: list[int] | None = None, problem: str | None = None):
+        super().__init__(message)
+        self.place, self.problem = place, problem
 
 
 @dataclass(frozen=True)
@@ -120,81 +127,96 @@ def found_setup(program: Program) -> dict:
 
 # ---- reading --------------------------------------------------------------------------------------------------------
 
+class _Where(str):
+    """A block's place in words ("block 2 inside block 3 (repeat)"), knowing its `trail`."""
+    trail: tuple = ()
+
+
 def _place(trail: tuple) -> str:
     """trail: 1-based block numbers, outermost first."""
-    s = f"block {trail[-1]}"
+    s = i18n.t("block {n}", n=trail[-1])
     for n in reversed(trail[:-1]):
-        s += f" inside block {n}"
-    return s + (" (repeat)" if len(trail) > 1 else "")
+        s = i18n.t("{block} inside block {n}", block=s, n=n)
+    where = _Where(i18n.t("{place} (repeat)", place=s) if len(trail) > 1 else s)
+    where.trail = trail
+    return where
+
+
+def _fail(where: str, problem: str) -> TestFileError:
+    """The TestFileError "<where>: <problem>", with the block's place when `where` is one (_place)."""
+    trail = getattr(where, "trail", None)
+    return TestFileError(i18n.t("{where}: {problem}", where=where, problem=problem),
+                         place=[n - 1 for n in trail] if trail else None, problem=problem if trail else None)
 
 
 def _num(v, where: str, what: str) -> float:
     if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
-        raise TestFileError(f"{where}: {what} must be a number, not {v!r}")
+        raise _fail(where, i18n.t("{what} must be a number, not {value}", what=what, value=repr(v)))
     return float(v)
 
 
 def _time(v, where: str, what: str) -> float:
     x = _num(v, where, what)
     if x < 0:
-        raise TestFileError(f"{where}: {what} can't be negative")
+        raise _fail(where, i18n.t("{what} can't be negative", what=what))
     return x
 
 
 def _volts(v, where: str, what: str = "volts") -> float:
     x = _num(v, where, what)
     if abs(x) > MAX_VOLTS:
-        raise TestFileError(f"{where}: {what} must be between -12 and 12")
+        raise _fail(where, i18n.t("{what} must be between -12 and 12", what=what))
     return x
 
 
 def _text(v, where: str, what: str) -> str:
     if not isinstance(v, str) or not v:
-        raise TestFileError(f"{where}: {what} must be a name in quotes")
+        raise _fail(where, i18n.t("{what} must be a name in quotes", what=what))
     return v
 
 
 def _whole(v, where: str, what: str, hi: int) -> int:
     if isinstance(v, bool) or not isinstance(v, int) or not 1 <= v <= hi:
-        raise TestFileError(f"{where}: {what} must be a whole number from 1 to {hi}")
+        raise _fail(where, i18n.t("{what} must be a whole number from 1 to {high}", what=what, high=hi))
     return v
 
 
 def _unit(v, where: str) -> str:
     if v is None:
-        raise TestFileError(f'{where}: say the unit ("deg", "in" or "m")')
+        raise _fail(where, i18n.t('say the unit ("deg", "in" or "m")'))
     if v not in UNITS:
-        raise TestFileError(f'{where}: the unit must be "deg", "in" or "m", not {v!r}')
+        raise _fail(where, i18n.t('the unit must be "deg", "in" or "m", not {value}', value=repr(v)))
     return v
 
 
 def _keys(t: dict, allowed: tuple, where: str) -> None:
     extra = [k for k in t if k not in allowed]
     if extra:
-        raise TestFileError(f"{where}: {extra[0]!r} isn't something this kind of block uses; "
-                            f"it uses {', '.join(allowed)}")
+        raise _fail(where, i18n.t("{value} isn't something this kind of block uses; it uses {names}",
+                                  value=repr(extra[0]), names=', '.join(allowed)))
 
 
 def _one_of(t: dict, names: tuple, where: str) -> str:
     have = [n for n in names if n in t]
     if len(have) != 1:
-        raise TestFileError(f"{where}: give exactly one of {' or '.join(names)}")
+        raise _fail(where, i18n.t("give exactly one of {names}", names=' or '.join(names)))
     return have[0]
 
 
 def _cond(v, where: str) -> Cond:
     if not isinstance(v, dict) or not v:
-        raise TestFileError(f"{where}: a condition is a table like {{ tilt = {{ above = 10 }} }}")
+        raise _fail(where, i18n.t("a condition is a table like {{ tilt = {{ above = 10 }} }}"))
     if len(v) != 1:
-        raise TestFileError(f"{where}: one condition per block (this has {', '.join(map(str, v))})")
+        raise _fail(where, i18n.t("one condition per block (this has {names})", names=', '.join(map(str, v))))
     kind, t = next(iter(v.items()))
     if kind not in COND_KINDS:
-        raise TestFileError(f"{where}: {kind!r} isn't a condition; use {', '.join(COND_KINDS)}")
+        raise _fail(where, i18n.t("{kind} isn't a condition; use {names}",
+                                  kind=repr(kind), names=', '.join(COND_KINDS)))
     if kind in ("hanging_from", "level", "station_empty"):
         key = {"hanging_from": "bar", "level": "level", "station_empty": "station"}[kind]
         return Cond(kind, {key: _text(t, where, kind)})
     if not isinstance(t, dict):
-        raise TestFileError(f"{where}: {kind} needs a table with its settings")
+        raise _fail(where, i18n.t("{kind} needs a table with its settings", kind=kind))
     if kind == "joint":
         _keys(t, ("name", "above", "below", "unit"), where)
         side = _one_of(t, ("above", "below"), where)
@@ -205,15 +227,15 @@ def _cond(v, where: str) -> Cond:
         side = _one_of(t, ("at_least", "at_most"), where)
         n = t[side]
         if isinstance(n, bool) or not isinstance(n, int) or not 0 <= n <= MAX_HOPPER:
-            raise TestFileError(f"{where}: {side} must be a whole number from 0 to {MAX_HOPPER}")
+            raise _fail(where, i18n.t("{side} must be a whole number from 0 to {high}", side=side, high=MAX_HOPPER))
         return Cond(kind, {side: n})
     if kind == "made_it_in":
         _keys(t, ("at_least",), where)
         if "at_least" not in t:
-            raise TestFileError(f"{where}: made_it_in needs at_least, a percent")
+            raise _fail(where, i18n.t("made_it_in needs at_least, a percent"))
         pct = _num(t["at_least"], where, "at_least")
         if not 0 <= pct <= 100:
-            raise TestFileError(f"{where}: at_least is a percent, from 0 to 100")
+            raise _fail(where, i18n.t("at_least is a percent, from 0 to 100"))
         return Cond(kind, {"at_least": pct})
     if kind == "scored":
         _keys(t, ("goal", "at_least"), where)
@@ -223,23 +245,23 @@ def _cond(v, where: str) -> Cond:
         _keys(t, ("turret", "at", "within_deg"), where)
         within = _num(t.get("within_deg", AIMED_DEG), where, "within_deg")
         if within <= 0:
-            raise TestFileError(f"{where}: within_deg must be more than 0")
+            raise _fail(where, i18n.t("within_deg must be more than 0"))
         return Cond(kind, {"turret": _text(t.get("turret"), where, "turret"), "at": _text(t.get("at"), where, "at"),
                            "within_deg": within})
     if kind == "cylinder":
         _keys(t, ("cylinder", "is"), where)
         if t.get("is") not in CYLINDER_IS:
-            raise TestFileError(f'{where}: is must be "extended" or "retracted", not {t.get("is")!r}')
+            raise _fail(where, i18n.t('is must be "extended" or "retracted", not {value}', value=repr(t.get('is'))))
         return Cond(kind, {"cylinder": _text(t.get("cylinder"), where, "cylinder"), "is": t["is"]})
     if kind == "pressure":
         _keys(t, ("side", "above", "below"), where)
         side = t.get("side", "stored")
         if side not in PRESSURE_SIDES:
-            raise TestFileError(f'{where}: side must be "stored" or "working", not {side!r}')
+            raise _fail(where, i18n.t('side must be "stored" or "working", not {side}', side=repr(side)))
         limit = _one_of(t, ("above", "below"), where)
         psi = _num(t[limit], where, limit)
         if psi < 0:
-            raise TestFileError(f"{where}: {limit} is a pressure in psi and can't be negative")
+            raise _fail(where, i18n.t("{limit} is a pressure in psi and can't be negative", limit=limit))
         return Cond(kind, {"side": side, limit: psi})
     if kind == "element":     # in the element's unit: degrees for a hinged one, inches for a sliding one
         _keys(t, ("element", "above", "below"), where)
@@ -249,35 +271,36 @@ def _cond(v, where: str) -> Cond:
         _keys(t, ("element", "at_least_in"), where)
         at = _num(t.get("at_least_in"), where, "at_least_in")
         if at <= 0:
-            raise TestFileError(f"{where}: at_least_in must be more than 0")
+            raise _fail(where, i18n.t("at_least_in must be more than 0"))
         if at > MAX_CLEARS_IN:
-            raise TestFileError(f"{where}: at_least_in can be at most {MAX_CLEARS_IN:g}: clearance is measured out "
-                                "to 0.5 m (19.7 in)")
+            raise _fail(where, i18n.t("at_least_in can be at most {high}: clearance is measured out to 0.5 m (19.7 in)",
+                                      high=f"{MAX_CLEARS_IN:g}"))
         return Cond(kind, {"element": _text(t.get("element"), where, "element"), "at_least_in": at})
     if kind == "sensor":        # a [[sensor]] of the robot is on (broken, near, seeing a piece) or off
         _keys(t, ("sensor", "is", "sees"), where)
         if t.get("is") not in SENSOR_IS:
-            raise TestFileError(f'{where}: is must be "on" or "off", not {t.get("is")!r}')
+            raise _fail(where, i18n.t('is must be "on" or "off", not {value}', value=repr(t.get('is'))))
         sees = t.get("sees")
         if sees is not None and sees not in NAMED_COLORS:
-            raise TestFileError(f"{where}: sees must be one of the colors {', '.join(NAMED_COLORS)}, not {sees!r}")
+            raise _fail(where, i18n.t("sees must be one of the colors {names}, not {sees}",
+                                      names=', '.join(NAMED_COLORS), sees=repr(sees)))
         return Cond(kind, {"sensor": _text(t.get("sensor"), where, "sensor"), "is": t["is"], "sees": sees})
     if kind == "partner_lifted":
         _keys(t, ("at_least_in", "level_within_deg"), where)
         a = {"at_least_in": _num(t.get("at_least_in"), where, "at_least_in")}
         if a["at_least_in"] <= 0:
-            raise TestFileError(f"{where}: at_least_in must be more than 0")
+            raise _fail(where, i18n.t("at_least_in must be more than 0"))
         level = t.get("level_within_deg")
         if level is not None:
             level = _num(level, where, "level_within_deg")
             if level <= 0:
-                raise TestFileError(f"{where}: level_within_deg must be more than 0")
+                raise _fail(where, i18n.t("level_within_deg must be more than 0"))
         return Cond(kind, {**a, "level_within_deg": level})
     if kind == "partner_moved":
         _keys(t, ("at_least_in",), where)
         at = _num(t.get("at_least_in"), where, "at_least_in")
         if at <= 0:
-            raise TestFileError(f"{where}: at_least_in must be more than 0")
+            raise _fail(where, i18n.t("at_least_in must be more than 0"))
         return Cond(kind, {"at_least_in": at})
     if kind == "tilt":
         _keys(t, ("above", "below"), where)
@@ -295,7 +318,7 @@ def _cond(v, where: str) -> Cond:
         _keys(t, ("piece", "on", "at_least_in"), where)
         at = _num(t.get("at_least_in", 0.0), where, "at_least_in")
         if at < 0:
-            raise TestFileError(f"{where}: at_least_in can't be negative")
+            raise _fail(where, i18n.t("at_least_in can't be negative"))
         return Cond(kind, {"piece": _text(t.get("piece", "any"), where, "piece"),
                            "on": _text(t.get("on"), where, "on"), "at_least_in": at})
     if kind == "held":
@@ -310,15 +333,15 @@ def _cond(v, where: str) -> Cond:
 def _block(t, trail: tuple) -> Block:
     where = _place(trail)
     if not isinstance(t, dict):
-        raise TestFileError(f"{where}: a block is a table with do = \"...\"")
+        raise _fail(where, i18n.t('a block is a table with do = "..."'))
     do = t.get("do")
     if do is None:
-        raise TestFileError(f"{where}: says nothing about what to do (do = \"spin\", ...)")
+        raise _fail(where, i18n.t('says nothing about what to do (do = "spin", ...)'))
     if do not in DO_KINDS:
         kinds = ", ".join(DO_KINDS)
-        raise TestFileError(f'{where}: "{do}" isn\'t a block; use {kinds}')
+        raise _fail(where, i18n.t("\"{do}\" isn't a block; use {kinds}", do=do, kinds=kinds))
     if len(trail) > MAX_DEPTH:
-        raise TestFileError(f"{where}: blocks go at most {MAX_DEPTH} deep inside each other")
+        raise _fail(where, i18n.t("blocks go at most {depth} deep inside each other", depth=MAX_DEPTH))
     t = {k: v for k, v in t.items() if k != "do"}
     a: dict = {}
     body: list = []
@@ -337,17 +360,17 @@ def _block(t, trail: tuple) -> Block:
         a = {k: _time(t[k], where, k) if k == "seconds" else _num(t[k], where, k)}
         if "direction" in t:
             if t["direction"] not in DRIVE_DIRECTIONS:
-                raise TestFileError(f"{where}: direction must be one of {', '.join(DRIVE_DIRECTIONS)}, "
-                                    f"not {t['direction']!r}")
+                raise _fail(where, i18n.t("direction must be one of {names}, not {direction}",
+                                          names=', '.join(DRIVE_DIRECTIONS), direction=repr(t['direction'])))
             if t["direction"] in _OPPOSITE and k == "distance" and a[k] < 0:
-                raise TestFileError(f"{where}: drive {t['direction']} with a minus distance goes "
-                                    f"{_OPPOSITE[t['direction']]}; use one or the other")
+                raise _fail(where, i18n.t("drive {direction} with a minus distance goes {value}; use one or the other",
+                                          direction=t['direction'], value=_OPPOSITE[t['direction']]))
             a["direction"] = t["direction"]
         if "volts" in t:
             a["volts"] = _volts(t["volts"], where)
         if "timeout" in t:
             if k == "seconds":
-                raise TestFileError(f"{where}: timeout goes with distance, not seconds")
+                raise _fail(where, i18n.t("timeout goes with distance, not seconds"))
             a["timeout"] = _time(t["timeout"], where, "timeout")
     elif do == "stop":
         _keys(t, ("motor",), where)
@@ -371,15 +394,15 @@ def _block(t, trail: tuple) -> Block:
     elif do == "set_cylinder":
         _keys(t, ("cylinder", "to"), where)
         if t.get("to") not in CYLINDER_TO:
-            raise TestFileError(f'{where}: to must be "extend", "retract" or "off", not {t.get("to")!r}')
+            raise _fail(where, i18n.t('to must be "extend", "retract" or "off", not {to}', to=repr(t.get('to'))))
         a = {"cylinder": _text(t.get("cylinder"), where, "cylinder"), "to": t["to"]}
     elif do == "turn":
         _keys(t, ("degrees", "volts", "timeout"), where)
         deg = _num(t.get("degrees"), where, "degrees")
         if deg == 0:
-            raise TestFileError(f"{where}: degrees can't be 0")
+            raise _fail(where, i18n.t("degrees can't be 0"))
         if abs(deg) > MAX_TURN:
-            raise TestFileError(f"{where}: degrees must be between -720 and 720")
+            raise _fail(where, i18n.t("degrees must be between -720 and 720"))
         a = {"degrees": deg}
         if "volts" in t:
             a["volts"] = _volts(t["volts"], where)
@@ -390,7 +413,7 @@ def _block(t, trail: tuple) -> Block:
         k = _one_of(t, ("times", "until"), where)
         if k == "times":
             if "max" in t:
-                raise TestFileError(f"{where}: max goes with until, not times")
+                raise _fail(where, i18n.t("max goes with until, not times"))
             a = {"times": _whole(t["times"], where, "times", MAX_TIMES)}
         else:
             a = {"until": _cond(t["until"], where)}
@@ -398,21 +421,21 @@ def _block(t, trail: tuple) -> Block:
                 a["max"] = _whole(t["max"], where, "max", MAX_TIMES)
         raw = t.get("body", [])
         if not isinstance(raw, list):
-            raise TestFileError(f"{where}: body is a list of blocks ([[block.body]])")
+            raise _fail(where, i18n.t("body is a list of blocks ([[block.body]])"))
         body = [_block(b, trail + (i,)) for i, b in enumerate(raw, 1)]
     else:   # expect
         _keys(t, ("that", "throughout"), where)
         a = {"that": _cond(t.get("that"), where)}
         if "throughout" in t:
             if not isinstance(t["throughout"], bool):
-                raise TestFileError(f"{where}: throughout must be true or false")
+                raise _fail(where, i18n.t("throughout must be true or false"))
             a["throughout"] = t["throughout"]
     return Block(do, a, body)
 
 
 def _strings(v, where: str, what: str) -> list:
     if not isinstance(v, list) or not all(isinstance(x, str) and x for x in v):
-        raise TestFileError(f"{where}: {what} must be a list of names in quotes")
+        raise _fail(where, i18n.t("{what} must be a list of names in quotes", what=what))
     return list(v)
 
 
@@ -422,41 +445,44 @@ def _setup(raw: dict) -> dict:
     where = "[setup]"
     extra = [k for k in raw if k not in SETUP_KEYS]
     if extra:
-        raise TestFileError(f'{where}: "{extra[0]}" isn\'t a setting; settings are {", ".join(SETUP_KEYS)}')
+        raise _fail(where, i18n.t("\"{value}\" isn't a setting; settings are {names}",
+                                  value=extra[0], names=', '.join(SETUP_KEYS)))
     out: dict = {}
     if "ball" in raw:
         ball = raw["ball"]
         if not isinstance(ball, str) or (ball not in PRESETS["ball"] and not is_measurement(ball)):
-            raise TestFileError(f'{where}: ball {ball!r} isn\'t a ball; balls: {", ".join(PRESETS["ball"])}, or a '
-                                'ball measurement file ("fuel.measure.toml")')
+            raise _fail(where, i18n.t("ball {ball} isn't a ball; balls: {names}, or a ball measurement file "
+                                      "(\"fuel.measure.toml\")", ball=repr(ball), names=', '.join(PRESETS['ball'])))
         out["ball"] = ball
     if "piece" in raw:
         if "ball" in raw:
-            raise TestFileError(f"{where}: give ball or piece, not both")
+            raise _fail(where, i18n.t("give ball or piece, not both"))
         piece = raw["piece"]
         if not isinstance(piece, str) or (piece not in PRESETS["piece"] and piece not in PRESETS["ball"]):
-            raise TestFileError(f'{where}: piece {piece!r} isn\'t a piece; pieces: '
-                                f'{", ".join([*PRESETS["piece"], *PRESETS["ball"]])}')
+            raise _fail(where, i18n.t("piece {piece} isn't a piece; pieces: {names}",
+                                      piece=repr(piece), names=', '.join([*PRESETS['piece'], *PRESETS['ball']])))
         out["piece"] = piece
     if "seed" in raw:
         seed = raw["seed"]
         if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= MAX_SEED:
-            raise TestFileError(f"{where}: seed must be a whole number from 0 to {MAX_SEED}, not {seed!r}")
+            raise _fail(where, i18n.t("seed must be a whole number from 0 to {high}, not {seed}",
+                                      high=MAX_SEED, seed=repr(seed)))
         out["seed"] = seed
     if "station" in raw:
         stations = raw["station"]
         if not isinstance(stations, dict):
-            raise TestFileError(f"{where}: station is a table of station names, like station = {{ feeder = "
-                                "{ interval = 1.0 } }")
+            raise _fail(where, i18n.t("station is a table of station names, like station = {{ feeder = {{ interval = "
+                                      "1.0 }} }}"))
         out["station"] = {name: _station_setup(name, t) for name, t in stations.items()}
     if "floor_spread" in raw:
         spread = raw["floor_spread"]
         if not isinstance(spread, dict):
-            raise TestFileError(f"{where}: floor_spread is a table like floor_spread = {{ offset_in = [-6, 0, 6] }}")
+            raise _fail(where, i18n.t("floor_spread is a table like floor_spread = {{ offset_in = [-6, 0, 6] }}"))
         out["floor_spread"] = _floor_spread(spread)
         n = placement_count(out)
         if n > MAX_PLACEMENTS:
-            raise TestFileError(f"{where}: the floor spread tries {n} placements; at most {MAX_PLACEMENTS}")
+            raise _fail(where, i18n.t("the floor spread tries {count} placements; at most {high}",
+                                      count=n, high=MAX_PLACEMENTS))
     if "partner" in raw:
         out["partner"] = _partner_setup(raw["partner"])
     return out
@@ -468,16 +494,17 @@ def _partner_setup(t) -> dict | bool:
     if t is False:
         return False
     if not isinstance(t, dict):
-        raise TestFileError(f"{where} must be a table like partner = {{ ahead_in = 60 }}, or false for none")
+        raise TestFileError(i18n.t("{where} must be a table like partner = {{ ahead_in = 60 }}, or false for none",
+                                   where=where))
     _keys(t, PARTNER_SETUP_KEYS, where)
     if "ahead_in" not in t:
-        raise TestFileError(f"{where}: needs ahead_in, how far ahead of the robot's start the partner's center is")
+        raise _fail(where, i18n.t("needs ahead_in, how far ahead of the robot's start the partner's center is"))
     out: dict = {"ahead_in": _num(t["ahead_in"], where, "ahead_in")}
     if "heading_deg" in t:
         out["heading_deg"] = _num(t["heading_deg"], where, "heading_deg")
     if "brake" in t:
         if not isinstance(t["brake"], bool):
-            raise TestFileError(f"{where}: brake must be true or false")
+            raise _fail(where, i18n.t("brake must be true or false"))
         out["brake"] = t["brake"]
     return out
 
@@ -485,29 +512,29 @@ def _partner_setup(t) -> dict | bool:
 def _station_setup(name: str, t) -> dict:
     where = f"[setup] station {name!r}"
     if not isinstance(t, dict):
-        raise TestFileError(f"{where}: needs a table of settings")
+        raise _fail(where, i18n.t("needs a table of settings"))
     _keys(t, OVERRIDE_KEYS, where)
     out: dict = {}
     for key, v in t.items():
         if key in _STATION_LISTS:
             if not isinstance(v, list) or len(v) != 3:
-                raise TestFileError(f"{where}: {key} must be 3 numbers")
+                raise _fail(where, i18n.t("{key} must be 3 numbers", key=key))
             out[key] = [_time(x, where, key) for x in v]
         elif key == "stock":
             if isinstance(v, bool) or not isinstance(v, int) or v < 0:
-                raise TestFileError(f"{where}: stock must be a whole number, 0 (no limit) or more")
+                raise _fail(where, i18n.t("stock must be a whole number, 0 (no limit) or more"))
             if v > MAX_STOCK:
-                raise TestFileError(f"{where}: {stock_too_big(v)}")
+                raise _fail(where, stock_too_big(v))
             out[key] = v
         elif key in ("tip_deg", "turn_deg"):
             x = _num(v, where, key)
             if key == "tip_deg" and not -90 <= x <= 90:
-                raise TestFileError(f"{where}: tip_deg must be from -90 to 90")
+                raise _fail(where, i18n.t("tip_deg must be from -90 to 90"))
             out[key] = x
         else:
             x = _time(v, where, key)
             if key == "interval" and x <= 0:
-                raise TestFileError(f"{where}: interval must be more than 0")
+                raise _fail(where, i18n.t("interval must be more than 0"))
             out[key] = x
     return out
 
@@ -518,12 +545,12 @@ def _floor_spread(spread: dict) -> dict:
     out: dict = {}
     for axis, v in spread.items():
         if not isinstance(v, list) or not v:
-            raise TestFileError(f"{where}: {axis} must be a list of numbers, like [-6, 0, 6]")
+            raise _fail(where, i18n.t("{axis} must be a list of numbers, like [-6, 0, 6]", axis=axis))
         out[axis] = [_num(x, where, axis) for x in v]
         if axis == "distance_in" and min(out[axis]) <= 0:
-            raise TestFileError(f"{where}: distance_in must be more than 0")
+            raise _fail(where, i18n.t("distance_in must be more than 0"))
         if axis == "tip_deg" and not 0 <= min(out[axis]) <= max(out[axis]) <= 90:
-            raise TestFileError(f"{where}: tip_deg must be from 0 to 90")
+            raise _fail(where, i18n.t("tip_deg must be from 0 to 90"))
     return out
 
 
@@ -538,25 +565,27 @@ def placement_count(setup: dict) -> int:
 def _program(data: dict, path: Path, head: str = "[test]") -> Program:
     test = data.get("test")
     if not isinstance(test, dict) or "robot" not in test:
-        raise TestFileError(f'{head} needs robot = "<robot file>.toml", which says which robot to test'
-                            if head == "[test]" else "the test needs a robot file, which says which robot to test")
+        raise TestFileError(i18n.t('[test] needs robot = "<robot file>.toml", which says which robot to test')
+                            if head == "[test]" else i18n.t("the test needs a robot file, which says which robot to "
+                                                            "test"))
     _keys(test, ("robot", "hooks", "hopper", "time_limit", "chart"), head)
     robot = test["robot"]
     if not isinstance(robot, str) or not robot:
-        raise TestFileError(f'{head} robot must be the robot file\'s name in quotes, like "my_robot.toml"')
+        raise TestFileError(i18n.t("{head} robot must be the robot file's name in quotes, like \"my_robot.toml\"",
+                                   head=head))
     hooks = _strings(test.get("hooks", []), head, "hooks")
     hopper = _strings(test["hopper"], head, "hopper") if "hopper" in test else None
     chart = _strings(test["chart"], head, "chart") if "chart" in test else None
     limit = _time(test.get("time_limit", TIME_LIMIT), head, "time_limit")
     if limit <= SETTLE_S:
-        raise TestFileError(f"{head}: the time limit must be longer than {SETTLE_S:g} s "
-                            "(the robot settles that long before the first block)")
+        raise TestFileError(i18n.t("{head}: the time limit must be longer than {settle} s (the robot settles that "
+                                   "long before the first block)", head=head, settle=f"{SETTLE_S:g}"))
     raw = data.get("block", [])
     if not isinstance(raw, list):
-        raise TestFileError("blocks are written as [[block]] tables")
+        raise TestFileError(i18n.t("blocks are written as [[block]] tables"))
     setup = data.get("setup", {})
     if not isinstance(setup, dict):
-        raise TestFileError("[setup] must be a table")
+        raise TestFileError(i18n.t("[setup] must be a table"))
     return Program(Path(path), Path(robot), hooks, limit, chart,
                    [_block(b, (i,)) for i, b in enumerate(raw, 1)], _setup(setup), hopper)
 
@@ -565,7 +594,7 @@ def loads(text: str, path: Path) -> Program:
     try:
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError as e:
-        raise TestFileError(f"{Path(path).name} isn't valid TOML: {e}") from None
+        raise TestFileError(i18n.t("{name} isn't valid TOML: {why}", name=Path(path).name, why=e)) from None
     return _program(data, Path(path))
 
 
@@ -602,10 +631,10 @@ def to_json(p: Program) -> dict:
 
 def from_json(d: dict, path: Path) -> Program:
     if not isinstance(d, dict):
-        raise TestFileError("the test is a table")
+        raise TestFileError(i18n.t("the test is a table"))
     extra = [k for k in d if k not in ("robot", "hooks", "hopper", "time_limit", "chart", "setup", "blocks")]
     if extra:
-        raise TestFileError(f"the test has something it doesn't use: {extra[0]!r}")
+        raise TestFileError(i18n.t("the test has something it doesn't use: {value}", value=repr(extra[0])))
     test = {k: d[k] for k in ("robot", "hooks", "hopper", "time_limit", "chart") if d.get(k) is not None}
     data = {"test": test, "block": d.get("blocks", []), "setup": d.get("setup") or {}}
     return _program(data, Path(path), "the test")

@@ -709,9 +709,8 @@ async def test_sweep(path: str, target: dict, values: list[float | str]) -> dict
         from .blocks import store as blocks_store
         from .blocks.sweep import run_sweep
         from . import units
-        program = blocks_program.load(file)
-        with units.machine_text():      # refusals too, as they always were, whatever the Units setting
-            folder = run_sweep(program, target, values, blocks_store.runs_dir(file))
+        with units.machine_text():      # refusals too (the file's), as they always were, whatever the settings
+            folder = run_sweep(blocks_program.load(file), target, values, blocks_store.runs_dir(file))
         with open(folder / "table.csv", newline="", encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         meta = json.loads((folder / "sweep.json").read_text(encoding="utf-8"))

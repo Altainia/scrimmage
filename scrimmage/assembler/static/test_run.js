@@ -47,6 +47,7 @@
 import { $, h, api, apiFile } from "./app.js";
 import { units } from "./units.js";
 import { theme } from "./theme.js";
+import { i18n, t } from "./i18n.js";
 
 const MOTION_MAGIC = "SCRM", MOTION_VERSION = 1, HEADER = 14;   // struct "<4sHII"
 const CHART_H = 92, PAD_L = 44, PAD_R = 8, PAD_T = 6, TICKS_H = 16;
@@ -82,13 +83,17 @@ const rp = {
 export function runName(id) {
   const m = /^(?:(sweep|spread)-(\d+)\/)?(\d+)$/.exec(id || "");
   if (!m) return String(id);
-  if (m[1] === "spread") return `Spread ${+m[2]}, placement ${+m[3]}`;
-  return m[1] ? `Sweep ${+m[2]}, run ${+m[3]}` : `Run ${+m[3]}`;
+  if (m[1] === "spread") return t("Spread {spread}, placement {placement}", { spread: +m[2], placement: +m[3] });
+  return m[1] ? t("Sweep {sweep}, run {run}", { sweep: +m[2], run: +m[3] }) : t("Run {run}", { run: +m[3] });
 }
 
-const statusWord = (status) => (status === "cancelled" ? "stopped" : status || "");
+// a run's status (run.py's: a key) in words
+const STATUS_WORDS = { finished: () => t("finished"), "check failed": () => t("check failed"), "timed out": () => t("timed out"),
+  "tipped over": () => t("tipped over"), "walked off": () => t("walked off"), "time limit": () => t("time limit"),
+  "repeat limit": () => t("repeat limit"), cancelled: () => t("stopped") };
+const statusWord = (status) => (STATUS_WORDS[status] ? STATUS_WORDS[status]() : status || "");
 // the outcome as the student reads it ("finished" alone says nothing the status doesn't)
-const outcomeText = (r) => sentence(r.status === "finished" && r.outcome === "finished" ? "every block played" : r.outcome);
+const outcomeText = (r) => sentence(r.status === "finished" && r.outcome === "finished" ? t("every block played") : r.outcome);
 const sentence = (s) => (s ? `${s[0].toUpperCase()}${s.slice(1)}${/[.!?]$/.test(s) ? "" : "."}` : "");
 const end = () => (rp.run ? rp.run.result.t_end || 0 : 0);
 const start = () => (rp.run && rp.run.motion.times.length ? rp.run.motion.times[0] : 0);
@@ -135,7 +140,7 @@ export function update(state) {
   }
   const err = $("#test-run-error");
   err.hidden = !state.run_error;
-  err.textContent = state.run_error ? `The run couldn't finish: ${state.run_error}` : "";
+  err.textContent = state.run_error ? t("The run couldn't finish: {why}", { why: state.run_error }) : "";
   // before the first run: what to do (nothing kept, nothing running, no sweep, no error)
   $("#test-run-empty").hidden = !!(runs.length || sweeps.length || spreads.length || state.running || state.run_error);
   renderList();
@@ -164,24 +169,24 @@ async function result(id) {
   const key = resultKey(id);
   if (rp.results.has(key)) return rp.results.get(key);
   const { status, data } = await api("GET", `/api/test/run/${id}`);
-  if (status !== 200) throw new Error((data.errors && data.errors[0] && data.errors[0].message) || `the server answered ${status}`);
+  if (status !== 200) throw new Error((data.errors && data.errors[0] && data.errors[0].message) || t("the server answered {status}", { status }));
   if (`${id}|${data.started}` !== key) return data;     // the run changed meanwhile: use it, keep nothing
   rp.results.set(key, data);
   while (rp.results.size > KEEP_LOADED) rp.results.delete(rp.results.keys().next().value);
   return data;
 }
 
-const DAMAGED = "this run's replay file is damaged; run the test again";
+const damaged = () => t("this run's replay file is damaged; run the test again");
 
 export function parseMotion(buf) {
   const dv = new DataView(buf);
   if (buf.byteLength < HEADER || String.fromCharCode(...new Uint8Array(buf, 0, 4)) !== MOTION_MAGIC) {
-    throw new Error(DAMAGED);
+    throw new Error(damaged());
   }
-  if (dv.getUint16(4, true) !== MOTION_VERSION) throw new Error("this run was saved by a newer scrimmage: update scrimmage to replay it");
+  if (dv.getUint16(4, true) !== MOTION_VERSION) throw new Error(t("this run was saved by a newer scrimmage: update scrimmage to replay it"));
   const frames = dv.getUint32(6, true), n = dv.getUint32(10, true);
   const size = 8 + n * 28;
-  if (buf.byteLength !== HEADER + frames * size) throw new Error(DAMAGED);
+  if (buf.byteLength !== HEADER + frames * size) throw new Error(damaged());
   const times = new Float64Array(frames), poses = new Float32Array(frames * n * 7);
   for (let k = 0, o = HEADER; k < frames; k++, o += size) {
     times[k] = dv.getFloat64(o, true);
@@ -207,8 +212,8 @@ export async function show(id) {
   let res, viewData, motion;
   try {
     const [r, v, m] = await Promise.all([result(id), api("GET", `/api/test/run/${id}/view`), apiFile(`/api/test/run/${id}/motion`)]);
-    if (v.status !== 200) throw new Error((v.data.errors && v.data.errors[0] && v.data.errors[0].message) || `the server answered ${v.status}`);
-    if (!m.blob) throw new Error(`the server answered ${m.status}`);
+    if (v.status !== 200) throw new Error((v.data.errors && v.data.errors[0] && v.data.errors[0].message) || t("the server answered {status}", { status: v.status }));
+    if (!m.blob) throw new Error(t("the server answered {status}", { status: m.status }));
     res = r;
     viewData = v.data;
     motion = parseMotion(await m.blob.arrayBuffer());
@@ -218,7 +223,7 @@ export async function show(id) {
     rp.compare = null;
     $("#test-results").hidden = true;
     loadErr.hidden = false;
-    loadErr.textContent = `Couldn't load ${runName(id)}: ${e.message || e}`;
+    loadErr.textContent = t("Couldn't load {run}: {why}", { run: runName(id), why: e.message || e });
     return;
   }
   await ensureView();
@@ -244,10 +249,10 @@ async function ensureView() {
     const { LiveView } = await import("./live3d.js");
     if (rp.view) return;
     rp.view = new LiveView(box);
-    rp.view.renderer.domElement.setAttribute("aria-label", "Replay of the run in 3D");
+    rp.view.renderer.domElement.setAttribute("aria-label", t("Replay of the run in 3D"));
   } catch (e) {
     rp.viewFailed = String(e.message || e);
-    box.replaceChildren(h("p", { class: "view-placeholder", text: `The replay needs WebGL: ${rp.viewFailed}` }));
+    box.replaceChildren(h("p", { class: "view-placeholder", text: t("The replay needs WebGL: {why}", { why: rp.viewFailed }) }));
   }
 }
 
@@ -278,7 +283,7 @@ function renderCompare() {
   const sel = $("#test-compare");
   const runs = ((rp.state && rp.state.runs) || []).filter((r) => r.id !== rp.shownId);
   const want = compareTarget();
-  const opts = [h("option", { value: "", text: "nothing" }),
+  const opts = [h("option", { value: "", text: t("nothing") }),
     ...runs.map((r) => h("option", { value: r.id, text: `${runName(r.id)} · ${statusWord(r.status)}` }))];
   const key = opts.map((o) => `${o.value}=${o.textContent}`).join("|");
   if (sel.dataset.key !== key) { sel.replaceChildren(...opts); sel.dataset.key = key; }
@@ -288,8 +293,8 @@ function renderCompare() {
 
 // -- outcome and runs ----------------------------------------------------------------------------------------------
 const NOTES = {
-  "timed out": "A block gave up after its timeout. Timeouts aren't shown on the blocks yet: change one in the test file.",
-  "repeat limit": "A “repeat until” block gave up after going round as many times as it may (its max). The max isn't shown on the block yet: change it in the test file.",
+  "timed out": () => t("A block gave up after its timeout. Timeouts aren't shown on the blocks yet: change one in the test file."),
+  "repeat limit": () => t("A “repeat until” block gave up after going round as many times as it may (its max). The max isn't shown on the block yet: change it in the test file."),
 };
 
 function renderOutcome() {
@@ -298,8 +303,8 @@ function renderOutcome() {
   $("#test-outcome").textContent = outcomeText(r);
   const note = $("#test-outcome-note");
   note.hidden = !NOTES[r.status];
-  note.textContent = NOTES[r.status] || "";
-  const seated = Object.entries(r.seated || {}).map(([rod, words]) => `${words} on ${rod}`);
+  note.textContent = NOTES[r.status] ? NOTES[r.status]() : "";
+  const seated = Object.entries(r.seated || {}).map(([rod, words]) => t("{depth} on {rod}", { depth: words, rod }));
   $("#test-seated").hidden = !seated.length;
   $("#test-seated").textContent = seated.join("; ");
   const totals = Array.isArray(r.lines) ? r.lines : [];
@@ -316,16 +321,23 @@ function renderOutcome() {
 
 // -- the fed pieces --------------------------------------------------------------------------------------------------
 const feedsOf = (r) => (r && Array.isArray(r.feeds) ? r.feeds : []);
-const OUTCOME_WORDS = { in: "made it in", placed: "placed", stuck: "stuck in the robot", missed: "missed" };
+const OUTCOME_WORDS = { in: () => t("made it in"), stuck: () => t("stuck in the robot"), missed: () => t("missed") };
+// a missed piece's why (feeds.py's, a key in the run) in words
+const FEED_WHY = { "bounced out": () => t("bounced out"), "off the field": () => t("off the field"),
+  "still moving when the run ended": () => t("still moving when the run ended"), "on the floor": () => t("on the floor") };
 const feedWhen = (f) => (f.t_outcome == null ? f.t : f.t_outcome);
 
 // "piece 4 from feeder at 3.0 s: missed (bounced out)"; "piece 1 from drop at 0.5 s: placed on peg"
 function feedText(f, k) {
-  const from = f.source === "floor" ? "the floor" : f.source;
-  const head = `piece ${k + 1} from ${from} at ${Number(f.t).toFixed(1)} s: `;
-  if (f.outcome === "placed") return `${head}placed${f.why ? ` on ${f.why}` : ""}`;
-  const why = f.outcome === "stuck" && f.body ? `resting on ${f.body}` : f.why;
-  return `${head}${OUTCOME_WORDS[f.outcome] || f.outcome}${why ? ` (${why})` : ""}`;
+  const p = { piece: k + 1, source: f.source === "floor" ? t("the floor") : f.source, t: Number(f.t).toFixed(1) };
+  if (f.outcome === "placed") {
+    return f.why ? t("piece {piece} from {source} at {t} s: placed on {place}", { ...p, place: f.why })
+      : t("piece {piece} from {source} at {t} s: placed", p);
+  }
+  const why = f.outcome === "stuck" && f.body ? t("resting on {body}", { body: f.body }) : FEED_WHY[f.why] ? FEED_WHY[f.why]() : f.why;
+  const outcome = OUTCOME_WORDS[f.outcome] ? OUTCOME_WORDS[f.outcome]() : f.outcome;
+  return why ? t("piece {piece} from {source} at {t} s: {outcome} ({why})", { ...p, outcome, why })
+    : t("piece {piece} from {source} at {t} s: {outcome}", { ...p, outcome });
 }
 
 function renderFeeds() {
@@ -334,11 +346,12 @@ function renderFeeds() {
   const shown = !!c && c.fed > 0;      // a station field's run that fed nothing has nothing to sum up
   summary.hidden = !shown;
   // with no hopper named (feeds.py's sentence) a test can't count a piece in, so "0 in" is left out
-  const words = c ? [...(c.in || r.hopper !== false ? [`${c.in} in`] : []), ...(c.placed ? [`${c.placed} placed`] : []),
-    `${c.stuck} stuck`, `${c.missed} missed`] : [];
-  summary.replaceChildren(...(shown ? [h("span", { text: `Fed pieces: ${words.join(" · ")}` }),
+  const words = c ? [...(c.in || r.hopper !== false ? [t("{count} in", { count: c.in })] : []),
+    ...(c.placed ? [t("{count} placed", { count: c.placed })] : []),
+    t("{count} stuck", { count: c.stuck }), t("{count} missed", { count: c.missed })] : [];
+  summary.replaceChildren(...(shown ? [h("span", { text: t("Fed pieces: {counts}", { counts: words.join(" · ") }) }),
     ...feeds.filter((f) => f.outcome === "stuck").map((f) => h("button", { type: "button", class: "btn btn-small test-stuck-show",
-      "data-ball": String(f.ball), onclick: () => jumpTo(f), text: `Show the stuck piece (at ${feedWhen(f).toFixed(1)} s)` }))] : []));
+      "data-ball": String(f.ball), onclick: () => jumpTo(f), text: t("Show the stuck piece (at {t} s)", { t: feedWhen(f).toFixed(1) }) }))] : []));
   const marks = $("#test-feed-marks");
   marks.hidden = !feeds.length;
   const t0 = start(), span = Math.max(1e-9, end() - t0);
@@ -487,7 +500,7 @@ function renderPlayer() {
   scrub.min = String(start());
   scrub.max = String(Math.max(end(), start() + 0.01));
   scrub.value = String(rp.time);
-  $("#test-time").textContent = `${rp.time.toFixed(1)} s of ${end().toFixed(1)} s`;
+  $("#test-time").textContent = t("{now} s of {end} s", { now: rp.time.toFixed(1), end: end().toFixed(1) });
   const play = $("#test-play");
   play.textContent = rp.playing ? "❚❚ Pause" : "▶ Play";
   play.setAttribute("aria-pressed", String(rp.playing));
@@ -607,9 +620,9 @@ function renderSignals() {
     rp.picked = now;
     renderSignals();
     drawChart();
-  })), ...(next.length ? [h("span", { class: "test-signals-next", text: "From the next run:" })] : []),
+  })), ...(next.length ? [h("span", { class: "test-signals-next", text: t("From the next run:") })] : []),
   ...next.map((s) => button(s, chart.has(s), () => toggleNextRun(s),
-    { title: "Measured from the next run: this puts it in the test's chart" })));
+    { title: t("Measured from the next run: this puts it in the test's chart") })));
   const again = focused && [...box.querySelectorAll("[data-signal]")].find((b) => b.dataset.signal === focused);
   if (again) again.focus();
 }
@@ -646,8 +659,8 @@ function drawChart() {
   canvases.forEach((c) => plot(c, c.dataset.signal, cmp, tEnd, tk));
   key.replaceChildren(...[
     h("span", { class: "test-key" }, h("span", { class: "test-swatch test-swatch-run" }), runName(rp.run.id)),
-    cmp ? h("span", { class: "test-key" }, h("span", { class: "test-swatch test-swatch-compare" }), `${runName(cmp.id)} (faded)`) : null,
-    names.length ? null : h("span", { class: "muted", text: "Pick something to chart above." })].filter(Boolean));
+    cmp ? h("span", { class: "test-key" }, h("span", { class: "test-swatch test-swatch-compare" }), t("{run} (faded)", { run: runName(cmp.id) })) : null,
+    names.length ? null : h("span", { class: "muted", text: t("Pick something to chart above.") })].filter(Boolean));
   // the two runs' outcomes side by side, so a compare reads without scrolling down to the Runs list
   const line = (id, r) => h("li", {}, h("span", { class: "test-chart-outcome-name", text: `${runName(id)} · ${statusWord(r.status)}: ` }),
     outcomeText(r));
@@ -669,7 +682,8 @@ function plot(canvas, name, cmp, tEnd, tk) {
   const run = series(rp.run.result.signals);
   const other = cmp && name in cmp.signals ? series(cmp.signals) : null;
   canvas.dataset.series = String(other ? 2 : 1);
-  canvas.setAttribute("aria-label", `${name} over time, ${runName(rp.run.id)}${other ? ` and ${runName(cmp.id)}` : ""}`);
+  canvas.setAttribute("aria-label", other ? t("{signal} over time, {run} and {other}", { signal: name, run: runName(rp.run.id), other: runName(cmp.id) })
+    : t("{signal} over time, {run}", { signal: name, run: runName(rp.run.id) }));
   const ctx = canvas.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, W, H);
@@ -724,15 +738,18 @@ function plot(canvas, name, cmp, tEnd, tk) {
 
 
 // -- the sweep -----------------------------------------------------------------------------------------------------
-// What a sweep tried, in words, with the unit shown (L: the Units setting's, filled in by unitWords)
-const ROBOT_WORDS = { mass: "the robot's weight (M)", com_forward: "the robot's center of mass, forward (L)",
-  com_left: "the robot's center of mass, left (L)", com_up: "the robot's center of mass, up (L)" };
-const AXIS_WORDS = { x: "forward (x, L)", y: "left (y, L)", z: "up (z, L)", yaw: "turned (yaw, °)" };
+// What a sweep tried, in words, with the unit shown (the Units setting's)
+const L = () => ({ unit: units.name("length") });
+const ROBOT_WORDS = { mass: () => t("the robot's weight ({unit})", { unit: units.name("mass") }),
+  com_forward: () => t("the robot's center of mass, forward ({unit})", L()),
+  com_left: () => t("the robot's center of mass, left ({unit})", L()), com_up: () => t("the robot's center of mass, up ({unit})", L()) };
+const AXIS_WORDS = { x: () => t("forward (x, {unit})", L()), y: () => t("left (y, {unit})", L()), z: () => t("up (z, {unit})", L()),
+  yaw: () => t("turned (yaw, °)") };
 const KEY_UNITS = { volts: () => "V", seconds: () => "s", distance: () => units.name("field") };
-const STATION_WORDS = { interval: "time between pieces (s)", stock: "stock", spread_yaw_deg: "left/right angle (± °)",
-  spread_pitch_deg: "up/down angle (± °)", spread_speed: "speed (± S)", spread_position: "release box (± L)",
-  spread_rotation_deg: "turned (± °)" };
-const unitWords = (text) => text.replace(/\b([LMS])\)/g, (_, k) => `${units.name({ L: "length", M: "mass", S: "speed" }[k])})`);
+const STATION_WORDS = { interval: () => t("time between pieces (s)"), stock: () => t("stock"),
+  spread_yaw_deg: () => t("left/right angle (± °)"), spread_pitch_deg: () => t("up/down angle (± °)"),
+  spread_speed: () => t("speed (± {unit})", { unit: units.name("speed") }), spread_position: () => t("release box (± {unit})", L()),
+  spread_rotation_deg: () => t("turned (± °)") };
 const isGrip = (sw) => !!(sw.target && "grip" in sw.target);
 const FILE_SI = { in: 0.0254, m: 1 };     // a block's length units in the test file
 // A sweep's number as the file has it: [kind, SI per one of the file's unit], or null for one shown as it is
@@ -767,7 +784,7 @@ function blockAt(test, place) {
 }
 
 const blockWords = (b) => {
-  if (!b) return "a block";
+  if (!b) return t("a block");
   const name = b.motor || b.joint;
   return name ? `${b.do} ${name}` : b.do;
 };
@@ -778,13 +795,18 @@ function targetText(target) {
     const b = blockAt(rp.state && rp.state.test, target.block);
     const unit = target.key === "to" ? (b && b.unit === "deg" ? "°" : b && FILE_SI[b.unit] ? units.name("length") : b ? b.unit : "")
       : KEY_UNITS[target.key] ? KEY_UNITS[target.key]() : "";
-    return `${blockWords(b)} (block ${target.block.map((i) => i + 1).join(" in ")}): ${target.key}${unit ? ` (${unit})` : ""}`;
+    const p = { block: blockWords(b), place: target.block.map((i) => i + 1).join(" in "), key: target.key, unit };
+    return unit ? t("{block} (block {place}): {key} ({unit})", p) : t("{block} (block {place}): {key}", p);
   }
-  if ("robot" in target) return ROBOT_WORDS[target.robot] ? unitWords(ROBOT_WORDS[target.robot]) : target.robot;
-  if ("grip" in target) return `grip material of ${target.grip}`;
-  if ("mount" in target) return `where ${target.mount} is mounted: ${AXIS_WORDS[target.axis] ? unitWords(AXIS_WORDS[target.axis]) : target.axis}`;
-  if ("station" in target) return `${target.station}: ${STATION_WORDS[target.key] ? unitWords(STATION_WORDS[target.key]) : target.key}`;
-  if (target.setup === "seed") return "the shuffle";
+  if ("robot" in target) return ROBOT_WORDS[target.robot] ? ROBOT_WORDS[target.robot]() : target.robot;
+  if ("grip" in target) return t("grip material of {part}", { part: target.grip });
+  if ("mount" in target) {
+    return t("where {part} is mounted: {axis}", { part: target.mount, axis: AXIS_WORDS[target.axis] ? AXIS_WORDS[target.axis]() : target.axis });
+  }
+  if ("station" in target) {
+    return t("{station}: {setting}", { station: target.station, setting: STATION_WORDS[target.key] ? STATION_WORDS[target.key]() : target.key });
+  }
+  if (target.setup === "seed") return t("the shuffle");
   return "";
 }
 
@@ -804,38 +826,39 @@ function renderSweep() {
   const sw = shownSweep();
   wrap.hidden = !sw;
   if (!sw) return;
-  $("#test-sweep-title").textContent = `Sweep ${+sweepNumber(sw.id)}: ${targetText(sw.target)}`;
-  const notes = [...(sw.cancelled ? ["You stopped this sweep, so it has the values done before that."] : []), ...(sw.problems || [])];
+  $("#test-sweep-title").textContent = t("Sweep {sweep}: {what}", { sweep: +sweepNumber(sw.id), what: targetText(sw.target) });
+  const notes = [...(sw.cancelled ? [t("You stopped this sweep, so it has the values done before that.")] : []), ...(sw.problems || [])];
   const note = $("#test-sweep-note");
   note.hidden = !notes.length;
   note.textContent = notes.join(" ");
   const checks = checkColumns(sw);
   const table = $("#test-sweep-table");
-  const key = JSON.stringify([sw.id, sw.rows, checks, rp.shownId, (rp.state.runs || []).map((r) => r.id), units.system]);
+  const key = JSON.stringify([sw.id, sw.rows, checks, rp.shownId, (rp.state.runs || []).map((r) => r.id), units.system, i18n.lang]);
   if (table.dataset.key !== key) {
     table.dataset.key = key;
     table.replaceChildren(
-      h("thead", {}, h("tr", {}, h("th", { scope: "col", text: "Value" }), h("th", { scope: "col", text: "Outcome" }),
-        ...checks.map((c, i) => h("th", { scope: "col", title: c, text: `Check ${i + 1}` })))),
+      h("thead", {}, h("tr", {}, h("th", { scope: "col", text: t("Value") }), h("th", { scope: "col", text: t("Outcome") }),
+        ...checks.map((c, i) => h("th", { scope: "col", title: c, text: t("Check {n}", { n: i + 1 }) })))),
       h("tbody", {}, ...sw.rows.map((r, k) => {
         const id = rowRun(sw, k), ran = hasRun(id);
         const current = id === rp.shownId;
-        const outcome = r.status === "couldn't run" ? `Couldn't run: ${r.outcome}` : `${statusWord(r.status)}: ${outcomeText(r)}`;
+        const outcome = rowOutcome(r);
         return h("tr", { class: ran ? "test-sweep-row" : "test-sweep-row test-sweep-norun", "data-row": String(k), "aria-current": current ? "true" : null,
           onclick: ran ? () => { if (id !== rp.shownId) show(id); } : null },
           h("td", {}, ran ? h("button", { type: "button", class: "linklike test-sweep-value", "data-run": id,
-            "aria-label": `Show the run at ${rowText(sw, r)}`, text: rowText(sw, r) }) : h("span", { text: rowText(sw, r) })),
+            "aria-label": t("Show the run at {value}", { value: rowText(sw, r) }), text: rowText(sw, r) }) : h("span", { text: rowText(sw, r) })),
           h("td", { class: "test-sweep-outcome", text: outcome }),
           ...checks.map((c) => h("td", { class: r[c] === "passed" ? "test-check-ok" : r[c] === "failed" ? "test-check-bad" : "",
             title: c, text: r[c] === "passed" ? "✓" : r[c] === "failed" ? "✗" : "" })));
       })));
     if (checks.length) {
-      table.prepend(h("caption", { class: "test-sweep-caption" }, ...checks.map((c, i) => h("span", { text: `Check ${i + 1}: ${sentence(c)}` }))));
+      table.prepend(h("caption", { class: "test-sweep-caption" }, ...checks.map((c, i) => h("span", { text: t("Check {n}: {check}", { n: i + 1, check: sentence(c) }) }))));
     }
   }
   const sel = $("#test-sweep-y");
   const signals = ((rp.state.palette && rp.state.palette.signals) || []);
-  const opts = [["t_end", "when the run ended (s)"], ...signals.map((s) => [s, `${s} at the end${shownUnit(s) ? ` (${shownUnit(s)})` : ""}`])];
+  const opts = [["t_end", t("when the run ended (s)")], ...signals.map((s) => [s, shownUnit(s)
+    ? t("{signal} at the end ({unit})", { signal: s, unit: shownUnit(s) }) : t("{signal} at the end", { signal: s })])];
   const okey = opts.map((o) => o.join("=")).join("|");
   if (sel.dataset.key !== okey) {
     sel.replaceChildren(...opts.map(([v, text]) => h("option", { value: v, text })));
@@ -894,8 +917,9 @@ function drawSweep() {
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
     canvas.style.height = `${H}px`;
   }
-  const yName = rp.sweepY === "t_end" ? "when the run ended" : `${rp.sweepY} at the end`;
-  canvas.setAttribute("aria-label", `${yName} against ${targetText(sw.target)}: ${pts.map(([x, y]) => `${isGrip(sw) ? sw.rows[x].value : +x.toPrecision(4)} → ${+y.toPrecision(4)}`).join(", ") || "no runs"}`);
+  const yName = rp.sweepY === "t_end" ? t("when the run ended") : t("{signal} at the end", { signal: rp.sweepY });
+  canvas.setAttribute("aria-label", t("{y} against {x}: {points}", { y: yName, x: targetText(sw.target),
+    points: pts.map(([x, y]) => `${isGrip(sw) ? sw.rows[x].value : +x.toPrecision(4)} → ${+y.toPrecision(4)}`).join(", ") || t("no runs") }));
   const ctx = canvas.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, W, H);
@@ -905,7 +929,7 @@ function drawSweep() {
   ctx.fillStyle = tk.text;
   if (!pts.length) {
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(rp.sweepY !== "t_end" && loadingFinals.size ? "Loading…" : "No run to chart", W / 2, H / 2);
+    ctx.fillText(rp.sweepY !== "t_end" && loadingFinals.size ? t("Loading…") : t("No run to chart"), W / 2, H / 2);
     return;
   }
   const xs = sw.rows.map((r) => rowValue(sw, r)).filter(isFinite);
@@ -938,6 +962,10 @@ function drawSweep() {
   }
 }
 
+// A sweep's or spread's row (table.csv's: machine text, so its outcome is the run's English, spec L2) in words.
+const rowOutcome = (r) => (r.status === "couldn't run" ? t("Couldn't run: {why}", { why: r.outcome })
+  : t("{status}: {outcome}", { status: statusWord(r.status), outcome: outcomeText(r) }));
+
 // -- the floor spread ------------------------------------------------------------------------------------------------
 const shownSpread = () => ((rp.state && rp.state.spreads) || []).find((s) => s.id === rp.spreadId) || null;
 
@@ -952,27 +980,27 @@ function renderSpread() {
   wrap.hidden = !sp;
   if (!sp) return;
   const num = /^spread-(\d+)$/.exec(sp.id);
-  $("#test-spread-title").textContent = num ? `Spread ${+num[1]}` : String(sp.id);
+  $("#test-spread-title").textContent = num ? t("Spread {spread}", { spread: +num[1] }) : String(sp.id);
   $("#test-spread-sentence").textContent = sentence(sp.sentence || "");
   const note = $("#test-spread-note");
   note.hidden = !sp.cancelled;
-  note.textContent = sp.cancelled ? "You stopped this spread, so it has the placements done before that." : "";
+  note.textContent = sp.cancelled ? t("You stopped this spread, so it has the placements done before that.") : "";
   const table = $("#test-spread-table");
-  const key = JSON.stringify([sp.id, sp.rows, rp.shownId, (rp.state.runs || []).map((r) => r.id)]);
+  const key = JSON.stringify([sp.id, sp.rows, rp.shownId, (rp.state.runs || []).map((r) => r.id), i18n.lang]);
   if (table.dataset.key === key) return;
   table.dataset.key = key;
   table.replaceChildren(
-    h("thead", {}, h("tr", {}, h("th", { scope: "col", text: "Placement" }), h("th", { scope: "col", text: "Picked up" }),
-      h("th", { scope: "col", text: "Outcome" }))),
+    h("thead", {}, h("tr", {}, h("th", { scope: "col", text: t("Placement") }), h("th", { scope: "col", text: t("Picked up") }),
+      h("th", { scope: "col", text: t("Outcome") }))),
     h("tbody", {}, ...sp.rows.map((r, k) => {
       const id = rowRun(sp, k), ran = hasRun(id);
-      const outcome = r.status === "couldn't run" ? `Couldn't run: ${r.outcome}` : `${statusWord(r.status)}: ${outcomeText(r)}`;
+      const outcome = rowOutcome(r);
       const picked = r["picked up"] === "yes";
       return h("tr", { class: ran ? "test-sweep-row" : "test-sweep-row test-sweep-norun", "data-row": String(k),
         "aria-current": id === rp.shownId ? "true" : null, onclick: ran ? () => { if (id !== rp.shownId) show(id); } : null },
         h("td", {}, ran ? h("button", { type: "button", class: "linklike", "data-run": id,
-          "aria-label": `Show the run at ${r.placement}`, text: r.placement }) : h("span", { text: r.placement })),
-        h("td", { class: picked ? "test-check-ok" : "test-check-bad", text: r["picked up"] }),
+          "aria-label": t("Show the run at {value}", { value: r.placement }), text: r.placement }) : h("span", { text: r.placement })),
+        h("td", { class: picked ? "test-check-ok" : "test-check-bad", text: picked ? t("yes") : r["picked up"] === "no" ? t("no") : r["picked up"] }),
         h("td", { class: "test-sweep-outcome", text: outcome }));
     })));
 }
@@ -997,4 +1025,10 @@ export function initRunPanel({ chart, setChart } = {}) {
     if (rp.run) { drawChart(); renderSweep(); }
   });
   theme.onChange(() => { drawChart(); drawSweep(); });   // the colors are the theme's
+  i18n.onChange(() => {         // everything drawn in words, again in the new ones
+    $("#test-chart").replaceChildren();
+    $("#test-runs").replaceChildren();     // its names are made once per run
+    if (rp.state) update(rp.state);
+    if (rp.run) { renderOutcome(); renderSignals(); drawChart(); setTime(rp.time); }
+  });
 }
