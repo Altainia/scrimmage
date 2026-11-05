@@ -13,27 +13,28 @@ from typing import NamedTuple
 
 import numpy as np
 
+from ..i18n import N_
 from . import CadError
 
 
 @dataclass(frozen=True)
 class Material:
     key: str
-    label: str          # the user-facing name
+    label: str          # the user-facing name (N_(): shown with i18n.translated())
     density: float      # kg/m^3, solid
     printed: bool = False
 
 
 MATERIALS: dict[str, Material] = {m.key: m for m in (
-    Material("aluminum", "Aluminum 6061", 2700.0),      # same as the FreeCAD exporter's DEFAULT_DENSITY
-    Material("steel", "Steel", 7850.0),
-    Material("polycarbonate", "Polycarbonate", 1200.0),
-    Material("hdpe", "HDPE", 950.0),
-    Material("plywood", "Plywood", 600.0),
-    Material("carbon_fiber", "Carbon fiber", 1550.0),
-    Material("nylon", "Nylon", 1150.0),
-    Material("pla", "PLA (3D printed)", 1240.0, printed=True),
-    Material("petg", "PETG (3D printed)", 1270.0, printed=True),
+    Material("aluminum", N_("Aluminum 6061"), 2700.0),      # same as the FreeCAD exporter's DEFAULT_DENSITY
+    Material("steel", N_("Steel"), 7850.0),
+    Material("polycarbonate", N_("Polycarbonate"), 1200.0),
+    Material("hdpe", N_("HDPE"), 950.0),
+    Material("plywood", N_("Plywood"), 600.0),
+    Material("carbon_fiber", N_("Carbon fiber"), 1550.0),
+    Material("nylon", N_("Nylon"), 1150.0),
+    Material("pla", N_("PLA (3D printed)"), 1240.0, printed=True),
+    Material("petg", N_("PETG (3D printed)"), 1270.0, printed=True),
 )}
 
 DEFAULT_INFILL = 0.4

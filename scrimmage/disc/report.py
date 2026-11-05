@@ -5,13 +5,15 @@ import math
 from pathlib import Path
 
 from ..launcher import report
+from .. import i18n
 from ..measure import labels
 from .inputs import DiscSetup, load_setup
 from .run import METRIC_KEYS, exit_table
 from .sweep import run_all, run_one
 
 CHART_KINDS = ("line", "shaft")
-DISC_UNCALIBRATED = labels.line({}, labels.DISC) + "."   # a disc setup takes no measurement file yet
+with i18n.fixed():      # made once, at import: the CLI's line, American English (it prints nothing else)
+    DISC_UNCALIBRATED = labels.line({}, labels.DISC) + "."   # a disc setup takes no measurement file yet
 
 
 def run_and_write(path: Path, out: Path, sweep: bool) -> list[Path] | None:

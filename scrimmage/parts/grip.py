@@ -32,7 +32,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from ..measure.use import is_measurement
-from ..i18n import t
+from ..i18n import N_, t, translated
 from .model import Part, PartError, Where
 
 GRIP_PRIORITY = 1                     # above a piece's (and every field geom's) 0, as the climber's hooks
@@ -46,26 +46,26 @@ _HERE = Path(__file__).resolve().parent.parent
 _BENCH = tomllib.loads((_HERE / "bench" / "presets.toml").read_text(encoding="utf-8"))["material"]
 _SURFACE = tomllib.loads((_HERE / "launcher" / "presets.toml").read_text(encoding="utf-8"))["surface"]
 
-# key -> (label, sliding friction against a rigid piece)
+# key -> (label, sliding friction against a rigid piece); a label is N_(), shown with translated()
 GRIP_MATERIALS: dict[str, tuple[str, float]] = {
     # estimate: rubber on a hard surface, the lower half of the published rubber-on-concrete and rubber-on-cardboard
     # ranges (0.5 to 0.85); the range's rubber surface (launcher/presets.toml [surface.rubber]), read from there
-    "rubber": ("Rubber", float(_SURFACE["rubber"]["friction"])),
+    "rubber": (N_("Rubber"), float(_SURFACE["rubber"]["friction"])),
     # estimate: rubber on a hard plastic piece, 0.7 to 1.0 typical; the bench's nitrile rigid_friction
     # (bench/presets.toml [material.nitrile]), read from there. As rubber: the estimates can't tell them apart
-    "nitrile": ("Nitrile", float(_BENCH["nitrile"]["rigid_friction"])),
+    "nitrile": (N_("Nitrile"), float(_BENCH["nitrile"]["rigid_friction"])),
     # estimate: a grit-coated tape grips a hard plastic piece above plain rubber (0.7 to 1.0 typical); taken past
     # the top of that range. No other table has it
-    "grip-tape": ("Grip tape", 1.1),
+    "grip-tape": (N_("Grip tape"), 1.1),
     # estimate: smooth plastic on a hard plastic piece, 0.3 to 0.5 typical; the bench's polycarbonate rigid_friction
-    "polycarbonate": ("Polycarbonate", float(_BENCH["polycarbonate"]["rigid_friction"])),
+    "polycarbonate": (N_("Polycarbonate"), float(_BENCH["polycarbonate"]["rigid_friction"])),
     # estimate: bare aluminum on a hard plastic piece, 0.3 to 0.4 typical; the bench's aluminum rigid_friction
-    "aluminum": ("Aluminum", float(_BENCH["aluminum"]["rigid_friction"])),
+    "aluminum": (N_("Aluminum"), float(_BENCH["aluminum"]["rigid_friction"])),
     # estimate: UHMW on a hard plastic piece, 0.15 to 0.25 typical (a low-friction guide material); the bench's
     # UHMW rigid_friction
-    "hdpe": ("HDPE / UHMW", float(_BENCH["UHMW"]["rigid_friction"])),
+    "hdpe": (N_("HDPE / UHMW"), float(_BENCH["UHMW"]["rigid_friction"])),
 }
-MEASURE = "measure yours with a sled pull, docs/test-tab.md"
+MEASURE = N_("measure yours with a sled pull, docs/test-tab.md")     # shown with translated()
 
 
 def _number(x) -> bool:
@@ -191,17 +191,21 @@ def set_grip(folder: Path, body: str, grip: str | float | None) -> None:
 def measured_label(mu: float | None, prov) -> str:
     """A measured grip's words: its friction, the file it came from, and why it isn't good enough when it isn't."""
     from ..measure.labels import not_good, source
-    friction = f", friction {mu:g}" if mu is not None else ""
-    said = f"measured{friction} ({source(prov)})"
-    return said if prov.good else f"{said}, {not_good(prov)} (UNCALIBRATED)"
+    if mu is not None:
+        said = t("measured, friction {mu} ({source})", mu=f"{mu:g}", source=source(prov))
+    else:
+        said = t("measured ({source})", source=source(prov))
+    return said if prov.good else t("{said}, {why} (UNCALIBRATED)", said=said, why=not_good(prov))
 
 
 def _label(grip: str | float) -> str:
     if _number(grip):
-        return f"my own number, friction {float(grip):g} (UNCALIBRATED unless you measured it)"
+        return t("my own number, friction {mu} (UNCALIBRATED unless you measured it)", mu=f"{float(grip):g}")
     label, mu = GRIP_MATERIALS[grip]
+    label = translated(label)
     word = label[0].lower() + label[1:] if label[1:2].islower() else label     # "nitrile", "HDPE / UHMW"
-    return f"{word}, friction {mu:g} (UNCALIBRATED estimate; {MEASURE})"
+    return t("{material}, friction {mu} (UNCALIBRATED estimate; {measure})", material=word, mu=f"{mu:g}",
+             measure=translated(MEASURE))
 
 
 def pad_frictions(world) -> dict[str, float | None]:
@@ -235,9 +239,9 @@ def grip_notes(world) -> list[str]:
         for body, grip in inst.part.grips.items():
             prov = inst.part.grip_provenance.get(body)
             if prov is None:
-                out.append(f"{inst.name}.{body} grip: {_label(grip)}")
+                out.append(t("{part}.{body} grip: {grip}", part=inst.name, body=body, grip=_label(grip)))
                 continue
             mu = next((g.friction for b in inst.part.bodies if b.name == body for g in b.geoms
                        if g.priority == GRIP_PRIORITY), None)    # None: the body touches nothing
-            out.append(f"{inst.name}.{body} grip: {measured_label(mu, prov)}")
+            out.append(t("{part}.{body} grip: {grip}", part=inst.name, body=body, grip=measured_label(mu, prov)))
     return out

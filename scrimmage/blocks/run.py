@@ -350,7 +350,7 @@ def default_grip_note(world) -> str:
                   "yours with a sled pull (docs/test-tab.md)", pads=each)
 
 
-PNEUMATIC_ESTIMATES = "UNCALIBRATED: pneumatic numbers are estimates"
+PNEUMATIC_ESTIMATES = i18n.N_("pneumatic numbers are estimates")      # after measure/labels.py's mark
 
 
 def pneumatic_note(cylinders) -> str:
@@ -359,7 +359,7 @@ def pneumatic_note(cylinders) -> str:
     from ..measure.labels import line
     keys = tuple(f"{c.name} valve conductance" for c in cylinders)
     inputs = {k: c.provenance for k, c in zip(keys, cylinders)}
-    return f"{line(inputs, keys, estimates=PNEUMATIC_ESTIMATES)}; see docs/pneumatics.md."
+    return i18n.t("{line}; see docs/pneumatics.md.", line=line(inputs, keys, estimates=PNEUMATIC_ESTIMATES))
 
 
 def piece_notes(world) -> list[str]:

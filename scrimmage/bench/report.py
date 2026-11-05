@@ -8,8 +8,8 @@ what to measure. Names from the bench file are in backticks.
 Units and Language: the headlines and summary.txt are in the Units and Language settings when they are written
 (scrimmage/units.py, i18n.py; the MCP tools return the headlines in meters and American English, as before the
 settings, through units.fixed()). The CSVs stay SI, their columns named by unit (speed_m_s), and the tables' column
-names are the CSVs'. The UNCALIBRATED line is measure/labels.py's words, as the pictures carry it, untranslated:
-summary.txt's readers (the Bench tab) find the headlines' end by its first word.
+names are the CSVs'. The UNCALIBRATED line is measure/labels.py's, as the pictures carry it, in the Language but with
+its mark, "UNCALIBRATED", in every language: summary.txt's readers (the Bench tab) find the headlines' end by it.
 """
 
 import csv
@@ -38,10 +38,11 @@ LOAD_STANDS_OUT = 3.0   # a shape's peak force over this many times the other to
 MAX_LINES = 6           # headlines, UNCALIBRATED included
 JAM_NEAR = 0.05         # m: a jammed piece is "at" the nearest shape within this distance
 
-_MEASURE = {
-    "squishy": "measure the ball's stiffness (a squeeze test) and its bounce (a drop test) first; see "
-               "docs/launcher.md, \"Measure these first\"",
-    "rigid": "measure the tread's friction against the piece first (a sled pull: pull force / pressing force)",
+_MEASURE = {      # N_(): said with translated()
+    "squishy": i18n.N_("measure the ball's stiffness (a squeeze test) and its bounce (a drop test) first; see "
+                       "docs/launcher.md, \"Measure these first\""),
+    "rigid": i18n.N_("measure the tread's friction against the piece first (a sled pull: pull force / pressing "
+                     "force)"),
 }
 
 
@@ -49,7 +50,7 @@ def uncalibrated(result: BenchResult) -> str:
     return bench_uncalibrated(result.bench)
 
 
-ESTIMATES = "UNCALIBRATED: estimates from preset numbers, not measurements"
+ESTIMATES = i18n.N_("estimates from preset numbers, not measurements")    # after measure/labels.py's mark
 _MATTERS = {"squishy": labels.SQUISHY_BENCH, "rigid": labels.RIGID_BENCH}
 
 
@@ -66,7 +67,8 @@ def bench_estimates(bench) -> str:
 
 def bench_uncalibrated(bench) -> str:
     """The UNCALIBRATED line for a bench: what is estimated and what to measure first, for its kind of piece."""
-    return f"{bench_estimates(bench)}; {_MEASURE[bench.piece.kind]}."
+    return t("{estimates}; {measure}.", estimates=bench_estimates(bench),
+             measure=i18n.translated(_MEASURE[bench.piece.kind]))
 
 
 def _name(s: str) -> str:

@@ -250,7 +250,7 @@ def palette(world, hooks: list[str], setup: dict | None = None) -> dict:
         "piece_labels": _piece_labels(world, floor_names),
         "station_kinds": {st.name: st.kind or rng.default_kind for st in stations},
         "grips": _grips(world),
-        "grip_materials": [[key, label, mu] for key, (label, mu) in GRIP_MATERIALS.items()],
+        "grip_materials": [[key, i18n.translated(label), mu] for key, (label, mu) in GRIP_MATERIALS.items()],
         # where the floor spread's piece lies (in) and the nearest distance ahead Setup offers: {offset_in,
         # distance_in, nearest_in, kind (its kind's name), and a piece other than a ball's tip_deg and rotation_deg},
         # or null

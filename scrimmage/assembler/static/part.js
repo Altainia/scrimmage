@@ -633,7 +633,11 @@ export async function initPart() {
   await import("./part_inspector.js");   // its sections (it imports this file, so not at the top)
   registerTab("part", { renderTop, undo, redo, onShow: render });
   units.onChange(() => render());   // renderInspector keeps what is half typed
-  i18n.onChange(() => { render(); refresh(); });    // likewise; then the checklist, the server's words, again
+  i18n.onChange(async () => {      // likewise; then the checklist, the server's words, and the material names again
+    render(); refresh();
+    const m = await api("GET", "/api/part/materials");
+    if (m.status === 200) { part.materials = m.data; render(); }
+  });
   setTab("part");
   $("#part-new-body").addEventListener("click", () => {
     const ps = selectedPieces();

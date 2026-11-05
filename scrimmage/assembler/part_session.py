@@ -77,8 +77,9 @@ def need_step() -> str:
 def materials() -> dict:
     """GET /api/part/materials: the materials (key -> label, density, printed), the motor names and the grip materials
     a body's Grip picker offers ([key, label, friction estimate], parts/grip.py's order)."""
-    return {"materials": {k: dataclasses.asdict(m) for k, m in MATERIALS.items()}, "motors": sorted(MOTORS),
-            "grips": [[k, label, mu] for k, (label, mu) in GRIP_MATERIALS.items()]}
+    return {"materials": {k: {**dataclasses.asdict(m), "label": i18n.translated(m.label)} for k, m in MATERIALS.items()},
+            "motors": sorted(MOTORS),
+            "grips": [[k, i18n.translated(label), mu] for k, (label, mu) in GRIP_MATERIALS.items()]}
 
 
 def _sig(*paths: Path):

@@ -6,11 +6,13 @@ import textwrap
 from pathlib import Path
 
 from .. import units
+from .. import i18n
 from ..measure import labels
 from .inputs import Goal, LauncherConfigError
 from .run import METRIC_KEYS, RunResult
 
-UNCALIBRATED = labels.line({}, labels.LAUNCHER) + "."   # the line for setups that use no measurement
+with i18n.fixed():      # made once, at import: the CLI's line, American English (it prints nothing else)
+    UNCALIBRATED = labels.line({}, labels.LAUNCHER) + "."   # the line for setups that use no measurement
 FOOTER_WIDTH = 135   # characters: a longer chart footer wraps, below the chart, so it doesn't widen the PNG; every
 #   no-measurement line (the launcher's 122, the disc's 127) fits on one, as before measurements
 NO_MATPLOTLIB = "charts need matplotlib: pip install matplotlib"

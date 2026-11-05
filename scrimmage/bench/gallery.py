@@ -6,7 +6,7 @@ or emailed on its own) and its headlines, then a table comparing every idea. A f
 listed with its problem rather than stopping the gallery: one typo shouldn't cost the room the rest of the session.
 
 The gallery is for people: its words are in the Units and Language settings when it is written (a translation's text
-is put in as it is, with what goes into it escaped). The UNCALIBRATED line is report.py's, untranslated.
+is put in as it is, with what goes into it escaped). The UNCALIBRATED line is report.py's, in the Language.
 """
 
 import base64
@@ -23,6 +23,7 @@ from PIL import Image
 
 from .. import i18n, units
 from ..i18n import t
+from ..measure.labels import marked
 from .compare import idea_labels, metrics
 from .pictures import PICTURE_TRACE_HZ, path_picture
 from .report import headlines, uncalibrated
@@ -184,10 +185,10 @@ def gallery_html(folder: Path, entries: list[Entry]) -> str:
     labels = iter(idea_labels(ran))
     named = [(e, next(labels) if e.result is not None else e.file.name, f"idea-{i + 1}") for i, e in enumerate(entries)]
     title = t("Bench gallery: {folder}", folder=Path(folder).resolve().name)
-    warn = (uncalibrated(ran[0]) if ran else "UNCALIBRATED: estimates from preset numbers, not measurements.")
+    warn = (uncalibrated(ran[0]) if ran else marked(t("estimates from preset numbers, not measurements.")))
     kinds = {r.bench.piece.kind for r in ran}
     if len(kinds) > 1:
-        warn = "UNCALIBRATED: estimates from preset numbers, not measurements; see docs/bench.md."
+        warn = marked(t("estimates from preset numbers, not measurements; see docs/bench.md."))
     body = [f"<h1>{html.escape(title)}</h1>",
             '<p class="sub">' + html.escape(t(
                 "{count} ideas, made {date} with scrimmage bench gallery. Paths: green left through an outlet, red "

@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from .. import i18n
 from ..measure.labels import line
 from .model import ATM, CFM, COMPRESSORS, PSI, AirConfig, CylinderSpec
 
@@ -17,7 +18,8 @@ from .model import ATM, CFM, COMPRESSORS, PSI, AirConfig, CylinderSpec
 # What a budget rests on. A valve's measured conductance doesn't enter it (a budget counts air, not how fast it
 # flows), and none of these takes a measurement file yet, so a budget is always UNCALIBRATED.
 BUDGET_MATTERS = ("compressor flow", "pressure switch points", "tank volume", "dead volume")
-BUDGET_LINE = f"{line({}, BUDGET_MATTERS, estimates='UNCALIBRATED: estimates')}; see docs/pneumatics.md."
+with i18n.fixed():      # made once, at import: the CLI's line (scrimmage air), American English
+    BUDGET_LINE = f"{line({}, BUDGET_MATTERS, estimates=i18n.N_('estimates'))}; see docs/pneumatics.md."
 
 
 @dataclass(frozen=True)

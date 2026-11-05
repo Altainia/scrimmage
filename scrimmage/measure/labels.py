@@ -11,27 +11,38 @@
 
 A measurement that isn't good counts as an estimate and says why: "ball stiffness (fuel.measure.toml, not good
 enough: 2 trials; take at least 3)". The line has no closing period, so a caller can add its own ending.
+
+The words are in the Language setting, but the label's own word, MARK ("UNCALIBRATED"), is the same in every
+language: the Bench tab finds the headlines' end in summary.txt by it, and people and agents read it as the flag it
+is. A caller's own `estimates` wording is N_() text without it.
 """
 
 from __future__ import annotations
 
+from ..i18n import N_, t, tn, translated
 from .file import Provenance
 
-ESTIMATES = "UNCALIBRATED: estimates from preset material numbers, not fitted to measurements"
+MARK = "UNCALIBRATED"
+ESTIMATES = N_("estimates from preset material numbers, not fitted to measurements")
+
+
+def marked(text: str) -> str:
+    """`text` (in the user's language) after the label's mark: "UNCALIBRATED: <text>"."""
+    return f"{MARK}: {text}"
 
 # what matters for each result (spec goal 5); a grip's pads and a cylinder's valve are named by their callers
 LAUNCHER = ("ball.stiffness_n", "ball.restitution", "wheels.friction")
 DISC = ("disc.inertia", "disc.rim_stiffness", "tread.friction")      # docs/disc.md's "Measure these first"
 SQUISHY_BENCH = ("ball.stiffness_n", "tread.friction")              # a bench: its piece's stiffness and friction
 RIGID_BENCH = ("piece.stiffness", "tread.friction")
-NAMES = {   # an input's key -> its words: (what it belongs to, what it is)
-    "ball.stiffness_n": ("ball", "stiffness"),
-    "ball.restitution": ("ball", "bounce"),
-    "wheels.friction": ("wheel", "friction"),
-    "piece.stiffness": ("piece", "stiffness"),
-    "tread.friction": ("tread", "friction"),
-    "disc.inertia": ("disc", "inertia"),
-    "disc.rim_stiffness": ("disc", "rim stiffness"),
+NAMES = {   # an input's key -> (what it belongs to, its words, its words after its owner's) (N_(): translated())
+    "ball.stiffness_n": ("ball", N_("ball stiffness"), N_("stiffness")),
+    "ball.restitution": ("ball", N_("ball bounce"), N_("bounce")),
+    "wheels.friction": ("wheel", N_("wheel friction"), N_("friction")),
+    "piece.stiffness": ("piece", N_("piece stiffness"), N_("stiffness")),
+    "tread.friction": ("tread", N_("tread friction"), N_("friction")),
+    "disc.inertia": ("disc", N_("disc inertia"), N_("inertia")),
+    "disc.rim_stiffness": ("disc", N_("disc rim stiffness"), N_("rim stiffness")),
 }
 
 
@@ -40,26 +51,26 @@ def names(keys) -> list[str]:
     NAMES doesn't know is its own words ("lift valve conductance")."""
     out, last = [], None
     for k in keys:
-        owner, what = NAMES.get(k, (None, k))
-        out.append(what if owner is not None and owner == last else f"{owner} {what}" if owner else what)
+        owner, full, short = NAMES.get(k, (None, k, k))
+        out.append(translated(short if owner is not None and owner == last else full))
         last = owner
     return out
 
 
 def _and(words: list[str]) -> str:
-    return words[0] if len(words) == 1 else f"{', '.join(words[:-1])} and {words[-1]}"
+    return words[0] if len(words) == 1 else t("{names} and {last}", names=", ".join(words[:-1]), last=words[-1])
 
 
 def source(p: Provenance) -> str:
     """Where a measurement came from: "fuel.measure.toml, J. Smith, 2026-11-10, 5 trials"; who and when are left
     out when the file doesn't give them ("fuel.measure.toml, 5 trials")."""
-    trials = f"{p.trials} trial{'' if p.trials == 1 else 's'}"
+    trials = tn("{count} trial", "{count} trials", p.trials)
     return ", ".join([p.file.name, *(x for x in (p.by, p.date) if x), trials])
 
 
 def not_good(p: Provenance) -> str:
     """Why a measurement counts as an estimate: "not good enough: 2 trials; take at least 3" (one colon)."""
-    return f"not good enough: {p.why.replace(': ', '; ')}" if p.why else "not good enough"
+    return t("not good enough: {why}", why=p.why.replace(": ", "; ")) if p.why else t("not good enough")
 
 
 def _grouped(keys, inputs) -> list[tuple[Provenance | None, list[str]]]:
@@ -72,19 +83,19 @@ def _grouped(keys, inputs) -> list[tuple[Provenance | None, list[str]]]:
 
 def line(inputs: dict[str, Provenance | None], matters: tuple[str, ...], *, estimates: str = ESTIMATES) -> str:
     """The label for a result resting on `matters`, each measured as `inputs` says (a key missing or None: an
-    estimate). `estimates` is the caller's own UNCALIBRATED wording for when nothing is measured."""
+    estimate). `estimates` is the caller's own wording (N_() text, after the mark) for when nothing is measured."""
     prov = {k: inputs.get(k) for k in matters}
     if all(p is None for p in prov.values()):
-        return f"{estimates} ({', '.join(names(matters))})"
+        return marked(t("{estimates} ({inputs})", estimates=translated(estimates), inputs=", ".join(names(matters))))
     good = [k for k in matters if prov[k] is not None and prov[k].good]
     measured = "; ".join(f"{_and(names(ks))} ({source(p)})" for p, ks in _grouped(good, prov))
     if len(good) == len(matters):
-        return f"Calibrated from measurements: {measured}"
+        return t("Calibrated from measurements: {measured}", measured=measured)
     # the plain estimates together, and the not-good measurements by their file, saying why
     still = [", ".join(names(ks)) if p is None else f"{_and(names(ks))} ({p.file.name}, {not_good(p)})"
              for p, ks in _grouped([k for k in matters if k not in good], prov)]
-    text = f"UNCALIBRATED: still estimates: {', '.join(still)}"
-    return f"{text}. Measured: {measured}" if measured else text
+    text = marked(t("still estimates: {still}", still=", ".join(still)))
+    return t("{text}. Measured: {measured}", text=text, measured=measured) if measured else text
 
 
 def common(provenances: list[dict]) -> dict[str, Provenance]:

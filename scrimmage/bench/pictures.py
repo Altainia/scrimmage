@@ -17,6 +17,7 @@ from PIL import Image, ImageDraw, ImageFont
 from .. import i18n, units
 from ..render import new_renderer
 from ..i18n import t
+from ..measure.labels import marked
 from .report import ESTIMATES, STATUS_COLORS, bench_estimates, status_words
 from .run import BenchResult
 
@@ -33,7 +34,9 @@ PATH_ORDER = ("timed_out", "out", "escaped", "jammed")  # later ones drawn on to
 MOVES_ACROSS = 0.01     # m: a top view is drawn when the paths span more than this across y
 PICTURE_TRACE_HZ = 240.0  # what `bench run` samples paths and the trace at, for smooth paths and a smooth GIF
 UNCALIBRATED_INK = (170, 40, 40)  # dark red, as the launcher model's charts' footer; not the jammed paths' red
-PICTURE_UNCALIBRATED = ESTIMATES   # a picture's line when its bench isn't known; picture_uncalibrated(bench) else
+def picture_line() -> str:
+    """A picture's UNCALIBRATED line when its bench isn't known (picture_uncalibrated(bench) else)."""
+    return marked(i18n.translated(ESTIMATES))
 OUTLINE_APART = 0.6     # a piece's outlines are at least this many piece sizes apart (the later pose wins)
 
 
@@ -486,9 +489,10 @@ def _time_label(draw: ImageDraw.ImageDraw, t: float, height: int, x: float = 0.0
 
 
 def pass_sheet(frames: list[tuple[float, np.ndarray]], columns: int = 4,
-               label: str = PICTURE_UNCALIBRATED) -> np.ndarray:
+               label: str | None = None) -> np.ndarray:
     """The frames in a grid, left to right, each with its time in large type, and `label` (the UNCALIBRATED line)
-    under them."""
+    under them (default picture_line())."""
+    label = picture_line() if label is None else label
     cols = min(columns, len(frames))
     rows = math.ceil(len(frames) / cols)
     h, w = frames[0][1].shape[:2]
@@ -505,8 +509,10 @@ def pass_sheet(frames: list[tuple[float, np.ndarray]], columns: int = 4,
 
 
 def write_gif(frames: list[tuple[float, np.ndarray]], path: Path, fps: float = 15,
-              label: str = PICTURE_UNCALIBRATED) -> Path:
-    """An endless GIF of the frames, each stamped with its simulated time and `label` (the UNCALIBRATED line)."""
+              label: str | None = None) -> Path:
+    """An endless GIF of the frames, each stamped with its simulated time and `label` (the UNCALIBRATED line, default
+    picture_line())."""
+    label = picture_line() if label is None else label
     path = Path(path)
     images = []
     for t, img in frames:

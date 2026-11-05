@@ -26,12 +26,13 @@ from collections.abc import Callable
 from pathlib import Path
 
 from .. import i18n
+from ..measure.labels import MARK
 from ..bench import run as bench_run
 from ..bench import session
 from ..bench.build import build_bench
 from ..bench.compare import BENCH_METRICS
 from ..bench.fields import fields_payload
-from ..bench.pictures import PICTURE_UNCALIBRATED
+from ..bench.pictures import picture_line
 from ..bench.problems import collect_problems
 from ..bench.report import bench_uncalibrated
 from ..bench.spec import (_LISTS, _SECTIONS, _SINGLES, BenchError, _check_path, _read_toml,
@@ -127,7 +128,7 @@ def _summary(out: Path | None) -> tuple[list[str], str | None]:
     heads = []
     for line in lines[lines.index("") + 1:]:
         heads.append(line)
-        if line.startswith("UNCALIBRATED"):
+        if line.startswith(MARK):           # the label's mark, the same in every language
             return heads, line
         if not line:
             break
@@ -445,7 +446,7 @@ class BenchSession:
         out = Path(e["out"]) if isinstance(e.get("out"), str) else None
         heads, unc = _summary(out)
         if unc is None:   # never a result without its UNCALIBRATED line
-            unc = bench_uncalibrated(idea.bench) if idea.bench is not None else PICTURE_UNCALIBRATED
+            unc = bench_uncalibrated(idea.bench) if idea.bench is not None else picture_line()
 
         def pic(name):
             return str(out / name) if out is not None and (out / name).is_file() else None
@@ -465,7 +466,7 @@ class BenchSession:
         pictures, table = _result_files(kind, out) if e.get("ok") else ([], None)
         first = self.ideas.get(files[0]) if files else None
         unc = bench_uncalibrated(first.bench) if first is not None and first.bench is not None \
-            else PICTURE_UNCALIBRATED   # never a result without its UNCALIBRATED line
+            else picture_line()   # never a result without its UNCALIBRATED line
         return {"kind": kind, "files": files, "ok": e.get("ok"), "error": e.get("error"), "t": e.get("t"),
                 "source": e.get("source"), "out": e.get("out"), "uncalibrated": unc, "pictures": pictures,
                 "table": _table(table), "on_stage": self._result_on_stage}
