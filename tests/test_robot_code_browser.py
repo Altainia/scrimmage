@@ -632,3 +632,38 @@ def test_docs_screenshot(code_page, tmp_path):
         assert i < 0, shown[max(0, i - 120):i + 120]
     page.screenshot(path=os.environ["SCRIMMAGE_ROBOT_CODE_SHOT"])
     _stop(page)
+
+
+def _live_real_ds(page) -> bool:
+    """Whether the running session is a real-DS one (its config's default is known only once it runs)."""
+    return page.evaluate("""async () => {
+      const t = new URLSearchParams(location.hash.slice(1)).get('token');
+      for (;;) {
+        const s = (await (await fetch('/api/live/info', {headers: {'X-Scrimmage-Token': t}})).json()).status;
+        if (s.state === 'running') return s.real_ds;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }""")
+
+
+def test_check_devices_takes_the_drive_tabs_driver_station_choice(code_page, tmp_path):
+    """Start and check devices starts the session the Drive tab would: the config's [driver_station] real until the
+    student picks in the Drive tab, then the pick."""
+    cmd = json.dumps(["{python}", "fake_robot_main.py", "--lockstep"])
+    cfg = tmp_path / "bot.toml"
+    cfg.write_text(templates.new_config("differential").replace("[robot]\n", PICKED_START, 1)
+                   + f"\n[robot_program]\ncommand = {cmd}\ncwd = {json.dumps(str(TESTS))}\n"
+                   + "\n[driver_station]\nreal = true\n")
+    page = code_page(cfg)
+    for pick, want in ((None, True), ("page", False), ("real", True)):
+        if pick is not None:
+            page.click("#tab-btn-drive")
+            page.wait_for_selector("#drive-ds-source:enabled")
+            page.select_option("#drive-ds-source", pick)
+            page.click("#tab-btn-robot")
+            page.click("#center-code")
+        page.click("#code-check-devices")
+        page.wait_for_selector("#code-stop:visible", timeout=60000)
+        assert _live_real_ds(page) is want, pick
+        page.click("#code-stop")
+        page.wait_for_selector("#code-stop", state="hidden", timeout=30000)

@@ -848,7 +848,10 @@ async function checkDevices(discard = false) {
   if (!(await ensurePicked())) return;
   els.checkBtn.disabled = true;
   try {
-    const { status, data } = await api("POST", "/api/robot/check", { discard_recording: discard });
+    // the Drive tab's Driver Station choice, once the student has picked it there; else null, the config's default
+    const ds = $("#drive-ds-source");
+    const realDs = ds && ds.dataset.touched ? ds.value === "real" : null;
+    const { status, data } = await api("POST", "/api/robot/check", { discard_recording: discard, real_ds: realDs });
     const errors = data.errors || [];
     if (status === 200 && data.ok) {
       code.run = { kind: "ok", text: "The robot is running, disabled, so scrimmage can see the devices your code makes. Enable it in the Drive tab to drive it." };

@@ -76,6 +76,7 @@ const drive = {
   notBuilt: false,      // it failed because the Java code hasn't built (start/not_built): the banner links Build now
   posting: false,       // a Start request is on its way
   startTaken: false,    // the server took a Start, and no state message since has said it is starting (or ended)
+  starts: 0,            // Starts the server has taken (so a late answer about an earlier one is ignored)
   messages: 0,          // state messages received from the stream
   picks: new Array(SIGNALS).fill(""),
   sentPicks: "[]",
@@ -325,6 +326,7 @@ function onState(s) {
   const prev = drive.state;
   drive.state = s;
   if (s.state !== "idle" && s.state !== "stopped") drive.startTaken = false;
+  else if (drive.startTaken) checkStartEnded();
   if (isLive(s) && !isLive(prev)) sessionBegan(prev);
   if (!isLive(s)) drive.rtf = [];
   else if (!s.paused) {
@@ -572,6 +574,8 @@ async function startSession(discard = false) {
       { speed: sp === "max" ? "max" : Number(sp), discard_recording: discard, real_ds: $("#drive-ds-source").value === "real" });
     if (status === 200 && data.ok) {
       drive.startTaken = true;
+      drive.starts++;
+      checkStartEnded();
       drive.consoleSeq = null;
       for (const p of drive.plots) p.plot.clear();
       return;
@@ -594,6 +598,18 @@ async function startSession(discard = false) {
   // nobody has picked where the robot starts: the robot code panel's start picker asks, then Start goes on
   const { pickStart } = await import("./code.js");
   if (await pickStart()) startSession(discard);
+}
+
+// After a taken Start, the session may start and end before the page hears of it (the stream sends only the latest
+// state, so "starting" can be skipped): ask the server. It marks a Start "starting" before it answers, so an idle or
+// stopped session now means it has ended, and the idle page shouldn't look like a real-DS session any more.
+async function checkStartEnded() {
+  const start = drive.starts;
+  const { status, data } = await api("GET", "/api/live/info");
+  if (status === 200 && drive.startTaken && drive.starts === start && ["idle", "stopped"].includes(data.status.state)) {
+    drive.startTaken = false;
+    render();
+  }
 }
 
 // The robot code panel's Drive button: the Drive tab, and a start when nothing is running yet.
@@ -778,7 +794,11 @@ export function initDrive() {
   window.addEventListener("gamepaddisconnected", refreshPadOptions);
   setInterval(refreshPadOptions, 1000);   // some browsers report gamepads only by polling
 
-  $("#drive-ds-source").addEventListener("change", () => { drive.dsTouched = true; render(); });
+  $("#drive-ds-source").addEventListener("change", (e) => {
+    drive.dsTouched = true;
+    e.target.dataset.touched = "1";   // the robot code panel's Start and check devices sends the pick too
+    render();
+  });
   $("#drive-start").addEventListener("click", () => startSession());
   $("#drive-restart").addEventListener("click", () => startSession());
   $("#discard-form").addEventListener("submit", (e) => {

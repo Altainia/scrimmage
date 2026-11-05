@@ -3,8 +3,10 @@ readouts against a real `scrimmage edit` driving tests/fake_robot_main.py (`--dr
 axis 1, pushed forward = -1, while enabled, PWM 1 negated to match the config's inverted right side, so it drives
 straight).
 """
+import json
 import os
 import re
+import urllib.request
 
 import pytest
 
@@ -407,3 +409,34 @@ def test_the_bar_follows_the_frc_driver_station(drive_page, tmp_path):
     finally:
         ds.stop()
     stop(page)
+
+
+def _post(page, path, body=None):
+    """POST to the assembler from the test (not the page), with the page's token."""
+    from urllib.parse import parse_qs, urlsplit
+    u = urlsplit(page.url)
+    token = parse_qs(u.fragment)["token"][0]   # the hash is "#drive&token=…"
+    base = f"{u.scheme}://{u.netloc}"
+    req = urllib.request.Request(base + path, data=json.dumps(body or {}).encode(), method="POST",
+                                 headers={"X-Scrimmage-Token": token, "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read())
+
+
+def test_a_real_ds_start_that_ends_before_its_answer_leaves_the_page_idle(drive_page):
+    """The session starts and stops while the Start request's answer is held back: once the answer comes, the idle
+    page doesn't keep the FRC Driver Station look (the stream may never send a state after it)."""
+    page = drive_page()
+    page.select_option("#drive-ds-source", "real")
+
+    def hold_the_answer(route):
+        resp = route.fetch()           # the server takes the Start
+        _post(page, "/api/live/stop")
+        route.fulfill(response=resp)   # the answer comes after the session has stopped
+
+    page.route("**/api/live/start", hold_the_answer)
+    page.click("#drive-start")
+    page.wait_for_function("__scrimmage.live.state && __scrimmage.live.state.state === 'stopped'", timeout=30000)
+    page.wait_for_selector("#drive-real-ds", state="hidden", timeout=10000)
+    assert page.is_enabled("#drive-ds-source") and page.is_enabled("#drive-start")
+    assert "Driver Station app" not in page.text_content("#drive-keys-hint")
