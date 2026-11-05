@@ -324,7 +324,7 @@ def _joint_problems(n: _Names, name: str, unit: str | None, motor: bool) -> list
 
 def _bar_problems(n: _Names, bar: str) -> list[str]:
     if bar == NEXT_BAR:
-        return [] if n.bars else [i18n.t('"next bar" needs a field with bars')]
+        return [] if n.bars else [i18n.t("\"{next_bar}\" needs a field with bars", next_bar="next bar")]
     return [] if bar in n.bars else [i18n.t('no bar "{bar}" on this field', bar=bar)]
 
 
@@ -362,7 +362,7 @@ def _cylinder_problems(n: _Names, name: str, doing: str) -> list[str]:
 def _sensor_problems(n: _Names, name: str, sees: str | None) -> list[str]:
     """A sensor condition's sensor: one of the robot's [[sensor]]s; and `sees` only on a color sensor."""
     if not n.sensors:
-        return [i18n.t("this robot has no sensors; add a [[sensor]] to its config")]
+        return [i18n.t("this robot has no sensors; add a {sensor_table} to its config", sensor_table="[[sensor]]")]
     if name not in n.sensors:
         return [i18n.t("{name} isn't a sensor; the robot's sensors: {names}", name=name, names=', '.join(n.sensors))]
     if sees is not None and n.sensors[name] != "color":
@@ -381,7 +381,7 @@ def _cond_problems(n: _Names, c) -> list[str]:
     if c.kind == "touch":
         out = []
         if a["field"] == ANY_BAR:
-            out += [] if n.bars else [i18n.t('"any bar" needs a field with bars')]
+            out += [] if n.bars else [i18n.t("\"{any_bar}\" needs a field with bars", any_bar="any bar")]
         if a["robot"] == ANY_HOOK:
             if not n.p["hooks"]:
                 out.append(i18n.t("this robot has no hooks; say which bodies are hooks in the test's setup"))

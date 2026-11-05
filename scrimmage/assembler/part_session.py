@@ -176,9 +176,11 @@ def open_part(path: Path, version: int, parts_dir: Path | None = None,
             rel = tomllib.loads((path / MARKER).read_text(encoding="utf-8"))["import"]
             imp = (path / rel).resolve()
         except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, KeyError, TypeError):
-            raise CadError(i18n.t("{name}'s {marker} can't be read: open the CAD file again to remake it.", name=path.name, marker=MARKER)) from None
+            raise CadError(i18n.t("{name}'s {marker} can't be read: open the CAD file again to remake it.",
+                                  name=path.name, marker=MARKER)) from None
         if not imp.is_file():
-            raise CadError(i18n.t("{name} was made from {rel}, which is gone: open the CAD file again to remake it.", name=path.name, rel=rel))
+            raise CadError(i18n.t("{name} was made from {rel}, which is gone: open the CAD file again to remake it.",
+                                  name=path.name, rel=rel))
         return PartSession(imp, version)
     if path.is_file() and path.name.lower().endswith(".toml"):
         return PartSession(path, version)
@@ -195,7 +197,8 @@ def upload_name(filename: str | None) -> str:
     if not name or name.startswith(".") or ":" in name or any(ord(ch) < 32 for ch in name):
         raise SessionError(400, i18n.t("the file needs a name (header X-Filename)"))
     if Path(name).suffix.lower() not in CAD_SUFFIXES:
-        raise SessionError(400, i18n.t("{name} is not a STEP, STL or OBJ file: export it from CAD as one of those", name=name))
+        raise SessionError(400, i18n.t("{name} is not a STEP, STL or OBJ file: export it from CAD as one of those",
+                                       name=name))
     return name
 
 
@@ -439,7 +442,8 @@ class PartSession(_Session):
             self._build = {"state": "failed", "message": str(e)}
             return None
         if not src.pieces:
-            self._src_problem = i18n.t("{name} has no pieces to import: export the parts, not an empty file.", name=path.name)
+            self._src_problem = i18n.t("{name} has no pieces to import: export the parts, not an empty file.",
+                                       name=path.name)
             return None
         return src
 
@@ -549,7 +553,8 @@ class PartSession(_Session):
                 err = str(e)
             except Exception as e:   # a bug: say so, keep the session
                 log.exception("part build")
-                err = i18n.t("The build failed ({why}); this is a bug in Scrimmage: please report it.", why=f"{type(e).__name__}: {e}")
+                err = i18n.t("The build failed ({why}); this is a bug in Scrimmage: please report it.",
+                             why=f"{type(e).__name__}: {e}")
             with self._cond:
                 self._built_gen = gen
                 if err is not None:
@@ -679,19 +684,23 @@ class PartSession(_Session):
         rebuilt and it isn't on the undo history (lock held)."""
         name = a.get("body")
         if not isinstance(name, str) or name not in self.imp.bodies:
-            return _refused(EditError("body", i18n.t("There is no body called {name}: pick one from the list.", name=name)))
+            return _refused(EditError("body", i18n.t("There is no body called {name}: pick one from the list.",
+                                                     name=name)))
         if "grip" not in a:
-            return _refused(EditError("grip", i18n.t("Say the grip material, or grip = none for the default friction.")))
+            return _refused(EditError("grip", i18n.t("Say the grip material, or {grip_setting} for the default "
+                                                     "friction.", grip_setting="grip = none")))
         try:
             part, home = body_home(self.imp, name)
         except CadError as e:
             return _refused(EditError("body", str(e)))
         if home != name:
-            return _refused(EditError("body", i18n.t("{name} is built into {home}'s body (it has no joint of its own): set the grip on {home}.", name=name, home=home)))
+            return _refused(EditError("body", i18n.t("{name} is built into {home}'s body (it has no joint of its own): set the grip on {home}.",
+                                                     name=name, home=home)))
         folder = part_folder(self.imp, part, self.path)
         # not while a build runs: write_parts copies the folder's edits before it swaps the new folder in
         if not (folder / "part.toml").is_file() or self._build["state"] == "building":
-            return _refused(EditError("body", i18n.t("{part} isn't built yet: wait for the build, then set the grip.", part=part)))
+            return _refused(EditError("body", i18n.t("{part} isn't built yet: wait for the build, then set the grip.",
+                                                     part=part)))
         before = self._grips().get(name)
         try:
             set_grip(folder, name, a["grip"])
@@ -709,7 +718,8 @@ class PartSession(_Session):
         held)."""
         folder = part_folder(self.imp, step.part, self.path)
         if self._build["state"] == "building":
-            raise SessionError(409, i18n.t("{part} is being built: wait for the build, then undo the grip.", part=step.part))
+            raise SessionError(409, i18n.t("{part} is being built: wait for the build, then undo the grip.",
+                                           part=step.part))
         now = self._grips().get(step.body)
         try:
             set_grip(folder, step.body, step.grip)

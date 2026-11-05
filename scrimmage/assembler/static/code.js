@@ -149,7 +149,7 @@ function build() {
       els.devBody)),
     h("div", { class: "row code-apply-row" }, els.apply), els.applyStatus);
   const more = h("details", { id: "code-more", class: "code-more" }, h("summary", {}, L(() => t("More settings"))),
-    h("p", { class: "hint" }, L(() => t("How the simulated battery behaves ([battery] in the robot file). Leave a box empty for the default."))));
+    h("p", { class: "hint" }, L(() => t("How the simulated battery behaves ({table} in the robot file). Leave a box empty for the default.", { table: "[battery]" }))));
   for (const b of BATTERY) {
     const inp = markDirty(h("input", { id: b.id, type: "number", step: b.step, min: "0", inputmode: "decimal", dataset: { key: b.key } }));
     onCommit(inp, () => saveBattery(b, inp));

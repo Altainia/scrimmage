@@ -129,8 +129,8 @@ def parse_start_pose(value, default=None) -> tuple[float, float, float] | None:
     ok = (isinstance(value, (list, tuple)) and len(value) == 3
           and all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in value))
     if not ok:
-        raise ValueError(t("[robot] start_pose must be [x, y, heading_deg], 3 finite numbers, not {value}",
-                           value=repr(value)))
+        raise ValueError(t("{robot_table} start_pose must be [x, y, heading_deg], 3 finite numbers, not {value}",
+                           value=repr(value), robot_table="[robot]"))
     return tuple(float(v) for v in value)
 
 
@@ -159,9 +159,9 @@ def _instances(cfg: dict, cfg_dir: Path) -> list[Instance]:
     from .stock import build_stock, stock_params
     entries = cfg.get("part")
     if not entries:
-        raise PartError(t("no [[part]] entries"))
+        raise PartError(t("no {part_table} entries", part_table="[[part]]"))
     if not isinstance(entries, list) or not all(isinstance(e, dict) for e in entries):
-        raise PartError(t("[[part]] must be an array of tables"))
+        raise PartError(t("{part_table} must be an array of tables", part_table="[[part]]"))
     out: list[Instance] = []
     for i, e in enumerate(entries):
         name = e.get("name")
@@ -173,8 +173,9 @@ def _instances(cfg: dict, cfg_dir: Path) -> list[Instance]:
             raise PartError(t("{where}: the part name {name} is used twice", where=where, name=repr(name)),
                             where=where, field="name")
         if ("stock" in e) == ("path" in e):
-            raise PartError(t("{where}: give exactly one of stock = \"<stock part>\" or path = \"<part folder>\"",
-                              where=where), where=where)
+            raise PartError(t("{where}: give exactly one of {stock_setting} or {path_setting}", where=where,
+                              stock_setting="stock = \"<stock part>\"",
+                              path_setting="path = \"<part folder>\""), where=where)
         params = {k: v for k, v in e.items() if k not in PLACEMENT_KEYS}
         checked: dict = {}
         if "stock" in e:
@@ -215,11 +216,12 @@ def _instances(cfg: dict, cfg_dir: Path) -> list[Instance]:
                 part, _ = apply_grip(part, e["grip"], where, base=cfg_dir)
         attach = e.get("attach")
         if attach is not None and not (isinstance(attach, str) and attach.count(".") == 1 and all(attach.split("."))):
-            raise PartError(t("{where}: attach must be \"<part>.<mount or body>\", not {attach}", where=where,
-                              attach=repr(attach)), where=where, field="attach")
+            raise PartError(t("{where}: attach must be \"{part_mount_or}\", not {attach}", where=where,
+                              attach=repr(attach), part_mount_or="<part>.<mount or body>"), where=where, field="attach")
         ids = e.get("ids", {})
         if not isinstance(ids, dict):
-            raise PartError(t("{where}: ids must be a table of slot = device, not {ids}", where=where, ids=repr(ids)),
+            raise PartError(t("{where}: ids must be a table of {slot_setting}, not {ids}", where=where,
+                              ids=repr(ids), slot_setting="slot = device"),
                             where=where, field="ids")
         out.append(Instance(name, part, source, attach, _vec3(e, "pos", where), _vec3(e, "rot", where), ids, where,
                             checked))
@@ -544,15 +546,16 @@ def assemble(cfg: dict, cfg_dir: Path) -> Built:
     spec.option.impratio = 10
     field_cfg = cfg.get("field", {})
     if not isinstance(field_cfg, dict):
-        raise PartError(t("[field] must be a table"))
+        raise PartError(t("{field_table} must be a table", field_table="[field]"))
     section = None
     timestep = model_timestep(cfg)
     if "range" in cfg:
         from ..testrange.build import parse_range_section
         section = parse_range_section(cfg, cfg_dir)
         if field_cfg.get("obstacle") is True:
-            raise PartError(t("[field] obstacle = true: the range's field elements replace the center obstacle; "
-                              "remove the key or set it false"))
+            raise PartError(t("{field_table} {obstacle_setting}: the range's field elements replace the center "
+                              "obstacle; remove the key or set it false", field_table="[field]",
+                              obstacle_setting="obstacle = true"))
         if timestep is not None:   # the balls' contacts are built for the run's timestep
             spec.option.timestep = timestep
     add_field(spec, field_cfg, obstacle_default=section is None)
@@ -591,7 +594,8 @@ def assemble(cfg: dict, cfg_dir: Path) -> Built:
         from .partner import add_partner, check_start
         if "partner" in by_name:
             at = by_name["partner"].where
-            raise PartError(t("{where}: the part name 'partner' is the [partner] robot's; rename the part", where=at),
+            raise PartError(t("{where}: the part name 'partner' is the {partner_table} robot's; rename the part",
+                              where=at, partner_table="[partner]"),
                             where=at, field="name")
         partner = add_partner(spec, cfg)
         check_start(partner, pose, section.range.elements if section is not None else ())

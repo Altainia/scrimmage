@@ -14,5 +14,5 @@
   "the start must be [x, y, heading]: meters from the blue corner, and degrees": "the start must be [x, y, heading]: metres from the blue corner, and degrees",
   "\"{name}\" slides, so give it in inches or meters, not degrees": "\"{name}\" slides, so give it in inches or metres, not degrees",
   "{count} ideas, made {date} with scrimmage bench gallery. Paths: green left through an outlet, red jammed, orange escaped, gray still inside or never got in.": "{count} ideas, made {date} with scrimmage bench gallery. Paths: green left through an outlet, red jammed, orange escaped, grey still inside or never got in.",
-  "[flight] flies balls only; a rigid piece's flight is not modeled yet, so there are no landings.": "[flight] flies balls only; a rigid piece's flight is not modelled yet, so there are no landings."
+  "{flight_table} flies balls only; a rigid piece's flight is not modeled yet, so there are no landings.": "{flight_table} flies balls only; a rigid piece's flight is not modelled yet, so there are no landings."
 }

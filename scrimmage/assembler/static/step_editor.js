@@ -176,7 +176,7 @@ function headSection(i, step) {
       type: "button", class: `mode-btn mode-${m}`, "aria-pressed": String(step.mode === m), dataset: { key: `mode-${m}` },
       onclick: () => { if (step.mode !== m) setStep({ mode: m }); },
     }, m))),
-    !MODES.includes(step.mode) && step.mode != null ? h("p", { class: "hint", text: t("The file says mode = {mode}.", { mode: JSON.stringify(step.mode) }) }) : null,
+    !MODES.includes(step.mode) && step.mode != null ? h("p", { class: "hint", text: t("The file says {setting}.", { setting: `mode = ${JSON.stringify(step.mode)}` }) }) : null,
     h("div", { class: "field-msgs" }));
   const dur = numField(`step${i}/duration`, "ed-duration", "duration", t("Duration"), step.duration,
     (v) => setStep({ duration: v }), { unit: "s", min: 0 });

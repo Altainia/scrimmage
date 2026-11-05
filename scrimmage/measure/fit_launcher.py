@@ -139,7 +139,8 @@ def _number(table: dict, key: str, where: str) -> float | None:
         return None
     v = table[key]
     if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
-        raise MeasureError(i18n.t("{where}: {key} must be a number, not {value}", where=where, key=key, value=repr(v)))
+        raise MeasureError(i18n.t("{where}: {key} must be a number, not {value}", where=where, key=key,
+                                  value=repr(v)))
     return float(v)
 
 
@@ -150,20 +151,22 @@ def _is_reading(key: str) -> bool:
 def _check_keys(mf: MeasureFile, setup: dict, rows: list[dict]) -> None:
     for key in setup:
         if key == "wheel_rps" or unit_of(key, "frames") is not None:
-            raise MeasureError(i18n.t("{path}: {key} goes in each [[shot]], not in [shot_setup]", path=mf.path,
-                                      key=key))
+            raise MeasureError(i18n.t("{path}: {key} goes in each {shot_table}, not in {shot_setup_table}",
+                                      path=mf.path, key=key, shot_table="[[shot]]", shot_setup_table="[shot_setup]"))
         if key not in SETUP_TEXT and key not in SETUP_NUMBERS and unit_of(key, "marks") is None:
-            raise MeasureError(i18n.t("{path}: unknown key '{key}' in [shot_setup]; it takes setup, ball, "
-                                      "marks_<unit>, fps, hood_deg", path=mf.path, key=key))
+            raise MeasureError(i18n.t("{path}: unknown key '{key}' in {shot_setup_table}; it takes setup, ball, "
+                                      "marks_<unit>, fps, hood_deg", path=mf.path, key=key,
+                                      shot_setup_table="[shot_setup]"))
     for i, row in enumerate(rows):
         for key in row:
             if key in SETUP_TEXT:
-                raise MeasureError(i18n.t("{path}: {key} goes in [shot_setup], once for all shots, not in [[shot]] "
-                                          "trial {n}", path=mf.path, key=key, n=i + 1))
+                raise MeasureError(i18n.t("{path}: {key} goes in {shot_setup_table}, once for all shots, not in "
+                                          "{shot_table} trial {n}", path=mf.path, key=key, n=i + 1,
+                                          shot_setup_table="[shot_setup]", shot_table="[[shot]]"))
             if key not in SHOT_NUMBERS and not _is_reading(key):
-                raise MeasureError(i18n.t("{path}: unknown reading '{key}' in [[shot]] trial {n}; it takes "
+                raise MeasureError(i18n.t("{path}: unknown reading '{key}' in {shot_table} trial {n}; it takes "
                                           "wheel_rps, hood_deg, marks_<unit>, frames, fps", path=mf.path, key=key,
-                                          n=i + 1))
+                                          n=i + 1, shot_table="[[shot]]"))
 
 
 def _text(mf: MeasureFile, table: dict, key: str) -> str | None:
@@ -171,8 +174,8 @@ def _text(mf: MeasureFile, table: dict, key: str) -> str | None:
         return None
     v = table[key]
     if not isinstance(v, str):
-        raise MeasureError(i18n.t("{path}: [shot_setup] {key} must be text, not {value}", path=mf.path, key=key,
-                                  value=repr(v)))
+        raise MeasureError(i18n.t("{path}: {shot_setup_table} {key} must be text, not {value}", path=mf.path,
+                                  key=key, value=repr(v), shot_setup_table="[shot_setup]"))
     return v
 
 
@@ -202,8 +205,8 @@ def _load_setup(mf: MeasureFile, table: dict) -> _Inputs:
     setup's own ball file."""
     name = _text(mf, table, "setup")
     if name is None:
-        raise MeasureError(i18n.t("{path}: [shot_setup] is missing required key 'setup': the launcher setup file "
-                                  "the shots were taken on", path=mf.path))
+        raise MeasureError(i18n.t("{path}: {shot_setup_table} is missing required key 'setup': the launcher setup "
+                                  "file the shots were taken on", path=mf.path, shot_setup_table="[shot_setup]"))
     path = mf.path.parent / name
     where = f"{mf.path}: [shot_setup] setup = \"{name}\""
     if not path.is_file():
@@ -257,7 +260,7 @@ def _shots(mf: MeasureFile, setup: Setup, table: dict) -> list[_Shot]:
     here = f"{mf.path}: [shot_setup]"
     shots = []
     for i, row in enumerate(rows):
-        where = i18n.t("{path}: [[shot]] trial {n}", path=mf.path, n=i + 1)
+        where = i18n.t("{path}: {shot_table} trial {n}", path=mf.path, n=i + 1, shot_table="[[shot]]")
 
         def either(read):  # the shot's own reading, else [shot_setup]'s
             v = read(row, where)
@@ -270,12 +273,14 @@ def _shots(mf: MeasureFile, setup: Setup, table: dict) -> list[_Shot]:
         frames = reading(row, "frames", where=where)
         marks = either(lambda t, w: reading(t, "length", "marks", where=w, required=False))
         if marks is None:
-            raise MeasureError(i18n.t("{where} has no marks: give the tape marks' spacing once in [shot_setup] or in "
-                                      "the shot, as marks_<unit>", where=where))
+            raise MeasureError(i18n.t("{where} has no marks: give the tape marks' spacing once in {shot_setup_table} "
+                                      "or in the shot, as marks_<unit>", where=where,
+                                      shot_setup_table="[shot_setup]"))
         fps = either(lambda t, w: _number(t, "fps", w))
         if fps is None:
-            raise MeasureError(i18n.t("{where} has no fps: give the camera's frame rate once in [shot_setup] or in "
-                                      "the shot (fps = 240)", where=where))
+            raise MeasureError(i18n.t("{where} has no fps: give the camera's frame rate once in {shot_setup_table} "
+                                      "or in the shot ({fps_setting})", where=where, shot_setup_table="[shot_setup]",
+                                      fps_setting="fps = 240"))
         for name, v in (("wheel_rps", rps), ("frames", frames), ("marks", marks), ("fps", fps)):
             if v <= 0:
                 raise MeasureError(i18n.t("{where}: {name} must be above 0, not {value}", where=where, name=name,
@@ -356,8 +361,8 @@ def fit(mf: MeasureFile) -> LauncherFit:
         raise MeasureError(i18n.t("{path} is a {kind} measurement: only a launcher file has shots to fit",
                                   path=mf.path, kind=mf.kind))
     if "shot" not in mf.trials:
-        raise MeasureError(i18n.t("{path}: a launcher file needs its shots, each written as a [[shot]] table",
-                                  path=mf.path))
+        raise MeasureError(i18n.t("{path}: a launcher file needs its shots, each written as a {shot_table} table",
+                                  path=mf.path, shot_table="[[shot]]"))
     table = mf.settings.get("shot_setup", {})
     _check_keys(mf, table, mf.trials["shot"])
     inputs = _load_setup(mf, table)
@@ -383,13 +388,16 @@ def fit(mf: MeasureFile) -> LauncherFit:
     ball_name = _text(mf, table, "ball")
     if ball_name is not None and inputs.setup_ball not in (inputs.ball_file, mf.path.resolve()):
         if squeezed is not None:
-            warnings.append(i18n.t("[shot_setup] ball = \"{ball}\" isn't the ball the setup names: name it in the "
-                                   "setup's [ball] measured too, so a run uses the ball the shots were fit with",
-                                   ball=ball_name))
+            warnings.append(i18n.t("{shot_setup_table} {ball_setting} isn't the ball the setup names: name it in the "
+                                   "setup's {ball_table} measured too, so a run uses the ball the shots were fit with",
+                                   shot_setup_table="[shot_setup]", ball_setting="ball = \"{}\"".format(ball_name),
+                                   ball_table="[ball]"))
         else:
-            warnings.append(i18n.t("[shot_setup] ball = \"{ball}\" isn't the ball the setup names: name {file} in the "
-                                   "setup's [ball] measured (it brings the ball file's numbers), so a run uses the "
-                                   "ball the shots were fit with", ball=ball_name, file=mf.path.name))
+            warnings.append(i18n.t("{shot_setup_table} {ball_setting} isn't the ball the setup names: name {file} in "
+                                   "the setup's {ball_table} measured (it brings the ball file's numbers), so a run "
+                                   "uses the ball the shots were fit with", file=mf.path.name,
+                                   shot_setup_table="[shot_setup]", ball_setting="ball = \"{}\"".format(ball_name),
+                                   ball_table="[ball]"))
     for i, s in enumerate(shots):
         if s.frames < GOOD_FRAMES:
             warnings.append(i18n.t("shot {n}: {frames} frames between the marks; {good} or more fits better", n=i + 1,

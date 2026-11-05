@@ -264,8 +264,8 @@ def _pose(v) -> list[float]:
         raise EditError("start/pose", i18n.t("the start must be [x, y, heading]: meters from the blue corner, and degrees"))
     x, y, h = (float(a) for a in v)
     if not (0.0 <= x <= FIELD_LENGTH and 0.0 <= y <= FIELD_WIDTH):
-        raise EditError("start/pose", i18n.t("({x}, {y}) is off the field ({length} m by {width} m)", x=f"{x:g}", y=f"{y:g}",
-                                             length=f"{FIELD_LENGTH:g}", width=f"{FIELD_WIDTH:g}"))
+        raise EditError("start/pose", i18n.t("({x}, {y}) is off the field ({length} m by {width} m)", x=f"{x:g}",
+                                             y=f"{y:g}", length=f"{FIELD_LENGTH:g}", width=f"{FIELD_WIDTH:g}"))
     h %= 360.0
     if h > 180.0:
         h -= 360.0   # (-180, 180]
@@ -405,13 +405,14 @@ def _device_spec(value) -> tuple[str | None, str]:
 def _matched(slot: str, value, device, field: str):
     """`value` (the slot's ID as written) pointing at `device` instead, the same type."""
     if not isinstance(device, str) or not device.strip():
-        raise EditError(field, i18n.t("the device must be one the robot code made, e.g. \"TalonFX 3\", not {device}",
-                                      device=repr(device)))
+        raise EditError(field, i18n.t("the device must be one the robot code made, e.g. \"{talonfx_3}\", not {device}",
+                                      device=repr(device), talonfx_3="TalonFX 3"))
     device = device.strip()
     key, spec = _device_spec(value)
     if isinstance(value, dict) and "device" in value:
-        raise EditError(field, i18n.t("{slot} names its device itself (device = {device}); change it in the part inspector",
-                                      slot=slot, device=repr(value["device"])))
+        raise EditError(field, i18n.t("{slot} names its device itself ({device_setting}); change it in the part "
+                                      "inspector", slot=slot,
+                                      device_setting="device = {}".format(repr(value["device"]))))
     kind, _, current = spec.partition(":")
     if key == "scrimmage" or kind in _SIM_TYPE:
         m = _SCRIMMAGE_RE.fullmatch(device)
@@ -484,7 +485,8 @@ def set_motor(doc, slot, neutral=_UNSET, invert=_UNSET, motor_slots=None) -> Non
     just its device goes back to the short ID. `motor_slots`: the robot's motor names, when known."""
     field = f"motor/{slot}"
     if neutral is not _UNSET and neutral not in ("brake", "coast", None):
-        raise EditError(field, i18n.t('neutral must be "brake" or "coast", not {value}', value=repr(neutral)))
+        raise EditError(field, i18n.t("neutral must be \"{brake}\" or \"{coast}\", not {value}", value=repr(neutral),
+                                      brake="brake", coast="coast"))
     if invert is not _UNSET and invert is not None and not isinstance(invert, bool):
         raise EditError(field, i18n.t("invert must be true or false, not {value}", value=repr(invert)))
     container, key, value = _slot_ref(doc, slot, field)

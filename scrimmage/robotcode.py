@@ -207,7 +207,8 @@ def _check_lockstep(info: ProjectInfo) -> Check:
                      else i18n.t("The fast-simulation add-on isn't installed: install it to run faster than real time and to "
                                  "pause the robot."), fix="install_lockstep")
     if _version_tuple(have) < LOCKSTEP_VERSION:
-        return Check("lockstep", False, i18n.t("The fast-simulation add-on is too old ({have}; this scrimmage needs {need} or newer): update it.", have=have, need=need), fix="install_lockstep")
+        return Check("lockstep", False, i18n.t("The fast-simulation add-on is too old ({have}; this scrimmage needs {need} or newer): update it.",
+                                               have=have, need=need), fix="install_lockstep")
     if not imports:
         return Check("lockstep", False, i18n.t("The fast-simulation add-on is installed for this robot's Python but doesn't load (its "
                                                "compiled part is missing): install it again.") if info.python
@@ -235,7 +236,8 @@ def _check_robotpy(info: ProjectInfo) -> Check:
         ok = False
     if ok:
         return Check("robotpy", True, i18n.t("RobotPy is installed in {own}", own=own))
-    return Check("robotpy", False, i18n.t("RobotPy isn't installed in {own}: run {python} -m pip install \"robotpy[sim]\"", own=own, python=python))
+    return Check("robotpy", False, i18n.t("RobotPy isn't installed in {own}: run {python} -m pip install "
+                                          "\"{robotpy_sim}\"", own=own, python=python, robotpy_sim="robotpy[sim]"))
 
 
 def checklist(info: ProjectInfo) -> list[Check]:
@@ -348,7 +350,8 @@ def run_fix(fix: str, info: ProjectInfo, out: Callable[[str], None], cancel: thr
         python = str(info.python or sys.executable)
         by_hand = f'{python} -m pip install "{LOCKSTEP_DIR}"'
         if not (LOCKSTEP_DIR / "pyproject.toml").is_file():
-            return Check("lockstep", False, i18n.t("scrimmage can't find its lockstep folder (it isn't running from its downloaded copy). From the scrimmage folder, run: {by_hand}", by_hand=by_hand), fix=fix)
+            return Check("lockstep", False, i18n.t("scrimmage can't find its lockstep folder (it isn't running from its downloaded copy). From the scrimmage folder, run: {by_hand}",
+                                                   by_hand=by_hand), fix=fix)
         code, tail = _stream([python, "-m", "pip", "install", str(LOCKSTEP_DIR)], None, None, out, **kw)
         if code != 0:
             return _failed("lockstep", i18n.t("Installing the fast-simulation add-on didn't work."),

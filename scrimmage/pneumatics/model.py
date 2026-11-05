@@ -120,8 +120,9 @@ class AirConfig:
         if self.switch_on_psi >= self.switch_off_psi:
             raise ValueError(i18n.t("The pressure switch must turn on below the pressure where it turns off."))
         if self.compressor != "none" and self.compressor not in COMPRESSORS:
-            raise ValueError(i18n.t("Unknown compressor {compressor}; use one of {compressors} or \"none\".",
-                                    compressor=repr(self.compressor), compressors=', '.join(COMPRESSORS)))
+            raise ValueError(i18n.t("Unknown compressor {compressor}; use one of {compressors} or \"{none}\".",
+                                    compressor=repr(self.compressor), compressors=', '.join(COMPRESSORS),
+                                    none="none"))
 
 
 @dataclass(frozen=True)

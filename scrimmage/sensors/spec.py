@@ -105,8 +105,8 @@ class _Table:
 
     def point(self, key: str, what: str) -> tuple[float, float, float]:
         if not self.has(key):
-            raise self.err(i18n.t("needs {key} = [x, y, z]: {what}, in meters in the body's frame (or {key}_in, "
-                                  "inches)", key=key, what=what))
+            raise self.err(i18n.t("needs {key_setting}: {what}, in meters in the body's frame (or {key}_in, inches)",
+                                  key=key, what=what, key_setting="{} = [x, y, z]".format(key)))
         v, given, scale = self._metric(key)
         if not (isinstance(v, list) and len(v) == 3 and all(_finite(c) for c in v)):
             raise self.err(i18n.t("{given} must be [x, y, z], 3 numbers, not {value}", given=given, value=plain(v)))
@@ -166,21 +166,24 @@ def _unit(v, t: _Table, key: str) -> tuple[float, float, float]:
 def parse_sensor(table, index: int) -> SensorSpec:
     """One [[sensor]] table (`index` counting from 1, for a sensor with no name yet)."""
     if not isinstance(table, dict):
-        raise SensorError(i18n.t("[[sensor]] {index} must be a table, not {value}", index=index, value=plain(table)))
+        raise SensorError(i18n.t("{sensor_table} {index} must be a table, not {value}", index=index,
+                                 value=plain(table), sensor_table="[[sensor]]"))
     name = table.get("name")
     if not isinstance(name, str) or not name.strip():
         if name is None:
-            raise SensorError(i18n.t("[[sensor]] {index} needs a name: name = \"<a name>\", what the Test tab calls "
-                                     "it", index=index))
-        raise SensorError(i18n.t("[[sensor]] {index} needs a name: name = \"<a name>\", what the Test tab calls it "
-                                 "(not {value})", index=index, value=plain(name)))
+            raise SensorError(i18n.t("{sensor_table} {index} needs a name: {name_setting}, what the Test tab calls it",
+                                     index=index, sensor_table="[[sensor]]", name_setting="name = \"<a name>\""))
+        raise SensorError(i18n.t("{sensor_table} {index} needs a name: {name_setting}, what the Test tab calls it "
+                                 "(not {value})", index=index, value=plain(name), sensor_table="[[sensor]]",
+                                 name_setting="name = \"<a name>\""))
     if not NAME_RE.match(name):
-        raise SensorError(i18n.t("[[sensor]] {index}: name must be letters, digits and _ (like a part's name), "
-                                 "not {value}", index=index, value=plain(name)))
+        raise SensorError(i18n.t("{sensor_table} {index}: name must be letters, digits and _ (like a part's name), "
+                                 "not {value}", index=index, value=plain(name), sensor_table="[[sensor]]"))
     t = _Table(table, f'[[sensor]] "{name}"')
     kind = table.get("kind")
     if kind is None:
-        raise t.err(i18n.t("needs kind = \"beam\", \"distance\" or \"color\""))
+        raise t.err(i18n.t("needs {kind_setting} or {last}", last=f'"{KINDS[-1]}"',
+                           kind_setting="kind = " + ", ".join(f'"{k}"' for k in KINDS[:-1])))
     if kind not in KINDS:
         raise t.err(i18n.t("kind must be {kinds} or {last}, not {value}",
                            kinds=", ".join(f'"{k}"' for k in KINDS[:-1]), last=f'"{KINDS[-1]}"', value=plain(kind)))
@@ -191,9 +194,10 @@ def parse_sensor(table, index: int) -> SensorSpec:
     body = table.get("body")
     if not isinstance(body, str) or not body:
         if body is None:
-            raise t.err(i18n.t("needs body = \"<part>.<body>\": the robot body it is mounted on"))
-        raise t.err(i18n.t("needs body = \"<part>.<body>\": the robot body it is mounted on (not {value})",
-                           value=plain(body)))
+            raise t.err(i18n.t("needs {body_setting}: the robot body it is mounted on",
+                               body_setting="body = \"<part>.<body>\""))
+        raise t.err(i18n.t("needs {body_setting}: the robot body it is mounted on (not {value})", value=plain(body),
+                           body_setting="body = \"<part>.<body>\""))
     kw: dict = {"name": name, "kind": kind, "body": body}
     if kind == "beam":
         a, b = t.point("from", i18n.t("one end of the beam")), t.point("to", i18n.t("the beam's other end"))
@@ -202,21 +206,23 @@ def parse_sensor(table, index: int) -> SensorSpec:
     else:
         at = t.point("at", i18n.t("where it looks from"))
         if "toward" not in table:
-            raise t.err(i18n.t("needs toward = [x, y, z]: the direction it looks, in the body's frame"))
+            raise t.err(i18n.t("needs {toward_setting}: the direction it looks, in the body's frame",
+                               toward_setting="toward = [x, y, z]"))
         toward = table["toward"]
         if not (isinstance(toward, list) and len(toward) == 3 and all(_finite(c) for c in toward)):
             raise t.err(i18n.t("toward must be a direction [x, y, z], 3 numbers, not {value}", value=plain(toward)))
         reach = t.length("max_range", DEFAULT_MAX_RANGE[kind])
         if kind == "color" and reach > COLOR_MAX_RANGE + 1e-12:
-            raise t.err(i18n.t("max_range is {reach} m: a color sensor sees 10 cm at most (max_range = 0.10)",
-                               reach=f"{reach:g}"))
+            raise t.err(i18n.t("max_range is {reach} m: a color sensor sees 10 cm at most ({max_range_setting})",
+                               reach=f"{reach:g}", max_range_setting="max_range = 0.10"))
         kw.update(start=at, direction=_unit(toward, t, "toward"), length=reach, sees=t.choice("sees", SEES, "pieces"))
     kw["dio"] = t.channel("dio")
     if "active_low" in table:
         if not isinstance(table["active_low"], bool):
             raise t.err(i18n.t("active_low must be true or false, not {value}", value=plain(table['active_low'])))
         if kw["dio"] is None:
-            raise t.err(i18n.t("active_low goes with dio: give dio = <channel> too, or leave active_low out"))
+            raise t.err(i18n.t("active_low goes with dio: give {dio_setting} too, or leave active_low out",
+                               dio_setting="dio = <channel>"))
         kw["active_low"] = table["active_low"]
     if kind == "distance":
         kw["analog"] = t.channel("analog")
@@ -225,8 +231,8 @@ def parse_sensor(table, index: int) -> SensorSpec:
             if not _finite(v) or v <= 0:
                 raise t.err(i18n.t("volts_per_m must be a number more than 0, not {value}", value=plain(v)))
             if kw["analog"] is None:
-                raise t.err(i18n.t("volts_per_m goes with analog: give analog = <channel> too, or leave "
-                                   "volts_per_m out"))
+                raise t.err(i18n.t("volts_per_m goes with analog: give {analog_setting} too, or leave volts_per_m out",
+                                   analog_setting="analog = <channel>"))
             kw["volts_per_m"] = float(v)
         threshold = t.length("threshold", kw["length"] / 2.0)
         if threshold > kw["length"]:
@@ -241,12 +247,13 @@ def parse_sensor(table, index: int) -> SensorSpec:
 def parse_sensors(tables) -> list[SensorSpec]:
     """The config's [[sensor]] list, checked."""
     if not isinstance(tables, list):
-        raise SensorError(i18n.t("sensor must be [[sensor]] tables, one per sensor"))
+        raise SensorError(i18n.t("sensor must be {sensor_table} tables, one per sensor", sensor_table="[[sensor]]"))
     specs: list[SensorSpec] = []
     for i, table in enumerate(tables, 1):
         s = parse_sensor(table, i)
         if any(o.name == s.name for o in specs):
-            raise SensorError(i18n.t("two sensors named \"{name}\"; give each [[sensor]] its own name", name=s.name))
+            raise SensorError(i18n.t("two sensors named \"{name}\"; give each {sensor_table} its own name",
+                                     name=s.name, sensor_table="[[sensor]]"))
         specs.append(s)
     return specs
 

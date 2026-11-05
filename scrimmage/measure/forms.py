@@ -68,7 +68,8 @@ class Test:
     formula: str  # how a trial's value is worked out, printed above the value column
     summaries: tuple[str, ...]  # the values the summary boxes average; none for shots (they are fit, not averaged)
     note: str = ""  # printed under the trials table
-    example_note: str = ""  # a comment under the starter's example trial
+    example_note: str = ""  # a comment under the starter's example trial (N_(): its placeholders from example_keys)
+    example_keys: tuple = ()  # (placeholder, what the student types) pairs for example_note
 
 
 def _r(quantities: dict, name: str, what: str, example=None, unit: str = "", optional: bool = False) -> Reading:
@@ -108,7 +109,9 @@ TEST: dict[str, Test] = {
                _r(_T["size"], "diameter", N_("or across, with calipers"), optional=True)),
         value=N_("diameter worked out"), formula=N_("circumference ÷ 3.1416, or the diameter read across"),
         summaries=(N_("mass"), N_("diameter")),
-        example_note=N_("or diameter_in = 5.9, read across with calipers: a circumference or a diameter, not both")),
+        example_note=N_("or {diameter_in_setting}, read across with calipers: a circumference or a diameter, not "
+                        "both"),
+        example_keys=(("diameter_in_setting", "diameter_in = 5.9"),)),
     "squeeze": Test(
         title=N_("Ball squeeze"),
         gives=N_("the ball's stiffness: the force that squeezes it by 25% of its diameter"),
@@ -222,7 +225,9 @@ TEST: dict[str, Test] = {
                _r(fit_cylinder.STROKE_READINGS, "frames", N_("or frames, filmed"), optional=True)),
         value=N_("time"), formula=N_("frames ÷ fps, or the time you read"),
         summaries=(N_("time"),),
-        example_note=N_("or frames = 50, with fps = 240 in [stroke_setup]: a time or frames, not both")),
+        example_note=N_("or {frames_setting}, with {fps_setting} in {stroke_setup_table}: a time or frames, not both"),
+        example_keys=(("frames_setting", "frames = 50"), ("fps_setting", "fps = 240"),
+                      ("stroke_setup_table", "[stroke_setup]"))),
 }
 
 
@@ -432,5 +437,5 @@ def starter_toml(test: str, date: datetime.date | None = None) -> str:
                 "at two or more wheel speeds")
     lines += ["", f"# One [[{test}]] table per trial: {how_many}.", f"# [[{test}]]", *(_line(r) for r in trial)]
     if t.example_note:
-        lines.append(f"# {t.example_note}")
+        lines.append("# " + _tr(t.example_note, lang=i18n.SOURCE, **dict(t.example_keys)))   # as written
     return "\n".join(lines) + "\n"

@@ -52,7 +52,8 @@ def no_ball() -> str:
 
 
 def no_spread() -> str:
-    return i18n.t("this test has no floor spread: set one in Setup ([setup] floor_spread)")
+    return i18n.t("this test has no floor spread: set one in Setup ({setup_table} floor_spread)",
+                  setup_table="[setup]")
 
 
 COULDNT_RUN = "couldn't run"

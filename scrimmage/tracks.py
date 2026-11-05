@@ -109,8 +109,8 @@ def parse_track(text: str, path: Path) -> Track:
         if not math.isfinite(t) or t < 0:
             raise TrackError(err(n, i18n.t("t must be 0 or more, not {value}", value=repr(cells[0]))))
         if last_t is not None and t <= last_t:
-            raise TrackError(err(n, i18n.t("t = {value} must be greater than the previous row's {last_t}",
-                                           value=f"{t:g}", last_t=f"{last_t:g}")))
+            raise TrackError(err(n, i18n.t("{t_setting} must be greater than the previous row's {last_t}",
+                                           last_t=f"{last_t:g}", t_setting="t = {}".format(f"{t:g}"))))
         last_t = t
         ports = {p: PortInputs([0.0] * w["axis"], [False] * w["button"], [-1] * w["pov"])
                  for p, w in widths.items()}

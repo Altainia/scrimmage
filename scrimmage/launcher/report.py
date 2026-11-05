@@ -88,20 +88,20 @@ def check_charts(charts: list[dict], keys: list[str], metrics=METRIC_KEYS, kinds
     for spec in charts:
         kind = spec.get("kind")
         if kind not in kinds:
-            raise LauncherConfigError(i18n.t("[[chart]] kind must be one of: {kinds}; got {kind}",
-                                             kinds=', '.join(kinds), kind=repr(kind)))
+            raise LauncherConfigError(i18n.t("{chart_table} kind must be one of: {kinds}; got {kind}",
+                                             kinds=', '.join(kinds), kind=repr(kind), chart_table="[[chart]]"))
         if kind != "line":
             continue
         x, y, series = spec.get("x"), spec.get("y"), spec.get("series")
         for what, key in (("x", x), ("series", series)):
             if key is not None and key not in keys:
                 raise LauncherConfigError(
-                    i18n.t("[[chart]] {what} = {key} is not a swept key; swept keys: {keys}",
-                           what=what, key=repr(key), keys=', '.join(keys) or i18n.t("none")))
+                    i18n.t("{chart_table} {what} = {key} is not a swept key; swept keys: {keys}", what=what,
+                           key=repr(key), keys=', '.join(keys) or i18n.t("none"), chart_table="[[chart]]"))
         if x is None or y not in metrics:
             raise LauncherConfigError(
-                i18n.t("[[chart]] line needs x (a swept key) and y (one of: {metrics}); got y = {y}",
-                       metrics=', '.join(metrics), y=repr(y)))
+                i18n.t("{chart_table} line needs x (a swept key) and y (one of: {metrics}); got {y_setting}",
+                       metrics=', '.join(metrics), chart_table="[[chart]]", y_setting="y = {}".format(repr(y))))
 
 
 def label(combo: dict) -> str:

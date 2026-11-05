@@ -217,9 +217,10 @@ class ClimbRun:
                                              where=where, joint=repr(dr.joint), driven=driven))
             for joint, _ in st.release:
                 if not self.latches or (joint is not None and joint not in self.latches):
-                    raise ScriptError(i18n.t("{where}: release needs a latch release motor (a climber with latch "
-                                             "= \"released\" and its release slot bound); latch motors: {motors}",
-                                             where=where, motors=', '.join(self.latches) or i18n.t("none")))
+                    raise ScriptError(i18n.t("{where}: release needs a latch release motor (a climber with "
+                                             "{latch_setting} and its release slot bound); latch motors: {motors}",
+                                             where=where, motors=', '.join(self.latches) or i18n.t("none"),
+                                             latch_setting="latch = \"released\""))
             w = st.wait
             if w is None:
                 continue
@@ -242,7 +243,8 @@ class ClimbRun:
         if script.goal is not None and script.goal not in self.levels:
             raise ScriptError(i18n.t("{path}: goal {goal} isn't a level of the range; its levels: {levels}",
                                      path=script.path, goal=repr(script.goal),
-                                     levels=', '.join(self.levels) or i18n.t("none (the range has no [climb] table)")))
+                                     levels=', '.join(self.levels) or i18n.t("none (the range has no {climb_table} "
+                                                                             "table)", climb_table="[climb]")))
         self.on_step = None     # optional f(t, climb signals): called after every physics step (tracing a run)
         self._qadr = {n: int(m.jnt_qposadr[m.joint(n).id]) for n in names}
         self._hinge = {n: int(m.jnt_type[m.joint(n).id]) == int(mujoco.mjtJoint.mjJNT_HINGE) for n in names}
@@ -434,8 +436,9 @@ def run_climb(config_path, script: Script) -> ClimbResult:
     """Play `script` on the config's robot and range."""
     world = build_world(load_config(config_path))
     if world.parts is None or world.parts.range is None or world.parts.range.climb is None:
-        raise ScriptError(i18n.t("{config_path}: climb run needs a [range] whose range file has a [climb] table "
-                                 "(a climbing range, such as 2022-hangar)", config_path=config_path))
+        raise ScriptError(i18n.t("{config_path}: climb run needs a {range_table} whose range file has a "
+                                 "{climb_table} table (a climbing range, such as 2022-hangar)",
+                                 config_path=config_path, range_table="[range]", climb_table="[climb]"))
     return ClimbRun(world, script).run()
 
 

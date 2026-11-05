@@ -108,7 +108,8 @@ class PluginSession(_Session):
 
         def body(field="body") -> dict:
             if a.get(field) not in bodies:
-                raise EditError(field, i18n.t("There is no body called {name}: pick one from the list.", name=a.get(field)))
+                raise EditError(field, i18n.t("There is no body called {name}: pick one from the list.",
+                                              name=a.get(field)))
             return edits.setdefault("body", {}).setdefault(a[field], {})
 
         def number(v, field, what):
@@ -118,17 +119,20 @@ class PluginSession(_Session):
 
         if op == "set_mass":
             if "kg" not in a:
-                raise EditError("kg", i18n.t("Say the mass in kg, or kg = none to clear it."))
+                raise EditError("kg", i18n.t("Say the mass in kg, or {kg_setting} to clear it.",
+                                             kg_setting="kg = none"))
             b = body()
             b.pop("mass", None) if a["kg"] is None else b.update(mass=number(a["kg"], "kg", "The mass"))
         elif op == "set_collision":
             if a.get("mode") not in ("none", "wheel", "shaped", "simple"):
-                raise EditError("mode", i18n.t("Collision is one of none, wheel, shaped, simple, not {name}: pick one.", name=repr(a.get('mode'))))
+                raise EditError("mode", i18n.t("Collision is one of none, wheel, shaped, simple, not {name}: pick one.",
+                                               name=repr(a.get('mode'))))
             body()["collision"] = a["mode"]
         elif op == "set_joint":
             spec = a.get("joint")
             if bodies.get(a.get("body")) is not None and bodies[a["body"]].joint is None:
-                raise EditError("body", i18n.t("{body} has no joint in the CAD plugin's part: add it there.", body=a['body']))
+                raise EditError("body", i18n.t("{body} has no joint in the CAD plugin's part: add it there.",
+                                               body=a['body']))
             b = body()
             if not isinstance(spec, dict) or any(k not in JOINT_KEYS for k in spec):
                 raise EditError("joint", i18n.t("Only the joint's range, spring, damping and frictionloss can change here; the rest comes from the CAD plugin."))
@@ -139,7 +143,8 @@ class PluginSession(_Session):
                 b.pop("joint")
         elif op == "set_grip":
             if "grip" not in a:
-                raise EditError("grip", i18n.t("Say the grip material, or grip = none for the default friction."))
+                raise EditError("grip", i18n.t("Say the grip material, or {grip_setting} for the default friction.",
+                                               grip_setting="grip = none"))
             b = body()
             if a["grip"] is None:
                 b.pop("grip", None)

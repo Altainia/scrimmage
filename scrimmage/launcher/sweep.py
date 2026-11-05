@@ -42,9 +42,10 @@ def setups_for(path: Path, load=load_setup, parse=parse_setup, overrides=apply_o
         for section, (name, measured_base) in bases.items():
             swept = combo.get(f"{section}.preset", measured_base)
             if swept != measured_base:
-                raise error(i18n.t("{combo}: [{section}] preset {swept} isn't the {base} ball that measured = "
-                                   "\"{name}\" measured: sweep the preset without measured, or measure each ball",
-                                   combo=label(combo), section=section, swept=swept, base=measured_base, name=name))
+                raise error(i18n.t("{combo}: [{section}] preset {swept} isn't the {base} ball that "
+                                   "{measured_setting} measured: sweep the preset without measured, or measure each "
+                                   "ball", combo=label(combo), section=section, swept=swept, base=measured_base,
+                                   measured_setting="measured = \"{}\"".format(name)))
         try:
             setup = parse(overrides(raw, combo))
         except error as e:

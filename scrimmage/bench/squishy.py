@@ -106,8 +106,8 @@ class SquishyContacts:
     def __init__(self, built: Built, bench: Bench):
         piece = bench.piece
         if piece.kind != "squishy" or piece.ball is None:
-            raise BenchError(i18n.t("[piece] '{name}' is {kind}; squishy contacts are for balls only", name=piece.name,
-                                    kind=piece.kind))
+            raise BenchError(i18n.t("{piece_table} '{name}' is {kind}; squishy contacts are for balls only",
+                                    name=piece.name, kind=piece.kind, piece_table="[piece]"))
         self.m, self.lay, self.ball = built.model, built.layout, piece.ball
         m, lay = self.m, self.lay
         self.r = self.ball.diameter / 2

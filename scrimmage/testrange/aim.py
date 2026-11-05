@@ -73,17 +73,19 @@ def load_model(config_path: Path, goal: str, hood_step_deg: float = 2.0) -> AimM
                               hood_step_deg=f"{hood_step_deg:g}"))
     cfg = load_config(config_path)
     if "shooter" not in cfg.raw:
-        raise AimError(i18n.t("{config_path}: no [shooter]: the aiming table is made from the robot's launcher",
-                              config_path=config_path))
+        raise AimError(i18n.t("{config_path}: no {shooter_table}: the aiming table is made from the robot's launcher",
+                              config_path=config_path, shooter_table="[shooter]"))
     try:
         built = assemble(cfg.raw, cfg.dir)
         shooter = parse_shooter(cfg.raw, built, cfg.dir)
     except ValueError as e:     # PartError is one
         raise AimError(f"{config_path}: {e}") from None
     if shooter.kind == "disc":
-        raise AimError(i18n.t("{config_path}: [shooter] kind = \"disc\": the aiming table is made from a ball "
-                              "launcher; for a disc shooter's exit speeds use `scrimmage disc table` and "
-                              "`scrimmage disc run`", config_path=config_path))
+        raise AimError(i18n.t("{config_path}: {shooter_table} {kind_setting}: the aiming table is made from a ball "
+                              "launcher; for a disc shooter's exit speeds use `{scrimmage_disc_table}` and "
+                              "`{scrimmage_disc_run}`", config_path=config_path, shooter_table="[shooter]",
+                              kind_setting="kind = \"disc\"", scrimmage_disc_table="scrimmage disc table",
+                              scrimmage_disc_run="scrimmage disc run"))
     goals = {g.name: g for g in built.range.goals}
     if goal not in goals:
         raise AimError(i18n.t("goal {goal} isn't in range {name}; its goals: {goals}",

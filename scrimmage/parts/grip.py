@@ -82,9 +82,9 @@ def measured_grip(grip: str, where: str, base) -> tuple[float, object]:
     except MeasureError as e:
         raise PartError(str(e), where=where) from None
     if not (math.isfinite(mu) and 0 < mu <= MY_OWN_MAX):
-        raise PartError(t("{where}: grip = \"{grip}\" measures a friction of {mu}, which isn't one to use: above 0 and "
-                          "at most {most}; check its sled pulls", where=where, grip=grip, mu=f"{mu:g}",
-                          most=f"{MY_OWN_MAX:g}"), where=where)
+        raise PartError(t("{where}: {grip_setting} measures a friction of {mu}, which isn't one to use: above 0 and "
+                          "at most {most}; check its sled pulls", where=where, mu=f"{mu:g}", most=f"{MY_OWN_MAX:g}",
+                          grip_setting="grip = \"{}\"".format(grip)), where=where)
     return mu, prov
 
 
@@ -112,7 +112,8 @@ def apply_grip(part: Part, grips: dict[str, str | float], where: str, base=None)
     `base`, the folder of the file that names it (default the part's folder), and its provenance kept in the part's
     grip_provenance."""
     if not isinstance(grips, dict):
-        raise PartError(t("{where}: grip must be a table of body = material, not {grip}", where=where, grip=repr(grips)),
+        raise PartError(t("{where}: grip must be a table of {body_setting}, not {grip}", where=where,
+                          grip=repr(grips), body_setting="body = material"),
                         where=where)
     base = base if base is not None else part.base_dir if part.base_dir is not None else Path(".")
     names = [b.name for b in part.bodies]

@@ -32,7 +32,8 @@ class StraightDriver:
         self.world, self.model = world, m
         self.speed = float(speed)
         if world.parts is None or not world.parts.tread_geoms:
-            raise ValueError(i18n.t("the robot has no tread wheels (geoms with tread = true) to drive"))
+            raise ValueError(i18n.t("the robot has no tread wheels (geoms with {tread_setting}) to drive",
+                                    tread_setting="tread = true"))
         names = world.joint_states()
         unknown = [n for n in holds if n not in names]
         if unknown:

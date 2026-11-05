@@ -67,7 +67,8 @@ class RunManager:
         try:
             doc = tomlkit.parse(text)
             if not isinstance(doc.get("config"), str):
-                raise ScenarioError(i18n.t("{name}: config = \"<robot config .toml>\" is required", name=scenario_path.name))
+                raise ScenarioError(i18n.t("{name}: {config_setting} is required", name=scenario_path.name,
+                                           config_setting="config = \"<robot config .toml>\""))
             doc["config"] = str((scenario_path.parent / doc["config"]).resolve())
             snapshot_text = tomlkit.dumps(doc)
             scenario = load_scenario_text(snapshot_text, scenario_path)

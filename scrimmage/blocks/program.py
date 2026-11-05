@@ -184,9 +184,11 @@ def _whole(v, where: str, what: str, hi: int) -> int:
 
 def _unit(v, where: str) -> str:
     if v is None:
-        raise _fail(where, i18n.t('say the unit ("deg", "in" or "m")'))
+        raise _fail(where, i18n.t("say the unit (\"{deg}\", \"{in_word}\" or \"{m}\")", deg="deg", in_word="in",
+                                  m="m"))
     if v not in UNITS:
-        raise _fail(where, i18n.t('the unit must be "deg", "in" or "m", not {value}', value=repr(v)))
+        raise _fail(where, i18n.t("the unit must be \"{deg}\", \"{in_word}\" or \"{m}\", not {value}", value=repr(v),
+                                  deg="deg", in_word="in", m="m"))
     return v
 
 
@@ -206,7 +208,8 @@ def _one_of(t: dict, names: tuple, where: str) -> str:
 
 def _cond(v, where: str) -> Cond:
     if not isinstance(v, dict) or not v:
-        raise _fail(where, i18n.t("a condition is a table like {{ tilt = {{ above = 10 }} }}"))
+        raise _fail(where, i18n.t("a condition is a table like {tilt_above_form}",
+                                  tilt_above_form="{ tilt = { above = 10 } }"))
     if len(v) != 1:
         raise _fail(where, i18n.t("one condition per block (this has {names})", names=', '.join(map(str, v))))
     kind, t = next(iter(v.items()))
@@ -252,13 +255,15 @@ def _cond(v, where: str) -> Cond:
     if kind == "cylinder":
         _keys(t, ("cylinder", "is"), where)
         if t.get("is") not in CYLINDER_IS:
-            raise _fail(where, i18n.t('is must be "extended" or "retracted", not {value}', value=repr(t.get('is'))))
+            raise _fail(where, i18n.t("is must be \"{extended}\" or \"{retracted}\", not {value}",
+                                      value=repr(t.get('is')), extended="extended", retracted="retracted"))
         return Cond(kind, {"cylinder": _text(t.get("cylinder"), where, "cylinder"), "is": t["is"]})
     if kind == "pressure":
         _keys(t, ("side", "above", "below"), where)
         side = t.get("side", "stored")
         if side not in PRESSURE_SIDES:
-            raise _fail(where, i18n.t('side must be "stored" or "working", not {side}', side=repr(side)))
+            raise _fail(where, i18n.t("side must be \"{stored}\" or \"{working}\", not {side}", side=repr(side),
+                                      stored="stored", working="working"))
         limit = _one_of(t, ("above", "below"), where)
         psi = _num(t[limit], where, limit)
         if psi < 0:
@@ -280,7 +285,8 @@ def _cond(v, where: str) -> Cond:
     if kind == "sensor":        # a [[sensor]] of the robot is on (broken, near, seeing a piece) or off
         _keys(t, ("sensor", "is", "sees"), where)
         if t.get("is") not in SENSOR_IS:
-            raise _fail(where, i18n.t('is must be "on" or "off", not {value}', value=repr(t.get('is'))))
+            raise _fail(where, i18n.t("is must be \"{on}\" or \"{off}\", not {value}", value=repr(t.get('is')),
+                                      on="on", off="off"))
         sees = t.get("sees")
         if sees is not None and sees not in NAMED_COLORS:
             raise _fail(where, i18n.t("sees must be one of the colors {names}, not {sees}",
@@ -334,10 +340,10 @@ def _cond(v, where: str) -> Cond:
 def _block(t, trail: tuple) -> Block:
     where = _place(trail)
     if not isinstance(t, dict):
-        raise _fail(where, i18n.t('a block is a table with do = "..."'))
+        raise _fail(where, i18n.t("a block is a table with {do_setting}", do_setting="do = \"...\""))
     do = t.get("do")
     if do is None:
-        raise _fail(where, i18n.t('says nothing about what to do (do = "spin", ...)'))
+        raise _fail(where, i18n.t("says nothing about what to do ({do_setting}, ...)", do_setting="do = \"spin\""))
     if do not in DO_KINDS:
         kinds = ", ".join(DO_KINDS)
         raise _fail(where, i18n.t("\"{do}\" isn't a block; use {kinds}", do=do, kinds=kinds))
@@ -395,7 +401,8 @@ def _block(t, trail: tuple) -> Block:
     elif do == "set_cylinder":
         _keys(t, ("cylinder", "to"), where)
         if t.get("to") not in CYLINDER_TO:
-            raise _fail(where, i18n.t('to must be "extend", "retract" or "off", not {to}', to=repr(t.get('to'))))
+            raise _fail(where, i18n.t("to must be \"{extend}\", \"{retract}\" or \"{off}\", not {to}",
+                                      to=repr(t.get('to')), extend="extend", retract="retract", off="off"))
         a = {"cylinder": _text(t.get("cylinder"), where, "cylinder"), "to": t["to"]}
     elif do == "turn":
         _keys(t, ("degrees", "volts", "timeout"), where)
@@ -422,7 +429,8 @@ def _block(t, trail: tuple) -> Block:
                 a["max"] = _whole(t["max"], where, "max", MAX_TIMES)
         raw = t.get("body", [])
         if not isinstance(raw, list):
-            raise _fail(where, i18n.t("body is a list of blocks ([[block.body]])"))
+            raise _fail(where, i18n.t("body is a list of blocks ({block_body_table})",
+                                      block_body_table="[[block.body]]"))
         body = [_block(b, trail + (i,)) for i, b in enumerate(raw, 1)]
     else:   # expect
         _keys(t, ("that", "throughout"), where)
@@ -453,7 +461,8 @@ def _setup(raw: dict) -> dict:
         ball = raw["ball"]
         if not isinstance(ball, str) or (ball not in PRESETS["ball"] and not is_measurement(ball)):
             raise _fail(where, i18n.t("ball {ball} isn't a ball; balls: {names}, or a ball measurement file "
-                                      "(\"fuel.measure.toml\")", ball=repr(ball), names=', '.join(PRESETS['ball'])))
+                                      "(\"{fuel_measure_toml}\")", ball=repr(ball), names=', '.join(PRESETS['ball']),
+                                      fuel_measure_toml="fuel.measure.toml"))
         out["ball"] = ball
     if "piece" in raw:
         if "ball" in raw:
@@ -472,13 +481,14 @@ def _setup(raw: dict) -> dict:
     if "station" in raw:
         stations = raw["station"]
         if not isinstance(stations, dict):
-            raise _fail(where, i18n.t("station is a table of station names, like station = {{ feeder = {{ interval = "
-                                      "1.0 }} }}"))
+            raise _fail(where, i18n.t("station is a table of station names, like {station_setting}",
+                                      station_setting="station = { feeder = { interval = 1.0 } }"))
         out["station"] = {name: _station_setup(name, t) for name, t in stations.items()}
     if "floor_spread" in raw:
         spread = raw["floor_spread"]
         if not isinstance(spread, dict):
-            raise _fail(where, i18n.t("floor_spread is a table like floor_spread = {{ offset_in = [-6, 0, 6] }}"))
+            raise _fail(where, i18n.t("floor_spread is a table like {floor_spread_setting}",
+                                      floor_spread_setting="floor_spread = { offset_in = [-6, 0, 6] }"))
         out["floor_spread"] = _floor_spread(spread)
         n = placement_count(out)
         if n > MAX_PLACEMENTS:
@@ -495,8 +505,8 @@ def _partner_setup(t) -> dict | bool:
     if t is False:
         return False
     if not isinstance(t, dict):
-        raise TestFileError(i18n.t("{where} must be a table like partner = {{ ahead_in = 60 }}, or false for none",
-                                   where=where))
+        raise TestFileError(i18n.t("{where} must be a table like {partner_setting}, or false for none", where=where,
+                                   partner_setting="partner = { ahead_in = 60 }"))
     _keys(t, PARTNER_SETUP_KEYS, where)
     if "ahead_in" not in t:
         raise _fail(where, i18n.t("needs ahead_in, how far ahead of the robot's start the partner's center is"))
@@ -566,14 +576,15 @@ def placement_count(setup: dict) -> int:
 def _program(data: dict, path: Path, head: str = "[test]") -> Program:
     test = data.get("test")
     if not isinstance(test, dict) or "robot" not in test:
-        raise TestFileError(i18n.t('[test] needs robot = "<robot file>.toml", which says which robot to test')
+        raise TestFileError(i18n.t("{test_table} needs {robot_setting}, which says which robot to test",
+                                   test_table="[test]", robot_setting="robot = \"<robot file>.toml\"")
                             if head == "[test]" else i18n.t("the test needs a robot file, which says which robot to "
                                                             "test"))
     _keys(test, ("robot", "hooks", "hopper", "time_limit", "chart"), head)
     robot = test["robot"]
     if not isinstance(robot, str) or not robot:
-        raise TestFileError(i18n.t("{head} robot must be the robot file's name in quotes, like \"my_robot.toml\"",
-                                   head=head))
+        raise TestFileError(i18n.t("{head} robot must be the robot file's name in quotes, like \"{my_robot_toml}\"",
+                                   head=head, my_robot_toml="my_robot.toml"))
     hooks = _strings(test.get("hooks", []), head, "hooks")
     hopper = _strings(test["hopper"], head, "hopper") if "hopper" in test else None
     chart = _strings(test["chart"], head, "chart") if "chart" in test else None
@@ -583,10 +594,10 @@ def _program(data: dict, path: Path, head: str = "[test]") -> Program:
                                    "long before the first block)", head=head, settle=f"{SETTLE_S:g}"))
     raw = data.get("block", [])
     if not isinstance(raw, list):
-        raise TestFileError(i18n.t("blocks are written as [[block]] tables"))
+        raise TestFileError(i18n.t("blocks are written as {block_table} tables", block_table="[[block]]"))
     setup = data.get("setup", {})
     if not isinstance(setup, dict):
-        raise TestFileError(i18n.t("[setup] must be a table"))
+        raise TestFileError(i18n.t("{setup_table} must be a table", setup_table="[setup]"))
     return Program(Path(path), Path(robot), hooks, limit, chart,
                    [_block(b, (i,)) for i, b in enumerate(raw, 1)], _setup(setup), hopper)
 

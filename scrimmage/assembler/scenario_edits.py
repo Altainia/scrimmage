@@ -53,7 +53,7 @@ def set_top(doc, key: str, value) -> None:
     if not ok:
         said = {"config": lambda: i18n.t("config must be text"),
                 "description": lambda: i18n.t("description must be text"),
-                "speed": lambda: i18n.t("speed must be a number or text such as \"max\""),
+                "speed": lambda: i18n.t("speed must be a number or text such as \"{max}\"", max="max"),
                 "require_lockstep": lambda: i18n.t("require_lockstep must be true or false")}[key]
         raise EditError(f"scenario/{key}", said())
     if key in doc:
@@ -73,19 +73,20 @@ def set_match(doc, key: str, value) -> None:
     """Set one key of the `[match]` table (made before the first step when there is none); `None` removes the
     key, and the table with its last key. Values are only type-checked here: the loader judges a station."""
     if key not in MATCH_KEYS:
-        raise EditError("scenario/match", i18n.t("unknown [match] key {key}; use {keys}",
-                                                 key=repr(key), keys=", ".join(MATCH_KEYS)))
+        raise EditError("scenario/match", i18n.t("unknown {match_table} key {key}; use {keys}", key=repr(key),
+                                                 keys=", ".join(MATCH_KEYS), match_table="[match]"))
     at = f"scenario/match.{key}"
     if value is not None:
         if key == "station" and not isinstance(value, str):
-            raise EditError(at, i18n.t("station must be text such as \"red1\""))
+            raise EditError(at, i18n.t("station must be text such as \"{red_1}\"", red_1="red1"))
         if key in ("fms", "timer") and not isinstance(value, bool):
             raise EditError(at, i18n.t("{key} must be true or false", key=key))
         if key.endswith("_seconds") and not _is_num(value):
             raise EditError(at, i18n.t("{key} must be a number of seconds", key=key))
     cur = doc.get("match")
     if cur is not None and not isinstance(cur, (Table, InlineTable)):
-        raise EditError("scenario/match", i18n.t("match isn't written as a [match] table; edit the file by hand"))
+        raise EditError("scenario/match", i18n.t("match isn't written as a {match_table} table; edit the file by hand",
+                                                 match_table="[match]"))
     if value is None:
         if cur is not None:
             cur.pop(key, None)
@@ -264,7 +265,8 @@ def _values(i: int, kind: str, port: str, values: list) -> None:
     for n, x in enumerate(values):
         at = f"step{i}/{kind}"
         if kind == "axes" and not (_is_num(x) and -1 <= x <= 1):
-            raise EditError(at, i18n.t("port {port}, index {n}: an axis is a number between -1 and 1", port=port, n=n))
+            raise EditError(at, i18n.t("port {port}, index {n}: an axis is a number between -1 and 1", port=port,
+                                       n=n))
         if kind == "buttons" and not isinstance(x, bool):
             raise EditError(at, i18n.t("port {port}, index {n}: a button is true or false", port=port, n=n))
         if kind == "povs" and not (isinstance(x, int) and not isinstance(x, bool) and (x == -1 or 0 <= x <= 359)):

@@ -745,11 +745,13 @@ def unset_folder(values) -> tuple[str, str] | None:
 
 # The page's words for a few refusals and states, in the user's language (made when they are said, never at import)
 def _hand_written() -> str:
-    return i18n.t("this robot uses a hand-written model; the assembler edits [[part]] robots")
+    return i18n.t("this robot uses a hand-written model; the assembler edits {part_table} robots",
+                  part_table="[[part]]")
 
 
 def _no_program() -> str:
-    return i18n.t("this robot config has no [robot_program] section: add one to drive it")
+    return i18n.t("this robot config has no {robot_program_table} section: add one to drive it",
+                  robot_program_table="[robot_program]")
 
 
 def _unpicked() -> str:
@@ -1085,7 +1087,8 @@ class App:
         except ValueError as e:
             raise ApiError(400, str(e)) from None
         except OSError as e:
-            raise ApiError(500, i18n.t("can't save {path}: {why}", path=settings.settings_path(), why=e.strerror or e)) from None
+            raise ApiError(500, i18n.t("can't save {path}: {why}", path=settings.settings_path(),
+                                       why=e.strerror or e)) from None
         if "units" in changes and settings.overridden():
             settings.set_override(changes["units"])
         if "language" in changes and settings.language_overridden():
@@ -1151,7 +1154,8 @@ class App:
         if not p.exists():
             raise ApiError(400, i18n.t("{path} doesn't exist", path=self._display(p)))
         if p.is_file() and p.suffix.lower() not in (".toml", *part_session.CAD_SUFFIXES):
-            raise ApiError(400, i18n.t("{path} is not a robot config, scenario, bench file, CAD file or folder", path=self._display(p)))
+            raise ApiError(400, i18n.t("{path} is not a robot config, scenario, bench file, CAD file or folder",
+                                       path=self._display(p)))
         with self._lock:
             self._check_can_open()
             try:
@@ -1173,7 +1177,8 @@ class App:
         p = self._user_path(body.get("path"), "the CAD file to import")
         if not (p.is_file() and p.suffix.lower() in part_session.CAD_SUFFIXES) and not (
                 p.is_dir() and any(f.suffix.lower() in part_session.CAD_SUFFIXES for f in p.iterdir())):
-            raise ApiError(400, i18n.t("{path} is not a STEP, STL or OBJ file (or a folder of STL/OBJ files)", path=self._display(p)))
+            raise ApiError(400, i18n.t("{path} is not a STEP, STL or OBJ file (or a folder of STL/OBJ files)",
+                                       path=self._display(p)))
         parts_dir = None
         if body.get("robot") is not None:
             robot = self._user_path(body.get("robot"), "the robot config the part is for")
@@ -1343,7 +1348,8 @@ class App:
         except FileNotFoundError:
             reason = i18n.t("the robot config {path} doesn't exist", path=self._display(target))
         except OSError as e:
-            reason = i18n.t("can't read the robot config {path}: {why}", path=self._display(target), why=e.strerror or e)
+            reason = i18n.t("can't read the robot config {path}: {why}", path=self._display(target),
+                            why=e.strerror or e)
         if doc is None:
             if self.robot is None and self._robot_target == target and self.robot_missing is not None:
                 return False   # still missing: keep saying why (e.g. "was deleted")
@@ -1372,7 +1378,8 @@ class App:
                     if self.scenario is None and d is not None and "part" not in d and "model" not in d:
                         self.robot.read_only_reason = i18n.t(
                             "this config has errors; fix them in a text editor: {errors}; to start a new one, use "
-                            "scrimmage edit FILE --new swerve|differential or --new-scenario --robot CONFIG", errors=errors)
+                            "scrimmage edit FILE --new swerve|differential or --new-scenario --robot CONFIG",
+                            errors=errors)
                     else:
                         self.robot.read_only_reason = i18n.t("this config has errors; fix them in a text editor: {errors}",
                                                              errors=errors)
@@ -1735,7 +1742,8 @@ class App:
             motor_slots = {m.name for m in world.motors} if world is not None else None
             return lambda doc: edits.set_motor(doc, b.get("slot"), motor_slots=motor_slots,
                                                **{k: b[k] for k in ("neutral", "invert") if k in b})
-        raise ApiError(400, i18n.t("unknown op {op} (add, remove, rename, attach, params, ids, start, battery, match_devices, motor)", op=repr(op)))
+        raise ApiError(400, i18n.t("unknown op {op} (add, remove, rename, attach, params, ids, start, battery, match_devices, motor)",
+                                   op=repr(op)))
 
     def edit(self, body: dict) -> tuple[int, dict]:
         with self._lock:
@@ -1786,7 +1794,8 @@ class App:
         except EditError as e:
             return 200, {"ok": False, "errors": [{"field": e.field, "message": e.message}]}
         except OSError as e:
-            return 200, {"ok": False, "errors": [{"field": "status", "message": i18n.t("can't write the file: {why}", why=e)}]}
+            return 200, {"ok": False, "errors": [{"field": "status", "message": i18n.t("can't write the file: {why}",
+                                                                                       why=e)}]}
         self._view = self._scenario_view = self._signals = None
         self.result = res
         self._parts_seen = self._parts_look()
@@ -1846,8 +1855,10 @@ class App:
             return None, None, None
         cwd = rp.get("cwd", ".")
         if not isinstance(cwd, str):
-            return None, None, (i18n.t("[robot_program] cwd must be a folder path, not {cwd}.", cwd=repr(cwd)) if sentence
-                                else i18n.t("[robot_program] cwd must be a folder path, not {cwd}", cwd=repr(cwd)))
+            return None, None, (i18n.t("{robot_program_table} cwd must be a folder path, not {cwd}.", cwd=repr(cwd),
+                                       robot_program_table="[robot_program]") if sentence
+                                else i18n.t("{robot_program_table} cwd must be a folder path, not {cwd}",
+                                            cwd=repr(cwd), robot_program_table="[robot_program]"))
         try:
             folder = (self.robot.path.parent / teamfolders.expand(cwd)).resolve()
         except teamfolders.TeamFolderError as e:
@@ -2220,7 +2231,8 @@ class App:
                 except EditError as e:
                     return 200, {"ok": False, "errors": [{"field": e.field, "message": e.message}]}
                 except OSError as e:
-                    return 200, {"ok": False, "errors": [{"field": "status", "message": i18n.t("can't write the file: {why}", why=e)}]}
+                    return 200, {"ok": False, "errors": [{"field": "status", "message": i18n.t("can't write the file: {why}",
+                                                                                               why=e)}]}
                 committed = True
             finally:
                 if not committed:
@@ -2439,7 +2451,8 @@ class App:
         if st["build"]["state"] == "building":
             raise ApiError(409, i18n.t("the parts are still updating; try again when they're up to date"))
         if st["build"]["state"] == "failed" or imp is None:
-            raise ApiError(409, i18n.t("the parts didn't build: {why}", why=st["build"]["message"] or i18n.t("see the Part tab")))
+            raise ApiError(409, i18n.t("the parts didn't build: {why}",
+                                       why=st["build"]["message"] or i18n.t("see the Part tab")))
         imp_path = Path(st["path"])
         # next to the parts folder the import file is in (or beside an import file kept elsewhere)
         home = imp_path.parent.parent if imp_path.parent.name == "parts" else imp_path.parent
@@ -2451,7 +2464,8 @@ class App:
                 raise ApiError(409, str(e)) from None
             marker = library.cad_marker(folder)
             if marker is None or not (folder / "part.toml").is_file():
-                raise ApiError(409, i18n.t("the part {name} isn't built yet; try again when the parts are up to date", name=p["name"]))
+                raise ApiError(409, i18n.t("the part {name} isn't built yet; try again when the parts are up to date",
+                                           name=p["name"]))
             try:
                 built = load_part(folder)
                 slots[marker["part"]] = [m.slot for m in built.motors]
@@ -2476,7 +2490,8 @@ class App:
             if not test.exists():
                 test_session.write_new(test, self._starter_test(standin, home))
         except OSError as e:
-            raise ApiError(400, i18n.t("can't write next to {path}: {why}", path=self._display(home), why=e.strerror or e)) from None
+            raise ApiError(400, i18n.t("can't write next to {path}: {why}", path=self._display(home),
+                                       why=e.strerror or e)) from None
         except (ValueError, KeyError, TypeError) as e:   # a hand-edited stand-in that can't be read as one
             raise ApiError(409, i18n.t("can't add the new parts to {name}: {why}", name=standin.name, why=e)) from None
         return {**self.open_path(str(test)), "added": added}
@@ -2627,11 +2642,12 @@ class App:
                 speed = None
             elif isinstance(speed, bool) or not isinstance(speed, (int, float)) or not math.isfinite(speed) \
                     or speed <= 0:
-                return refuse(i18n.t('speed must be a positive number or "max", not {speed}', speed=repr(speed)))
+                return refuse(i18n.t("speed must be a positive number or \"{max}\", not {speed}", speed=repr(speed),
+                                     max="max"))
             elif cfg.step / speed >= 1.0:
                 return refuse(i18n.t("speed {speed} with {step} s steps: each step would take {wall} s of wall time or more, "
-                                     "and the robot's 2 s watchdog would release the clock",
-                                     speed=f"{speed:g}", step=f"{cfg.step:g}", wall=f"{cfg.step / speed:g}"))
+                                     "and the robot's 2 s watchdog would release the clock", speed=f"{speed:g}",
+                                     step=f"{cfg.step:g}", wall=f"{cfg.step / speed:g}"))
             try:
                 self.live.start(path, speed, discard_recording=discard, real_ds=real_ds)
             except SimBusy as e:
@@ -2865,7 +2881,8 @@ class _Handler(BaseHTTPRequestHandler):
                     try:
                         files = [(f["name"], f["size"]) for f in json.loads(unquote(self.headers["X-Files"]))]
                     except (ValueError, TypeError, KeyError):
-                        raise ApiError(400, i18n.t("X-Files must be a list of {{name, size}}")) from None
+                        raise ApiError(400, i18n.t("X-Files must be a list of {name_size_form}",
+                                                   name_size_form="{name, size}")) from None
                     if not files:
                         raise ApiError(400, i18n.t("no files were sent"))
                 return app.upload(body, n, self.headers.get("X-Filename"), files,

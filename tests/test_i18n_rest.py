@@ -25,14 +25,14 @@ GB = {
     # measure
     "{count} trial: take at least {min}|{count} trials: take at least {min}": {
         "one": "only {count} go: do {min} or more", "other": "only {count} goes: do {min} or more"},
-    "{path}: needs a [measure] table saying what was measured (kind, by, date)":
-        "{path}: say what was measured in a [measure] table (kind, by, date)",
+    "{path}: needs a {measure_table} table saying what was measured (kind, by, date)":
+        "{path}: say what was measured in a {measure_table} table (kind, by, date)",
     "stroke time": "time for a stroke",
     # parts, partner, field, range
     "{key} must be greater than 0, got {value}": "{key} has to be above nought, not {value}",
-    "[field] obstacle must be true or false": "[field] obstacle is true or false, nothing else",
-    "[partner] must be a table": "[partner] has to be a table",
-    "[range]: give ball or piece, not both": "[range]: a ball or a piece, not the pair",
+    "{field_table} obstacle must be true or false": "{field_table} obstacle is true or false, nothing else",
+    "{partner_table} must be a table": "{partner_table} has to be a table",
+    "{range_table}: give ball or piece, not both": "{range_table}: a ball or a piece, not the pair",
     # CAD: the density error's words no longer say "density"
     "A custom material needs a density above zero (kg per cubic meter): enter one.":
         "Give the custom material its weight per volume (kg per cubic metre), above nought.",

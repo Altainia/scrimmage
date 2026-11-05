@@ -18,9 +18,10 @@ def add_field(spec: mujoco.MjSpec, cfg: dict, *, obstacle_default: bool = True) 
     from .model import PartError
     for k in cfg:
         if k != "obstacle":
-            raise PartError(i18n.t("[field]: unknown key {key}; allowed: obstacle", key=repr(k)))
+            raise PartError(i18n.t("{field_table}: unknown key {key}; allowed: obstacle", key=repr(k),
+                                   field_table="[field]"))
     if not isinstance(cfg.get("obstacle", obstacle_default), bool):
-        raise PartError(i18n.t("[field] obstacle must be true or false"))
+        raise PartError(i18n.t("{field_table} obstacle must be true or false", field_table="[field]"))
     g = spec.visual.global_
     g.offwidth, g.offheight, g.azimuth, g.elevation = 1600, 1000, -125, -30
     spec.visual.quality.shadowsize = 4096

@@ -50,7 +50,8 @@ def set_sim_mode(config: Config, mode: str | None) -> None:
     if mode is None:
         return
     if mode not in SIM_MODES:
-        raise ConfigError(t("sim_mode must be one of {modes}, not {mode}", modes=", ".join(SIM_MODES), mode=repr(mode)))
+        raise ConfigError(t("sim_mode must be one of {modes}, not {mode}", modes=", ".join(SIM_MODES),
+                            mode=repr(mode)))
     rp = config.robot_program
     if rp is None:
         return
@@ -138,15 +139,19 @@ def load_config_text(text: str, path: str | Path) -> Config:
     if rp:
         cmd = rp.get("command")
         if not (isinstance(cmd, list) and cmd and all(isinstance(c, str) for c in cmd)):
-            raise ConfigError(t('[robot_program] command must be a list of strings, e.g. ["{{python}}", "-m", '
-                                '"robotpy", "sim", "--nogui", "--ws-client"]'))
+            raise ConfigError(t("{robot_program_table} command must be a list of strings, e.g. [\"{python2}\", "
+                                "\"{m}\", \"{robotpy}\", \"{sim}\", \"{nogui}\", \"{ws_client}\"]",
+                                robot_program_table="[robot_program]", python2="{python}", m="-m", robotpy="robotpy",
+                                sim="sim", nogui="--nogui", ws_client="--ws-client"))
         env = rp.get("env", {})
         if not isinstance(env, dict):
-            raise ConfigError(t("[robot_program] env must be a table of NAME = value"))
+            raise ConfigError(t("{robot_program_table} env must be a table of {name_setting}",
+                                robot_program_table="[robot_program]", name_setting="NAME = value"))
         sim_mode = rp.get("sim_mode", "phoenix")
         if sim_mode not in SIM_MODES:
-            raise ConfigError(t("[robot_program] sim_mode must be one of {modes}, not {mode}",
-                                modes=", ".join(SIM_MODES), mode=repr(sim_mode)))
+            raise ConfigError(t("{robot_program_table} sim_mode must be one of {modes}, not {mode}",
+                                modes=", ".join(SIM_MODES), mode=repr(sim_mode),
+                                robot_program_table="[robot_program]"))
         gradle = Path(cmd[0]).name in ("gradlew", "gradlew.bat")
         try:
             command = [sys.executable if c == "{python}"
@@ -163,16 +168,17 @@ def load_config_text(text: str, path: str | Path) -> Config:
     tel = _table(raw, "telemetry")
     odometry = tel.get("odometry", DEFAULT_ODOMETRY)
     if odometry is not None and not isinstance(odometry, str):
-        raise ConfigError(t("[telemetry] odometry must be a NetworkTables topic name, not {value}",
-                            value=repr(odometry)))
+        raise ConfigError(t("{telemetry_table} odometry must be a NetworkTables topic name, not {value}",
+                            value=repr(odometry), telemetry_table="[telemetry]"))
     nt_port = tel.get("nt_port", 5810)
     if isinstance(nt_port, bool) or not isinstance(nt_port, int):
-        raise ConfigError(t("[telemetry] nt_port must be a port number, not {value}", value=repr(nt_port)))
+        raise ConfigError(t("{telemetry_table} nt_port must be a port number, not {value}", value=repr(nt_port),
+                            telemetry_table="[telemetry]"))
 
     nt = tel.get("nt", True)
     if not isinstance(nt, bool):
-        raise ConfigError(t("[telemetry] nt must be true or false (false: the robot program serves no "
-                            "NetworkTables), not {value}", value=repr(nt)))
+        raise ConfigError(t("{telemetry_table} nt must be true or false (false: the robot program serves no "
+                            "NetworkTables), not {value}", value=repr(nt), telemetry_table="[telemetry]"))
 
     try:
         match = MatchSettings().merged(_table(raw, "match"), "[match]")
@@ -182,11 +188,13 @@ def load_config_text(text: str, path: str | Path) -> Config:
     ds = _table(raw, "driver_station")
     for key in ds:
         if key != "real":
-            raise ConfigError(t("[driver_station] has no key {key}; the only key is real", key=repr(key)))
+            raise ConfigError(t("{driver_station_table} has no key {key}; the only key is real", key=repr(key),
+                                driver_station_table="[driver_station]"))
     real_ds = ds.get("real", False)
     if not isinstance(real_ds, bool):
-        raise ConfigError(t("[driver_station] real must be true or false (true: the FRC Driver Station app drives "
-                            "the robot), not {value}", value=repr(real_ds)))
+        raise ConfigError(t("{driver_station_table} real must be true or false (true: the FRC Driver Station app "
+                            "drives the robot), not {value}", value=repr(real_ds),
+                            driver_station_table="[driver_station]"))
 
     sess = _table(raw, "session")
     return Config(path, raw, step, program, odometry or None, nt_port,
@@ -194,11 +202,11 @@ def load_config_text(text: str, path: str | Path) -> Config:
 
 
 # Keys a binding entry reads without a default, and the entries that read them (for a KeyError's message).
-_KEY_USERS = {      # N_(): said with translated()
-    "joint": N_("a [[motor]]/[[encoder]]/[[analog]]/[[digital]] entry"),
-    "device": N_("a [[gyro]] entry"), "body": N_("a [[gyro]] entry"),
-    "port": N_("an [[analog]] entry"), "channel": N_("a [[digital]] entry"),
-    **{k: N_("a [[motor]] entry's custom motor = { ... } table")
+_KEY_USERS = {      # (N_() words, said with translated() and the tables a student types in them)
+    "joint": (N_("a {tables} entry"), "[[motor]]/[[encoder]]/[[analog]]/[[digital]]"),
+    "device": (N_("a {tables} entry"), "[[gyro]]"), "body": (N_("a {tables} entry"), "[[gyro]]"),
+    "port": (N_("an {tables} entry"), "[[analog]]"), "channel": (N_("a {tables} entry"), "[[digital]]"),
+    **{k: (N_("a {tables} entry's custom {motor_setting} table"), "[[motor]]")
        for k in ("stall_torque", "stall_current", "free_current", "free_rpm")},
 }
 
@@ -214,6 +222,6 @@ def build_world(config: Config) -> World:
         if users is None:
             raise ConfigError(t("{path}: missing key {key} in the config", path=config.path, key=repr(key))) from None
         raise ConfigError(t("{path}: missing key {key} in {users}", path=config.path, key=repr(key),
-                            users=translated(users))) from None
+                            users=translated(users[0], tables=users[1], motor_setting="motor = { ... }"))) from None
     except (TypeError, ValueError) as e:
         raise ConfigError(f"{config.path}: {e}", fields=getattr(e, "fields", ())) from None

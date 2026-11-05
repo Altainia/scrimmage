@@ -21,14 +21,14 @@ GB = {
     "_language": "English (UK)",
     "{where}: attach {attach}: no mount or body {local} on {target}; mounts: {mounts}; bodies: {bodies}":
         "ZZ {local} {target} ({where})",
-    "{where}: ids: {slot} = {value}: expected \"<Kind>:<number>\", e.g. \"TalonFX:3\"": "ZZ {value} {slot} {where}",
+    "{where}: ids: {slot} = {value}: expected \"{kind_number}\", e.g. \"{talonfx_3}\"": "ZZ {value} {slot} {where}",
     "{where}: {name} must be at most {most}, got {got}": "ZZ {got} > {most}: {name} ({where})",
     "{part}.{slot} has no device ID, so it won't report": "ZZ {slot} of {part}",
     "{device} is bound by {a} and {b}: give each device one binding": "ZZ {b} {a} {device}",
     "{file}, step {n} ({name})": "{name} ZZ {n} {file}",
     "mode must be one of {modes}, not {value}": "ZZ {value} ({modes})",
     "{step}, screenshot {n}": "ZZ {n} {step}",
-    "at = {at} is beyond the step's {duration} s": "ZZ {duration} < {at}",
+    "{at_setting} is beyond the step's {duration} s": "ZZ {duration} < {at_setting}",
     "unknown signal {signal}; signals are {signals}": "ZZ {signal}",
     "{key} must be a number, not {value}": "ZZ {value} {key}",
     "station must be one of {stations}, not {value}": "ZZ {value}",
@@ -79,7 +79,7 @@ def test_a_warning_lands_on_its_field_in_another_language(gb, tmp_path):
 
 @pytest.mark.parametrize("text,field,detail", [
     (HEAD + STEP.replace('"auto"', '"bogus"'), "step0/mode", "ZZ 'bogus' (disabled, auto, teleop, test)"),
-    (HEAD + STEP + '  [[step.screenshot]]\n  at = 5.0\n', "step0/shot0/at", "ZZ 1 < 5.0"),
+    (HEAD + STEP + '  [[step.screenshot]]\n  at = 5.0\n', "step0/shot0/at", "ZZ 1 < at = 5.0"),
     (HEAD + STEP + '  [[step.check]]\n  at_end = { signal = "nope", min = 1 }\n', "step0/check0/at_end.signal",
      "ZZ 'nope'"),      # a signal's error says no where: all of it is its detail
     (HEAD + STEP + '  [[step.check]]\n  at_end = { signal = "battery", min = "x" }\n', "step0/check0/at_end.min",

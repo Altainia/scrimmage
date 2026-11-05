@@ -264,8 +264,9 @@ def rev_unavailable_message(state: str, language: str | None = None) -> str:
     """The agent's "unavailable: <reason>" as a scrimmage error (bridge log, scenario check, Drive notice)."""
     reason = state.removeprefix("unavailable:").strip()
     if language == "python":
-        return i18n.t("REV simulation unavailable in the robot program ({reason}): update robotpy-rev (`pip install "
-                      "\"robotpy-rev>=2026.0.4,<2027\"`)", reason=reason)
+        return i18n.t("REV simulation unavailable in the robot program ({reason}): update robotpy-rev "
+                      "(`{pip_install_robotpy}`)", reason=reason,
+                      pip_install_robotpy="pip install \"robotpy-rev>=2026.0.4,<2027\"")
     return i18n.t("REV simulation unavailable in the robot program ({reason}): update REVLib to {version} or later "
                   "(vendordeps/REVLib.json), then rebuild (WPILib VS Code: Manage Vendor Libraries, Check for Updates)",
                   reason=reason, version=REVLIB_NEEDED)
@@ -571,7 +572,8 @@ class Bridge:
         for device, writes in fwn.by_device(new).items():
             if device not in self._warned:
                 self._warned.add(device)
-                log.warning("%s", fwn.message(device, writes, self.agent_state(), self.robot_language))
+                with i18n.fixed():      # the bridge's thread: its log line is machine text, as it always was
+                    log.warning("%s", fwn.message(device, writes, self.agent_state(), self.robot_language))
 
     def _set_mode(self, mode: str | None) -> None:
         self.mode = mode

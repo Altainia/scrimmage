@@ -86,12 +86,13 @@ def _listing(names) -> str:
 def _text(path: Path, table: dict, key: str, *, required: bool) -> str:
     if key not in table:
         if required:
-            raise MeasureError(i18n.t("{path}: [measure] is missing required key '{key}'", path=path, key=key))
+            raise MeasureError(i18n.t("{path}: {measure_table} is missing required key '{key}'", path=path, key=key,
+                                      measure_table="[measure]"))
         return ""
     v = table[key]
     if not isinstance(v, str):
-        raise MeasureError(i18n.t("{path}: [measure] {key} must be text, not {value}", path=path, key=key,
-                                  value=repr(v)))
+        raise MeasureError(i18n.t("{path}: {measure_table} {key} must be text, not {value}", path=path, key=key,
+                                  value=repr(v), measure_table="[measure]"))
     return v
 
 
@@ -107,8 +108,8 @@ def _date(path: Path, table: dict) -> str:
             return datetime.date.fromisoformat(v).isoformat()
         except ValueError:
             pass
-    raise MeasureError(i18n.t("{path}: [measure] date must be a date like 2026-11-10, not {value}", path=path,
-                              value=repr(v)))
+    raise MeasureError(i18n.t("{path}: {measure_table} date must be a date like 2026-11-10, not {value}", path=path,
+                              value=repr(v), measure_table="[measure]"))
 
 
 def load(path) -> MeasureFile:
@@ -132,21 +133,22 @@ def parse(raw: dict, path) -> MeasureFile:
     path = Path(path)
     head = raw.get("measure")
     if not isinstance(head, dict):
-        raise MeasureError(i18n.t("{path}: needs a [measure] table saying what was measured (kind, by, date)",
-                                  path=path))
+        raise MeasureError(i18n.t("{path}: needs a {measure_table} table saying what was measured (kind, by, date)",
+                                  path=path, measure_table="[measure]"))
     unknown = [k for k in head if k not in _HEADER]
     if unknown:
-        raise MeasureError(i18n.t("{path}: unknown key '{key}' in [measure]; valid keys: {keys}", path=path,
-                                  key=unknown[0], keys=_listing(_HEADER)))
+        raise MeasureError(i18n.t("{path}: unknown key '{key}' in {measure_table}; valid keys: {keys}", path=path,
+                                  key=unknown[0], keys=_listing(_HEADER), measure_table="[measure]"))
     kind = _text(path, head, "kind", required=True)
     if kind not in KIND_TESTS:
-        raise MeasureError(i18n.t("{path}: [measure] kind must be one of {kinds}, not {value}", path=path,
-                                  kinds=_listing(KIND_TESTS), value=repr(kind)))
+        raise MeasureError(i18n.t("{path}: {measure_table} kind must be one of {kinds}, not {value}", path=path,
+                                  kinds=_listing(KIND_TESTS), value=repr(kind), measure_table="[measure]"))
     base = _text(path, head, "base", required=False) or None
     if kind == "ball" and base is not None:
         if base not in PRESETS["ball"]:
-            raise MeasureError(i18n.t("{path}: [measure] base '{base}' isn't a ball preset; one of {presets}",
-                                      path=path, base=base, presets=_listing(PRESETS["ball"])))
+            raise MeasureError(i18n.t("{path}: {measure_table} base '{base}' isn't a ball preset; one of {presets}",
+                                      path=path, base=base, presets=_listing(PRESETS["ball"]),
+                                      measure_table="[measure]"))
 
     tests = KIND_TESTS[kind]
     trials: dict[str, list[dict]] = {}

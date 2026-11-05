@@ -17,7 +17,12 @@ PATH_COLORS = {"truth": (0.15, 0.85, 0.25, 1.0), "odometry": (0.95, 0.35, 0.2, 1
 PATH_WIDTH = 0.03        # capsule radius, m
 PATH_Z = 0.02            # just above the carpet
 MAX_SEGMENTS = 500       # per path
-VIEWS_HELP = N_('view must be "follow", "top", "free" or "camera:<name>"')   # said with translated()
+VIEWS_HELP = N_('view must be "{follow}", "{top}", "{free}" or "{camera}"')   # said with views_help()
+
+
+def views_help() -> str:
+    """VIEWS_HELP in the Language, the view names (what a scenario file says) filled in."""
+    return translated(VIEWS_HELP, follow="follow", top="top", free="free", camera="camera:<name>")
 
 
 CAMERA_KEYS = ("lookat", "distance", "azimuth", "elevation")
@@ -40,8 +45,8 @@ def check_sheet_size(frames: int, width: int, height: int) -> None:
     px = frames * width * height
     if px > MAX_SHEET_PIXELS:
         raise ValueError(t("a contact sheet of {frames} frames at {width}x{height} is {megapixels} megapixels; the "
-                           "limit is {limit} (use fewer or smaller frames)", frames=frames, width=width, height=height,
-                           megapixels=f"{px / 1e6:.1f}", limit=f"{MAX_SHEET_PIXELS / 1e6:g}"))
+                           "limit is {limit} (use fewer or smaller frames)", frames=frames, width=width,
+                           height=height, megapixels=f"{px / 1e6:.1f}", limit=f"{MAX_SHEET_PIXELS / 1e6:g}"))
 
 
 def _num(v) -> bool:
@@ -150,8 +155,8 @@ class Renderer:
             cam.distance = 1.08 * half / math.tan(fovy / 2)
         elif view == "free":
             if "lookat" not in c:
-                raise ValueError(t("the free view needs camera = {{lookat: [x, y, z]}} (and optionally distance, "
-                                   "azimuth, elevation)"))
+                raise ValueError(t("the free view needs {camera_setting} (and optionally distance, azimuth, "
+                                   "elevation)", camera_setting="camera = {lookat: [x, y, z]}"))
             cam.type = mujoco.mjtCamera.mjCAMERA_FREE
             cam.lookat[:] = [float(v) for v in c["lookat"]]
             cam.distance = float(c.get("distance", 3.0))
@@ -168,7 +173,7 @@ class Renderer:
                 raise ValueError(t("no camera {name}; the model has no cameras", name=repr(name)))
             return name
         else:
-            raise ValueError(t("{help}, not {view}", help=translated(VIEWS_HELP), view=repr(view)))
+            raise ValueError(t("{help}, not {view}", help=views_help(), view=repr(view)))
         return cam
 
     @staticmethod

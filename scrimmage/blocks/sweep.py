@@ -208,10 +208,11 @@ def _edit_config(text: str, target: dict, value: float | str, bodies: list[str] 
     elif "robot" in target:
         chassis = next((p for p in parts if p.get("stock") == "chassis"), None)
         if chassis is None:
-            raise ValueError(i18n.t('this robot has no stand-in chassis (stock = "chassis") to change the mass of')
+            raise ValueError(i18n.t("this robot has no stand-in chassis ({stock_setting}) to change the mass of",
+                                    stock_setting="stock = \"chassis\"")
                              if target["robot"] == "mass" else
-                             i18n.t('this robot has no stand-in chassis (stock = "chassis") to move the center of '
-                                    'gravity of'))
+                             i18n.t("this robot has no stand-in chassis ({stock_setting}) to move the center of "
+                                    "gravity of", stock_setting="stock = \"chassis\""))
         i = ROBOT_KEYS[target["robot"]]
         _set(chassis, "mass" if i is None else "com_offset", i, value)
     else:
@@ -297,7 +298,8 @@ def run_sweep(program: Program, target: dict, values: list[float | str], base, o
     if kind == "block":
         b = _block_json(to_json(program)["blocks"], target["block"])     # the target is there (else it's refused)
         if target["key"] not in b:
-            raise TestFileError(i18n.t("{block} has no {key}", block=_where(tuple(target['block'])), key=target['key']))
+            raise TestFileError(i18n.t("{block} has no {key}", block=_where(tuple(target['block'])),
+                                       key=target['key']))
     elif kind == "setup":
         if "station" in target:
             _check_station(program, config, target["station"])

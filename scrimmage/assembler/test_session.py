@@ -533,8 +533,8 @@ class TestSession:
                 raise SessionError(409, _busy())
             world = self._world
         if not isinstance(name, str) or name.count(".") != 1 or not all(name.split(".")):
-            raise SessionError(400, i18n.t('body must be "<part>.<body>", such as "claw.pad_left", not {name}',
-                                           name=repr(name)))
+            raise SessionError(400, i18n.t("body must be \"{part_body}\", such as \"{claw_pad_left}\", not {name}",
+                                           name=repr(name), part_body="<part>.<body>", claw_pad_left="claw.pad_left"))
         if world is None or world.parts is None:
             raise SessionError(409, i18n.t("fix the robot first: {why}",
                                            why=self._robot_problem or i18n.t("it is not made of parts")))
@@ -554,9 +554,9 @@ class TestSession:
                                            name=name))
         own = self._config_grip(part)
         if grip is not None and b in own:       # clearing the folder's own grip is always fine
-            raise SessionError(400, i18n.t("{file} sets {body}'s grip itself (its [[part]] {part}'s grip), and that "
-                                           "wins over the part folder's; change it there",
-                                           file=self.robot_path.name, body=name, part=part))
+            raise SessionError(400, i18n.t("{file} sets {body}'s grip itself (its {part_table} {part}'s grip), and "
+                                           "that wins over the part folder's; change it there",
+                                           file=self.robot_path.name, body=name, part=part, part_table="[[part]]"))
         folder = Path(inst.source)
         try:
             set_grip(folder.parent if folder.is_file() else folder, b, grip)

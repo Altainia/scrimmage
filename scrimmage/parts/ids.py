@@ -41,8 +41,8 @@ def _device(kind: str, slot: str, value, where: str) -> dict:
         if k in SIM_SHORT:
             if not n:
                 raise _ids_error(where, slot, t("{where}: ids: {slot} = {value}: {kind} needs a name, e.g. "
-                                                "\"{kind}:fl_drive\"", where=where, slot=slot, value=repr(value),
-                                                kind=k))
+                                                "\"{kind_fl_drive}\"", where=where, slot=slot, value=repr(value),
+                                                kind=k, kind_fl_drive="{}:fl_drive".format(k)))
             if any(c.isspace() for c in n):
                 raise _ids_error(where, slot, t("{where}: ids: {slot} = {value}: the name takes no spaces",
                                                 where=where, slot=slot, value=repr(value)))
@@ -54,25 +54,29 @@ def _device(kind: str, slot: str, value, where: str) -> dict:
                 raise _kind_error(where, slot, kind, value, "valve")
             channels = n.split(",")
             if not sep or len(channels) > 2 or not all(x.isdigit() for x in channels):
-                raise _ids_error(where, slot, t("{where}: ids: {slot} = {value}: expected \"{kind}:3\" (a single "
-                                                "solenoid) or \"{kind}:3,4\" (a double solenoid's forward and reverse "
-                                                "channels)", where=where, slot=slot, value=repr(value), kind=k))
+                raise _ids_error(where, slot, t("{where}: ids: {slot} = {value}: expected \"{kind_3}\" (a single "
+                                                "solenoid) or \"{kind_3_4}\" (a double solenoid's forward and "
+                                                "reverse channels)", where=where, slot=slot, value=repr(value),
+                                                kind_3="{}:3".format(k), kind_3_4="{}:3,4".format(k)))
             module = SHORT[k][1]
             ch = [int(x) for x in channels]
             return _valve(module, VALVE_MODULES[module][1], ch[0], ch[1] if len(ch) == 2 else None, False,
                           slot, where)
         if kind == "valve" and k not in SHORT:
-            raise _ids_error(where, slot, t("{where}: ids: {slot} = {value}: a valve takes \"PCM:<channel>\" or "
-                                            "\"PH:<channel>\" (\"PH:3,4\" for a double solenoid), or a table like "
-                                            "{{ pcm = 1, channel = 3 }}", where=where, slot=slot, value=repr(value)))
+            raise _ids_error(where, slot, t("{where}: ids: {slot} = {value}: a valve takes \"{pcm_channel}\" or "
+                                            "\"{ph_channel}\" (\"{ph_3_4}\" for a double solenoid), or a table like "
+                                            "{pcm_1_form}", where=where, slot=slot, value=repr(value),
+                                            pcm_channel="PCM:<channel>", ph_channel="PH:<channel>", ph_3_4="PH:3,4",
+                                            pcm_1_form="{ pcm = 1, channel = 3 }"))
         if not sep or not n.isdigit():
-            raise _ids_error(where, slot, t("{where}: ids: {slot} = {value}: expected \"<Kind>:<number>\", e.g. "
-                                            "\"TalonFX:3\"", where=where, slot=slot, value=repr(value)))
+            raise _ids_error(where, slot, t("{where}: ids: {slot} = {value}: expected \"{kind_number}\", e.g. "
+                                            "\"{talonfx_3}\"", where=where, slot=slot, value=repr(value),
+                                            kind_number="<Kind>:<number>", talonfx_3="TalonFX:3"))
         if k not in SHORT:
             raise _ids_error(where, slot, t("{where}: ids: {slot} = {value}: Kind one of {kinds} (other devices take "
-                                            "a table of binding keys, e.g. {{ can = \"VictorSPX[3]\" }})",
-                                            where=where, slot=slot, value=repr(value),
-                                            kinds=", ".join([*SHORT, *SIM_SHORT])))
+                                            "a table of binding keys, e.g. {can_victorspx_form})", where=where,
+                                            slot=slot, value=repr(value), kinds=", ".join([*SHORT, *SIM_SHORT]),
+                                            can_victorspx_form="{ can = \"VictorSPX[3]\" }"))
         want, key = SHORT[k]
         if want != kind:
             raise _kind_error(where, slot, kind, value, want)
@@ -86,10 +90,12 @@ def _device(kind: str, slot: str, value, where: str) -> dict:
                                                 where=where, slot=slot, key=repr(k)))
         return dict(value)
     if kind == "motor":
-        raise _ids_error(where, slot, t("{where}: ids: {slot} must be \"<Kind>:<number>\", a table of binding keys "
-                                        "or a list of them, not {value}", where=where, slot=slot, value=repr(value)))
-    raise _ids_error(where, slot, t("{where}: ids: {slot} must be \"<Kind>:<number>\", a table of binding keys, not "
-                                    "{value}", where=where, slot=slot, value=repr(value)))
+        raise _ids_error(where, slot, t("{where}: ids: {slot} must be \"{kind_number}\", a table of binding keys or "
+                                        "a list of them, not {value}", where=where, slot=slot, value=repr(value),
+                                        kind_number="<Kind>:<number>"))
+    raise _ids_error(where, slot, t("{where}: ids: {slot} must be \"{kind_number}\", a table of binding keys, not "
+                                    "{value}", where=where, slot=slot, value=repr(value),
+                                    kind_number="<Kind>:<number>"))
 
 
 def _whole(v) -> bool:
@@ -123,11 +129,14 @@ def _valve_table(slot: str, value: dict, where: str) -> dict:
                                             key=repr(k)))
     modules = [k for k in VALVE_MODULES if k in value]
     if len(modules) != 1:
-        raise _ids_error(where, slot, t("{where}: ids: {slot}: give exactly one of pcm = <number> or ph = <number>",
-                                        where=where, slot=slot))
+        raise _ids_error(where, slot, t("{where}: ids: {slot}: give exactly one of {pcm_setting} or {ph_setting}",
+                                        where=where, slot=slot, pcm_setting="pcm = <number>",
+                                        ph_setting="ph = <number>"))
     if ("channel" in value) == ("forward" in value) or ("reverse" in value and "forward" not in value):
-        raise _ids_error(where, slot, t("{where}: ids: {slot}: give channel = <n> (a single solenoid) or forward = "
-                                        "<n>, reverse = <n> (a double solenoid)", where=where, slot=slot))
+        raise _ids_error(where, slot, t("{where}: ids: {slot}: give {channel_setting} (a single solenoid) or "
+                                        "{forward_setting}, {reverse_setting} (a double solenoid)", where=where,
+                                        slot=slot, channel_setting="channel = <n>", forward_setting="forward = <n>",
+                                        reverse_setting="reverse = <n>"))
     invert = value.get("invert", False)
     if not isinstance(invert, bool):
         raise _ids_error(where, slot, t("{where}: ids: {slot}: invert must be true or false, not {invert}",
@@ -143,8 +152,8 @@ def slot_bindings(inst) -> tuple[dict[str, list[dict]], list[str]]:
     for slot in inst.ids:
         if slot not in kinds:
             if kinds:
-                raise _ids_error(where, slot, t("{where}: ids: no slot {slot}; the part's slots: {slots}", where=where,
-                                                slot=repr(slot), slots=", ".join(kinds)))
+                raise _ids_error(where, slot, t("{where}: ids: no slot {slot}; the part's slots: {slots}",
+                                                where=where, slot=repr(slot), slots=", ".join(kinds)))
             raise _ids_error(where, slot, t("{where}: ids: no slot {slot}; the part's slots: none", where=where,
                                             slot=repr(slot)))
     out: dict[str, list[dict]] = {"motor": [], "encoder": [], "gyro": [], "valve": []}

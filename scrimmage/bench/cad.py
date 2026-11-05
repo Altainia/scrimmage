@@ -228,8 +228,9 @@ def convex_pieces(mesh_path: Path, units: str) -> list[Path]:
         how = i18n.t("{percent}% bigger", percent=f"{100 * (hull / own - 1):.0f}") if own > 0 else \
             i18n.t("far bigger")
         raise BenchError(i18n.t("mesh {path} is concave (its hull is {how} than it), so it has to be split into "
-                                "convex pieces, which needs coacd: pip install scrimmage[bench]. (Run as it is, its "
-                                "hollows would be filled in.)", path=mesh_path, how=how), code="no_coacd") from None
+                                "convex pieces, which needs coacd: pip install scrimmage{bench_table}. (Run as it "
+                                "is, its hollows would be filled in.)", path=mesh_path, how=how,
+                                bench_table="[bench]"), code="no_coacd") from None
     if not pieces:
         raise BenchError(i18n.t("mesh {path}: coacd found no convex pieces in it", path=mesh_path),
                          code="no_convex_pieces")
@@ -293,14 +294,15 @@ def place(c: Cad) -> Placement:
     try:
         part = out.part = load_part(c.part)
     except PartError as e:
-        raise BenchError(i18n.t("[[cad]] '{name}': can't load its part folder {folder}: {error}", name=c.name,
-                                folder=c.part, error=e)) from None
+        raise BenchError(i18n.t("{cad_table} '{name}': can't load its part folder {folder}: {error}", name=c.name,
+                                folder=c.part, error=e,
+                                cad_table="[[cad]]")) from None
     motor = {s.slot: s for s in part.motors}
     for slot in c.slots:
         if slot not in motor:
-            raise BenchError(i18n.t("[[cad]] '{name}' slots: the part has no motor slot {slot}; its motor slots: "
+            raise BenchError(i18n.t("{cad_table} '{name}' slots: the part has no motor slot {slot}; its motor slots: "
                                     "{slots}", name=c.name, slot=repr(slot),
-                                    slots=", ".join(motor) or i18n.t("(none)")))
+                                    slots=", ".join(motor) or i18n.t("(none)"), cad_table="[[cad]]"))
     driven = {motor[s].joint: (motor[s], shaft) for s, shaft in c.slots.items()}
     unused = {s.joint: s.slot for s in part.motors if s.slot not in c.slots}
     root_q = np.array(quat_from_rpy(c.rot_deg))
@@ -318,14 +320,14 @@ def place(c: Cad) -> Placement:
         if j is not None and j.name in driven:
             slot, shaft = driven[j.name]
             if carrier is not None:
-                raise BenchError(i18n.t("[[cad]] '{name}': joint '{joint}' (slot '{slot}') rides on a body that "
+                raise BenchError(i18n.t("{cad_table} '{name}': joint '{joint}' (slot '{slot}') rides on a body that "
                                         "turns with shaft '{shaft}'; a bench shaft turns about a fixed line, so give "
                                         "only the outer joint a shaft", name=c.name, joint=j.name, slot=slot.slot,
-                                        shaft=carrier))
+                                        shaft=carrier, cad_table="[[cad]]"))
             if j.kind != "hinge":
-                raise BenchError(i18n.t("[[cad]] '{name}': slot '{slot}' drives joint '{joint}', a slide; bench "
+                raise BenchError(i18n.t("{cad_table} '{name}': slot '{slot}' drives joint '{joint}', a slide; bench "
                                         "shafts turn, so give slots only to hinge joints", name=c.name,
-                                        slot=slot.slot, joint=j.name))
+                                        slot=slot.slot, joint=j.name, cad_table="[[cad]]"))
             axis = _rot(q, j.axis) * (-1.0 if slot.invert else 1.0)
             out.anchors.append((shaft, f"[[cad]] '{c.name}' joint '{j.name}'", p, axis / np.linalg.norm(axis)))
             carrier = shaft
@@ -374,7 +376,8 @@ def add_cad(spec: mujoco.MjSpec, pl: Placement, bench: Bench, shapes) -> tuple[d
         try:
             files = convex_pieces(c.mesh, c.units)
         except BenchError as e:
-            raise BenchError(i18n.t("[[cad]] '{name}': {error}", name=c.name, error=e)) from None
+            raise BenchError(i18n.t("{cad_table} '{name}': {error}", name=c.name, error=e,
+                                    cad_table="[[cad]]")) from None
         q = quat_from_rpy(c.rot_deg)
         for i, f in enumerate(files):
             mesh = _add_mesh(spec, f"cad:{c.name}:{i}", f, UNITS[c.units])
@@ -410,8 +413,9 @@ def add_cad(spec: mujoco.MjSpec, pl: Placement, bench: Bench, shapes) -> tuple[d
             try:
                 kws = _geom_kw(g, pl.part.base_dir)
             except BenchError as e:
-                raise BenchError(i18n.t("[[cad]] '{name}' body '{body}': {error}", name=c.name, body=b.name,
-                                        error=e)) from None
+                raise BenchError(i18n.t("{cad_table} '{name}' body '{body}': {error}", name=c.name, body=b.name,
+                                        error=e,
+                                        cad_table="[[cad]]")) from None
             for i, (kw, file) in enumerate(kws):
                 gname = f"cad:{c.name}:{b.name}:{k}:{i}"
                 if file is not None:

@@ -126,9 +126,10 @@ def _check_hook(p: dict, where: str = "climber") -> None:
     reach = w + bar_r + LATCH_RADIUS + LATCH_MARGIN     # the latch's length plus the bar's and its own radius
     need = math.sqrt(reach ** 2 - f["rho"] ** 2) + w / 2 - (hook_seat(p)[1] - f["center"][1])
     if depth < need:
-        raise PartError(t("{where}: hook_depth {depth} m is too short for the latch to close under a seated bar: make "
-                          "it at least {least} m, or set latch = \"none\"", where=where, depth=depth,
-                          least=math.ceil(need * 1000) / 1000), where=where, field="param:hook_depth")
+        raise PartError(t("{where}: hook_depth {depth} m is too short for the latch to close under a seated bar: "
+                          "make it at least {least} m, or set {latch_setting}", where=where, depth=depth,
+                          least=math.ceil(need * 1000) / 1000,
+                          latch_setting="latch = \"none\""), where=where, field="param:hook_depth")
 
 
 def _hook(p: dict, i: int, y: float) -> tuple[list[dict], dict | None]:

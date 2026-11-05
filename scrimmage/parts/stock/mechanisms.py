@@ -221,8 +221,8 @@ def _cylinder(p: dict) -> dict:
         cylinder["length"] = p["length"]
     if push:
         if push.count(".") != 1 or not all(push.split(".")):
-            raise PartError(t("cylinder: push must be \"<part>.<body>\" (the body the rod's end is pinned to), not "
-                              "{push}", push=repr(push)))
+            raise PartError(t("cylinder: push must be \"{part_body}\" (the body the rod's end is pinned to), not "
+                              "{push}", push=repr(push), part_body="<part>.<body>"))
         cylinder["pin_b"] = {"body": push, "pos": p["push_pos"]}
         return {"part": {"name": "cylinder", "format": 1},
                 "body": [{"name": "barrel", "mass": p["mass"] + p["rod_mass"], "geom": [barrel]}],

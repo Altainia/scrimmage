@@ -68,7 +68,8 @@ def model_timestep(cfg: dict, default: float | None = None) -> float | None:
         return default
     t = cfg["model"]["timestep"]
     if isinstance(t, bool) or not isinstance(t, (int, float)) or not math.isfinite(t) or t <= 0:
-        raise PartError(i18n.t("[model] timestep must be a positive number of seconds, not {value}", value=repr(t)))
+        raise PartError(i18n.t("{model_table} timestep must be a positive number of seconds, not {value}",
+                               value=repr(t), model_table="[model]"))
     return float(t)
 
 
@@ -260,7 +261,8 @@ class _Ctx:
             raise self.err(where, i18n.t("{key} must be a list of {n} numbers, not {value}",
                                          key=key, n=n, value=repr(v)))
         if not all(math.isfinite(x) for x in v):
-            raise self.err(where, i18n.t("{key} must contain only finite numbers, not {value}", key=key, value=repr(v)))
+            raise self.err(where, i18n.t("{key} must contain only finite numbers, not {value}", key=key,
+                                         value=repr(v)))
         return tuple(float(x) for x in v)
 
     def flag(self, d: dict, key: str, where: str, default: bool = False) -> bool:
@@ -289,8 +291,8 @@ class _Ctx:
                 if abs(n - 1.0) <= 1e-12:
                     return tuple(float(x) for x in v)
                 return tuple(float(x) / n for x in v)
-        raise self.err(where, i18n.t("{key} must be \"x\", \"y\", \"z\" or a non-zero [x, y, z], not {value}",
-                                     key=key, value=repr(v)))
+        raise self.err(where, i18n.t("{key} must be \"{x}\", \"{y}\", \"{z}\" or a non-zero [x, y, z], not {value}",
+                                     key=key, value=repr(v), x="x", y="y", z="z"))
 
 
 def _item(c: _Ctx, kind: str, item, i: int, key: str) -> str:
@@ -333,13 +335,15 @@ def _geom(c: _Ctx, g: dict, where: str, base_dir: Path | None) -> Geom:
         raise c.err(where, i18n.t("axis is for cylinders only; turn other shapes with rot"))
     axis = g.get("axis", "z")
     if not isinstance(axis, str) or axis not in AXES:
-        raise c.err(where, i18n.t("axis must be \"x\", \"y\" or \"z\", not {axis}", axis=repr(axis)))
+        raise c.err(where, i18n.t("axis must be \"{x}\", \"{y}\" or \"{z}\", not {axis}", axis=repr(axis), x="x",
+                                  y="y", z="z"))
     color = c.vec(g, "color", where, 4) if "color" in g else None
     solref = c.vec(g, "solref", where, 2) if "solref" in g else None
     collide = c.flag(g, "collide", where, default=True)
     tread = c.flag(g, "tread", where)
     if tread and not collide:
-        raise c.err(where, i18n.t("a tread geom must collide: remove collide = false or tread = true"))
+        raise c.err(where, i18n.t("a tread geom must collide: remove {collide_setting} or {tread_setting}",
+                                  collide_setting="collide = false", tread_setting="tread = true"))
     condim = g.get("condim")
     if condim is not None and condim not in (1, 3, 4, 6):
         raise c.err(where, i18n.t("condim must be 1, 3, 4 or 6, not {condim}", condim=repr(condim)))
@@ -369,7 +373,8 @@ def _joint(c: _Ctx, j: dict, where: str) -> Joint:
     name = c.name(j, "name", where)
     kinds = [k for k in ("hinge", "slide") if k in j]
     if len(kinds) != 1:
-        raise c.err(where, i18n.t("a joint needs exactly one of hinge = <axis> or slide = <axis>"))
+        raise c.err(where, i18n.t("a joint needs exactly one of {hinge_setting} or {slide_setting}",
+                                  hinge_setting="hinge = <axis>", slide_setting="slide = <axis>"))
     kind = kinds[0]
     rng = None
     if "range" in j:
@@ -411,7 +416,8 @@ def part_from_dict(d: dict, source: str, base_dir: Path | None) -> Part:
     c.keys(d, top, "")
     head = d.get("part")
     if not isinstance(head, dict):
-        raise c.err("", i18n.t("missing the [part] table (name = \"...\", format = 1)"))
+        raise c.err("", i18n.t("missing the {part_table} table ({name_setting}, {format_setting})",
+                               part_table="[part]", name_setting="name = \"...\"", format_setting="format = 1"))
     c.keys(head, ("name", "format"), "[part]")
     fmt = head.get("format", FORMAT)
     if not isinstance(fmt, int) or isinstance(fmt, bool):
@@ -443,7 +449,7 @@ def part_from_dict(d: dict, source: str, base_dir: Path | None) -> Part:
                                       parent=repr(parent), items=', '.join(x.name for x in bodies)))
         geom_list = b.get("geom", [])
         if not (isinstance(geom_list, list) and all(isinstance(g, dict) for g in geom_list)):
-            raise c.err(where, i18n.t("geom must be an array like `geom = [{{ box = [...] }}]`"))
+            raise c.err(where, i18n.t("geom must be an array like `{geom_box}`", geom_box="geom = [{ box = [...] }]"))
         geoms = [_geom(c, g, f"{where} geom {k}", base_dir) for k, g in enumerate(geom_list)]
         for k, g in enumerate(geoms):
             if g.name is not None:
@@ -473,7 +479,7 @@ def part_from_dict(d: dict, source: str, base_dir: Path | None) -> Part:
                            c.vec(b, "pos", where, default=ZERO3), c.vec(b, "rot", where, default=ZERO3),
                            joint, com, inertia, inertia_rot))
     if not bodies:
-        raise c.err("", i18n.t("a part needs at least one [[body]]"))
+        raise c.err("", i18n.t("a part needs at least one {body_table}", body_table="[[body]]"))
     for clash in sorted(geom_names.keys() & tread_names.keys()):
         body, k = tread_names[clash]
         raise c.err(geom_names[clash], i18n.t("geom name {clash} is the name of body {body}'s tread geom {key} "
@@ -509,7 +515,7 @@ def part_from_dict(d: dict, source: str, base_dir: Path | None) -> Part:
         where = "coupling"
         js = cp.get("joints")
         if not (isinstance(js, list) and len(js) == 2 and all(isinstance(x, str) for x in js)):
-            raise c.err(where, i18n.t("joints must be [\"a\", \"b\"] (b = ratio * a)"))
+            raise c.err(where, i18n.t("joints must be [\"{a}\", \"{b}\"] (b = ratio * a)", a="a", b="b"))
         ratio = c.num(cp, "ratio", where)
         if ratio == 0:
             raise c.err(where, i18n.t("ratio must not be 0"))

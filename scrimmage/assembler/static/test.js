@@ -662,7 +662,7 @@ function partnerBox() {
       h("input", { type: "checkbox", id: "test-partner", checked: on, onchange: (e) => setPartnerOn(e.target.checked) }),
       h("span", { text: t("A partner robot") }))];
   if (on) {
-    if (own) parts.push(h("p", { class: "hint", text: t("Where the robot file's [partner] puts it, until you change it here.") }));
+    if (own) parts.push(h("p", { class: "hint", text: t("Where the robot file's {table} puts it, until you change it here.", { table: "[partner]" }) }));
     const facing = FACING().some(([deg]) => deg === p.heading_deg) ? FACING()
       : [...FACING(), [p.heading_deg, t("turned {degrees}°", { degrees: fmt(p.heading_deg) })]];
     const sel = h("select", { id: "test-partner-facing", onchange: (e) => setPartner("heading_deg", Number(e.target.value)) },

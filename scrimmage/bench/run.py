@@ -425,9 +425,10 @@ class _Run:
     # ---------------------------------------------------------------------------------------------- loop
 
     def _blew_up(self, t: float, what: str) -> BenchRunError:
-        return BenchRunError(i18n.t("the run blew up at t = {t} s: {what}. A contact may be far too stiff for the "
-                                    "timestep ({dt} s): check the piece's stiffness and the [run] timestep",
-                                    t=f"{t:.4f}", what=what, dt=f"{self.dt:g}"))
+        return BenchRunError(i18n.t("the run blew up at {t_setting} s: {what}. A contact may be far too stiff for "
+                                    "the timestep ({dt} s): check the piece's stiffness and the {run_table} timestep",
+                                    what=what, dt=f"{self.dt:g}", t_setting="t = {}".format(f"{t:.4f}"),
+                                    run_table="[run]"))
 
     def check_inputs(self, t: float) -> list[tuple[float, int]]:
         """Before a step: the forces about to be applied must be finite (a NaN contact force is named here, before
@@ -464,7 +465,8 @@ class _Run:
             what = i18n.t("piece {n} is moving at {speed} m/s (over {most})", n=i, speed=f"{s_:.0f}",
                           most=f"{BLOWUP_SPEED:.0f}")
         elif not (np.isfinite(d.qpos).all() and np.isfinite(d.qvel).all()):
-            what = (i18n.t("piece {n} (the fastest) was in the bench when the state went non-finite", n=max(before)[1])
+            what = (i18n.t("piece {n} (the fastest) was in the bench when the state went non-finite",
+                           n=max(before)[1])
                     if before else i18n.t("no piece was in the bench, but the model's state went non-finite"))
         else:
             return

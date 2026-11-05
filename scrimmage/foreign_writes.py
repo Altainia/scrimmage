@@ -95,13 +95,15 @@ def cause(agent: str | None, language: str | None = None) -> str:
     if agent == "missing":
         # no agent line yet; Gradle passes the console on late, so it may only not have arrived
         return i18n.t("the robot console hasn't said the scrimmage Java agent is loaded (yet): if it isn't, run "
-                      "`scrimmage java build` if it isn't built, and run the robot program through scrimmage or its "
-                      "Gradle init script (see `scrimmage java path`)")
+                      "`{scrimmage_java_build}` if it isn't built, and run the robot program through scrimmage or "
+                      "its Gradle init script (see `{scrimmage_java_path}`)",
+                      scrimmage_java_build="scrimmage java build", scrimmage_java_path="scrimmage java path")
     if agent == "loaded":
         return i18n.t("the scrimmage agent is loaded, so something writes this device's sim values without going "
                       "through the Phoenix SimState setters (e.g. a SimDeviceSim or HAL write)")
-    return i18n.t("check that the scrimmage Java agent is built (`scrimmage java build`) and loaded "
-                  "(see `scrimmage java path`)")
+    return i18n.t("check that the scrimmage Java agent is built (`{scrimmage_java_build}`) and loaded (see "
+                  "`{scrimmage_java_path}`)", scrimmage_java_build="scrimmage java build",
+                  scrimmage_java_path="scrimmage java path")
 
 
 def by_device(writes: list[dict]) -> dict[str, list[dict]]:

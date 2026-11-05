@@ -385,16 +385,19 @@ def _opening(r: _Reader) -> Opening | RectOpening:
         o = r.sub("opening", _RECT)
         return RectOpening(width=o.num("width", positive=True), height=o.num("height", positive=True))
     if kind != "polygon":
-        raise o.err(i18n.t("kind must be \"polygon\" (the default) or \"rect\", not {kind}", kind=repr(kind)))
+        raise o.err(i18n.t("kind must be \"{polygon}\" (the default) or \"{rect}\", not {kind}", kind=repr(kind),
+                           polygon="polygon", rect="rect"))
     if o.has("width") or o.has("height"):
-        raise o.err(i18n.t("width and height are a rect opening's; add kind = \"rect\" or give {{ sides, "
-                           "across_flats }}"))
+        raise o.err(i18n.t("width and height are a rect opening's; add {kind_setting} or give {sides_across_form}",
+                           kind_setting="kind = \"rect\"", sides_across_form="{ sides, across_flats }"))
     polygon, circle = o.has("sides") or o.has("across_flats"), o.has("diameter")
     if polygon and circle:
-        raise o.err(i18n.t("has both sides/across_flats and diameter; give one: {{ sides, across_flats }} or {{ "
-                           "diameter }}"))
+        raise o.err(i18n.t("has both sides/across_flats and diameter; give one: {sides_across_form} or "
+                           "{diameter_form}", sides_across_form="{ sides, across_flats }",
+                           diameter_form="{ diameter }"))
     if not polygon and not circle:
-        raise o.err(i18n.t("has neither sides nor diameter; give {{ sides, across_flats }} or {{ diameter }}"))
+        raise o.err(i18n.t("has neither sides nor diameter; give {sides_across_form} or {diameter_form}",
+                           sides_across_form="{ sides, across_flats }", diameter_form="{ diameter }"))
     rotation = o.num("rotation_deg", 0.0)
     if circle:
         d = o.num("diameter", positive=True)
@@ -436,11 +439,12 @@ def _goal(path: Path, table, i: int, kinds: dict[str, PieceKind], default: str) 
     opening = _opening(r)
     rect = isinstance(opening, RectOpening)
     if rect and (r.has("funnel") or r.has("body")):
-        raise r.err(i18n.t("has a rect opening with a funnel or a body; a slot goal is built from its slot = {{ "
-                           "depth, frame }}"))
+        raise r.err(i18n.t("has a rect opening with a funnel or a body; a slot goal is built from its {slot_setting}",
+                           slot_setting="slot = { depth, frame }"))
     if r.has("slot") and not rect:
-        raise r.err(i18n.t("slot = {{ depth, frame }} is a rect opening's; give opening = {{ kind = \"rect\", "
-                           "width, height }}"))
+        raise r.err(i18n.t("{slot_setting} is a rect opening's; give {opening_setting}",
+                           slot_setting="slot = { depth, frame }",
+                           opening_setting="opening = { kind = \"rect\", width, height }"))
     slot = None
     if r.has("slot"):
         s = r.sub("slot", _SLOT)
@@ -463,7 +467,7 @@ def _goal(path: Path, table, i: int, kinds: dict[str, PieceKind], default: str) 
     plates = []
     raw_plates = r.t.get("plate", [])
     if not isinstance(raw_plates, list):
-        raise r.err(i18n.t("plate must be an array of tables ([[goal.plate]])"))
+        raise r.err(i18n.t("plate must be an array of tables ({goal_plate_table})", goal_plate_table="[[goal.plate]]"))
     for j, pt in enumerate(raw_plates):
         p = _Reader(path, f"[[goal]] '{name}' [[goal.plate]] #{j + 1}", pt, _PLATE)
         plates.append(Plate(name=p.text("name"), pos=p.nums("pos", 3), size=p.nums("size", 2, positive=True),
@@ -477,9 +481,9 @@ def _goal(path: Path, table, i: int, kinds: dict[str, PieceKind], default: str) 
     throat = g.throat_across_flats()
     if throat is not None and throat <= piece.diameter:
         raise RangeError(
-            i18n.t("{path}: [[goal]] '{name}' funnel: the throat is {throat} m across the flats, no wider than "
-                   "the ball ({diameter} m); make the funnel shallower or its walls steeper",
-                   path=path, name=name, throat=f"{throat:.4g}", diameter=piece.diameter)
+            i18n.t("{path}: {goal_table} '{name}' funnel: the throat is {throat} m across the flats, no wider than "
+                   "the ball ({diameter} m); make the funnel shallower or its walls steeper", path=path, name=name,
+                   throat=f"{throat:.4g}", diameter=piece.diameter, goal_table="[[goal]]")
         )
     return g
 
@@ -519,6 +523,14 @@ def _one_round_kind(kinds: dict[str, PieceKind]) -> bool:
     return len(kinds) == 1 and next(iter(kinds.values())).form != "rigid"
 
 
+def _floor_pieces(kinds: dict[str, PieceKind], floor_kinds: list[str]) -> list[str]:
+    """The piece each floor piece is, in a message: "ball" on a field of one ball or disc kind (as its names say),
+    else the kind's plain name ("coral")."""
+    if _one_round_kind(kinds):
+        return [i18n.t("ball")] * len(floor_kinds)
+    return [kinds[k].label for k in floor_kinds]
+
+
 def _floor_names(kinds: dict[str, PieceKind], floor_kinds: list[str]) -> list[str]:
     """What a student reads for each floor piece: "ball 3" on a field of one ball or disc kind (as always), else the
     kind's plain name and its number among that kind's floor pieces, from 1 ("coral 1")."""
@@ -536,12 +548,14 @@ def _floor_balls(path: Path, tables, kinds: dict[str, PieceKind],
                  default: str) -> tuple[np.ndarray, list[str], np.ndarray, np.ndarray, list[str]]:
     """The floor pieces: their positions, kinds, (tip_deg, rotation_deg) turns, reaches and names."""
     if not isinstance(tables, list):
-        raise RangeError(i18n.t("{path}: floor_balls must be an array of tables ([[floor_balls]])", path=path))
+        raise RangeError(i18n.t("{path}: floor_balls must be an array of tables ({floor_balls_table})", path=path,
+                                floor_balls_table="[[floor_balls]]"))
     parts, floor_kinds, turns, reaches = [], [], [], []
     for i, t in enumerate(tables):
         r = _Reader(path, f"[[floor_balls]] #{i + 1}", t, _FLOOR)
         if r.has("grid") == r.has("at"):
-            raise r.err(i18n.t("needs one of grid = {{ corner, step, count }} or at = [[x, y], ...]"))
+            raise r.err(i18n.t("needs one of {grid_setting} or {at_setting}",
+                               grid_setting="grid = { corner, step, count }", at_setting="at = [[x, y], ...]"))
         name = r.text("kind") if r.has("kind") else default
         kind = kind_named(path, r.where, name, kinds)
         tip = r.num("tip_deg", 90.0 if kind.flat else 0.0)
@@ -601,8 +615,8 @@ def _floor_balls(path: Path, tables, kinds: dict[str, PieceKind],
 def _ball(path: Path, name: str) -> Ball:
     if name not in PRESETS["ball"]:
         raise RangeError(
-            i18n.t("{path}: [range] ball: unknown ball preset {name}; known ball presets: {presets}",
-                   path=path, name=repr(name), presets=', '.join(PRESETS['ball']))
+            i18n.t("{path}: {range_table} ball: unknown ball preset {name}; known ball presets: {presets}", path=path,
+                   name=repr(name), presets=', '.join(PRESETS['ball']), range_table="[range]")
         )
     try:
         return _build_section("ball", {"preset": name})
@@ -612,11 +626,13 @@ def _ball(path: Path, name: str) -> Ball:
 
 def _disc(path: Path, name: str, aero: str) -> tuple[Disc, AeroSet]:
     if name not in DISC_PRESETS.get("disc", {}):
-        raise RangeError(i18n.t("{path}: [range] disc: unknown disc preset {name}; known disc presets: {presets}",
-                                path=path, name=repr(name), presets=', '.join(DISC_PRESETS.get('disc', {}))))
+        raise RangeError(i18n.t("{path}: {range_table} disc: unknown disc preset {name}; known disc presets: "
+                                "{presets}", path=path, name=repr(name),
+                                presets=', '.join(DISC_PRESETS.get('disc', {})), range_table="[range]"))
     if aero not in DISC_PRESETS.get("aero", {}):
-        raise RangeError(i18n.t("{path}: [range] aero: unknown aero set {aero}; known aero sets: {sets}",
-                                path=path, aero=repr(aero), sets=', '.join(DISC_PRESETS.get('aero', {}))))
+        raise RangeError(i18n.t("{path}: {range_table} aero: unknown aero set {aero}; known aero sets: {sets}",
+                                path=path, aero=repr(aero), sets=', '.join(DISC_PRESETS.get('aero', {})),
+                                range_table="[range]"))
     try:
         return disc_preset(name), aero_set(aero)
     except DiscConfigError as e:  # pragma: no cover - the shipped presets are complete
@@ -631,9 +647,10 @@ def _range_piece(path: Path, name: str) -> PieceKind:
         return ball_kind(name, name)
     if name in PRESETS.get("piece", {}):
         return kind_preset(name)
-    raise RangeError(i18n.t("{path}: [range] piece: unknown preset {name}; known ball presets: {presets}; known "
-                            "piece presets: {piece_presets}", path=path, name=repr(name),
-                            presets=', '.join(PRESETS['ball']), piece_presets=', '.join(PRESETS.get('piece', {}))))
+    raise RangeError(i18n.t("{path}: {range_table} piece: unknown preset {name}; known ball presets: {presets}; "
+                            "known piece presets: {piece_presets}", path=path, name=repr(name),
+                            presets=', '.join(PRESETS['ball']), piece_presets=', '.join(PRESETS.get('piece', {})),
+                            range_table="[range]"))
 
 
 def _kinds(path: Path, raw: dict, rng: _Reader) -> tuple[dict[str, PieceKind], str]:
@@ -642,19 +659,23 @@ def _kinds(path: Path, raw: dict, rng: _Reader) -> tuple[dict[str, PieceKind], s
 
     given = [k for k in ("ball", "disc", "piece") if rng.has(k)]
     if given == ["ball", "disc"]:
-        raise rng.err(i18n.t("has both ball and disc; a range has one game piece: give ball = \"<preset>\" or "
-                             "disc = \"<preset>\""))
+        raise rng.err(i18n.t("has both ball and disc; a range has one game piece: give {ball_setting} or "
+                             "{disc_setting}", ball_setting="ball = \"<preset>\"",
+                             disc_setting="disc = \"<preset>\""))
     if len(given) > 1:
         a, b = given[:2]
         raise rng.err(i18n.t("has both {a} and {b}; give {a} or {b}, not both", a=a, b=b))
     if rng.has("aero") and not rng.has("disc"):
-        raise rng.err(i18n.t("aero is a disc's aerodynamics; a ball range takes its air from the [shooter]"))
+        raise rng.err(i18n.t("aero is a disc's aerodynamics; a ball range takes its air from the {shooter_table}",
+                             shooter_table="[shooter]"))
     tables = raw.get("piece", {})
     if not isinstance(tables, dict) or not all(isinstance(t, dict) for t in tables.values()):
-        raise RangeError(i18n.t("{path}: piece must be tables ([piece.<name>])", path=path))
+        raise RangeError(i18n.t("{path}: piece must be tables ({piece_name_table})", path=path,
+                                piece_name_table="[piece.<name>]"))
     if not given and not tables:
-        raise rng.err(i18n.t("is missing its game piece: give ball = \"<ball preset>\", piece = \"<piece "
-                             "preset>\" or a [piece.<name>] table"))
+        raise rng.err(i18n.t("is missing its game piece: give {ball_setting}, {piece_setting} or a "
+                             "{piece_name_table} table", ball_setting="ball = \"<ball preset>\"",
+                             piece_setting="piece = \"<piece preset>\"", piece_name_table="[piece.<name>]"))
     kinds: dict[str, PieceKind] = {}
     if given == ["ball"] and is_measurement(rng.text("ball")):
         kind = measured_ball_kind(None, rng.text("ball"), path.parent, f"{path}: [range]")
@@ -673,14 +694,16 @@ def _kinds(path: Path, raw: dict, rng: _Reader) -> tuple[dict[str, PieceKind], s
         kinds[kind.name] = kind
     if rng.has("color"):        # the [range] ball's, disc's or piece's color (pieces.py's piece_color)
         if not given:
-            raise rng.err(i18n.t("color goes with its ball, disc or piece; give a [piece.<name>] its color there"))
+            raise rng.err(i18n.t("color goes with its ball, disc or piece; give a {piece_name_table} its color there",
+                                 piece_name_table="[piece.<name>]"))
         from .pieces import parse_color_key
         default = next(iter(kinds.values()))
         kinds[default.name] = replace(default, color=parse_color_key(f"{path}: [range]", rng.raw("color")))
     for name, t in tables.items():
         if name in kinds:
-            raise RangeError(i18n.t("{path}: [piece.{name}] has the same name as [range] {given}; give it another "
-                                    "name", path=path, name=name, given=given[0]))
+            raise RangeError(i18n.t("{path}: {piece_name_table} has the same name as {range_table} {given}; give it "
+                                    "another name", path=path, given=given[0],
+                                    piece_name_table="[piece.{}]".format(name), range_table="[range]"))
         kinds[name] = parse_kind(path, name, t, path.parent)
     return kinds, next(iter(kinds))
 
@@ -694,7 +717,8 @@ def parse_range(raw: dict, path: Path) -> Range:
     first_disc = next((k for k in kinds.values() if k.form == "disc"), None)
     goals_raw = raw.get("goal", [])
     if not isinstance(goals_raw, list):
-        raise RangeError(i18n.t("{path}: goal must be an array of tables ([[goal]])", path=path))
+        raise RangeError(i18n.t("{path}: goal must be an array of tables ({goal_table})", path=path,
+                                goal_table="[[goal]]"))
     goals = []
     for i, t in enumerate(goals_raw):
         g = _goal(path, t, i, kinds, default)
@@ -704,7 +728,8 @@ def parse_range(raw: dict, path: Path) -> Range:
         goals.append(g)
     starts_raw = raw.get("start", {})
     if not isinstance(starts_raw, dict):
-        raise RangeError(i18n.t("{path}: start must be tables ([start.<name>])", path=path))
+        raise RangeError(i18n.t("{path}: start must be tables ({start_name_table})", path=path,
+                                start_name_table="[start.<name>]"))
     starts = {}
     for name, t in starts_raw.items():
         starts[name] = _Reader(path, f"[start.{name}]", t, _START).nums("pose", 3)
@@ -714,13 +739,15 @@ def parse_range(raw: dict, path: Path) -> Range:
         raise carpet.err(i18n.t("rolling_resistance must be 0 or more, not {rolling}", rolling=repr(rolling)))
     obstacles_raw = raw.get("obstacle", [])
     if not isinstance(obstacles_raw, list):
-        raise RangeError(i18n.t("{path}: obstacle must be an array of tables ([[obstacle]])", path=path))
+        raise RangeError(i18n.t("{path}: obstacle must be an array of tables ({obstacle_table})", path=path,
+                                obstacle_table="[[obstacle]]"))
     obstacles = []
     for i, t in enumerate(obstacles_raw):
         o = _obstacle(path, t, i)
         if any(o.name == other for other in [g.name for g in goals] + [x.name for x in obstacles]):
-            raise RangeError(i18n.t("{path}: [[obstacle]] '{name}' shares its name with another goal or obstacle; "
-                                    "names must be unique", path=path, name=o.name))
+            raise RangeError(i18n.t("{path}: {obstacle_table} '{name}' shares its name with another goal or "
+                                    "obstacle; names must be unique", path=path, name=o.name,
+                                    obstacle_table="[[obstacle]]"))
         obstacles.append(o)
     from .elements import check_clear, parse_climb, parse_elements  # elements.py imports this module
     from .station import check_release_clear, parse_stations
@@ -729,7 +756,7 @@ def parse_range(raw: dict, path: Path) -> Range:
     climb, elements = parse_climb(path, raw.get("climb"), elements)
     floor_balls, floor_kinds, floor_turns, reaches, names = _floor_balls(path, raw.get("floor_balls", []), kinds,
                                                                         default)
-    check_clear(path, elements, starts, floor_balls, reaches, names)
+    check_clear(path, elements, starts, floor_balls, reaches, names, _floor_pieces(kinds, floor_kinds))
     taken = tuple([g.name for g in goals] + [o.name for o in obstacles] + [e.name for e in elements])
     stations = parse_stations(path, raw.get("station", []), kinds, default, taken)
     built = Range(name=rng.text("name"), ball_preset=first_ball.preset if first_ball else None,

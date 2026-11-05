@@ -15,7 +15,7 @@ from .checks import CHECK_KINDS, ScenarioError, bad, build_check
 from .driverstation import MODES, MatchSettings, check_game_data
 from .i18n import t, translated
 from .lockstep import parse_speed
-from .render import VIEWS_HELP, check_camera, check_sheet_size, check_size
+from .render import check_camera, check_sheet_size, check_size, views_help
 from .teamfolders import TeamFolderError, expand
 from .tracks import Track, TrackError, load_track
 
@@ -100,7 +100,8 @@ def _is_num(v) -> bool:
 def _ports(v, where: str, what: str, at: str) -> dict[int, list]:
     field = f"{at}{what}"
     if not isinstance(v, dict):
-        raise bad(where, t("{what} must be a table like {what} = {{ 0 = [...] }}", what=what), field=field)
+        raise bad(where, t("{what} must be a table like {what_setting}", what=what,
+                           what_setting="{} = {{ 0 = [...] }}".format(what)), field=field)
     out = {}
     for k, vals in v.items():
         if not str(k).isdigit() or not 0 <= int(k) <= 5 or not isinstance(vals, list):
@@ -166,7 +167,8 @@ def load_scenario_raw(raw: dict, path: str | Path, *, first_step: int = 1) -> Sc
     where = path.name
     _keys(raw, TOP_KEYS, where, "scenario/")
     if not isinstance(raw.get("config"), str):
-        raise bad(where, t("config = \"<robot config .toml>\" is required"), field="scenario/config")
+        raise bad(where, t("{config_setting} is required",
+                           config_setting="config = \"<robot config .toml>\""), field="scenario/config")
     try:
         config_ref = expand(raw["config"])
     except TeamFolderError as e:
@@ -180,12 +182,13 @@ def load_scenario_raw(raw: dict, path: str | Path, *, first_step: int = 1) -> Sc
         raise bad(where, t("require_lockstep must be true or false"), field="scenario/require_lockstep")
     steps_raw = raw.get("step", [])
     if not isinstance(steps_raw, list) or not steps_raw:
-        raise bad(where, t("needs at least one [[step]]"))
+        raise bad(where, t("needs at least one {step_table}", step_table="[[step]]"))
     steps = []
     for i, s in enumerate(steps_raw, first_step):
         sw, at_step = _step_where(where, i), f"step{i - 1}/"
         if not isinstance(s, dict):
-            raise bad(sw, t("each step must be a [[step]] table, not {value}", value=repr(s)))
+            raise bad(sw, t("each step must be a {step_table} table, not {value}", value=repr(s),
+                            step_table="[[step]]"))
         _keys(s, STEP_KEYS, sw, at_step)
         name = str(s.get("name", f"step {i}"))     # data: report.json's step name
         sw = _step_where(where, i, name) if "name" in s else sw
@@ -214,14 +217,17 @@ def load_scenario_raw(raw: dict, path: str | Path, *, first_step: int = 1) -> Sc
             except TrackError as e:
                 raise bad(sw, t("inputs: {problem}", problem=e), field=inputs) from None
             if track.samples and track.samples[-1].t > dur + 1e-9:
-                raise bad(sw, t("inputs: {file}: the last sample (t = {last}) is after the step's {duration} s",
-                                file=track.path.name, last=f"{track.samples[-1].t:g}", duration=f"{dur:g}"),
+                raise bad(sw, t("inputs: {file}: the last sample ({t_setting}) is after the step's {duration} s",
+                                file=track.path.name, duration=f"{dur:g}",
+                                t_setting="t = {}".format(f"{track.samples[-1].t:g}")),
                           field=inputs)
         checks = s.get("check", [])
         if isinstance(checks, dict):
-            raise bad(sw, t("use [[step.check]] (double brackets), one per check"), field=f"{at_step}check")
+            raise bad(sw, t("use {step_check_table} (double brackets), one per check",
+                            step_check_table="[[step.check]]"), field=f"{at_step}check")
         if not isinstance(checks, list):
-            raise bad(sw, t("checks are [[step.check]] tables"), field=f"{at_step}check")
+            raise bad(sw, t("checks are {step_check_table} tables",
+                            step_check_table="[[step.check]]"), field=f"{at_step}check")
         for j, c in enumerate(checks, 1):
             if not isinstance(c, dict):
                 raise bad(sw, t("check {n} must be a table, not {value}", n=j, value=repr(c)),
@@ -230,11 +236,11 @@ def load_scenario_raw(raw: dict, path: str | Path, *, first_step: int = 1) -> Sc
             kinds = [k for k in c]
             if len(kinds) != 1:
                 if kinds:
-                    detail = t("each [[step.check]] needs exactly one of {kinds}; got {got}",
-                               kinds=", ".join(CHECK_KINDS), got=", ".join(kinds))
+                    detail = t("each {step_check_table} needs exactly one of {kinds}; got {got}",
+                               kinds=", ".join(CHECK_KINDS), got=", ".join(kinds), step_check_table="[[step.check]]")
                 else:
-                    detail = t("each [[step.check]] needs exactly one of {kinds}; got nothing",
-                               kinds=", ".join(CHECK_KINDS))
+                    detail = t("each {step_check_table} needs exactly one of {kinds}; got nothing",
+                               kinds=", ".join(CHECK_KINDS), step_check_table="[[step.check]]")
                 raise bad(sw, detail, field=f"{at_step}check{j - 1}/check")
             if "by_time" in c:
                 _by_time(c["by_time"], dur, t("{step}, check {n}, by_time", step=sw, n=j),
@@ -242,9 +248,11 @@ def load_scenario_raw(raw: dict, path: str | Path, *, first_step: int = 1) -> Sc
         shots = []
         shots_raw = s.get("screenshot", [])
         if isinstance(shots_raw, dict):
-            raise bad(sw, t("use [[step.screenshot]] (double brackets), one per screenshot"), field=f"{at_step}shot")
+            raise bad(sw, t("use {step_screenshot_table} (double brackets), one per screenshot",
+                            step_screenshot_table="[[step.screenshot]]"), field=f"{at_step}shot")
         if not isinstance(shots_raw, list):
-            raise bad(sw, t("screenshots are [[step.screenshot]] tables"), field=f"{at_step}shot")
+            raise bad(sw, t("screenshots are {step_screenshot_table} tables",
+                            step_screenshot_table="[[step.screenshot]]"), field=f"{at_step}shot")
         for j, sh in enumerate(shots_raw, 1):
             shw, at_shot = t("{step}, screenshot {n}", step=sw, n=j), f"{at_step}shot{j - 1}/"
             if not isinstance(sh, dict):
@@ -254,9 +262,10 @@ def load_scenario_raw(raw: dict, path: str | Path, *, first_step: int = 1) -> Sc
             _keys(sh, SHOT_KEYS, shw, at_shot)
             at = sh.get("at", "end")
             if at != "end" and (not _is_num(at) or at < 0):
-                raise bad(shw, t("at must be \"end\" or seconds into the step"), field=f"{at_shot}at")
+                raise bad(shw, t("at must be \"{end}\" or seconds into the step", end="end"), field=f"{at_shot}at")
             if at != "end" and at > dur:
-                raise bad(shw, t("at = {at} is beyond the step's {duration} s", at=at, duration=f"{dur:g}"),
+                raise bad(shw, t("{at_setting} is beyond the step's {duration} s", duration=f"{dur:g}",
+                                 at_setting="at = {}".format(at)),
                           field=f"{at_shot}at")
             w_, h_ = _int(sh, "width", 960, shw, at_shot), _int(sh, "height", 600, shw, at_shot)
             _size(w_, h_, shw, at_shot)
@@ -266,9 +275,11 @@ def load_scenario_raw(raw: dict, path: str | Path, *, first_step: int = 1) -> Sc
             cs = s["contact_sheet"]
             csw, at_sheet = f"{sw}, contact_sheet", f"{at_step}sheet/"
             if not isinstance(cs, dict):
-                raise ScenarioError(t("{where} must be a table like [step.contact_sheet], not {value}", where=csw,
-                                      value=repr(cs)), field=f"{at_sheet}view",
-                                    detail=t("must be a table like [step.contact_sheet], not {value}", value=repr(cs)))
+                raise ScenarioError(t("{where} must be a table like {step_contact_sheet_table}, not {value}",
+                                      where=csw, value=repr(cs),
+                                      step_contact_sheet_table="[step.contact_sheet]"), field=f"{at_sheet}view",
+                                    detail=t("must be a table like {step_contact_sheet_table}, not {value}",
+                                             value=repr(cs), step_contact_sheet_table="[step.contact_sheet]"))
             _keys(cs, SHEET_KEYS, csw, at_sheet)
             sheet = SheetSpec(_int(cs, "frames", 8, csw, at_sheet), str(cs.get("view", "follow")),
                               _int(cs, "width", 480, csw, at_sheet), _int(cs, "height", 300, csw, at_sheet))
@@ -289,7 +300,8 @@ def load_scenario_raw(raw: dict, path: str | Path, *, first_step: int = 1) -> Sc
 def _by_time(spec, duration: float, where: str, field: str) -> None:
     """A by_time check's t: present, a number, and within the step (the rest is checked against the world)."""
     if not isinstance(spec, dict):
-        raise bad(where, t("expected a table like by_time = {{ signal = \"score\", min = 8, t = 15 }}"), field=field)
+        raise bad(where, t("expected a table like {by_time_setting}",
+                           by_time_setting="by_time = { signal = \"score\", min = 8, t = 15 }"), field=field)
     if "t" not in spec:
         raise bad(where, t("by_time needs t, the seconds into the step it must hold by"), field=field)
     when = spec["t"]
@@ -297,7 +309,8 @@ def _by_time(spec, duration: float, where: str, field: str) -> None:
         raise bad(where, t("t must be 0 or more seconds into the step, not {value}", value=repr(when)),
                   field=f"{field}.t")
     if when > duration + 1e-9:
-        raise bad(where, t("t = {t} is beyond the step's {duration} s", t=f"{when:g}", duration=f"{duration:g}"),
+        raise bad(where, t("{t_setting} is beyond the step's {duration} s", duration=f"{duration:g}",
+                           t_setting="t = {}".format(f"{when:g}")),
                   field=f"{field}.t")
 
 
@@ -309,10 +322,12 @@ def _range(raw: dict, path: Path, where: str) -> dict | None:
         return None
     field = "scenario/range"
     if not isinstance(sec, dict):
-        raise bad(where, t("range must be a [range] table with {keys}", keys=", ".join(RANGE_KEYS)), field=field)
+        raise bad(where, t("range must be a {range_table} table with {keys}", keys=", ".join(RANGE_KEYS),
+                           range_table="[range]"), field=field)
     for k in sec:
         if k not in RANGE_KEYS:
-            raise bad(where, t("range: {key} isn't a [range] key; use {keys}", key=repr(k), keys=", ".join(RANGE_KEYS)),
+            raise bad(where, t("range: {key} isn't a {range_table} key; use {keys}", key=repr(k),
+                               keys=", ".join(RANGE_KEYS), range_table="[range]"),
                       field=field)
     out = dict(sec)
     if "file" in sec:
@@ -339,8 +354,9 @@ def _range(raw: dict, path: Path, where: str) -> dict | None:
 def _robot_env(raw: dict, where: str) -> dict[str, str]:
     env = raw.get("robot_env", {})
     if not isinstance(env, dict) or not all(isinstance(v, str) for v in env.values()):
-        raise bad(where, t("robot_env must be a table of NAME = \"text\", e.g. robot_env = {{ SCRIMMAGE_AUTO = "
-                           "\"shoot\" }}"), field="scenario/robot_env")
+        raise bad(where, t("robot_env must be a table of {name_setting}, e.g. {robot_env_setting}",
+                           name_setting="NAME = \"text\"",
+                           robot_env_setting="robot_env = { SCRIMMAGE_AUTO = \"shoot\" }"), field="scenario/robot_env")
     return {str(k): v for k, v in env.items()}
 
 
@@ -368,8 +384,8 @@ def range_file(ref: str) -> Path:
 
 
 def no_range_message(config_path: Path) -> str:
-    return t("the scenario's [range] needs a robot on a test range, but {config} has no [range]: add [range] to the "
-             "config (see docs/test-range.md)", config=config_path)
+    return t("the scenario's {range_table} needs a robot on a test range, but {config} has no {range_table}: add "
+             "{range_table} to the config (see docs/test-range.md)", config=config_path, range_table="[range]")
 
 
 def _check_range(config, raw: dict, where: str) -> None:
@@ -411,8 +427,9 @@ def config_for(scenario: Scenario, config):
     rp = config.robot_program
     if scenario.robot_env:
         if rp is None:
-            raise bad(where, t("robot_env needs a robot program to give it to, but {config} has no [robot_program] "
-                               "(scrimmage doesn't launch the robot program)", config=config.path),
+            raise bad(where, t("robot_env needs a robot program to give it to, but {config} has no "
+                               "{robot_program_table} (scrimmage doesn't launch the robot program)",
+                               config=config.path, robot_program_table="[robot_program]"),
                       field="scenario/robot_env")
         rp = dataclasses.replace(rp, env={**rp.env, **scenario.robot_env})
     return dataclasses.replace(config, raw=raw, robot_program=rp)
@@ -432,8 +449,8 @@ def validate(scenario: Scenario, world, *, first_step: int = 1) -> None:
             except ValueError as e:
                 raise bad(shw, str(e), key="camera") from None
             if shot.view == "free" and "lookat" not in cam:
-                raise bad(shw, t("the free view needs camera = {{ lookat = [x, y, z] }} (and optionally distance, "
-                                 "azimuth, elevation)"), key="camera")
+                raise bad(shw, t("the free view needs {camera_setting} (and optionally distance, azimuth, elevation)",
+                                 camera_setting="camera = { lookat = [x, y, z] }"), key="camera")
         if step.contact_sheet is not None:
             csw = f"{where}, contact_sheet"
             if step.contact_sheet.view == "free":
@@ -445,7 +462,7 @@ def _check_view(view: str, world, where: str) -> None:
     if view in ("follow", "top", "free"):
         return
     if not view.startswith("camera:"):
-        raise bad(where, t("{help}, not {view}", help=translated(VIEWS_HELP), view=repr(view)), key="view")
+        raise bad(where, t("{help}, not {view}", help=views_help(), view=repr(view)), key="view")
     name = view.split(":", 1)[1]
     m = world.model
     names = [mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_CAMERA, i) for i in range(m.ncam)]

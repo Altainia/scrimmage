@@ -129,15 +129,16 @@ def _angle(t: dict, key: str, where: str) -> float | None:
 def _joint(t: dict, where: str) -> str:
     j = t.get("joint")
     if not isinstance(j, str) or not j:
-        raise ScriptError(i18n.t("{where}: needs joint = \"<part>.<joint>\" (a name from the robot's joints)",
-                                 where=where))
+        raise ScriptError(i18n.t("{where}: needs {joint_setting} (a name from the robot's joints)", where=where,
+                                 joint_setting="joint = \"<part>.<joint>\""))
     return j
 
 
 def _drive(t, where: str) -> Drive:
     if not isinstance(t, dict):
-        raise ScriptError(i18n.t("{where}: a drive is a table, {{ joint = \"...\", to = <position> }} or {{ joint "
-                                 "= \"...\", voltage = <V> }}", where=where))
+        raise ScriptError(i18n.t("{where}: a drive is a table, {joint_to_form} or {joint_voltage_form}", where=where,
+                                 joint_to_form="{ joint = \"...\", to = <position> }",
+                                 joint_voltage_form="{ joint = \"...\", voltage = <V> }"))
     _keys(t, ("joint", "to", "to_deg", "voltage", "max_voltage"), where)
     joint = _joint(t, where)
     to = _angle(t, "to", where)
@@ -165,17 +166,20 @@ def _release(v, where: str) -> tuple[tuple[str | None, float], ...]:
     if isinstance(v, dict):
         _keys(v, ("joint", "output"), where)
         if "output" not in v:
-            raise ScriptError(i18n.t("{where}: release = {{ joint = \"<latch joint>\", output = <-1 to 1> }}",
-                                     where=where))
+            raise ScriptError(i18n.t("{where}: {release_setting}", where=where,
+                                     release_setting="release = { joint = \"<latch joint>\", output = <-1 to 1> }"))
         return ((_joint(v, where), output(v["output"])),)
     return ((None, output(v)),)
 
 
 def _wait(t, where: str) -> Wait:
     if not isinstance(t, dict) or len(t) != 1 or next(iter(t)) not in WAIT_KINDS:
-        raise ScriptError(i18n.t("{where}: wait is one of {{ time = <s> }}, {{ joint_at = {{ joint, value, tol }} "
-                                 "}}, {{ swing_phase = \"{phase}\" }}, {{ hook_contact = \"<bar>\" }} or "
-                                 "{{ level = \"<level>\" }}", where=where, phase=SWING_PHASES[0]))
+        raise ScriptError(i18n.t("{where}: wait is one of {time_s_form}, {joint_at_form}, {swing_phase_form}, "
+                                 "{hook_contact_form} or {level_level_form}", where=where,
+                                 time_s_form="{ time = <s> }", joint_at_form="{ joint_at = { joint, value, tol } }",
+                                 swing_phase_form="{{ swing_phase = \"{}\" }}".format(SWING_PHASES[0]),
+                                 hook_contact_form="{ hook_contact = \"<bar>\" }",
+                                 level_level_form="{ level = \"<level>\" }"))
     kind, v = next(iter(t.items()))
     if kind == "time":
         s = _num(v, where, i18n.t("wait time"))
@@ -184,8 +188,8 @@ def _wait(t, where: str) -> Wait:
         return Wait("time", time=s)
     if kind == "joint_at":
         if not isinstance(v, dict):
-            raise ScriptError(i18n.t("{where}: joint_at = {{ joint = \"...\", value = <position>, tol = "
-                                     "<tolerance> }}", where=where))
+            raise ScriptError(i18n.t("{where}: {joint_at_setting}", where=where,
+                                     joint_at_setting="joint_at = { joint = \"...\", value = <position>, tol = <tolerance> }"))
         _keys(v, ("joint", "value", "value_deg", "tol", "tol_deg"), where)
         value = _angle(v, "value", where)
         if value is None:
@@ -199,14 +203,15 @@ def _wait(t, where: str) -> Wait:
         _keys(v, ("bar", "hook"), where)
         bar, hook = v.get("bar"), v.get("hook", "")
         if not isinstance(bar, str) or not bar or not isinstance(hook, str):
-            raise ScriptError(i18n.t("{where}: hook_contact = {{ bar = \"<bar>\", hook = \"<part>\" }}", where=where))
+            raise ScriptError(i18n.t("{where}: {hook_contact_setting}", where=where,
+                                     hook_contact_setting="hook_contact = { bar = \"<bar>\", hook = \"<part>\" }"))
         return Wait(kind, name=bar, hook=hook)
     if not isinstance(v, str) or not v:
         if kind == "swing_phase":
-            raise ScriptError(i18n.t("{where}: swing_phase names a phase", where=where))
+            raise ScriptError(i18n.t("{where}: {key} names a phase", where=where, key=kind))
         if kind == "hook_contact":
-            raise ScriptError(i18n.t("{where}: hook_contact names a contact", where=where))
-        raise ScriptError(i18n.t("{where}: level names a level", where=where))
+            raise ScriptError(i18n.t("{where}: {key} names a contact", where=where, key=kind))
+        raise ScriptError(i18n.t("{where}: {key} names a level", where=where, key=kind))
     if kind == "swing_phase" and v not in SWING_PHASES:
         raise ScriptError(i18n.t("{where}: swing_phase {value} isn't one of {phases}",
                                  where=where, value=repr(v), phases=', '.join(SWING_PHASES)))
@@ -215,7 +220,7 @@ def _wait(t, where: str) -> Wait:
 
 def _step(i: int, t, where: str) -> Step:
     if not isinstance(t, dict):
-        raise ScriptError(i18n.t("{where}: a step is a table ([[step]])", where=where))
+        raise ScriptError(i18n.t("{where}: a step is a table ({step_table})", where=where, step_table="[[step]]"))
     _keys(t, ("name", "drive", "release", "wait", "timeout"), where)
     name = t.get("name", f"step {i}")
     if not isinstance(name, str):
@@ -242,11 +247,11 @@ def parse_script(raw: dict, path: str = "<script>") -> Script:
     _keys(raw, ("goal", "limits", "step"), path)
     goal = raw.get("goal")
     if goal is not None and (not isinstance(goal, str) or not goal):
-        raise ScriptError(i18n.t("{path}: goal names a level of the range's [climb] levels, e.g. goal = \"HIGH\"",
-                                 path=path))
+        raise ScriptError(i18n.t("{path}: goal names a level of the range's {climb_table} levels, e.g. {goal_setting}",
+                                 path=path, climb_table="[climb]", goal_setting="goal = \"HIGH\""))
     lim = raw.get("limits", {})
     if not isinstance(lim, dict):
-        raise ScriptError(i18n.t("{path}: [limits] is a table", path=path))
+        raise ScriptError(i18n.t("{path}: {limits_table} is a table", path=path, limits_table="[limits]"))
     _keys(lim, ("extension_in", "height_in", "hit_force"), f"{path} [limits]")
     limits = Limits(
         extension=_num(lim.get("extension_in", G107_EXTENSION / 0.0254), path, "extension_in") * 0.0254,
@@ -255,10 +260,12 @@ def parse_script(raw: dict, path: str = "<script>") -> Script:
     for key, value in (("extension_in", limits.extension), ("height_in", limits.height),
                        ("hit_force", limits.hit_force)):
         if value <= 0:
-            raise ScriptError(i18n.t("{path} [limits]: {key} must be above 0", path=path, key=key))
+            raise ScriptError(i18n.t("{path} {limits_table}: {key} must be above 0", path=path, key=key,
+                                     limits_table="[limits]"))
     steps = raw.get("step")
     if not isinstance(steps, list) or not steps:
-        raise ScriptError(i18n.t("{path}: a climb script needs at least one [[step]]", path=path))
+        raise ScriptError(i18n.t("{path}: a climb script needs at least one {step_table}", path=path,
+                                 step_table="[[step]]"))
     return Script(tuple(_step(i, s, i18n.t("{path} step {number}", path=path, number=i))
                         for i, s in enumerate(steps, start=1)), goal, limits, path)
 

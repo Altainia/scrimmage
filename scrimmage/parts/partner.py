@@ -82,7 +82,8 @@ class PartnerInfo:
 
 def _number(v, key: str) -> float:
     if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
-        raise PartError(i18n.t("[partner] {key} must be a number, not {value}", key=key, value=repr(v)))
+        raise PartError(i18n.t("{partner_table} {key} must be a number, not {value}", key=key, value=repr(v),
+                               partner_table="[partner]"))
     return float(v)
 
 
@@ -92,36 +93,37 @@ def parse_partner(cfg: dict) -> PartnerSpec | None:
     if sec is None:
         return None
     if not isinstance(sec, dict):
-        raise PartError(i18n.t("[partner] must be a table"))
+        raise PartError(i18n.t("{partner_table} must be a table", partner_table="[partner]"))
     extra = [k for k in sec if k not in PARTNER_KEYS]
     if extra:
-        raise PartError(i18n.t("[partner]: unknown key {extra}; allowed: {partner_keys}",
-                               extra=repr(extra[0]), partner_keys=', '.join(PARTNER_KEYS)))
+        raise PartError(i18n.t("{partner_table}: unknown key {extra}; allowed: {partner_keys}", extra=repr(extra[0]),
+                               partner_keys=', '.join(PARTNER_KEYS), partner_table="[partner]"))
     start = sec.get("start")
     if start is None:
-        raise PartError(i18n.t("[partner] needs start = [x, y, heading_deg]: where the partner robot starts"))
+        raise PartError(i18n.t("{partner_table} needs {start_setting}: where the partner robot starts",
+                               partner_table="[partner]", start_setting="start = [x, y, heading_deg]"))
     if not (isinstance(start, list) and len(start) == 3 and all(
             isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in start)):
-        raise PartError(i18n.t("[partner] start must be [x, y, heading_deg], 3 finite numbers, not {start}",
-                               start=repr(start)))
+        raise PartError(i18n.t("{partner_table} start must be [x, y, heading_deg], 3 finite numbers, not {start}",
+                               start=repr(start), partner_table="[partner]"))
     kw: dict = {"start": tuple(float(v) for v in start)}
     for key in ("length", "width"):
         if key in sec:
             kw[key] = _number(sec[key], key)
             if kw[key] < MIN_SIZE:
-                raise PartError(i18n.t("[partner] {key} must be at least {min_size} m (its drive's wheels fit "
-                                       "inside the frame), not {value}",
-                                       key=key, min_size=f"{MIN_SIZE:g}", value=f"{kw[key]:g}"))
+                raise PartError(i18n.t("{partner_table} {key} must be at least {min_size} m (its drive's wheels fit "
+                                       "inside the frame), not {value}", key=key, min_size=f"{MIN_SIZE:g}",
+                                       value=f"{kw[key]:g}", partner_table="[partner]"))
     for key in ("mass", "bumper_clearance"):
         if key in sec:
             kw[key] = _number(sec[key], key)
             if kw[key] <= 0:
-                raise PartError(i18n.t("[partner] {key} must be more than 0, not {value}", key=key,
-                                       value=f"{kw[key]:g}"))
+                raise PartError(i18n.t("{partner_table} {key} must be more than 0, not {value}", key=key,
+                                       value=f"{kw[key]:g}", partner_table="[partner]"))
     if "brake" in sec:
         if not isinstance(sec["brake"], bool):
-            raise PartError(i18n.t("[partner] brake must be true (its wheels braked) or false (coasting), not "
-                                   "{brake}", brake=repr(sec['brake'])))
+            raise PartError(i18n.t("{partner_table} brake must be true (its wheels braked) or false (coasting), not "
+                                   "{brake}", brake=repr(sec['brake']), partner_table="[partner]"))
         kw["brake"] = sec["brake"]
     return PartnerSpec(**kw)
 
@@ -135,8 +137,8 @@ def _parts(p: PartnerSpec) -> tuple:
     drive = build_stock("differential", dparams, where)
     drive_mass = sum(b.mass for b in drive.bodies)
     if p.mass <= drive_mass:
-        raise PartError(i18n.t("[partner] mass must be more than its drive's {drive_mass} kg, not {mass}",
-                               drive_mass=f"{drive_mass:g}", mass=f"{p.mass:g}"))
+        raise PartError(i18n.t("{partner_table} mass must be more than its drive's {drive_mass} kg, not {mass}",
+                               drive_mass=f"{drive_mass:g}", mass=f"{p.mass:g}", partner_table="[partner]"))
     cparams = {"length": p.length, "width": p.width, "mass": p.mass - drive_mass,
                "bumper_clearance": p.bumper_clearance}
     chassis = build_stock("chassis", cparams, where)

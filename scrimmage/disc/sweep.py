@@ -23,8 +23,8 @@ def apply_overrides(raw: dict, overrides: dict[str, object]) -> dict:
             continue
         section, _, key = dotted.partition(".")
         if section not in _SECTIONS or not key:
-            raise DiscConfigError(i18n.t("[sweep] {dotted} is not section.key; sections: {sections}, or dt",
-                                         dotted=repr(dotted), sections=', '.join(_SECTIONS)))
+            raise DiscConfigError(i18n.t("{sweep_table} {dotted} is not section.key; sections: {sections}, or dt",
+                                         dotted=repr(dotted), sections=', '.join(_SECTIONS), sweep_table="[sweep]"))
         tables = out.setdefault(section, {})
         for table in tables if isinstance(tables, list) else [tables]:
             table[key] = copy.deepcopy(value)
@@ -39,8 +39,8 @@ def setups_for(path: Path) -> list[tuple[dict, DiscSetup]]:
     _, sweep, _ = load_setup(path)
     for dotted, values in sweep.items():
         if not isinstance(values, list) or not values:
-            raise DiscConfigError(i18n.t("[sweep] {dotted} must be a non-empty list of values, not {values}",
-                                         dotted=dotted, values=repr(values)))
+            raise DiscConfigError(i18n.t("{sweep_table} {dotted} must be a non-empty list of values, not {values}",
+                                         dotted=dotted, values=repr(values), sweep_table="[sweep]"))
     return ball.setups_for(path, **_disc)
 
 

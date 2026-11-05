@@ -139,28 +139,33 @@ def _plain(table: dict, key: str, where: str) -> float | None:
         return None
     v = table[key]
     if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
-        raise MeasureError(i18n.t("{where}: {key} must be a number, not {value}", where=where, key=key, value=repr(v)))
+        raise MeasureError(i18n.t("{where}: {key} must be a number, not {value}", where=where, key=key,
+                                  value=repr(v)))
     return float(v)
 
 
 def _check_keys(mf: MeasureFile, setup: dict, rows: list[dict]) -> None:
     for key in setup:
         if unit_of(key, "time") is not None or unit_of(key, "frames") is not None:
-            raise MeasureError(i18n.t("{path}: {key} goes in each [[stroke]], not in [stroke_setup]", path=mf.path,
-                                      key=key))
+            raise MeasureError(i18n.t("{path}: {key} goes in each {stroke_table}, not in {stroke_setup_table}",
+                                      path=mf.path, key=key, stroke_table="[[stroke]]",
+                                      stroke_setup_table="[stroke_setup]"))
         if key in (*SETUP_ONLY, *STROKE_NUMBERS) or any(unit_of(key, n) is not None for n in SETUP_READINGS):
             continue
-        raise MeasureError(i18n.t("{path}: unknown key '{key}' in [stroke_setup]; it takes bore_<unit>, rod_<unit>, "
-                                  "stroke_<unit>, load_mass_<unit>, rod_mass_<unit>, vertical, working_psi, "
-                                  "friction_<unit>, fps", path=mf.path, key=key))
+        raise MeasureError(i18n.t("{path}: unknown key '{key}' in {stroke_setup_table}; it takes bore_<unit>, "
+                                  "rod_<unit>, stroke_<unit>, load_mass_<unit>, rod_mass_<unit>, vertical, "
+                                  "working_psi, friction_<unit>, fps", path=mf.path, key=key,
+                                  stroke_setup_table="[stroke_setup]"))
     for i, row in enumerate(rows):
         for key in row:
             if key in SETUP_ONLY or any(unit_of(key, n) is not None for n in SETUP_READINGS):
-                raise MeasureError(i18n.t("{path}: {key} goes in [stroke_setup], once for all strokes, not in "
-                                          "[[stroke]] trial {n}", path=mf.path, key=key, n=i + 1))
+                raise MeasureError(i18n.t("{path}: {key} goes in {stroke_setup_table}, once for all strokes, not in "
+                                          "{stroke_table} trial {n}", path=mf.path, key=key, n=i + 1,
+                                          stroke_setup_table="[stroke_setup]", stroke_table="[[stroke]]"))
             if key not in STROKE_NUMBERS and not any(unit_of(key, n) is not None for n in STROKE_READINGS):
-                raise MeasureError(i18n.t("{path}: unknown reading '{key}' in [[stroke]] trial {n}; it takes "
-                                          "time_s, or frames and fps", path=mf.path, key=key, n=i + 1))
+                raise MeasureError(i18n.t("{path}: unknown reading '{key}' in {stroke_table} trial {n}; it takes "
+                                          "time_s, or frames and fps", path=mf.path, key=key, n=i + 1,
+                                          stroke_table="[[stroke]]"))
 
 
 def cylinder_of(mf: MeasureFile) -> dict[str, float]:
@@ -168,20 +173,21 @@ def cylinder_of(mf: MeasureFile) -> dict[str, float]:
     stroke, friction and rod_mass, the defaults filled in as the fit fills them."""
     table = mf.settings.get("stroke_setup", {})
     s = _stroke(mf, table)
-    rod_mass = reading(table, "mass", "rod_mass", where=i18n.t("{path}: [stroke_setup]", path=mf.path),
+    rod_mass = reading(table, "mass", "rod_mass", where=i18n.t("{path}: {stroke_setup_table}", path=mf.path,
+                                                               stroke_setup_table="[stroke_setup]"),
                        required=False)
     return {"bore": s.bore, "rod": s.rod, "stroke": s.stroke, "friction": s.friction_n,
             "rod_mass": ROD_MASS if rod_mass is None else rod_mass}
 
 
 def _stroke(mf: MeasureFile, table: dict) -> Stroke:
-    where = i18n.t("{path}: [stroke_setup]", path=mf.path)
+    where = i18n.t("{path}: {stroke_setup_table}", path=mf.path, stroke_setup_table="[stroke_setup]")
     lengths = {}
     for name in _LENGTHS:
         v = reading(table, "length", name, where=where, required=False)
         if v is None:
-            raise MeasureError(i18n.t("{where} has no {name}: write it as {name}_<unit> (bore_in = 1.0625)",
-                                      where=where, name=name))
+            raise MeasureError(i18n.t("{where} has no {name}: write it as {name}_<unit> ({bore_in_setting})",
+                                      where=where, name=name, bore_in_setting="bore_in = 1.0625"))
         if v <= 0:
             raise MeasureError(i18n.t("{where}: {name} must be above 0", where=where, name=name))
         lengths[name] = v
@@ -219,7 +225,7 @@ def trial_times(mf: MeasureFile, table: dict) -> tuple[list[float], list[float]]
     """Each stroke's time (s) and its resolution (s)."""
     times, resolutions = [], []
     for i, row in enumerate(mf.trials["stroke"]):
-        where = i18n.t("{path}: [[stroke]] trial {n}", path=mf.path, n=i + 1)
+        where = i18n.t("{path}: {stroke_table} trial {n}", path=mf.path, n=i + 1, stroke_table="[[stroke]]")
         seconds = reading(row, "time", where=where, required=False)
         frames = reading(row, "frames", where=where, required=False)
         if seconds is not None and frames is not None:
@@ -236,10 +242,12 @@ def trial_times(mf: MeasureFile, table: dict) -> tuple[list[float], list[float]]
             continue
         fps = _plain(row, "fps", where)
         if fps is None:
-            fps = _plain(table, "fps", i18n.t("{path}: [stroke_setup]", path=mf.path))
+            fps = _plain(table, "fps", i18n.t("{path}: {stroke_setup_table}", path=mf.path,
+                                              stroke_setup_table="[stroke_setup]"))
         if fps is None:
-            raise MeasureError(i18n.t("{where} has no fps: give the camera's frame rate once in [stroke_setup] or in "
-                                      "the stroke (fps = 240)", where=where))
+            raise MeasureError(i18n.t("{where} has no fps: give the camera's frame rate once in {stroke_setup_table} "
+                                      "or in the stroke ({fps_setting})", where=where,
+                                      stroke_setup_table="[stroke_setup]", fps_setting="fps = 240"))
         for name, v in (("frames", frames), ("fps", fps)):
             if v <= 0:
                 raise MeasureError(i18n.t("{where}: {name} must be above 0, not {value}", where=where, name=name,
@@ -275,8 +283,8 @@ def fit(mf: MeasureFile) -> CylinderFit:
         raise MeasureError(i18n.t("{path} is a {kind} measurement: only a cylinder file has strokes to fit",
                                   path=mf.path, kind=mf.kind))
     if "stroke" not in mf.trials:
-        raise MeasureError(i18n.t("{path}: a cylinder file needs its strokes, each written as a [[stroke]] table",
-                                  path=mf.path))
+        raise MeasureError(i18n.t("{path}: a cylinder file needs its strokes, each written as a {stroke_table} table",
+                                  path=mf.path, stroke_table="[[stroke]]"))
     table = mf.settings.get("stroke_setup", {})
     _check_keys(mf, table, mf.trials["stroke"])
     setup = _stroke(mf, table)
@@ -300,12 +308,12 @@ def fit(mf: MeasureFile) -> CylinderFit:
         # in psi whatever the Units setting: working_psi is the file's key, and this is also raised while a robot
         # config loads (measure/use.py), into report.json and MCP errors
         if setup.vertical:
-            raise MeasureError(i18n.t("{path}: [stroke_setup]: the model's cylinder can't lift its load at {psi} psi: "
-                                      "check the bore, load_mass, friction and working_psi", path=mf.path,
-                                      psi=f"{setup.working_psi:g}"))
-        raise MeasureError(i18n.t("{path}: [stroke_setup]: the model's cylinder can't push past its seals' friction "
-                                  "at {psi} psi: check the bore, load_mass, friction and working_psi", path=mf.path,
-                                  psi=f"{setup.working_psi:g}"))
+            raise MeasureError(i18n.t("{path}: {stroke_setup_table}: the model's cylinder can't lift its load at "
+                                      "{psi} psi: check the bore, load_mass, friction and working_psi", path=mf.path,
+                                      psi=f"{setup.working_psi:g}", stroke_setup_table="[stroke_setup]"))
+        raise MeasureError(i18n.t("{path}: {stroke_setup_table}: the model's cylinder can't push past its seals' "
+                                  "friction at {psi} psi: check the bore, load_mass, friction and working_psi",
+                                  path=mf.path, psi=f"{setup.working_psi:g}", stroke_setup_table="[stroke_setup]"))
 
     best = _crossing(time_at, measured)
     conductance, model_time = value(best), time_at(best)
@@ -331,7 +339,8 @@ def fit(mf: MeasureFile) -> CylinderFit:
         if best >= 0.5:
             warnings.append(i18n.t("the model's cylinder can't stroke this fast: its fastest is {fastest} s, and your "
                                    "strokes average {measured} s: check that the time runs from the valve opening to "
-                                   "the rod at full stroke", fastest=f"{time_at(1.0):.3f}", measured=f"{measured:.3f}"))
+                                   "the rod at full stroke", fastest=f"{time_at(1.0):.3f}",
+                                   measured=f"{measured:.3f}"))
         else:
             warnings.append(i18n.t("the model's cylinder strokes faster than this even with the slowest valve it "
                                    "tries: its slowest is {slowest} s, and your strokes average {measured} s: check the "

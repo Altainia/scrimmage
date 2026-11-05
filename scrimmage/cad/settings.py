@@ -120,8 +120,8 @@ class PartSettings:
 
     def __post_init__(self):
         if self.attach is not None and (not isinstance(self.attach, str) or not self.attach):
-            raise CadError(i18n.t("attach must name a body, such as \"arm_B\", not {attach}: fix it or remove it.",
-                                  attach=repr(self.attach)))
+            raise CadError(i18n.t("attach must name a body, such as \"{arm_b}\", not {attach}: fix it or remove it.",
+                                  attach=repr(self.attach), arm_b="arm_B"))
 
 
 @dataclass
@@ -397,7 +397,8 @@ def remove_empty_bodies(imp: ImportFile) -> tuple[ImportFile, list[str]]:
             what = words[0] if len(words) == 1 else i18n.t("{names} and {last}", names=", ".join(words[:-1]),
                                                            last=words[-1])
             msg = i18n.tn("{name} is no longer in the CAD; its {items} was dropped",
-                          "{name} is no longer in the CAD; its {items} were dropped", len(gone), name=name, items=what)
+                          "{name} is no longer in the CAD; its {items} were dropped", len(gone), name=name,
+                          items=what)
         if b.parent is None and heir is not None and imp.bodies[heir].joint is not None:
             hb = imp.bodies[heir]
             hb.joint = hb.motor = hb.encoder = None

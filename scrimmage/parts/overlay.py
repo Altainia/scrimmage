@@ -172,7 +172,7 @@ def apply_overlay(part: Part, edits: dict, source: str) -> tuple[Part, list[str]
     fixed: set[str] = set()
     bodies = edits.get("body", {})
     if not isinstance(bodies, dict):
-        raise _err(i18n.t("[body.<name>] tables expected"))
+        raise _err(i18n.t("{body_name_table} tables expected", body_name_table="[body.<name>]"))
     for name, e in bodies.items():
         _check_keys(e, BODY_KEYS, f"[body.{name}]")
         if name not in by_name:
@@ -187,8 +187,9 @@ def apply_overlay(part: Part, edits: dict, source: str) -> tuple[Part, list[str]
         if "collision" in e:
             mode = e["collision"]
             if mode not in COLLISION:
-                raise _err(i18n.t("[body.{name}] collision must be one of {collision}, not {mode}",
-                                  name=name, collision=', '.join(COLLISION), mode=repr(mode)))
+                raise _err(i18n.t("{body_name_table} collision must be one of {collision}, not {mode}",
+                                  collision=', '.join(COLLISION), mode=repr(mode),
+                                  body_name_table="[body.{}]".format(name)))
             _collision(b, orig[name], mode, part.base_dir, warns)
         if "joint" in e:
             je = e["joint"]

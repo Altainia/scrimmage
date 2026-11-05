@@ -186,7 +186,7 @@ def _set_material(imp, a):
 
 def _set_mass(imp, a):
     if "kg" not in a:
-        _fail("kg", i18n.t("Say the mass in kg, or kg = none to clear it."))
+        _fail("kg", i18n.t("Say the mass in kg, or {kg_setting} to clear it.", kg_setting="kg = none"))
     kg = a.get("kg")
     if kg is not None:
         kg = _number(kg, "kg", "The mass")
@@ -294,21 +294,25 @@ def _set_joint(imp, a):
         if b.parent is not None:
             _fail("parent", i18n.t("{name} needs a parent body: pick one, or make it a new part instead.", name=name))
         if spec is not None:
-            _fail("joint", i18n.t("{name} is the root of a part, and a root can't have a joint: remove the joint.", name=name))
+            _fail("joint", i18n.t("{name} is the root of a part, and a root can't have a joint: remove the joint.",
+                                  name=name))
     else:
         _body(imp, parent, "parent")
         if parent == name:
             _fail("parent", i18n.t("{name} can't hang on itself: pick another body.", name=name))
         if parent in _descendants(imp, name):
-            _fail("parent", i18n.t("{name} can't hang on {parent}: {parent} already hangs on {name}", name=name, parent=parent))
+            _fail("parent", i18n.t("{name} can't hang on {parent}: {parent} already hangs on {name}", name=name,
+                                   parent=parent))
         if b.parent is None and b.part is not None:
-            _fail("parent", i18n.t("{name} is the root of part {part}: remove that part before hanging it on another body.", name=name, part=b.part))
+            _fail("parent", i18n.t("{name} is the root of part {part}: remove that part before hanging it on another body.",
+                                   name=name, part=b.part))
     joint = None if spec is None else _build(JointSettings, spec, "joint")
     if joint is not None:
         joint.anchor = _vec3(joint.anchor, "anchor", "The anchor")
         joint.axis = _vec3(joint.axis, "axis", "The axis", unit=True)
         if joint.kind == "slide" and b.motor is not None and not b.motor.spool_diameter:
-            _fail("joint", i18n.t("{name} has a motor that needs a spool diameter to drive a slide: set the motor first.", name=name))
+            _fail("joint", i18n.t("{name} has a motor that needs a spool diameter to drive a slide: set the motor first.",
+                                  name=name))
     b.parent = parent
     b.joint = joint
     if joint is None:
@@ -375,14 +379,16 @@ def _remove_mount(imp, a):
     b = _body(imp, a.get("body"))
     keep = [m for m in b.mounts if m.name != a.get("name")]
     if len(keep) == len(b.mounts):
-        _fail("name", i18n.t("{body} has no mount called {name}: pick one from the list.", body=a['body'], name=a.get('name')))
+        _fail("name", i18n.t("{body} has no mount called {name}: pick one from the list.", body=a['body'],
+                             name=a.get('name')))
     b.mounts = keep
 
 
 def _set_collision(imp, a):
     mode = a.get("mode")
     if mode not in COLLISIONS:
-        _fail("mode", i18n.t("Collision is one of {modes}, not {mode}: pick one.", modes=', '.join(COLLISIONS), mode=repr(mode)))
+        _fail("mode", i18n.t("Collision is one of {modes}, not {mode}: pick one.", modes=', '.join(COLLISIONS),
+                             mode=repr(mode)))
     _body(imp, a.get("body")).collision = mode
 
 
@@ -400,7 +406,8 @@ def _set_part(imp, a):
             _fail("parent", i18n.t("Say which body {name} should hang on once it stops being a part.", name=name))
         _body(imp, parent, "parent")
         if parent == name or parent in _descendants(imp, name):
-            _fail("parent", i18n.t("{name} can't hang on {parent}: {parent} already hangs on {name}", name=name, parent=parent))
+            _fail("parent", i18n.t("{name} can't hang on {parent}: {parent} already hangs on {name}", name=name,
+                                   parent=parent))
         imp.parts.pop(b.part, None)
         b.part, b.parent = None, parent
         return
@@ -442,7 +449,8 @@ def _add_coupling(imp, a):
 def _remove_coupling(imp, a):
     keep = [c for c in imp.couplings if not (c.get("a") == a.get("a") and c.get("b") == a.get("b"))]
     if len(keep) == len(imp.couplings):
-        _fail("a", i18n.t("There is no coupling from {a} to {b}: pick one from the list.", a=a.get('a'), b=a.get('b')))
+        _fail("a", i18n.t("There is no coupling from {a} to {b}: pick one from the list.", a=a.get('a'),
+                          b=a.get('b')))
     imp.couplings = keep
 
 
@@ -457,7 +465,8 @@ def _add_loop(imp, a):
 def _remove_loop(imp, a):
     keep = [c for c in imp.loops if not (c.get("body1") == a.get("body1") and c.get("body2") == a.get("body2"))]
     if len(keep) == len(imp.loops):
-        _fail("body1", i18n.t("There is no loop between {a} and {b}: pick one from the list.", a=a.get('body1'), b=a.get('body2')))
+        _fail("body1", i18n.t("There is no loop between {a} and {b}: pick one from the list.", a=a.get('body1'),
+                              b=a.get('body2')))
     imp.loops = keep
 
 
@@ -469,10 +478,12 @@ def _set_frame(imp, a):
     f = dict(a)
     for k in ("up", "front"):
         if k in f and f[k] not in AXES:
-            _fail(k, i18n.t("The robot's {k} direction must be one of {axes}, not {value}: pick one.", k=k, axes=', '.join(AXES), value=repr(f[k])))
+            _fail(k, i18n.t("The robot's {k} direction must be one of {axes}, not {value}: pick one.", k=k,
+                            axes=', '.join(AXES), value=repr(f[k])))
     up, front = f.get("up", imp.frame.up), f.get("front", imp.frame.front)
     if up[1] == front[1]:
-        _fail("front", i18n.t("Up ({up}) and front ({front}) must point along different axes: change one.", up=up, front=front))
+        _fail("front", i18n.t("Up ({up}) and front ({front}) must point along different axes: change one.", up=up,
+                              front=front))
     if "floor" in f and (isinstance(f["floor"], bool) or not isinstance(f["floor"], (int, float))
                          or not math.isfinite(f["floor"])):
         _fail("floor", i18n.t("The floor must be a number (CAD meters along up): enter one."))
@@ -498,7 +509,8 @@ def _set_units(imp, a):
     if imp.source.lower().endswith(STEP_SUFFIXES):
         _fail("units", i18n.t("A STEP file carries its own units: only STL and OBJ files can change them."))
     if a.get("units") not in UNITS:
-        _fail("units", i18n.t("Units are one of {units}, not {value}: pick one.", units=', '.join(UNITS), value=repr(a.get('units'))))
+        _fail("units", i18n.t("Units are one of {units}, not {value}: pick one.", units=', '.join(UNITS),
+                              value=repr(a.get('units'))))
     imp.units = a["units"]
 
 

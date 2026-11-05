@@ -197,13 +197,15 @@ def _station(path, table, i: int, kinds: dict[str, PieceKind], default: str, tak
         raise RangeError(i18n.t("{path}: {where}: stations feed balls; this range's piece is a disc",
                                 path=path, where=r.where))
     if name in taken:
-        raise RangeError(i18n.t("{path}: [[station]] '{name}' shares its name with another station, goal, "
-                                "obstacle or element; names must be unique", path=path, name=name))
+        raise RangeError(i18n.t("{path}: {station_table} '{name}' shares its name with another station, goal, "
+                                "obstacle or element; names must be unique", path=path, name=name,
+                                station_table="[[station]]"))
     for key in ("release", "spread_position"):
         if r.has(key) and r.has(key + "_in"):
             raise r.err(i18n.t("has both {key} and {key}_in; give one", key=key))
     if r.has("release") == r.has("release_in"):
-        raise r.err(i18n.t("needs one of release = [x, y, z] (m) or release_in = [x, y, z] (in)"))
+        raise r.err(i18n.t("needs one of {release_setting} (m) or {release_in_setting} (in)",
+                           release_setting="release = [x, y, z]", release_in_setting="release_in = [x, y, z]"))
     release = r.nums("release", 3) if r.has("release") else tuple(v * IN for v in r.nums("release_in", 3))
     if r.has("spread_position_in"):
         spread_position = tuple(v * IN for v in r.nums("spread_position_in", 3))
@@ -275,7 +277,8 @@ def parse_stations(path, tables, kinds: dict[str, PieceKind], default: str,
     """Read the `[[station]]` tables, feeding the field's `kinds` (`default` when a station names none). `taken` are
     the names of the goals, obstacles and elements, which a station's name may not repeat."""
     if not isinstance(tables, list):
-        raise RangeError(i18n.t("{path}: station must be an array of tables ([[station]])", path=path))
+        raise RangeError(i18n.t("{path}: station must be an array of tables ({station_table})", path=path,
+                                station_table="[[station]]"))
     out: list[Station] = []
     for i, t in enumerate(tables):
         out.append(_station(path, t, i, kinds, default, list(taken) + [s.name for s in out]))
@@ -343,15 +346,15 @@ def check_release_clear(path, rng: Range) -> None:
                 if np.linalg.norm(local - np.clip(local, -half, half)) < r - _TOUCH:
                     x, y, z = st.release
                     if kind.ball is not None:
-                        raise RangeError(i18n.t("{path}: [[station]] '{name}': its release point at ({x}, {y}, {z}) "
-                                                "is inside {what}; move it clear (the ball's center needs {r} m all "
-                                                "round)", path=path, name=st.name, x=f"{x:.4g}", y=f"{y:.4g}",
-                                                z=f"{z:.4g}", what=what, r=f"{r:.2g}"))
-                    raise RangeError(i18n.t("{path}: [[station]] '{name}': its release point at ({x}, {y}, {z}) is "
-                                            "inside {what}; move it clear (the {piece}'s center needs {r} m all "
-                                            "round)",
-                                            path=path, name=st.name, x=f"{x:.4g}", y=f"{y:.4g}", z=f"{z:.4g}",
-                                            what=what, piece=kind.label, r=f"{r:.2g}"))
+                        raise RangeError(i18n.t("{path}: {station_table} '{name}': its release point at ({x}, {y}, "
+                                                "{z}) is inside {what}; move it clear (the ball's center needs {r} m "
+                                                "all round)", path=path, name=st.name, x=f"{x:.4g}", y=f"{y:.4g}",
+                                                z=f"{z:.4g}", what=what, r=f"{r:.2g}", station_table="[[station]]"))
+                    raise RangeError(i18n.t("{path}: {station_table} '{name}': its release point at ({x}, {y}, {z}) "
+                                            "is inside {what}; move it clear (the {piece}'s center needs {r} m all "
+                                            "round)", path=path, name=st.name, x=f"{x:.4g}", y=f"{y:.4g}",
+                                            z=f"{z:.4g}", what=what, piece=kind.label, r=f"{r:.2g}",
+                                            station_table="[[station]]"))
 
 
 def _corners(center, rot, half) -> np.ndarray:
@@ -392,7 +395,8 @@ def _check_chutes(path, rng: Range, solids, chutes: dict) -> None:
     for st in rng.stations:
         if st.chute is None:
             continue
-        where = i18n.t("{path}: [[station]] '{name}': its chute", path=path, name=st.name)
+        where = i18n.t("{path}: {station_table} '{name}': its chute", path=path, name=st.name,
+                       station_table="[[station]]")
         for part, box in chutes[st.name].items():
             part_words = i18n.translated(CHUTE_PARTS[part])
             c = _corners(*box)

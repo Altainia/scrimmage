@@ -41,8 +41,9 @@ def _reject_duplicate_devices(*groups) -> None:
                     said = {"device": what, "a": other[1], "b": _label(b, i)}
                     if encoder is not None:
                         message = t("{device} is bound by {a} and {b}: give each device one binding (an encoder on "
-                                    "channel_a = {channel} takes DIO {channel} and {next})", **said,
-                                    channel=encoder.channel_a, next=encoder.channel_a + 1)
+                                    "{channel_a_setting} takes DIO {channel} and {next})", **said,
+                                    channel=encoder.channel_a, next=encoder.channel_a + 1,
+                                    channel_a_setting="channel_a = {}".format(encoder.channel_a))
                     else:
                         message = t("{device} is bound by {a} and {b}: give each device one binding", **said)
                     raise PartError(message, fields=_slot_field(other[0]) + _slot_field(b))
@@ -81,30 +82,35 @@ class World:
         self.parts = None
         if "part" not in cfg and "mjcf" not in mcfg:
             if "parts" in cfg:
-                raise ValueError(t("describe the robot with [[part]] entries (see docs/parts.md) or [model] mjcf = "
-                                   "<file> (did you mean [[part]]?)"))
-            raise ValueError(t("describe the robot with [[part]] entries (see docs/parts.md) or [model] mjcf = <file>"))
+                raise ValueError(t("describe the robot with {part_table} entries (see docs/parts.md) or "
+                                   "{model_table} {mjcf_setting} (did you mean {part_table}?)", part_table="[[part]]",
+                                   model_table="[model]", mjcf_setting="mjcf = <file>"))
+            raise ValueError(t("describe the robot with {part_table} entries (see docs/parts.md) or {model_table} "
+                               "{mjcf_setting}", part_table="[[part]]", model_table="[model]",
+                               mjcf_setting="mjcf = <file>"))
         if "range" in cfg and "part" not in cfg:
             from .parts.model import PartError
-            raise PartError(t("a range needs a robot built from [[part]]: [model] mjcf robots can't have a "
-                                   "[range]"))
+            raise PartError(t("a range needs a robot built from {part_table}: {model_table} mjcf robots can't have a "
+                              "{range_table}", part_table="[[part]]", model_table="[model]", range_table="[range]"))
         if "partner" in cfg and "part" not in cfg:
             from .parts.model import PartError
-            raise PartError(t("a [partner] robot needs a robot built from [[part]]: [model] mjcf robots "
-                                   "can't have one"))
+            raise PartError(t("a {partner_table} robot needs a robot built from {part_table}: {model_table} mjcf "
+                              "robots can't have one", partner_table="[partner]", part_table="[[part]]",
+                              model_table="[model]"))
         start_pose = parse_start_pose(rcfg.get("start_pose"))
         self.warnings: list[str] = []
         if "part" in cfg:
             if "mjcf" in mcfg:
-                raise ValueError(t("use either [model] mjcf = <hand-written model> or [[part]] entries, not "
-                                        "both"))
+                raise ValueError(t("use either {model_table} {mjcf_setting} or {part_table} entries, not both",
+                                   model_table="[model]", mjcf_setting="mjcf = <hand-written model>",
+                                   part_table="[[part]]"))
             for k in ("motor", "encoder", "gyro"):
                 if cfg.get(k):
-                    raise ValueError(t("[[{key}]] entries don't go with [[part]]: give the part's slot an ID "
-                                            "in its ids table instead", key=k))
+                    raise ValueError(t("[[{key}]] entries don't go with {part_table}: give the part's slot an ID in "
+                                       "its ids table instead", key=k, part_table="[[part]]"))
             if "body" in rcfg:
-                raise ValueError(t("[robot] body is set by the root part when the robot is built from "
-                                        "[[part]]"))
+                raise ValueError(t("{robot_table} body is set by the root part when the robot is built from "
+                                   "{part_table}", robot_table="[robot]", part_table="[[part]]"))
             from .parts.assemble import assemble
             self.parts = assemble(cfg, cfg_dir)
             self.model = self.parts.model

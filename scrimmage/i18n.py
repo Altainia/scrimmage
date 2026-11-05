@@ -304,14 +304,15 @@ def N_(source: str, /) -> str:
     return source
 
 
-def translated(source: str, /, *, lang: str | None = None) -> str:
+def translated(source: str, /, *, lang: str | None = None, **params) -> str:
     """The translation of `source`, text marked with N_() where it was defined (or text that has no catalog entry,
-    which reads as it is). No placeholders are filled: N_() text has none."""
+    which reads as it is). With `params`, its {placeholders} are filled as t()'s are (N_() text that holds what a
+    student types, a key or a value, takes it as a placeholder); without, the text is returned as it is."""
     if not source:
         return source
     lang = lang or current_language()
     entry = _entry(source, lang, plural=False)
-    return entry if entry else source
+    return _fill(entry or source, params, source) if params else (entry if entry else source)
 
 
 def catalog_version(lang: str) -> str:

@@ -81,7 +81,7 @@ def lockstep_version_problem(config: Config) -> str | None:
         why = "lockstep"
     else:
         return None
-    said = {"config": config.path, "need": ".".join(map(str, need_version))}
+    said = {"config": config.path, "need": ".".join(map(str, need_version)), "install": "pip install ./lockstep"}
     try:
         have = metadata.version("scrimmage-lockstep")
     except metadata.PackageNotFoundError:
@@ -89,15 +89,15 @@ def lockstep_version_problem(config: Config) -> str | None:
             return None
         if why == "ph":
             return t("{config} binds valves on a REV Pneumatic Hub, which needs scrimmage-lockstep {need} or later, but "
-                     "it isn't installed: `pip install ./lockstep`", **said)
+                     "it isn't installed: `{install}`", **said)
         if why == "java":
             return t("{config} runs a Java robot, which needs scrimmage-lockstep {need} or later, but it isn't "
-                     "installed: `pip install ./lockstep`", **said)
+                     "installed: `{install}`", **said)
         if why == "rev":
             return t("{config} binds REV SPARKs on a RobotPy robot, which needs scrimmage-lockstep {need} or later, but "
-                     "it isn't installed: `pip install ./lockstep`", **said)
+                     "it isn't installed: `{install}`", **said)
         return t("{config} runs a RobotPy robot with --scrimmage-lockstep, which needs scrimmage-lockstep {need} or "
-                 "later, but it isn't installed: `pip install ./lockstep`", **said)
+                 "later, but it isn't installed: `{install}`", **said)
     nums = []
     for part in have.split(".")[:3]:
         digits = "".join(itertools.takewhile(str.isdigit, part))
@@ -106,15 +106,15 @@ def lockstep_version_problem(config: Config) -> str | None:
         said["have"] = have
         if why == "ph":
             return t("{config} binds valves on a REV Pneumatic Hub, which needs scrimmage-lockstep {need} or later "
-                     "(installed: {have}): reinstall it with `pip install ./lockstep`", **said)
+                     "(installed: {have}): reinstall it with `{install}`", **said)
         if why == "java":
             return t("{config} runs a Java robot, which needs scrimmage-lockstep {need} or later (installed: {have}): "
-                     "reinstall it with `pip install ./lockstep`", **said)
+                     "reinstall it with `{install}`", **said)
         if why == "rev":
             return t("{config} binds REV SPARKs on a RobotPy robot, which needs scrimmage-lockstep {need} or later "
-                     "(installed: {have}): reinstall it with `pip install ./lockstep`", **said)
+                     "(installed: {have}): reinstall it with `{install}`", **said)
         return t("{config} runs a RobotPy robot with --scrimmage-lockstep, which needs scrimmage-lockstep {need} or "
-                 "later (installed: {have}): reinstall it with `pip install ./lockstep`", **said)
+                 "later (installed: {have}): reinstall it with `{install}`", **said)
     return None
 
 
@@ -187,12 +187,14 @@ def connect_timeout_hint(command: list[str], cwd) -> str:
     """What to add to "the robot program didn't connect" when the command is Gradle's wrapper."""
     if Path(command[0]).name not in ("gradlew", "gradlew.bat"):
         return ""
-    hint = "; " + t("first Gradle runs download dependencies: run `./gradlew build` once in {cwd}, or raise "
-                    "[robot_program] start_timeout", cwd=cwd)
+    hint = "; " + t("first Gradle runs download dependencies: run `{gradlew_build}` once in {cwd}, or raise "
+                    "{robot_program_table} start_timeout", cwd=cwd, gradlew_build="./gradlew build",
+                    robot_program_table="[robot_program]")
     if not any("scrimmage.init.gradle" in c for c in command):
         from . import java_tools
-        hint += "; " + t("Java projects run through `-I {java}/scrimmage.init.gradle` (in the command, as `-I "
-                         "{{scrimmage_java}}/scrimmage.init.gradle`)", java=java_tools.JAVA_DIR)
+        hint += "; " + t("Java projects run through `{i_java_scrimmage}` (in the command, as `{i_scrimmage_java}`)",
+                         i_java_scrimmage="-I {}/scrimmage.init.gradle".format(java_tools.JAVA_DIR),
+                         i_scrimmage_java="-I {scrimmage_java}/scrimmage.init.gradle")
     return hint
 
 
@@ -214,8 +216,9 @@ class Session:
         if (unused := sim_mode_unused(self.config, sim_mode, launching=not attach)) is not None:
             log.warning(unused)
         if not attach and self.config.robot_program is None:
-            raise SessionError(t("{config} has no [robot_program] section: add one (see configs/kitbot.toml), or "
-                                 "attach to a robot program you start yourself", config=self.config.path))
+            raise SessionError(t("{config} has no {robot_program_table} section: add one (see configs/kitbot.toml), "
+                                 "or attach to a robot program you start yourself", config=self.config.path,
+                                 robot_program_table="[robot_program]"))
         self.real_ds = self.config.real_ds if real_ds is None else bool(real_ds)
         rp = self.config.robot_program
         if self.real_ds and rp is not None and not attach:
@@ -269,8 +272,9 @@ class Session:
             raise SessionError(problem)
         if not self.attach and self.nt and _listening("127.0.0.1", cfg.nt_port):
             # The robot program we launch would serve NT there too, and each would read the other's values.
-            raise SessionError(t("NetworkTables port {port} is already in use (another robot program running?); "
-                                 "stop it, or set [telemetry] nt_port", port=cfg.nt_port))
+            raise SessionError(t("NetworkTables port {port} is already in use (another robot program running?); stop "
+                                 "it, or set {telemetry_table} nt_port", port=cfg.nt_port,
+                                 telemetry_table="[telemetry]"))
         try:
             self.world = build_world(cfg)
         except ConfigError as e:
@@ -876,8 +880,8 @@ class Session:
         self._require_started()
         link = self.bridge.nt_link
         if link is None:
-            raise SessionError(t("NetworkTables isn't available in this session (install scrimmage[nt], and don't "
-                                 "start the session with nt=False)"))
+            raise SessionError(t("NetworkTables isn't available in this session (install scrimmage{nt_table}, and "
+                                 "don't start the session with nt=False)", nt_table="[nt]"))
         return link
 
     def nt_list(self, prefix: str = "/") -> dict:

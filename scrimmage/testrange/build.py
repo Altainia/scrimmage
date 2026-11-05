@@ -450,7 +450,8 @@ def _capacity(cfg: dict) -> int | None:
     default = DISC_CAPACITY if isinstance(shooter, dict) and shooter.get("kind") == "disc" else 0
     cap = hopper.get("capacity", default) if isinstance(hopper, dict) else None
     if isinstance(cap, bool) or not isinstance(cap, int) or cap < 0:
-        raise PartError(i18n.t("[shooter] hopper capacity must be a whole number of balls, not {cap}", cap=repr(cap)))
+        raise PartError(i18n.t("{shooter_table} hopper capacity must be a whole number of balls, not {cap}",
+                               cap=repr(cap), shooter_table="[shooter]"))
     return cap
 
 
@@ -461,23 +462,25 @@ def parse_range_section(cfg: dict, cfg_dir: Path | None) -> RangeSection | None:
     if sec is None:
         return None
     if not isinstance(sec, dict):
-        raise PartError(i18n.t("[range] must be a table"))
+        raise PartError(i18n.t("{range_table} must be a table", range_table="[range]"))
     for k in sec:
         if k not in RANGE_KEYS:
-            raise PartError(i18n.t("[range]: unknown key {key}; allowed: {range_keys}",
-                                   key=repr(k), range_keys=', '.join(RANGE_KEYS)))
+            raise PartError(i18n.t("{range_table}: unknown key {key}; allowed: {range_keys}", key=repr(k),
+                                   range_keys=', '.join(RANGE_KEYS), range_table="[range]"))
     ref = sec.get("file")
     if not isinstance(ref, str):
-        raise PartError(i18n.t("[range] file must be a built-in range's name ({builtin_ranges}) or a path "
-                               "relative to the config, not {ref}",
-                               builtin_ranges=', '.join(BUILTIN_RANGES), ref=repr(ref)))
+        raise PartError(i18n.t("{range_table} file must be a built-in range's name ({builtin_ranges}) or a path "
+                               "relative to the config, not {ref}", builtin_ranges=', '.join(BUILTIN_RANGES),
+                               ref=repr(ref), range_table="[range]"))
     ball, piece = sec.get("ball"), sec.get("piece")
     if ball is not None and not isinstance(ball, str):
-        raise PartError(i18n.t("[range] ball must be a ball preset's name, not {ball}", ball=repr(ball)))
+        raise PartError(i18n.t("{range_table} ball must be a ball preset's name, not {ball}", ball=repr(ball),
+                               range_table="[range]"))
     if piece is not None and not isinstance(piece, str):
-        raise PartError(i18n.t("[range] piece must be a piece or ball preset's name, not {piece}", piece=repr(piece)))
+        raise PartError(i18n.t("{range_table} piece must be a piece or ball preset's name, not {piece}",
+                               piece=repr(piece), range_table="[range]"))
     if ball is not None and piece is not None:
-        raise PartError(i18n.t("[range]: give ball or piece, not both"))
+        raise PartError(i18n.t("{range_table}: give ball or piece, not both", range_table="[range]"))
     asked = "ball" if ball is not None else "piece" if piece is not None else None
     if is_measurement(ball):   # checked here, so a mistake names the config's [range] and the path as written
         try:
@@ -514,31 +517,37 @@ def parse_range_section(cfg: dict, cfg_dir: Path | None) -> RangeSection | None:
                 check_timestep(timestep)
         except ValueError as e:
             if kind.form == "ball":
-                raise PartError(i18n.t("[range] ({file}, ball {preset}): {error}", file=rng.path.name,
-                                       preset=repr(kind.preset or name), error=e)) from None
-            raise PartError(i18n.t("[range] ({file}, piece {preset}): {error}", file=rng.path.name,
-                                   preset=repr(kind.preset or name), error=e)) from None
+                raise PartError(i18n.t("{range_table} ({file}, ball {preset}): {error}", file=rng.path.name,
+                                       preset=repr(kind.preset or name), error=e, range_table="[range]")) from None
+            raise PartError(i18n.t("{range_table} ({file}, piece {preset}): {error}", file=rng.path.name,
+                                   preset=repr(kind.preset or name), error=e, range_table="[range]")) from None
     start = sec.get("start")
     if start is not None:
         if not isinstance(start, str) or start not in rng.starts:
-            raise PartError(i18n.t("[range] start: {start} isn't a start of range {name}; its starts: {starts}",
+            raise PartError(i18n.t("{range_table} start: {start} isn't a start of range {name}; its starts: {starts}",
                                    start=repr(start), name=repr(rng.name),
-                                   starts=', '.join(rng.starts) or i18n.t("none")))
+                                   starts=', '.join(rng.starts) or i18n.t("none"), range_table="[range]"))
         if cfg.get("robot", {}).get("start_pose") is not None:
-            raise PartError(i18n.t("[range] start and [robot] start_pose both place the robot: give one"))
+            raise PartError(i18n.t("{range_table} start and {robot_table} start_pose both place the robot: give one",
+                                   range_table="[range]", robot_table="[robot]"))
     preload = sec.get("preload", 0)
     if isinstance(preload, bool) or not isinstance(preload, int) or preload < 0:
-        raise PartError(i18n.t("[range] preload must be a whole number of balls (0 or more), not {preload}",
-                               preload=repr(preload)))
+        raise PartError(i18n.t("{range_table} preload must be a whole number of balls (0 or more), not {preload}",
+                               preload=repr(preload), range_table="[range]"))
     floor = sec.get("floor_balls", True)
     if not isinstance(floor, bool):
-        raise PartError(i18n.t("[range] floor_balls must be true or false, not {floor}", floor=repr(floor)))
+        raise PartError(i18n.t("{range_table} floor_balls must be true or false, not {floor}", floor=repr(floor),
+                               range_table="[range]"))
     capacity = _capacity(cfg)
     if preload > 0 and capacity is None:
-        raise PartError(i18n.t("[range] preload = {preload}: the robot has no [shooter] to hold balls; set "
-                               "preload = 0", preload=preload))
+        raise PartError(i18n.t("{range_table} {preload_setting}: the robot has no {shooter_table} to hold balls; set "
+                               "{preload_setting2}", range_table="[range]",
+                               preload_setting="preload = {}".format(preload), shooter_table="[shooter]",
+                               preload_setting2="preload = 0"))
     capacity = capacity or 0
     if preload > capacity:
-        raise PartError(i18n.t("[range] preload = {preload} is more balls than the robot holds ([shooter] hopper "
-                               "capacity = {capacity})", preload=preload, capacity=capacity))
+        raise PartError(i18n.t("{range_table} {preload_setting} is more balls than the robot holds ({shooter_table} "
+                               "hopper {capacity_setting})", range_table="[range]",
+                               preload_setting="preload = {}".format(preload), shooter_table="[shooter]",
+                               capacity_setting="capacity = {}".format(capacity)))
     return RangeSection(range=rng, start=start, preload=preload, floor_balls=floor, capacity=capacity, seed=seed)

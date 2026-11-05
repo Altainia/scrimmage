@@ -100,19 +100,22 @@ def agent_missing_message(config_path, command: list[str], rev: bool = False) ->
     jar = agent_jar_path()
     if not jar.exists():
         if rev:
-            return i18n.t("{config} runs a Java robot program with REV SPARKs (they only simulate through the agent), "
-                          "but the scrimmage Java agent isn't built (missing {jar}): run `scrimmage java build` (needs "
-                          "the WPILib JDK)", config=config_path, jar=jar)
+            return i18n.t("{config} runs a Java robot program with REV SPARKs (they only simulate through the "
+                          "agent), but the scrimmage Java agent isn't built (missing {jar}): run "
+                          "`{scrimmage_java_build}` (needs the WPILib JDK)", config=config_path, jar=jar,
+                          scrimmage_java_build="scrimmage java build")
         return i18n.t("{config} runs a Java robot program, but the scrimmage Java agent isn't built (missing {jar}): "
-                      "run `scrimmage java build` (needs the WPILib JDK)", config=config_path, jar=jar)
+                      "run `{scrimmage_java_build}` (needs the WPILib JDK)", config=config_path, jar=jar,
+                      scrimmage_java_build="scrimmage java build")
     if agent_jar_version(jar) != AGENT_VERSION:
         if rev:
-            return i18n.t("{config} runs a Java robot program with REV SPARKs (they only simulate through the agent), "
-                          "but the scrimmage Java agent at {jar} is out of date (built by an older scrimmage): run "
-                          "`scrimmage java build` (needs the WPILib JDK)", config=config_path, jar=jar)
-        return i18n.t("{config} runs a Java robot program, but the scrimmage Java agent at {jar} is out of date (built "
-                      "by an older scrimmage): run `scrimmage java build` (needs the WPILib JDK)", config=config_path,
-                      jar=jar)
+            return i18n.t("{config} runs a Java robot program with REV SPARKs (they only simulate through the "
+                          "agent), but the scrimmage Java agent at {jar} is out of date (built by an older "
+                          "scrimmage): run `{scrimmage_java_build}` (needs the WPILib JDK)", config=config_path,
+                          jar=jar, scrimmage_java_build="scrimmage java build")
+        return i18n.t("{config} runs a Java robot program, but the scrimmage Java agent at {jar} is out of date "
+                      "(built by an older scrimmage): run `{scrimmage_java_build}` (needs the WPILib JDK)",
+                      config=config_path, jar=jar, scrimmage_java_build="scrimmage java build")
     return None
 
 

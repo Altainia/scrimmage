@@ -26,9 +26,9 @@ GB = {
     # launcher and disc setups (one source for both)
     "unknown section [{name}]; valid sections: {sections}": "there's no section [{name}]; the sections are {sections}",
     # climb scripts
-    "{path}: a climb script needs at least one [[step]]": "{path}: a climb script wants a [[step]] or more",
+    "{path}: a climb script needs at least one {step_table}": "{path}: a climb script wants a {step_table} or more",
     # sensors
-    "needs kind = \"beam\", \"distance\" or \"color\"": "wants kind = \"beam\", \"distance\" or \"colour\"",
+    "needs {kind_setting} or {last}": "wants {kind_setting} or else {last}",
     # bindings, and a list separator
     "{what} sets {given}: give only one of {keys}": "{what} sets {given}: pick one of {keys}",
     "gyro": "gyroscope",
@@ -103,7 +103,7 @@ def test_climb_script_errors_follow_the_language(gb):
 def test_sensor_errors_follow_the_language(gb):
     from scrimmage.sensors.spec import SensorError, parse_sensor
     assert _both(lambda: parse_sensor({"name": "a"}, 1), SensorError) == (
-        '[[sensor]] "a": wants kind = "beam", "distance" or "colour"',
+        '[[sensor]] "a": wants kind = "beam", "distance" or else "color"',
         '[[sensor]] "a": needs kind = "beam", "distance" or "color"')
 
 

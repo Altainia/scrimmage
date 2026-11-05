@@ -49,12 +49,17 @@ REAL_DS_REFUSED = N_("a scenario run can't use the real Driver Station: the scen
 CONFIG_REAL_DS_NOTE = N_("the config's [driver_station] real = true is ignored here: in a scenario run, scrimmage is "
                          "the Driver Station")
 LOCKSTEP_REQUIRED = N_("lockstep is required but the robot program didn't load the scrimmage_lockstep extension "
-                       "(RobotPy: add --scrimmage-lockstep to [robot_program] command; or set "
-                       "require_lockstep = false)")
+                       "(RobotPy: add --scrimmage-lockstep to {robot_program_table} command; or set "
+                       "{require_lockstep_setting})")
+LOCKSTEP_REQUIRED_KEYS = {"robot_program_table": "[robot_program]",
+                          "require_lockstep_setting": "require_lockstep = false"}
 
 
-def _said(text: str) -> Said:
-    """A constant marked with N_(): itself in report.json, in the Language setting where it is shown."""
+def _said(text: str, **params) -> Said:
+    """A constant marked with N_(): itself in report.json, in the Language setting where it is shown. `params` fill
+    its placeholders (what a student types, kept out of the words)."""
+    if params:
+        return Said(translated(text, lang=i18n.SOURCE, **params), lambda: translated(text, **params))
     return Said(text, lambda: translated(text))
 
 
@@ -641,7 +646,7 @@ async def _run_steps(session: Session, scenario: Scenario, report: Report, out_d
                      hooks: _Hooks) -> None:
     report.lockstep = session.lockstep
     if scenario.require_lockstep and not (session.lockstep or session.bridge.clock_freed):
-        report.error = _said(LOCKSTEP_REQUIRED)
+        report.error = _said(LOCKSTEP_REQUIRED, **LOCKSTEP_REQUIRED_KEYS)
         return
     if session.bridge.nt_link is None and any(build_check(c, session.world, s.name).uses_nt
                                               for s in scenario.steps for c in s.checks):
@@ -656,12 +661,13 @@ async def _run_steps(session: Session, scenario: Scenario, report: Report, out_d
         def words() -> str:
             if config_off:
                 return t("this scenario checks NetworkTables values (nt: signals or odometry_error), but the config "
-                         "sets [telemetry] nt = false, and these checks need NetworkTables")
+                         "sets {telemetry_table} {nt_setting}, and these checks need NetworkTables",
+                         telemetry_table="[telemetry]", nt_setting="nt = false")
             if session_off:
                 return t("this scenario checks NetworkTables values (nt: signals or odometry_error), but this session "
                          "was started without NetworkTables (nt=False)")
             return t("this scenario checks NetworkTables values (nt: signals or odometry_error), but NetworkTables "
-                     "isn't available: install scrimmage[nt] (pyntcore)")
+                     "isn't available: install scrimmage{nt_table} (pyntcore)", nt_table="[nt]")
         report.error = Said(f"this scenario checks NetworkTables values (nt: signals or odometry_error), but {why}",
                             words)
         return

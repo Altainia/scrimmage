@@ -97,8 +97,9 @@ def _load_errors(raw: dict, path: Path):
         errors.append(_load_error(e, path))
     steps_raw = raw.get("step")
     if not isinstance(steps_raw, list) or not steps_raw:
-        errors.append(FieldError("status", i18n.t("{file}: needs at least one [[step]]", file=where),
-                                 detail=i18n.t("needs at least one [[step]]")))
+        errors.append(FieldError("status", i18n.t("{file}: needs at least one {step_table}", file=where,
+                                                  step_table="[[step]]"),
+                                 detail=i18n.t("needs at least one {step_table}", step_table="[[step]]")))
         steps_raw = []
     base = None
     if isinstance(cfg, str):

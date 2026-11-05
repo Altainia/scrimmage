@@ -406,7 +406,8 @@ def _climbing(r: _Reader, kind: str, kw: dict) -> None:
         kw["level"] = r.text("level") if r.has("level") else None
         kw["section"] = r.text("section") if r.has("section") else "round"
         if kw["section"] not in ("round", "square"):
-            raise r.err(i18n.t("section must be \"round\" or \"square\", not {section}", section=repr(kw['section'])))
+            raise r.err(i18n.t("section must be \"{round}\" or \"{square}\", not {section}",
+                               section=repr(kw['section']), round="round", square="square"))
     elif kind == "box":
         kw["size"] = _size(r)
         kw["ground"] = _bool(r, "ground", False)
@@ -425,7 +426,8 @@ def _climbing(r: _Reader, kind: str, kw: dict) -> None:
 
 def _size(r: _Reader) -> tuple[float, float, float]:
     if r.has("size") == r.has("size_in"):
-        raise r.err(i18n.t("needs one of size = [x, y, z] (m) or size_in = [x, y, z] (in)"))
+        raise r.err(i18n.t("needs one of {size_setting} (m) or {size_in_setting} (in)",
+                           size_setting="size = [x, y, z]", size_in_setting="size_in = [x, y, z]"))
     return r.nums("size", 3, positive=True) if r.has("size") else tuple(
         v * IN for v in r.nums("size_in", 3, positive=True))
 
@@ -449,7 +451,8 @@ def _span(r: _Reader, key: str, unit: str) -> tuple[float, float]:
 def _axis(r: _Reader) -> str:
     v = r.text("axis")
     if v not in AXES:
-        raise r.err(i18n.t("axis must be \"x\", \"y\" or \"z\" (in the element's frame), not {value}", value=repr(v)))
+        raise r.err(i18n.t("axis must be \"{x}\", \"{y}\" or \"{z}\" (in the element's frame), not {value}",
+                           value=repr(v), x="x", y="y", z="z"))
     return v
 
 
@@ -466,12 +469,13 @@ def _moving(r: _Reader, kind: str, kw: dict) -> Hinged | Sliding:
     if kind == "hinged":
         kw["shape"] = r.text("shape") if r.has("shape") else "box"
         if kw["shape"] not in SHAPES:
-            raise r.err(i18n.t("shape must be \"box\" or \"disc\", not {shape}", shape=repr(kw['shape'])))
+            raise r.err(i18n.t("shape must be \"{box}\" or \"{disc}\", not {shape}", shape=repr(kw['shape']),
+                               box="box", disc="disc"))
         if kw["shape"] == "box":
             given = [k for k in ("diameter", "diameter_in", "thickness", "thickness_in") if r.has(k)]
             if given:
-                raise r.err(i18n.t("has {given}, which only a disc takes; a box takes size, or give shape = "
-                                   "\"disc\"", given=given[0]))
+                raise r.err(i18n.t("has {given}, which only a disc takes; a box takes size, or give {shape_setting}",
+                                   given=given[0], shape_setting="shape = \"disc\""))
             kw["size"] = _size(r)
         else:
             if r.has("size") or r.has("size_in"):
@@ -483,8 +487,9 @@ def _moving(r: _Reader, kind: str, kw: dict) -> Hinged | Sliding:
                                hinges=', '.join(HINGES), hinge=repr(kw['hinge'])))
         if r.has("axis"):
             if kw["hinge"] != "center":
-                raise r.err(i18n.t("has axis, which only a \"center\" hinge takes; an edge hinge's axis is its "
-                                   "edge (hinge = {hinge})", hinge=repr(kw['hinge'])))
+                raise r.err(i18n.t("has axis, which only a \"{center}\" hinge takes; an edge hinge's axis is its "
+                                   "edge ({hinge_setting})", center="center",
+                                   hinge_setting="hinge = {}".format(repr(kw['hinge']))))
             kw["axis"] = _axis(r)
         kw["range_deg"] = _span(r, "range_deg", "degrees") if r.has("range_deg") else None
         kw["rest_deg"] = r.num("rest_deg", 0.0)
@@ -511,7 +516,9 @@ def _lengths(r: _Reader, key: str, names: str) -> tuple[float, ...]:
     if r.has(key + "_in"):
         return tuple(v * IN for v in r.nums(key + "_in", n))
     if not r.has(key):
-        raise r.err(i18n.t("needs one of {key} = [{names}] (m) or {key}_in = [{names}] (in)", key=key, names=names))
+        raise r.err(i18n.t("needs one of {key_setting} (m) or {key_in_setting} (in)",
+                           key_setting="{} = [{}]".format(key, names),
+                           key_in_setting="{}_in = [{}]".format(key, names)))
     return r.nums(key, n)
 
 
@@ -522,7 +529,8 @@ def _rod(r: _Reader, name: str) -> Rod:
               friction=r.num("friction", DEFAULT_FRICTION, positive=True))
     kw["section"] = r.text("section") if r.has("section") else "round"
     if kw["section"] not in ("round", "square"):
-        raise r.err(i18n.t("section must be \"round\" or \"square\", not {section}", section=repr(kw['section'])))
+        raise r.err(i18n.t("section must be \"{round}\" or \"{square}\", not {section}", section=repr(kw['section']),
+                           round="round", square="square"))
     e = Rod(**kw)
     if e.length() < 1e-9:
         raise RangeError(i18n.t("{path}: {where}: base and tip are the same point; a rod needs two ends",
@@ -586,7 +594,8 @@ def _check_bump(r: _Reader, e: Bump) -> None:
 def parse_elements(path, tables) -> tuple[Element, ...]:
     """Read the `[[element]]` tables; the names must be unique."""
     if not isinstance(tables, list):
-        raise RangeError(i18n.t("{path}: element must be an array of tables ([[element]])", path=path))
+        raise RangeError(i18n.t("{path}: element must be an array of tables ({element_table})", path=path,
+                                element_table="[[element]]"))
     out: list[Element] = []
     for i, t in enumerate(tables):
         e = _element(path, t, i)
@@ -602,9 +611,9 @@ def parse_climb(path, table, elements: tuple[Element, ...]) -> tuple[ClimbRule |
     leveled = [e for e in elements if isinstance(e, Bar) and e.level is not None]
     if table is None:
         if leveled:
-            raise RangeError(i18n.t("{path}: bar '{name}' has level '{level}' but the range has no [climb]; add "
-                                    "[climb] with rule and levels, or drop the bar's level",
-                                    path=path, name=leveled[0].name, level=leveled[0].level))
+            raise RangeError(i18n.t("{path}: bar '{name}' has level '{level}' but the range has no {climb_table}; "
+                                    "add {climb_table} with rule and levels, or drop the bar's level", path=path,
+                                    name=leveled[0].name, level=leveled[0].level, climb_table="[climb]"))
         return None, elements
     r = _Reader(path, "[climb]", table, ("rule", "levels", "level_bonus", "switch"))
     rule = r.text("rule")
@@ -613,8 +622,8 @@ def parse_climb(path, table, elements: tuple[Element, ...]) -> tuple[ClimbRule |
                            rule=rule, rules=', '.join(CLIMB_RULES)))
     raw = r.raw("levels")
     if not isinstance(raw, dict) or not raw:
-        raise r.err(i18n.t("levels must be a table of level name = points, lowest first, like {{ LOW = 4, MID = 6 "
-                           "}}, not {raw}", raw=repr(raw)))
+        raise r.err(i18n.t("levels must be a table of level name = points, lowest first, like {low_4_form}, not {raw}",
+                           raw=repr(raw), low_4_form="{ LOW = 4, MID = 6 }"))
     lv = _Reader(path, "[climb] levels", raw, tuple(raw))
     levels = {name: lv.num(name) for name in raw}
     points = list(levels.values())
@@ -624,10 +633,11 @@ def parse_climb(path, table, elements: tuple[Element, ...]) -> tuple[ClimbRule |
     if rule == "hang":
         name = r.text("switch")
         if not any(e.name == name for e in elements):
-            raise r.err(i18n.t("switch '{name}' isn't an element of the range; name a kind = \"switch\" element",
-                               name=name))
+            raise r.err(i18n.t("switch '{name}' isn't an element of the range; name a {kind_setting} element",
+                               name=name, kind_setting="kind = \"switch\""))
         if not any(e.name == name and isinstance(e, Switch) for e in elements):
-            raise r.err(i18n.t("switch '{name}' isn't a switch; name a kind = \"switch\" element", name=name))
+            raise r.err(i18n.t("switch '{name}' isn't a switch; name a {kind_setting} element", name=name,
+                               kind_setting="kind = \"switch\""))
         bonus = r.num("level_bonus")
         if bonus < 0.0:
             raise r.err(i18n.t("level_bonus must be 0 or more, not {bonus}", bonus=repr(bonus)))
@@ -635,14 +645,14 @@ def parse_climb(path, table, elements: tuple[Element, ...]) -> tuple[ClimbRule |
     else:
         extra = [k for k in ("switch", "level_bonus") if r.has(k)]
         if extra:
-            raise r.err(i18n.t("has {extra}, which only the \"hang\" rule takes; drop it or use rule = \"hang\"",
-                               extra=extra[0]))
+            raise r.err(i18n.t("has {extra}, which only the \"{hang}\" rule takes; drop it or use {rule_setting}",
+                               extra=extra[0], hang="hang", rule_setting="rule = \"hang\""))
         climb = ClimbRule(rule=rule, levels=levels)
     for e in leveled:
         if e.level not in levels:
-            raise RangeError(i18n.t("{path}: bar '{name}' has level '{level}', which isn't one of the [climb] "
-                                    "levels: {levels}",
-                                    path=path, name=e.name, level=e.level, levels=', '.join(levels)))
+            raise RangeError(i18n.t("{path}: bar '{name}' has level '{level}', which isn't one of the {climb_table} "
+                                    "levels: {levels}", path=path, name=e.name, level=e.level,
+                                    levels=', '.join(levels), climb_table="[climb]"))
     return climb, tuple(replace(e, points=levels[e.level]) if e in leveled else e for e in elements)
 
 
@@ -714,10 +724,11 @@ def _on_floor(e: Element, start: bool) -> list[np.ndarray]:
     return [footprint(e)]
 
 
-def check_clear(path, elements, starts: dict, floor_balls: np.ndarray, reaches, names=None) -> None:
+def check_clear(path, elements, starts: dict, floor_balls: np.ndarray, reaches, names=None, pieces=None) -> None:
     """Reject a start whose outline overlaps an element standing on the carpet, and a floor piece resting inside one
     (see _on_floor). `reaches` are the floor pieces' reaches across the carpet (a ball's radius), one each or one for
-    all; `names` what a student reads for each ("ball 3", "coral 1"; default "ball <k>")."""
+    all; `names` what a student reads for each ("ball 3", "coral 1"; default "ball <k>"), and `pieces` the piece
+    each is ("ball", "coral"; default "ball")."""
     reaches = np.broadcast_to(np.asarray(reaches, dtype=float), (len(floor_balls),))
     for sname, (x, y, heading) in starts.items():
         outline = _rect((x, y), heading, ROBOT_OUTLINE, ROBOT_OUTLINE)
@@ -733,10 +744,11 @@ def check_clear(path, elements, starts: dict, floor_balls: np.ndarray, reaches, 
             for f in _on_floor(e, start=False):
                 if _gap(f, (x, y)) < reaches[k]:
                     what = names[k] if names is not None else i18n.t("ball {number}", number=k)
+                    piece = pieces[k] if pieces is not None else i18n.t("ball")
                     raise RangeError(
                         i18n.t("{path}: floor_balls: {what} at ({x}, {y}) lies on element '{name}'; move the "
                                "{piece} off it", path=path, what=what, x=f"{x:.4g}", y=f"{y:.4g}", name=e.name,
-                               piece=what.rsplit(' ', 1)[0])
+                               piece=piece)
                     )
 
 

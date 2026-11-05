@@ -387,7 +387,8 @@ def _resolve_path(t: _Table, key: str, base_dir: Path) -> Path | None:
 def _units(t: _Table, required: bool) -> str | None:
     if "units" not in t.t:
         if required:
-            raise t.err(i18n.t("{table} needs units (\"m\", \"mm\" or \"in\") for its mesh", table=t.label))
+            raise t.err(i18n.t("{table} needs units (\"{m}\", \"{mm}\" or \"{in_word}\") for its mesh", table=t.label,
+                               m="m", mm="mm", in_word="in"))
         return None
     if not required:
         raise t.err(i18n.t("{table} has units, but only a mesh has units", table=t.label))
@@ -430,18 +431,18 @@ def _parse_piece(raw, base_dir: Path, warned: list[str]) -> Piece:
         raise t.err(i18n.t("{table} preset {preset} is a ball; its shape is sphere, not {shape}", table=t.label,
                            preset=repr(preset), shape=shape))
     if kind == "squishy" and shape != "sphere":
-        raise t.err(i18n.t(
-            "{table} is squishy with shape {shape}, but squishy pieces are balls only (a sphere, or a ball preset); "
-            "use kind = \"rigid\" as a rigid stand-in (rigid pieces may give their own contact `stiffness`)",
-            table=t.label, shape=shape))
+        raise t.err(i18n.t("{table} is squishy with shape {shape}, but squishy pieces are balls only (a sphere, or a "
+                           "ball preset); use {kind_setting} as a rigid stand-in (rigid pieces may give their own "
+                           "contact `{stiffness}`)", table=t.label, shape=shape, kind_setting="kind = \"rigid\"",
+                           stiffness="stiffness"))
     ball_given = [k for k in _BALL_KEYS if k in t.t]
     if kind == "rigid" and ball_given:
-        raise t.err(i18n.t("{table} is rigid, so {key} does not apply (ball numbers are for squishy pieces); "
-                           "a rigid piece's own contact stiffness is `stiffness` (N/m)", table=t.label,
-                           key=ball_given[0]))
+        raise t.err(i18n.t("{table} is rigid, so {key} does not apply (ball numbers are for squishy pieces); a rigid "
+                           "piece's own contact stiffness is `{stiffness}` (N/m)", table=t.label, key=ball_given[0],
+                           stiffness="stiffness"))
     if kind == "squishy" and "stiffness" in t.t:
-        raise t.err(i18n.t("{table} is squishy, so `stiffness` does not apply; give the launcher model's "
-                           "stiffness_n (N for a quarter-diameter squeeze)", table=t.label))
+        raise t.err(i18n.t("{table} is squishy, so `{stiffness}` does not apply; give the launcher model's "
+                           "stiffness_n (N for a quarter-diameter squeeze)", table=t.label, stiffness="stiffness"))
     name = t.text("name", preset or "piece")
     if shape == "mesh":
         if t.has("size"):
@@ -454,7 +455,7 @@ def _parse_piece(raw, base_dir: Path, warned: list[str]) -> Piece:
         units = _units(t, True)
     else:
         if "mesh" in t.t:
-            raise t.err(i18n.t("{table} has a mesh but shape is not \"mesh\"", table=t.label))
+            raise t.err(i18n.t("{table} has a mesh but shape is not \"{mesh}\"", table=t.label, mesh="mesh"))
         mesh, units = None, _units(t, False)
         n = _SHAPE_SIZES[shape]
         size = t.vec("size", n, (base["diameter"],) if preset else _REQ, positive=True, length=True)
@@ -466,8 +467,9 @@ def _parse_piece(raw, base_dir: Path, warned: list[str]) -> Piece:
             near = min(PRESETS["ball"], key=lambda p: abs(PRESETS["ball"][p]["diameter"] - size[0]))
             missing = [k for k in ("stiffness_n", "restitution") if k not in t.t]
             if missing:
-                warned.append(i18n.t("[piece] {keys} not given; using the nearest ball preset's ({near}). Measure "
-                                     "your own ball (docs/launcher.md)", keys=" and ".join(missing), near=near))
+                warned.append(i18n.t("{piece_table} {keys} not given; using the nearest ball preset's ({near}). "
+                                     "Measure your own ball (docs/launcher.md)", keys=" and ".join(missing),
+                                     near=near, piece_table="[piece]"))
                 nums = dict(PRESETS["ball"][near])
         for k in _BALL_KEYS:
             if k in t.t:
@@ -480,8 +482,8 @@ def _parse_piece(raw, base_dir: Path, warned: list[str]) -> Piece:
     if "inertia" in t.t:
         inertia = t.vec("inertia", 3, positive=True)
     elif shape == "mesh":
-        raise t.err(i18n.t("{table} is a mesh, so it needs an inertia = [Ixx, Iyy, Izz] (kg m^2); there is no "
-                           "default", table=t.label))
+        raise t.err(i18n.t("{table} is a mesh, so it needs an {inertia_setting} (kg m^2); there is no default",
+                           table=t.label, inertia_setting="inertia = [Ixx, Iyy, Izz]"))
     elif ball is not None:
         inertia = (ball.inertia_factor * mass * (size[0] / 2) ** 2,) * 3
     else:
@@ -513,8 +515,9 @@ def _parse_shaft(name: str, raw) -> Shaft:
     elif motor is None or coupled is not None:
         control = "free"
     else:
-        raise t.err(i18n.t("{table} has motor {motor} but neither target_rps nor voltage; give one, or control = "
-                           "\"free\"", table=t.label, motor=repr(motor)))
+        raise t.err(i18n.t("{table} has motor {motor} but neither target_rps nor voltage; give one, or "
+                           "{control_setting}", table=t.label, motor=repr(motor),
+                           control_setting="control = \"free\""))
     if control == "speed" and target is None:
         raise t.err(i18n.t("{table} control is speed, so it needs target_rps", table=t.label), "target_rps")
     if control == "voltage" and voltage is None:
@@ -624,8 +627,8 @@ def _parse_cad(name, raw, base_dir: Path) -> Cad:
     t = _Table("cad", f"[[cad]] '{name}'", raw, name)
     part, mesh = _resolve_path(t, "part", base_dir), _resolve_path(t, "mesh", base_dir)
     if (part is None) == (mesh is None):
-        raise t.err(i18n.t("{table} needs exactly one of part = \"<part folder>\" or mesh = \"<file.stl>\"",
-                           table=t.label))
+        raise t.err(i18n.t("{table} needs exactly one of {part_setting} or {mesh_setting}", table=t.label,
+                           part_setting="part = \"<part folder>\"", mesh_setting="mesh = \"<file.stl>\""))
     slots = t.t.get("slots", {})
     if not isinstance(slots, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in slots.items()):
         raise t.err(i18n.t("{table} slots must be a table of slot name = shaft name, not {value}", table=t.label,
@@ -713,8 +716,9 @@ def _shaft_tables(value, where: str = "") -> dict:
     else:
         bad = "[[shaft]]" if isinstance(value, list) else f"shaft = {value!r}"
     if bad:
-        raise BenchError(i18n.t("{where}[shaft.<name>] must be a table: write [shaft.top], not {bad}", where=where,
-                                bad=bad))
+        raise BenchError(i18n.t("{where}{shaft_name_table} must be a table: write {shaft_top_table}, not {bad}",
+                                where=where, bad=bad, shaft_name_table="[shaft.<name>]",
+                                shaft_top_table="[shaft.top]"))
     return value
 
 
@@ -839,15 +843,17 @@ def parse_bench(raw: dict, base_dir: Path, problems: list[Problem] | None = None
         return None
     bt = fields = None
     if "bench" not in raw:
-        attempt(_raise, BenchError(i18n.t("[bench] is missing: give at least name = \"...\" (valid keys: name, "
-                                          "author, idea, notes)"), "bench"))
+        attempt(_raise, BenchError(i18n.t("{bench_table} is missing: give at least {name_setting} (valid keys: name, "
+                                          "author, idea, notes)", bench_table="[bench]",
+                                          name_setting="name = \"...\""), "bench"))
     else:
         bt = attempt(_Table, "bench", "[bench]", raw["bench"])
     warned: list[str] = []
     piece = None
     if "piece" not in raw:
-        attempt(_raise, BenchError(i18n.t("[piece] is missing: give preset = \"<ball preset>\" or a custom piece "
-                                          "(valid keys: {keys})", keys=", ".join(_valid_keys("piece"))), "piece"))
+        attempt(_raise, BenchError(i18n.t("{piece_table} is missing: give {preset_setting} or a custom piece (valid "
+                                          "keys: {keys})", keys=", ".join(_valid_keys("piece")),
+                                          piece_table="[piece]", preset_setting="preset = \"<ball preset>\""), "piece"))
     else:
         piece = attempt(_parse_piece, raw["piece"], base_dir, warned, key="piece")
     shafts_raw = attempt(_shaft_tables, raw.get("shaft", {}), key="shaft") or {}
@@ -866,30 +872,34 @@ def parse_bench(raw: dict, base_dir: Path, problems: list[Problem] | None = None
     names = ", ".join(shafts_raw) or i18n.t("(none)")
     for w in parsed["wheel"]:
         if w.shaft not in shafts_raw:
-            attempt(_raise, BenchError(i18n.t("[[wheel]] '{name}' names shaft {shaft}, which is not defined; "
-                                              "shafts: {shafts}", name=w.name, shaft=repr(w.shaft), shafts=names),
+            attempt(_raise, BenchError(i18n.t("{wheel_table} '{name}' names shaft {shaft}, which is not defined; "
+                                              "shafts: {shafts}", name=w.name, shaft=repr(w.shaft), shafts=names,
+                                              wheel_table="[[wheel]]"),
                                        f"wheel.{w.name}.shaft"))
     for c in cads:
         for slot, shaft in c.slots.items():
             if shaft not in shafts_raw:
-                attempt(_raise, BenchError(i18n.t("[[cad]] '{name}' slot {slot} names shaft {shaft}, which is not "
-                                                  "defined; shafts: {shafts}", name=c.name, slot=repr(slot),
-                                                  shaft=repr(shaft), shafts=names), f"cad.{c.name}.slots"))
+                attempt(_raise, BenchError(i18n.t("{cad_table} '{name}' slot {slot} names shaft {shaft}, which is "
+                                                  "not defined; shafts: {shafts}", name=c.name, slot=repr(slot),
+                                                  shaft=repr(shaft), shafts=names,
+                                                  cad_table="[[cad]]"), f"cad.{c.name}.slots"))
     flight = None
     if "flight" in raw:
         flight = attempt(_parse_flight, raw["flight"], [n for n, _ in named["outlet"]], key="flight")
     sweep = raw.get("sweep", {})
     if not isinstance(sweep, dict):
-        attempt(_raise, BenchError(i18n.t("[sweep] must be a table, not {value}", value=repr(sweep)), "sweep"))
+        attempt(_raise, BenchError(i18n.t("{sweep_table} must be a table, not {value}", value=repr(sweep),
+                                          sweep_table="[sweep]"), "sweep"))
         sweep = {}
     for dotted, values in sweep.items():
         attempt(_check_path, raw, dotted, key=f"sweep.{dotted}")
         if not isinstance(values, list) or not values:
-            attempt(_raise, BenchError(i18n.t("[sweep] {key} must be a non-empty list of values, not {value}",
-                                              key=dotted, value=repr(values)), f"sweep.{dotted}"))
+            attempt(_raise, BenchError(i18n.t("{sweep_table} {key} must be a non-empty list of values, not {value}",
+                                              key=dotted, value=repr(values),
+                                              sweep_table="[sweep]"), f"sweep.{dotted}"))
     charts = raw.get("chart", [])
     if not isinstance(charts, list) or not all(isinstance(c, dict) for c in charts):
-        attempt(_raise, BenchError(i18n.t("[[chart]] must be a list of tables"), "chart"))
+        attempt(_raise, BenchError(i18n.t("{chart_table} must be a list of tables", chart_table="[[chart]]"), "chart"))
         charts = []
     if bt is not None:
         fields = attempt(lambda: (bt.text("name"), bt.text("author", ""), bt.text("idea", ""), bt.text("notes", "")))
@@ -915,11 +925,13 @@ def _check_coupling(shaft: Shaft, shafts: dict[str, Shaft], defined=None) -> Non
     chain, cur = [shaft.name], shaft
     while cur.coupled_to is not None:
         if cur.coupled_to not in defined:
-            raise BenchError(i18n.t("[shaft.{name}] is coupled to {shaft}, which is not defined; shafts: {shafts}",
-                                    name=cur.name, shaft=repr(cur.coupled_to), shafts=", ".join(defined)))
+            raise BenchError(i18n.t("{shaft_name_table} is coupled to {shaft}, which is not defined; shafts: {shafts}",
+                                    shaft=repr(cur.coupled_to), shafts=", ".join(defined),
+                                    shaft_name_table="[shaft.{}]".format(cur.name)))
         if cur.coupled_to in chain:
             if cur.coupled_to == cur.name:
-                raise BenchError(i18n.t("[shaft.{name}] is coupled to itself", name=cur.name))
+                raise BenchError(i18n.t("{shaft_name_table} is coupled to itself",
+                                        shaft_name_table="[shaft.{}]".format(cur.name)))
             raise BenchError(i18n.t("shafts are coupled in a loop: {chain}",
                                     chain=" -> ".join(chain + [cur.coupled_to])))
         if cur.coupled_to not in shafts:

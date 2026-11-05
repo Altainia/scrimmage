@@ -269,7 +269,7 @@ def _energy_line(result: BenchResult) -> str | None:
     if not bad:
         return None
     return t("the energy check failed for {bad} of {n} pieces: the simulation is wrong here, not the design; try a "
-             "smaller [run] timestep", bad=bad, n=len(result.energy))
+             "smaller {run_table} timestep", bad=bad, n=len(result.energy), run_table="[run]")
 
 
 def headlines(result: BenchResult, lands: list[tuple[PieceOutcome, Landing]] | None = None) -> list[str]:
@@ -436,7 +436,8 @@ def _summary(result: BenchResult, heads: list[str], tables) -> str:
     for name, table in tables.items():
         text += [titles[name], _text_table(*_shown_table(*table)), ""]
     if b.flight is not None and b.piece.ball is None:
-        text += [t("[flight] flies balls only; a rigid piece's flight is not modeled yet, so there are no landings."),
+        text += [t("{flight_table} flies balls only; a rigid piece's flight is not modeled yet, so there are no "
+                   "landings.", flight_table="[flight]"),
                  ""]
     bad = [e.index for e in result.energy if not e.ok]
     if bad:

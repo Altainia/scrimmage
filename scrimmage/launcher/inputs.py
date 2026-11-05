@@ -225,8 +225,8 @@ def _check_ranges(setup: Setup) -> None:
     shaft = setup.shaft
     if shaft.wheel_inertia + shaft.added_inertia <= 0.0:
         raise LauncherConfigError(
-            i18n.t("[shaft] wheel_inertia + added_inertia must be positive, not {inertia}",
-                   inertia=shaft.wheel_inertia + shaft.added_inertia)
+            i18n.t("{shaft_table} wheel_inertia + added_inertia must be positive, not {inertia}",
+                   inertia=shaft.wheel_inertia + shaft.added_inertia, shaft_table="[shaft]")
         )
 
 
@@ -350,8 +350,8 @@ def apply_measured(raw: dict, path: Path | None = None) -> tuple[dict, dict]:
     for section, name in named.items():
         if not isinstance(name, str):
             raise LauncherConfigError(i18n.t("[{section}] measured must be a measurement file's path in quotes "
-                                             "(\"tread.measure.toml\"), not {name}", section=section,
-                                             name=repr(name)))
+                                             "(\"{tread_measure_toml}\"), not {name}", section=section,
+                                             name=repr(name), tread_measure_toml="tread.measure.toml"))
     shared = len(named) == 2 and (base / named["ball"]).resolve() == (base / named["wheels"]).resolve()
     out, provenance, fits = dict(raw), {}, {}  # fits: a launcher file named by both sections is fit once
     for section, name in named.items():
@@ -410,17 +410,19 @@ def parse_setup(raw: dict, path: Path | None = None) -> Setup:
     _check_ranges(setup)
     if setup.shaft.motor not in MOTORS:
         raise LauncherConfigError(
-            i18n.t("[shaft] unknown motor {motor}; known motors: {motors}",
-                   motor=repr(setup.shaft.motor), motors=', '.join(sorted(MOTORS)))
+            i18n.t("{shaft_table} unknown motor {motor}; known motors: {motors}", motor=repr(setup.shaft.motor),
+                   motors=', '.join(sorted(MOTORS)), shaft_table="[shaft]")
         )
     feed = setup.feed
     if feed.rule not in FEED_RULES:
-        raise LauncherConfigError(i18n.t("[feed] unknown rule {rule}; valid rules: {rules}",
-                                         rule=repr(feed.rule), rules=', '.join(FEED_RULES)))
+        raise LauncherConfigError(i18n.t("{feed_table} unknown rule {rule}; valid rules: {rules}",
+                                         rule=repr(feed.rule), rules=', '.join(FEED_RULES), feed_table="[feed]"))
     if feed.count < 1:
-        raise LauncherConfigError(i18n.t("[feed] count must be at least 1, not {count}", count=feed.count))
+        raise LauncherConfigError(i18n.t("{feed_table} count must be at least 1, not {count}", count=feed.count,
+                                         feed_table="[feed]"))
     if feed.rate <= 0.0:
-        raise LauncherConfigError(i18n.t("[feed] rate must be positive, not {rate}", rate=feed.rate))
+        raise LauncherConfigError(i18n.t("{feed_table} rate must be positive, not {rate}", rate=feed.rate,
+                                         feed_table="[feed]"))
     for lane in feed.lanes:
         check_lane(lane, setup.ball.diameter, setup.launcher.width, "[feed] lanes: lane")
     # The hood wraps from where the ball enters (entry_deg, fixed on the robot) round to where it leaves
@@ -428,19 +430,21 @@ def parse_setup(raw: dict, path: Path | None = None) -> Setup:
     wrap = setup.hood.entry_deg - (setup.hood.exit_angle_deg + 90.0)
     if wrap <= 0:
         raise LauncherConfigError(
-            i18n.t("[hood] wrap must be positive: entry_deg {entry_deg} minus exit angle {exit_plus_90} "
+            i18n.t("{hood_table} wrap must be positive: entry_deg {entry_deg} minus exit angle {exit_plus_90} "
                    "(exit_angle_deg + 90) is {wrap}; lower exit_angle_deg or raise entry_deg",
-                   entry_deg=setup.hood.entry_deg, exit_plus_90=setup.hood.exit_angle_deg + 90.0, wrap=wrap)
+                   entry_deg=setup.hood.entry_deg, exit_plus_90=setup.hood.exit_angle_deg + 90.0, wrap=wrap,
+                   hood_table="[hood]")
         )
     # The flares are the angles the hood's ends open at, not arcs of the wrap; a wrap shorter than the flares' ramps
     # is fine (the squeeze then peaks below the full delta, see launcher/model.py).
     flare = setup.hood.flare_deg
     if not 0.0 < flare < 90.0:
-        raise LauncherConfigError(i18n.t("[hood] flare_deg must be above 0 and below 90, not {flare}", flare=flare))
+        raise LauncherConfigError(i18n.t("{hood_table} flare_deg must be above 0 and below 90, not {flare}",
+                                         flare=flare, hood_table="[hood]"))
     exit_flare = setup.hood.exit_flare_deg
     if exit_flare is not None and not 0.0 < exit_flare < 90.0:
-        raise LauncherConfigError(i18n.t("[hood] exit_flare_deg must be above 0 and below 90, not {exit_flare}",
-                                         exit_flare=exit_flare))
+        raise LauncherConfigError(i18n.t("{hood_table} exit_flare_deg must be above 0 and below 90, not {exit_flare}",
+                                         exit_flare=exit_flare, hood_table="[hood]"))
     return setup
 
 
@@ -480,13 +484,14 @@ def load_setup(source: Path | dict) -> tuple[Setup, dict[str, list], list[dict]]
     setup = parse_setup(raw, path)
     sweep = raw.get("sweep", {})
     if not isinstance(sweep, dict):
-        raise LauncherConfigError(i18n.t("[sweep] must be a table, not {sweep}", sweep=repr(sweep)))
+        raise LauncherConfigError(i18n.t("{sweep_table} must be a table, not {sweep}", sweep=repr(sweep),
+                                         sweep_table="[sweep]"))
     for dotted, values in sweep.items():
         _check_key(dotted)
         if not isinstance(values, list) or not values:
-            raise LauncherConfigError(i18n.t("[sweep] {dotted} must be a non-empty list of values, not {values}",
-                                             dotted=dotted, values=repr(values)))
+            raise LauncherConfigError(i18n.t("{sweep_table} {dotted} must be a non-empty list of values, not {values}",
+                                             dotted=dotted, values=repr(values), sweep_table="[sweep]"))
     charts = raw.get("chart", [])
     if not isinstance(charts, list) or not all(isinstance(c, dict) for c in charts):
-        raise LauncherConfigError(i18n.t("[[chart]] must be a list of tables"))
+        raise LauncherConfigError(i18n.t("{chart_table} must be a list of tables", chart_table="[[chart]]"))
     return setup, dict(sweep), list(charts)

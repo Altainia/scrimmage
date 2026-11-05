@@ -485,7 +485,8 @@ def _simple(r: _Reader, shape: str) -> tuple[list[Solid], tuple | None, tuple | 
         return [Solid("sphere", (_length(r, "diameter") / 2,), (0.0, 0.0, 0.0), _IDENTITY)], None, (0, 0, 1)
     if shape == "box":
         if r.has("size") == r.has("size_in"):
-            raise r.err(i18n.t("needs one of size = [x, y, z] (m) or size_in = [x, y, z] (in)"))
+            raise r.err(i18n.t("needs one of {size_setting} (m) or {size_in_setting} (in)",
+                               size_setting="size = [x, y, z]", size_in_setting="size_in = [x, y, z]"))
         size = r.nums("size", 3, positive=True) if r.has("size") else tuple(
             v * IN for v in r.nums("size_in", 3, positive=True))
         axis = [0, 0, 0]
@@ -532,7 +533,7 @@ def _axis(r: _Reader) -> tuple:
         return (0, 0, 1)
     a = r.raw("axis")
     if not isinstance(a, str) or a not in _AXES:
-        raise r.err(i18n.t("axis must be \"x\", \"y\" or \"z\", not {axis}", axis=repr(a)))
+        raise r.err(i18n.t("axis must be \"{x}\", \"{y}\" or \"{z}\", not {axis}", axis=repr(a), x="x", y="y", z="z"))
     return _AXES[a]
 
 
@@ -548,7 +549,8 @@ def _hole(r: _Reader, path: Path, name: str) -> tuple | None:
 def _compound(r: _Reader, path: Path, name: str) -> list[Solid]:
     raw = r.raw("shapes")
     if not isinstance(raw, list) or not raw:
-        raise r.err(i18n.t("shapes must list at least one shape ([[piece.<name>.shapes]] tables)"))
+        raise r.err(i18n.t("shapes must list at least one shape ({piece_name_shapes_table} tables)",
+                           piece_name_shapes_table="[[piece.<name>.shapes]]"))
     out = []
     for i, t in enumerate(raw):
         e = _KindReader(path, f"[piece.{name}] shapes #{i + 1}", t, _ENTRY)
@@ -622,8 +624,9 @@ def _parse_kind(path: Path, name: str, r: _KindReader, base_dir: Path) -> PieceK
     label = r.text("label") if r.has("label") else ""
     given = [k for k in ("preset", "ball", "disc", "shape") if r.has(k)]
     if not given:
-        raise r.err(i18n.t("needs a shape (one of {shapes}), or preset = \"<piece preset>\", ball = \"<ball "
-                           "preset>\" or disc = \"<disc preset>\"", shapes=", ".join(SHAPES)))
+        raise r.err(i18n.t("needs a shape (one of {shapes}), or {preset_setting}, {ball_setting} or {disc_setting}",
+                           shapes=", ".join(SHAPES), preset_setting="preset = \"<piece preset>\"",
+                           ball_setting="ball = \"<ball preset>\"", disc_setting="disc = \"<disc preset>\""))
     if len(given) > 1:
         raise r.err(i18n.t("has both {first} and {second}; a kind is a preset or a shape: give one",
                            first=given[0], second=given[1]))
@@ -653,8 +656,9 @@ def _parse_kind(path: Path, name: str, r: _KindReader, base_dir: Path) -> PieceK
     mass = r.num("mass", positive=True)
     measured = None
     if r.has("material") and r.has("friction"):
-        raise r.err(i18n.t("has both material and friction; give one: material = \"<surface>\", or friction = "
-                           "<number> for your own measured number"))
+        raise r.err(i18n.t("has both material and friction; give one: {material_setting}, or {friction_setting} for "
+                           "your own measured number", material_setting="material = \"<surface>\"",
+                           friction_setting="friction = <number>"))
     if r.has("material"):
         try:
             friction = surface_friction(r.text("material"))
@@ -669,8 +673,9 @@ def _parse_kind(path: Path, name: str, r: _KindReader, base_dir: Path) -> PieceK
     elif r.has("friction"):
         friction = r.num("friction", positive=True)
     else:
-        raise r.err(i18n.t("needs a surface: material = \"<surface preset>\", or friction = <number> for your own "
-                           "number"))
+        raise r.err(i18n.t("needs a surface: {material_setting}, or {friction_setting} for your own number",
+                           material_setting="material = \"<surface preset>\"",
+                           friction_setting="friction = <number>"))
     inertia = r.nums("inertia", 3, positive=True) if r.has("inertia") else None
     own = None
     if shape == "compound":
@@ -717,9 +722,10 @@ def measured_ball_kind(name: str | None, file: str, base_dir: Path, where: str, 
         raise RangeError(str(e)) from None
     preset = fields.get("preset")
     if preset is None:
-        raise RangeError(i18n.t("{where}: {key} = \"{file}\" needs its [measure] base, the ball preset it "
-                                "measured (base = \"2026-fuel\"), for the numbers it doesn't measure",
-                                where=where, key=key, file=file))
+        raise RangeError(i18n.t("{where}: {key_setting} needs its {measure_table} base, the ball preset it measured "
+                                "({base_setting}), for the numbers it doesn't measure", where=where,
+                                key_setting="{} = \"{}\"".format(key, file), measure_table="[measure]",
+                                base_setting="base = \"2026-fuel\""))
     try:
         ball = _build_section("ball", fields)
     except LauncherConfigError as e:

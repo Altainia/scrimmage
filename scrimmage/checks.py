@@ -93,8 +93,8 @@ class Signal:
 def _range_signal(name: str, world) -> Signal:
     rng = getattr(world, "test_range", None)
     if rng is None:
-        raise ScenarioError(t("{signal} needs a robot on a test range: add [range] to the config (see "
-                              "docs/test-range.md)", signal=name))
+        raise ScenarioError(t("{signal} needs a robot on a test range: add {range_table} to the config (see "
+                              "docs/test-range.md)", signal=name, range_table="[range]"))
     if name.startswith("score."):
         goal = name[len("score."):]
         goals = [g.name for g in rng.range.goals]
@@ -120,8 +120,10 @@ def _robot_signal(name: str, world) -> Signal:
         raise ScenarioError(t("{signal} needs a simulated robot", signal=name))
     if field in WHEEL_SIGNALS and not (world.parts is not None and world.parts.tread_geoms):
         raise ScenarioError(t("{signal} reads the drive wheels, but this robot has no tread wheels (a hand-written "
-                              "[model] mjcf robot, or parts without tread = true geoms): build it from [[part]] with "
-                              "a stock drivetrain, or use robot.tilt, pitch, roll, z, air_time or tipped", signal=name))
+                              "{model_table} mjcf robot, or parts without {tread_setting} geoms): build it from "
+                              "{part_table} with a stock drivetrain, or use robot.tilt, pitch, roll, z, air_time or "
+                              "tipped", signal=name, model_table="[model]", tread_setting="tread = true",
+                              part_table="[[part]]"))
     make()
     return Signal(name, lambda s: s.world.terrain.sample()[name])
 
@@ -166,8 +168,8 @@ def _partner_signal(name: str, world) -> Signal:
         raise ScenarioError(t("unknown signal {signal}: the partner signals are {signals}", signal=repr(name),
                               signals=", ".join(SIGNALS)))
     if getattr(world, "partner", None) is None:
-        raise ScenarioError(t("{signal} needs a partner robot: add [partner] to the config (see README.md)",
-                              signal=name))
+        raise ScenarioError(t("{signal} needs a partner robot: add {partner_table} to the config (see README.md)",
+                              signal=name, partner_table="[partner]"))
     return Signal(name, lambda s: s.world.partner.read(name))
 
 
@@ -339,7 +341,8 @@ def _only(spec: dict, allowed: set[str], where: str) -> None:
     extra = set(spec) - allowed
     if extra:
         first = sorted(extra)[0]
-        raise bad(where, t("unknown key {key}; allowed: {allowed}", key=repr(first), allowed=", ".join(sorted(allowed))),
+        raise bad(where, t("unknown key {key}; allowed: {allowed}", key=repr(first),
+                           allowed=", ".join(sorted(allowed))),
                   key=first)
 
 
@@ -384,7 +387,7 @@ class SignalCheck(Check):
     def __init__(self, kind: str, spec: dict, world, where: str):
         _only(spec, {"signal", "min", "max", "equals", "approx", "tol"}, where)
         if "signal" not in spec:
-            raise bad(where, t("{kind} needs signal = \"...\"", kind=kind))
+            raise bad(where, t("{kind} needs {signal_setting}", kind=kind, signal_setting="signal = \"...\""))
         self.kind = kind
         try:
             self.signal = resolve_signal(str(spec["signal"]), world)
@@ -600,7 +603,7 @@ class OdometryErrorCheck(Check):
             raise bad(where, t("odometry_error max must be greater than 0"))
         self.when = spec.get("when", "end")
         if self.when not in ("end", "always"):
-            raise bad(where, t("odometry_error when must be \"end\" or \"always\""))
+            raise bad(where, t("odometry_error when must be \"{end}\" or \"{always}\"", end="end", always="always"))
         self.uses_nt = True
         self.ticks = self.when == "always"
         self.label = f"odometry_error {self.when} <= {self.max:g} m"
@@ -643,12 +646,13 @@ class OdometryErrorCheck(Check):
         ok = self.first_fail is None
         worst = self.worst
         return said(self.label, ok, f"odometry error peaked at {worst:.3f} m; allowed {self.max:g} m",
-                    lambda: t("odometry error peaked at {error}; allowed {max}", error=_far(worst), max=_far(self.max)),
+                    lambda: t("odometry error peaked at {error}; allowed {max}", error=_far(worst),
+                              max=_far(self.max)),
                     round(worst, 4), self.max, self.first_fail)
 
 
 def _no_odometry() -> str:
-    return t("no odometry on NetworkTables ([telemetry] odometry)")
+    return t("no odometry on NetworkTables ({telemetry_table} odometry)", telemetry_table="[telemetry]")
 
 
 class ContactCheck(Check):
@@ -823,15 +827,16 @@ def build_check(spec: dict, world, where: str) -> Check:
     keys = [k for k in spec if k in CHECK_KINDS]
     if len(keys) != 1 or len(spec) != 1:
         if spec:
-            raise bad(where, t("each [[step.check]] needs exactly one of {kinds}; got {got}",
-                               kinds=", ".join(CHECK_KINDS), got=", ".join(spec)))
-        raise bad(where, t("each [[step.check]] needs exactly one of {kinds}; got nothing", kinds=", ".join(CHECK_KINDS)))
+            raise bad(where, t("each {step_check_table} needs exactly one of {kinds}; got {got}",
+                               kinds=", ".join(CHECK_KINDS), got=", ".join(spec), step_check_table="[[step.check]]"))
+        raise bad(where, t("each {step_check_table} needs exactly one of {kinds}; got nothing",
+                           kinds=", ".join(CHECK_KINDS), step_check_table="[[step.check]]"))
     kind, val = keys[0], spec[keys[0]]
     w = f"{where}, {kind}"
     if kind in ("never_touch", "must_touch"):
         return ContactCheck(val, kind == "must_touch", world, w)
     if not isinstance(val, dict):
-        raise bad(w, t("expected a table like {kind} = {{ ... }}", kind=kind))
+        raise bad(w, t("expected a table like {kind_setting}", kind_setting="{} = {{ ... }}".format(kind)))
     if kind == "pose":
         return PoseCheck(val, w)
     if kind == "odometry_error":

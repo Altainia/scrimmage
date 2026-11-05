@@ -111,9 +111,11 @@ class RangeRuntime:
             raise ValueError(i18n.t("preload {preload}: the robot holds at most {n_slots} balls",
                                     preload=preload, n_slots=n_slots))
         if floor_balls and self.layout.n_floor == 0 and len(self.range.floor_balls):
-            raise ValueError(i18n.t("floor_balls: this world was built with [range] floor_balls = false, so it "
-                                    "has no floor balls to put out; set floor_balls = true in the config (or the "
-                                    "scenario's [range])"))
+            raise ValueError(i18n.t("floor_balls: this world was built with {range_table} {floor_balls_setting}, so "
+                                    "it has no floor balls to put out; set {floor_balls_setting2} in the config (or "
+                                    "the scenario's {range_table})", range_table="[range]",
+                                    floor_balls_setting="floor_balls = false",
+                                    floor_balls_setting2="floor_balls = true"))
         self._overrides.update(new)
         s = self.settings()
         balls = self.balls

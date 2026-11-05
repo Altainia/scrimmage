@@ -37,11 +37,11 @@ def parse_section(section: dict | None) -> AirConfig:
     """The config's [pneumatics] table as an AirConfig (the defaults for keys left out)."""
     section = section or {}
     if not isinstance(section, dict):
-        raise ValueError(i18n.t("[pneumatics] must be a table"))
+        raise ValueError(i18n.t("{pneumatics_table} must be a table", pneumatics_table="[pneumatics]"))
     for k in section:
         if k not in KEYS:
-            raise ValueError(i18n.t("[pneumatics]: unknown key {key}; the keys are {keys}",
-                                    key=repr(k), keys=', '.join(KEYS)))
+            raise ValueError(i18n.t("{pneumatics_table}: unknown key {key}; the keys are {keys}", key=repr(k),
+                                    keys=', '.join(KEYS), pneumatics_table="[pneumatics]"))
     return AirConfig(**section)
 
 

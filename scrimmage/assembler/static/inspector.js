@@ -660,7 +660,7 @@ function slotField(part, slot, kind, count, known) {
     if (!rows.length) addRow();
     body = h("div", {}, list,
       h("button", { type: "button", class: "btn btn-small", onclick: () => addRow().focus() }, t("Add key")),
-      h("p", { class: "hint" }, t("Binding keys, e.g. can = VictorSPX[3], neutral = coast, counts_per_rev = 2048.")));
+      h("p", { class: "hint" }, t("Binding keys, e.g. {can}, {neutral}, {counts}.", { can: "can = VictorSPX[3]", neutral: "neutral = coast", counts: "counts_per_rev = 2048" })));
     body.setAttribute("id", id);
     onGroupCommit(body, commit);
   } else {   // list: one ID per motor

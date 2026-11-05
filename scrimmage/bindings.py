@@ -42,15 +42,18 @@ def _ctre_device(cfg: dict, kind: str) -> str:
     spec = str(cfg["ctre"])
     name, sep, ident = spec.partition(":")
     if name not in CTRE_DEVICES or not sep:
-        raise ValueError(i18n.t("ctre = {spec}: expected \"<Kind>:<id>\" with Kind one of {devices} (e.g. "
-                                "\"TalonFX:1\")", spec=repr(spec), devices=', '.join(CTRE_DEVICES)))
+        raise ValueError(i18n.t("{ctre_setting}: expected \"{kind_id}\" with Kind one of {devices} (e.g. "
+                                "\"{talonfx_1}\")", devices=', '.join(CTRE_DEVICES),
+                                ctre_setting="ctre = {}".format(repr(spec)), kind_id="<Kind>:<id>",
+                                talonfx_1="TalonFX:1"))
     want = _CTRE_KIND_FOR[kind]
     if name != want:
-        raise ValueError(i18n.t("ctre = {spec} in a [[{kind}]] binding: only {want} is supported there",
-                                spec=repr(spec), kind=kind, want=want))
+        raise ValueError(i18n.t("{ctre_setting} in a [[{kind}]] binding: only {want} is supported there", kind=kind,
+                                want=want, ctre_setting="ctre = {}".format(repr(spec))))
     ident = ident.strip()
     if not ident.isdigit() or not 0 <= int(ident) <= 62:
-        raise ValueError(i18n.t("ctre = {spec}: the CAN id must be an integer 0-62", spec=repr(spec)))
+        raise ValueError(i18n.t("{ctre_setting}: the CAN id must be an integer 0-62",
+                                ctre_setting="ctre = {}".format(repr(spec))))
     if "device" in cfg:
         return str(cfg["device"])
     return f"{CTRE_DEVICES[name]}[{int(ident)}]"
@@ -94,16 +97,17 @@ def _rev_device(cfg: dict, kind: str) -> str:
     name, sep, ident = spec.partition(":")
     allowed = _REV_KINDS_FOR[kind]
     if not sep or (name not in allowed and name not in REV_DEVICES and name.removesuffix("Abs") not in REV_DEVICES):
-        raise ValueError(i18n.t("rev = {spec}: expected \"<Kind>:<id>\" with Kind one of {allowed} (e.g. "
-                                "\"{next}:1\")", spec=repr(spec), allowed=', '.join(allowed),
-                                next=next(iter(allowed))))
+        raise ValueError(i18n.t("{rev_setting}: expected \"{kind_id}\" with Kind one of {allowed} (e.g. \"{next_1}\")",
+                                allowed=', '.join(allowed), rev_setting="rev = {}".format(repr(spec)),
+                                kind_id="<Kind>:<id>", next_1="{}:1".format(next(iter(allowed)))))
     if name not in allowed:
-        raise ValueError(i18n.t("rev = {spec} in a [[{kind}]] binding: only {allowed} is supported there",
-                                spec=repr(spec), kind=kind,
-                                allowed=i18n.t(" or ", context="list separator").join(allowed)))
+        raise ValueError(i18n.t("{rev_setting} in a [[{kind}]] binding: only {allowed} is supported there", kind=kind,
+                                allowed=i18n.t(" or ", context="list separator").join(allowed),
+                                rev_setting="rev = {}".format(repr(spec))))
     ident = ident.strip()
     if not ident.isdigit() or not 0 <= int(ident) <= 62:
-        raise ValueError(i18n.t("rev = {spec}: the CAN id must be an integer 0-62", spec=repr(spec)))
+        raise ValueError(i18n.t("{rev_setting}: the CAN id must be an integer 0-62",
+                                rev_setting="rev = {}".format(repr(spec))))
     return f"{allowed[name]}[{int(ident)}]"
 
 
@@ -111,8 +115,9 @@ def _scrimmage_name(cfg: dict) -> str:
     """The fast-mode device name in `scrimmage = "<name>"` (any non-empty string without spaces)."""
     name = cfg["scrimmage"]
     if not isinstance(name, str) or not name or any(c.isspace() for c in name):
-        raise ValueError(i18n.t("scrimmage = {name}: expected a non-empty device name without spaces (e.g. "
-                                "\"fl_drive\")", name=repr(name)))
+        raise ValueError(i18n.t("{scrimmage_setting}: expected a non-empty device name without spaces (e.g. "
+                                "\"{fl_drive}\")", scrimmage_setting="scrimmage = {}".format(repr(name)),
+                                fl_drive="fl_drive"))
     return name
 
 
@@ -256,9 +261,11 @@ class MotorBinding:
         elif "scrimmage" in cfg:
             self.kind, self.device = "Scrimmage", _scrimmage_name(cfg)
         else:
-            raise ValueError(i18n.t("motor '{name}' needs pwm = <port>, can = \"<Device[id]>\", ctre = "
-                                    "\"TalonFX:<id>\", rev = \"SparkMax:<id>\" or scrimmage = \"<name>\"",
-                                    name=self.name))
+            raise ValueError(i18n.t("motor '{name}' needs {pwm_setting}, {can_setting}, {ctre_setting}, "
+                                    "{rev_setting} or {scrimmage_setting}", name=self.name,
+                                    pwm_setting="pwm = <port>", can_setting="can = \"<Device[id]>\"",
+                                    ctre_setting="ctre = \"TalonFX:<id>\"", rev_setting="rev = \"SparkMax:<id>\"",
+                                    scrimmage_setting="scrimmage = \"<name>\""))
         self.device_key = ({"REV": "ScrimmageREV", "Scrimmage": "ScrimmageMotor", "PWM": "PWM"}.get(self.kind, "CANMotor"),
                            self.device)
         self.model = model
@@ -279,11 +286,13 @@ class MotorBinding:
         self.limits = None                                # (lower, upper) joint range when limits = true (REV)
         if cfg.get("limits", False):
             if self.kind != "REV":
-                raise ValueError(i18n.t("motor '{name}': limits = true is only for rev motors", name=self.name))
+                raise ValueError(i18n.t("motor '{name}': {limits_setting} is only for rev motors", name=self.name,
+                                        limits_setting="limits = true"))
             jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, cfg["joint"])
             if not model.jnt_limited[jid]:
-                raise ValueError(i18n.t("motor '{name}': limits = true needs joint '{joint}' to have a range "
-                                        "(range=\"lo hi\" in the MJCF)", name=self.name, joint=cfg['joint']))
+                raise ValueError(i18n.t("motor '{name}': {limits_setting} needs joint '{joint}' to have a range "
+                                        "(range=\"{lo_hi}\" in the MJCF)", name=self.name, joint=cfg['joint'],
+                                        limits_setting="limits = true", lo_hi="lo hi"))
             self.limits = (float(model.jnt_range[jid][0]), float(model.jnt_range[jid][1]))
         # live values, useful for logging
         self.command = 0.0
@@ -483,8 +492,11 @@ class EncoderBinding:
             self.kind, self.device = "Scrimmage", _scrimmage_name(cfg)
             self.offset = float(cfg.get("offset", 0.0))
         else:
-            raise ValueError(i18n.t("encoder needs channel_a = <dio>, can = \"<Device[id]>\", ctre = "
-                                    "\"CANcoder:<id>\", rev = \"SparkMaxAbs:<id>\" or scrimmage = \"<name>\""))
+            raise ValueError(i18n.t("encoder needs {channel_a_setting}, {can_setting}, {ctre_setting}, {rev_setting} "
+                                    "or {scrimmage_setting}", channel_a_setting="channel_a = <dio>",
+                                    can_setting="can = \"<Device[id]>\"", ctre_setting="ctre = \"CANcoder:<id>\"",
+                                    rev_setting="rev = \"SparkMaxAbs:<id>\"",
+                                    scrimmage_setting="scrimmage = \"<name>\""))
         # HALSim names quadrature Encoders by index, so their key matches on <channel_a (see resolve_device_key)
         self.device_key = (("Encoder", f"<channel_a={self.channel_a}") if self.kind == "Encoder"
                            else ({"REV": "ScrimmageREV", "Scrimmage": "ScrimmageEncoder"}.get(self.kind, "CANEncoder"), self.device))

@@ -285,8 +285,8 @@ def build_bench(bench: Bench) -> Built:
     piece = bench.piece
     n_pool = sum(i.count for i in bench.inlets)
     if n_pool > POOL_MAX:
-        raise BenchError(i18n.t("the inlets send {n} pieces in all; a bench holds at most {most} (lower an [[inlet]] "
-                                "count)", n=n_pool, most=POOL_MAX))
+        raise BenchError(i18n.t("the inlets send {n} pieces in all; a bench holds at most {most} (lower an "
+                                "{inlet_table} count)", n=n_pool, most=POOL_MAX, inlet_table="[[inlet]]"))
     dt = bench.run.timestep if bench.run.timestep is not None else TIMESTEP[piece.kind]
 
     spec = mujoco.MjSpec()

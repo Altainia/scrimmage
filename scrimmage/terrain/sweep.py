@@ -93,8 +93,9 @@ def sweep(config_path, element: str, speeds: list[float], holds: dict[str, float
     world = build_world(load_config(config_path))
     rng = world.parts.range if world.parts is not None else None
     if rng is None or not rng.elements:
-        raise SweepError(i18n.t("{config_path}: the sweep needs a [range] whose range file has field elements "
-                                "([[element]])", config_path=config_path))
+        raise SweepError(i18n.t("{config_path}: the sweep needs a {range_table} whose range file has field elements "
+                                "({element_table})", config_path=config_path, range_table="[range]",
+                                element_table="[[element]]"))
     by_name = {e.name: e for e in rng.elements}
     if element not in by_name:
         raise SweepError(i18n.t("no element {element} in range {name}; its elements: {elements}",

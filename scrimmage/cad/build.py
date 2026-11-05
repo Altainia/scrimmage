@@ -297,8 +297,8 @@ def _build_part(imp, tree, root, heads, origin, verts, items, R, shift, msgs) ->
                                total=f"{total:.3g}"), ("part", name)))
         elif typed == total and computed > 0:
             msgs.append(Note(t("The weights typed in {part} already reach its total of {total} kg, so the rest keep "
-                               "their weight from their material: lower a typed weight or raise the total.", part=name,
-                               total=f"{total:.3g}"), ("part", name)))
+                               "their weight from their material: lower a typed weight or raise the total.",
+                               part=name, total=f"{total:.3g}"), ("part", name)))
         elif computed > 0:
             k = (total - typed) / computed
             for h in order:
@@ -440,7 +440,8 @@ def _collision(imp, n, h, vs, meshes, R, msgs) -> list[Geom]:
         except BenchError as e:
             if e.code == "no_coacd":
                 text = t("{body} is concave, and touching things as shaped needs coacd to split it: pip install "
-                         "scrimmage[bench]. It touches things as a simple box until then.", body=n)
+                         "scrimmage{bench_table}. It touches things as a simple box until then.", body=n,
+                         bench_table="[bench]")
             elif e.code == "no_convex_pieces":
                 text = t("{body} couldn't be split into convex pieces to touch things as shaped: pick simple instead. "
                          "It touches things as a simple box until then.", body=n)
