@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from browser_harness import page_units
 from scrimmage.bench import session
 from test_assembler_browser import REPO, Server, browser  # noqa: F401  (fixtures)
 
@@ -108,7 +109,8 @@ def test_stage_shows_latest_run_with_uncalibrated(make_bench_page):
     assert page.is_visible("#bench-edit")
 
 
-def test_change_it_edit_writes_file_and_moves_to_top(make_bench_page, tmp_path):
+def test_change_it_edit_writes_file_and_moves_to_top(make_bench_page, tmp_path, units):
+    units("metric")   # in meters and mm; test_a_length_shows_in_the_units_... has both systems
     page = make_bench_page()
     _on_stage(page, "bounce bar")
     page.click("#bench-showall")
@@ -223,7 +225,8 @@ def test_new_idea_from_example(make_bench_page, tmp_path):
     assert page.is_visible("#bench-strip [data-file='bounce_bar.toml']")
 
 
-def test_problem_marks_field(make_bench_page, tmp_path):
+def test_problem_marks_field(make_bench_page, tmp_path, units):
+    units("metric")   # in meters and mm; test_a_length_shows_in_the_units_... has both systems
     page = make_bench_page()
     _on_stage(page, "bounce bar")
     f = tmp_path / "kickoff" / "bounce_bar.toml"
@@ -244,7 +247,8 @@ def test_problem_marks_field(make_bench_page, tmp_path):
     assert "travel" in page.text_content("#bench-problems")
 
 
-def test_typing_over_an_outside_edit_is_refused_not_saved(make_bench_page, tmp_path):
+def test_typing_over_an_outside_edit_is_refused_not_saved(make_bench_page, tmp_path, units):
+    units("metric")   # in meters and mm; test_a_length_shows_in_the_units_... has both systems
     page = make_bench_page()
     _on_stage(page, "bounce bar")
     f = tmp_path / "kickoff" / "bounce_bar.toml"
@@ -272,7 +276,8 @@ def test_typing_over_an_outside_edit_is_refused_not_saved(make_bench_page, tmp_p
     assert "spring = 5000.0" in f.read_text() and "4600" not in pinch.read_text()
 
 
-def test_half_typed_value_waits_for_enter_across_redraws(make_bench_page, tmp_path):
+def test_half_typed_value_waits_for_enter_across_redraws(make_bench_page, tmp_path, units):
+    units("metric")   # in meters and mm; test_a_length_shows_in_the_units_... has both systems
     page = make_bench_page()
     _on_stage(page, "bounce bar")
     folder = tmp_path / "kickoff"
@@ -299,6 +304,63 @@ def test_half_typed_value_waits_for_enter_across_redraws(make_bench_page, tmp_pa
     while "spring = 4500" not in f.read_text() and time.time() < deadline:
         time.sleep(0.1)
     assert "spring = 4500" in f.read_text()
+
+
+def _diameters(f: Path) -> dict:
+    import tomllib
+    return {w["name"]: {k: v for k, v in w.items() if k.startswith("diameter")} for w in tomllib.loads(f.read_text())["wheel"]}
+
+
+def test_a_length_shows_in_the_units_and_is_written_as_the_file_writes_it(make_bench_page, tmp_path, units):
+    """U3: a length is shown and typed in the Units setting; it is written in the form the file has, `diameter_in` in
+    inches (Review Focus 2: typed in Metric) and `diameter` in meters, and a Units change writes nothing."""
+    def before(folder):
+        f = folder / "bounce_bar.toml"
+        text = f.read_text()
+        top = text.index('name = "top"')
+        f.write_text(text[:top] + text[top:].replace("diameter = 0.1016", "diameter_in = 4.0", 1))
+    units("metric")
+    page = make_bench_page(before)
+    _on_stage(page, "bounce bar")
+    f = tmp_path / "kickoff" / "bounce_bar.toml"
+    page.click("#bench-showall")
+    top, bottom = ("#bench-all input[data-key='wheel.%s.diameter']" % w for w in ("top", "bottom"))
+    page.wait_for_selector(top)
+    assert page.input_value(top) == "101.6" and page.input_value(bottom) == "101.6"
+    assert page.text_content("#bench-all [data-field='wheel.top.diameter'] .unit") == "mm"
+    page.fill(top, "127")                       # 127 mm in a key the file writes in inches: 5 in
+    page.press(top, "Enter")
+    _wait_file(f, lambda t: _diameters(f)["top"] == {"diameter_in": 5.0})
+    shows = lambda box, text: page.wait_for_function(   # noqa: E731 - the page has the file's new version
+        "([s, t]) => { const b = document.querySelector(s); return b.value === t && b.dataset.version === "
+        "String(__scrimmageBench.state.version); }", arg=[box, text])
+    shows(top, "127")
+    page.fill(bottom, "12 cm")                  # in meters, as the file writes it
+    page.press(bottom, "Enter")
+    _wait_file(f, lambda t: _diameters(f)["bottom"] == {"diameter": 0.12})
+    shows(bottom, "120")
+    page.fill(bottom, "5 in")                   # the other system's unit is refused, not converted
+    page.press(bottom, "Enter")
+    msg = "#bench-all [data-field='wheel.bottom.diameter'] .field-msg.error"
+    page.wait_for_selector(msg)
+    assert "Units is set to Metric, so type mm here, not in" in page.text_content(msg)
+    page.fill(bottom, "110")
+    page.press(bottom, "Enter")
+    _wait_file(f, lambda t: _diameters(f)["bottom"] == {"diameter": 0.11})
+    page.wait_for_function("(s) => !document.querySelector(s)", arg=msg)
+    shows(bottom, "110")
+    before_switch = f.read_text()
+    page_units(page, "imperial")                # shown again in inches; nothing is written
+    page.wait_for_function("(s) => document.querySelector(s).value === '5'", arg=top)
+    assert page.input_value(bottom) == "4.33071"
+    assert page.text_content("#bench-all [data-field='wheel.top.diameter'] .unit") == "in"
+    page.press(top, "Enter")                    # unchanged: written back exactly
+    page.wait_for_timeout(500)
+    assert f.read_text() == before_switch
+    page.fill(bottom, "4.5")
+    page.press(bottom, "Enter")
+    _wait_file(f, lambda t: _diameters(f)["bottom"] == {"diameter": 0.1143})
+    assert _diameters(f)["top"] == {"diameter_in": 5.0}
 
 
 # -- the shape editor (Edit shape) ------------------------------------------------------------------------------------
@@ -329,7 +391,8 @@ def _entry(raw_text: str, section: str, name: str) -> dict:
     return next(e for e in raw[section] if e.get("name") == name)
 
 
-def test_click_shape_selects_and_plus_moves_it(make_bench_page, tmp_path):
+def test_click_shape_selects_and_plus_moves_it(make_bench_page, tmp_path, units):
+    units("metric")   # in meters and mm; test_a_length_shows_in_the_units_... has both systems
     page = make_bench_page()
     _on_stage(page, "bounce bar")
     _open_editor(page)
@@ -363,7 +426,7 @@ def test_click_shape_selects_and_plus_moves_it(make_bench_page, tmp_path):
     # the view follows the edit
     page.wait_for_function("Math.abs(__scrimmageBench.editor.posOf('bar.kicker')[2] + 0.038) < 1e-6")
     # the end boxes show the new numbers, three boxes each
-    assert page.input_value("#bench-inspector input[data-key='bar.kicker.a#2']") == "-0.038"
+    assert page.input_value("#bench-inspector input[data-key='bar.kicker.a#2']") == "-38"   # mm
     # one edit moved both ends: one undo puts both back
     page.click("#undo")
     text = _wait_file(f, lambda t: _entry(t, "bar", "kicker")["b"][2] == pytest.approx(-0.048))
@@ -376,8 +439,9 @@ def test_click_shape_selects_and_plus_moves_it(make_bench_page, tmp_path):
     assert not page.is_visible("#bench-editor")
 
 
-def test_plus_nudges_a_radius(make_bench_page, tmp_path):
+def test_plus_nudges_a_radius(make_bench_page, tmp_path, units):
     """A length in meters (a radius here) has - and + too: 10 mm a click. The title names the shape once."""
+    units("metric")   # in meters and mm; test_a_length_shows_in_the_units_... has both systems
     def before(folder):
         shutil.copy(REPO / "examples" / "bench" / "hooded.toml", folder / "hooded.toml")
     page = make_bench_page(before)
@@ -391,7 +455,7 @@ def test_plus_nudges_a_radius(make_bench_page, tmp_path):
     page.click(plus)
     f = tmp_path / "kickoff" / "hooded.toml"
     _wait_file(f, lambda t: _entry(t, "curve", "hood")["radius"] == pytest.approx(0.2005))
-    page.wait_for_function("document.querySelector(\"#bench-inspector input[data-key='curve.hood.radius#0']\")?.value === '0.2005'")
+    page.wait_for_function("document.querySelector(\"#bench-inspector input[data-key='curve.hood.radius#0']\")?.value === '200.5'")
     page.click("#bench-inspector [data-field='curve.hood.radius'] button[data-step='-']")
     _wait_file(f, lambda t: _entry(t, "curve", "hood")["radius"] == pytest.approx(0.1905))
     # a wheel's diameter too
@@ -491,7 +555,8 @@ def test_included_entry_read_only_then_override(make_bench_page, tmp_path):
     assert "target_rps = 30" in (tmp_path / "kickoff" / "shafts.toml").read_text()
 
 
-def test_undo_redo_in_editor(make_bench_page, tmp_path):
+def test_undo_redo_in_editor(make_bench_page, tmp_path, units):
+    units("metric")   # in meters and mm; test_a_length_shows_in_the_units_... has both systems
     page = make_bench_page()
     _on_stage(page, "bounce bar")
     _open_editor(page)
@@ -505,7 +570,7 @@ def test_undo_redo_in_editor(make_bench_page, tmp_path):
     page.wait_for_selector("#undo:not([disabled])")
     page.click("#undo")
     _wait_file(f, lambda t: x(t) == pytest.approx(-0.22))
-    page.wait_for_function("(s) => document.querySelector(s).value === '-0.22'",
+    page.wait_for_function("(s) => document.querySelector(s).value === '-220'",   # mm
                            arg="#bench-inspector input[data-key='plate.feeder.center#0']")
     page.click("#redo")
     _wait_file(f, lambda t: x(t) == pytest.approx(-0.21))
@@ -522,7 +587,8 @@ def test_undo_redo_in_editor(make_bench_page, tmp_path):
     assert page.evaluate("__scrimmageBench.shown") == "bounce_bar.toml" and _selected(page) == "plate.feeder"
 
 
-def test_help_text_shown_for_field(make_bench_page, tmp_path):
+def test_help_text_shown_for_field(make_bench_page, tmp_path, units):
+    units("metric")   # in meters and mm; test_a_length_shows_in_the_units_... has both systems
     page = make_bench_page()
     _on_stage(page, "bounce bar")
     _open_editor(page)
@@ -546,7 +612,8 @@ def test_help_text_shown_for_field(make_bench_page, tmp_path):
     assert page.text_content("#bench-inspector-title") == "flipper — bar"
 
 
-def test_typing_in_the_inspector_over_an_outside_edit_is_refused(make_bench_page, tmp_path):
+def test_typing_in_the_inspector_over_an_outside_edit_is_refused(make_bench_page, tmp_path, units):
+    units("metric")   # in meters and mm; test_a_length_shows_in_the_units_... has both systems
     page = make_bench_page()
     _on_stage(page, "bounce bar")
     _open_editor(page)
@@ -566,7 +633,7 @@ def test_typing_in_the_inspector_over_an_outside_edit_is_refused(make_bench_page
     assert page.evaluate("document.activeElement.dataset.key") == "plate.feeder.center#0"
     page.keyboard.press("Enter")
     page.wait_for_selector("#notices .notice:has-text(\"your edit to plate.feeder.center wasn't saved\")")
-    page.wait_for_function("(s) => document.querySelector(s).value === '-0.22'", arg=box)
+    page.wait_for_function("(s) => document.querySelector(s).value === '-220'", arg=box)   # mm
     text = f.read_text()
     assert "spring = 5000.0" in text and "center = [-0.22, 0.0, -0.08]" in text
 
@@ -598,7 +665,15 @@ def test_agent_sweep_and_compare_show_on_stage(make_bench_page, tmp_path):
     assert page.is_visible("#bench-table")
     assert page.text_content("#bench-table th") == "bar.kicker.spring"
     assert len(page.query_selector_all("#bench-table tbody tr")) == 2
-    assert "exit speed (m/s)" in page.text_content("#bench-table thead")
+    # the CSV is SI; the table is in the Units setting (Imperial): 7.5 m/s is 24.61 ft/s, 40 N is 8.992 lbf
+    assert "exit speed (ft/s)" in page.text_content("#bench-table thead")
+    assert "peak load (lbf)" in page.text_content("#bench-table thead")
+    first = page.eval_on_selector_all("#bench-table tbody tr:first-child td", "ts => ts.map(t => t.textContent)")
+    assert first == ["2000", "3", "0", "24.61", "8.992"]
+    page_units(page, "metric")
+    page.wait_for_function("document.querySelector('#bench-table thead').textContent.includes('exit speed (m/s)')")
+    first = page.eval_on_selector_all("#bench-table tbody tr:first-child td", "ts => ts.map(t => t.textContent)")
+    assert first == ["2000", "3", "0", "7.5", "40"]
     assert page.text_content("#bench-uncalibrated").startswith("UNCALIBRATED")
     page.wait_for_timeout(1200)   # the "... ago" line is kept current: it still names the sweep
     assert re.search(r"the agent swept this .*ago", page.text_content("#bench-changed"))

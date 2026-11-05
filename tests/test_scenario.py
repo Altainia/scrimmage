@@ -101,12 +101,14 @@ def stub(world):
                            nt_value=lambda topic: None)
 
 
-def test_pose_check_reports_measured_values(world):
+def test_pose_check_reports_measured_values(world, units):
     s = stub(world)
     c = build_check({"pose": {"x": 4.0, "y": 4.035, "tol_xy": 0.25}}, world, "auto")
     world.set_robot_pose(3.6, 4.035, 0.0)
+    units("metric")
     r = c.end(s)
-    assert not r.passed and "0.40 m from target" in r.message and "x=3.60" in r.message
+    assert not r.passed and "0.4 m from target" in r.shown() and "x=3.6 m" in r.shown()
+    assert "1.31 ft from target" in r.message and "x=11.81 ft" in r.message   # report.json's: units.MACHINE
     world.set_robot_pose(4.1, 4.0, 0.0)
     assert c.end(s).passed
 

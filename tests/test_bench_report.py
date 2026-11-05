@@ -57,7 +57,8 @@ def test_fly_state_matches_fly():
     assert fly_state(pos, vel, axis, shot.spin, setup.ball, setup.air, setup.goal) == fly(shot, setup, setup.ball)
 
 
-def test_headlines_wording(pinch):
+def test_headlines_wording(pinch, units):
+    units("metric")   # the wording; tests/test_display_units_bench.py has both systems
     lines = headlines(pinch)
     assert 3 <= len(lines) <= 6
     assert re.fullmatch(r"3 of 3 left through `shot` at \d+\.\d m/s ± \d+\.\d, \d+° down", lines[0]), lines[0]
@@ -73,15 +74,17 @@ def test_squishy_uncalibrated_names_the_ball_tests(hooded_flight):
     assert "stiffness" in last and "squeeze" in last and "bounce" in last and "drop" in last
 
 
-def test_loads_headline_when_a_bar_takes_the_hit(bounce):
+def test_loads_headline_when_a_bar_takes_the_hit(bounce, units):
+    units("metric")   # the wording; tests/test_display_units_bench.py has both systems
     lines = headlines(bounce)
     hit = [line for line in lines if "`kicker`" in line]
     assert len(hit) == 1 and re.search(r"up to \d+ N", hit[0]), lines
     assert 3 <= len(lines) <= 6
 
 
-def test_loads_headline_with_two_touched_shapes(bounce):
+def test_loads_headline_with_two_touched_shapes(bounce, units):
     """A wheel plus a bounce bar: the bar stands out against the one other part; one touched part has no line."""
+    units("metric")   # the wording; tests/test_display_units_bench.py has both systems
     from scrimmage.bench.run import LoadStats
 
     def with_loads(**peaks):
@@ -121,7 +124,8 @@ def test_write_results_tables(pinch, tmp_path):
     assert {r["shape"] for r in loads} == {"top", "bottom", "track"}
 
 
-def test_flight_landing_written(hooded_flight, tmp_path):
+def test_flight_landing_written(hooded_flight, tmp_path, units):
+    units("metric")   # the wording; tests/test_display_units_bench.py has both systems
     out = write_results(hooded_flight, tmp_path)
     rows = list(csv.DictReader((out / "landings.csv").open()))
     assert len(rows) == 2

@@ -973,7 +973,7 @@ def _sweep_job(path: Path, sweep: dict, out: Path) -> None:
     out.mkdir(parents=True, exist_ok=True)
     report.write_csv(rows, out / "results.csv", compare.BENCH_METRICS)
     report.write_charts(rows, compare.default_charts(list(sweep)), out, None, compare.BENCH_METRICS,
-                        compare.CHART_KINDS, footer=bench_estimates(bench))
+                        compare.CHART_KINDS, footer=bench_estimates(bench), shown=compare.SHOWN)
 
 
 def _compare_job(files: list[Path], out: Path) -> None:

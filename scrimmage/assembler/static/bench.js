@@ -19,8 +19,12 @@
 // marked `data-bench-fields`, and `keepTyping()` / `restoreTyping()` keep what is half typed in it across a
 // redraw (inside `redraw()`, so the change events of the boxes it removes are ignored). A test hook,
 // window.__scrimmageBench, exposes the store.
+//
+// Units: lengths, speeds, masses, forces and springs are shown and typed in the Units setting (units.js; valueOf
+// says how). What is typed is written in the form the file already has, `diameter_in` in inches, else meters (U3).
 
 import { $, h, api, apiFile, notice, serial, registerTab, setTab, showPath, fmt, UNIT } from "./app.js";
+import { units } from "./units.js";
 
 export const FOCUS_SHOWN = 6;
 
@@ -90,15 +94,59 @@ export function entryOf(raw, section, name) {
   return (Array.isArray(raw[section]) ? raw[section] : []).find((e) => e && e.name === name) || null;
 }
 
-// The value of a key as the file writes it: {value, inches, sendKey}; a length the file writes in inches is shown
-// and sent in inches (`diameter_in`).
+// The value of a key as the file writes it: {value, inches, sendKey, kind}. A length the file writes in inches
+// (`diameter_in`) is sent in inches, one it writes in meters, or not at all yet, in meters, whatever the Units
+// setting (U3); `kind` (units.js) is what it is shown and typed in, or null for a key shown as the file has it.
 function valueOf(key) {
   const { section, name, k, def } = parseKey(key);
   const t = entryOf(bench.idea && bench.idea.merged, section, name) || {};
+  const kind = kindOf(key);
   if (def && def.length && t[k] === undefined && t[`${k}_in`] !== undefined) {
-    return { value: t[`${k}_in`], inches: true, sendKey: `${key}_in` };
+    return { value: t[`${k}_in`], inches: true, sendKey: `${key}_in`, kind };
   }
-  return { value: t[k], inches: false, sendKey: key };
+  return { value: t[k], inches: false, sendKey: key, kind };
+}
+
+// -- units: a key's number in the Units setting -------------------------------------------------------------------
+// By the unit fields.toml gives a key: a length is "length" (in or mm), a flight's target "field" (ft or m). Angles,
+// times, rps and the rest are shown as the file writes them.
+const KINDS = { m: "length", "m/s": "speed", kg: "mass", N: "force", "N/m": "spring" };
+const FIELD_KEYS = ["flight.target_distance", "flight.target_height"];
+function kindOf(key) {
+  const { section, k, def } = parseKey(key);
+  if (!def || def.choices) return null;
+  return def.unit === "m" && FIELD_KEYS.includes(`${section}.${k}`) ? "field" : KINDS[def.unit] || null;
+}
+const isNumber = (x) => typeof x === "number" && Number.isFinite(x);
+const each = (v, f) => (Array.isArray(v) ? v.map((x) => (isNumber(x) ? f(x) : x)) : isNumber(v) ? f(v) : v);
+// a value as the file writes it, in SI (and back: to 1 µm, or a millionth of an inch)
+const siOf = (t, v) => each(v, (x) => (t.inches ? units.fromKey(x, "in") : x));
+const fileOf = (t, si) => each(si, (x) => round6(t.inches ? units.toKey(x, "in") : x));
+// a number's text in a box (no unit), and a whole value's ("1, 2, 3"), in the Units setting
+const shownNumber = (t, x) => (t.kind ? units.shown(siOf(t, x), t.kind) : fmt(x));
+const shownValue = (t, v) => (t.kind && v != null && typeof v !== "string" ? (Array.isArray(v) ? v.map((x) => shownNumber(t, x)).join(", ") : shownNumber(t, v)) : show(v));
+const unitOf = (t, def) => (t.kind ? units.name(t.kind) : t.inches ? "in" : def && def.unit ? UNIT[def.unit] || def.unit : "");
+
+// What a box of a key with a kind holds, as the file writes it: "" -> null (remove); a number, or a list "1, 2, 3",
+// each typed in the Units setting ("4", "4 in", "100 mm"). A part still showing `orig`'s text keeps the file's own
+// number (`file`), so a list with one number changed writes the others back exactly.
+function parseMeasured(text, t, orig, file) {
+  const s = text.trim();
+  if (s === "") return { value: null };
+  const list = /^\[/.test(s) || s.includes(",");
+  let parts = s.replace(/^\[|\]$/g, "").split(",").map((x) => x.trim()).filter(Boolean);
+  const spaced = parts.length === 1 ? parts[0].split(/\s+/) : [];
+  if (spaced.length > 1 && spaced.every((x) => NUM_RE.test(x))) parts = spaced;   // "1 2 3", as parseTyped takes it
+  const was = String(orig ?? "").split(",").map((x) => x.trim());
+  const exact = Array.isArray(file) ? file : [file];
+  const out = [];
+  for (const [j, x] of parts.entries()) {
+    if (parts.length === was.length && x === was[j] && isNumber(exact[j])) { out.push(exact[j]); continue; }
+    const v = units.parse(x, t.kind);
+    if (typeof v === "object") return { error: v.error };
+    out.push(fileOf(t, v));
+  }
+  return { value: out.length === 1 && !list ? out[0] : out };
 }
 
 const meters = (field) => {
@@ -392,19 +440,26 @@ function stagePictures(lt, result) {
   return { main: p.path_side || null, gif: p.pass_gif || null };
 }
 
-// A sweep's or compare's table header in plain words (a swept key stays as the file writes it).
-const COLUMN = { idea: "idea", out: "got out", jammed: "jammed", exit_speed: "exit speed (m/s)",
-  elevation_deg: "elevation (°)", spin_rps: "spin (turns/s)", speed_drop_pct: "speed drop (%)", peak_load_n: "peak load (N)" };
+// A sweep's or compare's table header in plain words (a swept key stays as the file writes it, its values too). The
+// CSV is SI: exit speed and peak load are shown in the Units setting, to 4 significant figures, as the CSV has them.
+const COLUMN = { idea: "idea", out: "got out", jammed: "jammed", exit_speed: () => `exit speed (${units.name("speed")})`,
+  elevation_deg: "elevation (°)", spin_rps: "spin (turns/s)", speed_drop_pct: "speed drop (%)", peak_load_n: () => `peak load (${units.name("force")})` };
+const COLUMN_KIND = { exit_speed: "speed", peak_load_n: "force" };
+const columnName = (c) => (typeof COLUMN[c] === "function" ? COLUMN[c]() : COLUMN[c]);
 
 function renderTable(result) {
   const wrap = $("#bench-table-wrap");
   const t = result && result.table;
   wrap.hidden = !t || !t.rows.length;
   if (wrap.hidden) { $("#bench-table").replaceChildren(); return; }
-  const cell = (x) => (x === "nan" ? "–" : x);
+  const cell = (x, c) => {
+    if (x === "nan") return "–";
+    const kind = COLUMN_KIND[t.columns[c]], v = Number(x);
+    return kind && x !== "" && Number.isFinite(v) ? String(+units.toDisplay(v, kind).toPrecision(4)) : x;
+  };
   $("#bench-table").replaceChildren(
-    h("thead", {}, h("tr", {}, ...t.columns.map((c) => h("th", { scope: "col", class: COLUMN[c] ? "" : "mono", text: COLUMN[c] || c })))),
-    h("tbody", {}, ...t.rows.map((r) => h("tr", {}, ...r.map((x) => h("td", { text: cell(x) }))))));
+    h("thead", {}, h("tr", {}, ...t.columns.map((c) => h("th", { scope: "col", class: COLUMN[c] ? "" : "mono", text: columnName(c) || c })))),
+    h("tbody", {}, ...t.rows.map((r) => h("tr", {}, ...r.map((x, c) => h("td", { text: cell(x, c) }))))));
 }
 
 const listOf = (xs) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
@@ -559,8 +614,11 @@ function renderStage() {
 }
 
 // -- vectors (the shape editor): three number boxes, or one for an angle, each with - and + -----------------------
-const STEP = { m: 0.01, degrees: 5 };   // 10 mm, 5 degrees
-const STEP_IN = 0.5;                    // a length the file writes in inches
+// a - or + step: an angle's 5 degrees; a length's 0.5 in or 10 mm, a field length's 0.5 ft or 0.1 m (in SI, by the
+// Units setting, whatever unit the file writes the key in)
+const STEP = { degrees: 5 };
+const STEP_SI = { imperial: { length: 0.0127, field: 0.1524 }, metric: { length: 0.01, field: 0.1 } };
+const stepOf = (t, def) => (t.kind ? (STEP_SI[units.system] || STEP_SI.metric)[t.kind] || null : (def && STEP[def.unit]) || null);
 const AXES = ["x", "y", "z"];
 const round6 = (x) => Math.round(x * 1e6) / 1e6;
 const isNum = (x) => typeof x === "number" && Number.isFinite(x);
@@ -568,7 +626,7 @@ const vec3 = (v) => Array.isArray(v) && v.length === 3 && v.every(isNum);
 const NUM_RE = /^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/;
 
 // Whether `key` is drawn as number boxes with - and +: a point or size ([x, y, z]), any three numbers, an angle, or a
-// length in meters (a radius, diameter, width, travel...: 10 mm a step, 0.5 in when the file writes inches).
+// length (a radius, diameter, width, travel...: 0.5 in or 10 mm a step).
 function isVector(key) {
   const { section, k, def } = parseKey(key);
   if (!def || def.choices) return false;
@@ -579,18 +637,18 @@ function isVector(key) {
   return isNum(v) && (def.unit === "degrees" || def.unit === "m");
 }
 
-// What a vector field holds and how a new value is written: {value, base (what - and + start from), n, inches,
-// write(v) -> [[key, value], ...]}. A bar given by its two ends has no center: its center is their middle, and
-// moving it moves both ends.
+// What a vector field holds and how a new value is written: {value, base (what - and + start from), n, inches, kind,
+// write(v) -> [[key, value], ...]}, each as the file writes it. A bar given by its two ends has no center: its
+// center is their middle, and moving it moves both ends.
 function vectorOf(key) {
   const { section, name, k, def } = parseKey(key);
-  const { value, inches } = valueOf(key);
+  const { value, inches, kind } = valueOf(key);
   if (section === "bar" && k === "center" && value === undefined) {
     const ak = dotted(section, name, "a"), bk = dotted(section, name, "b");
     const a = valueOf(ak), b = valueOf(bk);
     if (vec3(a.value) && vec3(b.value) && a.inches === b.inches) {
       const mid = a.value.map((x, j) => round6((x + b.value[j]) / 2));
-      return { value: mid, base: mid, n: 3, inches: a.inches, ends: true, write: (v) => {
+      return { value: mid, base: mid, n: 3, inches: a.inches, kind, ends: true, write: (v) => {
         const pairs = [[ak, a.value.map((x, j) => round6(x + v[j] - mid[j]))], [bk, b.value.map((x, j) => round6(x + v[j] - mid[j]))]];
         pairs.value = v;
         return pairs;
@@ -599,13 +657,13 @@ function vectorOf(key) {
   }
   const dv = def ? def.default : undefined;
   const n = isNum(value ?? dv) || (value == null && dv == null && def && def.unit === "degrees" && !["center", "a", "b", "size"].includes(k)) ? 1 : 3;
-  return { value, base: value ?? dv ?? null, n, inches, write: (v) => [[key, v]] };
+  return { value, base: value ?? dv ?? null, n, inches, kind, write: (v) => [[key, v]] };
 }
 
 function vectorBoxes(key, id, disabled) {
   const { k, def } = parseKey(key);
   const t = vectorOf(key);
-  const step = t.inches ? STEP_IN : (def && STEP[def.unit]) || null;
+  const step = stepOf(t, def);   // SI for a key with a kind
   const typed = bench.typed.has(key) ? bench.typed.get(key) : undefined;
   const cur = typed !== undefined ? typed : t.value;
   const comp = (j) => (t.n === 1 ? (Array.isArray(cur) ? cur[0] : cur) : Array.isArray(cur) ? cur[j] : undefined);
@@ -620,9 +678,19 @@ function vectorBoxes(key, id, disabled) {
       if (t.ends) return;
       v = null;
     } else {
-      const vals = texts.map((x, j) => (x === "" ? baseOf(j) : NUM_RE.test(x) ? Number(x) : NaN));
-      if (vals.some((x) => !isNum(x))) {
-        bench.errors = { file: bench.shown, list: [{ field: key, message: t.n === 1 ? "type a number" : "type a number in each box" }] };
+      // a box still showing the file's number keeps it exactly; another is typed in the Units setting (with a kind)
+      const read = (x, j) => {
+        if (x === "") return baseOf(j);
+        if (!t.kind) return NUM_RE.test(x) ? Number(x) : NaN;
+        if (x === boxes[j].dataset.orig && isNum(comp(j))) return comp(j);
+        const v = units.parse(x, t.kind);
+        return typeof v === "object" ? v : fileOf(t, v);
+      };
+      const vals = texts.map(read);
+      const bad = vals.find((x) => x && typeof x === "object");
+      if (bad || vals.some((x) => !isNum(x))) {
+        const message = bad ? bad.error : t.n === 1 ? "type a number" : "type a number in each box";
+        bench.errors = { file: bench.shown, list: [{ field: key, message }] };
         bench.typed.set(key, t.n === 1 ? texts[0] : texts);
         bench.typedAt.set(key, Math.min(...boxes.map((b) => Number(b.dataset.typedAt || b.dataset.version))));
         render();
@@ -634,24 +702,26 @@ function vectorBoxes(key, id, disabled) {
     row.dataset.sent = JSON.stringify(v);
     const version = Math.min(...boxes.map((b) => Number(b.dataset.typedAt || b.dataset.version)));
     const pairs = v === null ? [[key, null]] : t.write(v);
+    for (const b of boxes) b.dataset.orig = b.value;   // sent: the redraw shows the saved value, as fieldRow's
     setKeys(pairs, version, boxes[0].dataset.file, key);
   };
   // - and +: the step is added to what the file holds when the edit's turn comes, so quick clicks all count
   const nudge = (j, sign) => setKeys(() => {
     const now2 = vectorOf(key);
     if (now2.base == null) return [];
-    const v = now2.n === 1 ? round6((Array.isArray(now2.base) ? now2.base[0] : now2.base) + sign * step)
-      : now2.base.map((x, m) => (m === j ? round6(x + sign * step) : x));
+    const add = (x) => (now2.kind ? fileOf(now2, siOf(now2, x) + sign * step) : round6(x + sign * step));
+    const v = now2.n === 1 ? add(Array.isArray(now2.base) ? now2.base[0] : now2.base)
+      : now2.base.map((x, m) => (m === j ? add(x) : x));
     return now2.write(v);
   }, null, bench.shown, key);
-  const unit = t.inches ? "in" : def && def.unit ? UNIT[def.unit] || def.unit : "";
-  const stepText = step ? `${fmt(step)} ${t.inches ? "in" : def.unit === "degrees" ? "°" : unit === "m" ? "m (10 mm)" : unit}` : "";
+  const unit = unitOf(t, def);
+  const stepText = !step ? "" : t.kind ? `${units.number(units.toDisplay(step, t.kind), 4)} ${unit}` : `${fmt(step)} ${def.unit === "degrees" ? "°" : unit}`;
   for (let j = 0; j < t.n; j++) {
     const c = comp(j);
-    const text = c == null ? "" : typeof c === "string" ? c : fmt(c);
-    const box = h("input", { id: `${id}-${j}`, type: "text", class: "bench-vnum", inputmode: "decimal", autocomplete: "off",
+    const text = c == null ? "" : typeof c === "string" ? c : shownNumber(t, c);
+    const box = h("input", { id: `${id}-${j}`, type: "text", class: "bench-vnum", inputmode: t.kind ? null : "decimal", autocomplete: "off",
       spellcheck: "false", disabled, dataset: { key: `${key}#${j}` }, "aria-label": t.n === 1 ? k : `${k} ${AXES[j]}`,
-      placeholder: baseOf(j) != null && t.value === undefined ? fmt(baseOf(j)) : "" });
+      placeholder: baseOf(j) != null && t.value === undefined ? shownNumber(t, baseOf(j)) : "" });
     box.value = text;
     box.dataset.orig = text;
     box.dataset.file = bench.shown;
@@ -677,16 +747,18 @@ function vectorBoxes(key, id, disabled) {
 export function fieldRow(key, { focus = false, prefix = null, vectors = false } = {}) {
   const { section, name, k, def } = parseKey(key);
   const i = shownIdea();
-  const { value, inches } = valueOf(key);
+  const vt = valueOf(key);
+  const { value } = vt;
   const inc = included(section, name);
   const disabled = !!(i && i.read_only_reason) || !!inc;
   const id = `bench-${prefix || (focus ? "f" : "a")}-${key.replace(/[^A-Za-z0-9_-]/g, "-")}`;
-  let unitText = inches ? "in" : def && def.unit ? UNIT[def.unit] || def.unit : "";
+  let unitText = unitOf(vt, def);
   const typed = bench.typed.has(key) ? bench.typed.get(key) : undefined;
   let box, vec = null;
   const commit = (v) => {
     if (box.dataset.sent === JSON.stringify(v)) return;
     box.dataset.sent = JSON.stringify(v);
+    box.dataset.orig = box.value;   // sent: the redraw shows the saved value ("12 cm" reads back "120"), not this text
     setKey(key, v, Number(box.dataset.typedAt || box.dataset.version), box.dataset.file);
   };
   const stamp = () => {   // which idea and version this box shows, and the version typing began at
@@ -715,14 +787,16 @@ export function fieldRow(key, { focus = false, prefix = null, vectors = false } 
     box.addEventListener("change", () => { if (live(box)) commit(box.value === "" ? null : box.value === "true"); });
   } else {
     const numeric = !!(def && def.unit) || typeof value === "number" || (Array.isArray(value) && value.every((x) => typeof x === "number"));
-    const text = typed !== undefined ? (typeof typed === "string" ? typed : show(typed)) : value == null ? "" : show(value);
+    const text = typed !== undefined ? (typeof typed === "string" ? typed : shownValue(vt, typed)) : value == null ? "" : shownValue(vt, value);
+    const dflt = def && def.default != null ? shownValue({ kind: vt.kind, inches: false }, def.default) : "";   // in meters
     box = h("input", { id, type: "text", dataset: { key }, disabled, autocomplete: "off", spellcheck: "false",
-      inputmode: numeric && !Array.isArray(value) ? "decimal" : null,
-      placeholder: def && def.default != null ? `${show(def.default)} if left out` : "", class: numeric ? "bench-num" : "bench-text" });
+      inputmode: numeric && !Array.isArray(value) && !vt.kind ? "decimal" : null,
+      placeholder: dflt ? `${dflt} if left out` : "", class: numeric ? "bench-num" : "bench-text" });
     box.value = text;
     box.dataset.orig = text;
     const go = () => {
-      const r = parseTyped(box.value, numeric);
+      // a key with a kind is typed in the Units setting and written as the file writes it (U3)
+      const r = vt.kind ? parseMeasured(box.value, vt, typed === undefined ? text : null, value) : parseTyped(box.value, numeric);
       if (r.error) {
         bench.errors = { file: bench.shown, list: [{ field: key, message: r.error }] };
         bench.typed.set(key, box.value);
@@ -910,11 +984,12 @@ function initDialogs() {
   const fillRange = () => {
     const key = $("#bench-sweep-key").value;
     if (!key) return;
-    const { value, inches } = valueOf(key);
+    const t = valueOf(key);
     const { def } = parseKey(key);
-    $("#bench-sweep-from").value = fmt(+(value * 0.8).toPrecision(4));
-    $("#bench-sweep-to").value = fmt(+(value * 1.2).toPrecision(4));
-    $("#bench-sweep-unit").textContent = `Now ${fmt(value)} ${inches ? "in" : def && def.unit ? UNIT[def.unit] || def.unit : ""}. ${def ? def.help : ""}`;
+    const now = t.kind ? units.toDisplay(siOf(t, t.value), t.kind) : t.value;   // From and To are in the Units setting
+    $("#bench-sweep-from").value = fmt(+(now * 0.8).toPrecision(4));
+    $("#bench-sweep-to").value = fmt(+(now * 1.2).toPrecision(4));
+    $("#bench-sweep-unit").textContent = `Now ${t.kind ? units.fmt(siOf(t, t.value), t.kind) : `${fmt(t.value)} ${unitOf(t, def)}`}. ${def ? def.help : ""}`;
   };
   $("#bench-sweep").addEventListener("click", () => {
     const keys = sweepKeys();
@@ -924,18 +999,30 @@ function initDialogs() {
     $("#bench-sweep-dialog").showModal();
   });
   $("#bench-sweep-key").addEventListener("change", fillRange);
+  units.onChange(() => { if ($("#bench-sweep-dialog").open) fillRange(); });   // From and To in the new units
   $("#bench-sweep-dialog form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const key = $("#bench-sweep-key").value;
-    const a = Number($("#bench-sweep-from").value), b = Number($("#bench-sweep-to").value);
+    const t = key ? valueOf(key) : {};
+    // a number, or with a kind, one in the Units setting ("4", "4 in"): From and To in its shown unit
+    const typed = (sel) => {
+      const x = $(sel).value.trim();
+      if (!t.kind || x === "") return Number(x);
+      const v = units.parse(x, t.kind);
+      return typeof v === "object" ? NaN : units.toDisplay(v, t.kind);
+    };
+    const a = typed("#bench-sweep-from"), b = typed("#bench-sweep-to");
     const n = Number($("#bench-sweep-steps").value);
     const errs = [];
     if (!key) errs.push({ message: "Pick a number to sweep." });
     if (!Number.isFinite(a) || !Number.isFinite(b) || $("#bench-sweep-from").value.trim() === "" || $("#bench-sweep-to").value.trim() === "") errs.push({ message: "From and To must be numbers." });
     if (!Number.isInteger(n) || n < 2 || n > 25) errs.push({ message: "Steps must be a whole number from 2 to 25." });
     if (errs.length) { dialogErrors("#bench-sweep-errors", errs); return; }
-    const values = Array.from({ length: n }, (_, k) => +(a + ((b - a) * k) / (n - 1)).toPrecision(6));
-    const sendKey = valueOf(key).sendKey;
+    const values = Array.from({ length: n }, (_, k) => {
+      const v = +(a + ((b - a) * k) / (n - 1)).toPrecision(6);
+      return t.kind ? fileOf(t, units.fromDisplay(v, t.kind)) : v;   // written as the file writes the key
+    });
+    const sendKey = t.sendKey;
     const file = bench.shown;
     const r = await job("/api/bench/sweep", { file, key: sendKey, values }, { kind: "sweep", files: [file], key: sendKey });
     if (r === true) $("#bench-sweep-dialog").close();
@@ -988,6 +1075,7 @@ export async function initBench() {
   $("#bench-showall").addEventListener("click", () => { bench.showAll = !bench.showAll; renderChange(); });
   $("#bench-edit").addEventListener("click", () => { if (stageHooks.edit && bench.shown) stageHooks.edit(bench.shown); });
   initDialogs();
+  units.onChange(() => render());   // a half-typed box keeps its text (keepTyping), then read in the new units
   $("#bench-change").dataset.benchFields = "";
   const [f, app] = await Promise.all([api("GET", "/api/bench/fields"), api("GET", "/api/app/state")]);
   if (f.status === 200) bench.fields = f.data;

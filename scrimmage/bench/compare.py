@@ -31,6 +31,7 @@ from .spec import Bench, BenchError, _absolute_paths, load_bench, parse_bench, w
 # hardest-hit shape. time_inside_s: the median, inlet to outlet.
 BENCH_METRICS = ("out", "out_other", "jammed", "escaped", "exit_speed", "exit_speed_sd", "elevation_deg", "spin_rps",
                  "speed_drop_pct", "recovery_s", "peak_load_n", "time_inside_s")
+SHOWN = {"exit_speed": "speed", "exit_speed_sd": "speed", "peak_load_n": "force"}   # charted in the Units setting
 NOISE = 1e-6  # a spread under this fraction of its mean, or a number under this, is rounding noise: shown as 0
 CHART_KINDS = ("line",)  # a bench sweep charts a metric against a swept key; the launcher's shaft and landing charts
                          # need its own traces

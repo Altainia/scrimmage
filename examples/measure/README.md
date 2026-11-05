@@ -50,7 +50,7 @@ Six shots from the hooded Power Cell launcher, three near 70 rps and three near 
 with the wheel friction at the setup's 0.95:
 
 ```
-  fit: stiffness 91 N, anywhere from 81 to 103 N fits your shots
+  fit: stiffness 20.6 lbf, anywhere from 18.2 to 23.1 lbf fits your shots
   the model misses your shots by 1.9% (root mean square)
   warning: Measure the ball's squeeze (the squeeze test) to fit wheel friction too.
   good enough to use

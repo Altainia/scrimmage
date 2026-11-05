@@ -155,7 +155,8 @@ scrimmage measure examples/measure/fuel.measure.toml
 prints each test's trials with the value each gives, then the average, the lowest, the highest and the spread, with
 any warnings, and for a shot or a stroke the fit. Its last line says whether the file is good enough to use. It
 exits 0 when it is, 1 when it isn't yet, and 2 when the file can't be read (the message names the file, the table
-and the key). The sections below quote it on the [worked examples](../examples/measure/README.md).
+and the key). The sections below quote it on the [worked examples](../examples/measure/README.md), in Imperial
+units; it prints in the Units setting (`scrimmage --units metric measure ...` for Metric).
 
 ## Ball size and mass
 
@@ -179,11 +180,11 @@ a circumference; each value is averaged over the trials that give it.
 
 ```
 size: gives mass, diameter
-  trial  mass_g  circumference_in  mass     diameter
-  1      215     18.6              215.0 g  150.4 mm (5.92 in)
+  trial  mass_g  circumference_in  mass      diameter
+  1      215     18.6              0.474 lb  5.921 in
   ...
-  mass: average 215.6 g, lowest 214.0 g, highest 217.0 g, spread 1% (5 trials)
-  diameter: average 150.2 mm (5.91 in), lowest 149.6 mm (5.89 in), highest 151.2 mm (5.95 in), spread 1% (5 trials)
+  mass: average 0.475 lb, lowest 0.472 lb, highest 0.478 lb, spread 1% (5 trials)
+  diameter: average 5.914 in, lowest 5.889 in, highest 5.952 in, spread 1% (5 trials)
   good enough to use
 ```
 
@@ -221,9 +222,9 @@ own size test when it is good, else its base preset's.
 ```
 squeeze: gives stiffness_n, the force that squeezes the ball by 25%
   trial  force_lb  stiffness_n
-  1      27.4      121.9 N
+  1      27.4      27.40 lbf
   ...
-  stiffness_n: average 123.1 N, lowest 119.2 N, highest 127.2 N, spread 7% (5 trials)
+  stiffness_n: average 27.68 lbf, lowest 26.80 lbf, highest 28.60 lbf, spread 7% (5 trials)
   good enough to use
 ```
 
@@ -344,10 +345,10 @@ cos of its launch angle).
 
 ```
 shot: fits the ball's stiffness to your shots (the wheel friction held at 0.95)
-  shot  wheel_rps  frames  speed across  model     model off by
-  1     69.5       25      5.85 m/s      5.93 m/s  +1.3%
+  shot  wheel_rps  frames  speed across  model       model off by
+  1     69.5       25      19.20 ft/s    19.45 ft/s  +1.3%
   ...
-  fit: stiffness 91 N, anywhere from 81 to 103 N fits your shots
+  fit: stiffness 20.6 lbf, anywhere from 18.2 to 23.1 lbf fits your shots
   the model misses your shots by 1.9% (root mean square)
   warning: Measure the ball's squeeze (the squeeze test) to fit wheel friction too.
   good enough to use
@@ -419,8 +420,8 @@ Form: `scrimmage measure form stroke -o stroke-form.html`.
 Every trial of a direct test gives one value. The result is their **average**.
 
 - **At least 3 trials.** Fewer warns "take at least 3 trials". **5 are better**, and a form has room for 8.
-- **The spread** is the highest minus the lowest, as a percent of the average. The squeeze example above: (127.2 −
-  119.2) ÷ 123.1 = 7%. **Over 15%** warns "your trials disagree by 22%: measure again or take more trials".
+- **The spread** is the highest minus the lowest, as a percent of the average. The squeeze example above: (28.60 −
+  26.80) ÷ 27.68 = 7%. **Over 15%** warns "your trials disagree by 22%: measure again or take more trials".
 - **A trial that looks off.** Work out how far each trial is from the average, and the average of those distances.
   A trial more than twice that average distance is flagged: "trial 6 looks off: check it". In the drop example the
   trials are on average 0.016 from the average restitution of 0.595, and trial 6 (0.553) is 0.042 away, more than
@@ -435,7 +436,7 @@ Every trial of a direct test gives one value. The result is their **average**.
 UNCALIBRATED and says why:
 
 ```
-  stiffness_n: average 112.5 N, lowest 97.9 N, highest 127.2 N, spread 26% (2 trials)
+  stiffness_n: average 25.30 lbf, lowest 22.00 lbf, highest 28.60 lbf, spread 26% (2 trials)
   warning: take at least 3 trials (this has 2): a run uses it, but its result stays UNCALIBRATED until then
   warning: your trials disagree by 26%: measure again or take more trials
   not good enough yet: stiffness_n (2 trials: take at least 3; trials disagree by 26%)
@@ -490,8 +491,8 @@ loop holding it, run once per wheel speed and hood angle, with no ball-to-ball s
 value whose model speeds miss your shots by the least, as a root mean square of each shot's miss in percent.
 
 **The band.** A shot's speed is read to one frame in the frames it spans (25 frames: 4%), but never better than 2%. The
-band is every value that fits the shots as well as that can tell: "stiffness 91 N, anywhere from 81 to 103 N fits
-your shots".
+band is every value that fits the shots as well as that can tell: "stiffness 20.6 lbf, anywhere from 18.2 to 23.1 lbf
+fits your shots".
 
 **A good fit** needs all three:
 
@@ -505,10 +506,10 @@ your shots".
   wheel's speed, sets the exit speed)". Here are the example's shots taken at 40 and 50 rps instead:
 
 ```
-  fit: stiffness 61 N, anywhere from 53 to 240 N fits your shots
+  fit: stiffness 13.7 lbf, anywhere from 11.9 to 54.0 lbf fits your shots
   the model misses your shots by 1.3% (root mean square)
   warning: Measure the ball's squeeze (the squeeze test) to fit wheel friction too.
-  warning: stiffness 61 N, anywhere from 53 to 240 N fits your shots: your shots hardly depend on the ball's stiffness at these wheel speeds: shoot at a higher wheel speed (where the ball's grip, not the wheel's speed, sets the exit speed)
+  warning: stiffness 13.7 lbf, anywhere from 11.9 to 54.0 lbf fits your shots: your shots hardly depend on the ball's stiffness at these wheel speeds: shoot at a higher wheel speed (where the ball's grip, not the wheel's speed, sets the exit speed)
   not good enough yet: the shots hardly depend on the ball's stiffness
 ```
 

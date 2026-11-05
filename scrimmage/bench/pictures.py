@@ -14,6 +14,7 @@ import mujoco
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+from .. import units
 from ..render import new_renderer
 from .report import ESTIMATES, STATUS_COLORS, STATUS_WORDS, bench_estimates
 from .run import BenchResult
@@ -158,13 +159,23 @@ def _label(draw: ImageDraw.ImageDraw, xy, text: str, font, fill=INK, anchor="mm"
     draw.text(xy, text, font=font, fill=fill, anchor=anchor)
 
 
-def _nice_length(meters: float) -> float:
-    k = 10.0 ** math.floor(math.log10(meters))
-    return max(f * k for f in (1, 2, 5) if f * k <= meters)
+def _nice(x: float) -> float:
+    k = 10.0 ** math.floor(math.log10(x))
+    return max(f * k for f in (1, 2, 5) if f * k <= x)
 
 
-def _length_text(meters: float) -> str:
-    return f"{meters * 100:g} cm" if meters < 1.0 else f"{meters:g} m"
+def scale_bar(meters: float, system: str | None = None) -> tuple[float, str]:
+    """The scale bar for a picture `meters` across: its length (m, a round number in the Units setting, at most
+    `meters`) and its label: cm or m in Metric, in or ft in Imperial."""
+    if (system or units.current_system()) == "metric":
+        m = _nice(meters)
+        return m, f"{m * 100:g} cm" if m < 1.0 else f"{m:g} m"
+    inches = meters / units.IN
+    if inches < 12.0:
+        n = _nice(inches)
+        return n * units.IN, f"{n:g} in"
+    n = _nice(meters / units.FT)
+    return n * units.FT, f"{n:g} ft"
 
 
 def _box_px(frame: _Frame, lo, hi):
@@ -412,13 +423,13 @@ def path_picture(result: BenchResult, view: str = "side", width: int = 1280, hei
         text = f"{STATUS_WORDS[status]}: {counts[status]}"
         draw.text((x + 54 * u, y), text, font=mid, fill=INK, anchor="lm")
         x += 54 * u + draw.textlength(text, font=mid) + 30 * u
-    meters = _nice_length(0.2 * width / frame.scale)
+    meters, scale_text = scale_bar(0.2 * width / frame.scale)
     bar = meters * frame.scale
     x1 = width - 20 * u
     draw.line([(x1 - bar, y + 8 * u), (x1, y + 8 * u)], fill=INK, width=max(2, int(5 * u)))
     for xe in (x1 - bar, x1):
         draw.line([(xe, y), (xe, y + 16 * u)], fill=INK, width=max(2, int(3 * u)))
-    draw.text((x1 - bar / 2, y - 4 * u), _length_text(meters), font=small, fill=INK, anchor="mb")
+    draw.text((x1 - bar / 2, y - 4 * u), scale_text, font=small, fill=INK, anchor="mb")
     return np.asarray(img)
 
 

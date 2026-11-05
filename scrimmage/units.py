@@ -110,8 +110,13 @@ def fixed(system: str):
         _fixed.reset(token)
 
 
+def current_system() -> str:
+    """The system text is built in here: a `fixed()` one, else the Units setting."""
+    return _fixed.get() or current_units()
+
+
 def _unit(kind: str, system: str | None) -> Unit:
-    system = (_fixed.get() or current_units()) if system is None else system
+    system = current_system() if system is None else system
     if system not in TABLE:
         raise ValueError(f"unknown unit system {system!r}; imperial or metric")
     if kind not in TABLE[system]:

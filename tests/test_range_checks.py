@@ -408,18 +408,19 @@ def test_report_ball_row_says_where_it_scored(tmp_path):
     assert json.loads((tmp_path / "report.json").read_text())["balls"][i]["goal"] == "hub_blue"
 
 
-@pytest.mark.parametrize("outcome,where", [("on_field", "rest at (6.10, 4.20)"),
-                                           ("out_of_field", "left at (6.10, 4.20, 0.08)")])
-def test_report_ball_row_compares_a_misses_apex_with_the_rim(outcome, where):
+@pytest.mark.parametrize("outcome,where", [("on_field", "rest at (6.10, 4.20) m"),
+                                           ("out_of_field", "left at (6.10, 4.20, 0.08) m")])
+def test_report_ball_row_compares_a_misses_apex_with_the_rim(outcome, where, units):
     """A ball fired that didn't score: its row says how high it got against the rim of the goal nearest its release
     (did it fall short or go over?)."""
     from scrimmage.scenario_runner import _ball_result
+    units("metric")   # tests/test_display_units_bench.py has both systems
     b = {"outcome": outcome, "fired_t": 1.5, "last_pos": [6.1, 4.2, 0.08], "at_rest": True,
          "first_hit": "hub_blue.funnel_0", "apex_z": 1.7, "rim_height": 1.829, "nearest_goal": "hub_blue"}
     assert _ball_result(b) == f"{where}; first hit hub_blue.funnel_0; apex 1.70 m vs rim 1.83 m (hub_blue)"
     held = {**b, "outcome": "on_field", "fired_t": None, "apex_z": None, "nearest_goal": None, "rim_height": None,
             "first_hit": None}
-    assert _ball_result(held) == "rest at (6.10, 4.20)"      # never fired: no apex
+    assert _ball_result(held) == "rest at (6.10, 4.20) m"      # never fired: no apex
     scored = {**b, "outcome": "scored", "goal": "hub_blue", "scored_t": 2.0}
     assert "apex" not in _ball_result(scored)
 

@@ -4,6 +4,9 @@ land.
 Headlines are three to six lines, read on a projector: what came out where and how fast, what didn't get out, the
 part taking the hardest hits (when one stands out), the shaft that slows most, and always last, UNCALIBRATED with
 what to measure. Names from the bench file are in backticks.
+
+Units: the headlines and summary.txt's tables are in the Units setting when they are written (scrimmage/units.py;
+the MCP tools build their headlines in units.MACHINE). The CSVs stay SI, their columns named by unit (speed_m_s).
 """
 
 import csv
@@ -14,6 +17,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
+from .. import units
 from ..launcher.flight import Landing, fly_state
 from ..launcher.inputs import PRESETS, Air, Goal
 from ..measure import labels
@@ -63,6 +67,21 @@ def _name(s: str) -> str:
     return f"`{s}`"
 
 
+# A headline's numbers, in the Units setting, to the places they had in meters: an exit speed to 0.1 (no unit; the
+# caller says it once after a ± spread), a load to 1 lbf or N, a flight distance to `places`.
+def _speed(v: float) -> str:
+    return f"{units.to_display(v, 'speed'):.1f}"
+
+
+def _force(v: float) -> str:
+    return f"{units.to_display(v, 'force'):.0f} {units.unit_name('force')}"
+
+
+def _far(v: float, places: int = 2, unit: bool = True) -> str:
+    text = f"{units.to_display(v, 'field'):.{places}f}"
+    return f"{text} {units.unit_name('field')}" if unit else text
+
+
 def _direction(elevation_deg: float, yaw: float) -> str:
     e = round(elevation_deg)
     text = "level" if e == 0 else f"{abs(e)}° {'up' if e > 0 else 'down'}"
@@ -75,11 +94,12 @@ def _direction(elevation_deg: float, yaw: float) -> str:
 
 def _out_line(outlet: str, out: list[PieceOutcome], n: int) -> str:
     speeds = np.array([p.speed for p in out])
-    spread = f" ± {speeds.std():.1f}" if len(out) > 1 else ""
+    spread = f" ± {_speed(speeds.std())}" if len(out) > 1 else ""
     yaw = np.radians([p.yaw_deg for p in out])  # a circular mean: -179 and 179 average to 180, not 0
     way = _direction(float(np.mean([p.elevation_deg for p in out])),
                      math.degrees(math.atan2(np.sin(yaw).mean(), np.cos(yaw).mean())))
-    return f"{len(out)} of {n} left through {_name(outlet)} at {speeds.mean():.1f} m/s{spread}, {way}"
+    return f"{len(out)} of {n} left through {_name(outlet)} at {_speed(speeds.mean())} {units.unit_name('speed')}" \
+        f"{spread}, {way}"
 
 
 def jam_place(result: BenchResult, piece: PieceOutcome) -> str | None:
@@ -126,8 +146,8 @@ def _load_line(result: BenchResult) -> str | None:
     median = float(np.median([f for s, f in peaks.items() if s != shape]))
     if peak <= LOAD_STANDS_OUT * median:
         return None
-    return (f"the {_name(shape)} takes the hardest hits: up to {peak:.0f} N, {peak / median:.1f} times a typical "
-            f"other part's ({median:.0f} N)")
+    return (f"the {_name(shape)} takes the hardest hits: up to {_force(peak)}, {peak / median:.1f} times a typical "
+            f"other part's ({_force(median)})")
 
 
 SLIPPING = 0.10  # exit slip at or above this is grip-limited (the launcher model's regime line, docs/launcher.md)
@@ -203,14 +223,14 @@ def _flight_line(result: BenchResult, lands: list[tuple[PieceOutcome, Landing]])
     n = len(lands)
     xs = [land.at_goal[0] for _, land in lands if land.at_goal is not None]
     if not xs:
-        return f"none of the {n} shots get up to the target's height ({fl.target_height:.1f} m)"
-    where = f"{np.mean(xs):.2f} m out" + (f" ± {np.std(xs):.2f}" if len(xs) > 1 else "")
+        return f"none of the {n} shots get up to the target's height ({_far(fl.target_height, 1)})"
+    where = f"{_far(np.mean(xs))} out" + (f" ± {_far(np.std(xs), unit=False)}" if len(xs) > 1 else "")
     if fl.ring_diameter is not None:
         k = sum(land.scored for _, land in lands)
-        return (f"{k} of {n} shots go in the ring {fl.target_distance:.1f} m away, {fl.target_height:.1f} m up "
+        return (f"{k} of {n} shots go in the ring {_far(fl.target_distance, 1)} away, {_far(fl.target_height, 1)} up "
                 f"(they come down through its height {where})")
-    return (f"shots come down through {fl.target_height:.1f} m at {where} (the target is {fl.target_distance:.1f} m "
-            "away)")
+    return (f"shots come down through {_far(fl.target_height, 1)} at {where} (the target is "
+            f"{_far(fl.target_distance, 1)} away)")
 
 
 def energy_failures(result: BenchResult) -> int:
@@ -264,7 +284,8 @@ def _f(v, digits: int = 3) -> str:
     return str(v)
 
 
-def _tables(result: BenchResult, lands) -> dict[str, tuple[list[str], list[list[str]]]]:
+def _tables(result: BenchResult, lands) -> dict[str, tuple[list[str], list[list]]]:
+    """Each table's header and rows of values, in SI (formatted by _csv_table and _shown_table)."""
     ok = {e.index: e.ok for e in result.energy}
     pieces = (["piece", "inlet", "status", "outlet", "t_in_s", "t_out_s", "time_inside_s", "speed_m_s",
                "elevation_deg", "yaw_deg", "spin_rps", "spin_x_rad_s", "spin_y_rad_s", "spin_z_rad_s", "tilt_deg",
@@ -274,16 +295,15 @@ def _tables(result: BenchResult, lands) -> dict[str, tuple[list[str], list[list[
         spin = p.spin or (None, None, None)
         rps = None if p.spin is None else float(np.linalg.norm(p.spin)) / (2 * math.pi)
         inside = None if p.t_in is None or p.t_out is None else p.t_out - p.t_in
-        pieces[1].append([_f(v) for v in (p.index, p.inlet, p.status, p.outlet, p.t_in, p.t_out, inside, p.speed,
-                                          p.elevation_deg, p.yaw_deg, rps, *spin, None if squishy else p.tilt_deg,
-                                          None if p.exit_slip is None else 100.0 * p.exit_slip,
-                                          p.peak_force, ok.get(p.index))])
+        pieces[1].append([p.index, p.inlet, p.status, p.outlet, p.t_in, p.t_out, inside, p.speed, p.elevation_deg,
+                          p.yaw_deg, rps, *spin, None if squishy else p.tilt_deg,
+                          None if p.exit_slip is None else 100.0 * p.exit_slip, p.peak_force, ok.get(p.index)])
     shafts = (["shaft", "target_rps", "min_rps", "drop_pct", "recovery_s", "back_before_next", "peak_current_a",
                "energy_per_piece_j"],
-              [[_f(v) for v in (s.name, s.target_rps, s.min_rps, s.drop_pct, s.recovery_s, s.back_before_next,
-                                s.peak_current, s.energy_per_piece_j)] for s in result.shafts.values()])
+              [[s.name, s.target_rps, s.min_rps, s.drop_pct, s.recovery_s, s.back_before_next, s.peak_current,
+                s.energy_per_piece_j] for s in result.shafts.values()])
     loads = (["shape", "peak_force_n", "peak_impulse_ns", "at_x_m", "at_y_m", "at_z_m"],
-             [[_f(v) for v in (ld.shape, ld.peak_force_n, ld.peak_impulse_ns, *(ld.at or (None,) * 3))]
+             [[ld.shape, ld.peak_force_n, ld.peak_impulse_ns, *(ld.at or (None,) * 3)]
               for ld in sorted(result.loads.values(), key=lambda ld: -ld.peak_force_n)])
     out = {"pieces": pieces, "shafts": shafts, "loads": loads}
     fl = result.bench.flight
@@ -294,12 +314,39 @@ def _tables(result: BenchResult, lands) -> dict[str, tuple[list[str], list[list[
             gx, gy = land.at_goal or (None, None)
             miss = None if land.at_goal is None else math.hypot(gx - fl.target_distance, gy)
             ring = None if fl.ring_diameter is None else land.scored
-            rows.append([_f(v) for v in (p.index, p.outlet, x, y, z + fl.height, p.speed, p.elevation_deg, land.apex,
-                                         gx, gy, miss, ring, *land.floor, land.flight_time)])
+            rows.append([p.index, p.outlet, x, y, z + fl.height, p.speed, p.elevation_deg, land.apex, gx, gy, miss,
+                         ring, *land.floor, land.flight_time])
         out["landings"] = (["piece", "outlet", "exit_x_m", "exit_y_m", "exit_height_m", "speed_m_s", "elevation_deg",
                             "apex_m", "target_height_x_m", "target_height_y_m", "miss_m", "in_ring", "floor_x_m",
                             "floor_y_m", "flight_time_s"], rows)
     return out
+
+
+# summary.txt's columns with a unit, by kind: shown in the Units setting, the unit in the column's name (speed_ft_s,
+# at_x_in). The CSVs keep them in SI. A position on the bench is a length; where a shot flies, a field length.
+SHOWN_KINDS = {"speed_m_s": "speed", "peak_force_n": "force", "at_x_m": "length", "at_y_m": "length",
+               "at_z_m": "length", "exit_x_m": "length", "exit_y_m": "length", "exit_height_m": "length",
+               "apex_m": "field", "target_height_x_m": "field", "target_height_y_m": "field", "miss_m": "field",
+               "floor_x_m": "field", "floor_y_m": "field"}
+
+
+def _csv_table(header: list[str], rows: list[list]) -> tuple[list[str], list[list[str]]]:
+    return header, [[_f(v) for v in r] for r in rows]
+
+
+def _shown_table(header: list[str], rows: list[list]) -> tuple[list[str], list[list[str]]]:
+    """A table for summary.txt: SHOWN_KINDS' columns in the Units setting, renamed for their unit."""
+    kinds = [SHOWN_KINDS.get(c) for c in header]
+
+    def named(c: str, kind: str) -> str:
+        stem = c[:-len("_m_s")] if c.endswith("_m_s") else c.rsplit("_", 1)[0]
+        return f"{stem}_{units.unit_name(kind).replace('/', '_').lower()}"
+
+    def shown(v, kind):
+        return units.to_display(v, kind) if kind and isinstance(v, float) else v
+
+    return ([c if k is None else named(c, k) for c, k in zip(header, kinds)],
+            [[_f(shown(v, k)) for v, k in zip(r, kinds)] for r in rows])
 
 
 def _text_table(header: list[str], rows: list[list[str]]) -> str:
@@ -314,7 +361,8 @@ def write_results(result: BenchResult, out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     lands = landings(result)
     tables = _tables(result, lands)
-    for name, (header, rows) in tables.items():
+    for name, table in tables.items():
+        header, rows = _csv_table(*table)
         with open(out_dir / f"{name}.csv", "w", newline="", encoding="utf-8") as f:
             w = csv.writer(f, lineterminator="\n")
             w.writerow(header)
@@ -328,8 +376,8 @@ def write_results(result: BenchResult, out_dir: Path) -> Path:
     text += ["", *headlines(result, lands), *(f"warning: {w}" for w in b.warnings), ""]
     titles = {"pieces": "Pieces", "shafts": "Shafts", "loads": "Loads (normal contact force on each part)",
               "landings": "Landings (the launcher model's ball flight, from the outlet)"}
-    for name, (header, rows) in tables.items():
-        text += [titles[name], _text_table(header, rows), ""]
+    for name, table in tables.items():
+        text += [titles[name], _text_table(*_shown_table(*table)), ""]
     if b.flight is not None and b.piece.ball is None:
         text += ["[flight] flies balls only; a rigid piece's flight is not modeled yet, so there are no landings.",
                  ""]

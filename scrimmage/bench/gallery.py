@@ -18,6 +18,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from .. import units
 from .compare import idea_labels, metrics
 from .pictures import PICTURE_TRACE_HZ, path_picture
 from .report import headlines, uncalibrated
@@ -139,8 +140,9 @@ def _idea_html(e: Entry, label: str, anchor: str) -> str:
 
 
 def _table_html(entries: list[tuple[Entry, str, str]]) -> str:
-    head = ("idea", "author", "got out", "exit speed (m/s)", "direction", "didn't get out", "worst shaft drop",
-            "hardest hit (N)")
+    head = ("idea", "author", "got out", f"exit speed ({units.unit_name('speed')})", "direction", "didn't get out",
+            "worst shaft drop", f"hardest hit ({units.unit_name('force')})")
+    speed_of = lambda v: units.to_display(v, "speed")   # noqa: E731 - the Units setting, as the headlines
     trs = []
     for e, label, anchor in entries:
         if e.result is None:
@@ -150,14 +152,16 @@ def _table_html(entries: list[tuple[Entry, str, str]]) -> str:
         r, m = e.result, metrics(e.result)
         n = len(r.pieces)
         main = r.bench.outlets[0].name if r.bench.outlets else "-"
-        speed = _num(m["exit_speed"]) + ("" if math.isnan(m["exit_speed_sd"]) else f" ± {m['exit_speed_sd']:.1f}")
+        speed = _num(speed_of(m["exit_speed"])) + ("" if math.isnan(m["exit_speed_sd"])
+                                                   else f" ± {speed_of(m['exit_speed_sd']):.1f}")
         way = "–" if math.isnan(m["elevation_deg"]) else f"{m['elevation_deg']:.0f}° up" if m["elevation_deg"] >= 0.5 \
             else f"{-m['elevation_deg']:.0f}° down" if m["elevation_deg"] <= -0.5 else "level"
         stuck = n - m["out"] - m["out_other"]
         cells = [f'<a href="#{anchor}">{html.escape(label)}</a>', html.escape(r.bench.author),
                  f"{m['out']} of {n} through <code>{html.escape(main)}</code>"
                  + (f", {m['out_other']} elsewhere" if m["out_other"] else ""),
-                 speed, way, str(stuck), _num(m["speed_drop_pct"], 0, "%"), _num(m["peak_load_n"], 0)]
+                 speed, way, str(stuck), _num(m["speed_drop_pct"], 0, "%"),
+                 _num(units.to_display(m["peak_load_n"], "force"), 0)]
         numeric = {3, 5, 6, 7}
         trs.append("<tr>" + "".join(f'<td class="n">{c}</td>' if i in numeric else f"<td>{c}</td>"
                                     for i, c in enumerate(cells)) + "</tr>")

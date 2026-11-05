@@ -56,9 +56,10 @@ def _type(r: forms.Reading) -> str:
 
 
 def reading_json(r: forms.Reading) -> dict:
-    """A reading as the page draws it: its box, and the units its key may end in (the unit picker)."""
+    """A reading as the page draws it: its box, and the units its key may end in (the unit picker). `unit` is the
+    form's; the page picks a new column's by its quantity and the Units setting (measure.js defaultUnit)."""
     units = list(UNITS[r.quantity]) if r.quantity else []
-    return {"name": r.name, "what": r.what, "optional": r.optional, "type": _type(r),
+    return {"name": r.name, "what": r.what, "optional": r.optional, "type": _type(r), "quantity": r.quantity,
             "units": [{"unit": u, "label": forms.UNIT_WORDS.get(u, u)} for u in units],
             "unit": (r.unit or units[0]) if units else ""}
 

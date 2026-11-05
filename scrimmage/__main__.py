@@ -531,7 +531,7 @@ def _bench_many(args) -> None:
                 print(f"wrote {out / 'results.csv'}")
                 charts = bench.charts or compare.default_charts(list(bench.sweep))
                 paths = report.write_charts(rows, charts, out, None, compare.BENCH_METRICS, compare.CHART_KINDS,
-                                            footer=bench_estimates(bench))
+                                            footer=bench_estimates(bench), shown=compare.SHOWN)
                 print(report.NO_MATPLOTLIB if paths is None else "\n".join(f"wrote {p}" for p in paths))
             elif args.bench_command == "compare":
                 from .bench.run import run_bench

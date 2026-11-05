@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import foreign_writes as fwn
+from . import units
 from .bindings import binds_rev
 from .bridge import REALTIME_REASON
 from .devicecheck import check_devices, device_notes
@@ -81,10 +82,10 @@ class StepReport:
     def passed(self) -> bool:
         return self.interrupted is None and all(c.passed for c in self.checks)
 
-    def to_dict(self) -> dict:
+    def to_dict(self, shown: bool = False) -> dict:
         return {"name": self.name, "mode": self.mode, "start_t": self.start_t, "end_t": self.end_t,
                 "game_data": self.game_data, "passed": self.passed, "interrupted": self.interrupted,
-                "checks": [c.to_dict() for c in self.checks], "screenshots": self.screenshots,
+                "checks": [c.to_dict(shown) for c in self.checks], "screenshots": self.screenshots,
                 "skipped": self.skipped}
 
 
@@ -113,10 +114,11 @@ class Report:
     def exit_code(self) -> int:
         return 2 if self.error is not None else (0 if self.passed else 1)
 
-    def to_dict(self) -> dict:
+    def to_dict(self, shown: bool = False) -> dict:
+        """report.json: the checks' messages in units.MACHINE; with `shown`, in the Units setting (the Scenario tab)."""
         d = {"scenario": self.scenario, "description": self.description, "passed": self.passed,
              "exit_code": self.exit_code, "error": self.error, "lockstep": self.lockstep,
-             "steps": [s.to_dict() for s in self.steps], "implicit": [c.to_dict() for c in self.implicit],
+             "steps": [s.to_dict(shown) for s in self.steps], "implicit": [c.to_dict(shown) for c in self.implicit],
              "effective_speed": self.effective_speed, "notes": self.notes,
              "console_tail": self.console_tail, "files": self.files}
         if self.range is not None:      # a run on a test range; other reports keep their keys
@@ -129,12 +131,12 @@ class Report:
         lines = [f"{'PASS' if self.passed else 'FAIL'}  {self.scenario}"]
         for s in self.steps:
             for c in s.checks:
-                lines.append(f"  {'ok  ' if c.passed else 'FAIL'} [{s.name}] {c.message}")
+                lines.append(f"  {'ok  ' if c.passed else 'FAIL'} [{s.name}] {c.shown()}")
             if s.interrupted:
                 lines.append(f"  FAIL [{s.name}] {s.interrupted}")
         for c in self.implicit:
             if not c.passed:
-                lines.append(f"  FAIL {c.message}")
+                lines.append(f"  FAIL {c.shown()}")
         lines += [f"  note: {n}" for n in self.notes]
         return "\n".join(lines)
 
@@ -152,7 +154,7 @@ class Report:
         for s in self.steps:
             data = f", game data {json.dumps(s.game_data, ensure_ascii=False)}" if s.game_data else ""
             md += [f"## {s.name} ({s.mode}, t={s.start_t:.2f}–{s.end_t:.2f} s{data})", ""]
-            md += [f"- {'✅' if c.passed else '❌'} {c.message}" for c in s.checks]
+            md += [f"- {'✅' if c.passed else '❌'} {c.shown()}" for c in s.checks]
             md += [f"- ❌ {s.interrupted}"] if s.interrupted else []
             md += [f"- skipped: {x}" for x in s.skipped]
             md += [""] + [f"![{p}]({p})" for p in s.screenshots] + [""]
@@ -160,7 +162,7 @@ class Report:
             md += _score_md(self.range) + _balls_md(self.balls, self.ball_summary or {})
         bad = [c for c in self.implicit if not c.passed]
         if bad:
-            md += ["## Robot program", ""] + [f"- ❌ {c.message}" for c in bad] + [""]
+            md += ["## Robot program", ""] + [f"- ❌ {c.shown()}" for c in bad] + [""]
         if self.console_tail:
             md += ["## Console (last lines)", "", "```", *self.console_tail, "```", ""]
         (out_dir / "report.md").write_text("\n".join(md))
@@ -168,6 +170,11 @@ class Report:
 
 def _f(v, fmt: str = ".2f") -> str:
     return "–" if v is None else format(v, fmt)
+
+
+def _fu(v, kind: str, fmt: str = ".2f") -> str:
+    """A position or speed in the Units setting, as report.js's ball table shows it."""
+    return _f(None if v is None else units.to_display(v, kind), fmt)
 
 
 def _score_md(c: dict) -> list[str]:
@@ -187,27 +194,33 @@ def _ball_result(b: dict) -> str:
     elif out == "stuck":
         text = f"launcher: {b['launcher_status']}"
     elif pos is not None:
-        xyz = f"({pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f})"
+        u = units.unit_name("field")
+        xyz = f"({_fu(pos[0], 'field')}, {_fu(pos[1], 'field')}, {_fu(pos[2], 'field')}) {u}"
         text = {"out_of_field": f"left at {xyz}", "in_flight": f"flying at {xyz}",
-                "on_field": f"rest at ({pos[0]:.2f}, {pos[1]:.2f})" if b.get("at_rest") else f"moving at {xyz}"
-                }.get(out, xyz)
+                "on_field": f"rest at ({_fu(pos[0], 'field')}, {_fu(pos[1], 'field')}) {u}" if b.get("at_rest")
+                else f"moving at {xyz}"}.get(out, xyz)
     if b.get("first_hit"):
         text += f"{'; ' if text else ''}first hit {b['first_hit']}"
     if out != "scored" and b.get("fired_t") is not None and b.get("apex_z") is not None and b.get("nearest_goal"):
-        text += (f"{'; ' if text else ''}apex {b['apex_z']:.2f} m vs rim {_f(b.get('rim_height'))} m "
-                 f"({b['nearest_goal']})")
+        u = units.unit_name("field")
+        text += (f"{'; ' if text else ''}apex {_fu(b['apex_z'], 'field')} {u} vs rim "
+                 f"{_fu(b.get('rim_height'), 'field')} {u} ({b['nearest_goal']})")
     return text
 
 
-_BALL_COLUMNS = ["#", "fired t", "x", "y", "heading", "vx", "vy", "ω °/s", "hood °", "rps", "exit m/s", "spin rpm", "slip",
-                "outcome", "goal and time / rest point / first hit"]
+def _ball_columns() -> list[str]:
+    """The ball table's header, in the Units setting (report.js's)."""
+    f, v = units.unit_name("field"), units.unit_name("speed")
+    return ["#", "fired t", f"x {f}", f"y {f}", "heading", f"vx {v}", f"vy {v}", "ω °/s", "hood °", "rps", f"exit {v}",
+            "spin rpm", "slip", "outcome", "goal and time / rest point / first hit"]
 
 
 def _ball_row(b: dict) -> list[str]:
     pose = b.get("robot_pose") or (None, None, None)
     vel = b.get("robot_velocity") or (None, None, None)
-    return [str(b["id"]), _f(b["fired_t"]), _f(pose[0]), _f(pose[1]), _f(pose[2], ".1f"), _f(vel[0]), _f(vel[1]),
-            _f(vel[2], ".1f"), _f(b["hood_deg"], ".1f"), _f(b["shooter_rps"], ".1f"), _f(b["exit_speed"]),
+    return [str(b["id"]), _f(b["fired_t"]), _fu(pose[0], "field"), _fu(pose[1], "field"), _f(pose[2], ".1f"),
+            _fu(vel[0], "speed"), _fu(vel[1], "speed"), _f(vel[2], ".1f"), _f(b["hood_deg"], ".1f"),
+            _f(b["shooter_rps"], ".1f"), _fu(b["exit_speed"], "speed"),
             _f(b["spin_rpm"], ".0f"), _f(b["exit_slip"]), b["outcome"], _ball_result(b)]
 
 
@@ -228,7 +241,8 @@ def _balls_md(balls: list[dict], summary: dict) -> list[str]:
     """One row per ball that took part; the untouched floor balls and the spares counted under the table."""
     md = ["## Balls", ""]
     if balls:
-        md += ["| " + " | ".join(_BALL_COLUMNS) + " |", "|" + "---|" * len(_BALL_COLUMNS)]
+        columns = _ball_columns()
+        md += ["| " + " | ".join(columns) + " |", "|" + "---|" * len(columns)]
         md += ["| " + " | ".join(_ball_row(b)) + " |" for b in balls]
     else:
         md += ["No ball took part."]

@@ -1,12 +1,19 @@
 """Signals a scenario can check, and the checks themselves. Checks read the session duck-typed (world,
-bridge.hal, robot, nt_value), so they can be unit-tested without a robot program."""
+bridge.hal, robot, nt_value), so they can be unit-tested without a robot program.
+
+Units: a check whose message has a length (pose, odometry_error) words it twice, through `said()`: `message` in
+units.MACHINE, for report.json and the MCP result, which don't change with the Units setting, and `shown()` in the
+setting, for report.md, the terminal and the Scenario tab. A signal's own value is shown as the signal gives it."""
 
 from __future__ import annotations
 
 import math
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, fields
+from dataclasses import field as dc_field
 from typing import Any, Callable
+
+from . import units
 
 # Python tracebacks and Java stack traces in the robot console
 CRASH_PATTERN = re.compile(r"^Traceback \(most recent call last\)|^Exception in thread|^\s+at [\w.$<>]+\(.*\)\s*$",
@@ -216,9 +223,25 @@ class CheckResult:
     measured: Any = None
     expected: Any = None
     first_failure_t: float | None = None
+    words: Callable[[], str] | None = dc_field(default=None, repr=False, compare=False)   # see said()
 
-    def to_dict(self) -> dict:
-        return asdict(self)
+    def shown(self) -> str:
+        """The message in the Units setting (report.md, the terminal, the page); `message` is the machine one."""
+        return self.words() if self.words is not None else self.message
+
+    def to_dict(self, shown: bool = False) -> dict:
+        d = {f.name: getattr(self, f.name) for f in fields(self) if f.name != "words"}
+        if shown:
+            d["message"] = self.shown()
+        return d
+
+
+def said(check: str, passed: bool, words: Callable[[], str], *rest) -> CheckResult:
+    """A CheckResult whose message has units: `message` built in units.MACHINE, `words` kept to build it again in the
+    Units setting when it is shown."""
+    with units.fixed(units.MACHINE):
+        message = words()
+    return CheckResult(check, passed, message, *rest, words=words)
 
 
 class Check:
@@ -282,11 +305,13 @@ class PoseCheck(Check):
         ok = dist <= self.tol_xy and dh <= self.tol_h
         measured = {"x": round(x, 3), "y": round(y, 3), "heading": round(hdg, 1)}
         expected = {k: v for k, v in (("x", self.x), ("y", self.y), ("heading", self.h)) if v is not None}
-        where = f"(x={x:.2f}, y={y:.2f}, heading={hdg:.1f}°)"
-        msg = (f"pose within {dist:.2f} m and {dh:.1f}° of target {where}" if ok else
-               f"pose: {dist:.2f} m from target, heading off by {dh:.1f}° {where}; "
-               f"allowed {self.tol_xy:g} m, {self.tol_h:g}°")
-        return CheckResult(self.label, ok, msg, measured, expected)
+        def words() -> str:
+            f = lambda v: units.fmt(v, "field")   # noqa: E731
+            where = f"(x={f(x)}, y={f(y)}, heading={hdg:.1f}°)"
+            return (f"pose within {f(dist)} and {dh:.1f}° of target {where}" if ok else
+                    f"pose: {f(dist)} from target, heading off by {dh:.1f}° {where}; "
+                    f"allowed {f(self.tol_xy)}, {self.tol_h:g}°")
+        return said(self.label, ok, words, measured, expected)
 
 
 class SignalCheck(Check):
@@ -497,13 +522,14 @@ class OdometryErrorCheck(Check):
             e = self._err(session)
             if e is None:
                 return CheckResult(self.label, False, "no odometry on NetworkTables ([telemetry] odometry)", None, self.max)
-            return CheckResult(self.label, e <= self.max, f"odometry {e:.3f} m from ground truth at the end; "
-                               f"allowed {self.max:g} m", round(e, 4), self.max)
+            return said(self.label, e <= self.max, lambda: f"odometry {units.fmt(e, 'field')} from ground truth at "
+                        f"the end; allowed {units.fmt(self.max, 'field')}", round(e, 4), self.max)
         if self.missing and self.worst == 0.0:
             return CheckResult(self.label, False, "no odometry on NetworkTables ([telemetry] odometry)", None, self.max)
         ok = self.first_fail is None
-        return CheckResult(self.label, ok, f"odometry error peaked at {self.worst:.3f} m; allowed {self.max:g} m",
-                           round(self.worst, 4), self.max, self.first_fail)
+        worst = self.worst
+        return said(self.label, ok, lambda: f"odometry error peaked at {units.fmt(worst, 'field')}; allowed "
+                    f"{units.fmt(self.max, 'field')}", round(worst, 4), self.max, self.first_fail)
 
 
 class ContactCheck(Check):

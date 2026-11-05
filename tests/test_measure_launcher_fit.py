@@ -163,7 +163,8 @@ def test_shots_faster_than_any_friction_gives_are_at_the_edge_and_not_good(tmp_p
     assert "edge" in result.why
 
 
-def test_shots_slower_than_any_stiffness_gives_are_at_the_edge_and_not_good(tmp_path):
+def test_shots_slower_than_any_stiffness_gives_are_at_the_edge_and_not_good(tmp_path, units):
+    units("metric")   # the wording in newtons; tests/test_display_units_bench.py has both systems
     result = fit(_measure(tmp_path, [(50.0, _frames(1.5)), (80.0, _frames(2.0))]))
     assert result.stiffness_n == pytest.approx(20.0)  # a quarter of the preset's 80 N
     assert not result.good
@@ -200,7 +201,8 @@ def test_shots_that_hardly_depend_on_the_friction_are_not_good(tmp_path):
     assert any("your shots hardly depend on the wheel friction at these wheel speeds" in w for w in result.warnings)
 
 
-def test_a_good_fit_has_a_narrow_band(tmp_path):
+def test_a_good_fit_has_a_narrow_band(tmp_path, units):
+    units("metric")   # the wording in newtons; tests/test_display_units_bench.py has both systems
     result = fit(_synthetic(tmp_path, 120.0, 0.95, [50.0, 80.0]))
     low, high = result.band
     assert 0.85 * result.stiffness_n <= low < result.stiffness_n < high <= 1.15 * result.stiffness_n
