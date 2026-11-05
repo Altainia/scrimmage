@@ -34,6 +34,7 @@ import { LiveView } from "./live3d.js";
 import { InputRouter, KEYBOARD, isEditable, isDrivingKey } from "./gamepad.js";
 import { renderReadouts, Plot } from "./readouts.js";
 import { MiniField } from "./minifield.js";
+import { i18n, t, tn, live as L, liveAttr, markup } from "./i18n.js";
 
 const PORTS = 6;
 const INPUT_PERIOD = 20;          // ms between input messages (50 Hz)
@@ -45,19 +46,18 @@ const RTF_WINDOW = 1000;          // ms of wall time the real-time factor is mea
 const MODE_SETTLE = 1000;         // ms a mode sent from this page outranks an older chosen_mode from the server
 const MATCH_CONTROLS = { station: "#drive-station", fms: "#drive-fms", timer: "#drive-timer", game_data: "#drive-game-data" };
 // What is off while the FRC Driver Station app drives, and why (the tooltips); the server refuses these commands too.
-const REAL_DS_WHY = "The FRC Driver Station app is driving: use it instead";
-const REAL_DS_NO_PAUSE = "The FRC Driver Station runs the robot in real time, so it can't be paused";
-const REAL_DS_NO_RECORD = "Recording doesn't work while the FRC Driver Station app is driving";
+const realDsWhy = () => t("The FRC Driver Station app is driving: use it instead");
+const realDsNoPause = () => t("The FRC Driver Station runs the robot in real time, so it can't be paused");
+const realDsNoRecord = () => t("Recording doesn't work while the FRC Driver Station app is driving");
 const REAL_DS_OFF = new Set(["mode", "enable", "disable", "match", "pause", "resume", "step", "record_start"]);
-const REAL_DS_MODE_TEXT = { teleop: "Teleop enabled", auto: "Auto enabled", test: "Test enabled", disabled: "Disabled" };
-const KEYS_HINT = "Enter enables, Space disables.";
-const REAL_DS_KEYS_HINT = "Enable in the Driver Station app. There, Enter disables and Space is the E-stop.";
-const MATCH_HINT = "Game data reaches the robot when it is enabled in Teleop.";
-const REAL_DS_MATCH_HINT = "The Driver Station app sets the match. Its game data isn't shown here.";
+const REAL_DS_MODE_TEXT = { teleop: () => t("Teleop enabled"), auto: () => t("Auto enabled"), test: () => t("Test enabled"), disabled: () => t("Disabled") };
 const STATE_TEXT = {
-  idle: "Not started", starting: "Starting the robot program…", running: "Running", paused: "Paused",
-  stopped: "Stopped", error: "Error",
+  idle: () => t("Not started"), starting: () => t("Starting the robot program…"), running: () => t("Running"),
+  paused: () => t("Paused"), stopped: () => t("Stopped"), error: () => t("Error"),
 };
+// The session's mode (a key) in words
+const MODE_WORD = { teleop: () => t("Teleop"), auto: () => t("Auto"), test: () => t("Test"), disabled: () => t("Disabled") };
+const modeWord = (m) => (MODE_WORD[m] ? MODE_WORD[m]() : m);
 
 const drive = {
   started: false,       // the stream, view and input loop are up (on first show)
@@ -116,8 +116,8 @@ function realDs(s) {
 // A control's tooltip: `why` while it is off for a reason, else its own title from the page.
 function setWhy(el, why) {
   if (el.dataset.title === undefined) el.dataset.title = el.getAttribute("title") || "";
-  const t = why || el.dataset.title;
-  if (t) el.title = t;
+  const title = why || markup(el, "title") || el.dataset.title;     // the page's own title, in today's language
+  if (title) el.title = title;
   else el.removeAttribute("title");
 }
 
@@ -162,14 +162,14 @@ function connectedPads() {
 let padsSig = null;
 function refreshPadOptions() {
   const pads = connectedPads();
-  const sig = JSON.stringify(pads);
+  const sig = JSON.stringify([pads, i18n.lang]);
   if (sig === padsSig) return;
   padsSig = sig;
   for (let p = 0; p < PORTS; p++) {
     const sel = $(`#drive-port-${p}`);
     const cur = sourceValue(drive.router.ports.get(p));
-    sel.replaceChildren(h("option", { value: "" }, "None"), h("option", { value: KEYBOARD }, "Keyboard"),
-      ...pads.map((g) => h("option", { value: String(g.index) }, `Gamepad ${g.index}: ${g.id}`)));
+    sel.replaceChildren(h("option", { value: "" }, t("None")), h("option", { value: KEYBOARD }, t("Keyboard")),
+      ...pads.map((g) => h("option", { value: String(g.index) }, t("Gamepad {n}: {name}", { n: g.index, name: g.id }))));
     sel.value = [...sel.options].some((o) => o.value === cur) ? cur : "";
   }
   // Browsers expose a gamepad only once one of its buttons is pressed, usually after the page has loaded: the first
@@ -178,7 +178,7 @@ function refreshPadOptions() {
     drive.port0Default = false;
     drive.router.assign(0, pads[0].index);
     $("#drive-port-0").value = String(pads[0].index);
-    notice(`Gamepad ${pads[0].index} (${pads[0].id}) is now on port 0; the keyboard no longer drives. Pick the Keyboard in the Joysticks list to switch back.`, "info");
+    notice(t("Gamepad {n} ({name}) is now on port 0; the keyboard no longer drives. Pick the Keyboard in the Joysticks list to switch back.", { n: pads[0].index, name: pads[0].id }), "info");
   }
 }
 
@@ -197,17 +197,18 @@ function buildPorts() {
   const box = $("#drive-ports");
   box.replaceChildren();
   for (let p = 0; p < PORTS; p++) {
-    const sel = h("select", { id: `drive-port-${p}`, "aria-label": `Port ${p} source` });
+    const sel = liveAttr(h("select", { id: `drive-port-${p}` }), "aria-label", () => t("Port {n} source", { n: p }));
     sel.addEventListener("change", () => {
       if (p === 0) drive.port0Default = false;
       assignPort(p, sel.value);
     });
     const axes = h("div", { class: "port-axes", "aria-hidden": "true" },
-      ...Array.from({ length: SHOWN_AXES }, (_, i) => h("span", { class: "port-axis", title: `axis ${i}` }, h("span", { class: "port-axis-fill" }))));
+      ...Array.from({ length: SHOWN_AXES }, (_, i) => liveAttr(h("span", { class: "port-axis" }, h("span", { class: "port-axis-fill" })),
+        "title", () => t("axis {n}", { n: i }))));
     const buttons = h("div", { class: "port-buttons", "aria-hidden": "true" },
-      ...Array.from({ length: SHOWN_BUTTONS }, (_, i) => h("span", { class: "port-button", title: `button ${i + 1}` })));
+      ...Array.from({ length: SHOWN_BUTTONS }, (_, i) => liveAttr(h("span", { class: "port-button" }), "title", () => t("button {n}", { n: i + 1 }))));
     box.append(h("div", { class: "port-row idle", dataset: { port: String(p) } },
-      h("label", { class: "port-label", for: `drive-port-${p}` }, `Port ${p}`), sel, axes, buttons));
+      h("label", { class: "port-label", for: `drive-port-${p}` }, L(() => t("Port {n}", { n: p }))), sel, axes, buttons));
   }
 }
 
@@ -232,8 +233,9 @@ function buildSignals() {
   box.replaceChildren();
   drive.plots = [];
   for (let k = 0; k < SIGNALS; k++) {
-    const input = h("input", { id: `drive-signal-${k}`, type: "text", list: "drive-signal-list", autocomplete: "off",
-      spellcheck: "false", placeholder: "signal, e.g. battery or nt:/…", "aria-label": `Signal ${k + 1}` });
+    const input = h("input", { id: `drive-signal-${k}`, type: "text", list: "drive-signal-list", autocomplete: "off", spellcheck: "false" });
+    liveAttr(input, "placeholder", () => t("signal, e.g. battery or nt:/…"));
+    liveAttr(input, "aria-label", () => t("Signal {n}", { n: k + 1 }));
     const value = h("span", { class: "ro-num sig-value" });
     const canvas = h("canvas", { class: "sig-plot", height: "54", "aria-hidden": "true" });
     input.addEventListener("change", () => {
@@ -300,7 +302,7 @@ function createView() {
   } catch (e) {
     console.warn(e);
     drive.view = null;
-    $("#drive-canvas").replaceChildren(h("p", { class: "view-placeholder" }, `The live view needs WebGL: ${e.message || e}`));
+    $("#drive-canvas").replaceChildren(h("p", { class: "view-placeholder" }, t("The live view needs WebGL: {why}", { why: e.message || e })));
   }
 }
 
@@ -375,8 +377,9 @@ function renderMatch(s) {
     station.replaceChildren(...s.stations.map((st) => h("option", { value: st }, st)));
   }
   const real = realDs(s);
-  $("#drive-match-hint").textContent = real ? REAL_DS_MATCH_HINT : MATCH_HINT;
-  for (const id of Object.values(MATCH_CONTROLS)) setWhy($(id), real ? REAL_DS_WHY : "");
+  $("#drive-match-hint").textContent = real ? t("The Driver Station app sets the match. Its game data isn't shown here.")
+    : t("Game data reaches the robot when it is enabled in Teleop.");
+  for (const id of Object.values(MATCH_CONTROLS)) setWhy($(id), real ? realDsWhy() : "");
   if (real) {   // read-only: what the robot reports from the real DS (it doesn't report the game data)
     for (const id of Object.values(MATCH_CONTROLS)) $(id).disabled = true;
     if (!m) return;
@@ -402,11 +405,11 @@ const fmtT = (t) => (typeof t === "number" ? `${t.toFixed(3)} s` : "—");
 
 function rtfText(s) {
   if (!isLive(s)) return "";
-  if (s.paused) return "paused";
+  if (s.paused) return t("paused");
   const r = drive.rtf;
   if (r.length < 2) return "…";
   const dw = (r[r.length - 1][0] - r[0][0]) / 1000, dt = r[r.length - 1][1] - r[0][1];
-  return dw > 0 ? `${(dt / dw).toFixed(2)}× real time` : "…";
+  return dw > 0 ? t("{factor}× real time", { factor: (dt / dw).toFixed(2) }) : "…";
 }
 
 function renderSource(s) {
@@ -414,20 +417,21 @@ function renderSource(s) {
   if (isLive(s)) sel.value = s.real_ds ? "real" : "page";   // a reloaded page shows the session's choice
   else if (!isActive(s) && !drive.dsTouched) sel.value = drive.realDsDefault ? "real" : "page";
   sel.disabled = isActive(s) || drive.posting;
-  setWhy(sel, isActive(s) ? "Fixed while the robot runs: to change it, stop and start again" : "");
+  setWhy(sel, isActive(s) ? t("Fixed while the robot runs: to change it, stop and start again") : "");
 }
 
 function realDsText(m) {
-  if (!m || !m.connected) return "Waiting for the Driver Station";
-  const text = REAL_DS_MODE_TEXT[m.mode] || m.mode;
-  return m.mode === "disabled" && m.estop ? `${text} (E-stopped)` : text;
+  if (!m || !m.connected) return t("Waiting for the Driver Station");
+  if (m.mode === "disabled" && m.estop) return t("Disabled (E-stopped)");
+  return REAL_DS_MODE_TEXT[m.mode] ? REAL_DS_MODE_TEXT[m.mode]() : m.mode;
 }
 
 // The bar's read-only line while the FRC Driver Station app drives: what the robot reports it is doing.
 function renderRealDs(s, real) {
   const box = $("#drive-real-ds");
   box.hidden = !real;
-  $("#drive-keys-hint").textContent = real ? REAL_DS_KEYS_HINT : KEYS_HINT;
+  $("#drive-keys-hint").textContent = real ? t("Enable in the Driver Station app. There, Enter disables and Space is the E-stop.")
+    : t("Enter enables, Space disables.");
   if (!real) return;
   const m = isLive(s) ? s.match : null;
   const st = $("#drive-real-ds-state");
@@ -435,9 +439,9 @@ function renderRealDs(s, real) {
   st.className = `mode-chip ds-real-state mode-${m && m.connected && m.mode !== "disabled" ? m.mode : "disabled"}`;
   const parts = [];
   if (m && m.connected) {
-    if (m.station && m.station !== "unknown") parts.push(`Station ${m.station}`);
-    if (m.fms) parts.push("FMS attached");
-    if (typeof m.match_time === "number" && m.match_time >= 0) parts.push(`match time ${m.match_time.toFixed(1)} s`);
+    if (m.station && m.station !== "unknown") parts.push(t("Station {station}", { station: m.station }));
+    if (m.fms) parts.push(t("FMS attached"));
+    if (typeof m.match_time === "number" && m.match_time >= 0) parts.push(t("match time {time} s", { time: m.match_time.toFixed(1) }));
   }
   $("#drive-real-ds-match").textContent = parts.join(" · ");
   $("#drive-real-ds-match").hidden = !parts.length;
@@ -454,24 +458,24 @@ function render() {
     const b = document.querySelector(`#drive-ds [data-key="mode-${m}"]`);
     b.setAttribute("aria-pressed", String(real ? live && s.mode === m : drive.mode === m));
     b.disabled = real;
-    setWhy(b, real ? REAL_DS_WHY : "");
+    setWhy(b, real ? realDsWhy() : "");
   }
   $("#drive-enable").disabled = !live || s.enabled || real;
   $("#drive-disable").disabled = !live || real;
-  for (const id of ["#drive-enable", "#drive-disable"]) setWhy($(id), real ? REAL_DS_WHY : "");
+  for (const id of ["#drive-enable", "#drive-disable"]) setWhy($(id), real ? realDsWhy() : "");
   $("#drive-enable").classList.toggle("on", live && !!s.enabled);
   for (let p = 0; p < PORTS; p++) {
     const sel = $(`#drive-port-${p}`);
     sel.disabled = real;
-    setWhy(sel, real ? REAL_DS_WHY : "");
+    setWhy(sel, real ? realDsWhy() : "");
   }
   renderRealDs(s, real);
   const pause = $("#drive-pause");
   pause.disabled = !live || real;
-  pause.textContent = live && s.paused ? "Resume" : "Pause";
+  pause.textContent = live && s.paused ? t("Resume") : t("Pause");
   pause.setAttribute("aria-pressed", String(live && !!s.paused));
   $("#drive-step").disabled = !live || real;
-  for (const id of ["#drive-pause", "#drive-step"]) setWhy($(id), real ? REAL_DS_NO_PAUSE : "");
+  for (const id of ["#drive-pause", "#drive-step"]) setWhy($(id), real ? realDsNoPause() : "");
   const speed = $("#drive-speed");
   if (live && document.activeElement !== speed) {
     const want = s.speed === null ? "max" : String(s.speed);
@@ -481,15 +485,15 @@ function render() {
   speed.disabled = !!(live && s.speed_locked);
   const lock = $("#drive-speed-lock");
   lock.hidden = !(live && s.speed_locked);
-  lock.textContent = live && s.speed_locked ? `Speed locked at 1×: ${s.speed_locked}` : "";
+  lock.textContent = live && s.speed_locked ? t("Speed locked at 1×: {why}", { why: s.speed_locked }) : "";
   for (const id of ["#push-go", "#drive-reset", "#drive-record"]) $(id).disabled = !live;
   const rec = live && !!s.recording;
   const recBtn = $("#drive-record");
   if (real) recBtn.disabled = true;
-  setWhy(recBtn, real ? REAL_DS_NO_RECORD : "");
+  setWhy(recBtn, real ? realDsNoRecord() : "");
   recBtn.setAttribute("aria-pressed", String(rec));
   recBtn.classList.toggle("recording", rec);
-  recBtn.textContent = rec ? `● REC · ${pluralPokes(s.pokes || 0)}` : "● Record";
+  recBtn.textContent = rec ? t("● REC · {pokes}", { pokes: pluralPokes(s.pokes || 0) }) : t("● Record");
   $("#drive-save").disabled = !s.can_save || drive.saving;
   $("#drive-pokes").classList.toggle("off", !active);
   if (drive.field) drive.field.setEnabled(active);   // drags only while a session is starting, running or paused
@@ -505,18 +509,18 @@ function render() {
 
 function renderHud(s) {
   const live = isLive(s);
-  const mode = live ? s.mode : "—";
-  const badge = live && s.enabled ? h("span", { class: "hud-badge hud-enabled", text: "Enabled" })
-    : h("span", { class: "hud-badge hud-disabled", text: "Disabled" });
+  const mode = live ? modeWord(s.mode) : "—";
+  const badge = live && s.enabled ? h("span", { class: "hud-badge hud-enabled", text: t("Enabled") })
+    : h("span", { class: "hud-badge hud-disabled", text: t("Disabled") });
   const items = [
-    h("span", { class: "hud-item", text: `t ${fmtT(live ? s.t : null)}` }),
+    h("span", { class: "hud-item", text: t("t {time}", { time: fmtT(live ? s.t : null) }) }),
     h("span", { class: `hud-item mode-chip hud-mode mode-${live && MODES.includes(s.mode) ? s.mode : "disabled"}`, text: mode }),
     badge,
     h("span", { class: "hud-item", text: rtfText(s) }),
   ];
   const match = live && s.readouts && s.readouts.match;
-  if (match && (match.timer || s.real_ds) && match.match_time >= 0) items.splice(3, 0, h("span", { class: "hud-item", text: `match ${match.match_time.toFixed(1)} s` }));
-  if (drive.started && !drive.connected) items.push(h("span", { class: "hud-item hud-bad", text: "reconnecting…" }));
+  if (match && (match.timer || s.real_ds) && match.match_time >= 0) items.splice(3, 0, h("span", { class: "hud-item", text: t("match {time} s", { time: match.match_time.toFixed(1) }) }));
+  if (drive.started && !drive.connected) items.push(h("span", { class: "hud-item hud-bad", text: t("reconnecting…") }));
   $("#drive-hud").replaceChildren(...items);
 }
 
@@ -531,7 +535,7 @@ function renderConsole(s) {
 
 function renderStatus(s) {
   const el = $("#drive-state");
-  el.textContent = STATE_TEXT[s.state] || s.state;
+  el.textContent = STATE_TEXT[s.state] ? STATE_TEXT[s.state]() : s.state;
   el.className = `saved ${s.state === "error" ? "saved-bad" : isLive(s) ? "saved-ok" : s.state === "starting" ? "saved-busy" : ""}`;
   const err = $("#drive-error");
   err.hidden = !s.error;
@@ -539,23 +543,24 @@ function renderStatus(s) {
   $("#drive-restart").hidden = s.state !== "error";
 }
 
+let lastDevices = null;     // the device check's last answer (code.js), for a redraw
 function renderDeviceLine(d) {
   const el = $("#drive-devices");
   const bad = d ? d.rows.filter((r) => r.status === "missing" || r.status === "other_type").length : 0;
   el.hidden = !bad;
   if (!bad) { el.replaceChildren(); return; }
-  el.replaceChildren(h("strong", { text: `${bad} device${bad === 1 ? " doesn't" : "s don't"} match the model` }), ": ",
-    h("button", { type: "button", class: "linklike", onclick: async () => (await import("./code.js")).showDevices() }, "see Robot code"));
+  el.replaceChildren(h("strong", { text: tn("{count} device doesn't match the model", "{count} devices don't match the model", bad) }), ": ",
+    h("button", { type: "button", class: "linklike", onclick: async () => (await import("./code.js")).showDevices() }, t("see Robot code")));
 }
 
 function renderBanner() {
   const problem = drive.startProblem, why = problem || drive.startError;
   $("#drive-banner").hidden = !why;
-  $("#drive-banner-text").textContent = !why ? "" : problem ? `Start is unavailable: ${problem}` : `Couldn't start: ${why}`;
+  $("#drive-banner-text").textContent = !why ? "" : problem ? t("Start is unavailable: {why}", { why: problem }) : t("Couldn't start: {why}", { why });
   // Java code that hasn't built: the button goes to the Robot code panel, where Build now is
   const toCode = !problem && !!drive.startError && drive.notBuilt;
   $("#drive-banner-robot").hidden = !problem && !toCode;
-  $("#drive-banner-robot").textContent = toCode ? "Go to Robot code" : "Go to the Robot tab";
+  $("#drive-banner-robot").textContent = toCode ? t("Go to Robot code") : t("Go to the Robot tab");
 }
 
 // -- session ------------------------------------------------------------------------------------------------
@@ -588,7 +593,7 @@ async function startSession(discard = false) {
     unpicked = status === 200 && (data.errors || []).some((e) => e.field === "start/unpicked");
     drive.notBuilt = status === 200 && (data.errors || []).some((e) => e.field === "start/not_built");
     if (!unpicked) {
-      drive.startError = (data.errors || []).map((e) => e.message).join("; ") || `the server answered ${status}`;
+      drive.startError = (data.errors || []).map((e) => e.message).join("; ") || t("the server answered {status}", { status });
       refreshInfo();   // the robot may have become undrivable since the last look
     }
   } finally {
@@ -623,14 +628,14 @@ export async function driveFromPanel() {
 
 async function stopSession() {
   const { status, data } = await api("POST", "/api/live/stop");
-  if (status !== 200) notice(`Couldn't stop: ${(data.errors || [{}])[0].message || status}`, "error");
+  if (status !== 200) notice(t("Couldn't stop: {why}", { why: (data.errors || [{}])[0].message || status }), "error");
 }
 
 async function refreshInfo() {
   const seen = drive.messages;
   const { status, data } = await api("GET", "/api/live/info");
   if (status !== 200) return null;
-  drive.startProblem = data.can_start ? null : data.start_problem || "this robot can't be driven";
+  drive.startProblem = data.can_start ? null : data.start_problem || t("this robot can't be driven");
   drive.realDsDefault = !!data.real_ds_default;
   // a state message that came meanwhile is newer than this status; else keep the last readouts until the next one
   if (drive.messages === seen) onState({ ...(drive.state || {}), ...data.status });
@@ -639,7 +644,7 @@ async function refreshInfo() {
 }
 
 // -- pokes and recording ----------------------------------------------------------------------------------------
-const pluralPokes = (n) => `${n} poke${n === 1 ? "" : "s"}`;
+const pluralPokes = (n) => tn("{count} poke", "{count} pokes", n);
 
 // The push force box shows the force in the chosen units (it is sent in newtons). A change of units redraws it,
 // unless it is being typed in.
@@ -656,8 +661,8 @@ function push() {
   const typed = readMeasure($("#push-force"), "force");
   const force = typeof typed === "number" ? typed : NaN, dir = read("#push-dir"), dur = read("#push-duration");
   if (![force, dir, dur].every(Number.isFinite) || dur <= 0) {
-    const why = measureError(typed) ? `${measureError(typed)}. ` : "";
-    notice(`${why}Push needs a force (${units.name("force")}), a direction (°) and a duration above 0 s.`, "warn");
+    const needs = t("Push needs a force ({unit}), a direction (°) and a duration above 0 s.", { unit: units.name("force") });
+    notice(measureError(typed) ? t("{why}. {needs}", { why: measureError(typed), needs }) : needs, "warn");
     return;
   }
   pushForce = force;
@@ -679,7 +684,8 @@ function openSaveDialog() {
   const n = (drive.state && drive.state.pokes) || 0;
   const warn = $("#save-pokes");
   warn.hidden = !n;
-  warn.textContent = n ? `${n === 1 ? "1 poke happened while recording and is" : `${n} pokes happened while recording and are`} not in the scenario.` : "";
+  warn.textContent = n ? tn("{count} poke happened while recording and is not in the scenario.",
+    "{count} pokes happened while recording and are not in the scenario.", n) : "";
   showSaveErrors([]);
   d.showModal();
   $("#save-path").select();
@@ -688,7 +694,7 @@ function openSaveDialog() {
 function showSaveErrors(errors) {
   const exists = errors.find((e) => e.field === "save/exists");
   $("#save-exists").hidden = !exists;
-  $("#save-exists-text").textContent = exists ? `${exists.message}. Overwrite?` : "";
+  $("#save-exists-text").textContent = exists ? t("{why}. Overwrite?", { why: exists.message }) : "";
   const rest = errors.filter((e) => e !== exists);
   const list = $("#save-errors");
   list.replaceChildren(...rest.map((e) => h("li", { text: e.message })));
@@ -697,18 +703,18 @@ function showSaveErrors(errors) {
 
 async function saveRecording(overwrite = false) {
   const path = $("#save-path").value.trim();
-  if (!path) { showSaveErrors([{ field: "status", message: "Enter a file name for the scenario." }]); return; }
+  if (!path) { showSaveErrors([{ field: "status", message: t("Enter a file name for the scenario.") }]); return; }
   if (drive.saving) return;
   drive.saving = true;
   $("#save-go").disabled = $("#save-overwrite").disabled = true;
   try {
     const { status, data } = await api("POST", "/api/live/save_recording", { path, overwrite });
     if (!(status === 200 && data.ok)) {
-      showSaveErrors(data.errors && data.errors.length ? data.errors : [{ field: "status", message: `the server answered ${status}` }]);
+      showSaveErrors(data.errors && data.errors.length ? data.errors : [{ field: "status", message: t("the server answered {status}", { status }) }]);
       return;
     }
     $("#save-dialog").close();
-    notice(`Saved the recording as ${data.display_path} (${data.steps} step${data.steps === 1 ? "" : "s"}).`, "info");
+    notice(tn("Saved the recording as {path} ({count} step).", "Saved the recording as {path} ({count} steps).", data.steps, { path: data.display_path }), "info");
     await openSaved(data.path);
   } finally {
     drive.saving = false;
@@ -724,7 +730,7 @@ async function openSaved(path) {
   const { status, data } = await api("POST", "/api/scenario/open", { path });
   if (!(status === 200 && data.ok)) {
     sc.expectOpen(false);
-    notice(`Saved, but couldn't open it in the Scenario tab: ${(data.errors || [{}])[0].message || status}`, "error");
+    notice(t("Saved, but couldn't open it in the Scenario tab: {why}", { why: (data.errors || [{}])[0].message || status }), "error");
     return;
   }
   await sc.showScenario();
@@ -733,19 +739,19 @@ async function openSaved(path) {
 // -- keys -----------------------------------------------------------------------------------------------------
 function onKey(e) {
   if (currentTab() !== "drive" || e.ctrlKey || e.metaKey || e.altKey) return;
-  const t = e.target;
-  if (t && t.tagName === "SELECT" && isDrivingKey(e.code)) {
+  const el = e.target;
+  if (el && el.tagName === "SELECT" && isDrivingKey(e.code)) {
     e.preventDefault();   // W or 1 drives the robot; it doesn't type-ahead in a Drive-tab list (camera, speed, ports)
     return;
   }
-  if (isEditable(t) && t.tagName !== "SELECT") return;   // typing in a text box
+  if (isEditable(el) && el.tagName !== "SELECT") return;   // typing in a text box
   // an open dialog (Save as scenario…) has the keys to itself
-  if (document.querySelector("dialog[open]") || (t && t.closest && t.closest("dialog"))) return;
+  if (document.querySelector("dialog[open]") || (el && el.closest && el.closest("dialog"))) return;
   if (e.key === " " || e.code === "Space") {
     e.preventDefault();   // the e-stop: Space disables, even on a focused button, which it then doesn't press
     cmd("disable");
   } else if (e.key === "Enter") {
-    if (t && t.closest && t.closest("button")) return;   // Enter presses the focused button
+    if (el && el.closest && el.closest("button")) return;   // Enter presses the focused button
     e.preventDefault();
     if (!e.repeat) cmd("enable");
   }
@@ -766,9 +772,9 @@ async function ensureStarted() {
   loadSignals();
   await loadView();
   const info = await refreshInfo();
-  if (!info) { notice("Couldn't reach the live session (is scrimmage edit still running?)", "error"); return; }
+  if (!info) { notice(t("Couldn't reach the live session (is scrimmage edit still running?)"), "error"); return; }
   const stream = await sharedStream(info.port);
-  if (!stream) { notice("Couldn't reach the live session (is scrimmage edit still running?)", "error"); return; }
+  if (!stream) { notice(t("Couldn't reach the live session (is scrimmage edit still running?)"), "error"); return; }
   drive.stream = stream;
   stream.addEventListener("open", () => { drive.connected = true; refreshInfo(); render(); });
   stream.addEventListener("close", () => { drive.connected = false; render(); });
@@ -794,7 +800,7 @@ function onRobotState(e) {
 export function initDrive() {
   drive.router = new InputRouter({ accept: () => currentTab() === "drive" });
   drive.router.addEventListener("gamepad-lost", (e) => {
-    notice(`The gamepad on port ${e.detail} went away; that port now reads zeros.`, "warn");
+    notice(t("The gamepad on port {n} went away; that port now reads zeros.", { n: e.detail }), "warn");
     padsSig = null;
     refreshPadOptions();
   });
@@ -857,6 +863,10 @@ export function initDrive() {
   });
   showPushForce();
   units.onChange(() => { showPushForce(); render(); });
+  i18n.onChange(() => {
+    refreshPadOptions(); render(); renderDeviceLine(lastDevices);
+    if (drive.started) refreshInfo();   // why Start is unavailable is the server's words
+  });
   $("#drive-reset").addEventListener("click", () => cmd("reset"));
   $("#drive-record").addEventListener("click", () => cmd(drive.state && drive.state.recording ? "record_stop" : "record_start"));
   $("#drive-save").addEventListener("click", openSaveDialog);
@@ -868,7 +878,7 @@ export function initDrive() {
   // a pick from a Drive-tab list hands the keys back to driving (WASD, the digits, Enter and Space)
   $("#tab-drive").addEventListener("change", (e) => { if (e.target.tagName === "SELECT") e.target.blur(); });
   window.addEventListener("scrimmage:state", onRobotState);
-  window.addEventListener("scrimmage:devices", (e) => renderDeviceLine(e.detail.devices));
+  window.addEventListener("scrimmage:devices", (e) => { lastDevices = e.detail.devices; renderDeviceLine(lastDevices); });
 
   window.__scrimmage.live = {
     get state() { return drive.state; },

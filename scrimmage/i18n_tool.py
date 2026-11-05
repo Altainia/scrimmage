@@ -2,7 +2,8 @@
 
 The sources are found by reading the code, not by running it: every t()/tn() call whose function came from i18n
 (Python: `from .i18n import t`, `i18n.t(...)`; JavaScript: `import { t } from "./i18n.js"`, `i18n.t(...)`) must
-pass literal strings first. A variable, an f-string, a template with ${...} or text joined with + is an error here,
+pass literal strings first. An HTML page's static text is its data-i18n, data-i18n-title, -placeholder and
+-aria-label attributes (with data-i18n-context), which static/i18n.js fills in. A variable, an f-string, a template with ${...} or text joined with + is an error here,
 since a translator could never see the whole sentence; its dynamic parts are {placeholders} instead.
 
     template   lists each source with every file:line using it; --out FILE also writes a starter catalog, every
@@ -20,6 +21,7 @@ import json
 import re
 import sys
 from dataclasses import dataclass, field
+from html.parser import HTMLParser
 from pathlib import Path
 
 from . import i18n
@@ -53,13 +55,13 @@ def scan(root: Path = PACKAGE) -> tuple[list[Source], list[str]]:
     found: dict[str, Source] = {}
     errors: list[str] = []
     base = root.resolve().parent
-    files = sorted(p for p in root.rglob("*") if p.suffix in (".py", ".js") and p.name not in SKIP_FILES
+    files = sorted(p for p in root.rglob("*") if p.suffix in (".py", ".js", ".html") and p.name not in SKIP_FILES
                    and not SKIP_DIRS & set(p.relative_to(root).parts[:-1]))
     for path in files:
         shown = path.resolve().relative_to(base).as_posix()
         text = path.read_text(encoding="utf-8")
         try:
-            calls = _python_calls(text) if path.suffix == ".py" else _js_calls(text)
+            calls = {".py": _python_calls, ".js": _js_calls, ".html": _html_calls}[path.suffix](text)
         except SyntaxError as e:     # a file being edited: say so, and scan the rest
             errors.append(f"{shown}:{e.lineno or 1}: isn't valid Python ({e.msg})")
             continue
@@ -86,7 +88,7 @@ def _python_calls(text: str):
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
             if (node.module or "").split(".")[-1] == "i18n":
-                funcs.update({a.asname or a.name: a.name for a in node.names if a.name in ("t", "tn")})
+                funcs.update({a.asname or a.name: a.name for a in node.names if a.name in ("t", "tn", "N_")})
             else:
                 modules.update(a.asname or a.name for a in node.names if a.name == "i18n")
         elif isinstance(node, ast.Import):
@@ -98,11 +100,13 @@ def _python_calls(text: str):
         f = node.func
         if isinstance(f, ast.Name) and f.id in funcs:
             kind = funcs[f.id]
-        elif (isinstance(f, ast.Attribute) and f.attr in ("t", "tn") and isinstance(f.value, ast.Name)
+        elif (isinstance(f, ast.Attribute) and f.attr in ("t", "tn", "N_") and isinstance(f.value, ast.Name)
               and f.value.id in modules):
             kind = f.attr
         else:
             continue
+        if kind == "N_":     # data marked where it is defined: a plain source, as t()'s
+            kind = "t"
         want = 1 if kind == "t" else 2
         args, error = [], None
         for a in node.args[:want]:
@@ -121,6 +125,33 @@ def _python_calls(text: str):
                     error = error or f"a context of {ast.unparse(kw.value)}"
         calls.append((node.lineno, kind, args, context, error))
     return sorted(calls, key=lambda c: c[0])
+
+
+HTML_ATTRS = ("data-i18n", "data-i18n-title", "data-i18n-placeholder", "data-i18n-aria-label")
+
+
+class _HtmlSources(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.calls = []
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        for name in HTML_ATTRS:
+            if name in a:
+                value = a[name]
+                error = None if value else "an empty attribute"
+                self.calls.append((self.getpos()[0], "t", [value] if value else [], a.get("data-i18n-context"), error))
+
+    handle_startendtag = handle_starttag
+
+
+def _html_calls(text: str):
+    """(line, "t", [source], context, error) for each data-i18n* attribute in an HTML page."""
+    p = _HtmlSources()
+    p.feed(text)
+    p.close()
+    return p.calls
 
 
 # JavaScript has no parser here: the code is masked (comments and the insides of strings and regular expressions

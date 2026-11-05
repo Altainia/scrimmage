@@ -18,7 +18,7 @@ import { renderLibrary, initLibrary } from "./library.js";
 import { renderTree } from "./tree.js";
 import { renderInspector, placeErrors } from "./inspector.js";
 import { units } from "./units.js";
-import { i18n, t } from "./i18n.js";
+import { i18n, t, tn } from "./i18n.js";
 import { theme } from "./theme.js";
 
 // The hash carries the token and the tab: "#token=…" or "#scenario&token=…" ("#robot&token=…", "#drive&token=…").
@@ -64,13 +64,13 @@ export async function api(method, path, body) {
   try {
     res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   } catch (e) {
-    return { status: 0, data: { ok: false, errors: [{ field: "status", message: "can't reach the assembler (is scrimmage edit still running?)" }] } };
+    return { status: 0, data: { ok: false, errors: [{ field: "status", message: t("can't reach the assembler (is scrimmage edit still running?)") }] } };
   }
   let data;
   try { data = await res.json(); } catch { data = {}; }
   if (!data || typeof data !== "object") data = {};
   if (res.status !== 200 && !(data.errors && data.errors.length)) {
-    data = { ok: false, errors: [{ field: "status", message: data.error || `the server answered ${res.status}` }] };
+    data = { ok: false, errors: [{ field: "status", message: data.error || t("the server answered {status}", { status: res.status }) }] };
   }
   return { status: res.status, data };
 }
@@ -101,7 +101,7 @@ export function registerTab(name, hooks) {
   $(`#tab-btn-${name}`).hidden = false;
   const want = hashParams();
   // a tab the link asks for opens; a scenario or a test opens on its own tab unless the link asks for another one
-  if (want.has(name) || ((name === "scenario" || name === "test") && !TABS.some((t) => want.has(t)))) setTab(name);
+  if (want.has(name) || ((name === "scenario" || name === "test") && !TABS.some((x) => want.has(x)))) setTab(name);
 }
 
 export function setTab(name, { focus = false } = {}) {
@@ -109,12 +109,12 @@ export function setTab(name, { focus = false } = {}) {
   const changed = name !== tab;
   if (changed && tabHooks[tab] && tabHooks[tab].onHide) tabHooks[tab].onHide();
   tab = name;
-  for (const t of TABS) {
-    const btn = $(`#tab-btn-${t}`);
-    btn.setAttribute("aria-selected", String(t === tab));
-    btn.tabIndex = t === tab ? 0 : -1;
-    btn.classList.toggle("active", t === tab);
-    $(`#tab-${t}`).hidden = t !== tab;
+  for (const x of TABS) {
+    const btn = $(`#tab-btn-${x}`);
+    btn.setAttribute("aria-selected", String(x === tab));
+    btn.tabIndex = x === tab ? 0 : -1;
+    btn.classList.toggle("active", x === tab);
+    $(`#tab-${x}`).hidden = x !== tab;
   }
   if (focus) $(`#tab-btn-${tab}`).focus();
   history.replaceState(null, "", `#${tab}${token ? `&token=${encodeURIComponent(token)}` : ""}`);
@@ -126,10 +126,10 @@ export function setTab(name, { focus = false } = {}) {
 }
 
 function initTabs() {
-  for (const t of TABS) $(`#tab-btn-${t}`).addEventListener("click", () => setTab(t));
+  for (const x of TABS) $(`#tab-btn-${x}`).addEventListener("click", () => setTab(x));
   $(".tabs").addEventListener("keydown", (e) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
-    const shown = TABS.filter((t) => !$(`#tab-btn-${t}`).hidden);
+    const shown = TABS.filter((x) => !$(`#tab-btn-${x}`).hidden);
     let k = shown.indexOf(tab);
     if (e.key === "ArrowLeft") k = (k + shown.length - 1) % shown.length;
     else if (e.key === "ArrowRight") k = (k + 1) % shown.length;
@@ -139,8 +139,8 @@ function initTabs() {
   });
   window.addEventListener("hashchange", () => {
     const want = hashParams();
-    const t = TABS.find((x) => want.has(x));
-    if (t && t !== tab) setTab(t);
+    const name = TABS.find((x) => want.has(x));
+    if (name && name !== tab) setTab(name);
   });
 }
 
@@ -157,7 +157,7 @@ export function renderTop() {
 export function showPath(shown, full) {
   const slash = shown.lastIndexOf("/");
   $("#file-path").replaceChildren(h("strong", { text: shown.slice(slash + 1) }),
-    ...(slash >= 0 ? [h("span", { class: "dir", text: `  in ${shown.slice(0, slash + 1)}` })] : []));
+    ...(slash >= 0 ? [h("span", { class: "dir", text: "  " + t("in {folder}", { folder: shown.slice(0, slash + 1) }) })] : []));
   $("#file-path").title = full;
 }
 
@@ -178,7 +178,7 @@ export function serial(fn) {
 async function mutate(path, body, opts = {}) {
   if (!store.state) return { ok: false, errors: [] };
   if (store.state.read_only) {
-    notice(`This config is read-only: ${store.state.read_only_reason}`, "warn");
+    notice(t("This config is read-only: {why}", { why: store.state.read_only_reason }), "warn");
     return { ok: false, errors: [] };
   }
   busy++; renderSaved();
@@ -191,7 +191,7 @@ async function mutate(path, body, opts = {}) {
       return { ok: true, version: data.version, data };
     }
     const errors = data.errors && data.errors.length ? data.errors
-      : [{ field: "status", message: data.error || `request failed (${status})` }];
+      : [{ field: "status", message: data.error || t("request failed ({status})", { status }) }];
     if (status === 409) {
       // stale version, file changed on disk, or read-only: reload and say why
       notice(errors.map((e) => e.message).join("; "), "warn");
@@ -238,7 +238,7 @@ async function refreshState(force = false) {
 async function loadLibrary() {
   const { status, data } = await api("GET", "/api/robot/library");
   if (status === 200) { store.library = data; renderAll(); }
-  else notice(`Couldn't load the parts library: ${data.errors[0].message}`, "error");
+  else notice(t("Couldn't load the parts library: {why}", { why: data.errors[0].message }), "error");
 }
 export { loadLibrary };
 
@@ -259,8 +259,7 @@ function applyState(s, force = false) {
   // same robot (a scenario opened from this page bumps it) isn't an outside edit
   const robotText = (x) => JSON.stringify([x.path, x.parts, x.other_sections]);
   if (prev && s.version !== prev.version && !ownVersions.has(s.version) && !busy && robotText(s) !== robotText(prev)) {
-    notice("The robot changed outside this page (the file was edited, or another tab), so it was reloaded. "
-      + "Undo history starts again from here.", "info");
+    notice(t("The robot changed outside this page (the file was edited, or another tab), so it was reloaded. Undo history starts again from here."), "info");
     store.lastErrors = [];
   }
   store.state = s;
@@ -296,7 +295,7 @@ let connected = null;
 function setConnected(ok, why) {
   if (connected === ok) return;
   connected = ok;
-  if (!ok) notice(`Lost contact with the assembler: ${why || "no answer"}. Retrying…`, "error", "conn");
+  if (!ok) notice(t("Lost contact with the assembler: {why}. Retrying…", { why: why || t("no answer") }), "error", "conn");
   else dismiss("conn");
   renderSaved();
 }
@@ -317,7 +316,7 @@ export function notice(text, kind = "info", id = null) {
   if (id) dismiss(id);
   const el = h("div", { class: `notice notice-${kind}`, role: kind === "error" ? "alert" : "status", dataset: id ? { id } : {} },
     h("span", { text }),
-    h("button", { type: "button", class: "btn btn-small btn-ghost", "aria-label": "Dismiss", onclick: () => el.remove() }, "×"));
+    h("button", { type: "button", class: "btn btn-small btn-ghost", "aria-label": t("Dismiss"), onclick: () => el.remove() }, "×"));
   box.append(el);
   while (box.children.length > 4) box.firstChild.remove();
   if (kind === "info") setTimeout(() => el.remove(), 10000);
@@ -332,13 +331,13 @@ function renderAll() {
   if (!s) return;
   const shown = s.display_path || s.path || "";
   renderTop();
-  $("#inspector-title").textContent = store.selected ? `Inspector · ${store.selected}` : "Inspector";
+  $("#inspector-title").textContent = store.selected ? t("Inspector · {name}", { name: store.selected }) : t("Inspector");
   const banner = $("#readonly-banner");
   banner.hidden = !s.read_only;
-  banner.textContent = s.read_only ? `Read-only: ${s.read_only_reason}` : "";
+  banner.textContent = s.read_only ? t("Read-only: {why}", { why: s.read_only_reason }) : "";
   document.body.classList.toggle("read-only", !!s.read_only);
   $("#other-path").textContent = shown;
-  $("#other-text").textContent = s.other_sections.trim() || "(none)";
+  $("#other-text").textContent = s.other_sections.trim() || t("(none)");
   renderLibrary(store);
   renderTree(store);
   renderInspector(store);
@@ -359,7 +358,7 @@ function renderErrors() {
     const m = /^([A-Za-z0-9_]+)\/(.+)$/.exec(e.field || "");
     const inst = m && s.parts.some((p) => p.name === m[1]) ? m[1] : null;
     box.append(h("div", { class: `message message-${kind}`, role: kind === "error" ? "alert" : null },
-      h("span", { class: "message-kind", text: kind === "error" ? "Error" : "Warning" }),
+      h("span", { class: "message-kind", text: kind === "error" ? t("Error") : t("Warning") }),
       inst ? h("button", { type: "button", class: "linklike", onclick: () => select(inst), text: inst }) : null,
       h("span", { text: inst ? String(e.message).replace(/^parts\[\d+\] '[^']*': /, "") : e.message })));
   };
@@ -371,31 +370,33 @@ function renderErrors() {
 function renderSaved() {
   const el = $("#saved");
   if (!el) return;
-  if (connected === false) { el.textContent = "Not connected"; el.className = "saved saved-bad"; return; }
+  if (connected === false) { el.textContent = t("Not connected"); el.className = "saved saved-bad"; return; }
   if (!store.state) return;
-  if (store.state.read_only) { el.textContent = "Read-only"; el.className = "saved saved-warn"; return; }
-  if (busy) { el.textContent = "Saving…"; el.className = "saved saved-busy"; return; }
+  if (store.state.read_only) { el.textContent = t("Read-only"); el.className = "saved saved-warn"; return; }
+  if (busy) { el.textContent = t("Saving…"); el.className = "saved saved-busy"; return; }
   if (store.lastErrors.length) {
-    el.textContent = "Last change not saved (see the error)";
+    el.textContent = t("Last change not saved (see the error)");
     el.className = "saved saved-bad";
     return;
   }
-  el.textContent = "✓ All changes saved";
+  el.textContent = t("✓ All changes saved");
   el.className = "saved saved-ok";
 }
 
 function renderStatus() {
   const s = store.state;
   renderSaved();
-  $("#mass").textContent = s.mass_kg == null ? "Mass: —" : `Mass: ${units.number(units.toDisplay(s.mass_kg, "mass"), 1)} ${units.name("mass")}`;
+  $("#mass").textContent = s.mass_kg == null ? t("Mass: —")
+    : t("Mass: {mass} {unit}", { mass: units.number(units.toDisplay(s.mass_kg, "mass"), 1), unit: units.name("mass") });
   $("#cg").textContent = cgText(s.com);
-  $("#cg").title = s.com ? "The robot's center of gravity at its start pose, from the floor at the frame's center" : "";
-  $("#counts").textContent = s.bodies == null ? "" : `${s.bodies} bodies · ${s.joints} joints`;
+  $("#cg").title = s.com ? t("The robot's center of gravity at its start pose, from the floor at the frame's center") : "";
+  $("#counts").textContent = s.bodies == null ? ""
+    : `${tn("{count} body", "{count} bodies", s.bodies)} · ${tn("{count} joint", "{count} joints", s.joints)}`;
   const ne = s.errors.length + store.lastErrors.length, nw = s.warnings.length;
   const parts = [];
-  if (ne) parts.push(`${ne} error${ne === 1 ? "" : "s"}`);
-  if (nw) parts.push(`${nw} warning${nw === 1 ? "" : "s"}`);
-  $("#problems").textContent = parts.length ? parts.join(" · ") : "No problems";
+  if (ne) parts.push(tn("{count} error", "{count} errors", ne));
+  if (nw) parts.push(tn("{count} warning", "{count} warnings", nw));
+  $("#problems").textContent = parts.length ? parts.join(" · ") : t("No problems");
   $("#problems").className = `stat ${ne ? "stat-bad" : nw ? "stat-warn" : "stat-ok"}`;
 }
 export { renderErrors, renderStatus };
@@ -408,9 +409,11 @@ export function cgText(com) {
   const u = units.name("length"), d = CG_DECIMALS[u] ?? 2;
   const r = (v) => Number(units.toDisplay(v, "length").toFixed(d)) || 0;     // || 0: -0 reads as 0
   const m = (v) => `${Math.abs(r(v)).toFixed(d)} ${u}`;
-  const side = r(com.left);
-  return `CG: ${m(com.height)} up, ${m(com.forward)} ${r(com.forward) < 0 ? "back" : "forward"}`
-    + (side ? `, ${m(com.left)} ${side < 0 ? "right" : "left"}` : "");
+  const p = { up: m(com.height), along: m(com.forward), side: m(com.left) };
+  const side = r(com.left), back = r(com.forward) < 0;
+  if (!side) return back ? t("CG: {up} up, {along} back", p) : t("CG: {up} up, {along} forward", p);
+  if (side < 0) return back ? t("CG: {up} up, {along} back, {side} right", p) : t("CG: {up} up, {along} forward, {side} right", p);
+  return back ? t("CG: {up} up, {along} back, {side} left", p) : t("CG: {up} up, {along} forward, {side} left", p);
 }
 
 // -- helpers shared by the library and inspector ------------------------------------------------
@@ -470,14 +473,14 @@ export function descendants(name) {
 // Fill an attach <select>: an optional "root" choice, then one optgroup per instance with its mounts and bodies.
 export function fillAttachSelect(select, groups, current, { allowRoot = false } = {}) {
   select.replaceChildren();
-  if (allowRoot) select.append(h("option", { value: "" }, "Nothing (this is the robot's root part)"));
+  if (allowRoot) select.append(h("option", { value: "" }, t("Nothing (this is the robot's root part)")));
   let found = current === null || current === undefined || current === "" ? allowRoot : false;
   for (const g of groups) {
     const og = h("optgroup", { label: g.instance });
-    if (!g.mounts.length && !g.bodies.length) og.append(h("option", { disabled: true, value: "" }, "(nothing to attach to)"));
+    if (!g.mounts.length && !g.bodies.length) og.append(h("option", { disabled: true, value: "" }, t("(nothing to attach to)")));
     for (const [list, what] of [[g.mounts, "mount"], [g.bodies, "body"]]) {
       for (const o of list) {
-        og.append(h("option", { value: o }, `${o}  (${what})`));
+        og.append(h("option", { value: o }, what === "mount" ? t("{name}  (mount)", { name: o }) : t("{name}  (body)", { name: o })));
         if (o === current) found = true;
       }
     }
@@ -502,18 +505,20 @@ export function showMeasure(el, si, kind) {
   return el;
 }
 export function readMeasure(el, kind) {
-  const t = el.value.trim();
-  if (t === "") return null;
-  if (el.dataset.si !== undefined && t === el.dataset.shown) return Number(el.dataset.si);
-  return units.parse(t, kind);
+  const text = el.value.trim();
+  if (text === "") return null;
+  if (el.dataset.si !== undefined && text === el.dataset.shown) return Number(el.dataset.si);
+  return units.parse(text, kind);
 }
 export const measureError = (v) => (v !== null && typeof v === "object" ? v.error : null);
 // The length unit in words, for a hint or an aria label ("in inches", "Offset x (millimeters)")
-const LENGTH_WORDS = { in: "inches", mm: "millimeters" };
-export const lengthWords = () => LENGTH_WORDS[units.name("length")] || units.name("length");
+export function lengthWords() {
+  const u = units.name("length");
+  return u === "in" ? t("inches") : u === "mm" ? t("millimeters") : u;
+}
 
 // A Grip picker's entry for a pad with no grip set (the Part and Test tabs; scrimmage/blocks/run.py DEFAULT_GRIP_NOTE)
-export const DEFAULT_GRIP = "Default — 1.0 (MuJoCo's default; the larger of pad and piece applies)";
+export const defaultGrip = () => t("Default — 1.0 (MuJoCo's default; the larger of pad and piece applies)");
 export const UNIT = { "kg*m^2": "kg·m²", deg: "°", "N*m/rad": "N·m/rad" };
 
 // -- settings menu ------------------------------------------------------------------------------
@@ -572,8 +577,8 @@ function onKey(e) {
   const mod = e.ctrlKey || e.metaKey;
   if (!mod || e.altKey || e.defaultPrevented) return;   // defaultPrevented: the block editor did it itself
   const k = e.key.toLowerCase();
-  const t = e.target;
-  const typing = t && (t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && !["checkbox", "button", "radio"].includes(t.type)));
+  const el = e.target;
+  const typing = el && (el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && !["checkbox", "button", "radio"].includes(el.type)));
   if (typing || document.querySelector("dialog[open]")) return;   // let text boxes keep their own undo
   if (startShown) return;   // the start page edits nothing: undo would act on a document out of sight
   if (k === "z" && !e.shiftKey) { e.preventDefault(); tabUndo(); }
@@ -595,13 +600,13 @@ async function showStartPage(canGoBack, { cadFor = null } = {}) {
   $("#start-page").replaceChildren();   // not the last visit's answers (the team folders may have changed since)
   $("#start-page").hidden = false;
   $("#start-link").hidden = true;
-  $("#file-path").replaceChildren(h("strong", { text: "Start" }));
+  $("#file-path").replaceChildren(h("strong", { text: t("Start", { context: "page" }) }));
   try {
     const m = await import("./start.js");
     await m.showStart($("#start-page"), { canGoBack, onBack: hideStartPage, cadFor });
   } catch (e) {
     console.error(e);
-    notice(`The start page failed to load: ${e.message || e}`, "error");
+    notice(t("The start page failed to load: {why}", { why: e.message || e }), "error");
   }
 }
 function hideStartPage() {
@@ -619,7 +624,7 @@ function bootBench() {
   setTab("bench");
   import("./bench.js").then((m) => m.initBench()).catch((e) => {
     console.error(e);
-    notice(`The Bench tab failed to load: ${e.message || e}`, "error");
+    notice(t("The Bench tab failed to load: {why}", { why: e.message || e }), "error");
   });
 }
 
@@ -629,7 +634,7 @@ function bootPart() {
   setTab("part");
   import("./part.js").then((m) => m.initPart()).catch((e) => {
     console.error(e);
-    notice(`The Part tab failed to load: ${e.message || e}`, "error");
+    notice(t("The Part tab failed to load: {why}", { why: e.message || e }), "error");
   });
 }
 
@@ -638,7 +643,7 @@ function bootTest() {
   registerTab("test", { renderTop() {}, undo() {}, redo() {}, onShow() {} });
   import("./test.js").then((m) => m.initTest()).catch((e) => {
     console.error(e);
-    notice(`The Test tab failed to load: ${e.message || e}`, "error");
+    notice(t("The Test tab failed to load: {why}", { why: e.message || e }), "error");
   });
 }
 
@@ -648,7 +653,7 @@ function bootMeasure() {
   setTab("measure");
   import("./measure.js").then((m) => m.initMeasure()).catch((e) => {
     console.error(e);
-    notice(`The Measure tab failed to load: ${e.message || e}`, "error");
+    notice(t("The Measure tab failed to load: {why}", { why: e.message || e }), "error");
   });
 }
 
@@ -656,25 +661,27 @@ function bootRobot() {
   initLibrary();
   import("./view3d.js").then((m) => m.initView()).catch((e) => {
     console.error(e);
-    $("#view").replaceChildren(h("p", { class: "view-placeholder" }, `The 3D view failed to load: ${e.message || e}`));
+    $("#view").replaceChildren(h("p", { class: "view-placeholder" }, t("The 3D view failed to load: {why}", { why: e.message || e })));
   });
   loadLibrary();
   pollLoop();
   units.onChange(() => renderAll());   // the inspector keeps what is half typed (renderInspector)
+  // likewise; the library's part docs are the server's words, so they are asked for again in the new language
+  i18n.onChange(() => { renderAll(); loadLibrary(); });
   // the Scenario tab: loaded on its own (like the 3D view) so a failure there can't break the Robot tab
   import("./scenario.js").then((m) => m.initScenario()).catch((e) => {
     console.error(e);
-    notice(`The Scenario tab failed to load: ${e.message || e}`, "error");
+    notice(t("The Scenario tab failed to load: {why}", { why: e.message || e }), "error");
   });
   // the robot code panel (in the Robot tab, beside the 3D view), likewise
   import("./code.js").then((m) => m.initCode()).catch((e) => {
     console.error(e);
-    notice(`The robot code panel failed to load: ${e.message || e}`, "error");
+    notice(t("The robot code panel failed to load: {why}", { why: e.message || e }), "error");
   });
   // the Drive tab, likewise
   import("./drive.js").then((m) => m.initDrive()).catch((e) => {
     console.error(e);
-    notice(`The Drive tab failed to load: ${e.message || e}`, "error");
+    notice(t("The Drive tab failed to load: {why}", { why: e.message || e }), "error");
   });
 }
 
@@ -682,7 +689,9 @@ function bootRobot() {
 function backButton(back) {
   const btn = $("#back-robot");
   btn.hidden = false;
-  btn.title = `Open ${back.display_path} again`;
+  const title = () => { btn.title = t("Open {path} again", { path: back.display_path }); };
+  title();
+  i18n.onChange(title);
   btn.addEventListener("click", async () => {
     btn.disabled = true;
     const { status, data } = await api("POST", "/api/app/open", { path: back.path });
@@ -692,8 +701,8 @@ function backButton(back) {
       return;
     }
     btn.disabled = false;
-    const why = (data.errors && data.errors[0] && data.errors[0].message) || `the server answered ${status}`;
-    notice(status === 409 ? `Can't switch right now: ${why}` : why, "error");
+    const why = (data.errors && data.errors[0] && data.errors[0].message) || t("the server answered {status}", { status });
+    notice(status === 409 ? t("Can't switch right now: {why}", { why }) : why, "error");
   });
 }
 
@@ -711,7 +720,7 @@ async function boot() {
     render: () => renderAll(),      // tests: a redraw (as a state arriving does) at a moment they choose
   };
   if (!token) {
-    notice("This page needs the link scrimmage edit printed (it carries a #token=…). Open that link.", "error");
+    notice(t("This page needs the link scrimmage edit printed (it carries a #token=…). Open that link."), "error");
   }
   initTabs();
   $("#start-link").addEventListener("click", () => showStartPage(true));

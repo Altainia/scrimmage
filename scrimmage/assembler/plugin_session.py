@@ -30,7 +30,7 @@ from ..parts.grip import grip_friction
 from ..parts.model import PartError, load_part, part_from_dict
 from ..parts.overlay import JOINT_KEYS, OVERLAY, _rot, apply_overlay
 from .bench_session import SessionError
-from .part_session import NEED_STEP, PIECE_OPS, _floats, _mesh, _refused, _Session, _sig
+from .part_session import PIECE_OPS, need_step, _floats, _mesh, _refused, _Session, _sig
 
 
 class PluginSession(_Session):
@@ -101,7 +101,7 @@ class PluginSession(_Session):
     def _op(self, op: str, a: dict) -> dict:
         """The overlay with body-level edit `op` applied (args as the import's edits take them)."""
         if op in PIECE_OPS or (op == "set_mass" and a.get("piece") is not None):
-            raise EditError("op", NEED_STEP)
+            raise EditError("op", need_step())
         edits = copy.deepcopy(self.edits)
         bodies = {b.name: b for b in self.part.bodies}
 

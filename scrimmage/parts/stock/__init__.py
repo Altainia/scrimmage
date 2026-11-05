@@ -10,6 +10,7 @@ import math
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from ...i18n import N_
 from ..assemble import TREAD_DAMPING, TREAD_STIFFNESS
 from ..model import Part, PartError, part_from_dict
 
@@ -58,9 +59,9 @@ class Stock:
 
 # A drivetrain's wheels: their geoms say tread = true, and the assembler reads these two (parts/assemble.py).
 TREAD_PARAMS = (
-    Param("tread_stiffness", "N/m", TREAD_STIFFNESS, "each wheel's tread stiffness (estimate: TPU or Colson-like "
-          "tread on a 4 in wheel, about 1e5 to 3e5)", positive=True),
-    Param("tread_damping", "", TREAD_DAMPING, "the tread contact's damping ratio (1 is critical: no bounce)",
+    Param("tread_stiffness", "N/m", TREAD_STIFFNESS, N_("each wheel's tread stiffness (estimate: TPU or Colson-like "
+          "tread on a 4 in wheel, about 1e5 to 3e5)"), positive=True),
+    Param("tread_damping", "", TREAD_DAMPING, N_("the tread contact's damping ratio (1 is critical: no bounce)"),
           positive=True),
 )
 

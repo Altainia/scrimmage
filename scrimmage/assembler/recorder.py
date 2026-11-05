@@ -24,6 +24,10 @@ class RecordingError(ValueError):
     pass
 
 
+class RecordingExists(RecordingError):
+    """The scenario file or its tracks folder is already there: the page asks before overwriting it."""
+
+
 class _RestoreFailed(Exception):
     """An install failed and the old recording couldn't all be put back: it stays in the staging folder."""
 
@@ -162,9 +166,9 @@ class DriveRecorder:
                 raise RecordingError(f"the folder {folder.name} holds more than a recording's step CSVs, so it "
                                      "can't be replaced; choose another name")
         if path.exists() and not overwrite:
-            raise RecordingError(f"{path.name} already exists")
+            raise RecordingExists(f"{path.name} already exists")
         if folder.exists() and not overwrite:
-            raise RecordingError(f"{folder.name} already exists")
+            raise RecordingExists(f"{folder.name} already exists")
         try:
             rel_config = Path(os.path.relpath(config.resolve(), path.parent.resolve())).as_posix()
         except ValueError:   # different drive

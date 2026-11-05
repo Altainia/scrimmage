@@ -2,5 +2,14 @@
   "_language": "English (UK)",
   "Center of gravity": "Centre of gravity",
   "Color": "Colour",
-  "{count} meter|{count} meters": {"one": "{count} metre", "other": "{count} metres"}
+  "{count} meter|{count} meters": {
+    "one": "{count} metre",
+    "other": "{count} metres"
+  },
+  "The robot's center of gravity at its start pose, from the floor at the frame's center": "The robot's centre of gravity at its start pose, from the floor at the frame's centre",
+  "millimeters": "millimetres",
+  "distance from each frame edge to a corner mount (module center)": "distance from each frame edge to a corner mount (module centre)",
+  "Weight {weight} · center of gravity {cg}": "Weight {weight} · centre of gravity {cg}",
+  "center of gravity": "centre of gravity",
+  "the start must be [x, y, heading]: meters from the blue corner, and degrees": "the start must be [x, y, heading]: metres from the blue corner, and degrees"
 }

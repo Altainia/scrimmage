@@ -13,6 +13,7 @@ import os
 import tomllib
 from pathlib import Path
 
+from .. import i18n
 from ..cad.build import MARKER
 from ..parts.model import PartError, load_part
 from ..parts.stock import REGISTRY, _load_all, build_stock
@@ -29,7 +30,7 @@ def _param(p) -> dict:
     default = list(p.default) if p.kind == "pair" else p.default
     return {"name": p.name, "kind": p.kind, "unit": p.unit, "default": default, "min": p.min,
             "max": None if callable(p.max) else p.max, "max_depends": callable(p.max),
-            "choices": list(p.choices) if p.choices is not None else None, "doc": p.doc, "positive": p.positive}
+            "choices": list(p.choices) if p.choices is not None else None, "doc": i18n.translated(p.doc), "positive": p.positive}
 
 
 _KINDS: dict[str, dict[str, str]] = {}
@@ -54,8 +55,9 @@ def root_body(name: str) -> str:
 
 
 def stock() -> list[dict]:
+    """The stock parts for the page, their docs in the user's language (N_() text, translated now)."""
     _load_all()
-    return [{"name": s.name, "group": group(s), "doc": s.doc, "note": s.note,
+    return [{"name": s.name, "group": group(s), "doc": i18n.translated(s.doc), "note": i18n.translated(s.note),
              "params": [_param(p) for p in s.params], "slots": _slot_kinds(s), "mounts": list(s.mounts),
              "root_body": root_body(s.name)}
             for s in sorted(REGISTRY.values(), key=lambda s: s.name)]

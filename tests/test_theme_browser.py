@@ -140,7 +140,7 @@ def test_an_older_save_answered_last_still_shows_its_setting(open_page):
             pass                        # the poll waits too, so only the saves' answers can change the menu
         else:
             route.continue_()
-    page.route("**/api/settings", hold)
+    page.route("**/api/settings*", hold)
     page.click("#settings-btn")
     page.click("#settings-menu [data-setting='units'][data-value='metric']")
     for _ in range(50):

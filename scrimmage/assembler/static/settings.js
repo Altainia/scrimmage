@@ -12,14 +12,33 @@ const warners = new Set();
 
 function token() { return new URLSearchParams(location.hash.slice(1)).get("token") || ""; }
 
+// The language's catalog comes once, not with every poll: a request says which catalog the page has
+// (?catalog=<its catalog_version>), and the answer leaves it out while that is still the one. The page keeps the few
+// it was sent, by version, and fills an answer's catalog back in, so the takers always see a whole answer.
+const catalogs = new Map();     // catalog_version -> catalog, the newest last
+let catalogHave = null;         // the version the page shows
+
+function withCatalog(data) {
+  if (!data.catalog_version) return data;
+  if (data.catalog) {
+    catalogs.delete(data.catalog_version);
+    catalogs.set(data.catalog_version, data.catalog);
+    while (catalogs.size > 4) catalogs.delete(catalogs.keys().next().value);
+  } else if (catalogs.has(data.catalog_version)) {
+    data.catalog = catalogs.get(data.catalog_version);
+  }
+  return data;
+}
+
 async function request(method, body) {
   const headers = { "X-Scrimmage-Token": token() };
   if (body !== undefined) headers["Content-Type"] = "application/json";
+  const query = method === "GET" && catalogHave && catalogs.has(catalogHave) ? `?catalog=${encodeURIComponent(catalogHave)}` : "";
   try {
-    const res = await fetch("/api/settings", { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    const res = await fetch(`/api/settings${query}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
     let data = {};
     try { data = await res.json(); } catch { /* not JSON */ }
-    return { status: res.status, data: data || {} };
+    return { status: res.status, data: withCatalog(data || {}) };
   } catch {
     return { status: 0, data: { error: "can't reach the editor (is scrimmage edit still running?)" } };
   }
@@ -29,6 +48,7 @@ let shown = {};      // the answer the takers last had
 
 function apply(data) {
   shown = data;
+  if (data.catalog_version && data.catalog) catalogHave = data.catalog_version;
   const hadWarning = warning;
   warning = data.warning || null;
   for (const fn of [...takers]) {
@@ -48,7 +68,7 @@ function apply(data) {
 let sent = 0, settled = 0, saving = 0;
 let newest = 0;            // the latest save() answered
 const answered = {};       // setting -> the latest save() answered that changed it
-const PART_OF = { catalog: "language" };   // an answer's catalog goes with its language
+const PART_OF = { catalog: "language", catalog_version: "language" };   // an answer's catalog goes with its language
 
 export async function load() {
   const n = ++sent;

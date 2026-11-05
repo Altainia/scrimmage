@@ -37,6 +37,7 @@ import { $, h, notice } from "./app.js";
 import { part, onPart, onView, select, bodyColor, view3d } from "./part.js";
 import { decode } from "./scene3d.js";
 import { theme } from "./theme.js";
+import { t, live as L, liveAttr } from "./i18n.js";
 import { toRobot, cadToRobot, dirToRobot, normalize, bodyPoses, apply } from "./part_frame.js";
 
 const SELECTED = new THREE.Color(0x2f7ff0);
@@ -66,7 +67,7 @@ export function initPartView() {
     renderer = new THREE.WebGLRenderer({ antialias: true });
   } catch (e) {
     host.replaceChildren(h("p", { class: "view-placeholder" },
-      "The 3D view needs WebGL, which this browser didn't provide. The list and the inspector still work."));
+      t("The 3D view needs WebGL, which this browser didn't provide. The list and the inspector still work.")));
     return false;
   }
   renderer.setPixelRatio(window.devicePixelRatio || 1);
@@ -74,7 +75,7 @@ export function initPartView() {
   const cv = renderer.domElement;
   cv.className = "view-canvas";
   cv.setAttribute("role", "img");
-  cv.setAttribute("aria-label", "3D view of the part. Drag to orbit, right-drag to pan, scroll to zoom; click a piece to select it, Shift-click to add one. The list on the left does the same.");
+  liveAttr(cv, "aria-label", () => t("3D view of the part. Drag to orbit, right-drag to pan, scroll to zoom; click a piece to select it, Shift-click to add one. The list on the left does the same."));
 
   scene = new THREE.Scene();
   setBackground();
@@ -95,29 +96,31 @@ export function initPartView() {
   scene.add(root, cogs, overlay);
 
   const leftBtn = h("button", { type: "button", class: "btn btn-small", id: "part-show-left-out", "aria-pressed": "false",
-    title: "Draw the pieces you left out, faintly",
+
     onclick: () => {
       part.showLeftOut = !part.showLeftOut;
       leftBtn.setAttribute("aria-pressed", String(part.showLeftOut));
       for (const m of meshes) if (m.faint) m.mesh.visible = part.showLeftOut;
       requestRender();
-    } }, "Show left out");
+    } }, L(() => t("Show left out")));
+  liveAttr(leftBtn, "title", () => t("Draw the pieces you left out, faintly"));
   const tools = h("div", { class: "view-tools" },
-    h("button", { type: "button", class: "btn btn-small", id: "part-frame-view", title: "Fit the part in the view", onclick: () => frameAll() }, "Fit to view"),
+    liveAttr(h("button", { type: "button", class: "btn btn-small", id: "part-frame-view", onclick: () => frameAll() }, L(() => t("Fit to view"))),
+      "title", () => t("Fit the part in the view")),
     leftBtn);
-  const legend = h("p", { class: "part-legend" }, h("span", { class: "part-cog-dot", "aria-hidden": "true" }), " center of gravity",
-    h("span", { id: "part-legend-front", hidden: true }, h("span", { class: "part-front-dot", "aria-hidden": "true" }), " front"));
+  const legend = h("p", { class: "part-legend" }, h("span", { class: "part-cog-dot", "aria-hidden": "true" }), " ", L(() => t("center of gravity")),
+    h("span", { id: "part-legend-front", hidden: true }, h("span", { class: "part-front-dot", "aria-hidden": "true" }), " ", L(() => t("front"))));
   const empty = h("p", { class: "view-placeholder", id: "part-view-empty", hidden: true });
   const hint = h("div", { class: "part-pick-hint", id: "part-pick-hint", hidden: true, role: "status" },
     h("span", { id: "part-pick-text" }),
-    h("button", { type: "button", class: "btn btn-small", id: "part-pick-cancel", onclick: () => cancelPick() }, "Cancel (Esc)"));
+    h("button", { type: "button", class: "btn btn-small", id: "part-pick-cancel", onclick: () => cancelPick() }, L(() => t("Cancel (Esc)"))));
   host.replaceChildren(cv, tools, legend, empty, hint);
 
   new ResizeObserver(resize).observe(host);
   resize();
   cv.addEventListener("webglcontextlost", (e) => {
     e.preventDefault();
-    host.replaceChildren(h("p", { class: "view-placeholder", role: "alert" }, "The 3D view lost its graphics context: reload the page."));
+    host.replaceChildren(h("p", { class: "view-placeholder", role: "alert" }, t("The 3D view lost its graphics context: reload the page.")));
   });
   cv.addEventListener("pointerdown", (e) => { down = { x: e.clientX, y: e.clientY, button: e.button }; });
   cv.addEventListener("pointerup", onUp);
@@ -233,9 +236,9 @@ function update() {
   const empty = $("#part-view-empty");
   const s = part.state;
   const why = meshes.length || !part.view ? ""
-    : s.read_only_reason && s.mode !== "plugin" ? "Nothing to draw: the CAD file can't be read (see above)."
-    : s.mode === "plugin" ? "Nothing to draw: this part folder has no mesh files (its bodies are simple shapes)."
-    : "Nothing to draw: the CAD file has no pieces.";
+    : s.read_only_reason && s.mode !== "plugin" ? t("Nothing to draw: the CAD file can't be read (see above).")
+    : s.mode === "plugin" ? t("Nothing to draw: this part folder has no mesh files (its bodies are simple shapes).")
+    : t("Nothing to draw: the CAD file has no pieces.");
   empty.textContent = why;
   empty.hidden = !why;
   requestRender();
@@ -423,18 +426,18 @@ function cancelPick() {
 }
 
 async function pickClick(e) {
-  const t = pickAt(e.clientX, e.clientY);
+  const target = pickAt(e.clientX, e.clientY);
   const text = $("#part-pick-text");
-  if (!t) { text.textContent = `${pick.hint} (That click missed: click on a piece.)`; return; }
+  if (!target) { text.textContent = t("{hint} (That click missed: click on a piece.)", { hint: pick.hint }); return; }
   if (pick.busy) return;
   const cur = pick;
   cur.busy = true;
   try {
-    const r = await cur.onPick(t);
+    const r = await cur.onPick(target);
     if (pick === cur && r && r.again) text.textContent = `${r.again} ${cur.hint}`;
   } catch (err) {
     if (pick === cur) cancelPick();
-    notice(`That click didn't work (${err && err.message ? err.message : err}): try again.`, "error");
+    notice(t("That click didn't work ({why}): try again.", { why: err && err.message ? err.message : err }), "error");
   } finally {
     cur.busy = false;
   }

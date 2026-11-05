@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Scrimmage editor</title>
+<title data-i18n="Scrimmage editor">Scrimmage editor</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="app.css">
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
@@ -12,34 +12,34 @@
 <body>
 <header class="topbar">
   <div class="brand">scrimmage <span>assembler</span></div>
-  <nav class="tabs" role="tablist" aria-label="What to edit">
-    <button type="button" role="tab" id="tab-btn-robot" class="tab" aria-controls="tab-robot" aria-selected="true">Robot</button>
-    <button type="button" role="tab" id="tab-btn-scenario" class="tab" aria-controls="tab-scenario" aria-selected="false" tabindex="-1" hidden>Scenario</button>
-    <button type="button" role="tab" id="tab-btn-drive" class="tab" aria-controls="tab-drive" aria-selected="false" tabindex="-1">Drive</button>
-    <button type="button" role="tab" id="tab-btn-bench" class="tab" aria-controls="tab-bench" aria-selected="false" tabindex="-1" hidden>Bench</button>
-    <button type="button" role="tab" id="tab-btn-part" class="tab" aria-controls="tab-part" aria-selected="false" tabindex="-1" hidden>Part</button>
-    <button type="button" role="tab" id="tab-btn-test" class="tab" aria-controls="tab-test" aria-selected="false" tabindex="-1" hidden>Test</button>
-    <button type="button" role="tab" id="tab-btn-measure" class="tab" aria-controls="tab-measure" aria-selected="false" tabindex="-1" hidden>Measure</button>
+  <nav class="tabs" role="tablist" aria-label="What to edit" data-i18n-aria-label="What to edit">
+    <button type="button" role="tab" id="tab-btn-robot" class="tab" aria-controls="tab-robot" aria-selected="true" data-i18n="Robot">Robot</button>
+    <button type="button" role="tab" id="tab-btn-scenario" class="tab" aria-controls="tab-scenario" aria-selected="false" tabindex="-1" hidden data-i18n="Scenario">Scenario</button>
+    <button type="button" role="tab" id="tab-btn-drive" class="tab" aria-controls="tab-drive" aria-selected="false" tabindex="-1" data-i18n="Drive">Drive</button>
+    <button type="button" role="tab" id="tab-btn-bench" class="tab" aria-controls="tab-bench" aria-selected="false" tabindex="-1" hidden data-i18n="Bench">Bench</button>
+    <button type="button" role="tab" id="tab-btn-part" class="tab" aria-controls="tab-part" aria-selected="false" tabindex="-1" hidden data-i18n="Part">Part</button>
+    <button type="button" role="tab" id="tab-btn-test" class="tab" aria-controls="tab-test" aria-selected="false" tabindex="-1" hidden data-i18n="Test">Test</button>
+    <button type="button" role="tab" id="tab-btn-measure" class="tab" aria-controls="tab-measure" aria-selected="false" tabindex="-1" hidden data-i18n="Measure">Measure</button>
   </nav>
-  <div class="file" id="file-path" title="The file this tab edits">Loading…</div>
+  <div class="file" id="file-path" title="The file this tab edits" data-i18n-title="The file this tab edits" data-i18n="Loading…">Loading…</div>
   <div class="topbar-actions">
-    <button type="button" id="back-robot" class="btn" hidden>Back to the robot</button>
-    <button type="button" id="start-link" class="btn" title="Open or create something else" hidden>Start page</button>
-    <button type="button" id="undo" class="btn" title="Undo (Ctrl+Z)" disabled>Undo</button>
-    <button type="button" id="redo" class="btn" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
+    <button type="button" id="back-robot" class="btn" hidden data-i18n="Back to the robot">Back to the robot</button>
+    <button type="button" id="start-link" class="btn" title="Open or create something else" data-i18n-title="Open or create something else" hidden data-i18n="Start page">Start page</button>
+    <button type="button" id="undo" class="btn" title="Undo (Ctrl+Z)" data-i18n-title="Undo (Ctrl+Z)" disabled data-i18n="Undo">Undo</button>
+    <button type="button" id="redo" class="btn" title="Redo (Ctrl+Shift+Z)" data-i18n-title="Redo (Ctrl+Shift+Z)" disabled data-i18n="Redo">Redo</button>
     <div class="settings-wrap">
-      <button type="button" id="settings-btn" class="btn" aria-expanded="false" aria-controls="settings-menu">Settings</button>
-      <div id="settings-menu" class="settings-menu" role="group" aria-label="Settings" hidden>
+      <button type="button" id="settings-btn" class="btn" aria-expanded="false" aria-controls="settings-menu" data-i18n="Settings">Settings</button>
+      <div id="settings-menu" class="settings-menu" role="group" aria-label="Settings" data-i18n-aria-label="Settings" hidden>
         <!-- one row per setting (app.js initSettings): a label and its choices -->
         <div class="settings-row">
-          <span class="settings-label" id="settings-units-label">Units</span>
+          <span class="settings-label" id="settings-units-label" data-i18n="Units">Units</span>
           <div class="seg" role="group" aria-labelledby="settings-units-label">
-            <button type="button" class="seg-btn" data-setting="units" data-value="imperial" aria-pressed="true">Imperial</button>
-            <button type="button" class="seg-btn" data-setting="units" data-value="metric" aria-pressed="false">Metric</button>
+            <button type="button" class="seg-btn" data-setting="units" data-value="imperial" aria-pressed="true" data-i18n="Imperial">Imperial</button>
+            <button type="button" class="seg-btn" data-setting="units" data-value="metric" aria-pressed="false" data-i18n="Metric">Metric</button>
           </div>
         </div>
         <div class="settings-row">
-          <span class="settings-label" id="settings-language-label">Language</span>
+          <span class="settings-label" id="settings-language-label" data-i18n="Language">Language</span>
           <div class="seg" id="settings-language" role="group" aria-labelledby="settings-language-label">
             <!-- one button per language the server has (app.js renderSettings) -->
             <button type="button" class="seg-btn" data-setting="language" data-value="en-US" lang="en-US" aria-pressed="true">English (US)</button>
@@ -54,7 +54,7 @@
             <button type="button" class="seg-btn" data-setting="theme" data-value="dark" aria-pressed="false">Dark</button>
           </div>
         </div>
-        <p class="settings-note">For every tab, and every editor on this computer.</p>
+        <p class="settings-note" data-i18n="For every tab, and every editor on this computer.">For every tab, and every editor on this computer.</p>
       </div>
     </div>
   </div>
@@ -62,20 +62,20 @@
 
 <div id="notices" class="notices" aria-live="polite"></div>
 
-<section id="start-page" class="start-page" aria-label="Start page" hidden></section>
+<section id="start-page" class="start-page" aria-label="Start page" data-i18n-aria-label="Start page" hidden></section>
 
 <div id="tab-bench" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-bench" hidden>
 <div id="bench-lock" class="banner bench-lock" role="status" hidden></div>
 <div id="bench-readonly" class="banner banner-readonly" role="status" hidden></div>
 <main class="bench-layout">
-  <section id="bench-stage" class="bench-stage" aria-label="The idea on stage">
+  <section id="bench-stage" class="bench-stage" aria-label="The idea on stage" data-i18n-aria-label="The idea on stage">
     <header class="bench-head">
       <div class="row bench-stage-buttons">
-        <button type="button" id="bench-run" class="btn btn-primary btn-big">Run</button>
-        <button type="button" id="bench-edit" class="btn btn-big" title="Edit the shape in 3D (coming next)" disabled>Edit shape</button>
+        <button type="button" id="bench-run" class="btn btn-primary btn-big" data-i18n="Run">Run</button>
+        <button type="button" id="bench-edit" class="btn btn-big" title="Edit the shape in 3D (coming next)" data-i18n-title="Edit the shape in 3D (coming next)" disabled data-i18n="Edit shape">Edit shape</button>
       </div>
-      <h1 id="bench-name" class="bench-name" tabindex="-1">Loading…</h1>
-      <p class="bench-by"><span class="muted">by</span> <span id="bench-author"></span></p>
+      <h1 id="bench-name" class="bench-name" tabindex="-1" data-i18n="Loading…">Loading…</h1>
+      <p class="bench-by"><span class="muted" data-i18n="by">by</span> <span id="bench-author"></span></p>
       <p id="bench-idea" class="bench-idea"></p>
       <p id="bench-changed" class="bench-changed muted"></p>
     </header>
@@ -87,88 +87,88 @@
       <figure class="bench-figure">
         <div class="bench-picture-box">
           <img id="bench-picture" class="bench-picture" alt="" hidden>
-          <p id="bench-nopicture" class="bench-nopicture">No picture yet. Press Run to see it work.</p>
+          <p id="bench-nopicture" class="bench-nopicture" data-i18n="No picture yet. Press Run to see it work.">No picture yet. Press Run to see it work.</p>
         </div>
         <div class="row bench-figure-tools">
-          <button type="button" id="bench-gif" class="btn" aria-pressed="false" title="Show the moving picture of a piece going through" disabled>Pass GIF</button>
+          <button type="button" id="bench-gif" class="btn" aria-pressed="false" title="Show the moving picture of a piece going through" data-i18n-title="Show the moving picture of a piece going through" disabled data-i18n="Pass GIF">Pass GIF</button>
         </div>
       </figure>
       <div class="bench-results">
         <ul id="bench-headlines" class="bench-headlines"></ul>
         <div id="bench-table-wrap" class="bench-table-wrap" hidden><table id="bench-table" class="bench-table"></table></div>
-        <p id="bench-noresult" class="bench-noresult muted" hidden>Not run yet. Press Run to see how it does.</p>
+        <p id="bench-noresult" class="bench-noresult muted" hidden data-i18n="Not run yet. Press Run to see how it does.">Not run yet. Press Run to see how it does.</p>
       </div>
     </div>
   </section>
   <aside id="bench-change" class="bench-change" aria-labelledby="bench-change-title">
-    <h2 id="bench-change-title" class="bench-change-title">Change it</h2>
+    <h2 id="bench-change-title" class="bench-change-title" data-i18n="Change it">Change it</h2>
     <div class="scroll bench-change-scroll">
       <div id="bench-focus" class="bench-fields"></div>
       <div class="row bench-change-buttons">
-        <button type="button" id="bench-showall" class="btn" aria-expanded="false" aria-controls="bench-all">Show all</button>
-        <button type="button" id="bench-change-run" class="btn btn-primary">Run</button>
+        <button type="button" id="bench-showall" class="btn" aria-expanded="false" aria-controls="bench-all" data-i18n="Show all">Show all</button>
+        <button type="button" id="bench-change-run" class="btn btn-primary" data-i18n="Run">Run</button>
       </div>
       <div id="bench-all" class="bench-all" hidden></div>
       <section class="bench-problems-wrap" aria-labelledby="bench-problems-title">
-        <h3 id="bench-problems-title" class="bench-sub">Problems</h3>
+        <h3 id="bench-problems-title" class="bench-sub" data-i18n="Problems">Problems</h3>
         <ul id="bench-problems" class="bench-problems"></ul>
       </section>
     </div>
   </aside>
 </main>
 <footer class="bench-foot">
-  <div class="bench-tools" role="group" aria-label="Session tools">
-    <button type="button" id="bench-new" class="btn btn-primary-soft">New idea</button>
-    <button type="button" id="bench-sweep" class="btn">Sweep</button>
-    <button type="button" id="bench-compare" class="btn">Compare</button>
-    <button type="button" id="bench-gallery" class="btn">Gallery</button>
+  <div class="bench-tools" role="group" aria-label="Session tools" data-i18n-aria-label="Session tools">
+    <button type="button" id="bench-new" class="btn btn-primary-soft" data-i18n="New idea">New idea</button>
+    <button type="button" id="bench-sweep" class="btn" data-i18n="Sweep">Sweep</button>
+    <button type="button" id="bench-compare" class="btn" data-i18n="Compare">Compare</button>
+    <button type="button" id="bench-gallery" class="btn" data-i18n="Gallery">Gallery</button>
   </div>
-  <nav id="bench-strip" class="bench-strip" aria-label="Other ideas in this session"></nav>
+  <nav id="bench-strip" class="bench-strip" aria-label="Other ideas in this session" data-i18n-aria-label="Other ideas in this session"></nav>
 </footer>
 </div>
 
 <dialog id="bench-new-dialog" aria-labelledby="bench-new-title">
   <form method="dialog" novalidate>
-    <h2 id="bench-new-title">New idea</h2>
-    <div class="field"><label for="bench-new-name">Name of the idea</label><input id="bench-new-name" autocomplete="off"></div>
-    <div class="field"><label for="bench-new-author">Whose idea?</label><input id="bench-new-author" autocomplete="off"></div>
-    <div class="field"><label for="bench-new-idea">The idea in a sentence</label><input id="bench-new-idea" autocomplete="off"></div>
-    <div class="field"><label for="bench-new-from">Start from</label><select id="bench-new-from"><option value="">Blank</option></select></div>
+    <h2 id="bench-new-title" data-i18n="New idea">New idea</h2>
+    <div class="field"><label for="bench-new-name" data-i18n="Name of the idea">Name of the idea</label><input id="bench-new-name" autocomplete="off"></div>
+    <div class="field"><label for="bench-new-author" data-i18n="Whose idea?">Whose idea?</label><input id="bench-new-author" autocomplete="off"></div>
+    <div class="field"><label for="bench-new-idea" data-i18n="The idea in a sentence">The idea in a sentence</label><input id="bench-new-idea" autocomplete="off"></div>
+    <div class="field"><label for="bench-new-from" data-i18n="Start from">Start from</label><select id="bench-new-from"><option value="" data-i18n="Blank">Blank</option></select></div>
     <ul id="bench-new-errors" class="error-list" role="alert" hidden></ul>
     <div class="dialog-actions">
-      <button type="button" class="btn" data-close>Cancel</button>
-      <button type="submit" id="bench-new-go" class="btn btn-primary">Make it</button>
+      <button type="button" class="btn" data-close data-i18n="Cancel">Cancel</button>
+      <button type="submit" id="bench-new-go" class="btn btn-primary" data-i18n="Make it">Make it</button>
     </div>
   </form>
 </dialog>
 
 <dialog id="bench-sweep-dialog" aria-labelledby="bench-sweep-title">
   <form method="dialog" novalidate>
-    <h2 id="bench-sweep-title">Sweep: try a number at several values</h2>
-    <div class="field"><label for="bench-sweep-key">Which number?</label><select id="bench-sweep-key"></select></div>
+    <h2 id="bench-sweep-title" data-i18n="Sweep: try a number at several values">Sweep: try a number at several values</h2>
+    <div class="field"><label for="bench-sweep-key" data-i18n="Which number?">Which number?</label><select id="bench-sweep-key"></select></div>
     <div class="row bench-sweep-range">
-      <div class="field"><label for="bench-sweep-from">From</label><input id="bench-sweep-from" inputmode="decimal" autocomplete="off"></div>
-      <div class="field"><label for="bench-sweep-to">To</label><input id="bench-sweep-to" inputmode="decimal" autocomplete="off"></div>
-      <div class="field"><label for="bench-sweep-steps">Steps</label><input id="bench-sweep-steps" inputmode="numeric" value="5" autocomplete="off"></div>
+      <div class="field"><label for="bench-sweep-from" data-i18n="From">From</label><input id="bench-sweep-from" inputmode="decimal" autocomplete="off"></div>
+      <div class="field"><label for="bench-sweep-to" data-i18n="To">To</label><input id="bench-sweep-to" inputmode="decimal" autocomplete="off"></div>
+      <div class="field"><label for="bench-sweep-steps" data-i18n="Steps">Steps</label><input id="bench-sweep-steps" inputmode="numeric" value="5" autocomplete="off"></div>
     </div>
     <p id="bench-sweep-unit" class="hint"></p>
     <ul id="bench-sweep-errors" class="error-list" role="alert" hidden></ul>
     <div class="dialog-actions">
-      <button type="button" class="btn" data-close>Cancel</button>
-      <button type="submit" id="bench-sweep-go" class="btn btn-primary">Sweep</button>
+      <button type="button" class="btn" data-close data-i18n="Cancel">Cancel</button>
+      <button type="submit" id="bench-sweep-go" class="btn btn-primary" data-i18n="Sweep">Sweep</button>
     </div>
   </form>
 </dialog>
 
 <dialog id="bench-compare-dialog" aria-labelledby="bench-compare-title">
   <form method="dialog" novalidate>
-    <h2 id="bench-compare-title">Compare ideas</h2>
-    <p class="hint">Tick two or more. They are run with the first one's piece and feed.</p>
+    <h2 id="bench-compare-title" data-i18n="Compare ideas">Compare ideas</h2>
+    <p class="hint" data-i18n="Tick two or more. They are run with the first one's piece and feed.">Tick two or more. They are run with the first one's piece and feed.</p>
     <div id="bench-compare-list" class="bench-compare-list"></div>
     <ul id="bench-compare-errors" class="error-list" role="alert" hidden></ul>
     <div class="dialog-actions">
-      <button type="button" class="btn" data-close>Cancel</button>
-      <button type="submit" id="bench-compare-go" class="btn btn-primary">Compare</button>
+      <button type="button" class="btn" data-close data-i18n="Cancel">Cancel</button>
+      <button type="submit" id="bench-compare-go" class="btn btn-primary" data-i18n="Compare">Compare</button>
     </div>
   </form>
 </dialog>
@@ -178,45 +178,45 @@
 
 <main class="layout">
   <aside class="col col-library" aria-labelledby="library-title">
-    <h2 id="library-title" class="col-title">Parts library</h2>
+    <h2 id="library-title" class="col-title" data-i18n="Parts library">Parts library</h2>
     <div id="library" class="scroll"></div>
   </aside>
 
-  <section class="col col-view" aria-label="3D view and robot code">
-    <div class="center-switch" role="tablist" aria-label="Show">
-      <button type="button" role="tab" id="center-3d" class="center-tab active" aria-controls="view" aria-selected="true">3D view</button>
-      <button type="button" role="tab" id="center-code" class="center-tab" aria-controls="code-panel" aria-selected="false" tabindex="-1">Robot code</button>
+  <section class="col col-view" aria-label="3D view and robot code" data-i18n-aria-label="3D view and robot code">
+    <div class="center-switch" role="tablist" aria-label="Show" data-i18n-aria-label="Show">
+      <button type="button" role="tab" id="center-3d" class="center-tab active" aria-controls="view" aria-selected="true" data-i18n="3D view">3D view</button>
+      <button type="button" role="tab" id="center-code" class="center-tab" aria-controls="code-panel" aria-selected="false" tabindex="-1" data-i18n="Robot code">Robot code</button>
     </div>
     <section id="code-panel" class="code-panel" role="tabpanel" aria-labelledby="center-code" hidden></section>
     <div id="pick-banner" class="pick-banner" role="status" hidden>
-      <span>Click a highlighted mount in the 3D view to attach the new part.</span>
-      <button type="button" id="pick-cancel" class="btn btn-small">Cancel</button>
+      <span data-i18n="Click a highlighted mount in the 3D view to attach the new part.">Click a highlighted mount in the 3D view to attach the new part.</span>
+      <button type="button" id="pick-cancel" class="btn btn-small" data-i18n="Cancel">Cancel</button>
     </div>
-    <div id="view"><p class="view-placeholder">3D view</p></div>
+    <div id="view"><p class="view-placeholder" data-i18n="3D view">3D view</p></div>
   </section>
 
   <aside class="col col-robot">
     <section class="tree-wrap" aria-labelledby="tree-title">
-      <h2 id="tree-title" class="col-title">Robot</h2>
+      <h2 id="tree-title" class="col-title" data-i18n="Robot">Robot</h2>
       <div id="tree" class="scroll"></div>
     </section>
     <section class="inspector-wrap" aria-labelledby="inspector-title">
-      <h2 id="inspector-title" class="col-title">Inspector</h2>
+      <h2 id="inspector-title" class="col-title" data-i18n="Inspector">Inspector</h2>
       <div id="inspector" class="scroll"></div>
     </section>
   </aside>
 </main>
 
 <details id="other-sections" class="other-sections">
-  <summary>Other sections (read-only)</summary>
-  <p class="muted">The assembler only edits the robot's parts. Edit these sections in a text editor:
+  <summary data-i18n="Other sections (read-only)">Other sections (read-only)</summary>
+  <p class="muted"><span data-i18n="The assembler only edits the robot's parts. Edit these sections in a text editor:">The assembler only edits the robot's parts. Edit these sections in a text editor:</span>
     <code id="other-path"></code></p>
   <pre id="other-text"></pre>
 </details>
 
 <div id="messages" class="messages" aria-live="polite" hidden></div>
 <footer class="statusbar" id="statusbar">
-  <span id="saved" class="saved">Connecting…</span>
+  <span id="saved" class="saved" data-i18n="Connecting…">Connecting…</span>
   <span id="mass" class="stat"></span>
   <span id="cg" class="stat"></span>
   <span id="counts" class="stat"></span>
@@ -227,25 +227,25 @@
 <div id="tab-scenario" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-scenario" hidden>
 <div id="sc-banner" class="banner banner-readonly" role="status" hidden>
   <span id="sc-banner-text"></span>
-  <button type="button" id="sc-banner-robot" class="btn btn-small" hidden>Go to the Robot tab</button>
+  <button type="button" id="sc-banner-robot" class="btn btn-small" hidden data-i18n="Go to the Robot tab">Go to the Robot tab</button>
 </div>
-<section id="sc-header" class="sc-header" aria-label="Scenario settings"></section>
+<section id="sc-header" class="sc-header" aria-label="Scenario settings" data-i18n-aria-label="Scenario settings"></section>
 <main class="layout layout-scenario">
   <aside class="col col-timeline" aria-labelledby="timeline-title">
-    <h2 id="timeline-title" class="col-title">Steps</h2>
+    <h2 id="timeline-title" class="col-title" data-i18n="Steps">Steps</h2>
     <div id="timeline" class="scroll"></div>
   </aside>
   <section class="col col-editor" aria-labelledby="editor-title">
-    <h2 id="editor-title" class="col-title">Step</h2>
+    <h2 id="editor-title" class="col-title" data-i18n="Step">Step</h2>
     <div id="step-editor" class="scroll"></div>
   </section>
-  <aside id="sc-run" class="col col-run" aria-label="Run" hidden></aside>
+  <aside id="sc-run" class="col col-run" aria-label="Run" data-i18n-aria-label="Run" hidden></aside>
 </main>
 <datalist id="sc-signal-list"></datalist>
 <datalist id="sc-contact-list"></datalist>
 <div id="sc-messages" class="messages" aria-live="polite" hidden></div>
 <footer class="statusbar" id="sc-statusbar">
-  <span id="sc-saved" class="saved">Loading…</span>
+  <span id="sc-saved" class="saved" data-i18n="Loading…">Loading…</span>
   <span id="sc-total" class="stat"></span>
   <span id="sc-problems" class="stat"></span>
 </footer>
@@ -254,126 +254,126 @@
 <div id="tab-drive" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-drive" hidden>
 <div id="drive-banner" class="banner banner-readonly" role="status" hidden>
   <span id="drive-banner-text"></span>
-  <button type="button" id="drive-banner-robot" class="btn btn-small" hidden>Go to the Robot tab</button>
+  <button type="button" id="drive-banner-robot" class="btn btn-small" hidden data-i18n="Go to the Robot tab">Go to the Robot tab</button>
 </div>
 <p id="drive-devices" class="drive-devices" role="status" hidden></p>
 <main class="layout layout-drive">
   <aside id="drive-ds" class="col drive-ds" aria-labelledby="drive-ds-title">
-    <h2 id="drive-ds-title" class="col-title">Driver Station</h2>
+    <h2 id="drive-ds-title" class="col-title" data-i18n="Driver Station">Driver Station</h2>
     <div class="scroll">
       <div class="ds-section">
         <div class="ds-source">
-          <label class="ds-label" for="drive-ds-source">Driver Station</label>
+          <label class="ds-label" for="drive-ds-source" data-i18n="Driver Station">Driver Station</label>
           <select id="drive-ds-source">
-            <option value="page">Scrimmage (this page)</option>
-            <option value="real">The FRC Driver Station app</option>
+            <option value="page" data-i18n="Scrimmage (this page)">Scrimmage (this page)</option>
+            <option value="real" data-i18n="The FRC Driver Station app">The FRC Driver Station app</option>
           </select>
         </div>
         <div class="row">
-          <button type="button" id="drive-start" class="btn btn-primary">Start</button>
-          <button type="button" id="drive-stop" class="btn" disabled>Stop</button>
+          <button type="button" id="drive-start" class="btn btn-primary" data-i18n="Start">Start</button>
+          <button type="button" id="drive-stop" class="btn" disabled data-i18n="Stop">Stop</button>
         </div>
       </div>
       <div class="ds-section">
         <div id="drive-real-ds" class="ds-real" role="status" hidden>
-          <strong class="ds-real-title">The FRC Driver Station is driving</strong>
+          <strong class="ds-real-title" data-i18n="The FRC Driver Station is driving">The FRC Driver Station is driving</strong>
           <span id="drive-real-ds-state" class="mode-chip ds-real-state"></span>
           <span id="drive-real-ds-match" class="ds-real-match"></span>
         </div>
-        <span class="field-label ds-label" id="drive-mode-label">Mode</span>
+        <span class="field-label ds-label" id="drive-mode-label" data-i18n="Mode">Mode</span>
         <div class="mode-seg" role="group" aria-labelledby="drive-mode-label">
-          <button type="button" class="mode-btn mode-teleop" data-key="mode-teleop" aria-pressed="true">Teleop</button>
-          <button type="button" class="mode-btn mode-auto" data-key="mode-auto" aria-pressed="false">Auto</button>
-          <button type="button" class="mode-btn mode-test" data-key="mode-test" aria-pressed="false">Test</button>
+          <button type="button" class="mode-btn mode-teleop" data-key="mode-teleop" aria-pressed="true" data-i18n="Teleop">Teleop</button>
+          <button type="button" class="mode-btn mode-auto" data-key="mode-auto" aria-pressed="false" data-i18n="Auto">Auto</button>
+          <button type="button" class="mode-btn mode-test" data-key="mode-test" aria-pressed="false" data-i18n="Test">Test</button>
         </div>
         <div class="row ds-enable">
-          <button type="button" id="drive-enable" class="btn ds-enable-btn" title="Enable (Enter)" disabled>Enable</button>
-          <button type="button" id="drive-disable" class="btn ds-disable-btn" title="Disable (Space)" disabled>Disable</button>
+          <button type="button" id="drive-enable" class="btn ds-enable-btn" title="Enable (Enter)" data-i18n-title="Enable (Enter)" disabled data-i18n="Enable">Enable</button>
+          <button type="button" id="drive-disable" class="btn ds-disable-btn" title="Disable (Space)" data-i18n-title="Disable (Space)" disabled data-i18n="Disable">Disable</button>
         </div>
-        <p class="hint" id="drive-keys-hint">Enter enables, Space disables.</p>
+        <p class="hint" id="drive-keys-hint" data-i18n="Enter enables, Space disables.">Enter enables, Space disables.</p>
       </div>
       <div class="ds-section">
-        <h3 class="ds-label">Match</h3>
+        <h3 class="ds-label" data-i18n="Match">Match</h3>
         <div class="ds-match">
-          <label class="port-label" for="drive-station">Station</label>
+          <label class="port-label" for="drive-station" data-i18n="Station">Station</label>
           <select id="drive-station" disabled></select>
-          <label class="port-label" for="drive-game-data">Game data</label>
-          <input type="text" id="drive-game-data" autocomplete="off" spellcheck="false" placeholder="e.g. R" disabled>
+          <label class="port-label" for="drive-game-data" data-i18n="Game data">Game data</label>
+          <input type="text" id="drive-game-data" autocomplete="off" spellcheck="false" placeholder="e.g. R" data-i18n-placeholder="e.g. R" disabled>
         </div>
         <div class="row ds-match-checks">
-          <label class="check-label"><input type="checkbox" id="drive-fms" disabled> FMS attached</label>
-          <label class="check-label"><input type="checkbox" id="drive-timer" disabled> Match timer</label>
+          <label class="check-label"><input type="checkbox" id="drive-fms" disabled> <span data-i18n="FMS attached">FMS attached</span></label>
+          <label class="check-label"><input type="checkbox" id="drive-timer" disabled> <span data-i18n="Match timer">Match timer</span></label>
         </div>
-        <p class="hint" id="drive-match-hint">Game data reaches the robot when it is enabled in Teleop.</p>
+        <p class="hint" id="drive-match-hint" data-i18n="Game data reaches the robot when it is enabled in Teleop.">Game data reaches the robot when it is enabled in Teleop.</p>
       </div>
       <div class="ds-section">
-        <h3 class="ds-label">Record</h3>
+        <h3 class="ds-label" data-i18n="Record">Record</h3>
         <div class="row ds-record">
-          <button type="button" id="drive-record" class="btn drive-record" aria-pressed="false" title="Record the inputs and modes from the next step" disabled>● Record</button>
-          <button type="button" id="drive-save" class="btn" disabled>Save as scenario…</button>
+          <button type="button" id="drive-record" class="btn drive-record" aria-pressed="false" title="Record the inputs and modes from the next step" data-i18n-title="Record the inputs and modes from the next step" disabled data-i18n="● Record">● Record</button>
+          <button type="button" id="drive-save" class="btn" disabled data-i18n="Save as scenario…">Save as scenario…</button>
         </div>
-        <p class="hint">The scenario replays the recorded inputs step for step; pokes aren't in it.</p>
+        <p class="hint" data-i18n="The scenario replays the recorded inputs step for step; pokes aren't in it.">The scenario replays the recorded inputs step for step; pokes aren't in it.</p>
       </div>
       <div class="ds-section">
-        <h3 class="ds-label">Joysticks</h3>
-        <p class="hint">Keyboard: W/S and A/D left stick, I/K and J/L right stick, 1–8 buttons.</p>
+        <h3 class="ds-label" data-i18n="Joysticks">Joysticks</h3>
+        <p class="hint" data-i18n="Keyboard: W/S and A/D left stick, I/K and J/L right stick, 1–8 buttons.">Keyboard: W/S and A/D left stick, I/K and J/L right stick, 1–8 buttons.</p>
         <div id="drive-ports" class="drive-ports"></div>
       </div>
     </div>
   </aside>
-  <section class="col drive-center" aria-label="Live view">
-    <div id="drive-sim" class="drive-sim" role="group" aria-label="Simulation controls">
-      <button type="button" id="drive-pause" class="btn" disabled>Pause</button>
-      <button type="button" id="drive-step" class="btn" title="Advance one robot step (paused)" disabled>Step</button>
-      <label for="drive-speed" class="ds-inline-label">Speed</label>
+  <section class="col drive-center" aria-label="Live view" data-i18n-aria-label="Live view">
+    <div id="drive-sim" class="drive-sim" role="group" aria-label="Simulation controls" data-i18n-aria-label="Simulation controls">
+      <button type="button" id="drive-pause" class="btn" disabled data-i18n="Pause">Pause</button>
+      <button type="button" id="drive-step" class="btn" data-i18n-context="verb" title="Advance one robot step (paused)" data-i18n-title="Advance one robot step (paused)" disabled data-i18n="Step">Step</button>
+      <label for="drive-speed" class="ds-inline-label" data-i18n="Speed">Speed</label>
       <select id="drive-speed">
         <option value="0.25">0.25×</option>
         <option value="0.5">0.5×</option>
         <option value="1" selected>1×</option>
         <option value="2">2×</option>
-        <option value="max">max</option>
+        <option value="max" data-i18n="max">max</option>
       </select>
       <span id="drive-speed-lock" class="muted drive-speed-lock" hidden></span>
-      <label for="drive-camera" class="ds-inline-label drive-camera-label">Camera</label>
+      <label for="drive-camera" class="ds-inline-label drive-camera-label" data-i18n="Camera">Camera</label>
       <select id="drive-camera">
-        <option value="follow">Follow</option>
-        <option value="top">Top</option>
-        <option value="driver">Driver station</option>
-        <option value="free">Free orbit</option>
+        <option value="follow" data-i18n="Follow">Follow</option>
+        <option value="top" data-i18n="Top">Top</option>
+        <option value="driver" data-i18n="Driver station">Driver station</option>
+        <option value="free" data-i18n="Free orbit">Free orbit</option>
       </select>
     </div>
     <div id="drive-view" class="drive-view">
-      <div id="drive-canvas" class="drive-canvas"><p class="view-placeholder">Live view</p></div>
+      <div id="drive-canvas" class="drive-canvas"><p class="view-placeholder" data-i18n="Live view">Live view</p></div>
       <div id="drive-hud" class="drive-hud" aria-live="off"></div>
     </div>
   </section>
   <aside id="drive-readouts" class="col drive-readouts" aria-labelledby="drive-readouts-title">
-    <h2 id="drive-readouts-title" class="col-title">Readouts</h2>
+    <h2 id="drive-readouts-title" class="col-title" data-i18n="Readouts">Readouts</h2>
     <div class="scroll">
       <section id="drive-pokes" class="ro-section drive-pokes off" aria-labelledby="drive-pokes-title">
-        <h3 id="drive-pokes-title" class="ro-title">Poke</h3>
+        <h3 id="drive-pokes-title" class="ro-title" data-i18n="Poke">Poke</h3>
         <div class="minifield-wrap">
           <canvas id="drive-field" class="minifield" role="application"
-            aria-label="Field, seen from above. Drag from a point to put the robot there facing the way you drag (a click keeps its heading); drag a game piece or other movable object to move it."></canvas>
+            aria-label="Field, seen from above. Drag from a point to put the robot there facing the way you drag (a click keeps its heading); drag a game piece or other movable object to move it." data-i18n-aria-label="Field, seen from above. Drag from a point to put the robot there facing the way you drag (a click keeps its heading); drag a game piece or other movable object to move it."></canvas>
         </div>
-        <p class="hint">Drag on the field to place the robot (drag direction = heading); drag an object to move it.</p>
-        <div class="push-row" role="group" aria-label="Push the robot">
-          <label class="push-field" for="push-force"><span class="muted">Force</span><span class="with-unit"><input id="push-force" type="text" autocomplete="off" inputmode="decimal"><span class="unit" id="push-force-unit">N</span></span></label>
-          <label class="push-field" for="push-dir"><span class="muted">Direction</span><span class="with-unit"><input id="push-dir" type="number" step="any" value="0" inputmode="decimal" title="Field direction: 0° is +x, 90° is +y"><span class="unit">°</span></span></label>
-          <label class="push-field" for="push-duration"><span class="muted">For</span><span class="with-unit"><input id="push-duration" type="number" step="any" min="0" value="0.5" inputmode="decimal"><span class="unit">s</span></span></label>
+        <p class="hint" data-i18n="Drag on the field to place the robot (drag direction = heading); drag an object to move it.">Drag on the field to place the robot (drag direction = heading); drag an object to move it.</p>
+        <div class="push-row" role="group" aria-label="Push the robot" data-i18n-aria-label="Push the robot">
+          <label class="push-field" for="push-force"><span class="muted" data-i18n="Force">Force</span><span class="with-unit"><input id="push-force" type="text" autocomplete="off" inputmode="decimal"><span class="unit" id="push-force-unit">N</span></span></label>
+          <label class="push-field" for="push-dir"><span class="muted" data-i18n="Direction">Direction</span><span class="with-unit"><input id="push-dir" type="number" step="any" value="0" inputmode="decimal" title="Field direction: 0° is +x, 90° is +y" data-i18n-title="Field direction: 0° is +x, 90° is +y"><span class="unit">°</span></span></label>
+          <label class="push-field" for="push-duration"><span class="muted" data-i18n="For">For</span><span class="with-unit"><input id="push-duration" type="number" step="any" min="0" value="0.5" inputmode="decimal"><span class="unit">s</span></span></label>
         </div>
         <div class="row push-actions">
-          <button type="button" id="push-go" class="btn btn-small" disabled>Push</button>
-          <button type="button" id="drive-reset" class="btn btn-small" title="Put the robot back at its start pose" disabled>Reset robot</button>
+          <button type="button" id="push-go" class="btn btn-small" disabled data-i18n="Push">Push</button>
+          <button type="button" id="drive-reset" class="btn btn-small" title="Put the robot back at its start pose" data-i18n-title="Put the robot back at its start pose" disabled data-i18n="Reset robot">Reset robot</button>
         </div>
       </section>
       <div id="drive-values" class="ro-section"></div>
       <section class="ro-section" aria-labelledby="drive-signals-title">
-        <h3 id="drive-signals-title" class="ro-title">Signals</h3>
+        <h3 id="drive-signals-title" class="ro-title" data-i18n="Signals">Signals</h3>
         <div id="drive-signals" class="ro-signals"></div>
       </section>
       <section class="ro-section" aria-labelledby="drive-console-title">
-        <h3 id="drive-console-title" class="ro-title">Console</h3>
+        <h3 id="drive-console-title" class="ro-title" data-i18n="Console">Console</h3>
         <pre id="drive-console" class="drive-console" tabindex="0"></pre>
       </section>
     </div>
@@ -381,9 +381,9 @@
 </main>
 <datalist id="drive-signal-list"></datalist>
 <footer class="statusbar" id="drive-status">
-  <span id="drive-state" class="saved">Not started</span>
+  <span id="drive-state" class="saved" data-i18n="Not started">Not started</span>
   <span id="drive-error" class="stat stat-bad" hidden></span>
-  <button type="button" id="drive-restart" class="btn btn-small" hidden>Restart</button>
+  <button type="button" id="drive-restart" class="btn btn-small" hidden data-i18n="Restart">Restart</button>
 </footer>
 </div>
 
@@ -392,77 +392,77 @@
 <main class="layout layout-part">
   <aside class="col col-part-left">
     <section class="part-tree-wrap" aria-labelledby="part-tree-title">
-      <h2 id="part-tree-title" class="col-title">Bodies (pieces that move together)</h2>
-      <div class="row part-tree-tools" role="group" aria-label="Act on the selected pieces">
-        <button type="button" id="part-new-body" class="btn btn-small" disabled>New body from selection</button>
-        <button type="button" id="part-leave-out" class="btn btn-small" disabled>Leave out</button>
+      <h2 id="part-tree-title" class="col-title" data-i18n="Bodies (pieces that move together)">Bodies (pieces that move together)</h2>
+      <div class="row part-tree-tools" role="group" aria-label="Act on the selected pieces" data-i18n-aria-label="Act on the selected pieces">
+        <button type="button" id="part-new-body" class="btn btn-small" disabled data-i18n="New body from selection">New body from selection</button>
+        <button type="button" id="part-leave-out" class="btn btn-small" disabled data-i18n="Leave out">Leave out</button>
       </div>
       <div id="part-tree" class="scroll"></div>
     </section>
     <section class="part-check-wrap" aria-labelledby="part-check-title">
-      <h2 id="part-check-title" class="col-title">Still needed</h2>
+      <h2 id="part-check-title" class="col-title" data-i18n="Still needed">Still needed</h2>
       <ul id="part-checklist" class="scroll part-checklist"></ul>
     </section>
   </aside>
-  <section class="col col-view" aria-label="3D view of the part">
-    <div id="part-frame-step" class="part-frame-step" role="region" aria-label="Where's the robot?" hidden></div>
-    <div id="part-view"><p class="view-placeholder">3D view</p></div>
+  <section class="col col-view" aria-label="3D view of the part" data-i18n-aria-label="3D view of the part">
+    <div id="part-frame-step" class="part-frame-step" role="region" aria-label="Where's the robot?" data-i18n-aria-label="Where's the robot?" hidden></div>
+    <div id="part-view"><p class="view-placeholder" data-i18n="3D view">3D view</p></div>
   </section>
   <aside class="col col-part-right" aria-labelledby="part-insp-title">
-    <h2 id="part-insp-title" class="col-title">Inspector</h2>
+    <h2 id="part-insp-title" class="col-title" data-i18n="Inspector">Inspector</h2>
     <div id="part-inspector" class="scroll"></div>
   </aside>
 </main>
 <footer class="statusbar" id="part-status">
-  <span id="part-saved" class="saved">Loading…</span>
+  <span id="part-saved" class="saved" data-i18n="Loading…">Loading…</span>
   <span id="part-build" class="stat" role="status"></span>
   <span id="part-total" class="stat"></span>
-  <button type="button" id="part-test-it" class="btn btn-small btn-primary part-test-it" hidden>Test it</button>
-  <button type="button" id="part-reimport" class="btn btn-small part-reimport" title="Read the CAD file again (after you changed it in your CAD program)">Import again</button>
-  <input type="file" id="part-reimport-file" accept=".step,.stp,.stl,.obj" multiple hidden aria-label="The new export of the CAD file">
+  <button type="button" id="part-test-it" class="btn btn-small btn-primary part-test-it" hidden data-i18n="Test it">Test it</button>
+  <button type="button" id="part-reimport" class="btn btn-small part-reimport" title="Read the CAD file again (after you changed it in your CAD program)" data-i18n-title="Read the CAD file again (after you changed it in your CAD program)" data-i18n="Import again">Import again</button>
+  <input type="file" id="part-reimport-file" accept=".step,.stp,.stl,.obj" multiple hidden aria-label="The new export of the CAD file" data-i18n-aria-label="The new export of the CAD file">
 </footer>
-<div id="part-drop" class="part-drop" hidden><p>Drop the CAD file (or its STL files) to use in place of this one</p></div>
+<div id="part-drop" class="part-drop" hidden><p data-i18n="Drop the CAD file (or its STL files) to use in place of this one">Drop the CAD file (or its STL files) to use in place of this one</p></div>
 </div>
 
 <div id="tab-test" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-test" hidden>
 <div id="test-banner" class="banner banner-readonly" role="status" hidden></div>
 <main class="layout layout-test">
-  <section class="col col-test-edit" aria-label="The blocks and your test">
+  <section class="col col-test-edit" aria-label="The blocks and your test" data-i18n-aria-label="The blocks and your test">
     <details id="test-setup" class="test-setup">
-      <summary><span class="test-setup-title">Setup</span> <span id="test-setup-sum" class="test-setup-sum"></span></summary>
+      <summary><span class="test-setup-title" data-i18n="Setup">Setup</span> <span id="test-setup-sum" class="test-setup-sum"></span></summary>
       <div id="test-setup-body" class="test-setup-body"></div>
     </details>
     <div class="test-heads">
-      <h2 id="test-palette-title" class="col-title">Blocks</h2>
-      <h2 id="test-edit-title" class="col-title">Your test <span class="test-heads-hint">drag blocks in from the left</span></h2>
+      <h2 id="test-palette-title" class="col-title" data-i18n="Blocks">Blocks</h2>
+      <h2 id="test-edit-title" class="col-title"><span data-i18n="Your test">Your test</span> <span class="test-heads-hint" data-i18n="drag blocks in from the left">drag blocks in from the left</span></h2>
     </div>
-    <div id="test-blockly" class="test-blockly"><p class="view-placeholder">Loading the blocks…</p></div>
+    <div id="test-blockly" class="test-blockly"><p class="view-placeholder" data-i18n="Loading the blocks…">Loading the blocks…</p></div>
   </section>
   <aside id="test-run-col" class="col col-test-run" aria-labelledby="test-run-title">
-    <h2 id="test-run-title" class="col-title">Run</h2>
+    <h2 id="test-run-title" class="col-title" data-i18n="Run">Run</h2>
     <div class="scroll test-run-scroll">
       <section id="test-problems-wrap" class="test-problems-wrap" aria-labelledby="test-problems-title" hidden>
-        <h3 id="test-problems-title" class="test-sub">Fix these first</h3>
+        <h3 id="test-problems-title" class="test-sub" data-i18n="Fix these first">Fix these first</h3>
         <ul id="test-problems" class="test-problems"></ul>
       </section>
       <section id="test-hints-wrap" class="test-hints-wrap" aria-labelledby="test-hints-title" hidden>
-        <h3 id="test-hints-title" class="test-sub">Good to know</h3>
+        <h3 id="test-hints-title" class="test-sub" data-i18n="Good to know">Good to know</h3>
         <ul id="test-hints" class="test-hints"></ul>
       </section>
       <div class="row test-run-buttons">
-        <button type="button" id="test-run" class="btn btn-primary btn-big" disabled>&#9654; Run</button>
-        <button type="button" id="test-stop" class="btn" hidden>Stop</button>
+        <button type="button" id="test-run" class="btn btn-primary btn-big" disabled data-i18n="▶ Run">&#9654; Run</button>
+        <button type="button" id="test-stop" class="btn" hidden data-i18n="Stop">Stop</button>
         <p id="test-running" class="test-running" role="status" hidden></p>
       </div>
       <p id="test-run-error" class="error" role="alert" hidden></p>
-      <p id="test-run-empty" class="hint test-run-empty" hidden>Press Run to try your test. The replay and chart show up here.</p>
+      <p id="test-run-empty" class="hint test-run-empty" hidden data-i18n="Press Run to try your test. The replay and chart show up here.">Press Run to try your test. The replay and chart show up here.</p>
       <p id="test-load-error" class="error" role="alert" hidden></p>
       <section id="test-sweep-wrap" class="test-sweep-wrap" aria-labelledby="test-sweep-title" hidden>
         <h3 id="test-sweep-title" class="test-sub"></h3>
         <p id="test-sweep-note" class="test-note muted" hidden></p>
         <div class="test-sweep-table-wrap"><table id="test-sweep-table" class="test-sweep-table"></table></div>
         <div class="row test-chart-head">
-          <label class="test-compare">chart <select id="test-sweep-y"></select></label>
+          <label class="test-compare"><span data-i18n="chart">chart</span> <select id="test-sweep-y"></select></label>
         </div>
         <canvas id="test-sweep-chart" class="test-plot test-sweep-chart" role="img"></canvas>
       </section>
@@ -476,21 +476,21 @@
         <h3 id="test-result-title" class="test-sub"></h3>
         <p id="test-outcome" class="test-outcome"></p>
         <p id="test-seated" class="test-seated" hidden></p>
-        <ul id="test-totals" class="test-totals" aria-label="Goals and air" hidden></ul>
+        <ul id="test-totals" class="test-totals" aria-label="Goals and air" data-i18n-aria-label="Goals and air" hidden></ul>
         <p id="test-outcome-note" class="test-note muted" hidden></p>
-        <ul id="test-run-notes" class="test-run-notes" aria-label="What these numbers rest on" hidden></ul>
+        <ul id="test-run-notes" class="test-run-notes" aria-label="What these numbers rest on" data-i18n-aria-label="What these numbers rest on" hidden></ul>
         <p id="test-feeds-summary" class="test-feeds-summary" hidden></p>
         <ul id="test-checks" class="test-checks"></ul>
         <div id="test-replay" class="test-replay"></div>
         <div class="row test-player">
-          <button type="button" id="test-play" class="btn btn-small test-play">&#9654; Play</button>
+          <button type="button" id="test-play" class="btn btn-small test-play" data-i18n="▶ Play">&#9654; Play</button>
           <div class="test-scrub-wrap">
-            <input type="range" id="test-scrub" class="test-scrub" min="0" max="1" step="any" value="0" aria-label="Replay time">
-            <div id="test-feed-marks" class="test-feed-marks" role="group" aria-label="Each fed piece, at the time it was fed" hidden></div>
-            <div id="test-slip-marks" class="test-feed-marks" role="group" aria-label="Each time a piece slipped out" hidden></div>
+            <input type="range" id="test-scrub" class="test-scrub" min="0" max="1" step="any" value="0" aria-label="Replay time" data-i18n-aria-label="Replay time">
+            <div id="test-feed-marks" class="test-feed-marks" role="group" aria-label="Each fed piece, at the time it was fed" data-i18n-aria-label="Each fed piece, at the time it was fed" hidden></div>
+            <div id="test-slip-marks" class="test-feed-marks" role="group" aria-label="Each time a piece slipped out" data-i18n-aria-label="Each time a piece slipped out" hidden></div>
           </div>
           <span id="test-time" class="test-time">0.0 s</span>
-          <select id="test-speed" aria-label="Replay speed">
+          <select id="test-speed" aria-label="Replay speed" data-i18n-aria-label="Replay speed">
             <option value="0.25">&frac14;&times;</option>
             <option value="0.5">&frac12;&times;</option>
             <option value="1" selected>1&times;</option>
@@ -498,23 +498,23 @@
           </select>
         </div>
         <div class="row test-chart-head">
-          <h3 class="test-sub">Chart</h3>
-          <label class="test-compare">compare with <select id="test-compare"></select></label>
+          <h3 class="test-sub" data-i18n="Chart">Chart</h3>
+          <label class="test-compare"><span data-i18n="compare with">compare with</span> <select id="test-compare"></select></label>
         </div>
-        <div id="test-signals" class="test-signals" role="group" aria-label="What to chart"></div>
+        <div id="test-signals" class="test-signals" role="group" aria-label="What to chart" data-i18n-aria-label="What to chart"></div>
         <div id="test-chart" class="test-chart"></div>
         <p id="test-chart-key" class="test-chart-key"></p>
-        <ul id="test-chart-outcomes" class="test-chart-outcomes" aria-label="The compared runs' outcomes" hidden></ul>
+        <ul id="test-chart-outcomes" class="test-chart-outcomes" aria-label="The compared runs' outcomes" data-i18n-aria-label="The compared runs' outcomes" hidden></ul>
       </section>
       <section id="test-runs-wrap" class="test-runs-wrap" aria-labelledby="test-runs-title" hidden>
-        <h3 id="test-runs-title" class="test-sub">Runs</h3>
+        <h3 id="test-runs-title" class="test-sub" data-i18n="Runs">Runs</h3>
         <ol id="test-runs" class="test-runs"></ol>
       </section>
     </div>
   </aside>
 </main>
 <footer class="statusbar" id="test-status">
-  <span id="test-saved" class="saved">Loading…</span>
+  <span id="test-saved" class="saved" data-i18n="Loading…">Loading…</span>
   <span id="test-count" class="stat"></span>
 </footer>
 </div>
@@ -522,114 +522,114 @@
 <div id="tab-measure" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-measure" hidden>
 <div id="measure-banner" class="banner banner-readonly" role="status" hidden></div>
 <main class="measure-layout">
-  <nav id="measure-tests" class="measure-tests" aria-label="Which test"></nav>
+  <nav id="measure-tests" class="measure-tests" aria-label="Which test" data-i18n-aria-label="Which test"></nav>
   <div class="measure-body">
     <section class="measure-how" aria-labelledby="measure-title">
-      <h1 id="measure-title" class="measure-title">Loading…</h1>
+      <h1 id="measure-title" class="measure-title" data-i18n="Loading…">Loading…</h1>
       <p id="measure-gives" class="measure-gives"></p>
       <figure id="measure-picture" class="measure-picture"></figure>
-      <h2 class="measure-sub">You need</h2>
+      <h2 class="measure-sub" data-i18n="You need">You need</h2>
       <ul id="measure-need" class="measure-list"></ul>
-      <h2 class="measure-sub">Steps</h2>
+      <h2 class="measure-sub" data-i18n="Steps">Steps</h2>
       <ol id="measure-steps" class="measure-list"></ol>
     </section>
-    <section class="measure-entry" aria-label="Your measurements">
+    <section class="measure-entry" aria-label="Your measurements" data-i18n-aria-label="Your measurements">
       <div class="row measure-actions">
-        <a id="measure-print" class="btn" target="_blank" rel="noopener">Print a blank form</a>
-        <button type="button" id="measure-fit" class="btn" hidden>Fit</button>
+        <a id="measure-print" class="btn" target="_blank" rel="noopener" data-i18n="Print a blank form">Print a blank form</a>
+        <button type="button" id="measure-fit" class="btn" hidden data-i18n="Fit">Fit</button>
       </div>
       <div id="measure-header" class="measure-header"></div>
       <div id="measure-setup"></div>
-      <h2 class="measure-sub">Trials</h2>
+      <h2 class="measure-sub" data-i18n="Trials">Trials</h2>
       <div class="measure-table-wrap"><table id="measure-trials" class="measure-trials"></table></div>
-      <div class="row"><button type="button" id="measure-add" class="btn btn-small">Add a trial</button></div>
+      <div class="row"><button type="button" id="measure-add" class="btn btn-small" data-i18n="Add a trial">Add a trial</button></div>
       <p id="measure-extra" class="hint" hidden></p>
-      <section id="measure-summary" class="measure-summary" aria-live="polite" aria-label="Average and spread"></section>
-      <section id="measure-fit-result" class="measure-summary" aria-live="polite" aria-label="The fit" hidden></section>
+      <section id="measure-summary" class="measure-summary" aria-live="polite" aria-label="Average and spread" data-i18n-aria-label="Average and spread"></section>
+      <section id="measure-fit-result" class="measure-summary" aria-live="polite" aria-label="The fit" data-i18n-aria-label="The fit" hidden></section>
     </section>
   </div>
 </main>
 <footer class="statusbar" id="measure-status">
-  <span id="measure-saved" class="saved">Loading…</span>
+  <span id="measure-saved" class="saved" data-i18n="Loading…">Loading…</span>
 </footer>
 </div>
 
 <dialog id="test-sweep-dialog" aria-labelledby="test-sweep-dialog-title">
   <form method="dialog" novalidate>
-    <h2 id="test-sweep-dialog-title">Try values</h2>
+    <h2 id="test-sweep-dialog-title" data-i18n="Try values">Try values</h2>
     <p id="test-sweep-for" class="hint"></p>
-    <div class="field" id="test-sweep-which-field"><label for="test-sweep-which" id="test-sweep-which-label">Which number?</label><select id="test-sweep-which"></select></div>
+    <div class="field" id="test-sweep-which-field"><label for="test-sweep-which" id="test-sweep-which-label" data-i18n="Which number?">Which number?</label><select id="test-sweep-which"></select></div>
     <fieldset id="test-sweep-materials" class="test-sweep-materials" hidden></fieldset>
     <div class="row bench-sweep-range" id="test-sweep-range">
-      <div class="field"><label for="test-sweep-from">From</label><input id="test-sweep-from" inputmode="decimal" autocomplete="off"></div>
-      <div class="field"><label for="test-sweep-to">To</label><input id="test-sweep-to" inputmode="decimal" autocomplete="off"></div>
-      <div class="field"><label for="test-sweep-steps">Steps</label><input id="test-sweep-steps" inputmode="numeric" value="5" autocomplete="off"></div>
+      <div class="field"><label for="test-sweep-from" data-i18n="From">From</label><input id="test-sweep-from" inputmode="decimal" autocomplete="off"></div>
+      <div class="field"><label for="test-sweep-to" data-i18n="To">To</label><input id="test-sweep-to" inputmode="decimal" autocomplete="off"></div>
+      <div class="field"><label for="test-sweep-steps" data-i18n="Steps">Steps</label><input id="test-sweep-steps" inputmode="numeric" value="5" autocomplete="off"></div>
     </div>
-    <div class="field" id="test-sweep-list-field"><label for="test-sweep-list">Or type the values</label><input id="test-sweep-list" autocomplete="off" placeholder="for example 2, 4, 6"></div>
-    <p class="hint" id="test-sweep-limit">Up to 12 values. The test runs once for each; your files don't change.</p>
+    <div class="field" id="test-sweep-list-field"><label for="test-sweep-list" data-i18n="Or type the values">Or type the values</label><input id="test-sweep-list" autocomplete="off" placeholder="for example 2, 4, 6" data-i18n-placeholder="for example 2, 4, 6"></div>
+    <p class="hint" id="test-sweep-limit" data-i18n="Up to 12 values. The test runs once for each; your files don't change.">Up to 12 values. The test runs once for each; your files don't change.</p>
     <ul id="test-sweep-errors" class="error-list" role="alert" hidden></ul>
     <div class="dialog-actions">
-      <button type="button" class="btn" data-close>Cancel</button>
-      <button type="submit" id="test-sweep-go" class="btn btn-primary">Try them</button>
+      <button type="button" class="btn" data-close data-i18n="Cancel">Cancel</button>
+      <button type="submit" id="test-sweep-go" class="btn btn-primary" data-i18n="Try them">Try them</button>
     </div>
   </form>
 </dialog>
 
 <dialog id="save-dialog" class="save-dialog" aria-labelledby="save-title">
   <form id="save-form" method="dialog" novalidate>
-    <h2 id="save-title">Save as scenario</h2>
+    <h2 id="save-title" data-i18n="Save as scenario">Save as scenario</h2>
     <div class="field">
-      <label for="save-path">Scenario file</label>
+      <label for="save-path" data-i18n="Scenario file">Scenario file</label>
       <input id="save-path" autocomplete="off" spellcheck="false" class="mono">
-      <p class="hint">Relative to the folder scrimmage edit was started in. The input tracks go in a folder of the same name next to it.</p>
+      <p class="hint" data-i18n="Relative to the folder scrimmage edit was started in. The input tracks go in a folder of the same name next to it.">Relative to the folder scrimmage edit was started in. The input tracks go in a folder of the same name next to it.</p>
     </div>
     <p id="save-pokes" class="warning" role="status" hidden></p>
     <div id="save-exists" class="save-exists" hidden>
       <p id="save-exists-text" class="warning"></p>
-      <button type="button" id="save-overwrite" class="btn btn-danger">Overwrite</button>
+      <button type="button" id="save-overwrite" class="btn btn-danger" data-i18n="Overwrite">Overwrite</button>
     </div>
     <ul id="save-errors" class="error-list" role="alert" hidden></ul>
     <div class="dialog-actions">
-      <button type="button" id="save-cancel" class="btn">Cancel</button>
-      <button type="submit" id="save-go" class="btn btn-primary">Save</button>
+      <button type="button" id="save-cancel" class="btn" data-i18n="Cancel">Cancel</button>
+      <button type="submit" id="save-go" class="btn btn-primary" data-i18n="Save">Save</button>
     </div>
   </form>
 </dialog>
 
 <dialog id="discard-dialog" aria-labelledby="discard-title" aria-describedby="discard-why">
   <form id="discard-form" method="dialog" novalidate>
-    <h2 id="discard-title">Start a new session and discard the recording?</h2>
-    <p id="discard-why" class="hint">The last drive's recording hasn't been saved. Cancel, then Save as scenario… to keep it.</p>
+    <h2 id="discard-title" data-i18n="Start a new session and discard the recording?">Start a new session and discard the recording?</h2>
+    <p id="discard-why" class="hint" data-i18n="The last drive's recording hasn't been saved. Cancel, then Save as scenario… to keep it.">The last drive's recording hasn't been saved. Cancel, then Save as scenario… to keep it.</p>
     <div class="dialog-actions">
-      <button type="button" id="discard-cancel" class="btn" autofocus>Cancel</button>
-      <button type="submit" id="discard-go" class="btn btn-danger">Discard and start</button>
+      <button type="button" id="discard-cancel" class="btn" autofocus data-i18n="Cancel">Cancel</button>
+      <button type="submit" id="discard-go" class="btn btn-danger" data-i18n="Discard and start">Discard and start</button>
     </div>
   </form>
 </dialog>
 
 <dialog id="add-dialog" aria-labelledby="add-title">
   <form id="add-form" method="dialog" novalidate>
-    <h2 id="add-title">Add part</h2>
+    <h2 id="add-title" data-i18n="Add part">Add part</h2>
     <p id="add-source" class="muted"></p>
     <div class="field">
-      <label for="add-name">Instance name</label>
+      <label for="add-name" data-i18n="Instance name">Instance name</label>
       <input id="add-name" name="name" autocomplete="off" spellcheck="false" required>
-      <p class="hint">Letters, digits and underscores. Joints and bodies get it as a prefix.</p>
+      <p class="hint" data-i18n="Letters, digits and underscores. Joints and bodies get it as a prefix.">Letters, digits and underscores. Joints and bodies get it as a prefix.</p>
       <p class="error" data-err="name" hidden></p>
     </div>
     <div class="field">
-      <label for="add-attach">Attach to</label>
+      <label for="add-attach" data-i18n="Attach to">Attach to</label>
       <div class="row">
         <select id="add-attach" name="attach"></select>
-        <button type="button" id="add-pick" class="btn">Pick in 3D</button>
+        <button type="button" id="add-pick" class="btn" data-i18n="Pick in 3D">Pick in 3D</button>
       </div>
-      <p id="add-cad-hint" class="hint" hidden>Made from a CAD file: on the chassis, or on a body of another part from the same CAD file, it goes where the CAD has it.</p>
+      <p id="add-cad-hint" class="hint" hidden data-i18n="Made from a CAD file: on the chassis, or on a body of another part from the same CAD file, it goes where the CAD has it.">Made from a CAD file: on the chassis, or on a body of another part from the same CAD file, it goes where the CAD has it.</p>
       <p class="error" data-err="attach" hidden></p>
     </div>
     <ul id="add-errors" class="error-list" hidden></ul>
     <div class="dialog-actions">
-      <button type="button" id="add-cancel" class="btn">Cancel</button>
-      <button type="submit" id="add-ok" class="btn btn-primary">Add part</button>
+      <button type="button" id="add-cancel" class="btn" data-i18n="Cancel">Cancel</button>
+      <button type="submit" id="add-ok" class="btn btn-primary" data-i18n="Add part">Add part</button>
     </div>
   </form>
 </dialog>

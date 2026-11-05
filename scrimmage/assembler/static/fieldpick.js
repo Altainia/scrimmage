@@ -13,6 +13,7 @@
 import { h, api, fmt, showMeasure, readMeasure, measureError } from "./app.js";
 import { units } from "./units.js";
 import { theme } from "./theme.js";
+import { i18n, t, live as L, liveAttr } from "./i18n.js";
 import { sc } from "./scenario.js";
 
 const DEFAULT_TOL_XY = 0.1, DEFAULT_TOL_H = 5;   // checks.py's defaults
@@ -212,8 +213,8 @@ export function drawSides(ctx, geometry, toCanvas) {
   ctx.setLineDash([]);
   ctx.font = "700 12px system-ui, sans-serif"; ctx.textBaseline = "top";
   const [lx, ly] = toCanvas(fr.minx, fr.maxy), [rx] = toCanvas(fr.maxx, fr.maxy);
-  ctx.fillStyle = c("--accent-strong"); ctx.textAlign = "left"; ctx.fillText("BLUE", lx + 6, ly + 5);
-  ctx.fillStyle = c("--field-red-text"); ctx.textAlign = "right"; ctx.fillText("RED", rx - 6, ly + 5);
+  ctx.fillStyle = c("--accent-strong"); ctx.textAlign = "left"; ctx.fillText(t("BLUE"), lx + 6, ly + 5);
+  ctx.fillStyle = c("--field-red-text"); ctx.textAlign = "right"; ctx.fillText(t("RED"), rx - 6, ly + 5);
   ctx.restore();
 }
 
@@ -293,8 +294,8 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
   const toField = (px, py) => [b.minx + px / scale, b.maxy - py / scale];
 
   const canvas = h("canvas", { id: "field-canvas", class: "field-canvas", tabindex: "0", role: "application", width: String(W), height: String(H),
-    style: `width:${W}px;height:${H}px`,
-    "aria-label": "Field, seen from above. Click to place the target; drag to set the heading. Arrow keys move the target, [ and ] turn it." });
+    style: `width:${W}px;height:${H}px` });
+  liveAttr(canvas, "aria-label", () => t("Field, seen from above. Click to place the target; drag to set the heading. Arrow keys move the target, [ and ] turn it."));
   const dpr = window.devicePixelRatio || 1;
   canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
   const ctx = canvas.getContext("2d");
@@ -313,8 +314,8 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
     show(el, k);
     el.addEventListener("input", () => {
       if (el.validity.badInput) return;
-      const t = el.value.trim();
-      const v = !kind ? (t === "" ? null : Number(t)) : readMeasure(el, kind);
+      const text = el.value.trim();
+      const v = !kind ? (text === "" ? null : Number(text)) : readMeasure(el, kind);
       if (measureError(v)) return;   // not a field length yet: OK says what to type
       cur[k] = v;
       draw();
@@ -323,7 +324,7 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
     if (kind) fieldUnits.push(u);
     return [el, h("label", { class: "fp-field", for: el.id }, h("span", { class: "fp-label" }, label), h("span", { class: "with-unit" }, el, u))];
   };
-  const [xIn, xF] = box("x", "x"), [yIn, yF] = box("y", "y"), [hIn, hF] = box("heading", "heading", "°", "none");
+  const [xIn, xF] = box("x", "x"), [yIn, yF] = box("y", "y"), [hIn, hF] = box("heading", "heading", "°", t("none"));
   const [txIn, txF] = box("tol_xy", "tol_xy", null, units.shown(DEFAULT_TOL_XY, "field", 0)), [thIn, thF] = box("tol_heading", "tol_heading", "°", String(DEFAULT_TOL_H));
   const syncBoxes = () => { show(xIn, "x"); show(yIn, "y"); show(hIn, "heading"); };
   // Units changed in another tab or editor while this is open: the boxes and labels follow. Text being typed in
@@ -356,7 +357,7 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
       const below = Math.min(...robotHull.map((q) => q[1]));
       const [px, py] = toPx(cx, below);
       ctx.fillStyle = c("--accent-strong"); ctx.font = "600 10px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "top";
-      ctx.fillText("start", px, py + 3);
+      ctx.fillText(t("start", { context: "field" }), px, py + 3);
     }
     // the other pose checks, as ghosts
     for (const g of others) marker(g, { ghost: true });
@@ -390,7 +391,7 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
       ctx.restore();
       ctx.fillStyle = c("--error"); ctx.font = "600 11px system-ui, sans-serif";
       ctx.textAlign = cx > W / 2 ? "right" : "left"; ctx.textBaseline = cy > H / 2 ? "bottom" : "top";
-      ctx.fillText(`target (${units.fmt(m.x, "field")}, ${units.fmt(m.y, "field")}) is off the field`, cx + (cx > W / 2 ? -14 : 14), cy + (cy > H / 2 ? -8 : 8));
+      ctx.fillText(t("target ({x}, {y}) is off the field", { x: units.fmt(m.x, "field"), y: units.fmt(m.y, "field") }), cx + (cx > W / 2 ? -14 : 14), cy + (cy > H / 2 ? -8 : 8));
       return;
     }
     const r = Math.max(m.tol_xy * scale, 2);
@@ -412,7 +413,7 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
     ctx.beginPath(); ctx.arc(px, py, ghost ? 2.5 : 3.5, 0, 2 * Math.PI); ctx.fillStyle = color; ctx.fill();
     if (ghost) {
       ctx.fillStyle = c("--field-ghost-text"); ctx.font = "600 10px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
-      ctx.fillText(`step ${m.label}`, px + Math.max(r, 4) * 0.75 + 3, py - Math.max(r, 4) * 0.75 - 1);
+      ctx.fillText(t("step {n}", { n: m.label }), px + Math.max(r, 4) * 0.75 + 3, py - Math.max(r, 4) * 0.75 - 1);
     }
   }
 
@@ -440,7 +441,7 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
   canvas.addEventListener("pointermove", (e) => {
     const [px, py] = at(e);
     const [x, y] = toField(px, py);
-    readout.textContent = `x ${units.fmt(x, "field")}, y ${units.fmt(y, "field")}`;
+    readout.textContent = t("x {x}, y {y}", { x: units.fmt(x, "field"), y: units.fmt(y, "field") });
     if (!drag) return;
     if (!drag.aiming && Math.hypot(px - drag.px, py - drag.py) < 6) return;
     drag.aiming = true;
@@ -465,22 +466,23 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
   });
 
   const close = () => { d.close(); };
-  const ok = h("button", { type: "submit", id: "fp-ok", class: "btn btn-primary" }, "OK");
+  const ok = h("button", { type: "submit", id: "fp-ok", class: "btn btn-primary" }, L(() => t("OK")));
   const form = h("form", { method: "dialog", novalidate: true },
-    h("h2", { id: "fp-title" }, `Pick the pose · step ${step + 1}${st && st.name ? ` (${st.name})` : ""}, check ${check + 1}`),
-    h("p", { class: "muted fp-help" }, "Click the field to place the target; keep the button down and drag to aim the heading (drag from the target to re-aim it). "
-      + "Arrow keys move it (Shift: faster), [ and ] turn it. A blank heading isn't checked."),
+    h("h2", { id: "fp-title" }, L(() => (st && st.name
+      ? t("Pick the pose · step {step} ({name}), check {check}", { step: step + 1, name: st.name, check: check + 1 })
+      : t("Pick the pose · step {step}, check {check}", { step: step + 1, check: check + 1 })))),
+    h("p", { class: "muted fp-help" }, L(() => t("Click the field to place the target; keep the button down and drag to aim the heading (drag from the target to re-aim it). Arrow keys move it (Shift: faster), [ and ] turn it. A blank heading isn't checked."))),
     h("div", { class: "fp-canvas-wrap" }, canvas),
     h("div", { class: "fp-row" }, xF, yF, hF, txF, thF, readout),
     h("div", { class: "fp-legend muted" },
-      h("span", { class: "lg lg-robot" }), "robot at its start", h("span", { class: "lg lg-target" }), "target and tol_xy",
-      h("span", { class: "lg lg-wedge" }), "heading ± tol_heading", others.length ? [h("span", { class: "lg lg-ghost" }), "other pose checks"] : null),
+      h("span", { class: "lg lg-robot" }), L(() => t("robot at its start")), h("span", { class: "lg lg-target" }), L(() => t("target and tol_xy")),
+      h("span", { class: "lg lg-wedge" }), L(() => t("heading ± tol_heading")), others.length ? [h("span", { class: "lg lg-ghost" }), L(() => t("other pose checks"))] : null),
     err,
-    h("div", { class: "dialog-actions" }, h("button", { type: "button", id: "fp-cancel", class: "btn", onclick: close }, "Cancel"), ok));
+    h("div", { class: "dialog-actions" }, h("button", { type: "button", id: "fp-cancel", class: "btn", onclick: close }, L(() => t("Cancel"))), ok));
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     const bad = [hIn, thIn].find((el) => el.validity.badInput);
-    if (bad) { err.textContent = `${bad.getAttribute("aria-label")} must be a number`; err.hidden = false; bad.focus(); return; }
+    if (bad) { err.textContent = t("{box} must be a number", { box: bad.getAttribute("aria-label") }); err.hidden = false; bad.focus(); return; }
     // x, y and tol_xy as their boxes say now
     for (const [el, k] of [[xIn, "x"], [yIn, "y"], [txIn, "tol_xy"]]) {
       const v = readMeasure(el, "field");
@@ -502,7 +504,8 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
     get value() { return { ...cur }; },
   };
   const offTheme = theme.onChange(() => draw());
-  d.addEventListener("close", () => { delete window.__scrimmage.fieldPick; offUnits(); offTheme(); }, { once: true });
+  const offLanguage = i18n.onChange(() => draw());     // the canvas's words
+  d.addEventListener("close", () => { delete window.__scrimmage.fieldPick; offUnits(); offTheme(); offLanguage(); }, { once: true });
   draw();
   d.showModal();
   canvas.focus();
@@ -512,6 +515,6 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
 export function poseTools({ step, check, spec, setSpec }) {
   return h("div", { class: "pose-tools" },
     h("button", { type: "button", class: "btn btn-small", dataset: { key: `pick-${step}-${check}` },
-      onclick: () => openFieldPicker({ step, check, spec, setSpec }) }, "Pick on field…"),
-    h("span", { class: "hint" }, "Place the target and aim the heading on a drawing of the field."));
+      onclick: () => openFieldPicker({ step, check, spec, setSpec }) }, t("Pick on field…")),
+    h("span", { class: "hint" }, t("Place the target and aim the heading on a drawing of the field.")));
 }

@@ -12,8 +12,21 @@
 //   onChange(fn)                               fn(lang) after the setting changes (here, elsewhere or by hand):
 //                                              re-render what's shown; returns a function that stops it
 //   setLanguage(tag)                           save the setting; resolves to null, or the server's error text
+//   translate(root)                            fill in root's data-i18n* attributes (below); the page's own are
+//                                              filled at a change, before the onChange functions run
+//   live(() => t("Recent"))                    a text node that writes itself again at a change, for words in a
+//                                              part of the page built once (no re-render, so no typing is lost)
+//   liveAttr(el, "title", () => t("..."))      likewise for an attribute
+//   markup(el, "title")                        the translation of what index.html's data-i18n-title (or data-i18n,
+//                                              "text") names on el, for a script that puts the page's own text back
 // Loading and the poll are settings.js's (app.js awaits settings.load() before the tabs start). A broken entry
 // shows in English, with one console warning for it (L6).
+//
+// Static text in index.html names its source in an attribute, which `scrimmage i18n template` also reads:
+//   <h2 data-i18n="Parts library">Parts library</h2>                the text (an element holding only text)
+//   <button data-i18n-title="Undo (Ctrl+Z)" title="Undo (Ctrl+Z)">  likewise -placeholder and -aria-label
+//   data-i18n-context="verb"                                        the context for all of them on the element
+// An element whose text (or attribute) a script has since changed is left alone: its script re-renders it.
 
 import { settings } from "./settings.js";
 
@@ -28,13 +41,14 @@ const listeners = new Set();
 const warned = new Set();
 
 settings.onSettings((data) => {
-  const was = lang;
+  const was = lang, had = catalog;
   if (data.languages) languages = data.languages;
   if (data.language) {
     lang = data.language;
-    catalog = data.catalog || {};
+    catalog = data.catalog || (lang === was ? catalog : {});
   }
   document.documentElement.lang = lang;
+  if (lang !== was || catalog !== had) { translate(document); rewriteLives(); }
   if (lang !== was) {
     for (const fn of [...listeners]) {
       try { fn(lang); } catch (e) { console.error(e); }
@@ -128,9 +142,62 @@ export function tn(singular, plural, count, params = {}) {
   return fill(text, { ...params, count }, singular);
 }
 
+// -- words that write themselves again ---------------------------------------------------------------------------
+const lives = new Set();     // [WeakRef(node or element), write]: dropped once the page has let go of the node
+
+export function live(fn) {
+  const node = document.createTextNode(fn());
+  lives.add([new WeakRef(node), (n) => { n.data = fn(); }]);
+  return node;
+}
+
+export function liveAttr(el, name, fn) {
+  el.setAttribute(name, fn());
+  lives.add([new WeakRef(el), (e) => e.setAttribute(name, fn())]);
+  return el;
+}
+
+export function markup(el, which = "text") {
+  const source = el.getAttribute(which === "text" ? "data-i18n" : `data-i18n-${which}`);
+  return source === null ? null : t(source, { context: el.getAttribute("data-i18n-context") || undefined });
+}
+
+function rewriteLives() {
+  for (const item of lives) {
+    const node = item[0].deref();
+    if (!node) { lives.delete(item); continue; }
+    try { item[1](node); } catch (e) { console.error(e); }
+  }
+}
+
+// -- the page's static text --------------------------------------------------------------------------------------
+const ATTRS = [["data-i18n", null], ["data-i18n-title", "title"], ["data-i18n-placeholder", "placeholder"],
+  ["data-i18n-aria-label", "aria-label"]];
+const SELECTOR = ATTRS.map(([a]) => `[${a}]`).join(",");
+const written = new WeakMap();      // element -> {target: the text last written there}
+const same = (a, b) => String(a ?? "").replace(/\s+/g, " ").trim() === String(b ?? "").replace(/\s+/g, " ").trim();
+
+export function translate(root = document) {
+  const els = [...(root.matches && root.matches(SELECTOR) ? [root] : []), ...root.querySelectorAll(SELECTOR)];
+  for (const el of els) {
+    const context = el.getAttribute("data-i18n-context") || undefined;
+    const last = written.get(el) || {};
+    for (const [attr, target] of ATTRS) {
+      const source = el.getAttribute(attr);
+      if (source === null) continue;
+      const now = target ? el.getAttribute(target) : el.textContent;
+      if (!same(now, last[target] ?? source)) continue;      // a script has changed it since
+      const text = t(source, { context });
+      if (target) el.setAttribute(target, text); else el.textContent = text;
+      last[target] = text;
+    }
+    written.set(el, last);
+  }
+}
+
 export const i18n = {
   get lang() { return lang; },
   get languages() { return { ...languages }; },
-  t, tn, onChange, setLanguage,
+  t, tn, onChange, setLanguage, translate, live, liveAttr, markup,
 };
 export default i18n;

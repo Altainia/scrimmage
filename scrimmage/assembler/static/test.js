@@ -33,7 +33,7 @@
 // robot state Setup shows, sweepFor: the sweep form's numbers, trySweep(blockId): opens the sweep form for that
 // block's number}.
 
-import { $, h, api, notice, registerTab, setTab, showPath, currentTab, store, DEFAULT_GRIP, showMeasure, readMeasure,
+import { $, h, api, notice, registerTab, setTab, showPath, currentTab, store, defaultGrip, showMeasure, readMeasure,
   measureError, lengthWords } from "./app.js";
 import { initRunPanel, update as updateRuns, replay, sweepShown, spreadShown } from "./test_run.js";
 import { defineBlocks, toolbox, testToWorkspace, workspaceToTest, placeOf, incomplete, looseStacks, setUsed, STYLES,
@@ -923,7 +923,7 @@ function gripRow(pal, body, i, running, first) {
     }
     t.gripOwn.delete(body);
     setGrip(body, v === "" ? null : v);
-  } }, h("option", { value: "", text: DEFAULT_GRIP }),
+  } }, h("option", { value: "", text: defaultGrip() }),
   ...mats.map((m) => h("option", { value: m[0], text: gripText(m) })),
   h("option", { value: OWN, text: "My own number…" }));
   sel.value = own ? OWN : now === null ? "" : now;

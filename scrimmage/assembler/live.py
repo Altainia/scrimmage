@@ -14,14 +14,14 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from .. import robot_process
+from .. import i18n, robot_process
 from ..bridge import MISSING_AFTER
 from ..checks import consume_peaks, resolve_signal
 from ..devicecheck import check_devices
 from ..driverstation import MATCH_KEYS, REAL_DS_DRIVING, REAL_DS_WAITING, STATIONS, MatchSettings, check_game_data
 from ..session import REAL_DS_INPUTS, Session
 from ..tracks import PortInputs
-from .recorder import DriveRecorder, RecordingError
+from .recorder import DriveRecorder, RecordingError, RecordingExists
 from .simlock import SimLock
 
 log = logging.getLogger("scrimmage")
@@ -50,11 +50,20 @@ class LiveError(ValueError):
     """A request the live session can't take; the message says why."""
 
 
+class AlreadyLive(LiveError):
+    """Start was asked for while a drive session is live."""
+
+
+class RecordingTaken(LiveError):
+    """Save as scenario named a file (or tracks folder) that is already there: the page asks before overwriting it."""
+
+
 class UnsavedRecording(LiveError):
     """Start was asked for while the last session's recording hasn't been saved."""
 
 
-UNSAVED = "the last drive's recording hasn't been saved: save it, or start again to discard it"
+def _unsaved() -> str:
+    return i18n.t("the last drive's recording hasn't been saved: save it, or start again to discard it")
 
 
 class _Stopped(Exception):
@@ -177,12 +186,12 @@ class LiveManager:
             if self._closed:
                 raise LiveError("the editor is shutting down")
             if self._live:
-                raise LiveError("a drive session is already live")
+                raise AlreadyLive("a drive session is already live")
             self._simlock.acquire("live")   # SimBusy first: no point asking about the recording then
             rec = self._recorder
             if not discard_recording and rec is not None and not rec.empty and not rec.saved:
                 self._simlock.release("live")
-                raise UnsavedRecording(UNSAVED)
+                raise UnsavedRecording(_unsaved())
             self._live = True
             self._stopping = threading.Event()
             self._commands.clear()
@@ -273,10 +282,10 @@ class LiveManager:
         session is live, UnsavedRecording (before anything stops) when its recording hasn't been saved."""
         with self._lock:
             if not self._live or self._closed:
-                raise LiveError("no drive session is live")
+                raise LiveError(i18n.t("no drive session is live"))
             rec = self._recorder
             if rec is not None and not rec.empty and not rec.saved:
-                raise UnsavedRecording(UNSAVED)
+                raise UnsavedRecording(_unsaved())
             path, speed, real_ds = self._config_path, self._speed, self._real_ds
             self._restart, self._restart_problem = "restarting", None
             self._devices_bump()
@@ -304,7 +313,7 @@ class LiveManager:
         cmd = self._validate(cmd)
         with self._lock:
             if not self._live:
-                raise LiveError("no drive session is live")
+                raise LiveError(i18n.t("no drive session is live"))
             if self._real_ds and cmd["cmd"] in REAL_DS_REFUSES:
                 raise LiveError(REAL_DS_REFUSES[cmd["cmd"]])
             self._commands.append(cmd)
@@ -347,16 +356,18 @@ class LiveManager:
         with self._lock:
             rec = self._recorder
             if rec is None or self._state in ("idle", "starting"):
-                raise LiveError("nothing has been recorded")
+                raise LiveError(i18n.t("nothing has been recorded"))
             rec.stop(self._t)
             if rec.empty:
-                raise LiveError("nothing has been recorded")
+                raise LiveError(i18n.t("nothing has been recorded"))
             try:
                 return rec.save(Path(path), self._config_path, self._start_pose, overwrite)
+            except RecordingExists as e:
+                raise RecordingTaken(str(e)) from None      # the page asks before overwriting (save/exists)
             except RecordingError as e:
                 raise LiveError(str(e)) from None
             except OSError as e:
-                raise LiveError(f"can't write {path}: {e.strerror or e}") from None
+                raise LiveError(i18n.t("can't write {path}: {why}", path=path, why=e.strerror or e)) from None
 
     # -- validation -----------------------------------------------------------------------------------------
 

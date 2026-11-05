@@ -30,6 +30,7 @@ import * as THREE from "three";
 import { OrbitControls } from "./vendor/OrbitControls.js";
 import { meshGeometry, primitive, setPose, geomMaterial, buildFloor } from "./scene3d.js";
 import { theme } from "./theme.js";
+import { t, liveAttr } from "./i18n.js";
 
 const FOLLOW_BACK = 2.2, FOLLOW_UP = 1.4, FOLLOW_LOOK_UP = 0.25, FOLLOW_SMOOTH = 0.18;
 const DRIVER_HEIGHT = 1.7;
@@ -86,7 +87,7 @@ export class LiveView {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.domElement.className = "view-canvas";
     this.renderer.domElement.setAttribute("role", "img");
-    this.renderer.domElement.setAttribute("aria-label", "3D view of the field and robot");
+    liveAttr(this.renderer.domElement, "aria-label", () => t("3D view of the field and robot"));
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(theme.color("--watch-bg"));   // the page's theme (app.css)
@@ -303,7 +304,7 @@ export class LiveView {
   setScore(range) {
     if (!range || !range.goals) { this.score.hidden = true; this.score.textContent = ""; return; }
     const lines = Object.entries(range.goals).map(([name, n]) => `${name} ${n}`);
-    lines.push(`fired ${range.fired} · held ${range.held}`);
+    lines.push(t("fired {fired} · held {held}", { fired: range.fired, held: range.held }));
     this.score.textContent = lines.join("\n");
     this.score.hidden = false;
   }

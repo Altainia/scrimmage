@@ -28,6 +28,7 @@ from ...motors import MOTORS
 from ..model import PartError
 from . import Param, Stock, register
 from .mechanisms import slide_chain
+from ...i18n import N_
 
 IN = 0.0254
 STEEL = [0.55, 0.55, 0.6, 1.0]
@@ -209,47 +210,47 @@ def _climber(p: dict) -> dict:
 
 
 register(Stock(
-    "climber", "telescoping climber with J hooks at its tip that hold a bar by contact; optional spring latch "
-    "(passive or released by a motor) and pivot. Every geom collides",
-    (Param("stages", "", 2, "moving tubes including the tip (the tip is stage 'tip', the others stage1, stage2, ...)",
+    "climber", N_("telescoping climber with J hooks at its tip that hold a bar by contact; optional spring latch "
+    "(passive or released by a motor) and pivot. Every geom collides"),
+    (Param("stages", "", 2, N_("moving tubes including the tip (the tip is stage 'tip', the others stage1, stage2, ...)"),
            kind="int", min=1, max=4),
-     Param("base_length", "m", 0.6, "length of every tube (estimate)", positive=True),
+     Param("base_length", "m", 0.6, N_("length of every tube (estimate)"), positive=True),
      Param("travel", "m", 0.6, "total extension of the tip from fully retracted; each tube keeps "
            f"{MIN_OVERLAP} m inside the one below",
            positive=True, max=lambda q: q["stages"] * (q["base_length"] - MIN_OVERLAP)),
-     Param("rigging", "", "continuous", "continuous or cascade, as the elevator's", kind="str",
+     Param("rigging", "", "continuous", N_("continuous or cascade, as the elevator's"), kind="str",
            choices=("continuous", "cascade")),
-     Param("tube", "m", 2 * IN, "outer size of the square base tube; each stage is 1/4 in smaller", positive=True),
-     Param("stage_mass", "kg", 0.6, "mass of the base tube and of each intermediate tube (estimate: 2 in 1/16 wall "
-           "aluminum, 0.86 kg/m, plus hardware)", positive=True),
-     Param("tip_mass", "kg", 0.8, "mass of the tip tube with its hooks and bracket (estimate)", positive=True),
-     Param("motor", "", "KrakenX60", "extend motor model", kind="str", choices=_MOTOR_NAMES),
-     Param("count", "", 1, "motors driving the telescope", kind="int", min=1),
-     Param("gearing", "", 20.0, "motor turns per spool turn (estimate)", positive=True),
-     Param("spool_radius", "m", 0.015, "radius the rope winds on (estimate)", positive=True),
-     Param("friction", "N", 5.0, "constant sliding friction, in newtons felt at the tip", min=0.0),
-     Param("hook_throat", "m", round(RUNG_OD + THROAT_CLEARANCE, 6), "the throat's clear width between the stem and "
-           "the tip; default the 2022 rung's 1.66 in OD plus 6 mm", positive=True),
-     Param("hook_depth", "m", 0.1, "how far the hook's tip reaches below the throat's top (estimate)", positive=True),
-     Param("hook_material", "", "steel", "sets the hook's friction on the bar: steel 0.5, polycarbonate 0.35, "
-           "uhmw 0.15, nitrile 1.0 (estimates)", kind="str", choices=tuple(HOOK_FRICTION)),
-     Param("hook_count", "", 1, "hooks across the arm (1 or 2)", kind="int", min=1, max=2),
-     Param("hook_spacing", "m", 0.2, "distance between two hooks along the bar (estimate)", positive=True),
-     Param("latch", "", "passive", "none; passive: a spring latch across each hook's mouth that the bar pushes "
-           "open and that snaps shut behind it; released: the same, plus a motor slot release that opens it",
+     Param("tube", "m", 2 * IN, N_("outer size of the square base tube; each stage is 1/4 in smaller"), positive=True),
+     Param("stage_mass", "kg", 0.6, N_("mass of the base tube and of each intermediate tube (estimate: 2 in 1/16 wall "
+           "aluminum, 0.86 kg/m, plus hardware)"), positive=True),
+     Param("tip_mass", "kg", 0.8, N_("mass of the tip tube with its hooks and bracket (estimate)"), positive=True),
+     Param("motor", "", "KrakenX60", N_("extend motor model"), kind="str", choices=_MOTOR_NAMES),
+     Param("count", "", 1, N_("motors driving the telescope"), kind="int", min=1),
+     Param("gearing", "", 20.0, N_("motor turns per spool turn (estimate)"), positive=True),
+     Param("spool_radius", "m", 0.015, N_("radius the rope winds on (estimate)"), positive=True),
+     Param("friction", "N", 5.0, N_("constant sliding friction, in newtons felt at the tip"), min=0.0),
+     Param("hook_throat", "m", round(RUNG_OD + THROAT_CLEARANCE, 6), N_("the throat's clear width between the stem and "
+           "the tip; default the 2022 rung's 1.66 in OD plus 6 mm"), positive=True),
+     Param("hook_depth", "m", 0.1, N_("how far the hook's tip reaches below the throat's top (estimate)"), positive=True),
+     Param("hook_material", "", "steel", N_("sets the hook's friction on the bar: steel 0.5, polycarbonate 0.35, "
+           "uhmw 0.15, nitrile 1.0 (estimates)"), kind="str", choices=tuple(HOOK_FRICTION)),
+     Param("hook_count", "", 1, N_("hooks across the arm (1 or 2)"), kind="int", min=1, max=2),
+     Param("hook_spacing", "m", 0.2, N_("distance between two hooks along the bar (estimate)"), positive=True),
+     Param("latch", "", "passive", N_("none; passive: a spring latch across each hook's mouth that the bar pushes "
+           "open and that snaps shut behind it; released: the same, plus a motor slot release that opens it"),
            kind="str", choices=("none", "passive", "released")),
-     Param("latch_spring", "N*m/rad", 0.3, "the latch's torsion spring (estimate)", positive=True),
-     Param("release_motor", "", "NEO550", "release motor model", kind="str", choices=_MOTOR_NAMES),
-     Param("release_gearing", "", 5.0, "release motor turns per latch turn (estimate)", positive=True),
-     Param("pivot", "", "none", "none, or articulated: a hinge at the base on a motor (slots pivot, pivot_encoder)",
+     Param("latch_spring", "N*m/rad", 0.3, N_("the latch's torsion spring (estimate)"), positive=True),
+     Param("release_motor", "", "NEO550", N_("release motor model"), kind="str", choices=_MOTOR_NAMES),
+     Param("release_gearing", "", 5.0, N_("release motor turns per latch turn (estimate)"), positive=True),
+     Param("pivot", "", "none", N_("none, or articulated: a hinge at the base on a motor (slots pivot, pivot_encoder)"),
            kind="str", choices=("none", "articulated")),
-     Param("pivot_range", "deg", [-30.0, 30.0], "the pivot's limits; 0 is upright, positive leans the tip toward "
-           "+x, the side the hooks open to (estimate)", kind="pair"),
-     Param("pivot_motor", "", "KrakenX60", "pivot motor model", kind="str", choices=_MOTOR_NAMES),
-     Param("pivot_count", "", 1, "motors driving the pivot", kind="int", min=1),
-     Param("pivot_gearing", "", 100.0, "pivot motor turns per climber turn (estimate)", positive=True)),
+     Param("pivot_range", "deg", [-30.0, 30.0], N_("the pivot's limits; 0 is upright, positive leans the tip toward "
+           "+x, the side the hooks open to (estimate)"), kind="pair"),
+     Param("pivot_motor", "", "KrakenX60", N_("pivot motor model"), kind="str", choices=_MOTOR_NAMES),
+     Param("pivot_count", "", 1, N_("motors driving the pivot"), kind="int", min=1),
+     Param("pivot_gearing", "", 100.0, N_("pivot motor turns per climber turn (estimate)"), positive=True)),
     _climber, slots=("extend", "extend_encoder"), mounts=("base", "tip"),
-    note="Slots: extend (motor) and extend_encoder (spool turns); release (motor) with latch = \"released\"; pivot "
+    note=N_("Slots: extend (motor) and extend_encoder (spool turns); release (motor) with latch = \"released\"; pivot "
          "(motor) and pivot_encoder (climber turns) with pivot = \"articulated\". Hook geoms are named "
          "<part>.hook<i>.stem, .crown<k>, .tip and .latch; the bracket carrying them <part>.bracket. The climber "
-         "stands up from its base mount, retracted; the hooks open toward +x and hold a bar running along y."))
+         "stands up from its base mount, retracted; the hooks open toward +x and hold a bar running along y.")))

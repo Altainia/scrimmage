@@ -16,6 +16,7 @@ import { OrbitControls } from "./vendor/OrbitControls.js";
 import { $, h, store, select, attachGroups } from "./app.js";
 import { meshGeometry, primitive, setPose, geomMaterial, buildFloor } from "./scene3d.js";
 import { theme } from "./theme.js";
+import { i18n, t, live as L, liveAttr } from "./i18n.js";
 
 const HOVER = new THREE.Color(0x5b8fd6);     // emissive tints
 const SELECTED = new THREE.Color(0x1d6fd6);
@@ -40,13 +41,13 @@ export function initView() {
     renderer = new THREE.WebGLRenderer({ antialias: true });
   } catch (e) {
     host.replaceChildren(h("p", { class: "view-placeholder" },
-      "The 3D view needs WebGL, which this browser didn't provide. Everything else still works."));
+      t("The 3D view needs WebGL, which this browser didn't provide. Everything else still works.")));
     return false;
   }
   renderer.setPixelRatio(window.devicePixelRatio || 1);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.domElement.className = "view-canvas";
-  renderer.domElement.setAttribute("aria-label", "3D view of the robot. Drag to orbit, right-drag to pan, scroll to zoom; click a part to select it.");
+  liveAttr(renderer.domElement, "aria-label", () => t("3D view of the robot. Drag to orbit, right-drag to pan, scroll to zoom; click a part to select it."));
   renderer.domElement.setAttribute("role", "img");
 
   scene = new THREE.Scene();
@@ -70,18 +71,17 @@ export function initView() {
   scene.add(robot);
 
   tip = h("div", { class: "view-tip", hidden: true });
-  const mountsBtn = h("button", {
+  const mountsBtn = liveAttr(h("button", {
     type: "button", class: "btn btn-small", id: "view-mounts", "aria-pressed": "true",
-    title: "Show or hide the mount triads (where parts attach)",
     onclick: () => { showMounts = !showMounts; mountsBtn.setAttribute("aria-pressed", String(showMounts)); updateMountVisibility(); },
-  }, "Mounts");
-  const cgBtn = h("button", {
+  }, L(() => t("Mounts"))), "title", () => t("Show or hide the mount triads (where parts attach)"));
+  const cgBtn = liveAttr(h("button", {
     type: "button", class: "btn btn-small", id: "view-cg", "aria-pressed": "false",
-    title: "Show or hide the robot's center of gravity",
     onclick: () => { showCg = !showCg; cgBtn.setAttribute("aria-pressed", String(showCg)); updateCg(); },
-  }, "CG");
+  }, L(() => t("CG"))), "title", () => t("Show or hide the robot's center of gravity"));
   const tools = h("div", { class: "view-tools" },
-    h("button", { type: "button", class: "btn btn-small", id: "view-frame", title: "Fit the robot in the view", onclick: () => frameRobot() }, "Frame robot"),
+    liveAttr(h("button", { type: "button", class: "btn btn-small", id: "view-frame", onclick: () => frameRobot() }, L(() => t("Frame robot"))),
+      "title", () => t("Fit the robot in the view")),
     mountsBtn, cgBtn);
   const empty = h("p", { class: "view-placeholder", id: "view-empty", hidden: true });
   host.replaceChildren(renderer.domElement, tools, tip, empty);
@@ -101,6 +101,7 @@ export function initView() {
 
   window.addEventListener("scrimmage:view", () => build(store.view));
   window.addEventListener("scrimmage:state", () => { updateEmpty(); updateMountVisibility(); });
+  i18n.onChange(() => updateEmpty());
   window.addEventListener("scrimmage:selected", () => updateHighlight());
   window.addEventListener("scrimmage:hover", (e) => {
     if (e.detail && e.detail.source !== "view") setHover(e.detail.name ? { kind: "instance", name: e.detail.name } : null, false);
@@ -364,11 +365,11 @@ function hit(e, partsOnly = false) {
 
 function onMove(e) {
   if (e.buttons) return;   // orbiting
-  const t = hit(e);
-  setHover(t);
-  if (t) {
+  const target = hit(e);
+  setHover(target);
+  if (target) {
     const r = $("#view").getBoundingClientRect();
-    tip.textContent = t.kind === "mount" ? `Attach to ${t.name}` : t.name;
+    tip.textContent = target.kind === "mount" ? t("Attach to {mount}", { mount: target.name }) : target.name;
     tip.style.left = `${e.clientX - r.left + 12}px`;
     tip.style.top = `${e.clientY - r.top + 12}px`;
     tip.hidden = false;
@@ -379,15 +380,15 @@ function onUp(e) {
   const d = down;
   down = null;
   if (!d || d.button !== 0 || Math.hypot(e.clientX - d.x, e.clientY - d.y) > CLICK_SLOP) return;
-  const t = hit(e);
+  const target = hit(e);
   if (picking) {
-    if (t && t.kind === "mount") {
+    if (target && target.kind === "mount") {
       setHover(null);
-      window.dispatchEvent(new CustomEvent("scrimmage:mount-picked", { detail: { name: t.name } }));
+      window.dispatchEvent(new CustomEvent("scrimmage:mount-picked", { detail: { name: target.name } }));
     }
     return;
   }
-  if (t && t.kind === "instance") select(t.name);
+  if (target && target.kind === "instance") select(target.name);
 }
 
 // -- empty / read-only ------------------------------------------------------------------------
@@ -396,9 +397,9 @@ function updateEmpty() {
   if (!el) return;
   const s = store.state;
   let msg = "";
-  if (s && s.read_only) msg = "No 3D view: this config is read-only.";
-  else if (s && !s.parts.length) msg = "No parts yet. Add one from the library.";
-  else if (s && store.view && !built.geoms.length && s.errors.length) msg = "No 3D view while the robot has errors.";
+  if (s && s.read_only) msg = t("No 3D view: this config is read-only.");
+  else if (s && !s.parts.length) msg = t("No parts yet. Add one from the library.");
+  else if (s && store.view && !built.geoms.length && s.errors.length) msg = t("No 3D view while the robot has errors.");
   el.textContent = msg;
   el.hidden = !msg;
 }

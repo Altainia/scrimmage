@@ -63,7 +63,7 @@ def test_a_broken_entry_falls_back_with_one_console_warning(page):
         data.update(language="en-GB", catalog={"Saved {name}": "Saved {nom}",
                                                "{count} part|{count} parts": "not an object", "Color": "Colour"})
         route.fulfill(response=res, body=json.dumps(data))
-    page.route("**/api/settings", broken)
+    page.route("**/api/settings*", broken)
     page.evaluate("import('./settings.js').then((m) => m.load())")
     assert page.evaluate("I.i18n.lang") == "en-GB"
     for _ in range(3):

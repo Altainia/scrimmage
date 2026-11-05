@@ -40,7 +40,7 @@ from urllib.parse import unquote
 
 import numpy as np
 
-from .. import teamfolders
+from .. import i18n, teamfolders
 from ..cad import CadError
 from ..cad.axis import fit_axis
 from ..cad.bodies import assembly_diagonal, is_hardware
@@ -64,11 +64,14 @@ POLL_SECONDS = 25.0
 HISTORY = 50
 CAD_SUFFIXES = STEP_SUFFIXES + MESH_SUFFIXES
 MAX_UPLOAD = 512 * 1024 * 1024
-NEED_STEP = "per-piece materials need the STEP: import it instead"
 PIECE_OPS = ("set_material", "move_pieces", "new_body", "leave_out")
 SUFFIX = ".import.toml"
-STALE = "the import changed (another tab, or an outside edit); the page has reloaded it"
 log = logging.getLogger("scrimmage.assembler")
+
+
+def need_step() -> str:
+    """Why a plugin part can't take a per-piece edit, in the user's language."""
+    return i18n.t("per-piece materials need the STEP: import it instead")
 
 
 def materials() -> dict:
@@ -172,9 +175,9 @@ def open_part(path: Path, version: int, parts_dir: Path | None = None,
             rel = tomllib.loads((path / MARKER).read_text(encoding="utf-8"))["import"]
             imp = (path / rel).resolve()
         except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, KeyError, TypeError):
-            raise CadError(f"{path.name}'s {MARKER} can't be read: open the CAD file again to remake it.") from None
+            raise CadError(i18n.t("{name}'s {marker} can't be read: open the CAD file again to remake it.", name=path.name, marker=MARKER)) from None
         if not imp.is_file():
-            raise CadError(f"{path.name} was made from {rel}, which is gone: open the CAD file again to remake it.")
+            raise CadError(i18n.t("{name} was made from {rel}, which is gone: open the CAD file again to remake it.", name=path.name, rel=rel))
         return PartSession(imp, version)
     if path.is_file() and path.name.lower().endswith(".toml"):
         return PartSession(path, version)
@@ -189,9 +192,9 @@ def upload_name(filename: str | None) -> str:
     name or one that isn't a CAD file."""
     name = unquote(filename or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
     if not name or name.startswith(".") or ":" in name or any(ord(ch) < 32 for ch in name):
-        raise SessionError(400, "the file needs a name (header X-Filename)")
+        raise SessionError(400, i18n.t("the file needs a name (header X-Filename)"))
     if Path(name).suffix.lower() not in CAD_SUFFIXES:
-        raise SessionError(400, f"{name} is not a STEP, STL or OBJ file: export it from CAD as one of those")
+        raise SessionError(400, i18n.t("{name} is not a STEP, STL or OBJ file: export it from CAD as one of those", name=name))
     return name
 
 
@@ -200,13 +203,13 @@ def upload_set(names: list[str]) -> None:
     sentence for STEP files among them, or two with the same name."""
     steps = [n for n in names if Path(n).suffix.lower() in STEP_SUFFIXES]
     if len(steps) == len(names) and len(names) > 1:
-        raise SessionError(400, "Use one STEP file at a time: a STEP file already holds the whole assembly.")
+        raise SessionError(400, i18n.t("Use one STEP file at a time: a STEP file already holds the whole assembly."))
     if steps:
-        raise SessionError(400, "Use a STEP file on its own, or only STL and OBJ files, not both at once.")
+        raise SessionError(400, i18n.t("Use a STEP file on its own, or only STL and OBJ files, not both at once."))
     seen = set()
     for n in names:
         if n.lower() in seen:
-            raise SessionError(400, f"Two of the files are called {n}: give each piece its own file name.")
+            raise SessionError(400, i18n.t("Two of the files are called {n}: give each piece its own file name.", n=n))
         seen.add(n.lower())
 
 
@@ -216,7 +219,7 @@ def _copy_in(stream, length: int, dest) -> None:
         while left > 0:
             chunk = stream.read(min(left, 1 << 20))
             if not chunk:
-                raise SessionError(400, "the upload stopped before the whole file arrived")
+                raise SessionError(400, i18n.t("the upload stopped before the whole file arrived"))
             f.write(chunk)
             left -= len(chunk)
 
@@ -226,12 +229,12 @@ def save_upload(stream, length: int, filename: str | None, folder: Path) -> Path
     a name that isn't a CAD file, 413 for a body over MAX_UPLOAD."""
     name = upload_name(filename)
     if length > MAX_UPLOAD:
-        raise SessionError(413, "that file is too large to upload (over 512 MB)")
+        raise SessionError(413, i18n.t("that file is too large to upload (over 512 MB)"))
     folder = Path(folder).resolve()
     folder.mkdir(parents=True, exist_ok=True)
     dest = folder / name
     if dest.parent != folder:
-        raise SessionError(400, "the file needs a plain name")
+        raise SessionError(400, i18n.t("the file needs a plain name"))
     tmp = folder / f".upload-{uuid.uuid4().hex[:8]}.tmp"
     try:
         _copy_in(stream, length, tmp)
@@ -249,9 +252,9 @@ def save_uploads(stream, length: int, files: list[tuple[str, int]], folder: Path
     upload_set(names)
     sizes = [n for _, n in files]
     if any(isinstance(n, bool) or not isinstance(n, int) or n < 0 for n in sizes) or sum(sizes) != length:
-        raise SessionError(400, "the files' sizes don't add up to what was sent")
+        raise SessionError(400, i18n.t("the files' sizes don't add up to what was sent"))
     if length > MAX_UPLOAD:
-        raise SessionError(413, "those files are too large to upload (over 512 MB)")
+        raise SessionError(413, i18n.t("those files are too large to upload (over 512 MB)"))
     folder = Path(folder).resolve()
     folder.mkdir(parents=True, exist_ok=True)
     dest, tag = folder / MESH_FOLDER, uuid.uuid4().hex[:8]
@@ -317,14 +320,14 @@ class _Session:
 
     def _check_open(self) -> None:
         if self._closed:
-            raise SessionError(409, "the part was closed")
+            raise SessionError(409, i18n.t("the part was closed"))
 
     def _fresh(self, body: dict) -> None:
         v = body.get("version")
         if not isinstance(v, int) or isinstance(v, bool):
-            raise SessionError(400, "version (the integer from the state) is required")
+            raise SessionError(400, i18n.t("version (the integer from the state) is required"))
         if v < self._changed_at:
-            raise SessionError(409, STALE)
+            raise SessionError(409, i18n.t("the import changed (another tab, or an outside edit); the page has reloaded it"))
 
     def _poll(self) -> None:
         while not self._stop.wait(POLL_PERIOD):
@@ -352,16 +355,16 @@ class _Session:
                 t.join(timeout=30)
 
     def axis(self, body: dict) -> dict:
-        raise SessionError(400, "a part from the CAD plugin has no CAD file to measure: import the STEP instead")
+        raise SessionError(400, i18n.t("a part from the CAD plugin has no CAD file to measure: import the STEP instead"))
 
     def reimport(self, body: dict) -> tuple[int, dict]:
-        raise SessionError(400, "a part from the CAD plugin has no CAD file to read again: import the STEP instead")
+        raise SessionError(400, i18n.t("a part from the CAD plugin has no CAD file to read again: import the STEP instead"))
 
     def replace_source(self, path: Path, again: bool = False) -> tuple[int, dict]:
-        raise SessionError(400, "a part from the CAD plugin has no CAD file to replace: import the STEP instead")
+        raise SessionError(400, i18n.t("a part from the CAD plugin has no CAD file to replace: import the STEP instead"))
 
     def source_folder(self) -> Path:
-        raise SessionError(400, "a part from the CAD plugin has no CAD file to replace: import the STEP instead")
+        raise SessionError(400, i18n.t("a part from the CAD plugin has no CAD file to replace: import the STEP instead"))
 
 
 # ---------------------------------------------------------------- import mode
@@ -435,7 +438,7 @@ class PartSession(_Session):
             self._build = {"state": "failed", "message": str(e)}
             return None
         if not src.pieces:
-            self._src_problem = f"{path.name} has no pieces to import: export the parts, not an empty file."
+            self._src_problem = i18n.t("{name} has no pieces to import: export the parts, not an empty file.", name=path.name)
             return None
         return src
 
@@ -474,7 +477,7 @@ class PartSession(_Session):
         try:
             write_import(self.imp, self.path)
         except OSError as e:
-            raise SessionError(500, f"can't save {self.path.name}: {e.strerror or e}") from None
+            raise SessionError(500, i18n.t("can't save {path}: {why}", path=self.path.name, why=e.strerror or e)) from None
         self._sig = _sig(self.path)
 
     def _commit(self, old, new, msgs: list[str], push: bool = True) -> None:
@@ -497,14 +500,14 @@ class PartSession(_Session):
             return
         self._sig = sig
         if sig == (None,):
-            self._file_problem = (f"{self.path.name} was deleted; put it back, or open the CAD file again to make "
-                                  "a new one")
+            self._file_problem = i18n.t("{name} was deleted; put it back, or open the CAD file again to make a new one",
+                                        name=self.path.name)
             self._bump()
             return
         try:
             new = read_import(self.path)
         except CadError as e:
-            self._file_problem = f"{e} Fix it in a text editor."
+            self._file_problem = i18n.t("{why} Fix it in a text editor.", why=e)
             self._bump()
             return
         self._file_problem = None
@@ -545,7 +548,7 @@ class PartSession(_Session):
                 err = str(e)
             except Exception as e:   # a bug: say so, keep the session
                 log.exception("part build")
-                err = f"The build failed ({type(e).__name__}: {e}); this is a bug in Scrimmage: please report it."
+                err = i18n.t("The build failed ({why}); this is a bug in Scrimmage: please report it.", why=f"{type(e).__name__}: {e}")
             with self._cond:
                 self._built_gen = gen
                 if err is not None:
@@ -653,9 +656,9 @@ class PartSession(_Session):
     def edit(self, body: dict) -> tuple[int, dict]:
         op, args = body.get("op"), body.get("args", {})
         if not isinstance(op, str):
-            raise SessionError(400, "op (the edit's name) is required")
+            raise SessionError(400, i18n.t("op (the edit's name) is required"))
         if not isinstance(args, dict):
-            raise SessionError(400, "args must be a JSON object")
+            raise SessionError(400, i18n.t("args must be a JSON object"))
         with self._lock:
             self._writable(body)
             if op == "set_grip":
@@ -675,27 +678,26 @@ class PartSession(_Session):
         rebuilt and it isn't on the undo history (lock held)."""
         name = a.get("body")
         if not isinstance(name, str) or name not in self.imp.bodies:
-            return _refused(EditError("body", f"There is no body called {name}: pick one from the list."))
+            return _refused(EditError("body", i18n.t("There is no body called {name}: pick one from the list.", name=name)))
         if "grip" not in a:
-            return _refused(EditError("grip", "Say the grip material, or grip = none for the default friction."))
+            return _refused(EditError("grip", i18n.t("Say the grip material, or grip = none for the default friction.")))
         try:
             part, home = body_home(self.imp, name)
         except CadError as e:
             return _refused(EditError("body", str(e)))
         if home != name:
-            return _refused(EditError("body", f"{name} is built into {home}'s body (it has no joint of its own): "
-                                              f"set the grip on {home}."))
+            return _refused(EditError("body", i18n.t("{name} is built into {home}'s body (it has no joint of its own): set the grip on {home}.", name=name, home=home)))
         folder = part_folder(self.imp, part, self.path)
         # not while a build runs: write_parts copies the folder's edits before it swaps the new folder in
         if not (folder / "part.toml").is_file() or self._build["state"] == "building":
-            return _refused(EditError("body", f"{part} isn't built yet: wait for the build, then set the grip."))
+            return _refused(EditError("body", i18n.t("{part} isn't built yet: wait for the build, then set the grip.", part=part)))
         before = self._grips().get(name)
         try:
             set_grip(folder, name, a["grip"])
         except PartError as e:
             return _refused(EditError("grip", str(e)))
         except OSError as e:
-            raise SessionError(500, f"can't save {folder / OVERLAY}: {e.strerror or e}") from None
+            raise SessionError(500, i18n.t("can't save {path}: {why}", path=folder / OVERLAY, why=e.strerror or e)) from None
         self._push(GripStep(part, name, before))      # ruling P29: Undo puts the previous grip back
         self._messages = []
         self._bump(changed=True)
@@ -706,14 +708,14 @@ class PartSession(_Session):
         held)."""
         folder = part_folder(self.imp, step.part, self.path)
         if self._build["state"] == "building":
-            raise SessionError(409, f"{step.part} is being built: wait for the build, then undo the grip.")
+            raise SessionError(409, i18n.t("{part} is being built: wait for the build, then undo the grip.", part=step.part))
         now = self._grips().get(step.body)
         try:
             set_grip(folder, step.body, step.grip)
         except PartError as e:
             raise SessionError(400, str(e)) from None
         except OSError as e:
-            raise SessionError(500, f"can't save {folder / OVERLAY}: {e.strerror or e}") from None
+            raise SessionError(500, i18n.t("can't save {path}: {why}", path=folder / OVERLAY, why=e.strerror or e)) from None
         other.append(GripStep(step.part, step.body, now))
 
     def _grips(self) -> dict:
@@ -767,11 +769,11 @@ class PartSession(_Session):
             pieces = {p.key: p for p in self.src.pieces} if self.src is not None else {}
             p, tri, kind = pieces.get(body.get("piece")), body.get("triangle"), body.get("kind")
             if p is None:
-                raise SessionError(400, "there is no such piece: click on a piece")
+                raise SessionError(400, i18n.t("there is no such piece: click on a piece"))
             if isinstance(tri, bool) or not isinstance(tri, int):
-                raise SessionError(400, "triangle must be a whole number (the triangle clicked)")
+                raise SessionError(400, i18n.t("triangle must be a whole number (the triangle clicked)"))
             if kind not in ("round", "flat"):
-                raise SessionError(400, "kind is round or flat")
+                raise SessionError(400, i18n.t("kind is round or flat"))
             try:
                 point, d = fit_axis(p, tri, kind)
             except CadError as e:

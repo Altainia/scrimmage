@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from . import Param, Stock, register
+from ...i18n import N_
 
 YELLOW = [1.0, 0.9, 0.1, 1.0]
 BLUE = [0.1, 0.25, 0.85, 1.0]
@@ -41,17 +42,17 @@ def build(p: dict) -> dict:
 
 
 register(Stock(
-    "chassis", "rectangular drive base with bumpers; modules mount at its corners",
-    (Param("length", "m", 0.7, "frame length (front to back), without bumpers", positive=True),
-     Param("width", "m", 0.7, "frame width (side to side), without bumpers", positive=True),
-     Param("mass", "kg", 46.0, "everything on the chassis that isn't another part (frame, battery, electronics)", positive=True),
-     Param("frame_height", "m", 0.12, "height of the frame's middle above the floor", positive=True),
-     Param("bumper", "m", 0.08, "bumper thickness", positive=True),
-     Param("bumper_clearance", "m", 0.02, "height of the bumpers' bottom above the carpet; with the bumpers' reach "
+    "chassis", N_("rectangular drive base with bumpers; modules mount at its corners"),
+    (Param("length", "m", 0.7, N_("frame length (front to back), without bumpers"), positive=True),
+     Param("width", "m", 0.7, N_("frame width (side to side), without bumpers"), positive=True),
+     Param("mass", "kg", 46.0, N_("everything on the chassis that isn't another part (frame, battery, electronics)"), positive=True),
+     Param("frame_height", "m", 0.12, N_("height of the frame's middle above the floor"), positive=True),
+     Param("bumper", "m", 0.08, N_("bumper thickness"), positive=True),
+     Param("bumper_clearance", "m", 0.02, N_("height of the bumpers' bottom above the carpet; with the bumpers' reach "
            "past the front wheels it sets the approach angle, the steepest ramp the robot drives onto "
-           "(docs/terrain.md)", positive=True),
-     Param("module_inset", "m", 0.0579, "distance from each frame edge to a corner mount (module center)",
+           "(docs/terrain.md)"), positive=True),
+     Param("module_inset", "m", 0.0579, N_("distance from each frame edge to a corner mount (module center)"),
            min=0.0, max=lambda q: min(q["length"], q["width"]) / 2),
-     Param("com_offset", "m", [0.0, 0.0, 0.0], "moves the chassis's center of mass from its usual place "
-           "[forward, left, up]; use it when a part you attach changes where the robot's weight sits", kind="vec3")),
+     Param("com_offset", "m", [0.0, 0.0, 0.0], N_("moves the chassis's center of mass from its usual place "
+           "[forward, left, up]; use it when a part you attach changes where the robot's weight sits"), kind="vec3")),
     build, slots=("gyro",), mounts=("front_left", "front_right", "back_left", "back_right", "center", "top")))

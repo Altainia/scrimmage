@@ -30,6 +30,7 @@ keeps the source's English too (L2).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -266,6 +267,29 @@ def tn(singular: str, plural: str, count: float, /, *, lang: str | None = None, 
     else:
         text = singular if plural_category(SOURCE, count) == "one" else plural
     return _fill(text, params, singular)
+
+
+def N_(source: str, /) -> str:
+    """Marks text that is data, written where it is defined (a stock part's parameter docs): it is a source for
+    `scrimmage i18n template` like t()'s, and comes back unchanged. Where it is shown, translated() turns it into the
+    user's language then; a t() at import would freeze the language the process started in."""
+    return source
+
+
+def translated(source: str, /, *, lang: str | None = None) -> str:
+    """The translation of `source`, text marked with N_() where it was defined (or text that has no catalog entry,
+    which reads as it is). No placeholders are filled: N_() text has none."""
+    if not source:
+        return source
+    lang = lang or current_language()
+    entry = _entry(source, lang, plural=False)
+    return entry if entry else source
+
+
+def catalog_version(lang: str) -> str:
+    """A short hash of `lang` and its catalog_json(): the page asks for the catalog again only when this changes."""
+    text = json.dumps([lang, catalog_json(lang)], sort_keys=True, ensure_ascii=False)
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
 
 
 def catalog_json(lang: str) -> dict:
