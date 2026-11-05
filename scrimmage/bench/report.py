@@ -20,7 +20,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
-from .. import units
+from .. import i18n, units
 from ..i18n import t
 from ..launcher.flight import Landing, fly_state
 from ..launcher.inputs import PRESETS, Air, Goal
@@ -388,8 +388,14 @@ def write_results(result: BenchResult, out_dir: Path) -> Path:
             w = csv.writer(f, lineterminator="\n")
             w.writerow(header)
             w.writerows(rows)
+    with i18n.for_people():     # summary.txt is for people: in the Units and Language settings (an MCP run's too)
+        (out_dir / "summary.txt").write_text(_summary(result, lands, tables), encoding="utf-8")
+    return out_dir
+
+
+def _summary(result: BenchResult, lands, tables) -> str:
+    """summary.txt's text (the Bench tab reads its headlines back)."""
     b = result.bench
-    # summary.txt is for people: in the Units and Language settings (the Bench tab reads its headlines back)
     text = [b.name + (f" ({b.author})" if b.author else "")]
     if b.idea:
         text.append(t('idea: "{idea}"', idea=b.idea))
@@ -409,5 +415,4 @@ def write_results(result: BenchResult, out_dir: Path) -> Path:
                       "wrong, not the design)", pieces=", ".join(map(str, bad))))
     else:
         text.append(t("Energy check: ok (a failure means the simulation is wrong, not the design)"))
-    (out_dir / "summary.txt").write_text("\n".join(text) + "\n", encoding="utf-8")
-    return out_dir
+    return "\n".join(text) + "\n"

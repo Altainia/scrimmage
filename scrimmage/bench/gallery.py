@@ -35,6 +35,7 @@ GUTTER = 12                  # px between pictures
 GALLERY_SIZE = (1280, 720)   # each idea's picture in the gallery
 
 
+@i18n.for_people()
 def compare_picture(results: list[BenchResult], width: int = COMPARE_SIZE[0],
                     height: int = COMPARE_SIZE[1]) -> np.ndarray:
     """The side path pictures in a grid, side by side, up to COMPARE_COLUMNS to a row (RGB, uint8). Each keeps its own
@@ -177,6 +178,7 @@ def _table_html(entries: list[tuple[Entry, str, str]]) -> str:
             + "".join(trs) + "</table></div>")
 
 
+@i18n.for_people()       # the page is for people (an MCP gallery's too)
 def gallery_html(folder: Path, entries: list[Entry]) -> str:
     ran = [e.result for e in entries if e.result is not None]
     labels = iter(idea_labels(ran))

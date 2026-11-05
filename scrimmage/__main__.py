@@ -79,8 +79,9 @@ def main(argv: list[str] | None = None) -> None:
                     help="show values in imperial or metric units for this run (default: the Units setting, which "
                          "the editor's Settings menu sets)")
     ap.add_argument("--language", choices=list(languages()),
-                    help="write the web app and its reports in this language for this run (default: the Language "
-                         "setting, which the editor's Settings menu sets)")
+                    help="show the web app (`edit`, `serve`) and the reports it writes in this language for this run "
+                         "(default: the Language setting, which the editor's Settings menu sets); what the other "
+                         "commands print and the files they write stay American English")
     sub = ap.add_subparsers(dest="command", required=True)
 
     sp = sub.add_parser("serve", help="run the world for a robot program you drive yourself (WPILib sim GUI)")
@@ -290,13 +291,31 @@ def main(argv: list[str] | None = None) -> None:
                      f"(choose from {', '.join(languages())})")
     if argv[:1] == ["measure"]:
         from .measure.cli import main as measure
-        sys.exit(measure(argv[1:]))
+        with i18n.fixed():
+            code = measure(argv[1:])
+        sys.exit(code)
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S")
-    if args.command == "serve":
+    if args.command == "serve":     # the web app's commands follow the Language
         _serve(args, sp)
-    elif args.command == "java":
+    elif args.command == "edit":
+        _edit(args)
+    else:
+        # Every other command is American English throughout, what it prints and the files it writes (the spec's
+        # non-goal); units still follow --units and the setting. One guard here, so no command is missed. A thread
+        # a command starts doesn't inherit it (none builds text today: asyncio.to_thread and Session's render jobs
+        # carry the context).
+        with i18n.fixed():
+            code = _command(args, rp)
+        if code is not None:
+            sys.exit(code)
+
+
+def _command(args, rp) -> int | None:
+    """The command, other than `edit` and `serve`: its exit code for `run` and `i18n` (the others exit themselves
+    when they fail)."""
+    if args.command == "java":
         _java(args)
     elif args.command == "freecad":
         _freecad(args)
@@ -305,8 +324,7 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "disc":
         _disc(args)
     elif args.command == "bench":
-        with i18n.fixed():          # the CLI's printed words stay American English (spec non-goals); units don't
-            _bench(args)
+        _bench(args)
     elif args.command == "air":
         _air(args)
     elif args.command == "terrain":
@@ -314,21 +332,17 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "climb":
         _climb(args)
     elif args.command == "test":
-        with i18n.fixed():          # run.py's outcome and lines too, as the CLI's own
-            _test(args)
+        _test(args)
     elif args.command == "model":
         _model(args)
     elif args.command == "parts":
         _parts(args)
-    elif args.command == "edit":
-        _edit(args)
     elif args.command == "i18n":
         from . import i18n_tool
-        sys.exit(i18n_tool.main(args))
+        return i18n_tool.main(args)
     else:
-        with i18n.fixed():
-            code = _run(args, rp)
-        sys.exit(code)
+        return _run(args, rp)
+    return None
 
 
 def _java(args) -> None:

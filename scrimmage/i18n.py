@@ -66,6 +66,7 @@ _catalogs: dict[tuple[str, str], dict] = {}          # (folder, tag): its entrie
 _languages: dict[str, dict[str, str]] = {}           # folder: {tag: name}
 _warned: set = set()
 _fixed: ContextVar[str | None] = ContextVar("i18n_fixed", default=None)
+_people: ContextVar[str | None] = ContextVar("i18n_people", default=None)    # for_people()'s language
 
 
 def reload() -> None:
@@ -143,9 +144,36 @@ def languages() -> dict[str, str]:
 
 @contextmanager
 def fixed(lang: str = SOURCE):
-    """Write in `lang` inside the `with` (this thread or task only), whatever the setting. units.fixed() and
-    units.machine_text() enter it with the source's English, so machine text keeps its words."""
-    token = _fixed.set(lang)
+    """Write in `lang` inside the `with` (this thread or task only), whatever the setting, files for people too
+    (for_people()). units.fixed() and units.machine_text() enter it with the source's English, so machine text keeps
+    its words; the CLI's main enters it for every command but `edit` and `serve`, so it is American English
+    throughout."""
+    token, people = _fixed.set(lang), _people.set(lang)
+    try:
+        yield
+    finally:
+        _people.reset(people)
+        _fixed.reset(token)
+
+
+@contextmanager
+def machine():
+    """An MCP tool call: what it returns is the source's English (as fixed()), while the files it writes for people
+    (report.md, summary.txt, the pictures, a gallery: inside for_people()) follow the Language setting, as the web
+    app's do. Enter it in a worker thread too: a thread doesn't inherit it."""
+    token, people = _fixed.set(SOURCE), _people.set(None)
+    try:
+        yield
+    finally:
+        _people.reset(people)
+        _fixed.reset(token)
+
+
+@contextmanager
+def for_people():
+    """A file written for people to read: in the language of the guard around it (fixed()'s, so the CLI's files are
+    American English), or the setting's inside machine() or outside any guard. Also a decorator."""
+    token = _fixed.set(_people.get())
     try:
         yield
     finally:

@@ -645,11 +645,12 @@ from ..measure.use import SUFFIX
 STATIC = Path(__file__).resolve().parent / "static"
 POLL_SECONDS = 25.0
 MAX_BODY = 1_000_000
-NO_ROBOT = "no robot is open"
-NO_SESSION = "no idea session is open"
-NO_PART = "no part is open"
-NO_TEST = "no test is open"
-NO_MEASURE = "no measurement file is open"
+# The 404s while the open file's kind doesn't match the route (N_(): said with translated() when raised)
+NO_ROBOT = i18n.N_("no robot is open")
+NO_SESSION = i18n.N_("no idea session is open")
+NO_PART = i18n.N_("no part is open")
+NO_TEST = i18n.N_("no test is open")
+NO_MEASURE = i18n.N_("no measurement file is open")
 _FORM = re.compile(r"/forms/([a-z]+)\.html")
 ROBOT_TEMPLATES = ("swerve", "swerve-rev", "differential")
 FIXES = ("build_agent", "gradle_build", "install_lockstep")
@@ -974,30 +975,30 @@ class App:
         """404 unless a robot config or scenario is open (the Robot, Scenario and Drive tabs' routes)."""
         with self._lock:
             if self.mode != "robot":
-                raise ApiError(404, NO_ROBOT)
+                raise ApiError(404, i18n.translated(NO_ROBOT))
 
     def need_test(self) -> TestSession:
         with self._lock:
             if self.test is None:
-                raise ApiError(404, NO_TEST)
+                raise ApiError(404, i18n.translated(NO_TEST))
             return self.test
 
     def need_measure(self) -> MeasureSession:
         with self._lock:
             if self.measure is None:
-                raise ApiError(404, NO_MEASURE)
+                raise ApiError(404, i18n.translated(NO_MEASURE))
             return self.measure
 
     def need_bench(self) -> BenchSession:
         with self._lock:
             if self.bench is None:
-                raise ApiError(404, NO_SESSION)
+                raise ApiError(404, i18n.translated(NO_SESSION))
             return self.bench
 
     def need_part(self):
         with self._lock:
             if self.part is None:
-                raise ApiError(404, NO_PART)
+                raise ApiError(404, i18n.translated(NO_PART))
             return self.part
 
     def remember_part(self) -> None:

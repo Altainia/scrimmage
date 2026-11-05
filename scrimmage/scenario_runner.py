@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import foreign_writes as fwn
-from . import units
+from . import i18n, units
 from .bindings import binds_rev
 from .bridge import REALTIME_REASON
 from .devicecheck import check_devices, device_notes
@@ -187,7 +187,10 @@ class Report:
         self.files = {k: v for k, v in OUTPUT_FILES.items()
                       if k in ("report", "report_md") or (out_dir / v).exists()}
         (out_dir / "report.json").write_text(json.dumps(self.to_dict(), indent=2, default=str))
-        # report.md is for people: in the Units and Language settings
+        with i18n.for_people():     # report.md is for people: in the Units and Language settings (an MCP run's too)
+            (out_dir / "report.md").write_text(self._markdown())
+
+    def _markdown(self) -> str:
         if self.passed:
             head = t("PASS: {scenario}", scenario=self.scenario)
         elif self.error:
@@ -220,7 +223,7 @@ class Report:
             md += ["## " + t("Robot program"), ""] + [f"- ❌ {c.shown()}" for c in bad] + [""]
         if self.console_tail:
             md += ["## " + t("Console (last lines)"), "", "```", *self.console_tail, "```", ""]
-        (out_dir / "report.md").write_text("\n".join(md))
+        return "\n".join(md)
 
 
 _shown = shown

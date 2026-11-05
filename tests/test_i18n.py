@@ -214,7 +214,11 @@ def test_cli_language_overrides_the_file(monkeypatch, language):
     from scrimmage import __main__ as cli
     language("en-GB")
     seen = []
-    monkeypatch.setattr(cli, "_java", lambda args: seen.append((i18n.current_language(), settings.current_units())))
+    # the flag sets the Language (settings.current_language(), what `edit` and `serve` follow), while a command other
+    # than those writes American English (i18n.current_language(), inside the CLI's one guard)
+    monkeypatch.setattr(cli, "_java", lambda args: seen.append((settings.current_language(), settings.current_units()))
+                        or written.append(i18n.current_language()))
+    written = []
     cli.main(["--language", "en-US", "java", "path"])
     cli.main(["--language=en-gb", "--units", "metric", "java", "path"])
     settings.set_language_override(None)
@@ -223,16 +227,19 @@ def test_cli_language_overrides_the_file(monkeypatch, language):
     settings.set_language_override(None)
     cli.main(["java", "path"])                     # without it, the settings file
     assert seen == [("en-US", "imperial"), ("en-GB", "metric"), ("en-US", "metric"), ("en-GB", "metric")]
+    assert written == ["en-US"] * 4
 
 
 def test_cli_language_before_measure(monkeypatch):
     from scrimmage import __main__ as cli
     from scrimmage.measure import cli as measure_cli
     seen = []
-    monkeypatch.setattr(measure_cli, "main", lambda argv: seen.append((argv, i18n.current_language())) or 0)
+    monkeypatch.setattr(measure_cli, "main", lambda argv: seen.append((argv, settings.current_language(),
+                                                                       i18n.current_language())) or 0)
     with pytest.raises(SystemExit):
         cli.main(["--language", "en-GB", "measure", "form", "ball"])
-    assert seen == [(["form", "ball"], "en-GB")]
+    settings.set_language_override(None)
+    assert seen == [(["form", "ball"], "en-GB", "en-US")]       # the setting reached it; it prints American English
 
 
 def test_cli_language_refuses_another_value(capsys):

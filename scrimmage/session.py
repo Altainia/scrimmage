@@ -7,7 +7,9 @@ robot program paused between calls (lockstep, with keep-alives), so callers can 
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import dataclasses
+import functools
 import itertools
 import logging
 import math
@@ -281,7 +283,8 @@ class Session:
                     raise SessionError(f"couldn't start the HALSim server on port {self.port}")
                 raise SessionError(f"the HALSim server didn't start listening on port {self.port} within 10 s")
             if self.picture_sizes:
-                await asyncio.get_running_loop().run_in_executor(self._pool(), self._prepare_pictures)
+                await asyncio.get_running_loop().run_in_executor(self._pool(), contextvars.copy_context().run,
+                                                           self._prepare_pictures)
             if not self.attach:
                 await self._launch()
             await self._wait_ready()
@@ -785,7 +788,7 @@ class Session:
                 return self._renderer.render(view, width=width, height=height, paths=p, camera=camera, data=snap)
             except (RenderUnavailable, ValueError) as e:
                 raise SessionError(str(e)) from None
-        return draw
+        return functools.partial(contextvars.copy_context().run, draw)   # the caller's language guard (MCP's) too
 
     def _prepare_pictures(self) -> None:   # on the render thread
         if self._renderer is None:

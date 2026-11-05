@@ -14,7 +14,7 @@ import mujoco
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from .. import units
+from .. import i18n, units
 from ..render import new_renderer
 from ..i18n import t
 from .report import ESTIMATES, STATUS_COLORS, bench_estimates, status_words
@@ -522,6 +522,7 @@ def write_gif(frames: list[tuple[float, np.ndarray]], path: Path, fps: float = 1
     return path
 
 
+@i18n.for_people()       # pictures are for people: their words in the Language setting (an MCP run's too)
 def write_pictures(result: BenchResult, out_dir: Path) -> list[Path]:
     """path_side.png, path_top.png (when anything moves across y), pass.png and pass.gif. RenderUnavailable when
     there is no GL."""
