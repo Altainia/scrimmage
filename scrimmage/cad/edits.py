@@ -90,9 +90,10 @@ def _clear_joint(imp, name, msgs):
     gone = [w for w, has in (("joint", b.joint), ("motor", b.motor), ("encoder", b.encoder)) if has]
     b.joint = b.motor = b.encoder = None
     if gone:
-        msgs.append(f"{name}'s {' and '.join(gone)} {'was' if len(gone) == 1 else 'were'} dropped")
+        msgs.append(i18n.tn("{name}'s {items} was dropped", "{name}'s {items} were dropped", len(gone), name=name,
+                            items=i18n.t(" and ").join(gone)))
     if drop_couplings(imp, name):
-        msgs.append(f"A coupling that used {name} was dropped, because {name} no longer has a joint")
+        msgs.append(i18n.t("A coupling that used {name} was dropped, because {name} no longer has a joint", name=name))
 
 
 def _check_mounts(imp):
@@ -241,9 +242,10 @@ def _merge_bodies(imp, a):
     gone = [w for w, has in (("joint", ob.joint), ("motor", ob.motor), ("encoder", ob.encoder), ("gyro", ob.gyro),
                              ("mounts", ob.mounts)) if has]
     if gone:
-        msgs.append(f"{other}'s {', '.join(gone)} {'was' if len(gone) == 1 else 'were'} dropped in the merge")
+        msgs.append(i18n.tn("{name}'s {items} was dropped in the merge", "{name}'s {items} were dropped in the merge",
+                            len(gone), name=other, items=", ".join(gone)))
     if any(_mentions(c, other) for c in imp.couplings + imp.loops):
-        msgs.append(f"The couplings and loops that used {other} were dropped")
+        msgs.append(i18n.t("The couplings and loops that used {name} were dropped", name=other))
     del imp.bodies[other]
     _drop_links(imp, other)
     return msgs

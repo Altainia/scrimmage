@@ -173,8 +173,8 @@ def _no_cycles(imp: ImportFile) -> None:
             cur = b[cur].parent
         if cur in path:
             ring = path[path.index(cur):]
-            raise CadError(f"{_and(ring)} hang on each other; give one of them another parent." if len(ring) > 1
-                           else f"{cur} hangs on itself; give it another parent.")
+            raise CadError(t("{bodies} hang on each other; give one of them another parent.", bodies=_and(ring))
+                           if len(ring) > 1 else t("{body} hangs on itself; give it another parent.", body=cur))
 
 
 def _direction(v, what: str) -> np.ndarray:
@@ -182,25 +182,25 @@ def _direction(v, what: str) -> np.ndarray:
     a = np.asarray(v, dtype=float)
     n = float(np.linalg.norm(a)) if a.shape == (3,) and np.all(np.isfinite(a)) else 0.0
     if not n > 1e-12:
-        raise CadError(f"{what} has no direction: set it again.")
+        raise CadError(t("{what} has no direction: set it again.", what=what))
     return a / n
 
 
 def _point(v, what: str) -> np.ndarray:
     a = np.asarray(v, dtype=float)
     if a.shape != (3,) or not np.all(np.isfinite(a)):
-        raise CadError(f"{what} isn't a point (it needs three numbers): set it again.")
+        raise CadError(t("{what} isn't a point (it needs three numbers): set it again.", what=what))
     return a
 
 
 def _check_geometry(imp: ImportFile) -> None:
     for n, b in imp.bodies.items():
         if b.joint is not None:
-            _direction(b.joint.axis, f"{n}'s joint axis")
-            _point(b.joint.anchor, f"{n}'s joint anchor")
+            _direction(b.joint.axis, t("{body}'s joint axis", body=n))
+            _point(b.joint.anchor, t("{body}'s joint anchor", body=n))
         for m in b.mounts:
-            _direction(m.normal, f"{n}'s mount {m.name}")
-            _point(m.point, f"{n}'s mount {m.name}")
+            _direction(m.normal, t("{body}'s mount {mount}", body=n, mount=m.name))
+            _point(m.point, t("{body}'s mount {mount}", body=n, mount=m.name))
 
 
 def _coupling_messages(imp: ImportFile, tree: "_Tree", msgs: list[str]) -> None:
@@ -484,13 +484,14 @@ def _resolve(text: str, import_path: Path) -> Path:
     try:
         text = teamfolders.expand(text)
     except teamfolders.TeamFolderError as e:
-        raise CadError(f"Can't find the folder {text}: {e}.") from None
+        raise CadError(t("Can't find the folder {text}: {error}.", text=text, error=e)) from None
     p = Path(text)
     return p if p.is_absolute() else Path(import_path).parent / p
 
 
 def _check_target(folder: Path, imp: ImportFile) -> None:
-    refuse = CadError(f"{_shown(folder)} already holds a part that didn't come from this import; pick another name")
+    refuse = CadError(t("{shown} already holds a part that didn't come from this import; pick another name",
+                        shown=_shown(folder)))
     if folder.is_file():
         raise refuse
     if not folder.is_dir() or not any(folder.iterdir()):
@@ -594,20 +595,21 @@ def write_parts(result: BuildResult, imp: ImportFile, import_path: Path) -> list
             load_part(tmp)                      # never swap in a folder that doesn't load
         except PartError as e:
             shutil.rmtree(tmp, ignore_errors=True)
-            raise CadError(f"The part {name} came out wrong ({e}); this is a bug in Scrimmage: please report it.") \
+            raise CadError(t("The part {name} came out wrong ({error}); this is a bug in Scrimmage: please report "
+                             "it.", name=name, error=e)) \
                 from None
         except OSError as e:
             shutil.rmtree(tmp, ignore_errors=True)
-            raise CadError(f"Couldn't write the part folder {folder} ({e.strerror or e}): check the folder can be "
-                           "written and try again.") from None
+            raise CadError(t("Couldn't write the part folder {folder} ({value}): check the folder can be written "
+                             "and try again.", folder=folder, value=e.strerror or e)) from None
         edits = folder / "scrimmage-edits.toml"     # the student's own edits (a grip material...): kept, unchecked
         try:                                        # here (a mistake in them shows when the part is loaded)
             if edits.is_file():
                 shutil.copy2(edits, tmp / edits.name)
         except OSError as e:
             shutil.rmtree(tmp, ignore_errors=True)
-            raise CadError(f"Couldn't keep your edits in {edits} ({e.strerror or e}): check the folder can be read "
-                           "and try again.") from None
+            raise CadError(t("Couldn't keep your edits in {edits} ({value}): check the folder can be read and try "
+                             "again.", edits=edits, value=e.strerror or e)) from None
         _install(tmp, folder)
         out.append(folder)
     kept, msgs = _remove_stale(imp, import_path, targets)
@@ -632,7 +634,7 @@ def _install(tmp: Path, folder: Path) -> None:
             raise
     except OSError as e:
         shutil.rmtree(tmp, ignore_errors=True)
-        raise CadError(f"Couldn't replace the part folder {folder} ({e.strerror or e}): close anything using it "
-                       "(Explorer, an editor) and try again.") from None
+        raise CadError(t("Couldn't replace the part folder {folder} ({value}): close anything using it (Explorer, "
+                         "an editor) and try again.", folder=folder, value=e.strerror or e)) from None
     if old is not None:
         shutil.rmtree(old, ignore_errors=True)

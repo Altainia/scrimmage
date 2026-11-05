@@ -5,7 +5,9 @@ files, and only when called), so code that needs just `fit` or `mass` loads with
 `CadError` is the one error type; its message is plain words meant for the student.
 """
 
-MISSING_EXTRA = 'Reading CAD files needs the cad extra: pip install "scrimmage[cad]"'
+from ..i18n import N_
+
+MISSING_EXTRA = N_('Reading CAD files needs the cad extra: pip install "scrimmage[cad]"')   # shown translated()
 
 
 class CadError(ValueError):
