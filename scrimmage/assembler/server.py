@@ -683,6 +683,13 @@ def _plain(v):
     return v.unwrap() if hasattr(v, "unwrap") else v
 
 
+def _sentence(why: str) -> str:
+    """`why` (a reason, in the user's language) as a finished sentence: its first letter capitalized, and closed as
+    the language closes a sentence, unless it is closed already."""
+    why = why[:1].upper() + why[1:]
+    return why if why.endswith((".", "!", "?")) else i18n.t("{sentence}.", sentence=why)
+
+
 def _chassis_root_body() -> str:
     """The stock chassis's root body ("chassis"): an import part attached to it at zero offset sits where the CAD has it."""
     _load_all()
@@ -1961,7 +1968,20 @@ class App:
         return None
 
     def code_set(self, body: dict) -> tuple[int, dict]:
-        """Point the robot at its code: detect the project in `folder` and write [robot_program] (one undo step)."""
+        """Point the robot at its code: detect the project in `folder` and write [robot_program] (one undo step). A
+        refusal's first error carries problem_text: the refusal as a finished sentence, which the page shows as it
+        is."""
+        try:
+            status, out = self._code_set(body)
+        except ApiError as e:
+            e.detail = {**getattr(e, "detail", {}), "problem_text": _sentence(e.message)}
+            raise
+        errors = out.get("errors") or []
+        if not out.get("ok") and errors:
+            errors[0] = {**errors[0], "problem_text": _sentence("; ".join(e["message"] for e in errors))}
+        return status, out
+
+    def _code_set(self, body: dict) -> tuple[int, dict]:
         p = self._user_path(body.get("folder"), "a folder path")
         if not p.is_dir():
             raise ApiError(400, i18n.t("{path} is not a folder", path=self._display(p)))

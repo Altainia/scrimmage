@@ -144,9 +144,9 @@ MOVING_IN_S = 0.5         # ... or sliding faster than this (a slide), our call
 MOVING_SPEED = 0.1        # m/s: the robot going across the floor faster than this was driving at a slip, our call
 COLOR_NAMES = list(NAMED_COLORS)     # a color sensor's signal is its color's index here (palette's sensor_colors)
 
-# The verbs describe() uses, as "-ing" (after "without") and "to ..." (after "waiting for"). These recast the
-# source's American English (TestRun._recast describes in it, i18n.fixed): such a sentence's frame follows the
-# Language setting, the condition inside it stays in English until describe() has whole sentences for each form.
+# The verbs describe() uses, as "-ing" (after "without") and "to ..." (after "waiting for"): _recast's. A run says
+# those forms with describe(form="without"/"waiting"), a whole phrase per form for a translator; _recast stays as
+# the English rule they follow (tests/test_i18n_test_tab.py checks every condition's forms against it).
 _VERBS = {"passes": ("passing", "to pass"), "goes": ("going", "to go"), "tilts": ("tilting", "to tilt"),
           "touches": ("touching", "to touch"), "reaches": ("reaching", "to reach"), "hangs": ("hanging", "to hang"),
           "are": ("being", "to be"), "is": ("being", "to be"), "made": ("having made", "to have made"),
@@ -811,7 +811,7 @@ class TestRun:
                         raise _End("repeat limit", i18n.tn(
                             "repeat ({where}) stopped after {count} time without {what}",
                             "repeat ({where}) stopped after {count} times without {what}",
-                            f.rounds, where=_where(f.trail), what=self._recast(a["until"], 0)))
+                            f.rounds, where=_where(f.trail), what=self._describe(a["until"], "without")))
                 if done:
                     self.frames.pop()
                     parent.index += 1
@@ -955,7 +955,8 @@ class TestRun:
                 return True
             if elapsed >= a.get("timeout", WAIT_TIMEOUT) - EPS:
                 raise _End("timed out", i18n.t("waiting for {what} timed out at {t} s ({where})",
-                                               what=self._recast(a["until"], 1), t=f"{t:.1f}", where=_where(place)))
+                                               what=self._describe(a["until"], "waiting"), t=f"{t:.1f}",
+                                               where=_where(place)))
             return False
         if b.do == "feed_one":
             f, name = self.feeder, a["station"]
@@ -1266,17 +1267,12 @@ class TestRun:
                   for n in recent if n not in joints]
         return i18n.t(" and ").join(words) if words else i18n.t("nothing was moving")
 
-    def _describe(self, cond) -> str:
+    def _describe(self, cond, form: str = "is") -> str:
         """describe() with this run's next bar, the field's piece words, its moving elements' units and the robot's
-        sensors' kinds."""
+        sensors' kinds; `form` as describe()'s."""
         w, sensors = self.watch, getattr(self.world, "sensors", None)
         kinds = {s.name: s.kind for s in sensors.specs} if sensors is not None else None
-        return describe(cond, w.next_bar(), w.kinds, w.piece_names, w.units, kinds)
-
-    def _recast(self, cond, form: int) -> str:
-        """_describe's words with the verb recast (module _recast), in the source's English (see _VERBS)."""
-        with i18n.fixed():
-            return _recast(self._describe(cond), form)
+        return describe(cond, w.next_bar(), w.kinds, w.piece_names, w.units, kinds, form=form)
 
     def _fail(self, check: dict, cond, t: float) -> None:
         check.update(passed=False, t=t, failure=self._failure(cond))
@@ -1297,7 +1293,7 @@ class TestRun:
         if b.do == "wait":
             return i18n.t("waiting {seconds} s", seconds=f"{a['seconds']:g}")
         if b.do == "wait_until":
-            return i18n.t("waiting for {what}", what=self._recast(a["until"], 1))
+            return i18n.t("waiting for {what}", what=self._describe(a["until"], "waiting"))
         if b.do == "move":
             return i18n.t("moving {joint} to {to}", joint=a["joint"], to=_amount(a["to"], a["unit"]))
         if b.do == "feed_one":

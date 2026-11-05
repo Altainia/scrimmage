@@ -20,6 +20,12 @@ import { renderInspector, placeErrors } from "./inspector.js";
 import { units } from "./units.js";
 import { i18n, t, tn } from "./i18n.js";
 import { theme } from "./theme.js";
+import { settings } from "./settings.js";
+
+settings.useWords({      // settings.js's own words, in the Language (it can't import i18n.js)
+  unreachable: () => t("can't reach the editor (is scrimmage edit still running?)"),
+  answered: (status) => t("the server answered {status}", { status }),
+});
 
 // The hash carries the token and the tab: "#token=…" or "#scenario&token=…" ("#robot&token=…", "#drive&token=…").
 const hashParams = () => new URLSearchParams(location.hash.slice(1));

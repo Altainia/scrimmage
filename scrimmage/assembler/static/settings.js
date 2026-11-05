@@ -8,6 +8,14 @@
 
 let warning = null;
 const takers = new Set();
+
+// The words this module says itself, in the Language: i18n.js imports this module, so it can't import i18n.js;
+// app.js hands them over with useWords() (until then, American English).
+let words = {
+  unreachable: () => "can't reach the editor (is scrimmage edit still running?)",
+  answered: (status) => `the server answered ${status}`,
+};
+function useWords(given) { words = { ...words, ...given }; }
 const warners = new Set();
 
 function token() { return new URLSearchParams(location.hash.slice(1)).get("token") || ""; }
@@ -40,7 +48,7 @@ async function request(method, body) {
     try { data = await res.json(); } catch { /* not JSON */ }
     return { status: res.status, data: withCatalog(data || {}) };
   } catch {
-    return { status: 0, data: { error: "can't reach the editor (is scrimmage edit still running?)" } };
+    return { status: 0, data: { error: words.unreachable() } };
   }
 }
 
@@ -83,7 +91,7 @@ export async function save(changes) {
   let res;
   try { res = await request("POST", changes); } finally { saving--; settled = ++sent; }
   const { status, data } = res;
-  if (status !== 200) return data.error || `the server answered ${status}`;
+  if (status !== 200) return data.error || words.answered(status);
   const kept = { ...shown };
   for (const [key, value] of Object.entries(data)) {
     const setting = PART_OF[key] || key;
@@ -118,6 +126,6 @@ export function onWarning(fn) {
 
 export const settings = {
   get warning() { return warning; },
-  load, save, watch, onSettings, onWarning,
+  load, save, watch, onSettings, onWarning, useWords,
 };
 export default settings;

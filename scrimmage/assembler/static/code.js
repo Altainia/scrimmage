@@ -56,7 +56,7 @@ const code = {
   seq: 0,               // the latest load asked (older answers are dropped)
   fix: null,            // GET /api/robot/code/fix, while one is running or after one ran
   results: {},          // check id -> the failed result of its last fix (its message and output stay shown)
-  postError: null,      // why the last folder pick wasn't used
+  postError: null,      // why the last folder pick wasn't used: the server's finished sentence
   view: null, viewVersion: null,   // /api/live/view for the robot document, and the robot version it is for
   shown: false,
   run: null,            // {text, kind, discard?} the last Start and check devices answer
@@ -182,11 +182,11 @@ function render() {
   els.browse.textContent = s.cwd === null ? t("Browse…") : t("Change…");
   els.summary.hidden = !s.info;
   els.summary.replaceChildren(...(s.info ? [h("span", { class: "muted", text: t("Found:") + " " }), h("strong", { text: s.info.summary })] : []));
-  // the panel's own problem comes as a finished sentence (problem_text); a refused folder pick is the refusal's words
+  // the panel's own problem and a refused folder pick both come as finished sentences (problem_text)
   const problem = code.postError || s.problem_text || s.problem;
   els.problem.hidden = !problem;
   els.problem.replaceChildren(...(problem ? [h("strong", { text: (code.postError ? t("Not used.") : t("Can't use the robot code.")) + " " }),
-    h("span", { text: code.postError ? upper(code.postError) + (/[.!?]$/.test(code.postError) ? "" : ".") : problem }),
+    h("span", { text: problem }),
     h("p", { class: "hint", text: t("Pick the folder that holds the robot project: build.gradle for Java, robot.py for Python (RobotPy).") })] : []));
   // 2. the checklist
   renderChecks();
@@ -252,7 +252,6 @@ function renderRun() {
       onclick: () => { code.run = null; renderRun(); runFix("gradle_build"); } }, FIX_LABEL.gradle_build())] : []));
 }
 
-const upper = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
 // -- the device check -------------------------------------------------------------------------------------------
 async function pollDevices() {
@@ -458,7 +457,7 @@ async function useFolder(path) {
     code.results = {};
     els.browseBox.hidden = true;
   } else if (!r.conflict) {
-    code.postError = (r.errors || []).map((e) => e.message).join("; ") || t("that folder couldn't be used");
+    code.postError = (r.errors && r.errors[0] && r.errors[0].problem_text) || t("That folder couldn't be used.");
   }
   await loadState();
 }
