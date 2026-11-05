@@ -110,3 +110,37 @@ Each decision gives the choice, the reason, and what it costs if it is wrong.
   the chosen system's names: in or mm for a length, ft or m for a field length.
 - **U5. Written reports:** `report.md`, bench `summary.txt` and the charts use the setting at the time they're
   written. JSON and CSV stay SI.
+
+## Rulings during the build
+
+Each ruling is recorded in the build ledger with its reason and cost; the user-facing result is
+[docs/settings.md](../../settings.md).
+
+- **Tests:** a conftest fixture points `$SCRIMMAGE_CONFIG` at an empty folder for every test (the product default,
+  Imperial, applies), and `units("metric")` sets a system per test. The new tests are `tests/test_display_units*.py`
+  (`tests/test_units.py` was already the motor units' file).
+- **The settings file:** a missing file is the normal first run and warns nothing; an unreadable file, bad TOML or a
+  bad value warns once each. The menu's choice replaces a `--units` override for the rest of that `scrimmage edit`
+  run.
+- **Reaching other pages:** a 2 s poll of `GET /api/settings`; the page that makes the change applies it at once.
+- **Typing:** a length or field box takes any length unit of the chosen system (`6 in` in a feet box, `50 cm` in a
+  meters box), and refuses the other system's with a plain message. Converted boxes show the parse messages, which
+  name the unit to type, instead of "Enter a number."
+- **U4, a block's `unit`:** an untouched block writes its own number and unit back (byte-identical); a typed value is
+  converted into the block's existing length unit; a new move gets the system's ("in" or "m").
+- **Test-tab signals** keep their fixed wire units (in, psi, deg, N), so `signals.csv` and MCP results don't change;
+  the page converts them for its chart.
+- **Machine text reproduces each area's text from before the setting, byte for byte.** That holds for the Test tab's
+  MCP `test_run` words and a sweep's or spread's `table.csv` (inches and psi, with a drive's distance, a "m" joint and
+  the partner's overlap in meters), written inside `units.machine_text()`. It also holds for scenario `report.json`
+  and the MCP `run_scenario` check messages (meters), and for the MCP bench headlines (m/s, N, m). A robot config's
+  `[partner]` refusal is in meters too. Task 5 checked the Test tab against main on every example test plus eleven
+  cases that reach each unit-bearing line, and `tests/test_units_machine_text.py` pins main's text.
+- **Human files follow the setting when written:** MCP `bench_run` and `bench_compare` write `summary.txt` and their
+  pictures in the room's setting; only the text returned to the agent is fixed.
+- **The Measure tab's new-column defaults:** lb or kg for mass, lbf (`lb`) or N for force.
+- **The field drawing's grid:** every 5 ft, labeled in feet, in Imperial; every 1 m in Metric.
+- **A units change clears the Test tab's undo history** (its steps hold numbers in the old units).
+- **Known gaps, for a later cleanup:** the Test tab's sweep and spread tables show inches whatever the setting (they
+  come from the fixed `table.csv`); the launcher model's own charts and the CLI's printed sweep and compare tables
+  keep their fixed units; a bench sweep's chart axis and the stage's swept-key column show the file's form.

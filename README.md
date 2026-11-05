@@ -291,6 +291,12 @@ refuses (call `stop_session` first), because two robot programs would share Netw
 says which in its `mode` field (`"session"` or `"standalone"`). In a session, the session's speed is used
 (the result's `speed` field) and the scenario's `speed` is ignored. Reports go to `runs/<scenario>-mcp` unless you pass `out_dir`.
 
+**Units.** Tool results are in fixed units whatever the web app's Units setting: numbers are SI (meters, kg, N, m/s)
+unless a key names its unit (`min_in`, `extension_m`), `run_scenario`'s check messages are in meters, the bench
+headlines in m/s, N and meters, and `test_run`'s words in inches and psi (a drive's distance in meters), exactly as
+before the setting existed. Files written for people (`report.md`, a bench run's `summary.txt` and pictures) follow
+the setting ([docs/settings.md](docs/settings.md#what-never-changes-machine-output)).
+
 `scrimmage-mcp` speaks MCP over stdio and has no flags (it doesn't print help). Give agents absolute paths for configs and scenarios: relative ones resolve against the MCP server's working directory.
 
 **Headless rendering.** `MUJOCO_GL` defaults to `egl` on Linux. On a machine without a GPU install Mesa's
@@ -757,6 +763,11 @@ section stay exactly as you wrote them, edits are atomic, and Undo/Redo step thr
 errors, or hand-written MJCF robots, open read-only. See [docs/assembler.md](docs/assembler.md) for the
 walkthrough, shortcuts and troubleshooting. Part folders changing on disk aren't watched: re-open the page or
 make an edit to refresh the library.
+
+**Units.** The page's **Settings** menu picks **Units: Imperial** (the default) or **Metric** for every tab and for the
+command line's printed text; files keep their own units. `scrimmage --units metric <command>` (or `imperial`) uses
+one system for that run only. MCP results, `report.json` and JSON and CSV numbers keep fixed units whatever the
+setting. See [docs/settings.md](docs/settings.md).
 
 **From CAD.** Install the CAD reader with `pip install -e ".[cad]"`, then `scrimmage edit my_robot.step` (or **Import CAD…**
 in the assembler's library) opens the Part tab: it reads a STEP file (or STL/OBJ files), guesses bodies, and lets you set

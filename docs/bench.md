@@ -140,7 +140,9 @@ size = [0.4, 0.4, 0.4]
 duration = 3.0
 ```
 
-It prints, in about three seconds:
+It prints, in about three seconds (in Metric here, as an agent's `bench_run` returns its headlines whatever the
+setting; `scrimmage bench run` and the Bench tab print them in the [Units setting](settings.md), feet per second and
+pounds-force unless you pick Metric):
 
 ```
 5 of 5 left through `shot` at 7.4 m/s ± 0.0, 6° down

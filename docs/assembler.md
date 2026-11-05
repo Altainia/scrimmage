@@ -9,7 +9,7 @@ Open a scenario file with the same command and the page gains a Scenario tab: se
 Contents: [Starting it](#starting-it), [The three columns](#the-three-columns), [Adding parts](#adding-parts),
 [Attaching and moving](#attaching-and-moving-parts), [Parameters and device IDs](#parameters-and-device-ids), [The robot code panel](#the-robot-code-panel),
 [Errors and warnings](#errors-and-warnings), [Undo](#undo), [Read-only cases](#read-only-cases),
-[What it never touches](#what-it-never-touches), [Keyboard shortcuts](#keyboard-shortcuts),
+[What it never touches](#what-it-never-touches), [Units](#units), [Keyboard shortcuts](#keyboard-shortcuts),
 [Troubleshooting](#troubleshooting).
 
 ## Starting it
@@ -154,6 +154,13 @@ above its `[[part]]` (a comment separated from it by a blank line, such as a sec
 comments above the next part stay with that part. Writes are atomic (a temporary file, then a rename), and the assembler refuses to write over a file that
 changed since it last read it. It never reads or writes anything outside the config and the part folders in the
 library.
+
+## Units
+
+**Settings** in the top bar has **Units: Imperial | Metric** (Imperial is the default). Every tab shows and takes
+lengths, speeds, masses, forces and pressures in the chosen units, and a box takes a unit typed after the number
+(`4 in`, `100 mm`). Your files keep their own units whatever you pick. See [Settings](settings.md) for the table,
+typing, files, the command line's `--units` and what stays fixed.
 
 ## Keyboard shortcuts
 

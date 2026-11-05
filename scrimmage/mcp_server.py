@@ -48,6 +48,11 @@ Block tests (test_run, test_sweep, test_spread) try a mechanism on a robot with 
 (<name>.test.toml) with your own file tools, then test_run it. test_sweep tries one number in the test or the robot at
 several values; test_spread tries the floor ball at each placement of the test's floor spread. Pass absolute paths.
 Each run is kept next to the test file, where the app's Test tab can replay it.
+
+Results are in fixed units whatever the web app's Units setting (Imperial or Metric): numbers are SI unless a key
+names its unit (min_in, extension_m); run_scenario's messages are in meters, the bench headlines in m/s, N and m,
+and test_run's words in inches and psi (a drive's distance in meters). Files written for people (report.md, summary.txt, pictures) follow the
+setting.
 """
 
 

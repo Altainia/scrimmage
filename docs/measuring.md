@@ -318,8 +318,8 @@ so the [launcher model](launcher.md) matches your filmed shots.
 
 1. Tape two **vertical** marks on a board a few inches behind the ball's path, the first near the exit. Measure the
    distance between them, across (not along a slope).
-2. Space them so the ball takes **20 or more frames** to cross: for a shot about 9 m/s across, about 30 in at 240
-   fps. A phone's 960 fps mode with marks 24 in apart gives far more.
+2. Space them so the ball takes **20 or more frames** to cross: for a shot about 30 ft/s (9 m/s) across, about 30
+   in at 240 fps. A phone's 960 fps mode with marks 24 in apart gives far more.
 3. Set the phone to its highest frame rate, square-on to the board, at least **10 times as far in front of the path
    as the board is behind it** (so the ball, nearer the camera than the marks, isn't read early or late against
    them).
@@ -355,8 +355,8 @@ shot: fits the ball's stiffness to your shots (the wheel friction held at 0.95)
 ```
 
 **A good launcher fit needs a fast camera or marks far apart.** A shot read off video is no better than one frame in
-the frames counted: 16 frames reads the speed to about 6%, and that blurs the fit. At 240 fps a 9 m/s shot needs the
-marks about 30 in apart; 960 fps does better with less room. [How the launcher fit works](#how-the-launcher-fit-works)
+the frames counted: 16 frames reads the speed to about 6%, and that blurs the fit. At 240 fps a 30 ft/s (9 m/s) shot needs
+the marks about 30 in apart; 960 fps does better with less room. [How the launcher fit works](#how-the-launcher-fit-works)
 says what else makes a fit good or not.
 
 **Feeds** a launcher setup's `[ball] measured` (when it fit the stiffness) or `[wheels] measured` (when it fit the
@@ -514,7 +514,8 @@ fits your shots".
 ```
 
 **Shots near the model's stiffness peak may stay not good.** In the model the exit speed rises with the ball's
-stiffness only up to a point (for `hooded.toml` at 80 rps, about 180 to 240 N), then falls slowly. Near there the
+stiffness only up to a point (for `hooded.toml` at 80 rps, about 40 to 54 lbf, or 180
+to 240 N), then falls slowly. Near there the
 speed hardly changes with stiffness, so a higher wheel speed may not help; measure the squeeze instead.
 
 Shots all at one wheel speed still fit, with a warning: "shots at two or more wheel speeds check the fit".

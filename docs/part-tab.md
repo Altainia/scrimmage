@@ -227,7 +227,7 @@ in the library and can be added like any other part. For a part made from a CAD 
   the chassis for the base, or a body of another part from the same import for an arm on a base. The Inspector says
   "Placed where the CAD has it". If you move it, it says "Moved from where the CAD has it", and **Reset to CAD** puts
   it back.
-- **CG:** the bottom bar shows the robot's whole center of gravity ("CG: 0.31 m up, 0.02 m forward"), and the **CG**
+- **CG:** the bottom bar shows the robot's whole center of gravity ("CG: 12.2 in up, 0.8 in forward", in the [Units setting](settings.md)), and the **CG**
   button over the 3D view shows it as an orange ball with a line down to the floor.
 
 ## Testing the part
