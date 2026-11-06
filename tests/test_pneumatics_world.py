@@ -384,3 +384,17 @@ def test_get_state_has_the_air_only_with_cylinders(tmp_path):
     air = asyncio.run(state(with_cyl))["pneumatics"]
     assert air == {"stored_psi": pytest.approx(120, abs=0.01), "working_psi": pytest.approx(60, abs=0.01),
                    "compressor_on": False, "cylinders": {"cyl": {"extension_m": pytest.approx(0, abs=0.001)}}}
+
+
+@pytest.mark.parametrize("typ, dev", [("CTREPCM", "0"), ("ScrimmagePH", "1")])
+def test_compressor_runs_on_a_module_with_no_valves_bound(typ, dev):
+    """A real module's closed loop runs its compressor on the pressure switch whether or not a valve is wired to it:
+    with no valve bound, the module the robot program made (a Compressor object alone) runs it and gets its inputs."""
+    w = World(robot(pneumatics={"start_psi": 90}), ROOT)
+    run(w, hal(), 0.01)
+    assert not w.pneumatics.system.compressor_on        # no module made: nothing runs it
+    h = hal((typ, dev, {"<closed_loop": True}))
+    run(w, h, 0.01)
+    assert w.pneumatics.system.compressor_on
+    ups = [data for t, d, data in w.sensor_updates(h) if (t, d) == (typ, dev)]
+    assert len(ups) == 1 and ups[0][">pressure_switch"] is True

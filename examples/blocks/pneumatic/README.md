@@ -84,7 +84,7 @@ pressure is 70 psi.
 
 The first try had a 2 in. bore. It lifts the arm easily, but each cycle takes about 4 L of air: `scrimmage air` said 1
 cycle from the tanks and 4 in a whole match. In the test the arm got up twice, and the tanks fell to 60 psi at 2.0 s.
-A 1-1/16 in. bore (the stock cylinder's) did better: `scrimmage air` said 4 cycles from the tanks, and the test got
+A 1-1/16 in. bore (the stock cylinder's) did better: `scrimmage air` says 3 full cycles from the tanks, and the test got
 the arm up 8 times before the tanks fell to 60 psi at 2.7 s.
 
 A 3/4 in. bore still pushes about 118 N at 60 psi, plenty for a 2 kg arm, and uses about 0.6 L a cycle. Pick the

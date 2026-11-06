@@ -61,3 +61,14 @@ def test_air_cli_no_cylinders(tmp_path, capsys):
 
 def test_format_budget_ends_with_note():
     assert format_budget(budget(AirConfig(), [CYL])).endswith("see docs/pneumatics.md.")
+
+
+def test_cycles_are_whole_cycles_rounded_down():
+    """4.8 cycles is 4 that reach the working pressure, not 5: the budget never promises a cycle the air can't pay."""
+    from scrimmage.pneumatics.budget import full_cycles
+    assert [full_cycles(x) for x in (4.8, 4.0, 3.9999999999, 0.4, math.inf)] == ["4", "4", "4", "0", "unlimited"]
+    cfg = AirConfig()
+    b = budget(cfg, [CYL])
+    out = format_budget(b)
+    assert f"Cycles from the tanks alone: {math.floor(b.cycles_no_compressor)}\n" in out
+    assert f"Cycles per match, tanks and compressor: {math.floor(b.cycles_per_match)}\n" in out

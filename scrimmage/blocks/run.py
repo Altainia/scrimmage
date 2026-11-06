@@ -117,7 +117,7 @@ import numpy as np
 
 from .. import i18n, units
 from ..climb.run import SETTLE_S, WalkOff
-from ..hal_drive import MotorDrive, driven_joints, position_volts
+from ..hal_drive import driven_joints, joint_drives, position_volts
 from ..movers import mover_poses, movers
 from ..parts.partner import SIGNALS as PARTNER_SIGNALS, PartnerOverlap
 from ..protocol import HalState
@@ -576,10 +576,7 @@ class TestRun:
         self.world, self.program = world, program
         m = world.model
         self.motors = driven_joints(world)
-        # every motor on each joint (a slot of several motors, a lead and its followers, shares one joint), each
-        # written as robot code writes it, through its own binding
-        self._drive = {n: [MotorDrive(mb) for mb in world.motors if mb.qadr == b.qadr]
-                       for n, b in self.motors.items()}
+        self._drive = joint_drives(world, self.motors)     # every motor on each joint
         pal = palette(world, list(program.hooks), program.setup)
         kinds = {j["name"]: j["kind"] for j in pal["joints"]}
         self.drivetrain = drivetrain(world, self.motors)

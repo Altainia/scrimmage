@@ -59,15 +59,21 @@ def budget(config: AirConfig, cylinders: list[CylinderSpec], match_s: float = 15
                   (stored + compressor) / total if total else math.inf, config, match_s)
 
 
+def full_cycles(cycles: float) -> str:
+    """Whole cycles that each reach the working pressure: 4.8 is 4 (a fifth extend would start below it and push
+    weaker), not 5 as rounding would say. A hair under a whole number (float error) counts as it."""
+    return "unlimited" if math.isinf(cycles) else f"{math.floor(cycles + 1e-9):d}"
+
+
 def format_budget(b: Budget) -> str:
     c = b.config
     lines = [f"Working pressure {c.working_psi:g} psi; the switch stops the compressor at {c.switch_off_psi:g} psi.",
              "Free air for one cycle (extend and retract):"]
     lines += [f"  {name}: {liters:.3f} L" for name, liters in b.per_cycle_l.items()]
     lines += [f"Stored air above the working pressure: {b.stored_l:.2f} L",
-              f"Cycles from the tanks alone: {b.cycles_no_compressor:.0f}",
+              f"Cycles from the tanks alone: {full_cycles(b.cycles_no_compressor)}",
               f"Compressor air in a {b.match_s:g} s match: {b.compressor_l_per_match:.1f} L"
               + (" (no compressor)" if c.compressor == "none" else ""),
-              f"Cycles per match, tanks and compressor: {b.cycles_per_match:.0f}",
+              f"Cycles per match, tanks and compressor: {full_cycles(b.cycles_per_match)}",
               budget_line()]
     return "\n".join(lines)

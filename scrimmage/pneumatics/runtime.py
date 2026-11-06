@@ -17,8 +17,9 @@ Every step, before mj_step:
   - the AirSystem steps and each force (N, positive extends) goes to data.ctrl. MuJoCo keeps ctrl, so it is written
     every step.
 
-The compressor runs (in the model) when the robot is enabled and the closed loop of any module a valve names is on,
-or always_closed_loop is set (the Test tab's runs). Its current joins the bus voltage solve as a constant load.
+The compressor runs (in the model) when the robot is enabled and the closed loop of any module a valve names is on
+(with no valve naming one, any module the robot program made), or always_closed_loop is set (the Test tab's runs).
+Its current joins the bus voltage solve as a constant load.
 """
 from __future__ import annotations
 
@@ -62,6 +63,10 @@ class PneumaticsRuntime:
         # and they get its inputs.
         self._pcms = sorted({v["id"] for v in self._valves.values() if v["module"] == "PCM"})
         self._hubs = sorted({v["id"] for v in self._valves.values() if v["module"] == "PH"})
+        # With no valve naming a module, the compressor is on whichever module the robot program makes (a
+        # Compressor object alone makes one): a real module's closed loop runs its compressor on the pressure switch
+        # whether or not any valve is wired to it. Found in the HAL every step (modules_in).
+        self._named = bool(self._pcms or self._hubs)
         self._overrides: dict[str, str] = {}
         self._warned: set[str] = set()
 
@@ -114,9 +119,18 @@ class PneumaticsRuntime:
         rate = float(d.ten_J[adr:adr + nnz] @ d.qvel[m.ten_J_colind[adr:adr + nnz]])
         return float(d.ten_length[tid]) + m.opt.timestep * rate
 
+    def modules_in(self, hal: HalState) -> None:
+        """With no valve naming a module, the CTRE PCMs and REV Pneumatic Hubs the robot program has made become the
+        modules whose closed loop runs the compressor and that get its inputs."""
+        if self._named:
+            return
+        self._pcms = sorted(int(dev) for typ, dev in hal.devices if typ == "CTREPCM" and dev.isdigit())
+        self._hubs = sorted(int(dev) for typ, dev in hal.devices if typ == PH_TYPE and dev.isdigit())
+
     def before_physics(self, hal: HalState, enabled: bool, dt: float) -> None:
         for name in self.names:
             self.system.set_valve(name, self._overrides.get(name) or self._valve_state(name, hal, enabled))
+        self.modules_in(hal)
         closed_loop = (self.always_closed_loop
                        or any(hal.get("CTREPCM", str(n), "<closed_loop", False) for n in self._pcms)
                        or any(hal.get(PH_TYPE, str(n), "<closed_loop", False) for n in self._hubs))
