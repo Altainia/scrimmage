@@ -378,6 +378,7 @@ def test_the_frc_driver_station_choice_turns_the_page_controls_off(drive_page):
     assert page.input_value("#drive-ds-source") == "real"   # the student's pick stays for the next Start
 
 
+@pytest.mark.usefixtures("ds_ports")
 def test_the_bar_follows_the_frc_driver_station(drive_page, tmp_path):
     """A real RobotPy program with the DS socket and tests/fake_ds.py as the FRC Driver Station app: the choice starts
     from the config's [driver_station] real, and the read-only bar goes from waiting to teleop enabled at red2."""

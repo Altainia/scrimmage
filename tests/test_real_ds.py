@@ -140,7 +140,9 @@ def test_real_ds_none_takes_the_configs_default(tmp_path):
 
 # ------------------------------------------------------------------------------------------------------ the ports
 # These bind UDP 1110 and TCP 1740 on the whole machine (the DS protocol's fixed ports), as a real-DS robot program
-# does: run the real-DS tests serially, or one test's port takes another's.
+# does: run the real-DS tests serially, or one test's port takes another's. A test that needs them free skips when
+# they are taken (the ds_ports fixture), rather than failing.
+@pytest.mark.usefixtures("ds_ports")
 @pytest.mark.parametrize("kind,port", [(socket.SOCK_DGRAM, 1110), (socket.SOCK_STREAM, 1740)])
 def test_a_port_in_use_stops_the_start_before_the_robot_launches(tmp_path, kind, port):
     held = socket.socket(socket.AF_INET, kind)
@@ -163,12 +165,17 @@ def test_a_port_in_use_stops_the_start_before_the_robot_launches(tmp_path, kind,
 
 
 # ------------------------------------------------------------------------------------------------------ a session
-def test_a_real_ds_session_steps_back_and_refuses_ds_changes(tmp_path):
+@pytest.mark.usefixtures("ds_ports")
+def test_a_real_ds_session_steps_back_and_refuses_ds_changes(tmp_path, monkeypatch):
     """The fake robot loads the lockstep extension but no DS socket: the session releases lockstep at once, sends
     no DS frames, runs between calls, waits for a DS, refuses the DS's controls, and after the start timeout says the
     robot isn't listening."""
     log = tmp_path / "run.csv"
-    cfg = fake_config(tmp_path, start_timeout=1)
+    cfg = fake_config(tmp_path)
+    # the not-listening check waits the start timeout after the connection; 1 s here, without making the start
+    # timeout itself 1 s (a slow runner's robot program can take longer than that to connect)
+    watch = Session._watch_ds_socket
+    monkeypatch.setattr(Session, "_watch_ds_socket", lambda self, timeout: watch(self, 1.0))
 
     async def main():
         s = Session(cfg, real_ds=True, nt=False, log_path=log)
@@ -252,6 +259,7 @@ def test_a_scenario_ignores_the_configs_real_ds_with_a_note(tmp_path):
     assert note in rep.notes and rep.lockstep is True
 
 
+@pytest.mark.usefixtures("ds_ports")
 def test_a_scenario_refuses_an_open_real_ds_session(tmp_path):
     cfg = fake_config(tmp_path)
     sc = load_scenario(scenario(tmp_path, cfg))
@@ -308,6 +316,7 @@ def test_serve_without_launch_says_what_to_add_and_waits_for_the_ds(tmp_path):
     assert REAL_DS_HAND_START in text and REAL_DS_WAITING in text, text
 
 
+@pytest.mark.usefixtures("ds_ports")
 def test_serve_launch_tells_the_robot_to_listen_and_checks_it_does(tmp_path):
     """The fake robot has no DS socket: after the start timeout, serve says what the robot program needs."""
     text = serve_until([fake_config(tmp_path, start_timeout=1), "--real-ds", "--launch", "--port", free_port()],
@@ -317,6 +326,7 @@ def test_serve_launch_tells_the_robot_to_listen_and_checks_it_does(tmp_path):
     assert REAL_DS_HAND_START not in text   # the lines to add are for serve without --launch
 
 
+@pytest.mark.usefixtures("ds_ports")
 def test_serve_launch_refuses_a_taken_ds_port(tmp_path, capsys):
     from scrimmage.__main__ import main
     held = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -364,6 +374,7 @@ def test_serve_logs_it_when_following_the_real_ds_fails(caplog):
 
 
 # ------------------------------------------------------------------------------------------------------ MCP
+@pytest.mark.usefixtures("ds_ports")
 def test_mcp_passes_the_switch_and_the_refusals_on(tmp_path, monkeypatch):
     pytest.importorskip("mcp")
     from mcp import Client

@@ -584,27 +584,31 @@ def test_the_game_data_box_is_sent_on_a_teleop_enable(running):
     while enabled in Auto, it waits for Teleop."""
     mgr, _, _ = running
     ds = mgr._session.bridge.ds
-    mgr.command({"cmd": "mode", "mode": "teleop"})
-    mgr.command({"cmd": "match", "game_data": "R"})
-    wait_for(lambda: mgr.status()["match"]["game_data"] == "R", 5, "the box")
-    assert ds.game_data == ""   # disabled: the box waits
-    mgr.command({"cmd": "enable"})
-    wait_for(lambda: ds.game_data == "R", 5, "R on the enable")
-    mgr.command({"cmd": "match", "game_data": "B"})
-    wait_for(lambda: ds.game_data == "B", 5, "B at once")
-    mgr.command({"cmd": "mode", "mode": "auto"})
-    mgr.command({"cmd": "match", "game_data": "R"})
-    wait_for(lambda: mgr.status()["match"]["game_data"] == "R" and mgr.status()["mode"] == "auto", 5, "auto")
-    time.sleep(0.3)
-    assert ds.game_data == "B"   # enabled in Auto: the change waits for Teleop
-    mgr.command({"cmd": "mode", "mode": "teleop"})
-    wait_for(lambda: ds.game_data == "R", 5, "R in Teleop")
-    # clean up while enabled in Teleop, so the robot's game data clears too (a box cleared while disabled would leave
-    # the robot with "R" for the later tests on this shared session)
-    mgr.command({"cmd": "match", "game_data": ""})
-    wait_for(lambda: mgr.status()["match"]["game_data"] == "" and ds.game_data == "", 5, "the game data cleared")
-    mgr.command({"cmd": "disable"})
-    wait_for(lambda: not mgr.status()["enabled"], 5, "disabled")
+    try:
+        mgr.command({"cmd": "mode", "mode": "teleop"})
+        mgr.command({"cmd": "match", "game_data": "R"})
+        wait_for(lambda: mgr.status()["match"]["game_data"] == "R", 5, "the box")
+        assert ds.game_data == ""   # disabled: the box waits
+        mgr.command({"cmd": "enable"})
+        wait_for(lambda: ds.game_data == "R", 5, "R on the enable")
+        mgr.command({"cmd": "match", "game_data": "B"})
+        wait_for(lambda: ds.game_data == "B", 5, "B at once")
+        mgr.command({"cmd": "mode", "mode": "auto"})
+        mgr.command({"cmd": "match", "game_data": "R"})
+        wait_for(lambda: mgr.status()["match"]["game_data"] == "R" and mgr.status()["mode"] == "auto", 5, "auto")
+        time.sleep(0.3)
+        assert ds.game_data == "B"   # enabled in Auto: the change waits for Teleop
+        mgr.command({"cmd": "mode", "mode": "teleop"})
+        wait_for(lambda: ds.game_data == "R", 5, "R in Teleop")
+    finally:
+        # clean up while enabled in Teleop, so the robot's game data clears too (a box cleared while disabled would
+        # leave the robot with "R" for the later tests on this shared session), even when a check above failed
+        mgr.command({"cmd": "mode", "mode": "teleop"})
+        mgr.command({"cmd": "enable"})
+        mgr.command({"cmd": "match", "game_data": ""})
+        wait_for(lambda: mgr.status()["match"]["game_data"] == "" and ds.game_data == "", 5, "the game data cleared")
+        mgr.command({"cmd": "disable"})
+        wait_for(lambda: not mgr.status()["enabled"], 5, "disabled")
 
 
 def test_the_match_command_sets_the_station_fms_and_timer(running):
@@ -665,6 +669,7 @@ def test_a_restart_keeps_the_match_settings_and_the_game_data(tmp_path, monkeypa
 
 # ---- the FRC Driver Station app drives (sub-project 28) -------------------------------------------------------
 
+@pytest.mark.usefixtures("ds_ports")
 def test_a_real_ds_session_refuses_the_ds_commands_and_shows_the_ds(tmp_path, monkeypatch):
     """With real_ds the page can't drive: mode, enable, disable, match, the joystick feed, pause, step and record are
     refused with the reason; the state says the real DS drives, waiting for it (the fake robot has no DS socket),
@@ -701,6 +706,7 @@ def test_a_real_ds_session_refuses_the_ds_commands_and_shows_the_ds(tmp_path, mo
     assert mgr.status()["real_ds"] is True   # the last session's, until the next Start
 
 
+@pytest.mark.usefixtures("ds_ports")
 def test_the_real_ds_choice_starts_from_the_config(tmp_path, monkeypatch):
     """real_ds=None takes the config's [driver_station] real; True or False overrides it (D3)."""
     monkeypatch.setattr(session_mod, "NT_CONNECT_TIMEOUT", 0.5)

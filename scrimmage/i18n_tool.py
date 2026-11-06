@@ -84,7 +84,7 @@ def _python_calls(text: str):
     """(line, "t" | "tn", [literal args], context, error) for each i18n call in a Python module."""
     tree = ast.parse(text)
     funcs: dict[str, str] = {}      # local name -> t | tn
-    modules: set[str] = set()       # local names of the i18n module
+    modules: set[str] = set()       # local (dotted) names of the i18n module: i18n, loc, scrimmage.i18n
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
             if (node.module or "").split(".")[-1] == "i18n":
@@ -92,7 +92,7 @@ def _python_calls(text: str):
             else:
                 modules.update(a.asname or a.name for a in node.names if a.name == "i18n")
         elif isinstance(node, ast.Import):
-            modules.update(a.asname for a in node.names if a.asname and a.name.split(".")[-1] == "i18n")
+            modules.update(a.asname or a.name for a in node.names if a.name.split(".")[-1] == "i18n")
     calls = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -100,8 +100,7 @@ def _python_calls(text: str):
         f = node.func
         if isinstance(f, ast.Name) and f.id in funcs:
             kind = funcs[f.id]
-        elif (isinstance(f, ast.Attribute) and f.attr in ("t", "tn", "N_") and isinstance(f.value, ast.Name)
-              and f.value.id in modules):
+        elif isinstance(f, ast.Attribute) and f.attr in ("t", "tn", "N_") and _dotted(f.value) in modules:
             kind = f.attr
         else:
             continue
@@ -125,6 +124,16 @@ def _python_calls(text: str):
                     error = error or f"a context of {ast.unparse(kw.value)}"
         calls.append((node.lineno, kind, args, context, error))
     return sorted(calls, key=lambda c: c[0])
+
+
+def _dotted(node: ast.expr) -> str | None:
+    """"scrimmage.i18n" for the expression scrimmage.i18n (a name or a chain of attributes), else None."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        base = _dotted(node.value)
+        return None if base is None else f"{base}.{node.attr}"
+    return None
 
 
 HTML_ATTRS = ("data-i18n", "data-i18n-title", "data-i18n-placeholder", "data-i18n-aria-label")

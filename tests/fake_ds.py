@@ -19,6 +19,7 @@ It follows allwpilib simulation/halsim_ds_socket DSCommPacket.cpp (2026 branch):
 
 from __future__ import annotations
 
+import os
 import socket
 import struct
 import threading
@@ -30,6 +31,26 @@ MODE_BITS = {"teleop": 0x00, "test": 0x01, "auto": 0x02}
 ENABLED, FMS, ESTOP = 0x04, 0x08, 0x80
 STATIONS = ("red1", "red2", "red3", "blue1", "blue2", "blue3")
 JOYSTICK_TAG, GAME_DATA_TAG = 0x0C, 0x0E
+
+
+def skip_if_ds_ports_taken() -> None:
+    """Skip the test when this computer's Driver Station ports are already taken. A real-DS robot program binds UDP
+    1110 and TCP 1740 for the whole machine, and the fake DS binds UDP 1150, so another test run (or a robot program)
+    holding one isn't this test failing."""
+    import pytest
+    from scrimmage.session import ds_ports_problem
+    problem = ds_ports_problem()
+    if problem is None:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            try:
+                sock.bind(("0.0.0.0", UDP_DS))
+            except OSError:
+                problem = f"UDP port {UDP_DS} is already in use"
+    if problem:
+        msg = f"the Driver Station ports are taken on this computer (another test run?): {problem}"
+        if os.environ.get("CI"):   # on CI a held port would skip every real-DS test and still show green
+            pytest.fail(msg)
+        pytest.skip(msg)
 
 
 def _axis(v: float) -> int:

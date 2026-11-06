@@ -648,6 +648,7 @@ def _live_real_ds(page) -> bool:
     }""")
 
 
+@pytest.mark.usefixtures("ds_ports")
 def test_check_devices_takes_the_drive_tabs_driver_station_choice(code_page, tmp_path):
     """Start and check devices starts the session the Drive tab would: the config's [driver_station] real until the
     student picks in the Drive tab, then the pick."""

@@ -175,9 +175,17 @@ def test_the_scenario_passes_with_rev_available(main_run):
 
 def test_robot_clock_matches_scrimmage_time(main_run):
     """The lockstep extension restarts the robot's clock when it loads, so a RobotPy robot's FPGA time is scrimmage's
-    time (RobotPy loads extensions after importing robot.py, which used to leave its clock ~0.13 s ahead)."""
-    assert main_run.prints
-    assert all(abs(p["logged"] - p["t"]) < 1e-3 for p in main_run.prints), [(p["logged"], p["t"]) for p in main_run.prints[:5]]
+    time (RobotPy loads extensions after importing robot.py, which used to leave its clock ~0.13 s ahead).
+
+    Loop n of a 20 ms TimedRobot runs at scrimmage's 0.02 n when the two clocks agree. "logged" is when scrimmage read
+    the line from the robot's pipe: never before the robot printed it, but a slow runner can make it a step late (CI
+    logged loop 85's t=1.7 at 1.705; under load locally, 5 ms each time), so it is checked within 0.05 s: a robot
+    clock running behind scrimmage's is caught too, without the pipe's timing."""
+    prints = main_run.prints
+    assert len(prints) > 10
+    assert all(p["t"] == pytest.approx(0.02 * p["loop"], abs=1e-4) for p in prints), [(p["loop"], p["t"]) for p in prints]
+    assert all(-1e-3 <= p["logged"] - p["t"] < 0.05 for p in prints), \
+        [(p["logged"], p["t"]) for p in prints if not -1e-3 <= p["logged"] - p["t"] < 0.05]
 
 
 def test_disabled_robot_outputs_nothing_with_a_duty_cycle_held(main_run):

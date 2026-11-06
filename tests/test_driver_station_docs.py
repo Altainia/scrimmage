@@ -77,9 +77,12 @@ def test_the_config_switch_is_documented_and_parses(tmp_path):
 def test_every_port_is_documented():
     assert (DS_UDP_PORT, DS_TCP_PORT) == (UDP_ROBOT, TCP_ROBOT)
     doc = text()
-    for name, port in (("UDP", UDP_ROBOT), ("UDP", UDP_DS), ("TCP", TCP_ROBOT)):
-        assert f"| {name} {port} |" in doc, port   # the firewall table
-        assert doc.count(f"{name} {port}") >= 2, port
+    table = {m[0]: m[1] for m in re.findall(r"^\| ((?:UDP|TCP) \d+) \| ([^|]+?) \|", doc, re.M)}
+    assert table == {f"UDP {UDP_ROBOT}": "Driver Station to robot", f"UDP {UDP_DS}": "robot to Driver Station",
+                     f"TCP {TCP_ROBOT}": "Driver Station to robot (the app connects)"}   # the firewall table
+    rule = flat(doc).split("The simulation computer must accept ", 1)[1].split(".", 1)[0]
+    assert rule == f"UDP {UDP_ROBOT} and TCP {TCP_ROBOT}, and the Driver Station laptop must accept UDP {UDP_DS}"
+    assert f"sudo ufw allow {UDP_ROBOT}/udp" in doc and f"sudo ufw allow {TCP_ROBOT}/tcp" in doc
 
 
 def test_the_refusal_and_waiting_texts_are_the_codes():
