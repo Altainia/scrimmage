@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "BSD-3-Clause" }
 # tomlkit: assembler/tomlutil.py uses private Container APIs (_insert_after, _insert_at, _raw_append, _map), so the range is the tested one
-dependencies = ["mujoco>=3.4", "websockets>=12", "numpy", "pillow", "tomlkit>=0.13,<0.16"]
+dependencies = ["mujoco>=3.4,<4", "websockets>=12", "numpy", "pillow", "tomlkit>=0.13,<0.16"]
 
 [project.optional-dependencies]
 # ground-truth pose to NetworkTables/AdvantageScope, the RobotPy example, and the test suite
