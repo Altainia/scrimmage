@@ -2473,3 +2473,25 @@ def test_block_settings_offer_each_blocks_own_keys(test_page):
     })()""")
     assert keys == {"drive/distance": [["volts", "4"], ["timeout", "10"]], "drive/seconds": [["volts", "4"]],
                     "repeat_until": [["max", "20"]]}
+
+
+def test_block_settings_defaults_come_from_the_runs_constants(test_page):
+    """Block settings…'s placeholders and limits are program.py's, sent in the state (they can't drift from a run);
+    a turn's volts are a size, 0 up."""
+    from scrimmage.blocks import program as pg
+    page, _ = test_page()
+    assert page.evaluate("__scrimmageTest.state.block_defaults") == pg.block_defaults()
+    out = page.evaluate("""(() => {
+      const b = __scrimmageTest.workspace.newBlock('turn');
+      __scrimmageTest.openSettings(b.id);
+      const v = document.querySelector('#test-settings-0');
+      v.value = '-3';
+      document.querySelector('#test-settings-go').click();
+      const r = [v.placeholder, document.querySelector('#test-settings-1').placeholder,
+                 document.querySelector('#test-settings-errors').innerText];
+      document.querySelector('#test-settings-dialog').close();
+      b.dispose();
+      return r;
+    })()""")
+    assert out[:2] == [f"{pg.DRIVE_VOLTS:g}", f"{pg.DRIVE_TIMEOUT:g}"]
+    assert "Turn at up to: type a number from 0 to 12" in out[2]

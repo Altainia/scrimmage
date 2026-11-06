@@ -125,7 +125,7 @@ its own Python and needs no sudo). Options, roughly from
     and 0.05 s at 66.7 rps: the slower wheel recovers a little slower, not 20 times. The recovery is measured back to
     within 2% of the speed the shaft had when the piece touched (not of the target), so the P-only loop's steady
     error doesn't count. Today's bench doesn't give the 1.93 s again (the bench changed since 2026-10-31; which change
-moved it wasn't traced). The original note: **A bench
+    moved it wasn't traced). The original note: **A bench
     recovery time that may be wrong.** `examples/bench/hooded.toml` at 33.3 rps reports "the `shooter`
     shaft drops 6% and recovers in 1.93 s", against 0.10 s at 66.7 rps. A slower wheel has more motor headroom, so a
     20 times slower recovery is suspicious: check the controller (P only, `kP = 0.2`) and the 2% recovery tolerance

@@ -1024,15 +1024,17 @@ def _run(args, ap) -> int:
         try:
             code = _run_one(args, ap, path, out, several=True)
         except _CantRun as e:
-            print(f"scrimmage: {path}: {e}", file=sys.stderr)
+            print(i18n.t("scrimmage: {path}: {problem}", path=path, problem=e), file=sys.stderr)
             code = 2
         codes.append(code)
         print()
-    words = {0: "PASS ", 1: "FAIL ", 2: "ERROR"}
+    # the CLI prints American English (the en-US guard); the words are wrapped like any other
+    words = {0: "PASS ", 1: "FAIL ", 2: "ERROR"}     # as each report's own summary line starts
     passed = codes.count(0)
-    print(f"{passed} of {len(codes)} scenarios passed")
+    print(i18n.tn("{passed} of {count} scenario passed", "{passed} of {count} scenarios passed", len(codes),
+                  passed=passed))
     for path, code in zip(args.scenario, codes):
-        print(f"  {words.get(code, 'ERROR')}  {path}")
+        print(i18n.t("  {result}  {path}", result=words.get(code, "ERROR"), path=path))
     return max(codes)
 
 

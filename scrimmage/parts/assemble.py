@@ -16,7 +16,8 @@ from ..i18n import t
 from .field import add_field
 from .ids import slot_bindings
 from ..teamfolders import TeamFolderError, expand
-from .model import Body, Geom, Part, PartError, Where, load_part, model_timestep, quat_from_rpy, tread_name
+from .model import (VALVE_SLOT, Body, Geom, Noted, Part, PartError, Where, load_part, model_timestep, quat_from_rpy,
+                    tread_name)
 from ..pneumatics.model import ATM, MAX_WORKING_PSI, PSI, CylinderSpec
 
 if TYPE_CHECKING:
@@ -624,8 +625,46 @@ def assemble(cfg: dict, cfg_dir: Path) -> Built:
         built.warnings.extend(x for x in w if not any(f"{p}.{f.removeprefix('ids:')}" in left_out
                                                       for p, f in getattr(x, "fields", ())))
         built.warnings.extend(f"{inst.name}: {n}" for n in inst.part.warnings)
+    built.warnings.extend(not_modeled_mistakes(cfg, insts, built.bindings))
     _one_module_kind(built.bindings["valve"])
     return built
+
+
+def not_modeled_mistakes(cfg: dict, insts, bindings: dict) -> list[str]:
+    """A warning for each [robot_program] not_modeled entry that leaves nothing out: a slot whose part or slot the
+    robot hasn't, or that has a device ID after all; a device this config binds (so it is modeled)."""
+    from ..bindings import device_key_of, parse_not_modeled
+    rp = cfg.get("robot_program")
+    entries = rp.get("not_modeled") if isinstance(rp, dict) else None
+    if not isinstance(entries, list):
+        return []
+    by_name = {x.name: x for x in insts}
+    bound = {device_key_of(kind, c) for kind in ("motor", "encoder", "gyro") for c in bindings.get(kind, [])}
+    table = "[robot_program]"
+    out = []
+    for entry in entries:
+        devices, slots = parse_not_modeled([entry])
+        if slots:
+            part, _, slot = entry.partition(".")
+            inst = by_name.get(part)
+            if inst is None:
+                out.append(Noted(t("{robot_program_table} not_modeled: {entry} names no part of the robot (its parts: {parts})",
+                                   robot_program_table=table, entry=repr(entry),
+                                   parts=", ".join(by_name) or t("none"))))
+                continue
+            p = inst.part
+            names = [s.slot for s in (*p.motors, *p.encoders, *p.gyros)] + ([VALVE_SLOT] if p.cylinders else [])
+            if slot not in names:
+                out.append(Noted(t("{robot_program_table} not_modeled: {entry}: {part} has no slot {slot} (its slots: {slots})",
+                                   robot_program_table=table, entry=repr(entry), part=part, slot=repr(slot),
+                                   slots=", ".join(names) or t("none")), ((part, "ids"),)))
+            elif inst.ids.get(slot) is not None:
+                out.append(Noted(t("{robot_program_table} not_modeled: {entry} has a device ID, so there is nothing to leave out",
+                                   robot_program_table=table, entry=repr(entry)), ((part, f"ids:{slot}"),)))
+        elif devices & bound:
+            out.append(Noted(t("{robot_program_table} not_modeled: {entry} is bound in this config, so there is nothing to leave "
+                               "out", robot_program_table=table, entry=repr(entry))))
+    return out
 
 
 def _one_module_kind(valves: list[dict]) -> None:

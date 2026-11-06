@@ -634,6 +634,15 @@ def block_json(b: Block) -> dict:
     return d
 
 
+def block_defaults() -> dict:
+    """The run's defaults for the keys a block has no box for, as the Test tab's Block settings… shows them (one source,
+    so the page's placeholders can't drift from what a run does): each timeout by block, a drive's and turn's volts
+    and their limit, a repeat until's max and its limit."""
+    return {"timeout": {"move": MOVE_TIMEOUT, "wait_until": WAIT_TIMEOUT, "feed_one": WAIT_TIMEOUT,
+                        "drive": DRIVE_TIMEOUT, "turn": DRIVE_TIMEOUT},
+            "volts": DRIVE_VOLTS, "max_volts": MAX_VOLTS, "repeat_max": REPEAT_MAX, "max_times": MAX_TIMES}
+
+
 def to_json(p: Program) -> dict:
     return {"robot": p.robot.as_posix(), "hooks": list(p.hooks),
             "hopper": None if p.hopper is None else list(p.hopper), "time_limit": p.time_limit,

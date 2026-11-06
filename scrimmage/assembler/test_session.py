@@ -37,7 +37,8 @@ import tomlkit
 from .. import i18n
 from ..blocks import store
 from ..blocks.palette import ANY_PIECE, hints, palette, problems
-from ..blocks.program import Block, Cond, TestFileError, block_json, dumps, from_json, load, to_json
+from ..blocks.program import (Block, Cond, TestFileError, block_defaults, block_json, dumps, from_json, load,
+                              to_json)
 from ..blocks.run import TestRun, air_lines, clearance_lines, goal_lines, world_for
 from ..blocks.spread import inside_robot, no_ball, no_spread, run_spread
 from ..blocks.sweep import MAX_SWEEP, _kind as sweep_kind, run_sweep
@@ -740,6 +741,7 @@ class TestSession:
                    "starter_hopper": list(self.starter_hopper),
                    "station_starter": [block_json(b) for b in station_starter(self.palette)] or None}
         out["fields"] = field_choices()
+        out["block_defaults"] = block_defaults()        # Block settings…'s placeholders (scrimmage/blocks/program.py)
         out["runs"], out["sweeps"], out["spreads"] = self._kept_runs()
         return out
 

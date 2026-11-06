@@ -165,6 +165,20 @@ def parse_not_modeled(value) -> tuple[set[tuple[str, object]], set[str]]:
     return devices, slots
 
 
+def device_key_of(kind: str, cfg: dict) -> tuple[str, object] | None:
+    """A binding's device (`kind`: "motor", "encoder" or "gyro"; `cfg`: its ids table) as parse_not_modeled names
+    devices, or None for one it can't name (PWM, DIO, ...)."""
+    if "scrimmage" in cfg:
+        return ({"motor": "ScrimmageMotor", "encoder": "ScrimmageEncoder", "gyro": "ScrimmageGyro"}[kind],
+                str(cfg["scrimmage"]))
+    for key in ("ctre", "rev"):
+        name, sep, ident = str(cfg.get(key, "")).partition(":")
+        name = name.removesuffix("Abs")
+        if sep and ident.isdigit() and name in _NOT_MODELED_CAN:
+            return _NOT_MODELED_CAN[name], int(ident)
+    return None
+
+
 def not_modeled(cfg: dict) -> tuple[set[tuple[str, object]], set[str]]:
     """parse_not_modeled of a raw config's [robot_program] not_modeled."""
     rp = cfg.get("robot_program") if isinstance(cfg, dict) else None

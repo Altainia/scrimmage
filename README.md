@@ -525,7 +525,8 @@ ones that matter: devices the robot code makes for a mechanism the config doesn'
 `"SimEncoder:<name>"`, `"SimGyro:<name>"`, `"TalonFX:<id>"`, `"CANcoder:<id>"`, `"Pigeon2:<id>"`, `"SparkMax:<id>"`,
 `"SparkFlex:<id>"`) get no "nothing in the config binds it" warning or note, and a part's slot left unbound
 (`"<part>.<slot>"`, say an encoder slot when the robot reads the motor's own sensor) gets no "has no device ID"
-warning. Everything not listed is still reported. `configs/fastmode.toml` uses it for the shooter its robot code
+warning. Everything not listed is still reported, and an entry that leaves nothing out (a part or slot the robot
+hasn't, a slot that has a device ID, a device the config binds) is a warning itself. `configs/fastmode.toml` uses it for the shooter its robot code
 always builds.
 
 `"{python}"` in `command` is replaced by the Python running scrimmage. For a Java or C++ robot, use

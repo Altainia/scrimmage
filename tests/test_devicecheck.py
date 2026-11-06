@@ -175,3 +175,22 @@ def test_not_modeled_devices_and_slots_are_left_out(world):
         parse_not_modeled(["TalonFX:x"])
     with pytest.raises(ValueError, match="not_modeled must be a list"):
         parse_not_modeled("TalonFX:3")
+
+
+def test_not_modeled_entries_that_leave_nothing_out_are_warned():
+    """A not_modeled entry that matches nothing in the robot is a mistake worth saying: a slot whose part or slot
+    doesn't exist, a slot that has a device ID after all, a device the config binds. A device the config doesn't
+    bind (the robot code's own) and an unbound slot say nothing."""
+    raw = tomllib.loads(SWERVE.read_text())
+    del next(p for p in raw["part"] if p["name"] == "fr")["ids"]["encoder"]
+    raw["robot_program"] = {**raw.get("robot_program", {}), "not_modeled": [
+        "nope.encoder", "fl.nothing", "fl.encoder", "TalonFX:1", "CANcoder:9", "TalonFX:40", "fr.encoder"]}
+    w = World(raw, SWERVE.parent)
+    said = [x for x in w.warnings if "not_modeled" in x]
+    assert said[0].startswith("[robot_program] not_modeled: 'nope.encoder' names no part of the robot (its parts: ")
+    assert said[1].startswith("[robot_program] not_modeled: 'fl.nothing': fl has no slot 'nothing' (its slots: drive, ")
+    assert said[2:] == [
+        "[robot_program] not_modeled: 'fl.encoder' has a device ID, so there is nothing to leave out",
+        "[robot_program] not_modeled: 'TalonFX:1' is bound in this config, so there is nothing to leave out",
+        "[robot_program] not_modeled: 'CANcoder:9' is bound in this config, so there is nothing to leave out"]
+    assert len(said) == 5 and not any("fr.encoder" in x for x in w.warnings)

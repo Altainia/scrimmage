@@ -1320,7 +1320,7 @@ function registerSettings() {
     displayText: () => t("Block settings…"),
     preconditionFn: (scope) => {
       const b = scope.block;
-      if (!b || b.isInFlyout || !blockSettings(b).length) return "hidden";
+      if (!b || b.isInFlyout || !blockSettings(b, T.state && T.state.block_defaults).length) return "hidden";
       return T.state && !T.state.running ? "enabled" : "disabled";
     },
     callback: (scope) => openSettings(scope.block.id),
@@ -1329,7 +1329,7 @@ function registerSettings() {
 
 function openSettings(id) {
   const b = T.ws && T.ws.getBlockById(id);
-  const list = b ? blockSettings(b) : [];
+  const list = b ? blockSettings(b, T.state && T.state.block_defaults) : [];
   if (!list.length) return;
   const d = $("#test-settings-dialog");
   T.settingsFor = { id, list };

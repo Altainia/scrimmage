@@ -75,8 +75,9 @@ If your code made different devices than the robot file expects (a CAN ID that d
 your code made TalonFX 1. The Robot tab's device table shows the same and can fix it.
 
 The report folder has `report.md` (the checks and the pictures), `robot.log` (everything your code printed) and
-`run.csv` (every motor and joint, every few milliseconds). The `runs/` folder keeps itself out of git (Scrimmage
-puts a `.gitignore` in it when it makes it), so you don't need to add it to yours.
+`run.csv` (every motor and joint, every few milliseconds). A `runs/` folder that Scrimmage makes keeps itself out of
+git: Scrimmage puts a `.gitignore` in it. A `runs/` folder from before this has none, so add `runs/` to your project's
+`.gitignore`, or delete the folder and let Scrimmage make it again.
 
 The command's exit code is 0 when everything passed, 1 when a check failed, and 2 when it couldn't run at all
 (a typo in the file, or the robot code crashed at startup).
