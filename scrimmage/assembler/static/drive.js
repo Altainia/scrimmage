@@ -27,7 +27,7 @@
 // with "see Robot code" (the panel's device table).
 // Test hook: window.__scrimmage.live = {state, frames, lastFrame: {t, poses}, connected, plots, assignments}.
 
-import { $, h, api, notice, registerTab, setTab, showPath, currentTab, store, showMeasure, readMeasure, measureError } from "./app.js";
+import { $, h, api, notice, registerTab, setTab, showPath, currentTab, store, showMeasure, readMeasure, measureError, convertTyped } from "./app.js";
 import { units } from "./units.js";
 import { sharedStream } from "./livestream.js";
 import { LiveView } from "./live3d.js";
@@ -647,13 +647,13 @@ async function refreshInfo() {
 // -- pokes and recording ----------------------------------------------------------------------------------------
 const pluralPokes = (n) => tn("{count} poke", "{count} pokes", n);
 
-// The push force box shows the force in the chosen units (it is sent in newtons). A change of units redraws it,
-// unless it is being typed in.
+// The push force box shows the force in the chosen units (it is sent in newtons). A change of units redraws it;
+// what is being typed in it is converted instead.
 let pushForce = 100;   // N
 function showPushForce() {
   const el = $("#push-force");
   $("#push-force-unit").textContent = units.name("force");
-  if (document.activeElement === el && el.value.trim() !== el.dataset.shown) return;
+  if (document.activeElement === el && el.value.trim() !== el.dataset.shown) { convertTyped(el); return; }
   showMeasure(el, pushForce, "force");
 }
 

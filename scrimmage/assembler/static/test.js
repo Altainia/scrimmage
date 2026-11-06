@@ -34,7 +34,7 @@
 // block's number}.
 
 import { $, h, api, notice, registerTab, setTab, showPath, currentTab, store, defaultGrip, showMeasure, readMeasure,
-  measureError, lengthWords } from "./app.js";
+  measureError, lengthWords, convertTyped } from "./app.js";
 import { initRunPanel, update as updateRuns, replay, sweepShown, spreadShown } from "./test_run.js";
 import { defineBlocks, toolbox, testToWorkspace, workspaceToTest, placeOf, incomplete, looseStacks, setUsed, STYLES,
   headOf, setHead, sweepNumber, appendBlocks, showUnits, relabel } from "./blocks_defs.js";
@@ -179,6 +179,9 @@ function unitsChanged() {
   }
   T.shownUnits = units.system;
   floorUnits();
+  // a Setup box half typed keeps Setup from being drawn again: what it holds is converted to the new units
+  const act = document.activeElement;
+  if (act && act.matches && act.matches("input.test-num[data-units-kind]") && act.value !== act.dataset.orig) convertTyped(act);
   T.setupKey = null;
   renderSetup();
 }
@@ -760,8 +763,8 @@ function floorSpread(draft) {
 }
 
 // A Units change: the draft's lengths in the new units (the file's own value shown again where a box still shows
-// it), in the boxes too, even when Setup isn't drawn again (another box is half typed); a box being typed in keeps
-// its text, which then means the new units.
+// it), in the boxes too, even when Setup isn't drawn again (another box is half typed); what a box being typed in
+// holds is converted too (units.convert), not read again in the new units.
 function floorUnits() {
   const from = T.floorSystem;
   T.floorSystem = units.system;
@@ -771,21 +774,19 @@ function floorUnits() {
     const d = T.floor[axis], file = fs[axis] && fs[axis].length ? { from: fs[axis][0], to: fs[axis][fs[axis].length - 1] } : {};
     for (const k of ["from", "to"]) {
       let next = d[k];
-      if (file[k] !== undefined && d[k].trim() === shownIn(file[k] * IN, from)) next = units.shown(file[k] * IN, "length");
+      if (file[k] !== undefined && d[k].trim() === units.shown(file[k] * IN, "length", 2, from)) next = units.shown(file[k] * IN, "length");
       else {
         const si = units.parse(d[k], "length", from);
         if (typeof si === "number") next = units.shown(si, "length");
       }
       d[k] = next;
       const el = document.getElementById(`test-spread-${axis}-${k}`);
-      if (el && el !== document.activeElement) el.value = el.dataset.orig = next;
+      if (!el) continue;
+      if (el === document.activeElement && el.value !== el.dataset.orig) el.value = units.convert(el.value, "length", from);
+      else el.value = next;
+      el.dataset.orig = next;
     }
   }
-}
-// what units.shown gave for `si` in `system` (the draft's text before a Units change)
-function shownIn(si, system) {
-  const u = units.table.units[system].length;
-  return units.number(+(si * u.factor).toPrecision(15), u.decimals + 2);
 }
 
 function floorChanged() {

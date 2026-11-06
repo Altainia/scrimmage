@@ -29,7 +29,7 @@
 // meters), labels: [the field's boxes labeled in it]} while a start is shown}; window.__scrimmage.startPicker = {toScreen(x, y) -> page pixels, value} while the
 // picker is open.
 
-import { $, h, api, edit, post, undo, notice, setTab, store, fmt, select, showMeasure, readMeasure, measureError } from "./app.js";
+import { $, h, api, edit, post, undo, notice, setTab, store, fmt, select, showMeasure, readMeasure, measureError, convertTyped } from "./app.js";
 import { units } from "./units.js";
 import { theme } from "./theme.js";
 import { i18n, t, tn } from "./i18n.js";
@@ -650,13 +650,13 @@ async function openPicker() {
       for (const [el, k] of [[xIn, "x"], [yIn, "y"]]) if (!(keepTyping && typing(el))) showMeasure(el, cur[k], "field");
       hIn.value = fmt(round(cur.heading, 1));
     };
-    // Units changed in another tab or editor while this is open: the boxes show the new units. Text being typed in
-    // stays and now means the new units, as in the inspector and the step editor (it is read again here and at OK).
+    // Units changed in another tab or editor while this is open: the boxes show the new units. Text being typed in is
+    // converted to the new units, as in the inspector and the step editor (it is read again here and at OK).
     const offUnits = units.onChange(() => {
       xU.textContent = yU.textContent = units.name("field");
       const kept = [xIn, yIn].filter(typing);
       sync({ keepTyping: true });
-      for (const el of kept) el.dispatchEvent(new Event("input"));
+      for (const el of kept) convertTyped(el).dispatchEvent(new Event("input"));
       draw();   // the grid's labels are in the chosen units
     });
     const offTheme = theme.onChange(() => draw());

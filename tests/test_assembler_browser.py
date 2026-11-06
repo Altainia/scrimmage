@@ -566,14 +566,14 @@ def test_the_field_picker_shows_and_takes_the_chosen_units(scenario_page):
     assert spec()["x"] == 1.99644
     pick()
     assert page.input_value("#fp-x") == "6.55"
-    # Units changes while a box is half typed: the text stays and means the new units (as in the inspector)
+    # Units changes while a box is half typed: the text is converted (6.5 ft is 1.9812 m), as in the inspector (A6)
     page.fill("#fp-x", "6.5")
     page.focus("#fp-x")
     page_units(page, "metric")
     page.wait_for_function("document.querySelector(\"label[for='fp-x'] .unit\").textContent === 'm'")
-    assert page.input_value("#fp-x") == "6.5" and page.input_value("#fp-tol-xy") == "0.3048"
+    assert page.input_value("#fp-x") == "1.9812" and page.input_value("#fp-tol-xy") == "0.3048"
     ok()
-    assert spec()["x"] == 6.5 and spec()["tol_xy"] == 0.3048
+    assert spec()["x"] == 1.9812 and spec()["tol_xy"] == 0.3048
 
 
 _RECORD_LABELS = """() => {
@@ -1080,21 +1080,22 @@ def test_the_inspector_shows_and_takes_the_chosen_units(make_page):
     assert elevator()["travel"] == pytest.approx(1.016)
     assert "in" in page.inner_text('[data-field="elevator/param:travel"] .unit')
 
-    # Review Focus 4: switching while typing keeps the box and its text; the rest follows at once
+    # Review Focus 4: switching while typing keeps the box, and its text converted (A6: 12 in is 304.8 mm); the rest
+    # follows at once
     page.fill("#insp-pos-1", "12")
     page.focus("#insp-pos-1")
     page_units(page, "metric")
     page.wait_for_function("document.querySelector('#insp-pos-0').value === '101.6'")
-    assert page.input_value("#insp-pos-1") == "12"
+    assert page.input_value("#insp-pos-1") == "304.8"
     assert page.evaluate("document.activeElement.id") == "insp-pos-1"
     assert page.inner_text('[data-field="elevator/pos"] .field-label .unit').strip() == "mm"
     assert page.inner_text("#mass").endswith(" kg")
     assert page.get_attribute('#inspector [aria-label^="Increase z by"]', "aria-label") == "Increase z by 10 mm"
     assert page.get_attribute("#insp-pos-0", "aria-label") == "Offset x (millimeters)"
     v = page.evaluate("__scrimmage.state.version")
-    page.keyboard.press("Enter")                                 # the kept text is now millimeters
+    page.keyboard.press("Enter")                                 # the 12 in typed, not 12 mm
     page.wait_for_function(f"__scrimmage.state.version > {v}")
-    assert elevator()["pos"] == [0.1016, 0.012, 0.12]
+    assert elevator()["pos"] == [0.1016, 0.3048, 0.12]
     # the other system's unit is refused, saying why
     page.fill("#insp-p-travel", "40 in")
     page.keyboard.press("Enter")

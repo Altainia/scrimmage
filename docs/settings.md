@@ -17,8 +17,10 @@ Contents: [Units](#units), [What each quantity is shown in](#what-each-quantity-
 thinks in millimeters and kilograms.
 
 The choice applies at once. Every open tab shows its numbers again in the new units, with no reload. A box you are
-typing in keeps your text, which then means the new units. Another browser tab or another editor on the same
-computer picks the change up within about 2 seconds.
+typing in keeps its focus, and what you typed is converted to the new units: "4" typed in inches becomes "101.6"
+in millimeters. Text that isn't a number yet ("1e", "-") stays as you typed it. A Measure tab reading keeps the
+unit its picker shows. Another browser tab or another editor on the same computer picks the change up within about
+2 seconds.
 
 Text that was already written keeps the units it was written in. A test run or a scenario run that finished before
 you changed the setting still says "0.5 in" until you run it again.

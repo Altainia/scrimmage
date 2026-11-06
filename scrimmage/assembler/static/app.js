@@ -508,6 +508,27 @@ export function fmt(v) {
 export function showMeasure(el, si, kind) {
   el.value = el.dataset.shown = units.shown(si, kind);
   if (typeof si === "number" && isFinite(si)) el.dataset.si = String(si); else delete el.dataset.si;
+  return markUnits(el, kind);
+}
+// A box typed in a units kind: it notes the kind and the system it shows, so typedText() can convert its text.
+export function markUnits(el, kind) {
+  if (kind) { el.dataset.unitsKind = kind; el.dataset.unitsSys = units.system; }
+  return el;
+}
+// A box's text to carry across a redraw. After a Units change (the box was drawn in another system) what is half
+// typed is converted, not read again in the new units: "4" typed in inches comes back "101.6" in millimeters; a
+// box still showing its value shows it again in the new units. Text that isn't a value yet stays as typed.
+export function typedText(el) {
+  const { unitsKind: kind, unitsSys: sys } = el.dataset;
+  if (!kind || !sys || sys === units.system) return el.value;
+  if (el.dataset.si !== undefined && el.value.trim() === el.dataset.shown) return units.shown(Number(el.dataset.si), kind);
+  return units.convert(el.value, kind, sys);
+}
+// The same for a box kept on the page across a Units change (a picker's): its text converted in place.
+export function convertTyped(el) {
+  const text = typedText(el);
+  if (el.dataset.unitsKind) el.dataset.unitsSys = units.system;
+  if (text !== el.value) el.value = text;
   return el;
 }
 export function readMeasure(el, kind) {

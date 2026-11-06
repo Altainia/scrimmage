@@ -780,16 +780,16 @@ def test_the_part_tab_shows_and_takes_the_chosen_units(part_page):
     page.keyboard.type("1.2")                                          # half typed: not committed
     page_units(page, "metric")
     page.wait_for_function("document.querySelector('#part-inspector [data-field=\"kg\"] .unit').textContent === 'kg'")
-    assert page.input_value("#part-body-weight") == "1.2"
+    assert page.input_value("#part-body-weight") == "0.54431"                # converted: 1.2 lb (A6)
     assert page.evaluate("document.activeElement.id") == "part-body-weight"
     assert page.inner_text("#part-body-mass").endswith(" kg")
     assert page.inner_text("#part-inspector .mono").endswith(" mm")
     assert mass() == pytest.approx(2.5 * 0.45359237)                   # switching wrote nothing
-    _edit(page, lambda: page.keyboard.press("Enter"))                  # the kept text is now kilograms
-    assert mass() == 1.2
+    _edit(page, lambda: page.keyboard.press("Enter"))                  # the 1.2 lb typed, in kilograms
+    assert mass() == 0.54431
     saved = imp.read_text()
     page_units(page, "imperial")
-    page.wait_for_function(f"document.querySelector('#part-body-weight').value === {_shown(1.2, 'mass', 'imperial')!r}")
+    page.wait_for_function(f"document.querySelector('#part-body-weight').value === {_shown(0.54431, 'mass', 'imperial')!r}")
     page.wait_for_timeout(300)
     assert imp.read_text() == saved
     # a typed unit is fine; the other system's is refused, saying why

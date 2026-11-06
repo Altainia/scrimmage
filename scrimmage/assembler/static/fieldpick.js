@@ -10,7 +10,7 @@
 // draw with them too, the start picker also with drawSides (the plain red / blue field) and robotFootprint. Their
 // colors are app.css's --field-* tokens (theme.color), so each drawing redraws on theme.onChange.
 
-import { h, api, fmt, showMeasure, readMeasure, measureError } from "./app.js";
+import { h, api, fmt, showMeasure, readMeasure, measureError, convertTyped } from "./app.js";
 import { units } from "./units.js";
 import { theme } from "./theme.js";
 import { i18n, t, live as L, liveAttr } from "./i18n.js";
@@ -327,13 +327,13 @@ export async function openFieldPicker({ step, check, spec, setSpec }) {
   const [xIn, xF] = box("x", "x"), [yIn, yF] = box("y", "y"), [hIn, hF] = box("heading", "heading", "°", t("none"));
   const [txIn, txF] = box("tol_xy", "tol_xy", null, units.shown(DEFAULT_TOL_XY, "field", 0)), [thIn, thF] = box("tol_heading", "tol_heading", "°", String(DEFAULT_TOL_H));
   const syncBoxes = () => { show(xIn, "x"); show(yIn, "y"); show(hIn, "heading"); };
-  // Units changed in another tab or editor while this is open: the boxes and labels follow. Text being typed in
-  // stays and now means the new units, as in the inspector and the step editor (it is read again here and at OK).
+  // Units changed in another tab or editor while this is open: the boxes and labels follow. Text being typed in is
+  // converted to the new units, as in the inspector and the step editor (it is read again here and at OK).
   const offUnits = units.onChange(() => {
     for (const u of fieldUnits) u.textContent = units.name("field");
     txIn.placeholder = units.shown(DEFAULT_TOL_XY, "field", 0);
     for (const [el, k] of [[xIn, "x"], [yIn, "y"], [txIn, "tol_xy"]]) {
-      if (document.activeElement === el && el.value.trim() !== el.dataset.shown) el.dispatchEvent(new Event("input"));
+      if (document.activeElement === el && el.value.trim() !== el.dataset.shown) convertTyped(el).dispatchEvent(new Event("input"));
       else show(el, k);
     }
     draw();

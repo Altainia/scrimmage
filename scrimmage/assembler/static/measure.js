@@ -135,7 +135,11 @@ async function languageChanged() {
 }
 
 // The fit's words (its band, "stiffness 20.6 lbf ...") are the server's, in the Units setting it fit in: fit again.
+// A fit still under way was asked in the old setting: the refit waits for it (fit() calls it again when it is done).
+let refitWanted = false;
 async function refit() {
+  if (m.fitting) { refitWanted = true; return; }
+  refitWanted = false;
   for (const test of Object.keys(m.fit)) if (m.fit[test] && !m.fit[test].error) await fit(test);
 }
 function adopt(file) {
@@ -257,6 +261,7 @@ async function fit(test = m.test) {
   } finally {
     m.fitting = false;
     renderFit();
+    if (refitWanted) refit();
   }
 }
 

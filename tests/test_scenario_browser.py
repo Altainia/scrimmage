@@ -296,11 +296,11 @@ def test_a_pose_check_shows_and_takes_the_chosen_units(scenario_page):
     page_units(page, "metric")
     page.wait_for_function(f"document.querySelector('{x}').value === '3.81'")
     assert page.inner_text(f'[data-fields="step1/check{j}/pose.x"] .unit') == "m"
-    assert page.input_value(y) == "2" and page.evaluate("document.activeElement.id") == f"ck-1-{j}-y"
+    assert page.input_value(y) == "0.6096" and page.evaluate("document.activeElement.id") == f"ck-1-{j}-y"   # 2 ft (A6)
     assert scn.read_text() == saved
     v = _version(page)
-    page.keyboard.press("Enter")                                       # now meters
+    page.keyboard.press("Enter")                                       # the 2 ft typed
     _wait_edit(page, v)
-    assert spec()["y"] == 2
+    assert spec()["y"] == 0.6096
     page_units(page, "imperial")
     page.wait_for_function(f"document.querySelector('{x}').value === '12.5'")

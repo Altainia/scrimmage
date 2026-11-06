@@ -728,13 +728,13 @@ def test_the_start_picker_shows_and_takes_the_chosen_units(code_page, tmp_path):
     ok()
     assert _raw(cfg)["robot"]["start_pose"] == pose
 
-    # Units changes while a box is half typed: the text stays and means the new units (as in the inspector)
+    # Units changes while a box is half typed: the text is converted (6.5 ft is 1.9812 m), as in the inspector (A6)
     page_units(page, "imperial")
     reopen()
     page.fill("#sp-y", "6.5")
     page.focus("#sp-y")
     page_units(page, "metric")
     page.wait_for_function("document.querySelector('#sp-exact .fp-field .unit').textContent === 'm'")
-    assert page.input_value("#sp-y") == "6.5"
+    assert page.input_value("#sp-y") == "1.9812"
     ok()
-    assert _raw(cfg)["robot"]["start_pose"][1] == 6.5
+    assert _raw(cfg)["robot"]["start_pose"][1] == 1.9812

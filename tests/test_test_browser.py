@@ -2304,6 +2304,21 @@ def test_the_floor_spread_keeps_its_values_across_a_units_change(test_page, tmp_
     page.wait_for_function("document.querySelector('#test-spread-count').textContent === '5 runs'")
 
 
+def test_a_floor_spread_length_half_typed_when_units_change_is_converted(test_page, tmp_path):
+    """A6: "-3" (inches) half typed in the from box when Units changes comes back as -76.2 mm; Enter writes -3 in."""
+    path = _example(tmp_path, "intake", "spread.test.toml")
+    page, _ = test_page(path=path)
+    _open_setup(page)
+    page.wait_for_selector("#test-spread-count")
+    page.fill("#test-spread-offset_in-from", "-3")                  # half typed: not committed
+    page.focus("#test-spread-offset_in-from")
+    page_units(page, "metric")
+    page.wait_for_function("document.querySelector('#test-spread-offset_in-to').value === '152.4'")
+    assert page.input_value("#test-spread-offset_in-from") == "-76.2"
+    page.press("#test-spread-offset_in-from", "Enter")
+    _wait_file(lambda: _toml(path)["setup"]["floor_spread"]["offset_in"] == [-3.0, 1.5, 6.0], path)
+
+
 def test_a_number_being_typed_in_a_block_when_units_change_is_read_as_typed(test_page, tmp_path):
     """The block's editor is open with "2" (inches) when Units changes to Metric: it is committed as 2 in, then shown
     as 50.8 mm; never read as 2 mm."""
