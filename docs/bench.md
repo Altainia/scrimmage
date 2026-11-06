@@ -377,7 +377,10 @@ Ball presets come from `scrimmage/launcher/presets.toml`; their sources are in
 TOML. Every unknown key or section is an error that names the valid ones. **Every length key also has an inch form**,
 `<key>_in` (give one of the two, not both): `diameter_in = 4`, `center_in = [0, 0, 4.36]`. Angles are degrees and end
 in `_deg`. Lists of shapes (`[[wheel]]`, `[[plate]]`, ...) need a `name` on each entry (letters, digits, `_`, `-`),
-unique in its section; it is how the pictures label it and how a sweep reaches it.
+unique in its section; it is how the pictures label it and how a sweep reaches it. So a bench file has many `name =`
+lines: the idea's own is the one under `[bench]`. To rename the idea, change only that one (the Bench tab's title box
+does just that). A find-and-replace on `name` renames the shapes too, and other lines (a wheel's `shaft`, a sweep's
+target) still name the old ones, so the file stops loading.
 
 Units: lengths m (or in.), mass kg, inertia kg m², speeds m/s, spin rad/s, shaft speeds rps (turns per second),
 stiffness N/m, voltage V, current A, time s.

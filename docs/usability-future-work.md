@@ -3,7 +3,8 @@
 Rough edges found on 2026-10-31 while writing the [getting-started guides](getting-started/README.md), by following
 each guide literally from a fresh clone and a fresh venv (Linux, Python 3.14). The readers in mind are high-school
 students and mentors who aren't programmers, using it at kickoff or for their own robot. Ordered by how likely each is
-to stop one of them, most likely first. Items 2, 7 and 9 have been done (see their entries) and items 4 and 15 are eased; nothing else has been started.
+to stop one of them, most likely first. Items marked DONE have been done (see their entries), items 4 and 15 are eased,
+and items 18 and 20 are deferred.
 
 ## Likely to stop someone
 
@@ -76,39 +77,64 @@ its own Python and needs no sudo). Options, roughly from
    program ran"); `--new-scenario` still writes no active check. The original note: **The starter scenario has no checks,
    so it always passes.** A first PASS that tested nothing is misleading.
    Have `--new-scenario` include a commented pose check, or have `scrimmage run` warn "this scenario has no checks".
-11. **`scrimmage run` takes one scenario.** The test guide has a shell loop for "run them all". Accept several files
+11. **DONE (2026-11-06): `scrimmage run` takes several scenarios** (`scrimmage run sim/scenarios/*.toml`): each in
+   turn with its report, then one PASS / FAIL / ERROR line per file, and the worst exit code; a file that can't load is
+   reported and the others still run. The original note: **`scrimmage run` takes one scenario.** The test guide has a shell loop for "run them all". Accept several files
    or a folder, run them in turn, and print one summary with an exit code for the lot.
-12. **Reports land in `runs/` in the team's robot repository**, which their `.gitignore` doesn't cover. Writing a
+12. **DONE (2026-11-06): a `runs/` folder Scrimmage makes holds a `.gitignore` of `*`** (the CLI, the MCP server and
+    the Scenario tab), so reports stay out of commits; one that is already there is left alone. The original note:
+    **Reports land in `runs/` in the team's robot repository**, which their `.gitignore` doesn't cover. Writing a
     `runs/.gitignore` containing `*` when the folder is created would keep it out of commits with no setup.
-13. **Passing samples print warnings.** `scenarios/fastmode_auto.toml` passes but prints eight warnings (six fast-mode
+13. **DONE (2026-11-06): the samples run with no warnings.** A config's `[robot_program] not_modeled` lists what it
+    leaves out on purpose: devices the robot code makes for a mechanism the config doesn't model (the sample's shooter
+    motors) and slots left unbound (an encoder slot when the robot reads the motor's rotor). Those get no warning or
+    note; everything else still does. The fast-mode configs and `disc_robot.toml` use it. The original note:
+    **Passing samples print warnings.** `scenarios/fastmode_auto.toml` passes but prints eight warnings (six fast-mode
     motors with no binding, two encoders with no device ID). A newcomer learns from this to ignore warnings, which
     then hides the useful ones (item 2). Bind them in the sample config, or quiet the expected ones.
-14. **The "neutralized N robot-side sim writes" note shows on every Tuner X robot.** It is expected, but "neutralized"
+14. **DONE (2026-11-06): the note says it is expected**: "as expected, the scrimmage agent ignored the robot code's
+    own simulation (N sim writes: ...): scrimmage's physics drives the sensors". The original note: **The
+    "neutralized N robot-side sim writes" note shows on every Tuner X robot.** It is expected, but "neutralized"
     plus a big count reads like an error. Say that it is normal: "turned off the robot code's own simulation (Tuner X's
     sim thread), as expected: physics drives the sensors."
 15. **A bench file has many `name =` keys.** The guide's "change the name" step had to say "the one under `[bench]`",
     because a find-and-replace on `name` renames every shape and the file stops loading (`two entries named ...`).
     Consider `title` for the bench's own name.
     *Eased by the Bench tab:* it edits the bench's own title (`bench.name`) and no other `name`, so a student using the
-    page can't hit the trap; the by-hand step in the guide still has it.
+    page can't hit the trap; the by-hand step in the guide still has it. *Eased in the docs (2026-11-06):*
+    docs/bench.md says which `name` is the idea's and why a find-and-replace breaks the file. Renaming the key
+    (`title`) would break every bench file, so it stays.
 16. **Bench results go beside the bench file**, so running an example writes into `examples/bench/` (git-ignored,
     but surprising when the examples folder fills up). The guides tell students to copy examples into their own folder
     first.
-17. **No tested CI recipe for a team's robot repository.** The test guide says GitHub Actions is possible but gives
+17. **DONE (2026-11-06): a GitHub Actions recipe**, `examples/ci/scrimmage.yml`, documented in the test guide (step
+    6): it checks Scrimmage out beside the robot code (public now: no token), installs it and the lockstep extension
+    (and the Java helpers for a Java robot), runs `scrimmage run sim/scenarios/*.toml` and keeps `runs/` as an
+    artifact. tests/test_ci_recipe.py checks it is a workflow and that its `scrimmage` commands and installs exist; it
+    hasn't been run on a team's repository. The original note: **No tested CI recipe for a team's robot repository.** The test guide says GitHub Actions is possible but gives
     no workflow, because none has been run, and installing a private Scrimmage in CI needs a token. Write and test
     one, ideally fast mode for CTRE robots.
-18. **The README is a 900-line reference.** It now points newcomers at the guides first. Splitting it into topic
+18. **Deferred (2026-11-06): a docs reorganization, for the next large docs change.** **The README is a 900-line
+    reference.** It now points newcomers at the guides first. Splitting it into topic
     pages (most sections already have one in `docs/`) would leave a short README; worth doing at the next large docs
     change.
 
 ## Worth a closer look
 
-19. **A bench recovery time that may be wrong.** `examples/bench/hooded.toml` at 33.3 rps reports "the `shooter`
+19. **Checked (2026-11-06): not wrong now.** At 33.3 rps the hooded example says "drops 6% and recovers in 0.08 s",
+    and 0.05 s at 66.7 rps: the slower wheel recovers a little slower, not 20 times. The recovery is measured back to
+    within 2% of the speed the shaft had when the piece touched (not of the target), so the P-only loop's steady
+    error doesn't count. Today's bench doesn't give the 1.93 s again (the bench changed since 2026-10-31; which change
+moved it wasn't traced). The original note: **A bench
+    recovery time that may be wrong.** `examples/bench/hooded.toml` at 33.3 rps reports "the `shooter`
     shaft drops 6% and recovers in 1.93 s", against 0.10 s at 66.7 rps. A slower wheel has more motor headroom, so a
     20 times slower recovery is suspicious: check the controller (P only, `kP = 0.2`) and the 2% recovery tolerance
     near the lower target before trusting the headline.
-20. **Only three swerve modules are stock parts** (SDS MK4i and MK4n, REV MAXSwerve). Teams using others (WCP,
+20. **Deferred (2026-11-06): a feature (new stock parts).** **Only three swerve modules are stock parts** (SDS MK4i and MK4n, REV MAXSwerve). Teams using others (WCP,
     Thrifty, newer SDS) have to approximate. Add the common ones.
-21. **The lockstep extension must be reinstalled by hand after some updates.** Scrimmage says when, but a
+21. **DONE in part (2026-11-06): the message gives a command that works from anywhere**: "reinstall it with
+    `<python> -m pip install <scrimmage>/lockstep`", the robot's Python and the checkout's folder in full, so it can be
+    pasted in a team's robot folder. The Robot tab's robot code panel already offers the install. Reinstalling on its
+    own is not done. The original note: **The lockstep extension must be reinstalled by hand after some updates.** Scrimmage says when, but a
     `git pull` followed by an error is a poor first experience. Checking the version and reinstalling on demand, or
     folding it into the main install, would remove a step.

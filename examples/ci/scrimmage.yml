@@ -1,0 +1,55 @@
+# Scrimmage in GitHub Actions, for a team's robot repository: every push and pull request runs the scenarios in
+# sim/scenarios/ (docs/getting-started/test-your-robot-code.md) and keeps their reports. A failed check fails the
+# job, and the reports (report.md with its pictures, robot.log, run.csv) are on the run's page under Artifacts.
+#
+# Copy this file to .github/workflows/scrimmage.yml in your robot repository. It expects the layout the guides make:
+# sim/robot.toml and sim/scenarios/*.toml. Delete the two steps marked "Java robots only" for a RobotPy robot.
+# CTRE robots run in real time unless their robot file is a fast-mode one (docs/fast-mode.md): fast mode is quicker
+# and repeats exactly, which suits CI.
+name: Scrimmage
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  scenarios:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      # Scrimmage itself, beside the robot code (it is public: no token needed). Add `ref: <commit>` to pin a version,
+      # so a Scrimmage update can't change your results without you knowing.
+      - uses: actions/checkout@v7
+        with:
+          repository: Altainia/scrimmage
+          path: .scrimmage
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      # Java robots only: a JDK 17 for Gradle (it downloads WPILib and the vendor libraries itself)
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      # the reports' pictures are drawn without a GPU
+      - name: Install OSMesa
+        run: sudo apt-get update && sudo apt-get install -y libosmesa6
+      - name: Install Scrimmage
+        run: |
+          pip install -e "./.scrimmage[robotpy,nt]"
+          pip install ./.scrimmage/lockstep
+      # Java robots only: the agent that keeps the robot code's own simulation out of the way, and the fast-mode
+      # library
+      - name: Build Scrimmage's Java helpers
+        run: scrimmage java build
+      - name: Run the scenarios
+        env:
+          MUJOCO_GL: osmesa
+        run: scrimmage run sim/scenarios/*.toml
+      - name: Keep the reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrimmage-reports
+          path: runs/

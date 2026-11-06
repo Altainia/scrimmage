@@ -125,6 +125,18 @@ The exit code is the worst of them: 0 when all passed, 1 when one failed, 2 when
 CTRE robots run in real time, so a 15 s auto takes 15 s to check. For faster checks that repeat exactly (for example
 in GitHub Actions), see [fast mode](../fast-mode.md).
 
+## 6. Run them on every push (GitHub Actions)
+
+[`examples/ci/scrimmage.yml`](../../examples/ci/scrimmage.yml) is a workflow for your robot repository: copy it to
+`.github/workflows/scrimmage.yml`. On every push and pull request it checks Scrimmage out beside your code, installs
+it, runs `scrimmage run sim/scenarios/*.toml`, and keeps the `runs/` reports as the run's artifact. A failed check
+fails the job. For a RobotPy robot, delete the two steps the file marks "Java robots only"; a RobotPy robot that
+needs more packages than RobotPy itself also needs a `pip install -r requirements.txt` step. Add `ref:` to the
+Scrimmage checkout to pin a version, so an update can't change your results unnoticed.
+
+Scrimmage's own tests check that the file is a valid workflow and that every `scrimmage` command in it exists with
+those arguments. Nobody has run it on a team's repository yet: if it breaks there, the job's log says where.
+
 ## If something goes wrong
 
 - **Exit code 2 with a message about the file**: the message names the bad line and lists the valid choices.
