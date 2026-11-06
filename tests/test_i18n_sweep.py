@@ -54,8 +54,8 @@ THREAD = ("runtime warning the bridge's thread only logs (the terminal's log, Am
           "the run's notes and the page show devicecheck's notes for the same devices, worded for people (cleanup A9)")
 DEV = "developer-only text (the terminal, a stock part's definition, a tool's subprocess)"
 MARKUP = "markup or code around values, no words of ours"
-SETTINGS = ("the settings file's own problems and the --units/--language refusals and setting-value checks: read "
-            "before the language is known (i18n reads the settings), shown in American English (docs/settings.md)")
+SETTINGS = ("the --units/--language refusals and setting-value checks: read before the language is known (i18n reads "
+            "the settings), shown in American English (docs/settings.md)")
 LOCATOR = "a locator join (a TOML table, a step or a file) around an already-translated message"
 LOG = "the run's console log line (the robot program's log, shown as it is)"
 PICKER = "a picker value (a key a test file holds); its words are t()"
@@ -220,11 +220,6 @@ ALLOWED = {
     ('scrimmage/settings.py', 'theme must be "system", "light" or "dark", not {}'): SETTINGS,
     ('scrimmage/settings.py', 'language must be one of {}, not {}'): SETTINGS,
     ('scrimmage/settings.py', 'unknown setting {}; the settings are {}'): SETTINGS,
-    ('scrimmage/settings.py', "{}: units = {} isn't imperial or metric; using imperial units"): SETTINGS,
-    ('scrimmage/settings.py',
-     "{}: language = {} isn't one of Scrimmage's languages ({}); using American English (en-US)"):
-        SETTINGS,
-    ('scrimmage/settings.py', "{}: theme = {} isn't system, light or dark; using the System theme"): SETTINGS,
     ('scrimmage/testrange/ballpath.py',
      "ball path: lane {}'s rearmost ball {} isn't ball {} going to the hopper"):
         ASSERT,

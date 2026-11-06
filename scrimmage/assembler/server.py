@@ -1082,7 +1082,7 @@ class App:
         version = i18n.catalog_version(language)
         out = {"units": settings.current_units(), "table": units.table_json(), "language": language,
                "languages": i18n.languages(), "catalog_version": version, "theme": settings.load().theme,
-               "warning": settings.problem()}
+               "warning": settings.problem_words()}
         if have != version:
             out["catalog"] = i18n.catalog_json(language)
         return out

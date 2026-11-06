@@ -236,8 +236,8 @@ For Language:
 - **MCP results stay American English** (machine output), even when the web app shows the same run in British
   English.
 - **The settings file's own problems** (a `settings.toml` that can't be read, or a value Scrimmage doesn't know,
-  such as "theme = … isn't system, light or dark; using the System theme") are reported in American English: they
-  are found before the language is known.
+  such as "theme = … isn't system, light or dark; using the System theme") are in American English in the
+  terminal's log: they are found before the language is known. The web app's warning says them in your language.
 
 For Theme:
 

@@ -44,7 +44,8 @@ class Settings:
 
 DEFAULTS = "imperial units, American English and the System theme"
 _lock = threading.Lock()
-_cache: tuple[tuple, Settings, str | None] | None = None   # (the file's stat, what it says, its problem)
+# (the file's stat, what it says, its problems: each its American English text and a function wording it for people)
+_cache: tuple[tuple, Settings, list] | None = None
 _override: str | None = None
 _language_override: str | None = None
 
@@ -94,37 +95,62 @@ def _shown(value) -> str:
     return f'"{value}"' if isinstance(value, str) else repr(value)
 
 
-def _read(path: Path) -> tuple[Settings, str | None]:
+def _i18n():
+    from . import i18n      # i18n reads the settings: imported when a problem is worded, after the file is read
+    return i18n
+
+
+def _read(path: Path) -> tuple[Settings, list[tuple[str, object]]]:
+    """The file's settings and its problems, each (its American English text, for the log, and a function wording it
+    in the Language setting when it is shown: the problems are found before the language is known)."""
     try:
         raw = path.read_bytes()
     except FileNotFoundError:
-        return Settings(), None
+        return Settings(), []
     except OSError as e:
-        return Settings(), f"can't read {path} ({e.strerror or e}); using {DEFAULTS}"
+        why = e.strerror or e
+        return Settings(), [(f"can't read {path} ({why}); using {DEFAULTS}",
+                             lambda: _i18n().t("can't read {path} ({why}); using imperial units, American English "
+                                               "and the System theme", path=path, why=why))]
     try:
         data = tomllib.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, tomllib.TOMLDecodeError) as e:
-        return Settings(), f"{path} isn't valid TOML ({e}); using {DEFAULTS} (changing a setting replaces it, keeping a copy as {path.name}.bad)"
+        why = str(e)   # (e is gone after the except: the words are made later)
+        return Settings(), [(f"{path} isn't valid TOML ({e}); using {DEFAULTS} (changing a setting replaces it, keeping a copy as {path.name}.bad)",
+                             lambda: _i18n().t("{path} isn't valid TOML ({why}); using imperial units, American "
+                                               "English and the System theme (changing a setting replaces it, "
+                                               "keeping a copy as {copy})", path=path, why=why,
+                                               copy=f"{path.name}.bad"))]
     found, problems = {}, []
     if "units" in data:
         try:
             found["units"] = check_units(data["units"])
         except ValueError:
-            problems.append(f"{path}: units = {_shown(data['units'])} isn't imperial or metric; using imperial units")
+            value = _shown(data["units"])
+            problems.append((f"{path}: units = {value} isn't imperial or metric; using imperial units",
+                             lambda value=value: _i18n().t("{path}: units = {value} isn't imperial or metric; "
+                                                           "using imperial units", path=path, value=value)))
     if "language" in data:
         try:
             found["language"] = check_language(data["language"])
         except ValueError:
             from .i18n import languages
-            problems.append(f"{path}: language = {_shown(data['language'])} isn't one of Scrimmage's languages "
-                            f"({', '.join(languages())}); using American English (en-US)")
+            value, known = _shown(data["language"]), ", ".join(languages())
+            problems.append((f"{path}: language = {value} isn't one of Scrimmage's languages "
+                             f"({known}); using American English (en-US)",
+                             lambda value=value: _i18n().t("{path}: language = {value} isn't one of Scrimmage's "
+                                                           "languages ({languages}); using American English (en-US)",
+                                                           path=path, value=value, languages=known)))
     if "theme" in data:
         try:
             found["theme"] = check_theme(data["theme"])
         except ValueError:
-            problems.append(f"{path}: theme = {_shown(data['theme'])} isn't system, light or dark; "
-                            "using the System theme")
-    return Settings(**found), "; ".join(problems) or None
+            value = _shown(data["theme"])
+            problems.append((f"{path}: theme = {value} isn't system, light or dark; "
+                             "using the System theme",
+                             lambda value=value: _i18n().t("{path}: theme = {value} isn't system, light or dark; "
+                                                           "using the System theme", path=path, value=value)))
+    return Settings(**found), problems
 
 
 def _stat(path: Path) -> tuple:
@@ -135,18 +161,18 @@ def _stat(path: Path) -> tuple:
     return (str(path), st.st_ino, st.st_mtime_ns, st.st_size)
 
 
-def _current() -> tuple[Settings, str | None]:
+def _current() -> tuple[Settings, list]:
     global _cache
     path = settings_path()
     key = _stat(path)
     with _lock:
         if _cache is not None and _cache[0] == key:
             return _cache[1], _cache[2]
-        found, problem = _read(path)
-        if problem:
-            log.warning(problem)   # once per state of the file: the next read is the cached one
-        _cache = (key, found, problem)
-        return found, problem
+        found, problems = _read(path)
+        if problems:
+            log.warning("; ".join(text for text, _ in problems))   # once per state of the file: the next read is cached
+        _cache = (key, found, problems)
+        return found, problems
 
 
 def load() -> Settings:
@@ -155,8 +181,14 @@ def load() -> Settings:
 
 
 def problem() -> str | None:
-    """Why the settings file is being ignored (it can't be read, isn't TOML, has a bad value), else None."""
-    return _current()[1]
+    """Why the settings file is being ignored (it can't be read, isn't TOML, has a bad value), else None: in
+    American English, as the log has it."""
+    return "; ".join(text for text, _ in _current()[1]) or None
+
+
+def problem_words() -> str | None:
+    """problem() in the Language setting (the web app's warning): worded when asked, once the language is known."""
+    return "; ".join(words() for _, words in _current()[1]) or None
 
 
 def save(**changes) -> None:

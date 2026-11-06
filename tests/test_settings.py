@@ -293,3 +293,23 @@ def test_the_page_starts_in_the_saved_theme(api):
     assert '<html lang="en-US" data-theme="system">' in page()
     save(theme="dark")
     assert '<html lang="en-US" data-theme="dark">' in page()
+
+
+@pytest.mark.parametrize("text", ['units = "furlongs"\ntheme = "pink"\n', "units = metric\n", None])
+def test_a_settings_problem_is_worded_in_the_language_when_shown(monkeypatch, text):
+    """A12: the problems are found before the language is known; the log keeps American English, and the web app's
+    warning (problem_words) is worded when it is asked for: en-US the log's text, word for word."""
+    from scrimmage import i18n
+    f = settings_dir() / "settings.toml"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    if text is None:
+        f.mkdir()                                                  # can't be read
+    else:
+        f.write_text(text)
+    assert settings.problem_words() == settings.problem() and settings.problem()
+    real = i18n._entry
+    monkeypatch.setattr(i18n, "_entry", lambda key, lang, plural: ("XX " + key.split("\u0004")[-1])
+                        if lang == "en-GB" and not plural else real(key, lang, plural))
+    with i18n.fixed("en-GB"):
+        words = settings.problem_words()
+    assert words == "; ".join("XX " + text for text, _ in settings._current()[1]), words   # each one sentence
