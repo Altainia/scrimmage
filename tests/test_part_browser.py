@@ -759,6 +759,23 @@ def test_the_part_tab_grip_row_sets_the_overlay(part_page):
     assert page.input_value("#part-grip") == "nitrile"
 
 
+def test_a_half_typed_weight_switched_back_and_forth_doesnt_drift(part_page):
+    """Review (A6): 0.5 kg half typed, Units to Imperial (1.1023 lb) and back: 0.5 again, not 0.49999, and 0.5 is
+    saved."""
+    page, imp = part_page
+    page_units(page, "metric")
+    _pick_body(page, "arm_A")
+    page.wait_for_selector("#part-body-weight")
+    page.click("#part-body-weight", click_count=3)
+    page.keyboard.type("0.5")                                          # half typed: not committed
+    page_units(page, "imperial")
+    page.wait_for_function("document.querySelector('#part-body-weight').value === '1.1023'")
+    page_units(page, "metric")
+    page.wait_for_function("document.querySelector('#part-body-weight').value === '0.5'")
+    _edit(page, lambda: page.keyboard.press("Enter"))
+    assert tomllib.loads(imp.read_text())["bodies"]["arm_A"]["mass"] == 0.5
+
+
 def test_the_part_tab_shows_and_takes_the_chosen_units(part_page):
     """Units (Settings): weights show and take pounds (the default) or kilograms; the file keeps kilograms; a typed
     weight reads back as typed (Review Focus 1); switching while the tab is open redraws it at once and keeps the box

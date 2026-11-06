@@ -555,8 +555,11 @@ function jointMore(c, b) {
   const pair = (which, saved, ids, kinds, send, waitText) => {
     const key = `${b.name}:${which}`, kept = pairDraft.get(key);
     // typed in the other system (Units changed since): converted, as a box being typed in is
+    // (from what was typed, kept with it, so switching back and forth doesn't drift: carryText's rule)
+    const orig = kept && (kept.orig || kept), origSys = kept && (kept.origSys || kept.sys);
     const d = kept && kept.sys !== units.system
-      ? Object.assign(kept.map((x, i) => units.convert(x, kinds[i], kept.sys)), { sys: units.system }) : kept;
+      ? Object.assign(orig.map((x, i) => (origSys === units.system ? x : units.convert(x, kinds[i], origSys))),
+        { sys: units.system, orig, origSys }) : kept;
     if (d !== kept) pairDraft.set(key, d);
     const text = d || (saved ? saved.map((x, i) => shownAs(x, kinds[i], 4)) : ["", ""]);
     const els = ids.map(([id, extra], i) => box({ id, type: "text", inputmode: "decimal", value: text[i], kind: kinds[i], ...extra }, () => {

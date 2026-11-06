@@ -446,7 +446,8 @@ def _launcher(args) -> None:
         label = report.calibration(setups)
         print(report.format_table(rows, label=label, shown=report.SHOWN))
         print(f"wrote {out / 'results.csv'}")
-        paths = report.write_charts(rows, charts, out, [s.goal for s in setups], footer=label, shown=report.SHOWN)
+        paths = report.write_charts(rows, charts, out, [s.goal for s in setups], footer=label, shown=report.SHOWN,
+                                    swept=report.key_kind)
     except (LauncherConfigError, OSError) as e:
         print(f"scrimmage: {e}", file=sys.stderr)
         sys.exit(2)

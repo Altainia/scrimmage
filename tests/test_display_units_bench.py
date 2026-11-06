@@ -105,11 +105,11 @@ def test_a_chart_axis_in_both_systems(units, tmp_path, monkeypatch):
         return list(said), [list(p) for p in plotted]
 
     labels, values = chart(tmp_path / "i")
-    assert labels == ["exit_speed (ft/s)", "peak_load_n (lbf)", "jammed"]
+    assert labels == ["exit_speed (ft/s)", "peak_load (lbf)", "jammed"]
     assert values[0] == pytest.approx([6.0 / u.FT, 7.5 / u.FT])
     units("metric")
     labels, values = chart(tmp_path / "m")
-    assert labels == ["exit_speed (m/s)", "peak_load_n (N)", "jammed"]
+    assert labels == ["exit_speed (m/s)", "peak_load (N)", "jammed"]
     assert values[0] == pytest.approx([6.0, 7.5]) and values[1] == pytest.approx([100.0, 100.0])
 
 
@@ -227,3 +227,43 @@ def test_measure_summaries_in_both_systems(units):
     units("metric")
     assert [FIELD[k][1](v) for k, v in (("mass", 0.142), ("diameter", 0.15), ("stiffness_n", 118.0))] == \
         ["0.1420 kg", "150.0 mm", "118.0 N"]
+
+
+def test_a_launcher_sweep_charts_its_swept_length_in_the_units_setting(units, tmp_path, monkeypatch):
+    """Review (A3/A4): `launcher sweep` passes the launcher's key kinds, so hood.gap is charted in inches or mm; a
+    shown metric's header drops its SI suffix ("spread_downrange (ft)", not "spread_downrange_m (ft)")."""
+    pytest.importorskip("matplotlib")
+    from matplotlib.axes import Axes
+
+    from scrimmage.bench.compare import Row
+    from scrimmage.launcher import report
+    from scrimmage.launcher.run import METRIC_KEYS
+    xs_said, x_values = [], []
+    set_xlabel, plot = Axes.set_xlabel, Axes.plot
+    monkeypatch.setattr(Axes, "set_xlabel", lambda self, text, *a, **k: (xs_said.append(text), set_xlabel(self, text, *a, **k))[1])
+    monkeypatch.setattr(Axes, "plot", lambda self, xs, ys, *a, **k: (x_values.append(list(xs)), plot(self, xs, ys, *a, **k))[1])
+    base = {k: float("nan") for k in METRIC_KEYS}
+    rows = [({"hood.gap": g}, Row({**base, "exit_speed": 10.0, "spread_downrange_m": 0.3048})) for g in (0.1016, 0.127)]
+    chart = [{"kind": "line", "x": "hood.gap", "y": "exit_speed"}]
+    report.write_charts(rows, chart, tmp_path / "i", footer="x", shown=report.SHOWN, swept=report.key_kind)
+    assert xs_said == ["hood.gap (in)"] and x_values[0] == pytest.approx([4.0, 5.0])
+    assert "spread_downrange (ft)" in report.format_table(rows, label="x", shown=report.SHOWN).splitlines()[1]
+    units("metric")
+    xs_said.clear(), x_values.clear()
+    report.write_charts(rows, chart, tmp_path / "m", footer="x", shown=report.SHOWN, swept=report.key_kind)
+    assert xs_said == ["hood.gap (mm)"] and x_values[0] == pytest.approx([101.6, 127.0])
+
+
+def test_the_disc_launchers_table_follows_the_units_setting(units):
+    """Review (A3/A4): the disc launcher's printed table (and summary.md) show its speeds and distances in the Units
+    setting; results.csv stays SI."""
+    from scrimmage.bench.compare import Row
+    from scrimmage.disc import report as disc
+    from scrimmage.disc.run import METRIC_KEYS
+    from scrimmage.launcher import report
+    rows = [({}, Row({**{k: 1.0 for k in METRIC_KEYS}, "exit_speed": 3.048, "landing_m": 3.048}))]
+    head, row = (report.format_table(rows, METRIC_KEYS, label="x", shown=disc.SHOWN).splitlines()[1:])
+    assert "exit_speed (ft/s)" in head and "landing (ft)" in head and "landing_m" not in head
+    assert row.split()[METRIC_KEYS.index("landing_m")] == "10"
+    units("metric")
+    assert "landing (m)" in report.format_table(rows, METRIC_KEYS, label="x", shown=disc.SHOWN).splitlines()[1]

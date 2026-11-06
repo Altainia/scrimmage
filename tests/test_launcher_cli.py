@@ -206,8 +206,8 @@ def test_the_printed_table_follows_the_units_but_results_csv_stays_si(tmp_path, 
     imperial = _table(capsys.readouterr().out)
     main(["--units", "metric", "launcher", "run", str(p), "--out", str(tmp_path / "m")])
     metric = _table(capsys.readouterr().out)
-    assert "exit_speed (ft/s)" in imperial[0] and "spread_downrange_m (ft)" in imperial[0]
-    assert "exit_speed (m/s)" in metric[0] and "spread_lateral_m (m)" in metric[0]
+    assert "exit_speed (ft/s)" in imperial[0] and "spread_downrange (ft)" in imperial[0]
+    assert "exit_speed (m/s)" in metric[0] and "spread_lateral (m)" in metric[0]
     k = metric[0].index("exit_speed (m/s)")
     assert float(imperial[1][k]) == pytest.approx(float(metric[1][k]) / 0.3048, rel=1e-3)
     assert metric[0][metric[0].index("fired")] == "fired"                # counts are as they were

@@ -473,6 +473,19 @@ async function runFix(fix) {
   followFix(data.id);
 }
 
+// A Language change: the failed fix's result (the server words it again, /api/robot/code/fix) in the new words. A
+// result kept from an older fix the server no longer holds goes: its check shows the server's words for it.
+async function rewordResults() {
+  if (!Object.keys(code.results).length) return;
+  const { status, data } = await api("GET", "/api/robot/code/fix");
+  if (status !== 200) return;
+  const r = data.result && data.result.ok === false ? data.result : null;
+  const had = !!r && r.id in code.results;
+  for (const id of Object.keys(code.results)) delete code.results[id];
+  if (had) code.results[r.id] = r;
+  if (els && code.state) render();
+}
+
 let following = null;
 async function followFix(id) {
   if (following === id) return;
@@ -982,6 +995,7 @@ export function initCode() {
     for (const [node, fn] of relabels) node.data = fn();
     render();
     if (code.shown) loadState();    // the checklist and the start sentence are the server's words
+    rewordResults();                // and so is a failed fix's result, kept beside its check
   });
   theme.onChange(() => drawPicture());   // the start's picture, in the theme's colors
   $("#center-3d").addEventListener("click", () => showCode(false));

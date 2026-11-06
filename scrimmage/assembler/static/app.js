@@ -522,7 +522,18 @@ export function typedText(el) {
   const { unitsKind: kind, unitsSys: sys } = el.dataset;
   if (!kind || !sys || sys === units.system) return el.value;
   if (el.dataset.si !== undefined && el.value.trim() === el.dataset.shown) return units.shown(Number(el.dataset.si), kind);
-  return units.convert(el.value, kind, sys);
+  return carryText(el.value, kind, sys);
+}
+// `text` typed in `from`, in the setting now (units.convert), from what the student typed: a text this made and
+// nobody has typed over since is converted again from the original, so switching back and forth doesn't drift
+// (0.5 kg is 1.1023 lb, which would come back 0.49999 kg). Typing again starts from the new text.
+let carried = null;   // {kind, sys, text: what the last conversion showed, orig, origSys: what was typed, and in}
+export function carryText(text, kind, from) {
+  const again = carried && carried.kind === kind && carried.sys === from && carried.text === text;
+  const orig = again ? carried.orig : text, origSys = again ? carried.origSys : from;
+  const out = origSys === units.system ? orig : units.convert(orig, kind, origSys);
+  carried = { kind, sys: units.system, text: out, orig, origSys };
+  return out;
 }
 // The same for a box kept on the page across a Units change (a picker's): its text converted in place.
 export function convertTyped(el) {

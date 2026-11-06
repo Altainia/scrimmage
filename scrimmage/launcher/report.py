@@ -2,6 +2,7 @@
 
 import csv
 import math
+import re
 import textwrap
 from pathlib import Path
 
@@ -24,6 +25,31 @@ Rows = list[tuple[dict, RunResult]]
 # The launcher model's metrics shown in the Units setting (the printed table, the charts), by units kind; results.csv
 # stays SI, its columns named as before. The bench passes its own (bench/compare.py SHOWN).
 SHOWN = {"exit_speed": "speed", "exit_speed_sd": "speed", "spread_downrange_m": "field", "spread_lateral_m": "field"}
+
+
+# A metric's SI suffix ("spread_downrange_m", "peak_load_n"): left off where the metric is shown in the Units setting,
+# with that unit named after it ("spread_downrange (ft)"), as fields.key_kind leaves off a key's "_in"
+SI_SUFFIX = re.compile(r"_(m|n|mps|kg|nm|pa)$")
+
+
+# A launcher file's swept keys in SI (launcher/inputs.py) that are lengths, weights, forces or speeds, by units kind:
+# a sweep chart's x axis shows them in the Units setting (write_charts' swept, key_kind). Angles, rps and the rest
+# are charted as the file has them.
+KEY_KINDS = {"ball.diameter": "length", "ball.mass": "mass", "ball.stiffness_n": "force", "wheels.diameter": "length",
+             "wheels.width": "length", "hood.gap": "length", "launcher.height": "length", "launcher.width": "length",
+             "goal.distance": "field", "goal.height": "field", "goal.diameter": "length", "feed.entry_speed": "speed"}
+
+
+def key_kind(key: str) -> tuple[str, float, str] | None:
+    """A launcher key's (units kind, SI per one of its values, its name without an SI suffix), or None: as
+    bench/fields.key_kind, for write_charts' `swept`."""
+    kind = KEY_KINDS.get(key)
+    return (kind, 1.0, SI_SUFFIX.sub("", key)) if kind else None
+
+
+def shown_name(metric: str, kind: str) -> str:
+    """A metric's name with the unit it is shown in, for a printed header or a chart: "spread_downrange (ft)"."""
+    return f"{SI_SUFFIX.sub('', metric)} ({units.unit_name(kind)})"
 
 
 def calibration(setups) -> str:
@@ -53,7 +79,7 @@ def _cells(rows: Rows, metrics=METRIC_KEYS, shown: dict[str, str] | None = None)
     setting, the unit in the header ("exit_speed (ft/s)")."""
     shown = shown or {}
     keys = _swept_keys(rows)
-    header = [*keys, *(f"{m} ({units.unit_name(shown[m])})" if m in shown else m for m in metrics)]
+    header = [*keys, *(shown_name(m, shown[m]) if m in shown else m for m in metrics)]
 
     def cell(m: str, v):
         return _fmt(units.to_display(v, shown[m]) if m in shown and isinstance(v, (int, float)) else v)
@@ -187,7 +213,7 @@ def write_charts(rows: Rows, charts: list[dict], out_dir: Path, goals: list[Goal
             if not numeric:
                 ax.set_xticks(range(len(order)), [_fmt(ticks[o]) for o in order])
             ax.set_xlabel(f"{x_kind[2]} ({units.unit_name(x_kind[0])})" if x_kind and numeric else x)
-            ax.set_ylabel(f"{y} ({units.unit_name(y_kind)})" if y_kind else y)
+            ax.set_ylabel(shown_name(y, y_kind) if y_kind else y)
             if series:
                 ax.legend()
             ax.grid(alpha=0.3)

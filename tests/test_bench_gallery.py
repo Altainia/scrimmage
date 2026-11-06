@@ -192,8 +192,8 @@ def test_the_sweep_table_prints_in_the_units_setting(tmp_path, capsys):
         lines = [ln for ln in out.splitlines() if ln.startswith(("shaft.", "  ")) or re.match(r"\s*\d", ln)]
         return [re.split(r"\s{2,}", ln.strip()) for ln in lines[:2]]
     (hi, vi), (hm, vm) = row(imperial), row(metric)
-    assert "exit_speed (ft/s)" in hi and "peak_load_n (lbf)" in hi
-    assert "exit_speed (m/s)" in hm and "peak_load_n (N)" in hm
+    assert "exit_speed (ft/s)" in hi and "peak_load (lbf)" in hi
+    assert "exit_speed (m/s)" in hm and "peak_load (N)" in hm
     k = hm.index("exit_speed (m/s)")
     assert float(vi[k]) == pytest.approx(float(vm[k]) / 0.3048, rel=1e-3)
     assert (tmp_path / "i" / "results.csv").read_bytes() == (tmp_path / "m" / "results.csv").read_bytes()

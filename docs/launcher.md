@@ -445,8 +445,8 @@ The table's first line is always the label, the charts' footer too: UNCALIBRATED
 and from how many trials. With all three measured, and good enough, it reads "Calibrated from measurements: ...". A
 swept number is an estimate. Then one row per run (one per sweep combination), with the swept values first.
 `results.csv` has the same columns, in SI. The printed table shows the exit speed and the landing spread in the
-Units setting (or `--units`), the unit in the column's name (`exit_speed (ft/s)`, `spread_downrange_m (ft)`), and so
-do the charts, the landing chart's axes too ([settings.md](settings.md)). Averages are over the launched balls.
+Units setting (or `--units`), the unit in the column's name (`exit_speed (ft/s)`, `spread_downrange (ft)`), and so
+do the charts, the landing chart's axes and a swept length on a sweep chart's x axis too ([settings.md](settings.md)). Averages are over the launched balls.
 
 | column | meaning |
 |---|---|

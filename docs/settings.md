@@ -94,8 +94,10 @@ Everything written for people to read, at the moment it is written:
   too) and the scale bar on its pictures, and a bench folder's gallery page;
 - the text the command line prints: `scrimmage run`'s check lines, `scrimmage test run`, `scrimmage bench run`,
   `scrimmage measure` and `scrimmage freecad export` (its mass line), and the tables `scrimmage launcher run`,
-  `launcher sweep`, `bench sweep` and `bench compare` print (exit speed, the landing spread and peak load, the unit in
-  the column's name: `exit_speed (ft/s)`), and the launcher model's landing chart.
+  `launcher sweep`, `bench sweep`, `bench compare` and `scrimmage disc run`/`disc sweep` print (exit speed, the
+  landing spread, peak load and the disc's apex, landing and wall heights, the unit in the column's name, without
+  the SI suffix: `exit_speed (ft/s)`, `spread_downrange (ft)`), and the launcher and disc charts: their metrics, the
+  landing chart's axes, and a swept length, weight, force or speed on a sweep chart's x axis (`hood.gap (in)`).
 
 ## What never changes: machine output
 
@@ -206,6 +208,10 @@ command line, and the default is used for that setting; the others keep their va
   `table.csv`'s table, as the command line always did.
 - **A bench sweep chart** is drawn in the setting it was made in (its axis follows the setting when written, as
   every chart does); the stage table beside it switches at once.
+- **The swept values in a printed table** (`launcher sweep`, `disc sweep`, `bench sweep` and `bench compare`)
+  are as the file has them (`hood.gap` in meters, `wheel.top.diameter_in` in inches), so a row reads back as the
+  file's own numbers; the metrics beside them follow the setting. A swept angle, rps or count is charted as the file
+  has it too.
 - **Changing Units clears the Test tab's undo history**, because the steps hold numbers in the old units.
 - **Another open tab or editor** follows a change within about 2 seconds, not at once.
 

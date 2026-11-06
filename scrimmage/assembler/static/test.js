@@ -34,7 +34,7 @@
 // block's number}.
 
 import { $, h, api, notice, registerTab, setTab, showPath, currentTab, store, defaultGrip, showMeasure, readMeasure,
-  measureError, lengthWords, convertTyped } from "./app.js";
+  measureError, lengthWords, convertTyped, carryText } from "./app.js";
 import { initRunPanel, update as updateRuns, replay, sweepShown, spreadShown } from "./test_run.js";
 import { defineBlocks, toolbox, testToWorkspace, workspaceToTest, placeOf, incomplete, looseStacks, setUsed, STYLES,
   headOf, setHead, sweepNumber, appendBlocks, showUnits, relabel } from "./blocks_defs.js";
@@ -179,11 +179,11 @@ function unitsChanged() {
   }
   T.shownUnits = units.system;
   floorUnits();
-  // a Setup box half typed keeps Setup from being drawn again: what it holds is converted to the new units
+  // a Setup box half typed: what it holds is converted to the new units, and kept as Setup is drawn again
   const act = document.activeElement;
   if (act && act.matches && act.matches("input.test-num[data-units-kind]") && act.value !== act.dataset.orig) convertTyped(act);
   T.setupKey = null;
-  renderSetup();
+  renderSetup({ keepTyping: true });
 }
 
 // A Language change (spec L7): the blocks are made again in the new words (blocks_defs.js relabel: an open editor is
@@ -782,7 +782,7 @@ function floorUnits() {
       d[k] = next;
       const el = document.getElementById(`test-spread-${axis}-${k}`);
       if (!el) continue;
-      if (el === document.activeElement && el.value !== el.dataset.orig) el.value = units.convert(el.value, "length", from);
+      if (el === document.activeElement && el.value !== el.dataset.orig) el.value = carryText(el.value, "length", from);
       else el.value = next;
       el.dataset.orig = next;
     }
@@ -1024,7 +1024,9 @@ function renderSetupError() {
   el.textContent = T.setupError ? t("Not changed: {why}", { why: T.setupError }) : "";
 }
 
-function renderSetup() {
+// `keepTyping` (a Units change): drawn again even while a box is half typed, so every label names the new unit; the
+// box's text (already converted: floorUnits, unitsChanged), focus and caret carry over into the new box.
+function renderSetup({ keepTyping = false } = {}) {
   const s = T.state;
   if (!s || !T.ws) return;
   const body = $("#test-setup-body");
@@ -1055,7 +1057,10 @@ function renderSetup() {
     (s.fields || []).length, T.robot ? [T.robot.version, T.robot.parts, ro] : null, !!T.stock, T.setupError, units.system]);
   if (key === T.setupKey) return;
   const focused = document.activeElement && body.contains(document.activeElement) ? document.activeElement.id : null;
-  if (focused && document.activeElement.matches("input.test-num") && document.activeElement.value !== document.activeElement.dataset.orig) return;
+  const act = document.activeElement;
+  const typing = focused && act.matches("input.test-num") && act.value !== act.dataset.orig;
+  if (typing && !keepTyping) return;
+  const kept = typing ? { value: act.value, start: act.selectionStart, end: act.selectionEnd } : null;
 
   // the mechanism's bodies: not the drivetrain's or the stock root part's (as the mounts); a ticked one always shows
   const skip = new Set();
@@ -1280,7 +1285,11 @@ function renderSetup() {
   if (pal.floor_piece) renderFloorCount(floorSpread(T.floor));
   T.setupKey = key;
   renderSetupError();
-  if (focused && document.getElementById(focused)) document.getElementById(focused).focus();
+  const el = focused && document.getElementById(focused);
+  if (el) {
+    if (kept) { el.value = kept.value; try { el.setSelectionRange(kept.start, kept.end); } catch { /* not a text box */ } }
+    el.focus();
+  }
 }
 
 // -- sweeps -----------------------------------------------------------------------------------------------------------

@@ -2312,11 +2312,13 @@ def test_the_floor_spread_keeps_its_values_across_a_units_change(test_page, tmp_
     page.wait_for_selector("#test-spread-count")
     assert _toml(path)["setup"]["floor_spread"]["offset_in"] == [-6.0, 0.0, 6.0]
     assert [page.input_value(f"#test-spread-offset_in-{k}") for k in ("from", "to")] == ["-6", "6"]
-    page.fill("#test-spread-offset_in-steps", "5")                  # half typed: Setup isn't drawn again
+    page.fill("#test-spread-offset_in-steps", "5")                  # half typed: kept as Setup is drawn again
     page_units(page, "metric")
     page.wait_for_function("document.querySelector('#test-spread-offset_in-to').value === '152.4'")
     assert page.input_value("#test-spread-offset_in-from") == "-152.4"
     assert page.input_value("#test-spread-offset_in-steps") == "5"
+    assert page.evaluate("document.activeElement.id") == "test-spread-offset_in-steps"
+    assert "Offset across (mm)" in page.inner_text(".test-setup-floor")   # review: the labels follow too
     assert page.get_attribute("#test-spread-offset_in-on", "id")      # (still there)
     page.press("#test-spread-offset_in-steps", "Enter")
     _wait_file(lambda: _toml(path)["setup"]["floor_spread"]["offset_in"] == [-6.0, -3.0, 0.0, 3.0, 6.0], path)
