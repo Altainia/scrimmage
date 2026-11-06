@@ -41,6 +41,7 @@ import numpy as np
 
 from .. import i18n
 from ..bindings import Update
+from ..checks import Said
 from ..protocol import HalState
 from .colors import nearest_color
 from .spec import COLOR_MAX_RANGE, I2C_PORTS, SensorError, SensorSpec, color_device
@@ -57,6 +58,20 @@ MAX_CASTS = 32      # a sensor's most casts in one step (robot surfaces in the w
 FULL_SCALE = 2047
 MAX_VOLTS = 5.0     # an AnalogInput reads 0 to 5 V
 PORT_WORDS = {"onboard": "onboard", "mxp": "MXP"}
+
+
+def _missing_color_words(name: str, port: str, after: float, other: str | None):
+    """missing_color_sensors' warning for people, worded when it is shown (not on the bridge's thread)."""
+    p = dict(sensor_table="[[sensor]]", name=name, device="REV Color Sensor V3", port=port, after=f"{after:g}",
+             class_name="ColorSensorV3", i2c_key="i2c")
+    if other is None:
+        return lambda: i18n.t('{sensor_table} "{name}" is a {device} on the {port} I2C port, but the robot program '
+                              "hasn't created one there {after} s after connecting; check the port the robot code "
+                              "gives {class_name} and the sensor's {i2c_key}", **p)
+    return lambda: i18n.t('{sensor_table} "{name}" is a {device} on the {port} I2C port, but the robot program '
+                          "hasn't created one there {after} s after connecting (it has one on the {other} port); "
+                          "check the port the robot code gives {class_name} and the sensor's {i2c_key}", other=other,
+                          **p)
 GRAY_REFLECTANCE = 0.3  # estimate: how much IR something that isn't a piece (the carpet, a wall) returns, of a piece's
 BRIGHTNESS = ((0.0, 1.0), (0.02, 1.0), (0.06, 0.5), (COLOR_MAX_RANGE, 0.0))
 DARK = {"Red": 12, "Green": 14, "Blue": 12, "IR": 8}    # estimate: a dark gray carpet, a few counts in each channel
@@ -192,9 +207,13 @@ class SensorRuntime:
         if name in self._out_of_casts:
             return
         self._out_of_casts.add(name)
-        self.world.warnings.append(
+        # made on the simulation's thread: machine text (report.json, MCP state), worded for people when shown (Said)
+        self.world.warnings.append(Said(
             f'[[sensor]] "{name}": the robot is in its way: its ray met {MAX_CASTS} of the robot\'s surfaces in one '
-            "step, the most a sensor looks past, so it read nothing beyond them; move it or point it clear of the robot")
+            "step, the most a sensor looks past, so it read nothing beyond them; move it or point it clear of the robot",
+            lambda: i18n.t('{sensor_table} "{name}": the robot is in its way: its ray met {casts} of the robot\'s '
+                           "surfaces in one step, the most a sensor looks past, so it read nothing beyond them; move "
+                           "it or point it clear of the robot", sensor_table="[[sensor]]", name=name, casts=MAX_CASTS)))
 
     def sensor_updates(self) -> list[Update]:
         """The HAL inputs for the robot program: a DigitalInput per `dio` (on, inverted when active-low: a beam broken
@@ -224,10 +243,12 @@ class SensorRuntime:
             if key in hal.devices:
                 continue
             others = [p for p in I2C_PORTS if p != s.i2c and color_device(p) in hal.devices]
-            msg = (f'[[sensor]] "{s.name}" is a REV Color Sensor V3 on the {PORT_WORDS[s.i2c]} I2C port, but the robot '
-                   f"program hasn't created one there {after:g} s after connecting"
-                   + (f" (it has one on the {PORT_WORDS[others[0]]} port)" if others else "")
-                   + "; check the port the robot code gives ColorSensorV3 and the sensor's i2c")
+            text = (f'[[sensor]] "{s.name}" is a REV Color Sensor V3 on the {PORT_WORDS[s.i2c]} I2C port, but the robot '
+                    f"program hasn't created one there {after:g} s after connecting"
+                    + (f" (it has one on the {PORT_WORDS[others[0]]} port)" if others else "")
+                    + "; check the port the robot code gives ColorSensorV3 and the sensor's i2c")
+            msg = Said(text, _missing_color_words(s.name, PORT_WORDS[s.i2c], after,
+                                                  PORT_WORDS[others[0]] if others else None))
             out.append(msg)
             if msg not in self.world.warnings:
                 self.world.warnings.append(msg)

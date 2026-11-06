@@ -84,11 +84,16 @@ Everything written for people to read, at the moment it is written:
 
 - every number the editor shows, in every tab: the Robot and Part inspectors, the status bar's mass and center of
   gravity, the Drive tab's readouts and push force, the Scenario tab's checks and report, the Test tab's blocks,
-  Setup, chart titles and failure text, the Bench tab's boxes and stage table, and the Measure tab's new columns;
-- `report.md` beside a scenario run, a bench run's `summary.txt`, its charts and the scale bar on its pictures, and a
-  bench folder's gallery page;
+  Setup, chart titles and failure text, its sweep and floor spread tables, the Bench tab's boxes and stage table (a
+  swept key's values too), and the Measure tab's new columns;
+- a run kept by a sweep, a floor spread or an agent's MCP `test_run`, opened in the Test tab: its outcome and check
+  lines are kept in every setting when the run is made, so it shows yours, and switches when you change it;
+- `report.md` beside a scenario run, a bench run's `summary.txt`, its charts (a bench sweep chart's swept-key axis
+  too) and the scale bar on its pictures, and a bench folder's gallery page;
 - the text the command line prints: `scrimmage run`'s check lines, `scrimmage test run`, `scrimmage bench run`,
-  `scrimmage measure` and `scrimmage freecad export` (its mass line).
+  `scrimmage measure` and `scrimmage freecad export` (its mass line), and the tables `scrimmage launcher run`,
+  `launcher sweep`, `bench sweep` and `bench compare` print (exit speed, the landing spread and peak load, the unit in
+  the column's name: `exit_speed (ft/s)`), and the launcher model's landing chart.
 
 ## What never changes: machine output
 
@@ -100,7 +105,9 @@ before the setting existed, so nothing that reads it breaks:
 - **A scenario's `report.json`** and the MCP `run_scenario` result keep their check messages in meters ("pose:
   0.40 m from target").
 - **The Test tab's machine text** keeps its old words: the MCP `test_run`, `test_sweep` and `test_spread` results
-  (their outcomes, check lines and refusals) and a sweep's or floor spread's `table.csv`. They are in inches and psi
+  (their outcomes, check lines and refusals), a sweep's or floor spread's `table.csv`, and the fields of a run's
+  `result.json` (a run kept this way also keeps its words in every setting, its `words`, for the Test tab; the
+  sweep's or spread's `table.json` beside `table.csv` holds the table's). They are in inches and psi
   as they always were, with one decimal where they had one ("120.0 psi", "0.0 in"), except for three things that
   were always in meters:
   - a drive's distance ("didn't reach 4 m in 0.5 s (went 0.43 m)");
@@ -191,24 +198,17 @@ command line, and the default is used for that setting; the others keep their va
 
 ## Known gaps
 
-- **The Test tab's sweep and floor spread tables** show inches whatever the setting. They are read from the run's
-  `table.csv`, which keeps its old words (above). `scrimmage test spread` prints the same table.
-- **A run kept inside a sweep or a floor spread**, opened from its row, shows those same old words (its outcome and
-  checks, such as "didn't reach 4 m"), whatever the setting: they are written once, during the run, for the table.
-- **A run an agent made with MCP `test_run`**, then opened in the Test tab, shows its check lines in the fixed agent
-  text (inches and psi, with a drive's distance in meters), whatever the setting: the run is saved inside machine
-  text.
-- **The launcher model's own output** (`scrimmage launcher run`: its table and its downrange and lateral charts) and
-  the tables `scrimmage bench sweep` and `scrimmage bench compare` print keep their fixed units (m, m/s, N).
-- **A bench sweep's From and To boxes** follow the setting, but the sweep chart's x axis and the stage table's
-  swept-key column show the number as the bench file writes it (meters, or inches for an `_in` key).
+- **A sweep or floor spread made by an older Scrimmage** (its folder has no `table.json`) shows its table in
+  inches and American English whatever the setting, as its `table.csv` has it, and so does a run kept inside it or
+  made by MCP `test_run` before this change. Run it again to see it in your setting. `scrimmage test spread` prints
+  `table.csv`'s table, as the command line always did.
+- **A bench sweep chart** is drawn in the setting it was made in (its axis follows the setting when written, as
+  every chart does); the stage table beside it switches at once.
 - **Changing Units clears the Test tab's undo history**, because the steps hold numbers in the old units.
 - **Another open tab or editor** follows a change within about 2 seconds, not at once.
 
 For Language:
 
-- **The Test tab's sweep and floor spread tables** keep their outcomes and grip-loss words in American English
-  inside the translated table, because they come from the run's `table.csv`, which is machine text.
 - **The command line is American English throughout**, whatever the setting: what it prints and the files it
   writes. Only the web app (`edit`, `serve`) and its files follow the Language.
 - **A scenario run started from the web app** shows session and config errors (a robot config that can't load, for
@@ -216,14 +216,21 @@ For Language:
 - **A Test-tab sweep or floor spread that fails as a whole** (a session or config error, such as a robot config
   that can't load) says why in American English, because the error is raised while the run writes its machine text
   (`table.csv`).
-- **The Part tab's build messages**, and why the part can't be edited (an import file that was deleted or can't be
-  read, a CAD file that can't be), keep the language they were made in until the next build or change of the file.
-- **The robot code panel's Build now result** (its log and a failed build's checklist line) keeps the language it was
-  made in until the next build.
-- **Why a scenario has no robot** (its `config` names none, or names a file that was deleted) keeps its language
-  until the scenario or its robot config changes.
-- **A few warnings from a running simulation** stay in American English: a sensor the robot blocks, a valve on a hub
-  the robot code never opened, a missing device. They are made while the robot runs, and go into machine text too.
+- **A sweep row that couldn't run** says why in American English: the error is raised while the sweep writes its
+  machine text.
+- **A language added after a run was kept** shows that run (kept by a sweep, a spread or MCP) in American English,
+  in your units: its words were kept for the languages Scrimmage had then.
+- **The Part tab's build and edit messages** (what a build or an edit left out or changed, and why a build failed) and why a CAD file
+  can't be read keep the language they were made in until the next build or read of the file: only a build can
+  make them again. Why the part can't be edited otherwise (an import file that was deleted or has a mistake, a team
+  folder this computer hasn't set, a CAD file with no pieces) follows a change at once.
+- **The robot code panel's Build now log** is the build program's own output, as it printed it. The result's
+  sentence and the checklist's line follow a change.
+- **A few warnings from a running simulation** are in American English in the terminal's log (a device the robot
+  code didn't create, a SPARK the REV helper doesn't drive). The ones a run's notes and the Scenario tab show (a
+  sensor the robot blocks, a valve on a hub the robot code never opened, both of a valve's channels on, a color
+  sensor the robot didn't create) are worded in your language when the run ends, as its check lines are, and stay
+  American English in `report.json` and MCP results.
 - **MCP results stay American English** (machine output), even when the web app shows the same run in British
   English.
 - **The settings file's own problems** (a `settings.toml` that can't be read, or a value Scrimmage doesn't know,

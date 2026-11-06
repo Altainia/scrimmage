@@ -26,6 +26,7 @@ import mujoco
 
 from .. import i18n
 from ..bindings import Update
+from ..checks import Said
 from ..protocol import HalState
 from .model import AirConfig, AirSystem
 
@@ -145,12 +146,17 @@ class PneumaticsRuntime:
         if fwd and rev:
             if v["name"] not in self._warned:
                 self._warned.add(v["name"])
-                self._warn(f"{v['name']}: both of the double solenoid's channels ({v['forward']} and "
-                           f"{v['reverse']}) are on, so the valve holds where it is; turn one off")
+                self._warn(Said(f"{v['name']}: both of the double solenoid's channels ({v['forward']} and "
+                                f"{v['reverse']}) are on, so the valve holds where it is; turn one off",
+                                lambda v=v: i18n.t("{valve}: both of the double solenoid's channels ({forward} and "
+                                                   "{reverse}) are on, so the valve holds where it is; turn one off",
+                                                   valve=v["name"], forward=v["forward"], reverse=v["reverse"])))
             return "hold"
         return "extend" if fwd else "retract" if rev else "hold"
 
     def _warn(self, text: str) -> None:
+        """A warning made while the robot runs (on the simulation's or bridge's thread): machine text in the run's
+        notes and MCP state, a Said so the page words it for people when it shows it."""
         self.warnings.append(text)
         self.world.warnings.append(text)
 
@@ -177,12 +183,21 @@ class PneumaticsRuntime:
             if v["module"] != "PH" or v["id"] in opened:
                 continue
             if not opened:
-                out.append(f"{v['name']} is on a REV Pneumatic Hub, which needs the lockstep extension "
-                           "(`--scrimmage-lockstep` for RobotPy, the Gradle init script for Java)")
+                out.append(Said(f"{v['name']} is on a REV Pneumatic Hub, which needs the lockstep extension "
+                                "(`--scrimmage-lockstep` for RobotPy, the Gradle init script for Java)",
+                                lambda v=v: i18n.t("{valve} is on a REV Pneumatic Hub, which needs the lockstep "
+                                                   "extension ({flag} for RobotPy, the Gradle init script for Java)",
+                                                   valve=v["name"], flag="`--scrimmage-lockstep`")))
             else:
                 hubs = f"Pneumatic Hub{'s' if len(opened) > 1 else ''} {', '.join(map(str, opened))}"
-                out.append(f"{v['name']}: the robot never opened Pneumatic Hub {v['id']} (it opened {hubs}); "
-                           "check the hub's number in the valve's ids")
+                out.append(Said(f"{v['name']}: the robot never opened Pneumatic Hub {v['id']} (it opened {hubs}); "
+                                "check the hub's number in the valve's ids",
+                                lambda v=v, opened=opened: i18n.tn(
+                                    "{valve}: the robot never opened Pneumatic Hub {hub} (it opened Pneumatic Hub "
+                                    "{hubs}); check the hub's number in the valve's {ids_key}",
+                                    "{valve}: the robot never opened Pneumatic Hub {hub} (it opened Pneumatic Hubs "
+                                    "{hubs}); check the hub's number in the valve's {ids_key}", len(opened),
+                                    valve=v["name"], hub=v["id"], hubs=", ".join(map(str, opened)), ids_key="ids")))
         return out
 
     def warn_missing_hubs(self, hal: HalState) -> list[str]:

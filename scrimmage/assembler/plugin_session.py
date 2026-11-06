@@ -44,6 +44,7 @@ class PluginSession(_Session):
         self.edits: dict = {}
         self.part = None
         self.read_only_reason: str | None = None
+        self._problem_lang: str | None = None     # the language read_only_reason is in
         self._sig = None
         self._view_key = self._view = None
         with self._lock:
@@ -65,6 +66,7 @@ class PluginSession(_Session):
             part = load_part(self.path)
         except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, PartError) as e:
             self.read_only_reason = i18n.t("{why}; fix it in a text editor", why=e)
+            self._problem_lang = i18n.current_language()
             self._bump()
             return
         if self.part is not None and edits != old:
@@ -203,8 +205,16 @@ class PluginSession(_Session):
             out[b.name] = (R0 @ _rot(b.rot), R0 @ np.asarray(b.pos, float) + p0)
         return out
 
+    def _reword(self) -> None:
+        """Why the part can't be edited, again in the Language setting when it changed since: the files read again
+        (lock held)."""
+        if self.read_only_reason is not None and self._problem_lang != i18n.current_language():
+            self._sig = None
+            self._sync()
+
     def state(self) -> dict:
         with self._lock:
+            self._reword()
             out = {"version": self.version, "mode": "plugin", "path": str(self.path),
                    "name": self.part.name if self.part else self.path.name, "source": None, "source_copied": False, "units": "m",
                    "frame": None, "pieces": [], "bodies": [], "parts": [], "couplings": [], "loops": [],

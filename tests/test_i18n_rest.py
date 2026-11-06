@@ -228,14 +228,14 @@ def test_a_stopped_fix_keeps_its_advice_without_splitting_a_sentence(gb):
     """robotcode._failed took the advice after the first ". " of the message; in a language whose sentences break
     elsewhere that cut the wrong words. The advice is now its own text."""
     from scrimmage import robotcode
-    c = robotcode._failed("agent", i18n.t("Building scrimmage's Java helper didn't work."),
-                          i18n.t("It needs Java (WPILib) and the internet the first time. The last lines are below."),
-                          [], "build_agent", robotcode.TIMED_OUT)
+    c = robotcode._failed("agent", lambda: i18n.t("Building scrimmage's Java helper didn't work."),
+                          lambda: i18n.t("It needs Java (WPILib) and the internet the first time. The last lines are "
+                                         "below."), [], "build_agent", robotcode.TIMED_OUT)
     assert c.message == "The first time, it wants Java (WPILib) and the internet. See the last lines. (It was " \
                         "stopped: it took too long.)"
     with i18n.fixed():
-        c = robotcode._failed("agent", i18n.t("Building scrimmage's Java helper didn't work."),
-                              i18n.t("It needs Java (WPILib) and the internet the first time. The last lines are "
-                                     "below."), [], "build_agent", 1)
+        c = robotcode._failed("agent", lambda: i18n.t("Building scrimmage's Java helper didn't work."),
+                              lambda: i18n.t("It needs Java (WPILib) and the internet the first time. The last lines "
+                                             "are below."), [], "build_agent", 1)
     assert c.message == ("Building scrimmage's Java helper didn't work. It needs Java (WPILib) and the internet the "
                          "first time. The last lines are below.")

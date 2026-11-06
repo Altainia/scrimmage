@@ -209,7 +209,10 @@ When you write text a student will read:
   tool with `@_tool()` in `mcp_server.py`, which enters the guard, and run its blocking work through `_in_thread()`,
   which enters it again in the worker thread (a thread doesn't inherit it). A scenario run
   started from the web app writes `report.json` inside `i18n.machine()` too. The Test tab's `table.csv` and MCP
-  `test_run` are made inside `units.machine_text()`, which also keeps the units' old words. `i18n.fixed()` is the
+  `test_run` are made inside `units.machine_text()`, which also keeps the units' old words. A run made there keeps
+  its words in every language and unit system too (`units.each_setting`, blocks/run.py's `_w`), so the Test tab
+  shows it in the viewer's: word such text with t() while the run's numbers are at hand. A warning made on the
+  simulation's thread is a `Said` (checks.py) whose words are made when it is shown, never on that thread. `i18n.fixed()` is the
   CLI's guard: everything, files for people too, in American English.
 - **The page must not find server text by its words.** Send a code or a field, and branch on that.
 

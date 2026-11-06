@@ -50,8 +50,8 @@ API = "API-contract refusal: the page never sends such a request, so no student 
 ASSERT = "internal assertion: a programming error, never a student's mistake"
 CLI = "CLI-only text (American English, the CLI ruling)"
 MCP = "MCP-only refusal or result: machine text, en-US (L2)"
-THREAD = ("runtime warning built on the simulation's or bridge's thread: machine text in report notes and MCP "
-          "state, and a new thread doesn't inherit the en-US guard (6d ruling)")
+THREAD = ("runtime warning the bridge's thread only logs (the terminal's log, American English: docs/settings.md); "
+          "the run's notes and the page show devicecheck's notes for the same devices, worded for people (cleanup A9)")
 DEV = "developer-only text (the terminal, a stock part's definition, a tool's subprocess)"
 MARKUP = "markup or code around values, no words of ours"
 SETTINGS = ("the settings file's own problems and the --units/--language refusals and setting-value checks: read "
@@ -205,13 +205,6 @@ ALLOWED = {
     ('scrimmage/parts/stock/__init__.py', '{}: unknown kind {}; kinds: {}'): DEV + " (a stock part definition's Param)",
     ('scrimmage/parts/stock/__init__.py', '{}: kind {} needs choices'): DEV + " (a stock part definition's Param)",
     ('scrimmage/parts/toml_writer.py', "can't write {} to part.toml"): ASSERT + ' (the TOML writer)',
-    ('scrimmage/pneumatics/runtime.py',
-     '{} is on a REV Pneumatic Hub, which needs the lockstep extension (`--scrimmage-lockstep` for RobotPy, '
-     'the Gradle init script for Java)'):
-        THREAD,
-    ('scrimmage/pneumatics/runtime.py',
-     "{}: the robot never opened Pneumatic Hub {} (it opened {}); check the hub's number in the valve's ids"):
-        THREAD,
     ('scrimmage/robot_process.py', 'the robot program is already running'): ASSERT + ' (started twice)',
     ('scrimmage/scenario_runner.py',
      "the scenario's [range] file is {}, but this session runs the range {}; start a session with that range"):
@@ -223,10 +216,6 @@ ALLOWED = {
      "{}: robot_env can't reach the robot program: this session attaches to a robot program it doesn't launch; "
      'set the variables yourself'):
         MCP + ' (run_scenario on a live session)',
-    ('scrimmage/sensors/runtime.py',
-     '[[sensor]] "{}": the robot is in its way: its ray met {} of the robot\'s surfaces in one step, the most '
-     'a sensor looks past, so it read nothing beyond them; move it or point it clear of the robot'):
-        THREAD,
     ('scrimmage/settings.py', 'units must be "imperial" or "metric", not {}'): SETTINGS,
     ('scrimmage/settings.py', 'theme must be "system", "light" or "dark", not {}'): SETTINGS,
     ('scrimmage/settings.py', 'language must be one of {}, not {}'): SETTINGS,
