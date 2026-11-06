@@ -850,3 +850,94 @@ def test_bench_tab_screenshot(make_bench_page):
     page.wait_for_function("document.querySelector('#bench-picture').naturalWidth > 100")
     page.wait_for_timeout(800)
     page.screenshot(path=os.environ["SCRIMMAGE_BENCH_SHOT"])
+
+
+
+def _two_reads(page, folder, then):
+    """Two idea reads on their way at once, held: the poll's (the talked-about list changed, which bumps the state
+    without changing the idea; the poll waits on its read) and, after `then()` (an edit, whose refresh reads again),
+    the edit's. Returns (the poll's route, its answer as the idea was before `then`, the edit's route)."""
+    import json
+    held = []
+    page.route("**/api/bench/idea*", lambda r: held.append(r))
+    v = page.evaluate("__scrimmageBench.state.version")
+    (folder / ".scrimmage-bench").mkdir(exist_ok=True)
+    (folder / ".scrimmage-bench" / "focus.json").write_text(json.dumps({"bounce_bar.toml": ["bar.kicker.spring"]}))
+    page.wait_for_function("(v) => __scrimmageBench.state.version > v", arg=v)
+    for _ in range(40):   # in page calls, so the handler runs
+        if held:
+            break
+        page.wait_for_timeout(100)
+    assert len(held) == 1
+    older = held.pop()
+    old_answer = older.fetch()
+    then()
+    for _ in range(40):
+        if held:
+            break
+        page.wait_for_timeout(100)
+    assert len(held) == 1
+    return older, old_answer, held.pop()
+
+
+def test_an_older_read_drawn_stamps_its_own_version(make_bench_page, tmp_path, units):
+    """A read answered while a newer one is still on its way is drawn, and its boxes carry the version it is of, not
+    the newer state's: a value typed in them over an outside change they don't show is refused as stale."""
+    units("metric")
+    page = make_bench_page()
+    _on_stage(page, "bounce bar")
+    folder = tmp_path / "kickoff"
+    f = folder / "bounce_bar.toml"
+    page.click("#bench-showall")
+    box = "#bench-all input[data-key='bar.kicker.spring']"
+    page.wait_for_selector(box)
+
+    def outside_then_edit():
+        f.write_text(f.read_text().replace("spring = 3000.0", "spring = 5000.0"))   # the page's poll waits on its read
+        page.wait_for_timeout(600)   # the session's folder poll has it
+        page.fill("#bench-all input[data-key='bar.kicker.diameter']", "30")   # refused (stale): its refresh reads
+        page.press("#bench-all input[data-key='bar.kicker.diameter']", "Enter")
+    older, old_answer, newer = _two_reads(page, folder, outside_then_edit)
+    drawn = old_answer.json()["version"]
+    older.fulfill(response=old_answer)
+    page.wait_for_function("(v) => __scrimmageBench.idea && __scrimmageBench.idea.version === v", arg=drawn)
+    assert drawn < page.evaluate("__scrimmageBench.state.version")
+    assert page.evaluate("__scrimmageBench.idea.merged.bar[0].spring") == 3000
+    # the redraw stamps the boxes it draws from that read with its version
+    page.wait_for_function("([s, v]) => document.querySelector(s).dataset.version === String(v)", arg=[box, drawn])
+    posts = []
+    page.on("response", lambda r: posts.append(r.json()) if r.url.endswith("/api/bench/edit") else None)
+    page.fill(box, "4500")
+    page.press(box, "Enter")
+    page.wait_for_timeout(200)
+    newer.continue_()
+    page.wait_for_function("__scrimmageBench.idea.merged.bar[0].spring === 5000")
+    page.wait_for_timeout(300)
+    assert posts and not any(p.get("ok") for p in posts), posts   # the 4500 was refused as stale
+    assert "spring = 5000.0" in f.read_text()
+    page.unroute("**/api/bench/idea*")
+
+
+def test_an_older_read_answered_after_a_newer_one_is_dropped(make_bench_page, tmp_path, units):
+    """Reads answered out of order: the newer is drawn, the older that comes after it is not."""
+    units("metric")
+    page = make_bench_page()
+    _on_stage(page, "bounce bar")
+    folder = tmp_path / "kickoff"
+    box = "#bench-all input[data-key='bar.kicker.spring']"
+    page.click("#bench-showall")
+    page.wait_for_selector(box)
+
+    def edit():
+        page.fill(box, "4000")
+        page.press(box, "Enter")
+    older, old_answer, newer = _two_reads(page, folder, edit)
+    newer.continue_()
+    page.wait_for_function("__scrimmageBench.idea.merged.bar[0].spring === 4000")
+    drawn = page.evaluate("__scrimmageBench.idea.version")
+    older.fulfill(response=old_answer)   # the idea before the edit
+    page.wait_for_timeout(500)
+    assert page.evaluate("__scrimmageBench.idea.merged.bar[0].spring") == 4000
+    assert page.evaluate("__scrimmageBench.idea.version") == drawn
+    assert page.input_value(box) == "4000"
+    page.unroute("**/api/bench/idea*")

@@ -549,6 +549,36 @@ def test_a_redraw_keeps_the_text_selected_to_type_over(part_page):
     assert page.input_value("#part-pivot-z") == "830"
 
 
+def test_a_units_change_keeps_the_whole_text_selected(part_page):
+    """A box's whole number selected, then Units changes (the redraw shows it converted, longer): all of the new
+    number is still selected, so what is typed replaces it and is saved in the new unit. Text half typed across the
+    change, now another length, has the caret at its end."""
+    from scrimmage.cad.frame import RobotFrame, to_robot
+    page, _ = part_page
+    page_units(page, "metric")
+    _pick_body(page, "hook_assy")
+    page.select_option("#part-joint-kind", "hinge")
+    _edit(page, lambda: page.click("#part-snap-x"))
+    page.wait_for_selector("#part-pivot-z")
+    before = page.input_value("#part-pivot-z")
+    page.click("#part-pivot-z", click_count=3)
+    page_units(page, "imperial")
+    page.wait_for_function("(b) => document.querySelector('#part-pivot-z').value !== b", arg=before)
+    assert page.evaluate("document.activeElement.id") == "part-pivot-z"
+    assert page.evaluate("(e => [e.selectionStart, e.selectionEnd])(document.activeElement)") == [0, len(page.input_value("#part-pivot-z"))]
+    _edit(page, lambda: (page.keyboard.type("33"), page.keyboard.press("Enter")))
+    f = page.evaluate("__scrimmagePart.store.state.frame")
+    R, t = to_robot(RobotFrame(f["up"], f["front"], f["floor"], f["center"], f["skip"]))
+    anchor = np.asarray(_body(page, "hook_assy")["joint"]["anchor"])
+    assert (R @ anchor + t)[2] == pytest.approx(33 * 0.0254, abs=1e-9)
+    # half typed ("20" in inches), then Metric: converted to "508", the caret at its end
+    page.click("#part-pivot-z", click_count=3)
+    page.keyboard.type("20")
+    page_units(page, "metric")
+    page.wait_for_function("document.querySelector('#part-pivot-z').value === '508'")
+    assert page.evaluate("(e => [e.selectionStart, e.selectionEnd])(document.activeElement)") == [3, 3]
+
+
 def test_plugin_part_shows_and_clears_what_was_changed_here(browser, tmp_path, monkeypatch):
     """A copy of tests/parts/intake (a plugin-made folder): a typed weight and damping go in scrimmage-edits.toml and
     show as changed here; emptying the weight box removes it again."""

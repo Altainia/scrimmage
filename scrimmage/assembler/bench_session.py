@@ -579,7 +579,9 @@ class BenchSession:
             return own
 
     def idea(self, file) -> dict:
-        """{own: the file's tables, included: {entry key: source file}, merged: the bench after includes}."""
+        """{own: the file's tables, included: {entry key: source file}, merged: the bench after includes, version: the
+        session version this read is of (the page stamps the boxes it draws from it with that), changed_at: the
+        version of its last content change}."""
         with self._lock:
             idea = self._need(file)
             own = idea.doc.doc.unwrap() if idea.doc.doc is not None else {}
@@ -588,7 +590,8 @@ class BenchSession:
             for k, p in self._sources(own, self.folder, (idea.doc.path,)).items():
                 if k not in mine:
                     included[k] = p.relative_to(self.folder).as_posix() if p.is_relative_to(self.folder) else str(p)
-            return {"own": own, "included": included, "merged": self._merged(idea, own)}
+            return {"own": own, "included": included, "merged": self._merged(idea, own), "version": self.version,
+                    "changed_at": idea.changed_at}
 
     # -- edits -------------------------------------------------------------------------------------------
     @staticmethod

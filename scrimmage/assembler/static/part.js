@@ -552,6 +552,16 @@ export function matLabel(key, short = false) {
 
 const noticed = new WeakSet();   // refused edits whose unplaced messages were already shown as notices
 
+// Where the selection goes in a box redrawn with `text`: where it was while the text is the same; when the redraw
+// changed the text (a Units change converts it, an undo or another tab's edit shows a new number), all of it if all
+// was selected (still there to type over), else the caret at its end. Offsets into the old text would select part of
+// a number ("830" selected becomes "32." of "32.677" in inches, and typing then keeps "677").
+function keptSelection(sel, text) {
+  if (text === sel.text) return [sel.start, sel.end, sel.dir || "none"];
+  if (sel.text.length && sel.start === 0 && sel.end === sel.text.length) return [0, text.length, sel.dir || "none"];
+  return [text.length, text.length, "none"];
+}
+
 function renderInspector() {
   const root = $("#part-inspector");
   // keep what is half typed in a box across the redraw
@@ -562,7 +572,8 @@ function renderInspector() {
   const keepFocus = act && root.contains(act) && act.id ? act.id : null;
   // and what is selected in it, typed in or not: a box's text selected to type over (a triple click) and redrawn
   // before the first key would otherwise take the typing in front of its old number ("830" + "818" = 830818 mm)
-  const sel = keepFocus && act.tagName === "INPUT" ? { start: act.selectionStart, end: act.selectionEnd, dir: act.selectionDirection } : null;
+  const sel = keepFocus && act.tagName === "INPUT"
+    ? { text: act.value, start: act.selectionStart, end: act.selectionEnd, dir: act.selectionDirection } : null;
   const ctx = context();
   const out = [];
   for (const sec of sections) {
@@ -581,7 +592,7 @@ function renderInspector() {
       if (typing && el.tagName === "INPUT") el.value = typing.value;
       el.focus({ preventScroll: true });
       if (sel && el.tagName === "INPUT" && sel.start !== null) {
-        try { el.setSelectionRange(sel.start, sel.end, sel.dir || "none"); } catch { /* boxes with no text selection */ }
+        try { el.setSelectionRange(...keptSelection(sel, el.value)); } catch { /* boxes with no text selection */ }
       }
     }
   }
