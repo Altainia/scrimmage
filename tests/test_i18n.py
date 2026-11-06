@@ -392,6 +392,21 @@ def test_template_finds_the_literal_sources(tree):
     ]
 
 
+def test_template_finds_calls_through_the_module_however_it_is_imported(tree):
+    """`import scrimmage.i18n` (unaliased) is called as scrimmage.i18n.t(...); an alias or a bare `import i18n` too."""
+    (tree / "dotted.py").write_text(
+        "import scrimmage.i18n\nimport scrimmage.i18n as loc\nimport i18n\nimport other.thing\n\n"
+        "a = scrimmage.i18n.t(\"Through the package\")\nb = loc.tn(\"{count} rod\", \"{count} rods\", 2)\n"
+        "c = i18n.N_(\"Bare module\")\nd = other.thing.t(\"Not i18n\")\ne = scrimmage.i18n.t(name)\n")
+    found, errors = i18n_tool.scan(tree)
+    where = {s.key: s.where for s in found}
+    assert where["Through the package"] == ["pkg/dotted.py:6"]
+    assert where["{count} rod|{count} rods"] == ["pkg/dotted.py:7"]
+    assert where["Bare module"] == ["pkg/dotted.py:8"]
+    assert "Not i18n" not in where
+    assert "pkg/dotted.py:10: t() needs a literal string first, not name" in errors
+
+
 def test_a_python_file_that_doesnt_parse_is_an_error_not_a_crash(tree):
     (tree / "broken.py").write_text("from scrimmage.i18n import t\n\ndef f(:\n    t('Never seen')\n")
     found, errors = i18n_tool.scan(tree)
