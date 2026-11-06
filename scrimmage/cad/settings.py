@@ -55,11 +55,12 @@ class JointSettings:
     spring: tuple[float, float] | None = None       # (stiffness, rest)
     damping: float = 0.0
     frictionloss: float = 0.0
+    limit_solref: tuple[float, float] | None = None     # the range's stops: (timeconst, dampratio); None: MuJoCo's
 
     def __post_init__(self):
         if self.kind not in ("hinge", "slide"):
             raise CadError(i18n.t("A joint is a hinge or a slide, not {kind}.", kind=repr(self.kind)))
-        for name in ("range", "spring"):
+        for name in ("range", "spring", "limit_solref"):
             v = getattr(self, name)
             if v is not None:
                 setattr(self, name, (float(v[0]), float(v[1])))

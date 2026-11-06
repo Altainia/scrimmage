@@ -9,7 +9,7 @@ doesn't load makes the part read-only with the reason until it loads again. Vers
 part_session's.
 
 Each body in the state has `typed_mass` (the weight typed here, else None) and `changed` (the overlay's keys for it:
-"mass", "collision", "grip" and the joint's "range", "spring", "damping", "frictionloss"), so the page can show
+"mass", "collision", "grip" and the joint's "range", "spring", "damping", "frictionloss", "limit_solref"), so the page can show
 which values were changed here and which come from the plugin; `grip` is the body's grip material (None: the default
 friction).
 """
@@ -137,7 +137,7 @@ class PluginSession(_Session):
                                                body=a['body']))
             b = body()
             if not isinstance(spec, dict) or any(k not in JOINT_KEYS for k in spec):
-                raise EditError("joint", i18n.t("Only the joint's range, spring, damping and frictionloss can change here; the rest comes from the CAD plugin."))
+                raise EditError("joint", i18n.t("Only the joint's range, spring, damping, friction and stops' stiffness can change here; the rest comes from the CAD plugin."))
             j = b.setdefault("joint", {})
             for k, v in spec.items():
                 j.pop(k, None) if v is None else j.__setitem__(k, list(v) if isinstance(v, (list, tuple)) else v)
@@ -239,7 +239,8 @@ class PluginSession(_Session):
                     "name": b.name, "parent": b.parent, "part": p.name if b.parent is None else None,
                     "joint": None if j is None else {"kind": j.kind, "axis": _floats(R @ np.asarray(j.axis, float)),
                                                      "range": j.range, "spring": j.spring, "damping": j.damping,
-                                                     "frictionloss": j.frictionloss},
+                                                     "frictionloss": j.frictionloss,
+                                                     "limit_solref": j.limit_solref},
                     "motor": [m.slot for m in p.motors if m.joint in joints],
                     "encoder": [e.slot for e in p.encoders if e.joint in joints],
                     "gyro": any(g.body == b.name for g in p.gyros),

@@ -179,7 +179,7 @@ Part (`/api/part/*`; 404 unless a part is open, except upload). Pieces are keyed
         can't be read), typed_mass, left_out, volume (m^3), hardware (the hardware guess)}], bodies: [{name, parent,
         joint, motor, encoder, gyro, mounts, collision, part, typed_mass, mass (its pieces left in, or its typed
         weight), com (robot coordinates; null for no mass); in plugin mode also changed (the scrimmage-edits.toml
-        keys set here: mass, collision, range, spring, damping, frictionloss)}], parts: [{name, folder, mass, com (from the last
+        keys set here: mass, collision, range, spring, damping, frictionloss, limit_solref)}], parts: [{name, folder, mass, com (from the last
         build; null before one), total_mass}], couplings: [{a, b, ratio}] and loops: [{body1, body2, point (CAD)}]
         (as the import file has them; [] in plugin mode), checklist: [{level: todo|check|error, text, target: {kind:
         piece|body|frame, keys}}], messages (what the last edit, undo or re-import dropped or guessed, plain words),
@@ -190,7 +190,7 @@ Part (`/api/part/*`; 404 unless a part is open, except upload). Pieces are keyed
         source that can't be read (the cad extra missing: 'Reading CAD files needs the cad extra: pip install
         "scrimmage[cad]"'), makes the part read-only with that reason; the build is then failed with it. In plugin
         mode pieces are [] and bodies come from the folder's part.toml with its overlay (joint: {kind, axis, range,
-        spring, damping, frictionloss}, motor and encoder: slot names, mounts: names), and the checklist is the
+        spring, damping, frictionloss, limit_solref}, motor and encoder: slot names, mounts: names), and the checklist is the
         overlay's notes.
   GET  /api/part/view              -> {pieces: [{key, vert, face}]}: each piece's mesh (left-out ones too) in robot
         coordinates (base64 little-endian float32 xyz / int32 triangles, as the robot view's meshes); cached per
@@ -201,7 +201,7 @@ Part (`/api/part/*`; 404 unless a part is open, except upload). Pieces are keyed
   POST /api/part/edit              -> body {version, op, args}: scrimmage.cad.edits.apply_edit(op, args) (set_frame
         leaves the frame unchecked unless args has confirmed = true, which "Looks right" sends; plugin
         mode: set_mass {body, kg}, set_collision {body, mode}, set_joint {body, joint: {range?, spring?, damping?,
-        frictionloss?}} (null removes one), set_total {kg}; piece edits are 400 "per-piece materials need the STEP:
+        frictionloss?, limit_solref?}} (null removes one), set_total {kg}; piece edits are 400 "per-piece materials need the STEP:
         import it instead"). Both modes: set_grip {body, grip: a parts/grip.py material key, a number (a measured
         friction) or null (the default)} writes the body's grip in its part folder's own edits (scrimmage-edits.toml):
         plugin mode the folder's; import mode the built folder holding that body, not rebuilt (a rebuild keeps it),

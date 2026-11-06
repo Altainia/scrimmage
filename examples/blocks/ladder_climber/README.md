@@ -71,5 +71,5 @@ robot's top from a mount near its center), or a robot whose weight sits further 
 
 A side note from the simulation: the hook's stop (its hinge's range) is soft under a robot's weight, so a loaded hook
 turns 40° to 60° past it until its back plate rests on the rung, and the replay shows the hooks tipped up while they
-carry the robot. A real hook would sit on its stop. How much this changes the climb hasn't been tested: the Part tab
-can't stiffen a hinge's stop yet (the part format's `armature` and `limit_solref` aren't among its joint settings).
+carry the robot. A real hook would sit on its stop. How much this changes the climb hasn't been tested: the Part
+tab's **Stops: Stiff** (under the hook's joint's **More**) stiffens it, the next thing to try.

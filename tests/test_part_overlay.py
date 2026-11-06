@@ -211,3 +211,9 @@ def test_install_without_an_overlay_adds_none(tmp_path):
     (tmp / "part.toml").write_text("new")
     export._install(str(tmp), str(out))
     assert sorted(p.name for p in out.iterdir()) == ["part.toml"]
+
+
+def test_overlay_stiffens_a_joints_stops(folder):
+    """The Part tab's Stops picker in plugin mode: the overlay's limit_solref reaches the part's joint."""
+    part, w = edit(folder, "[body.arm.joint]\nrange = [-10, 45]\nlimit_solref = [0.004, 1.0]\n")
+    assert w == [] and body(part, "arm").joint.limit_solref == (0.004, 1.0)

@@ -150,6 +150,14 @@ def _build(cls, d, field):
                 _fail("range", i18n.t("The range must run from a smaller number to a larger one: swap them."))
         if d.get("spring") is not None:
             d["spring"] = _pair(d["spring"], "spring", "The spring")
+        if d.get("limit_solref") is not None:
+            if d.get("range") is None:
+                _fail("limit_solref", i18n.t("The stops' stiffness needs a range (the stops): give the joint a range, or "
+                                             "set the stops back to normal."))
+            d["limit_solref"] = _pair(d["limit_solref"], "limit_solref", "The stops' stiffness")
+            if min(d["limit_solref"]) <= 0:
+                _fail("limit_solref", i18n.t("The stops' stiffness is two numbers above zero (a time constant in "
+                                             "seconds and a damping ratio)."))
         for k in ("damping", "frictionloss"):
             v = d.get(k, 0.0)
             if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0:

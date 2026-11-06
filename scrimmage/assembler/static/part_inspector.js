@@ -19,7 +19,8 @@
 //   frame        the robot frame: which way is up and forward, and a button that shows the step again
 //
 // Plugin mode (a part folder from the FreeCAD add-on) keeps only what its overlay can change: weight, collision and
-// a joint's range, spring, damping and friction; its motors, encoders and mounts are slot names, shown as text.
+// a joint's range, spring, damping, friction and stops (how hard the range's ends are: limit_solref); its motors,
+// encoders and mounts are slot names, shown as text.
 //
 // Picking in the 3D view (an axis, a floor, a center, a mount, a pin) goes through view3d.startPick: a hint shows
 // over the view and Esc (or Cancel) stops it. "Try it" only moves the drawing (part.tryit): it never makes an edit.
@@ -277,7 +278,7 @@ const AXIS_WORDS = [() => t("x (forward)"), () => t("y (left)"), () => t("z (up)
 // The joint as set_joint takes it (`patch` replaces fields; null fields are left out).
 function jointSpec(j, patch = {}) {
   const out = {};
-  for (const k of ["kind", "anchor", "axis", "range", "spring", "damping", "frictionloss"]) {
+  for (const k of ["kind", "anchor", "axis", "range", "spring", "damping", "frictionloss", "limit_solref"]) {
     const v = k in patch ? patch[k] : j[k];
     if (v !== null && v !== undefined) out[k] = v;
   }
@@ -579,7 +580,8 @@ function jointMore(c, b) {
   const rangeWait = plugin ? t("Type the other end too, or empty both to go back to the CAD plugin's range.")
     : t("Type the other end too, or empty both for no limit.");
   const range = pair("range", j.range, [["part-range-from", { placeholder: t("no limit") }], ["part-range-to", { placeholder: t("no limit"), "aria-label": t("Range to") }]], [k.pos, k.pos],
-    ([a, z]) => ((a === null) !== (z === null) ? null : patchJoint(b.name, { range: a === null ? null : [a, z] })),
+    ([a, z]) => ((a === null) !== (z === null) ? null : patchJoint(b.name, a === null
+      ? { range: null, ...(plugin ? {} : { limit_solref: null }) } : { range: [a, z] })),   // no range: no stops to stiffen
     rangeWait);
   const rangeRow = field(t("Range: from"), h("span", { class: "with-unit part-pair" }, range.els[0], h("span", { class: "unit", text: t("{unit} to", { unit: u.pos }) }), range.els[1], h("span", { class: "unit", text: u.pos })), "range",
     range.waiting ? rangeWait
@@ -605,8 +607,33 @@ function jointMore(c, b) {
     row.querySelector("label").htmlFor = `part-${key}`;
     rows.push(origin(c, b, [key], row));
   }
+  if (j.range || j.limit_solref) rows.push(origin(c, b, ["limit_solref"], stopsRow(b, j)));
   return details("joint-more", t("More: range, spring, damping, friction"), rows,
-    part.errors.some((e) => ["range", "spring", "damping", "frictionloss"].includes(e.field)));
+    part.errors.some((e) => ["range", "spring", "damping", "frictionloss", "limit_solref"].includes(e.field)));
+}
+
+// How hard the ends of the range are: MuJoCo's limit_solref ([time constant s, damping ratio]; docs/part-tab.md), in
+// plain words. Normal is MuJoCo's default (no key); a file's own numbers show as they are and stay until another is
+// picked.
+const STOPS = [["soft", [0.05, 1.0], () => t("Soft: gives a little")], ["normal", null, () => t("Normal")],
+  ["stiff", [0.004, 1.0], () => t("Stiff: holds a loaded joint on its stop")]];
+function stopsRow(b, j) {
+  const now = j.limit_solref || null;
+  const same = (a, z) => (a === null || z === null ? a === z : a[0] === z[0] && a[1] === z[1]);
+  const known = STOPS.find(([, v]) => same(v, now));
+  const sel = h("select", { id: "part-stops" },
+    ...STOPS.map(([k, , words]) => h("option", { value: k }, words())),
+    known ? null : h("option", { value: "own" }, t("As set: {seconds} s, damping ratio {ratio}", { seconds: now[0], ratio: now[1] })));
+  sel.value = known ? known[0] : "own";
+  sel.addEventListener("change", () => {
+    if (!live(sel) || sel.value === "own") return;
+    const v = STOPS.find(([k]) => k === sel.value)[1];
+    patchJoint(b.name, { limit_solref: v ? [...v] : null });
+  });
+  const row = field(t("Stops"), sel, "limit_solref",
+    t("How hard the ends of the range are. A light hook carrying a robot pushes through a normal stop; stiff keeps it there."));
+  row.querySelector("label").htmlFor = "part-stops";
+  return row;
 }
 
 // A <details> that stays open across redraws.

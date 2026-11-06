@@ -335,7 +335,7 @@ Keep collision shapes simple: boxes and cylinders for contact, a CAD mesh with `
 | `frictionloss` | `0` | Constant dry friction: N*m or N. |
 | `armature` | `0` | Added rotor/drivetrain inertia seen at the joint: kg*m^2 or kg. Stock modules put the geared rotor's inertia here. |
 | `spring` | none | `{ stiffness = 5.0, rest = 30 }`: a spring pulling to `rest` (degrees or meters; default 0), with stiffness (0 or more) in N*m/rad or N/m. |
-| `limit_solref` | MuJoCo's default | `[timeconst, dampratio]`: the softness of the `range` stops (needs a `range`). MuJoCo softens a stop by the inertia it holds, so a light body on a loaded stop needs a short time constant (and some `armature`) to stay put. |
+| `limit_solref` | MuJoCo's default | `[timeconst, dampratio]`: the softness of the `range` stops (needs a `range`). MuJoCo softens a stop by the inertia it holds, so a light body on a loaded stop needs a short time constant (and some `armature`) to stay put. The Part tab's **Stops** picker writes `[0.004, 1.0]` (Stiff) or `[0.05, 1.0]` (Soft), or leaves it out (Normal). |
 
 A joint reads zero where the body sits at its `pos` and `rot`, and encoders count from there.
 

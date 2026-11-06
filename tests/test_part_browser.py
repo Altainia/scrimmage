@@ -591,6 +591,48 @@ def test_plugin_part_shows_and_clears_what_was_changed_here(browser, tmp_path, m
     assert not logs, f"browser errors: {logs}"
 
 
+def test_stops_picker_stiffens_a_joints_range(browser, tmp_path, monkeypatch):
+    """The joint's Stops picker (under More): offered once the joint has a range; Stiff writes limit_solref
+    (to scrimmage-edits.toml in plugin mode), Normal takes it out again."""
+    monkeypatch.setenv("SCRIMMAGE_RECENT", str(tmp_path / "recent.json"))
+    monkeypatch.setenv("SCRIMMAGE_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("SCRIMMAGE_FOLDERS", str(tmp_path / "folders.json"))
+    folder = tmp_path / "intake"
+    shutil.copytree(Path(__file__).resolve().parent / "parts" / "intake", folder)
+    overlay = folder / "scrimmage-edits.toml"
+    srv = Server(folder, cwd=tmp_path)
+    ctx = browser.new_context(viewport={"width": 1500, "height": 950})
+    logs = []
+    try:
+        page = ctx.new_page()
+        page.set_default_timeout(30000)
+        page.on("pageerror", lambda e: logs.append(f"pageerror: {e}"))
+        page.goto(srv.url)
+        page.wait_for_function("window.__scrimmagePart && __scrimmagePart.store.state"
+                               " && __scrimmagePart.store.state.mode === 'plugin'")
+        _pick_body(page, "roller")
+        page.click("#part-joint-more summary")
+        page.locator("#part-range-from").wait_for()
+        assert page.locator("#part-stops").count() == 0          # no range, no stops to stiffen
+        page.click("#part-range-from", click_count=3)
+        page.keyboard.type("-10")
+        page.keyboard.press("Tab")
+        _edit(page, lambda: _type(page, "#part-range-to", "45"))
+        page.locator("#part-stops").wait_for()
+        assert page.input_value("#part-stops") == "normal"
+        _edit(page, lambda: page.select_option("#part-stops", "stiff"))
+        assert tomllib.loads(overlay.read_text())["body"]["roller"]["joint"]["limit_solref"] == [0.004, 1.0]
+        assert _body(page, "roller")["joint"]["limit_solref"] == [0.004, 1.0]
+        page.wait_for_function("document.querySelector('#part-stops') && "
+                               "document.querySelector('#part-stops').value === 'stiff'")
+        _edit(page, lambda: page.select_option("#part-stops", "normal"))
+        assert "limit_solref" not in tomllib.loads(overlay.read_text())["body"]["roller"]["joint"]
+    finally:
+        ctx.close()
+        srv.stop()
+    assert not logs, f"browser errors: {logs}"
+
+
 def _start_page(browser, tmp_path, monkeypatch):
     """(page, close) on the start page of `scrimmage edit` in tmp_path, with climber.step and climber_v2.step there."""
     monkeypatch.setenv("SCRIMMAGE_RECENT", str(tmp_path / "recent.json"))
