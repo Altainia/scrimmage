@@ -623,9 +623,19 @@ In the test file:
 - **A robot counts as tipped over at 60°.** The run ends with "the robot tipped over" when the robot's body leans more
   than 60° from upright. (The **tilt** check is separate: it only tests what you ask.)
 
-The tab doesn't have boxes for these settings yet. To change one, edit the test file in a text editor: `timeout` on a
-block, `max` on a **repeat until**, `volts` on a **drive**, `time_limit` in the `[test]` table. The tab keeps them when
-it saves. The 3 s settle after the blocks is fixed, and the file can't change it.
+To change a block's own limit, right-click the block (or open its menu) and choose **Block settings…**:
+
+| Block | Settings |
+|---|---|
+| **move**, **wait until**, **feed one** | **Give up after** (s): its timeout (5 s for a move, 10 s for the others) |
+| **drive** | **Drive at** (V, the default 4 V) and, for a distance, **Give up after** (s, 10) |
+| **turn** | **Turn at up to** (V, the most it uses, 4 V) and **Give up after** (s, 10) |
+| **repeat until** | **Give up after** (rounds, 1 to 100, the default 20) |
+
+An empty box is the default (the file leaves the key out). They are the file's `timeout`, `volts` and `max` keys on
+the block, saved like any other change (Undo doesn't take one back: set it again). The whole test's `time_limit` is
+in the `[test]` table: edit it in a text editor, and the tab keeps it when it saves. The 3 s settle after the blocks
+is fixed, and the file can't change it.
 
 ## Setup
 

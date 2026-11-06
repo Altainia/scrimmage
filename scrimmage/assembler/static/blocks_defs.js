@@ -21,6 +21,8 @@
 //   placeOf(ws) / incomplete(ws)   block -> its place ([i, j, ...] as problems() gives them); the blocks that can't be
 //                                  saved yet (an empty condition socket) or aren't joined to the test
 //   headOf(ws) / setHead(ws, p)    the test's header (robot, hooks, ...) as workspaceToTest writes it / changed
+//   blockSettings(b) / setBlockSettings(b, values)   the keys a block takes with no box (a timeout, a drive's or turn's
+//                                  volts, a repeat until's max), for Block settings…, and writing them back
 //   sweepNumber(block)             the block's number a sweep can try ({key, field, unit, scale}: scrimmage/blocks/
 //                                  sweep.py's block keys; scale: the file's unit per shown unit), or null
 //   showUnits(ws, from)            shows every block's lengths and pressures again after a Units change (`from`: the
@@ -850,6 +852,43 @@ function blockJson(b) {
   if (k.cond) out[k.cond[1]] = condJson(b.getInputTargetBlock(k.cond[0]));
   if (k.body) out.body = stackBlocks(b.getInputTargetBlock("DO")).map(blockJson);
   return out;
+}
+
+// -- a block's settings (Block settings…) ---------------------------------------------------------------------------
+// The keys a block takes beside its boxes (scrimmage/blocks/program.py): a timeout, a drive's or turn's volts, a
+// repeat until's max. Each: {key, label, unit, def (the run's default when the key is left out), hint, whole, min,
+// max}. They live in block.data like any key with no box, so the file keeps them; nothing to convert (s, V, rounds).
+const TIMEOUT = (def) => ({ key: "timeout", label: () => t("Give up after"), unit: "s", def, min: 0,
+  hint: () => t("If it isn't done by then, the run ends there, naming this block. Empty: {seconds} s.", { seconds: def }) });
+const VOLTS = (label, hint) => ({ key: "volts", label, unit: "V", def: 4, min: -12, max: 12, hint });
+const SETTINGS = {
+  move: () => [TIMEOUT(5)],
+  wait_until: () => [TIMEOUT(10)],
+  feed_one: () => [TIMEOUT(10)],
+  drive: (b) => [VOLTS(() => t("Drive at"), () => t("The wheels' volts (-12 to 12). Empty: {volts} V.", { volts: 4 })),
+    ...(b.getFieldValue("WHAT") === "seconds" ? [] : [TIMEOUT(10)])],      // a timeout only goes with a distance
+  turn: () => [VOLTS(() => t("Turn at up to"), () => t("The most volts the turn uses (-12 to 12). Empty: {volts} V.", { volts: 4 })),
+    TIMEOUT(10)],
+  repeat_until: () => [{ key: "max", label: () => t("Give up after"), unit: t("rounds"), def: 20, whole: true, min: 1, max: 100,
+    hint: () => t("A repeat until still going after this many rounds ends the run (1 to 100). Empty: {count}.", { count: 20 }) }],
+};
+
+// [{key, label, unit, def, hint, whole, min, max, value}] for block b (value: the file's, or null for the default);
+// [] for a block with no such settings.
+export function blockSettings(b) {
+  const make = b && SETTINGS[b.type];
+  if (!make) return [];
+  const data = dataOf(b);
+  return make(b).map((s) => ({ ...s, label: s.label(), hint: s.hint(), value: typeof data[s.key] === "number" ? data[s.key] : null }));
+}
+
+// Writes `values` ({key: number, or null for the default}) into block b's data, keeping its other keys.
+export function setBlockSettings(b, values) {
+  const data = dataOf(b);
+  for (const [k, v] of Object.entries(values)) {
+    if (v === null || v === undefined) delete data[k]; else data[k] = v;
+  }
+  b.data = Object.keys(data).length ? JSON.stringify(data) : null;
 }
 
 export const headOf = (ws) => header.get(ws) || {};

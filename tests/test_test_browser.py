@@ -2406,3 +2406,70 @@ def test_a_partner_distance_typed_in_inches_is_written_as_typed(test_page, tmp_p
     page.fill("#test-partner-ahead", "3.33333")
     page.press("#test-partner-ahead", "Enter")
     _wait_file(lambda: (_partner_setup(path) or {}).get("ahead_in") == 3.33333, path)
+
+
+SETTLED = """
+[[block]]
+do = "spin"
+motor = "arm.pivot"
+volts = 2.0
+
+[[block]]
+do = "move"
+joint = "arm.pivot"
+to = 40.0
+unit = "deg"
+timeout = 3.0
+"""
+
+
+def test_block_settings_set_a_moves_timeout_on_the_block(test_page):
+    """Block settings… (a block's context menu) edits the keys a block has no box for: the move's timeout shows as
+    typed, a new one is saved in the file, an empty box goes back to the default (the key left out), and a number out
+    of range is refused with a sentence. A spin has none, so its menu doesn't offer it."""
+    page, path = test_page(SETTLED)
+    item = "Blockly.ContextMenuRegistry.registry.getItem('scrimmage-block-settings')"
+    blocks = "__scrimmageTest.workspace.getTopBlocks(true)[0].getDescendants(true)"
+    assert page.evaluate(f"{item}.preconditionFn({{block: {blocks}[0]}})") == "hidden"
+    assert page.evaluate(f"{item}.preconditionFn({{block: {blocks}[1]}})") == "enabled"
+    page.evaluate(f"__scrimmageTest.openSettings({blocks}[1].id)")
+    page.wait_for_selector("#test-settings-dialog[open]")
+    assert page.input_value("#test-settings-0") == "3"
+    assert page.get_attribute("#test-settings-0", "placeholder") == "5"
+    assert "Give up after" in page.inner_text("#test-settings-fields")
+    page.fill("#test-settings-0", "-1")
+    page.click("#test-settings-go")
+    assert "Give up after: type a number of 0 or more" in page.inner_text("#test-settings-errors")
+    assert page.evaluate("document.querySelector('#test-settings-dialog').open")
+    page.fill("#test-settings-0", "2.5")
+    page.click("#test-settings-go")
+    page.wait_for_function("!document.querySelector('#test-settings-dialog').open")
+    _wait_file(lambda: _file_blocks(path)[1].get("timeout") == 2.5, path)
+    page.evaluate(f"__scrimmageTest.openSettings({blocks}[1].id)")
+    page.wait_for_selector("#test-settings-dialog[open]")
+    assert page.input_value("#test-settings-0") == "2.5"
+    page.fill("#test-settings-0", "")
+    page.click("#test-settings-go")
+    _wait_file(lambda: "timeout" not in _file_blocks(path)[1], path)
+    assert _file_blocks(path)[1] == {"do": "move", "joint": "arm.pivot", "to": 40.0, "unit": "deg"}
+
+
+def test_block_settings_offer_each_blocks_own_keys(test_page):
+    """A drive has its volts and (for a distance) its timeout; for seconds, the volts only. A repeat until has its
+    max, a whole number of rounds."""
+    page, _ = test_page()
+    keys = page.evaluate("""(() => {
+      const ws = __scrimmageTest.workspace, out = {};
+      for (const [type, what] of [['drive', 'distance'], ['drive', 'seconds'], ['repeat_until', null]]) {
+        const b = ws.newBlock(type);
+        if (what) b.setFieldValue(what, 'WHAT');
+        __scrimmageTest.openSettings(b.id);
+        out[type + (what ? '/' + what : '')] = [...document.querySelectorAll('#test-settings-fields input')]
+          .map((i) => [i.dataset.key, i.placeholder]);
+        document.querySelector('#test-settings-dialog').close();
+        b.dispose();
+      }
+      return out;
+    })()""")
+    assert keys == {"drive/distance": [["volts", "4"], ["timeout", "10"]], "drive/seconds": [["volts", "4"]],
+                    "repeat_until": [["max", "20"]]}

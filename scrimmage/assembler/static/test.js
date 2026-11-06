@@ -21,6 +21,8 @@
 // and steps, or typed values, at most 12; /api/test/sweep runs them and test_run.js shows the table and its chart.
 // "Try materials…" (beside a grip) opens it over ticked materials instead, for the whole part (ruling P28: one pad of
 // two shows no difference while the other holds alone) or the one body.
+// "Block settings…" (a block's context menu) sets the keys a block has no box for: a move's, wait until's, feed
+// one's, drive's or turn's timeout, a drive's or turn's volts, a repeat until's max (empty: the run's default).
 //
 // Every change is saved (500 ms after the last one) through /api/test/save with the state's version; a 409 (the file
 // changed meanwhile) shows the saved version again and says so. Problems from the state show as a warning on their
@@ -37,7 +39,7 @@ import { $, h, api, notice, registerTab, setTab, showPath, currentTab, store, de
   measureError, lengthWords, convertTyped, carryText } from "./app.js";
 import { initRunPanel, update as updateRuns, replay, sweepShown, spreadShown } from "./test_run.js";
 import { defineBlocks, toolbox, testToWorkspace, workspaceToTest, placeOf, incomplete, looseStacks, setUsed, STYLES,
-  headOf, setHead, sweepNumber, appendBlocks, showUnits, relabel } from "./blocks_defs.js";
+  headOf, setHead, sweepNumber, appendBlocks, showUnits, relabel, blockSettings, setBlockSettings } from "./blocks_defs.js";
 import { units } from "./units.js";
 import { i18n, t, tn } from "./i18n.js";
 import { theme as pageTheme } from "./theme.js";
@@ -146,6 +148,7 @@ function inject() {
   T.shownUnits = units.system;
   T.ws.addChangeListener(onChange);
   registerTryValues();
+  registerSettings();
   if (!followsTheme) followsTheme = pageTheme.onChange(() => { if (T.ws) T.ws.setTheme(theme()); });
   new ResizeObserver(() => { B.svgResize(T.ws); fitHeads(); }).observe(box);
 }
@@ -1302,6 +1305,81 @@ function renderSetup({ keepTyping = false } = {}) {
   }
 }
 
+// -- block settings ---------------------------------------------------------------------------------------------------
+// "Block settings…" (a block's context menu): the keys a block takes with no box on it (blocks_defs.js blockSettings:
+// a timeout, a drive's or turn's volts, a repeat until's max). Empty is the run's default (the key left out). Saved
+// like any change to the blocks; Undo doesn't take it back (Blockly has no event for a block's data).
+function registerSettings() {
+  const B = window.Blockly;
+  const reg = B.ContextMenuRegistry.registry;
+  if (reg.getItem("scrimmage-block-settings")) return;
+  reg.register({
+    id: "scrimmage-block-settings",
+    scopeType: B.ContextMenuRegistry.ScopeType.BLOCK,
+    weight: -2,
+    displayText: () => t("Block settings…"),
+    preconditionFn: (scope) => {
+      const b = scope.block;
+      if (!b || b.isInFlyout || !blockSettings(b).length) return "hidden";
+      return T.state && !T.state.running ? "enabled" : "disabled";
+    },
+    callback: (scope) => openSettings(scope.block.id),
+  });
+}
+
+function openSettings(id) {
+  const b = T.ws && T.ws.getBlockById(id);
+  const list = b ? blockSettings(b) : [];
+  if (!list.length) return;
+  const d = $("#test-settings-dialog");
+  T.settingsFor = { id, list };
+  $("#test-settings-for").textContent = t("For “{block}”. Empty a box for the default.", { block: b.toString() });
+  $("#test-settings-fields").replaceChildren(...list.map((s, i) => h("div", { class: "field" },
+    h("label", { for: `test-settings-${i}`, text: s.label }),
+    h("span", { class: "with-unit" },
+      h("input", { id: `test-settings-${i}`, "data-key": s.key, inputmode: s.whole ? "numeric" : "decimal", autocomplete: "off",
+        value: s.value === null ? "" : fmt(s.value), placeholder: fmt(s.def) }),
+      h("span", { class: "unit", text: s.unit })),
+    h("p", { class: "hint", text: s.hint }))));
+  showSettingsErrors([]);
+  d.showModal();
+  const first = $("#test-settings-0");
+  if (first) first.focus();
+}
+
+function showSettingsErrors(list) {
+  const ul = $("#test-settings-errors");
+  ul.replaceChildren(...list.map((m) => h("li", { text: m })));
+  ul.hidden = !list.length;
+}
+
+function submitSettings(e) {
+  e.preventDefault();
+  const { id, list } = T.settingsFor || {};
+  const b = id && T.ws && T.ws.getBlockById(id);
+  if (!b) { $("#test-settings-dialog").close(); return; }
+  const values = {}, errors = [];
+  list.forEach((s, i) => {
+    const text = $(`#test-settings-${i}`).value.trim();
+    if (text === "") { values[s.key] = null; return; }
+    const v = Number(text);
+    const lo = s.min, hi = s.max;
+    if (!isFinite(v) || (s.whole && !Number.isInteger(v)) || (lo !== undefined && v < lo) || (hi !== undefined && v > hi)) {
+      errors.push(s.whole ? t("{setting}: type a whole number from {low} to {high}", { setting: s.label, low: lo, high: hi })
+        : hi === undefined ? t("{setting}: type a number of {low} or more", { setting: s.label, low: lo })
+          : t("{setting}: type a number from {low} to {high}", { setting: s.label, low: lo, high: hi }));
+      return;
+    }
+    values[s.key] = v;
+  });
+  if (errors.length) { showSettingsErrors(errors); return; }
+  setBlockSettings(b, values);
+  $("#test-settings-dialog").close();
+  check();
+  schedule();       // no Blockly event carries a block's data: save it as a change to the blocks
+  renderTop();
+}
+
 // -- sweeps -----------------------------------------------------------------------------------------------------------
 function registerTryValues() {
   const B = window.Blockly;
@@ -1441,6 +1519,7 @@ export async function initTest() {
     get robot() { return T.robot; },
     get sweepFor() { return T.sweepFor; },
     trySweep: (id) => tryBlock(id),
+    openSettings: (id) => openSettings(id),
   };
   registerTab("test", {
     renderTop,
@@ -1453,6 +1532,9 @@ export async function initTest() {
   const dlg = $("#test-sweep-dialog");
   dlg.querySelector("form").addEventListener("submit", submitSweep);
   for (const b of dlg.querySelectorAll("[data-close]")) b.addEventListener("click", () => dlg.close());
+  const sdlg = $("#test-settings-dialog");
+  sdlg.querySelector("form").addEventListener("submit", submitSettings);
+  for (const b of sdlg.querySelectorAll("[data-close]")) b.addEventListener("click", () => sdlg.close());
   $("#test-stop").addEventListener("click", stop);
   initRunPanel({ chart: () => (T.ws ? headOf(T.ws).chart || null : null), setChart: (c) => setTest({ chart: c }) });
   units.onChange(unitsChanged);
