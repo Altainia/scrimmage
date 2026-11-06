@@ -129,3 +129,52 @@ def test_test_setup_lists_them():
     from scrimmage.assembler.test_session import field_choices
     files = [f["file"] for f in field_choices()]
     assert "2026-trench" in files and "2016-defenses" in files
+
+
+def test_drawbridge_preload_takes_2_lb_to_start():
+    """Manual 2.2.2.1: about 2 lb at the top edge to begin to move the drawbridge, at most 5 lb once moving. Its
+    spring is wound up against the closed stop (`preload_in_lb`): just under the 2 lb holds it shut, just over
+    opens it, and held flat its top edge takes about 5 lb."""
+    b = _element("2016-defenses", "drawbridge")
+    edge = b.size[2]                                   # the top edge, 37 in up from the hinge
+    start = 2.0 * 4.4482216152605 * edge               # N m
+    assert b.preload == pytest.approx(start, rel=1e-6) and b.rest_deg == b.range_deg[1]
+    m, d = _alone(b)
+    mujoco.mj_forward(m, d)
+    assert d.qfrc_spring[0] == pytest.approx(start, rel=1e-6)    # pressing it into the closed stop at rest
+    assert abs(math.degrees(_push(m, d, 1.0, -0.9 * start))) < 0.5
+    mujoco.mj_resetData(m, d)
+    assert math.degrees(_push(m, d, 1.0, -1.1 * start)) < -5.0
+    mujoco.mj_resetData(m, d)
+    d.qpos[0] = math.radians(-90.0)
+    mujoco.mj_forward(m, d)
+    flat = (d.qfrc_spring[0] - d.qfrc_bias[0]) / edge / 4.4482216152605      # lb at the top edge to hold it flat
+    assert flat == pytest.approx(5.0, abs=0.3)
+
+
+@pytest.mark.parametrize("extra, message", [
+    ({"preload": 2.0}, "preload is a spring's push at rest: give the spring's stiffness too"),
+    ({"preload": 2.0, "stiffness": 1.0, "rest_deg": -10.0}, "preload presses the element against a stop: put rest_deg "
+                                                          "at one end of range_deg"),
+    ({"preload": 2.0, "preload_in_lb": 3.0, "stiffness": 1.0}, "has both preload and preload_in_lb; give one"),
+    ({"preload": -1.0, "stiffness": 1.0}, "preload must be 0 or more"),
+])
+def test_preload_needs_a_spring_and_a_stop(tmp_path, extra, message):
+    from scrimmage.testrange.spec import RangeError
+    door = {"name": "door", "kind": "hinged", "center": [1.0, 1.0], "size": [0.01, 1.0, 1.0], "hinge": "bottom",
+            "range_deg": [-90.0, 0.0], "mass": 2.0, **extra}
+    lines = ["[range]", 'name = "t"', 'ball = "2026-fuel"', "[[element]]"] + [f"{k} = {v!r}".replace("'", '"') for k, v in door.items()]
+    f = tmp_path / "r.toml"
+    f.write_text("\n".join(lines) + "\n")
+    with pytest.raises(RangeError, match=message):
+        load_range(str(f), ".")
+
+
+def test_sliding_preload_in_pounds():
+    """A sliding element's preload is a force: `preload_lb` in pounds, toward the stop the rest is on (here the low
+    one, so it pushes -)."""
+    e = Sliding(name="s", center=(0.0, 0.0), yaw_deg=0.0, size=(0.1, 0.1, 0.1), axis="z", range=(0.0, 0.3), mass=1.0,
+                stiffness=100.0, preload=-10.0)
+    m, d = _alone(e)
+    mujoco.mj_forward(m, d)
+    assert d.qfrc_spring[0] == pytest.approx(-10.0)

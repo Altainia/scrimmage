@@ -97,6 +97,7 @@ an `_in` form.
 | `stiffness` | both | N·m/deg (`hinged`), N/m (`sliding`) | 0 (no spring) | the spring pulling it back to rest. Per degree on a hinge, so it reads like a door spring's rating |
 | `damping` | both | N·m·s/rad (`hinged`), N·s/m (`sliding`) | critical, or 0.05 | with a spring, left out it is critical damping for the panel (it settles at rest without swinging past). With no spring it is 0.05 (an estimate: enough to settle a panel knocked loose, not enough to feel) |
 | `breakaway` | both | N·m (`hinged`), N (`sliding`) | 0 | the push it takes to move it (see below) |
+| `preload` | both | N·m (`hinged`, or `preload_in_lb` in inch-pounds), N (`sliding`, or `preload_lb` in pounds) | 0 | the spring wound up against a stop: the push it takes to start the panel moving off it (see below). Needs a `stiffness` and the rest at one end of the range |
 | `ground` | both | | `false` | `true` makes it floor for the terrain signals, as a box's `ground`: a drawbridge a robot drives over |
 
 All angles and travel are measured from the panel **as described** (its `size` and `base_height`, before it turns).
@@ -124,9 +125,12 @@ F × r.
 lands on its stop without a bounce. Gravity acts on every panel: a portcullis on a vertical slide with no spring
 rests on its lower stop, and lifting it takes its weight.
 
-**No preload.** A spring's rest must lie within the stops, so a spring can't be wound up against a stop. A door that
-takes a set force before it starts to move (the 2016 drawbridge's 2 lb) or a return spring that holds a door shut
-(the 2016 sally port's) can't be described yet.
+**Preload** winds the spring up against the stop the rest is on, so the panel sits pressed into that stop and takes
+that much push to start moving off it: a door that takes a set force before it starts to move (the 2016
+drawbridge's 2 lb), or a return spring that holds a door shut. Put the rest at one end of the range (`rest_deg` or
+`rest` equal to `range_deg`'s or `range`'s low or high end) and give a `stiffness`: the spring then pushes `preload`
+at rest and `preload` plus `stiffness` times the travel once moved. On a hinge it is a torque: 2 lb at a door's top
+edge 37 in up is `preload_in_lb = 74` (2 × 37).
 
 **Starts and floor balls.** A panel standing on the carpet (`base_height` 0) blocks a start and floor balls, as a
 box does; one raised off the carpet doesn't, so a robot may start under it. Both use the panel as described.
@@ -145,7 +149,7 @@ before its near ramp, facing it: `[start.portcullis]`, `[start.sally_port]`, `[s
 |---|---|---|---|
 | portcullis | `portcullis` (`sliding`, up along z), between two posts | lift it from its bottom edge | 2.27 kg, no spring or breakaway, so it takes its weight to lift: the manual's "approximately 5 lbs." (5 lb = 2.27 kg). A 5 in gap under it (manual). Its 43 x 30 in size and its 24 in of travel are estimates |
 | sally port | `sally_port` (`hinged`, `"left"`, `range_deg = [-90, 0]`) | swings only toward -x | a breakaway of 8.135 N·m: the manual's 1.5 lb at its outer edge, 48 in from the hinge. 48 x 24 x 1/4 in (manual); its 6 kg mass is an estimate |
-| drawbridge | `drawbridge` (`hinged`, `"bottom"`, `range_deg = [-90, 0]`, `ground = true`) | lowered toward -x, then driven over | a spring that stands it back up: pressed flat, its top edge takes about 25 N (5.7 lb; the manual's maximum is 5 lb). 37 in tall and 1/4 in thick (manual); its 41 in width, 7.5 kg, spring (0.65 N·m/deg) and damping (3 N·m·s/rad) are estimates |
+| drawbridge | `drawbridge` (`hinged`, `"bottom"`, `range_deg = [-90, 0]`, `ground = true`) | lowered toward -x, then driven over | a spring wound up against its closed stop (`preload_in_lb = 74`): 2 lb at its top edge to begin to move it, as the manual says, and about 4.9 lb to hold it flat (the manual's at most 5 lb). 37 in tall and 1/4 in thick (manual); its 41 in width, 7.5 kg, spring (0.52 N·m/deg) and damping (3 N·m·s/rad) are estimates |
 | cheval de frise | `cheval_1` to `cheval_4` (`hinged`, `"center"`, `axis = "y"`) | each plate tilts about a pipe across the lane | 24 x 12 x 1/2 in plates (manual), resting on alternate sides at ±23.6° (1 and 3 with the far end down). Pressing one level takes 1 lb at its edge (manual). Their spacing, height, 3 kg mass and spring are estimates |
 
 Things to know:
@@ -153,10 +157,11 @@ Things to know:
 - **The doors open toward the robot.** A robot driving in along +x presses the sally port and the drawbridge against
   their closed stops. They open by being pulled toward the robot (-x), or, for the drawbridge, by pressing its top
   edge down once it has started toward you, as on the real field.
-- **The drawbridge has no 2 lb start.** The manual's 2 lb to begin moving needs a spring preloaded against the
-  closed stop (see **No preload** under [Moving elements](#moving-elements-hinged-and-sliding)). Here the spring
-  only just beats the door's weight near upright, so a light pull starts it, and the push grows to about 5.7 lb at
-  its top edge to hold it flat. The sally port's return spring isn't modeled either.
+- **The drawbridge takes 2 lb to start.** Its spring is preloaded against the closed stop (see **Preload** under
+  [Moving elements](#moving-elements-hinged-and-sliding)). Once moving, the push at its top edge dips to about 1.6 lb
+  near 30° (the spring is a little weaker per degree than the door's own weight there) and climbs to about 4.9 lb to
+  hold it flat; the manual says only that it increases to at most 5 lb. The sally port's return spring isn't
+  modeled: the manual gives only the 1.5 lb to open it, which is its breakaway here.
 - **The cheval plates spring back toward rest.** Pressed down, a plate returns to its own side; it doesn't tip over
   to the other side, as a weighted real plate can.
 - Every number cites its source on its line in `scrimmage/testrange/ranges/2016-defenses.toml`, or says it is an
