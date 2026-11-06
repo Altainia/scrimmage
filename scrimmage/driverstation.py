@@ -16,6 +16,7 @@ MATCH_KEYS = ("station", "fms", "timer", "auto_seconds", "teleop_seconds")
 GAME_DATA_MAX = 64            # the HAL keeps up to 64 bytes
 REAL_DS_DRIVING = "the FRC Driver Station is driving"   # the words every real-DS refusal ends with (tests check them)
 REAL_DS_WAITING = "waiting for the Driver Station"      # a real-DS session before (or without) a connected DS
+REAL_DS_SILENT = "connected (Driver Station silent)"    # connected, but no DS packet for over SILENT_S
 
 
 class SettingError(ValueError):
@@ -102,6 +103,7 @@ class DriverStationState:
     _length: float = 0.0                    # that phase's length
     _time: float = -1.0                     # the match time in the last frame (timer on)
     _extra_keys: bool = False               # >game_data and >fms go out once either has been set (M2)
+    _last_now: float | None = None          # sim time of the last frame: a later frame before it is a clock reset
 
     def set_mode(self, mode: str) -> None:
         if mode not in MODES:
@@ -156,14 +158,24 @@ class DriverStationState:
         self.changed = True
 
     @property
+    def sends_match_data(self) -> bool:
+        """>game_data and >fms are in the frames now (M2: once either has been set in the session)."""
+        return self._extra_keys
+
+    @property
     def sent_match_time(self) -> float:
         """The match time in the last frame."""
         return self._time if self.match.timer else -1.0
 
     def _tick(self, now: float) -> None:
         m, before = self.mode, self._seen_mode
-        if self._entry is not None and now < self._entry:   # the world clock was reset (a reconnect): carry on from the last time
+        # The world clock was reset (a reconnect): carry on from the last time. Judged by the last frame's time, not
+        # the entry's, so a phase entered at or before the time the clock goes back to carries on too, rather than
+        # restarting near its full length.
+        reset = self._last_now is not None and now < self._last_now - 1e-9
+        if self._entry is not None and (reset or now < self._entry):
             self._entry = now - (self._length - max(self._time, 0.0))
+        self._last_now = now
         if m in PHASES and (self._entering or m != before):
             self._entry = now
             self._length = self.match.auto_seconds if m == "auto" else self.match.teleop_seconds
@@ -192,10 +204,16 @@ class DriverStationState:
         return out
 
 
-def real_ds_report(hal) -> dict:
+SILENT_S = 1.0     # s of wall time with no DriverStation report from the robot: the real DS has gone silent
+
+
+def real_ds_report(hal, quiet: float | None = None) -> dict:
     """What the real Driver Station is doing, from the robot program's own ("DriverStation", "") reports (its DS
     socket extension sets them from the DS's packets). Until the latest report has `>ds` true the mode is "waiting".
-    game_data is there only if the robot reports it."""
+    game_data is there only if the robot reports it. `quiet`: wall seconds since the robot's last DriverStation
+    report (Bridge.ds_quiet; None: not known). The robot reports every DS packet it gets (`>new_data`, about 50 a
+    second), so `silent` is true while connected and nothing came for more than SILENT_S: the app stopped or the
+    network dropped, while the extension keeps `>ds` true (D5)."""
     d = hal.devices.get(("DriverStation", ""), {})
     connected = d.get(">ds") is True
     if not connected:
@@ -209,16 +227,28 @@ def real_ds_report(hal) -> dict:
     else:
         mode = "teleop"
     out = {"connected": connected, "mode": mode, "estop": bool(d.get(">estop", False)),
-           "station": d.get(">station"), "fms": bool(d.get(">fms", False)), "match_time": d.get(">match_time", -1.0)}
+           "station": d.get(">station"), "fms": bool(d.get(">fms", False)), "match_time": d.get(">match_time", -1.0),
+           "silent": connected and quiet is not None and quiet > SILENT_S}
     if ">game_data" in d:
         out["game_data"] = d[">game_data"]
     return out
 
 
-def real_ds_line(report: dict) -> str:
-    """One log line for a real_ds_report: "Driver Station: teleop enabled", "... disabled", or REAL_DS_WAITING."""
+def ds_words(report: dict) -> str:
+    """get_state's driver_station for a real_ds_report: "connected", REAL_DS_SILENT while connected but silent, or
+    REAL_DS_WAITING (machine text: the same in every language)."""
     if not report["connected"]:
         return REAL_DS_WAITING
+    return REAL_DS_SILENT if report.get("silent") else "connected"
+
+
+def real_ds_line(report: dict) -> str:
+    """One log line for a real_ds_report: "Driver Station: teleop enabled", "... disabled", REAL_DS_SILENT or
+    REAL_DS_WAITING."""
+    if not report["connected"]:
+        return REAL_DS_WAITING
+    if report.get("silent"):
+        return REAL_DS_SILENT
     if report["mode"] == "disabled":
         return "Driver Station: disabled (E-stopped)" if report["estop"] else "Driver Station: disabled"
     return f"Driver Station: {report['mode']} enabled"

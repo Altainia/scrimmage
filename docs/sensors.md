@@ -7,13 +7,14 @@ teams already use (`DigitalInput`, `AnalogInput` and REVLib's `ColorSensorV3`), 
 check them and chart them with no robot code at all.
 
 **The readings are ideal.** There is no noise, no mounting tolerance and no delay beyond one physics step. Sensors see
-balls, discs and rigid pieces alike, and never the robot's own parts. The color sensor's numbers are estimates (each
-one is marked below).
+balls, discs and rigid pieces alike, and never the robot's own parts. The color sensor's numbers are estimates, and
+Java's color sensor hasn't been run yet: [Estimated or not yet checked](#estimated-or-not-yet-checked) lists both.
 
 `examples/blocks/beam` is a worked example: an intake that stops when its beam break sees a ball in the bin.
 
 Contents: [Adding a sensor](#adding-a-sensor), [The keys](#the-keys), [What the readings are](#what-the-readings-are),
 [Piece colors](#piece-colors), [Robot code](#robot-code), [In the Test tab](#in-the-test-tab),
+[In scenarios and MCP](#in-scenarios-and-mcp), [Estimated or not yet checked](#estimated-or-not-yet-checked),
 [What isn't simulated](#what-isnt-simulated), [Errors](#errors).
 
 ## Adding a sensor
@@ -178,8 +179,9 @@ A color sensor reads a piece kind's color:
 - **Otherwise, the color its form was always drawn in:** a ball yellow, a disc white, a rigid piece off-white.
 
 The piece is drawn in the same color in the viewer and the replay. A **Piece** picked in the Test tab's Setup in place
-of a field's first `[piece.<name>]` (the red cargo of a red and blue field) takes the new piece's own color, not red;
-one in place of a range file's `[range]` ball keeps its `[range] color`.
+of a field's first `[piece.<name>]` (the red cargo of a red and blue field) keeps that table's `color` (it stays red),
+as one in place of a range file's `[range]` ball keeps its `[range] color`. A table with no `color` of its own leaves
+the new piece its form's color.
 
 `color` is one of the named colors below, or `[r, g, b]` with each 0 to 1. The Test tab's **is seeing** names the
 nearest of them to the color the sensor reads (the straight-line distance between the two colors' r, g and b), so a
@@ -291,18 +293,66 @@ closer than its `threshold`, and a color sensor while it sees a piece (optionall
 sensor's `sensor.<name>` signal is on the chart, and the replay draws each sensor as a line, lit while it is on.
 Details are in [test-tab.md](test-tab.md#sensors).
 
+## In scenarios and MCP
+
+A scenario step can check a sensor the way the Test tab's **sensor** check does:
+
+```toml
+[[step.check]]
+sensor = { name = "bin", is = "on" }                        # on at the end of the step
+
+[[step.check]]
+sensor = { name = "eye", sees = "red", when = "by", t = 2.0 }   # seeing a red piece by 2 s into the step
+
+[[step.check]]
+sensor = { name = "bin", is = "off", when = "always" }      # never broken during the step
+```
+
+`is` is `"on"` (the default) or `"off"`. `sees` (a color sensor only) wants it on and seeing that named color. `when`
+is `"end"` (the default: at the end of the step), `"always"` (on every tick of the step) or `"by"` (at some tick up
+to `t` seconds into the step). The check reports as the `at_end`, `always` and `by_time` checks do, of the signal
+`sensor.<name>` (or `sensor.<name>.sees.<color>`) equal to true for on and false for off.
+
+The signals, for `at_end`, `always` and `by_time` too:
+
+- `sensor.<name>`: true while the sensor is on;
+- `sensor.<name>.distance`: a distance sensor's reading in meters (its `max_range` with nothing in range), or a color
+  sensor's distance to the piece it sees (no value while it sees none). A beam break has none;
+- `sensor.<name>.color`: the named color a color sensor sees (no value while it sees none);
+- `sensor.<name>.sees.<color>`: true while a color sensor is on and sees that named color.
+
+The Scenario tab shows a `sensor` check as one it can't edit yet: change it in a text editor.
+
+The MCP tool `get_state` has a `sensors` block on a robot with `[[sensor]]`s: each sensor's `kind`, `on`,
+`distance_m` (meters; `null` for a beam break and while a color sensor sees nothing) and `color` (the named color a
+color sensor sees, else `null`). `set_pose` and `move_body` read the sensors again at once, so the reading they
+return is of the new pose; at any other time a reading is taken after each physics step.
+
+## Estimated or not yet checked
+
+Two things here rest on our own numbers or on reading code, not on a real sensor or a real run:
+
+- **Estimated: every number the color sensor gives.** The brightness (full up to 2 cm, half at 6 cm, nothing past
+  10 cm), the 2047 counts at full brightness for red, green, blue and IR, the IR of something that isn't a piece (0.3
+  of a piece's), the proximity's straight line from 2047 at contact to 0 at 10 cm, and the dark carpet's counts
+  (red 12, green 14, blue 12, IR 8). They are our choices from REV's datasheet, not measured from a Color Sensor V3.
+  `getColor()` and `ColorMatch` don't depend on the scale; code that compares raw counts or IR with a real sensor's
+  numbers does.
+- **Not yet checked: Java's color sensor.** REVLib's Java `ColorSensorV3` names its simulated device the same way as
+  RobotPy's (`REV Color Sensor V3[<port>,82]`, read from REVLib 2026.0.5's classes), but no Java robot program has
+  run one in Scrimmage yet. Only RobotPy has been checked running. If a Java robot's color sensor reads nothing,
+  this is the first thing to suspect.
+
+The beam break and the distance sensor are exact lines: they have no numbers of their own to estimate (see below for
+what a real one adds).
+
 ## What isn't simulated
 
 - **Noise, delay and mounting.** Every reading is exact, 1 ms behind the physics. A real beam is a few millimeters
   wide, a real distance sensor has a cone, not a line, and a real color sensor's numbers depend on its lighting and
   gain. Allow for them on the real robot.
-- **The color sensor's numbers** (the brightness, the full 2047 counts, the carpet, the IR of what isn't a piece) are
-  our estimates, not a measured sensor.
 - **Other vendors' sensors.** The CTRE CANrange, Playing With Fusion's time-of-flight sensor and the LaserCAN each
   need their own vendor binding; none is here yet. A distance sensor on an `analog` or `dio` input is the stand-in.
-- **Java's color sensor** has not been run in Scrimmage yet. REVLib's Java `ColorSensorV3` names its simulated device
-  the same way (`REV Color Sensor V3[<port>,82]`, read from REVLib 2026.0.5's classes), but only RobotPy has been
-  checked running.
 - **Cameras and vision** (Limelight-style targeting, AprilTags) are not part of Scrimmage.
 - **A screen for placing sensors.** Sensors live in the config's `[[sensor]]` tables, written by hand; there's no
   picker for them in the Robot tab or the Part tab yet.

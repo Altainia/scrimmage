@@ -504,6 +504,8 @@ def test_test_it_from_the_part_tab_puts_the_part_on_a_stand_in_where_the_cad_has
     s, b = c.call("POST", "/api/test/new", {"from_part": True})
     assert s == 200 and b["added"] == [], b
     standin, test = tmp_path / "climber-standin.toml", tmp_path / "climber.test.toml"
+    # B3: no body is named like a hook or a hopper, so the stand-in is on the plain field, and the answer says so
+    assert b["plain_field"] is True and "range" not in tomllib.loads(standin.read_text(encoding="utf-8"))
     app = c.get("/api/app/state")[1]
     assert app["mode"] == "robot" and app["test"] == str(test.resolve())     # the page opens on the Test tab
     raw = tomllib.loads(standin.read_text(encoding="utf-8"))
@@ -526,7 +528,7 @@ def test_test_it_from_the_part_tab_puts_the_part_on_a_stand_in_where_the_cad_has
     assert c.call("POST", "/api/app/open", {"path": str(step)})[0] == 200
     _built_part(c)
     s, b = c.call("POST", "/api/test/new", {"from_part": True})
-    assert s == 200 and b["added"] == [], b
+    assert s == 200 and b["added"] == [] and b["plain_field"] is False, b     # nothing new was made
     assert "mass = 30.0" in standin.read_text(encoding="utf-8")
     assert not (tmp_path / "climber-standin-2.toml").exists() and not (tmp_path / "climber-2.test.toml").exists()
     assert c.get("/api/app/state")[1]["test"] == str(test.resolve())
@@ -1182,6 +1184,15 @@ def test_a_clears_run_has_the_clearance_line(tmp_path, test_app):
     assert s == 200
     assert [ln for ln in res["lines"] if "portcullis" in ln] == ["portcullis: never within 20 in"], res["lines"]
     assert uncounted in res["notes"]
+
+
+def test_a_chart_name_with_no_signal_is_a_hint(tmp_path, test_app):
+    """B1: a chart name no run of the test has a signal for is a hint (the run still goes); a clearance of a field
+    element is not, as the run measures it."""
+    st = _state(test_app(write_test(tmp_path, 'chart = ["tilt", "arm.lift"]\n' + SPIN)))
+    assert st["problems"] == []
+    assert st["hints"] == [{"place": [], "message": 'this test\'s runs have no signal called "arm.lift", so the '
+                                                    'chart leaves it out'}]
 
 
 def test_no_hint_without_a_clearance(tmp_path, test_app):

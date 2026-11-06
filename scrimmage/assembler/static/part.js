@@ -615,9 +615,12 @@ async function testIt() {
   const { status, data } = await api("POST", "/api/test/new", { from_part: true });
   if (status === 200 && data.ok) {
     const added = data.added || [];
-    if (added.length) {   // said by the Test tab once the page has reloaded on it
-      const text = tn("Added to the stand-in robot where the CAD has it: {parts}.", "Added to the stand-in robot where the CAD has them: {parts}.",
-        added.length, { parts: added.join(", ") });
+    // said by the Test tab once the page has reloaded on it
+    const text = added.length ? tn("Added to the stand-in robot where the CAD has it: {parts}.", "Added to the stand-in robot where the CAD has them: {parts}.",
+      added.length, { parts: added.join(", ") })
+      : data.plain_field ? t("No body is named like a hook or a hopper, so the stand-in robot starts on the plain field. Pick another field in Setup.")
+        : null;
+    if (text) {
       try { sessionStorage.setItem("scrimmage-test-notice", text); } catch { /* the notice is lost, nothing else */ }
     }
     location.hash = `token=${encodeURIComponent(sessionToken())}`;

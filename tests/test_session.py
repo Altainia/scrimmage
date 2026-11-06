@@ -181,6 +181,33 @@ def test_attach_mode_waits_for_a_robot_program():
     run(main())
 
 
+def test_an_attach_mode_reset_sends_the_resets_game_data():
+    """B20: an attached robot program isn't restarted, so its HAL keeps the game data it last heard: a reset after
+    the game data was cleared (as a scenario clears it before its reset) sends the empty game data, rather than
+    dropping the key and leaving the robot with the old "R"."""
+    async def main():
+        port = next_port()
+        s = Session(FAKE, attach=True, port=port, nt=False)
+        start = asyncio.create_task(s.start())
+        await asyncio.sleep(0.3)
+        async with FakeRobot(port, lockstep=True) as robot:
+            await asyncio.wait_for(start, 10)
+            s.set_match(game_data="R")
+            await s.advance(0.05)
+
+            def heard(mark):
+                return [m["data"][">game_data"] for m in robot.frames[mark:]
+                        if (m["type"], m["device"]) == ("DriverStation", "") and ">game_data" in m["data"]]
+            assert heard(0)[-1] == "R"
+            s.bridge.ds.set_game_data("")       # what run_scenario does before its reset
+            await s.restart_robot()
+            mark = len(robot.frames)
+            await s.advance(0.05)
+            assert heard(mark) and set(heard(mark)) == {""}
+            await s.stop()
+    run(main())
+
+
 def test_session_without_robot_program_section(tmp_path):
     cfg = tmp_path / "bare.toml"
     cfg.write_text(FAKE.read_text().split("[robot_program]")[0].replace('"models/', f'"{TESTS / "models"}/'))

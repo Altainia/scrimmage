@@ -295,7 +295,8 @@ def _world_boxes(center, yaw_deg: float, parts) -> list[tuple[np.ndarray, np.nda
 
 
 def _element_boxes(e) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
-    """The boxes an element is built from, level (a platform untilted, a moving panel at rest), in the field."""
+    """The boxes an element is built from, in the field: level (a moving panel at rest), and a platform's also as
+    it tilts (_tilted)."""
     from .build_elements import bump_parts, panel_parts, platform_parts, ramp_parts, rod_parts
     from .elements import Bar, Box, Bump, Hinged, Platform, Ramp, Rod, Sliding
 
@@ -312,9 +313,26 @@ def _element_boxes(e) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
         return _world_boxes(e.center, e.yaw_deg, [((0, 0, e.height), np.eye(3), (e.length / 2.0, r, r))])
     if isinstance(e, (Bump, Ramp, Platform)):
         parts = bump_parts(e) if isinstance(e, Bump) else ramp_parts(e) if isinstance(e, Ramp) else platform_parts(e)
-        return _world_boxes(e.center, e.yaw_deg, [(c, rot, (hx, e.width / 2.0, hz)) for c, rot, (hx, hz)
-                                                  in parts.values()])
+        level = [(c, rot, (hx, e.width / 2.0, hz)) for c, rot, (hx, hz) in parts.values()]
+        if isinstance(e, Platform):
+            level += _tilted(e, level)
+        return _world_boxes(e.center, e.yaw_deg, level)
     return []   # a switch hangs overhead, on a hinge
+
+
+def _tilted(e, level: list) -> list:
+    """A platform's boxes (its element frame) tilted as it can tilt: about the hinge at +x by up to max_tilt_deg (its
+    -x end up) and about the one at -x (its +x end up), each at half and at its full tilt, so a release point or a
+    chute clear of the level deck but in the way of the tilted one is found too (build_elements._platform's hinges)."""
+    s, out = e.hinge_spacing / 2.0, []
+    for side, sign in ((s, 1.0), (-s, -1.0)):
+        pivot = np.array([side, 0.0, e.hinge_height])
+        for share in (0.5, 1.0):
+            a = sign * math.radians(e.max_tilt_deg) * share
+            ry = np.array([[math.cos(a), 0.0, math.sin(a)], [0.0, 1.0, 0.0], [-math.sin(a), 0.0, math.cos(a)]])
+            out += [(pivot + ry @ (np.asarray(c, float) - pivot), ry @ np.asarray(rot, float), half)
+                    for c, rot, half in level]
+    return out
 
 
 def check_release_clear(path, rng: Range) -> None:

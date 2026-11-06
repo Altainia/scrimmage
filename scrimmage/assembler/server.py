@@ -485,11 +485,12 @@ Test (`/api/test/*`; 404 "no test is open" unless a test is open, except /api/te
         from_part: true and a part from a CAD import open ("Test it" in the Part tab): makes <import
         name>-standin.toml (the standin template carrying the built parts where the CAD has them, in front of the
         ladder range when a body is named like a hook, else facing the reef's floor coral when one is named like a
-        grabber, else at the station range's chute when one is named like a hopper) and <import name>.test.toml next
+        grabber, else at the station range's chute when one is named like a hopper, else on the plain field:
+        plain_field true) and <import name>.test.toml next
         to the import's parts/ folder, once each, and opens the test. Pressed again it opens the same test and adds
         the import's built parts the stand-in doesn't have yet, where the CAD has them (it never removes one);
-        {ok, added: [their names]}. 409 while the parts are updating, didn't build or the part is read-only, 400
-        with no part open or in plugin mode.
+        {ok, added: [their names], plain_field}. 409 while the parts are updating, didn't build or the part is
+        read-only, 400 with no part open or in plugin mode.
 
 Measure (`/api/measure/*`; 404 "no measurement file is open" unless one is). See measure_session.py, whose
 docstring gives the file's JSON (`file`):
@@ -2506,7 +2507,9 @@ class App:
     def test_from_part(self) -> dict:
         """The Part tab's "Test it": make (once) `<import name>-standin.toml` next to the import's parts folder, the
         built parts on it where the CAD has them (test_session.standin_config), and `<import name>.test.toml` beside
-        it with starter blocks, then open the test. Pressed again it opens the same test: nothing is made twice."""
+        it with starter blocks, then open the test. Pressed again it opens the same test: nothing is made twice.
+        `plain_field` is true when it made the stand-in on the plain field (no body like a hook or a hopper picked a
+        field for it), so the page can say where it starts."""
         with self._lock:
             part = self.part
             if self.mode != "part" or not isinstance(part, part_session.PartSession):
@@ -2546,9 +2549,12 @@ class App:
         name = sanitize(st["name"]) or "part"
         standin, test = home / f"{name}-standin.toml", home / f"{name}.test.toml"
         added: list[str] = []
+        plain = False     # a new stand-in on the plain field: no body is like a hook or a hopper (the page says so)
         try:
             new = test_session.standin_config(parts, _chassis_root_body(), slots, roots)
-            if not test_session.write_new(standin, new):
+            if test_session.write_new(standin, new):
+                plain = "range" not in tomllib.loads(new)
+            else:
                 text, added = test_session.add_to_standin(standin.read_text(encoding="utf-8"), parts,
                                                           _chassis_root_body(), slots)
                 if added:
@@ -2560,7 +2566,7 @@ class App:
                                        why=e.strerror or e)) from None
         except (ValueError, KeyError, TypeError) as e:   # a hand-edited stand-in that can't be read as one
             raise ApiError(409, i18n.t("can't add the new parts to {name}: {why}", name=standin.name, why=e)) from None
-        return {**self.open_path(str(test)), "added": added}
+        return {**self.open_path(str(test)), "added": added, "plain_field": plain}
 
     # -- runs -------------------------------------------------------------------------------
     def _runs_changed(self) -> None:

@@ -366,6 +366,9 @@ def test_the_frc_driver_station_choice_turns_the_page_controls_off(drive_page):
     bar = page.text_content("#drive-real-ds")
     assert "The FRC Driver Station is driving" in bar and "Waiting for the Driver Station" in bar, bar
     assert "Driver Station app" in page.text_content("#drive-keys-hint")
+    # B21: the Match timer box says the app runs the timer, rather than following the match time
+    assert page.evaluate("document.querySelector('#drive-timer').indeterminate") and not page.is_checked("#drive-timer")
+    assert "runs the match timer" in page.get_attribute("#drive-timer", "title")
     page.click("#drive-hud")
     page.keyboard.press("Enter")
     page.keyboard.down("w")
@@ -407,6 +410,11 @@ def test_the_bar_follows_the_frc_driver_station(drive_page, tmp_path):
         ds.set(False, "teleop", "red2", fms=True)
         page.wait_for_function("document.querySelector('#drive-real-ds-state').textContent === 'Disabled'")
         assert not page.query_selector("#notices .notice-error"), page.text_content("#notices")
+        # B21: the app stops; over 1 s with no DS packet, the bar says the Driver Station went silent
+        ds.stop()
+        page.wait_for_function("document.querySelector('#drive-real-ds-state').textContent === "
+                               "'Connected (Driver Station silent)'", timeout=10000)
+        assert page.evaluate("__scrimmage.live.state.match.silent") is True
     finally:
         ds.stop()
     stop(page)

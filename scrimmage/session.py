@@ -26,7 +26,7 @@ import mujoco
 from .bindings import binds_ph, binds_rev
 from .bridge import Bridge, robot_language
 from .devicecheck import check_devices, device_notes
-from .driverstation import (REAL_DS_WAITING, MatchSettings, check_game_data,
+from .driverstation import (MatchSettings, check_game_data, ds_words,
                             real_ds_report)
 from .config import Config, ConfigError, RobotProgram, build_world, load_config, set_sim_mode, sim_mode_unused
 from .i18n import N_, t, translated
@@ -435,9 +435,12 @@ class Session:
         if self.robot is None and not self.attach:
             raise SessionError(t("the session has no robot program to restart"))
         if not self.real_ds:   # the real DS keeps its own match data; scrimmage's DS is inactive
-            game_data = b.ds.game_data
+            game_data, sent = b.ds.game_data, b.ds.sends_match_data
             b.ds.clear()
-            if game_data:   # the field's data stays for the match, so the new program hears it on its first frame (M2)
+            # the field's data stays for the match, so the new program hears it on its first frame (M2); an attached
+            # program isn't restarted and keeps what its HAL last heard, so it is sent the reset's game data even
+            # when that is empty (a scenario clears it before this reset)
+            if game_data or (self.attach and sent):
                 b.ds.set_game_data(game_data)
         if self.attach:
             if env:
@@ -683,9 +686,9 @@ class Session:
         self._require_started()
         x, y, yaw = w.robot_pose()
         if self.real_ds:    # what the real DS is doing, per the robot program's own reports
-            report = real_ds_report(self.bridge.hal)
+            report = real_ds_report(self.bridge.hal, self.bridge.ds_quiet())
             ds = {"mode": report["mode"], "match": report, "real_ds": True,
-                  "driver_station": "connected" if report["connected"] else REAL_DS_WAITING}
+                  "driver_station": ds_words(report)}
         else:
             ds = {"mode": self.bridge.ds.mode,
                   "match": {**dataclasses.asdict(self.bridge.ds.match), "game_data": self.bridge.ds.game_data,
@@ -706,6 +709,7 @@ class Session:
                if w.test_range is not None else {}),
             **({"pneumatics": w.pneumatics.state()} if w.pneumatics is not None else {}),
             **({"partner": w.partner.state()} if getattr(w, "partner", None) is not None else {}),
+            **({"sensors": w.sensors.state()} if getattr(w, "sensors", None) is not None else {}),
         }
 
     def hal(self, device_filter: str = "") -> dict:

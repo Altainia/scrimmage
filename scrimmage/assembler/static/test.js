@@ -873,7 +873,8 @@ function stationBox(name, box, setting, field, kind) {
 }
 
 // The test's [setup] settings this field can't use, as [key, words, clear(setup)]: a station it doesn't have, a ball
-// on a field that keeps its own, a floor spread with no ball on the floor (palette.problems refuses the run for each)
+// on a field that keeps its own (one with pieces of its own: palette's own_pieces) or has none to pick (a climb
+// field), a floor spread with no ball on the floor (palette.problems refuses the run for each, in the same sense)
 function leftovers(pal, setup) {
   const out = [];
   for (const name of Object.keys(setup.station || {})) {
@@ -884,11 +885,11 @@ function leftovers(pal, setup) {
     }]);
   }
   if (setup.ball && !pal.ball_choice) {
-    out.push(["ball", pal.ball ? t("Ball \"{name}\": this field keeps its own ball", { name: setup.ball })
+    out.push(["ball", pal.ball && pal.own_pieces ? t("Ball \"{name}\": this field keeps its own ball", { name: setup.ball })
       : t("Ball \"{name}\": this field has no ball to pick", { name: setup.ball }), (x) => { delete x.ball; }]);
   }
   if (setup.piece && !pal.ball_choice) {
-    out.push(["piece", pal.piece ? t("Piece \"{name}\": this field keeps its own pieces", { name: setup.piece })
+    out.push(["piece", pal.piece && pal.own_pieces ? t("Piece \"{name}\": this field keeps its own pieces", { name: setup.piece })
       : t("Piece \"{name}\": this field has no piece to pick", { name: setup.piece }), (x) => { delete x.piece; }]);
   }
   if (setup.floor_spread && Object.keys(setup.floor_spread).length && !pal.floor_piece) {
@@ -931,6 +932,12 @@ async function setGrip(body, grip) {
   renderSetupError();
 }
 
+// A grip picker's Default: what part.toml gives the body's pads (palette's grip_defaults), else MuJoCo's 1.0.
+function defaultGripOf(pal, body) {
+  const mu = (pal.grip_defaults || {})[body];
+  return mu == null ? defaultGrip() : t("Default — {friction} (part.toml's; the larger of pad and piece applies)", { friction: fmt(mu) });
+}
+
 // `first`: the first row of its part, which carries the part's Try materials… (ruling P32: one per part)
 function gripRow(pal, body, i, running, first) {
   const id = `test-grip-${i}`;
@@ -949,7 +956,7 @@ function gripRow(pal, body, i, running, first) {
     }
     T.gripOwn.delete(body);
     setGrip(body, v === "" ? null : v);
-  } }, h("option", { value: "", text: defaultGrip() }),
+  } }, h("option", { value: "", text: defaultGripOf(pal, body) }),
   ...mats.map((m) => h("option", { value: m[0], text: gripText(m) })),
   h("option", { value: OWN, text: t("My own number…") }));
   sel.value = own ? OWN : now === null ? "" : now;
@@ -985,8 +992,8 @@ function gripRow(pal, body, i, running, first) {
 
 // Try materials… for a part: every pad of it first (ruling P28), then each pad on its own.
 function gripChoices(pal, part) {
-  const named = (g) => {
-    if (g === null || g === undefined) return t("the default friction 1.0");
+  const named = (g, b) => {
+    if (g === null || g === undefined) return t("the default friction {friction}", { friction: fmt((pal.grip_defaults || {})[b] ?? 1) });
     if (typeof g === "number") return t("my own {friction}", { friction: fmt(g) });
     const m = (pal.grip_materials || []).find((x) => x[0] === g);
     return m ? m[1] : g;
@@ -994,7 +1001,7 @@ function gripChoices(pal, part) {
   const pads = Object.keys(pal.grips || {}).filter((b) => b.split(".")[0] === part);
   return [{ label: t("Every pad of {part}: {pads}", { part, pads: pads.map((b) => b.split(".")[1]).join(", ") }), target: { grip: part },
     materials: true },
-  ...pads.map((b) => ({ label: t("{body} only", { body: b }), target: { grip: b }, materials: true, now: named(gripShown(pal, b)) }))];
+  ...pads.map((b) => ({ label: t("{body} only", { body: b }), target: { grip: b }, materials: true, now: named(gripShown(pal, b), b) }))];
 }
 
 // the station starter waits until the grabber holds a piece (ruling P31: the server's choice, on a robot with one)

@@ -346,14 +346,14 @@ def test_a_fields_colors(tmp_path):
         load_range("c.toml", tmp_path)
 
 
-def test_a_setup_piece_in_place_of_a_red_and_blue_fields_first_kind_takes_its_own_color(tmp_path):
-    """The Test tab's Setup piece replaces the field's default kind, its first [piece.<name>] here: the new ball has
-    its own color (a ball's yellow), not the red it replaced; the blue kind keeps its blue."""
+def test_a_setup_piece_in_place_of_a_red_and_blue_fields_first_kind_keeps_its_color(tmp_path):
+    """The Test tab's Setup piece replaces the field's default kind, its first [piece.<name>] here: the new ball keeps
+    the red of the table it replaced (B11: the field says which pieces are red), and the blue kind keeps its blue."""
     from scrimmage.testrange.spec import load_range
     (tmp_path / "rb.toml").write_text('[range]\nname = "rb"\n[piece.red_cargo]\nball = "2022-cargo"\ncolor = "red"\n'
                                       '[piece.blue_cargo]\nball = "2022-cargo"\ncolor = "blue"\n', encoding="utf-8")
     kinds = load_range("rb.toml", tmp_path, piece="2026-fuel").kinds
-    assert nearest_color(piece_color(kinds["red_cargo"])) == "yellow"
+    assert kinds["red_cargo"].preset == "2026-fuel" and nearest_color(piece_color(kinds["red_cargo"])) == "red"
     assert nearest_color(piece_color(kinds["blue_cargo"])) == "blue"
 
 
@@ -420,3 +420,102 @@ def test_defaults_and_inches():
 def test_a_robot_without_sensors_has_none():
     assert intake_world().sensors is None
     assert World(range_cfg(), None).sensors is None
+
+
+# ------------------------------------------------------------------------------------- get_state, scenarios, pokes
+
+def test_a_sensor_reads_again_when_the_robot_is_set_somewhere_else():
+    """B12: set_pose (World.set_robot_pose) reads the sensors at once: the reading is of the new pose, not the old
+    one until the next physics step."""
+    w, front = _ahead_world(kind="distance", max_range=2.0)
+    r = w.test_range.balls.r
+    w.test_range.balls.put(0, front + [0.5 + r, 0.0, 0.0], BALL_BITS)
+    step(w)
+    assert w.sensors.reading("s").on
+    x, y, yaw = w.robot_pose()
+    w.set_robot_pose(x - 1.0, y, float(np.degrees(yaw)) + 180.0)     # turned away from the ball, no step
+    got = w.sensors.reading("s")
+    assert not got.on and got.distance == pytest.approx(2.0)
+    assert w.sensors.state() == {"s": {"kind": "distance", "on": False, "distance_m": 2.0, "color": None}}
+
+
+def test_the_sensors_state_is_in_si_with_the_color_it_sees(tmp_path):
+    """B12: get_state's sensors: each one's kind, on, distance_m (meters) and the named color it sees."""
+    w, front = _two_color_world(tmp_path)
+    balls = w.test_range.balls
+    assert w.sensors.state() == {"eye": {"kind": "color", "on": False, "distance_m": None, "color": None}}
+    balls.put(list(balls.kind).index("red_cargo"), front + [0.03 + balls.r, 0.0, 0.0], BALL_BITS)
+    step(w)
+    assert w.sensors.state() == {"eye": {"kind": "color", "on": True, "distance_m": 0.03, "color": "red"}}
+
+
+def test_a_scenario_sensor_check_reads_as_the_test_tabs_sensor_condition(tmp_path):
+    """B12: a [[step.check]] sensor = {name, is, sees, when}: on or off at the end of the step, on every tick, or
+    by a time, as the at_end, always and by_time checks of sensor.<name> (or .sees.<color>) equal to true or false;
+    and the sensor signals themselves."""
+    from types import SimpleNamespace
+
+    from scrimmage.checks import ScenarioError, build_check, resolve_signal
+    w, front = _two_color_world(tmp_path)
+    session = SimpleNamespace(world=w, t=w.time)
+    balls = w.test_range.balls
+    balls.put(list(balls.kind).index("red_cargo"), front + [0.03 + balls.r, 0.0, 0.0], BALL_BITS)
+    step(w)
+
+    def result(spec):
+        c = build_check({"sensor": spec}, w, "x.toml, step 1 (A)")
+        c.begin(session)
+        c.tick(session, w.time)
+        return c.end(session)
+
+    assert result({"name": "eye"}).passed
+    assert result({"name": "eye", "sees": "red"}).passed
+    assert not result({"name": "eye", "sees": "blue"}).passed
+    assert result({"name": "eye", "is": "off", "sees": "blue"}).passed
+    assert not result({"name": "eye", "is": "off", "when": "always"}).passed
+    assert result({"name": "eye", "when": "by", "t": 1.0}).passed
+    r = result({"name": "eye", "sees": "red"})
+    assert r.check == "at_end sensor.eye.sees.red == True" and r.measured is True
+    assert resolve_signal("sensor.eye.color", w).read(session) == "red"
+    assert resolve_signal("sensor.eye.distance", w).read(session) == pytest.approx(0.03, abs=0.001)
+    for spec, words in (({"name": "nope"}, "the robot's sensors: eye"), ({"name": "eye", "is": "broken"},
+                        'is must be "on" or "off"'), ({"name": "eye", "when": "by"}, "t goes with"),
+                        ({"name": "eye", "sees": "teal"}, "teal' isn't a named color"),
+                        ({"name": "eye", "glows": True}, "unknown key 'glows'")):
+        with pytest.raises(ScenarioError, match=words):
+            build_check({"sensor": spec}, w, "x.toml, step 1 (A)")
+    with pytest.raises(ScenarioError, match="needs a sensor"):
+        resolve_signal("sensor.eye", spares_world(range_cfg()))
+
+
+def test_get_state_has_the_sensors_only_with_sensors_and_reads_them_again_after_set_pose(tmp_path):
+    """B12: the MCP tool get_state (Session.state) gains a sensors block, in SI, on a robot with [[sensor]]s, and
+    set_pose answers with the readings at the new pose."""
+    import asyncio
+
+    from parts_fake import parts_config
+    from scrimmage.session import Session
+
+    plain = parts_config(tmp_path)
+    with_sensor = tmp_path / "with_sensor.toml"
+    with_sensor.write_text(plain.read_text() + '\n[[sensor]]\nname = "front"\nkind = "distance"\nbody = "drive.chassis"\n'
+                           'at = [0.45, 0.0, 0.1]\ntoward = [1.0, 0.0, 0.0]\nsees = "anything"\nmax_range = 3.0\n')
+
+    async def states(path):
+        s = Session(path, nt=False)
+        try:
+            await s.start()
+            await s.advance(0.1)
+            first = s.state()
+            x, y, h = first["pose"]["x"], first["pose"]["y"], first["pose"]["heading_deg"]
+            return first, s.set_pose(x, y, h + 180.0)
+        finally:
+            await s.stop()
+
+    assert "sensors" not in asyncio.run(states(plain))[0]
+    first, turned = asyncio.run(states(with_sensor))
+    assert set(first["sensors"]) == {"front"} and first["sensors"]["front"]["kind"] == "distance"
+    assert set(first["sensors"]["front"]) == {"kind", "on", "distance_m", "color"}
+    # at (2, 4.035) facing +x nothing is within 3 m; turned round, the wall behind is 1.55 m off
+    assert first["sensors"]["front"]["distance_m"] == 3.0
+    assert turned["sensors"]["front"]["distance_m"] == pytest.approx(1.55, abs=0.01)

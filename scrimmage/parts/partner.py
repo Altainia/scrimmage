@@ -216,9 +216,39 @@ class PartnerOverlap(PartError):
         self.what, self.depth = what, depth
 
 
-def check_start(info: PartnerInfo, robot_start: tuple[float, float, float], elements=()) -> None:
-    """The partner's outline (frame plus bumpers) may not overlap the robot's start outline (ROBOT_OUTLINE) or any
-    element standing on the carpet (testrange/elements.py's _on_floor, as a start's robot outline is checked)."""
+def _circle_overlap(poly: np.ndarray, center: np.ndarray, r: float) -> float:
+    """How far a circle (center, radius r) overlaps a convex polygon: how far it must move to clear it, 0 when apart."""
+    edges = [(poly[k], poly[(k + 1) % len(poly)]) for k in range(len(poly))]
+
+    def gap(a, b) -> float:                      # the center's distance to edge a-b
+        ab = b - a
+        u = min(1.0, max(0.0, float((center - a) @ ab) / float(ab @ ab)))
+        return float(np.linalg.norm(center - (a + u * ab)))
+
+    near = min(gap(a, b) for a, b in edges)
+    # inside a counterclockwise or clockwise polygon: the center is on the same side of every edge
+    sides = [float((b - a)[0] * (center - a)[1] - (b - a)[1] * (center - a)[0]) for a, b in edges]
+    inside = all(x >= 0.0 for x in sides) or all(x <= 0.0 for x in sides)
+    return near + r if inside else max(0.0, r - near)
+
+
+def floor_pieces(rng) -> list[tuple[float, float, float, str]]:
+    """The range's floor pieces as (x, y, radius (m), what a student calls it) for check_start: a ball's or disc's
+    own radius, any other piece's bounding sphere's (so a long piece lying near the partner counts a little early)."""
+    kinds = list(rng.floor_kinds) if len(rng.floor_kinds) == len(rng.floor_balls) \
+        else [rng.piece_kind] * len(rng.floor_balls)
+    out = []
+    for (x, y), name in zip(np.asarray(rng.floor_balls, float).reshape(-1, 2), kinds):
+        kind = rng.kinds.get(name)
+        if kind is not None:
+            out.append((float(x), float(y), float(kind.radius), kind.label))
+    return out
+
+
+def check_start(info: PartnerInfo, robot_start: tuple[float, float, float], elements=(), pieces=()) -> None:
+    """The partner's outline (frame plus bumpers) may not overlap the robot's start outline (ROBOT_OUTLINE), any
+    element standing on the carpet (testrange/elements.py's _on_floor, as a start's robot outline is checked) or any
+    floor piece (`pieces`: floor_pieces' (x, y, radius, label))."""
     from ..testrange.elements import ROBOT_OUTLINE, _on_floor, _rect
     x, y, heading = info.start
     mine = _rect((x, y), heading, *info.outline)
@@ -230,6 +260,10 @@ def check_start(info: PartnerInfo, robot_start: tuple[float, float, float], elem
         depth = max((_overlap(mine, f) for f in _on_floor(e, start=True)), default=0.0)
         if depth > 1e-9:
             raise PartnerOverlap(i18n.t("element {name}", name=e.name), depth)
+    for x, y, r, label in pieces:
+        depth = _circle_overlap(mine, np.array([x, y]), r)
+        if depth > 1e-9:
+            raise PartnerOverlap(i18n.t("a floor piece ({piece})", piece=label), depth)
 
 
 # ---- its signals ----------------------------------------------------------------------------------------------------

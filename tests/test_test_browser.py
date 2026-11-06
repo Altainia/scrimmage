@@ -632,6 +632,19 @@ def test_a_run_shows_its_outcome_and_a_replay_that_plays_and_scrubs(test_page):
     assert "Run 1" in page.inner_text("#test-runs") and "Every block played." in page.inner_text("#test-runs")
 
 
+def test_a_chart_name_the_run_has_no_signal_for_gets_a_note(test_page):
+    """B1: a name in the test's chart the run has no signal for isn't dropped without a word: the chart says so, and
+    the test's hints say so before a run."""
+    page, _ = test_page('chart = ["arm.pivot", "arm.lift"]\n' + SPIN)
+    page.wait_for_selector("#test-hints-wrap:not([hidden])")
+    assert 'no signal called "arm.lift"' in page.inner_text("#test-hints")
+    assert page.is_enabled("#test-run")
+    _run(page, "001")
+    assert page.evaluate("__scrimmageTest.replay.chart.signals") == ["arm.pivot"]
+    page.wait_for_selector("#test-chart-key .test-chart-missing")
+    assert page.inner_text("#test-chart-key .test-chart-missing") == "This run has no signal called arm.lift"
+
+
 def test_a_second_run_is_charted_against_the_first(test_page):
     page, _ = test_page()
     _run(page, "001")
@@ -1176,6 +1189,22 @@ def test_settings_for_another_field_can_be_cleared_so_the_test_runs(test_page, t
     assert _run(page, "001")["status"] == "finished"
 
 
+def test_a_ball_left_over_on_a_climb_field_says_it_has_no_ball_to_pick(test_page, tmp_path):
+    """B9: the ladder names a ball only because a range must, so a ball left over from another field reads "has no
+    ball to pick" in Setup, as the problem does, not "keeps its own ball"."""
+    (tmp_path / "robot.toml").write_text(new_config("standin") + ARM + '\n[range]\nfile = "ladder"\nstart = "below"\n',
+                                         encoding="utf-8")
+    path = tmp_path / "t.test.toml"
+    path.write_text('[test]\nrobot = "robot.toml"\n\n[setup]\nball = "2014-ball"\n' + SPIN, encoding="utf-8")
+    page, _ = test_page(path=path)
+    page.wait_for_function("__scrimmageTest.state.problems.length > 0")
+    assert "this field has no ball to pick; clear the ball in Setup" in page.inner_text("#test-problems")
+    _open_setup(page)
+    row = "#test-setup .test-setup-leftover [data-leftover='ball']"
+    page.wait_for_selector(row)
+    assert page.inner_text(f"{row} span") == 'Ball "2014-ball": this field has no ball to pick'
+
+
 def test_a_run_on_a_station_field_that_fed_nothing_has_no_fed_pieces_line(test_page, tmp_path):
     page, path = test_page(path=_example(tmp_path, "station", "feed.test.toml", _just_a_wait))
     run = _run(page, "001")
@@ -1434,6 +1463,22 @@ def _reef(tmp_path, blocks='[[block]]\ndo = "wait"\nseconds = 0.2\n'):
 
 def _options(page, sel):
     return page.eval_on_selector_all(f"{sel} option", "os => os.map(o => [o.value, o.textContent])")
+
+
+def test_a_grip_pickers_default_says_the_friction_part_toml_gives(test_page, tmp_path):
+    """B10: a pad whose part.toml sets a friction: its picker's Default says that friction, not MuJoCo's 1.0; the
+    other pad keeps MuJoCo's default."""
+    path = _reef(tmp_path)
+    part = path.parent / "parts" / "grabber" / "part.toml"
+    part.write_text(part.read_text(encoding="utf-8").replace('name = "pad_left", color = [0.2, 0.2, 0.2, 1.0] }',
+                                                             'name = "pad_left", color = [0.2, 0.2, 0.2, 1.0], '
+                                                             'friction = 0.6 }'), encoding="utf-8")
+    page, _ = test_page(path=path)
+    _open_setup(page)
+    left, right = "#test-setup [data-grip='grabber.jaw_left']", "#test-setup [data-grip='grabber.jaw_right']"
+    page.wait_for_selector(left)
+    assert _options(page, left)[0] == ["", "Default — 0.6 (part.toml's; the larger of pad and piece applies)"]
+    assert _options(page, right)[0] == ["", "Default — 1.0 (MuJoCo's default; the larger of pad and piece applies)"]
 
 
 def test_setup_picks_a_piece_and_saves_it_as_piece(test_page, tmp_path):

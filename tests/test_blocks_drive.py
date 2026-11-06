@@ -107,6 +107,34 @@ def test_tank_turn_right(standin_world):
     assert dyaw == pytest.approx(-90, abs=10)
 
 
+TURN_THEN_WAIT = '[[block]]\ndo = "turn"\ndegrees = {deg}\n{extra}\n[[block]]\ndo = "wait"\nseconds = 2\n'
+
+
+@pytest.mark.parametrize("which", ["standin", "swerve"])
+@pytest.mark.parametrize("extra", ["", "volts = 12"])
+def test_a_turn_stops_at_its_angle_rather_than_coasting_past(which, extra, standin_world, swerve_world):
+    """B4: the turn slows into its angle and holds there; 2 s later the robot has turned 90°, not ~120° (it used to
+    coast on once the wheels stopped), at the default volts and at 12 V."""
+    world = standin_world if which == "standin" else swerve_world
+    r = run(world, TURN_THEN_WAIT.format(deg=90, extra=extra))
+    assert r.status == "finished", r.outcome
+    _, _, dyaw = moved(world, r)
+    assert dyaw == pytest.approx(90, abs=3)
+
+
+@pytest.mark.parametrize("which", ["standin", "swerve"])
+def test_a_turn_across_180_degrees_heading_keeps_counting(which, tmp_path):
+    """B4: starting at a heading of 150°, a 60° left turn crosses ±180 (the heading wraps to -150°); and a 270° turn
+    goes the long way round. Each ends where it should, its heading unwrapped as it goes."""
+    world = world_of(which, tmp_path, start=[3.0, 3.0, 150.0])
+    r = run(world, TURN_THEN_WAIT.format(deg=60, extra=""))
+    assert r.status == "finished", r.outcome
+    assert moved(world, r)[2] == pytest.approx(60, abs=3)
+    r = run(world, TURN_THEN_WAIT.format(deg=270, extra=""))
+    assert r.status == "finished", r.outcome
+    assert moved(world, r)[2] == pytest.approx(-90, abs=3)       # 270° left ends where 90° right does
+
+
 def test_tank_drive_back(standin_world):
     r = run(standin_world, '[[block]]\ndo = "drive"\ndirection = "back"\ndistance = 0.4\n')
     assert r.status == "finished", r.outcome

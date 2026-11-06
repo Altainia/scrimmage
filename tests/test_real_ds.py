@@ -78,13 +78,27 @@ def test_the_report_waits_until_the_robot_says_a_ds_is_attached():
 def test_the_report_follows_the_robots_driver_station_values():
     r = real_ds_report(hal(**SPIKE))
     assert r == {"connected": True, "mode": "teleop", "estop": False, "station": "red2", "fms": True,
-                 "match_time": -1.0}
+                 "match_time": -1.0, "silent": False}
     assert real_ds_report(hal(**{**SPIKE, ">autonomous": True}))["mode"] == "auto"
     assert real_ds_report(hal(**{**SPIKE, ">test": True}))["mode"] == "test"
     assert real_ds_report(hal(**{**SPIKE, ">enabled": False, ">autonomous": True}))["mode"] == "disabled"
     stopped = real_ds_report(hal(**{**SPIKE, ">enabled": False, ">estop": True}))
     assert stopped["mode"] == "disabled" and stopped["estop"] is True
     assert real_ds_report(hal(**{**SPIKE, ">game_data": "B"}))["game_data"] == "B"
+
+
+def test_a_ds_that_sent_nothing_for_over_a_second_is_silent():
+    """B21: the robot reports every DS packet it gets, so over SILENT_S with no DriverStation report while connected
+    is a silent DS: get_state's driver_station and serve's line say so; waiting stays waiting."""
+    from scrimmage.driverstation import REAL_DS_SILENT, SILENT_S, ds_words
+    on = hal(**{**SPIKE, ">enabled": False})
+    assert real_ds_report(on, 0.2)["silent"] is False and ds_words(real_ds_report(on, 0.2)) == "connected"
+    quiet = real_ds_report(on, SILENT_S + 0.5)
+    assert quiet["silent"] is True and ds_words(quiet) == REAL_DS_SILENT == "connected (Driver Station silent)"
+    assert real_ds_line(quiet) == REAL_DS_SILENT
+    assert real_ds_report(on)["silent"] is False                       # not known: not silent
+    waiting = real_ds_report(HalState(), 10.0)
+    assert waiting["silent"] is False and ds_words(waiting) == REAL_DS_WAITING
 
 
 def test_the_log_line_says_what_the_real_ds_is_doing():

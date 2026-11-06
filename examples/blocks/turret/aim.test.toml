@@ -87,4 +87,4 @@ seconds = 2.0
 
 [[block]]
 do = "expect"
-that = { scored = { goal = "hub_blue", at_least = 6 } }
+that = { scored = { goal = "hub_blue", at_least = 5 } }

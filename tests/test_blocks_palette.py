@@ -272,6 +272,15 @@ def test_setup_problems_at_place_nothing():
         "this field keeps its own ball; pick a ball on the intake or station field"]
     assert msgs(sprog(setup='\n[setup]\nball = "2014-ball"\n'), station_world("2013", "auto_line_left")) == [
         "this field has no ball to pick; clear the ball in Setup"]
+    # B9: a climb field names a ball only because a range must: it has no pieces of its own to keep
+    ladder = station_world("ladder", "below")
+    assert palette(ladder, [])["own_pieces"] is False and palette(on_2026, [])["own_pieces"] is True
+    assert msgs(sprog(setup='\n[setup]\nball = "2014-ball"\n'), ladder) == [
+        "this field has no ball to pick; clear the ball in Setup"]
+    assert msgs(sprog(setup='\n[setup]\npiece = "2025-coral"\n'), ladder) == [
+        "this field has no piece to pick; clear the piece in Setup"]
+    assert msgs(sprog(setup='\n[setup]\npiece = "2025-coral"\n'), on_2026) == [
+        "this field keeps its own pieces; pick a piece on the intake or station field"]
 
 
 def test_an_unknown_station_in_setup_leaves_the_others_settings_alone():

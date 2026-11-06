@@ -998,7 +998,7 @@ async def _follow_real_ds(bridge: Bridge, timeout: float, launched: bool) -> Non
             check_at = math.inf
             if (note := ds_socket_problem()) is not None:
                 log.warning("%s", note)
-        if (line := real_ds_line(real_ds_report(bridge.hal))) != last:
+        if (line := real_ds_line(real_ds_report(bridge.hal, bridge.ds_quiet()))) != last:
             last = line
             log.info("%s", line)
         await asyncio.sleep(0.1)

@@ -18,7 +18,7 @@ from .. import i18n, robot_process
 from ..bridge import MISSING_AFTER
 from ..checks import consume_peaks, resolve_signal
 from ..devicecheck import check_devices
-from ..driverstation import MATCH_KEYS, REAL_DS_WAITING, STATIONS, MatchSettings, check_game_data
+from ..driverstation import MATCH_KEYS, REAL_DS_WAITING, STATIONS, MatchSettings, check_game_data, ds_words
 from ..session import REAL_DS_INPUTS, Session
 from ..tracks import PortInputs
 from .recorder import DriveRecorder, RecordingError, RecordingExists
@@ -267,8 +267,7 @@ class LiveManager:
                 report = self._ds_report
                 mode = report["mode"] if report is not None else "waiting"
                 out |= {"mode": mode, "enabled": mode in MODES, "match": dict(report) if report is not None else None,
-                        "driver_station": "connected" if report is not None and report["connected"]
-                        else REAL_DS_WAITING}
+                        "driver_station": ds_words(report) if report is not None else REAL_DS_WAITING}
             return out
 
     def devices(self, since: int | None = None, timeout: float = DEVICES_WAIT) -> dict:
