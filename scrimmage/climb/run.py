@@ -4,8 +4,8 @@ the climb: a timeline, the peak hook load, the swing, the 2022 robot limits and 
 The runner takes the robot program's place: every physics step it writes the motor controllers' outputs, so each
 drive goes through the config's own motor, gearing, battery and neutral mode (a motor's speed and torque limits
 apply, and a `release` motor in brake mode slows its latch as it would on the robot); every motor bound to a joint
-(a lead and its followers) is written, as the Test tab's runs (scrimmage/blocks/run.py) write them. A position drive is a
-proportional loop on the joint: KP_SLIDE or KP_HINGE (scrimmage/hal_drive.py) volts per unit of error, clipped to the bus (or the drive's
+(a lead and its followers) is written, as the Test tab's runs (scrimmage/blocks/run.py) write them. A position drive
+is a proportional loop on the joint: KP_SLIDE or KP_HINGE (scrimmage/hal_drive.py) volts per unit of error, clipped to the bus (or the drive's
 max_voltage), as a team's position loop on a climber; the motor's own back-EMF damps it.
 
 The run settles the robot on the carpet for SETTLE_S, then plays the steps from t = 0. Every physics step it reads

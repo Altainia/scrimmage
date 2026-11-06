@@ -9,9 +9,9 @@ doesn't load makes the part read-only with the reason until it loads again. Vers
 part_session's.
 
 Each body in the state has `typed_mass` (the weight typed here, else None) and `changed` (the overlay's keys for it:
-"mass", "collision", "grip" and the joint's "range", "spring", "damping", "frictionloss", "limit_solref"), so the page can show
-which values were changed here and which come from the plugin; `grip` is the body's grip material (None: the default
-friction).
+"mass", "collision", "grip" and the joint's "range", "spring", "damping", "frictionloss", "limit_solref"), so the
+page can show which values were changed here and which come from the plugin; `grip` is the body's grip material
+(None: the default friction).
 """
 
 from __future__ import annotations

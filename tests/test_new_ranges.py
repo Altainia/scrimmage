@@ -163,7 +163,8 @@ def test_preload_needs_a_spring_and_a_stop(tmp_path, extra, message):
     from scrimmage.testrange.spec import RangeError
     door = {"name": "door", "kind": "hinged", "center": [1.0, 1.0], "size": [0.01, 1.0, 1.0], "hinge": "bottom",
             "range_deg": [-90.0, 0.0], "mass": 2.0, **extra}
-    lines = ["[range]", 'name = "t"', 'ball = "2026-fuel"', "[[element]]"] + [f"{k} = {v!r}".replace("'", '"') for k, v in door.items()]
+    lines = ["[range]", 'name = "t"', 'ball = "2026-fuel"', "[[element]]"]
+    lines += [f"{k} = {v!r}".replace("'", '"') for k, v in door.items()]
     f = tmp_path / "r.toml"
     f.write_text("\n".join(lines) + "\n")
     with pytest.raises(RangeError, match=message):
