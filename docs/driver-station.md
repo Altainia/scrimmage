@@ -117,26 +117,31 @@ scoring are the same whatever the mode.
 
 - **The Drive tab:** a box under Start, above the Mode buttons, says "The FRC Driver Station is driving", with
   the mode ("Waiting for the Driver Station", "Teleop enabled", "Auto enabled", "Test enabled", "Disabled" or
-  "Disabled (E-stopped)") and a line such as "Station red2 · FMS attached · match time 12.3 s". The Match section
-  shows the station and FMS, read-only. Its **Match timer** box is checked whenever the app sends a match time. The
-  HUD over the live view shows the mode, Enabled and the match time.
+  "Disabled (E-stopped)", or "Connected (Driver Station silent)": see below) and a line such as "Station red2 · FMS
+  attached · match time 12.3 s". The Match section shows the station and FMS, read-only. Its **Match timer** box is
+  grayed out with a dash: the app runs the match timer itself (hold the pointer over it to read so), and the match
+  time shows in the bar while it counts. The HUD over the live view shows the mode, Enabled and the match time.
 - **Agents:** `get_state` has `real_ds: true` and `driver_station`: "connected", or "waiting for the Driver
   Station". Its `mode` is the app's (`waiting`, `disabled`, `auto`, `teleop` or `test`), and its `match` has
-  `connected`, `mode`, `estop`, `station`, `fms` and `match_time`.
+  `connected`, `mode`, `estop`, `station`, `fms`, `match_time` and `silent`: true while connected but no packet has
+  come from the app for over 1 s (`driver_station` still says "connected").
 - **`scrimmage serve`:** prints a line each time it changes: `Driver Station: teleop enabled` (or `auto enabled`,
-  `test enabled`), `Driver Station: disabled`, `Driver Station: disabled (E-stopped)` or `waiting for the Driver
-  Station`.
+  `test enabled`), `Driver Station: disabled`, `Driver Station: disabled (E-stopped)`, `connected (Driver Station
+  silent)` or `waiting for the Driver Station`.
 - **The CSV log** (`--log`): its mode column is the app's mode.
 
 Things to know:
 
 - **Before the app connects,** everything says "waiting for the Driver Station".
 - **When the app stops sending,** the robot program disables itself within about 0.1 s, but it keeps reporting that
-  a Driver Station is connected. So Scrimmage shows "connected" and "Disabled", with the last station and FMS,
-  until the app comes back. (Seen with RobotPy 2026.2.2.)
+  a Driver Station is connected. While the app sends, the robot program reports each packet it gets (about 75 a
+  second), so once more than 1 s passes with none, the Drive tab and `serve` say "connected (Driver Station silent)"
+  and "Disabled", with the last station and FMS, and `get_state`'s `match.silent` is true, until the app comes back.
+  (Seen with RobotPy 2026.2.2.) Once the robot program itself disconnects, nothing is called silent.
 - **Game data:** the robot program reads the app's Game Data box, as on a real field
-  (`DriverStation.getGameSpecificMessage()`), but it doesn't report it back, so Scrimmage can't show it. The Drive
-  tab's Game data box stays empty.
+  (`DriverStation.getGameSpecificMessage()`). RobotPy 2026 doesn't report it back, so Scrimmage can't show it, and
+  the Drive tab's Game data box stays empty. A robot program whose reports do carry it (`>game_data`) has it shown in
+  the Game data box, read-only, and in `get_state`'s `match`.
 - **Joysticks:** the gamepads plugged into the Driver Station laptop reach the robot program through the app. The
   Drive tab's joystick ports are off.
 

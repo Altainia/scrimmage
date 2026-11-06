@@ -87,6 +87,18 @@ def test_rename_rewrites_attach_and_keeps_comments(tmp_path):
     assert len(cd.text.splitlines()) == len(new.splitlines())
 
 
+def test_rename_rewrites_a_sensors_body():
+    """B12: a [[sensor]]'s body names its part ("<part>.<body>"), so a rename updates it as it does an attach; a
+    sensor on another part, and its comment, stay as they were."""
+    d = tomlkit.parse('[[part]]\nname = "intake"\nstock = "arm"\n\n[[part]]\nname = "intake2"\nstock = "arm"\n\n'
+                      '[[sensor]]\nname = "mouth"\nkind = "beam"\nbody = "intake.frame"   # the lip\n\n'
+                      '[[sensor]]\nname = "other"\nkind = "beam"\nbody = "intake2.frame"\n')
+    edits.rename_part(d, "intake", "grabber")
+    text = tomlkit.dumps(d)
+    assert 'body = "grabber.frame"   # the lip' in text and 'body = "intake2.frame"' in text
+    assert [s["body"] for s in tomlkit.parse(text)["sensor"]] == ["grabber.frame", "intake2.frame"]
+
+
 def test_rename_rejections(tmp_path):
     cd = doc_for(tmp_path, "swerve")
     for bad in ("fl", "has space", "x.y", ""):

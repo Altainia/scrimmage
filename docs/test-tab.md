@@ -94,6 +94,8 @@ drive motor on each module. A tank drive can drive **forward** and **back** only
 drive can't drive sideways; turn, then drive forward"). A swerve drive can go in all four directions: it points the
 modules first (up to a second), then drives the wheels at the block's volts. **turn** spins the robot on the spot:
 a tank drive runs its two sides in opposite directions, a swerve drive points its modules around the robot's center.
+It slows down as it nears its angle (the block's volts are the most it uses) and pushes back if the robot swings
+past, so it ends within 2° of the angle and nearly still, instead of coasting on after the wheels stop.
 Any other robot (mecanum, say) has no **drive** or **turn** block: spin the drive motors one by one instead. The
 problem text on such a robot is "drive works on a tank or swerve drive; spin the drive motors instead". A robot with
 no drivetrain at all gets the problem "drive needs a drivetrain".
@@ -330,7 +332,8 @@ choices, with the friction the simulation uses for each:
 (Rubber and nitrile are the same estimate, so they act the same: a sweep over both won't show a difference.) The
 picker shows each estimate beside the name. Left alone (**Default — 1.0 (MuJoCo's default; the larger of pad and piece
 applies)**), a pad keeps the friction its part gives it: MuJoCo's default 1.0, about grip tape's, unless `part.toml`
-sets a `friction` on its geoms, and the larger of the pad's and the piece's friction applies.
+sets a `friction` on its geoms, and the larger of the pad's and the piece's friction applies. When `part.toml` sets
+one, the picker's first choice says so: **Default — 0.6 (part.toml's; the larger of pad and piece applies)**.
 
 **Every number here is an estimate, marked UNCALIBRATED.** Friction against game pieces isn't published, so these are
 typical ranges. A run that depends on a grip says so in a line under the sentence ("claw.pad_left grip: nitrile,
@@ -582,11 +585,16 @@ about 1.8 times as far. A robot that also has friction brakes would be harder to
 it tilted no more than that many degrees. **partner moved at least** *n* **in** reads `partner.moved`. On a test with
 no partner they are a problem: "there's no partner robot; add one in Setup".
 
-**Where it starts.** A partner that starts overlapping your robot's start (a 0.9 m square) or a field element on
-the carpet is refused before the run:
-`the partner robot (Setup) starts inside the robot (their outlines overlap by 7.87 in)`, or
-`the partner robot (Setup) starts inside element portcullis_platform (their outlines overlap by 4.72 in)`. Move it. A
-partner from the robot file's `[partner]` says `[partner] starts inside ...` instead.
+**Where it starts.** A partner that starts overlapping your robot's start (a 0.9 m square), a field element on
+the carpet or a game piece lying on the floor is refused before the run:
+`the partner robot (Setup) starts inside the robot (their outlines overlap by 7.87 in)`,
+`the partner robot (Setup) starts inside element portcullis_platform (their outlines overlap by 4.72 in)`, or
+`the partner robot (Setup) starts inside a floor piece (fuel) (their outlines overlap by 19.83 in)`. Move it. A
+partner from the robot file's `[partner]` says `[partner] starts inside ...` instead. A piece other than a ball or a
+disc counts as its bounding sphere, so a long piece lying near the partner is refused a little early. A
+[floor spread](#floor-spreads) whose placement puts its piece under the partner is refused before its first run too:
+`the floor spread's placement 66 in ahead puts the ball under the partner robot: move the partner farther away in
+Setup, or leave that placement out`.
 
 In the test file:
 
@@ -682,6 +690,8 @@ run early. Then:
   `partner.moved`), the robot's sensors (`sensor.<name>`) and the clearances (`clearance.<element>`, listed under
   **From the next run:**) are there too: see [Moving field elements](#moving-field-elements),
   [A partner robot](#a-partner-robot), [Sensors](#sensors) and [Clearance to a field element](#clearance-to-a-field-element).
+  A name in the `chart` line that the run has no signal for (a typo, or a joint renamed since) isn't drawn. A note
+  under the chart says "This run has no signal called arm.lift", and the hints above **Run** say so before a run.
 - **Compare.** Pick another run in **compare with** to draw both on the same chart, for example before and after a
   change. Under the chart, each run's sentence is shown one above the other.
 
@@ -740,7 +750,8 @@ Then it opens the Test tab. If you press **Test it** again after adding parts, n
 and the tab says which. **Test it also gives the part's motors free device IDs**: the first PWM channels the drive
 leaves free (`PWM:2` and up), so a motor you built in the Part tab can spin at once without anyone choosing IDs.
 Change them in the Robot tab if you like. A cylinder's valve needs no ID under the Test tab. A part with a hook is
-put in front of the ladder field.
+put in front of the ladder field. A part with no body named like a hook or a hopper starts on the plain field (there
+is nothing on another field for it to reach), and the tab says so when it opens; Setup's field picks another.
 
 You can use any robot file instead: **Test a mechanism** on the start page, then **Make the test**.
 
@@ -791,7 +802,7 @@ Nine worked examples are in `examples/blocks/`. Each has a README with the story
   says what was tried and what to try next. The test's tilt check passes (the robot leans 20° at most).
 - **`examples/blocks/turret`**, a launcher on a turret on a stand-in robot, on the 2026 field with 8 balls preloaded.
   It aims at `hub_blue`, shoots standing still, turns on the spot, then shoots while it drives 1.5 m, and checks the
-  turret stays aimed within 5° throughout and that the balls score: 7 of 8 go in, all 4 standing and 3 of the 4 on
+  turret stays aimed within 5° throughout and that the balls score: 6 of 8 go in, all 4 standing and 2 of the 4 on
   the move (the aim doesn't lead the shot). The README tries the hood, the wheel speed, a faster drive and the same
   run without the turret.
 - **`examples/blocks/pneumatic`**, an arm lifted by an air cylinder on a stand-in robot. It lifts the arm and puts it

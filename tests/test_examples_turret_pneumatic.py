@@ -1,7 +1,7 @@
 """The turret shooter and the pneumatic arm (examples/blocks/turret and examples/blocks/pneumatic): two worked Test-tab
 examples on the stand-in robot. The turret keeps the launcher on hub_blue while the robot turns on the spot and
-while it drives; the standing shots score, and most of the shots on the move (the aim doesn't lead them); the arm is lifted by a cylinder 10 times and the air stays above the
-working pressure. Each test asserts what the example's README says the run does."""
+while it drives; the 4 standing shots score, and 2 of the 4 on the move (the aim doesn't lead them); the arm is
+lifted by a cylinder 10 times and the air stays above the working pressure. Each test asserts what the example's README says the run does."""
 
 from __future__ import annotations
 
@@ -72,17 +72,17 @@ def test_turret_example_scores_standing_and_on_the_move(turret):
     assert r.status == "finished", r.outcome
     assert [c["passed"] for c in r.checks] == [True, True, True], r.checks
     assert r.checks[0]["line"].startswith("passed: the turret is aimed at hub_blue within 5° from ")
-    # the README's times: aimed from 1.4 s, 3 scored at 3.8 s, 6 scored at 9.0 s
+    # the README's times: aimed from 1.4 s, 3 scored at 3.8 s, 5 scored at 9.2 s
     assert [c["t"] for c in r.checks] == [pytest.approx(1.4, abs=0.1), pytest.approx(3.8, abs=0.1),
-                                          pytest.approx(9.0, abs=0.1)]
-    assert r.goals == {"hub_blue": 7, "hub_red": 0}         # the README: 7 of 8
-    assert goal_lines(r) == ["scored 7 in hub_blue"]
-    assert turret["scored_at_turn"] == [4]                  # all 4 standing shots in before the turn; 3 on the move
-    # the robot coasts on past its 90° to about 112° before it drives
-    assert 105 < turret["yaw_at_drive"] < 120
-    # it drives (from 4.6 s, the shots leave at 4.7 s) and the aim holds while it does: at most 1.7° off
+                                          pytest.approx(9.2, abs=0.1)]
+    assert r.goals == {"hub_blue": 6, "hub_red": 0}         # the README: 6 of 8
+    assert goal_lines(r) == ["scored 6 in hub_blue"]
+    assert turret["scored_at_turn"] == [4]                  # all 4 standing shots in before the turn; 2 on the move
+    # B4: the turn slows into its 90° and stops at about 91° (it used to coast on to about 112°)
+    assert 88 < turret["yaw_at_drive"] < 94
+    # it drives (from about 4.8 s) and the aim holds while it does: at most 0.5° off
     drive = turret["driving"]
-    assert drive[0][0] == pytest.approx(4.6, abs=0.1)
+    assert drive[0][0] == pytest.approx(4.8, abs=0.1)
     assert max(abs(e) for _, e in drive) < 2.5
     assert max(abs(e) for e in r.signals["aim_error"]) < 5
     # it drove about the 1.5 m

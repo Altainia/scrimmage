@@ -377,18 +377,25 @@ function renderMatch(s) {
     station.replaceChildren(...s.stations.map((st) => h("option", { value: st }, st)));
   }
   const real = realDs(s);
-  $("#drive-match-hint").textContent = real ? t("The Driver Station app sets the match. Its game data isn't shown here.")
-    : t("Game data reaches the robot when it is enabled in Teleop.");
+  // a robot whose reports carry the DS's game data (RobotPy 2026's don't) shows it in the Game data box
+  const shown = real && m && typeof m.game_data === "string";
+  $("#drive-match-hint").textContent = !real ? t("Game data reaches the robot when it is enabled in Teleop.")
+    : shown ? t("The Driver Station app sets the match.") : t("The Driver Station app sets the match. Its game data isn't shown here.");
   for (const id of Object.values(MATCH_CONTROLS)) setWhy($(id), real ? realDsWhy() : "");
-  if (real) {   // read-only: what the robot reports from the real DS (it doesn't report the game data)
+  if (real) {   // read-only: what the robot reports from the real DS
     for (const id of Object.values(MATCH_CONTROLS)) $(id).disabled = true;
+    // the app runs the match timer itself: the box says so rather than following the match time
+    const timer = $("#drive-timer");
+    timer.checked = false;
+    timer.indeterminate = true;
+    setWhy(timer, t("The Driver Station app runs the match timer: its match time shows in the bar above while it counts"));
     if (!m) return;
     station.value = m.station || "";
     $("#drive-fms").checked = !!m.fms;
-    $("#drive-timer").checked = typeof m.match_time === "number" && m.match_time >= 0;
-    $("#drive-game-data").value = "";
+    $("#drive-game-data").value = shown ? m.game_data : "";
     return;
   }
+  $("#drive-timer").indeterminate = false;
   for (const [key, id] of Object.entries(MATCH_CONTROLS)) {
     const el = $(id);
     el.disabled = !m;
@@ -422,6 +429,7 @@ function renderSource(s) {
 
 function realDsText(m) {
   if (!m || !m.connected) return t("Waiting for the Driver Station");
+  if (m.silent) return t("Connected (Driver Station silent)");     // no DS packet for over 1 s: the app stopped
   if (m.mode === "disabled" && m.estop) return t("Disabled (E-stopped)");
   return REAL_DS_MODE_TEXT[m.mode] ? REAL_DS_MODE_TEXT[m.mode]() : m.mode;
 }

@@ -202,6 +202,7 @@ Steps run back to back in one simulation, so a robot driven in step 1 starts ste
 | `always = {signal, min, max, equals}` | The signal holds on every tick of the step. The failure names the first time it broke. |
 | `never_touch = "name"` / `must_touch = "name"` | Whether the robot touched that geom or body (like `obstacle`) during the step. |
 | `console = {contains, not_contains}` | A regular expression over the robot console lines printed during the step. |
+| `sensor = {name, is, sees, when, t}` | A `[[sensor]]` is on or off (`is`, default on; `sees` a named color for a color sensor) at the end of the step, on every tick (`when = "always"`) or by `t` s into it (`when = "by"`). See [docs/sensors.md](docs/sensors.md#in-scenarios-and-mcp). |
 
 Signals for `at_end` and `always`:
 
@@ -216,6 +217,8 @@ Signals for `at_end` and `always`:
   ([docs/test-range.md](docs/test-range.md)); with bars, the climb signals ([docs/climbing.md](docs/climbing.md))
 - with a [partner robot](#a-partner-robot), `partner.height` (in: its frame's lowest corner above where it rested),
   `partner.tilt` (degrees from level) and `partner.moved` (in: how far its center has gone across the floor)
+- with [[sensor]]s, `sensor.<name>` (true while on), `sensor.<name>.distance` (m), `sensor.<name>.color` and
+  `sensor.<name>.sees.<color>` ([docs/sensors.md](docs/sensors.md#in-scenarios-and-mcp))
 
 Signal values are compared as plain values: a true/false value (an NT boolean, for example) matches
 `equals = true` / `equals = false`, and an array value (an NT `double[]`, for example) compares as a list, so
@@ -272,7 +275,7 @@ edit the robot code, `restart_robot()`, repeat. The agent launches your robot wi
 | `set_mode` | Driver Station mode: disabled, auto, teleop or test. |
 | `set_joystick` | Set axes, buttons and POVs on a port 0-5. |
 | `set_match` | The match data the Driver Station sends: `station`, `fms`, `timer`, `game_data`, `auto_seconds`, `teleop_seconds` ([docs/match.md](docs/match.md)). |
-| `get_state` | Ground-truth pose, speed, battery, motor commands and currents, joint positions, the match data (`match`); on a robot with air cylinders, the air (`pneumatics`: stored and working psi, whether the compressor is on, each rod's extension in meters, `extension_m`). |
+| `get_state` | Ground-truth pose, speed, battery, motor commands and currents, joint positions, the match data (`match`); on a robot with air cylinders, the air (`pneumatics`: stored and working psi, whether the compressor is on, each rod's extension in meters, `extension_m`); on a robot with `[[sensor]]`s, each sensor's reading (`sensors`: `kind`, `on`, `distance_m` in meters and the named `color` it sees). |
 | `get_hal` | Raw HAL values the robot reported, with an optional device filter. |
 | `get_console` | Robot console lines with simulated timestamps. |
 | `nt_list`, `nt_get` | List and read NetworkTables topics. |

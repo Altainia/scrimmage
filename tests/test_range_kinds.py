@@ -191,6 +191,24 @@ def test_a_piece_override_replaces_a_default_from_a_piece_table(tmp_path):
     assert list(rng.kinds) == ["coral"] and rng.piece_preset == "2023-cube" and rng.kinds["coral"].label == "cube"
 
 
+def test_a_piece_override_keeps_the_color_of_the_table_it_replaces(tmp_path):
+    """B11: the first [piece.<name>] table's color stays when a [range] piece replaces it (a color sensor reads it),
+    as a [range] table's own color stays when its ball or piece is replaced."""
+    text = CORAL_ONLY.replace('preset = "2025-coral"\n', 'preset = "2025-coral"\ncolor = "red"\n')
+    (tmp_path / "reef.toml").write_text(text.replace("[3.0, 2.0]]", '[3.0, 2.0]]\nkind = "coral"'))
+    red = load_range("reef.toml", tmp_path).kinds["coral"].color
+    assert red is not None
+    for piece in ("2019-cargo", "2023-cube"):
+        assert load_range("reef.toml", tmp_path, piece=piece).kinds["coral"].color == red, piece
+    (tmp_path / "ball.toml").write_text('[range]\nname = "b"\nball = "2026-fuel"\ncolor = "blue"\n')
+    def color(**kw):
+        rng = load_range("ball.toml", tmp_path, **kw)
+        return rng.kinds[rng.default_kind].color
+    blue = color()
+    assert blue is not None and blue != red
+    assert color(piece="2023-cube") == blue and color(ball="2019-cargo") == blue
+
+
 def test_every_builtin_range_is_unchanged():
     for name in BUILTIN_RANGES:
         if name == "reef":      # new with pieces beyond balls: a coral range from the start

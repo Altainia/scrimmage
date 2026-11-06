@@ -257,6 +257,41 @@ mass = 2.27
         world_for(_program(tmp_path, "", robot="\n[partner]\nstart = [2.68, 4.035, 0]\n"))
 
 
+def test_a_partner_on_a_floor_piece_or_a_spread_placement_is_refused(tmp_path):
+    """B7: the partner's start is checked against the field's floor pieces, as against the robot and the elements
+    (Setup's words in the Units setting, a config's [partner] in meters), and a floor spread's placements against the
+    partner, before any run."""
+    from scrimmage.blocks.spread import on_partner, run_spread
+    from scrimmage.parts.partner import PartnerOverlap
+    from scrimmage.units import machine_text
+    intake = '\n[range]\nfile = "intake"\nstart = "facing_ball"\n'      # the ball 1.5 m (59 in) ahead
+    with pytest.raises(TestFileError) as e:
+        world_for(_program(tmp_path, "partner = { ahead_in = 59 }", robot=intake))
+    assert str(e.value) == ("the partner robot (Setup) starts inside a floor piece (fuel) (their outlines overlap by "
+                            "19.83 in)")
+    with pytest.raises(PartError) as e:
+        _world(tmp_path, intake + "\n[partner]\nstart = [3.5, 4.0, 0]\n")
+    assert isinstance(e.value, PartnerOverlap) and e.value.what == "a floor piece (fuel)"
+    assert str(e.value) == "[partner] starts inside a floor piece (fuel) (their outlines overlap by 0.51 m)"
+    _world(tmp_path, intake + '\nfloor_balls = false\n\n[partner]\nstart = [3.5, 4.0, 0]\n')   # no ball: allowed
+
+    # 80 in ahead clears the ball where it lies; a spread placement 66 in ahead puts it under the partner
+    spread = "partner = { ahead_in = 80 }\nfloor_spread = { distance_in = [30, 66] }"
+    program = _program(tmp_path, spread, '[[block]]\ndo = "wait"\nseconds = 0.1\n', robot=intake)
+    w = world_for(program)
+    assert on_partner(w, {"distance_in": [30, 50]}) is None
+    refusal = ("the floor spread's placement 66 in ahead puts the ball under the partner robot: move the partner "
+               "farther away in Setup, or leave that placement out")
+    assert on_partner(w, program.setup["floor_spread"]) == refusal
+    with pytest.raises(TestFileError) as e:
+        run_spread(program, tmp_path / "runs")
+    assert str(e.value) == refusal
+    with machine_text():
+        assert on_partner(w, {"offset_in": [0, 20], "distance_in": [62]}).startswith(
+            "the floor spread's placement on the center line puts the ball under the partner robot")
+    assert not (tmp_path / "runs").exists() or not any((tmp_path / "runs").iterdir())
+
+
 def test_partner_conditions(tmp_path):
     expect_moved = '[[block]]\ndo = "expect"\nthat = { partner_moved = { at_least_in = 2.0 } }\n'
     program = _program(tmp_path, "partner = { ahead_in = 40 }",

@@ -186,6 +186,7 @@ class Part:
     # Its pins name the part's own bodies, or (pin_b, the push form) another part's body as "<instance>.<body>";
     # length None means the pins' distance at the assembled pose. Each cylinder's valve is the slot VALVE_SLOT.
     grip_provenance: dict = field(default_factory=dict)  # body -> the Provenance of a grip from a measurement file
+    grip_base: dict = field(default_factory=dict)  # gripped body -> the friction part.toml gave it (grip.part_friction)
 
     def slot_kinds(self) -> dict[str, str]:
         out = {s.slot: "motor" for s in self.motors}

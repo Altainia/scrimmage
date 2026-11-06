@@ -157,6 +157,18 @@ class SensorRuntime:
     def reset(self) -> None:
         self.update(self.world.data)
 
+    def state(self) -> dict:
+        """Each sensor's reading now, in SI, for MCP get_state: {name: {kind, on, distance_m (a distance sensor's, or
+        a color sensor's to what it sees; None for a beam and while a color sensor sees nothing), color (the named
+        color a color sensor sees, else None)}}."""
+        out = {}
+        for s in self.specs:
+            r = self._readings[s.name]
+            out[s.name] = {"kind": s.kind, "on": r.on,
+                           "distance_m": None if r.distance is None else round(float(r.distance), 4),
+                           "color": r.color_name}
+        return out
+
     def update(self, data: mujoco.MjData) -> None:
         """Read every sensor from `data`'s kinematics (after mj_step: the state the step began from)."""
         for s, b, start, direction, reach in zip(self.specs, self._bodies, self._start, self._dir, self._reach):

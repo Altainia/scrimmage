@@ -235,6 +235,23 @@ def test_a_pads_own_friction_in_part_toml_is_the_one_the_note_names(tmp_path, fr
                                                     "Part tab, or measure yours with a sled pull (docs/test-tab.md)")
 
 
+def test_a_grip_pickers_default_is_the_friction_part_toml_gives(tmp_path):
+    """B10: the palette's grip_defaults says what a pad's Default means: part.toml's friction (kept when a grip is
+    set over it), or None for MuJoCo's default 1.0."""
+    from scrimmage.blocks.palette import palette
+    from scrimmage.parts.grip import set_grip
+    path = grabber(tmp_path, blocks())
+    part = tmp_path / "parts" / "grabber" / "part.toml"
+    text = part.read_text(encoding="utf-8").split("[[body]]")
+    text[3] = text[3].replace("color = [0.2, 0.2, 0.2, 1.0] }", "color = [0.2, 0.2, 0.2, 1.0], friction = 0.6 }")
+    part.write_text("[[body]]".join(text), encoding="utf-8")
+    pal = palette(world_for(load(path)), [])
+    assert pal["grip_defaults"] == {"grabber.jaw_b": 0.6, "grabber.jaw_f": None}
+    set_grip(part.parent, "jaw_b", "nitrile")                  # a grip over it: the Default still means 0.6
+    pal = palette(world_for(load(path)), [])
+    assert pal["grips"]["grabber.jaw_b"] == "nitrile" and pal["grip_defaults"]["grabber.jaw_b"] == 0.6
+
+
 @pytest.mark.parametrize("case, words", [("typo", "isn't a grip material"), ("no geoms", "does nothing"),
                                          ("stock", "a stock part has its own materials"),
                                          ("unknown body", "no body")])

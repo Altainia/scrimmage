@@ -235,6 +235,37 @@ def inside_robot(world, spread: dict) -> str | None:
     return None
 
 
+def on_partner(world, spread: dict) -> str | None:
+    """Why the floor spread can't run when a placement puts the piece under the partner robot ("the floor spread's
+    placement 6 in left puts the ball under the partner robot: ..."), or None (no partner, or none does). The piece is
+    a circle of its kind's radius (a ball's own; any other piece's bounding sphere's) where the placement puts its
+    center, against the partner's outline (frame plus bumpers), as partner.check_start judges the field's own floor
+    pieces."""
+    from ..parts.partner import _circle_overlap
+    from ..testrange.elements import _rect
+    info = world.parts.partner if world.parts is not None else None
+    found = spread_ball(world)
+    pose = start_pose(world)
+    if info is None or found is None or pose is None:
+        return None
+    i = found[0]
+    kind = spread_kind(world, i)
+    r = kind.radius if kind is not None else world.test_range.balls.rest_z_of(i)
+    px, py, ph = info.start
+    poly = _rect((px, py), ph, *info.outline)
+    x, y, heading = pose
+    names = varying(spread)
+    for p in placements(spread, found[1]):
+        h = math.radians(heading + p["angle_deg"])
+        ahead, left = p["distance_in"] * IN, p["offset_in"] * IN
+        at = np.array([x + ahead * math.cos(h) - left * math.sin(h), y + ahead * math.sin(h) + left * math.cos(h)])
+        if _circle_overlap(poly, at, r) > 1e-9:
+            return i18n.t("the floor spread's placement {placement} puts the {piece} under the partner robot: move "
+                          "the partner farther away in Setup, or leave that placement out",
+                          placement=label(p, names, kind), piece=i18n.t("ball") if kind is None else kind.label)
+    return None
+
+
 def placements(spread: dict, base: dict) -> list[dict]:
     """Every combination of the spread's axes, in SPREAD_AXES order with the first axis slowest. Each has all five
     axes: an axis left out is the base's (spread_ball's: the floor piece's own offset, distance, tip and turn), or 0
@@ -401,7 +432,7 @@ def run_spread(program: Program, base, on_progress=None, cancel: threading.Event
     found = spread_ball(world)
     if found is None:
         raise TestFileError(no_ball())
-    inside = inside_robot(world, spread)
+    inside = inside_robot(world, spread) or on_partner(world, spread)
     if inside is not None:
         raise TestFileError(inside)
     ps = placements(spread, found[1])

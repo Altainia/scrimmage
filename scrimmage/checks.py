@@ -25,8 +25,9 @@ SIGNALS_HELP = ("battery, speed, motor.<name>.current|command, joint.<name>.posi
                 "robot.ground_gap|wheels_down|air_time|pitch|roll|tilt|z|stranded|tipped, "
                 "climb.hanging|level|points|swing|hook_load|extension|height, climb.hook.<hook>.load, "
                 "hal:<type>/<device>/<key>, nt:<topic>, and on a test range score, score.<goal>, fired, held, on_field, "
-                "element.<platform>.angle, element.<hinged or sliding element>, and with a [partner] partner.height|"
-                "tilt|moved")
+                "element.<platform>.angle, element.<hinged or sliding element>, with a [partner] partner.height|"
+                "tilt|moved, and with [[sensor]]s sensor.<name>, sensor.<name>.distance|color, "
+                "sensor.<name>.sees.<color>")
 RANGE_SIGNALS = ("score", "fired", "held", "on_field")   # and score.<goal>: read from the range's counts()
 
 
@@ -199,7 +200,50 @@ def _climb_signal(name: str, world) -> Signal:
     return Signal(name, lambda s: s.world.climb.sample()[name])
 
 
+def _sensor_signal(name: str, world) -> Signal:
+    """sensor.<name>: true while the [[sensor]] is on (a beam broken, a distance closer than its threshold, a color
+    sensor seeing a piece), as the Test tab's sensor condition reads it; sensor.<name>.distance (m: a distance sensor's,
+    max_range with nothing in range; a color sensor's to the piece it sees; no value otherwise); sensor.<name>.color
+    (the named color a color sensor sees, no value while it sees none); sensor.<name>.sees.<color> (true while it is on
+    and sees that named color)."""
+    from .sensors.colors import NAMED_COLORS
+    runtime = getattr(world, "sensors", None)
+    if runtime is None:
+        raise ScenarioError(t("{signal} needs a sensor: add a {sensor_table} to the config (see docs/sensors.md)",
+                              signal=name, sensor_table="[[sensor]]"))
+    kinds = {sp.name: sp.kind for sp in runtime.specs}
+    sensor, _, field = name[len("sensor."):].partition(".")     # a sensor's name has no dot (sensors/spec.py)
+    if sensor not in kinds or field not in ("", "distance", "color") and not field.startswith("sees."):
+        raise ScenarioError(t("unknown signal {signal}: use one of {sensor_signals}; the robot's sensors: {sensors}",
+                              signal=repr(name), sensors=", ".join(kinds),
+                              sensor_signals="sensor.<name>, sensor.<name>.distance, sensor.<name>.color, "
+                                             "sensor.<name>.sees.<color>"))
+    if field == "":
+        return Signal(name, lambda s: s.world.sensors.reading(sensor).on)
+    if field == "distance":
+        if kinds[sensor] == "beam":
+            raise ScenarioError(t("signal {signal}: {sensor} is a beam break, which reads no distance; read it as "
+                                  "{on_signal}", signal=repr(name), sensor=sensor, on_signal=f"sensor.{sensor}"))
+        return Signal(name, lambda s: s.world.sensors.reading(sensor).distance)
+    if kinds[sensor] != "color":
+        raise ScenarioError(t("signal {signal}: {sensor} isn't a color sensor, so it sees no color", signal=repr(name),
+                              sensor=sensor))
+    if field == "color":
+        return Signal(name, lambda s: s.world.sensors.reading(sensor).color_name)
+    color = field[len("sees."):]
+    if color not in NAMED_COLORS:
+        raise ScenarioError(t("signal {signal}: {color} isn't a named color; the colors: {colors}", signal=repr(name),
+                              color=repr(color), colors=", ".join(NAMED_COLORS)))
+
+    def sees(s) -> bool:
+        r = s.world.sensors.reading(sensor)
+        return bool(r.on and r.color_name == color)
+    return Signal(name, sees)
+
+
 def resolve_signal(name: str, world) -> Signal:
+    if name.startswith("sensor."):
+        return _sensor_signal(name, world)
     if name in RANGE_SIGNALS or name.startswith("score."):
         return _range_signal(name, world)
     if name.startswith("robot."):
@@ -857,7 +901,41 @@ def consume_peaks(world) -> None:
             monitor.consume()
 
 
-CHECK_KINDS = ("pose", "odometry_error", "at_end", "always", "by_time", "never_touch", "must_touch", "console")
+CHECK_KINDS = ("pose", "odometry_error", "at_end", "always", "by_time", "never_touch", "must_touch", "console",
+               "sensor")
+SENSOR_WHEN = ("end", "always", "by")
+
+
+def sensor_check(spec: dict, world, where: str) -> Check:
+    """sensor = {name, is = "on" or "off", sees, when, t}: the Test tab's sensor condition as a step check. The sensor
+    (with `sees`, a color sensor seeing that named color) is on, or off: at the end of the step (when = "end", the
+    default), on every tick of it ("always"), or at some tick up to `t` s into it ("by"). It is the at_end, always or
+    by_time check of the signal sensor.<name> (sensor.<name>.sees.<color> with sees) equal to true for on, false for
+    off, so it reports as they do."""
+    _only(spec, {"name", "is", "sees", "when", "t"}, where)
+    name = spec.get("name")
+    if not isinstance(name, str) or not name:
+        raise bad(where, t("{sensor_check} needs {name_setting}, the {sensor_table}'s name", sensor_check="sensor",
+                           name_setting="name = \"...\"", sensor_table="[[sensor]]"), key="name")
+    state = spec.get("is", "on")
+    if state not in ("on", "off"):
+        raise bad(where, t("{is_setting} must be {on} or {off}, not {value}", is_setting="is", on='"on"', off='"off"',
+                           value=repr(state)), key="is")
+    when = spec.get("when", "end")
+    if when not in SENSOR_WHEN:
+        raise bad(where, t("{when_setting} must be one of {choices}, not {value}", when_setting="when",
+                           choices=", ".join(f'"{w}"' for w in SENSOR_WHEN), value=repr(when)), key="when")
+    if ("t" in spec) != (when == "by"):
+        raise bad(where, t("{t_setting} goes with {by_setting} (the seconds into the step it must hold by)",
+                           t_setting="t", by_setting="when = \"by\""), key="t")
+    sees = spec.get("sees")
+    if sees is not None and not isinstance(sees, str):
+        raise bad(where, t("{sees_setting} must be a named color, not {value}", sees_setting="sees",
+                           value=repr(sees)), key="sees")
+    cond = {"signal": f"sensor.{name}" if sees is None else f"sensor.{name}.sees.{sees}", "equals": state == "on"}
+    if when == "by":
+        return ByTimeCheck({**cond, "t": spec["t"]}, world, where)
+    return SignalCheck("at_end" if when == "end" else "always", cond, world, where)
 
 
 def build_check(spec: dict, world, where: str) -> Check:
@@ -882,4 +960,6 @@ def build_check(spec: dict, world, where: str) -> Check:
         return ConsoleCheck(val, w)
     if kind == "by_time":
         return ByTimeCheck(val, world, w)
+    if kind == "sensor":
+        return sensor_check(val, world, w)
     return SignalCheck(kind, val, world, w)

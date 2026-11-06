@@ -141,9 +141,31 @@ def apply_grip(part: Part, grips: dict[str, str | float], where: str, base=None)
         bodies.append(replace(b, geoms=[replace(g, friction=mu, priority=GRIP_PRIORITY, solref=GRIP_SOLREF) if t
                                         else g for g, t in zip(b.geoms, touch)]))
     kept = {k: p for k, p in part.grip_provenance.items() if k not in grips}
+    # what part.toml gave each newly gripped body, before its grip replaced it (a body gripped again keeps the first)
+    base_mu = {b.name: _toml_friction(b) for b in part.bodies if b.name in grips and b.name not in part.grip_base}
     out = replace(part, bodies=bodies, warnings=list(part.warnings) + warns,
-                  grips={**part.grips, **copy.deepcopy(grips)}, grip_provenance={**kept, **provenance})
+                  grips={**part.grips, **copy.deepcopy(grips)}, grip_provenance={**kept, **provenance},
+                  grip_base={**part.grip_base, **base_mu})
     return out, warns
+
+
+def _toml_friction(body) -> float | None:
+    """The sliding friction a body's touching geoms have (treads aside): the largest when they differ, a geom with none
+    counting MuJoCo's default; None when none sets one (MuJoCo's default, MUJOCO_FRICTION)."""
+    touch = [g for g in body.geoms if g.collide and not g.tread]
+    if not any(g.friction is not None for g in touch):
+        return None
+    return max(g.friction if g.friction is not None else MUJOCO_FRICTION for g in touch)
+
+
+def part_friction(part: Part, body: str) -> float | None:
+    """The friction body `body` has with no grip: what part.toml gives its touching geoms (_toml_friction; for a
+    gripped body, as it was before the grip), or None for MuJoCo's default (MUJOCO_FRICTION). What a grip picker's
+    "Default" means."""
+    if body in part.grip_base:
+        return part.grip_base[body]
+    b = next((x for x in part.bodies if x.name == body), None)
+    return _toml_friction(b) if b is not None else None
 
 
 def set_grip(folder: Path, body: str, grip: str | float | None) -> None:

@@ -113,6 +113,19 @@ def test_a_release_inside_each_kind_of_element_is_refused(tmp_path, kind):
         parse(tmp_path, HEAD + element + station)
 
 
+def test_a_release_over_a_platform_that_tilts_into_it_is_refused(tmp_path):
+    """B9: a platform tilts (15° here), so a release point clear of its level deck but in the way of its tilted end is
+    refused; one clear of both is kept."""
+    element = '\n[[element]]\nname = "e"\nkind = "platform"\n' + ELEMENTS["platform"]
+    deck = 9.125 * 0.0254                                    # the deck's top, level
+    x = 4.0 - 1.0                                            # 1 m toward the -x end, which tilting about +x raises
+    over = FEEDER.replace("[1.0, 4.0, 0.5]", f"[{x}, 2.0, {deck + 0.075 + 0.1}]")    # 0.1 m clear of the level deck
+    with pytest.raises(RangeError, match="'feeder': its release point at .* is inside element 'e'"):
+        parse(tmp_path, HEAD + element + over)
+    clear = FEEDER.replace("[1.0, 4.0, 0.5]", f"[{x}, 2.0, {deck + 0.075 + 0.4}]")
+    parse(tmp_path, HEAD + element + clear)
+
+
 def test_a_release_inside_another_stations_chute_is_refused(tmp_path):
     chute = "chute = { length = 0.5, slope_deg = 10.0 }\n"
     floor = chute_parts(parse(tmp_path, HEAD + FEEDER + chute).stations[0], fuel())["floor"][0]

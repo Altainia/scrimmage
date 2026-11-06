@@ -435,9 +435,12 @@ class Session:
         if self.robot is None and not self.attach:
             raise SessionError(t("the session has no robot program to restart"))
         if not self.real_ds:   # the real DS keeps its own match data; scrimmage's DS is inactive
-            game_data = b.ds.game_data
+            game_data, sent = b.ds.game_data, b.ds.sends_match_data
             b.ds.clear()
-            if game_data:   # the field's data stays for the match, so the new program hears it on its first frame (M2)
+            # the field's data stays for the match, so the new program hears it on its first frame (M2); an attached
+            # program isn't restarted and keeps what its HAL last heard, so it is sent the reset's game data even
+            # when that is empty (a scenario clears it before this reset)
+            if game_data or (self.attach and sent):
                 b.ds.set_game_data(game_data)
         if self.attach:
             if env:
@@ -683,7 +686,8 @@ class Session:
         self._require_started()
         x, y, yaw = w.robot_pose()
         if self.real_ds:    # what the real DS is doing, per the robot program's own reports
-            report = real_ds_report(self.bridge.hal)
+            # match.silent says the DS went quiet; driver_station keeps its two values (agents compare them)
+            report = real_ds_report(self.bridge.hal, self.bridge.ds_quiet())
             ds = {"mode": report["mode"], "match": report, "real_ds": True,
                   "driver_station": "connected" if report["connected"] else REAL_DS_WAITING}
         else:
@@ -706,6 +710,7 @@ class Session:
                if w.test_range is not None else {}),
             **({"pneumatics": w.pneumatics.state()} if w.pneumatics is not None else {}),
             **({"partner": w.partner.state()} if getattr(w, "partner", None) is not None else {}),
+            **({"sensors": w.sensors.state()} if getattr(w, "sensors", None) is not None else {}),
         }
 
     def hal(self, device_filter: str = "") -> dict:

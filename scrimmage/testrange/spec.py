@@ -774,7 +774,8 @@ def load_range(ref: str, base_dir: Path, ball: str | None = None, piece: str | N
     """`ref` is a built-in range's name (BUILTIN_RANGES) or a path relative to `base_dir`. With `ball`, the file is
     read with its [range] ball replaced (all the checks run again; a disc range refuses). With `piece` (a ball or
     piece preset), its default kind is replaced the same way: the [range] ball, disc or piece, or, when the default
-    is the first [piece.<name>] table, that table (keeping its name, so what names it still finds it). A `ball` that is
+    is the first [piece.<name>] table, that table (keeping its name, so what names it still finds it, and its
+    `color`, as the [range] table keeps its own). A `ball` that is
     a measurement file (`fuel.measure.toml`) is found from `base_dir`, the folder of the file that names it."""
     if ball is not None and piece is not None:
         raise RangeError(i18n.t("give ball or piece, not both"))
@@ -810,7 +811,10 @@ def load_range(ref: str, base_dir: Path, ball: str | None = None, piece: str | N
 
             first = next(iter(tables))
             key = "ball" if piece in PRESETS["ball"] else "preset"
-            raw = {**raw, "piece": {**tables, first: {key: piece, "label": display_name(piece)}}}
+            # the field's color for it stays (a color sensor reads it), as a [range] piece's does below
+            color = {"color": tables[first]["color"]} if isinstance(tables[first], dict) and "color" in tables[first] \
+                else {}
+            raw = {**raw, "piece": {**tables, first: {key: piece, "label": display_name(piece), **color}}}
         else:
             kept = {k: v for k, v in table.items() if k not in ("ball", "disc", "aero", "piece")}
             raw = {**raw, "range": {**kept, "piece": piece}}

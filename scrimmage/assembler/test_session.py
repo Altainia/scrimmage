@@ -443,7 +443,7 @@ class TestSession:
         try:
             # the robot config's world, with the test's setup's partner (world_for builds a run's with it)
             pal = palette(self._world, list(self.program.hooks), self.program.setup)
-            return pal, problems(self.program, self._world), hints(self.program, self._world)
+            return pal, problems(self.program, self._world), hints(self.program, self._world, pal)
         except Exception as e:   # a robot the palette can't read must not take the Test tab down
             log.exception("test palette")
             return None, [{"place": [], "message": i18n.t("can't read the robot's motors and joints ({why})",

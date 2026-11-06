@@ -711,6 +711,8 @@ def test_test_it_puts_the_part_on_a_stand_in_and_opens_the_test_tab(part_page):
     assert page.evaluate("__scrimmage.tab") == "test"
     assert page.evaluate("__scrimmageTest.state.test.robot") == "climber-standin.toml"
     assert page.evaluate("__scrimmageTest.state.problems") == []
+    # B3: no body is like a hook or a hopper, so it starts on the plain field, and the tab says so
+    page.wait_for_selector("#notices .notice:has-text('starts on the plain field')")
     folder = imp.parent.parent
     raw = tomllib.loads((folder / "climber-standin.toml").read_text(encoding="utf-8"))
     assert {"name": "climber", "path": "parts/climber", "attach": "drive.chassis"} in raw["part"]

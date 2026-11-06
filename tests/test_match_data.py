@@ -107,6 +107,22 @@ def test_the_match_time_carries_on_when_the_world_clock_resets():
     assert match_time(ds, 0.0) == held and held <= 140.0   # a held value stays held across a reset
 
 
+def test_a_phase_entered_at_the_time_the_clock_goes_back_to_carries_on():
+    """B20: Auto entered at 0 s, then a reconnect resets the clock to 0 (not before the entry): the time carries on
+    from where it was, rather than restarting near the full length."""
+    ds = DriverStationState(active=True)
+    ds.set_match(timer=True)
+    ds.set_mode("auto")
+    assert match_time(ds, 0.0) == 20.0
+    assert match_time(ds, 10.0) == 10.0
+    t = match_time(ds, 0.0)                             # the clock back to the entry's own time
+    assert t == pytest.approx(10.0)
+    assert match_time(ds, 2.0) == pytest.approx(8.0)
+    ds.set_mode("teleop")
+    assert match_time(ds, 3.0) == 140.0                 # a new phase starts at its full length as before
+    assert match_time(ds, 0.5) == pytest.approx(140.0)  # entered after the reset point: carried on as before
+
+
 def test_clear_resets_the_extra_keys_and_a_restore_brings_them_back():
     ds = DriverStationState(active=True)
     ds.set_game_data("R")

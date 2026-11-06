@@ -276,6 +276,7 @@ class World:
             self.terrain.reset()
         if self.climb is not None:
             self.climb.reset()
+        self._read_sensors()
 
     def _apply_start_pose(self) -> None:
         """A hand-written model's robot starts at [robot] start_pose rather than the MJCF's pose (a parts robot's
@@ -309,6 +310,13 @@ class World:
             self.data.qpos[q + 3:q + 7] = quat
         self.data.qvel[self.free_dadr:self.free_dadr + 6] = 0
         mujoco.mj_forward(self.model, self.data)
+        self._read_sensors()
+
+    def _read_sensors(self) -> None:
+        """Read the sensors again after a poke moved the robot or a piece (mj_forward has run): a reading is otherwise
+        taken only after a physics step, so it would describe the pose before the poke until the next step."""
+        if getattr(self, "sensors", None) is not None:
+            self.sensors.update(self.data)
 
     def set_robot_force(self, fx: float, fy: float) -> None:
         """A horizontal force (N, world frame) on the robot body, applied until changed."""
@@ -365,6 +373,7 @@ class World:
                 m.geom_pos[g] = [x, y, z]
                 m.geom_quat[g] = quat
             mujoco.mj_forward(m, self.data)
+            self._read_sensors()
             return
         raise ValueError(t("no movable object {name}; movable objects: {objects}",
                                 name=repr(name), objects=', '.join(self.movable_objects()) or t("none")))

@@ -685,6 +685,24 @@ def test_the_part_tab_sets_a_grip_in_import_mode(part_app, tmp_path):
     assert s == 200 and not overlay.exists()
 
 
+def test_the_part_tab_finds_a_grip_measurement_file_in_the_built_part_folder(part_app, tmp_path, monkeypatch):
+    """B16: set_grip checks a measurement file from the built part's folder, as loading the part finds it there (not
+    from wherever the server runs): a file only there is taken, and one that isn't there is refused on the grip."""
+    from test_measure_use import friction_file
+    c, _ = part_app()
+    _built(c)
+    folder = tmp_path / "parts" / "climber"
+    friction_file(folder, name="pad.measure.toml")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    s, st = _edit(c, "set_grip", body="base_plate", grip="pad.measure.toml")
+    assert s == 200, st
+    assert load_part(folder).grip_provenance["base_plate"].file == folder / "pad.measure.toml"
+    s, b = _edit(c, "set_grip", body="base_plate", grip="nope.measure.toml")
+    assert s == 400 and b["field"] == "grip", b
+
+
 def test_an_import_grip_is_undone_and_redone(part_app, tmp_path):
     """Ruling P29: in import mode a grip change goes on the undo history: Undo puts the previous grip back and
     leaves the earlier settings edit alone; Redo sets the grip again. A grip can't be set while a build runs."""

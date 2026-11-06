@@ -164,6 +164,12 @@ def rename_part(doc, old: str, new: str) -> None:
         a = p.get("attach")
         if a is not None and str(a).split(".", 1)[0] == old:
             _set_value(p, "attach", new + str(a)[len(old):])
+    # a [[sensor]]'s body names the part too ("<part>.<body>")
+    sensors = doc.get("sensor")
+    for sn in sensors if isinstance(sensors, list) else ():
+        b = sn.get("body") if isinstance(sn, dict) else None
+        if isinstance(b, str) and b.split(".", 1)[0] == old and "." in b:
+            _set_value(sn, "body", new + b[len(old):])
 
 
 def set_attach(doc, name: str, attach, pos, rot) -> None:

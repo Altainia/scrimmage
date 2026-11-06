@@ -27,7 +27,8 @@
 //             its rod, a clearance while nothing is within 20 in) breaks the line. A field element's clearance is
 //             measured only when the test names it, so the picker also offers `clearance.<element>` for each field
 //             element the run didn't measure: picking one puts it in the test's `chart` (with the signals shown
-//             now, so they stay the default), and the next run measures it
+//             now, so they stay the default), and the next run measures it. A name in the test's chart the run
+//             has no signal for gets a note under the chart ("This run has no signal called arm.lift")
 //   Runs      the kept runs, newest first, each with its outcome (a stopped one says so); a click shows it
 //   Sweep     over the shown run when it is one of a sweep's (and when a sweep has just finished): what it tried,
 //             a row per value (the value, the outcome, each check) and a chart of when the run ended, or a signal's
@@ -567,6 +568,13 @@ function defaultSignals() {
   return have.filter((s) => !s.endsWith(".current") && s !== "hook_load" && !wheels.has(s));
 }
 
+// The names in the test's chart this run has no signal for, but a clearance the next run measures (the picker offers
+// it): the chart says so rather than leaving them out without a word.
+function missingSignals() {
+  const have = new Set([...available(), ...nextRunSignals()]);
+  return (rp.chartOf() || []).filter((s) => !have.has(s));
+}
+
 const shownSignals = () => (rp.picked ? available().filter((s) => rp.picked.has(s)) : defaultSignals());
 
 // A signal's unit on the wire: the run's signals keep the units signals.csv and the MCP tools have (inches, psi,
@@ -681,7 +689,9 @@ function drawChart() {
   key.replaceChildren(...[
     h("span", { class: "test-key" }, h("span", { class: "test-swatch test-swatch-run" }), runName(rp.run.id)),
     cmp ? h("span", { class: "test-key" }, h("span", { class: "test-swatch test-swatch-compare" }), t("{run} (faded)", { run: runName(cmp.id) })) : null,
-    names.length ? null : h("span", { class: "muted", text: t("Pick something to chart above.") })].filter(Boolean));
+    names.length ? null : h("span", { class: "muted", text: t("Pick something to chart above.") }),
+    ...missingSignals().map((name) => h("span", { class: "muted test-chart-missing", "data-signal": name,
+      text: t("This run has no signal called {name}", { name }) }))].filter(Boolean));
   // the two runs' outcomes side by side, so a compare reads without scrolling down to the Runs list
   const line = (id, r) => h("li", {}, h("span", { class: "test-chart-outcome-name", text: `${runName(id)} · ${statusWord(r.status)}: ` }),
     outcomeText(r));

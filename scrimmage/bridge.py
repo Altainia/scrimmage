@@ -318,6 +318,7 @@ class Bridge:
         self.recorder = Recorder()
         self.nt_link: NetworkTablesLink | None = None
         self.hal = HalState()
+        self._ds_heard: float | None = None     # wall time of the robot's last DriverStation report (ds_quiet)
         self.cache = OutboundCache()
         self.phoenix = False             # a Phoenix 6 device appeared on the current connection
         self.clock_freed = False         # Phoenix 6 or the real DS made scrimmage free the robot's clock: this
@@ -375,6 +376,7 @@ class Bridge:
         self._set_mode(None)
         self.disconnected.clear()
         self.hal = HalState()
+        self._ds_heard = None
         self.sim_values_seen: set[tuple[str, str, str]] = set()  # distinct SimDevice values heard of (connection)
         self.phoenix = self.clock_freed = False
         self._initial = {}
@@ -390,6 +392,8 @@ class Bridge:
                 got = self.hal.apply(raw)
                 if got is None:
                     continue
+                if got[0] == ("DriverStation", ""):
+                    self._ds_heard = time.monotonic()
                 if from_sim_device(got[0]):
                     before = len(self.sim_values_seen)
                     self.sim_values_seen.update((*got[0], k) for k in got[1])
@@ -630,6 +634,14 @@ class Bridge:
                 await ws.send(f)
         except websockets.ConnectionClosed:
             pass
+
+    def ds_quiet(self) -> float | None:
+        """Wall seconds since the robot program's last ("DriverStation", "") report on this connection, None before
+        one, and None while no robot program is connected (its last reports are stale, so they say nothing about the
+        DS). With the real DS the robot reports each packet it gets, so a long quiet means the DS went silent."""
+        if self._ds_heard is None or self.ws is None:     # no robot program now: its old reports blame no DS
+            return None
+        return time.monotonic() - self._ds_heard
 
     def _connected(self, conn: int) -> bool:
         """Is connection number `conn` still the live one (and are we still running)?"""

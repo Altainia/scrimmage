@@ -16,13 +16,16 @@ inches for a distance sensor, and for a color sensor the index in `sensor_colors
 pick) of the color it sees, NaN while it sees none). A
 chart can also show `clearance.<element>` (in) for any of `elements`; it isn't in `signals`, as a run measures it
 only when the test names it (clearance.py).
-The field's pieces: `piece` (its default kind's preset), `kinds` (each kind's form, whether it is hollow or flat and the
-plain name a student reads, e.g. "coral"), `floor_kinds` (each floor piece's kind), `piece_labels` (what a student
-reads for each floor piece, "coral 2", as the run's sentences name it) and `station_kinds` (each station's), and every
-preset Setup's piece picker offers (`piece_presets`: balls and pieces). The grips: `grips`, the grip
+The field's pieces: `piece` (its default kind's preset), `own_pieces` (whether the field has game pieces of its own:
+floor pieces, stations or goals; a climb field names a ball only because a range must), `kinds` (each kind's form,
+whether it is hollow or flat and the plain name a student reads, e.g. "coral"), `floor_kinds` (each floor piece's
+kind), `piece_labels` (what a student reads for each floor piece, "coral 2", as the run's sentences name it) and
+`station_kinds` (each station's), and every preset Setup's piece picker offers (`piece_presets`: balls and pieces).
+The grips: `grips`, the grip
 material (parts/grip.py) of each body of a path part that touches anything ("<instance>.<body>" -> a material, a
 number or None for the default friction), and `grip_materials`, the materials a picker offers ([key, label,
-friction estimate]).
+friction estimate]), and `grip_defaults`, what each one's Default means (the friction part.toml gives its pads, or None
+for MuJoCo's default 1.0).
 Every list is sorted by name except `levels`, which keeps the range's climb order (lowest first), so a picker reads the
 way the robot climbs. `pieces` are the field's game pieces (the floor balls), not the balls parked in the robot's
 slots.
@@ -30,7 +33,8 @@ slots.
 `problems()` checks a test's names against that: one plain sentence per bad name, at the block's place (0-based
 indices, through repeat bodies). A test written before Import again renamed a part shows its blocks' problems here
 and doesn't run; nothing crashes. `hints()` says what a test can run with but should know: a clearance it measures
-that leaves out the robot's stock parts with collide off (clearance.uncounted_note). A hint never stops a run.
+that leaves out the robot's stock parts with collide off (clearance.uncounted_note), or a name in the test's chart its
+runs have no signal for. A hint never stops a run.
 """
 
 from __future__ import annotations
@@ -48,7 +52,7 @@ from ..testrange.elements import moving_units
 from ..testrange.spec import BALL_CHOICE_RANGES, RangeError, load_range
 from ..testrange.station import OVERRIDE_KEYS, with_overrides
 from .aim import turrets
-from .clearance import uncounted_note
+from .clearance import PREFIX, uncounted_note
 from .drive import drivetrain
 from .placed import ON_PIECE
 from .spread import floor_ball, no_ball, spread_ball
@@ -122,6 +126,21 @@ def _kinds(rng) -> dict:
         return {}
     return {name: {"form": k.form, "hollow": k.hole is not None, "flat": bool(k.flat), "label": k.label}
             for name, k in rng.kinds.items()}
+
+
+def _grip_defaults(world) -> dict:
+    """"<instance>.<body>" -> the friction its grip picker's Default means, for each body _grips lists: what part.toml
+    gives its pads (grip.part_friction), or None for MuJoCo's default 1.0."""
+    from ..parts.grip import part_friction
+    parts = world.parts
+    if parts is None:
+        return {}
+    by_name = {inst.name: inst for inst in parts.instances}
+    out = {}
+    for name in _grips(world):
+        inst, body = name.split(".", 1)
+        out[name] = part_friction(by_name[inst].part, body)
+    return out
 
 
 def _grips(world) -> dict:
@@ -240,6 +259,9 @@ def palette(world, hooks: list[str], setup: dict | None = None) -> dict:
         "stations": [st.name for st in stations],
         "station_settings": {st.name: _station_settings(st) for st in stations},
         "ball": rng.ball_preset if rng is not None else None,
+        # the field has game pieces of its own (on the floor, from a station, or goals to score them in), so it keeps
+        # its own ball or piece; a climb field's ball is only the preset a range must name
+        "own_pieces": rng is not None and bool(len(rng.floor_balls) or rng.stations or rng.goals),
         "balls": sorted(PRESETS["ball"]),
         "ball_choice": rng is not None and rng.path.stem in BALL_CHOICE_RANGES,
         "floor_piece": ball is not None,
@@ -250,6 +272,7 @@ def palette(world, hooks: list[str], setup: dict | None = None) -> dict:
         "piece_labels": _piece_labels(world, floor_names),
         "station_kinds": {st.name: st.kind or rng.default_kind for st in stations},
         "grips": _grips(world),
+        "grip_defaults": _grip_defaults(world),
         "grip_materials": [[key, i18n.translated(label), mu] for key, (label, mu) in GRIP_MATERIALS.items()],
         # where the floor spread's piece lies (in) and the nearest distance ahead Setup offers: {offset_in,
         # distance_in, nearest_in, kind (its kind's name), and a piece other than a ball's tip_deg and rotation_deg},
@@ -523,14 +546,15 @@ def _setup_level_problems(program, world, n: _Names) -> list[str]:
     if "ball" in setup and rng is None:
         out.append(i18n.t("the plain field has no ball to pick; clear the ball in Setup"))
     elif "ball" in setup and not n.p["ball_choice"]:
-        if n.p["ball"]:
+        if n.p["ball"] and n.p["own_pieces"]:
             out.append(i18n.t("this field keeps its own ball; pick a ball on the intake or station field"))
         else:
             out.append(i18n.t("this field has no ball to pick; clear the ball in Setup"))
     if "piece" in setup and rng is None:
         out.append(i18n.t("the plain field has no piece to pick; clear the piece in Setup"))
     elif "piece" in setup and not n.p["ball_choice"]:
-        out.append(i18n.t("this field keeps its own pieces; pick a piece on the intake or station field"))
+        out.append(i18n.t("this field keeps its own pieces; pick a piece on the intake or station field")
+                   if n.p["own_pieces"] else i18n.t("this field has no piece to pick; clear the piece in Setup"))
     out += [i18n.t("Setup names a station this field doesn't have: \"{name}\"", name=name)
             for name in setup.get("station", {}) if name not in n.stations]
     if setup.get("floor_spread") and spread_ball(world) is None:
@@ -563,9 +587,23 @@ def problems(program, world) -> list[dict]:
     return out
 
 
-def hints(program, world) -> list[dict]:
+def hints(program, world, pal: dict | None = None) -> list[dict]:
     """[{"place": [], "message": str}]: what the test can run with but should know (it never stops a run): a clearance
-    it measures on a robot with stock parts whose collide is off, which leaves them out (clearance.uncounted_note).
-    Empty otherwise."""
+    it measures on a robot with stock parts whose collide is off, which leaves them out (clearance.uncounted_note),
+    and each name in the test's chart its runs have no signal for (the chart leaves it out). Empty otherwise. `pal`:
+    the world's palette for the test, when the caller has it."""
     note = uncounted_note(world, program)
-    return [] if note is None else [{"place": [], "message": note}]
+    out = [] if note is None else [{"place": [], "message": note}]
+    if program.chart:
+        from .run import _aims       # run imports this module
+        if pal is None:
+            pal = palette(world, list(program.hooks), program.setup)
+        # the signals a run of this test has (TestRun's signal_names): the palette's, aim_error with an aim, and a
+        # clearance for any field element the test names
+        known = {*pal["signals"], *(f"{PREFIX}{e}" for e in pal["elements"])}
+        if _aims(program.blocks):
+            known.add("aim_error")
+        out += [{"place": [], "message": i18n.t('this test\'s runs have no signal called "{signal}", so the chart '
+                                                'leaves it out', signal=s)}
+                for s in program.chart if s not in known]
+    return out

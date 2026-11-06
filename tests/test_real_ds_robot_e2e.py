@@ -64,7 +64,7 @@ fms = false
 @pytest.fixture(scope="module")
 def run(tmp_path_factory) -> dict:
     """A held real-DS session; the fake DS enables teleop at red2 with the FMS and axis 0 at 0.5, then sends game data
-    "B"; 3 s; then the DS stops, and 1 s later what scrimmage shows is recorded."""
+    "B"; 3 s; then the DS stops, and 0.5 s and 1.5 s later what scrimmage shows is recorded."""
     skip_if_ds_ports_taken()
     cfg = tmp_path_factory.mktemp("real_ds_py") / "real_ds_probe.toml"
     cfg.write_text(CONFIG)
@@ -98,6 +98,8 @@ def run(tmp_path_factory) -> dict:
             except SessionError as e:
                 out["refused"] = str(e)
             ds.stop()
+            await asyncio.sleep(0.5)
+            out["just_stopped"] = s.state()
             await asyncio.sleep(1.0)
             out["after_stop"] = s.state()
             out["hal_after_stop"] = s.hal("DriverStation").get("DriverStation/", {})
@@ -142,10 +144,14 @@ def test_game_data_is_not_reported_back(run):
 def test_after_the_ds_stops_the_state_follows_the_latest_report(run):
     """D5: "waiting for the Driver Station" exactly when the robot's latest report doesn't have >ds true. Seen with
     RobotPy 2026.2.2: the extension keeps >ds true after the DS stops and disables the robot 100 ms after the last
-    packet, so scrimmage shows "connected" and disabled."""
+    packet, so scrimmage shows "connected" and disabled, and once no report has come for over 1 s, match.silent."""
     hal, after = run["hal_after_stop"], run["after_stop"]
     expected = "connected" if hal.get(">ds") is True else REAL_DS_WAITING
     assert after["driver_station"] == expected, (after, hal)
+    # B21: the robot reports each packet; 1.5 s after the last, match.silent says the DS went quiet (0.5 s after, not
+    # yet), while driver_station stays exactly "connected" (agents compare it)
+    assert run["just_stopped"]["match"]["silent"] is False and after["match"]["silent"] is True
+    assert run["just_stopped"]["driver_station"] == after["driver_station"] == "connected"
     # The behavior seen, pinned: if these fail, the extension changed, and docs/driver-station.md (what scrimmage
     # shows when the DS stops) must change with it.
     assert hal.get(">ds") is True, hal

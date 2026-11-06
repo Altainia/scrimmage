@@ -1,7 +1,7 @@
 [test]
 robot = "climber-standin.toml"
 hooks = ["climber.hook_A", "climber.hook_B"]
-chart = ["tilt", "climber.crank", "climber.arm_A", "climber.arm_B", "hook_load"]
+chart = ["tilt", "climber.crank", "hook_load"]
 
 [[block]]
 do = "expect"

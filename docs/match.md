@@ -88,6 +88,8 @@ With `timer = true`, the match time is the seconds left in the current phase, Au
   `teleop_seconds` counts from the next time that phase starts.
 - **Its precision:** the value is the phase's length minus the enabled time since the phase started, rounded to
   1 ms. Simulated time makes it repeatable: the same run gives the same match times at any speed.
+- **A reconnect carries it on.** When the robot program reconnects, simulated time starts again from 0, and the match
+  time carries on from where it was rather than starting the phase again.
 
 Your robot code sees each new value about one robot loop after it is sent, so a check like `match_time > 130` can
 change up to 20 ms after the 130 s mark. A scenario that checks a change near a boundary should leave at least one robot loop (20 ms) on
@@ -102,6 +104,8 @@ simple (no memory of earlier phases), and a real match never pauses.
   the field's data stays for the rest of the match. A step without `game_data` keeps what the step before left.
   `game_data = ""` clears it.
 - **Each scenario starts empty.** A scenario run starts with no game data, even in an agent's session that had some.
+  In attach mode (scrimmage doesn't launch the robot program, so it isn't restarted) the empty game data is sent to
+  the robot, so it doesn't keep the old data.
 - **A restart keeps it.** A robot program restarted part way through (an agent's `restart_robot`, or the Drive tab
   restarting a running robot on new IDs) gets the game data back on its first frame: a restart is the same match.
 - **The size limit:** at most 64 bytes, as the robot's HAL keeps. That is 64 plain letters, digits or punctuation;

@@ -253,7 +253,8 @@ async def get_state() -> str:
     """Ground-truth pose (m, degrees CCW), speed, battery voltage, motor commands/currents, joint positions, the
     match data the Driver Station sends (see set_match); with pneumatic cylinders, the air (stored and working psi,
     compressor on, each rod's extension_m in meters); with a [partner] robot, its height_in, tilt_deg and moved_in
-    from where it settled."""
+    from where it settled; with [[sensor]]s, each one's reading (kind, on, distance_m in meters, the named color a
+    color sensor sees), read again after set_pose or move_body."""
     try:
         return _json(_need().state())
     except SessionError as e:

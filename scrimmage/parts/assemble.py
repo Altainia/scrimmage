@@ -591,14 +591,15 @@ def assemble(cfg: dict, cfg_dir: Path) -> Built:
         layout = add_range(spec, section.range, section.capacity, floor_balls=section.floor_balls)
     partner = None
     if "partner" in cfg:
-        from .partner import add_partner, check_start
+        from .partner import add_partner, check_start, floor_pieces
         if "partner" in by_name:
             at = by_name["partner"].where
             raise PartError(t("{where}: the part name 'partner' is the {partner_table} robot's; rename the part",
                               where=at, partner_table="[partner]"),
                             where=at, field="name")
         partner = add_partner(spec, cfg)
-        check_start(partner, pose, section.range.elements if section is not None else ())
+        check_start(partner, pose, section.range.elements if section is not None else (),
+                    floor_pieces(section.range) if section is not None and section.floor_balls else ())
     try:
         model = spec.compile()
     except ValueError as e:
