@@ -63,7 +63,8 @@ Pick the line for what you are going to do. Each line includes the ones above it
 | Run robot code (RobotPy or Java) | `pip install -e ".[robotpy,nt,mcp]"` and then `pip install ./lockstep` | 3 minutes more |
 
 The `-e` matters: it makes scrimmage run from this folder, so `git pull` updates it without reinstalling. After a
-`git pull` that changes `lockstep/`, run `pip install ./lockstep` again (Scrimmage tells you when it is needed).
+`git pull` that changes `lockstep/`, run `pip install ./lockstep` again (Scrimmage tells you when it is needed, and
+gives the whole command to paste, which works from any folder).
 
 **Java teams** also need WPILib installed (the normal WPILib installer, which brings its own Java), and then once:
 

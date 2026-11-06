@@ -154,7 +154,8 @@ Install it with `pip install ./lockstep` (Linux only for now) and add `--scrimma
 `python -m robotpy sim` (the kitbot config already does). Scrimmage logs `lockstep engaged` once it has taken over. Set the step with
 `[lockstep] step = 0.005` in the config or with `--step`.
 Reinstall it after updating Scrimmage: if the installed extension is older than Scrimmage needs, the run stops at
-the start and says so.
+the start and says so, with the command to paste (the Python and the `lockstep` folder in full, so it works from any
+folder).
 
 ## Scenario files
 
