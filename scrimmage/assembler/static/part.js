@@ -558,8 +558,11 @@ function renderInspector() {
   const act = document.activeElement;
   // (converted to the new units after a Units change: typedText)
   const typing = act && root.contains(act) && act.tagName === "INPUT" && act.id && act.value !== act.dataset.orig
-    ? { id: act.id, value: typedText(act), start: act.selectionStart, end: act.selectionEnd } : null;
+    ? { id: act.id, value: typedText(act) } : null;
   const keepFocus = act && root.contains(act) && act.id ? act.id : null;
+  // and what is selected in it, typed in or not: a box's text selected to type over (a triple click) and redrawn
+  // before the first key would otherwise take the typing in front of its old number ("830" + "818" = 830818 mm)
+  const sel = keepFocus && act.tagName === "INPUT" ? { start: act.selectionStart, end: act.selectionEnd, dir: act.selectionDirection } : null;
   const ctx = context();
   const out = [];
   for (const sec of sections) {
@@ -575,8 +578,11 @@ function renderInspector() {
   if (keepFocus) {
     const el = document.getElementById(keepFocus);
     if (el && root.contains(el)) {
-      if (typing && el.tagName === "INPUT") { el.value = typing.value; try { el.setSelectionRange(typing.start, typing.end); } catch { /* boxes with no text selection */ } }
+      if (typing && el.tagName === "INPUT") el.value = typing.value;
       el.focus({ preventScroll: true });
+      if (sel && el.tagName === "INPUT" && sel.start !== null) {
+        try { el.setSelectionRange(sel.start, sel.end, sel.dir || "none"); } catch { /* boxes with no text selection */ }
+      }
     }
   }
   // a refused edit's message that has no field shown goes in a notice

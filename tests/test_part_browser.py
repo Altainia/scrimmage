@@ -533,6 +533,22 @@ def test_a_snapped_hinge_takes_a_typed_pivot_point(part_page):
     assert posts == []
 
 
+def test_a_redraw_keeps_the_text_selected_to_type_over(part_page):
+    """A box's number selected to type over (a triple click) stays selected across a redraw (a poll's answer) that
+    comes before the first key: the typing replaces it, not goes in front of it ("830" + "818")."""
+    page, _ = part_page
+    page_units(page, "metric")
+    _pick_body(page, "hook_assy")
+    page.select_option("#part-joint-kind", "hinge")
+    _edit(page, lambda: page.click("#part-snap-x"))
+    page.wait_for_selector("#part-pivot-z")
+    assert page.input_value("#part-pivot-z") not in ("", "830")
+    page.click("#part-pivot-z", click_count=3)
+    page.evaluate("__scrimmagePart.render()")
+    page.keyboard.type("830")
+    assert page.input_value("#part-pivot-z") == "830"
+
+
 def test_plugin_part_shows_and_clears_what_was_changed_here(browser, tmp_path, monkeypatch):
     """A copy of tests/parts/intake (a plugin-made folder): a typed weight and damping go in scrimmage-edits.toml and
     show as changed here; emptying the weight box removes it again."""

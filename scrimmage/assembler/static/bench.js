@@ -357,6 +357,7 @@ async function run() {
 // -- state ---------------------------------------------------------------------------------------------
 const sig = (i) => JSON.stringify([i.name, i.author, i.idea, i.focus, i.problems, i.read_only_reason]);
 let applySeq = 0;
+let loadedSeq = 0;   // the newest applyState whose idea read has been taken
 
 async function applyState(s, force = false) {
   const prev = bench.state;
@@ -399,7 +400,11 @@ async function loadIdea(seq, own) {
   let idea = null;
   if (file) {
     const { status, data } = await api("GET", `/api/bench/idea?file=${encodeURIComponent(file)}`);
-    if (seq !== applySeq) return;   // a newer state is being applied
+    // a newer state's read has answered first, or another idea is on stage now: this read is older than what's shown.
+    // One merely overtaken by a newer state still counts: an edit's refresh waits on its own read, and the next - or +
+    // in line reads the value from it (a newer state's read, not waited on, may not have answered yet)
+    if (seq < loadedSeq || file !== bench.shown) return;
+    loadedSeq = seq;
     if (status === 200) idea = { file, ...data };
   }
   const prev = bench.idea;

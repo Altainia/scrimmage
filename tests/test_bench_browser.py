@@ -535,6 +535,29 @@ def test_click_shape_selects_and_plus_moves_it(make_bench_page, tmp_path, units)
     assert not page.is_visible("#bench-editor")
 
 
+def test_a_second_plus_counts_when_the_idea_reads_slowly(make_bench_page, tmp_path, units):
+    """An edit bumps the session twice (the edit, then the talked-about list it writes): when the second bump's state
+    comes while the edit's own refresh is still reading the idea, the next + still steps from the edited value."""
+    units("metric")
+    page = make_bench_page()
+    _on_stage(page, "bounce bar")
+    _open_editor(page)
+    page.wait_for_timeout(300)
+    p = page.evaluate("__scrimmageBench.editor.screenPos('bar.kicker')")
+    page.mouse.click(p["x"], p["y"])
+    page.wait_for_function("__scrimmageBench.editor.selected === 'bar.kicker'")
+    plus = "#bench-inspector [data-field='bar.kicker.center'] button[data-step='+'][data-axis='2']"
+    page.wait_for_selector(plus)
+    # each idea read answers 0.6 s late (a handler runs only while this test waits in a page call, not in _wait_file)
+    page.route("**/api/bench/idea*", lambda r: (time.sleep(0.6), r.continue_()))
+    page.click(plus)
+    page.click(plus)
+    page.wait_for_function("Math.abs(__scrimmageBench.editor.posOf('bar.kicker')[2] + 0.038) < 1e-6")
+    page.unroute("**/api/bench/idea*")
+    bar = _entry((tmp_path / "kickoff" / "bounce_bar.toml").read_text(), "bar", "kicker")
+    assert bar["a"][2] == pytest.approx(-0.038) and bar["b"][2] == pytest.approx(-0.038)
+
+
 def test_plus_nudges_a_radius(make_bench_page, tmp_path, units):
     """A length in meters (a radius here) has - and + too: 10 mm a click. The title names the shape once."""
     units("metric")   # in meters and mm; test_a_length_shows_in_the_units_... has both systems
