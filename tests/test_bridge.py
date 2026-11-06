@@ -603,11 +603,41 @@ def test_a_phoenix_device_booting_after_the_first_push_is_not_a_foreign_write():
     bridge.settle_foreign_writes()
     assert bridge.foreign_writes == {}
     bridge._check_inputs(cc, {">rawPositionInput": 4.0})                 # any other value still is
-    bridge.world.data.time = 1.5
+    bridge.world.data.time = bridge_mod.PHOENIX_BOOT + 0.5
     bridge._check_inputs(cc, {">supplyVoltage": 12.0})                  # and so is the initial value, later
     bridge.settle_foreign_writes()
     assert sorted(bridge.foreign_writes) == ["CANEncoder/CANcoder (v6)[2] >rawPositionInput",
                                              "CANEncoder/CANcoder (v6)[2] >supplyVoltage"]
+
+
+def test_a_phoenix_device_s_late_boot_on_a_slow_computer_is_not_a_foreign_write():
+    """Phoenix boots on the wall clock. On a slow CI runner four CANcoders re-asserted their initial values (twice
+    each) at t = 1.057, past the 1 s once allowed. The boot window counts from when each device appeared, so a device
+    the robot program creates late gets the whole window too."""
+    bridge = make_bridge(0, PHOENIX_CONFIG, speed=None, held=True)
+    cc = ("CANEncoder", "CANcoder (v6)[2]")
+    talon = ("CANMotor", "Talon FX (v6)[1]")
+    bridge._check_inputs(cc, {">supplyVoltage": 12.0, ">rawPositionInput": 0.0})   # created at t = 0
+    bridge.cache.diff(*cc, {">supplyVoltage": 5.0, ">rawPositionInput": 0.4873})
+    for t in (1.057, 1.077):                                                         # as measured on CI
+        bridge.world.data.time = t
+        bridge._check_inputs(cc, {">supplyVoltage": 12.0, ">rawPositionInput": 0.0})
+    bridge.settle_foreign_writes()
+    assert bridge.foreign_writes == {}
+
+    bridge.world.data.time = 3.0
+    bridge._check_inputs(talon, {">supplyVoltage": 12.0})                # created late, at t = 3
+    bridge.cache.diff(*talon, {">supplyVoltage": 12.5})
+    bridge.world.data.time = 3.0 + 1.06
+    bridge._check_inputs(talon, {">supplyVoltage": 12.0})                # its boot, 1.06 s after it appeared
+    bridge.settle_foreign_writes()
+    assert bridge.foreign_writes == {}
+    bridge.world.data.time = 3.0 + bridge_mod.PHOENIX_BOOT
+    bridge._check_inputs(talon, {">supplyVoltage": 12.0})                # past its window: a write
+    bridge._check_inputs(cc, {">supplyVoltage": 12.0})                   # and long past the CANcoder's
+    bridge.settle_foreign_writes()
+    assert sorted(bridge.foreign_writes) == ["CANEncoder/CANcoder (v6)[2] >supplyVoltage",
+                                             "CANMotor/Talon FX (v6)[1] >supplyVoltage"]
 
 
 def test_a_phoenix_device_announced_after_our_first_send_gets_our_values_again():
@@ -947,7 +977,7 @@ def test_one_warning_per_device_naming_keys_in_words(caplog):
     assert len(warns) == 2
     assert warns[0].startswith("something in the robot program writes simulated sensor values for Pigeon 2 (v6)[3] (yaw")
     assert ("writes simulated sensor values for Talon FX (v6)[1] (rotor position, rotor velocity, supply voltage, "
-            "first at t=1.000)") in warns[1]
+            "first at t=2.000)") in warns[1]
     assert "without going through the Phoenix SimState setters" in warns[1]
 
 

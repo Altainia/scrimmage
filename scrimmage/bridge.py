@@ -41,7 +41,10 @@ PHOENIX_MARK = " (v6)["  # Phoenix 6 SimDevice names: "Talon FX (v6)[1]", "CANco
 REALTIME_REASON = i18n.N_("Phoenix 6 simulation runs on the wall clock, so this robot runs in real time (not lockstep)")
 REAL_DS_REASON = i18n.N_("the real Driver Station talks to the robot program on the wall clock, so this robot runs in "
                          "real time (not lockstep)")
-PHOENIX_BOOT = 1.0       # simulated seconds a Phoenix device may take to boot and re-assert its initial values
+# Simulated seconds after a Phoenix device appears in which it may boot and re-assert its initial values. Phoenix
+# boots on the wall clock and sends no event when it is done: a slow CI runner measured 1.06 s after the device
+# appeared, so this allows twice the 1 s once used (the same as MISSING_AFTER).
+PHOENIX_BOOT = 2.0
 MISSING_AFTER = 2.0      # simulated seconds after connecting before a configured Phoenix device counts as missing
 # "<Kind> (v6)[<id>]" anywhere in a device name, not followed by a sub-device ("/Rotor Sensor")
 PHOENIX_NAME = re.compile("(?P<kind>" + "|".join(map(re.escape, CTRE_DEVICES.values())) + r")\[(?P<id>\d+)\](?!/)")
@@ -343,7 +346,8 @@ class Bridge:
         # (device, key) -> pending suspect: first value and time, latest value, how many
         self._suspects: dict[tuple[DeviceKey, str], dict] = {}
         self._initial: dict[tuple[DeviceKey, str], Any] = {}  # each watched input's value before scrimmage sent one
-        self._heard: set[DeviceKey] = set()  # watched devices the robot program has announced (this connection)
+        # watched devices the robot program has announced (this connection), with the simulated time it did
+        self._heard: dict[DeviceKey, float] = {}
         self._warned: set[str] = set()   # devices warned about this run
         self.robot_language: str | None = None  # "python" / "java" per the robot program command (Session)
         self.agent_state: Callable[[], str | None] = lambda: None  # the Java agent, per the console (Session)
@@ -371,7 +375,7 @@ class Bridge:
         self.sim_values_seen: set[tuple[str, str, str]] = set()  # distinct SimDevice values heard of (connection)
         self.phoenix = self.clock_freed = False
         self._initial = {}
-        self._heard = set()
+        self._heard = {}
         self._phoenix_seen_event.clear()
         self._clock_freed_event.clear()
         self._scrimmage_present.clear()
@@ -512,7 +516,7 @@ class Bridge:
         if dev not in self._heard:
             # Its first frame announces the values it was created with. Anything we sent before then was dropped
             # (halsim_ws_client drops values for a device that doesn't exist yet), so resend all of ours.
-            self._heard.add(dev)
+            self._heard[dev] = self.world.time
             for key, value in delta.items():
                 if key.startswith(">"):
                     self._initial.setdefault((dev, key), value)
@@ -530,7 +534,8 @@ class Bridge:
                 self._behind(self.cache.relayed(*dev, key, i))
                 continue
             initial = self._initial.get((dev, key))
-            if self.world.time < PHOENIX_BOOT and initial is not None and fwn.is_echo(dev[1], key, value, [initial]):
+            booting = self.world.time - self._heard[dev] < PHOENIX_BOOT   # from when it appeared, not from t = 0
+            if booting and initial is not None and fwn.is_echo(dev[1], key, value, [initial]):
                 # The device booting (real time, slow computer) reports its own values until ours land, compared as
                 # ours are (a Talon models a little supply drop on its own 12 V too)
                 continue
