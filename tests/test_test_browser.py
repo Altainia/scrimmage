@@ -355,7 +355,7 @@ def test_drive_offers_left_and_right_on_a_swerve_robot_only(test_page):
     assert page.evaluate("__scrimmageTest.state.palette.drive_kind") == "tank"
     assert _drive_choices(page) == ["forward", "back"]
     (path.parent / "robot.toml").write_text(new_config("swerve"), encoding="utf-8")
-    page.wait_for_function("__scrimmageTest.state.palette.drive_kind === 'swerve'")
+    page.wait_for_function("__scrimmageTest.state?.palette?.drive_kind === 'swerve'")   # (state is null while it reloads)
     assert _drive_choices(page) == ["forward", "back", "left", "right"]
 
 
