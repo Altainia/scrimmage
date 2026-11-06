@@ -176,3 +176,45 @@ def test_compare_cli_prints_the_bench_uncalibrated_once(tmp_path, capsys):
     assert out.count("UNCALIBRATED") == 1 and launcher_uncalibrated() not in out
     assert "measure the tread's friction" in out
     assert not re.search(r"\de-\d\d", out)  # no rounding noise like 2.3e-10 (test_metrics_round_noise_to_zero)
+
+
+def test_the_sweep_table_prints_in_the_units_setting(tmp_path, capsys):
+    """Cleanup A3: `bench sweep` prints exit speeds and the peak load in the Units setting (or `--units`), the unit
+    in the header, as its charts are; results.csv stays SI."""
+    import re
+    f = _write(tmp_path, "car.toml", _one_car() + '\n[sweep]\n"shaft.top.target_rps" = [30]\n')
+    main(["bench", "sweep", str(f), "--out", str(tmp_path / "i")])
+    imperial = capsys.readouterr().out
+    main(["--units", "metric", "bench", "sweep", str(f), "--out", str(tmp_path / "m")])
+    metric = capsys.readouterr().out
+
+    def row(out):
+        lines = [ln for ln in out.splitlines() if ln.startswith(("shaft.", "  ")) or re.match(r"\s*\d", ln)]
+        return [re.split(r"\s{2,}", ln.strip()) for ln in lines[:2]]
+    (hi, vi), (hm, vm) = row(imperial), row(metric)
+    assert "exit_speed (ft/s)" in hi and "peak_load_n (lbf)" in hi
+    assert "exit_speed (m/s)" in hm and "peak_load_n (N)" in hm
+    k = hm.index("exit_speed (m/s)")
+    assert float(vi[k]) == pytest.approx(float(vm[k]) / 0.3048, rel=1e-3)
+    assert (tmp_path / "i" / "results.csv").read_bytes() == (tmp_path / "m" / "results.csv").read_bytes()
+
+
+def test_a_sweep_charts_a_swept_length_in_the_units_setting(tmp_path, capsys, monkeypatch):
+    """Cleanup A4: the sweep chart's x axis is in the Units setting, for a key the file writes in meters and for its
+    inch form (`diameter_in`), as the From and To boxes are; the x values are converted, results.csv is SI."""
+    pytest.importorskip("matplotlib")
+    from matplotlib.axes import Axes
+    seen = []
+    plot = Axes.plot
+    monkeypatch.setattr(Axes, "set_xlabel", lambda self, text, *a, **k: seen.append(("label", text)))
+    monkeypatch.setattr(Axes, "plot", lambda self, xs, *a, **k: (seen.append(("x", list(xs))), plot(self, xs, *a, **k))[1])
+    f = _write(tmp_path, "car.toml", _one_car() + '\n[sweep]\n"wheel.top.diameter" = [0.0762, 0.1016]\n')
+    main(["bench", "sweep", str(f), "--out", str(tmp_path / "i")])
+    assert ("label", "wheel.top.diameter (in)") in seen and ("x", [3.0, 4.0]) in seen
+    seen.clear()
+    main(["--units", "metric", "bench", "sweep", str(f), "--out", str(tmp_path / "m")])
+    assert ("label", "wheel.top.diameter (mm)") in seen and ("x", [76.2, 101.6]) in seen
+    assert (tmp_path / "m" / "results.csv").read_text().splitlines()[1].startswith("0.0762,")
+    from scrimmage.bench.fields import key_kind
+    assert key_kind("wheel.top.diameter_in") == ("length", 0.0254, "wheel.top.diameter")
+    assert key_kind("shaft.top.target_rps") is None

@@ -41,6 +41,29 @@ def _load() -> dict[str, Field]:
 
 FIELDS = _load()
 
+# A key's units kind (units.py) by the unit it gives, as the Bench tab's kindOf (static/bench.js): a length is
+# "length" (in or mm), a flight's target "field" (ft or m); angles, times, rps and the rest read as the file has them.
+KINDS = {"m": "length", "m/s": "speed", "kg": "mass", "N": "force", "N/m": "spring"}
+FIELD_KEYS = ("flight.target_distance", "flight.target_height")
+IN = 0.0254
+
+
+def key_kind(dotted: str) -> tuple[str, float, str] | None:
+    """A swept key's ("wheel.top.diameter", or its inch form "wheel.top.diameter_in") units kind, SI per one of its
+    values and the key without `_in`, for showing its values in the Units setting (a sweep's chart and table); None
+    for one shown as the file has it."""
+    parts = str(dotted).split(".")
+    section, k = parts[0], parts[-1]
+    inches = k.endswith("_in")
+    base_k = k[:-3] if inches else k
+    f = FIELDS.get(f"{section}.{base_k}")
+    if f is None or f.choices or (inches and not f.length):
+        return None
+    kind = "field" if f.unit == "m" and f"{section}.{base_k}" in FIELD_KEYS else KINDS.get(f.unit or "")
+    if kind is None:
+        return None
+    return kind, IN if inches else 1.0, ".".join([*parts[:-1], base_k])
+
 
 def choices(kind: str, raw: dict) -> list[str]:
     """The valid words for a `choices` kind; "shafts" and "outlets" are read from the idea's raw dict."""

@@ -31,7 +31,7 @@ from ..bench import run as bench_run
 from ..bench import session
 from ..bench.build import build_bench
 from ..bench.compare import BENCH_METRICS
-from ..bench.fields import fields_payload
+from ..bench.fields import fields_payload, key_kind
 from ..bench.pictures import picture_line
 from ..bench.problems import collect_problems
 from ..bench.report import SUMMARY_DATA, bench_uncalibrated
@@ -1025,7 +1025,7 @@ def _sweep_job(path: Path, sweep: dict, out: Path) -> None:
     out.mkdir(parents=True, exist_ok=True)
     report.write_csv(rows, out / "results.csv", compare.BENCH_METRICS)
     report.write_charts(rows, compare.default_charts(list(sweep)), out, None, compare.BENCH_METRICS,
-                        compare.CHART_KINDS, footer=bench_estimates(bench), shown=compare.SHOWN)
+                        compare.CHART_KINDS, footer=bench_estimates(bench), shown=compare.SHOWN, swept=key_kind)
 
 
 def _compare_job(files: list[Path], out: Path) -> None:

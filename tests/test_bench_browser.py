@@ -702,17 +702,19 @@ def test_agent_sweep_and_compare_show_on_stage(make_bench_page, tmp_path):
     page.wait_for_function("document.querySelector('#bench-picture').naturalWidth === 60")   # the chart, not the run
     assert page.query_selector_all("#bench-headlines li") == []   # never the run's headlines
     assert page.is_visible("#bench-table")
-    assert page.text_content("#bench-table th") == "bar.kicker.spring"
+    # the swept key's values follow the Units setting too, as From and To do (cleanup A4): 2000 N/m is 11.42 lbf/in
+    assert page.text_content("#bench-table th") == "bar.kicker.spring (lbf/in)"
     assert len(page.query_selector_all("#bench-table tbody tr")) == 2
     # the CSV is SI; the table is in the Units setting (Imperial): 7.5 m/s is 24.61 ft/s, 40 N is 8.992 lbf
     assert "exit speed (ft/s)" in page.text_content("#bench-table thead")
     assert "peak load (lbf)" in page.text_content("#bench-table thead")
     first = page.eval_on_selector_all("#bench-table tbody tr:first-child td", "ts => ts.map(t => t.textContent)")
-    assert first == ["2000", "3", "0", "24.61", "8.992"]
+    assert first == ["11.42", "3", "0", "24.61", "8.992"]
     page_units(page, "metric")
     page.wait_for_function("document.querySelector('#bench-table thead').textContent.includes('exit speed (m/s)')")
     first = page.eval_on_selector_all("#bench-table tbody tr:first-child td", "ts => ts.map(t => t.textContent)")
     assert first == ["2000", "3", "0", "7.5", "40"]
+    assert page.text_content("#bench-table th") == "bar.kicker.spring (N/m)"
     assert page.text_content("#bench-uncalibrated").startswith("UNCALIBRATED")
     page.wait_for_timeout(1200)   # the "... ago" line is kept current: it still names the sweep
     assert re.search(r"the agent swept this .*ago", page.text_content("#bench-changed"))

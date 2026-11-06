@@ -81,5 +81,6 @@
   "release point is {z} m above the carpet; a {diameter} m ball's center needs at least {rad} m": "release point is {z} m above the carpet; a {diameter} m ball's centre needs at least {rad} m",
   "release point is {z} m above the carpet; a {piece}'s center needs at least {rad} m": "release point is {z} m above the carpet; a {piece}'s centre needs at least {rad} m",
   "{path}: {station_table} '{name}': its release point at ({x}, {y}, {z}) is inside {what}; move it clear (the ball's center needs {r} m all round)": "{path}: {station_table} '{name}': its release point at ({x}, {y}, {z}) is inside {what}; move it clear (the ball's centre needs {r} m all round)",
-  "{path}: {station_table} '{name}': its release point at ({x}, {y}, {z}) is inside {what}; move it clear (the {piece}'s center needs {r} m all round)": "{path}: {station_table} '{name}': its release point at ({x}, {y}, {z}) is inside {what}; move it clear (the {piece}'s centre needs {r} m all round)"
+  "{path}: {station_table} '{name}': its release point at ({x}, {y}, {z}) is inside {what}; move it clear (the {piece}'s center needs {r} m all round)": "{path}: {station_table} '{name}': its release point at ({x}, {y}, {z}) is inside {what}; move it clear (the {piece}'s centre needs {r} m all round)",
+  "on the center line": "on the centre line"
 }

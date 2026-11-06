@@ -47,7 +47,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .. import i18n
+from .. import i18n, units
 from ..cad.mass import Inertial, combine, mesh_inertial
 from ..disc.inputs import PRESETS as DISC_PRESETS
 from ..disc.inputs import AeroSet, Disc, DiscConfigError, aero_set, disc_preset
@@ -782,20 +782,36 @@ def surface_friction(name: str) -> float:
 
 # ------------------------------------------------------------------------------------------------------- words
 
+# A floor spread's table.csv and spread.json are machine text (units.machine_text): American English, as they always
+# were. Outside it (the Test tab's words for the same table, units.each_setting) they are translated.
+
 def _turn_words(turn: int) -> str:
+    if units.is_machine():
+        if turn == 0:
+            return "lying in line"
+        if abs(turn) == 90:
+            return "lying across"
+        if turn == 180:
+            return "lying in line, turned around"
+        return f"lying at {turn}°"
     if turn == 0:
-        return "lying in line"
+        return i18n.t("lying in line")
     if abs(turn) == 90:
-        return "lying across"
+        return i18n.t("lying across")
     if turn == 180:
-        return "lying in line, turned around"
-    return f"lying at {turn}°"
+        return i18n.t("lying in line, turned around")
+    return i18n.t("lying at {angle}°", angle=turn)
 
 
 def _edge_words(turn: int) -> str:
+    if units.is_machine():
+        if turn == 0:
+            return "standing on edge"
+        return "standing on edge, turned around" if turn == 180 else f"standing on edge, turned {turn}°"
     if turn == 0:
-        return "standing on edge"
-    return "standing on edge, turned around" if turn == 180 else f"standing on edge, turned {turn}°"
+        return i18n.t("standing on edge")
+    return (i18n.t("standing on edge, turned around") if turn == 180
+            else i18n.t("standing on edge, turned {angle}°", angle=turn))
 
 
 def orientation_words(kind: PieceKind, tip_deg: float, turn_deg: float) -> str:
@@ -804,7 +820,13 @@ def orientation_words(kind: PieceKind, tip_deg: float, turn_deg: float) -> str:
     from the robot's path (or the field's +x)."""
     turn = round((turn_deg + 180.0) % 360.0 - 180.0)
     turn = 180 if turn == -180 else turn
+    machine = units.is_machine()
     if tip_deg >= _STAND_DEG:
-        return "lying flat" if kind.flat else "standing on end"
+        if machine:
+            return "lying flat" if kind.flat else "standing on end"
+        return i18n.t("lying flat") if kind.flat else i18n.t("standing on end")
     lying = _edge_words(turn) if kind.flat else _turn_words(turn)
-    return lying if tip_deg <= _LIE_DEG else f"leaning {round(tip_deg)}°, {lying}"
+    if tip_deg <= _LIE_DEG:
+        return lying
+    return f"leaning {round(tip_deg)}°, {lying}" if machine else i18n.t("leaning {angle}°, {lying}",
+                                                                        angle=round(tip_deg), lying=lying)

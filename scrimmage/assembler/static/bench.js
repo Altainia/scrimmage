@@ -475,8 +475,10 @@ function stagePictures(lt, result) {
   return { main: p.path_side || null, gif: p.pass_gif || null };
 }
 
-// A sweep's or compare's table header in plain words (a swept key stays as the file writes it, its values too). The
-// CSV is SI: exit speed and peak load are shown in the Units setting, to 4 significant figures, as the CSV has them.
+// A sweep's or compare's table header in plain words. The CSV is SI: exit speed and peak load are shown in the Units
+// setting, to 4 significant figures, as the CSV has them. A swept key keeps its name; a length, weight or speed key's
+// values are shown in the Units setting too (as From and To are), the unit in its header: "wheel.top.diameter (in)",
+// for `diameter_in` as for `diameter`.
 const COLUMN = { idea: () => t("idea"), out: () => t("got out"), jammed: () => t("jammed"),
   exit_speed: () => t("exit speed ({unit})", { unit: units.name("speed") }), elevation_deg: () => t("elevation (°)"),
   spin_rps: () => t("spin (turns/s)"), speed_drop_pct: () => t("speed drop (%)"),
@@ -484,18 +486,32 @@ const COLUMN = { idea: () => t("idea"), out: () => t("got out"), jammed: () => t
 const COLUMN_KIND = { exit_speed: "speed", peak_load_n: "force" };
 const columnName = (c) => (COLUMN[c] ? COLUMN[c]() : undefined);
 
+// a swept key's column: {kind, inches, key (without `_in`)}, or null for one shown as the file has it
+function sweptColumn(c) {
+  if (COLUMN[c]) return null;
+  const inches = /_in$/.test(c), key = inches ? c.slice(0, -3) : c;
+  const { def } = parseKey(key);
+  const kind = kindOf(key);
+  return kind && (!inches || (def && def.length)) ? { kind, inches, key } : null;
+}
+
 function renderTable(result) {
   const wrap = $("#bench-table-wrap");
   const vt = result && result.table;
   wrap.hidden = !vt || !vt.rows.length;
   if (wrap.hidden) { $("#bench-table").replaceChildren(); return; }
+  const swept = vt.columns.map(sweptColumn);
   const cell = (x, c) => {
     if (x === "nan") return "–";
-    const kind = COLUMN_KIND[vt.columns[c]], v = Number(x);
-    return kind && x !== "" && Number.isFinite(v) ? String(+units.toDisplay(v, kind).toPrecision(4)) : x;
+    const v = Number(x);
+    if (x === "" || !Number.isFinite(v)) return x;
+    if (swept[c]) return String(+units.toDisplay(swept[c].inches ? units.fromKey(v, "in") : v, swept[c].kind).toPrecision(5));
+    const kind = COLUMN_KIND[vt.columns[c]];
+    return kind ? String(+units.toDisplay(v, kind).toPrecision(4)) : x;
   };
+  const head = (c, k) => columnName(c) || (swept[k] ? t("{key} ({unit})", { key: swept[k].key, unit: units.name(swept[k].kind) }) : c);
   $("#bench-table").replaceChildren(
-    h("thead", {}, h("tr", {}, ...vt.columns.map((c) => h("th", { scope: "col", class: COLUMN[c] ? "" : "mono", text: columnName(c) || c })))),
+    h("thead", {}, h("tr", {}, ...vt.columns.map((c, k) => h("th", { scope: "col", class: COLUMN[c] ? "" : "mono", text: head(c, k) })))),
     h("tbody", {}, ...vt.rows.map((r) => h("tr", {}, ...r.map((x, c) => h("td", { text: cell(x, c) }))))));
 }
 

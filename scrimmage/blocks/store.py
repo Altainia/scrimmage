@@ -16,16 +16,21 @@
                              None without cylinders: RunResult.air), clearance (each element the test measures:
                              its smallest clearance in inches and when, both None when never within 0.5 m; None
                              when it measures none: RunResult.clearance) and hopper (whether the test names where a
-                             piece should end up)
+                             piece should end up); and, for a run made inside machine text (a sweep's, a spread's,
+                             MCP test_run's: its words above are machine text), words: the outcome, the checks'
+                             words, the marks' text, seated and notes in every Language and Units setting
+                             (RunResult.words), which the Test tab shows in the viewer's
         signals.csv          t and each signal, SIGNAL_HZ (scrimmage/blocks/run.py)
         view.json            model_view(world, include_world=True) at the run's start, meshes included
         motion.bin           the movers' poses at MOTION_HZ (below)
       sweep-001/ ...         the newest KEEP_SWEEPS sweeps (scrimmage/blocks/sweep.py)
         001/ ...             one run per value, as above
         table.csv, sweep.json
+        table.json           the table for the Test tab, in the viewer's setting (sweep.py's _write_words)
       spread-001/ ...        the newest KEEP_SPREADS floor spreads (scrimmage/blocks/spread.py), kept as sweeps are
         001/ ...             one run per placement, as above
         table.csv, spread.json
+        table.json           the table for the Test tab, as a sweep's (spread.py's _write_words)
 
 A run keeps the geometry it was run with (view.json), so its replay still draws the old robot after the part is
 imported again; no MuJoCo model is kept. Every folder is written as a hidden temp folder, then renamed into place.
@@ -50,7 +55,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .. import i18n
+from .. import i18n, units
 from ..cad.settings import replace_file
 from .program import Program, dumps
 
@@ -255,6 +260,11 @@ def save_run(result, program: Program, base, sweep: dict | None = None) -> Path:
         before = _seed(runs[-1][1]) if runs else None
         if before is not None and before != seed:
             result.outcome = f"{result.outcome}; a new shuffle (seed {seed})"
+            for key, words in (getattr(result, "words", None) or {}).items():
+                lang, _, system = key.partition("|")
+                with units.shown_in(system, lang):
+                    words["outcome"] = i18n.t("{outcome}; a new shuffle (seed {seed})", outcome=words["outcome"],
+                                              seed=seed)
     tmp = Path(tempfile.mkdtemp(dir=base, prefix=".run-"))
     try:
         _write_json(tmp / "result.json", {
@@ -264,7 +274,8 @@ def save_run(result, program: Program, base, sweep: dict | None = None) -> Path:
             "counts": getattr(result, "counts", None), "seed": seed, "marks": getattr(result, "marks", []),
             "notes": getattr(result, "notes", []), "seated": getattr(result, "seated", {}),
             "goals": getattr(result, "goals", None), "air": getattr(result, "air", None),
-            "clearance": getattr(result, "clearance", None), "hopper": bool(program.hopper)})
+            "clearance": getattr(result, "clearance", None), "hopper": bool(program.hopper),
+            **({"words": result.words} if getattr(result, "words", None) else {})})
         _write_signals(tmp / "signals.csv", result.signals)
         _write_json(tmp / "view.json", result.view)
         write_motion(tmp / "motion.bin", result.motion, len(result.movers))
@@ -282,13 +293,18 @@ def _entry(base: Path, folder: Path) -> dict | None:
         r = json.loads((folder / "result.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None                     # a folder being deleted, or not a run
-    return {"id": folder.relative_to(base).as_posix(), "status": r.get("status"), "outcome": r.get("outcome"),
-            "started": r.get("started"), "sweep": r.get("sweep"), "cancelled": r.get("status") == "cancelled"}
+    out = {"id": folder.relative_to(base).as_posix(), "status": r.get("status"), "outcome": r.get("outcome"),
+           "started": r.get("started"), "sweep": r.get("sweep"), "cancelled": r.get("status") == "cancelled"}
+    words = r.get("words")
+    if isinstance(words, dict):         # a run made in machine text: its outcome in every setting
+        out["words"] = {k: {"outcome": w.get("outcome")} for k, w in words.items() if isinstance(w, dict)}
+    return out
 
 
 def list_runs(base) -> list[dict]:
     """The kept runs, plain and in sweeps and spreads, newest first: id ("004", "sweep-002/003", "spread-001/002"),
-    status, outcome, started, sweep, cancelled (the student stopped it)."""
+    status, outcome, started, sweep, cancelled (the student stopped it), and for a run made in machine text its
+    outcome in every setting (words: {setting_key: {outcome}})."""
     base = Path(base)
     folders = [p for _, p in _numbered(base, _RUN_RE)]
     for _, s in _numbered(base, _SWEEP_RE) + _numbered(base, _SPREAD_RE):
@@ -328,9 +344,24 @@ def load_run(base, run_id: str) -> dict:
     return out
 
 
+def _table(folder: Path, n: int) -> dict | None:
+    """A sweep's or spread's table.json (its table in every Language and Units setting: sweep.py's and spread.py's
+    _write_words), or None for an older folder without one, or one that doesn't match table.csv's rows: the Test
+    tab then shows table.csv's machine text as it is."""
+    try:
+        table = json.loads((folder / "table.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(table, dict) or not isinstance(table.get("rows"), list) or len(table["rows"]) != n \
+            or not isinstance(table.get("words"), dict):
+        return None
+    return table
+
+
 def list_sweeps(base) -> list[dict]:
-    """The kept sweeps, newest first: id ("sweep-002"), target, values, cancelled, problems and rows (table.csv's,
-    each a dict of its columns as text). A sweep whose files can't be read (being deleted) is left out."""
+    """The kept sweeps, newest first: id ("sweep-002"), target, values, cancelled, problems, rows (table.csv's,
+    each a dict of its columns as text) and table (table.json's, or None: _table). A sweep whose files can't be read
+    (being deleted) is left out."""
     out = []
     for _, folder in reversed(_numbered(Path(base), _SWEEP_RE)):
         try:
@@ -340,13 +371,15 @@ def list_sweeps(base) -> list[dict]:
         except (OSError, ValueError):
             continue
         out.append({"id": folder.name, "target": meta.get("target"), "values": meta.get("values"),
-                    "cancelled": bool(meta.get("cancelled")), "problems": meta.get("problems", []), "rows": rows})
+                    "cancelled": bool(meta.get("cancelled")), "problems": meta.get("problems", []), "rows": rows,
+                    "table": _table(folder, len(rows))})
     return out
 
 
 def list_spreads(base) -> list[dict]:
-    """The kept floor spreads, newest first: id ("spread-002"), spread, placements, picked, sentence, cancelled and
-    rows (table.csv's, each a dict of its columns as text). A spread whose files can't be read is left out."""
+    """The kept floor spreads, newest first: id ("spread-002"), spread, placements, picked, sentence, cancelled,
+    rows (table.csv's, each a dict of its columns as text) and table (table.json's, or None: _table). A spread whose
+    files can't be read is left out."""
     out = []
     for _, folder in reversed(_numbered(Path(base), _SPREAD_RE)):
         try:
@@ -357,7 +390,7 @@ def list_spreads(base) -> list[dict]:
             continue
         out.append({"id": folder.name, "spread": meta.get("spread"), "placements": meta.get("placements"),
                     "picked": meta.get("picked"), "sentence": meta.get("sentence"),
-                    "cancelled": bool(meta.get("cancelled")), "rows": rows})
+                    "cancelled": bool(meta.get("cancelled")), "rows": rows, "table": _table(folder, len(rows))})
     return out
 
 

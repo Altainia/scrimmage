@@ -20,7 +20,8 @@ turn, and a placement names how it lies ("standing on end", "lying across": piec
 
 The spread is kept as `base/spread-<NNN>/`, as a sweep is (store.py, KEEP_SPREADS): a run per placement (`001/` ...),
 `table.csv` (placement, the five axes, status, picked up, outcome) and `spread.json` (spread, placements, picked,
-sentence, and `cancelled` when it was stopped). A cancelled spread is kept and prunes nothing; its `picked` (and the
+sentence, and `cancelled` when it was stopped), both machine text (units.machine_text: American English, inches),
+and `table.json`, the same table's words in every Language and Units setting for the Test tab (_write_words). A cancelled spread is kept and prunes nothing; its `picked` (and the
 table's rows) cover only the placements run, so `picked` is shorter than `placements`, the two aligned by index.
 """
 
@@ -270,7 +271,10 @@ def worded(varying: list[str], kind: PieceKind | None) -> bool:
 def label(p: dict, varying: list[str], kind: PieceKind | None = None) -> str:
     """A placement in words, only its varying axes in SPREAD_AXES order: "6 in left at 30°". For a piece other than
     a ball (`kind`), a varying tip or turn reads as how it lies, its turn from the robot's heading: "6 in left lying
-    across", "standing on end"; a ball's (kind None) reads "turned 45°"."""
+    across", "standing on end"; a ball's (kind None) reads "turned 45°". Machine text (table.csv) is American
+    English, as it always was; outside it the words are translated (_label_words)."""
+    if not units.is_machine():
+        return _label_words(p, varying, kind)
     words = []
     for a in SPREAD_AXES:
         if a not in varying:
@@ -293,6 +297,40 @@ def label(p: dict, varying: list[str], kind: PieceKind | None = None) -> str:
     return " ".join(words)
 
 
+def _label_words(p: dict, varying: list[str], kind: PieceKind | None) -> str:
+    """label()'s words, translated, in the Units setting."""
+    words = []
+    for a in SPREAD_AXES:
+        if a not in varying:
+            continue
+        v = p[a]
+        if a in ORIENTATION_AXES and worded(varying, kind):
+            if a == next(b for b in ORIENTATION_AXES if b in varying):
+                words.append(orientation_words(kind, p["tip_deg"], p["rotation_deg"]))
+            continue
+        if a == "offset_in":
+            words.append(i18n.t("on the center line") if v == 0 else
+                         i18n.t("{distance} left", distance=_inches(abs(v))) if v > 0 else
+                         i18n.t("{distance} right", distance=_inches(abs(v))))
+        elif a == "distance_in":
+            words.append(i18n.t("{distance} ahead", distance=_inches(v)))
+        elif a == "angle_deg":
+            words.append(i18n.t("at {angle}°", angle=_n(v)))
+        elif a == "rotation_deg":
+            words.append(i18n.t("turned {angle}°", angle=_n(v)))
+        else:
+            words.append(i18n.t("tipped {angle}°", angle=_n(v)))
+    return " ".join(words)
+
+
+def _differs(p: dict, a: str) -> str:
+    """A tip or turn that tells two placements apart, after their label: "turned 45°", "tipped 80°"."""
+    if units.is_machine():
+        return f"turned {_n(p[a])}°" if a == "rotation_deg" else f"tipped {_n(p[a])}°"
+    return (i18n.t("turned {angle}°", angle=_n(p[a])) if a == "rotation_deg"
+            else i18n.t("tipped {angle}°", angle=_n(p[a])))
+
+
 def placement_labels(ps: list[dict], varying: list[str], kind: PieceKind | None = None) -> list[str]:
     """Each placement's label. Where words for how a piece lies say the same for two placements or more ("lying
     flat" at every turn of a disc, "standing on end" at tips 80 and 90), each of those gets its tip or turn that
@@ -308,9 +346,9 @@ def placement_labels(ps: list[dict], varying: list[str], kind: PieceKind | None 
             continue
         differs = [a for a in ORIENTATION_AXES if a in varying and len({ps[k][a] for k in ks}) > 1]
         for k in ks:
-            extra = [f"turned {_n(ps[k][a])}°" if a == "rotation_deg" else f"tipped {_n(ps[k][a])}°"
-                     for a in differs]
-            out[k] = f"{lb} ({', '.join(extra)})"
+            extra = [_differs(ps[k], a) for a in differs]
+            out[k] = (f"{lb} ({', '.join(extra)})" if units.is_machine()
+                      else i18n.t("{label} ({differs})", label=lb, differs=", ".join(extra)))
     return out
 
 
@@ -319,17 +357,27 @@ def _joined(items: list[str]) -> str:
     "lying flat (turned 0°), lying flat (turned 45°) and ...")."""
     if len(items) == 1:
         return items[0]
-    if any("," in re.sub(r"\([^)]*\)", "", it) for it in items):
-        return f"{'; '.join(items[:-1])}; and {items[-1]}"
-    return f"{', '.join(items[:-1])} and {items[-1]}"
+    semi = any("," in re.sub(r"\([^)]*\)", "", it) for it in items)
+    if units.is_machine():
+        return f"{'; '.join(items[:-1])}; and {items[-1]}" if semi else f"{', '.join(items[:-1])} and {items[-1]}"
+    if semi:
+        return i18n.t("{items}; and {last}", items="; ".join(items[:-1]), last=items[-1])
+    return i18n.t("{items} and {last}", items=", ".join(items[:-1]), last=items[-1])
 
 
 def sentence(picked: list[bool], labels: list[str], at: bool = True) -> str:
     """"picked up 7 of 9; missed at 6 in left at 30° and 6 in right at 30°", or "picked up 9 of 9". Labels that
     name how a piece lies (`at` false) read without the "at": "picked up 2 of 3; missed standing on end"."""
-    out = f"picked up {sum(picked)} of {len(picked)}"
     missed = [lb for ok, lb in zip(picked, labels) if not ok]
-    return out + (f"; missed {'at ' if at else ''}{_joined(missed)}" if missed else "")
+    if units.is_machine():
+        out = f"picked up {sum(picked)} of {len(picked)}"
+        return out + (f"; missed {'at ' if at else ''}{_joined(missed)}" if missed else "")
+    p = dict(picked=sum(picked), total=len(picked))
+    if not missed:
+        return i18n.t("picked up {picked} of {total}", **p)
+    if at:
+        return i18n.t("picked up {picked} of {total}; missed at {missed}", missed=_joined(missed), **p)
+    return i18n.t("picked up {picked} of {total}; missed {missed}", missed=_joined(missed), **p)
 
 
 def _floor_outcome(result) -> str:
@@ -366,7 +414,8 @@ def run_spread(program: Program, base, on_progress=None, cancel: threading.Event
     tmp = store.new_sweep_folder(base, prefix="spread")
 
     def record(i: int, row: dict, result):
-        row.update(status=result.status, outcome=result.outcome, picked=_floor_outcome(result) == "in")
+        row.update(status=result.status, outcome=result.outcome, picked=_floor_outcome(result) == "in",
+                   words=result.words)
         return program, {"spread": ps[i], "index": i}
 
     rows = [{"placement": labels[i], **p, "status": COULDNT_RUN, "picked": False, "outcome": ""}
@@ -374,12 +423,13 @@ def run_spread(program: Program, base, on_progress=None, cancel: threading.Event
     # on_progress must stay numeric: anything built inside machine_text() is machine text
     with units.machine_text():
         return run_each(tmp, rows, lambda i: TestRun(world, program, placement=ps[i]).run(cancel=cancel), record,
-                        lambda done, cancelled: _finish(tmp, base, spread, ps, labels, at, done, cancelled),
+                        lambda done, cancelled: _finish(tmp, base, spread, ps, labels, at, done, cancelled,
+                                                        names, kind),
                         on_progress)
 
 
 def _finish(tmp: Path, base: Path, spread: dict, ps: list, labels: list, at: bool, rows: list,
-            cancelled: bool) -> Path:
+            cancelled: bool, names: list, kind) -> Path:
     """Write table.csv and spread.json and put the spread in place."""
     picked = [r["picked"] for r in rows]
     meta = {"spread": spread, "placements": ps, "picked": picked,
@@ -389,10 +439,28 @@ def _finish(tmp: Path, base: Path, spread: dict, ps: list, labels: list, at: boo
     try:
         _write_table(tmp / "table.csv", rows)
         (tmp / "spread.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+        _write_words(tmp / "table.json", ps, names, kind, rows, picked)
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
     return store.place_sweep(tmp, base, cancelled=cancelled, prefix="spread")
+
+
+def _write_words(path: Path, ps: list, names: list, kind, rows: list, picked: list) -> None:
+    """table.json: the spread's table for the Test tab, in every Language and Units setting (units.each_setting),
+    since table.csv and spread.json are machine text. {"rows": [{run}], "words": {setting_key: {placements,
+    outcomes, sentence}}}: run is the row's kept run ("001"), or None when it couldn't run (its outcome is None,
+    table.csv saying why); a run's outcome is its own words (RunResult.words). Words, not codes, because a run's
+    outcome is worded from its numbers while it runs."""
+    def table_words() -> dict:
+        labels = placement_labels(ps, names, kind)
+        key = units.setting_key()
+        return {"placements": labels[:len(rows)],
+                "outcomes": [r["words"][key]["outcome"] if r.get("words") else None for r in rows],
+                "sentence": sentence(picked, labels[:len(rows)], not worded(names, kind))}
+    table = {"rows": [{"run": f"{i + 1:03d}" if r.get("words") else None} for i, r in enumerate(rows)],
+             "words": units.each_setting(table_words)}
+    path.write_text(json.dumps(table, ensure_ascii=False), encoding="utf-8")
 
 
 def _write_table(path: Path, rows: list[dict]) -> None:

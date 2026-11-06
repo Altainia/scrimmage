@@ -193,8 +193,9 @@ def _quiet(row: dict[str, float]) -> dict[str, float]:
 
 
 def format_table(rows: list[tuple[dict, "Row"]], bench: Bench) -> str:
-    """The launcher model's table of BENCH_METRICS, headed by the bench's UNCALIBRATED line (not the launcher's)."""
-    table = launcher_report.format_table(rows, BENCH_METRICS).split("\n", 1)[1]
+    """The launcher model's table of BENCH_METRICS, headed by the bench's UNCALIBRATED line (not the launcher's): SHOWN
+    in the Units setting, as the charts are."""
+    table = launcher_report.format_table(rows, BENCH_METRICS, shown=SHOWN).split("\n", 1)[1]
     return f"{bench_uncalibrated(bench)}\n{table}"
 
 

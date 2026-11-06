@@ -184,6 +184,10 @@ class RunResult:
     # each element the test measures (a clears condition or a clearance.<element> chart signal): {min_in, t}, the
     # smallest clearance (in) and when, both None when it was never within 0.5 m; None when the test measures none
     clearance: dict[str, dict] | None = None
+    # a run made inside machine text (a sweep's, a spread's, MCP test_run's): its words in every Language and Units
+    # setting, {"en-GB|metric": {outcome, checks, marks, seated, notes}} (_keep_words), which the Test tab shows in
+    # the viewer's; None for any other run (its words are in the setting it was made in)
+    words: dict | None = None
 
     @property
     def passed(self) -> bool:
@@ -202,6 +206,79 @@ class _Frame:
 class _End(Exception):
     def __init__(self, status: str, ending: str):
         self.status, self.ending = status, ending
+
+
+class _Words(str):
+    """Machine text with its words in every Language and Units setting (units.each_setting), for a run made inside
+    units.machine_text() (a sweep's, a spread's or MCP test_run's): the str itself is the machine text, `each` the
+    words by setting. The run's end files them in RunResult.words and leaves plain text (_keep_words)."""
+
+    def __new__(cls, text: str, each: dict):
+        s = super().__new__(cls, text)
+        s.each = each
+        return s
+
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self, memo):
+        return self
+
+
+def _w(fn) -> str:
+    """fn()'s text; inside machine text, as _Words with fn() in every setting too, while the run's numbers are at
+    hand (a kept run is shown in the viewer's setting)."""
+    text = fn()
+    return _Words(text, units.each_setting(fn)) if units.is_machine() else text
+
+
+def _v(text):
+    """Text made earlier (by _w) as it reads in the setting being worded now; itself in machine text."""
+    if isinstance(text, _Words) and not units.is_machine():
+        return text.each.get(units.setting_key(), str(text))
+    return text
+
+
+def _ws(fn) -> list:
+    """_w() for a list of lines (each line worded in every setting)."""
+    lines = fn()
+    if not units.is_machine():
+        return lines
+    each = units.each_setting(fn)
+    return [_Words(line, {k: v[i] if len(v) == len(lines) else line for k, v in each.items()})
+            for i, line in enumerate(lines)]
+
+
+WORDED_CHECK = ("text", "failure", "line", "until")     # a check's fields in words
+
+
+def _keep_words(result: RunResult) -> None:
+    """Inside machine text: file the run's words in every setting in result.words ({setting_key: {outcome, checks
+    (each check's WORDED_CHECK fields), marks (each mark's text), seated, notes}}), and leave the machine text in
+    the result as plain str (MCP results and result.json's other fields don't change)."""
+    if not units.is_machine():
+        return
+
+    def pick(x, key):
+        return x.each.get(key, str(x)) if isinstance(x, _Words) else x
+
+    keys = list(units.each_setting(lambda: None))
+    result.words = {key: {
+        "outcome": pick(result.outcome, key),
+        "checks": [{f: pick(c[f], key) for f in WORDED_CHECK if isinstance(c.get(f), str)} for c in result.checks],
+        "marks": [pick(m.get("text"), key) for m in result.marks],
+        "seated": {rod: pick(v, key) for rod, v in result.seated.items()},
+        "notes": [pick(n, key) for n in result.notes]} for key in keys}
+    result.outcome = str(result.outcome)
+    for c in result.checks:
+        for f in WORDED_CHECK:
+            if isinstance(c.get(f), str):
+                c[f] = str(c[f])
+    for m in result.marks:
+        if isinstance(m.get("text"), str):
+            m["text"] = str(m["text"])
+    result.seated = {rod: str(v) for rod, v in result.seated.items()}
+    result.notes = [str(n) for n in result.notes]
 
 
 def _where(place: tuple) -> str:
@@ -598,10 +675,11 @@ class TestRun:
             while True:
                 self._advance(t)
                 if cancel is not None and cancel.is_set():
-                    raise _End("cancelled", i18n.t("you stopped the run at {t} s", t=f"{t:.1f}"))
+                    raise _End("cancelled", _w(lambda: i18n.t("you stopped the run at {t} s", t=f"{t:.1f}")))
                 if t >= self.program.time_limit - EPS:
-                    raise _End("time limit", i18n.t("ran out of time ({limit} s){under_way}",
-                                                    limit=f"{self.program.time_limit:g}", under_way=self._under_way()))
+                    raise _End("time limit", _w(lambda: i18n.t(
+                        "ran out of time ({limit} s){under_way}", limit=f"{self.program.time_limit:g}",
+                        under_way=self._under_way())))
                 self._step()
                 t = float(d.time)
                 watch.update()
@@ -615,14 +693,16 @@ class TestRun:
                         check["until"] = placed                 # the hold ended where a check expects the piece
                         self.throughout.remove((check, cond))
                 if watch.tilt > TIP_DEG:
-                    raise _End("tipped over", i18n.t("the robot tipped over at {t} s", t=f"{t:.1f}"))
+                    raise _End("tipped over", _w(lambda: i18n.t("the robot tipped over at {t} s", t=f"{t:.1f}")))
                 if walk is not None:
                     on_ground, touched, _, _ = watch.mon.contact_state()
                     z = float(d.subtree_com[w.robot_body][2])
                     if walk.see(t, bool(watch.climb.get("climb.hanging", 0)), float(watch.climb.get(
                             "climb.hook_load", 0.0)), z, on_ground, touched) == "hook walked off":
-                        bars = i18n.t(" and ", context="list separator").join(walk.left) or i18n.t("its bar")
-                        raise _End("walked off", i18n.t("a hook walked off {bars} at {t} s", bars=bars, t=f"{t:.1f}"))
+                        def walked() -> str:
+                            bars = i18n.t(" and ", context="list separator").join(walk.left) or i18n.t("its bar")
+                            return i18n.t("a hook walked off {bars} at {t} s", bars=bars, t=f"{t:.1f}")
+                        raise _End("walked off", _w(walked))
         except _End as e:
             result.status, ending = e.status, e.ending
         if result.status == "finished":
@@ -652,28 +732,33 @@ class TestRun:
         if self.feeder is not None or rows:
             result.feeds, result.counts = rows, counts(rows)
             result.seed = self.feeder.seed if self.feeder is not None else None
-        if rows:
-            told = sentence(rows, hopper=bool(self.program.hopper))
-            ending = told if result.status == "finished" else i18n.t("{ending}; {counts}", ending=ending, counts=told)
-        top = watch.highest_hung()
-        result.outcome = i18n.t("reached {bar}, then {ending}", bar=top, ending=ending) if top else ending
+        top, finished = watch.highest_hung(), result.status == "finished"
+
+        def outcome() -> str:
+            said = _v(ending)
+            if rows:
+                told = sentence(rows, hopper=bool(self.program.hopper))
+                said = told if finished else i18n.t("{ending}; {counts}", ending=said, counts=told)
+            return i18n.t("reached {bar}, then {ending}", bar=top, ending=said) if top else said
+        result.outcome = _w(outcome)
         result.t_end = t
         result.hung = list(watch.hung)
         for check in self.checks:
-            check["line"] = self._line(check)
+            check["line"] = _w(lambda: self._line(check))
         result.checks = self.checks
         result.marks = self.marks
         for rod in self._seated.values():
             got = watch.placed.seated(rod)
             if got is not None:
-                result.seated[rod] = seated_words(*got)
-        result.notes = run_notes(self.world, self.program)
+                result.seated[rod] = _w(lambda: seated_words(*got))
+        result.notes = _ws(lambda: run_notes(self.world, self.program))
         tr = self.world.test_range
         if tr is not None and tr.shooter is not None:
             result.goals = dict(tr.counts()["goals"])
         if self.air is not None:
             result.air = dict(self.air.out)
         result.clearance = watch.closest.result()
+        _keep_words(result)
         return result
 
     def _see_air(self) -> None:
@@ -735,7 +820,7 @@ class TestRun:
         t0 = t
         while not self.outcomes.settled() and t < t0 + SETTLE_MAX_S - EPS:
             if cancel is not None and cancel.is_set():
-                raise _End("cancelled", i18n.t("you stopped the run at {t} s", t=f"{t:.1f}"))
+                raise _End("cancelled", _w(lambda: i18n.t("you stopped the run at {t} s", t=f"{t:.1f}")))
             self._step()
             t = float(d.time)
             self.watch.update()
@@ -813,10 +898,10 @@ class TestRun:
                 else:
                     done = watch.holds(a["until"])
                     if not done and f.rounds >= a.get("max", REPEAT_MAX):
-                        raise _End("repeat limit", i18n.tn(
+                        raise _End("repeat limit", _w(lambda: i18n.tn(
                             "repeat ({where}) stopped after {count} time without {what}",
                             "repeat ({where}) stopped after {count} times without {what}",
-                            f.rounds, where=_where(f.trail), what=self._describe(a["until"], "without")))
+                            f.rounds, where=_where(f.trail), what=self._describe(a["until"], "without"))))
                 if done:
                     self.frames.pop()
                     parent.index += 1
@@ -879,13 +964,13 @@ class TestRun:
             cond = a["that"]
             throughout = bool(a.get("throughout", False))
             if cond.kind == "made_it_in" and not throughout and place == (len(self.program.blocks) - 1,):
-                check = {"place": list(place), "text": self._describe(cond), "throughout": False, "passed": True,
+                check = {"place": list(place), "text": _w(lambda: self._describe(cond)), "throughout": False, "passed": True,
                          "t": t}
                 self.checks.append(check)
                 self._deferred = (check, cond)       # decided after the settle, on the final counts
                 return True
             ok = watch.holds(cond)
-            check = {"place": list(place), "text": self._describe(cond),
+            check = {"place": list(place), "text": _w(lambda: self._describe(cond)),
                      "throughout": throughout, "passed": ok, "t": t}
             self.checks.append(check)
             if not ok:
@@ -959,9 +1044,9 @@ class TestRun:
             if watch.holds(a["until"]):
                 return True
             if elapsed >= a.get("timeout", WAIT_TIMEOUT) - EPS:
-                raise _End("timed out", i18n.t("waiting for {what} timed out at {t} s ({where})",
-                                               what=self._describe(a["until"], "waiting"), t=f"{t:.1f}",
-                                               where=_where(place)))
+                raise _End("timed out", _w(lambda: i18n.t("waiting for {what} timed out at {t} s ({where})",
+                                                          what=self._describe(a["until"], "waiting"), t=f"{t:.1f}",
+                                                          where=_where(place))))
             return False
         if b.do == "feed_one":
             f, name = self.feeder, a["station"]
@@ -969,10 +1054,14 @@ class TestRun:
                 return True
             if elapsed >= a.get("timeout", WAIT_TIMEOUT) - EPS:
                 st = next(s for s in f.stations if s.name == name)
-                why = (i18n.t("its release point stayed blocked") if f.blocked(name)
-                       else i18n.t("its {interval} s between pieces hadn't passed", interval=f"{st.interval:g}"))
-                raise _End("timed out", i18n.t("feed one from {station} timed out at {t} s: {why} ({where})",
-                                               station=name, t=f"{t:.1f}", why=why, where=_where(place)))
+                blocked = f.blocked(name)
+
+                def timed_out() -> str:
+                    why = (i18n.t("its release point stayed blocked") if blocked
+                           else i18n.t("its {interval} s between pieces hadn't passed", interval=f"{st.interval:g}"))
+                    return i18n.t("feed one from {station} timed out at {t} s: {why} ({where})",
+                                  station=name, t=f"{t:.1f}", why=why, where=_where(place))
+                raise _End("timed out", _w(timed_out))
             return False
         if b.do == "move":
             j = a["joint"]
@@ -984,9 +1073,12 @@ class TestRun:
             if elapsed >= a.get("timeout", MOVE_TIMEOUT) - EPS:
                 target = self.active["target"]
                 short = (target - q) * (target - self.active["q0"]) > 0.0     # still on the start's side
-                p = dict(joint=j, at=self._value(j, a["unit"]), to=_amount(a["to"], a["unit"]), where=_where(place))
-                raise _End("timed out", i18n.t("{joint} stopped at {at} short of {to} ({where})", **p) if short
-                           else i18n.t("{joint} stopped at {at} past {to} ({where})", **p))
+                def stopped() -> str:
+                    p = dict(joint=j, at=self._value(j, a["unit"]), to=_amount(a["to"], a["unit"]),
+                             where=_where(place))
+                    return (i18n.t("{joint} stopped at {at} short of {to} ({where})", **p) if short
+                            else i18n.t("{joint} stopped at {at} past {to} ({where})", **p))
+                raise _End("timed out", _w(stopped))
             return False
         # drive or turn
         self._commanded[b.do] = t
@@ -1003,21 +1095,23 @@ class TestRun:
         if b.do == "turn":
             done = act["turned"] * math.copysign(1.0, a["degrees"]) >= math.radians(abs(a["degrees"])) - EPS
             if not done and elapsed >= timeout - EPS:
-                raise _End("timed out", i18n.t("turn ({where}) didn't turn {degrees}° in {timeout} s (turned "
-                                               "{turned}°)", where=_where(place), degrees=f"{a['degrees']:g}", timeout=f"{timeout:g}",
-                                               turned=f"{math.degrees(act['turned']):.0f}"))
+                raise _End("timed out", _w(lambda: i18n.t(
+                    "turn ({where}) didn't turn {degrees}° in {timeout} s (turned {turned}°)", where=_where(place),
+                    degrees=f"{a['degrees']:g}", timeout=f"{timeout:g}", turned=f"{math.degrees(act['turned']):.0f}")))
         elif "distance" in a:
             gone = float(np.linalg.norm(d.xpos[self.world.robot_body][:2] - act["from"]))
             done = gone >= abs(a["distance"]) - EPS
             if not done and elapsed >= timeout - EPS:
-                if units.is_machine():          # the old words, kept for machine text (units.machine_text)
-                    far, went = f"{abs(a['distance']):g} m", f"{gone:.2f} m"
-                else:
-                    far, went = units.fmt(abs(a["distance"]), "field"), units.fmt(gone, "field", fewer=1)
-                p = dict(where=_where(place), far=far, timeout=f"{timeout:g}", went=went)
-                raise _End("timed out", i18n.t("drive {direction} ({where}) didn't reach {far} in {timeout} s (went "
-                                               "{went})", direction=a["direction"], **p) if "direction" in a
-                           else i18n.t("drive ({where}) didn't reach {far} in {timeout} s (went {went})", **p))
+                def short() -> str:
+                    if units.is_machine():          # the old words, kept for machine text (units.machine_text)
+                        far, went = f"{abs(a['distance']):g} m", f"{gone:.2f} m"
+                    else:
+                        far, went = units.fmt(abs(a["distance"]), "field"), units.fmt(gone, "field", fewer=1)
+                    p = dict(where=_where(place), far=far, timeout=f"{timeout:g}", went=went)
+                    return (i18n.t("drive {direction} ({where}) didn't reach {far} in {timeout} s (went {went})",
+                                   direction=a["direction"], **p) if "direction" in a
+                            else i18n.t("drive ({where}) didn't reach {far} in {timeout} s (went {went})", **p))
+                raise _End("timed out", _w(short))
         else:
             done = act["rolling"] is not None and t - act["rolling"] >= a["seconds"] - EPS
         if done:
@@ -1231,7 +1325,7 @@ class TestRun:
         on = loss[1].removeprefix(SET_DOWN)
         if on not in self._places:
             return None
-        return i18n.t("until it was set down on {place} at {t} s", place=on, t=f"{loss[0]:.1f}")
+        return _w(lambda: i18n.t("until it was set down on {place} at {t} s", place=on, t=f"{loss[0]:.1f}"))
 
     def _not_placed(self, k: str, a: dict) -> str:
         """How a rests_on or seated check failed: "the coral doesn't rest on shelf (a robot body still touches it)";
@@ -1280,7 +1374,7 @@ class TestRun:
         return describe(cond, w.next_bar(), w.kinds, w.piece_names, w.units, kinds, form=form)
 
     def _fail(self, check: dict, cond, t: float) -> None:
-        check.update(passed=False, t=t, failure=self._failure(cond))
+        check.update(passed=False, t=t, failure=_w(lambda: self._failure(cond)))
         if cond.kind == "held":
             i, by = self.watch.piece_index(cond.args["piece"]), cond.args["by"]
             loss = self.watch.held.lost(i, by)
@@ -1288,9 +1382,11 @@ class TestRun:
                 check["timed"] = True              # its failure says its own time (the moment it was lost)
                 self.marks.append({"t": loss[0], "kind": "slip", "text": check["failure"],
                                    "ball": self.watch.held.lost_piece(i, by)})
-        p = dict(where=_where(tuple(check["place"])), failure=check["failure"])
-        raise _End("check failed", i18n.t("a check failed ({where}): {failure}", **p) if check.get("timed")
-                   else i18n.t("a check failed ({where}): {failure} at {t} s", t=f"{t:.1f}", **p))
+        def failed() -> str:
+            p = dict(where=_where(tuple(check["place"])), failure=_v(check["failure"]))
+            return (i18n.t("a check failed ({where}): {failure}", **p) if check.get("timed")
+                    else i18n.t("a check failed ({where}): {failure} at {t} s", t=f"{t:.1f}", **p))
+        raise _End("check failed", _w(failed))
 
     def _doing(self, b) -> str:
         """A waiting block under way, in words."""
@@ -1328,10 +1424,11 @@ class TestRun:
         p = dict(where=_where(tuple(c["place"])), t=f"{c['t']:.1f}")
         if c["passed"]:
             if c.get("until"):
-                return i18n.t("passed: {check} from {t} s {until} ({where})", check=c["text"], until=c["until"], **p)
+                return i18n.t("passed: {check} from {t} s {until} ({where})", check=_v(c["text"]),
+                              until=_v(c["until"]), **p)
             if c["throughout"]:
-                return i18n.t("passed: {check} from {t} s on ({where})", check=c["text"], **p)
-            return i18n.t("passed: {check} at {t} s ({where})", check=c["text"], **p)
+                return i18n.t("passed: {check} from {t} s on ({where})", check=_v(c["text"]), **p)
+            return i18n.t("passed: {check} at {t} s ({where})", check=_v(c["text"]), **p)
         if c.get("timed"):
-            return i18n.t("failed ({where}): {failure}", failure=c["failure"], where=p["where"])
-        return i18n.t("failed ({where}): {failure} at {t} s", failure=c["failure"], **p)
+            return i18n.t("failed ({where}): {failure}", failure=_v(c["failure"]), where=p["where"])
+        return i18n.t("failed ({where}): {failure} at {t} s", failure=_v(c["failure"]), **p)
