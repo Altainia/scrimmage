@@ -725,7 +725,7 @@ def test_test_it_puts_the_part_on_a_stand_in_and_opens_the_test_tab(part_page):
             != {"file": "ladder", "start": "below"}:
         assert time.monotonic() < end, (folder / "climber-standin.toml").read_text(encoding="utf-8")
         time.sleep(0.05)
-    page.wait_for_function("__scrimmageTest.state.palette.bars.includes('rung1')")
+    page.wait_for_function("__scrimmageTest.state?.palette?.bars.includes('rung1')")
     page.wait_for_function("document.querySelector('#test-setup summary').textContent.includes('field: ladder')")
     assert page.input_value("#test-field") == "ladder"
 
