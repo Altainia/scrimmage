@@ -993,7 +993,10 @@ function gripRow(pal, body, i, running, first) {
 // Try materials… for a part: every pad of it first (ruling P28), then each pad on its own.
 function gripChoices(pal, part) {
   const named = (g, b) => {
-    if (g === null || g === undefined) return t("the default friction {friction}", { friction: fmt((pal.grip_defaults || {})[b] ?? 1) });
+    if (g === null || g === undefined) {
+      const mu = (pal.grip_defaults || {})[b];       // part.toml's, else MuJoCo's 1.0 (its words as they were)
+      return mu == null ? t("the default friction 1.0") : t("the default friction {friction}", { friction: fmt(mu) });
+    }
     if (typeof g === "number") return t("my own {friction}", { friction: fmt(g) });
     const m = (pal.grip_materials || []).find((x) => x[0] === g);
     return m ? m[1] : g;

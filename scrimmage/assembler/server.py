@@ -529,7 +529,8 @@ Live (`/api/live/*`; one simulation at a time: a drive session, a scenario run, 
         real_ds_default is the robot config's [driver_station] real (false when it doesn't load): where the Drive
         tab's Driver Station choice starts. status.real_ds is true while (and after) a session the FRC Driver Station
         app drives; its mode, enabled and match then come from the robot's own reports (real_ds_report), and
-        status.driver_station is "connected" or "waiting for the Driver Station".
+        status.driver_station is "connected" or "waiting for the Driver Station", and status.match.silent is true
+        while connected but no DS packet has come for over 1 s.
   GET  /api/live/view              -> model_view(world, include_world=True) of the robot document (movers and
         movable included; frames list poses in its movers order), or {} when the robot config doesn't load.
   GET  /api/live/signals           -> signals(world) of the robot document, or {}.

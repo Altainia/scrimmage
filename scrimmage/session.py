@@ -26,7 +26,7 @@ import mujoco
 from .bindings import binds_ph, binds_rev
 from .bridge import Bridge, robot_language
 from .devicecheck import check_devices, device_notes
-from .driverstation import (MatchSettings, check_game_data, ds_words,
+from .driverstation import (REAL_DS_WAITING, MatchSettings, check_game_data,
                             real_ds_report)
 from .config import Config, ConfigError, RobotProgram, build_world, load_config, set_sim_mode, sim_mode_unused
 from .i18n import N_, t, translated
@@ -686,9 +686,10 @@ class Session:
         self._require_started()
         x, y, yaw = w.robot_pose()
         if self.real_ds:    # what the real DS is doing, per the robot program's own reports
+            # match.silent says the DS went quiet; driver_station keeps its two values (agents compare them)
             report = real_ds_report(self.bridge.hal, self.bridge.ds_quiet())
             ds = {"mode": report["mode"], "match": report, "real_ds": True,
-                  "driver_station": ds_words(report)}
+                  "driver_station": "connected" if report["connected"] else REAL_DS_WAITING}
         else:
             ds = {"mode": self.bridge.ds.mode,
                   "match": {**dataclasses.asdict(self.bridge.ds.match), "game_data": self.bridge.ds.game_data,

@@ -1,7 +1,7 @@
 """The turret shooter and the pneumatic arm (examples/blocks/turret and examples/blocks/pneumatic): two worked Test-tab
 examples on the stand-in robot. The turret keeps the launcher on hub_blue while the robot turns on the spot and
-while it drives; the standing shots score, and most of the shots on the move (the aim doesn't lead them); the arm is lifted by a cylinder 10 times and the air stays above the
-working pressure. Each test asserts what the example's README says the run does."""
+while it drives; the 4 standing shots score, and 2 of the 4 on the move (the aim doesn't lead them); the arm is
+lifted by a cylinder 10 times and the air stays above the working pressure. Each test asserts what the example's README says the run does."""
 
 from __future__ import annotations
 

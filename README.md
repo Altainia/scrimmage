@@ -275,7 +275,7 @@ edit the robot code, `restart_robot()`, repeat. The agent launches your robot wi
 | `set_mode` | Driver Station mode: disabled, auto, teleop or test. |
 | `set_joystick` | Set axes, buttons and POVs on a port 0-5. |
 | `set_match` | The match data the Driver Station sends: `station`, `fms`, `timer`, `game_data`, `auto_seconds`, `teleop_seconds` ([docs/match.md](docs/match.md)). |
-| `get_state` | Ground-truth pose, speed, battery, motor commands and currents, joint positions, the match data (`match`); on a robot with air cylinders, the air (`pneumatics`: stored and working psi, whether the compressor is on, each rod's extension in meters, `extension_m`). |
+| `get_state` | Ground-truth pose, speed, battery, motor commands and currents, joint positions, the match data (`match`); on a robot with air cylinders, the air (`pneumatics`: stored and working psi, whether the compressor is on, each rod's extension in meters, `extension_m`); on a robot with `[[sensor]]`s, each sensor's reading (`sensors`: `kind`, `on`, `distance_m` in meters and the named `color` it sees). |
 | `get_hal` | Raw HAL values the robot reported, with an optional device filter. |
 | `get_console` | Robot console lines with simulated timestamps. |
 | `nt_list`, `nt_get` | List and read NetworkTables topics. |

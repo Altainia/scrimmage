@@ -135,6 +135,26 @@ def test_a_turn_across_180_degrees_heading_keeps_counting(which, tmp_path):
     assert moved(world, r)[2] == pytest.approx(-90, abs=3)       # 270° left ends where 90° right does
 
 
+@pytest.mark.parametrize("which", ["standin", "swerve"])
+def test_a_small_turn_turns(which, standin_world, swerve_world):
+    """Review fix: a 3° turn turns (its tolerance is a quarter of a small angle, and it isn't there before its wheels
+    start), rather than counting as done at the start."""
+    world = standin_world if which == "standin" else swerve_world
+    r = run(world, TURN_THEN_WAIT.format(deg=3, extra=""))
+    assert r.status == "finished", r.outcome
+    assert moved(world, r)[2] == pytest.approx(3, abs=1)
+
+
+def test_a_turn_at_its_angle_but_still_turning_at_its_timeout_says_so(standin_world, monkeypatch):
+    """Review fix: a turn that reached its angle but was still turning faster than TURN_RATE_TOL when its timeout ran
+    out says that, not that it didn't turn its angle."""
+    from scrimmage.blocks import run as run_mod
+    monkeypatch.setattr(run_mod, "TURN_RATE_TOL", -1.0)       # never slow enough: it times out at its angle
+    r = run(standin_world, '[[block]]\ndo = "turn"\ndegrees = 90\ntimeout = 3\n')
+    assert r.status == "timed out"
+    assert r.outcome == "turn (block 1) reached 90° but was still turning when its 3 s ran out", r.outcome
+
+
 def test_tank_drive_back(standin_world):
     r = run(standin_world, '[[block]]\ndo = "drive"\ndirection = "back"\ndistance = 0.4\n')
     assert r.status == "finished", r.outcome

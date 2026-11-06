@@ -376,7 +376,7 @@ class Bridge:
         self._set_mode(None)
         self.disconnected.clear()
         self.hal = HalState()
-        self._ds_heard: float | None = None     # wall time of the robot's last DriverStation report (ds_quiet)
+        self._ds_heard = None
         self.sim_values_seen: set[tuple[str, str, str]] = set()  # distinct SimDevice values heard of (connection)
         self.phoenix = self.clock_freed = False
         self._initial = {}
@@ -637,8 +637,11 @@ class Bridge:
 
     def ds_quiet(self) -> float | None:
         """Wall seconds since the robot program's last ("DriverStation", "") report on this connection, None before
-        one. With the real DS the robot reports each packet it gets, so a long quiet means the DS went silent."""
-        return None if self._ds_heard is None else time.monotonic() - self._ds_heard
+        one, and None while no robot program is connected (its last reports are stale, so they say nothing about the
+        DS). With the real DS the robot reports each packet it gets, so a long quiet means the DS went silent."""
+        if self._ds_heard is None or self.ws is None:     # no robot program now: its old reports blame no DS
+            return None
+        return time.monotonic() - self._ds_heard
 
     def _connected(self, conn: int) -> bool:
         """Is connection number `conn` still the live one (and are we still running)?"""

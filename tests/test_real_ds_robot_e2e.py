@@ -20,7 +20,7 @@ pytest.importorskip("halsim_ds_socket")
 pytest.importorskip("scrimmage_lockstep")
 
 from fake_ds import FakeDS, skip_if_ds_ports_taken  # noqa: E402
-from scrimmage.driverstation import REAL_DS_DRIVING, REAL_DS_SILENT, REAL_DS_WAITING  # noqa: E402
+from scrimmage.driverstation import REAL_DS_DRIVING, REAL_DS_WAITING  # noqa: E402
 import scrimmage.session  # noqa: E402
 from scrimmage.session import NOT_LISTENING, Session, SessionError  # noqa: E402
 
@@ -144,13 +144,14 @@ def test_game_data_is_not_reported_back(run):
 def test_after_the_ds_stops_the_state_follows_the_latest_report(run):
     """D5: "waiting for the Driver Station" exactly when the robot's latest report doesn't have >ds true. Seen with
     RobotPy 2026.2.2: the extension keeps >ds true after the DS stops and disables the robot 100 ms after the last
-    packet, so scrimmage shows "connected" and disabled, and once no report has come for over 1 s, "connected (Driver
-    Station silent)"."""
+    packet, so scrimmage shows "connected" and disabled, and once no report has come for over 1 s, match.silent."""
     hal, after = run["hal_after_stop"], run["after_stop"]
-    # B21: the robot reports each packet; 1.5 s after the last, the DS is silent (0.5 s after, still "connected")
-    expected = REAL_DS_SILENT if hal.get(">ds") is True else REAL_DS_WAITING
+    expected = "connected" if hal.get(">ds") is True else REAL_DS_WAITING
     assert after["driver_station"] == expected, (after, hal)
-    assert run["just_stopped"]["driver_station"] == "connected" and after["match"]["silent"] is True
+    # B21: the robot reports each packet; 1.5 s after the last, match.silent says the DS went quiet (0.5 s after, not
+    # yet), while driver_station stays exactly "connected" (agents compare it)
+    assert run["just_stopped"]["match"]["silent"] is False and after["match"]["silent"] is True
+    assert run["just_stopped"]["driver_station"] == after["driver_station"] == "connected"
     # The behavior seen, pinned: if these fail, the extension changed, and docs/driver-station.md (what scrimmage
     # shows when the DS stops) must change with it.
     assert hal.get(">ds") is True, hal

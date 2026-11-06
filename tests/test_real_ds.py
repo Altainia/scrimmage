@@ -89,16 +89,29 @@ def test_the_report_follows_the_robots_driver_station_values():
 
 def test_a_ds_that_sent_nothing_for_over_a_second_is_silent():
     """B21: the robot reports every DS packet it gets, so over SILENT_S with no DriverStation report while connected
-    is a silent DS: get_state's driver_station and serve's line say so; waiting stays waiting."""
-    from scrimmage.driverstation import REAL_DS_SILENT, SILENT_S, ds_words
+    is a silent DS: the report's silent and serve's line say so; waiting stays waiting."""
+    from scrimmage.driverstation import REAL_DS_SILENT, SILENT_S
     on = hal(**{**SPIKE, ">enabled": False})
-    assert real_ds_report(on, 0.2)["silent"] is False and ds_words(real_ds_report(on, 0.2)) == "connected"
+    assert real_ds_report(on, 0.2)["silent"] is False
     quiet = real_ds_report(on, SILENT_S + 0.5)
-    assert quiet["silent"] is True and ds_words(quiet) == REAL_DS_SILENT == "connected (Driver Station silent)"
-    assert real_ds_line(quiet) == REAL_DS_SILENT
-    assert real_ds_report(on)["silent"] is False                       # not known: not silent
-    waiting = real_ds_report(HalState(), 10.0)
-    assert waiting["silent"] is False and ds_words(waiting) == REAL_DS_WAITING
+    assert quiet["silent"] is True and quiet["connected"] is True
+    assert real_ds_line(quiet) == REAL_DS_SILENT == "connected (Driver Station silent)"
+    assert real_ds_report(on)["silent"] is False                       # not known (no robot connected): not silent
+    assert real_ds_report(HalState(), 10.0)["silent"] is False
+
+
+def test_a_robot_that_disconnected_doesnt_make_the_ds_silent():
+    """Review fix: the HalState keeps the gone robot's >ds true, but with no robot connected nothing is quiet."""
+    import time
+
+    from scrimmage.bridge import Bridge
+    from scrimmage.world import World
+    b = Bridge(World({"part": [{"name": "drive", "stock": "chassis"}]}, Path(".")), "localhost", 0, nt=False,
+               speed=None, held=True)
+    b._ds_heard = time.monotonic() - 5.0
+    assert b.ws is None and b.ds_quiet() is None
+    b.ws = object()
+    assert b.ds_quiet() > 4.0
 
 
 def test_the_log_line_says_what_the_real_ds_is_doing():

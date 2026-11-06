@@ -141,6 +141,7 @@ TIP_DEG = 60.0            # the robot body's up axis this far from vertical: it 
 MOVE_TOL_DEG = 1.0        # a move has reached its target within this (a hinge), our call
 MOVE_TOL_IN = 0.25        # ... or this (a slide), our call
 TURN_TOL_DEG = 2.0        # a turn has reached its angle within this, our call
+TURN_TOL_MIN_DEG = 0.25   # ... a small turn's tolerance (a quarter of its angle) is at least this, our call
 TURN_RATE_TOL = 10.0      # deg/s: ... and turns slower than this, our call
 TURN_KP = 0.25            # V per degree still to turn, our call (tuned on the stand-in and the swerve template)
 TURN_KD = 0.02            # V per deg/s of turning, our call
@@ -557,6 +558,12 @@ def check_problems(program: Program, world) -> None:
     if bad:
         lines = [(f"{_where(tuple(p['place']))}: " if p["place"] else "") + p["message"] for p in bad]
         raise TestFileError(i18n.t("the test can't run on this robot yet:") + "\n" + "\n".join(lines))
+
+
+def turn_tolerance(degrees: float) -> float:
+    """How close (deg) a turn of `degrees` must come to its angle: TURN_TOL_DEG, or a quarter of a small turn's
+    angle (at least TURN_TOL_MIN_DEG), so a 2° turn turns rather than counting as there at the start."""
+    return min(TURN_TOL_DEG, max(TURN_TOL_MIN_DEG, abs(degrees) / 4.0))
 
 
 class TestRun:
@@ -1102,9 +1109,14 @@ class TestRun:
         if b.do == "turn":
             done = self._steer_turn(b, t)
             if not done and elapsed >= timeout - EPS:
+                p = dict(where=_where(place), degrees=f"{a['degrees']:g}", timeout=f"{timeout:g}",
+                         turned=f"{math.degrees(act['turned']):.0f}")
+                # at its angle but still turning faster than TURN_RATE_TOL (a swing it hadn't damped yet)
+                there = abs(a["degrees"] - math.degrees(act["turned"])) <= turn_tolerance(a["degrees"])
                 raise _End("timed out", _w(lambda: i18n.t(
-                    "turn ({where}) didn't turn {degrees}° in {timeout} s (turned {turned}°)", where=_where(place),
-                    degrees=f"{a['degrees']:g}", timeout=f"{timeout:g}", turned=f"{math.degrees(act['turned']):.0f}")))
+                    "turn ({where}) reached {degrees}° but was still turning when its {timeout} s ran out", **p)
+                    if there else i18n.t("turn ({where}) didn't turn {degrees}° in {timeout} s (turned {turned}°)",
+                                         **p)))
         elif "distance" in a:
             gone = float(np.linalg.norm(d.xpos[self.world.robot_body][:2] - act["from"]))
             done = gone >= abs(a["distance"]) - EPS
@@ -1129,21 +1141,22 @@ class TestRun:
     def _steer_turn(self, b, t: float) -> bool:
         """A turn block's wheels this step, once they roll, and whether it is done. The volts follow the heading still
         to go and the turn rate (TURN_KP, TURN_KD, up to the block's volts, at least TURN_MIN_VOLTS while it is off by
-        more than TURN_TOL_DEG), so the robot slows into its angle and pushes back when it coasts past, rather than
-        coasting past it after the wheels stop (it went about 120° for 90). Done within TURN_TOL_DEG and turning
-        slower than TURN_RATE_TOL."""
+        more than turn_tolerance), so the robot slows into its angle and pushes back when it coasts past, rather than
+        coasting past it after the wheels stop (it went about 120° for 90). Done, once its wheels have started, within
+        turn_tolerance and turning slower than TURN_RATE_TOL."""
         act, a = self.active, b.args
         prev = act.get("rate_at")
         rate = 0.0 if prev is None or t <= prev[0] + EPS else (act["turned"] - prev[1]) / (t - prev[0])
         act["rate_at"] = (t, act["turned"])
         err = math.degrees(math.radians(a["degrees"]) - act["turned"])
         rate = math.degrees(rate)
-        if abs(err) <= TURN_TOL_DEG and abs(rate) <= TURN_RATE_TOL:
+        tol = turn_tolerance(a["degrees"])
+        if act["rolling"] is not None and abs(err) <= tol and abs(rate) <= TURN_RATE_TOL:
             return True
         if act["rolling"] is not None:
             cap = abs(a.get("volts", DRIVE_VOLTS))
             v = max(-cap, min(cap, TURN_KP * err - TURN_KD * rate))
-            if abs(err) > TURN_TOL_DEG and abs(v) < TURN_MIN_VOLTS:
+            if abs(err) > tol and abs(v) < TURN_MIN_VOLTS:
                 v = math.copysign(min(TURN_MIN_VOLTS, cap), err)
             for j, volts in self.drivetrain.wheel_volts(None, math.copysign(1.0, v), abs(v)).items():
                 self.drives[j] = ("volts", volts)
