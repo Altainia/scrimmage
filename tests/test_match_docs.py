@@ -23,6 +23,11 @@ def text() -> str:
     return DOC.read_text(encoding="utf-8")
 
 
+def flat(s: str) -> str:
+    """The text with its line wrapping undone, so a phrase is found however the doc wraps it."""
+    return " ".join(s.split())
+
+
 def table_rows(doc: str) -> dict[str, list[str]]:
     """The key tables' rows by their first column's key: | `station` | `"blue1"` | ..."""
     out = {}
@@ -46,7 +51,7 @@ def test_every_key_is_in_a_table_with_its_default():
         else:
             assert shown == f"`{want:g}`", (key, shown)
     assert "game_data" in rows
-    assert ", ".join(f"`{s}`" for s in STATIONS[:-1]) + f" or `{STATIONS[-1]}`" in text()
+    assert ", ".join(f"`{s}`" for s in STATIONS[:-1]) + f" or `{STATIONS[-1]}`" in flat(text())
 
 
 def test_the_example_parses():
@@ -89,7 +94,7 @@ def test_the_error_messages_are_the_codes(table):
     with pytest.raises(ValueError) as e:
         MatchSettings().merged(table, "[match]")
     msg = str(e.value)
-    doc = " ".join(text().split())   # the doc wraps long messages
+    doc = flat(text())   # the doc wraps long messages
     if "station" in table or "alliance" in table:
         assert msg in doc, msg                                    # in full
     else:
@@ -99,7 +104,7 @@ def test_the_error_messages_are_the_codes(table):
 def test_the_game_data_message_is_the_codes():
     with pytest.raises(ValueError) as e:
         check_game_data("x" * 65, "step 2 (shift):")
-    assert str(e.value) in " ".join(text().split())
+    assert str(e.value) in flat(text())
 
 
 def test_the_robot_code_matches_the_live_probes():
@@ -117,11 +122,10 @@ def test_the_other_docs_point_here():
         assert "match.md" in (ROOT / "docs" / name).read_text(encoding="utf-8"), name
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert "docs/match.md" in readme and "game_data" in readme
-    drive = (ROOT / "docs" / "drive.md").read_text(encoding="utf-8")
+    drive = flat((ROOT / "docs" / "drive.md").read_text(encoding="utf-8"))
     for words in ("**Enter**", "aren't saved", "auto_seconds"):
         assert words in drive, words
-    doc = text()
+    doc = flat(text())
     assert "`scrimmage serve` ignores `[match]`" in doc
-    flat = " ".join(doc.split())
     for words in ("press **Enter** or leave the box", "**aren't saved**", "no fields for the Auto and Teleop lengths"):
-        assert words in flat, words
+        assert words in doc, words

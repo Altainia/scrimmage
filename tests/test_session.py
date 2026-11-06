@@ -141,18 +141,27 @@ def test_start_fails_when_robot_exits_immediately(tmp_path):
 
 
 def test_realtime_fallback_session(tmp_path, monkeypatch):
+    """Without the lockstep extension the session runs in real time: simulated time never gets ahead of the wall
+    clock since the robot connected (when it starts at 0). An advance alone can take less wall time than it
+    simulates: physics a busy machine left behind (up to MAX_LAG) catches up faster than real time."""
     monkeypatch.setattr(bridge_mod, "DETECT_WINDOW", 0.2)
     cfg = fake_config(tmp_path, '["{python}", "fake_robot_main.py"]')
+    connected = []
+    restart = bridge_mod.Bridge._restart_clock
+    monkeypatch.setattr(bridge_mod.Bridge, "_restart_clock",
+                        lambda self: (connected.append(time.monotonic()), restart(self))[-1])
 
     async def main():
         s = Session(cfg, nt=False)
         try:
             st = await s.start()
             assert st["lockstep"] is False
-            t0, w0 = s.t, time.monotonic()
+            t0 = s.t
             r = await s.advance(0.3)
+            wall = time.monotonic() - connected[-1]
             # t is rounded to the step: 0.201 + 0.3 is 0.5010000000000002 in floating point, and t reads 0.501
-            assert r["t"] >= t0 + 0.3 - 1e-9 and time.monotonic() - w0 >= 0.28
+            assert r["t"] >= t0 + 0.3 - 1e-9
+            assert r["t"] <= wall + 0.002, (r["t"], wall)   # (a pass ends on a whole 1 ms step)
         finally:
             await s.stop()
     run(main())

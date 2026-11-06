@@ -166,12 +166,16 @@ def test_a_port_in_use_stops_the_start_before_the_robot_launches(tmp_path, kind,
 
 # ------------------------------------------------------------------------------------------------------ a session
 @pytest.mark.usefixtures("ds_ports")
-def test_a_real_ds_session_steps_back_and_refuses_ds_changes(tmp_path):
+def test_a_real_ds_session_steps_back_and_refuses_ds_changes(tmp_path, monkeypatch):
     """The fake robot loads the lockstep extension but no DS socket: the session releases lockstep at once, sends
     no DS frames, runs between calls, waits for a DS, refuses the DS's controls, and after the start timeout says the
     robot isn't listening."""
     log = tmp_path / "run.csv"
-    cfg = fake_config(tmp_path, start_timeout=1)
+    cfg = fake_config(tmp_path)
+    # the not-listening check waits the start timeout after the connection; 1 s here, without making the start
+    # timeout itself 1 s (a slow runner's robot program can take longer than that to connect)
+    watch = Session._watch_ds_socket
+    monkeypatch.setattr(Session, "_watch_ds_socket", lambda self, timeout: watch(self, 1.0))
 
     async def main():
         s = Session(cfg, real_ds=True, nt=False, log_path=log)
