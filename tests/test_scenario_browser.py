@@ -304,3 +304,28 @@ def test_a_pose_check_shows_and_takes_the_chosen_units(scenario_page):
     assert spec()["y"] == 0.6096
     page_units(page, "imperial")
     page.wait_for_function(f"document.querySelector('{x}').value === '12.5'")
+
+
+def test_a_refused_trim_keeps_the_typed_boxes(scenario_page, tmp_path):
+    """A11: a trim the server refuses (here it can't write the trimmed track) keeps what was typed in the Trim boxes,
+    also when Trim is pressed after leaving them (from the keyboard: Tab, then Enter)."""
+    track = tmp_path / "fake_track"             # scenario_page puts the scenario in tmp_path
+    shutil.copytree(REPO / "tests" / "scenarios" / "fake_track", track)
+    page, _ = scenario_page("fake_track.toml")
+    page.wait_for_selector("#track-canvas")
+    track.chmod(0o555)                           # the trimmed copy can't be written beside it
+    page.click("#step-row-0")
+    page.wait_for_selector("#trim-start")
+    page.fill("#trim-start", "0.05")
+    page.fill("#trim-end", "0.08")
+    page.evaluate("document.querySelector('#trim-end').blur()")   # left: Trim is pressed with no box focused
+    page.wait_for_timeout(50)
+    page.evaluate("document.querySelector('#trim-start').dataset.old = '1'")
+    page.evaluate("document.querySelector('#trim-go').click()")
+    page.wait_for_function("__scrimmage.scenario.lastErrors.length > 0")
+    page.wait_for_selector("#trim-start:not([data-old])")   # the refusal drew the step editor again
+    try:
+        assert page.input_value("#trim-start") == "0.05" and page.input_value("#trim-end") == "0.08"
+        assert "can't write the trimmed track" in page.inner_text("#step-editor")
+    finally:
+        track.chmod(0o755)

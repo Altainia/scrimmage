@@ -156,7 +156,8 @@ export async function trackPanel(stepIndex, step) {
       || !(a >= 0 && b > a && b <= dur + 1e-9);
     trimErr.hidden = !bad;
     trimErr.textContent = bad ? t("Trim needs 0 ≤ start < end ≤ {duration} s.", { duration: fmt(dur) }) : "";
-    if (!bad) { typedTrim.delete(trimKey); scEdit("trim_track", { step: i, start: a, end: b }); }
+    // the typed boxes stay until the trim is saved: a refused one (a track that can't be read) keeps them
+    if (!bad) scEdit("trim_track", { step: i, start: a, end: b }).then((r) => { if (r.ok || r.conflict) typedTrim.delete(trimKey); });
   } }, t("Trim"));
   parts.push(h("div", { class: "track-trim" },
     h("label", { for: "trim-start", class: "track-field" }, h("span", { class: "muted" }, t("Keep from")), h("span", { class: "with-unit" }, startIn, h("span", { class: "unit" }, "s"))),
