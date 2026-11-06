@@ -166,6 +166,11 @@ amended ruling is listed as it stands, with what it replaced.
   refuses; test_i18n_typed.py is the gate. Cost: about 450 calls restructured.
 - **"(s)" plurals** in the loaders' messages ("table(s)") stay as written, so en-US is exact; translators may rewrite
   them (docs/translating.md says how). Cost: awkward plurals for translators.
+- **describe()'s recast forms** ("waiting for…", "without…") were first left as English pieces inside translated
+  sentences, then (0c6e465) became whole phrases, one per form. Cost: more catalog entries; no English pieces
+  remain.
+- **Server text students never see** (API-contract 400s the page never sends, internal assertions) may stay raw,
+  each with a reasoned entry in the gate's allowlist. Cost: nothing.
 - **List separators** (" and ", " or ") are translated with the context "list separator". Cost: nothing; the guide
   names the context.
 - **The page loads the catalog only when it changes.** The settings poll sends a catalog version, and the page
@@ -174,6 +179,12 @@ amended ruling is listed as it stands, with what it replaced.
 
 **Machine output (L2)**
 
+- **The CLI tests in test_i18n.py** were changed to check that `--language` sets the setting and the CLI stays en-US,
+  following the CLI ruling. Cost: nothing.
+- **Two tasks were added** for what remained: 6c (the bench problem texts, Measure fit/CLI/stats text, part.toml,
+  partner, field, overlay and range build errors, the bridge/robot-code/Java notes, and the Bench tab's UNCALIBRATED
+  flag) and 6d (about 400 input-file loader messages, devicecheck and foreign writes), because L1 says done means
+  wrapped and en-GB would otherwise show American spellings there. Cost: two more tasks.
 - **"Shared with MCP/CLI" is no reason to leave text unwrapped.** Every MCP tool handler runs under
   `i18n.fixed("en-US")` through one wrapper, and the CLI's main does too, except `edit` and `serve`, which serve the
   web app. Shared text is then wrapped with t(). Cost: a bigger final stretch (Task 6 split into 6a–6d); MCP and CLI
@@ -233,7 +244,8 @@ Cost: small deviations from "text unchanged", in shown text only.
   theme (a known gap).
 - **The 3D backgrounds** of the Assembler, Drive and Bench views follow the theme, as part3d.js does: a light box in
   a dark page reads as a bug. Cost: a dark background token.
-- **The 1px radius** maps to `--radius-sm`. Cost: nothing.
+- **The 1px radius** maps to `--radius-sm`, and `PLURAL_RULES` in i18n.py got a comment saying the page uses
+  `Intl.PluralRules` (a rule added there must give CLDR's categories). Cost: nothing.
 
 **The British English catalog (Goal 4, L4)**
 
@@ -256,8 +268,9 @@ Cost: small deviations from "text unchanged", in shown text only.
 
 - **tests/test_i18n_sweep.py** reads the static JS, index.html and every Python module, and fails on an unwrapped
   phrase a student would see (an error or notice in Python; a literal that isn't a key, class, selector or console
-  text in JS; text or attributes without data-i18n in HTML). Four modules are whole-file exceptions (`__main__.py`,
-  `mcp_server.py`, `measure/cli.py`, `i18n_tool.py`: CLI and MCP only); every other kept string is an exact (file,
-  text) entry with its reason. It found the Scenario tab's input-track panel (trackplot.js), units.js's typed-value
+  text in JS; text or attributes without data-i18n in HTML). Three modules are whole-file exceptions (`__main__.py`,
+  `mcp_server.py`, `i18n_tool.py`: CLI and MCP only). `measure/cli.py` is scanned, because the Measure tab shows
+  its field labels and shot_words(); its two CLI-only strings are allowlisted. Every other kept string is an exact
+  (file, whole text) entry with its reason, so a new string with the same words is still caught. It found the Scenario tab's input-track panel (trackplot.js), units.js's typed-value
   refusals, a 3D view's lost-context notice and the undo/redo refusals unwrapped, and they were wrapped. Cost: a
   heuristic gate: a lowercase single word or text built from variables can slip past it.

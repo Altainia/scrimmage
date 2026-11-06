@@ -7,18 +7,9 @@ The scan reads every source as `scrimmage i18n template` finds it, and flags a q
 [table] / [[table]] header that isn't a single {placeholder}, a key = value (or key=value) setting with its key
 written out, and a {{literal brace}} group. ALLOWED lists, per file, the tokens a source may keep, each with why.
 """
-import re
-
+from i18n_helpers import tokens as _tokens
 from scrimmage import i18n
 from scrimmage.i18n_tool import scan
-
-FIELD = re.compile(r"\{[A-Za-z_]\w*\}")
-SETTING = re.compile(r"[A-Za-z_][\w.]* ?= ?(?!=)[^\s,;)]+")
-TABLE = re.compile(r"\[\[?([A-Za-z_<{][\w.<>{}\-]*)\]\]?")
-
-# Notation, not a setting: a time or a position written as math beside a placeholder ("at t={t}", "x={x}",
-# "t={start}–{end} s", "heading={heading}°"). Nobody types it into a file; a translation keeps the letters.
-NOTATION = re.compile(r"(?:t|x|y|z|heading)=\{[A-Za-z_]\w*\}(?:–\{[A-Za-z_]\w*\})?[°:]?$")
 
 # (file, token) -> why that source may keep that token. Each entry is one token in one file's source, exactly; only UI
 # labels and headings (translated with what they name) and prose formulas (words around "=", translated as words).
@@ -48,39 +39,6 @@ ALLOWED = {
 }
 
 
-def _tokens(text: str) -> list[str]:
-    """The quoted, backticked and bracketed tokens of `text` that aren't one {placeholder}, quotes paired in order."""
-    out, i = [], 0
-    while i < len(text):
-        c = text[i]
-        if text.startswith("{{", i):            # a literal brace: a TOML inline table or a {cad}-style folder token
-            j = text.find("}}", i + 2)
-            j = len(text) if j < 0 else j + 2
-            out.append(text[i:j])
-            i = j
-            continue
-        m = SETTING.match(text, i)
-        if m and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] in "_.}")):
-            if not NOTATION.match(m.group(0)):
-                out.append(m.group(0))         # key = value or key=value, the key written out
-            i = m.end()
-            continue
-        if c in '"`':
-            j = text.find(c, i + 1)
-            if j < 0:
-                break
-            if not FIELD.fullmatch(text[i + 1:j]):
-                out.append(text[i:j + 1])
-            i = j + 1
-            continue
-        if c == "[":
-            m = TABLE.match(text, i)
-            if m and not FIELD.fullmatch(m.group(1)):
-                out.append(m.group(0))
-                i = m.end()
-                continue
-        i += 1
-    return out
 
 
 def _flagged() -> list[tuple[str, str, str, str]]:

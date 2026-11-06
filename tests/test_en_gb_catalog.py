@@ -10,18 +10,17 @@
 """
 import json
 import re
-import sys
 from pathlib import Path
 
+from i18n_helpers import tokens as _tokens          # the typed-values gate's token finder
 from scrimmage import i18n, i18n_tool
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_i18n_typed import _tokens        # noqa: E402  (the typed-values gate's token finder)
 
 LOCALES = Path(i18n.__file__).resolve().parent / "locales"
 SPELLINGS = {k: v for k, v in json.loads((LOCALES / "en-GB.spellings.json").read_text(encoding="utf-8")).items()
              if not k.startswith("_")}
 # British usage beyond spelling, held to the same rule: "towards" and "backwards" (as adverbs) are the British forms
+# "backward" -> "backwards" assumes the adverb ("faces backward"); an adjective ("a backward step") stays "backward"
+# in British English too, so a source using it so needs an EXCEPTIONS entry.
 USAGE = {"toward": "towards", "backward": "backwards"}
 WORDS = {**SPELLINGS, **USAGE}
 AMERICAN = re.compile(r"\b(" + "|".join(map(re.escape, sorted(WORDS, key=len, reverse=True))) + r")\b", re.I)

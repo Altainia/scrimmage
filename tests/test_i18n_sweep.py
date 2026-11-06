@@ -19,8 +19,9 @@ locator join such as f"{where}: {e}" has no words and isn't flagged.
 What it can't see: a lowercase single word ("to"), text built from variables, and text a Python function returns
 outside a dict. The wrapping tasks found those by hand; this gate keeps the found ones from coming back.
 
-ALLOWED: (file, a piece of the flagged text) -> why it stays as it is. A piece matches every flagged text in that
-file that contains it. An entry that matches nothing fails, to keep the list true.
+ALLOWED: (file, the flagged text exactly as the scan shows it, {} for each value) -> why it stays as it is. Only that
+whole text in that file is allowed, so a new string with the same words is still caught. An entry that matches
+nothing fails, to keep the list true.
 """
 from __future__ import annotations
 
@@ -36,11 +37,11 @@ PACKAGE = ROOT / "scrimmage"
 STATIC = PACKAGE / "assembler" / "static"
 
 # Modules whose every word is the CLI's or MCP's: American English by the spec's non-goal and rulings (the CLI
-# runs inside i18n.fixed("en-US"), every MCP tool too), never shown in the web app.
+# runs inside i18n.fixed("en-US"), every MCP tool too), never shown in the web app. (measure/cli.py is not one: the
+# Measure tab shows its FIELD labels and shot_words(), so it is scanned like any other module.)
 NOT_SHOWN = {
     "scrimmage/__main__.py": "the CLI's own messages and --help (American English, non-goal; the CLI ruling)",
     "scrimmage/mcp_server.py": "MCP tool results and refusals: machine text, en-US (L2)",
-    "scrimmage/measure/cli.py": "`scrimmage measure` CLI output (American English, the CLI ruling)",
     "scrimmage/i18n_tool.py": "`scrimmage i18n` CLI, for contributors (American English)",
 }
 
@@ -53,158 +54,255 @@ THREAD = ("runtime warning built on the simulation's or bridge's thread: machine
           "state, and a new thread doesn't inherit the en-US guard (6d ruling)")
 DEV = "developer-only text (the terminal, a stock part's definition, a tool's subprocess)"
 MARKUP = "markup or code around values, no words of ours"
-SETTINGS = ("the settings file's own problems and the --units/--language/--theme refusals: read before the "
-            "language is known (i18n reads the settings), shown in the terminal and the CLI")
+SETTINGS = ("the settings file's own problems and the --units/--language refusals and setting-value checks: read "
+            "before the language is known (i18n reads the settings), shown in American English (docs/settings.md)")
 LOCATOR = "a locator join (a TOML table, a step or a file) around an already-translated message"
 LOG = "the run's console log line (the robot program's log, shown as it is)"
 PICKER = "a picker value (a key a test file holds); its words are t()"
 FALLBACK = "settings.js's fallback before app.js hands it its words (useWords; i18n.js imports settings.js)"
 
 ALLOWED = {
-    # ---- Python -----------------------------------------------------------------------------------------------
-    ("scrimmage/assembler/bench_session.py", "version (the integer from the state) is required"): API,
-    ("scrimmage/assembler/bench_session.py", "values must be a table of dotted keys"): API,
-    ("scrimmage/assembler/bench_session.py", "unknown op"): API,
-    ("scrimmage/assembler/bench_session.py", "no such file"): API,
-    ("scrimmage/assembler/bench_session.py", "no bench job"): API,
-    ("scrimmage/assembler/bench_session.py", "a bench run is in progress"): API + " (the page disables Run during one)",
-    ("scrimmage/assembler/bench_session.py", "no pictures: %s"): DEV + " (a warning() on bench_session's own log)",
-    ("scrimmage/assembler/measure_session.py", "must be a number, text, or true or false"): API,
-    ("scrimmage/assembler/measure_session.py", "must be an object {cells, extra}"): API,
-    ("scrimmage/assembler/measure_session.py", "cells and extra must be objects"): API,
-    ("scrimmage/assembler/measure_session.py", "file must be {measure, tests}"): API,
-    ("scrimmage/assembler/measure_session.py", "measure must be"): API,
-    ("scrimmage/assembler/measure_session.py", "no reading"): API,
-    ("scrimmage/assembler/measure_session.py", "must be {unit, value}"): API,
-    ("scrimmage/assembler/measure_session.py", "must be text"): API,
-    ("scrimmage/assembler/measure_session.py", "test; it has"): API,
-    ("scrimmage/assembler/measure_session.py", "must be {setup, trials: [...]}"): API,
-    ("scrimmage/assembler/measure_session.py", "version (the integer from the state) is required"): API,
-    ("scrimmage/assembler/measure_session.py", "origin must be a later trial's index"): API,
-    ("scrimmage/assembler/measure_session.py", "is averaged, not fit"): API + " (no fit of an averaged test)",
-    ("scrimmage/assembler/runs.py", "error: couldn't read the report"): LOG,
-    ("scrimmage/assembler/server.py", "send units, language or theme to change"): API,
-    ("scrimmage/assembler/server.py", 'speed must be a positive number or "max"'): API,
-    ("scrimmage/assembler/server.py", "bad edit: "): API + " (malformed JSON values from a client)",
-    ("scrimmage/assembler/simlock.py", "owner must be one of"): ASSERT,
-    ("scrimmage/assembler/stream.py", "unknown message kind"): ASSERT,
-    ("scrimmage/assembler/templates.py", "unknown template"): ASSERT + " (the page sends only known kinds)",
-    ("scrimmage/bench/compare.py", "a [sweep] of"): "bench_compare's summary (MCP and CLI only): machine text",
-    ("scrimmage/bench/fields.py", "unknown choices kind"): ASSERT,
-    ("scrimmage/bench/gallery.py", "<img alt="): MARKUP,
-    ("scrimmage/bench/gallery.py", '<ul class="head">'): MARKUP,
-    ("scrimmage/bench/gallery.py", "<tr><td><a href="): MARKUP,
-    ("scrimmage/bench/gallery.py", "compare_picture needs at least one result"): ASSERT,
-    ("scrimmage/bench/gallery.py", "is not a folder of bench files"): MCP + " (bench_gallery and the CLI)",
-    ("scrimmage/bench/gallery.py", "has no bench files"): MCP + " (bench_gallery and the CLI)",
-    ("scrimmage/bench/pictures.py", 'view must be "side" or "top"'): ASSERT,
-    ("scrimmage/bench/run.py", "trace_hz must be positive"): ASSERT,
-    ("scrimmage/bench/session.py", "run_lock is already held"): ASSERT,
-    ("scrimmage/bench/view.py", "--slow must be greater than 0"): CLI + " (`scrimmage bench view --slow`)",
-    ("scrimmage/blocks/conditions.py", "unknown condition"): ASSERT + " (conditions come from the checked file)",
-    ("scrimmage/blocks/program.py", "to TOML"): ASSERT + " (the TOML writer)",
-    ("scrimmage/bridge.py", "config expects"): THREAD,
-    ("scrimmage/bridge.py", "--speed {} with {} s steps"): CLI + " (`--speed`, the CLI and MCP)",
-    ("scrimmage/climb/run.py", "| reached"): CLI + " (`scrimmage climb run`'s report)",
-    ("scrimmage/climb/run.py", "over its {} in limit"): CLI + " (`scrimmage climb run`'s report)",
-    ("scrimmage/disc/flight.py", "dt must be positive"): ASSERT,
-    ("scrimmage/disc/launcher.py", "but the launcher's clock is at"): ASSERT,
-    ("scrimmage/disc/launcher.py", "voltage(s) for"): ASSERT,
-    ("scrimmage/freecad_tools.py", "FreeCAD"): DEV + " (`scrimmage freecad`, the CLI only)",
-    ("scrimmage/freecad_tools.py", "isn't an executable"): DEV + " (`scrimmage freecad`, the CLI only)",
-    ("scrimmage/i18n.py", "needs a value for"): ASSERT + " (a t() call missing a placeholder's value)",
-    ("scrimmage/java_tools.py", "no JDK found"): CLI + " (`scrimmage java`; the page uses robotcode's words)",
-    ("scrimmage/java_tools.py", "downloaded ASM has sha256"): CLI + " (`scrimmage java`)",
-    ("scrimmage/java_tools.py", "the fast-mode library"): CLI + " (`scrimmage java`)",
-    ("scrimmage/java_tools.py", "isn't a robot project folder"): CLI + " (`scrimmage java`)",
-    ("scrimmage/java_tools.py", "isn't a GradleRIO robot project"): CLI + " (`scrimmage java`)",
-    ("scrimmage/java_tools.py", "can't create the cache directory"): CLI + " (`scrimmage java`)",
-    ("scrimmage/java_tools.py", "can't write"): CLI + " (`scrimmage java`)",
-    ("scrimmage/java_tools.py", "could not download ASM"): CLI + " (`scrimmage java`)",
-    ("scrimmage/java_tools.py", "gradlew publish wrote nothing"): CLI + " (`scrimmage java`)",
-    ("scrimmage/java_tools.py", "can't run"): CLI + " (`scrimmage java`)",
-    ("scrimmage/launcher/flight.py", "cannot fly a ball whose status is"): ASSERT,
-    ("scrimmage/launcher/inputs.py", "unhandled type"): ASSERT,
-    ("scrimmage/lockstep.py", 'speed must be a positive number or "max"'): "the lockstep protocol's own errors (CLI)",
-    ("scrimmage/lockstep.py", "must be a whole multiple of the physics timestep"): "the lockstep protocol's own errors",
-    ("scrimmage/measure/forms.py", "isn't one of"): ASSERT + " (form and test names come from code)",
-    ("scrimmage/measure/forms.py", "no test {}; one of"): ASSERT + " (form and test names come from code)",
-    ("scrimmage/measure/forms.py", '<td class="label">'): MARKUP + " (the printed form's blank)",
-    ("scrimmage/measure/stats.py", "summary needs"): ASSERT,
-    ("scrimmage/measure/units.py", "unknown quantity"): ASSERT,
-    ("scrimmage/nt_reader.py", "no NetworkTables topic"): MCP + " (nt_get)",
-    ("scrimmage/parts/overlay.py", "no part folder"): ASSERT,
-    ("scrimmage/parts/stock/__init__.py", "a whole number"): CLI + " (`scrimmage parts describe`)",
-    ("scrimmage/parts/stock/__init__.py", "or a number greater than 0"): CLI + " (`scrimmage parts describe`)",
-    ("scrimmage/parts/stock/__init__.py", "[min, max] with min < max"): CLI + " (`scrimmage parts describe`)",
-    ("scrimmage/parts/stock/__init__.py", "greater than 0"): CLI + " (`scrimmage parts describe`)",
-    ("scrimmage/parts/stock/__init__.py", "at least {}"): CLI + " (`scrimmage parts describe`)",
-    ("scrimmage/parts/stock/__init__.py", "at most {}"): CLI + " (`scrimmage parts describe`)",
-    ("scrimmage/parts/stock/__init__.py", "one of {}"): CLI + " (`scrimmage parts describe`)",
-    ("scrimmage/parts/stock/__init__.py", "limited by other parameters"): CLI + " (`scrimmage parts describe`)",
-    ("scrimmage/parts/stock/__init__.py", "unknown kind"): DEV + " (a stock part definition's Param)",
-    ("scrimmage/parts/stock/__init__.py", "needs choices"): DEV + " (a stock part definition's Param)",
-    ("scrimmage/parts/toml_writer.py", "to part.toml"): ASSERT + " (the TOML writer)",
-    ("scrimmage/pneumatics/runtime.py", "is on a REV Pneumatic Hub"): THREAD,
-    ("scrimmage/pneumatics/runtime.py", "the robot never opened Pneumatic Hub"): THREAD,
-    ("scrimmage/robot_process.py", "the robot program is already running"): ASSERT + " (started twice)",
-    ("scrimmage/scenario_runner.py", "this session runs the range"): MCP + " (run_scenario on a live session)",
-    ("scrimmage/scenario_runner.py", "but the scenario uses"): MCP + " (run_scenario on a live session)",
-    ("scrimmage/scenario_runner.py", "robot_env can't reach the robot program"): (MCP + " (run_scenario on a "
-                                                                                    "live session)"),
-    ("scrimmage/sensors/runtime.py", "the robot is in its way"): THREAD,
-    ("scrimmage/settings.py", 'units must be "imperial" or "metric"'): SETTINGS,
-    ("scrimmage/settings.py", 'theme must be "system", "light" or "dark"'): SETTINGS,
-    ("scrimmage/settings.py", "language must be one of"): SETTINGS,
-    ("scrimmage/settings.py", "unknown setting"): SETTINGS,
-    ("scrimmage/settings.py", "isn't imperial or metric; using imperial units"): SETTINGS,
-    ("scrimmage/settings.py", "isn't one of Scrimmage's languages"): SETTINGS,
-    ("scrimmage/settings.py", "isn't system, light or dark"): SETTINGS,
-    ("scrimmage/testrange/ballpath.py", "rearmost ball"): ASSERT,
-    ("scrimmage/testrange/build.py", "[range] "): LOCATOR,
-    ("scrimmage/testrange/shooter.py", "fed a disc while the channel holds one"): ASSERT,
-    ("scrimmage/testrange/spec.py", "[range]"): LOCATOR,
-    ("scrimmage/units.py", "unknown unit system"): ASSERT,
-    ("scrimmage/units.py", "unknown kind"): ASSERT,
-    # ---- the page's JavaScript --------------------------------------------------------------------------------
-    ("scrimmage/assembler/static/app.js", "Home"): "a key's name (KeyboardEvent.key), never shown",
-    ("scrimmage/assembler/static/app.js", "End"): "a key's name (KeyboardEvent.key), never shown",
-    ("scrimmage/assembler/static/bench.js", "vec vec-1"): "CSS classes",
-    ("scrimmage/assembler/static/bench.js", "-dialog form"): "a CSS selector",
-    ("scrimmage/assembler/static/bench_edit.js", "hood (curve)"): ("a bench file's section name and a curve's name, "
-                                                                   "shown as the file's words beside them"),
-    ("scrimmage/assembler/static/blocks_defs.js", "Condition"): "a Blockly style's name, never shown",
-    ("scrimmage/assembler/static/blocks_defs.js", "next bar"): PICKER,
-    ("scrimmage/assembler/static/blocks_defs.js", "any bar"): PICKER,
-    ("scrimmage/assembler/static/gamepad.js", "Digit"): "a key's code (KeyboardEvent.code), never shown",
-    ("scrimmage/assembler/static/library.js", "Chassis"): "a stock group's key, shown through groupWord's t()",
-    ("scrimmage/assembler/static/library.js", "Drivetrain"): "a stock group's key, shown through groupWord's t()",
-    ("scrimmage/assembler/static/library.js", "Mechanisms"): "a stock group's key, shown through groupWord's t()",
-    ("scrimmage/assembler/static/measure.js", "#measure-trials tr[data-trial="): "a CSS selector",
-    ("scrimmage/assembler/static/report.js", "rp-skip muted"): "CSS classes",
-    ("scrimmage/assembler/static/scenario.js", "sc-field sc-desc"): "CSS classes",
-    ("scrimmage/assembler/static/settings.js", "can't reach the editor"): FALLBACK,
-    ("scrimmage/assembler/static/settings.js", "the server answered"): FALLBACK,
-    ("scrimmage/assembler/static/step_editor.js", "<svg viewBox="): MARKUP + " (an icon)",
-    ("scrimmage/assembler/static/step_editor.js", "step{} step{}/step"): "field ids (data-fields), never shown",
-    ("scrimmage/assembler/static/step_editor.js", "step{}/axes step{}/buttons"): "field ids (data-fields), never shown",
-    ("scrimmage/assembler/static/step_editor.js", "battery, motor.<name>.current, nt:/…"): ("a signal field's "
-                                                                                             "placeholder: signal "
-                                                                                             "names a student types"),
-    ("scrimmage/assembler/static/test.js", "couldn't load"): "an Error a failed script load throws: the console only",
-    ("scrimmage/assembler/static/test_run.js", "test-sweep-row test-sweep-norun"): "CSS classes",
-    ("scrimmage/assembler/static/units.js", "unknown kind"): ASSERT,
-    ("scrimmage/assembler/static/units.js", "could be {}: say which"): ASSERT + " (a key unit asked of code)",
-    ("scrimmage/assembler/static/units.js", "isn't a key unit"): ASSERT + " (a key unit asked of code)",
-    # ---- index.html -------------------------------------------------------------------------------------------
-    ("scrimmage/assembler/static/index.html", "scrimmage"): "the product's name",
-    ("scrimmage/assembler/static/index.html", "assembler"): "the product's name",
-    ("scrimmage/assembler/static/index.html", "English (US)"): ("a language's own name, never translated; app.js "
-                                                                "renderSettings builds the row from the catalogs"),
-    ("scrimmage/assembler/static/index.html", "Theme"): "app.js renderSettings writes the Theme row's words with t()",
-    ("scrimmage/assembler/static/index.html", "System"): "app.js renderSettings writes the Theme row's words with t()",
-    ("scrimmage/assembler/static/index.html", "Light"): "app.js renderSettings writes the Theme row's words with t()",
-    ("scrimmage/assembler/static/index.html", "Dark"): "app.js renderSettings writes the Theme row's words with t()",
+    # ---- Python ---------------------------------------------------------------------------------------------------
+    ('scrimmage/assembler/bench_session.py', 'version (the integer from the state) is required'): API,
+    ('scrimmage/assembler/bench_session.py', 'values must be a table of dotted keys and their values'): API,
+    ('scrimmage/assembler/bench_session.py', 'unknown op {} ({})'): API,
+    ('scrimmage/assembler/bench_session.py', 'no such file'): API,
+    ('scrimmage/assembler/bench_session.py', 'no such file in this session'): API,
+    ('scrimmage/assembler/bench_session.py', 'no bench job {}'): API,
+    ('scrimmage/assembler/bench_session.py',
+     'a bench run is in progress; wait for it to finish'):
+        API + ' (the page disables Run during one)',
+    ('scrimmage/assembler/bench_session.py', 'no pictures: %s'): DEV + " (a warning() on bench_session's own log)",
+    ('scrimmage/assembler/measure_session.py', '{} must be a number, text, or true or false, not {}'): API,
+    ('scrimmage/assembler/measure_session.py', '{} must be an object {cells, extra}'): API,
+    ('scrimmage/assembler/measure_session.py', '{}: cells and extra must be objects'): API,
+    ('scrimmage/assembler/measure_session.py', 'file must be {measure, tests}'): API,
+    ('scrimmage/assembler/measure_session.py', 'measure must be {}'): API,
+    ('scrimmage/assembler/measure_session.py', "{}: no reading '{}'; it has {}"): API,
+    ('scrimmage/assembler/measure_session.py', '{}: {} must be {unit, value}'): API,
+    ('scrimmage/assembler/measure_session.py', '[measure] {} must be text'): API,
+    ('scrimmage/assembler/measure_session.py', 'a {} file has no {} test; it has {}'): API,
+    ('scrimmage/assembler/measure_session.py', '{} must be {setup, trials: [...]}'): API,
+    ('scrimmage/assembler/measure_session.py', 'version (the integer from the state) is required'): API,
+    ('scrimmage/assembler/measure_session.py', "[[{}]] trial {}: origin must be a later trial's index"): API,
+    ('scrimmage/assembler/measure_session.py',
+     'the {} test is averaged, not fit: only shots and strokes are fit'):
+        API + ' (no fit of an averaged test)',
+    ('scrimmage/assembler/runs.py', "error: couldn't read the report: {}: {}"): LOG,
+    ('scrimmage/assembler/server.py', 'send units, language or theme to change'): API,
+    ('scrimmage/assembler/server.py', 'speed must be a positive number or "max", not {}'): API,
+    ('scrimmage/assembler/server.py', 'bad edit: {}'): API + ' (malformed JSON values from a client)',
+    ('scrimmage/assembler/simlock.py', 'owner must be one of {}, not {}'): ASSERT,
+    ('scrimmage/assembler/stream.py', 'unknown message kind {}'): ASSERT,
+    ('scrimmage/assembler/templates.py',
+     'unknown template {} (use one of: {})'):
+        ASSERT + ' (the page sends only known kinds)',
+    ('scrimmage/bench/compare.py', 'a [sweep] of {}'): "bench_compare's summary (MCP and CLI only): machine text",
+    ('scrimmage/bench/fields.py', 'unknown choices kind {}'): ASSERT,
+    ('scrimmage/bench/gallery.py', '<img alt="{}" src="data:image/png;base64,{}">'): MARKUP,
+    ('scrimmage/bench/gallery.py', '<ul class="head">{}</ul>'): MARKUP,
+    ('scrimmage/bench/gallery.py', '<tr><td><a href="#{}">{}</a></td><td colspan="{}">{}</td></tr>'): MARKUP,
+    ('scrimmage/bench/gallery.py', 'compare_picture needs at least one result'): ASSERT,
+    ('scrimmage/bench/gallery.py', '{} is not a folder of bench files'): MCP + ' (bench_gallery and the CLI)',
+    ('scrimmage/bench/gallery.py', '{} has no bench files (*.toml)'): MCP + ' (bench_gallery and the CLI)',
+    ('scrimmage/bench/pictures.py', 'view must be "side" or "top", not {}'): ASSERT,
+    ('scrimmage/bench/run.py', 'trace_hz must be positive, not {}'): ASSERT,
+    ('scrimmage/bench/session.py', 'run_lock is already held by this thread for {}'): ASSERT,
+    ('scrimmage/bench/view.py', '--slow must be greater than 0, not {}'): CLI + ' (`scrimmage bench view --slow`)',
+    ('scrimmage/blocks/conditions.py', 'unknown condition {}'): ASSERT + ' (conditions come from the checked file)',
+    ('scrimmage/blocks/program.py', "can't write {} to TOML"): ASSERT + ' (the TOML writer)',
+    ('scrimmage/bridge.py',
+     "config expects {}, but the robot program created {} before scrimmage's REV helper loaded (for example at "
+     'import time of robot.py): create SPARKs in robotInit or a subsystem constructor'):
+        THREAD,
+    ('scrimmage/bridge.py',
+     "config expects {}, but the robot program hasn't created {} {} s after connecting; check the CAN ids in "
+     'the config ({})'):
+        THREAD,
+    ('scrimmage/bridge.py',
+     "config expects {}, but the scrimmage REV helper isn't driving the robot's REV SPARKs: the robot program "
+     'created {} with no scrimmage helper ({}); {}'):
+        THREAD,
+    ('scrimmage/bridge.py',
+     "config expects {}, but the scrimmage agent isn't driving the robot's REV SPARKs: the robot program "
+     'created {} with no scrimmage helper ({}); {}'):
+        THREAD,
+    ('scrimmage/bridge.py', 'config expects {}, robot has {}: set device = "{}" in that binding'): THREAD,
+    ('scrimmage/bridge.py', "config expects {}, robot has {}: use {} in that binding's rev ({})"): THREAD,
+    ('scrimmage/bridge.py',
+     "--speed {} with {} s steps: each step would take {} s of wall time or more, and the robot's 2 s watchdog "
+     'would release the clock'):
+        CLI + ' (`--speed`, the CLI and MCP)',
+    ('scrimmage/climb/run.py',
+     '| reached {} | {} s (largest swing hanging there alone {} deg) |'):
+        CLI + " (`scrimmage climb run`'s report)",
+    ('scrimmage/climb/run.py',
+     '- {}: over its {} in limit from t = {} s, by up to {} in at {} s ({} s over in all).'):
+        CLI + " (`scrimmage climb run`'s report)",
+    ('scrimmage/disc/flight.py', 'dt must be positive, got {}'): ASSERT,
+    ('scrimmage/disc/launcher.py', "insert at t = {}, but the launcher's clock is at {}: feed at its time"): ASSERT,
+    ('scrimmage/disc/launcher.py', '{} voltage(s) for {} wheel group(s); give one per group'): ASSERT,
+    ('scrimmage/freecad_tools.py',
+     'FreeCAD not found: install FreeCAD 1.1+ or set SCRIMMAGE_FREECAD_CMD to its freecad.cmd/FreeCADCmd'):
+        DEV + ' (`scrimmage freecad`, the CLI only)',
+    ('scrimmage/freecad_tools.py', 'FreeCAD not found: {}'): DEV + ' (`scrimmage freecad`, the CLI only)',
+    ('scrimmage/freecad_tools.py',
+     'FreeCAD timed out after {}s:\n{}\n{}'):
+        DEV + ' (`scrimmage freecad`, the CLI only)',
+    ('scrimmage/freecad_tools.py',
+     "SCRIMMAGE_FREECAD_CMD={} isn't an executable"):
+        DEV + ' (`scrimmage freecad`, the CLI only)',
+    ('scrimmage/i18n.py', '{} needs a value for {{}}'): ASSERT + " (a t() call missing a placeholder's value)",
+    ('scrimmage/java_tools.py',
+     'no JDK found (looked at: {}). Install WPILib (https://docs.wpilib.org) or set JAVA_HOME to a JDK 17.'):
+        CLI + " (`scrimmage java`; the page uses robotcode's words)",
+    ('scrimmage/java_tools.py', 'downloaded ASM has sha256 {}, expected {}'): CLI + ' (`scrimmage java`)',
+    ('scrimmage/java_tools.py',
+     "the fast-mode library {} isn't built (missing {}): run `scrimmage java build` (needs the WPILib JDK)"):
+        CLI + ' (`scrimmage java`)',
+    ('scrimmage/java_tools.py', "{} isn't a robot project folder"): CLI + ' (`scrimmage java`)',
+    ('scrimmage/java_tools.py',
+     "{} isn't a GradleRIO robot project (no build.gradle): give the folder that holds your robot's build.gradle"):
+        CLI + ' (`scrimmage java`)',
+    ('scrimmage/java_tools.py',
+     "can't create the cache directory {}: {}. Set SCRIMMAGE_CACHE to a writable directory."):
+        CLI + ' (`scrimmage java`)',
+    ('scrimmage/java_tools.py', "can't write the vendordep into {}: {}"): CLI + ' (`scrimmage java`)',
+    ('scrimmage/java_tools.py', "can't write {}: {}"): CLI + ' (`scrimmage java`)',
+    ('scrimmage/java_tools.py',
+     'could not download ASM from {}: {}. Check your network, or place {} at {}'):
+        CLI + ' (`scrimmage java`)',
+    ('scrimmage/java_tools.py', 'gradlew publish wrote nothing to {}'): CLI + ' (`scrimmage java`)',
+    ('scrimmage/java_tools.py', "can't run {}: {}"): CLI + ' (`scrimmage java`)',
+    ('scrimmage/launcher/flight.py', 'cannot fly a ball whose status is {}'): ASSERT,
+    ('scrimmage/launcher/inputs.py', 'unhandled type {}'): ASSERT,
+    ('scrimmage/lockstep.py',
+     'speed must be a positive number or "max", not {}'):
+        "the lockstep protocol's own errors (CLI)",
+    ('scrimmage/lockstep.py',
+     'lockstep step {} s must be a whole multiple of the physics timestep {} s'):
+        "the lockstep protocol's own errors",
+    ('scrimmage/measure/forms.py', "{} isn't one of {}"): ASSERT + ' (form and test names come from code)',
+    ('scrimmage/measure/forms.py', 'no test {}; one of {}'): ASSERT + ' (form and test names come from code)',
+    ('scrimmage/measure/forms.py',
+     '<td class="label"><b>{}</b><br><span class="small">{}</span></td><td>______ × 0.75 = ______</td>'):
+        MARKUP + " (the printed form's blank)",
+    ('scrimmage/measure/stats.py', 'summary needs at least one trial'): ASSERT,
+    ('scrimmage/measure/stats.py', 'summary needs one trial number per value'): ASSERT,
+    ('scrimmage/measure/units.py', 'unknown quantity {}; one of {}'): ASSERT,
+    ('scrimmage/nt_reader.py', 'no NetworkTables topic {} (or it has no value yet)'): MCP + ' (nt_get)',
+    ('scrimmage/parts/overlay.py', 'no part folder'): ASSERT,
+    ('scrimmage/parts/stock/__init__.py', 'a whole number'): CLI + ' (`scrimmage parts describe`)',
+    ('scrimmage/parts/stock/__init__.py',
+     'one of {} or a number greater than 0'):
+        CLI + ' (`scrimmage parts describe`)',
+    ('scrimmage/parts/stock/__init__.py', '[min, max] with min < max'): CLI + ' (`scrimmage parts describe`)',
+    ('scrimmage/parts/stock/__init__.py', 'greater than 0'): CLI + ' (`scrimmage parts describe`)',
+    ('scrimmage/parts/stock/__init__.py', 'at least {}'): CLI + ' (`scrimmage parts describe`)',
+    ('scrimmage/parts/stock/__init__.py', 'at most {}'): CLI + ' (`scrimmage parts describe`)',
+    ('scrimmage/parts/stock/__init__.py', 'one of {}'): CLI + ' (`scrimmage parts describe`)',
+    ('scrimmage/parts/stock/__init__.py', 'limited by other parameters'): CLI + ' (`scrimmage parts describe`)',
+    ('scrimmage/parts/stock/__init__.py', '{}: unknown kind {}; kinds: {}'): DEV + " (a stock part definition's Param)",
+    ('scrimmage/parts/stock/__init__.py', '{}: kind {} needs choices'): DEV + " (a stock part definition's Param)",
+    ('scrimmage/parts/toml_writer.py', "can't write {} to part.toml"): ASSERT + ' (the TOML writer)',
+    ('scrimmage/pneumatics/runtime.py',
+     '{} is on a REV Pneumatic Hub, which needs the lockstep extension (`--scrimmage-lockstep` for RobotPy, '
+     'the Gradle init script for Java)'):
+        THREAD,
+    ('scrimmage/pneumatics/runtime.py',
+     "{}: the robot never opened Pneumatic Hub {} (it opened {}); check the hub's number in the valve's ids"):
+        THREAD,
+    ('scrimmage/robot_process.py', 'the robot program is already running'): ASSERT + ' (started twice)',
+    ('scrimmage/scenario_runner.py',
+     "the scenario's [range] file is {}, but this session runs the range {}; start a session with that range"):
+        MCP + ' (run_scenario on a live session)',
+    ('scrimmage/scenario_runner.py',
+     'this session runs {}, but the scenario uses {}; start a session with that config'):
+        MCP + ' (run_scenario on a live session)',
+    ('scrimmage/scenario_runner.py',
+     "{}: robot_env can't reach the robot program: this session attaches to a robot program it doesn't launch; "
+     'set the variables yourself'):
+        MCP + ' (run_scenario on a live session)',
+    ('scrimmage/sensors/runtime.py',
+     '[[sensor]] "{}": the robot is in its way: its ray met {} of the robot\'s surfaces in one step, the most '
+     'a sensor looks past, so it read nothing beyond them; move it or point it clear of the robot'):
+        THREAD,
+    ('scrimmage/settings.py', 'units must be "imperial" or "metric", not {}'): SETTINGS,
+    ('scrimmage/settings.py', 'theme must be "system", "light" or "dark", not {}'): SETTINGS,
+    ('scrimmage/settings.py', 'language must be one of {}, not {}'): SETTINGS,
+    ('scrimmage/settings.py', 'unknown setting {}; the settings are {}'): SETTINGS,
+    ('scrimmage/settings.py', "{}: units = {} isn't imperial or metric; using imperial units"): SETTINGS,
+    ('scrimmage/settings.py',
+     "{}: language = {} isn't one of Scrimmage's languages ({}); using American English (en-US)"):
+        SETTINGS,
+    ('scrimmage/settings.py', "{}: theme = {} isn't system, light or dark; using the System theme"): SETTINGS,
+    ('scrimmage/testrange/ballpath.py',
+     "ball path: lane {}'s rearmost ball {} isn't ball {} going to the hopper"):
+        ASSERT,
+    ('scrimmage/testrange/build.py', '[range] file: {}'): LOCATOR,
+    ('scrimmage/testrange/build.py', '[range] station: {}'): LOCATOR,
+    ('scrimmage/testrange/shooter.py',
+     "disc shooter: fed a disc while the channel holds one (the ball path checks it's clear)"):
+        ASSERT,
+    ('scrimmage/testrange/spec.py', '{}: [range] ball: {}'): LOCATOR,
+    ('scrimmage/units.py', 'unknown unit system {}; imperial or metric'): ASSERT,
+    ('scrimmage/units.py', 'unknown kind {}; one of {}'): ASSERT,
+    # ---- the page's JavaScript ------------------------------------------------------------------------------------
+    ('scrimmage/assembler/static/app.js', 'Home'): "a key's name (KeyboardEvent.key), never shown",
+    ('scrimmage/assembler/static/app.js', 'End'): "a key's name (KeyboardEvent.key), never shown",
+    ('scrimmage/assembler/static/bench.js', 'vec vec-1'): 'CSS classes',
+    ('scrimmage/assembler/static/bench.js', '#bench-compare-dialog form'): 'a CSS selector',
+    ('scrimmage/assembler/static/bench.js', '#bench-new-dialog form'): 'a CSS selector',
+    ('scrimmage/assembler/static/bench.js', '#bench-sweep-dialog form'): 'a CSS selector',
+    ('scrimmage/assembler/static/bench_edit.js',
+     'hood (curve)'):
+        "a bench file's section name and a curve's name, shown as the file's words beside them",
+    ('scrimmage/assembler/static/blocks_defs.js', 'Condition'): "a Blockly style's name, never shown",
+    ('scrimmage/assembler/static/blocks_defs.js', 'next bar'): PICKER,
+    ('scrimmage/assembler/static/blocks_defs.js', 'any bar'): PICKER,
+    ('scrimmage/assembler/static/gamepad.js', 'Digit{}'): "a key's code (KeyboardEvent.code), never shown",
+    ('scrimmage/assembler/static/library.js', 'Chassis'): "a stock group's key, shown through groupWord's t()",
+    ('scrimmage/assembler/static/library.js', 'Drivetrain'): "a stock group's key, shown through groupWord's t()",
+    ('scrimmage/assembler/static/library.js', 'Mechanisms'): "a stock group's key, shown through groupWord's t()",
+    ('scrimmage/assembler/static/measure.js',
+     '#measure-trials tr[data-trial="{}"] [data-reading="{}"], #measure-setup [data-reading="{}"]'):
+        'a CSS selector',
+    ('scrimmage/assembler/static/report.js', 'rp-skip muted'): 'CSS classes',
+    ('scrimmage/assembler/static/scenario.js', 'sc-field sc-desc'): 'CSS classes',
+    ('scrimmage/assembler/static/settings.js', "can't reach the editor (is scrimmage edit still running?)"): FALLBACK,
+    ('scrimmage/assembler/static/settings.js', 'the server answered {}'): FALLBACK,
+    ('scrimmage/assembler/static/step_editor.js',
+     '<svg viewBox="0 0 16 16" class="icon icon-{}" aria-hidden="true"><path d="{}"/></svg>'):
+        MARKUP + ' (an icon)',
+    ('scrimmage/assembler/static/step_editor.js', 'step{} step{}/step'): 'field ids (data-fields), never shown',
+    ('scrimmage/assembler/static/step_editor.js',
+     'step{}/axes step{}/buttons step{}/povs'):
+        'field ids (data-fields), never shown',
+    ('scrimmage/assembler/static/step_editor.js',
+     'battery, motor.<name>.current, nt:/…'):
+        "a signal field's placeholder: signal names a student types",
+    ('scrimmage/assembler/static/test.js',
+     "couldn't load {}"):
+        'an Error a failed script load throws: the console only',
+    ('scrimmage/assembler/static/test_run.js', 'test-sweep-row test-sweep-norun'): 'CSS classes',
+    ('scrimmage/assembler/static/units.js', 'unknown kind "{}"; one of {}'): ASSERT,
+    ('scrimmage/assembler/static/units.js', '"{}" could be {}: say which'): ASSERT + ' (a key unit asked of code)',
+    ('scrimmage/assembler/static/units.js', '"{}" isn\'t a key unit{}'): ASSERT + ' (a key unit asked of code)',
+    # ---- index.html -----------------------------------------------------------------------------------------------
+    ('scrimmage/assembler/static/index.html', 'scrimmage'): "the product's name",
+    ('scrimmage/assembler/static/index.html', 'assembler'): "the product's name",
+    ('scrimmage/assembler/static/index.html',
+     'English (US)'):
+        "a language's own name, never translated; app.js renderSettings builds the row from the catalogs",
+    ('scrimmage/assembler/static/index.html', 'Theme'): "app.js renderSettings writes the Theme row's words with t()",
+    ('scrimmage/assembler/static/index.html', 'System'): "app.js renderSettings writes the Theme row's words with t()",
+    ('scrimmage/assembler/static/index.html', 'Light'): "app.js renderSettings writes the Theme row's words with t()",
+    ('scrimmage/assembler/static/index.html', 'Dark'): "app.js renderSettings writes the Theme row's words with t()",
+    # ---- Python ---------------------------------------------------------------------------------------------------
+    ('scrimmage/measure/cli.py',
+     'warning: add {} to [measure] ({}): the labels name them'):
+        CLI + " (`scrimmage measure`'s report; the Measure tab builds its own)",
+    ('scrimmage/measure/cli.py', 'no test {}; one of {}'): CLI + " (`scrimmage measure form`'s argument)",
 }
 
 
@@ -406,7 +504,7 @@ def _flagged() -> list[tuple[str, int, str]]:
 
 
 def _allowed(rel: str, text: str) -> bool:
-    return any(f == rel and piece in text for f, piece in ALLOWED)
+    return (rel, text) in ALLOWED
 
 
 def test_no_unwrapped_text():
@@ -417,7 +515,8 @@ def test_no_unwrapped_text():
 
 def test_every_allowed_entry_is_still_needed():
     flagged = _flagged()
-    stale = [k for k in ALLOWED if not any(rel == k[0] and k[1] in text for rel, _, text in flagged)]
+    found = {(rel, text) for rel, _, text in flagged}
+    stale = [k for k in ALLOWED if k not in found]
     assert not stale, stale
     assert all(why for why in ALLOWED.values()) and all(why for why in NOT_SHOWN.values())
     assert all((ROOT / f).is_file() for f in NOT_SHOWN)

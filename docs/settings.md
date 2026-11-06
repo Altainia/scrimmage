@@ -218,6 +218,9 @@ For Language:
   the robot code never opened, a missing device. They are made while the robot runs, and go into machine text too.
 - **MCP results stay American English** (machine output), even when the web app shows the same run in British
   English.
+- **The settings file's own problems** (a `settings.toml` that can't be read, or a value Scrimmage doesn't know,
+  such as "theme = … isn't system, light or dark; using the System theme") are reported in American English: they
+  are found before the language is known.
 
 For Theme:
 
