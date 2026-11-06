@@ -72,6 +72,13 @@ def language():
     return lambda tag: settings.save(language=tag)
 
 
+@pytest.fixture
+def ds_ports():
+    """Skip when this computer's Driver Station ports are already taken (fake_ds.skip_if_ds_ports_taken)."""
+    from fake_ds import skip_if_ds_ports_taken
+    skip_if_ds_ports_taken()
+
+
 def _no_freecad() -> bool:
     from scrimmage import freecad_tools
     try:

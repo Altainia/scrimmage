@@ -200,6 +200,7 @@ async def follow_the_fake_ds(s: Session, ds: FakeDS, want: tuple | None) -> dict
     return s.state()
 
 
+@pytest.mark.usefixtures("ds_ports")
 def test_java_follows_the_real_ds(tmp_path):
     """Sub-project 28: with real_ds the init script keeps the probe's wpi.sim.addDriverstation(). A fake DS enables
     teleop at red2 and sends game data "B": the probe prints them, and scrimmage shows the DS from the robot's reports."""
@@ -221,6 +222,7 @@ def test_java_follows_the_real_ds(tmp_path):
     asyncio.run(main())
 
 
+@pytest.mark.usefixtures("ds_ports")
 def test_the_init_script_adds_the_ds_socket_when_the_project_has_none(tmp_path):
     """A project without wpi.sim.addDriverstation(): with real_ds the init script adds it."""
     import shutil

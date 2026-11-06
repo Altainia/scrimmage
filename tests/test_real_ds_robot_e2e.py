@@ -19,7 +19,7 @@ pytest.importorskip("halsim_ws")
 pytest.importorskip("halsim_ds_socket")
 pytest.importorskip("scrimmage_lockstep")
 
-from fake_ds import FakeDS  # noqa: E402
+from fake_ds import FakeDS, skip_if_ds_ports_taken  # noqa: E402
 from scrimmage.driverstation import REAL_DS_DRIVING, REAL_DS_WAITING  # noqa: E402
 import scrimmage.session  # noqa: E402
 from scrimmage.session import NOT_LISTENING, Session, SessionError  # noqa: E402
@@ -65,6 +65,7 @@ fms = false
 def run(tmp_path_factory) -> dict:
     """A held real-DS session; the fake DS enables teleop at red2 with the FMS and axis 0 at 0.5, then sends game data
     "B"; 3 s; then the DS stops, and 1 s later what scrimmage shows is recorded."""
+    skip_if_ds_ports_taken()
     cfg = tmp_path_factory.mktemp("real_ds_py") / "real_ds_probe.toml"
     cfg.write_text(CONFIG)
 
@@ -151,6 +152,7 @@ def test_after_the_ds_stops_the_state_follows_the_latest_report(run):
     assert after["mode"] == "disabled", (after, hal)   # the extension's 100 ms auto-disable
 
 
+@pytest.mark.usefixtures("ds_ports")
 def test_serve_logs_what_the_real_ds_does(tmp_path):
     """D1: `serve --real-ds --launch` adds --ds-socket, and logs the DS's mode changes from the robot's reports."""
     cfg = tmp_path / "real_ds_probe.toml"

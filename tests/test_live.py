@@ -665,6 +665,7 @@ def test_a_restart_keeps_the_match_settings_and_the_game_data(tmp_path, monkeypa
 
 # ---- the FRC Driver Station app drives (sub-project 28) -------------------------------------------------------
 
+@pytest.mark.usefixtures("ds_ports")
 def test_a_real_ds_session_refuses_the_ds_commands_and_shows_the_ds(tmp_path, monkeypatch):
     """With real_ds the page can't drive: mode, enable, disable, match, the joystick feed, pause, step and record are
     refused with the reason; the state says the real DS drives, waiting for it (the fake robot has no DS socket),
@@ -701,6 +702,7 @@ def test_a_real_ds_session_refuses_the_ds_commands_and_shows_the_ds(tmp_path, mo
     assert mgr.status()["real_ds"] is True   # the last session's, until the next Start
 
 
+@pytest.mark.usefixtures("ds_ports")
 def test_the_real_ds_choice_starts_from_the_config(tmp_path, monkeypatch):
     """real_ds=None takes the config's [driver_station] real; True or False overrides it (D3)."""
     monkeypatch.setattr(session_mod, "NT_CONNECT_TIMEOUT", 0.5)
