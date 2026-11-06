@@ -11,6 +11,7 @@ from typing import Callable
 import tomlkit
 from tomlkit.exceptions import TOMLKitError
 
+from .. import i18n
 from .edits import EditError
 
 
@@ -21,7 +22,7 @@ class FileChanged(EditError):
     """The file on disk changed since it was last loaded; nothing was written."""
 
     def __init__(self):
-        super().__init__("status", "the file changed on disk; the page has reloaded it")
+        super().__init__("status", i18n.t("the file changed on disk; the page has reloaded it"))
 
 
 class ConfigDoc:
@@ -39,11 +40,17 @@ class ConfigDoc:
         try:
             self.text = self._raw.decode("utf-8")
             self.doc = tomlkit.parse(self.text)
-            self.read_only_reason = None
+            self.read_only_reason = self._toml_error = None
         except (UnicodeDecodeError, TOMLKitError) as e:
             self.text = self._raw.decode("utf-8", errors="replace")
             self.doc = None
-            self.read_only_reason = f"{self.path.name} is not valid TOML: {e}"
+            self._toml_error = e
+            self.reword()
+
+    def reword(self) -> None:
+        """The TOML error's read-only reason again, in the Language setting (it changed since the file was read)."""
+        if self._toml_error is not None:
+            self.read_only_reason = i18n.t("{name} is not valid TOML: {why}", name=self.path.name, why=self._toml_error)
 
     @property
     def can_undo(self) -> bool:
@@ -68,7 +75,7 @@ class ConfigDoc:
         try:
             tomlkit.parse(text)
         except TOMLKitError as e:
-            raise EditError("status", f"refusing to write invalid TOML: {e}") from e
+            raise EditError("status", i18n.t("refusing to write invalid TOML: {why}", why=e)) from e
         fd = tempfile.NamedTemporaryFile(dir=self.path.parent, delete=False,
                                          prefix=self.path.name + ".", suffix=".tmp")
         try:

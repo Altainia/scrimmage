@@ -14,8 +14,9 @@ import re
 import tempfile
 from pathlib import Path
 
+from .i18n import t
+
 FOLDERS = ("cad", "code")
-_LABEL = {"cad": "CAD", "code": "code"}
 _PLACEHOLDER = re.compile(r"\{(cad|code)\}")
 
 
@@ -51,7 +52,8 @@ def folders() -> dict[str, Path | None]:
 def set_folder(name: str, path: Path | None) -> None:
     """Remember (or, with None, forget) a team folder on this computer. The file is replaced in one step."""
     if name not in FOLDERS:
-        raise ValueError(f"unknown team folder {name!r}; the team folders are {', '.join(FOLDERS)}")
+        raise ValueError(t("unknown team folder {name}; the team folders are {folders}", name=repr(name),
+                           folders=", ".join(FOLDERS)))
     data = {k: v for k, v in _read().items() if isinstance(v, str)}
     if path is None:
         data.pop(name, None)
@@ -85,9 +87,12 @@ def expand(text: str) -> str:
         name = m.group(1)
         path = known[name]
         if path is None:
-            raise TeamFolderError(
-                f"this robot file uses the team's {_LABEL[name]} folder, but this computer doesn't know where it is: "
-                f"set it on the start page (scrimmage edit), or set SCRIMMAGE_{name.upper()}")
+            if name == "cad":
+                raise TeamFolderError(t("this robot file uses the team's CAD folder, but this computer doesn't know "
+                                        "where it is: set it on the start page (scrimmage edit), or set "
+                                        "SCRIMMAGE_CAD"))
+            raise TeamFolderError(t("this robot file uses the team's code folder, but this computer doesn't know where "
+                                    "it is: set it on the start page (scrimmage edit), or set SCRIMMAGE_CODE"))
         return str(path)
 
     return _PLACEHOLDER.sub(one, text)

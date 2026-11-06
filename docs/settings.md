@@ -1,14 +1,14 @@
 # Settings
 
 The editor's top bar has a **Settings** button. It opens a small menu of choices that apply to every tab, and to
-every editor and command on this computer. Today it has one setting, **Units**.
+every editor and command on this computer. It has three settings: **Units**, **Language** and **Theme**.
 
 Contents: [Units](#units), [What each quantity is shown in](#what-each-quantity-is-shown-in),
 [Typing a value](#typing-a-value), [Your files don't change](#your-files-dont-change),
 [What follows the setting](#what-follows-the-setting),
 [What never changes: machine output](#what-never-changes-machine-output),
-[The command line: --units](#the-command-line---units), [Where the setting is kept](#where-the-setting-is-kept),
-[Known gaps](#known-gaps).
+[The command line: --units](#the-command-line---units), [Language](#language), [Theme](#theme),
+[Where the setting is kept](#where-the-setting-is-kept), [Known gaps](#known-gaps).
 
 ## Units
 
@@ -125,6 +125,50 @@ scrimmage --units imperial edit configs/swerve.toml
 `--units` goes before the command. Without it, a command uses the setting. If you start the editor with `--units`
 and then pick Units in its Settings menu, your pick wins for the rest of that run (and is saved as the setting).
 
+## Language
+
+**Language: English (US) | English (UK).** English (US) is the default: it is the words the code is written in.
+English (UK) is British English: "colour", "centre", "metre", "aluminium", "grey", "towards" and the other British
+spellings. Each language comes from a file in `scrimmage/locales/`, so the menu lists every one Scrimmage has, by
+its own name. To add one, see [translating.md](translating.md).
+
+Language is separate from Units: picking English (UK) doesn't switch to metric, and picking Metric doesn't change
+the spelling. FRC is in inches and pounds, and many teams outside the US still work in them.
+
+The choice applies at once, like Units: every open tab shows its words again in the new language, with no reload,
+and a box you are typing in keeps your text. Text that was already written keeps its language: a finished run's
+report still reads as it was written until you run it again.
+
+What follows the Language:
+
+- every tab's words: buttons, labels, tooltips, the Test tab's blocks, the drawings, notices and errors;
+- the server's words on the page: problems in a file, run outcomes and check lines, Bench headlines and Measure
+  text;
+- the files written for people from the web app or by an agent's MCP call: `report.md`, a bench run's
+  `summary.txt` and its chart labels.
+
+What never changes: the same machine output as for Units ([above](#what-never-changes-machine-output)). MCP
+results, `report.json`, `summary.json`, and the JSON and CSV files stay American English whatever the setting, so
+agents and scripts see no change. File keys and values never change either: a file still says `color = "red"` and
+`center = [1, 2]`, even when the page around them says "colour" and "centre".
+
+**The command line** is American English: what `scrimmage run`, `test`, `bench` and the other commands print, and
+the report files they write. `scrimmage --language en-GB <command>` sets the language for that one run of the web
+app (`edit` and `serve`) and the reports it writes; like `--units`, it goes before the command, and a pick in the
+Settings menu wins after that:
+
+```bash
+scrimmage --language en-GB edit configs/kitbot.toml
+```
+
+## Theme
+
+**Theme: System | Light | Dark.** System is the default: the page is light or dark as your computer is set, as it
+always was. Light and Dark keep the page that way whatever the computer says. Every tab follows a change at once:
+its colors, the 3D views, the Test tab's blocks, the charts and the field drawings.
+
+Theme has no command-line flag: it only changes how the web app looks.
+
 ## Where the setting is kept
 
 In a small file, `settings.toml`, in your user settings folder:
@@ -137,11 +181,13 @@ In a small file, `settings.toml`, in your user settings folder:
 
 ```toml
 units = "metric"      # "imperial" (the default) or "metric"
+language = "en-GB"    # "en-US" (the default), "en-GB", or another language file's tag
+theme = "dark"        # "system" (the default), "light" or "dark"
 ```
 
-Set `SCRIMMAGE_CONFIG` to a folder to keep it there instead. With no file, the default (Imperial) applies. A file
-Scrimmage can't read, or a value other than imperial or metric, is reported once in the editor and on the command
-line, and the default is used.
+Set `SCRIMMAGE_CONFIG` to a folder to keep it there instead. With no file, the defaults (Imperial, English (US) and
+System) apply. A file Scrimmage can't read, or a value it doesn't know, is reported once in the editor and on the
+command line, and the default is used for that setting; the others keep their values.
 
 ## Known gaps
 
@@ -158,3 +204,32 @@ line, and the default is used.
   swept-key column show the number as the bench file writes it (meters, or inches for an `_in` key).
 - **Changing Units clears the Test tab's undo history**, because the steps hold numbers in the old units.
 - **Another open tab or editor** follows a change within about 2 seconds, not at once.
+
+For Language:
+
+- **The Test tab's sweep and floor spread tables** keep their outcomes and grip-loss words in American English
+  inside the translated table, because they come from the run's `table.csv`, which is machine text.
+- **The command line is American English throughout**, whatever the setting: what it prints and the files it
+  writes. Only the web app (`edit`, `serve`) and its files follow the Language.
+- **A scenario run started from the web app** shows session and config errors (a robot config that can't load, for
+  example) in American English on its run panel, because they are written into its `report.json`.
+- **A Test-tab sweep or floor spread that fails as a whole** (a session or config error, such as a robot config
+  that can't load) says why in American English, because the error is raised while the run writes its machine text
+  (`table.csv`).
+- **The Part tab's build messages**, and why the part can't be edited (an import file that was deleted or can't be
+  read, a CAD file that can't be), keep the language they were made in until the next build or change of the file.
+- **The robot code panel's Build now result** (its log and a failed build's checklist line) keeps the language it was
+  made in until the next build.
+- **Why a scenario has no robot** (its `config` names none, or names a file that was deleted) keeps its language
+  until the scenario or its robot config changes.
+- **A few warnings from a running simulation** stay in American English: a sensor the robot blocks, a valve on a hub
+  the robot code never opened, a missing device. They are made while the robot runs, and go into machine text too.
+- **MCP results stay American English** (machine output), even when the web app shows the same run in British
+  English.
+- **The settings file's own problems** (a `settings.toml` that can't be read, or a value Scrimmage doesn't know,
+  such as "theme = … isn't system, light or dark; using the System theme") are reported in American English: they
+  are found before the language is known.
+
+For Theme:
+
+- **Older browsers** (before Chrome 123, Safari 17.5 or Firefox 120) show the light theme only, whatever you pick.

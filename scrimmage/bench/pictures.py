@@ -14,9 +14,11 @@ import mujoco
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from .. import units
+from .. import i18n, units
 from ..render import new_renderer
-from .report import ESTIMATES, STATUS_COLORS, STATUS_WORDS, bench_estimates
+from ..i18n import t
+from ..measure.labels import marked
+from .report import ESTIMATES, STATUS_COLORS, bench_estimates, status_words
 from .run import BenchResult
 
 # view -> (azimuth, elevation, the world axes across and up the picture)
@@ -32,7 +34,9 @@ PATH_ORDER = ("timed_out", "out", "escaped", "jammed")  # later ones drawn on to
 MOVES_ACROSS = 0.01     # m: a top view is drawn when the paths span more than this across y
 PICTURE_TRACE_HZ = 240.0  # what `bench run` samples paths and the trace at, for smooth paths and a smooth GIF
 UNCALIBRATED_INK = (170, 40, 40)  # dark red, as the launcher model's charts' footer; not the jammed paths' red
-PICTURE_UNCALIBRATED = ESTIMATES   # a picture's line when its bench isn't known; picture_uncalibrated(bench) else
+def picture_line() -> str:
+    """A picture's UNCALIBRATED line when its bench isn't known (picture_uncalibrated(bench) else)."""
+    return marked(i18n.translated(ESTIMATES))
 OUTLINE_APART = 0.6     # a piece's outlines are at least this many piece sizes apart (the later pose wins)
 
 
@@ -360,7 +364,7 @@ def path_picture(result: BenchResult, view: str = "side", width: int = 1280, hei
         _dashed_rect(draw, ((x0, y0), (x1, y1)), OUTLET_INK, max(2, int(4 * u)), int(14 * u))
         cx = min(max((x0 + x1) / 2, 80 * u), width - 80 * u)
         cy = min(max(y0 + 22 * u, top + 20 * u), height - bottom - 20 * u)
-        _label(draw, (cx, cy), f"outlet: {name}", small, OUTLET_INK)
+        _label(draw, (cx, cy), t("outlet: {name}", name=name), small, OUTLET_INK)
     inlet_labels = []
     for inlet in b.inlets:
         (x0, y0), (x1, y1) = _box_px(frame, *lay.inlet_boxes[inlet.name])
@@ -403,11 +407,12 @@ def path_picture(result: BenchResult, view: str = "side", width: int = 1280, hei
         if top < y < height - bottom:
             _label(draw, (x, y), text, small, anchor=anchor)
     for name, (x, y), anchor in inlet_labels:
-        _label(draw, (x, y), f"in: {name}", small, INLET_INK, anchor=anchor)
+        _label(draw, (x, y), t("in: {name}", name=name), small, INLET_INK, anchor=anchor)
 
     # title band
     draw.rectangle([0, 0, width, top], fill=(240, 242, 246))
-    draw.text((20 * u, 12 * u), f"{b.name}: {'side view' if view == 'side' else 'from above'}", font=big, fill=INK)
+    title = t("{name}: side view", name=b.name) if view == "side" else t("{name}: from above", name=b.name)
+    draw.text((20 * u, 12 * u), title, font=big, fill=INK)
     if b.idea or b.author:
         idea = (f"{b.author}: " if b.author else "") + (f'"{b.idea}"' if b.idea else "")
         draw.text((20 * u, 58 * u), idea, font=mid, fill=(70, 70, 85))
@@ -416,11 +421,12 @@ def path_picture(result: BenchResult, view: str = "side", width: int = 1280, hei
     draw.rectangle([0, height - bottom, width, height], fill=(240, 242, 246))
     _uncalibrated(draw, (20 * u, height - 22 * u), int(24 * u), picture_uncalibrated(b), width - 40 * u)
     x = 20 * u
+    words = status_words()      # the picture is for people: in the Language setting
     for status in PATH_ORDER + ("stuck_at_inlet",):
         if status not in counts:
             continue
         draw.line([(x, y), (x + 44 * u, y)], fill=STATUS_COLORS[status], width=width_px)
-        text = f"{STATUS_WORDS[status]}: {counts[status]}"
+        text = t("{status}: {count}", status=words[status], count=counts[status])
         draw.text((x + 54 * u, y), text, font=mid, fill=INK, anchor="lm")
         x += 54 * u + draw.textlength(text, font=mid) + 30 * u
     meters, scale_text = scale_bar(0.2 * width / frame.scale)
@@ -483,9 +489,10 @@ def _time_label(draw: ImageDraw.ImageDraw, t: float, height: int, x: float = 0.0
 
 
 def pass_sheet(frames: list[tuple[float, np.ndarray]], columns: int = 4,
-               label: str = PICTURE_UNCALIBRATED) -> np.ndarray:
+               label: str | None = None) -> np.ndarray:
     """The frames in a grid, left to right, each with its time in large type, and `label` (the UNCALIBRATED line)
-    under them."""
+    under them (default picture_line())."""
+    label = picture_line() if label is None else label
     cols = min(columns, len(frames))
     rows = math.ceil(len(frames) / cols)
     h, w = frames[0][1].shape[:2]
@@ -502,8 +509,10 @@ def pass_sheet(frames: list[tuple[float, np.ndarray]], columns: int = 4,
 
 
 def write_gif(frames: list[tuple[float, np.ndarray]], path: Path, fps: float = 15,
-              label: str = PICTURE_UNCALIBRATED) -> Path:
-    """An endless GIF of the frames, each stamped with its simulated time and `label` (the UNCALIBRATED line)."""
+              label: str | None = None) -> Path:
+    """An endless GIF of the frames, each stamped with its simulated time and `label` (the UNCALIBRATED line, default
+    picture_line())."""
+    label = picture_line() if label is None else label
     path = Path(path)
     images = []
     for t, img in frames:
@@ -519,6 +528,7 @@ def write_gif(frames: list[tuple[float, np.ndarray]], path: Path, fps: float = 1
     return path
 
 
+@i18n.for_people()       # pictures are for people: their words in the Language setting (an MCP run's too)
 def write_pictures(result: BenchResult, out_dir: Path) -> list[Path]:
     """path_side.png, path_top.png (when anything moves across y), pass.png and pass.gif. RenderUnavailable when
     there is no GL."""

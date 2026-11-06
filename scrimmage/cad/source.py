@@ -4,7 +4,7 @@ A STEP file goes through cascadio (OpenCASCADE) to a GLB in a temp folder, which
 nesting of sub-assemblies; the result is one `Piece` per mesh with its world transform applied. STL/OBJ files are
 one piece each, scaled from `units` to meters. Nothing is rotated: pieces stay in the CAD file's own axes (the
 robot frame is chosen later). `cascadio` and `trimesh` are imported inside the functions that need them, only here,
-so the rest of `scrimmage.cad` loads without the `cad` extra; a missing one raises `CadError(MISSING_EXTRA)`.
+so the rest of `scrimmage.cad` loads without the `cad` extra; a missing one raises `CadError(missing_extra())`.
 """
 
 import json
@@ -16,7 +16,8 @@ from pathlib import Path
 
 import numpy as np
 
-from . import MISSING_EXTRA, CadError
+from .. import i18n
+from . import CadError, missing_extra
 
 UNITS = {"m": 1.0, "mm": 0.001, "in": 0.0254}
 TOL_LINEAR = 0.2        # tessellation, in the STEP file's own units
@@ -53,22 +54,24 @@ def guess_units(extent_max: float) -> str:
 def load_source(path: "Path | list[Path]", units: str | None = None) -> Source:
     paths = [Path(p) for p in path] if isinstance(path, (list, tuple)) else [Path(path)]
     if not paths:
-        raise CadError("No CAD file was given: choose a STEP, STL or OBJ file.")
+        raise CadError(i18n.t("No CAD file was given: choose a STEP, STL or OBJ file."))
     if len(paths) == 1 and paths[0].is_dir():
         found = sorted(p for p in paths[0].iterdir() if p.suffix.lower() in MESH_SUFFIXES)
         if not found:
-            raise CadError(f"The folder {paths[0].name} has no STL or OBJ files: pick a folder that does.")
+            raise CadError(i18n.t("The folder {name} has no STL or OBJ files: pick a folder that does.",
+                                  name=paths[0].name))
         return _load_meshes(found, units, paths[0])
     kinds = {p.suffix.lower() in STEP_SUFFIXES for p in paths}
     if kinds == {True}:
         if len(paths) > 1:
-            raise CadError("Open one STEP file at a time: pick a single .step file.")
+            raise CadError(i18n.t("Open one STEP file at a time: pick a single .step file."))
         return _load_step(paths[0])
     for p in paths:
         if p.suffix.lower() not in MESH_SUFFIXES:
-            raise CadError(f"{p.name} is not a STEP, STL or OBJ file: export it from CAD as one of those.")
+            raise CadError(i18n.t("{name} is not a STEP, STL or OBJ file: export it from CAD as one of those.",
+                                  name=p.name))
     if len(paths) > 1 and True in kinds:
-        raise CadError("Don't mix a STEP file with mesh files: open them separately.")
+        raise CadError(i18n.t("Don't mix a STEP file with mesh files: open them separately."))
     return _load_meshes(paths, units, paths[0] if len(paths) == 1 else paths[0].parent)
 
 
@@ -76,7 +79,7 @@ def _load_meshes(files: list[Path], units: str | None, where: Path) -> Source:
     from ..bench.cad import read_mesh
     from ..bench.spec import BenchError
     if units is not None and units not in UNITS:
-        raise CadError(f"Unknown units '{units}': pick m, mm or in.")
+        raise CadError(i18n.t("Unknown units '{units}': pick m, mm or in.", units=units))
     raw = []
     for p in files:
         try:
@@ -105,15 +108,17 @@ def _load_step(path: Path) -> Source:
         import cascadio
         import trimesh
     except ImportError:
-        raise CadError(MISSING_EXTRA) from None
-    unreadable = CadError(f"Could not read {path.name} as a STEP file: re-export it from CAD and try again.")
+        raise CadError(missing_extra()) from None
+    unreadable = CadError(i18n.t("Could not read {name} as a STEP file: re-export it from CAD and try again.",
+                                 name=path.name))
     with tempfile.TemporaryDirectory(prefix="scrimmage-cad-") as tmp:
         # cascadio takes C strings; copying to a plain name sidesteps spaces and non-ASCII characters in the path
         src, glb = Path(tmp) / "in.step", Path(tmp) / "out.glb"
         try:
             shutil.copyfile(path, src)
         except OSError as e:
-            raise CadError(f"Could not open {path.name}: {e.strerror or e}. Check the file and try again.") from None
+            raise CadError(i18n.t("Could not open {name}: {error}. Check the file and try again.",
+                                  name=path.name, error=e.strerror or e)) from None
         try:
             cascadio.step_to_glb(str(src), str(glb), tol_linear=TOL_LINEAR, tol_angular=TOL_ANGULAR)
             raw = glb.read_bytes()
@@ -147,7 +152,8 @@ def _load_step(path: Path) -> Source:
     for r in roots:
         walk(r, "", (), np.eye(4), top)
     if not pieces:
-        raise CadError(f"{path.name} has no solid parts in it: check the STEP file has bodies, not just sketches.")
+        raise CadError(i18n.t("{name} has no solid parts in it: check the STEP file has bodies, not just sketches.",
+                              name=path.name))
     return Source("step", path, "m", pieces, groups)
 
 

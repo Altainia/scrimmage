@@ -32,6 +32,7 @@ from dataclasses import dataclass
 import mujoco
 import numpy as np
 
+from .. import i18n
 from ..launcher import contact as C
 from ..launcher.inputs import PRESETS, Wheels
 from .build import PIECE_FRICTION, Built
@@ -105,7 +106,8 @@ class SquishyContacts:
     def __init__(self, built: Built, bench: Bench):
         piece = bench.piece
         if piece.kind != "squishy" or piece.ball is None:
-            raise BenchError(f"[piece] '{piece.name}' is {piece.kind}; squishy contacts are for balls only")
+            raise BenchError(i18n.t("{piece_table} '{name}' is {kind}; squishy contacts are for balls only",
+                                    name=piece.name, kind=piece.kind, piece_table="[piece]"))
         self.m, self.lay, self.ball = built.model, built.layout, piece.ball
         m, lay = self.m, self.lay
         self.r = self.ball.diameter / 2

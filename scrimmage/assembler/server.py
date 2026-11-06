@@ -69,13 +69,21 @@ App (`/api/app/*`; in every mode):
 
 Settings (`/api/settings`; in every mode). The user's settings (scrimmage/settings.py), shared by every editor and the
 CLI on this computer:
-  GET  /api/settings               -> {units: imperial|metric, table, warning}: the Units setting (`scrimmage --units`
-        wins over the file for its run), the unit table every display formats with (units.table_json(): {systems,
-        kinds, units: {system: {kind: {name, factor, decimals}}}, aliases, keys, lengths}), and why the settings file is
-        being ignored (it can't be read, isn't TOML or has a bad value: the defaults apply), else null. The file is
-        read again when it changes on disk; the page polls this every few seconds to pick that up.
-  POST /api/settings               -> body {units}: saves it in the settings file (and, under `--units`, for this
-        run too); answers as GET does. 400 for another value.
+  GET  /api/settings[?catalog=V]   -> {units: imperial|metric, table, language, languages, catalog_version, catalog,
+        theme, warning}: the
+        Units setting (`scrimmage --units` wins over the file for its run), the unit table every display formats with
+        (units.table_json(): {systems, kinds, units: {system: {kind: {name, factor, decimals}}}, aliases, keys,
+        lengths}), the Language setting (a tag of languages; `--language` wins likewise), languages {tag: name}
+        (i18n.languages(): en-US, then each catalog in scrimmage/locales/), the language's catalog (i18n.catalog_json:
+        its entries that differ from the American English source; {} for en-US) and its catalog_version (a hash of
+        the language and those entries; the catalog is left out when ?catalog= names the current version, so the
+        page's poll doesn't carry it every time), the Theme setting
+        (system|light|dark: index.html is served with it on <html data-theme>, so the first paint is in it), and why
+        the settings file is being ignored, in whole or for one setting (it can't be read, isn't TOML or has a bad
+        value: the defaults apply), else null. The file is read again when it changes on disk; the page polls this every few seconds to
+        pick that up.
+  POST /api/settings               -> body {units?, language?, theme?}: saves them in the settings file (and, under
+        `--units` or `--language`, for this run too); answers as GET does. 400 for another value or none of them.
 
 Bench (`/api/bench/*`; 404 unless an idea session is open). `file` is an idea's file name in the session folder:
   GET  /api/bench/state[?since=N]  -> {version, folder, display_folder, stage: file|null, lock: {source, file, pid,
@@ -90,8 +98,9 @@ Bench (`/api/bench/*`; 404 unless an idea session is open). `file` is an idea's 
         keys it changed to the front. latest: the idea's own result, from the newest session log RUN event naming the
         file (a sweep or compare never replaces it), null when none: {kind: "run", ok, error, t, source, out,
         headlines: [the summary's headline lines, the UNCALIBRATED line last; [] without a summary], uncalibrated:
-        always a line starting "UNCALIBRATED", energy_failed: true when the run's summary.txt says the energy check
-        failed (the simulation, not the design, is wrong; the same signal whoever ran it; ok stays as logged),
+        always the UNCALIBRATED line (in the Language), energy_failed: true when the run's summary.json says the
+        energy check failed (the simulation, not the design, is wrong; the same signal whoever ran it; ok stays as
+        logged),
         pictures: {path_side, pass_gif} (absolute paths for /api/bench/file, null when absent)}.
         result: the session's result, from the newest sweep or compare event in the log (any source), null when
         none: {kind: sweep|compare, files: [the idea file names it concerns: the swept idea, or the compared ones
@@ -295,17 +304,20 @@ Robot (`/api/robot/*`):
   POST /api/robot/folder           -> body {path}; adds a parts folder to the library. A relative path resolves
         against the config's directory (~ is expanded); it must be an existing directory (else 400).
         Returns {ok: true}.
-  GET  /api/robot/code             -> {folder, display_folder, cwd, problem, info, checks, start, battery}: the
+  GET  /api/robot/code             -> {folder, display_folder, cwd, problem, problem_text, info, checks, start,
+        battery, build_failed}: the
         robot code panel. cwd is [robot_program] cwd as written (null without a [robot_program]); folder the
         absolute folder it names (display_folder relative to the working directory when under it), null when
         there is no program or a team folder isn't set. problem says why the code can't be used (an unset team
-        folder, a folder that isn't there, a folder with no robot project: robotcode.detect's summary), else null.
+        folder, a folder that isn't there, a folder with no robot project: robotcode.detect's summary), else null;
+        problem_text: the same as a finished sentence, which the page shows as it is.
         info: robotcode.ProjectInfo {folder, kind: java|robotpy, vendors, tuner_swerve, python, summary} or null;
         checks: robotcode.checklist [{id, ok: true|false|null (information), message, fix: build_agent|
         gradle_build|install_lockstep|null, detail}] ([] without info; they run programs, so this takes a moment).
         gradle_built is ok when the folder has a jar in build/libs or compiled classes under build/classes (a
         build/ folder alone isn't: a failed build leaves one); while this editor's last Build now of the folder
-        failed and nothing has built there since, it is that failed result (its message and detail).
+        failed and nothing has built there since, it is that failed result (its message and detail), and
+        build_failed is true (the page words its advice by that, not by the message).
         start: {picked, pose: [x, y, deg] (a named start's pose from its range) | null, range: the [range] file |
         null (the plain field), named: [range] start | null, named_starts: [names of the range's starts, in its
         order], floor_balls, fields: ["2026", null] (the picker's choices), range_read_only: true for a range the
@@ -326,7 +338,8 @@ Robot (`/api/robot/*`):
         result: the re-checked item (a check as above) | null while running}; long-polls like the state.
   POST /api/robot/check            -> body {speed?, discard_recording?}: Start and check devices. Starts the robot
         document's program as /api/live/start does, refused the same ways (field start/unpicked while no start is
-        picked, start/not_built, live/unsaved, 409 while a session is live or a scenario run is in progress); it runs disabled
+        picked, start/not_built, live/unsaved, 409 while a session is live (field live/already) or another simulation
+        holds the lock (busy/run for a scenario run, busy/bench, busy/test)); it runs disabled
         (until someone enables it in Drive), and keeps running: the devices fill in as the code makes them.
   GET  /api/robot/devices[?since=N] -> {version, live, robot_time, settled, rows: [devicecheck.DeviceRow {slot,
         kind, expected, made, status: ok|waiting|missing|extra|other_type|not_checked, suggest: [devices], note}]}:
@@ -599,7 +612,7 @@ import mujoco
 import tomlkit
 from tomlkit.exceptions import TOMLKitError
 
-from .. import robotcode, settings, teamfolders, units
+from .. import i18n, robotcode, settings, teamfolders, units
 from ..config import ConfigError, load_config_text
 from ..lockstep import parse_speed
 from ..parts.assemble import PLACEMENT_KEYS
@@ -617,8 +630,8 @@ from . import (bench_session, edits, library, measure_session, part_session, rec
 from .bench_session import BenchJobs, BenchSession, SessionError
 from .doc import ConfigDoc, FileChanged
 from .edits import EditError
-from .live import FRAME_HEAD, LiveError, LiveManager, UnsavedRecording
-from .recorder import RecordingError
+from .live import FRAME_HEAD, AlreadyLive, LiveError, LiveManager, RecordingTaken, UnsavedRecording
+from .recorder import RecordingError, RecordingExists
 from .runs import RunBusy, RunManager
 from .signals import signals
 from .simlock import SimBusy, SimLock
@@ -633,22 +646,14 @@ from ..measure.use import SUFFIX
 STATIC = Path(__file__).resolve().parent / "static"
 POLL_SECONDS = 25.0
 MAX_BODY = 1_000_000
-HAND_WRITTEN = "this robot uses a hand-written model; the assembler edits [[part]] robots"
-NO_PROGRAM = "this robot config has no [robot_program] section: add one to drive it"
-NO_ROBOT = "no robot is open"
-NO_SESSION = "no idea session is open"
-NO_PART = "no part is open"
-NO_TEST = "no test is open"
-NO_MEASURE = "no measurement file is open"
+# The 404s while the open file's kind doesn't match the route (N_(): said with translated() when raised)
+NO_ROBOT = i18n.N_("no robot is open")
+NO_SESSION = i18n.N_("no idea session is open")
+NO_PART = i18n.N_("no part is open")
+NO_TEST = i18n.N_("no test is open")
+NO_MEASURE = i18n.N_("no measurement file is open")
 _FORM = re.compile(r"/forms/([a-z]+)\.html")
 ROBOT_TEMPLATES = ("swerve", "swerve-rev", "differential")
-UNPICKED = "Pick where the robot starts first"
-NOT_BUILT = ("The robot code hasn't been built on this computer yet. Build it first (Build now, under Ready to "
-             "start? in the Robot code panel): the first build downloads the libraries, so it takes a few minutes.")
-NOT_BUILT_FAILED = ("The robot code didn't build the last time. Fix what the build said (under Ready to start? in "
-                    "the Robot code panel), then build it again.")
-NOT_BUILT_RUNNING = "The robot code is still building. Wait for the build to finish, then start again."
-NOT_PICKED = "Not picked yet"
 FIXES = ("build_agent", "gradle_build", "install_lockstep")
 FIX_LINES = 1000          # a fix's output lines kept for the page (the last ones)
 BATTERY_DEFAULTS = {"nominal_voltage": 12.0, "resistance": 0.02}   # world.py's, when [battery] leaves one out
@@ -665,14 +670,36 @@ _TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=
 
 
 class ApiError(Exception):
-    def __init__(self, status: int, message: str):
+    """An answer other than 200: `message` for people, `field` the code the page acts on (never the message's words,
+    which are in the user's language): "status" unless a caller needs to tell this refusal from others."""
+
+    def __init__(self, status: int, message: str, field: str = "status"):
         super().__init__(message)
         self.status = status
         self.message = message
+        self.field = field
 
 
 def _plain(v):
     return v.unwrap() if hasattr(v, "unwrap") else v
+
+
+def _nothing_to(which: str) -> str:
+    """An undo or redo with nothing in its history (the button is disabled then, so a second page's race)."""
+    return i18n.t("nothing to undo") if which == "undo" else i18n.t("nothing to redo")
+
+
+def _cant(which: str, problem: str) -> str:
+    """An undo or redo the file's check refuses, with the check's own words."""
+    return (i18n.t("can't undo: {problem}", problem=problem) if which == "undo"
+            else i18n.t("can't redo: {problem}", problem=problem))
+
+
+def _sentence(why: str) -> str:
+    """`why` (a reason, in the user's language) as a finished sentence: its first letter capitalized, and closed as
+    the language closes a sentence, unless it is closed already."""
+    why = why[:1].upper() + why[1:]
+    return why if why.endswith((".", "!", "?")) else i18n.t("{sentence}.", sentence=why)
 
 
 def _chassis_root_body() -> str:
@@ -727,14 +754,46 @@ def unset_folder(values) -> tuple[str, str] | None:
     return None
 
 
+# The page's words for a few refusals and states, in the user's language (made when they are said, never at import)
+def _hand_written() -> str:
+    return i18n.t("this robot uses a hand-written model; the assembler edits {part_table} robots",
+                  part_table="[[part]]")
+
+
+def _no_program() -> str:
+    return i18n.t("this robot config has no {robot_program_table} section: add one to drive it",
+                  robot_program_table="[robot_program]")
+
+
+def _unpicked() -> str:
+    return i18n.t("Pick where the robot starts first")
+
+
+def _not_built(why: str) -> str:
+    """why: "never" (never built here), "failed" (the last Build now failed) or "running" (a build is running)."""
+    if why == "running":
+        return i18n.t("The robot code is still building. Wait for the build to finish, then start again.")
+    if why == "failed":
+        return i18n.t("The robot code didn't build the last time. Fix what the build said (under Ready to start? in "
+                      "the Robot code panel), then build it again.")
+    return i18n.t("The robot code hasn't been built on this computer yet. Build it first (Build now, under Ready to "
+                  "start? in the Robot code panel): the first build downloads the libraries, so it takes a few minutes.")
+
+
 def start_sentence(pose) -> str:
     """Plain words for a start pose (x, y, heading in degrees; the blue alliance wall at x = 0, red at the far end):
     which alliance's half of the field it is on, and which wall it faces."""
     x, _, h = (float(a) for a in pose)
-    side = "blue" if x < edits.FIELD_LENGTH / 2 else "red"
+    blue = x < edits.FIELD_LENGTH / 2
     h = (h + 180.0) % 360.0 - 180.0
-    facing = "the red wall" if abs(h) <= 45 else "the blue wall" if abs(h) >= 135 else "a side wall"
-    return f"Starts on the {side} side, facing {facing}"
+    facing = "red" if abs(h) <= 45 else "blue" if abs(h) >= 135 else "side"
+    if blue:
+        return {"red": i18n.t("Starts on the blue side, facing the red wall"),
+                "blue": i18n.t("Starts on the blue side, facing the blue wall"),
+                "side": i18n.t("Starts on the blue side, facing a side wall")}[facing]
+    return {"red": i18n.t("Starts on the red side, facing the red wall"),
+            "blue": i18n.t("Starts on the red side, facing the blue wall"),
+            "side": i18n.t("Starts on the red side, facing a side wall")}[facing]
 
 
 _IMPORT_HEADER = re.compile(r"(?m)^[ \t]*\[[ \t]*import[ \t]*\]")
@@ -816,11 +875,13 @@ class App:
         self._robot_target: Path | None = None    # the robot config the scenario names
         self._robot_ver = 0                       # the robot version while there is no robot document
         self.result: validate.Result | None = None
+        self._robot_lang: str | None = None       # the language result and the robot's read-only reason are in
         self.scenario: ConfigDoc | None = None
         self.scenario_result: scenario_validate.Result | None = None
         self.scenario_read_only_reason: str | None = None
         self.scenario_robot_problem: str | None = None
         self.scenario_errors: list[dict] = []
+        self._scenario_lang: str | None = None    # the language scenario_errors and the read-only reason are in
         self.test: TestSession | None = None      # the block test (robot mode; its robot is the robot document)
         self.bench: BenchSession | None = None    # the idea session (bench mode)
         self.part = None                          # the PartSession or PluginSession (part mode)
@@ -936,30 +997,30 @@ class App:
         """404 unless a robot config or scenario is open (the Robot, Scenario and Drive tabs' routes)."""
         with self._lock:
             if self.mode != "robot":
-                raise ApiError(404, NO_ROBOT)
+                raise ApiError(404, i18n.translated(NO_ROBOT))
 
     def need_test(self) -> TestSession:
         with self._lock:
             if self.test is None:
-                raise ApiError(404, NO_TEST)
+                raise ApiError(404, i18n.translated(NO_TEST))
             return self.test
 
     def need_measure(self) -> MeasureSession:
         with self._lock:
             if self.measure is None:
-                raise ApiError(404, NO_MEASURE)
+                raise ApiError(404, i18n.translated(NO_MEASURE))
             return self.measure
 
     def need_bench(self) -> BenchSession:
         with self._lock:
             if self.bench is None:
-                raise ApiError(404, NO_SESSION)
+                raise ApiError(404, i18n.translated(NO_SESSION))
             return self.bench
 
     def need_part(self):
         with self._lock:
             if self.part is None:
-                raise ApiError(404, NO_PART)
+                raise ApiError(404, i18n.translated(NO_PART))
             return self.part
 
     def remember_part(self) -> None:
@@ -971,20 +1032,20 @@ class App:
 
     def _user_path(self, path, what: str) -> Path:
         if not isinstance(path, str) or not path.strip():
-            raise ApiError(400, f"path must be {what}")
+            raise ApiError(400, i18n.t("path must be {what}", what=what))
         p = Path(path).expanduser()
         return (p if p.is_absolute() else self.cwd / p).resolve()
 
     def _check_can_open(self) -> None:
         """409 while a drive session or a scenario run is live: they keep the robot document they started with."""
         if self.live.status()["state"] in ("starting", "running", "paused"):
-            raise ApiError(409, "a drive session is live; stop it first")
+            raise ApiError(409, i18n.t("a drive session is live; stop it first"))
         if self.runs.running:
-            raise ApiError(409, "a scenario run is in progress; stop it first")
+            raise ApiError(409, i18n.t("a scenario run is in progress; stop it first"))
         if self.bench_jobs.active:   # this App's own job; another process holding the session lock never refuses
-            raise ApiError(409, "a bench run is in progress; wait for it to finish")
+            raise ApiError(409, i18n.t("a bench run is in progress; wait for it to finish"))
         if self.test is not None and self.test.busy:
-            raise ApiError(409, "a test run is in progress; stop it first")
+            raise ApiError(409, i18n.t("a test run is in progress; stop it first"))
 
     def app_state(self) -> dict:
         with self._lock:
@@ -1010,20 +1071,40 @@ class App:
                     return unset
         return None
 
-    def settings_state(self) -> dict:
-        return {"units": settings.current_units(), "table": units.table_json(), "warning": settings.problem()}
+    def settings_state(self, have: str | None = None) -> dict:
+        """`have`: the catalog_version the page already has; the catalog is left out while it is still that one."""
+        language = settings.current_language()
+        version = i18n.catalog_version(language)
+        out = {"units": settings.current_units(), "table": units.table_json(), "language": language,
+               "languages": i18n.languages(), "catalog_version": version, "theme": settings.load().theme,
+               "warning": settings.problem()}
+        if have != version:
+            out["catalog"] = i18n.catalog_json(language)
+        return out
 
     def set_settings(self, body: dict) -> dict:
-        """Save the Units setting. Under `scrimmage --units` the menu still switches: this run follows it too."""
+        """Save the Units, Language or Theme setting (or several). Under `scrimmage --units` or `--language` the menu still
+        switches: this run follows it too."""
+        changes = {}
         try:
-            system = settings.check_units(body.get("units"))
-            settings.save(units=system)
+            if "units" in body:
+                changes["units"] = settings.check_units(body["units"])
+            if "language" in body:
+                changes["language"] = settings.check_language(body["language"])
+            if "theme" in body:
+                changes["theme"] = settings.check_theme(body["theme"])
+            if not changes:
+                raise ValueError("send units, language or theme to change")
+            settings.save(**changes)
         except ValueError as e:
             raise ApiError(400, str(e)) from None
         except OSError as e:
-            raise ApiError(500, f"can't save {settings.settings_path()}: {e.strerror or e}") from None
-        if settings.overridden():
-            settings.set_override(system)
+            raise ApiError(500, i18n.t("can't save {path}: {why}", path=settings.settings_path(),
+                                       why=e.strerror or e)) from None
+        if "units" in changes and settings.overridden():
+            settings.set_override(changes["units"])
+        if "language" in changes and settings.language_overridden():
+            settings.set_language_override(changes["language"])
         return self.settings_state()
 
     def get_folders(self) -> dict:
@@ -1035,16 +1116,16 @@ class App:
         """Remember where a team folder is on this computer; what is open is read again with it."""
         name, path = body.get("name"), body.get("path")
         if name not in teamfolders.FOLDERS:
-            raise ApiError(400, f"name must be one of {', '.join(teamfolders.FOLDERS)}")
+            raise ApiError(400, i18n.t("name must be one of {choices}", choices=', '.join(teamfolders.FOLDERS)))
         p = None
         if path is not None:
             p = self._user_path(path, "a folder path")
             if not p.is_dir():
-                raise ApiError(400, f"{self._display(p)} is not a folder")
+                raise ApiError(400, i18n.t("{path} is not a folder", path=self._display(p)))
         try:
             teamfolders.set_folder(name, p)
         except OSError as e:
-            raise ApiError(500, f"can't save the team folders: {e.strerror or e}") from None
+            raise ApiError(500, i18n.t("can't save the team folders: {why}", why=e.strerror or e)) from None
         with self._lock:
             if self.mode == "robot":
                 if self.robot is not None and self.robot.doc is not None:
@@ -1061,11 +1142,11 @@ class App:
     def browse(self, folder) -> dict:
         d = self._user_path(folder, "a folder path") if folder else self.cwd
         if not d.is_dir():
-            raise ApiError(400, f"{self._display(d)} is not a folder")
+            raise ApiError(400, i18n.t("{path} is not a folder", path=self._display(d)))
         try:
             items = sorted(d.iterdir(), key=lambda p: p.name.lower())
         except OSError as e:
-            raise ApiError(400, f"can't read {self._display(d)}: {e.strerror or e}") from None
+            raise ApiError(400, i18n.t("can't read {path}: {why}", path=self._display(d), why=e.strerror or e)) from None
         folders, files = [], []
         for p in items:
             if p.name.startswith("."):
@@ -1083,16 +1164,17 @@ class App:
         file, CAD file or part folder (see _load for kind and parts_dir)."""
         p = self._user_path(path, "a file or folder path")
         if not p.exists():
-            raise ApiError(400, f"{self._display(p)} doesn't exist")
+            raise ApiError(400, i18n.t("{path} doesn't exist", path=self._display(p)))
         if p.is_file() and p.suffix.lower() not in (".toml", *part_session.CAD_SUFFIXES):
-            raise ApiError(400, f"{self._display(p)} is not a robot config, scenario, bench file, CAD file or folder")
+            raise ApiError(400, i18n.t("{path} is not a robot config, scenario, bench file, CAD file or folder",
+                                       path=self._display(p)))
         with self._lock:
             self._check_can_open()
             try:
                 with self.bench_jobs.gate():   # no job can queue on the old session while it is replaced
                     self._load(p, kind=kind, parts_dir=parts_dir)
             except OSError as e:
-                raise ApiError(400, f"can't read {self._display(p)}: {e.strerror or e}") from None
+                raise ApiError(400, i18n.t("can't read {path}: {why}", path=self._display(p), why=e.strerror or e)) from None
             except (CadError, TestFileError) as e:
                 raise ApiError(400, str(e)) from None
         self.bench_jobs.stop()    # idle (refused above while a job is active); outside the lock: it joins
@@ -1107,12 +1189,13 @@ class App:
         p = self._user_path(body.get("path"), "the CAD file to import")
         if not (p.is_file() and p.suffix.lower() in part_session.CAD_SUFFIXES) and not (
                 p.is_dir() and any(f.suffix.lower() in part_session.CAD_SUFFIXES for f in p.iterdir())):
-            raise ApiError(400, f"{self._display(p)} is not a STEP, STL or OBJ file (or a folder of STL/OBJ files)")
+            raise ApiError(400, i18n.t("{path} is not a STEP, STL or OBJ file (or a folder of STL/OBJ files)",
+                                       path=self._display(p)))
         parts_dir = None
         if body.get("robot") is not None:
             robot = self._user_path(body.get("robot"), "the robot config the part is for")
             if not robot.is_file() or classify(robot) != "robot":
-                raise ApiError(400, f"{self._display(robot)} is not a robot config")
+                raise ApiError(400, i18n.t("{path} is not a robot config", path=self._display(robot)))
             parts_dir = robot.parent / "parts"
         return self.open_path(str(p), kind="import", parts_dir=parts_dir)
 
@@ -1161,24 +1244,24 @@ class App:
         if kind == "import":
             return self.new_import(body)
         if kind not in ("robot", "scenario", "session", "measure"):
-            raise ApiError(400, "kind must be robot, scenario, session, measure or import")
+            raise ApiError(400, i18n.t("kind must be robot, scenario, session, measure or import"))
         p = self._user_path(body.get("path"), "a file or folder path")
         if kind == "measure" and not p.name.lower().endswith(SUFFIX):
             p = p.with_name(p.name.removesuffix(".toml") + SUFFIX)
         elif kind not in ("session", "measure") and p.suffix.lower() != ".toml":
             p = p.with_name(p.name + ".toml")
         if p.exists():
-            raise ApiError(400, f"{self._display(p)} already exists; choose another name")
+            raise ApiError(400, i18n.t("{path} already exists; choose another name", path=self._display(p)))
         self._check_can_open()
         text = None
         if kind == "robot":
             if body.get("template") not in ROBOT_TEMPLATES:
-                raise ApiError(400, f"template must be one of {', '.join(ROBOT_TEMPLATES)}")
+                raise ApiError(400, i18n.t("template must be one of {choices}", choices=', '.join(ROBOT_TEMPLATES)))
             text = templates.new_config(body["template"])
         elif kind == "scenario":
             robot = self._user_path(body.get("robot"), "the robot config the scenario runs")
             if not robot.is_file() or classify(robot) != "robot":
-                raise ApiError(400, f"{self._display(robot)} is not a robot config")
+                raise ApiError(400, i18n.t("{path} is not a robot config", path=self._display(robot)))
             text = templates.new_scenario(self._portable(robot, p.parent))
         elif kind == "measure":
             try:
@@ -1192,9 +1275,9 @@ class App:
                 with open(p, "x", encoding="utf-8") as f:
                     f.write(text)
         except FileExistsError:
-            raise ApiError(400, f"{self._display(p)} already exists; choose another name") from None
+            raise ApiError(400, i18n.t("{path} already exists; choose another name", path=self._display(p))) from None
         except OSError as e:
-            raise ApiError(400, f"can't write {self._display(p)}: {e.strerror or e}") from None
+            raise ApiError(400, i18n.t("can't write {path}: {why}", path=self._display(p), why=e.strerror or e)) from None
         return self.open_path(str(p))
 
     # -- documents --------------------------------------------------------------------------
@@ -1235,7 +1318,7 @@ class App:
                     return
             except OSError:
                 pass
-        raise ApiError(409, "a drive session is live")
+        raise ApiError(409, i18n.t("a drive session is live"))
 
     def _detach(self, reason: str, target: Path | None, initial: bool) -> bool:
         """No robot document, for `reason`; True when that changed."""
@@ -1252,11 +1335,12 @@ class App:
         target = self._scenario_config(sc)
         if target is None:
             if sc.doc is None:
-                reason = (f"the scenario {sc.path.name} has a TOML error, so its robot config isn't known; "
-                          "fix the scenario in a text editor")
+                reason = i18n.t("the scenario {name} has a TOML error, so its robot config isn't known; fix the scenario "
+                                "in a text editor", name=sc.path.name)
             else:
                 unset = unset_folder(_plain(sc.doc.get("config")))
-                reason = unset[1] if unset else 'this scenario names no robot config (config = "<robot config .toml>")'
+                reason = unset[1] if unset else i18n.t("this scenario names no robot config ({setting})",
+                                                       setting='config = "<robot config .toml>"')
             return self._detach(reason, None, initial)
         return self._attach_robot(target, initial)
 
@@ -1270,14 +1354,15 @@ class App:
         if self.robot is not None and self.robot.path == target:
             if target.exists():
                 return False
-            return self._detach(f"the robot config {self._display(target)} was deleted", target, initial)
+            return self._detach(i18n.t("the robot config {path} was deleted", path=self._display(target)), target, initial)
         doc, reason = None, None
         try:
             doc = ConfigDoc(target)
         except FileNotFoundError:
-            reason = f"the robot config {self._display(target)} doesn't exist"
+            reason = i18n.t("the robot config {path} doesn't exist", path=self._display(target))
         except OSError as e:
-            reason = f"can't read the robot config {self._display(target)}: {e.strerror or e}"
+            reason = i18n.t("can't read the robot config {path}: {why}", path=self._display(target),
+                            why=e.strerror or e)
         if doc is None:
             if self.robot is None and self._robot_target == target and self.robot_missing is not None:
                 return False   # still missing: keep saying why (e.g. "was deleted")
@@ -1292,6 +1377,7 @@ class App:
         self._scenario_view = None
         self._signals = None
         self._parts_seen = self._parts_look()
+        self._robot_lang = i18n.current_language()
         if self.robot is None:
             self.result = validate.Result(False, [validate.FieldError("status", self.robot_missing)], [], None)
         else:
@@ -1301,14 +1387,18 @@ class App:
                 if not self.result.ok and unset is not None:
                     self.robot.read_only_reason = unset[1]
                 elif not self.result.ok:
-                    self.robot.read_only_reason = ("this config has errors; fix them in a text editor: "
-                                                   + "; ".join(e.message for e in self.result.errors))
+                    errors = "; ".join(e.message for e in self.result.errors)
                     d = self.robot.doc
                     if self.scenario is None and d is not None and "part" not in d and "model" not in d:
-                        self.robot.read_only_reason += ("; to start a new one, use scrimmage edit FILE --new "
-                                                        "swerve|differential or --new-scenario --robot CONFIG")
+                        self.robot.read_only_reason = i18n.t(
+                            "this config has errors; fix them in a text editor: {errors}; to start a new one, use "
+                            "scrimmage edit FILE --new swerve|differential or --new-scenario --robot CONFIG",
+                            errors=errors)
+                    else:
+                        self.robot.read_only_reason = i18n.t("this config has errors; fix them in a text editor: {errors}",
+                                                             errors=errors)
                 elif self.result.world.parts is None:
-                    self.robot.read_only_reason = HAND_WRITTEN
+                    self.robot.read_only_reason = _hand_written()
         if self.test is not None:
             self.test.refresh(self._robot_world(), self._robot_problem())
         self._changed.notify_all()
@@ -1319,7 +1409,8 @@ class App:
             return None
         if self.robot is None:
             return self._rel(self.robot_missing)
-        return self._rel(f"{self.robot.path.name} has errors: " + "; ".join(e.message for e in self.result.errors))
+        return self._rel(i18n.t("{name} has errors: {errors}", name=self.robot.path.name,
+                                errors="; ".join(e.message for e in self.result.errors)))
 
     def _scenario_signature(self):
         r = self.scenario_result
@@ -1338,15 +1429,21 @@ class App:
             problem = self.robot_missing   # our own words: "was deleted", "has a TOML error", ...
         problem = self._rel(problem)
         self.scenario_robot_problem = problem
-        old = f"fix the robot first: {res.robot_problem}" if res.robot_problem else None
-        self.scenario_errors = [{"field": e.field,
-                                 "message": f"fix the robot first: {problem}" if e.message == old else e.message}
-                                for e in res.errors]
-        self.scenario_read_only_reason = self.scenario.read_only_reason or (
-            f"fix the robot first: {problem}" if res.robot_problem else None)
+        self._scenario_words()
         if bump and self._scenario_signature() != before:
             self.scenario.version += 1   # the page's next state shows the new errors / read-only state
         self._changed.notify_all()
+
+    def _scenario_words(self) -> None:
+        """The scenario's errors and read-only reason in the Language setting: the robot's problem in our words (L3:
+        scenario_validate marks its "fix the robot first" error with a code, not by its text)."""
+        res, problem = self.scenario_result, self.scenario_robot_problem
+        first = i18n.t("fix the robot first: {why}", why=problem)
+        self.scenario_errors = [{"field": e.field, "message": first if e.code == scenario_validate.ROBOT_FIRST else
+                                 e.message, **({"detail": e.detail} if e.detail is not None else {})}
+                                for e in res.errors]    # detail: without its where, for beside its field
+        self.scenario_read_only_reason = self.scenario.read_only_reason or (first if res.robot_problem else None)
+        self._scenario_lang = i18n.current_language()
 
     def _refusal(self, res: scenario_validate.Result) -> list[dict] | None:
         """Why a candidate scenario can't be written, or None. A valid file only takes a valid candidate; an invalid
@@ -1391,12 +1488,12 @@ class App:
         """`current` is a callable giving the document's version after a sync."""
         v = body.get("version")
         if not isinstance(v, int) or isinstance(v, bool):
-            raise ApiError(400, "version (the integer from the state) is required")
+            raise ApiError(400, i18n.t("version (the integer from the state) is required"))
         before = current()
         if self._sync() and current() != before:
             raise ApiError(409, FileChanged().message)
         if v != current():
-            raise ApiError(409, "the file changed (another tab?); the page has reloaded it")
+            raise ApiError(409, i18n.t("the file changed (another tab?); the page has reloaded it"))
 
     def _display(self, path: Path) -> str:
         try:
@@ -1418,7 +1515,22 @@ class App:
         return self.result.world if self.result is not None and self.result.ok else None
 
     # -- robot ------------------------------------------------------------------------------
+    def _robot_words(self) -> None:
+        """When the Language setting changed since the robot was validated: its errors, warnings and read-only
+        reason again, in its words (the file is the same). The reason no robot is attached (scenario mode) keeps its
+        words until the scenario or its robot changes (docs/settings.md, known gaps). Lock held."""
+        if self._robot_lang == i18n.current_language() or (self.robot is None and self.robot_missing is None):
+            return
+        d = self.robot
+        if d is not None:
+            if d.doc is not None:
+                d.read_only_reason = None   # only _revalidate words it while the file parses
+            else:
+                d.reword()
+        self._revalidate()
+
     def state(self) -> dict:
+        self._robot_words()
         d = self.robot
         parts = []
         other = ""
@@ -1598,19 +1710,20 @@ class App:
 
     def add_folder(self, path) -> dict:
         if not isinstance(path, str) or not path.strip():
-            raise ApiError(400, "path must be a folder path")
+            raise ApiError(400, i18n.t("path must be a folder path"))
         p = Path(path).expanduser()
         with self._lock:
             if not p.is_absolute():
                 p = self._base_dir() / p
             p = p.resolve()
             if not p.is_dir():
-                raise ApiError(400, f"{p} is not a folder")
+                raise ApiError(400, i18n.t("{path} is not a folder", path=p))
             if p not in self.extra_folders:
                 self.extra_folders.append(p)
         return {"ok": True}
 
     def _require_robot_writable(self) -> None:
+        self._robot_words()
         if self.robot is None:
             raise ApiError(409, self.robot_missing)
         if self.robot.read_only_reason is not None:
@@ -1659,8 +1772,8 @@ class App:
             motor_slots = {m.name for m in world.motors} if world is not None else None
             return lambda doc: edits.set_motor(doc, b.get("slot"), motor_slots=motor_slots,
                                                **{k: b[k] for k in ("neutral", "invert") if k in b})
-        raise ApiError(400, f"unknown op {op!r} (add, remove, rename, attach, params, ids, start, battery, "
-                            "match_devices, motor)")
+        raise ApiError(400, i18n.t("unknown op {op} (add, remove, rename, attach, params, ids, start, battery, match_devices, motor)",
+                                   op=repr(op)))
 
     def edit(self, body: dict) -> tuple[int, dict]:
         with self._lock:
@@ -1702,7 +1815,7 @@ class App:
         if not res.ok:
             return 200, {"ok": False, "errors": _fe(res.errors)}
         if res.world.parts is None:
-            return 200, {"ok": False, "errors": [{"field": "status", "message": HAND_WRITTEN}]}
+            return 200, {"ok": False, "errors": [{"field": "status", "message": _hand_written()}]}
         try:
             self.robot.commit(candidate)
         except FileChanged as e:
@@ -1711,9 +1824,11 @@ class App:
         except EditError as e:
             return 200, {"ok": False, "errors": [{"field": e.field, "message": e.message}]}
         except OSError as e:
-            return 200, {"ok": False, "errors": [{"field": "status", "message": f"can't write the file: {e}"}]}
+            return 200, {"ok": False, "errors": [{"field": "status", "message": i18n.t("can't write the file: {why}",
+                                                                                       why=e)}]}
         self._view = self._scenario_view = self._signals = None
         self.result = res
+        self._robot_lang = i18n.current_language()
         self._parts_seen = self._parts_look()
         if self.test is not None:      # its palette and problems: an edit can change the field or the parts
             self.test.refresh(self._robot_world(), self._robot_problem())
@@ -1727,11 +1842,11 @@ class App:
             self._require_robot_writable()
             target = self.robot.peek_undo() if which == "undo" else self.robot.peek_redo()
             if target is None:
-                return 200, {"ok": False, "errors": [{"field": "status", "message": f"nothing to {which}"}]}
+                return 200, {"ok": False, "errors": [{"field": "status", "message": _nothing_to(which)}]}
             res = validate.check(target, self.robot.path)   # the world may have changed (a deleted part folder)
             if not res.ok or res.world.parts is None:
-                errs = _fe(res.errors) if not res.ok else [{"field": "status", "message": HAND_WRITTEN}]
-                return 200, {"ok": False, "errors": [{"field": e["field"], "message": f"can't {which}: {e['message']}"}
+                errs = _fe(res.errors) if not res.ok else [{"field": "status", "message": _hand_written()}]
+                return 200, {"ok": False, "errors": [{"field": e["field"], "message": _cant(which, e["message"])}
                                                       for e in errs]}
             try:
                 self.robot.undo() if which == "undo" else self.robot.redo()
@@ -1739,7 +1854,7 @@ class App:
                 self._sync()
                 raise ApiError(409, e.message) from None
             except OSError as e:
-                raise ApiError(500, f"can't write the file: {e}") from None
+                raise ApiError(500, i18n.t("can't write the file: {why}", why=e)) from None
             self._revalidate()
             self._revalidate_scenario(bump=True)
             return 200, {"ok": True, "version": self.robot.version}
@@ -1761,23 +1876,31 @@ class App:
         except ValueError:   # another drive (Windows)
             return target.as_posix()
 
-    def _program_folder(self) -> tuple[str | None, Path | None, str | None]:
+    def _program_folder(self, sentence: bool = False) -> tuple[str | None, Path | None, str | None]:
         """(the [robot_program] cwd as written, the folder it names, why it can't be used) for the robot document;
-        all None without a [robot_program]. Called with self._lock held."""
+        all None without a [robot_program]. With `sentence`, why is a finished sentence (the robot code panel shows
+        it as it is). Called with self._lock held."""
         raw = self.robot.doc.unwrap() if self.robot is not None and self.robot.doc is not None else {}
         rp = raw.get("robot_program")
         if not isinstance(rp, dict):
             return None, None, None
         cwd = rp.get("cwd", ".")
         if not isinstance(cwd, str):
-            return None, None, f"[robot_program] cwd must be a folder path, not {cwd!r}"
+            return None, None, (i18n.t("{robot_program_table} cwd must be a folder path, not {cwd}.", cwd=repr(cwd),
+                                       robot_program_table="[robot_program]") if sentence
+                                else i18n.t("{robot_program_table} cwd must be a folder path, not {cwd}",
+                                            cwd=repr(cwd), robot_program_table="[robot_program]"))
         try:
             folder = (self.robot.path.parent / teamfolders.expand(cwd)).resolve()
         except teamfolders.TeamFolderError as e:
-            return cwd, None, str(e)
+            why = str(e)    # teamfolders' words (the loader's too), not translated: made a sentence here
+            return cwd, None, (why[:1].upper() + why[1:] + ("" if why.endswith(".") else ".")) if sentence else why
         if not folder.is_dir():
-            return cwd, folder, (f"the robot code folder {self._display(folder)} isn't there (was it moved?): "
-                                 "pick it again")
+            if sentence:
+                return cwd, folder, i18n.t("The robot code folder {path} isn't there (was it moved?): pick it again.",
+                                           path=self._display(folder))
+            return cwd, folder, i18n.t("the robot code folder {path} isn't there (was it moved?): pick it again",
+                                       path=self._display(folder))
         return cwd, folder, None
 
     def _named_starts(self, ref: str, base: Path) -> dict | None:
@@ -1811,7 +1934,8 @@ class App:
         if pose is not None:
             sentence = start_sentence(pose)
         else:
-            sentence = f"Starts at {named}" if named is not None else NOT_PICKED if not picked else "Starts as written"
+            sentence = (i18n.t("Starts at {name}", name=named) if named is not None else i18n.t("Not picked yet") if not picked
+                        else i18n.t("Starts as written"))
         floor = sec.get("floor_balls", True) if sec is not None else True
         return {"picked": picked, "pose": pose, "range": rng, "named": named, "named_starts": list(starts),
                 "floor_balls": floor if isinstance(floor, bool) else True, "fields": list(edits.FIELDS),
@@ -1824,7 +1948,7 @@ class App:
                 "defaults": dict(BATTERY_DEFAULTS)}
 
     def _start_problem(self, for_run: bool = False) -> str | None:
-        """UNPICKED while the robot document (a [[part]] robot) has neither [robot] start_pose nor [range] start
+        """_unpicked() while the robot document (a [[part]] robot) has neither [robot] start_pose nor [range] start
         (for a run, nor does the scenario's [range] give a start), else None. A hand-written model starts where its
         MJCF puts it. Only the page asks: the CLI and the loader keep their default. Called with self._lock held."""
         if self.robot is None or self.robot.doc is None:
@@ -1836,7 +1960,7 @@ class App:
             sec = self.scenario.doc.unwrap().get("range")
             if isinstance(sec, dict) and sec.get("start") is not None:
                 return None
-        return UNPICKED
+        return _unpicked()
 
     def code_state(self) -> dict:
         with self._lock:
@@ -1844,15 +1968,17 @@ class App:
             cwd, folder, problem = self._program_folder()
             out = {"folder": str(folder) if folder is not None else None,
                    "display_folder": self._display(folder) if folder is not None else None,
-                   "cwd": cwd, "problem": problem, "info": None, "checks": [], "start": self._start(),
-                   "battery": self._battery()}
+                   "cwd": cwd, "problem": problem, "problem_text": self._program_folder(sentence=True)[2], "info": None,
+                   "checks": [], "start": self._start(), "battery": self._battery(), "build_failed": False}
         if folder is not None and problem is None:   # outside the lock: the checks run programs
             info = robotcode.detect(folder)
             if info.kind is None:
                 out["problem"] = info.summary
+                out["problem_text"] = i18n.t("Nothing here scrimmage can start: no build.gradle or robot.py.")
             else:
                 out["info"] = _info_json(info)
                 failed = self._failed_build(folder)
+                out["build_failed"] = failed is not None
                 out["checks"] = [failed if c.id == "gradle_built" and failed is not None else dataclasses.asdict(c)
                                  for c in robotcode.checklist(info)]
         return out
@@ -1877,18 +2003,31 @@ class App:
         with self._fix_cond:
             building = self._fix["running"] and self._fix["fix"] == "gradle_build"
         if building:
-            return NOT_BUILT_RUNNING
+            return _not_built("running")
         if self._failed_build(folder) is not None:
-            return NOT_BUILT_FAILED
+            return _not_built("failed")
         if robotcode.built_at(folder) is None:
-            return NOT_BUILT
+            return _not_built("never")
         return None
 
     def code_set(self, body: dict) -> tuple[int, dict]:
-        """Point the robot at its code: detect the project in `folder` and write [robot_program] (one undo step)."""
+        """Point the robot at its code: detect the project in `folder` and write [robot_program] (one undo step). A
+        refusal's first error carries problem_text: the refusal as a finished sentence, which the page shows as it
+        is."""
+        try:
+            status, out = self._code_set(body)
+        except ApiError as e:
+            e.detail = {**getattr(e, "detail", {}), "problem_text": _sentence(e.message)}
+            raise
+        errors = out.get("errors") or []
+        if not out.get("ok") and errors:
+            errors[0] = {**errors[0], "problem_text": _sentence("; ".join(e["message"] for e in errors))}
+        return status, out
+
+    def _code_set(self, body: dict) -> tuple[int, dict]:
         p = self._user_path(body.get("folder"), "a folder path")
         if not p.is_dir():
-            raise ApiError(400, f"{self._display(p)} is not a folder")
+            raise ApiError(400, i18n.t("{path} is not a folder", path=self._display(p)))
         info = robotcode.detect(p)
         if info.kind is None:
             raise ApiError(400, info.summary)
@@ -1919,17 +2058,17 @@ class App:
         """Run one readiness fix (robotcode.run_fix) on the fix worker: one at a time."""
         fix = body.get("fix")
         if fix not in FIXES:
-            raise ApiError(400, f"fix must be one of {', '.join(FIXES)}")
+            raise ApiError(400, i18n.t("fix must be one of {choices}", choices=', '.join(FIXES)))
         with self._lock:
             _, folder, problem = self._program_folder()
         if folder is None or problem is not None:
-            raise ApiError(400, problem or "pick the robot code's folder first")
+            raise ApiError(400, problem or i18n.t("pick the robot code's folder first"))
         info = robotcode.detect(folder)
         if info.kind is None:
             raise ApiError(400, info.summary)
         with self._fix_cond:
             if self._fix["running"]:
-                raise ApiError(409, "a fix is already running; wait for it to finish")
+                raise ApiError(409, i18n.t("a fix is already running; wait for it to finish"))
             cancel = self._fix_cancel = threading.Event()
             f = self._fix
             f.update(id=f["id"] + 1, fix=fix, running=True, lines=[], result=None, version=f["version"] + 1)
@@ -1966,12 +2105,16 @@ class App:
     # -- scenario ---------------------------------------------------------------------------
     def _need_scenario(self) -> ConfigDoc:
         if self.scenario is None:
-            raise ApiError(404, "no scenario is open (scrimmage edit was given a robot config)")
+            raise ApiError(404, i18n.t("no scenario is open (scrimmage edit was given a robot config)"))
         return self.scenario
 
     def scenario_state(self) -> dict:
         sc = self._need_scenario()
         res = self.scenario_result
+        if self._scenario_lang != i18n.current_language():
+            # the Language setting changed since: the errors again, in its words (the file is the same)
+            self._set_scenario_result(scenario_validate.check(sc.text, sc.path))
+            res = self.scenario_result
         raw = sc.doc.unwrap() if sc.doc is not None else {}
         top = {k: raw.get(k) for k in ("config", "description", "speed", "require_lockstep")}
         top["match"] = raw["match"] if isinstance(raw.get("match"), dict) else {}
@@ -2014,10 +2157,10 @@ class App:
             try:
                 i = int(step)
             except (TypeError, ValueError):
-                raise ApiError(400, "step must be an integer") from None
+                raise ApiError(400, i18n.t("step must be an integer")) from None
             s = steps[i] if 0 <= i < len(steps) and isinstance(steps[i], dict) else None
             if s is None or not isinstance(s.get("inputs"), str):
-                raise ApiError(404, f"step {i} has no input track")
+                raise ApiError(404, i18n.t("step {step} has no input track", step=i))
             try:
                 track = load_track(sc.path.parent / s["inputs"])
             except TrackError as e:
@@ -2072,7 +2215,7 @@ class App:
             "sheet": lambda d: e.set_sheet(d, b.get("step"), b.get("spec")),
         }
         if op not in ops:
-            raise ApiError(400, f"unknown op {op!r} ({', '.join(ops)})")
+            raise ApiError(400, i18n.t("unknown op {op} ({choices})", op=repr(op), choices=', '.join(ops)))
         return ops[op]
 
     def _check_config_change(self, sc: ConfigDoc, text: str) -> None:
@@ -2119,7 +2262,8 @@ class App:
                 except EditError as e:
                     return 200, {"ok": False, "errors": [{"field": e.field, "message": e.message}]}
                 except OSError as e:
-                    return 200, {"ok": False, "errors": [{"field": "status", "message": f"can't write the file: {e}"}]}
+                    return 200, {"ok": False, "errors": [{"field": "status", "message": i18n.t("can't write the file: {why}",
+                                                                                               why=e)}]}
                 committed = True
             finally:
                 if not committed:
@@ -2135,11 +2279,11 @@ class App:
             self._require_scenario_writable()
             target = sc.peek_undo() if which == "undo" else sc.peek_redo()
             if target is None:
-                return 200, {"ok": False, "errors": [{"field": "status", "message": f"nothing to {which}"}]}
+                return 200, {"ok": False, "errors": [{"field": "status", "message": _nothing_to(which)}]}
             res = scenario_validate.check(target, sc.path)   # the robot may have changed since
             refused = self._refusal(res)
             if refused is not None:
-                return 200, {"ok": False, "errors": [{"field": e["field"], "message": f"can't {which}: {e['message']}"}
+                return 200, {"ok": False, "errors": [{"field": e["field"], "message": _cant(which, e["message"])}
                                                       for e in refused]}
             self._check_config_change(sc, target)
             try:
@@ -2148,7 +2292,7 @@ class App:
                 self._sync()
                 raise ApiError(409, e.message) from None
             except OSError as e:
-                raise ApiError(500, f"can't write the file: {e}") from None
+                raise ApiError(500, i18n.t("can't write the file: {why}", why=e)) from None
             self._scenario_changed(res)
             return 200, {"ok": True, "version": sc.version}
 
@@ -2207,20 +2351,20 @@ class App:
         """Make `path` the scenario document, as if it had been given to `scrimmage edit`; the robot document
         follows its config."""
         if not isinstance(path, str) or not path.strip():
-            raise ApiError(400, "path must be a scenario file path")
+            raise ApiError(400, i18n.t("path must be a scenario file path"))
         p = Path(path).expanduser()
         p = (p if p.is_absolute() else self.cwd / p).resolve()
         if not p.is_file() or classify(p) != "scenario":
-            raise ApiError(400, f"{self._display(p)} is not a scenario file")
+            raise ApiError(400, i18n.t("{path} is not a scenario file", path=self._display(p)))
         if self.runs.running:
-            raise ApiError(409, "a scenario run is in progress")
+            raise ApiError(409, i18n.t("a scenario run is in progress"))
         with self._lock:
             if self.test is not None and self.test.busy:
-                raise ApiError(409, "a test run is in progress")
+                raise ApiError(409, i18n.t("a test run is in progress"))
             try:
                 doc = ConfigDoc(p)
             except OSError as e:
-                raise ApiError(400, f"can't read {self._display(p)}: {e.strerror or e}") from None
+                raise ApiError(400, i18n.t("can't read {path}: {why}", path=self._display(p), why=e.strerror or e)) from None
             self._check_live_robot(self._scenario_config(doc))   # a live session keeps its robot document
             if self.scenario is not None:
                 doc.version = self.scenario.version + 1   # the page's long poll sees the new document
@@ -2288,12 +2432,12 @@ class App:
         if body.get("robot") is not None:
             robot = self._user_path(body.get("robot"), "the robot config the test is for")
             if not robot.is_file() or classify(robot) != "robot":
-                raise ApiError(400, f"{self._display(robot)} is not a robot config")
+                raise ApiError(400, i18n.t("{path} is not a robot config", path=self._display(robot)))
         else:
             with self._lock:
                 robot = self.robot.path if self.mode == "robot" and self.robot is not None else None
             if robot is None:
-                raise ApiError(400, "say which robot config the test is for (robot)")
+                raise ApiError(400, i18n.t("say which robot config the test is for (robot)"))
         with self._lock:
             self._check_can_open()
         text = self._starter_test(robot)
@@ -2303,9 +2447,9 @@ class App:
                 if test_session.write_new(p, text):
                     break
             except OSError as e:
-                raise ApiError(400, f"can't write {self._display(p)}: {e.strerror or e}") from None
+                raise ApiError(400, i18n.t("can't write {path}: {why}", path=self._display(p), why=e.strerror or e)) from None
         else:
-            raise ApiError(400, f"there are too many tests of {robot.name} already; delete some")
+            raise ApiError(400, i18n.t("there are too many tests of {name} already; delete some", name=robot.name))
         return self.open_path(str(p))
 
     def _starter_test(self, robot: Path, folder: Path | None = None) -> str:
@@ -2331,14 +2475,15 @@ class App:
         with self._lock:
             part = self.part
             if self.mode != "part" or not isinstance(part, part_session.PartSession):
-                raise ApiError(400, "Test it works on a part made from a CAD import: open one in the Part tab")
+                raise ApiError(400, i18n.t("Test it works on a part made from a CAD import: open one in the Part tab"))
             st, imp = part.state_and_settings()
         if st["read_only_reason"]:
-            raise ApiError(409, f"the part can't be tested yet: {st['read_only_reason']}")
+            raise ApiError(409, i18n.t("the part can't be tested yet: {why}", why=st["read_only_reason"]))
         if st["build"]["state"] == "building":
-            raise ApiError(409, "the parts are still updating; try again when they're up to date")
+            raise ApiError(409, i18n.t("the parts are still updating; try again when they're up to date"))
         if st["build"]["state"] == "failed" or imp is None:
-            raise ApiError(409, f"the parts didn't build: {st['build']['message'] or 'see the Part tab'}")
+            raise ApiError(409, i18n.t("the parts didn't build: {why}",
+                                       why=st["build"]["message"] or i18n.t("see the Part tab")))
         imp_path = Path(st["path"])
         # next to the parts folder the import file is in (or beside an import file kept elsewhere)
         home = imp_path.parent.parent if imp_path.parent.name == "parts" else imp_path.parent
@@ -2350,16 +2495,17 @@ class App:
                 raise ApiError(409, str(e)) from None
             marker = library.cad_marker(folder)
             if marker is None or not (folder / "part.toml").is_file():
-                raise ApiError(409, f"the part {p['name']} isn't built yet; try again when the parts are up to date")
+                raise ApiError(409, i18n.t("the part {name} isn't built yet; try again when the parts are up to date",
+                                           name=p["name"]))
             try:
                 built = load_part(folder)
                 slots[marker["part"]] = [m.slot for m in built.motors]
                 roots[marker["part"]] = next((b.name for b in built.bodies if b.parent is None), None)
             except (PartError, OSError) as e:
-                raise ApiError(409, f"the part {p['name']} can't be read: {e}") from None
+                raise ApiError(409, i18n.t("the part {name} can't be read: {why}", name=p["name"], why=e)) from None
             parts.append((test_session.config_path(folder, home), marker))
         if not parts:
-            raise ApiError(409, "this import makes no parts yet: put its pieces in a body first")
+            raise ApiError(409, i18n.t("this import makes no parts yet: put its pieces in a body first"))
         with self._lock:
             self._check_can_open()
         name = sanitize(st["name"]) or "part"
@@ -2375,9 +2521,10 @@ class App:
             if not test.exists():
                 test_session.write_new(test, self._starter_test(standin, home))
         except OSError as e:
-            raise ApiError(400, f"can't write next to {self._display(home)}: {e.strerror or e}") from None
+            raise ApiError(400, i18n.t("can't write next to {path}: {why}", path=self._display(home),
+                                       why=e.strerror or e)) from None
         except (ValueError, KeyError, TypeError) as e:   # a hand-edited stand-in that can't be read as one
-            raise ApiError(409, f"can't add the new parts to {standin.name}: {e}") from None
+            raise ApiError(409, i18n.t("can't add the new parts to {name}: {why}", name=standin.name, why=e)) from None
         return {**self.open_path(str(test)), "added": added}
 
     # -- runs -------------------------------------------------------------------------------
@@ -2398,7 +2545,7 @@ class App:
             if not_built is not None:
                 return 200, {"ok": False, "errors": [{"field": "start/not_built", "message": not_built}]}
             if self._start_problem(for_run=True) is not None:
-                return 200, {"ok": False, "errors": [{"field": "start/unpicked", "message": UNPICKED}]}
+                return 200, {"ok": False, "errors": [{"field": "start/unpicked", "message": _unpicked()}]}
             speed = body.get("speed")
             if speed is None:
                 speed = UNSET
@@ -2441,7 +2588,7 @@ class App:
         run_id, _, name = rest.partition("/")
         p = self.runs.file(run_id, name) if run_id and name else None
         if p is None:
-            raise ApiError(404, "no such run file")
+            raise ApiError(404, i18n.t("no such run file"))
         return p
 
     # -- live -------------------------------------------------------------------------------
@@ -2487,6 +2634,7 @@ class App:
         """(config path, config, None) when the robot document can be driven, else (None, None, why not)."""
         with self._lock:
             self._sync()
+            self._robot_words()
             if self.robot is None:
                 return None, None, self.robot_missing
             if not self.result.ok:
@@ -2497,7 +2645,7 @@ class App:
         except ConfigError as e:
             return None, None, str(e)
         if cfg.robot_program is None:
-            return None, None, NO_PROGRAM
+            return None, None, _no_program()
         return path, cfg, None
 
     def live_start(self, body: dict) -> tuple[int, dict]:
@@ -2506,10 +2654,10 @@ class App:
 
         discard = body.get("discard_recording", False)
         if not isinstance(discard, bool):
-            raise ApiError(400, "discard_recording must be true or false")
+            raise ApiError(400, i18n.t("discard_recording must be true or false"))
         real_ds = body.get("real_ds")
         if real_ds is not None and not isinstance(real_ds, bool):
-            raise ApiError(400, "real_ds must be true, false or null")
+            raise ApiError(400, i18n.t("real_ds must be true, false or null"))
         # under the lock from the robot check to the start: no scenario open or edit switches the robot document
         # in between (LiveManager never calls back into the app, so holding it here can't deadlock)
         with self._lock:
@@ -2520,25 +2668,28 @@ class App:
             if not_built is not None:
                 return 200, {"ok": False, "errors": [{"field": "start/not_built", "message": not_built}]}
             if self._start_problem() is not None:
-                return 200, {"ok": False, "errors": [{"field": "start/unpicked", "message": UNPICKED}]}
+                return 200, {"ok": False, "errors": [{"field": "start/unpicked", "message": _unpicked()}]}
             speed = body.get("speed", 1.0)
             if speed == "max":
                 speed = None
             elif isinstance(speed, bool) or not isinstance(speed, (int, float)) or not math.isfinite(speed) \
                     or speed <= 0:
-                return refuse(f'speed must be a positive number or "max", not {speed!r}')
+                return refuse(i18n.t("speed must be a positive number or \"{max}\", not {speed}", speed=repr(speed),
+                                     max="max"))
             elif cfg.step / speed >= 1.0:
-                return refuse(f"speed {speed:g} with {cfg.step:g} s steps: each step would take "
-                              f"{cfg.step / speed:g} s of wall time or more, and the robot's 2 s watchdog would "
-                              "release the clock")
+                return refuse(i18n.t("speed {speed} with {step} s steps: each step would take {wall} s of wall time or more, "
+                                     "and the robot's 2 s watchdog would release the clock", speed=f"{speed:g}",
+                                     step=f"{cfg.step:g}", wall=f"{cfg.step / speed:g}"))
             try:
                 self.live.start(path, speed, discard_recording=discard, real_ds=real_ds)
             except SimBusy as e:
-                raise ApiError(409, str(e)) from None
+                raise ApiError(409, str(e), field=f"busy/{e.holder}") from None     # busy/run: a scenario run
             except UnsavedRecording as e:
                 return 200, {"ok": False, "errors": [{"field": "live/unsaved", "message": str(e)}]}
+            except AlreadyLive as e:
+                raise ApiError(409, str(e), field="live/already") from None
             except LiveError as e:
-                raise ApiError(409, str(e)) from None   # already live or shutting down (the speed was checked)
+                raise ApiError(409, str(e)) from None   # shutting down (the speed was checked)
         return 200, {"ok": True}
 
     def robot_check(self, body: dict) -> tuple[int, dict]:
@@ -2553,10 +2704,10 @@ class App:
     def save_recording(self, body: dict) -> tuple[int, dict]:
         path = body.get("path")
         if not isinstance(path, str) or not path.strip():
-            raise ApiError(400, "path must be a file path")
+            raise ApiError(400, i18n.t("path must be a file path"))
         overwrite = body.get("overwrite", False)
         if not isinstance(overwrite, bool):
-            raise ApiError(400, "overwrite must be true or false")
+            raise ApiError(400, i18n.t("overwrite must be true or false"))
         p = Path(path).expanduser()
         p = (p if p.is_absolute() else self.cwd / p).resolve()
         config = self.live.status()["config"]
@@ -2565,15 +2716,14 @@ class App:
                 config = str(self.robot.path) if self.robot is not None else None
         allowed = [self.cwd] + ([Path(config).resolve().parent] if config else [])
         if not any(p.is_relative_to(base) and p != base for base in allowed):
-            return 200, {"ok": False, "errors": [{"field": "status", "message":
-                         f"{p} is outside the folder scrimmage edit was started in and the robot config's folder; "
-                         "save the recording in one of them"}]}
+            return 200, {"ok": False, "errors": [{"field": "status", "message": i18n.t(
+                         "{path} is outside the folder scrimmage edit was started in and the robot config's folder; "
+                         "save the recording in one of them", path=p)}]}
         try:
             res = self.live.save_recording(p, overwrite)
         except (LiveError, RecordingError) as e:
-            msg = str(e)
-            field = "save/exists" if msg.endswith("already exists") else "status"
-            return 200, {"ok": False, "errors": [{"field": field, "message": msg}]}
+            field = "save/exists" if isinstance(e, (RecordingExists, RecordingTaken)) else "status"
+            return 200, {"ok": False, "errors": [{"field": field, "message": str(e)}]}
         return 200, {"ok": True, "path": res["path"], "display_path": self._display(Path(res["path"])),
                      "steps": res["steps"], "pokes": res["pokes"]}
 
@@ -2683,16 +2833,16 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             n = int(self.headers.get("Content-Length") or 0)
         except ValueError:
-            raise ApiError(400, "bad Content-Length") from None
+            raise ApiError(400, i18n.t("bad Content-Length")) from None
         if n > MAX_BODY:
-            raise ApiError(413, "request too large")
+            raise ApiError(413, i18n.t("request too large"))
         raw = self.rfile.read(n) if n else b"{}"
         try:
             body = json.loads(raw or b"{}")
         except ValueError:
-            raise ApiError(400, "body is not JSON") from None
+            raise ApiError(400, i18n.t("body is not JSON")) from None
         if not isinstance(body, dict):
-            raise ApiError(400, "body must be a JSON object")
+            raise ApiError(400, i18n.t("body must be a JSON object"))
         return body
 
     def _handle(self, method: str) -> None:
@@ -2702,14 +2852,16 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             if url.path.startswith("/api/"):
                 if not self._authorized():
-                    raise ApiError(403, "missing or wrong token")
+                    raise ApiError(403, i18n.t("missing or wrong token"))
                 self._send(*self._api(method, url))
             elif method in ("GET", "HEAD"):
                 self._static(url.path)
             else:
-                raise ApiError(405, "method not allowed")
+                raise ApiError(405, i18n.t("method not allowed"))
         except (ApiError, SessionError) as e:
-            self._send(e.status, {"ok": False, "error": e.message, "errors": [{"field": "status", "message": e.message}]})
+            self._send(e.status, {"ok": False, "error": e.message,
+                                  "errors": [{"field": getattr(e, "field", "status"), "message": e.message,
+                                              **getattr(e, "detail", {})}]})
         except (BrokenPipeError, ConnectionResetError):
             pass
         except Exception as e:   # never take the server down on a request
@@ -2735,7 +2887,7 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             return int(since) if since is not None else None
         except ValueError:
-            raise ApiError(400, "since must be an integer") from None
+            raise ApiError(400, i18n.t("since must be an integer")) from None
 
     def _api(self, method: str, url) -> tuple:
         app, path = self.app, url.path
@@ -2744,16 +2896,16 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/api/settings":
             if method == "POST":
                 return 200, app.set_settings(self._body())
-            return 200, app.settings_state()
+            return 200, app.settings_state(parse_qs(url.query).get("catalog", [None])[0])
         if path.startswith("/api/bench/"):
             return self._bench_api(method, url, app.need_bench())
         if path == "/api/part/upload" and method == "POST":
             try:
                 n = int(self.headers.get("Content-Length") or 0)
             except ValueError:
-                raise ApiError(400, "bad Content-Length") from None
+                raise ApiError(400, i18n.t("bad Content-Length")) from None
             if n > part_session.MAX_UPLOAD:   # (not read: a body this large may be cut off)
-                raise ApiError(413, "that file is too large to upload (over 512 MB)")
+                raise ApiError(413, i18n.t("that file is too large to upload (over 512 MB)"))
             body = _Bounded(self.rfile, n)
             try:
                 files = None
@@ -2761,9 +2913,10 @@ class _Handler(BaseHTTPRequestHandler):
                     try:
                         files = [(f["name"], f["size"]) for f in json.loads(unquote(self.headers["X-Files"]))]
                     except (ValueError, TypeError, KeyError):
-                        raise ApiError(400, "X-Files must be a list of {name, size}") from None
+                        raise ApiError(400, i18n.t("X-Files must be a list of {name_size_form}",
+                                                   name_size_form="{name, size}")) from None
                     if not files:
-                        raise ApiError(400, "no files were sent")
+                        raise ApiError(400, i18n.t("no files were sent"))
                 return app.upload(body, n, self.headers.get("X-Filename"), files,
                                   again=self.headers.get("X-Import-Again") == "1")
             finally:
@@ -2840,7 +2993,7 @@ class _Handler(BaseHTTPRequestHandler):
                 return 200, app.live_stop()
             if path == "/api/live/save_recording":
                 return app.save_recording(body)
-        raise ApiError(404, "no such endpoint")
+        raise ApiError(404, i18n.t("no such endpoint"))
 
     def _app_api(self, method: str, url) -> tuple:
         app, path = self.app, url.path
@@ -2856,7 +3009,7 @@ class _Handler(BaseHTTPRequestHandler):
             return 200, app.get_folders()
         if method == "POST" and path == "/api/app/folders":
             return 200, app.set_folder(self._body())
-        raise ApiError(404, "no such endpoint")
+        raise ApiError(404, i18n.t("no such endpoint"))
 
     def _bench_api(self, method: str, url, bench: BenchSession) -> tuple:
         path, q = url.path, parse_qs(url.query)
@@ -2884,7 +3037,7 @@ class _Handler(BaseHTTPRequestHandler):
                 return bench.new_idea(body)
             if path in ("/api/bench/run", "/api/bench/sweep", "/api/bench/compare", "/api/bench/gallery"):
                 return self.app.bench_jobs.submit(bench, path.rsplit("/", 1)[1], body)
-        raise ApiError(404, "no such endpoint")
+        raise ApiError(404, i18n.t("no such endpoint"))
 
     def _test_api(self, method: str, url) -> tuple:
         app, path = self.app, url.path
@@ -2900,7 +3053,7 @@ class _Handler(BaseHTTPRequestHandler):
                     try:
                         data = test.run_file(rest[:-len(what) - 1], what).read_bytes()
                     except FileNotFoundError:   # pruned meanwhile
-                        raise ApiError(404, "that run is no longer kept") from None
+                        raise ApiError(404, i18n.t("that run is no longer kept")) from None
                     return 200, data, ctype
             return 200, test.run_result(rest)
         if method == "POST":
@@ -2913,7 +3066,7 @@ class _Handler(BaseHTTPRequestHandler):
                 return 200, test.cancel()
             if path == "/api/test/grip":
                 return app.test_grip(body)
-        raise ApiError(404, "no such endpoint")
+        raise ApiError(404, i18n.t("no such endpoint"))
 
     def _measure_api(self, method: str, url) -> tuple:
         app, path = self.app, url.path
@@ -2928,7 +3081,7 @@ class _Handler(BaseHTTPRequestHandler):
                 return 200, measure.fit(body)
             if path == "/api/measure/save":
                 return measure.save(body)
-        raise ApiError(404, "no such endpoint")
+        raise ApiError(404, i18n.t("no such endpoint"))
 
     def _part_api(self, method: str, url, part) -> tuple:
         path = url.path
@@ -2949,13 +3102,13 @@ class _Handler(BaseHTTPRequestHandler):
                 return 200, part.axis(body)
             if path == "/api/part/reimport":
                 return part.reimport(body)
-        raise ApiError(404, "no such endpoint")
+        raise ApiError(404, i18n.t("no such endpoint"))
 
     def _static(self, urlpath: str) -> None:
         form = _FORM.fullmatch(urlpath)
         if form is not None:   # a blank form to print: a plain link opens it, so it needs no token (it holds no data)
             if form.group(1) not in forms.TEST:
-                raise ApiError(404, "not found")
+                raise ApiError(404, i18n.t("not found"))
             self._send(200, forms.form_html(form.group(1)).encode("utf-8"), _TYPES[".html"])
             return
         rel = "index.html" if urlpath in ("", "/") else urlpath.lstrip("/")
@@ -2964,7 +3117,10 @@ class _Handler(BaseHTTPRequestHandler):
             target = (root / rel).resolve()
             target.relative_to(root)
         except (ValueError, OSError):
-            raise ApiError(404, "not found") from None
+            raise ApiError(404, i18n.t("not found")) from None
         if not target.is_file():
-            raise ApiError(404, "not found")
-        self._send(200, target.read_bytes(), _TYPES.get(target.suffix.lower(), "application/octet-stream"))
+            raise ApiError(404, i18n.t("not found"))
+        body = target.read_bytes()
+        if rel == "index.html":    # the page starts in the Theme setting: no light flash before theme.js runs
+            body = body.replace(b'data-theme="system"', f'data-theme="{settings.load().theme}"'.encode(), 1)
+        self._send(200, body, _TYPES.get(target.suffix.lower(), "application/octet-stream"))

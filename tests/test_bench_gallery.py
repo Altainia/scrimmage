@@ -168,11 +168,11 @@ def test_metrics_round_noise_to_zero():
 
 
 def test_compare_cli_prints_the_bench_uncalibrated_once(tmp_path, capsys):
-    from scrimmage.launcher.report import UNCALIBRATED as LAUNCHER_UNCALIBRATED
+    from scrimmage.launcher.report import uncalibrated as launcher_uncalibrated
     a = _write(tmp_path, "a.toml", _one_car())
     b = _write(tmp_path, "b.toml", _one_car().replace('name = "pinch car"', 'name = "twin car"'))
     main(["bench", "compare", str(a), str(b), "--out", str(tmp_path / "c")])
     out = capsys.readouterr().out
-    assert out.count("UNCALIBRATED") == 1 and LAUNCHER_UNCALIBRATED not in out
+    assert out.count("UNCALIBRATED") == 1 and launcher_uncalibrated() not in out
     assert "measure the tread's friction" in out
     assert not re.search(r"\de-\d\d", out)  # no rounding noise like 2.3e-10 (test_metrics_round_noise_to_zero)

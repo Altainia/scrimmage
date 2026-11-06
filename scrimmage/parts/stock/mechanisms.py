@@ -10,6 +10,7 @@ import math
 from ...motors import MOTORS
 from ...pneumatics.model import DEFAULT_CONDUCTANCE
 from . import Param, Stock, register
+from ...i18n import N_, t
 
 STEEL = [0.55, 0.55, 0.6, 1.0]
 ORANGE = [0.95, 0.5, 0.1, 1.0]
@@ -25,9 +26,9 @@ def _count_param(doc: str, default: int) -> Param:
     return Param("count", "", default, doc, kind="int", min=1)
 
 
-COLLIDE = Param("collide", "", False, "its geoms touch the field, game pieces and a partner robot (never the "
+COLLIDE = Param("collide", "", False, N_("its geoms touch the field, game pieces and a partner robot (never the "
                 "robot's own parts). Drawing-only geoms never collide: the launcher's hood arc, a disc shooter's "
-                "guide plates, and a push cylinder's barrel (a push cylinder touches nothing even with collide on)",
+                "guide plates, and a push cylinder's barrel (a push cylinder touches nothing even with collide on)"),
                 kind="bool")
 
 
@@ -88,26 +89,26 @@ def _elevator(p: dict) -> dict:
 
 
 register(Stock(
-    "elevator", "linear lift of 1-4 stages driven by a spool; the carriage is the last stage",
-    (Param("travel", "m", 1.0, "total carriage travel from fully lowered to fully raised", positive=True),
-     Param("stages", "", 1, "number of moving stages including the carriage (the carriage is stage 'carriage', "
-           "the others are stage1, stage2, ...)", kind="int", min=1, max=4),
-     Param("rigging", "", "continuous", "continuous: the carriage moves at the rope speed, full force at the carriage, "
+    "elevator", N_("linear lift of 1-4 stages driven by a spool; the carriage is the last stage"),
+    (Param("travel", "m", 1.0, N_("total carriage travel from fully lowered to fully raised"), positive=True),
+     Param("stages", "", 1, N_("number of moving stages including the carriage (the carriage is stage 'carriage', "
+           "the others are stage1, stage2, ...)"), kind="int", min=1, max=4),
+     Param("rigging", "", "continuous", N_("continuous: the carriage moves at the rope speed, full force at the carriage, "
            "and the first stage moves at 1/stages of it; cascade: the first stage moves at the rope speed and the "
-           "carriage at stages x rope speed, with 1/stages of the force (carriage height = spool turns x 2 pi r x stages)",
+           "carriage at stages x rope speed, with 1/stages of the force (carriage height = spool turns x 2 pi r x stages)"),
            kind="str", choices=("continuous", "cascade")),
-     Param("carriage_mass", "kg", 3.0, "mass of the carriage and what it carries", positive=True),
-     Param("stage_mass", "kg", 1.5, "mass of the base and of each intermediate stage", positive=True),
+     Param("carriage_mass", "kg", 3.0, N_("mass of the carriage and what it carries"), positive=True),
+     Param("stage_mass", "kg", 1.5, N_("mass of the base and of each intermediate stage"), positive=True),
      _motor_param("motor model"),
      _count_param("motors driving the lift", 2),
-     Param("gearing", "", 9.0, "motor turns per spool turn", positive=True),
-     Param("spool_radius", "m", 0.022, "radius the rope winds on", positive=True),
-     Param("friction", "N", 5.0, "constant sliding friction, in newtons felt at the carriage", min=0.0),
-     Param("width", "m", 0.3, "side-to-side width of the stages", min=0.1),
+     Param("gearing", "", 9.0, N_("motor turns per spool turn"), positive=True),
+     Param("spool_radius", "m", 0.022, N_("radius the rope winds on"), positive=True),
+     Param("friction", "N", 5.0, N_("constant sliding friction, in newtons felt at the carriage"), min=0.0),
+     Param("width", "m", 0.3, N_("side-to-side width of the stages"), min=0.1),
      COLLIDE),
     _elevator, slots=("lift", "encoder"), mounts=("base", "carriage"),
-    note="Slots: lift (motor), encoder (spool turns). The elevator stands up from its base mount; the carriage "
-         "starts fully lowered."))
+    note=N_("Slots: lift (motor), encoder (spool turns). The elevator stands up from its base mount; the carriage "
+         "starts fully lowered.")))
 
 
 # ---------------------------------------------------------------- arm
@@ -137,21 +138,21 @@ def _arm(p: dict) -> dict:
 
 
 register(Stock(
-    "arm", "single-jointed arm on a horizontal pivot; 0 degrees points forward, positive raises the tip",
-    (Param("length", "m", 0.5, "pivot to tip", positive=True),
-     Param("mass", "kg", 2.0, "arm mass", positive=True),
-     Param("com", "m", 0.0, "center of mass distance from the pivot; 0 means half the length. Only the center-of-mass point moves: "
-           "the inertia stays that of a uniform bar of this mass and length",
+    "arm", N_("single-jointed arm on a horizontal pivot; 0 degrees points forward, positive raises the tip"),
+    (Param("length", "m", 0.5, N_("pivot to tip"), positive=True),
+     Param("mass", "kg", 2.0, N_("arm mass"), positive=True),
+     Param("com", "m", 0.0, N_("center of mass distance from the pivot; 0 means half the length. Only the center-of-mass point moves: "
+           "the inertia stays that of a uniform bar of this mass and length"),
            min=0.0, max=lambda q: q["length"]),
-     Param("range", "deg", [-90.0, 90.0], "lowest and highest allowed angle", kind="pair"),
+     Param("range", "deg", [-90.0, 90.0], N_("lowest and highest allowed angle"), kind="pair"),
      _motor_param("motor model"),
      _count_param("motors driving the pivot", 1),
-     Param("gearing", "", 50.0, "motor turns per arm turn", positive=True),
-     Param("spring_stiffness", "N*m/rad", 0.0, "torsion spring (gas spring or counterbalance) stiffness", min=0.0),
-     Param("spring_rest", "deg", 0.0, "angle at which the spring is relaxed (a spring is added whenever this or the stiffness is non-zero)"),
+     Param("gearing", "", 50.0, N_("motor turns per arm turn"), positive=True),
+     Param("spring_stiffness", "N*m/rad", 0.0, N_("torsion spring (gas spring or counterbalance) stiffness"), min=0.0),
+     Param("spring_rest", "deg", 0.0, N_("angle at which the spring is relaxed (a spring is added whenever this or the stiffness is non-zero)")),
      COLLIDE),
     _arm, slots=("pivot", "encoder"), mounts=("base", "tip"),
-    note="Slots: pivot (motor), encoder (arm turns)."))
+    note=N_("Slots: pivot (motor), encoder (arm turns).")))
 
 
 # ---------------------------------------------------------------- turret
@@ -160,7 +161,8 @@ def _turret(p: dict) -> dict:
     from ..model import PartError
     lo, hi = p["range"]
     if not (-360 <= lo and hi <= 360):
-        raise PartError(f"turret: range {[lo, hi]} has an end beyond 360 degrees: keep both ends within +-360")
+        raise PartError(t("turret: range {range} has an end beyond 360 degrees: keep both ends within +-360",
+                          range=[lo, hi]))
     r, m = p["diameter"] / 2, p["mass"]
     return {
         "part": {"name": "turret", "format": 1},
@@ -181,19 +183,19 @@ def _turret(p: dict) -> dict:
 
 
 register(Stock(
-    "turret", "a flat platform on a vertical axis; carry a launcher on it and turn it to aim",
-    (Param("diameter", "m", 0.3, "the platform's diameter", positive=True),
-     Param("mass", "kg", 2.0, "platform mass", positive=True),
-     Param("height", "m", 0.05, "the top mount's height above the base", min=0.0),
-     Param("range", "deg", [-180.0, 180.0], "lowest and highest allowed angle (each end within +-360)", kind="pair"),
+    "turret", N_("a flat platform on a vertical axis; carry a launcher on it and turn it to aim"),
+    (Param("diameter", "m", 0.3, N_("the platform's diameter"), positive=True),
+     Param("mass", "kg", 2.0, N_("platform mass"), positive=True),
+     Param("height", "m", 0.05, N_("the top mount's height above the base"), min=0.0),
+     Param("range", "deg", [-180.0, 180.0], N_("lowest and highest allowed angle (each end within +-360)"), kind="pair"),
      _motor_param("motor model"),
      _count_param("motors driving the turret", 1),
-     Param("gearing", "", 60.0, "motor turns per turret turn", positive=True),
-     Param("friction", "N*m", 0.2, "constant friction torque on the turret's joint", min=0.0),
+     Param("gearing", "", 60.0, N_("motor turns per turret turn"), positive=True),
+     Param("friction", "N*m", 0.2, N_("constant friction torque on the turret's joint"), min=0.0),
      COLLIDE),
     _turret, slots=("turn", "encoder"), mounts=("base", "top"),
-    note="Slots: turn (motor), encoder (turret turns). 0 faces the part's +x; positive turns left (counter-clockwise "
-         "from above). Attach the launcher to turret.top."))
+    note=N_("Slots: turn (motor), encoder (turret turns). 0 faces the part's +x; positive turns left (counter-clockwise "
+         "from above). Attach the launcher to turret.top.")))
 
 
 # ---------------------------------------------------------------- pneumatic cylinder
@@ -219,15 +221,15 @@ def _cylinder(p: dict) -> dict:
         cylinder["length"] = p["length"]
     if push:
         if push.count(".") != 1 or not all(push.split(".")):
-            raise PartError(f"cylinder: push must be \"<part>.<body>\" (the body the rod's end is pinned to), "
-                            f"not {push!r}")
+            raise PartError(t("cylinder: push must be \"{part_body}\" (the body the rod's end is pinned to), not "
+                              "{push}", push=repr(push), part_body="<part>.<body>"))
         cylinder["pin_b"] = {"body": push, "pos": p["push_pos"]}
         return {"part": {"name": "cylinder", "format": 1},
                 "body": [{"name": "barrel", "mass": p["mass"] + p["rod_mass"], "geom": [barrel]}],
                 "cylinder": cylinder, "mount": [{"name": "base", "body": "barrel"}]}
     if any(p["push_pos"]):
-        raise PartError("cylinder: push_pos places the rod's end on the part named by push; set push too, "
-                        "or remove push_pos")
+        raise PartError(t("cylinder: push_pos places the rod's end on the part named by push; set push too, or "
+                          "remove push_pos"))
     rod_len = 0.8 * length
     cylinder["pin_b"] = {"body": "rod"}
     cylinder["length"] = length
@@ -243,28 +245,29 @@ def _cylinder(p: dict) -> dict:
 
 
 register(Stock(
-    "cylinder", "a double-acting pneumatic cylinder, driven by air through its valve",
-    (Param("bore", "m", 0.0269875, "the piston's diameter (1-1/16 in; estimate, UNCALIBRATED)", positive=True),
-     Param("rod", "m", 0.0079375, "the rod's diameter, less than the bore (5/16 in; UNCALIBRATED)", positive=True),
-     Param("stroke", "m", 0.1524, "how far the rod travels (6 in)", positive=True),
-     Param("friction", "N", 8.0, "seal friction (estimate, UNCALIBRATED)", min=0.0),
+    "cylinder", N_("a double-acting pneumatic cylinder, driven by air through its valve"),
+    (Param("bore", "m", 0.0269875, N_("the piston's diameter (1-1/16 in; estimate, UNCALIBRATED)"), positive=True),
+     Param("rod", "m", 0.0079375, N_("the rod's diameter, less than the bore (5/16 in; UNCALIBRATED)"), positive=True),
+     Param("stroke", "m", 0.1524, N_("how far the rod travels (6 in)"), positive=True),
+     Param("friction", "N", 8.0, N_("seal friction (estimate, UNCALIBRATED)"), min=0.0),
      Param("conductance", "m^3/(s*Pa)", DEFAULT_CONDUCTANCE,
-           "the valve's sonic conductance, how freely air flows (estimate, UNCALIBRATED)", positive=True),
-     Param("measured", "", "", "a cylinder measurement file (\"deploy.measure.toml\", relative to the robot config) "
-           "whose timed strokes fit the conductance; empty for the conductance above", kind="text"),
-     Param("mass", "kg", 0.25, "the barrel's mass (UNCALIBRATED)", positive=True),
-     Param("rod_mass", "kg", 0.1, "the rod's mass (UNCALIBRATED)", positive=True),
-     Param("push", "", "", "\"<part>.<body>\" the rod's end is pinned to (a stock arm's \"arm.arm\"); empty for a "
-           "free rod with its own mount", kind="text"),
-     Param("push_pos", "m", [0.0, 0.0, 0.0], "where on the push body the rod's end is pinned, in that body's frame",
+           N_("the valve's sonic conductance, how freely air flows (estimate, UNCALIBRATED)"), positive=True),
+     Param("measured", "", "", N_("a cylinder measurement file (\"{example}\", relative to the robot config) "
+           "whose timed strokes fit the conductance; empty for the conductance above"), kind="text",
+           doc_keys=(("example", "deploy.measure.toml"),)),
+     Param("mass", "kg", 0.25, N_("the barrel's mass (UNCALIBRATED)"), positive=True),
+     Param("rod_mass", "kg", 0.1, N_("the rod's mass (UNCALIBRATED)"), positive=True),
+     Param("push", "", "", N_("\"{form}\" the rod's end is pinned to (a stock arm's \"{example}\"); empty for a "
+           "free rod with its own mount"), kind="text", doc_keys=(("form", "<part>.<body>"), ("example", "arm.arm"))),
+     Param("push_pos", "m", [0.0, 0.0, 0.0], N_("where on the push body the rod's end is pinned, in that body's frame"),
            kind="vec3"),
-     Param("length", "m", 0.0, "pin to pin when retracted; 0 takes it from the assembled pose (push) or "
-           "0.3 x stroke + 0.05 m (free)", min=0.0),
+     Param("length", "m", 0.0, N_("pin to pin when retracted; 0 takes it from the assembled pose (push) or "
+           "0.3 x stroke + 0.05 m (free)"), min=0.0),
      COLLIDE),
     _cylinder, slots=("valve",), mounts=("base", "rod"),
-    note="Slots: valve (a PCM or PH solenoid). The barrel lies along the part's +x and the rod extends toward +x. "
+    note=N_("Slots: valve (a PCM or PH solenoid). The barrel lies along the part's +x and the rod extends toward +x. "
          "Free (push empty): mount things on cylinder.rod. Push: the rod's end is pinned to push at push_pos, and "
-         "the cylinder drives the joints between its two ends; it has only the base mount."))
+         "the cylinder drives the joints between its two ends; it has only the base mount.")))
 
 
 # ---------------------------------------------------------------- flywheel and roller
@@ -296,26 +299,26 @@ def _roller(p: dict) -> dict:
 
 
 def _spinner_params(diameter: float, mass: float, extent: Param) -> tuple[Param, ...]:
-    return (Param("diameter", "m", diameter, "wheel diameter", positive=True),
-            Param("mass", "kg", mass, "wheel mass", positive=True),
-            Param("moi", "kg*m^2", 0.0, "moment of inertia about the axle; 0 means a solid disc, 1/2 m r^2",
+    return (Param("diameter", "m", diameter, N_("wheel diameter"), positive=True),
+            Param("mass", "kg", mass, N_("wheel mass"), positive=True),
+            Param("moi", "kg*m^2", 0.0, N_("moment of inertia about the axle; 0 means a solid disc, 1/2 m r^2"),
                   min=0.0),
             extent,
             _motor_param("motor model"),
             _count_param("motors driving the wheel", 1),
-            Param("gearing", "", 1.0, "motor turns per wheel turn", positive=True),
+            Param("gearing", "", 1.0, N_("motor turns per wheel turn"), positive=True),
             COLLIDE)
 
 
 register(Stock(
-    "flywheel", "spinning wheel on a horizontal axle (shooter wheel)",
-    _spinner_params(0.1016, 0.5, Param("width", "m", 0.05, "wheel thickness along the axle", positive=True)),
-    _flywheel, slots=("spin",), mounts=("base",), note="Slot: spin (motor). The axle runs along the y axis."))
+    "flywheel", N_("spinning wheel on a horizontal axle (shooter wheel)"),
+    _spinner_params(0.1016, 0.5, Param("width", "m", 0.05, N_("wheel thickness along the axle"), positive=True)),
+    _flywheel, slots=("spin",), mounts=("base",), note=N_("Slot: spin (motor). The axle runs along the y axis.")))
 
 register(Stock(
-    "roller", "spinning roller on a horizontal axle (intake or indexer)",
-    _spinner_params(0.05, 0.3, Param("length", "m", 0.4, "roller length along the axle", positive=True)),
-    _roller, slots=("spin",), mounts=("base",), note="Slot: spin (motor). The axle runs along the y axis."))
+    "roller", N_("spinning roller on a horizontal axle (intake or indexer)"),
+    _spinner_params(0.05, 0.3, Param("length", "m", 0.4, N_("roller length along the axle"), positive=True)),
+    _roller, slots=("spin",), mounts=("base",), note=N_("Slot: spin (motor). The axle runs along the y axis.")))
 
 
 # ---------------------------------------------------------------- launcher
@@ -382,35 +385,36 @@ def _launcher(p: dict) -> dict:
 
 
 register(Stock(
-    "launcher", "hooded shooter: a wheel on a horizontal shaft and a hood around it, articulated or fixed; "
-    "the test range's [shooter] runs it with sub-project 8's launcher model",
-    (Param("wheel_diameter", "m", 0.1016, "shooter wheel diameter", positive=True),
-     Param("width", "m", 0.3, "inside width between the side plates; every lane's ball must fit", positive=True),
-     Param("wheel_moi", "kg*m^2", 0.002, "the wheels, hubs and shaft's moment of inertia about the shaft",
+    "launcher", N_("hooded shooter: a wheel on a horizontal shaft and a hood around it, articulated or fixed; "
+    "the test range's {shooter_table} runs it with sub-project 8's launcher model"),
+    (Param("wheel_diameter", "m", 0.1016, N_("shooter wheel diameter"), positive=True),
+     Param("width", "m", 0.3, N_("inside width between the side plates; every lane's ball must fit"), positive=True),
+     Param("wheel_moi", "kg*m^2", 0.002, N_("the wheels, hubs and shaft's moment of inertia about the shaft"),
            positive=True),
-     Param("added_moi", "kg*m^2", 0.0, "a flywheel on the same shaft", min=0.0),
+     Param("added_moi", "kg*m^2", 0.0, N_("a flywheel on the same shaft"), min=0.0),
      _motor_param("shooter motor model"),
      _count_param("motors driving the shooter shaft", 1),
-     Param("gearing", "", 1.0, "shooter motor turns per wheel turn", positive=True),
-     Param("hood_gap", "m", 0.12, "gap between the wheel's surface and the hood; the ball is squeezed by its "
-           "diameter less this", positive=True),
-     Param("hood_entry_deg", "deg", 240.0, "where the ball enters, round the shaft from forward (+x) toward up",
+     Param("gearing", "", 1.0, N_("shooter motor turns per wheel turn"), positive=True),
+     Param("hood_gap", "m", 0.12, N_("gap between the wheel's surface and the hood; the ball is squeezed by its "
+           "diameter less this"), positive=True),
+     Param("hood_entry_deg", "deg", 240.0, N_("where the ball enters, round the shaft from forward (+x) toward up"),
            min=0.0, max=360.0),
-     Param("hood", "", "articulated", "articulated: the hood turns about the shaft on a motor (joint hood); "
-           "fixed: the hood stays at hood_angle", kind="str", choices=("articulated", "fixed")),
-     Param("hood_angle", "deg", 50.0, "the fixed hood's exit angle, above horizontal", min=-90.0, max=90.0),
-     Param("hood_range", "deg", [20.0, 70.0], "the articulated hood's exit angles at its low and high hard stops",
+     Param("hood", "", "articulated", N_("articulated: the hood turns about the shaft on a motor (joint hood); "
+           "fixed: the hood stays at hood_angle"), kind="str", choices=("articulated", "fixed")),
+     Param("hood_angle", "deg", 50.0, N_("the fixed hood's exit angle, above horizontal"), min=-90.0, max=90.0),
+     Param("hood_range", "deg", [20.0, 70.0], N_("the articulated hood's exit angles at its low and high hard stops"),
            kind="pair"),
-     Param("hood_motor", "", "KrakenX60", "hood motor model", kind="str", choices=_MOTOR_NAMES),
-     Param("hood_count", "", 1, "motors driving the hood", kind="int", min=1),
-     Param("hood_gearing", "", 50.0, "hood motor turns per hood turn", positive=True),
-     Param("hood_mass", "kg", 1.0, "the articulated hood's mass", positive=True),
+     Param("hood_motor", "", "KrakenX60", N_("hood motor model"), kind="str", choices=_MOTOR_NAMES),
+     Param("hood_count", "", 1, N_("motors driving the hood"), kind="int", min=1),
+     Param("hood_gearing", "", 50.0, N_("hood motor turns per hood turn"), positive=True),
+     Param("hood_mass", "kg", 1.0, N_("the articulated hood's mass"), positive=True),
      COLLIDE),
     _launcher, slots=("shooter", "hood", "hood_encoder"), mounts=("base",),
-    note="Slots: shooter (motor on joint spin), hood (motor) and hood_encoder (hood turns), the last two only with "
+    note=N_("Slots: shooter (motor on joint spin), hood (motor) and hood_encoder (hood turns), the last two only with "
          "an articulated hood. The base's origin is on the shaft (x forward, z up, the shaft along y). The hood "
          "joint reads 0 at the low stop: exit angle = hood_range[0] + the joint's angle. In the world the "
-         "[shooter] section's launcher model runs the shaft and the spin joint mirrors it."))
+         "{shooter_table} section's launcher model runs the shaft and the spin joint mirrors it."),
+    doc_keys=(("shooter_table", "[shooter]"),), note_keys=(("shooter_table", "[shooter]"),)))
 
 
 # ---------------------------------------------------------------- disc shooter
@@ -430,8 +434,8 @@ def disc_wheel_spots(p: dict) -> list[dict]:
     from ..model import PartError
     n = p["wheel_count"]
     if p["layout"] == "arc" and n != 1:
-        raise PartError(f"disc_shooter: an arc has one wheel (the fence curves round it); wheel_count is {n}, make "
-                        "it 1")
+        raise PartError(t("disc_shooter: an arc has one wheel (the fence curves round it); wheel_count is {count}, "
+                          "make it 1", count=n))
     sides = ("right", "left") if p["layout"] == "pinch" else (p["wheel_side"],)
     spots = []
     for s, side in enumerate(sides):
@@ -524,51 +528,54 @@ def _disc_shooter(p: dict) -> dict:
 
 
 register(Stock(
-    "disc_shooter", "planar disc shooter: wheels driving a flat disc along a channel against a fence (or a second "
-    "row of wheels), the channel tilted to the launch angle, fixed or on a motor; the test range's [shooter] "
-    "kind = \"disc\" runs it with the disc launcher model",
-    (Param("layout", "", "linear", "linear: wheels in a row on one side, a straight fence on the other; arc: one "
-           "wheel with a fence curved round it; pinch: wheels on both sides, no fence", kind="str",
+    "disc_shooter", N_("planar disc shooter: wheels driving a flat disc along a channel against a fence (or a second "
+    "row of wheels), the channel tilted to the launch angle, fixed or on a motor; the test range's {shooter_table} "
+    "{kind_setting} runs it with the disc launcher model"),
+    (Param("layout", "", "linear", N_("linear: wheels in a row on one side, a straight fence on the other; arc: one "
+           "wheel with a fence curved round it; pinch: wheels on both sides, no fence"), kind="str",
            choices=("linear", "arc", "pinch")),
-     Param("wheel_diameter", "m", 0.1016, "wheel diameter", positive=True),
-     Param("wheel_width", "m", 0.0234, "wheel tread width (the contact patch is the narrower of it and the disc)",
+     Param("wheel_diameter", "m", 0.1016, N_("wheel diameter"), positive=True),
+     Param("wheel_width", "m", 0.0234, N_("wheel tread width (the contact patch is the narrower of it and the disc)"),
            positive=True),
-     Param("wheel_count", "", 4, "wheels on each wheeled side (an arc: 1)", kind="int", min=1),
-     Param("wheel_start", "m", 0.10, "the first wheel's center, downrange from the disc's center at the entry",
+     Param("wheel_count", "", 4, N_("wheels on each wheeled side (an arc: 1)"), kind="int", min=1),
+     Param("wheel_start", "m", 0.10, N_("the first wheel's center, downrange from the disc's center at the entry"),
            min=0.0),
-     Param("wheel_pitch", "m", 0.10, "the distance between neighboring wheels along the channel", positive=True),
-     Param("wheel_side", "", "right", "the wheels' side looking downrange (linear and arc)", kind="str",
+     Param("wheel_pitch", "m", 0.10, N_("the distance between neighboring wheels along the channel"), positive=True),
+     Param("wheel_side", "", "right", N_("the wheels' side looking downrange (linear and arc)"), kind="str",
            choices=("right", "left")),
-     Param("groups", "", "single", "the wheel groups, one shaft and motor slot each: single (every wheel on one "
-           "shaft), per_side (a pinch's two sides), per_wheel", kind="str", choices=GROUPS),
-     Param("compression", "m", 0.0127, "the disc's diameter less the gap between a wheel and the fence (the other "
-           "row in a pinch)", positive=True),
-     Param("channel_length", "m", 0.50, "the channel's length: the disc leaves when its trailing rim passes it",
+     Param("groups", "", "single", N_("the wheel groups, one shaft and motor slot each: single (every wheel on one "
+           "shaft), per_side (a pinch's two sides), per_wheel"), kind="str", choices=GROUPS),
+     Param("compression", "m", 0.0127, N_("the disc's diameter less the gap between a wheel and the fence (the other "
+           "row in a pinch)"), positive=True),
+     Param("channel_length", "m", 0.50, N_("the channel's length: the disc leaves when its trailing rim passes it"),
            positive=True),
-     Param("arc_deg", "deg", 90.0, "how far the arc's fence wraps its wheel (arc only, at most 180)", min=1.0,
+     Param("arc_deg", "deg", 90.0, N_("how far the arc's fence wraps its wheel (arc only, at most 180)"), min=1.0,
            max=180.0),
-     Param("channel_width", "m", 0.2794, "the width between the guide walls: the disc's diameter (the range's "
-           "disc must match it)", positive=True),
-     Param("wheel_moi", "kg*m^2", 0.0002, "each wheel's (with its hub and share of the shaft) moment of inertia "
-           "about its axle", positive=True),
-     Param("added_moi", "kg*m^2", 0.0, "a flywheel on each group's shaft", min=0.0),
+     Param("channel_width", "m", 0.2794, N_("the width between the guide walls: the disc's diameter (the range's "
+           "disc must match it)"), positive=True),
+     Param("wheel_moi", "kg*m^2", 0.0002, N_("each wheel's (with its hub and share of the shaft) moment of inertia "
+           "about its axle"), positive=True),
+     Param("added_moi", "kg*m^2", 0.0, N_("a flywheel on each group's shaft"), min=0.0),
      _motor_param("wheel motor model"),
      _count_param("motors driving each wheel group", 2),
-     Param("gearing", "", 0.75, "motor turns per wheel turn", positive=True),
-     Param("channel_mass", "kg", 2.0, "the channel's mass (its plates, fence and wheels' frame)", positive=True),
-     Param("tilt", "", "fixed", "fixed: the channel stays at tilt_angle; articulated: it pivots at its entry on a "
-           "motor (joint tilt)", kind="str", choices=("fixed", "articulated")),
-     Param("tilt_angle", "deg", 25.0, "the fixed channel's launch angle above horizontal", min=-80.0, max=80.0),
-     Param("tilt_range", "deg", [10.0, 45.0], "the articulated channel's launch angles at its low and high hard "
-           "stops", kind="pair"),
-     Param("tilt_motor", "", "KrakenX60", "tilt motor model", kind="str", choices=_MOTOR_NAMES),
-     Param("tilt_count", "", 1, "motors driving the tilt", kind="int", min=1),
-     Param("tilt_gearing", "", 100.0, "tilt motor turns per channel turn", positive=True),
+     Param("gearing", "", 0.75, N_("motor turns per wheel turn"), positive=True),
+     Param("channel_mass", "kg", 2.0, N_("the channel's mass (its plates, fence and wheels' frame)"), positive=True),
+     Param("tilt", "", "fixed", N_("fixed: the channel stays at tilt_angle; articulated: it pivots at its entry on a "
+           "motor (joint tilt)"), kind="str", choices=("fixed", "articulated")),
+     Param("tilt_angle", "deg", 25.0, N_("the fixed channel's launch angle above horizontal"), min=-80.0, max=80.0),
+     Param("tilt_range", "deg", [10.0, 45.0], N_("the articulated channel's launch angles at its low and high hard "
+           "stops"), kind="pair"),
+     Param("tilt_motor", "", "KrakenX60", N_("tilt motor model"), kind="str", choices=_MOTOR_NAMES),
+     Param("tilt_count", "", 1, N_("motors driving the tilt"), kind="int", min=1),
+     Param("tilt_gearing", "", 100.0, N_("tilt motor turns per channel turn"), positive=True),
      COLLIDE),
     _disc_shooter, slots=("shooter0",),
     mounts=("base",),
-    note="Slots: shooter<g> (motor on joint spin<g>, one per wheel group: shooter0, shooter1, ...), and tilt "
+    note=N_("Slots: shooter<g> (motor on joint spin<g>, one per wheel group: shooter0, shooter1, ...), and tilt "
          "(motor) and tilt_encoder (channel turns) with an articulated tilt. The channel body's origin is the disc's center at the entry: x downrange, "
          "y left, z normal to the channel (the disc's axis); it is the base's frame pitched up by the launch angle "
          "about y. The tilt joint reads 0 at the low stop: launch angle = tilt_range[0] + the joint's angle. In the "
-         "world the [shooter] section's disc launcher model runs the wheel shafts and the spin joints mirror them."))
+         "world the {shooter_table} section's disc launcher model runs the wheel shafts and the spin joints mirror "
+         "them."),
+    doc_keys=(("shooter_table", "[shooter]"), ("kind_setting", 'kind = "disc"')),
+    note_keys=(("shooter_table", "[shooter]"),)))

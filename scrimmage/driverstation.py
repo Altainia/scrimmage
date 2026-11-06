@@ -6,6 +6,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field, replace
 
+from .i18n import t
 from .protocol import frame
 
 MODES = ("disabled", "auto", "teleop", "test")
@@ -13,16 +14,26 @@ PHASES = ("auto", "teleop")   # the modes with a match timer
 STATIONS = ("red1", "red2", "red3", "blue1", "blue2", "blue3")
 MATCH_KEYS = ("station", "fms", "timer", "auto_seconds", "teleop_seconds")
 GAME_DATA_MAX = 64            # the HAL keeps up to 64 bytes
-REAL_DS_DRIVING = "the FRC Driver Station is driving"   # why a real-DS session refuses mode, joystick and match changes
+REAL_DS_DRIVING = "the FRC Driver Station is driving"   # the words every real-DS refusal ends with (tests check them)
 REAL_DS_WAITING = "waiting for the Driver Station"      # a real-DS session before (or without) a connected DS
+
+
+class SettingError(ValueError):
+    """A bad match setting or game data: "<where> <detail>". `key` is the setting it is about (None: the table
+    itself) and `detail` the message without its where, so a page can place it on its field and show it there
+    without reading the words."""
+
+    def __init__(self, where: str, detail: str, key: str | None = None):
+        super().__init__(f"{where} {detail}")
+        self.key, self.detail = key, detail
 
 
 def check_game_data(value, where: str) -> str:
     if not isinstance(value, str):
-        raise ValueError(f"{where} game_data must be text, not {value!r}")
+        raise SettingError(where, t("game_data must be text, not {value}", value=repr(value)), "game_data")
     if len(value.encode("utf-8")) > GAME_DATA_MAX:
-        raise ValueError(f"{where} game_data must be at most {GAME_DATA_MAX} bytes ({GAME_DATA_MAX} plain letters, "
-                         "digits or punctuation)")
+        raise SettingError(where, t("game_data must be at most {most} bytes ({most} plain letters, digits or "
+                                    "punctuation)", most=GAME_DATA_MAX), "game_data")
     return value
 
 
@@ -40,20 +51,24 @@ class MatchSettings:
         """A copy with `table`'s keys applied over these values. A bad key or value raises a ValueError that starts
         with `where`."""
         if not isinstance(table, dict):
-            raise ValueError(f"{where} must be a table, not {table!r}")
+            raise SettingError(where, t("must be a table, not {value}", value=repr(table)))
         changes = {}
         for key, v in table.items():
             if key not in MATCH_KEYS:
-                raise ValueError(f"{where} has no key {key!r}; the keys are {', '.join(MATCH_KEYS)}")
+                raise SettingError(where, t("has no key {key}; the keys are {keys}", key=repr(key),
+                                            keys=", ".join(MATCH_KEYS)))
+            said = {"key": key, "value": repr(v)}
             if key == "station":
                 if v not in STATIONS:
-                    raise ValueError(f"{where} station must be one of {', '.join(STATIONS)}, not {v!r}")
+                    raise SettingError(where, t("station must be one of {stations}, not {value}", **said,
+                                                stations=", ".join(STATIONS)), key)
             elif key in ("fms", "timer"):
                 if not isinstance(v, bool):
-                    raise ValueError(f"{where} {key} must be true or false, not {v!r}")
+                    raise SettingError(where, t("{key} must be true or false, not {value}", **said), key)
             else:
                 if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v <= 0:
-                    raise ValueError(f"{where} {key} must be a positive number of seconds, not {v!r}")
+                    raise SettingError(where, t("{key} must be a positive number of seconds, not {value}", **said),
+                                       key)
                 v = float(v)
             changes[key] = v
         return replace(self, **changes)
@@ -90,7 +105,7 @@ class DriverStationState:
 
     def set_mode(self, mode: str) -> None:
         if mode not in MODES:
-            raise ValueError(f"mode must be one of {', '.join(MODES)}, not {mode!r}")
+            raise ValueError(t("mode must be one of {modes}, not {mode}", modes=", ".join(MODES), mode=repr(mode)))
         if mode in PHASES and mode != self.mode:
             self._entering = True
         self.mode = mode
@@ -112,7 +127,7 @@ class DriverStationState:
 
     def set_joystick(self, port: int, axes=None, buttons=None, povs=None) -> None:
         if not 0 <= int(port) <= 5:
-            raise ValueError(f"joystick port must be 0-5, not {port}")
+            raise ValueError(t("joystick port must be 0-5, not {port}", port=port))
         js = self.joysticks.setdefault(int(port), Joystick())
         if axes is not None:
             js.axes = [float(a) for a in axes]

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import math
 
+from .. import i18n
+
 # Our choice of eight plain colors, spread out so an FRC game piece's color lands nearest the name a student would
 # use: the 2020 and 2026 yellow balls, the 2019 orange cargo, 2022's red and blue cargo, the white and off-white
 # discs and rigid pieces (build.py's drawn colors), and 2016's gray boulder.
@@ -36,10 +38,12 @@ def parse_color(value, where: str) -> tuple[float, float, float]:
     if isinstance(value, str):
         if value in NAMED_COLORS:
             return NAMED_COLORS[value]
-        raise ValueError(f"{where}: color {value!r} isn't one of the named colors ({', '.join(NAMED_COLORS)}); "
-                         "give one of those or [r, g, b], each 0 to 1")
+        raise ValueError(i18n.t("{where}: {key} {value} isn't one of the named colors ({named_colors}); give one "
+                                "of those or [r, g, b], each 0 to 1", where=where, key="color", value=repr(value),
+                                named_colors=', '.join(NAMED_COLORS)))
     if (isinstance(value, list) and len(value) == 3
             and all(isinstance(c, (int, float)) and not isinstance(c, bool) and 0.0 <= c <= 1.0 for c in value)):
         return tuple(float(c) for c in value)
-    raise ValueError(f"{where}: color must be a named color ({', '.join(NAMED_COLORS)}) or [r, g, b], each 0 to 1, "
-                     f"not {value!r}")
+    raise ValueError(i18n.t("{where}: {key} must be a named color ({named_colors}) or [r, g, b], each 0 to 1, not "
+                            "{value}", where=where, key="color", named_colors=', '.join(NAMED_COLORS),
+                            value=repr(value)))

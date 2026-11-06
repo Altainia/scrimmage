@@ -21,6 +21,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
+from .. import i18n
 from ..config import load_config
 from ..launcher.flight import Landing, fly
 from ..launcher.inputs import Setup
@@ -68,21 +69,27 @@ def calibration(model: AimModel) -> str:
 
 def load_model(config_path: Path, goal: str, hood_step_deg: float = 2.0) -> AimModel:
     if hood_step_deg <= 0.0:
-        raise AimError(f"hood_step_deg must be positive, not {hood_step_deg:g}")
+        raise AimError(i18n.t("hood_step_deg must be positive, not {hood_step_deg}",
+                              hood_step_deg=f"{hood_step_deg:g}"))
     cfg = load_config(config_path)
     if "shooter" not in cfg.raw:
-        raise AimError(f"{config_path}: no [shooter]: the aiming table is made from the robot's launcher")
+        raise AimError(i18n.t("{config_path}: no {shooter_table}: the aiming table is made from the robot's launcher",
+                              config_path=config_path, shooter_table="[shooter]"))
     try:
         built = assemble(cfg.raw, cfg.dir)
         shooter = parse_shooter(cfg.raw, built, cfg.dir)
     except ValueError as e:     # PartError is one
         raise AimError(f"{config_path}: {e}") from None
     if shooter.kind == "disc":
-        raise AimError(f"{config_path}: [shooter] kind = \"disc\": the aiming table is made from a ball launcher; "
-                       "for a disc shooter's exit speeds use `scrimmage disc table` and `scrimmage disc run`")
+        raise AimError(i18n.t("{config_path}: {shooter_table} {kind_setting}: the aiming table is made from a ball "
+                              "launcher; for a disc shooter's exit speeds use `{scrimmage_disc_table}` and "
+                              "`{scrimmage_disc_run}`", config_path=config_path, shooter_table="[shooter]",
+                              kind_setting="kind = \"disc\"", scrimmage_disc_table="scrimmage disc table",
+                              scrimmage_disc_run="scrimmage disc run"))
     goals = {g.name: g for g in built.range.goals}
     if goal not in goals:
-        raise AimError(f"goal {goal!r} isn't in range {built.range.name!r}; its goals: {', '.join(goals)}")
+        raise AimError(i18n.t("goal {goal} isn't in range {name}; its goals: {goals}",
+                              goal=repr(goal), name=repr(built.range.name), goals=', '.join(goals)))
     g = goals[goal]
 
     m = built.model
@@ -92,8 +99,9 @@ def load_model(config_path: Path, goal: str, hood_step_deg: float = 2.0) -> AimM
     local = data.xmat[robot].reshape(3, 3).T @ (data.xpos[base] - data.xpos[robot])
     facing = data.xmat[robot].reshape(3, 3).T @ data.xmat[base].reshape(3, 3)[:, 0]   # launcher x in the robot frame
     if facing[0] <= 0.0:
-        raise AimError(f"the launcher part {shooter.part!r} faces backward (its x axis points {facing[0]:+.2f} along "
-                       "the robot's): the table assumes it shoots where the robot faces")
+        raise AimError(i18n.t("the launcher part {part} faces backward (its x axis points {facing} along the "
+                              "robot's): the table assumes it shoots where the robot faces",
+                              part=repr(shooter.part), facing=f"{facing[0]:+.2f}"))
 
     if shooter.hood == "fixed":
         angles = (shooter.hood_angle,)
@@ -130,7 +138,7 @@ def fly_row(model: AimModel, row: AimRow) -> Landing:
     """The landing of the shot a row prescribes (the goal at the row's distance)."""
     landing = _land(model, row.hood_deg, row.wheel_rps, row.distance)
     if landing is None:
-        raise AimError(f"the shot at {row.distance:g} m does not leave the launcher")
+        raise AimError(i18n.t("the shot at {distance} m does not leave the launcher", distance=f"{row.distance:g}"))
     return landing
 
 
@@ -159,8 +167,9 @@ def reachable(model: AimModel, rps_range: tuple[float, float]) -> tuple[float, f
             if x is not None:
                 into.append(x + model.forward)
     if not highs:
-        raise AimError("no hood angle in range gets a ball to the rim height at any wheel speed in "
-                       f"{rps_range[0]:g}..{rps_range[1]:g} rps")
+        raise AimError(i18n.t("no hood angle in range gets a ball to the rim height at any wheel speed in "
+                              "{low}..{high} rps",
+                              low=f"{rps_range[0]:g}", high=f"{rps_range[1]:g}"))
     return (min(lows) if lows else min(highs)), max(highs)
 
 
@@ -191,7 +200,7 @@ def aim_table(config_path: Path, goal: str, distances: list[float], *, hood_step
     called once with a message naming them and the reachable range; AimError only when none is reachable. `model`:
     load_model's, when the caller has loaded it already (for its label)."""
     if not distances:
-        raise AimError("no distances")
+        raise AimError(i18n.t("no distances"))
     if model is None:
         model = load_model(config_path, goal, hood_step_deg)
     rows = []
@@ -207,9 +216,11 @@ def aim_table(config_path: Path, goal: str, distances: list[float], *, hood_step
     missed = [r.distance for r in rows if r.status == UNREACHABLE]
     if missed:
         near, far = reachable(model, rps_range)
-        msg = (f"{', '.join(f'{d:g}' for d in missed)} m can't be reached with wheels at {rps_range[0]:g}.."
-               f"{rps_range[1]:g} rps and hood angles {model.hood_angles[0]:g}..{model.hood_angles[-1]:g} deg to the "
-               f"{goal} rim height: reachable distances are about {near:.2f} to {far:.2f} m")
+        msg = i18n.t("{distances} m can't be reached with wheels at {low}..{high} rps and hood angles "
+                     "{lowest}..{highest} deg to the {goal} rim height: reachable distances are about {near} to "
+                     "{far} m", distances=", ".join(f"{d:g}" for d in missed), low=f"{rps_range[0]:g}",
+                     high=f"{rps_range[1]:g}", lowest=f"{model.hood_angles[0]:g}",
+                     highest=f"{model.hood_angles[-1]:g}", goal=goal, near=f"{near:.2f}", far=f"{far:.2f}")
         if len(missed) == len(rows):
             raise AimError(msg)
         if on_unreachable is not None:
@@ -231,7 +242,7 @@ def to_java(rows: list[AimRow], class_name: str, command: str, label: str | None
     """A `final` class with `ROWS`, one {distance, wheel_rps, hood_deg, flight_s, apex} row per distance. The header
     gives `command` as the command that made it, and `label` (the launcher's UNCALIBRATED line by default; the setup's
     own, calibration(model), says what was measured)."""
-    from ..launcher.report import UNCALIBRATED
+    from ..launcher.report import uncalibrated
     package, _, name = class_name.rpartition(".")
     body = ",\n".join(
         "        {" + ", ".join(f"{getattr(r, f):.4f}" for f in ROW_FIELDS) + "}" for r in rows if r.status == "ok")
@@ -242,7 +253,7 @@ def to_java(rows: list[AimRow], class_name: str, command: str, label: str | None
         "// angle whose ball crosses the goal's rim height descending at its center, the time from exit to that",
         "// crossing, and the ball's highest point.",
         f"// Made by: {command}",
-        f"// {UNCALIBRATED if label is None else label}",
+        f"// {uncalibrated() if label is None else label}",
         *([f"package {package};", ""] if package else []),
         f"public final class {name} {{",
         f"    private {name}() {{}}",

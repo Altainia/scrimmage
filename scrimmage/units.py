@@ -21,6 +21,7 @@ from contextvars import ContextVar
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 from typing import NamedTuple
 
+from . import i18n
 from .settings import SYSTEMS, current_units
 
 KINDS = ("length", "field", "speed", "mass", "force", "torque", "pressure", "density", "spring", "angle", "time",
@@ -97,6 +98,8 @@ KEY_UNITS: dict[str, dict[str, float]] = {
 # code inside (this thread or task only), so the words built there needn't be passed a system. The Test tab's
 # machine text goes further: inside `with machine_text():` its sites write their old f-strings (is_machine()),
 # since some were meters ("didn't reach 5 m") and some kept trailing zeros ("4.0 in"), which no one system gives.
+# Both keep the source's American English too, whatever the Language setting (i18n.fixed; L2 in
+# docs/superpowers/specs/2026-11-05-language-theme-design.md): machine text is never translated.
 MACHINE = "imperial"
 _fixed: ContextVar[str | None] = ContextVar("units_fixed", default=None)
 _machine: ContextVar[bool] = ContextVar("units_machine", default=False)
@@ -104,12 +107,14 @@ _machine: ContextVar[bool] = ContextVar("units_machine", default=False)
 
 @contextmanager
 def fixed(system: str):
-    """Format in `system` by default inside the `with`, instead of the Units setting."""
+    """Format in `system` by default inside the `with`, instead of the Units setting, and write American English
+    whatever the Language setting."""
     if system not in TABLE:
         raise ValueError(f"unknown unit system {system!r}; imperial or metric")
     token = _fixed.set(system)
     try:
-        yield
+        with i18n.fixed(i18n.SOURCE):
+            yield
     finally:
         _fixed.reset(token)
 
@@ -118,7 +123,7 @@ def fixed(system: str):
 def machine_text():
     """The Test tab's machine text (a sweep's or spread's table.csv, MCP test_run): inside the `with`, the sites
     that check is_machine() write the words they wrote before the Units setting existed, byte for byte, and the
-    rest format in MACHINE."""
+    rest format in MACHINE, in American English (fixed())."""
     token = _machine.set(True)
     try:
         with fixed(MACHINE):

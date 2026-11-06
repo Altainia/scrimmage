@@ -14,6 +14,7 @@ from collections import defaultdict, deque
 
 import numpy as np
 
+from .. import i18n
 from . import CadError
 from .source import Piece
 
@@ -23,9 +24,9 @@ BORE_GAP_DEG = 90.0         # a bore's walls face every way round: no gap betwee
 BORE_SPREAD = 1.25          # and its corners sit on one circle: farthest over nearest, from the fitted center
 FLAT_ANGLE_DEG = 2.0
 CYLINDER_RATIO = 0.05       # smallest/largest eigenvalue above this is not a cylinder
-NOT_ROUND = ("that face isn't round; click inside a hole, a hex bore or on a round face, or snap the axis and type "
-             "the pivot point")
-NOT_A_FACE = "that spot has no surface to measure; click a different part of the piece"
+NOT_ROUND = i18n.N_("that face isn't round; click inside a hole, a hex bore or on a round face, or snap the axis and "
+                    "type the pivot point")      # (N_(): raised translated())
+NOT_A_FACE = i18n.N_("that spot has no surface to measure; click a different part of the piece")
 
 
 def _grow(p: Piece, start: int, normals: np.ndarray, valid: np.ndarray, angle_deg: float) -> list[int]:
@@ -52,13 +53,13 @@ def _grow(p: Piece, start: int, normals: np.ndarray, valid: np.ndarray, angle_de
 def fit_axis(p: Piece, triangle: int, kind: str) -> tuple[np.ndarray, np.ndarray]:
     """(point, unit direction) in CAD coordinates for the face under triangle `triangle`; kind "round" or "flat"."""
     if not 0 <= triangle < len(p.f):
-        raise CadError("That click is outside the piece: click on the piece itself.")
+        raise CadError(i18n.t("That click is outside the piece: click on the piece itself."))
     tv = p.v[p.f]
     cross = np.cross(tv[:, 1] - tv[:, 0], tv[:, 2] - tv[:, 0])
     length = np.linalg.norm(cross, axis=1)
     valid = length > 1e-18
     if not valid[triangle]:
-        raise CadError(NOT_A_FACE)
+        raise CadError(i18n.translated(NOT_A_FACE))
     area = length / 2
     normals = np.zeros_like(cross)
     normals[valid] = cross[valid] / length[valid, None]
@@ -74,7 +75,7 @@ def fit_axis(p: Piece, triangle: int, kind: str) -> tuple[np.ndarray, np.ndarray
     if fit is None:
         fit = _round(p, normals, area, _grow(p, triangle, normals, valid, BORE_ANGLE_DEG), bore=True)
     if fit is None:
-        raise CadError(NOT_ROUND)
+        raise CadError(i18n.translated(NOT_ROUND))
     return fit
 
 

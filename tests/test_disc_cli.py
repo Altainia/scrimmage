@@ -12,7 +12,7 @@ from scrimmage.disc.flight import fly, matrix_from_quat
 from scrimmage.disc.inputs import DiscConfigError, load_setup, parse_setup
 from scrimmage.disc.launcher import ExitedDisc, DiscEnergy
 from scrimmage.disc.run import METRIC_KEYS, exit_to_flight_state, run_setup
-from scrimmage.disc.report import DISC_UNCALIBRATED as UNCALIBRATED
+from scrimmage.disc.report import disc_uncalibrated
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples" / "disc"
 NAMES = ("linear.toml", "arc.toml", "pinch.toml")
@@ -70,7 +70,7 @@ def test_examples_run(tmp_path, capsys):
         main(["disc", "run", str(quick(name, tmp_path)), "--out", str(out)])
         assert (out / "results.csv").exists() and (out / "summary.md").exists(), name
         text = capsys.readouterr().out
-        assert text.splitlines()[0] == UNCALIBRATED
+        assert text.splitlines()[0] == disc_uncalibrated()
         rows = list(csv.DictReader((out / "results.csv").open()))
         assert len(rows) == 1 and float(rows[0]["launched"]) >= 1, name
         assert float(rows[0]["exit_speed"]) > 3.0, name
@@ -124,7 +124,7 @@ def test_table_prints_rows(tmp_path, capsys):
     main(["disc", "table", str(EXAMPLES / "linear.toml"), "--rpm", "3000:5000:1000"])
     out = capsys.readouterr().out
     lines = out.splitlines()
-    assert lines[0] == UNCALIBRATED
+    assert lines[0] == disc_uncalibrated()
     assert lines[1].split()[0] == "rpm"
     assert [l.split()[0] for l in lines[2:5]] == ["3000", "4000", "5000"]
     assert "exit speed" in lines[-1] and "x wheel surface speed" in lines[-1]

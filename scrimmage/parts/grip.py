@@ -32,7 +32,8 @@ from dataclasses import replace
 from pathlib import Path
 
 from ..measure.use import is_measurement
-from .model import Part, PartError
+from ..i18n import N_, t, translated
+from .model import Part, PartError, Where
 
 GRIP_PRIORITY = 1                     # above a piece's (and every field geom's) 0, as the climber's hooks
 GRIP_SOLREF = (0.004, 1.0)            # a rigid piece's firm contact (testrange/build.py, RIGID_SOLREF); a pad's own
@@ -45,26 +46,26 @@ _HERE = Path(__file__).resolve().parent.parent
 _BENCH = tomllib.loads((_HERE / "bench" / "presets.toml").read_text(encoding="utf-8"))["material"]
 _SURFACE = tomllib.loads((_HERE / "launcher" / "presets.toml").read_text(encoding="utf-8"))["surface"]
 
-# key -> (label, sliding friction against a rigid piece)
+# key -> (label, sliding friction against a rigid piece); a label is N_(), shown with translated()
 GRIP_MATERIALS: dict[str, tuple[str, float]] = {
     # estimate: rubber on a hard surface, the lower half of the published rubber-on-concrete and rubber-on-cardboard
     # ranges (0.5 to 0.85); the range's rubber surface (launcher/presets.toml [surface.rubber]), read from there
-    "rubber": ("Rubber", float(_SURFACE["rubber"]["friction"])),
+    "rubber": (N_("Rubber"), float(_SURFACE["rubber"]["friction"])),
     # estimate: rubber on a hard plastic piece, 0.7 to 1.0 typical; the bench's nitrile rigid_friction
     # (bench/presets.toml [material.nitrile]), read from there. As rubber: the estimates can't tell them apart
-    "nitrile": ("Nitrile", float(_BENCH["nitrile"]["rigid_friction"])),
+    "nitrile": (N_("Nitrile"), float(_BENCH["nitrile"]["rigid_friction"])),
     # estimate: a grit-coated tape grips a hard plastic piece above plain rubber (0.7 to 1.0 typical); taken past
     # the top of that range. No other table has it
-    "grip-tape": ("Grip tape", 1.1),
+    "grip-tape": (N_("Grip tape"), 1.1),
     # estimate: smooth plastic on a hard plastic piece, 0.3 to 0.5 typical; the bench's polycarbonate rigid_friction
-    "polycarbonate": ("Polycarbonate", float(_BENCH["polycarbonate"]["rigid_friction"])),
+    "polycarbonate": (N_("Polycarbonate"), float(_BENCH["polycarbonate"]["rigid_friction"])),
     # estimate: bare aluminum on a hard plastic piece, 0.3 to 0.4 typical; the bench's aluminum rigid_friction
-    "aluminum": ("Aluminum", float(_BENCH["aluminum"]["rigid_friction"])),
+    "aluminum": (N_("Aluminum"), float(_BENCH["aluminum"]["rigid_friction"])),
     # estimate: UHMW on a hard plastic piece, 0.15 to 0.25 typical (a low-friction guide material); the bench's
     # UHMW rigid_friction
-    "hdpe": ("HDPE / UHMW", float(_BENCH["UHMW"]["rigid_friction"])),
+    "hdpe": (N_("HDPE / UHMW"), float(_BENCH["UHMW"]["rigid_friction"])),
 }
-MEASURE = "measure yours with a sled pull, docs/test-tab.md"
+MEASURE = N_("measure yours with a sled pull, docs/test-tab.md")     # shown with translated()
 
 
 def _number(x) -> bool:
@@ -77,12 +78,13 @@ def measured_grip(grip: str, where: str, base) -> tuple[float, object]:
     from ..measure.file import MeasureError
     from ..measure.use import friction_value
     try:
-        mu, prov = friction_value(grip, where, base=base, key="grip", needs="a grip")
+        mu, prov = friction_value(grip, where, base=base, key="grip", needs=N_("a grip"))
     except MeasureError as e:
-        raise PartError(str(e)) from None
+        raise PartError(str(e), where=where) from None
     if not (math.isfinite(mu) and 0 < mu <= MY_OWN_MAX):
-        raise PartError(f"{where}: grip = \"{grip}\" measures a friction of {mu:g}, which isn't one to use: above 0 "
-                        f"and at most {MY_OWN_MAX:g}; check its sled pulls")
+        raise PartError(t("{where}: {grip_setting} measures a friction of {mu}, which isn't one to use: above 0 and "
+                          "at most {most}; check its sled pulls", where=where, mu=f"{mu:g}", most=f"{MY_OWN_MAX:g}",
+                          grip_setting="grip = \"{}\"".format(grip)), where=where)
     return mu, prov
 
 
@@ -93,14 +95,15 @@ def grip_friction(grip: str | float, where: str, base=None) -> float:
         return measured_grip(grip, where, base if base is not None else Path("."))[0]
     if _number(grip):
         if not (math.isfinite(grip) and 0 < grip <= MY_OWN_MAX):
-            raise PartError(f"{where}: grip {grip!r} isn't a friction to use; give a number above 0 and at most "
-                            f"{MY_OWN_MAX:g} (a measured friction)")
+            raise PartError(t("{where}: grip {grip} isn't a friction to use; give a number above 0 and at most {most} "
+                              "(a measured friction)", where=where, grip=repr(grip), most=f"{MY_OWN_MAX:g}"),
+                            where=where)
         return float(grip)
     if isinstance(grip, str) and grip in GRIP_MATERIALS:
         return GRIP_MATERIALS[grip][1]
     shown = f'"{grip}"' if isinstance(grip, str) else repr(grip)
-    raise PartError(f"{where}: grip {shown} isn't a grip material; pick one of {', '.join(GRIP_MATERIALS)}, or give "
-                    "a number (a measured friction)")
+    raise PartError(t("{where}: grip {grip} isn't a grip material; pick one of {materials}, or give a number (a "
+                      "measured friction)", where=where, grip=shown, materials=", ".join(GRIP_MATERIALS)), where=where)
 
 
 def apply_grip(part: Part, grips: dict[str, str | float], where: str, base=None) -> tuple[Part, list[str]]:
@@ -109,17 +112,21 @@ def apply_grip(part: Part, grips: dict[str, str | float], where: str, base=None)
     `base`, the folder of the file that names it (default the part's folder), and its provenance kept in the part's
     grip_provenance."""
     if not isinstance(grips, dict):
-        raise PartError(f"{where}: grip must be a table of body = material, not {grips!r}")
+        raise PartError(t("{where}: grip must be a table of {body_setting}, not {grip}", where=where,
+                          grip=repr(grips), body_setting="body = material"),
+                        where=where)
     base = base if base is not None else part.base_dir if part.base_dir is not None else Path(".")
     names = [b.name for b in part.bodies]
     frictions, provenance = {}, {}
     for name, grip in grips.items():
         if name not in names:
-            raise PartError(f"{where}: grip: no body {name!r} in the part; bodies: {', '.join(names)}")
+            raise PartError(t("{where}: grip: no body {body} in the part; bodies: {bodies}", where=where,
+                              body=repr(name), bodies=", ".join(names)), where=where)
+        at = Where(f"{where}: body {name}", getattr(where, "part", None))
         if is_measurement(grip):
-            frictions[name], provenance[name] = measured_grip(grip, f"{where}: body {name}", base)
+            frictions[name], provenance[name] = measured_grip(grip, at, base)
         else:
-            frictions[name] = grip_friction(grip, f"{where}: body {name}")
+            frictions[name] = grip_friction(grip, at)
     warns: list[str] = []
     bodies = []
     for b in part.bodies:
@@ -129,7 +136,8 @@ def apply_grip(part: Part, grips: dict[str, str | float], where: str, base=None)
         mu = frictions[b.name]
         touch = [g.collide and not g.tread for g in b.geoms]
         if not any(touch):
-            warns.append(f"{where}: body {b.name} has no geom that touches anything, so its grip does nothing")
+            warns.append(t("{where}: body {body} has no geom that touches anything, so its grip does nothing",
+                           where=where, body=b.name))
         bodies.append(replace(b, geoms=[replace(g, friction=mu, priority=GRIP_PRIORITY, solref=GRIP_SOLREF) if t
                                         else g for g, t in zip(b.geoms, touch)]))
     kept = {k: p for k, p in part.grip_provenance.items() if k not in grips}
@@ -185,17 +193,21 @@ def set_grip(folder: Path, body: str, grip: str | float | None) -> None:
 def measured_label(mu: float | None, prov) -> str:
     """A measured grip's words: its friction, the file it came from, and why it isn't good enough when it isn't."""
     from ..measure.labels import not_good, source
-    friction = f", friction {mu:g}" if mu is not None else ""
-    said = f"measured{friction} ({source(prov)})"
-    return said if prov.good else f"{said}, {not_good(prov)} (UNCALIBRATED)"
+    if mu is not None:
+        said = t("measured, friction {mu} ({source})", mu=f"{mu:g}", source=source(prov))
+    else:
+        said = t("measured ({source})", source=source(prov))
+    return said if prov.good else t("{said}, {why} (UNCALIBRATED)", said=said, why=not_good(prov))
 
 
 def _label(grip: str | float) -> str:
     if _number(grip):
-        return f"my own number, friction {float(grip):g} (UNCALIBRATED unless you measured it)"
+        return t("my own number, friction {mu} (UNCALIBRATED unless you measured it)", mu=f"{float(grip):g}")
     label, mu = GRIP_MATERIALS[grip]
+    label = translated(label)
     word = label[0].lower() + label[1:] if label[1:2].islower() else label     # "nitrile", "HDPE / UHMW"
-    return f"{word}, friction {mu:g} (UNCALIBRATED estimate; {MEASURE})"
+    return t("{material}, friction {mu} (UNCALIBRATED estimate; {measure})", material=word, mu=f"{mu:g}",
+             measure=translated(MEASURE))
 
 
 def pad_frictions(world) -> dict[str, float | None]:
@@ -229,9 +241,9 @@ def grip_notes(world) -> list[str]:
         for body, grip in inst.part.grips.items():
             prov = inst.part.grip_provenance.get(body)
             if prov is None:
-                out.append(f"{inst.name}.{body} grip: {_label(grip)}")
+                out.append(t("{part}.{body} grip: {grip}", part=inst.name, body=body, grip=_label(grip)))
                 continue
             mu = next((g.friction for b in inst.part.bodies if b.name == body for g in b.geoms
                        if g.priority == GRIP_PRIORITY), None)    # None: the body touches nothing
-            out.append(f"{inst.name}.{body} grip: {measured_label(mu, prov)}")
+            out.append(t("{part}.{body} grip: {grip}", part=inst.name, body=body, grip=measured_label(mu, prov)))
     return out

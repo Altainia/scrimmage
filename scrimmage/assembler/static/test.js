@@ -25,26 +25,29 @@
 // Every change is saved (500 ms after the last one) through /api/test/save with the state's version; a 409 (the file
 // changed meanwhile) shows the saved version again and says so. Problems from the state show as a warning on their
 // block and in the list above Run, with this page's own (a save the server refused, an empty condition socket, blocks
-// not joined to the test); Run is off while there are any, and runs only the test as it is on screen. Blockly's theme follows the page's (light or dark),
-// its colors read from app.css's tokens.
+// not joined to the test); Run is off while there are any, and runs only the test as it is on screen. Blockly's
+// theme follows the page's (theme.js: light or dark), its colors read from app.css's tokens.
 //
 // Test hook: window.__scrimmageTest {workspace, state, toJSON(), saved: a promise for the save under way (or
 // resolved), replay: test_run.js's replay(), sweep: test_run.js's sweepShown(), spread: its spreadShown(), robot: the
 // robot state Setup shows, sweepFor: the sweep form's numbers, trySweep(blockId): opens the sweep form for that
 // block's number}.
 
-import { $, h, api, notice, registerTab, setTab, showPath, currentTab, store, DEFAULT_GRIP, showMeasure, readMeasure,
+import { $, h, api, notice, registerTab, setTab, showPath, currentTab, store, defaultGrip, showMeasure, readMeasure,
   measureError, lengthWords } from "./app.js";
 import { initRunPanel, update as updateRuns, replay, sweepShown, spreadShown } from "./test_run.js";
 import { defineBlocks, toolbox, testToWorkspace, workspaceToTest, placeOf, incomplete, looseStacks, setUsed, STYLES,
-  headOf, setHead, sweepNumber, appendBlocks, showUnits } from "./blocks_defs.js";
+  headOf, setHead, sweepNumber, appendBlocks, showUnits, relabel } from "./blocks_defs.js";
 import { units } from "./units.js";
+import { i18n, t, tn } from "./i18n.js";
+import { theme as pageTheme } from "./theme.js";
 
 const SAVE_DELAY = 500;     // ms after the last change
 const MAX_SWEEP = 12;       // scrimmage/blocks/sweep.py's
-const STALE = "The test changed on disk; showing the saved version.";
+const stale = () => t("The test changed on disk; showing the saved version.");
+const answered = (status) => t("the server answered {status}", { status });
 
-const t = {
+const T = {
   state: null,        // /api/test/state
   ws: null,           // the Blockly workspace
   synced: null,       // canon() of the test as the server has it, when the workspace shows it
@@ -88,20 +91,18 @@ function loadScript(src) {
   });
 }
 
-const dark = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
-
-// The Blockly theme for the page's theme, from app.css's tokens (read when that theme is first shown).
+// The Blockly theme for the page's theme (theme.js), from app.css's tokens (read when that theme is first shown).
 const themes = {};
+let followsTheme = null;      // theme.js's onChange, once for every workspace inject() makes
 function theme() {
-  const name = dark && dark.matches ? "scrimmage-dark" : "scrimmage-light";
+  const name = pageTheme.isDark() ? "scrimmage-dark" : "scrimmage-light";
   if (!themes[name]) themes[name] = makeTheme(name);
   return themes[name];
 }
 
 function makeTheme(name) {
   const B = window.Blockly;
-  const css = getComputedStyle(document.documentElement);
-  const v = (name) => css.getPropertyValue(name).trim();
+  const v = (token) => pageTheme.color(token);
   const style = (cat) => ({ colourPrimary: v(`--block-${cat}`), colourTertiary: v(`--block-${cat}-3`) });
   return B.Theme.defineTheme(name, {
     base: B.Themes.Classic,
@@ -119,17 +120,17 @@ function makeTheme(name) {
       cursorColour: v("--accent-text"),
       markerColour: v("--accent-text"),
     },
-    fontStyle: { family: v("--font"), weight: "600", size: 11 },
+    fontStyle: { family: getComputedStyle(document.documentElement).getPropertyValue("--font").trim(), weight: "600", size: 11 },
   });
 }
 
 function inject() {
   const B = window.Blockly;
-  defineBlocks(() => (t.state ? t.state.palette : null));
+  defineBlocks(() => (T.state ? T.state.palette : null));
   const box = $("#test-blockly");
   box.replaceChildren();
-  t.ws = B.inject(box, {
-    toolbox: toolbox(t.state.palette),
+  T.ws = B.inject(box, {
+    toolbox: toolbox(T.state.palette),
     theme: theme(),
     media: "vendor/blockly-media/",
     sounds: false,
@@ -141,45 +142,61 @@ function inject() {
     move: { scrollbars: true, drag: true, wheel: true },
     zoom: { controls: true, wheel: false, startScale: 1.0 },
   });
-  t.toolboxKey = toolboxKey(t.state.palette);
-  t.shownUnits = units.system;
-  t.ws.addChangeListener(onChange);
+  T.toolboxKey = toolboxKey(T.state.palette);
+  T.shownUnits = units.system;
+  T.ws.addChangeListener(onChange);
   registerTryValues();
-  if (dark && dark.addEventListener) dark.addEventListener("change", () => t.ws.setTheme(theme()));
-  new ResizeObserver(() => { B.svgResize(t.ws); fitHeads(); }).observe(box);
+  if (!followsTheme) followsTheme = pageTheme.onChange(() => { if (T.ws) T.ws.setTheme(theme()); });
+  new ResizeObserver(() => { B.svgResize(T.ws); fitHeads(); }).observe(box);
 }
 
 // The column titles over the flyout and the workspace.
 function fitHeads() {
-  const fl = t.ws && t.ws.getFlyout();
+  const fl = T.ws && T.ws.getFlyout();
   if (fl) $(".test-heads").style.setProperty("--flyout-w", `${Math.round(fl.getWidth())}px`);
 }
 
 function show(test) {
-  t.saveError = null;
-  t.hopperSet = false;
-  t.floor = null;
-  testToWorkspace(test, t.ws);
-  t.synced = canon(test);
-  t.base = t.state.version;
+  T.saveError = null;
+  T.hopperSet = false;
+  T.floor = null;
+  testToWorkspace(test, T.ws);
+  T.synced = canon(test);
+  T.base = T.state.version;
   check();
 }
 
 // The flyout's blocks show the palette's names and the Units setting's numbers.
-const toolboxKey = (palette) => canon([palette, units.system]);
+const toolboxKey = (palette) => canon([palette, units.system, i18n.lang]);
 
 // A Units change: the blocks, the flyout and Setup show their numbers in the new units; the test file is unchanged.
 function unitsChanged() {
-  if (t.ws) {
-    showUnits(t.ws, t.shownUnits || units.system);
-    t.toolboxKey = toolboxKey(t.state.palette);
-    t.ws.updateToolbox(toolbox(t.state.palette));
+  if (T.ws) {
+    showUnits(T.ws, T.shownUnits || units.system);
+    T.toolboxKey = toolboxKey(T.state.palette);
+    T.ws.updateToolbox(toolbox(T.state.palette));
     fitHeads();
   }
-  t.shownUnits = units.system;
+  T.shownUnits = units.system;
   floorUnits();
-  t.setupKey = null;
+  T.setupKey = null;
   renderSetup();
+}
+
+// A Language change (spec L7): the blocks are made again in the new words (blocks_defs.js relabel: an open editor is
+// committed first, and nothing is saved, as the test is unchanged), and so are the flyout and Setup; the state is
+// asked for again, for the server's words (problems, hints) in the new language.
+function languageChanged() {
+  if (T.ws) {
+    relabel(T.ws);
+    T.toolboxKey = toolboxKey(T.state.palette);
+    T.ws.updateToolbox(toolbox(T.state.palette));
+    fitHeads();
+    check();
+  }
+  T.setupKey = null;
+  render();
+  refresh();
 }
 
 // -- saving -----------------------------------------------------------------------------------------------------------
@@ -189,57 +206,54 @@ function onChange(e) {
   if (![B.Events.BLOCK_CHANGE, B.Events.BLOCK_CREATE, B.Events.BLOCK_DELETE, B.Events.BLOCK_MOVE].includes(e.type)) return;
   check();
   // Blockly reports the blocks testToWorkspace made a moment later: those are no change to save
-  if (t.timer || t.saving || canon(workspaceToTest(t.ws)) !== t.synced) schedule();
+  if (T.timer || T.saving || canon(workspaceToTest(T.ws)) !== T.synced) schedule();
   else renderStatus();
   renderTop();
 }
 
 function schedule() {
-  clearTimeout(t.timer);
-  t.timer = setTimeout(() => { t.timer = null; t.saving = save().finally(() => { t.saving = null; }); }, SAVE_DELAY);
+  clearTimeout(T.timer);
+  T.timer = setTimeout(() => { T.timer = null; T.saving = save().finally(() => { T.saving = null; }); }, SAVE_DELAY);
   renderStatus();
 }
 
 // Save now (a pending change), and wait for any save under way.
 async function flush() {
-  if (t.timer) {
-    clearTimeout(t.timer);
-    t.timer = null;
-    t.saving = save().finally(() => { t.saving = null; });
+  if (T.timer) {
+    clearTimeout(T.timer);
+    T.timer = null;
+    T.saving = save().finally(() => { T.saving = null; });
   }
-  while (t.saving) await t.saving;
+  while (T.saving) await T.saving;
 }
 
 async function save() {
-  if (t.local.some((p) => p.blocking)) { renderStatus(); return; }   // can't be written like this yet
-  const test = workspaceToTest(t.ws);
+  if (T.local.some((p) => p.blocking)) { renderStatus(); return; }   // can't be written like this yet
+  const test = workspaceToTest(T.ws);
   const key = canon(test);
-  if (key === t.synced) { t.saveError = null; renderStatus(); return; }
+  if (key === T.synced) { T.saveError = null; renderStatus(); return; }
   renderStatus(true);
-  const { status, data } = await api("POST", "/api/test/save", { test, version: t.base });
+  const { status, data } = await api("POST", "/api/test/save", { test, version: T.base });
   if (status === 200 && data.ok) {
-    t.synced = key;
-    t.base = data.version;
-    t.saveError = null;
+    T.synced = key;
+    T.base = data.version;
+    T.saveError = null;
     await refresh();
   } else if (status === 409) {
-    t.saveError = null;
-    notice(STALE, "warn", "test-stale");
+    T.saveError = null;
+    notice(stale(), "warn", "test-stale");
     await refresh(true);
   } else {
-    t.saveError = refused((data.errors && data.errors[0] && data.errors[0].message) || `the server answered ${status}`);
+    T.saveError = refused((data.errors && data.errors[0]) || { message: answered(status) });
     check();
   }
   renderStatus();
 }
 
-// The server names a bad block by its place ("block 2 inside block 3 (repeat): seconds can't be negative"): the
-// message without that, and the place (0-based, outermost first) when it has one.
-function refused(text) {
-  const m = /^block (\d+)((?: inside block \d+)*)(?: \(repeat\))?: (.*)$/s.exec(text);
-  if (!m) return { message: text, place: null };
-  const nums = [m[1], ...(m[2].match(/\d+/g) || [])].map(Number).reverse();
-  return { message: m[3], place: nums.map((n) => n - 1) };
+// A refused save that names a bad block ("block 2 inside block 3 (repeat): seconds can't be negative") sends its place
+// (0-based, outermost first) and the problem without the place's words: those, else the whole message.
+function refused(err) {
+  return Array.isArray(err.place) ? { message: err.problem || err.message, place: err.place } : { message: err.message, place: null };
 }
 
 // -- state ------------------------------------------------------------------------------------------------------------
@@ -249,27 +263,27 @@ async function refresh(reload = false) {
 }
 
 function apply(s, reload = false) {
-  const prev = t.state;
+  const prev = T.state;
   if (prev && !reload && s.version < prev.version) return;   // an older answer overtaken by a newer one
-  t.state = s;
-  if (t.ws) {
-    setUsed([s.test, workspaceToTest(t.ws)]);
+  T.state = s;
+  if (T.ws) {
+    setUsed([s.test, workspaceToTest(T.ws)]);
     const key = toolboxKey(s.palette);
-    if (key !== t.toolboxKey) {
-      t.toolboxKey = key;
-      t.ws.updateToolbox(toolbox(s.palette));
+    if (key !== T.toolboxKey) {
+      T.toolboxKey = key;
+      T.ws.updateToolbox(toolbox(s.palette));
       fitHeads();
       if ($("#test-setup").open) loadRobot();     // the robot changed: its parts may have too
     }
-    const changed = canon(s.test) !== t.synced;
+    const changed = canon(s.test) !== T.synced;
     // a change this page didn't make (an outside edit, another tab), while nothing of ours is waiting to be saved
-    if (reload || (changed && !t.timer && !t.saving)) {
-      if (changed && !reload && prev) notice("The test changed outside this page (the file was edited, or another tab), so it was reloaded.", "info");
-      const loose = looseStacks(t.ws).map((b) => b.toString());
+    if (reload || (changed && !T.timer && !T.saving)) {
+      if (changed && !reload && prev) notice(t("The test changed outside this page (the file was edited, or another tab), so it was reloaded."), "info");
+      const loose = looseStacks(T.ws).map((b) => b.toString());
       show(s.test);
-      if (loose.length) notice(`Blocks not joined to your test were left out: ${loose.join("; ")}`, "warn");
+      if (loose.length) notice(t("Blocks not joined to your test were left out: {blocks}", { blocks: loose.join("; ") }), "warn");
     } else {
-      if (!changed) t.base = s.version;
+      if (!changed) T.base = s.version;
       check();
     }
   }
@@ -278,7 +292,7 @@ function apply(s, reload = false) {
 
 async function pollLoop() {
   for (;;) {
-    const since = t.state ? `?since=${t.state.version}` : "";
+    const since = T.state ? `?since=${T.state.version}` : "";
     const { status, data } = await api("GET", "/api/test/state" + since);
     if (status === 200) apply(data);
     else if (status === 404) return;     // the test was closed (another file opened); the page reloads
@@ -289,22 +303,22 @@ async function pollLoop() {
 // -- problems ---------------------------------------------------------------------------------------------------------
 // Server problems (at their place) and this page's own (incomplete blocks), as warnings on the blocks.
 function check() {
-  if (!t.ws) return;
-  t.local = incomplete(t.ws);
+  if (!T.ws) return;
+  T.local = incomplete(T.ws);
   // the state's places are the saved test's: they fit the workspace while it shows that test (else the last ones stay)
-  if (t.state && fits()) {
+  if (T.state && fits()) {
     const ids = placeIds();
-    t.serverWarn = new Map();
-    for (const p of t.state.problems || []) {
+    T.serverWarn = new Map();
+    for (const p of T.state.problems || []) {
       const id = p.place.length ? ids.get(p.place.join("/")) : null;
-      if (id) t.serverWarn.set(id, [...(t.serverWarn.get(id) || []), p.message]);
+      if (id) T.serverWarn.set(id, [...(T.serverWarn.get(id) || []), p.message]);
     }
   }
-  const byBlock = new Map(t.serverWarn);
+  const byBlock = new Map(T.serverWarn);
   const refusedAt = saveErrorBlock();
-  if (refusedAt) byBlock.set(refusedAt, [...(byBlock.get(refusedAt) || []), t.saveError.message]);
-  for (const p of t.local) byBlock.set(p.block.id, [...(byBlock.get(p.block.id) || []), p.message]);
-  for (const b of t.ws.getAllBlocks(false)) {
+  if (refusedAt) byBlock.set(refusedAt, [...(byBlock.get(refusedAt) || []), T.saveError.message]);
+  for (const p of T.local) byBlock.set(p.block.id, [...(byBlock.get(p.block.id) || []), p.message]);
+  for (const b of T.ws.getAllBlocks(false)) {
     const msgs = byBlock.get(b.id);
     const text = msgs ? msgs.join("\n") : null;
     if ((b.warningShown || null) !== text) { b.setWarningText(text); b.warningShown = text; }
@@ -312,27 +326,27 @@ function check() {
   renderProblems();
 }
 
-const fits = () => !!t.ws && canon(workspaceToTest(t.ws)) === t.synced;
-const placeIds = () => new Map([...placeOf(t.ws)].map(([id, place]) => [place.join("/"), id]));
+const fits = () => !!T.ws && canon(workspaceToTest(T.ws)) === T.synced;
+const placeIds = () => new Map([...placeOf(T.ws)].map(([id, place]) => [place.join("/"), id]));
 // the block a refused save names (its place is the workspace's: that is the test it tried to save)
-const saveErrorBlock = () => (t.saveError && t.saveError.place && t.ws ? placeIds().get(t.saveError.place.join("/")) || null : null);
+const saveErrorBlock = () => (T.saveError && T.saveError.place && T.ws ? placeIds().get(T.saveError.place.join("/")) || null : null);
 
 function problemList() {
   const out = [];
-  const s = t.state;
+  const s = T.state;
   if (!s) return out;
-  if (s.file_error) out.push({ message: `The test file can't be read: ${s.file_error}` });
+  if (s.file_error) out.push({ message: t("The test file can't be read: {why}", { why: s.file_error }) });
   const ids = fits() ? placeIds() : new Map();
   for (const p of s.problems || []) out.push({ message: p.message, id: p.place.length ? ids.get(p.place.join("/")) : null });
-  if (t.saveError) out.push({ message: `Not saved: ${t.saveError.message}`, id: saveErrorBlock() });
-  for (const p of t.local) out.push({ message: p.message, id: p.block.id });
+  if (T.saveError) out.push({ message: t("Not saved: {why}", { why: T.saveError.message }), id: saveErrorBlock() });
+  for (const p of T.local) out.push({ message: p.message, id: p.block.id });
   return out;
 }
 
 function goTo(id) {
-  const b = t.ws && t.ws.getBlockById(id);
+  const b = T.ws && T.ws.getBlockById(id);
   if (!b) return;
-  t.ws.centerOnBlock(id);
+  T.ws.centerOnBlock(id);
   b.select();
 }
 
@@ -340,53 +354,53 @@ function renderProblems() {
   const list = problemList();
   const ul = $("#test-problems");
   ul.replaceChildren(...list.map((p) => {
-    const b = p.id && t.ws ? t.ws.getBlockById(p.id) : null;
+    const b = p.id && T.ws ? T.ws.getBlockById(p.id) : null;
     return h("li", { class: "test-problem" },
       b ? h("button", { type: "button", class: "linklike", onclick: () => goTo(p.id), text: b.toString() }) : null,
       h("span", { text: p.message }));
   }));
   $("#test-problems-wrap").hidden = !list.length;
   // hints (the state's): what the test can run with but should know; they never keep Run from running
-  const hints = (t.state && t.state.hints) || [];
+  const hints = (T.state && T.state.hints) || [];
   $("#test-hints").replaceChildren(...hints.map((p) => h("li", { text: p.message })));
   $("#test-hints-wrap").hidden = !hints.length;
-  const s = t.state;
+  const s = T.state;
   $("#test-run").disabled = !s || !!list.length || !!s.running;
-  $("#test-run").title = list.length ? "Fix the problems first" : "";
+  $("#test-run").title = list.length ? t("Fix the problems first") : "";
 }
 
 // -- rendering --------------------------------------------------------------------------------------------------------
 function renderTop() {
-  if (currentTab() !== "test" || !t.state) return;
-  showPath(store.appPath || t.state.path, t.state.path);
-  $("#undo").disabled = !t.ws || !t.ws.getUndoStack().length;
-  $("#redo").disabled = !t.ws || !t.ws.getRedoStack().length;
+  if (currentTab() !== "test" || !T.state) return;
+  showPath(store.appPath || T.state.path, T.state.path);
+  $("#undo").disabled = !T.ws || !T.ws.getUndoStack().length;
+  $("#redo").disabled = !T.ws || !T.ws.getRedoStack().length;
 }
 
 function renderStatus(busy = false) {
   const el = $("#test-saved");
-  if (!t.state) return;
-  const blocking = t.local.find((p) => p.blocking);
-  if (busy || t.timer || t.saving) { el.textContent = "Saving…"; el.className = "saved saved-busy"; }
-  else if (t.saveError) { el.textContent = `Not saved: ${t.saveError.message}`; el.className = "saved saved-bad"; }
-  else if (blocking) { el.textContent = "Not saved yet: a block needs a check plugged in"; el.className = "saved saved-warn"; }
-  else { el.textContent = "✓ All changes saved"; el.className = "saved saved-ok"; }
-  const n = t.ws ? placeOf(t.ws).size : 0;   // every block of the test, the ones inside repeats too
-  $("#test-count").textContent = t.ws ? `${n} block${n === 1 ? "" : "s"} in the test` : "";
+  if (!T.state) return;
+  const blocking = T.local.find((p) => p.blocking);
+  if (busy || T.timer || T.saving) { el.textContent = t("Saving…"); el.className = "saved saved-busy"; }
+  else if (T.saveError) { el.textContent = t("Not saved: {why}", { why: T.saveError.message }); el.className = "saved saved-bad"; }
+  else if (blocking) { el.textContent = t("Not saved yet: a block needs a check plugged in"); el.className = "saved saved-warn"; }
+  else { el.textContent = t("✓ All changes saved"); el.className = "saved saved-ok"; }
+  const n = T.ws ? placeOf(T.ws).size : 0;   // every block of the test, the ones inside repeats too
+  $("#test-count").textContent = T.ws ? tn("{count} block in the test", "{count} blocks in the test", n) : "";
 }
 
 function render() {
-  const s = t.state;
+  const s = T.state;
   if (!s) return;
   const banner = $("#test-banner");
   banner.hidden = !s.file_error;
-  banner.textContent = s.file_error ? `The test file can't be read, so this is its last good version: ${s.file_error}` : "";
+  banner.textContent = s.file_error ? t("The test file can't be read, so this is its last good version: {why}", { why: s.file_error }) : "";
   const running = $("#test-running");
   running.hidden = !s.running;
-  running.textContent = s.running ? `Running… ${Math.round(100 * (s.running.progress || 0))}%` : "";
-  if (!s.running) t.stopping = false;
+  running.textContent = s.running ? t("Running… {percent}%", { percent: Math.round(100 * (s.running.progress || 0)) }) : "";
+  if (!s.running) T.stopping = false;
   $("#test-stop").hidden = !s.running;
-  $("#test-stop").disabled = t.stopping;
+  $("#test-stop").disabled = T.stopping;
   updateRuns(s);
   renderProblems();
   renderStatus();
@@ -397,22 +411,22 @@ function render() {
 async function run() {
   await flush();
   // only the test on screen runs: not a file this page couldn't save
-  if (t.saveError || t.local.length || !fits()) { check(); renderStatus(); return; }
+  if (T.saveError || T.local.length || !fits()) { check(); renderStatus(); return; }
   const { status, data } = await api("POST", "/api/test/run", {});
   if (status !== 200) {
-    const why = (data.errors && data.errors[0] && data.errors[0].message) || data.error || `the server answered ${status}`;
-    notice(`Can't run the test: ${why}`, "warn");
+    const why = (data.errors && data.errors[0] && data.errors[0].message) || data.error || answered(status);
+    notice(t("Can't run the test: {why}", { why }), "warn");
   }
   await refresh();
 }
 
 async function stop() {
-  t.stopping = true;
+  T.stopping = true;
   $("#test-stop").disabled = true;
   const { status, data } = await api("POST", "/api/test/cancel", {});
   if (status !== 200) {
-    notice(`Couldn't stop the run: ${(data.errors && data.errors[0] && data.errors[0].message) || `the server answered ${status}`}`, "error");
-    t.stopping = false;
+    notice(t("Couldn't stop the run: {why}", { why: (data.errors && data.errors[0] && data.errors[0].message) || answered(status) }), "error");
+    T.stopping = false;
     $("#test-stop").disabled = false;
   }
 }
@@ -421,25 +435,28 @@ async function stop() {
 // -- setup ------------------------------------------------------------------------------------------------------------
 async function loadRobot() {
   const [{ status, data }, lib] = await Promise.all([api("GET", "/api/robot/state"),
-    t.stock ? null : api("GET", "/api/robot/library")]);
-  if (lib && lib.status === 200) t.stock = Object.fromEntries((lib.data.stock || []).map((x) => [x.name, x]));
-  t.robot = status === 200 ? data : null;
+    T.stock ? null : api("GET", "/api/robot/library")]);
+  if (lib && lib.status === 200) T.stock = Object.fromEntries((lib.data.stock || []).map((x) => [x.name, x]));
+  T.robot = status === 200 ? data : null;
   renderSetup();
 }
 
 const stockDefault = (stock, name, fallback) => {
-  const p = t.stock && t.stock[stock] && t.stock[stock].params.find((x) => x.name === name);
+  const p = T.stock && T.stock[stock] && T.stock[stock].params.find((x) => x.name === name);
   return p ? p.default : fallback;
 };
 // the part the robot is (attached to nothing): Setup's weight and center of mass are its, when it is the stock chassis
-const rootPart = () => (t.robot ? (t.robot.parts || []).find((p) => !p.attach) || null : null);
+const rootPart = () => (T.robot ? (T.robot.parts || []).find((p) => !p.attach) || null : null);
 const chassis = () => { const r = rootPart(); return r && r.stock === "chassis" ? r : null; };
 const mass = (c) => Number(c.params.mass ?? stockDefault("chassis", "mass", 46));
 const com = (c) => (Array.isArray(c.params.com_offset) ? c.params.com_offset : stockDefault("chassis", "com_offset", [0, 0, 0])).map(Number);
 // each part but the root and the drivetrain, which only the Robot tab moves
-const isDrivetrain = (p) => !!(p.stock && t.stock && t.stock[p.stock] && t.stock[p.stock].group === "Drivetrain");
-const mounted = () => (t.robot ? (t.robot.parts || []).filter((p) => p.attach && !isDrivetrain(p)) : []);
+const isDrivetrain = (p) => !!(p.stock && T.stock && T.stock[p.stock] && T.stock[p.stock].group === "Drivetrain");
+const mounted = () => (T.robot ? (T.robot.parts || []).filter((p) => p.attach && !isDrivetrain(p)) : []);
 const AXES = [["x", 0, "pos", "forward"], ["y", 1, "pos", "left"], ["z", 2, "pos", "up"], ["yaw", 2, "rot", "turned"]];
+// an axis's word ("forward" in AXES, or the center of mass's), as shown
+const AXIS_WORDS = { forward: () => t("forward"), left: () => t("left"), up: () => t("up"), turned: () => t("turned") };
+const axisWord = (w) => AXIS_WORDS[w]();
 const fmt = (v) => String(+Number(v).toPrecision(6));
 const IN = 0.0254;            // m per inch: an `_in` key's unit
 const round6 = (x) => Number(x.toFixed(6));       // a typed value as saved: to a millionth of its unit (1 µm in m)
@@ -450,34 +467,35 @@ const FEED_KINDS = ["start_feeding", "stop_feeding", "feed_one"];
 // a station's numbers (scrimmage/testrange/station.py's OVERRIDE_KEYS): key, label, unit on screen, a list key's
 // three axes, and what Try values… goes up to from a spread of 0 (in the unit shown). Every spread is ± its value;
 // the speed and the release box (`kind`) are in the Units setting here and SI in the file.
-const STATION_BOXES = [
-  { key: "interval", label: "Time between pieces (s)", unit: "s" },
-  { key: "stock", label: "Stock (empty: never runs out)", unit: "" },
-  { key: "spread_yaw_deg", label: "Left/right angle (± degrees)", unit: "°", upTo: 10 },
-  { key: "spread_pitch_deg", label: "Up/down angle (± degrees)", unit: "°", upTo: 10 },
-  { key: "spread_speed", label: "Speed", kind: "speed", upTo: [1.3, 0.4] },
-  { key: "spread_position", label: "Release box", kind: "length", axes: ["x", "y", "z"], upTo: [2, 50] },
-  { key: "spread_rotation_deg", label: "Turned (± degrees)", unit: "°", axes: ["about x", "about y", "about z"], upTo: 90 },
+const STATION_BOXES = () => [
+  { key: "interval", label: t("Time between pieces (s)"), unit: "s" },
+  { key: "stock", label: t("Stock (empty: never runs out)"), unit: "" },
+  { key: "spread_yaw_deg", label: t("Left/right angle (± degrees)"), unit: "°", upTo: 10 },
+  { key: "spread_pitch_deg", label: t("Up/down angle (± degrees)"), unit: "°", upTo: 10 },
+  { key: "spread_speed", label: t("Speed"), kind: "speed", upTo: [1.3, 0.4] },
+  { key: "spread_position", label: t("Release box"), kind: "length", axes: ["x", "y", "z"], upTo: [2, 50] },
+  { key: "spread_rotation_deg", label: t("Turned (± degrees)"), unit: "°", axes: [t("about x"), t("about y"), t("about z")], upTo: 90 },
 ];
 // a piece other than a ball (ruling P30): its tip and facing (a ball has neither; Try values… goes from and to these
 // two), then the 3-axis spread last, as an extra tumble, so the three can't be mixed up
-const PIECE_BOXES = [
-  { key: "tip_deg", label: "Tipped up (degrees: 0 lying, 90 standing)", unit: "°", from: 0, to: 90 },
-  { key: "spread_tip_deg", label: "Tipped up varies by (± degrees)", unit: "°", upTo: 30 },
-  { key: "turn_deg", label: "Facing (degrees from the feed direction)", unit: "°", from: 0, to: 90 },
-  { key: "spread_turn_deg", label: "Facing varies by (± degrees)", unit: "°", upTo: 90 },
-  { ...STATION_BOXES.at(-1), label: "Extra tumble (± degrees)" },
+const PIECE_BOXES = () => [
+  { key: "tip_deg", label: t("Tipped up (degrees: 0 lying, 90 standing)"), unit: "°", from: 0, to: 90 },
+  { key: "spread_tip_deg", label: t("Tipped up varies by (± degrees)"), unit: "°", upTo: 30 },
+  { key: "turn_deg", label: t("Facing (degrees from the feed direction)"), unit: "°", from: 0, to: 90 },
+  { key: "spread_turn_deg", label: t("Facing varies by (± degrees)"), unit: "°", upTo: 90 },
+  { ...STATION_BOXES().at(-1), label: t("Extra tumble (± degrees)") },
 ];
-const stationBoxes = (piece) => (piece ? [...STATION_BOXES.slice(0, -1), ...PIECE_BOXES] : STATION_BOXES)
-  .map((box) => (box.kind ? { ...box, label: `${box.label} (± ${units.name(box.kind)})`, unit: units.name(box.kind),
+const stationBoxes = (piece) => (piece ? [...STATION_BOXES().slice(0, -1), ...PIECE_BOXES()] : STATION_BOXES())
+  .map((box) => (box.kind ? { ...box, label: t("{label} (± {unit})", { label: box.label, unit: units.name(box.kind) }), unit: units.name(box.kind),
     upTo: box.upTo[units.system === "metric" ? 1 : 0] } : box));
 // a flat kind (a disc, a hatch panel) lies flat at a tip of 90: its axis is its face's normal
-const tipLabel = (kind) => `Tipped up (degrees: ${kind && kind.flat ? "0 on its edge, 90 lying flat" : "0 lying, 90 standing"})`;
-const tipWords = (kind) => (kind && kind.flat ? "Tipped up: 0 is standing on its edge, 90 lying flat."
-  : "Tipped up: 0 is lying on its side, 90 standing on end.");
+const tipLabel = (kind) => (kind && kind.flat ? t("Tipped up (degrees: 0 on its edge, 90 lying flat)")
+  : t("Tipped up (degrees: 0 lying, 90 standing)"));
+const tipWords = (kind) => (kind && kind.flat ? t("Tipped up: 0 is standing on its edge, 90 lying flat.")
+  : t("Tipped up: 0 is lying on its side, 90 standing on end."));
 const GRABBER = /claw|grabber|gripper|jaw/i;     // test_session.py's GRABBER_WORDS
 // a grip material as its picker shows it (ruling P27): two with the same estimate read the same
-const gripText = ([, label, mu]) => `${label} — ${fmt(mu)}, estimate`;
+const gripText = ([, label, mu]) => t("{material} — {friction}, estimate", { material: label, friction: fmt(mu) });
 const OWN = "own";      // the grip picker's "My own number…"
 // the floor spread's axes (scrimmage/blocks/spread.py's SPREAD_AXES): label, and from, to, steps when ticked: around
 // where the field's ball lies (palette.floor_ball; offset and distance), never nearer than its nearest_in
@@ -485,18 +503,18 @@ const OWN = "own";      // the grip picker's "My own number…"
 // in the file and the Units setting's length on screen (LENGTH_AXES).
 const LENGTH_AXES = ["offset_in", "distance_in"];
 const FLOOR_AXES = [
-  ["offset_in", "Offset across", -6, 6, 3],
-  ["distance_in", "Distance ahead", -12, 12, 3],
-  ["angle_deg", "Angle (degrees)", -30, 30, 3],
-  ["rotation_deg", "Turned (degrees)", 0, 90, 3],
-  ["tip_deg", "Tipped up (degrees)", 0, 90, 3],
+  ["offset_in", () => t("Offset across ({unit})", { unit: units.name("length") }), -6, 6, 3],
+  ["distance_in", () => t("Distance ahead ({unit})", { unit: units.name("length") }), -12, 12, 3],
+  ["angle_deg", () => t("Angle (degrees)"), -30, 30, 3],
+  ["rotation_deg", () => t("Turned (degrees)"), 0, 90, 3],
+  ["tip_deg", () => t("Tipped up (degrees)"), 0, 90, 3],
 ];
 // a start's id in words: "at_station" -> "At station"
 const startWords = (id) => { const w = id.replace(/_/g, " "); return w.charAt(0).toUpperCase() + w.slice(1); };
-const floorBall = () => (t.state && t.state.palette && t.state.palette.floor_ball) || null;
+const floorBall = () => (T.state && T.state.palette && T.state.palette.floor_ball) || null;
 // the floor spread's piece kind ({form, flat, label}), null for a ball
 function floorKind() {
-  const ball = floorBall(), kinds = (t.state && t.state.palette && t.state.palette.kinds) || {};
+  const ball = floorBall(), kinds = (T.state && T.state.palette && T.state.palette.kinds) || {};
   const k = ball && kinds[ball.kind];
   return k && k.form !== "ball" ? k : null;
 }
@@ -504,9 +522,9 @@ function floorKind() {
 // turn read as where it faces (ruling P30, as a station's)
 function floorAxes() {
   const k = floorKind();
-  const label = { tip_deg: tipLabel(k), rotation_deg: "Facing (degrees)" };
-  return FLOOR_AXES.filter(([axis]) => axis !== "tip_deg" || k).map((a) => (k && label[a[0]] ? [a[0], label[a[0]], ...a.slice(2)]
-    : LENGTH_AXES.includes(a[0]) ? [a[0], `${a[1]} (${units.name("length")})`, ...a.slice(2)] : a));
+  const label = { tip_deg: tipLabel(k), rotation_deg: t("Facing (degrees)") };
+  return FLOOR_AXES.filter(([axis]) => axis !== "tip_deg" || k)
+    .map(([axis, words, ...rest]) => [axis, k && label[axis] ? label[axis] : words(), ...rest]);
 }
 
 // A number box: `blank` (when given) is what an empty box means, and a value equal to it shows empty.
@@ -517,7 +535,7 @@ function numberBox(id, value, label, commit, blank = null) {
     const text = el.value.trim();
     if (text === el.dataset.orig) return;
     const v = text === "" && blank !== null ? blank : Number(text);
-    if ((text === "" && blank === null) || !isFinite(v)) { t.setupError = `${label}: type a number`; renderSetupError(); el.value = el.dataset.orig; return; }
+    if ((text === "" && blank === null) || !isFinite(v)) { T.setupError = t("{label}: type a number", { label }); renderSetupError(); el.value = el.dataset.orig; return; }
     el.dataset.orig = text;
     commit(v);
   };
@@ -536,8 +554,8 @@ function measureBox(id, si, kind, label, commit, toFile = (x) => x) {
   const send = () => {
     if (el.value.trim() === el.dataset.orig) return;
     const v = readMeasure(el, kind);
-    const why = v === null ? `type a number in ${units.name(kind)}` : measureError(v);
-    if (why) { t.setupError = `${label}: ${why}`; renderSetupError(); el.value = el.dataset.orig; return; }
+    const why = v === null ? t("type a number in {unit}", { unit: units.name(kind) }) : measureError(v);
+    if (why) { T.setupError = t("{label}: {why}", { label, why }); renderSetupError(); el.value = el.dataset.orig; return; }
     el.dataset.orig = el.value.trim();
     commit(round6(toFile(v)));
   };
@@ -555,13 +573,13 @@ const measured = (label, target, si, kind, extra = {}) => ({ label, target, valu
 let editing = Promise.resolve();
 function robotEdit(make) {
   editing = editing.then(async () => {
-    const body = t.robot && make(t.robot);
+    const body = T.robot && make(T.robot);
     if (!body) return;
-    const { status, data } = await api("POST", "/api/robot/edit", { version: t.robot.version, ...body });
-    t.setupError = status === 200 && data.ok ? null
-      : (data.errors && data.errors[0] && data.errors[0].message) || `the server answered ${status}`;
+    const { status, data } = await api("POST", "/api/robot/edit", { version: T.robot.version, ...body });
+    T.setupError = status === 200 && data.ok ? null
+      : (data.errors && data.errors[0] && data.errors[0].message) || answered(status);
     await loadRobot();
-  }).catch((e) => { t.setupError = String(e.message || e); renderSetupError(); });
+  }).catch((e) => { T.setupError = String(e.message || e); renderSetupError(); });
   return editing;
 }
 const partNamed = (robot, name) => (robot.parts || []).find((p) => p.name === name) || null;
@@ -572,10 +590,10 @@ function setHooks(hooks) {
 
 // The hopper Setup ticks: the test's (an empty one the student cleared stays empty); for a test that names none,
 // starter_hopper's until the student changes it.
-const hopperNamed = () => Array.isArray(headOf(t.ws).hopper);
+const hopperNamed = () => Array.isArray(headOf(T.ws).hopper);
 function hopperShown() {
-  const mine = headOf(t.ws).hopper || [];
-  return hopperNamed() || t.hopperSet ? mine : (t.state && t.state.starter_hopper) || [];
+  const mine = headOf(T.ws).hopper || [];
+  return hopperNamed() || T.hopperSet ? mine : (T.state && T.state.starter_hopper) || [];
 }
 
 // A change to the test's own Setup settings (`patch`: hopper, setup) saves the test; a preselected hopper goes
@@ -584,14 +602,14 @@ function hopperShown() {
 function setTest(patch) {
   const shown = hopperShown();
   if (!("hopper" in patch) && !hopperNamed() && shown.length) patch = { ...patch, hopper: [...shown] };
-  setHead(t.ws, patch);
+  setHead(T.ws, patch);
   schedule();
   setTimeout(renderSetup, 0);
 }
-const setupOf = () => JSON.parse(JSON.stringify(headOf(t.ws).setup || {}));
+const setupOf = () => JSON.parse(JSON.stringify(headOf(T.ws).setup || {}));
 
 function setHopper(bodies) {
-  t.hopperSet = true;
+  T.hopperSet = true;
   setTest({ hopper: [...bodies].sort() });
 }
 
@@ -613,12 +631,12 @@ function newShuffle() {
 
 // Setup's partner robot, [setup] partner: a table puts one ahead of the robot; false hides the robot config's own
 // [partner] (the palette's robot_partner); with neither key the config decides.
-const FACING = [[0, "the same way"], [180, "toward me"], [90, "sideways"]];
+const FACING = () => [[0, t("the same way")], [180, t("toward me")], [90, t("sideways")]];
 const PARTNER = { ahead_in: 60, heading_deg: 0, brake: true };      // a new partner's: 60 in ahead, facing the same way
 // (ahead_in is inches in the file, whatever the Units setting: a typed 101.6 mm writes 4)
-const ownPartner = () => !!(t.state && t.state.palette && t.state.palette.robot_partner);
+const ownPartner = () => !!(T.state && T.state.palette && T.state.palette.robot_partner);
 function partnerOn() {
-  const p = (headOf(t.ws).setup || {}).partner;
+  const p = (headOf(T.ws).setup || {}).partner;
   return p === undefined ? ownPartner() : p !== false;
 }
 function setPartnerOn(on) {
@@ -636,57 +654,57 @@ function setPartner(key, v) {
 
 function partnerBox() {
   const on = partnerOn();
-  const p = { ...PARTNER, ...((headOf(t.ws).setup || {}).partner || {}) };
-  const own = ownPartner() && !((headOf(t.ws).setup || {}).partner);     // the config's, placed where it says
-  const parts = [h("legend", { text: "Partner robot" }),
-    h("p", { class: "hint", text: "A second robot with no program of its own, to push, lift or drive around. "
-      + "It starts ahead of your robot, along the way your robot faces." }),
+  const p = { ...PARTNER, ...((headOf(T.ws).setup || {}).partner || {}) };
+  const own = ownPartner() && !((headOf(T.ws).setup || {}).partner);     // the config's, placed where it says
+  const parts = [h("legend", { text: t("Partner robot") }),
+    h("p", { class: "hint", text: t("A second robot with no program of its own, to push, lift or drive around. It starts ahead of your robot, along the way your robot faces.") }),
     h("label", { class: "test-hook", for: "test-partner" },
       h("input", { type: "checkbox", id: "test-partner", checked: on, onchange: (e) => setPartnerOn(e.target.checked) }),
-      h("span", { text: "A partner robot" }))];
+      h("span", { text: t("A partner robot") }))];
   if (on) {
-    if (own) parts.push(h("p", { class: "hint", text: "Where the robot file's [partner] puts it, until you change it here." }));
-    const facing = FACING.some(([deg]) => deg === p.heading_deg) ? FACING : [...FACING, [p.heading_deg, `turned ${fmt(p.heading_deg)}°`]];
+    if (own) parts.push(h("p", { class: "hint", text: t("Where the robot file's {table} puts it, until you change it here.", { table: "[partner]" }) }));
+    const facing = FACING().some(([deg]) => deg === p.heading_deg) ? FACING()
+      : [...FACING(), [p.heading_deg, t("turned {degrees}°", { degrees: fmt(p.heading_deg) })]];
     const sel = h("select", { id: "test-partner-facing", onchange: (e) => setPartner("heading_deg", Number(e.target.value)) },
       ...facing.map(([deg, text]) => h("option", { value: String(deg), text })));
     sel.value = String(p.heading_deg);
     parts.push(h("div", { class: "test-setup-grid" },
-      h("label", { for: "test-partner-ahead", text: "Ahead of my robot by" }),
+      h("label", { for: "test-partner-ahead", text: t("Ahead of my robot by") }),
       h("div", { class: "row" }, measureBox("test-partner-ahead", p.ahead_in * IN, "length",
-        `Partner robot: ahead of my robot by (${units.name("length")})`, (v) => setPartner("ahead_in", v), (si) => si / IN),
+        t("Partner robot: ahead of my robot by ({unit})", { unit: units.name("length") }), (v) => setPartner("ahead_in", v), (si) => si / IN),
       h("span", { text: units.name("length") })),
-      h("label", { for: "test-partner-facing", text: "Facing" }), sel,
-      h("span", { class: "test-setup-label", text: "Drive" }),
+      h("label", { for: "test-partner-facing", text: t("Facing") }), sel,
+      h("span", { class: "test-setup-label", text: t("Drive", { context: "partner" }) }),
       h("label", { class: "test-hook", for: "test-partner-brake" },
         h("input", { type: "checkbox", id: "test-partner-brake", checked: p.brake !== false,
           onchange: (e) => setPartner("brake", e.target.checked) }),
-        h("span", { text: "brakes on" }))));
+        h("span", { text: t("brakes on") }))));
   }
   return h("fieldset", { class: "test-setup-partner" }, ...parts);
 }
 
-const hasFeed = () => !!t.ws && t.ws.getAllBlocks(false).some((b) => FEED_KINDS.includes(b.type));
+const hasFeed = () => !!T.ws && T.ws.getAllBlocks(false).some((b) => FEED_KINDS.includes(b.type));
 
 function addStationBlocks() {
-  const blocks = t.state && t.state.station_starter;
+  const blocks = T.state && T.state.station_starter;
   if (!blocks || hasFeed()) return;
-  appendBlocks(t.ws, blocks);
+  appendBlocks(T.ws, blocks);
   renderSetup();
 }
 
 // -- the floor spread: a draft of the boxes ({axis: {on, from, to, steps}}), written to the test when it makes at
 // most MAX_SPREAD runs
-// (offset and distance: inches in the file, in the Units setting's length in the boxes, `t.floorSystem`'s: a Units
+// (offset and distance: inches in the file, in the Units setting's length in the boxes, `T.floorSystem`'s: a Units
 // change converts the draft, floorUnits)
 const floorKey = (fs) => canon(fs);
 function floorDraft() {
-  const fs = (headOf(t.ws).setup || {}).floor_spread || {};
+  const fs = (headOf(T.ws).setup || {}).floor_spread || {};
   const key = floorKey(fs);
-  if (t.floor && t.floorFor === key) return t.floor;
-  t.floorFor = key;
-  t.floorSystem = units.system;
+  if (T.floor && T.floorFor === key) return T.floor;
+  T.floorFor = key;
+  T.floorSystem = units.system;
   const ball = floorBall() || {};
-  t.floor = Object.fromEntries(FLOOR_AXES.map(([axis, , from, to, steps]) => {
+  T.floor = Object.fromEntries(FLOOR_AXES.map(([axis, , from, to, steps]) => {
     const text = (x) => (LENGTH_AXES.includes(axis) ? units.shown(x * IN, "length") : fmt(x));
     const v = fs[axis];
     if (v && v.length) return [axis, { on: true, from: text(v[0]), to: text(v[v.length - 1]), steps: String(v.length) }];
@@ -701,12 +719,12 @@ function floorDraft() {
       ? units.shown(Math.round(units.toDisplay(x * IN, "length") / 10) * 10 / 1000, "length") : text(Math.round(x)));
     return [axis, { on: false, from: round(lo), to: round(hi), steps: String(steps) }];
   }));
-  return t.floor;
+  return T.floor;
 }
 
 // The draft's lists and run count ({spread, runs}), or {error} saying what is wrong.
 function floorSpread(draft) {
-  const fs = (headOf(t.ws).setup || {}).floor_spread || {};
+  const fs = (headOf(T.ws).setup || {}).floor_spread || {};
   const spread = {};
   let runs = 1;
   for (const [axis, label] of floorAxes()) {
@@ -722,19 +740,22 @@ function floorSpread(draft) {
     };
     const a = length ? inches("from") : Number(d.from), b = length ? inches("to") : Number(d.to), n = Number(d.steps);
     if (d.from.trim() === "" || d.to.trim() === "" || !isFinite(a) || !isFinite(b)) {
-      return { error: `${label}: type a number in from and to${length ? ` (in ${units.name("length")})` : ""}` };
+      return { error: length ? t("{axis}: type a number in from and to (in {unit})", { axis: label, unit: units.name("length") })
+        : t("{axis}: type a number in from and to", { axis: label }) };
     }
-    if (!Number.isInteger(n) || n < 1) return { error: `${label}: steps is a whole number, 1 or more` };
+    if (!Number.isInteger(n) || n < 1) return { error: t("{axis}: steps is a whole number, 1 or more", { axis: label }) };
     // nearest_in alone, ignoring the offset: stricter than the server's exact check, which is fine as a quick warning
     const nearest = floorBall() && floorBall().nearest_in;
     if (axis === "distance_in" && nearest !== undefined && nearest !== null && Math.min(a, b) < nearest) {
-      return { error: `${label}: ${units.fmt(nearest * IN, "length")} or more (nearer, the ball starts inside the robot)` };
+      return { error: t("{axis}: {distance} or more (nearer, the ball starts inside the robot)", { axis: label, distance: units.fmt(nearest * IN, "length") }) };
     }
     spread[axis] = n === 1 ? [a] : Array.from({ length: n }, (_, k) => +(a + ((b - a) * k) / (n - 1)).toPrecision(6));
     runs *= n;
   }
-  if (!Object.keys(spread).length) return { error: `Tick an axis to spread the ${floorKind() ? "piece" : "ball"} over`, spread, runs: 0 };
-  if (runs > MAX_SPREAD) return { error: `${runs} runs: at most ${MAX_SPREAD} runs; use fewer steps`, runs };
+  if (!Object.keys(spread).length) {
+    return { error: floorKind() ? t("Tick an axis to spread the piece over") : t("Tick an axis to spread the ball over"), spread, runs: 0 };
+  }
+  if (runs > MAX_SPREAD) return { error: t("{runs} runs: at most {max} runs; use fewer steps", { runs, max: MAX_SPREAD }), runs };
   return { spread, runs };
 }
 
@@ -742,12 +763,12 @@ function floorSpread(draft) {
 // it), in the boxes too, even when Setup isn't drawn again (another box is half typed); a box being typed in keeps
 // its text, which then means the new units.
 function floorUnits() {
-  const from = t.floorSystem;
-  t.floorSystem = units.system;
-  if (!t.floor || !from || from === units.system) return;
-  const fs = (headOf(t.ws).setup || {}).floor_spread || {};
+  const from = T.floorSystem;
+  T.floorSystem = units.system;
+  if (!T.floor || !from || from === units.system) return;
+  const fs = (headOf(T.ws).setup || {}).floor_spread || {};
   for (const axis of LENGTH_AXES) {
-    const d = t.floor[axis], file = fs[axis] && fs[axis].length ? { from: fs[axis][0], to: fs[axis][fs[axis].length - 1] } : {};
+    const d = T.floor[axis], file = fs[axis] && fs[axis].length ? { from: fs[axis][0], to: fs[axis][fs[axis].length - 1] } : {};
     for (const k of ["from", "to"]) {
       let next = d[k];
       if (file[k] !== undefined && d[k].trim() === shownIn(file[k] * IN, from)) next = units.shown(file[k] * IN, "length");
@@ -768,7 +789,7 @@ function shownIn(si, system) {
 }
 
 function floorChanged() {
-  const draft = t.floor;
+  const draft = T.floor;
   for (const [axis] of floorAxes()) {
     const on = document.getElementById(`test-spread-${axis}-on`);
     if (!on) continue;
@@ -784,26 +805,26 @@ function floorChanged() {
   if (!r.spread) return;      // nothing written until it can run
   const s = setupOf();
   if (Object.keys(r.spread).length) s.floor_spread = r.spread; else delete s.floor_spread;
-  if (canon(s.floor_spread || {}) === canon((headOf(t.ws).setup || {}).floor_spread || {})) return;
-  t.floorFor = floorKey(s.floor_spread || {});
+  if (canon(s.floor_spread || {}) === canon((headOf(T.ws).setup || {}).floor_spread || {})) return;
+  T.floorFor = floorKey(s.floor_spread || {});
   setTest({ setup: s });
 }
 
 function renderFloorCount(r) {
   const el = document.getElementById("test-spread-count");
   if (!el) return;
-  el.textContent = r.error || `${r.runs} run${r.runs === 1 ? "" : "s"}`;
+  el.textContent = r.error || tn("{count} run", "{count} runs", r.runs);
   el.classList.toggle("error", !!r.error && r.runs > MAX_SPREAD);
-  $("#test-spread-run").disabled = !!r.error || !t.state || !!t.state.running;
+  $("#test-spread-run").disabled = !!r.error || !T.state || !!T.state.running;
 }
 
 async function runSpread() {
   await flush();
-  if (t.saveError || t.local.length || !fits()) { check(); renderStatus(); return; }
+  if (T.saveError || T.local.length || !fits()) { check(); renderStatus(); return; }
   const { status, data } = await api("POST", "/api/test/spread", {});
   if (status !== 200) {
-    const why = (data.errors && data.errors[0] && data.errors[0].message) || data.error || `the server answered ${status}`;
-    notice(`Can't run the spread: ${why}`, "warn");
+    const why = (data.errors && data.errors[0] && data.errors[0].message) || data.error || answered(status);
+    notice(t("Can't run the spread: {why}", { why }), "warn");
   }
   await refresh();
 }
@@ -821,7 +842,7 @@ function stationChoice(name, box, value) {
   // a list: the sweep sets all three axes to the value; the speed and the release box are tried in the unit shown
   const si = box.axes ? Math.max(...value) : value;
   const v = box.kind ? +units.toDisplay(si, box.kind).toPrecision(6) : si;
-  const label = box.axes ? `${box.label.replace(/ \(.*/, "")}, every axis (± ${box.unit})` : box.label;
+  const label = box.axes ? t("{setting}, every axis (± {unit})", { setting: box.label.replace(/ \(.*/, ""), unit: box.unit }) : box.label;
   return { label, target, value: v, unit: box.unit, from: 0, to: v > 0 ? 2 * v : box.upTo,
     ...(box.kind ? { scale: units.fromDisplay(1, box.kind) } : {}) };
 }
@@ -830,9 +851,10 @@ function stationBox(name, box, setting, field, kind) {
   if (box.key === "tip_deg") box = { ...box, label: tipLabel(kind) };
   const id = `test-station-${name}-${box.key}`;
   const tryIt = h("button", { type: "button", class: "btn btn-small", "data-try": `station-${name}-${box.key}`,
-    onclick: () => openSweep([stationChoice(name, box, setting)], `${name}'s ${box.label.replace(/ \(.*/, "").toLowerCase()}`) }, "Try values…");
+    onclick: () => openSweep([stationChoice(name, box, setting)],
+      t("{station}'s {setting}", { station: name, setting: box.label.replace(/ \(.*/, "").toLowerCase() })) }, t("Try values…"));
   if (!box.axes) {
-    const label = `${name}: ${box.label}`, commit = (v) => setStation(name, box.key, v);
+    const label = t("{station}: {setting}", { station: name, setting: box.label }), commit = (v) => setStation(name, box.key, v);
     return [h("label", { for: id, text: box.label }),
       h("div", { class: "row" }, box.kind ? measureBox(id, setting, box.kind, label, commit)
         : numberBox(id, setting, label, commit, box.key === "stock" ? 0 : null), tryIt)];
@@ -841,8 +863,8 @@ function stationBox(name, box, setting, field, kind) {
     h("div", { class: "row test-com" }, ...box.axes.flatMap((word, i) => [
       h("label", { for: `${id}-${i}`, text: word }),
       (box.kind ? (...a) => measureBox(a[0], a[1], box.kind, a[2], a[3]) : numberBox)(`${id}-${i}`, Number(setting[i]),
-        `${name}: ${box.label} ${word}`, (v) => {
-          const now = (((headOf(t.ws).setup || {}).station || {})[name] || {})[box.key] || field;
+        t("{station}: {setting} {axis}", { station: name, setting: box.label, axis: word }), (v) => {
+          const now = (((headOf(T.ws).setup || {}).station || {})[name] || {})[box.key] || field;
           const next = [...now].map(Number);
           next[i] = v;
           setStation(name, box.key, next);
@@ -855,25 +877,27 @@ function leftovers(pal, setup) {
   const out = [];
   for (const name of Object.keys(setup.station || {})) {
     if ((pal.stations || []).includes(name)) continue;
-    out.push([`station-${name}`, `Station "${name}": this field has no station by that name`, (x) => {
+    out.push([`station-${name}`, t("Station \"{name}\": this field has no station by that name", { name }), (x) => {
       delete x.station[name];
       if (!Object.keys(x.station).length) delete x.station;
     }]);
   }
   if (setup.ball && !pal.ball_choice) {
-    out.push(["ball", `Ball "${setup.ball}": ${pal.ball ? "this field keeps its own ball" : "this field has no ball to pick"}`, (x) => { delete x.ball; }]);
+    out.push(["ball", pal.ball ? t("Ball \"{name}\": this field keeps its own ball", { name: setup.ball })
+      : t("Ball \"{name}\": this field has no ball to pick", { name: setup.ball }), (x) => { delete x.ball; }]);
   }
   if (setup.piece && !pal.ball_choice) {
-    out.push(["piece", `Piece "${setup.piece}": ${pal.piece ? "this field keeps its own pieces" : "this field has no piece to pick"}`, (x) => { delete x.piece; }]);
+    out.push(["piece", pal.piece ? t("Piece \"{name}\": this field keeps its own pieces", { name: setup.piece })
+      : t("Piece \"{name}\": this field has no piece to pick", { name: setup.piece }), (x) => { delete x.piece; }]);
   }
   if (setup.floor_spread && Object.keys(setup.floor_spread).length && !pal.floor_piece) {
-    out.push(["floor_spread", "Floor spread: this field has no ball on the floor", (x) => { delete x.floor_spread; }]);
+    out.push(["floor_spread", t("Floor spread: this field has no ball on the floor"), (x) => { delete x.floor_spread; }]);
   }
   return out;
 }
 
 // -- grip: a body's pad material, written in its part folder at once (/api/test/grip); the robot is built again with it
-const errorOf = (data, status) => (data.errors && data.errors[0] && data.errors[0].message) || data.error || `the server answered ${status}`;
+const errorOf = (data, status) => (data.errors && data.errors[0] && data.errors[0].message) || data.error || answered(status);
 
 // The bodies Setup offers a grip for: those palette.grips has (a path part's, touching things) that are ticked as
 // where a piece should end up, named like a grabber, or already given a grip.
@@ -885,22 +909,22 @@ function gripBodies(pal, hopper) {
 // What a body's picker shows: the grip just sent until the palette has it, else the palette's.
 function gripShown(pal, body) {
   const now = (pal.grips || {})[body] ?? null;
-  if (t.gripSent.has(body) && canon(t.gripSent.get(body)) !== canon(now)) return t.gripSent.get(body);
-  t.gripSent.delete(body);
+  if (T.gripSent.has(body) && canon(T.gripSent.get(body)) !== canon(now)) return T.gripSent.get(body);
+  T.gripSent.delete(body);
   return now;
 }
 
 async function setGrip(body, grip) {
-  t.gripSent.set(body, grip);
+  T.gripSent.set(body, grip);
   const { status, data } = await api("POST", "/api/test/grip", { body, grip });
   if (status === 200 && data.ok) {
-    t.setupError = null;
-    t.gripOwn.delete(body);
+    T.setupError = null;
+    T.gripOwn.delete(body);
   } else {
-    t.setupError = `${body}'s grip: ${errorOf(data, status)}`;
-    t.gripSent.delete(body);
+    T.setupError = t("{body}'s grip: {why}", { body, why: errorOf(data, status) });
+    T.gripSent.delete(body);
   }
-  t.setupKey = null;
+  T.setupKey = null;
   await refresh();
   renderSetup();
   renderSetupError();
@@ -910,35 +934,35 @@ async function setGrip(body, grip) {
 function gripRow(pal, body, i, running, first) {
   const id = `test-grip-${i}`;
   const now = gripShown(pal, body);
-  const own = typeof now === "number" || t.gripOwn.has(body);
+  const own = typeof now === "number" || T.gripOwn.has(body);
   const mats = pal.grip_materials || [];
   const sel = h("select", { id, "data-grip": body, disabled: running, onchange: (e) => {
     const v = e.target.value;
     if (v === OWN) {          // asks for the number first; nothing is sent until it is typed
-      t.gripOwn.add(body);
-      t.setupKey = null;
+      T.gripOwn.add(body);
+      T.setupKey = null;
       renderSetup();
       const el = document.querySelector(`[data-grip-own="${body}"]`);
       if (el) el.focus();
       return;
     }
-    t.gripOwn.delete(body);
+    T.gripOwn.delete(body);
     setGrip(body, v === "" ? null : v);
-  } }, h("option", { value: "", text: DEFAULT_GRIP }),
+  } }, h("option", { value: "", text: defaultGrip() }),
   ...mats.map((m) => h("option", { value: m[0], text: gripText(m) })),
-  h("option", { value: OWN, text: "My own number…" }));
+  h("option", { value: OWN, text: t("My own number…") }));
   sel.value = own ? OWN : now === null ? "" : now;
   const row = [sel];
   if (own) {
     const box = h("input", { id: `${id}-own`, class: "test-num", "data-grip-own": body, inputmode: "decimal", autocomplete: "off",
-      disabled: running, placeholder: "0.9", "aria-label": `${body}: my own friction (measured)` });
+      disabled: running, placeholder: "0.9", "aria-label": t("{body}: my own friction (measured)", { body }) });
     box.value = box.dataset.orig = typeof now === "number" ? fmt(now) : "";
     const send = () => {
       const text = box.value.trim();
       if (text === box.dataset.orig) return;
       const v = Number(text);
       if (text === "" || !isFinite(v) || v <= 0) {
-        t.setupError = `${body}'s grip: type the friction you measured, a number above 0 such as 0.9`;
+        T.setupError = t("{body}'s grip: type the friction you measured, a number above 0 such as 0.9", { body });
         renderSetupError();
         box.value = box.dataset.orig;
         return;
@@ -953,7 +977,7 @@ function gripRow(pal, body, i, running, first) {
   const part = body.split(".")[0];
   if (first) {
     row.push(h("button", { type: "button", class: "btn btn-small", "data-try": `grip-${part}`, disabled: running,
-      onclick: () => openSweep(gripChoices(pal, part), `${part}'s grip`) }, "Try materials…"));
+      onclick: () => openSweep(gripChoices(pal, part), t("{part}'s grip", { part })) }, t("Try materials…")));
   }
   return [h("label", { for: id, text: body }), h("div", { class: "row" }, ...row)];
 }
@@ -961,14 +985,15 @@ function gripRow(pal, body, i, running, first) {
 // Try materials… for a part: every pad of it first (ruling P28), then each pad on its own.
 function gripChoices(pal, part) {
   const named = (g) => {
-    if (g === null || g === undefined) return "the default friction 1.0";
-    if (typeof g === "number") return `my own ${fmt(g)}`;
+    if (g === null || g === undefined) return t("the default friction 1.0");
+    if (typeof g === "number") return t("my own {friction}", { friction: fmt(g) });
     const m = (pal.grip_materials || []).find((x) => x[0] === g);
     return m ? m[1] : g;
   };
   const pads = Object.keys(pal.grips || {}).filter((b) => b.split(".")[0] === part);
-  return [{ label: `Every pad of ${part}: ${pads.map((b) => b.split(".")[1]).join(", ")}`, target: { grip: part }, materials: true },
-    ...pads.map((b) => ({ label: `${b} only`, target: { grip: b }, materials: true, now: named(gripShown(pal, b)) }))];
+  return [{ label: t("Every pad of {part}: {pads}", { part, pads: pads.map((b) => b.split(".")[1]).join(", ") }), target: { grip: part },
+    materials: true },
+  ...pads.map((b) => ({ label: t("{body} only", { body: b }), target: { grip: b }, materials: true, now: named(gripShown(pal, b)) }))];
 }
 
 // the station starter waits until the grabber holds a piece (ruling P31: the server's choice, on a robot with one)
@@ -981,63 +1006,63 @@ function floorKindsLine(pal) {
   const count = {};
   for (const k of Object.values(pal.floor_kinds || {})) count[k] = (count[k] || 0) + 1;
   const words = Object.keys(kinds).filter((k) => count[k]).map((k) => `${count[k]} ${kinds[k].label}`);
-  return words.length ? `On the floor: ${words.join(", ")}` : null;
+  return words.length ? t("On the floor: {pieces}", { pieces: words.join(", ") }) : null;
 }
 
 function floorHint() {
   const k = floorKind();
-  const what = k ? `the ${k.label}` : "the ball";
-  const words = `Run the test with ${what} in front of the robot at each place of a grid, to see which ones it picks up. Tick the axes to spread it over.`;
-  return k ? `${words} ${tipWords(k)} Facing: about the vertical, 0 in line with the robot's path, 90 across it.` : words;
+  if (!k) return t("Run the test with the ball in front of the robot at each place of a grid, to see which ones it picks up. Tick the axes to spread it over.");
+  return [t("Run the test with the {piece} in front of the robot at each place of a grid, to see which ones it picks up. Tick the axes to spread it over.",
+    { piece: k.label }), tipWords(k), t("Facing: about the vertical, 0 in line with the robot's path, 90 across it.")].join(" ");
 }
 
 function renderSetupError() {
   const el = document.getElementById("test-setup-error");
   if (!el) return;
-  el.hidden = !t.setupError;
-  el.textContent = t.setupError ? `Not changed: ${t.setupError}` : "";
+  el.hidden = !T.setupError;
+  el.textContent = T.setupError ? t("Not changed: {why}", { why: T.setupError }) : "";
 }
 
 function renderSetup() {
-  const s = t.state;
-  if (!s || !t.ws) return;
+  const s = T.state;
+  if (!s || !T.ws) return;
   const body = $("#test-setup-body");
   const open = $("#test-setup").open;
   const pal = s.palette || {};
-  const head = headOf(t.ws);
+  const head = headOf(T.ws);
   const setup = head.setup || {};
   const mine = new Set(head.hooks || []);
   const counted = new Set((pal.hooks || []).filter((x) => !mine.has(x)));     // the stock climber's: always hooks
   const hopper = new Set(hopperShown());
   const c = chassis();
-  const sum = [`hooks: ${[...mine, ...counted].length ? [...counted, ...mine].join(", ") : "none"}`];
-  if (hopper.size) sum.push(`hopper: ${[...hopper].join(", ")}`);
-  if (c) sum.push(`robot ${units.fmt(mass(c), "mass")}`);
-  if (t.robot) sum.push(t.robot.range ? `field: ${t.robot.range}` : "plain field");
+  const sum = [[...mine, ...counted].length ? t("hooks: {hooks}", { hooks: [...counted, ...mine].join(", ") }) : t("hooks: none")];
+  if (hopper.size) sum.push(t("hopper: {bodies}", { bodies: [...hopper].join(", ") }));
+  if (c) sum.push(t("robot {weight}", { weight: units.fmt(mass(c), "mass") }));
+  if (T.robot) sum.push(T.robot.range ? t("field: {field}", { field: T.robot.range }) : t("plain field"));
   $("#test-setup-sum").textContent = `· ${sum.join(" · ")}`;
-  if (!open) { t.setupKey = null; return; }      // filled in when it is opened
-  const ro = !t.robot || !!t.robot.read_only;
+  if (!open) { T.setupKey = null; return; }      // filled in when it is opened
+  const ro = !T.robot || !!T.robot.read_only;
   const feeding = hasFeed();
   // drawn again only when something it shows changed (states come four times a second while a run goes)
   // the floor spread's boxes show its draft: the spread the draft wrote is nothing new to draw
   const { floor_spread: fs, ...drawn } = setup;
   const key = canon([pal.bodies || [], [...mine], [...counted], [...hopper], drawn,
-    floorKey(fs || {}) === t.floorFor ? null : fs, pal.station_settings || {},
+    floorKey(fs || {}) === T.floorFor ? null : fs, i18n.lang, pal.station_settings || {},
     pal.ball || null, pal.balls || [], !!pal.ball_choice, !!pal.floor_piece, s.station_starter, feeding, !!s.running,
     pal.piece || null, pal.piece_presets || null, pal.kinds || {}, pal.floor_kinds || {}, pal.station_kinds || {},
-    pal.floor_ball || null, !!pal.robot_partner, pal.grips || {}, pal.grip_materials || [], [...t.gripOwn], [...t.gripSent],
-    (s.fields || []).length, t.robot ? [t.robot.version, t.robot.parts, ro] : null, !!t.stock, t.setupError, units.system]);
-  if (key === t.setupKey) return;
+    pal.floor_ball || null, !!pal.robot_partner, pal.grips || {}, pal.grip_materials || [], [...T.gripOwn], [...T.gripSent],
+    (s.fields || []).length, T.robot ? [T.robot.version, T.robot.parts, ro] : null, !!T.stock, T.setupError, units.system]);
+  if (key === T.setupKey) return;
   const focused = document.activeElement && body.contains(document.activeElement) ? document.activeElement.id : null;
   if (focused && document.activeElement.matches("input.test-num") && document.activeElement.value !== document.activeElement.dataset.orig) return;
 
   // the mechanism's bodies: not the drivetrain's or the stock root part's (as the mounts); a ticked one always shows
   const skip = new Set();
-  if (t.robot && t.robot.part_bodies) {
+  if (T.robot && T.robot.part_bodies) {
     const root = rootPart();
-    for (const p of t.robot.parts || []) {
+    for (const p of T.robot.parts || []) {
       if (!(p.stock && ((root && p.name === root.name) || isDrivetrain(p)))) continue;
-      for (const b of t.robot.part_bodies[p.name] || []) skip.add(`${p.name}.${b}`);
+      for (const b of T.robot.part_bodies[p.name] || []) skip.add(`${p.name}.${b}`);
     }
   }
   const base = (pal.bodies || []).filter((b) => !skip.has(b));
@@ -1047,16 +1072,16 @@ function renderSetup() {
       const missing = !(pal.bodies || []).includes(b);
       const box = h("input", { type: "checkbox", id, "data-body": b, checked: ticked.has(b) || fixed.has(b), disabled: fixed.has(b),
         onchange: (e) => { const next = new Set(ticked); if (e.target.checked) next.add(b); else next.delete(b); onchange(next); } });
-      return h("label", { class: "test-hook", for: id }, box, h("span", { text: b + (missing ? " (not on the robot)" : "") }));
+      return h("label", { class: "test-hook", for: id }, box, h("span", { text: missing ? t("{name} (not on the robot)", { name: b }) : b }));
     }));
 
   const parts = [];
-  if (t.robot && !t.robot.read_only) {
+  if (T.robot && !T.robot.read_only) {
     const fields = s.fields || [];
-    const now = t.robot.range || "";
+    const now = T.robot.range || "";
     const entry = fields.find((f) => (f.file || "") === now);
     const opts = fields.map((f) => [f.file || "", f.name]);
-    if (!entry) opts.push([now, `${now} (this robot's field)`]);
+    if (!entry) opts.push([now, t("{field} (this robot's field)", { field: now })]);
     const sel = h("select", { id: "test-field", onchange: (e) => {
       const f = fields.find((x) => (x.file || "") === e.target.value);
       if (!f || e.target.value === now) return;
@@ -1065,42 +1090,43 @@ function renderSetup() {
         : f.starts.length ? { op: "start", range: f.file, named: f.starts[0] } : { op: "start", range: f.file }));
     } }, ...opts.map(([v, text]) => h("option", { value: v, text })));
     sel.value = now;
-    const field = [h("legend", { text: "The field" }),
-      h("p", { class: "hint", text: "Where the robot starts: an empty floor, a field made to try one mechanism on (a ladder to climb, a ball to pick up, "
-        + "a human player station that feeds balls), or a whole season's field. "
-        + `Picking a field moves the robot to that field's start (this changes ${t.robot.display_path || t.robot.path || "the robot file"}). The Robot tab's Undo puts the old field and start back.` }),
-      h("label", { class: "visually-hidden", for: "test-field", text: "The field" }), sel];
+    const field = [h("legend", { text: t("The field") }),
+      h("p", { class: "hint", text: (T.robot.display_path || T.robot.path)
+        ? t("Where the robot starts: an empty floor, a field made to try one mechanism on (a ladder to climb, a ball to pick up, a human player station that feeds balls), or a whole season's field. Picking a field moves the robot to that field's start (this changes {file}). The Robot tab's Undo puts the old field and start back.",
+          { file: T.robot.display_path || T.robot.path })
+        : t("Where the robot starts: an empty floor, a field made to try one mechanism on (a ladder to climb, a ball to pick up, a human player station that feeds balls), or a whole season's field. Picking a field moves the robot to that field's start (this changes the robot file). The Robot tab's Undo puts the old field and start back.") }),
+      h("label", { class: "visually-hidden", for: "test-field", text: t("The field") }), sel];
     const floorWords = floorKindsLine(pal);
     if (floorWords) field.push(h("p", { id: "test-floor-kinds", class: "hint test-floor-kinds", text: floorWords }));
     if (entry && entry.starts.length > 1) {
-      const start = t.robot.start || "";
-      const starts = [...(start && entry.starts.includes(start) ? [] : [[start, start ? `${start} (not on this field)` : "Where the robot file puts it"]]),
+      const start = T.robot.start || "";
+      const starts = [...(start && entry.starts.includes(start) ? []
+        : [[start, start ? t("{start} (not on this field)", { start }) : t("Where the robot file puts it")]]),
         ...entry.starts.map((x) => [x, startWords(x)])];
       const pick = h("select", { id: "test-start", onchange: (e) => {
         const v = e.target.value;
         if (v && v !== start && entry.starts.includes(v)) robotEdit(() => ({ op: "start", named: v }));
       } }, ...starts.map(([v, text]) => h("option", { value: v, text })));
       pick.value = start;
-      field.push(h("div", { class: "row test-start" }, h("label", { for: "test-start", text: "Start" }), pick));
+      field.push(h("div", { class: "row test-start" }, h("label", { for: "test-start", text: t("Start", { context: "pose" }) }), pick));
     }
     parts.push(h("fieldset", { class: "test-setup-field" }, ...field));
   }
   parts.push(h("fieldset", { class: "test-setup-hopper" },
-    h("legend", { text: "Where a piece should end up" }),
-    h("p", { class: "hint", text: "Tick the bodies a piece should end up in or be held by: a hopper, an intake, a claw. "
-      + "A piece whose center is inside one, or that one holds when the run ends, made it in." }),
+    h("legend", { text: t("Where a piece should end up") }),
+    h("p", { class: "hint", text: t("Tick the bodies a piece should end up in or be held by: a hopper, an intake, a claw. A piece whose center is inside one, or that one holds when the run ends, made it in.") }),
     bodyList("hopper", hopper, new Set(), setHopper)));
   const grips = gripBodies(pal, hopper);
   if (grips.length) {
     parts.push(h("fieldset", { class: "test-setup-grip" },
-      h("legend", { text: "Grip" }),
-      h("p", { class: "hint", text: "What the pads are made of. Friction values are estimates (UNCALIBRATED); docs/test-tab.md says how to measure yours." }),
+      h("legend", { text: t("Grip") }),
+      h("p", { class: "hint", text: t("What the pads are made of. Friction values are estimates (UNCALIBRATED); docs/test-tab.md says how to measure yours.") }),
       h("div", { class: "test-setup-grid" }, ...grips.flatMap((b, i) => gripRow(pal, b, i, !!s.running,
         !grips.slice(0, i).some((x) => x.split(".")[0] === b.split(".")[0]))))));
   }
   parts.push(h("fieldset", { class: "test-setup-hooks" },
-    h("legend", { text: "Hooks" }),
-    h("p", { class: "hint", text: "Tick the bodies that grab a bar. A stock climber's hooks always count." }),
+    h("legend", { text: t("Hooks") }),
+    h("p", { class: "hint", text: t("Tick the bodies that grab a bar. A stock climber's hooks always count.") }),
     bodyList("hook", mine, counted, setHooks)));
   const own = pal.piece || pal.ball;
   if (pal.ball_choice && own) {
@@ -1116,13 +1142,13 @@ function renderSetup() {
       delete next.piece;
       if (e.target.value !== own) next.piece = e.target.value;
       setTest({ setup: next });
-    } }, h("option", { value: own, text: `${own} (the field's)` }), group("Balls", presets.balls),
-      group("Other pieces", presets.pieces), ...odd.map((b) => h("option", { value: b, text: `${b} (not in the list)` })));
+    } }, h("option", { value: own, text: t("{piece} (the field's)", { piece: own }) }), group(t("Balls"), presets.balls),
+      group(t("Other pieces"), presets.pieces), ...odd.map((b) => h("option", { value: b, text: t("{piece} (not in the list)", { piece: b }) })));
     sel.value = now;
     parts.push(h("fieldset", { class: "test-setup-piece" },
-      h("legend", { text: "Piece" }),
-      h("p", { class: "hint", text: "Pick the piece this test uses." }),
-      h("label", { class: "visually-hidden", for: "test-piece", text: "Piece" }), sel));
+      h("legend", { text: t("Piece") }),
+      h("p", { class: "hint", text: t("Pick the piece this test uses.") }),
+      h("label", { class: "visually-hidden", for: "test-piece", text: t("Piece") }), sel));
   }
   const settings = pal.station_settings || {};
   const kinds = pal.kinds || {};
@@ -1133,22 +1159,21 @@ function renderSetup() {
     const kind = kinds[(pal.station_kinds || {})[name]] || null;
     const piece = !!kind && kind.form !== "ball";          // a ball has no tip or turn
     parts.push(h("fieldset", { class: "test-setup-station", "data-station": name },
-      h("legend", { text: `Station: ${name}${several && kind ? ` (${kind.label})` : ""}` }),
-      h("p", { class: "hint", text: "How the human player feeds pieces. Each box shows the field's value until you change it; a change is saved in the test. "
-        + "Each piece varies by up to ± each spread."
-        + (piece ? ` ${tipWords(kind)} Facing: about the vertical, from the way the station feeds. Extra tumble turns each piece a little more about each axis.` : "") }),
+      h("legend", { text: several && kind ? t("Station: {name} ({piece})", { name, piece: kind.label }) : t("Station: {name}", { name }) }),
+      h("p", { class: "hint", text: [t("How the human player feeds pieces. Each box shows the field's value until you change it; a change is saved in the test. Each piece varies by up to ± each spread."),
+        ...(piece ? [tipWords(kind), t("Facing: about the vertical, from the way the station feeds. Extra tumble turns each piece a little more about each axis.")] : [])].join(" ") }),
       h("div", { class: "test-setup-grid" }, ...stationBoxes(piece)
         .flatMap((box) => stationBox(name, box, chosen[box.key] ?? field[box.key], field[box.key], kind)))));
   }
   if ((pal.stations || []).length) {
     const seed = setup.seed ?? DEFAULT_SEED;
     parts.push(h("fieldset", { class: "test-setup-shuffle" },
-      h("legend", { text: "Shuffle" }),
-      h("p", { class: "hint", text: "Which draw of the spreads the stations feed: the same shuffle gives the same feeds every run, so a comparison is fair. New shuffle checks it wasn't a lucky draw." }),
-      h("div", { class: "row" }, h("span", { id: "test-seed", class: "test-seed", text: `Shuffle ${seed}` }),
-        h("button", { type: "button", id: "test-new-shuffle", class: "btn btn-small", onclick: newShuffle }, "New shuffle"),
+      h("legend", { text: t("Shuffle") }),
+      h("p", { class: "hint", text: t("Which draw of the spreads the stations feed: the same shuffle gives the same feeds every run, so a comparison is fair. New shuffle checks it wasn't a lucky draw.") }),
+      h("div", { class: "row" }, h("span", { id: "test-seed", class: "test-seed", text: t("Shuffle {seed}", { seed }) }),
+        h("button", { type: "button", id: "test-new-shuffle", class: "btn btn-small", onclick: newShuffle }, t("New shuffle")),
         h("button", { type: "button", class: "btn btn-small", "data-try": "seed",
-          onclick: () => openSweep([{ label: "Shuffle", target: { setup: "seed" }, value: seed, unit: "", from: seed, to: seed + 4 }], "the shuffle") }, "Try values…"))));
+          onclick: () => openSweep([{ label: t("Shuffle"), target: { setup: "seed" }, value: seed, unit: "", from: seed, to: seed + 4 }], t("the shuffle")) }, t("Try values…")))));
   }
   if (pal.floor_piece) {
     const draft = floorDraft();
@@ -1160,77 +1185,77 @@ function renderSetup() {
       return el;
     };
     parts.push(h("fieldset", { class: "test-setup-floor" },
-      h("legend", { text: "Floor spread" }),
+      h("legend", { text: t("Floor spread") }),
       h("p", { class: "hint", text: floorHint() }),
       h("table", { class: "test-mounts test-floor" },
-        h("thead", {}, h("tr", {}, h("th", { text: "Axis" }), h("th", { text: "from" }), h("th", { text: "to" }), h("th", { text: "steps" }))),
+        h("thead", {}, h("tr", {}, h("th", { text: t("Axis") }), h("th", { text: t("from") }), h("th", { text: t("to") }), h("th", { text: t("steps") }))),
         h("tbody", {}, ...floorAxes().map(([axis, label]) => h("tr", { "data-axis": axis },
           h("th", { scope: "row" }, h("label", { class: "test-hook", for: `test-spread-${axis}-on` },
             h("input", { type: "checkbox", id: `test-spread-${axis}-on`, checked: draft[axis].on, onchange: floorChanged }),
             h("span", { text: label }))),
-          h("td", {}, box(axis, "from", `${label} from`)), h("td", {}, box(axis, "to", `${label} to`)),
-          h("td", {}, box(axis, "steps", `${label} steps`)))))),
+          h("td", {}, box(axis, "from", t("{axis} from", { axis: label }))), h("td", {}, box(axis, "to", t("{axis} to", { axis: label }))),
+          h("td", {}, box(axis, "steps", t("{axis} steps", { axis: label }))))))),
       h("div", { class: "row" }, h("span", { id: "test-spread-count", class: "test-spread-count", role: "status" }),
-        h("button", { type: "button", id: "test-spread-run", class: "btn btn-small", onclick: runSpread }, "Run the spread"))));
+        h("button", { type: "button", id: "test-spread-run", class: "btn btn-small", onclick: runSpread }, t("Run the spread")))));
   }
   parts.push(partnerBox());
   const left = leftovers(pal, setup);
   if (left.length) {
     parts.push(h("fieldset", { class: "test-setup-leftover" },
-      h("legend", { text: "Settings for another field" }),
-      h("p", { class: "hint", text: "The test has settings this field can't use (they were made on another field). Clear them to run the test here." }),
+      h("legend", { text: t("Settings for another field") }),
+      h("p", { class: "hint", text: t("The test has settings this field can't use (they were made on another field). Clear them to run the test here.") }),
       ...left.map(([key, words, clear]) => h("div", { class: "row", "data-leftover": key },
         h("span", { text: words }),
-        h("button", { type: "button", class: "btn btn-small", "aria-label": `Clear: ${words}`,
-          onclick: () => { const next = setupOf(); clear(next); setTest({ setup: next }); } }, "Clear")))));
+        h("button", { type: "button", class: "btn btn-small", "aria-label": t("Clear: {setting}", { setting: words }),
+          onclick: () => { const next = setupOf(); clear(next); setTest({ setup: next }); } }, t("Clear"))))));
   }
   if (s.station_starter && !feeding) {
     parts.push(h("fieldset", { class: "test-setup-starter" },
-      h("legend", { text: "Station blocks" }),
-      h("p", { class: "hint", text: `Start feeding, wait until ${grabberStarter(s.station_starter)
-        ? "the grabber holds a piece" : "5 pieces are where a piece should end up"}, stop feeding: added at the end of the test.` }),
-      h("button", { type: "button", id: "test-add-station-blocks", class: "btn btn-small", onclick: addStationBlocks }, "Add the station blocks")));
+      h("legend", { text: t("Station blocks") }),
+      h("p", { class: "hint", text: grabberStarter(s.station_starter)
+        ? t("Start feeding, wait until the grabber holds a piece, stop feeding: added at the end of the test.")
+        : t("Start feeding, wait until 5 pieces are where a piece should end up, stop feeding: added at the end of the test.") }),
+      h("button", { type: "button", id: "test-add-station-blocks", class: "btn btn-small", onclick: addStationBlocks }, t("Add the station blocks"))));
   }
   if (c) {
     const [f, l, u] = com(c);
     const send = (key, v) => robotEdit(() => ({ op: "params", name: c.name, params: { [key]: v } }));
     const L = units.name("length");
-    const comBox = (i, word, v) => measureBox(`test-com-${word}`, v, "length", `Center of mass ${word} (${L})`, (x) => robotEdit((r) => {
+    const comBox = (i, word, v) => measureBox(`test-com-${word}`, v, "length", t("Center of mass {axis} ({unit})", { axis: axisWord(word), unit: L }), (x) => robotEdit((r) => {
       const now = partNamed(r, c.name);
       if (!now) return null;
       const off = com(now); off[i] = x;
       return { op: "params", name: c.name, params: { com_offset: off } };
     }));
     parts.push(h("fieldset", { class: "test-setup-robot" },
-      h("legend", { text: "The robot" }),
-      h("p", { class: "hint", text: "Weight: everything that isn't one of the robot's parts (frame, battery, bumpers). "
-        + "The Robot tab's Undo takes changes back." }),
+      h("legend", { text: t("The robot") }),
+      h("p", { class: "hint", text: t("Weight: everything that isn't one of the robot's parts (frame, battery, bumpers). The Robot tab's Undo takes changes back.") }),
       h("div", { class: "test-setup-grid" },
-        h("label", { for: "test-mass", text: `Weight (${units.name("mass")})` }),
-        h("div", { class: "row" }, measureBox("test-mass", mass(c), "mass", `Weight (${units.name("mass")})`, (v) => send("mass", v)),
+        h("label", { for: "test-mass", text: t("Weight ({unit})", { unit: units.name("mass") }) }),
+        h("div", { class: "row" }, measureBox("test-mass", mass(c), "mass", t("Weight ({unit})", { unit: units.name("mass") }), (v) => send("mass", v)),
           h("button", { type: "button", class: "btn btn-small", "data-try": "mass", disabled: ro,
-            onclick: () => openSweep([measured("Weight", { robot: "mass" }, mass(c), "mass")], "the robot's weight") }, "Try values…")),
-        h("span", { class: "test-setup-label", text: `Center of mass (${L})` }),
+            onclick: () => openSweep([measured(t("Weight"), { robot: "mass" }, mass(c), "mass")], t("the robot's weight")) }, t("Try values…"))),
+        h("span", { class: "test-setup-label", text: t("Center of mass ({unit})", { unit: L }) }),
         h("div", { class: "row test-com" },
-          h("label", { for: "test-com-forward", text: "forward" }), comBox(0, "forward", f),
-          h("label", { for: "test-com-left", text: "left" }), comBox(1, "left", l),
-          h("label", { for: "test-com-up", text: "up" }), comBox(2, "up", u),
+          h("label", { for: "test-com-forward", text: axisWord("forward") }), comBox(0, "forward", f),
+          h("label", { for: "test-com-left", text: axisWord("left") }), comBox(1, "left", l),
+          h("label", { for: "test-com-up", text: axisWord("up") }), comBox(2, "up", u),
           h("button", { type: "button", class: "btn btn-small", "data-try": "com", disabled: ro,
-            onclick: () => openSweep([["forward", 0], ["left", 1], ["up", 2]].map(([w, i]) => measured(`Center of mass ${w}`,
-              { robot: `com_${w}` }, com(c)[i], "length")), "the robot's center of mass") }, "Try values…")))));
+            onclick: () => openSweep([["forward", 0], ["left", 1], ["up", 2]].map(([w, i]) => measured(t("Center of mass {axis}", { axis: axisWord(w) }),
+              { robot: `com_${w}` }, com(c)[i], "length")), t("the robot's center of mass")) }, t("Try values…"))))));
   }
   const ms = mounted();
   if (ms.length) {
     const L = units.name("length");
     parts.push(h("fieldset", { class: "test-setup-mounts" },
-      h("legend", { text: "Where the parts are mounted" }),
-      h("p", { class: "hint", text: `How far each part is moved from where it attaches: forward (x), left (y), up (z) in ${lengthWords()}, turned (yaw) in degrees.` }),
+      h("legend", { text: t("Where the parts are mounted") }),
+      h("p", { class: "hint", text: t("How far each part is moved from where it attaches: forward (x), left (y), up (z) in {unit}, turned (yaw) in degrees.", { unit: lengthWords() }) }),
       h("table", { class: "test-mounts" },
-        h("thead", {}, h("tr", {}, h("th", { text: "Part" }), ...AXES.map(([a]) => h("th", { text: a === "yaw" ? "yaw (°)" : `${a} (${L})` })), h("th", {}))),
+        h("thead", {}, h("tr", {}, h("th", { text: t("Part") }), ...AXES.map(([a]) => h("th", { text: a === "yaw" ? t("yaw (°)") : `${a} (${L})` })), h("th", {}))),
         h("tbody", {}, ...ms.map((p) => h("tr", { "data-part": p.name },
-          h("th", { scope: "row", title: `on ${p.attach}`, text: p.name }),
+          h("th", { scope: "row", title: t("on {attach}", { attach: p.attach }), text: p.name }),
           ...AXES.map(([a, i, key, word]) => {
-            const label = `${p.name} ${word} (${a === "yaw" ? "°" : L})`;
+            const label = t("{part} {axis} ({unit})", { part: p.name, axis: axisWord(word), unit: a === "yaw" ? "°" : L });
             const commit = (v) => robotEdit((r) => {
               const now = partNamed(r, p.name);
               if (!now) return null;
@@ -1243,15 +1268,16 @@ function renderSetup() {
           }),
           h("td", {}, h("button", { type: "button", class: "btn btn-small", "data-try": `mount-${p.name}`, disabled: ro,
             onclick: () => openSweep(AXES.map(([a, i, key, word]) => (a === "yaw"
-              ? { label: `${word} (${a})`, target: { mount: p.name, axis: a }, value: Number(p[key][i]), unit: "°" }
-              : measured(`${word} (${a})`, { mount: p.name, axis: a }, p[key][i], "length"))), `where ${p.name} is mounted`) }, "Try values…"))))))));
+              ? { label: `${axisWord(word)} (${a})`, target: { mount: p.name, axis: a }, value: Number(p[key][i]), unit: "°" }
+              : measured(`${axisWord(word)} (${a})`, { mount: p.name, axis: a }, p[key][i], "length"))),
+            t("where {part} is mounted", { part: p.name })) }, t("Try values…")))))))));
   }
-  const note = !t.robot ? h("p", { class: "hint", text: "Loading the robot…" })
-    : t.robot.read_only ? h("p", { class: "hint", text: `The robot file can't be changed here: ${t.robot.read_only_reason}` }) : null;
+  const note = !T.robot ? h("p", { class: "hint", text: t("Loading the robot…") })
+    : T.robot.read_only ? h("p", { class: "hint", text: t("The robot file can't be changed here: {why}", { why: T.robot.read_only_reason }) }) : null;
   body.replaceChildren(...parts, note || "", h("p", { id: "test-setup-error", class: "error", role: "alert", hidden: true }));
   if (ro) for (const x of body.querySelectorAll(".test-setup-robot input.test-num, .test-setup-mounts input.test-num")) x.disabled = true;
-  if (pal.floor_piece) renderFloorCount(floorSpread(t.floor));
-  t.setupKey = key;
+  if (pal.floor_piece) renderFloorCount(floorSpread(T.floor));
+  T.setupKey = key;
   renderSetupError();
   if (focused && document.getElementById(focused)) document.getElementById(focused).focus();
 }
@@ -1265,47 +1291,48 @@ function registerTryValues() {
     id: "scrimmage-try-values",
     scopeType: B.ContextMenuRegistry.ScopeType.BLOCK,
     weight: -1,
-    displayText: () => "Try values…",
+    displayText: () => t("Try values…"),
     preconditionFn: (scope) => {
       const b = scope.block;
-      if (!sweepNumber(b) || !placeOf(t.ws).has(b.id)) return "hidden";
-      return t.state && !t.state.running ? "enabled" : "disabled";
+      if (!sweepNumber(b) || !placeOf(T.ws).has(b.id)) return "hidden";
+      return T.state && !T.state.running ? "enabled" : "disabled";
     },
     callback: (scope) => tryBlock(scope.block.id),
   });
 }
 
 function tryBlock(id) {
-  const b = t.ws && t.ws.getBlockById(id);
+  const b = T.ws && T.ws.getBlockById(id);
   const n = sweepNumber(b);
-  if (!n || !placeOf(t.ws).has(id)) return;
+  if (!n || !placeOf(T.ws).has(id)) return;
   openSweep([{ label: n.key, target: { key: n.key }, block: id, value: Number(b.getFieldValue(n.field)), unit: n.unit,
     ...(n.scale ? { scale: n.scale } : {}) }],
-    `“${b.toString()}”`);
+    t("“{block}”", { block: b.toString() }));
 }
 
 // A choice with `materials` (a grip) is tried over the ticked materials, not from and to.
 function openSweep(choices, what) {
   const d = $("#test-sweep-dialog");
-  t.sweepFor = choices;
+  T.sweepFor = choices;
   const mats = choices.some((c) => c.materials);
-  $("#test-sweep-dialog-title").textContent = mats ? "Try materials" : "Try values";
-  $("#test-sweep-for").textContent = mats ? `Run the test once for each material you tick, for ${what}, to see which grips best.`
-    : `Run the test once for each value of ${what}, to see which works best.`;
-  $("#test-sweep-which-label").textContent = mats ? "Which pads?" : "Which number?";
+  $("#test-sweep-dialog-title").textContent = mats ? t("Try materials") : t("Try values");
+  $("#test-sweep-for").textContent = mats ? t("Run the test once for each material you tick, for {what}, to see which grips best.", { what })
+    : t("Run the test once for each value of {what}, to see which works best.", { what });
+  $("#test-sweep-which-label").textContent = mats ? t("Which pads?") : t("Which number?");
   $("#test-sweep-range").hidden = mats;
   $("#test-sweep-list-field").hidden = mats;
-  $("#test-sweep-limit").textContent = mats ? "The test runs once for each material you tick; your files don't change."
-    : `Up to ${MAX_SWEEP} values. The test runs once for each; your files don't change.`;
+  $("#test-sweep-limit").textContent = mats ? t("The test runs once for each material you tick; your files don't change.")
+    : t("Up to {max} values. The test runs once for each; your files don't change.", { max: MAX_SWEEP });
   const list = $("#test-sweep-materials");
   list.hidden = !mats;
-  const pal = (t.state && t.state.palette) || {};
-  list.replaceChildren(h("legend", { text: "Materials" }), ...(mats ? pal.grip_materials || [] : []).map((m, i) =>
+  const pal = (T.state && T.state.palette) || {};
+  list.replaceChildren(h("legend", { text: t("Materials") }), ...(mats ? pal.grip_materials || [] : []).map((m, i) =>
     h("label", { class: "test-hook", for: `test-sweep-mat-${i}` },
       h("input", { type: "checkbox", id: `test-sweep-mat-${i}`, value: m[0], checked: true }), h("span", { text: gripText(m) }))));
-  const now = (c) => (c.materials ? (c.now ? ` (now ${c.now})` : "") : ` (now ${fmt(c.value)}${c.unit ? ` ${c.unit}` : ""})`);
+  const now = (c) => (c.materials ? c.now || null : `${fmt(c.value)}${c.unit ? ` ${c.unit}` : ""}`);
   const which = $("#test-sweep-which");
-  which.replaceChildren(...choices.map((c, i) => h("option", { value: String(i), text: `${c.label}${now(c)}` })));
+  which.replaceChildren(...choices.map((c, i) => h("option", { value: String(i),
+    text: now(c) === null ? c.label : t("{setting} (now {value})", { setting: c.label, value: now(c) }) })));
   $("#test-sweep-which-field").hidden = choices.length < 2;
   const fill = () => {
     const c = choices[Number(which.value) || 0];
@@ -1335,37 +1362,37 @@ function sweepValues(from, to, steps, list) {
     const parts = list.split(/[\s,;]+/).filter(Boolean);
     const vs = parts.map(Number);
     const bad = parts.find((x, i) => !isFinite(vs[i]));
-    if (bad !== undefined) return `“${bad}” isn't a number: type numbers with commas between them`;
-    if (vs.length > MAX_SWEEP) return `Try at most ${MAX_SWEEP} values at a time (that's ${vs.length})`;
+    if (bad !== undefined) return t("“{text}” isn't a number: type numbers with commas between them", { text: bad });
+    if (vs.length > MAX_SWEEP) return t("Try at most {max} values at a time (that's {count})", { max: MAX_SWEEP, count: vs.length });
     return vs;
   }
   const a = Number(from), b = Number(to), n = Number(steps);
-  if (from.trim() === "" || to.trim() === "" || !isFinite(a) || !isFinite(b)) return "Type a number in From and To (or type the values)";
-  if (!Number.isInteger(n) || n < 1 || n > MAX_SWEEP) return `Steps is a whole number from 1 to ${MAX_SWEEP}`;
+  if (from.trim() === "" || to.trim() === "" || !isFinite(a) || !isFinite(b)) return t("Type a number in From and To (or type the values)");
+  if (!Number.isInteger(n) || n < 1 || n > MAX_SWEEP) return t("Steps is a whole number from 1 to {max}", { max: MAX_SWEEP });
   if (n === 1) return [a];
   return Array.from({ length: n }, (_, k) => +(a + ((b - a) * k) / (n - 1)).toPrecision(6));
 }
 
 async function submitSweep(e) {
   e.preventDefault();
-  const choices = t.sweepFor || [];
+  const choices = T.sweepFor || [];
   const c = choices[Number($("#test-sweep-which").value) || 0];
   if (!c) return;
   const values = c.materials
     ? [...$("#test-sweep-materials").querySelectorAll("input:checked")].map((b) => b.value)
     : sweepValues($("#test-sweep-from").value, $("#test-sweep-to").value, $("#test-sweep-steps").value, $("#test-sweep-list").value);
-  if (Array.isArray(values) && !values.length) { showSweepErrors(["Tick at least one material to try"]); return; }
+  if (Array.isArray(values) && !values.length) { showSweepErrors([t("Tick at least one material to try")]); return; }
   if (typeof values === "string") { showSweepErrors([values]); return; }
   let target = c.target;
   await flush();      // a sweep runs the saved test, as Run does: only the test on screen, with nothing to fix
-  if (t.saveError || t.local.length || !fits()) {
+  if (T.saveError || T.local.length || !fits()) {
     check();
-    showSweepErrors(["Fix the problems first (they are listed over Run): the test can't run like this yet."]);
+    showSweepErrors([t("Fix the problems first (they are listed over Run): the test can't run like this yet.")]);
     return;
   }
   if (c.block) {
-    const place = placeOf(t.ws).get(c.block);
-    if (!place) { showSweepErrors(["That block isn't in the test any more."]); return; }
+    const place = placeOf(T.ws).get(c.block);
+    if (!place) { showSweepErrors([t("That block isn't in the test any more.")]); return; }
     target = { block: place, key: c.target.key };
   }
   $("#test-sweep-go").disabled = true;
@@ -1373,8 +1400,8 @@ async function submitSweep(e) {
   const { status, data } = await api("POST", "/api/test/sweep", { target, values: sent });
   $("#test-sweep-go").disabled = false;
   if (status !== 200) {
-    const why = (data.errors && data.errors[0] && data.errors[0].message) || data.error || `the server answered ${status}`;
-    showSweepErrors([`Can't try them: ${why}`]);
+    const why = (data.errors && data.errors[0] && data.errors[0].message) || data.error || answered(status);
+    showSweepErrors([t("Can't try them: {why}", { why })]);
     return;
   }
   $("#test-sweep-dialog").close();
@@ -1384,22 +1411,22 @@ async function submitSweep(e) {
 // -- boot -------------------------------------------------------------------------------------------------------------
 export async function initTest() {
   window.__scrimmageTest = {
-    get workspace() { return t.ws; },
-    get state() { return t.state; },
-    toJSON: () => workspaceToTest(t.ws),
+    get workspace() { return T.ws; },
+    get state() { return T.state; },
+    toJSON: () => workspaceToTest(T.ws),
     get saved() { return flush(); },
     get replay() { return replay(); },
     get sweep() { return sweepShown(); },
     get spread() { return spreadShown(); },
-    get robot() { return t.robot; },
-    get sweepFor() { return t.sweepFor; },
+    get robot() { return T.robot; },
+    get sweepFor() { return T.sweepFor; },
     trySweep: (id) => tryBlock(id),
   };
   registerTab("test", {
     renderTop,
-    undo() { if (t.ws) t.ws.undo(false); },
-    redo() { if (t.ws) t.ws.undo(true); },
-    onShow() { if (t.ws) { window.Blockly.svgResize(t.ws); fitHeads(); } render(); loadRobot(); },
+    undo() { if (T.ws) T.ws.undo(false); },
+    redo() { if (T.ws) T.ws.undo(true); },
+    onShow() { if (T.ws) { window.Blockly.svgResize(T.ws); fitHeads(); } render(); loadRobot(); },
   });
   $("#test-run").addEventListener("click", run);
   $("#test-setup").addEventListener("toggle", () => { if ($("#test-setup").open) loadRobot(); renderSetup(); });
@@ -1407,15 +1434,16 @@ export async function initTest() {
   dlg.querySelector("form").addEventListener("submit", submitSweep);
   for (const b of dlg.querySelectorAll("[data-close]")) b.addEventListener("click", () => dlg.close());
   $("#test-stop").addEventListener("click", stop);
-  initRunPanel({ chart: () => (t.ws ? headOf(t.ws).chart || null : null), setChart: (c) => setTest({ chart: c }) });
+  initRunPanel({ chart: () => (T.ws ? headOf(T.ws).chart || null : null), setChart: (c) => setTest({ chart: c }) });
   units.onChange(unitsChanged);
-  while (!t.state) {
+  i18n.onChange(languageChanged);
+  while (!T.state) {
     await refresh();
-    if (!t.state) await new Promise((r) => setTimeout(r, 2000));
+    if (!T.state) await new Promise((r) => setTimeout(r, 2000));
   }
   await loadScript("vendor/blockly.min.js");
   inject();
-  show(t.state.test);
+  show(T.state.test);
   fitHeads();
   render();
   loadRobot();

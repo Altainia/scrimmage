@@ -1,9 +1,16 @@
 // The parts library (left column) and the "Add part" dialog.
 
 import { $, h, api, edit, store, attachGroups, fillAttachSelect, importCad, loadLibrary, notice, renderErrors, renderStatus, stockMeta } from "./app.js";
+import { i18n, t } from "./i18n.js";
+import { kindWord } from "./inspector.js";
 
 const GROUP_ORDER = ["Chassis", "Drivetrain", "Mechanisms"];
-let rendered = { library: null, readOnly: null };
+// A stock group's name (parts/stock's `group`, a key) in words
+const groupWord = (g) => (g === "Chassis" ? t("Chassis") : g === "Drivetrain" ? t("Drivetrain") : g === "Mechanisms" ? t("Mechanisms") : g);
+const slotsLine = (slots) => (Object.keys(slots).length
+  ? t("Slots: {slots}", { slots: Object.entries(slots).map(([k, v]) => `${k} (${kindWord(v)})`).join(", ") }) : t("No device slots"));
+const mountsLine = (mounts) => (mounts.length ? t("Mounts: {mounts}", { mounts: mounts.join(", ") }) : t("No mounts"));
+let rendered = { library: null, readOnly: null, lang: null };
 let adding = null;          // {source: {stock} or {path}, title} while the dialog is open
 let picking = false;
 let dialogErrors = null;  // the lastErrors array the dialog is showing
@@ -11,10 +18,10 @@ let dialogErrors = null;  // the lastErrors array the dialog is showing
 export function renderLibrary(st) {
   const lib = st.library;
   const ro = !!(st.state && st.state.read_only);
-  if (rendered.library === lib && rendered.readOnly === ro) return;
-  rendered = { library: lib, readOnly: ro };
+  if (rendered.library === lib && rendered.readOnly === ro && rendered.lang === i18n.lang) return;
+  rendered = { library: lib, readOnly: ro, lang: i18n.lang };
   const root = $("#library");
-  if (!lib) { root.replaceChildren(h("p", { class: "empty" }, "Loading parts…")); return; }
+  if (!lib) { root.replaceChildren(h("p", { class: "empty" }, t("Loading parts…"))); return; }
 
   const groups = new Map(GROUP_ORDER.map((g) => [g, []]));
   for (const s of lib.stock) {
@@ -25,68 +32,66 @@ export function renderLibrary(st) {
   for (const [g, items] of groups) {
     if (!items.length) continue;
     out.push(h("section", { class: "lib-group" },
-      h("h3", { class: "lib-group-title" }, g),
+      h("h3", { class: "lib-group-title" }, groupWord(g)),
       h("ul", { class: "lib-list" }, items.map((s) => libItem({
         title: s.name, kind: "stock", doc: s.doc, note: s.note,
-        meta: [Object.keys(s.slots).length ? `Slots: ${Object.entries(s.slots).map(([k, v]) => `${k} (${v})`).join(", ")}` : "No device slots",
-          s.mounts.length ? `Mounts: ${s.mounts.join(", ")}` : "No mounts"],
+        meta: [slotsLine(s.slots), mountsLine(s.mounts)],
         source: { stock: s.name }, ro,
       })))));
   }
   const folders = lib.folders || [];
   out.push(h("section", { class: "lib-group" },
-    h("h3", { class: "lib-group-title" }, "Part folders"),
+    h("h3", { class: "lib-group-title" }, t("Part folders")),
     folders.length
       ? h("ul", { class: "lib-list" }, folders.map((f) => libItem({
         title: f.name, kind: "folder", doc: f.path, error: f.error,
-        meta: f.error ? [] : [Object.keys(f.slots).length ? `Slots: ${Object.entries(f.slots).map(([k, v]) => `${k} (${v})`).join(", ")}` : "No device slots",
-          f.mounts.length ? `Mounts: ${f.mounts.join(", ")}` : "No mounts"],
+        meta: f.error ? [] : [slotsLine(f.slots), mountsLine(f.mounts)],
         source: { path: f.path }, cad: f.cad || null, ro,
       })))
-      : h("p", { class: "empty empty-small" }, "No part folders found next to this config (folders holding a part.toml)."),
+      : h("p", { class: "empty empty-small" }, t("No part folders found next to this config (folders holding a part.toml).")),
     h("div", { class: "lib-import" },
       h("button", { type: "button", class: "btn btn-small", id: "lib-import-cad", disabled: ro || !(st.state && st.state.path),
-        title: ro ? "This config is read-only" : "Make part folders from a CAD file", onclick: () => importCad(st.state.path) }, "Import CAD…"),
-      h("p", { class: "hint" }, "Make part folders from a STEP, STL or OBJ file. They go in the parts folder next to this config.")),
+        title: ro ? t("This config is read-only") : t("Make part folders from a CAD file"), onclick: () => importCad(st.state.path) }, t("Import CAD…")),
+      h("p", { class: "hint" }, t("Make part folders from a STEP, STL or OBJ file. They go in the parts folder next to this config."))),
     folderForm(ro)));
   root.replaceChildren(...out);
 }
 
 function libItem({ title, kind, doc, note, meta, error, source, cad = null, ro }) {
-  const label = kind === "folder" ? `${title} (folder)` : title;
+  const label = kind === "folder" ? t("{name} (folder)", { name: title }) : title;
   return h("li", { class: "lib-item" },
     h("div", { class: "lib-item-head" },
       h("span", { class: "lib-name", text: title }),
       h("button", {
         type: "button", class: "btn btn-small btn-primary-soft", disabled: ro || !!error,
-        "aria-label": `Add ${label}`, title: error ? "This folder's part.toml has an error" : `Add a ${title}`,
+        "aria-label": t("Add {name}", { name: label }), title: error ? t("This folder's part.toml has an error") : t("Add a {name}", { name: title }),
         onclick: () => openAdd(source, title, cad),
-      }, "Add")),
+      }, t("Add"))),
     doc ? h("p", { class: "lib-doc", text: doc }) : null,
     error ? h("p", { class: "error", text: error }) : null,
     meta.length || note ? h("details", { class: "lib-more" },
-      h("summary", {}, "Details"),
+      h("summary", {}, t("Details")),
       note ? h("p", { text: note }) : null,
       meta.map((m) => h("p", { class: "muted", text: m }))) : null);
 }
 
 function folderForm(ro) {
-  const input = h("input", { id: "folder-path", placeholder: "../parts or /path/to/parts", autocomplete: "off", spellcheck: "false", disabled: ro });
+  const input = h("input", { id: "folder-path", placeholder: t("../parts or /path/to/parts"), autocomplete: "off", spellcheck: "false", disabled: ro });
   const err = h("p", { class: "error", hidden: true });
   const form = h("form", {
     class: "folder-form", onsubmit: async (e) => {
       e.preventDefault();
       err.hidden = true;
       const path = input.value.trim();
-      if (!path) { err.textContent = "Type a folder path first."; err.hidden = false; return; }
+      if (!path) { err.textContent = t("Type a folder path first."); err.hidden = false; return; }
       const { status, data } = await api("POST", "/api/robot/folder", { path });
-      if (status === 200 && data.ok) { notice(`Added part folder ${path}`, "info"); await loadLibrary(); }
+      if (status === 200 && data.ok) { notice(t("Added part folder {path}", { path }), "info"); await loadLibrary(); }
       else { err.textContent = data.errors.map((x) => x.message).join("; "); err.hidden = false; }
     },
   },
-  h("label", { for: "folder-path" }, "Add folder…"),
-  h("div", { class: "row" }, input, h("button", { type: "submit", class: "btn btn-small", disabled: ro }, "Add folder")),
-  h("p", { class: "hint" }, "A folder of part folders, or one part folder. Relative to the config file; remembered for this session."),
+  h("label", { for: "folder-path" }, t("Add folder…")),
+  h("div", { class: "row" }, input, h("button", { type: "submit", class: "btn btn-small", disabled: ro }, t("Add folder"))),
+  h("p", { class: "hint" }, t("A folder of part folders, or one part folder. Relative to the config file; remembered for this session.")),
   err);
   return form;
 }
@@ -138,8 +143,8 @@ function openAdd(source, title, cad = null) {
   if (!store.state || store.state.read_only) return;
   adding = { source, title };
   const dlg = $("#add-dialog");
-  $("#add-source").textContent = source.stock ? `Stock part: ${source.stock}` : `Part folder: ${source.path}`;
-  $("#add-title").textContent = `Add ${title}`;
+  $("#add-source").textContent = source.stock ? t("Stock part: {name}", { name: source.stock }) : t("Part folder: {path}", { path: source.path });
+  $("#add-title").textContent = t("Add {name}", { name: title });
   $("#add-name").value = uniqueName(title);
   const groups = attachGroups();
   const sel = $("#add-attach");
@@ -147,13 +152,13 @@ function openAdd(source, title, cad = null) {
     fillAttachSelect(sel, groups, defaultAttach(groups, cad));
     sel.disabled = false;
   } else {
-    sel.replaceChildren(h("option", { value: "" }, "Nothing: this will be the robot's root part"));
+    sel.replaceChildren(h("option", { value: "" }, t("Nothing: this will be the robot's root part")));
     sel.disabled = true;
   }
   $("#add-cad-hint").hidden = !cad;
   const pick = $("#add-pick");
   pick.disabled = !groups.length || !store.view3d;
-  pick.title = !store.view3d ? "The 3D view isn't available" : !groups.length ? "Nothing to attach to yet" : "Click a mount in the 3D view";
+  pick.title = !store.view3d ? t("The 3D view isn't available") : !groups.length ? t("Nothing to attach to yet") : t("Click a mount in the 3D view");
   clearDialogErrors();
   if (!dlg.open) dlg.showModal();
   $("#add-name").focus();
@@ -201,7 +206,7 @@ async function submitAdd(e) {
   const attach = attachValue();
   if (attach) fields.attach = attach;
   if (!$("#add-attach").disabled && !attach) {
-    showDialogErrors([{ field: `${name}/attach`, message: "Choose what this part attaches to." }], name);
+    showDialogErrors([{ field: `${name}/attach`, message: t("Choose what this part attaches to.") }], name);
     return;
   }
   $("#add-ok").disabled = true;

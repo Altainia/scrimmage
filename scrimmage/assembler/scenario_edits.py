@@ -17,6 +17,7 @@ from tomlkit.items import AoT, InlineTable, Table
 from ..checks import CHECK_KINDS
 from ..driverstation import MATCH_KEYS
 from ..tracks import Sample, TrackError, load_track, write_track
+from .. import i18n
 from .edits import EditError
 from .tomlutil import (
     ensure_newline_end, inline, insert_aot_item, insert_first, insert_table, leaf, remove_aot_item,
@@ -40,18 +41,21 @@ def _is_num(v) -> bool:
 def set_top(doc, key: str, value) -> None:
     """Set config / description / speed / require_lockstep; `None` removes the key."""
     if key not in TOP_ORDER:
-        raise EditError(f"scenario/{key}", f"unknown scenario key {key!r}; use {', '.join(TOP_ORDER)}")
+        raise EditError(f"scenario/{key}", i18n.t("unknown scenario key {key}; use {keys}",
+                                                  key=repr(key), keys=", ".join(TOP_ORDER)))
     if value is None:
         if key == "config":
-            raise EditError("scenario/config", "config is required")
+            raise EditError("scenario/config", i18n.t("config is required"))
         doc.pop(key, None)
         return
     ok = {"config": isinstance(value, str), "description": isinstance(value, str),
           "speed": isinstance(value, str) or _is_num(value), "require_lockstep": isinstance(value, bool)}[key]
     if not ok:
-        want = {"config": "text", "description": "text", "speed": "a number or text such as \"max\"",
-                "require_lockstep": "true or false"}[key]
-        raise EditError(f"scenario/{key}", f"{key} must be {want}")
+        said = {"config": lambda: i18n.t("config must be text"),
+                "description": lambda: i18n.t("description must be text"),
+                "speed": lambda: i18n.t("speed must be a number or text such as \"{max}\"", max="max"),
+                "require_lockstep": lambda: i18n.t("require_lockstep must be true or false")}[key]
+        raise EditError(f"scenario/{key}", said())
     if key in doc:
         set_value(doc, key, value)
         return
@@ -69,18 +73,20 @@ def set_match(doc, key: str, value) -> None:
     """Set one key of the `[match]` table (made before the first step when there is none); `None` removes the
     key, and the table with its last key. Values are only type-checked here: the loader judges a station."""
     if key not in MATCH_KEYS:
-        raise EditError("scenario/match", f"unknown [match] key {key!r}; use {', '.join(MATCH_KEYS)}")
+        raise EditError("scenario/match", i18n.t("unknown {match_table} key {key}; use {keys}", key=repr(key),
+                                                 keys=", ".join(MATCH_KEYS), match_table="[match]"))
     at = f"scenario/match.{key}"
     if value is not None:
         if key == "station" and not isinstance(value, str):
-            raise EditError(at, "station must be text such as \"red1\"")
+            raise EditError(at, i18n.t("station must be text such as \"{example}\"", example="red1"))
         if key in ("fms", "timer") and not isinstance(value, bool):
-            raise EditError(at, f"{key} must be true or false")
+            raise EditError(at, i18n.t("{key} must be true or false", key=key))
         if key.endswith("_seconds") and not _is_num(value):
-            raise EditError(at, f"{key} must be a number of seconds")
+            raise EditError(at, i18n.t("{key} must be a number of seconds", key=key))
     cur = doc.get("match")
     if cur is not None and not isinstance(cur, (Table, InlineTable)):
-        raise EditError("scenario/match", "match isn't written as a [match] table; edit the file by hand")
+        raise EditError("scenario/match", i18n.t("match isn't written as a {match_table} table; edit the file by hand",
+                                                 match_table="[match]"))
     if value is None:
         if cur is not None:
             cur.pop(key, None)
@@ -116,7 +122,7 @@ def _steps(doc) -> list:
 def _step(doc, i: int):
     steps = _steps(doc)
     if isinstance(i, bool) or not isinstance(i, int) or not 0 <= i < len(steps):
-        raise EditError(f"step{i}/step", f"there is no step {i}")
+        raise EditError(f"step{i}/step", i18n.t("there is no step {n}", n=i))
     return steps[i]
 
 
@@ -127,23 +133,27 @@ def _aot(step, name: str, i: int):
     arr = step[name]
     if not isinstance(arr, AoT):
         nm = step.get("name")
-        who = f"step {i + 1} {nm!r}" if nm else f"step {i + 1}"
-        raise EditError(f"step{i}/{name}", f"{who} writes {name} as an inline list; edit it by hand")
+        if nm:
+            raise EditError(f"step{i}/{name}", i18n.t("step {n} {name} writes {key} as an inline list; edit it by hand",
+                                                      n=i + 1, name=repr(nm), key=name))
+        raise EditError(f"step{i}/{name}", i18n.t("step {n} writes {key} as an inline list; edit it by hand", n=i + 1,
+                                                  key=name))
     return arr
 
 
 def _step_fields(i: int, fields: dict) -> None:
     for k, v in fields.items():
         if k not in STEP_KEYS:
-            raise EditError(f"step{i}/{k}", f"unknown step field {k!r}; use {', '.join(STEP_KEYS)}")
+            raise EditError(f"step{i}/{k}", i18n.t("unknown step field {key}; use {keys}",
+                                                   key=repr(k), keys=", ".join(STEP_KEYS)))
         if v is None:
             if k != "name":
-                raise EditError(f"step{i}/{k}", f"{k} is required")
+                raise EditError(f"step{i}/{k}", i18n.t("{key} is required", key=k))
         elif k == "duration":
             if not _is_num(v):
-                raise EditError(f"step{i}/duration", "duration must be a number of seconds")
+                raise EditError(f"step{i}/duration", i18n.t("duration must be a number of seconds"))
         elif not isinstance(v, str):
-            raise EditError(f"step{i}/{k}", f"{k} must be text")
+            raise EditError(f"step{i}/{k}", i18n.t("{key} must be text", key=k))
 
 
 def add_step(doc, after: int | None, name, mode, duration) -> None:
@@ -237,7 +247,7 @@ def set_step_game_data(doc, i: int, value) -> None:
         t.pop("game_data", None)
         return
     if not isinstance(value, str):
-        raise EditError(f"step{i}/game_data", "game_data must be text")
+        raise EditError(f"step{i}/game_data", i18n.t("game_data must be text"))
     set_value(t, "game_data", value, AFTER_DURATION[1:])
 
 
@@ -247,7 +257,7 @@ def _port(i: int, kind: str, port) -> str:
     if isinstance(port, str) and port.isdigit():
         port = int(port)
     if isinstance(port, bool) or not isinstance(port, int) or not 0 <= port <= 5:
-        raise EditError(f"step{i}/{kind}", "the joystick port must be 0-5")
+        raise EditError(f"step{i}/{kind}", i18n.t("the joystick port must be 0-5"))
     return str(port)
 
 
@@ -255,11 +265,13 @@ def _values(i: int, kind: str, port: str, values: list) -> None:
     for n, x in enumerate(values):
         at = f"step{i}/{kind}"
         if kind == "axes" and not (_is_num(x) and -1 <= x <= 1):
-            raise EditError(at, f"port {port}, index {n}: an axis is a number between -1 and 1")
+            raise EditError(at, i18n.t("port {port}, index {n}: an axis is a number between -1 and 1", port=port,
+                                       n=n))
         if kind == "buttons" and not isinstance(x, bool):
-            raise EditError(at, f"port {port}, index {n}: a button is true or false")
+            raise EditError(at, i18n.t("port {port}, index {n}: a button is true or false", port=port, n=n))
         if kind == "povs" and not (isinstance(x, int) and not isinstance(x, bool) and (x == -1 or 0 <= x <= 359)):
-            raise EditError(at, f"port {port}, index {n}: a POV is a whole number, -1 or 0-359 degrees")
+            raise EditError(at, i18n.t("port {port}, index {n}: a POV is a whole number, -1 or 0-359 degrees",
+                                       port=port, n=n))
 
 
 def set_inputs(doc, i: int, kind: str, port: int, values) -> None:
@@ -267,13 +279,13 @@ def set_inputs(doc, i: int, kind: str, port: int, values) -> None:
     empty list removes the port (and the whole key when no port is left)."""
     t = _step(doc, i)
     if kind not in INPUT_KINDS:
-        raise EditError(f"step{i}/{kind}", f"inputs are {', '.join(INPUT_KINDS)}")
+        raise EditError(f"step{i}/{kind}", i18n.t("inputs are {kinds}", kinds=", ".join(INPUT_KINDS)))
     p = _port(i, kind, port)
     if values is not None and not isinstance(values, (list, tuple)):
-        raise EditError(f"step{i}/{kind}", "give a list of values")
+        raise EditError(f"step{i}/{kind}", i18n.t("give a list of values"))
     cur = t.get(kind)
     if kind in t and not isinstance(cur, (InlineTable, Table)):
-        raise EditError(f"step{i}/{kind}", f"{kind} isn't written as a table; edit the file by hand")
+        raise EditError(f"step{i}/{kind}", i18n.t("{kind} isn't written as a table; edit the file by hand", kind=kind))
     if values:
         values = list(values)
         _values(i, kind, p, values)
@@ -308,7 +320,7 @@ def set_inputs_file(doc, i: int, path: str | None) -> None:
         t.pop("inputs", None)
         return
     if not isinstance(path, str) or not path.strip():
-        raise EditError(f"step{i}/inputs", "inputs must be the path of a .csv file")
+        raise EditError(f"step{i}/inputs", i18n.t("inputs must be the path of a .csv file"))
     for k in INPUT_KINDS:
         t.pop(k, None)
     set_value(t, "inputs", path, AFTER_DURATION)
@@ -341,10 +353,11 @@ def trim_track(doc, i: int, start: float, end: float, scenario_path: Path) -> Pa
     at = f"step{i}/inputs"
     old = t.get("inputs")
     if not isinstance(old, str):
-        raise EditError(at, f"step {i} has no input track to trim")
+        raise EditError(at, i18n.t("step {n} has no input track to trim", n=i))
     dur = t.get("duration")
     if not (_is_num(start) and _is_num(end) and _is_num(dur) and 0 <= start < end <= dur + 1e-9):
-        raise EditError(at, f"trim needs 0 <= start < end <= the step's duration ({dur}); got {start} to {end}")
+        raise EditError(at, i18n.t("trim needs 0 <= start < end <= the step's duration ({duration}); got {start} to "
+                                   "{end}", duration=dur, start=start, end=end))
     old_path = Path(scenario_path).parent / old
     try:
         track = load_track(old_path)
@@ -359,7 +372,7 @@ def trim_track(doc, i: int, start: float, end: float, scenario_path: Path) -> Pa
     try:
         dest = _write_new_csv(old_path.parent, old_path.stem, samples)
     except OSError as e:
-        raise EditError(at, f"can't write the trimmed track: {e.strerror or e}") from None
+        raise EditError(at, i18n.t("can't write the trimmed track: {why}", why=e.strerror or e)) from None
     try:
         t["inputs"] = str(PurePosixPath(old).with_name(dest.name))
         set_value(t, "duration", round(end - start, 6))
@@ -399,9 +412,10 @@ def _nested(doc, key_indent_pairs: dict) -> Table:
 
 def _check_spec(at: str, kind, spec) -> dict:
     if kind not in CHECK_KINDS:
-        raise EditError(at, f"a check is one of {', '.join(CHECK_KINDS)}, not {kind!r}")
+        raise EditError(at, i18n.t("a check is one of {kinds}, not {kind}",
+                                   kinds=", ".join(CHECK_KINDS), kind=repr(kind)))
     if spec is None:
-        raise EditError(at, f"{kind} needs a value")
+        raise EditError(at, i18n.t("{kind} needs a value", kind=kind))
     return {kind: inline(spec)}
 
 
@@ -416,7 +430,7 @@ def add_check(doc, i: int, kind: str, spec) -> None:
 def _item(step, name: str, i: int, j: int, what: str):
     arr = _aot(step, name, i)
     if arr is None or isinstance(j, bool) or not isinstance(j, int) or not 0 <= j < len(arr):
-        raise EditError(f"step{i}/{what}{j}", f"step {i} has no {what} {j}")
+        raise EditError(f"step{i}/{what}{j}", i18n.t("step {n} has no {what} {j}", n=i, what=what, j=j))
     return arr[j]
 
 
@@ -426,7 +440,7 @@ def set_check(doc, i: int, j: int, spec: dict) -> None:
     c = _item(step, "check", i, j, "check")
     at = f"step{i}/check{j}"
     if not isinstance(spec, dict) or len(spec) != 1:
-        raise EditError(at, f"a check is one key: {', '.join(CHECK_KINDS)}")
+        raise EditError(at, i18n.t("a check is one key: {kinds}", kinds=", ".join(CHECK_KINDS)))
     (kind, val), = spec.items()
     new = _check_spec(f"{at}/{kind}", kind, val)[kind]
     old = [k for k in c if k != kind]
@@ -448,10 +462,11 @@ def delete_check(doc, i: int, j: int) -> None:
 
 def _fields(at: str, spec, allowed: tuple[str, ...]) -> dict:
     if not isinstance(spec, dict):
-        raise EditError(at, "give the fields as a table")
+        raise EditError(at, i18n.t("give the fields as a table"))
     for k in spec:
         if k not in allowed:
-            raise EditError(f"{at}/{k}", f"unknown field {k!r}; use {', '.join(allowed)}")
+            raise EditError(f"{at}/{k}", i18n.t("unknown field {key}; use {keys}",
+                                                key=repr(k), keys=", ".join(allowed)))
     return spec
 
 
@@ -509,4 +524,4 @@ def set_sheet(doc, i: int, spec) -> None:
     elif isinstance(cur, Table):
         _apply_fields(cur, spec, SHEET_KEYS)
     else:
-        raise EditError(f"step{i}/sheet", "contact_sheet isn't written as a table; edit the file by hand")
+        raise EditError(f"step{i}/sheet", i18n.t("contact_sheet isn't written as a table; edit the file by hand"))

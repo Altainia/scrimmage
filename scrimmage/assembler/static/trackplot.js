@@ -6,17 +6,20 @@
 
 import { h, api, fmt } from "./app.js";
 import { scEdit, sc } from "./scenario.js";
+import { theme } from "./theme.js";
+import { t, tn, i18n } from "./i18n.js";
 
-const COLORS = ["#2b6cb0", "#e8590c", "#1a7f37", "#8250df", "#c62828", "#0a7ea4", "#9a6700", "#d6336c"];
+// one color per column, app.css's --series-1 to --series-8 (the legend's swatches are the same tokens)
+const COLORS = [1, 2, 3, 4, 5, 6, 7, 8].map((k) => `--series-${k}`);
 const AXES_H = 110, LANE_H = 14, TIME_H = 18, PAD_L = 34, PAD_R = 8;
 
 let cache = { key: null, data: null };   // the last track fetched (re-renders of the same version don't refetch)
 
 async function loadTrack(i, step) {
-  const key = `${i}|${step.inputs}|${step.duration}|${sc.state ? sc.state.version : ""}`;
+  const key = `${i}|${step.inputs}|${step.duration}|${sc.state ? sc.state.version : ""}|${i18n.lang}`;   // the error is in the Language
   if (cache.key === key) return cache.data;
   const { status, data } = await api("GET", `/api/scenario/track?step=${i}`);
-  const out = status === 200 ? { ok: true, track: data } : { ok: false, message: (data.errors && data.errors[0] && data.errors[0].message) || `the server answered ${status}` };
+  const out = status === 200 ? { ok: true, track: data } : { ok: false, message: (data.errors && data.errors[0] && data.errors[0].message) || t("the server answered {status}", { status }) };
   cache = { key, data: out };
   return out;
 }
@@ -42,16 +45,17 @@ function drawTrack(canvas, track, cols) {
   const ctx = canvas.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = "#fafbfc";
+  const c = theme.color;
+  ctx.fillStyle = c("--subtle-2");
   ctx.fillRect(0, 0, W, H);
   const t = track.t;
   const dur = typeof track.duration === "number" && track.duration > 0 ? track.duration : (t.length ? t[t.length - 1] : 1) || 1;
   const X = (tt) => PAD_L + (tt / dur) * (W - PAD_L - PAD_R);
   const Y = (v) => 6 + (1 - (v + 1) / 2) * (AXES_H - 12);
   // the axis grid: -1, 0, 1
-  ctx.font = "10px system-ui, sans-serif"; ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillStyle = "#59616b";
+  ctx.font = "10px system-ui, sans-serif"; ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillStyle = c("--plot-label");
   for (const v of [-1, 0, 1]) {
-    ctx.strokeStyle = v === 0 ? "#c9d1d9" : "#e6e9ed"; ctx.lineWidth = 1;
+    ctx.strokeStyle = c(v === 0 ? "--plot-axis" : "--plot-grid"); ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(PAD_L, Math.round(Y(v)) + 0.5); ctx.lineTo(W - PAD_R, Math.round(Y(v)) + 0.5); ctx.stroke();
     ctx.fillText(String(v), PAD_L - 5, Y(v));
   }
@@ -66,7 +70,7 @@ function drawTrack(canvas, track, cols) {
     ctx.stroke();
   };
   cols.axes.forEach((name, k) => {
-    ctx.strokeStyle = COLORS[k % COLORS.length]; ctx.lineWidth = 1.5;
+    ctx.strokeStyle = c(COLORS[k % COLORS.length]); ctx.lineWidth = 1.5;
     step(track.series[name], Y);
   });
   // button / POV lanes: filled while pressed
@@ -74,9 +78,9 @@ function drawTrack(canvas, track, cols) {
     const y = AXES_H + k * LANE_H;
     const values = track.series[name];
     const pov = /\.pov\d+$/.test(name);
-    ctx.fillStyle = "#59616b"; ctx.textAlign = "right"; ctx.fillText(name.replace("button", "b"), PAD_L - 5, y + LANE_H / 2);
-    ctx.fillStyle = "#eef0f3"; ctx.fillRect(PAD_L, y + 2, W - PAD_L - PAD_R, LANE_H - 4);
-    ctx.fillStyle = COLORS[(cols.axes.length + k) % COLORS.length];
+    ctx.fillStyle = c("--plot-label"); ctx.textAlign = "right"; ctx.fillText(name.replace("button", "b"), PAD_L - 5, y + LANE_H / 2);
+    ctx.fillStyle = c("--sunken"); ctx.fillRect(PAD_L, y + 2, W - PAD_L - PAD_R, LANE_H - 4);
+    ctx.fillStyle = c(COLORS[(cols.axes.length + k) % COLORS.length]);
     values.forEach((v, j) => {
       const on = pov ? v !== -1 : !!v;
       if (!on) return;
@@ -86,62 +90,86 @@ function drawTrack(canvas, track, cols) {
   });
   // time ticks
   const yT = AXES_H + cols.lanes.length * LANE_H;
-  ctx.fillStyle = "#59616b"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+  ctx.fillStyle = c("--plot-label"); ctx.textAlign = "center"; ctx.textBaseline = "top";
   const every = dur > 20 ? 5 : dur > 8 ? 2 : dur > 3 ? 1 : 0.5;
   for (let s = 0; s <= dur + 1e-9; s += every) {
-    ctx.strokeStyle = "#c9d1d9"; ctx.beginPath(); ctx.moveTo(X(s) + 0.5, yT); ctx.lineTo(X(s) + 0.5, yT + 3); ctx.stroke();
+    ctx.strokeStyle = c("--plot-axis"); ctx.beginPath(); ctx.moveTo(X(s) + 0.5, yT); ctx.lineTo(X(s) + 0.5, yT + 3); ctx.stroke();
     ctx.fillText(`${+s.toFixed(1)} s`, X(s), yT + 4);
   }
 }
 
-// The panel body for step i (the step editor puts it in its "Input track" section, which shows the errors).
+// What is typed in the Trim boxes, by step, track and duration: every render of the step editor rebuilds the panel
+// (a poll, a language change), and a box keeps its text, and its focus, across that.
+const typedTrim = new Map();   // "step|inputs|duration" -> { start, end, focus: "start" | "end" | null }
+
+// The panel body for step i (the step editor puts it in its "Input track" section, which shows the errors). The
+// caller calls the returned element's afterInsert() once it is on the page: a Trim box that had focus gets it back.
 export async function trackPanel(stepIndex, step) {
   const i = stepIndex;
+  const trimKey = `${i}|${step.inputs}|${step.duration}`;
   const res = await loadTrack(i, step);
   const parts = [];
   parts.push(h("p", { class: "track-meta" }, h("code", { class: "track-path", text: step.inputs, title: step.inputs }),
-    res.ok ? h("span", { class: "muted", text: ` · ${res.track.t.length} row${res.track.t.length === 1 ? "" : "s"} · ${fmt(step.duration)} s` }) : null));
+    res.ok ? h("span", { class: "muted", text: ` · ${tn("{count} row", "{count} rows", res.track.t.length)} · ${t("{seconds} s", { seconds: fmt(step.duration) })}` }) : null));
   if (res.ok) {
     const cols = columns(res.track.series);
     const canvas = h("canvas", { id: "track-canvas", class: "track-canvas", role: "img",
-      "aria-label": `Input track: ${cols.axes.length} moving axes, ${cols.lanes.length} button or POV lanes` });
+      "aria-label": t("Input track: {axes} moving axes, {lanes} button or POV lanes", { axes: cols.axes.length, lanes: cols.lanes.length }) });
     const ro = new ResizeObserver(() => { if (canvas.isConnected) drawTrack(canvas, res.track, cols); else ro.disconnect(); });
     ro.observe(canvas);
+    // redrawn in a new theme; dropped once the canvas has been on the page and left it (not before it is put there)
+    let shown = false;
+    const off = theme.onChange(() => {
+      if (canvas.isConnected) { shown = true; drawTrack(canvas, res.track, cols); } else if (shown) off();
+    });
     parts.push(canvas);
     const legend = [...cols.axes].map((name, k) => h("span", { class: "track-key" },
-      h("span", { class: "track-swatch", style: `background:${COLORS[k % COLORS.length]}` }), name));
-    if (cols.quiet) legend.push(h("span", { class: "muted", text: `${cols.quiet} other column${cols.quiet === 1 ? "" : "s"} stay${cols.quiet === 1 ? "s" : ""} at rest` }));
-    if (!cols.axes.length && !cols.lanes.length) legend.unshift(h("span", { class: "muted", text: "Every input stays at rest in this track." }));
+      h("span", { class: "track-swatch", style: `background:var(${COLORS[k % COLORS.length]})` }), name));
+    if (cols.quiet) legend.push(h("span", { class: "muted", text: tn("{count} other column stays at rest", "{count} other columns stay at rest", cols.quiet) }));
+    if (!cols.axes.length && !cols.lanes.length) legend.unshift(h("span", { class: "muted", text: t("Every input stays at rest in this track.") }));
     parts.push(h("div", { class: "track-legend" }, ...legend));
   } else {
-    parts.push(h("p", { class: "error", role: "alert", text: `Couldn't load the track: ${res.message}` }));
+    parts.push(h("p", { class: "error", role: "alert", text: t("Couldn't load the track: {problem}", { problem: res.message }) }));
   }
 
   // Trim
   const dur = typeof step.duration === "number" ? step.duration : 0;
-  const startIn = h("input", { id: "trim-start", type: "number", step: "any", min: "0", value: "0", inputmode: "decimal", "aria-label": "Trim start" });
-  const endIn = h("input", { id: "trim-end", type: "number", step: "any", min: "0", value: fmt(dur), inputmode: "decimal", "aria-label": "Trim end" });
+  const startIn = h("input", { id: "trim-start", type: "number", step: "any", min: "0", value: "0", inputmode: "decimal", "aria-label": t("Trim start") });
+  const endIn = h("input", { id: "trim-end", type: "number", step: "any", min: "0", value: fmt(dur), inputmode: "decimal", "aria-label": t("Trim end") });
+  const kept = typedTrim.get(trimKey);
+  if (kept) { startIn.value = kept.start; endIn.value = kept.end; }
+  const remember = (focus) => {
+    const was = typedTrim.get(trimKey);
+    typedTrim.set(trimKey, { start: startIn.value, end: endIn.value, focus: focus === undefined ? was && was.focus : focus });
+  };
+  for (const [box, which] of [[startIn, "start"], [endIn, "end"]]) {
+    box.addEventListener("input", () => remember());
+    box.addEventListener("focus", () => remember(which));
+    // a box the re-render removes takes its focus along (kept); one the student leaves gives it up. Chromium fires
+    // blur before the box leaves the page, so whether it left is read after
+    box.addEventListener("blur", () => setTimeout(() => { if (box.isConnected) remember(null); }, 0));
+  }
   const trimErr = h("p", { class: "error", role: "alert", hidden: true });
   const trim = h("button", { type: "button", id: "trim-go", class: "btn btn-small", onclick: () => {
     const a = Number(startIn.value), b = Number(endIn.value);
     const bad = startIn.validity.badInput || endIn.validity.badInput || startIn.value.trim() === "" || endIn.value.trim() === ""
       || !(a >= 0 && b > a && b <= dur + 1e-9);
     trimErr.hidden = !bad;
-    trimErr.textContent = bad ? `Trim needs 0 ≤ start < end ≤ ${fmt(dur)} s.` : "";
-    if (!bad) scEdit("trim_track", { step: i, start: a, end: b });
-  } }, "Trim");
+    trimErr.textContent = bad ? t("Trim needs 0 ≤ start < end ≤ {duration} s.", { duration: fmt(dur) }) : "";
+    if (!bad) { typedTrim.delete(trimKey); scEdit("trim_track", { step: i, start: a, end: b }); }
+  } }, t("Trim"));
   parts.push(h("div", { class: "track-trim" },
-    h("label", { for: "trim-start", class: "track-field" }, h("span", { class: "muted" }, "Keep from"), h("span", { class: "with-unit" }, startIn, h("span", { class: "unit" }, "s"))),
-    h("label", { for: "trim-end", class: "track-field" }, h("span", { class: "muted" }, "to"), h("span", { class: "with-unit" }, endIn, h("span", { class: "unit" }, "s"))),
+    h("label", { for: "trim-start", class: "track-field" }, h("span", { class: "muted" }, t("Keep from")), h("span", { class: "with-unit" }, startIn, h("span", { class: "unit" }, "s"))),
+    h("label", { for: "trim-end", class: "track-field" }, h("span", { class: "muted" }, t("to")), h("span", { class: "with-unit" }, endIn, h("span", { class: "unit" }, "s"))),
     trim), trimErr);
 
   // Replace / choose another file
   const fileIn = h("input", { id: "track-file", type: "text", class: "mono", value: step.inputs, autocomplete: "off", spellcheck: "false",
-    "aria-label": "Track file, relative to the scenario file" });
+    "aria-label": t("Track file, relative to the scenario file") });
   const use = h("button", { type: "button", id: "track-file-go", class: "btn btn-small", onclick: () => {
     const v = fileIn.value.trim();
     if (v && v !== step.inputs) scEdit("inputs_file", { step: i, path: v });
-  } }, "Use this file");
+  } }, t("Use this file"));
   fileIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); use.click(); } });
   const chooser = h("div", { class: "row track-chooser", hidden: true }, fileIn, use);
   parts.push(h("div", { class: "row track-actions" },
@@ -149,9 +177,15 @@ export async function trackPanel(stepIndex, step) {
       chooser.hidden = !chooser.hidden;
       e.currentTarget.setAttribute("aria-expanded", String(!chooser.hidden));
       if (!chooser.hidden) fileIn.focus();
-    } }, "Choose file…"),
-    h("button", { type: "button", id: "track-constant", class: "btn btn-small", title: "Remove the track from this step (the CSV file stays on disk)",
-      onclick: () => scEdit("inputs_file", { step: i, path: null }) }, "Replace with constant inputs")),
+    } }, t("Choose file…")),
+    h("button", { type: "button", id: "track-constant", class: "btn btn-small", title: t("Remove the track from this step (the CSV file stays on disk)"),
+      onclick: () => scEdit("inputs_file", { step: i, path: null }) }, t("Replace with constant inputs"))),
   chooser);
-  return h("div", { class: "track-panel" }, ...parts);
+  const panel = h("div", { class: "track-panel" }, ...parts);
+  panel.afterInsert = () => {
+    const box = kept && kept.focus === "start" ? startIn : kept && kept.focus === "end" ? endIn : null;
+    // only when the focus went with the old panel: not after the student moved on meanwhile
+    if (box && (!document.activeElement || document.activeElement === document.body)) box.focus();
+  };
+  return panel;
 }

@@ -12,7 +12,7 @@ from typing import Callable
 
 import tomlkit
 
-from .. import robot_process
+from .. import i18n, robot_process
 from ..scenario import ScenarioError, load_scenario_text
 from ..scenario_runner import STOPPED, UNSET, run_scenario
 from .simlock import SimBusy, SimLock
@@ -50,7 +50,7 @@ class RunManager:
         scenario_path = Path(scenario_path).resolve()
         with self._lock:
             if self._running:
-                raise RunBusy("a run is already in progress")
+                raise RunBusy(i18n.t("a run is already in progress"))
             try:
                 self._simlock.acquire("run")
             except SimBusy as e:
@@ -67,7 +67,8 @@ class RunManager:
         try:
             doc = tomlkit.parse(text)
             if not isinstance(doc.get("config"), str):
-                raise ScenarioError(f"{scenario_path.name}: config = \"<robot config .toml>\" is required")
+                raise ScenarioError(i18n.t("{name}: {config_setting} is required", name=scenario_path.name,
+                                           config_setting="config = \"<robot config .toml>\""))
             doc["config"] = str((scenario_path.parent / doc["config"]).resolve())
             snapshot_text = tomlkit.dumps(doc)
             scenario = load_scenario_text(snapshot_text, scenario_path)
@@ -84,13 +85,15 @@ class RunManager:
             try:
                 out_dir.mkdir(parents=True)
             except OSError as e:
-                raise ScenarioError(f"can't make the run folder {out_dir}: {e.strerror or e}") from None
+                raise ScenarioError(i18n.t("can't make the run folder {folder}: {why}", folder=out_dir,
+                                           why=e.strerror or e)) from None
             try:
                 snapshot = out_dir / "scenario.toml"
                 snapshot.write_text(snapshot_text)
             except OSError as e:
                 shutil.rmtree(out_dir, ignore_errors=True)
-                raise ScenarioError(f"can't write the run folder {out_dir}: {e.strerror or e}") from None
+                raise ScenarioError(i18n.t("can't write the run folder {folder}: {why}", folder=out_dir,
+                                           why=e.strerror or e)) from None
             # `scenario` is the snapshot's text (config made absolute); its path stays the student's file, so the
             # report is titled with their scenario's name rather than "scenario.toml"
             self._dirs[run_id] = out_dir
@@ -168,6 +171,12 @@ class RunManager:
         self._on_change()
 
     def _work(self, run_id: str, scenario, out_dir: Path, speed, cancel: threading.Event) -> None:
+        """The run, as MCP's run_scenario runs it: its machine text (report.json) in American English, inside
+        i18n.machine(); report.md and the page's words (to_dict(shown=True)) in the Language setting (spec L2)."""
+        with i18n.machine():
+            self._work_guarded(run_id, scenario, out_dir, speed, cancel)
+
+    def _work_guarded(self, run_id: str, scenario, out_dir: Path, speed, cancel: threading.Event) -> None:
         def progress(e: dict) -> None:
             kind = e.get("type")
             if kind == "step_start":
@@ -193,7 +202,8 @@ class RunManager:
         def finish(r: dict) -> None:
             try:
                 if report is not None:
-                    r["report"] = report.to_dict(shown=True)   # the checks in the Units setting
+                    with i18n.for_people():
+                        r["report"] = report.to_dict(shown=True)   # the checks in the Units and Language settings
                     if report.error is not None:
                         # "stopped" only when the stop is why it ended; any other error shows as itself
                         r["state"] = "stopped" if report.error == STOPPED else "error"

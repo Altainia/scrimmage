@@ -27,6 +27,7 @@
 import { $, h, api, notice, serial, registerTab, setTab, showPath, sessionToken } from "./app.js";
 import { uploadCad, cadFilesProblem, filesName } from "./start.js";
 import { units } from "./units.js";
+import { i18n, t, tn } from "./i18n.js";
 
 export const part = {
   state: null,        // /api/part/state
@@ -69,13 +70,14 @@ export function kg(x) {
 }
 // A point (the center of gravity, a pivot): to 0.001 in or 0.1 mm, never "-0"
 const len = (v) => units.number(units.toDisplay(v, "length"), units.name("length") === "in" ? 3 : 1);
-export const cog = (c) => (c ? `x ${len(c[0])}, y ${len(c[1])}, z ${len(c[2])} ${units.name("length")}` : "none (no weight)");
+export const cog = (c) => (c ? t("x {x}, y {y}, z {z} {unit}", { x: len(c[0]), y: len(c[1]), z: len(c[2]), unit: units.name("length") })
+  : t("none (no weight)"));
 
 // -- edits ------------------------------------------------------------------------------------------
 async function mutate(path, body) {
   if (!part.state) return { ok: false, errors: [] };
   if (readOnly()) {
-    notice(`This part is read-only: ${part.state.read_only_reason}`, "warn");
+    notice(t("This part is read-only: {why}", { why: part.state.read_only_reason }), "warn");
     return { ok: false, errors: [] };
   }
   busy++; renderStatus();
@@ -83,12 +85,12 @@ async function mutate(path, body) {
     const { status, data } = await api("POST", path, { version: part.state.version, ...body });
     if (status === 200) {
       part.errors = [];
-      if (data.ok === false) notice(`Nothing to ${path.endsWith("undo") ? "undo" : "redo"}.`, "info");
+      if (data.ok === false) notice(path.endsWith("undo") ? t("Nothing to undo.") : t("Nothing to redo."), "info");
       applyState(data, true);
       return { ok: data.ok !== false };
     }
     const errors = data.errors && data.errors.length ? data.errors
-      : [{ field: "status", message: data.error || `the server answered ${status}` }];
+      : [{ field: "status", message: data.error || t("the server answered {status}", { status }) }];
     if (status === 400) {
       part.errors = errors;
       pendingBody = null;
@@ -117,7 +119,7 @@ const redo = () => serial(() => mutate("/api/part/redo", {}));
 async function reimport(files = null, again = false) {
   if (!part.state) return;
   const what = files ? filesName(files) : null;
-  working = files ? `Reading ${what}…` : "Reading the CAD file again…";
+  working = files ? t("Reading {files}…", { files: what }) : t("Reading the CAD file again…");
   renderStatus();
   try {
     const { status, data } = files ? await uploadCad(files, { again })
@@ -126,10 +128,10 @@ async function reimport(files = null, again = false) {
       part.errors = [];
       viewKey = null;   // the same path may hold new shapes
       applyState(data, true);
-      notice(again ? `Read the new export (${what}).` : files ? `Using ${what} now.` : "Read the CAD file again.", "info");
+      notice(again ? t("Read the new export ({files}).", { files: what }) : files ? t("Using {files} now.", { files: what }) : t("Read the CAD file again."), "info");
     } else {
-      const why = (data.errors && data.errors[0] && data.errors[0].message) || data.error || `the server answered ${status}`;
-      notice(files ? `Couldn't use ${what}: ${why}` : `Couldn't read the CAD file again: ${why}`, "error");
+      const why = (data.errors && data.errors[0] && data.errors[0].message) || data.error || t("the server answered {status}", { status });
+      notice(files ? t("Couldn't use {files}: {why}", { files: what, why }) : t("Couldn't read the CAD file again: {why}", { why }), "error");
       await refresh();
     }
   } finally {
@@ -227,7 +229,7 @@ export function render() {
     renderTop();
     const ro = $("#part-readonly");
     ro.hidden = !readOnly();
-    ro.textContent = readOnly() ? `Read-only: ${part.state.read_only_reason}` : "";
+    ro.textContent = readOnly() ? t("Read-only: {why}", { why: part.state.read_only_reason }) : "";
     $("#tab-part").classList.toggle("read-only", readOnly());
     $("#tab-part").classList.toggle("part-plugin", plugin());
     renderTools();
@@ -258,8 +260,8 @@ function renderTools() {
   const off = plugin() || readOnly() || !ps.length;
   $("#part-new-body").disabled = off;
   const back = ps.length && ps.every((p) => p.left_out);
-  $("#part-leave-out").textContent = back ? "Put back" : "Leave out";
-  $("#part-leave-out").title = back ? "Put the selected pieces back into the part" : "Leave the selected pieces out of the part (they weigh nothing and aren't drawn)";
+  $("#part-leave-out").textContent = back ? t("Put back") : t("Leave out");
+  $("#part-leave-out").title = back ? t("Put the selected pieces back into the part") : t("Leave the selected pieces out of the part (they weigh nothing and aren't drawn)");
   $("#part-leave-out").disabled = off;
   $("#part-reimport").disabled = !!working || (readOnly() && !part.state.source);
 }
@@ -269,7 +271,7 @@ function renderTools() {
 function renderTree() {
   const s = part.state, box = $("#part-tree");
   const focused = box.contains(document.activeElement) ? document.activeElement.dataset.key : null;
-  const tree = h("ul", { class: "part-tree", role: "tree", "aria-label": "Bodies and their pieces", "aria-multiselectable": "true" });
+  const tree = h("ul", { class: "part-tree", role: "tree", "aria-label": t("Bodies and their pieces"), "aria-multiselectable": "true" });
   const sel = part.sel;
   const drag = !plugin() && !readOnly();
   for (const b of s.bodies) {
@@ -281,9 +283,9 @@ function renderTree() {
       const open = part.openHardware.has(b.name);
       group.append(h("li", { role: "none", class: "part-hw" },
         h("button", { type: "button", class: "linklike part-hw-btn", "aria-expanded": String(open), dataset: { hardware: b.name },
-          title: "Bolts, nuts and other hardware the import folded into this body",
+          title: t("Bolts, nuts and other hardware the import folded into this body"),
           onclick: () => { if (open) part.openHardware.delete(b.name); else part.openHardware.add(b.name); render(); } },
-        `${open ? "−" : "+"}${hw.length} hardware`)));
+        open ? t("−{count} hardware", { count: hw.length }) : t("+{count} hardware", { count: hw.length }))));
       if (open) for (const p of hw) group.append(pieceItem(p, drag));
     }
     const chosen = sel.kind === "body" && sel.keys.has(b.name);
@@ -295,9 +297,9 @@ function renderTree() {
     tree.append(h("li", { role: "treeitem", class: `part-item part-body${chosen ? " selected" : ""}`, tabindex: "-1",
       "aria-selected": String(chosen), "aria-expanded": "true", dataset: { key: `b:${b.name}`, name: b.name },
       onclick: (e) => { if (e.target.closest(".part-row") === row) select("body", [b.name], { add: e.shiftKey || e.ctrlKey || e.metaKey, show: false }); } },
-    row, mine.length || plugin() ? group : h("p", { class: "hint part-empty" }, "No pieces: drag some here.")));
+    row, mine.length || plugin() ? group : h("p", { class: "hint part-empty" }, t("No pieces: drag some here."))));
   }
-  if (!s.bodies.length) tree.append(h("li", { role: "none", class: "empty" }, s.read_only_reason ? "Nothing to show." : "No bodies yet."));
+  if (!s.bodies.length) tree.append(h("li", { role: "none", class: "empty" }, s.read_only_reason ? t("Nothing to show.") : t("No bodies yet.")));
   tree.addEventListener("keydown", treeKeys);
   box.replaceChildren(tree);
   // roving focus: the focused item (or the first selected one, or the first) is the one Tab reaches
@@ -315,11 +317,11 @@ function renderTree() {
 }
 
 function bodyWords(b, n) {
-  const pieces = plugin() ? "" : `${n} piece${n === 1 ? "" : "s"} · `;
-  if (b.parent == null) return `${pieces}its own part${b.part && b.part !== b.name ? ` (${b.part})` : ""}`;
+  const pieces = plugin() ? "" : `${tn("{count} piece", "{count} pieces", n)} · `;
+  if (b.parent == null) return pieces + (b.part && b.part !== b.name ? t("its own part ({part})", { part: b.part }) : t("its own part"));
   const kind = b.joint && b.joint.kind;   // JointSettings.kind (and a plugin part's Joint.kind): "hinge" | "slide"
-  const how = kind === "hinge" ? "turns on" : kind === "slide" ? "slides on" : "fixed to";
-  return `${pieces}${how} ${b.parent}`;
+  const parent = { parent: b.parent };
+  return pieces + (kind === "hinge" ? t("turns on {parent}", parent) : kind === "slide" ? t("slides on {parent}", parent) : t("fixed to {parent}", parent));
 }
 
 function pieceItem(p, drag) {
@@ -330,7 +332,7 @@ function pieceItem(p, drag) {
     onclick: (e) => select("piece", [p.key], { add: e.shiftKey || e.ctrlKey || e.metaKey, show: false }) },
   h("span", { class: "part-row" },
     h("span", { class: "part-piece-name", text: tail(p.key) }),
-    p.left_out ? h("span", { class: "part-tag", text: "left out" }) : null,
+    p.left_out ? h("span", { class: "part-tag", text: t("left out") }) : null,
     p.material ? h("span", { class: "part-mat", text: matLabel(p.material, true) }) : null));
   if (drag) {
     li.addEventListener("dragstart", (e) => {
@@ -397,44 +399,45 @@ export function bodyColor(name) {
 
 function renderChecklist() {
   const s = part.state, box = $("#part-checklist");
-  const MARK = { todo: ["☐", "To do"], check: ["!", "Check"], error: ["✕", "Problem"] };
+  const MARK = { todo: ["☐", () => t("To do")], check: ["!", () => t("Check")], error: ["✕", () => t("Problem")] };
   box.replaceChildren(...s.checklist.map((it) => {
     const [mark, word] = MARK[it.level] || MARK.todo;
-    const t = it.target || { kind: null, keys: [] };
+    const target = it.target || { kind: null, keys: [] };
     return h("li", { class: `part-check part-check-${it.level}` },
-      h("button", { type: "button", class: "part-check-btn", title: "Show what this is about",
-        onclick: () => select(t.kind, t.keys || []) },
+      h("button", { type: "button", class: "part-check-btn", title: t("Show what this is about"),
+        onclick: () => select(target.kind, target.keys || []) },
       h("span", { class: "part-check-mark", "aria-hidden": "true", text: mark }),
-      h("span", { class: "visually-hidden", text: `${word}: ` }),
+      h("span", { class: "visually-hidden", text: t("{word}:", { word: word() }) + " " }),
       h("span", { text: it.text })));
   }));
-  if (!s.checklist.length) box.append(h("li", { class: "part-check part-check-done" }, "Nothing left to do."));
+  if (!s.checklist.length) box.append(h("li", { class: "part-check part-check-done" }, t("Nothing left to do.")));
 }
 
 function renderStatus() {
   const s = part.state;
   if (!s) return;
   const saved = $("#part-saved");
-  if (readOnly()) { saved.textContent = "Read-only"; saved.className = "saved saved-warn"; }
-  else if (busy) { saved.textContent = "Saving…"; saved.className = "saved saved-busy"; }
-  else if (part.errors.length) { saved.textContent = "Last change not saved (see the error)"; saved.className = "saved saved-bad"; }
-  else { saved.textContent = "✓ All changes saved"; saved.className = "saved saved-ok"; }
+  if (readOnly()) { saved.textContent = t("Read-only"); saved.className = "saved saved-warn"; }
+  else if (busy) { saved.textContent = t("Saving…"); saved.className = "saved saved-busy"; }
+  else if (part.errors.length) { saved.textContent = t("Last change not saved (see the error)"); saved.className = "saved saved-bad"; }
+  else { saved.textContent = t("✓ All changes saved"); saved.className = "saved saved-ok"; }
   const b = $("#part-build"), st = (s.build || {}).state;
   if (working) { b.textContent = working; b.className = "stat saved-busy"; }
-  else if (st === "building") { b.textContent = "Updating parts…"; b.className = "stat saved-busy"; }
-  else if (st === "failed") { b.textContent = `Parts not updated: ${s.build.message || "the build failed"}`; b.className = "stat stat-bad"; }
-  else { b.textContent = "Parts up to date"; b.className = "stat stat-ok"; }
+  else if (st === "building") { b.textContent = t("Updating parts…"); b.className = "stat saved-busy"; }
+  else if (st === "failed") { b.textContent = t("Parts not updated: {why}", { why: s.build.message || t("the build failed") }); b.className = "stat stat-bad"; }
+  else { b.textContent = t("Parts up to date"); b.className = "stat stat-ok"; }
   const total = s.parts.reduce((a, p) => a + (p.mass || 0), 0);
-  $("#part-total").textContent = s.parts.length > 1 ? `${s.parts.length} parts · ${kg(total)}` : `Weight ${kg(total)}`;
+  $("#part-total").textContent = s.parts.length > 1 ? t("{count} parts · {weight}", { count: s.parts.length, weight: kg(total) })
+    : t("Weight {weight}", { weight: kg(total) });
   const tryIt = $("#part-test-it");
   const built = st === "idle" && !working && s.parts.length > 0 && s.parts.every((p) => p.mass != null);
   tryIt.hidden = plugin();
   tryIt.disabled = !built || readOnly() || testing;
-  tryIt.title = readOnly() ? "This part is read-only" : built ? "Try the part on a stand-in robot: opens the Test tab with a test to start from"
-    : "Wait for the parts to be up to date";
+  tryIt.title = readOnly() ? t("This part is read-only") : built ? t("Try the part on a stand-in robot: opens the Test tab with a test to start from")
+    : t("Wait for the parts to be up to date");
   $("#part-reimport").hidden = plugin();
-  $("#part-reimport").title = s.source_copied ? "Choose the new export: this part was made from a copy of a dropped or chosen file"
-    : "Read the CAD file again (after you changed it in your CAD program)";
+  $("#part-reimport").title = s.source_copied ? t("Choose the new export: this part was made from a copy of a dropped or chosen file")
+    : t("Read the CAD file again (after you changed it in your CAD program)");
   renderTools();
 }
 
@@ -494,7 +497,7 @@ export function measure(text, name, kind) {
   let message = null;
   if (THOUSANDS.test(text)) {
     const whole = text.replace(",", ""), dec = text.replace(",", ".");
-    message = `"${text}" could mean ${whole} or ${dec}. Type it without the comma.`;
+    message = t("\"{text}\" could mean {whole} or {dec}. Type it without the comma.", { text, whole, dec });
   }
   const v = message ? null : units.parse(text.replace(/^([+-]?\d*),/, "$1."), kind);
   if (v !== null && typeof v === "object") message = v.error;
@@ -525,9 +528,9 @@ export function number(text, name) {
   let message = null;
   if (THOUSANDS.test(text)) {
     const whole = text.replace(",", ""), dec = text.replace(",", ".");
-    message = `"${text}" could mean ${whole} or ${dec}. Type it without the comma.`;
+    message = t("\"{text}\" could mean {whole} or {dec}. Type it without the comma.", { text, whole, dec });
   } else if (!NUMBER_TEXT.test(text) || !isFinite(Number(text.replace(",", ".")))) {
-    message = `"${text}" isn't a number. Type one such as 0.25.`;
+    message = t("\"{text}\" isn't a number. Type one such as 0.25.", { text });
   }
   if (message) {
     part.errors = [{ field: name, message }];
@@ -538,12 +541,12 @@ export function number(text, name) {
 }
 
 export function matLabel(key, short = false) {
-  if (key === "custom") return short ? "custom" : "Something else (type its density)";
+  if (key === "custom") return short ? t("custom") : t("Something else (type its density)");
   const m = part.materials && part.materials.materials[key];
   if (!m) return key;
   if (short) return m.label;
   const g = units.fmt(m.density, "density");
-  return m.printed ? `${m.label}, ${g} solid` : `${m.label} (${g})`;
+  return m.printed ? t("{material}, {density} solid", { material: m.label, density: g }) : t("{material} ({density})", { material: m.label, density: g });
 }
 
 const noticed = new WeakSet();   // refused edits whose unplaced messages were already shown as notices
@@ -563,9 +566,10 @@ function renderInspector() {
     if (node) out.push(...(Array.isArray(node) ? node : [node]).filter(Boolean));
   }
   root.replaceChildren(...out);
-  const t = ctx.sel.kind === "piece" ? (ctx.pieces.length === 1 ? tail(ctx.pieces[0].key) : `${ctx.pieces.length} pieces`)
-    : ctx.sel.kind === "body" ? (ctx.body ? ctx.body.name : `${ctx.bodies.length} bodies`) : ctx.sel.kind === "frame" ? "robot frame" : null;
-  $("#part-insp-title").textContent = t ? `Selected: ${t}` : "Inspector";
+  const what = ctx.sel.kind === "piece" ? (ctx.pieces.length === 1 ? tail(ctx.pieces[0].key) : tn("{count} piece", "{count} pieces", ctx.pieces.length))
+    : ctx.sel.kind === "body" ? (ctx.body ? ctx.body.name : tn("{count} body", "{count} bodies", ctx.bodies.length))
+    : ctx.sel.kind === "frame" ? t("robot frame") : null;
+  $("#part-insp-title").textContent = what ? t("Selected: {what}", { what }) : t("Inspector");
   if (keepFocus) {
     const el = document.getElementById(keepFocus);
     if (el && root.contains(el)) {
@@ -595,7 +599,7 @@ function initDrop() {
     depth = 0;
     cover.hidden = true;
     const dropped = [...e.dataTransfer.files];
-    if (plugin()) { notice("A plugin-made part comes from its CAD plugin: export it again there.", "warn"); return; }
+    if (plugin()) { notice(t("A plugin-made part comes from its CAD plugin: export it again there."), "warn"); return; }
     const problem = cadFilesProblem(dropped);
     if (problem) { notice(problem, "error"); return; }
     reimport(dropped);
@@ -610,7 +614,8 @@ async function testIt() {
   if (status === 200 && data.ok) {
     const added = data.added || [];
     if (added.length) {   // said by the Test tab once the page has reloaded on it
-      const text = `Added to the stand-in robot where the CAD has ${added.length === 1 ? "it" : "them"}: ${added.join(", ")}.`;
+      const text = tn("Added to the stand-in robot where the CAD has it: {parts}.", "Added to the stand-in robot where the CAD has them: {parts}.",
+        added.length, { parts: added.join(", ") });
       try { sessionStorage.setItem("scrimmage-test-notice", text); } catch { /* the notice is lost, nothing else */ }
     }
     location.hash = `token=${encodeURIComponent(sessionToken())}`;
@@ -619,8 +624,8 @@ async function testIt() {
   }
   testing = false;
   renderStatus();
-  const why = (data.errors && data.errors[0] && data.errors[0].message) || data.error || `the server answered ${status}`;
-  notice(`Can't test it yet: ${why}`, "warn");
+  const why = (data.errors && data.errors[0] && data.errors[0].message) || data.error || t("the server answered {status}", { status });
+  notice(t("Can't test it yet: {why}", { why }), "warn");
 }
 
 export async function initPart() {
@@ -628,6 +633,11 @@ export async function initPart() {
   await import("./part_inspector.js");   // its sections (it imports this file, so not at the top)
   registerTab("part", { renderTop, undo, redo, onShow: render });
   units.onChange(() => render());   // renderInspector keeps what is half typed
+  i18n.onChange(async () => {      // likewise; then the checklist, the server's words, and the material names again
+    render(); refresh();
+    const m = await api("GET", "/api/part/materials");
+    if (m.status === 200) { part.materials = m.data; render(); }
+  });
   setTab("part");
   $("#part-new-body").addEventListener("click", () => {
     const ps = selectedPieces();
@@ -659,11 +669,11 @@ export async function initPart() {
   initDrop();
   const [m, app] = await Promise.all([api("GET", "/api/part/materials"), api("GET", "/api/app/state")]);
   if (m.status === 200) part.materials = m.data;
-  else notice("Couldn't load the list of materials; reload the page to try again.", "error");
+  else notice(t("Couldn't load the list of materials; reload the page to try again."), "error");
   if (app.status === 200) part.appPath = app.data.display_path || app.data.path || "";
   import("./part3d.js").then((v) => v.initPartView()).catch((e) => {
     console.error(e);
-    $("#part-view").replaceChildren(h("p", { class: "view-placeholder" }, `The 3D view failed to load: ${e.message || e}`));
+    $("#part-view").replaceChildren(h("p", { class: "view-placeholder" }, t("The 3D view failed to load: {why}", { why: e.message || e })));
   });
   await pollLoop();
 }

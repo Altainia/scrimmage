@@ -20,11 +20,13 @@ from .bindings import binds_rev
 from .bridge import Bridge, robot_language
 from .config import SIM_MODES, ConfigError, build_world, load_config, set_sim_mode, sim_mode_unused
 from .driverstation import real_ds_line, real_ds_report
+from . import i18n
+from .i18n import languages
 from .lockstep import DEFAULT_STEP, parse_speed
 from .robot_process import RobotProcess
 from .scenario import ScenarioError, load_scenario, validate
 from .scenario_runner import REAL_DS_REFUSED, UNSET, run_scenario
-from .settings import SYSTEMS, set_override
+from .settings import SYSTEMS, set_language_override, set_override
 
 
 SIM_MODE_HELP = ("fast: set SCRIMMAGE_MODE=fast for the robot program (overrides [robot_program] sim_mode); "
@@ -53,14 +55,22 @@ def _port(text: str) -> int:
     return n
 
 
-def _leading_units(argv: list[str]) -> tuple[str | None, list[str]]:
-    """The global `--units X` (or `--units=X`) before the command, and the rest: taken off first, so that
-    `scrimmage --units metric measure ...` still reaches measure's own parser."""
-    if argv[:1] == ["--units"] and len(argv) > 1:
-        return argv[1], argv[2:]
-    if argv[:1] and argv[0].startswith("--units="):
-        return argv[0].split("=", 1)[1], argv[1:]
-    return None, argv
+GLOBAL = ("--units", "--language")
+
+
+def _leading(argv: list[str]) -> tuple[dict[str, str], list[str]]:
+    """The global `--units X` and `--language X` (or `--units=X`) before the command, in either order, and the
+    rest: taken off first, so that `scrimmage --units metric measure ...` still reaches measure's own parser."""
+    found: dict[str, str] = {}
+    while argv:
+        if argv[0] in GLOBAL and len(argv) > 1:
+            found[argv[0]], argv = argv[1], argv[2:]
+        elif argv[0].split("=", 1)[0] in GLOBAL and "=" in argv[0]:
+            name, value = argv[0].split("=", 1)
+            found[name], argv = value, argv[1:]
+        else:
+            break
+    return found, argv
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -68,6 +78,10 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--units", choices=SYSTEMS,
                     help="show values in imperial or metric units for this run (default: the Units setting, which "
                          "the editor's Settings menu sets)")
+    ap.add_argument("--language", choices=list(languages()),
+                    help="show the web app (`edit`, `serve`) and the reports it writes in this language for this run "
+                         "(default: the Language setting, which the editor's Settings menu sets); what the other "
+                         "commands print and the files they write stay American English")
     sub = ap.add_subparsers(dest="command", required=True)
 
     sp = sub.add_parser("serve", help="run the world for a robot program you drive yourself (WPILib sim GUI)")
@@ -244,25 +258,64 @@ def main(argv: list[str] | None = None) -> None:
     ep.add_argument("--no-browser", action="store_true", help="print the URL instead of opening a browser")
     ep.add_argument("-v", "--verbose", action="store_true")
 
+    ip = sub.add_parser("i18n", help="translations: list the web app's source text for a new language, or check "
+                                     "a catalog in scrimmage/locales/ against it (docs/translating.md)")
+    ip.add_argument("-v", "--verbose", action="store_true")
+    isub = ip.add_subparsers(dest="i18n_command", required=True)
+    it = isub.add_parser("template", help="list every source string with the file:line using it (exit 1 for a "
+                                          "t()/tn() call without literal strings)")
+    it.add_argument("--out", type=Path, help="also write a starter catalog, every entry untranslated, to fill in "
+                                             "as scrimmage/locales/<lang>.json")
+    ic = isub.add_parser("check", help="list a catalog's broken, mismatched, unused and missing entries (exit 1 "
+                                       "for broken or mismatched ones; missing ones show in American English)")
+    ic.add_argument("lang", nargs="?", help="the catalog to check (default: every one)")
+    for p in (it, ic):
+        p.add_argument("--root", type=Path, help="the source folder to read (default: the scrimmage package)")
+    ic.add_argument("--locales", type=Path, help="the catalogs' folder (default: scrimmage/locales)")
+
     # listed here for the help; its arguments (a file, or the form and new commands) are parsed by measure/cli.py
     sub.add_parser("measure", help="measurements: read a <name>.measure.toml file (its averages and fit), print a "
                                    "blank form, or start a file (docs/measuring.md)")
 
     argv = sys.argv[1:] if argv is None else argv
-    units, argv = _leading_units(argv)
-    if units is not None:
-        if units not in SYSTEMS:
-            ap.error(f"argument --units: invalid choice: {units!r} (choose from {', '.join(SYSTEMS)})")
-        set_override(units)
+    leading, argv = _leading(argv)
+    if "--units" in leading:
+        if leading["--units"] not in SYSTEMS:
+            ap.error(f"argument --units: invalid choice: {leading['--units']!r} (choose from {', '.join(SYSTEMS)})")
+        set_override(leading["--units"])
+    if "--language" in leading:
+        try:
+            set_language_override(leading["--language"])
+        except ValueError:
+            ap.error(f"argument --language: invalid choice: {leading['--language']!r} "
+                     f"(choose from {', '.join(languages())})")
     if argv[:1] == ["measure"]:
         from .measure.cli import main as measure
-        sys.exit(measure(argv[1:]))
+        with i18n.fixed():
+            code = measure(argv[1:])
+        sys.exit(code)
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S")
-    if args.command == "serve":
+    if args.command == "serve":     # the web app's commands follow the Language
         _serve(args, sp)
-    elif args.command == "java":
+    elif args.command == "edit":
+        _edit(args)
+    else:
+        # Every other command is American English throughout, what it prints and the files it writes (the spec's
+        # non-goal); units still follow --units and the setting. One guard here, so no command is missed. A thread
+        # a command starts doesn't inherit it (none builds text today: asyncio.to_thread and Session's render jobs
+        # carry the context).
+        with i18n.fixed():
+            code = _command(args, rp)
+        if code is not None:
+            sys.exit(code)
+
+
+def _command(args, rp) -> int | None:
+    """The command, other than `edit` and `serve`: its exit code for `run` and `i18n` (the others exit themselves
+    when they fail)."""
+    if args.command == "java":
         _java(args)
     elif args.command == "freecad":
         _freecad(args)
@@ -284,10 +337,12 @@ def main(argv: list[str] | None = None) -> None:
         _model(args)
     elif args.command == "parts":
         _parts(args)
-    elif args.command == "edit":
-        _edit(args)
+    elif args.command == "i18n":
+        from . import i18n_tool
+        return i18n_tool.main(args)
     else:
-        sys.exit(_run(args, rp))
+        return _run(args, rp)
+    return None
 
 
 def _java(args) -> None:

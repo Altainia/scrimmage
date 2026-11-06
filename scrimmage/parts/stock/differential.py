@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ...motors import MOTORS
 from . import TREAD_PARAMS, Param, Stock, register
+from ...i18n import N_
 
 DARK = [0.3, 0.3, 0.33, 1.0]
 TIRE = [0.15, 0.15, 0.15, 1.0]
@@ -44,19 +45,19 @@ def build(p: dict) -> dict:
 
 
 register(Stock(
-    "differential", "tank drive with 2-6 wheels per side; the middle wheel of each side is driven",
-    (Param("track_width", "m", 0.51, "distance between the left and right wheel centers", positive=True),
-     Param("wheelbase", "m", 0.52, "front-to-back spacing of the first and last wheel", positive=True),
-     Param("wheels_per_side", "", 3, "wheels on each side, spread evenly front to back", kind="int", min=2, max=6),
-     Param("wheel_diameter", "m", 0.1524, "wheel diameter", positive=True),
-     Param("drop_center", "m", 0.003, "how far the middle wheel of an odd count sits below the others", min=0.0),
-     Param("motor", "", "CIM", "motor model", kind="str", choices=tuple(sorted(MOTORS))),
-     Param("motors_per_side", "", 2, "motors on each side", kind="int", min=1),
-     Param("gearing", "", 10.71, "motor turns per wheel turn", positive=True),
-     Param("efficiency", "", 0.9, "drivetrain efficiency", positive=True),
-     Param("wheel_friction", "", 1.1, "wheel-to-carpet sliding friction coefficient", positive=True),
+    "differential", N_("tank drive with 2-6 wheels per side; the middle wheel of each side is driven"),
+    (Param("track_width", "m", 0.51, N_("distance between the left and right wheel centers"), positive=True),
+     Param("wheelbase", "m", 0.52, N_("front-to-back spacing of the first and last wheel"), positive=True),
+     Param("wheels_per_side", "", 3, N_("wheels on each side, spread evenly front to back"), kind="int", min=2, max=6),
+     Param("wheel_diameter", "m", 0.1524, N_("wheel diameter"), positive=True),
+     Param("drop_center", "m", 0.003, N_("how far the middle wheel of an odd count sits below the others"), min=0.0),
+     Param("motor", "", "CIM", N_("motor model"), kind="str", choices=tuple(sorted(MOTORS))),
+     Param("motors_per_side", "", 2, N_("motors on each side"), kind="int", min=1),
+     Param("gearing", "", 10.71, N_("motor turns per wheel turn"), positive=True),
+     Param("efficiency", "", 0.9, N_("drivetrain efficiency"), positive=True),
+     Param("wheel_friction", "", 1.1, N_("wheel-to-carpet sliding friction coefficient"), positive=True),
      *TREAD_PARAMS,
-     Param("rail_mass", "kg", 1.0, "mass of the rails the wheels hang from", positive=True)),
+     Param("rail_mass", "kg", 1.0, N_("mass of the rails the wheels hang from"), positive=True)),
     build, slots=("left", "right", "left_encoder", "right_encoder"), mounts=("center", "top"),
-    note="The right side is mirrored: its motor and encoder are inverted, so equal controller outputs "
-         "drive the two sides in opposite directions unless the robot program inverts one."))
+    note=N_("The right side is mirrored: its motor and encoder are inverted, so equal controller outputs "
+         "drive the two sides in opposite directions unless the robot program inverts one.")))

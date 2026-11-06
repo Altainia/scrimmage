@@ -11,11 +11,18 @@ import mujoco
 import numpy as np
 from PIL import Image, ImageDraw
 
+from .i18n import N_, t, translated
+
 PATH_COLORS = {"truth": (0.15, 0.85, 0.25, 1.0), "odometry": (0.95, 0.35, 0.2, 1.0)}
 PATH_WIDTH = 0.03        # capsule radius, m
 PATH_Z = 0.02            # just above the carpet
 MAX_SEGMENTS = 500       # per path
-VIEWS_HELP = 'view must be "follow", "top", "free" or "camera:<name>"'
+VIEWS_HELP = N_('view must be "{follow}", "{top}", "{free}" or "{camera}"')   # said with views_help()
+
+
+def views_help() -> str:
+    """VIEWS_HELP in the Language, the view names (what a scenario file says) filled in."""
+    return translated(VIEWS_HELP, follow="follow", top="top", free="free", camera="camera:<name>")
 
 
 CAMERA_KEYS = ("lookat", "distance", "azimuth", "elevation")
@@ -29,15 +36,17 @@ class RenderUnavailable(RuntimeError):
 
 def check_size(name: str, value) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or not MIN_SIZE <= value <= MAX_SIZE:
-        raise ValueError(f"{name} must be a whole number from {MIN_SIZE} to {MAX_SIZE}, not {value!r}")
+        raise ValueError(t("{name} must be a whole number from {least} to {most}, not {value}", name=name,
+                           least=MIN_SIZE, most=MAX_SIZE, value=repr(value)))
     return value
 
 
 def check_sheet_size(frames: int, width: int, height: int) -> None:
     px = frames * width * height
     if px > MAX_SHEET_PIXELS:
-        raise ValueError(f"a contact sheet of {frames} frames at {width}x{height} is {px / 1e6:.1f} megapixels; "
-                         f"the limit is {MAX_SHEET_PIXELS / 1e6:g} (use fewer or smaller frames)")
+        raise ValueError(t("a contact sheet of {frames} frames at {width}x{height} is {megapixels} megapixels; the "
+                           "limit is {limit} (use fewer or smaller frames)", frames=frames, width=width,
+                           height=height, megapixels=f"{px / 1e6:.1f}", limit=f"{MAX_SHEET_PIXELS / 1e6:g}"))
 
 
 def _num(v) -> bool:
@@ -48,19 +57,21 @@ def check_camera(camera: dict | None) -> dict:
     if camera is None:
         return {}
     if not isinstance(camera, dict):
-        raise ValueError(f"camera must be an object with any of {', '.join(CAMERA_KEYS)}, not {camera!r}")
+        raise ValueError(t("camera must be an object with any of {keys}, not {value}", keys=", ".join(CAMERA_KEYS),
+                           value=repr(camera)))
     bad = [k for k in camera if k not in CAMERA_KEYS]
     if bad:
-        raise ValueError(f"unknown camera key(s) {', '.join(map(repr, bad))}; allowed: {', '.join(CAMERA_KEYS)}")
+        raise ValueError(t("unknown camera key(s) {keys}; allowed: {allowed}", keys=", ".join(map(repr, bad)),
+                           allowed=", ".join(CAMERA_KEYS)))
     if "lookat" in camera:
         la = camera["lookat"]
         if not isinstance(la, (list, tuple)) or len(la) != 3 or not all(_num(v) for v in la):
-            raise ValueError(f"camera lookat must be a list of 3 numbers [x, y, z], not {la!r}")
+            raise ValueError(t("camera lookat must be a list of 3 numbers [x, y, z], not {value}", value=repr(la)))
     for k in ("distance", "azimuth", "elevation"):
         if k in camera and not _num(camera[k]):
-            raise ValueError(f"camera {k} must be a number, not {camera[k]!r}")
+            raise ValueError(t("camera {key} must be a number, not {value}", key=k, value=repr(camera[k])))
     if "distance" in camera and camera["distance"] <= 0:
-        raise ValueError(f"camera distance must be greater than 0, not {camera['distance']!r}")
+        raise ValueError(t("camera distance must be greater than 0, not {value}", value=repr(camera["distance"])))
     return camera
 
 
@@ -144,8 +155,8 @@ class Renderer:
             cam.distance = 1.08 * half / math.tan(fovy / 2)
         elif view == "free":
             if "lookat" not in c:
-                raise ValueError("the free view needs camera = {lookat: [x, y, z]} (and optionally distance, "
-                                 "azimuth, elevation)")
+                raise ValueError(t("the free view needs {camera_setting} (and optionally distance, azimuth, "
+                                   "elevation)", camera_setting="camera = {lookat: [x, y, z]}"))
             cam.type = mujoco.mjtCamera.mjCAMERA_FREE
             cam.lookat[:] = [float(v) for v in c["lookat"]]
             cam.distance = float(c.get("distance", 3.0))
@@ -156,11 +167,13 @@ class Renderer:
             if mujoco.mj_name2id(w.model, mujoco.mjtObj.mjOBJ_CAMERA, name) < 0:
                 names = [mujoco.mj_id2name(w.model, mujoco.mjtObj.mjOBJ_CAMERA, i) for i in range(w.model.ncam)]
                 have = ", ".join(n for n in names if n) or None
-                raise ValueError(f"no camera {name!r}; " + (f"the model's cameras: {have}" if have
-                                                             else "the model has no cameras"))
+                if have:
+                    raise ValueError(t("no camera {name}; the model's cameras: {cameras}", name=repr(name),
+                                       cameras=have))
+                raise ValueError(t("no camera {name}; the model has no cameras", name=repr(name)))
             return name
         else:
-            raise ValueError(f"{VIEWS_HELP}, not {view!r}")
+            raise ValueError(t("{help}, not {view}", help=views_help(), view=repr(view)))
         return cam
 
     @staticmethod

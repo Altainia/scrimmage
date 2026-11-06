@@ -50,6 +50,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .. import i18n
 from ..cad.settings import replace_file
 from .program import Program, dumps
 
@@ -134,7 +135,7 @@ def _plain(v):
         return v.item()
     if isinstance(v, np.ndarray):
         return v.tolist()
-    raise TypeError(f"can't write {v!r} to JSON")
+    raise TypeError(i18n.t("can't write {value} to JSON", value=repr(v)))
 
 
 def _write_json(path: Path, data) -> None:
@@ -157,7 +158,7 @@ def _place(tmp: Path, base: Path, pattern: re.Pattern, name) -> Path:
             if dst.exists():
                 continue
             raise
-    raise OSError(f"couldn't find a free folder name in {base}")
+    raise OSError(i18n.t("couldn't find a free folder name in {base}", base=base))
 
 
 def _status(folder: Path) -> str | None:
@@ -193,15 +194,16 @@ def read_motion(path) -> tuple[int, np.ndarray, np.ndarray]:
     """(movers, times (frames,), poses (frames, movers, 7) float32)."""
     raw = Path(path).read_bytes()
     if len(raw) < _HEADER.size:
-        raise ValueError(f"{path} isn't a replay file")
+        raise ValueError(i18n.t("{path} isn't a replay file", path=path))
     magic, version, frames, n = _HEADER.unpack_from(raw)
     if magic != MOTION_MAGIC:
-        raise ValueError(f"{path} isn't a replay file")
+        raise ValueError(i18n.t("{path} isn't a replay file", path=path))
     if version != MOTION_VERSION:
-        raise ValueError(f"{path} is a replay file from a newer scrimmage (version {version})")
+        raise ValueError(i18n.t("{path} is a replay file from a newer scrimmage (version {version})",
+                                path=path, version=version))
     frame = np.dtype([("t", "<f8"), ("poses", "<f4", (n, 7))])
     if len(raw) != _HEADER.size + frames * frame.itemsize:
-        raise ValueError(f"{path} is cut short")
+        raise ValueError(i18n.t("{path} is cut short", path=path))
     data = np.frombuffer(raw, frame, count=frames, offset=_HEADER.size)
     return n, data["t"].copy(), data["poses"].astype(np.float32)
 
@@ -301,10 +303,10 @@ def run_folder(base, run_id: str) -> Path:
     that isn't one."""
     base = Path(base)
     if not isinstance(run_id, str) or not _ID_RE.fullmatch(run_id):
-        raise FileNotFoundError(f"no run {run_id!r}")
+        raise FileNotFoundError(i18n.t("no run {run_id}", run_id=repr(run_id)))
     folder = base / run_id
     if not (folder / "result.json").is_file():
-        raise FileNotFoundError(f"no run {run_id!r} in {base}")
+        raise FileNotFoundError(i18n.t("no run {run_id} in {base}", run_id=repr(run_id), base=base))
     return folder
 
 

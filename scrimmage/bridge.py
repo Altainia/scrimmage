@@ -14,6 +14,7 @@ from typing import Any, Callable
 import websockets
 from websockets.protocol import State as WsState
 
+from . import i18n
 from .bindings import CTRE_DEVICES, REV_DEVICES, resolve_device_key
 from .config import DEFAULT_ODOMETRY
 from . import foreign_writes as fwn
@@ -36,9 +37,10 @@ LOG_PERIOD = 0.02        # simulated seconds between CSV rows and NT ground-trut
 VIEWER_PERIOD = 1 / 60   # wall-clock seconds between viewer refreshes
 DETECT_WINDOW = 2.0      # wall seconds after connecting to wait for the lockstep extension
 PHOENIX_MARK = " (v6)["  # Phoenix 6 SimDevice names: "Talon FX (v6)[1]", "CANcoder (v6)[2]", ...
-REALTIME_REASON = "Phoenix 6 simulation runs on the wall clock, so this robot runs in real time (not lockstep)"
-REAL_DS_REASON = ("the real Driver Station talks to the robot program on the wall clock, so this robot runs in real "
-                  "time (not lockstep)")
+# (N_(): realtime_reason shows them translated())
+REALTIME_REASON = i18n.N_("Phoenix 6 simulation runs on the wall clock, so this robot runs in real time (not lockstep)")
+REAL_DS_REASON = i18n.N_("the real Driver Station talks to the robot program on the wall clock, so this robot runs in "
+                         "real time (not lockstep)")
 PHOENIX_BOOT = 1.0       # simulated seconds a Phoenix device may take to boot and re-assert its initial values
 MISSING_AFTER = 2.0      # simulated seconds after connecting before a configured Phoenix device counts as missing
 # "<Kind> (v6)[<id>]" anywhere in a device name, not followed by a sub-device ("/Rotor Sensor")
@@ -125,8 +127,8 @@ def missing_device_warnings(hal: HalState, expected: list[DeviceKey]) -> list[st
 
 def fast_phoenix_message(names: list[str]) -> str:
     """What to say when a fast-mode run's robot program creates Phoenix 6 devices anyway."""
-    return (f"fast mode, but the robot program created Phoenix 6 devices ({', '.join(names)}): they force real time; "
-            "use the fast-mode IO for them")
+    return i18n.t("fast mode, but the robot program created Phoenix 6 devices ({devices}): they force real time; use "
+                  "the fast-mode IO for them", devices=", ".join(names))
 
 
 def scrimmage_devices(world: World) -> list[DeviceKey]:
@@ -262,10 +264,12 @@ def rev_unavailable_message(state: str, language: str | None = None) -> str:
     """The agent's "unavailable: <reason>" as a scrimmage error (bridge log, scenario check, Drive notice)."""
     reason = state.removeprefix("unavailable:").strip()
     if language == "python":
-        return (f"REV simulation unavailable in the robot program ({reason}): "
-                "update robotpy-rev (`pip install \"robotpy-rev>=2026.0.4,<2027\"`)")
-    return (f"REV simulation unavailable in the robot program ({reason}): update REVLib to {REVLIB_NEEDED} or later "
-            "(vendordeps/REVLib.json), then rebuild (WPILib VS Code: Manage Vendor Libraries, Check for Updates)")
+        return i18n.t("REV simulation unavailable in the robot program ({reason}): update robotpy-rev "
+                      "(`{pip_install_robotpy}`)", reason=reason,
+                      pip_install_robotpy="pip install \"robotpy-rev>=2026.0.4,<2027\"")
+    return i18n.t("REV simulation unavailable in the robot program ({reason}): update REVLib to {version} or later "
+                  "(vendordeps/REVLib.json), then rebuild (WPILib VS Code: Manage Vendor Libraries, Check for Updates)",
+                  reason=reason, version=REVLIB_NEEDED)
 
 
 class _Ticks:
@@ -430,8 +434,8 @@ class Bridge:
     @property
     def realtime_reason(self) -> str | None:
         if self.phoenix:
-            return REALTIME_REASON
-        return REAL_DS_REASON if self.real_ds else None
+            return i18n.translated(REALTIME_REASON)
+        return i18n.translated(REAL_DS_REASON) if self.real_ds else None
 
     def phoenix_names(self) -> list[str]:
         """The Phoenix 6 devices the robot program has created ("Talon FX (v6)[1]", ...), sorted."""
@@ -568,7 +572,8 @@ class Bridge:
         for device, writes in fwn.by_device(new).items():
             if device not in self._warned:
                 self._warned.add(device)
-                log.warning("%s", fwn.message(device, writes, self.agent_state(), self.robot_language))
+                with i18n.fixed():      # the bridge's thread: its log line is machine text, as it always was
+                    log.warning("%s", fwn.message(device, writes, self.agent_state(), self.robot_language))
 
     def _set_mode(self, mode: str | None) -> None:
         self.mode = mode

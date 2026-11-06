@@ -113,11 +113,11 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
-from .. import units
+from .. import i18n, units
 from ..climb.run import SETTLE_S, WalkOff
 from ..hal_drive import MotorDrive, driven_joints, position_volts
 from ..movers import mover_poses, movers
-from ..parts.partner import SIGNALS as PARTNER_SIGNALS, STARTS_INSIDE, PartnerOverlap
+from ..parts.partner import SIGNALS as PARTNER_SIGNALS, PartnerOverlap
 from ..protocol import HalState
 from ..sensors.colors import NAMED_COLORS
 from ..testrange.build import BALL_BITS
@@ -131,7 +131,7 @@ from .palette import ALL_MOTORS, ANY_GOAL, ANY_HOOK, ANY_PIECE, NEXT_BAR, palett
 from .placed import KNOCK_OFF_SHARE, ON_PIECE, seated_words
 from .program import (DRIVE_TIMEOUT, DRIVE_VOLTS, MOVE_TIMEOUT, REPEAT_MAX, WAIT_TIMEOUT, Program,
                       TestFileError, found_setup)
-from .spread import NO_BALL, rest_of, spread_ball, start_pose
+from .spread import no_ball, rest_of, spread_ball, start_pose
 
 MOTION_HZ = 30            # mover poses a second, for the replay
 SIGNAL_HZ = 50            # signal samples a second, for the chart
@@ -144,7 +144,9 @@ MOVING_IN_S = 0.5         # ... or sliding faster than this (a slide), our call
 MOVING_SPEED = 0.1        # m/s: the robot going across the floor faster than this was driving at a slip, our call
 COLOR_NAMES = list(NAMED_COLORS)     # a color sensor's signal is its color's index here (palette's sensor_colors)
 
-# The verbs describe() uses, as "-ing" (after "without") and "to ..." (after "waiting for").
+# The verbs describe() uses, as "-ing" (after "without") and "to ..." (after "waiting for"): _recast's. A run says
+# those forms with describe(form="without"/"waiting"), a whole phrase per form for a translator; _recast stays as
+# the English rule they follow (tests/test_i18n_test_tab.py checks every condition's forms against it).
 _VERBS = {"passes": ("passing", "to pass"), "goes": ("going", "to go"), "tilts": ("tilting", "to tilt"),
           "touches": ("touching", "to touch"), "reaches": ("reaching", "to reach"), "hangs": ("hanging", "to hang"),
           "are": ("being", "to be"), "is": ("being", "to be"), "made": ("having made", "to have made"),
@@ -204,7 +206,10 @@ class _End(Exception):
 
 def _where(place: tuple) -> str:
     """0-based place -> "block 3 inside block 2"."""
-    return " inside ".join(f"block {i + 1}" for i in reversed(place))
+    words = i18n.t("block {n}", n=place[-1] + 1)
+    for i in reversed(place[:-1]):
+        words = i18n.t("{block} inside block {n}", block=words, n=i + 1)
+    return words
 
 
 def _recast(text: str, form: int) -> str:
@@ -254,7 +259,7 @@ def setup_partner(raw: dict, partner, cfg_dir: Path | None) -> dict:
     try:
         x, y, heading = robot_start(raw, cfg_dir)
     except ValueError as e:     # the config's own mistake (its [range], its start_pose), which building it says too
-        raise TestFileError(f"Setup's partner needs the robot's start: {e}") from None
+        raise TestFileError(i18n.t("Setup's partner needs the robot's start: {why}", why=e)) from None
     h, ahead = math.radians(heading), partner["ahead_in"] * IN
     have = raw.get("partner")
     out = {**(have if isinstance(have, dict) else {}),
@@ -270,8 +275,8 @@ def _range_setup(raw: dict, setup: dict) -> dict:
     if not isinstance(raw.get("range"), dict):
         values.pop("seed", None)
         if values:          # palette.problems says so too, so Setup shows it before Run
-            raise TestFileError("Setup's ball, piece and station settings need a field; this robot is on the plain "
-                                "field")
+            raise TestFileError(i18n.t("Setup's ball, piece and station settings need a field; this robot is on the "
+                                       "plain field"))
     if not values:
         return raw
     rng = dict(raw["range"])
@@ -289,9 +294,6 @@ def _range_setup(raw: dict, setup: dict) -> dict:
     return {**raw, "range": rng}
 
 
-SETUP_STARTS_INSIDE = "the partner robot (Setup) starts inside "
-
-
 def world_for(program: Program):
     """The World of the test's robot config (its `robot`, relative to the test file), with the test's setup applied.
     When Setup places the partner and it starts inside the robot or an element, the TestFileError says Setup's partner
@@ -302,45 +304,58 @@ def world_for(program: Program):
     try:
         return build_world(replace(config, raw=setup_config(config.raw, found_setup(program), config.dir)))
     except ConfigError as e:
-        text = str(e)
-        if not isinstance(program.setup.get("partner"), dict) or STARTS_INSIDE not in text:
+        overlap = partner_overlap(e)
+        if not isinstance(program.setup.get("partner"), dict) or overlap is None:
             raise
-        # build_world re-raises partner.check_start's PartnerOverlap `from None`: it is the ConfigError's context
-        raise TestFileError(setup_partner_words(text, e.__context__)) from None
+        raise TestFileError(setup_partner_words(overlap)) from None
 
 
-def setup_partner_words(text: str, cause) -> str:
-    """Setup's partner refusal from the config's `text` ("[partner] starts inside ... by 0.20 m)"): in the Units
-    setting when `cause` is the PartnerOverlap it came from ("... by 7.87 in)"), else (and in machine text) the
-    config's words, meters as before the setting."""
-    if isinstance(cause, PartnerOverlap) and not units.is_machine():
-        by = units.fmt(cause.depth, "length", fewer=1)
-        return f"{SETUP_STARTS_INSIDE}{cause.what} (their outlines overlap by {by})"
-    return SETUP_STARTS_INSIDE + text.split(STARTS_INSIDE, 1)[1]
+def partner_overlap(e: BaseException) -> PartnerOverlap | None:
+    """The PartnerOverlap a ConfigError came from (build_world re-raises partner.check_start's `from None`, so it is
+    the error's context), found by its type, never by its words (L3); None for any other error."""
+    seen = 0
+    cause = e
+    while cause is not None and seen < 8:
+        if isinstance(cause, PartnerOverlap):
+            return cause
+        cause, seen = cause.__cause__ or cause.__context__, seen + 1
+    return None
+
+
+def setup_partner_words(overlap: PartnerOverlap) -> str:
+    """Setup's partner refusal from the config's PartnerOverlap: in the Units setting ("... by 7.87 in)"), or in
+    machine text in meters, as the config's own refusal was before the setting ("... by 0.20 m)")."""
+    by = f"{overlap.depth:.2f} m" if units.is_machine() else units.fmt(overlap.depth, "length", fewer=1)
+    return i18n.t("the partner robot (Setup) starts inside {what} (their outlines overlap by {by})",
+                  what=overlap.what, by=by)
 
 
 GRIP_CONDITIONS = ("held", "rests_on", "seated")     # a test of these rests on the grip's friction
-_GRIP_ADVICE = "an UNCALIBRATED estimate; pick a grip material for them in the Part tab, or measure yours with a sled " \
-               "pull (docs/test-tab.md)"
-_LARGER = "the larger of pad and piece applies"
-DEFAULT_GRIP_NOTE = f"grip: the pads have MuJoCo's default friction 1.0 — about grip tape's; {_LARGER} — {_GRIP_ADVICE}"
+DEFAULT_GRIP_NOTE = i18n.N_("grip: the pads have MuJoCo's default friction 1.0 — about grip tape's; the larger of "
+                            "pad and piece applies — an UNCALIBRATED estimate; pick a grip material for them in the "
+                            "Part tab, or measure yours with a sled pull (docs/test-tab.md)")
 
 
 def default_grip_note(world) -> str:
-    """The note for a test of held, rests on or seated with no grip anywhere: DEFAULT_GRIP_NOTE, or, when part.toml
-    sets a pad's friction, the pads' own values (MuJoCo's default 1.0 for a pad it leaves alone)."""
+    """The note for a test of held, rests on or seated with no grip anywhere: DEFAULT_GRIP_NOTE, or, when
+    part.toml sets a pad's friction, the pads' own values (MuJoCo's default 1.0 for a pad it leaves alone)."""
     from ..parts.grip import pad_frictions
     pads = pad_frictions(world)
     if all(mu is None for mu in pads.values()):
-        return DEFAULT_GRIP_NOTE
+        return i18n.translated(DEFAULT_GRIP_NOTE)
     mus = set(pads.values())
     if len(mus) == 1:
-        return f"grip: the pads have friction {mus.pop():g}, which part.toml gives them; {_LARGER} — {_GRIP_ADVICE}"
-    each = ", ".join(f"{b} {mu:g}" if mu is not None else f"{b} MuJoCo's default 1.0" for b, mu in pads.items())
-    return f"grip: the pads have the friction part.toml gives them ({each}); {_LARGER} — {_GRIP_ADVICE}"
+        return i18n.t("grip: the pads have friction {friction}, which part.toml gives them; the larger of pad and "
+                      "piece applies — an UNCALIBRATED estimate; pick a grip material for them in the Part tab, or "
+                      "measure yours with a sled pull (docs/test-tab.md)", friction=f"{mus.pop():g}")
+    each = ", ".join(i18n.t("{body} {friction}", body=b, friction=f"{mu:g}") if mu is not None
+                     else i18n.t("{body} MuJoCo's default 1.0", body=b) for b, mu in pads.items())
+    return i18n.t("grip: the pads have the friction part.toml gives them ({pads}); the larger of pad and piece "
+                  "applies — an UNCALIBRATED estimate; pick a grip material for them in the Part tab, or measure "
+                  "yours with a sled pull (docs/test-tab.md)", pads=each)
 
 
-PNEUMATIC_ESTIMATES = "UNCALIBRATED: pneumatic numbers are estimates"
+PNEUMATIC_ESTIMATES = i18n.N_("pneumatic numbers are estimates")      # after measure/labels.py's mark
 
 
 def pneumatic_note(cylinders) -> str:
@@ -349,7 +364,7 @@ def pneumatic_note(cylinders) -> str:
     from ..measure.labels import line
     keys = tuple(f"{c.name} valve conductance" for c in cylinders)
     inputs = {k: c.provenance for k, c in zip(keys, cylinders)}
-    return f"{line(inputs, keys, estimates=PNEUMATIC_ESTIMATES)}; see docs/pneumatics.md."
+    return i18n.t("{line}; see docs/pneumatics.md.", line=line(inputs, keys, estimates=PNEUMATIC_ESTIMATES))
 
 
 def piece_notes(world) -> list[str]:
@@ -385,7 +400,7 @@ def run_notes(world, program: Program) -> list[str]:
 def goal_lines(result: RunResult) -> list[str]:
     """The run's goal counts as lines, "scored 5 in hub_blue", one per goal with a ball in it (none without a
     [shooter])."""
-    return [f"scored {n} in {name}" for name, n in (result.goals or {}).items() if n]
+    return [i18n.t("scored {count} in {goal}", count=n, goal=name) for name, n in (result.goals or {}).items() if n]
 
 
 def clearance_lines(result: RunResult) -> list[str]:
@@ -394,8 +409,10 @@ def clearance_lines(result: RunResult) -> list[str]:
     if units.is_machine():                  # the old words, kept for machine text (units.machine_text)
         return [f"{e}: never within {NEVER_WITHIN_IN} in" if c["min_in"] is None else
                 f"closest to {e}: {c['min_in']:.2f} in at {c['t']:.1f} s" for e, c in (result.clearance or {}).items()]
-    return [f"{e}: never within {_amount(NEVER_WITHIN_IN, 'in')}" if c["min_in"] is None else
-            f"closest to {e}: {_amount(c['min_in'], 'in', fewer=1)} at {c['t']:.1f} s"
+    return [i18n.t("{element}: never within {distance}", element=e, distance=_amount(NEVER_WITHIN_IN, "in"))
+            if c["min_in"] is None else
+            i18n.t("closest to {element}: {distance} at {t} s", element=e, distance=_amount(c["min_in"], "in", fewer=1),
+                   t=f"{c['t']:.1f}")
             for e, c in (result.clearance or {}).items()]
 
 
@@ -409,11 +426,12 @@ def air_lines(result: RunResult) -> list[str]:
     def psi(x: float) -> str:
         return f"{x:.0f} psi" if units.is_machine() else _amount(x, "psi", fewer=1)
 
-    lines = [f"air: {psi(a['start_psi'])} at the start, {psi(a['end_psi'])} at the end, lowest "
-             f"{psi(a['low_psi'])} at {a['low_t']:.1f} s; the compressor ran {a['compressor_s']:.1f} s"]
+    lines = [i18n.t("air: {start} at the start, {end} at the end, lowest {low} at {t} s; the compressor ran {ran} s",
+                    start=psi(a["start_psi"]), end=psi(a["end_psi"]), low=psi(a["low_psi"]), t=f"{a['low_t']:.1f}",
+                    ran=f"{a['compressor_s']:.1f}")]
     if a["below_working_t"] is not None:
-        lines.append(f"the tanks fell below the {_amount(a['working_psi'], 'psi')} working pressure at "
-                     f"{a['below_working_t']:.1f} s: the cylinders pushed weaker from then on")
+        lines.append(i18n.t("the tanks fell below the {working} working pressure at {t} s: the cylinders pushed weaker "
+                            "from then on", working=_amount(a["working_psi"], "psi"), t=f"{a['below_working_t']:.1f}"))
     return lines
 
 
@@ -454,7 +472,7 @@ def check_problems(program: Program, world) -> None:
     bad = problems(program, world)
     if bad:
         lines = [(f"{_where(tuple(p['place']))}: " if p["place"] else "") + p["message"] for p in bad]
-        raise TestFileError("the test can't run on this robot yet:\n" + "\n".join(lines))
+        raise TestFileError(i18n.t("the test can't run on this robot yet:") + "\n" + "\n".join(lines))
 
 
 class TestRun:
@@ -494,7 +512,7 @@ class TestRun:
         self.placement = placement
         self._floor = spread_ball(world) if placement is not None else None
         if placement is not None and self._floor is None:
-            raise TestFileError(NO_BALL)
+            raise TestFileError(no_ball())
 
     # ---- the run ----------------------------------------------------------------------------------------------------
 
@@ -580,9 +598,10 @@ class TestRun:
             while True:
                 self._advance(t)
                 if cancel is not None and cancel.is_set():
-                    raise _End("cancelled", f"you stopped the run at {t:.1f} s")
+                    raise _End("cancelled", i18n.t("you stopped the run at {t} s", t=f"{t:.1f}"))
                 if t >= self.program.time_limit - EPS:
-                    raise _End("time limit", f"ran out of time ({self.program.time_limit:g} s){self._under_way()}")
+                    raise _End("time limit", i18n.t("ran out of time ({limit} s){under_way}",
+                                                    limit=f"{self.program.time_limit:g}", under_way=self._under_way()))
                 self._step()
                 t = float(d.time)
                 watch.update()
@@ -596,14 +615,14 @@ class TestRun:
                         check["until"] = placed                 # the hold ended where a check expects the piece
                         self.throughout.remove((check, cond))
                 if watch.tilt > TIP_DEG:
-                    raise _End("tipped over", f"the robot tipped over at {t:.1f} s")
+                    raise _End("tipped over", i18n.t("the robot tipped over at {t} s", t=f"{t:.1f}"))
                 if walk is not None:
                     on_ground, touched, _, _ = watch.mon.contact_state()
                     z = float(d.subtree_com[w.robot_body][2])
                     if walk.see(t, bool(watch.climb.get("climb.hanging", 0)), float(watch.climb.get(
                             "climb.hook_load", 0.0)), z, on_ground, touched) == "hook walked off":
-                        bars = " and ".join(walk.left) or "its bar"
-                        raise _End("walked off", f"a hook walked off {bars} at {t:.1f} s")
+                        bars = i18n.t(" and ", context="list separator").join(walk.left) or i18n.t("its bar")
+                        raise _End("walked off", i18n.t("a hook walked off {bars} at {t} s", bars=bars, t=f"{t:.1f}"))
         except _End as e:
             result.status, ending = e.status, e.ending
         if result.status == "finished":
@@ -635,9 +654,9 @@ class TestRun:
             result.seed = self.feeder.seed if self.feeder is not None else None
         if rows:
             told = sentence(rows, hopper=bool(self.program.hopper))
-            ending = told if result.status == "finished" else f"{ending}; {told}"
+            ending = told if result.status == "finished" else i18n.t("{ending}; {counts}", ending=ending, counts=told)
         top = watch.highest_hung()
-        result.outcome = f"reached {top}, then {ending}" if top else ending
+        result.outcome = i18n.t("reached {bar}, then {ending}", bar=top, ending=ending) if top else ending
         result.t_end = t
         result.hung = list(watch.hung)
         for check in self.checks:
@@ -716,7 +735,7 @@ class TestRun:
         t0 = t
         while not self.outcomes.settled() and t < t0 + SETTLE_MAX_S - EPS:
             if cancel is not None and cancel.is_set():
-                raise _End("cancelled", f"you stopped the run at {t:.1f} s")
+                raise _End("cancelled", i18n.t("you stopped the run at {t} s", t=f"{t:.1f}"))
             self._step()
             t = float(d.time)
             self.watch.update()
@@ -794,9 +813,10 @@ class TestRun:
                 else:
                     done = watch.holds(a["until"])
                     if not done and f.rounds >= a.get("max", REPEAT_MAX):
-                        what = _recast(self._describe(a["until"]), 0)
-                        times = "1 time" if f.rounds == 1 else f"{f.rounds} times"
-                        raise _End("repeat limit", f"repeat ({_where(f.trail)}) stopped after {times} without {what}")
+                        raise _End("repeat limit", i18n.tn(
+                            "repeat ({where}) stopped after {count} time without {what}",
+                            "repeat ({where}) stopped after {count} times without {what}",
+                            f.rounds, where=_where(f.trail), what=self._describe(a["until"], "without")))
                 if done:
                     self.frames.pop()
                     parent.index += 1
@@ -939,8 +959,9 @@ class TestRun:
             if watch.holds(a["until"]):
                 return True
             if elapsed >= a.get("timeout", WAIT_TIMEOUT) - EPS:
-                what = _recast(self._describe(a["until"]), 1)
-                raise _End("timed out", f"waiting for {what} timed out at {t:.1f} s ({_where(place)})")
+                raise _End("timed out", i18n.t("waiting for {what} timed out at {t} s ({where})",
+                                               what=self._describe(a["until"], "waiting"), t=f"{t:.1f}",
+                                               where=_where(place)))
             return False
         if b.do == "feed_one":
             f, name = self.feeder, a["station"]
@@ -948,9 +969,10 @@ class TestRun:
                 return True
             if elapsed >= a.get("timeout", WAIT_TIMEOUT) - EPS:
                 st = next(s for s in f.stations if s.name == name)
-                why = ("its release point stayed blocked" if f.blocked(name)
-                       else f"its {st.interval:g} s between pieces hadn't passed")
-                raise _End("timed out", f"feed one from {name} timed out at {t:.1f} s: {why} ({_where(place)})")
+                why = (i18n.t("its release point stayed blocked") if f.blocked(name)
+                       else i18n.t("its {interval} s between pieces hadn't passed", interval=f"{st.interval:g}"))
+                raise _End("timed out", i18n.t("feed one from {station} timed out at {t} s: {why} ({where})",
+                                               station=name, t=f"{t:.1f}", why=why, where=_where(place)))
             return False
         if b.do == "move":
             j = a["joint"]
@@ -962,9 +984,9 @@ class TestRun:
             if elapsed >= a.get("timeout", MOVE_TIMEOUT) - EPS:
                 target = self.active["target"]
                 short = (target - q) * (target - self.active["q0"]) > 0.0     # still on the start's side
-                raise _End("timed out", f"{j} stopped at {self._value(j, a['unit'])} "
-                                        f"{'short of' if short else 'past'} {_amount(a['to'], a['unit'])} "
-                                        f"({_where(place)})")
+                p = dict(joint=j, at=self._value(j, a["unit"]), to=_amount(a["to"], a["unit"]), where=_where(place))
+                raise _End("timed out", i18n.t("{joint} stopped at {at} short of {to} ({where})", **p) if short
+                           else i18n.t("{joint} stopped at {at} past {to} ({where})", **p))
             return False
         # drive or turn
         self._commanded[b.do] = t
@@ -981,8 +1003,9 @@ class TestRun:
         if b.do == "turn":
             done = act["turned"] * math.copysign(1.0, a["degrees"]) >= math.radians(abs(a["degrees"])) - EPS
             if not done and elapsed >= timeout - EPS:
-                raise _End("timed out", f"turn ({_where(place)}) didn't turn {a['degrees']:g}° in {timeout:g} s "
-                                        f"(turned {math.degrees(act['turned']):.0f}°)")
+                raise _End("timed out", i18n.t("turn ({where}) didn't turn {degrees}° in {timeout} s (turned "
+                                               "{turned}°)", where=_where(place), degrees=f"{a['degrees']:g}", timeout=f"{timeout:g}",
+                                               turned=f"{math.degrees(act['turned']):.0f}"))
         elif "distance" in a:
             gone = float(np.linalg.norm(d.xpos[self.world.robot_body][:2] - act["from"]))
             done = gone >= abs(a["distance"]) - EPS
@@ -991,19 +1014,16 @@ class TestRun:
                     far, went = f"{abs(a['distance']):g} m", f"{gone:.2f} m"
                 else:
                     far, went = units.fmt(abs(a["distance"]), "field"), units.fmt(gone, "field", fewer=1)
-                raise _End("timed out", f"{self._drive_name(a)} ({_where(place)}) didn't reach {far} in {timeout:g} s "
-                                        f"(went {went})")
+                p = dict(where=_where(place), far=far, timeout=f"{timeout:g}", went=went)
+                raise _End("timed out", i18n.t("drive {direction} ({where}) didn't reach {far} in {timeout} s (went "
+                                               "{went})", direction=a["direction"], **p) if "direction" in a
+                           else i18n.t("drive ({where}) didn't reach {far} in {timeout} s (went {went})", **p))
         else:
             done = act["rolling"] is not None and t - act["rolling"] >= a["seconds"] - EPS
         if done:
             for j in self.drivetrain.wheels:
                 self.drives.pop(j, None)
         return done
-
-    @staticmethod
-    def _drive_name(a: dict) -> str:
-        """`drive`, or `drive left` with its direction."""
-        return f"drive {a['direction']}" if "direction" in a else "drive"
 
     def _value(self, joint: str, unit: str) -> str:
         """A joint's position now in words (`38.2°`, `1.5 in` or `38 mm`): degrees for a `unit` of "deg", else
@@ -1018,133 +1038,184 @@ class TestRun:
     def _failure(self, cond) -> str:
         """What happened instead of `cond`, in words."""
         a, k, watch = cond.args, cond.kind, self.watch
+        t = i18n.t
 
         def bar(name: str) -> str:
-            return (watch.next_bar() or "the next bar") if name == NEXT_BAR else name
+            return (watch.next_bar() or t("the next bar")) if name == NEXT_BAR else name
 
         if k == "joint":
-            side = "above" if "above" in a else "below"
-            return (f"expected {a['name']} {side} {_amount(a[side], a['unit'])}, "
-                    f"but it was {self._value(a['name'], a['unit'])}")
+            p = dict(joint=a["name"], at=self._value(a["name"], a["unit"]))
+            if "above" in a:
+                return t("expected {joint} above {limit}, but it was {at}", limit=_amount(a["above"], a["unit"]), **p)
+            return t("expected {joint} below {limit}, but it was {at}", limit=_amount(a["below"], a["unit"]), **p)
         if k == "tilt":
-            side, limit = ("more", a["above"]) if "above" in a else ("less", a["below"])
-            return (f"expected the robot to tilt {side} than {_amount(limit, 'deg')}, "
-                    f"but it tilted {_amount(round(watch.tilt, 1), 'deg')}")
+            tilted = _amount(round(watch.tilt, 1), "deg")
+            if "above" in a:
+                return t("expected the robot to tilt more than {limit}, but it tilted {tilted}",
+                         limit=_amount(a["above"], "deg"), tilted=tilted)
+            return t("expected the robot to tilt less than {limit}, but it tilted {tilted}",
+                     limit=_amount(a["below"], "deg"), tilted=tilted)
         if k == "touch":
             if a["robot"] == ANY_HOOK:
-                return f"no hook touched {bar(a['field'])}"
-            return f"{a['robot']} didn't touch {bar(a['field'])}"
+                return t("no hook touched {target}", target=bar(a["field"]))
+            return t("{part} didn't touch {target}", part=a["robot"], target=bar(a["field"]))
         if k == "piece_in":
             if a["piece"] == ANY_PIECE:
-                return f"no {default_word(watch.kinds)} was in {a['body']}"
-            return f"{watch.piece_names.get(a['piece'], a['piece'])} wasn't in {a['body']}"
+                return t("no {piece} was in {body}", piece=default_word(watch.kinds), body=a["body"])
+            return t("{piece} wasn't in {body}", piece=watch.piece_names.get(a["piece"], a["piece"]), body=a["body"])
         if k == "in_hopper":
             n = watch.hopper_count()
-            pieces = "1 piece was" if n == 1 else f"{n} pieces were"
             if "at_least" in a:
-                return f"expected {a['at_least']} or more pieces in the hopper, but {pieces} in it"
-            return f"expected at most {a['at_most']} pieces in the hopper, but {pieces} in it"
+                return i18n.tn("expected {want} or more pieces in the hopper, but {count} piece was in it",
+                               "expected {want} or more pieces in the hopper, but {count} pieces were in it",
+                               n, want=a["at_least"])
+            return i18n.tn("expected at most {want} pieces in the hopper, but {count} piece was in it",
+                           "expected at most {want} pieces in the hopper, but {count} pieces were in it",
+                           n, want=a["at_most"])
         if k == "scored":
             n = watch.scored_count(a["goal"])
-            where = "any goal" if a["goal"] == ANY_GOAL else a["goal"]
-            return f"expected {a['at_least']} or more balls scored in {where}, but {n} {'was' if n == 1 else 'were'}"
+            if a["goal"] == ANY_GOAL:
+                return i18n.tn("expected {want} or more balls scored in any goal, but {count} was",
+                               "expected {want} or more balls scored in any goal, but {count} were", n,
+                               want=a["at_least"])
+            return i18n.tn("expected {want} or more balls scored in {goal}, but {count} was",
+                           "expected {want} or more balls scored in {goal}, but {count} were", n,
+                           want=a["at_least"], goal=a["goal"])
         if k == "aimed":
             target, ok = aim_target(self.world, a["turret"], a["at"])
             if not ok:
-                return f"{a['at']} is outside the turret's range (it stops at {round(math.degrees(target), 1):g}°)"
+                return t("{goal} is outside the turret's range (it stops at {stop}°)", goal=a["at"],
+                         stop=f"{round(math.degrees(target), 1):g}")
             off = math.degrees(aim_error(self.world, a["turret"], a["at"]))
-            return (f"expected {turret_words(a['turret'])} aimed at {a['at']} within "
-                    f"{_amount(a['within_deg'], 'deg')}, but it was {abs(off):.1f}° off")
+            return t("expected {turret} aimed at {goal} within {within}, but it was {off}° off",
+                     turret=turret_words(a["turret"]), goal=a["at"], within=_amount(a["within_deg"], "deg"),
+                     off=f"{abs(off):.1f}")
         if k == "cylinder":
             out = self.world.pneumatics.extension(a["cylinder"]) / IN
             stroke = next(c.stroke for c in self.world.parts.cylinders if c.name == a["cylinder"]) / IN
             if units.is_machine():
-                return (f"expected {a['cylinder']} {a['is']}, but its rod was out {out:.1f} in of "
-                        f"{round(stroke, 1):g} in")
-            return (f"expected {a['cylinder']} {a['is']}, but its rod was out {_amount(out, 'in', fewer=2)} of "
-                    f"{_amount(stroke, 'in', fewer=2)}")
+                p = dict(cylinder=a["cylinder"], out=f"{out:.1f} in", stroke=f"{round(stroke, 1):g} in")
+            else:
+                p = dict(cylinder=a["cylinder"], out=_amount(out, "in", fewer=2), stroke=_amount(stroke, "in", fewer=2))
+            if a["is"] == "extended":
+                return t("expected {cylinder} extended, but its rod was out {out} of {stroke}", **p)
+            return t("expected {cylinder} retracted, but its rod was out {out} of {stroke}", **p)
         if k == "pressure":
             side, psi = ("above", a["above"]) if "above" in a else ("below", a["below"])
             s = self.world.pneumatics.system
             now = s.stored_psi if a["side"] == "stored" else s.working_psi
-            what = f"the {a['side']} air pressure"      # as the block reads: "stored air pressure above 60 psi"
+            # as the block reads: "stored air pressure above 60 psi"
             if units.is_machine():
-                return f"expected {what} {side} {psi:g} psi, but it was {now:.1f} psi"
-            return f"expected {what} {side} {_amount(psi, 'psi')}, but it was {_amount(now, 'psi')}"
+                p = dict(limit=f"{psi:g} psi", now=f"{now:.1f} psi")
+            else:
+                p = dict(limit=_amount(psi, "psi"), now=_amount(now, "psi"))
+            return {("stored", "above"): t("expected the stored air pressure above {limit}, but it was {now}", **p),
+                    ("stored", "below"): t("expected the stored air pressure below {limit}, but it was {now}", **p),
+                    ("working", "above"): t("expected the working air pressure above {limit}, but it was {now}", **p),
+                    ("working", "below"): t("expected the working air pressure below {limit}, but it was {now}", **p),
+                    }[a["side"], side]
         if k == "element":
             side = "above" if "above" in a else "below"
             unit = watch.units[a["element"]]
             now = watch.element_value(a["element"])
             if unit == "deg" or units.is_machine():                    # machine text: the old words, to 0.1
                 now = round(now, 1) + 0.0                                 # + 0.0: a panel at rest never reads "-0"
-            return (f"expected {a['element']} {side} {_amount(a[side], unit)}, "
-                    f"but it was {_amount(now, unit, fewer=2)}")
+            p = dict(element=a["element"], limit=_amount(a[side], unit), now=_amount(now, unit, fewer=2))
+            if side == "above":
+                return t("expected {element} above {limit}, but it was {now}", **p)
+            return t("expected {element} below {limit}, but it was {now}", **p)
         if k == "clears":
             c = watch.closest.now[a["element"]]
             if units.is_machine():
                 now = f"{c / IN:.2f} in" if math.isfinite(c) else f">{NEVER_WITHIN_IN} in"
             else:
                 now = units.fmt(c, "length", fewer=1) if math.isfinite(c) else f">{_amount(NEVER_WITHIN_IN, 'in')}"
-            return (f"expected the robot to clear {a['element']} by at least {_amount(a['at_least_in'], 'in')}, "
-                    f"but it was {now}")
+            return t("expected the robot to clear {element} by at least {limit}, but it was {now}",
+                     element=a["element"], limit=_amount(a["at_least_in"], "in"), now=now)
         if k == "sensor":
             return self._sensor_failure(a)
         if k == "partner_lifted":
             p, level = self.world.partner, a.get("level_within_deg")
-            want = f"at least {_amount(a['at_least_in'], 'in')}" + (
-                f" (level within {_amount(level, 'deg')})" if level is not None else "")
+            want = (t("at least {lift} (level within {level})", lift=_amount(a["at_least_in"], "in"),
+                      level=_amount(level, "deg")) if level is not None
+                    else t("at least {lift}", lift=_amount(a["at_least_in"], "in")))
             if units.is_machine():
                 up = round(p.height(), 1) + 0.0             # + 0.0: a partner at rest never reads "-0"
-                return f"expected the partner lifted {want}, but it was {up:g} in up, {p.tilt():.1f}° from level"
-            return (f"expected the partner lifted {want}, but it was {_amount(p.height(), 'in', fewer=2)} up, "
-                    f"{p.tilt():.1f}° from level")
+                up = f"{up:g} in"
+            else:
+                up = _amount(p.height(), "in", fewer=2)
+            return t("expected the partner lifted {want}, but it was {up} up, {tilt}° from level", want=want, up=up,
+                     tilt=f"{p.tilt():.1f}")
         if k == "partner_moved":
             moved = (f"{self.world.partner.moved():.1f} in" if units.is_machine()
                      else _amount(self.world.partner.moved(), 'in', fewer=2))
-            return f"expected the partner to move at least {_amount(a['at_least_in'], 'in')}, but it moved {moved}"
+            return t("expected the partner to move at least {limit}, but it moved {moved}",
+                     limit=_amount(a["at_least_in"], "in"), moved=moved)
         if k == "station_empty":
             left = self.feeder.left(a["station"]) if self.feeder is not None else None
-            return f"{a['station']} wasn't empty" + (f" ({left} left)" if left else "")
+            if left:
+                return t("{station} wasn't empty ({left} left)", station=a["station"], left=left)
+            return t("{station} wasn't empty", station=a["station"])
         if k == "made_it_in":
             c = self._final if self._final is not None else self.outcomes.so_far()
-            return f"expected at least {a['at_least']:g}% to make it in, but {c['in']} of {c['fed']} did"
+            return t("expected at least {share}% to make it in, but {made} of {fed} did", share=f"{a['at_least']:g}",
+                     made=c["in"], fed=c["fed"])
         if k == "hanging_from":
-            return f"the robot wasn't hanging from {bar(a['bar'])}"
+            return t("the robot wasn't hanging from {bar}", bar=bar(a["bar"]))
         if k == "held":
             return self._not_held(a)
         if k in ("rests_on", "seated"):
             return self._not_placed(k, a)
-        return f"the robot wasn't hanging at {a['level']}"           # level
+        return t("the robot wasn't hanging at {level}", level=a["level"])           # level
 
     def _sensor_failure(self, a: dict) -> str:
         """What a sensor read instead: a beam broken or clear, a distance, the color seen."""
+        t = i18n.t
         name, want = a["sensor"], a["is"]
         spec = next(s for s in self.world.sensors.specs if s.name == name)
         r = self.world.sensors.reading(name)
+        if spec.kind in ("beam", "distance"):
+            wanted = t("on", context="sensor") if want == "on" else t("off", context="sensor")
         if spec.kind == "beam":
-            return f"expected {name} {want}, but it was {'on (broken)' if r.on else 'off (clear)'}"
+            return t("expected {sensor} {want}, but it was {reading}", sensor=name, want=wanted,
+                     reading=t("on (broken)") if r.on else t("off (clear)"))
         if spec.kind == "distance":
             if units.is_machine():
-                return (f"expected {name} {want}, but it read {r.distance / IN:.1f} in (it is on closer than "
-                        f"{spec.threshold / IN:.1f} in)")
-            return (f"expected {name} {want}, but it read {units.fmt(r.distance, 'length', fewer=2)} (it is on "
-                    f"closer than {units.fmt(spec.threshold, 'length', fewer=2)})")
-        saw = f"{'an' if r.color_name[0] in 'aeiou' else 'a'} {r.color_name} piece" if r.on else "no piece"
-        return f"expected {name} {'' if want == 'on' else 'not '}to see {a['sees'] or 'a piece'}, but it saw {saw}"
+                p = dict(reading=f"{r.distance / IN:.1f} in", threshold=f"{spec.threshold / IN:.1f} in")
+            else:
+                p = dict(reading=units.fmt(r.distance, "length", fewer=2),
+                         threshold=units.fmt(spec.threshold, "length", fewer=2))
+            return t("expected {sensor} {want}, but it read {reading} (it is on closer than {threshold})", sensor=name,
+                     want=wanted, **p)
+        if not r.on:
+            saw = t("no piece")
+        elif r.color_name[0] in "aeiou":
+            saw = t("an {color} piece", color=r.color_name)
+        else:
+            saw = t("a {color} piece", color=r.color_name)
+        what = a["sees"] or t("a piece")
+        if want == "on":
+            return t("expected {sensor} to see {what}, but it saw {saw}", sensor=name, what=what, saw=saw)
+        return t("expected {sensor} not to see {what}, but it saw {saw}", sensor=name, what=what, saw=saw)
 
     def _not_held(self, a: dict) -> str:
         """How a held check failed: when and how the piece was lost, and what was moving in the second before; or
-        that it was never held. It carries its own time (the moment it was lost)."""
+        that it was never held. It carries its own time (the moment it was lost). How it was lost is grip_watch.py's
+        words, in English."""
         watch = self.watch
         i, by = watch.piece_index(a["piece"]), a["by"]
         loss = watch.held.lost(i, by) if watch.held.ever(i, by) else None
         named = watch.piece_names.get(a["piece"], a["piece"]) if i is not None else None
         if loss is None:
-            return f"{named or 'the ' + default_word(watch.kinds)} was never held by {by}"
+            if named:
+                return i18n.t("{piece} was never held by {by}", piece=named, by=by)
+            return i18n.t("the {piece} was never held by {by}", piece=default_word(watch.kinds), by=by)
         t, how, kind = loss
-        what = named or f"the {kind}"
         lost = f"{how} {by}" if how in ("slipped out of", "slid in") else how
-        return f"{what} {lost} at {t:.1f} s while {self._moving(t)}"
+        p = dict(lost=lost, t=f"{t:.1f}", moving=self._moving(t))
+        if named:
+            return i18n.t("{piece} {lost} at {t} s while {moving}", piece=named, **p)
+        return i18n.t("the {piece} {lost} at {t} s while {moving}", piece=kind, **p)
 
     def _placed_hold(self, cond) -> str | None:
         """A held throughout check that stopped holding because the piece was set down on a rod or element a `seated`
@@ -1158,7 +1229,9 @@ class TestRun:
         if loss is None or not loss[1].startswith(SET_DOWN):
             return None
         on = loss[1].removeprefix(SET_DOWN)
-        return f"until it was set down on {on} at {loss[0]:.1f} s" if on in self._places else None
+        if on not in self._places:
+            return None
+        return i18n.t("until it was set down on {place} at {t} s", place=on, t=f"{loss[0]:.1f}")
 
     def _not_placed(self, k: str, a: dict) -> str:
         """How a rests_on or seated check failed: "the coral doesn't rest on shelf (a robot body still touches it)";
@@ -1166,19 +1239,23 @@ class TestRun:
         on but short of what was asked, "the coral is seated 2 in of 4 in on branch_l2, less than 3 in"."""
         watch = self.watch
         i, on = watch.piece_index(a["piece"]), a["on"]
-        what = watch.piece_names.get(a["piece"], a["piece"]) if i is not None else f"the {default_word(watch.kinds)}"
+        what = (watch.piece_names.get(a["piece"], a["piece"]) if i is not None
+                else i18n.t("the {piece}", piece=default_word(watch.kinds)))
         if k == "rests_on":
             why = watch.placed.why_not(i, on)
-            return f"{what} doesn't rest on {on}" + (f" ({why})" if why else "")
+            if why:
+                return i18n.t("{piece} doesn't rest on {place} ({why})", piece=what, place=on, why=why)
+            return i18n.t("{piece} doesn't rest on {place}", piece=what, place=on)
         got = watch.placed.seated(on, i)
         if got is None:
-            return f"{what} isn't on {on}"
+            return i18n.t("{piece} isn't on {place}", piece=what, place=on)
         depth, could = got
         if depth < KNOCK_OFF_SHARE * could:
-            if units.is_machine():
-                return f"{what} is seated only {depth / IN:.1f} in on {on} (could be knocked off)"
-            return f"{what} is seated only {units.fmt(depth, 'length', fewer=2)} on {on} (could be knocked off)"
-        return f"{what} is {seated_words(depth, could)} on {on}, less than {_amount(a['at_least_in'], 'in')}"
+            shown = f"{depth / IN:.1f} in" if units.is_machine() else units.fmt(depth, "length", fewer=2)
+            return i18n.t("{piece} is seated only {depth} on {place} (could be knocked off)", piece=what, depth=shown,
+                          place=on)
+        return i18n.t("{piece} is {seated} on {place}, less than {want}", piece=what, seated=seated_words(depth, could),
+                      place=on, want=_amount(a["at_least_in"], "in"))
 
     def _moving(self, t: float) -> str:
         """What was commanded (moved, spun or stopped) in the SLIP_LOOKBACK_S before t, most recent first, then
@@ -1188,17 +1265,19 @@ class TestRun:
                                         if t - SLIP_LOOKBACK_S - EPS <= c <= t + EPS), reverse=True)]
         recent += sorted(n for n in self._turning.get(t, ()) if n not in recent)
         joints = [n for n in recent if n not in ("drive", "turn")]
-        words = [f"{joints[0]} was moving" if len(joints) == 1 else
-                 f"{', '.join(joints[:-1])} and {joints[-1]} were moving"] if joints else []
-        words += [f"the robot was {'driving' if n == 'drive' else 'turning'}" for n in recent if n not in joints]
-        return " and ".join(words) if words else "nothing was moving"
+        words = [i18n.t("{joint} was moving", joint=joints[0]) if len(joints) == 1 else
+                 i18n.t("{joints} and {last} were moving", joints=", ".join(joints[:-1]), last=joints[-1])] \
+            if joints else []
+        words += [i18n.t("the robot was driving") if n == "drive" else i18n.t("the robot was turning")
+                  for n in recent if n not in joints]
+        return i18n.t(" and ", context="list separator").join(words) if words else i18n.t("nothing was moving")
 
-    def _describe(self, cond) -> str:
+    def _describe(self, cond, form: str = "is") -> str:
         """describe() with this run's next bar, the field's piece words, its moving elements' units and the robot's
-        sensors' kinds."""
+        sensors' kinds; `form` as describe()'s."""
         w, sensors = self.watch, getattr(self.world, "sensors", None)
         kinds = {s.name: s.kind for s in sensors.specs} if sensors is not None else None
-        return describe(cond, w.next_bar(), w.kinds, w.piece_names, w.units, kinds)
+        return describe(cond, w.next_bar(), w.kinds, w.piece_names, w.units, kinds, form=form)
 
     def _fail(self, check: dict, cond, t: float) -> None:
         check.update(passed=False, t=t, failure=self._failure(cond))
@@ -1209,27 +1288,30 @@ class TestRun:
                 check["timed"] = True              # its failure says its own time (the moment it was lost)
                 self.marks.append({"t": loss[0], "kind": "slip", "text": check["failure"],
                                    "ball": self.watch.held.lost_piece(i, by)})
-        when = "" if check.get("timed") else f" at {t:.1f} s"
-        raise _End("check failed", f"a check failed ({_where(tuple(check['place']))}): {check['failure']}{when}")
+        p = dict(where=_where(tuple(check["place"])), failure=check["failure"])
+        raise _End("check failed", i18n.t("a check failed ({where}): {failure}", **p) if check.get("timed")
+                   else i18n.t("a check failed ({where}): {failure} at {t} s", t=f"{t:.1f}", **p))
 
     def _doing(self, b) -> str:
         """A waiting block under way, in words."""
         a = b.args
         if b.do == "wait":
-            return f"waiting {a['seconds']:g} s"
+            return i18n.t("waiting {seconds} s", seconds=f"{a['seconds']:g}")
         if b.do == "wait_until":
-            return f"waiting for {_recast(self._describe(a['until']), 1)}"
+            return i18n.t("waiting for {what}", what=self._describe(a["until"], "waiting"))
         if b.do == "move":
-            return f"moving {a['joint']} to {_amount(a['to'], a['unit'])}"
+            return i18n.t("moving {joint} to {to}", joint=a["joint"], to=_amount(a["to"], a["unit"]))
         if b.do == "feed_one":
-            return f"feeding one from {a['station']}"
+            return i18n.t("feeding one from {station}", station=a["station"])
         if b.do == "turn":
-            return f"turning {a['degrees']:g}°"
-        way = f" {a['direction']}" if "direction" in a else ""
+            return i18n.t("turning {degrees}°", degrees=f"{a['degrees']:g}")
         if "distance" in a:
-            return f"driving{way} {a['distance']:g} m" if units.is_machine() else \
-                f"driving{way} {units.fmt(a['distance'], 'field')}"
-        return f"driving{way} for {a['seconds']:g} s"
+            far = f"{a['distance']:g} m" if units.is_machine() else units.fmt(a["distance"], "field")
+            return (i18n.t("driving {direction} {distance}", direction=a["direction"], distance=far)
+                    if "direction" in a else i18n.t("driving {distance}", distance=far))
+        s = f"{a['seconds']:g}"
+        return (i18n.t("driving {direction} for {seconds} s", direction=a["direction"], seconds=s)
+                if "direction" in a else i18n.t("driving for {seconds} s", seconds=s))
 
     def _under_way(self) -> str:
         """The innermost repeat and the block under way, for the time-limit sentence ("" for neither)."""
@@ -1238,14 +1320,18 @@ class TestRun:
         if self.active is not None and f.index < len(f.blocks):
             doing = self._doing(f.blocks[f.index]), f.trail + (f.index,)
         if len(self.frames) > 1:
-            return f" during repeat ({_where(f.trail)})" + (f", {doing[0]}" if doing else "")
-        return f", {doing[0]} ({_where(doing[1])})" if doing else ""
+            return (i18n.t(" during repeat ({where}), {doing}", where=_where(f.trail), doing=doing[0]) if doing
+                    else i18n.t(" during repeat ({where})", where=_where(f.trail)))
+        return i18n.t(", {doing} ({where})", doing=doing[0], where=_where(doing[1])) if doing else ""
 
     def _line(self, c: dict) -> str:
-        where = _where(tuple(c["place"]))
+        p = dict(where=_where(tuple(c["place"])), t=f"{c['t']:.1f}")
         if c["passed"]:
-            when = f"from {c['t']:.1f} s on" if c["throughout"] else f"at {c['t']:.1f} s"
             if c.get("until"):
-                when = f"from {c['t']:.1f} s {c['until']}"
-            return f"passed: {c['text']} {when} ({where})"
-        return f"failed ({where}): {c['failure']}" + ("" if c.get("timed") else f" at {c['t']:.1f} s")
+                return i18n.t("passed: {check} from {t} s {until} ({where})", check=c["text"], until=c["until"], **p)
+            if c["throughout"]:
+                return i18n.t("passed: {check} from {t} s on ({where})", check=c["text"], **p)
+            return i18n.t("passed: {check} at {t} s ({where})", check=c["text"], **p)
+        if c.get("timed"):
+            return i18n.t("failed ({where}): {failure}", failure=c["failure"], where=p["where"])
+        return i18n.t("failed ({where}): {failure} at {t} s", failure=c["failure"], **p)

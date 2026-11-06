@@ -984,6 +984,18 @@ def test_the_grip_endpoint_writes_the_overlay(test_app, tmp_path):
     assert _state(c)["palette"]["grips"]["grabber.jaw_left"] is None
 
 
+def test_a_grip_that_cant_be_written_is_refused(test_app, tmp_path, monkeypatch):
+    """The part folder can't be written (read-only, full): a 400 saying why, not a server error."""
+    from scrimmage.parts import grip
+    c = test_app(_reef_test(tmp_path))
+
+    def fail(*a, **k):
+        raise PermissionError(13, "Permission denied")
+    monkeypatch.setattr(grip, "set_grip", fail)
+    s, b = _grip(c, "grabber.jaw_left", "nitrile")
+    assert s == 400 and b["error"].startswith("can't write the grip in ") and b["error"].endswith(": Permission denied"), b
+
+
 def test_the_grip_endpoint_waits_for_a_run(test_app, tmp_path):
     c = test_app(_reef_test(tmp_path, '[[block]]\ndo = "wait"\nseconds = 20\n'))
     assert c.call("POST", "/api/test/run", {})[0] == 200

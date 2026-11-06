@@ -1,9 +1,11 @@
 """Signals a scenario can check, and the checks themselves. Checks read the session duck-typed (world,
 bridge.hal, robot, nt_value), so they can be unit-tested without a robot program.
 
-Units: a check whose message has a length (pose, odometry_error) words it twice, through `said()`: `message` as it
-always was (meters), for report.json and the MCP result, which don't change with the Units setting, and `shown()` in
-the setting, for report.md, the terminal and the Scenario tab. A signal's own value is shown as the signal gives it."""
+Units and Language: every check result words its message twice, through `said()`: `message` as it always was
+(American English, meters), for report.json and the MCP result, which don't change with the settings, and `shown()`
+in the Units and Language settings, for report.md and the Scenario tab (the terminal's is American English). A
+signal's own value is shown as the signal gives it. ScenarioError's messages (a scenario file's problems) stay
+American English: the Scenario tab places them on their fields by their words, as the CLI prints them."""
 
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ from dataclasses import field as dc_field
 from typing import Any, Callable
 
 from . import units
+from .i18n import t, tn
 
 # Python tracebacks and Java stack traces in the robot console
 CRASH_PATTERN = re.compile(r"^Traceback \(most recent call last\)|^Exception in thread|^\s+at [\w.$<>]+\(.*\)\s*$",
@@ -28,7 +31,22 @@ RANGE_SIGNALS = ("score", "fired", "held", "on_field")   # and score.<goal>: rea
 
 
 class ScenarioError(ValueError):
-    pass
+    """A mistake in a scenario file. Its message is "<where>: <detail>" (the file, step, check or screenshot, then
+    the problem) and stays what the CLI and MCP print. For the Scenario tab (spec L3: placed by these, not by its
+    words, so the words can be translated): `field`, the tab's field id it is about ("step0/mode",
+    "step1/check0/pose.tol_xy", "scenario/match.station"), set where the loader knows it; `key`, the key inside a
+    check or screenshot a world check names ("signal", "min", "view"), which the tab adds to the item's field;
+    `detail`, the message without its where, shown beside the field."""
+
+    def __init__(self, message: str = "", *, field: str | None = None, key: str | None = None,
+                 detail: str | None = None):
+        super().__init__(message)
+        self.field, self.key, self.detail = field, key, detail
+
+
+def bad(where: str, detail: str, *, field: str | None = None, key: str | None = None) -> ScenarioError:
+    """A ScenarioError at `where`: "<where>: <detail>", knowing its field (or key) and its detail."""
+    return ScenarioError(f"{where}: {detail}", field=field, key=key, detail=detail)
 
 
 def _plain(v):
@@ -75,13 +93,17 @@ class Signal:
 def _range_signal(name: str, world) -> Signal:
     rng = getattr(world, "test_range", None)
     if rng is None:
-        raise ScenarioError(f"{name} needs a robot on a test range: add [range] to the config (see docs/test-range.md)")
+        raise ScenarioError(t("{signal} needs a robot on a test range: add {range_table} to the config (see "
+                              "docs/test-range.md)", signal=name, range_table="[range]"))
     if name.startswith("score."):
         goal = name[len("score."):]
         goals = [g.name for g in rng.range.goals]
         if goal not in goals:
-            raise ScenarioError(f"unknown signal {name!r}: range {rng.range.name!r} has the goals "
-                                f"{', '.join(goals) or 'none'}")
+            if goals:
+                raise ScenarioError(t("unknown signal {signal}: range {range} has the goals {goals}",
+                                      signal=repr(name), range=repr(rng.range.name), goals=", ".join(goals)))
+            raise ScenarioError(t("unknown signal {signal}: range {range} has the goals none", signal=repr(name),
+                                  range=repr(rng.range.name)))
         return Signal(name, lambda s: s.world.test_range.counts()["goals"][goal])
     return Signal(name, lambda s: s.world.test_range.counts()[name])
 
@@ -91,15 +113,17 @@ def _robot_signal(name: str, world) -> Signal:
     from .terrain.monitor import ROBOT_SIGNALS, WHEEL_SIGNALS
     field = name[len("robot."):]
     if field not in ROBOT_SIGNALS:
-        raise ScenarioError(f"unknown signal {name!r}: the robot signals are "
-                            f"{', '.join('robot.' + f for f in ROBOT_SIGNALS)}")
+        raise ScenarioError(t("unknown signal {signal}: the robot signals are {signals}", signal=repr(name),
+                              signals=", ".join("robot." + f for f in ROBOT_SIGNALS)))
     make = getattr(world, "terrain_monitor", None)
     if make is None:
-        raise ScenarioError(f"{name} needs a simulated robot")
+        raise ScenarioError(t("{signal} needs a simulated robot", signal=name))
     if field in WHEEL_SIGNALS and not (world.parts is not None and world.parts.tread_geoms):
-        raise ScenarioError(f"{name} reads the drive wheels, but this robot has no tread wheels (a hand-written "
-                            "[model] mjcf robot, or parts without tread = true geoms): build it from [[part]] with a "
-                            "stock drivetrain, or use robot.tilt, pitch, roll, z, air_time or tipped")
+        raise ScenarioError(t("{signal} reads the drive wheels, but this robot has no tread wheels (a hand-written "
+                              "{model_table} mjcf robot, or parts without {tread_setting} geoms): build it from "
+                              "{part_table} with a stock drivetrain, or use robot.tilt, pitch, roll, z, air_time or "
+                              "tipped", signal=name, model_table="[model]", tread_setting="tread = true",
+                              part_table="[[part]]"))
     make()
     return Signal(name, lambda s: s.world.terrain.sample()[name])
 
@@ -117,16 +141,22 @@ def _element_signal(name: str, world) -> Signal:
         return Signal(name, lambda s: moving_value(float(s.world.data.qpos[qadr]), unit))
     elem, _, field = rest.rpartition(".")
     platforms = [e.name for e in elements if isinstance(e, Platform)]
-    known = f"platforms: {', '.join(platforms) or 'none'}; moving elements: {', '.join(units) or 'none'}"
+    known = t("platforms: {platforms}; moving elements: {moving}", platforms=", ".join(platforms) or t("none"),
+              moving=", ".join(units) or t("none"))
     if field != "angle" or not elem:
-        raise ScenarioError(f"unknown signal {name!r}: use element.<platform>.angle or element.<moving element>; "
-                            f"{known}")
+        raise ScenarioError(t("unknown signal {signal}: use element.<platform>.angle or element.<moving element>; "
+                              "{known}", signal=repr(name), known=known))
     if elem not in platforms:
-        kinds = {e.name: type(e).__name__.lower() for e in elements}
-        why = (f"{elem!r} is a {kinds[elem]} element: read it as element.{elem}" if elem in units else
-               f"element {elem!r} is a {kinds[elem]}, not a platform: only a platform tilts" if elem in kinds else
-               f"no platform {elem!r}")
-        raise ScenarioError(f"signal {name!r}: {why}; {known}")
+        kinds = {e.name: type(e).__name__.lower() for e in elements}   # the element's kind is its file key
+        said = {"signal": repr(name), "element": repr(elem), "name": elem, "kind": kinds.get(elem), "known": known}
+        if elem in units:
+            message = t("signal {signal}: {element} is a {kind} element: read it as element.{name}; {known}", **said)
+        elif elem in kinds:
+            message = t("signal {signal}: element {element} is a {kind}, not a platform: only a platform tilts; "
+                        "{known}", **said)
+        else:
+            message = t("signal {signal}: no platform {element}; {known}", **said)
+        raise ScenarioError(message)
     world.terrain_monitor()
     return Signal(name, lambda s: s.world.terrain.platform_angle(elem))
 
@@ -135,9 +165,11 @@ def _partner_signal(name: str, world) -> Signal:
     """partner.height (in), partner.tilt (deg) and partner.moved (in): the [partner] robot's (parts/partner.py)."""
     from .parts.partner import SIGNALS
     if name not in SIGNALS:
-        raise ScenarioError(f"unknown signal {name!r}: the partner signals are {', '.join(SIGNALS)}")
+        raise ScenarioError(t("unknown signal {signal}: the partner signals are {signals}", signal=repr(name),
+                              signals=", ".join(SIGNALS)))
     if getattr(world, "partner", None) is None:
-        raise ScenarioError(f"{name} needs a partner robot: add [partner] to the config (see README.md)")
+        raise ScenarioError(t("{signal} needs a partner robot: add {partner_table} to the config (see README.md)",
+                              signal=name, partner_table="[partner]"))
     return Signal(name, lambda s: s.world.partner.read(name))
 
 
@@ -149,17 +181,18 @@ def _climb_signal(name: str, world) -> Signal:
     field = name[len("climb."):]
     if field.startswith("hook.") and field.endswith(".load"):
         if make is None:
-            raise ScenarioError(f"{name} needs a simulated robot")
+            raise ScenarioError(t("{signal} needs a simulated robot", signal=name))
         hook = field[len("hook."):-len(".load")]
         hooks = list(robot_hooks(world.model, world.robot_body))
         if hook not in hooks:
-            raise ScenarioError(f"unknown signal {name!r}: the robot's hooks are {', '.join(hooks) or 'none'} "
-                                "(a stock climber's, <part>.hook<i>), each read as climb.hook.<hook>.load")
+            raise ScenarioError(t("unknown signal {signal}: the robot's hooks are {hooks} (a stock climber's, "
+                                  "<part>.hook<i>), each read as climb.hook.<hook>.load", signal=repr(name),
+                                  hooks=", ".join(hooks) or t("none")))
     elif field not in CLIMB_SIGNALS:
-        raise ScenarioError(f"unknown signal {name!r}: the climb signals are "
-                            f"{', '.join('climb.' + f for f in CLIMB_SIGNALS)} and climb.hook.<hook>.load")
+        raise ScenarioError(t("unknown signal {signal}: the climb signals are {signals} and climb.hook.<hook>.load",
+                              signal=repr(name), signals=", ".join("climb." + f for f in CLIMB_SIGNALS)))
     elif make is None:
-        raise ScenarioError(f"{name} needs a simulated robot")
+        raise ScenarioError(t("{signal} needs a simulated robot", signal=name))
     mon = make()
     if field in EXTENT_SIGNALS:
         mon.track_extent()
@@ -186,33 +219,35 @@ def resolve_signal(name: str, world) -> Signal:
         motor, _, field = name[len("motor."):].rpartition(".")
         motors = [m.name for m in world.motors]
         if field not in ("current", "command") or motor not in motors:
-            raise ScenarioError(f"unknown signal {name!r}: use motor.<name>.current or .command; "
-                                f"motors: {', '.join(motors) or 'none'}")
+            raise ScenarioError(t("unknown signal {signal}: use motor.<name>.current or .command; motors: {motors}",
+                                  signal=repr(name), motors=", ".join(motors) or t("none")))
         i = motors.index(motor)
         return Signal(name, lambda s: getattr(s.world.motors[i], field))
     if name.startswith("joint."):
         joint, _, field = name[len("joint."):].rpartition(".")
         joints = sorted(world.joint_states())
         if field not in ("position", "velocity") or joint not in joints:
-            raise ScenarioError(f"unknown signal {name!r}: use joint.<name>.position or .velocity; "
-                                f"joints: {', '.join(joints) or 'none'}")
+            raise ScenarioError(t("unknown signal {signal}: use joint.<name>.position or .velocity; joints: {joints}",
+                                  signal=repr(name), joints=", ".join(joints) or t("none")))
         j, k = joint, 0 if field == "position" else 1
         return Signal(name, lambda s: s.world.joint_states()[j][k])
     if name.startswith("hal:"):
         typ, _, rest = name[4:].partition("/")
         dev, _, key = rest.rpartition("/")
         if not (typ and key):
-            raise ScenarioError(f"unknown signal {name!r}: use hal:<type>/<device>/<key>, e.g. hal:PWM/0/<speed")
+            raise ScenarioError(t("unknown signal {signal}: use hal:<type>/<device>/<key>, e.g. hal:PWM/0/<speed",
+                                  signal=repr(name)))
         if key[0] not in "<>":
-            raise ScenarioError(f"signal {name!r}: the key needs its direction prefix, e.g. hal:PWM/0/<speed "
-                                f"(< for robot output, > for input)")
+            raise ScenarioError(t("signal {signal}: the key needs its direction prefix, e.g. hal:PWM/0/<speed (< for "
+                                  "robot output, > for input)", signal=repr(name)))
         return Signal(name, lambda s: s.bridge.hal.get(typ, dev, key))
     if name.startswith("nt:") and len(name) > 3:
         topic = name[3:]
         if not topic.startswith("/"):
-            raise ScenarioError(f"signal {name!r}: NetworkTables topics start with /, e.g. nt:/SmartDashboard/x")
+            raise ScenarioError(t("signal {signal}: NetworkTables topics start with /, e.g. nt:/SmartDashboard/x",
+                                  signal=repr(name)))
         return Signal(name, lambda s: s.nt_value(topic), uses_nt=True)
-    raise ScenarioError(f"unknown signal {name!r}; signals are {SIGNALS_HELP}")
+    raise ScenarioError(t("unknown signal {signal}; signals are {signals}", signal=repr(name), signals=SIGNALS_HELP))
 
 
 @dataclass
@@ -226,7 +261,7 @@ class CheckResult:
     words: Callable[[], str] | None = dc_field(default=None, repr=False, compare=False)   # see said()
 
     def shown(self) -> str:
-        """The message in the Units setting (report.md, the terminal, the page); `message` is the machine one."""
+        """The message in the Units and Language settings (report.md, the page); `message` is the machine one."""
         return self.words() if self.words is not None else self.message
 
     def to_dict(self, shown: bool = False) -> dict:
@@ -237,9 +272,30 @@ class CheckResult:
 
 
 def said(check: str, passed: bool, message: str, words: Callable[[], str], *rest) -> CheckResult:
-    """A CheckResult whose message has units: `message` the machine text, as it was before the Units setting (report.json
-    and MCP results don't change with it), and `words` to build it in the Units setting when it is shown."""
+    """A CheckResult worded twice: `message` the machine text, as it was before the Units and Language settings
+    (report.json and MCP results don't change with them), and `words` to build it in the settings when it is shown."""
     return CheckResult(check, passed, message, *rest, words=words)
+
+
+class Said(str):
+    """Text worded twice, as a CheckResult's message is (said()): the str itself is the machine text (report.json, MCP
+    results), and `words()` builds it in the Units and Language settings when it is shown (shown())."""
+
+    def __new__(cls, text: str, words: Callable[[], str]):
+        s = super().__new__(cls, text)
+        s.words = words
+        return s
+
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self, memo):
+        return self
+
+
+def shown(text):
+    """`text` as it is shown: a Said's words, else the text itself (None stays None)."""
+    return text.words() if isinstance(text, Said) else text
 
 
 def _far(v: float) -> str:
@@ -268,23 +324,26 @@ def _num(spec: dict, key: str, where: str) -> float | None:
     if v is None:
         return None
     if isinstance(v, bool) or not isinstance(v, (int, float)):
-        raise ScenarioError(f"{where}: {key} must be a number, not {v!r}")
+        raise bad(where, t("{key} must be a number, not {value}", key=key, value=repr(v)), key=key)
     if not math.isfinite(v):
-        raise ScenarioError(f"{where}: {key} must be a finite number, not {v!r}")
+        raise bad(where, t("{key} must be a finite number, not {value}", key=key, value=repr(v)), key=key)
     return float(v)
 
 
 def _tol(spec: dict, key: str, where: str) -> float | None:
     v = _num(spec, key, where)
     if v is not None and v < 0:
-        raise ScenarioError(f"{where}: {key} can't be negative")
+        raise bad(where, t("{key} can't be negative", key=key), key=key)
     return v
 
 
 def _only(spec: dict, allowed: set[str], where: str) -> None:
     extra = set(spec) - allowed
     if extra:
-        raise ScenarioError(f"{where}: unknown key {sorted(extra)[0]!r}; allowed: {', '.join(sorted(allowed))}")
+        first = sorted(extra)[0]
+        raise bad(where, t("unknown key {key}; allowed: {allowed}", key=repr(first),
+                           allowed=", ".join(sorted(allowed))),
+                  key=first)
 
 
 class PoseCheck(Check):
@@ -292,7 +351,7 @@ class PoseCheck(Check):
         _only(spec, {"x", "y", "heading", "tol_xy", "tol_heading"}, where)
         self.x, self.y, self.h = _num(spec, "x", where), _num(spec, "y", where), _num(spec, "heading", where)
         if self.x is None and self.y is None and self.h is None:
-            raise ScenarioError(f"{where}: pose needs at least one of x, y, heading")
+            raise bad(where, t("pose needs at least one of x, y, heading"))
         tol_xy, tol_h = _tol(spec, "tol_xy", where), _tol(spec, "tol_heading", where)
         self.tol_xy = 0.1 if tol_xy is None else tol_xy
         self.tol_h = 5.0 if tol_h is None else tol_h
@@ -314,10 +373,11 @@ class PoseCheck(Check):
                f"allowed {self.tol_xy:g} m, {self.tol_h:g}°")
 
         def words() -> str:
-            where = f"(x={_far(x)}, y={_far(y)}, heading={hdg:.1f}°)"
-            return (f"pose within {_far(dist)} and {dh:.1f}° of target {where}" if ok else
-                    f"pose: {_far(dist)} from target, heading off by {dh:.1f}° {where}; "
-                    f"allowed {_far(self.tol_xy)}, {self.tol_h:g}°")
+            at = {"x": _far(x), "y": _far(y), "heading": f"{hdg:.1f}", "dist": _far(dist), "off": f"{dh:.1f}"}
+            if ok:
+                return t("pose within {dist} and {off}° of target (x={x}, y={y}, heading={heading}°)", **at)
+            return t("pose: {dist} from target, heading off by {off}° (x={x}, y={y}, heading={heading}°); "
+                     "allowed {tol_xy}, {tol_heading}°", tol_xy=_far(self.tol_xy), tol_heading=f"{self.tol_h:g}", **at)
         return said(self.label, ok, msg, words, measured, expected)
 
 
@@ -327,9 +387,14 @@ class SignalCheck(Check):
     def __init__(self, kind: str, spec: dict, world, where: str):
         _only(spec, {"signal", "min", "max", "equals", "approx", "tol"}, where)
         if "signal" not in spec:
-            raise ScenarioError(f"{where}: {kind} needs signal = \"...\"")
+            raise bad(where, t("{kind} needs {signal_setting}", kind=kind, signal_setting="signal = \"...\""))
         self.kind = kind
-        self.signal = resolve_signal(str(spec["signal"]), world)
+        try:
+            self.signal = resolve_signal(str(spec["signal"]), world)
+        except ScenarioError as e:
+            e.key = e.key or "signal"       # the Scenario tab shows it on the signal's box
+            e.detail = e.detail or str(e)   # it says no where: all of it goes beside the box
+            raise
         self.min, self.max = _num(spec, "min", where), _num(spec, "max", where)
         self.equals = spec.get("equals")
         self.approx, self.tol = _num(spec, "approx", where), _tol(spec, "tol", where)
@@ -337,20 +402,21 @@ class SignalCheck(Check):
             ok_type = isinstance(self.equals, (bool, str)) or (
                 isinstance(self.equals, (int, float)) and math.isfinite(self.equals))
             if not ok_type:
-                raise ScenarioError(f"{where}: equals must be a bool, a finite number or a string, "
-                                    f"not {self.equals!r}")
+                raise bad(where, t("equals must be a bool, a finite number or a string, not {value}",
+                                   value=repr(self.equals)), key="equals")
             if self.min is not None or self.max is not None or self.approx is not None:
-                raise ScenarioError(f"{where}: equals can't be combined with min, max or approx")
+                raise bad(where, t("equals can't be combined with min, max or approx"), key="equals")
         if self.min is not None and self.max is not None and self.min > self.max:
-            raise ScenarioError(f"{where}: min ({self.min:g}) is greater than max ({self.max:g})")
+            raise bad(where, t("min ({min}) is greater than max ({max})", min=f"{self.min:g}", max=f"{self.max:g}"),
+                      key="min")
         if self.approx is not None and self.tol is None:
-            raise ScenarioError(f"{where}: approx needs tol")
+            raise bad(where, t("approx needs tol"), key="approx")
         if self.tol is not None and self.approx is None:
-            raise ScenarioError(f"{where}: tol needs approx")
+            raise bad(where, t("tol needs approx"), key="tol")
         if kind == "always" and self.approx is not None:
-            raise ScenarioError(f"{where}: always checks take min, max or equals")
+            raise bad(where, t("always checks take min, max or equals"))
         if self.min is None and self.max is None and self.equals is None and self.approx is None:
-            raise ScenarioError(f"{where}: {kind} needs min, max, equals, or approx with tol")
+            raise bad(where, t("{kind} needs min, max, equals, or approx with tol", kind=kind))
         self.uses_nt = self.signal.uses_nt
         self.ticks = kind == "always"
         self.label = f"{kind} {self.signal.name} {self._expected()}"
@@ -453,39 +519,96 @@ class SignalCheck(Check):
     def _missing(self, session, at_end: bool) -> str:
         name = self.signal.name
         if name.startswith("hal:"):
-            seen = ", ".join(f"{t}/{d}" for t, d in sorted(session.bridge.hal.devices)) or "none"
+            seen = ", ".join(f"{typ}/{d}" for typ, d in sorted(session.bridge.hal.devices)) or "none"
             return f"no HAL value {name}; devices seen: {seen}"
         return f"{name} has no value" + (" at the end of the step" if at_end else "")
+
+    def _missing_words(self, session, at_end: bool) -> Callable[[], str]:
+        """_missing() in the Language setting, when it is called."""
+        name = self.signal.name
+        if name.startswith("hal:"):
+            seen = ", ".join(f"{typ}/{d}" for typ, d in sorted(session.bridge.hal.devices))
+            return lambda: t("no HAL value {name}; devices seen: {seen}", name=name, seen=seen or t("none"))
+        if at_end:
+            return lambda: t("{name} has no value at the end of the step", name=name)
+        return lambda: t("{name} has no value", name=name)
 
     def _sampled(self) -> str:
         if self.uses_nt and self.nt_period is not None:
             return f" (sampled at {self.nt_period:g} s hold points)"
         return ""
 
+    def _period(self) -> str | None:
+        """The hold-point period the words say the signal was sampled at, or None (each sentence has its own form)."""
+        return f"{self.nt_period:g}" if self.uses_nt and self.nt_period is not None else None
+
     def end(self, session) -> CheckResult:
         if self.kind == "always":
             if not self.seen:
                 self.tick(session, getattr(session, "t", 0.0))
             ok = self.first_fail is None
+            name, expected, period = self.signal.name, self._expected(), self._period()
             if ok:
                 measured = self.last if self.equals is not None else self.extreme
-                return CheckResult(self.label, True, f"{self.signal.name} stayed {self._expected()}{self._sampled()}",
-                                   measured, self._expected())
+                return said(self.label, True, f"{self.signal.name} stayed {self._expected()}{self._sampled()}",
+                            lambda: t("{name} stayed {expected}", name=name, expected=expected) if period is None
+                            else t("{name} stayed {expected} (sampled at {period} s hold points)", name=name,
+                                   expected=expected, period=period),
+                            measured, self._expected())
             if self.worst_excess is None:
                 msg = f"{self._missing(session, False)} (first at t={self.first_missing}); expected {self._expected()}"
+                missing = self._missing_words(session, False)
+                first = self.first_missing
+
+                def words() -> str:
+                    if period is None:
+                        return t("{missing} (first at t={t}); expected {expected}", missing=missing(), t=first,
+                                 expected=expected)
+                    return t("{missing} (first at t={t}); expected {expected} (sampled at {period} s hold points)",
+                             missing=missing(), t=first, expected=expected, period=period)
             else:
                 msg = (f"{self.signal.name} was {_show(self.worst)} at t={self.worst_t} (first out of range at "
                        f"t={self.first_num_fail}); expected {self._expected()}")
                 if self.n_missing:
                     msg += f"; no value at {self.n_missing} ticks (first at t={self.first_missing})"
+                worst, worst_t, first_num, n_missing, first_missing = (
+                    _show(self.worst), self.worst_t, self.first_num_fail, self.n_missing, self.first_missing)
+
+                def words() -> str:   # a whole sentence for each: with no-value ticks or not, sampled or not
+                    if n_missing and period is not None:
+                        return tn("{name} was {value} at t={t} (first out of range at t={first}); expected "
+                                  "{expected}; no value at {count} tick (first at t={first_missing}) (sampled at "
+                                  "{period} s hold points)",
+                                  "{name} was {value} at t={t} (first out of range at t={first}); expected "
+                                  "{expected}; no value at {count} ticks (first at t={first_missing}) (sampled at "
+                                  "{period} s hold points)", n_missing, name=name, value=worst, t=worst_t,
+                                  first=first_num, expected=expected, first_missing=first_missing, period=period)
+                    if n_missing:
+                        return tn("{name} was {value} at t={t} (first out of range at t={first}); expected "
+                                  "{expected}; no value at {count} tick (first at t={first_missing})",
+                                  "{name} was {value} at t={t} (first out of range at t={first}); expected "
+                                  "{expected}; no value at {count} ticks (first at t={first_missing})", n_missing,
+                                  name=name, value=worst, t=worst_t, first=first_num, expected=expected,
+                                  first_missing=first_missing)
+                    if period is not None:
+                        return t("{name} was {value} at t={t} (first out of range at t={first}); expected "
+                                 "{expected} (sampled at {period} s hold points)", name=name, value=worst, t=worst_t,
+                                 first=first_num, expected=expected, period=period)
+                    return t("{name} was {value} at t={t} (first out of range at t={first}); expected {expected}",
+                             name=name, value=worst, t=worst_t, first=first_num, expected=expected)
             msg += self._sampled()
-            return CheckResult(self.label, False, msg, self.worst, self._expected(), self.first_fail)
+            return said(self.label, False, msg, words, self.worst, self._expected(), self.first_fail)
         v = self.signal.read(session)
+        expected = self._expected()
         if v is None:
-            return CheckResult(self.label, False, self._missing(session, True), None, self._expected())
+            return said(self.label, False, self._missing(session, True), self._missing_words(session, True), None,
+                        self._expected())
         ok = self._ok(v)
-        return CheckResult(self.label, ok, f"{self.signal.name} = {_show(v)} at the end; expected {self._expected()}",
-                           v, self._expected())
+        name, value = self.signal.name, _show(v)
+        return said(self.label, ok, f"{self.signal.name} = {_show(v)} at the end; expected {self._expected()}",
+                    lambda: t("{name} = {value} at the end; expected {expected}", name=name, value=value,
+                              expected=expected),
+                    v, self._expected())
 
 
 class OdometryErrorCheck(Check):
@@ -493,12 +616,12 @@ class OdometryErrorCheck(Check):
         _only(spec, {"max", "when"}, where)
         self.max = _num(spec, "max", where)
         if self.max is None:
-            raise ScenarioError(f"{where}: odometry_error needs max")
+            raise bad(where, t("odometry_error needs max"))
         if self.max <= 0:
-            raise ScenarioError(f"{where}: odometry_error max must be greater than 0")
+            raise bad(where, t("odometry_error max must be greater than 0"))
         self.when = spec.get("when", "end")
         if self.when not in ("end", "always"):
-            raise ScenarioError(f"{where}: odometry_error when must be \"end\" or \"always\"")
+            raise bad(where, t("odometry_error when must be \"{end}\" or \"{always}\"", end="end", always="always"))
         self.uses_nt = True
         self.ticks = self.when == "always"
         self.label = f"odometry_error {self.when} <= {self.max:g} m"
@@ -528,24 +651,33 @@ class OdometryErrorCheck(Check):
         if self.when == "end":
             e = self._err(session)
             if e is None:
-                return CheckResult(self.label, False, "no odometry on NetworkTables ([telemetry] odometry)", None, self.max)
+                return said(self.label, False, "no odometry on NetworkTables ([telemetry] odometry)", _no_odometry,
+                            None, self.max)
             return said(self.label, e <= self.max,
                         f"odometry {e:.3f} m from ground truth at the end; allowed {self.max:g} m",
-                        lambda: f"odometry {_far(e)} from ground truth at the end; allowed {_far(self.max)}",
+                        lambda: t("odometry {error} from ground truth at the end; allowed {max}", error=_far(e),
+                                  max=_far(self.max)),
                         round(e, 4), self.max)
         if self.missing and self.worst == 0.0:
-            return CheckResult(self.label, False, "no odometry on NetworkTables ([telemetry] odometry)", None, self.max)
+            return said(self.label, False, "no odometry on NetworkTables ([telemetry] odometry)", _no_odometry, None,
+                        self.max)
         ok = self.first_fail is None
         worst = self.worst
         return said(self.label, ok, f"odometry error peaked at {worst:.3f} m; allowed {self.max:g} m",
-                    lambda: f"odometry error peaked at {_far(worst)}; allowed {_far(self.max)}",
+                    lambda: t("odometry error peaked at {error}; allowed {max}", error=_far(worst),
+                              max=_far(self.max)),
                     round(worst, 4), self.max, self.first_fail)
+
+
+def _no_odometry() -> str:
+    return t("no odometry on NetworkTables ({telemetry_table} odometry)", telemetry_table="[telemetry]")
 
 
 class ContactCheck(Check):
     def __init__(self, target: Any, must: bool, world, where: str):
         if not isinstance(target, str) or target not in world.contact_names():
-            raise ScenarioError(f"{where}: no geom or body {target!r} to touch; names: {', '.join(world.contact_names())}")
+            raise bad(where, t("no geom or body {target} to touch; names: {names}", target=repr(target),
+                               names=", ".join(world.contact_names())))
         self.target, self.must = target, must
         self.ticks = True
         self.label = f"{'must_touch' if must else 'never_touch'} {target}"
@@ -562,7 +694,13 @@ class ContactCheck(Check):
         touched = self.first_t is not None
         ok = touched if self.must else not touched
         msg = (f"touched {self.target} at t={self.first_t}" if touched else f"never touched {self.target}")
-        return CheckResult(self.label, ok, msg, touched, self.must, None if self.must else self.first_t)
+        target, first = self.target, self.first_t
+
+        def words() -> str:
+            if touched:
+                return t("touched {target} at t={t}", target=target, t=first)
+            return t("never touched {target}", target=target)
+        return said(self.label, ok, msg, words, touched, self.must, None if self.must else self.first_t)
 
 
 class ConsoleCheck(Check):
@@ -572,9 +710,9 @@ class ConsoleCheck(Check):
             self.contains = re.compile(spec["contains"]) if "contains" in spec else None
             self.not_contains = re.compile(spec["not_contains"]) if "not_contains" in spec else None
         except re.error as e:
-            raise ScenarioError(f"{where}: bad regex: {e}") from None
+            raise bad(where, t("bad regex: {problem}", problem=e)) from None
         if self.contains is None and self.not_contains is None:
-            raise ScenarioError(f"{where}: console needs contains or not_contains")
+            raise bad(where, t("console needs contains or not_contains"))
         self.label = "console " + " ".join(f"{k} /{v}/" for k, v in spec.items())
         self.ticks = True
         self._reset(0)
@@ -606,12 +744,19 @@ class ConsoleCheck(Check):
     def end(self, session) -> CheckResult:
         self._scan(session)
         if self.contains is not None and not self.matched:
-            return CheckResult(self.label, False, f"no console line matched /{self.contains.pattern}/ "
-                               f"({self.count} lines in the step)", None, self.contains.pattern)
+            pattern, count = self.contains.pattern, self.count
+            return said(self.label, False, f"no console line matched /{self.contains.pattern}/ "
+                        f"({self.count} lines in the step)",
+                        lambda: tn("no console line matched /{pattern}/ ({count} line in the step)",
+                                   "no console line matched /{pattern}/ ({count} lines in the step)", count,
+                                   pattern=pattern),
+                        None, self.contains.pattern)
         if self.bad is not None:
-            return CheckResult(self.label, False,
-                               f"console line matched /{self.not_contains.pattern}/: {self.bad}", self.bad, None)
-        return CheckResult(self.label, True, "console as expected")
+            pattern, bad = self.not_contains.pattern, self.bad
+            return said(self.label, False, f"console line matched /{self.not_contains.pattern}/: {self.bad}",
+                        lambda: t("console line matched /{pattern}/: {line}", pattern=pattern, line=bad),
+                        self.bad, None)
+        return said(self.label, True, "console as expected", lambda: t("console as expected"))
 
 
 class ByTimeCheck(Check):
@@ -622,9 +767,9 @@ class ByTimeCheck(Check):
         _only(spec, {"signal", "min", "max", "equals", "approx", "tol", "t"}, where)
         self.t = _num(spec, "t", where)
         if self.t is None:
-            raise ScenarioError(f"{where}: by_time needs t, the seconds into the step it must hold by")
+            raise bad(where, t("by_time needs t, the seconds into the step it must hold by"))
         if self.t < 0:
-            raise ScenarioError(f"{where}: t must be 0 or more seconds into the step, not {_show(self.t)}")
+            raise bad(where, t("t must be 0 or more seconds into the step, not {value}", value=_show(self.t)), key="t")
         self.cond = SignalCheck("at_end", {k: v for k, v in spec.items() if k != "t"}, world, where)
         self.signal = self.cond.signal
         self.uses_nt = self.signal.uses_nt
@@ -655,15 +800,27 @@ class ByTimeCheck(Check):
         expected = f"{self.cond._expected()} by t={by}"
         if self.reached is not None:
             st, v = self.reached
-            return CheckResult(self.label, True, f"{name} reached {_show(v)} at t={_show(st)} (by {by})", v, expected)
+            return said(self.label, True, f"{name} reached {_show(v)} at t={_show(st)} (by {by})",
+                        lambda: t("{name} reached {value} at t={t} (by {by})", name=name, value=_show(v), t=_show(st),
+                                  by=by),
+                        v, expected)
         fail_t = round(self.start + self.t, 4)
         if self.last is None or self.last[1] is None:
             at = f" at t={_show(self.last[0])}" if self.last is not None else ""
-            return CheckResult(self.label, False, f"{name} has no value{at}; expected {expected}", None, expected,
-                               fail_t)
+            last = self.last
+
+            def words() -> str:
+                if last is None:
+                    return t("{name} has no value; expected {expected}", name=name, expected=expected)
+                return t("{name} has no value at t={t}; expected {expected}", name=name, t=_show(last[0]),
+                         expected=expected)
+            return said(self.label, False, f"{name} has no value{at}; expected {expected}", words, None, expected,
+                        fail_t)
         st, v = self.last
-        return CheckResult(self.label, False, f"{name} was {_show(v)} at t={_show(st)}; expected {expected}", v,
-                           expected, fail_t)
+        return said(self.label, False, f"{name} was {_show(v)} at t={_show(st)}; expected {expected}",
+                    lambda: t("{name} was {value} at t={t}; expected {expected}", name=name, value=_show(v),
+                              t=_show(st), expected=expected),
+                    v, expected, fail_t)
 
 
 def tick_checks(checks, session, t: float) -> None:
@@ -687,14 +844,17 @@ CHECK_KINDS = ("pose", "odometry_error", "at_end", "always", "by_time", "never_t
 def build_check(spec: dict, world, where: str) -> Check:
     keys = [k for k in spec if k in CHECK_KINDS]
     if len(keys) != 1 or len(spec) != 1:
-        raise ScenarioError(f"{where}: each [[step.check]] needs exactly one of {', '.join(CHECK_KINDS)}; "
-                            f"got {', '.join(spec) or 'nothing'}")
+        if spec:
+            raise bad(where, t("each {step_check_table} needs exactly one of {kinds}; got {got}",
+                               kinds=", ".join(CHECK_KINDS), got=", ".join(spec), step_check_table="[[step.check]]"))
+        raise bad(where, t("each {step_check_table} needs exactly one of {kinds}; got nothing",
+                           kinds=", ".join(CHECK_KINDS), step_check_table="[[step.check]]"))
     kind, val = keys[0], spec[keys[0]]
     w = f"{where}, {kind}"
     if kind in ("never_touch", "must_touch"):
         return ContactCheck(val, kind == "must_touch", world, w)
     if not isinstance(val, dict):
-        raise ScenarioError(f"{w}: expected a table like {kind} = {{ ... }}")
+        raise bad(w, t("expected a table like {kind_setting}", kind_setting="{} = {{ ... }}".format(kind)))
     if kind == "pose":
         return PoseCheck(val, w)
     if kind == "odometry_error":

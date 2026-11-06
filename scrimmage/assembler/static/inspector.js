@@ -7,6 +7,7 @@
 import { $, h, edit, store, stockMeta, folderMeta, attachGroups, fillAttachSelect, fmt, UNIT, mountsOf, notice,
   showMeasure, readMeasure, measureError, lengthWords } from "./app.js";
 import { units } from "./units.js";
+import { t, tn } from "./i18n.js";
 
 const NUDGE = { pos: { imperial: 0.00635, metric: 0.01 }, rot: 5 };   // 1/4 in or 10 mm; 5 degrees
 const nudgeStep = (key) => (key === "pos" ? NUDGE.pos[units.system] ?? 0.01 : NUDGE.rot);
@@ -67,7 +68,7 @@ function numberInput(id, key, value, { label, kind } = {}) {
 // A box's value: a number (SI for a `kind`), null when empty, or {error}.
 function readNumber(el, kind) {
   if (kind) return readMeasure(el, kind);
-  if (badNumber(el)) return { error: "Enter a number." };
+  if (badNumber(el)) return { error: t("Enter a number.") };
   return el.value.trim() === "" ? null : Number(el.value);
 }
 
@@ -168,8 +169,8 @@ export function renderInspector(st) {
     lastRendered = null;
     rerendering = true;
     try { root.replaceChildren(h("p", { class: "empty" }, s.parts.length
-      ? "Select a part in the robot tree to see its settings."
-      : "Add a part from the library on the left.")); } finally { rerendering = false; }
+      ? t("Select a part in the robot tree to see its settings.")
+      : t("Add a part from the library on the left."))); } finally { rerendering = false; }
     return;
   }
   const switched = lastRendered !== part.name;
@@ -211,14 +212,14 @@ function headSection(part) {
     type: "button", class: "btn btn-danger", onclick: async () => {
       const r = await edit("remove", { name: n });
       if (r.ok) {
-        notice(`Deleted ${n}. Press Ctrl+Z (or Undo) to bring it back.`, "info");
+        notice(t("Deleted {name}. Press Ctrl+Z (or Undo) to bring it back.", { name: n }), "info");
       }
     },
-  }, "Delete part");
+  }, t("Delete part"));
   return h("section", { class: "insp-section insp-head" },
-    field(`${n}/name`, "insp-name", "Name", name, { hint: "Letters, digits and underscores. Renaming also updates parts attached to it." }),
+    field(`${n}/name`, "insp-name", t("Name"), name, { hint: t("Letters, digits and underscores. Renaming also updates parts attached to it.") }),
     h("div", { class: "source-row" },
-      h("span", { class: "muted" }, part.stock ? "Stock part" : "Part folder"),
+      h("span", { class: "muted" }, part.stock ? t("Stock part") : t("Part folder")),
       h("code", { text: part.stock || part.path })),
     h("div", { class: "field field-part", dataset: { field: `${n}/part` } },
       h("div", { class: "field-msgs" }),
@@ -241,7 +242,7 @@ function placementSection(part) {
       const bad = read.map(measureError).find(Boolean);
       if (bad) { localError(vecs[k].fieldEl, bad); return; }
       vals[k] = read.map((v) => (v === null ? 0 : v));
-      if (vals[k].some((v) => !isFinite(v))) { localError(vecs[k].fieldEl, "Enter numbers (leave a box empty for 0)."); return; }
+      if (vals[k].some((v) => !isFinite(v))) { localError(vecs[k].fieldEl, t("Enter numbers (leave a box empty for 0).")); return; }
     }
     clean(...vecs.pos.inputs, ...vecs.rot.inputs);
     await edit("attach", { name: n, attach, pos: vals.pos, rot: vals.rot });
@@ -251,12 +252,12 @@ function placementSection(part) {
 
   const mountsHere = mountsOf(part);
   return h("section", { class: "insp-section" },
-    h("h3", {}, "Placement"),
-    field(`${n}/attach`, "insp-attach", "Attach to", sel,
-      { hint: isRoot ? "This is the robot's root part: start_pose places it." : "A mount of another part, or one of its bodies (at the body's origin)." }),
+    h("h3", {}, t("Placement")),
+    field(`${n}/attach`, "insp-attach", t("Attach to"), sel,
+      { hint: isRoot ? t("This is the robot's root part: start_pose places it.") : t("A mount of another part, or one of its bodies (at the body's origin).") }),
     vecs.pos.fieldEl, vecs.rot.fieldEl,
     cadLine(part),
-    mountsHere.length ? h("p", { class: "hint" }, `Mounts on ${n}: ${mountsHere.join(", ")}`) : null);
+    mountsHere.length ? h("p", { class: "hint" }, t("Mounts on {name}: {mounts}", { name: n, mounts: mountsHere.join(", ") })) : null);
 }
 
 // A part made from a CAD file: whether it sits where the CAD has it (the state's cad_pos, for what it attaches to),
@@ -271,8 +272,8 @@ function cadLine(part) {
   if (!part.cad_pos) {
     if (!part.cad) return null;
     return h("p", { class: "hint", id: "insp-cad" }, hangs
-      ? `Made from a CAD file, where it hangs on ${hangs}: attach it there to place it where the CAD has it.`
-      : "Made from a CAD file: attach it to the chassis, or to a body of another part from the same CAD file, to place it where the CAD has it.");
+      ? t("Made from a CAD file, where it hangs on {body}: attach it there to place it where the CAD has it.", { body: hangs })
+      : t("Made from a CAD file: attach it to the chassis, or to a body of another part from the same CAD file, to place it where the CAD has it."));
   }
   const near = (a, b) => (a || [0, 0, 0]).every((v, i) => Math.abs(v - b[i]) < 1e-6);
   const there = near(part.pos, part.cad_pos) && near(part.rot, [0, 0, 0]);
@@ -280,11 +281,18 @@ function cadLine(part) {
   const elsewhere = hangs && hangs !== part.attach;
   return h("div", {},
     h("div", { class: "insp-cad" },
-      h("p", { class: "hint", id: "insp-cad" }, there ? "Placed where the CAD has it" : "Moved from where the CAD has it"),
+      h("p", { class: "hint", id: "insp-cad" }, there ? t("Placed where the CAD has it") : t("Moved from where the CAD has it")),
       h("button", { type: "button", class: "btn btn-small", id: "insp-cad-reset", disabled: there || (store.state && store.state.read_only),
-        title: "Put this part back where the CAD has it", onclick: () => edit("attach", { name: part.name, attach: part.attach, pos: part.cad_pos, rot: [0, 0, 0] }) },
-      "Reset to CAD")),
-    elsewhere ? h("p", { class: "hint", id: "insp-cad-hangs" }, `In the CAD this hangs on ${hangs}; it's fixed to ${onChassis(part) ? "the chassis" : part.attach} here.`) : null);
+        title: t("Put this part back where the CAD has it"), onclick: () => edit("attach", { name: part.name, attach: part.attach, pos: part.cad_pos, rot: [0, 0, 0] }) },
+      t("Reset to CAD"))),
+    elsewhere ? h("p", { class: "hint", id: "insp-cad-hangs" }, onChassis(part)
+      ? t("In the CAD this hangs on {body}; it's fixed to the chassis here.", { body: hangs })
+      : t("In the CAD this hangs on {body}; it's fixed to {attach} here.", { body: hangs, attach: part.attach })) : null);
+}
+
+// The rotation axes' names (x, y and z are letters, not words)
+function axisWord(ax) {
+  return ax === "roll" ? t("roll") : ax === "pitch" ? t("pitch") : ax === "yaw" ? t("yaw") : ax;
 }
 
 function vecInputs(n, key, value) {
@@ -295,10 +303,12 @@ function vecInputs(n, key, value) {
   const inputs = [];
   const cells = axes.map((ax, i) => {
     const id = `insp-${key}-${i}`;
-    const inp = numberInput(id, `${key}:${i}`, (value || [0, 0, 0])[i], { kind, label: `${key === "pos" ? "Offset" : "Rotation"} ${ax} (${key === "pos" ? lengthWords() : "degrees"})` });
+    const label = key === "pos" ? t("Offset {axis} ({unit})", { axis: ax, unit: lengthWords() }) : t("Rotation {axis} (degrees)", { axis: axisWord(ax) });
+    const inp = numberInput(id, `${key}:${i}`, (value || [0, 0, 0])[i], { kind, label });
     inputs.push(inp);
     const nudge = (sign) => h("button", {
-      type: "button", class: "nudge", "aria-label": `${sign > 0 ? "Increase" : "Decrease"} ${ax} by ${step}`,
+      type: "button", class: "nudge", "aria-label": sign > 0 ? t("Increase {axis} by {step}", { axis: axisWord(ax), step })
+        : t("Decrease {axis} by {step}", { axis: axisWord(ax), step }),
       onclick: () => {
         const cur = readNumber(inp, kind);
         if (measureError(cur)) { localError(inp.closest(".field"), measureError(cur)); return; }
@@ -309,14 +319,14 @@ function vecInputs(n, key, value) {
       },
     }, sign > 0 ? "+" : "−");
     return h("div", { class: "vec-cell" },
-      h("span", { class: "vec-axis", "aria-hidden": "true" }, ax),
+      h("span", { class: "vec-axis", "aria-hidden": "true" }, axisWord(ax)),
       h("div", { class: "nudge-group" }, nudge(-1), inp, nudge(+1)));
   });
-  const title = key === "pos" ? "Offset (pos)" : "Rotation (rot)";
+  const title = key === "pos" ? t("Offset (pos)") : t("Rotation (rot)");
   const fieldEl = h("div", { class: "field", dataset: { field: `${n}/${key}` }, role: "group", "aria-label": title },
     h("span", { class: "field-label" }, title, h("span", { class: "unit" }, ` ${u}`)),
     h("div", { class: "vec" }, cells),
-    h("p", { class: "hint" }, key === "pos" ? `From the mount, in the mount's frame. ± moves ${step}.` : "Roll, pitch, yaw about fixed x, y, z. ± turns 5°."),
+    h("p", { class: "hint" }, key === "pos" ? t("From the mount, in the mount's frame. ± moves {step}.", { step }) : t("Roll, pitch, yaw about fixed x, y, z. ± turns 5°.")),
     h("div", { class: "field-msgs" }));
   return { inputs, fieldEl, wire: (fn) => inputs.forEach((i) => onCommit(i, fn)) };
 }
@@ -324,16 +334,16 @@ function vecInputs(n, key, value) {
 // -- parameters ---------------------------------------------------------------------------------
 function paramsSection(part, meta) {
   const n = part.name;
-  const sec = h("section", { class: "insp-section" }, h("h3", {}, "Parameters"));
+  const sec = h("section", { class: "insp-section" }, h("h3", {}, t("Parameters")));
   if (!part.stock) {
-    sec.append(h("p", { class: "muted" }, "A part folder has no parameters here; edit its part.toml."));
+    sec.append(h("p", { class: "muted" }, t("A part folder has no parameters here; edit its part.toml.")));
     return sec;
   }
-  if (!meta) { sec.append(h("p", { class: "muted" }, store.library ? `Unknown stock part ${part.stock}.` : "Loading…")); return sec; }
+  if (!meta) { sec.append(h("p", { class: "muted" }, store.library ? t("Unknown stock part {name}.", { name: part.stock }) : t("Loading…"))); return sec; }
   const known = new Set(meta.params.map((p) => p.name));
   for (const p of meta.params) sec.append(paramField(n, p, part.params[p.name]));
   for (const [k, v] of Object.entries(part.params)) {
-    if (!known.has(k)) sec.append(field(`${n}/param:${k}`, `insp-p-${k}`, k, h("code", { id: `insp-p-${k}`, text: JSON.stringify(v) }), { hint: "Not a parameter of this part." }));
+    if (!known.has(k)) sec.append(field(`${n}/param:${k}`, `insp-p-${k}`, k, h("code", { id: `insp-p-${k}`, text: JSON.stringify(v) }), { hint: t("Not a parameter of this part.") }));
   }
   return sec;
 }
@@ -347,12 +357,13 @@ function hintFor(p) {
   const bits = [];
   const k = paramKind(p);
   const num = k ? (v) => units.shown(v, k, 0) : fmt;   // as fmt rounds it, without the unit (it follows once)
-  const d = p.kind === "pair" ? p.default.map(num).join(" to ") : p.kind === "vec3" ? `[${p.default.map(num).join(", ")}]` : p.kind === "bool" ? (p.default ? "on" : "off") : num(p.default);
-  bits.push(`default ${d}${p.unit && p.kind !== "bool" ? " " + paramUnit(p) : ""}`);
-  if (p.positive) bits.push("more than 0");
-  if (p.min !== null && p.min !== undefined) bits.push(`at least ${k ? units.fmt(p.min, k) : fmt(p.min)}`);
-  if (p.max !== null && p.max !== undefined) bits.push(`at most ${k ? units.fmt(p.max, k) : fmt(p.max)}`);
-  if (p.max_depends) bits.push("maximum depends on other parameters");
+  const d = p.kind === "pair" ? t("{low} to {high}", { low: num(p.default[0]), high: num(p.default[1]) })
+    : p.kind === "vec3" ? `[${p.default.map(num).join(", ")}]` : p.kind === "bool" ? (p.default ? t("on") : t("off")) : num(p.default);
+  bits.push(t("default {value}", { value: `${d}${p.unit && p.kind !== "bool" ? " " + paramUnit(p) : ""}` }));
+  if (p.positive) bits.push(t("more than 0"));
+  if (p.min !== null && p.min !== undefined) bits.push(t("at least {value}", { value: k ? units.fmt(p.min, k) : fmt(p.min) }));
+  if (p.max !== null && p.max !== undefined) bits.push(t("at most {value}", { value: k ? units.fmt(p.max, k) : fmt(p.max) }));
+  if (p.max_depends) bits.push(t("maximum depends on other parameters"));
   return bits.join(" · ");
 }
 
@@ -363,9 +374,9 @@ function paramField(n, p, value) {
   const send = (v) => edit("params", { name: n, params: { [p.name]: v } });
   const isDefault = value === undefined;
   const reset = isDefault ? null : h("button", {
-    type: "button", class: "btn btn-small btn-ghost reset", title: "Back to the default", "aria-label": `Reset ${p.name} to its default`,
+    type: "button", class: "btn btn-small btn-ghost reset", title: t("Back to the default"), "aria-label": t("Reset {name} to its default", { name: p.name }),
     onclick: () => send(null),
-  }, "Reset");
+  }, t("Reset"));
   let control;
   const kind = paramKind(p);
   const unitSpan = () => (p.unit ? h("span", { class: "unit" }, paramUnit(p)) : null);
@@ -374,7 +385,7 @@ function paramField(n, p, value) {
   if (p.kind === "bool") {
     const cb = h("input", { id, type: "checkbox", checked: !!cur, dataset: { key: `param:${p.name}` } });
     cb.addEventListener("change", () => send(cb.checked));
-    control = h("div", { class: "with-unit" }, cb, h("span", { class: "muted" }, cur ? "on" : "off"), reset);
+    control = h("div", { class: "with-unit" }, cb, h("span", { class: "muted" }, cur ? t("on") : t("off")), reset);
   } else if (p.kind === "str" && p.choices) {
     const sel = h("select", { id, dataset: { key: `param:${p.name}` } }, p.choices.map((c) => h("option", { value: c }, c)));
     if (!p.choices.includes(cur)) sel.append(h("option", { value: cur }, String(cur)));
@@ -393,8 +404,8 @@ function paramField(n, p, value) {
   } else if (p.kind === "ratio") {
     const custom = typeof cur === "number";
     const sel = h("select", { id, dataset: { key: `param:${p.name}` } },
-      (p.choices || []).map((c) => h("option", { value: c }, c)), h("option", { value: "__custom__" }, "Custom number…"));
-    const num = numberInput(`${id}-n`, `param:${p.name}:n`, custom ? cur : "", { label: `${p.name} (custom ratio)` });
+      (p.choices || []).map((c) => h("option", { value: c }, c)), h("option", { value: "__custom__" }, t("Custom number…")));
+    const num = numberInput(`${id}-n`, `param:${p.name}:n`, custom ? cur : "", { label: t("{name} (custom ratio)", { name: p.name }) });
     sel.value = custom ? "__custom__" : String(cur);
     num.hidden = !custom;
     sel.addEventListener("change", () => {
@@ -402,38 +413,38 @@ function paramField(n, p, value) {
       num.hidden = true; send(sel.value);
     });
     onCommit(num, () => {
-      if (badNumber(num)) return localError(num.closest(".field"), "Enter a number.");
+      if (badNumber(num)) return localError(num.closest(".field"), t("Enter a number."));
       if (num.value.trim() === "") { clean(num); return; }
       const v = Number(num.value);
-      if (!isFinite(v)) return localError(num.closest(".field"), "Enter a number.");
+      if (!isFinite(v)) return localError(num.closest(".field"), t("Enter a number."));
       clean(num);
       send(v);
     });
     control = h("div", { class: "with-unit" }, sel, num, reset);
   } else if (p.kind === "pair") {
-    const a = numberInput(id, `param:${p.name}:0`, cur[0], { kind, label: `${p.name} low (${paramUnit(p) || "value"})` });
-    const b = numberInput(`${id}-1`, `param:${p.name}:1`, cur[1], { kind, label: `${p.name} high (${paramUnit(p) || "value"})` });
+    const a = numberInput(id, `param:${p.name}:0`, cur[0], { kind, label: t("{name} low ({unit})", { name: p.name, unit: paramUnit(p) || t("value") }) });
+    const b = numberInput(`${id}-1`, `param:${p.name}:1`, cur[1], { kind, label: t("{name} high ({unit})", { name: p.name, unit: paramUnit(p) || t("value") }) });
     const commit = () => {
       const [va, vb] = [readNumber(a, kind), readNumber(b, kind)];
       const bad = measureError(va) || measureError(vb);
       if (bad) return localError(a.closest(".field"), bad);
       if (va === null || vb === null || !isFinite(va) || !isFinite(vb)) {
-        return localError(a.closest(".field"), "Enter both numbers.");
+        return localError(a.closest(".field"), t("Enter both numbers."));
       }
       clean(a, b);
       send([va, vb]);
     };
     onCommit(a, commit); onCommit(b, commit);
-    control = h("div", { class: "with-unit" }, a, h("span", { class: "muted" }, "to"), b, unitSpan(), reset);
+    control = h("div", { class: "with-unit" }, a, h("span", { class: "muted" }, t("to", { context: "range" })), b, unitSpan(), reset);
   } else if (p.kind === "vec3") {   // [x, y, z]: three numbers, sent together
     const boxes = ["x", "y", "z"].map((axis, k) => numberInput(k ? `${id}-${k}` : id, `param:${p.name}:${k}`, cur[k],
-      { kind, label: `${p.name} ${axis} (${paramUnit(p) || "value"})` }));
+      { kind, label: t("{name} {axis} ({unit})", { name: p.name, axis, unit: paramUnit(p) || t("value") }) }));
     const commit = () => {
       const v = boxes.map((b) => readNumber(b, kind));
       const bad = v.map(measureError).find(Boolean);
       if (bad) return localError(boxes[0].closest(".field"), bad);
       if (v.some((x) => x === null) || !v.every(isFinite)) {
-        return localError(boxes[0].closest(".field"), "Enter all three numbers.");
+        return localError(boxes[0].closest(".field"), t("Enter all three numbers."));
       }
       clean(...boxes);
       send(v);
@@ -445,9 +456,9 @@ function paramField(n, p, value) {
     const inp = numberInput(id, `param:${p.name}`, cur, { kind });
     onCommit(inp, () => {
       const v = readNumber(inp, kind);
-      if (measureError(v)) return localError(inp.closest(".field"), isInt ? "Enter a whole number." : measureError(v));
+      if (measureError(v)) return localError(inp.closest(".field"), isInt ? t("Enter a whole number.") : measureError(v));
       if (v !== null && (!isFinite(v) || (isInt && !Number.isInteger(v)))) {   // refused: the text stays dirty, so the refusal keeps it
-        return localError(inp.closest(".field"), isInt ? "Enter a whole number." : "Enter a number.");
+        return localError(inp.closest(".field"), isInt ? t("Enter a whole number.") : t("Enter a number."));
       }
       clean(inp);
       send(v);   // an empty box (null) = the default
@@ -462,8 +473,10 @@ function slotKind(slot, meta) {
   return meta && meta.slots ? meta.slots[slot] || null : null;   // null: not a slot, or no metadata yet
 }
 
-// "a motor", "an encoder" (as scrimmage/parts/ids.py's _a() writes it)
-const withArticle = (word) => `${/^[aeiou]/i.test(word) ? "an" : "a"} ${word}`;
+// A slot's kind in words: "motor"; with its article, "a motor" (as scrimmage/parts/ids.py's _a() writes it)
+export const kindWord = (k) => (k === "motor" ? t("motor") : k === "encoder" ? t("encoder") : k === "gyro" ? t("gyro") : k);
+const withArticle = (k) => (k === "motor" ? t("a motor") : k === "encoder" ? t("an encoder") : k === "gyro" ? t("a gyro")
+  : `${/^[aeiou]/i.test(k) ? "an" : "a"} ${k}`);
 
 function motorCount(part, meta) {
   if (!part.stock || !meta) return null;
@@ -483,10 +496,10 @@ function idsSection(part, meta) {
   const n = part.name;
   const slots = slotsOf(part, meta);
   const sec = h("section", { class: "insp-section", dataset: { field: `${n}/ids` } },
-    h("h3", {}, "Device IDs"),
-    h("p", { class: "hint" }, "Short form: PWM:0, DIO:4, TalonFX:3, CANcoder:9, Pigeon2:13. Use a table for other devices and extra keys. Leave empty to leave the slot unbound."),
+    h("h3", {}, t("Device IDs")),
+    h("p", { class: "hint" }, t("Short form: PWM:0, DIO:4, TalonFX:3, CANcoder:9, Pigeon2:13. Use a table for other devices and extra keys. Leave empty to leave the slot unbound.")),
     h("div", { class: "field-msgs" }));
-  if (!slots.length) sec.append(h("p", { class: "muted" }, meta || !store.library ? "This part has no device slots." : "Loading…"));
+  if (!slots.length) sec.append(h("p", { class: "muted" }, meta || !store.library ? t("This part has no device slots.") : t("Loading…")));
   const count = motorCount(part, meta);
   for (const slot of slots) sec.append(slotField(part, slot, slotKind(slot, meta), count, !!meta));
   return sec;
@@ -495,9 +508,11 @@ function idsSection(part, meta) {
 function shortProblem(v, kind) {
   if (v === "") return null;
   const m = /^([A-Za-z0-9]+):(\d+)$/.exec(v);
-  if (!m) return "Expected Kind:number, e.g. TalonFX:3";
-  if (!SHORT[m[1]]) return `Kind is one of ${Object.keys(SHORT).join(", ")} (other devices: use a table)`;
-  if (kind && SHORT[m[1]][0] !== kind) return `${m[1]} is ${withArticle(SHORT[m[1]][0])}; this is ${withArticle(kind)} slot`;
+  if (!m) return t("Expected Kind:number, e.g. TalonFX:3");
+  if (!SHORT[m[1]]) return t("Kind is one of {kinds} (other devices: use a table)", { kinds: Object.keys(SHORT).join(", ") });
+  if (kind && SHORT[m[1]][0] !== kind) {
+    return t("{device} is {what}; this is {slot} slot", { device: m[1], what: withArticle(SHORT[m[1]][0]), slot: withArticle(kind) });
+  }
   return null;
 }
 
@@ -511,11 +526,11 @@ function toTable(v) {
 }
 
 function parseScalar(s) {
-  const t = s.trim();
-  if (t === "true") return true;
-  if (t === "false") return false;
-  if (t !== "" && isFinite(Number(t))) return Number(t);
-  return t;
+  const text = s.trim();
+  if (text === "true") return true;
+  if (text === "false") return false;
+  if (text !== "" && isFinite(Number(text))) return Number(text);
+  return text;
 }
 
 // The short ID of a motor table that holds only its device and the motor settings ({ ctre = "TalonFX:1",
@@ -535,10 +550,10 @@ function shortOf(v) {
 function withSettings(text, old) {
   const keep = old && typeof old === "object" && !Array.isArray(old) ? SETTINGS.filter((k) => old[k] !== undefined) : [];
   if (!keep.length) return text;
-  const t = toTable(text);
-  if (!Object.keys(t).length) return text;
-  for (const k of keep) t[k] = old[k];
-  return t;
+  const table = toTable(text);
+  if (!Object.keys(table).length) return text;
+  for (const k of keep) table[k] = old[k];
+  return table;
 }
 
 // The device's own neutral mode when the config says nothing: a Talon FX coasts, the others brake.
@@ -547,36 +562,36 @@ function defaultNeutral(v) {
   return /^TalonFX:/.test(d) ? "coast" : "brake";
 }
 
-const MOTOR_WHY = "scrimmage can't read brake / coast or invert from your robot code, so set them here the way your code sets them.";
 
 // Brake / coast and invert for each motor of a motor slot (one, or each of a per-motor list).
 function motorControls(part, slot, value) {
   const n = part.name;
   const one = (path, v, label, suffix) => {
-    const t = v && typeof v === "object" && !Array.isArray(v) ? v : {};
+    const set = v && typeof v === "object" && !Array.isArray(v) ? v : {};
     const def = defaultNeutral(v);
-    const sel = h("select", { id: `insp-neutral-${suffix}`, dataset: { key: `motor:${path}:neutral` }, "aria-label": label ? `${slot} ${label}: when stopped` : null },
-      h("option", { value: "" }, `Default (${def})`),
-      h("option", { value: "brake" }, "Brake (holds when stopped)"),
-      h("option", { value: "coast" }, "Coast (rolls freely)"));
-    sel.value = t.neutral === "brake" || t.neutral === "coast" ? t.neutral : "";
-    const inv = h("input", { type: "checkbox", id: `insp-invert-${suffix}`, checked: t.invert === true || undefined, dataset: { key: `motor:${path}:invert` },
-      "aria-label": label ? `${slot} ${label}: invert` : null });
+    const sel = h("select", { id: `insp-neutral-${suffix}`, dataset: { key: `motor:${path}:neutral` }, "aria-label": label ? t("{slot} {motor}: when stopped", { slot, motor: label }) : null },
+      h("option", { value: "" }, def === "coast" ? t("Default (coast)") : t("Default (brake)")),
+      h("option", { value: "brake" }, t("Brake (holds when stopped)")),
+      h("option", { value: "coast" }, t("Coast (rolls freely)")));
+    sel.value = set.neutral === "brake" || set.neutral === "coast" ? set.neutral : "";
+    const inv = h("input", { type: "checkbox", id: `insp-invert-${suffix}`, checked: set.invert === true || undefined, dataset: { key: `motor:${path}:invert` },
+      "aria-label": label ? t("{slot} {motor}: invert", { slot, motor: label }) : null });
     // a control replaced by a re-render (or not on the page any more) says nothing
     const send = (fields) => edit("motor", { slot: `${n}.${path}`, ...fields });
     sel.addEventListener("change", () => { if (!rerendering && sel.isConnected) send({ neutral: sel.value || null }); });
     inv.addEventListener("change", () => { if (!rerendering && inv.isConnected) send({ invert: inv.checked }); });
     return h("div", { class: "motor-set", dataset: { field: `motor/${n}.${path}` } },
       label ? h("span", { class: "muted motor-set-label" }, label) : null,
-      h("label", { class: "motor-set-item", for: sel.id }, h("span", { class: "motor-set-name" }, "When stopped"), sel),
-      h("label", { class: "motor-set-item motor-set-check", for: inv.id }, inv, h("span", {}, "Invert (turn the other way)")),
+      h("label", { class: "motor-set-item", for: sel.id }, h("span", { class: "motor-set-name" }, t("When stopped")), sel),
+      h("label", { class: "motor-set-item motor-set-check", for: inv.id }, inv, h("span", {}, t("Invert (turn the other way)"))),
       h("div", { class: "field-msgs" }));
   };
   const rows = Array.isArray(value)
-    ? value.map((v, i) => one(`${slot}[${i}]`, v, `motor ${i + 1}`, `${slot}-${i}`))
+    ? value.map((v, i) => one(`${slot}[${i}]`, v, t("motor {n}", { n: i + 1 }), `${slot}-${i}`))
     : value === undefined || value === "" ? [] : [one(slot, value, null, slot)];
   if (!rows.length) return null;
-  return h("div", { class: "motor-settings" }, ...rows, h("p", { class: "hint motor-why", text: MOTOR_WHY }));
+  return h("div", { class: "motor-settings" }, ...rows, h("p", { class: "hint motor-why",
+    text: t("scrimmage can't read brake / coast or invert from your robot code, so set them here the way your code sets them.") }));
 }
 
 function slotField(part, slot, kind, count, known) {
@@ -598,15 +613,15 @@ function slotField(part, slot, kind, count, known) {
     return { name: n, ids };
   });
   const setMode = (m) => { slotModes.set(mkey, m); renderInspector(store); };
-  const modes = h("div", { class: "seg", role: "group", "aria-label": `${slot} entry form` },
-    [["short", "ID"], ["table", "Table"], ...(canList ? [["list", "Per motor"]] : [])].map(([m, label]) =>
+  const modes = h("div", { class: "seg", role: "group", "aria-label": t("{slot} entry form", { slot }) },
+    [["short", t("ID")], ["table", t("Table")], ...(canList ? [["list", t("Per motor")]] : [])].map(([m, label]) =>
       h("button", { type: "button", class: "seg-btn", "aria-pressed": String(mode === m), onclick: () => setMode(m) }, label)));
 
   let body;
   const id = `insp-id-${slot}`;
   if (mode === "short") {
     const text = typeof value === "string" ? value : short || "";
-    const inp = markDirty(h("input", { id, value: text, placeholder: kind === "motor" ? "e.g. TalonFX:3, SparkMax:5 or PWM:0" : kind === "encoder" ? "e.g. CANcoder:9, SparkMaxAbs:5 or DIO:4" : "e.g. Pigeon2:13", autocomplete: "off", spellcheck: "false", dataset: { key: `ids:${slot}` } }));
+    const inp = markDirty(h("input", { id, value: text, placeholder: kind === "motor" ? t("e.g. TalonFX:3, SparkMax:5 or PWM:0") : kind === "encoder" ? t("e.g. CANcoder:9, SparkMaxAbs:5 or DIO:4") : t("e.g. Pigeon2:13"), autocomplete: "off", spellcheck: "false", dataset: { key: `ids:${slot}` } }));
     const live = h("p", { class: "hint live", "aria-live": "polite" });
     inp.addEventListener("input", () => {
       const prob = shortProblem(inp.value.trim(), kind);
@@ -623,29 +638,29 @@ function slotField(part, slot, kind, count, known) {
     const rows = Object.entries(toTable(value));
     const list = h("div", { class: "kv" });
     const commit = () => {
-      const t = {};
+      const table = {};
       const rowsNow = [...list.querySelectorAll(".kv-row")].map((r) => r.querySelectorAll("input"));
       const half = rowsNow.find(([k, v]) => k.value.trim() && !v.value.trim());
-      if (half) return localError(list.closest(".field"), `Give a value for ${half[0].value.trim()}.`);
+      if (half) return localError(list.closest(".field"), t("Give a value for {key}.", { key: half[0].value.trim() }));
       for (const [k, v] of rowsNow) {
-        if (k.value.trim()) t[k.value.trim()] = parseScalar(v.value);
+        if (k.value.trim()) table[k.value.trim()] = parseScalar(v.value);
         clean(k, v);
       }
-      sendIds(Object.keys(t).length ? t : undefined);
+      sendIds(Object.keys(table).length ? table : undefined);
     };
     const addRow = (k = "", v = "", i = list.children.length) => {
-      const ki = markDirty(h("input", { value: k, placeholder: "key", "aria-label": `${slot} key ${i + 1}`, dataset: { key: `ids:${slot}:k${i}` } }));
-      const vi = markDirty(h("input", { value: typeof v === "string" ? v : JSON.stringify(v), placeholder: "value", "aria-label": `${slot} value ${i + 1}`, dataset: { key: `ids:${slot}:v${i}` } }));
+      const ki = markDirty(h("input", { value: k, placeholder: t("key"), "aria-label": t("{slot} key {n}", { slot, n: i + 1 }), dataset: { key: `ids:${slot}:k${i}` } }));
+      const vi = markDirty(h("input", { value: typeof v === "string" ? v : JSON.stringify(v), placeholder: t("value"), "aria-label": t("{slot} value {n}", { slot, n: i + 1 }), dataset: { key: `ids:${slot}:v${i}` } }));
       const row = h("div", { class: "kv-row" }, ki, vi,
-        h("button", { type: "button", class: "btn btn-small btn-ghost", "aria-label": `Remove ${slot} key ${i + 1}`, onclick: () => { row.remove(); commit(); } }, "×"));
+        h("button", { type: "button", class: "btn btn-small btn-ghost", "aria-label": t("Remove {slot} key {n}", { slot, n: i + 1 }), onclick: () => { row.remove(); commit(); } }, "×"));
       list.append(row);
       return ki;
     };
     rows.forEach(([k, v], i) => addRow(k, v, i));
     if (!rows.length) addRow();
     body = h("div", {}, list,
-      h("button", { type: "button", class: "btn btn-small", onclick: () => addRow().focus() }, "Add key"),
-      h("p", { class: "hint" }, "Binding keys, e.g. can = VictorSPX[3], neutral = coast, counts_per_rev = 2048."));
+      h("button", { type: "button", class: "btn btn-small", onclick: () => addRow().focus() }, t("Add key")),
+      h("p", { class: "hint" }, t("Binding keys, e.g. {can}, {neutral}, {counts}.", { can: "can = VictorSPX[3]", neutral: "neutral = coast", counts: "counts_per_rev = 2048" })));
     body.setAttribute("id", id);
     onGroupCommit(body, commit);
   } else {   // list: one ID per motor
@@ -657,24 +672,24 @@ function slotField(part, slot, kind, count, known) {
       inputs.forEach((i) => clean(i));
       if (vals.every((v) => v === "")) return sendIds(undefined);
       if (vals.some((v) => v === "")) {
-        return localError(inputs[0].closest(".field"), "Give an ID for every motor, or leave them all empty.");
+        return localError(inputs[0].closest(".field"), t("Give an ID for every motor, or leave them all empty."));
       }
       sendIds(vals.map((v) => (v.startsWith("{") ? safeJson(v) : v)));
     };
     const rows = [];
     for (let i = 0; i < len; i++) {
       const v = cur[i];
-      const inp = markDirty(h("input", { id: i === 0 ? id : `${id}-${i}`, value: v === undefined ? "" : typeof v === "string" ? v : JSON.stringify(v), placeholder: `motor ${i + 1}, e.g. TalonFX:${3 + i}`, "aria-label": `${slot} motor ${i + 1}`, dataset: { key: `ids:${slot}:${i}` } }));
+      const inp = markDirty(h("input", { id: i === 0 ? id : `${id}-${i}`, value: v === undefined ? "" : typeof v === "string" ? v : JSON.stringify(v), placeholder: t("motor {n}, e.g. TalonFX:{id}", { n: i + 1, id: 3 + i }), "aria-label": t("{slot} motor {n}", { slot, n: i + 1 }), dataset: { key: `ids:${slot}:${i}` } }));
       inputs.push(inp);
       rows.push(h("div", { class: "list-row" }, h("span", { class: "muted" }, `${i + 1}`), inp));
     }
     body = h("div", {}, rows);
     onGroupCommit(body, commit);
-    body.append(h("p", { class: "hint" }, count ? `One ID per motor: this slot has ${count} motor${count === 1 ? "" : "s"}.` : "One ID per motor."));
+    body.append(h("p", { class: "hint" }, count ? tn("One ID per motor: this slot has {count} motor.", "One ID per motor: this slot has {count} motors.", count) : t("One ID per motor.")));
   }
   return h("div", { class: "field slot", dataset: { field: fid } },
     h("div", { class: "slot-head" },
-      h("label", { for: id, class: "field-label" }, slot, h("span", { class: "kind" }, kind || (known ? "not a slot of this part" : store.library ? "unknown slot (part not in the library)" : "unknown slot (library not loaded)"))),
+      h("label", { for: id, class: "field-label" }, slot, h("span", { class: "kind", dataset: kind ? { kind } : {} }, kind ? kindWord(kind) : known ? t("not a slot of this part") : store.library ? t("unknown slot (part not in the library)") : t("unknown slot (library not loaded)"))),
       modes),
     body,
     kind === "motor" ? motorControls(part, slot, value) : null,

@@ -10,7 +10,7 @@ import pytest
 import tomlkit
 
 from range_fixtures import shooter_cfg
-from scrimmage.launcher.report import UNCALIBRATED
+from scrimmage.launcher.report import uncalibrated
 from scrimmage.testrange import aim
 
 GOAL = "hub_blue"
@@ -100,7 +100,7 @@ def test_java_output_compiles_shape(cfg_path, goal_name, tmp_path):
     assert "package frc.robot;" in text
     assert "public final class AimTable {" in text
     assert "public static final double[][] ROWS = {" in text
-    assert UNCALIBRATED in text
+    assert uncalibrated() in text
     assert "scrimmage launcher aim CONFIG" in text and str(tmp_path) not in text
     assert sum(1 for line in text.splitlines() if line.startswith("        {")) == 1
 

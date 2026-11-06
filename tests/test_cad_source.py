@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from scrimmage.cad import MISSING_EXTRA, CadError
+from scrimmage.cad import CadError, missing_extra
 from scrimmage.cad.mass import is_closed, mesh_inertial
 from scrimmage.cad.source import UNITS, guess_units, load_source
 
@@ -63,7 +63,7 @@ def test_missing_extra_message(monkeypatch):
     monkeypatch.setitem(sys.modules, "cascadio", None)
     with pytest.raises(CadError) as e:
         load_source(DATA / "climber.step")
-    assert str(e.value) == MISSING_EXTRA
+    assert str(e.value) == missing_extra()
 
 
 def test_unreadable_file_names_it(tmp_path):

@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from scrimmage.cad import CadError, MISSING_EXTRA
+from scrimmage.cad import CadError, missing_extra
 from scrimmage.cad.mass import (Inertial, combine, density, is_closed, mesh_inertial, principal, rpy_deg)
 from scrimmage.cad.names import sanitize, unique
 
@@ -101,4 +101,4 @@ def test_sanitize_and_unique():
 
 
 def test_missing_extra_message():
-    assert MISSING_EXTRA == 'Reading CAD files needs the cad extra: pip install "scrimmage[cad]"'
+    assert missing_extra() == 'Reading CAD files needs the cad extra: pip install "scrimmage[cad]"'

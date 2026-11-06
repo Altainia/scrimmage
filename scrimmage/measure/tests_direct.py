@@ -24,6 +24,7 @@ import dataclasses
 import math
 import re
 
+from .. import i18n
 from ..launcher.inputs import PRESETS
 from .file import MeasureError, MeasureFile
 from .stats import Summary, summary, why
@@ -60,9 +61,11 @@ def _check_keys(mf: MeasureFile, label: str, table: dict, names: dict[str, str],
         if key in text or any(unit_of(key, n) is not None for n in names):
             continue
         if key in setup_text:
-            raise MeasureError(f"{mf.path}: {key} goes in [{setup}], once for all trials, not in {label}")
+            raise MeasureError(i18n.t("{path}: {key} goes in [{setup}], once for all trials, not in {table}",
+                                      path=mf.path, key=key, setup=setup, table=label))
         valid = _keys(names) + "".join(f", {t}" for t in text)
-        raise MeasureError(f"{mf.path}: unknown reading '{key}' in {label}; it takes {valid}")
+        raise MeasureError(i18n.t("{path}: unknown reading '{key}' in {table}; it takes {valid}", path=mf.path,
+                                  key=key, table=label, valid=valid))
 
 
 class _Test:
@@ -78,18 +81,19 @@ class _Test:
                         setup=f"{test}_setup")
 
     def label(self, i: int) -> str:
-        return f"[[{self.test}]] trial {i + 1}"
+        return i18n.t("[[{test}]] trial {n}", test=self.test, n=i + 1)
 
     def where(self, i: int) -> str:
         return f"{self.mf.path}: {self.label(i)}"
 
-    def err(self, i: int, msg: str) -> MeasureError:
-        return MeasureError(f"{self.where(i)} {msg}")
+    def err(self, message: str) -> MeasureError:
+        """`message`: the whole sentence, beginning with its trial's where()."""
+        return MeasureError(message)
 
     def trial(self, i: int, name: str, *, required: bool = True) -> float | None:
         v = reading(self.rows[i], TRIAL[self.test][name], name, where=self.where(i), required=required)
         if v is not None and v < 0:
-            raise self.err(i, f"has a negative {name} reading")
+            raise self.err(i18n.t("{where} has a negative {name} reading", where=self.where(i), name=name))
         return v
 
     def setting(self, i: int, name: str, *, required: bool = True) -> float | None:
@@ -99,20 +103,24 @@ class _Test:
         if v is None:
             v = reading(self.setup, quantity, name, where=f"{self.mf.path}: [{self.test}_setup]", required=False)
         if v is None and required:
-            raise self.err(i, f"has no {name}: give it once in [{self.test}_setup] or in the trial, as "
-                              f"{name}_<unit>")
+            raise self.err(i18n.t("{where} has no {name}: give it once in {test_setup_table} or in the trial, as "
+                                  "{name}_<unit>", where=self.where(i), name=name,
+                                  test_setup_table="[{}_setup]".format(self.test)))
         if v is not None and v < 0:
-            raise self.err(i, f"has a negative {name} reading")
+            raise self.err(i18n.t("{where} has a negative {name} reading", where=self.where(i), name=name))
         return v
 
     def text(self, key: str, *, required: bool = True) -> str | None:
         if key not in self.setup:
             if required:
-                raise MeasureError(f"{self.mf.path}: [{self.test}_setup] is missing required key '{key}'")
+                raise MeasureError(i18n.t("{path}: {test_setup_table} is missing required key '{key}'",
+                                          path=self.mf.path, key=key,
+                                          test_setup_table="[{}_setup]".format(self.test)))
             return None
         v = self.setup[key]
         if not isinstance(v, str):
-            raise MeasureError(f"{self.mf.path}: [{self.test}_setup] {key} must be text, not {v!r}")
+            raise MeasureError(i18n.t("{path}: {test_setup_table} {key} must be text, not {value}", path=self.mf.path,
+                                      key=key, value=repr(v), test_setup_table="[{}_setup]".format(self.test)))
         return v
 
 
@@ -129,9 +137,10 @@ def _size(t: _Test) -> dict:
         d = t.trial(i, "diameter", required=False)
         if c is not None and d is not None:
             given = [k for k in row if unit_of(k, "circumference") is not None or unit_of(k, "diameter") is not None]
-            raise t.err(i, f"gives {' and '.join(given)}: give a circumference or a diameter, not both")
+            raise t.err(i18n.t("{where} gives {keys}: give a circumference or a diameter, not both",
+                               where=t.where(i), keys=" and ".join(given)))
         if m is None and c is None and d is None:
-            raise t.err(i, f"has no reading: write {_keys(TRIAL['size'])}")
+            raise t.err(i18n.t("{where} has no reading: write {keys}", where=t.where(i), keys=_keys(TRIAL["size"])))
         if m is not None:
             mass.append(m)
             mass_trials.append(i)
@@ -159,10 +168,12 @@ def _diameter(mf: MeasureFile, size: tuple[Summary, list[float]] | None) -> tupl
     if s.good:
         return s.mean, []
     if preset is not None:
-        return preset, [f"the squeeze heights use the {mf.base} preset's diameter, because the [[size]] diameter "
-                        f"isn't good enough ({why(s)})"]
-    return s.mean, [f"the squeeze heights use the [[size]] diameter, which isn't good enough ({why(s)}): "
-                    "measure it again, or give a base preset in [measure]"]
+        return preset, [i18n.t("the squeeze heights use the {preset} preset's diameter, because the {size_table} "
+                               "diameter isn't good enough ({why})", preset=mf.base, why=why(s),
+                               size_table="[[size]]")]
+    return s.mean, [i18n.t("the squeeze heights use the {size_table} diameter, which isn't good enough ({why}): "
+                           "measure it again, or give a base preset in {measure_table}", why=why(s),
+                           size_table="[[size]]", measure_table="[measure]")]
 
 
 def _squeeze(t: _Test, size: tuple[Summary, list[float]] | None) -> dict:
@@ -172,19 +183,21 @@ def _squeeze(t: _Test, size: tuple[Summary, list[float]] | None) -> dict:
     for i in range(len(t.rows)):
         force = t.trial(i, "force") - (t.setting(i, "tare", required=False) or 0.0)
         if force <= 0:
-            raise t.err(i, "reads no more than the tare: zero the scale with the bottom board and the ball on it, "
-                           "then put the top board on and press")
+            raise t.err(i18n.t("{where} reads no more than the tare: zero the scale with the bottom board and the "
+                               "ball on it, then put the top board on and press", where=t.where(i)))
         height = t.setting(i, "squeezed_to", required=False)
         if height is not None:
             if height == 0:
-                raise t.err(i, "is squeezed to 0: squeezed_to is the gap between the boards when you read the "
-                               "scale, about 75% of the ball's diameter")
+                raise t.err(i18n.t("{where} is squeezed to 0: squeezed_to is the gap between the boards when you "
+                                   "read the scale, about 75% of the ball's diameter", where=t.where(i)))
             if diameter is None:
-                raise t.err(i, "is squeezed to a height, which needs the ball's diameter: add [[size]] trials or "
-                               "a base preset in [measure]")
+                raise t.err(i18n.t("{where} is squeezed to a height, which needs the ball's diameter: add "
+                                   "{size_table} trials or a base preset in {measure_table}", where=t.where(i),
+                                   size_table="[[size]]", measure_table="[measure]"))
             if height >= diameter:
-                raise t.err(i, f"is squeezed to {height / 0.0254:.3g} in, which isn't less than the ball's "
-                               f"diameter ({diameter / 0.0254:.3g} in): measure the gap between the boards")
+                raise t.err(i18n.t("{where} is squeezed to {height} in, which isn't less than the ball's diameter "
+                                   "({diameter} in): measure the gap between the boards", where=t.where(i),
+                                   height=f"{height / 0.0254:.3g}", diameter=f"{diameter / 0.0254:.3g}"))
             force *= (IDEAL_SQUEEZE / (1.0 - height / diameter)) ** exponent
             heights_used = True
         values.append(force)
@@ -196,24 +209,27 @@ def _drop(t: _Test) -> dict:
     for i in range(len(t.rows)):
         drop, bounce = t.setting(i, "drop"), t.trial(i, "bounce")
         if drop <= 0:
-            raise t.err(i, "has a drop height of 0: measure from the floor to the bottom of the ball before you "
-                           "let go (drop_in = 18)")
+            raise t.err(i18n.t("{where} has a drop height of 0: measure from the floor to the bottom of the ball "
+                               "before you let go ({drop_in_setting})", where=t.where(i),
+                               drop_in_setting="drop_in = 18"))
         if bounce > drop:
-            raise t.err(i, "bounces higher than the drop: measure both to the bottom of the ball")
+            raise t.err(i18n.t("{where} bounces higher than the drop: measure both to the bottom of the ball",
+                               where=t.where(i)))
         values.append(math.sqrt(bounce / drop))
         heights.append(drop)
     warnings = []
     off = sorted({round(h / 0.0254, 1) for h in heights if abs(h / DROP_HEIGHT - 1) > DROP_TOLERANCE})
     if off:
-        warnings.append(f"the ball was dropped from {' and '.join(f'{h:g}' for h in off)} in: the model's foam is "
-                        "tuned for an 18 in drop, so drop it from 18 in if you can")
+        warnings.append(i18n.t("the ball was dropped from {heights} in: the model's foam is tuned for an 18 in drop, "
+                               "so drop it from 18 in if you can", heights=" and ".join(f"{h:g}" for h in off)))
     floor = t.text("floor", required=False)
     if floor is None:
-        warnings.append("say what floor it bounced on (floor = \"concrete\" in [drop_setup]): the model expects a "
-                        "hard floor")
+        warnings.append(i18n.t("say what floor it bounced on ({floor_setting} in {drop_setup_table}): the model "
+                               "expects a hard floor", floor_setting="floor = \"concrete\"",
+                               drop_setup_table="[drop_setup]"))
     elif _SOFT_FLOOR.search(floor):
-        warnings.append(f"a ball bounces lower on a soft floor ({floor}) than on the hard floor the model expects: "
-                        "drop it on concrete, tile or wood")
+        warnings.append(i18n.t("a ball bounces lower on a soft floor ({floor}) than on the hard floor the model "
+                               "expects: drop it on concrete, tile or wood", floor=floor))
     return {"restitution": (_with(summary(values), warnings), values)}
 
 
@@ -224,7 +240,8 @@ def _sled(t: _Test) -> dict:
     for i in range(len(t.rows)):
         weight = t.setting(i, "sled")
         if weight <= 0:
-            raise t.err(i, "has a sled weight of 0: weigh the sled with its load on a scale (sled_lb = 5)")
+            raise t.err(i18n.t("{where} has a sled weight of 0: weigh the sled with its load on a scale "
+                               "({sled_lb_setting})", where=t.where(i), sled_lb_setting="sled_lb = 5"))
         values.append(t.trial(i, "pull") / weight)
     return {"friction": (summary(values), values)}
 

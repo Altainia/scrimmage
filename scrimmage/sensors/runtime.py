@@ -39,6 +39,7 @@ from dataclasses import dataclass
 import mujoco
 import numpy as np
 
+from .. import i18n
 from ..bindings import Update
 from ..protocol import HalState
 from .colors import nearest_color
@@ -103,8 +104,9 @@ class SensorRuntime:
         for s in self.specs:
             b = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, s.body)
             if b not in robot:
-                raise SensorError(f'[[sensor]] "{s.name}": body "{s.body}" isn\'t one of the robot\'s bodies; its '
-                                  f"bodies: {', '.join(n for n in names if n)}")
+                raise SensorError(i18n.t("{sensor_table} \"{name}\": body \"{body}\" isn't one of the robot's "
+                                         "bodies; its bodies: {bodies}", name=s.name, body=s.body,
+                                         bodies=', '.join(n for n in names if n), sensor_table="[[sensor]]"))
             self._bodies.append(b)
         self._robot = (m.body_rootid[m.geom_bodyid] == root).tolist()      # per geom: part of the robot
         # Per geom: the piece (ball index) it belongs to, -1 for every other geom; and each piece's color.
@@ -133,7 +135,8 @@ class SensorRuntime:
 
     def reading(self, name: str) -> Reading:
         if name not in self._readings:
-            raise SensorError(f'the robot has no sensor "{name}"; its sensors: {", ".join(self.names)}')
+            raise SensorError(i18n.t("the robot has no sensor \"{name}\"; its sensors: {names}",
+                                     name=name, names=", ".join(self.names)))
         return self._readings[name]
 
     def reset(self) -> None:

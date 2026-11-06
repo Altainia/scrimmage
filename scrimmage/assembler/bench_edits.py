@@ -11,6 +11,7 @@ from pathlib import Path
 import tomlkit
 from tomlkit.items import SingleKey
 
+from .. import i18n
 from ..bench.spec import _LISTS, _SINGLES, BenchError, _check_path, _valid_keys
 from .edits import EditError
 from .tomlutil import container, insert_aot_item, insert_table, plain, reindex, remove_aot_item, remove_table
@@ -50,8 +51,8 @@ def _check_key(doc, dotted: str) -> tuple[str, str | None, str]:
         return _check_path(raw, dotted)
     except BenchError as e:
         msg = str(e)
-        if "no " in msg and " named " in msg:
-            msg += "; if it comes from an included file, override it first"
+        if e.code == "no_entry":
+            msg = i18n.t("{problem}; if it comes from an included file, override it first", problem=msg)
         raise _err(dotted, msg) from None
 
 
@@ -75,11 +76,12 @@ def _names(doc, section: str) -> list[str]:
 
 def _require(doc, section: str, name: str):
     if section not in _ENTRY_SECTIONS:
-        raise _err(section, f"unknown section '{section}'; valid sections: {', '.join(_ENTRY_SECTIONS)}")
+        raise _err(section, i18n.t("unknown section '{section}'; valid sections: {entry_sections}",
+                                   section=section, entry_sections=', '.join(_ENTRY_SECTIONS)))
     t = _entry(doc, section, name)
     if t is None:
-        raise _err(f"{section}.{name}", f"no {section} named '{name}' in this file; if it comes from an included "
-                                         "file, override it first")
+        raise _err(f"{section}.{name}", i18n.t("no {section} named '{name}' in this file; if it comes from an "
+                                               "included file, override it first", section=section, name=name))
     return t
 
 
@@ -133,9 +135,10 @@ def _unique(doc, section: str, base: str | None) -> str:
     names = _names(doc, section)
     if base is not None:
         if not isinstance(base, str) or not _NAME_RE.fullmatch(base):
-            raise _err(f"{section}.{base}", "use letters, digits, '_' or '-' only")
+            raise _err(f"{section}.{base}", i18n.t("use letters, digits, '_' or '-' only"))
         if base in names:
-            raise _err(f"{section}.{base}", f"a {section} named {base!r} already exists")
+            raise _err(f"{section}.{base}", i18n.t("a {section} named {base} already exists",
+                                                   section=section, base=repr(base)))
         return base
     n = 1
     while f"{section}{n}" in names:
@@ -150,7 +153,8 @@ def _fill(section: str, fields: dict | None) -> dict:
         out.pop("units")
     for k, v in (fields or {}).items():
         if k not in _valid_keys(section) or k == "name":
-            raise _err(f"{section}.{k}", f"unknown key '{k}' for {section}; valid keys: {', '.join(_valid_keys(section))}")
+            raise _err(f"{section}.{k}", i18n.t("unknown key '{key}' for {section}; valid keys: {items}",
+                                                key=k, section=section, items=', '.join(_valid_keys(section))))
         out.pop(_twin(k), None)
         out[k] = v
     return out
@@ -176,7 +180,8 @@ def _add_shaft(doc, name: str, values: dict) -> None:
 def add_entry(doc, section: str, name: str | None = None, fields: dict | None = None) -> str:
     """Add an entry and return its name. A wheel in a file without shafts gets a shaft of its own."""
     if section not in _ENTRY_SECTIONS:
-        raise _err(section, f"unknown section '{section}'; valid sections: {', '.join(_ENTRY_SECTIONS)}")
+        raise _err(section, i18n.t("unknown section '{section}'; valid sections: {entry_sections}",
+                                   section=section, entry_sections=', '.join(_ENTRY_SECTIONS)))
     name = _unique(doc, section, name)
     values = _fill(section, fields)
     if section == "shaft":
@@ -207,11 +212,12 @@ def _users(doc, section: str, name: str) -> list[str]:
     """Descriptions of what in the file refers to this entry by name."""
     out: list[str] = []
     if section == "shaft":
-        out += [f"wheel '{w.get('name')}'" for w in doc.get("wheel", []) if w.get("shaft") == name]
+        out += [i18n.t("wheel '{name}'", name=w.get("name")) for w in doc.get("wheel", []) if w.get("shaft") == name]
         for c in doc.get("cad", []):
             if name in dict(c.get("slots", {})).values():
-                out.append(f"CAD part '{c.get('name')}'")
-        out += [f"shaft '{n}' (coupled_to)" for n, s in doc.get("shaft", {}).items() if s.get("coupled_to") == name]
+                out.append(i18n.t("CAD part '{name}'", name=c.get("name")))
+        out += [i18n.t("shaft '{name}' (coupled_to)", name=n) for n, s in doc.get("shaft", {}).items()
+                if s.get("coupled_to") == name]
     if section == "outlet" and doc.get("flight", {}).get("outlet") == name:
         out.append("[flight]")
     return out
@@ -228,7 +234,8 @@ def remove_entry(doc, section: str, name: str) -> None:
     field = f"{section}.{name}"
     users = _users(doc, section, name)
     if users:
-        raise _err(field, f"{section} '{name}' is used by {', '.join(users)}; change those first")
+        raise _err(field, i18n.t("{section} '{name}' is used by {users}; change those first",
+                                 section=section, name=name, users=', '.join(users)))
     for k in _sweep_keys(doc, section, name):
         del doc["sweep"][k]
     if section == "shaft":
@@ -261,11 +268,12 @@ def rename_entry(doc, section: str, name: str, new_name: str) -> None:
     t = _require(doc, section, name)
     field = f"{section}.{name}"
     if not isinstance(new_name, str) or not _NAME_RE.fullmatch(new_name):
-        raise _err(field, "use letters, digits, '_' or '-' only")
+        raise _err(field, i18n.t("use letters, digits, '_' or '-' only"))
     if new_name == name:
         return
     if new_name in _names(doc, section):
-        raise _err(field, f"a {section} named {new_name!r} already exists")
+        raise _err(field, i18n.t("a {section} named {new_name} already exists",
+                                 section=section, new_name=repr(new_name)))
     if section == "shaft":
         _rename_key(doc["shaft"], name, new_name)
         for w in doc.get("wheel", []):
@@ -293,26 +301,27 @@ def override_included(doc, raw_merged: dict, section: str, name: str) -> None:
     be edited). `raw_merged` is the file after includes; a single section ([piece], [run], [flight]) is copied whole."""
     if section in _SINGLES:
         if section in doc:
-            raise _err(section, f"[{section}] is already in this file")
+            raise _err(section, i18n.t("[{section}] is already in this file", section=section))
         src = raw_merged.get(section)
         if src is None:
-            raise _err(section, f"no [{section}] to override")
+            raise _err(section, i18n.t("no [{section}] to override", section=section))
         t = tomlkit.table()
         for k, v in copy.deepcopy(src).items():
             t[k] = plain(v)
         insert_table(doc, section, t)
         return
     if section not in _ENTRY_SECTIONS:
-        raise _err(section, f"unknown section '{section}'; valid sections: {', '.join(_ENTRY_SECTIONS)}")
+        raise _err(section, i18n.t("unknown section '{section}'; valid sections: {entry_sections}",
+                                   section=section, entry_sections=', '.join(_ENTRY_SECTIONS)))
     field = f"{section}.{name}"
     if _entry(doc, section, name) is not None:
-        raise _err(field, f"{section} '{name}' is already in this file")
+        raise _err(field, i18n.t("{section} '{name}' is already in this file", section=section, name=name))
     if section == "shaft":
         src = raw_merged.get("shaft", {}).get(name)
     else:
         src = next((e for e in raw_merged.get(section, []) if e.get("name") == name), None)
     if src is None:
-        raise _err(field, f"no {section} named '{name}' in the included files")
+        raise _err(field, i18n.t("no {section} named '{name}' in the included files", section=section, name=name))
     src = copy.deepcopy(src)
     if section == "shaft":
         _add_shaft(doc, name, src)

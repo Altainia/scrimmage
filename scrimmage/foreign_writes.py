@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from . import i18n
+from .i18n import N_
+
 COUNT = 1 / 4096          # Phoenix 6 position resolution, in rotations
 FLOAT32 = 2 * 2.0 ** -23  # Phoenix rewrites inputs as float32: allow two ulps of the larger magnitude
 ROTOR = "/Rotor Sensor"
@@ -53,15 +56,19 @@ def echo_index(device: str, key: str, value: Any, sent: list) -> int | None:
     return None
 
 
-_WORDS = {">rawPositionInput": "position", ">velocity": "velocity", ">supplyVoltage": "supply voltage",
-          ">rawYawInput": "yaw", ">pitch": "pitch", ">roll": "roll", ">angularVelX": "angular velocity X",
-          ">angularVelY": "angular velocity Y", ">angularVelZ": "angular velocity Z"}
+_WORDS = {">rawPositionInput": N_("position"), ">velocity": N_("velocity"), ">supplyVoltage": N_("supply voltage"),
+          ">rawYawInput": N_("yaw"), ">pitch": N_("pitch"), ">roll": N_("roll"),
+          ">angularVelX": N_("angular velocity X"), ">angularVelY": N_("angular velocity Y"),
+          ">angularVelZ": N_("angular velocity Z")}
 
 
 def key_words(device: str, key: str) -> str:
     """`>rawPositionInput` on a Rotor Sensor -> "rotor position", and so on."""
-    words = _WORDS.get(key, key.lstrip("<>"))
-    return f"rotor {words}" if device.endswith(ROTOR) and key in (">rawPositionInput", ">velocity") else words
+    if device.endswith(ROTOR) and key == ">rawPositionInput":
+        return i18n.t("rotor position")
+    if device.endswith(ROTOR) and key == ">velocity":
+        return i18n.t("rotor velocity")
+    return i18n.translated(_WORDS[key]) if key in _WORDS else key.lstrip("<>")
 
 
 def device_name(device: str) -> str:
@@ -69,31 +76,34 @@ def device_name(device: str) -> str:
     return device.removesuffix(ROTOR)
 
 
-FIX = ("Fix: remove or guard the robot-side sim model, e.g. startSimThread(), updateSimState(…), or a "
-       "simulationPeriodic() that calls getSimState().set…")
-FIX_PYTHON = ("Fix: remove or guard the robot-side sim model, e.g. physics.py or a simulationPeriodic() that calls "
-              "a device's sim_state.set_…()")
-CAUSE_PYTHON = ("RobotPy robots run without the scrimmage agent, so robot-side Phoenix sim writes "
-                "(sim_state.set_…) reach the device")
+FIX = N_("Fix: remove or guard the robot-side sim model, e.g. startSimThread(), updateSimState(…), or a "
+         "simulationPeriodic() that calls getSimState().set…")
+FIX_PYTHON = N_("Fix: remove or guard the robot-side sim model, e.g. physics.py or a simulationPeriodic() that calls "
+                "a device's sim_state.set_…()")
+CAUSE_PYTHON = N_("RobotPy robots run without the scrimmage agent, so robot-side Phoenix sim writes "
+                  "(sim_state.set_…) reach the device")
 
 
 def cause(agent: str | None, language: str | None = None) -> str:
     """Why robot-side writes got through: for a RobotPy robot, always its own sim model; otherwise from the Java
     agent's console lines ("loaded", "disabled", "missing", or None when the console isn't visible)."""
     if language == "python":
-        return CAUSE_PYTHON
+        return i18n.translated(CAUSE_PYTHON)
     if agent == "disabled":
-        return "the scrimmage agent was disabled (-Dscrimmage.agent.disable), so robot-side sim writes reach the device"
+        return i18n.t("the scrimmage agent was disabled (-Dscrimmage.agent.disable), so robot-side sim writes reach "
+                      "the device")
     if agent == "missing":
         # no agent line yet; Gradle passes the console on late, so it may only not have arrived
-        return ("the robot console hasn't said the scrimmage Java agent is loaded (yet): if it isn't, run "
-                "`scrimmage java build` if it isn't built, and run the robot program through scrimmage or its "
-                "Gradle init script (see `scrimmage java path`)")
+        return i18n.t("the robot console hasn't said the scrimmage Java agent is loaded (yet): if it isn't, run "
+                      "`{scrimmage_java_build}` if it isn't built, and run the robot program through scrimmage or "
+                      "its Gradle init script (see `{scrimmage_java_path}`)",
+                      scrimmage_java_build="scrimmage java build", scrimmage_java_path="scrimmage java path")
     if agent == "loaded":
-        return ("the scrimmage agent is loaded, so something writes this device's sim values without going "
-                "through the Phoenix SimState setters (e.g. a SimDeviceSim or HAL write)")
-    return ("check that the scrimmage Java agent is built (`scrimmage java build`) and loaded "
-            "(see `scrimmage java path`)")
+        return i18n.t("the scrimmage agent is loaded, so something writes this device's sim values without going "
+                      "through the Phoenix SimState setters (e.g. a SimDeviceSim or HAL write)")
+    return i18n.t("check that the scrimmage Java agent is built (`{scrimmage_java_build}`) and loaded (see "
+                  "`{scrimmage_java_path}`)", scrimmage_java_build="scrimmage java build",
+                  scrimmage_java_path="scrimmage java path")
 
 
 def by_device(writes: list[dict]) -> dict[str, list[dict]]:
@@ -108,5 +118,6 @@ def message(device: str, writes: list[dict], agent: str | None, language: str | 
     what = ", ".join(dict.fromkeys(key_words(w["device"], w["key"]) for w in writes))
     t = min(w["first_t"] for w in writes)
     fix = FIX_PYTHON if language == "python" else FIX
-    return (f"something in the robot program writes simulated sensor values for {device} ({what}, first at "
-            f"t={t:.3f}), so physics and robot code disagree; {cause(agent, language)}. {fix}")
+    return i18n.t("something in the robot program writes simulated sensor values for {device} ({what}, first at "
+                  "t={time}), so physics and robot code disagree; {cause}. {fix}", device=device, what=what,
+                  time=f"{t:.3f}", cause=cause(agent, language), fix=i18n.translated(fix))

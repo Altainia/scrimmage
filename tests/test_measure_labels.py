@@ -64,11 +64,11 @@ def test_runs_share_only_the_provenance_every_one_has():
 
 def test_the_launcher_run_report_without_a_measurement(tmp_path, capsys):
     from scrimmage.__main__ import main
-    from scrimmage.launcher.report import UNCALIBRATED
-    assert UNCALIBRATED == ("UNCALIBRATED: estimates from preset material numbers, not fitted to measurements "
+    from scrimmage.launcher.report import uncalibrated
+    assert uncalibrated() == ("UNCALIBRATED: estimates from preset material numbers, not fitted to measurements "
                             "(ball stiffness, bounce, wheel friction).")
     main(["launcher", "run", str(shooter(tmp_path)), "--out", str(tmp_path / "out")])
-    assert capsys.readouterr().out.splitlines()[0] == UNCALIBRATED
+    assert capsys.readouterr().out.splitlines()[0] == uncalibrated()
 
 
 def test_the_launcher_run_report_with_a_measurement(tmp_path, capsys, monkeypatch):
@@ -106,8 +106,8 @@ def test_a_swept_number_reads_as_an_estimate(tmp_path):
 
 def test_the_aiming_table_says_what_its_setup_measured():
     from scrimmage.testrange import aim
-    from scrimmage.launcher.report import UNCALIBRATED, calibration
-    assert f"// {UNCALIBRATED}" in aim.to_java([], "Aim", "cmd")
+    from scrimmage.launcher.report import calibration, uncalibrated
+    assert f"// {uncalibrated()}" in aim.to_java([], "Aim", "cmd")
     setup = type("S", (), {"provenance": {"ball.stiffness_n": FUEL}})()
     label = calibration([setup])
     assert label.startswith("UNCALIBRATED: still estimates: ball bounce, wheel friction. Measured: ball stiffness")
@@ -115,8 +115,8 @@ def test_the_aiming_table_says_what_its_setup_measured():
 
 
 def test_the_disc_report_names_what_matters():
-    from scrimmage.disc.report import DISC_UNCALIBRATED
-    assert DISC_UNCALIBRATED == ("UNCALIBRATED: estimates from preset material numbers, not fitted to measurements "
+    from scrimmage.disc.report import disc_uncalibrated
+    assert disc_uncalibrated() == ("UNCALIBRATED: estimates from preset material numbers, not fitted to measurements "
                                  "(disc inertia, rim stiffness, tread friction).")
 
 
@@ -252,14 +252,14 @@ def test_a_bench_sweep_chart_carries_the_bench_line(tmp_path, monkeypatch, capsy
 
 
 def test_a_no_measurement_chart_footer_stays_on_one_line(tmp_path, monkeypatch):
-    from scrimmage.disc.report import DISC_UNCALIBRATED
+    from scrimmage.disc.report import disc_uncalibrated
     from scrimmage.launcher import report, sweep
     footers = _footers(monkeypatch)
     rows, _ = sweep.run_one(shooter(tmp_path))
-    for line_ in (report.UNCALIBRATED, DISC_UNCALIBRATED):
+    for line_ in (report.uncalibrated(), disc_uncalibrated()):
         assert len(line_) <= report.FOOTER_WIDTH
         report.write_charts(rows, [{"kind": "shaft"}], tmp_path / "out", footer=line_)
-    assert footers == [report.UNCALIBRATED, DISC_UNCALIBRATED]  # unwrapped
+    assert footers == [report.uncalibrated(), disc_uncalibrated()]  # unwrapped
 
 
 def test_a_long_chart_footer_wraps(tmp_path, monkeypatch):

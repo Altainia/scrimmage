@@ -14,6 +14,7 @@
 
 import { fieldGeometry, drawField, fieldPoly, outline, hull } from "./fieldpick.js";
 import { units } from "./units.js";
+import { theme } from "./theme.js";
 
 const DRAG_PX = 6;          // a press that moves less than this is a click
 const OBJECT_HIT_PX = 5;    // extra grab margin around an object's marker
@@ -38,7 +39,8 @@ export class MiniField {
     canvas.addEventListener("pointercancel", () => { this.drag = null; this.draw(); });
     this.observer = new ResizeObserver(() => this.layout());
     this.observer.observe(canvas.parentElement || canvas);
-    units.onChange(() => this.draw());   // the grid's labels are in the chosen units
+    this.offUnits = units.onChange(() => this.draw());   // the grid's labels are in the chosen units
+    this.offTheme = theme.onChange(() => this.draw());   // its colors are the theme's (app.css --field-*)
     const self = this;
     if (window.__scrimmage) {
       window.__scrimmage.miniField = {
@@ -218,7 +220,8 @@ export class MiniField {
     const ctx = this.ctx, W = this.width, H = this.height;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = "#dfe3e8";
+    const c = theme.color;
+    ctx.fillStyle = c("--field-surround");
     ctx.fillRect(0, 0, W, H);
     const toPx = (x, y) => this.toPx(x, y);
     drawField(ctx, this.staticGeo, toPx);
@@ -227,7 +230,7 @@ export class MiniField {
       const moving = d && d.kind === "object" && d.name === o.name && d.moved;
       const at = moving ? this.toField(...d.at) : null;
       const [x, y] = moving ? [at[0] + d.off[0], at[1] + d.off[1]] : [o.x, o.y];
-      fieldPoly(ctx, toPx, this.objectPoly(o, x, y), moving ? "rgba(232,89,12,.45)" : "rgba(212,160,23,.6)", "#8a6500", 1);
+      fieldPoly(ctx, toPx, this.objectPoly(o, x, y), moving ? c("--field-aim", 0.45) : c("--field-piece", 0.6), c("--field-piece-edge"), 1);
     }
     if (this.robot) this.robotMarker(this.robot.x, this.robot.y, this.robot.heading, false);
     if (d && d.kind === "pose") {
@@ -238,7 +241,7 @@ export class MiniField {
   }
 
   robotMarker(x, y, headingDeg, ghost) {
-    const ctx = this.ctx;
+    const ctx = this.ctx, c = theme.color;
     const [px, py] = this.toPx(x, y);
     const r = Math.max(5, this.robotSize * this.scale);
     const a = -(headingDeg || 0) * Math.PI / 180;
@@ -248,16 +251,18 @@ export class MiniField {
     // a square footprint with an arrow out of its front
     const s = r / Math.SQRT2;
     fieldPoly(ctx, (u, v) => [u, -v], [[-s, -s], [s, -s], [s, s], [-s, s]],
-      ghost ? "rgba(232,89,12,.25)" : "rgba(43,108,176,.35)", ghost ? "#e8590c" : "#2b6cb0", 1.5, ghost ? [4, 3] : null);
+      ghost ? c("--field-aim", 0.25) : c("--accent-text", 0.35), ghost ? c("--field-aim") : c("--accent-text"), 1.5, ghost ? [4, 3] : null);
     ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(r + 6, 0);
-    ctx.strokeStyle = ghost ? "#e8590c" : "#1f5592"; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = ghost ? c("--field-aim") : c("--accent-strong"); ctx.lineWidth = 2; ctx.stroke();
     ctx.beginPath(); ctx.moveTo(r + 9, 0); ctx.lineTo(r + 3, -3.5); ctx.lineTo(r + 3, 3.5); ctx.closePath();
-    ctx.fillStyle = ghost ? "#e8590c" : "#1f5592"; ctx.fill();
+    ctx.fillStyle = ghost ? c("--field-aim") : c("--accent-strong"); ctx.fill();
     ctx.restore();
   }
 
   dispose() {
     this.observer.disconnect();
+    this.offUnits();
+    this.offTheme();
     if (window.__scrimmage && window.__scrimmage.miniField) delete window.__scrimmage.miniField;
   }
 }

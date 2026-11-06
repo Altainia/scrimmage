@@ -66,7 +66,7 @@ import math
 import mujoco
 import numpy as np
 
-from .. import units
+from .. import i18n, units
 from ..terrain.climb import hold_geoms, robot_hooks
 from ..testrange.elements import moving_units, moving_value
 from ..testrange.spec import _one_round_kind as one_round_kind
@@ -434,90 +434,190 @@ def _amount(x: float, unit: str, fewer: int = 0) -> str:
 def a_piece(kinds: dict | None) -> str:
     """Any piece of the field, as a sentence names it: "a coral", "a ball", "a piece"."""
     word = default_word(kinds)
-    return f"{'an' if word[:1] in 'aeiou' else 'a'} {word}"
+    return i18n.t("an {piece}", piece=word) if word[:1] in "aeiou" else i18n.t("a {piece}", piece=word)
 
 
 def turret_words(name: str) -> str:
     """A turret as a sentence names it: "the turret" for the instance named turret, else "turret <name>"."""
-    return "the turret" if name == "turret" else f"turret {name}"
+    return i18n.t("the turret") if name == "turret" else i18n.t("turret {name}", name=name)
 
 
 def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names: dict | None = None,
-             units: dict | None = None, sensors: dict | None = None) -> str:
+             units: dict | None = None, sensors: dict | None = None, form: str = "is") -> str:
     """The condition in plain words, for a run's outcome. `next_bar` names "the next bar" when known; `kinds` (the
     field's Range.kinds) names any piece by its kind, `names` a piece by what a student reads (Watch.piece_names),
     `units` a moving element's unit (Watch.units; a number alone when not known), `sensors` each [[sensor]]'s kind
-    by name (a color sensor's check with no color reads "is seeing a piece", as its block does)."""
+    by name (a color sensor's check with no color reads "is seeing a piece", as its block does).
+
+    `form` is how the sentence around it takes it, each a whole phrase for a translator: "is" on its own ("arm
+    passes 40°"), "without" after "without" ("arm passing 40°") and "waiting" after "waiting for" ("arm to pass
+    40°")."""
     a, k = cond.args, cond.kind
     names = names or {}
+    t = i18n.t
+
+    def say(alone: str, without: str, waiting: str) -> str:
+        return {"is": alone, "without": without, "waiting": waiting}[form]
 
     def piece(name: str) -> str:
         return a_piece(kinds) if name == ANY_PIECE else names.get(name, name)
 
     def bar(name: str) -> str:
-        return (next_bar or "the next bar") if name == NEXT_BAR else name
+        return (next_bar or t("the next bar")) if name == NEXT_BAR else name
+
+    def who() -> str:
+        return t("a hook") if a["robot"] == ANY_HOOK else a["robot"]
 
     if k == "touch" and a["field"] == ANY_BAR:
-        return f"{'a hook' if a['robot'] == ANY_HOOK else a['robot']} touches any bar"
+        p = {"part": who()}
+        return say(t("{part} touches any bar", **p), t("{part} touching any bar", **p),
+                   t("{part} to touch any bar", **p))
     if k == "joint":
         if "above" in a:
-            return f"{a['name']} passes {_amount(a['above'], a['unit'])}"
-        return f"{a['name']} goes below {_amount(a['below'], a['unit'])}"
+            p = {"joint": a["name"], "limit": _amount(a["above"], a["unit"])}
+            return say(t("{joint} passes {limit}", **p), t("{joint} passing {limit}", **p),
+                       t("{joint} to pass {limit}", **p))
+        p = {"joint": a["name"], "limit": _amount(a["below"], a["unit"])}
+        return say(t("{joint} goes below {limit}", **p), t("{joint} going below {limit}", **p),
+                   t("{joint} to go below {limit}", **p))
     if k == "tilt":
         if "above" in a:
-            return f"the robot tilts more than {_amount(a['above'], 'deg')}"
-        return f"the robot tilts less than {_amount(a['below'], 'deg')}"
+            p = {"limit": _amount(a["above"], "deg")}
+            return say(t("the robot tilts more than {limit}", **p), t("the robot tilting more than {limit}", **p),
+                       t("the robot to tilt more than {limit}", **p))
+        p = {"limit": _amount(a["below"], "deg")}
+        return say(t("the robot tilts less than {limit}", **p), t("the robot tilting less than {limit}", **p),
+                   t("the robot to tilt less than {limit}", **p))
     if k == "touch":
-        who = "a hook" if a["robot"] == ANY_HOOK else a["robot"]
-        return f"{who} touches {bar(a['field'])}"
+        p = {"part": who(), "target": bar(a["field"])}
+        return say(t("{part} touches {target}", **p), t("{part} touching {target}", **p),
+                   t("{part} to touch {target}", **p))
     if k == "piece_in":
-        return f"{piece(a['piece'])} reaches {a['body']}"
+        p = {"piece": piece(a["piece"]), "body": a["body"]}
+        return say(t("{piece} reaches {body}", **p), t("{piece} reaching {body}", **p),
+                   t("{piece} to reach {body}", **p))
     if k == "in_hopper":
         if "at_least" in a:
-            return f"{a['at_least']} or more pieces are in the hopper"
-        return f"at most {a['at_most']} pieces are in the hopper"
+            p = {"count": a["at_least"]}
+            return say(t("{count} or more pieces are in the hopper", **p),
+                       t("{count} or more pieces being in the hopper", **p),
+                       t("{count} or more pieces to be in the hopper", **p))
+        p = {"count": a["at_most"]}
+        return say(t("at most {count} pieces are in the hopper", **p),
+                   t("at most {count} pieces being in the hopper", **p),
+                   t("at most {count} pieces to be in the hopper", **p))
     if k == "scored":
-        where = "any goal" if a["goal"] == ANY_GOAL else a["goal"]
-        return f"{a['at_least']} or more balls are scored in {where}"
+        if a["goal"] == ANY_GOAL:
+            p = {"count": a["at_least"]}
+            return say(t("{count} or more balls are scored in any goal", **p),
+                       t("{count} or more balls being scored in any goal", **p),
+                       t("{count} or more balls to be scored in any goal", **p))
+        p = {"count": a["at_least"], "goal": a["goal"]}
+        return say(t("{count} or more balls are scored in {goal}", **p),
+                   t("{count} or more balls being scored in {goal}", **p),
+                   t("{count} or more balls to be scored in {goal}", **p))
     if k == "aimed":
-        return f"{turret_words(a['turret'])} is aimed at {a['at']} within {_amount(a['within_deg'], 'deg')}"
+        p = {"turret": turret_words(a["turret"]), "goal": a["at"], "within": _amount(a["within_deg"], "deg")}
+        return say(t("{turret} is aimed at {goal} within {within}", **p),
+                   t("{turret} being aimed at {goal} within {within}", **p),
+                   t("{turret} to be aimed at {goal} within {within}", **p))
     if k == "cylinder":
-        return f"{a['cylinder']} is {a['is']}"
+        p = {"cylinder": a["cylinder"]}
+        if a["is"] == "extended":
+            return say(t("{cylinder} is extended", **p), t("{cylinder} being extended", **p),
+                       t("{cylinder} to be extended", **p))
+        return say(t("{cylinder} is retracted", **p), t("{cylinder} being retracted", **p),
+                   t("{cylinder} to be retracted", **p))
     if k == "pressure":
         side, psi = ("above", a["above"]) if "above" in a else ("below", a["below"])
-        what = f"the {a['side']} air pressure"      # as the block reads: "stored air pressure above 60 psi"
-        return f"{what} is {side} {_amount(psi, 'psi')}"
+        p = {"limit": _amount(psi, "psi")}      # as the block reads: "stored air pressure above 60 psi"
+        if (a["side"], side) == ("stored", "above"):
+            return say(t("the stored air pressure is above {limit}", **p),
+                       t("the stored air pressure being above {limit}", **p),
+                       t("the stored air pressure to be above {limit}", **p))
+        if (a["side"], side) == ("stored", "below"):
+            return say(t("the stored air pressure is below {limit}", **p),
+                       t("the stored air pressure being below {limit}", **p),
+                       t("the stored air pressure to be below {limit}", **p))
+        if side == "above":
+            return say(t("the working air pressure is above {limit}", **p),
+                       t("the working air pressure being above {limit}", **p),
+                       t("the working air pressure to be above {limit}", **p))
+        return say(t("the working air pressure is below {limit}", **p),
+                   t("the working air pressure being below {limit}", **p),
+                   t("the working air pressure to be below {limit}", **p))
     if k == "element":
         side = "above" if "above" in a else "below"
         unit = (units or {}).get(a["element"])
-        return f"{a['element']} is {side} {_amount(a[side], unit) if unit else f'{a[side]:g}'}"
+        p = {"element": a["element"], "limit": _amount(a[side], unit) if unit else f"{a[side]:g}"}
+        if side == "above":
+            return say(t("{element} is above {limit}", **p), t("{element} being above {limit}", **p),
+                       t("{element} to be above {limit}", **p))
+        return say(t("{element} is below {limit}", **p), t("{element} being below {limit}", **p),
+                   t("{element} to be below {limit}", **p))
     if k == "clears":
-        return f"the robot clears {a['element']} by at least {_amount(a['at_least_in'], 'in')}"
+        p = {"element": a["element"], "limit": _amount(a["at_least_in"], "in")}
+        return say(t("the robot clears {element} by at least {limit}", **p),
+                   t("the robot clearing {element} by at least {limit}", **p),
+                   t("the robot to clear {element} by at least {limit}", **p))
     if k == "sensor":
         if a.get("sees") is not None or (sensors or {}).get(a["sensor"]) == "color":
-            verb = "is seeing" if a["is"] == "on" else "isn't seeing"
-            return f"{a['sensor']} {verb} {a['sees'] or 'a piece'}"
-        return f"{a['sensor']} is {a['is']}"
+            p = {"sensor": a["sensor"], "what": a["sees"] or t("a piece")}
+            if a["is"] == "on":
+                return say(t("{sensor} is seeing {what}", **p), t("{sensor} seeing {what}", **p),
+                           t("{sensor} to see {what}", **p))
+            return say(t("{sensor} isn't seeing {what}", **p), t("{sensor} losing sight of {what}", **p),
+                       t("{sensor} not to see {what}", **p))
+        p = {"sensor": a["sensor"]}
+        if a["is"] == "on":
+            return say(t("{sensor} is on", **p), t("{sensor} being on", **p), t("{sensor} to be on", **p))
+        return say(t("{sensor} is off", **p), t("{sensor} being off", **p), t("{sensor} to be off", **p))
     if k == "partner_lifted":
         level = a.get("level_within_deg")
-        return (f"the partner is lifted at least {_amount(a['at_least_in'], 'in')}"
-                + (f" (level within {_amount(level, 'deg')})" if level is not None else ""))
+        lift = _amount(a["at_least_in"], "in")
+        if level is not None:
+            p = {"lift": lift, "level": _amount(level, "deg")}
+            return say(t("the partner is lifted at least {lift} (level within {level})", **p),
+                       t("the partner being lifted at least {lift} (level within {level})", **p),
+                       t("the partner to be lifted at least {lift} (level within {level})", **p))
+        p = {"lift": lift}
+        return say(t("the partner is lifted at least {lift}", **p), t("the partner being lifted at least {lift}", **p),
+                   t("the partner to be lifted at least {lift}", **p))
     if k == "partner_moved":
-        return f"the partner moved at least {_amount(a['at_least_in'], 'in')}"
+        p = {"limit": _amount(a["at_least_in"], "in")}
+        return say(t("the partner moved at least {limit}", **p), t("the partner having moved at least {limit}", **p),
+                   t("the partner to have moved at least {limit}", **p))
     if k == "station_empty":
-        return f"{a['station']} is empty"
+        p = {"station": a["station"]}
+        return say(t("{station} is empty", **p), t("{station} being empty", **p), t("{station} to be empty", **p))
     if k == "made_it_in":
-        return f"at least {a['at_least']:g}% made it in"
+        p = {"share": f"{a['at_least']:g}"}
+        return say(t("at least {share}% made it in", **p), t("at least {share}% having made it in", **p),
+                   t("at least {share}% to have made it in", **p))
     if k == "hanging_from":
-        return f"the robot hangs from {bar(a['bar'])}"
+        p = {"bar": bar(a["bar"])}
+        return say(t("the robot hangs from {bar}", **p), t("the robot hanging from {bar}", **p),
+                   t("the robot to hang from {bar}", **p))
     if k == "level":
-        return f"the robot hangs at {a['level']}"
+        p = {"level": a["level"]}
+        return say(t("the robot hangs at {level}", **p), t("the robot hanging at {level}", **p),
+                   t("the robot to hang at {level}", **p))
     if k == "held":
-        return f"{piece(a['piece'])} is held by {a['by']}"
+        p = {"piece": piece(a["piece"]), "by": a["by"]}
+        return say(t("{piece} is held by {by}", **p), t("{piece} being held by {by}", **p),
+                   t("{piece} to be held by {by}", **p))
     if k == "rests_on":
-        return f"{piece(a['piece'])} rests on {a['on']}"
+        p = {"piece": piece(a["piece"]), "place": a["on"]}
+        return say(t("{piece} rests on {place}", **p), t("{piece} resting on {place}", **p),
+                   t("{piece} to rest on {place}", **p))
     if k == "seated":
         at = a["at_least_in"]
-        depth = f"at least {_amount(at, 'in')} " if at else ""
-        return f"{piece(a['piece'])} is seated {depth}on {a['on']}"
+        if at:
+            p = {"piece": piece(a["piece"]), "depth": _amount(at, "in"), "place": a["on"]}
+            return say(t("{piece} is seated at least {depth} on {place}", **p),
+                       t("{piece} being seated at least {depth} on {place}", **p),
+                       t("{piece} to be seated at least {depth} on {place}", **p))
+        p = {"piece": piece(a["piece"]), "place": a["on"]}
+        return say(t("{piece} is seated on {place}", **p), t("{piece} being seated on {place}", **p),
+                   t("{piece} to be seated on {place}", **p))
     raise ValueError(f"unknown condition {k!r}")

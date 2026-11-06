@@ -11,10 +11,11 @@ from pathlib import Path
 
 import mujoco
 
-from .checks import CHECK_KINDS, ScenarioError, build_check
+from .checks import CHECK_KINDS, ScenarioError, bad, build_check
 from .driverstation import MODES, MatchSettings, check_game_data
+from .i18n import t, translated
 from .lockstep import parse_speed
-from .render import VIEWS_HELP, check_camera, check_sheet_size, check_size
+from .render import check_camera, check_sheet_size, check_size, views_help
 from .teamfolders import TeamFolderError, expand
 from .tracks import Track, TrackError, load_track
 
@@ -74,48 +75,65 @@ class Scenario:
     match: dict = field(default_factory=dict)   # [match] keys over the config's for this run (checked at load)
 
 
-def _keys(d: dict, allowed: set[str], where: str) -> None:
+# A ScenarioError's `field` (see checks.ScenarioError): `at` below is the field id's prefix for the table being
+# read, "scenario/", "step0/", "step0/shot1/" or "step0/sheet/"; a key's field is the prefix and the key.
+
+def _keys(d: dict, allowed: set[str], where: str, at: str) -> None:
     for k in d:
         if k not in allowed:
-            raise ScenarioError(f"{where}: unknown key {k!r}; allowed: {', '.join(sorted(allowed))}")
+            raise bad(where, t("unknown key {key}; allowed: {allowed}", key=repr(k),
+                               allowed=", ".join(sorted(allowed))),
+                      field=f"{at}{k}")
+
+
+def _step_where(where: str, i: int, name: str | None = None) -> str:
+    """Where a step's messages say they are: "x.toml, step 2", or "x.toml, step 2 (shoot)" once it has a name."""
+    if name is None:
+        return t("{file}, step {n}", file=where, n=i)
+    return t("{file}, step {n} ({name})", file=where, n=i, name=name)
 
 
 def _is_num(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
 
 
-def _ports(v, where: str, what: str) -> dict[int, list]:
+def _ports(v, where: str, what: str, at: str) -> dict[int, list]:
+    field = f"{at}{what}"
     if not isinstance(v, dict):
-        raise ScenarioError(f"{where}: {what} must be a table like {what} = {{ 0 = [...] }}")
+        raise bad(where, t("{what} must be a table like {what_setting}", what=what,
+                           what_setting="{} = {{ 0 = [...] }}".format(what)), field=field)
     out = {}
     for k, vals in v.items():
         if not str(k).isdigit() or not 0 <= int(k) <= 5 or not isinstance(vals, list):
-            raise ScenarioError(f"{where}: {what} keys are joystick ports 0-5 with a list of values")
+            raise bad(where, t("{what} keys are joystick ports 0-5 with a list of values", what=what), field=field)
         for i, x in enumerate(vals):
-            at = f"{where}: {what} port {k}, index {i}"
+            said = {"what": what, "port": k, "index": i, "value": repr(x)}
             if what == "axes" and not (_is_num(x) and -1 <= x <= 1):
-                raise ScenarioError(f"{at} must be a number between -1 and 1, not {x!r}")
+                raise bad(where, t("{what} port {port}, index {index} must be a number between -1 and 1, not {value}",
+                                   **said), field=field)
             if what == "buttons" and not isinstance(x, bool):
-                raise ScenarioError(f"{at} must be true or false, not {x!r}")
+                raise bad(where, t("{what} port {port}, index {index} must be true or false, not {value}", **said),
+                          field=field)
             if what == "povs" and not (isinstance(x, int) and not isinstance(x, bool) and (x == -1 or 0 <= x <= 359)):
-                raise ScenarioError(f"{at} must be a whole number: -1 or 0-359 degrees, not {x!r}")
+                raise bad(where, t("{what} port {port}, index {index} must be a whole number: -1 or 0-359 degrees, not "
+                                   "{value}", **said), field=field)
         out[int(k)] = vals
     return out
 
 
-def _int(d: dict, key: str, default: int, where: str) -> int:
+def _int(d: dict, key: str, default: int, where: str, at: str) -> int:
     v = d.get(key, default)
     if isinstance(v, bool) or not isinstance(v, int) or v <= 0:
-        raise ScenarioError(f"{where}: {key} must be a positive whole number")
+        raise bad(where, t("{key} must be a positive whole number", key=key), field=f"{at}{key}")
     return v
 
 
-def _size(width: int, height: int, where: str) -> None:
+def _size(width: int, height: int, where: str, at: str) -> None:
     for name, v in (("width", width), ("height", height)):
         try:
             check_size(name, v)
         except ValueError as e:
-            raise ScenarioError(f"{where}: {e}") from None
+            raise bad(where, str(e), field=f"{at}{name}") from None
 
 
 def load_scenario(path: str | Path) -> Scenario:
@@ -123,11 +141,12 @@ def load_scenario(path: str | Path) -> Scenario:
     try:
         text = path.read_text()
     except FileNotFoundError:
-        raise ScenarioError(f"scenario file not found: {path}") from None
+        raise ScenarioError(t("scenario file not found: {path}", path=path)) from None
     except OSError as e:
-        raise ScenarioError(f"can't read scenario file {path}: {e.strerror or e}") from None
+        raise ScenarioError(t("can't read scenario file {path}: {problem}", path=path,
+                              problem=e.strerror or e)) from None
     except UnicodeDecodeError as e:
-        raise ScenarioError(f"{path} isn't a text file: {e}") from None
+        raise ScenarioError(t("{path} isn't a text file: {problem}", path=path, problem=e)) from None
     return load_scenario_text(text, path)
 
 
@@ -141,13 +160,15 @@ def load_scenario_text(text: str, path: str | Path) -> Scenario:
     return load_scenario_raw(raw, path)
 
 
-def load_scenario_raw(raw: dict, path: str | Path) -> Scenario:
-    """The scenario from already-parsed TOML (as load_scenario_text, without the parsing)."""
+def load_scenario_raw(raw: dict, path: str | Path, *, first_step: int = 1) -> Scenario:
+    """The scenario from already-parsed TOML (as load_scenario_text, without the parsing). `first_step`: the number
+    its first [[step]] has in messages and fields (the Scenario tab loads each step of a file on its own)."""
     path = Path(path).resolve()
     where = path.name
-    _keys(raw, TOP_KEYS, where)
+    _keys(raw, TOP_KEYS, where, "scenario/")
     if not isinstance(raw.get("config"), str):
-        raise ScenarioError(f"{where}: config = \"<robot config .toml>\" is required")
+        raise bad(where, t("{config_setting} is required",
+                           config_setting="config = \"<robot config .toml>\""), field="scenario/config")
     try:
         config_ref = expand(raw["config"])
     except TeamFolderError as e:
@@ -155,113 +176,142 @@ def load_scenario_raw(raw: dict, path: str | Path) -> Scenario:
     try:
         speed = parse_speed(str(raw.get("speed", "max")))
     except ValueError as e:
-        raise ScenarioError(f"{where}: {e}") from None
+        raise bad(where, str(e), field="scenario/speed") from None
     req = raw.get("require_lockstep", True)
     if not isinstance(req, bool):
-        raise ScenarioError(f"{where}: require_lockstep must be true or false")
+        raise bad(where, t("require_lockstep must be true or false"), field="scenario/require_lockstep")
     steps_raw = raw.get("step", [])
     if not isinstance(steps_raw, list) or not steps_raw:
-        raise ScenarioError(f"{where}: needs at least one [[step]]")
+        raise bad(where, t("needs at least one {step_table}", step_table="[[step]]"))
     steps = []
-    for i, s in enumerate(steps_raw, 1):
-        sw = f"{where}, step {i}"
+    for i, s in enumerate(steps_raw, first_step):
+        sw, at_step = _step_where(where, i), f"step{i - 1}/"
         if not isinstance(s, dict):
-            raise ScenarioError(f"{sw}: each step must be a [[step]] table, not {s!r}")
-        _keys(s, STEP_KEYS, sw)
-        name = str(s.get("name", f"step {i}"))
-        sw = f"{where}, step {i} ({name})" if "name" in s else sw
+            raise bad(sw, t("each step must be a {step_table} table, not {value}", value=repr(s),
+                            step_table="[[step]]"))
+        _keys(s, STEP_KEYS, sw, at_step)
+        name = str(s.get("name", f"step {i}"))     # data: report.json's step name
+        sw = _step_where(where, i, name) if "name" in s else sw
         if s.get("mode") not in MODES:
-            raise ScenarioError(f"{sw}: mode must be one of {', '.join(MODES)}, not {s.get('mode')!r}")
+            raise bad(sw, t("mode must be one of {modes}, not {value}", modes=", ".join(MODES),
+                            value=repr(s.get("mode"))), field=f"{at_step}mode")
         dur = s.get("duration")
         if not _is_num(dur) or dur <= 0:
-            raise ScenarioError(f"{sw}: duration must be a positive number of seconds, not {dur!r}")
+            raise bad(sw, t("duration must be a positive number of seconds, not {value}", value=repr(dur)),
+                      field=f"{at_step}duration")
         game_data = None
         if "game_data" in s:
             try:
                 game_data = check_game_data(s["game_data"], f"{sw}:")
             except ValueError as e:
-                raise ScenarioError(str(e)) from None
+                raise ScenarioError(str(e), field=f"{at_step}game_data", detail=getattr(e, "detail", None)) from None
         track = None
         if "inputs" in s:
+            inputs = f"{at_step}inputs"
             if not isinstance(s["inputs"], str):
-                raise ScenarioError(f"{sw}: inputs must be the path of a .csv file")
+                raise bad(sw, t("inputs must be the path of a .csv file"), field=inputs)
             if any(k in s for k in ("axes", "buttons", "povs")):
-                raise ScenarioError(f"{sw}: inputs can't be combined with axes, buttons or povs in the same step")
+                raise bad(sw, t("inputs can't be combined with axes, buttons or povs in the same step"), field=inputs)
             try:
                 track = load_track(path.parent / s["inputs"])
             except TrackError as e:
-                raise ScenarioError(f"{sw}: inputs: {e}") from None
+                raise bad(sw, t("inputs: {problem}", problem=e), field=inputs) from None
             if track.samples and track.samples[-1].t > dur + 1e-9:
-                raise ScenarioError(f"{sw}: inputs: {track.path.name}: the last sample "
-                                    f"(t = {track.samples[-1].t:g}) is after the step's {dur:g} s")
+                raise bad(sw, t("inputs: {file}: the last sample ({t_setting}) is after the step's {duration} s",
+                                file=track.path.name, duration=f"{dur:g}",
+                                t_setting="t = {}".format(f"{track.samples[-1].t:g}")),
+                          field=inputs)
         checks = s.get("check", [])
         if isinstance(checks, dict):
-            raise ScenarioError(f"{sw}: use [[step.check]] (double brackets), one per check")
+            raise bad(sw, t("use {step_check_table} (double brackets), one per check",
+                            step_check_table="[[step.check]]"), field=f"{at_step}check")
         if not isinstance(checks, list):
-            raise ScenarioError(f"{sw}: checks are [[step.check]] tables")
+            raise bad(sw, t("checks are {step_check_table} tables",
+                            step_check_table="[[step.check]]"), field=f"{at_step}check")
         for j, c in enumerate(checks, 1):
             if not isinstance(c, dict):
-                raise ScenarioError(f"{sw}: check {j} must be a table, not {c!r}")
+                raise bad(sw, t("check {n} must be a table, not {value}", n=j, value=repr(c)),
+                          field=f"{at_step}check{j - 1}/check")
         for j, c in enumerate(checks, 1):  # structure only here; names are checked against the world in validate()
             kinds = [k for k in c]
             if len(kinds) != 1:
-                raise ScenarioError(f"{sw}: each [[step.check]] needs exactly one of {', '.join(CHECK_KINDS)}; "
-                                    f"got {', '.join(kinds) or 'nothing'}")
+                if kinds:
+                    detail = t("each {step_check_table} needs exactly one of {kinds}; got {got}",
+                               kinds=", ".join(CHECK_KINDS), got=", ".join(kinds), step_check_table="[[step.check]]")
+                else:
+                    detail = t("each {step_check_table} needs exactly one of {kinds}; got nothing",
+                               kinds=", ".join(CHECK_KINDS), step_check_table="[[step.check]]")
+                raise bad(sw, detail, field=f"{at_step}check{j - 1}/check")
             if "by_time" in c:
-                _by_time(c["by_time"], dur, f"{sw}, check {j}, by_time")
+                _by_time(c["by_time"], dur, t("{step}, check {n}, by_time", step=sw, n=j),
+                         f"{at_step}check{j - 1}/by_time")
         shots = []
         shots_raw = s.get("screenshot", [])
         if isinstance(shots_raw, dict):
-            raise ScenarioError(f"{sw}: use [[step.screenshot]] (double brackets), one per screenshot")
+            raise bad(sw, t("use {step_screenshot_table} (double brackets), one per screenshot",
+                            step_screenshot_table="[[step.screenshot]]"), field=f"{at_step}shot")
         if not isinstance(shots_raw, list):
-            raise ScenarioError(f"{sw}: screenshots are [[step.screenshot]] tables")
+            raise bad(sw, t("screenshots are {step_screenshot_table} tables",
+                            step_screenshot_table="[[step.screenshot]]"), field=f"{at_step}shot")
         for j, sh in enumerate(shots_raw, 1):
-            shw = f"{sw}, screenshot {j}"
+            shw, at_shot = t("{step}, screenshot {n}", step=sw, n=j), f"{at_step}shot{j - 1}/"
             if not isinstance(sh, dict):
-                raise ScenarioError(f"{shw} must be a table, not {sh!r}")
-            _keys(sh, SHOT_KEYS, shw)
+                raise ScenarioError(t("{where} must be a table, not {value}", where=shw, value=repr(sh)),
+                                    field=f"{at_shot}view",
+                                    detail=t("must be a table, not {value}", value=repr(sh)))
+            _keys(sh, SHOT_KEYS, shw, at_shot)
             at = sh.get("at", "end")
             if at != "end" and (not _is_num(at) or at < 0):
-                raise ScenarioError(f"{shw}: at must be \"end\" or seconds into the step")
+                raise bad(shw, t("at must be \"{end}\" or seconds into the step", end="end"), field=f"{at_shot}at")
             if at != "end" and at > dur:
-                raise ScenarioError(f"{shw}: at = {at} is beyond the step's {dur:g} s")
-            w_, h_ = _int(sh, "width", 960, shw), _int(sh, "height", 600, shw)
-            _size(w_, h_, shw)
+                raise bad(shw, t("{at_setting} is beyond the step's {duration} s", duration=f"{dur:g}",
+                                 at_setting="at = {}".format(at)),
+                          field=f"{at_shot}at")
+            w_, h_ = _int(sh, "width", 960, shw, at_shot), _int(sh, "height", 600, shw, at_shot)
+            _size(w_, h_, shw, at_shot)
             shots.append(Shot(str(sh.get("view", "follow")), at, w_, h_, sh.get("camera")))
         sheet = None
         if "contact_sheet" in s:
             cs = s["contact_sheet"]
-            csw = f"{sw}, contact_sheet"
+            csw, at_sheet = f"{sw}, contact_sheet", f"{at_step}sheet/"
             if not isinstance(cs, dict):
-                raise ScenarioError(f"{csw} must be a table like [step.contact_sheet], not {cs!r}")
-            _keys(cs, SHEET_KEYS, csw)
-            sheet = SheetSpec(_int(cs, "frames", 8, csw), str(cs.get("view", "follow")),
-                              _int(cs, "width", 480, csw), _int(cs, "height", 300, csw))
-            _size(sheet.width, sheet.height, csw)
+                raise ScenarioError(t("{where} must be a table like {step_contact_sheet_table}, not {value}",
+                                      where=csw, value=repr(cs),
+                                      step_contact_sheet_table="[step.contact_sheet]"), field=f"{at_sheet}view",
+                                    detail=t("must be a table like {step_contact_sheet_table}, not {value}",
+                                             value=repr(cs), step_contact_sheet_table="[step.contact_sheet]"))
+            _keys(cs, SHEET_KEYS, csw, at_sheet)
+            sheet = SheetSpec(_int(cs, "frames", 8, csw, at_sheet), str(cs.get("view", "follow")),
+                              _int(cs, "width", 480, csw, at_sheet), _int(cs, "height", 300, csw, at_sheet))
+            _size(sheet.width, sheet.height, csw, at_sheet)
             if sheet.frames > 16:
-                raise ScenarioError(f"{csw}: frames must be 1-16 (contact_sheet frames)")
+                raise bad(csw, t("frames must be 1-16 (contact_sheet frames)"), field=f"{at_sheet}frames")
             try:
                 check_sheet_size(sheet.frames, sheet.width, sheet.height)
             except ValueError as e:
-                raise ScenarioError(f"{csw}: {e}") from None
-        steps.append(Step(name, s["mode"], float(dur), _ports(s.get("axes", {}), sw, "axes"),
-                          _ports(s.get("buttons", {}), sw, "buttons"), _ports(s.get("povs", {}), sw, "povs"),
-                          checks, shots, sheet, track, game_data))
+                raise bad(csw, str(e), field=f"{at_sheet}frames") from None
+        steps.append(Step(name, s["mode"], float(dur), _ports(s.get("axes", {}), sw, "axes", at_step),
+                          _ports(s.get("buttons", {}), sw, "buttons", at_step),
+                          _ports(s.get("povs", {}), sw, "povs", at_step), checks, shots, sheet, track, game_data))
     return Scenario(path, (path.parent / config_ref).resolve(), str(raw.get("description", "")), speed, req, steps,
                     _range(raw, path, where), _robot_env(raw, where), _match(raw, where))
 
 
-def _by_time(spec, duration: float, where: str) -> None:
+def _by_time(spec, duration: float, where: str, field: str) -> None:
     """A by_time check's t: present, a number, and within the step (the rest is checked against the world)."""
     if not isinstance(spec, dict):
-        raise ScenarioError(f"{where}: expected a table like by_time = {{ signal = \"score\", min = 8, t = 15 }}")
+        raise bad(where, t("expected a table like {by_time_setting}",
+                           by_time_setting="by_time = { signal = \"score\", min = 8, t = 15 }"), field=field)
     if "t" not in spec:
-        raise ScenarioError(f"{where}: by_time needs t, the seconds into the step it must hold by")
-    t = spec["t"]
-    if not _is_num(t) or t < 0:
-        raise ScenarioError(f"{where}: t must be 0 or more seconds into the step, not {t!r}")
-    if t > duration + 1e-9:
-        raise ScenarioError(f"{where}: t = {t:g} is beyond the step's {duration:g} s")
+        raise bad(where, t("by_time needs t, the seconds into the step it must hold by"), field=field)
+    when = spec["t"]
+    if not _is_num(when) or when < 0:
+        raise bad(where, t("t must be 0 or more seconds into the step, not {value}", value=repr(when)),
+                  field=f"{field}.t")
+    if when > duration + 1e-9:
+        raise bad(where, t("{t_setting} is beyond the step's {duration} s", duration=f"{duration:g}",
+                           t_setting="t = {}".format(f"{when:g}")),
+                  field=f"{field}.t")
 
 
 def _range(raw: dict, path: Path, where: str) -> dict | None:
@@ -270,34 +320,43 @@ def _range(raw: dict, path: Path, where: str) -> dict | None:
     sec = raw.get("range")
     if sec is None:
         return None
+    field = "scenario/range"
     if not isinstance(sec, dict):
-        raise ScenarioError(f"{where}: range must be a [range] table with {', '.join(RANGE_KEYS)}")
+        raise bad(where, t("range must be a {range_table} table with {keys}", keys=", ".join(RANGE_KEYS),
+                           range_table="[range]"), field=field)
     for k in sec:
         if k not in RANGE_KEYS:
-            raise ScenarioError(f"{where}: range: {k!r} isn't a [range] key; use {', '.join(RANGE_KEYS)}")
+            raise bad(where, t("range: {key} isn't a {range_table} key; use {keys}", key=repr(k),
+                               keys=", ".join(RANGE_KEYS), range_table="[range]"),
+                      field=field)
     out = dict(sec)
     if "file" in sec:
         from .testrange.spec import BUILTIN_RANGES
         if not isinstance(sec["file"], str) or not sec["file"]:
-            raise ScenarioError(f"{where}: range: file must be a built-in range's name ({', '.join(BUILTIN_RANGES)}) "
-                                f"or a path relative to the scenario, not {sec['file']!r}")
+            raise bad(where, t("range: file must be a built-in range's name ({ranges}) or a path relative to the "
+                               "scenario, not {value}", ranges=", ".join(BUILTIN_RANGES), value=repr(sec["file"])),
+                      field=field)
         if sec["file"] not in BUILTIN_RANGES:
             out["file"] = str((path.parent / sec["file"]).resolve())
     if "start" in sec and not isinstance(sec["start"], str):
-        raise ScenarioError(f"{where}: range: start must be the name of one of the range's starts, not {sec['start']!r}")
+        raise bad(where, t("range: start must be the name of one of the range's starts, not {value}",
+                           value=repr(sec["start"])), field=field)
     p = sec.get("preload", 0)
     if isinstance(p, bool) or not isinstance(p, int) or p < 0:
-        raise ScenarioError(f"{where}: range: preload must be a whole number of balls (0 or more), not {p!r}")
+        raise bad(where, t("range: preload must be a whole number of balls (0 or more), not {value}", value=repr(p)),
+                  field=field)
     if not isinstance(sec.get("floor_balls", True), bool):
-        raise ScenarioError(f"{where}: range: floor_balls must be true or false, not {sec['floor_balls']!r}")
+        raise bad(where, t("range: floor_balls must be true or false, not {value}", value=repr(sec["floor_balls"])),
+                  field=field)
     return out
 
 
 def _robot_env(raw: dict, where: str) -> dict[str, str]:
     env = raw.get("robot_env", {})
     if not isinstance(env, dict) or not all(isinstance(v, str) for v in env.values()):
-        raise ScenarioError(f"{where}: robot_env must be a table of NAME = \"text\", e.g. "
-                            f"robot_env = {{ SCRIMMAGE_AUTO = \"shoot\" }}")
+        raise bad(where, t("robot_env must be a table of {name_setting}, e.g. {robot_env_setting}",
+                           name_setting="NAME = \"text\"",
+                           robot_env_setting="robot_env = { SCRIMMAGE_AUTO = \"shoot\" }"), field="scenario/robot_env")
     return {str(k): v for k, v in env.items()}
 
 
@@ -307,7 +366,9 @@ def _match(raw: dict, where: str) -> dict:
     try:
         MatchSettings().merged(table, f"{where}: [match]")
     except ValueError as e:
-        raise ScenarioError(str(e)) from None
+        key = getattr(e, "key", None)
+        raise ScenarioError(str(e), field=f"scenario/match.{key}" if key else "scenario/match",
+                            detail=getattr(e, "detail", None)) from None
     return dict(table)
 
 
@@ -323,8 +384,8 @@ def range_file(ref: str) -> Path:
 
 
 def no_range_message(config_path: Path) -> str:
-    return (f"the scenario's [range] needs a robot on a test range, but {config_path} has no [range]: add [range] to "
-            "the config (see docs/test-range.md)")
+    return t("the scenario's {range_table} needs a robot on a test range, but {config} has no {range_table}: add "
+             "{range_table} to the config (see docs/test-range.md)", config=config_path, range_table="[range]")
 
 
 def _check_range(config, raw: dict, where: str) -> None:
@@ -339,7 +400,7 @@ def _check_range(config, raw: dict, where: str) -> None:
     try:
         parse_range_section(raw, config.dir)
     except (PartError, ValueError) as e:
-        raise ScenarioError(f"{where}: range: {e}") from None
+        raise bad(where, t("range: {problem}", problem=e), field="scenario/range") from None
 
 
 def config_for(scenario: Scenario, config):
@@ -357,7 +418,8 @@ def config_for(scenario: Scenario, config):
     raw = copy.deepcopy(config.raw)
     if scenario.range:
         if "range" not in raw:
-            raise ScenarioError(no_range_message(config.path))
+            raise ScenarioError(no_range_message(config.path), field="scenario/range",
+                                detail=no_range_message(config.path))
         raw["range"] = {**raw["range"], **scenario.range}
         if "start" in scenario.range and isinstance(raw.get("robot"), dict):
             raw["robot"].pop("start_pose", None)
@@ -365,32 +427,34 @@ def config_for(scenario: Scenario, config):
     rp = config.robot_program
     if scenario.robot_env:
         if rp is None:
-            raise ScenarioError(f"{where}: robot_env needs a robot program to give it to, but {config.path} has no "
-                                "[robot_program] (scrimmage doesn't launch the robot program)")
+            raise bad(where, t("robot_env needs a robot program to give it to, but {config} has no "
+                               "{robot_program_table} (scrimmage doesn't launch the robot program)",
+                               config=config.path, robot_program_table="[robot_program]"),
+                      field="scenario/robot_env")
         rp = dataclasses.replace(rp, env={**rp.env, **scenario.robot_env})
     return dataclasses.replace(config, raw=raw, robot_program=rp)
 
 
-def validate(scenario: Scenario, world) -> None:
+def validate(scenario: Scenario, world, *, first_step: int = 1) -> None:
     """Check every name in the scenario against the world before anything runs."""
-    for i, step in enumerate(scenario.steps, 1):
-        where = f"{scenario.path.name}, step {i} ({step.name})"
+    for i, step in enumerate(scenario.steps, first_step):
+        where = _step_where(scenario.path.name, i, step.name)
         for c in step.checks:
             build_check(c, world, where)
         for j, shot in enumerate(step.screenshots, 1):
-            shw = f"{where}, screenshot {j}"
+            shw = t("{step}, screenshot {n}", step=where, n=j)
             _check_view(shot.view, world, shw)
             try:
                 cam = check_camera(shot.camera)
             except ValueError as e:
-                raise ScenarioError(f"{shw}: {e}") from None
+                raise bad(shw, str(e), key="camera") from None
             if shot.view == "free" and "lookat" not in cam:
-                raise ScenarioError(f"{shw}: the free view needs camera = {{ lookat = [x, y, z] }} "
-                                    f"(and optionally distance, azimuth, elevation)")
+                raise bad(shw, t("the free view needs {camera_setting} (and optionally distance, azimuth, elevation)",
+                                 camera_setting="camera = { lookat = [x, y, z] }"), key="camera")
         if step.contact_sheet is not None:
             csw = f"{where}, contact_sheet"
             if step.contact_sheet.view == "free":
-                raise ScenarioError(f"{csw}: contact_sheet supports follow, top and camera:<name>, not 'free'")
+                raise bad(csw, t("contact_sheet supports follow, top and camera:<name>, not 'free'"), key="view")
             _check_view(step.contact_sheet.view, world, csw)
 
 
@@ -398,11 +462,13 @@ def _check_view(view: str, world, where: str) -> None:
     if view in ("follow", "top", "free"):
         return
     if not view.startswith("camera:"):
-        raise ScenarioError(f"{where}: {VIEWS_HELP}, not {view!r}")
+        raise bad(where, t("{help}, not {view}", help=views_help(), view=repr(view)), key="view")
     name = view.split(":", 1)[1]
     m = world.model
     names = [mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_CAMERA, i) for i in range(m.ncam)]
     if name not in names:
         have = ", ".join(n for n in names if n)
-        raise ScenarioError(f"{where}: no camera {name!r}; " + (f"the model's cameras: {have}" if have
-                                                                else "the model has no cameras"))
+        if have:
+            raise bad(where, t("no camera {name}; the model's cameras: {cameras}", name=repr(name), cameras=have),
+                      key="view")
+        raise bad(where, t("no camera {name}; the model has no cameras", name=repr(name)), key="view")

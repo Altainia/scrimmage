@@ -14,33 +14,19 @@
 //   onChange(fn)                 fn(system) after the setting changes (here, in another tab, browser or by hand):
 //                                re-render what's shown; returns a function that stops it
 // load() fetches the table (app.js awaits it before the tabs start); watch() polls /api/settings so a change made
-// elsewhere arrives within a few seconds; set(system) saves the setting.
+// elsewhere arrives within a few seconds; set(system) saves the setting. The request and the poll are settings.js's,
+// which i18n.js shares.
+
+import { settings } from "./settings.js";
+import { t } from "./i18n.js";
 
 let table = null;
 let system = "imperial";
-let warning = null;
 const listeners = new Set();
-const warners = new Set();
 
-function token() { return new URLSearchParams(location.hash.slice(1)).get("token") || ""; }
-
-async function request(method, body) {
-  const headers = { "X-Scrimmage-Token": token() };
-  if (body !== undefined) headers["Content-Type"] = "application/json";
-  try {
-    const res = await fetch("/api/settings", { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
-    let data = {};
-    try { data = await res.json(); } catch { /* not JSON */ }
-    return { status: res.status, data: data || {} };
-  } catch {
-    return { status: 0, data: { error: "can't reach the editor (is scrimmage edit still running?)" } };
-  }
-}
-
-function apply(data) {
-  const hadTable = table !== null, was = system, hadWarning = warning;
+settings.onSettings((data) => {
+  const hadTable = table !== null, was = system;
   table = data.table || table;
-  warning = data.warning || null;
   system = data.units || system;
   // the first load() may have failed: the table arriving later changes every shown value too
   if (system !== was || (!hadTable && table)) {
@@ -48,53 +34,13 @@ function apply(data) {
       try { fn(system); } catch (e) { console.error(e); }
     }
   }
-  if (warning && warning !== hadWarning) {
-    for (const fn of [...warners]) {
-      try { fn(warning); } catch (e) { console.error(e); }
-    }
-  }
-}
+});
 
-// Requests are numbered: a GET sent before a set() was answered can carry the old setting (a poll that left just
-// before the POST and came back just after it), so its answer is dropped, as is any GET answered while a set() is
-// still on its way.
-let sent = 0, settled = 0, setting = 0, latestSet = 0;   // latestSet: two set()s answered out of order, the later wins
-
-export async function load() {
-  const n = ++sent;
-  const { status, data } = await request("GET");
-  if (status === 200 && !setting && n > settled) apply(data);
-  return status === 200;
-}
+// load(), watch() and onWarning() are settings.js's: one request serves Units and Language
+export const { load, watch, onWarning } = settings;
 
 // Save the setting; resolves to null, or the server's error text.
-export async function set(next) {
-  const n = ++sent;
-  setting++;
-  let res;
-  try { res = await request("POST", { units: next }); } finally { setting--; settled = ++sent; }
-  const { status, data } = res;
-  if (status !== 200) return data.error || `the server answered ${status}`;
-  if (n > latestSet) { latestSet = n; apply(data); }
-  return null;
-}
-
-let watching = null;
-export function watch(ms = 2000) {
-  if (watching) return;
-  const tick = async () => {
-    if (!document.hidden) await load();
-    watching = setTimeout(tick, ms);
-  };
-  watching = setTimeout(tick, ms);
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
-}
-
-// fn(text) when a settings warning appears or changes (not for the one load() found before anyone listened)
-export function onWarning(fn) {
-  warners.add(fn);
-  return () => warners.delete(fn);
-}
+export function set(next) { return settings.save({ units: next }); }
 
 export function onChange(fn) {
   listeners.add(fn);
@@ -146,7 +92,7 @@ export function fmt(si, kind) {
 
 const squash = (s) => s.replace(/\s+/g, "").toLowerCase();
 const NUMBER = /^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)\s*(.*?)\s*$/i;
-const SYSTEM_NAME = { imperial: "Imperial", metric: "Metric" };
+const SYSTEM_NAME = { imperial: () => t("Imperial"), metric: () => t("Metric") };
 
 const LENGTH_KINDS = ["length", "field"];
 
@@ -157,10 +103,10 @@ const LENGTH_KINDS = ["length", "field"];
 export function parse(text, kind, sys = system) {
   const u = unit(kind, sys);
   const m = NUMBER.exec(String(text ?? ""));
-  const want = u.name ? ` in ${u.name}` : "";
-  if (!m) return { error: `Type a number${want}` };
+  const typeOne = () => (u.name ? t("Type a number in {unit}", { unit: u.name }) : t("Type a number"));
+  if (!m) return { error: typeOne() };
   const v = Number(m[1]);
-  if (!Number.isFinite(v)) return { error: `Type a number${want}` };
+  if (!Number.isFinite(v)) return { error: typeOne() };
   const said = squash(m[2]);
   if (!said || !table) return fromDisplay(v, kind, sys);
   const names = (n) => (table.aliases[n] || [n]).map(squash);
@@ -170,7 +116,8 @@ export function parse(text, kind, sys = system) {
     const mine = Object.keys(lengths[sys] || {}).find((n) => names(n).includes(said));
     if (mine) return clean(v * lengths[sys][mine]);
   }
-  const refuse = (o) => ({ error: `Units is set to ${SYSTEM_NAME[sys]}, so type ${u.name} here, not ${o} (or change Units in Settings)` });
+  const refuse = (o) => ({ error: t("Units is set to {system}, so type {unit} here, not {other} (or change Units in Settings)",
+    { system: SYSTEM_NAME[sys](), unit: u.name, other: o }) });
   for (const other of table.systems) {
     if (other === sys) continue;
     const o = table.units[other][kind];
@@ -178,7 +125,8 @@ export function parse(text, kind, sys = system) {
     const theirs = lengths && Object.keys(lengths[other] || {}).find((n) => names(n).includes(said));
     if (theirs) return refuse(theirs);
   }
-  return { error: `"${m[2]}" isn't a unit for this: type a number${want}` };
+  return { error: u.name ? t("\"{typed}\" isn't a unit for this: type a number in {unit}", { typed: m[2], unit: u.name })
+    : t("\"{typed}\" isn't a unit for this: type a number", { typed: m[2] }) };
 }
 
 // A file key's own unit: `keyUnit` is the unit ("in") or the whole key ("diameter_in"); `quantity` ("length",
@@ -198,7 +146,7 @@ export function fromKey(v, keyUnit, quantity) { return clean(v * keyFactor(keyUn
 export const units = {
   get system() { return system; },
   get table() { return table; },
-  get warning() { return warning; },
+  get warning() { return settings.warning; },
   load, set, watch, onChange, onWarning, fmt, shown, toDisplay, fromDisplay, name, parse, number, toKey, fromKey,
 };
 export default units;

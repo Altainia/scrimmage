@@ -7,7 +7,9 @@ robot program paused between calls (lockstep, with keep-alives), so callers can 
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import dataclasses
+import functools
 import itertools
 import logging
 import math
@@ -24,9 +26,10 @@ import mujoco
 from .bindings import binds_ph, binds_rev
 from .bridge import Bridge, robot_language
 from .devicecheck import check_devices, device_notes
-from .driverstation import (REAL_DS_DRIVING, REAL_DS_WAITING, MatchSettings, check_game_data,
+from .driverstation import (REAL_DS_WAITING, MatchSettings, check_game_data,
                             real_ds_report)
 from .config import Config, ConfigError, RobotProgram, build_world, load_config, set_sim_mode, sim_mode_unused
+from .i18n import N_, t, translated
 from .lockstep import Pacer
 from .movers import Mover, mover_poses, movers
 from .render import Renderer, check_sheet_size, check_size, RenderUnavailable, contact_sheet, to_png
@@ -42,14 +45,15 @@ CONSOLE_LIMIT = 200      # most console lines returned by one advance
 NT_CONNECT_TIMEOUT = 5.0 # wall s to wait for NetworkTables once the robot is ready ($SCRIMMAGE_NT_CONNECT_TIMEOUT)
 
 
-PHOENIX_UNPAUSABLE = "Phoenix 6 devices keep running between calls: this session can't pause them"
-REAL_DS_UNPAUSABLE = "the real Driver Station keeps the robot running between calls: this session can't pause it"
+# N_(): said with translated()
+PHOENIX_UNPAUSABLE = N_("Phoenix 6 devices keep running between calls: this session can't pause them")
+REAL_DS_UNPAUSABLE = N_("the real Driver Station keeps the robot running between calls: this session can't pause it")
 DS_SOCKET_ENV = "SCRIMMAGE_DS_SOCKET"   # set to 1 for a real-DS launch: the Gradle init script then keeps the DS socket
 DS_UDP_PORT, DS_TCP_PORT = 1110, 1740   # the DS protocol's fixed ports, where the robot listens for the real DS
-REAL_DS_INPUTS = f"this session can't change the Driver Station's inputs: {REAL_DS_DRIVING}"
+REAL_DS_INPUTS = N_("this session can't change the Driver Station's inputs: the FRC Driver Station is driving")
 DS_LISTEN_TIMEOUT = 30.0                # wall s an attached robot program has to listen on UDP 1110 (no start_timeout)
-NOT_LISTENING = ("the robot program isn't listening for the Driver Station (UDP 1110): RobotPy needs --ds-socket; "
-                 "Java needs wpi.sim.addDriverstation()")
+NOT_LISTENING = N_("the robot program isn't listening for the Driver Station (UDP 1110): RobotPy needs --ds-socket; "
+                    "Java needs wpi.sim.addDriverstation()")
 # scrimmage-lockstep: 0.2.0 REV helper, 0.3.0 clock at 0, 0.4.0 seed, 0.5.0 sim_values, 0.6.0 clock at 1 us (AdvantageKit)
 LOCKSTEP_VERSION = (0, 6, 0)
 PH_LOCKSTEP_VERSION = (0, 7, 0)   # 0.7.0 relays the REV Pneumatic Hub; needed only by robots with valves on one
@@ -66,31 +70,51 @@ def lockstep_version_problem(config: Config) -> str | None:
     language = robot_language(rp.command) if rp is not None else None
     need_version, ph = LOCKSTEP_VERSION, binds_ph(config.raw)
     if ph and language in ("java", "python"):
-        why, need_version = "binds valves on a REV Pneumatic Hub", PH_LOCKSTEP_VERSION
+        why, need_version = "ph", PH_LOCKSTEP_VERSION
     elif language == "java":
-        why = "runs a Java robot"     # without the extension the init script runs it in real time: nothing to check
+        why = "java"     # without the extension the init script runs it in real time: nothing to check
     elif language != "python":
         return None
     elif binds_rev(config.raw):
-        why = "binds REV SPARKs on a RobotPy robot"
+        why = "rev"
     elif "--scrimmage-lockstep" in rp.command:
-        why = "runs a RobotPy robot with --scrimmage-lockstep"
+        why = "lockstep"
     else:
         return None
-    need = ".".join(map(str, need_version))
+    said = {"config": config.path, "need": ".".join(map(str, need_version)), "install": "pip install ./lockstep"}
     try:
         have = metadata.version("scrimmage-lockstep")
     except metadata.PackageNotFoundError:
         if language == "java" and not ph:
             return None
-        return f"{config.path} {why}, which needs scrimmage-lockstep {need} or later, but it isn't installed: `pip install ./lockstep`"
+        if why == "ph":
+            return t("{config} binds valves on a REV Pneumatic Hub, which needs scrimmage-lockstep {need} or later, but "
+                     "it isn't installed: `{install}`", **said)
+        if why == "java":
+            return t("{config} runs a Java robot, which needs scrimmage-lockstep {need} or later, but it isn't "
+                     "installed: `{install}`", **said)
+        if why == "rev":
+            return t("{config} binds REV SPARKs on a RobotPy robot, which needs scrimmage-lockstep {need} or later, but "
+                     "it isn't installed: `{install}`", **said)
+        return t("{config} runs a RobotPy robot with --scrimmage-lockstep, which needs scrimmage-lockstep {need} or "
+                 "later, but it isn't installed: `{install}`", **said)
     nums = []
     for part in have.split(".")[:3]:
         digits = "".join(itertools.takewhile(str.isdigit, part))
         nums.append(int(digits) if digits else 0)
     if tuple(nums + [0] * (3 - len(nums))) < need_version:
-        return (f"{config.path} {why}, which needs scrimmage-lockstep {need} or later (installed: {have}): "
-                "reinstall it with `pip install ./lockstep`")
+        said["have"] = have
+        if why == "ph":
+            return t("{config} binds valves on a REV Pneumatic Hub, which needs scrimmage-lockstep {need} or later "
+                     "(installed: {have}): reinstall it with `{install}`", **said)
+        if why == "java":
+            return t("{config} runs a Java robot, which needs scrimmage-lockstep {need} or later (installed: {have}): "
+                     "reinstall it with `{install}`", **said)
+        if why == "rev":
+            return t("{config} binds REV SPARKs on a RobotPy robot, which needs scrimmage-lockstep {need} or later "
+                     "(installed: {have}): reinstall it with `{install}`", **said)
+        return t("{config} runs a RobotPy robot with --scrimmage-lockstep, which needs scrimmage-lockstep {need} or "
+                 "later (installed: {have}): reinstall it with `{install}`", **said)
     return None
 
 
@@ -113,7 +137,7 @@ class SessionError(RuntimeError):
 
 def _finite(name: str, value) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-        raise SessionError(f"{name} must be a finite number, not {value!r}")
+        raise SessionError(t("{name} must be a finite number, not {value}", name=name, value=repr(value)))
     return float(value)
 
 
@@ -142,8 +166,9 @@ def ds_ports_problem() -> str | None:
     """Why a real-DS robot program can't listen for the Driver Station here: one of its ports is taken."""
     for kind, name, port in ((socket.SOCK_DGRAM, "UDP", DS_UDP_PORT), (socket.SOCK_STREAM, "TCP", DS_TCP_PORT)):
         if not _port_free(kind, port):
-            return (f"{name} port {port} is already in use, so the robot program can't listen for the Driver Station: "
-                    "stop the other real Driver Station session or robot program (only one can listen per computer)")
+            return t("{protocol} port {port} is already in use, so the robot program can't listen for the Driver "
+                     "Station: stop the other real Driver Station session or robot program (only one can listen per "
+                     "computer)", protocol=name, port=port)
     return None
 
 
@@ -155,19 +180,21 @@ def real_ds_program(rp: RobotProgram) -> RobotProgram:
 def ds_socket_problem() -> str | None:
     """NOT_LISTENING if nothing listens for the Driver Station on UDP 1110. Check it once the robot program has
     started: binding the port while it starts could take it from the robot."""
-    return NOT_LISTENING if _port_free(socket.SOCK_DGRAM, DS_UDP_PORT) else None
+    return translated(NOT_LISTENING) if _port_free(socket.SOCK_DGRAM, DS_UDP_PORT) else None
 
 
 def connect_timeout_hint(command: list[str], cwd) -> str:
     """What to add to "the robot program didn't connect" when the command is Gradle's wrapper."""
     if Path(command[0]).name not in ("gradlew", "gradlew.bat"):
         return ""
-    hint = (f"; first Gradle runs download dependencies: run `./gradlew build` once in {cwd}, "
-            "or raise [robot_program] start_timeout")
+    hint = "; " + t("first Gradle runs download dependencies: run `{gradlew_build}` once in {cwd}, or raise "
+                    "{robot_program_table} start_timeout", cwd=cwd, gradlew_build="./gradlew build",
+                    robot_program_table="[robot_program]")
     if not any("scrimmage.init.gradle" in c for c in command):
         from . import java_tools
-        hint += (f"; Java projects run through `-I {java_tools.JAVA_DIR}/scrimmage.init.gradle` "
-                 "(in the command, as `-I {scrimmage_java}/scrimmage.init.gradle`)")
+        hint += "; " + t("Java projects run through `{i_java_scrimmage}` (in the command, as `{i_scrimmage_java}`)",
+                         i_java_scrimmage="-I {}/scrimmage.init.gradle".format(java_tools.JAVA_DIR),
+                         i_scrimmage_java="-I {scrimmage_java}/scrimmage.init.gradle")
     return hint
 
 
@@ -189,8 +216,9 @@ class Session:
         if (unused := sim_mode_unused(self.config, sim_mode, launching=not attach)) is not None:
             log.warning(unused)
         if not attach and self.config.robot_program is None:
-            raise SessionError(f"{self.config.path} has no [robot_program] section: add one (see configs/kitbot.toml), "
-                               "or attach to a robot program you start yourself")
+            raise SessionError(t("{config} has no {robot_program_table} section: add one (see configs/kitbot.toml), "
+                                 "or attach to a robot program you start yourself", config=self.config.path,
+                                 robot_program_table="[robot_program]"))
         self.real_ds = self.config.real_ds if real_ds is None else bool(real_ds)
         rp = self.config.robot_program
         if self.real_ds and rp is not None and not attach:
@@ -237,15 +265,16 @@ class Session:
         [match] and no game data); the Drive tab's restart passes the match it had."""
         cfg = self.config
         if self._task is not None:
-            raise SessionError("this session has already been started")
+            raise SessionError(t("this session has already been started"))
         if not self.attach and (problem := lockstep_version_problem(cfg)):
             raise SessionError(problem)
         if self.real_ds and not self.attach and (problem := ds_ports_problem()):
             raise SessionError(problem)
         if not self.attach and self.nt and _listening("127.0.0.1", cfg.nt_port):
             # The robot program we launch would serve NT there too, and each would read the other's values.
-            raise SessionError(f"NetworkTables port {cfg.nt_port} is already in use (another robot program "
-                               "running?); stop it, or set [telemetry] nt_port")
+            raise SessionError(t("NetworkTables port {port} is already in use (another robot program running?); stop "
+                                 "it, or set {telemetry_table} nt_port", port=cfg.nt_port,
+                                 telemetry_table="[telemetry]"))
         try:
             self.world = build_world(cfg)
         except ConfigError as e:
@@ -275,13 +304,15 @@ class Session:
                 listening.cancel()
             if self._task in done or not self.bridge.listening.is_set():
                 if self._task.done() and not self._task.cancelled() and self._task.exception() is not None:
-                    raise SessionError(f"couldn't start the HALSim server on port {self.port}: "
-                                       f"{self._task.exception()}")
+                    raise SessionError(t("couldn't start the HALSim server on port {port}: {problem}",
+                                         port=self.port, problem=self._task.exception()))
                 if self._task.done():
-                    raise SessionError(f"couldn't start the HALSim server on port {self.port}")
-                raise SessionError(f"the HALSim server didn't start listening on port {self.port} within 10 s")
+                    raise SessionError(t("couldn't start the HALSim server on port {port}", port=self.port))
+                raise SessionError(t("the HALSim server didn't start listening on port {port} within 10 s",
+                                     port=self.port))
             if self.picture_sizes:
-                await asyncio.get_running_loop().run_in_executor(self._pool(), self._prepare_pictures)
+                await asyncio.get_running_loop().run_in_executor(self._pool(), contextvars.copy_context().run,
+                                                           self._prepare_pictures)
             if not self.attach:
                 await self._launch()
             await self._wait_ready()
@@ -328,14 +359,16 @@ class Session:
         while b.mode is None:
             if self.robot is not None and not self.robot.running:
                 await self.robot.wait_exited(2.0)  # let the console reader catch the last lines
-                raise self._error(f"the robot program exited (code {self.robot.returncode}) before it connected")
+                raise self._error(t("the robot program exited (code {code}) before it connected",
+                                    code=self.robot.returncode))
             left = deadline - time.monotonic()
             if left <= 0:
                 if self.attach:
-                    raise self._error(f"no robot program connected to port {b.bound_port} within {timeout:g} s")
-                msg = (f"the robot program didn't connect within {timeout:g} s "
-                       f"(command: {' '.join(self.config.robot_program.command)} "
-                       f"in {self.config.robot_program.cwd})")
+                    raise self._error(t("no robot program connected to port {port} within {seconds} s",
+                                        port=b.bound_port, seconds=f"{timeout:g}"))
+                msg = t("the robot program didn't connect within {seconds} s (command: {command} in {cwd})",
+                        seconds=f"{timeout:g}", command=" ".join(self.config.robot_program.command),
+                        cwd=self.config.robot_program.cwd)
                 msg += connect_timeout_hint(self.config.robot_program.command, self.config.robot_program.cwd)
                 raise self._error(msg)
             b.mode_changed.clear()
@@ -400,7 +433,7 @@ class Session:
     async def _restart_robot(self, env: dict | None = None) -> dict:
         b = self._require_started()
         if self.robot is None and not self.attach:
-            raise SessionError("the session has no robot program to restart")
+            raise SessionError(t("the session has no robot program to restart"))
         if not self.real_ds:   # the real DS keeps its own match data; scrimmage's DS is inactive
             game_data = b.ds.game_data
             b.ds.clear()
@@ -408,17 +441,17 @@ class Session:
                 b.ds.set_game_data(game_data)
         if self.attach:
             if env:
-                raise SessionError("attach mode: scrimmage doesn't launch the robot program, so it can't set its "
-                                   "environment; set the variables yourself")
+                raise SessionError(t("attach mode: scrimmage doesn't launch the robot program, so it can't set its "
+                                     "environment; set the variables yourself"))
             b._restart_clock()
-            return {**self.status(), "note": "attach mode: the world was reset; restart the robot program yourself"}
+            return {**self.status(), "note": t("attach mode: the world was reset; restart the robot program yourself")}
         await self.robot.stop()
         self.robot.env = {**self.config.robot_program.env, **{str(k): str(v) for k, v in (env or {}).items()}}
         deadline = time.monotonic() + 5
         while b.ws is not None and time.monotonic() < deadline:
             await asyncio.sleep(0.02)
         if b.ws is not None:
-            raise SessionError("the old robot program didn't disconnect within 5 s")
+            raise SessionError(t("the old robot program didn't disconnect within 5 s"))
         first = self.robot.next_index
         try:
             await self._launch()
@@ -441,7 +474,7 @@ class Session:
     async def _advance(self, seconds: float, on_step: Callable[[float], None] | None,
                        stop: Callable[[], bool] | None = None) -> dict:
         if not (isinstance(seconds, (int, float)) and math.isfinite(seconds) and seconds > 0):
-            raise SessionError(f"seconds must be a positive number, not {seconds!r}")
+            raise SessionError(t("seconds must be a positive number, not {value}", value=repr(seconds)))
         self._require_started()
         self._check_alive()
         b, w = self.bridge, self.world
@@ -459,13 +492,13 @@ class Session:
                     realtime = True
                     break
                 if r == "timeout":
-                    raise self._error(f"the robot program stopped responding at t={w.time:.3f} "
-                                      f"(no step acknowledgement for {self.config.step_timeout:g} s)")
+                    raise self._error(t("the robot program stopped responding at t={t} (no step acknowledgement for "
+                                        "{seconds} s)", t=f"{w.time:.3f}", seconds=f"{self.config.step_timeout:g}"))
                 if r == "done" or b.done.is_set():
-                    raise self._error(f"the session is stopping (at t={w.time:.3f})")
+                    raise self._error(t("the session is stopping (at t={t})", t=f"{w.time:.3f}"))
                 if r != "ok":
                     await self._settle()
-                    raise self._error(f"the robot program disconnected at t={w.time:.3f}")
+                    raise self._error(t("the robot program disconnected at t={t}", t=f"{w.time:.3f}"))
                 if on_step is not None:
                     on_step(w.time)
                 if stop is not None and stop():
@@ -484,13 +517,13 @@ class Session:
                     break
                 if b.ws is None:
                     await self._settle()
-                    raise self._error(f"the robot program disconnected at t={w.time:.3f}")
+                    raise self._error(t("the robot program disconnected at t={t}", t=f"{w.time:.3f}"))
                 spent = time.monotonic() - started
                 skipped = max(b.physics_skipped - skipped0, 0.0)   # a reset mid-advance zeroes the count
                 if spent > min(budget + skipped, hard):
-                    raise self._error(f"physics reached t={w.time:.3f} after {spent:.1f} s of wall time (target "
-                                      f"t={target + 1e-9:.3f}; it skipped {skipped:.2f} s "
-                                      "ahead)")
+                    raise self._error(t("physics reached t={t} after {spent} s of wall time (target t={target}; it "
+                                        "skipped {skipped} s ahead)", t=f"{w.time:.3f}", spent=f"{spent:.1f}",
+                                        target=f"{target + 1e-9:.3f}", skipped=f"{skipped:.2f}"))
                 await asyncio.sleep(REALTIME_POLL)
                 if on_step is not None:
                     on_step(w.time)
@@ -515,16 +548,16 @@ class Session:
         return b is not None and b.held and b.frees_clock
 
     def _unpausable_message(self) -> str:
-        return PHOENIX_UNPAUSABLE if self.bridge.phoenix else REAL_DS_UNPAUSABLE
+        return translated(PHOENIX_UNPAUSABLE if self.bridge.phoenix else REAL_DS_UNPAUSABLE)
 
     def release_message(self) -> str:
-        return (f"the robot program's clock ran free at t={self.bridge.lockstep_released_at:.3f} "
-                "(scrimmage stalled for more than 2 s); results aren't repeatable")
+        return t("the robot program's clock ran free at t={t} (scrimmage stalled for more than 2 s); results aren't "
+                 "repeatable", t=f"{self.bridge.lockstep_released_at:.3f}")
 
     # ------------------------------------------------------------------ driver inputs
     def _not_real_ds(self) -> None:
         if self.real_ds:
-            raise SessionError(REAL_DS_INPUTS)
+            raise SessionError(translated(REAL_DS_INPUTS))
 
     def set_mode(self, mode: str) -> dict:
         self._require_started()
@@ -580,7 +613,7 @@ class Session:
         force_n, direction_deg = _finite("force_n", force_n), _finite("direction_deg", direction_deg)
         duration_s = _finite("duration_s", duration_s)
         if duration_s <= 0:
-            raise SessionError(f"duration_s must be a positive number, not {duration_s!r}")
+            raise SessionError(t("duration_s must be a positive number, not {value}", value=repr(duration_s)))
         a = math.radians(direction_deg)
         self.world.set_robot_force(force_n * math.cos(a), force_n * math.sin(a))
         try:
@@ -635,11 +668,12 @@ class Session:
         if speed is not None:
             speed = _finite("speed", speed)
             if speed <= 0:
-                raise SessionError(f"speed must be positive, not {speed:g}")
+                raise SessionError(t("speed must be positive, not {speed}", speed=f"{speed:g}"))
             step = self.config.step
             if step / speed >= 1.0:
-                raise SessionError(f"--speed {speed:g} with {step:g} s steps: each step would take {step / speed:g} s "
-                                   "of wall time or more, and the robot's 2 s watchdog would release the clock")
+                raise SessionError(t("--speed {speed} with {step} s steps: each step would take {wall} s of wall time "
+                                     "or more, and the robot's 2 s watchdog would release the clock",
+                                     speed=f"{speed:g}", step=f"{step:g}", wall=f"{step / speed:g}"))
         self.speed = speed
         if self.bridge is not None:
             self.bridge.speed = speed
@@ -785,7 +819,7 @@ class Session:
                 return self._renderer.render(view, width=width, height=height, paths=p, camera=camera, data=snap)
             except (RenderUnavailable, ValueError) as e:
                 raise SessionError(str(e)) from None
-        return draw
+        return functools.partial(contextvars.copy_context().run, draw)   # the caller's language guard (MCP's) too
 
     def _prepare_pictures(self) -> None:   # on the render thread
         if self._renderer is None:
@@ -825,9 +859,9 @@ class Session:
         self._require_started()
         seconds = _finite("seconds", seconds)
         if seconds <= 0:
-            raise SessionError(f"seconds must be a positive number, not {seconds!r}")
+            raise SessionError(t("seconds must be a positive number, not {value}", value=repr(seconds)))
         if isinstance(frames, bool) or not isinstance(frames, int) or not 1 <= frames <= 16:
-            raise SessionError(f"frames must be a whole number from 1 to 16, not {frames!r}")
+            raise SessionError(t("frames must be a whole number from 1 to 16, not {value}", value=repr(frames)))
         try:
             check_size("width", width), check_size("height", height)
             check_sheet_size(frames, width, height)
@@ -846,8 +880,8 @@ class Session:
         self._require_started()
         link = self.bridge.nt_link
         if link is None:
-            raise SessionError("NetworkTables isn't available in this session "
-                               "(install scrimmage[nt], and don't start the session with nt=False)")
+            raise SessionError(t("NetworkTables isn't available in this session (install {nt_extra}, and don't start "
+                                 "the session with {nt_off})", nt_extra="scrimmage[nt]", nt_off="nt=False"))
         return link
 
     def nt_list(self, prefix: str = "/") -> dict:
@@ -887,7 +921,7 @@ class Session:
 
     def _require_started(self) -> Bridge:
         if self._task is None or self.bridge is None or self.world is None:
-            raise SessionError("the session isn't started")
+            raise SessionError(t("the session isn't started"))
         return self.bridge
 
     async def _settle(self) -> None:
@@ -898,7 +932,7 @@ class Session:
 
     def _check_alive(self) -> None:
         if self.robot is not None and not self.robot.running:
-            raise self._error(f"the robot program exited (code {self.robot.returncode}) at t={self.t:.3f}; "
-                              "call restart_robot to launch it again")
+            raise self._error(t("the robot program exited (code {code}) at t={t}; call restart_robot to launch it "
+                                "again", code=self.robot.returncode, t=f"{self.t:.3f}"))
         if self.bridge is None or self.bridge.ws is None or self.bridge.mode is None:
-            raise self._error("no robot program is connected")
+            raise self._error(t("no robot program is connected"))

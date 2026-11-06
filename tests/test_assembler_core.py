@@ -146,7 +146,7 @@ def test_stock_lists_registry_with_param_metadata():
         assert list(s["slots"]) == list(reg.slots) and s["mounts"] == list(reg.mounts)
         assert [p["name"] for p in s["params"]] == [p.name for p in reg.params]
         for meta, p in zip(s["params"], reg.params):
-            assert meta["kind"] == p.kind and meta["unit"] == p.unit and meta["doc"] == p.doc
+            assert meta["kind"] == p.kind and meta["unit"] == p.unit and meta["doc"] == p.shown_doc()
             assert meta["positive"] == p.positive and meta["min"] == p.min
             assert meta["max_depends"] == callable(p.max)
             assert meta["max"] == (None if callable(p.max) else p.max)

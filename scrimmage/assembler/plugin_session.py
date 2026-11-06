@@ -24,13 +24,14 @@ from pathlib import Path
 import numpy as np
 import tomlkit
 
+from .. import i18n
 from ..cad.edits import EditError
 from ..cad.settings import replace_file
 from ..parts.grip import grip_friction
 from ..parts.model import PartError, load_part, part_from_dict
 from ..parts.overlay import JOINT_KEYS, OVERLAY, _rot, apply_overlay
 from .bench_session import SessionError
-from .part_session import NEED_STEP, PIECE_OPS, _floats, _mesh, _refused, _Session, _sig
+from .part_session import PIECE_OPS, need_step, _floats, _mesh, _refused, _Session, _sig
 
 
 class PluginSession(_Session):
@@ -63,7 +64,7 @@ class PluginSession(_Session):
             edits = tomllib.loads(self._overlay.read_text(encoding="utf-8")) if self._overlay.is_file() else {}
             part = load_part(self.path)
         except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, PartError) as e:
-            self.read_only_reason = f"{e}; fix it in a text editor"
+            self.read_only_reason = i18n.t("{why}; fix it in a text editor", why=e)
             self._bump()
             return
         if self.part is not None and edits != old:
@@ -80,7 +81,7 @@ class PluginSession(_Session):
             else:
                 self._overlay.unlink(missing_ok=True)
         except OSError as e:
-            raise SessionError(500, f"can't save {OVERLAY}: {e.strerror or e}") from None
+            raise SessionError(500, i18n.t("can't save {path}: {why}", path=OVERLAY, why=e.strerror or e)) from None
 
     def _set(self, edits: dict, push: bool = True) -> tuple[int, dict]:
         try:
@@ -101,38 +102,40 @@ class PluginSession(_Session):
     def _op(self, op: str, a: dict) -> dict:
         """The overlay with body-level edit `op` applied (args as the import's edits take them)."""
         if op in PIECE_OPS or (op == "set_mass" and a.get("piece") is not None):
-            raise EditError("op", NEED_STEP)
+            raise EditError("op", need_step())
         edits = copy.deepcopy(self.edits)
         bodies = {b.name: b for b in self.part.bodies}
 
         def body(field="body") -> dict:
             if a.get(field) not in bodies:
-                raise EditError(field, f"There is no body called {a.get(field)}: pick one from the list.")
+                raise EditError(field, i18n.t("There is no body called {name}: pick one from the list.",
+                                              name=a.get(field)))
             return edits.setdefault("body", {}).setdefault(a[field], {})
 
         def number(v, field, what):
             if isinstance(v, bool) or not isinstance(v, (int, float)) or not np.isfinite(v) or v <= 0:
-                raise EditError(field, f"{what} must be a number above zero: enter one.")
+                raise EditError(field, i18n.t("{what} must be a number above zero: enter one.", what=what))
             return float(v)
 
         if op == "set_mass":
             if "kg" not in a:
-                raise EditError("kg", "Say the mass in kg, or kg = none to clear it.")
+                raise EditError("kg", i18n.t("Say the mass in kg, or {kg_setting} to clear it.",
+                                             kg_setting="kg = none"))
             b = body()
             b.pop("mass", None) if a["kg"] is None else b.update(mass=number(a["kg"], "kg", "The mass"))
         elif op == "set_collision":
             if a.get("mode") not in ("none", "wheel", "shaped", "simple"):
-                raise EditError("mode", f"Collision is one of none, wheel, shaped, simple, not {a.get('mode')!r}: "
-                                        "pick one.")
+                raise EditError("mode", i18n.t("Collision is one of none, wheel, shaped, simple, not {name}: pick one.",
+                                               name=repr(a.get('mode'))))
             body()["collision"] = a["mode"]
         elif op == "set_joint":
             spec = a.get("joint")
             if bodies.get(a.get("body")) is not None and bodies[a["body"]].joint is None:
-                raise EditError("body", f"{a['body']} has no joint in the CAD plugin's part: add it there.")
+                raise EditError("body", i18n.t("{body} has no joint in the CAD plugin's part: add it there.",
+                                               body=a['body']))
             b = body()
             if not isinstance(spec, dict) or any(k not in JOINT_KEYS for k in spec):
-                raise EditError("joint", "Only the joint's range, spring, damping and frictionloss can change "
-                                         "here; the rest comes from the CAD plugin.")
+                raise EditError("joint", i18n.t("Only the joint's range, spring, damping and frictionloss can change here; the rest comes from the CAD plugin."))
             j = b.setdefault("joint", {})
             for k, v in spec.items():
                 j.pop(k, None) if v is None else j.__setitem__(k, list(v) if isinstance(v, (list, tuple)) else v)
@@ -140,7 +143,8 @@ class PluginSession(_Session):
                 b.pop("joint")
         elif op == "set_grip":
             if "grip" not in a:
-                raise EditError("grip", "Say the grip material, or grip = none for the default friction.")
+                raise EditError("grip", i18n.t("Say the grip material, or {grip_setting} for the default friction.",
+                                               grip_setting="grip = none"))
             b = body()
             if a["grip"] is None:
                 b.pop("grip", None)
@@ -155,7 +159,7 @@ class PluginSession(_Session):
             edits.pop("total_mass", None) if kg is None else edits.update(total_mass=number(kg, "kg",
                                                                                             "The total mass"))
         else:
-            raise EditError("op", f"{op} needs the CAD file: import the STEP instead.")
+            raise EditError("op", i18n.t("{op} needs the CAD file: import the STEP instead.", op=op))
         edits["body"] = {k: v for k, v in edits.get("body", {}).items() if v}
         if not edits["body"]:
             del edits["body"]
@@ -164,7 +168,7 @@ class PluginSession(_Session):
     def edit(self, body: dict) -> tuple[int, dict]:
         op, args = body.get("op"), body.get("args", {})
         if not isinstance(op, str) or not isinstance(args, dict):
-            raise SessionError(400, "op (the edit's name) and args (an object) are required")
+            raise SessionError(400, i18n.t("op (the edit's name) and args (an object) are required"))
         with self._lock:
             self._check_open()
             self._sync()

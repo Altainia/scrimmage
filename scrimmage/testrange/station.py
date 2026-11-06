@@ -44,6 +44,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from .. import i18n
+from ..i18n import N_
 from .elements import IN, ROBOT_OUTLINE, _rect, _separated
 from .spec import FIELD_LENGTH, FIELD_WIDTH, RangeError, _Reader, _rot_z, kind_named
 
@@ -65,18 +67,19 @@ _STATION = ("name", "release", "release_in", "heading_deg", "pitch_deg", "speed"
             "spread_yaw_deg", "spread_pitch_deg", "spread_speed", "spread_position", "spread_position_in",
             "spread_rotation_deg", "chute", "kind", "tip_deg", "turn_deg", "spread_tip_deg", "spread_turn_deg")
 _CHUTE = ("width", "length", "slope_deg")
+CHUTE_PARTS = {"floor": N_("floor"), "wall_left": N_("wall left"), "wall_right": N_("wall right")}   # chute_parts's
 _TOUCH = 1e-6   # m: a ball resting on a surface is not inside it
 _START_TOUCH = 0.01     # m: a start's bumpers may lie against a chute's low end (its plate's corner reaches past)
 
 
 def stock_too_big(stock: int) -> str:
-    return f"stock can be at most {MAX_STOCK} pieces, not {stock}"
+    return i18n.t("stock can be at most {most} pieces, not {stock}", most=MAX_STOCK, stock=stock)
 
 
 def check_seed(seed) -> int:
     """`seed` if it is a whole number, 0 or more (numpy's seeds); a ValueError otherwise."""
     if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
-        raise ValueError(f"seed must be a whole number, 0 or more, not {seed!r}")
+        raise ValueError(i18n.t("seed must be a whole number, 0 or more, not {seed}", seed=repr(seed)))
     return seed
 
 
@@ -184,11 +187,6 @@ def _low_end_drop(st: Station, kind: PieceKind) -> float:
     return -(top - CHUTE_PLATE * math.cos(s))
 
 
-def _piece_words(kind: PieceKind) -> str:
-    """A fed piece in a message: "a 0.1501 m ball" (as always), or "a coral"."""
-    return f"a {kind.ball.diameter} m ball" if kind.ball is not None else f"a {kind.label}"
-
-
 def _station(path, table, i: int, kinds: dict[str, PieceKind], default: str, taken: list[str]) -> Station:
     r = _Reader(path, f"[[station]] #{i + 1}", table, _STATION)
     name = r.text("name")
@@ -196,15 +194,18 @@ def _station(path, table, i: int, kinds: dict[str, PieceKind], default: str, tak
     kind_name = r.text("kind") if r.has("kind") else None
     kind = kind_named(path, r.where, kind_name if kind_name is not None else default, kinds)
     if kind.form == "disc":
-        raise RangeError(f"{path}: {r.where}: stations feed balls; this range's piece is a disc")
+        raise RangeError(i18n.t("{path}: {where}: stations feed balls; this range's piece is a disc",
+                                path=path, where=r.where))
     if name in taken:
-        raise RangeError(f"{path}: [[station]] '{name}' shares its name with another station, goal, obstacle or "
-                         "element; names must be unique")
+        raise RangeError(i18n.t("{path}: {station_table} '{name}' shares its name with another station, goal, "
+                                "obstacle or element; names must be unique", path=path, name=name,
+                                station_table="[[station]]"))
     for key in ("release", "spread_position"):
         if r.has(key) and r.has(key + "_in"):
-            raise r.err(f"has both {key} and {key}_in; give one")
+            raise r.err(i18n.t("has both {key} and {key}_in; give one", key=key))
     if r.has("release") == r.has("release_in"):
-        raise r.err("needs one of release = [x, y, z] (m) or release_in = [x, y, z] (in)")
+        raise r.err(i18n.t("needs one of {release_setting} (m) or {release_in_setting} (in)",
+                           release_setting="release = [x, y, z]", release_in_setting="release_in = [x, y, z]"))
     release = r.nums("release", 3) if r.has("release") else tuple(v * IN for v in r.nums("release_in", 3))
     if r.has("spread_position_in"):
         spread_position = tuple(v * IN for v in r.nums("spread_position_in", 3))
@@ -212,10 +213,10 @@ def _station(path, table, i: int, kinds: dict[str, PieceKind], default: str, tak
         spread_position = r.nums("spread_position", 3, (0.0, 0.0, 0.0))
     pitch = r.num("pitch_deg", 0.0)
     if not -90.0 <= pitch <= 90.0:
-        raise r.err(f"pitch_deg must be from -90 to 90, not {pitch}")
+        raise r.err(i18n.t("pitch_deg must be from -90 to 90, not {pitch}", pitch=pitch))
     stock = r.whole("stock") if r.has("stock") else None
     if stock is not None and stock < 1:
-        raise r.err(f"stock must be at least 1, not {stock}")
+        raise r.err(i18n.t("stock must be at least 1, not {stock}", stock=stock))
     if stock is not None and stock > MAX_STOCK:
         raise r.err(stock_too_big(stock))
     rotation = r.nums("spread_rotation_deg", 3, (0.0, 0.0, 0.0))
@@ -225,27 +226,31 @@ def _station(path, table, i: int, kinds: dict[str, PieceKind], default: str, tak
     for key, v in (*spreads.items(), ("spread_position", min(spread_position)),
                    ("spread_rotation_deg", min(rotation))):
         if v < 0.0:
-            raise r.err(f"{key} must be 0 or more, not {v!r}")
+            raise r.err(i18n.t("{key} must be 0 or more, not {value}", key=key, value=repr(v)))
     speed = r.num("speed", 0.0)
     if speed < 0.0:
-        raise r.err(f"speed must be 0 or more, not {speed!r}")
+        raise r.err(i18n.t("speed must be 0 or more, not {speed}", speed=repr(speed)))
     tip = r.num("tip_deg", 90.0 if kind.flat else 0.0)
     if not -90.0 <= tip <= 90.0:
-        raise r.err(f"tip_deg must be from -90 to 90, not {tip}")
+        raise r.err(i18n.t("tip_deg must be from -90 to 90, not {tip}", tip=tip))
     rad = kind.radius
     x, y, z = release
     if not (rad <= x <= FIELD_LENGTH - rad and rad <= y <= FIELD_WIDTH - rad):
-        raise r.err(f"release point ({x:.4g}, {y:.4g}) lies off the field (0..{FIELD_LENGTH} x 0..{FIELD_WIDTH} m,"
-                    f" center at least {rad:.4g} m inside)")
+        raise r.err(i18n.t("release point ({x}, {y}) lies off the field (0..{field_length} x 0..{field_width} "
+                           "m, center at least {rad} m inside)", x=f"{x:.4g}", y=f"{y:.4g}",
+                           field_length=FIELD_LENGTH, field_width=FIELD_WIDTH, rad=f"{rad:.4g}"))
     if z < rad:
-        raise r.err(f"release point is {z:.4g} m above the carpet; {_piece_words(kind)}'s center needs at"
-                    f" least {rad:.4g} m")
+        if kind.ball is not None:     # the fed piece: "a 0.1501 m ball" (as always), or "a coral"
+            raise r.err(i18n.t("release point is {z} m above the carpet; a {diameter} m ball's center needs at least "
+                               "{rad} m", z=f"{z:.4g}", diameter=kind.ball.diameter, rad=f"{rad:.4g}"))
+        raise r.err(i18n.t("release point is {z} m above the carpet; a {piece}'s center needs at least {rad} m",
+                           z=f"{z:.4g}", piece=kind.label, rad=f"{rad:.4g}"))
     chute = None
     if r.has("chute"):
         c = r.sub("chute", _CHUTE)
         slope = c.num("slope_deg")
         if not 0.0 <= slope < 90.0:
-            raise c.err(f"slope_deg must be from 0 to below 90, not {slope}")
+            raise c.err(i18n.t("slope_deg must be from 0 to below 90, not {slope}", slope=slope))
         chute = Chute(length=c.num("length", positive=True), slope_deg=slope,
                       width=c.num("width", positive=True) if c.has("width") else None)
     st = Station(name=name, release=release, heading_deg=r.num("heading_deg"), pitch_deg=pitch, speed=speed,
@@ -254,12 +259,16 @@ def _station(path, table, i: int, kinds: dict[str, PieceKind], default: str, tak
                  tip_deg=tip, turn_deg=r.num("turn_deg", 0.0))
     if chute is not None:
         if chute.width is not None and chute.width <= kind.extent:
-            what = f"the ball ({kind.extent} m)" if kind.ball is not None else f"the {kind.label} ({kind.extent:.4g} m)"
-            raise RangeError(f"{path}: {r.where} chute: {chute.width:.4g} m wide, no wider than {what}")
+            if kind.ball is not None:
+                raise RangeError(i18n.t("{path}: {where} chute: {width} m wide, no wider than the ball ({extent} m)",
+                                        path=path, where=r.where, width=f"{chute.width:.4g}", extent=kind.extent))
+            raise RangeError(i18n.t("{path}: {where} chute: {width} m wide, no wider than the {piece} ({extent} m)",
+                                    path=path, where=r.where, width=f"{chute.width:.4g}", piece=kind.label,
+                                    extent=f"{kind.extent:.4g}"))
         drop = _low_end_drop(st, kind)
         if drop > 0.0:
-            raise RangeError(f"{path}: {r.where} chute: its low end would be {drop:.2g} m below the carpet; make"
-                             " it shorter or less steep")
+            raise RangeError(i18n.t("{path}: {where} chute: its low end would be {drop} m below the carpet; make "
+                                    "it shorter or less steep", path=path, where=r.where, drop=f"{drop:.2g}"))
     return st
 
 
@@ -268,7 +277,8 @@ def parse_stations(path, tables, kinds: dict[str, PieceKind], default: str,
     """Read the `[[station]]` tables, feeding the field's `kinds` (`default` when a station names none). `taken` are
     the names of the goals, obstacles and elements, which a station's name may not repeat."""
     if not isinstance(tables, list):
-        raise RangeError(f"{path}: station must be an array of tables ([[station]])")
+        raise RangeError(i18n.t("{path}: station must be an array of tables ({station_table})", path=path,
+                                station_table="[[station]]"))
     out: list[Station] = []
     for i, t in enumerate(tables):
         out.append(_station(path, t, i, kinds, default, list(taken) + [s.name for s in out]))
@@ -315,28 +325,36 @@ def check_release_clear(path, rng: Range) -> None:
         return
     from .build_elements import chute_parts
 
-    solids = [(f"element '{e.name}'", _element_boxes(e)) for e in rng.elements]
-    solids += [(f"obstacle '{o.name}'", [(np.array(o.pos, float), o.rotation(), np.array(o.size) / 2.0)])
-               for o in rng.obstacles]
+    # (what it is in a message, its boxes, the station whose chute it is or None)
+    solids = [(i18n.t("element '{name}'", name=e.name), _element_boxes(e), None) for e in rng.elements]
+    solids += [(i18n.t("obstacle '{name}'", name=o.name),
+                [(np.array(o.pos, float), o.rotation(), np.array(o.size) / 2.0)], None) for o in rng.obstacles]
     chutes = {s.name: chute_parts(s, s.kind_of(rng)) for s in rng.stations if s.chute is not None}
-    solids += [(f"the chute of station '{name}'", list(parts.values())) for name, parts in chutes.items()]
+    solids += [(i18n.t("the chute of station '{name}'", name=name), list(parts.values()), name)
+               for name, parts in chutes.items()]
     _check_chutes(path, rng, solids, chutes)
     for st in rng.stations:
         kind = st.kind_of(rng)
         r = kind.radius
         p = np.array(st.release)
         own = [b for part, b in chutes[st.name].items() if part != "floor"] if st.name in chutes else []
-        for what, boxes in solids:
-            if what == f"the chute of station '{st.name}'":
+        for what, boxes, station in solids:
+            if station == st.name:
                 boxes = own
             for center, rot, half in boxes:
                 local = rot.T @ (p - center)
                 if np.linalg.norm(local - np.clip(local, -half, half)) < r - _TOUCH:
                     x, y, z = st.release
-                    raise RangeError(
-                        f"{path}: [[station]] '{st.name}': its release point at ({x:.4g}, {y:.4g}, {z:.4g}) is"
-                        f" inside {what}; move it clear (the {'ball' if kind.ball is not None else kind.label}'s"
-                        f" center needs {r:.2g} m all round)")
+                    if kind.ball is not None:
+                        raise RangeError(i18n.t("{path}: {station_table} '{name}': its release point at ({x}, {y}, "
+                                                "{z}) is inside {what}; move it clear (the ball's center needs {r} m "
+                                                "all round)", path=path, name=st.name, x=f"{x:.4g}", y=f"{y:.4g}",
+                                                z=f"{z:.4g}", what=what, r=f"{r:.2g}", station_table="[[station]]"))
+                    raise RangeError(i18n.t("{path}: {station_table} '{name}': its release point at ({x}, {y}, {z}) "
+                                            "is inside {what}; move it clear (the {piece}'s center needs {r} m all "
+                                            "round)", path=path, name=st.name, x=f"{x:.4g}", y=f"{y:.4g}",
+                                            z=f"{z:.4g}", what=what, piece=kind.label, r=f"{r:.2g}",
+                                            station_table="[[station]]"))
 
 
 def _corners(center, rot, half) -> np.ndarray:
@@ -377,37 +395,45 @@ def _check_chutes(path, rng: Range, solids, chutes: dict) -> None:
     for st in rng.stations:
         if st.chute is None:
             continue
-        where = f"{path}: [[station]] '{st.name}': its chute"
+        where = i18n.t("{path}: {station_table} '{name}': its chute", path=path, name=st.name,
+                       station_table="[[station]]")
         for part, box in chutes[st.name].items():
+            part_words = i18n.translated(CHUTE_PARTS[part])
             c = _corners(*box)
             lo, hi = c.min(axis=0), c.max(axis=0)
             if lo[0] < 0.0 or lo[1] < 0.0 or hi[0] > FIELD_LENGTH or hi[1] > FIELD_WIDTH:
-                raise RangeError(f"{where} reaches off the field (0..{FIELD_LENGTH} x 0..{FIELD_WIDTH} m: its"
-                                 f" {part.replace('_', ' ')} spans x {lo[0]:.3g} to {hi[0]:.3g}, y {lo[1]:.3g} to"
-                                 f" {hi[1]:.3g}); move the release point further onto the field")
-            for what, boxes in solids:
-                if what == f"the chute of station '{st.name}'":
+                raise RangeError(i18n.t("{where} reaches off the field (0..{field_length} x 0..{field_width} m: "
+                                        "its {part} spans x {x_lo} to {x_hi}, y {y_lo} to {y_hi}); move the release "
+                                        "point further onto the field", where=where, field_length=FIELD_LENGTH,
+                                        field_width=FIELD_WIDTH, part=part_words, x_lo=f"{lo[0]:.3g}",
+                                        x_hi=f"{hi[0]:.3g}", y_lo=f"{lo[1]:.3g}", y_hi=f"{hi[1]:.3g}"))
+            for what, boxes, station in solids:
+                if station == st.name:
                     continue
                 if any(_overlap(box, other) for other in boxes):
-                    raise RangeError(f"{where} runs into {what}; move the station or shorten its chute")
+                    raise RangeError(i18n.t("{where} runs into {what}; move the station or shorten its chute",
+                                            where=where, what=what))
             for sname, (sx, sy, heading) in rng.starts.items():
                 outline = _rect((sx, sy), heading, ROBOT_OUTLINE - 2 * _START_TOUCH, ROBOT_OUTLINE - 2 * _START_TOUCH)
                 if not _separated(outline, _footprint(box)):
-                    raise RangeError(f"{where} ({part.replace('_', ' ')}) overlaps start '{sname}' at"
-                                     f" ({sx:.4g}, {sy:.4g}); move the start or the station (a {ROBOT_OUTLINE} m"
-                                     " square robot outline is assumed)")
+                    raise RangeError(i18n.t("{where} ({part}) overlaps start '{start}' at ({sx}, {sy}); move "
+                                            "the start or the station (a {robot_outline} m square robot outline "
+                                            "is assumed)", where=where, part=part_words, start=sname, sx=f"{sx:.4g}",
+                                            sy=f"{sy:.4g}", robot_outline=ROBOT_OUTLINE))
 
 
 def with_overrides(rng: Range, overrides: dict) -> Range:
     """`rng` with the named stations' settings replaced: `{station name: {OVERRIDE_KEYS...}}`. `stock = 0` is no stock
     (the station feeds up to STATION_CAP); a list key takes 3 numbers. The release check runs again."""
     if not isinstance(overrides, dict):
-        raise RangeError(f"station settings must be a table of station names, not {overrides!r}")
+        raise RangeError(i18n.t("station settings must be a table of station names, not {overrides}",
+                                overrides=repr(overrides)))
     names = [s.name for s in rng.stations]
     changed = {}
     for name, table in overrides.items():
         if name not in names:
-            raise RangeError(f"the field has no station '{name}'; its stations: {', '.join(names) or 'none'}")
+            raise RangeError(i18n.t("the field has no station '{name}'; its stations: {stations}",
+                                    name=name, stations=', '.join(names) or i18n.t("none")))
         r = _Reader(rng.path, f"station '{name}'", table, OVERRIDE_KEYS)
         new: dict = {}
         if r.has("interval"):
@@ -415,14 +441,14 @@ def with_overrides(rng: Range, overrides: dict) -> Range:
         if r.has("stock"):
             stock = r.whole("stock")
             if stock < 0:
-                raise r.err(f"stock must be 0 (no limit) or more, not {stock}")
+                raise r.err(i18n.t("stock must be 0 (no limit) or more, not {stock}", stock=stock))
             if stock > MAX_STOCK:
                 raise r.err(stock_too_big(stock))
             new["stock"] = stock or None
         if r.has("tip_deg"):
             tip = r.num("tip_deg")
             if not -90.0 <= tip <= 90.0:
-                raise r.err(f"tip_deg must be from -90 to 90, not {tip:g}")
+                raise r.err(i18n.t("tip_deg must be from -90 to 90, not {tip}", tip=f"{tip:g}"))
             new["tip_deg"] = tip
         if r.has("turn_deg"):
             new["turn_deg"] = r.num("turn_deg")
@@ -431,7 +457,7 @@ def with_overrides(rng: Range, overrides: dict) -> Range:
             if r.has(key):
                 v = r.nums(key, 3) if key in ("spread_position", "spread_rotation_deg") else r.num(key)
                 if min(v if isinstance(v, tuple) else (v,)) < 0.0:
-                    raise r.err(f"{key} must be 0 or more, not {v!r}")
+                    raise r.err(i18n.t("{key} must be 0 or more, not {value}", key=key, value=repr(v)))
                 new[key] = v
         changed[name] = replace(next(s for s in rng.stations if s.name == name), **new)
     out = replace(rng, stations=tuple(changed.get(s.name, s) for s in rng.stations))

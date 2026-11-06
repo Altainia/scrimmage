@@ -8,6 +8,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from . import i18n
+
 RPM_TO_RAD_S = 2.0 * math.pi / 60.0
 
 
@@ -82,7 +84,8 @@ def get_motor(name: str, count: int = 1) -> DCMotor:
     try:
         base = MOTORS[name]
     except KeyError:
-        raise ValueError(f"Unknown motor '{name}'. Known motors: {', '.join(sorted(MOTORS))}") from None
+        raise ValueError(i18n.t("Unknown motor '{name}'. Known motors: {motors}",
+                                name=name, motors=', '.join(sorted(MOTORS)))) from None
     return base.gearbox(count)
 
 

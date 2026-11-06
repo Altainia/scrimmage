@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import mujoco
 
+from .. import i18n
 from ..hal_drive import driven_joints
 from ..launcher.inputs import PRESETS
 from ..parts.grip import GRIP_MATERIALS
@@ -50,7 +51,7 @@ from .aim import turrets
 from .clearance import uncounted_note
 from .drive import drivetrain
 from .placed import ON_PIECE
-from .spread import NO_BALL, floor_ball, spread_ball
+from .spread import floor_ball, no_ball, spread_ball
 
 NEXT_BAR = "next bar"     # a hanging_from or touch target: the lowest bar above every bar hung from so far
 ANY_BAR = "any bar"       # a touch target: any of the field's bars
@@ -249,7 +250,7 @@ def palette(world, hooks: list[str], setup: dict | None = None) -> dict:
         "piece_labels": _piece_labels(world, floor_names),
         "station_kinds": {st.name: st.kind or rng.default_kind for st in stations},
         "grips": _grips(world),
-        "grip_materials": [[key, label, mu] for key, (label, mu) in GRIP_MATERIALS.items()],
+        "grip_materials": [[key, i18n.translated(label), mu] for key, (label, mu) in GRIP_MATERIALS.items()],
         # where the floor spread's piece lies (in) and the nearest distance ahead Setup offers: {offset_in,
         # distance_in, nearest_in, kind (its kind's name), and a piece other than a ball's tip_deg and rotation_deg},
         # or null
@@ -302,18 +303,18 @@ class _Names:
 
 def _unit_problem(name: str, kind: str, unit: str) -> str | None:
     if kind == "slide" and unit == "deg":
-        return f'"{name}" slides, so give it in inches or meters, not degrees'
+        return i18n.t('"{name}" slides, so give it in inches or meters, not degrees', name=name)
     if kind != "slide" and unit != "deg":
-        return f'"{name}" turns, so give it in degrees'
+        return i18n.t('"{name}" turns, so give it in degrees', name=name)
     return None
 
 
 def _joint_problems(n: _Names, name: str, unit: str | None, motor: bool) -> list[str]:
     if name not in n.joints:
-        return [f'no joint "{name}" on this robot any more']
+        return [i18n.t('no joint "{name}" on this robot any more', name=name)]
     out = []
     if motor and name not in n.motors:
-        out.append(f'"{name}" has no motor to move it')
+        out.append(i18n.t('"{name}" has no motor to move it', name=name))
     if unit is not None:
         u = _unit_problem(name, n.joints[name], unit)
         if u:
@@ -323,23 +324,24 @@ def _joint_problems(n: _Names, name: str, unit: str | None, motor: bool) -> list
 
 def _bar_problems(n: _Names, bar: str) -> list[str]:
     if bar == NEXT_BAR:
-        return [] if n.bars else ['"next bar" needs a field with bars']
-    return [] if bar in n.bars else [f'no bar "{bar}" on this field']
+        return [] if n.bars else [i18n.t("\"{next_bar}\" needs a field with bars", next_bar="next bar")]
+    return [] if bar in n.bars else [i18n.t('no bar "{bar}" on this field', bar=bar)]
 
 
 def _no_goal(n: _Names, goal: str) -> str:
-    return f"no goal '{goal}' on this field; its goals: {', '.join(n.goals)}"
+    return i18n.t("no goal '{goal}' on this field; its goals: {names}", goal=goal, names=', '.join(n.goals))
 
 
 def _aim_problems(n: _Names, turret: str, goal: str) -> list[str]:
     """An aim block's or aimed condition's turret and goal: a stock turret of the robot, a goal of the field."""
     out = []
     if not n.turrets:
-        out.append("this robot has no turret to aim")
+        out.append(i18n.t("this robot has no turret to aim"))
     elif turret not in n.turrets:
-        out.append(f"{turret} isn't a turret; the robot's turrets: {', '.join(n.turrets)}")
+        out.append(i18n.t("{turret} isn't a turret; the robot's turrets: {names}",
+                          turret=turret, names=', '.join(n.turrets)))
     if not n.goals:
-        out.append("this field has no goals to aim at")
+        out.append(i18n.t("this field has no goals to aim at"))
     elif goal not in n.goals:
         out.append(_no_goal(n, goal))
     return out
@@ -348,24 +350,27 @@ def _aim_problems(n: _Names, turret: str, goal: str) -> list[str]:
 def _cylinder_problems(n: _Names, name: str, doing: str) -> list[str]:
     """A set_cylinder block's or cylinder condition's cylinder: one of the robot's."""
     if not n.cylinders:
-        return [f"this robot has no cylinder to {doing}"]
+        return [(i18n.t("this robot has no cylinder to check") if doing == "check"
+                else i18n.t("this robot has no cylinder to set"))]
     if name not in n.cylinders:
-        return [f"{name} isn't a cylinder; the robot's cylinders: {', '.join(n.cylinders)}"]
+        return [i18n.t("{name} isn't a cylinder; the robot's cylinders: {names}",
+                       name=name, names=', '.join(n.cylinders))]
     return []
 
-
-KIND_WORDS = {"beam": "a beam break", "distance": "a distance sensor", "color": "a color sensor"}
 
 
 def _sensor_problems(n: _Names, name: str, sees: str | None) -> list[str]:
     """A sensor condition's sensor: one of the robot's [[sensor]]s; and `sees` only on a color sensor."""
     if not n.sensors:
-        return ["this robot has no sensors; add a [[sensor]] to its config"]
+        return [i18n.t("this robot has no sensors; add a {sensor_table} to its config", sensor_table="[[sensor]]")]
     if name not in n.sensors:
-        return [f"{name} isn't a sensor; the robot's sensors: {', '.join(n.sensors)}"]
+        return [i18n.t("{name} isn't a sensor; the robot's sensors: {names}", name=name, names=', '.join(n.sensors))]
     if sees is not None and n.sensors[name] != "color":
-        return [f"{name} is {KIND_WORDS[n.sensors[name]]}, which can't see colors; only a color sensor can see "
-                f"{sees}"]
+        if n.sensors[name] == "beam":
+            return [i18n.t("{name} is a beam break, which can't see colors; only a color sensor can see {sees}",
+                           name=name, sees=sees)]
+        return [i18n.t("{name} is a distance sensor, which can't see colors; only a color sensor can see {sees}",
+                       name=name, sees=sees)]
     return []
 
 
@@ -376,43 +381,43 @@ def _cond_problems(n: _Names, c) -> list[str]:
     if c.kind == "touch":
         out = []
         if a["field"] == ANY_BAR:
-            out += [] if n.bars else ['"any bar" needs a field with bars']
+            out += [] if n.bars else [i18n.t("\"{any_bar}\" needs a field with bars", any_bar="any bar")]
         if a["robot"] == ANY_HOOK:
             if not n.p["hooks"]:
-                out.append("this robot has no hooks; say which bodies are hooks in the test's setup")
+                out.append(i18n.t("this robot has no hooks; say which bodies are hooks in the test's setup"))
         elif a["robot"] not in n.robot:
-            out.append(f'no part or body "{a["robot"]}" on this robot any more')
+            out.append(i18n.t('no part or body "{robot}" on this robot any more', robot=a['robot']))
         if a["field"] == NEXT_BAR:
             out += _bar_problems(n, NEXT_BAR)
         elif a["field"] != ANY_BAR and a["field"] not in n.field and a["field"] not in n.pieces:
-            out.append(f'nothing called "{a["field"]}" on this field')
+            out.append(i18n.t('nothing called "{field}" on this field', field=a['field']))
         return out
     if c.kind in ("piece_in", "held", "rests_on", "seated"):
         out = []
         if c.kind == "rests_on" and a["on"] != ON_PIECE and a["on"] not in n.elements:
-            out.append(f'no element "{a["on"]}" on this field')
+            out.append(i18n.t('no element "{element}" on this field', element=a['on']))
         if c.kind == "seated" and a["on"] not in n.rods:
-            out.append(f'no rod "{a["on"]}" on this field')
+            out.append(i18n.t('no rod "{rod}" on this field', rod=a['on']))
         elif c.kind == "seated" and not n.hollow:
-            out.append("this field's pieces have no hole to go on a rod")
+            out.append(i18n.t("this field's pieces have no hole to go on a rod"))
         if c.kind == "piece_in" and a["body"] not in n.bodies:
-            out.append(f'no body "{a["body"]}" on this robot any more')
+            out.append(i18n.t('no body "{body}" on this robot any more', body=a['body']))
         if c.kind == "held" and a["by"] not in n.robot:
-            out.append(f'no body or part "{a["by"]}" on this robot (held by)')
+            out.append(i18n.t('no body or part "{by}" on this robot (held by)', by=a['by']))
         if a["piece"] == ANY_PIECE:
             # a piece a station feeds can be placed too (rests_on, seated)
             if not n.pieces and not (c.kind in ("rests_on", "seated") and n.stations):
-                out.append("this field has no game pieces")
+                out.append(i18n.t("this field has no game pieces"))
         elif a["piece"] not in n.pieces:
-            out.append(f'no game piece "{a["piece"]}" on this field')
+            out.append(i18n.t('no game piece "{piece}" on this field', piece=a['piece']))
         return out
     if c.kind == "hanging_from":
         return _bar_problems(n, a["bar"])
     if c.kind in ("in_hopper", "made_it_in") and not n.hopper:
-        return ["tick where a piece should end up in Setup: the bodies a piece lands in or is held by"]
+        return [i18n.t("tick where a piece should end up in Setup: the bodies a piece lands in or is held by")]
     if c.kind == "scored":
         if not n.goals:
-            return ["this field has no goals to score in"]
+            return [i18n.t("this field has no goals to score in")]
         if a["goal"] != ANY_GOAL and a["goal"] not in n.goals:
             return [_no_goal(n, a["goal"])]
         return []
@@ -421,28 +426,28 @@ def _cond_problems(n: _Names, c) -> list[str]:
     if c.kind == "cylinder":
         return _cylinder_problems(n, a["cylinder"], "check")
     if c.kind == "pressure":
-        return [] if n.cylinders else ["this robot has no air system (no cylinder)"]
+        return [] if n.cylinders else [i18n.t("this robot has no air system (no cylinder)")]
     if c.kind == "element" and a["element"] not in n.moving:
-        known = f"this field's moving elements: {', '.join(n.moving)}" if n.moving else \
-            "this field has no moving elements"
-        return [f"{a['element']} isn't a moving element; {known}"]
+        known = i18n.t("this field's moving elements: {names}", names=', '.join(n.moving)) if n.moving else \
+            i18n.t("this field has no moving elements")
+        return [i18n.t("{element} isn't a moving element; {known}", element=a['element'], known=known)]
     if c.kind == "clears" and a["element"] not in n.elements:
-        return [f'no element "{a["element"]}" on this field']
+        return [i18n.t('no element "{element}" on this field', element=a['element'])]
     if c.kind == "sensor":
         return _sensor_problems(n, a["sensor"], a.get("sees"))
     if c.kind in ("partner_lifted", "partner_moved") and not n.partner:
-        return ["there's no partner robot; add one in Setup"]
+        return [i18n.t("there's no partner robot; add one in Setup")]
     if c.kind == "station_empty":
         name = a["station"]
         if name not in n.stations:
-            return [f'no station "{name}" on this field']
+            return [i18n.t('no station "{name}" on this field', name=name)]
         if n.stock.get(name) is None:
-            return [f'"{name}" never runs out (it has no stock); give it a stock in Setup']
+            return [i18n.t('"{name}" never runs out (it has no stock); give it a stock in Setup', name=name)]
         return []
     if c.kind == "level":
         if not n.p["levels"]:
-            return ["levels need a field that scores climbs"]
-        return [] if a["level"] in n.p["levels"] else [f'no level "{a["level"]}" on this field']
+            return [i18n.t("levels need a field that scores climbs")]
+        return [] if a["level"] in n.p["levels"] else [i18n.t('no level "{level}" on this field', level=a['level'])]
     return []       # tilt
 
 
@@ -455,9 +460,10 @@ def _block_problems(n: _Names, b) -> list[str]:
     if b.do == "move":
         return _joint_problems(n, a["joint"], a["unit"], motor=True)
     if b.do in ("start_feeding", "stop_feeding", "feed_one"):
-        return [] if a["station"] in n.stations else [f'no station "{a["station"]}" on this field']
+        return [] if a["station"] in n.stations else [i18n.t('no station "{station}" on this field',
+                                                             station=a['station'])]
     if b.do == "turn":
-        return [] if n.p["drive_kind"] else ["turn needs a drivetrain; this robot has none"]
+        return [] if n.p["drive_kind"] else [i18n.t("turn needs a drivetrain; this robot has none")]
     if b.do == "aim":
         out = _aim_problems(n, a["turret"], a["at"])
         if a["turret"] in n.turrets:
@@ -468,11 +474,11 @@ def _block_problems(n: _Names, b) -> list[str]:
     if b.do == "drive":
         if n.p["drive"]:
             if n.p["drive_kind"] == "tank" and a.get("direction") in ("left", "right"):
-                return ["a tank drive can't drive sideways; turn, then drive forward"]
+                return [i18n.t("a tank drive can't drive sideways; turn, then drive forward")]
             return []
         if any(j["kind"] == "wheel" for j in n.p["motors"]):
-            return ["drive works on a tank or swerve drive; spin the drive motors instead"]
-        return ["drive needs a drivetrain; this robot has none"]
+            return [i18n.t("drive works on a tank or swerve drive; spin the drive motors instead")]
+        return [i18n.t("drive needs a drivetrain; this robot has none")]
     for key in ("until", "that"):
         if key in a:
             return _cond_problems(n, a[key])
@@ -515,20 +521,20 @@ def _setup_level_problems(program, world, n: _Names) -> list[str]:
     out = []
     setup = program.setup
     if "ball" in setup and rng is None:
-        out.append("the plain field has no ball to pick; clear the ball in Setup")
+        out.append(i18n.t("the plain field has no ball to pick; clear the ball in Setup"))
     elif "ball" in setup and not n.p["ball_choice"]:
         if n.p["ball"]:
-            out.append("this field keeps its own ball; pick a ball on the intake or station field")
+            out.append(i18n.t("this field keeps its own ball; pick a ball on the intake or station field"))
         else:
-            out.append("this field has no ball to pick; clear the ball in Setup")
+            out.append(i18n.t("this field has no ball to pick; clear the ball in Setup"))
     if "piece" in setup and rng is None:
-        out.append("the plain field has no piece to pick; clear the piece in Setup")
+        out.append(i18n.t("the plain field has no piece to pick; clear the piece in Setup"))
     elif "piece" in setup and not n.p["ball_choice"]:
-        out.append("this field keeps its own pieces; pick a piece on the intake or station field")
-    out += [f'Setup names a station this field doesn\'t have: "{name}"'
+        out.append(i18n.t("this field keeps its own pieces; pick a piece on the intake or station field"))
+    out += [i18n.t("Setup names a station this field doesn't have: \"{name}\"", name=name)
             for name in setup.get("station", {}) if name not in n.stations]
     if setup.get("floor_spread") and spread_ball(world) is None:
-        out.append(NO_BALL)
+        out.append(no_ball())
     if rng is not None and tr is not None:
         out += setup_problems(program, rng)
     return out
@@ -539,9 +545,11 @@ def problems(program, world) -> list[dict]:
     hopper body the test's setup names that isn't a body of the robot, and what the setup asks of the field, are at
     place []. Empty when the program can run."""
     n = _Names(world, list(program.hooks), program)
-    out = [{"place": [], "message": f'no body "{h}" on this robot any more (the test lists it as a hook)'}
+    out = [{"place": [], "message": i18n.t('no body "{body}" on this robot any more (the test lists it as a hook)',
+                                           body=h)}
            for h in program.hooks if h not in n.bodies]
-    out += [{"place": [], "message": f'no body "{h}" on this robot any more (the test lists it as the hopper)'}
+    out += [{"place": [], "message": i18n.t('no body "{body}" on this robot any more (the test lists it as the hopper)',
+                                            body=h)}
             for h in program.hopper or [] if h not in n.bodies]
     out += [{"place": [], "message": msg} for msg in _setup_level_problems(program, world, n)]
 

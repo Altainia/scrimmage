@@ -33,6 +33,7 @@ import typing
 from dataclasses import dataclass, fields
 from pathlib import Path
 
+from .. import i18n
 from ..launcher.inputs import (
     FEED_RULES,
     BatteryIn,
@@ -108,7 +109,8 @@ class AeroSet:
 def _section(kind: str, name: str) -> dict:
     presets = PRESETS.get(kind, {})
     if name not in presets:
-        raise DiscConfigError(f"unknown {kind} preset {name!r}; valid presets: {', '.join(sorted(presets))}")
+        raise DiscConfigError(i18n.t("unknown {kind} preset {name}; valid presets: {presets}",
+                                     kind=kind, name=repr(name), presets=', '.join(sorted(presets))))
     return dict(presets[name])
 
 
@@ -116,7 +118,9 @@ def _check_keys(kind: str, name: str, values: dict, cls) -> None:
     valid = {f.name for f in fields(cls)} - {"name"}
     unknown = sorted(set(values) - valid)
     if unknown:
-        raise DiscConfigError(f"[{kind}.{name}] has unknown keys {unknown}; valid keys: {', '.join(sorted(valid))}")
+        raise DiscConfigError(i18n.t("{kind_name_table} has unknown keys {unknown}; valid keys: {valid}",
+                                     unknown=unknown, valid=', '.join(sorted(valid)),
+                                     kind_name_table="[{}.{}]".format(kind, name)))
 
 
 def disc_preset(name: str) -> Disc:
@@ -125,9 +129,12 @@ def disc_preset(name: str) -> Disc:
     disc = Disc(**values)
     for key in ("diameter", "mass", "height", "izz", "ixx", "rim_stiffness"):
         if not getattr(disc, key) > 0.0:
-            raise DiscConfigError(f"[disc.{name}] {key} must be positive, got {getattr(disc, key)}")
+            raise DiscConfigError(i18n.t("{disc_name_table} {key} must be positive, got {value}", key=key,
+                                         value=getattr(disc, key), disc_name_table="[disc.{}]".format(name)))
     if disc.rim_damping_ratio < 0.0:
-        raise DiscConfigError(f"[disc.{name}] rim_damping_ratio must be zero or more, got {disc.rim_damping_ratio}")
+        raise DiscConfigError(i18n.t("{disc_name_table} rim_damping_ratio must be zero or more, got "
+                                     "{rim_damping_ratio}", rim_damping_ratio=disc.rim_damping_ratio,
+                                     disc_name_table="[disc.{}]".format(name)))
     return disc
 
 
@@ -136,9 +143,11 @@ def aero_set(name: str) -> AeroSet:
     _check_keys("aero", name, values, AeroSet)
     aero = AeroSet(name=name, **values)
     if aero.form not in AERO_FORMS:
-        raise DiscConfigError(f"[aero.{name}] form {aero.form!r} is not one of {', '.join(AERO_FORMS)}")
+        raise DiscConfigError(i18n.t("{aero_name_table} form {form} is not one of {forms}", form=repr(aero.form),
+                                     forms=', '.join(AERO_FORMS), aero_name_table="[aero.{}]".format(name)))
     if aero.flat_plate_cd < 0.0:
-        raise DiscConfigError(f"[aero.{name}] flat_plate_cd must be zero or more, got {aero.flat_plate_cd}")
+        raise DiscConfigError(i18n.t("{aero_name_table} flat_plate_cd must be zero or more, got {flat_plate_cd}",
+                                     flat_plate_cd=aero.flat_plate_cd, aero_name_table="[aero.{}]".format(name)))
     return aero
 
 
@@ -253,7 +262,7 @@ _LAYOUT_KEYS = ("kind", "wheels", "fence", "fence_friction", "fence_radius", "ch
 
 def _table(section: str, value) -> dict:
     if not isinstance(value, dict):
-        raise DiscConfigError(f"[{section}] must be a table, not {value!r}")
+        raise DiscConfigError(i18n.t("[{section}] must be a table, not {table}", section=section, table=repr(value)))
     return dict(value)
 
 
@@ -263,19 +272,21 @@ def _preset_table(section: str, cls, table: dict, default: str | None) -> object
     valid = [f.name for f in fields(cls)]
     for key in table:
         if key not in valid and key != "preset":
-            raise DiscConfigError(f"unknown key '{key}' in [{section}]; valid keys: {', '.join(valid + ['preset'])}")
+            raise DiscConfigError(i18n.t("unknown key '{key}' in [{section}]; valid keys: {keys}",
+                                         key=key, section=section, keys=', '.join(valid + ['preset'])))
     name = table.pop("preset", default)
     values: dict = {}
     if name is not None:
         known = PRESETS.get(section, {})
         if not isinstance(name, str) or name not in known:
-            raise DiscConfigError(f"[{section}] unknown preset {name!r}; known {section} presets: {', '.join(known)}")
+            raise DiscConfigError(i18n.t("[{section}] unknown preset {name}; known {section} presets: {known}",
+                                         section=section, name=repr(name), known=', '.join(known)))
         values.update(known[name])
     values.update(table)
     missing = [f.name for f in fields(cls) if f.name not in values and f.default is dataclasses.MISSING]
     if missing:
-        raise DiscConfigError(f"[{section}] missing required key(s): {', '.join(missing)}; valid keys: "
-                              f"{', '.join(valid + ['preset'])}")
+        raise DiscConfigError(i18n.t("[{section}] missing required key(s): {missing}; valid keys: {keys}",
+                                     section=section, missing=', '.join(missing), keys=', '.join(valid + ['preset'])))
     hints = typing.get_type_hints(cls)
     try:
         return cls(**{k: _coerce(v, hints[k], section, k) for k, v in values.items()})
@@ -286,7 +297,8 @@ def _preset_table(section: str, cls, table: dict, default: str | None) -> object
 def _number(table: dict, key: str, default=dataclasses.MISSING) -> float | None:
     if key not in table:
         if default is dataclasses.MISSING:
-            raise DiscConfigError(f"[layout] missing required key {key}; valid keys: {', '.join(_LAYOUT_KEYS)}")
+            raise DiscConfigError(i18n.t("{layout_table} missing required key {key}; valid keys: {keys}", key=key,
+                                         keys=', '.join(_LAYOUT_KEYS), layout_table="[layout]"))
         return default
     try:
         return _coerce(table[key], float, "layout", key)
@@ -296,21 +308,25 @@ def _number(table: dict, key: str, default=dataclasses.MISSING) -> float | None:
 
 def _spots(value) -> tuple[WheelSpot, ...]:
     if not isinstance(value, list) or not value:
-        raise DiscConfigError(f"[layout] wheels must be a non-empty list of {{x, side, group}} tables, not {value!r}")
+        raise DiscConfigError(i18n.t("{layout_table} wheels must be a non-empty list of {x_side_form} tables, not "
+                                     "{value}", value=repr(value), layout_table="[layout]",
+                                     x_side_form="{x, side, group}"))
     out = []
     for i, w in enumerate(value):
         where = f"[layout] wheels[{i}]"
         if not isinstance(w, dict) or set(w) - {"x", "side", "group"} or "x" not in w or "side" not in w:
-            raise DiscConfigError(f"{where} must be a table {{x, side, group}} (group defaults to 0), not {w!r}")
+            raise DiscConfigError(i18n.t("{where} must be a table {x_side_form} (group defaults to 0), not {value}",
+                                         where=where, value=repr(w), x_side_form="{x, side, group}"))
         try:
             x = _coerce(w["x"], float, "layout", f"wheels[{i}].x")
             group = _coerce(w.get("group", 0), int, "layout", f"wheels[{i}].group")
         except LauncherConfigError as e:
             raise DiscConfigError(str(e)) from None
         if w["side"] not in SIDES:
-            raise DiscConfigError(f"{where} side must be one of {', '.join(SIDES)}, not {w['side']!r}")
+            raise DiscConfigError(i18n.t("{where} side must be one of {sides}, not {side}",
+                                         where=where, sides=', '.join(SIDES), side=repr(w['side'])))
         if group < 0:
-            raise DiscConfigError(f"{where} group must be 0 or more, not {group}")
+            raise DiscConfigError(i18n.t("{where} group must be 0 or more, not {group}", where=where, group=group))
         out.append(WheelSpot(x=x, side=w["side"], group=group))
     return tuple(out)
 
@@ -318,36 +334,45 @@ def _spots(value) -> tuple[WheelSpot, ...]:
 def _layout(table: dict, disc: Disc, wheels: Wheels) -> Layout:
     for key in table:
         if key not in _LAYOUT_KEYS:
-            raise DiscConfigError(f"unknown key '{key}' in [layout]; valid keys: {', '.join(_LAYOUT_KEYS)}")
+            raise DiscConfigError(i18n.t("unknown key '{key}' in {layout_table}; valid keys: {keys}", key=key,
+                                         keys=', '.join(_LAYOUT_KEYS), layout_table="[layout]"))
     kind = table.get("kind")
     if kind not in LAYOUT_KINDS:
-        raise DiscConfigError(f"[layout] kind must be one of {', '.join(LAYOUT_KINDS)}, not {kind!r}")
+        raise DiscConfigError(i18n.t("{layout_table} kind must be one of {kinds}, not {kind}",
+                                     kinds=', '.join(LAYOUT_KINDS), kind=repr(kind), layout_table="[layout]"))
     spots = _spots(table.get("wheels"))
     groups = max(w.group for w in spots) + 1
     unused = sorted(set(range(groups)) - {w.group for w in spots})
     if unused:
-        raise DiscConfigError(f"[layout] wheel groups must be numbered 0 to {groups - 1} with none skipped; "
-                              f"no wheel is in group(s) {unused}")
+        raise DiscConfigError(i18n.t("{layout_table} wheel groups must be numbered 0 to {last} with none skipped; no "
+                                     "wheel is in group(s) {unused}", last=groups - 1, unused=unused,
+                                     layout_table="[layout]"))
     sides = {w.side for w in spots}
     if kind == "pinch":
         if sides != set(SIDES):
-            raise DiscConfigError("[layout] a pinch has wheels on both sides of the disc; give at least one wheel "
-                                  "with side = \"left\" and one with side = \"right\"")
+            raise DiscConfigError(i18n.t("{layout_table} a pinch has wheels on both sides of the disc; give at least "
+                                         "one wheel with {left_setting} and one with {right_setting}",
+                                         layout_table="[layout]", left_setting="side = \"left\"",
+                                         right_setting="side = \"right\""))
         for key in ("fence", "fence_friction", "fence_radius"):
             if key in table:
-                raise DiscConfigError(f"[layout] {key}: a pinch has no fence (the wheels hold both sides)")
+                raise DiscConfigError(i18n.t("{layout_table} {key}: a pinch has no fence (the wheels hold both sides)",
+                                             key=key, layout_table="[layout]"))
         fence = 0.0
     else:
         if len(sides) != 1:
-            raise DiscConfigError(f"[layout] a {kind} layout has all its wheels on one side, the fence on the other; "
-                                  "use kind = \"pinch\" for wheels on both sides")
+            raise DiscConfigError(i18n.t("{layout_table} a {kind} layout has all its wheels on one side, the fence "
+                                         "on the other; use {kind_setting} for wheels on both sides", kind=kind,
+                                         layout_table="[layout]", kind_setting="kind = \"pinch\""))
         if "fence" in table and "fence_friction" in table:
-            raise DiscConfigError("[layout] give fence (a preset) or fence_friction, not both")
+            raise DiscConfigError(i18n.t("{layout_table} give fence (a preset) or fence_friction, not both",
+                                         layout_table="[layout]"))
         if "fence" in table:
             known = PRESETS.get("fence", {})
             if table["fence"] not in known:
-                raise DiscConfigError(f"[layout] unknown fence preset {table['fence']!r}; known fence presets: "
-                                      f"{', '.join(known)}")
+                raise DiscConfigError(i18n.t("{layout_table} unknown fence preset {fence}; known fence presets: "
+                                             "{known}", fence=repr(table['fence']), known=', '.join(known),
+                                             layout_table="[layout]"))
             fence = float(known[table["fence"]]["friction"])
         else:
             fence = _number(table, "fence_friction")
@@ -355,11 +380,12 @@ def _layout(table: dict, disc: Disc, wheels: Wheels) -> Layout:
     fence_radius = None
     if kind == "arc":
         if len(spots) != 1:
-            raise DiscConfigError(f"[layout] an arc has one wheel, the fence curved round it; got {len(spots)}")
+            raise DiscConfigError(i18n.t("{layout_table} an arc has one wheel, the fence curved round it; got {count}",
+                                         count=len(spots), layout_table="[layout]"))
         if "fence_radius" in table and "compression" in table:
-            raise DiscConfigError("[layout] an arc takes compression or fence_radius (the fence is concentric with "
-                                  "the wheel, so each sets the other: fence_radius = R_wheel + D - compression), "
-                                  "not both")
+            raise DiscConfigError(i18n.t("{layout_table} an arc takes compression or fence_radius (the fence is "
+                                         "concentric with the wheel, so each sets the other: fence_radius = R_wheel "
+                                         "+ D - compression), not both", layout_table="[layout]"))
         if "fence_radius" in table:
             fence_radius = _number(table, "fence_radius")
             compression = r_w + disc.diameter - fence_radius
@@ -368,9 +394,11 @@ def _layout(table: dict, disc: Disc, wheels: Wheels) -> Layout:
             fence_radius = r_w + disc.diameter - compression
     else:
         if "fence_radius" in table:
-            raise DiscConfigError(f"[layout] fence_radius is for an arc only, not kind = {kind!r}")
+            raise DiscConfigError(i18n.t("{layout_table} fence_radius is for an arc only, not {kind_setting}",
+                                         layout_table="[layout]", kind_setting="kind = {}".format(repr(kind))))
         if "arc_deg" in table:
-            raise DiscConfigError(f"[layout] arc_deg is for an arc only, not kind = {kind!r}")
+            raise DiscConfigError(i18n.t("{layout_table} arc_deg is for an arc only, not {kind_setting}",
+                                         layout_table="[layout]", kind_setting="kind = {}".format(repr(kind))))
         compression = _number(table, "compression")
     layout = Layout(
         kind=kind, wheels=spots, fence_friction=fence, fence_radius=fence_radius,
@@ -397,42 +425,51 @@ def wheel_reach(layout: Layout, disc: Disc, wheels: Wheels) -> float:
 def _check_layout(layout: Layout, disc: Disc, wheels: Wheels) -> None:
     for key in ("fence_friction", "rail_friction"):
         if getattr(layout, key) < 0.0:
-            raise DiscConfigError(f"[layout] {key} must be zero or more, not {getattr(layout, key)}")
+            raise DiscConfigError(i18n.t("{layout_table} {key} must be zero or more, not {value}", key=key,
+                                         value=getattr(layout, key), layout_table="[layout]"))
     if layout.channel_length <= 0.0:
-        raise DiscConfigError(f"[layout] channel_length must be positive, not {layout.channel_length}")
+        raise DiscConfigError(i18n.t("{layout_table} channel_length must be positive, not {channel_length}",
+                                     channel_length=layout.channel_length, layout_table="[layout]"))
     if layout.wheel_stiffness is not None and layout.wheel_stiffness <= 0.0:
-        raise DiscConfigError(f"[layout] wheel_stiffness must be positive, not {layout.wheel_stiffness}")
+        raise DiscConfigError(i18n.t("{layout_table} wheel_stiffness must be positive, not {wheel_stiffness}",
+                                     wheel_stiffness=layout.wheel_stiffness, layout_table="[layout]"))
     if not layout.compression < disc.diameter / 2.0:
-        raise DiscConfigError(f"[layout] compression {layout.compression} must be below the disc's radius "
-                              f"{disc.radius}")
+        raise DiscConfigError(i18n.t("{layout_table} compression {compression} must be below the disc's radius "
+                                     "{radius}", compression=layout.compression, radius=disc.radius,
+                                     layout_table="[layout]"))
     # The arc wraps at most a half turn. Up to 180 deg the disc stays behind the wheel's center (x <= x_w) until the
     # fence's exit end, so it can't reach the lead-out's walls (which start at x_w) or the channel's end early. A
     # longer wrap would start the disc inside the wheel-side wall.
     if layout.kind == "arc" and not 0.0 < layout.arc_deg <= MAX_ARC_DEG:
-        raise DiscConfigError(f"[layout] arc_deg must be above 0 and at most {MAX_ARC_DEG:g} (a half turn round the "
-                              f"wheel; the disc would start inside the lead-out's wall past it), not "
-                              f"{layout.arc_deg}")
+        raise DiscConfigError(i18n.t("{layout_table} arc_deg must be above 0 and at most {max_arc_deg} (a half turn "
+                                     "round the wheel; the disc would start inside the lead-out's wall past it), not "
+                                     "{arc_deg}", max_arc_deg=f"{MAX_ARC_DEG:g}", arc_deg=layout.arc_deg,
+                                     layout_table="[layout]"))
     reach = wheel_reach(layout, disc, wheels)
     for w in layout.wheels:
         if layout.kind != "arc" and w.x < reach:
             raise DiscConfigError(
-                f"[layout] a wheel at x = {w.x} touches the disc as it is fed (its center at x = 0): a wheel must be "
-                f"at x >= {reach:.4g} (where the disc first touches it) so the disc enters clear of it"
+                i18n.t("{layout_table} a wheel at {x_setting} touches the disc as it is fed (its center at "
+                       "{entry_setting}): a wheel must be at x >= {reach} (where the disc first touches it) so the "
+                       "disc enters clear of it", reach=f"{reach:.4g}", layout_table="[layout]",
+                       x_setting="x = {}".format(w.x), entry_setting="x = 0")
             )
         if w.x > layout.channel_length:
-            raise DiscConfigError(f"[layout] a wheel at x = {w.x} is past the channel's end, channel_length "
-                                  f"{layout.channel_length}")
+            raise DiscConfigError(i18n.t("{layout_table} a wheel at {x_setting} is past the channel's end, "
+                                         "channel_length {channel_length}", channel_length=layout.channel_length,
+                                         layout_table="[layout]", x_setting="x = {}".format(w.x)))
 
 
 def _per_group(raw: dict, section: str, groups: int) -> tuple:
     value = raw.get(section)
     if value is None:
-        raise DiscConfigError(f"missing [{section}]: give one [{section}] table for every wheel group, or "
-                              f"[[{section}]] with one table per group")
+        raise DiscConfigError(i18n.t("missing [{section}]: give one [{section}] table for every wheel group, or "
+                                     "[[{section}]] with one table per group", section=section))
     tables = value if isinstance(value, list) else [value] * groups
     if len(tables) != groups:
-        raise DiscConfigError(f"[[{section}]] has {len(tables)} table(s) for {groups} wheel groups; give one per "
-                              f"group, in group order, or a single [{section}] for all")
+        raise DiscConfigError(i18n.t("[[{section}]] has {tables} table(s) for {groups} wheel groups; give one per "
+                                     "group, in group order, or a single [{section}] for all",
+                                     section=section, tables=len(tables), groups=groups))
     try:
         return tuple(_build_section(section, _table(section, t)) for t in tables)
     except LauncherConfigError as e:
@@ -443,36 +480,48 @@ def parse_setup(raw: dict) -> DiscSetup:
     """Build a `DiscSetup` from a raw dict (the parsed TOML), applying presets and defaults."""
     for key in raw:
         if key not in _TOP_LEVEL:
-            raise DiscConfigError(f"unknown section [{key}]; valid sections: {', '.join(sorted(_TOP_LEVEL))}")
+            raise DiscConfigError(i18n.t("unknown section [{name}]; valid sections: {sections}",
+                                         name=key, sections=', '.join(sorted(_TOP_LEVEL))))
     disc = _preset_table("disc", Disc, _table("disc", raw.get("disc", {})), DEFAULT_DISC)
     for key in ("diameter", "mass", "height", "izz", "ixx", "rim_stiffness"):
         if not getattr(disc, key) > 0.0:
-            raise DiscConfigError(f"[disc] {key} must be positive, not {getattr(disc, key)}")
+            raise DiscConfigError(i18n.t("{disc_table} {key} must be positive, not {value}", key=key,
+                                         value=getattr(disc, key), disc_table="[disc]"))
     if "wheels" not in raw:
-        raise DiscConfigError("missing [wheels]: give a preset (e.g. preset = \"urethane-60a-4in\") or diameter, "
-                              "width, durometer and friction")
+        raise DiscConfigError(i18n.t("missing {wheels_table}: give a preset (e.g. {preset_setting}) or diameter, "
+                                     "width, durometer and friction", wheels_table="[wheels]",
+                                     preset_setting="preset = \"urethane-60a-4in\""))
     wheels = _preset_table("wheels", Wheels, _table("wheels", raw["wheels"]), None)
     for key in ("diameter", "width"):
         if not getattr(wheels, key) > 0.0:
-            raise DiscConfigError(f"[wheels] {key} must be positive, not {getattr(wheels, key)}")
+            raise DiscConfigError(i18n.t("{wheels_table} {key} must be positive, not {value}", key=key,
+                                         value=getattr(wheels, key), wheels_table="[wheels]"))
     if not 0.0 < wheels.durometer < 100.0:
-        raise DiscConfigError(f"[wheels] durometer must be above 0 and below 100, not {wheels.durometer}")
+        raise DiscConfigError(i18n.t("{wheels_table} durometer must be above 0 and below 100, not {durometer}",
+                                     durometer=wheels.durometer, wheels_table="[wheels]"))
     if wheels.friction < 0.0:
-        raise DiscConfigError(f"[wheels] friction must be zero or more, not {wheels.friction}")
+        raise DiscConfigError(i18n.t("{wheels_table} friction must be zero or more, not {friction}",
+                                     friction=wheels.friction, wheels_table="[wheels]"))
     if "layout" not in raw:
-        raise DiscConfigError("missing [layout]: give kind, wheels, compression, channel_length and the fence")
+        raise DiscConfigError(i18n.t("missing {layout_table}: give kind, wheels, compression, channel_length and the "
+                                     "fence", layout_table="[layout]"))
     layout = _layout(_table("layout", raw["layout"]), disc, wheels)
     shafts = _per_group(raw, "shaft", layout.groups)
     controls = _per_group(raw, "control", layout.groups)
     for shaft in shafts:
         if shaft.motor not in MOTORS:
-            raise DiscConfigError(f"[shaft] unknown motor {shaft.motor!r}; known motors: {', '.join(sorted(MOTORS))}")
+            raise DiscConfigError(i18n.t("{shaft_table} unknown motor {motor}; known motors: {motors}",
+                                         motor=repr(shaft.motor), motors=', '.join(sorted(MOTORS)),
+                                         shaft_table="[shaft]"))
         if shaft.wheel_inertia < 0.0 or shaft.added_inertia < 0.0 or shaft.wheel_inertia + shaft.added_inertia <= 0:
-            raise DiscConfigError("[shaft] wheel_inertia and added_inertia must be zero or more, and their sum "
-                                  f"positive; got {shaft.wheel_inertia} and {shaft.added_inertia}")
+            raise DiscConfigError(i18n.t("{shaft_table} wheel_inertia and added_inertia must be zero or more, and "
+                                         "their sum positive; got {wheel_inertia} and {added_inertia}",
+                                         wheel_inertia=shaft.wheel_inertia, added_inertia=shaft.added_inertia,
+                                         shaft_table="[shaft]"))
         if shaft.gearing <= 0.0 or shaft.motor_count < 1:
-            raise DiscConfigError(f"[shaft] gearing must be positive and motor_count at least 1; got "
-                                  f"{shaft.gearing} and {shaft.motor_count}")
+            raise DiscConfigError(i18n.t("{shaft_table} gearing must be positive and motor_count at least 1; got "
+                                         "{gearing} and {motor_count}", gearing=shaft.gearing,
+                                         motor_count=shaft.motor_count, shaft_table="[shaft]"))
     try:
         rest = {name: _build_section(name, _table(name, raw.get(name, {})))
                 for name in ("battery", "robot", "feed", "results")}
@@ -481,16 +530,23 @@ def parse_setup(raw: dict) -> DiscSetup:
     feed_keys = ("count", "rate", "rule", "tolerance", "entry_speed", "timeout")
     for key in _table("feed", raw.get("feed", {})):
         if key not in feed_keys:
-            hint = " (discs have no lanes)" if key == "lanes" else ""
-            raise DiscConfigError(f"[feed] unknown key {key!r}{hint}; valid keys: {', '.join(feed_keys)}")
+            if key == "lanes":
+                raise DiscConfigError(i18n.t("{feed_table} unknown key {key} (discs have no lanes); valid keys: "
+                                             "{keys}", key=repr(key), keys=", ".join(feed_keys), feed_table="[feed]"))
+            raise DiscConfigError(i18n.t("{feed_table} unknown key {key}; valid keys: {keys}", key=repr(key),
+                                         keys=", ".join(feed_keys), feed_table="[feed]"))
     if rest["feed"].count < 1:
-        raise DiscConfigError(f"[feed] count must be at least 1, not {rest['feed'].count}")
+        raise DiscConfigError(i18n.t("{feed_table} count must be at least 1, not {count}", count=rest['feed'].count,
+                                     feed_table="[feed]"))
     if rest["feed"].rate <= 0.0:
-        raise DiscConfigError(f"[feed] rate must be positive, not {rest['feed'].rate}")
+        raise DiscConfigError(i18n.t("{feed_table} rate must be positive, not {rate}", rate=rest['feed'].rate,
+                                     feed_table="[feed]"))
     if rest["feed"].rule not in FEED_RULES:
-        raise DiscConfigError(f"[feed] unknown rule {rest['feed'].rule!r}; valid rules: {', '.join(FEED_RULES)}")
+        raise DiscConfigError(i18n.t("{feed_table} unknown rule {rule}; valid rules: {rules}",
+                                     rule=repr(rest['feed'].rule), rules=', '.join(FEED_RULES), feed_table="[feed]"))
     if rest["feed"].entry_speed < 0.0:
-        raise DiscConfigError(f"[feed] entry_speed must be zero or more, not {rest['feed'].entry_speed}")
+        raise DiscConfigError(i18n.t("{feed_table} entry_speed must be zero or more, not {entry_speed}",
+                                     entry_speed=rest['feed'].entry_speed, feed_table="[feed]"))
     mount = _preset_table("launcher", Mount, _table("launcher", raw.get("launcher", {})), None)
     goal = _preset_table("goal", DiscGoal, _table("goal", raw.get("goal", {})), None)
     air = _preset_table("air", DiscAir, _table("air", raw.get("air", {})), None)
@@ -500,11 +556,14 @@ def parse_setup(raw: dict) -> DiscSetup:
             if f.name in ("tilt_deg", "bottom"):
                 continue
             if isinstance(v, float) and not v > 0.0:
-                raise DiscConfigError(f"[{section}] {f.name} must be positive, not {v}")
+                raise DiscConfigError(i18n.t("[{section}] {name} must be positive, not {value}",
+                                             section=section, name=f.name, value=v))
     if not -90.0 < mount.tilt_deg < 90.0:
-        raise DiscConfigError(f"[launcher] tilt_deg must be between -90 and 90, not {mount.tilt_deg}")
+        raise DiscConfigError(i18n.t("{launcher_table} tilt_deg must be between -90 and 90, not {tilt_deg}",
+                                     tilt_deg=mount.tilt_deg, launcher_table="[launcher]"))
     if goal.bottom < 0.0:
-        raise DiscConfigError(f"[goal] bottom must be zero or more, not {goal.bottom}")
+        raise DiscConfigError(i18n.t("{goal_table} bottom must be zero or more, not {bottom}", bottom=goal.bottom,
+                                     goal_table="[goal]"))
     aero_set(air.aero)  # a bad name raises, listing the valid ones
     dt = raw.get("dt")
     if dt is not None:
@@ -513,7 +572,7 @@ def parse_setup(raw: dict) -> DiscSetup:
         except LauncherConfigError as e:
             raise DiscConfigError(str(e)) from None
         if dt <= 0:
-            raise DiscConfigError(f"dt must be positive, not {dt!r}")
+            raise DiscConfigError(i18n.t("dt must be positive, not {dt}", dt=repr(dt)))
     return DiscSetup(disc=disc, wheels=wheels, layout=layout, shafts=shafts, controls=controls, dt=dt, mount=mount,
                      goal=goal, air=air, **rest)
 
@@ -531,8 +590,9 @@ def load_setup(source: Path | dict) -> tuple[DiscSetup, dict[str, list], list[di
     setup = parse_setup(raw)
     sweep = raw.get("sweep", {})
     if not isinstance(sweep, dict):
-        raise DiscConfigError(f"[sweep] must be a table, not {sweep!r}")
+        raise DiscConfigError(i18n.t("{sweep_table} must be a table, not {sweep}", sweep=repr(sweep),
+                                     sweep_table="[sweep]"))
     charts = raw.get("chart", [])
     if not isinstance(charts, list) or not all(isinstance(c, dict) for c in charts):
-        raise DiscConfigError("[[chart]] must be a list of tables")
+        raise DiscConfigError(i18n.t("{chart_table} must be a list of tables", chart_table="[[chart]]"))
     return setup, dict(sweep), list(charts)

@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 import mujoco
 import numpy as np
 
+from .. import i18n
 from .model import PartError, quat_from_rpy
 
 PARTNER_KEYS = ("length", "width", "mass", "bumper_clearance", "brake", "start")
@@ -81,7 +82,8 @@ class PartnerInfo:
 
 def _number(v, key: str) -> float:
     if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
-        raise PartError(f"[partner] {key} must be a number, not {v!r}")
+        raise PartError(i18n.t("{partner_table} {key} must be a number, not {value}", key=key, value=repr(v),
+                               partner_table="[partner]"))
     return float(v)
 
 
@@ -91,32 +93,37 @@ def parse_partner(cfg: dict) -> PartnerSpec | None:
     if sec is None:
         return None
     if not isinstance(sec, dict):
-        raise PartError("[partner] must be a table")
+        raise PartError(i18n.t("{partner_table} must be a table", partner_table="[partner]"))
     extra = [k for k in sec if k not in PARTNER_KEYS]
     if extra:
-        raise PartError(f"[partner]: unknown key {extra[0]!r}; allowed: {', '.join(PARTNER_KEYS)}")
+        raise PartError(i18n.t("{partner_table}: unknown key {extra}; allowed: {partner_keys}", extra=repr(extra[0]),
+                               partner_keys=', '.join(PARTNER_KEYS), partner_table="[partner]"))
     start = sec.get("start")
     if start is None:
-        raise PartError("[partner] needs start = [x, y, heading_deg]: where the partner robot starts")
+        raise PartError(i18n.t("{partner_table} needs {start_setting}: where the partner robot starts",
+                               partner_table="[partner]", start_setting="start = [x, y, heading_deg]"))
     if not (isinstance(start, list) and len(start) == 3 and all(
             isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in start)):
-        raise PartError(f"[partner] start must be [x, y, heading_deg], 3 finite numbers, not {start!r}")
+        raise PartError(i18n.t("{partner_table} start must be [x, y, heading_deg], 3 finite numbers, not {start}",
+                               start=repr(start), partner_table="[partner]"))
     kw: dict = {"start": tuple(float(v) for v in start)}
     for key in ("length", "width"):
         if key in sec:
             kw[key] = _number(sec[key], key)
             if kw[key] < MIN_SIZE:
-                raise PartError(f"[partner] {key} must be at least {MIN_SIZE:g} m (its drive's wheels fit inside the "
-                                f"frame), not {kw[key]:g}")
+                raise PartError(i18n.t("{partner_table} {key} must be at least {min_size} m (its drive's wheels fit "
+                                       "inside the frame), not {value}", key=key, min_size=f"{MIN_SIZE:g}",
+                                       value=f"{kw[key]:g}", partner_table="[partner]"))
     for key in ("mass", "bumper_clearance"):
         if key in sec:
             kw[key] = _number(sec[key], key)
             if kw[key] <= 0:
-                raise PartError(f"[partner] {key} must be more than 0, not {kw[key]:g}")
+                raise PartError(i18n.t("{partner_table} {key} must be more than 0, not {value}", key=key,
+                                       value=f"{kw[key]:g}", partner_table="[partner]"))
     if "brake" in sec:
         if not isinstance(sec["brake"], bool):
-            raise PartError(f"[partner] brake must be true (its wheels braked) or false (coasting), "
-                            f"not {sec['brake']!r}")
+            raise PartError(i18n.t("{partner_table} brake must be true (its wheels braked) or false (coasting), not "
+                                   "{brake}", brake=repr(sec['brake']), partner_table="[partner]"))
         kw["brake"] = sec["brake"]
     return PartnerSpec(**kw)
 
@@ -130,7 +137,8 @@ def _parts(p: PartnerSpec) -> tuple:
     drive = build_stock("differential", dparams, where)
     drive_mass = sum(b.mass for b in drive.bodies)
     if p.mass <= drive_mass:
-        raise PartError(f"[partner] mass must be more than its drive's {drive_mass:g} kg, not {p.mass:g}")
+        raise PartError(i18n.t("{partner_table} mass must be more than its drive's {drive_mass} kg, not {mass}",
+                               drive_mass=f"{drive_mass:g}", mass=f"{p.mass:g}", partner_table="[partner]"))
     cparams = {"length": p.length, "width": p.width, "mass": p.mass - drive_mass,
                "bumper_clearance": p.bumper_clearance}
     chassis = build_stock("chassis", cparams, where)
@@ -196,16 +204,15 @@ def _overlap(a: np.ndarray, b: np.ndarray) -> float:
     return float(depth)
 
 
-STARTS_INSIDE = "[partner] starts inside "    # check_start's refusals begin so; run.world_for words Setup's its own way
-
-
 class PartnerOverlap(PartError):
     """check_start's refusal: in meters, as a robot config's [partner] start is written (and as MCP results and
-    report.json have always had it). It keeps `what` ("the robot", "element <name>") and `depth` (m), so the Test
-    tab can word Setup's partner in the Units setting (blocks/run.py setup_partner_words)."""
+    report.json have always had it). It keeps `what` (the shown words: "the robot", "element <name>") and `depth`
+    (m), so the Test tab words Setup's partner in the Units setting (blocks/run.py setup_partner_words) by finding
+    this exception, not its words (L3)."""
 
     def __init__(self, what: str, depth: float):
-        super().__init__(f"{STARTS_INSIDE}{what} (their outlines overlap by {depth:.2f} m)")
+        super().__init__(i18n.t("{partner_table} starts inside {what} (their outlines overlap by {depth} m)",
+                                partner_table="[partner]", what=what, depth=f"{depth:.2f}"))
         self.what, self.depth = what, depth
 
 
@@ -218,11 +225,11 @@ def check_start(info: PartnerInfo, robot_start: tuple[float, float, float], elem
     rx, ry, rh = robot_start
     depth = _overlap(mine, _rect((rx, ry), rh, ROBOT_OUTLINE, ROBOT_OUTLINE))
     if depth > 1e-9:
-        raise PartnerOverlap("the robot", depth)
+        raise PartnerOverlap(i18n.t("the robot"), depth)
     for e in elements:
         depth = max((_overlap(mine, f) for f in _on_floor(e, start=True)), default=0.0)
         if depth > 1e-9:
-            raise PartnerOverlap(f"element {e.name}", depth)
+            raise PartnerOverlap(i18n.t("element {name}", name=e.name), depth)
 
 
 # ---- its signals ----------------------------------------------------------------------------------------------------

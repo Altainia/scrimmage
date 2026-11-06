@@ -34,11 +34,12 @@ from types import SimpleNamespace
 
 import tomlkit
 
+from .. import i18n
 from ..blocks import store
 from ..blocks.palette import ANY_PIECE, hints, palette, problems
 from ..blocks.program import Block, Cond, TestFileError, block_json, dumps, from_json, load, to_json
 from ..blocks.run import TestRun, air_lines, clearance_lines, goal_lines, world_for
-from ..blocks.spread import NO_BALL, NO_SPREAD, inside_robot, run_spread
+from ..blocks.spread import inside_robot, no_ball, no_spread, run_spread
 from ..blocks.sweep import MAX_SWEEP, _kind as sweep_kind, run_sweep
 from ..cad.settings import replace_file
 from ..parts.model import PartError
@@ -49,9 +50,6 @@ from .simlock import SimBusy, SimLock
 from .templates import new_config
 
 log = logging.getLogger("scrimmage.assembler")
-STALE = "the test changed (another tab, or an outside edit); the page has reloaded it"
-BUSY = "a test run is in progress; wait for it to finish or stop it"
-FIX_FIRST = "Fix the problems first: the test can't run on this robot yet."
 PROGRESS_PERIOD = 0.25    # s of wall time between progress updates while a run goes
 POLL_SECONDS = 25.0
 
@@ -70,19 +68,20 @@ GRABBER_CLOSE_S = 1.0           # s: ... waits this long for them to close
 GRABBER_LIFT_DEG = -30.0        # ... lifts with the part's lone arm hinge to this (the reef example's forward and up)
 GRABBER_HOLD_TIMEOUT = 10.0     # s: ... then waits this long for a piece to be held
 GRABBER_WAIT_S = 2.0            # ... then holds it this long, expected held throughout
-PLAIN_FIELD = "The plain field"
 
 
 def field_choices() -> list[dict]:
     """Every field the Test tab's Setup can put the robot on: the plain field (no [range]) first, then each built-in
     range in BUILTIN_RANGES order with its name, its starts (file order: Setup picks the first), whether its piece is
     a disc, whether Setup can change its ball, and its stations. A fresh copy each call (the ranges are read once)."""
-    return copy.deepcopy(_field_choices())
+    out = copy.deepcopy(_field_choices())
+    out[0]["name"] = i18n.t("The plain field")
+    return out
 
 
 @functools.cache
 def _field_choices() -> list[dict]:
-    out: list[dict] = [{"file": None, "name": PLAIN_FIELD, "starts": []}]
+    out: list[dict] = [{"file": None, "name": None, "starts": []}]       # its name: field_choices
     for name in BUILTIN_RANGES:
         rng = load_range(name, Path("."))
         out.append({"file": name, "name": rng.name, "starts": list(rng.starts), "disc": rng.disc is not None,
@@ -256,8 +255,10 @@ def free_motor_ids(doc, slots: list[str]) -> dict[str, str]:
     kind = max(dict.fromkeys(kinds), key=kinds.count) if on_can else "PWM"
     free = [n for n in (CAN_IDS if on_can else PWM_CHANNELS) if n not in (can if on_can else pwm)]
     if len(free) < len(slots):
-        raise ValueError(f"the robot has no free {'CAN IDs' if on_can else 'PWM channels'} left for "
-                         f"{len(slots)} more motor{'s' if len(slots) != 1 else ''}")
+        raise ValueError(i18n.tn("the robot has no free CAN IDs left for {count} more motor",
+                                 "the robot has no free CAN IDs left for {count} more motors", len(slots)) if on_can
+                         else i18n.tn("the robot has no free PWM channels left for {count} more motor",
+                                      "the robot has no free PWM channels left for {count} more motors", len(slots)))
     return {slot: f"{kind}:{n}" for slot, n in zip(slots, free)}
 
 
@@ -383,7 +384,11 @@ def _sig(path: Path) -> bytes | None:
 
 
 def _plain_error(e: BaseException) -> str:
-    return f"the run stopped with an error ({type(e).__name__}: {e})"
+    return i18n.t("the run stopped with an error ({kind}: {why})", kind=type(e).__name__, why=e)
+
+
+def _busy() -> str:
+    return i18n.t("a test run is in progress; wait for it to finish or stop it")
 
 
 class TestSession:
@@ -412,6 +417,7 @@ class TestSession:
         self._thread: threading.Thread | None = None
         self._closed = False
         self._kept: tuple | None = None      # (the runs folder's look, list_runs, list_sweeps, list_spreads)
+        self._lang: str | None = None        # the language the problems and hints were last made in
 
     # -- what it is -------------------------------------------------------------------------
     @property
@@ -433,16 +439,18 @@ class TestSession:
     def _names(self) -> tuple[dict | None, list[dict], list[dict]]:
         """The palette, the problems and the hints."""
         if self._world is None:
-            return None, [{"place": [], "message": self._robot_problem or "the robot isn't loaded"}], []
+            return None, [{"place": [], "message": self._robot_problem or i18n.t("the robot isn't loaded")}], []
         try:
             # the robot config's world, with the test's setup's partner (world_for builds a run's with it)
             pal = palette(self._world, list(self.program.hooks), self.program.setup)
             return pal, problems(self.program, self._world), hints(self.program, self._world)
         except Exception as e:   # a robot the palette can't read must not take the Test tab down
             log.exception("test palette")
-            return None, [{"place": [], "message": f"can't read the robot's motors and joints ({e})"}], []
+            return None, [{"place": [], "message": i18n.t("can't read the robot's motors and joints ({why})",
+                                                          why=e)}], []
 
     def _recompute(self) -> None:
+        self._lang = i18n.current_language()        # the problems' and hints' words are in it
         pal, probs, tips = self._names()
         hopper = starter_hopper(pal, part_roots(self._world)) if pal is not None else []
         if (pal, probs, tips, hopper) != (self.palette, self.problems, self.hints, self.starter_hopper):
@@ -465,7 +473,8 @@ class TestSession:
             try:
                 new = load(self.path)
             except (TestFileError, OSError, UnicodeDecodeError) as e:
-                msg = str(e) if isinstance(e, TestFileError) else f"can't read {self.path.name}: {e}"
+                msg = str(e) if isinstance(e, TestFileError) else i18n.t("can't read {name}: {why}",
+                                                                         name=self.path.name, why=e)
                 if msg != self.file_error:
                     self.file_error = msg
                     self._bump(changed=True)
@@ -479,16 +488,17 @@ class TestSession:
         """Replace the test with body["test"] (the state's `test` shape) and write the file."""
         v = body.get("version")
         if not isinstance(v, int) or isinstance(v, bool):
-            raise SessionError(400, "version (the integer from the state) is required")
+            raise SessionError(400, i18n.t("version (the integer from the state) is required"))
         with self._cond:
             if self._closed:
-                raise SessionError(409, "the test was closed")
+                raise SessionError(409, i18n.t("the test was closed"))
             if v < self._changed_at:
-                return 409, {"ok": False, "error": STALE, "state": self.state()}
+                return 409, {"ok": False, "error": i18n.t("the test changed (another tab, or an outside edit); the "
+                                                          "page has reloaded it"), "state": self.state()}
             try:
                 new = from_json(body.get("test"), self.path)
-            except TestFileError as e:
-                raise SessionError(400, str(e)) from None
+            except TestFileError as e:      # a bad block's place goes as a code, so the page needn't read the words
+                raise SessionError(400, str(e), {"place": e.place, "problem": e.problem} if e.place else None) from None
             text = dumps(new)
             tmp = None
             try:
@@ -500,7 +510,8 @@ class TestSession:
             except OSError as e:
                 if tmp is not None:
                     tmp.unlink(missing_ok=True)
-                raise SessionError(400, f"can't write {self.path.name}: {e.strerror or e}") from None
+                raise SessionError(400, i18n.t("can't write {name}: {why}",
+                                               name=self.path.name, why=e.strerror or e)) from None
             self._sig = _sig(self.path)
             self.program, self.file_error = new, None
             self._bump(changed=True)
@@ -517,37 +528,43 @@ class TestSession:
         name, grip = body.get("body"), body.get("grip")
         with self._cond:
             if self._closed:
-                raise SessionError(409, "the test was closed")
+                raise SessionError(409, i18n.t("the test was closed"))
             if self.running is not None:
-                raise SessionError(409, BUSY)
+                raise SessionError(409, _busy())
             world = self._world
         if not isinstance(name, str) or name.count(".") != 1 or not all(name.split(".")):
-            raise SessionError(400, f'body must be "<part>.<body>", such as "claw.pad_left", not {name!r}')
+            raise SessionError(400, i18n.t("body must be \"{part_body}\", such as \"{claw_pad_left}\", not {name}",
+                                           name=repr(name), part_body="<part>.<body>", claw_pad_left="claw.pad_left"))
         if world is None or world.parts is None:
-            raise SessionError(409, f"fix the robot first: {self._robot_problem or 'it is not made of parts'}")
+            raise SessionError(409, i18n.t("fix the robot first: {why}",
+                                           why=self._robot_problem or i18n.t("it is not made of parts")))
         part, b = name.split(".")
         inst = next((i for i in world.parts.instances if i.name == part), None)
         if inst is None:
-            raise SessionError(400, f'no part "{part}" on this robot')
+            raise SessionError(400, i18n.t('no part "{part}" on this robot', part=part))
         if inst.source.startswith("stock "):
-            raise SessionError(400, f"{part}: grip is for a part folder's bodies; a stock part has its own materials")
+            raise SessionError(400, i18n.t("{part}: grip is for a part folder's bodies; a stock part has its own "
+                                           "materials", part=part))
         found = next((x for x in inst.part.bodies if x.name == b), None)
         if found is None:
-            raise SessionError(400, f'no body "{b}" in {part}; its bodies: '
-                                    f'{", ".join(x.name for x in inst.part.bodies)}')
+            raise SessionError(400, i18n.t('no body "{body}" in {part}; its bodies: {names}',
+                                           body=b, part=part, names=', '.join((x.name for x in inst.part.bodies))))
         if grip is not None and not any(g.collide and not g.tread for g in found.geoms):
-            raise SessionError(400, f"{name} touches nothing (no geom collides), so a grip on it does nothing")
+            raise SessionError(400, i18n.t("{name} touches nothing (no geom collides), so a grip on it does nothing",
+                                           name=name))
         own = self._config_grip(part)
         if grip is not None and b in own:       # clearing the folder's own grip is always fine
-            raise SessionError(400, f"{self.robot_path.name} sets {name}'s grip itself (its [[part]] {part}'s "
-                                    "grip), and that wins over the part folder's; change it there")
+            raise SessionError(400, i18n.t("{file} sets {body}'s grip itself (its {part_table} {part}'s grip), and "
+                                           "that wins over the part folder's; change it there",
+                                           file=self.robot_path.name, body=name, part=part, part_table="[[part]]"))
         folder = Path(inst.source)
         try:
             set_grip(folder.parent if folder.is_file() else folder, b, grip)
         except PartError as e:
             raise SessionError(400, str(e)) from None
         except OSError as e:
-            raise SessionError(400, f"can't write the grip in {folder}: {e.strerror or e}") from None
+            raise SessionError(400, i18n.t("can't write the grip in {folder}: {why}",
+                                           folder=folder, why=e.strerror or e)) from None
         return 200, {"ok": True}
 
     def _config_grip(self, part: str) -> dict:
@@ -581,25 +598,27 @@ class TestSession:
             if not isinstance(values, list) or not values or len(values) > MAX_SWEEP or not all(
                     (isinstance(x, str) and names) or (isinstance(x, (int, float)) and not isinstance(x, bool))
                     for x in values):
-                raise SessionError(400, f"values must be a list of 1 to {MAX_SWEEP} " +
-                                   ("material names or numbers" if names else "numbers"))
+                raise SessionError(400, i18n.t("values must be a list of 1 to {max} material names or numbers",
+                                               max=MAX_SWEEP) if names
+                                   else i18n.t("values must be a list of 1 to {max} numbers", max=MAX_SWEEP))
         with self._cond:
             if self._closed:
-                raise SessionError(409, "the test was closed")
+                raise SessionError(409, i18n.t("the test was closed"))
             if self.running is not None:
-                raise SessionError(409, BUSY)
+                raise SessionError(409, _busy())
             if self.file_error is not None:
-                raise SessionError(409, f"fix the test file first: {self.file_error}")
+                raise SessionError(409, i18n.t("fix the test file first: {file_error}", file_error=self.file_error))
             if kind == "spread" and not self.program.setup.get("floor_spread"):
-                raise SessionError(409, NO_SPREAD)
+                raise SessionError(409, no_spread())
             if kind == "spread" and self.palette is not None and not self.palette.get("floor_piece"):
-                raise SessionError(409, NO_BALL)
+                raise SessionError(409, no_ball())
             if kind == "spread" and self._world is not None:
                 inside = inside_robot(self._world, self.program.setup["floor_spread"])
                 if inside is not None:
                     raise SessionError(409, inside)
             if self.problems:
-                return 409, {"ok": False, "error": FIX_FIRST, "problems": self.problems}
+                return 409, {"ok": False, "error": i18n.t("Fix the problems first: the test can't run on this robot "
+                                                          "yet."), "problems": self.problems}
             try:
                 self.simlock.acquire("test")
             except SimBusy as e:
@@ -713,6 +732,8 @@ class TestSession:
 
     def state(self) -> dict:
         with self._cond:
+            if self._lang != i18n.current_language():
+                self._recompute()           # the Language setting changed: the problems and hints in its words
             out = {"version": self.version, "path": str(self.path), "test": to_json(self.program),
                    "palette": self.palette, "problems": self.problems, "hints": self.hints, "running": self.running,
                    "file_error": self.file_error, "run_error": self.run_error, "last": self.last,
@@ -736,7 +757,7 @@ class TestSession:
         try:
             folder = store.run_folder(self.runs_dir, run_id)
         except FileNotFoundError:
-            raise SessionError(404, f"no run {run_id} is kept for this test") from None
+            raise SessionError(404, i18n.t("no run {run_id} is kept for this test", run_id=run_id)) from None
         return folder / ("view.json" if what == "view" else "motion.bin")
 
     def run_result(self, run_id: str) -> dict:
@@ -745,7 +766,7 @@ class TestSession:
         try:
             out = store.load_result(self.runs_dir, run_id)
         except FileNotFoundError:
-            raise SessionError(404, f"no run {run_id} is kept for this test") from None
+            raise SessionError(404, i18n.t("no run {run_id} is kept for this test", run_id=run_id)) from None
         kept = SimpleNamespace(goals=out.get("goals"), air=out.get("air"), clearance=out.get("clearance"))
         out["lines"] = goal_lines(kept) + air_lines(kept) + clearance_lines(kept)
         return out

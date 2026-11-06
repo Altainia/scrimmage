@@ -43,6 +43,7 @@ from collections import deque
 
 import numpy as np
 
+from .. import i18n
 from ..bindings import Update
 from ..launcher.model import ExitedBall
 from .balls import BallState, Balls
@@ -115,7 +116,8 @@ class BallPath:
         b = self.balls
         slots = [i for i in b.layout.robot_slots if b.state[i] == BallState.SPARE and b.of_shooter[i]]
         if n > len(slots) or self.held() + n > self.config.capacity:
-            raise ValueError(f"preload {n}: the robot holds at most {self.config.capacity} balls")
+            raise ValueError(i18n.t("preload {n}: the robot holds at most {capacity} balls",
+                                    n=n, capacity=self.config.capacity))
         for i in slots[:n]:
             self._store(i)
 

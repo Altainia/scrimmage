@@ -32,6 +32,7 @@ keep UNCALIBRATED for it. Each function here only reads: it returns the new valu
 import math
 from pathlib import Path
 
+from .. import i18n
 from .file import MeasureError, MeasureFile, Provenance, load, provenance
 from .tests_direct import values
 
@@ -44,26 +45,34 @@ def is_measurement(value) -> bool:
     return isinstance(value, str) and value.endswith(SUFFIX)
 
 
+def _or() -> str:
+    """The separator in a list of choices ("ball or launcher"), in the Language."""
+    return i18n.t(" or ", context="list separator")
+
+
 def find(name: str, base, where: str, key: str) -> Path:
     """The path of the measurement file `<key> = "<name>"` names, found from `base`, the folder of the file that names
     it (C12); an error naming the place, the key and where it looked when it isn't there."""
     path = Path(base) / name
     if not path.is_file():
-        raise MeasureError(f"{where}: {key} = \"{name}\": no such file (looked in {path.resolve()})")
+        raise MeasureError(i18n.t("{where}: {key_setting}: no such file (looked in {path})", where=where,
+                                  path=path.resolve(), key_setting="{} = \"{}\"".format(key, name)))
     return path
 
 
 def open_file(name: str, base, where: str, key: str, kinds: tuple[str, ...], needs: str) -> MeasureFile:
     """The measurement file `<key> = "<name>"` names, found from `base` (the folder of the file that names it), and
-    checked to be one of `kinds`. `needs` says what the setting is: "a ball", "a grip"."""
+    checked to be one of `kinds`. `needs` says what the setting is: N_("a ball"), N_("a grip") (shown translated)."""
     path = find(name, base, where, key)
     try:
         mf = load(path)
     except MeasureError as e:
-        raise MeasureError(f"{where}: {key} = \"{name}\": {e}") from None
+        raise MeasureError(i18n.t("{where}: {key_setting}: {error}", where=where, error=e,
+                                  key_setting="{} = \"{}\"".format(key, name))) from None
     if mf.kind not in kinds:
-        raise MeasureError(f"{where}: {key} = \"{name}\" is a {mf.kind} measurement; {needs} needs a "
-                           f"{' or '.join(kinds)} measurement")
+        raise MeasureError(i18n.t("{where}: {key_setting} is a {kind} measurement; {needs} needs a {kinds} "
+                                  "measurement", where=where, kind=mf.kind, needs=i18n.translated(needs),
+                                  kinds=_or().join(kinds), key_setting="{} = \"{}\"".format(key, name)))
     return mf
 
 
@@ -71,7 +80,8 @@ def _fitted(fit, mf: MeasureFile, where: str, key: str, name: str):
     try:
         return fit(mf)
     except MeasureError as e:
-        raise MeasureError(f"{where}: {key} = \"{name}\": {e}") from None
+        raise MeasureError(i18n.t("{where}: {key_setting}: {error}", where=where, error=e,
+                                  key_setting="{} = \"{}\"".format(key, name))) from None
 
 
 def _fit_provenance(mf: MeasureFile, test: str, result) -> Provenance:
@@ -127,28 +137,34 @@ def _launcher(mf: MeasureFile, field: str, where: str, key: str, name: str, *, s
     if shared:
         return {}, ball
     if field == "stiffness_n":
-        raise MeasureError(f"{where}: {key} = \"{name}\" fits the wheel's friction, not the ball's stiffness (its "
-                           "shots' ball squeeze is measured): name it in [wheels] measured, and the ball file in "
-                           "[ball] measured")
-    raise MeasureError(f"{where}: {key} = \"{name}\" fits the ball's stiffness, not the wheel's friction (its shots' "
-                       "ball squeeze isn't measured): name it in [ball] measured, or measure the squeeze to fit the "
-                       "wheel's friction")
+        raise MeasureError(i18n.t("{where}: {key_setting} fits the wheel's friction, not the ball's stiffness (its "
+                                  "shots' ball squeeze is measured): name it in {wheels_table} measured, and the "
+                                  "ball file in {ball_table} measured", where=where,
+                                  key_setting="{} = \"{}\"".format(key, name), wheels_table="[wheels]",
+                                  ball_table="[ball]"))
+    raise MeasureError(i18n.t("{where}: {key_setting} fits the ball's stiffness, not the wheel's friction (its "
+                              "shots' ball squeeze isn't measured): name it in {ball_table} measured, or measure the "
+                              "squeeze to fit the wheel's friction", where=where,
+                              key_setting="{} = \"{}\"".format(key, name), ball_table="[ball]"))
 
 
 def _direct(mf: MeasureFile, fields: tuple[str, ...], where: str, key: str, name: str) -> dict:
     """{field: (mean, provenance)} of a ball or friction file's averaged trials."""
     got = {k: (s.mean, provenance(mf, s)) for k, (s, _) in values(mf).items() if k in fields}
     if not got:
-        tests = " or ".join(f"[[{t}]]" for t in mf.trials) or "trials"
-        raise MeasureError(f"{where}: {key} = \"{name}\" has no {tests} that measure {' or '.join(fields)}")
+        tests = _or().join(f"[[{t}]]" for t in mf.trials) or i18n.t("trials")
+        raise MeasureError(i18n.t("{where}: {key_setting} has no {tests} that measure {fields}", where=where,
+                                  tests=tests, fields=_or().join(fields),
+                                  key_setting="{} = \"{}\"".format(key, name)))
     return got
 
 
 def _replace(fields: dict, got: dict, where: str, key: str, name: str) -> tuple[dict, dict[str, Provenance]]:
     clash = [k for k in got if k in fields]
     if clash:
-        raise MeasureError(f"{where}: {clash[0]} is given and also measured by {key} = \"{name}\": give one (leave "
-                           f"{clash[0]} out to use the measurement)")
+        raise MeasureError(i18n.t("{where}: {field} is given and also measured by {key_setting}: give one (leave "
+                                  "{field} out to use the measurement)", where=where, field=clash[0],
+                                  key_setting="{} = \"{}\"".format(key, name)), key=clash[0])
     return {**fields, **{k: v for k, (v, _) in got.items()}}, {k: p for k, (_, p) in got.items()}
 
 
@@ -159,7 +175,7 @@ def apply_ball(fields: dict, path: str, where: str, *, base=".", key: str = "mea
     both are given; with no preset, its base becomes the preset. `shared`: the wheels name the same launcher file.
     `launcher`: a launcher file is taken too (a range's ball isn't on a launcher, so it takes a ball file only).
     `fits`: the fits already run (see _launcher)."""
-    mf = open_file(path, base, where, key, ("ball", "launcher") if launcher else ("ball",), "a ball")
+    mf = open_file(path, base, where, key, ("ball", "launcher") if launcher else ("ball",), i18n.N_("a ball"))
     fields = dict(fields)
     got, ball_file = {}, None
     if mf.kind == "launcher":
@@ -169,9 +185,14 @@ def apply_ball(fields: dict, path: str, where: str, *, base=".", key: str = "mea
         ball_file = mf.path.name
     preset = fields.get("preset")
     if mf.base is not None and preset is not None and preset != mf.base:
-        what = f"measured a {mf.base} ball" if ball_file is None else f"was fit with a {mf.base} ball ({ball_file})"
-        raise MeasureError(f"{where}: {key} = \"{path}\" {what}, but the preset is {preset}: make them the same, or "
-                           "leave the preset out to use the file's")
+        if ball_file is None:
+            raise MeasureError(i18n.t("{where}: {key_setting} measured a {base} ball, but the preset is {preset}: "
+                                      "make them the same, or leave the preset out to use the file's", where=where,
+                                      base=mf.base, preset=preset, key_setting="{} = \"{}\"".format(key, path)))
+        raise MeasureError(i18n.t("{where}: {key_setting} was fit with a {base} ball ({file}), but the preset is "
+                                  "{preset}: make them the same, or leave the preset out to use the file's",
+                                  where=where, base=mf.base, file=ball_file, preset=preset,
+                                  key_setting="{} = \"{}\"".format(key, path)))
     if preset is None and mf.base is not None:
         fields["preset"] = mf.base
     return _replace(fields, {**_direct(mf, BALL_FIELDS, where, key, path), **got}, where, key, path)
@@ -181,14 +202,14 @@ def apply_wheels(fields: dict, path: str, where: str, *, base=".", key: str = "m
                  fits: dict | None = None) -> tuple[dict, dict[str, Provenance]]:
     """A `[wheels]` table's keys (without `measured`) with the friction of the file `path` in place, and its
     provenance. `shared`: the ball names the same launcher file. `fits`: the fits already run (see _launcher)."""
-    mf = open_file(path, base, where, key, ("friction", "launcher"), "a wheel")
+    mf = open_file(path, base, where, key, ("friction", "launcher"), i18n.N_("a wheel"))
     got = (_launcher(mf, "friction", where, key, path, shared=shared, fits=fits)[0] if mf.kind == "launcher"
            else _direct(mf, ("friction",), where, key, path))
     return _replace(dict(fields), got, where, key, path)
 
 
 def friction_value(path: str, where: str, *, base=".", key: str = "friction",
-                   needs: str = "a surface") -> tuple[float, Provenance]:
+                   needs: str = i18n.N_("a surface")) -> tuple[float, Provenance]:
     """The sliding friction a friction file's sled pulls measured, and its provenance: for a grip or a piece."""
     mf = open_file(path, base, where, key, ("friction",), needs)
     (value, prov), = _direct(mf, ("friction",), where, key, path).values()
@@ -205,17 +226,20 @@ def apply_cylinder(params: dict, path: str, where: str, *, base=".", key: str = 
     isn't the one the strokes were timed on: the valve fit there may not fit here."""
     from .fit_cylinder import cylinder_of, fit
 
-    mf = open_file(path, base, where, key, ("cylinder",), "a cylinder")
+    mf = open_file(path, base, where, key, ("cylinder",), i18n.N_("a cylinder"))
     if "conductance" in params:
-        raise MeasureError(f"{where}: conductance is given and also measured by {key} = \"{path}\": give one (leave "
-                           "conductance out to use the measurement)")
+        raise MeasureError(i18n.t("{where}: {field} is given and also measured by {key_setting}: give one (leave "
+                                  "{field} out to use the measurement)", where=where, field="conductance",
+                                  key_setting="{} = \"{}\"".format(key, path)), key="conductance")
     result = _fitted(fit, mf, where, key, path)
     warnings = []
     if cylinder is not None:
         timed = cylinder_of(mf)
         for name, unit in CYLINDER_UNITS.items():
             if name in cylinder and not math.isclose(timed[name], cylinder[name], rel_tol=1e-6):
-                warnings.append(f"{key} = \"{path}\": the strokes were fit with {name} {timed[name]:.4g} {unit}, but "
-                                f"this cylinder has {cylinder[name]:.4g} {unit}: the valve's fit may not fit it (give "
-                                f"it the strokes' {name}, or time this one)")
+                warnings.append(i18n.t("{key_setting}: the strokes were fit with {name} {timed} {unit}, but this "
+                                       "cylinder has {here} {unit}: the valve's fit may not fit it (give it the "
+                                       "strokes' {name}, or time this one)", name=name, timed=f"{timed[name]:.4g}",
+                                       unit=unit, here=f"{cylinder[name]:.4g}",
+                                       key_setting="{} = \"{}\"".format(key, path)))
     return {**params, "conductance": result.conductance}, _fit_provenance(mf, "stroke", result), warnings

@@ -16,6 +16,7 @@ which is slow on a big assembly.
 from dataclasses import dataclass
 from typing import Iterable, Mapping
 
+from .. import i18n
 from .build import BuildResult
 from .mass import mesh_inertial
 from .settings import ImportFile
@@ -29,28 +30,22 @@ class Item:
     target: dict        # {"kind": "piece" | "body" | "frame", "keys": [...]}
 
 
-def _pieces(n: int) -> str:
-    return f"{n} piece" if n == 1 else f"{n} pieces"
-
-
 def _and(names: list[str]) -> str:
-    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+    return names[0] if len(names) == 1 else i18n.t("{names} and {last}", names=", ".join(names[:-1]), last=names[-1])
 
 
-def _target(imp: ImportFile, text: str) -> dict:
-    """What a build message is about: the body or piece it starts with, else the robot frame."""
-    if text.startswith("The weights typed in "):
-        name = text[len("The weights typed in "):].split(" ")[0]
-        # the message names a body, or a part (then its root body)
-        if name in imp.bodies:
+def _target(imp: ImportFile, note) -> dict:
+    """What a build message is about (build.Note.about, not its words: spec L3): its body or piece, a part's root
+    bodies, else the robot frame."""
+    kind, name = getattr(note, "about", None) or (None, None)
+    if kind == "part":
+        if name in imp.bodies:       # a part is named by its root body unless it was given a name
             return {"kind": "body", "keys": [name]}
         roots = [n for n, b in imp.bodies.items() if b.part == name]
         if roots:
             return {"kind": "body", "keys": roots}
-    for kind, names in (("body", imp.bodies), ("piece", imp.pieces)):
-        for n in names:
-            if text.startswith(n + " ") or text.startswith(n + ":") or text.startswith(n + "'"):
-                return {"kind": kind, "keys": [n]}
+    if kind == "body" and name in imp.bodies or kind == "piece" and name in imp.pieces:
+        return {"kind": kind, "keys": [name]}
     return {"kind": "frame", "keys": []}
 
 
@@ -71,8 +66,9 @@ def checklist(imp: ImportFile, src: Source, result: BuildResult, guessed: Iterab
             continue
         keys = [k for k, ps in live if ps.body == name and ps.material is None and not ps.mass]
         if keys:
-            items.append(Item("todo", f"{_pieces(len(keys))} in {name} {'is' if len(keys) == 1 else 'are'} still "
-                              "guessed as aluminum", {"kind": "piece", "keys": keys}))
+            items.append(Item("todo", i18n.tn("{count} piece in {body} is still guessed as aluminum",
+                                              "{count} pieces in {body} are still guessed as aluminum", len(keys), body=name),
+                              {"kind": "piece", "keys": keys}))
 
     # no volume (open surfaces) and no typed weight to stand in for it
     for name, bs in imp.bodies.items():
@@ -81,31 +77,34 @@ def checklist(imp: ImportFile, src: Source, result: BuildResult, guessed: Iterab
         keys = [k for k, ps in live if ps.body == name and not ps.mass and k in by_key
                 and volume(k) <= 0]
         if keys:
-            one = len(keys) == 1
-            items.append(Item("error", f"{_pieces(len(keys))} in {name} {'has' if one else 'have'} no volume: type a "
-                              f"weight or leave {'it' if one else 'them'} out", {"kind": "piece", "keys": keys}))
+            items.append(Item("error", i18n.tn("{count} piece in {body} has no volume: type a weight or leave it out",
+                                               "{count} pieces in {body} have no volume: type a weight or leave them out",
+                                               len(keys), body=name), {"kind": "piece", "keys": keys}))
 
     for k in guessed:
-        items.append(Item("check", f"{k} was matched by shape after re-importing: check it",
+        items.append(Item("check", i18n.t("{piece} was matched by shape after re-importing: check it", piece=k),
                           {"kind": "piece", "keys": [k]}))
 
     welded = [n for n, b in imp.bodies.items() if b.parent is not None and b.joint is None]
     if welded:
         parents = {imp.bodies[n].parent for n in welded}
-        to = parents.pop() if len(parents) == 1 else "the body they hang on"
-        one = len(welded) == 1
-        items.append(Item("check", f"{_and(welded)} {'is' if one else 'are'} welded to {to}: give "
-                          f"{'it' if one else 'them'} a joint if {'it moves' if one else 'they move'}",
-                          {"kind": "body", "keys": welded}))
+        if len(welded) == 1:
+            text = i18n.t("{body} is welded to {parent}: give it a joint if it moves", body=welded[0], parent=parents.pop())
+        elif len(parents) == 1:
+            text = i18n.t("{bodies} are welded to {parent}: give them a joint if they move", bodies=_and(welded),
+                          parent=parents.pop())
+        else:
+            text = i18n.t("{bodies} are welded to the body they hang on: give them a joint if they move", bodies=_and(welded))
+        items.append(Item("check", text, {"kind": "body", "keys": welded}))
 
     for n, b in imp.bodies.items():
         if b.joint is not None and b.motor is None:
-            items.append(Item("todo", f"{n} has a joint but no motor: add one, or leave it to move freely",
+            items.append(Item("todo", i18n.t("{body} has a joint but no motor: add one, or leave it to move freely", body=n),
                               {"kind": "body", "keys": [n]}))
 
     if not imp.frame.confirmed:
-        items.append(Item("todo", "Check which way is up and forward for the robot", {"kind": "frame", "keys": []}))
+        items.append(Item("todo", i18n.t("Check which way is up and forward for the robot"), {"kind": "frame", "keys": []}))
 
     for m in result.messages:
-        items.append(Item("error" if "weighs nothing" in m else "check", m, _target(imp, m)))
+        items.append(Item("error" if getattr(m, "error", False) else "check", str(m), _target(imp, m)))
     return items

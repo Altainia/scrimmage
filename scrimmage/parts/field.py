@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import mujoco
 
+from .. import i18n
+
 FIELD_BITS = {"contype": 1, "conaffinity": 2}
 # The ground's geom group: the carpet and the range's field elements (scrimmage/testrange/build_elements.py), and
 # nothing else, so a ray in it finds the ground and never a ball or the robot. MuJoCo draws groups 0 to 2 by default.
@@ -16,9 +18,10 @@ def add_field(spec: mujoco.MjSpec, cfg: dict, *, obstacle_default: bool = True) 
     from .model import PartError
     for k in cfg:
         if k != "obstacle":
-            raise PartError(f"[field]: unknown key {k!r}; allowed: obstacle")
+            raise PartError(i18n.t("{field_table}: unknown key {key}; allowed: obstacle", key=repr(k),
+                                   field_table="[field]"))
     if not isinstance(cfg.get("obstacle", obstacle_default), bool):
-        raise PartError("[field] obstacle must be true or false")
+        raise PartError(i18n.t("{field_table} obstacle must be true or false", field_table="[field]"))
     g = spec.visual.global_
     g.offwidth, g.offheight, g.azimuth, g.elevation = 1600, 1000, -125, -30
     spec.visual.quality.shadowsize = 4096

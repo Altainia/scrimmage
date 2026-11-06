@@ -11,6 +11,7 @@ import numpy as np
 
 from .bindings import AnalogBinding, DigitalBinding, EncoderBinding, GyroBinding, MotorBinding, Update
 from .motors import Battery
+from .i18n import t
 from .parts.assemble import parse_start_pose
 from .protocol import HalState
 
@@ -36,10 +37,23 @@ def _reject_duplicate_devices(*groups) -> None:
                     dev = dev.replace("<channel_a=", "encoder channel A ")
                     what = dev if typ == "SimDevice" else f"{typ} {dev}"   # a SimDevice's name says what it is
                     encoder = next((e for e in (other[0], b) if _quadrature(e) and typ == "DIO"), None)
-                    hint = (f" (an encoder on channel_a = {encoder.channel_a} takes DIO {encoder.channel_a} and "
-                            f"{encoder.channel_a + 1})" if encoder is not None else "")
-                    raise ValueError(f"{what} is bound by {other[1]} and {_label(b, i)}: "
-                                     f"give each device one binding{hint}")
+                    from .parts.model import PartError
+                    said = {"device": what, "a": other[1], "b": _label(b, i)}
+                    if encoder is not None:
+                        message = t("{device} is bound by {a} and {b}: give each device one binding (an encoder on "
+                                    "{channel_a_setting} takes DIO {channel} and {next})", **said,
+                                    channel=encoder.channel_a, next=encoder.channel_a + 1,
+                                    channel_a_setting="channel_a = {}".format(encoder.channel_a))
+                    else:
+                        message = t("{device} is bound by {a} and {b}: give each device one binding", **said)
+                    raise PartError(message, fields=_slot_field(other[0]) + _slot_field(b))
+
+
+def _slot_field(b) -> tuple:
+    """The Robot tab's field of a [[part]] slot's binding (named "<part>.<slot>" or "<part>.<slot>[i]"), for
+    PartError.fields; () for a binding written by hand."""
+    part, dot, slot = (getattr(b, "name", None) or "").partition(".")
+    return ((part, "ids:" + slot.split("[")[0]),) if dot and part and slot else ()
 
 
 def _quadrature(b) -> bool:
@@ -67,26 +81,36 @@ class World:
         rcfg = cfg.get("robot", {})
         self.parts = None
         if "part" not in cfg and "mjcf" not in mcfg:
-            hint = " (did you mean [[part]]?)" if "parts" in cfg else ""
-            raise ValueError("describe the robot with [[part]] entries (see docs/parts.md) or "
-                             f"[model] mjcf = <file>{hint}")
+            if "parts" in cfg:
+                raise ValueError(t("describe the robot with {part_table} entries (see docs/parts.md) or "
+                                   "{model_table} {mjcf_setting} (did you mean {part_table}?)", part_table="[[part]]",
+                                   model_table="[model]", mjcf_setting="mjcf = <file>"))
+            raise ValueError(t("describe the robot with {part_table} entries (see docs/parts.md) or {model_table} "
+                               "{mjcf_setting}", part_table="[[part]]", model_table="[model]",
+                               mjcf_setting="mjcf = <file>"))
         if "range" in cfg and "part" not in cfg:
             from .parts.model import PartError
-            raise PartError("a range needs a robot built from [[part]]: [model] mjcf robots can't have a [range]")
+            raise PartError(t("a range needs a robot built from {part_table}: {model_table} mjcf robots can't have a "
+                              "{range_table}", part_table="[[part]]", model_table="[model]", range_table="[range]"))
         if "partner" in cfg and "part" not in cfg:
             from .parts.model import PartError
-            raise PartError("a [partner] robot needs a robot built from [[part]]: [model] mjcf robots can't have one")
+            raise PartError(t("a {partner_table} robot needs a robot built from {part_table}: {model_table} mjcf "
+                              "robots can't have one", partner_table="[partner]", part_table="[[part]]",
+                              model_table="[model]"))
         start_pose = parse_start_pose(rcfg.get("start_pose"))
         self.warnings: list[str] = []
         if "part" in cfg:
             if "mjcf" in mcfg:
-                raise ValueError("use either [model] mjcf = <hand-written model> or [[part]] entries, not both")
+                raise ValueError(t("use either {model_table} {mjcf_setting} or {part_table} entries, not both",
+                                   model_table="[model]", mjcf_setting="mjcf = <hand-written model>",
+                                   part_table="[[part]]"))
             for k in ("motor", "encoder", "gyro"):
                 if cfg.get(k):
-                    raise ValueError(f"[[{k}]] entries don't go with [[part]]: give the part's slot an ID in its "
-                                     "ids table instead")
+                    raise ValueError(t("[[{key}]] entries don't go with {part_table}: give the part's slot an ID in "
+                                       "its ids table instead", key=k, part_table="[[part]]"))
             if "body" in rcfg:
-                raise ValueError("[robot] body is set by the root part when the robot is built from [[part]]")
+                raise ValueError(t("{robot_table} body is set by the root part when the robot is built from "
+                                   "{part_table}", robot_table="[robot]", part_table="[[part]]"))
             from .parts.assemble import assemble
             self.parts = assemble(cfg, cfg_dir)
             self.model = self.parts.model
@@ -104,7 +128,7 @@ class World:
         self.robot_body_name = body_name
         self.robot_body = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, body_name)
         if self.robot_body < 0:
-            raise ValueError(f"robot body '{body_name}' not in model")
+            raise ValueError(t("robot body '{body_name}' not in model", body_name=body_name))
         self.start_pose = start_pose  # (x, y, heading_deg) or None to use the MJCF pose; parts bake it into qpos0
         jnt = self.model.body_jntadr[self.robot_body]
         self.free_qadr = int(self.model.jnt_qposadr[jnt]) if (
@@ -269,7 +293,7 @@ class World:
         For a parts robot (x, y, heading) is where the start-pose frame goes, like [robot] start_pose: the root
         part's pos and rot are applied below it, so the root body ends up offset from (x, y)."""
         if self.free_qadr is None:
-            raise ValueError("the robot body has no free joint, so it can't be moved")
+            raise ValueError(t("the robot body has no free joint, so it can't be moved"))
         q = self.free_qadr
         h = math.radians(heading_deg) / 2
         frame_q = np.array([math.cos(h), 0, 0, math.sin(h)])
@@ -326,7 +350,7 @@ class World:
         quat = [math.cos(h), 0, 0, math.sin(h)]
         b = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, name)
         if b == self.robot_body:
-            raise ValueError("that's the robot: use set_pose to move it")
+            raise ValueError(t("that's the robot: use set_pose to move it"))
         if name in self.movable_objects():
             j = int(m.body_jntadr[b]) if b >= 0 else -1
             if j >= 0 and int(m.jnt_type[j]) == int(mujoco.mjtJoint.mjJNT_FREE):
@@ -336,12 +360,14 @@ class World:
             else:
                 g = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, name)
                 if g < 0 or m.geom_bodyid[g] != 0:
-                    raise ValueError(f"{name!r} can't be moved; movable objects: {', '.join(self.movable_objects())}")
+                    raise ValueError(t("{name} can't be moved; movable objects: {items}",
+                                            name=repr(name), items=', '.join(self.movable_objects())))
                 m.geom_pos[g] = [x, y, z]
                 m.geom_quat[g] = quat
             mujoco.mj_forward(m, self.data)
             return
-        raise ValueError(f"no movable object {name!r}; movable objects: {', '.join(self.movable_objects()) or 'none'}")
+        raise ValueError(t("no movable object {name}; movable objects: {objects}",
+                                name=repr(name), objects=', '.join(self.movable_objects()) or t("none")))
 
     def step(self, hal: HalState) -> None:
         """Advance one physics timestep using the robot program's latest outputs."""

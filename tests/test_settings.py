@@ -212,6 +212,7 @@ def api():
                 return r.status, json.loads(r.read())
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read())
+    call.url = base + "/"
     yield call
     app.stop()
 
@@ -251,3 +252,44 @@ def test_api_post_moves_the_cli_override(api, units):
     set_override("imperial")
     st, r = api("POST", {"units": "metric"})
     assert r["units"] == "metric" and current_units() == "metric" and load().units == "metric"
+
+
+# -- Theme ---------------------------------------------------------------------------------------------------------
+def test_theme_is_system_by_default_and_saves():
+    assert load().theme == "system" and settings.THEMES == ("system", "light", "dark")
+    for value in ("dark", "Light", " SYSTEM "):
+        save(theme=value)
+        assert load().theme == value.strip().lower()
+    with pytest.raises(ValueError, match='theme must be "system", "light" or "dark", not "blue"'):
+        save(theme="blue")
+    assert load().theme == "system"
+
+
+def test_a_bad_theme_falls_back_on_its_own_with_one_warning(caplog):
+    f = settings_dir() / "settings.toml"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text('units = "metric"\ntheme = "blue"\n')
+    with caplog.at_level(logging.WARNING, logger="scrimmage.settings"):
+        for _ in range(3):
+            assert load() == Settings(units="metric", theme="system")
+    warnings = [r.getMessage() for r in caplog.records]
+    assert len(warnings) == 1 and 'theme = "blue" isn\'t system, light or dark; using the System theme' in warnings[0]
+
+
+def test_api_saves_the_theme(api):
+    assert api("GET")[1]["theme"] == "system"
+    st, r = api("POST", {"theme": "dark"})
+    assert st == 200 and r["theme"] == "dark" and r["units"] == "imperial" and load().theme == "dark"
+    st, r = api("POST", {"theme": "sepia"})
+    assert st == 400 and r["error"] == 'theme must be "system", "light" or "dark", not "sepia"'
+    assert api("POST", {})[1]["error"] == "send units, language or theme to change"
+
+
+def test_the_page_starts_in_the_saved_theme(api):
+    """index.html is served with the Theme setting on <html>, so the first paint is already in it (no flash)."""
+    def page():
+        with urllib.request.urlopen(api.url, timeout=10) as r:
+            return r.read().decode("utf-8")
+    assert '<html lang="en-US" data-theme="system">' in page()
+    save(theme="dark")
+    assert '<html lang="en-US" data-theme="dark">' in page()

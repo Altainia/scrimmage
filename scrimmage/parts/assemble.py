@@ -12,10 +12,11 @@ from typing import TYPE_CHECKING
 import mujoco
 import numpy as np
 
+from ..i18n import t
 from .field import add_field
 from .ids import slot_bindings
 from ..teamfolders import TeamFolderError, expand
-from .model import Body, Geom, Part, PartError, load_part, model_timestep, quat_from_rpy, tread_name
+from .model import Body, Geom, Part, PartError, Where, load_part, model_timestep, quat_from_rpy, tread_name
 from ..pneumatics.model import ATM, MAX_WORKING_PSI, PSI, CylinderSpec
 
 if TYPE_CHECKING:
@@ -128,7 +129,8 @@ def parse_start_pose(value, default=None) -> tuple[float, float, float] | None:
     ok = (isinstance(value, (list, tuple)) and len(value) == 3
           and all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in value))
     if not ok:
-        raise ValueError(f"[robot] start_pose must be [x, y, heading_deg], 3 finite numbers, not {value!r}")
+        raise ValueError(t("{robot_table} start_pose must be [x, y, heading_deg], 3 finite numbers, not {value}",
+                           value=repr(value), robot_table="[robot]"))
     return tuple(float(v) for v in value)
 
 
@@ -148,7 +150,8 @@ def robot_start(cfg: dict, cfg_dir: Path | None) -> tuple[float, float, float]:
 def _vec3(e: dict, key: str, where: str) -> tuple[float, float, float]:
     v = e.get(key, [0, 0, 0])
     if not (isinstance(v, list) and len(v) == 3 and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in v)):
-        raise PartError(f"{where}: {key} must be a list of 3 numbers, not {v!r}")
+        raise PartError(t("{where}: {key} must be a list of 3 numbers, not {value}", where=where, key=key,
+                          value=repr(v)), where=where)
     return tuple(float(x) for x in v)
 
 
@@ -156,24 +159,29 @@ def _instances(cfg: dict, cfg_dir: Path) -> list[Instance]:
     from .stock import build_stock, stock_params
     entries = cfg.get("part")
     if not entries:
-        raise PartError("no [[part]] entries")
+        raise PartError(t("no {part_table} entries", part_table="[[part]]"))
     if not isinstance(entries, list) or not all(isinstance(e, dict) for e in entries):
-        raise PartError("[[part]] must be an array of tables")
+        raise PartError(t("{part_table} must be an array of tables", part_table="[[part]]"))
     out: list[Instance] = []
     for i, e in enumerate(entries):
         name = e.get("name")
-        where = f"parts[{i}] {name!r}" if isinstance(name, str) else f"parts[{i}]"
+        where = (Where(f"parts[{i}] {name!r}", name) if isinstance(name, str) else Where(f"parts[{i}]"))
         if not isinstance(name, str) or not NAME_RE.match(name):
-            raise PartError(f"{where}: name must be letters, digits and _ (it prefixes the part's names), not {name!r}")
+            raise PartError(t("{where}: name must be letters, digits and _ (it prefixes the part's names), not {name}",
+                              where=where, name=repr(name)), where=where, field="name")
         if any(x.name == name for x in out):
-            raise PartError(f"{where}: the part name {name!r} is used twice")
+            raise PartError(t("{where}: the part name {name} is used twice", where=where, name=repr(name)),
+                            where=where, field="name")
         if ("stock" in e) == ("path" in e):
-            raise PartError(f"{where}: give exactly one of stock = \"<stock part>\" or path = \"<part folder>\"")
+            raise PartError(t("{where}: give exactly one of {stock_setting} or {path_setting}", where=where,
+                              stock_setting="stock = \"<stock part>\"",
+                              path_setting="path = \"<part folder>\""), where=where)
         params = {k: v for k, v in e.items() if k not in PLACEMENT_KEYS}
         checked: dict = {}
         if "stock" in e:
             if "grip" in e:
-                raise PartError(f"{where}: grip is for a part folder's bodies; a stock part has its own materials")
+                raise PartError(t("{where}: grip is for a part folder's bodies; a stock part has its own materials",
+                                  where=where), where=where)
             checked = stock_params(str(e["stock"]), params, where)
             measured = checked.get("measured") if e["stock"] == "cylinder" else ""
             provenance, notes = None, []
@@ -184,7 +192,7 @@ def _instances(cfg: dict, cfg_dir: Path) -> list[Instance]:
                     params, provenance, notes = apply_cylinder(params, measured, where, base=cfg_dir,
                                                                cylinder=checked)
                 except MeasureError as err:
-                    raise PartError(str(err)) from None
+                    raise PartError(str(err), where=where, field=f"param:{err.key or 'measured'}") from None
                 checked = stock_params(str(e["stock"]), params, where)
             part, source = build_stock(str(e["stock"]), params, where), f"stock {e['stock']}"
             if provenance is not None:
@@ -192,31 +200,38 @@ def _instances(cfg: dict, cfg_dir: Path) -> list[Instance]:
                 part.warnings = [*part.warnings, *notes]
         else:
             if params:
-                raise PartError(f"{where}: {', '.join(repr(k) for k in params)} isn't a key of a path part "
-                                f"(allowed: {', '.join(PLACEMENT_KEYS)})")
+                raise PartError(t("{where}: {keys} isn't a key of a path part (allowed: {allowed})", where=where,
+                                  keys=", ".join(repr(k) for k in params), allowed=", ".join(PLACEMENT_KEYS)),
+                                where=where)
             try:
                 folder = (cfg_dir / expand(str(e["path"]))).resolve()
             except TeamFolderError as err:
-                raise PartError(f"{where}: {err}") from None
+                raise PartError(f"{where}: {err}", where=where) from None
             try:
                 part, source = load_part(folder if folder.is_file() else folder / "part.toml"), str(folder)
             except PartError as err:
-                raise PartError(f"{where}: {err}") from None
+                raise PartError(f"{where}: {err}", where=where) from None
             if "grip" in e:     # over the folder's own (its scrimmage-edits.toml)
                 from .grip import apply_grip
                 part, _ = apply_grip(part, e["grip"], where, base=cfg_dir)
         attach = e.get("attach")
         if attach is not None and not (isinstance(attach, str) and attach.count(".") == 1 and all(attach.split("."))):
-            raise PartError(f"{where}: attach must be \"<part>.<mount or body>\", not {attach!r}")
+            raise PartError(t("{where}: attach must be \"{part_mount_or}\", not {attach}", where=where,
+                              attach=repr(attach), part_mount_or="<part>.<mount or body>"), where=where, field="attach")
         ids = e.get("ids", {})
         if not isinstance(ids, dict):
-            raise PartError(f"{where}: ids must be a table of slot = device, not {ids!r}")
+            raise PartError(t("{where}: ids must be a table of {slot_setting}, not {ids}", where=where,
+                              ids=repr(ids), slot_setting="slot = device"),
+                            where=where, field="ids")
         out.append(Instance(name, part, source, attach, _vec3(e, "pos", where), _vec3(e, "rot", where), ids, where,
                             checked))
     roots = [x for x in out if x.attach is None]
     if len(roots) != 1:
-        raise PartError("exactly one part without attach is the robot's root (it gets the free joint); "
-                        f"parts without attach: {', '.join(x.name for x in roots) or 'none'}")
+        if roots:
+            raise PartError(t("exactly one part without attach is the robot's root (it gets the free joint); parts "
+                              "without attach: {parts}", parts=", ".join(x.name for x in roots)))
+        raise PartError(t("exactly one part without attach is the robot's root (it gets the free joint); parts "
+                          "without attach: none"))
     return out
 
 
@@ -226,13 +241,15 @@ def _order(insts: list[Instance]) -> list[Instance]:
         if x.attach is not None:
             target = x.attach.split(".")[0]
             if target not in names:
-                raise PartError(f"{x.where}: attach {x.attach!r}: no part {target!r}; parts: {', '.join(names)}")
+                raise PartError(t("{where}: attach {attach}: no part {target}; parts: {parts}", where=x.where,
+                                  attach=repr(x.attach), target=repr(target), parts=", ".join(names)),
+                                where=x.where, field="attach")
     placed: list[Instance] = [x for x in insts if x.attach is None]
     rest = [x for x in insts if x.attach is not None]
     while rest:
         ready = [x for x in rest if x.attach.split(".")[0] in {p.name for p in placed}]
         if not ready:
-            raise PartError(f"attach cycle: {', '.join(sorted(x.name for x in rest))}")
+            raise PartError(t("attach cycle: {parts}", parts=", ".join(sorted(x.name for x in rest))))
         placed += ready
         rest = [x for x in rest if x not in ready]
     return placed
@@ -247,9 +264,15 @@ def _target_frame(inst: Instance, by_name: dict[str, Instance]) -> tuple[str, np
             return f"{tname}.{m.body}", np.array(m.pos), np.array(quat_from_rpy(m.rot))
     if any(b.name == local for b in target.bodies):
         return f"{tname}.{local}", np.zeros(3), np.array([1.0, 0, 0, 0])
-    raise PartError(f"{inst.where}: attach {inst.attach!r}: no mount or body {local!r} on {tname!r}; "
-                    f"mounts: {', '.join(m.name for m in target.mounts) or 'none'}; "
-                    f"bodies: {', '.join(b.name for b in target.bodies)}")
+    mounts, bodies = ", ".join(m.name for m in target.mounts), ", ".join(b.name for b in target.bodies)
+    if mounts:
+        message = t("{where}: attach {attach}: no mount or body {local} on {target}; mounts: {mounts}; bodies: "
+                    "{bodies}", where=inst.where, attach=repr(inst.attach), local=repr(local), target=repr(tname),
+                    mounts=mounts, bodies=bodies)
+    else:
+        message = t("{where}: attach {attach}: no mount or body {local} on {target}; mounts: none; bodies: {bodies}",
+                    where=inst.where, attach=repr(inst.attach), local=repr(local), target=repr(tname), bodies=bodies)
+    raise PartError(message, where=inst.where, field="attach")
 
 
 def _add_geom(body, g: Geom, part: Part, spec: mujoco.MjSpec, mesh_names: dict, looks_only: bool = False,
@@ -342,7 +365,9 @@ def part_spec(part: Part, where: str | None = None) -> mujoco.MjSpec:
     try:
         probe = fresh(None).compile()
     except ValueError as e:
-        raise PartError(f"{where or 'part ' + repr(part.name)}: {e}") from None
+        if where:
+            raise PartError(f"{where}: {e}", where=where) from None
+        raise PartError(t("part {name}: {problem}", name=repr(part.name), problem=e)) from None
     densities = {}
     for b in part.bodies:
         if b.com is None:
@@ -420,10 +445,12 @@ def _pin_body(inst: Instance, body: str, by_name: dict[str, Instance]) -> str:
         return f"{inst.name}.{body}"
     tname, local = body.split(".")
     if tname not in by_name:
-        raise PartError(f"{inst.name}: push {body!r}: no part {tname!r}; parts: {', '.join(by_name)}")
+        raise PartError(t("{part}: push {body}: no part {target}; parts: {parts}", part=inst.name, body=repr(body),
+                          target=repr(tname), parts=", ".join(by_name)))
     bodies = [b.name for b in by_name[tname].part.bodies]
     if local not in bodies:
-        raise PartError(f"{inst.name}: push {body!r}: no body {local!r} on {tname!r}; its bodies: {', '.join(bodies)}")
+        raise PartError(t("{part}: push {body}: no body {local} on {target}; its bodies: {bodies}", part=inst.name,
+                          body=repr(body), local=repr(local), target=repr(tname), bodies=", ".join(bodies)))
     return body
 
 
@@ -488,18 +515,20 @@ def _resolve_cylinders(built: Built, cylinders: list[CylinderSpec]) -> None:
     for cy in cylinders:
         a, b = (_moving_body(m, m.body(pin[0]).id) for pin in (cy.pin_a, cy.pin_b))
         if a == b:
-            raise PartError(f"{cy.name}: the cylinder's two ends are on bodies that can't move relative to each other "
-                            f"(nothing between {cy.pin_a[0]} and {cy.pin_b[0]} turns or slides)")
+            raise PartError(t("{cylinder}: the cylinder's two ends are on bodies that can't move relative to each "
+                              "other (nothing between {a} and {b} turns or slides)", cylinder=cy.name, a=cy.pin_a[0],
+                              b=cy.pin_b[0]))
         apart = float(np.linalg.norm(d.site_xpos[m.site(f"{cy.name}.pin_a").id]
                                      - d.site_xpos[m.site(f"{cy.name}.pin_b").id]))
         if apart < 1e-6:
-            raise PartError(f"{cy.name}: the cylinder's two ends are at the same point; move the part or push_pos "
-                            "so they are apart")
+            raise PartError(t("{cylinder}: the cylinder's two ends are at the same point; move the part or push_pos "
+                              "so they are apart", cylinder=cy.name))
         length = apart if cy.length is None else cy.length
         if not length - 1e-9 <= apart <= length + cy.stroke + 1e-9:
-            raise PartError(f"{cy.name}: the cylinder's ends are {apart:.4g} m apart as assembled, outside its travel "
-                            f"from {length:.4g} m (retracted) to {length + cy.stroke:.4g} m (extended); set length "
-                            "between those, or 0 to take it from the assembled pose")
+            raise PartError(t("{cylinder}: the cylinder's ends are {apart} m apart as assembled, outside its travel "
+                              "from {retracted} m (retracted) to {extended} m (extended); set length between those, "
+                              "or 0 to take it from the assembled pose", cylinder=cy.name, apart=f"{apart:.4g}",
+                              retracted=f"{length:.4g}", extended=f"{length + cy.stroke:.4g}"))
         tid = m.tendon(f"{cy.name}.cylinder").id
         m.tendon_range[tid] = [length, length + cy.stroke]
         built.spec.tendon(f"{cy.name}.cylinder").range = [length, length + cy.stroke]
@@ -517,15 +546,16 @@ def assemble(cfg: dict, cfg_dir: Path) -> Built:
     spec.option.impratio = 10
     field_cfg = cfg.get("field", {})
     if not isinstance(field_cfg, dict):
-        raise PartError("[field] must be a table")
+        raise PartError(t("{field_table} must be a table", field_table="[field]"))
     section = None
     timestep = model_timestep(cfg)
     if "range" in cfg:
         from ..testrange.build import parse_range_section
         section = parse_range_section(cfg, cfg_dir)
         if field_cfg.get("obstacle") is True:
-            raise PartError("[field] obstacle = true: the range's field elements replace the center obstacle; "
-                            "remove the key or set it false")
+            raise PartError(t("{field_table} {obstacle_setting}: the range's field elements replace the center "
+                              "obstacle; remove the key or set it false", field_table="[field]",
+                              obstacle_setting="obstacle = true"))
         if timestep is not None:   # the balls' contacts are built for the run's timestep
             spec.option.timestep = timestep
     add_field(spec, field_cfg, obstacle_default=section is None)
@@ -563,14 +593,16 @@ def assemble(cfg: dict, cfg_dir: Path) -> Built:
     if "partner" in cfg:
         from .partner import add_partner, check_start
         if "partner" in by_name:
-            raise PartError(f"{by_name['partner'].where}: the part name 'partner' is the [partner] robot's; rename "
-                            "the part")
+            at = by_name["partner"].where
+            raise PartError(t("{where}: the part name 'partner' is the {partner_table} robot's; rename the part",
+                              where=at, partner_table="[partner]"),
+                            where=at, field="name")
         partner = add_partner(spec, cfg)
         check_start(partner, pose, section.range.elements if section is not None else ())
     try:
         model = spec.compile()
     except ValueError as e:
-        raise PartError(f"assembling the robot: {e}") from None
+        raise PartError(t("assembling the robot: {problem}", problem=e)) from None
     if layout is not None:     # qpos addresses exist only once compiled
         from ..testrange.build_elements import fill_layout
         fill_layout(layout, model, section.range.elements)
@@ -599,5 +631,5 @@ def _one_module_kind(valves: list[dict]) -> None:
         first.setdefault(v["module"], v["name"])
     if len(first) > 1:
         (ka, a), (kb, b) = first.items()
-        raise PartError(f"{a} is on a {ka} and {b} is on a {kb}: one robot's valves must all be on one kind of "
-                        "module (all PCM or all PH)")
+        raise PartError(t("{a} is on a {kind_a} and {b} is on a {kind_b}: one robot's valves must all be on one "
+                          "kind of module (all PCM or all PH)", a=a, kind_a=ka, b=b, kind_b=kb))

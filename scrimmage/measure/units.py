@@ -11,6 +11,7 @@ given in two units is an error that lists the units allowed.
 
 import math
 
+from .. import i18n
 from .file import MeasureError
 
 G = 9.80665  # standard gravity (m/s^2): a scale reading in a mass unit is that mass's weight
@@ -28,7 +29,7 @@ UNITS: dict[str, dict[str, float]] = {
 
 def _choices(name: str, quantity: str) -> str:
     keys = [name if unit == name else f"{name}_{unit}" for unit in UNITS[quantity]]
-    return keys[0] if len(keys) == 1 else f"{', '.join(keys[:-1])} or {keys[-1]}"
+    return keys[0] if len(keys) == 1 else i18n.t("{keys} or {last}", keys=", ".join(keys[:-1]), last=keys[-1])
 
 
 def unit_of(key: str, name: str) -> str | None:
@@ -40,31 +41,37 @@ def unit_of(key: str, name: str) -> str | None:
     return None
 
 
-def reading(row: dict, quantity: str, name: str | None = None, *, where: str = "this trial",
+def reading(row: dict, quantity: str, name: str | None = None, *, where: str | None = None,
             required: bool = True) -> float | None:
     """The reading `name` (default: the quantity's own name) of `row`, in SI. Left out, it is an error, or None when
     not `required`. `where` begins the error sentences ("fuel.measure.toml: [[squeeze]] trial 2")."""
     if quantity not in UNITS:
         raise ValueError(f"unknown quantity {quantity!r}; one of {', '.join(UNITS)}")
     name = name or quantity
+    where = i18n.t("this trial") if where is None else where
     units = UNITS[quantity]
     found = [(k, u) for k in row if (u := unit_of(k, name)) is not None]
     for key, unit in found:
         if unit == "" and name not in units:
-            raise MeasureError(f"{where}: {key} needs its unit in its key: write {_choices(name, quantity)}")
+            raise MeasureError(i18n.t("{where}: {key} needs its unit in its key: write {keys}", where=where, key=key,
+                                      keys=_choices(name, quantity)))
         if unit and unit not in units and unit.lower() in units:
-            raise MeasureError(f"{where}: {key}: units are lowercase: write {name}_{unit.lower()}")
+            raise MeasureError(i18n.t("{where}: {key}: units are lowercase: write {name}_{unit}", where=where, key=key,
+                                      name=name, unit=unit.lower()))
         if unit and unit not in units:
-            raise MeasureError(f"{where}: {key}: '{unit}' isn't a unit of {quantity}; "
-                               f"write {_choices(name, quantity)}")
+            raise MeasureError(i18n.t("{where}: {key}: '{unit}' isn't a unit of {quantity}; write {keys}", where=where,
+                                      key=key, unit=unit, quantity=quantity, keys=_choices(name, quantity)))
     if len(found) > 1:
-        raise MeasureError(f"{where} gives {' and '.join(k for k, _ in found)}: give {name} once, in one unit")
+        raise MeasureError(i18n.t("{where} gives {keys}: give {name} once, in one unit", where=where,
+                                  keys=" and ".join(k for k, _ in found), name=name))
     if not found:
         if not required:
             return None
-        raise MeasureError(f"{where} has no {name} reading: write {_choices(name, quantity)}")
+        raise MeasureError(i18n.t("{where} has no {name} reading: write {keys}", where=where, name=name,
+                                  keys=_choices(name, quantity)))
     key, unit = found[0]
     value = row[key]
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-        raise MeasureError(f"{where}: {key} must be a number, not {value!r}")
+        raise MeasureError(i18n.t("{where}: {key} must be a number, not {value}", where=where, key=key,
+                                  value=repr(value)))
     return float(value) * units[unit or name]

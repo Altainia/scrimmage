@@ -13,6 +13,7 @@ from typing import Any
 import tomlkit
 from tomlkit.items import InlineTable, Whitespace
 
+from .. import i18n
 from ..parts.assemble import PLACEMENT_KEYS
 from ..testrange.spec import BUILTIN_RANGES
 from ..testrange.spec import FIELD_LENGTH, FIELD_WIDTH   # m: the generated field, the blue alliance wall at x = 0
@@ -24,7 +25,8 @@ _NAME_RE = re.compile(r"[A-Za-z0-9_]+")
 
 
 class EditError(Exception):
-    """A rejected edit; `field` is "<instance>/<key>" as in the API's field errors."""
+    """A rejected edit; `field` is "<instance>/<key>" as in the API's field errors. The message is in the user's
+    language (i18n.t, made when the edit is refused); the field is the code the page acts on."""
 
     def __init__(self, field: str, message: str):
         super().__init__(f"{field}: {message}")
@@ -43,7 +45,7 @@ def _find(doc, name: str):
     for p in parts(doc):
         if p.get("name") == name:
             return p
-    raise EditError(f"{name}/part", f"no part named {name!r}")
+    raise EditError(f"{name}/part", i18n.t("no part named {name}", name=repr(name)))
 
 
 def _attach_parent(p) -> str | None:
@@ -54,9 +56,9 @@ def _attach_parent(p) -> str | None:
 def _check_name(doc, name: str, owner: str | None = None) -> None:
     owner = name if owner is None else owner
     if not isinstance(name, str) or not _NAME_RE.fullmatch(name):
-        raise EditError(f"{owner}/name", "use letters, digits and underscores only")
+        raise EditError(f"{owner}/name", i18n.t("use letters, digits and underscores only"))
     if any(p.get("name") == name for p in parts(doc)):
-        raise EditError(f"{owner}/name", f"a part named {name!r} already exists")
+        raise EditError(f"{owner}/name", i18n.t("a part named {name} already exists", name=repr(name)))
 
 
 def _vec(v) -> Any:
@@ -89,7 +91,7 @@ def add_part(doc, *, name, stock=None, path=None, attach=None, pos=None, rot=Non
              params=None, ids=None, defaults: dict | None = None) -> None:
     _check_name(doc, name)
     if (stock is None) == (path is None):
-        raise EditError(f"{name}/part", "give exactly one of stock or path")
+        raise EditError(f"{name}/part", i18n.t("give exactly one of stock or path"))
     defaults = defaults or {}
     t = tomlkit.table()
     t["name"] = name
@@ -145,8 +147,8 @@ def remove_part(doc, name: str) -> None:
     target = _find(doc, name)
     deps = [p["name"] for p in parts(doc) if p is not target and _attach_parent(p) == name]
     if deps:
-        raise EditError(f"{name}/part",
-                        f"{name} is attached to by {', '.join(deps)}; move or delete those first")
+        raise EditError(f"{name}/part", i18n.t("{name} is attached to by {parts}; move or delete those first",
+                                               name=name, parts=", ".join(deps)))
     i = next(k for k, p in enumerate(doc["part"]) if p is target)
     remove_aot_item(doc, "part", i)
 
@@ -156,7 +158,7 @@ def rename_part(doc, old: str, new: str) -> None:
     if new != old:
         _check_name(doc, new, old)
     elif not _NAME_RE.fullmatch(new):
-        raise EditError(f"{old}/name", "use letters, digits and underscores only")
+        raise EditError(f"{old}/name", i18n.t("use letters, digits and underscores only"))
     _set_value(target, "name", new)
     for p in parts(doc):
         a = p.get("attach")
@@ -185,7 +187,7 @@ def set_params(doc, name: str, params: dict, defaults: dict) -> None:
     p = _find(doc, name)
     for k, v in params.items():
         if k in _RESERVED:
-            raise EditError(f"{name}/param:{k}", "reserved key")
+            raise EditError(f"{name}/param:{k}", i18n.t("reserved key"))
         if v is None or (k in defaults and _is_default(v, defaults[k])):
             p.pop(k, None)
         else:
@@ -235,7 +237,8 @@ def set_program(doc, table: dict) -> None:
 
 def _number(field: str, v, *, positive: bool) -> float:
     if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0 or (positive and v == 0):
-        raise EditError(field, f"must be a number {'above' if positive else 'of at least'} 0, not {v!r}")
+        raise EditError(field, i18n.t("must be a number above 0, not {value}", value=repr(v)) if positive
+                        else i18n.t("must be a number of at least 0, not {value}", value=repr(v)))
     return float(v)
 
 
@@ -258,10 +261,11 @@ def set_battery(doc, values: dict) -> None:
 def _pose(v) -> list[float]:
     if not isinstance(v, (list, tuple)) or len(v) != 3 or not all(
             isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) for x in v):
-        raise EditError("start/pose", "the start must be [x, y, heading]: meters from the blue corner, and degrees")
+        raise EditError("start/pose", i18n.t("the start must be [x, y, heading]: meters from the blue corner, and degrees"))
     x, y, h = (float(a) for a in v)
     if not (0.0 <= x <= FIELD_LENGTH and 0.0 <= y <= FIELD_WIDTH):
-        raise EditError("start/pose", f"({x:g}, {y:g}) is off the field ({FIELD_LENGTH:g} m by {FIELD_WIDTH:g} m)")
+        raise EditError("start/pose", i18n.t("({x}, {y}) is off the field ({length} m by {width} m)", x=f"{x:g}",
+                                             y=f"{y:g}", length=f"{FIELD_LENGTH:g}", width=f"{FIELD_WIDTH:g}"))
     h %= 360.0
     if h > 180.0:
         h -= 360.0   # (-180, 180]
@@ -293,7 +297,7 @@ def set_start(doc, body: dict) -> None:
     if "range" in body:
         rng = body["range"]
         if rng not in FIELDS and rng not in TEST_FIELDS:
-            raise EditError("start/range", "choose a built-in field or the plain field")
+            raise EditError("start/range", i18n.t("choose a built-in field or the plain field"))
         if rng is None:
             if "range" in doc:
                 _remove_table(doc, "range")
@@ -319,16 +323,16 @@ def set_start(doc, body: dict) -> None:
         named = body["named"]
         keep = body.get("keep_pose", False)
         if not isinstance(keep, bool):
-            raise EditError("start/keep_pose", "keep_pose must be true or false")
+            raise EditError("start/keep_pose", i18n.t("keep_pose must be true or false"))
         if keep and named is not None and _valid_start_pose(doc):
             if has_range:
                 doc["range"].pop("start", None)
         elif named is None:
             clear = True
         elif not isinstance(named, str) or not named:
-            raise EditError("start/named", "a named start is the name of one of the field's starts")
+            raise EditError("start/named", i18n.t("a named start is the name of one of the field's starts"))
         elif not has_range:
-            raise EditError("start/named", "the plain field has no named starts; place the robot on it instead")
+            raise EditError("start/named", i18n.t("the plain field has no named starts; place the robot on it instead"))
         else:
             if "robot" in doc:
                 doc["robot"].pop("start_pose", None)
@@ -341,7 +345,7 @@ def set_start(doc, body: dict) -> None:
     if "floor_balls" in body and has_range:
         fb = body["floor_balls"]
         if not isinstance(fb, bool):
-            raise EditError("start/floor_balls", "floor_balls must be true or false")
+            raise EditError("start/floor_balls", i18n.t("floor_balls must be true or false"))
         if fb:
             doc["range"].pop("floor_balls", None)
         else:
@@ -364,23 +368,24 @@ def _slot_ref(doc, slot, field: str):
     "<part>.<slot>" or "<part>.<slot>[i]" for one motor of a list."""
     m = _SLOT_RE.fullmatch(slot) if isinstance(slot, str) else None
     if m is None:
-        raise EditError(field, f"{slot!r} isn't a slot: it is <part>.<slot>, e.g. fl.drive")
+        raise EditError(field, i18n.t("{slot} isn't a slot: it is <part>.<slot>, e.g. fl.drive", slot=repr(slot)))
     p = next((p for p in parts(doc) if p.get("name") == m["part"]), None)
     ids = p.get("ids") if p is not None else None
     if p is None:
-        raise EditError(field, f"there is no part named {m['part']!r}")
+        raise EditError(field, i18n.t("there is no part named {name}", name=repr(m["part"])))
     if not isinstance(ids, dict) or m["slot"] not in ids:
-        raise EditError(field, f"{m['part']} has no device ID for {m['slot']!r}; give it one in the part inspector")
+        raise EditError(field, i18n.t("{part} has no device ID for {slot}; give it one in the part inspector",
+                                      part=m["part"], slot=repr(m["slot"])))
     container, key = ids, m["slot"]
     value = ids[key]
     if isinstance(value, list):
         if m["i"] is None or int(m["i"]) >= len(value):
-            raise EditError(field, f"{m['part']}.{m['slot']} is a list of {len(value)} motors: name one, e.g. "
-                                   f"{m['part']}.{m['slot']}[0]")
+            raise EditError(field, i18n.t("{slot} is a list of {count} motors: name one, e.g. {slot}[0]",
+                                          slot=f"{m['part']}.{m['slot']}", count=len(value)))
         container, key = value, int(m["i"])
         value = value[key]
     elif m["i"] is not None:
-        raise EditError(field, f"{m['part']}.{m['slot']} is one device, not a list")
+        raise EditError(field, i18n.t("{slot} is one device, not a list", slot=f"{m['part']}.{m['slot']}"))
     return container, key, value
 
 
@@ -400,29 +405,32 @@ def _device_spec(value) -> tuple[str | None, str]:
 def _matched(slot: str, value, device, field: str):
     """`value` (the slot's ID as written) pointing at `device` instead, the same type."""
     if not isinstance(device, str) or not device.strip():
-        raise EditError(field, f"the device must be one the robot code made, e.g. \"TalonFX 3\", not {device!r}")
+        raise EditError(field, i18n.t("the device must be one the robot code made, e.g. \"{example}\", not {device}",
+                                      device=repr(device), example="TalonFX 3"))
     device = device.strip()
     key, spec = _device_spec(value)
     if isinstance(value, dict) and "device" in value:
-        raise EditError(field, f"{slot} names its device itself (device = {value['device']!r}); change it in the "
-                               "part inspector")
+        raise EditError(field, i18n.t("{slot} names its device itself ({device_setting}); change it in the part "
+                                      "inspector", slot=slot,
+                                      device_setting="device = {}".format(repr(value["device"]))))
     kind, _, current = spec.partition(":")
     if key == "scrimmage" or kind in _SIM_TYPE:
         m = _SCRIMMAGE_RE.fullmatch(device)
         if m is None or (kind in _SIM_TYPE and _SIM_TYPE[kind] != m["type"]):
-            raise EditError(field, f"{slot} is a fast-mode {(_SIM_TYPE.get(kind) or 'device')}; {device} is not")
+            raise EditError(field, i18n.t("{slot} is a fast-mode {kind}; {device} is not", slot=slot,
+                                          kind=_SIM_TYPE.get(kind) or i18n.t("device"), device=device))
         return m["name"] if key == "scrimmage" else f"{kind}:{m['name']}", key
     label = _CAN_LABEL.get(kind)
     if label is None or not current.isdigit():
-        raise EditError(field, f"{slot} isn't a device scrimmage checks ({spec or value!r}); set it in the part "
-                               "inspector")
+        raise EditError(field, i18n.t("{slot} isn't a device scrimmage checks ({spec}); set it in the part inspector",
+                                      slot=slot, spec=spec or repr(value)))
     m = _DEVICE_RE.fullmatch(device)
     if m is None or m["label"] not in (label, kind):
-        raise EditError(field, f"{slot} is a {label}; {device} is another type of device: check the device type of "
-                               f"{slot} in the part inspector")
+        raise EditError(field, i18n.t("{slot} is a {label}; {device} is another type of device: check the device type of "
+                                      "{slot} in the part inspector", slot=slot, label=label, device=device))
     ident = int(m["id"])
     if not 0 <= ident <= 62:
-        raise EditError(field, f"CAN IDs are 0 to 62, not {ident}")
+        raise EditError(field, i18n.t("CAN IDs are 0 to 62, not {id}", id=ident))
     return f"{kind}:{ident}", key
 
 
@@ -431,7 +439,7 @@ def match_devices(doc, matches) -> None:
     ("fl.drive", "fl.drive[1]") and device as its rows do ("TalonFX 3", "SPARK MAX 5", "ScrimmageMotor:fl_drive"; also
     "TalonFX:3"), always the slot's own device type. All of them change in one go, so two slots can swap IDs."""
     if not isinstance(matches, dict) or not matches:
-        raise EditError("devices/matches", "matches must name at least one slot and the device for it")
+        raise EditError("devices/matches", i18n.t("matches must name at least one slot and the device for it"))
     planned = []
     for slot, device in matches.items():
         field = f"devices/{slot}"
@@ -477,12 +485,13 @@ def set_motor(doc, slot, neutral=_UNSET, invert=_UNSET, motor_slots=None) -> Non
     just its device goes back to the short ID. `motor_slots`: the robot's motor names, when known."""
     field = f"motor/{slot}"
     if neutral is not _UNSET and neutral not in ("brake", "coast", None):
-        raise EditError(field, f'neutral must be "brake" or "coast", not {neutral!r}')
+        raise EditError(field, i18n.t("neutral must be \"{brake}\" or \"{coast}\", not {value}", value=repr(neutral),
+                                      brake="brake", coast="coast"))
     if invert is not _UNSET and invert is not None and not isinstance(invert, bool):
-        raise EditError(field, f"invert must be true or false, not {invert!r}")
+        raise EditError(field, i18n.t("invert must be true or false, not {value}", value=repr(invert)))
     container, key, value = _slot_ref(doc, slot, field)
     if motor_slots is not None and slot not in motor_slots:
-        raise EditError(field, f"{slot} isn't a motor")
+        raise EditError(field, i18n.t("{slot} isn't a motor", slot=slot))
     if isinstance(value, str):
         kind, _, n = value.partition(":")
         if kind in _MOTOR_KEY:
@@ -492,7 +501,7 @@ def set_motor(doc, slot, neutral=_UNSET, invert=_UNSET, motor_slots=None) -> Non
         elif kind == "PWM" and n.isdigit():
             pairs = [("pwm", int(n))]
         else:
-            raise EditError(field, f"{slot} isn't a motor ({value})")
+            raise EditError(field, i18n.t("{slot} isn't a motor ({value})", slot=slot, value=value))
         if neutral in (_UNSET, None) and invert in (_UNSET, None, False):
             return                           # nothing to write: the short ID already has the defaults
         if neutral not in (_UNSET, None):
@@ -502,7 +511,7 @@ def set_motor(doc, slot, neutral=_UNSET, invert=_UNSET, motor_slots=None) -> Non
         container[key] = _inline(pairs)
         return
     if not isinstance(value, dict):
-        raise EditError(field, f"{slot} isn't a motor")
+        raise EditError(field, i18n.t("{slot} isn't a motor", slot=slot))
     for k, v in (("neutral", neutral), ("invert", invert)):
         if v is _UNSET:
             continue

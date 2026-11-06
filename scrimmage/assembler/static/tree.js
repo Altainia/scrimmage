@@ -2,6 +2,7 @@
 // Left/Right collapse/expand (or go to parent/first child), Home/End, Enter/Space select.
 
 import { $, h, select, store } from "./app.js";
+import { t } from "./i18n.js";
 
 const collapsed = new Set();
 
@@ -30,7 +31,7 @@ export function renderTree(st) {
   const hadFocus = root.contains(document.activeElement);
   if (!s.parts.length) {
     root.replaceChildren(h("p", { class: "empty" },
-      "No parts yet. Add a part from the library on the left; the first one becomes the robot's root."));
+      t("No parts yet. Add a part from the library on the left; the first one becomes the robot's root.")));
     return;
   }
   const names = new Set(s.parts.map((p) => p.name));
@@ -66,15 +67,15 @@ export function renderTree(st) {
         ? h("span", { class: "twisty", "aria-hidden": "true", onclick: (e) => { e.stopPropagation(); toggle(p.name); } }, open ? "▾" : "▸")
         : h("span", { class: "twisty", "aria-hidden": "true" }, ""),
       h("span", { class: "tree-name", text: p.name }),
-      h("span", { class: "tree-src", text: p.stock || `folder ${p.path}` }),
-      mount ? h("span", { class: "tree-mount", text: `@ ${mount}` }) : h("span", { class: "tree-mount", text: "root" }),
-      prob ? h("span", { class: `dot dot-${prob}`, title: prob === "error" ? "has errors" : "has warnings", "aria-label": prob === "error" ? "has errors" : "has warnings" }) : null));
+      h("span", { class: "tree-src", text: p.stock || t("folder {path}", { path: p.path }) }),
+      mount ? h("span", { class: "tree-mount", text: `@ ${mount}` }) : h("span", { class: "tree-mount", text: t("root") }),
+      prob ? h("span", { class: `dot dot-${prob}`, title: prob === "error" ? t("has errors") : t("has warnings"), "aria-label": prob === "error" ? t("has errors") : t("has warnings") }) : null));
     if (children.length && open) {
       li.append(h("ul", { role: "group" }, children.map((c) => item(c, level + 1))));
     }
     return li;
   };
-  const ul = h("ul", { role: "tree", "aria-label": "Robot parts", class: "tree" }, tops.map((p) => item(p, 1)));
+  const ul = h("ul", { role: "tree", "aria-label": t("Robot parts"), class: "tree" }, tops.map((p) => item(p, 1)));
   if (!ul.querySelector('[tabindex="0"]')) ul.querySelector('[role="treeitem"]').tabIndex = 0;
   ul.addEventListener("click", (e) => {
     const li = e.target.closest('[role="treeitem"]');

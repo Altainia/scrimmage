@@ -296,7 +296,8 @@ unless a key names its unit (`min_in`, `extension_m`), `run_scenario`'s check me
 headlines in m/s, N and meters, and the words of `test_run`, `test_sweep` and `test_spread` in inches and psi
 (a drive's distance, a block whose `unit` is "m" and Setup's partner overlap in meters), exactly as before the
 setting existed. Files written for people (`report.md`, a bench run's `summary.txt` and pictures) follow
-the setting ([docs/settings.md](docs/settings.md#what-never-changes-machine-output)).
+the setting ([docs/settings.md](docs/settings.md#what-never-changes-machine-output)). Tool results are in American English
+whatever the web app's Language setting, too; `report.md` and `summary.txt` follow it.
 
 `scrimmage-mcp` speaks MCP over stdio and has no flags (it doesn't print help). Give agents absolute paths for configs and scenarios: relative ones resolve against the MCP server's working directory.
 
@@ -770,6 +771,12 @@ command line's printed text; files keep their own units. `scrimmage --units metr
 one system for that run only. MCP results, `report.json` and JSON and CSV numbers keep fixed units whatever the
 setting. See [docs/settings.md](docs/settings.md).
 
+**Language and Theme.** The same menu picks **Language: English (US)** (the default) or **English (UK)** for the web
+app's words and the reports it writes, and **Theme: System** (the default, following your computer), **Light** or
+**Dark**. `scrimmage --language en-GB edit <file>` picks the language for that run. The command line's printed text,
+MCP results, `report.json` and JSON and CSV files stay American English. See
+[docs/settings.md](docs/settings.md#language); to add a language, see [docs/translating.md](docs/translating.md).
+
 **From CAD.** Install the CAD reader with `pip install -e ".[cad]"`, then `scrimmage edit my_robot.step` (or **Import CAD…**
 in the assembler's library) opens the Part tab: it reads a STEP file (or STL/OBJ files), guesses bodies, and lets you set
 materials, joints, motors, mounts and the robot frame in the browser, with the weight and center of gravity worked out.
@@ -1055,6 +1062,8 @@ scrimmage/pneumatics/  the air system: tanks, compressor, regulator and cylinder
                    (runtime.py), the air budget (budget.py, scrimmage air)
 scrimmage/sensors/  [[sensor]] beam breaks, distance and color sensors: the tables (spec.py), the named colors
                    (colors.py), reading them every step and the robot's inputs (runtime.py)
+scrimmage/i18n.py  t() and tn(), the language files and the Language setting; i18n_tool.py is scrimmage i18n
+scrimmage/locales/  one file per language (en-GB.json), and en-GB.spellings.json, the spellings its test checks
 docs/getting-started/  first-steps guides: install, try a mechanism idea, run and test your robot code
 docs/usability-future-work.md  rough edges found writing those guides, as possible future work
 docs/parts.md      part.toml reference, [[part]] entries, stock parts
@@ -1066,6 +1075,8 @@ docs/scenario-editor.md  the browser scenario editor: steps, pickers, running an
 docs/drive.md      the Drive tab: driving live, keyboard and gamepad maps, recording, input-track CSV format
 docs/freecad.md    FreeCAD exporter: install, preparing an Assembly, the panel, troubleshooting
 docs/fast-mode.md  fast mode for CTRE robots: setup, settings mapping, fidelity limits
+docs/settings.md   the Settings menu: Units, Language and Theme, settings.toml, --units and --language
+docs/translating.md  adding or fixing a language: the catalog files, plurals, contexts, scrimmage i18n check
 docs/launcher.md   the launcher model (scrimmage launcher): inputs, presets, accuracy, examples
 docs/measuring.md  measuring your own numbers (scrimmage measure): the six tests, forms, averaging, fits, labels
 docs/disc.md       the disc launcher and disc flight (scrimmage disc): models, limits, what to measure, examples

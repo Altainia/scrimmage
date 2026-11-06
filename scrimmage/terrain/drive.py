@@ -18,6 +18,8 @@ from __future__ import annotations
 import mujoco
 import numpy as np
 
+from .. import i18n
+
 WHEEL_DAMPING = 50.0     # N m s/rad: the wheel servo's gain; 1 N m of torque costs it 0.02 rad/s of wheel speed
 HOLD_OMEGA = 100.0       # rad/s: each hold's natural frequency on its joint's own inertia (0.1 rad per 1 ms step)
 HOLD_ZETA = 1.0          # each hold's damping ratio
@@ -30,11 +32,13 @@ class StraightDriver:
         self.world, self.model = world, m
         self.speed = float(speed)
         if world.parts is None or not world.parts.tread_geoms:
-            raise ValueError("the robot has no tread wheels (geoms with tread = true) to drive")
+            raise ValueError(i18n.t("the robot has no tread wheels (geoms with {tread_setting}) to drive",
+                                    tread_setting="tread = true"))
         names = world.joint_states()
         unknown = [n for n in holds if n not in names]
         if unknown:
-            raise ValueError(f"no joint {unknown[0]!r} to hold; joints: {', '.join(sorted(names))}")
+            raise ValueError(i18n.t("no joint {unknown} to hold; joints: {names}",
+                                    unknown=repr(unknown[0]), names=', '.join(sorted(names))))
         # Each tread wheel: (dof, joint id, radius), and the azimuth joints above them.
         self.wheels: list[tuple[int, int, float]] = []
         azimuths: dict[int, None] = {}
@@ -43,7 +47,7 @@ class StraightDriver:
             b = int(m.geom_bodyid[g])
             j = int(m.body_jntadr[b])
             if j < 0 or int(m.jnt_type[j]) != int(mujoco.mjtJoint.mjJNT_HINGE):
-                raise ValueError(f"tread geom {name!r} isn't on a wheel with a hinge joint")
+                raise ValueError(i18n.t("tread geom {name} isn't on a wheel with a hinge joint", name=repr(name)))
             self.wheels.append((int(m.jnt_dofadr[j]), j, float(m.geom_size[g][0])))
             parent = int(m.body_parentid[b])
             for k in range(int(m.body_jntadr[parent]), int(m.body_jntadr[parent]) + int(m.body_jntnum[parent])):
@@ -60,7 +64,8 @@ class StraightDriver:
             j = m.joint(name).id
             lo, hi = m.jnt_range[j]
             if m.jnt_limited[j] and not lo <= value <= hi:
-                raise ValueError(f"can't hold joint {name!r} at {value:g}: its range is {lo:g} to {hi:g}")
+                raise ValueError(i18n.t("can't hold joint {name} at {value}: its range is {lo} to {hi}",
+                                        name=repr(name), value=f"{value:g}", lo=f"{lo:g}", hi=f"{hi:g}"))
             targets[j] = float(value)
         self.holds = []
         for j, q in targets.items():

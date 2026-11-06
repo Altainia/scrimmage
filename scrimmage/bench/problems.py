@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from .. import i18n
+
 
 @dataclass(frozen=True)
 class Problem:
@@ -32,7 +34,7 @@ def collect_problems(path: Path, text: str | None = None):
             try:
                 raw = tomllib.loads(text)
             except tomllib.TOMLDecodeError as e:
-                raise BenchError(f"{path}: {e}") from None
+                raise BenchError(i18n.t("{path}: {error}", path=path, error=e)) from None
         base = path.resolve().parent
         raw = _resolve_includes(raw, base, (path.resolve(),))
     except BenchError as e:

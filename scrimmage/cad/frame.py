@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .. import i18n
 from . import CadError
 from .source import Source
 
@@ -31,9 +32,11 @@ class RobotFrame:
     def __post_init__(self):
         for field, value in (("up", self.up), ("front", self.front)):
             if value not in AXES:
-                raise CadError(f"The robot's {field} direction must be one of {', '.join(AXES)}, not {value!r}.")
+                raise CadError(i18n.t("The robot's {field} direction must be one of {axes}, not {value}.",
+                                      field=field, axes=', '.join(AXES), value=repr(value)))
         if self.up[1] == self.front[1]:
-            raise CadError(f"Up ({self.up}) and front ({self.front}) must point along different axes.")
+            raise CadError(i18n.t("Up ({up}) and front ({front}) must point along different axes.",
+                                  up=self.up, front=self.front))
         if self.center is not None:
             self.center = (float(self.center[0]), float(self.center[1]))
         self.floor = float(self.floor)

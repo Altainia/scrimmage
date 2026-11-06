@@ -5,12 +5,17 @@ Headlines are three to six lines, read on a projector: what came out where and h
 part taking the hardest hits (when one stands out), the shaft that slows most, and always last, UNCALIBRATED with
 what to measure. Names from the bench file are in backticks.
 
-Units: the headlines and summary.txt's tables are in the Units setting when they are written (scrimmage/units.py;
-the MCP tools return the headlines in meters, as before the setting). The CSVs stay SI, their columns named by unit
-(speed_m_s).
+Units and Language: the headlines and summary.txt are in the Units and Language settings when they are written
+(scrimmage/units.py, i18n.py; the MCP tools return the headlines in meters and American English, as before the
+settings, through units.fixed()). The CSVs stay SI, their columns named by unit (speed_m_s), and the tables' column
+names are the CSVs'. The UNCALIBRATED line is measure/labels.py's, as the pictures carry it, all of it in the Language.
+The Bench tab doesn't read summary.txt's words: summary.json, written beside it, holds no words, only how many
+lines summary.txt's title block takes, how many headline lines follow it, whether the last is the UNCALIBRATED line,
+and whether the energy check failed (spec L2, L3).
 """
 
 import csv
+import json
 import math
 from collections import Counter
 from pathlib import Path
@@ -18,7 +23,8 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
-from .. import units
+from .. import i18n, units
+from ..i18n import t
 from ..launcher.flight import Landing, fly_state
 from ..launcher.inputs import PRESETS, Air, Goal
 from ..measure import labels
@@ -27,16 +33,19 @@ from .run import BenchResult, PieceOutcome
 # path colors by outcome (RGB): out green, jammed red, escaped orange, timed out gray
 STATUS_COLORS = {"out": (0, 158, 60), "jammed": (220, 30, 40), "escaped": (245, 140, 0),
                  "timed_out": (130, 130, 130), "stuck_at_inlet": (130, 130, 130)}
-STATUS_WORDS = {"out": "left through an outlet", "jammed": "jammed", "escaped": "escaped the bench",
-                "timed_out": "still inside at the end", "stuck_at_inlet": "never got in"}
+# a piece's status (a key) in words (a function: the words are in the Language setting of the moment)
+def status_words() -> dict[str, str]:
+    return {"out": t("left through an outlet"), "jammed": t("jammed"), "escaped": t("escaped the bench"),
+            "timed_out": t("still inside at the end"), "stuck_at_inlet": t("never got in")}
 LOAD_STANDS_OUT = 3.0   # a shape's peak force over this many times the other touched shapes' median is a headline
 MAX_LINES = 6           # headlines, UNCALIBRATED included
 JAM_NEAR = 0.05         # m: a jammed piece is "at" the nearest shape within this distance
 
-_MEASURE = {
-    "squishy": "measure the ball's stiffness (a squeeze test) and its bounce (a drop test) first; see "
-               "docs/launcher.md, \"Measure these first\"",
-    "rigid": "measure the tread's friction against the piece first (a sled pull: pull force / pressing force)",
+_MEASURE = {      # N_(): said with translated()
+    "squishy": i18n.N_("measure the ball's stiffness (a squeeze test) and its bounce (a drop test) first; see "
+                       "docs/launcher.md, \"Measure these first\""),
+    "rigid": i18n.N_("measure the tread's friction against the piece first (a sled pull: pull force / pressing "
+                     "force)"),
 }
 
 
@@ -44,7 +53,7 @@ def uncalibrated(result: BenchResult) -> str:
     return bench_uncalibrated(result.bench)
 
 
-ESTIMATES = "UNCALIBRATED: estimates from preset numbers, not measurements"
+ESTIMATES = i18n.N_("estimates from preset numbers, not measurements")    # after measure/labels.py's mark
 _MATTERS = {"squishy": labels.SQUISHY_BENCH, "rigid": labels.RIGID_BENCH}
 
 
@@ -61,7 +70,8 @@ def bench_estimates(bench) -> str:
 
 def bench_uncalibrated(bench) -> str:
     """The UNCALIBRATED line for a bench: what is estimated and what to measure first, for its kind of piece."""
-    return f"{bench_estimates(bench)}; {_MEASURE[bench.piece.kind]}."
+    return t("{estimates}; {measure}.", estimates=bench_estimates(bench),
+             measure=i18n.translated(_MEASURE[bench.piece.kind]))
 
 
 def _name(s: str) -> str:
@@ -85,22 +95,27 @@ def _far(v: float, places: int = 2, unit: bool = True) -> str:
 
 def _direction(elevation_deg: float, yaw: float) -> str:
     e = round(elevation_deg)
-    text = "level" if e == 0 else f"{abs(e)}° {'up' if e > 0 else 'down'}"
+    text = t("level") if e == 0 else t("{deg}° up", deg=abs(e)) if e > 0 else t("{deg}° down", deg=abs(e))
     if abs(yaw) >= 178.0:
-        text += ", going backwards"
-    elif abs(yaw) > 2.0:
-        text += f", {abs(yaw):.0f}° to the {'left' if yaw > 0 else 'right'}"
+        return t("{way}, going backwards", way=text)
+    if abs(yaw) > 2.0:
+        turn = f"{abs(yaw):.0f}"
+        return t("{way}, {deg}° to the left", way=text, deg=turn) if yaw > 0 else \
+            t("{way}, {deg}° to the right", way=text, deg=turn)
     return text
 
 
 def _out_line(outlet: str, out: list[PieceOutcome], n: int) -> str:
     speeds = np.array([p.speed for p in out])
-    spread = f" ± {_speed(speeds.std())}" if len(out) > 1 else ""
     yaw = np.radians([p.yaw_deg for p in out])  # a circular mean: -179 and 179 average to 180, not 0
     way = _direction(float(np.mean([p.elevation_deg for p in out])),
                      math.degrees(math.atan2(np.sin(yaw).mean(), np.cos(yaw).mean())))
-    return f"{len(out)} of {n} left through {_name(outlet)} at {_speed(speeds.mean())} {units.unit_name('speed')}" \
-        f"{spread}, {way}"
+    at = {"out": len(out), "n": n, "outlet": _name(outlet), "speed": _speed(speeds.mean()),
+          "unit": units.unit_name("speed"), "way": way}
+    if len(out) > 1:
+        return t("{out} of {n} left through {outlet} at {speed} {unit} ± {spread}, {way}",
+                 spread=_speed(speeds.std()), **at)
+    return t("{out} of {n} left through {outlet} at {speed} {unit}, {way}", **at)
 
 
 def jam_place(result: BenchResult, piece: PieceOutcome) -> str | None:
@@ -125,16 +140,18 @@ def _not_out_line(result: BenchResult, n: int) -> str | None:
     if not rest:
         return None
     parts: Counter = Counter()
+    words = status_words()
     for p in rest:
         if p.status == "jammed":
             at = jam_place(result, p)
-            parts[f"jammed at {_name(at)}" if at else "jammed inside the bench"] += 1
+            parts[t("jammed at {shape}", shape=_name(at)) if at else t("jammed inside the bench")] += 1
         else:
-            parts[STATUS_WORDS[p.status]] += 1
+            parts[words[p.status]] += 1
     if len(parts) == 1:
         (what, k), = parts.items()
-        return f"{k} of {n} {what}"
-    return f"{len(rest)} of {n} didn't get out: " + ", ".join(f"{k} {what}" for what, k in parts.most_common())
+        return t("{k} of {n} {what}", k=k, n=n, what=what)
+    return t("{rest} of {n} didn't get out: {parts}", rest=len(rest), n=n,
+             parts=", ".join(t("{k} {what}", k=k, what=what) for what, k in parts.most_common()))
 
 
 def _load_line(result: BenchResult) -> str | None:
@@ -147,8 +164,8 @@ def _load_line(result: BenchResult) -> str | None:
     median = float(np.median([f for s, f in peaks.items() if s != shape]))
     if peak <= LOAD_STANDS_OUT * median:
         return None
-    return (f"the {_name(shape)} takes the hardest hits: up to {_force(peak)}, {peak / median:.1f} times a typical "
-            f"other part's ({_force(median)})")
+    return t("the {shape} takes the hardest hits: up to {peak}, {times} times a typical other part's ({median})",
+             shape=_name(shape), peak=_force(peak), times=f"{peak / median:.1f}", median=_force(median))
 
 
 SLIPPING = 0.10  # exit slip at or above this is grip-limited (the launcher model's regime line, docs/launcher.md)
@@ -163,8 +180,9 @@ def _slip_line(result: BenchResult) -> str | None:
     s = float(np.median(slips))
     if s < SLIPPING:
         return None
-    return (f"the balls are still slipping on the wheels when they leave ({100 * s:.0f}% slip): more wheel speed won't "
-            f"make them much faster; more grip will (more squeeze, more or wider wheels, a longer wrap)")
+    return t("the balls are still slipping on the wheels when they leave ({slip}% slip): more wheel speed won't make "
+             "them much faster; more grip will (more squeeze, more or wider wheels, a longer wrap)",
+             slip=f"{100 * s:.0f}")
 
 
 def _shaft_line(result: BenchResult) -> str | None:
@@ -172,16 +190,19 @@ def _shaft_line(result: BenchResult) -> str | None:
     if not touched:
         return None
     s = max(touched, key=lambda s: s.drop_pct)
+    at = {"shaft": _name(s.name), "drop": f"{s.drop_pct:.0f}"}
     if s.back_before_next is False:
-        back = "isn't back to speed when the next piece arrives (feed slower, or add a flywheel)"
+        line = t("the {shaft} shaft drops {drop}% and isn't back to speed when the next piece arrives (feed slower, "
+                 "or add a flywheel)", **at)
     elif s.recovery_s is not None:
-        back = f"recovers in {s.recovery_s:.2f} s"
+        line = t("the {shaft} shaft drops {drop}% and recovers in {seconds} s", seconds=f"{s.recovery_s:.2f}", **at)
     else:
-        back = "has not recovered when the run ends"
-    line = f"the {_name(s.name)} shaft drops {s.drop_pct:.0f}% and {back}"
+        line = t("the {shaft} shaft drops {drop}% and has not recovered when the run ends", **at)
     n = len(result.shafts)
-    if n > 1:
-        line += f" (the {'worse' if n == 2 else 'worst'} of {n} shafts)"
+    if n == 2:
+        line = t("{line} (the worse of {n} shafts)", line=line, n=n)
+    elif n > 2:
+        line = t("{line} (the worst of {n} shafts)", line=line, n=n)
     return line
 
 
@@ -189,7 +210,7 @@ def _time_line(result: BenchResult) -> str | None:
     out = [p.t_out - p.t_in for p in result.pieces if p.status == "out"]
     if not out:
         return None
-    return f"a piece takes {float(np.median(out)):.2f} s from the inlet to the outlet"
+    return t("a piece takes {seconds} s from the inlet to the outlet", seconds=f"{float(np.median(out)):.2f}")
 
 
 # ----------------------------------------------------------------------------------------------------- flight
@@ -224,14 +245,18 @@ def _flight_line(result: BenchResult, lands: list[tuple[PieceOutcome, Landing]])
     n = len(lands)
     xs = [land.at_goal[0] for _, land in lands if land.at_goal is not None]
     if not xs:
-        return f"none of the {n} shots get up to the target's height ({_far(fl.target_height, 1)})"
-    where = f"{_far(np.mean(xs))} out" + (f" ± {_far(np.std(xs), unit=False)}" if len(xs) > 1 else "")
+        return t("none of the {n} shots get up to the target's height ({height})", n=n,
+                 height=_far(fl.target_height, 1))
+    if len(xs) > 1:
+        where = t("{far} out ± {spread}", far=_far(np.mean(xs)), spread=_far(np.std(xs), unit=False))
+    else:
+        where = t("{far} out", far=_far(np.mean(xs)))
+    at = {"height": _far(fl.target_height, 1), "distance": _far(fl.target_distance, 1), "where": where}
     if fl.ring_diameter is not None:
         k = sum(land.scored for _, land in lands)
-        return (f"{k} of {n} shots go in the ring {_far(fl.target_distance, 1)} away, {_far(fl.target_height, 1)} up "
-                f"(they come down through its height {where})")
-    return (f"shots come down through {_far(fl.target_height, 1)} at {where} (the target is "
-            f"{_far(fl.target_distance, 1)} away)")
+        return t("{k} of {n} shots go in the ring {distance} away, {height} up (they come down through its height "
+                 "{where})", k=k, n=n, **at)
+    return t("shots come down through {height} at {where} (the target is {distance} away)", **at)
 
 
 def energy_failures(result: BenchResult) -> int:
@@ -243,8 +268,8 @@ def _energy_line(result: BenchResult) -> str | None:
     bad = energy_failures(result)
     if not bad:
         return None
-    return (f"the energy check failed for {bad} of {len(result.energy)} pieces: the simulation is wrong here, not the "
-            "design; try a smaller [run] timestep")
+    return t("the energy check failed for {bad} of {n} pieces: the simulation is wrong here, not the design; try a "
+             "smaller {run_table} timestep", bad=bad, n=len(result.energy), run_table="[run]")
 
 
 def headlines(result: BenchResult, lands: list[tuple[PieceOutcome, Landing]] | None = None) -> list[str]:
@@ -257,7 +282,7 @@ def headlines(result: BenchResult, lands: list[tuple[PieceOutcome, Landing]] | N
             by_outlet.setdefault(p.outlet, []).append(p)
     lines = [_out_line(o, ps, n) for o, ps in sorted(by_outlet.items(), key=lambda kv: -len(kv[1]))]
     if not lines and result.bench.outlets:
-        lines.append(f"0 of {n} got out through {_name(result.bench.outlets[0].name)}")
+        lines.append(t("0 of {n} got out through {outlet}", n=n, outlet=_name(result.bench.outlets[0].name)))
     slip = _slip_line(result)
     if slip:
         lines.append(slip)
@@ -356,8 +381,12 @@ def _text_table(header: list[str], rows: list[list[str]]) -> str:
     return "\n".join([fmt.format(*header), *(fmt.format(*r) for r in rows)])
 
 
+SUMMARY_DATA = "summary.json"   # summary.txt's layout as data, for the Bench tab (it never reads their words)
+
+
 def write_results(result: BenchResult, out_dir: Path) -> Path:
-    """summary.txt (the headlines and tables), pieces.csv, shafts.csv, loads.csv, and with [flight] landings.csv."""
+    """summary.txt (the headlines and tables), summary.json (SUMMARY_DATA), pieces.csv, shafts.csv, loads.csv, and
+    with [flight] landings.csv."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     lands = landings(result)
@@ -368,22 +397,52 @@ def write_results(result: BenchResult, out_dir: Path) -> Path:
             w = csv.writer(f, lineterminator="\n")
             w.writerow(header)
             w.writerows(rows)
-    b = result.bench
+    with i18n.for_people():     # summary.txt is for people: in the Units and Language settings (an MCP run's too)
+        heads = headlines(result, lands)
+        (out_dir / "summary.txt").write_text(_summary(result, heads, tables), encoding="utf-8")
+        title_lines = _title_lines(result.bench)
+    # summary.txt's layout as data (machine JSON: no words, nothing in the Units setting): how many lines the title
+    # block takes (its notes may hold blank lines), how many headline lines follow its blank line, whether the last
+    # of them is the UNCALIBRATED line, and the energy check
+    data = {"title_lines": title_lines, "headlines": len(heads), "uncalibrated": True,
+            "energy_failed": energy_failures(result) > 0}
+    (out_dir / SUMMARY_DATA).write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
+    return out_dir
+
+
+def _title(b) -> list[str]:
+    """summary.txt's title block: the bench's name and author, its idea, its notes (which may run over lines)."""
     text = [b.name + (f" ({b.author})" if b.author else "")]
     if b.idea:
-        text.append(f'idea: "{b.idea}"')
+        text.append(t('idea: "{idea}"', idea=b.idea))
     if b.notes:
         text.append(b.notes)
-    text += ["", *headlines(result, lands), *(f"warning: {w}" for w in b.warnings), ""]
-    titles = {"pieces": "Pieces", "shafts": "Shafts", "loads": "Loads (normal contact force on each part)",
-              "landings": "Landings (the launcher model's ball flight, from the outlet)"}
+    return text
+
+
+def _title_lines(b) -> int:
+    """The lines summary.txt's title block takes as a reader splits the file (str.splitlines): the headlines start
+    after them and one blank line."""
+    return len(("\n".join(_title(b)) + "\n\n").splitlines()) - 1
+
+
+def _summary(result: BenchResult, heads: list[str], tables) -> str:
+    """summary.txt's text; `heads` is headlines()'."""
+    b = result.bench
+    text = _title(b)
+    text += ["", *heads, *(t("warning: {warning}", warning=w) for w in b.warnings), ""]
+    titles = {"pieces": t("Pieces"), "shafts": t("Shafts"), "loads": t("Loads (normal contact force on each part)"),
+              "landings": t("Landings (the launcher model's ball flight, from the outlet)")}
     for name, table in tables.items():
         text += [titles[name], _text_table(*_shown_table(*table)), ""]
     if b.flight is not None and b.piece.ball is None:
-        text += ["[flight] flies balls only; a rigid piece's flight is not modeled yet, so there are no landings.",
+        text += [t("{flight_table} flies balls only; a rigid piece's flight is not modeled yet, so there are no "
+                   "landings.", flight_table="[flight]"),
                  ""]
     bad = [e.index for e in result.energy if not e.ok]
-    text.append(f"Energy check: {'pieces ' + ', '.join(map(str, bad)) + ' gained energy from nowhere' if bad else 'ok'}"
-                " (a failure means the simulation is wrong, not the design)")
-    (out_dir / "summary.txt").write_text("\n".join(text) + "\n", encoding="utf-8")
-    return out_dir
+    if bad:
+        text.append(t("Energy check: pieces {pieces} gained energy from nowhere (a failure means the simulation is "
+                      "wrong, not the design)", pieces=", ".join(map(str, bad))))
+    else:
+        text.append(t("Energy check: ok (a failure means the simulation is wrong, not the design)"))
+    return "\n".join(text) + "\n"

@@ -22,12 +22,15 @@
 // on demand. The follow camera tracks view.root_mover (-1: it looks at the floor center instead).
 // Where WebGL is software (SwiftShader, llvmpipe: no GPU acceleration) the view draws at half resolution without
 // antialiasing and at most every SOFTWARE_MS, so drawing doesn't starve the page.
-// For tests: window.__scrimmage.live3d = {groups, lastSeq, camera, root, follow, software} of the newest live view not yet
+// For tests: window.__scrimmage.live3d = {groups, lastSeq, camera, root, follow, software, background (#rrggbb:
+// --watch-bg in the page's theme)} of the newest live view not yet
 // disposed (the Drive tab's, or the Scenario run panel's Watch view while it is shown).
 
 import * as THREE from "three";
 import { OrbitControls } from "./vendor/OrbitControls.js";
 import { meshGeometry, primitive, setPose, geomMaterial, buildFloor } from "./scene3d.js";
+import { theme } from "./theme.js";
+import { t, liveAttr } from "./i18n.js";
 
 const FOLLOW_BACK = 2.2, FOLLOW_UP = 1.4, FOLLOW_LOOK_UP = 0.25, FOLLOW_SMOOTH = 0.18;
 const DRIVER_HEIGHT = 1.7;
@@ -68,7 +71,7 @@ function hook() {
   Object.defineProperty(window.__scrimmage, "live3d", {
     configurable: true, enumerable: true,
     get: () => ({ groups: v.groups.length, lastSeq: v.lastSeq, camera: v.mode, root: v.rootMover, follow: v.followTarget.toArray(),
-                  software: v.software }),
+                  software: v.software, background: `#${v.scene.background.getHexString()}` }),
   });
 }
 
@@ -84,10 +87,14 @@ export class LiveView {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.domElement.className = "view-canvas";
     this.renderer.domElement.setAttribute("role", "img");
-    this.renderer.domElement.setAttribute("aria-label", "3D view of the field and robot");
+    liveAttr(this.renderer.domElement, "aria-label", () => t("3D view of the field and robot"));
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xe9ecf0);
+    this.scene.background = new THREE.Color(theme.color("--watch-bg"));   // the page's theme (app.css)
+    this.offTheme = theme.onChange(() => {
+      this.scene.background.set(theme.color("--watch-bg"));
+      this.requestRender();
+    });
     const hemi = new THREE.HemisphereLight(0xffffff, 0x8a8f96, 2.0);
     hemi.position.set(0, 0, 1);
     const sun = new THREE.DirectionalLight(0xffffff, 1.6);
@@ -297,7 +304,7 @@ export class LiveView {
   setScore(range) {
     if (!range || !range.goals) { this.score.hidden = true; this.score.textContent = ""; return; }
     const lines = Object.entries(range.goals).map(([name, n]) => `${name} ${n}`);
-    lines.push(`fired ${range.fired} · held ${range.held}`);
+    lines.push(t("fired {fired} · held {held}", { fired: range.fired, held: range.held }));
     this.score.textContent = lines.join("\n");
     this.score.hidden = false;
   }
@@ -390,6 +397,7 @@ export class LiveView {
 
   dispose() {
     this.disposed = true;
+    this.offTheme();
     this.observer.disconnect();
     this.renderer.domElement.removeEventListener("webglcontextlost", this.onLost);
     this.controls.dispose();

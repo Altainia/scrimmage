@@ -59,7 +59,7 @@ def test_the_examples_read_as_the_formatter_writes_them():
 
 def test_the_setting_is_the_menus_and_imperial_by_default():
     html = (STATIC / "index.html").read_text(encoding="utf-8")
-    assert '<span class="settings-label" id="settings-units-label">Units</span>' in html
+    assert '<span class="settings-label" id="settings-units-label" data-i18n="Units">Units</span>' in html
     choices = re.findall(r'data-setting="units" data-value="(\w+)"[^>]*>(\w+)<', html)
     assert choices == [("imperial", "Imperial"), ("metric", "Metric")]
     assert tuple(v for v, _ in choices) == settings.SYSTEMS
@@ -99,8 +99,8 @@ def test_typing_is_units_js():
     for system, words in (("imperial", ("in", "ft")), ("metric", ("mm", "cm", "m"))):
         assert tuple(units.LENGTHS[system]) == words
     js = (STATIC / "units.js").read_text(encoding="utf-8")
-    template = re.search(r"error: `(Units is set to .*?)`", js).group(1)
-    said = (template.replace("${SYSTEM_NAME[sys]}", "Imperial").replace("${u.name}", "ft").replace("${o}", "m"))
+    template = re.search(r't\("(Units is set to .*?)"', js).group(1)
+    said = template.format(system="Imperial", unit="ft", other="m")
     assert f'"{said}"' in doc
     assert "takes `6 in`" in doc and "takes `50 cm` or `500 mm`" in doc
 

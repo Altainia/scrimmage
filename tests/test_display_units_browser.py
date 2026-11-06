@@ -218,7 +218,7 @@ def test_a_failed_first_load_catches_up_on_the_next_poll(browser, tmp_path):
                 route.abort()
             else:
                 route.continue_()
-        p.route("**/api/settings", first_fails)
+        p.route("**/api/settings*", first_fails)
         p.goto(srv.url)
         p.wait_for_function("window.__scrimmage && __scrimmage.mode")
         assert failed

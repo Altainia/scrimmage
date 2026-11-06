@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .. import teamfolders
+from .. import i18n, teamfolders
 from ..parts.toml_writer import _toml_value
 from . import CadError
 from .bodies import default_bodies
@@ -25,6 +25,14 @@ from .names import sanitize, unique
 from .source import Source
 
 COLLISIONS = ("none", "wheel", "shaped", "simple")
+# what a body can carry, in words for the notes that say what was dropped (N_(): body_things() translates them)
+BODY_THINGS = {"joint": i18n.N_("joint"), "motor": i18n.N_("motor"), "encoder": i18n.N_("encoder"),
+               "gyro": i18n.N_("gyro"), "mounts": i18n.N_("mounts")}
+
+
+def body_things(keys: list[str]) -> list[str]:
+    """BODY_THINGS' words for `keys` ("joint", "motor", ...), in the Language."""
+    return [i18n.translated(BODY_THINGS[k]) for k in keys]
 
 
 @dataclass
@@ -50,7 +58,7 @@ class JointSettings:
 
     def __post_init__(self):
         if self.kind not in ("hinge", "slide"):
-            raise CadError(f"A joint is a hinge or a slide, not {self.kind!r}.")
+            raise CadError(i18n.t("A joint is a hinge or a slide, not {kind}.", kind=repr(self.kind)))
         for name in ("range", "spring"):
             v = getattr(self, name)
             if v is not None:
@@ -74,7 +82,7 @@ class EncoderSettings:
 
     def __post_init__(self):
         if self.on not in ("joint", "motor"):
-            raise CadError(f"An encoder is on the joint or the motor, not {self.on!r}.")
+            raise CadError(i18n.t("An encoder is on the joint or the motor, not {on}.", on=repr(self.on)))
 
 
 @dataclass
@@ -98,7 +106,8 @@ class BodySettings:
 
     def __post_init__(self):
         if self.collision not in COLLISIONS:
-            raise CadError(f"Collision is one of {', '.join(COLLISIONS)}, not {self.collision!r}.")
+            raise CadError(i18n.t("Collision is one of {collisions}, not {collision}.",
+                                  collisions=', '.join(COLLISIONS), collision=repr(self.collision)))
 
 
 @dataclass
@@ -111,7 +120,8 @@ class PartSettings:
 
     def __post_init__(self):
         if self.attach is not None and (not isinstance(self.attach, str) or not self.attach):
-            raise CadError(f"attach must name a body, such as \"arm_B\", not {self.attach!r}: fix it or remove it.")
+            raise CadError(i18n.t("attach must name a body, such as \"{arm_b}\", not {attach}: fix it or remove it.",
+                                  attach=repr(self.attach), arm_b="arm_B"))
 
 
 @dataclass
@@ -149,7 +159,7 @@ class ImportFile:
             _expect_dict(d.get(k, {}), k)
         for k, v in d.get("written", {}).items():
             if not isinstance(v, str):
-                raise CadError(f"written.{k} must be text (a folder).")
+                raise CadError(i18n.t("written.{key} must be text (a folder).", key=k))
         kw = dict(
             frame=_build(RobotFrame, head.get("frame", {}), "import.frame"),
             pieces={k: _build(PieceSettings, v, f"pieces.{k}") for k, v in d.get("pieces", {}).items()},
@@ -161,9 +171,9 @@ class ImportFile:
         )
         for k in ("name", "import_id", "source", "units"):
             if k not in flat:
-                raise CadError(f"The import file is missing import.{k}.")
+                raise CadError(i18n.t("The import file is missing import.{key}.", key=k))
             if not isinstance(flat[k], str):
-                raise CadError(f"import.{k} must be text.")
+                raise CadError(i18n.t("import.{key} must be text.", key=k))
         return cls(**flat, **kw)
 
 
@@ -181,18 +191,19 @@ def _plain(x):
 
 def _expect_dict(v, path):
     if not isinstance(v, dict):
-        raise CadError(f"{path or 'The import file'} must be a table.")
+        raise CadError(i18n.t("{path} must be a table.", path=path) if path else
+                       i18n.t("The import file must be a table."))
 
 
 def _no_unknown(d, known, path):
     for k in d:
         if k not in known:
-            raise CadError(f"{path + '.' if path else ''}{k} is not a setting the import file knows.")
+            raise CadError(i18n.t("{key} is not a setting the import file knows.", key=f"{path}.{k}" if path else k))
 
 
 def _list_of_dicts(v, path):
     if not isinstance(v, list) or not all(isinstance(x, dict) for x in v):
-        raise CadError(f"{path} must be a list of tables.")
+        raise CadError(i18n.t("{path} must be a list of tables.", path=path))
     return copy.deepcopy(v)
 
 
@@ -204,7 +215,7 @@ def _build(cls, d, path):
     except CadError as e:
         raise CadError(f"{path}: {e}") from None
     except (TypeError, ValueError, IndexError) as e:
-        raise CadError(f"{path}: not valid ({e}).") from None
+        raise CadError(i18n.t("{path}: not valid ({error}).", path=path, error=e)) from None
 
 
 def _build_body(d, path):
@@ -216,7 +227,7 @@ def _build_body(d, path):
             d[key] = _build(cls, d[key], f"{path}.{key}")
     if "mounts" in d:
         if not isinstance(d["mounts"], list):
-            raise CadError(f"{path}.mounts must be a list of tables.")
+            raise CadError(i18n.t("{path}.mounts must be a list of tables.", path=path))
         d["mounts"] = [_build(MountSettings, m, f"{path}.mounts") for m in d["mounts"]]
     try:
         return BodySettings(**d)
@@ -329,9 +340,9 @@ def read_import(path: Path) -> ImportFile:
     try:
         data = tomllib.loads(Path(path).read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as e:
-        raise CadError(f"{Path(path).name} isn't valid TOML: {e}") from None
+        raise CadError(i18n.t("{name} isn't valid TOML: {error}", name=Path(path).name, error=e)) from None
     except OSError as e:
-        raise CadError(f"Can't read {Path(path).name}: {e.strerror or e}") from None
+        raise CadError(i18n.t("Can't read {name}: {error}", name=Path(path).name, error=e.strerror or e)) from None
     return ImportFile.from_dict(data)
 
 
@@ -380,24 +391,30 @@ def remove_empty_bodies(imp: ImportFile) -> tuple[ImportFile, list[str]]:
                 imp.parts.pop(b.part, None)
         gone = [w for w, has in (("joint", b.joint), ("motor", b.motor), ("encoder", b.encoder), ("gyro", b.gyro),
                                  ("mounts", b.mounts)) if has]
-        msg = f"{name} is no longer in the CAD"
+        msg = i18n.t("{name} is no longer in the CAD", name=name)
         if gone:
-            what = gone[0] if len(gone) == 1 else ", ".join(gone[:-1]) + " and " + gone[-1]
-            msg += f"; its {what} {'was' if len(gone) == 1 else 'were'} dropped"
+            words = body_things(gone)
+            what = words[0] if len(words) == 1 else i18n.t("{names} and {last}", names=", ".join(words[:-1]),
+                                                           last=words[-1])
+            msg = i18n.tn("{name} is no longer in the CAD; its {items} was dropped",
+                          "{name} is no longer in the CAD; its {items} were dropped", len(gone), name=name,
+                          items=what)
         if b.parent is None and heir is not None and imp.bodies[heir].joint is not None:
             hb = imp.bodies[heir]
             hb.joint = hb.motor = hb.encoder = None
-            msg += f"; {heir} is now the root, so its joint was dropped"
+            msg = i18n.t("{message}; {heir} is now the root, so its joint was dropped", message=msg, heir=heir)
             messages.append(msg)
             msg = None
             if drop_couplings(imp, heir):
-                messages.append(f"A coupling that used {heir} was dropped, because {heir} no longer has a joint")
+                messages.append(i18n.t("A coupling that used {name} was dropped, because {name} no longer has a joint",
+                                       name=heir))
         if msg is not None:
             messages.append(msg)
         for attr in ("couplings", "loops"):
             keep = [c for c in getattr(imp, attr) if not _mentions(c, name)]
             if len(keep) != len(getattr(imp, attr)):
-                messages.append(f"A {attr[:-1]} that used {name} was dropped")
+                messages.append(i18n.t("A coupling that used {name} was dropped", name=name) if attr == "couplings"
+                                else i18n.t("A loop that used {name} was dropped", name=name))
             setattr(imp, attr, keep)
     return imp, messages
 
@@ -415,9 +432,9 @@ def reimport(imp: ImportFile, src: Source) -> tuple[ImportFile, list[str]]:
         ps.fp = fps[new]
         out.pieces[new] = ps
         if old in m.guessed:
-            messages.append(f"{old}: matched by shape; check it")
+            messages.append(i18n.t("{piece}: matched by shape; check it", piece=old))
     for key in m.missing:
-        messages.append(f"{key} is no longer in the CAD")
+        messages.append(i18n.t("{name} is no longer in the CAD", name=key))
     default = {k: b for b, keys in default_bodies(src).items() for k in keys}
     siblings: dict[str, list[str]] = {}
     for k, b in default.items():

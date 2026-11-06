@@ -49,6 +49,7 @@ from pathlib import Path
 import numpy as np
 
 from .. import teamfolders
+from ..i18n import t, tn
 from ..bench.cad import write_obj
 from ..bench.spec import BenchError
 from ..parts.model import (Body, Coupling, EncoderSlot, Geom, GyroSlot, Joint, Loop, MotorSlot, Mount, Part,
@@ -92,8 +93,8 @@ def _box_inertial(v: np.ndarray, mass: float, at=None) -> Inertial:
         return Inertial(mass, np.zeros(3) if at is None else np.asarray(at, float), SMALL_INERTIA * mass * np.eye(3))
     lo, hi = v.min(axis=0), v.max(axis=0)
     a, b, c = np.maximum(hi - lo, 0.01)
-    t = mass / 12 * np.diag([b * b + c * c, a * a + c * c, a * a + b * b])
-    return Inertial(mass, (lo + hi) / 2, t)
+    tensor = mass / 12 * np.diag([b * b + c * c, a * a + c * c, a * a + b * b])
+    return Inertial(mass, (lo + hi) / 2, tensor)
 
 
 def _scaled(i: Inertial, k: float) -> Inertial:
@@ -110,12 +111,15 @@ class _Tree:
         self.roots = [n for n, s in b.items() if s.part is not None or s.parent not in b]
         for n in self.roots:
             if b[n].parent in b:
-                messages.append(f"{n} is its own part; attach it to {b[n].parent} in the robot")
-                gone = [w for w, has in (("joint", b[n].joint), ("motor", b[n].motor), ("encoder", b[n].encoder))
-                        if has]
+                messages.append(Note(t("{body} is its own part; attach it to {parent} in the robot", body=n,
+                                       parent=b[n].parent), ("body", n)))
+                gone = [w for w, has in ((t("joint"), b[n].joint), (t("motor"), b[n].motor),
+                                         (t("encoder"), b[n].encoder)) if has]
                 if gone:
-                    messages.append(f"{n}'s {_and(gone)} {'was' if len(gone) == 1 else 'were'} dropped, because the "
-                                    "first body of a part can't move on its own")
+                    messages.append(Note(tn("{body}'s {things} was dropped, because the first body of a part can't move "
+                                            "on its own", "{body}'s {things} were dropped, because the first body of a "
+                                            "part can't move on its own", len(gone), body=n, things=_and(gone)),
+                                         ("body", n)))
         self._head: dict[str, str] = {}
 
     def is_root(self, n: str) -> bool:
@@ -144,7 +148,19 @@ class _Tree:
 
 
 def _and(words: list[str]) -> str:
-    return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1]
+    return words[0] if len(words) == 1 else t("{names} and {last}", names=", ".join(words[:-1]), last=words[-1])
+
+
+class Note(str):
+    """A build message, in plain words, that knows what it is about, so the checklist doesn't read its words (spec
+    L3): `about` is ("body" | "piece" | "part", name), or None for the robot frame; `error`: the part is wrong."""
+    about: tuple[str, str] | None
+    error: bool
+
+    def __new__(cls, text: str, about: tuple[str, str] | None = None, error: bool = False):
+        s = super().__new__(cls, text)
+        s.about, s.error = about, error
+        return s
 
 
 def _no_cycles(imp: ImportFile) -> None:
@@ -157,8 +173,8 @@ def _no_cycles(imp: ImportFile) -> None:
             cur = b[cur].parent
         if cur in path:
             ring = path[path.index(cur):]
-            raise CadError(f"{_and(ring)} hang on each other; give one of them another parent." if len(ring) > 1
-                           else f"{cur} hangs on itself; give it another parent.")
+            raise CadError(t("{bodies} hang on each other; give one of them another parent.", bodies=_and(ring))
+                           if len(ring) > 1 else t("{body} hangs on itself; give it another parent.", body=cur))
 
 
 def _direction(v, what: str) -> np.ndarray:
@@ -166,25 +182,25 @@ def _direction(v, what: str) -> np.ndarray:
     a = np.asarray(v, dtype=float)
     n = float(np.linalg.norm(a)) if a.shape == (3,) and np.all(np.isfinite(a)) else 0.0
     if not n > 1e-12:
-        raise CadError(f"{what} has no direction: set it again.")
+        raise CadError(t("{what} has no direction: set it again.", what=what))
     return a / n
 
 
 def _point(v, what: str) -> np.ndarray:
     a = np.asarray(v, dtype=float)
     if a.shape != (3,) or not np.all(np.isfinite(a)):
-        raise CadError(f"{what} isn't a point (it needs three numbers): set it again.")
+        raise CadError(t("{what} isn't a point (it needs three numbers): set it again.", what=what))
     return a
 
 
 def _check_geometry(imp: ImportFile) -> None:
     for n, b in imp.bodies.items():
         if b.joint is not None:
-            _direction(b.joint.axis, f"{n}'s joint axis")
-            _point(b.joint.anchor, f"{n}'s joint anchor")
+            _direction(b.joint.axis, t("{body}'s joint axis", body=n))
+            _point(b.joint.anchor, t("{body}'s joint anchor", body=n))
         for m in b.mounts:
-            _direction(m.normal, f"{n}'s mount {m.name}")
-            _point(m.point, f"{n}'s mount {m.name}")
+            _direction(m.normal, t("{body}'s mount {mount}", body=n, mount=m.name))
+            _point(m.point, t("{body}'s mount {mount}", body=n, mount=m.name))
 
 
 def _coupling_messages(imp: ImportFile, tree: "_Tree", msgs: list[str]) -> None:
@@ -194,19 +210,20 @@ def _coupling_messages(imp: ImportFile, tree: "_Tree", msgs: list[str]) -> None:
     for c in imp.couplings:
         a, b = c.get("a"), c.get("b")
         if not (moves(a) and moves(b) and tree.part_root(a) == tree.part_root(b)):
-            msgs.append(f"The coupling between {a} and {b} was left out: both need joints in the same part.")
+            msgs.append(Note(t("The coupling between {a} and {b} was left out: both need joints in the same part.",
+                               a=a, b=b)))
 
 
 def build_parts(imp: ImportFile, src: Source) -> BuildResult:
     """The parts `imp` makes from `src`, in memory, and messages about anything that couldn't be built as asked."""
     msgs: list[str] = []
-    R, t = to_robot(imp.frame)
+    R, shift = to_robot(imp.frame)          # robot = R @ CAD + shift
     _check_geometry(imp)
     tree = _Tree(imp, msgs)
     _coupling_messages(imp, tree, msgs)
     by_key = {p.key: p for p in src.pieces}
     heads = [n for n in imp.bodies if tree.head(n) == n]
-    origin = {h: np.zeros(3) if tree.is_root(h) else R @ np.asarray(imp.bodies[h].joint.anchor, float) + t
+    origin = {h: np.zeros(3) if tree.is_root(h) else R @ np.asarray(imp.bodies[h].joint.anchor, float) + shift
               for h in heads}
 
     # pieces in robot coordinates, and their inertials, per import body
@@ -217,19 +234,21 @@ def build_parts(imp: ImportFile, src: Source) -> BuildResult:
             continue
         p = by_key.get(key)
         if p is None:
-            msgs.append(f"{key} is no longer in the CAD file: import it again to update the settings")
+            msgs.append(Note(t("{piece} is no longer in the CAD file: import it again to update the settings",
+                               piece=key), ("piece", key)))
             continue
-        verts[ps.body].append((p.v @ R.T + t, np.asarray(p.f)))
+        verts[ps.body].append((p.v @ R.T + shift, np.asarray(p.f)))
     for name, bs in imp.bodies.items():
         own = []
         for key, ps in imp.pieces.items():
             if ps.body != name or ps.left_out or key not in by_key:
                 continue
-            v = by_key[key].v @ R.T + t
+            v = by_key[key].v @ R.T + shift
             try:
                 rho = density(ps.material or "aluminum", ps.infill, ps.custom_density)
             except CadError as e:
-                msgs.append(f"{key}: {e} It counts as aluminum until then.")
+                msgs.append(Note(t("{piece}: {problem} It counts as aluminum until then.", piece=key, problem=e),
+                                 ("piece", key)))
                 rho = density("aluminum")
             i = mesh_inertial(v, by_key[key].f, rho)
             if ps.mass:
@@ -245,11 +264,11 @@ def build_parts(imp: ImportFile, src: Source) -> BuildResult:
 
     result = BuildResult(messages=msgs)
     for root in tree.roots:
-        result.parts[tree.part_name(root)] = _build_part(imp, tree, root, heads, origin, verts, items, R, t, msgs)
+        result.parts[tree.part_name(root)] = _build_part(imp, tree, root, heads, origin, verts, items, R, shift, msgs)
     return result
 
 
-def _build_part(imp, tree, root, heads, origin, verts, items, R, t, msgs) -> BuiltPart:
+def _build_part(imp, tree, root, heads, origin, verts, items, R, shift, msgs) -> BuiltPart:
     name = tree.part_name(root)
     members = [h for h in heads if tree.part_root(h) == root]
     order: list[str] = []
@@ -273,18 +292,20 @@ def _build_part(imp, tree, root, heads, origin, verts, items, R, t, msgs) -> Bui
         typed = sum(i.mass for h in order for i, ty in items[h] if ty)
         computed = sum(i.mass for h in order for i, ty in items[h] if not ty)
         if typed > total:
-            msgs.append(f"The weights typed in {name} add up to {typed:.3g} kg, more than its total of {total:.3g} "
-                        "kg: lower a typed weight or raise the total.")
+            msgs.append(Note(t("The weights typed in {part} add up to {typed} kg, more than its total of {total} kg: "
+                               "lower a typed weight or raise the total.", part=name, typed=f"{typed:.3g}",
+                               total=f"{total:.3g}"), ("part", name)))
         elif typed == total and computed > 0:
-            msgs.append(f"The weights typed in {name} already reach its total of {total:.3g} kg, so the rest keep "
-                        "their weight from their material: lower a typed weight or raise the total.")
+            msgs.append(Note(t("The weights typed in {part} already reach its total of {total} kg, so the rest keep "
+                               "their weight from their material: lower a typed weight or raise the total.",
+                               part=name, total=f"{total:.3g}"), ("part", name)))
         elif computed > 0:
             k = (total - typed) / computed
             for h in order:
                 items[h] = [(i if ty else _scaled(i, k), ty) for i, ty in items[h]]
         elif typed < total:
-            msgs.append(f"Nothing in {name} gets its weight from a material, so it can't be scaled to its total of "
-                        f"{total:.3g} kg: type the weights instead.")
+            msgs.append(Note(t("Nothing in {part} gets its weight from a material, so it can't be scaled to its total "
+                               "of {total} kg: type the weights instead.", part=name, total=f"{total:.3g}")))
 
     bodies, meshes, inertials = [], {}, []
     motors, encoders, gyros, mounts = [], [], [], []
@@ -308,8 +329,9 @@ def _build_part(imp, tree, root, heads, origin, verts, items, R, t, msgs) -> Bui
             inertia_rot = tuple(float(x) for x in rpy_deg(axes))
             inertials.append(inertial)
         else:
-            msgs.append(f"{h} weighs nothing (its pieces have no volume or are left out), so it gets a "
-                        f"{PLACEHOLDER_KG} kg placeholder: type a weight for it.")
+            msgs.append(Note(t("{body} weighs nothing (its pieces have no volume or are left out), so it gets a "
+                               "{kg} kg placeholder: type a weight for it.", body=h, kg=PLACEHOLDER_KG),
+                             ("body", h), error=True))
             mass = PLACEHOLDER_KG
             com = meshes[f"meshes/{h}.obj"][0].mean(axis=0) + o if vs else o
             inertia, inertia_rot = [SMALL_INERTIA * mass] * 3, None
@@ -329,7 +351,7 @@ def _build_part(imp, tree, root, heads, origin, verts, items, R, t, msgs) -> Bui
             if nb.gyro:
                 gyros.append(GyroSlot(f"{n}_gyro", h))
             for m in nb.mounts:
-                mounts.append(Mount(m.name, h, tuple(_floats(R @ np.asarray(m.point, float) + t - o)),
+                mounts.append(Mount(m.name, h, tuple(_floats(R @ np.asarray(m.point, float) + shift - o)),
                                     rot_z_to(R @ _direction(m.normal, m.name))))
         bodies.append(Body(h, parent, float(mass), geoms, tuple(_floats(o - origin[parent])) if parent else
                            (0.0, 0.0, 0.0), joint=joint, com=tuple(_floats(np.asarray(com) - o)),
@@ -348,10 +370,10 @@ def _build_part(imp, tree, root, heads, origin, verts, items, R, t, msgs) -> Bui
             continue
         h1, h2 = tree.head(b1), tree.head(b2)
         if tree.part_root(b2) != root or h1 == h2:
-            msgs.append(f"The loop between {b1} and {b2} was left out: they must be in the same part and not "
-                        "welded together.")
+            msgs.append(Note(t("The loop between {a} and {b} was left out: they must be in the same part and not "
+                               "welded together.", a=b1, b=b2)))
             continue
-        loops.append(Loop(h1, h2, tuple(_floats(R @ np.asarray(lp["point"], float) + t - origin[h1]))))
+        loops.append(Loop(h1, h2, tuple(_floats(R @ np.asarray(lp["point"], float) + shift - origin[h1]))))
 
     whole = combine(inertials)
     part = Part(name, bodies, couplings, loops, motors, encoders, gyros, mounts)
@@ -372,7 +394,8 @@ def _slots(h, bs, msgs) -> tuple[list[MotorSlot], list[EncoderSlot]]:
     j, m, e = bs.joint, bs.motor, bs.encoder
     slide = j.kind == "slide"
     if slide and m is not None and not m.spool_diameter:
-        msgs.append(f"{h}'s motor was left out: a motor on a slide needs a spool diameter, so enter one.")
+        msgs.append(Note(t("{body}'s motor was left out: a motor on a slide needs a spool diameter, so enter one.",
+                           body=h), ("body", h)))
         m = None
     motors = [] if m is None else [MotorSlot(f"{h}_motor", h, m.motor, m.count, float(m.ratio / (m.spool_diameter / 2)
                                              if slide else m.ratio), m.invert, m.efficiency)]
@@ -381,7 +404,8 @@ def _slots(h, bs, msgs) -> tuple[list[MotorSlot], list[EncoderSlot]]:
         if e.on == "joint":
             ratio = 1.0
         elif bs.motor is None or (slide and not bs.motor.spool_diameter):
-            msgs.append(f"{h}'s encoder is on the motor, but {h} has no motor: it reads the joint instead.")
+            msgs.append(Note(t("{body}'s encoder is on the motor, but {body} has no motor: it reads the joint instead.",
+                               body=h), ("body", h)))
             ratio = 1.0
         else:
             ratio = bs.motor.ratio / (math.pi * bs.motor.spool_diameter) if slide else bs.motor.ratio
@@ -408,21 +432,22 @@ def _collision(imp, n, h, vs, meshes, R, msgs) -> list[Geom]:
             else:
                 g.rot = rot_z_to(axis)
             return [g]
-        msgs.append(f"{n} is set to touch things as a wheel, but a wheel needs a hinge (it turns): give {n} a hinge. "
-                    "It touches things as a simple box until then.")
+        msgs.append(Note(t("{body} is set to touch things as a wheel, but a wheel needs a hinge (it turns): give "
+                           "{body} a hinge. It touches things as a simple box until then.", body=n), ("body", n)))
     elif mode == "shaped":
         try:
             pieces = convex_split(v, f)
         except BenchError as e:
-            if "needs coacd" in str(e):
-                msgs.append(f"{n} is concave, and touching things as shaped needs coacd to split it: pip install "
-                            "scrimmage[bench]. It touches things as a simple box until then.")
-            elif "no convex pieces" in str(e):
-                msgs.append(f"{n} couldn't be split into convex pieces to touch things as shaped: pick simple "
-                            "instead. It touches things as a simple box until then.")
+            if e.code == "no_coacd":
+                text = t("{body} is concave, and touching things as shaped needs coacd to split it: {install}. It "
+                         "touches things as a simple box until then.", body=n, install="pip install scrimmage[bench]")
+            elif e.code == "no_convex_pieces":
+                text = t("{body} couldn't be split into convex pieces to touch things as shaped: pick simple instead. "
+                         "It touches things as a simple box until then.", body=n)
             else:
-                msgs.append(f"{n} can't touch things as shaped because its pieces aren't closed solids: "
-                            "pick simple instead. It touches things as a simple box until then.")
+                text = t("{body} can't touch things as shaped because its pieces aren't closed solids: pick simple "
+                         "instead. It touches things as a simple box until then.", body=n)
+            msgs.append(Note(text, ("body", n)))
         else:
             out = []
             for i, (pv, pf) in enumerate(pieces):
@@ -459,13 +484,14 @@ def _resolve(text: str, import_path: Path) -> Path:
     try:
         text = teamfolders.expand(text)
     except teamfolders.TeamFolderError as e:
-        raise CadError(f"Can't find the folder {text}: {e}.") from None
+        raise CadError(t("Can't find the folder {text}: {error}.", text=text, error=e)) from None
     p = Path(text)
     return p if p.is_absolute() else Path(import_path).parent / p
 
 
 def _check_target(folder: Path, imp: ImportFile) -> None:
-    refuse = CadError(f"{_shown(folder)} already holds a part that didn't come from this import; pick another name")
+    refuse = CadError(t("{shown} already holds a part that didn't come from this import; pick another name",
+                        shown=_shown(folder)))
     if folder.is_file():
         raise refuse
     if not folder.is_dir() or not any(folder.iterdir()):
@@ -517,19 +543,21 @@ def _remove_stale(imp: ImportFile, import_path: Path, targets: dict[str, Path]) 
             shutil.rmtree(folder)
         except OSError:
             kept[part] = text
-            msgs.append(f"Couldn't remove {_shown(folder)}, an old part from this import; delete it yourself.")
+            msgs.append(Note(t("Couldn't remove {folder}, an old part from this import; delete it yourself.",
+                               folder=_shown(folder))))
             continue
         if part in targets:
-            why = f"part {part} is now saved in {_shown(targets[part])}"
+            why = t("part {part} is now saved in {folder}", part=part, folder=_shown(targets[part]))
         else:
             now: dict[str, list[str]] = {}
             origins = marker.get("origins")
             for body in origins if isinstance(origins, dict) else []:
                 if body in imp.bodies:
                     now.setdefault(tree.part_name(tree.part_root(body)), []).append(body)
-            why = "; ".join(f"{_and(bs)} {'is' if len(bs) == 1 else 'are'} part of {p} again"
-                            for p, bs in now.items()) or "this import no longer makes that part"
-        msgs.append(f"{_shown(folder)} was removed: {why}")
+            why = "; ".join(tn("{bodies} is part of {part} again", "{bodies} are part of {part} again", len(bs),
+                               bodies=_and(bs), part=p) for p, bs in now.items()) \
+                or t("this import no longer makes that part")
+        msgs.append(Note(t("{folder} was removed: {why}", folder=_shown(folder), why=why)))
     return kept, msgs
 
 
@@ -567,20 +595,21 @@ def write_parts(result: BuildResult, imp: ImportFile, import_path: Path) -> list
             load_part(tmp)                      # never swap in a folder that doesn't load
         except PartError as e:
             shutil.rmtree(tmp, ignore_errors=True)
-            raise CadError(f"The part {name} came out wrong ({e}); this is a bug in Scrimmage: please report it.") \
+            raise CadError(t("The part {name} came out wrong ({error}); this is a bug in Scrimmage: please report "
+                             "it.", name=name, error=e)) \
                 from None
         except OSError as e:
             shutil.rmtree(tmp, ignore_errors=True)
-            raise CadError(f"Couldn't write the part folder {folder} ({e.strerror or e}): check the folder can be "
-                           "written and try again.") from None
+            raise CadError(t("Couldn't write the part folder {folder} ({error}): check the folder can be written "
+                             "and try again.", folder=folder, error=e.strerror or e)) from None
         edits = folder / "scrimmage-edits.toml"     # the student's own edits (a grip material...): kept, unchecked
         try:                                        # here (a mistake in them shows when the part is loaded)
             if edits.is_file():
                 shutil.copy2(edits, tmp / edits.name)
         except OSError as e:
             shutil.rmtree(tmp, ignore_errors=True)
-            raise CadError(f"Couldn't keep your edits in {edits} ({e.strerror or e}): check the folder can be read "
-                           "and try again.") from None
+            raise CadError(t("Couldn't keep your edits in {edits} ({error}): check the folder can be read and try "
+                             "again.", edits=edits, error=e.strerror or e)) from None
         _install(tmp, folder)
         out.append(folder)
     kept, msgs = _remove_stale(imp, import_path, targets)
@@ -605,7 +634,7 @@ def _install(tmp: Path, folder: Path) -> None:
             raise
     except OSError as e:
         shutil.rmtree(tmp, ignore_errors=True)
-        raise CadError(f"Couldn't replace the part folder {folder} ({e.strerror or e}): close anything using it "
-                       "(Explorer, an editor) and try again.") from None
+        raise CadError(t("Couldn't replace the part folder {folder} ({error}): close anything using it (Explorer, "
+                         "an editor) and try again.", folder=folder, error=e.strerror or e)) from None
     if old is not None:
         shutil.rmtree(old, ignore_errors=True)

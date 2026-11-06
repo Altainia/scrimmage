@@ -16,6 +16,7 @@ import math
 from dataclasses import dataclass
 from functools import lru_cache
 
+from .. import i18n
 from .inputs import Ball, LauncherConfigError, Wheels
 
 # The impact speed at which `Ball.restitution` is defined: a drop from 0.46 m (18 in.), sqrt(2 * 9.81 * 0.46) =
@@ -65,7 +66,8 @@ def _damping(restitution: float) -> float:
     bounce also assumes the plate is rigid and the ball's mass is the only one moving.
     """
     if not 0.0 < restitution <= 1.0:
-        raise LauncherConfigError(f"[ball] restitution must be above 0 and at most 1, not {restitution!r}")
+        raise LauncherConfigError(i18n.t("{ball_table} restitution must be above 0 and at most 1, not {restitution}",
+                                         restitution=repr(restitution), ball_table="[ball]"))
     e = restitution
     if e == 1.0:
         return 0.0
@@ -309,7 +311,8 @@ def shore_a_modulus(durometer: float) -> float:
     About 1.1 MPa at 30A and 3.6 MPa at 60A; it is for 0 < S < 100 and is least accurate near either end.
     """
     if not 0.0 < durometer < 100.0:
-        raise LauncherConfigError(f"[wheels] durometer must be between 0 and 100 (Shore A), not {durometer!r}")
+        raise LauncherConfigError(i18n.t("{wheels_table} durometer must be between 0 and 100 (Shore A), not "
+                                         "{durometer}", durometer=repr(durometer), wheels_table="[wheels]"))
     return 1e6 * 0.0981 * (56.0 + 7.62336 * durometer) / (0.137505 * (254.0 - 2.54 * durometer))
 
 

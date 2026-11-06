@@ -6,6 +6,8 @@
 
 import { h } from "./app.js";
 import { units } from "./units.js";
+import { theme } from "./theme.js";
+import { t, live as L } from "./i18n.js";
 
 const fmt = (v, digits) => (typeof v === "number" && isFinite(v) ? v.toFixed(digits) : "—");
 // A measure in the chosen units (units.js), to `digits` places kept (the rows don't jump about at 10 Hz)
@@ -38,22 +40,22 @@ class Readouts {
     this.pose = h("dd", { class: "ro-val" });
     this.speed = h("dd", { class: "ro-val" });
     this.battery = h("dd", { class: "ro-val" });
-    this.scoreTitle = h("dt", { text: "Score", hidden: true });
+    this.scoreTitle = h("dt", { hidden: true }, L(() => t("Score")));
     this.score = h("dd", { class: "ro-val", hidden: true });
     this.motors = h("div", { class: "ro-motors" });
     this.joints = h("div", { class: "ro-joints" });
-    this.empty = h("p", { class: "muted ro-empty", text: "Start the robot to see its readouts." });
+    this.empty = h("p", { class: "muted ro-empty" }, L(() => t("Start the robot to see its readouts.")));
     this.motorRows = new Map();
     this.jointRows = new Map();
     this.currentMax = CURRENT_SCALE;
     root.replaceChildren(this.empty,
       h("dl", { class: "ro-grid" },
-        h("dt", { text: "Pose" }), this.pose,
-        h("dt", { text: "Speed" }), this.speed,
-        h("dt", { text: "Battery" }), this.battery,
+        h("dt", {}, L(() => t("Pose"))), this.pose,
+        h("dt", {}, L(() => t("Speed"))), this.speed,
+        h("dt", {}, L(() => t("Battery"))), this.battery,
         this.scoreTitle, this.score),
-      h("h3", { class: "ro-title", text: "Motors" }), h("p", { class: "ro-legend muted", text: "command (−1…1) · current (A)" }), this.motors,
-      h("h3", { class: "ro-title", text: "Joints" }), this.joints);
+      h("h3", { class: "ro-title" }, L(() => t("Motors"))), h("p", { class: "ro-legend muted" }, L(() => t("command (−1…1) · current (A)"))), this.motors,
+      h("h3", { class: "ro-title" }, L(() => t("Joints"))), this.joints);
   }
 
   render(state) {
@@ -61,12 +63,15 @@ class Readouts {
     this.empty.hidden = !!r;
     if (!r) return;
     const p = r.pose || {};
-    this.pose.textContent = `x ${measure(p.x, "field", 2)} · y ${measure(p.y, "field", 2)} · ${fmt(p.heading_deg, 1)}°`;
+    this.pose.textContent = t("x {x} · y {y} · {heading}°", { x: measure(p.x, "field", 2), y: measure(p.y, "field", 2), heading: fmt(p.heading_deg, 1) });
     this.speed.textContent = measure(r.speed, "speed", 2);
     this.battery.textContent = `${fmt(r.battery, 2)} V`;
     const sc = r.range;   // the test range's counts, when the robot is on one
     this.scoreTitle.hidden = this.score.hidden = !sc;
-    if (sc) this.score.textContent = [...Object.entries(sc.goals || {}).map(([k, n]) => `${k} ${n}`), `fired ${sc.fired}`, `held ${sc.held}`].join(" · ");
+    if (sc) {
+      this.score.textContent = [...Object.entries(sc.goals || {}).map(([k, n]) => `${k} ${n}`), t("fired {n}", { n: sc.fired }),
+        t("held {n}", { n: sc.held })].join(" · ");
+    }
 
     const motors = r.motors || {};
     for (const c of Object.values(motors)) this.currentMax = Math.max(this.currentMax, Math.abs(c.current || 0));
@@ -103,7 +108,7 @@ class Readouts {
     rows.clear();
     for (const n of names) rows.set(n, make(n));
     box.replaceChildren(...[...rows.values()].map((r) => r.el));
-    if (!names.length) box.append(h("p", { class: "muted ro-none", text: "(none)" }));
+    if (!names.length) box.append(h("p", { class: "muted ro-none" }, L(() => t("(none)"))));
   }
 }
 
@@ -116,13 +121,18 @@ export function renderReadouts(root, state) {
 }
 
 // One signal's values over the last `seconds` of sim time. push(t, value) adds a sample (a t that goes back, as
-// in a new session, starts over; null values leave a gap); draw() paints the canvas.
+// in a new session, starts over; null values leave a gap); draw() paints the canvas, again when the theme changes
+// (until the canvas leaves the page).
 export class Plot {
   constructor(canvas, seconds = 10) {
     this.canvas = canvas;
     this.seconds = seconds;
     this.t = [];
     this.v = [];
+    let shown = false;     // the canvas has been on the page: once it has left, the listener goes
+    const off = theme.onChange(() => {
+      if (canvas.isConnected) { shown = true; this.draw(); } else if (shown) off();
+    });
   }
 
   clear() {
@@ -166,11 +176,11 @@ export class Plot {
     const X = (t) => ((t - t0) / this.seconds) * w;
     const Y = (v) => pad + (1 - (v - lo) / (hi - lo)) * (hgt - 2 * pad);
     if (lo < 0 && hi > 0) {   // the zero line
-      g.strokeStyle = "#d0d5dc";
+      g.strokeStyle = theme.color("--plot-zero");
       g.lineWidth = 1;
       g.beginPath(); g.moveTo(0, Y(0)); g.lineTo(w, Y(0)); g.stroke();
     }
-    g.strokeStyle = "#2b6cb0";
+    g.strokeStyle = theme.color("--accent-text");
     g.lineWidth = 1.5;
     g.beginPath();
     let pen = false;
@@ -181,7 +191,7 @@ export class Plot {
       pen = true;
     }
     g.stroke();
-    g.fillStyle = "#656d76";
+    g.fillStyle = theme.color("--muted");
     g.font = "10.5px system-ui, sans-serif";
     g.fillText(String(+hi.toPrecision(4)), 3, 11);
     g.fillText(String(+lo.toPrecision(4)), 3, hgt - 3);

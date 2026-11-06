@@ -32,6 +32,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
+from .. import i18n
 from ..config import build_world, load_config
 from ..hal_drive import MotorDrive, driven_joints, position_volts
 from ..protocol import HalState
@@ -208,34 +209,42 @@ class ClimbRun:
             where = f"{script.path} step {st.index}"
             for dr in st.drives:
                 if dr.joint not in names:
-                    raise ScriptError(f"{where}: no joint {dr.joint!r}; the robot's joints: {', '.join(sorted(names))}")
+                    raise ScriptError(i18n.t("{where}: no joint {joint}; the robot's joints: {names}",
+                                             where=where, joint=repr(dr.joint), names=', '.join(sorted(names))))
                 if dr.joint not in motors:
-                    raise ScriptError(f"{where}: joint {dr.joint!r} has no motor to drive it (bind its part's slot "
-                                      f"in the config's ids); joints with a motor: {driven}")
+                    raise ScriptError(i18n.t("{where}: joint {joint} has no motor to drive it (bind its part's "
+                                             "slot in the config's ids); joints with a motor: {driven}",
+                                             where=where, joint=repr(dr.joint), driven=driven))
             for joint, _ in st.release:
                 if not self.latches or (joint is not None and joint not in self.latches):
-                    raise ScriptError(f"{where}: release needs a latch release motor (a climber with latch = "
-                                      f"\"released\" and its release slot bound); latch motors: "
-                                      f"{', '.join(self.latches) or 'none'}")
+                    raise ScriptError(i18n.t("{where}: release needs a latch release motor (a climber with "
+                                             "{latch_setting} and its release slot bound); latch motors: {motors}",
+                                             where=where, motors=', '.join(self.latches) or i18n.t("none"),
+                                             latch_setting="latch = \"released\""))
             w = st.wait
             if w is None:
                 continue
             if w.kind == "joint_at" and w.joint not in names:
-                raise ScriptError(f"{where}: no joint {w.joint!r} to wait on; the robot's joints: "
-                                  f"{', '.join(sorted(names))}")
+                raise ScriptError(i18n.t("{where}: no joint {joint} to wait on; the robot's joints: {names}",
+                                         where=where, joint=repr(w.joint), names=', '.join(sorted(names))))
             if w.kind == "hook_contact" and w.name not in holds:
-                raise ScriptError(f"{where}: no bar {w.name!r} in the range; its bars and switches: "
-                                  f"{', '.join(sorted(holds)) or 'none'}")
+                raise ScriptError(i18n.t("{where}: no bar {name} in the range; its bars and switches: {holds}",
+                                         where=where, name=repr(w.name),
+                                         holds=', '.join(sorted(holds)) or i18n.t("none")))
             if w.kind == "hook_contact" and not self.mon.hooks:
-                raise ScriptError(f"{where}: the robot has no hooks (a stock climber's) to wait on")
+                raise ScriptError(i18n.t("{where}: the robot has no hooks (a stock climber's) to wait on",
+                                         where=where))
             if w.kind == "hook_contact" and w.hook and not any(_is_hook_of(h, w.hook) for h in self.mon.hooks):
-                raise ScriptError(f"{where}: no hook {w.hook!r}; the robot's hooks: {', '.join(self.mon.hooks)}")
+                raise ScriptError(i18n.t("{where}: no hook {hook}; the robot's hooks: {hooks}",
+                                         where=where, hook=repr(w.hook), hooks=', '.join(self.mon.hooks)))
             if w.kind == "level" and w.name not in self.levels:
-                raise ScriptError(f"{where}: no level {w.name!r}; the range's levels: "
-                                  f"{', '.join(self.levels) or 'none'}")
+                raise ScriptError(i18n.t("{where}: no level {name}; the range's levels: {levels}", where=where,
+                                         name=repr(w.name), levels=', '.join(self.levels) or i18n.t("none")))
         if script.goal is not None and script.goal not in self.levels:
-            raise ScriptError(f"{script.path}: goal {script.goal!r} isn't a level of the range; its levels: "
-                              f"{', '.join(self.levels) or 'none (the range has no [climb] table)'}")
+            raise ScriptError(i18n.t("{path}: goal {goal} isn't a level of the range; its levels: {levels}",
+                                     path=script.path, goal=repr(script.goal),
+                                     levels=', '.join(self.levels) or i18n.t("none (the range has no {climb_table} "
+                                                                             "table)", climb_table="[climb]")))
         self.on_step = None     # optional f(t, climb signals): called after every physics step (tracing a run)
         self._qadr = {n: int(m.jnt_qposadr[m.joint(n).id]) for n in names}
         self._hinge = {n: int(m.jnt_type[m.joint(n).id]) == int(mujoco.mjtJoint.mjJNT_HINGE) for n in names}
@@ -427,8 +436,9 @@ def run_climb(config_path, script: Script) -> ClimbResult:
     """Play `script` on the config's robot and range."""
     world = build_world(load_config(config_path))
     if world.parts is None or world.parts.range is None or world.parts.range.climb is None:
-        raise ScriptError(f"{config_path}: climb run needs a [range] whose range file has a [climb] table "
-                          "(a climbing range, such as 2022-hangar)")
+        raise ScriptError(i18n.t("{config_path}: climb run needs a {range_table} whose range file has a "
+                                 "{climb_table} table (a climbing range, such as 2022-hangar)",
+                                 config_path=config_path, range_table="[range]", climb_table="[climb]"))
     return ClimbRun(world, script).run()
 
 

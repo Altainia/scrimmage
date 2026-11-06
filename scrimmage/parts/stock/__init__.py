@@ -10,6 +10,7 @@ import math
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from ...i18n import N_, t, translated
 from ..assemble import TREAD_DAMPING, TREAD_STIFFNESS
 from ..model import Part, PartError, part_from_dict
 
@@ -35,6 +36,11 @@ class Param:
     max: float | Callable[[dict], float] | None = None
     choices: tuple | None = None
     positive: bool = False
+    doc_keys: tuple = ()        # (placeholder, what a student types) pairs that fill `doc`'s {placeholders}
+
+    def shown_doc(self, lang: str | None = None) -> str:
+        """`doc` (N_() text) in `lang` (default: the Language setting), its typed keys and values filled in."""
+        return translated(self.doc, lang=lang, **dict(self.doc_keys))
 
     def __post_init__(self):
         if self.kind not in KINDS:
@@ -54,13 +60,22 @@ class Stock:
     slots: tuple[str, ...]
     mounts: tuple[str, ...]
     note: str = ""
+    doc_keys: tuple = ()        # (placeholder, what a student types) pairs for `doc`'s {placeholders}
+    note_keys: tuple = ()       # the same for `note`
+
+    def shown_doc(self, lang: str | None = None) -> str:
+        """`doc` (N_() text) in `lang` (default: the Language setting), its typed keys and values filled in."""
+        return translated(self.doc, lang=lang, **dict(self.doc_keys))
+
+    def shown_note(self, lang: str | None = None) -> str:
+        return translated(self.note, lang=lang, **dict(self.note_keys))
 
 
 # A drivetrain's wheels: their geoms say tread = true, and the assembler reads these two (parts/assemble.py).
 TREAD_PARAMS = (
-    Param("tread_stiffness", "N/m", TREAD_STIFFNESS, "each wheel's tread stiffness (estimate: TPU or Colson-like "
-          "tread on a 4 in wheel, about 1e5 to 3e5)", positive=True),
-    Param("tread_damping", "", TREAD_DAMPING, "the tread contact's damping ratio (1 is critical: no bounce)",
+    Param("tread_stiffness", "N/m", TREAD_STIFFNESS, N_("each wheel's tread stiffness (estimate: TPU or Colson-like "
+          "tread on a 4 in wheel, about 1e5 to 3e5)"), positive=True),
+    Param("tread_damping", "", TREAD_DAMPING, N_("the tread contact's damping ratio (1 is critical: no bounce)"),
           positive=True),
 )
 
@@ -82,54 +97,59 @@ def _finite(x) -> bool:
 
 def _check(p: Param, v: Any, where: str, params: dict) -> Any:
     """Validate one value. `params` holds the already-checked parameters declared before p (used by callable max)."""
-    unit = f" ({p.unit})" if p.unit else ""
+    # each sentence names the parameter and the value: {unit} is " (m)" or "", {value} the value as given
+    say = {"where": where, "name": p.name, "unit": f" ({p.unit})" if p.unit else "", "value": repr(v)}
 
-    def bad(msg):
-        return PartError(f"{where}: {p.name} {msg}")
+    def bad(message):
+        return PartError(message, where=where, field=f"param:{p.name}")
 
     if p.kind in ("float", "int"):
         if isinstance(v, bool) or not isinstance(v, (int, float)) or (p.kind == "int" and not isinstance(v, int)):
-            raise bad(f"must be {'a whole number' if p.kind == 'int' else 'a number'}{unit}, not {v!r}")
+            if p.kind == "int":
+                raise bad(t("{where}: {name} must be a whole number{unit}, not {value}", **say))
+            raise bad(t("{where}: {name} must be a number{unit}, not {value}", **say))
         if not _finite(v):
-            raise bad(f"must be a finite number{unit}, not {v!r}")
+            raise bad(t("{where}: {name} must be a finite number{unit}, not {value}", **say))
         if p.positive and not v > 0:
-            raise bad(f"must be greater than 0, got {v}")
+            raise bad(t("{where}: {name} must be greater than 0, got {got}", **say, got=v))
         if p.min is not None and v < p.min:
-            raise bad(f"must be at least {p.min}, got {v}")
+            raise bad(t("{where}: {name} must be at least {least}, got {got}", **say, least=p.min, got=v))
         hi = p.max(params) if callable(p.max) else p.max
         if hi is not None and v > hi:
-            raise bad(f"must be at most {round(hi, 6)}, got {v}")
+            raise bad(t("{where}: {name} must be at most {most}, got {got}", **say, most=round(hi, 6), got=v))
         return float(v) if p.kind == "float" else v
     if p.kind == "bool":
         if not isinstance(v, bool):
-            raise bad(f"must be true or false, not {v!r}")
+            raise bad(t("{where}: {name} must be true or false, not {value}", **say))
         return v
     if p.kind == "str":
         if not isinstance(v, str) or v not in p.choices:
-            raise bad(f"must be one of {', '.join(map(str, p.choices))}, not {v!r}")
+            raise bad(t("{where}: {name} must be one of {choices}, not {value}", **say,
+                        choices=", ".join(map(str, p.choices))))
         return v
     if p.kind == "text":
         if not isinstance(v, str):
-            raise bad(f"must be text in quotes, not {v!r}")
+            raise bad(t("{where}: {name} must be text in quotes, not {value}", **say))
         return v
     if p.kind == "ratio":
         if isinstance(v, str) and v in p.choices:
             return v
         if not isinstance(v, bool) and isinstance(v, (int, float)) and _finite(v) and v > 0:
             return float(v)
-        raise bad(f"must be one of {', '.join(map(str, p.choices))} or a number greater than 0, not {v!r}")
+        raise bad(t("{where}: {name} must be one of {choices} or a number greater than 0, not {value}", **say,
+                    choices=", ".join(map(str, p.choices))))
     if p.kind == "pair":
         ok = (isinstance(v, (list, tuple)) and len(v) == 2
               and all(isinstance(x, (int, float)) and not isinstance(x, bool) and _finite(x) for x in v)
               and v[0] < v[1])
         if not ok:
-            raise bad(f"must be [min, max] with min < max{unit}, not {v!r}")
+            raise bad(t("{where}: {name} must be [min, max] with min < max{unit}, not {value}", **say))
         return (float(v[0]), float(v[1]))
     if p.kind == "vec3":
         ok = (isinstance(v, (list, tuple)) and len(v) == 3
               and all(isinstance(x, (int, float)) and not isinstance(x, bool) and _finite(x) for x in v))
         if not ok:
-            raise bad(f"must be [x, y, z], three numbers{unit}, not {v!r}")
+            raise bad(t("{where}: {name} must be [x, y, z], three numbers{unit}, not {value}", **say))
         return [float(x) for x in v]
     raise AssertionError(p.kind)
 
@@ -153,11 +173,13 @@ def stock_params(name: str, given: dict, where: str) -> dict:
     _load_all()
     stock = REGISTRY.get(name)
     if stock is None:
-        raise PartError(f"{where}: unknown stock part {name!r}; stock parts: {', '.join(sorted(REGISTRY))}")
+        raise PartError(t("{where}: unknown stock part {name}; stock parts: {parts}", where=where, name=repr(name),
+                          parts=", ".join(sorted(REGISTRY))), where=where)
     names = [p.name for p in stock.params]
     for k in given:
         if k not in names:
-            raise PartError(f"{where}: unknown parameter {k!r} for {name}; parameters: {', '.join(names)}")
+            raise PartError(t("{where}: unknown parameter {key} for {name}; parameters: {parameters}", where=where,
+                              key=repr(k), name=name, parameters=", ".join(names)), where=where, field=f"param:{k}")
     checked: dict = {}
     for p in stock.params:   # each parameter sees only the checked parameters declared before it
         checked[p.name] = _check(p, given.get(p.name, p.default), where, checked)
@@ -206,13 +228,14 @@ def _toml(v) -> str:
 def describe(name: str | None) -> str:
     _load_all()
     if name is None:
-        return "\n".join(f"{s.name:20} {s.doc}" for s in sorted(REGISTRY.values(), key=lambda s: s.name))
+        return "\n".join(f"{s.name:20} {s.shown_doc()}" for s in sorted(REGISTRY.values(), key=lambda s: s.name))
     s = REGISTRY.get(name)
     if s is None:
-        raise PartError(f"unknown stock part {name!r}; stock parts: {', '.join(sorted(REGISTRY))}")
-    lines = [f"{s.name}: {s.doc}", ""]
+        raise PartError(t("unknown stock part {name}; stock parts: {parts}", name=repr(name),
+                          parts=", ".join(sorted(REGISTRY))))
+    lines = [f"{s.name}: {s.shown_doc()}", ""]
     if s.note:
-        lines += [s.note, ""]
+        lines += [s.shown_note(), ""]
     lines.append("parameters:")
     for p in s.params:
         value = _toml(p.default)
@@ -221,6 +244,6 @@ def describe(name: str | None) -> str:
         constraints = _constraints(p)
         if constraints:
             value += f" ({constraints})"
-        lines.append(f"  {p.name} = {value}: {p.doc}")
+        lines.append(f"  {p.name} = {value}: {p.shown_doc()}")
     lines += ["", f"slots: {', '.join(s.slots) or 'none'}", f"mounts: {', '.join(s.mounts) or 'none'}"]
     return "\n".join(lines)

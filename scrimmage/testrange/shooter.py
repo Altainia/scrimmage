@@ -29,6 +29,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
+from .. import i18n
 from ..disc import inputs as disc_inputs
 from ..disc.launcher import DiscLauncher, ExitedDisc
 from ..launcher.inputs import LauncherConfigError, Setup, _build_section, apply_measured, check_lane, parse_setup
@@ -140,7 +141,7 @@ def _setup_file(path: Path) -> dict:
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except OSError as e:
-        raise _err(f"setup: can't read {path}: {e.strerror}") from None
+        raise _err(i18n.t("setup: can't read {path}: {error}", path=path, error=e.strerror)) from None
     except tomllib.TOMLDecodeError as e:
         raise _err(f"setup {path}: {e}") from None
     return {k: v for k, v in raw.items() if k not in IGNORED_SECTIONS}
@@ -157,8 +158,10 @@ def _check_file(raw: dict, path: Path, name: str, given: dict, rng, art: bool, p
         except LauncherConfigError as e:
             raise _err(f"{where}: {e}") from None
         if ball != rng.ball:
-            raise _err(f"{where}: its [ball] ({raw['ball']}) is not the range's ball {rng.ball_preset!r}: the shooter "
-                       "shoots the range's balls; remove [ball] from the setup file or make it the range's")
+            raise _err(i18n.t("{where}: its {ball_table} ({ball}) is not the range's ball {ball_preset}: the shooter "
+                              "shoots the range's balls; remove {ball_table} from the setup file or make it the "
+                              "range's", where=where, ball=raw['ball'], ball_preset=repr(rng.ball_preset),
+                              ball_table="[ball]"))
     for (section, key), value in given.items():
         table = raw.get(section)
         if not isinstance(table, dict) or key not in table:
@@ -169,13 +172,17 @@ def _check_file(raw: dict, path: Path, name: str, given: dict, rng, art: bool, p
         if (section, key) == ("hood", "exit_angle_deg") and art:
             lo, hi = p["hood_range"]
             if not (isinstance(mine, (int, float)) and lo - 1e-9 <= mine <= hi + 1e-9):
-                raise _err(f"{where}: [hood] exit_angle_deg = {mine} is outside the launcher part {name!r}'s "
-                           f"hood_range = {list(p['hood_range'])} (its hood joint sets the exit angle)")
+                raise _err(i18n.t("{where}: {hood_table} {exit_angle_deg_setting} is outside the launcher part "
+                                  "{name}'s {hood_range_setting} (its hood joint sets the exit angle)", where=where,
+                                  name=repr(name), hood_table="[hood]",
+                                  exit_angle_deg_setting="exit_angle_deg = {}".format(mine),
+                                  hood_range_setting="hood_range = {}".format(list(p['hood_range']))))
             continue
         if not _same(mine, value):
             theirs = {("hood", "exit_angle_deg"): "hood_angle"}.get((section, key), PART_KEYS.get((section, key)))
-            raise _err(f"{where}: [{section}] {key} = {mine} but the launcher part {name!r} has {theirs} = {value}; "
-                       "make them agree or leave the key out of the setup file")
+            raise _err(i18n.t("{where}: [{section}] {key} = {mine} but the launcher part {name} has {theirs} = "
+                              "{value}; make them agree or leave the key out of the setup file", where=where,
+                              section=section, key=key, mine=mine, name=repr(name), theirs=theirs, value=value))
 
 
 def parse_shooter(cfg: dict, built, cfg_dir: Path | None) -> ShooterConfig:
@@ -183,50 +190,63 @@ def parse_shooter(cfg: dict, built, cfg_dir: Path | None) -> ShooterConfig:
     the [shooter] key."""
     sec = cfg.get("shooter")
     if not isinstance(sec, dict):
-        raise _err("must be a table")
+        raise _err(i18n.t("must be a table"))
     if built is None or built.range is None:
-        raise _err("needs a [range]: the shooter shoots the range's balls, so add a [range] (see the range files) or "
-                   "remove [shooter]")
+        raise _err(i18n.t("needs a {range_table}: the shooter shoots the range's balls, so add a {range_table} (see "
+                          "the range files) or remove {shooter_table}", range_table="[range]",
+                          shooter_table="[shooter]"))
     rng = built.range
     if rng.ball is None and rng.disc is None:
-        raise ValueError(f"the robot's [shooter] needs a ball or disc on the field; this field's pieces are: "
-                         f"{', '.join(k.label for k in rng.kinds.values())}")
+        raise ValueError(i18n.t("the robot's {shooter_table} needs a ball or disc on the field; this field's pieces "
+                                "are: {pieces}", pieces=', '.join(k.label for k in rng.kinds.values()),
+                                shooter_table="[shooter]"))
     kind = sec.get("kind", "ball")
     if kind not in SHOOTER_KINDS:
-        raise _err(f"kind must be \"ball\" (a stock launcher part) or \"disc\" (a stock disc_shooter part), not "
-                   f"{kind!r}")
+        raise _err(i18n.t("kind must be \"{ball}\" (a stock launcher part) or \"{disc}\" (a stock disc_shooter "
+                          "part), not {kind}", kind=repr(kind), ball="ball", disc="disc"))
     if kind == "ball" and rng.disc is not None:
-        raise _err(f"kind = \"ball\" (the default: a stock launcher part) shoots balls, but the range {rng.name!r} "
-                   f"plays discs ({rng.disc_preset!r}); set kind = \"disc\" and run it in a stock disc_shooter part")
+        raise _err(i18n.t("{ball_setting} (the default: a stock launcher part) shoots balls, but the range {name} "
+                          "plays discs ({disc_preset}); set {disc_setting} and run it in a stock disc_shooter part",
+                          name=repr(rng.name), disc_preset=repr(rng.disc_preset), ball_setting="kind = \"ball\"",
+                          disc_setting="kind = \"disc\""))
     if kind == "disc" and rng.disc is None:
-        raise _err(f"kind = \"disc\" (a stock disc_shooter part) shoots discs, but the range {rng.name!r} plays balls "
-                   f"({rng.ball_preset!r}); leave kind out for a stock launcher part, or use a disc range (such as "
-                   "\"2013\")")
+        raise _err(i18n.t("{kind_setting} (a stock disc_shooter part) shoots discs, but the range {name} plays balls "
+                          "({ball_preset}); leave kind out for a stock launcher part, or use a disc range (such as "
+                          "\"{disc_range}\")", name=repr(rng.name), ball_preset=repr(rng.ball_preset),
+                          kind_setting="kind = \"disc\"", disc_range="2013"))
     if kind == "disc":
         return _parse_disc(sec, built, cfg_dir)
     for k in sec:
         if k == "ball":
-            raise _err(f"ball comes from the range ({rng.ball_preset!r}); leave it out")
+            raise _err(i18n.t("ball comes from the range ({ball_preset}); leave it out",
+                              ball_preset=repr(rng.ball_preset)))
         if k in ("shaft", "launcher"):
-            raise _err(f"{k} comes from the launcher part (its parameters wheel_moi, added_moi, motor, count, "
-                       "gearing, width, and its mount); leave it out")
+            raise _err(i18n.t("{key} comes from the launcher part (its parameters wheel_moi, added_moi, motor, "
+                              "count, gearing, width, and its mount); leave it out", key=k))
         if k not in SHOOTER_KEYS:
-            raise _err(f"unknown key {k!r}; allowed: {', '.join(SHOOTER_KEYS)}")
+            raise _err(i18n.t("unknown key {key}; allowed: {keys}",
+                              key=repr(k), keys=', '.join(SHOOTER_KEYS)))
 
     name = sec.get("part")
     by_name = {i.name: i for i in built.instances}
     if not isinstance(name, str) or name not in by_name:
-        raise _err(f"part {name!r}: no such part; parts: {', '.join(by_name)}")
+        raise _err(i18n.t("part {name}: no such part; parts: {parts}", name=repr(name), parts=', '.join(by_name)))
     inst = by_name[name]
     if inst.source != "stock launcher":
-        raise _err(f"part {name!r} is a {inst.source} part; the shooter runs in a stock launcher part")
+        raise _err(i18n.t("part {name} is a {source} part; the shooter runs in a stock launcher part",
+                          name=repr(name), source=inst.source))
     p = inst.stock_params
     art = p["hood"] == "articulated"
     entry = p["hood_entry_deg"]
-    top, key = (p["hood_range"][1], "hood_range's high stop") if art else (p["hood_angle"], "hood_angle")
+    top = p["hood_range"][1] if art else p["hood_angle"]
     if entry - (top + 90.0) <= 0.0:
-        raise _err(f"part {name!r}: {key} {top} leaves the hood no wrap: hood_entry_deg {entry} less {top + 90.0} "
-                   f"(the exit angle + 90) is {entry - (top + 90.0)}; it must be above 0")
+        if art:
+            raise _err(i18n.t("part {name}: hood_range's high stop {top} leaves the hood no wrap: hood_entry_deg "
+                              "{entry} less {least} (the exit angle + 90) is {wrap}; it must be above 0",
+                              name=repr(name), top=top, entry=entry, least=top + 90.0, wrap=entry - (top + 90.0)))
+        raise _err(i18n.t("part {name}: hood_angle {top} leaves the hood no wrap: hood_entry_deg {entry} less "
+                          "{least} (the exit angle + 90) is {wrap}; it must be above 0",
+                          name=repr(name), top=top, entry=entry, least=top + 90.0, wrap=entry - (top + 90.0)))
 
     given = {(s, k): p[param] for (s, k), param in PART_KEYS.items()}
     given[("hood", "exit_angle_deg")] = p["hood_range"][0] if art else p["hood_angle"]
@@ -235,15 +255,23 @@ def parse_shooter(cfg: dict, built, cfg_dir: Path | None) -> ShooterConfig:
     for section in INLINE_SECTIONS:
         table = sec.get(section, {})
         if not isinstance(table, dict):
-            raise _err(f"{section} must be a table, not {table!r}")
+            raise _err(i18n.t("{section} must be a table, not {table}", section=section, table=repr(table)))
         for k in table:
             if (section, k) == ("hood", "exit_angle_deg"):
-                src = (f"the launcher part {name!r}'s hood joint (hood_range = {list(p['hood_range'])})" if art
-                       else f"the launcher part {name!r} (hood_angle = {p['hood_angle']})")
-                raise ValueError(f"[shooter.hood] exit_angle_deg comes from {src}; leave it out")
+                if art:
+                    raise ValueError(i18n.t("{shooter_hood_table} exit_angle_deg comes from the launcher part "
+                                            "{name}'s hood joint ({hood_range_setting}); leave it out",
+                                            name=repr(name), shooter_hood_table="[shooter.hood]",
+                                            hood_range_setting="hood_range = {}".format(list(p["hood_range"]))))
+                raise ValueError(i18n.t("{shooter_hood_table} exit_angle_deg comes from the launcher part {name} "
+                                        "({hood_angle_setting}); leave it out", name=repr(name),
+                                        shooter_hood_table="[shooter.hood]",
+                                        hood_angle_setting="hood_angle = {}".format(p["hood_angle"])))
             if (section, k) in PART_KEYS:
-                raise ValueError(f"[shooter.{section}] {k} comes from the launcher part {name!r} "
-                                 f"({PART_KEYS[(section, k)]} = {p[PART_KEYS[(section, k)]]}); leave it out")
+                raise ValueError(i18n.t("{shooter_section_table} {key} comes from the launcher part {name} ({param} "
+                                        "= {value}); leave it out", key=k, name=repr(name),
+                                        param=PART_KEYS[(section, k)], value=p[PART_KEYS[(section, k)]],
+                                        shooter_section_table="[shooter.{}]".format(section)))
 
     raw: dict = {}
     path = None
@@ -251,7 +279,7 @@ def parse_shooter(cfg: dict, built, cfg_dir: Path | None) -> ShooterConfig:
     if "setup" in sec:
         ref = sec["setup"]
         if not isinstance(ref, str):
-            raise _err(f"setup must be a path to a launcher setup file, not {ref!r}")
+            raise _err(i18n.t("setup must be a path to a launcher setup file, not {ref}", ref=repr(ref)))
         path = Path(cfg_dir if cfg_dir is not None else ".") / ref
         raw = _setup_file(path)
         try:  # its [ball] and [wheels] measured files, found from it, read together (a launcher file may be both's)
@@ -276,7 +304,7 @@ def parse_shooter(cfg: dict, built, cfg_dir: Path | None) -> ShooterConfig:
     lanes = sec.get("lanes", [0.0])
     if not (isinstance(lanes, list) and lanes
             and all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) for x in lanes)):
-        raise _err(f"lanes must be a list of positions across the wheels (m), not {lanes!r}")
+        raise _err(i18n.t("lanes must be a list of positions across the wheels (m), not {lanes}", lanes=repr(lanes)))
     lanes = tuple(float(x) for x in lanes)
     for lane in lanes:
         try:
@@ -286,8 +314,9 @@ def parse_shooter(cfg: dict, built, cfg_dir: Path | None) -> ShooterConfig:
     by_pos = sorted(lanes)
     for a, b in zip(by_pos, by_pos[1:]):
         if b - a < rng.ball.diameter - 1e-12:
-            raise _err(f"lanes {a:g} and {b:g} are {b - a:.4g} m apart, closer than the ball's diameter "
-                       f"{rng.ball.diameter}: balls side by side would overlap")
+            raise _err(i18n.t("lanes {a} and {b} are {gap} m apart, closer than the ball's diameter {diameter}: "
+                              "balls side by side would overlap",
+                              a=f"{a:g}", b=f"{b:g}", gap=f"{b - a:.4g}", diameter=rng.ball.diameter))
 
     capacity = _capacity(sec, 0)
     stages = _stages(sec.get("stage"), by_name, name)
@@ -304,7 +333,7 @@ def parse_shooter(cfg: dict, built, cfg_dir: Path | None) -> ShooterConfig:
     try:
         setup = parse_setup(raw, path)
     except LauncherConfigError as e:
-        raise _err(f"(the launcher model's inputs): {e}") from None
+        raise _err(i18n.t("(the launcher model's inputs): {error}", error=e)) from None
     ball_kind = next(k for k in rng.kinds.values() if k.form == "ball")
     ball = {f"ball.{k}": v for k, v in ball_kind.provenance.items()}  # the range's ball: the shooter shoots it
     wheels = {k: v for k, v in measured.items() if not k.startswith("ball.")}
@@ -319,13 +348,14 @@ def _capacity(sec: dict, default: int) -> int:
     """[shooter.hopper] capacity: the pieces the whole robot holds, `default` when it is left out."""
     hopper = sec.get("hopper", {})
     if not isinstance(hopper, dict):
-        raise _err(f"hopper must be a table, not {hopper!r}")
+        raise _err(i18n.t("hopper must be a table, not {hopper}", hopper=repr(hopper)))
     for k in hopper:
         if k not in HOPPER_KEYS:
-            raise _err(f"hopper: unknown key {k!r}; allowed: {', '.join(HOPPER_KEYS)}")
+            raise _err(i18n.t("hopper: unknown key {key}; allowed: {keys}",
+                              key=repr(k), keys=', '.join(HOPPER_KEYS)))
     capacity = hopper.get("capacity", default)
     if isinstance(capacity, bool) or not isinstance(capacity, int) or capacity < 0:
-        raise _err(f"hopper capacity must be a whole number of balls, not {capacity!r}")
+        raise _err(i18n.t("hopper capacity must be a whole number of balls, not {capacity}", capacity=repr(capacity)))
     return capacity
 
 
@@ -335,41 +365,46 @@ def _number(v) -> bool:
 
 def _keys(table, allowed: tuple, where: str) -> None:
     if not isinstance(table, dict):
-        raise _err(f"{where} must be a table, not {table!r}")
+        raise _err(i18n.t("{where} must be a table, not {table}", where=where, table=repr(table)))
     for k in table:
         if k not in allowed:
-            raise _err(f"{where}: unknown key {k!r}; allowed: {', '.join(allowed)}")
+            raise _err(i18n.t("{where}: unknown key {key}; allowed: {allowed}",
+                              where=where, key=repr(k), allowed=', '.join(allowed)))
 
 
 def _spinner(part, by_name: dict, where: str, sources: tuple, launcher: str):
     """The stock roller (or flywheel) instance named `part`."""
     if not isinstance(part, str) or part not in by_name:
-        raise _err(f"{where}: part {part!r}: no such part; parts: {', '.join(by_name)}")
+        raise _err(i18n.t("{where}: part {part}: no such part; parts: {parts}",
+                          where=where, part=repr(part), parts=', '.join(by_name)))
     inst = by_name[part]
     if inst.source not in sources or part == launcher:
         kinds = " or ".join(x.removeprefix("stock ") for x in sources)
-        raise _err(f"{where}: part {part!r} is a {inst.source} part; it must be a stock {kinds}")
+        raise _err(i18n.t("{where}: part {part} is a {source} part; it must be a stock {kinds}",
+                          where=where, part=repr(part), source=inst.source, kinds=kinds))
     return inst
 
 
 def _stages(table, by_name: dict, launcher: str) -> tuple[Stage, ...]:
     """[[shooter.stage]]: at least one, in order from the hopper's side."""
     if not isinstance(table, list) or not table:
-        raise _err("stage: at least one [[shooter.stage]] is needed (name, part, path_length): the stages carry "
-                   "the balls from the hopper to the launcher")
+        raise _err(i18n.t("stage: at least one {shooter_stage_table} is needed (name, part, path_length): the stages "
+                          "carry the balls from the hopper to the launcher", shooter_stage_table="[[shooter.stage]]"))
     stages: list[Stage] = []
     for k, st in enumerate(table, 1):
         _keys(st, STAGE_KEYS, f"stage #{k}")
         name = st.get("name")
         if not isinstance(name, str) or not name or name in ("hopper", "launcher"):
-            raise _err(f"stage #{k}: name must be a name other than hopper or launcher, not {name!r}")
+            raise _err(i18n.t("stage #{key}: name must be a name other than hopper or launcher, not {name}",
+                              key=k, name=repr(name)))
         if any(x.name == name for x in stages):
-            raise _err(f"two stages named {name!r}: give each its own name")
+            raise _err(i18n.t("two stages named {name}: give each its own name", name=repr(name)))
         where = f"stage {name!r}"
         inst = _spinner(st.get("part"), by_name, where, STAGE_SOURCES, launcher)
         length = st.get("path_length")
         if not _number(length) or length <= 0.0:
-            raise _err(f"{where}: path_length must be a length (m) above 0, not {length!r}")
+            raise _err(i18n.t("{where}: path_length must be a length (m) above 0, not {length}",
+                              where=where, length=repr(length)))
         stages.append(Stage(name=name, part=inst.name, path_length=float(length),
                             diameter=float(inst.stock_params["diameter"])))
     return tuple(stages)
@@ -389,7 +424,8 @@ def _mount_frame(at, by_name: dict, where: str) -> tuple[str, np.ndarray, np.nda
         if any(b.name == local for b in inst.part.bodies):
             return f"{tname}.{local}", np.zeros(3), np.eye(3)
     mounts = [f"{i.name}.{m.name}" for i in by_name.values() for m in i.part.mounts]
-    raise _err(f"{where}: at {at!r} is not a robot mount; mounts: {', '.join(mounts)}")
+    raise _err(i18n.t("{where}: at {at} is not a robot mount; mounts: {mounts}",
+                      where=where, at=repr(at), mounts=', '.join(mounts)))
 
 
 def _intake(table, by_name: dict) -> Intake | None:
@@ -401,20 +437,24 @@ def _intake(table, by_name: dict) -> Intake | None:
     if inst.stock_params.get("collide"):
         # its roller would push the floor balls the zone collects; the launcher and the stages may collide (the
         # balls they hold are parked and touch nothing, and a launched ball clears the robot)
-        raise ValueError(f"{inst.name} has collide = true but is the [shooter]'s intake; the ball path moves those "
-                         "balls, so leave collide off")
+        raise ValueError(i18n.t("{name} has {collide_setting} but is the {shooter_table}'s intake; the ball path "
+                                "moves those balls, so leave collide off", name=inst.name,
+                                collide_setting="collide = true", shooter_table="[shooter]"))
     body, mpos, mrot = _mount_frame(table.get("at"), by_name, "intake")
     pos, size = table.get("pos"), table.get("size")
     if not (isinstance(pos, list) and len(pos) == 3 and all(_number(v) for v in pos)):
-        raise _err(f"intake: pos must be [x, y, z] (m, the zone's center in the mount's frame), not {pos!r}")
+        raise _err(i18n.t("intake: pos must be [x, y, z] (m, the zone's center in the mount's frame), not {pos}",
+                          pos=repr(pos)))
     if not (isinstance(size, list) and len(size) == 3 and all(_number(v) and v > 0.0 for v in size)):
-        raise _err(f"intake: size must be [depth, width, height] (m, each above 0), not {size!r}")
+        raise _err(i18n.t("intake: size must be [depth, width, height] (m, each above 0), not {size}",
+                          size=repr(size)))
     rate = table.get("rate")
     if not _number(rate) or rate <= 0.0:
-        raise _err(f"intake: rate must be balls per second above 0, not {rate!r}")
+        raise _err(i18n.t("intake: rate must be balls per second above 0, not {rate}", rate=repr(rate)))
     speed = table.get("min_surface_speed", DEFAULT_MIN_SURFACE_SPEED)
     if not _number(speed) or speed < 0.0:
-        raise _err(f"intake: min_surface_speed must be a speed (m/s) of 0 or more, not {speed!r}")
+        raise _err(i18n.t("intake: min_surface_speed must be a speed (m/s) of 0 or more, not {speed}",
+                          speed=repr(speed)))
     center = mpos + mrot @ np.asarray(pos, float)
     return Intake(part=inst.name, diameter=float(inst.stock_params["diameter"]), body=body,
                   center=tuple(float(v) for v in center), axes=tuple(tuple(float(v) for v in row) for row in mrot),
@@ -424,7 +464,8 @@ def _intake(table, by_name: dict) -> Intake | None:
 def _beam_breaks(table, stages: tuple[Stage, ...], n_lanes: int) -> tuple[BeamBreak, ...]:
     """[[shooter.beam_break]] (two on one DIO, or one on a [[digital]]'s channel, World rejects)."""
     if not isinstance(table, list):
-        raise _err(f"beam_break must be a list of [[shooter.beam_break]] tables, not {table!r}")
+        raise _err(i18n.t("beam_break must be a list of {shooter_beam_break_table} tables, not {table}",
+                          table=repr(table), shooter_beam_break_table="[[shooter.beam_break]]"))
     names = [st.name for st in stages]
     out = []
     for k, bb in enumerate(table, 1):
@@ -433,23 +474,27 @@ def _beam_breaks(table, stages: tuple[Stage, ...], n_lanes: int) -> tuple[BeamBr
         at = bb.get("at")
         stage = at.removeprefix("stage:") if isinstance(at, str) and at.startswith("stage:") else None
         if not (at in ("hopper", "launcher") or stage in names):
-            raise _err(f"{where}: at {at!r} must be \"hopper\", \"launcher\" or \"stage:<name>\" of a stage; "
-                       f"stages: {', '.join(names)}")
+            raise _err(i18n.t("{where}: at {at} must be \"{hopper}\", \"{launcher}\" or \"{stage_name}\" of a stage; "
+                              "stages: {names}", where=where, at=repr(at), names=', '.join(names), hopper="hopper",
+                              launcher="launcher", stage_name="stage:<name>"))
         fraction = bb.get("fraction")
         if stage is None and fraction is not None:
-            raise _err(f"{where}: fraction is only for a beam break on a stage (where along it), not at {at!r}")
+            raise _err(i18n.t("{where}: fraction is only for a beam break on a stage (where along it), not at {at}",
+                              where=where, at=repr(at)))
         if stage is not None and not (_number(fraction) and 0.0 <= fraction <= 1.0):
-            raise _err(f"{where}: at {at!r} needs fraction, where along the stage (0 to 1), not {fraction!r}")
+            raise _err(i18n.t("{where}: at {at} needs fraction, where along the stage (0 to 1), not {fraction}",
+                              where=where, at=repr(at), fraction=repr(fraction)))
         lane = bb.get("lane")
         if lane is not None and (isinstance(lane, bool) or not isinstance(lane, int) or not 0 <= lane < n_lanes):
-            raise _err(f"{where}: lane {lane!r} must be an index into lanes (0 to {n_lanes - 1}), or left out for "
-                       "any lane")
+            raise _err(i18n.t("{where}: lane {lane} must be an index into lanes (0 to {last}), or left out for any "
+                              "lane", where=where, lane=repr(lane), last=n_lanes - 1))
         dio = bb.get("dio")
         if isinstance(dio, bool) or not isinstance(dio, int) or dio < 0:
-            raise _err(f"{where}: dio must be a DIO channel (0 or more), not {dio!r}")
+            raise _err(i18n.t("{where}: dio must be a DIO channel (0 or more), not {dio}", where=where,
+                              dio=repr(dio)))
         low = bb.get("active_low", True)
         if not isinstance(low, bool):
-            raise _err(f"{where}: active_low must be true or false, not {low!r}")
+            raise _err(i18n.t("{where}: active_low must be true or false, not {low}", where=where, low=repr(low)))
         out.append(BeamBreak(at=at, fraction=None if fraction is None else float(fraction), lane=lane, dio=dio,
                              active_low=low))
     return tuple(out)
@@ -663,12 +708,15 @@ def _check_disc_file(raw: dict, where: str, name: str, given: dict, shafts: list
         except (LauncherConfigError, TypeError) as e:
             raise _err(f"{where}: {e}") from None
         if disc != rng.disc:
-            raise _err(f"{where}: its [disc] is not the range's disc {rng.disc_preset!r}: the shooter shoots the "
-                       "range's discs; remove [disc] from the setup file or make it the range's")
+            raise _err(i18n.t("{where}: its {disc_table} is not the range's disc {disc_preset}: the shooter shoots "
+                              "the range's discs; remove {disc_table} from the setup file or make it the range's",
+                              where=where, disc_preset=repr(rng.disc_preset), disc_table="[disc]"))
     air = raw.get("air", {})
     if isinstance(air, dict) and "aero" in air and air["aero"] != rng.aero.name:
-        raise _err(f"{where}: [air] aero = {air['aero']!r} but the range {rng.name!r} flies its discs with "
-                   f"{rng.aero.name!r}; leave aero out of the setup file")
+        raise _err(i18n.t("{where}: {air_table} {aero_setting} but the range {name} flies its discs with {aero}; "
+                          "leave aero out of the setup file", where=where, name=repr(rng.name),
+                          aero=repr(rng.aero.name), air_table="[air]",
+                          aero_setting="aero = {}".format(repr(air['aero']))))
     for (section, key), value in given.items():
         table = raw.get(section)
         if not isinstance(table, dict) or key not in table:
@@ -684,20 +732,25 @@ def _check_disc_file(raw: dict, where: str, name: str, given: dict, shafts: list
         else:
             agree = _same(mine, value)
         if not agree:
-            raise _err(f"{where}: [{section}] {key} = {mine} but the disc_shooter part {name!r} gives {value} (from "
-                       f"its {DISC_PART_KEYS[(section, key)]}); make them agree or leave the key out of the setup "
-                       "file")
+            raise _err(i18n.t("{where}: [{section}] {key} = {mine} but the disc_shooter part {name} gives {value} "
+                              "(from its {params}); make them agree or leave the key out of the setup file",
+                              where=where, section=section, key=key, mine=mine, name=repr(name), value=value,
+                              params=DISC_PART_KEYS[(section, key)]))
     if "shaft" in raw:
         tables = raw["shaft"] if isinstance(raw["shaft"], list) else [raw["shaft"]] * len(shafts)
         if len(tables) != len(shafts):
-            raise _err(f"{where}: [[shaft]] has {len(tables)} table(s) but the disc_shooter part {name!r} has "
-                       f"{len(shafts)} wheel group(s); leave [shaft] out of the setup file")
+            raise _err(i18n.t("{where}: {shaft_tables} has {tables} table(s) but the disc_shooter part {name} has "
+                              "{groups} wheel group(s); leave {shaft_table} out of the setup file", where=where,
+                              tables=len(tables), name=repr(name), groups=len(shafts), shaft_tables="[[shaft]]",
+                              shaft_table="[shaft]"))
         for g, (table, mine) in enumerate(zip(tables, shafts)):
             for key, value in (table.items() if isinstance(table, dict) else ()):
                 if key in mine and not _same(value, mine[key]):
-                    raise _err(f"{where}: [shaft] {key} = {value} but the disc_shooter part {name!r}'s wheel group "
-                               f"{g} has {mine[key]} (from its wheel_moi, added_moi, motor, count and gearing); "
-                               "make them agree or leave [shaft] out of the setup file")
+                    raise _err(i18n.t("{where}: {shaft_table} {key} = {value} but the disc_shooter part {name}'s "
+                                      "wheel group {group} has {mine} (from its wheel_moi, added_moi, motor, count "
+                                      "and gearing); make them agree or leave {shaft_table} out of the setup file",
+                                      where=where, key=key, value=value, name=repr(name), group=g, mine=mine[key],
+                                      shaft_table="[shaft]"))
 
 
 def _parse_disc(sec: dict, built, cfg_dir: Path | None) -> DiscShooterConfig:
@@ -705,27 +758,31 @@ def _parse_disc(sec: dict, built, cfg_dir: Path | None) -> DiscShooterConfig:
     rng = built.range
     for k in sec:
         if k == "lanes":
-            raise _err("lanes: a disc shooter feeds one disc at a time down one channel; leave lanes out")
+            raise _err(i18n.t("lanes: a disc shooter feeds one disc at a time down one channel; leave lanes out"))
         if k == "disc":
-            raise _err(f"disc comes from the range ({rng.disc_preset!r}); leave it out")
+            raise _err(i18n.t("disc comes from the range ({disc_preset}); leave it out",
+                              disc_preset=repr(rng.disc_preset)))
         if k in ("shaft", "launcher"):
-            raise _err(f"{k} comes from the disc_shooter part (its parameters wheel_moi, added_moi, motor, count, "
-                       "gearing and tilt, and its mount); leave it out")
+            raise _err(i18n.t("{key} comes from the disc_shooter part (its parameters wheel_moi, added_moi, "
+                              "motor, count, gearing and tilt, and its mount); leave it out", key=k))
         if k not in DISC_SHOOTER_KEYS:
-            raise _err(f"unknown key {k!r} for a disc shooter; allowed: {', '.join(DISC_SHOOTER_KEYS)}")
+            raise _err(i18n.t("unknown key {key} for a disc shooter; allowed: {keys}",
+                              key=repr(k), keys=', '.join(DISC_SHOOTER_KEYS)))
     name = sec.get("part")
     by_name = {i.name: i for i in built.instances}
     if not isinstance(name, str) or name not in by_name:
-        raise _err(f"part {name!r}: no such part; parts: {', '.join(by_name)}")
+        raise _err(i18n.t("part {name}: no such part; parts: {parts}", name=repr(name), parts=', '.join(by_name)))
     inst = by_name[name]
     if inst.source != "stock disc_shooter":
-        raise _err(f"part {name!r} is a {inst.source} part; a disc shooter (kind = \"disc\") runs in a stock "
-                   "disc_shooter part")
+        raise _err(i18n.t("part {name} is a {source} part; a disc shooter ({kind_setting}) runs in a stock "
+                          "disc_shooter part", name=repr(name), source=inst.source, kind_setting="kind = \"disc\""))
     p = inst.stock_params
     if not math.isclose(p["channel_width"], rng.disc.diameter, abs_tol=1e-9):
-        raise _err(f"part {name!r}: channel_width {p['channel_width']} isn't the diameter of the range's disc "
-                   f"{rng.disc_preset!r} ({rng.disc.diameter}): the guide walls fit the disc; set channel_width = "
-                   f"{rng.disc.diameter}")
+        raise _err(i18n.t("part {name}: channel_width {channel_width} isn't the diameter of the range's disc "
+                          "{disc_preset} ({diameter}): the guide walls fit the disc; set {channel_width_setting}",
+                          name=repr(name), channel_width=p['channel_width'], disc_preset=repr(rng.disc_preset),
+                          diameter=rng.disc.diameter,
+                          channel_width_setting="channel_width = {}".format(rng.disc.diameter)))
     articulated = p["tilt"] == "articulated"
     tilt0 = p["tilt_range"][0] if articulated else p["tilt_angle"]
     spots = disc_wheel_spots(p)
@@ -740,26 +797,28 @@ def _parse_disc(sec: dict, built, cfg_dir: Path | None) -> DiscShooterConfig:
     for section in DISC_INLINE_SECTIONS:
         table = sec.get(section, {})
         if not isinstance(table, dict):
-            raise _err(f"{section} must be a table, not {table!r}")
+            raise _err(i18n.t("{section} must be a table, not {table}", section=section, table=repr(table)))
         for k in table:
             if (section, k) in DISC_PART_KEYS:
                 param = DISC_PART_KEYS[(section, k)]
-                raise ValueError(f"[shooter.{section}] {k} comes from the disc_shooter part {name!r} ({param}); "
-                                 "leave it out")
+                raise ValueError(i18n.t("{shooter_section_table} {key} comes from the disc_shooter part {name} "
+                                        "({param}); leave it out", key=k, name=repr(name), param=param,
+                                        shooter_section_table="[shooter.{}]".format(section)))
             if (section, k) == ("air", "aero"):
-                raise ValueError(f"[shooter.air] aero comes from the range ({rng.name!r}: aero = "
-                                 f"{rng.aero.name!r}); leave it out")
+                raise ValueError(i18n.t("{shooter_air_table} aero comes from the range ({name}: {aero_setting}); "
+                                        "leave it out", name=repr(rng.name), shooter_air_table="[shooter.air]",
+                                        aero_setting="aero = {}".format(repr(rng.aero.name))))
 
     raw: dict = {}
     if "setup" in sec:
         ref = sec["setup"]
         if not isinstance(ref, str):
-            raise _err(f"setup must be a path to a disc setup file, not {ref!r}")
+            raise _err(i18n.t("setup must be a path to a disc setup file, not {ref}", ref=repr(ref)))
         path = Path(cfg_dir if cfg_dir is not None else ".") / ref
         try:
             text = path.read_text(encoding="utf-8")
         except OSError as e:
-            raise _err(f"setup: can't read {path}: {e.strerror}") from None
+            raise _err(i18n.t("setup: can't read {path}: {error}", path=path, error=e.strerror)) from None
         try:
             whole = tomllib.loads(text)
         except tomllib.TOMLDecodeError as e:
@@ -768,7 +827,7 @@ def _parse_disc(sec: dict, built, cfg_dir: Path | None) -> DiscShooterConfig:
         raw = {k: v for k, v in whole.items() if k in DISC_FILE_SECTIONS and k not in ("disc", "shaft")}
         unknown = sorted(set(whole) - set(DISC_FILE_SECTIONS) - set(DISC_IGNORED_SECTIONS))
         if unknown:
-            raise _err(f"setup {path}: unknown section(s) {unknown}")
+            raise _err(i18n.t("setup {path}: unknown section(s) {unknown}", path=path, unknown=unknown))
     for section in DISC_INLINE_SECTIONS:
         if section in sec:
             base = raw.get(section, {})
@@ -796,7 +855,7 @@ def _parse_disc(sec: dict, built, cfg_dir: Path | None) -> DiscShooterConfig:
     try:
         setup = disc_inputs.parse_setup(raw)
     except LauncherConfigError as e:
-        raise _err(f"(the disc launcher model's inputs): {e}") from None
+        raise _err(i18n.t("(the disc launcher model's inputs): {error}", error=e)) from None
     return DiscShooterConfig(part=name, setup=setup, tilt=p["tilt"], tilt_range=tuple(p["tilt_range"]),
                              tilt_angle=p["tilt_angle"], capacity=capacity, stages=stages, intake=intake,
                              beam_breaks=beams)

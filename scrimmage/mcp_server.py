@@ -9,6 +9,7 @@ stdout carries the MCP protocol, so nothing here may print to it; logging goes t
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import math
@@ -21,6 +22,7 @@ from typing import Any
 from mcp.server.mcpserver import Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
+from . import i18n
 from .config import ConfigError
 from .lockstep import parse_speed
 from .scenario import ScenarioError, load_scenario
@@ -85,6 +87,30 @@ def _lock() -> asyncio.Lock:
     return _session_lock
 
 
+def _tool():
+    """Register an MCP tool (server.tool()) that runs inside i18n.machine(): what it returns is American English
+    whatever the Language setting, as its numbers are in fixed units (L2), while the files it writes for people follow
+    the setting. Every tool is registered through this, so none is missed (tests/test_mcp_language.py lists them);
+    its work in a worker thread enters the guard again (_in_thread: a thread doesn't inherit it)."""
+    def register(fn):
+        @functools.wraps(fn)
+        async def guarded(*args, **kwargs):
+            with i18n.machine():
+                return await fn(*args, **kwargs)
+        guarded.machine_guard = True
+        server.tool()(guarded)
+        return guarded
+    return register
+
+
+async def _in_thread(fn, *args):
+    """`fn(*args)` in a worker thread, inside i18n.machine() there too."""
+    def work():
+        with i18n.machine():
+            return fn(*args)
+    return await asyncio.to_thread(work)
+
+
 def _json(d: Any) -> str:
     return json.dumps(d, separators=(",", ":"), default=str)
 
@@ -106,7 +132,7 @@ def _check_seconds(seconds: float) -> None:
         raise ToolError(f"seconds must be > 0 and at most {MAX_ADVANCE:g} per call")
 
 
-@server.tool()
+@_tool()
 async def start_session(config: str, attach: bool = False, viewer: bool = False, replace: bool = False,
                         speed: str | float = "max", sim_mode: str | None = None, real_ds: bool | None = None) -> str:
     """Start simulating a robot program. config: path to a robot config TOML (model, bindings, [robot_program]);
@@ -135,7 +161,7 @@ async def start_session(config: str, attach: bool = False, viewer: bool = False,
         return _json(result)
 
 
-@server.tool()
+@_tool()
 async def stop_session() -> str:
     """Stop the session and the robot program."""
     global _session
@@ -146,7 +172,7 @@ async def stop_session() -> str:
     return _json({"stopped": True})
 
 
-@server.tool()
+@_tool()
 async def restart_robot() -> str:
     """Restart the robot program (e.g. after editing its code) and reset the world to t=0, disabled. The game data
     and match settings stay: a restart is the same match."""
@@ -156,13 +182,13 @@ async def restart_robot() -> str:
         raise _fail(e) from None
 
 
-@server.tool()
+@_tool()
 async def session_status() -> str:
     """Whether a session is running, lockstep is active, and which HAL devices the robot program created."""
     return _json(_session.status() if _session is not None else {"session": None})
 
 
-@server.tool()
+@_tool()
 async def robot_parts() -> str:
     """The robot's part instances (name, source, attach, slots with kind and device ID, mounts, joints) when it is
     built from [[part]] entries; an error for a hand-written [model] mjcf robot."""
@@ -172,7 +198,7 @@ async def robot_parts() -> str:
     return _json(tree)
 
 
-@server.tool()
+@_tool()
 async def advance(seconds: float) -> str:
     """Run the simulation forward by `seconds` (at most 60), then hold it again. Returns the state and any new
     robot console lines."""
@@ -183,7 +209,7 @@ async def advance(seconds: float) -> str:
         raise _fail(e) from None
 
 
-@server.tool()
+@_tool()
 async def set_mode(mode: str) -> str:
     """Set the Driver Station mode: disabled, auto, teleop or test. Takes effect on the next advance."""
     try:
@@ -192,7 +218,7 @@ async def set_mode(mode: str) -> str:
         raise _fail(e) from None
 
 
-@server.tool()
+@_tool()
 async def set_match(station: str | None = None, fms: bool | None = None, timer: bool | None = None,
                     game_data: str | None = None, auto_seconds: float | None = None,
                     teleop_seconds: float | None = None) -> str:
@@ -212,7 +238,7 @@ async def set_match(station: str | None = None, fms: bool | None = None, timer: 
         raise _fail(e) from None
 
 
-@server.tool()
+@_tool()
 async def set_joystick(port: int, axes: list[float] | None = None, buttons: list[bool] | None = None,
                        povs: list[int] | None = None) -> str:
     """Set a joystick (port 0-5): axes in [-1, 1], buttons (index 0 = button 1), POV angles (-1 = centered)."""
@@ -222,7 +248,7 @@ async def set_joystick(port: int, axes: list[float] | None = None, buttons: list
         raise _fail(e) from None
 
 
-@server.tool()
+@_tool()
 async def get_state() -> str:
     """Ground-truth pose (m, degrees CCW), speed, battery voltage, motor commands/currents, joint positions, the
     match data the Driver Station sends (see set_match); with pneumatic cylinders, the air (stored and working psi,
@@ -234,7 +260,7 @@ async def get_state() -> str:
         raise _fail(e) from None
 
 
-@server.tool()
+@_tool()
 async def get_hal(device_filter: str = "") -> str:
     """Raw HAL values the robot program reported, by "type/device"; device_filter matches a substring."""
     try:
@@ -243,7 +269,7 @@ async def get_hal(device_filter: str = "") -> str:
         raise _fail(e) from None
 
 
-@server.tool()
+@_tool()
 async def get_console(since: int = 0) -> str:
     """Robot program console lines (with simulated timestamps) from line index `since`; returns `next`."""
     try:
@@ -252,7 +278,7 @@ async def get_console(since: int = 0) -> str:
         raise _fail(e) from None
 
 
-@server.tool()
+@_tool()
 async def nt_list(prefix: str = "/") -> str:
     """List the robot's NetworkTables topics under a prefix."""
     try:
@@ -261,7 +287,7 @@ async def nt_list(prefix: str = "/") -> str:
         raise _fail(e) from None
 
 
-@server.tool()
+@_tool()
 async def nt_get(topics: list[str]) -> str:
     """Read NetworkTables values (e.g. "/SmartDashboard/Gyro deg"). Values lag the simulation by up to ~0.1 s."""
     try:
@@ -270,7 +296,7 @@ async def nt_get(topics: list[str]) -> str:
         raise _fail(e) from None
 
 
-@server.tool()
+@_tool()
 async def set_pose(x: float, y: float, heading_deg: float) -> str:
     """Teleport the robot (physics only; the robot's odometry isn't reset). For a parts robot the pose is where the
     start-pose frame goes; get_state reports the root body, which may be offset from it."""
@@ -280,7 +306,7 @@ async def set_pose(x: float, y: float, heading_deg: float) -> str:
         raise _fail(e) from None
 
 
-@server.tool()
+@_tool()
 async def push(force_n: float, direction_deg: float, duration_s: float) -> str:
     """Push the robot with a horizontal force (N) toward direction_deg (field frame, CCW from +x) for duration_s
     of simulated time (at most 60). This advances time."""
@@ -291,7 +317,7 @@ async def push(force_n: float, direction_deg: float, duration_s: float) -> str:
         raise _fail(e) from None
 
 
-@server.tool()
+@_tool()
 async def move_body(name: str, x: float, y: float, z: float | None = None, yaw_deg: float = 0.0) -> str:
     """Move an object in the world (a free body or a named static geom such as "obstacle")."""
     try:
@@ -300,7 +326,7 @@ async def move_body(name: str, x: float, y: float, z: float | None = None, yaw_d
         raise _fail(e) from None
 
 
-@server.tool()
+@_tool()
 async def screenshot(view: str = "follow", width: int = 960, height: int = 600, paths: bool = True,
                      camera: dict | None = None) -> list:
     """A picture of the world (width/height 16-4096). view: "follow" (camera behind the robot), "top" (whole field;
@@ -314,7 +340,7 @@ async def screenshot(view: str = "follow", width: int = 960, height: int = 600, 
     return [_json({"t": round(s.t, 4), "view": view}), Image(data=png, format="png")]
 
 
-@server.tool()
+@_tool()
 async def contact_sheet(seconds: float, frames: int = 8, view: str = "follow", width: int = 480, height: int = 300,
                         paths: bool = True, camera: dict | None = None) -> list:
     """Advance `seconds` (at most 60), capturing `frames` (1-16) pictures at equal steps, as one grid image.
@@ -330,7 +356,7 @@ async def contact_sheet(seconds: float, frames: int = 8, view: str = "follow", w
     return [_json(state), Image(data=png, format="png")]
 
 
-@server.tool()
+@_tool()
 async def run_scenario(path: str, out_dir: str | None = None, real_ds: bool | None = None) -> list:
     """Run a scenario file (steps, checks, screenshots). Uses the current session if its config matches (the robot
     is restarted); with no session open, runs standalone in its own session (an open session with another config is
@@ -388,7 +414,7 @@ def _bench_path(path: str) -> Path:
 
 async def _bench_call(fn, *args):
     try:
-        return await asyncio.to_thread(fn, *args)
+        return await _in_thread(fn, *args)
     except _bench_errors() as e:
         raise ToolError(str(e)) from None
 
@@ -426,7 +452,7 @@ def _metric_rows(rows) -> list[dict]:
             for combo, row in rows]
 
 
-@server.tool()
+@_tool()
 async def bench_check(path: str) -> str:
     """Check a bench file (TOML) without running it: unknown keys, bad values, an inlet that overlaps a shape. Fast;
     run it after every edit. path: give an absolute path (a relative one resolves against the MCP server's working
@@ -440,7 +466,7 @@ async def bench_check(path: str) -> str:
                   "problems": [{"level": p.level, "key": p.key, "message": p.message} for p in problems]})
 
 
-@server.tool()
+@_tool()
 async def bench_focus(path: str, keys: list[str]) -> str:
     """Pin the numbers you are talking about on the Bench tab (`scrimmage edit <folder>`), if one is open: the fields
     for these keys float to the top of that bench file's page. keys: dotted keys such as "wheel.top.diameter",
@@ -460,7 +486,7 @@ async def bench_focus(path: str, keys: list[str]) -> str:
     return _json(await _bench_call(work))
 
 
-@server.tool()
+@_tool()
 async def bench_run(path: str, out_dir: str | None = None) -> list:
     """Run a bench file (ignoring its [sweep]): returns the headlines (plain words for the room, UNCALIBRATED last;
     in meters, m/s and N whatever the Units setting, while summary.txt and the pictures follow the setting),
@@ -504,7 +530,7 @@ async def bench_run(path: str, out_dir: str | None = None) -> list:
     return [_json(info), *(Image(data=png, format="png") for png in pngs)]
 
 
-@server.tool()
+@_tool()
 async def bench_sweep(path: str, out_dir: str | None = None) -> list:
     """Run every combination of a bench file's [sweep] table (dotted keys, list entries by name, e.g.
     "wheel.top.diameter" = [0.06, 0.08]): returns one row per combination (the swept values, then out, jammed,
@@ -543,7 +569,7 @@ async def bench_sweep(path: str, out_dir: str | None = None) -> list:
     return [_json(info), *(Image(data=png, format="png") for png in pngs)]
 
 
-@server.tool()
+@_tool()
 async def bench_compare(paths: list[str], feed_from: str | None = None, out_dir: str | None = None) -> list:
     """Run two or more bench files with the same piece and feed ([piece] and [[inlet]] from feed_from, default the
     first file; each keeps its own shapes, shafts and outlets): returns each idea's headlines, a table row per idea,
@@ -579,7 +605,7 @@ async def bench_compare(paths: list[str], feed_from: str | None = None, out_dir:
     return [_json(info), Image(data=png, format="png")]
 
 
-@server.tool()
+@_tool()
 async def bench_gallery(folder: str, out: str | None = None) -> str:
     """Run every bench file in a folder (*.toml, not subfolders; each once, ignoring [sweep]) and write one
     self-contained HTML page: each idea's author, idea line, side path picture and headlines, then a table comparing
@@ -631,7 +657,7 @@ def _signal_summary(signals: dict) -> dict:
     return out
 
 
-@server.tool()
+@_tool()
 async def test_run(path: str) -> dict:
     """Run a block test (a <name>.test.toml file) on its robot, with no robot program: the blocks drive the motors.
     Returns "status" (finished, check failed, timed out, tipped over, walked off, time limit, repeat limit),
@@ -661,7 +687,7 @@ async def test_run(path: str) -> dict:
             return _test_run(file)
 
     try:
-        return await asyncio.to_thread(work)
+        return await _in_thread(work)
     except _test_errors() as e:
         raise ToolError(str(e)) from None
 
@@ -685,7 +711,7 @@ def _test_run(file) -> dict:
             "run_folder": str(folder.resolve())}
 
 
-@server.tool()
+@_tool()
 async def test_sweep(path: str, target: dict, values: list[float | str]) -> dict:
     """Run a block test several times, changing one number each time, to find which value works. target says what
     changes: {"block": [2], "key": "to"} is the "to" of block 3 (a list of positions, counting from 0, goes inside
@@ -709,9 +735,8 @@ async def test_sweep(path: str, target: dict, values: list[float | str]) -> dict
         from .blocks import store as blocks_store
         from .blocks.sweep import run_sweep
         from . import units
-        program = blocks_program.load(file)
-        with units.machine_text():      # refusals too, as they always were, whatever the Units setting
-            folder = run_sweep(program, target, values, blocks_store.runs_dir(file))
+        with units.machine_text():      # refusals too (the file's), as they always were, whatever the settings
+            folder = run_sweep(blocks_program.load(file), target, values, blocks_store.runs_dir(file))
         with open(folder / "table.csv", newline="", encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         meta = json.loads((folder / "sweep.json").read_text(encoding="utf-8"))
@@ -721,12 +746,12 @@ async def test_sweep(path: str, target: dict, values: list[float | str]) -> dict
         return info
 
     try:
-        return await asyncio.to_thread(work)
+        return await _in_thread(work)
     except _test_errors() as e:
         raise ToolError(str(e)) from None
 
 
-@server.tool()
+@_tool()
 async def test_spread(path: str) -> dict:
     """Run a block test once per placement of its floor spread (the test file's [setup] floor_spread, e.g.
     floor_spread = { offset_in = [-6, 0, 6], angle_deg = [0, 30] }: every combination, at most 25), to see which
@@ -754,7 +779,7 @@ async def test_spread(path: str) -> dict:
         return {"sentence": meta["sentence"], "rows": rows, "spread_folder": str(folder.resolve())}
 
     try:
-        return await asyncio.to_thread(work)
+        return await _in_thread(work)
     except _test_errors() as e:
         raise ToolError(str(e)) from None
 

@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from . import i18n
+
 AGENT_PREFIX = "scrimmage agent: "  # the Java agent's console lines: loaded / disabled / ignored N ...
 HELPER_PREFIX = "scrimmage rev helper: "  # the RobotPy REV helper's lines: the same words after the prefix
 REV_UNAVAILABLE = "REV sim unavailable:"     # ... REV sim unavailable: <reason> (REVLib too old or missing)
@@ -245,7 +247,8 @@ class RobotProcess:
             try:
                 self._logf = open(self.log_path, "a", encoding="utf-8", errors="replace")
             except OSError as e:
-                raise RuntimeError(f"can't write the robot log {self.log_path}: {e.strerror}") from None
+                raise RuntimeError(i18n.t("can't write the robot log {path}: {error}", path=self.log_path,
+                                          error=e.strerror)) from None
         self._write_log(f"--- robot program started: {' '.join(self.command)} ---")
         try:
             self.proc = await asyncio.create_subprocess_exec(
@@ -255,8 +258,9 @@ class RobotProcess:
                 preexec_fn=(functools.partial(_die_with_parent, os.getpid())
                             if sys.platform.startswith("linux") else None))
         except OSError as e:
-            raise RuntimeError(f"couldn't start the robot program ({' '.join(self.command)} in {self.cwd}): "
-                               f"{e.strerror or e}") from None
+            raise RuntimeError(i18n.t("couldn't start the robot program ({command} in {folder}): {error}",
+                                      command=" ".join(self.command), folder=self.cwd,
+                                      error=e.strerror or e)) from None
         self._reader = asyncio.create_task(self._capture(self.proc, self._console_file))
 
     async def _capture(self, proc: asyncio.subprocess.Process, console_file: Path | None) -> None:

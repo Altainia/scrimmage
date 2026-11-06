@@ -14,14 +14,14 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from .. import robot_process
+from .. import i18n, robot_process
 from ..bridge import MISSING_AFTER
 from ..checks import consume_peaks, resolve_signal
 from ..devicecheck import check_devices
-from ..driverstation import MATCH_KEYS, REAL_DS_DRIVING, REAL_DS_WAITING, STATIONS, MatchSettings, check_game_data
+from ..driverstation import MATCH_KEYS, REAL_DS_WAITING, STATIONS, MatchSettings, check_game_data
 from ..session import REAL_DS_INPUTS, Session
 from ..tracks import PortInputs
-from .recorder import DriveRecorder, RecordingError
+from .recorder import DriveRecorder, RecordingError, RecordingExists
 from .simlock import SimLock
 
 log = logging.getLogger("scrimmage")
@@ -39,8 +39,9 @@ DEVICES_WAIT = 25.0                  # s a devices long-poll waits for a change
 SIMPLE = ("enable", "disable", "pause", "resume", "reset", "record_start", "record_stop")
 ENDED = ("stopped", "error")
 # what a session the FRC Driver Station app drives refuses (D6, D7): the DS's own controls, and what needs the clock held
-REAL_DS_NO_PAUSE = f"this session can't be paused or stepped: {REAL_DS_DRIVING}, in real time"
-REAL_DS_NO_RECORD = f"this session can't be recorded: {REAL_DS_DRIVING}"
+# N_(): said with translated()
+REAL_DS_NO_PAUSE = i18n.N_("this session can't be paused or stepped: the FRC Driver Station is driving, in real time")
+REAL_DS_NO_RECORD = i18n.N_("this session can't be recorded: the FRC Driver Station is driving")
 REAL_DS_REFUSES = {"mode": REAL_DS_INPUTS, "enable": REAL_DS_INPUTS, "disable": REAL_DS_INPUTS,
                    "match": REAL_DS_INPUTS, "pause": REAL_DS_NO_PAUSE, "resume": REAL_DS_NO_PAUSE,
                    "step": REAL_DS_NO_PAUSE, "record_start": REAL_DS_NO_RECORD}
@@ -50,11 +51,20 @@ class LiveError(ValueError):
     """A request the live session can't take; the message says why."""
 
 
+class AlreadyLive(LiveError):
+    """Start was asked for while a drive session is live."""
+
+
+class RecordingTaken(LiveError):
+    """Save as scenario named a file (or tracks folder) that is already there: the page asks before overwriting it."""
+
+
 class UnsavedRecording(LiveError):
     """Start was asked for while the last session's recording hasn't been saved."""
 
 
-UNSAVED = "the last drive's recording hasn't been saved: save it, or start again to discard it"
+def _unsaved() -> str:
+    return i18n.t("the last drive's recording hasn't been saved: save it, or start again to discard it")
 
 
 class _Stopped(Exception):
@@ -63,7 +73,7 @@ class _Stopped(Exception):
 
 def _number(name: str, v) -> float:
     if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
-        raise LiveError(f"{name} must be a number, not {v!r}")
+        raise LiveError(i18n.t("{name} must be a number, not {value}", name=name, value=repr(v)))
     return float(v)
 
 
@@ -73,31 +83,36 @@ def _neutral(pi: PortInputs) -> PortInputs:
 
 def _port_inputs(port: int, data) -> PortInputs:
     if not isinstance(data, dict):
-        raise LiveError(f"port {port}: inputs must be an object with axes, buttons and povs")
+        raise LiveError(i18n.t("port {port}: inputs must be an object with axes, buttons and povs", port=port))
     unknown = set(data) - {"axes", "buttons", "povs"}
     if unknown:
-        raise LiveError(f"port {port}: unknown key {sorted(unknown)[0]!r}; use axes, buttons, povs")
+        raise LiveError(i18n.t("port {port}: unknown key {key}; use axes, buttons, povs", port=port,
+                               key=repr(sorted(unknown)[0])))
 
     def items(key: str, most: int) -> list:
         v = data.get(key, [])
         if not isinstance(v, list) or len(v) > most:
-            raise LiveError(f"port {port}: {key} must be a list of at most {most} values")
+            raise LiveError(i18n.t("port {port}: {key} must be a list of at most {most} values", port=port, key=key,
+                                   most=most))
         return v
 
     axes = []
     for v in items("axes", MAX_AXES):
         if isinstance(v, bool) or not isinstance(v, (int, float)) or not (math.isfinite(v) and -1 <= v <= 1):
-            raise LiveError(f"port {port}: axes must be numbers between -1 and 1, not {v!r}")
+            raise LiveError(i18n.t("port {port}: axes must be numbers between -1 and 1, not {value}", port=port,
+                                   value=repr(v)))
         axes.append(round(float(v), 4))
     buttons = []
     for v in items("buttons", MAX_BUTTONS):
         if not (isinstance(v, bool) or (isinstance(v, int) and v in (0, 1))):
-            raise LiveError(f"port {port}: buttons must be true/false or 0/1, not {v!r}")
+            raise LiveError(i18n.t("port {port}: buttons must be true/false or 0/1, not {value}", port=port,
+                                   value=repr(v)))
         buttons.append(bool(v))
     povs = []
     for v in items("povs", MAX_POVS):
         if isinstance(v, bool) or not isinstance(v, int) or not (v == -1 or 0 <= v <= 359):
-            raise LiveError(f"port {port}: povs must be whole numbers: -1 or 0-359 degrees, not {v!r}")
+            raise LiveError(i18n.t("port {port}: povs must be whole numbers: -1 or 0-359 degrees, not {value}",
+                                   port=port, value=repr(v)))
         povs.append(v)
     return PortInputs(axes, buttons, povs)
 
@@ -171,18 +186,18 @@ class LiveManager:
         if speed is not None:
             speed = _number("speed", speed)
             if speed <= 0:
-                raise LiveError(f"speed must be positive, not {speed:g}")
+                raise LiveError(i18n.t("speed must be positive, not {speed}", speed=f"{speed:g}"))
         config_path = Path(config_path).resolve()
         with self._lock:
             if self._closed:
-                raise LiveError("the editor is shutting down")
+                raise LiveError(i18n.t("the editor is shutting down"))
             if self._live:
-                raise LiveError("a drive session is already live")
+                raise AlreadyLive(i18n.t("a drive session is already live"))
             self._simlock.acquire("live")   # SimBusy first: no point asking about the recording then
             rec = self._recorder
             if not discard_recording and rec is not None and not rec.empty and not rec.saved:
                 self._simlock.release("live")
-                raise UnsavedRecording(UNSAVED)
+                raise UnsavedRecording(_unsaved())
             self._live = True
             self._stopping = threading.Event()
             self._commands.clear()
@@ -273,10 +288,10 @@ class LiveManager:
         session is live, UnsavedRecording (before anything stops) when its recording hasn't been saved."""
         with self._lock:
             if not self._live or self._closed:
-                raise LiveError("no drive session is live")
+                raise LiveError(i18n.t("no drive session is live"))
             rec = self._recorder
             if rec is not None and not rec.empty and not rec.saved:
-                raise UnsavedRecording(UNSAVED)
+                raise UnsavedRecording(_unsaved())
             path, speed, real_ds = self._config_path, self._speed, self._real_ds
             self._restart, self._restart_problem = "restarting", None
             self._devices_bump()
@@ -290,7 +305,7 @@ class LiveManager:
             self.stop()
             if not self.join(30):
                 log.warning("live: the session didn't stop in 30 s; not restarting it")
-                failed("the robot didn't stop within 30 s, so it wasn't started again")
+                failed(i18n.t("the robot didn't stop within 30 s, so it wasn't started again"))
                 return
             try:
                 self.start(path, speed, restarting=True, real_ds=real_ds)
@@ -304,9 +319,9 @@ class LiveManager:
         cmd = self._validate(cmd)
         with self._lock:
             if not self._live:
-                raise LiveError("no drive session is live")
+                raise LiveError(i18n.t("no drive session is live"))
             if self._real_ds and cmd["cmd"] in REAL_DS_REFUSES:
-                raise LiveError(REAL_DS_REFUSES[cmd["cmd"]])
+                raise LiveError(i18n.translated(REAL_DS_REFUSES[cmd["cmd"]]))
             self._commands.append(cmd)
         self._wake_loop()
 
@@ -314,18 +329,18 @@ class LiveManager:
         """The page's joystick inputs, ``{"<port>": {"axes": [...], "buttons": [...], "povs": [...]}}``; latest
         wins per port. Axes are rounded to 4 decimals, so the robot and a recording get identical values."""
         if not isinstance(ports, dict):
-            raise LiveError("ports must be an object of port number to inputs")
+            raise LiveError(i18n.t("ports must be an object of port number to inputs"))
         parsed = {}
         for key, data in ports.items():
             port = key if isinstance(key, int) and not isinstance(key, bool) else (
                 int(key) if isinstance(key, str) and key.isdigit() else None)
             if port is None or not 0 <= port <= 5:
-                raise LiveError(f"joystick ports are 0-5, not {key!r}")
+                raise LiveError(i18n.t("joystick ports are 0-5, not {port}", port=repr(key)))
             parsed[port] = _port_inputs(port, data)
         now = time.monotonic()
         with self._lock:
             if self._live and self._real_ds:
-                raise LiveError(REAL_DS_INPUTS)
+                raise LiveError(i18n.translated(REAL_DS_INPUTS))
             for port, pi in parsed.items():
                 self._inputs[port] = pi
                 self._input_wall[port] = now
@@ -347,70 +362,74 @@ class LiveManager:
         with self._lock:
             rec = self._recorder
             if rec is None or self._state in ("idle", "starting"):
-                raise LiveError("nothing has been recorded")
+                raise LiveError(i18n.t("nothing has been recorded"))
             rec.stop(self._t)
             if rec.empty:
-                raise LiveError("nothing has been recorded")
+                raise LiveError(i18n.t("nothing has been recorded"))
             try:
                 return rec.save(Path(path), self._config_path, self._start_pose, overwrite)
+            except RecordingExists as e:
+                raise RecordingTaken(str(e)) from None      # the page asks before overwriting (save/exists)
             except RecordingError as e:
                 raise LiveError(str(e)) from None
             except OSError as e:
-                raise LiveError(f"can't write {path}: {e.strerror or e}") from None
+                raise LiveError(i18n.t("can't write {path}: {why}", path=path, why=e.strerror or e)) from None
 
     # -- validation -----------------------------------------------------------------------------------------
 
     def _validate(self, cmd) -> dict:
         if not isinstance(cmd, dict):
-            raise LiveError("a command must be an object with a cmd")
+            raise LiveError(i18n.t("a command must be an object with a cmd"))
         name = cmd.get("cmd")
         if name in SIMPLE:
             return {"cmd": name}
         if name == "mode":
             if cmd.get("mode") not in MODES:
-                raise LiveError(f"mode must be one of {', '.join(MODES)}, not {cmd.get('mode')!r}")
+                raise LiveError(i18n.t("mode must be one of {modes}, not {mode}", modes=", ".join(MODES),
+                                       mode=repr(cmd.get("mode"))))
             return {"cmd": name, "mode": cmd["mode"]}
         if name == "step":
             n = cmd.get("n")
             if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= MAX_STEPS:
-                raise LiveError(f"n must be a whole number from 1 to {MAX_STEPS}, not {n!r}")
+                raise LiveError(i18n.t("n must be a whole number from 1 to {most}, not {n}", most=MAX_STEPS, n=repr(n)))
             return {"cmd": name, "n": n}
         if name == "speed":
             if cmd.get("speed") == "max":
                 return {"cmd": name, "speed": None}
             speed = _number("speed", cmd.get("speed"))
             if speed <= 0:
-                raise LiveError(f"speed must be positive, not {speed:g}")
+                raise LiveError(i18n.t("speed must be positive, not {speed}", speed=f"{speed:g}"))
             with self._lock:
                 step = self._step
             if step is not None and step / speed >= 1.0:
-                raise LiveError(f"speed {speed:g} with {step:g} s steps: each step would take {step / speed:g} s "
-                                "of wall time or more, and the robot's 2 s watchdog would release the clock")
+                raise LiveError(i18n.t("speed {speed} with {step} s steps: each step would take {wall} s of wall time or "
+                                       "more, and the robot's 2 s watchdog would release the clock", speed=f"{speed:g}",
+                                       step=f"{step:g}", wall=f"{step / speed:g}"))
             return {"cmd": name, "speed": speed}
         if name == "set_pose":
             return {"cmd": name, **{k: _number(k, cmd.get(k)) for k in ("x", "y", "heading_deg")}}
         if name == "push":
             out = {"cmd": name, **{k: _number(k, cmd.get(k)) for k in ("force_n", "direction_deg", "duration_s")}}
             if out["duration_s"] <= 0:
-                raise LiveError(f"duration_s must be positive, not {out['duration_s']:g}")
+                raise LiveError(i18n.t("duration_s must be positive, not {value}", value=f"{out['duration_s']:g}"))
             return out
         if name == "move_body":
             body = cmd.get("name")
             if not isinstance(body, str) or not body:
-                raise LiveError(f"name must be the name of a movable body, not {body!r}")
+                raise LiveError(i18n.t("name must be the name of a movable body, not {value}", value=repr(body)))
             return {"cmd": name, "name": body, **{k: _number(k, cmd.get(k)) for k in ("x", "y", "yaw_deg")}}
         if name == "signals":
             names = cmd.get("names")
             if (not isinstance(names, list) or len(names) > MAX_SIGNALS
                     or not all(isinstance(n, str) for n in names)):
-                raise LiveError(f"names must be a list of at most {MAX_SIGNALS} signal names")
+                raise LiveError(i18n.t("names must be a list of at most {most} signal names", most=MAX_SIGNALS))
             return {"cmd": name, "names": list(names)}
         if name == "match":
             out = {k: v for k, v in cmd.items() if k != "cmd"}
             unknown = set(out) - {*MATCH_KEYS, "game_data"}
             if unknown:
-                raise LiveError(f"match has no key {sorted(unknown)[0]!r}; the keys are {', '.join(MATCH_KEYS)}, "
-                                "game_data")
+                raise LiveError(i18n.t("match has no key {key}; the keys are {keys}, game_data",
+                                       key=repr(sorted(unknown)[0]), keys=", ".join(MATCH_KEYS)))
             try:
                 MatchSettings().merged({k: v for k, v in out.items() if k != "game_data"}, "match:")
                 if "game_data" in out:
@@ -418,7 +437,7 @@ class LiveManager:
             except ValueError as e:
                 raise LiveError(str(e)) from None
             return {"cmd": name, **out}
-        raise LiveError(f"unknown command {name!r}")
+        raise LiveError(i18n.t("unknown command {name}", name=repr(name)))
 
     # -- worker ---------------------------------------------------------------------------------------------
 
