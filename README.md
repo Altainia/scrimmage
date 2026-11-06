@@ -498,6 +498,7 @@ cwd = "../examples/robotpy_kitbot"   # relative to the config file
 env = { MY_FLAG = "1" }          # example only: extra environment variables
 start_timeout = 30               # seconds to wait for the robot to connect
 sim_mode = "phoenix"             # "fast" also sets SCRIMMAGE_MODE=fast in the robot's environment
+not_modeled = ["SimMotor:intake", "elevator.encoder"]   # example only: left out on purpose (below)
 
 [telemetry]
 odometry = "/SmartDashboard/Field/Robot"   # NT topic with the robot's own pose estimate
@@ -518,6 +519,14 @@ real = false                     # true: the FRC Driver Station app drives the r
 `sim_mode` (and `--sim-mode` on `serve` and `run`, which overrides it) only sets the robot's environment
 variable; it never changes the bindings. Fast mode needs robot code that checks `Scrimmage.fastMode()`, and a config
 that binds the fast-mode devices (`scrimmage = "<name>"` below) expects such code.
+
+`not_modeled` lists what the config leaves out on purpose, so the warnings and report notes about it don't bury the
+ones that matter: devices the robot code makes for a mechanism the config doesn't model (`"SimMotor:<name>"`,
+`"SimEncoder:<name>"`, `"SimGyro:<name>"`, `"TalonFX:<id>"`, `"CANcoder:<id>"`, `"Pigeon2:<id>"`, `"SparkMax:<id>"`,
+`"SparkFlex:<id>"`) get no "nothing in the config binds it" warning or note, and a part's slot left unbound
+(`"<part>.<slot>"`, say an encoder slot when the robot reads the motor's own sensor) gets no "has no device ID"
+warning. Everything not listed is still reported. `configs/fastmode.toml` uses it for the shooter its robot code
+always builds.
 
 `"{python}"` in `command` is replaced by the Python running scrimmage. For a Java or C++ robot, use
 your Gradle command instead.

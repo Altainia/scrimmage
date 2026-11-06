@@ -89,13 +89,14 @@ def check_devices(world, hal: HalState, robot_time: float) -> list[DeviceRow]:
             rows.append(DeviceRow(slot, _plain_kind(b, what), None, None, "not_checked", [],
                                   i18n.t("{slot} is not checked: scrimmage only checks Phoenix 6, REV SPARK and "
                                          "fast-mode devices", slot=slot)))
+    left_out = getattr(world, "not_modeled", set())     # [robot_program] not_modeled: on purpose, not "extra"
     for (label, ident), _ in sorted(made.items(), key=lambda kv: (kv[0][0], kv[0][1])):
-        if (label, ident) not in bound_can:
+        if (label, ident) not in bound_can and (label, ident) not in left_out:
             rows.append(DeviceRow(None, label, None, _ident(label, ident), "extra", [],
                                   i18n.t("the robot code made {device}, but nothing in the config uses it",
                                          device=_ident(label, ident))))
     for typ, name in sorted(d for d in hal.devices if d[0] in SCRIMMAGE_TYPES):
-        if (typ, name) not in bound_keys:
+        if (typ, name) not in bound_keys and (typ, name) not in left_out:
             rows.append(DeviceRow(None, _scrimmage_kind(typ), None, f"{typ}:{name}", "extra", [],
                                   i18n.t("the robot code made {device}, but nothing in the config uses it",
                                          device=f"{typ}:{name}")))

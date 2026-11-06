@@ -615,11 +615,14 @@ def assemble(cfg: dict, cfg_dir: Path) -> Built:
                   range=None if section is None else section.range, layout=layout, partner=partner)
     _set_treads(built, timestep if timestep is not None else spec.option.timestep)
     _resolve_cylinders(built, cylinders)
+    from ..bindings import not_modeled
+    left_out = not_modeled(cfg)[1]      # slots unbound on purpose: no "has no device ID" for them
     for inst in insts:
         b, w = slot_bindings(inst)
         for k, v in b.items():
             built.bindings[k].extend(v)
-        built.warnings.extend(w)
+        built.warnings.extend(x for x in w if not any(f"{p}.{f.removeprefix('ids:')}" in left_out
+                                                      for p, f in getattr(x, "fields", ())))
         built.warnings.extend(f"{inst.name}: {n}" for n in inst.part.warnings)
     _one_module_kind(built.bindings["valve"])
     return built

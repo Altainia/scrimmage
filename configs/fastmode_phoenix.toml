@@ -25,6 +25,11 @@ command = ["./gradlew", "-I", "{scrimmage_java}/scrimmage.init.gradle", "simulat
 cwd = "../examples/java_fastmode"
 start_timeout = 180       # a first Gradle build is slow; pre-build with ./gradlew build
 sim_mode = "phoenix"
+# Left out on purpose (no warning or note for them): the encoder slots, since the robot reads each motor's own
+# rotor, and the shooter's Talons the robot code builds whatever the config (configs/fastmode_range_phoenix.toml
+# models them).
+not_modeled = ["elevator.encoder", "arm.encoder", "TalonFX:11", "TalonFX:12", "TalonFX:13", "TalonFX:14", "TalonFX:15",
+               "TalonFX:16"]
 
 # ---- Parts (as configs/fastmode.toml; see the notes there) ---------------------------
 # Phoenix doesn't expose its neutral mode, so `neutral = "brake"` repeats what the robot code configures.

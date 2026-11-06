@@ -29,6 +29,8 @@ command = ["./gradlew", "-I", "{scrimmage_java}/scrimmage.init.gradle", "simulat
 cwd = "../examples/java_fastmode"
 start_timeout = 180       # a first Gradle build is slow; pre-build with ./gradlew build
 sim_mode = "phoenix"
+# Left out on purpose (no warning for it): the hood's encoder slot, since the robot reads the hood motor's own rotor.
+not_modeled = ["launcher.hood_encoder"]
 
 # ---- Drive (as configs/fastmode_phoenix.toml) -----------------------------------------
 

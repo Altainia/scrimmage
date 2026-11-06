@@ -146,3 +146,32 @@ def test_scenario_with_checks_has_no_such_note(tmp_path):
                    '  [[step.check]]\n  always = {{ signal = "battery", min = 1.0 }}\n'.replace("{{", "{").replace("}}", "}"))
     rep = asyncio.run(run_scenario(load_scenario(scn), tmp_path / "out"))
     assert NO_CHECKS_NOTE not in rep.notes
+
+
+def test_not_modeled_devices_and_slots_are_left_out(world):
+    """[robot_program] not_modeled: a mechanism the config leaves out on purpose. The robot code's devices for it are
+    not "extra" (no row, no note), and a slot named there that is left unbound gets no "has no device ID" warning;
+    devices and slots not named still do."""
+    from scrimmage.bindings import parse_not_modeled
+    from scrimmage.bridge import Bridge
+    raw = tomllib.loads(SWERVE.read_text())
+    raw["robot_program"] = {**raw.get("robot_program", {}), "not_modeled": ["TalonFX:40", "SimMotor:shooter",
+                                                                           "SparkMax:41", "fl.encoder"]}
+    del next(p for p in raw["part"] if p["name"] == "fl")["ids"]["encoder"]
+    del next(p for p in raw["part"] if p["name"] == "fr")["ids"]["encoder"]
+    w = World(raw, SWERVE.parent)
+    assert w.not_modeled == {("TalonFX", 40), ("ScrimmageMotor", "shooter"), ("SPARK MAX", 41)}
+    assert w.warnings == ["fr.encoder has no device ID, so it won't report"]
+    made = [("SimDevice", "Talon FX (v6)[40]"), ("SimDevice", "Talon FX (v6)[42]"), ("ScrimmageMotor", "shooter"),
+            ("ScrimmageMotor", "intake"), ("ScrimmageREV", "SparkMax[41]")]
+    rows = check_devices(w, hal_with(w, extra=made), robot_time=5)
+    assert sorted(r.made for r in rows if r.status == "extra") == ["ScrimmageMotor:intake", "TalonFX 42"]
+    b = Bridge(w)
+    for dev in [("ScrimmageMotor", "shooter"), ("ScrimmageMotor", "intake")]:
+        b._scrimmage_seen(dev)
+    b._rev_seen(("ScrimmageREV", "SparkMax[41]"))
+    assert b._scrimmage_unbound == {("ScrimmageMotor", "intake")} and b._rev_unbound == set()
+    with pytest.raises(ValueError, match="not_modeled: 'TalonFX:x' isn't a device ID or a slot"):
+        parse_not_modeled(["TalonFX:x"])
+    with pytest.raises(ValueError, match="not_modeled must be a list"):
+        parse_not_modeled("TalonFX:3")
