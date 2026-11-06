@@ -535,6 +535,11 @@ class Bridge:
                 continue
             initial = self._initial.get((dev, key))
             booting = self.world.time - self._heard[dev] < PHOENIX_BOOT   # from when it appeared, not from t = 0
+            if booting and initial is None:
+                # A device's announcement can span frames (a Pigeon 2's pitch came a frame after its yaw, after ours
+                # was sent): a key's first report while it boots is its own initial value too
+                self._initial[(dev, key)] = value
+                continue
             if booting and initial is not None and fwn.is_echo(dev[1], key, value, [initial]):
                 # The device booting (real time, slow computer) reports its own values until ours land, compared as
                 # ours are (a Talon models a little supply drop on its own 12 V too)

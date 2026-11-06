@@ -640,6 +640,25 @@ def test_a_phoenix_device_s_late_boot_on_a_slow_computer_is_not_a_foreign_write(
                                              "CANMotor/Talon FX (v6)[1] >supplyVoltage"]
 
 
+def test_a_phoenix_device_s_announcement_over_several_frames_is_not_a_foreign_write():
+    """Measured (Java probe, real DS): a Pigeon 2's first frame had only its yaw; its pitch and angular velocity came
+    a frame later, as 0.0, after scrimmage had sent its own. A key's first report while booting is its own value."""
+    bridge = make_bridge(0, PHOENIX_CONFIG, speed=None, held=True)
+    pigeon = ("CANGyro", "Pigeon 2 (v6)[3]")
+    bridge.world.data.time = 0.004
+    bridge._check_inputs(pigeon, {">rawYawInput": 0.0})                  # created: the first frame
+    bridge.cache.diff(*pigeon, {">rawYawInput": 0.0, ">pitch": -0.0108, ">angularVelY": -2.83})
+    bridge.world.data.time = 0.007
+    bridge._check_inputs(pigeon, {">pitch": 0.0})                         # the rest of its announcement
+    bridge._check_inputs(pigeon, {">angularVelY": 0.0})
+    bridge._check_inputs(pigeon, {">angularVelY": -2.83, ">pitch": -0.0108})   # then ours
+    bridge.settle_foreign_writes()
+    assert bridge.foreign_writes == {}
+    bridge._check_inputs(pigeon, {">pitch": 5.0})                         # a value of nobody's is still a write
+    bridge.settle_foreign_writes()
+    assert list(bridge.foreign_writes) == ["CANGyro/Pigeon 2 (v6)[3] >pitch"]
+
+
 def test_a_phoenix_device_announced_after_our_first_send_gets_our_values_again():
     """scrimmage can send a device's values before the robot program creates it; halsim_ws_client drops those. The
     device then announces its own values (and repeats them until ours arrive): not writes, and ours go out again."""
