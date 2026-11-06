@@ -176,6 +176,43 @@ def test_a_server_validation_message_in_en_gb(start, tmp_path, language):
                             "message": "the start must be [x, y, heading]: metres from the blue corner, and degrees"}]
 
 
+@pytest.fixture
+def pseudo(monkeypatch):
+    """en-GB as a pseudo catalog: every sentence it has no plural for reads "XX <source>", so a word that stayed in
+    the old language shows."""
+    real = i18n._entry
+    monkeypatch.setattr(i18n, "_entry", lambda key, lang, plural: ("XX " + key.split("\u0004")[-1])
+                        if lang == "en-GB" and not plural else real(key, lang, plural))
+
+
+def test_the_robot_state_follows_a_language_change(start, tmp_path, language, pseudo):
+    """The Robot tab asks for its state again on a language change: the errors and read-only reason come back in the
+    new words, though the file is the same (and the version too)."""
+    p = tmp_path / "bot.toml"
+    p.write_text(templates.new_config("swerve").replace("[robot]\n", "[robot]\nstart_pose = [1.0, 2.0]\n"))
+    c = start(p)
+    s, before = c.call("GET", "/api/robot/state")
+    assert before["errors"][0]["message"].startswith("[robot] start_pose must be")
+    assert before["read_only_reason"].startswith("this config has errors; fix them in a text editor: [robot]")
+    language("en-GB")
+    s, after = c.call("GET", "/api/robot/state")
+    assert after["version"] == before["version"]
+    assert after["errors"][0]["message"] == "XX " + before["errors"][0]["message"]
+    assert after["read_only_reason"] == ("XX this config has errors; fix them in a text editor: XX "
+                                         + before["errors"][0]["message"])
+
+
+def test_a_robot_toml_error_follows_a_language_change(start, tmp_path, language, pseudo):
+    p = tmp_path / "bot.toml"
+    p.write_text("[robot\n")
+    c = start(p)
+    s, before = c.call("GET", "/api/robot/state")
+    assert before["read_only_reason"].startswith("bot.toml is not valid TOML: ")
+    language("en-GB")
+    s, after = c.call("GET", "/api/robot/state")
+    assert after["read_only_reason"] == "XX " + before["read_only_reason"]
+
+
 def test_refusals_the_page_acts_on_carry_codes(start, tmp_path, monkeypatch):
     """L3: the robot code panel told "already live" and "a scenario run" apart by their words; now by field."""
     from scrimmage.assembler import live as live_mod

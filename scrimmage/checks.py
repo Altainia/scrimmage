@@ -538,22 +538,22 @@ class SignalCheck(Check):
             return f" (sampled at {self.nt_period:g} s hold points)"
         return ""
 
-    def _sampled_words(self) -> str:
-        """_sampled() in the Language setting: a clause the sentence ends with."""
-        if self.uses_nt and self.nt_period is not None:
-            return t(" (sampled at {period} s hold points)", period=f"{self.nt_period:g}")
-        return ""
+    def _period(self) -> str | None:
+        """The hold-point period the words say the signal was sampled at, or None (each sentence has its own form)."""
+        return f"{self.nt_period:g}" if self.uses_nt and self.nt_period is not None else None
 
     def end(self, session) -> CheckResult:
         if self.kind == "always":
             if not self.seen:
                 self.tick(session, getattr(session, "t", 0.0))
             ok = self.first_fail is None
-            name, expected = self.signal.name, self._expected()
+            name, expected, period = self.signal.name, self._expected(), self._period()
             if ok:
                 measured = self.last if self.equals is not None else self.extreme
                 return said(self.label, True, f"{self.signal.name} stayed {self._expected()}{self._sampled()}",
-                            lambda: t("{name} stayed {expected}", name=name, expected=expected) + self._sampled_words(),
+                            lambda: t("{name} stayed {expected}", name=name, expected=expected) if period is None
+                            else t("{name} stayed {expected} (sampled at {period} s hold points)", name=name,
+                                   expected=expected, period=period),
                             measured, self._expected())
             if self.worst_excess is None:
                 msg = f"{self._missing(session, False)} (first at t={self.first_missing}); expected {self._expected()}"
@@ -561,8 +561,11 @@ class SignalCheck(Check):
                 first = self.first_missing
 
                 def words() -> str:
-                    return t("{missing} (first at t={t}); expected {expected}", missing=missing(), t=first,
-                             expected=expected) + self._sampled_words()
+                    if period is None:
+                        return t("{missing} (first at t={t}); expected {expected}", missing=missing(), t=first,
+                                 expected=expected)
+                    return t("{missing} (first at t={t}); expected {expected} (sampled at {period} s hold points)",
+                             missing=missing(), t=first, expected=expected, period=period)
             else:
                 msg = (f"{self.signal.name} was {_show(self.worst)} at t={self.worst_t} (first out of range at "
                        f"t={self.first_num_fail}); expected {self._expected()}")
@@ -571,13 +574,28 @@ class SignalCheck(Check):
                 worst, worst_t, first_num, n_missing, first_missing = (
                     _show(self.worst), self.worst_t, self.first_num_fail, self.n_missing, self.first_missing)
 
-                def words() -> str:
-                    text = t("{name} was {value} at t={t} (first out of range at t={first}); expected {expected}",
-                             name=name, value=worst, t=worst_t, first=first_num, expected=expected)
+                def words() -> str:   # a whole sentence for each: with no-value ticks or not, sampled or not
+                    if n_missing and period is not None:
+                        return tn("{name} was {value} at t={t} (first out of range at t={first}); expected "
+                                  "{expected}; no value at {count} tick (first at t={first_missing}) (sampled at "
+                                  "{period} s hold points)",
+                                  "{name} was {value} at t={t} (first out of range at t={first}); expected "
+                                  "{expected}; no value at {count} ticks (first at t={first_missing}) (sampled at "
+                                  "{period} s hold points)", n_missing, name=name, value=worst, t=worst_t,
+                                  first=first_num, expected=expected, first_missing=first_missing, period=period)
                     if n_missing:
-                        text += tn("; no value at {count} tick (first at t={first})",
-                                   "; no value at {count} ticks (first at t={first})", n_missing, first=first_missing)
-                    return text + self._sampled_words()
+                        return tn("{name} was {value} at t={t} (first out of range at t={first}); expected "
+                                  "{expected}; no value at {count} tick (first at t={first_missing})",
+                                  "{name} was {value} at t={t} (first out of range at t={first}); expected "
+                                  "{expected}; no value at {count} ticks (first at t={first_missing})", n_missing,
+                                  name=name, value=worst, t=worst_t, first=first_num, expected=expected,
+                                  first_missing=first_missing)
+                    if period is not None:
+                        return t("{name} was {value} at t={t} (first out of range at t={first}); expected "
+                                 "{expected} (sampled at {period} s hold points)", name=name, value=worst, t=worst_t,
+                                 first=first_num, expected=expected, period=period)
+                    return t("{name} was {value} at t={t} (first out of range at t={first}); expected {expected}",
+                             name=name, value=worst, t=worst_t, first=first_num, expected=expected)
             msg += self._sampled()
             return said(self.label, False, msg, words, self.worst, self._expected(), self.first_fail)
         v = self.signal.read(session)

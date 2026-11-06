@@ -40,11 +40,17 @@ class ConfigDoc:
         try:
             self.text = self._raw.decode("utf-8")
             self.doc = tomlkit.parse(self.text)
-            self.read_only_reason = None
+            self.read_only_reason = self._toml_error = None
         except (UnicodeDecodeError, TOMLKitError) as e:
             self.text = self._raw.decode("utf-8", errors="replace")
             self.doc = None
-            self.read_only_reason = i18n.t("{name} is not valid TOML: {why}", name=self.path.name, why=e)
+            self._toml_error = e
+            self.reword()
+
+    def reword(self) -> None:
+        """The TOML error's read-only reason again, in the Language setting (it changed since the file was read)."""
+        if self._toml_error is not None:
+            self.read_only_reason = i18n.t("{name} is not valid TOML: {why}", name=self.path.name, why=self._toml_error)
 
     @property
     def can_undo(self) -> bool:

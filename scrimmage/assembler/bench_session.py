@@ -227,7 +227,17 @@ class _Idea:
         bench, problems = found or collect_problems(self.doc.path, self.doc.text)
         self.bench = bench if self.doc.doc is not None else None
         self.problems = [{"level": p.level, "key": _meters(p.key), "message": p.message} for p in problems]
+        self.lang = i18n.current_language()   # the language the problems (and a TOML error's reason) are in
         self.view = None
+
+    def reword(self) -> None:
+        """The Language setting changed since the problems were found: them (and a TOML error's read-only reason)
+        again, in its words. The text is the same, so the 3D view stays."""
+        view = self.view
+        if not self.unreadable:
+            self.doc.reword()
+        self.check()
+        self.view = view
 
 
 class BenchSession:
@@ -310,7 +320,7 @@ class BenchSession:
             if idea.unreadable and not changed:   # readable again, unchanged: back to what its text says
                 idea.doc._load()
         except OSError as e:   # FileNotFoundError is handled inside (a delete is the scan's)
-            reason = f"can't read {idea.file}: {e.strerror or e}"
+            reason = i18n.t("can't read {file}: {why}", file=idea.file, why=e.strerror or e)
             if idea.doc.read_only_reason != reason:
                 idea.doc.read_only_reason = reason
                 idea.unreadable = True
@@ -488,6 +498,8 @@ class BenchSession:
                 "table": _table(table), "on_stage": self._result_on_stage}
 
     def _idea_state(self, idea: _Idea) -> dict:
+        if idea.lang != i18n.current_language():
+            idea.reword()
         b = idea.raw.get("bench") if isinstance(idea.raw.get("bench"), dict) else {}
         try:
             focus = [_meters(k) for k in session.focus(self.folder, idea.doc.path)]
@@ -781,6 +793,8 @@ class BenchJobs:
     def _runnable(s: BenchSession, file) -> tuple[_Idea, list[dict]]:
         """The idea and its errors as a refusal's errors ([] when it can run)."""
         idea = s._need(file)
+        if idea.lang != i18n.current_language():
+            idea.reword()
         errs = [{"field": p["key"] or "status", "message": p["message"]} for p in idea.problems
                 if p["level"] == "error"]
         if not errs and idea.doc.read_only_reason is not None:

@@ -672,8 +672,9 @@ function bootRobot() {
   loadLibrary();
   pollLoop();
   units.onChange(() => renderAll());   // the inspector keeps what is half typed (renderInspector)
-  // likewise; the library's part docs are the server's words, so they are asked for again in the new language
-  i18n.onChange(() => { renderAll(); loadLibrary(); });
+  // likewise; the library's part docs and the state's errors and read-only reason are the server's words, so they
+  // are asked for again in the new language
+  i18n.onChange(() => { renderAll(); loadLibrary(); refreshState(true); });
   // the Scenario tab: loaded on its own (like the 3D view) so a failure there can't break the Robot tab
   import("./scenario.js").then((m) => m.initScenario()).catch((e) => {
     console.error(e);

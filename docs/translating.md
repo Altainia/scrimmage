@@ -146,7 +146,7 @@ the template, or only as a `{placeholder}`, so you won't see it, but it's good t
 - **Status keys**, such as `"cancelled"`, `"timed out"` and `"check failed"`. The code compares them. The page shows
   them through their own entries.
 - **Machine output:** MCP tool results, `report.json`, the CSV and JSON files (a sweep's `table.csv`, a bench run's
-  `results.csv` and `summary.json`), and what the command line prints. Scripts and agents read these, so they stay
+  `pieces.csv`, `shafts.csv`, `loads.csv`, `landings.csv` and `summary.json`, a bench sweep's `results.csv`), and what the command line prints. Scripts and agents read these, so they stay
   American English whatever the setting. The code makes sure of it, so you can translate every entry you see.
 
 ## "(s)" plurals
@@ -204,8 +204,13 @@ When you write text a student will read:
   `data-i18n-aria-label`, with `data-i18n-context` for a context).
 - **Use a context** (`t("Open", context="file")`) only when the same words need two different translations.
 - **What a student types** (a key, a value, a `[table]`, a command) goes in a placeholder, never in the words.
-- **Machine output** (MCP results, `report.json`, CSV and JSON) runs inside `i18n.fixed()` or `units.machine_text()`,
-  which keep American English.
+- **Machine output** keeps American English inside a guard. An MCP tool runs inside `i18n.machine()`: what it
+  returns is American English, while the files it writes for people follow the Language. So register a new MCP
+  tool with `@_tool()` in `mcp_server.py`, which enters the guard, and run its blocking work through `_in_thread()`,
+  which enters it again in the worker thread (a thread doesn't inherit it). A scenario run
+  started from the web app writes `report.json` inside `i18n.machine()` too. The Test tab's `table.csv` and MCP
+  `test_run` are made inside `units.machine_text()`, which also keeps the units' old words. `i18n.fixed()` is the
+  CLI's guard: everything, files for people too, in American English.
 - **The page must not find server text by its words.** Send a code or a field, and branch on that.
 
 The tests that keep this true:

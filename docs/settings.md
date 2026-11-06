@@ -213,7 +213,15 @@ For Language:
   writes. Only the web app (`edit`, `serve`) and its files follow the Language.
 - **A scenario run started from the web app** shows session and config errors (a robot config that can't load, for
   example) in American English on its run panel, because they are written into its `report.json`.
-- **The Part tab's build messages** keep the language they were made in until the page is refreshed.
+- **A Test-tab sweep or floor spread that fails as a whole** (a session or config error, such as a robot config
+  that can't load) says why in American English, because the error is raised while the run writes its machine text
+  (`table.csv`).
+- **The Part tab's build messages**, and why the part can't be edited (an import file that was deleted or can't be
+  read, a CAD file that can't be), keep the language they were made in until the next build or change of the file.
+- **The robot code panel's Build now result** (its log and a failed build's checklist line) keeps the language it was
+  made in until the next build.
+- **Why a scenario has no robot** (its `config` names none, or names a file that was deleted) keeps its language
+  until the scenario or its robot config changes.
 - **A few warnings from a running simulation** stay in American English: a sensor the robot blocks, a valve on a hub
   the robot code never opened, a missing device. They are made while the robot runs, and go into machine text too.
 - **MCP results stay American English** (machine output), even when the web app shows the same run in British

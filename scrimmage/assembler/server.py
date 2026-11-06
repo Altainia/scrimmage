@@ -875,6 +875,7 @@ class App:
         self._robot_target: Path | None = None    # the robot config the scenario names
         self._robot_ver = 0                       # the robot version while there is no robot document
         self.result: validate.Result | None = None
+        self._robot_lang: str | None = None       # the language result and the robot's read-only reason are in
         self.scenario: ConfigDoc | None = None
         self.scenario_result: scenario_validate.Result | None = None
         self.scenario_read_only_reason: str | None = None
@@ -1338,7 +1339,8 @@ class App:
                                 "in a text editor", name=sc.path.name)
             else:
                 unset = unset_folder(_plain(sc.doc.get("config")))
-                reason = unset[1] if unset else 'this scenario names no robot config (config = "<robot config .toml>")'
+                reason = unset[1] if unset else i18n.t("this scenario names no robot config ({setting})",
+                                                       setting='config = "<robot config .toml>"')
             return self._detach(reason, None, initial)
         return self._attach_robot(target, initial)
 
@@ -1375,6 +1377,7 @@ class App:
         self._scenario_view = None
         self._signals = None
         self._parts_seen = self._parts_look()
+        self._robot_lang = i18n.current_language()
         if self.robot is None:
             self.result = validate.Result(False, [validate.FieldError("status", self.robot_missing)], [], None)
         else:
@@ -1512,7 +1515,22 @@ class App:
         return self.result.world if self.result is not None and self.result.ok else None
 
     # -- robot ------------------------------------------------------------------------------
+    def _robot_words(self) -> None:
+        """When the Language setting changed since the robot was validated: its errors, warnings and read-only
+        reason again, in its words (the file is the same). The reason no robot is attached (scenario mode) keeps its
+        words until the scenario or its robot changes (docs/settings.md, known gaps). Lock held."""
+        if self._robot_lang == i18n.current_language() or (self.robot is None and self.robot_missing is None):
+            return
+        d = self.robot
+        if d is not None:
+            if d.doc is not None:
+                d.read_only_reason = None   # only _revalidate words it while the file parses
+            else:
+                d.reword()
+        self._revalidate()
+
     def state(self) -> dict:
+        self._robot_words()
         d = self.robot
         parts = []
         other = ""
@@ -1705,6 +1723,7 @@ class App:
         return {"ok": True}
 
     def _require_robot_writable(self) -> None:
+        self._robot_words()
         if self.robot is None:
             raise ApiError(409, self.robot_missing)
         if self.robot.read_only_reason is not None:
@@ -1809,6 +1828,7 @@ class App:
                                                                                        why=e)}]}
         self._view = self._scenario_view = self._signals = None
         self.result = res
+        self._robot_lang = i18n.current_language()
         self._parts_seen = self._parts_look()
         if self.test is not None:      # its palette and problems: an edit can change the field or the parts
             self.test.refresh(self._robot_world(), self._robot_problem())
@@ -2614,6 +2634,7 @@ class App:
         """(config path, config, None) when the robot document can be driven, else (None, None, why not)."""
         with self._lock:
             self._sync()
+            self._robot_words()
             if self.robot is None:
                 return None, None, self.robot_missing
             if not self.result.ok:

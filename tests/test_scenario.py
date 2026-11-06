@@ -330,6 +330,28 @@ def test_always_missing_then_numeric_failure(world):
     assert "was -5 at" in r.message and "no value at 1 ticks" in r.message
 
 
+def test_an_always_checks_shown_words_are_one_sentence(world, monkeypatch, language):
+    """A translator gets the whole sentence, not "... expected 0" and "; no value at ..." to join: in a pseudo
+    catalog ("XX <source>") the shown words carry one XX. The message (machine text) stays as it always was."""
+    from scrimmage import i18n
+    r = _run_always(world, [None, -5.0])
+    assert r.shown() == r.message.replace("1 ticks", "1 tick")   # en-US: the same words, the plural right
+    message = r.message
+    real = i18n._entry
+
+    def pseudo(key, lang, plural):
+        if lang != "en-GB":
+            return real(key, lang, plural)
+        if plural:
+            one, other = key.split(i18n.PLURAL)
+            return {"one": "XX " + one, "other": "XX " + other}
+        return "XX " + key
+    monkeypatch.setattr(i18n, "_entry", pseudo)
+    language("en-GB")
+    assert r.shown().startswith("XX ") and r.shown().count("XX") == 1 and "no value at 1 tick (first" in r.shown()
+    assert r.message == message
+
+
 def test_always_numeric_then_missing_keeps_worst(world):
     r = _run_always(world, [-5.0, None])
     assert r.measured == -5.0 and "at t=0.0" in r.message and r.first_failure_t == 0.0

@@ -98,9 +98,15 @@ function drawTrack(canvas, track, cols) {
   }
 }
 
-// The panel body for step i (the step editor puts it in its "Input track" section, which shows the errors).
+// What is typed in the Trim boxes, by step, track and duration: every render of the step editor rebuilds the panel
+// (a poll, a language change), and a box keeps its text, and its focus, across that.
+const typedTrim = new Map();   // "step|inputs|duration" -> { start, end, focus: "start" | "end" | null }
+
+// The panel body for step i (the step editor puts it in its "Input track" section, which shows the errors). The
+// caller calls the returned element's afterInsert() once it is on the page: a Trim box that had focus gets it back.
 export async function trackPanel(stepIndex, step) {
   const i = stepIndex;
+  const trimKey = `${i}|${step.inputs}|${step.duration}`;
   const res = await loadTrack(i, step);
   const parts = [];
   parts.push(h("p", { class: "track-meta" }, h("code", { class: "track-path", text: step.inputs, title: step.inputs }),
@@ -130,6 +136,19 @@ export async function trackPanel(stepIndex, step) {
   const dur = typeof step.duration === "number" ? step.duration : 0;
   const startIn = h("input", { id: "trim-start", type: "number", step: "any", min: "0", value: "0", inputmode: "decimal", "aria-label": t("Trim start") });
   const endIn = h("input", { id: "trim-end", type: "number", step: "any", min: "0", value: fmt(dur), inputmode: "decimal", "aria-label": t("Trim end") });
+  const kept = typedTrim.get(trimKey);
+  if (kept) { startIn.value = kept.start; endIn.value = kept.end; }
+  const remember = (focus) => {
+    const was = typedTrim.get(trimKey);
+    typedTrim.set(trimKey, { start: startIn.value, end: endIn.value, focus: focus === undefined ? was && was.focus : focus });
+  };
+  for (const [box, which] of [[startIn, "start"], [endIn, "end"]]) {
+    box.addEventListener("input", () => remember());
+    box.addEventListener("focus", () => remember(which));
+    // a box the re-render removes takes its focus along (kept); one the student leaves gives it up. Chromium fires
+    // blur before the box leaves the page, so whether it left is read after
+    box.addEventListener("blur", () => setTimeout(() => { if (box.isConnected) remember(null); }, 0));
+  }
   const trimErr = h("p", { class: "error", role: "alert", hidden: true });
   const trim = h("button", { type: "button", id: "trim-go", class: "btn btn-small", onclick: () => {
     const a = Number(startIn.value), b = Number(endIn.value);
@@ -137,7 +156,7 @@ export async function trackPanel(stepIndex, step) {
       || !(a >= 0 && b > a && b <= dur + 1e-9);
     trimErr.hidden = !bad;
     trimErr.textContent = bad ? t("Trim needs 0 ≤ start < end ≤ {duration} s.", { duration: fmt(dur) }) : "";
-    if (!bad) scEdit("trim_track", { step: i, start: a, end: b });
+    if (!bad) { typedTrim.delete(trimKey); scEdit("trim_track", { step: i, start: a, end: b }); }
   } }, t("Trim"));
   parts.push(h("div", { class: "track-trim" },
     h("label", { for: "trim-start", class: "track-field" }, h("span", { class: "muted" }, t("Keep from")), h("span", { class: "with-unit" }, startIn, h("span", { class: "unit" }, "s"))),
@@ -162,5 +181,11 @@ export async function trackPanel(stepIndex, step) {
     h("button", { type: "button", id: "track-constant", class: "btn btn-small", title: t("Remove the track from this step (the CSV file stays on disk)"),
       onclick: () => scEdit("inputs_file", { step: i, path: null }) }, t("Replace with constant inputs"))),
   chooser);
-  return h("div", { class: "track-panel" }, ...parts);
+  const panel = h("div", { class: "track-panel" }, ...parts);
+  panel.afterInsert = () => {
+    const box = kept && kept.focus === "start" ? startIn : kept && kept.focus === "end" ? endIn : null;
+    // only when the focus went with the old panel: not after the student moved on meanwhile
+    if (box && (!document.activeElement || document.activeElement === document.body)) box.focus();
+  };
+  return panel;
 }

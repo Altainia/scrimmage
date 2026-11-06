@@ -5,11 +5,14 @@ text (report.json, the MCP scenario report and bench headlines) stays byte for b
 
 The catalog is these tests' own (a scratch locales folder), so it can change words en-GB spells the same."""
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from scrimmage import i18n
+
+ROOT = Path(__file__).resolve().parent.parent
 
 GB = {
     "_language": "English (UK)",
@@ -198,3 +201,63 @@ def test_the_shipped_en_gb_catalog_in_the_bench_files(language, pinch, tmp_path)
     language("en-GB")
     html = gallery_html(Path("kickoff"), [Entry(file=Path("pinch_car.toml"), result=pinch)])
     assert "grey still inside" in html and "gray" not in html
+
+
+# ------------------------------------------------------------- the Bench and Measure tabs after a language change
+
+@pytest.fixture
+def pseudo(monkeypatch):
+    """en-GB as a pseudo catalog, switched on by calling it: every sentence it has no plural for reads
+    "XX <source>", so a word that stayed in the old language shows."""
+    def on():
+        real = i18n._entry
+        monkeypatch.setattr(i18n, "_entry", lambda key, lang, plural: ("XX " + key.split("\u0004")[-1])
+                            if lang == "en-GB" and not plural else real(key, lang, plural))
+    yield on
+    from scrimmage.assembler import measure_session
+    measure_session._test_json.cache_clear()   # it keeps a test's words per language: not these
+
+
+def test_an_ideas_problems_follow_a_language_change(language, pseudo, tmp_path):
+    """The Bench tab asks for its state again on a language change: an idea's problems (and a TOML error's read-only
+    reason) come back in the new words, though the files are the same."""
+    import time
+
+    from scrimmage.assembler.bench_session import BenchSession
+    src = (ROOT / "examples" / "bench" / "bounce_bar.toml").read_text()
+    folder = tmp_path / "ideas"
+    folder.mkdir()
+    (folder / "x.toml").write_text(src.replace("[bench]", "[bench]\nbogus_key = 1", 1))
+    (folder / "y.toml").write_text(src)
+    s = BenchSession(folder, lambda: None)
+    try:
+        def shown():
+            return {i["file"]: i for i in s.state()["ideas"]}
+        (folder / "y.toml").write_text("[bench\n" + src)   # an idea's file half written: read-only, saying why
+        end = time.monotonic() + 10
+        while not shown()["y.toml"]["read_only_reason"] and time.monotonic() < end:
+            time.sleep(0.05)
+        before = shown()
+        assert before["x.toml"]["problems"] and before["y.toml"]["read_only_reason"]
+        pseudo()
+        language("en-GB")
+        after = shown()
+        assert all(p["message"].startswith("XX ") for p in after["x.toml"]["problems"])
+        assert len(after["x.toml"]["problems"]) == len(before["x.toml"]["problems"])
+        assert after["y.toml"]["read_only_reason"] == "XX " + before["y.toml"]["read_only_reason"]
+    finally:
+        s.close()
+
+
+def test_the_measure_summary_and_file_error_follow_a_language_change(language, pseudo, tmp_path):
+    from scrimmage.assembler.measure_session import MeasureSession
+    good, bad = tmp_path / "fuel.measure.toml", tmp_path / "bad.measure.toml"
+    good.write_text((ROOT / "examples" / "measure" / "fuel.measure.toml").read_text())
+    bad.write_text("[measure\n")
+    ok, broken = MeasureSession(good), MeasureSession(bad)
+    before = ok.state()["summary"]["size"]["fields"][0]["what"], broken.state()["file_error"]
+    assert before[0] == "mass" and before[1].startswith("bad.measure.toml isn't valid TOML: ")
+    pseudo()
+    language("en-GB")
+    assert ok.state()["summary"]["size"]["fields"][0]["what"] == "XX mass"
+    assert broken.state()["file_error"] == "XX " + before[1]

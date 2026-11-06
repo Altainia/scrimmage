@@ -65,6 +65,8 @@ def test_the_known_gaps_are_the_rulings():
     for gap in ("keep their outcomes and grip-loss words in American English",
                 "**The command line is American English throughout**",
                 "shows session and config errors", "**The Part tab's build messages**",
+                "**A Test-tab sweep or floor spread that fails as a whole**",
+                "**The robot code panel's Build now result**", "**Why a scenario has no robot**",
                 "**A few warnings from a running simulation**", "**MCP results stay American English**",
                 "**Older browsers** (before Chrome 123, Safari 17.5 or Firefox 120) show the light theme only"):
         assert gap in doc, gap

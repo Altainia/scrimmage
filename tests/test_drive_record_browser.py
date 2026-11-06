@@ -153,12 +153,20 @@ def test_record_save_trim_overwrite_run_and_watch(drive_page, tmp_path):
     assert (tmp_path / "scenarios" / "rec.toml").is_file()
     steps = page.evaluate("__scrimmage.scenario.state.steps")
     assert len(steps) >= 2 and all(s["inputs"] for s in steps)
+    # the Scenario tab settled: its robot's signals loaded (loadRobotInfo), whose render rebuilds the track panel
+    page.wait_for_function("__scrimmage.scenario.signals !== null")
     page.wait_for_selector("#track-canvas", state="visible")
     assert page.input_value("#trim-start") == "0"
 
-    # Trim the first step's start
+    # Trim the first step's start; a re-render (here a language change) keeps what is typed, and the focus
     d0 = steps[0]["duration"]
     page.fill("#trim-start", "0.1")
+    for lang in ("en-GB", "en-US"):
+        page.evaluate("document.querySelector('#trim-start').dataset.old = '1'")
+        page.evaluate("(tag) => import('./i18n.js').then((m) => m.setLanguage(tag))", lang)
+        page.wait_for_selector("#trim-start:not([data-old])")
+        assert page.input_value("#trim-start") == "0.1"
+        assert page.evaluate("document.activeElement.id") == "trim-start"
     page.click("#trim-go")
     page.wait_for_function(f"__scrimmage.scenario.state.steps[0].duration < {d0} - 0.05")
     assert page.evaluate("__scrimmage.scenario.state.steps[0].duration") == pytest.approx(d0 - 0.1, abs=1e-6)

@@ -380,13 +380,15 @@ class MeasureSession:
     def _read(self) -> None:
         """The file as it is now: its kind, its JSON and its summary, or why it can't be edited here."""
         self.kind, self.raw, self.file_error, self.summary = None, None, None, {}
+        self._lang = i18n.current_language()   # the language file_error and the summary are in
         try:
             raw = tomllib.loads(self._sig.decode("utf-8"))
         except UnicodeDecodeError:
-            self.file_error = f"{self.path.name} isn't a text file: a measurement file is TOML text (UTF-8)"
+            self.file_error = i18n.t("{name} isn't a text file: a measurement file is TOML text (UTF-8)",
+                                     name=self.path.name)
             return
         except tomllib.TOMLDecodeError as e:
-            self.file_error = f"{self.path.name} isn't valid TOML: {e}"
+            self.file_error = i18n.t("{name} isn't valid TOML: {why}", name=self.path.name, why=e)
             return
         head = raw.get("measure")
         if isinstance(head, dict) and head.get("kind") in KIND_TESTS:
@@ -420,7 +422,14 @@ class MeasureSession:
         with self._cond:
             return self._state()
 
+    def _words(self) -> None:
+        """The Language setting changed since the file was read: its summary and file_error again, in its words
+        (the file is the same)."""
+        if self._lang != i18n.current_language():
+            self._read()
+
     def _state(self) -> dict:
+        self._words()
         return {"version": self.version, "path": str(self.path), "name": self.path.name, "kind": self.kind,
                 "tests": [test_json(t) for t in KIND_TESTS.get(self.kind, ())],
                 "bases": list(PRESETS["ball"]) if self.kind == "ball" else [],
@@ -429,6 +438,7 @@ class MeasureSession:
 
     def _typed(self, body: dict) -> tuple[MeasureFile, dict, dict]:
         """The file as typed in the page (body["file"]): checked, not written."""
+        self._words()
         if self.kind is None or self.raw is None:
             raise SessionError(409, i18n.t("fix the file first: {why}", why=self.file_error))
         raw, origins = unwire(body.get("file"), self.kind)
@@ -460,6 +470,7 @@ class MeasureSession:
         with self._cond:
             if self._closed:
                 raise SessionError(409, i18n.t("the measurement file was closed"))
+            self._words()
             if self.kind is None or self.raw is None:
                 raise SessionError(409, i18n.t("fix the file first: {why}", why=self.file_error))
             if v < self._changed_at or _sig(self.path) != self._sig:

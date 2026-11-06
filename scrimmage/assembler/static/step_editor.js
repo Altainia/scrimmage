@@ -236,7 +236,7 @@ function inputsSection(i, step) {
 // A step with an input track: the track panel (loaded after the editor is drawn) in place of the constant inputs.
 function trackSection(i, step) {
   const body = h("p", { class: "muted track-loading" }, t("Loading the track…"));
-  trackPanel(i, step).then((el) => { if (body.isConnected) body.replaceWith(el); },
+  trackPanel(i, step).then((el) => { if (body.isConnected) { body.replaceWith(el); el.afterInsert(); } },
     (e) => { if (body.isConnected) body.replaceWith(h("p", { class: "error", text: t("Couldn't show the track: {why}", { why: e.message || e }) })); });
   return section([t("Input track"), h("span", { class: "ed-sub" }, t("replayed step for step"))], `step${i}/inputs`, body);
 }

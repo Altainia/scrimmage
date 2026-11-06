@@ -547,3 +547,6 @@ def f(e, where):
     html = ('<p data-i18n="Wrapped words">Wrapped words</p><p>Unwrapped words</p>'
             '<button title="Undo it" data-i18n-title="Undo it">x</button><button title="Redo it">y</button>')
     assert [text for _, text in html_hits(html)] == ["Unwrapped words", "Redo it"]
+    # an entry allows its whole text only: a longer text holding the same word is still flagged
+    rel = "scrimmage/assembler/static/index.html"
+    assert _allowed(rel, "Theme") and not _allowed(rel, "Theme is broken") and not _allowed(rel, "theme")
