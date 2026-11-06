@@ -31,6 +31,8 @@ PROSE = r"(?<! in(?= (?:the|a|an|all|front|line|order|place|it|its|this|that|whi
 AFTER_NUMBER = re.compile(r"[\d}]\s?" + UNITS + END + PROSE)   # "0.5 m", `${x} in`, "4 in of", not "3 in the test"
 IN_BRACKETS = re.compile(r"\(" + UNITS + r"\)")               # "exit speed (m/s)"
 JUST_A_UNIT = re.compile(r"^\s*" + UNITS + r"\s*$")         # "kg", and " m" in `fmt(v) + " m"`
+# Python's keys and unit names ("in", "m") are everywhere: there only a unit after a space, " m" in `f"{x:.2f}" + " m"`
+SPACED_UNIT = re.compile(r"^\s+" + UNITS + r"\s*$")
 FORMAT_SPEC = re.compile(r"\.\d+[gfe]\b")                    # ".3g" is a format, not 3 grams
 
 KEY = "a file's, a key's or the wire's own unit (U3, U4; signals keep fixed units), not text in the setting"
@@ -212,7 +214,7 @@ def hits():
         lines = text.splitlines()
         for ln, s, source in py_strings(text):
             s = FORMAT_SPEC.sub("", s)
-            for m in [*AFTER_NUMBER.finditer(s), *IN_BRACKETS.finditer(s)]:      # the line, and the whole literal
+            for m in [*AFTER_NUMBER.finditer(s), *IN_BRACKETS.finditer(s), *SPACED_UNIT.finditer(s)]:   # line + literal
                 found.append((name, ln, f"{lines[ln - 1]} ‖ {source}", m.group(0)))
     return found
 
@@ -245,6 +247,8 @@ def test_the_sweep_finds_a_hard_coded_unit():
     got = [m.group(0) for _, s in js_strings(js)
            for m in [*AFTER_NUMBER.finditer(s), *IN_BRACKETS.finditer(s), *JUST_A_UNIT.finditer(s)]]
     assert got == ["} m", "(m/s)", "kg", " m", " in"]
-    py = 'def f(x):\n    """4 in, a docstring"""\n    return f"{x:.2f} in", "%.3g" % x, "in the robot"\n'
-    got = [m.group(0) for _, s, _ in py_strings(py) for m in AFTER_NUMBER.finditer(FORMAT_SPEC.sub("", s))]
-    assert got == ["} in"]
+    py = ('def f(x):\n    """4 in, a docstring"""\n    return f"{x:.2f} in", "%.3g" % x, "in the robot", '
+          'f"{x:.2f}" + " m", str(x) + " in", d["in"]\n')
+    got = [m.group(0) for _, s, _ in py_strings(py)
+           for m in [*AFTER_NUMBER.finditer(FORMAT_SPEC.sub("", s)), *SPACED_UNIT.finditer(s)]]
+    assert got == ["} in", " m", " in"]

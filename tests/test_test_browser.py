@@ -1979,6 +1979,25 @@ def test_the_element_clears_and_partner_checks_round_trip_exactly(test_page, tmp
     assert _units(page)[0] == ["sally_port", "°"]
 
 
+def test_a_clears_check_at_its_exact_limit_round_trips_in_metric(test_page, tmp_path):
+    """A15: clears' limit (19.6 in) shown in metric is 497.84 mm exactly: the limit typed there writes 19.6 in (not
+    refused as over it), and more is held at the limit by the block."""
+    from browser_harness import page_units
+    blocks = '[[block]]\ndo = "expect"\nthat = { clears = { element = "trench", at_least_in = 2.5 } }\nthroughout = true\n'
+    page, path = test_page(path=_defenses_test(tmp_path, blocks))
+    clears = "__scrimmageTest.workspace.getAllBlocks(false).find(b => b.type === 'cond_clears')"
+    page_units(page, "metric")
+    page.wait_for_function(f"({clears}).getFieldValue('CLEAR') === 63.5")
+    assert page.evaluate(f"({clears}).getField('CLEAR').getMax()") == 497.84
+    page.evaluate(f"({clears}).setFieldValue(497.84, 'CLEAR')")
+    _wait_file(lambda: _file_blocks(path)[0]["that"]["clears"]["at_least_in"] == 19.6, path)
+    page.evaluate(f"({clears}).setFieldValue(600, 'CLEAR')")
+    assert page.evaluate(f"({clears}).getFieldValue('CLEAR')") == 497.84
+    page_units(page, "imperial")
+    page.wait_for_function(f"({clears}).getFieldValue('CLEAR') === 19.6")
+    assert page.evaluate(f"({clears}).getField('CLEAR').getMax()") == 19.6
+
+
 def test_the_new_checks_from_the_palette_save_as_the_test_file_reads_them(test_page, tmp_path):
     from scrimmage.blocks.program import load
     page, path = test_page(path=_defenses_test(tmp_path, '[setup]\npartner = { ahead_in = 80 }\n\n'
