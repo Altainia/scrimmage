@@ -897,10 +897,14 @@ def _implicit(session: Session, scenario: Scenario, report: Report, console_star
         m = AGENT_IGNORED.match(summary or "")
         if m:
             who, n, what = m.groups()
-            report.notes.append(Said(f"the scrimmage {who} neutralized {n} robot-side sim writes ({what})",
-                                     lambda: t("the scrimmage agent neutralized {n} robot-side sim writes ({what})",
-                                               n=n, what=what) if who == "agent" else
-                                     t("the scrimmage rev helper neutralized {n} robot-side sim writes ({what})",
+            # normal on every Tuner X robot (its sim thread): said as expected, not as a problem (usability 14)
+            report.notes.append(Said(f"as expected, the scrimmage {who} ignored the robot code's own simulation "
+                                     f"({n} sim writes: {what}): scrimmage's physics drives the sensors",
+                                     lambda: t("as expected, the scrimmage agent ignored the robot code's own "
+                                               "simulation ({n} sim writes: {what}): scrimmage's physics drives the "
+                                               "sensors", n=n, what=what) if who == "agent" else
+                                     t("as expected, the scrimmage rev helper ignored the robot code's own "
+                                       "simulation ({n} sim writes: {what}): scrimmage's physics drives the sensors",
                                        n=n, what=what)))
         return
     agent = session.agent_state()

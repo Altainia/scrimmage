@@ -25,7 +25,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from . import i18n
 from .config import ConfigError
 from .lockstep import parse_speed
-from .scenario import ScenarioError, load_scenario
+from .scenario import ScenarioError, load_scenario, runs_folder
 from .scenario_runner import REAL_DS_REFUSED, run_scenario as _run_scenario
 from .session import Session, SessionError
 
@@ -371,7 +371,7 @@ async def run_scenario(path: str, out_dir: str | None = None, real_ds: bool | No
         sc = load_scenario(Path(path).expanduser())
     except (ScenarioError, ConfigError) as e:
         raise _fail(e) from None
-    out = Path(out_dir).expanduser() if out_dir else Path("runs") / f"{sc.path.stem}-mcp"
+    out = Path(out_dir).expanduser() if out_dir else runs_folder(Path("runs")) / f"{sc.path.stem}-mcp"
     if _session is None:
         use, note = None, "no session is open; ran in a standalone session"
     elif _session.config.path != sc.config_path:

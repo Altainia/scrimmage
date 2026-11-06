@@ -75,7 +75,8 @@ If your code made different devices than the robot file expects (a CAN ID that d
 your code made TalonFX 1. The Robot tab's device table shows the same and can fix it.
 
 The report folder has `report.md` (the checks and the pictures), `robot.log` (everything your code printed) and
-`run.csv` (every motor and joint, every few milliseconds). Add `runs/` to your robot project's `.gitignore`.
+`run.csv` (every motor and joint, every few milliseconds). The `runs/` folder keeps itself out of git (Scrimmage
+puts a `.gitignore` in it when it makes it), so you don't need to add it to yours.
 
 The command's exit code is 0 when everything passed, 1 when a check failed, and 2 when it couldn't run at all
 (a typo in the file, or the robot code crashed at startup).
@@ -102,18 +103,24 @@ exactly what you did, and you add checks to it like any other. See [Recording an
 
 ## 5. Run them all
 
-`scrimmage run` takes one scenario at a time. To run every scenario in `sim/scenarios/` and see whether any
-failed:
+Give `scrimmage run` every scenario in `sim/scenarios/`:
 
 ```bash
-failed=0
-for s in sim/scenarios/*.toml; do
-  scrimmage run "$s" || failed=1
-done
-echo "failed: $failed"
+scrimmage run sim/scenarios/*.toml
 ```
 
-Run them one after another, never two at once: only one simulation can run on a computer at a time.
+It runs them one after another (only one simulation can run on a computer at a time), prints each one's results as
+it goes, and ends with one line per file:
+
+```
+2 of 3 scenarios passed
+  PASS   sim/scenarios/auto.toml
+  FAIL   sim/scenarios/my_drive.toml
+  PASS   sim/scenarios/shoot.toml
+```
+
+The exit code is the worst of them: 0 when all passed, 1 when one failed, 2 when one couldn't run. Don't start two
+`scrimmage run`s at once.
 
 CTRE robots run in real time, so a 15 s auto takes 15 s to check. For faster checks that repeat exactly (for example
 in GitHub Actions), see [fast mode](../fast-mode.md).

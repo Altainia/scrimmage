@@ -24,7 +24,7 @@ from . import i18n
 from .i18n import languages
 from .lockstep import DEFAULT_STEP, parse_speed
 from .robot_process import RobotProcess
-from .scenario import ScenarioError, load_scenario, validate
+from .scenario import ScenarioError, load_scenario, runs_folder, validate
 from .scenario_runner import REAL_DS_REFUSED, UNSET, run_scenario
 from .settings import SYSTEMS, set_language_override, set_override
 
@@ -101,9 +101,11 @@ def main(argv: list[str] | None = None) -> None:
                          "config's [driver_station] real)")
     sp.add_argument("-v", "--verbose", action="store_true")
 
-    rp = sub.add_parser("run", help="run a scenario file and write a report (exit 0 pass, 1 fail, 2 couldn't run)")
-    rp.add_argument("scenario", type=Path)
-    rp.add_argument("--out", type=Path, help="report directory (default runs/<scenario>-<timestamp>)")
+    rp = sub.add_parser("run", help="run scenario files and write a report for each (exit 0 all passed, 1 one failed, "
+                                    "2 one couldn't run)")
+    rp.add_argument("scenario", type=Path, nargs="+", help="scenario files, run one after another")
+    rp.add_argument("--out", type=Path, help="report directory (default runs/<scenario>-<timestamp>); with several "
+                                             "scenarios, the folder their report directories go in (<out>/<scenario>)")
     rp.add_argument("--sim-mode", choices=SIM_MODES, help=SIM_MODE_HELP)
     rp.add_argument("--speed", type=_speed, default=UNSET, help='override the scenario\'s speed ("max" or a factor)')
     rp.add_argument("--real-ds", action="store_true", help="refused: in a scenario run, the scenario is the Driver Station")
@@ -1007,15 +1009,50 @@ async def _follow_real_ds(bridge: Bridge, timeout: float, launched: bool) -> Non
 def _run(args, ap) -> int:
     if args.real_ds:
         ap.error(REAL_DS_REFUSED)
+    if len(args.scenario) == 1:
+        return _run_one(args, ap, args.scenario[0], args.out)
+    # several: each in turn (one simulation at a time), a file that can't run reported and skipped, then one line each
+    codes, stems = [], set()
+    for path in args.scenario:
+        out = None
+        if args.out is not None:
+            stem, n = path.stem, 2
+            while stem in stems:
+                stem, n = f"{path.stem}-{n}", n + 1
+            stems.add(stem)
+            out = args.out / stem
+        try:
+            code = _run_one(args, ap, path, out, several=True)
+        except _CantRun as e:
+            print(f"scrimmage: {path}: {e}", file=sys.stderr)
+            code = 2
+        codes.append(code)
+        print()
+    words = {0: "PASS ", 1: "FAIL ", 2: "ERROR"}
+    passed = codes.count(0)
+    print(f"{passed} of {len(codes)} scenarios passed")
+    for path, code in zip(args.scenario, codes):
+        print(f"  {words.get(code, 'ERROR')}  {path}")
+    return max(codes)
+
+
+class _CantRun(Exception):
+    """A scenario among several that can't be loaded: reported, and the others still run."""
+
+
+def _run_one(args, ap, path: Path, out: Path | None, several: bool = False) -> int:
     try:
-        scenario = load_scenario(args.scenario)
+        scenario = load_scenario(path)
         config = load_config(scenario.config_path)
         world = build_world(config)
         validate(scenario, world)
     except (ScenarioError, ConfigError, ValueError) as e:
+        if several:
+            raise _CantRun(str(e)) from None
         ap.error(str(e))
     _log_warnings(world)
-    out = args.out or Path("runs") / f"{scenario.path.stem}-{datetime.now():%Y%m%d-%H%M%S}"
+    if out is None:
+        out = runs_folder(Path("runs")) / f"{scenario.path.stem}-{datetime.now():%Y%m%d-%H%M%S}"
     try:
         report = asyncio.run(run_scenario(scenario, out, speed=args.speed, sim_mode=args.sim_mode))
     except Exception as e:  # KeyboardInterrupt and SystemExit go through

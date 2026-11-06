@@ -13,7 +13,7 @@ from typing import Callable
 import tomlkit
 
 from .. import i18n, robot_process
-from ..scenario import ScenarioError, load_scenario_text
+from ..scenario import ScenarioError, load_scenario_text, runs_folder
 from ..scenario_runner import STOPPED, UNSET, run_scenario
 from .simlock import SimBusy, SimLock
 
@@ -83,6 +83,7 @@ class RunManager:
                 run_id = f"{run_id}-{self._seq}"
             out_dir = (self._runs_dir / run_id).resolve()
             try:
+                runs_folder(self._runs_dir)
                 out_dir.mkdir(parents=True)
             except OSError as e:
                 raise ScenarioError(i18n.t("can't make the run folder {folder}: {why}", folder=out_dir,

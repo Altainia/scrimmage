@@ -82,7 +82,9 @@ scrimmage run scenarios/kitbot_auto.toml
 
 It starts the robot program, plays each step (Driver Station mode, duration, joysticks), evaluates the
 checks, takes the screenshots, and writes a report directory, `runs/<scenario>-<timestamp>/` by default
-(change it with `--out DIR`). Files in it:
+(change it with `--out DIR`). A `runs/` folder Scrimmage makes holds a `.gitignore` of `*`, so the reports stay out
+of your commits. Several files run one after another (`scrimmage run sim/scenarios/*.toml`), each with its own
+report, then one line per file; `--out DIR` then holds a folder for each (`DIR/<scenario>`). Files in it:
 
 - `report.md`: a short readable summary with the screenshots inline
 - `report.json`: the same results for scripts, with the measured and expected value of every check
@@ -92,7 +94,7 @@ checks, takes the screenshots, and writes a report directory, `runs/<scenario>-<
 
 Exit codes: **0** every check passed. **1** a check failed (the message names the measured value).
 **2** it couldn't run: a bad scenario or config file, the robot program never connected or crashed at
-startup, lockstep was required but isn't loaded, or a dependency is missing.
+startup, lockstep was required but isn't loaded, or a dependency is missing. With several files, the worst of them.
 
 `--speed max` (the scenario default) runs as fast as the robot program can keep up; `--speed 2` runs at
 twice real time. The flag overrides the scenario's `speed`. Fast runs need lockstep (next section);

@@ -137,8 +137,8 @@ To check your robot automatically every time the code changes, go on to
 - **"Phoenix 6 simulation runs on the wall clock, so this robot runs in real time."** Normal for CTRE robots. CTRE's
   simulation only runs in real time, so a 15 s auto takes 15 s. REV and Python robots run faster than real time. If
   your CTRE team wants faster, exactly repeatable runs (for example in CI), read [fast mode](../fast-mode.md).
-- **"The Scrimmage agent neutralized 1187 robot-side sim writes (SwerveDrivetrain.updateSimState ...)".** Also
-  normal. Code made by Tuner X has its own small simulation that would fight Scrimmage's physics, so Scrimmage
+- **"As expected, the scrimmage agent ignored the robot code's own simulation (1187 sim writes:
+  SwerveDrivetrain.updateSimState ...)".** Also normal. Code made by Tuner X has its own small simulation that would fight Scrimmage's physics, so Scrimmage
   turns it off while the robot runs. Nothing in your files changes.
 - **The robot drives but odometry is off by a few centimeters.** That's real: wheels slip and scrub. Scrimmage
   shows the difference between where the robot thinks it is and where it really is.
