@@ -19,6 +19,7 @@ It follows allwpilib simulation/halsim_ds_socket DSCommPacket.cpp (2026 branch):
 
 from __future__ import annotations
 
+import os
 import socket
 import struct
 import threading
@@ -46,7 +47,10 @@ def skip_if_ds_ports_taken() -> None:
             except OSError:
                 problem = f"UDP port {UDP_DS} is already in use"
     if problem:
-        pytest.skip(f"the Driver Station ports are taken on this computer (another test run?): {problem}")
+        msg = f"the Driver Station ports are taken on this computer (another test run?): {problem}"
+        if os.environ.get("CI"):   # on CI a held port would skip every real-DS test and still show green
+            pytest.fail(msg)
+        pytest.skip(msg)
 
 
 def _axis(v: float) -> int:

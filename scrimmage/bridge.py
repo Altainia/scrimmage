@@ -43,8 +43,11 @@ REAL_DS_REASON = i18n.N_("the real Driver Station talks to the robot program on 
                          "real time (not lockstep)")
 # Simulated seconds after a Phoenix device appears in which it may boot and re-assert its initial values. Phoenix
 # boots on the wall clock and sends no event when it is done: a slow CI runner measured 1.06 s after the device
-# appeared, so this allows twice the 1 s once used (the same as MISSING_AFTER).
+# appeared, so this allows twice the 1 s once used. (Not tied to MISSING_AFTER, which counts from the connection.)
 PHOENIX_BOOT = 2.0
+# Simulated seconds after a Phoenix device appears in which a key it hasn't reported yet is still its announcement:
+# a Pigeon 2's pitch came 3 ms after its first frame (Java probe, real DS), so 0.1 s leaves plenty of room
+PHOENIX_ANNOUNCE = 0.1
 MISSING_AFTER = 2.0      # simulated seconds after connecting before a configured Phoenix device counts as missing
 # "<Kind> (v6)[<id>]" anywhere in a device name, not followed by a sub-device ("/Rotor Sensor")
 PHOENIX_NAME = re.compile("(?P<kind>" + "|".join(map(re.escape, CTRE_DEVICES.values())) + r")\[(?P<id>\d+)\](?!/)")
@@ -534,10 +537,11 @@ class Bridge:
                 self._behind(self.cache.relayed(*dev, key, i))
                 continue
             initial = self._initial.get((dev, key))
-            booting = self.world.time - self._heard[dev] < PHOENIX_BOOT   # from when it appeared, not from t = 0
-            if booting and initial is None:
-                # A device's announcement can span frames (a Pigeon 2's pitch came a frame after its yaw, after ours
-                # was sent): a key's first report while it boots is its own initial value too
+            age = self.world.time - self._heard[dev]   # from when it appeared, not from t = 0
+            booting = age < PHOENIX_BOOT
+            if age < PHOENIX_ANNOUNCE and initial is None:
+                # A device's announcement can span frames (a Pigeon 2's pitch came 3 ms after its yaw, after ours
+                # was sent): a key's first report just after it appeared is its own initial value too
                 self._initial[(dev, key)] = value
                 continue
             if booting and initial is not None and fwn.is_echo(dev[1], key, value, [initial]):
@@ -633,6 +637,10 @@ class Bridge:
 
     def _restart_clock(self) -> None:
         """Simulated time back to 0: reset the world and resend every input."""
+        # the devices already heard keep the time since they appeared: one heard just before the lockstep engage
+        # still gets its boot window, and one heard long ago (attach mode's restart_robot) doesn't get a new one
+        now = self.world.time
+        self._heard = {d: t - now for d, t in self._heard.items()}
         self.world.reset()
         self.lockstep_released_at = None
         self.cache.reset()
