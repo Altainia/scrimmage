@@ -191,6 +191,13 @@ def test_mcp_machine_text_is_the_same_bytes_in_any_language(pseudo, units, tmp_p
         assert zz[key].keys() == us[key].keys() and zz[key], key
         for name, data in zz[key].items():
             assert data.replace(b"/zz/", b"/us/") == us[key][name], (key, name)
+            if (key, name) == ("test", "result.json"):
+                # a run kept in machine text also keeps its words in every setting (the Test tab shows the
+                # viewer's): the same bytes in any setting, en-GB's from the catalog; its machine fields have none
+                kept = json.loads(data)
+                words = kept.pop("words")
+                assert "ZZ" not in json.dumps(words["en-US|metric"]) and "ZZ" in json.dumps(words["en-GB|metric"])
+                data = json.dumps(kept).encode()
             assert b"ZZ" not in data, (key, name)
     assert "ZZ" not in us["report.md"] and "ZZ" not in us["summary.txt"]
     assert "ZZ" in zz["report.md"] and "ZZ" in zz["summary.txt"]       # the files for people follow the setting

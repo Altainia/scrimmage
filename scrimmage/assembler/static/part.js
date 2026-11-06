@@ -24,7 +24,7 @@
 // the "Try it" poses from part.tryit), solidBox() (the drawn pieces' robot-frame box). Test hook:
 // window.__scrimmagePart {store, screenPos(pieceKey, {along, across}), screenPoint(pieceKey), scene, toRobot(frame)}.
 
-import { $, h, api, notice, serial, registerTab, setTab, showPath, sessionToken } from "./app.js";
+import { $, h, api, notice, serial, registerTab, setTab, showPath, sessionToken, markUnits, typedText } from "./app.js";
 import { uploadCad, cadFilesProblem, filesName } from "./start.js";
 import { units } from "./units.js";
 import { i18n, t, tn } from "./i18n.js";
@@ -475,8 +475,9 @@ export function field(label, control, name, hint = null) {
 // A text box (numbers too: see number) that commits on Enter or leaving it, when its text differs from the server's (dataset.orig),
 // once. Not only on "change": text carried across a redraw (renderInspector) is set by script, and then Enter or
 // leaving the box fires no change. A box a redraw removes never commits (live): its text lives on in the new box.
-export function box(attrs, commit) {
-  const el = h("input", { autocomplete: "off", ...attrs });
+// `kind`: a units.js kind its number is typed in (so text half typed across a Units change is converted).
+export function box({ kind = null, ...attrs }, commit) {
+  const el = markUnits(h("input", { autocomplete: "off", ...attrs }), kind);
   el.dataset.orig = el.value = attrs.value == null ? "" : String(attrs.value);
   const send = () => {
     if (!live(el) || el.value === el.dataset.orig) return;
@@ -555,8 +556,9 @@ function renderInspector() {
   const root = $("#part-inspector");
   // keep what is half typed in a box across the redraw
   const act = document.activeElement;
+  // (converted to the new units after a Units change: typedText)
   const typing = act && root.contains(act) && act.tagName === "INPUT" && act.id && act.value !== act.dataset.orig
-    ? { id: act.id, value: act.value, start: act.selectionStart, end: act.selectionEnd } : null;
+    ? { id: act.id, value: typedText(act), start: act.selectionStart, end: act.selectionEnd } : null;
   const keepFocus = act && root.contains(act) && act.id ? act.id : null;
   const ctx = context();
   const out = [];

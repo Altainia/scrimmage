@@ -344,7 +344,9 @@ side of HIGH, an estimate); LOW 29 x 24 in., bottom 19 in. (manual §2.2.3). Dis
 ## Reading results.csv
 
 One row per setup (per combination for `sweep`), the swept keys first. One value per column, the mean over the discs
-launched, unless noted.
+launched, unless noted. results.csv is in SI; the table `disc run` and `disc sweep` print, `summary.md` and the
+charts show the exit speed, apex, landing and wall heights in the Units setting (or `--units`), the unit in the
+column's name (`landing (ft)`), as [settings.md](settings.md) says.
 
 | Column | Meaning |
 |---|---|

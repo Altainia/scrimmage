@@ -138,10 +138,13 @@ def test_machine_output_is_what_the_code_keeps():
         "the partner robot (Setup) starts inside the robot (their outlines overlap by 0.75 m)"
     assert '("pose: 0.40 m from target")' in doc
     assert units.MACHINE == "imperial"
-    for known in ("**The Test tab's sweep and floor spread tables**", "**The launcher model's own output**",
-                  "**A bench sweep's From and To boxes**", "**Changing Units clears the Test tab's undo history**",
-                  "**Another open tab or editor**", "**A run kept inside a sweep or a floor spread**"):
+    for known in ("**A sweep or floor spread made by an older Scrimmage**", "**A bench sweep chart**",
+                  "**Changing Units clears the Test tab's undo history**", "**Another open tab or editor**"):
         assert known in doc, known
+    # cleanup A1-A4: what follows the setting now
+    for now in ("its sweep and floor spread tables", "a run kept by a sweep, a floor spread or an agent's MCP `test_run`",
+                "`exit_speed (ft/s)`", "a swept key's values too"):
+        assert now in doc, now
 
 
 @pytest.mark.parametrize("md", ["README.md", "docs/assembler.md", "examples/measure/README.md"])

@@ -3,7 +3,7 @@
 // the contact sheet. Every change posts one scenario edit; each field
 // carries data-fields with its field ids so errors render beside it (scenario.js renderErrors).
 
-import { h, fmt, showMeasure, readMeasure, measureError } from "./app.js";
+import { h, fmt, showMeasure, readMeasure, measureError, typedText } from "./app.js";
 import { units } from "./units.js";
 import { MODES, scEdit, hooks, sc } from "./scenario.js";
 import { trackPanel } from "./trackplot.js";
@@ -140,7 +140,7 @@ export function renderStepEditor(st) {
   const s = st.state;
   const act = document.activeElement;
   const keep = act && root.contains(act) && act.dataset.key && lastStep === st.selected
-    ? { key: act.dataset.key, dirty: act.dataset.dirty ? act.value : null } : null;
+    ? { key: act.dataset.key, dirty: act.dataset.dirty ? typedText(act) : null } : null;   // converted after a Units change
   const i = st.selected;
   const step = i === null ? null : s.steps[i];
   if (!step) {

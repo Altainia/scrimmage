@@ -125,6 +125,16 @@ def test_a_length_box_takes_any_length_unit_of_the_system(page):
                 assert g == pytest.approx(want, rel=1e-12), (system, case)
 
 
+def test_text_typed_in_the_other_system_is_converted(page):
+    # A6: a box half typed when Units changes keeps its value, in the new units; what isn't a value yet stays
+    _switch(page, "metric")
+    got = page.evaluate("""() => [U.units.convert("4", "length", "imperial"), U.units.convert(" 2 ft", "field", "imperial"),
+      U.units.convert("1, 2", "length", "imperial"), U.units.convert("1e", "length", "imperial"),
+      U.units.convert("5 mm", "length", "imperial"), U.units.convert("", "length", "imperial"),
+      U.units.convert("4", "length", "metric"), U.units.convert("4", null, "imperial"), U.shown(0.0254, "length", 2, "imperial")]""")
+    assert got == ["101.6", " 0.6096", "25.4, 50.8", "1e", "5 mm", "", "4", "4", "1"]
+
+
 def test_typed_values_round_trip(page):
     # Review Focus 1, at the helper: what is typed reads back as typed, in both systems
     for system, typed, kind in (("imperial", "4", "length"), ("imperial", "0.25", "length"),

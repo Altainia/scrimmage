@@ -137,6 +137,40 @@ def is_machine() -> bool:
     return _machine.get()
 
 
+# Text kept with machine text, worded for people too: a run kept by a sweep, a spread or MCP test_run is made inside
+# machine_text(), yet the Test tab shows it in the viewer's Language and Units, switched live. Its words are built
+# once more in each setting while the run's numbers are at hand (each_setting), keyed "<language>|<system>"
+# (setting_key), and the page picks the viewer's: a language added later shows such a run in American English, in
+# the viewer's units.
+@contextmanager
+def shown_in(system: str, lang: str):
+    """Write for people in `system` and `lang` inside the `with`, even inside machine_text()."""
+    if system not in TABLE:
+        raise ValueError(f"unknown unit system {system!r}; imperial or metric")
+    machine, token = _machine.set(False), _fixed.set(system)
+    try:
+        with i18n.fixed(lang):
+            yield
+    finally:
+        _fixed.reset(token)
+        _machine.reset(machine)
+
+
+def setting_key(lang: str | None = None, system: str | None = None) -> str:
+    """"en-GB|metric": the key each_setting() files a setting's words under (the page's i18n.lang and units.system)."""
+    return f"{lang or i18n.current_language()}|{system or current_system()}"
+
+
+def each_setting(fn) -> dict:
+    """fn() in every Language the app has and both unit systems: {setting_key: what it returned}."""
+    out = {}
+    for lang in i18n.languages():
+        for system in SYSTEMS:
+            with shown_in(system, lang):
+                out[setting_key()] = fn()
+    return out
+
+
 def current_system() -> str:
     """The system text is built in here: a `fixed()` one, else the Units setting."""
     return _fixed.get() or current_units()

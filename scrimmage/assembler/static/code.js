@@ -29,7 +29,7 @@
 // meters), labels: [the field's boxes labeled in it]} while a start is shown}; window.__scrimmage.startPicker = {toScreen(x, y) -> page pixels, value} while the
 // picker is open.
 
-import { $, h, api, edit, post, undo, notice, setTab, store, fmt, select, showMeasure, readMeasure, measureError } from "./app.js";
+import { $, h, api, edit, post, undo, notice, setTab, store, fmt, select, showMeasure, readMeasure, measureError, convertTyped } from "./app.js";
 import { units } from "./units.js";
 import { theme } from "./theme.js";
 import { i18n, t, tn } from "./i18n.js";
@@ -473,6 +473,19 @@ async function runFix(fix) {
   followFix(data.id);
 }
 
+// A Language change: the failed fix's result (the server words it again, /api/robot/code/fix) in the new words. A
+// result kept from an older fix the server no longer holds goes: its check shows the server's words for it.
+async function rewordResults() {
+  if (!Object.keys(code.results).length) return;
+  const { status, data } = await api("GET", "/api/robot/code/fix");
+  if (status !== 200) return;
+  const r = data.result && data.result.ok === false ? data.result : null;
+  const had = !!r && r.id in code.results;
+  for (const id of Object.keys(code.results)) delete code.results[id];
+  if (had) code.results[r.id] = r;
+  if (els && code.state) render();
+}
+
 let following = null;
 async function followFix(id) {
   if (following === id) return;
@@ -650,13 +663,13 @@ async function openPicker() {
       for (const [el, k] of [[xIn, "x"], [yIn, "y"]]) if (!(keepTyping && typing(el))) showMeasure(el, cur[k], "field");
       hIn.value = fmt(round(cur.heading, 1));
     };
-    // Units changed in another tab or editor while this is open: the boxes show the new units. Text being typed in
-    // stays and now means the new units, as in the inspector and the step editor (it is read again here and at OK).
+    // Units changed in another tab or editor while this is open: the boxes show the new units. Text being typed in is
+    // converted to the new units, as in the inspector and the step editor (it is read again here and at OK).
     const offUnits = units.onChange(() => {
       xU.textContent = yU.textContent = units.name("field");
       const kept = [xIn, yIn].filter(typing);
       sync({ keepTyping: true });
-      for (const el of kept) el.dispatchEvent(new Event("input"));
+      for (const el of kept) convertTyped(el).dispatchEvent(new Event("input"));
       draw();   // the grid's labels are in the chosen units
     });
     const offTheme = theme.onChange(() => draw());
@@ -982,6 +995,7 @@ export function initCode() {
     for (const [node, fn] of relabels) node.data = fn();
     render();
     if (code.shown) loadState();    // the checklist and the start sentence are the server's words
+    rewordResults();                // and so is a failed fix's result, kept beside its check
   });
   theme.onChange(() => drawPicture());   // the start's picture, in the theme's colors
   $("#center-3d").addEventListener("click", () => showCode(false));

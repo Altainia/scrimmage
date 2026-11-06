@@ -254,6 +254,23 @@ def test_fit_shows_the_fit_and_each_shot_against_the_model(measure_page, tmp_pat
     assert "press Fit again" in page.inner_text("#measure-fit-result")
 
 
+def test_a_units_change_while_it_fits_fits_again_when_done(measure_page, tmp_path):
+    # A5: the fit under way was asked in the old units; the refit waits for it instead of skipping it
+    from browser_harness import page_units
+    mf = synthetic(tmp_path, 120.0, 0.95, [50.0, 80.0])
+    page, _ = measure_page(mf.path)
+    page.click("#measure-fit")
+    page.wait_for_function("document.querySelector('#measure-fit-result .measure-verdict')", timeout=60000)
+    assert " lbf fits your shots" in page.inner_text("#measure-fit-result")
+    page.click("#measure-fit")
+    assert page.evaluate("__scrimmageMeasure.store.fitting")
+    page_units(page, "metric")
+    page.wait_for_function("!__scrimmageMeasure.store.fitting && "
+                           "document.querySelector('#measure-fit-result').textContent.includes(' N fits your shots')",
+                           timeout=60000)
+    assert "m/s" in page.locator("#measure-fit-result tbody tr").first.inner_text()
+
+
 def test_the_tab_reads_in_the_dark_theme(measure_page):
     page, _ = measure_page(scheme="dark")
     _pick(page, "squeeze")

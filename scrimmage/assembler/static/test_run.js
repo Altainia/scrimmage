@@ -47,7 +47,7 @@
 import { $, h, api, apiFile } from "./app.js";
 import { units } from "./units.js";
 import { theme } from "./theme.js";
-import { i18n, t } from "./i18n.js";
+import { i18n, t, SOURCE } from "./i18n.js";
 
 const MOTION_MAGIC = "SCRM", MOTION_VERSION = 1, HEADER = 14;   // struct "<4sHII"
 const CHART_H = 92, PAD_L = 44, PAD_R = 8, PAD_T = 6, TICKS_H = 16;
@@ -92,8 +92,29 @@ const STATUS_WORDS = { finished: () => t("finished"), "check failed": () => t("c
   "tipped over": () => t("tipped over"), "walked off": () => t("walked off"), "time limit": () => t("time limit"),
   "repeat limit": () => t("repeat limit"), cancelled: () => t("stopped") };
 const statusWord = (status) => (STATUS_WORDS[status] ? STATUS_WORDS[status]() : status || "");
+// A run kept by a sweep, a spread or MCP test_run is machine text (American English, fixed units), so it also keeps
+// its words in every Language and Units setting, keyed "en-GB|metric" (result.json's and table.json's `words`:
+// blocks/run.py's RunResult.words); the viewer's are shown, switched live. null for anything else, or a language
+// added after the run was made, whose viewer gets the American English words in their units (else the machine text).
+function inSetting(words) {
+  if (!words || typeof words !== "object") return null;
+  return words[`${i18n.lang}|${units.system}`] || words[`${SOURCE}|${units.system}`] || null;
+}
+// a kept run's result in the viewer's setting: its outcome, checks, marks, seated and notes from its words, if any
+function shownResult(r) {
+  const w = r && inSetting(r.words);
+  if (!w) return r;
+  const checks = Array.isArray(w.checks) ? w.checks : [];
+  const marks = Array.isArray(w.marks) ? w.marks : [];
+  return { ...r, outcome: w.outcome ?? r.outcome, seated: w.seated || r.seated, notes: w.notes || r.notes,
+    checks: (r.checks || []).map((c, i) => ({ ...c, ...(checks[i] || {}) })),
+    marks: (r.marks || []).map((m, i) => (marks[i] != null ? { ...m, text: marks[i] } : m)) };
+}
 // the outcome as the student reads it ("finished" alone says nothing the status doesn't)
-const outcomeText = (r) => sentence(r.status === "finished" && r.outcome === "finished" ? t("every block played") : r.outcome);
+const outcomeText = (r) => {
+  const w = inSetting(r.words), said = w && w.outcome != null ? w.outcome : r.outcome;
+  return sentence(r.status === "finished" && said === "finished" ? t("every block played") : said);
+};
 const sentence = (s) => (s ? `${s[0].toUpperCase()}${s.slice(1)}${/[.!?]$/.test(s) ? "" : "."}` : "");
 const end = () => (rp.run ? rp.run.result.t_end || 0 : 0);
 const start = () => (rp.run && rp.run.motion.times.length ? rp.run.motion.times[0] : 0);
@@ -298,7 +319,7 @@ const NOTES = {
 };
 
 function renderOutcome() {
-  const r = rp.run.result;
+  const r = shownResult(rp.run.result);
   $("#test-result-title").textContent = `${runName(rp.run.id)} · ${statusWord(r.status)}`;
   $("#test-outcome").textContent = outcomeText(r);
   const note = $("#test-outcome-note");
@@ -386,7 +407,7 @@ function showPiece(ball, time) {
 }
 
 // -- the moments the replay marks (a slip) ---------------------------------------------------------------------------
-const marksOf = (r) => (r && Array.isArray(r.marks) ? r.marks : []);
+const marksOf = (r) => (r && Array.isArray(r.marks) ? shownResult(r).marks : []);
 const slipsOf = (r) => marksOf(r).filter((m) => m.kind === "slip");     // the kinds drawn: a slip, as a cross
 
 function renderMarks() {
@@ -769,12 +790,16 @@ function targetMeasure(target) {
 // a sweep row's value as the table and chart show it: a length, weight or speed in the units shown (to 5 figures:
 // the sweep keeps 6, so 100 lb tried reads 100, not 99.9999); a grip's material names (not numbers) are placed in
 // order, one step apart, and labeled with the name
+// (table.json's SI value and kind when the sweep has one: the block's unit as it was then, not as the test has it now)
 function rowValue(sw, r) {
   if (isGrip(sw)) return sw.rows.indexOf(r);
-  const m = targetMeasure(sw.target);
+  const kept = sw.table && sw.table.rows[sw.rows.indexOf(r)];
+  if (sw.table && sw.table.kind && kept && kept.si != null) return +units.toDisplay(kept.si, sw.table.kind).toPrecision(5);
+  const m = sw.table ? null : targetMeasure(sw.target);
   return m ? +units.toDisplay(Number(r.value) * m[1], m[0]).toPrecision(5) : Number(r.value);
 }
-const rowText = (sw, r) => (targetMeasure(sw.target) ? String(rowValue(sw, r)) : r.value);
+const measured = (sw) => (sw.table ? !!sw.table.kind : !!targetMeasure(sw.target));
+const rowText = (sw, r) => (measured(sw) ? String(rowValue(sw, r)) : r.value);
 
 // The block at a place in the test JSON (0-based, through repeat bodies), or null.
 function blockAt(test, place) {
@@ -842,7 +867,7 @@ function renderSweep() {
       h("tbody", {}, ...sw.rows.map((r, k) => {
         const id = rowRun(sw, k), ran = hasRun(id);
         const current = id === rp.shownId;
-        const outcome = rowOutcome(r);
+        const outcome = rowOutcome(sw, r, k);
         return h("tr", { class: ran ? "test-sweep-row" : "test-sweep-row test-sweep-norun", "data-row": String(k), "aria-current": current ? "true" : null,
           onclick: ran ? () => { if (id !== rp.shownId) show(id); } : null },
           h("td", {}, ran ? h("button", { type: "button", class: "linklike test-sweep-value", "data-run": id,
@@ -852,7 +877,9 @@ function renderSweep() {
             title: c, text: r[c] === "passed" ? "✓" : r[c] === "failed" ? "✗" : "" })));
       })));
     if (checks.length) {
-      table.prepend(h("caption", { class: "test-sweep-caption" }, ...checks.map((c, i) => h("span", { text: t("Check {n}: {check}", { n: i + 1, check: sentence(c) }) }))));
+      const named = (inSetting(sw.table && sw.table.words) || {}).columns;
+      const column = (c, i) => (Array.isArray(named) && named.length === checks.length ? named[i] : c);
+      table.prepend(h("caption", { class: "test-sweep-caption" }, ...checks.map((c, i) => h("span", { text: t("Check {n}: {check}", { n: i + 1, check: sentence(column(c, i)) }) }))));
     }
   }
   const sel = $("#test-sweep-y");
@@ -962,9 +989,14 @@ function drawSweep() {
   }
 }
 
-// A sweep's or spread's row (table.csv's: machine text, so its outcome is the run's English, spec L2) in words.
-const rowOutcome = (r) => (r.status === "couldn't run" ? t("Couldn't run: {why}", { why: r.outcome })
-  : t("{status}: {outcome}", { status: statusWord(r.status), outcome: outcomeText(r) }));
+// A sweep's or spread's row k in words: its outcome from table.json in the viewer's setting, else table.csv's (machine
+// text: an older folder, or a row that couldn't run, whose why is the error's American English).
+function rowOutcome(sw, r, k) {
+  if (r.status === "couldn't run") return t("Couldn't run: {why}", { why: r.outcome });
+  const kept = (inSetting(sw.table && sw.table.words) || {}).outcomes;
+  const said = Array.isArray(kept) && kept[k] != null ? kept[k] : r.outcome;
+  return t("{status}: {outcome}", { status: statusWord(r.status), outcome: outcomeText({ status: r.status, outcome: said }) });
+}
 
 // -- the floor spread ------------------------------------------------------------------------------------------------
 const shownSpread = () => ((rp.state && rp.state.spreads) || []).find((s) => s.id === rp.spreadId) || null;
@@ -981,12 +1013,13 @@ function renderSpread() {
   if (!sp) return;
   const num = /^spread-(\d+)$/.exec(sp.id);
   $("#test-spread-title").textContent = num ? t("Spread {spread}", { spread: +num[1] }) : String(sp.id);
-  $("#test-spread-sentence").textContent = sentence(sp.sentence || "");
+  const words = inSetting(sp.table && sp.table.words) || {};
+  $("#test-spread-sentence").textContent = sentence(words.sentence || sp.sentence || "");
   const note = $("#test-spread-note");
   note.hidden = !sp.cancelled;
   note.textContent = sp.cancelled ? t("You stopped this spread, so it has the placements done before that.") : "";
   const table = $("#test-spread-table");
-  const key = JSON.stringify([sp.id, sp.rows, rp.shownId, (rp.state.runs || []).map((r) => r.id), i18n.lang]);
+  const key = JSON.stringify([sp.id, sp.rows, rp.shownId, (rp.state.runs || []).map((r) => r.id), units.system, i18n.lang]);
   if (table.dataset.key === key) return;
   table.dataset.key = key;
   table.replaceChildren(
@@ -994,12 +1027,13 @@ function renderSpread() {
       h("th", { scope: "col", text: t("Outcome") }))),
     h("tbody", {}, ...sp.rows.map((r, k) => {
       const id = rowRun(sp, k), ran = hasRun(id);
-      const outcome = rowOutcome(r);
+      const outcome = rowOutcome(sp, r, k);
       const picked = r["picked up"] === "yes";
+      const placement = Array.isArray(words.placements) && words.placements[k] != null ? words.placements[k] : r.placement;
       return h("tr", { class: ran ? "test-sweep-row" : "test-sweep-row test-sweep-norun", "data-row": String(k),
         "aria-current": id === rp.shownId ? "true" : null, onclick: ran ? () => { if (id !== rp.shownId) show(id); } : null },
         h("td", {}, ran ? h("button", { type: "button", class: "linklike", "data-run": id,
-          "aria-label": t("Show the run at {value}", { value: r.placement }), text: r.placement }) : h("span", { text: r.placement })),
+          "aria-label": t("Show the run at {value}", { value: placement }), text: placement }) : h("span", { text: placement })),
         h("td", { class: picked ? "test-check-ok" : "test-check-bad", text: picked ? t("yes") : r["picked up"] === "no" ? t("no") : r["picked up"] }),
         h("td", { class: "test-sweep-outcome", text: outcome }));
     })));
@@ -1020,9 +1054,10 @@ export function initRunPanel({ chart, setChart } = {}) {
   new ResizeObserver(() => drawChart()).observe($("#test-chart"));
   new ResizeObserver(() => drawSweep()).observe($("#test-sweep-wrap"));
   $("#test-sweep-y").addEventListener("change", (e) => { rp.sweepY = e.target.value || "t_end"; drawSweep(); });
-  units.onChange(() => {          // the chart and the sweep in the new units: its titles drawn again
+  units.onChange(() => {          // the chart, the sweep and the spread in the new units: its titles drawn again
     $("#test-chart").replaceChildren();
-    if (rp.run) { drawChart(); renderSweep(); }
+    if (rp.state) { renderList(); renderSweep(); renderSpread(); }
+    if (rp.run) { renderOutcome(); drawChart(); }
   });
   theme.onChange(() => { drawChart(); drawSweep(); });   // the colors are the theme's
   i18n.onChange(() => {         // everything drawn in words, again in the new ones

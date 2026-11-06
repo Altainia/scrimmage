@@ -119,6 +119,35 @@ def test_pick_code_folder_shows_summary_and_checks(code_page, tmp_path):
     assert page.is_enabled("#code-checks li[data-check='gradle_built'] button[data-fix='gradle_build']")
 
 
+def test_a_failed_build_now_follows_a_language_change(code_page, tmp_path):
+    """Review (A8): a failed fix's result kept beside its check is asked for again on a Language change (the server
+    words it again: test_live_words.py); here the server's answer is marked, to see the page take it."""
+    proj = tmp_path / "5098-2026"
+    proj.mkdir()
+    (proj / "build.gradle").write_text("plugins { id 'java' }\n")
+    cfg = _robot(tmp_path)
+    page = code_page(cfg)
+    page.click("#code-browse")
+    page.click("[data-use='5098-2026']")
+    page.wait_for_selector("#code-checks li[data-check='gradle_built'] button[data-fix='gradle_build']")
+    row = page.locator("#code-checks li[data-check='gradle_built']")
+    row.locator("button[data-fix='gradle_build']").click()
+    page.wait_for_selector("#code-checks li[data-check='gradle_built'] .check-detail")
+    assert "didn't build" in row.text_content()
+
+    def reworded(route):
+        r = route.fetch()
+        data = r.json()
+        if data.get("result"):
+            data["result"]["message"] = "REWORDED " + data["result"]["message"]
+        route.fulfill(response=r, json=data)
+    page.route("**/api/robot/code/fix*", reworded)
+    page.evaluate("(tag) => import('./i18n.js').then((m) => m.setLanguage(tag))", "en-GB")
+    page.wait_for_function("document.querySelector(\"#code-checks li[data-check='gradle_built']\")"
+                           ".textContent.includes('REWORDED')")
+    assert page.locator("#code-checks li[data-check='gradle_built'] .check-detail").count() == 1
+
+
 def test_scenario_run_of_unbuilt_java_code_goes_to_build_now(code_page, tmp_path):
     proj = tmp_path / "5098-2026"
     proj.mkdir()
@@ -728,13 +757,13 @@ def test_the_start_picker_shows_and_takes_the_chosen_units(code_page, tmp_path):
     ok()
     assert _raw(cfg)["robot"]["start_pose"] == pose
 
-    # Units changes while a box is half typed: the text stays and means the new units (as in the inspector)
+    # Units changes while a box is half typed: the text is converted (6.5 ft is 1.9812 m), as in the inspector (A6)
     page_units(page, "imperial")
     reopen()
     page.fill("#sp-y", "6.5")
     page.focus("#sp-y")
     page_units(page, "metric")
     page.wait_for_function("document.querySelector('#sp-exact .fp-field .unit').textContent === 'm'")
-    assert page.input_value("#sp-y") == "6.5"
+    assert page.input_value("#sp-y") == "1.9812"
     ok()
-    assert _raw(cfg)["robot"]["start_pose"][1] == 6.5
+    assert _raw(cfg)["robot"]["start_pose"][1] == 1.9812

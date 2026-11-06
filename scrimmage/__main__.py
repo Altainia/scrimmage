@@ -444,9 +444,10 @@ def _launcher(args) -> None:
         out.mkdir(parents=True, exist_ok=True)
         report.write_csv(rows, out / "results.csv")
         label = report.calibration(setups)
-        print(report.format_table(rows, label=label))
+        print(report.format_table(rows, label=label, shown=report.SHOWN))
         print(f"wrote {out / 'results.csv'}")
-        paths = report.write_charts(rows, charts, out, [s.goal for s in setups], footer=label)
+        paths = report.write_charts(rows, charts, out, [s.goal for s in setups], footer=label, shown=report.SHOWN,
+                                    swept=report.key_kind)
     except (LauncherConfigError, OSError) as e:
         print(f"scrimmage: {e}", file=sys.stderr)
         sys.exit(2)
@@ -585,8 +586,9 @@ def _bench_many(args) -> None:
                 print(compare.format_table(rows, bench))
                 print(f"wrote {out / 'results.csv'}")
                 charts = bench.charts or compare.default_charts(list(bench.sweep))
+                from .bench.fields import key_kind
                 paths = report.write_charts(rows, charts, out, None, compare.BENCH_METRICS, compare.CHART_KINDS,
-                                            footer=bench_estimates(bench), shown=compare.SHOWN)
+                                            footer=bench_estimates(bench), shown=compare.SHOWN, swept=key_kind)
                 print(report.NO_MATPLOTLIB if paths is None else "\n".join(f"wrote {p}" for p in paths))
             elif args.bench_command == "compare":
                 from .bench.run import run_bench

@@ -112,3 +112,58 @@ def test_a_runs_outcome_and_the_runs_list_follow_the_language(test_page):
     assert page.inner_text("#test-runs").startswith("Go 1 · done")
     english(page)
     page.wait_for_function("document.querySelector('#test-result-title').textContent === 'Run 1 · finished'")
+
+
+def test_a_kept_spread_follows_the_language_and_units(test_page, tmp_path):
+    """Cleanup A1: a spread's table is made in machine text, yet the page shows it in the viewer's Language and Units
+    from its table.json, switched live; a spread from before table.json shows table.csv's words as they are."""
+    from scrimmage.blocks import store
+    from scrimmage.blocks.program import loads
+    from scrimmage.blocks.spread import run_spread
+    from test_blocks_spread import spread_test
+    from test_i18n_pages_browser import switch
+    path = spread_test(tmp_path, "offset_in = [0, 30]")
+    program = loads(path.read_text(encoding="utf-8"), path)
+    base = store.runs_dir(path)
+    old = run_spread(program, base)
+    (old / "table.json").unlink()                       # as an older scrimmage kept it
+    run_spread(program, base)
+    page, _ = test_page(path=path)
+    page.wait_for_function("__scrimmageTest.replay.runId === 'spread-002/002'")
+    cells = "[...document.querySelectorAll('#test-spread-table tbody tr td:first-child')].map((e) => e.textContent)"
+    assert page.evaluate(cells) == ["on the center line", "30 in left"]
+    assert page.inner_text("#test-spread-sentence") == "Picked up 1 of 2; missed at 30 in left."
+    switch(page, "en-GB")
+    page.evaluate("import('./units.js').then((m) => m.set('metric'))")
+    page.wait_for_function(f"{cells}.join('|') === 'on the centre line|762 mm left'")
+    assert page.inner_text("#test-spread-sentence") == "Picked up 1 of 2; missed at 762 mm left."
+    # the older spread: table.csv's words, as they are
+    page.click("#test-runs [data-run='spread-001/002']")
+    page.wait_for_function(f"__scrimmageTest.replay.runId === 'spread-001/002' && {cells}[1] === '30 in left'")
+    assert page.inner_text("#test-spread-sentence") == "Picked up 1 of 2; missed at 30 in left."
+
+
+DRIVE_SHORT = '[[block]]\ndo = "drive"\ndistance = 5.0\ntimeout = 0.3\n'
+
+
+def test_a_kept_sweep_and_its_run_follow_the_units(test_page, tmp_path):
+    """Cleanup A1, A2: a sweep's values, its outcomes and a run kept inside it follow the Units setting live (the
+    run's words are result.json's, in every setting); the run made in machine text says meters for a drive."""
+    from scrimmage.blocks import store
+    from scrimmage.blocks.program import loads
+    from scrimmage.blocks.sweep import run_sweep
+    page, path = test_page(DRIVE_SHORT)
+    run_sweep(loads(path.read_text(encoding="utf-8"), path), {"block": [0], "key": "distance"}, [5.0, 6.0],
+              store.runs_dir(path))
+    page.wait_for_function("__scrimmageTest.replay.runId === 'sweep-001/002' && __scrimmageTest.sweep")
+    values = "[...document.querySelectorAll('#test-sweep-table tbody tr td:first-child')].map((e) => e.textContent)"
+    outcomes = "[...document.querySelectorAll('#test-sweep-table .test-sweep-outcome')].map((e) => e.textContent)"
+    assert page.evaluate(values) == ["16.404", "19.685"]
+    assert page.evaluate(outcomes)[1].startswith("timed out: Drive (block 1) didn't reach 19.69 ft in 0.3 s")
+    assert page.inner_text("#test-outcome").startswith("Drive (block 1) didn't reach 19.69 ft in 0.3 s (went ")
+    page.evaluate("import('./units.js').then((m) => m.set('metric'))")
+    page.wait_for_function(f"{values}.join('|') === '5|6'")
+    assert page.evaluate(outcomes)[0].startswith("timed out: Drive (block 1) didn't reach 5 m in 0.3 s")
+    page.wait_for_function("document.querySelector('#test-outcome').textContent.startsWith("
+                           "\"Drive (block 1) didn't reach 6 m in 0.3 s (went \")")
+    assert "didn't reach 6 m" in page.inner_text("#test-runs")

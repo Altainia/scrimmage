@@ -17,6 +17,21 @@ def disc_uncalibrated() -> str:
 
 
 
+# The disc launcher's metrics shown in the Units setting (the printed table, summary.md, the charts), by units kind;
+# results.csv stays SI, its columns named as before.
+SHOWN = {"exit_speed": "speed", "apex_m": "field", "landing_m": "field", "wall_height_m": "field",
+         "wall_lateral_m": "field"}
+# A disc file's swept keys charted in the Units setting (the rest, such as launcher.tilt_deg, as the file has them).
+KEY_KINDS = {"disc.diameter": "length", "disc.mass": "mass", "disc.height": "length", "wheels.diameter": "length",
+             "wheels.width": "length", "layout.compression": "length", "launcher.height": "field",
+             "goal.distance": "field", "goal.width": "field", "goal.height": "field", "goal.bottom": "field"}
+
+
+def key_kind(key: str):
+    kind = KEY_KINDS.get(key)
+    return (kind, 1.0, report.SI_SUFFIX.sub("", key)) if kind else None
+
+
 def run_and_write(path: Path, out: Path, sweep: bool) -> list[Path] | None:
     """Run the file (every `[sweep]` combination, or just its setup), print the table and write results.csv,
     summary.md and charts into `out`. Returns the charts written (None without matplotlib)."""
@@ -28,14 +43,15 @@ def run_and_write(path: Path, out: Path, sweep: bool) -> list[Path] | None:
     charts = charts if sweep else [c for c in charts if c.get("kind") != "line"]
     out.mkdir(parents=True, exist_ok=True)
     report.write_csv(rows, out / "results.csv", METRIC_KEYS)
-    table = report.format_table(rows, METRIC_KEYS, label=disc_uncalibrated())
+    table = report.format_table(rows, METRIC_KEYS, label=disc_uncalibrated(), shown=SHOWN)
     print(table)
     print(f"wrote {out / 'results.csv'}")
     (out / "summary.md").write_text(
         f"# Disc launcher: {Path(path).name}\n\n{disc_uncalibrated()}\n\n```\n{table.split(chr(10), 1)[1]}\n```\n\n"
         "Columns are explained in docs/disc.md, \"Reading results.csv\".\n", encoding="utf-8")
     print(f"wrote {out / 'summary.md'}")
-    return report.write_charts(rows, charts or [c for c in report.default_charts(keys) if c["kind"] in CHART_KINDS], out, None, METRIC_KEYS, CHART_KINDS, footer=disc_uncalibrated())
+    return report.write_charts(rows, charts or [c for c in report.default_charts(keys) if c["kind"] in CHART_KINDS], out, None, METRIC_KEYS, CHART_KINDS, footer=disc_uncalibrated(),
+                               shown=SHOWN, swept=key_kind)
 
 
 def exit_table_text(setup: DiscSetup, rpms: list[float]) -> str:

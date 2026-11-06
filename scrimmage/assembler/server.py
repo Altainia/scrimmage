@@ -872,6 +872,8 @@ class App:
         self.extra_folders: list[Path] = []
         self.robot: ConfigDoc | None = None
         self.robot_missing: str | None = None     # why there is no robot document (scenario mode only)
+        self._missing_words = None                # ... a function wording it again (a Language change), or None
+        self._missing_lang: str | None = None     # ... and the language robot_missing is in
         self._robot_target: Path | None = None    # the robot config the scenario names
         self._robot_ver = 0                       # the robot version while there is no robot document
         self.result: validate.Result | None = None
@@ -914,9 +916,11 @@ class App:
         # the robot code panel's fixes (a Gradle build, ...): one at a time on one worker thread, never under _lock
         self._fix_cond = threading.Condition()
         self._fix = {"version": 0, "id": 0, "fix": None, "running": False, "lines": [], "result": None}
+        self._fix_again = None    # a failed fix's result worded again in the Language now (robotcode._failed), or None
         self._fix_thread: threading.Thread | None = None
         self._fix_cancel = threading.Event()
-        self._build_failed: dict[str, tuple[float, dict]] = {}   # code folder -> (when, the failed gradle_built check)
+        # code folder -> (when, the failed gradle_built check, a function wording it again: robotcode._failed)
+        self._build_failed: dict[str, tuple] = {}
         self._ranges: dict = {}   # (range file, its mtime) -> its named starts
         with self._lock:
             self._load(Path(path) if path is not None else None, initial=True, parts_dir=parts_dir)
@@ -970,6 +974,7 @@ class App:
             back = robot_parts = None
         self.back, self._back_parts = back, robot_parts
         self.robot, self.robot_missing, self._robot_target, self._robot_ver = None, NO_ROBOT, None, floor
+        self._missing_words = None
         self.scenario, self.extra_folders = None, []
         old_test, self.test = self.test, test
         old_measure, self.measure = self.measure, measure
@@ -1077,7 +1082,7 @@ class App:
         version = i18n.catalog_version(language)
         out = {"units": settings.current_units(), "table": units.table_json(), "language": language,
                "languages": i18n.languages(), "catalog_version": version, "theme": settings.load().theme,
-               "warning": settings.problem()}
+               "warning": settings.problem_words()}
         if have != version:
             out["catalog"] = i18n.catalog_json(language)
         return out
@@ -1320,27 +1325,37 @@ class App:
                 pass
         raise ApiError(409, i18n.t("a drive session is live"))
 
-    def _detach(self, reason: str, target: Path | None, initial: bool) -> bool:
-        """No robot document, for `reason`; True when that changed."""
+    def _detach(self, words, target: Path | None, initial: bool) -> bool:
+        """No robot document, for the reason `words()` says (a function, so a Language change words it again:
+        _reword_missing); True when that changed."""
+        self._reword_missing()
+        reason = words()
         if self.robot is None and self.robot_missing == reason:
+            self._missing_words = words
             return False
         if not initial:
             self._robot_ver = self.robot_version + 1
         self.robot, self.robot_missing, self._robot_target = None, reason, target
+        self._missing_words, self._missing_lang = words, i18n.current_language()
         return not initial
+
+    def _reword_missing(self) -> None:
+        """Why there is no robot document, again in the Language setting when it changed since. Lock held."""
+        if self.robot is None and self._missing_words is not None and self._missing_lang != i18n.current_language():
+            self.robot_missing, self._missing_lang = self._missing_words(), i18n.current_language()
 
     def _point_robot(self, initial: bool = False) -> bool:
         """Make the robot document the scenario's config; True when it was replaced, detached or reattached."""
         sc = self.scenario
         target = self._scenario_config(sc)
         if target is None:
-            if sc.doc is None:
-                reason = i18n.t("the scenario {name} has a TOML error, so its robot config isn't known; fix the scenario "
-                                "in a text editor", name=sc.path.name)
-            else:
+            def reason() -> str:
+                if sc.doc is None:
+                    return i18n.t("the scenario {name} has a TOML error, so its robot config isn't known; fix the "
+                                  "scenario in a text editor", name=sc.path.name)
                 unset = unset_folder(_plain(sc.doc.get("config")))
-                reason = unset[1] if unset else i18n.t("this scenario names no robot config ({setting})",
-                                                       setting='config = "<robot config .toml>"')
+                return unset[1] if unset else i18n.t("this scenario names no robot config ({setting})",
+                                                     setting='config = "<robot config .toml>"')
             return self._detach(reason, None, initial)
         return self._attach_robot(target, initial)
 
@@ -1354,15 +1369,19 @@ class App:
         if self.robot is not None and self.robot.path == target:
             if target.exists():
                 return False
-            return self._detach(i18n.t("the robot config {path} was deleted", path=self._display(target)), target, initial)
+            return self._detach(lambda: i18n.t("the robot config {path} was deleted", path=self._display(target)),
+                                target, initial)
         doc, reason = None, None
         try:
             doc = ConfigDoc(target)
         except FileNotFoundError:
-            reason = i18n.t("the robot config {path} doesn't exist", path=self._display(target))
+            def reason() -> str:
+                return i18n.t("the robot config {path} doesn't exist", path=self._display(target))
         except OSError as e:
-            reason = i18n.t("can't read the robot config {path}: {why}", path=self._display(target),
-                            why=e.strerror or e)
+            why = e.strerror or e
+
+            def reason() -> str:
+                return i18n.t("can't read the robot config {path}: {why}", path=self._display(target), why=why)
         if doc is None:
             if self.robot is None and self._robot_target == target and self.robot_missing is not None:
                 return False   # still missing: keep saying why (e.g. "was deleted")
@@ -1517,10 +1536,11 @@ class App:
     # -- robot ------------------------------------------------------------------------------
     def _robot_words(self) -> None:
         """When the Language setting changed since the robot was validated: its errors, warnings and read-only
-        reason again, in its words (the file is the same). The reason no robot is attached (scenario mode) keeps its
-        words until the scenario or its robot changes (docs/settings.md, known gaps). Lock held."""
+        reason again, in its words (the file is the same), and the reason no robot is attached (scenario mode:
+        _reword_missing). Lock held."""
         if self._robot_lang == i18n.current_language() or (self.robot is None and self.robot_missing is None):
             return
+        self._reword_missing()
         d = self.robot
         if d is not None:
             if d.doc is not None:
@@ -1991,7 +2011,9 @@ class App:
         if got is None:
             return None
         built = robotcode.built_at(folder)
-        return got[1] if built is None or built < got[0] else None
+        if built is not None and built >= got[0]:
+            return None
+        return dataclasses.asdict(got[2]()) if got[2] is not None else got[1]   # in the Language now
 
     def _not_built(self) -> str | None:
         """Why the robot document's Java code can't start yet (the page's starts only): it has never built on this
@@ -2043,16 +2065,24 @@ class App:
             out["info"] = _info_json(info)
         return status, out
 
+    def _fix_json(self) -> dict:
+        """The fix's state; a failed one's result in the Language now (its lines are the program's own). Fix lock
+        held."""
+        out = {**self._fix, "lines": list(self._fix["lines"])}
+        if self._fix_again is not None and not out["running"]:
+            out["result"] = dataclasses.asdict(self._fix_again())
+        return out
+
     def fix_state(self) -> dict:
         with self._fix_cond:
-            return {**self._fix, "lines": list(self._fix["lines"])}
+            return self._fix_json()
 
     def wait_fix(self, since: int | None) -> dict:
         end = time.monotonic() + POLL_SECONDS
         with self._fix_cond:
             while since is not None and self._fix["version"] == since and time.monotonic() < end:
                 self._fix_cond.wait(1.0)
-            return {**self._fix, "lines": list(self._fix["lines"])}
+            return self._fix_json()
 
     def code_fix(self, body: dict) -> dict:
         """Run one readiness fix (robotcode.run_fix) on the fix worker: one at a time."""
@@ -2072,6 +2102,7 @@ class App:
             cancel = self._fix_cancel = threading.Event()
             f = self._fix
             f.update(id=f["id"] + 1, fix=fix, running=True, lines=[], result=None, version=f["version"] + 1)
+            self._fix_again = None
             fix_id = f["id"]
             self._fix_cond.notify_all()
 
@@ -2094,7 +2125,9 @@ class App:
                         if result.ok:
                             self._build_failed.pop(str(info.folder), None)
                         else:
-                            self._build_failed[str(info.folder)] = (time.time(), dataclasses.asdict(result))
+                            self._build_failed[str(info.folder)] = (time.time(), dataclasses.asdict(result),
+                                                                    getattr(result, "again", None))
+                    self._fix_again = getattr(result, "again", None)
                     self._fix.update(running=False, result=dataclasses.asdict(result),
                                      version=self._fix["version"] + 1)
                     self._fix_cond.notify_all()
@@ -2112,7 +2145,9 @@ class App:
         sc = self._need_scenario()
         res = self.scenario_result
         if self._scenario_lang != i18n.current_language():
-            # the Language setting changed since: the errors again, in its words (the file is the same)
+            # the Language setting changed since: the errors again, in its words (the file is the same), the reason
+            # no robot is attached too
+            self._reword_missing()
             self._set_scenario_result(scenario_validate.check(sc.text, sc.path))
             res = self.scenario_result
         raw = sc.doc.unwrap() if sc.doc is not None else {}

@@ -189,3 +189,39 @@ def test_run_skips_line_charts_of_swept_keys(tmp_path, capsys):
                                 '[[chart]]\nkind = "shaft"\n')
     main(["launcher", "run", str(p), "--out", str(tmp_path / "o")])
     assert [f.name for f in (tmp_path / "o").glob("*.png")] == ["shaft.png"]
+
+
+def _table(out: str) -> list[list[str]]:
+    """The printed table's header and rows (after the UNCALIBRATED line), split on runs of spaces."""
+    import re
+    lines = [ln for ln in out.splitlines() if ln.strip() and not ln.startswith("wrote")][1:]
+    return [re.split(r"\s{2,}", ln.strip()) for ln in lines]
+
+
+def test_the_printed_table_follows_the_units_but_results_csv_stays_si(tmp_path, capsys, units):
+    """Cleanup A3: the table `launcher run` prints shows speeds and the landing spread in the Units setting (or
+    `--units`), the unit in the header; results.csv keeps SI and its column names."""
+    p = write(tmp_path, SETUP)
+    main(["launcher", "run", str(p), "--out", str(tmp_path / "i")])
+    imperial = _table(capsys.readouterr().out)
+    main(["--units", "metric", "launcher", "run", str(p), "--out", str(tmp_path / "m")])
+    metric = _table(capsys.readouterr().out)
+    assert "exit_speed (ft/s)" in imperial[0] and "spread_downrange (ft)" in imperial[0]
+    assert "exit_speed (m/s)" in metric[0] and "spread_lateral (m)" in metric[0]
+    k = metric[0].index("exit_speed (m/s)")
+    assert float(imperial[1][k]) == pytest.approx(float(metric[1][k]) / 0.3048, rel=1e-3)
+    assert metric[0][metric[0].index("fired")] == "fired"                # counts are as they were
+    assert (tmp_path / "i" / "results.csv").read_bytes() == (tmp_path / "m" / "results.csv").read_bytes()
+    assert (tmp_path / "i" / "results.csv").read_text().splitlines()[0].split(",") == list(METRIC_KEYS)
+
+
+def test_the_landing_chart_is_in_the_units_setting(tmp_path, capsys, monkeypatch):
+    """Cleanup A3: the landing chart's axes are in the setting's field length, like the bench charts' units."""
+    pytest.importorskip("matplotlib")
+    from matplotlib.axes import Axes
+    labels = []
+    monkeypatch.setattr(Axes, "set_xlabel", lambda self, text, *a, **k: labels.append(text))
+    p = write(tmp_path, SETUP)
+    main(["launcher", "run", str(p), "--out", str(tmp_path / "i")])
+    main(["--units", "metric", "launcher", "run", str(p), "--out", str(tmp_path / "m")])
+    assert "downrange (ft)" in labels and "downrange (m)" in labels

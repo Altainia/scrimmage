@@ -24,7 +24,8 @@ sweep.
 
 The sweep is kept as `base/sweep-<NNN>/`: a run per value (`001/` ...), `table.csv` (value, status, outcome, t_end,
 and passed / failed for each check) and `sweep.json` (target, values, and `cancelled` / `problems` when there are
-any). Run `<k>/` is row k's (none for a value that couldn't run). The newest KEEP_SWEEPS complete sweeps are kept; a
+any), both machine text (units.machine_text: American English, the words as they always were), and `table.json`,
+the table for the Test tab: each value in SI and the words in every Language and Units setting (_write_words). Run `<k>/` is row k's (none for a value that couldn't run). The newest KEEP_SWEEPS complete sweeps are kept; a
 cancelled sweep (stopped, or interrupted, with the runs done so far) doesn't count and prunes nothing.
 """
 
@@ -274,6 +275,30 @@ def _check_column(c: dict) -> str:
     return f"{_where(tuple(c['place']))}: {c['text']}"
 
 
+def _check_words(c: dict) -> str:
+    """A check's column, as _check_column's, translated (c: the check with its words in the setting)."""
+    return i18n.t("{where}: {check}", where=_where(tuple(c["place"])), check=c["text"])
+
+
+def value_kind(target: dict, program: Program) -> tuple[str, float] | None:
+    """What a sweep's values are: (the units kind, SI per one of the value) for a length, field length, weight or
+    speed (the robot file and a station keep SI; a block's `to`, its own unit), else None (degrees, seconds, volts,
+    a grip, the shuffle): the Test tab shows them as they are. As the page's targetMeasure (static/test_run.js)."""
+    if "robot" in target:
+        return ("mass", 1.0) if target["robot"] == "mass" else ("length", 1.0)
+    if "mount" in target:
+        return None if target["axis"] == "yaw" else ("length", 1.0)
+    if "station" in target:
+        return {"spread_position": ("length", 1.0), "spread_speed": ("speed", 1.0)}.get(target["key"])
+    if "block" in target:
+        if target["key"] == "distance":
+            return ("field", 1.0)
+        if target["key"] == "to":
+            unit = _block_json(to_json(program)["blocks"], target["block"]).get("unit")
+            return {"in": ("length", 0.0254), "m": ("length", 1.0)}.get(unit)
+    return None
+
+
 # ---- the sweep ------------------------------------------------------------------------------------------------------
 
 def run_sweep(program: Program, target: dict, values: list[float | str], base, on_progress=None,
@@ -335,13 +360,19 @@ def run_sweep(program: Program, target: dict, values: list[float | str], base, o
     def record(i: int, row: dict, result):
         row.update(status=result.status, outcome=result.outcome, t_end=result.t_end,
                    checks={_check_column(c): "passed" if c["passed"] else "failed" for c in result.checks})
+        if result.words:            # the outcome and each check's column in every setting, for table.json
+            row["words"] = {k: {"outcome": w["outcome"],
+                                "columns": {_check_column(c): (c, wc["text"]) for c, wc in zip(result.checks,
+                                                                                             w["checks"])}}
+                            for k, w in result.words.items()}
         return made[i], {"target": target, "value": values[i], "index": i}
 
     rows = [{"value": v, "status": COULDNT_RUN, "outcome": "", "t_end": None, "checks": {}} for v in values]
+    measure = value_kind(target, program)
     # on_progress must stay numeric: anything built inside machine_text() is machine text
     with units.machine_text():      # table.csv's words (outcomes, check columns) as they always were
         return run_each(tmp, rows, attempt, record, lambda done, cancelled: _finish(
-            tmp, base, target, values, done, left, cancelled), on_progress)
+            tmp, base, target, values, done, left, cancelled, measure), on_progress)
 
 
 def run_each(tmp: Path, rows: list[dict], attempt, record, finish, on_progress=None) -> Path:
@@ -383,7 +414,8 @@ def run_each(tmp: Path, rows: list[dict], attempt, record, finish, on_progress=N
     return finish(done, cancelled)
 
 
-def _finish(tmp: Path, base: Path, target: dict, values: list, rows: list, left: list, cancelled: bool) -> Path:
+def _finish(tmp: Path, base: Path, target: dict, values: list, rows: list, left: list, cancelled: bool,
+            measure: tuple[str, float] | None = None) -> Path:
     """Write table.csv and sweep.json and put the sweep in place."""
     meta = {"target": target, "values": values}
     if cancelled:
@@ -394,6 +426,7 @@ def _finish(tmp: Path, base: Path, target: dict, values: list, rows: list, left:
     try:
         _write_table(tmp / "table.csv", rows)
         (tmp / "sweep.json").write_text(json.dumps(meta), encoding="utf-8")
+        _write_words(tmp / "table.json", rows, measure)
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
@@ -404,10 +437,43 @@ def _value_text(v) -> str:
     return v if isinstance(v, str) else f"{v:g}"
 
 
-def _write_table(path: Path, rows: list[dict]) -> None:
+def _columns(rows: list[dict]) -> list[str]:
+    """table.csv's check columns, in order: every row's, each once."""
     cols: list[str] = []
     for r in rows:
         cols += [c for c in r["checks"] if c not in cols]
+    return cols
+
+
+def _write_words(path: Path, rows: list[dict], measure: tuple[str, float] | None) -> None:
+    """table.json: the sweep's table for the Test tab, which shows it in the viewer's Language and Units (table.csv is
+    machine text). {"kind": the values' units kind (value_kind; None: shown as they are), "rows": [{si (the value in
+    SI, or None), status, t_end (s, or None), run (the row's kept run, "001"; None when it couldn't run)}], "words":
+    {setting_key: {outcomes (each row's outcome, None for a row that couldn't run: table.csv says why), columns
+    (table.csv's check columns, in order)}}}. Words, not codes, for the outcome and the checks: a run's are worded
+    from its numbers while it runs (RunResult.words)."""
+    cols = _columns(rows)
+    kind, per = measure if measure is not None else (None, 1.0)
+
+    def table_words() -> dict:
+        key = units.setting_key()
+        columns = []
+        for col in cols:
+            found = next((r["words"][key]["columns"][col] for r in rows if col in r.get("words", {}).get(key, {})
+                          .get("columns", {})), None)
+            columns.append(_check_words({**found[0], "text": found[1]}) if found else col)
+        return {"outcomes": [r["words"][key]["outcome"] if "words" in r else None for r in rows], "columns": columns}
+
+    table = {"kind": kind,
+             "rows": [{"si": float(r["value"]) * per if kind is not None and not isinstance(r["value"], str) else None,
+                       "status": r["status"], "t_end": r["t_end"],
+                       "run": f"{i + 1:03d}" if "words" in r else None} for i, r in enumerate(rows)],
+             "words": units.each_setting(table_words)}
+    path.write_text(json.dumps(table, ensure_ascii=False), encoding="utf-8")
+
+
+def _write_table(path: Path, rows: list[dict]) -> None:
+    cols = _columns(rows)
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["value", "status", "outcome", "t_end", *cols])

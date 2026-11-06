@@ -23,7 +23,7 @@
 // Units: lengths, speeds, masses, forces and springs are shown and typed in the Units setting (units.js; valueOf
 // says how). What is typed is written in the form the file already has, `diameter_in` in inches, else meters (U3).
 
-import { $, h, api, apiFile, notice, serial, registerTab, setTab, showPath, fmt, UNIT } from "./app.js";
+import { $, h, api, apiFile, notice, serial, registerTab, setTab, showPath, fmt, UNIT, markUnits, typedText } from "./app.js";
 import { units } from "./units.js";
 import { t, onChange } from "./i18n.js";
 
@@ -226,6 +226,14 @@ function failed(data, status) {
     : [{ field: "status", message: data.error || t("the server answered {status}", { status }) }];
 }
 
+// A value refused (`list`: [{field, message}]), beside the earlier refusals of other fields of the idea whose text is
+// still in their box: each stays until its own field commits again (post).
+function refuse(file, list) {
+  const e = bench.errors, fields = new Set(list.map((x) => x.field));
+  const keep = e.file === file && !e.run ? e.list.filter((x) => !fields.has(x.field) && bench.typed.has(x.field)) : [];
+  bench.errors = { file, list: [...keep, ...list] };
+}
+
 async function post(path, body, field, file = bench.shown) {
   busy++;
   try {
@@ -238,10 +246,14 @@ async function post(path, body, field, file = bench.shown) {
       ownRun = path.endsWith("/edit") ? { file, from: chained ? ownRun.from : sent.version, to: data.version } : null;
       changes.set(file, { own: true, t: now() });
       // a refusal made while this edit was on its way ("5 in" typed in Metric) is about later text: it stays, with
-      // its text, until that box commits; the rest is now what the file says
+      // its text, until that box commits. So does an earlier edit's refusal of another field, whose text is still in
+      // its box: a refusal goes when its own field commits again. A run's refusal, an undo's or a refused edit with
+      // no field of its own is about the file as it was: it goes.
       const later = bench.errors !== refusalBefore && bench.errors.file === file ? bench.errors : null;
-      const stays = new Set(later ? later.list.map((e) => e.field) : []);
-      bench.errors = later || { file: null, list: [] };
+      const others = !later && field && bench.errors.file === file && !bench.errors.run
+        ? bench.errors.list.filter((e) => e.field !== field && bench.typed.has(e.field)) : [];
+      const stays = new Set(later ? later.list.map((e) => e.field) : others.map((e) => e.field));
+      bench.errors = later || (others.length ? { file, list: others } : { file: null, list: [] });
       for (const m of [bench.typed, bench.typedAt]) for (const k of [...m.keys()]) if (!stays.has(k)) m.delete(k);
       await refresh();
       return true;
@@ -264,7 +276,9 @@ async function post(path, body, field, file = bench.shown) {
       await refresh();
       return false;
     }
-    bench.errors = { file, list: errors.map((e) => ({ ...e, field: e.field === "status" && field ? field : meters(e.field) })) };
+    const list = errors.map((e) => ({ ...e, field: e.field === "status" && field ? field : meters(e.field) }));
+    if (body.op === "set") refuse(file, list);
+    else bench.errors = { file, list };
     if (field) bench.typedAt.set(field, sent.version);   // the refused value stays tied to the version it was typed at
     render();
     const shown = document.querySelector("#tab-bench .field-msg.error");
@@ -334,7 +348,9 @@ async function run() {
   const r = await job("/api/bench/run", { file }, { kind: "run", files: [file] });
   if (r === true) return;
   notice(t("Can't run {name}: {why}", { name: ideaName(file), why: r.map((e) => e.message).join("; ") }), "error", "bench-run");
-  bench.errors = { file, list: r.map((e) => ({ ...e, field: meters(e.field) })) };
+  // about the idea as it is now: it goes when the idea changes (an edit here, or outside: loadIdea)
+  bench.errors = { file, list: r.map((e) => ({ ...e, field: meters(e.field) })), run: true,
+    merged: bench.idea && bench.idea.file === file ? JSON.stringify(bench.idea.merged) : null };
   render();
 }
 
@@ -391,6 +407,8 @@ async function loadIdea(seq, own) {
     changes.set(file, { own: false, t: now() });
   }
   bench.idea = idea || (prev && prev.file === file ? prev : null);
+  const e = bench.errors;
+  if (e.run && e.file === file && bench.idea && e.merged !== JSON.stringify(bench.idea.merged)) bench.errors = { file: null, list: [] };
   render();
 }
 
@@ -475,8 +493,10 @@ function stagePictures(lt, result) {
   return { main: p.path_side || null, gif: p.pass_gif || null };
 }
 
-// A sweep's or compare's table header in plain words (a swept key stays as the file writes it, its values too). The
-// CSV is SI: exit speed and peak load are shown in the Units setting, to 4 significant figures, as the CSV has them.
+// A sweep's or compare's table header in plain words. The CSV is SI: exit speed and peak load are shown in the Units
+// setting, to 4 significant figures, as the CSV has them. A swept key keeps its name; a length, weight or speed key's
+// values are shown in the Units setting too (as From and To are), the unit in its header: "wheel.top.diameter (in)",
+// for `diameter_in` as for `diameter`.
 const COLUMN = { idea: () => t("idea"), out: () => t("got out"), jammed: () => t("jammed"),
   exit_speed: () => t("exit speed ({unit})", { unit: units.name("speed") }), elevation_deg: () => t("elevation (°)"),
   spin_rps: () => t("spin (turns/s)"), speed_drop_pct: () => t("speed drop (%)"),
@@ -484,18 +504,32 @@ const COLUMN = { idea: () => t("idea"), out: () => t("got out"), jammed: () => t
 const COLUMN_KIND = { exit_speed: "speed", peak_load_n: "force" };
 const columnName = (c) => (COLUMN[c] ? COLUMN[c]() : undefined);
 
+// a swept key's column: {kind, inches, key (without `_in`)}, or null for one shown as the file has it
+function sweptColumn(c) {
+  if (COLUMN[c]) return null;
+  const inches = /_in$/.test(c), key = inches ? c.slice(0, -3) : c;
+  const { def } = parseKey(key);
+  const kind = kindOf(key);
+  return kind && (!inches || (def && def.length)) ? { kind, inches, key } : null;
+}
+
 function renderTable(result) {
   const wrap = $("#bench-table-wrap");
   const vt = result && result.table;
   wrap.hidden = !vt || !vt.rows.length;
   if (wrap.hidden) { $("#bench-table").replaceChildren(); return; }
+  const swept = vt.columns.map(sweptColumn);
   const cell = (x, c) => {
     if (x === "nan") return "–";
-    const kind = COLUMN_KIND[vt.columns[c]], v = Number(x);
-    return kind && x !== "" && Number.isFinite(v) ? String(+units.toDisplay(v, kind).toPrecision(4)) : x;
+    const v = Number(x);
+    if (x === "" || !Number.isFinite(v)) return x;
+    if (swept[c]) return String(+units.toDisplay(swept[c].inches ? units.fromKey(v, "in") : v, swept[c].kind).toPrecision(5));
+    const kind = COLUMN_KIND[vt.columns[c]];
+    return kind ? String(+units.toDisplay(v, kind).toPrecision(4)) : x;
   };
+  const head = (c, k) => columnName(c) || (swept[k] ? t("{key} ({unit})", { key: swept[k].key, unit: units.name(swept[k].kind) }) : c);
   $("#bench-table").replaceChildren(
-    h("thead", {}, h("tr", {}, ...vt.columns.map((c) => h("th", { scope: "col", class: COLUMN[c] ? "" : "mono", text: columnName(c) || c })))),
+    h("thead", {}, h("tr", {}, ...vt.columns.map((c, k) => h("th", { scope: "col", class: COLUMN[c] ? "" : "mono", text: head(c, k) })))),
     h("tbody", {}, ...vt.rows.map((r) => h("tr", {}, ...r.map((x, c) => h("td", { text: cell(x, c) }))))));
 }
 
@@ -728,7 +762,7 @@ function vectorBoxes(key, id, disabled) {
       const bad = vals.find((x) => x && typeof x === "object");
       if (bad || vals.some((x) => !isNum(x))) {
         const message = bad ? bad.error : vt.n === 1 ? t("type a number") : t("type a number in each box");
-        bench.errors = { file: bench.shown, list: [{ field: key, message }] };
+        refuse(bench.shown, [{ field: key, message }]);
         bench.typed.set(key, vt.n === 1 ? texts[0] : texts);
         bench.typedAt.set(key, Math.min(...boxes.map((b) => Number(b.dataset.typedAt || b.dataset.version))));
         render();
@@ -762,6 +796,7 @@ function vectorBoxes(key, id, disabled) {
       placeholder: baseOf(j) != null && vt.value === undefined ? shownNumber(vt, baseOf(j)) : "" });
     box.value = text;
     box.dataset.orig = text;
+    markUnits(box, vt.kind);
     box.dataset.file = bench.shown;
     box.dataset.version = String(bench.state.version);
     if (bench.typedAt.has(key)) box.dataset.typedAt = String(bench.typedAt.get(key));
@@ -834,11 +869,12 @@ export function fieldRow(key, { focus = false, prefix = null, vectors = false } 
       placeholder: dflt ? t("{value} if left out", { value: dflt }) : "", class: numeric ? "bench-num" : "bench-text" });
     box.value = text;
     box.dataset.orig = text;
+    markUnits(box, vt.kind);
     const go = () => {
       // a key with a kind is typed in the Units setting and written as the file writes it (U3)
       const r = vt.kind ? parseMeasured(box.value, vt, typed === undefined ? text : null, value) : parseTyped(box.value, numeric);
       if (r.error) {
-        bench.errors = { file: bench.shown, list: [{ field: key, message: r.error }] };
+        refuse(bench.shown, [{ field: key, message: r.error }]);
         bench.typed.set(key, box.value);
         bench.typedAt.set(key, Number(box.dataset.typedAt || box.dataset.version));
         renderChange();
@@ -887,11 +923,12 @@ function renderChange() {
   redraw(drawChange);
 }
 
-// What is being typed in a field panel (`root`, a selector), and the caret, so a redraw can put it back.
+// What is being typed in a field panel (`root`, a selector), and the caret, so a redraw can put it back. After a
+// Units change, a length, weight or speed half typed is converted to the new units (typedText).
 export function keepTyping(root) {
   const act = document.activeElement;
   if (!(act && act.closest && act.closest(root) && act.dataset.key)) return null;
-  return { id: act.id, key: act.dataset.key, file: act.dataset.file, typedAt: act.dataset.typedAt, value: act.value,
+  return { id: act.id, key: act.dataset.key, file: act.dataset.file, typedAt: act.dataset.typedAt, value: typedText(act),
     dirty: act.tagName === "INPUT" && act.value !== act.dataset.orig, start: act.selectionStart, end: act.selectionEnd };
 }
 

@@ -122,7 +122,7 @@ addSection({
     }
     if (one === "custom" || (customAsked && sel.value !== "-")) {
       if (one !== "custom") sel.value = "custom";
-      const dens = box({ id: "part-density", type: "text", inputmode: "decimal",
+      const dens = box({ id: "part-density", type: "text", inputmode: "decimal", kind: "density",
         value: one === "custom" ? shownMeasure(ps[0].custom_density, "density") : "", placeholder: units.shown(2700, "density", 0) }, (text) => {
         const v = measure(text, "custom_density", "density");
         if (!Number.isNaN(v)) send("custom", { custom_density: v });
@@ -135,7 +135,7 @@ addSection({
     if (c.sel.kind === "piece") {
       const typed = new Set(ps.map((p) => p.typed_mass));
       const typedKg = typed.size === 1 ? [...typed][0] : null;
-      const w = box({ id: "part-weight", type: "text", inputmode: "decimal",
+      const w = box({ id: "part-weight", type: "text", inputmode: "decimal", kind: "mass",
         value: shownMeasure(typedKg, "mass"), placeholder: ps.length === 1 ? placeholderMass(ps[0].mass) : "" }, async (text) => {
         const v = measure(text, "kg", "mass");
         if (Number.isNaN(v)) return;
@@ -175,7 +175,7 @@ addSection({
     rows.push(h("p", { class: "part-line" }, t("Weight") + " ", h("strong", { id: "part-body-mass", dataset: { kg: String(b.mass ?? "") }, text: kg(b.mass) })));
     rows.push(h("p", { class: "part-line" }, t("Center of gravity") + " ", h("span", { class: "mono", text: cog(b.com) })));
     if (b.typed_mass !== undefined || c.plugin) {
-      const w = box({ id: "part-body-weight", type: "text", inputmode: "decimal",
+      const w = box({ id: "part-body-weight", type: "text", inputmode: "decimal", kind: "mass",
         value: shownMeasure(b.typed_mass, "mass"), placeholder: placeholderMass(b.mass) }, (text) => {
         const v = measure(text, "kg", "mass");
         if (!Number.isNaN(v)) editOp("set_mass", { body: b.name, kg: v });
@@ -484,7 +484,7 @@ function snap(name, i) {
 // three; a box not changed keeps its exact value.
 function pivotRow(b) {
   const now = cadToRobot(rt(), b.joint.anchor);
-  const els = ["x", "y", "z"].map((a, i) => box({ id: `part-pivot-${a}`, type: "text", inputmode: "decimal", value: shownMeasure(now[i], "length"),
+  const els = ["x", "y", "z"].map((a, i) => box({ id: `part-pivot-${a}`, type: "text", inputmode: "decimal", kind: "length", value: shownMeasure(now[i], "length"),
     "aria-label": t("Pivot point {axis}, {unit}", { axis: AXIS_WORDS[i](), unit: lengthWords() }) }, () => {
     const vals = els.map((e, k) => boxMeasure(e, now[k], "pivot", "length"));
     if (vals.some((v) => Number.isNaN(v))) return;
@@ -540,7 +540,7 @@ function tryIt(b, which = "try") {
 }
 
 // Range, spring, damping and friction (under "More").
-const pairDraft = new Map();   // "<body>:range" / "<body>:spring" -> the two boxes' text while only one is typed
+const pairDraft = new Map();   // "<body>:range" / "<body>:spring" -> the two boxes' text while only one is typed (.sys: its units)
 function jointMore(c, b) {
   const j = b.joint, slide = j.kind === "slide", plugin = c.plugin;
   // kinds (units.js) for the ones shown in the chosen units; null: as written (degrees, and the per-radian and
@@ -553,13 +553,20 @@ function jointMore(c, b) {
   const rows = [];
   // two boxes that are saved together (range: from and to; spring: stiffness and rest); one typed alone waits
   const pair = (which, saved, ids, kinds, send, waitText) => {
-    const key = `${b.name}:${which}`, d = pairDraft.get(key);
+    const key = `${b.name}:${which}`, kept = pairDraft.get(key);
+    // typed in the other system (Units changed since): converted, as a box being typed in is
+    // (from what was typed, kept with it, so switching back and forth doesn't drift: carryText's rule)
+    const orig = kept && (kept.orig || kept), origSys = kept && (kept.origSys || kept.sys);
+    const d = kept && kept.sys !== units.system
+      ? Object.assign(orig.map((x, i) => (origSys === units.system ? x : units.convert(x, kinds[i], origSys))),
+        { sys: units.system, orig, origSys }) : kept;
+    if (d !== kept) pairDraft.set(key, d);
     const text = d || (saved ? saved.map((x, i) => shownAs(x, kinds[i], 4)) : ["", ""]);
-    const els = ids.map(([id, extra], i) => box({ id, type: "text", inputmode: "decimal", value: text[i], ...extra }, () => {
+    const els = ids.map(([id, extra], i) => box({ id, type: "text", inputmode: "decimal", value: text[i], kind: kinds[i], ...extra }, () => {
       const now = els.map((e) => e.value.trim());
       const vals = els.map((e, n) => readAs(e, saved ? saved[n] : null, kinds[n], which));
       if (vals.some((v) => Number.isNaN(v))) return;
-      pairDraft.set(key, now);
+      pairDraft.set(key, Object.assign(now, { sys: units.system }));
       const r = send(vals);
       if (r) r.then((x) => { if (x.ok) { pairDraft.delete(key); render(); } });
       else {   // only one typed: wait for the other, without a redraw (so Tab still reaches the other box)
@@ -590,7 +597,7 @@ function jointMore(c, b) {
   rows.push(origin(c, b, ["spring"], springRow));
   for (const [key, label, unitText, kind, hint] of [["damping", t("Damping"), u.d, k.d, t("Slows it more the faster it moves.")],
     ["frictionloss", t("Friction"), u.f, k.f, t("A steady drag that holds it until pushed hard enough.")]]) {
-    const el = box({ id: `part-${key}`, type: "text", inputmode: "decimal", value: j[key] ? shownAs(j[key], kind, 5) : "", placeholder: "0" }, () => {
+    const el = box({ id: `part-${key}`, type: "text", inputmode: "decimal", kind, value: j[key] ? shownAs(j[key], kind, 5) : "", placeholder: "0" }, () => {
       const v = readAs(el, j[key], kind, key);
       if (!Number.isNaN(v)) patchJoint(b.name, { [key]: plugin ? v : v || 0 });
     });
@@ -747,7 +754,7 @@ function motorRows(c, b) {
     if (slide) {
       // in the chosen units (Settings), stored in meters
       const example = units.name("length") === "mm" ? 0.025 : 0.0254;   // 25 mm or 1 in
-      const spool = box({ id: "part-spool", type: "text", inputmode: "decimal",
+      const spool = box({ id: "part-spool", type: "text", inputmode: "decimal", kind: "length",
         value: cur.spool ? shownMeasure(cur.spool, "length") : "", placeholder: units.shown(example, "length", 0) }, () => {
         const v = boxMeasure(spool, cur.spool, "spool_diameter", "length");
         if (Number.isNaN(v)) return;

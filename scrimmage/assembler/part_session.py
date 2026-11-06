@@ -395,6 +395,10 @@ class PartSession(_Session):
         self._pending = Path(source).resolve() if source is not None else None   # the source of an import to make
         self._file_problem: str | None = None
         self._src_problem: str | None = None
+        # functions wording each again when the Language setting changes (_reword), or None for one only a new read
+        # of the CAD file or a build can word again (docs/settings.md, known gaps)
+        self._file_words = self._src_words = None
+        self._words_lang = i18n.current_language()
         self._sig = None
         self._info: dict = {}                   # piece key -> (volume, com in CAD coordinates, hardware)
         self._src_n = 0                         # counts source reads (the view's cache key)
@@ -412,7 +416,21 @@ class PartSession(_Session):
 
     @property
     def read_only_reason(self) -> str | None:
+        self._reword()
         return self._file_problem or self._src_problem
+
+    def _reword(self) -> None:
+        """Why the part can't be edited, again in the Language setting when it changed since (an import file deleted
+        or with a TOML error, a team folder this computer hasn't set, a CAD file with no pieces). A CAD file that
+        can't be read and the build's messages keep their words until it is read or built again."""
+        lang = i18n.current_language()
+        if lang == self._words_lang:
+            return
+        self._words_lang = lang
+        if self._file_problem is not None and self._file_words is not None:
+            self._file_problem = self._file_words()
+        if self._src_problem is not None and self._src_words is not None:
+            self._src_problem = self._src_words()
 
     def _stem(self) -> str:
         n = self.path.name
@@ -429,6 +447,14 @@ class PartSession(_Session):
             return _resolve(imp.source, self.path)
         except CadError as e:
             self._src_problem = str(e)
+
+            def again(text: str = str(e), source=imp.source) -> str:
+                try:
+                    _resolve(source, self.path)
+                except CadError as e2:
+                    return str(e2)
+                return text
+            self._src_words = again
             return None
 
     def _read(self, path: Path | None, units: str | None):
@@ -438,29 +464,30 @@ class PartSession(_Session):
         try:
             src = load_source(path, units)
         except CadError as e:
-            self._src_problem = str(e)
+            self._src_problem, self._src_words = str(e), None
             self._build = {"state": "failed", "message": str(e)}
             return None
         if not src.pieces:
-            self._src_problem = i18n.t("{name} has no pieces to import: export the parts, not an empty file.",
-                                       name=path.name)
+            self._src_words = lambda: i18n.t("{name} has no pieces to import: export the parts, not an empty file.",
+                                             name=path.name)
+            self._src_problem = self._src_words()
             return None
         return src
 
     def _try_read(self, imp, units: str | None):
         """The source `imp` names, read with `units`; 400 with the reason when it can't be (nothing changes)."""
-        keep = self._src_problem, self._build
+        keep = self._src_problem, self._src_words, self._build
         path = self._source_path(imp)
         src = self._read(path, units) if path is not None else None
         problem = self._src_problem
-        self._src_problem, self._build = keep
+        self._src_problem, self._src_words, self._build = keep
         if src is None:
             raise SessionError(400, problem or i18n.t("the CAD file can't be read"))
         return src
 
     def _use(self, src) -> None:
         """Make `src` (just read) the source: its pieces' volumes, centers and hardware guesses are kept."""
-        self.src, self._src_problem, self._src_n = src, None, self._src_n + 1
+        self.src, self._src_problem, self._src_words, self._src_n = src, None, None, self._src_n + 1
         diag = assembly_diagonal(src.pieces)
         self._info = {}
         for p in src.pieces:
@@ -505,17 +532,27 @@ class PartSession(_Session):
             return
         self._sig = sig
         if sig == (None,):
-            self._file_problem = i18n.t("{name} was deleted; put it back, or open the CAD file again to make a new one",
-                                        name=self.path.name)
+            self._file_words = lambda: i18n.t("{name} was deleted; put it back, or open the CAD file again to make a "
+                                              "new one", name=self.path.name)
+            self._file_problem = self._file_words()
             self._bump()
             return
         try:
             new = read_import(self.path)
         except CadError as e:
+            def again(why=e) -> str:        # the file read again, for its problem in the new words
+                try:
+                    read_import(self.path)
+                except CadError as e2:
+                    why = e2
+                except OSError:
+                    pass
+                return i18n.t("{why} Fix it in a text editor.", why=why)
+            self._file_words = again
             self._file_problem = i18n.t("{why} Fix it in a text editor.", why=e)
             self._bump()
             return
-        self._file_problem = None
+        self._file_problem = self._file_words = None
         old = self.imp
         if old is not None:
             new.written = {**old.written, **new.written}   # never forget a folder a build wrote
@@ -798,6 +835,7 @@ class PartSession(_Session):
         with self._lock:
             self._check_open()
             self._sync()
+            self._reword()
             if self._file_problem is not None:
                 raise SessionError(409, self._file_problem)
             if "version" in body:
@@ -811,7 +849,8 @@ class PartSession(_Session):
             src = load_source(path, units)   # outside the lock: a big STEP takes a while
         except CadError as e:
             with self._lock:
-                self._src_problem, self._build = str(e), {"state": "failed", "message": str(e)}
+                self._src_problem, self._src_words = str(e), None
+                self._build = {"state": "failed", "message": str(e)}
                 self._bump()
             raise SessionError(400, str(e)) from None
         with self._lock:

@@ -274,3 +274,18 @@ Cost: small deviations from "text unchanged", in shown text only.
   (file, whole text) entry with its reason, so a new string with the same words is still caught. It found the Scenario tab's input-track panel (trackplot.js), units.js's typed-value
   refusals, a 3D view's lost-context notice and the undo/redo refusals unwrapped, and they were wrapped. Cost: a
   heuristic gate: a lowercase single word or text built from variables can slip past it.
+
+**Cleanup A (2026-11-06)**
+
+- **Sweep and spread tables and kept runs** follow the Language (and Units): see the display-units spec's last
+  ruling. This replaces "Sweep and spread tables" and the kept-runs cost above.
+- **Cached server text is worded again on a change** where it can be made again cheaply: why a scenario has no robot
+  (server.py `_reword_missing`), why a part can't be edited (an import file deleted or with a mistake, a team folder,
+  no pieces: part_session `_reword`; a plugin part's files are read again), and a failed fix's result
+  (robotcode `_failed`'s `again()`). A build's messages and a CAD file that can't be read keep their words until
+  the next build or read: only a build can make them again. Cost: those stay a known gap.
+- **Runtime warnings the run's notes show** (a blocked sensor, an unopened hub, both of a valve's channels on, a
+  color sensor the robot didn't create) are a `Said`: machine text, worded for people when the report is shown, not
+  on the simulation's thread. The bridge's missing-device warnings are only logged and stay American English; the
+  run's notes use devicecheck's notes for the same devices. This replaces "Runtime warnings built on the
+  simulation's or bridge's thread" above.

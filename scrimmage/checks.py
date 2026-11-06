@@ -436,6 +436,9 @@ class SignalCheck(Check):
         self.seen = False
 
     def _expected(self) -> str:
+        return " and ".join(self._expected_parts())
+
+    def _expected_parts(self) -> list[str]:
         parts = []
         if self.min is not None:
             parts.append(f">= {_show(self.min)}")
@@ -445,7 +448,15 @@ class SignalCheck(Check):
             parts.append(f"== {self.equals!r}")
         if self.approx is not None:
             parts.append(f"≈ {_show(self.approx)} ± {_show(self.tol)}")
-        return " and ".join(parts)
+        return parts
+
+    def _expected_words(self) -> str:
+        """_expected() in the Language setting, when it is called: its parts joined by the translator's "and"."""
+        parts = self._expected_parts() or [""]
+        words = parts[0]
+        for p in parts[1:]:
+            words = t("{names} and {last}", names=words, last=p)
+        return words
 
     @staticmethod
     def _as_float(v) -> float | None:
@@ -547,25 +558,33 @@ class SignalCheck(Check):
             if not self.seen:
                 self.tick(session, getattr(session, "t", 0.0))
             ok = self.first_fail is None
-            name, expected, period = self.signal.name, self._expected(), self._period()
+            name, expected, period = self.signal.name, self._expected_words, self._period()
             if ok:
                 measured = self.last if self.equals is not None else self.extreme
                 return said(self.label, True, f"{self.signal.name} stayed {self._expected()}{self._sampled()}",
-                            lambda: t("{name} stayed {expected}", name=name, expected=expected) if period is None
+                            lambda: t("{name} stayed {expected}", name=name, expected=expected()) if period is None
                             else t("{name} stayed {expected} (sampled at {period} s hold points)", name=name,
-                                   expected=expected, period=period),
+                                   expected=expected(), period=period),
                             measured, self._expected())
             if self.worst_excess is None:
                 msg = f"{self._missing(session, False)} (first at t={self.first_missing}); expected {self._expected()}"
-                missing = self._missing_words(session, False)
                 first = self.first_missing
+                seen = (", ".join(f"{typ}/{d}" for typ, d in sorted(session.bridge.hal.devices))
+                        if name.startswith("hal:") else None)
 
-                def words() -> str:
+                def words() -> str:   # a whole sentence for each: a HAL value or not, sampled or not
+                    if seen is not None:
+                        p = dict(name=name, seen=seen or t("none"), t=first, expected=expected())
+                        if period is None:
+                            return t("no HAL value {name}; devices seen: {seen} (first at t={t}); expected {expected}",
+                                     **p)
+                        return t("no HAL value {name}; devices seen: {seen} (first at t={t}); expected {expected} "
+                                 "(sampled at {period} s hold points)", period=period, **p)
                     if period is None:
-                        return t("{missing} (first at t={t}); expected {expected}", missing=missing(), t=first,
-                                 expected=expected)
-                    return t("{missing} (first at t={t}); expected {expected} (sampled at {period} s hold points)",
-                             missing=missing(), t=first, expected=expected, period=period)
+                        return t("{name} has no value (first at t={t}); expected {expected}", name=name, t=first,
+                                 expected=expected())
+                    return t("{name} has no value (first at t={t}); expected {expected} (sampled at {period} s hold "
+                             "points)", name=name, t=first, expected=expected(), period=period)
             else:
                 msg = (f"{self.signal.name} was {_show(self.worst)} at t={self.worst_t} (first out of range at "
                        f"t={self.first_num_fail}); expected {self._expected()}")
@@ -582,24 +601,24 @@ class SignalCheck(Check):
                                   "{name} was {value} at t={t} (first out of range at t={first}); expected "
                                   "{expected}; no value at {count} ticks (first at t={first_missing}) (sampled at "
                                   "{period} s hold points)", n_missing, name=name, value=worst, t=worst_t,
-                                  first=first_num, expected=expected, first_missing=first_missing, period=period)
+                                  first=first_num, expected=expected(), first_missing=first_missing, period=period)
                     if n_missing:
                         return tn("{name} was {value} at t={t} (first out of range at t={first}); expected "
                                   "{expected}; no value at {count} tick (first at t={first_missing})",
                                   "{name} was {value} at t={t} (first out of range at t={first}); expected "
                                   "{expected}; no value at {count} ticks (first at t={first_missing})", n_missing,
-                                  name=name, value=worst, t=worst_t, first=first_num, expected=expected,
+                                  name=name, value=worst, t=worst_t, first=first_num, expected=expected(),
                                   first_missing=first_missing)
                     if period is not None:
                         return t("{name} was {value} at t={t} (first out of range at t={first}); expected "
                                  "{expected} (sampled at {period} s hold points)", name=name, value=worst, t=worst_t,
-                                 first=first_num, expected=expected, period=period)
+                                 first=first_num, expected=expected(), period=period)
                     return t("{name} was {value} at t={t} (first out of range at t={first}); expected {expected}",
-                             name=name, value=worst, t=worst_t, first=first_num, expected=expected)
+                             name=name, value=worst, t=worst_t, first=first_num, expected=expected())
             msg += self._sampled()
             return said(self.label, False, msg, words, self.worst, self._expected(), self.first_fail)
         v = self.signal.read(session)
-        expected = self._expected()
+        expected = self._expected_words
         if v is None:
             return said(self.label, False, self._missing(session, True), self._missing_words(session, True), None,
                         self._expected())
@@ -607,7 +626,7 @@ class SignalCheck(Check):
         name, value = self.signal.name, _show(v)
         return said(self.label, ok, f"{self.signal.name} = {_show(v)} at the end; expected {self._expected()}",
                     lambda: t("{name} = {value} at the end; expected {expected}", name=name, value=value,
-                              expected=expected),
+                              expected=expected()),
                     v, self._expected())
 
 

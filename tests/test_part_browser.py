@@ -725,7 +725,7 @@ def test_test_it_puts_the_part_on_a_stand_in_and_opens_the_test_tab(part_page):
             != {"file": "ladder", "start": "below"}:
         assert time.monotonic() < end, (folder / "climber-standin.toml").read_text(encoding="utf-8")
         time.sleep(0.05)
-    page.wait_for_function("__scrimmageTest.state.palette.bars.includes('rung1')")
+    page.wait_for_function("__scrimmageTest.state?.palette?.bars.includes('rung1')")
     page.wait_for_function("document.querySelector('#test-setup summary').textContent.includes('field: ladder')")
     assert page.input_value("#test-field") == "ladder"
 
@@ -759,6 +759,23 @@ def test_the_part_tab_grip_row_sets_the_overlay(part_page):
     assert page.input_value("#part-grip") == "nitrile"
 
 
+def test_a_half_typed_weight_switched_back_and_forth_doesnt_drift(part_page):
+    """Review (A6): 0.5 kg half typed, Units to Imperial (1.1023 lb) and back: 0.5 again, not 0.49999, and 0.5 is
+    saved."""
+    page, imp = part_page
+    page_units(page, "metric")
+    _pick_body(page, "arm_A")
+    page.wait_for_selector("#part-body-weight")
+    page.click("#part-body-weight", click_count=3)
+    page.keyboard.type("0.5")                                          # half typed: not committed
+    page_units(page, "imperial")
+    page.wait_for_function("document.querySelector('#part-body-weight').value === '1.1023'")
+    page_units(page, "metric")
+    page.wait_for_function("document.querySelector('#part-body-weight').value === '0.5'")
+    _edit(page, lambda: page.keyboard.press("Enter"))
+    assert tomllib.loads(imp.read_text())["bodies"]["arm_A"]["mass"] == 0.5
+
+
 def test_the_part_tab_shows_and_takes_the_chosen_units(part_page):
     """Units (Settings): weights show and take pounds (the default) or kilograms; the file keeps kilograms; a typed
     weight reads back as typed (Review Focus 1); switching while the tab is open redraws it at once and keeps the box
@@ -780,16 +797,16 @@ def test_the_part_tab_shows_and_takes_the_chosen_units(part_page):
     page.keyboard.type("1.2")                                          # half typed: not committed
     page_units(page, "metric")
     page.wait_for_function("document.querySelector('#part-inspector [data-field=\"kg\"] .unit').textContent === 'kg'")
-    assert page.input_value("#part-body-weight") == "1.2"
+    assert page.input_value("#part-body-weight") == "0.54431"                # converted: 1.2 lb (A6)
     assert page.evaluate("document.activeElement.id") == "part-body-weight"
     assert page.inner_text("#part-body-mass").endswith(" kg")
     assert page.inner_text("#part-inspector .mono").endswith(" mm")
     assert mass() == pytest.approx(2.5 * 0.45359237)                   # switching wrote nothing
-    _edit(page, lambda: page.keyboard.press("Enter"))                  # the kept text is now kilograms
-    assert mass() == 1.2
+    _edit(page, lambda: page.keyboard.press("Enter"))                  # the 1.2 lb typed, in kilograms
+    assert mass() == 0.54431
     saved = imp.read_text()
     page_units(page, "imperial")
-    page.wait_for_function(f"document.querySelector('#part-body-weight').value === {_shown(1.2, 'mass', 'imperial')!r}")
+    page.wait_for_function(f"document.querySelector('#part-body-weight').value === {_shown(0.54431, 'mass', 'imperial')!r}")
     page.wait_for_timeout(300)
     assert imp.read_text() == saved
     # a typed unit is fine; the other system's is refused, saying why

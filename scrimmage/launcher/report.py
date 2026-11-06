@@ -2,6 +2,7 @@
 
 import csv
 import math
+import re
 import textwrap
 from pathlib import Path
 
@@ -20,6 +21,35 @@ FOOTER_WIDTH = 135   # characters: a longer chart footer wraps, below the chart,
 NO_MATPLOTLIB = "charts need matplotlib: pip install matplotlib"
 
 Rows = list[tuple[dict, RunResult]]
+
+# The launcher model's metrics shown in the Units setting (the printed table, the charts), by units kind; results.csv
+# stays SI, its columns named as before. The bench passes its own (bench/compare.py SHOWN).
+SHOWN = {"exit_speed": "speed", "exit_speed_sd": "speed", "spread_downrange_m": "field", "spread_lateral_m": "field"}
+
+
+# A metric's SI suffix ("spread_downrange_m", "peak_load_n"): left off where the metric is shown in the Units setting,
+# with that unit named after it ("spread_downrange (ft)"), as fields.key_kind leaves off a key's "_in"
+SI_SUFFIX = re.compile(r"_(m|n|mps|kg|nm|pa)$")
+
+
+# A launcher file's swept keys in SI (launcher/inputs.py) that are lengths, weights, forces or speeds, by units kind:
+# a sweep chart's x axis shows them in the Units setting (write_charts' swept, key_kind). Angles, rps and the rest
+# are charted as the file has them.
+KEY_KINDS = {"ball.diameter": "length", "ball.mass": "mass", "ball.stiffness_n": "force", "wheels.diameter": "length",
+             "wheels.width": "length", "hood.gap": "length", "launcher.height": "length", "launcher.width": "length",
+             "goal.distance": "field", "goal.height": "field", "goal.diameter": "length", "feed.entry_speed": "speed"}
+
+
+def key_kind(key: str) -> tuple[str, float, str] | None:
+    """A launcher key's (units kind, SI per one of its values, its name without an SI suffix), or None: as
+    bench/fields.key_kind, for write_charts' `swept`."""
+    kind = KEY_KINDS.get(key)
+    return (kind, 1.0, SI_SUFFIX.sub("", key)) if kind else None
+
+
+def shown_name(metric: str, kind: str) -> str:
+    """A metric's name with the unit it is shown in, for a printed header or a chart: "spread_downrange (ft)"."""
+    return f"{SI_SUFFIX.sub('', metric)} ({units.unit_name(kind)})"
 
 
 def calibration(setups) -> str:
@@ -44,18 +74,26 @@ def _swept_keys(rows: Rows) -> list[str]:
     return list(rows[0][0]) if rows else []
 
 
-def _cells(rows: Rows, metrics=METRIC_KEYS) -> tuple[list[str], list[list[str]]]:
+def _cells(rows: Rows, metrics=METRIC_KEYS, shown: dict[str, str] | None = None) -> tuple[list[str], list[list[str]]]:
+    """The header and the rows' cells: SI, or with `shown` ({metric: units kind}) those metrics in the Units
+    setting, the unit in the header ("exit_speed (ft/s)")."""
+    shown = shown or {}
     keys = _swept_keys(rows)
-    header = [*keys, *metrics]
-    body = [[*(_fmt(c[k]) for k in keys), *(_fmt(r.metrics[m]) for m in metrics)] for c, r in rows]
+    header = [*keys, *(shown_name(m, shown[m]) if m in shown else m for m in metrics)]
+
+    def cell(m: str, v):
+        return _fmt(units.to_display(v, shown[m]) if m in shown and isinstance(v, (int, float)) else v)
+    body = [[*(_fmt(c[k]) for k in keys), *(cell(m, r.metrics[m]) for m in metrics)] for c, r in rows]
     return header, body
 
 
-def format_table(rows: Rows, metrics=METRIC_KEYS, label: str | None = None) -> str:
+def format_table(rows: Rows, metrics=METRIC_KEYS, label: str | None = None, shown: dict[str, str] | None = None) -> str:
     """`label` (default uncalibrated(), or calibration()'s line), then a header and one line per row: the swept values and
-    `metrics` (the rows' `.metrics`): the ball launcher's by default, the disc launcher and the bench pass their own."""
+    `metrics` (the rows' `.metrics`): the ball launcher's by default, the disc launcher and the bench pass their own.
+    `shown` ({metric: units kind}: SHOWN, or the bench's) prints those metrics in the Units setting, the unit in the
+    header; the swept values are as the file has them."""
     label = uncalibrated() if label is None else label
-    header, body = _cells(rows, metrics)
+    header, body = _cells(rows, metrics, shown)
     widths = [max(len(h), *(len(r[i]) for r in body)) if body else len(h) for i, h in enumerate(header)]
     line = lambda cells: "  ".join(c.rjust(w) for c, w in zip(cells, widths)).rstrip()
     return "\n".join([label, line(header), *(line(r) for r in body)])
@@ -110,12 +148,15 @@ def label(combo: dict) -> str:
 
 def write_charts(rows: Rows, charts: list[dict], out_dir: Path, goals: list[Goal] | None = None,
                  metrics=METRIC_KEYS, kinds=CHART_KINDS, *, footer: str,
-                 shown: dict[str, str] | None = None) -> list[Path] | None:
+                 shown: dict[str, str] | None = None, swept=None) -> list[Path] | None:
     """Write one PNG per chart, `footer` (the result's own UNCALIBRATED line: calibration()'s for a ball launcher,
     the disc's or the bench's) under it, wrapped at FOOTER_WIDTH; None when matplotlib is missing. `goals` (aligned with rows) sizes the landing circle. The disc launcher passes its own `metrics` and
     `kinds` (line and shaft: its shots have no ball landing); the bench passes its own metrics and line charts only.
-    `shown` ({metric: units kind}, the bench's) charts those metrics in the Units setting, the unit on the axis
-    ("exit_speed (ft/s)"); the CSV beside them stays SI."""
+    `shown` ({metric: units kind}: SHOWN, or the bench's) charts those metrics in the Units setting, the unit on the
+    axis ("exit_speed (ft/s)"); the landing chart is in the setting's field length; the CSV beside them stays SI.
+    `swept(key)` (the bench's fields.key_kind) gives a swept key's (kind, SI per one, key without `_in`), so a line
+    chart's x axis is in the Units setting too ("wheel.top.diameter (in)"), or None for one charted as the file has
+    it."""
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -150,6 +191,11 @@ def write_charts(rows: Rows, charts: list[dict], out_dir: Path, goals: list[Goal
         if kind == "line":
             x, y, series = spec.get("x"), spec.get("y"), spec.get("series")
             y_kind = (shown or {}).get(y)
+            x_kind = swept(x) if swept is not None else None
+            numeric = all(isinstance(c[x], (int, float)) and not isinstance(c[x], bool) for c, _ in rows)
+
+            def at(v):          # an x value as the chart shows it (a list-valued key's are placed by repr)
+                return units.to_display(v * x_kind[1], x_kind[0]) if x_kind is not None and numeric else v
             fig, ax = plt.subplots(figsize=(7, 4.5))
             # Swept values may be lists (robot.velocity, feed.lanes), which can't be hashed or ordered: group and
             # place them by repr, in first-seen order.
@@ -157,8 +203,8 @@ def write_charts(rows: Rows, charts: list[dict], out_dir: Path, goals: list[Goal
             for c, r in rows:
                 s_val = c[series] if series else None
                 v = r.metrics[y]
-                groups.setdefault(repr(s_val), (s_val, []))[1].append((c[x], units.to_display(v, y_kind) if y_kind else v))
-            numeric = all(isinstance(c[x], (int, float)) and not isinstance(c[x], bool) for c, _ in rows)
+                groups.setdefault(repr(s_val), (s_val, []))[1].append((at(c[x]),
+                                                                       units.to_display(v, y_kind) if y_kind else v))
             order = list(dict.fromkeys(repr(c[x]) for c, _ in rows)) if not numeric else []
             ticks = {repr(c[x]): c[x] for c, _ in rows}
             for s_val, pts in groups.values():
@@ -166,8 +212,8 @@ def write_charts(rows: Rows, charts: list[dict], out_dir: Path, goals: list[Goal
                 ax.plot(xs, [p[1] for p in pts], marker="o", label=f"{series}={_fmt(s_val)}" if series else None)
             if not numeric:
                 ax.set_xticks(range(len(order)), [_fmt(ticks[o]) for o in order])
-            ax.set_xlabel(x)
-            ax.set_ylabel(f"{y} ({units.unit_name(y_kind)})" if y_kind else y)
+            ax.set_xlabel(f"{x_kind[2]} ({units.unit_name(x_kind[0])})" if x_kind and numeric else x)
+            ax.set_ylabel(shown_name(y, y_kind) if y_kind else y)
             if series:
                 ax.legend()
             ax.grid(alpha=0.3)
@@ -190,14 +236,18 @@ def write_charts(rows: Rows, charts: list[dict], out_dir: Path, goals: list[Goal
             cols = min(n, 3)
             nrows = math.ceil(n / cols)
             fig, axes = plt.subplots(nrows, cols, figsize=(4 * cols, 4 * nrows), squeeze=False)
+            def field(v: float) -> float:          # a landing's meters in the setting's field length
+                return units.to_display(float(v), "field")
             for i, (c, r) in enumerate(rows):
                 ax = axes[i // cols][i % cols]
                 if goals:
                     g = goals[i]
-                    ax.add_patch(Circle((g.distance, 0.0), g.diameter / 2.0, fill=False, color="k"))
-                    ax.plot([g.distance], [0.0], "k+")
-                hits = [l.at_goal for _, l in r.shots if l is not None and l.at_goal is not None]
-                misses = [l.floor for _, l in r.shots if l is not None and l.at_goal is None]
+                    ax.add_patch(Circle((field(g.distance), 0.0), field(g.diameter) / 2.0, fill=False, color="k"))
+                    ax.plot([field(g.distance)], [0.0], "k+")
+                hits = [(field(p[0]), field(p[1])) for p in (l.at_goal for _, l in r.shots
+                                                             if l is not None and l.at_goal is not None)]
+                misses = [(field(p[0]), field(p[1])) for p in (l.floor for _, l in r.shots
+                                                               if l is not None and l.at_goal is None)]
                 if hits:
                     ax.scatter([p[0] for p in hits], [p[1] for p in hits], marker="o", label="at goal height")
                 if misses:
@@ -206,8 +256,8 @@ def write_charts(rows: Rows, charts: list[dict], out_dir: Path, goals: list[Goal
                 ax.set_title(label(c), fontsize=7)
                 ax.set_aspect("equal", adjustable="datalim")
                 ax.autoscale_view()
-                ax.set_xlabel("downrange (m)")
-                ax.set_ylabel("lateral (m)")
+                ax.set_xlabel(f"downrange ({units.unit_name('field')})")
+                ax.set_ylabel(f"lateral ({units.unit_name('field')})")
                 ax.grid(alpha=0.3)
                 if hits or misses:
                     ax.legend(fontsize=6)

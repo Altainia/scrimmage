@@ -148,3 +148,16 @@ Each ruling is recorded in the build ledger with its reason and cost; the user-f
   come from the fixed `table.csv`); the launcher model's own charts and the CLI's printed sweep and compare tables
   keep their fixed units; a bench sweep's chart axis and the stage's swept-key column show the file's form; a run kept
   inside a sweep or spread shows the table's old words (they are written once, during the run).
+- **A box being typed in across a Units change (Cleanup A, pass 2):** its text is converted (`units.convert`: parsed
+  in the old system, shown in the new), at every site that keeps half-typed text: the inspector, the pickers, the
+  step editor, the Part tab (a range or spring typed alone too), the Bench tab's keepTyping, the Test tab's Setup and
+  floor spread, and the Drive tab's push force. Text that isn't a value yet is kept as typed. A Measure tab reading
+  is stored with its picker's unit as it is typed, so a change never reinterprets it.
+- **Cleanup A (2026-11-06) closed those gaps.** A run made inside `units.machine_text()` (a sweep's, a spread's, MCP
+  `test_run`'s) also keeps its words in every Language and Units setting (`units.each_setting`; result.json's
+  `words`), and a sweep or spread writes `table.json` beside `table.csv` (each value in SI, the table's words by
+  setting); the Test tab shows the viewer's. Words, not codes and parameters: a run's text is built from its numbers
+  while it runs, at about sixty sites, so it is worded again in each setting then. Cost: a language added later
+  shows such a run in American English (in the viewer's units), and an older folder keeps table.csv's words. The
+  CLI's launcher, bench sweep and compare tables, the launcher charts, a bench sweep chart's swept-key axis and the
+  stage's swept-key column follow the setting; machine output is unchanged.

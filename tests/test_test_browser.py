@@ -287,13 +287,13 @@ def test_the_station_blocks_show_on_a_station_field_only(test_page):
     robot = path.parent / "robot.toml"
     base = robot.read_text(encoding="utf-8")
     robot.write_text(base + '\n[range]\nfile = "station"\nstart = "at_station"\n', encoding="utf-8")
-    page.wait_for_function("__scrimmageTest.state.palette.stations.includes('feeder')")
+    page.wait_for_function("__scrimmageTest.state?.palette?.stations.includes('feeder')")
     types = _flyout_types(page)
     for t in ("start_feeding", "stop_feeding", "feed_one", "cond_station_empty", "turn", "cond_in_hopper",
               "cond_made_it_in"):
         assert t in types, t
     robot.write_text(base + '\n[range]\nfile = "ladder"\nstart = "below"\n', encoding="utf-8")
-    page.wait_for_function("__scrimmageTest.state.palette.stations.length === 0")
+    page.wait_for_function("__scrimmageTest.state?.palette?.stations.length === 0")
     types = _flyout_types(page)
     assert "start_feeding" not in types and "cond_station_empty" not in types
     assert "cond_in_hopper" in types and "cond_made_it_in" in types
@@ -355,7 +355,7 @@ def test_drive_offers_left_and_right_on_a_swerve_robot_only(test_page):
     assert page.evaluate("__scrimmageTest.state.palette.drive_kind") == "tank"
     assert _drive_choices(page) == ["forward", "back"]
     (path.parent / "robot.toml").write_text(new_config("swerve"), encoding="utf-8")
-    page.wait_for_function("__scrimmageTest.state.palette.drive_kind === 'swerve'")
+    page.wait_for_function("__scrimmageTest.state?.palette?.drive_kind === 'swerve'")   # (state is null while it reloads)
     assert _drive_choices(page) == ["forward", "back", "left", "right"]
 
 
@@ -728,7 +728,7 @@ def test_an_old_run_replays_its_own_geometry_after_the_part_changes(test_page, t
     write_wedge(tmp_path / "wedge", 0.1)
     robot.write_text(robot.read_text(encoding="utf-8")
                      + '\n[[part]]\nname = "w"\npath = "wedge"\nattach = "drive.top"\n', encoding="utf-8")
-    page.wait_for_function("__scrimmageTest.state.palette.parts.includes('w')")
+    page.wait_for_function("__scrimmageTest.state?.palette?.parts.includes('w')")
     _run(page, "001")
     old = min(page.evaluate(WEDGE_EXTENTS))
     write_wedge(tmp_path / "wedge", 0.2, mass=2.0)
@@ -969,7 +969,7 @@ def test_setup_changes_the_stand_ins_weight_and_mounts_in_the_robot_file_and_the
     page.check("#test-setup .test-setup-hooks input[data-body='arm.arm']")
     page.evaluate("__scrimmageTest.saved")
     _wait_file(lambda: tomllib.loads(path.read_text(encoding="utf-8"))["test"].get("hooks") == ["arm.arm"], path)
-    page.wait_for_function("__scrimmageTest.state.palette.hooks.includes('arm.arm')")
+    page.wait_for_function("__scrimmageTest.state?.palette?.hooks.includes('arm.arm')")
     assert "hooks: arm.arm" in page.inner_text("#test-setup summary")
     # the hooks offered are the mechanism's: not the drivetrain's or the chassis's
     assert page.locator("#test-setup .test-setup-hooks input[data-body='dt.left_1']").count() == 0
@@ -1489,7 +1489,7 @@ def test_setup_grip_writes_the_parts_overlay_and_offers_try_values(test_page, tm
     overlay = path.parent / "parts" / "grabber" / "scrimmage-edits.toml"
     page.select_option(left, "nitrile")
     _wait_file(lambda: overlay.is_file() and _toml(overlay)["body"]["jaw_left"]["grip"] == "nitrile", overlay)
-    page.wait_for_function("__scrimmageTest.state.palette.grips['grabber.jaw_left'] === 'nitrile'")
+    page.wait_for_function("__scrimmageTest.state?.palette?.grips['grabber.jaw_left'] === 'nitrile'")
     page.wait_for_function(f"document.querySelector(\"{left}\").value === 'nitrile'")
     # my own number: a box for a measured friction
     page.select_option(left, "own")
@@ -1498,7 +1498,7 @@ def test_setup_grip_writes_the_parts_overlay_and_offers_try_values(test_page, tm
     page.fill(own, "1.05")
     page.press(own, "Enter")
     _wait_file(lambda: _toml(overlay)["body"]["jaw_left"]["grip"] == 1.05, overlay)
-    page.wait_for_function("__scrimmageTest.state.palette.grips['grabber.jaw_left'] === 1.05")
+    page.wait_for_function("__scrimmageTest.state?.palette?.grips['grabber.jaw_left'] === 1.05")
     page.wait_for_function(f"document.querySelector(\"{own}\") && document.querySelector(\"{own}\").value === '1.05'")
     # Try materials…: one per part (ruling P32); every pad first, then each pad alone; materials are ticked, not from
     # and to
@@ -1782,12 +1782,12 @@ def test_the_aim_cylinder_scored_and_air_blocks_show_only_on_a_robot_and_field_t
     base = robot.read_text(encoding="utf-8")
     # a turret and a cylinder, no field: the cylinder's blocks, but nothing to aim at or score in
     robot.write_text(base + TURRET_CYLINDER, encoding="utf-8")
-    page.wait_for_function("__scrimmageTest.state.palette.cylinders.length === 1")
+    page.wait_for_function("__scrimmageTest.state?.palette?.cylinders.length === 1")
     types = _flyout_types(page)
     assert {"set_cylinder", "cond_cylinder", "cond_pressure"} <= set(types), types
     assert not {"aim", "cond_aimed", "cond_scored"} & set(types), types
     robot.write_text(base + TURRET_CYLINDER + ON_THE_2026_FIELD, encoding="utf-8")
-    page.wait_for_function("__scrimmageTest.state.palette.goals.length === 2")
+    page.wait_for_function("__scrimmageTest.state?.palette?.goals.length === 2")
     types = _flyout_types(page)
     assert set(NEW_KINDS) <= set(types), types
     goals = page.evaluate("""(() => {
@@ -1938,7 +1938,7 @@ def test_the_element_clears_and_partner_checks_show_only_where_they_apply(test_p
     assert not set(MOVING_KINDS) & set(types), types       # the plain field: no moving element, no partner
     robot = path.parent / "robot.toml"
     robot.write_text(robot.read_text(encoding="utf-8") + ON_THE_DEFENSES, encoding="utf-8")
-    page.wait_for_function("__scrimmageTest.state.palette.moving_elements.length > 0")
+    page.wait_for_function("__scrimmageTest.state?.palette?.moving_elements.length > 0")
     types = _flyout_types(page)
     assert {"cond_element", "cond_clears"} <= set(types), types
     assert not {"cond_partner_lifted", "cond_partner_moved"} & set(types), types
@@ -1979,11 +1979,30 @@ def test_the_element_clears_and_partner_checks_round_trip_exactly(test_page, tmp
     assert _units(page)[0] == ["sally_port", "°"]
 
 
+def test_a_clears_check_at_its_exact_limit_round_trips_in_metric(test_page, tmp_path):
+    """A15: clears' limit (19.6 in) shown in metric is 497.84 mm exactly: the limit typed there writes 19.6 in (not
+    refused as over it), and more is held at the limit by the block."""
+    from browser_harness import page_units
+    blocks = '[[block]]\ndo = "expect"\nthat = { clears = { element = "trench", at_least_in = 2.5 } }\nthroughout = true\n'
+    page, path = test_page(path=_defenses_test(tmp_path, blocks))
+    clears = "__scrimmageTest.workspace.getAllBlocks(false).find(b => b.type === 'cond_clears')"
+    page_units(page, "metric")
+    page.wait_for_function(f"({clears}).getFieldValue('CLEAR') === 63.5")
+    assert page.evaluate(f"({clears}).getField('CLEAR').getMax()") == 497.84
+    page.evaluate(f"({clears}).setFieldValue(497.84, 'CLEAR')")
+    _wait_file(lambda: _file_blocks(path)[0]["that"]["clears"]["at_least_in"] == 19.6, path)
+    page.evaluate(f"({clears}).setFieldValue(600, 'CLEAR')")
+    assert page.evaluate(f"({clears}).getFieldValue('CLEAR')") == 497.84
+    page_units(page, "imperial")
+    page.wait_for_function(f"({clears}).getFieldValue('CLEAR') === 19.6")
+    assert page.evaluate(f"({clears}).getField('CLEAR').getMax()") == 19.6
+
+
 def test_the_new_checks_from_the_palette_save_as_the_test_file_reads_them(test_page, tmp_path):
     from scrimmage.blocks.program import load
     page, path = test_page(path=_defenses_test(tmp_path, '[setup]\npartner = { ahead_in = 80 }\n\n'
                                                          '[[block]]\ndo = "wait"\nseconds = 0.2\n'))
-    page.wait_for_function("__scrimmageTest.state.palette.partner === true")
+    page.wait_for_function("__scrimmageTest.state?.palette?.partner === true")
     page.evaluate(BUILD_FROM_FLYOUT, [["expect", "cond_element"], ["expect", "cond_clears"],
                                       ["expect", "cond_partner_lifted"], ["expect", "cond_partner_moved"]])
     page.wait_for_function("__scrimmageTest.state.test.blocks.length === 5")
@@ -2019,7 +2038,7 @@ def test_setups_partner_robot_writes_and_clears_setup_partner(test_page, tmp_pat
     assert "cond_partner_moved" not in _flyout_types(page)
     page.check("#test-partner")
     _wait_file(lambda: _partner_setup(path) == {"ahead_in": 60.0, "heading_deg": 0.0, "brake": True}, path)
-    page.wait_for_function("__scrimmageTest.state.palette.partner === true")
+    page.wait_for_function("__scrimmageTest.state?.palette?.partner === true")
     assert {"cond_partner_lifted", "cond_partner_moved"} <= set(_flyout_types(page))
     page.fill("#test-partner-ahead", "72")
     page.press("#test-partner-ahead", "Enter")
@@ -2033,7 +2052,7 @@ def test_setups_partner_robot_writes_and_clears_setup_partner(test_page, tmp_pat
     assert _partner_setup(path) == {"ahead_in": 72.0, "heading_deg": 180.0, "brake": False}
     page.uncheck("#test-partner")
     _wait_file(lambda: "partner" not in _toml(path).get("setup", {}), path)
-    page.wait_for_function("__scrimmageTest.state.palette.partner === false")
+    page.wait_for_function("__scrimmageTest.state?.palette?.partner === false")
     assert "cond_partner_moved" not in _flyout_types(page)
 
 
@@ -2043,7 +2062,7 @@ def test_setups_partner_robot_off_writes_false_over_the_configs_own(test_page, t
     assert page.is_checked("#test-partner")              # the robot config's own partner
     page.uncheck("#test-partner")
     _wait_file(lambda: _partner_setup(path) is False, path)
-    page.wait_for_function("__scrimmageTest.state.palette.partner === false")
+    page.wait_for_function("__scrimmageTest.state?.palette?.partner === false")
     page.check("#test-partner")
     _wait_file(lambda: "partner" not in _toml(path).get("setup", {}), path)       # the config's own again
 
@@ -2293,15 +2312,32 @@ def test_the_floor_spread_keeps_its_values_across_a_units_change(test_page, tmp_
     page.wait_for_selector("#test-spread-count")
     assert _toml(path)["setup"]["floor_spread"]["offset_in"] == [-6.0, 0.0, 6.0]
     assert [page.input_value(f"#test-spread-offset_in-{k}") for k in ("from", "to")] == ["-6", "6"]
-    page.fill("#test-spread-offset_in-steps", "5")                  # half typed: Setup isn't drawn again
+    page.fill("#test-spread-offset_in-steps", "5")                  # half typed: kept as Setup is drawn again
     page_units(page, "metric")
     page.wait_for_function("document.querySelector('#test-spread-offset_in-to').value === '152.4'")
     assert page.input_value("#test-spread-offset_in-from") == "-152.4"
     assert page.input_value("#test-spread-offset_in-steps") == "5"
+    assert page.evaluate("document.activeElement.id") == "test-spread-offset_in-steps"
+    assert "Offset across (mm)" in page.inner_text(".test-setup-floor")   # review: the labels follow too
     assert page.get_attribute("#test-spread-offset_in-on", "id")      # (still there)
     page.press("#test-spread-offset_in-steps", "Enter")
     _wait_file(lambda: _toml(path)["setup"]["floor_spread"]["offset_in"] == [-6.0, -3.0, 0.0, 3.0, 6.0], path)
     page.wait_for_function("document.querySelector('#test-spread-count').textContent === '5 runs'")
+
+
+def test_a_floor_spread_length_half_typed_when_units_change_is_converted(test_page, tmp_path):
+    """A6: "-3" (inches) half typed in the from box when Units changes comes back as -76.2 mm; Enter writes -3 in."""
+    path = _example(tmp_path, "intake", "spread.test.toml")
+    page, _ = test_page(path=path)
+    _open_setup(page)
+    page.wait_for_selector("#test-spread-count")
+    page.fill("#test-spread-offset_in-from", "-3")                  # half typed: not committed
+    page.focus("#test-spread-offset_in-from")
+    page_units(page, "metric")
+    page.wait_for_function("document.querySelector('#test-spread-offset_in-to').value === '152.4'")
+    assert page.input_value("#test-spread-offset_in-from") == "-76.2"
+    page.press("#test-spread-offset_in-from", "Enter")
+    _wait_file(lambda: _toml(path)["setup"]["floor_spread"]["offset_in"] == [-3.0, 1.5, 6.0], path)
 
 
 def test_a_number_being_typed_in_a_block_when_units_change_is_read_as_typed(test_page, tmp_path):

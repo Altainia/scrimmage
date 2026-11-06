@@ -9,6 +9,7 @@
 //   shown(si, kind)              an input box's text for si ("4", two more places than fmt)
 //   name(kind)                   "in" or "mm"
 //   parse(text, kind)            a typed "4", "4 in" or "100mm" in SI, or {error} saying plainly what to type
+//   convert(text, kind, from)    text typed in system `from`, in the setting now (a box typed in across a change)
 //   toKey(si, "in") / fromKey    a file key with its own unit (`diameter_in`, a measure file's `force_lb`): it keeps
 //                                that unit whatever the setting
 //   onChange(fn)                 fn(system) after the setting changes (here, in another tab, browser or by hand):
@@ -60,7 +61,7 @@ function unit(kind, sys = system) {
 const clean = (x) => (Number.isFinite(x) ? +x.toPrecision(15) : x);
 
 export function name(kind) { return unit(kind).name; }
-export function toDisplay(si, kind) { return clean(si * unit(kind).factor); }
+export function toDisplay(si, kind, sys = system) { return clean(si * unit(kind, sys).factor); }
 export function fromDisplay(v, kind, sys = system) { return clean(v / unit(kind, sys).factor); }
 
 // v to `decimals` places, trailing zeros trimmed, never "-0": the number as written rounded (6.35, not the binary
@@ -76,9 +77,24 @@ export function number(v, decimals) {
 
 // The number an input box shows for `si` (no unit name; "" for none): two more places than fmt, so a typed value
 // reads back as typed. A box whose text is still this is unchanged: save its SI value, not this rounding of it.
-export function shown(si, kind, extra = 2) {
+// `sys`: in that system rather than the setting's (what a box showed before a Units change).
+export function shown(si, kind, extra = 2, sys = system) {
   if (typeof si !== "number" || !Number.isFinite(si)) return si === null || si === undefined ? "" : String(si);
-  return number(toDisplay(si, kind), unit(kind).decimals + extra);
+  return number(toDisplay(si, kind, sys), unit(kind, sys).decimals + extra);
+}
+
+// Text typed in `from` (a box being typed in when the Units setting changed), in the setting now: the same value,
+// converted ("4" typed in inches is "101.6" in millimeters; each of a list "1, 2" too). Text that isn't a value yet
+// ("1e", "-", the other system's unit) is kept as typed. docs/settings.md: a box being typed in.
+export function convert(text, kind, from) {
+  const s = String(text ?? "");
+  if (!kind || !from || from === system || !table) return s;
+  return s.split(",").map((part) => {
+    if (part.trim() === "") return part;
+    const v = parse(part, kind, from);
+    if (typeof v !== "number") return part;
+    return part.match(/^\s*/)[0] + shown(v, kind) + part.match(/\s*$/)[0];
+  }).join(",");
 }
 
 export function fmt(si, kind) {
@@ -147,6 +163,6 @@ export const units = {
   get system() { return system; },
   get table() { return table; },
   get warning() { return settings.warning; },
-  load, set, watch, onChange, onWarning, fmt, shown, toDisplay, fromDisplay, name, parse, number, toKey, fromKey,
+  load, set, watch, onChange, onWarning, fmt, shown, convert, toDisplay, fromDisplay, name, parse, number, toKey, fromKey,
 };
 export default units;

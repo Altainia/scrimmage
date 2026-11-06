@@ -5,7 +5,7 @@
 // field ids), so errors and warnings render beside it; placeErrors returns the ones that have no field here.
 
 import { $, h, edit, store, stockMeta, folderMeta, attachGroups, fillAttachSelect, fmt, UNIT, mountsOf, notice,
-  showMeasure, readMeasure, measureError, lengthWords } from "./app.js";
+  showMeasure, readMeasure, measureError, lengthWords, typedText } from "./app.js";
 import { units } from "./units.js";
 import { t, tn } from "./i18n.js";
 
@@ -161,7 +161,7 @@ export function renderInspector(st) {
   // remember focus (and what the student is half-way through typing) across the re-render
   const act = document.activeElement;
   const keep = act && root.contains(act) && act.dataset.key && lastRendered === st.selected
-    ? { key: act.dataset.key, dirty: act.dataset.dirty ? act.value : null, sel: safeSel(act) } : null;
+    ? { key: act.dataset.key, dirty: act.dataset.dirty ? typedText(act) : null, sel: safeSel(act) } : null;   // converted after a Units change
 
   const s = st.state;
   const part = s.parts.find((p) => p.name === st.selected);

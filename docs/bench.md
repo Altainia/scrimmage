@@ -777,7 +777,9 @@ scrimmage bench gallery examples/bench/hood_shapes                # one HTML pag
 ```
 
 - **sweep** (the speed sweep above, saved as `pinch_sweep.toml`) writes `results.csv` and the charts to the results folder. Every combination is checked before the first
-  one runs, so a bad value fails at once, named (`wheel.top.diameter=-1: ...`).
+  one runs, so a bad value fails at once, named (`wheel.top.diameter=-1: ...`). `results.csv` is SI; the printed
+  table and the charts show exit speeds and the peak load in the Units setting (`exit_speed (ft/s)`), and a chart's
+  swept length, weight or speed key too (`wheel.top.diameter (in)`, for a `diameter_in` key as well).
 - **compare** runs two or more files with **one piece and feed**: `[piece]` and `[[inlet]]` from `--feed-from`, or
   from the first file; everything else (shapes, shafts, outlets, `[run]`) is each file's own. So the inlet must fit
   every design. It prints each idea's headlines and one table, and writes `compare.csv` and `compare.png` (the side
