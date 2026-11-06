@@ -54,24 +54,24 @@ def _device(kind: str, slot: str, value, where: str) -> dict:
                 raise _kind_error(where, slot, kind, value, "valve")
             channels = n.split(",")
             if not sep or len(channels) > 2 or not all(x.isdigit() for x in channels):
-                raise _ids_error(where, slot, t("{where}: ids: {slot} = {value}: expected \"{kind_3}\" (a single "
-                                                "solenoid) or \"{kind_3_4}\" (a double solenoid's forward and "
+                raise _ids_error(where, slot, t("{where}: ids: {slot} = {value}: expected \"{single}\" (a single "
+                                                "solenoid) or \"{double}\" (a double solenoid's forward and "
                                                 "reverse channels)", where=where, slot=slot, value=repr(value),
-                                                kind_3="{}:3".format(k), kind_3_4="{}:3,4".format(k)))
+                                                single="{}:3".format(k), double="{}:3,4".format(k)))
             module = SHORT[k][1]
             ch = [int(x) for x in channels]
             return _valve(module, VALVE_MODULES[module][1], ch[0], ch[1] if len(ch) == 2 else None, False,
                           slot, where)
         if kind == "valve" and k not in SHORT:
             raise _ids_error(where, slot, t("{where}: ids: {slot} = {value}: a valve takes \"{pcm_channel}\" or "
-                                            "\"{ph_channel}\" (\"{ph_3_4}\" for a double solenoid), or a table like "
-                                            "{pcm_1_form}", where=where, slot=slot, value=repr(value),
-                                            pcm_channel="PCM:<channel>", ph_channel="PH:<channel>", ph_3_4="PH:3,4",
-                                            pcm_1_form="{ pcm = 1, channel = 3 }"))
+                                            "\"{ph_channel}\" (\"{ph_double}\" for a double solenoid), or a table like "
+                                            "{table_form}", where=where, slot=slot, value=repr(value),
+                                            pcm_channel="PCM:<channel>", ph_channel="PH:<channel>", ph_double="PH:3,4",
+                                            table_form="{ pcm = 1, channel = 3 }"))
         if not sep or not n.isdigit():
             raise _ids_error(where, slot, t("{where}: ids: {slot} = {value}: expected \"{kind_number}\", e.g. "
-                                            "\"{talonfx_3}\"", where=where, slot=slot, value=repr(value),
-                                            kind_number="<Kind>:<number>", talonfx_3="TalonFX:3"))
+                                            "\"{example}\"", where=where, slot=slot, value=repr(value),
+                                            kind_number="<Kind>:<number>", example="TalonFX:3"))
         if k not in SHORT:
             raise _ids_error(where, slot, t("{where}: ids: {slot} = {value}: Kind one of {kinds} (other devices take "
                                             "a table of binding keys, e.g. {can_victorspx_form})", where=where,

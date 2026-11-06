@@ -1,6 +1,6 @@
 """The words people read, in their language: t() and tn(), the message catalogs, and the Language setting's choices.
 
-    t("Color")                                   -> "Color" (en-US) or "Colour" (en-GB)
+    t("Center of gravity")                       -> "Center of gravity" (en-US) or "Centre of gravity" (en-GB)
     t("Saved {name}", name=part)                 -> named placeholders, so a translation can reorder them
     tn("{count} part", "{count} parts", n)       -> the plural form the language's rules pick; {count} is n
     t("Open", context="file")                    -> for the rare source that means two different things
@@ -14,8 +14,8 @@ The catalogs are scrimmage/locales/<lang>.json, one flat JSON object per languag
 differ from the source:
 
     {"_language": "English (UK)",                                    the name the Settings menu shows
-     "Color": "Colour",
-     "{count} meter|{count} meters": {"one": "{count} metre", "other": "{count} metres"},     a plural
+     "Center of gravity": "Centre of gravity",
+     "{count} meter|{count} meters": {"one": "{count} metre", "other": "{count} metres"},     a plural's form
      "file\\u0004Open": "..."}                                        a source with a context
 
 Each catalog in the folder is a language (L5); American English is the source and has none. A broken entry (not

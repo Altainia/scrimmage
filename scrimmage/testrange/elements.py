@@ -376,7 +376,7 @@ def _length(r: _Reader, key: str, default: float | None = None, *, positive: boo
 
 def _center(r: _Reader) -> tuple[float, float]:
     if r.has("center") and r.has("center_in"):
-        raise r.err(i18n.t("has both center and center_in; give one"))
+        raise r.err(i18n.t("has both {key} and {key_in}; give one", key="center", key_in="center_in"))
     if r.has("center_in"):
         return tuple(x * IN for x in r.nums("center_in", 2))
     return r.nums("center", 2)
@@ -622,8 +622,8 @@ def parse_climb(path, table, elements: tuple[Element, ...]) -> tuple[ClimbRule |
                            rule=rule, rules=', '.join(CLIMB_RULES)))
     raw = r.raw("levels")
     if not isinstance(raw, dict) or not raw:
-        raise r.err(i18n.t("levels must be a table of level name = points, lowest first, like {low_4_form}, not {raw}",
-                           raw=repr(raw), low_4_form="{ LOW = 4, MID = 6 }"))
+        raise r.err(i18n.t("levels must be a table of level name = points, lowest first, like {levels_form}, not {raw}",
+                           raw=repr(raw), levels_form="{ LOW = 4, MID = 6 }"))
     lv = _Reader(path, "[climb] levels", raw, tuple(raw))
     levels = {name: lv.num(name) for name in raw}
     points = list(levels.values())

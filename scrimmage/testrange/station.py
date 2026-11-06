@@ -403,10 +403,10 @@ def _check_chutes(path, rng: Range, solids, chutes: dict) -> None:
             lo, hi = c.min(axis=0), c.max(axis=0)
             if lo[0] < 0.0 or lo[1] < 0.0 or hi[0] > FIELD_LENGTH or hi[1] > FIELD_WIDTH:
                 raise RangeError(i18n.t("{where} reaches off the field (0..{field_length} x 0..{field_width} m: "
-                                        "its {part} spans x {lo} to {hi}, y {lo2} to {hi2}); move the release "
+                                        "its {part} spans x {x_lo} to {x_hi}, y {y_lo} to {y_hi}); move the release "
                                         "point further onto the field", where=where, field_length=FIELD_LENGTH,
-                                        field_width=FIELD_WIDTH, part=part_words, lo=f"{lo[0]:.3g}",
-                                        hi=f"{hi[0]:.3g}", lo2=f"{lo[1]:.3g}", hi2=f"{hi[1]:.3g}"))
+                                        field_width=FIELD_WIDTH, part=part_words, x_lo=f"{lo[0]:.3g}",
+                                        x_hi=f"{hi[0]:.3g}", y_lo=f"{lo[1]:.3g}", y_hi=f"{hi[1]:.3g}"))
             for what, boxes, station in solids:
                 if station == st.name:
                     continue

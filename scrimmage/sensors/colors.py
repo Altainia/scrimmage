@@ -38,11 +38,12 @@ def parse_color(value, where: str) -> tuple[float, float, float]:
     if isinstance(value, str):
         if value in NAMED_COLORS:
             return NAMED_COLORS[value]
-        raise ValueError(i18n.t("{where}: color {value} isn't one of the named colors ({named_colors}); give one "
-                                "of those or [r, g, b], each 0 to 1",
-                                where=where, value=repr(value), named_colors=', '.join(NAMED_COLORS)))
+        raise ValueError(i18n.t("{where}: {key} {value} isn't one of the named colors ({named_colors}); give one "
+                                "of those or [r, g, b], each 0 to 1", where=where, key="color", value=repr(value),
+                                named_colors=', '.join(NAMED_COLORS)))
     if (isinstance(value, list) and len(value) == 3
             and all(isinstance(c, (int, float)) and not isinstance(c, bool) and 0.0 <= c <= 1.0 for c in value)):
         return tuple(float(c) for c in value)
-    raise ValueError(i18n.t("{where}: color must be a named color ({named_colors}) or [r, g, b], each 0 to 1, not "
-                            "{value}", where=where, named_colors=', '.join(NAMED_COLORS), value=repr(value)))
+    raise ValueError(i18n.t("{where}: {key} must be a named color ({named_colors}) or [r, g, b], each 0 to 1, not "
+                            "{value}", where=where, key="color", named_colors=', '.join(NAMED_COLORS),
+                            value=repr(value)))

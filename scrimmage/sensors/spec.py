@@ -210,7 +210,8 @@ def parse_sensor(table, index: int) -> SensorSpec:
                                toward_setting="toward = [x, y, z]"))
         toward = table["toward"]
         if not (isinstance(toward, list) and len(toward) == 3 and all(_finite(c) for c in toward)):
-            raise t.err(i18n.t("toward must be a direction [x, y, z], 3 numbers, not {value}", value=plain(toward)))
+            raise t.err(i18n.t("{key} must be a direction [x, y, z], 3 numbers, not {value}", key="toward",
+                               value=plain(toward)))
         reach = t.length("max_range", DEFAULT_MAX_RANGE[kind])
         if kind == "color" and reach > COLOR_MAX_RANGE + 1e-12:
             raise t.err(i18n.t("max_range is {reach} m: a color sensor sees 10 cm at most ({max_range_setting})",

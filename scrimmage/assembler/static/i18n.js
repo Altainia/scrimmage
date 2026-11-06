@@ -3,7 +3,7 @@
 //
 // The source text is American English and is its own key; it must be a literal string (no variable, no + or
 // ${...}), so `scrimmage i18n template` can find it. Dynamic parts are named {placeholders}; {{ and }} are braces.
-//   t("Color")                                 "Color" or "Colour"
+//   t("Center of gravity")                     "Center of gravity" or "Centre of gravity"
 //   t("Saved {name}", { name })                placeholders filled from params
 //   t("Open", { context: "file" })             a source that means two different things
 //   tn("{count} part", "{count} parts", n)     the plural form Intl.PluralRules picks for n; {count} is n

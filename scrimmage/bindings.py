@@ -43,9 +43,9 @@ def _ctre_device(cfg: dict, kind: str) -> str:
     name, sep, ident = spec.partition(":")
     if name not in CTRE_DEVICES or not sep:
         raise ValueError(i18n.t("{ctre_setting}: expected \"{kind_id}\" with Kind one of {devices} (e.g. "
-                                "\"{talonfx_1}\")", devices=', '.join(CTRE_DEVICES),
+                                "\"{example}\")", devices=', '.join(CTRE_DEVICES),
                                 ctre_setting="ctre = {}".format(repr(spec)), kind_id="<Kind>:<id>",
-                                talonfx_1="TalonFX:1"))
+                                example="TalonFX:1"))
     want = _CTRE_KIND_FOR[kind]
     if name != want:
         raise ValueError(i18n.t("{ctre_setting} in a [[{kind}]] binding: only {want} is supported there", kind=kind,
@@ -97,9 +97,9 @@ def _rev_device(cfg: dict, kind: str) -> str:
     name, sep, ident = spec.partition(":")
     allowed = _REV_KINDS_FOR[kind]
     if not sep or (name not in allowed and name not in REV_DEVICES and name.removesuffix("Abs") not in REV_DEVICES):
-        raise ValueError(i18n.t("{rev_setting}: expected \"{kind_id}\" with Kind one of {allowed} (e.g. \"{next_1}\")",
+        raise ValueError(i18n.t("{rev_setting}: expected \"{kind_id}\" with Kind one of {allowed} (e.g. \"{example}\")",
                                 allowed=', '.join(allowed), rev_setting="rev = {}".format(repr(spec)),
-                                kind_id="<Kind>:<id>", next_1="{}:1".format(next(iter(allowed)))))
+                                kind_id="<Kind>:<id>", example="{}:1".format(next(iter(allowed)))))
     if name not in allowed:
         raise ValueError(i18n.t("{rev_setting} in a [[{kind}]] binding: only {allowed} is supported there", kind=kind,
                                 allowed=i18n.t(" or ", context="list separator").join(allowed),

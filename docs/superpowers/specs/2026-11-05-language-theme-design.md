@@ -140,3 +140,124 @@ Each decision gives the choice, the reason, and what it costs if it is wrong.
   - 2px and 3px become `--radius-sm`, and 4px and 6px become `--radius`;
   - 8px, 10px and 12px become `--radius-lg` (6px), so panels get smaller, as the owner asked;
   - `50%` and `0` stay.
+
+## Decisions made during the build
+
+Each ruling from the build ledger (`.superpowers/sdd/2026-11-05-language-theme/progress.md`), with what it costs. An
+amended ruling is listed as it stands, with what it replaced.
+
+**How text is wrapped**
+
+- **Literal sources only.** A t()/tn() source is one literal string, never a variable or text joined from pieces,
+  so `scrimmage i18n template` can find it; the parts that change are {placeholders}. Cost: some assembled
+  sentences were restructured into whole sentences.
+- **One machine guard.** `i18n.fixed()` holds the guard; `units.fixed()` and `units.machine_text()` enter it, so
+  one guard keeps machine units and machine English. Cost: nothing.
+- **index.html's text** is named in `data-i18n*` attributes, which the template scans. Cost: a markup convention.
+- **app.js locals named `t`** that hid the imported t() were renamed. Cost: nothing.
+- **Text defined at import time** is marked with `N_()` and shown with `translated()` (stock part docs, constants).
+  A t() at import would freeze the starting language; a gate test (test_i18n_import_time.py) checks for it. Cost:
+  nothing.
+- **Placeholders are checked against the call.** test_i18n_calls.py checks every t()/tn()/translated() call gives
+  exactly its source's placeholders (Python AST, and JS object literals where practical), since the template tool
+  can't. Cost: one test file.
+- **What a student types is never translatable text.** Keys, values, `[table]` names and commands in a message are
+  {placeholders} (`{kind_setting}` = `kind = "disc"`), so en-GB's "colour" never teaches a value the loader
+  refuses; test_i18n_typed.py is the gate. Cost: about 450 calls restructured.
+- **"(s)" plurals** in the loaders' messages ("table(s)") stay as written, so en-US is exact; translators may rewrite
+  them (docs/translating.md says how). Cost: awkward plurals for translators.
+- **List separators** (" and ", " or ") are translated with the context "list separator". Cost: nothing; the guide
+  names the context.
+- **The page loads the catalog only when it changes.** The settings poll sends a catalog version, and the page
+  fetches the catalog when the language or version changes. Cost: nothing (a full translation would otherwise be
+  sent every 2 s).
+
+**Machine output (L2)**
+
+- **"Shared with MCP/CLI" is no reason to leave text unwrapped.** Every MCP tool handler runs under
+  `i18n.fixed("en-US")` through one wrapper, and the CLI's main does too, except `edit` and `serve`, which serve the
+  web app. Shared text is then wrapped with t(). Cost: a bigger final stretch (Task 6 split into 6a–6d); MCP and CLI
+  text stay byte-identical en-US, pinned by test_mcp_language.py and test_units_machine_text.py.
+- **The CLI is American English throughout.** What `scrimmage run`/`test`/`bench` print, and the report.md and
+  summary.txt they write, stay en-US (language only: units still follow `--units` and the setting). Human files
+  written from the web app or by an MCP call follow the Language. Cost: CLI users who pick en-GB get en-US report
+  files (docs/settings.md says so).
+- **"Kept runs"** in the machine-output rule means runs kept by MCP, sweeps and spreads (under the guard); a run the
+  student keeps in the Test tab follows the Language, as it follows Units. Cost: nothing.
+- **Sweep and spread tables.** `table.csv`'s rows and grip_watch's loss words stay en-US inside translated page
+  tables (machine text). Cost: mixed language in those two tables (a known gap in docs/settings.md).
+- **A web-started scenario run's worker** runs inside `i18n.machine()`, so its report.json stays en-US. Cost: session
+  and config errors in those runs show in en-US on the run panel (a known gap).
+- **summary.json is machine output**: structure and flags only (headline count, uncalibrated, energy_failed,
+  title_lines), no words or unit text, byte-identical across language and units. The Bench tab takes the headline
+  lines from summary.txt by position. This replaced an earlier summary.json that carried the headlines. Cost: one
+  more file per bench run and a positional reader; an old folder without summary.json takes its last warning line as
+  the UNCALIBRATED line (old folders only; a rerun fixes it).
+- **Runtime warnings built on the simulation's or bridge's thread** (a blocked sensor, a hub the robot never
+  opened, a device the robot didn't create) stay raw, allowlisted in the gate: a new thread doesn't inherit the guard,
+  so translating there could leak into machine output. Cost: English warnings in en-GB (a known gap).
+
+**The page must not match server text (L3)**
+
+- **Codes instead of words:** ApiError fields (`live`/`already`, `busy/<holder>`), `build_failed`,
+  RecordingExists/RecordingTaken, config and scenario errors carrying their fields (validate.py and scenario_validate
+  placed them by their English), `ROBOT_FIRST`, a refused save's `place`/`problem` fields, the Bench tab's
+  UNCALIBRATED and energy flags, BenchError's `no_entry` code, and station solids carrying their station. Cost:
+  nothing.
+- **Setup's partner refusal** (blocks/run.py) is found by its PartnerOverlap type through the ConfigError's context,
+  and worded from its fields; partner.py's message is wrapped. Cost: nothing.
+- **REAL_DS_DRIVING** stays as a constant (four test files check refusals against it), with a comment. Cost: nothing.
+
+**en-US text that changed (each a correction)**
+
+- The HUD mode chip says "Teleop"/"Auto"/"Disabled" (was the raw key), and "1 bodies" became "1 body".
+- Gallery and printed forms say `<html lang="en-US">` (was "en"), and the step row's aria-label says "1 check".
+- "(1 line in the step)" (was "1 lines") and "no value at 1 tick" (was "1 ticks") in shown text; machine messages
+  are unchanged.
+- A `[match]` error beside its Scenario-tab field drops the "[match] " prefix (the field is already labeled).
+
+Cost: small deviations from "text unchanged", in shown text only.
+
+**Live changes and gaps**
+
+- **Stored server text is fetched again** on a language change where the page holds it (code panel, Part state,
+  library, Drive info). Part tab build messages keep the language they were made in until the next refresh. Cost: a
+  mixed-language message until a refresh (rare; a known gap).
+
+**Theme and radii**
+
+- **The light fallback for older browsers.** The `light-dark()` pairs sit inside
+  `@supports (color: light-dark(#000, #fff))`, with plain light values outside it. A custom property isn't checked
+  when it is read, so "declare the light value first" (the first ruling) couldn't work. Cost: a second copy of the
+  light values, pinned by a test; browsers before Chromium 123, Safari 17.5 and Firefox 120 show only the light
+  theme (a known gap).
+- **The 3D backgrounds** of the Assembler, Drive and Bench views follow the theme, as part3d.js does: a light box in
+  a dark page reads as a bug. Cost: a dark background token.
+- **The 1px radius** maps to `--radius-sm`. Cost: nothing.
+
+**The British English catalog (Goal 4, L4)**
+
+- **Spellings:** every source with a word from en-GB.spellings.json has an en-GB entry without it
+  (test_en_gb_catalog.py). Task 6b added neutralize/neutralized/neutralizing and caliper/calipers to the list. Kept
+  out (Task 1): program, license and dialog, since British software text keeps "program" and "dialog", and "license"
+  is a verb and a noun.
+- **British usage beyond spelling:** "toward" becomes "towards", and "backward" as an adverb ("faces backward")
+  "backwards". The rest of the template reads the same in British English: it already says "tick", "round", "all
+  round" and 24-hour times, and has no dates, "gotten", "math" or "fall". Cost: nothing; the test holds these two to
+  the same rule as the spellings.
+- **Words that are keys** in a sentence with a British spelling became placeholders (`center` and `center_in`,
+  `toward`, `color`, a bar's `center, axis, length`), so the L4 exceptions list is empty. Cost: five messages
+  restructured.
+- **The doc-comment examples** ("Color" and "{count} meter|{count} meters" in i18n.py and i18n.js) are not sources,
+  so their catalog entries were removed for a clean `scrimmage i18n check en-GB`; the tests use real entries
+  ("Center of gravity", cad/checklist.py's aluminum plural). Cost: test edits.
+
+**The gate (L1)**
+
+- **tests/test_i18n_sweep.py** reads the static JS, index.html and every Python module, and fails on an unwrapped
+  phrase a student would see (an error or notice in Python; a literal that isn't a key, class, selector or console
+  text in JS; text or attributes without data-i18n in HTML). Four modules are whole-file exceptions (`__main__.py`,
+  `mcp_server.py`, `measure/cli.py`, `i18n_tool.py`: CLI and MCP only); every other kept string is an exact (file,
+  text) entry with its reason. It found the Scenario tab's input-track panel (trackplot.js), units.js's typed-value
+  refusals, a 3D view's lost-context notice and the undo/redo refusals unwrapped, and they were wrapped. Cost: a
+  heuristic gate: a lowercase single word or text built from variables can slip past it.

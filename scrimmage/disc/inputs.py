@@ -351,9 +351,9 @@ def _layout(table: dict, disc: Disc, wheels: Wheels) -> Layout:
     if kind == "pinch":
         if sides != set(SIDES):
             raise DiscConfigError(i18n.t("{layout_table} a pinch has wheels on both sides of the disc; give at least "
-                                         "one wheel with {side_setting} and one with {side_setting2}",
-                                         layout_table="[layout]", side_setting="side = \"left\"",
-                                         side_setting2="side = \"right\""))
+                                         "one wheel with {left_setting} and one with {right_setting}",
+                                         layout_table="[layout]", left_setting="side = \"left\"",
+                                         right_setting="side = \"right\""))
         for key in ("fence", "fence_friction", "fence_radius"):
             if key in table:
                 raise DiscConfigError(i18n.t("{layout_table} {key}: a pinch has no fence (the wheels hold both sides)",
@@ -450,9 +450,9 @@ def _check_layout(layout: Layout, disc: Disc, wheels: Wheels) -> None:
         if layout.kind != "arc" and w.x < reach:
             raise DiscConfigError(
                 i18n.t("{layout_table} a wheel at {x_setting} touches the disc as it is fed (its center at "
-                       "{x_setting2}): a wheel must be at x >= {reach} (where the disc first touches it) so the disc "
-                       "enters clear of it", reach=f"{reach:.4g}", layout_table="[layout]",
-                       x_setting="x = {}".format(w.x), x_setting2="x = 0")
+                       "{entry_setting}): a wheel must be at x >= {reach} (where the disc first touches it) so the "
+                       "disc enters clear of it", reach=f"{reach:.4g}", layout_table="[layout]",
+                       x_setting="x = {}".format(w.x), entry_setting="x = 0")
             )
         if w.x > layout.channel_length:
             raise DiscConfigError(i18n.t("{layout_table} a wheel at {x_setting} is past the channel's end, "

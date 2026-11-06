@@ -684,6 +684,17 @@ def _plain(v):
     return v.unwrap() if hasattr(v, "unwrap") else v
 
 
+def _nothing_to(which: str) -> str:
+    """An undo or redo with nothing in its history (the button is disabled then, so a second page's race)."""
+    return i18n.t("nothing to undo") if which == "undo" else i18n.t("nothing to redo")
+
+
+def _cant(which: str, problem: str) -> str:
+    """An undo or redo the file's check refuses, with the check's own words."""
+    return (i18n.t("can't undo: {problem}", problem=problem) if which == "undo"
+            else i18n.t("can't redo: {problem}", problem=problem))
+
+
 def _sentence(why: str) -> str:
     """`why` (a reason, in the user's language) as a finished sentence: its first letter capitalized, and closed as
     the language closes a sentence, unless it is closed already."""
@@ -1811,11 +1822,11 @@ class App:
             self._require_robot_writable()
             target = self.robot.peek_undo() if which == "undo" else self.robot.peek_redo()
             if target is None:
-                return 200, {"ok": False, "errors": [{"field": "status", "message": f"nothing to {which}"}]}
+                return 200, {"ok": False, "errors": [{"field": "status", "message": _nothing_to(which)}]}
             res = validate.check(target, self.robot.path)   # the world may have changed (a deleted part folder)
             if not res.ok or res.world.parts is None:
                 errs = _fe(res.errors) if not res.ok else [{"field": "status", "message": _hand_written()}]
-                return 200, {"ok": False, "errors": [{"field": e["field"], "message": f"can't {which}: {e['message']}"}
+                return 200, {"ok": False, "errors": [{"field": e["field"], "message": _cant(which, e["message"])}
                                                       for e in errs]}
             try:
                 self.robot.undo() if which == "undo" else self.robot.redo()
@@ -2248,11 +2259,11 @@ class App:
             self._require_scenario_writable()
             target = sc.peek_undo() if which == "undo" else sc.peek_redo()
             if target is None:
-                return 200, {"ok": False, "errors": [{"field": "status", "message": f"nothing to {which}"}]}
+                return 200, {"ok": False, "errors": [{"field": "status", "message": _nothing_to(which)}]}
             res = scenario_validate.check(target, sc.path)   # the robot may have changed since
             refused = self._refusal(res)
             if refused is not None:
-                return 200, {"ok": False, "errors": [{"field": e["field"], "message": f"can't {which}: {e['message']}"}
+                return 200, {"ok": False, "errors": [{"field": e["field"], "message": _cant(which, e["message"])}
                                                       for e in refused]}
             self._check_config_change(sc, target)
             try:

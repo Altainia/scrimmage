@@ -694,8 +694,8 @@ def _kinds(path: Path, raw: dict, rng: _Reader) -> tuple[dict[str, PieceKind], s
         kinds[kind.name] = kind
     if rng.has("color"):        # the [range] ball's, disc's or piece's color (pieces.py's piece_color)
         if not given:
-            raise rng.err(i18n.t("color goes with its ball, disc or piece; give a {piece_name_table} its color there",
-                                 piece_name_table="[piece.<name>]"))
+            raise rng.err(i18n.t("{key} goes with its ball, disc or piece; give a {piece_name_table} its {key} there",
+                                 key="color", piece_name_table="[piece.<name>]"))
         from .pieces import parse_color_key
         default = next(iter(kinds.values()))
         kinds[default.name] = replace(default, color=parse_color_key(f"{path}: [range]", rng.raw("color")))

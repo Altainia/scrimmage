@@ -387,8 +387,8 @@ def _resolve_path(t: _Table, key: str, base_dir: Path) -> Path | None:
 def _units(t: _Table, required: bool) -> str | None:
     if "units" not in t.t:
         if required:
-            raise t.err(i18n.t("{table} needs units (\"{m}\", \"{mm}\" or \"{in_word}\") for its mesh", table=t.label,
-                               m="m", mm="mm", in_word="in"))
+            raise t.err(i18n.t("{table} needs units (\"{m}\", \"{mm}\" or \"{inch}\") for its mesh", table=t.label,
+                               m="m", mm="mm", inch="in"))
         return None
     if not required:
         raise t.err(i18n.t("{table} has units, but only a mesh has units", table=t.label))
@@ -573,8 +573,8 @@ def _parse_bar(name, raw) -> Bar:
     ends = t.has("a") or t.has("b")
     placed = t.has("center") or t.has("axis") or t.has("length")
     if ends and placed:
-        raise t.err(i18n.t("{table} gives both ends (a, b) and a position (center, axis, length); give one",
-                           table=t.label))
+        raise t.err(i18n.t("{table} gives both ends ({ends}) and a position ({position}); give one",
+                           table=t.label, ends="a, b", position="center, axis, length"))
     if ends:
         a, b = t.vec("a", length=True), t.vec("b", length=True)
     else:

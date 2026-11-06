@@ -75,23 +75,50 @@ def test_a_broken_entry_falls_back_with_one_console_warning(page):
     assert any("{nom}" in w for w in broken_) and any("one and other" in w for w in broken_)
 
 
+def test_a_typed_values_refusal_is_in_the_language(page):
+    """units.js's refusals of a typed value (spec L1, Task 6b) go through t(), so a catalog words them."""
+    import json
+
+    def gb(route):
+        res = route.fetch()
+        data = res.json()
+        data.update(language="en-GB", catalog={
+            "Type a number in {unit}": "Enter a number in {unit}",
+            "Units is set to {system}, so type {unit} here, not {other} (or change Units in Settings)":
+                "Units: {system}, so {unit}, not {other}",
+            "Metric": "Metrisch"})
+        route.fulfill(response=res, body=json.dumps(data))
+    page.evaluate("async () => { window.U = await import('./units.js'); }")
+    assert page.evaluate("U.parse('x', 'length').error") == "Type a number in in"
+    page.route("**/api/settings*", gb)
+    page.evaluate("import('./settings.js').then((m) => m.load())")
+    assert page.evaluate("I.i18n.lang") == "en-GB"
+    assert page.evaluate("U.parse('x', 'length').error") == "Enter a number in in"
+    assert page.evaluate("U.parse('3 mm', 'length', 'metric') && U.parse('3 in', 'length', 'metric').error") == \
+        "Units: Metrisch, so mm, not in"
+
+
 def test_the_language_row_switches_and_the_page_rerenders(page):
     page.evaluate("""() => {
       window.notReloaded = true;
       const el = document.createElement('output');
       el.id = 'demo';
-      const show = () => { el.textContent = I.t('Color') + ' ' + I.tn('{count} meter', '{count} meters', 2); };
+      const show = () => { el.textContent = I.t('Center of gravity') + ' ' + I.tn(
+        '{count} piece in {body} is still guessed as aluminum',
+        '{count} pieces in {body} are still guessed as aluminum', 2, { body: 'arm' }); };
       I.onChange(show); show();
       document.body.append(el);
     }""")
-    assert page.text_content("#demo") == "Color 2 meters"
+    us = "Center of gravity 2 pieces in arm are still guessed as aluminum"
+    gb = "Centre of gravity 2 pieces in arm are still guessed as aluminium"
+    assert page.text_content("#demo") == us
     assert page.get_attribute("html", "lang") == "en-US"
     page.click("#settings-btn")
     assert page.is_visible("[data-setting='language'][data-value='en-GB']")
     assert page.text_content("[data-setting='language'][data-value='en-GB']") == "English (UK)"
     assert page.get_attribute("[data-setting='language'][data-value='en-US']", "aria-pressed") == "true"
     page.click("[data-setting='language'][data-value='en-GB']")
-    page.wait_for_function("document.getElementById('demo').textContent === 'Colour 2 metres'")
+    page.wait_for_function(f"document.getElementById('demo').textContent === '{gb}'")
     assert page.get_attribute("html", "lang") == "en-GB"
     assert page.get_attribute("[data-setting='language'][data-value='en-GB']", "aria-pressed") == "true"
     assert page.get_attribute("[data-setting='language'][data-value='en-US']", "aria-pressed") == "false"
@@ -100,7 +127,7 @@ def test_the_language_row_switches_and_the_page_rerenders(page):
     page.keyboard.press("Escape")
     # a change made elsewhere (another editor, the CLI, by hand) arrives by the poll
     (settings.settings_dir() / "settings.toml").write_text('language = "en-US"\n')
-    page.wait_for_function("document.getElementById('demo').textContent === 'Color 2 meters'", timeout=10000)
+    page.wait_for_function(f"document.getElementById('demo').textContent === '{us}'", timeout=10000)
     assert page.get_attribute("html", "lang") == "en-US"
     assert page.evaluate("window.notReloaded") is True
     # Units still switches on its own, and doesn't change the language
@@ -120,7 +147,7 @@ def test_the_page_starts_in_the_saved_language(browser, tmp_path, language):
         p.goto(srv.url)
         p.wait_for_function("window.__scrimmage && __scrimmage.mode")
         assert p.get_attribute("html", "lang") == "en-GB"
-        assert p.evaluate("import('./i18n.js').then((m) => m.t('Color'))") == "Colour"
+        assert p.evaluate("import('./i18n.js').then((m) => m.t('Center of gravity'))") == "Centre of gravity"
     finally:
         ctx.close()
         srv.stop()

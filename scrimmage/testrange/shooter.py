@@ -205,15 +205,15 @@ def parse_shooter(cfg: dict, built, cfg_dir: Path | None) -> ShooterConfig:
         raise _err(i18n.t("kind must be \"{ball}\" (a stock launcher part) or \"{disc}\" (a stock disc_shooter "
                           "part), not {kind}", kind=repr(kind), ball="ball", disc="disc"))
     if kind == "ball" and rng.disc is not None:
-        raise _err(i18n.t("{kind_setting} (the default: a stock launcher part) shoots balls, but the range {name} "
-                          "plays discs ({disc_preset}); set {kind_setting2} and run it in a stock disc_shooter part",
-                          name=repr(rng.name), disc_preset=repr(rng.disc_preset), kind_setting="kind = \"ball\"",
-                          kind_setting2="kind = \"disc\""))
+        raise _err(i18n.t("{ball_setting} (the default: a stock launcher part) shoots balls, but the range {name} "
+                          "plays discs ({disc_preset}); set {disc_setting} and run it in a stock disc_shooter part",
+                          name=repr(rng.name), disc_preset=repr(rng.disc_preset), ball_setting="kind = \"ball\"",
+                          disc_setting="kind = \"disc\""))
     if kind == "disc" and rng.disc is None:
         raise _err(i18n.t("{kind_setting} (a stock disc_shooter part) shoots discs, but the range {name} plays balls "
                           "({ball_preset}); leave kind out for a stock launcher part, or use a disc range (such as "
-                          "\"{n2013}\")", name=repr(rng.name), ball_preset=repr(rng.ball_preset),
-                          kind_setting="kind = \"disc\"", n2013="2013"))
+                          "\"{disc_range}\")", name=repr(rng.name), ball_preset=repr(rng.ball_preset),
+                          kind_setting="kind = \"disc\"", disc_range="2013"))
     if kind == "disc":
         return _parse_disc(sec, built, cfg_dir)
     for k in sec:
@@ -739,10 +739,10 @@ def _check_disc_file(raw: dict, where: str, name: str, given: dict, shafts: list
     if "shaft" in raw:
         tables = raw["shaft"] if isinstance(raw["shaft"], list) else [raw["shaft"]] * len(shafts)
         if len(tables) != len(shafts):
-            raise _err(i18n.t("{where}: {shaft_table} has {tables} table(s) but the disc_shooter part {name} has "
-                              "{groups} wheel group(s); leave {shaft_table2} out of the setup file", where=where,
-                              tables=len(tables), name=repr(name), groups=len(shafts), shaft_table="[[shaft]]",
-                              shaft_table2="[shaft]"))
+            raise _err(i18n.t("{where}: {shaft_tables} has {tables} table(s) but the disc_shooter part {name} has "
+                              "{groups} wheel group(s); leave {shaft_table} out of the setup file", where=where,
+                              tables=len(tables), name=repr(name), groups=len(shafts), shaft_tables="[[shaft]]",
+                              shaft_table="[shaft]"))
         for g, (table, mine) in enumerate(zip(tables, shafts)):
             for key, value in (table.items() if isinstance(table, dict) else ()):
                 if key in mine and not _same(value, mine[key]):

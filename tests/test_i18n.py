@@ -16,6 +16,11 @@ from scrimmage.i18n import t, tn
 ROOT = Path(__file__).resolve().parent.parent
 
 
+# entries of the shipped en-GB catalog that sources use (cad/checklist.py's plural, the Part tab's label)
+CG, CG_GB = "Center of gravity", "Centre of gravity"
+PIECES = ("{count} piece in {body} is still guessed as aluminum",
+          "{count} pieces in {body} are still guessed as aluminum")
+
 @pytest.fixture
 def locales(tmp_path, monkeypatch):
     """locales({"fr": {...}}) writes those catalogs in a scratch locales folder and makes it the one i18n reads."""
@@ -45,10 +50,10 @@ def test_untranslated_text_is_the_source():
 
 def test_the_shipped_en_gb_catalog():
     assert i18n.languages() == {"en-US": "English (US)", "en-GB": "English (UK)"}
-    assert t("Color", lang="en-GB") == "Colour"
-    assert t("Color") == "Color"
-    assert tn("{count} meter", "{count} meters", 1, lang="en-GB") == "1 metre"
-    assert tn("{count} meter", "{count} meters", 2.5, lang="en-GB") == "2.5 metres"
+    assert t(CG, lang="en-GB") == CG_GB
+    assert t(CG) == CG
+    assert tn(*PIECES, 1, lang="en-GB", body="arm") == "1 piece in arm is still guessed as aluminium"
+    assert tn(*PIECES, 2.5, lang="en-GB", body="arm") == "2.5 pieces in arm are still guessed as aluminium"
 
 
 def test_placeholders_can_be_reordered(locales):
@@ -147,7 +152,7 @@ def test_the_setting_picks_the_language(language):
     assert settings.load().language == "en-US"
     language("en-GB")
     assert settings.load().language == "en-GB" and i18n.current_language() == "en-GB"
-    assert t("Color") == "Colour"
+    assert t(CG) == CG_GB
     assert (settings.settings_dir() / "settings.toml").read_text() == 'language = "en-GB"\n'
     settings.save(language="en-us")                            # a tag's case doesn't matter
     assert settings.load().language == "en-US"
@@ -260,20 +265,20 @@ def test_cli_help_names_the_languages():
 # -- machine paths stay en-US (L2, Review Focus 5) --------------------------------------------------------------------
 def test_the_machine_guards_fix_the_language(language):
     language("en-GB")
-    assert t("Color") == "Colour"
+    assert t(CG) == CG_GB
     with units.machine_text():
         assert i18n.current_language() == "en-US"
-        assert t("Color") == "Color"
-        assert tn("{count} meter", "{count} meters", 2) == "2 meters"
-        assert t("Color", lang="en-GB") == "Colour"         # an explicit lang= still wins
+        assert t(CG) == CG
+        assert tn(*PIECES, 2, body="arm") == "2 pieces in arm are still guessed as aluminum"
+        assert t(CG, lang="en-GB") == CG_GB         # an explicit lang= still wins
     with units.fixed("metric"):
-        assert t("Color") == "Color" and units.current_system() == "metric"
+        assert t(CG) == CG and units.current_system() == "metric"
     with i18n.fixed("en-GB"):
-        assert t("Color") == "Colour"
+        assert t(CG) == CG_GB
         with units.machine_text():
-            assert t("Color") == "Color"
-        assert t("Color") == "Colour"
-    assert t("Color") == "Colour"
+            assert t(CG) == CG
+        assert t(CG) == CG_GB
+    assert t(CG) == CG_GB
 
 
 def test_the_machine_guard_is_per_thread(language):
@@ -281,19 +286,20 @@ def test_the_machine_guard_is_per_thread(language):
     language("en-GB")
     seen = []
     with units.machine_text():
-        th = threading.Thread(target=lambda: seen.append(t("Color")))
+        th = threading.Thread(target=lambda: seen.append(t(CG)))
         th.start()
         th.join()
-        seen.append(t("Color"))
-    assert seen == ["Colour", "Color"]
+        seen.append(t(CG))
+    assert seen == [CG_GB, CG]
 
 
 # -- catalog_json, for the page --------------------------------------------------------------------------------------
 def test_catalog_json_is_the_differing_entries():
     assert i18n.catalog_json("en-US") == {}
     gb = i18n.catalog_json("en-GB")
-    assert gb["Color"] == "Colour" and "_language" not in gb
-    assert gb["{count} meter|{count} meters"] == {"one": "{count} metre", "other": "{count} metres"}
+    assert gb[CG] == CG_GB and "_language" not in gb
+    assert gb["|".join(PIECES)] == {"one": PIECES[0].replace("aluminum", "aluminium"),
+                                  "other": PIECES[1].replace("aluminum", "aluminium")}
 
 
 def test_the_spellings_file():

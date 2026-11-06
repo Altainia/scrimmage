@@ -21,7 +21,7 @@ GB = {
     "_language": "English (UK)",
     "{where}: attach {attach}: no mount or body {local} on {target}; mounts: {mounts}; bodies: {bodies}":
         "ZZ {local} {target} ({where})",
-    "{where}: ids: {slot} = {value}: expected \"{kind_number}\", e.g. \"{talonfx_3}\"": "ZZ {value} {slot} {where}",
+    "{where}: ids: {slot} = {value}: expected \"{kind_number}\", e.g. \"{example}\"": "ZZ {value} {slot} {where}",
     "{where}: {name} must be at most {most}, got {got}": "ZZ {got} > {most}: {name} ({where})",
     "{part}.{slot} has no device ID, so it won't report": "ZZ {slot} of {part}",
     "{device} is bound by {a} and {b}: give each device one binding": "ZZ {b} {a} {device}",

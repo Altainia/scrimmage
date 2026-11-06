@@ -92,7 +92,7 @@ export function initView() {
   const cv = renderer.domElement;
   cv.addEventListener("webglcontextlost", (e) => {
     e.preventDefault();
-    host.replaceChildren(h("p", { class: "view-placeholder", role: "alert" }, "3D view lost its graphics context — reload the page"));
+    host.replaceChildren(h("p", { class: "view-placeholder", role: "alert" }, t("3D view lost its graphics context — reload the page")));
   });
   cv.addEventListener("pointermove", onMove);
   cv.addEventListener("pointerleave", () => setHover(null));

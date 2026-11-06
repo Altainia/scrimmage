@@ -60,6 +60,9 @@
   "maximized": "maximised",
   "normalize": "normalise",
   "normalized": "normalised",
+  "neutralize": "neutralise",
+  "neutralized": "neutralised",
+  "neutralizing": "neutralising",
   "customize": "customise",
   "customized": "customised",
   "recognize": "recognise",
@@ -90,5 +93,7 @@
   "practicing": "practising",
   "fulfill": "fulfil",
   "enrollment": "enrolment",
-  "judgment": "judgement"
+  "judgment": "judgement",
+  "caliper": "calliper",
+  "calipers": "callipers"
 }

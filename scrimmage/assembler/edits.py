@@ -405,8 +405,8 @@ def _device_spec(value) -> tuple[str | None, str]:
 def _matched(slot: str, value, device, field: str):
     """`value` (the slot's ID as written) pointing at `device` instead, the same type."""
     if not isinstance(device, str) or not device.strip():
-        raise EditError(field, i18n.t("the device must be one the robot code made, e.g. \"{talonfx_3}\", not {device}",
-                                      device=repr(device), talonfx_3="TalonFX 3"))
+        raise EditError(field, i18n.t("the device must be one the robot code made, e.g. \"{example}\", not {device}",
+                                      device=repr(device), example="TalonFX 3"))
     device = device.strip()
     key, spec = _device_spec(value)
     if isinstance(value, dict) and "device" in value:

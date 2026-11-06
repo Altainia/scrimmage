@@ -541,9 +541,9 @@ def parse_range_section(cfg: dict, cfg_dir: Path | None) -> RangeSection | None:
     capacity = _capacity(cfg)
     if preload > 0 and capacity is None:
         raise PartError(i18n.t("{range_table} {preload_setting}: the robot has no {shooter_table} to hold balls; set "
-                               "{preload_setting2}", range_table="[range]",
+                               "{preload_zero}", range_table="[range]",
                                preload_setting="preload = {}".format(preload), shooter_table="[shooter]",
-                               preload_setting2="preload = 0"))
+                               preload_zero="preload = 0"))
     capacity = capacity or 0
     if preload > capacity:
         raise PartError(i18n.t("{range_table} {preload_setting} is more balls than the robot holds ({shooter_table} "

@@ -18,6 +18,7 @@
 // which i18n.js shares.
 
 import { settings } from "./settings.js";
+import { t } from "./i18n.js";
 
 let table = null;
 let system = "imperial";
@@ -91,7 +92,7 @@ export function fmt(si, kind) {
 
 const squash = (s) => s.replace(/\s+/g, "").toLowerCase();
 const NUMBER = /^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)\s*(.*?)\s*$/i;
-const SYSTEM_NAME = { imperial: "Imperial", metric: "Metric" };
+const SYSTEM_NAME = { imperial: () => t("Imperial"), metric: () => t("Metric") };
 
 const LENGTH_KINDS = ["length", "field"];
 
@@ -102,10 +103,10 @@ const LENGTH_KINDS = ["length", "field"];
 export function parse(text, kind, sys = system) {
   const u = unit(kind, sys);
   const m = NUMBER.exec(String(text ?? ""));
-  const want = u.name ? ` in ${u.name}` : "";
-  if (!m) return { error: `Type a number${want}` };
+  const typeOne = () => (u.name ? t("Type a number in {unit}", { unit: u.name }) : t("Type a number"));
+  if (!m) return { error: typeOne() };
   const v = Number(m[1]);
-  if (!Number.isFinite(v)) return { error: `Type a number${want}` };
+  if (!Number.isFinite(v)) return { error: typeOne() };
   const said = squash(m[2]);
   if (!said || !table) return fromDisplay(v, kind, sys);
   const names = (n) => (table.aliases[n] || [n]).map(squash);
@@ -115,7 +116,8 @@ export function parse(text, kind, sys = system) {
     const mine = Object.keys(lengths[sys] || {}).find((n) => names(n).includes(said));
     if (mine) return clean(v * lengths[sys][mine]);
   }
-  const refuse = (o) => ({ error: `Units is set to ${SYSTEM_NAME[sys]}, so type ${u.name} here, not ${o} (or change Units in Settings)` });
+  const refuse = (o) => ({ error: t("Units is set to {system}, so type {unit} here, not {other} (or change Units in Settings)",
+    { system: SYSTEM_NAME[sys](), unit: u.name, other: o }) });
   for (const other of table.systems) {
     if (other === sys) continue;
     const o = table.units[other][kind];
@@ -123,7 +125,8 @@ export function parse(text, kind, sys = system) {
     const theirs = lengths && Object.keys(lengths[other] || {}).find((n) => names(n).includes(said));
     if (theirs) return refuse(theirs);
   }
-  return { error: `"${m[2]}" isn't a unit for this: type a number${want}` };
+  return { error: u.name ? t("\"{typed}\" isn't a unit for this: type a number in {unit}", { typed: m[2], unit: u.name })
+    : t("\"{typed}\" isn't a unit for this: type a number", { typed: m[2] }) };
 }
 
 // A file key's own unit: `keyUnit` is the unit ("in") or the whole key ("diameter_in"); `quantity` ("length",

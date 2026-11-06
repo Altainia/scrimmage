@@ -78,7 +78,7 @@ def set_match(doc, key: str, value) -> None:
     at = f"scenario/match.{key}"
     if value is not None:
         if key == "station" and not isinstance(value, str):
-            raise EditError(at, i18n.t("station must be text such as \"{red_1}\"", red_1="red1"))
+            raise EditError(at, i18n.t("station must be text such as \"{example}\"", example="red1"))
         if key in ("fms", "timer") and not isinstance(value, bool):
             raise EditError(at, i18n.t("{key} must be true or false", key=key))
         if key.endswith("_seconds") and not _is_num(value):

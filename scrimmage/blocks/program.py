@@ -184,11 +184,11 @@ def _whole(v, where: str, what: str, hi: int) -> int:
 
 def _unit(v, where: str) -> str:
     if v is None:
-        raise _fail(where, i18n.t("say the unit (\"{deg}\", \"{in_word}\" or \"{m}\")", deg="deg", in_word="in",
+        raise _fail(where, i18n.t("say the unit (\"{deg}\", \"{inch}\" or \"{m}\")", deg="deg", inch="in",
                                   m="m"))
     if v not in UNITS:
-        raise _fail(where, i18n.t("the unit must be \"{deg}\", \"{in_word}\" or \"{m}\", not {value}", value=repr(v),
-                                  deg="deg", in_word="in", m="m"))
+        raise _fail(where, i18n.t("the unit must be \"{deg}\", \"{inch}\" or \"{m}\", not {value}", value=repr(v),
+                                  deg="deg", inch="in", m="m"))
     return v
 
 

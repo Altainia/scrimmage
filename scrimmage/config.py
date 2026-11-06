@@ -139,10 +139,10 @@ def load_config_text(text: str, path: str | Path) -> Config:
     if rp:
         cmd = rp.get("command")
         if not (isinstance(cmd, list) and cmd and all(isinstance(c, str) for c in cmd)):
-            raise ConfigError(t("{robot_program_table} command must be a list of strings, e.g. [\"{python2}\", "
+            raise ConfigError(t("{robot_program_table} command must be a list of strings, e.g. [\"{python_token}\", "
                                 "\"{m}\", \"{robotpy}\", \"{sim}\", \"{nogui}\", \"{ws_client}\"]",
-                                robot_program_table="[robot_program]", python2="{python}", m="-m", robotpy="robotpy",
-                                sim="sim", nogui="--nogui", ws_client="--ws-client"))
+                                robot_program_table="[robot_program]", python_token="{python}", m="-m",
+                                robotpy="robotpy", sim="sim", nogui="--nogui", ws_client="--ws-client"))
         env = rp.get("env", {})
         if not isinstance(env, dict):
             raise ConfigError(t("{robot_program_table} env must be a table of {name_setting}",

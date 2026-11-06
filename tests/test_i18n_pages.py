@@ -142,7 +142,7 @@ def test_the_settings_poll_leaves_out_a_catalog_the_page_has(start, language):
     c = start()
     language("en-GB")
     s, first = c.call("GET", "/api/settings")
-    assert s == 200 and first["catalog"]["Color"] == "Colour"
+    assert s == 200 and first["catalog"]["Center of gravity"] == "Centre of gravity"
     version = first["catalog_version"]
     assert version == i18n.catalog_version("en-GB") != i18n.catalog_version("en-US")
     s, again = c.call("GET", f"/api/settings?catalog={version}")
