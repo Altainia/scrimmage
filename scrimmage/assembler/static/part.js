@@ -24,7 +24,7 @@
 // the "Try it" poses from part.tryit), solidBox() (the drawn pieces' robot-frame box). Test hook:
 // window.__scrimmagePart {store, screenPos(pieceKey, {along, across}), screenPoint(pieceKey), scene, toRobot(frame)}.
 
-import { $, h, api, notice, serial, registerTab, setTab, showPath, sessionToken, markUnits, typedText } from "./app.js";
+import { $, h, api, notice, serial, registerTab, setTab, showPath, sessionToken, markUnits, typedText, keptSelection } from "./app.js";
 import { uploadCad, cadFilesProblem, filesName } from "./start.js";
 import { units } from "./units.js";
 import { i18n, t, tn } from "./i18n.js";
@@ -551,16 +551,6 @@ export function matLabel(key, short = false) {
 }
 
 const noticed = new WeakSet();   // refused edits whose unplaced messages were already shown as notices
-
-// Where the selection goes in a box redrawn with `text`: where it was while the text is the same; when the redraw
-// changed the text (a Units change converts it, an undo or another tab's edit shows a new number), all of it if all
-// was selected (still there to type over), else the caret at its end. Offsets into the old text would select part of
-// a number ("830" selected becomes "32." of "32.677" in inches, and typing then keeps "677").
-function keptSelection(sel, text) {
-  if (text === sel.text) return [sel.start, sel.end, sel.dir || "none"];
-  if (sel.text.length && sel.start === 0 && sel.end === sel.text.length) return [0, text.length, sel.dir || "none"];
-  return [text.length, text.length, "none"];
-}
 
 function renderInspector() {
   const root = $("#part-inspector");

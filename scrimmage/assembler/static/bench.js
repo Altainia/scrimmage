@@ -23,7 +23,7 @@
 // Units: lengths, speeds, masses, forces and springs are shown and typed in the Units setting (units.js; valueOf
 // says how). What is typed is written in the form the file already has, `diameter_in` in inches, else meters (U3).
 
-import { $, h, api, apiFile, notice, serial, registerTab, setTab, showPath, fmt, UNIT, markUnits, typedText } from "./app.js";
+import { $, h, api, apiFile, notice, serial, registerTab, setTab, showPath, fmt, UNIT, markUnits, typedText, keptSelection } from "./app.js";
 import { units } from "./units.js";
 import { t, onChange } from "./i18n.js";
 
@@ -946,7 +946,8 @@ export function keepTyping(root) {
   const act = document.activeElement;
   if (!(act && act.closest && act.closest(root) && act.dataset.key)) return null;
   return { id: act.id, key: act.dataset.key, file: act.dataset.file, typedAt: act.dataset.typedAt, value: typedText(act),
-    dirty: act.tagName === "INPUT" && act.value !== act.dataset.orig, start: act.selectionStart, end: act.selectionEnd };
+    dirty: act.tagName === "INPUT" && act.value !== act.dataset.orig,
+    sel: { text: act.value, start: act.selectionStart, end: act.selectionEnd, dir: act.selectionDirection } };
 }
 
 export function restoreTyping(keep, root) {
@@ -965,7 +966,8 @@ export function restoreTyping(keep, root) {
     el.dataset.typedAt = keep.typedAt || el.dataset.version;
   }
   el.focus();
-  try { if (el.tagName === "INPUT") el.setSelectionRange(keep.start, keep.end); } catch { /* not a text box */ }
+  // where it was while the text is the same; else all of the new text if all was selected, or the caret at its end
+  try { if (el.tagName === "INPUT" && keep.sel.start !== null) el.setSelectionRange(...keptSelection(keep.sel, el.value)); } catch { /* not a text box */ }
 }
 
 function drawChange() {

@@ -542,6 +542,16 @@ export function convertTyped(el) {
   if (text !== el.value) el.value = text;
   return el;
 }
+// Where the selection goes in a box redrawn with `text` (`sel`: the old box's {text, start, end, dir}): where it was
+// while the text is the same; when the redraw changed the text (a Units change converts it, an undo or another tab's
+// edit shows a new number), all of it if all was selected (still there to type over), else the caret at its end.
+// Offsets into the old text would select part of a number ("830" selected becomes "32." of "32.677" in inches, and
+// typing then keeps "677"). For setSelectionRange(...).
+export function keptSelection(sel, text) {
+  if (text === sel.text) return [sel.start, sel.end, sel.dir || "none"];
+  if (sel.text.length && sel.start === 0 && sel.end === sel.text.length) return [0, text.length, sel.dir || "none"];
+  return [text.length, text.length, "none"];
+}
 export function readMeasure(el, kind) {
   const text = el.value.trim();
   if (text === "") return null;

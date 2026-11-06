@@ -941,3 +941,25 @@ def test_an_older_read_answered_after_a_newer_one_is_dropped(make_bench_page, tm
     assert page.evaluate("__scrimmageBench.idea.version") == drawn
     assert page.input_value(box) == "4000"
     page.unroute("**/api/bench/idea*")
+
+
+def test_a_units_change_keeps_a_bench_box_whole_text_selected(make_bench_page, tmp_path, units):
+    """A Bench box's whole number selected, then Units changes (the redraw shows it converted, longer: 1 in is
+    25.4 mm): all of the new number is still selected, so what is typed replaces it and is saved in the new unit."""
+    units("imperial")
+    page = make_bench_page()
+    _on_stage(page, "bounce bar")
+    f = tmp_path / "kickoff" / "bounce_bar.toml"
+    box = "#bench-all input[data-key='bar.kicker.diameter']"
+    page.click("#bench-showall")
+    page.wait_for_selector(box)
+    assert page.input_value(box) == "1"
+    page.click(box, click_count=3)
+    page_units(page, "metric")
+    page.wait_for_function("(s) => document.querySelector(s).value === '25.4'", arg=box)
+    assert page.evaluate("document.activeElement.dataset.key") == "bar.kicker.diameter"
+    assert page.evaluate("(e => [e.selectionStart, e.selectionEnd])(document.activeElement)") == [0, 4]
+    page.keyboard.type("30")
+    page.keyboard.press("Enter")
+    text = _wait_file(f, lambda t: _entry(t, "bar", "kicker")["diameter"] == pytest.approx(0.03))
+    assert _entry(text, "bar", "kicker")["diameter"] == pytest.approx(0.03)
