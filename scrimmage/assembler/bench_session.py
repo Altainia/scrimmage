@@ -16,9 +16,6 @@ the file writes `diameter_in`. `file` is an idea's file name inside the folder.
 
 from __future__ import annotations
 
-import contextlib
-import csv
-import json
 import logging
 import re
 import threading
@@ -27,29 +24,24 @@ from collections.abc import Callable
 from pathlib import Path
 
 from .. import i18n
-from ..bench import run as bench_run
 from ..bench import session
 from ..bench.build import build_bench
-from ..bench.compare import BENCH_METRICS
-from ..bench.fields import fields_payload, key_kind
+from ..bench.fields import fields_payload
 from ..bench.pictures import picture_line
 from ..bench.problems import collect_problems
-from ..bench.report import SUMMARY_DATA, bench_uncalibrated
-from ..bench.spec import (_LISTS, _SECTIONS, _SINGLES, BenchError, _check_path, _read_toml,
-                          _resolve_includes)
+from ..bench.report import bench_uncalibrated
+from ..bench.spec import _LISTS, _SECTIONS, _SINGLES, BenchError, _read_toml, _resolve_includes
 from . import bench_edits
+# bench_results' names, used here and re-exported (the tests read _summary, _result_files and _energy_failed here)
+from .bench_results import RESULT_SUFFIXES, _energy_failed, _result_files, _sig, _summary, _table  # noqa: F401
 from .bench_view import bench_view
 from .doc import ConfigDoc, FileChanged
 from .edits import EditError
-from .simlock import SimBusy, SimLock
 
 POLL_PERIOD = 0.25
 POLL_SECONDS = 25.0
 EXAMPLES = Path(__file__).resolve().parents[2] / "examples" / "bench"
 _ENTRY_SECTIONS = (*_LISTS, "shaft", *_SINGLES)   # what an include can supply
-RESULT_SUFFIXES = (".txt", ".csv", ".png", ".gif")   # what a bench writes in its results folder
-TABLE_METRICS = ("out", "jammed", "exit_speed", "elevation_deg", "spin_rps", "speed_drop_pct", "peak_load_n")
-TABLE_ROWS = 40   # a sweep's table on the stage shows its first rows; results.csv has them all
 
 
 class SessionError(Exception):
@@ -86,14 +78,6 @@ def _meters(key: str | None) -> str | None:
     return key
 
 
-def _sig(p: Path):
-    try:
-        st = p.stat()
-    except OSError:
-        return None
-    return st.st_mtime_ns, st.st_size
-
-
 def _is_bench(p: Path) -> bool:
     from .server import classify   # server imports this module
     return classify(p) == "bench"
@@ -115,88 +99,6 @@ def _stale_words(outside: bool, what: tuple) -> str:
 def _refused(field: str, message: str) -> tuple[int, dict]:
     return 200, {"ok": False, "errors": [{"field": field, "message": message}]}
 
-
-def _summary_data(out: Path | None) -> dict:
-    """A results folder's summary.json (bench/report.py's SUMMARY_DATA, written beside summary.txt): summary.txt's
-    layout and the energy check as data, no words. {} without a readable one (a folder from before it)."""
-    try:
-        data = json.loads((out / SUMMARY_DATA).read_text(encoding="utf-8")) if out is not None else {}
-    except (OSError, UnicodeDecodeError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _summary(out: Path | None) -> tuple[list[str], str | None]:
-    """(headlines, UNCALIBRATED line) from a results folder's summary.txt, by position, never by their words (spec
-    L3): the `headlines` lines summary.json counts after the title block (its `title_lines` lines, notes with blank
-    lines included) and one blank line, the last of them the UNCALIBRATED line. A summary.json without title_lines
-    (written before it) counts from the file's first blank line. Without summary.json (an older folder), the lines
-    from the first blank line up to the next, the last taken as the UNCALIBRATED line. ([], None) when there is
-    none."""
-    try:
-        lines = (out / "summary.txt").read_text(encoding="utf-8").splitlines() if out is not None else []
-    except (OSError, UnicodeDecodeError):
-        return [], None
-    data = _summary_data(out)
-    title = data.get("title_lines")
-    if isinstance(title, int) and not isinstance(title, bool) and 0 < title < len(lines) and lines[title] == "":
-        block = lines[title + 1:]
-    elif "" in lines:
-        block = lines[lines.index("") + 1:]
-    else:
-        return [], None
-    count = data.get("headlines")
-    if isinstance(count, int) and not isinstance(count, bool):
-        heads = block[:count] if 0 < count <= len(block) and "" not in block[:count] else []
-    else:
-        heads = block[:block.index("")] if "" in block else block
-    if not heads:
-        return [], None
-    return heads, (None if data.get("uncalibrated") is False else heads[-1])
-
-
-def _result_files(kind: str, out: Path | None) -> tuple[list[str], Path | None]:
-    """(picture paths, CSV) a sweep or compare wrote in `out`: a compare's compare.png and compare.csv; a sweep's
-    results.csv and the charts written with it (line-*.png no older than results.csv: a folder shared with runs or
-    older sweeps keeps their pictures, which aren't this sweep's)."""
-    if out is None:
-        return [], None
-    if kind == "compare":
-        pic, table = out / "compare.png", out / "compare.csv"
-        return ([str(pic)] if pic.is_file() else []), (table if table.is_file() else None)
-    table = out / "results.csv"
-    since = _sig(table)
-    if since is None:
-        return [], None
-    try:
-        charts = sorted((p for p in out.glob("line-*.png") if p.is_file() and (_sig(p) or (0,))[0] >= since[0]),
-                        key=lambda p: (not p.name.startswith("line-exit_speed-"), p.name))   # exit speed first: on stage
-    except OSError:
-        charts = []
-    return [str(p) for p in charts], table
-
-
-def _table(path: Path | None) -> dict | None:
-    """{columns, rows} from a sweep's or compare's CSV: the swept keys (or `idea`), then TABLE_METRICS; at most
-    TABLE_ROWS rows. None without a readable one."""
-    if path is None:
-        return None
-    try:
-        with open(path, newline="", encoding="utf-8") as f:
-            lines = list(csv.reader(f))
-    except (OSError, UnicodeDecodeError, csv.Error):
-        return None
-    if not lines:
-        return None
-    keep = [i for i, c in enumerate(lines[0]) if c not in BENCH_METRICS or c in TABLE_METRICS]
-    pick = lambda row: [row[i] if i < len(row) else "" for i in keep]   # noqa: E731
-    return {"columns": pick(lines[0]), "rows": [pick(r) for r in lines[1:TABLE_ROWS + 1]]}
-
-
-def _energy_failed(out: Path | None) -> bool:
-    """Whether the results folder's summary.json says the energy check failed (written by report.write_results for
-    every run, whoever ran it). False without one."""
-    return _summary_data(out).get("energy_failed") is True
 
 
 class _Idea:
@@ -758,295 +660,3 @@ class BenchSession:
                 for r in outs)):
             return p
         raise SessionError(404, "no such file in this session")
-
-
-# ----------------------------------------------------------------------------------------------------- page jobs
-
-KEEP_JOBS = 10
-
-
-class _Stopped(Exception):
-    """The editor is closing: a queued job doesn't start."""
-
-
-def _plain(e: BaseException) -> str:
-    return str(e) or type(e).__name__
-
-
-class BenchJobs:
-    """The Bench tab's runs, sweeps, compares and galleries: one worker thread per App, jobs in order. Each job holds
-    the App's SimLock and the session folder's run lock (`session.recorded`, source "page", so it is logged like a CLI
-    or agent run and reaches the ideas' `latest` or the session's `result`); while another process holds the run lock
-    the job stays queued."""
-
-    def __init__(self, simlock: SimLock, current: Callable[[], BenchSession | None]):
-        self._simlock = simlock
-        self._current = current          # the App's open session (its log is re-read when a job finishes)
-        self._cond = threading.Condition()
-        self.version = 0
-        self._jobs: list[dict] = []      # newest first, the last KEEP_JOBS
-        self._queue: list[tuple[dict, Path, list[Path], Path, Callable[[], str | None]]] = []
-        self._seq = 0
-        self._busy = False               # a job is queued or running
-        self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
-
-    # -- the page's requests -----------------------------------------------------------------------------
-    @staticmethod
-    def _runnable(s: BenchSession, file) -> tuple[_Idea, list[dict]]:
-        """The idea and its errors as a refusal's errors ([] when it can run)."""
-        idea = s._need(file)
-        if idea.lang != i18n.current_language():
-            idea.reword()
-        errs = [{"field": p["key"] or "status", "message": p["message"]} for p in idea.problems
-                if p["level"] == "error"]
-        if not errs and idea.doc.read_only_reason is not None:
-            errs = [{"field": "status", "message": idea.doc.read_only_reason}]
-        return idea, errs
-
-    def submit(self, s: BenchSession, kind: str, body: dict) -> tuple[int, dict]:
-        """Queue a page job on session `s`: {ok: true, id}, or 200 {ok: false, errors} when it can't run."""
-        with s._lock:
-            s._check_open()
-            folder = s.folder
-            if kind == "run":
-                idea, errs = self._runnable(s, body.get("file"))
-                if errs:
-                    return 200, {"ok": False, "errors": errs}
-                path = idea.doc.path
-                files, out = [path], folder / f"{path.stem}-results"
-                work = lambda: _run_job(path, out)   # noqa: E731
-            elif kind == "sweep":
-                idea, errs = self._runnable(s, body.get("file"))
-                key, values = body.get("key"), body.get("values")
-                if not isinstance(key, str) or not key:
-                    errs.append({"field": "key",
-                                 "message": i18n.t("key must be a dotted key, e.g. wheel.top.diameter")})
-                else:
-                    try:
-                        _check_path(s._merged(idea, idea.raw), key)
-                    except BenchError as e:
-                        errs.append({"field": "key", "message": str(e)})
-                if not isinstance(values, list) or not values:
-                    errs.append({"field": "values", "message": i18n.t("values must be a non-empty list")})
-                if errs:
-                    return 200, {"ok": False, "errors": errs}
-                path = idea.doc.path
-                files, out = [path], folder / f"{path.stem}-sweep"
-                work = lambda: _sweep_job(path, {key: list(values)}, out)   # noqa: E731
-            elif kind == "compare":
-                names = body.get("files")
-                if not isinstance(names, list) or not all(isinstance(n, str) for n in names) \
-                        or len(set(names)) < 2:
-                    return _refused("files", i18n.t("compare needs two or more different ideas"))
-                errs, files = [], []
-                for name in dict.fromkeys(names):
-                    idea, bad = self._runnable(s, name)
-                    errs += [{**e, "message": i18n.t("{file}: {why}", file=idea.file, why=e["message"])} for e in bad]
-                    files.append(idea.doc.path)
-                if errs:
-                    return 200, {"ok": False, "errors": errs}
-                out = folder / "compare-results"
-                work = lambda: _compare_job(files, out)   # noqa: E731
-            elif kind == "gallery":
-                files, out = [folder], folder / "gallery.html"
-                work = lambda: _gallery_job(folder, out)   # noqa: E731
-            else:
-                raise SessionError(404, f"no bench job {kind!r}")
-        with self._cond:
-            if s._closed:   # an open replaced the session after the checks above (see gate())
-                raise SessionError(409, i18n.t("the idea session was closed"))
-            if self._stop.is_set():
-                raise SessionError(409, i18n.t("the editor is closing"))
-            self._seq += 1
-            job = {"id": f"{kind}-{self._seq}", "kind": kind, "files": [f.name for f in files] if kind != "gallery"
-                   else [], "state": "queued", "error": None, "out": str(out)}
-            self._jobs.insert(0, job)
-            del self._jobs[KEEP_JOBS:]
-            self._queue.append((job, folder, files, out, work))
-            self._busy = True
-            self._bump()
-            if self._thread is None or not self._thread.is_alive():
-                self._thread = threading.Thread(target=self._work, daemon=True, name="bench-jobs")
-                self._thread.start()
-        return 200, {"ok": True, "id": job["id"]}
-
-    @contextlib.contextmanager
-    def gate(self):
-        """Hold off submits while an open replaces the session: 409 when a job is queued or running, else the body
-        runs with no job able to queue (a submit then finds its session closed)."""
-        with self._cond:
-            if self._busy:
-                raise SessionError(409, "a bench run is in progress; wait for it to finish")
-            yield
-
-    @property
-    def active(self) -> bool:
-        """A job of this App is queued or running."""
-        with self._cond:
-            return self._busy
-
-    def jobs(self) -> dict:
-        with self._cond:
-            return {"version": self.version, "jobs": [dict(j) for j in self._jobs]}
-
-    def wait_jobs(self, since: int | None) -> dict:
-        end = time.monotonic() + POLL_SECONDS
-        with self._cond:
-            while since is not None and self.version == since and not self._stop.is_set() \
-                    and time.monotonic() < end:
-                self._cond.wait(1.0)
-            return self.jobs()
-
-    def clear(self) -> None:
-        """Forget the finished jobs (another session was opened); the version keeps counting up."""
-        with self._cond:
-            self._jobs = [j for j in self._jobs if j["state"] in ("queued", "running")]
-            self._bump()
-
-    def stop(self, timeout: float = 30.0) -> None:
-        """Stop the worker: queued jobs don't start; a running one is waited for up to `timeout` seconds. Never call
-        it holding a lock the worker may need. The worker resets itself when it exits (also after a timed-out
-        stop), so the next submit starts a new one."""
-        with self._cond:
-            thread = self._thread
-            if thread is None:
-                return
-            self._stop.set()
-            self._cond.notify_all()
-        if thread is not threading.current_thread():
-            thread.join(timeout)
-
-    def _exit(self) -> None:
-        """The worker is leaving on a stop (self._cond held): drop the queue and let a new worker start."""
-        for job, *_ in self._queue:
-            job.update(state="failed", error="the editor closed before it ran")
-        self._queue.clear()
-        if self._thread is threading.current_thread():
-            self._thread = None
-            self._stop.clear()
-        self._busy = False
-        self._bump()
-
-    # -- the worker ------------------------------------------------------------------------------------
-    def _bump(self) -> None:   # self._cond held
-        self.version += 1
-        self._cond.notify_all()
-
-    def _set(self, job: dict, finished: bool = False, **kw) -> None:
-        with self._cond:
-            job.update(kw)
-            if finished:   # the final state and "not busy" together: open isn't refused once the page sees it
-                self._busy = bool(self._queue)
-            self._bump()
-
-    def _wait(self, ready: Callable[[], bool]) -> None:
-        while not ready():
-            if self._stop.wait(0.1):
-                raise _Stopped()
-
-    def _take_simlock(self) -> bool:
-        try:
-            self._simlock.acquire("bench")
-        except SimBusy:   # a drive session or a scenario run (not in bench mode, but never two at once)
-            return False
-        return True
-
-    def _work(self) -> None:
-        while True:
-            with self._cond:
-                while not self._queue and not self._stop.is_set():
-                    self._cond.wait()
-                if self._stop.is_set() or not self._queue:
-                    self._exit()
-                    return
-                job, folder, files, out, work = self._queue.pop(0)
-            try:
-                self._execute(job, folder, files, out, work)
-                self._sync(folder)   # latest shows the run before the job shows as done
-                self._set(job, finished=True, state="done", error=None)
-            except _Stopped:
-                self._set(job, finished=True, state="failed", error="the editor closed before it ran")
-            except BaseException as e:  # noqa: BLE001 - a job must never stay "queued" or "running"
-                self._sync(folder)
-                self._set(job, finished=True, state="failed", error=_plain(e))
-            finally:
-                with self._cond:   # a safety net: the job is settled and busy matches the queue
-                    if job["state"] in ("queued", "running"):
-                        job.update(state="failed", error="the job stopped unexpectedly")
-                    self._busy = bool(self._queue)
-                    self._bump()
-
-    def _execute(self, job: dict, folder: Path, files: list[Path], out: Path, work) -> None:
-        def free() -> bool:   # another process (the agent, the CLI) holds the folder's run lock: stay queued
-            try:
-                return session.lock_holder(folder) is None
-            except OSError:
-                return True   # an unwritable folder: recorded() runs it unshared
-        self._wait(self._take_simlock)
-        try:
-            self._wait(free)
-            with session.recorded(folder, job["kind"], files, out, "page"):
-                self._set(job, state="running")
-                work()
-        finally:
-            self._simlock.release("bench")
-
-    def _sync(self, folder: Path) -> None:
-        """Re-read the open session's log now, so a finished job's `latest` or `result` is in the state as the job
-        ends."""
-        s = self._current()
-        if s is not None and s.folder == folder:
-            try:
-                s.sync()
-            except Exception:
-                logging.getLogger("scrimmage.assembler").exception("bench session sync after a job")
-
-
-def _run_job(path: Path, out: Path) -> None:
-    """`bench run`: the results and pictures in `out`. A failed energy check is in the results (summary.txt and the
-    first headline), so `latest.energy_failed` reads it the same for every source; the job is done."""
-    from ..bench.pictures import PICTURE_TRACE_HZ, write_pictures
-    from ..bench.report import write_results
-    from ..bench.spec import load_bench
-    from ..render import RenderUnavailable
-    result = bench_run.run_bench(load_bench(path), trace_hz=PICTURE_TRACE_HZ)
-    out = write_results(result, out)
-    try:
-        write_pictures(result, out)
-    except RenderUnavailable as e:
-        logging.getLogger("scrimmage.assembler").warning("no pictures: %s", e)
-
-
-def _sweep_job(path: Path, sweep: dict, out: Path) -> None:
-    """`bench sweep` with the page's one key and values in place of the file's [sweep]: results.csv and a chart."""
-    from ..bench import compare
-    from ..launcher import report
-    from ..bench.report import bench_estimates
-    bench, benches = compare.sweep_benches(path, sweep)
-    rows = compare.rows([(c, bench_run.run_bench(b)) for c, b in benches])
-    out.mkdir(parents=True, exist_ok=True)
-    report.write_csv(rows, out / "results.csv", compare.BENCH_METRICS)
-    report.write_charts(rows, compare.default_charts(list(sweep)), out, None, compare.BENCH_METRICS,
-                        compare.CHART_KINDS, footer=bench_estimates(bench), shown=compare.SHOWN, swept=key_kind)
-
-
-def _compare_job(files: list[Path], out: Path) -> None:
-    """`bench compare`: compare.csv and compare.png, the piece and feed of the first idea."""
-    from PIL import Image
-
-    from ..bench import compare, gallery
-    from ..bench.pictures import PICTURE_TRACE_HZ
-    from ..launcher import report
-    results = compare.compare_benches(files, trace_hz=PICTURE_TRACE_HZ)
-    rows = compare.rows([({"idea": n}, r) for n, r in zip(compare.idea_labels(results), results)])
-    out.mkdir(parents=True, exist_ok=True)
-    report.write_csv(rows, out / "compare.csv", compare.BENCH_METRICS)
-    Image.fromarray(gallery.compare_picture(results)).save(out / "compare.png")
-
-
-def _gallery_job(folder: Path, out: Path) -> None:
-    """`bench gallery`: every bench file in the folder run once, one HTML page (a file that didn't run is listed with
-    its problem)."""
-    from ..bench import gallery
-    gallery.write_gallery(folder, out, gallery.run_folder(folder))

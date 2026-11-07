@@ -22,7 +22,8 @@ PY = ["blocks/conditions.py", "blocks/placed.py", "blocks/run.py", "blocks/sprea
       "checks.py", "scenario_runner.py", "bench/report.py", "bench/gallery.py", "bench/pictures.py",
       "bench/compare.py", "launcher/report.py", "measure/cli.py", "measure/fit_launcher.py",
       "measure/fit_cylinder.py", "parts/partner.py", "assembler/server.py", "assembler/runs.py",
-      "assembler/bench_session.py", "assembler/measure_session.py", "assembler/edits.py", "mcp_server.py"]
+      "assembler/bench_session.py", "assembler/bench_jobs.py",
+      "assembler/bench_results.py", "assembler/measure_session.py", "assembler/edits.py", "mcp_server.py"]
 
 UNITS = (r"(?:mm|cm|m|in|ft|kg|lbs|lbf|lb|N|psi|kPa|m/s|ft/s|N·m|N\*m|in·lbf|lbf/in|N/m|g/cm³|lb/in³|kg/m³|kg/m\^3"
          r"|g|oz)")

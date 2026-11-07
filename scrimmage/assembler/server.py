@@ -632,7 +632,8 @@ from ..cad.build import part_folder
 from ..cad.names import sanitize
 from . import (bench_session, edits, library, measure_session, part_session, recent, scenario_edits,
                scenario_validate, templates, test_session, validate)
-from .bench_session import BenchJobs, BenchSession, SessionError
+from .bench_jobs import BenchJobs
+from .bench_session import BenchSession, SessionError
 from .doc import ConfigDoc, FileChanged
 from .edits import EditError
 from .live import FRAME_HEAD, AlreadyLive, LiveError, LiveManager, RecordingTaken, UnsavedRecording
