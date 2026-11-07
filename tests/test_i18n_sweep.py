@@ -90,7 +90,7 @@ ALLOWED = {
         API + ' (no fit of an averaged test)',
     ('scrimmage/assembler/runs.py', "error: couldn't read the report: {}: {}"): LOG,
     ('scrimmage/assembler/app_files.py', 'send units, language or theme to change'): API,
-    ('scrimmage/assembler/server.py', 'speed must be a positive number or "max", not {}'): API,
+    ('scrimmage/assembler/app_live.py', 'speed must be a positive number or "max", not {}'): API,
     ('scrimmage/assembler/app_robot.py', 'bad edit: {}'): API + ' (malformed JSON values from a client)',
     ('scrimmage/assembler/app_scenario.py', 'bad edit: {}'): API + ' (malformed JSON values from a client)',
     ('scrimmage/assembler/simlock.py', 'owner must be one of {}, not {}'): ASSERT,
