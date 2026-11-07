@@ -353,12 +353,15 @@ def test_nt_reads_through_session(tmp_path, monkeypatch):
             assert any(t["name"] == "/SmartDashboard/Battery V" for t in s.nt_list("/SmartDashboard")["topics"])
         finally:
             await s.stop()
+    pub = None
     try:
         srv.startServer(str(tmp_path / "nt.json"), "", 0, 5892)
         pub = srv.getDoubleTopic("/SmartDashboard/Battery V").publish()  # a dropped publisher unpublishes
         pub.set(12.1)
         run(main(pub))
     finally:
+        if pub is not None:     # before the instance goes: a freed stale handle would hit a later instance's
+            pub.close()
         srv.stopServer()
         ntcore.NetworkTableInstance.destroy(srv)
 

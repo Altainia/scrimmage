@@ -33,8 +33,9 @@ def test_link_reads_topics_and_odometry(tmp_path):
     srv = ntcore.NetworkTableInstance.create()
     srv.startServer(str(tmp_path / "nt.json"), "", 0, PORT)
     link = None
+    pubs = []
     try:
-        pubs = [srv.getDoubleTopic("/SmartDashboard/Gyro deg").publish(),
+        pubs += [srv.getDoubleTopic("/SmartDashboard/Gyro deg").publish(),
                 srv.getDoubleArrayTopic("/SmartDashboard/Field/Robot").publish()]  # a dropped publisher unpublishes
         pubs[0].set(12.5)
         pubs[1].set([1.0, 2.0, 30.0])
@@ -48,6 +49,8 @@ def test_link_reads_topics_and_odometry(tmp_path):
     finally:
         if link is not None:
             link.close()
+        for pub in pubs:    # before the instance goes: a freed stale handle would hit a later instance's (NetworkTablesLink.close)
+            pub.close()
         srv.stopServer()
         ntcore.NetworkTableInstance.destroy(srv)
 
@@ -68,7 +71,7 @@ def test_nt_publishes_ball_poses(tmp_path):
     assert poses.shape == (3, 7)
     srv = ntcore.NetworkTableInstance.create()
     srv.startServer(str(tmp_path / "nt.json"), "", 0, PORT + 1)
-    link = None
+    link = sub = None
     try:
         sub = srv.getStructArrayTopic("/MuJoCo/Balls", geometry.Pose3d).subscribe([])
         link = NetworkTablesLink(None, port=PORT + 1)
@@ -94,6 +97,37 @@ def test_nt_publishes_ball_poses(tmp_path):
     finally:
         if link is not None:
             link.close()
+        if sub is not None:
+            sub.close()
+        srv.stopServer()
+        ntcore.NetworkTableInstance.destroy(srv)
+
+
+def test_a_closed_link_freed_later_leaves_new_instances_alone(tmp_path):
+    """ntcore reuses a destroyed instance's number and handles, so a closed link's publishers and subscribers, freed
+    later by the garbage collector (a session's Bridge sits in reference cycles), would unpublish what now has their
+    handles: here the server's own Battery V, as CI's in-process stand-in robot program lost it. close() releases
+    them while the instance still exists."""
+    import gc
+    old = NetworkTablesLink("/SmartDashboard/Field/Robot", port=PORT + 4)   # nothing serves PORT + 4
+    old.close()
+    srv = ntcore.NetworkTableInstance.create()
+    srv.startServer(str(tmp_path / "nt.json"), "", 0, PORT + 3)
+    pub = srv.getDoubleTopic("/SmartDashboard/Battery V").publish()
+    link = None
+    try:
+        pub.set(12.1)
+        link = NetworkTablesLink(None, port=PORT + 3)
+        del old
+        gc.collect()
+        assert [t.getName() for t in srv.getTopics()] == ["/SmartDashboard/Battery V"]
+        wait_for(lambda: link.connected)
+        wait_for(lambda: link.inst.getEntry("/SmartDashboard/Battery V").getValue().isValid())
+        assert link.get("/SmartDashboard/Battery V") == 12.1
+    finally:
+        if link is not None:
+            link.close()
+        pub.close()
         srv.stopServer()
         ntcore.NetworkTableInstance.destroy(srv)
 
