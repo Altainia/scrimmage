@@ -79,7 +79,7 @@ def _meters(key: str | None) -> str | None:
 
 
 def _is_bench(p: Path) -> bool:
-    from .server import classify   # server imports this module
+    from .server_common import classify   # server imports this module
     return classify(p) == "bench"
 
 
