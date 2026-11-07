@@ -94,5 +94,13 @@ class NetworkTablesLink:
         return list(val) if isinstance(val, (list, tuple)) else val
 
     def close(self) -> None:
+        # Release every publisher and subscriber before the instance goes. ntcore reuses a destroyed instance's
+        # number and handles, so a handle object left to the garbage collector would, when it is finally freed,
+        # unpublish or unsubscribe whatever now has the same handle: another session's link, or a server in
+        # this process (the tests' stand-in robot program lost its topics that way).
+        for handle in (self._all, self._odo, self._truth, self._balls):
+            if handle is not None:
+                handle.close()
+        self._all = self._odo = self._truth = self._balls = None
         self.inst.stopClient()
         self._ntcore.NetworkTableInstance.destroy(self.inst)  # otherwise NT threads keep the process alive
