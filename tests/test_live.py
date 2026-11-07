@@ -704,7 +704,11 @@ def test_a_real_ds_session_refuses_the_ds_commands_and_shows_the_ds(tmp_path, mo
     mgr = LiveManager(SimLock(), lambda kind, msg: pub.append((kind, msg)))
     mgr.start(config_copy(tmp_path), real_ds=True)
     try:
-        wait_for(lambda: mgr.status()["state"] in ("running", "error"), 30, "the session to run")
+        # "running" comes a moment before the first state publish reads the robot's DS report (match is None
+        # until then, which the page shows as waiting too)
+        wait_for(lambda: mgr.status()["state"] == "error"
+                 or (mgr.status()["state"] == "running" and mgr.status()["match"] is not None), 30,
+                 "the session to run and report the DS")
         st = mgr.status()
         assert st["state"] == "running" and st["real_ds"] is True, st
         assert st["driver_station"] == REAL_DS_WAITING and st["mode"] == "waiting" and st["enabled"] is False
