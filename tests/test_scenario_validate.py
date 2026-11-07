@@ -180,3 +180,17 @@ def test_missing_inputs_csv_maps_to_the_step_field():
     assert fs == ["step0/inputs"] and "file not found" in r.errors[0].message
     r, fs = fields(HEAD + STEP + 'inputs = "gone.csv"\naxes = { 0 = [1.0] }\n')
     assert fs == ["step0/inputs"]
+
+
+def test_an_unnamed_steps_world_error_names_the_step_once():
+    """Cleanup D7: an unnamed step's world error says "step 3", not "step 3 (step 3)"; a named step keeps its name."""
+    from scrimmage.config import build_world, load_config
+    from scrimmage.scenario import ScenarioError, load_scenario_text, validate
+    world = build_world(load_config(ROOT / "configs" / "kitbot.toml"))
+    unnamed = STEP.replace('name = "A"\n', "")
+    bad = '  [[step.screenshot]]\n  view = "nope"\n'
+    for text, where in ((HEAD + STEP + unnamed + unnamed + bad, "x.toml, step 3, screenshot 1: "),
+                        (HEAD + STEP + unnamed + STEP + bad, "x.toml, step 3 (A), screenshot 1: ")):
+        with pytest.raises(ScenarioError) as e:
+            validate(load_scenario_text(text, PATH), world)
+        assert str(e.value).startswith(where + "view must be"), str(e.value)

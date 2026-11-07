@@ -172,9 +172,10 @@ def test_cli_units_overrides_the_file(monkeypatch, units):
     monkeypatch.setattr(cli, "_java", lambda args: seen.append(current_units()))
     cli.main(["--units", "imperial", "java", "path"])
     cli.main(["--units=metric", "java", "path"])
+    cli.main(["--units", "Imperial", "java", "path"])   # one rule, the settings file's: any case (cleanup D5)
     set_override(None)
     cli.main(["java", "path"])                    # without it, the settings file
-    assert seen == ["imperial", "metric", "metric"]
+    assert seen == ["imperial", "metric", "imperial", "metric"]
 
 
 def test_cli_units_before_measure(monkeypatch):

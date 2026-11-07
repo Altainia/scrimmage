@@ -644,6 +644,11 @@ project it:
 Gradle's configuration cache may not work with the init script. If Gradle complains, run with
 `--no-configuration-cache` (untested here); in a Scrimmage config, add it to the `command` list.
 
+When Scrimmage stops a robot it launched, it ends every process that run started, found by the run's token in their
+environment. That catches a robot JVM a Gradle daemon forked, and it also ends a Gradle daemon that the run itself
+started, so the next run starts a new daemon (a few seconds slower). A daemon that was already running is left
+alone.
+
 **Hand-run setups.** To start the robot yourself (your own terminal or `serve`), run
 `./gradlew -I "$(scrimmage java path)" simulateJava` in your project. The init script reads
 `SCRIMMAGE_LOCKSTEP_SO` (the path `python -m scrimmage_lockstep` prints) and `SCRIMMAGE_AGENT_JAR`; `scrimmage` sets

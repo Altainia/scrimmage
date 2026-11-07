@@ -104,7 +104,10 @@ def test_scenario_state_shape_on_shipped_scenarios(served, repo_copy, name):
     st, s = c.get("/api/scenario/state")
     assert st == 200
     assert set(s) == {"version", "path", "display_path", "read_only", "read_only_reason", "robot_problem", "top",
-                      "steps", "errors", "warnings", "can_undo", "can_redo"}
+                      "steps", "errors", "warnings", "can_undo", "can_redo", "stations", "match_keys"}
+    # cleanup D3: the [match] row's choices come from driverstation.py, not a copy in scenario.js
+    from scrimmage.driverstation import MATCH_KEYS, STATIONS
+    assert s["stations"] == list(STATIONS) and s["match_keys"] == list(MATCH_KEYS)
     assert s["version"] == 0 and s["path"] == str(path.resolve())
     assert not s["read_only"] and s["read_only_reason"] is None and s["robot_problem"] is None
     assert s["errors"] == [] and s["can_undo"] is False and s["can_redo"] is False

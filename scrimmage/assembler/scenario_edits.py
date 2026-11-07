@@ -26,7 +26,9 @@ from .tomlutil import (
 
 TOP_ORDER = ("config", "description", "speed", "require_lockstep")
 STEP_KEYS = ("name", "mode", "duration")
-AFTER_DURATION = ("game_data", "duration", "mode", "name")   # where a key that follows the step's duration goes
+# where a key that follows the step's duration goes: after the nearest of these the step has, nearest first
+UP_TO_DURATION = ("duration", "mode", "name")             # game_data itself goes right after the duration
+AFTER_DURATION = ("game_data", *UP_TO_DURATION)           # the keys after it (inputs, axes...) after game_data too
 INPUT_KINDS = ("axes", "buttons", "povs")
 SHOT_KEYS = ("view", "at", "width", "height", "camera")
 SHEET_KEYS = ("frames", "view", "width", "height")
@@ -248,7 +250,7 @@ def set_step_game_data(doc, i: int, value) -> None:
         return
     if not isinstance(value, str):
         raise EditError(f"step{i}/game_data", i18n.t("game_data must be text"))
-    set_value(t, "game_data", value, AFTER_DURATION[1:])
+    set_value(t, "game_data", value, UP_TO_DURATION)
 
 
 # ---- joystick inputs --------------------------------------------------------------------------------------

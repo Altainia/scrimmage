@@ -139,3 +139,36 @@ def test_a_step_that_ends_in_an_error_still_notes_the_tipping(tmp_path, monkeypa
     rep = asyncio.run(run_scenario(scn, tmp_path / "out", watch=watch))
     assert any(not c.passed for c in rep.implicit) or rep.error, rep.to_dict()
     assert sum(n.startswith("the robot tipped over at t=") for n in rep.notes) == 1, rep.notes
+
+
+def test_one_builder_words_the_machine_text_and_the_shown_text(tmp_path, monkeypatch, language):
+    """Cleanup D4: moved_joints() and a missing signal are each built once (checks.worded): the machine text stays
+    American English byte for byte while the shown words follow the Language setting; pickled, a Said is its
+    machine text."""
+    import json
+    import pickle
+    import types
+    from scrimmage import i18n
+    from scrimmage.checks import Said, SignalCheck
+    folder = tmp_path / "locales"
+    folder.mkdir()
+    (folder / "en-GB.json").write_text(json.dumps({
+        "_language": "English (UK)", ", with {joints}": ", its joints at {joints}",
+        "{name} has no value at the end of the step": "{name} had no value by the step's end"}), encoding="utf-8")
+    monkeypatch.setattr(i18n, "LOCALES", folder)
+    i18n.reload()
+    try:
+        language("en-GB")
+        moved = moved_joints({"a": (0.2, 0.0), "b": (0.0, 0.0)})
+        assert str(moved) == ", with joint.a.position = 0.2"
+        assert moved.words() == ", its joints at joint.a.position = 0.2"
+        check = object.__new__(SignalCheck)
+        check.signal = types.SimpleNamespace(name="motor.x.output")
+        missing = check._missing(None, True)
+        assert str(missing) == "motor.x.output has no value at the end of the step"
+        assert missing.words() == "motor.x.output had no value by the step's end"
+        back = pickle.loads(pickle.dumps(missing))
+        assert back == "motor.x.output has no value at the end of the step" and not isinstance(back, Said)
+    finally:
+        monkeypatch.undo()
+        i18n.reload()

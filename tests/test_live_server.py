@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import ConnectionClosed, InvalidStatus
 from websockets.sync.client import connect
 
 import scrimmage.assembler.stream as stream_mod
@@ -138,14 +138,18 @@ def test_live_info_needs_the_token(served, robot):
 def test_socket_auth_and_driving(served, robot):
     c = served(robot)
     start_live(c)
-    bad = [ws_open(c, token="wrong"), ws_open(c, origin="http://evil.example"),
-           ws_open(c, origin=f"http://127.0.0.1:{c.app.port + 1}"), ws_open(c, host="evil.example")]
-    for ws in bad:
-        try:
-            ws.send(json.dumps({"type": "cmd", "cmd": "pause"}))
-        except ConnectionClosed:
-            pass
-        assert_rejected(ws)
+    ws = ws_open(c, token="wrong")
+    try:
+        ws.send(json.dumps({"type": "cmd", "cmd": "pause"}))
+    except ConnectionClosed:
+        pass
+    assert_rejected(ws)
+    # a wrong Origin or Host is refused before the upgrade (cleanup E6): HTTP 403, never a 101
+    for kw in ({"origin": "http://evil.example"}, {"origin": f"http://127.0.0.1:{c.app.port + 1}"},
+               {"host": "evil.example"}):
+        with pytest.raises(InvalidStatus) as e:
+            ws_open(c, **kw)
+        assert e.value.response.status_code == 403, kw
     time.sleep(0.3)
     assert status(c)["paused"] is False   # none of the pauses got through
 
@@ -435,6 +439,25 @@ def test_deeply_nested_json_before_auth_is_refused(served, robot, deep_json):
     ws = ws_open(c, token=None)
     ws.send(DEEP)
     assert_rejected(ws)
+
+
+def test_unauthenticated_sockets_are_capped_and_closed_when_idle(served, robot, monkeypatch):
+    """Cleanup E6: sockets waiting for their token are capped (a handshake beyond the cap gets HTTP 503 before the
+    upgrade) and closed after AUTH_TIMEOUT; once they are gone, a page connects and authenticates again."""
+    monkeypatch.setattr(stream_mod, "MAX_UNAUTHENTICATED", 3)
+    monkeypatch.setattr(stream_mod, "AUTH_TIMEOUT", 1.0)
+    c = served(robot)
+    waiting = [ws_open(c, token=None) for _ in range(3)]
+    with pytest.raises(InvalidStatus) as e:
+        ws_open(c, token=None)
+    assert e.value.response.status_code == 503
+    for ws in waiting:
+        assert_rejected(ws)   # idle past AUTH_TIMEOUT: closed with 1008, nothing sent
+    ws = ws_open(c)
+    ws.send(json.dumps({"type": "cmd", "cmd": "fly"}))   # authenticated: a bad command comes back as a notice
+    _, notice = collect(ws, lambda m: isinstance(m, dict) and m.get("type") == "notice", 5, "a notice")
+    assert "fly" in notice["text"]
+    ws.close()
 
 
 def test_deeply_nested_json_after_auth_is_ignored(served, robot, monkeypatch, deep_json):

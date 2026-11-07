@@ -11,7 +11,7 @@ import re
 from typing import Any
 
 import tomlkit
-from tomlkit.items import InlineTable, Whitespace
+from tomlkit.items import InlineTable, Table, Whitespace
 
 from .. import i18n
 from ..parts.assemble import PLACEMENT_KEYS
@@ -206,7 +206,7 @@ def set_ids(doc, name: str, ids: dict) -> None:
         p.pop("ids", None)
         return
     cur = p.get("ids")
-    if isinstance(cur, InlineTable):   # edit in place to keep the author's spacing
+    if isinstance(cur, (InlineTable, Table)):   # edit in place: the author's spacing, or the [part.ids] sub-table
         for k in [k for k in cur if k not in ids]:
             del cur[k]
         for k, v in ids.items():

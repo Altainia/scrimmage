@@ -18,7 +18,7 @@ from .bindings import binds_rev
 from .bridge import REALTIME_REASON
 from .devicecheck import check_devices, device_notes
 from .checks import (CRASH_PATTERN, Check, CheckResult, ConsoleCheck, Said, build_check, consume_peaks, said, shown,
-                     tick_checks)
+                     tick_checks, worded)
 from .i18n import N_, t, tn, translated
 from .config import ConfigError, build_world, load_config
 from .render import contact_sheet, to_png
@@ -592,17 +592,13 @@ def _capture_range(session: Session, report: Report, own: bool) -> None:
 JOINT_MOVED = 0.05      # rad or m: a joint this far from its rest counts as moved in a tipped/stranded note
 
 
-def moved_joints(joints: dict[str, tuple[float, float]]) -> str:
+def moved_joints(joints: dict[str, tuple[float, float]]) -> Said:
     """", with joint.<n>.position = v, ..." for each robot joint in `joints` ({name: (position, rest)}, the monitor's
-    snapshot at the event) more than JOINT_MOVED from its rest, else ""."""
-    moved = [f"joint.{n}.position = {pos:.3g}" for n, (pos, rest) in joints.items() if abs(pos - rest) > JOINT_MOVED]
-    return ", with " + ", ".join(moved) if moved else ""
-
-
-def _moved_words(joints: dict[str, tuple[float, float]]) -> str:
-    """moved_joints() in the Language setting."""
-    moved = [f"joint.{n}.position = {pos:.3g}" for n, (pos, rest) in joints.items() if abs(pos - rest) > JOINT_MOVED]
-    return t(", with {joints}", joints=", ".join(moved)) if moved else ""
+    snapshot at the event) more than JOINT_MOVED from its rest, else "": the machine text, and .words() in the
+    Language setting (worded())."""
+    moved = ", ".join(f"joint.{n}.position = {pos:.3g}" for n, (pos, rest) in joints.items()
+                      if abs(pos - rest) > JOINT_MOVED)
+    return worded(lambda: t(", with {joints}", joints=moved) if moved else "")
 
 
 def terrain_notes(world, noted: dict) -> list[str]:
@@ -623,7 +619,7 @@ def terrain_notes(world, noted: dict) -> list[str]:
                           f"{moved_joints(joints)}",
                           lambda at=at, tilt=tilt, x=x, y=y, joints=joints:
                           t("the robot tipped over at t={t} s (tilt {tilt}°, at x={x}, y={y})", t=f"{at:.2f}",
-                            tilt=f"{tilt:.0f}", x=f"{x:.2f}", y=f"{y:.2f}") + _moved_words(joints)))
+                            tilt=f"{tilt:.0f}", x=f"{x:.2f}", y=f"{y:.2f}") + moved_joints(joints).words()))
     if strand is not None and strand != noted.get("stranded"):
         noted["stranded"] = strand
         at, what = strand
@@ -631,7 +627,7 @@ def terrain_notes(world, noted: dict) -> list[str]:
         notes.append(Said(f"the robot was stranded at t={at:.2f} s, resting on {what}{moved_joints(joints)}",
                           lambda at=at, what=what, joints=joints:
                           t("the robot was stranded at t={t} s, resting on {what}", t=f"{at:.2f}", what=what)
-                          + _moved_words(joints)))
+                          + moved_joints(joints).words()))
     return notes
 
 

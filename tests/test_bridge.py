@@ -468,6 +468,22 @@ def test_held_bridge_records_a_watchdog_release():
     asyncio.run(main())
 
 
+def test_free_running_bridge_reports_a_watchdog_release(caplog):
+    """Cleanup E1: `serve --speed` (not held) records and warns about a watchdog release too, not only a Session."""
+    caplog.set_level(logging.WARNING, logger="scrimmage")
+
+    async def main():
+        port = next_port()
+        bridge = make_bridge(port, speed=2.0, held=False)
+        async with running(bridge):
+            async with FakeRobot(port, lockstep=True) as robot:
+                await wait_until(lambda: bridge.mode == "lockstep" and bridge.driver is not None)
+                await robot.ws.send(frame(*lockstep_mod.LOCKSTEP_DEVICE, {"<engaged": False}))
+                await wait_until(lambda: bridge.lockstep_released_at is not None)
+    asyncio.run(main())
+    assert "the robot program's clock ran free at t=" in caplog.text
+
+
 def announced(bridge):
     """Each bound Phoenix device has announced itself, as the robot program does when it creates one (its first frame
     is its initial values, never judged as a write), and the run is past the devices' boot."""

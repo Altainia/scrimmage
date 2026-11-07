@@ -534,6 +534,30 @@ def test_shutdown_refuses_later_starts():
     assert lock.holder is None and mgr.status()["state"] == "idle" and mgr.join(1)
 
 
+def test_a_start_in_flight_when_the_editor_shuts_down_launches_no_robot(monkeypatch):
+    """Cleanup E6: a start() that got past the closed check before shutdown() (its worker still building the
+    session) never launches the robot program, so nothing is left for join + kill to catch."""
+    import scrimmage.assembler.live as live_mod
+    gate, launched = threading.Event(), []
+
+    class Held(live_mod.Session):
+        def __init__(self, *a, **kw):
+            gate.wait(10)
+            super().__init__(*a, **kw)
+
+        async def start(self, *a, **kw):
+            launched.append(1)
+            return await super().start(*a, **kw)
+    monkeypatch.setattr(live_mod, "Session", Held)
+    lock = SimLock()
+    mgr = LiveManager(lock, lambda *a: None)
+    mgr.start(ROBOT)
+    mgr.shutdown()
+    gate.set()
+    assert mgr.join(30)
+    assert launched == [] and lock.holder is None and mgr.status()["state"] == "stopped"
+
+
 def test_status_reports_the_chosen_mode_while_disabled(running):
     mgr, _, _ = running
     mgr.command({"cmd": "mode", "mode": "auto"})

@@ -473,6 +473,10 @@ def part_from_dict(d: dict, source: str, base_dir: Path | None) -> Part:
         inertia = c.vec(b, "inertia", where) if "inertia" in b else None
         if inertia is not None and (com is None or min(inertia) <= 0):
             raise c.err(where, i18n.t("inertia needs com, and its three values must be greater than 0"))
+        if inertia is not None and any(2 * v > sum(inertia) for v in inertia):   # what MuJoCo refuses
+            raise c.err(where, i18n.t("inertia {inertia} can't be a real body's: none of the three values can be "
+                                      "more than the other two added together",
+                                      inertia="[" + ", ".join(f"{v:g}" for v in inertia) + "]"))
         inertia_rot = c.vec(b, "inertia_rot", where) if "inertia_rot" in b else None
         if inertia_rot is not None and inertia is None:
             raise c.err(where, i18n.t("inertia_rot needs inertia (and com)"))

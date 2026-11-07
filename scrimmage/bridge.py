@@ -308,7 +308,7 @@ class Bridge:
         self.driver: LockstepDriver | None = None
         self.disconnected = asyncio.Event()      # set while no robot program is connected (wakes the held keep-alive)
         self.lockstep_changed = asyncio.Event()   # set whenever the ScrimmageLockstep device reports
-        self.lockstep_released_at: float | None = None  # sim time the robot's watchdog freed its clock while held
+        self.lockstep_released_at: float | None = None  # sim time the robot's watchdog freed its clock
         self.host, self.port = host, port
         self.ds = DriverStationState()
         self.log_path = log_path
@@ -606,10 +606,11 @@ class Bridge:
 
     def _lockstep_released(self) -> None:
         """The extension let the robot's clock run free on its own (its 2 s watchdog): scrimmage stalled. Not when
-        scrimmage freed it on purpose (Phoenix 6 devices, the real DS)."""
+        scrimmage freed it on purpose (Phoenix 6 devices, the real DS). Held or not: a stall in `serve --speed` is
+        reported too."""
         if self.frees_clock:
             return
-        if self.held and self.driver is not None and not self.done.is_set() and self.lockstep_released_at is None:
+        if self.driver is not None and not self.done.is_set() and self.lockstep_released_at is None:
             self.lockstep_released_at = self.world.time
             log.warning("the robot program's clock ran free at t=%.3f (scrimmage stalled for more than 2 s); "
                         "results aren't repeatable", self.world.time)

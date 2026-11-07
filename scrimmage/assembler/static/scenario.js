@@ -18,8 +18,6 @@ import { units } from "./units.js";
 import { t, tn, onChange } from "./i18n.js";
 
 export const MODES = ["disabled", "auto", "teleop", "test"];
-export const STATIONS = ["red1", "red2", "red3", "blue1", "blue2", "blue3"];
-const MATCH_KEYS = ["station", "fms", "timer", "auto_seconds", "teleop_seconds"];
 
 export const sc = {
   state: null,        // /api/scenario/state
@@ -383,8 +381,9 @@ function renderHeader() {
 }
 
 // The [match] row: each control empty ("robot config's") leaves that key to the robot config, which the scenario's
-// keys go over when it runs.
+// keys go over when it runs. The stations and the [match] keys come from the server (driverstation.py).
 function renderMatch(m) {
+  const STATIONS = sc.state.stations, MATCH_KEYS = sc.state.match_keys;
   const set = (key, value) => scEdit("match", { key, value });
   const CONFIG = t("robot config's");
   const station = h("select", { id: "sc-station", dataset: { key: "match-station" } },

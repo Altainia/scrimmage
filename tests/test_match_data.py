@@ -240,7 +240,11 @@ def test_a_bad_config_match_raises(text):
         load_config_text(text, TESTS / "x.toml")
 
 
-def test_session_set_match_changes_the_state(tmp_path):
+def test_session_set_match_changes_the_state(tmp_path, monkeypatch):
+    from scrimmage.driverstation import MatchSettings
+    merges = []
+    real_merged = MatchSettings.merged
+    monkeypatch.setattr(MatchSettings, "merged", lambda self, *a: merges.append(1) or real_merged(self, *a))
     cfg = tmp_path / "robot.toml"
     text = FAKE.read_text().replace('"models/', f'"{TESTS / "models"}/').replace('cwd = "."', f'cwd = "{TESTS}"')
     cfg.write_text(text + '\n[match]\nstation = "red2"\n')
@@ -251,7 +255,9 @@ def test_session_set_match_changes_the_state(tmp_path):
             await s.start()
             assert s.state()["match"] == {"station": "red2", "fms": False, "timer": False, "auto_seconds": 20.0,
                                           "teleop_seconds": 140.0, "game_data": "", "match_time": -1.0}
+            merges.clear()
             st = s.set_match(station="blue3", fms=True, timer=True, game_data="R", teleop_seconds=100)
+            assert len(merges) == 1   # checked and applied from one merge (cleanup D5)
             assert st["match"] == {"station": "blue3", "fms": True, "timer": True, "auto_seconds": 20.0,
                                    "teleop_seconds": 100.0, "game_data": "R", "match_time": -1.0}
             s.set_mode("teleop")

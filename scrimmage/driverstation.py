@@ -115,7 +115,10 @@ class DriverStationState:
 
     def set_match(self, **changes) -> None:
         """Change any of the [match] settings (MATCH_KEYS). Turning the timer on starts the current phase again."""
-        new = self.match.merged(changes, "set_match:")
+        self.use_match(self.match.merged(changes, "set_match:"))
+
+    def use_match(self, new: MatchSettings) -> None:
+        """set_match() with the settings already merged (and so checked: MatchSettings.merged)."""
         if new.timer and not self.match.timer:
             self._entry, self._time = None, -1.0
             self._entering = self.mode in PHASES

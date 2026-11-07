@@ -225,6 +225,10 @@ def test_loop_and_inertia_rot_round_trip(tmp_path):
     (lambda d: d.update(loop=[{"body1": "arm", "body2": "arm", "pos": [0, 0, 0]}]), r"loop.*two different bodies"),
     (lambda d: d.update(loop=[{"body1": "arm", "body2": "nope", "pos": [0, 0, 0]}]), r"loop.*no body 'nope'"),
     (lambda d: d["body"][1].update(inertia_rot=[0, 0, 30]), r"inertia_rot needs inertia"),
+    # cleanup E4: the triangle inequality, refused here in words rather than by MuJoCo at build time
+    (lambda d: d["body"][1].update(com=[0, 0, 0], inertia=[1, 0.1, 0.1]),
+     r"body 'arm': inertia \[1, 0.1, 0.1\] can't be a real body's: none of the three values can be more than the "
+     r"other two added together"),
 ])
 def test_loop_and_inertia_rot_errors(change, message):
     d = minimal()

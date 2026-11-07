@@ -25,10 +25,9 @@ import mujoco
 
 from .bindings import binds_ph, binds_rev
 from .bridge import Bridge, robot_language
-from .devicecheck import check_devices, device_notes
-from .driverstation import (REAL_DS_WAITING, MatchSettings, check_game_data,
-                            real_ds_report)
 from .config import Config, ConfigError, RobotProgram, build_world, load_config, set_sim_mode, sim_mode_unused
+from .devicecheck import check_devices, device_notes
+from .driverstation import REAL_DS_WAITING, MatchSettings, check_game_data, real_ds_report
 from .i18n import N_, t, translated
 from .lockstep import Pacer
 from .movers import Mover, mover_poses, movers
@@ -602,10 +601,10 @@ class Session:
                                      ("auto_seconds", auto_seconds), ("teleop_seconds", teleop_seconds))
                    if v is not None}
         try:
-            ds.match.merged(changes, "set_match:")      # check everything before changing anything
+            match = ds.match.merged(changes, "set_match:")      # check everything before changing anything
             if game_data is not None:
                 check_game_data(game_data, "set_match:")
-            ds.set_match(**changes)
+            ds.use_match(match)
             if game_data is not None:
                 ds.set_game_data(game_data)
         except ValueError as e:

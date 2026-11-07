@@ -39,9 +39,10 @@ def test_fmt_both_systems(kind, si, imperial, metric):
     assert fmt(si, kind, "metric") == metric
 
 
-def test_fmt_uses_the_setting(units):
+def test_fmt_uses_the_setting(request):
+    set_units = request.getfixturevalue("units")    # the fixture, not the module this file imports as units
     assert fmt(0.1016, "length") == "4 in"          # the default, imperial
-    units("metric")
+    set_units("metric")
     assert fmt(0.1016, "length") == "101.6 mm"
     assert unit_name("field") == "m"
 
