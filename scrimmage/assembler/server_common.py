@@ -1,6 +1,6 @@
 """What every part of the editor's server shares: ApiError (an answer other than 200), the poll and stream periods,
 classify (what kind of file a path is), remember_opened, and the small helpers and words the App's parts use.
-server.py re-exports ApiError, classify and remember_opened; this module never imports server.py or the App's parts.
+server.py re-exports ApiError, classify, remember_opened and _chassis_root_body; this module never imports server.py or the App's parts.
 """
 
 from __future__ import annotations

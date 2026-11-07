@@ -72,7 +72,7 @@ ALLOWED = {
     ('scrimmage/assembler/bench_jobs.py',
      'a bench run is in progress; wait for it to finish'):
         API + ' (the page disables Run during one)',
-    ('scrimmage/assembler/bench_jobs.py', 'no pictures: %s'): DEV + " (a warning() on bench_session's own log)",
+    ('scrimmage/assembler/bench_jobs.py', 'no pictures: %s'): DEV + " (a warning() on the assembler log, from bench_jobs.py)",
     ('scrimmage/assembler/measure_session.py', '{} must be a number, text, or true or false, not {}'): API,
     ('scrimmage/assembler/measure_session.py', '{} must be an object {cells, extra}'): API,
     ('scrimmage/assembler/measure_session.py', '{}: cells and extra must be objects'): API,

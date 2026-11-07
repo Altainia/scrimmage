@@ -18,7 +18,7 @@
 //              blocks" appends station_starter.
 //
 // "Try values…" (a block's context menu, for its number; or beside a number in Setup) opens the sweep form: from, to
-// and steps, or typed values, at most 12; /api/test/sweep runs them and test_run.js shows the table and its chart.
+// and steps, or typed values, at most 12; /api/test/sweep runs them and test_run_sweep.js shows the table and its chart.
 // "Try materials…" (beside a grip) opens it over ticked materials instead, for the whole part (ruling P28: one pad of
 // two shows no difference while the other holds alone) or the one body.
 // "Block settings…" (a block's context menu) sets the keys a block has no box for: a move's, wait until's, feed

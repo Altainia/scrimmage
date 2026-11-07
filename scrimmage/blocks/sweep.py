@@ -283,7 +283,7 @@ def _check_words(c: dict) -> str:
 def value_kind(target: dict, program: Program) -> tuple[str, float] | None:
     """What a sweep's values are: (the units kind, SI per one of the value) for a length, field length, weight or
     speed (the robot file and a station keep SI; a block's `to`, its own unit), else None (degrees, seconds, volts,
-    a grip, the shuffle): the Test tab shows them as they are. As the page's targetMeasure (static/test_run.js)."""
+    a grip, the shuffle): the Test tab shows them as they are. As the page's targetMeasure (static/test_run_sweep.js)."""
     if "robot" in target:
         return ("mass", 1.0) if target["robot"] == "mass" else ("length", 1.0)
     if "mount" in target:

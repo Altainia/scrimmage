@@ -565,7 +565,7 @@ export function lengthWords() {
   return u === "in" ? t("inches") : u === "mm" ? t("millimeters") : u;
 }
 
-// A Grip picker's entry for a pad with no grip set (the Part and Test tabs; scrimmage/blocks/run.py DEFAULT_GRIP_NOTE)
+// A Grip picker's entry for a pad with no grip set (the Part and Test tabs; scrimmage/blocks/run_notes.py DEFAULT_GRIP_NOTE)
 export const defaultGrip = () => t("Default — 1.0 (MuJoCo's default; the larger of pad and piece applies)");
 export const UNIT = { "kg*m^2": "kg·m²", deg: "°", "N*m/rad": "N·m/rad" };
 

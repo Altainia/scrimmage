@@ -444,7 +444,7 @@ function signalAt(name, time) {
   return vs[lo];
 }
 
-// A sensor is on from its signal (scrimmage/blocks/run.py sensor_value): a beam broken (1), a distance sensor closer
+// A sensor is on from its signal (scrimmage/blocks/run_setup.py sensor_value): a beam broken (1), a distance sensor closer
 // than its threshold, a color sensor seeing a piece (a color's index; null while it sees none).
 function sensorOn(spec, v) {
   if (v == null) return false;

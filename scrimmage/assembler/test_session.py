@@ -764,7 +764,7 @@ class TestSession:
 
     def run_result(self, run_id: str) -> dict:
         """A kept run's result.json fields plus id, signals and `lines`: its goal counts and air in the sentences
-        `scrimmage test` prints (run.py goal_lines, air_lines and clearance_lines; none for a run without them)."""
+        `scrimmage test` prints (run_notes.py goal_lines, air_lines and clearance_lines; none for a run without them)."""
         try:
             out = store.load_result(self.runs_dir, run_id)
         except FileNotFoundError:

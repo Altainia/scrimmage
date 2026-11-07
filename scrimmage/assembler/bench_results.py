@@ -1,7 +1,7 @@
 """What the Bench tab reads back from a results folder: summary.json and summary.txt's headlines (by position,
 never by their words), the pictures and CSV a sweep or compare wrote, that CSV as the stage's table, and whether the
 energy check failed. The folder is written by bench/report.py (or the page's jobs, bench_jobs.py, which write the
-same files); bench_session re-exports the names its tests read.
+same files); bench_session re-exports the names it and its tests use.
 """
 
 from __future__ import annotations

@@ -6,7 +6,7 @@
 // Field geometry comes from /api/scenario/view: world_geoms (see view.py's _world_geoms for the size
 // conventions) and the robot geoms at the start pose (their projected outline is the robot's footprint).
 // fieldGeometry(view) and drawField(ctx, geometry, toCanvas) draw the field itself (floor, a grid in the chosen units,
-// world geoms, axes); the Drive tab's mini-field (minifield.js) and the robot code panel's start picker (code.js)
+// world geoms, axes); the Drive tab's mini-field (minifield.js) and the robot code panel's start picker (code_start.js)
 // draw with them too, the start picker also with drawSides (the plain red / blue field) and robotFootprint. Their
 // colors are app.css's --field-* tokens (theme.color), so each drawing redraws on theme.onChange.
 

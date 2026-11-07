@@ -54,7 +54,7 @@ from ..parts.grip import GRIP_MATERIALS, set_grip
 from ..parts.model import PartError
 from ..parts.overlay import OVERLAY
 from .bench_session import SessionError
-# part_files' names, used here and re-exported (server.py and the tests use them as part_session.<name>)
+# part_files' names, used here and re-exported (the App's mixins, app_files.py, and the tests use them as part_session.<name>)
 from .part_files import (CAD_SUFFIXES, MAX_UPLOAD, MESH_FOLDER, SUFFIX, free_import, import_for_source,  # noqa: F401
                          is_part_target, save_upload, save_uploads, source_text, upload_name, upload_set, upload_stem)
 

@@ -207,7 +207,7 @@ def _overlap(a: np.ndarray, b: np.ndarray) -> float:
 class PartnerOverlap(PartError):
     """check_start's refusal: in meters, as a robot config's [partner] start is written (and as MCP results and
     report.json have always had it). It keeps `what` (the shown words: "the robot", "element <name>") and `depth`
-    (m), so the Test tab words Setup's partner in the Units setting (blocks/run.py setup_partner_words) by finding
+    (m), so the Test tab words Setup's partner in the Units setting (blocks/run_setup.py setup_partner_words) by finding
     this exception, not its words (L3)."""
 
     def __init__(self, what: str, depth: float):
