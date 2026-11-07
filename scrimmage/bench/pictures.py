@@ -85,6 +85,7 @@ class _Frame:
         self.cam.lookat[:] = self.center
         self.cam.azimuth, self.cam.elevation = az, el
         self.cam.distance = float(np.linalg.norm(hi - lo)) + 1.0
+        self.cam.orthographic = 1  # MuJoCo 4 reads a free camera's projection from here, not vis.global_
         self.fovy = height / self.scale  # orthographic: the picture's height in meters
 
     def px(self, p) -> tuple[float, float]:
