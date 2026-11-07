@@ -540,6 +540,15 @@ def _part_edit(c, op, **args):
     assert s == 200 and b.get("ok", True), b
 
 
+def _text_or_empty(path):
+    """A file's text, or "" while a rebuild has the part folder renamed away (two renames; on Windows the gap
+    between them is long enough for a poll to land in)."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ""
+
+
 def test_test_it_gives_the_parts_motors_free_ids_so_the_starter_test_runs(tmp_path, test_app):
     """A part with a motor: Test it puts its slot on a PWM channel the stand-in's drive doesn't use, and the starter
     test (which moves that motor's joint) has no problems."""
@@ -553,7 +562,7 @@ def test_test_it_gives_the_parts_motors_free_ids_so_the_starter_test_runs(tmp_pa
                joint={"kind": "hinge", "anchor": [0.06, 0.1, 0.01], "axis": [0, 1, 0]})
     _part_edit(c, "set_motor", body="arm_A", settings={"motor": "NEO", "count": 1, "ratio": 50.0})
     end = time.monotonic() + 60
-    while "arm_A_motor" not in (tmp_path / "parts" / "climber" / "part.toml").read_text(encoding="utf-8") \
+    while "arm_A_motor" not in _text_or_empty(tmp_path / "parts" / "climber" / "part.toml") \
             or c.get("/api/part/state")[1]["build"]["state"] != "idle":
         assert time.monotonic() < end
         time.sleep(0.05)

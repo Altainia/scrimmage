@@ -498,7 +498,12 @@ class LiveManager:
 
     async def _until_stopped(self, aw, stopping: threading.Event):
         """Awaits `aw` (the robot start-up) as a task that Stop interrupts: the task is cancelled (its own clean-up
-        stops the robot program) and _Stopped is raised."""
+        stops the robot program) and _Stopped is raised. A Stop (or the editor's shutdown) that came before it
+        launches nothing: a start already in flight when the editor shuts down starts no robot program."""
+        if stopping.is_set():
+            if asyncio.iscoroutine(aw):
+                aw.close()
+            raise _Stopped
         task = asyncio.ensure_future(aw)
 
         async def watch() -> None:

@@ -72,6 +72,7 @@ class Step:
     contact_sheet: SheetSpec | None = None
     inputs: Track | None = None
     game_data: str | None = None    # sent when the step starts; None leaves the robot's as it was
+    named: bool = True              # the file names it (else `name` is the loader's "step <n>")
 
 
 @dataclass
@@ -304,7 +305,8 @@ def load_scenario_raw(raw: dict, path: str | Path, *, first_step: int = 1) -> Sc
                 raise bad(csw, str(e), field=f"{at_sheet}frames") from None
         steps.append(Step(name, s["mode"], float(dur), _ports(s.get("axes", {}), sw, "axes", at_step),
                           _ports(s.get("buttons", {}), sw, "buttons", at_step),
-                          _ports(s.get("povs", {}), sw, "povs", at_step), checks, shots, sheet, track, game_data))
+                          _ports(s.get("povs", {}), sw, "povs", at_step), checks, shots, sheet, track, game_data,
+                          "name" in s))
     return Scenario(path, (path.parent / config_ref).resolve(), str(raw.get("description", "")), speed, req, steps,
                     _range(raw, path, where), _robot_env(raw, where), _match(raw, where))
 
@@ -450,7 +452,7 @@ def config_for(scenario: Scenario, config):
 def validate(scenario: Scenario, world, *, first_step: int = 1) -> None:
     """Check every name in the scenario against the world before anything runs."""
     for i, step in enumerate(scenario.steps, first_step):
-        where = _step_where(scenario.path.name, i, step.name)
+        where = _step_where(scenario.path.name, i, step.name if step.named else None)   # not "step 3 (step 3)"
         for c in step.checks:
             build_check(c, world, where)
         for j, shot in enumerate(step.screenshots, 1):

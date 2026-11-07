@@ -355,8 +355,9 @@ Scenario (`/api/scenario/*`; 404 while no scenario is open, except /api/scenario
   GET  /api/scenario/state[?since=N] -> {version, path, display_path, read_only, read_only_reason, robot_problem,
         top: {config, description, speed, require_lockstep, match}, steps: [{name, mode, duration, game_data,
         start_t, axes, buttons, povs, checks: [{kind, spec}], shots: [{view?, at?, width?, height?, camera?}],
-        sheet}], errors, warnings, can_undo, can_redo}; each step also has inputs: the track CSV's path as written,
-        or null. match: the [match] table as written ({} without one). Long-polls like /api/robot/state.
+        sheet}], errors, warnings, can_undo, can_redo, stations, match_keys}; each step also has inputs: the track
+        CSV's path as written, or null. match: the [match] table as written ({} without one). stations and
+        match_keys: driverstation.STATIONS and MATCH_KEYS, the [match] row's choices. Long-polls like /api/robot/state.
         top and steps are read from the document as written (null / {} / [] where a key is absent), so they are
         listed even when the scenario is invalid. start_t is the step's start time (the sum of the earlier
         durations). axes/buttons/povs: {"<port>": [values]}. A check with other than exactly one key has kind null
@@ -565,9 +566,10 @@ Live (`/api/live/*`; one simulation at a time: a drive session, a scenario run, 
         place; if it can't be put back after a failed save, the error names the folder it is kept in.
 
 Stream (WebSocket on 127.0.0.1:<port from /api/live/info>): the handshake's Host must be 127.0.0.1 or localhost
-with that port and its Origin the page's own (http://127.0.0.1:<http port> or http://localhost:<http port>), and
-the first message must be {"token": "<session token>"} within 5 s; otherwise the socket is closed (code 1008) with
-nothing sent. Then the server sends:
+with that port and its Origin the page's own (http://127.0.0.1:<http port> or http://localhost:<http port>), or it
+is refused with HTTP 403 (and with 503 while 16 sockets already wait for their token); then the first message must
+be {"token": "<session token>"} within 5 s, or the socket is closed (code 1008) with nothing sent. Then the server
+sends:
   binary frames, little-endian packed: u32 seq, u8 source (0 live, 1 run), f64 t, u16 n, then n x 7 float32
         (x, y, z, qw, qx, qy, qz) per mover in the view's movers order; at most one per 33 ms per source.
   {"type": "state", "source": "live", ...status, readouts, signals, console (last 200 lines), console_seq} and,
@@ -616,6 +618,7 @@ from tomlkit.exceptions import TOMLKitError
 
 from .. import i18n, robotcode, settings, teamfolders, units
 from ..config import ConfigError, load_config_text
+from ..driverstation import MATCH_KEYS, STATIONS
 from ..lockstep import parse_speed
 from ..parts.assemble import PLACEMENT_KEYS
 from ..parts.model import PartError, load_part
@@ -2182,7 +2185,8 @@ class App:
         return {"version": sc.version, "path": str(sc.path), "display_path": self._display(sc.path),
                 "read_only": ro is not None, "read_only_reason": ro, "robot_problem": self.scenario_robot_problem,
                 "top": top, "steps": steps, "errors": self.scenario_errors, "warnings": _fe(res.warnings),
-                "can_undo": ro is None and sc.can_undo, "can_redo": ro is None and sc.can_redo}
+                "can_undo": ro is None and sc.can_undo, "can_redo": ro is None and sc.can_redo,
+                "stations": list(STATIONS), "match_keys": list(MATCH_KEYS)}
 
     def scenario_track(self, step) -> dict:
         """The input track of step `step` for the Scenario tab's plot: {path, duration, t, series}; 404 when the

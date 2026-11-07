@@ -30,7 +30,12 @@ class RecordingExists(RecordingError):
 
 
 class _RestoreFailed(Exception):
-    """An install failed and the old recording couldn't all be put back: it stays in the staging folder."""
+    """An install failed and the old recording couldn't all be put back: what wasn't (`left`: (where it was, where
+    it is now) pairs) stays in the staging folder; `whole` when none of it went back."""
+
+    def __init__(self, left: list[tuple[Path, Path]], whole: bool):
+        super().__init__()
+        self.left, self.whole = left, whole
 
 
 MARKER = "# Recorded in the Drive tab"   # the first line of every recording; Overwrite replaces only those
@@ -209,7 +214,10 @@ class DriveRecorder:
                 self._install(stage, tracks, folder, toml_tmp, path)
             except _RestoreFailed as e:
                 keep_stage = True
-                raise RecordingError(i18n.t("can't write {name} ({cause}), and the old recording couldn't be put back: it is kept in {stage}", name=path.name, cause=e.__cause__, stage=stage)) from e.__cause__
+                if e.whole:
+                    raise RecordingError(i18n.t("can't write {name} ({cause}), and the old recording couldn't be put back: it is kept in {stage}", name=path.name, cause=e.__cause__, stage=stage)) from e.__cause__
+                [(old, kept)] = e.left   # the folder or the TOML: the other one went back
+                raise RecordingError(i18n.t("can't write {name} ({cause}), and only part of the old recording could be put back: the old {old} is kept as {kept}", name=path.name, cause=e.__cause__, old=old.name, kept=kept)) from e.__cause__
         finally:
             if not keep_stage:
                 shutil.rmtree(stage, ignore_errors=True)
@@ -232,17 +240,17 @@ class DriveRecorder:
             placed.append(folder)
             os.replace(toml_tmp, path)
         except BaseException as err:
-            restored = True
             for p in placed:
                 try:
                     _remove(p)
                 except OSError:
-                    restored = False
+                    pass   # putting the old piece back over it then fails too
+            left = []
             for spot, old in reversed(aside):
                 try:
                     os.replace(spot, old)
                 except OSError:
-                    restored = False
-            if not restored:
-                raise _RestoreFailed() from err
+                    left.append((old, spot))
+            if left:
+                raise _RestoreFailed(left, whole=len(left) == len(aside)) from err
             raise

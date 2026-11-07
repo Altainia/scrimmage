@@ -15,7 +15,7 @@ from dataclasses import dataclass, fields
 from dataclasses import field as dc_field
 from typing import Any, Callable
 
-from . import units
+from . import i18n, units
 from .i18n import t, tn
 
 # Python tracebacks and Java stack traces in the robot console
@@ -336,6 +336,17 @@ class Said(str):
     def __deepcopy__(self, memo):
         return self
 
+    def __reduce__(self):
+        """Pickled (sent to another process), it is its machine text: its words are a closure."""
+        return str, (str(self),)
+
+
+def worded(words: Callable[[], str]) -> Said:
+    """One builder for both texts of a unit-free Said: the machine text is words() in the source's English
+    (i18n.fixed()), the shown text words() in the Language setting when it is shown."""
+    with i18n.fixed():
+        return Said(words(), words)
+
 
 def shown(text):
     """`text` as it is shown: a Said's words, else the text itself (None stays None)."""
@@ -571,27 +582,20 @@ class SignalCheck(Check):
             if self.extreme_margin is None or m < self.extreme_margin:
                 self.extreme, self.extreme_margin = f, m
 
-    def _missing(self, session, at_end: bool) -> str:
-        name = self.signal.name
-        if name.startswith("hal:"):
-            seen = ", ".join(f"{typ}/{d}" for typ, d in sorted(session.bridge.hal.devices)) or "none"
-            return f"no HAL value {name}; devices seen: {seen}"
-        return f"{name} has no value" + (" at the end of the step" if at_end else "")
-
-    def _missing_words(self, session, at_end: bool) -> Callable[[], str]:
-        """_missing() in the Language setting, when it is called."""
+    def _missing(self, session, at_end: bool) -> Said:
+        """Why the signal has no value: machine text and words from one builder (worded())."""
         name = self.signal.name
         if name.startswith("hal:"):
             seen = ", ".join(f"{typ}/{d}" for typ, d in sorted(session.bridge.hal.devices))
-            return lambda: t("no HAL value {name}; devices seen: {seen}", name=name, seen=seen or t("none"))
+            return worded(lambda: t("no HAL value {name}; devices seen: {seen}", name=name, seen=seen or t("none")))
         if at_end:
-            return lambda: t("{name} has no value at the end of the step", name=name)
-        return lambda: t("{name} has no value", name=name)
+            return worded(lambda: t("{name} has no value at the end of the step", name=name))
+        return worded(lambda: t("{name} has no value", name=name))
 
     def _sampled(self) -> str:
-        if self.uses_nt and self.nt_period is not None:
-            return f" (sampled at {self.nt_period:g} s hold points)"
-        return ""
+        """The machine text's hold-point suffix (the words' sentences carry it whole: _period())."""
+        period = self._period()
+        return f" (sampled at {period} s hold points)" if period is not None else ""
 
     def _period(self) -> str | None:
         """The hold-point period the words say the signal was sampled at, or None (each sentence has its own form)."""
@@ -664,8 +668,8 @@ class SignalCheck(Check):
         v = self.signal.read(session)
         expected = self._expected_words
         if v is None:
-            return said(self.label, False, self._missing(session, True), self._missing_words(session, True), None,
-                        self._expected())
+            missing = self._missing(session, True)
+            return said(self.label, False, missing, missing.words, None, self._expected())
         ok = self._ok(v)
         name, value = self.signal.name, _show(v)
         return said(self.label, ok, f"{self.signal.name} = {_show(v)} at the end; expected {self._expected()}",

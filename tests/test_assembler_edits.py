@@ -139,6 +139,24 @@ def test_set_ids_replace_and_remove():
     assert "ids" not in d["part"][0]
 
 
+def test_set_ids_keeps_a_part_ids_sub_table():
+    """Cleanup D6: a [part.ids] sub-table is edited in place, not replaced with an inline table."""
+    text = ('[[part]]\nname = "a"\nstock = "arm"\n\n[part.ids]\nm = "PWM:0"  # the arm\ne = "DIO:1"\n\n'
+            '[[part]]\nname = "b"\nstock = "arm"\n')
+    d = tomlkit.parse(text)
+    edits.set_ids(d, "a", {"m": "PWM:3", "x": "PWM:4"})
+    out = tomlkit.dumps(d)
+    assert '[part.ids]\nm = "PWM:3"  # the arm\nx = "PWM:4"\n' in out and "ids = {" not in out, out
+    assert dict(tomlkit.parse(out)["part"][0]["ids"]) == {"m": "PWM:3", "x": "PWM:4"}
+    assert tomlkit.parse(out)["part"][1]["name"] == "b"
+    # a new key lands before the next part's comment block, and the blank line above its header stays
+    d = tomlkit.parse('[[part]]\nname = "a"\nstock = "arm"\n\n[part.ids]\nm = "PWM:0"\n\n# next part\n'
+                      '[[part]]\nname = "b"\nstock = "arm"\n')
+    edits.set_ids(d, "a", {"m": "PWM:0", "x": "PWM:4"})
+    assert '[part.ids]\nm = "PWM:0"\nx = "PWM:4"\n\n# next part\n[[part]]\nname = "b"' in tomlkit.dumps(d), \
+        tomlkit.dumps(d)
+
+
 def test_set_attach_zero_pos_removed():
     d = tomlkit.parse('[[part]]\nname = "a"\nstock = "arm"\nattach = "x.y"\npos = [1, 2, 3]\n')
     edits.set_attach(d, "a", "z.w", [0, 0, 0], [0, 0, 90])
@@ -430,3 +448,22 @@ def test_start_keep_pose_must_be_true_or_false():
     with pytest.raises(EditError) as e:
         edits.set_start(tomlkit.parse(""), {"range": "ladder", "named": "below", "keep_pose": "yes"})
     assert e.value.field == "start/keep_pose"
+
+
+def test_the_tomlkit_it_runs_on_has_what_tomlutil_leans_on():
+    """Cleanup D6: assembler/tomlutil.py uses tomlkit's private Container API, and the editor relies on tomlkit refusing
+    an unclosed array-of-tables header (tomlkit before 0.15.1 parses it). A tomlkit outside pyproject's tested range
+    fails here, by name, rather than as odd edits."""
+    import inspect
+    from importlib.metadata import version
+
+    from tomlkit.container import Container
+    from tomlkit.exceptions import ParseError
+    from packaging.version import Version
+    assert Version("0.15.1") <= Version(version("tomlkit")) < Version("0.16"), version("tomlkit")
+    for name, params in (("_insert_after", ["self", "key", "other_key", "item"]),
+                         ("_insert_at", ["self", "idx", "key", "item"]), ("_raw_append", ["self", "key", "item"])):
+        assert list(inspect.signature(getattr(Container, name)).parameters) == params, name
+    assert isinstance(Container()._map, dict)
+    with pytest.raises(ParseError):
+        tomlkit.parse('config = "x"\n[[step]\n')

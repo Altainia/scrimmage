@@ -1,9 +1,13 @@
 """The live view's WebSocket hub: frames, state and notices out to the editor page, inputs and commands in.
 
 A `websockets` server on 127.0.0.1 (a random port) on its own thread and asyncio loop. A connection counts only once
-it has authenticated: its Host must be 127.0.0.1 or localhost with the hub's port, its Origin the editor page's own
-(http://127.0.0.1:<http port> or http://localhost:<http port>), and its first message ``{"token": "<session
-token>"}`` within AUTH_TIMEOUT seconds; any other connection is closed (code 1008) with nothing sent to it.
+it has authenticated: its Host must be 127.0.0.1 or localhost with the hub's port and its Origin the editor page's own
+(http://127.0.0.1:<http port> or http://localhost:<http port>), or the handshake is refused with HTTP 403; then its
+first message must be ``{"token": "<session token>"}`` within AUTH_TIMEOUT seconds, or the socket is closed (code
+1008) with nothing sent to it. At most MAX_UNAUTHENTICATED sockets may wait for their token at once: a handshake
+beyond that is refused with HTTP 503 (one that raced past the check is closed with code 1013 instead). A local
+process that isn't a browser can send any Origin, so it can hold those slots; for a tool on 127.0.0.1 that is
+acceptable (anything that can do that on this computer can already do worse).
 
 Out: binary frames (the bytes given to publish("frame", ...)) and JSON text ``{"type": "state" | "notice", ...}``.
 Per client, frames and states are latest-wins slots (a slow client skips intermediate ones) and notices are queued.
@@ -19,7 +23,7 @@ import json
 import logging
 import secrets
 import threading
-import weakref
+from http import HTTPStatus
 from typing import Callable
 
 from websockets.asyncio.server import ServerConnection, serve
@@ -30,7 +34,9 @@ log = logging.getLogger("scrimmage.assembler")
 AUTH_TIMEOUT = 5.0
 MAX_MESSAGE = 64 * 1024
 MAX_NOTICES = 100
+MAX_UNAUTHENTICATED = 16
 POLICY_VIOLATION = 1008
+TRY_AGAIN_LATER = 1013
 
 
 class _Client:
@@ -53,7 +59,7 @@ class StreamHub:
         self._closing: asyncio.Event | None = None
         self._thread: threading.Thread | None = None
         self._clients: set[_Client] = set()   # authenticated; touched only on the loop
-        self._refused: weakref.WeakSet[ServerConnection] = weakref.WeakSet()
+        self._unauthenticated = 0             # past the handshake, still waiting for their token; on the loop
         self.port = 0
 
     # -- lifecycle --------------------------------------------------------------------------------------------
@@ -97,7 +103,7 @@ class StreamHub:
         self._loop = asyncio.get_running_loop()
         self._closing = asyncio.Event()
         async with serve(self._handle, "127.0.0.1", 0, process_request=self._check_request,
-                         max_size=MAX_MESSAGE, compression=None) as server:
+                         max_size=MAX_MESSAGE, compression=None, open_timeout=AUTH_TIMEOUT) as server:
             self.port = server.sockets[0].getsockname()[1]
             ready.set()
             await self._closing.wait()
@@ -133,22 +139,21 @@ class StreamHub:
 
     # -- connections (on the loop) ------------------------------------------------------------------------------
 
-    def _check_request(self, connection: ServerConnection, request) -> None:
-        """Handshake hook: remember a connection whose Host or Origin is wrong; it is closed before anything is
-        sent to it."""
+    def _check_request(self, connection: ServerConnection, request):
+        """Handshake hook: a wrong Host or Origin is refused with HTTP 403, and a handshake while
+        MAX_UNAUTHENTICATED sockets wait for their token with HTTP 503, both before the upgrade."""
         port, http = self.port, self._http_port()
         host = request.headers.get("Host", "")
         origin = request.headers.get("Origin", "")
         ok = (host in (f"127.0.0.1:{port}", f"localhost:{port}")
               and origin in (f"http://127.0.0.1:{http}", f"http://localhost:{http}"))
         if not ok:
-            self._refused.add(connection)
+            return connection.respond(HTTPStatus.FORBIDDEN, "Forbidden\n")
+        if self._unauthenticated >= MAX_UNAUTHENTICATED:
+            return connection.respond(HTTPStatus.SERVICE_UNAVAILABLE, "Too many connections waiting for a token\n")
         return None
 
     async def _authenticate(self, ws: ServerConnection) -> bool:
-        if ws in self._refused:
-            self._refused.discard(ws)
-            return False
         try:
             first = await asyncio.wait_for(ws.recv(), AUTH_TIMEOUT)
             token = json.loads(first).get("token") if isinstance(first, str) else None
@@ -157,7 +162,15 @@ class StreamHub:
         return isinstance(token, str) and secrets.compare_digest(token.encode(), self._token.encode())
 
     async def _handle(self, ws: ServerConnection) -> None:
-        if not await self._authenticate(ws):
+        if self._unauthenticated >= MAX_UNAUTHENTICATED:   # several handshakes passed the check at once
+            await ws.close(TRY_AGAIN_LATER, "too many connections waiting for a token")
+            return
+        self._unauthenticated += 1
+        try:
+            ok = await self._authenticate(ws)
+        finally:
+            self._unauthenticated -= 1
+        if not ok:
             await ws.close(POLICY_VIOLATION, "not authorized")
             return
         client = _Client(ws)

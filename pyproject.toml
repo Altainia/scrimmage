@@ -10,7 +10,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "BSD-3-Clause" }
 # tomlkit: assembler/tomlutil.py uses private Container APIs (_insert_after, _insert_at, _raw_append, _map), so the range is the tested one
-dependencies = ["mujoco>=3.4,<4", "websockets>=12", "numpy", "pillow", "tomlkit>=0.13,<0.16"]
+# (tests/test_assembler_edits.py guards them); before 0.15.1 tomlkit parses some invalid TOML ("[[step]" unclosed)
+# that the editor must refuse. websockets: the asyncio server (stream.py) is 13.0's.
+dependencies = ["mujoco>=3.4,<4", "websockets>=13", "numpy", "pillow", "tomlkit>=0.15.1,<0.16"]
 
 [project.optional-dependencies]
 # ground-truth pose to NetworkTables/AdvantageScope, the RobotPy example, and the test suite
@@ -21,7 +23,8 @@ bench = ["coacd"]
 # reading STEP/STL/OBJ files into parts, in the browser (CAD to part)
 cad = ["cascadio>=0.1.1", "trimesh>=4.0"]
 robotpy = ["robotpy[sim,commands2]", "robotpy-halsim-ws", "robotpy-rev>=2026.0.4,<2027"]
-dev = ["pytest", "pyyaml", "matplotlib", "mcp>=2.3,<3", "pillow", "robotpy[sim,commands2]", "robotpy-halsim-ws", "robotpy-rev>=2026.0.4,<2027", "playwright==1.63.0", "cascadio>=0.1.1", "trimesh>=4.0"]
+# dev: websockets 15 for the tests' sync client (proxy=None), newer than the product needs
+dev = ["pytest", "websockets>=15", "pyyaml", "matplotlib", "mcp>=2.3,<3", "pillow", "robotpy[sim,commands2]", "robotpy-halsim-ws", "robotpy-rev>=2026.0.4,<2027", "playwright==1.63.0", "cascadio>=0.1.1", "trimesh>=4.0"]
 
 [project.scripts]
 scrimmage = "scrimmage.__main__:main"

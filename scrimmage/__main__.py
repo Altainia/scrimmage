@@ -281,10 +281,11 @@ def main(argv: list[str] | None = None) -> None:
 
     argv = sys.argv[1:] if argv is None else argv
     leading, argv = _leading(argv)
-    if "--units" in leading:
-        if leading["--units"] not in SYSTEMS:
+    if "--units" in leading:   # validated once, by the settings file's own rule (any case), as --language is
+        try:
+            set_override(leading["--units"])
+        except ValueError:
             ap.error(f"argument --units: invalid choice: {leading['--units']!r} (choose from {', '.join(SYSTEMS)})")
-        set_override(leading["--units"])
     if "--language" in leading:
         try:
             set_language_override(leading["--language"])
@@ -988,7 +989,8 @@ def _follow_ended(task: asyncio.Task) -> None:
 async def _follow_real_ds(bridge: Bridge, timeout: float, launched: bool) -> None:
     """serve with the real DS: log what the DS is doing, from the robot program's own reports. Once `timeout` wall
     seconds have passed since the launch (or since the robot program connected, when serve didn't launch it), say so
-    if the robot program isn't listening for the DS."""
+    if the robot program isn't listening for the DS. It looks every 0.1 s, so a state the DS holds for less than that
+    (a mode switched there and back) may not be logged; a failure here is logged by _follow_ended."""
     from .session import ds_socket_problem
     log = logging.getLogger("scrimmage")
     check_at = time.monotonic() + timeout if launched else None

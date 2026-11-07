@@ -208,7 +208,7 @@ def test_overwrite_refuses_a_hand_written_scenario(tmp_path):
     assert mine.read_text() == text and not (tmp_path / "drive").exists()
 
 
-def test_a_failed_restore_keeps_the_old_recording_in_the_staging_folder(tmp_path, monkeypatch):
+def test_a_partly_failed_restore_names_the_piece_kept_in_the_staging_folder(tmp_path, monkeypatch):
     import os
     rec = make(tmp_path)
     save(rec, tmp_path)
@@ -222,13 +222,36 @@ def test_a_failed_restore_keeps_the_old_recording_in_the_staging_folder(tmp_path
             raise OSError(28, "No space left on device")
         return real(src, dst)
     monkeypatch.setattr(os, "replace", failing)
+    with pytest.raises(RecordingError) as e:
+        save(rec, tmp_path, overwrite=True)
+    monkeypatch.setattr(os, "replace", real)
+    stages = [p for p in tmp_path.iterdir() if p.name.endswith(".tmp")]
+    assert len(stages) == 1
+    # cleanup E6: the folder went back, so the message names only the TOML, and where it is kept
+    assert str(e.value) == (f"can't write drive.toml ([Errno 28] No space left on device), and only part of the old "
+                            f"recording could be put back: the old drive.toml is kept as {stages[0] / 'old.toml'}")
+    assert (stages[0] / "old.toml").read_text() == old_toml   # nothing lost
+    assert (tmp_path / "drive" / "step1.csv").read_text() == "old\n"   # the folder went back
+
+
+def test_a_failed_restore_keeps_the_old_recording_in_the_staging_folder(tmp_path, monkeypatch):
+    import os
+    rec = make(tmp_path)
+    save(rec, tmp_path)
+    (tmp_path / "drive" / "step1.csv").write_text("old\n")
+    real = os.replace
+
+    def failing(src, dst):
+        if str(dst) in (str(tmp_path / "drive.toml"), str(tmp_path / "drive")):   # no piece goes in, or back
+            raise OSError(28, "No space left on device")
+        return real(src, dst)
+    monkeypatch.setattr(os, "replace", failing)
     with pytest.raises(RecordingError, match="couldn't be put back: it is kept in") as e:
         save(rec, tmp_path, overwrite=True)
     monkeypatch.setattr(os, "replace", real)
     stages = [p for p in tmp_path.iterdir() if p.name.endswith(".tmp")]
     assert len(stages) == 1 and str(stages[0]) in str(e.value)
-    assert (stages[0] / "old.toml").read_text() == old_toml   # nothing lost
-    assert (tmp_path / "drive" / "step1.csv").read_text() == "old\n"   # the folder went back
+    assert (stages[0] / "old-folder" / "step1.csv").read_text() == "old\n" and (stages[0] / "old.toml").exists()
 
 
 def test_game_data_and_match_settings(tmp_path):

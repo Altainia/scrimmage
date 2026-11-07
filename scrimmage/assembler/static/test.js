@@ -703,14 +703,20 @@ function addStationBlocks() {
 // (offset and distance: inches in the file, in the Units setting's length in the boxes, `T.floorSystem`'s: a Units
 // change converts the draft, floorUnits)
 const floorKey = (fs) => canon(fs);
+// The draft and the Units system its boxes' lengths are in (`T.floorSystem`): set together, only here (show() drops
+// the draft with T.floor = null; floorDraft() then makes a new one through here).
+function setFloor(draft) {
+  T.floor = draft;
+  T.floorSystem = units.system;
+  return draft;
+}
 function floorDraft() {
   const fs = (headOf(T.ws).setup || {}).floor_spread || {};
   const key = floorKey(fs);
   if (T.floor && T.floorFor === key) return T.floor;
   T.floorFor = key;
-  T.floorSystem = units.system;
   const ball = floorBall() || {};
-  T.floor = Object.fromEntries(FLOOR_AXES.map(([axis, , from, to, steps]) => {
+  return setFloor(Object.fromEntries(FLOOR_AXES.map(([axis, , from, to, steps]) => {
     const text = (x) => (LENGTH_AXES.includes(axis) ? units.shown(x * IN, "length") : fmt(x));
     const v = fs[axis];
     if (v && v.length) return [axis, { on: true, from: text(v[0]), to: text(v[v.length - 1]), steps: String(v.length) }];
@@ -724,8 +730,7 @@ function floorDraft() {
     const round = (x) => (LENGTH_AXES.includes(axis) && units.system === "metric"
       ? units.shown(Math.round(units.toDisplay(x * IN, "length") / 10) * 10 / 1000, "length") : text(Math.round(x)));
     return [axis, { on: false, from: round(lo), to: round(hi), steps: String(steps) }];
-  }));
-  return T.floor;
+  })));
 }
 
 // The draft's lists and run count ({spread, runs}), or {error} saying what is wrong.
@@ -770,8 +775,8 @@ function floorSpread(draft) {
 // holds is converted too (units.convert), not read again in the new units.
 function floorUnits() {
   const from = T.floorSystem;
-  T.floorSystem = units.system;
   if (!T.floor || !from || from === units.system) return;
+  setFloor(T.floor);   // its lengths are converted below
   const fs = (headOf(T.ws).setup || {}).floor_spread || {};
   for (const axis of LENGTH_AXES) {
     const d = T.floor[axis], file = fs[axis] && fs[axis].length ? { from: fs[axis][0], to: fs[axis][fs[axis].length - 1] } : {};
