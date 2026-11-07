@@ -23,7 +23,7 @@ PY = ["blocks/conditions.py", "blocks/placed.py", "blocks/run.py", "blocks/run_w
       "checks.py", "scenario_runner.py", "bench/report.py", "bench/gallery.py", "bench/pictures.py",
       "bench/compare.py", "launcher/report.py", "measure/cli.py", "measure/fit_launcher.py",
       "measure/fit_cylinder.py", "parts/partner.py", "assembler/server.py", "assembler/runs.py",
-      "assembler/server_common.py",
+      "assembler/server_common.py", "assembler/http_handler.py",
       "assembler/bench_session.py", "assembler/bench_jobs.py",
       "assembler/bench_results.py", "assembler/measure_session.py", "assembler/edits.py", "mcp_server.py"]
 
