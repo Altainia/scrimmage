@@ -183,7 +183,11 @@ friction**.
 - **C11 Compressor in the robot code path:** the compressor runs only while the robot is enabled and the robot
   program has its module's closed loop on (`<closed_loop`, or the PH's config type not "disabled"). If the program
   never creates the module, the compressor never runs, which is correct: the real one wouldn't. Under the Test
-  tab, the compressor runs throughout.
+  tab, the compressor runs throughout. *(2026-11-06, cleanup B2:)* with no valve bound to any module, the compressor
+  runs on whichever module the program makes (a `Compressor` object alone), as a real module's closed loop runs its
+  compressor on the pressure switch whether or not a valve is wired to it; before, such a compressor never ran. And
+  `scrimmage air` rounds its cycle counts down, not to the nearest (4.8 is 4 full cycles, not 5): a cycle it counts
+  must reach the working pressure.
 - **C12 Cylinder physics:**
   - **Force path:** a cylinder's force acts along a MuJoCo spatial tendon between its two pins, through an actuator
     on that tendon whose control is the force each step. In the free form the pins are the barrel's root and the

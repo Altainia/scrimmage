@@ -21,6 +21,8 @@
 //   placeOf(ws) / incomplete(ws)   block -> its place ([i, j, ...] as problems() gives them); the blocks that can't be
 //                                  saved yet (an empty condition socket) or aren't joined to the test
 //   headOf(ws) / setHead(ws, p)    the test's header (robot, hooks, ...) as workspaceToTest writes it / changed
+//   blockSettings(b, defaults)     the keys a block takes with no box (a timeout, a drive's or turn's volts, a repeat
+//   setBlockSettings(b, values)    until's max) for Block settings…, with the state's block_defaults; writing them back
 //   sweepNumber(block)             the block's number a sweep can try ({key, field, unit, scale}: scrimmage/blocks/
 //                                  sweep.py's block keys; scale: the file's unit per shown unit), or null
 //   showUnits(ws, from)            shows every block's lengths and pressures again after a Units change (`from`: the
@@ -850,6 +852,46 @@ function blockJson(b) {
   if (k.cond) out[k.cond[1]] = condJson(b.getInputTargetBlock(k.cond[0]));
   if (k.body) out.body = stackBlocks(b.getInputTargetBlock("DO")).map(blockJson);
   return out;
+}
+
+// -- a block's settings (Block settings…) ---------------------------------------------------------------------------
+// The keys a block takes beside its boxes (scrimmage/blocks/program.py): a timeout, a drive's or turn's volts, a
+// repeat until's max. Each: {key, label, unit, def (the run's default when the key is left out), hint, whole, min,
+// max}. The defaults and limits come from the server (the Test tab state's block_defaults: program.py's constants).
+// They live in block.data like any key with no box, so the file keeps them; nothing to convert (s, V, rounds). A
+// drive's or turn's volts are a size (the run takes their absolute value; a drive's direction says which way): 0 up.
+const TIMEOUT = (def) => ({ key: "timeout", label: () => t("Give up after"), unit: "s", def, min: 0,
+  hint: () => t("If it isn't done by then, the run ends there, naming this block. Empty: {seconds} s.", { seconds: def }) });
+const VOLTS = (d, label, hint) => ({ key: "volts", label, unit: "V", def: d.volts, min: 0, max: d.max_volts, hint });
+const SETTINGS = {
+  move: (b, d) => [TIMEOUT(d.timeout.move)],
+  wait_until: (b, d) => [TIMEOUT(d.timeout.wait_until)],
+  feed_one: (b, d) => [TIMEOUT(d.timeout.feed_one)],
+  drive: (b, d) => [VOLTS(d, () => t("Drive at"), () => t("The wheels' volts (0 to {most}). Empty: {volts} V.", { most: d.max_volts, volts: d.volts })),
+    ...(b.getFieldValue("WHAT") === "seconds" ? [] : [TIMEOUT(d.timeout.drive)])],      // a timeout only goes with a distance
+  turn: (b, d) => [VOLTS(d, () => t("Turn at up to"), () => t("The most volts the turn uses (0 to {most}). Empty: {volts} V.", { most: d.max_volts, volts: d.volts })),
+    TIMEOUT(d.timeout.turn)],
+  repeat_until: (b, d) => [{ key: "max", label: () => t("Give up after"), unit: t("rounds"), def: d.repeat_max, whole: true, min: 1,
+    max: d.max_times, hint: () => t("A repeat until still going after this many rounds ends the run (1 to {most}). Empty: {count}.", { most: d.max_times, count: d.repeat_max }) }],
+};
+
+// [{key, label, unit, def, hint, whole, min, max, value}] for block b (value: the file's, or null for the default),
+// with `defaults` the state's block_defaults; [] for a block with no such settings (or no defaults yet).
+export function blockSettings(b, defaults) {
+  const make = b && defaults && SETTINGS[b.type];
+  if (!make) return [];
+  const data = dataOf(b);
+  return make(b, defaults).map((s) => ({ ...s, label: s.label(), hint: s.hint(),
+    value: typeof data[s.key] === "number" ? data[s.key] : null }));
+}
+
+// Writes `values` ({key: number, or null for the default}) into block b's data, keeping its other keys.
+export function setBlockSettings(b, values) {
+  const data = dataOf(b);
+  for (const [k, v] of Object.entries(values)) {
+    if (v === null || v === undefined) delete data[k]; else data[k] = v;
+  }
+  b.data = Object.keys(data).length ? JSON.stringify(data) : null;
 }
 
 export const headOf = (ws) => header.get(ws) || {};

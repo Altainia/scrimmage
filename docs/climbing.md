@@ -124,8 +124,9 @@ scrimmage climb run configs/climber_robot.toml --script examples/climb/high.toml
 It builds the config's robot on its range (which needs a `[climb]` table), lets it settle on the carpet for 0.3 s and
 plays the script's steps from t = 0. The runner takes the robot program's place: it writes the motor controllers'
 outputs, so every drive goes through the config's own motors, gearing, battery and neutral modes (a motor's speed and
-torque limit the climb). A position drive is a proportional loop: 400 V/m on a slide, 60 V/rad on a hinge, clipped
-to the bus or the drive's `max_voltage`.
+torque limit the climb). A joint with several motors bound (a slot given a list of IDs, a lead and its followers)
+has every one of them written, as robot code drives each one and as the Test tab's runs do. A position drive is a
+proportional loop: 400 V/m on a slide, 60 V/rad on a hinge, clipped to the bus or the drive's `max_voltage`.
 
 Every physics step it checks how the climb is going, and ends the run on the first of:
 - **hit a bar**: a robot geom outside the hook assemblies (a tube, the frame; not the hooks or the bracket carrying

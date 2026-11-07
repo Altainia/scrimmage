@@ -265,10 +265,11 @@ def test_follower_of_a_missing_leader_outputs_nothing_and_is_named(main_run):
 def test_student_iterate_is_neutralized(main_run):
     assert re.search(r"scrimmage rev helper: ignored \d+ robot-side sim writes \(SparkSim\.iterate from "
                      r"\S*MyRobot\._simulationPeriodic\)", main_run.console), main_run.console[-3000:]
-    notes = [n for n in main_run.report.notes if "neutralized" in n]
+    notes = [n for n in main_run.report.notes if "own simulation" in n]
     assert len(notes) == 1 and re.fullmatch(
-        r"the scrimmage rev helper neutralized \d+ robot-side sim writes \(SparkSim\.iterate from "
-        r"\S*MyRobot\._simulationPeriodic\)", notes[0]), main_run.report.notes
+        r"as expected, the scrimmage rev helper ignored the robot code's own simulation \(\d+ sim writes: "
+        r"SparkSim\.iterate from \S*MyRobot\._simulationPeriodic\): scrimmage's physics drives the sensors",
+        notes[0]), main_run.report.notes
 
 
 def test_rev_runs_in_lockstep_faster_than_real_time(main_run):

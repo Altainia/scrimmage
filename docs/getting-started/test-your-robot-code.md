@@ -75,7 +75,9 @@ If your code made different devices than the robot file expects (a CAN ID that d
 your code made TalonFX 1. The Robot tab's device table shows the same and can fix it.
 
 The report folder has `report.md` (the checks and the pictures), `robot.log` (everything your code printed) and
-`run.csv` (every motor and joint, every few milliseconds). Add `runs/` to your robot project's `.gitignore`.
+`run.csv` (every motor and joint, every few milliseconds). A `runs/` folder that Scrimmage makes keeps itself out of
+git: Scrimmage puts a `.gitignore` in it. A `runs/` folder from before this has none, so add `runs/` to your project's
+`.gitignore`, or delete the folder and let Scrimmage make it again.
 
 The command's exit code is 0 when everything passed, 1 when a check failed, and 2 when it couldn't run at all
 (a typo in the file, or the robot code crashed at startup).
@@ -102,21 +104,39 @@ exactly what you did, and you add checks to it like any other. See [Recording an
 
 ## 5. Run them all
 
-`scrimmage run` takes one scenario at a time. To run every scenario in `sim/scenarios/` and see whether any
-failed:
+Give `scrimmage run` every scenario in `sim/scenarios/`:
 
 ```bash
-failed=0
-for s in sim/scenarios/*.toml; do
-  scrimmage run "$s" || failed=1
-done
-echo "failed: $failed"
+scrimmage run sim/scenarios/*.toml
 ```
 
-Run them one after another, never two at once: only one simulation can run on a computer at a time.
+It runs them one after another (only one simulation can run on a computer at a time), prints each one's results as
+it goes, and ends with one line per file:
+
+```
+2 of 3 scenarios passed
+  PASS   sim/scenarios/auto.toml
+  FAIL   sim/scenarios/my_drive.toml
+  PASS   sim/scenarios/shoot.toml
+```
+
+The exit code is the worst of them: 0 when all passed, 1 when one failed, 2 when one couldn't run. Don't start two
+`scrimmage run`s at once.
 
 CTRE robots run in real time, so a 15 s auto takes 15 s to check. For faster checks that repeat exactly (for example
 in GitHub Actions), see [fast mode](../fast-mode.md).
+
+## 6. Run them on every push (GitHub Actions)
+
+[`examples/ci/scrimmage.yml`](../../examples/ci/scrimmage.yml) is a workflow for your robot repository: copy it to
+`.github/workflows/scrimmage.yml`. On every push and pull request it checks Scrimmage out beside your code, installs
+it, runs `scrimmage run sim/scenarios/*.toml`, and keeps the `runs/` reports as the run's artifact. A failed check
+fails the job. For a RobotPy robot, delete the two steps the file marks "Java robots only"; a RobotPy robot that
+needs more packages than RobotPy itself also needs a `pip install -r requirements.txt` step. Add `ref:` to the
+Scrimmage checkout to pin a version, so an update can't change your results unnoticed.
+
+Scrimmage's own tests check that the file is a valid workflow and that every `scrimmage` command in it exists with
+those arguments. Nobody has run it on a team's repository yet: if it breaks there, the job's log says where.
 
 ## If something goes wrong
 

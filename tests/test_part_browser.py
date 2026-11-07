@@ -533,6 +533,52 @@ def test_a_snapped_hinge_takes_a_typed_pivot_point(part_page):
     assert posts == []
 
 
+def test_a_redraw_keeps_the_text_selected_to_type_over(part_page):
+    """A box's number selected to type over (a triple click) stays selected across a redraw (a poll's answer) that
+    comes before the first key: the typing replaces it, not goes in front of it ("830" + "818")."""
+    page, _ = part_page
+    page_units(page, "metric")
+    _pick_body(page, "hook_assy")
+    page.select_option("#part-joint-kind", "hinge")
+    _edit(page, lambda: page.click("#part-snap-x"))
+    page.wait_for_selector("#part-pivot-z")
+    assert page.input_value("#part-pivot-z") not in ("", "830")
+    page.click("#part-pivot-z", click_count=3)
+    page.evaluate("__scrimmagePart.render()")
+    page.keyboard.type("830")
+    assert page.input_value("#part-pivot-z") == "830"
+
+
+def test_a_units_change_keeps_the_whole_text_selected(part_page):
+    """A box's whole number selected, then Units changes (the redraw shows it converted, longer): all of the new
+    number is still selected, so what is typed replaces it and is saved in the new unit. Text half typed across the
+    change, now another length, has the caret at its end."""
+    from scrimmage.cad.frame import RobotFrame, to_robot
+    page, _ = part_page
+    page_units(page, "metric")
+    _pick_body(page, "hook_assy")
+    page.select_option("#part-joint-kind", "hinge")
+    _edit(page, lambda: page.click("#part-snap-x"))
+    page.wait_for_selector("#part-pivot-z")
+    before = page.input_value("#part-pivot-z")
+    page.click("#part-pivot-z", click_count=3)
+    page_units(page, "imperial")
+    page.wait_for_function("(b) => document.querySelector('#part-pivot-z').value !== b", arg=before)
+    assert page.evaluate("document.activeElement.id") == "part-pivot-z"
+    assert page.evaluate("(e => [e.selectionStart, e.selectionEnd])(document.activeElement)") == [0, len(page.input_value("#part-pivot-z"))]
+    _edit(page, lambda: (page.keyboard.type("33"), page.keyboard.press("Enter")))
+    f = page.evaluate("__scrimmagePart.store.state.frame")
+    R, t = to_robot(RobotFrame(f["up"], f["front"], f["floor"], f["center"], f["skip"]))
+    anchor = np.asarray(_body(page, "hook_assy")["joint"]["anchor"])
+    assert (R @ anchor + t)[2] == pytest.approx(33 * 0.0254, abs=1e-9)
+    # half typed ("20" in inches), then Metric: converted to "508", the caret at its end
+    page.click("#part-pivot-z", click_count=3)
+    page.keyboard.type("20")
+    page_units(page, "metric")
+    page.wait_for_function("document.querySelector('#part-pivot-z').value === '508'")
+    assert page.evaluate("(e => [e.selectionStart, e.selectionEnd])(document.activeElement)") == [3, 3]
+
+
 def test_plugin_part_shows_and_clears_what_was_changed_here(browser, tmp_path, monkeypatch):
     """A copy of tests/parts/intake (a plugin-made folder): a typed weight and damping go in scrimmage-edits.toml and
     show as changed here; emptying the weight box removes it again."""
@@ -585,6 +631,48 @@ def test_plugin_part_shows_and_clears_what_was_changed_here(browser, tmp_path, m
         assert _body(page, "roller")["typed_mass"] is None and _body(page, "roller")["mass"] == pytest.approx(0.3)
         assert tomllib.loads(overlay.read_text()) == {"body": {"roller": {"joint": {"damping": 0.01}}}}
         page.wait_for_function("document.querySelector('#part-inspector [data-field=\"kg\"]').dataset.from === 'plugin'")
+    finally:
+        ctx.close()
+        srv.stop()
+    assert not logs, f"browser errors: {logs}"
+
+
+def test_stops_picker_stiffens_a_joints_range(browser, tmp_path, monkeypatch):
+    """The joint's Stops picker (under More): offered once the joint has a range; Stiff writes limit_solref
+    (to scrimmage-edits.toml in plugin mode), Normal takes it out again."""
+    monkeypatch.setenv("SCRIMMAGE_RECENT", str(tmp_path / "recent.json"))
+    monkeypatch.setenv("SCRIMMAGE_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("SCRIMMAGE_FOLDERS", str(tmp_path / "folders.json"))
+    folder = tmp_path / "intake"
+    shutil.copytree(Path(__file__).resolve().parent / "parts" / "intake", folder)
+    overlay = folder / "scrimmage-edits.toml"
+    srv = Server(folder, cwd=tmp_path)
+    ctx = browser.new_context(viewport={"width": 1500, "height": 950})
+    logs = []
+    try:
+        page = ctx.new_page()
+        page.set_default_timeout(30000)
+        page.on("pageerror", lambda e: logs.append(f"pageerror: {e}"))
+        page.goto(srv.url)
+        page.wait_for_function("window.__scrimmagePart && __scrimmagePart.store.state"
+                               " && __scrimmagePart.store.state.mode === 'plugin'")
+        _pick_body(page, "roller")
+        page.click("#part-joint-more summary")
+        page.locator("#part-range-from").wait_for()
+        assert page.locator("#part-stops").count() == 0          # no range, no stops to stiffen
+        page.click("#part-range-from", click_count=3)
+        page.keyboard.type("-10")
+        page.keyboard.press("Tab")
+        _edit(page, lambda: _type(page, "#part-range-to", "45"))
+        page.locator("#part-stops").wait_for()
+        assert page.input_value("#part-stops") == "normal"
+        _edit(page, lambda: page.select_option("#part-stops", "stiff"))
+        assert tomllib.loads(overlay.read_text())["body"]["roller"]["joint"]["limit_solref"] == [0.004, 1.0]
+        assert _body(page, "roller")["joint"]["limit_solref"] == [0.004, 1.0]
+        page.wait_for_function("document.querySelector('#part-stops') && "
+                               "document.querySelector('#part-stops').value === 'stiff'")
+        _edit(page, lambda: page.select_option("#part-stops", "normal"))
+        assert "limit_solref" not in tomllib.loads(overlay.read_text())["body"]["roller"]["joint"]
     finally:
         ctx.close()
         srv.stop()

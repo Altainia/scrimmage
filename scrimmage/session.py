@@ -59,6 +59,18 @@ LOCKSTEP_VERSION = (0, 6, 0)
 PH_LOCKSTEP_VERSION = (0, 7, 0)   # 0.7.0 relays the REV Pneumatic Hub; needed only by robots with valves on one
 
 
+def lockstep_install(python: str | None = None) -> str:
+    """The command that installs (or updates) the lockstep extension, typed from any folder: `python -m pip install`
+    with the full path of the checkout's lockstep/ folder (where scrimmage was installed from), so it works in a
+    team's robot folder too and goes into the Python that needs it (`python`: the robot's; else scrimmage's own).
+    Without the checkout (an installed wheel), the README's `pip install ./lockstep`."""
+    import shlex
+    folder = Path(__file__).resolve().parent.parent / "lockstep"
+    if not (folder / "pyproject.toml").is_file():
+        return "pip install ./lockstep"
+    return f"{shlex.quote(python or sys.executable)} -m pip install {shlex.quote(str(folder))}"
+
+
 def lockstep_version_problem(config: Config) -> str | None:
     """Why a RobotPy robot run with `--scrimmage-lockstep` (or binding REV SPARKs, whose helper the package carries), or a
     Java robot while scrimmage-lockstep is installed (the Gradle init script then loads it), can't be simulated:
@@ -81,7 +93,8 @@ def lockstep_version_problem(config: Config) -> str | None:
         why = "lockstep"
     else:
         return None
-    said = {"config": config.path, "need": ".".join(map(str, need_version)), "install": "pip install ./lockstep"}
+    said = {"config": config.path, "need": ".".join(map(str, need_version)),
+            "install": lockstep_install(rp.command[0] if language == "python" and rp.command else None)}
     try:
         have = metadata.version("scrimmage-lockstep")
     except metadata.PackageNotFoundError:

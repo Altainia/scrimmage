@@ -42,3 +42,10 @@ def driven_joints(world) -> dict:
         if name in names and int(m.jnt_qposadr[j]) in by_qadr:
             motors[name] = by_qadr[int(m.jnt_qposadr[j])]
     return motors
+
+
+def joint_drives(world, motors: dict) -> dict:
+    """Joint name -> a MotorDrive for every motor on that joint (`motors`: driven_joints'). A slot of several motors,
+    a lead and its followers, shares one joint; each is written, as robot code writes each one through its own
+    binding (a follower copies its leader's output)."""
+    return {n: [MotorDrive(mb) for mb in world.motors if mb.qadr == b.qadr] for n, b in motors.items()}

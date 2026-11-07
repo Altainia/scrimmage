@@ -128,6 +128,63 @@ def _one_of(cfg: dict, keys: tuple[str, ...], what: str) -> None:
                                 given=i18n.t(" and ", context="list separator").join(given), keys=', '.join(keys)))
 
 
+# [robot_program] not_modeled: what this config leaves out on purpose. A device the robot code makes for a mechanism
+# the config doesn't model gets no "nothing in the config binds it" warning or note; a part's slot left unbound
+# ("elevator.encoder": the robot reads the motor's own sensor) gets no "has no device ID" warning. Devices take the
+# ids' short forms: "SimMotor:<name>" (and SimEncoder, SimGyro), "TalonFX:<id>" (and CANcoder, Pigeon2),
+# "SparkMax:<id>", "SparkFlex:<id>"; a slot is "<part>.<slot>".
+_NOT_MODELED_SIM = {"SimMotor": "ScrimmageMotor", "SimEncoder": "ScrimmageEncoder", "SimGyro": "ScrimmageGyro"}
+_NOT_MODELED_CAN = {"TalonFX": "TalonFX", "CANcoder": "CANcoder", "Pigeon2": "Pigeon2", "SparkMax": "SPARK MAX",
+                    "SparkFlex": "SPARK Flex"}
+_SLOT = re.compile(r"[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+")
+
+
+def parse_not_modeled(value) -> tuple[set[tuple[str, object]], set[str]]:
+    """[robot_program] not_modeled as (devices, slots). Devices: ("ScrimmageMotor", name) for a fast-mode device,
+    (label, id) as devicecheck names a CAN device the robot code made ("TalonFX", 11), ("SPARK MAX", 3). Slots:
+    "<part>.<slot>". A ValueError for a bad entry."""
+    if value is None:
+        return set(), set()
+    forms = ", ".join([*(f'"{k}:..."' for k in (*_NOT_MODELED_SIM, *_NOT_MODELED_CAN)), '"<part>.<slot>"'])
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise ValueError(i18n.t("{robot_program_table} not_modeled must be a list of device IDs or slots ({forms})",
+                                robot_program_table="[robot_program]", forms=forms))
+    devices: set[tuple[str, object]] = set()
+    slots: set[str] = set()
+    for v in value:
+        kind, sep, ident = v.partition(":")
+        if sep and ident and kind in _NOT_MODELED_SIM and not any(c.isspace() for c in ident):
+            devices.add((_NOT_MODELED_SIM[kind], ident))
+        elif sep and ident.isdigit() and kind in _NOT_MODELED_CAN:
+            devices.add((_NOT_MODELED_CAN[kind], int(ident)))
+        elif not sep and _SLOT.fullmatch(v):
+            slots.add(v)
+        else:
+            raise ValueError(i18n.t("{robot_program_table} not_modeled: {value} isn't a device ID or a slot ({forms})",
+                                    robot_program_table="[robot_program]", value=repr(v), forms=forms))
+    return devices, slots
+
+
+def device_key_of(kind: str, cfg: dict) -> tuple[str, object] | None:
+    """A binding's device (`kind`: "motor", "encoder" or "gyro"; `cfg`: its ids table) as parse_not_modeled names
+    devices, or None for one it can't name (PWM, DIO, ...)."""
+    if "scrimmage" in cfg:
+        return ({"motor": "ScrimmageMotor", "encoder": "ScrimmageEncoder", "gyro": "ScrimmageGyro"}[kind],
+                str(cfg["scrimmage"]))
+    for key in ("ctre", "rev"):
+        name, sep, ident = str(cfg.get(key, "")).partition(":")
+        name = name.removesuffix("Abs")
+        if sep and ident.isdigit() and name in _NOT_MODELED_CAN:
+            return _NOT_MODELED_CAN[name], int(ident)
+    return None
+
+
+def not_modeled(cfg: dict) -> tuple[set[tuple[str, object]], set[str]]:
+    """parse_not_modeled of a raw config's [robot_program] not_modeled."""
+    rp = cfg.get("robot_program") if isinstance(cfg, dict) else None
+    return parse_not_modeled(rp.get("not_modeled") if isinstance(rp, dict) else None)
+
+
 def resolve_device_key(hal: HalState, key: tuple[str, str]) -> str | None:
     """The device id a binding's `device_key` refers to, or None if the robot program never created it.
 

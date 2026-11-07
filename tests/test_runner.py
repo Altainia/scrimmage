@@ -430,8 +430,9 @@ def test_agent_summary_becomes_a_note_when_nothing_got_through(tmp_path, monkeyp
     monkeypatch.setattr(session_mod.Session, "_advance", advance)
     rep = asyncio.run(run_scenario(load_scenario(scenario(tmp_path, SIMPLE)), tmp_path / "out"))
     assert rep.exit_code == 0, rep.to_dict()
-    assert rep.notes == ["the scrimmage agent neutralized 42 robot-side sim writes "
-                         "(TalonFXSimState.setRawRotorPosition from frc.robot.Robot.simulationPeriodic)"]
+    assert rep.notes == ["as expected, the scrimmage agent ignored the robot code's own simulation (42 sim writes: "
+                         "TalonFXSimState.setRawRotorPosition from frc.robot.Robot.simulationPeriodic): scrimmage's "
+                         "physics drives the sensors"]
 
 
 def test_rev_helper_summary_becomes_a_note_when_nothing_got_through(tmp_path, monkeypatch):
@@ -446,8 +447,9 @@ def test_rev_helper_summary_becomes_a_note_when_nothing_got_through(tmp_path, mo
     monkeypatch.setattr(session_mod.Session, "_advance", advance)
     rep = asyncio.run(run_scenario(load_scenario(scenario(tmp_path, SIMPLE)), tmp_path / "out"))
     assert rep.exit_code == 0, rep.to_dict()
-    assert rep.notes == ["the scrimmage rev helper neutralized 7 robot-side sim writes "
-                         "(SparkSim.iterate from robot.MyRobot._simulationPeriodic)"]
+    assert rep.notes == ["as expected, the scrimmage rev helper ignored the robot code's own simulation (7 sim writes: "
+                         "SparkSim.iterate from robot.MyRobot._simulationPeriodic): scrimmage's physics drives the "
+                         "sensors"]
 
 
 def test_report_notes_carry_slot_warnings(tmp_path):
@@ -616,3 +618,49 @@ def test_picture_sizes_are_built_before_the_robot_program_starts(monkeypatch):
             await s.stop()
     asyncio.run(main())
     assert seen["ready"] == [(80, 50), (160, 100)]
+
+
+def test_run_takes_several_scenarios(tmp_path, monkeypatch, capsys):
+    """`scrimmage run a.toml b.toml c.toml`: each in turn, a file that can't load reported and skipped, one line per
+    file at the end, and the worst exit code (2 couldn't run, 1 failed, 0 all passed); --out holds one folder each."""
+    from scrimmage.__main__ import main
+    good = scenario(tmp_path, SIMPLE)
+    (tmp_path / "far").mkdir()
+    bad_pose = tmp_path / "far" / "s.toml"           # the same stem as `good`: its folder gets a -2
+    bad_pose.write_text(good.read_text().replace("x = 2.0", "x = 3.0"))
+    broken = tmp_path / "broken.toml"
+    broken.write_text('config = "nope.toml"\n')
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit) as e:
+        main(["run", str(good), str(bad_pose), str(broken), "--out", str(out)])
+    assert e.value.code == 2
+    std = capsys.readouterr()
+    tail = std.out.strip().splitlines()[-4:]
+    assert tail == ["1 of 3 scenarios passed", f"  PASS   {good}", f"  FAIL   {bad_pose}", f"  ERROR  {broken}"]
+    assert f"scrimmage: {broken}: " in std.err
+    assert (out / "s" / "report.md").is_file() and (out / "s-2" / "report.md").is_file()
+    with pytest.raises(SystemExit) as e:
+        main(["run", str(good), str(good), "--out", str(tmp_path / "o2")])
+    assert e.value.code == 0
+    assert capsys.readouterr().out.strip().splitlines()[-3] == "2 of 2 scenarios passed"
+
+
+def test_default_runs_folder_is_git_ignored(tmp_path, monkeypatch, capsys):
+    """Reports land in runs/ in the team's robot repository: the folder scrimmage makes keeps itself out of git."""
+    from scrimmage.__main__ import main
+    from scrimmage.scenario import runs_folder
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SystemExit) as e:
+        main(["run", str(scenario(tmp_path, SIMPLE))])
+    assert e.value.code == 0
+    assert (tmp_path / "runs" / ".gitignore").read_text().splitlines()[-1] == "*"
+    assert len([p for p in (tmp_path / "runs").iterdir() if p.is_dir()]) == 1
+    kept = tmp_path / "mine"
+    kept.mkdir()
+    runs_folder(kept)                       # a folder that was already there is left alone
+    assert not (kept / ".gitignore").exists()
+    if subprocess.run(["git", "--version"], capture_output=True).returncode == 0:
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+        status = subprocess.run(["git", "-C", str(tmp_path), "status", "--porcelain", "--untracked-files=all"],
+                                capture_output=True, text=True, check=True).stdout
+        assert "runs/" not in status

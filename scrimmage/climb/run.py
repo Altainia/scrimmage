@@ -3,8 +3,9 @@ the climb: a timeline, the peak hook load, the swing, the 2022 robot limits and 
 
 The runner takes the robot program's place: every physics step it writes the motor controllers' outputs, so each
 drive goes through the config's own motor, gearing, battery and neutral mode (a motor's speed and torque limits
-apply, and a `release` motor in brake mode slows its latch as it would on the robot). A position drive is a
-proportional loop on the joint: KP_SLIDE or KP_HINGE (scrimmage/hal_drive.py) volts per unit of error, clipped to the bus (or the drive's
+apply, and a `release` motor in brake mode slows its latch as it would on the robot); every motor bound to a joint
+(a lead and its followers) is written, as the Test tab's runs (scrimmage/blocks/run.py) write them. A position drive
+is a proportional loop on the joint: KP_SLIDE or KP_HINGE (scrimmage/hal_drive.py) volts per unit of error, clipped to the bus (or the drive's
 max_voltage), as a team's position loop on a climber; the motor's own back-EMF damps it.
 
 The run settles the robot on the carpet for SETTLE_S, then plays the steps from t = 0. Every physics step it reads
@@ -34,7 +35,7 @@ import numpy as np
 
 from .. import i18n
 from ..config import build_world, load_config
-from ..hal_drive import MotorDrive, driven_joints, position_volts
+from ..hal_drive import driven_joints, joint_drives, position_volts
 from ..protocol import HalState
 from .script import Script, ScriptError, Wait
 
@@ -202,6 +203,7 @@ class ClimbRun:
         names = world.joint_states()
         motors = driven_joints(world)
         self.motors = motors
+        self._drive = joint_drives(world, motors)       # every motor on each joint, as the Test tab's runs drive them
         self.latches = sorted(n for n in motors if n.rsplit(".", 1)[-1].startswith("latch"))
         holds = {h[0] for h in self.mon.holds}
         driven = ", ".join(sorted(motors)) or "none"
@@ -294,9 +296,11 @@ class ClimbRun:
                     q = float(d.qpos[self._qadr[joint]])
                     lim = bus if cap is None else min(cap, bus)
                     volts = position_volts(target, q, self._hinge[joint], lim)
-                MotorDrive(self.motors[joint]).write(hal, volts, bus)
+                for drive in self._drive[joint]:
+                    drive.write(hal, volts, bus)
             for joint, out in release.items():
-                MotorDrive(self.motors[joint]).write(hal, out * bus, bus)
+                for drive in self._drive[joint]:
+                    drive.write(hal, out * bus, bus)
             mon.consume()
             w.step(hal)
             t = float(d.time) - t0

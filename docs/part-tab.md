@@ -137,6 +137,18 @@ yet", and Esc cancels. This is so Scrimmage never guesses an axis for you.
 where the CAD shows the part), a spring and its rest position, damping, and friction. Leave the range empty for no
 limit. If you type one end of a range, type the other end too.
 
+Once the joint has a range, **Stops** says how hard its ends are:
+
+- **Normal** is MuJoCo's own stop (no setting in the file).
+- **Stiff: holds a loaded joint on its stop** is for a light part that carries a heavy load against its stop, such as a
+  hook carrying the robot. MuJoCo softens a stop by the inertia it holds, so a normal stop on a light hook lets a
+  hanging robot push it tens of degrees past its end. Stiff writes `limit_solref = [0.004, 1.0]`: a 4 ms time
+  constant, critically damped, as the stock climber's latch.
+- **Soft: gives a little** writes `[0.05, 1.0]`, for a stop with rubber on it.
+
+A file with other numbers shows them as **As set** and keeps them until you pick one of the three. Clearing the range
+also clears the stops' setting (a stop needs a range).
+
 **Try it** gives you a slider that moves the drawing in the 3D view, so you can check the axis is right. It only moves
 the picture. Nothing is saved.
 
@@ -203,7 +215,7 @@ re-importing does not move your axes.
 The FreeCAD add-on ([freecad.md](freecad.md)) writes part folders with their own `part.toml`. Open one with
 `scrimmage edit parts/arm`. The tab still shows the bodies, but there are no pieces to move, the frame is whatever the
 plugin wrote, and the joints, slots and axes come from the plugin and cannot be changed here. What you can change is
-the weight, the joint's range, spring, damping and friction, how it touches things, and mounts. Those edits go in
+the weight, the joint's range, spring, damping, friction and stops, how it touches things, and mounts. Those edits go in
 `scrimmage-edits.toml` inside the part folder, never in `part.toml`. A value you changed here says **Changed here**;
 the rest say **From the CAD plugin**. Empty a changed box to go back to what the plugin wrote. The FreeCAD add-on keeps that file when you export
 again. If an edit is about a body that has since gone from the CAD, you get a warning and the edit is ignored.

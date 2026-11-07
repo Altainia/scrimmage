@@ -54,7 +54,8 @@ that carries the bar is not built: only the bar collides.
 A hinged or sliding element is body `element.<name>` with one geom, `element.<name>.panel` (a box, or a cylinder
 for a disc), on joint `element.<name>.hinge` (about the hinge's axis, elements.hinge_axis) or `element.<name>.slide`
 (along its local axis). The body is built at rest (turned `rest_deg` about the hinge, or moved `rest` along the
-slide, from the panel as described), so the joint reads 0 at rest: the spring's springref is 0 and the stops are the
+slide, from the panel as described), so the joint reads 0 at rest: the spring's springref is 0 (with a `preload`,
+preload / stiffness, so at rest it presses the panel into the stop the rest is on that hard) and the stops are the
 file's range less the rest. Positive is a right-hand turn about the axis (C3), or travel along it: about +y for
 "bottom" and "top" (a panel on its bottom edge tips its top toward +x; one hung from its top edge swings its bottom
 toward -x), about +z for the side and end edges and a flat disc (counter-clockwise seen from above), along +x, +y or
@@ -371,11 +372,15 @@ def _moving(spec: mujoco.MjSpec, e: Hinged | Sliding, pos, quat) -> None:
         axis = np.eye(3)["xyz".index(e.axis)]
         lo_hi = [a - e.rest for a in e.range]
         stiffness = e.stiffness
+    # a preload winds the spring up past the rest: at 0 it pushes k springref = preload, into the stop the rest is on
+    springref = e.preload / stiffness if e.preload else 0.0
+    if hinged and springref and spec.compiler.degree:
+        springref = math.degrees(springref)
     limits = {"limited": False} if lo_hi is None else {"limited": True, "range": lo_hi,
                                                         "solref_limit": [PLATFORM_STOP_TC, 1.0]}
     body.add_joint(name=f"element.{e.name}.{'hinge' if hinged else 'slide'}",
                    type=mujoco.mjtJoint.mjJNT_HINGE if hinged else mujoco.mjtJoint.mjJNT_SLIDE, axis=list(axis),
-                   stiffness=stiffness, springref=0.0, damping=e.damping, frictionloss=e.breakaway,
+                   stiffness=stiffness, springref=springref, damping=e.damping, frictionloss=e.breakaway,
                    solref_friction=[PLATFORM_STOP_TC, 1.0], **limits)
     shape = (dict(type=mujoco.mjtGeom.mjGEOM_CYLINDER, size=[e.diameter / 2.0, e.thickness / 2.0, 0.0])
              if hinged and e.shape == "disc" else

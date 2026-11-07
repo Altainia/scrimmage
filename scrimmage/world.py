@@ -9,7 +9,8 @@ from typing import Callable
 import mujoco
 import numpy as np
 
-from .bindings import AnalogBinding, DigitalBinding, EncoderBinding, GyroBinding, MotorBinding, Update
+from .bindings import (AnalogBinding, DigitalBinding, EncoderBinding, GyroBinding, MotorBinding, Update,
+                       not_modeled)
 from .motors import Battery
 from .i18n import t
 from .parts.assemble import parse_start_pose
@@ -149,6 +150,8 @@ class World:
         self.gyros = [GyroBinding(c, m) for c in bind.get("gyro", [])]
         self.analogs = [AnalogBinding(c, m) for c in cfg.get("analog", [])]
         self.digitals = [DigitalBinding(c, m) for c in cfg.get("digital", [])]
+        # devices the robot code makes that the config leaves out on purpose: no "nothing binds it" for them
+        self.not_modeled = not_modeled(cfg)[0]
         self.test_range = None      # the test range's balls (scrimmage/testrange), for a config with a [range]
         if self.parts is not None and self.parts.range is not None:
             from .testrange.runtime import RangeRuntime

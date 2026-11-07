@@ -33,7 +33,9 @@ a disc's own axis, a spinning panel). `ground = true` makes it floor for the ter
 panel as described); `stiffness` is N m/deg, `breakaway` N m (C2), `damping` N m s/rad (left out, critical for the
 panel's inertia about the hinge with a spring, else DEFAULT_MOVING_DAMPING). A sliding element is a box on a slide
 along its local `axis` ("x", "y" or "z"): `range` [lo, hi] (m, or `range_in`), `rest` (m, or `rest_in`), stiffness
-N/m, breakaway N, damping N s/m (the same default). Each takes `mass`, all of it moving, and `ground`.
+N/m, breakaway N, damping N s/m (the same default). Each takes `mass`, all of it moving, and `ground`. `preload` (N m
+on a hinge, N on a slide; or `preload_in_lb`, `preload_lb`) winds the spring up against the stop the rest is on (the
+rest at one end of the range, and a stiffness), so it takes that much push to start the element moving.
 
 `[climb]` picks a scoring rule (CLIMB_RULES) and lists the levels lowest first, each with its points:
 `levels = { LOW = 4, MID = 6 }`. The "hang" rule also takes `level_bonus` and the `switch` it applies to.
@@ -47,6 +49,7 @@ from dataclasses import dataclass, field, replace
 import numpy as np
 
 from .. import i18n
+from ..units import LBF
 from .spec import RangeError, _Reader
 
 IN = 0.0254  # m per inch
@@ -221,6 +224,7 @@ class Hinged:
     stiffness: float = 0.0  # N m/deg
     damping: float | None = None  # N m s/rad
     breakaway: float = 0.0  # N m
+    preload: float = 0.0  # N m: the spring's push at rest, + about the axis (into the stop the rest is on)
     friction: float = DEFAULT_FRICTION
 
     def __post_init__(self) -> None:
@@ -248,6 +252,7 @@ class Sliding:
     stiffness: float = 0.0  # N/m
     damping: float | None = None  # N s/m
     breakaway: float = 0.0  # N
+    preload: float = 0.0  # N: the spring's push at rest, + along the axis (into the stop the rest is on)
     friction: float = DEFAULT_FRICTION
 
     def __post_init__(self) -> None:
@@ -348,8 +353,9 @@ _OTHER = {
     "switch": ("mass", "stop_deg", "damping", "level_deg"),
     "rod": ("base", "base_in", "tip", "tip_in", "section"),
     "hinged": ("shape", "size", "size_in", "hinge", "axis", "range_deg", "rest_deg", "stiffness", "damping",
-               "breakaway", "mass", "ground"),
-    "sliding": ("size", "size_in", "axis", "range", "range_in", "stiffness", "damping", "breakaway", "mass", "ground"),
+               "breakaway", "preload", "preload_in_lb", "mass", "ground"),
+    "sliding": ("size", "size_in", "axis", "range", "range_in", "stiffness", "damping", "breakaway", "preload",
+                "preload_lb", "mass", "ground"),
 }
 _ALL = tuple(dict.fromkeys(
     _COMMON + tuple(k + s for v in _LENGTHS.values() for k in v for s in ("", "_in"))
@@ -504,7 +510,35 @@ def _moving(r: _Reader, kind: str, kw: dict) -> Hinged | Sliding:
         rkey = "range_deg" if kind == "hinged" else "range"
         raise r.err(i18n.t("{key} {rest} is outside {rkey} [{low}, {high}]; give a {key} within it",
                            key=key, rest=f"{rest:g}", rkey=rkey, low=f"{span[0]:g}", high=f"{span[1]:g}"))
+    kw["preload"] = _preload(r, kind, kw["stiffness"], span, rest, key)
     return (Hinged if kind == "hinged" else Sliding)(**kw)
+
+
+def _preload(r: _Reader, kind: str, stiffness: float, span, rest: float, rest_key: str) -> float:
+    """`preload`, the spring's push at rest (N m on a hinge, N on a slide; or `preload_in_lb` in inch-pounds,
+    `preload_lb` in pounds), signed toward the stop the rest is on: a spring wound up against a stop, so it takes
+    that much push to start the element moving (a drawbridge's 2 lb start, a door's return spring). It needs a
+    stiffness (the spring) and a rest at one end of the range (the stop)."""
+    other = "preload_in_lb" if kind == "hinged" else "preload_lb"
+    if r.has("preload") and r.has(other):
+        raise r.err(i18n.t("has both {key} and {other}; give one", key="preload", other=other))
+    if r.has(other):
+        v = r.num(other) * (LBF * IN if kind == "hinged" else LBF)
+        given = other
+    else:
+        v = r.num("preload", 0.0)
+        given = "preload"
+    if v < 0.0:
+        raise r.err(i18n.t("{key} must be 0 or more, not {value}", key=given, value=repr(v)))
+    if v == 0.0:
+        return 0.0
+    if stiffness <= 0.0:
+        raise r.err(i18n.t("{key} is a spring's push at rest: give the spring's stiffness too", key=given))
+    if span is None or rest not in span:
+        rkey = "range_deg" if kind == "hinged" else "range"
+        raise r.err(i18n.t("{key} presses the element against a stop: put {rest_key} at one end of {rkey}",
+                           key=given, rest_key=rest_key, rkey=rkey))
+    return v if rest == span[1] else -v
 
 
 def _lengths(r: _Reader, key: str, names: str) -> tuple[float, ...]:

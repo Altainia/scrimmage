@@ -6,7 +6,7 @@ again on every export; the overlay holds the student's edits and survives that).
     mass = 2.5                         # kg; the body's inertia scales with it (center of mass kept)
     collision = "wheel"                # none | wheel | shaped | simple, as in the CAD import
     grip = "nitrile"                   # the body's grip material, or a measured friction (parts/grip.py)
-    [body.<name>.joint]                # range, spring, damping, frictionloss, as in part.toml
+    [body.<name>.joint]                # range, spring, damping, frictionloss, limit_solref, as in part.toml
     [[motor]] [[encoder]] [[gyro]] [[mount]]     # added to the part, same shape as in part.toml
 
 Edits naming a body that's gone come back as warnings, not errors. This module needs only the standard library and
@@ -28,7 +28,7 @@ from .model import Part, PartError, part_from_dict, part_to_dict, quat_from_rpy
 OVERLAY = "scrimmage-edits.toml"
 COLLISION = ("none", "wheel", "shaped", "simple")
 BODY_KEYS = ("mass", "collision", "joint", "grip")
-JOINT_KEYS = ("range", "spring", "damping", "frictionloss")
+JOINT_KEYS = ("range", "spring", "damping", "frictionloss", "limit_solref")
 TOP_KEYS = ("total_mass", "body", "motor", "encoder", "gyro", "mount")
 
 

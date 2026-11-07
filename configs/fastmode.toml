@@ -27,6 +27,10 @@ command = ["./gradlew", "-I", "{scrimmage_java}/scrimmage.init.gradle", "simulat
 cwd = "../examples/java_fastmode"
 start_timeout = 180       # a first Gradle build is slow; pre-build with ./gradlew build
 sim_mode = "fast"
+# Left out on purpose (no warning or note for them): the encoder slots, since the robot reads each motor's own
+# rotor, and the shooter the robot code builds whatever the config (configs/fastmode_range.toml models it).
+not_modeled = ["elevator.encoder", "arm.encoder", "SimMotor:shooter_lead", "SimMotor:shooter_follower", "SimMotor:hood",
+               "SimMotor:floor", "SimMotor:feeder", "SimMotor:intake"]
 
 # ---- Parts ---------------------------------------------------------------------------
 # The fast-mode devices are named by the robot code: ModuleIOScrimmage("fl", ...) creates fl_drive, fl_steer and

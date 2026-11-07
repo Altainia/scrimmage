@@ -342,7 +342,7 @@ def _build_part(imp, tree, root, heads, origin, verts, items, R, shift, msgs) ->
         if parent is not None:
             j = bs.joint
             joint = Joint(h, j.kind, tuple(_floats(R @ _direction(j.axis, h))), j.range, j.damping,
-                          j.frictionloss, spring=j.spring)
+                          j.frictionloss, spring=j.spring, limit_solref=j.limit_solref)
             motor, encoder = _slots(h, bs, msgs)
             motors += motor
             encoders += encoder

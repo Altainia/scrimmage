@@ -23,7 +23,7 @@ import { meshGeometry, primitive, setPose, geomMaterial } from "./scene3d.js";
 import { theme } from "./theme.js";
 import {
   bench, stageHooks, onBench, render, fieldRow, entries, keysOf, dotted, included, entryOf, shownIdea,
-  editOp, redraw, keepTyping, restoreTyping,
+  editOp, redraw, keepTyping, restoreTyping, drawnVersion,
 } from "./bench.js";
 import { browseList } from "./start.js";
 import { t, live, liveAttr } from "./i18n.js";
@@ -172,7 +172,7 @@ function drawInspector(i, readOnly) {
     // keyed like a field box, so half-typed text survives a redraw for this file and entry only
     const nameBox = h("input", { id: "bench-rename-name", type: "text", value: name, autocomplete: "off", spellcheck: "false",
       disabled: readOnly || !!inc, "aria-label": t("new name for {section} {name}", { section, name }),
-      dataset: { key: `${key}#rename`, file: bench.shown, orig: name, version: String(bench.state.version) } });
+      dataset: { key: `${key}#rename`, file: bench.shown, orig: name, version: String(drawnVersion()) } });
     nameBox.value = name;
     const go = () => rename(section, name, nameBox.value.trim());
     nameBox.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go(); } });

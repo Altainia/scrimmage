@@ -162,7 +162,7 @@ def test_start_failures_are_scenario_errors_and_leave_no_folder(tmp_path, monkey
     monkeypatch.setattr(P, "write_text", fail_write)
     with pytest.raises(ScenarioError, match="No space left"):
         mgr.start(path, text)
-    assert list((tmp_path / "runs").iterdir()) == []
+    assert [p.name for p in (tmp_path / "runs").iterdir()] == [".gitignore"]     # no run folder, only runs/'s own
     assert mgr.runs(0)["runs"] == [] and not mgr.running
 
 

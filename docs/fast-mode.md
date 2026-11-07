@@ -310,8 +310,9 @@ a two-lane hooded launcher (two Krakens on the wheel shaft, a hood on its own Kr
 floor, feeder), an intake roller and two beam breaks (DIO 0 halfway along the feeder, DIO 1 at the launcher's
 entry). `configs/fastmode_range.toml` binds it in fast mode, `configs/fastmode_range_phoenix.toml` by CAN id
 (Talons 11 to 16). The robot code builds the shooter whatever the config, so on the sample's other configs
-(`fastmode.toml`, `fastmode_phoenix.toml`) its devices go unbound: fast mode says once per device that nothing binds
-it, and Phoenix mode simulates six more Talons with no physics behind them.
+(`fastmode.toml`, `fastmode_phoenix.toml`) its devices go unbound: Phoenix mode simulates six more Talons with no
+physics behind them. Those configs list the shooter's devices in `[robot_program] not_modeled`, so neither mode
+warns about them (see the README's robot program section).
 
 `Shooter` looks the wheel speed and hood angle up in `AimTable` by distance to the alliance's hub. On the move it
 aims at a virtual target, the hub less the robot's velocity times the table's flight time (looked up twice), and

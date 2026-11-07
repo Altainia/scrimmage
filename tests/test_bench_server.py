@@ -88,6 +88,7 @@ def test_state_lists_ideas_with_problems_and_focus(bench):
     s, d = c.get("/api/bench/idea?file=bounce_bar.toml")
     assert s == 200 and d["own"]["bar"][0]["spring"] == 3000.0 and d["included"] == {}
     assert d["merged"]["bench"]["name"] == "bounce bar"
+    assert d["version"] == c.get("/api/bench/state")[1]["version"] and d["changed_at"] <= d["version"]   # the read's own
     assert c.get("/api/bench/idea?file=nope.toml")[0] == 404
 
 

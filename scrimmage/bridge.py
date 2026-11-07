@@ -335,6 +335,7 @@ class Bridge:
         self._devices_checked = False    # missing Phoenix devices reported for the current connection
         self._rev_expected = rev_devices(world)
         self._scrimmage_expected = scrimmage_devices(world)
+        self._left_out = getattr(world, "not_modeled", set())   # [robot_program] not_modeled: no warning for these
         self._scrimmage_present: set[DeviceKey] = set()   # fast-mode devices seen this connection
         self._scrimmage_unbound: set[DeviceKey] = set()   # ... that nothing in the config binds, reported once
         self._rev_motor_keys = {m.device_key for m in world.motors if m.kind == "REV"}
@@ -484,7 +485,7 @@ class Bridge:
         if dev not in self._scrimmage_present:
             self._scrimmage_present.add(dev)
             self.cache.forget(*dev)
-        if dev not in self._scrimmage_expected and dev not in self._scrimmage_unbound:
+        if dev not in self._scrimmage_expected and dev not in self._scrimmage_unbound and dev not in self._left_out:
             self._scrimmage_unbound.add(dev)
             log.warning("fast mode: the robot program created %s:%s, but nothing in the config binds it: it gets no "
                         "physics (bind it with scrimmage = \"%s\")", dev[0], dev[1], dev[1])
@@ -497,7 +498,9 @@ class Bridge:
         if dev not in self._rev_present:
             self._rev_present.add(dev)
             self.cache.forget(*dev)
-        if dev not in self._rev_expected and dev not in self._rev_unbound:
+        m = REV_NAME.fullmatch(dev[1])
+        left_out = m is not None and (REV_LABEL[m["kind"]], int(m["id"])) in self._left_out
+        if dev not in self._rev_expected and dev not in self._rev_unbound and not left_out:
             self._rev_unbound.add(dev)
             log.warning("%s", unbound_rev_message(dev[1]))
 

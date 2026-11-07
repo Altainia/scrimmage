@@ -575,6 +575,19 @@
   </form>
 </dialog>
 
+<dialog id="test-settings-dialog" aria-labelledby="test-settings-title">
+  <form method="dialog" novalidate>
+    <h2 id="test-settings-title" data-i18n="Block settings">Block settings</h2>
+    <p id="test-settings-for" class="hint"></p>
+    <div id="test-settings-fields"></div>
+    <ul id="test-settings-errors" class="error-list" role="alert" hidden></ul>
+    <div class="dialog-actions">
+      <button type="button" class="btn" data-close data-i18n="Cancel">Cancel</button>
+      <button type="submit" id="test-settings-go" class="btn btn-primary" data-i18n="Save">Save</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="save-dialog" class="save-dialog" aria-labelledby="save-title">
   <form id="save-form" method="dialog" novalidate>
     <h2 id="save-title" data-i18n="Save as scenario">Save as scenario</h2>

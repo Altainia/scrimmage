@@ -119,9 +119,11 @@ base_height_in = 3.0         # source: on the 3 in PLATFORM
 # weight on it. ... it takes approximately 2 lbs. of force applied at the top edge of the door for it to begin to
 # move. Once moving, the required force increases to a maximum of 5 lbs." Standing up on its bottom hinge, lowered
 # toward -x (negative about +y) by a robot pulling its top edge or pressing it down, and driven over (ground). Its
-# spring stands it back up against its own weight: 0.65 N m/deg against the door's 0.60 N m/deg near upright, so
-# pressed flat its top edge takes (0.65 x 90 - 34.6) / 0.94 = 25 N (5.7 lb, the manual's 5 lb about). The manual's
-# 2 lb to begin moving would need a spring preloaded against the closed stop, which a hinged element hasn't.
+# spring is wound up against the closed stop (preload): 2 lb at the 37 in top edge, 74 in lb (8.36 N m), to begin to
+# move it. Pressed flat, its top edge takes (8.36 + 0.52 x 90 - 34.6) / 0.94 = 21.9 N (4.9 lb, the manual's 5 lb).
+# The 0.52 N m/deg is a little under the door's own 0.60 N m/deg near upright, so the push needed dips to about
+# 1.6 lb near 30 deg before it climbs to the 5 lb (the manual says only that it increases); the spring still stands
+# the door back up from anywhere.
 [[element]]
 name = "drawbridge"
 kind = "hinged"
@@ -130,7 +132,8 @@ size_in = [0.25, 41.0, 37.0] # source: manual 2.2.2.1, 1/4 in thick and 37 in ta
 base_height_in = 3.0         # source: hinged on the 3 in PLATFORM (estimate: at its surface)
 hinge = "bottom"
 range_deg = [-90.0, 0.0]     # source: manual 2.2.2.1, lowers toward the NEUTRAL ZONE (-x), flat at -90; closed (0) on its frame
-stiffness = 0.65             # estimate: see above, just over the door's own 7.5 x 9.81 x 0.47 m = 34.6 N m (0.60 N m/deg near upright)
+stiffness = 0.52             # estimate: see above, so that flat takes the manual's 5 lb with the preload against the door's own 7.5 x 9.81 x 0.47 m = 34.6 N m
+preload_in_lb = 74.0         # source: manual 2.2.2.1, 2 lb at the top edge (37 in up) to begin to move it
 damping = 3.0                # estimate: settles it closed in a few seconds; the critical damping for the spring alone, 18 N m s/rad, would hold it open far longer against so small a net spring
 mass = 7.5                   # estimate: the 41 x 37 x 1/4 in polycarbonate (1200 kg/m^3), 7.5 kg
 ground = true                # choice: a robot drives over it lowered

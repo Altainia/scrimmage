@@ -265,3 +265,27 @@ def test_swing_phase_wait_fires_on_the_swing_under_high():
     assert fwd[round(zero.end - 0.01, 3)] < fwd[round(zero.end, 3)]  # heading forward
     assert fwd[round(back.end, 3)] < -5.0                            # out at the back
     assert fwd[round(back.end - 0.05, 3)] < fwd[round(back.end, 3)] + 0.5   # just past the turn
+
+
+def test_every_motor_on_a_joint_is_driven(tmp_path, monkeypatch):
+    """A slot bound to a list of IDs (a lead and its follower) puts two motors on one joint: the runner writes both,
+    as the Test tab's runs and robot code do, not just the last one bound."""
+    import scrimmage.hal_drive as hal_drive
+    text = CONFIG.read_text().replace('extend = "PWM:2", extend_encoder', 'extend = ["PWM:2", "PWM:5"], extend_encoder')
+    assert '"PWM:5"' in text
+    cfg = tmp_path / "two_motors.toml"
+    cfg.write_text(text)
+    written = set()
+    orig = hal_drive.MotorDrive.write
+
+    def write(self, hal, volts, bus):
+        if volts:
+            written.add(self.b.device_key)
+        return orig(self, hal, volts, bus)
+    monkeypatch.setattr(hal_drive.MotorDrive, "write", write)
+    run = ClimbRun(build_world(load_config(cfg)),
+                   parse_script({"step": [{"name": "lift", "drive": [{"joint": "mid.stage1", "voltage": 4.0}],
+                                           "wait": {"time": 0.05}}]}, "test"))
+    assert len(run._drive["mid.stage1"]) == 2
+    run.run()
+    assert {("PWM", "2"), ("PWM", "5")} <= written

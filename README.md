@@ -82,7 +82,9 @@ scrimmage run scenarios/kitbot_auto.toml
 
 It starts the robot program, plays each step (Driver Station mode, duration, joysticks), evaluates the
 checks, takes the screenshots, and writes a report directory, `runs/<scenario>-<timestamp>/` by default
-(change it with `--out DIR`). Files in it:
+(change it with `--out DIR`). A `runs/` folder Scrimmage makes holds a `.gitignore` of `*`, so the reports stay out
+of your commits. Several files run one after another (`scrimmage run sim/scenarios/*.toml`), each with its own
+report, then one line per file; `--out DIR` then holds a folder for each (`DIR/<scenario>`). Files in it:
 
 - `report.md`: a short readable summary with the screenshots inline
 - `report.json`: the same results for scripts, with the measured and expected value of every check
@@ -92,7 +94,7 @@ checks, takes the screenshots, and writes a report directory, `runs/<scenario>-<
 
 Exit codes: **0** every check passed. **1** a check failed (the message names the measured value).
 **2** it couldn't run: a bad scenario or config file, the robot program never connected or crashed at
-startup, lockstep was required but isn't loaded, or a dependency is missing.
+startup, lockstep was required but isn't loaded, or a dependency is missing. With several files, the worst of them.
 
 `--speed max` (the scenario default) runs as fast as the robot program can keep up; `--speed 2` runs at
 twice real time. The flag overrides the scenario's `speed`. Fast runs need lockstep (next section);
@@ -152,7 +154,8 @@ Install it with `pip install ./lockstep` (Linux only for now) and add `--scrimma
 `python -m robotpy sim` (the kitbot config already does). Scrimmage logs `lockstep engaged` once it has taken over. Set the step with
 `[lockstep] step = 0.005` in the config or with `--step`.
 Reinstall it after updating Scrimmage: if the installed extension is older than Scrimmage needs, the run stops at
-the start and says so.
+the start and says so, with the command to paste (the Python and the `lockstep` folder in full, so it works from any
+folder).
 
 ## Scenario files
 
@@ -495,6 +498,7 @@ cwd = "../examples/robotpy_kitbot"   # relative to the config file
 env = { MY_FLAG = "1" }          # example only: extra environment variables
 start_timeout = 30               # seconds to wait for the robot to connect
 sim_mode = "phoenix"             # "fast" also sets SCRIMMAGE_MODE=fast in the robot's environment
+not_modeled = ["SimMotor:intake", "elevator.encoder"]   # example only: left out on purpose (below)
 
 [telemetry]
 odometry = "/SmartDashboard/Field/Robot"   # NT topic with the robot's own pose estimate
@@ -515,6 +519,15 @@ real = false                     # true: the FRC Driver Station app drives the r
 `sim_mode` (and `--sim-mode` on `serve` and `run`, which overrides it) only sets the robot's environment
 variable; it never changes the bindings. Fast mode needs robot code that checks `Scrimmage.fastMode()`, and a config
 that binds the fast-mode devices (`scrimmage = "<name>"` below) expects such code.
+
+`not_modeled` lists what the config leaves out on purpose, so the warnings and report notes about it don't bury the
+ones that matter: devices the robot code makes for a mechanism the config doesn't model (`"SimMotor:<name>"`,
+`"SimEncoder:<name>"`, `"SimGyro:<name>"`, `"TalonFX:<id>"`, `"CANcoder:<id>"`, `"Pigeon2:<id>"`, `"SparkMax:<id>"`,
+`"SparkFlex:<id>"`) get no "nothing in the config binds it" warning or note, and a part's slot left unbound
+(`"<part>.<slot>"`, say an encoder slot when the robot reads the motor's own sensor) gets no "has no device ID"
+warning. Everything not listed is still reported, and an entry that leaves nothing out (a part or slot the robot
+hasn't, a slot that has a device ID, a device the config binds) is a warning itself. `configs/fastmode.toml` uses it for the shooter its robot code
+always builds.
 
 `"{python}"` in `command` is replaced by the Python running scrimmage. For a Java or C++ robot, use
 your Gradle command instead.

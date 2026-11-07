@@ -30,6 +30,18 @@ __all__ = ["ScenarioError", "Shot", "SheetSpec", "Step", "Scenario", "load_scena
            "match_for", "range_file"]
 
 
+RUNS_GITIGNORE = "# scrimmage's run reports, kept out of git: delete this file to commit them\n*\n"
+
+
+def runs_folder(base: Path) -> Path:
+    """`base`, the default report folder (runs/), made if missing. One it makes gets a .gitignore of `*`, so reports
+    in a team's robot repository stay out of its commits with no setup; a folder that is already there is left as it
+    is (a team that deleted the file to commit its reports keeps that)."""
+    if not base.is_dir():
+        base.mkdir(parents=True, exist_ok=True)
+        (base / ".gitignore").write_text(RUNS_GITIGNORE)
+    return base
+
 @dataclass
 class Shot:
     view: str = "follow"

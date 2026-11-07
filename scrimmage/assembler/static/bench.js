@@ -23,7 +23,7 @@
 // Units: lengths, speeds, masses, forces and springs are shown and typed in the Units setting (units.js; valueOf
 // says how). What is typed is written in the form the file already has, `diameter_in` in inches, else meters (U3).
 
-import { $, h, api, apiFile, notice, serial, registerTab, setTab, showPath, fmt, UNIT, markUnits, typedText } from "./app.js";
+import { $, h, api, apiFile, notice, serial, registerTab, setTab, showPath, fmt, UNIT, markUnits, typedText, keptSelection } from "./app.js";
 import { units } from "./units.js";
 import { t, onChange } from "./i18n.js";
 
@@ -77,6 +77,7 @@ const ownVersions = new Set();
 const ownJobs = new Map();   // job id -> {kind, file, key?, done?}
 const jobFailures = new Map();   // file -> {error, t}
 let busy = 0;
+let asking = 0;   // edits sent and not answered yet: the version each makes isn't known (ownVersions) until then
 // This page's last edits that went in one after another, of one idea: from the version the first was sent against
 // to the version the last made. A value typed while they were on their way (at a version in between) was typed
 // against nothing but them, so it is sent against `to`, not refused as stale by this page's own edit.
@@ -239,7 +240,10 @@ async function post(path, body, field, file = bench.shown) {
   try {
     const sent = { file, version: bench.state.version, ...body };
     const refusalBefore = bench.errors;
-    const { status, data } = await api("POST", path, sent);
+    asking++;
+    let answer;
+    try { answer = await api("POST", path, sent); } finally { asking--; }
+    const { status, data } = answer;
     if (status === 200 && data.ok) {
       ownVersions.add(data.version);
       const chained = ownRun && ownRun.file === file && sent.version === ownRun.to;
@@ -310,7 +314,7 @@ export function setKeys(pairs, version = null, file = null, field = null) {
       leftStage(target, shown);
       return false;
     }
-    let v = Number.isInteger(version) ? version : bench.state.version;
+    let v = Number.isInteger(version) ? version : drawnVersion();
     if (ownRun && ownRun.file === target && v >= ownRun.from && v < ownRun.to) v = ownRun.to;
     bench.typed.set(shown, list.value !== undefined ? list.value : list[0][1]);   // kept in its box if refused
     // not tied to `v` until it is refused (post): while it is on its way, the long poll can bring the version this
@@ -357,6 +361,11 @@ async function run() {
 // -- state ---------------------------------------------------------------------------------------------
 const sig = (i) => JSON.stringify([i.name, i.author, i.idea, i.focus, i.problems, i.read_only_reason]);
 let applySeq = 0;
+let loadedSeq = 0;   // the newest applyState whose idea read has been taken
+// The session version the values drawn are of: the idea read's own (a newer state may be on its way while an older
+// read is shown), so a value typed from them is refused as stale when the idea changed since
+export const drawnVersion = () => (bench.idea && bench.idea.file === bench.shown && Number.isInteger(bench.idea.version)
+  ? bench.idea.version : bench.state.version);
 
 async function applyState(s, force = false) {
   const prev = bench.state;
@@ -391,19 +400,27 @@ async function applyState(s, force = false) {
       : t("{file} was deleted or renamed outside; showing nothing (no ideas left)", { file: old }), "info", "bench-gone");
   }
   if (old !== bench.shown) { bench.errors = { file: null, list: [] }; bench.typed.clear(); bench.typedAt.clear(); bench.gif = false; }
-  await loadIdea(seq, own);
+  await loadIdea(seq);
 }
 
-async function loadIdea(seq, own) {
+async function loadIdea(seq) {
   const file = bench.shown;
   let idea = null;
   if (file) {
     const { status, data } = await api("GET", `/api/bench/idea?file=${encodeURIComponent(file)}`);
-    if (seq !== applySeq) return;   // a newer state is being applied
+    // a newer state's read has answered first, or another idea is on stage now: this read is older than what's shown.
+    // One merely overtaken by a newer state still counts: an edit's refresh waits on its own read, and the next - or +
+    // in line reads the value from it (a newer state's read, not waited on, may not have answered yet)
+    if (seq < loadedSeq || file !== bench.shown) return;
+    loadedSeq = seq;
     if (status === 200) idea = { file, ...data };
   }
   const prev = bench.idea;
-  if (idea && prev && prev.file === idea.file && JSON.stringify(prev.merged) !== JSON.stringify(idea.merged) && !own) {
+  // changed since what was drawn, last by someone else: told by the read's own last change, not by whether an edit
+  // of this page's was on its way (a read taken then can hold an outside change made after that edit). Only while an
+  // edit is unanswered can its last change be that edit's, whose version isn't known yet
+  if (idea && prev && prev.file === idea.file && JSON.stringify(prev.merged) !== JSON.stringify(idea.merged)
+      && !ownVersions.has(idea.changed_at) && !asking) {
     changes.set(file, { own: false, t: now() });
   }
   bench.idea = idea || (prev && prev.file === file ? prev : null);
@@ -798,7 +815,7 @@ function vectorBoxes(key, id, disabled) {
     box.dataset.orig = text;
     markUnits(box, vt.kind);
     box.dataset.file = bench.shown;
-    box.dataset.version = String(bench.state.version);
+    box.dataset.version = String(drawnVersion());
     if (bench.typedAt.has(key)) box.dataset.typedAt = String(bench.typedAt.get(key));
     box.addEventListener("input", () => { if (!box.dataset.typedAt) box.dataset.typedAt = box.dataset.version; });
     box.addEventListener("change", () => { if (live(box)) commit(); });
@@ -838,7 +855,7 @@ export function fieldRow(key, { focus = false, prefix = null, vectors = false } 
   };
   const stamp = () => {   // which idea and version this box shows, and the version typing began at
     box.dataset.file = bench.shown;
-    box.dataset.version = String(bench.state.version);
+    box.dataset.version = String(drawnVersion());
     if (bench.typedAt.has(key)) box.dataset.typedAt = String(bench.typedAt.get(key));
     box.addEventListener("input", () => { if (!box.dataset.typedAt) box.dataset.typedAt = box.dataset.version; });
   };
@@ -929,7 +946,8 @@ export function keepTyping(root) {
   const act = document.activeElement;
   if (!(act && act.closest && act.closest(root) && act.dataset.key)) return null;
   return { id: act.id, key: act.dataset.key, file: act.dataset.file, typedAt: act.dataset.typedAt, value: typedText(act),
-    dirty: act.tagName === "INPUT" && act.value !== act.dataset.orig, start: act.selectionStart, end: act.selectionEnd };
+    dirty: act.tagName === "INPUT" && act.value !== act.dataset.orig,
+    sel: { text: act.value, start: act.selectionStart, end: act.selectionEnd, dir: act.selectionDirection } };
 }
 
 export function restoreTyping(keep, root) {
@@ -948,7 +966,8 @@ export function restoreTyping(keep, root) {
     el.dataset.typedAt = keep.typedAt || el.dataset.version;
   }
   el.focus();
-  try { if (el.tagName === "INPUT") el.setSelectionRange(keep.start, keep.end); } catch { /* not a text box */ }
+  // where it was while the text is the same; else all of the new text if all was selected, or the caret at its end
+  try { if (el.tagName === "INPUT" && keep.sel.start !== null) el.setSelectionRange(...keptSelection(keep.sel, el.value)); } catch { /* not a text box */ }
 }
 
 function drawChange() {

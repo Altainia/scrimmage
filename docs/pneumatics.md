@@ -146,8 +146,9 @@ UNCALIBRATED: estimates (compressor flow, pressure switch points, tank volume, d
 ```
 
 The tanks' 4.30 L pay for 4.30 / 0.597, about 7 cycles, and with the compressor's 13.2 L, (4.30 + 13.2) / 0.597,
-about 29. The cycle counts are rounded to whole cycles (4.8 shows as 5). The stock cylinder (1-1/16 in bore, 6 in
-stroke) takes 0.889 L a cycle: 5 from the tanks, 20 in a match.
+about 29. The cycle counts are whole cycles, rounded down (4.8 shows as 4): a fifth extend would start below the
+working pressure and push weaker, so it isn't counted. The stock cylinder (1-1/16 in bore, 6 in stroke) takes 0.889 L
+a cycle: 4 from the tanks, 19 in a match.
 
 - **Free air** is air measured at the atmosphere's pressure, the way compressors and tanks are rated.
 - **One cycle** is one extend and one retract, each side filled all the way to the working pressure. The piston's side
@@ -232,8 +233,10 @@ table of ID forms is in [parts.md](parts.md#valve-ids).
 `Solenoid` or `DoubleSolenoid` on it does), so the compressor runs whenever the robot is enabled, and the pressure
 switch starts and stops it. You don't need a `Compressor` object or `enableDigital()` for that; `disable()` (or
 `disableCompressor()` on a `PneumaticHub`) turns it off. A program that never makes the module never runs the
-compressor, which is right: the real one wouldn't either. Scrimmage runs the compressor only for a module that one of
-the robot's valves is on, so a compressor on a module with no valves bound to it doesn't run.
+compressor, which is right: the real one wouldn't either. When the robot's valves are bound, the compressor runs on
+the module (or modules) they are on. With no valve bound (the cylinders have no device ID yet), it runs on whichever
+module the robot program makes, a `Compressor` object alone included, as a real module runs its compressor on the
+pressure switch whether or not a valve is wired to it.
 
 **A CTRE PCM** works with the usual RobotPy or Java setup: the HALSim WebSocket client carries its solenoids. RobotPy:
 
@@ -308,7 +311,9 @@ Robots with valves only on a PCM keep working with lockstep 0.6.0.
 - Flow-control valves on the ports (a cylinder's flow is the one `conductance`) and leaks.
 - Temperature: the air stays at 20 °C.
 - A Pneumatic Hub's analog pressure sensor (`getPressure()` reads 0).
-- Pneumatics on the [component bench](bench.md).
+- Pneumatics on the [component bench](bench.md) (deferred: a feature of its own).
+- A Part-tab screen to add a cylinder: add the stock `cylinder` part to the robot file by hand (deferred: a feature of
+  its own).
 
 ## Errors and warnings
 

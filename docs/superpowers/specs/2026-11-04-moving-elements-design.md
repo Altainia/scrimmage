@@ -238,8 +238,12 @@ if it is wrong.
 - **The defenses stand in a line across the field (y), crossed along +x**, as on the real OUTER WORKS. Why: a robot
   crosses each one the way it would in a 2016 match, and the starts can sit side by side before them. If wrong: only
   positions.
-- **No drawbridge start force or sally port return spring.** Both need a spring preloaded against a stop, and a
-  moving element's rest must lie within its range. A `preload` key can wait. Why: no test in this project needs the
+- **No drawbridge start force or sally port return spring.** *(Superseded 2026-11-06, cleanup B2: a `preload` key
+  (N·m or `preload_in_lb` on a hinge, N or `preload_lb` on a slide) winds the spring up against the stop the rest is
+  on, with the rest at one end of the range and a stiffness; the drawbridge takes `preload_in_lb = 74`, the manual's
+  2 lb at its 37 in top edge, and its stiffness drops to 0.52 N·m/deg so flat still takes the manual's 5 lb. The
+  sally port keeps its breakaway: the manual gives no return-spring numbers.)* Both need a spring preloaded against a
+  stop, and a moving element's rest must lie within its range. A `preload` key can wait. Why: no test in this project needs the
   2 lb start, and a preload is a new key and a new spring model for one number. If wrong: a drawbridge that takes
   about 5.7 lb at its top edge to hold flat, and no 2 lb start.
 

@@ -625,3 +625,27 @@ def test_a_rebuild_keeps_the_grip(tmp_path, src):
     assert again == folder and (folder / "scrimmage-edits.toml").read_text() == before
     part = load_part(folder)
     assert part.grips == {"base_plate": "rubber"} and sum(b.mass for b in part.bodies) == pytest.approx(2.0)
+
+
+def test_stops_stiffness_reaches_the_part_and_the_model(tmp_path, src):
+    """The Part tab's Stops picker sets the joint's limit_solref: it is kept in import.toml, written to the part,
+    reaches the MuJoCo joint's solref_limit, and needs a range of two numbers above zero."""
+    from scrimmage.cad.edits import EditError
+    from scrimmage.cad.settings import read_import, write_import
+    imp = make(src, tmp_path)
+    joint = {"kind": "hinge", "anchor": [0.24, 0.1, 0.01], "axis": [0, 1, 0], "range": [-10, 90],
+             "limit_solref": [0.004, 1.0]}
+    imp = edit(imp, "set_joint", body="arm_B", parent="base_plate", joint=joint)
+    write_import(imp, tmp_path / "climber.import.toml")
+    assert read_import(tmp_path / "climber.import.toml").bodies["arm_B"].joint.limit_solref == (0.004, 1.0)
+    write(imp, src, tmp_path)
+    (toml,) = [p for p in tmp_path.glob("**/part.toml") if "arm_B" in p.read_text()]
+    part = load_part(toml.parent)
+    assert next(b for b in part.bodies if b.name == "arm_B").joint.limit_solref == (0.004, 1.0)
+    model = assemble({"part": [{"name": "c", "path": str(toml.parent)}]}, tmp_path).model
+    jid = next(j for j in range(model.njnt) if model.joint(j).name.endswith("arm_B"))
+    assert list(model.jnt_solref[jid]) == pytest.approx([0.004, 1.0])
+    for bad_joint in ({**joint, "range": None}, {**joint, "limit_solref": [0, 1]}):
+        with pytest.raises(EditError) as e:
+            edit(imp, "set_joint", body="arm_B", parent="base_plate", joint=bad_joint)
+        assert e.value.field == "limit_solref"

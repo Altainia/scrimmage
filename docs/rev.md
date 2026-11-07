@@ -209,7 +209,7 @@ A robot with both kinds of device runs in real time, not lockstep (the notice na
 - **RobotPy: REV helper not loaded or too old.** A RobotPy robot run without `--scrimmage-lockstep` gets the "isn't
   driving the robot's REV SPARKs" warning with the fix: add `--scrimmage-lockstep` to `[robot_program] command`, or
   update scrimmage-lockstep (`pip install ./lockstep`). An extension older than 0.6.0 stops the run at the start
-  with "reinstall it with `pip install ./lockstep`". If robotpy-rev lacks something the helper needs, the console
+  with "reinstall it with `<python> -m pip install <scrimmage>/lockstep`", the robot's Python and the folder in full. If robotpy-rev lacks something the helper needs, the console
   says `scrimmage rev helper: REV sim unavailable: <reason>` and the "REV simulation available" check fails.
 
 ## Limitations

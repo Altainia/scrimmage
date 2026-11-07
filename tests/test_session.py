@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import re
 import signal
 import time
 import types
@@ -15,6 +16,7 @@ from fake_robot import FakeRobot, next_port, wait_until
 from scrimmage.session import Session, SessionError
 
 TESTS = Path(__file__).resolve().parent
+ROOT = TESTS.parent
 FAKE = TESTS / "fake_robot.toml"
 
 
@@ -661,7 +663,9 @@ def test_serve_launch_checks_the_lockstep_version_for_robotpy(tmp_path, monkeypa
     cfg = fake_config(tmp_path, ROBOTPY_COMMAND, "")
     with pytest.raises(SystemExit) as e:
         main(["serve", str(cfg), "--launch"])
-    assert e.value.code == 2 and "pip install ./lockstep" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    # the install command works from any folder: the robot's Python and the checkout's lockstep folder, in full
+    assert e.value.code == 2 and f" -m pip install {ROOT / 'lockstep'}`" in err, err
 
 
 def test_rev_check_detail_names_the_robotpy_helper_for_robotpy(tmp_path):
@@ -774,7 +778,8 @@ def test_robotpy_lockstep_config_refuses_old_or_missing_lockstep(tmp_path, monke
         return installed
     monkeypatch.setattr(metadata, "version", fake_version)
     cfg = fake_config(tmp_path, ROBOTPY_COMMAND, extra)
-    with pytest.raises(SessionError, match=why + r".*0\.6\.0 or later.*pip install \./lockstep"):
+    install = r"-m pip install " + re.escape(str(ROOT / "lockstep"))
+    with pytest.raises(SessionError, match=why + r".*0\.6\.0 or later.*" + install):
         asyncio.run(Session(cfg, nt=False).start())
 
 
@@ -899,7 +904,7 @@ def test_valves_on_a_pneumatic_hub_need_lockstep_0_7_0(tmp_path, monkeypatch, co
     monkeypatch.setattr(metadata, "version", lambda name: "0.6.0")
     problem = session_mod.lockstep_version_problem(cfg)
     assert problem and "binds valves on a REV Pneumatic Hub" in problem
-    assert "0.7.0 or later (installed: 0.6.0)" in problem and "pip install ./lockstep" in problem
+    assert "0.7.0 or later (installed: 0.6.0)" in problem and f"pip install {ROOT / 'lockstep'}" in problem
     monkeypatch.setattr(metadata, "version", lambda name: "0.7.0")
     assert session_mod.lockstep_version_problem(cfg) is None
 
