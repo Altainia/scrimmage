@@ -445,7 +445,7 @@ shooter speeds (5 to 15 m/s) are well inside them.
   0.5 m/s^2, like a golf ball on a putting green; nobody has published a figure for an FRC ball on FRC carpet.
   **Measure yours:** roll a real ball at a known speed, time it to a stop, and C = (1 + k) v / (g t). It decides how
   far missed shots and bumped balls drift. Without it a ball rolls on for tens of seconds.
-- **Sleeping.** The sim turns on MuJoCo's body sleeping (needs `mujoco>=3.4`, which the package requires), so the
+- **Sleeping.** The sim turns on MuJoCo's body sleeping (MuJoCo 3.4 added it; the package requires MuJoCo 4), so the
   hundreds of balls resting on the carpet cost almost nothing until something touches them. Only ball bodies may
   sleep; a sleeping ball wakes when an awake body touches it, when it is moved or when a force is applied to it. Two
   runs stay bit-identical.

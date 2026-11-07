@@ -25,11 +25,15 @@ the protocol lives below WPILib.
 ## Quick start
 
 ```bash
-# needs Python 3.11 or newer (and MuJoCo 3.4 or newer, which pip installs)
+# needs Python 3.11 or newer (and MuJoCo 4, which pip installs)
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[robotpy,nt]"          # mujoco, websockets, plus RobotPy for the example
 pip install ./lockstep                  # Linux: lets scrimmage drive the robot's clock
 ```
+
+Updating a checkout that has MuJoCo 3 installed: run `pip uninstall -y mujoco` first, then the `pip install -e`
+line again. MuJoCo 4 moved its files into a new `mujoco-core` package, and upgrading in place can remove some
+of them.
 
 The lockstep extension (**Linux only** for now) is needed for `scrimmage run` by default and for agents:
 the kitbot config's command loads it, and scenarios require it unless they set `require_lockstep = false`.
