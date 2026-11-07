@@ -45,15 +45,15 @@ CHOOSES = "chooses or names the unit by the setting"
 # (file, a piece of the hit's source line, why it is allowed)
 ALLOWED = [
     # JavaScript
-    ("bench.js", 'const KINDS = { m: "length", "m/s": "speed", kg: "mass", N: "force", "N/m": "spring" }',
+    ("bench_fields.js", 'const KINDS = { m: "length", "m/s": "speed", kg: "mass", N: "force", "N/m": "spring" }',
      "fields.toml's unit names, mapped to their kinds"),
-    ("bench.js", 'return def.unit === "m" && FIELD_KEYS', "fields.toml's unit names, mapped to their kinds"),
-    ("bench.js", 'const siOf = (vt, v) => each(v, (x) => (vt.inches ? units.fromKey(x, "in")', KEY),
-    ("bench.js", 'swept[c].inches ? units.fromKey(v, "in")', KEY + " (a swept _in key's values)"),
-    ("bench.js", 'const fileOf = (vt, si) => each(si, (x) => round6(vt.inches ? units.toKey(x, "in")', KEY),
-    ("bench.js", 'const unitOf = (vt, def) => (vt.kind ? units.name(vt.kind) : vt.inches ? "in"',
+    ("bench_fields.js", 'return def.unit === "m" && FIELD_KEYS', "fields.toml's unit names, mapped to their kinds"),
+    ("bench_fields.js", 'const siOf = (vt, v) => each(v, (x) => (vt.inches ? units.fromKey(x, "in")', KEY),
+    ("bench_fields.js", 'const fileOf = (vt, si) => each(si, (x) => round6(vt.inches ? units.toKey(x, "in")', KEY),
+    ("bench_fields.js", 'const unitOf = (vt, def) => (vt.kind ? units.name(vt.kind) : vt.inches ? "in"',
      KEY + " (an _in key's form)"),
-    ("bench.js", 'def.unit === "degrees" || def.unit === "m"', "fields.toml's unit names"),
+    ("bench_fields.js", 'def.unit === "degrees" || def.unit === "m"', "fields.toml's unit names"),
+    ("bench_stage.js", 'swept[c].inches ? units.fromKey(v, "in")', KEY + " (a swept _in key's values)"),
     ("bench_edit.js", '["m", "mm", "in"]', "a CAD file's own units, chosen when it is imported"),
     ("bench_edit.js", '$("#bench-cad-units").value = "mm"', "a CAD file's own units, chosen when it is imported"),
     ("blocks_defs.js", 'j.unit === "in"', KEY),

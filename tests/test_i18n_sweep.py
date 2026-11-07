@@ -234,10 +234,10 @@ ALLOWED = {
     # ---- the page's JavaScript ------------------------------------------------------------------------------------
     ('scrimmage/assembler/static/app.js', 'Home'): "a key's name (KeyboardEvent.key), never shown",
     ('scrimmage/assembler/static/app.js', 'End'): "a key's name (KeyboardEvent.key), never shown",
-    ('scrimmage/assembler/static/bench.js', 'vec vec-1'): 'CSS classes',
-    ('scrimmage/assembler/static/bench.js', '#bench-compare-dialog form'): 'a CSS selector',
-    ('scrimmage/assembler/static/bench.js', '#bench-new-dialog form'): 'a CSS selector',
-    ('scrimmage/assembler/static/bench.js', '#bench-sweep-dialog form'): 'a CSS selector',
+    ('scrimmage/assembler/static/bench_fields.js', 'vec vec-1'): 'CSS classes',
+    ('scrimmage/assembler/static/bench_dialogs.js', '#bench-compare-dialog form'): 'a CSS selector',
+    ('scrimmage/assembler/static/bench_dialogs.js', '#bench-new-dialog form'): 'a CSS selector',
+    ('scrimmage/assembler/static/bench_dialogs.js', '#bench-sweep-dialog form'): 'a CSS selector',
     ('scrimmage/assembler/static/bench_edit.js',
      'hood (curve)'):
         "a bench file's section name and a curve's name, shown as the file's words beside them",
