@@ -1022,7 +1022,7 @@ body.on-start .tab-panel, body.on-start .tabs, body.on-start #undo, body.on-star
 /* the Drive tab's line about devices that don't match */
 .drive-devices { margin: 0; padding: 6px 16px; font-size: 13.5px; color: var(--text); background: var(--panel); border-bottom: 1px solid var(--line); border-left: 4px solid var(--error); }
 
-/* -- the start picker (code.js) ------------------------------------------------------------------------------------ */
+/* -- the start picker (code_start.js) ------------------------------------------------------------------------------ */
 dialog.start-dialog { width: auto; max-width: 96vw; }
 .start-dialog form { gap: 10px; }
 .sp-top { display: flex; flex-direction: column; gap: 8px; }

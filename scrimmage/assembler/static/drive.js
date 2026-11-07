@@ -12,7 +12,7 @@
 // Poke tools (minifield.js: set the pose by dragging, move an object; Push; Reset) and Record / "Save as
 // scenario…" (POST /api/live/save_recording, then /api/scenario/open and the Scenario tab) are commands too.
 // Start asks (#discard-dialog) before it drops a recording that was never saved, and opens the robot code panel's
-// start picker (code.js) first while nobody has picked where the robot starts.
+// start picker (code_start.js) first while nobody has picked where the robot starts.
 // The stream is the page's one connection (sharedStream), shared with the run panel's Watch view.
 //
 // The Driver Station choice (#drive-ds-source, before Start; it starts from the config's [driver_station] real and is
@@ -23,7 +23,7 @@
 //
 // Keys on the Drive tab: Enter enables (unless a button has focus: Enter presses it), Space always disables (even on a
 // focused button); neither while typing in a text box or while a dialog is open.
-// While the device check (code.js) has devices that don't match the model, a line under the banner says how many,
+// While the device check (code_devices.js) has devices that don't match the model, a line under the banner says how many,
 // with "see Robot code" (the panel's device table).
 // Test hook: window.__scrimmage.live = {state, frames, lastFrame: {t, poses}, connected, plots, assignments}.
 
@@ -552,7 +552,7 @@ function renderStatus(s) {
   $("#drive-restart").hidden = s.state !== "error";
 }
 
-let lastDevices = null;     // the device check's last answer (code.js), for a redraw
+let lastDevices = null;     // the device check's last answer (code_devices.js), for a redraw
 function renderDeviceLine(d) {
   const el = $("#drive-devices");
   const bad = d ? d.rows.filter((r) => r.status === "missing" || r.status === "other_type").length : 0;

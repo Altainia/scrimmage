@@ -41,7 +41,7 @@ def _load() -> dict[str, Field]:
 
 FIELDS = _load()
 
-# A key's units kind (units.py) by the unit it gives, as the Bench tab's kindOf (static/bench.js): a length is
+# A key's units kind (units.py) by the unit it gives, as the Bench tab's kindOf (static/bench_fields.js): a length is
 # "length" (in or mm), a flight's target "field" (ft or m); angles, times, rps and the rest read as the file has them.
 KINDS = {"m": "length", "m/s": "speed", "kg": "mass", "N": "force", "N/m": "spring"}
 FIELD_KEYS = ("flight.target_distance", "flight.target_height")

@@ -1073,7 +1073,7 @@ seconds = 0.3
 
 def test_a_push_cylinders_run_keeps_its_pins_in_the_view_and_says_how_the_air_went(tmp_path, test_app):
     """The replay's view lists each cylinder (its pins as [mover, pos in the mover's frame], bore, rod, retracted
-    length and stroke), and the run's result has the air line the CLI prints (run.py air_lines)."""
+    length and stroke), and the run's result has the air line the CLI prints (run_notes.py air_lines)."""
     (tmp_path / "robot.toml").write_text(new_config("standin") + PUSH_CYLINDER, encoding="utf-8")
     t = tmp_path / "t.test.toml"
     t.write_text(f'[test]\nrobot = "robot.toml"\n{EXTEND}', encoding="utf-8")

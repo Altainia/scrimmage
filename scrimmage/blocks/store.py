@@ -9,7 +9,7 @@
                              seed; None without stations), marks (moments the replay marks: {t, kind, text,
                              ball}, e.g. a slip out of a grabber, ball the piece's index), notes (what the numbers
                              rest on: the grips' UNCALIBRATED frictions and the pneumatic estimates,
-                             scrimmage/blocks/run.py's run_notes),
+                             scrimmage/blocks/run_notes.py's run_notes),
                              seated (each rod with a piece on it at the end: its depth in words), goals (the
                              range's goal counts; None without a [shooter]), air (the air's start, end and lowest
                              psi, the compressor's seconds and when the tanks fell below the working pressure;
