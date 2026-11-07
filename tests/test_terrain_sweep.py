@@ -75,8 +75,10 @@ def test_sweep_rows_and_limit_on_the_2026_bump(tmp_path):
     rows = result.rows
     assert [r.speed for r in rows] == [1.0, 2.0, 3.0, 4.0]
     assert all(r.crossed for r in rows)
-    gaps = [r.peak_gap for r in rows]
-    assert gaps == sorted(gaps), gaps                     # faster leaves the ground higher
+    # faster leaves the ground higher, up to landing on the balls past the bump: from there the bounce off the
+    # balls sets the peak, and it differs between machines (3 m/s: 0.12 m here, 0.17 m on CI's runners)
+    gaps = [r.peak_gap for r in rows if not r.landed_on_balls]
+    assert len(gaps) >= 2 and gaps == sorted(gaps), gaps
     assert rows[-1].peak_gap > rows[0].peak_gap
     assert not any(r.tipped or r.stranded for r in rows[:2])
     assert not rows[-1].passes(Limits())                  # 4 m/s lands on the balls past the bump and tips

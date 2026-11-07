@@ -78,12 +78,14 @@ def test_the_ledger_steps_as_before():
         got, want = run(), golden[name]
         assert got["counts"] == want["counts"], name
         assert len(got["qpos"]) == len(want["qpos"]), name
-        # Positions within 1 mm, not the file's 1e-9 rounding, and no orientations: a 2013 disc's flight drifts
-        # about 0.3 mm between machines (CI's Linux runners against the machine that wrote the golden), and its
-        # spin's phase (the quaternion) by far more, while a real change in how pieces step moves them farther
-        # and changes the counts, which match exactly.
+        # Positions within 1 mm, not the file's 1e-9 rounding, and no orientations: a real change in how pieces
+        # step moves them farther and changes the counts, which match exactly. The 2013 discs get 10 cm: on
+        # MuJoCo 4 their bounces off the alliance wall amplify float differences between machines (CI's Linux
+        # runners land them up to 3.5 cm from where the machine that wrote the golden does, and from each other);
+        # their goals are in the counts. Their spin's phase (the quaternion) drifts by far more.
+        atol = 0.1 if name == "2013" else 1e-3
         for q, w in zip(got["qpos"], want["qpos"]):
-            np.testing.assert_allclose(q[:3], w[:3], rtol=0, atol=1e-3, err_msg=name)
+            np.testing.assert_allclose(q[:3], w[:3], rtol=0, atol=atol, err_msg=name)
 
 
 if __name__ == "__main__":
