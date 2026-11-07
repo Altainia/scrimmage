@@ -24,7 +24,7 @@ PY = ["blocks/conditions.py", "blocks/placed.py", "blocks/run.py", "blocks/run_w
       "bench/compare.py", "launcher/report.py", "measure/cli.py", "measure/fit_launcher.py",
       "measure/fit_cylinder.py", "parts/partner.py", "assembler/server.py", "assembler/runs.py",
       "assembler/server_common.py", "assembler/http_handler.py", "assembler/app_files.py",
-      "assembler/app_attach.py", "assembler/app_robot.py",
+      "assembler/app_attach.py", "assembler/app_robot.py", "assembler/app_code.py",
       "assembler/bench_session.py", "assembler/bench_jobs.py",
       "assembler/bench_results.py", "assembler/measure_session.py", "assembler/edits.py", "mcp_server.py"]
 
