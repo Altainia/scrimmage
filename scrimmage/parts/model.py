@@ -307,6 +307,12 @@ GEOM_KEYS = SHAPES + ("axis", "pos", "rot", "collide", "friction", "color", "con
 JOINT_KEYS = ("name", "hinge", "slide", "range", "damping", "frictionloss", "armature", "spring", "limit_solref")
 LOOP_KEYS = ("body1", "body2", "pos")
 CYLINDER_KEYS = ("bore", "rod", "stroke", "friction", "conductance", "pin_a", "pin_b", "length")
+def _not_a_triangle(a: float, b: float, c: float) -> bool:
+    """MuJoCo's own rule for a diagonal inertia, exactly (each sum against the third, in floats, no tolerance), so
+    every inertia it would refuse is refused here in words and none it accepts is."""
+    return a + b < c or a + c < b or b + c < a
+
+
 BODY_KEYS = ("name", "parent", "mass", "pos", "rot", "geom", "joint", "com", "inertia", "inertia_rot")
 
 
@@ -473,7 +479,7 @@ def part_from_dict(d: dict, source: str, base_dir: Path | None) -> Part:
         inertia = c.vec(b, "inertia", where) if "inertia" in b else None
         if inertia is not None and (com is None or min(inertia) <= 0):
             raise c.err(where, i18n.t("inertia needs com, and its three values must be greater than 0"))
-        if inertia is not None and any(2 * v > sum(inertia) for v in inertia):   # what MuJoCo refuses
+        if inertia is not None and _not_a_triangle(*inertia):
             raise c.err(where, i18n.t("inertia {inertia} can't be a real body's: none of the three values can be "
                                       "more than the other two added together",
                                       inertia="[" + ", ".join(f"{v:g}" for v in inertia) + "]"))

@@ -703,7 +703,8 @@ function addStationBlocks() {
 // (offset and distance: inches in the file, in the Units setting's length in the boxes, `T.floorSystem`'s: a Units
 // change converts the draft, floorUnits)
 const floorKey = (fs) => canon(fs);
-// The draft and the Units system its boxes' lengths are in (`T.floorSystem`): set together, only here.
+// The draft and the Units system its boxes' lengths are in (`T.floorSystem`): set together, only here (show() drops
+// the draft with T.floor = null; floorDraft() then makes a new one through here).
 function setFloor(draft) {
   T.floor = draft;
   T.floorSystem = units.system;

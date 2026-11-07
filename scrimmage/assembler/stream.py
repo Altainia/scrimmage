@@ -5,7 +5,9 @@ it has authenticated: its Host must be 127.0.0.1 or localhost with the hub's por
 (http://127.0.0.1:<http port> or http://localhost:<http port>), or the handshake is refused with HTTP 403; then its
 first message must be ``{"token": "<session token>"}`` within AUTH_TIMEOUT seconds, or the socket is closed (code
 1008) with nothing sent to it. At most MAX_UNAUTHENTICATED sockets may wait for their token at once: a handshake
-beyond that is refused with HTTP 503 (one that raced past the check is closed with code 1013 instead).
+beyond that is refused with HTTP 503 (one that raced past the check is closed with code 1013 instead). A local
+process that isn't a browser can send any Origin, so it can hold those slots; for a tool on 127.0.0.1 that is
+acceptable (anything that can do that on this computer can already do worse).
 
 Out: binary frames (the bytes given to publish("frame", ...)) and JSON text ``{"type": "state" | "notice", ...}``.
 Per client, frames and states are latest-wins slots (a slow client skips intermediate ones) and notices are queued.

@@ -149,6 +149,12 @@ def test_set_ids_keeps_a_part_ids_sub_table():
     assert '[part.ids]\nm = "PWM:3"  # the arm\nx = "PWM:4"\n' in out and "ids = {" not in out, out
     assert dict(tomlkit.parse(out)["part"][0]["ids"]) == {"m": "PWM:3", "x": "PWM:4"}
     assert tomlkit.parse(out)["part"][1]["name"] == "b"
+    # a new key lands before the next part's comment block, and the blank line above its header stays
+    d = tomlkit.parse('[[part]]\nname = "a"\nstock = "arm"\n\n[part.ids]\nm = "PWM:0"\n\n# next part\n'
+                      '[[part]]\nname = "b"\nstock = "arm"\n')
+    edits.set_ids(d, "a", {"m": "PWM:0", "x": "PWM:4"})
+    assert '[part.ids]\nm = "PWM:0"\nx = "PWM:4"\n\n# next part\n[[part]]\nname = "b"' in tomlkit.dumps(d), \
+        tomlkit.dumps(d)
 
 
 def test_set_attach_zero_pos_removed():
@@ -453,8 +459,8 @@ def test_the_tomlkit_it_runs_on_has_what_tomlutil_leans_on():
 
     from tomlkit.container import Container
     from tomlkit.exceptions import ParseError
-    major, minor, patch = (int(x) for x in version("tomlkit").split(".")[:3])
-    assert (0, 15, 1) <= (major, minor, patch) < (0, 16, 0), version("tomlkit")
+    from packaging.version import Version
+    assert Version("0.15.1") <= Version(version("tomlkit")) < Version("0.16"), version("tomlkit")
     for name, params in (("_insert_after", ["self", "key", "other_key", "item"]),
                          ("_insert_at", ["self", "idx", "key", "item"]), ("_raw_append", ["self", "key", "item"])):
         assert list(inspect.signature(getattr(Container, name)).parameters) == params, name

@@ -229,6 +229,10 @@ def test_loop_and_inertia_rot_round_trip(tmp_path):
     (lambda d: d["body"][1].update(com=[0, 0, 0], inertia=[1, 0.1, 0.1]),
      r"body 'arm': inertia \[1, 0.1, 0.1\] can't be a real body's: none of the three values can be more than the "
      r"other two added together"),
+    # MuJoCo's rule exactly: 0.041 + 0.24 < 0.281 in floats, so MuJoCo refuses it too (twice the largest doesn't
+    # exceed the sum there, so a rule written that way let it through to MuJoCo's raw error)
+    (lambda d: d["body"][1].update(com=[0, 0, 0], inertia=[0.041, 0.24, 0.281]),
+     r"can't be a real body's"),
 ])
 def test_loop_and_inertia_rot_errors(change, message):
     d = minimal()

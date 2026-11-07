@@ -23,7 +23,8 @@ bench = ["coacd"]
 # reading STEP/STL/OBJ files into parts, in the browser (CAD to part)
 cad = ["cascadio>=0.1.1", "trimesh>=4.0"]
 robotpy = ["robotpy[sim,commands2]", "robotpy-halsim-ws", "robotpy-rev>=2026.0.4,<2027"]
-dev = ["pytest", "pyyaml", "matplotlib", "mcp>=2.3,<3", "pillow", "robotpy[sim,commands2]", "robotpy-halsim-ws", "robotpy-rev>=2026.0.4,<2027", "playwright==1.63.0", "cascadio>=0.1.1", "trimesh>=4.0"]
+# dev: websockets 15 for the tests' sync client (proxy=None), newer than the product needs
+dev = ["pytest", "websockets>=15", "pyyaml", "matplotlib", "mcp>=2.3,<3", "pillow", "robotpy[sim,commands2]", "robotpy-halsim-ws", "robotpy-rev>=2026.0.4,<2027", "playwright==1.63.0", "cascadio>=0.1.1", "trimesh>=4.0"]
 
 [project.scripts]
 scrimmage = "scrimmage.__main__:main"

@@ -211,7 +211,10 @@ def set_ids(doc, name: str, ids: dict) -> None:
             del cur[k]
         for k, v in ids.items():
             if k not in cur or cur[k] != v:
-                cur[k] = _plain(v)
+                if isinstance(cur, Table):   # a new key goes before the comment block above the next part
+                    _set_value(cur, k, _plain(v))
+                else:
+                    cur[k] = _plain(v)
         return
     _set_value(p, "ids", _ids_table(ids))
 
