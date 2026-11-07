@@ -268,7 +268,7 @@ ALLOWED = {
     ('scrimmage/assembler/static/test.js',
      "couldn't load {}"):
         'an Error a failed script load throws: the console only',
-    ('scrimmage/assembler/static/test_run.js', 'test-sweep-row test-sweep-norun'): 'CSS classes',
+    ('scrimmage/assembler/static/test_run_sweep.js', 'test-sweep-row test-sweep-norun'): 'CSS classes',
     ('scrimmage/assembler/static/units.js', 'unknown kind "{}"; one of {}'): ASSERT,
     ('scrimmage/assembler/static/units.js', '"{}" could be {}: say which'): ASSERT + ' (a key unit asked of code)',
     ('scrimmage/assembler/static/units.js', '"{}" isn\'t a key unit{}'): ASSERT + ' (a key unit asked of code)',
