@@ -79,8 +79,8 @@ def spread_kind(world, i: int) -> PieceKind | None:
 
 
 def spread_ball(world) -> tuple[int, dict] | None:
-    """The floor piece nearest ahead of the robot's start (within SPREAD_CONE_DEG of its heading and SPREAD_REACH of
-    it) and where it lies from the start, {"offset_in" (left +), "distance_in" (ahead)}, and for a piece other than a
+    """The floor piece on the carpet (not one staged on an element) nearest ahead of the robot's start (within
+    SPREAD_CONE_DEG of its heading and SPREAD_REACH of it) and where it lies from the start, {"offset_in" (left +), "distance_in" (ahead)}, and for a piece other than a
     ball how the field has it lying, {"tip_deg", "rotation_deg" (from the start's heading)}; None when there is
     none."""
     tr = getattr(world, "test_range", None)
@@ -94,7 +94,10 @@ def spread_ball(world) -> tuple[int, dict] | None:
     side = rel @ np.array([-math.sin(h), math.cos(h)])
     dist = np.hypot(ahead, side)
     cone = math.cos(math.radians(SPREAD_CONE_DEG))
-    near = [i for i in range(len(rel)) if 0.0 < dist[i] <= SPREAD_REACH and ahead[i] >= cone * dist[i]]
+    lift = tr.range.floor_heights        # a staged piece (on an element) isn't the floor's: it stays where it is
+    staged = lift[:len(rel)] > 0.0 if len(lift) == len(tr.range.floor_balls) else np.zeros(len(rel), bool)
+    near = [i for i in range(len(rel)) if 0.0 < dist[i] <= SPREAD_REACH and ahead[i] >= cone * dist[i]
+            and not staged[i]]
     if not near:
         return None
     i = min(near, key=lambda k: dist[k])

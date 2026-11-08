@@ -74,3 +74,15 @@ def test_a_staged_piece_rests_up_there_in_the_world(tmp_path):
     assert d.xpos[ball][2] == pytest.approx(1.2 + 0.0751, abs=0.002)       # and put back up there
     assert np.allclose(d.xpos[ball][:2], [2.0, 2.0])
     assert Path  # noqa: B018
+
+
+def test_setups_floor_spread_never_picks_a_staged_piece(tmp_path):
+    # review M5: the floor spread sets its piece down on the carpet; a staged piece (on the AMP) stays where it is
+    from scrimmage.blocks.spread import spread_ball
+    from scrimmage.world import World
+    (tmp_path / "r.toml").write_text(HEAD + '[[floor_balls]]\nat = [[2.0, 2.0]]\nheight = 1.2\n'
+                                            '[[floor_balls]]\nat = [[2.0, 3.2]]\n'
+                                            '[start.s]\npose = [2.0, 0.9, 90.0]\n')
+    w = World(range_cfg(range={"file": "r.toml", "floor_balls": True, "start": "s"}), tmp_path)
+    i, where = spread_ball(w)
+    assert i == 1 and where["distance_in"] == pytest.approx(2.3 / 0.0254)
