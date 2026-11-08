@@ -283,6 +283,7 @@ class Range:
     field_length: float = FIELD_LENGTH  # [range] field: m, the alliance walls' inner faces
     field_width: float = FIELD_WIDTH    # m, the guardrails' inner faces
     zones: tuple = ()                   # [[zone]]: floor areas marked with tape (testrange/zones.py)
+    spread_warnings: tuple[str, ...] = ()   # those of warnings that are the stations' spreads' (redone by overrides)
     warnings: tuple[str, ...] = ()      # what is accepted but likely a mistake (checks.Said: its words when shown)
 
     @property
@@ -863,7 +864,7 @@ def parse_range(raw: dict, path: Path) -> Range:
     if staged:
         built = replace(built, warnings=built.warnings + staged)
     spread = check_release_clear(path, built)
-    return replace(built, warnings=built.warnings + spread) if spread else built
+    return replace(built, warnings=built.warnings + spread, spread_warnings=spread) if spread else built
 
 
 def load_range(ref: str, base_dir: Path, ball: str | None = None, piece: str | None = None) -> Range:

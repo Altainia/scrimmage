@@ -507,7 +507,8 @@ def _check_chutes(path, rng: Range, solids, chutes: dict) -> None:
 
 def with_overrides(rng: Range, overrides: dict) -> Range:
     """`rng` with the named stations' settings replaced: `{station name: {OVERRIDE_KEYS...}}`. `stock = 0` is no stock
-    (the station feeds up to STATION_CAP); a list key takes 3 numbers. The release check runs again."""
+    (the station feeds up to STATION_CAP); a list key takes 3 numbers. The release check runs again, and its spread
+    warnings replace the range's old ones."""
     if not isinstance(overrides, dict):
         raise RangeError(i18n.t("station settings must be a table of station names, not {overrides}",
                                 overrides=repr(overrides)))
@@ -544,5 +545,6 @@ def with_overrides(rng: Range, overrides: dict) -> Range:
                 new[key] = v
         changed[name] = replace(next(s for s in rng.stations if s.name == name), **new)
     out = replace(rng, stations=tuple(changed.get(s.name, s) for s in rng.stations))
-    check_release_clear(rng.path, out)
-    return out
+    spread = check_release_clear(rng.path, out)       # the new spreads' warnings replace the file's own
+    kept = tuple(w for w in rng.warnings if w not in rng.spread_warnings)
+    return replace(out, warnings=kept + spread, spread_warnings=spread)

@@ -862,3 +862,15 @@ def test_overrides_check_the_spread_too(tmp_path):
     rng = parse(tmp_path, SOURCE)
     with pytest.raises(RangeError, match="spread_position reaches into element 'source_wall'"):
         with_overrides(rng, {"source": {"spread_position": [0.3, 0.3, 0.0]}})
+
+
+def test_overrides_redo_the_spread_warnings(tmp_path):
+    # review M2: Setup's spread override is checked, and its warnings replace the file's own spread warnings
+    grazing = SOURCE.replace("release = [15.3, 0.85, 1.0]", "release = [15.25, 0.95, 1.0]")
+    plain = parse(tmp_path, grazing)
+    assert plain.warnings == ()
+    wide = with_overrides(plain, {"source": {"spread_position": [0.3, 0.0, 0.0]}})
+    assert any("spread_position" in w and "touches" in w for w in wide.warnings)
+    warned = parse(tmp_path, grazing + "spread_position = [0.3, 0.0, 0.0]\n")
+    assert warned.warnings
+    assert with_overrides(warned, {"source": {"spread_position": [0.0, 0.0, 0.0]}}).warnings == ()
