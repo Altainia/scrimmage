@@ -601,13 +601,14 @@ def _compound(r: _Reader, path: Path, name: str) -> list[Solid]:
     return out
 
 
-def _cad(r: _Reader, base_dir: Path) -> tuple[list[Solid], Inertial]:
+def _cad(r: _Reader, base_dir: Path) -> tuple[list[Solid], Inertial, tuple[str, ...]]:
     from ..bench.spec import BenchError
     from ..cad import CadError
     from ..cad.fit import convex_split
     from ..cad.source import load_source
 
-    from ..cad.source import STEP_SUFFIXES, UNITS, step_length_unit
+    from ..cad import source
+    from ..cad.source import STEP_SUFFIXES, STEP_UNITS
 
     units = None
     if r.has("units"):
@@ -623,12 +624,17 @@ def _cad(r: _Reader, base_dir: Path) -> tuple[list[Solid], Inertial]:
     path = file if file.is_absolute() else Path(base_dir) / file
     factor = scale
     step = path.suffix.lower() in STEP_SUFFIXES
+    notes: list[str] = []
     if step and units is not None:       # a STEP is read in its own units; `units` reads its numbers in these
-        declared = step_length_unit(path)
-        if declared is None:
-            raise r.err(i18n.t("can't tell which units {file} is in, so {units_setting} can't be applied; leave "
-                               "units out to use the file's own", file=file.name, units_setting=f"units = \"{units}\""))
-        factor *= UNITS[units] / UNITS[declared]
+        declared = source.step_length_unit(path)
+        if declared is None:            # ignored, as it always was before K1: such a file still loads, with a warning
+            from ..checks import worded
+            where = f"{r.path}: {r.where}"
+            notes.append(worded(lambda: i18n.t(
+                "{where}: can't tell which units {file} is in, so {units_setting} is ignored and the file's own are "
+                "used", where=where, file=file.name, units_setting=f"units = \"{units}\"")))
+        else:
+            factor *= STEP_UNITS[units] / STEP_UNITS[declared]
     try:
         src = load_source(path, None if step else units)
     except CadError as e:
@@ -652,7 +658,7 @@ def _cad(r: _Reader, base_dir: Path) -> tuple[list[Solid], Inertial]:
             raise r.err(str(e)) from None
         solids += [Solid("mesh", (), (0.0, 0.0, 0.0), _IDENTITY, np.asarray(v, dtype=float), np.asarray(f))
                    for v, f in pieces]
-    return solids, combine([mesh_inertial(p.v, p.f, 1.0) for p in src.pieces])
+    return solids, combine([mesh_inertial(p.v, p.f, 1.0) for p in src.pieces]), tuple(notes)
 
 
 def piece_color(kind: PieceKind) -> tuple[float, float, float]:
@@ -742,10 +748,12 @@ def _parse_kind(path: Path, name: str, r: _KindReader, base_dir: Path) -> PieceK
         solids, hole, axis = _compound(r, path, name), _hole(r, path, name), _axis(r)
     elif shape == "cad":
         axis, hole = _axis(r), _hole(r, path, name)
-        solids, own = _cad(r, base_dir)
+        solids, own, notes = _cad(r, base_dir)
     else:
         solids, hole, axis = _simple(r, shape)
     kind = _finish(r, name, shape, solids, mass, friction, axis, hole, inertia, own, label)
+    if shape == "cad" and notes:
+        kind = replace(kind, warnings=tuple(notes) + kind.warnings)
     return replace(kind, provenance={"friction": measured}) if measured is not None else kind
 
 

@@ -558,8 +558,13 @@ plain error saying so. The piece's size is checked: one more than 3 m across is 
 across; check units (m, mm or in)", the usual sign of millimeters read as meters or inches as millimeters.
 
 - **Units.** An STL or OBJ file has no units, so `units` says what its numbers are (guessed from the size when left
-  out). A **STEP file says its own units**, and they are used when `units` is left out. Give `units` for a STEP only
-  when the file is wrong about them: its numbers are then read in `units` instead.
+  out). A **STEP file says its own units** (the length unit of its parts' unit contexts: meters, millimeters,
+  centimeters, inches or feet), and they are used when `units` is left out. Give `units` for a STEP only when the file
+  is wrong about them: its numbers are then read in `units` instead. When the file's own unit can't be told (none, or
+  its parts disagree), `units` is ignored with a warning and the file loads as it is.
+  - *A change for old range files:* before, `units` was ignored on a STEP. A range file that gave a STEP piece a
+    `units` different from the file's own (harmless then) now rescales the piece; `scrimmage range check` shows the
+    size warning or the "check units" refusal when that is far off. Remove `units` to keep the old size.
 - **Scale.** `scale = 40` makes the piece 40 times bigger, for a scale model. The 2024 "Game Piece.step" in the
   3D-print field files is a 1:40 NOTE, 8.9 mm across; the full-size NOTE is `scale = 40`, or better the `2024-note`
   preset.

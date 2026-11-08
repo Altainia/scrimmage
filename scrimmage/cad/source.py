@@ -45,23 +45,38 @@ class Source:
     groups: list[str] = field(default_factory=list)     # every assembly key, in file order
 
 
-_INCH = re.compile(rb"CONVERSION_BASED_UNIT\s*\(\s*'INCH'", re.I)
-_MM = re.compile(rb"SI_UNIT\s*\(\s*\.MILLI\.\s*,\s*\.METRE\.\s*\)")
-_M = re.compile(rb"SI_UNIT\s*\(\s*\$\s*,\s*\.METRE\.\s*\)")
+STEP_UNITS = {"m": 1.0, "mm": 0.001, "cm": 0.01, "in": 0.0254, "ft": 0.3048}   # a STEP's length units, in m
+_ENTITY = re.compile(rb"#(\d+)\s*=\s*(.*?);\s*(?=#\d+\s*=|ENDSEC)", re.S)
+_CONTEXT = re.compile(rb"GLOBAL_UNIT_ASSIGNED_CONTEXT\s*\(\s*\(([^)]*)\)", re.S)
+_LENGTH = (("in", re.compile(rb"CONVERSION_BASED_UNIT\s*\(\s*'INCH'", re.I)),
+           ("ft", re.compile(rb"CONVERSION_BASED_UNIT\s*\(\s*'FOOT'", re.I)),
+           ("mm", re.compile(rb"SI_UNIT\s*\(\s*\.MILLI\.\s*,\s*\.METRE\.\s*\)")),
+           ("cm", re.compile(rb"SI_UNIT\s*\(\s*\.CENTI\.\s*,\s*\.METRE\.\s*\)")),
+           ("m", re.compile(rb"SI_UNIT\s*\(\s*\$\s*,\s*\.METRE\.\s*\)")))
 
 
 def step_length_unit(path: Path) -> str | None:
-    """The length unit a STEP file says its numbers are in ("m", "mm" or "in"; None when it says none of those, or
-    can't be read). cascadio reads it and gives meters, so a STEP's own unit is always applied; a range piece's
-    `units` reads the numbers in another one (testrange/pieces.py)."""
+    """The length unit a STEP file's products say their numbers are in (a STEP_UNITS key): the LENGTH_UNIT entity each
+    GLOBAL_UNIT_ASSIGNED_CONTEXT names, so a unit elsewhere in the file (a tolerance's) isn't taken for it. None when
+    there is no such context, their units disagree (sub-assemblies in different units), or the file can't be read.
+    cascadio reads it and gives meters, so a STEP's own unit is always applied; a range piece's `units` reads the
+    numbers in another one (testrange/pieces.py)."""
     try:
         raw = Path(path).read_bytes()
     except OSError:
         return None
-    for unit, pattern in (("in", _INCH), ("mm", _MM), ("m", _M)):
-        if pattern.search(raw):
-            return unit
-    return None
+    entities = {int(m.group(1)): m.group(2) for m in _ENTITY.finditer(raw)}
+    found = set()
+    for ctx in _CONTEXT.finditer(raw):
+        for ref in re.findall(rb"#(\d+)", ctx.group(1)):
+            body = entities.get(int(ref), b"")
+            if b"LENGTH_UNIT" not in body:
+                continue
+            unit = next((u for u, pattern in _LENGTH if pattern.search(body)), None)
+            if unit is None:
+                return None             # a length unit it doesn't know
+            found.add(unit)
+    return found.pop() if len(found) == 1 else None
 
 
 def guess_units(extent_max: float) -> str:

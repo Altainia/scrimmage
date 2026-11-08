@@ -304,3 +304,63 @@ def test_a_ranges_piece_warnings_are_the_ranges(tmp_path):
                                      'units = "m"\nmass = 0.2353\nfriction = 0.4\n')
     rng = load_range("r.toml", tmp_path)
     assert any("[piece.note]" in w and "across" in w for w in rng.warnings)
+
+
+# ---- a STEP's length unit from its unit contexts (review M9) ------------------------------------------------------
+
+def _step(tmp_path, units: list[str], extra: str = "") -> Path:
+    """A STEP text with one GLOBAL_UNIT_ASSIGNED_CONTEXT per length unit entity given (enough for step_length_unit)."""
+    lines, n = ["ISO-10303-21;", "DATA;"], 10
+    for u in units:
+        lines += [f"#{n} = {u};", f"#{n + 1} = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) "
+                  f"GLOBAL_UNIT_ASSIGNED_CONTEXT((#{n},#900,#901)) REPRESENTATION_CONTEXT('','') );"]
+        n += 2
+    lines += ["#900 = ( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) );",
+              "#901 = ( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() );", extra, "ENDSEC;", "END-ISO-10303-21;"]
+    p = tmp_path / "u.step"
+    p.write_text("\n".join(lines))
+    return p
+
+
+MM = "( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) )"
+M = "( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT($,.METRE.) )"
+CM = "( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.CENTI.,.METRE.) )"
+INCH = "( CONVERSION_BASED_UNIT('INCH',#950) LENGTH_UNIT() NAMED_UNIT(#951) )"
+FOOT = "( CONVERSION_BASED_UNIT('FOOT',#950) LENGTH_UNIT() NAMED_UNIT(#951) )"
+
+
+@pytest.mark.parametrize("units, want", [([MM], "mm"), ([M], "m"), ([INCH], "in"), ([CM], "cm"), ([FOOT], "ft"),
+                                         ([MM, MM], "mm"), ([MM, INCH], None), ([], None)])
+def test_a_step_unit_comes_from_its_unit_contexts(tmp_path, units, want):
+    from scrimmage.cad.source import step_length_unit
+    assert step_length_unit(_step(tmp_path, units)) == want
+
+
+def test_a_stray_unit_outside_the_contexts_is_not_the_files(tmp_path):
+    # a metre file with a millimetre unit elsewhere (a tolerance's, as some AP242 writers add) is a metre file
+    from scrimmage.cad.source import step_length_unit
+    stray = "#960 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );"
+    assert step_length_unit(_step(tmp_path, [M], stray)) == "m"
+
+
+def test_a_step_whose_unit_cant_be_told_keeps_loading(tmp_path, monkeypatch):
+    # before K1 `units` was ignored on a STEP; one whose unit can't be told still loads, its units ignored, with a
+    # warning (not refused)
+    import scrimmage.cad.source as source
+    monkeypatch.setattr(source, "step_length_unit", lambda path: None)
+    k = parse_kind(P, "c", {"shape": "cad", "cad": str(CAD_DATA / "climber.step"), "units": "in", "mass": 1.0,
+                            "friction": 0.4}, tmp_path)
+    plain = parse_kind(P, "c", {"shape": "cad", "cad": str(CAD_DATA / "climber.step"), "mass": 1.0, "friction": 0.4},
+                       tmp_path)
+    assert k.extent == pytest.approx(plain.extent)
+    assert any("can't tell which units" in w and "ignored" in w for w in k.warnings)
+
+
+def test_a_centimetre_step_takes_units(tmp_path, monkeypatch):
+    import scrimmage.cad.source as source
+    monkeypatch.setattr(source, "step_length_unit", lambda path: "cm")
+    plain = parse_kind(P, "c", {"shape": "cad", "cad": str(CAD_DATA / "climber.step"), "mass": 1.0, "friction": 0.4},
+                       tmp_path)
+    k = parse_kind(P, "c", {"shape": "cad", "cad": str(CAD_DATA / "climber.step"), "units": "mm", "mass": 1.0,
+                            "friction": 0.4}, tmp_path)
+    assert k.extent == pytest.approx(plain.extent / 10.0)
