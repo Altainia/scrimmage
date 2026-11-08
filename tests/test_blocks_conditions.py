@@ -402,3 +402,34 @@ def test_a_piece_the_robot_carries_is_in_it(tmp_path):
     for _ in step(w, watch, 0.5):
         pass
     assert watch.holds(Cond("piece_in", {"body": "bin.tray", "piece": "any"}))
+
+
+def test_a_bounce_shorter_than_the_grace_doesnt_count(tmp_path):
+    # review M7: a piece hopping off the carpet in an open box for less than CARPET_GRACE_S isn't in it
+    from scrimmage.blocks.conditions import CARPET_GRACE_S
+    w = bin_world(tmp_path)
+    m, d = w.model, w.data
+    under = d.xpos[m.body("bin.open").id].copy()
+    w.test_range.balls.put(0, [under[0], under[1], 0.0751], BALL_BITS)
+    mujoco.mj_forward(m, d)
+    watch = Watch(w, program())
+    cond = Cond("piece_in", {"body": "bin.open", "piece": "any"})
+    for _ in step(w, watch, 0.2):
+        pass
+    w.test_range.balls.put(0, [under[0], under[1], 0.0751 + 0.03], BALL_BITS)   # a 3 cm hop: down again in 0.08 s
+    mujoco.mj_forward(m, d)
+    assert 0.08 < CARPET_GRACE_S
+    for _ in step(w, watch, 0.3):
+        assert not watch.holds(cond)
+
+
+def test_a_piece_put_in_play_from_the_park_counts_at_once(tmp_path):
+    # review M7: a piece fed from the park straight into a bin never touched the carpet, so it is in from the start
+    w = bin_world(tmp_path)
+    m, d = w.model, w.data
+    watch = Watch(w, program())                     # every piece parked
+    tray = d.xpos[m.body("bin.tray").id].copy()
+    w.test_range.balls.put(0, tray + [0.0, 0.0, 0.0801], BALL_BITS)          # resting on the tray
+    mujoco.mj_forward(m, d)
+    watch.update()
+    assert watch.holds(Cond("piece_in", {"body": "bin.tray", "piece": "any"}))

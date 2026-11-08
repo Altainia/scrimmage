@@ -183,6 +183,10 @@ class Watch:
 
     def carried(self) -> np.ndarray:
         """(balls,) True for each piece off the carpet for at least CARPET_GRACE_S: one the robot may be carrying.
+        Off the carpet is all it asks, on purpose: a piece resting on a field element (a bump, a ramp, a piece staged on
+        the AMP) inside a body's box counts as in, as it did before. That is fine: a box around a piece up on an
+        element is a robot reaching over it, and what this rule is for is the open-bottom box driven over a piece on
+        the carpet (the 2024 dry run's intake).
         All of them in a Watch that doesn't follow the carpet (no piece_in, in_hopper or hopper)."""
         if not self._carpet_needed:
             self._carpet_needed = True          # asked after all (a test calling holds() directly): follow it now
