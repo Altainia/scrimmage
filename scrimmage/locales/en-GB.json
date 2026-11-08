@@ -30,6 +30,8 @@
   "{count} ideas, made {date} with scrimmage bench gallery. Paths: green left through an outlet, red jammed, orange escaped, gray still inside or never got in.": "{count} ideas, made {date} with scrimmage bench gallery. Paths: green left through an outlet, red jammed, orange escaped, grey still inside or never got in.",
   "{flight_table} flies balls only; a rigid piece's flight is not modeled yet, so there are no landings.": "{flight_table} flies balls only; a rigid piece's flight is not modelled yet, so there are no landings.",
   "{flight_table} flies balls only; a rigid piece's flight is not modeled yet, so a run will have no landings": "{flight_table} flies balls only; a rigid piece's flight is not modelled yet, so a run will have no landings",
+  "expected the robot in {zone}, but its center was at {at}": "expected the robot in {zone}, but its centre was at {at}",
+  "expected the robot out of {zone}, but its center was at {at}": "expected the robot out of {zone}, but its centre was at {at}",
   "The robot's center, seen from above, is in (or out of) one of the field's zones: an area marked on the carpet, such as a starting zone or a wing.": "The robot's centre, seen from above, is in (or out of) one of the field's zones: an area marked on the carpet, such as a starting zone or a wing.",
   "\"{name}\" slides, so give it in inches or meters, not degrees": "\"{name}\" slides, so give it in inches or metres, not degrees",
   "{name} is a beam break, which can't see colors; only a color sensor can see {sees}": "{name} is a beam break, which can't see colours; only a colour sensor can see {sees}",

@@ -258,8 +258,8 @@ class _FailureWords:
             at = (f"({x:.2f} m, {y:.2f} m)" if units.is_machine()
                   else f"({units.fmt(x, 'field', fewer=1)}, {units.fmt(y, 'field', fewer=1)})")
             if a["is"] == "in":
-                return t("expected the robot in {zone}, but its center was at {at}", zone=a["zone"], at=at)
-            return t("expected the robot out of {zone}, but its center was at {at}", zone=a["zone"], at=at)
+                return i18n.t("expected the robot in {zone}, but its center was at {at}", zone=a["zone"], at=at)
+            return i18n.t("expected the robot out of {zone}, but its center was at {at}", zone=a["zone"], at=at)
         if k == "partner_moved":
             moved = (f"{self.world.partner.moved():.1f} in" if units.is_machine()
                      else _amount(self.world.partner.moved(), 'in', fewer=2))
