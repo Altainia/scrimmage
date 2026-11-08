@@ -467,3 +467,21 @@ def test_the_tomlkit_it_runs_on_has_what_tomlutil_leans_on():
     assert isinstance(Container()._map, dict)
     with pytest.raises(ParseError):
         tomlkit.parse('config = "x"\n[[step]\n')
+
+
+def test_a_start_on_a_ranges_own_field_size(tmp_path):
+    # review M3: a range with field = { length, width } (2024: 8.211 m wide) takes starts out to its own walls
+    (tmp_path / "r.toml").write_text('[range]\nname = "t"\nball = "2026-fuel"\nfield = { length = 16.541, width = 8.211 }\n')
+    doc = tomlkit.parse('[range]\nfile = "r.toml"\n')
+    edits.set_start(doc, {"pose": [1.0, 8.15, 0.0]}, base_dir=tmp_path)
+    assert doc["robot"]["start_pose"].unwrap() == [1.0, 8.15, 0.0]
+    with pytest.raises(EditError, match=r"off the field \(16.541 m by 8.211 m\)"):
+        edits.set_start(doc, {"pose": [1.0, 8.3, 0.0]}, base_dir=tmp_path)
+    with pytest.raises(EditError, match=r"off the field \(16.54 m by 8.07 m\)"):
+        edits.set_start(tomlkit.parse('[range]\nfile = "2026"\n'), {"pose": [1.0, 8.15, 0.0]}, base_dir=tmp_path)
+
+
+def test_the_start_sentence_halves_the_ranges_field():
+    from scrimmage.assembler.server_common import start_sentence
+    assert start_sentence([8.0, 4.0, 0.0]) == "Starts on the blue side, facing the red wall"
+    assert start_sentence([8.0, 4.0, 0.0], length=10.0) == "Starts on the red side, facing the red wall"

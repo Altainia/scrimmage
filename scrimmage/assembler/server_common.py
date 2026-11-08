@@ -133,11 +133,11 @@ def _not_built(why: str) -> str:
                   "start? in the Robot code panel): the first build downloads the libraries, so it takes a few minutes.")
 
 
-def start_sentence(pose) -> str:
-    """Plain words for a start pose (x, y, heading in degrees; the blue alliance wall at x = 0, red at the far end):
-    which alliance's half of the field it is on, and which wall it faces."""
+def start_sentence(pose, length: float = edits.FIELD_LENGTH) -> str:
+    """Plain words for a start pose (x, y, heading in degrees; the blue alliance wall at x = 0, red at the far end,
+    `length` along x: the range's field's): which alliance's half of the field it is on, and which wall it faces."""
     x, _, h = (float(a) for a in pose)
-    blue = x < edits.FIELD_LENGTH / 2
+    blue = x < length / 2
     h = (h + 180.0) % 360.0 - 180.0
     facing = "red" if abs(h) <= 45 else "blue" if abs(h) >= 135 else "side"
     if blue:

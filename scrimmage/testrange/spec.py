@@ -736,6 +736,26 @@ def _kinds(path: Path, raw: dict, rng: _Reader) -> tuple[dict[str, PieceKind], s
     return kinds, next(iter(kinds))
 
 
+def field_size_of(ref: str, base_dir: Path) -> tuple[float, float]:
+    """A range's field size (length, width) read quickly from its file's `[range] field`, for the editor, which
+    needn't build the whole range: a built-in range's, or the generated field's when the file says none, can't be
+    read, or gives a size the range would refuse (that range's own errors are reported when it is built)."""
+    try:
+        path = BUILTIN_RANGES.get(ref) or Path(base_dir) / expand(ref)
+        raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, TeamFolderError, TypeError, ValueError):
+        return FIELD_LENGTH, FIELD_WIDTH
+    table = raw.get("range")
+    f = table.get("field") if isinstance(table, dict) else None
+    if not isinstance(f, dict):
+        return FIELD_LENGTH, FIELD_WIDTH
+    lo, hi = FIELD_LIMITS
+    size = [f.get(k) for k in _FIELD]
+    if all(isinstance(v, (int, float)) and not isinstance(v, bool) and lo <= v <= hi for v in size):
+        return float(size[0]), float(size[1])
+    return FIELD_LENGTH, FIELD_WIDTH
+
+
 def _field_size(rng: _Reader) -> tuple[float, float]:
     """`[range] field = { length, width }`, or the generated field's."""
     if not rng.has("field"):

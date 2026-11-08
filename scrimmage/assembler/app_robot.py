@@ -274,7 +274,7 @@ class RobotMixin:
             return lambda doc: edits.set_ids(doc, name, b.get("ids") or {})
         if op == "start":
             keys = ("range", "pose", "named", "keep_pose", "floor_balls")
-            return lambda doc: edits.set_start(doc, {k: b[k] for k in keys if k in b})
+            return lambda doc: edits.set_start(doc, {k: b[k] for k in keys if k in b}, self.robot.path.parent)
         if op == "battery":
             return lambda doc: edits.set_battery(doc, {k: b[k] for k in ("nominal_voltage", "resistance") if k in b})
         if op == "match_devices":
