@@ -225,16 +225,23 @@ def _meshes(raw: bytes, doc: dict, trimesh):
     """Per glTF mesh index: (vertices float64, faces int32), every triangle primitive of the mesh together, with
     duplicate vertices merged (so solids are closed). Read from the GLB by index: OpenCASCADE writes a part with
     several colors as one mesh of several primitives, so meshes and geometries needn't match one to one (the 2024
-    STAGE STEP, TE-24200: 81 meshes, 84 primitives). None when the file is broken (an index past its vertices, an
-    accessor past its buffer)."""
+    STAGE STEP, TE-24200: 81 meshes, 84 primitives). Points and lines are left out (no surface). None (the "re-export
+    it" message) for what it can't read right rather than read it wrong or drop it: an index past its vertices, an
+    accessor past its buffer, triangle strips or fans, quantized or normalized positions."""
     blob = _glb_bin(raw)
     out = []
     try:
         for mesh in doc.get("meshes", []):
             vs, fs, n = [], [], 0
             for prim in mesh.get("primitives", []):
-                if prim.get("mode", 4) != 4:        # points and lines: no surface
+                mode = prim.get("mode", 4)
+                if mode in (0, 1, 2, 3):            # points and lines: no surface
                     continue
+                if mode != 4:                       # strips and fans (5, 6) aren't decoded: say so, never drop them
+                    raise _Broken
+                pos = doc["accessors"][prim["attributes"]["POSITION"]]
+                if pos.get("componentType") != 5126 or pos.get("normalized"):   # quantized positions aren't meters
+                    raise _Broken
                 v = _accessor(doc, blob, prim["attributes"]["POSITION"]).astype(np.float64)
                 f = (_accessor(doc, blob, prim["indices"]).astype(np.int64).reshape(-1, 3) if "indices" in prim
                      else np.arange(len(v) - len(v) % 3, dtype=np.int64).reshape(-1, 3))

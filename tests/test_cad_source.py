@@ -183,3 +183,83 @@ def test_a_glb_with_bad_indices_is_still_a_broken_file(tmp_path, monkeypatch):
     step.write_text("ISO-10303-21;")
     with pytest.raises(CadError, match="broken.step.*re-export"):
         load_source(step)
+
+
+def _glb_prims(prims):
+    """A GLB of one node with one mesh of `prims`: each {v, f (None: not indexed), mode (4), stride (bytes between
+    vertices, 0: packed), pos_type (5126 float; 5123 uint16 quantized), normalized}."""
+    import json
+    import struct
+    blob, views, accessors, out = b"", [], [], []
+    for p in prims:
+        v = np.asarray(p["v"], dtype=np.float32)
+        stride = p.get("stride", 0)
+        pos_type = p.get("pos_type", 5126)
+        if pos_type == 5126:
+            raw = v.tobytes() if not stride else b"".join(row.tobytes() + b"\0" * (stride - 12) for row in v)
+        else:
+            raw = np.asarray(v, dtype=np.uint16).tobytes()
+        views.append({"buffer": 0, "byteOffset": len(blob), "byteLength": len(raw), **({"byteStride": stride} if stride
+                                                                                       else {})})
+        acc = {"bufferView": len(views) - 1, "componentType": pos_type, "count": len(v), "type": "VEC3"}
+        if p.get("normalized"):
+            acc["normalized"] = True
+        accessors.append(acc)
+        blob += raw + b"\0" * (-len(raw) % 4)
+        prim = {"attributes": {"POSITION": len(accessors) - 1}, "mode": p.get("mode", 4)}
+        if p.get("f") is not None:
+            f = np.asarray(p["f"], dtype=np.uint32).ravel()
+            views.append({"buffer": 0, "byteOffset": len(blob), "byteLength": f.nbytes})
+            accessors.append({"bufferView": len(views) - 1, "componentType": 5125, "count": f.size, "type": "SCALAR"})
+            blob += f.tobytes()
+            prim["indices"] = len(accessors) - 1
+        out.append(prim)
+    doc = {"asset": {"version": "2.0"}, "scene": 0, "scenes": [{"nodes": [0]}],
+           "nodes": [{"name": "part", "mesh": 0}], "meshes": [{"primitives": out}], "accessors": accessors,
+           "bufferViews": views, "buffers": [{"byteLength": len(blob)}]}
+    js = json.dumps(doc).encode()
+    js += b" " * (-len(js) % 4)
+    body = struct.pack("<II", len(js), 0x4E4F534A) + js + struct.pack("<II", len(blob), 0x004E4942) + blob
+    return struct.pack("<III", 0x46546C67, 2, 12 + len(body)) + body
+
+
+def _load_prims(tmp_path, monkeypatch, prims, name="p.step"):
+    _fake_cascadio(monkeypatch, _glb_prims(prims))
+    step = tmp_path / name
+    step.write_text("ISO-10303-21;")
+    return load_source(step)
+
+
+def test_a_strided_position_accessor_reads_right(tmp_path, monkeypatch):
+    v, f = _box([0, 0, 0], [0.1, 0.2, 0.3])
+    s = _load_prims(tmp_path, monkeypatch, [{"v": v, "f": f, "stride": 24}])      # interleaved: 12 spare bytes each
+    p = piece(s, "part")
+    assert p.v.min(axis=0) == pytest.approx([0, 0, 0]) and p.v.max(axis=0) == pytest.approx([0.1, 0.2, 0.3])
+    assert len(p.f) == 12 and is_closed(p.f)
+
+
+def test_points_and_lines_beside_triangles_are_left_out(tmp_path, monkeypatch):
+    v, f = _box([0, 0, 0], [0.1, 0.1, 0.1])
+    s = _load_prims(tmp_path, monkeypatch, [{"v": v, "f": f}, {"v": [[5, 5, 5], [6, 6, 6]], "f": None, "mode": 1},
+                                            {"v": [[7, 7, 7]], "f": None, "mode": 0}])
+    p = piece(s, "part")
+    assert len(p.f) == 12 and p.v.max() == pytest.approx(0.1)        # nothing from the line or the point
+
+
+def test_a_primitive_without_indices_is_its_vertices_in_threes(tmp_path, monkeypatch):
+    v, f = _box([0, 0, 0], [0.1, 0.1, 0.1])
+    s = _load_prims(tmp_path, monkeypatch, [{"v": v[f.ravel()], "f": None}])
+    p = piece(s, "part")
+    assert len(p.f) == 12 and len(p.v) == 8 and is_closed(p.f)          # merged back to the box's 8 corners
+
+
+@pytest.mark.parametrize("prim", [
+    {"mode": 5},                                   # a triangle strip
+    {"mode": 6},                                   # a fan
+    {"pos_type": 5123},                            # quantized positions (KHR_mesh_quantization)
+    {"normalized": True},
+])
+def test_what_it_can_t_read_right_is_a_broken_file(tmp_path, monkeypatch, prim):
+    v, f = _box([0, 0, 0], [0.1, 0.1, 0.1])
+    with pytest.raises(CadError, match="p.step.*re-export"):
+        _load_prims(tmp_path, monkeypatch, [{"v": v, "f": f, **prim}])
