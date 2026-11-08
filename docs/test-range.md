@@ -677,6 +677,13 @@ x = 0, z up) on the generated field of 16.54 by 8.07 m. The built-in `2026` is
 [`scrimmage/testrange/ranges/2026.toml`](../scrimmage/testrange/ranges/2026.toml); copy it to make your own and
 point `[range] file` at the copy.
 
+**The field's size.** A season whose field isn't 16.54 by 8.07 m gives its own in the range file's `[range]` table:
+`field = { length = 16.541, width = 8.211 }` (2024's, from the field drawings), each 2 to 40 m, the inside faces of
+the alliance walls (length, along x) and the guardrails (width, along y). The generated field's carpet and walls
+follow it, so WPILib coordinates, AprilTag positions and robot code agree with the range. Floor pieces and stations
+must lie inside it. A goal whose center is outside it is accepted with a warning: it is behind a wall, so nothing
+can reach it (2024's AMP at y = 8.204 m needs the 8.211 m field).
+
 ```toml
 # range file: one hexagonal goal, an 8-ball line on the floor, a start in front of the goal
 [range]

@@ -52,7 +52,7 @@ from ..disc.inputs import DEFAULT_AERO, Disc, aero_set
 from ..launcher.inputs import Air, Ball
 from .build import BALL_BITS, PARK_Z, PARKED_BITS, RangeLayout, kind_piece, rest_pose
 from .pieces import PieceKind
-from .spec import FIELD_LENGTH, FIELD_WIDTH, Range
+from .spec import Range
 from .spec import _one_round_kind as one_round_kind
 
 AIRBORNE = 0.001        # m above resting on the floor (center above rest_z) before the air acts on a ball
@@ -541,8 +541,9 @@ class Balls:
                 self.park(i)
                 events.append((i, "scored"))
                 live[k] = False
+        length, width = self.range.field_length, self.range.field_width
         for k, (x, y, z) in enumerate(rows):
-            if live[k] and (x < 0.0 or x > FIELD_LENGTH or y < 0.0 or y > FIELD_WIDTH or z < OUT_Z):
+            if live[k] and (x < 0.0 or x > length or y < 0.0 or y > width or z < OUT_Z):
                 i = balls[k]
                 self.set_state(i, BallState.OUT)
                 self.log[i].last_pos = (x, y, z)

@@ -187,7 +187,8 @@ def _low_end_drop(st: Station, kind: PieceKind) -> float:
     return -(top - CHUTE_PLATE * math.cos(s))
 
 
-def _station(path, table, i: int, kinds: dict[str, PieceKind], default: str, taken: list[str]) -> Station:
+def _station(path, table, i: int, kinds: dict[str, PieceKind], default: str, taken: list[str],
+             size: tuple[float, float] = (FIELD_LENGTH, FIELD_WIDTH)) -> Station:
     r = _Reader(path, f"[[station]] #{i + 1}", table, _STATION)
     name = r.text("name")
     r.where = f"[[station]] '{name}'"
@@ -235,10 +236,11 @@ def _station(path, table, i: int, kinds: dict[str, PieceKind], default: str, tak
         raise r.err(i18n.t("tip_deg must be from -90 to 90, not {tip}", tip=tip))
     rad = kind.radius
     x, y, z = release
-    if not (rad <= x <= FIELD_LENGTH - rad and rad <= y <= FIELD_WIDTH - rad):
+    length, width = size
+    if not (rad <= x <= length - rad and rad <= y <= width - rad):
         raise r.err(i18n.t("release point ({x}, {y}) lies off the field (0..{field_length} x 0..{field_width} "
                            "m, center at least {rad} m inside)", x=f"{x:.4g}", y=f"{y:.4g}",
-                           field_length=FIELD_LENGTH, field_width=FIELD_WIDTH, rad=f"{rad:.4g}"))
+                           field_length=f"{length:g}", field_width=f"{width:g}", rad=f"{rad:.4g}"))
     if z < rad:
         if kind.ball is not None:     # the fed piece: "a 0.1501 m ball" (as always), or "a coral"
             raise r.err(i18n.t("release point is {z} m above the carpet; a {diameter} m ball's center needs at least "
@@ -273,7 +275,8 @@ def _station(path, table, i: int, kinds: dict[str, PieceKind], default: str, tak
 
 
 def parse_stations(path, tables, kinds: dict[str, PieceKind], default: str,
-                   taken: tuple[str, ...] = ()) -> tuple[Station, ...]:
+                   taken: tuple[str, ...] = (), size: tuple[float, float] = (FIELD_LENGTH, FIELD_WIDTH),
+                   ) -> tuple[Station, ...]:
     """Read the `[[station]]` tables, feeding the field's `kinds` (`default` when a station names none). `taken` are
     the names of the goals, obstacles and elements, which a station's name may not repeat."""
     if not isinstance(tables, list):
@@ -281,7 +284,7 @@ def parse_stations(path, tables, kinds: dict[str, PieceKind], default: str,
                                 station_table="[[station]]"))
     out: list[Station] = []
     for i, t in enumerate(tables):
-        out.append(_station(path, t, i, kinds, default, list(taken) + [s.name for s in out]))
+        out.append(_station(path, t, i, kinds, default, list(taken) + [s.name for s in out], size))
     return tuple(out)
 
 
@@ -419,11 +422,11 @@ def _check_chutes(path, rng: Range, solids, chutes: dict) -> None:
             part_words = i18n.translated(CHUTE_PARTS[part])
             c = _corners(*box)
             lo, hi = c.min(axis=0), c.max(axis=0)
-            if lo[0] < 0.0 or lo[1] < 0.0 or hi[0] > FIELD_LENGTH or hi[1] > FIELD_WIDTH:
+            if lo[0] < 0.0 or lo[1] < 0.0 or hi[0] > rng.field_length or hi[1] > rng.field_width:
                 raise RangeError(i18n.t("{where} reaches off the field (0..{field_length} x 0..{field_width} m: "
                                         "its {part} spans x {x_lo} to {x_hi}, y {y_lo} to {y_hi}); move the release "
-                                        "point further onto the field", where=where, field_length=FIELD_LENGTH,
-                                        field_width=FIELD_WIDTH, part=part_words, x_lo=f"{lo[0]:.3g}",
+                                        "point further onto the field", where=where,
+                                        field_length=f"{rng.field_length:g}", field_width=f"{rng.field_width:g}", part=part_words, x_lo=f"{lo[0]:.3g}",
                                         x_hi=f"{hi[0]:.3g}", y_lo=f"{lo[1]:.3g}", y_hi=f"{hi[1]:.3g}"))
             for what, boxes, station in solids:
                 if station == st.name:

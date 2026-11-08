@@ -559,7 +559,11 @@ def assemble(cfg: dict, cfg_dir: Path) -> Built:
                               obstacle_setting="obstacle = true"))
         if timestep is not None:   # the balls' contacts are built for the run's timestep
             spec.option.timestep = timestep
-    add_field(spec, field_cfg, obstacle_default=section is None)
+    if section is None:
+        add_field(spec, field_cfg, obstacle_default=True)
+    else:
+        add_field(spec, field_cfg, obstacle_default=False,
+                  size=(section.range.field_length, section.range.field_width))
 
     pose = _start(cfg, section)
     root = insts[0]
@@ -626,6 +630,8 @@ def assemble(cfg: dict, cfg_dir: Path) -> Built:
                                                       for p, f in getattr(x, "fields", ())))
         built.warnings.extend(f"{inst.name}: {n}" for n in inst.part.warnings)
     built.warnings.extend(not_modeled_mistakes(cfg, insts, built.bindings))
+    if section is not None:     # a goal behind the walls and the like (testrange/spec.py)
+        built.warnings.extend(section.range.warnings)
     _one_module_kind(built.bindings["valve"])
     return built
 

@@ -1,4 +1,7 @@
-"""The simplified 2026-size field every generated model sits on: same names and look as tests/models/kitbot.xml."""
+"""The simplified field every generated model sits on: same names and look as tests/models/kitbot.xml. It is 2026's
+size, FIELD_LENGTH by FIELD_WIDTH, unless a range gives its own (`[range] field = { length, width }`,
+scrimmage/testrange/spec.py): the carpet, the four walls (their inner faces on the field's edges), the light and the
+center obstacle follow it."""
 
 from __future__ import annotations
 
@@ -10,11 +13,15 @@ FIELD_BITS = {"contype": 1, "conaffinity": 2}
 # The ground's geom group: the carpet and the range's field elements (scrimmage/testrange/build_elements.py), and
 # nothing else, so a ray in it finds the ground and never a ball or the robot. MuJoCo draws groups 0 to 2 by default.
 ELEMENT_GROUP = 2
+FIELD_LENGTH = 16.54  # m, the alliance walls' inner faces (2026's)
+FIELD_WIDTH = 8.07  # m, the guardrails' inner faces
 WALL = {"friction": [0.3, 0.005, 0.0001], "rgba": [0.75, 0.75, 0.8, 0.35]}
 
 
-def add_field(spec: mujoco.MjSpec, cfg: dict, *, obstacle_default: bool = True) -> None:
-    """`obstacle_default`: whether the center obstacle is there when [field] doesn't say (a range turns it off)."""
+def add_field(spec: mujoco.MjSpec, cfg: dict, *, obstacle_default: bool = True,
+              size: tuple[float, float] = (FIELD_LENGTH, FIELD_WIDTH)) -> None:
+    """`obstacle_default`: whether the center obstacle is there when [field] doesn't say (a range turns it off).
+    `size`: the field's length and width (m), the walls' inner faces."""
     from .model import PartError
     for k in cfg:
         if k != "obstacle":
@@ -31,15 +38,17 @@ def add_field(spec: mujoco.MjSpec, cfg: dict, *, obstacle_default: bool = True) 
     mat.textures[mujoco.mjtTextureRole.mjTEXROLE_RGB] = "carpet"
     mat.texrepeat = [16, 8]
     w = spec.worldbody
-    w.add_light(pos=[8.27, 4.035, 12], dir=[0, 0, -1], type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL)
+    hx, hy = size[0] / 2.0, size[1] / 2.0
+    w.add_light(pos=[hx, hy, 12], dir=[0, 0, -1], type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL)
     box = mujoco.mjtGeom.mjGEOM_BOX
-    w.add_geom(name="carpet", type=mujoco.mjtGeom.mjGEOM_PLANE, pos=[8.27, 4.035, 0], size=[8.27, 4.035, 0.1],
+    w.add_geom(name="carpet", type=mujoco.mjtGeom.mjGEOM_PLANE, pos=[hx, hy, 0], size=[hx, hy, 0.1],
                material="carpet", friction=[1.0, 0.01, 0.001], group=ELEMENT_GROUP, **FIELD_BITS)
-    for name, pos, size in (("wall_blue", [-0.05, 4.035, 0.25], [0.05, 4.135, 0.25]),
-                            ("wall_red", [16.59, 4.035, 0.25], [0.05, 4.135, 0.25]),
-                            ("wall_right", [8.27, -0.05, 0.25], [8.37, 0.05, 0.25]),
-                            ("wall_left", [8.27, 8.12, 0.25], [8.37, 0.05, 0.25])):
-        w.add_geom(name=name, type=box, pos=pos, size=size, **WALL, **FIELD_BITS)
+    t = 0.05    # half the walls' thickness: each reaches past the corners by its own thickness
+    for name, pos, half in (("wall_blue", [-t, hy, 0.25], [t, hy + 2 * t, 0.25]),
+                            ("wall_red", [size[0] + t, hy, 0.25], [t, hy + 2 * t, 0.25]),
+                            ("wall_right", [hx, -t, 0.25], [hx + 2 * t, t, 0.25]),
+                            ("wall_left", [hx, size[1] + t, 0.25], [hx + 2 * t, t, 0.25])):
+        w.add_geom(name=name, type=box, pos=pos, size=half, **WALL, **FIELD_BITS)
     if cfg.get("obstacle", obstacle_default):
-        w.add_geom(name="obstacle", type=box, pos=[8.27, 4.035, 0.25], size=[0.6, 0.6, 0.25],
+        w.add_geom(name="obstacle", type=box, pos=[hx, hy, 0.25], size=[0.6, 0.6, 0.25],
                    rgba=[0.8, 0.55, 0.1, 1], friction=[0.3, 0.005, 0.0001], **FIELD_BITS)

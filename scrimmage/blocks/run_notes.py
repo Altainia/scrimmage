@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .. import i18n, units
+from ..checks import shown
 from .clearance import NEVER_WITHIN_IN, uncounted_note
 from .conditions import _amount, _conds
 from .program import Program
@@ -80,6 +81,9 @@ def run_notes(world, program: Program) -> list[str]:
     uncounted = uncounted_note(world, program)
     if uncounted is not None:
         notes.append(uncounted)
+    rng = getattr(world, "parts", None) and world.parts.range
+    if rng is not None:         # the range's warnings (a goal behind the walls), in the setting being worded
+        notes += [str(w) if units.is_machine() else shown(w) for w in rng.warnings]
     return notes
 
 
