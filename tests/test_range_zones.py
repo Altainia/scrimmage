@@ -58,9 +58,21 @@ def test_zones_are_drawn_as_tape_and_collide_with_nothing(tmp_path):
     load(tmp_path)
     built = assemble(range_cfg(range={"file": "r.toml"}), tmp_path)
     m = built.model
-    tape = [g for g in range(m.ngeom) if m.geom(g).name.startswith("zone.stage.")]
-    assert len(tape) == 3
+    from scrimmage.testrange.zones import TAPE_HEIGHT
+    tape = [g for g in range(m.ngeom) if int(m.geom_bodyid[g]) == 0 and not m.geom(g).name
+            and m.geom_size[g][2] == pytest.approx(TAPE_HEIGHT / 2)]
+    assert len(tape) == 4 + 3                                  # blue_start's 4 edges, stage's 3
     assert all(m.geom_contype[g] == 0 and m.geom_conaffinity[g] == 0 for g in tape)
+
+
+def test_zone_tape_is_no_touch_target(tmp_path):
+    # review I1: tape touches nothing, so a touch check on it could never pass; the Test tab mustn't offer it
+    from scrimmage.blocks.palette import palette
+    from scrimmage.world import World
+    load(tmp_path)
+    w = World(range_cfg(range={"file": "r.toml", "start": "home"}), tmp_path)
+    assert not [n for n in palette(w, [])["targets"] if "zone" in n]
+    assert not [n for n in w.contact_names() if "zone" in n]
 
 
 def program(blocks=()) -> Program:

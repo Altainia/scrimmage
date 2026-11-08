@@ -8,7 +8,7 @@ zone, stage zone), for the Test tab's `in_zone` condition (the robot's center in
 
 A zone is a simple polygon (its edges don't cross), at least 3 corners, each on the field. It is drawn on the carpet
 as tape TAPE_WIDTH wide along its edges, touching nothing (a robot drives over it; a ray for the ground never finds
-it). `Zone.contains` is the even-odd test, an edge counting as inside.
+it), its geoms unnamed so no touch check offers it. `Zone.contains` is the even-odd test, an edge counting as inside.
 """
 
 from __future__ import annotations
@@ -90,11 +90,13 @@ def add_zones(spec, zones) -> None:
     for z in zones:
         rgba = [*(z.color if z.color is not None else DEFAULT_TAPE), 1.0]
         pts = z.corners
-        for k, ((x0, y0), (x1, y1)) in enumerate(zip(pts, pts[1:] + pts[:1])):
+        for (x0, y0), (x1, y1) in zip(pts, pts[1:] + pts[:1]):
             dx, dy = x1 - x0, y1 - y0
             half = float(np.hypot(dx, dy)) / 2.0
             yaw = float(np.arctan2(dy, dx))
-            spec.worldbody.add_geom(name=f"zone.{z.name}.{k}", type=mujoco.mjtGeom.mjGEOM_BOX,
+            # no name: tape is no surface a touch check can name (it touches nothing), so it stays out of the Test
+            # tab's touch targets and contact names
+            spec.worldbody.add_geom(type=mujoco.mjtGeom.mjGEOM_BOX,
                                     pos=[(x0 + x1) / 2.0, (y0 + y1) / 2.0, TAPE_HEIGHT / 2.0],
                                     quat=[float(np.cos(yaw / 2.0)), 0.0, 0.0, float(np.sin(yaw / 2.0))],
                                     size=[half + TAPE_WIDTH / 2.0, TAPE_WIDTH / 2.0, TAPE_HEIGHT / 2.0],
