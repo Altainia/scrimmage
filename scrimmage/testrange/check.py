@@ -20,15 +20,16 @@ from .spec import BUILTIN_RANGES, Range, load_range
 
 ROBOT_KEYS = ("part", "robot", "model", "robot_program", "motor", "encoder", "gyro", "shooter", "partner")
 SCENARIO_KEYS = ("config", "step", "check", "match")      # a scenario's: it may have a [range] of overrides too
+OTHER_KEYS = ("test", "bench", "measure", "import")      # a test's, a bench file's, a measurement's, an import file's
 
 
 def is_range_file(raw: dict) -> bool:
     """Whether a TOML file's tables are a range file's: a `[range]` table naming the field (`name`, which a range file
-    must have) that isn't a robot config's pointer to one (`file = "..."`), and none of a robot config's or a
-    scenario's tables (a scenario's `[range]` holds overrides: preload, start)."""
+    must have) that isn't a robot config's pointer to one (`file = "..."`), and none of the tables of a robot config, a
+    scenario (its `[range]` holds overrides: preload, start), a test, a bench file, a measurement or an import file."""
     rng = raw.get("range")
     return (isinstance(rng, dict) and "name" in rng and "file" not in rng
-            and not any(k in raw for k in ROBOT_KEYS + SCENARIO_KEYS))
+            and not any(k in raw for k in ROBOT_KEYS + SCENARIO_KEYS + OTHER_KEYS))
 
 
 def what_it_is(path: Path) -> str | None:
@@ -91,7 +92,8 @@ def summary(ref: str, rng: Range) -> list[str]:
     kinds = _names(rng.kinds)
     lines = [i18n.t("{file}: ok, range {name}: {parts}; pieces: {kinds}", file=ref, name=repr(rng.name),
                     parts=i18n.t("; ", context="list separator").join(parts), kinds=kinds)]
-    lines += ["  " + i18n.t("warning: {warning}", warning=str(w)) for w in rng.warnings]
+    from ..checks import shown
+    lines += ["  " + i18n.t("warning: {warning}", warning=shown(w)) for w in rng.warnings]
     return lines
 
 

@@ -76,6 +76,8 @@ def test_is_range_file():
     # a scenario's [range] holds overrides; it isn't a range file
     assert not is_range_file({"config": "robot.toml", "range": {"preload": 3}, "step": [{"mode": "disabled"}]})
     assert not is_range_file({"config": "robot.toml", "range": {"name": "x"}})
+    for other in ("test", "bench", "measure", "import"):          # review M11: the other kinds of file
+        assert not is_range_file({other: {}, "range": {"name": "x"}})
 
 
 def test_edit_refuses_a_range_file_and_says_what_it_is(tmp_path, capsys):
@@ -114,3 +116,14 @@ def test_edit_help_names_range_files(capsys):
         main(["edit", "--help"])
     assert "range check" in capsys.readouterr().out
     assert Path  # noqa: B018
+
+
+def test_check_warnings_are_shown_words(tmp_path, capsys, monkeypatch):
+    # review M11: a warning is a Said; range check prints its shown words, as its own lines go through i18n
+    from scrimmage.testrange import check
+    from scrimmage.checks import Said
+    rng = check.load(str(write(tmp_path, GOOD.replace("field = { length = 16.541, width = 8.211 }\n", ""))))
+    said = Said("machine words", lambda: "shown words")
+    from dataclasses import replace
+    lines = check.summary("r.toml", replace(rng, warnings=(said,)))
+    assert lines[-1].strip() == "warning: shown words"
