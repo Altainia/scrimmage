@@ -122,11 +122,10 @@ def _load_step(path: Path) -> Source:
         try:
             cascadio.step_to_glb(str(src), str(glb), tol_linear=TOL_LINEAR, tol_angular=TOL_ANGULAR)
             raw = glb.read_bytes()
-            scene = trimesh.load(str(glb), force="scene")
             doc = _glb_json(raw)
         except Exception:
             raise unreadable from None
-    meshes = _meshes(scene, doc)
+    meshes = _meshes(raw, doc, trimesh)
     if meshes is None:
         raise unreadable
     pieces: list[Piece] = []
@@ -139,7 +138,7 @@ def _load_step(path: Path) -> Source:
         name = str(node.get("name") or f"node{idx}")
         key = _numbered(f"{parent_key}/{name}" if parent_key else name, seen)
         world = parent_world @ _local(node)
-        if "mesh" in node:
+        if "mesh" in node and len(meshes[node["mesh"]][1]):     # a mesh of only points or lines has no surface
             v, f = meshes[node["mesh"]]
             pieces.append(Piece(key, name, parent_group, v @ world[:3, :3].T + world[:3, 3], f))
         if node.get("children"):
@@ -164,17 +163,73 @@ def _glb_json(raw: bytes) -> dict:
     return json.loads(raw[20:20 + length])
 
 
-def _meshes(scene, doc: dict):
-    """Per glTF mesh index: (vertices float64, faces int32) with duplicate vertices merged (so solids are closed).
-    trimesh keeps the geometry in mesh order, which is checked by count; None if it doesn't match."""
-    geoms = list(scene.geometry.values())
-    if len(geoms) != len(doc.get("meshes", [])):
-        return None
+class _Broken(Exception):
+    """A GLB that isn't the plain triangles an OpenCASCADE export writes (caught in _meshes: never shown)."""
+
+
+_COMPONENTS = {5121: np.uint8, 5123: np.uint16, 5125: np.uint32, 5126: np.float32}
+_WIDTH = {"SCALAR": 1, "VEC3": 3}
+
+
+def _glb_bin(raw: bytes) -> bytes:
+    """The binary chunk of a GLB (b"" when it has none)."""
+    length = struct.unpack_from("<I", raw, 12)[0]
+    at = 20 + length
+    if len(raw) < at + 8:
+        return b""
+    size, kind = struct.unpack_from("<II", raw, at)
+    return raw[at + 8:at + 8 + size] if kind == 0x004E4942 else b""
+
+
+def _accessor(doc: dict, blob: bytes, index: int) -> np.ndarray:
+    """One glTF accessor as an (count, width) array, reading its buffer view's stride. Raises on anything a plain
+    OpenCASCADE export doesn't write (sparse accessors, other buffers, unknown types)."""
+    acc = doc["accessors"][index]
+    if "sparse" in acc or acc["type"] not in _WIDTH or acc["componentType"] not in _COMPONENTS:
+        raise _Broken
+    view = doc["bufferViews"][acc["bufferView"]]
+    if view.get("buffer", 0) != 0:
+        raise _Broken
+    dtype = np.dtype(_COMPONENTS[acc["componentType"]])
+    width, count = _WIDTH[acc["type"]], int(acc["count"])
+    start = int(view.get("byteOffset", 0)) + int(acc.get("byteOffset", 0))
+    stride = int(view.get("byteStride") or dtype.itemsize * width)
+    end = start + (count - 1) * stride + dtype.itemsize * width if count else start
+    if end > int(view.get("byteOffset", 0)) + int(view["byteLength"]) or end > len(blob):
+        raise _Broken
+    out = np.ndarray((count, width), dtype=dtype, buffer=blob, offset=start, strides=(stride, dtype.itemsize))
+    return np.array(out)
+
+
+def _meshes(raw: bytes, doc: dict, trimesh):
+    """Per glTF mesh index: (vertices float64, faces int32), every triangle primitive of the mesh together, with
+    duplicate vertices merged (so solids are closed). Read from the GLB by index: OpenCASCADE writes a part with
+    several colors as one mesh of several primitives, so meshes and geometries needn't match one to one (the 2024
+    STAGE STEP, TE-24200: 81 meshes, 84 primitives). None when the file is broken (an index past its vertices, an
+    accessor past its buffer)."""
+    blob = _glb_bin(raw)
     out = []
-    for g in geoms:
-        g = g.copy()
-        g.merge_vertices()
-        out.append((np.asarray(g.vertices, dtype=np.float64), np.asarray(g.faces, dtype=np.int32)))
+    try:
+        for mesh in doc.get("meshes", []):
+            vs, fs, n = [], [], 0
+            for prim in mesh.get("primitives", []):
+                if prim.get("mode", 4) != 4:        # points and lines: no surface
+                    continue
+                v = _accessor(doc, blob, prim["attributes"]["POSITION"]).astype(np.float64)
+                f = (_accessor(doc, blob, prim["indices"]).astype(np.int64).reshape(-1, 3) if "indices" in prim
+                     else np.arange(len(v) - len(v) % 3, dtype=np.int64).reshape(-1, 3))
+                if len(f) and (f.min() < 0 or f.max() >= len(v)):
+                    return None
+                vs.append(v)
+                fs.append(f + n)
+                n += len(v)
+            v = np.concatenate(vs) if vs else np.zeros((0, 3))
+            f = np.concatenate(fs) if fs else np.zeros((0, 3), dtype=np.int64)
+            g = trimesh.Trimesh(v, f, process=False)
+            g.merge_vertices()
+            out.append((np.asarray(g.vertices, dtype=np.float64), np.asarray(g.faces, dtype=np.int32)))
+    except (KeyError, IndexError, TypeError, ValueError, _Broken):
+        return None
     return out
 
 
