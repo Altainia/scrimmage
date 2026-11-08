@@ -765,7 +765,7 @@ chute = { length = 0.5, slope_deg = 30.0 }
 | `stock` | balls | none | how many balls the station feeds, 1 to 200. Left out, it never runs out, but feeds at most 50 in one run. In a test's Setup (and the `[range] station` table), `stock = 0` also means "never runs out" |
 | `spread_yaw_deg`, `spread_pitch_deg` | degrees | 0 | each feed's heading and pitch vary by up to this much either way |
 | `spread_speed` | m/s | 0 | each feed's speed varies by up to this much either way |
-| `spread_position` or `spread_position_in` | m or in | 0, 0, 0 | a box around the release point, three numbers (along x, y, z): each feed's release point moves by up to this much either way on each axis |
+| `spread_position` or `spread_position_in` | m or in | 0, 0, 0 | a box around the release point, three numbers in the station's own frame (along the heading, across it to the left, up): each feed's release point moves by up to this much either way on each axis |
 | `spread_rotation_deg` | degrees | 0, 0, 0 | how much each feed is turned about each axis (roll, pitch, yaw). A round ball doesn't show it; for a piece that isn't round it tumbles it a little |
 | `kind` | | the range's default | the kind of piece it feeds, the name of a `[piece.<name>]` table (or the default kind) |
 | `tip_deg` | degrees | 0 (flat kinds: 90) | the fed piece's tip: 0 lying on its side, 90 standing on end, -90 to 90. A ball ignores it |
@@ -777,6 +777,14 @@ chute = { length = 0.5, slope_deg = 30.0 }
 degrees right of the heading, and `spread_position = [0, 0.02, 0.02]` is 2 cm either way across and up. The draws are
 uniform between those limits, not standard deviations, so a ball never leaves a tight chute's limits. A spread of 0 is
 exact.
+
+**The position spread follows the station.** `spread_position` is along the heading, across it and up, not along the
+field's x and y, so a station on a slanted wall (2024's SOURCE, at 30 degrees) spreads along the wall with
+`spread_position = [0, 0.3, 0]` whatever its heading. (Before, it was along the field's axes; a station heading 0
+reads the same either way.) Every corner of the spread box is checked like the release point: a feed whose center would
+start inside an element, an obstacle, a chute or beyond the field's walls is refused, since the physics would throw
+it out fast (the 2024 dry run saw a NOTE leave a wall at 13 m/s); one whose piece would only touch something is
+accepted with a warning (`scrimmage range check` shows it).
 
 **The seed.** The draws come from `[range] seed` (default 1), one stream per station, so the same seed gives the same
 feeds whatever the timing. A different seed is a different shuffle of the same spreads: the Test tab's **New shuffle**

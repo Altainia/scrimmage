@@ -5,7 +5,7 @@ A feed puts the station's next pool ball in play at the release point, moving al
 the physics step (RangeRuntime.before_physics), so its first step already moves. Each feed varies within the
 station's spreads, drawn uniformly from -1 to 1:
 
-- position: release + U * spread_position on each axis;
+- position: release + U * spread_position on each axis of the station's frame (along its heading, across it, up);
 - speed: speed + U * spread_speed, at least 0;
 - direction: Station.direction(heading_deg + U * spread_yaw_deg, pitch_deg + U * spread_pitch_deg);
 - turn: roll, pitch and yaw of U * spread_rotation_deg (it does nothing to a ball); a rigid piece is first laid at
@@ -35,7 +35,7 @@ from .. import i18n
 from .balls import Balls
 from .build import BALL_BITS, RangeLayout, _quat, _rpy
 from .pieces import _matrix, _quat as _piece_quat
-from .spec import Range
+from .spec import Range, _rot_z
 from .station import DEFAULT_SEED, check_seed
 
 EPS = 1e-6      # s: a feed due within this of now is due now (the step clock's rounding)
@@ -118,7 +118,7 @@ class Feeder:
                 continue
             i = self.layout.station_slots[st.name][self._next[k]]
             yaw, pitch, speed, dx, dy, dz, rx, ry, rz = self._gen[k].uniform(-1.0, 1.0, 9).tolist()
-            pos = np.array(st.release) + np.array([dx, dy, dz]) * np.array(st.spread_position)
+            pos = np.array(st.release) + _rot_z(st.heading_deg) @ (np.array([dx, dy, dz]) * np.array(st.spread_position))
             v = max(0.0, st.speed + speed * st.spread_speed) * st.direction(
                 st.heading_deg + yaw * st.spread_yaw_deg, st.pitch_deg + pitch * st.spread_pitch_deg)
             turn = _rpy(np.array([rx, ry, rz]) * np.array(st.spread_rotation_deg))

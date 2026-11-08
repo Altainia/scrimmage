@@ -789,3 +789,76 @@ def test_a_position_spread_lowers_the_chute_by_its_reach_toward_the_floor(tmp_pa
     assert spread.clearance(coral) is spread.clearance(coral)          # kept, not worked out again
     ball = parse(tmp_path, HEAD + FEEDER + chute + "spread_position = [0, 0, 0.02]\n")
     assert ball.stations[0].clearance(fuel()) == pytest.approx(0.1501 / 2 + 0.02 * math.cos(s))
+
+
+# ---- the position spread in the station's own frame, and checked like the release point (kickoff dry run gap 16) --
+
+def test_the_position_spread_is_along_and_across_the_heading(tmp_path):
+    # heading 90 (fed toward +y): across it is along x, so spread_position = [0, 0.3, 0] varies x, not y
+    w = station_world(tmp_path, "spread_position = [0.0, 0.04, 0.0]")
+    st = w.test_range.range.stations[0]
+    assert st.heading_deg == 0.0
+    turned = tmp_path / "turned"
+    turned.mkdir()
+    text = (tmp_path / "station.toml").read_text().replace("heading_deg = 0.0 ", "heading_deg = 90.0 ")
+    text = re.sub(r"(?m)^chute = .*\n", "", text)
+    (turned / "station.toml").write_text(text)
+    from scrimmage.assembler.templates import new_config
+    from scrimmage.world import World
+    w = World(tomllib.loads(new_config("standin") + '\n[range]\nfile = "station.toml"\n'), turned)
+    w.set_robot_pose(*AWAY)
+    st = w.test_range.range.stations[0]
+    feeder = w.test_range.feeder
+    feeder.start("feeder")
+    advance(w, 3.05)
+    assert len(feeder.fed) >= 3
+    for f in feeder.fed:
+        d = np.array(f.release) - np.array(st.release)
+        assert abs(d[1]) < 1e-12 and abs(d[0]) <= 0.04 + 1e-12
+    assert max(abs(f.release[0] - st.release[0]) for f in feeder.fed) > 0.01
+
+
+SOURCE = HEAD + '''
+[[element]]
+name = "source_wall"
+kind = "box"
+center = [15.5, 0.6]
+yaw_deg = 30.0
+size = [2.0, 0.2, 1.4]
+
+[[station]]
+name = "source"
+release = [15.3, 0.85, 1.0]
+heading_deg = 120.0
+pitch_deg = 50.0
+'''
+
+
+def test_a_spread_into_a_wall_is_refused(tmp_path):
+    # the dry run's SOURCE: spread along the field's axes at a 30 deg wall put a feed inside the wall, and it shot out
+    # at 13 m/s. Now the spread is the station's, and a spread that starts a piece inside the wall is refused
+    with pytest.raises(RangeError, match=r"'source': its spread_position reaches into element 'source_wall': a piece "
+                                         r"fed at \(.*\) would start inside it"):
+        parse(tmp_path, SOURCE + "spread_position = [0.3, 0.3, 0.0]\n")
+    rng = parse(tmp_path, SOURCE + "spread_position = [0.0, 0.3, 0.0]\n")     # across the heading: along the wall
+    assert rng.stations[0].spread_position == (0.0, 0.3, 0.0)
+
+
+def test_a_spread_off_the_field_is_refused(tmp_path):
+    with pytest.raises(RangeError, match=r"'feeder': its spread_position reaches off the field"):
+        parse(tmp_path, HEAD + FEEDER.replace("release = [1.0, 4.0, 0.5]", "release = [0.2, 4.0, 0.5]")
+              + "spread_position = [0.3, 0.0, 0.0]\n")
+
+
+def test_a_spread_that_grazes_a_wall_is_warned_about(tmp_path):
+    # 0.33 m out from the wall's face, spread 0.3 m along the heading: the nearest feed starts 0.03 m from the face,
+    # its center outside the wall but the ball (0.075 m) in it
+    rng = parse(tmp_path, SOURCE.replace("release = [15.3, 0.85, 1.0]", "release = [15.25, 0.95, 1.0]")
+                + "spread_position = [0.3, 0.0, 0.0]\n")
+    assert any("'source'" in w and "spread_position" in w and "touches" in w for w in rng.warnings)
+
+
+def test_overrides_check_the_spread_too(tmp_path):
+    rng = parse(tmp_path, SOURCE)
+    with pytest.raises(RangeError, match="spread_position reaches into element 'source_wall'"):
+        with_overrides(rng, {"source": {"spread_position": [0.3, 0.3, 0.0]}})

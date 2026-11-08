@@ -814,8 +814,8 @@ def parse_range(raw: dict, path: Path) -> Range:
                   floor_kinds=tuple(floor_kinds), floor_turns=floor_turns, field_length=size[0],
                   field_width=size[1],
                   warnings=tuple(w for k in kinds.values() for w in k.warnings) + _outside_warnings(goals, size))
-    check_release_clear(path, built)
-    return built
+    spread = check_release_clear(path, built)
+    return replace(built, warnings=built.warnings + spread) if spread else built
 
 
 def load_range(ref: str, base_dir: Path, ball: str | None = None, piece: str | None = None) -> Range:
