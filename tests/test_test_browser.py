@@ -1130,7 +1130,9 @@ def test_setup_hopper_ball_and_station_settings_are_saved_in_the_test(test_page,
     assert setup["station"]["feeder"] == {"spread_yaw_deg": 5.0, "spread_pitch_deg": 5.0, "spread_speed": 0.2,
                                           "interval": 0.5}
     assert setup["seed"] == 1 and setup["piece"] == "2017-fuel" and _toml(path)["test"]["hopper"] == ["hopper.bin"]
-    # the release box is in inches on screen, meters in the file
+    # the release box is in inches on screen, meters in the file; its boxes are the station's own axes (review M4)
+    assert [page.inner_text(f"label[for='test-station-feeder-spread_position-{i}']") for i in range(3)] == \
+        ["along", "across", "up"]
     page.fill("#test-station-feeder-spread_position-1", "2")
     page.press("#test-station-feeder-spread_position-1", "Enter")
     _wait_file(lambda: "spread_position" in _toml(path)["setup"]["station"]["feeder"], path)

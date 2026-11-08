@@ -166,7 +166,9 @@ moving read "still moving when the run ended".
 
 **Station settings.** In Setup, each station has a row of boxes for the field's values: time between balls, stock
 (empty means "never runs out", at most 50 are fed in one run), and the spreads. **Every spread is plus or minus its
-value**: "Left/right angle (± degrees)" of 5 means each ball goes up to 5° either side. A change is saved in the test's
+value**: "Left/right angle (± degrees)" of 5 means each ball goes up to 5° either side. The **Release box**'s three
+boxes are **along** the way the station feeds, **across** it and **up**, not the field's x, y and z, so a station on a
+slanted wall spreads along the wall. A change is saved in the test's
 `[setup]`; the box shows the field's own value until you change it. A station that feeds a piece that isn't a ball
 (a coral, say) has three more rows, in plain words: **Tipped up** (0 lying on its side, 90 standing on end; for a flat
 piece 0 is on its edge and 90 lying flat) and **Tipped up varies by** (± degrees), **Facing** (degrees from the way

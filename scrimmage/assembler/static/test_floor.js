@@ -20,7 +20,9 @@ const STATION_BOXES = () => [
   { key: "spread_yaw_deg", label: t("Left/right angle (± degrees)"), unit: "°", upTo: 10 },
   { key: "spread_pitch_deg", label: t("Up/down angle (± degrees)"), unit: "°", upTo: 10 },
   { key: "spread_speed", label: t("Speed"), kind: "speed", upTo: [1.3, 0.4] },
-  { key: "spread_position", label: t("Release box"), kind: "length", axes: ["x", "y", "z"], upTo: [2, 50] },
+  // the station's own frame (station.py): along its feed direction, across it (to its left) and up, not field x, y, z
+  { key: "spread_position", label: t("Release box"), kind: "length",
+    axes: [t("along", { context: "release box" }), t("across", { context: "release box" }), t("up", { context: "release box" })], upTo: [2, 50] },
   { key: "spread_rotation_deg", label: t("Turned (± degrees)"), unit: "°", axes: [t("about x"), t("about y"), t("about z")], upTo: 90 },
 ];
 // a piece other than a ball (ruling P30): its tip and facing (a ball has neither; Try values… goes from and to these
