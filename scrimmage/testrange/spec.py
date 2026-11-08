@@ -282,6 +282,7 @@ class Range:
     floor_heights: np.ndarray = field(default_factory=lambda: np.zeros(0))  # (n,): what each rests on, m (0: carpet)
     field_length: float = FIELD_LENGTH  # [range] field: m, the alliance walls' inner faces
     field_width: float = FIELD_WIDTH    # m, the guardrails' inner faces
+    zones: tuple = ()                   # [[zone]]: floor areas marked with tape (testrange/zones.py)
     warnings: tuple[str, ...] = ()      # what is accepted but likely a mistake (checks.Said: its words when shown)
 
     @property
@@ -372,7 +373,8 @@ class _Reader:
         return _Reader(self.path, f"{self.where} {key}", self.raw(key), valid)
 
 
-_TOP = ("range", "goal", "floor_balls", "start", "carpet", "obstacle", "element", "climb", "station", "piece")
+_TOP = ("range", "goal", "floor_balls", "start", "carpet", "obstacle", "element", "climb", "station", "piece",
+        "zone")
 _RANGE = ("name", "ball", "disc", "aero", "piece", "color", "field")
 _FIELD = ("length", "width")
 _GOAL = ("name", "pos", "heading_deg", "rim_height", "tilt_deg", "opening", "funnel", "body", "plate", "slot",
@@ -845,13 +847,15 @@ def parse_range(raw: dict, path: Path) -> Range:
                 [p for p, c in zip(_floor_pieces(kinds, floor_kinds), on_carpet) if c])
     taken = tuple([g.name for g in goals] + [o.name for o in obstacles] + [e.name for e in elements])
     stations = parse_stations(path, raw.get("station", []), kinds, default, taken, size)
+    from .zones import parse_zones
+    zones = parse_zones(path, raw.get("zone", []), size)
     built = Range(name=rng.text("name"), ball_preset=first_ball.preset if first_ball else None,
                   ball=first_ball.ball if first_ball else None, goals=tuple(goals),
                   floor_balls=floor_balls, starts=starts, path=path, rolling_resistance=rolling,
                   disc_preset=first_disc.preset if first_disc else None, disc=first_disc.disc if first_disc else None,
                   aero=first_disc.aero if first_disc else None, obstacles=tuple(obstacles),
                   elements=elements, climb=climb, stations=stations, kinds=kinds, default_kind=default,
-                  floor_kinds=tuple(floor_kinds), floor_turns=floor_turns, floor_heights=heights,
+                  floor_kinds=tuple(floor_kinds), floor_turns=floor_turns, floor_heights=heights, zones=zones,
                   field_length=size[0],
                   field_width=size[1],
                   warnings=tuple(w for k in kinds.values() for w in k.warnings) + _outside_warnings(goals, size))

@@ -620,6 +620,24 @@ in line" at a turn of 0, "lying across" at 90 (either way), "lying in line, turn
 between; a flat kind at tip 0 is "standing on edge". In between: "leaning 40°, lying across". When a spread would give
 two placements the same words, the words add what differs ("lying flat (turned 45°)").
 
+### Floor zones
+
+A range can mark areas of the carpet as zones, the way a game's tape lines do (2024's starting zone, wing and stage
+zone):
+
+```toml
+[[zone]]
+name = "blue_start"          # source: the manual's starting line
+corners = [[0.0, 0.0], [1.93, 0.0], [1.93, 8.21], [0.0, 8.21]]   # field x, y (m), in order around the zone
+color = "blue"               # the tape's color; default white
+```
+
+A zone is any polygon whose edges don't cross, with at least 3 corners, each on the field; two zones can't share a
+name. It is drawn as 2 in tape along its edges, which touches nothing. The Test tab's **robot is in** / **out of zone**
+condition reads it: the robot's center, seen from above, inside or outside the zone (an edge counts as inside). That is
+enough for "did it leave the starting zone" (2024's LEAVE) and "is it in the wing"; a rule about the whole robot or
+its bumpers (2024's PARK) isn't modeled yet.
+
 ### Rods
 
 A rod is a field element: a straight round or square rod fixed to the field, such as a peg, a pole, or a coral branch.

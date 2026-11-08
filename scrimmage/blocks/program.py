@@ -64,7 +64,8 @@ DO_KINDS = ("spin", "move", "drive", "stop", "wait", "wait_until", "repeat", "ex
             "start_feeding", "stop_feeding", "feed_one", "turn", "aim", "set_cylinder")
 COND_KINDS = ("joint", "touch", "tilt", "piece_in", "hanging_from", "level", "in_hopper", "station_empty",
               "made_it_in", "held", "rests_on", "seated", "scored", "aimed", "cylinder", "pressure",
-              "element", "clears", "partner_lifted", "partner_moved", "sensor")
+              "element", "clears", "partner_lifted", "partner_moved", "sensor", "in_zone")
+ZONE_IS = ("in", "out")
 DRIVE_DIRECTIONS = ("forward", "back", "left", "right")
 _OPPOSITE = {"back": "forward", "left": "right", "right": "left"}     # where a minus distance goes instead
 SPREAD_AXES = ("offset_in", "distance_in", "angle_deg", "rotation_deg", "tip_deg")
@@ -303,6 +304,13 @@ def _cond(v, where: str) -> Cond:
             if level <= 0:
                 raise _fail(where, i18n.t("level_within_deg must be more than 0"))
         return Cond(kind, {**a, "level_within_deg": level})
+    if kind == "in_zone":       # the robot's center in (or out of) one of the range's [[zone]]s
+        _keys(t, ("zone", "is"), where)
+        is_ = t.get("is", "in")
+        if is_ not in ZONE_IS:
+            raise _fail(where, i18n.t("is must be \"{in_}\" or \"{out}\", not {value}", value=repr(is_), in_="in",
+                                      out="out"))
+        return Cond(kind, {"zone": _text(t.get("zone"), where, "zone"), "is": is_})
     if kind == "partner_moved":
         _keys(t, ("at_least_in",), where)
         at = _num(t.get("at_least_in"), where, "at_least_in")

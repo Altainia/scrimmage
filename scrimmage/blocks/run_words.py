@@ -253,6 +253,13 @@ class _FailureWords:
                 up = _amount(p.height(), "in", fewer=2)
             return t("expected the partner lifted {want}, but it was {up} up, {tilt}° from level", want=want, up=up,
                      tilt=f"{p.tilt():.1f}")
+        if k == "in_zone":
+            x, y = (float(c) for c in self.world.data.xpos[self.world.robot_body][:2])
+            at = (f"({x:.2f} m, {y:.2f} m)" if units.is_machine()
+                  else f"({units.fmt(x, 'field', fewer=1)}, {units.fmt(y, 'field', fewer=1)})")
+            if a["is"] == "in":
+                return t("expected the robot in {zone}, but its center was at {at}", zone=a["zone"], at=at)
+            return t("expected the robot out of {zone}, but its center was at {at}", zone=a["zone"], at=at)
         if k == "partner_moved":
             moved = (f"{self.world.partner.moved():.1f} in" if units.is_machine()
                      else _amount(self.world.partner.moved(), 'in', fewer=2))

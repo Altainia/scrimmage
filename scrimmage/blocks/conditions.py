@@ -42,6 +42,8 @@ step, and the plain words that name them in a run's outcome.
   elements the test names; nothing within 0.5 m counts as clear.
 - `partner_lifted`: the partner robot's frame is lifted at least `at_least_in` inches (its `partner.height`: the
   lowest frame corner above where it settled), and, with `level_within_deg`, its tilt is within that of level.
+- `in_zone`: the robot's center (its root body's, seen from above) is in one of the range's floor zones (`[[zone]]`,
+  testrange/zones.py), or out of it with `is = "out"`: 2024's LEAVE and wing zones.
 - `partner_moved`: the partner robot has gone at least `at_least_in` inches across the floor from where it settled
   (`partner.moved`).
 - `sensor`: one of the robot's [[sensor]]s is on or off, as the world read it at the last physics step
@@ -407,6 +409,12 @@ class Watch:
             p = self.world.partner
             level = a.get("level_within_deg")
             return p.height() >= a["at_least_in"] and (level is None or p.tilt() <= level)
+        if k == "in_zone":
+            rng = self.world.parts.range if self.world.parts is not None else None
+            zone = next((z for z in (rng.zones if rng is not None else ()) if z.name == a["zone"]), None)
+            x, y = (float(c) for c in self.data.xpos[self.body][:2])
+            inside = zone is not None and zone.contains(x, y)
+            return inside == (a["is"] == "in")
         if k == "partner_moved":
             return self.world.partner.moved() >= a["at_least_in"]
         if k == "station_empty":
@@ -627,6 +635,13 @@ def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names
         p = {"lift": lift}
         return say(t("the partner is lifted at least {lift}", **p), t("the partner being lifted at least {lift}", **p),
                    t("the partner to be lifted at least {lift}", **p))
+    if k == "in_zone":
+        p = {"zone": a["zone"]}
+        if a["is"] == "in":
+            return say(t("the robot is in {zone}", **p), t("the robot being in {zone}", **p),
+                       t("the robot to be in {zone}", **p))
+        return say(t("the robot is out of {zone}", **p), t("the robot being out of {zone}", **p),
+                   t("the robot to be out of {zone}", **p))
     if k == "partner_moved":
         p = {"limit": _amount(a["at_least_in"], "in")}
         return say(t("the partner moved at least {limit}", **p), t("the partner having moved at least {limit}", **p),

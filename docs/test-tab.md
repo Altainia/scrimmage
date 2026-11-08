@@ -231,6 +231,7 @@ A check is a round-ended block that plugs into **wait until**, **repeat until** 
 | **hanging from** *bar* | The robot's hooks hold it up from that bar. |
 | **holding level** *level* | The robot holds that climb level (the field's own rule, such as the 2022 hangar's). |
 | *n* **scored in** *goal* | At least *n* balls have gone into the goal (**any goal**: into all of them together). See [Shooting](#shooting). |
+| **robot is in** / **out of zone** *zone* | The robot's center, seen from above, is inside (or outside) one of the field's zones: an area marked on the carpet, such as 2024's starting zone or wing (a range file's `[[zone]]`, [docs/test-range.md](test-range.md#floor-zones)). Only on a field with zones. In the test file: `{ in_zone = { zone = "blue_start", is = "out" } }` (`is` is `"in"`, the default, or `"out"`): "out of the starting zone" is 2024's LEAVE, by the robot's center. |
 | *turret* **aimed at** *goal* **within** *n* **°** | The turret's launcher points within *n*° of the goal's center. See [Aiming](#aiming). |
 | *cylinder* **is** *extended or retracted* | The cylinder's rod is all the way out, or all the way in. See [Pneumatics](#pneumatics). |
 | *stored or working* **air pressure above / below** *n* **psi** | The air in the tanks (stored), or after the regulator (working), is above or below that. See [Pneumatics](#pneumatics). |

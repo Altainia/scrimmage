@@ -112,11 +112,13 @@ before the setting existed, so nothing that reads it breaks:
   (their outcomes, check lines and refusals), a sweep's or floor spread's `table.csv`, and the fields of a run's
   `result.json` (a run kept this way also keeps its words in every setting, its `words`, for the Test tab; the
   sweep's or spread's `table.json` beside `table.csv` holds the table's). They are in inches and psi
-  as they always were, with one decimal where they had one ("120.0 psi", "0.0 in"), except for three things that
-  were always in meters:
+  as they always were, with one decimal where they had one ("120.0 psi", "0.0 in"), except for four things that
+  are in meters:
   - a drive's distance ("didn't reach 4 m in 0.5 s (went 0.43 m)");
   - a move or joint check whose block `unit` is "m" ("stopped at 0 m short of 0.5 m");
   - Setup's partner overlap ("the partner robot (Setup) starts inside the robot (their outlines overlap by 0.75 m)").
+  - a zone check's robot position, field coordinates ("expected the robot out of blue_start, but its center was at
+    (1.00 m, 4.00 m)").
 - **The MCP bench headlines** (`bench_run`, `bench_compare`) stay in m/s, newtons and meters. The files those tools
   write for people (`summary.txt`, the pictures) follow the setting, so the Bench tab shows them in your units.
 - **A message about a file's own numbers** names them in the file's units: a robot config's `[partner]` that starts
