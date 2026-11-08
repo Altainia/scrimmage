@@ -659,6 +659,15 @@ def _signal_summary(signals: dict) -> dict:
     return out
 
 
+PIECE_KEYS = ("id", "kind", "origin", "fired_t", "exit_speed", "outcome", "goal", "scored_t", "first_hit", "last_pos",
+              "at_rest")
+
+
+def _pieces(pieces: list[dict]) -> list[dict]:
+    """test_run's "pieces": each piece's log cut to the fields a reader needs (result.json keeps all of them)."""
+    return [{k: p.get(k) for k in PIECE_KEYS} for p in pieces]
+
+
 @_tool()
 async def test_run(path: str) -> dict:
     """Run a block test (a <name>.test.toml file) on its robot, with no robot program: the blocks drive the motors.
@@ -673,7 +682,11 @@ async def test_run(path: str) -> dict:
     numbers rest on: each gripped body's material and friction, and on a robot with cylinders each valve's
     conductance; UNCALIBRATED while one is an estimate, else measured, naming the file, who, when and how many trials;
     say them with the outcome),
-    "goals" (on a field with a shooter: the balls scored in each goal, else null), "air" (on a robot with cylinders:
+    "goals" (on a field with a shooter: the balls scored in each goal, else null), "pieces" (each game piece that took
+    part: id, kind, origin (floor, preload or station), fired_t, exit_speed (m/s), outcome (held, on_field, in_flight,
+    scored, out_of_field, stuck), goal and scored_t when it scored, first_hit (what it touched first after its
+    release), last_pos [x, y, z] (m), at_rest; null for what never happened: where each shot went, scored or not),
+    "air" (on a robot with cylinders:
     start_psi, end_psi, low_psi, low_t, compressor_s, below_working_t (when the tanks fell below working_psi, the
     cylinders weaker from then on; null if never), and working_psi; else null), "air_lines" (the air in words),
     "clearance" (each field element the test measures, in a clears check or a clearance.<element> chart signal:
@@ -708,6 +721,7 @@ def _test_run(file) -> dict:
             "hung": list(result.hung), "signals": _signal_summary(result.signals),
             "counts": result.counts, "feeds": result.feeds, "seed": result.seed,
             "marks": list(result.marks), "notes": list(result.notes), "goals": result.goals,
+            "pieces": _pieces(result.pieces),
             "air": result.air, "air_lines": blocks_run.air_lines(result),
             "clearance": result.clearance, "clearance_lines": blocks_run.clearance_lines(result),
             "run_folder": str(folder.resolve())}

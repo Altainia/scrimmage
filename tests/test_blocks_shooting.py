@@ -11,7 +11,7 @@ import pytest
 from scrimmage.blocks.conditions import describe
 from scrimmage.blocks.palette import palette, problems
 from scrimmage.blocks.program import Cond, TestFileError, load, loads
-from scrimmage.blocks.run import TestRun, goal_lines, world_for
+from scrimmage.blocks.run import TestRun, goal_lines, piece_lines, world_for
 
 ROOT = Path(__file__).resolve().parent.parent
 STATION = ROOT / "examples" / "blocks" / "station" / "feed.test.toml"
@@ -87,6 +87,31 @@ def test_spinning_the_launcher_scores(shot):
     assert set(r.goals) == {"hub_blue", "hub_red"}
     assert sum(r.goals.values()) >= 1
     assert r.goals == shot["world"].test_range.counts()["goals"]
+
+
+def test_the_run_lists_each_piece_and_where_it_went(shot):
+    # kickoff dry run gap 11: "why didn't it score?" needs each shot, not only the goal counts
+    r = shot["result"]
+    fired = [p for p in r.pieces if p["fired_t"] is not None]
+    assert len(fired) >= 1 and all(p["origin"] == "preload" for p in fired)
+    scored = [p for p in r.pieces if p["outcome"] == "scored"]
+    assert len(scored) == sum(r.goals.values())
+    assert all(p["goal"] in r.goals and p["scored_t"] > p["fired_t"] for p in scored)
+    assert all(set(p) >= {"id", "kind", "origin", "fired_t", "exit_speed", "outcome", "goal", "scored_t",
+                          "first_hit", "last_pos"} for p in r.pieces)
+    lines = piece_lines(r)
+    assert lines[0].startswith("#") and "outcome" in lines[0] and lines[0].endswith("where")
+    assert len(lines) == 1 + len(r.pieces)
+    assert any("scored" in ln and "hub_" in ln and "at t=" in ln for ln in lines[1:])
+
+
+def test_result_json_keeps_the_pieces(shot, tmp_path):
+    import json
+
+    from scrimmage.blocks.store import save_run
+    folder = save_run(shot["result"], shot["program"], tmp_path)
+    kept = json.loads((folder / "result.json").read_text())
+    assert kept["pieces"] == shot["result"].pieces
 
 
 def test_the_palette_lists_the_goals(shot):

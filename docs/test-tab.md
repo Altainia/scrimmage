@@ -372,7 +372,12 @@ any it picks up, go out of the launcher, fly, and score or miss. Nothing about s
 
 - **The check.** *n* **scored in** *goal* is true once at least *n* balls have gone into that goal. **any goal** counts
   every goal together.
-- **The result** has a line per goal with a ball in it: `scored 8 in hub_blue`.
+- **The result** has a line per goal with a ball in it: `scored 8 in hub_blue`. To see why a shot missed,
+  `scrimmage test run` also prints a table of the pieces that took part (each shot, a fed or preloaded piece, a floor
+  piece that moved): its number and kind, where it came from, when it was fired and its exit speed, its outcome, and
+  where it went (the goal and time it scored, where it rests or left the field, what it hit first, and how high a
+  missed shot got against the goal's rim). The run's `result.json` keeps them as `pieces`, and the MCP `test_run`
+  returns them too (in meters and m/s).
 - **The replay** shows the balls in flight.
 
 In the test file:
@@ -773,7 +778,8 @@ scrimmage test run my.test.toml --out some/folder    # keep the run somewhere el
 scrimmage test spread examples/blocks/intake/spread.test.toml   # one run per floor-spread placement
 ```
 
-It plays the blocks with no window, prints how it ended and each check, and keeps the run in `<test>-runs/` (or `--out`).
+It plays the blocks with no window, prints how it ended, each check and, on a field, a table of the pieces that
+took part and where each went ([Shooting](#shooting)), and keeps the run in `<test>-runs/` (or `--out`).
 The exit code is **0** when the test finished and every check passed, **1** when it didn't, and **2** when it couldn't
 run (a bad test file, a robot that won't build, a folder it can't write).
 

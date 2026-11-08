@@ -615,3 +615,15 @@ def _cross(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 def log_dict(log: BallLog) -> dict:
     """A BallLog as a dict with None for every unset (NaN) value, so it goes into JSON and compares with ==."""
     return {k: (None if isinstance(v, float) and math.isnan(v) else v) for k, v in dataclasses.asdict(log).items()}
+
+
+def took_part(b: dict, start, r: float) -> bool:
+    """Did ball log `b` take part in the run: a preload, or a floor ball that was collected, fired, scored, stuck,
+    left the field, is flying, or ended more than a radius `r` from where it started (`start`, its (x, y) on the
+    carpet)? Spares never do."""
+    if b["outcome"] == "spare":
+        return False
+    if b["origin"] != "floor" or b["fired_t"] is not None or b["outcome"] != "on_field":
+        return True
+    p = b["last_pos"]
+    return p is None or math.dist(p, (float(start[0]), float(start[1]), r)) > r

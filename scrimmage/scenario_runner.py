@@ -24,6 +24,7 @@ from .config import ConfigError, build_world, load_config
 from .render import contact_sheet, to_png
 from .scenario import Scenario, ScenarioError, config_for, match_for, no_range_message, range_file, validate
 from .session import Session, SessionError
+from .testrange.balls import took_part  # here before; the Test tab's runs (blocks/run_notes.py) use it too
 
 log = logging.getLogger("scrimmage")
 
@@ -339,18 +340,6 @@ def _balls_md(balls: list[dict], summary: dict) -> list[str]:
     if line := not_listed(summary):
         md += ["", line]
     return md + [""]
-
-
-def took_part(b: dict, start, r: float) -> bool:
-    """Did ball log `b` take part in the run: a preload, or a floor ball that was collected, fired, scored, stuck,
-    left the field, is flying, or ended more than a radius `r` from where it started (`start`, its (x, y) on the
-    carpet)? Spares never do."""
-    if b["outcome"] == "spare":
-        return False
-    if b["origin"] != "floor" or b["fired_t"] is not None or b["outcome"] != "on_field":
-        return True
-    p = b["last_pos"]
-    return p is None or math.dist(p, (float(start[0]), float(start[1]), r)) > r
 
 
 class _Stopped(Exception):
