@@ -122,7 +122,8 @@ Two conditions go with them. **\<station\> is empty** is true when the station h
 
 **Where a piece should end up.** The test needs to know where a piece counts as "in". In Setup, **Where a piece should
 end up**, tick the bodies a piece lands in or is held by: a hopper, an intake, a claw. A piece is in when its center is
-inside one of those bodies' boxes, or when one of them holds it as the run ends (a grabber's jaws count too; "held" is
+inside one of those bodies' boxes (the box around the body's shapes, so the space inside a bin counts) and it is off
+the carpet (the robot carries it, as for *piece* **in** *body*), or when one of them holds it as the run ends (a grabber's jaws count too; "held" is
 under [Holding a piece](#holding-a-piece)). A new test ticks the bodies named hopper, intake, indexer, claw, grabber,
 gripper or jaw for you. If you use **in the hopper** or **made it in** with nothing ticked, the problem says "tick where
 a piece should end up in Setup". The test file keeps this under `hopper` in `[test]`.
@@ -133,7 +134,8 @@ body without being inside is stuck. (A ball wedged on top of an intake would oth
 
 **What happens to each piece.** Every piece the station feeds ends in one of four ways:
 
-- **in**: its center is inside a ticked body, or a ticked body holds it (a piece that isn't a ball).
+- **in**: its center is inside a ticked body and off the carpet, or a ticked body holds it (a piece that isn't a
+  ball).
 - **placed**: it is seated on a rod, or resting on a field element, that a seated or rests-on check in your test names
   (see [Placing a piece](#placing-a-piece)). A coral on a branch is placed, not missed.
 - **stuck**: it is resting on a part of your robot outside the hopper, not moving for half a second. It is called out
@@ -222,7 +224,7 @@ A check is a round-ended block that plugs into **wait until**, **repeat until** 
 | **touches** (*part of the robot*, *thing on the field*) | The robot part touches the thing. |
 | **tilt above / below** *n* **°** | The robot leans more (or less) than that from upright. |
 | *joint* **above / below** *number* *unit* | A joint is past that position. |
-| *piece* **in** *body* | A game piece is inside a body of the robot. *any piece* means any of them. |
+| *piece* **in** *body* | A game piece is inside a body of the robot, and the robot carries it: its center is inside the box around the body's shapes, and it has been off the carpet for 0.1 s. A piece the robot drove an open-bottom box over, still on the carpet, isn't in. *any piece* means any of them. |
 | *piece* **is held by** *part or body* | A game piece is held by that part or body of the robot. See [Holding a piece](#holding-a-piece). |
 | *piece* **rests on** *thing on the field* | The field thing carries the piece's weight. See [Placing a piece](#placing-a-piece). |
 | *piece* **is seated at least** *n* **in on** *rod* | A piece with a hole has gone that far onto the rod. See [Placing a piece](#placing-a-piece). |

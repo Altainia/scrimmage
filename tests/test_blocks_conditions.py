@@ -15,6 +15,7 @@ from scrimmage.assembler.templates import new_config
 from scrimmage.blocks.conditions import Watch, describe
 from scrimmage.blocks.program import Cond, Program
 from scrimmage.protocol import HalState
+from scrimmage.testrange.build import BALL_BITS
 from scrimmage.testrange.pieces import ball_kind
 from scrimmage.world import World
 
@@ -319,3 +320,85 @@ def test_describe_new_conditions():
     assert describe(Cond("in_hopper", {"at_most": 2})) == "at most 2 pieces are in the hopper"
     assert describe(Cond("station_empty", {"station": "feeder"})) == "feeder is empty"
     assert describe(Cond("made_it_in", {"at_least": 80.0})) == "at least 80% made it in"
+
+
+# ---- a piece in a body must be carried, not just under it (kickoff dry run gap 13) ---------------------------------
+
+BIN_PART = """\
+[part]
+name = "bin"
+format = 1
+
+[[body]]
+name = "base"
+mass = 0.1
+geom = [{ box = [0.02, 0.02, 0.02], collide = false }]
+
+[[body]]
+name = "open"
+parent = "base"
+pos = [0.6, 0.0, 0.0]
+mass = 0.5
+geom = [
+  { box = [0.4, 0.01, 1.2], pos = [0.0, 0.2, -0.4], collide = false },
+  { box = [0.4, 0.01, 1.2], pos = [0.0, -0.2, -0.4], collide = false },
+]
+
+[[body]]
+name = "tray"
+parent = "base"
+pos = [-0.1, 0.0, 0.1]
+mass = 0.5
+geom = [
+  { box = [0.3, 0.3, 0.01], pos = [0.0, 0.0, 0.0] },
+  { box = [0.3, 0.01, 0.2], pos = [0.0, 0.155, 0.1], collide = false },
+]
+"""
+
+
+def bin_world(folder):
+    (folder / "bin").mkdir(parents=True)
+    (folder / "bin" / "part.toml").write_text(BIN_PART, encoding="utf-8")
+    cfg = range_cfg(part=[{"name": "drive", "stock": "chassis", "length": 0.66, "width": 0.6, "mass": 47.0},
+                          {"name": "bin", "path": "bin", "attach": "drive.top"}],
+                    range={"file": "2026", "floor_balls": True})
+    w = World(cfg, folder)
+    w.test_range.reset(floor_balls=False)
+    return w
+
+
+def test_a_piece_on_the_carpet_under_an_open_box_is_not_in_it(tmp_path):
+    # the dry run's floorless NOTE intake "picked up" a NOTE it had driven over: its center was inside the box, the
+    # NOTE still on the carpet, moved 3 mm. In a body means carried by the robot: off the carpet
+    w = bin_world(tmp_path)
+    m, d = w.model, w.data
+    ball = w.parts.layout.ball_names[0]
+    under = d.xpos[m.body("bin.open").id].copy()
+    w.test_range.balls.put(0, [under[0], under[1], 0.0751], BALL_BITS)     # on the carpet, inside the open box
+    mujoco.mj_forward(m, d)
+    watch = Watch(w, program())
+    cond = Cond("piece_in", {"body": "bin.open", "piece": "any"})
+    for _ in step(w, watch, 0.3):
+        pass
+    b, lo, hi = watch._box("bin.open")
+    local = (d.xpos[m.body(ball).id] - d.xpos[b]) @ d.xmat[b].reshape(3, 3)
+    assert ((local >= lo) & (local <= hi)).all()              # its center is inside the box...
+    assert not watch.holds(cond)                              # ...but it rests on the carpet: not in
+    prog = program()
+    prog.hopper = ["bin.open"]
+    hop = Watch(w, prog)
+    for _ in step(w, hop, 0.2):
+        pass
+    assert hop.hopper_count() == 0 and not hop.holds(Cond("in_hopper", {"at_least": 1}))
+
+
+def test_a_piece_the_robot_carries_is_in_it(tmp_path):
+    w = bin_world(tmp_path)
+    m, d = w.model, w.data
+    tray = d.xpos[m.body("bin.tray").id].copy()
+    w.test_range.balls.put(0, tray + [0.0, 0.0, 0.09], BALL_BITS)          # dropped onto the tray
+    mujoco.mj_forward(m, d)
+    watch = Watch(w, program())
+    for _ in step(w, watch, 0.5):
+        pass
+    assert watch.holds(Cond("piece_in", {"body": "bin.tray", "piece": "any"}))
