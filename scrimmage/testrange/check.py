@@ -19,13 +19,16 @@ from .. import i18n
 from .spec import BUILTIN_RANGES, Range, load_range
 
 ROBOT_KEYS = ("part", "robot", "model", "robot_program", "motor", "encoder", "gyro", "shooter", "partner")
+SCENARIO_KEYS = ("config", "step", "check", "match")      # a scenario's: it may have a [range] of overrides too
 
 
 def is_range_file(raw: dict) -> bool:
-    """Whether a TOML file's tables are a range file's: a `[range]` table that isn't a robot config's pointer to one
-    (`file = "..."`), and none of a robot config's tables."""
+    """Whether a TOML file's tables are a range file's: a `[range]` table naming the field (`name`, which a range file
+    must have) that isn't a robot config's pointer to one (`file = "..."`), and none of a robot config's or a
+    scenario's tables (a scenario's `[range]` holds overrides: preload, start)."""
     rng = raw.get("range")
-    return isinstance(rng, dict) and "file" not in rng and not any(k in raw for k in ROBOT_KEYS)
+    return (isinstance(rng, dict) and "name" in rng and "file" not in rng
+            and not any(k in raw for k in ROBOT_KEYS + SCENARIO_KEYS))
 
 
 def what_it_is(path: Path) -> str | None:

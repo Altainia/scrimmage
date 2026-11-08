@@ -73,6 +73,9 @@ def test_is_range_file():
     assert not is_range_file({"range": {"file": "2026"}, "part": []})
     assert not is_range_file({"robot": {}})
     assert not is_range_file({"range": "x"})
+    # a scenario's [range] holds overrides; it isn't a range file
+    assert not is_range_file({"config": "robot.toml", "range": {"preload": 3}, "step": [{"mode": "disabled"}]})
+    assert not is_range_file({"config": "robot.toml", "range": {"name": "x"}})
 
 
 def test_edit_refuses_a_range_file_and_says_what_it_is(tmp_path, capsys):
