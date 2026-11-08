@@ -229,6 +229,18 @@ def main(argv: list[str] | None = None) -> None:
     mp.add_argument("-o", "--output", type=Path, help="write the MJCF to this file instead of printing it")
     mp.add_argument("-v", "--verbose", action="store_true")
 
+    gp = sub.add_parser("range", help="range files (a season's field): check one, or picture it, with no robot")
+    gsub = gp.add_subparsers(dest="range_command", required=True)
+    gc = gsub.add_parser("check", help="read range files and say what each holds, its warnings, or what is wrong "
+                                       "(exit 1 when one has a problem)")
+    gc.add_argument("files", nargs="+", metavar="FILE", help="a range file (.toml) or a built-in range's name")
+    gc.add_argument("-v", "--verbose", action="store_true")
+    gv = gsub.add_parser("view", help="show a range's field from above in the MuJoCo viewer, or write a picture")
+    gv.add_argument("file", metavar="FILE", help="a range file (.toml) or a built-in range's name")
+    gv.add_argument("--out", type=Path, metavar="PNG", help="write a top-down picture here instead of opening the "
+                                                             "viewer")
+    gv.add_argument("-v", "--verbose", action="store_true")
+
     pp = sub.add_parser("parts", help="list the stock parts, or describe one")
     pp.add_argument("name", nargs="?", help="a stock part name")
     pp.add_argument("-v", "--verbose", action="store_true")
@@ -250,7 +262,8 @@ def main(argv: list[str] | None = None) -> None:
                     help="robot config or scenario TOML to edit (a scenario has a top-level config key or [[step]]s), "
                          "a bench file or a folder of them (an idea session, on the Bench tab), or a .step/.stp/.stl/"
                          ".obj file, an import file or a part folder (the Part tab), or a <name>.measure.toml "
-                         "measurement file (the Measure tab)")
+                         "measurement file (the Measure tab). A range file (a season's field) isn't edited here: "
+                         "check it with scrimmage range check FILE and see it with scrimmage range view FILE")
     ep.add_argument("--new", choices=("swerve", "swerve-rev", "differential"), help="write a starting robot config to FILE first")
     ep.add_argument("--new-scenario", action="store_true", help="write a starting scenario to FILE first (with --robot)")
     ep.add_argument("--robot", type=Path, metavar="CONFIG",
@@ -340,6 +353,8 @@ def _command(args, rp) -> int | None:
         _model(args)
     elif args.command == "parts":
         _parts(args)
+    elif args.command == "range":
+        _range(args)
     elif args.command == "i18n":
         from . import i18n_tool
         return i18n_tool.main(args)
@@ -815,6 +830,39 @@ def _model(args) -> None:
         sys.exit(2)
 
 
+def _range(args) -> None:
+    from .render import RenderUnavailable
+    from .testrange import check
+    from .testrange.spec import RangeError
+    if args.range_command == "check":
+        bad = False
+        for ref in args.files:
+            try:
+                print("\n".join(check.summary(ref, check.load(ref))))
+            except RangeError as e:
+                bad = True
+                print(f"{ref}: {e}")
+        if bad:
+            sys.exit(1)
+        return
+    try:
+        rng = check.load(args.file)
+    except RangeError as e:
+        print(f"scrimmage: {e}", file=sys.stderr)
+        sys.exit(1)
+    try:
+        if args.out is not None:
+            print(f"wrote {check.picture(rng, args.out)}")
+        else:
+            check.view(rng)
+    except RenderUnavailable as e:
+        print(f"scrimmage: {e}", file=sys.stderr)
+        sys.exit(2)
+    except (OSError, ValueError) as e:
+        print(f"scrimmage: {e}", file=sys.stderr)
+        sys.exit(2)
+
+
 def _parts(args) -> None:
     from .parts.model import PartError
     from .parts.stock import describe
@@ -872,6 +920,13 @@ def _edit(args) -> None:
                 print(f"scrimmage: note: {e.message}", file=sys.stderr)
     elif args.file is not None and not args.file.exists():
         fail(f"{args.file} not found; {how}")
+    if args.file is not None and args.file.is_file() and args.file.suffix.lower() == ".toml":
+        from .testrange.check import what_it_is
+        if what_it_is(args.file) == "range":
+            fail(f"{args.file.name} is a range file (a season's field: its goals, pieces and starts), not a robot "
+                 f"config, so the editor can't open it. Check it with: scrimmage range check {args.file}; see it "
+                 f"with: scrimmage range view {args.file}; use it from a robot config's [range] file = "
+                 f"\"{args.file.name}\" (docs/test-range.md)")
     try:
         app = App(args.file, open_browser=not args.no_browser, port=args.port,
                   parts_dir=args.robot.resolve().parent / "parts" if cad and args.robot is not None else None)

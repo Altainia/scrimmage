@@ -684,6 +684,20 @@ follow it, so WPILib coordinates, AprilTag positions and robot code agree with t
 must lie inside it. A goal whose center is outside it is accepted with a warning: it is behind a wall, so nothing
 can reach it (2024's AMP at y = 8.204 m needs the 8.211 m field).
 
+**Checking and seeing a range file.** A range file isn't a robot config, so `scrimmage edit` doesn't open it (it says
+so, and what to do instead). Check one on its own, with no robot:
+
+```bash
+scrimmage range check ranges/2024.toml          # "ok", the field's size and what it holds, then any warnings
+scrimmage range check 2026 ranges/2024.toml     # several at once; a built-in range by its name
+scrimmage range view ranges/2024.toml           # the field in the MuJoCo 3D viewer, no robot
+scrimmage range view ranges/2024.toml --out top.png    # a picture from above instead
+```
+
+`range check` exits 1 when a file has a problem, and prints the problem as the robot's config would (the file, the
+table and the key). A warning (a goal behind the walls) doesn't fail it. `range view` shows the goals, obstacles,
+elements, stations' chutes and floor pieces on the carpet at the range's field size.
+
 ```toml
 # range file: one hexagonal goal, an 8-ball line on the floor, a start in front of the goal
 [range]
