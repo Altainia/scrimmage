@@ -812,7 +812,8 @@ def parse_range(raw: dict, path: Path) -> Range:
                   aero=first_disc.aero if first_disc else None, obstacles=tuple(obstacles),
                   elements=elements, climb=climb, stations=stations, kinds=kinds, default_kind=default,
                   floor_kinds=tuple(floor_kinds), floor_turns=floor_turns, field_length=size[0],
-                  field_width=size[1], warnings=_outside_warnings(goals, size))
+                  field_width=size[1],
+                  warnings=tuple(w for k in kinds.values() for w in k.warnings) + _outside_warnings(goals, size))
     check_release_clear(path, built)
     return built
 

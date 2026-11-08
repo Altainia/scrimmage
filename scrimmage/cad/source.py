@@ -8,6 +8,7 @@ so the rest of `scrimmage.cad` loads without the `cad` extra; a missing one rais
 """
 
 import json
+import re
 import shutil
 import struct
 import tempfile
@@ -42,6 +43,25 @@ class Source:
     units: str                  # "m" for STEP (cascadio already gives meters); the scale used for meshes
     pieces: list[Piece] = field(default_factory=list)
     groups: list[str] = field(default_factory=list)     # every assembly key, in file order
+
+
+_INCH = re.compile(rb"CONVERSION_BASED_UNIT\s*\(\s*'INCH'", re.I)
+_MM = re.compile(rb"SI_UNIT\s*\(\s*\.MILLI\.\s*,\s*\.METRE\.\s*\)")
+_M = re.compile(rb"SI_UNIT\s*\(\s*\$\s*,\s*\.METRE\.\s*\)")
+
+
+def step_length_unit(path: Path) -> str | None:
+    """The length unit a STEP file says its numbers are in ("m", "mm" or "in"; None when it says none of those, or
+    can't be read). cascadio reads it and gives meters, so a STEP's own unit is always applied; a range piece's
+    `units` reads the numbers in another one (testrange/pieces.py)."""
+    try:
+        raw = Path(path).read_bytes()
+    except OSError:
+        return None
+    for unit, pattern in (("in", _INCH), ("mm", _MM), ("m", _M)):
+        if pattern.search(raw):
+            return unit
+    return None
 
 
 def guess_units(extent_max: float) -> str:

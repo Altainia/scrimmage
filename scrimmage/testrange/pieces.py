@@ -17,6 +17,8 @@ a solid tube; `cone` takes `diameter` (its base), `tip_diameter` (default 0, a p
 `size = [x, y, z]`; `sphere` takes `diameter`. `compound` lists `[[piece.<name>.shapes]]`, each one of those shapes
 with `pos` (or `pos_in`) and `rpy_deg` (roll about x, then pitch about y, then yaw about z, fixed axes). `cad` takes a
 STEP, STL or OBJ file (`cad`, relative to the range file) and its `units` (m, mm or in), read by scrimmage/cad. A
+STEP file says its own units, which are used when `units` is left out; `units` reads its numbers in those instead.
+`scale` (default 1) multiplies the CAD piece's size, for a scale model (a 1:40 print: 40). A
 compound or CAD piece may declare `axis = "x" | "y" | "z"` (default z) and a `hole = { diameter, length, center }`
 (along the axis; length defaults to the piece's own length along it, center to its bounding box's center, in the
 file's coordinates). `inertia = [Ixx, Iyy, Izz]` replaces the inertia the shapes give at a uniform density.
@@ -63,6 +65,11 @@ TUBE_SLICES = 24  # a hollow tube or ring is this many convex slices around its 
 ROUND_SIDES = 32  # a solid round (cylinder, solid tube, cone, disc) is this regular polygon's prism or frustum
 FLOOR_DROP = 0.005  # m: a rigid piece is set down this far above its resting height, so it settles
 MAX_EXTENT = 3.0  # m: a piece bigger than this is refused as a units mistake
+MIN_EXTENT = 0.02  # m: a piece smaller than this is warned about (a scale model, or a units mistake); our call
+DENSITY_RANGE = (1.0, 20000.0)  # kg/m^3: a mass and size outside this (lighter than air, denser than tungsten) is
+#                                 warned about; an inflated 2023 cube as a solid box is about 5
+MAX_SCALE = 1000.0  # a CAD piece's scale at most
+MIN_CAD_EXTENT = 0.0005  # m: a CAD piece smaller than this is refused as a units mistake (too small to split)
 
 
 def _meters(m: float) -> str:
@@ -78,7 +85,7 @@ _STAND_DEG = 80.0  # a tip at or above this is standing (flat kinds: lying flat)
 _LIE_DEG = 10.0  # a tip at or below this is lying (flat kinds: standing on edge)
 
 _KIND = ("preset", "ball", "disc", "aero", "shape", "diameter", "inner_diameter", "tip_diameter", "length",
-         "size", "mass", "material", "friction", "axis", "inertia", "shapes", "cad", "units", "hole")
+         "size", "mass", "material", "friction", "axis", "inertia", "shapes", "cad", "units", "hole", "scale")
 _LENGTHS = ("diameter", "inner_diameter", "tip_diameter", "length", "size")
 _KIND_ALL = _KIND + tuple(k + "_in" for k in _LENGTHS) + ("label", "color")
 # The keys each shape takes beyond shape, mass, material, friction, inertia, label and color (lengths also as
@@ -91,7 +98,7 @@ _SHAPE_KEYS = {
     "ring": ("diameter", "inner_diameter", "length"),
     "cone": ("diameter", "tip_diameter", "length"),
     "compound": ("shapes", "axis", "hole"),
-    "cad": ("cad", "units", "axis", "hole"),
+    "cad": ("cad", "units", "axis", "hole", "scale"),
 }
 _SIMPLE = SHAPES[:6]  # the shapes a compound's entries may be
 _ENTRY = ("shape", "pos", "pos_in", "rpy_deg") + _LENGTHS + tuple(k + "_in" for k in _LENGTHS)
@@ -326,6 +333,9 @@ class PieceKind:
     # each the file's Provenance. Empty when nothing is measured.
     provenance: dict = field(default_factory=dict)
     color: tuple[float, float, float] | None = None  # the field's `color` (r, g, b); None: the form's (piece_color)
+    # what is accepted but likely a mistake: a piece far smaller than a game piece, or far too heavy or light for its
+    # size (checks.Said: its words when shown). A range's are its own (spec.Range.warnings)
+    warnings: tuple[str, ...] = ()
 
     def __post_init__(self):
         if not self.label:
@@ -453,7 +463,36 @@ def _finish(r: _Reader, name: str, shape: str, solids: list[Solid], mass: float,
     centers, radii = kind._spheres
     radius = max([float(np.linalg.norm(kind._points, axis=1).max()) if len(kind._points) else 0.0]
                  + list(np.linalg.norm(centers, axis=1) + radii))
-    return replace(kind, radius=radius)
+    return replace(kind, radius=radius, warnings=_size_warnings(r, extent, mass / parts.mass, shape))
+
+
+def _plain(v: float) -> str:
+    """A number in plain digits: whole above 100 ("100000"), else 2 significant ("0.0088", "0.001")."""
+    return f"{v:.0f}" if v >= 100 else np.format_float_positional(v, precision=2, unique=False, fractional=False,
+                                                                  trim="-")
+
+
+def _size_warnings(r: _Reader, extent: float, density: float, shape: str) -> tuple[str, ...]:
+    """A warning for a piece far from a game piece's size (smaller than MIN_EXTENT: a scale model, a units mistake),
+    else for a mass that makes it far too heavy or light for its size (outside DENSITY_RANGE)."""
+    from ..checks import worded
+
+    where = f"{r.path}: {r.where}"
+    if extent < MIN_EXTENT:
+        if shape == "cad":
+            return (worded(lambda: i18n.t(
+                "{where}: the piece is only {size} m across, smaller than {least} m: is its CAD a scale model (a 1:40 "
+                "print needs {scale_setting}) or in other units ({units_setting})?", where=where, size=_plain(extent),
+                least=f"{MIN_EXTENT:g}", scale_setting="scale = 40", units_setting="units = \"mm\"")),)
+        return (worded(lambda: i18n.t("{where}: the piece is only {size} m across, smaller than {least} m: check its "
+                                      "sizes (in m, or the _in keys for inches)", where=where, size=_plain(extent),
+                                      least=f"{MIN_EXTENT:g}")),)
+    lo, hi = DENSITY_RANGE
+    if not lo <= density <= hi:
+        return (worded(lambda: i18n.t("{where}: its mass makes it {density} kg/m³ for its size, outside {lo} to {hi} "
+                                      "(lighter than air, or denser than tungsten): check mass (kg) and the sizes",
+                                      where=where, density=_plain(density), lo=f"{lo:g}", hi=f"{hi:g}")),)
+    return ()
 
 
 def _lo_hi(s: Solid) -> tuple[np.ndarray, np.ndarray]:
@@ -568,22 +607,43 @@ def _cad(r: _Reader, base_dir: Path) -> tuple[list[Solid], Inertial]:
     from ..cad.fit import convex_split
     from ..cad.source import load_source
 
+    from ..cad.source import STEP_SUFFIXES, UNITS, step_length_unit
+
     units = None
     if r.has("units"):
         units = r.text("units")
         if units not in _UNITS:
             raise r.err(i18n.t("units must be one of {choices}, not {units}",
                                choices=', '.join(_UNITS), units=repr(units)))
+    scale = r.num("scale", 1.0, positive=True)
+    if scale > MAX_SCALE:
+        raise r.err(i18n.t("scale must be from above 0 to {most}, not {scale}", most=f"{MAX_SCALE:g}",
+                           scale=repr(scale)))
     file = Path(r.text("cad"))
+    path = file if file.is_absolute() else Path(base_dir) / file
+    factor = scale
+    step = path.suffix.lower() in STEP_SUFFIXES
+    if step and units is not None:       # a STEP is read in its own units; `units` reads its numbers in these
+        declared = step_length_unit(path)
+        if declared is None:
+            raise r.err(i18n.t("can't tell which units {file} is in, so {units_setting} can't be applied; leave "
+                               "units out to use the file's own", file=file.name, units_setting=f"units = \"{units}\""))
+        factor *= UNITS[units] / UNITS[declared]
     try:
-        src = load_source(file if file.is_absolute() else Path(base_dir) / file, units)
+        src = load_source(path, None if step else units)
     except CadError as e:
         raise r.err(str(e)) from None
+    if factor != 1.0:
+        for p in src.pieces:
+            p.v = p.v * factor
     lo = np.min([p.v.min(axis=0) for p in src.pieces], axis=0)
     hi = np.max([p.v.max(axis=0) for p in src.pieces], axis=0)
     if float((hi - lo).max()) > MAX_EXTENT:  # before the split, which a units mistake would make slow
         raise r.err(i18n.t("the piece is {meters} m across; check units (m, mm or in)",
                            meters=_meters(float((hi - lo).max()))))
+    if float((hi - lo).max()) < MIN_CAD_EXTENT:     # before the split, which can't make a solid of it
+        raise r.err(i18n.t("the piece is only {size} m across; check units (m, mm or in) and scale",
+                           size=_plain(float((hi - lo).max()))))
     solids = []
     for p in src.pieces:
         try:

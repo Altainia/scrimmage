@@ -534,7 +534,7 @@ a shape with a key it doesn't use, no mass, or no surface is an error that names
 | `ring` | `diameter`, `length`, `inner_diameter` | a tube read as short: a hatch panel, a note |
 | `cone` | `diameter` (base), `tip_diameter` (default 0, a point), `length` | |
 | `compound` | `[[piece.<name>.shapes]]`, `axis`, `hole` | several of the shapes above, each with its `pos` and `rpy_deg` |
-| `cad` | `cad` (a STEP, STL or OBJ file, relative to the range file), `units` (`"m"`, `"mm"` or `"in"`), `axis`, `hole` | an exact shape from CAD |
+| `cad` | `cad` (a STEP, STL or OBJ file, relative to the range file), `units` (`"m"`, `"mm"` or `"in"`), `scale` (default 1), `axis`, `hole` | an exact shape from CAD |
 
 Every kind also takes `mass` (kg, required), `material` or `friction`, `inertia = [Ixx, Iyy, Izz]` (kg m², left out:
 worked out from the shape at the same density throughout), `label` and `color`.
@@ -556,6 +556,16 @@ the game's CAD. The CAD files carry no mass, so `mass` is required (the manual's
 for the surface. A piece that is not convex is cut into convex parts with `coacd`; without it installed, that is a
 plain error saying so. The piece's size is checked: one more than 3 m across is refused with "the piece is 301 m
 across; check units (m, mm or in)", the usual sign of millimeters read as meters or inches as millimeters.
+
+- **Units.** An STL or OBJ file has no units, so `units` says what its numbers are (guessed from the size when left
+  out). A **STEP file says its own units**, and they are used when `units` is left out. Give `units` for a STEP only
+  when the file is wrong about them: its numbers are then read in `units` instead.
+- **Scale.** `scale = 40` makes the piece 40 times bigger, for a scale model. The 2024 "Game Piece.step" in the
+  3D-print field files is a 1:40 NOTE, 8.9 mm across; the full-size NOTE is `scale = 40`, or better the `2024-note`
+  preset.
+- **A warning for a piece far from its expected size.** A piece (CAD or not) smaller than 2 cm across, or whose
+  `mass` makes it lighter than air or denser than tungsten for its size, is accepted with a warning: `scrimmage range
+  check` prints it, and a test run's notes say it. It is usually a scale model, a units mistake, or a mass in pounds.
 
 **The long axis, and flat pieces.** Each kind has a long axis: a tube's, ring's, cylinder's or cone's own, a box's
 longest edge, and for a compound or CAD piece `axis = "x"`, `"y"` or `"z"` (default `"z"`). A kind is **flat** when it

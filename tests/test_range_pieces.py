@@ -237,3 +237,70 @@ def test_piece_presets_are_there_with_their_sizes():
         assert 0 < kind_preset(name).friction < 2
         assert kind_preset(name).label == display_name(name)
     assert set(PRESETS["surface"]) == {"pvc", "polycarbonate", "rubber", "foam", "hdpe", "polypropylene", "fabric"}
+
+
+# ---- CAD units and scale, and a piece far from its expected size (kickoff dry run gap 14) -------------------------
+
+CAD_DATA = ROOT / "data" / "cad"
+
+
+def test_a_step_file_says_its_own_units():
+    from scrimmage.cad.source import step_length_unit
+    assert step_length_unit(CAD_DATA / "climber.step") == "mm"
+
+
+def test_step_units_are_honored(tmp_path):
+    # the file says millimeters; units = "in" reads its numbers as inches, 25.4 times bigger (here past 3 m: refused,
+    # which shows it was honored: before, units was ignored for a STEP)
+    with pytest.raises(RangeError, match=r"the piece is \d+(\.\d+)? m across; check units"):
+        parse_kind(P, "c", {"shape": "cad", "cad": str(CAD_DATA / "climber.step"), "units": "in", "mass": 1.0,
+                            "friction": 0.4}, tmp_path)
+
+
+def test_a_cad_piece_far_too_small_is_refused(tmp_path):
+    write_stl(tmp_path / "speck.stl", *cube(0.0088))
+    with pytest.raises(RangeError, match=r"the piece is only 0.0000088 m across; check units \(m, mm or in\) and scale"):
+        parse_kind(P, "c", {"shape": "cad", "cad": "speck.stl", "units": "mm", "mass": 0.2, "friction": 0.4},
+                   tmp_path)
+
+
+def test_a_cad_piece_scaled(tmp_path):
+    write_stl(tmp_path / "model.stl", *cube(0.0025))      # a 1:40 scale model
+    k = parse_kind(P, "c", {"shape": "cad", "cad": "model.stl", "units": "m", "scale": 40, "mass": 0.5,
+                            "friction": 0.4}, tmp_path)
+    assert k.extent == pytest.approx(0.1) and k.warnings == ()
+    for bad in (0, -2, "big"):
+        with pytest.raises(RangeError, match="scale must be"):
+            parse_kind(P, "c", {"shape": "cad", "cad": "model.stl", "units": "m", "scale": bad, "mass": 0.5,
+                                "friction": 0.4}, tmp_path)
+    with pytest.raises(RangeError, match="scale isn't used by a tube"):
+        parse_kind(P, "c", {**CORAL, "scale": 2}, tmp_path)
+
+
+def test_a_tiny_piece_is_warned_about(tmp_path):
+    # the official "Game Piece.step" is a 1:40 print: an 8.8 mm NOTE of 0.235 kg
+    write_stl(tmp_path / "note.stl", *cube(0.0088))
+    k = parse_kind(P, "note", {"shape": "cad", "cad": "note.stl", "units": "m", "mass": 0.2353, "friction": 0.4},
+                   tmp_path)
+    assert len(k.warnings) == 1
+    w = k.warnings[0]
+    assert "[piece.note]" in w and "0.0088 m across" in w and "scale" in w
+
+
+def test_a_piece_heavy_for_its_size_is_warned_about(tmp_path):
+    k = parse_kind(P, "brick", {"shape": "box", "size": [0.1, 0.1, 0.1], "mass": 100.0, "friction": 0.4}, tmp_path)
+    assert len(k.warnings) == 1 and "100000 kg/m³" in k.warnings[0] and "mass" in k.warnings[0]
+    light = parse_kind(P, "fluff", {"shape": "box", "size": [1.0, 1.0, 1.0], "mass": 0.001, "friction": 0.4},
+                       tmp_path)
+    assert len(light.warnings) == 1 and "0.001 kg/m³" in light.warnings[0]
+    assert parse_kind(P, "t", HOLLOW, ROOT).warnings == ()
+    assert kind_preset("2024-note").warnings == () and ball_kind("b", "2026-fuel").warnings == ()
+
+
+def test_a_ranges_piece_warnings_are_the_ranges(tmp_path):
+    from scrimmage.testrange.spec import load_range
+    write_stl(tmp_path / "note.stl", *cube(0.0088))
+    (tmp_path / "r.toml").write_text('[range]\nname = "t"\n[piece.note]\nshape = "cad"\ncad = "note.stl"\n'
+                                     'units = "m"\nmass = 0.2353\nfriction = 0.4\n')
+    rng = load_range("r.toml", tmp_path)
+    assert any("[piece.note]" in w and "across" in w for w in rng.warnings)
