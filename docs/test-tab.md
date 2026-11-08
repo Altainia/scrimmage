@@ -154,7 +154,8 @@ picture (a placed piece has its own mark, a square).
 
 **The check.** **At least n% made it in** (under **Check**, plug it into an **expect** block) is true when at least
 that share of the fed balls ended in. Put it last. Only the last block of the test, at the top level, is checked after
-the balls settle (below); in any other place it uses the counts so far.
+the balls settle (below); in any other place it uses the counts so far. In the test file it is
+`{ made_it_in = { at_least = 80 } }`: `at_least` is a percentage, from 0 to 100 (not `at_least_pct`).
 
 **Settling.** When the blocks finish, the run keeps going for up to 3 s so the balls come to rest, with the motors
 holding their last commands and the stations stopped. The wait doesn't count against the time limit. Checks that run

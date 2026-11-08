@@ -592,7 +592,8 @@ A piece waits while another still overlaps its spawn point. At most 200 pieces i
 ### `[flight]` (optional, balls only)
 
 Flies each piece out through `outlet` with the launcher model's ball flight (drag and spin lift), from where and how
-it left, so the results say where shots land.
+it left, so the results say where shots land. A rigid piece's flight isn't modeled yet: with a non-ball `[piece]`, `bench check` warns
+that the run will have no landings (the run still measures how the piece leaves).
 
 | Key | Meaning | Default |
 |---|---|---|

@@ -877,7 +877,9 @@ has its two outposts as stations: see [Where the 2026 numbers come from](#where-
   rolling_resistance` (a flat disc doesn't roll).
 - **Elements** are `[[element]]` tables: see [docs/terrain.md](terrain.md#field-elements-in-range-files), which has
   the `rod` kind ([Rods](#rods)). A start whose robot outline overlaps an element, or a floor ball resting inside one,
-  is an error; so is a start under a rod lower than 0.5 m.
+  is an error; so is a start under a rod lower than 0.5 m. The start check uses a fixed 0.9 m square for the robot,
+  not your robot's own outline: an intake or arm that reaches past it, into an element or onto a floor piece, isn't
+  caught there (the robot is placed as the start says and the physics sorts out the overlap at the first step).
 
 The built-in `2013` is the ULTIMATE ASCENT field's goal end:
 [`scrimmage/testrange/ranges/2013.toml`](../scrimmage/testrange/ranges/2013.toml). The blue alliance's four slot
