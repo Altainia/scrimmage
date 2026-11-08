@@ -598,8 +598,10 @@ default kind (a goal's, the first ball or disc kind).
 - **Staged on top of something.** `height = 1.2` (meters, 0 to 10, default 0: the carpet) sets that table's pieces
   down on a surface that high instead, such as 2024's HIGH NOTEs on top of the AMP: give the AMP as an `[[element]]`
   box or an `[[obstacle]]`, and the pieces' `height` as its top. A staged piece is not refused for lying over an
-  element (that check is the carpet's), and pieces at different heights may share an x and y. One with no element or
-  obstacle top under its center (within 2 cm) is accepted with a warning: it would fall.
+  element (that check is the carpet's), and pieces at different heights may share an x and y. One with no element,
+  obstacle or goal top under its center (within 2 cm) is accepted with a warning: it would fall. A goal's `body` is
+  four walls, not a solid block, so a piece over the middle of one falls in; stage it over a wall, or give the top
+  as an element.
 - **`[[station]]`** feeds any ball or rigid piece (not a disc). The keys `tip_deg` and `turn_deg` give the fed piece's
   base orientation (the turn is about the vertical from `heading_deg`), and `spread_tip_deg` and `spread_turn_deg`
   spread each feed by up to ± that much, as `spread_yaw_deg` does. They default to 0 (a flat kind's tip to 90). A

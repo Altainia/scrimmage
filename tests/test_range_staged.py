@@ -86,3 +86,22 @@ def test_setups_floor_spread_never_picks_a_staged_piece(tmp_path):
     w = World(range_cfg(range={"file": "r.toml", "floor_balls": True, "start": "s"}), tmp_path)
     i, where = spread_ball(w)
     assert i == 1 and where["distance_in"] == pytest.approx(2.3 / 0.0254)
+
+
+GOAL_BODY = '''
+[[goal]]
+name = "amp_goal"
+pos = [6.0, 6.0]
+rim_height = 1.4
+opening = { sides = 4, across_flats = 0.4 }
+body = { size = [0.6, 0.6], height = 1.2 }
+'''
+
+
+def test_a_piece_staged_on_a_goals_body_wall_is_supported(tmp_path):
+    # review M6: a goal's body (its four walls from the carpet to `height`) holds up a piece staged on a wall's top
+    rng = load(tmp_path, GOAL_BODY + '[[floor_balls]]\nat = [[6.29, 6.0]]\nheight = 1.2\n')
+    assert rng.warnings == ()
+    # over the middle of the body there's no top: it falls in, and is still warned about
+    inside = load(tmp_path, GOAL_BODY + '[[floor_balls]]\nat = [[6.0, 6.0]]\nheight = 1.2\n')
+    assert len(inside.warnings) == 1 and "nothing under it" in inside.warnings[0]

@@ -790,8 +790,9 @@ def _outside_warnings(goals, size: tuple[float, float]) -> tuple[str, ...]:
 
 
 def _unsupported(rng: Range, names: list[str]) -> tuple[str, ...]:
-    """A warning for each staged floor piece (height above 0) with no element's or obstacle's top under its center
-    within STAGED_TOL: it would fall."""
+    """A warning for each staged floor piece (height above 0) with no element's, obstacle's or goal's top (a goal
+    body's wall, its funnel, rim or plates, as build.py builds them) under its center within STAGED_TOL: it would
+    fall."""
     from ..checks import worded
     from .station import _element_boxes
 
@@ -799,6 +800,10 @@ def _unsupported(rng: Range, names: list[str]) -> tuple[str, ...]:
         return ()
     boxes = [b for e in rng.elements for b in _element_boxes(e)]
     boxes += [(np.array(o.pos, float), o.rotation(), np.array(o.size) / 2.0) for o in rng.obstacles]
+    from .build import _plates      # build.py imports this module
+    for g in rng.goals:             # a goal's walls, funnel, rim and plates, as built
+        rot = g.rotation()
+        boxes += [(g.to_world(center), rot @ local, np.array(half, float)) for _, center, local, half, _ in _plates(g)]
     out = []
     for k, ((x, y), h) in enumerate(zip(rng.floor_balls, rng.floor_heights)):
         if h <= 0.0:
@@ -807,8 +812,8 @@ def _unsupported(rng: Range, names: list[str]) -> tuple[str, ...]:
         if any(np.all(np.abs(rot.T @ (p - c)) <= half + 1e-9) for c, rot, half in boxes for p in under):
             continue
         out.append(worded(lambda k=k, x=x, y=y, h=h: i18n.t(
-            "floor_balls: {piece} at ({x}, {y}) is staged {height} m up with nothing under it: no element or "
-            "obstacle top is there, so it falls. Check its height and the element's", piece=names[k],
+            "floor_balls: {piece} at ({x}, {y}) is staged {height} m up with nothing under it: no element, "
+            "obstacle or goal top is there, so it falls. Check its height and the element's", piece=names[k],
             x=f"{x:.4g}", y=f"{y:.4g}", height=f"{h:g}")))
     return tuple(out)
 
