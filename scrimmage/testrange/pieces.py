@@ -21,7 +21,8 @@ STEP file says its own units, which are used when `units` is left out; `units` r
 `scale` (default 1) multiplies the CAD piece's size, for a scale model (a 1:40 print: 40). A
 compound or CAD piece may declare `axis = "x" | "y" | "z"` (default z) and a `hole = { diameter, length, center }`
 (along the axis; length defaults to the piece's own length along it, center to its bounding box's center, in the
-file's coordinates). `inertia = [Ixx, Iyy, Izz]` replaces the inertia the shapes give at a uniform density.
+file's axes). A CAD piece's hole is the piece as read, after `units` and `scale`: meters (or the _in keys) of the
+full-size piece, its center in the file's axes and origin scaled the same way, not the file's own numbers. `inertia = [Ixx, Iyy, Izz]` replaces the inertia the shapes give at a uniform density.
 
 A kind's frame has its origin at the center of mass; its `inertia` is the full tensor about it (Ixx, Iyy, Izz, Ixy,
 Ixz, Iyz, MuJoCo's `fullinertia` order) and its long `axis` a unit vector in it: a tube's, ring's, cylinder's or

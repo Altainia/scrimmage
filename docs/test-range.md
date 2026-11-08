@@ -549,7 +549,11 @@ its own `ball`, `disc` or `piece`.
 **Hollow pieces.** A hollow tube or ring is built from 24 convex slices so a rod goes through the hole (the hole is
 very slightly smaller than the number you give: the effective radius is cos(7.5 degrees), about 0.9914 times it). A
 compound or CAD piece with a hole says so with `hole = { diameter = 0.1, length = 0.3 }` (`center` too if it isn't in
-the middle); this is only used to tell if a rod runs through it, for a [seated](test-tab.md#placing-a-piece) check.
+the middle); this is only used to tell if a rod runs through it, for a [seated](test-tab.md#placing-a-piece) check. For a CAD
+piece the hole is the piece as it is read, after `units` and `scale`: its `diameter`, `length` and `center` are in
+meters (or the `_in` keys) of the full-size piece, not the CAD file's own numbers. A 1:40 model at `scale = 40` takes
+the real NOTE's 10 in hole. A `center` read off the CAD tool is in the tool's units and the model's size: turn it
+into meters and multiply it by the scale first.
 
 **CAD pieces.** `shape = "cad"` reads the file with the same reader as the Part tab, so a piece can come straight from
 the game's CAD. The CAD files carry no mass, so `mass` is required (the manual's weight), and `material` or `friction`
