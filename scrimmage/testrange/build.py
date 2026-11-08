@@ -339,6 +339,7 @@ def add_range(spec: mujoco.MjSpec, rng: Range, n_slots: int, *, floor_balls: boo
     places = []
     for i in range(n_floor):
         z, quat = rest_pose(rng, kinds[i], None if turns is None else turns[i])
+        z += float(rng.floor_heights[i]) if len(rng.floor_heights) == len(rng.floor_balls) else 0.0   # staged up
         places.append(((*(float(c) for c in rng.floor_balls[i]), z), quat, BALL_BITS))
     places += [((*slot_xy(j), PARK_Z), None, PARKED_BITS) for j in range(len(kinds) - n_floor)]
     made: dict[str, dict] = {}

@@ -103,7 +103,8 @@ def piece_log(tr) -> list[dict]:
     for b in tr.ball_log():
         i = b["id"]
         start = starts[i] if b["origin"] == "floor" and i < len(starts) else None
-        if not took_part(b, start, float(radius[i])):
+        lift = float(tr.range.floor_heights[i]) if start is not None and i < len(tr.range.floor_heights) else 0.0
+        if not took_part(b, start, float(radius[i]), lift):
             continue
         row = {**b, "kind": kinds[i] if i < len(kinds) else None}
         for k in ("last_pos", "robot_pose", "robot_velocity"):

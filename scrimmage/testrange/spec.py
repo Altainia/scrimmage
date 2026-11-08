@@ -51,7 +51,10 @@ each measured number's provenance (`PieceKind.provenance`).
 
 Floor pieces lie on the carpet, turned by the table's `tip_deg` (0 lying on its side, 90 standing on end; left out,
 the piece lies down: 90 for a flat kind such as a disc, lying flat, 0 for any other) and `rotation_deg` (about
-vertical from field +x, default 0). Each is at least its horizontal reach (`PieceKind.reach`) inside the field, and
+vertical from field +x, default 0). With `height` (m, default 0) they are staged on top of something that high
+instead (2024's HIGH NOTEs on the AMP): set down as on the carpet, that much higher (`Range.floor_heights`). A staged
+piece with no element or obstacle top under it is warned about (it falls), and the "lies on element" check is the
+carpet's only. Each is at least its horizontal reach (`PieceKind.reach`) inside the field, and
 two are at least their two reaches apart (a ball's reach is its radius: a diameter apart, as always).
 
 `[carpet] rolling_resistance` is the carpet's rolling-resistance coefficient C for the range's ball: a ball rolling on
@@ -83,6 +86,7 @@ if TYPE_CHECKING:
 
 CIRCLE_SIDES = 24  # a circular opening is this regular polygon of the given diameter (corners on the circle)
 from ..parts.field import FIELD_LENGTH, FIELD_WIDTH  # noqa: E402  m: the generated field's, when a range gives none
+STAGED_TOL = 0.02  # m: a staged piece's support may be this far below its height
 FIELD_LIMITS = (2.0, 40.0)  # m: a field's length and width must be in this (a typo's 165.4 is refused)
 BUILTIN_RANGES = {name: Path(__file__).with_name("ranges") / f"{name}.toml"
                   for name in ("2026", "2013", "2026-bump", "2023-charge-station", "terrain-library", "2022-hangar",
@@ -275,6 +279,7 @@ class Range:
     default_kind: str = ""
     floor_kinds: tuple[str, ...] = ()  # each floor piece's kind
     floor_turns: np.ndarray = field(default_factory=lambda: np.zeros((0, 2)))  # (n, 2): tip_deg, rotation_deg
+    floor_heights: np.ndarray = field(default_factory=lambda: np.zeros(0))  # (n,): what each rests on, m (0: carpet)
     field_length: float = FIELD_LENGTH  # [range] field: m, the alliance walls' inner faces
     field_width: float = FIELD_WIDTH    # m, the guardrails' inner faces
     warnings: tuple[str, ...] = ()      # what is accepted but likely a mistake (checks.Said: its words when shown)
@@ -379,7 +384,8 @@ _OBSTACLE = ("name", "pos", "size", "rpy_deg", "from", "to", "width")
 _FUNNEL = ("depth", "slope_deg", "throat")
 _BODY = ("size", "height")
 _PLATE = ("name", "pos", "size", "rpy_deg")
-_FLOOR = ("grid", "at", "kind", "tip_deg", "rotation_deg")
+_FLOOR = ("grid", "at", "kind", "tip_deg", "rotation_deg", "height")
+MAX_STAGED = 10.0  # m: a floor piece's `height` at most
 _GRID = ("corner", "step", "count")
 _START = ("pose",)
 _CARPET = ("rolling_resistance",)
@@ -561,7 +567,7 @@ def _floor_balls(path: Path, tables, kinds: dict[str, PieceKind], default: str,
     if not isinstance(tables, list):
         raise RangeError(i18n.t("{path}: floor_balls must be an array of tables ({floor_balls_table})", path=path,
                                 floor_balls_table="[[floor_balls]]"))
-    parts, floor_kinds, turns, reaches = [], [], [], []
+    parts, floor_kinds, turns, reaches, heights = [], [], [], [], []
     for i, t in enumerate(tables):
         r = _Reader(path, f"[[floor_balls]] #{i + 1}", t, _FLOOR)
         if r.has("grid") == r.has("at"):
@@ -573,6 +579,10 @@ def _floor_balls(path: Path, tables, kinds: dict[str, PieceKind], default: str,
         if not -90.0 <= tip <= 90.0:
             raise r.err(i18n.t("tip_deg must be from -90 to 90, not {tip}", tip=tip))
         turn = r.num("rotation_deg", 0.0)
+        height = r.num("height", 0.0)
+        if not 0.0 <= height <= MAX_STAGED:
+            raise r.err(i18n.t("height must be from 0 to {most} m (the top of what the pieces are staged on), not "
+                               "{height}", most=f"{MAX_STAGED:g}", height=repr(height)))
         if r.has("grid"):
             g = r.sub("grid", _GRID)
             corner, step = g.nums("corner", 2), g.nums("step", 2, positive=True)
@@ -593,7 +603,9 @@ def _floor_balls(path: Path, tables, kinds: dict[str, PieceKind], default: str,
         floor_kinds += [name] * n
         turns += [(tip, turn)] * n
         reaches += [_floor_reach(kind, tip, turn)] * n
+        heights += [height] * n
     balls = np.concatenate(parts) if parts else np.zeros((0, 2))
+    lift = np.array(heights, dtype=float)
     rad = np.array(reaches, dtype=float)
     names = _floor_names(kinds, floor_kinds)
     length, width = size
@@ -606,8 +618,9 @@ def _floor_balls(path: Path, tables, kinds: dict[str, PieceKind], default: str,
                    x=f"{balls[k, 0]:.4g}", y=f"{balls[k, 1]:.4g}", field_length=f"{length:g}",
                    field_width=f"{width:g}", inside=f"{rad[k]:.4g}")
         )
-    if len(balls) > 1:
-        d = np.linalg.norm(balls[:, None, :] - balls[None, :, :], axis=-1)
+    if len(balls) > 1:      # across the carpet, and up: pieces staged higher may sit over others
+        d = np.linalg.norm(np.column_stack([balls, lift])[:, None, :] - np.column_stack([balls, lift])[None, :, :],
+                           axis=-1)
         d[np.diag_indices(len(balls))] = np.inf
         need = rad[:, None] + rad[None, :]
         if (d - need).min() < -_EPS:
@@ -621,7 +634,7 @@ def _floor_balls(path: Path, tables, kinds: dict[str, PieceKind], default: str,
                                     "closer than their reaches across the carpet allow ({allowed} m)", path=path,
                                     first=names[a], second=names[b], distance=f"{d[a, b]:.4g}",
                                     allowed=f"{need[a, b]:.4g}"))
-    return balls, floor_kinds, np.array(turns, dtype=float).reshape(-1, 2), rad, names
+    return balls, floor_kinds, np.array(turns, dtype=float).reshape(-1, 2), rad, names, lift
 
 
 def _ball(path: Path, name: str) -> Ball:
@@ -753,6 +766,30 @@ def _outside_warnings(goals, size: tuple[float, float]) -> tuple[str, ...]:
     return tuple(out)
 
 
+def _unsupported(rng: Range, names: list[str]) -> tuple[str, ...]:
+    """A warning for each staged floor piece (height above 0) with no element's or obstacle's top under its center
+    within STAGED_TOL: it would fall."""
+    from ..checks import worded
+    from .station import _element_boxes
+
+    if not len(rng.floor_heights) or not rng.floor_heights.any():
+        return ()
+    boxes = [b for e in rng.elements for b in _element_boxes(e)]
+    boxes += [(np.array(o.pos, float), o.rotation(), np.array(o.size) / 2.0) for o in rng.obstacles]
+    out = []
+    for k, ((x, y), h) in enumerate(zip(rng.floor_balls, rng.floor_heights)):
+        if h <= 0.0:
+            continue
+        under = [np.array([x, y, h - dz]) for dz in (0.002, STAGED_TOL)]
+        if any(np.all(np.abs(rot.T @ (p - c)) <= half + 1e-9) for c, rot, half in boxes for p in under):
+            continue
+        out.append(worded(lambda k=k, x=x, y=y, h=h: i18n.t(
+            "floor_balls: {piece} at ({x}, {y}) is staged {height} m up with nothing under it: no element or "
+            "obstacle top is there, so it falls. Check its height and the element's", piece=names[k],
+            x=f"{x:.4g}", y=f"{y:.4g}", height=f"{h:g}")))
+    return tuple(out)
+
+
 def parse_range(raw: dict, path: Path) -> Range:
     top = _Reader(path, i18n.t("the file"), raw, _TOP)
     rng = top.sub("range", _RANGE)
@@ -800,9 +837,12 @@ def parse_range(raw: dict, path: Path) -> Range:
 
     elements = parse_elements(path, raw.get("element", []))
     climb, elements = parse_climb(path, raw.get("climb"), elements)
-    floor_balls, floor_kinds, floor_turns, reaches, names = _floor_balls(path, raw.get("floor_balls", []), kinds,
-                                                                        default, size)
-    check_clear(path, elements, starts, floor_balls, reaches, names, _floor_pieces(kinds, floor_kinds))
+    floor_balls, floor_kinds, floor_turns, reaches, names, heights = _floor_balls(path, raw.get("floor_balls", []),
+                                                                                 kinds, default, size)
+    on_carpet = heights == 0.0
+    check_clear(path, elements, starts, floor_balls[on_carpet], reaches[on_carpet],
+                [n for n, c in zip(names, on_carpet) if c],
+                [p for p, c in zip(_floor_pieces(kinds, floor_kinds), on_carpet) if c])
     taken = tuple([g.name for g in goals] + [o.name for o in obstacles] + [e.name for e in elements])
     stations = parse_stations(path, raw.get("station", []), kinds, default, taken, size)
     built = Range(name=rng.text("name"), ball_preset=first_ball.preset if first_ball else None,
@@ -811,9 +851,13 @@ def parse_range(raw: dict, path: Path) -> Range:
                   disc_preset=first_disc.preset if first_disc else None, disc=first_disc.disc if first_disc else None,
                   aero=first_disc.aero if first_disc else None, obstacles=tuple(obstacles),
                   elements=elements, climb=climb, stations=stations, kinds=kinds, default_kind=default,
-                  floor_kinds=tuple(floor_kinds), floor_turns=floor_turns, field_length=size[0],
+                  floor_kinds=tuple(floor_kinds), floor_turns=floor_turns, floor_heights=heights,
+                  field_length=size[0],
                   field_width=size[1],
                   warnings=tuple(w for k in kinds.values() for w in k.warnings) + _outside_warnings(goals, size))
+    staged = _unsupported(built, names)
+    if staged:
+        built = replace(built, warnings=built.warnings + staged)
     spread = check_release_clear(path, built)
     return replace(built, warnings=built.warnings + spread) if spread else built
 

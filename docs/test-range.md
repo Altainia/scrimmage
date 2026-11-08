@@ -595,6 +595,11 @@ default kind (a goal's, the first ball or disc kind).
   about the vertical from the field's +x: 0 is lying in line with +x, 90 across. A piece is set down just above its
   resting height and settles, so a leaning piece ends wherever physics puts it. Each floor piece must be inside
   the field by its reach and not overlap another: two are at least the sum of their horizontal reaches apart.
+- **Staged on top of something.** `height = 1.2` (meters, 0 to 10, default 0: the carpet) sets that table's pieces
+  down on a surface that high instead, such as 2024's HIGH NOTEs on top of the AMP: give the AMP as an `[[element]]`
+  box or an `[[obstacle]]`, and the pieces' `height` as its top. A staged piece is not refused for lying over an
+  element (that check is the carpet's), and pieces at different heights may share an x and y. One with no element or
+  obstacle top under its center (within 2 cm) is accepted with a warning: it would fall.
 - **`[[station]]`** feeds any ball or rigid piece (not a disc). The keys `tip_deg` and `turn_deg` give the fed piece's
   base orientation (the turn is about the vertical from `heading_deg`), and `spread_tip_deg` and `spread_turn_deg`
   spread each feed by up to ± that much, as `spread_yaw_deg` does. They default to 0 (a flat kind's tip to 90). A
