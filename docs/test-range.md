@@ -691,7 +691,7 @@ name = "goal"
 pos = [4.6, 4.035]         # field x, y of the opening's center
 heading_deg = 0.0          # goal +x points away from the alliance wall
 rim_height = 1.829         # opening height above the carpet
-tilt_deg = 0.0             # 0 faces up, 90 faces -x (a side opening)
+tilt_deg = 0.0             # 0 faces up, 90 faces -x (a side opening), 180 faces down (scores going up)
 opening = { sides = 6, across_flats = 1.06, rotation_deg = 0.0 }
 funnel = { depth = 0.395, slope_deg = 60.0 }
 body = { size = [1.194, 1.194], height = 1.51 }
@@ -780,8 +780,13 @@ has its two outposts as stations: see [Where the 2026 numbers come from](#where-
 - **The opening** is a regular polygon (`sides`, `across_flats`; or `{ diameter = d }` for a circle approximated by a
   24-gon), turned by `rotation_deg`. Vertex k lies at `rotation_deg + k * 360 / sides` from the goal's +x, so a
   hexagon at 0 has its corners on +-x and flats facing +-y.
-- **Tilt.** `tilt_deg` turns the opening about the goal's y axis: the entry normal goes from +z (0, facing up) to -x
-  (90, facing back toward the goal's own side).
+- **Tilt.** `tilt_deg` (0 to 180) turns the opening about the goal's y axis. The entry normal, the side a scoring
+  piece comes from, goes from +z (0: the opening faces up, a piece scores going down) to -x (90: it faces back
+  toward the field, a piece scores going toward +x, into the wall) to -z (180: it faces down, a piece scores going
+  up). A piece crossing the other way never scores. So the 2024 SPEAKER, entered going up and into the wall through
+  an opening whose front lip is 14.8 deg higher than its edge at the wall, is `heading_deg` pointing into the wall
+  (180 at the blue wall) and `tilt_deg = 165.2` (180 - 14.8). With
+  `heading_deg` this covers every way an opening can face, so a tilt outside 0 to 180 is refused: turn the heading.
 - **The funnel.** Walls run inward from each rim side at `slope_deg` below horizontal for `depth` along the entry
   normal. The **throat** is where they end: the opening inset by `depth / tan(slope)` on each flat, or the measured
   `throat` (across flats), when you give one. Walls are 2 cm thick plates.

@@ -6,7 +6,8 @@ z up, on the generated field's 16.54 x 8.07 m (scrimmage/parts/field.py).
 Goal frame: origin at the opening's center at rim height, x along `heading_deg`, z up. Opening vertex k lies at
 `rotation_deg + k * 360 / sides` from the goal's +x at the circumradius `across_flats / (2 cos(180 / sides))`, so a
 hexagon at rotation 0 has corners on +-x and flats facing +-y. Tilt turns the opening about the goal's y axis: its
-entry normal goes from +z (tilt 0) to -x (tilt 90). A funnel's walls run inward from the rim at `slope_deg` below
+entry normal (the side a scoring piece comes from) goes from +z (tilt 0: scores going down) to -x (tilt 90: going
+sideways, toward +x) to -z (tilt 180: going up). With heading, that is every direction an opening can face. A funnel's walls run inward from the rim at `slope_deg` below
 horizontal for `depth` along the normal; the throat is the opening inset by `depth / tan(slope)` per flat (or the
 measured `throat` across the flats, when given), `depth` below the rim. The scoring surface is the throat for a
 funnelled goal, otherwise the opening.
@@ -473,8 +474,10 @@ def _goal(path: Path, table, i: int, kinds: dict[str, PieceKind], default: str) 
         plates.append(Plate(name=p.text("name"), pos=p.nums("pos", 3), size=p.nums("size", 2, positive=True),
                             rpy_deg=p.nums("rpy_deg", 3, (0.0, 0.0, 0.0))))
     tilt = r.num("tilt_deg", 0.0)
-    if not 0.0 <= tilt <= 90.0:
-        raise r.err(i18n.t("tilt_deg must be from 0 to 90, not {tilt}", tilt=tilt))
+    if not 0.0 <= tilt <= 180.0:       # also refuses nan and inf
+        raise r.err(i18n.t("tilt_deg must be from 0 to 180, not {tilt}: 0 scores a piece going down, 90 going "
+                           "sideways (into a wall), 180 going up; to face the other way, turn heading_deg instead",
+                           tilt=tilt))
     g = Goal(name=name, pos=r.nums("pos", 2), heading_deg=r.num("heading_deg", 0.0),
              rim_height=r.num("rim_height", positive=True), tilt_deg=tilt, opening=opening, funnel=funnel,
              body=body, plates=tuple(plates), slot=slot, kind=kind_name)
