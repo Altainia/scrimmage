@@ -11,7 +11,8 @@
     spread_yaw_deg = 5.0          # each feed varies uniformly within +-this of the heading, and so on
     spread_pitch_deg = 5.0
     spread_speed = 0.2
-    spread_position = [0.0, 0.02, 0.02]    # or spread_position_in; a box around the release point, half sizes
+    spread_position = [0.0, 0.02, 0.02]    # or spread_position_in; a box around the release point, half sizes, in
+                                           # the station's frame: along the heading, across it (to its left), up
     spread_rotation_deg = [0, 0, 0]        # roll, pitch and yaw turning the fed piece (it does nothing to a ball)
     chute = { length = 0.6, slope_deg = 25.0, width = 0.3 }   # a sloped floor and two side walls (optional)
     kind = "coral"                # the field's piece kind it feeds (default: the range's default kind)
@@ -22,7 +23,11 @@
     spread_turn_deg = 30.0
 
 The spreads are limits, not standard deviations (the bench's inlet takes standard deviations): a piece never leaves
-a tight chute's limits. Every spread is +- its value on each axis.
+a tight chute's limits. Every spread is +- its value on each axis. The position spread is in the station's own frame
+(along its heading, across it, up), so a station on a slanted wall spreads along the wall whatever its heading. Each
+corner of the spread box (and each middle) is checked as the release point is: a piece whose center would start
+inside an element, an obstacle, a chute or off the field is refused (it would be shot out); one that would only
+touch one, or the carpet, is warned about (Range.warnings).
 Stations feed balls and rigid pieces (a kind, scrimmage/testrange/pieces.py), not discs. A rigid piece is fed
 turned by its tip and turn (PieceKind.orient, the turn from the heading), then by the rotation spread; a ball is
 fed unturned (its rotation spread turns it, which changes nothing).
@@ -187,7 +192,8 @@ def _low_end_drop(st: Station, kind: PieceKind) -> float:
     return -(top - CHUTE_PLATE * math.cos(s))
 
 
-def _station(path, table, i: int, kinds: dict[str, PieceKind], default: str, taken: list[str]) -> Station:
+def _station(path, table, i: int, kinds: dict[str, PieceKind], default: str, taken: list[str],
+             size: tuple[float, float] = (FIELD_LENGTH, FIELD_WIDTH)) -> Station:
     r = _Reader(path, f"[[station]] #{i + 1}", table, _STATION)
     name = r.text("name")
     r.where = f"[[station]] '{name}'"
@@ -235,10 +241,11 @@ def _station(path, table, i: int, kinds: dict[str, PieceKind], default: str, tak
         raise r.err(i18n.t("tip_deg must be from -90 to 90, not {tip}", tip=tip))
     rad = kind.radius
     x, y, z = release
-    if not (rad <= x <= FIELD_LENGTH - rad and rad <= y <= FIELD_WIDTH - rad):
+    length, width = size
+    if not (rad <= x <= length - rad and rad <= y <= width - rad):
         raise r.err(i18n.t("release point ({x}, {y}) lies off the field (0..{field_length} x 0..{field_width} "
                            "m, center at least {rad} m inside)", x=f"{x:.4g}", y=f"{y:.4g}",
-                           field_length=FIELD_LENGTH, field_width=FIELD_WIDTH, rad=f"{rad:.4g}"))
+                           field_length=f"{length:g}", field_width=f"{width:g}", rad=f"{rad:.4g}"))
     if z < rad:
         if kind.ball is not None:     # the fed piece: "a 0.1501 m ball" (as always), or "a coral"
             raise r.err(i18n.t("release point is {z} m above the carpet; a {diameter} m ball's center needs at least "
@@ -273,7 +280,8 @@ def _station(path, table, i: int, kinds: dict[str, PieceKind], default: str, tak
 
 
 def parse_stations(path, tables, kinds: dict[str, PieceKind], default: str,
-                   taken: tuple[str, ...] = ()) -> tuple[Station, ...]:
+                   taken: tuple[str, ...] = (), size: tuple[float, float] = (FIELD_LENGTH, FIELD_WIDTH),
+                   ) -> tuple[Station, ...]:
     """Read the `[[station]]` tables, feeding the field's `kinds` (`default` when a station names none). `taken` are
     the names of the goals, obstacles and elements, which a station's name may not repeat."""
     if not isinstance(tables, list):
@@ -281,7 +289,7 @@ def parse_stations(path, tables, kinds: dict[str, PieceKind], default: str,
                                 station_table="[[station]]"))
     out: list[Station] = []
     for i, t in enumerate(tables):
-        out.append(_station(path, t, i, kinds, default, list(taken) + [s.name for s in out]))
+        out.append(_station(path, t, i, kinds, default, list(taken) + [s.name for s in out], size))
     return tuple(out)
 
 
@@ -335,12 +343,13 @@ def _tilted(e, level: list) -> list:
     return out
 
 
-def check_release_clear(path, rng: Range) -> None:
+def check_release_clear(path, rng: Range) -> tuple[str, ...]:
     """Refuse a release point whose piece (its bounding sphere) overlaps an element's box, an obstacle, or a station's
     chute (its own chute's walls, not the floor built under it), and a chute that reaches off the field or into an
-    element, an obstacle or another station's chute."""
+    element, an obstacle or another station's chute. Then the position spread (_check_spread): refused where a feed
+    would start inside one of those or off the field; the warnings for a feed that would only touch one."""
     if not rng.stations:
-        return
+        return ()
     from .build_elements import chute_parts
 
     # (what it is in a message, its boxes, the station whose chute it is or None)
@@ -373,6 +382,62 @@ def check_release_clear(path, rng: Range) -> None:
                                             "round)", path=path, name=st.name, x=f"{x:.4g}", y=f"{y:.4g}",
                                             z=f"{z:.4g}", what=what, piece=kind.label, r=f"{r:.2g}",
                                             station_table="[[station]]"))
+    return _check_spread(path, rng, solids, chutes)
+
+
+def spread_offsets(st: Station) -> list[np.ndarray]:
+    """The position spread's corners and middles (26 offsets from the release point, in the field): the box of half
+    sizes spread_position in the station's frame (along the heading, across it, up), turned by the heading."""
+    rot = _rot_z(st.heading_deg)
+    half = np.asarray(st.spread_position, dtype=float)
+    signs = [np.array(c, dtype=float) - 1.0 for c in np.ndindex(3, 3, 3) if c != (1, 1, 1)]
+    return [rot @ (sign * half) for sign in signs]
+
+
+def _check_spread(path, rng: Range, solids, chutes: dict) -> tuple[str, ...]:
+    """Each station's spread box, corner by corner: refuse a feed whose center would start off the field or inside a
+    solid (an element, an obstacle, a chute: the release point's checks), and warn about one whose piece would only
+    touch a solid or the carpet. Its own chute's floor is left out, as for the release point."""
+    from ..checks import worded
+
+    out = []
+    for st in rng.stations:
+        if not any(st.spread_position):
+            continue
+        kind = st.kind_of(rng)
+        r = kind.radius
+        own = [b for part, b in chutes[st.name].items() if part != "floor"] if st.name in chutes else []
+        grazed = None
+        for off in spread_offsets(st):
+            p = np.array(st.release, dtype=float) + off
+            x, y, z = (float(c) for c in p)
+            if not (0.0 <= x <= rng.field_length and 0.0 <= y <= rng.field_width) or z < 0.0:
+                raise RangeError(i18n.t(
+                    "{path}: {station_table} '{name}': its spread_position reaches off the field: a piece fed at ({x}, "
+                    "{y}, {z}) would start beyond the walls or under the carpet; make spread_position smaller (along "
+                    "the heading, across it, up) or move the release point", path=path, name=st.name,
+                    x=f"{x:.4g}", y=f"{y:.4g}", z=f"{z:.4g}", station_table="[[station]]"))
+            if grazed is None and (min(x, y, rng.field_length - x, rng.field_width - y) < r - _TOUCH or z < r - _TOUCH):
+                grazed = (i18n.t("the field's edge or the carpet"), (x, y, z))
+            for what, boxes, station in solids:
+                for center, rot, half in (own if station == st.name else boxes):
+                    local = rot.T @ (p - center)
+                    gap = float(np.linalg.norm(local - np.clip(local, -half, half)))
+                    if gap == 0.0:
+                        raise RangeError(i18n.t(
+                            "{path}: {station_table} '{name}': its spread_position reaches into {what}: a piece fed "
+                            "at ({x}, {y}, {z}) would start inside it and be thrown out; make spread_position smaller "
+                            "(along the heading, across it, up) or move the release point", path=path, name=st.name,
+                            what=what, x=f"{x:.4g}", y=f"{y:.4g}", z=f"{z:.4g}", station_table="[[station]]"))
+                    if grazed is None and gap < r - _TOUCH:
+                        grazed = (what, (x, y, z))
+        if grazed is not None:
+            what, (x, y, z) = grazed
+            out.append(worded(lambda st=st, what=what, x=x, y=y, z=z: i18n.t(
+                "{station_table} '{name}': its spread_position lets a piece start where it touches {what} (fed at "
+                "({x}, {y}, {z})); it may be pushed out fast. Make spread_position smaller or move the release point",
+                name=st.name, what=what, x=f"{x:.4g}", y=f"{y:.4g}", z=f"{z:.4g}", station_table="[[station]]")))
+    return tuple(out)
 
 
 def _corners(center, rot, half) -> np.ndarray:
@@ -419,11 +484,11 @@ def _check_chutes(path, rng: Range, solids, chutes: dict) -> None:
             part_words = i18n.translated(CHUTE_PARTS[part])
             c = _corners(*box)
             lo, hi = c.min(axis=0), c.max(axis=0)
-            if lo[0] < 0.0 or lo[1] < 0.0 or hi[0] > FIELD_LENGTH or hi[1] > FIELD_WIDTH:
+            if lo[0] < 0.0 or lo[1] < 0.0 or hi[0] > rng.field_length or hi[1] > rng.field_width:
                 raise RangeError(i18n.t("{where} reaches off the field (0..{field_length} x 0..{field_width} m: "
                                         "its {part} spans x {x_lo} to {x_hi}, y {y_lo} to {y_hi}); move the release "
-                                        "point further onto the field", where=where, field_length=FIELD_LENGTH,
-                                        field_width=FIELD_WIDTH, part=part_words, x_lo=f"{lo[0]:.3g}",
+                                        "point further onto the field", where=where,
+                                        field_length=f"{rng.field_length:g}", field_width=f"{rng.field_width:g}", part=part_words, x_lo=f"{lo[0]:.3g}",
                                         x_hi=f"{hi[0]:.3g}", y_lo=f"{lo[1]:.3g}", y_hi=f"{hi[1]:.3g}"))
             for what, boxes, station in solids:
                 if station == st.name:
@@ -442,7 +507,8 @@ def _check_chutes(path, rng: Range, solids, chutes: dict) -> None:
 
 def with_overrides(rng: Range, overrides: dict) -> Range:
     """`rng` with the named stations' settings replaced: `{station name: {OVERRIDE_KEYS...}}`. `stock = 0` is no stock
-    (the station feeds up to STATION_CAP); a list key takes 3 numbers. The release check runs again."""
+    (the station feeds up to STATION_CAP); a list key takes 3 numbers. The release check runs again, and its spread
+    warnings replace the range's old ones."""
     if not isinstance(overrides, dict):
         raise RangeError(i18n.t("station settings must be a table of station names, not {overrides}",
                                 overrides=repr(overrides)))
@@ -479,5 +545,6 @@ def with_overrides(rng: Range, overrides: dict) -> Range:
                 new[key] = v
         changed[name] = replace(next(s for s in rng.stations if s.name == name), **new)
     out = replace(rng, stations=tuple(changed.get(s.name, s) for s in rng.stations))
-    check_release_clear(rng.path, out)
-    return out
+    spread = check_release_clear(rng.path, out)       # the new spreads' warnings replace the file's own
+    kept = tuple(w for w in rng.warnings if w not in rng.spread_warnings)
+    return replace(out, warnings=kept + spread, spread_warnings=spread)

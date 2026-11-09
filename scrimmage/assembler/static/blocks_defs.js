@@ -53,7 +53,7 @@ const COND = "Condition";
 const KINDS_OF_NAME = { motor: "robot", joint: "robot", robot: "robot", body: "robot", turret: "robot", cylinder: "robot",
   sensor: "robot", color: "robot",
   field: "field", piece: "field", bar: "field", level: "field", station: "field", element: "field", rod: "field",
-  goal: "field", moving: "field", cleared: "field" };
+  goal: "field", moving: "field", cleared: "field", zone: "field" };
 let used = {};
 const resetUsed = () => {
   used = Object.fromEntries(Object.keys(KINDS_OF_NAME).map((k) => [k, new Set()]));
@@ -125,6 +125,7 @@ const OPTIONS = {
   // a color sensor's check: a piece of any color (no sees in the file), or one of the palette's named colors
   sees: () => choices(pal().sensor_colors || [], "color", [[t("a piece"), "any"]]),
   cleared: () => choices(pal().elements || [], "cleared"),
+  zone: () => choices(pal().zones || [], "zone"),
   // left and right only on a swerve robot (or when the test already has one)
   heading: () => [[t("forward"), "forward"], [t("back"), "back"],
     ...(pal().drive_kind === "swerve" || used.sideways ? [[t("left"), "left"], [t("right"), "right"]] : [])],
@@ -142,6 +143,7 @@ const AIR_SIDES = () => [[t("stored"), "stored"], [t("working"), "working"]];
 // A sensor check's on or off, and the same choice worded for a color sensor. Given as functions: Blockly takes the
 // words a list's options share ("is", "seeing") out into labels of their own, which wouldn't hide with the picker.
 const SENSOR_IS = () => [[t("is on"), "on"], [t("is off"), "off"]];
+const ZONE_IS = () => [[t("in", { context: "zone" }), "in"], [t("out of", { context: "zone" }), "out"]];
 const SENSOR_SEEING = () => [[t("is seeing"), "on"], [t("isn't seeing"), "off"]];
 
 // A joint picker's validator: picking a joint that slides (or turns) switches a unit that doesn't fit it.
@@ -484,6 +486,12 @@ const CONDS = {
     fields: (a) => ("at_most" in a ? { COUNT: a.at_most, SIDE: "at_most" } : { COUNT: a.at_least, SIDE: "at_least" }),
     json: (b) => ({ in_hopper: { [b.getFieldValue("SIDE")]: b.getFieldValue("COUNT") } }),
   },
+  in_zone: {
+    def: () => ({ message0: t("robot is %1 zone %2"), args0: [dd("IS", ZONE_IS), dd("ZONE", OPTIONS.zone)],
+      tooltip: t("The robot's center, seen from above, is in (or out of) one of the field's zones: an area marked on the carpet, such as a starting zone or a wing.") }),
+    fields: (a) => ({ IS: a.is || "in", ZONE: a.zone }),
+    json: (b) => ({ in_zone: { zone: b.getFieldValue("ZONE"), is: b.getFieldValue("IS") } }),
+  },
   scored: {
     def: () => ({ message0: t("%1 scored in %2"), args0: [num("COUNT", 1, { min: 1, max: 1000, precision: 1 }), dd("GOAL", OPTIONS.scoredGoal)],
       tooltip: t("At least this many balls have gone into the goal (or into the goals together, for any goal).") }),
@@ -683,6 +691,7 @@ export function toolbox(p) {
   if (has(p.levels)) out.push(item(condType("level")));
   if (has(p.stations)) out.push(item(condType("station_empty")));
   if (has(p.goals)) out.push(item(condType("scored")));
+  if (has(p.zones)) out.push(item(condType("in_zone")));
   if (aimOk) out.push(item(condType("aimed")));
   if (cylinders) out.push(item(condType("cylinder")), item(condType("pressure")));
   if (has(p.moving_elements)) out.push(item(condType("element")));
@@ -724,6 +733,7 @@ function rememberNames(blocks) {
       if (kind === "cylinder") remember("cylinder", a.cylinder);
       if (kind === "element") remember("moving", a.element);
       if (kind === "clears") remember("cleared", a.element);
+      if (kind === "in_zone") remember("zone", a.zone);
       if (kind === "sensor") { remember("sensor", a.sensor); remember("color", a.sees); }
     }
     rememberNames(b.body);

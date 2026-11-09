@@ -134,7 +134,8 @@ from .program import DRIVE_TIMEOUT, DRIVE_VOLTS, MOVE_TIMEOUT, REPEAT_MAX, WAIT_
 # run_notes', run_setup's and run_words' names, used here and re-exported (other modules and the tests import them
 # from here)
 from .run_notes import (DEFAULT_GRIP_NOTE, GRIP_CONDITIONS, PNEUMATIC_ESTIMATES, air_lines,  # noqa: F401
-                        clearance_lines, default_grip_note, goal_lines, piece_notes, pneumatic_note, run_notes)
+                        clearance_lines, default_grip_note, goal_lines, piece_lines, piece_log, piece_notes,
+                        pneumatic_note, run_notes)
 from .run_setup import (COLOR_NAMES, partner_overlap, sensor_value, setup_config, setup_partner,  # noqa: F401
                         setup_partner_words, world_for)
 from .run_words import _FailureWords, _keep_words, _recast, _v, _w, _where, _ws  # noqa: F401
@@ -185,6 +186,9 @@ class RunResult:
     # each element the test measures (a clears condition or a clearance.<element> chart signal): {min_in, t}, the
     # smallest clearance (in) and when, both None when it was never within 0.5 m; None when the test measures none
     clearance: dict[str, dict] | None = None
+    # each game piece that took part (testrange/balls.py's took_part): its ball log (balls.py log_dict, SI, None
+    # for unset) and its kind; empty off a range. Where each shot or piece went, scored or not (piece_lines)
+    pieces: list[dict] = field(default_factory=list)
     # a run made inside machine text (a sweep's, a spread's, MCP test_run's): its words in every Language and Units
     # setting, {"en-GB|metric": {outcome, checks, marks, seated, notes}} (_keep_words), which the Test tab shows in
     # the viewer's; None for any other run (its words are in the setting it was made in)
@@ -455,6 +459,8 @@ class TestRun(_FailureWords):
         tr = self.world.test_range
         if tr is not None and tr.shooter is not None:
             result.goals = dict(tr.counts()["goals"])
+        if tr is not None:
+            result.pieces = piece_log(tr)
         if self.air is not None:
             result.air = dict(self.air.out)
         result.clearance = watch.closest.result()

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 import re
+from pathlib import Path
 from typing import Any
 
 import tomlkit
@@ -267,14 +268,15 @@ def set_battery(doc, values: dict) -> None:
         _set_value(sec, key, v, ("nominal_voltage",))
 
 
-def _pose(v) -> list[float]:
+def _pose(v, size: tuple[float, float] = (FIELD_LENGTH, FIELD_WIDTH)) -> list[float]:
     if not isinstance(v, (list, tuple)) or len(v) != 3 or not all(
             isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) for x in v):
         raise EditError("start/pose", i18n.t("the start must be [x, y, heading]: meters from the blue corner, and degrees"))
     x, y, h = (float(a) for a in v)
-    if not (0.0 <= x <= FIELD_LENGTH and 0.0 <= y <= FIELD_WIDTH):
+    length, width = size
+    if not (0.0 <= x <= length and 0.0 <= y <= width):
         raise EditError("start/pose", i18n.t("({x}, {y}) is off the field ({length} m by {width} m)", x=f"{x:g}",
-                                             y=f"{y:g}", length=f"{FIELD_LENGTH:g}", width=f"{FIELD_WIDTH:g}"))
+                                             y=f"{y:g}", length=f"{length:g}", width=f"{width:g}"))
     h %= 360.0
     if h > 180.0:
         h -= 360.0   # (-180, 180]
@@ -282,19 +284,29 @@ def _pose(v) -> list[float]:
     return [round(x, 6), round(y, 6), round(h, 1) + 0.0]
 
 
-def _valid_start_pose(doc) -> bool:
+def field_size(doc, base_dir) -> tuple[float, float]:
+    """The config's field size: its [range] file's own (`[range] field`), else the generated field's."""
+    from ..testrange.spec import field_size_of
+    sec = doc.get("range")
+    ref = sec.get("file") if hasattr(sec, "get") else None
+    if not isinstance(ref, str):
+        return FIELD_LENGTH, FIELD_WIDTH
+    return field_size_of(str(ref), Path(base_dir) if base_dir is not None else Path("."))
+
+
+def _valid_start_pose(doc, size: tuple[float, float] = (FIELD_LENGTH, FIELD_WIDTH)) -> bool:
     """The config has a [robot] start_pose that set_start would write: 3 numbers on the field."""
     pose = doc.get("robot", {}).get("start_pose")
     if pose is None:
         return False
     try:
-        _pose(list(pose) if isinstance(pose, list) else pose)
+        _pose(list(pose) if isinstance(pose, list) else pose, size)
     except EditError:
         return False
     return True
 
 
-def set_start(doc, body: dict) -> None:
+def set_start(doc, body: dict, base_dir=None) -> None:
     """Where the robot starts and on which field, from the keys present in `body`:
     range: a built-in range's name ("2026", "ladder", "station", ...: the Test tab's Setup offers every one) or None
     (the plain field: no [range]); absent keeps the config's field;
@@ -302,7 +314,9 @@ def set_start(doc, body: dict) -> None:
     named: a start of the field's range writes [range] start and removes [robot] start_pose; None clears it;
     keep_pose: true with named keeps a [robot] start_pose that is still valid (on the field) instead, and writes
     no [range] start; without one, named is written as above;
-    floor_balls: false writes [range] floor_balls = false, true removes it (the range's default)."""
+    floor_balls: false writes [range] floor_balls = false, true removes it (the range's default).
+    A pose must be on the field: the range file's own size (`[range] field`, its file found from `base_dir`, the
+    config's folder), else the generated field's."""
     if "range" in body:
         rng = body["range"]
         if rng not in FIELDS and rng not in TEST_FIELDS:
@@ -317,12 +331,13 @@ def set_start(doc, body: dict) -> None:
                 if "start" in sec and "named" not in body:
                     del sec["start"]   # the other range's named start
     has_range = "range" in doc
+    size = field_size(doc, base_dir)
     clear = False
     if "pose" in body:
         if body["pose"] is None:
             clear = True
         else:
-            pose = _pose(body["pose"])
+            pose = _pose(body["pose"], size)
             if has_range:
                 doc["range"].pop("start", None)
             arr = tomlkit.array()
@@ -333,7 +348,7 @@ def set_start(doc, body: dict) -> None:
         keep = body.get("keep_pose", False)
         if not isinstance(keep, bool):
             raise EditError("start/keep_pose", i18n.t("keep_pose must be true or false"))
-        if keep and named is not None and _valid_start_pose(doc):
+        if keep and named is not None and _valid_start_pose(doc, size):
             if has_range:
                 doc["range"].pop("start", None)
         elif named is None:

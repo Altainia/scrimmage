@@ -534,7 +534,7 @@ a shape with a key it doesn't use, no mass, or no surface is an error that names
 | `ring` | `diameter`, `length`, `inner_diameter` | a tube read as short: a hatch panel, a note |
 | `cone` | `diameter` (base), `tip_diameter` (default 0, a point), `length` | |
 | `compound` | `[[piece.<name>.shapes]]`, `axis`, `hole` | several of the shapes above, each with its `pos` and `rpy_deg` |
-| `cad` | `cad` (a STEP, STL or OBJ file, relative to the range file), `units` (`"m"`, `"mm"` or `"in"`), `axis`, `hole` | an exact shape from CAD |
+| `cad` | `cad` (a STEP, STL or OBJ file, relative to the range file), `units` (`"m"`, `"mm"` or `"in"`), `scale` (default 1), `axis`, `hole` | an exact shape from CAD |
 
 Every kind also takes `mass` (kg, required), `material` or `friction`, `inertia = [Ixx, Iyy, Izz]` (kg m², left out:
 worked out from the shape at the same density throughout), `label` and `color`.
@@ -549,13 +549,32 @@ its own `ball`, `disc` or `piece`.
 **Hollow pieces.** A hollow tube or ring is built from 24 convex slices so a rod goes through the hole (the hole is
 very slightly smaller than the number you give: the effective radius is cos(7.5 degrees), about 0.9914 times it). A
 compound or CAD piece with a hole says so with `hole = { diameter = 0.1, length = 0.3 }` (`center` too if it isn't in
-the middle); this is only used to tell if a rod runs through it, for a [seated](test-tab.md#placing-a-piece) check.
+the middle); this is only used to tell if a rod runs through it, for a [seated](test-tab.md#placing-a-piece) check. For a CAD
+piece the hole is the piece as it is read, after `units` and `scale`: its `diameter`, `length` and `center` are in
+meters (or the `_in` keys) of the full-size piece, not the CAD file's own numbers. A 1:40 model at `scale = 40` takes
+the real NOTE's 10 in hole. A `center` read off the CAD tool is in the tool's units and the model's size: turn it
+into meters and multiply it by the scale first.
 
 **CAD pieces.** `shape = "cad"` reads the file with the same reader as the Part tab, so a piece can come straight from
 the game's CAD. The CAD files carry no mass, so `mass` is required (the manual's weight), and `material` or `friction`
 for the surface. A piece that is not convex is cut into convex parts with `coacd`; without it installed, that is a
 plain error saying so. The piece's size is checked: one more than 3 m across is refused with "the piece is 301 m
 across; check units (m, mm or in)", the usual sign of millimeters read as meters or inches as millimeters.
+
+- **Units.** An STL or OBJ file has no units, so `units` says what its numbers are (guessed from the size when left
+  out). A **STEP file says its own units** (the length unit of its parts' unit contexts: meters, millimeters,
+  centimeters, inches or feet), and they are used when `units` is left out. Give `units` for a STEP only when the file
+  is wrong about them: its numbers are then read in `units` instead. When the file's own unit can't be told (none, or
+  its parts disagree), `units` is ignored with a warning and the file loads as it is.
+  - *A change for old range files:* before, `units` was ignored on a STEP. A range file that gave a STEP piece a
+    `units` different from the file's own (harmless then) now rescales the piece; `scrimmage range check` shows the
+    size warning or the "check units" refusal when that is far off. Remove `units` to keep the old size.
+- **Scale.** `scale = 40` makes the piece 40 times bigger, for a scale model. The 2024 "Game Piece.step" in the
+  3D-print field files is a 1:40 NOTE, 8.9 mm across; the full-size NOTE is `scale = 40`, or better the `2024-note`
+  preset.
+- **A warning for a piece far from its expected size.** A piece (CAD or not) smaller than 2 cm across, or whose
+  `mass` makes it lighter than air or denser than tungsten for its size, is accepted with a warning: `scrimmage range
+  check` prints it, and a test run's notes say it. It is usually a scale model, a units mistake, or a mass in pounds.
 
 **The long axis, and flat pieces.** Each kind has a long axis: a tube's, ring's, cylinder's or cone's own, a box's
 longest edge, and for a compound or CAD piece `axis = "x"`, `"y"` or `"z"` (default `"z"`). A kind is **flat** when it
@@ -585,6 +604,13 @@ default kind (a goal's, the first ball or disc kind).
   about the vertical from the field's +x: 0 is lying in line with +x, 90 across. A piece is set down just above its
   resting height and settles, so a leaning piece ends wherever physics puts it. Each floor piece must be inside
   the field by its reach and not overlap another: two are at least the sum of their horizontal reaches apart.
+- **Staged on top of something.** `height = 1.2` (meters, 0 to 10, default 0: the carpet) sets that table's pieces
+  down on a surface that high instead, such as 2024's HIGH NOTEs on top of the AMP: give the AMP as an `[[element]]`
+  box or an `[[obstacle]]`, and the pieces' `height` as its top. A staged piece is not refused for lying over an
+  element (that check is the carpet's), and pieces at different heights may share an x and y. One with no element,
+  obstacle or goal top under its center (within 2 cm) is accepted with a warning: it would fall. A goal's `body` is
+  four walls, not a solid block, so a piece over the middle of one falls in; stage it over a wall, or give the top
+  as an element.
 - **`[[station]]`** feeds any ball or rigid piece (not a disc). The keys `tip_deg` and `turn_deg` give the fed piece's
   base orientation (the turn is about the vertical from `heading_deg`), and `spread_tip_deg` and `spread_turn_deg`
   spread each feed by up to ± that much, as `spread_yaw_deg` does. They default to 0 (a flat kind's tip to 90). A
@@ -604,6 +630,24 @@ turn. Tipped up 80 degrees or more: "standing on end" (for a flat kind, "lying f
 in line" at a turn of 0, "lying across" at 90 (either way), "lying in line, turned around" at 180, "lying at 45°"
 between; a flat kind at tip 0 is "standing on edge". In between: "leaning 40°, lying across". When a spread would give
 two placements the same words, the words add what differs ("lying flat (turned 45°)").
+
+### Floor zones
+
+A range can mark areas of the carpet as zones, the way a game's tape lines do (2024's starting zone, wing and stage
+zone):
+
+```toml
+[[zone]]
+name = "blue_start"          # source: the manual's starting line
+corners = [[0.0, 0.0], [1.93, 0.0], [1.93, 8.21], [0.0, 8.21]]   # field x, y (m), in order around the zone
+color = "blue"               # the tape's color; default white
+```
+
+A zone is any polygon whose edges don't cross, with at least 3 corners, each on the field; two zones can't share a
+name. It is drawn as 2 in tape along its edges, which touches nothing. The Test tab's **robot is in** / **out of zone**
+condition reads it: the robot's center, seen from above, inside or outside the zone (an edge counts as inside). That is
+enough for "did it leave the starting zone" (2024's LEAVE) and "is it in the wing"; a rule about the whole robot or
+its bumpers (2024's PARK) isn't modeled yet.
 
 ### Rods
 
@@ -677,6 +721,27 @@ x = 0, z up) on the generated field of 16.54 by 8.07 m. The built-in `2026` is
 [`scrimmage/testrange/ranges/2026.toml`](../scrimmage/testrange/ranges/2026.toml); copy it to make your own and
 point `[range] file` at the copy.
 
+**The field's size.** A season whose field isn't 16.54 by 8.07 m gives its own in the range file's `[range]` table:
+`field = { length = 16.541, width = 8.211 }` (2024's, from the field drawings), each 2 to 40 m, the inside faces of
+the alliance walls (length, along x) and the guardrails (width, along y). The generated field's carpet and walls
+follow it, so WPILib coordinates, AprilTag positions and robot code agree with the range. Floor pieces and stations
+must lie inside it. A goal whose center is outside it is accepted with a warning: it is behind a wall, so nothing
+can reach it (2024's AMP at y = 8.204 m needs the 8.211 m field).
+
+**Checking and seeing a range file.** A range file isn't a robot config, so `scrimmage edit` doesn't open it (it says
+so, and what to do instead). Check one on its own, with no robot:
+
+```bash
+scrimmage range check ranges/2024.toml          # "ok", the field's size and what it holds, then any warnings
+scrimmage range check 2026 ranges/2024.toml     # several at once; a built-in range by its name
+scrimmage range view ranges/2024.toml           # the field in the MuJoCo 3D viewer, no robot
+scrimmage range view ranges/2024.toml --out top.png    # a picture from above instead
+```
+
+`range check` exits 1 when a file has a problem, and prints the problem as the robot's config would (the file, the
+table and the key). A warning (a goal behind the walls) doesn't fail it. `range view` shows the goals, obstacles,
+elements, stations' chutes and floor pieces on the carpet at the range's field size.
+
 ```toml
 # range file: one hexagonal goal, an 8-ball line on the floor, a start in front of the goal
 [range]
@@ -691,7 +756,7 @@ name = "goal"
 pos = [4.6, 4.035]         # field x, y of the opening's center
 heading_deg = 0.0          # goal +x points away from the alliance wall
 rim_height = 1.829         # opening height above the carpet
-tilt_deg = 0.0             # 0 faces up, 90 faces -x (a side opening)
+tilt_deg = 0.0             # 0 faces up, 90 faces -x (a side opening), 180 faces down (scores going up)
 opening = { sides = 6, across_flats = 1.06, rotation_deg = 0.0 }
 funnel = { depth = 0.395, slope_deg = 60.0 }
 body = { size = [1.194, 1.194], height = 1.51 }
@@ -734,7 +799,7 @@ chute = { length = 0.5, slope_deg = 30.0 }
 | `stock` | balls | none | how many balls the station feeds, 1 to 200. Left out, it never runs out, but feeds at most 50 in one run. In a test's Setup (and the `[range] station` table), `stock = 0` also means "never runs out" |
 | `spread_yaw_deg`, `spread_pitch_deg` | degrees | 0 | each feed's heading and pitch vary by up to this much either way |
 | `spread_speed` | m/s | 0 | each feed's speed varies by up to this much either way |
-| `spread_position` or `spread_position_in` | m or in | 0, 0, 0 | a box around the release point, three numbers (along x, y, z): each feed's release point moves by up to this much either way on each axis |
+| `spread_position` or `spread_position_in` | m or in | 0, 0, 0 | a box around the release point, three numbers in the station's own frame (along the heading, across it to the left, up): each feed's release point moves by up to this much either way on each axis |
 | `spread_rotation_deg` | degrees | 0, 0, 0 | how much each feed is turned about each axis (roll, pitch, yaw). A round ball doesn't show it; for a piece that isn't round it tumbles it a little |
 | `kind` | | the range's default | the kind of piece it feeds, the name of a `[piece.<name>]` table (or the default kind) |
 | `tip_deg` | degrees | 0 (flat kinds: 90) | the fed piece's tip: 0 lying on its side, 90 standing on end, -90 to 90. A ball ignores it |
@@ -746,6 +811,14 @@ chute = { length = 0.5, slope_deg = 30.0 }
 degrees right of the heading, and `spread_position = [0, 0.02, 0.02]` is 2 cm either way across and up. The draws are
 uniform between those limits, not standard deviations, so a ball never leaves a tight chute's limits. A spread of 0 is
 exact.
+
+**The position spread follows the station.** `spread_position` is along the heading, across it and up, not along the
+field's x and y, so a station on a slanted wall (2024's SOURCE, at 30 degrees) spreads along the wall with
+`spread_position = [0, 0.3, 0]` whatever its heading. (Before, it was along the field's axes; a station heading 0
+reads the same either way.) Every corner of the spread box is checked like the release point: a feed whose center would
+start inside an element, an obstacle, a chute or beyond the field's walls is refused, since the physics would throw
+it out fast (the 2024 dry run saw a NOTE leave a wall at 13 m/s); one whose piece would only touch something is
+accepted with a warning (`scrimmage range check` shows it).
 
 **The seed.** The draws come from `[range] seed` (default 1), one stream per station, so the same seed gives the same
 feeds whatever the timing. A different seed is a different shuffle of the same spreads: the Test tab's **New shuffle**
@@ -780,8 +853,13 @@ has its two outposts as stations: see [Where the 2026 numbers come from](#where-
 - **The opening** is a regular polygon (`sides`, `across_flats`; or `{ diameter = d }` for a circle approximated by a
   24-gon), turned by `rotation_deg`. Vertex k lies at `rotation_deg + k * 360 / sides` from the goal's +x, so a
   hexagon at 0 has its corners on +-x and flats facing +-y.
-- **Tilt.** `tilt_deg` turns the opening about the goal's y axis: the entry normal goes from +z (0, facing up) to -x
-  (90, facing back toward the goal's own side).
+- **Tilt.** `tilt_deg` (0 to 180) turns the opening about the goal's y axis. The entry normal, the side a scoring
+  piece comes from, goes from +z (0: the opening faces up, a piece scores going down) to -x (90: it faces back
+  toward the field, a piece scores going toward +x, into the wall) to -z (180: it faces down, a piece scores going
+  up). A piece crossing the other way never scores. So the 2024 SPEAKER, entered going up and into the wall through
+  an opening whose front lip is 14.8 deg higher than its edge at the wall, is `heading_deg` pointing into the wall
+  (180 at the blue wall) and `tilt_deg = 165.2` (180 - 14.8). With
+  `heading_deg` this covers every way an opening can face, so a tilt outside 0 to 180 is refused: turn the heading.
 - **The funnel.** Walls run inward from each rim side at `slope_deg` below horizontal for `depth` along the entry
   normal. The **throat** is where they end: the opening inset by `depth / tan(slope)` on each flat, or the measured
   `throat` (across flats), when you give one. Walls are 2 cm thick plates.
@@ -810,7 +888,9 @@ has its two outposts as stations: see [Where the 2026 numbers come from](#where-
   rolling_resistance` (a flat disc doesn't roll).
 - **Elements** are `[[element]]` tables: see [docs/terrain.md](terrain.md#field-elements-in-range-files), which has
   the `rod` kind ([Rods](#rods)). A start whose robot outline overlaps an element, or a floor ball resting inside one,
-  is an error; so is a start under a rod lower than 0.5 m.
+  is an error; so is a start under a rod lower than 0.5 m. The start check uses a fixed 0.9 m square for the robot,
+  not your robot's own outline: an intake or arm that reaches past it, into an element or onto a floor piece, isn't
+  caught there (the robot is placed as the start says and the physics sorts out the overlap at the first step).
 
 The built-in `2013` is the ULTIMATE ASCENT field's goal end:
 [`scrimmage/testrange/ranges/2013.toml`](../scrimmage/testrange/ranges/2013.toml). The blue alliance's four slot

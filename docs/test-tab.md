@@ -122,7 +122,8 @@ Two conditions go with them. **\<station\> is empty** is true when the station h
 
 **Where a piece should end up.** The test needs to know where a piece counts as "in". In Setup, **Where a piece should
 end up**, tick the bodies a piece lands in or is held by: a hopper, an intake, a claw. A piece is in when its center is
-inside one of those bodies' boxes, or when one of them holds it as the run ends (a grabber's jaws count too; "held" is
+inside one of those bodies' boxes (the box around the body's shapes, so the space inside a bin counts) and it is off
+the carpet (the robot carries it, as for *piece* **in** *body*), or when one of them holds it as the run ends (a grabber's jaws count too; "held" is
 under [Holding a piece](#holding-a-piece)). A new test ticks the bodies named hopper, intake, indexer, claw, grabber,
 gripper or jaw for you. If you use **in the hopper** or **made it in** with nothing ticked, the problem says "tick where
 a piece should end up in Setup". The test file keeps this under `hopper` in `[test]`.
@@ -133,7 +134,8 @@ body without being inside is stuck. (A ball wedged on top of an intake would oth
 
 **What happens to each piece.** Every piece the station feeds ends in one of four ways:
 
-- **in**: its center is inside a ticked body, or a ticked body holds it (a piece that isn't a ball).
+- **in**: its center is inside a ticked body and off the carpet, or a ticked body holds it (a piece that isn't a
+  ball).
 - **placed**: it is seated on a rod, or resting on a field element, that a seated or rests-on check in your test names
   (see [Placing a piece](#placing-a-piece)). A coral on a branch is placed, not missed.
 - **stuck**: it is resting on a part of your robot outside the hopper, not moving for half a second. It is called out
@@ -152,7 +154,8 @@ picture (a placed piece has its own mark, a square).
 
 **The check.** **At least n% made it in** (under **Check**, plug it into an **expect** block) is true when at least
 that share of the fed balls ended in. Put it last. Only the last block of the test, at the top level, is checked after
-the balls settle (below); in any other place it uses the counts so far.
+the balls settle (below); in any other place it uses the counts so far. In the test file it is
+`{ made_it_in = { at_least = 80 } }`: `at_least` is a percentage, from 0 to 100 (not `at_least_pct`).
 
 **Settling.** When the blocks finish, the run keeps going for up to 3 s so the balls come to rest, with the motors
 holding their last commands and the stations stopped. The wait doesn't count against the time limit. Checks that run
@@ -163,7 +166,9 @@ moving read "still moving when the run ended".
 
 **Station settings.** In Setup, each station has a row of boxes for the field's values: time between balls, stock
 (empty means "never runs out", at most 50 are fed in one run), and the spreads. **Every spread is plus or minus its
-value**: "Left/right angle (± degrees)" of 5 means each ball goes up to 5° either side. A change is saved in the test's
+value**: "Left/right angle (± degrees)" of 5 means each ball goes up to 5° either side. The **Release box**'s three
+boxes are **along** the way the station feeds, **across** it and **up**, not the field's x, y and z, so a station on a
+slanted wall spreads along the wall. A change is saved in the test's
 `[setup]`; the box shows the field's own value until you change it. A station that feeds a piece that isn't a ball
 (a coral, say) has three more rows, in plain words: **Tipped up** (0 lying on its side, 90 standing on end; for a flat
 piece 0 is on its edge and 90 lying flat) and **Tipped up varies by** (± degrees), **Facing** (degrees from the way
@@ -222,13 +227,14 @@ A check is a round-ended block that plugs into **wait until**, **repeat until** 
 | **touches** (*part of the robot*, *thing on the field*) | The robot part touches the thing. |
 | **tilt above / below** *n* **°** | The robot leans more (or less) than that from upright. |
 | *joint* **above / below** *number* *unit* | A joint is past that position. |
-| *piece* **in** *body* | A game piece is inside a body of the robot. *any piece* means any of them. |
+| *piece* **in** *body* | A game piece is inside a body of the robot, and the robot carries it: its center is inside the box around the body's shapes, and it has been off the carpet for 0.1 s. A piece the robot drove an open-bottom box over, still on the carpet, isn't in. *any piece* means any of them. |
 | *piece* **is held by** *part or body* | A game piece is held by that part or body of the robot. See [Holding a piece](#holding-a-piece). |
 | *piece* **rests on** *thing on the field* | The field thing carries the piece's weight. See [Placing a piece](#placing-a-piece). |
 | *piece* **is seated at least** *n* **in on** *rod* | A piece with a hole has gone that far onto the rod. See [Placing a piece](#placing-a-piece). |
 | **hanging from** *bar* | The robot's hooks hold it up from that bar. |
 | **holding level** *level* | The robot holds that climb level (the field's own rule, such as the 2022 hangar's). |
 | *n* **scored in** *goal* | At least *n* balls have gone into the goal (**any goal**: into all of them together). See [Shooting](#shooting). |
+| **robot is in** / **out of zone** *zone* | The robot's center, seen from above, is inside (or outside) one of the field's zones: an area marked on the carpet, such as 2024's starting zone or wing (a range file's `[[zone]]`, [docs/test-range.md](test-range.md#floor-zones)). Only on a field with zones. In the test file: `{ in_zone = { zone = "blue_start", is = "out" } }` (`is` is `"in"`, the default, or `"out"`): "out of the starting zone" is 2024's LEAVE, by the robot's center. |
 | *turret* **aimed at** *goal* **within** *n* **°** | The turret's launcher points within *n*° of the goal's center. See [Aiming](#aiming). |
 | *cylinder* **is** *extended or retracted* | The cylinder's rod is all the way out, or all the way in. See [Pneumatics](#pneumatics). |
 | *stored or working* **air pressure above / below** *n* **psi** | The air in the tanks (stored), or after the regulator (working), is above or below that. See [Pneumatics](#pneumatics). |
@@ -372,7 +378,12 @@ any it picks up, go out of the launcher, fly, and score or miss. Nothing about s
 
 - **The check.** *n* **scored in** *goal* is true once at least *n* balls have gone into that goal. **any goal** counts
   every goal together.
-- **The result** has a line per goal with a ball in it: `scored 8 in hub_blue`.
+- **The result** has a line per goal with a ball in it: `scored 8 in hub_blue`. To see why a shot missed,
+  `scrimmage test run` also prints a table of the pieces that took part (each shot, a fed or preloaded piece, a floor
+  piece that moved): its number and kind, where it came from, when it was fired and its exit speed, its outcome, and
+  where it went (the goal and time it scored, where it rests or left the field, what it hit first, and how high a
+  missed shot got against the goal's rim). The run's `result.json` keeps them as `pieces`, and the MCP `test_run`
+  returns them too (in meters and m/s).
 - **The replay** shows the balls in flight.
 
 In the test file:
@@ -773,7 +784,8 @@ scrimmage test run my.test.toml --out some/folder    # keep the run somewhere el
 scrimmage test spread examples/blocks/intake/spread.test.toml   # one run per floor-spread placement
 ```
 
-It plays the blocks with no window, prints how it ended and each check, and keeps the run in `<test>-runs/` (or `--out`).
+It plays the blocks with no window, prints how it ended, each check and, on a field, a table of the pieces that
+took part and where each went ([Shooting](#shooting)), and keeps the run in `<test>-runs/` (or `--out`).
 The exit code is **0** when the test finished and every check passed, **1** when it didn't, and **2** when it couldn't
 run (a bad test file, a robot that won't build, a folder it can't write).
 

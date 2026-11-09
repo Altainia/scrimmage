@@ -120,6 +120,44 @@ def test_vertical_goal_crossing_direction():
     assert through.tolist() == [True] and back.tolist() == [False]
 
 
+def test_upward_goal_scores_rising_pieces_only():
+    # the 2024 SPEAKER opening: entered going up and into the wall. Tilt past 90 turns the entry normal on from -x
+    # toward -z, so at 180 a piece scores going up
+    up = goal(pos=(3.0, 4.0), tilt_deg=180.0).scoring_surface()
+    assert np.allclose(up.normal, [0, 0, -1])
+    assert up.crossed(np.array([[3.0, 4.0, 1.95]]), np.array([[3.0, 4.0, 2.05]])).tolist() == [True]
+    assert up.crossed(np.array([[3.0, 4.0, 2.05]]), np.array([[3.0, 4.0, 1.95]])).tolist() == [False]
+    # 166 deg: the opening faces down and out of the wall (+x is into the wall): a piece rising toward the wall
+    # scores, one falling back out doesn't
+    s = goal(pos=(3.0, 4.0), tilt_deg=166.0).scoring_surface()
+    assert s.normal[2] < -0.9 and s.normal[0] < 0
+    rising = s.crossed(np.array([[2.95, 4.0, 1.9]]), np.array([[3.0, 4.0, 2.1]]))
+    falling = s.crossed(np.array([[3.0, 4.0, 2.1]]), np.array([[2.95, 4.0, 1.9]]))
+    assert rising.tolist() == [True] and falling.tolist() == [False]
+
+
+def test_the_2024_speaker_scores_the_dry_runs_rising_shot():
+    # the kickoff dry run's SPEAKER: the opening's low edge at the wall, its front lip 14.8 deg higher, entered going
+    # up. Heading into the wall (180 at the blue wall), tilt 180 - 14.8. The traced ball went (0.259, 2.039) ->
+    # (0.061, 2.107) and must score; the same path back out must not
+    from scrimmage.testrange.spec import RectOpening
+    g = goal(pos=(0.2293, 5.5446), heading_deg=180.0, rim_height=2.05, tilt_deg=165.2,
+             opening=RectOpening(width=1.0427, height=0.4742))
+    s = g.scoring_surface()
+    a, b = np.array([[0.259, 5.5446, 2.039]]), np.array([[0.061, 5.5446, 2.107]])
+    assert s.crossed(a, b).tolist() == [True] and s.crossed(b, a).tolist() == [False]
+
+
+@pytest.mark.parametrize("tilt", ["194.8", "-165.2", "nan", "inf"])
+def test_tilt_outside_0_to_180_refused_in_words(tmp_path, tilt):
+    with pytest.raises(RangeError, match=r"tilt_deg must be from 0 to 180.*going up.*heading_deg"):
+        load_text(tmp_path, MINIMAL + f"tilt_deg = {tilt}\n")
+
+
+def test_tilt_180_loads(tmp_path):
+    assert load_text(tmp_path, MINIMAL + "tilt_deg = 165.2\n").goals[0].tilt_deg == pytest.approx(165.2)
+
+
 def test_funnelled_surface_is_the_throat():
     g = goal(funnel=Funnel(depth=0.3, slope_deg=45.0))
     assert g.throat_across_flats() == pytest.approx(1.0 - 2 * 0.3)

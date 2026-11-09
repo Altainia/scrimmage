@@ -8,13 +8,15 @@ step, and the plain words that name them in a run's outcome.
   climbs to next, `any bar` for any of the field's bars. It reads the contacts update() recorded
   at the last physics step.
 - `piece_in`: a game piece's center inside a robot body's box: the axis-aligned box, in the body's own frame, around
-  its geoms' bounding boxes. `any` for any piece.
+  its geoms' bounding boxes, and the robot carrying it: it hasn't touched the carpet for CARPET_GRACE_S (so a piece
+  an open-bottom box was driven over, still on the carpet, isn't in it). `any` for any piece.
 - `hanging_from`: the robot hangs from a bar: the hooks hold the robot up from that bar with at least a quarter of
   its weight (its subtree mass times g) for HANG_S. The force counted is, over each contact between a hook geom and
   one of that bar's geoms, the upward (world z) part of the contact force on the hook (mj_contactForce, turned out
   of the contact frame): a push sideways, a hook pressed down onto a bar from below, or a hook's contact with
   anything else (a rail, another bar) holds nothing up from this bar.
-- `in_hopper`: how many balls (fed or not) have their center inside a hopper body's box, at least or at most N.
+- `in_hopper`: how many balls (fed or not) have their center inside a hopper body's box, off the carpet as `piece_in`
+  reads it, at least or at most N.
 - `station_empty`: a station with a stock has fed all of it.
 - `made_it_in`: the share of the pieces fed so far that are in the hopper, at least P percent (the runner's
   `outcomes`; false while nothing has been fed).
@@ -40,6 +42,8 @@ step, and the plain words that name them in a run's outcome.
   elements the test names; nothing within 0.5 m counts as clear.
 - `partner_lifted`: the partner robot's frame is lifted at least `at_least_in` inches (its `partner.height`: the
   lowest frame corner above where it settled), and, with `level_within_deg`, its tilt is within that of level.
+- `in_zone`: the robot's center (its root body's, seen from above) is in one of the range's floor zones (`[[zone]]`,
+  testrange/zones.py), or out of it with `is = "out"`: 2024's LEAVE and wing zones.
 - `partner_moved`: the partner robot has gone at least `at_least_in` inches across the floor from where it settled
   (`partner.moved`).
 - `sensor`: one of the robot's [[sensor]]s is on or off, as the world read it at the last physics step
@@ -81,6 +85,11 @@ HANG_S = 0.1            # s: the hooks carry a quarter of the robot's weight thi
 HANG_SHARE = 0.25       # of the robot's weight
 IN = 0.0254
 CYLINDER_TOL_IN = 0.25  # in: a cylinder this close to an end of its stroke is extended or retracted
+# s: a piece in a body's box counts as in only once it has been off the carpet this long (our call: longer than a
+# bounce on the carpet in an open box, shorter than any intake's lift into a bin, which leaves the carpet before the
+# piece reaches the bin's box, so a carried piece reads as in when it did before)
+CARPET_GRACE_S = 0.1
+CARPET_TOL = 0.005      # m: a piece whose lowest point is this close to the carpet is on it (it sinks a little)
 
 
 class Watch:
@@ -141,14 +150,53 @@ class Watch:
         if not self.round.all():                            # and by each hopper body: a rigid piece one holds is in
             for by in self.hopper:
                 self.held.track(by, hopper=True)
+        # each piece's last time on the carpet (s on the run's clock), followed only for a test that asks what is in a
+        # body or the hopper. Read from where its geoms reach down to, not from contacts: a piece at rest sleeps, and
+        # a sleeping body has no contacts
+        self._carpet_needed = bool(self.hopper) or bool(_conds(program.blocks, "piece_in")) \
+            or bool(_conds(program.blocks, "in_hopper"))
+        ball_set = {int(b): k for k, b in enumerate(self._balls)}
+        owned = [(ball_set[int(m.geom_bodyid[g])], g) for g in range(m.ngeom) if int(m.geom_bodyid[g]) in ball_set]
+        owned.sort()
+        self._piece_geoms = np.array([g for _, g in owned], dtype=int)
+        self._piece_of_geom = np.array([k for k, _ in owned], dtype=int)
+        self._on_carpet_t = np.full(len(self._balls), -np.inf)
+        self._see_carpet()
         self.inside = self.hopper_mask()                    # hopper_mask at the last update (feeds.py reads it)
         self._read_tilt()
 
     # ---- every physics step -----------------------------------------------------------------------------------------
 
+    def _see_carpet(self) -> None:
+        """Note the pieces on the carpet now: a geom's bounding box reaching within CARPET_TOL of it (not a parked
+        piece, far below: one put in play from the park is off the carpet from the moment it is put)."""
+        if not self._carpet_needed or not len(self._piece_geoms):
+            return
+        m, d, g = self.model, self.data, self._piece_geoms
+        rz = d.geom_xmat[g][:, 6:9]                                  # each geom's rotation's world-z row
+        aabb = m.geom_aabb[g]
+        low = d.geom_xpos[g, 2] + np.einsum("ij,ij->i", rz, aabb[:, :3]) - np.einsum("ij,ij->i", np.abs(rz),
+                                                                                       aabb[:, 3:])
+        on = np.zeros(len(self._balls), bool)
+        on[self._piece_of_geom[(low <= CARPET_TOL) & (low > -1.0)]] = True     # not a parked piece, far below
+        self._on_carpet_t[on] = float(d.time)
+
+    def carried(self) -> np.ndarray:
+        """(balls,) True for each piece off the carpet for at least CARPET_GRACE_S: one the robot may be carrying.
+        Off the carpet is all it asks, on purpose: a piece resting on a field element (a bump, a ramp, a piece staged on
+        the AMP) inside a body's box counts as in, as it did before. That is fine: a box around a piece up on an
+        element is a robot reaching over it, and what this rule is for is the open-bottom box driven over a piece on
+        the carpet (the 2024 dry run's intake).
+        All of them in a Watch that doesn't follow the carpet (no piece_in, in_hopper or hopper)."""
+        if not self._carpet_needed:
+            self._carpet_needed = True          # asked after all (a test calling holds() directly): follow it now
+            self._see_carpet()
+        return float(self.data.time) - self._on_carpet_t >= CARPET_GRACE_S - 1e-9
+
     def update(self) -> None:
         """Read the world after a physics step."""
         self._read_tilt()
+        self._see_carpet()
         if self.mon is not None:
             self.climb = self.mon.sample()
             self.mon.consume()
@@ -282,8 +330,8 @@ class Watch:
         return self._boxes[name]
 
     def hopper_mask(self) -> np.ndarray:
-        """(balls,) True for each range ball whose center is inside a hopper body's box now, in the range's ball
-        order."""
+        """(balls,) True for each range ball whose center is inside a hopper body's box now, and off the carpet
+        (carried), in the range's ball order."""
         d = self.data
         inside = np.zeros(len(self._balls), bool)
         if not self._balls:
@@ -292,7 +340,7 @@ class Watch:
             b, lo, hi = self._box(name)
             local = (d.xpos[self._balls] - d.xpos[b]) @ d.xmat[b].reshape(3, 3)
             inside |= np.all((local >= lo) & (local <= hi), axis=1)
-        return inside
+        return inside & self.carried()
 
     def piece_index(self, name: str) -> int | None:
         """A condition's piece as a ledger index: None for `any`."""
@@ -338,7 +386,9 @@ class Watch:
                 return False
             r = d.xmat[b].reshape(3, 3)
             local = (d.xpos[balls] - d.xpos[b]) @ r          # each center in the body's frame
-            return bool(np.any(np.all((local >= lo) & (local <= hi), axis=1)))
+            carried = self.carried() if a["piece"] == ANY_PIECE else \
+                self.carried()[[self._ball_names.index(a["piece"])]]
+            return bool(np.any(np.all((local >= lo) & (local <= hi), axis=1) & carried))
         if k == "in_hopper":
             n = self.hopper_count()
             return n >= a["at_least"] if "at_least" in a else n <= a["at_most"]
@@ -363,6 +413,12 @@ class Watch:
             p = self.world.partner
             level = a.get("level_within_deg")
             return p.height() >= a["at_least_in"] and (level is None or p.tilt() <= level)
+        if k == "in_zone":
+            rng = self.world.parts.range if self.world.parts is not None else None
+            zone = next((z for z in (rng.zones if rng is not None else ()) if z.name == a["zone"]), None)
+            x, y = (float(c) for c in self.data.xpos[self.body][:2])
+            inside = zone is not None and zone.contains(x, y)
+            return inside == (a["is"] == "in")
         if k == "partner_moved":
             return self.world.partner.moved() >= a["at_least_in"]
         if k == "station_empty":
@@ -583,6 +639,13 @@ def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names
         p = {"lift": lift}
         return say(t("the partner is lifted at least {lift}", **p), t("the partner being lifted at least {lift}", **p),
                    t("the partner to be lifted at least {lift}", **p))
+    if k == "in_zone":
+        p = {"zone": a["zone"]}
+        if a["is"] == "in":
+            return say(t("the robot is in {zone}", **p), t("the robot being in {zone}", **p),
+                       t("the robot to be in {zone}", **p))
+        return say(t("the robot is out of {zone}", **p), t("the robot being out of {zone}", **p),
+                   t("the robot to be out of {zone}", **p))
     if k == "partner_moved":
         p = {"limit": _amount(a["at_least_in"], "in")}
         return say(t("the partner moved at least {limit}", **p), t("the partner having moved at least {limit}", **p),

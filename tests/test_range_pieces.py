@@ -237,3 +237,130 @@ def test_piece_presets_are_there_with_their_sizes():
         assert 0 < kind_preset(name).friction < 2
         assert kind_preset(name).label == display_name(name)
     assert set(PRESETS["surface"]) == {"pvc", "polycarbonate", "rubber", "foam", "hdpe", "polypropylene", "fabric"}
+
+
+# ---- CAD units and scale, and a piece far from its expected size (kickoff dry run gap 14) -------------------------
+
+CAD_DATA = ROOT / "data" / "cad"
+
+
+def test_a_step_file_says_its_own_units():
+    from scrimmage.cad.source import step_length_unit
+    assert step_length_unit(CAD_DATA / "climber.step") == "mm"
+
+
+def test_step_units_are_honored(tmp_path):
+    # the file says millimeters; units = "in" reads its numbers as inches, 25.4 times bigger (here past 3 m: refused,
+    # which shows it was honored: before, units was ignored for a STEP)
+    with pytest.raises(RangeError, match=r"the piece is \d+(\.\d+)? m across; check units"):
+        parse_kind(P, "c", {"shape": "cad", "cad": str(CAD_DATA / "climber.step"), "units": "in", "mass": 1.0,
+                            "friction": 0.4}, tmp_path)
+
+
+def test_a_cad_piece_far_too_small_is_refused(tmp_path):
+    write_stl(tmp_path / "speck.stl", *cube(0.0088))
+    with pytest.raises(RangeError, match=r"the piece is only 0.0000088 m across; check units \(m, mm or in\) and scale"):
+        parse_kind(P, "c", {"shape": "cad", "cad": "speck.stl", "units": "mm", "mass": 0.2, "friction": 0.4},
+                   tmp_path)
+
+
+def test_a_cad_piece_scaled(tmp_path):
+    write_stl(tmp_path / "model.stl", *cube(0.0025))      # a 1:40 scale model
+    k = parse_kind(P, "c", {"shape": "cad", "cad": "model.stl", "units": "m", "scale": 40, "mass": 0.5,
+                            "friction": 0.4}, tmp_path)
+    assert k.extent == pytest.approx(0.1) and k.warnings == ()
+    for bad in (0, -2, "big"):
+        with pytest.raises(RangeError, match="scale must be"):
+            parse_kind(P, "c", {"shape": "cad", "cad": "model.stl", "units": "m", "scale": bad, "mass": 0.5,
+                                "friction": 0.4}, tmp_path)
+    with pytest.raises(RangeError, match="scale isn't used by a tube"):
+        parse_kind(P, "c", {**CORAL, "scale": 2}, tmp_path)
+
+
+def test_a_tiny_piece_is_warned_about(tmp_path):
+    # the official "Game Piece.step" is a 1:40 print: an 8.8 mm NOTE of 0.235 kg
+    write_stl(tmp_path / "note.stl", *cube(0.0088))
+    k = parse_kind(P, "note", {"shape": "cad", "cad": "note.stl", "units": "m", "mass": 0.2353, "friction": 0.4},
+                   tmp_path)
+    assert len(k.warnings) == 1
+    w = k.warnings[0]
+    assert "[piece.note]" in w and "0.0088 m across" in w and "scale" in w
+
+
+def test_a_piece_heavy_for_its_size_is_warned_about(tmp_path):
+    k = parse_kind(P, "brick", {"shape": "box", "size": [0.1, 0.1, 0.1], "mass": 100.0, "friction": 0.4}, tmp_path)
+    assert len(k.warnings) == 1 and "100000 kg/m³" in k.warnings[0] and "mass" in k.warnings[0]
+    light = parse_kind(P, "fluff", {"shape": "box", "size": [1.0, 1.0, 1.0], "mass": 0.001, "friction": 0.4},
+                       tmp_path)
+    assert len(light.warnings) == 1 and "0.001 kg/m³" in light.warnings[0]
+    assert parse_kind(P, "t", HOLLOW, ROOT).warnings == ()
+    assert kind_preset("2024-note").warnings == () and ball_kind("b", "2026-fuel").warnings == ()
+
+
+def test_a_ranges_piece_warnings_are_the_ranges(tmp_path):
+    from scrimmage.testrange.spec import load_range
+    write_stl(tmp_path / "note.stl", *cube(0.0088))
+    (tmp_path / "r.toml").write_text('[range]\nname = "t"\n[piece.note]\nshape = "cad"\ncad = "note.stl"\n'
+                                     'units = "m"\nmass = 0.2353\nfriction = 0.4\n')
+    rng = load_range("r.toml", tmp_path)
+    assert any("[piece.note]" in w and "across" in w for w in rng.warnings)
+
+
+# ---- a STEP's length unit from its unit contexts (review M9) ------------------------------------------------------
+
+def _step(tmp_path, units: list[str], extra: str = "") -> Path:
+    """A STEP text with one GLOBAL_UNIT_ASSIGNED_CONTEXT per length unit entity given (enough for step_length_unit)."""
+    lines, n = ["ISO-10303-21;", "DATA;"], 10
+    for u in units:
+        lines += [f"#{n} = {u};", f"#{n + 1} = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) "
+                  f"GLOBAL_UNIT_ASSIGNED_CONTEXT((#{n},#900,#901)) REPRESENTATION_CONTEXT('','') );"]
+        n += 2
+    lines += ["#900 = ( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) );",
+              "#901 = ( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() );", extra, "ENDSEC;", "END-ISO-10303-21;"]
+    p = tmp_path / "u.step"
+    p.write_text("\n".join(lines))
+    return p
+
+
+MM = "( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) )"
+M = "( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT($,.METRE.) )"
+CM = "( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.CENTI.,.METRE.) )"
+INCH = "( CONVERSION_BASED_UNIT('INCH',#950) LENGTH_UNIT() NAMED_UNIT(#951) )"
+FOOT = "( CONVERSION_BASED_UNIT('FOOT',#950) LENGTH_UNIT() NAMED_UNIT(#951) )"
+
+
+@pytest.mark.parametrize("units, want", [([MM], "mm"), ([M], "m"), ([INCH], "in"), ([CM], "cm"), ([FOOT], "ft"),
+                                         ([MM, MM], "mm"), ([MM, INCH], None), ([], None)])
+def test_a_step_unit_comes_from_its_unit_contexts(tmp_path, units, want):
+    from scrimmage.cad.source import step_length_unit
+    assert step_length_unit(_step(tmp_path, units)) == want
+
+
+def test_a_stray_unit_outside_the_contexts_is_not_the_files(tmp_path):
+    # a metre file with a millimetre unit elsewhere (a tolerance's, as some AP242 writers add) is a metre file
+    from scrimmage.cad.source import step_length_unit
+    stray = "#960 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );"
+    assert step_length_unit(_step(tmp_path, [M], stray)) == "m"
+
+
+def test_a_step_whose_unit_cant_be_told_keeps_loading(tmp_path, monkeypatch):
+    # before K1 `units` was ignored on a STEP; one whose unit can't be told still loads, its units ignored, with a
+    # warning (not refused)
+    import scrimmage.cad.source as source
+    monkeypatch.setattr(source, "step_length_unit", lambda path: None)
+    k = parse_kind(P, "c", {"shape": "cad", "cad": str(CAD_DATA / "climber.step"), "units": "in", "mass": 1.0,
+                            "friction": 0.4}, tmp_path)
+    plain = parse_kind(P, "c", {"shape": "cad", "cad": str(CAD_DATA / "climber.step"), "mass": 1.0, "friction": 0.4},
+                       tmp_path)
+    assert k.extent == pytest.approx(plain.extent)
+    assert any("can't tell which units" in w and "ignored" in w for w in k.warnings)
+
+
+def test_a_centimetre_step_takes_units(tmp_path, monkeypatch):
+    import scrimmage.cad.source as source
+    monkeypatch.setattr(source, "step_length_unit", lambda path: "cm")
+    plain = parse_kind(P, "c", {"shape": "cad", "cad": str(CAD_DATA / "climber.step"), "mass": 1.0, "friction": 0.4},
+                       tmp_path)
+    k = parse_kind(P, "c", {"shape": "cad", "cad": str(CAD_DATA / "climber.step"), "units": "mm", "mass": 1.0,
+                            "friction": 0.4}, tmp_path)
+    assert k.extent == pytest.approx(plain.extent / 10.0)

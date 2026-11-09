@@ -130,7 +130,7 @@ The contexts in use:
   have their spaces in them; keep spaces your language needs.
 - `theme`: the Theme choices (System, Light, Dark) in the Settings menu.
 - `verb` and `noun`: a word that can be either ("Frame" and "Step" as things to do, "Run" as a thing).
-- `blocks`, `field`, `page`, `partner`, `pose`, `range`: a word that means something special in that part of the
+- `blocks`, `field`, `page`, `partner`, `pose`, `range`, `release box`, `zone`: a word that means something special in that part of the
   app (the Test tab's "Move" and "Wait" blocks, the start page's "Start").
 
 `scrimmage i18n template` shows each one's key, with its context, and where it is used.

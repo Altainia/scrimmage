@@ -52,7 +52,7 @@ from ..disc.inputs import DEFAULT_AERO, Disc, aero_set
 from ..launcher.inputs import Air, Ball
 from .build import BALL_BITS, PARK_Z, PARKED_BITS, RangeLayout, kind_piece, rest_pose
 from .pieces import PieceKind
-from .spec import FIELD_LENGTH, FIELD_WIDTH, Range
+from .spec import Range
 from .spec import _one_round_kind as one_round_kind
 
 AIRBORNE = 0.001        # m above resting on the floor (center above rest_z) before the air acts on a ball
@@ -541,8 +541,9 @@ class Balls:
                 self.park(i)
                 events.append((i, "scored"))
                 live[k] = False
+        length, width = self.range.field_length, self.range.field_width
         for k, (x, y, z) in enumerate(rows):
-            if live[k] and (x < 0.0 or x > FIELD_LENGTH or y < 0.0 or y > FIELD_WIDTH or z < OUT_Z):
+            if live[k] and (x < 0.0 or x > length or y < 0.0 or y > width or z < OUT_Z):
                 i = balls[k]
                 self.set_state(i, BallState.OUT)
                 self.log[i].last_pos = (x, y, z)
@@ -614,3 +615,15 @@ def _cross(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 def log_dict(log: BallLog) -> dict:
     """A BallLog as a dict with None for every unset (NaN) value, so it goes into JSON and compares with ==."""
     return {k: (None if isinstance(v, float) and math.isnan(v) else v) for k, v in dataclasses.asdict(log).items()}
+
+
+def took_part(b: dict, start, r: float, height: float = 0.0) -> bool:
+    """Did ball log `b` take part in the run: a preload, or a floor ball that was collected, fired, scored, stuck,
+    left the field, is flying, or ended more than a radius `r` from where it started (`start`, its (x, y) on the
+    carpet, or `height` up on what it was staged on)? Spares never do."""
+    if b["outcome"] == "spare":
+        return False
+    if b["origin"] != "floor" or b["fired_t"] is not None or b["outcome"] != "on_field":
+        return True
+    p = b["last_pos"]
+    return p is None or math.dist(p, (float(start[0]), float(start[1]), r + height)) > r

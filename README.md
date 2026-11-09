@@ -787,7 +787,8 @@ scrimmage edit                                  # no file: a start page (recent 
 a 3D view you can click to pick mounts, a robot tree and an inspector for placement, parameters and device IDs,
 with live validation. It edits the `[[part]]` entries of the TOML file; comments, ordering and every other
 section stay exactly as you wrote them, edits are atomic, and Undo/Redo step through the session. Configs with
-errors, or hand-written MJCF robots, open read-only. See [docs/assembler.md](docs/assembler.md) for the
+errors, or hand-written MJCF robots, open read-only. A range file (a season's field) isn't opened here: check it with
+`scrimmage range check FILE` and see it with `scrimmage range view FILE` ([docs/test-range.md](docs/test-range.md#the-range-file)). See [docs/assembler.md](docs/assembler.md) for the
 walkthrough, shortcuts and troubleshooting. Part folders changing on disk aren't watched: re-open the page or
 make an edit to refresh the library.
 

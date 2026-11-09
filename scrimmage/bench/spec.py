@@ -886,6 +886,9 @@ def parse_bench(raw: dict, base_dir: Path, problems: list[Problem] | None = None
     flight = None
     if "flight" in raw:
         flight = attempt(_parse_flight, raw["flight"], [n for n, _ in named["outlet"]], key="flight")
+        if flight is not None and piece is not None and piece.ball is None:     # said at check time, not only after a run
+            warned.append(i18n.t("{flight_table} flies balls only; a rigid piece's flight is not modeled yet, so a run "
+                                 "will have no landings", flight_table="[flight]"))
     sweep = raw.get("sweep", {})
     if not isinstance(sweep, dict):
         attempt(_raise, BenchError(i18n.t("{sweep_table} must be a table, not {value}", value=repr(sweep),

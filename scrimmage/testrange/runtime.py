@@ -121,8 +121,11 @@ class RangeRuntime:
         balls = self.balls
         balls.clear()
         if s["floor_balls"]:
-            for i, (x, y) in enumerate(self.range.floor_balls):     # each at its kind's rest height and turn
-                balls.put(i, (float(x), float(y), balls.rest_z_of(i)), BALL_BITS, quat=balls.rest_quat(i))
+            lift = self.range.floor_heights if len(self.range.floor_heights) == len(self.range.floor_balls) \
+                else np.zeros(len(self.range.floor_balls))
+            for i, (x, y) in enumerate(self.range.floor_balls):     # each at its kind's rest height and turn, staged up
+                balls.put(i, (float(x), float(y), balls.rest_z_of(i) + float(lift[i])), BALL_BITS,
+                          quat=balls.rest_quat(i))
         if s["start"] is not None:
             self.world.set_robot_pose(*self.range.starts[s["start"]])
         if self.shooter is not None:     # its clock restarts with the world's

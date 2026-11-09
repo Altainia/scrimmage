@@ -99,7 +99,7 @@ class CodeMixin:
             pose = [float(a) for a in written]
         picked = written is not None or named is not None
         if pose is not None:
-            sentence = start_sentence(pose)
+            sentence = start_sentence(pose, edits.field_size(raw, self.robot.path.parent)[0])
         else:
             sentence = (i18n.t("Starts at {name}", name=named) if named is not None else i18n.t("Not picked yet") if not picked
                         else i18n.t("Starts as written"))

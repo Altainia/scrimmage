@@ -245,6 +245,7 @@ def palette(world, hooks: list[str], setup: dict | None = None) -> dict:
         "partner": partner,                 # a partner robot ([partner], or Setup's partner)
         "robot_partner": robot_partner,     # the world's own partner: the Test tab's is the robot config's [partner]
         "goals": sorted(g.name for g in rng.goals) if rng is not None else [],
+        "zones": [z.name for z in rng.zones] if rng is not None else [],     # [[zone]]s, for in_zone
         "turrets": turrets(world),          # stock turrets' instances: each turns `<inst>.turn`
         "cylinders": cyls,                  # pneumatic cylinders: {name, double}
         "sensors": sens,                    # the robot's [[sensor]]s: {name, kind}
@@ -300,6 +301,7 @@ class _Names:
         self.moving = [e["name"] for e in p["moving_elements"]]
         self.rods = set(p["rods"])
         self.goals = list(p["goals"])
+        self.zones = list(p["zones"])
         self.turrets = list(p["turrets"])
         self.cylinders = [c["name"] for c in p["cylinders"]]
         self.sensors = {s["name"]: s["kind"] for s in p["sensors"]}
@@ -458,6 +460,11 @@ def _cond_problems(n: _Names, c) -> list[str]:
         return [i18n.t('no element "{element}" on this field', element=a['element'])]
     if c.kind == "sensor":
         return _sensor_problems(n, a["sensor"], a.get("sees"))
+    if c.kind == "in_zone" and a["zone"] not in n.zones:
+        if not n.zones:
+            return [i18n.t("this field has no zones; a range file marks them with {zone_table}",
+                           zone_table="[[zone]]")]
+        return [i18n.t("no zone '{zone}' on this field; its zones: {names}", zone=a["zone"], names=', '.join(n.zones))]
     if c.kind in ("partner_lifted", "partner_moved") and not n.partner:
         return [i18n.t("there's no partner robot; add one in Setup")]
     if c.kind == "station_empty":

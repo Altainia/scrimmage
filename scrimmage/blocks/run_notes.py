@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .. import i18n, units
+from ..checks import shown
 from .clearance import NEVER_WITHIN_IN, uncounted_note
 from .conditions import _amount, _conds
 from .program import Program
@@ -80,6 +81,9 @@ def run_notes(world, program: Program) -> list[str]:
     uncounted = uncounted_note(world, program)
     if uncounted is not None:
         notes.append(uncounted)
+    rng = getattr(world, "parts", None) and world.parts.range
+    if rng is not None:         # the range's warnings (a goal behind the walls), in the setting being worded
+        notes += [str(w) if units.is_machine() else shown(w) for w in rng.warnings]
     return notes
 
 
@@ -87,6 +91,48 @@ def goal_lines(result: RunResult) -> list[str]:
     """The run's goal counts as lines, "scored 5 in hub_blue", one per goal with a ball in it (none without a
     [shooter])."""
     return [i18n.t("scored {count} in {goal}", count=n, goal=name) for name, n in (result.goals or {}).items() if n]
+
+
+def piece_log(tr) -> list[dict]:
+    """Each game piece that took part in the run on range runtime `tr` (testrange/balls.py took_part: a preload, a fed
+    piece, a floor piece that moved): its ball log (log_dict: SI, None for unset), its kind, and its last position as
+    a list (as result.json keeps it). Spares and untouched floor pieces are left out."""
+    from ..testrange.balls import took_part
+    starts, radius, kinds = tr.range.floor_balls, tr.balls.radius, tr.layout.kinds
+    out = []
+    for b in tr.ball_log():
+        i = b["id"]
+        start = starts[i] if b["origin"] == "floor" and i < len(starts) else None
+        lift = float(tr.range.floor_heights[i]) if start is not None and i < len(tr.range.floor_heights) else 0.0
+        if not took_part(b, start, float(radius[i]), lift):
+            continue
+        row = {**b, "kind": kinds[i] if i < len(kinds) else None}
+        for k in ("last_pos", "robot_pose", "robot_velocity"):
+            if row.get(k) is not None:
+                row[k] = [float(v) for v in row[k]]
+        out.append(row)
+    return out
+
+
+def piece_lines(result: RunResult) -> list[str]:
+    """The run's pieces as a table (a header, then a line each): its number, kind, where it came from, when it was
+    fired and its exit speed (blank if it never was), its outcome, and where it went (scenario_runner's ball table's
+    last column: the goal and time it scored, where it rests or left the field, what it hit first). None off a
+    range, or when no piece took part. Its numbers follow the Units setting, as the command line's do."""
+    from ..scenario_runner import _ball_result
+    if not result.pieces:
+        return []
+    speed = units.unit_name("speed")
+    head = [i18n.t("#"), i18n.t("kind"), i18n.t("from"), i18n.t("fired s"), i18n.t("exit {unit}", unit=speed),
+            i18n.t("outcome"), i18n.t("where")]
+    rows = []
+    for p in result.pieces:
+        fired = "-" if p.get("fired_t") is None else f"{p['fired_t']:.2f}"
+        exit_speed = "-" if p.get("exit_speed") is None else f"{units.to_display(p['exit_speed'], 'speed'):.2f}"
+        rows.append([str(p["id"]), str(p.get("kind") or "-"), p["origin"], fired, exit_speed, p["outcome"],
+                     _ball_result({**p, "last_pos": tuple(p["last_pos"]) if p.get("last_pos") else None})])
+    widths = [max(len(r[k]) for r in [head, *rows]) for k in range(len(head) - 1)]
+    return ["  ".join(c.ljust(w) for c, w in zip(r, widths)) + "  " + r[-1] for r in [head, *rows]]
 
 
 def clearance_lines(result: RunResult) -> list[str]:
