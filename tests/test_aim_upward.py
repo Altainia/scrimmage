@@ -7,12 +7,16 @@ import dataclasses
 import math
 import os
 import time
+import tomllib
 
 import numpy as np
 import pytest
 import tomlkit
 
 from range_fixtures import SHOOTER, shooter_cfg
+from scrimmage.motors import get_motor
+from scrimmage.protocol import HalState
+from scrimmage.world import World
 from scrimmage.launcher.flight import fly_path, fly_state
 from scrimmage.launcher.inputs import Air, Ball, Goal as FlightGoal
 from scrimmage.testrange import aim
@@ -75,6 +79,45 @@ def timed_table(speaker_cfg):
     model = aim.load_model(speaker_cfg, "speaker")
     rows = aim.aim_table(speaker_cfg, "speaker", DISTANCES, model=model, on_unreachable=warnings.append)
     return model, rows, time.perf_counter() - start, warnings
+
+
+@pytest.fixture(scope="module")
+def world_table(speaker_cfg):
+    """The SPEAKER table at four of DISTANCES with a 4 deg hood step, for flying in the world."""
+    model = aim.load_model(speaker_cfg, "speaker", hood_step_deg=4.0)
+    return aim.aim_table(speaker_cfg, "speaker", [1.5, 2.0, 2.5, 3.0], model=model, hood_step_deg=4.0)
+
+
+def _fly_in_world(cfg_path, distance: float, rps: float, hood: float) -> dict:
+    """The robot `distance` back from the goal on its approach line, facing it, with one ball in its hopper; robot code
+    that holds the hood angle and both wheels at `rps` (kV feedforward plus 0.5 V per rps, trimmed onto the speed
+    before the feed), then runs the hopper floor and the feeder: the ball's log once it has scored, or after 2.5 s of feeding."""
+    cfg = tomllib.loads(cfg_path.read_text(encoding="utf-8"))
+    cfg["range"] = {**{k: v for k, v in cfg["range"].items() if k != "start"}, "preload": 1}
+    cfg.setdefault("robot", {})["start_pose"] = [0.2293 + distance, 4.0, 180.0]
+    w = World(cfg, cfg_path.parent)
+    rt, m, d = w.test_range, w.model, w.data
+    joint = m.joint("launcher.hood")
+    qadr = m.jnt_qposadr[joint.id]
+    kv = 2.0 * math.pi / get_motor("KrakenX60", 1).Kv
+    low = rt.shooter.config.hood_range[0]           # the hood joint's 0 (hood_gap moves it off 20 deg)
+    trim = 0.0
+    for k in range(5000):
+        feeding = k >= 2500
+        error = rps - rt.shooter.rps()
+        if not feeding:
+            trim += 0.5 * error * 0.001
+        pwm = {"2": (kv * rps + 0.5 * error + trim) / w.vbatt}
+        herr = math.radians(hood - low) - d.qpos[qadr]
+        pwm["3"] = 4.0 * herr                       # the hood's PWM sets its speed, so P alone holds it
+        pwm["5"] = pwm["6"] = 1.0 if feeding else 0.0
+        hal = HalState()
+        for port, value in pwm.items():
+            hal.devices[("PWM", port)] = {"<init": True, "<speed": float(np.clip(value, -1.0, 1.0))}
+        w.step(hal)
+        if rt.counts()["goals"].get("speaker"):
+            break
+    return rt.ball_log()[0]
 
 
 def _through(model, path):
@@ -195,3 +238,23 @@ def test_hub_rows_are_unchanged(tmp_path):
     java = aim.to_java(rows, "A", "cmd")
     assert "// angle whose ball crosses the goal's rim height descending at its center, the time from exit to that" \
         in java.splitlines()
+
+
+# Measured 2026-11-09 (4 deg hood step, distances 1.5 to 3.0 m): see the test's docstring.
+@pytest.mark.xfail(strict=True, reason="the ball rows peak at the opening's center height and cross flat there, with "
+                   "about a centimeter to the field-side edge (rim_1); the world's ball flies 1.5-2.5 cm above and "
+                   "1 cm farther than the aim's at that edge (exit speed 0.5% higher at the same wheel speed) and "
+                   "catches it from below")
+def test_the_ball_rows_score_in_the_world_with_the_wheels_2_percent_off(speaker_cfg, world_table):
+    """Each ball row flown in the world, the robot at the row's distance, the hood at its angle and the wheels at its
+    speed and 2% either side: every shot scores in the SPEAKER-like goal (the ball counterpart of the NOTE re-fly in
+    tests/test_range_2024.py)."""
+    missed = []
+    ok = [r for r in world_table if r.status == "ok"]
+    assert len(ok) >= 2
+    for row in ok:
+        for f in (0.98, 1.0, 1.02):
+            log = _fly_in_world(speaker_cfg, row.distance, row.wheel_rps * f, row.hood_deg)
+            if log["goal"] != "speaker":
+                missed.append((row.distance, row.hood_deg, round(row.wheel_rps, 2), f, log["goal"], log["first_hit"]))
+    assert not missed, missed
