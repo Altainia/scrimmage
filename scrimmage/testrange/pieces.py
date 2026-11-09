@@ -535,6 +535,24 @@ def _directions(n: int = 2048) -> np.ndarray:
     return np.column_stack([r * np.cos(phi), r * np.sin(phi), z])
 
 
+SUPPORT_CHUNK = 8192  # points per pass in _support: 2048 directions by this many floats is 128 MB at most
+
+
+def _support(d: np.ndarray, p: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """For each direction in d, the farthest any point of p reaches along it and that point's index (the first, on a
+    tie, as np.argmax), taken SUPPORT_CHUNK points at a time so a big CAD mesh's vertices never make one
+    directions-by-points array."""
+    best = np.full(len(d), -np.inf)
+    at = np.zeros(len(d), dtype=int)
+    for start in range(0, len(p), SUPPORT_CHUNK):
+        proj = d @ p[start:start + SUPPORT_CHUNK].T
+        i = np.argmax(proj, axis=1)
+        reach = proj[np.arange(len(d)), i]
+        better = reach > best
+        best[better], at[better] = reach[better], i[better] + start
+    return best, at
+
+
 def _solid_points(solids) -> np.ndarray:
     """Every box corner and mesh vertex of `solids`, and 14 points on each sphere (its 6 poles and 8 diagonal
     points), deduplicated."""
@@ -558,7 +576,7 @@ def outline_points(solids, cap: int = OUTLINE_POINTS) -> np.ndarray:
     p = _solid_points(solids)
     if len(p) == 0:
         return p
-    p = p[np.unique(np.argmax(_directions() @ p.T, axis=1))]
+    p = p[np.unique(_support(_directions(), p)[1])]
     if len(p) <= cap:
         return p
     keep = list(dict.fromkeys(int(i) for k in range(3) for i in (np.argmin(p[:, k]), np.argmax(p[:, k]))))[:cap]
@@ -574,7 +592,7 @@ def outline_error(solids, cap: int = OUTLINE_POINTS) -> float:
     """How far (m) the outline_points' hull falls inside the solids' own, in the worst of 2048 directions: how much
     of the piece an opening's check can miss (a sphere's 14 points miss up to 0.18 of its radius more)."""
     d = _directions()
-    return float(np.max((d @ _solid_points(solids).T).max(axis=1) - (d @ outline_points(solids, cap).T).max(axis=1)))
+    return float(np.max(_support(d, _solid_points(solids))[0] - _support(d, outline_points(solids, cap))[0]))
 
 
 def piece_bounds(kind: PieceKind) -> tuple[np.ndarray, np.ndarray]:
