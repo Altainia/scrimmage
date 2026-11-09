@@ -18,6 +18,7 @@ points. `climb_points` is a copy of the range's `[climb] levels`, so scoring nee
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from .. import i18n
@@ -76,7 +77,17 @@ def _points(r, value, key: str) -> float:
         raise r.err(i18n.t("{key} must be a number, not {value}", key=key, value=repr(value)))
     if not value >= 0:
         raise r.err(i18n.t("{key} can't be negative, not {value}", key=key, value=repr(value)))
+    if not math.isfinite(value):
+        raise r.err(i18n.t("{key} must be a finite number, not {value}", key=key, value=repr(value)))
     return float(value)
+
+
+def _seconds(r, key: str, **kw) -> float:
+    """A phase length from reader `r`: `r.num`'s checks, and finite."""
+    v = r.num(key, **kw)
+    if not math.isfinite(v):
+        raise r.err(i18n.t("{key} must be a finite number of seconds, not {value}", key=key, value=repr(v)))
+    return v
 
 
 def parse_game(path, table, goals, zones, climb) -> Game:
@@ -86,9 +97,9 @@ def parse_game(path, table, goals, zones, climb) -> Game:
 
     r = _Reader(path, "[game]", table, _GAME)
     name = r.text("name") if r.has("name") else ""
-    auto_s = r.num("auto_seconds", positive=True)
-    pause_s = r.num("pause_seconds", nonnegative=True)
-    teleop_s = r.num("teleop_seconds", positive=True)
+    auto_s = _seconds(r, "auto_seconds", positive=True)
+    pause_s = _seconds(r, "pause_seconds", nonnegative=True)
+    teleop_s = _seconds(r, "teleop_seconds", positive=True)
     points: dict[str, GoalPoints] = {}
     if r.has("points"):
         raw = r.raw("points")
@@ -174,7 +185,7 @@ def score(game: Game, log: list[dict], phases: Phases, left: bool | None, level:
     """The points of a run, read from `ball_log()`'s rows (never written to). A piece scored in the pause scores
     nothing (its item says so); one scored outside the match isn't counted. `left` is whether LEAVE was earned and
     `level` the climb level held when the match ended (None: not earned or not decided, 0 points). With `at`, only
-    pieces with `scored_t <= at` count, LEAVE once auto has ended by `at`, and no endgame (the match isn't over)."""
+    pieces with `scored_t <= at` count, LEAVE once auto has ended by `at`, and the endgame once the match has ended by `at`."""
     counts: dict[tuple[str, str], int] = {}
     for row in log:
         goal, t = row.get("goal"), row.get("scored_t")
@@ -199,7 +210,7 @@ def score(game: Game, log: list[dict], phases: Phases, left: bool | None, level:
     if left and game.leave is not None and (at is None or at >= phases.auto[1]):
         items.append(PointsItem("leave", "auto", 1, game.leave.points))
         auto += game.leave.points
-    if level is not None and at is None:
+    if level is not None and (at is None or at >= phases.teleop[1]):
         pts = game.climb_points.get(level, 0.0)
         items.append(PointsItem("climb", "endgame", 1, pts))
         endgame += pts

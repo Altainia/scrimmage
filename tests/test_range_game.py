@@ -100,6 +100,9 @@ def _game(body):
     (_game('[game.rules]\npossession = 1.5'), r"\[game\] rules possession must be a whole number"),
     (_game('bonus = 3'), r"unknown key 'bonus' in \[game\]"),
     (_game('[game.rules]\nspeed = 3'), r"unknown key 'speed' in \[game\] rules"),
+    ("[game]\nauto_seconds = inf\npause_seconds = 3\nteleop_seconds = 135\n", r"auto_seconds must be a finite"),
+    (_game('points = { speaker_blue = inf }'), r"\[game\] points speaker_blue must be a finite number"),
+    (_game('points = { speaker_blue = { auto = 5 } }'), r"speaker_blue"),
 ])
 def test_bad_games_are_refused_naming_file_table_and_key(tmp_path, game, match):
     with pytest.raises(RangeError, match=match):
@@ -174,3 +177,10 @@ def test_points_so_far_with_at():
     assert (mid.auto, mid.teleop, mid.endgame, mid.total) == (5, 0, 0, 5)       # no leave yet, no endgame
     assert score(GAME24, log, PH, True, None, at=20.0).total == 10               # scored_t <= at counts
     assert score(GAME24, log, PH, True, None, at=26.0).total == 12               # auto over: LEAVE counts
+    end = score(GAME24, log, PH, True, "ONSTAGE", at=PH.teleop[1])
+    assert end == score(GAME24, log, PH, True, "ONSTAGE")                     # at the match's end: the endgame too
+
+
+def test_a_game_with_no_pause(tmp_path):
+    rng = load(tmp_path, "[game]\nauto_seconds = 15\npause_seconds = 0\nteleop_seconds = 135\n")
+    assert rng.game.pause_s == 0 and rng.game.phases(0.0) == Phases((0.0, 15.0), (15.0, 150.0))
