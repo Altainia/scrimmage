@@ -504,6 +504,12 @@ def _amount(x: float, unit: str, fewer: int = 0) -> str:
     return units.fmt(x * si, kind, fewer=fewer)
 
 
+def phase_word(phase: str) -> str:
+    """A match phase or points phase as a sentence says it (the words the phase marks use)."""
+    return {"auto": i18n.t("auto"), "pause": i18n.t("pause"), "teleop": i18n.t("teleop"),
+            "endgame": i18n.t("endgame")}[phase]
+
+
 def a_piece(kinds: dict | None) -> str:
     """Any piece of the field, as a sentence names it: "a coral", "a ball", "a piece"."""
     word = default_word(kinds)
@@ -684,7 +690,7 @@ def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names
         return say(t("the partner moved at least {limit}", **p), t("the partner having moved at least {limit}", **p),
                    t("the partner to have moved at least {limit}", **p))
     if k == "match":
-        p = {"phase": a["phase"]}
+        p = {"phase": phase_word(a["phase"])}
         return say(t("the match is in {phase}", **p), t("the match being in {phase}", **p),
                    t("the match to be in {phase}", **p))
     if k == "points":
@@ -692,7 +698,7 @@ def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names
             p = {"count": f"{a['at_least']:g}"}
             return say(t("{count} or more points are scored", **p), t("{count} or more points being scored", **p),
                        t("{count} or more points to be scored", **p))
-        p = {"count": f"{a['at_least']:g}", "phase": a["phase"]}
+        p = {"count": f"{a['at_least']:g}", "phase": phase_word(a["phase"])}
         return say(t("{count} or more points are scored in {phase}", **p),
                    t("{count} or more points being scored in {phase}", **p),
                    t("{count} or more points to be scored in {phase}", **p))

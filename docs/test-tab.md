@@ -662,7 +662,7 @@ match = true
 
 - **The clock.** The match starts with the first block, after the 0.3 s settle, which isn't match time. **Auto** runs
   for the game's `auto_seconds`, then the **pause**, then **teleop**. The run ends when teleop does, even if blocks are
-  left (the outcome says so), and even if the blocks finished early: the robot just sits, motors as they were, to the
+  left (the outcome says so; every **expect** among them fails, "the match ended before this check ran"), and even if the blocks finished early: the robot just sits, motors as they were, to the
   match's end. The 3 s settle after the match lets pieces in the air land, but a piece that scores then is after the
   match and doesn't count.
 - **The pause disables the robot.** Every motor goes to neutral and the air is held, as a real robot held disabled
@@ -670,7 +670,8 @@ match = true
   again when teleop begins.
 - **The length is the game's.** `time_limit` can't be given with `match = true`: the test file is refused.
 - **The phase check.** **match is in** *auto*, *pause* or *teleop* works in **wait until** (to wait for teleop) and in
-  **expect**. In a file: `{ match = { phase = "teleop" } }`.
+  **expect**. In a file: `{ match = { phase = "teleop" } }`. A **wait until** for a phase has no 10 s limit: it waits
+  for as long as the match has left, unless you give it a **Give up after** time of your own.
 - **The points check.** **points in** *auto*, *teleop*, *endgame* or *total* **at least** *N* reads the points so far.
   In a file: `{ points = { phase = "auto", at_least = 7 } }` (`phase` is `"total"` when left out). LEAVE counts once
   auto has ended: the robot's center was in the leave zone when the match started and is outside it when auto ends.

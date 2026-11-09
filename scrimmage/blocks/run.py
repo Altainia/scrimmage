@@ -132,7 +132,7 @@ from ..protocol import HalState, frame
 from ..testrange.build import BALL_BITS
 from .aim import TURN, aim_error, aim_target
 from .clearance import PREFIX, inches, named
-from .conditions import IN, Watch, _amount, _conds
+from .conditions import IN, Watch, _amount, _conds, phase_word
 from .drive import STEER_TIMEOUT, drivetrain
 from .feeds import SETTLE_MAX_S, Outcomes, counts, is_standin, made_it_in, sentence
 from .grip_watch import SLIP_LOOKBACK_S
@@ -403,6 +403,8 @@ class TestRun(_FailureWords):
                     raise _End("cancelled", _w(lambda: i18n.t("you stopped the run at {t} s", t=f"{t:.1f}")))
                 if self.match is not None:
                     if t >= self.match.end - EPS:       # the match plays to its end, whatever the blocks did
+                        if not self._blocks_done:
+                            self._unreached(t)
                         raise _End("finished", "finished" if self._blocks_done else _w(lambda: i18n.t(
                             "the match ended before the last block")))
                 elif t >= self.program.time_limit - EPS:
@@ -498,16 +500,37 @@ class TestRun(_FailureWords):
         _keep_words(result)
         return result
 
+    def _unreached(self, t: float) -> None:
+        """The match ended with blocks left: each `expect` that never ran fails ("the match ended before it"). That is
+        the current block (unless it is under way), the rest of every open block list, and the bodies of the repeats
+        among them."""
+        left: list[tuple[tuple, object]] = []
+
+        def walk(blocks, trail, start) -> None:
+            for i in range(start, len(blocks)):
+                b = blocks[i]
+                if b.do == "expect":
+                    left.append((trail + (i,), b))
+                walk(b.body, trail + (i,), 0)
+
+        last = len(self.frames) - 1
+        for k, f in enumerate(self.frames):
+            # the innermost list's current block is under way when `active`; an outer list's is the open repeat
+            walk(f.blocks, f.trail, f.index + (1 if k < last or self.active is not None else 0))
+        for place, b in sorted(left, key=lambda x: x[0]):
+            cond = b.args["that"]
+            self.checks.append({
+                "place": list(place), "text": _w(lambda: self._describe(cond)),
+                "throughout": bool(b.args.get("throughout", False)), "passed": False, "t": t, "timed": True,
+                "failure": _w(lambda: i18n.t("the match ended before this check ran"))})
+
     def _see_match(self, t: float) -> None:
         """After a physics step (or at the start) at run time t: the match's state, and a mark when its phase changed."""
         w = self.world
         x, y = (float(c) for c in w.data.xpos[w.robot_body][:2])
         phase = self.match.see(t, x, y, int(self.watch.climb.get("climb.level", 0)))
         if phase is not None:
-            words = {"auto": lambda: i18n.t("auto"),
-                     "pause": lambda: i18n.t("pause"),
-                     "teleop": lambda: i18n.t("teleop")}
-            self.marks.append({"t": t, "kind": "phase", "phase": phase, "text": _w(words[phase])})
+            self.marks.append({"t": t, "kind": "phase", "phase": phase, "text": _w(lambda: phase_word(phase))})
 
     def _see_air(self) -> None:
         if self.air is not None:
@@ -796,7 +819,10 @@ class TestRun(_FailureWords):
         if b.do == "wait_until":
             if watch.holds(a["until"]):
                 return True
-            if elapsed >= a.get("timeout", WAIT_TIMEOUT) - EPS:
+            timeout = a.get("timeout", WAIT_TIMEOUT)
+            if self.match is not None and "timeout" not in a and a["until"].kind == "match":
+                timeout = self.match.end - self.active["t0"] + 2 * EPS     # a wait for a phase lasts to the match's end
+            if elapsed >= timeout - EPS:
                 raise _End("timed out", _w(lambda: i18n.t("waiting for {what} timed out at {t} s ({where})",
                                                           what=self._describe(a["until"], "waiting"), t=f"{t:.1f}",
                                                           where=_where(place))))

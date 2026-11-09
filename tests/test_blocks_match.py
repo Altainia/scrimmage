@@ -13,24 +13,26 @@ from pathlib import Path
 import pytest
 
 from scrimmage import i18n, units
+from scrimmage.blocks import store
 from scrimmage.blocks.palette import problems
-from scrimmage.blocks.program import TestFileError, from_json, loads
+from scrimmage.blocks.program import TestFileError, dumps, from_json, loads
 from scrimmage.blocks.run import TestRun, points_lines, world_for
 from scrimmage.blocks.store import load_result, save_run
 
 ROOT = Path(__file__).resolve().parent.parent
-RANGE = (ROOT / "scrimmage" / "testrange" / "ranges" / "2026.toml").read_text(encoding="utf-8") + '''
+BASE = (ROOT / "scrimmage" / "testrange" / "ranges" / "2026.toml").read_text(encoding="utf-8")
+GAME = '''
 [[zone]]
 name = "start_zone"
 corners = [[3.0, 3.0], [4.2, 3.0], [4.2, 5.0], [3.0, 5.0]]
 
 [game]
 name = "test match"
-auto_seconds = 5
-pause_seconds = 2
-teleop_seconds = 5
-points = { hub_blue = { auto = 3, teleop = 1 } }
-leave = { zone = "start_zone", points = 2 }
+auto_seconds = {auto}
+pause_seconds = {pause}
+teleop_seconds = {teleop}
+points = {{ hub_blue = {{ auto = 3, teleop = 1 }} }}
+leave = {{ zone = "start_zone", points = 2 }}
 '''
 AUTO, PAUSE, TELEOP = 5.0, 2.0, 5.0
 
@@ -73,14 +75,16 @@ volts = 6.0
 """
 
 
-def make(tmp: Path, blocks: str, test: str = "match = true\n", name: str = "m.test.toml", ranged: bool = True):
+def make(tmp: Path, blocks: str, test: str = "match = true\n", name: str = "m.test.toml", ranged: bool = True,
+         game: tuple = (AUTO, PAUSE, TELEOP)):
     """The robot (configs/fastmode_range.toml with its robot program dropped, on the match range) and the test."""
     text = (ROOT / "configs" / "fastmode_range.toml").read_text(encoding="utf-8")
     text, n = re.subn(r"\n\[robot_program\]\n.*?(?=\n# ---- Drive)", "\n", text, flags=re.S)
     assert n == 1
     if ranged:
         text = text.replace('file = "2026"', 'file = "match_range.toml"')
-        (tmp / "match_range.toml").write_text(RANGE, encoding="utf-8")
+        (tmp / "match_range.toml").write_text(BASE + GAME.format(auto=game[0], pause=game[1], teleop=game[2]),
+                                              encoding="utf-8")
     (tmp / "shooter.toml").write_text(text, encoding="utf-8")
     return loads('[test]\nrobot = "shooter.toml"\n' + test + blocks, tmp / name)
 
@@ -97,7 +101,6 @@ that = { points = { phase = "auto", at_least = 5 } }
 [[block]]
 do = "wait_until"
 until = { match = { phase = "teleop" } }
-timeout = 20.0
 
 [[block]]
 do = "expect"
@@ -198,6 +201,7 @@ volts = 4.0
     assert peak(start + 1.0, pause0) > 1.0                          # driving in auto
     assert peak(pause0 + 0.5, pause1) < 0.01                        # the pause: neutral (the current dies away in 0.3 s)
     assert peak(pause1 + 0.5, pause1 + TELEOP) > 1.0                # and again in teleop
+    assert peak(start + 9.0 + 0.5, pause1 + TELEOP) < 0.01          # the drive's 9 s counted the pause: over by 9.5 s
     # the drive block's seconds counted match time, the pause included: 9 s is over at the match's end
     assert all(c["passed"] for c in r.checks)
 
@@ -245,23 +249,85 @@ def test_the_result_is_stored_and_loaded_with_its_points(played):
     assert len(lines) == 1 + len(p["items"])
 
 
-def test_the_points_lines_read_the_same_in_every_language_and_in_machine_text(played):
+def test_the_points_lines_are_the_same_in_machine_text_in_every_language(played):
     from types import SimpleNamespace
     kept = SimpleNamespace(points=played["result"].points, match=played["result"].match)
-    english = points_lines(kept)
     with units.machine_text():
-        assert points_lines(kept) == english
-    for lang in i18n.languages():       # points are plain numbers: no setting changes a word of them
+        english = points_lines(kept)
+    assert english[0].endswith(" in endgame") and "points: " in english[0]
+    for lang in i18n.languages():
         for system in units.SYSTEMS:
-            with units.shown_in(system, lang):
+            with units.shown_in(system, lang), units.machine_text():
                 assert points_lines(kept) == english
     # the run's own sentences (the marks, the checks) are the same in every setting when made in machine text
     with units.machine_text():
         r = TestRun(played["world"], played["program"]).run()
     assert r.words is not None
-    texts = {tuple(m for m in w["marks"]) for w in r.words.values()}
-    assert texts == {("auto", "pause", "teleop")}
+    assert {tuple(w["marks"]) for w in r.words.values()} == {("auto", "pause", "teleop")}
     assert len({tuple(c["line"] for c in w["checks"]) for w in r.words.values()}) == 1
+
+
+def test_run_result_has_the_points_lines_first(played, tmp_path):
+    from scrimmage.assembler.simlock import SimLock
+    from scrimmage.assembler.test_session import TestSession
+    program = played["program"]
+    program.path.write_text(dumps(program), encoding="utf-8")
+    save_run(played["result"], program, store.runs_dir(program.path))
+    out = TestSession(program.path, SimLock()).run_result("001")
+    p = played["result"].points
+    assert out["lines"][0].startswith(f"{p['total']:g} points: ")
+    assert out["points"] == p and out["match"] == played["result"].match and out["rules"] == []
+
+
+def test_an_expect_the_match_never_reached_fails_the_test(tmp_path):
+    blocks = """
+[[block]]
+do = "wait"
+seconds = 30.0
+
+[[block]]
+do = "repeat"
+times = 2
+
+[[block.body]]
+do = "expect"
+that = { points = { at_least = 1 } }
+
+[[block]]
+do = "expect"
+that = { match = { phase = "teleop" } }
+"""
+    program = make(tmp_path, blocks)
+    r = TestRun(world_for(program), program).run()
+    assert r.status == "finished" and not r.passed
+    assert [c["place"] for c in r.checks] == [[1, 0], [2]]
+    assert not any(c["passed"] for c in r.checks)
+    assert r.checks[1]["line"] == "failed (block 3): the match ended before this check ran"
+    assert r.checks[0]["line"].startswith("failed (block 1 inside block 2)")
+    assert r.checks[1]["t"] == pytest.approx(r.match["teleop"][1], abs=0.003)
+    assert "the match ended before the last block" in r.outcome
+
+
+def test_a_wait_for_a_phase_lasts_to_the_match_end_unless_told_otherwise(tmp_path):
+    # a 15 s auto: the wait from the first block lasts 15 s, longer than a wait until's usual 10 s
+    wait = """
+[[block]]
+do = "wait_until"
+until = { match = { phase = "teleop" } }
+%s
+[[block]]
+do = "expect"
+that = { match = { phase = "teleop" } }
+"""
+    program = make(tmp_path, wait % "", game=(15.0, 3.0, 2.0))
+    r = TestRun(world_for(program), program).run()
+    assert r.status == "finished" and r.passed, r.outcome
+    assert r.checks[0]["t"] == pytest.approx(r.match["teleop"][0], abs=0.003)
+    # a timeout the student gives wins
+    program = make(tmp_path, wait % "timeout = 1.0\n", game=(15.0, 3.0, 2.0), name="t.test.toml")
+    r = TestRun(world_for(program), program).run()
+    assert r.status == "timed out", r.outcome
+    assert "waiting for the match to be in teleop timed out at 1.3 s" in r.outcome
 
 
 def test_a_plain_test_has_none_of_these(tmp_path):
