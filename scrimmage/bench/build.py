@@ -22,8 +22,9 @@ from ..parts.assemble import TREAD_DAMPING, TREAD_IMPEDANCE, TREAD_STIFFNESS, tr
 from ..parts.model import quat_from_rpy
 from . import cad as cadmod
 from .cad import CadWheel
+from ..testrange.build import kind_geoms
 from .problems import Problem
-from .spec import UNITS, Bench, BenchError, Curve, Piece
+from .spec import PIECE_FRICTION, UNITS, Bench, BenchError, Curve, Piece
 
 POOL_MAX = 200
 BOUNDS_MARGIN = 0.5  # m: how far outside everything a piece must go to count as escaped
@@ -37,8 +38,6 @@ CURVE_MAX_DEG = 5.0  # a curve is cut into chords at most this many degrees apar
 SHAPE_BITS = {"contype": 1, "conaffinity": 0}  # shapes touch pieces, not each other
 PIECE_BITS = {"squishy": {"contype": 0, "conaffinity": 0}, "rigid": {"contype": 1, "conaffinity": 1}}
 SHAPE_PRIORITY = 1   # above a piece's 0: a rigid piece's contact with a shape uses the shape's friction and solref
-# estimate: a piece has no material, so piece-on-piece friction is a middling plastic-on-plastic figure
-PIECE_FRICTION = 0.5
 # MuJoCo's own torsional and rolling friction defaults
 SPIN_FRICTION, ROLL_FRICTION = 0.005, 0.0001
 # estimate: a springy bar's moving mass is a solid aluminum rod of its size (2700 kg/m^3); the file gives no mass
@@ -55,7 +54,9 @@ class BenchLayout:
     wheel_geoms: dict[str, int] = field(default_factory=dict)
     bar_dof: dict[str, int] = field(default_factory=dict)        # springy bars only
     piece_bodies: list[int] = field(default_factory=list)
-    piece_geoms: list[int] = field(default_factory=list)
+    piece_geoms: list[int] = field(default_factory=list)          # each pool body's first geom (a ball's only one)
+    piece_geom_sets: list[tuple[int, ...]] = field(default_factory=list)  # and all its geoms (a ring has 24)
+    piece_reach: float = 0.0                                      # m: the piece's bounding sphere about its center
     piece_qpos: list[int] = field(default_factory=list)          # each pool body's free joint qpos address
     piece_qvel: list[int] = field(default_factory=list)          # and its dof address
     parked: list[np.ndarray] = field(default_factory=list)       # where each pool body waits (its qpos0 position)
@@ -183,7 +184,8 @@ class _Shapes:
         for i in range(n_pool):
             for key, v in _contact(_series(self.piece.stiffness, self.piece.stiffness), 1.0 / (2 * iw_piece),
                                    self.dt).items():
-                setattr(spec.geom(f"piece:{i}:geom"), key, v)
+                for gname in _piece_geom_names(i, self.piece):
+                    setattr(spec.geom(gname), key, v)
 
 
 def _check_names(bench: Bench) -> None:
@@ -265,10 +267,22 @@ def _add_static(spec: mujoco.MjSpec, bench: Bench, shapes: _Shapes) -> None:
             shapes.add(world, f"curve:{c.name}:{i}", c.name, mujoco.mjtGeom.mjGEOM_BOX, half, center, q, mu)
 
 
-def _add_piece(body, piece: Piece) -> None:
+def _piece_geom_names(i: int, piece: Piece) -> list[str]:
+    """Pool body i's geom names: `piece:<i>:geom`, then for a kind's further solids `piece:<i>:geom:<k>`."""
+    n = len(piece.rigid_kind.solids) if piece.rigid_kind is not None else 1
+    return [f"piece:{i}:geom"] + [f"piece:{i}:geom:{k}" for k in range(1, n)]
+
+
+def _add_piece(body, piece: Piece, kind_meshes: list[dict] | None = None) -> None:
     # A mesh piece collides as its convex hull (MuJoCo's own mesh collision); concave pieces are out of scope.
+    # A kind's piece (a ring, a piece preset) collides as its solids, as the range builds them (kind_meshes).
     kw = dict(name=f"{body.name}:geom", friction=[PIECE_FRICTION, SPIN_FRICTION, ROLL_FRICTION],
               **PIECE_BITS[piece.kind])
+    if kind_meshes is not None:
+        i = int(body.name.split(":")[1])
+        for gname, geom in zip(_piece_geom_names(i, piece), kind_meshes):
+            body.add_geom(**{**kw, **geom, "name": gname})
+        return
     if piece.shape == "sphere":
         kw.update(type=mujoco.mjtGeom.mjGEOM_SPHERE, size=[piece.size[0] / 2, 0, 0])
     elif piece.shape == "box":
@@ -310,11 +324,17 @@ def build_bench(bench: Bench) -> Built:
         cad_material |= mat
     if piece.shape == "mesh":
         spec.add_mesh(name="piece_mesh", file=str(piece.mesh), scale=[UNITS[piece.units]] * 3)
+    kind = piece.rigid_kind
+    kind_meshes = kind_geoms(spec, kind, "piece") if kind is not None and n_pool else None
     for i in range(n_pool):
         body = spec.worldbody.add_body(name=f"piece:{i}")
         body.add_freejoint(name=f"piece:{i}")
-        _inertial(body, piece.mass, piece.inertia)
-        _add_piece(body, piece)
+        if kind is None:
+            _inertial(body, piece.mass, piece.inertia)
+        else:  # the full tensor (Ixx Iyy Izz Ixy Ixz Iyz) about the center of mass, as the range's slots take it
+            body.explicitinertial = True
+            body.mass, body.ipos, body.fullinertia = piece.mass, [0.0, 0.0, 0.0], list(kind.inertia)
+        _add_piece(body, piece, kind_meshes)
     for inlet in bench.inlets:  # sized below, once the piece's extent is known
         spec.worldbody.add_geom(name=f"inlet:{inlet.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
                                 size=list(np.array(inlet.size) / 2), pos=list(inlet.center), group=PROBE_GROUP,
@@ -339,23 +359,25 @@ def build_bench(bench: Bench) -> Built:
     hi = np.max([b[1] for b in boxes], axis=0) + BOUNDS_MARGIN
     parked = []
     shapes.set_stiffness(spec, m, n_pool)
+    piece_reach = 0.0
     if n_pool:
-        pg = m.geom("piece:0:geom").id
-        gpos = m.geom_pos[pg].copy()
+        pgs = [m.geom(g).id for g in _piece_geom_names(0, piece)]
+        gpos = {g: m.geom_pos[g].copy() for g in pgs}
         if piece.shape == "mesh":
             # MuJoCo moves a mesh geom to the mesh's centroid (and turns it to its principal axes). Shift it back by
             # the centroid so the body's origin is the centroid, its axes the file's, and piece.inertia (about the
             # piece's own axes) acts about the centroid. The body origin is then the point the runner spawns and tracks.
             for i in range(n_pool):
                 spec.geom(f"piece:{i}:geom").pos = list(-m.mesh_pos[0])
-            gpos -= m.mesh_pos[0]
-        plo, phi = _aabb(m, pg, gpos, _mat(m.geom_quat[pg]))  # in the piece's frame, as spawned upright
-        reach = np.maximum(-plo, phi)
+            gpos[pgs[0]] -= m.mesh_pos[0]
+        boxes = [_aabb(m, g, gpos[g], _mat(m.geom_quat[g])) for g in pgs]  # in the piece's frame, spawned upright
+        reach = np.maximum(-np.min([b[0] for b in boxes], axis=0), np.max([b[1] for b in boxes], axis=0))
         if piece.shape == "sphere":
             reach = np.zeros(3)  # exact for a ball: the zone must stay a radius clear (inlet_margin), corners and all
         for inlet in bench.inlets:
             spec.geom(f"inlet:{inlet.name}").size = list(np.array(inlet.size) / 2 + reach)
-        step = 2 * m.geom_rbound[pg] + PARK_GAP
+        piece_reach = max(float(np.linalg.norm(gpos[g]) + m.geom_rbound[g]) for g in pgs)
+        step = 2 * piece_reach + PARK_GAP
         cols = math.ceil(math.sqrt(n_pool))
         for i in range(n_pool):
             p = np.array([lo[0] + step * (i % cols), lo[1] + step * (i // cols), lo[2] - PARK_DROP])
@@ -367,7 +389,7 @@ def build_bench(bench: Bench) -> Built:
         raise BenchError(i18n.t("building the bench: {error}", error=e)) from None
 
     lay = BenchLayout(bounds=(lo, hi), outlet_boxes=outlet_boxes, inlet_boxes=inlet_boxes, parked=parked,
-                      inlet_margin=piece.size[0] / 2 if piece.shape == "sphere" else 0.0)
+                      inlet_margin=piece.size[0] / 2 if piece.shape == "sphere" else 0.0, piece_reach=piece_reach)
     lay.shape_of_geom = {m.geom(g).id: s for g, s in shapes.names.items()}
     lay.wheel_geoms = {w.name: m.geom(f"wheel:{w.name}").id for w in bench.wheels}
     lay.wheel_geoms |= {s: g for g, s in lay.shape_of_geom.items() if s in cad_wheels}
@@ -378,6 +400,7 @@ def build_bench(bench: Bench) -> Built:
         j = m.joint(f"piece:{i}")
         lay.piece_bodies.append(m.body(f"piece:{i}").id)
         lay.piece_geoms.append(m.geom(f"piece:{i}:geom").id)
+        lay.piece_geom_sets.append(tuple(m.geom(g).id for g in _piece_geom_names(i, piece)))
         lay.piece_qpos.append(int(j.qposadr[0]))
         lay.piece_qvel.append(int(j.dofadr[0]))
     lay.inlet_probes = {i.name: m.geom(f"inlet:{i.name}").id for i in bench.inlets}

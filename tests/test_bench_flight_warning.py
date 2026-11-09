@@ -1,5 +1,5 @@
-"""bench check warns when [flight] is given with a rigid piece (kickoff dry run gap 20): before, only a run's summary
-said there would be no landings."""
+"""bench check used to warn when [flight] was given with a rigid piece (kickoff dry run gap 20): a rigid piece's
+flight wasn't modeled. K2 flies rigid pieces (flight6 with rigid_aero's drag), so there is no warning now."""
 
 from scrimmage.bench.problems import collect_problems
 
@@ -40,11 +40,9 @@ duration = 1.0
 '''
 
 
-def test_flight_with_a_rigid_piece_is_a_check_warning(tmp_path):
+def test_flight_with_a_rigid_piece_is_no_longer_a_check_warning(tmp_path):
     f = tmp_path / "b.toml"
     f.write_text(BENCH + '[flight]\noutlet = "shot"\nheight = 0.5\ntarget_distance = 2.0\ntarget_height_in = 80.0\n')
     bench, problems = collect_problems(f)
     assert bench is not None, problems
-    assert any(p.level == "warning" and "flies balls only" in p.message for p in problems), problems
-    f.write_text(BENCH)
-    assert not any("flies balls only" in p.message for p in collect_problems(f)[1])
+    assert not [p for p in problems if p.level == "warning" and "[flight]" in p.message], problems

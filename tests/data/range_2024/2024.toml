@@ -1,0 +1,47 @@
+# FRC 2024 CRESCENDO, trimmed from the kickoff dry run's range file (K1) to what the bench's goal tests need: the
+# NOTE, the blue SUBWOOFER's front face, the blue SPEAKER's wall and hood, and the blue SPEAKER and AMP goals.
+# Sources as the dry run's: the game manual (M), Team 6328's FieldConstants (6328), the WPILib 2024 AprilTag JSON (WPI).
+# Coordinates: WPILib field frame (blue alliance wall x = 0, scoring-table guardrail y = 0), meters.
+
+[range]
+name = "FRC 2024 CRESCENDO (bench goal tests)"
+field = { length = 16.541, width = 8.211 }   # WPI: the 2024 field
+
+[piece.note]
+preset = "2024-note"        # M 5.7: 14 in OD, 10 in ID, 2 in thick, 8.3 oz; a rigid stand-in (scrimmage)
+color = "orange"
+
+[[element]]
+name = "subwoofer_blue_center"
+kind = "box"
+center = [0.4588, 5.5479]   # M 5.6.1: extends 3 ft 1/8 in from the wall, centered under the SPEAKER (tag 7 y)
+size = [0.9176, 0.9398, 0.9398]   # 37 in tall (M 5.6.1); 37 in front face width: estimate from TE-24300 (team version) base frame
+
+[[obstacle]]
+name = "speaker_blue_wall"
+pos = [-0.0500, 5.5446, 0.9947]   # the alliance wall under the SPEAKER opening, up to its low edge at 78.324 in (6328)
+size = [0.1, 1.0427, 1.9894]
+
+[[obstacle]]
+name = "speaker_blue_hood"
+pos = [0.2293, 5.5446, 2.3148]   # estimate: the hood roof from the opening's front lip (6328 corner, 18.055 in out, 83.091 in up)
+size = [0.5761, 1.0427, 0.03]   # ... up to the wall at about 98 in (CAD-ONLY; not measured); 41.05 in wide (6328 corners)
+rpy_deg = [0.0, 37.25, 0.0]
+
+[[goal]]
+name = "speaker_blue"
+kind = "note"
+pos = [0.2293, 5.5446]       # 6328 corners: opening center 9.03 in out from the wall
+heading_deg = 180.0          # into the wall (K1 gap 2)
+rim_height = 2.0500          # opening center height, (78.324 + 83.091) / 2 in
+tilt_deg = 165.2             # M 5.6: the opening rises 14.8 deg toward the field; entered going up (180 - 14.8)
+opening = { kind = "rect", width = 1.0427, height = 0.4742 }
+
+[[goal]]
+name = "amp_blue"
+kind = "note"
+pos = [1.8404, 8.2042]       # 6328 ampCenter; WPI tag 6
+heading_deg = 90.0           # into the AMP wall
+rim_height = 0.8890          # M 5.3: pocket bottom 26 in, 18 in tall
+tilt_deg = 90.0
+opening = { kind = "rect", width = 0.6096, height = 0.4572 }

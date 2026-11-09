@@ -9,12 +9,16 @@ elements do. List sections (`[[wheel]]`, `[[plate]]`, ...) and `[shaft.<name>]` 
 import copy
 import math
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+import numpy as np
 
 from .. import i18n
 from ..launcher.inputs import PRESETS, Ball
 from ..motors import MOTORS
+from ..testrange.pieces import PieceKind, kind_preset, parse_kind
+from ..testrange.spec import BUILTIN_RANGES, Goal, RangeError, load_range, piece_box
 from .problems import Problem
 
 IN = 0.0254  # m per inch
@@ -22,6 +26,9 @@ MATERIAL_DEFAULT = "polycarbonate"
 # estimate: 1/8 in polycarbonate sheet, the usual FRC hood material
 THICKNESS_DEFAULT = 0.125 * IN
 UNITS = {"m": 1.0, "mm": 0.001, "in": IN}
+# estimate: a piece has no material, so piece-on-piece friction is a middling plastic-on-plastic figure (build.py's
+# contacts use it; a ring's kind carries it too)
+PIECE_FRICTION = 0.5
 
 
 class BenchError(ValueError):
@@ -51,14 +58,18 @@ class Material:
 class Piece:
     name: str
     kind: str  # "squishy" | "rigid"
-    shape: str  # "sphere" | "box" | "cylinder" | "mesh" ("disc" is read as a cylinder)
-    size: tuple[float, ...]  # sphere (diameter,); box (x, y, z); cylinder (diameter, length), axis along local z; mesh ()
+    shape: str  # "sphere" | "box" | "cylinder" | "ring" | "mesh" ("disc" is read as a cylinder); a piece preset's own
+    size: tuple[float, ...]  # sphere (diameter,); box (x, y, z); cylinder (diameter, length), axis along local z;
+    #                          ring (diameter, inner diameter, length); mesh (); a piece preset its bounding box
     mass: float
     inertia: Vec  # principal moments about the piece's own axes (kg m^2)
     ball: Ball | None  # the launcher model's numbers; squishy pieces only
     stiffness: float | None  # N/m, a rigid piece's own contact stiffness in series with the tread
     mesh: Path | None
     units: str | None  # a mesh's length unit
+    # a piece preset's or a ring's kind, built by the range's piece builder (testrange/pieces.py): the bench builds
+    # its solids and flies it with its drag, so the bench and the range have one NOTE. None for the other shapes.
+    rigid_kind: PieceKind | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(**_frozen)
@@ -164,13 +175,27 @@ class Outlet:
 
 
 @dataclass(**_frozen)
+class FlightGoal:
+    """`[flight] goal = { range, name }`: a goal from a range file, with the bench placed on that field."""
+    range: Path  # the range file
+    name: str
+    goal: Goal
+    at: Vec  # the bench origin's field position (x, y, height), m
+    heading_deg: float  # which way the bench's +x faces on the field, from field +x
+    # the solid things a shot must miss on its way in: the range's obstacles and elements and every goal's plates,
+    # each (name, center, axes as columns, half sizes) on the field
+    boxes: tuple[tuple[str, np.ndarray, np.ndarray, np.ndarray], ...] = field(default=(), repr=False)
+
+
+@dataclass(**_frozen)
 class Flight:
     outlet: str
-    height: float  # the bench origin's height above the floor
-    target_distance: float
-    target_height: float
+    height: float  # the bench origin's height above the floor (with a goal, its `at` height)
+    target_distance: float | None  # None only with a goal
+    target_height: float | None
     ring_diameter: float | None
     air: str  # a launcher [air.*] preset name
+    goal: FlightGoal | None = None
 
 
 @dataclass(**_frozen)
@@ -235,8 +260,8 @@ _SECTIONS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "inlet": (("name", "center", "size", "count", "rate", "velocity", "spin", "spread_speed", "spread_position",
                "spread_time", "seed"), ("center", "size", "spread_position")),
     "outlet": (("name", "center", "size"), ("center", "size")),
-    "flight": (("outlet", "height", "target_distance", "target_height", "ring_diameter", "air"),
-               ("height", "target_distance", "target_height", "ring_diameter")),
+    "flight": (("outlet", "height", "target_distance", "target_height", "ring_diameter", "air", "goal", "at",
+                "heading_deg"), ("height", "target_distance", "target_height", "ring_diameter", "at")),
     "run": (("duration", "timestep", "jam_time", "jam_distance"), ("jam_distance",)),
 }
 _LISTS = ("wheel", "plate", "bar", "curve", "cad", "inlet", "outlet")  # [[section]], entries named
@@ -417,14 +442,17 @@ def _parse_piece(raw, base_dir: Path, warned: list[str]) -> Piece:
     t = _Table("piece", "[piece]", raw)
     preset = t.text("preset", None)
     base: dict = {}
+    if preset is not None and preset in PRESETS.get("piece", {}):
+        return _preset_piece(t, preset)
     if preset is not None:
         known = PRESETS["ball"]
         if preset not in known:
-            raise t.err(i18n.t("{table} preset {preset} is not a ball preset; known ball presets: {known}",
-                               table=t.label, preset=repr(preset), known=", ".join(known)), "preset")
+            raise t.err(i18n.t("{table} preset {preset} is not a ball or piece preset; known ball presets: {known}; "
+                               "known piece presets: {pieces}", table=t.label, preset=repr(preset),
+                               known=", ".join(known), pieces=", ".join(PRESETS.get("piece", {}))), "preset")
         base = known[preset]
     kind = t.text("kind", "squishy" if preset else "rigid", one_of=("squishy", "rigid"))
-    shape = t.text("shape", "sphere" if preset else _REQ, one_of=("sphere", "box", "cylinder", "disc", "mesh"))
+    shape = t.text("shape", "sphere" if preset else _REQ, one_of=("sphere", "box", "cylinder", "disc", "ring", "mesh"))
     if shape == "disc":  # a disc is a short cylinder
         shape = "cylinder"
     if preset and shape != "sphere":
@@ -444,6 +472,8 @@ def _parse_piece(raw, base_dir: Path, warned: list[str]) -> Piece:
         raise t.err(i18n.t("{table} is squishy, so `{stiffness}` does not apply; give the launcher model's "
                            "stiffness_n (N for a quarter-diameter squeeze)", table=t.label, stiffness="stiffness"))
     name = t.text("name", preset or "piece")
+    if shape == "ring":
+        return _ring_piece(t, name, kind)
     if shape == "mesh":
         if t.has("size"):
             raise t.err(i18n.t("{table} is a mesh and takes no size", table=t.label))
@@ -491,6 +521,59 @@ def _parse_piece(raw, base_dir: Path, warned: list[str]) -> Piece:
     stiffness = t.num("stiffness", None, positive=True)
     return Piece(name=name, kind=kind, shape=shape, size=size, mass=mass, inertia=inertia, ball=ball,
                  stiffness=stiffness, mesh=mesh, units=units)
+
+
+# the keys a piece preset takes beside `preset`: the rest are the preset's own
+_PRESET_KEYS = ("preset", "name", "kind", "shape", "stiffness")
+
+
+def _kind_piece(t: _Table, name: str, kind, size: tuple) -> Piece:
+    """A rigid bench piece that is a range kind: its mass, inertia (the full tensor's diagonal; the off-diagonal
+    moments go to the builder through the kind) and solids are the kind's."""
+    return Piece(name=name, kind="rigid", shape=kind.shape, size=size, mass=kind.mass,
+                 inertia=tuple(kind.inertia[:3]), ball=None, stiffness=t.num("stiffness", None, positive=True),
+                 mesh=None, units=None, rigid_kind=kind)
+
+
+def _preset_piece(t: _Table, preset: str) -> Piece:
+    """`preset = "<piece preset>"` (launcher/presets.toml's [piece.*], such as 2024-note): the range's own kind."""
+    extra = [k for k in t.t if k not in _PRESET_KEYS]
+    if extra:
+        raise t.err(i18n.t("{table} preset {preset} is a piece preset, so {key} comes from it; a piece preset takes "
+                           "only {keys}", table=t.label, preset=repr(preset), key=extra[0].removesuffix("_in"),
+                           keys=", ".join(_PRESET_KEYS)), extra[0])
+    t.text("kind", "rigid", one_of=("rigid",))
+    try:
+        kind = kind_preset(preset)
+    except RangeError as e:  # pragma: no cover - the shipped presets load
+        raise t.err(str(e), "preset") from None
+    shape = t.text("shape", kind.shape)
+    if shape != kind.shape:
+        raise t.err(i18n.t("{table} preset {preset} is a {own}, not a {shape}", table=t.label, preset=repr(preset),
+                           own=kind.shape, shape=shape), "shape")
+    return _kind_piece(t, t.text("name", preset), kind, piece_box(kind))
+
+
+def _ring_piece(t: _Table, name: str, kind: str) -> Piece:
+    """`shape = "ring"`: a hollow round, `size = [diameter, inner_diameter, length]`, built by the range's piece
+    builder (TUBE_SLICES convex slices, so a rod passes through the hole)."""
+    if kind != "rigid":  # pragma: no cover - squishy non-spheres are refused before
+        raise t.err(i18n.t("{table} is a ring, so it is rigid", table=t.label), "kind")
+    for key in ("mesh", "units", "inertia"):
+        if key in t.t:
+            raise t.err(i18n.t("{table} is a ring and takes no {key}: its inertia comes from its shape",
+                               table=t.label, key=key), key)
+    size = t.vec("size", 3, positive=True, length=True)
+    if not size[1] < size[0]:
+        raise t.err(i18n.t("{table} ring size is [diameter, inner_diameter, length]: the inner diameter must be "
+                           "smaller than the diameter", table=t.label), "size")
+    table = {"shape": "ring", "diameter": size[0], "inner_diameter": size[1], "length": size[2],
+             "mass": t.num("mass", positive=True), "friction": PIECE_FRICTION}
+    try:
+        built = parse_kind(Path("[piece]"), name, table, Path("."))
+    except RangeError as e:
+        raise t.err(str(e), "size") from None
+    return _kind_piece(t, name, built, size)
 
 
 # --- shafts and shapes ----------------------------------------------------------------------------------------------
@@ -664,8 +747,8 @@ def _parse_outlet(name, raw) -> Outlet:
     return Outlet(name=name, center=t.vec("center", length=True), size=t.vec("size", length=True, positive=True))
 
 
-def _parse_flight(raw, known: list[str]) -> Flight:
-    """The [flight]; `known` is the names of the file's outlets."""
+def _parse_flight(raw, known: list[str], base_dir: Path) -> Flight:
+    """The [flight]; `known` is the names of the file's outlets, `base_dir` the folder a goal's range is read from."""
     t = _Table("flight", "[flight]", raw)
     outlet = t.text("outlet")
     if outlet not in known:
@@ -675,10 +758,68 @@ def _parse_flight(raw, known: list[str]) -> Flight:
     if air not in PRESETS["air"]:
         raise t.err(i18n.t("{table} air {air} is not an air preset; known: {known}", table=t.label, air=repr(air),
                            known=", ".join(PRESETS["air"])), "air")
-    return Flight(outlet=outlet, height=t.num("height", 0.0, nonneg=True, length=True),
-                  target_distance=t.num("target_distance", positive=True, length=True),
-                  target_height=t.num("target_height", nonneg=True, length=True),
-                  ring_diameter=t.num("ring_diameter", None, positive=True, length=True), air=air)
+    goal = _flight_goal(t, base_dir) if "goal" in t.t else None
+    if goal is None:
+        for key in ("at", "heading_deg"):
+            if t.has(key):
+                raise t.err(i18n.t("{table} {key} places the bench on a range's field for a goal; give {goal_setting} "
+                                   "too, or leave {key} out", table=t.label, key=key,
+                                   goal_setting="goal = { range = \"<range file>\", name = \"<goal>\" }"), key)
+    target = _REQ if goal is None else None
+    return Flight(outlet=outlet, height=t.num("height", 0.0, nonneg=True, length=True) if goal is None else goal.at[2],
+                  target_distance=t.num("target_distance", target, positive=True, length=True),
+                  target_height=t.num("target_height", target, nonneg=True, length=True),
+                  ring_diameter=t.num("ring_diameter", None, positive=True, length=True), air=air, goal=goal)
+
+
+_GOAL_KEYS = ("range", "name")
+
+
+def _flight_goal(t: _Table, base_dir: Path) -> FlightGoal:
+    """`goal = { range, name }` with `at` and `heading_deg`: the goal, read from its range file (relative to the bench
+    file, or a built-in range's name), and the solid things on that field."""
+    g = t.t["goal"]
+    if not isinstance(g, dict) or set(g) != set(_GOAL_KEYS) or not all(isinstance(g[k], str) for k in _GOAL_KEYS):
+        raise t.err(i18n.t("{table} goal must be {goal_setting}, not {value}", table=t.label, value=repr(g),
+                           goal_setting="{ range = \"<range file>\", name = \"<goal>\" }"), "goal")
+    for key in ("at", "heading_deg"):
+        if not t.has(key):
+            raise t.err(i18n.t("{table} has a goal, so it needs {at_setting} (the bench origin's place on the field "
+                               "and its height, m) and {heading_setting} (which way the bench's +x faces on the "
+                               "field); {key} is missing", table=t.label, key=key, at_setting="at = [x, y, z]",
+                               heading_setting="heading_deg"), key)
+    if t.has("height"):
+        raise t.err(i18n.t("{table} has a goal, so the bench origin's height is {at_setting}'s z; leave {key} out",
+                           table=t.label, key="height", at_setting="at"), "height")
+    at = t.vec("at", 3, length=True)
+    if at[2] < 0:
+        raise t.err(i18n.t("{table} at's height must be zero or more, not {value}", table=t.label,
+                           value=repr(t.t.get("at", t.t.get("at_in")))), "at")
+    heading = t.num("heading_deg")
+    ref, name = g["range"], g["name"]
+    path = BUILTIN_RANGES.get(ref) or base_dir / ref
+    if not path.is_file():
+        raise t.err(i18n.t("{table} goal range {range} is not a file (it is read from the bench file's folder: "
+                           "{folder})", table=t.label, range=repr(ref), folder=base_dir), "goal")
+    try:
+        rng = load_range(ref, base_dir)
+    except RangeError as e:
+        raise t.err(i18n.t("{table} goal range {range}: {error}", table=t.label, range=repr(ref), error=e),
+                    "goal") from None
+    goals = {x.name: x for x in rng.goals}
+    if name not in goals:
+        raise t.err(i18n.t("{table} goal {name} is not a goal in {range}; its goals: {goals}", table=t.label,
+                           name=repr(name), range=repr(ref), goals=", ".join(goals) or i18n.t("(none)")), "goal")
+    from ..testrange.build import _plates          # pulls in mujoco
+    from ..testrange.station import _element_boxes
+    boxes = [(o.name, np.array(o.pos, float), o.rotation(), np.array(o.size, float) / 2.0) for o in rng.obstacles]
+    boxes += [(e.name, np.asarray(c, float), np.asarray(r, float), np.asarray(h, float))
+              for e in rng.elements for c, r, h in _element_boxes(e)]
+    for x in rng.goals:
+        rot = x.rotation()
+        boxes += [(f"{x.name}.{n}", x.to_world(c), rot @ local, np.array(half, float))
+                  for n, c, local, half, _ in _plates(x)]
+    return FlightGoal(range=path, name=name, goal=goals[name], at=at, heading_deg=heading, boxes=tuple(boxes))
 
 
 def _parse_run(raw) -> RunSettings:
@@ -706,6 +847,9 @@ def _absolute_paths(raw: dict, base_dir: Path) -> dict:
             for k in keys:
                 if isinstance(e, dict) and isinstance(e.get(k), str):
                     e[k] = str(base_dir / e[k])
+    goal = out.get("flight", {}).get("goal") if isinstance(out.get("flight"), dict) else None
+    if isinstance(goal, dict) and isinstance(goal.get("range"), str) and goal["range"] not in BUILTIN_RANGES:
+        goal["range"] = str(base_dir / goal["range"])   # a goal's range file, like a mesh, is the including file's
     return out
 
 
@@ -885,10 +1029,12 @@ def parse_bench(raw: dict, base_dir: Path, problems: list[Problem] | None = None
                                                   cad_table="[[cad]]"), f"cad.{c.name}.slots"))
     flight = None
     if "flight" in raw:
-        flight = attempt(_parse_flight, raw["flight"], [n for n, _ in named["outlet"]], key="flight")
-        if flight is not None and piece is not None and piece.ball is None:     # said at check time, not only after a run
-            warned.append(i18n.t("{flight_table} flies balls only; a rigid piece's flight is not modeled yet, so a run "
-                                 "will have no landings", flight_table="[flight]"))
+        flight = attempt(_parse_flight, raw["flight"], [n for n, _ in named["outlet"]], base_dir, key="flight")
+        if flight is not None and flight.goal is not None and piece is not None and piece.kind != "rigid":
+            attempt(_raise, BenchError(i18n.t("{flight_table} goal scores rigid pieces only for now; a ball's flight "
+                                              "scores through {ring_setting} at its target", flight_table="[flight]",
+                                              ring_setting="ring_diameter"), "flight.goal"))
+            flight = None
     sweep = raw.get("sweep", {})
     if not isinstance(sweep, dict):
         attempt(_raise, BenchError(i18n.t("{sweep_table} must be a table, not {value}", value=repr(sweep),

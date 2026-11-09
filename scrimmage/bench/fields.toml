@@ -21,18 +21,18 @@ default = ""
 help = "the piece's name"
 
 [piece.preset]
-help = "a ready-made ball; any key below overrides its numbers"
+help = "a ready-made ball (any key below overrides its numbers) or a range's piece, such as 2024-note (it is its preset)"
 choices = "pieces"
 
 [piece.kind]
 help = "squishy is a foam ball; rigid is anything hard"
 
 [piece.shape]
-help = "sphere, box, cylinder, disc (a short cylinder) or mesh (from a file)"
+help = "sphere, box, cylinder, disc (a short cylinder), ring (a hollow round, the range's) or mesh (from a file)"
 
 [piece.size]
 unit = "m"
-help = "sphere [diameter]; box [x, y, z]; cylinder or disc [diameter, length]"
+help = "sphere [diameter]; box [x, y, z]; cylinder or disc [diameter, length]; ring [diameter, inner diameter, length]"
 
 [piece.mass]
 unit = "kg"
@@ -389,6 +389,16 @@ help = "a ring at the target; shots through it count"
 [flight.air]
 help = "which air to fly through"
 default = "default"
+
+[flight.goal]
+help = "a goal from a range file, { range = \"<file>\", name = \"<goal>\" }: each shot says scored or missed (rigid pieces)"
+
+[flight.at]
+unit = "m"
+help = "with a goal: where the bench origin stands on that field, [x, y, height]"
+
+[flight.heading_deg]
+help = "with a goal: which way the bench's +x faces on that field, in degrees from the field's +x"
 
 [run.duration]
 unit = "s"

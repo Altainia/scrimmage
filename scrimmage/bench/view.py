@@ -28,7 +28,7 @@ def play(result: BenchResult, slow: float = 0.25) -> None:
     d = mujoco.MjData(m)
     lay = result.built.layout
     floor = lay.bounds[0][2]
-    alpha = m.geom_rgba[lay.piece_geoms, 3].copy() if lay.piece_geoms else np.zeros(0)
+    alpha = [m.geom_rgba[list(gs), 3].copy() for gs in lay.piece_geom_sets]
     trace = result.trace
     if not trace:
         return
@@ -44,8 +44,8 @@ def play(result: BenchResult, slow: float = 0.25) -> None:
                     return
                 with viewer.lock():  # the viewer draws from another thread
                     d.qpos[:] = qpos
-                    for i, (a, g) in enumerate(zip(lay.piece_qpos, lay.piece_geoms)):
-                        m.geom_rgba[g, 3] = alpha[i] if qpos[a + 2] > floor else 0.0
+                    for i, (a, gs) in enumerate(zip(lay.piece_qpos, lay.piece_geom_sets)):
+                        m.geom_rgba[list(gs), 3] = alpha[i] if qpos[a + 2] > floor else 0.0
                     mujoco.mj_forward(m, d)
                 viewer.sync()
                 time.sleep(max(0.0, (t - prev) / slow))

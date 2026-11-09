@@ -18,6 +18,7 @@ import csv
 import json
 import math
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 
 import mujoco
@@ -25,9 +26,12 @@ import numpy as np
 
 from .. import i18n, units
 from ..i18n import t
+from ..launcher import flight6, rigid_aero
 from ..launcher.flight import Landing, fly_state
 from ..launcher.inputs import PRESETS, Air, Goal
 from ..measure import labels
+from ..testrange.pieces import Solid, _round, shadow_area
+from ..testrange.spec import Surface, passing_width
 from .run import BenchResult, PieceOutcome
 
 # path colors by outcome (RGB): out green, jammed red, escaped orange, timed out gray
@@ -126,12 +130,12 @@ def jam_place(result: BenchResult, piece: PieceOutcome) -> str | None:
     d.qpos[a:a + 3] = piece.path[-1][1:]
     d.qpos[a + 3:a + 7] = (1.0, 0.0, 0.0, 0.0)
     mujoco.mj_kinematics(m, d)
-    g = lay.piece_geoms[piece.index]
     best, name = JAM_NEAR, None
-    for sg, shape in lay.shape_of_geom.items():
-        dist = mujoco.mj_geomDistance(m, d, g, sg, JAM_NEAR, None)
-        if dist < best:
-            best, name = dist, shape
+    for g in lay.piece_geom_sets[piece.index]:
+        for sg, shape in lay.shape_of_geom.items():
+            dist = mujoco.mj_geomDistance(m, d, g, sg, JAM_NEAR, None)
+            if dist < best:
+                best, name = dist, shape
     return name
 
 
@@ -215,12 +219,23 @@ def _time_line(result: BenchResult) -> str | None:
 
 # ----------------------------------------------------------------------------------------------------- flight
 
+@dataclass(frozen=True)
+class RigidLanding(Landing):
+    """A rigid piece's landing (flight6 with rigid_aero's drag), with a `[flight] goal`: "scored" or "missed", and
+    what it hit first when that stopped it."""
+    goal: str | None = None
+    blocked_by: str | None = None
+
+
 def landings(result: BenchResult) -> list[tuple[PieceOutcome, Landing]]:
-    """Each piece out through `[flight] outlet`, flown by the launcher model's ball flight from where and how it left.
-    Balls only (squishy pieces): empty for a rigid piece or with no [flight]."""
+    """Each piece out through `[flight] outlet`, flown from where and how it left: a ball by the launcher model's ball
+    flight, a rigid piece by flight6 with rigid_aero's drag (its orientation and spin as it left). Empty with no
+    [flight]."""
     fl, piece = result.bench.flight, result.bench.piece
-    if fl is None or piece.ball is None:
+    if fl is None:
         return []
+    if piece.ball is None:
+        return _rigid_landings(result)
     air = Air(**PRESETS["air"][fl.air])
     goal = Goal(distance=fl.target_distance, height=fl.target_height,
                 diameter=fl.ring_diameter if fl.ring_diameter is not None else piece.ball.diameter)
@@ -238,9 +253,177 @@ def landings(result: BenchResult) -> list[tuple[PieceOutcome, Landing]]:
     return out
 
 
+@dataclass(frozen=True)
+class _Air:
+    """What rigid_aero.force_fn reads from a kind."""
+    shadow_areas: tuple[float, float, float]
+    drag_coefficient: float
+    spin_damping: float
+
+
+def _model_solids(result: BenchResult) -> list[Solid]:
+    """Pool piece 0's geoms as Solids in its body frame (from the compiled model, so a mesh is what collides)."""
+    m, lay = result.built.model, result.built.layout
+    out = []
+    for g in lay.piece_geom_sets[0]:
+        R = np.zeros(9)
+        mujoco.mju_quat2Mat(R, m.geom_quat[g])
+        R, pos, size = R.reshape(3, 3), m.geom_pos[g].copy(), m.geom_size[g]
+        kind = m.geom_type[g]
+        if kind == mujoco.mjtGeom.mjGEOM_SPHERE:
+            out.append(Solid("sphere", (float(size[0]),), tuple(map(float, pos)), (1.0, 0.0, 0.0, 0.0)))
+            continue
+        if kind == mujoco.mjtGeom.mjGEOM_BOX:
+            local = np.array([[sx, sy, sz] for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)]) * size[:3]
+        elif kind == mujoco.mjtGeom.mjGEOM_CYLINDER:
+            local = _round(float(size[0]), float(size[0]), 2.0 * float(size[1])).vertices
+        else:
+            k = m.geom_dataid[g]
+            local = m.mesh_vert[m.mesh_vertadr[k]:m.mesh_vertadr[k] + m.mesh_vertnum[k]]
+        out.append(Solid("mesh", (), (0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0), vertices=pos + local @ R.T))
+    return out
+
+
+def _rigid_air(result: BenchResult) -> tuple[_Air, np.ndarray, float]:
+    """A rigid piece's air (its shadows, drag coefficient and spin damping), its body-frame inertia (3x3) and its
+    passing width (the smallest side of its bounding box). A ring or piece preset is its kind's (the range's own
+    numbers); any other shape's shadows come from its solids, with rigid_aero's default drag and damping."""
+    piece = result.bench.piece
+    kind = piece.rigid_kind
+    if kind is not None:
+        xx, yy, zz, xy, xz, yz = kind.inertia
+        inertia = np.array([[xx, xy, xz], [xy, yy, yz], [xz, yz, zz]])
+        return (_Air(kind.shadow_areas, kind.drag_coefficient, kind.spin_damping), inertia, passing_width(kind))
+    solids = _model_solids(result)
+    pts = np.concatenate([s.vertices if s.kind == "mesh" else np.array([np.array(s.pos) - s.size[0],
+                                                                         np.array(s.pos) + s.size[0]])
+                          for s in solids])
+    air = _Air(tuple(shadow_area(solids, k) for k in range(3)), rigid_aero.DRAG_COEFFICIENT, rigid_aero.SPIN_DAMPING)
+    return air, np.diag(piece.inertia), float((pts.max(axis=0) - pts.min(axis=0)).min())
+
+
+def _rot_z(deg: float) -> np.ndarray:
+    c, s = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+    return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+
+
+def _inset(surface: Surface, margin: float) -> Surface | None:
+    """The scoring surface with its (convex, counterclockwise) outline moved in by `margin` on every side, so a
+    piece's center crossing it clears the edge by that much; None when the opening is narrower than 2 margin."""
+    a = surface.polygon
+    n = len(a)
+    edge = np.roll(a, -1, axis=0) - a
+    inward = np.column_stack([-edge[:, 1], edge[:, 0]]) / np.linalg.norm(edge, axis=1)[:, None]
+    base = a + margin * inward  # a point on each moved edge
+    out = []
+    for k in range(n):
+        j = (k - 1) % n  # the corner between edge j and edge k
+        m = np.column_stack([edge[j], -edge[k]])
+        if abs(np.linalg.det(m)) < 1e-12:
+            out.append(base[k])
+            continue
+        s, _ = np.linalg.solve(m, base[k] - base[j])
+        out.append(base[j] + s * edge[j])
+    out = np.array(out)
+    new_edge = np.roll(out, -1, axis=0) - out
+    if np.any(np.einsum("ij,ij->i", new_edge, edge) <= 0.0):
+        return None
+    return Surface(center=surface.center, normal=surface.normal, axes=surface.axes, polygon=out)
+
+
+def _first_hit(points: np.ndarray, boxes, margin: float) -> tuple[int, str] | None:
+    """The first segment of the path `points` ((n, 3), on the field) that enters a box grown by `margin` on every
+    side, as (segment index, the box's name); None when the path misses them all. A slab test per box."""
+    if len(points) < 2:
+        return None
+    p0, d = points[:-1], points[1:] - points[:-1]
+    best = None
+    for name, center, axes, half in boxes:
+        a, b = (p0 - center) @ axes, d @ axes      # local coordinates (axes are the box's, as columns)
+        h = half + margin
+        lo, hi = np.zeros(len(a)), np.ones(len(a))
+        for k in range(3):
+            still = np.abs(b[:, k]) < 1e-15
+            with np.errstate(divide="ignore", invalid="ignore"):
+                t1, t2 = (-h[k] - a[:, k]) / b[:, k], (h[k] - a[:, k]) / b[:, k]
+            inside = np.abs(a[:, k]) <= h[k]
+            lo = np.maximum(lo, np.where(still, np.where(inside, -np.inf, np.inf), np.minimum(t1, t2)))
+            hi = np.minimum(hi, np.where(still, np.where(inside, np.inf, -np.inf), np.maximum(t1, t2)))
+        hit = np.flatnonzero(lo <= hi)
+        if len(hit) and (best is None or hit[0] < best[0]):
+            best = (int(hit[0]), name)
+    return best
+
+
+def _rigid_landings(result: BenchResult) -> list[tuple[PieceOutcome, Landing]]:
+    """Rigid pieces through `[flight] outlet`, each flown by flight6 from its exit state: the center, the velocity,
+    the orientation of its last pose and its spin (in its body frame). With a goal, the bench stands at `at` facing
+    `heading_deg` on the goal's field; a shot scores when its center crosses the goal's scoring surface (from the
+    entry side) at least half its passing width inside the opening, without first coming within half its passing
+    width of an obstacle, an element or a goal's plates. Positions are reported in the bench's floor frame (the bench
+    origin on the floor below it) either way."""
+    fl = result.bench.flight
+    air, inertia, width = _rigid_air(result)
+    rho = Air(**PRESETS["air"][fl.air]).density
+    force = rigid_aero.force_fn(air, rho)
+    g = fl.goal
+    turn = _rot_z(g.heading_deg) if g else np.eye(3)
+    origin = np.array([g.at[0], g.at[1], 0.0]) if g else np.zeros(3)
+    half_turn = math.radians(g.heading_deg) / 2.0 if g else 0.0
+    q_turn = np.array([math.cos(half_turn), 0.0, 0.0, math.sin(half_turn)])
+    goals = ()
+    if g is not None:
+        surface = _inset(g.goal.scoring_surface(), width / 2.0)
+        goals = () if surface is None else ((g.name, surface),)
+    out = []
+    for p in result.pieces:
+        if p.status != "out" or p.outlet != fl.outlet:
+            continue
+        _, x, y, z = p.path[-1]
+        e, yaw = math.radians(p.elevation_deg), math.radians(p.yaw_deg)
+        v = p.speed * np.array([math.cos(e) * math.cos(yaw), math.cos(e) * math.sin(yaw), math.sin(e)])
+        q = np.asarray(p.poses[-1][1][3:7], dtype=float)
+        rot = flight6.matrix_from_quat(q / np.linalg.norm(q))
+        omega = rot.T @ np.asarray(p.spin, dtype=float)
+        w0, v0 = q_turn[0], q_turn[1:]  # the bench's turn on the field, then the piece's own: q_turn (x) q
+        q_field = np.r_[w0 * q[0] - v0 @ q[1:], w0 * q[1:] + q[0] * v0 + np.cross(v0, q[1:])]
+        res = flight6.fly(origin + turn @ np.array([x, y, z + fl.height]), turn @ v, q_field, omega,
+                          result.bench.piece.mass, inertia, force, floor=width / 2.0, goals=goals)
+        path = (res.samples[:, flight6.POS] - origin) @ turn  # the floor frame: turn.T @ (P - origin), row by row
+        at_goal = goal_time = None
+        if fl.target_height is not None:
+            zs = path[:, 2]
+            down = np.flatnonzero((zs[:-1] > fl.target_height) & (zs[1:] <= fl.target_height))
+            if len(down):
+                k = int(down[0])
+                f = (zs[k] - fl.target_height) / (zs[k] - zs[k + 1])
+                at_goal = tuple(float(c) for c in path[k, :2] + f * (path[k + 1, :2] - path[k, :2]))
+                ts = res.samples[:, flight6.T]
+                goal_time = float(ts[k] + f * (ts[k + 1] - ts[k]))
+        scored = False
+        if at_goal is not None and fl.ring_diameter is not None:
+            scored = math.hypot(at_goal[0] - fl.target_distance, at_goal[1]) <= (fl.ring_diameter - width) / 2.0
+        verdict = blocked = None
+        if g is not None:
+            verdict = "missed"
+            if res.crossing is not None:
+                _, t_cross, center = res.crossing
+                before = res.samples[res.samples[:, flight6.T] < t_cross][:, flight6.POS]
+                hit = _first_hit(np.vstack([before, center]), g.boxes, width / 2.0)
+                if hit is None:
+                    verdict = "scored"
+                else:
+                    blocked = hit[1]
+        end = path[-1]
+        out.append((p, RigidLanding(scored=bool(scored), at_goal=at_goal, floor=(float(end[0]), float(end[1])),
+                                    apex=float(path[:, 2].max()), flight_time=res.flight_time, goal_time=goal_time,
+                                    goal=verdict, blocked_by=blocked)))
+    return out
+
+
 def _flight_line(result: BenchResult, lands: list[tuple[PieceOutcome, Landing]]) -> str | None:
     fl = result.bench.flight
-    if fl is None or not lands:
+    if fl is None or not lands or fl.target_height is None:
         return None
     n = len(lands)
     xs = [land.at_goal[0] for _, land in lands if land.at_goal is not None]
@@ -257,6 +440,20 @@ def _flight_line(result: BenchResult, lands: list[tuple[PieceOutcome, Landing]])
         return t("{k} of {n} shots go in the ring {distance} away, {height} up (they come down through its height "
                  "{where})", k=k, n=n, **at)
     return t("shots come down through {height} at {where} (the target is {distance} away)", **at)
+
+
+def _goal_line(result: BenchResult, lands: list[tuple[PieceOutcome, Landing]]) -> str | None:
+    """With a `[flight] goal`: how many shots score in it, and what the blocked ones hit first."""
+    fl = result.bench.flight
+    if fl is None or fl.goal is None or not lands:
+        return None
+    k = sum(getattr(land, "goal", None) == "scored" for _, land in lands)
+    line = t("{k} of {n} shots score in {goal}", k=k, n=len(lands), goal=_name(fl.goal.name))
+    hits = Counter(land.blocked_by for _, land in lands if getattr(land, "blocked_by", None))
+    if hits:
+        what, b = hits.most_common(1)[0]
+        line = t("{line} ({b} hit {what} on the way)", line=line, b=b, what=_name(what))
+    return line
 
 
 def energy_failures(result: BenchResult) -> int:
@@ -290,7 +487,8 @@ def headlines(result: BenchResult, lands: list[tuple[PieceOutcome, Landing]] | N
     if rest:
         lines.append(rest)
     lands = landings(result) if lands is None else lands
-    extra = [_flight_line(result, lands), _load_line(result), _shaft_line(result), _time_line(result)]
+    extra = [_goal_line(result, lands), _flight_line(result, lands), _load_line(result), _shaft_line(result),
+             _time_line(result)]
     lines += [x for x in extra if x]
     energy = _energy_line(result)
     if energy:
@@ -341,10 +539,10 @@ def _tables(result: BenchResult, lands) -> dict[str, tuple[list[str], list[list]
             miss = None if land.at_goal is None else math.hypot(gx - fl.target_distance, gy)
             ring = None if fl.ring_diameter is None else land.scored
             rows.append([p.index, p.outlet, x, y, z + fl.height, p.speed, p.elevation_deg, land.apex, gx, gy, miss,
-                         ring, *land.floor, land.flight_time])
+                         ring, *land.floor, land.flight_time] + ([land.goal] if fl.goal is not None else []))
         out["landings"] = (["piece", "outlet", "exit_x_m", "exit_y_m", "exit_height_m", "speed_m_s", "elevation_deg",
                             "apex_m", "target_height_x_m", "target_height_y_m", "miss_m", "in_ring", "floor_x_m",
-                            "floor_y_m", "flight_time_s"], rows)
+                            "floor_y_m", "flight_time_s"] + (["goal"] if fl.goal is not None else []), rows)
     return out
 
 
@@ -432,13 +630,10 @@ def _summary(result: BenchResult, heads: list[str], tables) -> str:
     text = _title(b)
     text += ["", *heads, *(t("warning: {warning}", warning=w) for w in b.warnings), ""]
     titles = {"pieces": t("Pieces"), "shafts": t("Shafts"), "loads": t("Loads (normal contact force on each part)"),
-              "landings": t("Landings (the launcher model's ball flight, from the outlet)")}
+              "landings": t("Landings (the launcher model's ball flight, from the outlet)") if b.piece.ball is not None
+              else t("Landings (a rigid piece's flight from the outlet: drag on its shadow, no lift)")}
     for name, table in tables.items():
         text += [titles[name], _text_table(*_shown_table(*table)), ""]
-    if b.flight is not None and b.piece.ball is None:
-        text += [t("{flight_table} flies balls only; a rigid piece's flight is not modeled yet, so there are no "
-                   "landings.", flight_table="[flight]"),
-                 ""]
     bad = [e.index for e in result.energy if not e.ok]
     if bad:
         text.append(t("Energy check: pieces {pieces} gained energy from nowhere (a failure means the simulation is "

@@ -426,10 +426,18 @@ def _slot_body(spec: mujoco.MjSpec, rng: Range, name: str, first: str, timestep:
                 "contact": ball_contact(piece, timestep),
                 "geom": {"type": mujoco.mjtGeom.mjGEOM_SPHERE, "size": [r, 0, 0], "rgba": rgba}}
     kind = rng.kinds[name]
+    return {"round": False, "mass": kind.mass, "inertia": list(kind.inertia), "contact": rigid_contact(kind),
+            "geoms": kind_geoms(spec, kind, first), "rgba": rgba}
+
+
+def kind_geoms(spec: mujoco.MjSpec, kind: PieceKind, prefix: str) -> list[dict]:
+    """A rigid kind's solids as MuJoCo geom keywords in its body frame (the center of mass at the origin): spheres,
+    boxes and convex meshes, each mesh added to `spec` once as `<prefix>.mesh.<k>`. The range's slots and the
+    bench's pieces are built from this, so the two collide as the same solids."""
     geoms = []
     for k, s in enumerate(kind.solids):
         if s.kind == "mesh":
-            mesh = f"{first}.mesh.{k}"
+            mesh = f"{prefix}.mesh.{k}"
             spec.add_mesh(name=mesh, uservert=[float(c) for c in np.asarray(s.vertices, dtype=float).ravel()])
             geoms.append({"type": mujoco.mjtGeom.mjGEOM_MESH, "meshname": mesh})
         elif s.kind == "sphere":
@@ -437,8 +445,7 @@ def _slot_body(spec: mujoco.MjSpec, rng: Range, name: str, first: str, timestep:
         else:
             geoms.append({"type": mujoco.mjtGeom.mjGEOM_BOX, "size": list(s.size), "pos": list(s.pos),
                           "quat": list(s.quat)})
-    return {"round": False, "mass": kind.mass, "inertia": list(kind.inertia), "contact": rigid_contact(kind),
-            "geoms": geoms, "rgba": rgba}
+    return geoms
 
 
 def _capacity(cfg: dict) -> int | None:

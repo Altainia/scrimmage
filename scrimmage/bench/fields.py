@@ -44,7 +44,7 @@ FIELDS = _load()
 # A key's units kind (units.py) by the unit it gives, as the Bench tab's kindOf (static/bench_fields.js): a length is
 # "length" (in or mm), a flight's target "field" (ft or m); angles, times, rps and the rest read as the file has them.
 KINDS = {"m": "length", "m/s": "speed", "kg": "mass", "N": "force", "N/m": "spring"}
-FIELD_KEYS = ("flight.target_distance", "flight.target_height")
+FIELD_KEYS = ("flight.target_distance", "flight.target_height", "flight.at")
 IN = 0.0254
 
 
@@ -68,7 +68,7 @@ def key_kind(dotted: str) -> tuple[str, float, str] | None:
 def choices(kind: str, raw: dict) -> list[str]:
     """The valid words for a `choices` kind; "shafts" and "outlets" are read from the idea's raw dict."""
     if kind == "pieces":
-        return list(PRESETS["ball"])
+        return list(PRESETS["ball"]) + list(PRESETS.get("piece", {}))
     if kind == "materials":
         return list(MATERIALS)
     if kind == "treads":
