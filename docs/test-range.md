@@ -377,8 +377,8 @@ it); and a `wheel_x` that puts the piece between the wheels before it is fed.
   ([Aiming tables](#aiming-tables-scrimmage-launcher-aim)). A level goal is refused (its table is a ball
   launcher's). It is slower than a ball's table: about 15 s for 3 SPEAKER distances at 7 tilts, 35 s for 5 at 16.
 - **A worked example** is [`examples/blocks/speaker`](../examples/blocks/speaker/README.md), on the built-in
-  [2024 field](#the-2024-field): a NOTE from the SUBWOOFER into the blue SPEAKER, its shot the SPEAKER table's first
-  row, and the table's rows flown again in the world.
+  [2024 field](#the-2024-field): a NOTE from the SUBWOOFER into the blue SPEAKER, the SPEAKER table, its rows flown
+  again in the world, and why the example takes a higher arc than the table's first row.
 
 ## Lanes, stages, the hopper and the intake
 
@@ -815,7 +815,7 @@ its line, or says it is an estimate or our choice).
 - **What isn't there.** The rest of the AMP and the SPEAKER's inside (a NOTE counts when it crosses the opening; where
   it goes after isn't modeled), the AMPLIFICATION and the game's points.
 - The worked example is [`examples/blocks/speaker`](../examples/blocks/speaker/README.md): a stand-in robot with a
-  pinch shooter scores a NOTE in the blue SPEAKER from the SUBWOOFER, its shot from the SPEAKER aim table.
+  pinch shooter scores a NOTE in the blue SPEAKER from the SUBWOOFER, with a shot `launcher aim` finds there.
 
 ## The range file
 

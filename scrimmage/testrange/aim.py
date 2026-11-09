@@ -74,10 +74,10 @@ NORMAL_SPEED_TOLERANCE = 1e-3   # m/s: and this close to a crossing along the su
 # estimate: a rigid piece aimed at a goal entered going up (a NOTE at the 2024 SPEAKER) takes a row only if its apex
 # is at least this far above the opening's center, so the piece is still rising as it crosses. Flown again in the
 # world (the 2024 range, a pinch shooter's NOTE, 2026-11-09), every row that peaked within about 0.05 m of the center
-# caught the opening's front lip, at its wheel speed or 2% off it, and every row 0.11 m or more above it scored at
+# caught the opening's front lip, at its wheel speed or 2% off it, and every row 0.105 m or more above it scored at
 # -2%, 0 and +2%. The cost: the flattest shots, the slowest wheels and the longest distances are no longer offered
 # (examples/blocks/speaker's table reached 2.57 m without it, 2.37 m with it). A ball's rows are unchanged (not flown
-# in the world; the margin cost tests/test_aim_upward.py's ball launcher its 2.5 and 3 m rows).
+# in the world; the margin would cost tests/test_aim_upward.py's ball launcher its 2.5 and 3 m rows).
 UPWARD_APEX_MARGIN = 0.10
 
 
@@ -451,7 +451,8 @@ class _SurfaceAim:
             return None
         t = float(p[k, 0] + f * (p[k + 1, 0] - p[k, 0]))
         apex = float(p[:, 3].max())          # as if it flew on, as the hub's
-        if self.upward and apex < self.height + self.apex_margin():
+        margin = self.apex_margin()
+        if margin > 0.0 and self.upward and apex < self.height + margin:
             return None                      # it would cross near its apex, flat, and catch the opening's front lip
         if not self.fits(p, pts, k, t, at):
             return None

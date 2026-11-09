@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import tomlkit
 
 from scrimmage.bench import report
 from scrimmage.bench.run import run_bench
@@ -75,30 +76,88 @@ def test_the_field_builds_with_its_notes_and_stays_still():
 # ------------------------------------------------------------------------------------------------ the example
 
 def test_the_example_scores_from_the_subwoofer():
-    """examples/blocks/speaker/subwoofer.test.toml: from against the blue SUBWOOFER, the channel at 60 degrees, both
-    wheels at 2.8 V (about 20 rps, the aim table's first row), the loader feeds the preloaded NOTE; it scores in the
-    blue SPEAKER without touching anything on the way."""
+    """examples/blocks/speaker/subwoofer.test.toml: from against the blue SUBWOOFER, the channel at 58 degrees, both
+    wheels at 3.05 V (about 21.7 rps: a solution launcher aim finds there with more room than the table's lowest-arc
+    row), the loader feeds the preloaded NOTE; it scores in the blue SPEAKER without touching anything on the way,
+    and the check says "pieces" for a NOTE."""
     program = load(EXAMPLE / "subwoofer.test.toml")
     world = world_for(program)
     assert problems(program, world) == []
     r = TestRun(world, program).run()
     assert r.status == "finished", r.outcome
     assert [c["passed"] for c in r.checks] == [True]
+    assert r.checks[0]["text"] == "1 or more pieces are scored in speaker_blue"
     log = world.test_range.ball_log()[0]
     assert log["goal"] == "speaker_blue" and log["first_hit"] is None
-    assert log["hood_deg"] == pytest.approx(60.0, abs=0.2)
-    assert log["shooter_rps"] == pytest.approx(19.87, rel=0.03)
+    assert log["hood_deg"] == pytest.approx(58.0, abs=0.2)
+    assert log["shooter_rps"] == pytest.approx(21.7, rel=0.03)
+
+
+def test_a_missed_note_says_pieces(tmp_path):
+    """A failed scored check on a NOTE field says "pieces" (a ball field keeps "balls": tests/test_blocks_shooting.py)."""
+    (tmp_path / "miss.test.toml").write_text(f"""[test]
+robot = "{ROBOT.as_posix()}"
+
+[[block]]
+do = "wait"
+seconds = 0.2
+
+[[block]]
+do = "expect"
+that = {{ scored = {{ goal = "speaker_blue", at_least = 1 }} }}
+""", encoding="utf-8")
+    program = load(tmp_path / "miss.test.toml")
+    r = TestRun(world_for(program), program).run()
+    assert r.status == "check failed"
+    assert "expected 1 or more pieces scored in speaker_blue, but 0 were" in r.outcome
+
+
+AMP_TEST = """[test]
+robot = "note-shooter-standin.toml"
+
+[[block]]
+do = "move"
+joint = "shooter.tilt"
+to = 0.0
+unit = "deg"
+
+[[block]]
+do = "spin"
+motor = "shooter.spin0"
+volts = 1.8
+
+[[block]]
+do = "spin"
+motor = "shooter.spin1"
+volts = 1.8
+
+[[block]]
+do = "wait"
+seconds = 1.0
+
+[[block]]
+do = "spin"
+motor = "loader.spin"
+volts = 8.0
+
+[[block]]
+do = "wait"
+seconds = 1.5
+
+[[block]]
+do = "expect"
+that = { scored = { goal = "amp_blue", at_least = 1 } }
+"""
 
 
 def test_the_amp_scores_a_note(tmp_path):
     """The README's AMP shot: the example robot at the blue_amp start (1 m from the AMP, facing it), the channel at
-    30 degrees, both wheels at 1.8 V (the AMP table's 1 m row, about 13.3 rps): the NOTE goes into the AMP."""
-    (tmp_path / ROBOT.name).write_text(ROBOT.read_text(encoding="utf-8").replace(
-        'start = "blue_subwoofer"', 'start = "blue_amp"'), encoding="utf-8")
-    text = (EXAMPLE / "subwoofer.test.toml").read_text(encoding="utf-8")
-    text = text.replace("to = 30.0", "to = 0.0").replace("volts = 2.8", "volts = 1.8").replace("speaker_blue",
-                                                                                               "amp_blue")
-    (tmp_path / "amp.test.toml").write_text(text, encoding="utf-8")
+    30 degrees (the tilt joint at 0), both wheels at 1.8 V (the AMP table's 1 m row, about 13.3 rps): the NOTE goes
+    into the AMP."""
+    cfg = tomllib.loads(ROBOT.read_text(encoding="utf-8"))
+    cfg["range"] = {**cfg["range"], "start": "blue_amp"}
+    (tmp_path / ROBOT.name).write_text(tomlkit.dumps(cfg), encoding="utf-8")
+    (tmp_path / "amp.test.toml").write_text(AMP_TEST, encoding="utf-8")
     program = load(tmp_path / "amp.test.toml")
     world = world_for(program)
     r = TestRun(world, program).run()
@@ -106,6 +165,7 @@ def test_the_amp_scores_a_note(tmp_path):
     log = world.test_range.ball_log()[0]
     assert log["goal"] == "amp_blue" and log["first_hit"] is None
     assert log["hood_deg"] == pytest.approx(30.0, abs=0.2)
+    assert log["shooter_rps"] == pytest.approx(13.3, rel=0.03)
 
 
 # ------------------------------------------------------------------------------------------------ the aim table

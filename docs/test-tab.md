@@ -233,7 +233,7 @@ A check is a round-ended block that plugs into **wait until**, **repeat until** 
 | *piece* **is seated at least** *n* **in on** *rod* | A piece with a hole has gone that far onto the rod. See [Placing a piece](#placing-a-piece). |
 | **hanging from** *bar* | The robot's hooks hold it up from that bar. |
 | **holding level** *level* | The robot holds that climb level (the field's own rule, such as the 2022 hangar's). |
-| *n* **scored in** *goal* | At least *n* balls have gone into the goal (**any goal**: into all of them together). See [Shooting](#shooting). |
+| *n* **scored in** *goal* | At least *n* balls have gone into the goal (**any goal**: into all of them together). On a field whose piece isn't a ball, such as 2024's NOTE, the check says "pieces". See [Shooting](#shooting). |
 | **robot is in** / **out of zone** *zone* | The robot's center, seen from above, is inside (or outside) one of the field's zones: an area marked on the carpet, such as 2024's starting zone or wing (a range file's `[[zone]]`, [docs/test-range.md](test-range.md#floor-zones)). Only on a field with zones. In the test file: `{ in_zone = { zone = "blue_start", is = "out" } }` (`is` is `"in"`, the default, or `"out"`): "out of the starting zone" is 2024's LEAVE, by the robot's center. |
 | *turret* **aimed at** *goal* **within** *n* **°** | The turret's launcher points within *n*° of the goal's center. See [Aiming](#aiming). |
 | *cylinder* **is** *extended or retracted* | The cylinder's rod is all the way out, or all the way in. See [Pneumatics](#pneumatics). |
@@ -797,7 +797,7 @@ absolute path. **`test_spread`** runs the floor spread. The agent writes the `.t
 
 ## The examples
 
-Nine worked examples are in `examples/blocks/`. Each has a README with the story, the blocks and how to change them.
+Ten worked examples are in `examples/blocks/`. Each has a README with the story, the blocks and how to change them.
 
 - **`examples/blocks/intake`**, a roller and bin that take a ball off the carpet. Run it and it finishes at 3.3 s
   with the ball in the bin. The README has a sweep of the roller's voltage.
@@ -837,9 +837,9 @@ Nine worked examples are in `examples/blocks/`. Each has a README with the story
   raised first, the check fails at 1.7 s, before the arm hits; without the check the arm runs into the trench and the
   robot stops. The README tries how high the arm can be (up to 50°) and a taller elevator.
 - **`examples/blocks/speaker`**, a stand-in robot with a stock `pinch_shooter` on the built-in `2024` field, against
-  the blue SUBWOOFER with one NOTE. It tilts the channel to 60°, spins both wheels at 2.8 V (about 20 rps, the
-  SPEAKER aim table's first row) and feeds the NOTE, which scores in `speaker_blue`. The README shows the aim table,
-  how much room the shot has (2.6 V to 3.4 V, 56° to 61°) and the AMP shot.
+  the blue SUBWOOFER with one NOTE. It tilts the channel to 58°, spins both wheels at 3.05 V (about 21.7 rps, a
+  shot `launcher aim` finds there with more room than the table's lowest-arc row) and feeds the NOTE, which scores in
+  `speaker_blue`. The README shows the aim table, how much room the shot has and the AMP shot.
 - **`examples/blocks/partner`**, a stand-in robot pushing a partner robot set in Setup. It drives into it at 6 V for
   2 s and checks the partner moved at least 60 in: a braked partner moves 63 in, a coasting one 112 in. The README
   tries other voltages and a partner turned sideways, which hardly moves.

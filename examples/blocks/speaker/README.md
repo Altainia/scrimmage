@@ -54,15 +54,26 @@ the opening, which crosses it flat at the top of its arc. Those rows caught the 
 (`speaker_blue.rim_1`) or its back edge, and only 9 of their 24 shots scored. `tests/test_range_2024.py` flies a
 4-row table's rows again on every run.
 
+## Why the example doesn't use the table's first row
+
+The table's first row, 60° at 19.87 rps, is the lowest arc that scores from the SUBWOOFER (with the 0.10 m margin).
+The lowest arc sits at one edge of what scores. At 2.8 V (about 20 rps) a 60° channel scores, but only from 56° to
+61°: 1° more tilt and the NOTE's top edge catches the front lip under the hood. A real robot's tilt is rarely
+better than a degree.
+
+So the example takes another shot `launcher aim` finds from the same place: 58° at about 21.9 rps, a higher arc
+(it peaks 0.27 m above the opening's center, against the row's 0.11 m). On this robot 3.05 V holds the wheels at
+about 21.7 rps. It scores from 53° to 60° (5° to spare below, 2° above), and from 2.7 V to past 4.4 V. Above 3.8 V
+the NOTE touches the hood on its way in and still drops through. The table keeps the lowest arc because that keeps
+its rows smooth from distance to distance. Take a higher arc when you want room, and fly it in the world to check.
+
 ## The blocks
 
 `subwoofer.test.toml`:
 
-1. Move `shooter.tilt` to 30°. The tilt joint reads 0 at its low stop, 30°, so this is a 60° channel: the table's
-   first row.
-2. Spin `shooter.spin0` (the bottom wheel) at 2.8 V.
-3. Spin `shooter.spin1` (the top wheel) at 2.8 V. On this robot 2.8 V holds the wheels at about 20 rps, the row's
-   19.87.
+1. Move `shooter.tilt` to 28°. The tilt joint reads 0 at its low stop, 30°, so this is a 58° channel.
+2. Spin `shooter.spin0` (the bottom wheel) at 3.05 V.
+3. Spin `shooter.spin1` (the top wheel) at 3.05 V. On this robot 3.05 V holds the wheels at about 21.7 rps.
 4. Wait 1 s for the wheels to get up to speed.
 5. Spin the loader at 8 V. It pushes the NOTE into the wheels.
 6. Wait 1.5 s.
@@ -72,29 +83,27 @@ the opening, which crosses it flat at the top of its arc. Those rows caught the 
 
 ```
 finished
-  passed: 1 or more balls are scored in speaker_blue at 2.9 s (block 7)
+  passed: 1 or more pieces are scored in speaker_blue at 2.9 s (block 7)
   scored 1 in speaker_blue
   pieces:
     #  kind  from     fired s  exit m/s  outcome  where
-    0  note  preload  1.85     6.34      scored   speaker_blue at t=2.19
+    0  note  preload  1.84     6.86      scored   speaker_blue at t=2.14
 ```
 
-The NOTE leaves at 6.3 m/s and is in the SPEAKER 0.34 s later without touching the rim or the hood. These numbers
+The NOTE leaves at 6.9 m/s and is in the SPEAKER 0.3 s later without touching the rim or the hood. These numbers
 are estimates from the simulation, not from a real robot.
 
 ## How much room there is
 
-**The wheel speed.** Open the spin blocks' menu and choose **Try values…** for the volts (both wheels together). From
-the SUBWOOFER at 60°, 2.6 V to 3.4 V scores (the wheels at about 18.7 to 24 rps as the NOTE leaves). At 2.5 V the
-NOTE falls short and catches the opening's back edge (`speaker_blue.rim_3`), and at 3.5 V it is too fast and its top
-edge catches the front lip under the hood (`speaker_blue.rim_1`). The table's 2.8 V has about 6% to spare below and
-20% above.
+**The wheel speed.** Open the spin blocks' menu and choose **Try values…** for the volts (both wheels together). At
+58°, 2.7 V scores and 2.6 V falls short: the NOTE catches the opening's back edge (`speaker_blue.rim_3`). Up to
+3.8 V it goes in clean; from 4.0 V to at least 4.4 V it touches the hood and still drops in.
 
-**The tilt.** Try values for the move block. At 2.8 V, 26° to 31° on the joint scores (56° to 61° channels): at 25°
-the NOTE catches the back edge, at 32° the front lip. So the table's 60° has 4° to spare below but only 1° above. A
-steadier shot from the same place is 58° (move to 28°) at 3.05 V, about 21.7 rps, another of the solutions
-`launcher aim` finds there, with a higher arc: it scores from 53° to 60° and from 2.7 V to at least 3.8 V. The table
-takes the lowest arc it can, so it chose 60°.
+**The tilt.** Try values for the move block. At 3.05 V, 23° to 30° on the joint scores (53° to 60° channels). At 22°
+the NOTE hits the wall under the opening, and at 31° its top edge catches the front lip (`speaker_blue.rim_1`).
+
+**The table's row instead.** Move to 30° and spin at 2.8 V: it scores from 2.6 V to 3.4 V, but only from 26° to 31°
+on the joint.
 
 ## The AMP
 

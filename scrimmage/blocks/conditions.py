@@ -493,6 +493,12 @@ def a_piece(kinds: dict | None) -> str:
     return i18n.t("an {piece}", piece=word) if word[:1] in "aeiou" else i18n.t("a {piece}", piece=word)
 
 
+def scores_balls(kinds: dict | None) -> bool:
+    """Does a scored check say "balls": with no field known, or a field whose kinds are all balls (as it always
+    did). Any other field (a NOTE's, a disc's, a mixed one) says "pieces"."""
+    return not kinds or all(getattr(k, "form", "ball") == "ball" for k in kinds.values())
+
+
 def turret_words(name: str) -> str:
     """A turret as a sentence names it: "the turret" for the instance named turret, else "turret <name>"."""
     return i18n.t("the turret") if name == "turret" else i18n.t("turret {name}", name=name)
@@ -563,6 +569,16 @@ def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names
                    t("at most {count} pieces being in the hopper", **p),
                    t("at most {count} pieces to be in the hopper", **p))
     if k == "scored":
+        if not scores_balls(kinds):          # a NOTE field (or any piece that isn't a ball): "pieces"
+            if a["goal"] == ANY_GOAL:
+                p = {"count": a["at_least"]}
+                return say(t("{count} or more pieces are scored in any goal", **p),
+                           t("{count} or more pieces being scored in any goal", **p),
+                           t("{count} or more pieces to be scored in any goal", **p))
+            p = {"count": a["at_least"], "goal": a["goal"]}
+            return say(t("{count} or more pieces are scored in {goal}", **p),
+                       t("{count} or more pieces being scored in {goal}", **p),
+                       t("{count} or more pieces to be scored in {goal}", **p))
         if a["goal"] == ANY_GOAL:
             p = {"count": a["at_least"]}
             return say(t("{count} or more balls are scored in any goal", **p),

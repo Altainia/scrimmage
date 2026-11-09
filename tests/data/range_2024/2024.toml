@@ -20,12 +20,12 @@ size = [0.9176, 0.9398, 0.9398]   # 37 in tall (M 5.6.1); 37 in front face width
 [[obstacle]]
 name = "speaker_blue_wall"
 pos = [-0.0500, 5.5446, 0.9947]   # the alliance wall under the SPEAKER opening, up to its low edge at 78.324 in (6328)
-size = [0.1, 1.0427, 1.9894]
+size = [0.1, 1.0509, 1.9894]      # M 5.6: as wide as the opening, 3 ft 5 3/8 in
 
 [[obstacle]]
 name = "speaker_blue_hood"
 pos = [0.2293, 5.5446, 2.3148]   # estimate: the hood roof from the opening's front lip (6328 corner, 18.055 in out, 83.091 in up)
-size = [0.5761, 1.0427, 0.03]   # ... up to the wall at about 98 in (CAD-ONLY; not measured); 41.05 in wide (6328 corners)
+size = [0.5761, 1.0509, 0.03]   # ... up to the wall at about 98 in (CAD-ONLY; not measured); M 5.6: 3 ft 5 3/8 in wide
 rpy_deg = [0.0, 37.25, 0.0]
 
 [[goal]]
@@ -35,7 +35,7 @@ pos = [0.2293, 5.5446]       # 6328 corners: opening center 9.03 in out from the
 heading_deg = 180.0          # into the wall (K1 gap 2)
 rim_height = 2.0500          # opening center height, (78.324 + 83.091) / 2 in
 tilt_deg = 165.2             # M 5.6: the opening rises 14.8 deg toward the field; entered going up (180 - 14.8)
-opening = { kind = "rect", width = 1.0427, height = 0.4742 }
+opening = { kind = "rect", width = 1.0509, height = 0.4742 }   # M 5.6: 3 ft 5 3/8 in wide
 
 [[goal]]
 name = "amp_blue"
