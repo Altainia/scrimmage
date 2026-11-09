@@ -402,3 +402,24 @@ def test_goal_refusals(flight, words):
 def test_a_ball_takes_no_goal():
     with pytest.raises(BenchError, match="rigid pieces only"):
         _parse(_bench(piece='preset = "2016-boulder"'))
+
+
+def test_a_big_meshs_outline_is_taken_in_chunks(monkeypatch):
+    """outline_points reads the vertices SUPPORT_CHUNK at a time: the same points as one pass (ties to the first
+    index, as np.argmax), and a CAD-sized cloud never makes one 2048-by-every-vertex array."""
+    from scrimmage.testrange import pieces
+    rng = np.random.default_rng(7)
+    cloud = rng.normal(size=(5000, 3))
+    cloud[4000] = cloud[10]                                   # a tie, where a later chunk must not win
+    d = pieces._directions()
+    whole = np.argmax(d @ cloud.T, axis=1)
+    monkeypatch.setattr(pieces, "SUPPORT_CHUNK", 64)
+    best, at = pieces._support(d, cloud)
+    assert np.array_equal(at, whole)
+    assert np.array_equal(best, (d @ cloud.T).max(axis=1))
+    monkeypatch.undo()
+    big = rng.normal(size=(300_000, 3))
+    big /= np.linalg.norm(big, axis=1)[:, None]               # a 300k-vertex sphere, 4.9 GB as one array
+    hull = pieces.outline_points([pieces.Solid("mesh", (), (0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0), vertices=big)])
+    assert len(hull) == pieces.OUTLINE_POINTS
+    assert np.linalg.norm(hull, axis=1).min() > 0.999
