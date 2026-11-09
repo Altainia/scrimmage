@@ -41,7 +41,9 @@ from .balls import BallState, Balls, log_dict
 from .build import BALL_BITS, LAUNCHED_BITS
 from .feeder import Feeder
 from .launch import LAUNCH_CLEAR_S, exit_state, exit_state_disc, exit_state_piece
-from .shooter import DiscShooter, PieceShooter, Shooter, parse_shooter
+from .shooter import Shooter, parse_shooter
+from .shooter_disc import DiscShooter
+from .shooter_piece import PieceShooter
 from .station import DEFAULT_SEED, check_seed
 
 

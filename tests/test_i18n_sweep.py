@@ -228,7 +228,7 @@ ALLOWED = {
         ASSERT,
     ('scrimmage/testrange/build.py', '[range] file: {}'): LOCATOR,
     ('scrimmage/testrange/build.py', '[range] station: {}'): LOCATOR,
-    ('scrimmage/testrange/shooter.py',
+    ('scrimmage/testrange/shooter_disc.py',
      "disc shooter: fed a disc while the channel holds one (the ball path checks it's clear)"):
         ASSERT,
     ('scrimmage/testrange/spec.py', '{}: [range] ball: {}'): LOCATOR,
