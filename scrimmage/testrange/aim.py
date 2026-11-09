@@ -32,7 +32,7 @@ the channel's tilt in place of the hood angle and both wheels at the row's wheel
   body's origin;
 - its verdict is goal_fit.fit on the flight, its outline's points turned as it flies (goal_fit.kind_points);
 - at a goal entered going up, its rows peak at least UPWARD_APEX_MARGIN above the opening's center, so it is still
-  rising as it crosses (a flat crossing at its apex catches the opening's front lip in the world).
+  rising as it crosses (a flat crossing at its apex catches the opening's front lip in the world), as a ball's do.
 A level goal (the hub, entered going down) is refused for it: that path is the ball launcher's own.
 """
 
@@ -472,9 +472,9 @@ class _SurfaceAim:
         return AimRow(distance, rps, hood_deg, t, apex)
 
     def apex_margin(self) -> float:
-        """How far above the opening's center an upward goal's row must peak (m): 0 for a ball (its rule unchanged),
-        UPWARD_APEX_MARGIN for a rigid piece (_PieceAim)."""
-        return 0.0
+        """How far above the opening's center an upward goal's row must peak (m): UPWARD_APEX_MARGIN, for a ball as
+        for a rigid piece (a downward goal, the hub, has no such rule)."""
+        return UPWARD_APEX_MARGIN
 
     def fits(self, p: np.ndarray, pts: np.ndarray, k: int, t: float, at: np.ndarray) -> bool:
         """Does the shot score: goal_fit.fit_ball on its centers up to the crossing (`pts`, on the field; it crosses at
@@ -566,9 +566,6 @@ class _PieceAim(_SurfaceAim):
         pos = np.array([0.0, 0.0, pc.height]) + shot.exit_x * chan[:, 0]
         omega = body.T @ (-shot.spin * chan[:, 1])          # backspin about the channel's -y, in the body frame
         return pos, shot.speed * chan[:, 0], flight6.quat_from_matrix(body), omega
-
-    def apex_margin(self) -> float:
-        return UPWARD_APEX_MARGIN
 
     def fly(self, pos, vel, quat, omega, **kw) -> flight6.Flight6Result:
         pc = self.model.piece

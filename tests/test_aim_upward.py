@@ -53,7 +53,7 @@ opening = { kind = "rect", width = 1.0427, height = 0.4742 }
 [start.front]
 pose = [3.0, 4.0, 180.0]
 """
-DISTANCES = [1.5, 2.0, 2.5, 3.0, 4.0]       # m; 4 m is past this launcher's reach going up
+DISTANCES = [1.25, 1.5, 1.75, 2.0, 4.0]     # m; its reach going up ends at 2.3 m (UPWARD_APEX_MARGIN), so 4 m is past it
 TIME_LIMIT = 15.0                           # s for the five, the target (it was 144 s before the speed-ups)
 
 
@@ -83,9 +83,9 @@ def timed_table(speaker_cfg):
 
 @pytest.fixture(scope="module")
 def world_table(speaker_cfg):
-    """The SPEAKER table at four of DISTANCES with a 4 deg hood step, for flying in the world."""
+    """The SPEAKER table at three distances to the end of its reach with a 4 deg hood step, for flying in the world."""
     model = aim.load_model(speaker_cfg, "speaker", hood_step_deg=4.0)
-    return aim.aim_table(speaker_cfg, "speaker", [1.5, 2.0, 2.5, 3.0], model=model, hood_step_deg=4.0)
+    return aim.aim_table(speaker_cfg, "speaker", [1.5, 2.0, 2.3], model=model, hood_step_deg=4.0)
 
 
 def _fly_in_world(cfg_path, distance: float, rps: float, hood: float) -> dict:
@@ -167,14 +167,22 @@ def test_speaker_rows_go_up_through_the_opening_untouched(speaker_cfg, timed_tab
     assert scoring[0] == min(first, key=lambda r: (r.apex, r.wheel_rps))
 
 
+class _NoMargin(aim._SurfaceAim):
+    """The aim without UPWARD_APEX_MARGIN, which on its own rules out the shots that come down over the roof."""
+
+    def apex_margin(self) -> float:
+        return 0.0
+
+
 def test_a_shot_through_the_roof_is_not_offered(speaker_cfg):
     """Without the range's boxes, some shots come down into the opening just past their apex over the roof's front
-    lip; with them, those aren't offered (and the table's row isn't one)."""
+    lip; with them, those aren't offered (and the table's row isn't one). The apex margin is left out here, so the
+    boxes alone must turn them away."""
     model = aim.load_model(speaker_cfg, "speaker")
     radius = model.setup.ball.diameter / 2.0
     roof = next(o for o in load_range("speaker.toml", speaker_cfg.parent).obstacles if o.name == "roof")
-    free = aim._SurfaceAim(dataclasses.replace(model, boxes=()))
-    real = aim._SurfaceAim(model)
+    free = _NoMargin(dataclasses.replace(model, boxes=()))
+    real = _NoMargin(model)
     through_roof = 0
     for distance in (2.5, 3.0):
         offered = real.solutions(distance, (10.0, 120.0))
@@ -240,15 +248,12 @@ def test_hub_rows_are_unchanged(tmp_path):
         in java.splitlines()
 
 
-# Measured 2026-11-09 (4 deg hood step, distances 1.5 to 3.0 m): see the test's docstring.
-@pytest.mark.xfail(strict=True, reason="the ball rows peak at the opening's center height and cross flat there, with "
-                   "about a centimeter to the field-side edge (rim_1); the world's ball flies 1.5-2.5 cm above and "
-                   "1 cm farther than the aim's at that edge (exit speed 0.5% higher at the same wheel speed) and "
-                   "catches it from below")
 def test_the_ball_rows_score_in_the_world_with_the_wheels_2_percent_off(speaker_cfg, world_table):
     """Each ball row flown in the world, the robot at the row's distance, the hood at its angle and the wheels at its
     speed and 2% either side: every shot scores in the SPEAKER-like goal (the ball counterpart of the NOTE re-fly in
-    tests/test_range_2024.py)."""
+    tests/test_range_2024.py). Without UPWARD_APEX_MARGIN the rows peaked at the opening's center and crossed flat
+    there, a centimeter under its field-side edge; the world's ball flew 1.5 to 2.5 cm higher and 6 of the 12 shots
+    caught that edge (rim_1), all of them at the row's speed or 2% above it."""
     missed = []
     ok = [r for r in world_table if r.status == "ok"]
     assert len(ok) >= 2
