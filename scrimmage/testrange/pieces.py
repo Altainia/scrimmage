@@ -57,6 +57,7 @@ from ..disc.inputs import AeroSet, Disc, DiscConfigError, aero_set, disc_preset
 from ..launcher import inputs as launcher_inputs
 from ..i18n import N_
 from ..launcher.inputs import PRESETS, Ball, LauncherConfigError, _build_section
+from ..launcher.rigid_aero import DRAG_COEFFICIENT, SPIN_DAMPING
 from ..measure.file import MeasureError
 from ..measure.use import apply_ball, friction_value, is_measurement
 from .elements import IN, _length
@@ -86,7 +87,9 @@ _STAND_DEG = 80.0  # a tip at or above this is standing (flat kinds: lying flat)
 _LIE_DEG = 10.0  # a tip at or below this is lying (flat kinds: standing on edge)
 
 _KIND = ("preset", "ball", "disc", "aero", "shape", "diameter", "inner_diameter", "tip_diameter", "length",
-         "size", "mass", "material", "friction", "axis", "inertia", "shapes", "cad", "units", "hole", "scale")
+         "size", "mass", "material", "friction", "axis", "inertia", "shapes", "cad", "units", "hole", "scale",
+         "drag_coefficient", "spin_damping")
+_AIR = ("drag_coefficient", "spin_damping")  # a rigid kind's air (launcher/rigid_aero.py), shape or piece preset
 _LENGTHS = ("diameter", "inner_diameter", "tip_diameter", "length", "size")
 _KIND_ALL = _KIND + tuple(k + "_in" for k in _LENGTHS) + ("label", "color")
 # The keys each shape takes beyond shape, mass, material, friction, inertia, label and color (lengths also as
@@ -337,6 +340,10 @@ class PieceKind:
     # what is accepted but likely a mistake: a piece far smaller than a game piece, or far too heavy or light for its
     # size (checks.Said: its words when shown). A range's are its own (spec.Range.warnings)
     warnings: tuple[str, ...] = ()
+    # a rigid piece's air (launcher/rigid_aero.py): its drag coefficient on its bounding box's projected area, and
+    # its spin damping (N m s/rad); a ball's and a disc's air are their own
+    drag_coefficient: float = DRAG_COEFFICIENT
+    spin_damping: float = SPIN_DAMPING
 
     def __post_init__(self):
         if not self.label:
@@ -700,8 +707,13 @@ def _parse_kind(path: Path, name: str, r: _KindReader, base_dir: Path) -> PieceK
     source = given[0]
     if r.has("aero") and source != "disc":
         raise r.err(i18n.t("aero is a disc's aerodynamics; only a disc kind takes it"))
+    if source in ("ball", "disc"):
+        air = [k for k in _AIR if r.has(k)]
+        if air:
+            raise r.err(i18n.t("{key} is a rigid piece's air drag; a ball flies with the {air_table} drag and a disc "
+                               "with its aero set", key=air[0], air_table="[air]"))
     if source != "shape":
-        extra = [k for k in r.t if k not in (source, "aero", "label", "color")]
+        extra = [k for k in r.t if k not in (source, "aero", "label", "color") + _AIR]
         if extra:
             raise r.err(i18n.t("{extra} doesn't go with {source} = {raw}: a preset kind is its preset",
                                extra=extra[0], source=source, raw=repr(r.raw(source))))
@@ -717,6 +729,7 @@ def _parse_kind(path: Path, name: str, r: _KindReader, base_dir: Path) -> PieceK
                 kind = replace(kind_preset(r.text("preset")), name=name, label="")
         except RangeError as e:
             raise r.err(str(e)) from None
+        kind = _air(r, kind)
         return replace(kind, label=label) if label else kind
     shape = _shape_name(r, SHAPES)
     _check_shape_keys(r, shape)
@@ -752,10 +765,17 @@ def _parse_kind(path: Path, name: str, r: _KindReader, base_dir: Path) -> PieceK
         solids, own, notes = _cad(r, base_dir)
     else:
         solids, hole, axis = _simple(r, shape)
-    kind = _finish(r, name, shape, solids, mass, friction, axis, hole, inertia, own, label)
+    kind = _air(r, _finish(r, name, shape, solids, mass, friction, axis, hole, inertia, own, label))
     if shape == "cad" and notes:
         kind = replace(kind, warnings=tuple(notes) + kind.warnings)
     return replace(kind, provenance={"friction": measured}) if measured is not None else kind
+
+
+def _air(r: _KindReader, kind: PieceKind) -> PieceKind:
+    """The kind with its own `drag_coefficient` and `spin_damping`, where the table gives them (each a number, not
+    negative: 0 is no drag, or no damping)."""
+    given = {k: r.num(k, nonnegative=True) for k in _AIR if r.has(k)}
+    return replace(kind, **given) if given else kind
 
 
 def _default_aero() -> str:

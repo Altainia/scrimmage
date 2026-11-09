@@ -140,7 +140,7 @@ ALLOWED = {
     ('scrimmage/climb/run.py',
      '- {}: over its {} in limit from t = {} s, by up to {} in at {} s ({} s over in all).'):
         CLI + " (`scrimmage climb run`'s report)",
-    ('scrimmage/disc/flight.py', 'dt must be positive, got {}'): ASSERT,
+    ('scrimmage/launcher/flight6.py', 'dt must be positive, got {}'): ASSERT,
     ('scrimmage/disc/launcher.py', "insert at t = {}, but the launcher's clock is at {}: feed at its time"): ASSERT,
     ('scrimmage/disc/launcher.py', '{} voltage(s) for {} wheel group(s); give one per group'): ASSERT,
     ('scrimmage/freecad_tools.py',

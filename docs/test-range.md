@@ -539,6 +539,18 @@ a shape with a key it doesn't use, no mass, or no surface is an error that names
 Every kind also takes `mass` (kg, required), `material` or `friction`, `inertia = [Ixx, Iyy, Izz]` (kg m², left out:
 worked out from the shape at the same density throughout), `label` and `color`.
 
+**A rigid piece in the air.** A flying rigid piece (a shape or a piece preset, not a ball or a disc) feels air drag
+against its velocity: ½ρ·Cd·A·v², where A is the area its bounding box shows the air as it is turned now. A NOTE
+flying flat in its own plane shows its 0.018 m² edge; face first, its 0.126 m² face, 7 times more. Two keys set it,
+each a number that can't be negative:
+- `drag_coefficient` (default 1.17, a flat plate's, an estimate used at every angle; 0 is no drag);
+- `spin_damping` (N·m·s/rad, default 0: the piece keeps its spin, as a ball does).
+
+There is no lift, so a flat, backspun piece that really glides comes up short, and the box counts a ring's hole as
+solid. Results that rest on these numbers are uncalibrated until someone measures. A piece touching anything (lying
+on the carpet, leaning on a goal) feels no air. A preset kind takes the two keys too: `preset = "2024-note"` with
+`drag_coefficient = 0.9`.
+
 **A kind's color.** `color` is one of the named colors (`"red"`, `"blue"`, `"yellow"`, `"orange"`, `"green"`,
 `"purple"`, `"white"`, `"gray"`) or `[r, g, b]`, each 0 to 1. The piece is drawn in it, and a
 [color sensor](sensors.md#piece-colors) reads it. A preset kind takes it too, so a 2022 field can have red and blue

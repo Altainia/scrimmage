@@ -746,7 +746,13 @@ def test_a_fed_coral_slides_down_the_chute_onto_the_carpet(tmp_path):
     x, _, z = w.test_range.balls.positions()[i]
     b = w.test_range.balls
     axis = w.data.xmat[b.bodies[i]].reshape(3, 3) @ np.array(w.test_range.range.kinds["coral"].axis)
-    assert x > chute_low_end_x and z == pytest.approx(4.5 * IN / 2, abs=0.01) and abs(axis[2]) < 0.05
+    # Past the chute and on the carpet, at rest, lying or standing on its end: how it comes to rest after the drop
+    # off the chute's end is a knife edge. With the air's drag on a rigid piece (launcher/rigid_aero.py) at its
+    # Cd it stands on end; at 0.1, 0.5, 1.5 or 2 times that Cd, or with none, it lies on its side.
+    lying = z == pytest.approx(4.5 * IN / 2, abs=0.01) and abs(axis[2]) < 0.05
+    standing = z == pytest.approx(11.875 * IN / 2, abs=0.01) and abs(axis[2]) > 0.95
+    assert x > chute_low_end_x and (lying or standing) and abs(b.clearance(i)) < 0.01
+    assert np.linalg.norm(b._qvel[i]) < 0.01
     assert b.state[i] == BallState.FIELD
 
 

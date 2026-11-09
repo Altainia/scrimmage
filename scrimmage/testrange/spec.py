@@ -343,14 +343,17 @@ class _Reader:
             raise self.err(i18n.t("{key} must be text, not {value}", key=key, value=repr(v)))
         return v
 
-    def num(self, key: str, default: float | None = None, *, positive: bool = False) -> float:
+    def num(self, key: str, default: float | None = None, *, positive: bool = False,
+            nonnegative: bool = False) -> float:
         if default is not None and key not in self.t:
             return default
         v = self.raw(key)
-        if isinstance(v, bool) or not isinstance(v, (int, float)):
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or (nonnegative and not math.isfinite(v)):
             raise self.err(i18n.t("{key} must be a number, not {value}", key=key, value=repr(v)))
         if positive and not v > 0:
             raise self.err(i18n.t("{key} must be positive, not {value}", key=key, value=repr(v)))
+        if nonnegative and v < 0:
+            raise self.err(i18n.t("{key} can't be negative, not {value}", key=key, value=repr(v)))
         return float(v)
 
     def whole(self, key: str) -> int:
@@ -439,16 +442,21 @@ def _counted(path: Path, where: str, name: str | None, kinds: dict[str, PieceKin
     return next((k for k in kinds.values() if k.form != "rigid"), next(iter(kinds.values())))
 
 
+def piece_box(kind: PieceKind) -> tuple[float, float, float]:
+    """A rigid kind's bounding box in its body frame: its sides along body x, y and z (m)."""
+    from .pieces import _lo_hi  # pieces.py imports this module
+
+    lo = np.min([_lo_hi(s)[0] for s in kind.solids], axis=0)
+    hi = np.max([_lo_hi(s)[1] for s in kind.solids], axis=0)
+    return tuple(float(x) for x in hi - lo)
+
+
 def piece_sides(kind: PieceKind) -> tuple[float, ...]:
     """The sides of a kind's bounding box in its body frame, smallest first (a ball or disc: its diameter)."""
     if kind.form != "rigid" or not kind.solids:
         d = kind.ball.diameter if kind.ball is not None else kind.disc.diameter if kind.disc is not None else kind.extent
         return (float(d),)
-    from .pieces import _lo_hi  # pieces.py imports this module
-
-    lo = np.min([_lo_hi(s)[0] for s in kind.solids], axis=0)
-    hi = np.max([_lo_hi(s)[1] for s in kind.solids], axis=0)
-    return tuple(sorted(float(x) for x in hi - lo))
+    return tuple(sorted(piece_box(kind)))
 
 
 def passing_width(kind: PieceKind) -> float:
