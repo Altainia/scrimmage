@@ -67,7 +67,7 @@ the Test tab's page.
 
 **Files:**
 - Create: `scrimmage/testrange/game.py`. Follow `zones.py`: frozen dataclasses and a `parse_game(path, table, goals,
-  zones)` function that reads with spec.py's `_Reader`.
+  zones, climb)` function that reads with spec.py's `_Reader`. `climb` is the range's parsed `[climb]` rule, or None.
 - Modify:
   - `scrimmage/testrange/spec.py`: add `"game"` to `_TOP` (around line 381), add `Range.game: Game | None = None`,
     and call the parser after goals and zones are parsed.
@@ -78,7 +78,8 @@ the Test tab's page.
 
 **Produces:**
 - `Game(name: str, auto_s: float, pause_s: float, teleop_s: float, points: dict[str, GoalPoints],
-  leave: Leave | None, rules: Rules | None)`.
+  leave: Leave | None, rules: Rules | None, climb_points: dict[str, float])`. `climb_points` is a copy of `[climb]
+  levels` (empty with no `[climb]`), so Task 2's scorer needs only the game.
 - `GoalPoints(auto: float, teleop: float)`. One number means the same in both phases.
 - `Leave(zone: str, points: float)`.
 - `Rules(possession: int | None, extension: float | None, height: float | None)`. Lengths are in meters; the file
