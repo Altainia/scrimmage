@@ -1161,23 +1161,26 @@ wall) is aimed at its **scoring surface** instead. A level goal such as the hub 
   and touches none of the range's `[[obstacle]]` boxes, elements or other goals' plates (nor, with its center, the
   goal's own plates) on the way in. A shot that would go through a hood roof, or clip its front edge, isn't offered.
 - The first row of a goal entered going up takes the **lowest apex** that scores (the steepest, as for the hub, would
-  go up into a roof). Later rows follow the row before, as above. These flattest shots peak at the opening, so some
-  are just past their apex, still moving up through a tilted opening.
+  go up into a roof), peaking at least 0.10 m above the opening's center (`UPWARD_APEX_MARGIN`, below), so the ball
+  is still rising as it crosses. Later rows follow the row before, as above.
 - `flight_s` is the time to that crossing; `apex` is the flight's highest point as if nothing stopped it.
 - A table of 5 distances takes about 10 s: a path doesn't depend on the distance, so each hood angle's paths are
   flown once, on a coarse wheel-speed grid, and only until they're back down past the opening's height.
 - The ball still flies unobstructed after it crosses: what it hits inside the goal isn't modeled.
 
-**A piece shooter** (`[shooter] kind = "piece"`, [above](#a-piece-shooter-a-note)) is aimed the same way at a goal
-that isn't level, its channel's tilt in place of the hood angle (`--hood-step` steps the tilt) and both wheels at
+**A piece shooter** (`[shooter] kind = "piece"`, [above](#a-piece-shooter-a-note)) is aimed the same way at a goal that
+isn't level, its channel's tilt in place of the hood angle (`--hood-step` steps the tilt) and both wheels at
 `wheel_rps`. Its shot is the pinch model's exit, flown as a rigid piece with its drag and its orientation, and a row
-scores only if all of the piece fits through the opening at the crossing (its outline's points, turned as it
-flies) and nothing touches an obstacle first. At a goal entered going up, a piece's row must also **peak at least
-0.10 m above the opening's center** (`UPWARD_APEX_MARGIN` in `scrimmage/testrange/aim.py`), so the piece is still
-rising as it crosses: flown again in the world, rows that crossed flat at their apex caught the SPEAKER's front lip
-(17 of their 24 shots missed: all 16 at the row's speed or 2% above it, and one of the 8 at 2% below), while every
-row with the margin scored at 2% either side (21 of 21). It costs the flattest, slowest shots and the farthest
-distances (the example robot's table stops at 2.37 m with it, and reached 2.57 m without it). A ball's rows keep the rule above (they aren't flown again in the world). Its
+scores only if all of the piece fits through the opening at the crossing (its outline's points, turned as it flies) and
+nothing touches an obstacle first. At a goal entered going up, a piece's row must also **peak at least 0.10 m above the
+opening's center** (`UPWARD_APEX_MARGIN` in `scrimmage/testrange/aim.py`), so the piece is still rising as it crosses:
+flown again in the world, rows that crossed flat at their apex caught the SPEAKER's front lip (17 of their 24 shots
+missed: all 16 at the row's speed or 2% above it, and one of the 8 at 2% below), while every row with the margin scored
+at 2% either side (21 of 21). It costs the flattest, slowest shots and the farthest distances (the example robot's table
+stops at 2.37 m with it, and reached 2.57 m without it). A ball's rows at a goal entered going up take the same margin:
+flown in the world without it, half the shots of a SPEAKER-like test goal caught its edge (6 of 12, the ball 1.5 to
+2.5 cm above the aim's path there), and with it all scored at 2% either side (`tests/test_aim_upward.py`); that test
+launcher's reach going up fell from about 3 m to 2.3 m. Its
 UNCALIBRATED line names the piece's stiffness, the tread's friction and the drag coefficient as the estimates, and
 says lift isn't modeled. A level goal (the hub) is refused for it. It takes longer than a ball's: about 15 s for 3
 SPEAKER distances with 7 tilts, 35 s for 5 with 16, and about a minute for the example's 8 with 21.

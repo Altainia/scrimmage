@@ -7,12 +7,16 @@ import dataclasses
 import math
 import os
 import time
+import tomllib
 
 import numpy as np
 import pytest
 import tomlkit
 
 from range_fixtures import SHOOTER, shooter_cfg
+from scrimmage.motors import get_motor
+from scrimmage.protocol import HalState
+from scrimmage.world import World
 from scrimmage.launcher.flight import fly_path, fly_state
 from scrimmage.launcher.inputs import Air, Ball, Goal as FlightGoal
 from scrimmage.testrange import aim
@@ -49,7 +53,7 @@ opening = { kind = "rect", width = 1.0427, height = 0.4742 }
 [start.front]
 pose = [3.0, 4.0, 180.0]
 """
-DISTANCES = [1.5, 2.0, 2.5, 3.0, 4.0]       # m; 4 m is past this launcher's reach going up
+DISTANCES = [1.25, 1.5, 1.75, 2.0, 4.0]     # m; its reach going up ends at 2.3 m (UPWARD_APEX_MARGIN), so 4 m is past it
 TIME_LIMIT = 15.0                           # s for the five, the target (it was 144 s before the speed-ups)
 
 
@@ -75,6 +79,45 @@ def timed_table(speaker_cfg):
     model = aim.load_model(speaker_cfg, "speaker")
     rows = aim.aim_table(speaker_cfg, "speaker", DISTANCES, model=model, on_unreachable=warnings.append)
     return model, rows, time.perf_counter() - start, warnings
+
+
+@pytest.fixture(scope="module")
+def world_table(speaker_cfg):
+    """The SPEAKER table at three distances to the end of its reach with a 4 deg hood step, for flying in the world."""
+    model = aim.load_model(speaker_cfg, "speaker", hood_step_deg=4.0)
+    return aim.aim_table(speaker_cfg, "speaker", [1.5, 2.0, 2.3], model=model, hood_step_deg=4.0)
+
+
+def _fly_in_world(cfg_path, distance: float, rps: float, hood: float) -> dict:
+    """The robot `distance` back from the goal on its approach line, facing it, with one ball in its hopper; robot code
+    that holds the hood angle and both wheels at `rps` (kV feedforward plus 0.5 V per rps, trimmed onto the speed
+    before the feed), then runs the hopper floor and the feeder: the ball's log once it has scored, or after 2.5 s of feeding."""
+    cfg = tomllib.loads(cfg_path.read_text(encoding="utf-8"))
+    cfg["range"] = {**{k: v for k, v in cfg["range"].items() if k != "start"}, "preload": 1}
+    cfg.setdefault("robot", {})["start_pose"] = [0.2293 + distance, 4.0, 180.0]
+    w = World(cfg, cfg_path.parent)
+    rt, m, d = w.test_range, w.model, w.data
+    joint = m.joint("launcher.hood")
+    qadr = m.jnt_qposadr[joint.id]
+    kv = 2.0 * math.pi / get_motor("KrakenX60", 1).Kv
+    low = rt.shooter.config.hood_range[0]           # the hood joint's 0 (hood_gap moves it off 20 deg)
+    trim = 0.0
+    for k in range(5000):
+        feeding = k >= 2500
+        error = rps - rt.shooter.rps()
+        if not feeding:
+            trim += 0.5 * error * 0.001
+        pwm = {"2": (kv * rps + 0.5 * error + trim) / w.vbatt}
+        herr = math.radians(hood - low) - d.qpos[qadr]
+        pwm["3"] = 4.0 * herr                       # the hood's PWM sets its speed, so P alone holds it
+        pwm["5"] = pwm["6"] = 1.0 if feeding else 0.0
+        hal = HalState()
+        for port, value in pwm.items():
+            hal.devices[("PWM", port)] = {"<init": True, "<speed": float(np.clip(value, -1.0, 1.0))}
+        w.step(hal)
+        if rt.counts()["goals"].get("speaker"):
+            break
+    return rt.ball_log()[0]
 
 
 def _through(model, path):
@@ -124,14 +167,22 @@ def test_speaker_rows_go_up_through_the_opening_untouched(speaker_cfg, timed_tab
     assert scoring[0] == min(first, key=lambda r: (r.apex, r.wheel_rps))
 
 
+class _NoMargin(aim._SurfaceAim):
+    """The aim without UPWARD_APEX_MARGIN, which on its own rules out the shots that come down over the roof."""
+
+    def apex_margin(self) -> float:
+        return 0.0
+
+
 def test_a_shot_through_the_roof_is_not_offered(speaker_cfg):
     """Without the range's boxes, some shots come down into the opening just past their apex over the roof's front
-    lip; with them, those aren't offered (and the table's row isn't one)."""
+    lip; with them, those aren't offered (and the table's row isn't one). The apex margin is left out here, so the
+    boxes alone must turn them away."""
     model = aim.load_model(speaker_cfg, "speaker")
     radius = model.setup.ball.diameter / 2.0
     roof = next(o for o in load_range("speaker.toml", speaker_cfg.parent).obstacles if o.name == "roof")
-    free = aim._SurfaceAim(dataclasses.replace(model, boxes=()))
-    real = aim._SurfaceAim(model)
+    free = _NoMargin(dataclasses.replace(model, boxes=()))
+    real = _NoMargin(model)
     through_roof = 0
     for distance in (2.5, 3.0):
         offered = real.solutions(distance, (10.0, 120.0))
@@ -195,3 +246,20 @@ def test_hub_rows_are_unchanged(tmp_path):
     java = aim.to_java(rows, "A", "cmd")
     assert "// angle whose ball crosses the goal's rim height descending at its center, the time from exit to that" \
         in java.splitlines()
+
+
+def test_the_ball_rows_score_in_the_world_with_the_wheels_2_percent_off(speaker_cfg, world_table):
+    """Each ball row flown in the world, the robot at the row's distance, the hood at its angle and the wheels at its
+    speed and 2% either side: every shot scores in the SPEAKER-like goal (the ball counterpart of the NOTE re-fly in
+    tests/test_range_2024.py). Without UPWARD_APEX_MARGIN the rows peaked at the opening's center and crossed flat
+    there, a centimeter under its field-side edge; the world's ball flew 1.5 to 2.5 cm higher and 6 of the 12 shots
+    caught that edge (rim_1), all of them at the row's speed or 2% above it."""
+    missed = []
+    ok = [r for r in world_table if r.status == "ok"]
+    assert len(ok) >= 2
+    for row in ok:
+        for f in (0.98, 1.0, 1.02):
+            log = _fly_in_world(speaker_cfg, row.distance, row.wheel_rps * f, row.hood_deg)
+            if log["goal"] != "speaker":
+                missed.append((row.distance, row.hood_deg, round(row.wheel_rps, 2), f, log["goal"], log["first_hit"]))
+    assert not missed, missed
