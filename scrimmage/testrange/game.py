@@ -58,10 +58,16 @@ class Game:
     leave: Leave | None = None
     rules: Rules | None = None
     climb_points: dict[str, float] = field(default_factory=dict)
+    goals: tuple[str, ...] = ()     # the range's goal names, in its order: the order a score's items come in
 
     @property
     def match_s(self) -> float:
         return self.auto_s + self.pause_s + self.teleop_s
+
+    def phases(self, start: float) -> Phases:
+        """The phases of a match that starts at run time `start`."""
+        return Phases(auto=(start, start + self.auto_s),
+                      teleop=(start + self.auto_s + self.pause_s, start + self.match_s))
 
 
 def _points(r, value, key: str) -> float:
@@ -115,5 +121,86 @@ def parse_game(path, table, goals, zones, climb) -> Game:
         if q.has("height_in"):
             height = q.num("height_in", positive=True) * INCH
         rules = Rules(possession, extension, height)
-    return Game(name=name, auto_s=auto_s, pause_s=pause_s, teleop_s=teleop_s, points=points, leave=leave,
-                rules=rules, climb_points=dict(climb.levels) if climb is not None else {})
+    ordered = {g.name: points[g.name] for g in goals if g.name in points}
+    return Game(name=name, auto_s=auto_s, pause_s=pause_s, teleop_s=teleop_s, points=ordered, leave=leave,
+                rules=rules, climb_points=dict(climb.levels) if climb is not None else {},
+                goals=tuple(g.name for g in goals))
+
+
+@dataclass(frozen=True)
+class Phases:
+    """The match's phases in run time (s): auto is [start, end), teleop is [start, end] (the match ends at teleop's
+    end, a piece scored then still counts), and the pause is between them."""
+    auto: tuple[float, float]
+    teleop: tuple[float, float]
+
+    def of(self, t: float) -> str | None:
+        """"auto", "pause" or "teleop" for run time `t`; None before auto starts or after teleop ends."""
+        if self.auto[0] <= t < self.auto[1]:
+            return "auto"
+        if self.auto[1] <= t < self.teleop[0]:
+            return "pause"
+        if self.teleop[0] <= t <= self.teleop[1]:
+            return "teleop"
+        return None
+
+
+@dataclass(frozen=True)
+class PointsItem:
+    source: str     # a goal's name, "leave" or "climb"
+    phase: str      # "auto", "teleop", "endgame" or "pause"
+    count: int
+    points: float
+
+    def to_dict(self) -> dict:
+        return {"source": self.source, "phase": self.phase, "count": self.count, "points": self.points}
+
+
+@dataclass(frozen=True)
+class Points:
+    auto: float
+    teleop: float
+    endgame: float
+    total: float
+    items: tuple[PointsItem, ...] = ()
+
+    def to_dict(self) -> dict:
+        return {"auto": self.auto, "teleop": self.teleop, "endgame": self.endgame, "total": self.total,
+                "items": [i.to_dict() for i in self.items]}
+
+
+def score(game: Game, log: list[dict], phases: Phases, left: bool | None, level: str | None,
+          at: float | None = None) -> Points:
+    """The points of a run, read from `ball_log()`'s rows (never written to). A piece scored in the pause scores
+    nothing (its item says so); one scored outside the match isn't counted. `left` is whether LEAVE was earned and
+    `level` the climb level held when the match ended (None: not earned or not decided, 0 points). With `at`, only
+    pieces with `scored_t <= at` count, LEAVE once auto has ended by `at`, and no endgame (the match isn't over)."""
+    counts: dict[tuple[str, str], int] = {}
+    for row in log:
+        goal, t = row.get("goal"), row.get("scored_t")
+        if goal is None or t is None or (at is not None and t > at):
+            continue
+        phase = phases.of(t)
+        if phase is not None:
+            counts[goal, phase] = counts.get((goal, phase), 0) + 1
+    order = list(game.goals) + [g for g in dict.fromkeys(g for g, _ in counts) if g not in game.goals]
+    items: list[PointsItem] = []
+    auto = teleop = endgame = 0.0
+    for goal in order:
+        gp = game.points.get(goal, GoalPoints(0.0, 0.0))
+        for phase in ("auto", "pause", "teleop"):
+            n = counts.get((goal, phase), 0)
+            if not n:
+                continue
+            each = {"auto": gp.auto, "teleop": gp.teleop, "pause": 0.0}[phase]
+            items.append(PointsItem(goal, phase, n, n * each))
+            auto += n * each if phase == "auto" else 0.0
+            teleop += n * each if phase == "teleop" else 0.0
+    if left and game.leave is not None and (at is None or at >= phases.auto[1]):
+        items.append(PointsItem("leave", "auto", 1, game.leave.points))
+        auto += game.leave.points
+    if level is not None and at is None:
+        pts = game.climb_points.get(level, 0.0)
+        items.append(PointsItem("climb", "endgame", 1, pts))
+        endgame += pts
+    return Points(auto, teleop, endgame, auto + teleop + endgame, tuple(items))

@@ -115,3 +115,62 @@ def test_a_range_with_no_game_has_none_and_check_prints_no_game_line(tmp_path):
 def test_check_summary_names_the_game(tmp_path):
     line = check.summary("r.toml", load(tmp_path))[0]
     assert "game '2024 CRESCENDO' (15 s auto, 3 s pause, 135 s teleop, 2 goals score points)" in line
+
+
+# ---------------------------------------------------------------------------------------------- the points
+
+from scrimmage.testrange.game import Game, GoalPoints, Leave, Phases, score  # noqa: E402
+
+GAME24 = Game("2024", 15.0, 3.0, 135.0,
+              points={"speaker_blue": GoalPoints(5, 2), "amp_blue": GoalPoints(2, 1)},
+              leave=Leave("blue_start", 2), climb_points={"ONSTAGE": 3.0}, goals=("speaker_blue", "amp_blue"))
+PH = GAME24.phases(10.0)        # auto [10, 25), pause [25, 28), teleop [28, 163]
+
+
+def rows(*pairs):
+    return [{"goal": g, "scored_t": t} for g, t in pairs]
+
+
+def test_phases():
+    assert PH == Phases(auto=(10.0, 25.0), teleop=(28.0, 163.0))
+
+
+def test_the_2024_numbers():
+    log = rows(("speaker_blue", 12.0), ("speaker_blue", 20.0), ("speaker_blue", 40.0), ("amp_blue", 50.0))
+    p = score(GAME24, log, PH, True, None)
+    assert (p.auto, p.teleop, p.endgame, p.total) == (12, 3, 0, 15)
+    assert [(i.source, i.phase, i.count, i.points) for i in p.items] == [
+        ("speaker_blue", "auto", 2, 10), ("speaker_blue", "teleop", 1, 2), ("amp_blue", "teleop", 1, 1),
+        ("leave", "auto", 1, 2)]
+    q = score(GAME24, log, PH, True, "ONSTAGE")
+    assert (q.endgame, q.total) == (3, 18) and q.items[-1].source == "climb" and q.items[-1].phase == "endgame"
+    assert q.to_dict()["total"] == 18 and q.to_dict()["items"][0]["source"] == "speaker_blue"
+
+
+def test_undecided_leave_and_no_level_score_nothing():
+    p = score(GAME24, rows(("amp_blue", 12.0)), PH, None, None)
+    assert (p.auto, p.total) == (2, 2) and all(i.source != "leave" for i in p.items)
+
+
+def test_phase_edges():
+    log = rows(("speaker_blue", 25.0), ("speaker_blue", 163.0), ("speaker_blue", 163.5), ("speaker_blue", 9.9),
+               ("speaker_blue", 28.0))
+    p = score(GAME24, log, PH, False, None)
+    assert [(i.phase, i.count, i.points) for i in p.items] == [("pause", 1, 0), ("teleop", 2, 4)]
+    assert p.total == 4
+
+
+def test_unlisted_goal_counts_for_zero_and_a_miss_has_no_item():
+    log = rows(("hoard", 12.0), ("hoard", 30.0), (None, 12.0)) + [{"goal": "speaker_blue", "scored_t": None}]
+    p = score(GAME24, log, PH, False, None)
+    assert [(i.source, i.phase, i.count, i.points) for i in p.items] == [
+        ("hoard", "auto", 1, 0), ("hoard", "teleop", 1, 0)]
+    assert p.total == 0
+
+
+def test_points_so_far_with_at():
+    log = rows(("speaker_blue", 12.0), ("speaker_blue", 20.0), ("speaker_blue", 40.0))
+    mid = score(GAME24, log, PH, True, "ONSTAGE", at=15.0)
+    assert (mid.auto, mid.teleop, mid.endgame, mid.total) == (5, 0, 0, 5)       # no leave yet, no endgame
+    assert score(GAME24, log, PH, True, None, at=20.0).total == 10               # scored_t <= at counts
+    assert score(GAME24, log, PH, True, None, at=26.0).total == 12               # auto over: LEAVE counts
