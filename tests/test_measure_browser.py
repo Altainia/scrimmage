@@ -6,6 +6,7 @@ import math
 import tomllib
 
 import pytest
+from playwright.sync_api import expect
 
 from measure_helpers import synthetic
 from scrimmage import units
@@ -219,8 +220,11 @@ def test_measure_something_makes_a_file_and_opens_it(measure_page, tmp_path):
     page.wait_for_function("window.__scrimmageMeasure && __scrimmageMeasure.store.state && "
                            "__scrimmageMeasure.store.state.kind === 'friction'")
     assert load(tmp_path / "tread.measure.toml").kind == "friction"
-    assert page.locator("#measure-tests [data-test]").evaluate_all("els => els.map(e => e.dataset.test)") == ["sled"]
-    assert page.inner_text("#measure-title") == forms.TEST["sled"].title
+    # the Start page reloads into the new file; expect retries across that reload, where a one-shot read can land in it
+    tests = page.locator("#measure-tests [data-test]")
+    expect(tests).to_have_count(1)
+    expect(tests).to_have_attribute("data-test", "sled")
+    expect(page.locator("#measure-title")).to_have_text(forms.TEST["sled"].title)
 
 
 def test_fit_shows_the_fit_and_each_shot_against_the_model(measure_page, tmp_path):
