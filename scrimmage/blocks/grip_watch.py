@@ -256,6 +256,10 @@ class HeldTracker:
         keys = self._keys(piece, by, self._lost)
         return max(keys, key=lambda k: self._lost[k])[0] if keys else None
 
+    def pieces(self) -> set[int]:
+        """The pieces held now by any tracked part or body."""
+        return {i for i, _ in self._held}
+
     def holders(self, piece: int) -> set[str]:
         """The tracked parts and bodies holding `piece` now."""
         return {by for i, by in self._held if i == piece}

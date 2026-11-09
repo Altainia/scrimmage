@@ -195,6 +195,9 @@ class WalkOff:
 class ClimbRun:
     def __init__(self, world, script: Script):
         self.world, self.script = world, script
+        rng = world.parts.range if world.parts is not None else None
+        # the range's game rules stand in for the [limits] the script leaves out (a script's own keys win)
+        self.limits = script.limits_in(rng.game.rules if rng is not None and rng.game is not None else None)
         m = world.model
         self.mon = world.climb_monitor()
         self.mon.track_extent()
@@ -269,8 +272,8 @@ class ClimbRun:
         steps: list[StepTime] = []
         level_times: dict[str, float] = {}
         level_swings: dict[str, float] = {}
-        g107 = _Breach("G107", self.script.limits.extension)
-        g106 = _Breach("G106", self.script.limits.height)
+        g107 = _Breach("G107", self.limits.extension)
+        g106 = _Breach("G106", self.limits.height)
         state = {"t": 0.0, "level": 0, "swing": 0.0, "load": 0.0, "row_load": 0.0}
         peak = {"load": 0.0, "load_t": 0.0, "swing": 0.0, "swing_t": 0.0, "ext": 0.0, "height": 0.0}
         swings: list[tuple[float, float]] = []

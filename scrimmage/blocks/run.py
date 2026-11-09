@@ -104,7 +104,7 @@ when blocks are left (the outcome says so) or finished early (the robot sits, mo
 not apply. During the pause every step's HalState gets a DriverStation frame with `>enabled` false, so World.step
 neutralizes the motors and holds the pneumatics; the blocks play on, and a drive's seconds count the pause. A mark
 (kind "phase") goes into `marks` at each phase change. The result gains `match`, `points` (the score at the run's end)
-and `rules` (always [] for now).
+and `rules` (the rules broken, possession.py: [] for none).
 
 A run ends with one status: "finished" (every block played), "check failed", "timed out" (a wait until, a move, a
 drive or a turn), "tipped over" (the robot body's up axis more than TIP_DEG from vertical), "walked off" (the climb
@@ -139,12 +139,13 @@ from .grip_watch import SLIP_LOOKBACK_S
 from .match import MatchState
 from .palette import ALL_MOTORS, palette, problems
 from .placed import ON_PIECE, seated_words
+from .possession import RuleWatch
 from .program import DRIVE_TIMEOUT, DRIVE_VOLTS, MOVE_TIMEOUT, REPEAT_MAX, WAIT_TIMEOUT, Program, TestFileError
 # run_notes', run_setup's and run_words' names, used here and re-exported (other modules and the tests import them
 # from here)
 from .run_notes import (DEFAULT_GRIP_NOTE, GRIP_CONDITIONS, PNEUMATIC_ESTIMATES, air_lines,  # noqa: F401
                         clearance_lines, default_grip_note, goal_lines, piece_lines, piece_log, piece_notes,
-                        pneumatic_note, points_lines, run_notes)
+                        pneumatic_note, points_lines, rules_lines, run_notes)
 from .run_setup import (COLOR_NAMES, partner_overlap, sensor_value, setup_config, setup_partner,  # noqa: F401
                         setup_partner_words, world_for)
 from .run_words import _FailureWords, _keep_words, _recast, _v, _w, _where, _ws  # noqa: F401
@@ -204,7 +205,7 @@ class RunResult:
     # the viewer's; None for any other run (its words are in the setting it was made in)
     words: dict | None = None
     # a match (`match = true`; None for any other run): the phase times in run time (match.py's to_dict), the points
-    # (game.py's Points.to_dict) at the end or where the run stopped, and the rules broken (always [] for now)
+    # (game.py's Points.to_dict) at the end or where the run stopped, and the rules broken (possession.py)
     match: dict | None = None
     points: dict | None = None
     rules: list | None = None
@@ -284,6 +285,7 @@ class TestRun(_FailureWords):
         self.world, self.program = world, program
         self.match: MatchState | None = None        # the match's state, made when the run starts (match = true)
         self._blocks_done = False                   # a match: every block has been played, the match goes on
+        self.rule_watch: RuleWatch | None = None    # a match on a game with [game.rules]: the rules checked each step
         m = world.model
         self.motors = driven_joints(world)
         self._drive = joint_drives(world, self.motors)     # every motor on each joint
@@ -378,6 +380,8 @@ class TestRun(_FailureWords):
             rng = w.parts.range
             self.match = watch.match = MatchState(rng.game, rng.zones, watch._levels, t)
             self._see_match(t)
+            if rng.game.rules is not None:
+                self.rule_watch = RuleWatch(w, watch, rng.game.rules)
         next_signal = next_motion = t
 
         def sample(t: float) -> None:
@@ -417,6 +421,8 @@ class TestRun(_FailureWords):
                 self._track(t)
                 if self.match is not None:
                     self._see_match(t)
+                    if self.rule_watch is not None and t <= self.match.end + EPS:
+                        self.rule_watch.see(t)
                 sample(t)
                 for check, cond in list(self.throughout):
                     if not watch.holds(cond):
@@ -496,7 +502,7 @@ class TestRun(_FailureWords):
         if self.match is not None:      # the points so far at the run's end (a pause or teleop piece after it is out)
             result.match = self.match.to_dict()
             result.points = self.match.points(tr.ball_log(), at=t).to_dict()
-            result.rules = []
+            result.rules = self.rule_watch.result() if self.rule_watch is not None else []
         _keep_words(result)
         return result
 

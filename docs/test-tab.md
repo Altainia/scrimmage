@@ -682,8 +682,23 @@ match = true
 - **The result** gains a points line first: `26 points: 26 in auto, 0 in teleop, 0 in endgame`, then a line for each
   item (`8 scored in hub_blue in auto: 24 points`, `left the starting zone: 2 points`). A piece scored in the pause
   scores nothing, and its line says so. `result.json` keeps `match` (the phases' run times, whether LEAVE was earned
-  and the climb level held), `points` and `rules` (always empty for now), and only for a match. The replay's mark strip
-  has a mark at each phase change. A test that isn't a match has none of these.
+  and the climb level held), `points` and `rules` (the rules broken, empty for none), and only for a match. The
+  replay's mark strip has a mark at each phase change. A test that isn't a match has none of these.
+- **Rules.** A game with a `[game.rules]` table (the test range page lists its keys) is checked every step of the
+  match, in auto, the pause and teleop. A broken rule is reported, not enforced: the robot isn't stopped and the run
+  carries on, like a referee calling a foul.
+  - **Possession** counts the pieces the robot controls: the ones in its hopper, a stage or the launcher, plus the ones
+    it holds by contact (touching a robot part, off the floor, moving with it, as a **held** check reads it). A piece
+    it only pushes along the floor isn't controlled. More than the limit for longer than 3 s (G403's MOMENTARY) is a
+    breach, noted at the moment the count went over.
+  - **Extension and height** are the same measures `climb run` uses: how far the colliding parts reach past the frame,
+    and the robot's own height. Going over either is a breach at once.
+  - Each rule is reported once, at its first breach, with the highest value it reached; a later breach of the same rule
+    only raises that value. The result gets a line per breach after the points lines, for example `rule broken at 4.2
+    s: held 2 pieces (limit 1)` or `rule broken at 6.1 s: reached 14.1 in past the frame (limit 12 in)`, in your
+    Units. `result.json`'s `rules` lists them as `rule`, `t`, `value` and `limit` (pieces, or meters).
+  - A game with no `[game.rules]` checks nothing and costs nothing extra. Counting by contact can miss a piece wedged in
+    the frame without being lifted.
 
 One block list plays both phases: use `wait until match is in teleop` where the auto part ends and the teleop part
 begins.

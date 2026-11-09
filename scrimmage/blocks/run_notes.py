@@ -127,6 +127,26 @@ def points_lines(result: RunResult) -> list[str]:
     return lines
 
 
+def rules_lines(result: RunResult) -> list[str]:
+    """A match's broken rules as lines, one per breach, in the viewer's units: "rule broken at 4.2 s: held 2 pieces
+    (limit 1)", "rule broken at 6 s: reached 14.1 in past the frame (limit 12 in)", "rule broken at 9 s: stood 50 in
+    tall (limit 48 in)". None for a run with no breach (or no match)."""
+    lines = []
+    for b in result.rules or []:
+        p = {"t": f"{b['t']:.1f}"}
+        if b["rule"] == "possession":
+            lines.append(i18n.tn("rule broken at {t} s: held {count} piece (limit {limit})",
+                                 "rule broken at {t} s: held {count} pieces (limit {limit})", round(b["value"]),
+                                 count=f"{round(b['value'])}", limit=f"{round(b['limit'])}", **p))
+        elif b["rule"] == "extension":
+            lines.append(i18n.t("rule broken at {t} s: reached {value} past the frame (limit {limit})",
+                                value=units.fmt(b["value"], "length"), limit=units.fmt(b["limit"], "length"), **p))
+        else:
+            lines.append(i18n.t("rule broken at {t} s: stood {value} tall (limit {limit})",
+                                value=units.fmt(b["value"], "length"), limit=units.fmt(b["limit"], "length"), **p))
+    return lines
+
+
 def _climb_level(result: RunResult) -> str:
     """The climb level a match ended on (its item doesn't carry the name)."""
     return (result.match or {}).get("level") or ""
