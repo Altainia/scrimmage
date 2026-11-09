@@ -143,6 +143,8 @@ ALLOWED = {
     ('scrimmage/launcher/flight6.py', 'dt must be positive, got {}'): ASSERT,
     ('scrimmage/disc/launcher.py', "insert at t = {}, but the launcher's clock is at {}: feed at its time"): ASSERT,
     ('scrimmage/disc/launcher.py', '{} voltage(s) for {} wheel group(s); give one per group'): ASSERT,
+    ('scrimmage/launcher/pinch.py', "insert at t = {}, but the launcher's clock is at {}: feed at its time"): ASSERT,
+    ('scrimmage/launcher/pinch.py', '{} voltage(s) for {} shafts; give one per shaft'): ASSERT,
     ('scrimmage/freecad_tools.py',
      'FreeCAD not found: install FreeCAD 1.1+ or set SCRIMMAGE_FREECAD_CMD to its freecad.cmd/FreeCADCmd'):
         DEV + ' (`scrimmage freecad`, the CLI only)',

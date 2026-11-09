@@ -36,7 +36,7 @@ def _frame(world, turret: str) -> int:
     shooter = tr.shooter if tr is not None else None
     if shooter is not None:
         cfg = shooter.config
-        b = m.body(f"{cfg.part}.{'channel' if cfg.kind == 'disc' else 'base'}").id
+        b = m.body(f"{cfg.part}.{'channel' if cfg.kind in ('disc', 'piece') else 'base'}").id
         base = b
         while b > 0:
             if b == platform:

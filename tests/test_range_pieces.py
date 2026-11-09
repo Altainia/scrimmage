@@ -364,3 +364,16 @@ def test_a_centimetre_step_takes_units(tmp_path, monkeypatch):
     k = parse_kind(P, "c", {"shape": "cad", "cad": str(CAD_DATA / "climber.step"), "units": "mm", "mass": 1.0,
                             "friction": 0.4}, tmp_path)
     assert k.extent == pytest.approx(plain.extent / 10.0)
+
+
+def test_a_rigid_kind_takes_its_own_contact_stiffness():
+    """`stiffness` (N/m at one contact, in series with a wheel's tread: launcher/pinch.py) on a shape or a piece
+    preset; the 2024 NOTE's is the kickoff dry run's estimate. A ball or a disc has its own and is refused it."""
+    assert kind_preset("2024-note").stiffness == 2000.0
+    assert parse_kind(P, "t", CORAL, ROOT).stiffness is None
+    assert parse_kind(P, "t", {**CORAL, "stiffness": 500}, ROOT).stiffness == 500.0
+    assert parse_kind(P, "n", {"preset": "2024-note", "stiffness": 3000}, ROOT).stiffness == 3000.0
+    with pytest.raises(RangeError, match="stiffness must be positive"):
+        parse_kind(P, "t", {**CORAL, "stiffness": 0}, ROOT)
+    with pytest.raises(RangeError, match="stiffness is a rigid piece's contact stiffness; a ball's is its stiffness_n"):
+        parse_kind(P, "b", {"ball": "2026-fuel", "stiffness": 1000}, ROOT)

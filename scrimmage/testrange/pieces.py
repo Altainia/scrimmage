@@ -88,8 +88,11 @@ _LIE_DEG = 10.0  # a tip at or below this is lying (flat kinds: standing on edge
 
 _KIND = ("preset", "ball", "disc", "aero", "shape", "diameter", "inner_diameter", "tip_diameter", "length",
          "size", "mass", "material", "friction", "axis", "inertia", "shapes", "cad", "units", "hole", "scale",
-         "drag_coefficient", "spin_damping")
+         "drag_coefficient", "spin_damping", "stiffness")
 _AIR = ("drag_coefficient", "spin_damping")  # a rigid kind's air (launcher/rigid_aero.py), shape or piece preset
+# a rigid kind's own contact stiffness (N/m at one contact, in series with a tread: launcher/pinch.py), shape or
+# piece preset
+_RIGID_OWN = _AIR + ("stiffness",)
 _LENGTHS = ("diameter", "inner_diameter", "tip_diameter", "length", "size")
 _KIND_ALL = _KIND + tuple(k + "_in" for k in _LENGTHS) + ("label", "color")
 # The keys each shape takes beyond shape, mass, material, friction, inertia, label and color (lengths also as
@@ -344,6 +347,9 @@ class PieceKind:
     # its spin damping (N m s/rad); a ball's and a disc's air are their own
     drag_coefficient: float = DRAG_COEFFICIENT
     spin_damping: float = SPIN_DAMPING
+    # a rigid piece's own contact stiffness, N/m at one contact in series with a wheel's tread (launcher/pinch.py, the
+    # bench's rigid `stiffness`); None: hard
+    stiffness: float | None = None
 
     def __post_init__(self):
         if not self.label:
@@ -781,8 +787,11 @@ def _parse_kind(path: Path, name: str, r: _KindReader, base_dir: Path) -> PieceK
         if air:
             raise r.err(i18n.t("{key} is a rigid piece's air drag; a ball flies with the {air_table} drag and a disc "
                                "with its aero set", key=air[0], air_table="[air]"))
+        if r.has("stiffness"):
+            raise r.err(i18n.t("{key} is a rigid piece's contact stiffness; a ball's is its {ball_key} and a disc's "
+                               "its {disc_key}", key="stiffness", ball_key="stiffness_n", disc_key="rim_stiffness"))
     if source != "shape":
-        extra = [k for k in r.t if k not in (source, "aero", "label", "color") + _AIR]
+        extra = [k for k in r.t if k not in (source, "aero", "label", "color") + _RIGID_OWN]
         if extra:
             raise r.err(i18n.t("{extra} doesn't go with {source} = {raw}: a preset kind is its preset",
                                extra=extra[0], source=source, raw=repr(r.raw(source))))
@@ -842,8 +851,10 @@ def _parse_kind(path: Path, name: str, r: _KindReader, base_dir: Path) -> PieceK
 
 def _air(r: _KindReader, kind: PieceKind) -> PieceKind:
     """The kind with its own `drag_coefficient` and `spin_damping`, where the table gives them (each a number, not
-    negative: 0 is no drag, or no damping)."""
+    negative: 0 is no drag, or no damping), and its own contact `stiffness` (a positive number, N/m)."""
     given = air_given(r)
+    if r.has("stiffness"):
+        given["stiffness"] = r.num("stiffness", positive=True)
     return replace(kind, **given) if given else kind
 
 

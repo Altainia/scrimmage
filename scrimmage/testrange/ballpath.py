@@ -35,6 +35,10 @@ already spaces pieces by a diameter; a stacked hopper, spaced by the disc's thic
 the bottom disc out). The launcher's entry is busy while a disc is in the channel, so the stage pushes the next disc
 in only once the last one has left. A disc goes in at the last stage's surface speed. The robot holds DISC_CAPACITY
 discs unless [shooter.hopper] capacity says otherwise.
+
+**Rigid pieces** (a pinch shooter, `[shooter] kind = "piece"`, the 2024 NOTE) take the disc's one-lane path the same
+way, spaced by their bounding sphere's diameter (`Balls.r`), the pinch taking the next only once the last has left.
+The robot holds PIECE_CAPACITY unless [shooter.hopper] capacity says otherwise.
 """
 
 from __future__ import annotations
@@ -53,6 +57,10 @@ HOPPER, LAUNCHER = "hopper", "launcher"
 # source: 2013 FRC Game Manual §3.2.5.4, G24: "ROBOTS may not actively control more than four (4) DISCS at any one
 # time" (docs/disc.md, Sources).
 DISC_CAPACITY = 4
+# Rigid pieces the robot holds when [shooter.hopper] capacity is left out: a piece shooter's (kind = "piece").
+# estimate: one, as the pinch holds one piece and the 2024 game lets a robot control one NOTE at a time (its game
+# manual's NOTE control rule; the rule's number is not looked up here).
+PIECE_CAPACITY = 1
 # m/s: a stage whose surface is slower than this is stopped. A roller at rest isn't exactly still (the robot's motion
 # jiggles its joint by ~1e-7 m/s), and that mustn't draw balls from the hopper or creep them along.
 STOPPED_SPEED = 1e-3

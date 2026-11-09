@@ -18,6 +18,7 @@ heavy a flywheel, what wheel speed, what hood angle.
 - [Presets and their sources](#presets-and-their-sources)
 - [Results](#results)
 - [Feeding balls from your own hopper model (`FedBall`)](#feeding-balls-from-your-own-hopper-model-fedball)
+- [A face-pinch shooter for a flat piece](#a-face-pinch-shooter-for-a-flat-piece)
 - [In the world: the test range](#in-the-world-the-test-range)
 
 ## Quick start
@@ -495,6 +496,37 @@ print(result.metrics["exit_speed"], [shot.status for shot, _ in result.shots])
 - `feed.rule`, `feed.tolerance` and `feed.timeout` still apply, and so does the one-ball-at-a-time lane rule.
 
 `result.shots` is a list of `(ExitedBall, Landing or None)`; `result.trace` is the wheel's speed against time.
+
+## A face-pinch shooter for a flat piece
+
+`scrimmage/launcher/pinch.py` is a second, smaller model for a flat rigid piece, such as the 2024 NOTE, shot by a
+top and a bottom wheel that squeeze its two faces. The test range runs it for a stock `pinch_shooter` part with
+`[shooter] kind = "piece"` ([docs/test-range.md](test-range.md#a-piece-shooter-a-note)); it has no stand-alone
+command or setup file.
+
+- **Planar, in the launch plane.** The piece is a rigid slab: its thickness is its thinnest side (what the wheels
+  squeeze), its length the next side (along the path). It moves along the channel's center line and spins in pitch;
+  its pitch angle isn't followed (the squeeze holds the faces flat for the tens of milliseconds it takes).
+- **The squeeze** is the piece's thickness less the `gap`, shared by the two contacts. Each contact is the tread's
+  stiffness (from its durometer, over the narrower of the wheel and the piece) in series with the piece's own
+  `stiffness` (N/m at one contact, the bench's meaning), critically damped. Where a wheel meets the piece's leading or
+  trailing corner, the contact is a wedge that holds the piece back on the way in and pushes it out at the end.
+- **Friction** is the tread's `friction`, against each face, as the hood-wrap model's. Each wheel is its own shaft on
+  its own motors. Equal wheels at equal speeds give no spin; a faster bottom wheel gives backspin and a faster top
+  wheel topspin, but only while the slower wheel grips: with both faces sliding, the two wheels' friction is equal and
+  opposite about the piece's middle.
+- **Outputs**: the exit speed, the pitch spin (backspin positive), the wheels' slip under the piece as it left, each
+  shaft's speed drop, and an energy ledger that closes (the shafts' work and the entry's energy against the exit's,
+  the slip and the damping).
+- **Refusals and stops.** A gap no narrower than the piece doesn't grip ("no_contact", in words); a piece that stops
+  moving between the wheels for 0.5 s is "jammed" (a hard piece squeezed by rubber alone, or wheels too slow to pull
+  it in). Gravity along a tilted channel is left out, as the disc launcher does.
+- **Against the bench.** The bench's MuJoCo contact on the same geometry (the kickoff dry run's `note_shooter.toml`:
+  4 in. wheels, a 1.25 in. gap, 60 rps, the NOTE at 2000 N/m) doesn't agree yet: the model gives 9.6 m/s, the bench
+  4.6 m/s with the ring NOTE and 12.8 m/s with a solid disc in its place. The bench counts a rigid piece's stiffness
+  at each MuJoCo contact point, and makes 8 per wheel on the ring (2 on the disc), so it squeezes harder than its
+  `stiffness` says; held still, each of its contact points carries the model's force. Until a squeeze test of a real
+  NOTE settles it, treat both as estimates (`tests/test_pinch_launcher.py`).
 
 ## In the world: the test range
 

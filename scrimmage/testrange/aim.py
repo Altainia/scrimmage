@@ -23,6 +23,15 @@ its scoring surface instead (the "surface" functions below; a level goal, the hu
   back down through the center's height. Where a path passes the center's height in the entry direction, going up
   or coming down, is that angle's crossing curve: the distance that path would score from. A distance is bracketed
   on the grid (so a narrow window, or a curve that turns back, is found) and solved by regula falsi.
+
+A rigid piece from a pinch shooter (`[shooter] kind = "piece"`, the 2024 NOTE) is aimed the same surface way, with
+the channel's tilt in place of the hood angle and both wheels at the row's wheel speed (no spin):
+- its path is the pinch model's exit (launcher/pinch.py, `single_shot`, the wheels held at the speed by the same
+  velocity loop, the piece fed at the pinch's entry speed) flown by launcher/flight6.py with its drag
+  (launcher/rigid_aero.py), leaving face-parallel to the channel, the frame's origin on the floor below the channel
+  body's origin;
+- its verdict is goal_fit.fit on the flight, its bounding box's corners turned as it flies (goal_fit.kind_corners).
+A level goal (the hub, entered going down) is refused for it: that path is the ball launcher's own.
 """
 
 from __future__ import annotations
@@ -38,11 +47,16 @@ import numpy as np
 
 from .. import i18n
 from ..config import load_config
+from ..disc.flight import quat_from_matrix
+from ..launcher import flight6, rigid_aero
 from ..launcher.flight import Landing, fly, fly_path, launch_state
 from ..launcher.inputs import Setup
+from ..launcher.pinch import PinchSetup, single_shot
 from ..launcher.single import single_pass
 from ..parts.assemble import assemble
+from . import goal_fit
 from .goal_fit import field_boxes, fit_ball
+from .pieces import PieceKind
 from .shooter import parse_shooter
 from .spec import Goal
 
@@ -72,6 +86,18 @@ class AimRow:
 
 
 @dataclass(frozen=True)
+class PieceShot:
+    """A pinch shooter's numbers for its aim: the pinch model's inputs, the range kind it shoots, the piece's body
+    frame in the channel's (pinch.channel_turn), the channel origin's height above the floor at the start pose and the
+    air's density."""
+    pinch: PinchSetup
+    kind: PieceKind
+    turn: np.ndarray
+    height: float
+    density: float
+
+
+@dataclass(frozen=True)
 class AimModel:
     """What a table is made from: the launcher's setup (its height the shaft's), the lane the ball is fed at, the
     goal's rim height and the launcher's forward offset from the robot center."""
@@ -82,6 +108,7 @@ class AimModel:
     hood_angles: tuple[float, ...]    # the angles tried: one for a fixed hood
     goal: Goal | None = None          # the goal, aimed at its scoring surface when it isn't level (tilt_deg not 0)
     boxes: tuple = dataclasses.field(default=(), compare=False)   # goal_fit.field_boxes: what a shot can hit
+    piece: PieceShot | None = dataclasses.field(default=None, compare=False)    # a pinch shooter's, else None
 
     @property
     def level(self) -> bool:
@@ -90,8 +117,12 @@ class AimModel:
 
 
 def calibration(model: AimModel) -> str:
-    """The table's UNCALIBRATED line: what its setup measured (the range's ball, the shooter's setup file)."""
+    """The table's UNCALIBRATED line: what its setup measured (the range's ball, the shooter's setup file); a pinch
+    shooter's rests on the piece's stiffness and the tread's friction, estimates."""
     from ..launcher import report
+    if model.piece is not None:
+        from ..measure import labels
+        return labels.line({}, labels.RIGID_BENCH) + "."
     return report.calibration([model.setup])
 
 
@@ -119,26 +150,42 @@ def load_model(config_path: Path, goal: str, hood_step_deg: float = 2.0) -> AimM
         raise AimError(i18n.t("goal {goal} isn't in range {name}; its goals: {goals}",
                               goal=repr(goal), name=repr(built.range.name), goals=', '.join(goals)))
     g = goals[goal]
+    piece = shooter.kind == "piece"
+    if piece and g.tilt_deg == 0.0:
+        raise AimError(i18n.t("{config_path}: {shooter_table} {kind_setting}: a pinch shooter's table aims through a "
+                              "goal's opening that isn't level (such as a SPEAKER or an AMP); {goal} is level, "
+                              "entered going down from above, and that table is made from a ball launcher",
+                              config_path=config_path, shooter_table="[shooter]", kind_setting="kind = \"piece\"",
+                              goal=repr(goal)))
 
     m = built.model
     data = mujoco.MjData(m)
     mujoco.mj_kinematics(m, data)
     robot, base = m.body(built.robot_body).id, m.body(f"{shooter.part}.base").id
-    local = data.xmat[robot].reshape(3, 3).T @ (data.xpos[base] - data.xpos[robot])
+    # the frame's origin: the launcher's shaft, or the pinch shooter's channel origin (where the fed piece starts)
+    origin = m.body(f"{shooter.part}.channel").id if piece else base
+    local = data.xmat[robot].reshape(3, 3).T @ (data.xpos[origin] - data.xpos[robot])
     facing = data.xmat[robot].reshape(3, 3).T @ data.xmat[base].reshape(3, 3)[:, 0]   # launcher x in the robot frame
     if facing[0] <= 0.0:
         raise AimError(i18n.t("the launcher part {part} faces backward (its x axis points {facing} along the "
                               "robot's): the table assumes it shoots where the robot faces",
                               part=repr(shooter.part), facing=f"{facing[0]:+.2f}"))
 
-    if shooter.hood == "fixed":
-        angles = (shooter.hood_angle,)
+    if piece:
+        fixed, fixed_angle, (lo, hi) = shooter.tilt == "fixed", shooter.tilt_angle, shooter.tilt_range
     else:
-        lo, hi = shooter.hood_range
+        fixed, fixed_angle, (lo, hi) = shooter.hood == "fixed", shooter.hood_angle, shooter.hood_range
+    if fixed:
+        angles = (fixed_angle,)
+    else:
         angles = tuple(lo + k * hood_step_deg for k in range(int(math.floor((hi - lo) / hood_step_deg + 1e-9)) + 1))
-    return AimModel(setup=shooter.setup, lane=min(shooter.lanes, key=abs), rim_height=g.rim_height,
-                    forward=float(local[0]), hood_angles=angles, goal=g,
-                    boxes=() if g.tilt_deg == 0.0 else field_boxes(built.range))
+    shot = None
+    if piece:
+        shot = PieceShot(pinch=shooter.setup, kind=built.range.kinds[shooter.piece], turn=np.array(shooter.turn),
+                         height=max(0.0, float(data.xpos[origin][2])), density=shooter.air.density)
+    return AimModel(setup=None if piece else shooter.setup, lane=min(shooter.lanes, key=abs),
+                    rim_height=g.rim_height, forward=float(local[0]), hood_angles=angles, goal=g,
+                    boxes=() if g.tilt_deg == 0.0 else field_boxes(built.range), piece=shot)
 
 
 def _setup(model: AimModel, hood_deg: float, distance: float) -> Setup:
@@ -236,7 +283,7 @@ def aim_table(config_path: Path, goal: str, distances: list[float], *, hood_step
         raise AimError(i18n.t("no distances"))
     if model is None:
         model = load_model(config_path, goal, hood_step_deg)
-    surface = None if model.level else _SurfaceAim(model)
+    surface = None if model.level else surface_aim(model)
     rows = []
     previous = None     # the last reachable row
     for d in distances:
@@ -324,7 +371,8 @@ class _SurfaceAim:
         self.height = float(self.surface.center[2])
         self.ahead = float((self.surface.center[:2] - np.array(g.pos)) @ self.toward[:2])
         self.upward = bool(n[2] < 0.0)
-        self.radius = model.setup.ball.diameter / 2.0
+        # the ball's radius; a rigid piece's bounding sphere's (where its path may stop below the center's height)
+        self.radius = model.setup.ball.diameter / 2.0 if model.piece is None else model.piece.kind.radius
         self._paths: dict[tuple[float, float], np.ndarray | None] = {}
         self._crossings: dict[tuple[float, float], dict[str, tuple[float, float]]] = {}
         self._curves: dict[tuple[float, float, float], list[float]] = {}
@@ -391,10 +439,15 @@ class _SurfaceAim:
         miss -= (miss @ self.left) * self.left
         if np.linalg.norm(miss) > HIT_TOLERANCE:
             return None
-        if not fit_ball(pts[:k + 1], at, s, self.model.goal.name, self.model.boxes, self.radius).scored:
-            return None
         t = float(p[k, 0] + f * (p[k + 1, 0] - p[k, 0]))
+        if not self.fits(p, pts, k, t, at):
+            return None
         return AimRow(distance, rps, hood_deg, t, float(p[:, 3].max()))    # the apex as if it flew on, as the hub's
+
+    def fits(self, p: np.ndarray, pts: np.ndarray, k: int, t: float, at: np.ndarray) -> bool:
+        """Does the shot score: goal_fit.fit_ball on its centers up to the crossing (`pts`, on the field; it crosses at
+        `at`, time t, between samples k and k + 1)."""
+        return fit_ball(pts[:k + 1], at, self.surface, self.model.goal.name, self.model.boxes, self.radius).scored
 
     def curve(self, hood_deg: float, rps_range: tuple[float, float]) -> list[float]:
         """The wheel speeds an angle's crossing curve is sampled at, whatever the distance: the coarse grid, plus
@@ -457,12 +510,102 @@ class _SurfaceAim:
         return [row for a in self.model.hood_angles for row in self.solve(a, distance, rps_range)]
 
 
+class _PieceAim(_SurfaceAim):
+    """A pinch shooter's rigid piece aimed at a non-level goal (the module docstring): its path is the pinch model's
+    exit flown by flight6, and its verdict goal_fit.fit; the rest is the surface aim's."""
+
+    def __init__(self, model: AimModel):
+        super().__init__(model)
+        self._shots: dict[float, object] = {}
+
+    def exit(self, hood_deg: float, rps: float):
+        """The pinch's exit at this tilt with both wheels at rps, in the launcher frame (x forward, y left, z up, the
+        origin on the floor below the channel origin): (pos, vel, quat, omega_body), or None if it doesn't leave. The
+        pinch's pass doesn't depend on the tilt (it leaves gravity out), so each wheel speed's is run once."""
+        pc = self.model.piece
+        if rps not in self._shots:
+            self._shots[rps] = single_shot(pc.pinch, (rps, rps), kP=AIM_KP)
+        shot = self._shots[rps]
+        if shot is None or shot.status != "launched":
+            return None
+        a = math.radians(hood_deg)
+        chan = np.array([[math.cos(a), 0.0, -math.sin(a)], [0.0, 1.0, 0.0], [math.sin(a), 0.0, math.cos(a)]])
+        body = chan @ pc.turn
+        pos = np.array([0.0, 0.0, pc.height]) + shot.exit_x * chan[:, 0]
+        omega = body.T @ (-shot.spin * chan[:, 1])          # backspin about the channel's -y, in the body frame
+        return pos, shot.speed * chan[:, 0], quat_from_matrix(body), omega
+
+    def fly(self, pos, vel, quat, omega, **kw) -> flight6.Flight6Result:
+        pc = self.model.piece
+        i = pc.kind.inertia
+        inertia = np.array([[i[0], i[3], i[4]], [i[3], i[1], i[5]], [i[4], i[5], i[2]]])
+        return flight6.fly(pos, vel, quat, omega, pc.kind.mass, inertia, rigid_aero.force_fn(pc.kind, pc.density),
+                           **kw)
+
+    def path(self, hood_deg: float, rps: float) -> np.ndarray | None:
+        """The piece's path for this tilt and wheel speed: flight6's samples' (t, pos, vel, quat) columns, in the
+        launcher frame (the first seven as the ball's), flown until it is back down a bounding radius below the
+        surface center's height; None if it doesn't leave the pinch."""
+        key = (hood_deg, rps)
+        if key not in self._paths:
+            state = self.exit(hood_deg, rps)
+            below = self.height - self.radius
+            self._paths[key] = None if state is None else self.fly(
+                *state, until=lambda pos, prev: pos[2] < prev[2] and pos[2] < below).samples[:, :11]
+        return self._paths[key]
+
+    def fits(self, p: np.ndarray, pts: np.ndarray, k: int, t: float, at: np.ndarray) -> bool:
+        """goal_fit.fit on the flight up to the crossing, on the field, its corners turned as the piece flies."""
+        n = k + 2
+        frame = np.column_stack([self.forward_axis, self.left, [0.0, 0.0, 1.0]])
+        quats = _quat_mul(quat_from_matrix(frame), p[:n, 7:11])
+        samples = np.zeros((n, 14))
+        samples[:, flight6.T], samples[:, flight6.POS], samples[:, flight6.QUAT] = p[:n, 0], pts[:n], quats
+        samples[:, flight6.VEL] = p[:n, 4:7] @ frame.T
+        res = flight6.Flight6Result(samples=samples, landing=None, crossing=(self.model.goal.name, t, at),
+                                    stopped="until", apex=float(p[:, 3].max()), flight_time=float(p[n - 1, 0]))
+        return goal_fit.fit(res, self.surface, self.model.goal.name, self.model.boxes,
+                            goal_fit.kind_corners(self.model.piece.kind)).scored
+
+
+def _quat_mul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """The quaternion product a (x) b, a one (4,) and b (n, 4), each (w, x, y, z)."""
+    aw, ax, ay, az = a
+    bw, bx, by, bz = b[:, 0], b[:, 1], b[:, 2], b[:, 3]
+    return np.column_stack([aw * bw - ax * bx - ay * by - az * bz, aw * bx + ax * bw + ay * bz - az * by,
+                            aw * by - ax * bz + ay * bw + az * bx, aw * bz + ax * by - ay * bx + az * bw])
+
+
+def surface_aim(model: AimModel) -> _SurfaceAim:
+    """The surface aim for a non-level goal: a ball launcher's, or a pinch shooter's piece's."""
+    return _SurfaceAim(model) if model.piece is None else _PieceAim(model)
+
+
+def piece_flight(model: AimModel, row: AimRow) -> flight6.Flight6Result:
+    """A pinch shooter's row's shot flown again by flight6 on the field (from the pinch's exit at the row's tilt and
+    wheel speed, the robot `row.distance` from the goal on its approach line), through the goal's scoring surface to
+    the floor: the flight goal_fit.fit judges."""
+    if model.piece is None:
+        raise AimError(i18n.t("{piece_flight} flies a pinch shooter's piece; a ball's row is flown by {surface_path}",
+                              piece_flight="piece_flight", surface_path="surface_path"))
+    aim = _PieceAim(model)
+    state = aim.exit(row.hood_deg, row.wheel_rps)
+    if state is None:
+        raise AimError(i18n.t("the shot at {distance} m does not leave the launcher", distance=f"{row.distance:g}"))
+    pos, vel, quat, omega = state
+    g = model.goal
+    frame = np.column_stack([aim.forward_axis, aim.left, [0.0, 0.0, 1.0]])
+    origin = np.array([g.pos[0], g.pos[1], 0.0]) + (row.distance - model.forward) * aim.toward
+    return aim.fly(origin + frame @ pos, frame @ vel, quat_from_matrix(frame @ flight6.matrix_from_quat(quat)), omega,
+                   floor=0.0, goals=((g.name, aim.surface),))
+
+
 def surface_path(model: AimModel, row: AimRow) -> np.ndarray:
-    """A non-level goal's row's shot: rows of (t, x, y, z) on the field, from the exit until the ball is back down a
-    radius below the surface center's height (or on the floor)."""
+    """A non-level goal's row's shot: rows of (t, x, y, z) on the field, from the exit until the ball (or piece) is
+    back down a radius below the surface center's height (or on the floor)."""
     if model.level:
         raise AimError(i18n.t("a level goal's rows are flown by {fly_row}", fly_row="fly_row"))
-    aim = _SurfaceAim(model)
+    aim = surface_aim(model)
     p = aim.path(row.hood_deg, row.wheel_rps)
     if p is None:
         raise AimError(i18n.t("the shot at {distance} m does not leave the launcher", distance=f"{row.distance:g}"))

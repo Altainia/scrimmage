@@ -449,15 +449,16 @@ def kind_geoms(spec: mujoco.MjSpec, kind: PieceKind, prefix: str) -> list[dict]:
 
 
 def _capacity(cfg: dict) -> int | None:
-    """[shooter] hopper capacity (the balls the whole robot holds; a disc shooter's default is DISC_CAPACITY), or None
-    without a [shooter]."""
+    """[shooter] hopper capacity (the balls the whole robot holds; a disc shooter's default is DISC_CAPACITY, a piece
+    shooter's PIECE_CAPACITY), or None without a [shooter]."""
     from ..parts.model import PartError
     shooter = cfg.get("shooter")
     if shooter is None:
         return None
-    from .ballpath import DISC_CAPACITY
+    from .ballpath import DISC_CAPACITY, PIECE_CAPACITY
     hopper = shooter.get("hopper", {}) if isinstance(shooter, dict) else None
-    default = DISC_CAPACITY if isinstance(shooter, dict) and shooter.get("kind") == "disc" else 0
+    kind = shooter.get("kind") if isinstance(shooter, dict) else None
+    default = DISC_CAPACITY if kind == "disc" else PIECE_CAPACITY if kind == "piece" else 0
     cap = hopper.get("capacity", default) if isinstance(hopper, dict) else None
     if isinstance(cap, bool) or not isinstance(cap, int) or cap < 0:
         raise PartError(i18n.t("{shooter_table} hopper capacity must be a whole number of balls, not {cap}",

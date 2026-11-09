@@ -16,6 +16,7 @@ hood and the ball's squeeze are that model, and the range adds a world around it
 - [`[shooter]`](#shooter)
 - [The launcher part](#the-launcher-part)
 - [A disc shooter](#a-disc-shooter)
+- [A piece shooter (a NOTE)](#a-piece-shooter-a-note)
 - [Lanes, stages, the hopper and the intake](#lanes-stages-the-hopper-and-the-intake)
 - [Beam breaks](#beam-breaks)
 - [Balls in the world](#balls-in-the-world)
@@ -314,7 +315,63 @@ diameter: it must be the range's disc's). The range gives the disc and its aerod
   (counter-clockwise from above for wheels on the right), plus the robot's motion; it ignores its robot for 0.15 s
   as a ball does. Its log's `hood_deg` is the tilt and `spin_rpm` is signed. The same voltages give the standalone
   model's exit speed and spin (`tests/test_range_disc_shooter.py`).
-- `scrimmage launcher aim` makes tables for ball launchers only; for a disc shooter use `scrimmage disc table`.
+- `scrimmage launcher aim` makes tables for ball launchers and piece shooters; for a disc shooter use
+  `scrimmage disc table`.
+
+## A piece shooter (a NOTE)
+
+On a range whose piece is a flat rigid piece, such as the 2024 NOTE, `[shooter] kind = "piece"` runs a stock
+`pinch_shooter` part with the pinch model of [docs/launcher.md](launcher.md#a-face-pinch-shooter-for-a-flat-piece):
+a top and a bottom wheel squeeze the piece's two faces and drive it out. `piece` names the range's kind it shoots.
+
+```toml
+[[part]]
+name = "shooter"
+stock = "pinch_shooter"       # defaults: 4 in. top and bottom wheels, 14 in. wide, a 1.25 in. gap, a fixed 45 degree
+attach = "drive.top"          # channel
+pos = [-0.1, 0.0, 0.3]
+ids = { bottom = "PWM:2", top = "PWM:3" }
+
+[shooter]
+kind = "piece"
+part = "shooter"
+piece = "note"                # the range's [piece.note]
+wheels = { preset = "60A" }   # the tread: a [wheels.*] preset, or durometer and friction
+[[shooter.stage]]             # at least one stage pushes the piece in
+name = "loader"
+part = "loader"
+path_length = 0.30
+```
+
+`[shooter]` for a piece shooter takes `part`, `piece`, `[wheels]` (`preset`, `durometer`, `friction`), `[air]` (the
+launcher's, for the flight) and the same `[hopper]`, `[[stage]]`, `[intake]` and `[[beam_break]]` as a ball shooter.
+There are no `lanes` and no `setup` file. The part gives the wheels (`bottom_diameter`, `top_diameter`,
+`wheel_width`, the `gap` between their surfaces, `wheel_x`: how far downrange of the fed piece's middle their axles
+stand), each wheel's shaft (slots `bottom` and `top`, each with `wheel_moi`, a flywheel `added_moi`, `motor`, `count`
+and `gearing`) and the channel's `tilt` (as the disc shooter's: `tilt_angle`, or `tilt_range` on a motor). The range
+gives the piece: its thinnest side is the thickness the wheels squeeze, its next side its length along the path, and
+its own `stiffness` (N/m, at one contact; the 2024 NOTE preset's 2000 is an estimate) is in series with the tread.
+
+These are refused, each in words: `kind = "piece"` in a part that isn't a `pinch_shooter`; a `piece` the range
+doesn't have, or one that is a ball or a disc (they have their own shooters); a piece the robot can't hold (on a
+range with a ball, the robot holds the ball); a `gap` no narrower than the piece's thickness (the wheels can't grip
+it); and a `wheel_x` that puts the piece between the wheels before it is fed.
+
+- **The hopper.** A robot holds 1 piece unless `[hopper] capacity` says otherwise (an estimate: the pinch holds one,
+  and the 2024 game lets a robot control one NOTE at a time). The piece takes the disc's one-lane path, spaced by its
+  bounding sphere's diameter, and is pushed into the pinch when it is clear, at the stage's surface speed.
+- **In the world.** Each wheel's shaft is run by the model on the shared battery, as the disc shooter's groups, and
+  its `spin0` (bottom) or `spin1` (top) joint mirrors it. A launched piece leaves from its center's exit point along
+  the channel's x, at the model's exit speed, lying face-parallel to the channel (its faces across the gap, as it
+  lay between the wheels), with its pitch spin as backspin about the channel's -y (none for equal wheels at equal
+  speeds), plus the robot's motion; it ignores its robot for 0.15 s and flies with its drag
+  (*A rigid piece in the air*, below). Its log's `hood_deg` is the tilt, `spin_rpm` its backspin
+  and `exit_slip` the wheels' slip under it as it left (`tests/test_range_piece_shooter.py`).
+- **Aiming.** `scrimmage launcher aim` aims a piece shooter at a goal that isn't level (a SPEAKER, an AMP), with the
+  tilt in place of the hood angle and both wheels at the row's wheel speed: its exit is the pinch model's, its flight
+  the rigid piece's, and a row scores only if all of the piece fits through the opening without touching anything
+  first. A level goal is refused (its table is a ball launcher's). It is slower than a ball's table: about 15 s for 3
+  SPEAKER distances at 7 tilts, 35 s for 5 at 16.
 
 ## Lanes, stages, the hopper and the intake
 
@@ -637,8 +694,9 @@ default kind (a goal's, the first ball or disc kind).
   (a field of rigid pieces only) its first kind. A piece scores when its center crosses the scoring surface, as a ball
   does, so a ring can count with its rim over the edge of the opening; the rim bars collide, so this is rare. A funnel
   throat no wider than a rigid piece's thinnest side is an error; one narrower than its middle side is a warning, as
-  the piece may pass only on edge. Shooting stays ball and disc only: the `[shooter]` ball path and its launcher never
-  take a non-ball piece. Pieces that aren't balls are moved only by contact with the student's mechanism.
+  the piece may pass only on edge. The `[shooter]` shoots balls, discs and, with a `pinch_shooter`, a flat rigid piece
+  such as the NOTE ([a piece shooter](#a-piece-shooter-a-note)); other pieces are moved only by contact with the
+  student's mechanism.
 
 **Words for how a piece lies.** The Test tab and the floor spread's results name how a piece lies from its tip and
 turn. Tipped up 80 degrees or more: "standing on end" (for a flat kind, "lying flat"). Tipped up 10 or less: "lying
@@ -1067,6 +1125,14 @@ wall) is aimed at its **scoring surface** instead. A level goal such as the hub 
   flown once, on a coarse wheel-speed grid, and only until they're back down past the opening's height.
 - The ball still flies unobstructed after it crosses: what it hits inside the goal isn't modeled.
 
+**A piece shooter** (`[shooter] kind = "piece"`, [above](#a-piece-shooter-a-note)) is aimed the same way at a goal
+that isn't level, its channel's tilt in place of the hood angle (`--hood-step` steps the tilt) and both wheels at
+`wheel_rps`. Its shot is the pinch model's exit, flown as a rigid piece with its drag and its orientation, and a row
+scores only if all of the piece fits through the opening at the crossing (its bounding box's corners, turned as it
+flies) and nothing touches an obstacle first. Its line names the piece's stiffness and the tread's friction as the
+estimates. A level goal (the hub) is refused for it. It takes longer than a ball's: about 15 s for 3 SPEAKER
+distances with 7 tilts, 35 s for 5 with 16.
+
 Robot code should **hold fire beyond the table's reach** rather than clamp to its last row; the sample does.
 
 ## The fast-mode sample's autos
@@ -1091,9 +1157,8 @@ by `SCRIMMAGE_AUTO`; they run on `configs/fastmode_range.toml` (fast mode) and `
 - **Ball-to-ball compression.** Balls are rigid spheres with a soft contact; a ball does not squash in the hopper.
 - **Squishy pieces.** The 2023 cube, the 2024 note and other soft pieces (inflated tubes, foam) are rigid stand-ins of
   the right size and weight: they don't squash or grip back. Soft pieces are a later project (survey project 5).
-- **Shooting pieces that aren't balls.** The `[shooter]`, the launcher model and goals that count pieces passing an
-  opening stay ball and disc only. A coral, a cone or a tote moves only by contact with the mechanism you test, and a
-  goal that names one is an error.
+- **Shooting pieces that aren't balls.** The `[shooter]` shoots balls, discs and flat rigid pieces (a pinch shooter,
+  the 2024 NOTE). A coral, a cone or a tote moves only by contact with the mechanism you test.
 - **Calibration.** Nothing here is calibrated: the ball's stiffness, the wheel's friction, a piece's surface and a pad's grip, and the carpet's rolling
   resistance are estimates until you measure your own. See [measuring.md](measuring.md) for the ball, the wheel, a
   piece's surface and a pad (the carpet's rolling resistance has no test there yet).
