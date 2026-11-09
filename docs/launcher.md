@@ -521,6 +521,9 @@ command or setup file.
 - **Refusals and stops.** A gap no narrower than the piece doesn't grip ("no_contact", in words); a piece that stops
   moving between the wheels for 0.5 s is "jammed" (a hard piece squeezed by rubber alone, or wheels too slow to pull
   it in). Gravity along a tilted channel is left out, as the disc launcher does.
+- **In the world.** On the built-in `2024` range a NOTE from a `pinch_shooter` scores in the SPEAKER and the AMP
+  ([`examples/blocks/speaker`](../examples/blocks/speaker/README.md)). The exit speed itself is the model's, not yet
+  checked against the bench (below), so a shot's wheel speed is an estimate.
 - **Against the bench.** The bench's MuJoCo contact on the same geometry (the kickoff dry run's `note_shooter.toml`:
   4 in. wheels, a 1.25 in. gap, 60 rps, the NOTE at 2000 N/m) doesn't agree yet: the model gives 9.6 m/s, the bench
   4.6 m/s with the ring NOTE and 12.8 m/s with a solid disc in its place. The bench counts a rigid piece's stiffness
@@ -560,5 +563,7 @@ scrimmage launcher aim CONFIG --goal hub_blue --distances 1.5:6.0:0.25 --csv aim
 ```
 
 Unreachable distances are marked in the output and warned about; each row follows the previous row's solution so the
-table interpolates smoothly. Options, the Java output and what it assumes are in [the test range
+table interpolates smoothly. A [pinch shooter](#a-face-pinch-shooter-for-a-flat-piece)'s table aims a NOTE through a
+goal that isn't level, such as the built-in `2024` range's `speaker_blue`, its channel's tilt in place of the hood.
+Options, the Java output and what it assumes are in [the test range
 doc](test-range.md#aiming-tables-scrimmage-launcher-aim).

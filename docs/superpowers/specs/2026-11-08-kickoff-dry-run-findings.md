@@ -175,6 +175,21 @@ Severity: **B** = blocker, **W** = workaround exists, **N** = nice-to-have. Size
      - give `[shooter]` a non-ball launch: exit velocity and spin from a pinch model, then rigid-body flight with drag (L)
      - bench flight for rigid pieces (M)
    - Docs: test-range.md "What isn't modeled" says so, but nothing tells a 2024 team up front.
+   - **K2 status (2026-11-09).** What works now:
+     - goals count any kind, and the built-in `2024` range's SPEAKERS and AMPS count NOTEs;
+     - a stock `pinch_shooter` with `[shooter] kind = "piece"` shoots a NOTE in the world, from an analytic pinch
+       model (`scrimmage/launcher/pinch.py`), and the NOTE flies as a rigid body with drag;
+     - the bench flies a NOTE in `[flight]` and scores it against a range goal (all of the NOTE must fit through);
+     - `examples/blocks/speaker`: a NOTE from the SUBWOOFER scores in the blue SPEAKER, and an AMP shot scores
+       (`tests/test_range_2024.py`).
+   - What doesn't work yet:
+     - a soft NOTE is K5: it is still a rigid stand-in that doesn't squash in the pinch or on the rim (gap 3);
+     - lift isn't modeled, so a flat, backspun NOTE that would glide comes up short;
+     - the pinch exit speed isn't validated against the bench yet. The bench applies a rigid piece's stiffness at each
+       of its MuJoCo contact points (8 per wheel on the ring), so it squeezes harder than its `stiffness` says. That
+       fix is queued after K2, and a strict xfail (`tests/test_pinch_launcher.py::test_exit_speed_against_the_bench`)
+       pins it;
+     - a field with both balls and NOTEs can't shoot NOTEs (the robot holds the ball).
 
 2. **Goals can only score downward entries (tilt 0–90).** — **B** (W with a hack), S
    - Needed: the SPEAKER opening, entered going up (M 5.6, 14° plane).
@@ -248,6 +263,20 @@ Severity: **B** = blocker, **W** = workaround exists, **N** = nice-to-have. Size
     - For the SPEAKER it put the apex at 2.8 m, over the hood roof. None of its rows scored.
     - It also took 2 min 24 s for 5 distances.
     - Fix: aim at the goal's scoring surface with its entry direction, and model the rim and plates.
+    - **K2 status (2026-11-09).** What works now:
+      - `launcher aim` aims at a goal's scoring surface from its entry side: going up through the SPEAKER, under the
+        hood, which is an `[[obstacle]]`;
+      - a ball's 5 SPEAKER distances take about 10 s (it was 2 min 24 s);
+      - a pinch shooter's NOTE table is checked with all of the NOTE through the opening and nothing hit first. Its
+        rows must peak at least 0.10 m above the opening's center (`UPWARD_APEX_MARGIN`). Flown again in the world
+        with the wheels 2% off, 21 of 21 shots scored with the margin, and 9 of 24 without it: the lowest arcs
+        crossed flat and caught the front lip. The cost: the slowest shots and the farthest distance (2.57 m) are gone.
+    - What doesn't work yet:
+      - a NOTE table takes about a minute (21 tilts, 8 distances);
+      - the rows rest on the unvalidated pinch exit speed and on drag with no lift (gap 1);
+      - before the crossing, a NOTE is checked against its goal's own rim bars by its center only, so the margin is
+        what keeps its corners off the lip;
+      - a ball's SPEAKER rows keep the lowest-apex rule with no margin, and aren't flown in the world.
 
 13. **"Piece in body" = center inside the bounding box: an open-bottom intake "picks up" a NOTE it just drove over.**
     - **N/W**, S

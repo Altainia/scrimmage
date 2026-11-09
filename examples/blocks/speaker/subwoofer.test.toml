@@ -1,0 +1,36 @@
+[test]
+robot = "note-shooter-standin.toml"
+chart = ["shooter.spin0", "shooter.spin1", "shooter.tilt"]
+
+[[block]]
+do = "move"
+joint = "shooter.tilt"
+to = 30.0
+unit = "deg"
+
+[[block]]
+do = "spin"
+motor = "shooter.spin0"
+volts = 2.8
+
+[[block]]
+do = "spin"
+motor = "shooter.spin1"
+volts = 2.8
+
+[[block]]
+do = "wait"
+seconds = 1.0
+
+[[block]]
+do = "spin"
+motor = "loader.spin"
+volts = 8.0
+
+[[block]]
+do = "wait"
+seconds = 1.5
+
+[[block]]
+do = "expect"
+that = { scored = { goal = "speaker_blue", at_least = 1 } }

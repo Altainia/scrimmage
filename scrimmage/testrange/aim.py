@@ -30,7 +30,9 @@ the channel's tilt in place of the hood angle and both wheels at the row's wheel
   velocity loop, the piece fed at the pinch's entry speed) flown by launcher/flight6.py with its drag
   (launcher/rigid_aero.py), leaving face-parallel to the channel, the frame's origin on the floor below the channel
   body's origin;
-- its verdict is goal_fit.fit on the flight, its bounding box's corners turned as it flies (goal_fit.kind_corners).
+- its verdict is goal_fit.fit on the flight, its bounding box's corners turned as it flies (goal_fit.kind_corners);
+- at a goal entered going up, its rows peak at least UPWARD_APEX_MARGIN above the opening's center, so it is still
+  rising as it crosses (a flat crossing at its apex catches the opening's front lip in the world).
 A level goal (the hub, entered going down) is refused for it: that path is the ball launcher's own.
 """
 
@@ -69,6 +71,14 @@ GRID_RPS = 10.0         # rps between a surface aim's coarse grid of wheel speed
 OFFSET_TOLERANCE = 0.002    # m: a surface aim's regula falsi stops this close to the target distance
 APEX_TOLERANCE = 1e-4       # m: and this close to the apex that just reaches the surface center's height
 NORMAL_SPEED_TOLERANCE = 1e-3   # m/s: and this close to a crossing along the surface (no speed along its normal)
+# estimate: a rigid piece aimed at a goal entered going up (a NOTE at the 2024 SPEAKER) takes a row only if its apex
+# is at least this far above the opening's center, so the piece is still rising as it crosses. Flown again in the
+# world (the 2024 range, a pinch shooter's NOTE, 2026-11-09), every row that peaked within about 0.05 m of the center
+# caught the opening's front lip, at its wheel speed or 2% off it, and every row 0.11 m or more above it scored at
+# -2%, 0 and +2%. The cost: the flattest shots, the slowest wheels and the longest distances are no longer offered
+# (examples/blocks/speaker's table reached 2.57 m without it, 2.37 m with it). A ball's rows are unchanged (not flown
+# in the world; the margin cost tests/test_aim_upward.py's ball launcher its 2.5 and 3 m rows).
+UPWARD_APEX_MARGIN = 0.10
 
 
 class AimError(ValueError):
@@ -440,9 +450,17 @@ class _SurfaceAim:
         if np.linalg.norm(miss) > HIT_TOLERANCE:
             return None
         t = float(p[k, 0] + f * (p[k + 1, 0] - p[k, 0]))
+        apex = float(p[:, 3].max())          # as if it flew on, as the hub's
+        if self.upward and apex < self.height + self.apex_margin():
+            return None                      # it would cross near its apex, flat, and catch the opening's front lip
         if not self.fits(p, pts, k, t, at):
             return None
-        return AimRow(distance, rps, hood_deg, t, float(p[:, 3].max()))    # the apex as if it flew on, as the hub's
+        return AimRow(distance, rps, hood_deg, t, apex)
+
+    def apex_margin(self) -> float:
+        """How far above the opening's center an upward goal's row must peak (m): 0 for a ball (its rule unchanged),
+        UPWARD_APEX_MARGIN for a rigid piece (_PieceAim)."""
+        return 0.0
 
     def fits(self, p: np.ndarray, pts: np.ndarray, k: int, t: float, at: np.ndarray) -> bool:
         """Does the shot score: goal_fit.fit_ball on its centers up to the crossing (`pts`, on the field; it crosses at
@@ -534,6 +552,9 @@ class _PieceAim(_SurfaceAim):
         pos = np.array([0.0, 0.0, pc.height]) + shot.exit_x * chan[:, 0]
         omega = body.T @ (-shot.spin * chan[:, 1])          # backspin about the channel's -y, in the body frame
         return pos, shot.speed * chan[:, 0], quat_from_matrix(body), omega
+
+    def apex_margin(self) -> float:
+        return UPWARD_APEX_MARGIN
 
     def fly(self, pos, vel, quat, omega, **kw) -> flight6.Flight6Result:
         pc = self.model.piece

@@ -1,0 +1,331 @@
+# The FRC 2024 CRESCENDO test range, written on a kickoff dry run (2026-11-08) from the game manual (M), the Layout &
+# Marking Diagram FE-2024 Rev A (LMD), the WPILib 2024 AprilTag JSON (WPI) and Team 6328's FieldConstants (6328):
+# both SPEAKERS (the opening as a goal, the wall and the hood as obstacles), both AMPS, the SUBWOOFERS, the STAGES
+# with their CHAINS, the SOURCES feeding NOTES, the 11 staged NOTES and the blue starting zone and WING.
+# Coordinates: WPILib field frame (blue alliance wall x = 0, scoring-table guardrail y = 0, z up), meters.
+#
+# The NOTE is a rigid stand-in for the foam ring (the 2024-note preset): it doesn't squash. A pinch shooter
+# (`[shooter] kind = "piece"`) shoots it; the goals count it only when all of it fits through the opening.
+# The SPEAKER's hood is an [[obstacle]], not a plate of the goal, so a NOTE's corners can't clip it on the way in.
+# The field is the 2024 one (16.541 x 8.211 m, WPI), so y is WPILib's and robot code, tags and paths agree.
+#
+# Numbers cite their source on their line, or say they are an estimate, derived (worked out from sourced numbers)
+# or our choice. A red element is the blue one mirrored across x = 16.541 / 2.
+
+[range]
+name = "FRC 2024 CRESCENDO"                  # source: the 2024 game's name, manual title page
+field = { length = 16.541, width = 8.211 }   # source: WPI, the 2024 field's length and width
+
+[carpet]
+rolling_resistance = 0.07   # estimate: scrimmage's default; NOTEs do not roll anyway (they lie flat)
+
+[piece.note]
+preset = "2024-note"        # source: M 5.7: 14 in OD, 10 in ID, 2 in thick, 8.3 oz; a rigid stand-in (the preset cites its own numbers)
+color = "orange"
+
+# NOTE staging (M 6.3.4; coordinates LMD sheet 6 / 6328): 3 per WING on spike marks, 5 on the CENTER LINE.
+[[floor_balls]]
+kind = "note"
+at = [[2.8956, 4.1056], [2.8956, 5.5534], [2.8956, 7.0012]]   # source: LMD sheet 6 / 6328: blue WING spikes, x = 114 in
+[[floor_balls]]
+kind = "note"
+at = [[13.6454, 4.1056], [13.6454, 5.5534], [13.6454, 7.0012]]   # source: LMD sheet 6 / 6328: red WING spikes
+[[floor_balls]]
+kind = "note"
+at = [[8.2705, 0.7529], [8.2705, 2.4293], [8.2705, 4.1057], [8.2705, 5.7821], [8.2705, 7.4585]]   # source: LMD sheet 6 / 6328: CENTER LINE, first 29.64 in from the scoring-table border, 66 in apart
+
+# ------------------------------------------------------------------------------------------------ the SUBWOOFERS
+[[element]]
+name = "subwoofer_blue_center"
+kind = "box"
+center = [0.4588, 5.5479]   # source: M 5.6.1: extends 3 ft 1/8 in from the wall, centered under the SPEAKER (tag 7 y)
+size = [0.9176, 0.9398, 0.9398]   # source: 37 in tall (M 5.6.1); estimate: 37 in front face width from TE-24300 (team version) base frame
+
+[[element]]
+name = "subwoofer_blue_left"
+kind = "box"
+center = [0.3949, 6.1834]   # estimate: angled side face from the wall at 40 in off center to the front face corner (TE-24300 base frame spans 80 in at the wall)
+yaw_deg = -30.76            # estimate: derived from the side face's two ends (line above)
+size = [1.0678, 0.25, 0.9398]   # estimate: the side face's length between its two ends, 0.25 m deep (our choice), 37 in tall (M 5.6.1)
+
+[[element]]
+name = "subwoofer_blue_right"
+kind = "box"
+center = [0.3949, 4.9124]   # estimate: angled side face from the wall at 40 in off center to the front face corner (TE-24300 base frame spans 80 in at the wall)
+yaw_deg = 30.76             # estimate: derived from the side face's two ends (line above)
+size = [1.0678, 0.25, 0.9398]   # estimate: the side face's length between its two ends, 0.25 m deep (our choice), 37 in tall (M 5.6.1)
+
+[[element]]
+name = "subwoofer_red_center"
+kind = "box"
+center = [16.0822, 5.5479]   # source: M 5.6.1: extends 3 ft 1/8 in from the wall, centered under the SPEAKER (tag 4 y)
+size = [0.9176, 0.9398, 0.9398]   # source: 37 in tall (M 5.6.1); estimate: 37 in front face width from TE-24300 (team version) base frame
+
+[[element]]
+name = "subwoofer_red_left"
+kind = "box"
+center = [16.1461, 6.1834]   # estimate: angled side face from the wall at 40 in off center to the front face corner (TE-24300 base frame spans 80 in at the wall)
+yaw_deg = -149.24            # estimate: derived from the side face's two ends (line above)
+size = [1.0678, 0.25, 0.9398]   # estimate: the side face's length between its two ends, 0.25 m deep (our choice), 37 in tall (M 5.6.1)
+
+[[element]]
+name = "subwoofer_red_right"
+kind = "box"
+center = [16.1461, 4.9124]   # estimate: angled side face from the wall at 40 in off center to the front face corner (TE-24300 base frame spans 80 in at the wall)
+yaw_deg = 149.24             # estimate: derived from the side face's two ends (line above)
+size = [1.0678, 0.25, 0.9398]   # estimate: the side face's length between its two ends, 0.25 m deep (our choice), 37 in tall (M 5.6.1)
+
+# ------------------------------------------------------------------------------------------------ the SPEAKERS
+# The opening is the goal; the wall under it and the hood over it are obstacles a NOTE can't pass through.
+[[obstacle]]
+name = "speaker_blue_wall"
+pos = [-0.0500, 5.5446, 0.9947]   # source: 6328: the alliance wall under the SPEAKER opening, up to its low edge at 78.324 in
+size = [0.1, 1.0427, 1.9894]      # source: 6328: 41.05 in wide (the opening's corners), up to 78.324 in; 0.1 m thick is our choice
+
+[[obstacle]]
+name = "speaker_blue_hood"
+pos = [0.2293, 5.5446, 2.3148]   # estimate: the hood roof from the opening's front lip (6328 corner, 18.055 in out, 83.091 in up)
+size = [0.5761, 1.0427, 0.03]    # estimate: ... up to the wall at about 98 in (CAD-ONLY; not measured); 41.05 in wide (6328 corners)
+rpy_deg = [0.0, 37.25, 0.0]      # estimate: derived from the lip and the wall point above
+
+[[obstacle]]
+name = "speaker_red_wall"
+pos = [16.5910, 5.5446, 0.9947]   # source: 6328: the alliance wall under the SPEAKER opening, up to its low edge at 78.324 in
+size = [0.1, 1.0427, 1.9894]      # source: 6328: 41.05 in wide (the opening's corners), up to 78.324 in; 0.1 m thick is our choice
+
+[[obstacle]]
+name = "speaker_red_hood"
+pos = [16.3117, 5.5446, 2.3148]   # estimate: the hood roof from the opening's front lip (6328 corner, 18.055 in out, 83.091 in up)
+size = [0.5761, 1.0427, 0.03]     # estimate: ... up to the wall at about 98 in (CAD-ONLY; not measured); 41.05 in wide (6328 corners)
+rpy_deg = [0.0, -37.25, 0.0]      # estimate: derived from the lip and the wall point above
+
+[[goal]]
+name = "speaker_blue"
+kind = "note"
+pos = [0.2293, 5.5446]       # source: 6328 corners: opening center 9.03 in out from the wall
+heading_deg = 180.0          # source: into the wall (K1 gap 2)
+rim_height = 2.0500          # source: 6328: opening center height, (78.324 + 83.091) / 2 in
+tilt_deg = 165.2             # source: M 5.6: the opening rises 14.8 deg toward the field; entered going up (180 - 14.8)
+opening = { kind = "rect", width = 1.0427, height = 0.4742 }   # source: 6328 corners: 41.05 in wide, 18.67 in along the slope
+
+[[goal]]
+name = "speaker_red"
+kind = "note"
+pos = [16.3117, 5.5446]      # source: 6328 corners, mirrored: opening center 9.03 in out from the wall
+heading_deg = 0.0            # source: into the wall
+rim_height = 2.0500          # source: 6328: opening center height, (78.324 + 83.091) / 2 in
+tilt_deg = 165.2             # source: M 5.6: the opening rises 14.8 deg toward the field; entered going up (180 - 14.8)
+opening = { kind = "rect", width = 1.0427, height = 0.4742 }   # source: 6328 corners: 41.05 in wide, 18.67 in along the slope
+
+# ------------------------------------------------------------------------------------------------ the AMPS
+[[goal]]
+name = "amp_blue"
+kind = "note"
+pos = [1.8404, 8.2042]       # source: 6328 ampCenter; WPI tag 6
+heading_deg = 90.0           # source: into the AMP wall
+rim_height = 0.8890          # source: M 5.3: pocket bottom 26 in, 18 in tall
+tilt_deg = 90.0              # source: M 5.3: the pocket's opening is vertical
+opening = { kind = "rect", width = 0.6096, height = 0.4572 }   # source: M 5.3: 24 in wide, 18 in tall
+
+[[goal]]
+name = "amp_red"
+kind = "note"
+pos = [14.7006, 8.2042]      # source: 6328 ampCenter, mirrored; WPI tag 5
+heading_deg = 90.0           # source: into the AMP wall
+rim_height = 0.8890          # source: M 5.3: pocket bottom 26 in, 18 in tall
+tilt_deg = 90.0              # source: M 5.3: the pocket's opening is vertical
+opening = { kind = "rect", width = 0.6096, height = 0.4572 }   # source: M 5.3: 24 in wide, 18 in tall
+
+# ------------------------------------------------------------------------------------------------ the SOURCES
+# The corners cut at 30 degrees (WPI tags 1/2 and 9/10 face 120 and 60 degrees). scrimmage's field is a rectangle,
+# so each diagonal wall is a box.
+[[element]]
+name = "blue_source_wall"
+kind = "box"
+center = [15.6470, 0.4579]   # source: derived: the line through the two SOURCE tags (WPI), to the guardrail and the alliance wall
+yaw_deg = 29.98              # source: derived from the two SOURCE tags (WPI)
+size = [2.1796, 0.2, 1.4]    # source: derived: the wall's length between the guardrail and the alliance wall; estimate: 0.2 m thick, 1.4 m tall
+
+[[element]]
+name = "red_source_wall"
+kind = "box"
+center = [0.8940, 0.4579]    # source: derived: the line through the two SOURCE tags (WPI), to the guardrail and the alliance wall
+yaw_deg = -29.98             # source: derived from the two SOURCE tags (WPI)
+size = [2.1796, 0.2, 1.4]    # source: derived: the wall's length between the guardrail and the alliance wall; estimate: 0.2 m thick, 1.4 m tall
+
+[[station]]
+name = "source_blue"
+kind = "note"
+release = [15.5023, 0.7900, 0.99]   # source: derived: midway between the SOURCE tags, just clear of the wall; opening bottom 3 ft 3/4 in (M 5.4)
+heading_deg = 120.0           # source: out of the SOURCE wall, the way its tags face (WPI)
+pitch_deg = 50.0               # source: M 5.4: the CHUTE slopes at 50 degrees
+speed = 2.0                    # estimate: a NOTE sliding ~21 in down the 50 degree CHUTE
+interval = 2.0                 # estimate: human player pace
+spread_position = [0.0, 0.3, 0.0]   # estimate: K1 gap 16: across the heading, along the wall; the opening is 75.25 in wide (M 5.4), but spread_position is along the field axes, not the 30 deg wall: a 0.3 m spread pushed NOTEs into the wall and they shot out at 13 m/s
+spread_yaw_deg = 5.0           # estimate: a human player's aim
+
+[[station]]
+name = "source_red"
+kind = "note"
+release = [1.0388, 0.7900, 0.99]   # source: derived: midway between the SOURCE tags, just clear of the wall; opening bottom 3 ft 3/4 in (M 5.4)
+heading_deg = 60.0           # source: out of the SOURCE wall, the way its tags face (WPI)
+pitch_deg = 50.0               # source: M 5.4: the CHUTE slopes at 50 degrees
+speed = 2.0                    # estimate: a NOTE sliding ~21 in down the 50 degree CHUTE
+interval = 2.0                 # estimate: human player pace
+spread_position = [0.0, 0.3, 0.0]   # estimate: K1 gap 16: across the heading, along the wall; the opening is 75.25 in wide (M 5.4), but spread_position is along the field axes, not the 30 deg wall: a 0.3 m spread pushed NOTEs into the wall and they shot out at 13 m/s
+spread_yaw_deg = 5.0           # estimate: a human player's aim
+
+# ------------------------------------------------------------------------------------------------ the STAGES
+# The blue STAGE (M 5.5): core center derived from tags 14, 15, 16 (WPI); legs 70.8 in from it (122.62 in apart, LMD sheet 3).
+[[element]]
+name = "stage_blue_core"
+kind = "box"
+center = [4.8678, 4.1051]     # source: derived from tags 14, 15, 16 (WPI)
+size = [0.91, 0.91, 1.22]     # estimate: the 6-sided core as a box, its faces 0.454 m from center (tags); top about 76 in (MICROPHONE top 88.25 in less its 12 in, M 5.5)
+base_height = 0.7176          # source: M 5.5: aluminum surfaces 2 ft 4 1/4 in above the carpet
+
+[[obstacle]]
+name = "stage_blue_leg1"       # choice: the leg toward the alliance wall
+from = [3.0748, 4.1051, 0.15]   # source: derived: the truss foot (LMD sheet 3: near foot 120.5 / 121.0 in from the wall)
+to = [4.3678, 4.1051, 1.85]    # estimate: the truss leans in to the core top; member sizes are CAD-ONLY
+width = 0.25                   # estimate: member sizes are CAD-ONLY
+
+[[obstacle]]
+name = "stage_blue_leg2"       # choice: the leg on the AMP side
+from = [5.7643, 5.6578, 0.15]   # source: derived: the truss foot (LMD sheet 3: near foot 120.5 / 121.0 in from the wall)
+to = [5.1178, 4.5381, 1.85]    # estimate: the truss leans in to the core top; member sizes are CAD-ONLY
+width = 0.25                   # estimate: member sizes are CAD-ONLY
+
+[[obstacle]]
+name = "stage_blue_leg3"       # choice: the leg on the SOURCE side
+from = [5.7643, 2.5524, 0.15]   # source: derived: the truss foot (LMD sheet 3: near foot 120.5 / 121.0 in from the wall)
+to = [5.1178, 3.6721, 1.85]    # estimate: the truss leans in to the core top; member sizes are CAD-ONLY
+width = 0.25                   # estimate: member sizes are CAD-ONLY
+
+[[element]]
+name = "chain_blue_center"
+kind = "bar"
+center = [5.7441, 4.1051]   # source: M 5.5: the chain rests 1 ft 4 5/8 in from the core's face; face direction from the tags
+yaw_deg = 90.0                 # source: along the core's face (WPI tags)
+length = 1.5                   # estimate: the chain's straight-ish middle; really a 1/4 in chain hung from 48 in at the legs
+diameter_in = 0.5              # estimate: 1/4 in chain links, about 1/2 in across
+height = 0.7176                # source: M 5.5: lowest point 2 ft 4 1/4 in; a rigid bar does not sag or swing
+posts = false
+level = "ONSTAGE"
+
+[[element]]
+name = "chain_blue_left"
+kind = "bar"
+center = [4.4297, 4.8640]   # source: M 5.5: the chain rests 1 ft 4 5/8 in from the core's face; face direction from the tags
+yaw_deg = 210.0                # source: along the core's face (WPI tags)
+length = 1.5                   # estimate: the chain's straight-ish middle; really a 1/4 in chain hung from 48 in at the legs
+diameter_in = 0.5              # estimate: 1/4 in chain links, about 1/2 in across
+height = 0.7176                # source: M 5.5: lowest point 2 ft 4 1/4 in; a rigid bar does not sag or swing
+posts = false
+level = "ONSTAGE"
+
+[[element]]
+name = "chain_blue_right"
+kind = "bar"
+center = [4.4297, 3.3462]   # source: M 5.5: the chain rests 1 ft 4 5/8 in from the core's face; face direction from the tags
+yaw_deg = 330.0                # source: along the core's face (WPI tags)
+length = 1.5                   # estimate: the chain's straight-ish middle; really a 1/4 in chain hung from 48 in at the legs
+diameter_in = 0.5              # estimate: 1/4 in chain links, about 1/2 in across
+height = 0.7176                # source: M 5.5: lowest point 2 ft 4 1/4 in; a rigid bar does not sag or swing
+posts = false
+level = "ONSTAGE"
+
+# The red STAGE (M 5.5): core center derived from tags 11, 12, 13 (WPI); legs 70.8 in from it (122.62 in apart, LMD sheet 3).
+[[element]]
+name = "stage_red_core"
+kind = "box"
+center = [11.6732, 4.1051]    # source: derived from tags 11, 12, 13 (WPI)
+size = [0.91, 0.91, 1.22]     # estimate: the 6-sided core as a box, its faces 0.454 m from center (tags); top about 76 in (MICROPHONE top 88.25 in less its 12 in, M 5.5)
+base_height = 0.7176          # source: M 5.5: aluminum surfaces 2 ft 4 1/4 in above the carpet
+
+[[obstacle]]
+name = "stage_red_leg1"        # choice: the leg toward the alliance wall
+from = [13.4662, 4.1051, 0.15]   # source: derived: the truss foot (LMD sheet 3: near foot 120.5 / 121.0 in from the wall)
+to = [12.1732, 4.1051, 1.85]    # estimate: the truss leans in to the core top; member sizes are CAD-ONLY
+width = 0.25                    # estimate: member sizes are CAD-ONLY
+
+[[obstacle]]
+name = "stage_red_leg2"        # choice: the leg on the AMP side
+from = [10.7767, 5.6578, 0.15]   # source: derived: the truss foot (LMD sheet 3: near foot 120.5 / 121.0 in from the wall)
+to = [11.4232, 4.5381, 1.85]    # estimate: the truss leans in to the core top; member sizes are CAD-ONLY
+width = 0.25                    # estimate: member sizes are CAD-ONLY
+
+[[obstacle]]
+name = "stage_red_leg3"        # choice: the leg on the SOURCE side
+from = [10.7767, 2.5524, 0.15]   # source: derived: the truss foot (LMD sheet 3: near foot 120.5 / 121.0 in from the wall)
+to = [11.4232, 3.6721, 1.85]    # estimate: the truss leans in to the core top; member sizes are CAD-ONLY
+width = 0.25                    # estimate: member sizes are CAD-ONLY
+
+[[element]]
+name = "chain_red_center"
+kind = "bar"
+center = [10.7969, 4.1051]   # source: M 5.5: the chain rests 1 ft 4 5/8 in from the core's face; face direction from the tags
+yaw_deg = 270.0                # source: along the core's face (WPI tags)
+length = 1.5                   # estimate: the chain's straight-ish middle; really a 1/4 in chain hung from 48 in at the legs
+diameter_in = 0.5              # estimate: 1/4 in chain links, about 1/2 in across
+height = 0.7176                # source: M 5.5: lowest point 2 ft 4 1/4 in; a rigid bar does not sag or swing
+posts = false
+level = "ONSTAGE"
+
+[[element]]
+name = "chain_red_left"
+kind = "bar"
+center = [12.1113, 3.3462]   # source: M 5.5: the chain rests 1 ft 4 5/8 in from the core's face; face direction from the tags
+yaw_deg = 30.0                 # source: along the core's face (WPI tags)
+length = 1.5                   # estimate: the chain's straight-ish middle; really a 1/4 in chain hung from 48 in at the legs
+diameter_in = 0.5              # estimate: 1/4 in chain links, about 1/2 in across
+height = 0.7176                # source: M 5.5: lowest point 2 ft 4 1/4 in; a rigid bar does not sag or swing
+posts = false
+level = "ONSTAGE"
+
+[[element]]
+name = "chain_red_right"
+kind = "bar"
+center = [12.1113, 4.8640]   # source: M 5.5: the chain rests 1 ft 4 5/8 in from the core's face; face direction from the tags
+yaw_deg = 150.0                # source: along the core's face (WPI tags)
+length = 1.5                   # estimate: the chain's straight-ish middle; really a 1/4 in chain hung from 48 in at the legs
+diameter_in = 0.5              # estimate: 1/4 in chain links, about 1/2 in across
+height = 0.7176                # source: M 5.5: lowest point 2 ft 4 1/4 in; a rigid bar does not sag or swing
+posts = false
+level = "ONSTAGE"
+
+[climb]
+rule = "lowest-rung"           # nearest available: a robot touching a chain and not the carpet scores; HARMONY/SPOTLIT not expressible
+levels = { ONSTAGE = 3 }       # source: M Table 6-2
+
+# ------------------------------------------------------------------------------------------------ zones and starts
+# M 5.3: the starting line 76.1 in from the wall; the WING line 231.2 in (estimates from the LMD).
+[[zone]]
+name = "blue_start"
+corners = [[0.0, 0.0], [1.933, 0.0], [1.933, 8.211], [0.0, 8.211]]   # estimate: from the LMD, the starting line 76.1 in out (M 5.3)
+color = "blue"
+[[zone]]
+name = "blue_wing"
+corners = [[0.0, 0.0], [5.873, 0.0], [5.873, 8.211], [0.0, 8.211]]   # estimate: from the LMD, the WING line 231.2 in out (M 5.3)
+color = "white"
+[[zone]]
+name = "red_start"
+corners = [[14.608, 0.0], [16.541, 0.0], [16.541, 8.211], [14.608, 8.211]]   # estimate: blue_start mirrored
+color = "red"
+[[zone]]
+name = "red_wing"
+corners = [[10.668, 0.0], [16.541, 0.0], [16.541, 8.211], [10.668, 8.211]]   # estimate: blue_wing mirrored
+color = "white"
+
+[start.blue_subwoofer]
+pose = [1.40, 5.5479, 180.0]   # choice: the bumper ~1 in off the SUBWOOFER face, facing the SPEAKER
+[start.blue_amp_side]
+pose = [1.40, 7.0, 180.0]      # choice: beside the SUBWOOFER, on the AMP side, facing the SPEAKER wall
+[start.blue_source_side]
+pose = [1.40, 2.5, 180.0]      # choice: on the SOURCE side, facing the alliance wall
+[start.blue_wing_note]
+pose = [1.60, 4.1056, 0.0]     # choice: facing the middle blue WING NOTE, 1.3 m before it
+[start.blue_amp]
+pose = [1.8404, 7.2042, 90.0]  # choice: facing the blue AMP, 1 m back from its opening, in line with its center
+[start.at_blue_source]
+pose = [15.10, 1.48, -60.0]    # choice: facing the blue SOURCE, its intake just short of the release point

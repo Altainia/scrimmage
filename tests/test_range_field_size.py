@@ -36,8 +36,11 @@ def test_default_field_is_the_generated_one(tmp_path):
 
 @pytest.mark.parametrize("name", BUILTIN_RANGES)
 def test_builtin_ranges_keep_their_field_and_have_no_warnings(name):
+    """Every built-in range has the generated field, except 2024's, which is new with its own (16.541 x 8.211 m, so
+    the AMPS at y = 8.204 m are on it)."""
     rng = load_range(name, Path("."))
-    assert (rng.field_length, rng.field_width) == (FIELD_LENGTH, FIELD_WIDTH)
+    field = (16.541, 8.211) if name == "2024" else (FIELD_LENGTH, FIELD_WIDTH)
+    assert (rng.field_length, rng.field_width) == field
     assert rng.warnings == ()
 
 

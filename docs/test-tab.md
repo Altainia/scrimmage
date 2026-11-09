@@ -836,6 +836,10 @@ Nine worked examples are in `examples/blocks/`. Each has a README with the story
   by at least 0.5 in the whole time: the closest it comes is 2.9 in, the elevator's top under the arm. With the arm
   raised first, the check fails at 1.7 s, before the arm hits; without the check the arm runs into the trench and the
   robot stops. The README tries how high the arm can be (up to 50°) and a taller elevator.
+- **`examples/blocks/speaker`**, a stand-in robot with a stock `pinch_shooter` on the built-in `2024` field, against
+  the blue SUBWOOFER with one NOTE. It tilts the channel to 60°, spins both wheels at 2.8 V (about 20 rps, the
+  SPEAKER aim table's first row) and feeds the NOTE, which scores in `speaker_blue`. The README shows the aim table,
+  how much room the shot has (2.6 V to 3.4 V, 56° to 61°) and the AMP shot.
 - **`examples/blocks/partner`**, a stand-in robot pushing a partner robot set in Setup. It drives into it at 6 V for
   2 s and checks the partner moved at least 60 in: a braked partner moves 63 in, a coasting one 112 in. The README
   tries other voltages and a partner turned sideways, which hardly moves.

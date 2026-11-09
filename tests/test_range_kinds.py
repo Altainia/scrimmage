@@ -208,7 +208,7 @@ def test_a_piece_override_keeps_the_color_of_the_table_it_replaces(tmp_path):
 
 def test_every_builtin_range_is_unchanged():
     for name in BUILTIN_RANGES:
-        if name == "reef":      # new with pieces beyond balls: a coral range from the start
+        if name in ("reef", "2024"):    # new with pieces beyond balls: a coral range and a NOTE range from the start
             continue
         r = load_range(name, ROOT)
         assert len(r.kinds) == 1 and all(g.kind is None for g in r.goals)

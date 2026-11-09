@@ -1,0 +1,67 @@
+# Stand-in box robot with a NOTE shooter: the kitbot's chassis and drive, a stock pinch_shooter (a top and a bottom
+# wheel squeeze the NOTE's faces) on a tilting channel, and a loader roller that pushes the NOTE into it.
+# Edit it with `scrimmage edit {this file}`, or by hand: the assembler only touches [[part]] tables.
+
+[model]
+timestep = 0.001
+
+[robot]
+standin = true   # the stand-in robot: a piece resting on its chassis or drive isn't stuck in your robot
+
+[battery]
+nominal_voltage = 12.5
+resistance = 0.02
+
+[lockstep]
+step = 0.005
+
+[[part]]
+name = "drive"
+stock = "chassis"
+mass = 45.0
+com_offset = [0.0, 0.0, 0.0]
+ids = { gyro = { device = "ADXRS450[0]", axis = "x", cw_positive = true } }
+
+[[part]]
+name = "dt"
+stock = "differential"    # 3 wheels per side, 6 in, the middle ones 3 mm lower (drop center)
+attach = "drive.center"
+ids = { left = "PWM:0", right = "PWM:1" }
+
+# ---- The NOTE shooter ----------------------------------------------------------------
+# A stock pinch_shooter: 4 in top and bottom wheels, 14 in wide, a 1.25 in gap (the NOTE is 2 in thick), one
+# KrakenX60 on each wheel. Its channel tilts from 30 to 70 degrees on a motor (the tilt joint reads 0 at 30 degrees).
+[[part]]
+name = "shooter"
+stock = "pinch_shooter"
+attach = "drive.top"
+pos = [-0.1, 0.0, 0.3]
+tilt = "articulated"
+tilt_range = [30.0, 70.0]
+ids = { bottom = "PWM:2", top = "PWM:3", tilt = "PWM:4" }
+
+# The loader: a roller behind the shooter that pushes the held NOTE into the wheels.
+[[part]]
+name = "loader"
+stock = "roller"
+attach = "drive.top"
+pos = [-0.35, 0.0, 0.2]
+gearing = 10.0
+ids = { spin = "PWM:5" }
+
+[shooter]
+kind = "piece"
+part = "shooter"
+piece = "note"                # the range's [piece.note]
+wheels = { preset = "60A" }   # the tread
+[[shooter.stage]]
+name = "loader"
+part = "loader"
+path_length = 0.30
+
+# The 2024 field, against the blue SUBWOOFER, facing the blue SPEAKER, one NOTE in the robot.
+[range]
+file = "2024"
+start = "blue_subwoofer"
+preload = 1
+floor_balls = false

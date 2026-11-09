@@ -91,7 +91,7 @@ FIELD_LIMITS = (2.0, 40.0)  # m: a field's length and width must be in this (a t
 BUILTIN_RANGES = {name: Path(__file__).with_name("ranges") / f"{name}.toml"
                   for name in ("2026", "2013", "2026-bump", "2023-charge-station", "terrain-library", "2022-hangar",
                                "2020-switch", "2013-pyramid", "ladder", "ladder-square", "intake", "station", "reef",
-                               "2026-trench", "2016-defenses")}
+                               "2026-trench", "2016-defenses", "2024")}
 BALL_CHOICE_RANGES = ("intake", "station")   # the ranges whose ball a test's Setup can change (a stand-in's, not a game's)
 # estimate: no published figure for an FRC foam ball on FRC carpet. Chosen so a 2026 FUEL (k = 0.4) slows at
 # 0.07 * 9.81 / 1.4 = 0.49 m/s^2, stopping from 1 m/s in about 2 s and 1 m: about a golf ball on a putting green

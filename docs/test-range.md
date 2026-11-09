@@ -22,6 +22,7 @@ hood and the ball's squeeze are that model, and the range adds a world around it
 - [Balls in the world](#balls-in-the-world)
 - [Pieces that aren't balls](#pieces-that-arent-balls)
 - [The trench field](#the-trench-field)
+- [The 2024 field](#the-2024-field)
 - [The range file](#the-range-file)
 - [Scenarios: signals, `by_time`, `[range]`, `robot_env`](#scenarios-signals-by_time-range-robot_env)
 - [The report, the viewer and NetworkTables](#the-report-the-viewer-and-networktables)
@@ -34,6 +35,8 @@ hood and the ball's squeeze are that model, and the range adds a world around it
 - Goals with a real opening, tilt and funnel. A ball **scores** when its path crosses the scoring surface going
   in. The 2026 range ships with both hubs, the four bumps and the 360 FUEL in the neutral zone, all measured from the
   field CAD. Robots drive over the bumps; see [docs/terrain.md](terrain.md) for elements and the terrain signals.
+  The 2024 range ships with both SPEAKERS and AMPS, scored by a NOTE from a pinch shooter
+  ([The 2024 field](#the-2024-field)).
 - Balls as MuJoCo bodies: they roll, bounce off the carpet, the hub and your robot, get pushed by your bumper and
   fly with drag and spin lift.
 - A robot with a hooded shooter, a hopper, one or more feeder stages and an intake. Your robot program drives their
@@ -167,7 +170,7 @@ fast-mode sample's shooter.
 
 | key | unit | default | meaning |
 |---|---|---|---|
-| `file` | | required | a built-in range (`"2026"`, `"2013"`, `"2026-bump"`, `"2023-charge-station"`, `"terrain-library"`, `"2022-hangar"`, `"2020-switch"`, `"2013-pyramid"`, `"ladder"`, `"ladder-square"`, `"intake"` (one ball on the carpet in front of `[start.facing_ball]`, to try an intake on), `"station"` (a human player station at the blue alliance wall that feeds balls down a short chute, `[start.at_station]` against it, to try a hopper or an intake on), `"2026-trench"` (one 2026 TRENCH, its arm 22.25 in above the carpet, `[start.approach]` before it, to drive under), `"2016-defenses"` (the 2016 portcullis, sally port, drawbridge and cheval de frise, each with a start before it; [docs/terrain.md](terrain.md)) or `"reef"` (one pipe of the 2025 reef with its L2, L3 and L4 branches, a coral on the carpet in front of `[start.facing_coral]` and a coral station with `[start.at_coral_station]` against it, to try a grabber on)) or a path to a [range file](#the-range-file), relative to the config. For 2013, `"2013"` is the disc range (shooting discs at the slot goals, the pyramid an obstacle) and `"2013-pyramid"` the climbing range (the pyramid to climb, no goals) |
+| `file` | | required | a built-in range (`"2026"`, `"2013"`, `"2026-bump"`, `"2023-charge-station"`, `"terrain-library"`, `"2022-hangar"`, `"2020-switch"`, `"2013-pyramid"`, `"ladder"`, `"ladder-square"`, `"intake"` (one ball on the carpet in front of `[start.facing_ball]`, to try an intake on), `"station"` (a human player station at the blue alliance wall that feeds balls down a short chute, `[start.at_station]` against it, to try a hopper or an intake on), `"2026-trench"` (one 2026 TRENCH, its arm 22.25 in above the carpet, `[start.approach]` before it, to drive under), `"2016-defenses"` (the 2016 portcullis, sally port, drawbridge and cheval de frise, each with a start before it; [docs/terrain.md](terrain.md)), `"2024"` (the 2024 CRESCENDO field: both SPEAKERS and AMPS, which a NOTE scores in, the SUBWOOFERS, the STAGES, the SOURCES and the 11 staged NOTES, on its own 16.541 by 8.211 m field; [The 2024 field](#the-2024-field)) or `"reef"` (one pipe of the 2025 reef with its L2, L3 and L4 branches, a coral on the carpet in front of `[start.facing_coral]` and a coral station with `[start.at_coral_station]` against it, to try a grabber on)) or a path to a [range file](#the-range-file), relative to the config. For 2013, `"2013"` is the disc range (shooting discs at the slot goals, the pyramid an obstacle) and `"2013-pyramid"` the climbing range (the pyramid to climb, no goals) |
 | `start` | | none | a named start from the range file. The robot starts there. Give either `start` or `[robot] start_pose`, not both |
 | `preload` | balls | 0 | balls already in the hopper at the start of a run. More than the robot holds (the hopper capacity) is an error |
 | `floor_balls` | | `true` | `false`: no floor balls (the range's `[[floor_balls]]` are left out of the world entirely, so the world can't put them out later). Faster runs, and the right choice when the auto never touches them |
@@ -370,8 +373,12 @@ it); and a `wheel_x` that puts the piece between the wheels before it is fed.
 - **Aiming.** `scrimmage launcher aim` aims a piece shooter at a goal that isn't level (a SPEAKER, an AMP), with the
   tilt in place of the hood angle and both wheels at the row's wheel speed: its exit is the pinch model's, its flight
   the rigid piece's, and a row scores only if all of the piece fits through the opening without touching anything
-  first. A level goal is refused (its table is a ball launcher's). It is slower than a ball's table: about 15 s for 3
-  SPEAKER distances at 7 tilts, 35 s for 5 at 16.
+  first, and at a goal entered going up it must peak at least 0.10 m above the opening's center
+  ([Aiming tables](#aiming-tables-scrimmage-launcher-aim)). A level goal is refused (its table is a ball
+  launcher's). It is slower than a ball's table: about 15 s for 3 SPEAKER distances at 7 tilts, 35 s for 5 at 16.
+- **A worked example** is [`examples/blocks/speaker`](../examples/blocks/speaker/README.md), on the built-in
+  [2024 field](#the-2024-field): a NOTE from the SUBWOOFER into the blue SPEAKER, its shot the SPEAKER table's first
+  row, and the table's rows flown again in the world.
 
 ## Lanes, stages, the hopper and the intake
 
@@ -784,6 +791,32 @@ the arm with its elevator down and its arm stowed, and by how much? It has no hu
 - The worked example is [`examples/blocks/trench`](../examples/blocks/trench/README.md): a stand-in robot with an
   elevator and an arm that clears the arm by 2.9 in stowed, and hits it with the arm raised.
 
+## The 2024 field
+
+The built-in `2024` field is the FRC 2024 CRESCENDO field, written on a kickoff dry run from the game manual, the
+field drawings, the WPILib 2024 AprilTag layout and Team 6328's field constants
+([`scrimmage/testrange/ranges/2024.toml`](../scrimmage/testrange/ranges/2024.toml); every number cites its source on
+its line, or says it is an estimate or our choice).
+
+- **The field** is 2024's own, 16.541 by 8.211 m, so WPILib coordinates and AprilTag positions agree with it.
+- **The piece** is `note`, the `2024-note` preset: a rigid stand-in for the foam ring (it doesn't squash). The 11
+  staged NOTES lie on their marks (`floor_balls = false` leaves them out), and the two SOURCES (`source_blue`,
+  `source_red`) feed NOTES down their chutes.
+- **The goals** count NOTES. `speaker_blue` and `speaker_red` are the SPEAKER openings, entered going up under the
+  hood; the hood and the wall under the opening are `[[obstacle]]` boxes (`speaker_blue_hood`, `speaker_blue_wall`),
+  not plates of the goal, so a NOTE's corners can't pass through the hood on the way in. `amp_blue` and `amp_red` are
+  the AMP pockets, entered sideways.
+- **The elements.** The SUBWOOFERS (a box under each SPEAKER and its two angled sides), the SOURCE walls, and the
+  STAGES: a core box, three legs and three CHAINS as rigid bars (`[climb]` scores a robot off the carpet touching a
+  chain, as ONSTAGE). HARMONY, the TRAP and the MICROPHONES aren't modeled.
+- **The zones** `blue_start`, `blue_wing`, `red_start` and `red_wing` are drawn as tape.
+- **The starts.** `blue_subwoofer` (against the blue SUBWOOFER, facing the SPEAKER), `blue_amp` (1 m back from the
+  blue AMP, facing it), `blue_amp_side`, `blue_source_side`, `blue_wing_note` and `at_blue_source`.
+- **What isn't there.** The rest of the AMP and the SPEAKER's inside (a NOTE counts when it crosses the opening; where
+  it goes after isn't modeled), the AMPLIFICATION and the game's points.
+- The worked example is [`examples/blocks/speaker`](../examples/blocks/speaker/README.md): a stand-in robot with a
+  pinch shooter scores a NOTE in the blue SPEAKER from the SUBWOOFER, its shot from the SPEAKER aim table.
+
 ## The range file
 
 A range file describes a season's field elements: the ball, the goals, the floor balls, the starting positions,
@@ -1129,9 +1162,14 @@ wall) is aimed at its **scoring surface** instead. A level goal such as the hub 
 that isn't level, its channel's tilt in place of the hood angle (`--hood-step` steps the tilt) and both wheels at
 `wheel_rps`. Its shot is the pinch model's exit, flown as a rigid piece with its drag and its orientation, and a row
 scores only if all of the piece fits through the opening at the crossing (its bounding box's corners, turned as it
-flies) and nothing touches an obstacle first. Its line names the piece's stiffness and the tread's friction as the
-estimates. A level goal (the hub) is refused for it. It takes longer than a ball's: about 15 s for 3 SPEAKER
-distances with 7 tilts, 35 s for 5 with 16.
+flies) and nothing touches an obstacle first. At a goal entered going up, a piece's row must also **peak at least
+0.10 m above the opening's center** (`UPWARD_APEX_MARGIN` in `scrimmage/testrange/aim.py`), so the piece is still
+rising as it crosses: flown again in the world, rows that crossed flat at their apex caught the SPEAKER's front lip,
+and most missed with the wheels 2% off their speed, while every row with the margin scored at 2% either side. It
+costs the flattest, slowest shots and the farthest distances (the example robot's table stops at 2.37 m with it,
+and reached 2.57 m without it). A ball's rows keep the rule above. Its line names the piece's stiffness and the
+tread's friction as the estimates. A level goal (the hub) is refused for it. It takes longer than a ball's: about
+15 s for 3 SPEAKER distances with 7 tilts, 35 s for 5 with 16, and about a minute for the example's 8 with 21.
 
 Robot code should **hold fire beyond the table's reach** rather than clamp to its last row; the sample does.
 

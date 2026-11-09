@@ -626,6 +626,10 @@ or a NOTE overlapping the opening's edge, doesn't count, and the headline names 
 for a NOTE turned in the opening. The positions in the landings table are still the bench's own: forward of the
 bench origin and above the floor.
 
+The built-in `2024` range (the FRC 2024 CRESCENDO field, `scrimmage/testrange/ranges/2024.toml`) has both SPEAKERS
+(`speaker_blue`, `speaker_red`) and both AMPS (`amp_blue`, `amp_red`), so `range = "2024"` needs no file of your own:
+
+<!-- bench -->
 ```toml
 [bench]
 name = "note lob"
@@ -650,7 +654,7 @@ size = [0.1, 1.0, 3.0]
 
 [flight]
 outlet = "shot"
-goal = { range = "2024.toml", name = "speaker_blue" }   # your season's range file, next to this one
+goal = { range = "2024", name = "speaker_blue" }   # the built-in 2024 range, or your own range file
 at = [2.5, 5.5446, 0.5]          # 2.5 m out from the blue alliance wall, in line with the SPEAKER, 0.5 m up
 heading_deg = 180.0              # facing the wall
 ```
