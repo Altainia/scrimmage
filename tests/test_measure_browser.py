@@ -12,6 +12,7 @@ from scrimmage import units
 from scrimmage.measure import fit_cylinder, fit_launcher, forms, stats
 from scrimmage.measure.file import load
 from test_assembler_browser import Server, browser  # noqa: F401  (fixtures)
+from browser_harness import close_context
 
 pytestmark = pytest.mark.browser
 
@@ -58,7 +59,7 @@ def measure_page(browser, tmp_path, monkeypatch):
 
     yield open_
     for c in contexts:
-        c.close()
+        close_context(c)
     for s in servers:
         s.stop()
     assert not logs, f"browser errors: {logs}"
