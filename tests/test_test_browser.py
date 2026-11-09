@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from scrimmage.assembler.templates import new_config
-from browser_harness import page_units
+from browser_harness import page_units, close_context
 from test_assembler_browser import CONTRAST_JS, Server, browser  # noqa: F401  (fixtures)
 
 pytestmark = pytest.mark.browser
@@ -219,7 +219,7 @@ def test_page(browser, tmp_path, monkeypatch):
 
     yield open_
     for c in contexts:
-        c.close()
+        close_context(c)
     for s in servers:
         s.stop()
     assert not logs, f"browser errors: {logs}"

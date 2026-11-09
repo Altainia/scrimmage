@@ -7,6 +7,7 @@ import pytest
 from scrimmage import settings
 from scrimmage.i18n import t, tn
 from test_assembler_browser import Server, browser  # noqa: F401  (fixtures)
+from browser_harness import close_context
 
 pytestmark = pytest.mark.browser
 
@@ -26,7 +27,7 @@ def page(browser, tmp_path):
     p.evaluate("async () => { window.I = await import('./i18n.js'); }")
     p.console_warnings = warnings
     yield p
-    ctx.close()
+    close_context(ctx)
     srv.stop()
     assert not logs, f"browser errors: {logs}"
 
@@ -149,5 +150,5 @@ def test_the_page_starts_in_the_saved_language(browser, tmp_path, language):
         assert p.get_attribute("html", "lang") == "en-GB"
         assert p.evaluate("import('./i18n.js').then((m) => m.t('Center of gravity'))") == "Centre of gravity"
     finally:
-        ctx.close()
+        close_context(ctx)
         srv.stop()

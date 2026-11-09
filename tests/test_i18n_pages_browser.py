@@ -12,6 +12,7 @@ import pytest
 
 from test_assembler_browser import Server, browser, make_page  # noqa: F401  (fixtures)
 from test_part_browser import _open
+from browser_harness import close_context
 
 pytestmark = pytest.mark.browser
 
@@ -141,5 +142,5 @@ def test_the_start_page_follows_the_language_and_keeps_a_typed_name(browser, tmp
         assert "A name such as mybot (.toml goes on the end)." in page.text_content("#start-new")
         assert page.input_value("#start-name") == "mybot"           # the form wasn't rebuilt
     finally:
-        ctx.close()
+        close_context(ctx)
         srv.stop()

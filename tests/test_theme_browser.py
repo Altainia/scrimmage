@@ -15,6 +15,7 @@ from scrimmage import settings
 from test_assembler_browser import Server, browser, make_page  # noqa: F401  (fixtures)
 from test_bench_browser import make_bench_page  # noqa: F401  (fixture)
 from test_drive_browser import drive_page  # noqa: F401  (fixture)
+from browser_harness import close_context
 
 pytestmark = pytest.mark.browser
 
@@ -49,7 +50,7 @@ def open_page(browser, tmp_path):
 
     yield open_
     for c in contexts:
-        c.close()
+        close_context(c)
     for s in servers:
         s.stop()
     assert not logs, f"browser errors: {logs}"
@@ -180,7 +181,7 @@ def test_tab(browser, tmp_path, monkeypatch):
     page.goto(srv.url)
     page.wait_for_function(test_tests.READY)
     yield page
-    ctx.close()
+    close_context(ctx)
     srv.stop()
     assert not logs, f"browser errors: {logs}"
 

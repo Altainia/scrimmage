@@ -69,6 +69,16 @@ def browser():
         b.close()
 
 
+def close_context(ctx) -> None:
+    """Close a browser context, dropping its routes first. A test's route handler (one that answers with
+    route.fetch()) can still be running when its context closes; its "Response has been disposed" then surfaces in
+    whatever Playwright call comes next, which is the next test's new_context. Every test closes contexts here."""
+    for page in ctx.pages:
+        page.unroute_all(behavior="ignoreErrors")
+    ctx.unroute_all(behavior="ignoreErrors")
+    ctx.close()
+
+
 def page_units(page, system: str) -> None:
     """Set the Units setting from the open page (as the Settings menu does): saved, and applied there at once."""
     assert page.evaluate("async (s) => (await import('./units.js')).set(s)", system) is None

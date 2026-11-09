@@ -7,6 +7,7 @@ import pytest
 from scrimmage import settings
 from scrimmage.units import KINDS, fmt
 from test_assembler_browser import Server, browser  # noqa: F401  (fixtures)
+from browser_harness import close_context
 
 pytestmark = pytest.mark.browser
 
@@ -27,7 +28,7 @@ def page(browser, tmp_path):
     p.wait_for_function("window.__scrimmage && __scrimmage.mode")
     p.evaluate("async () => { window.U = await import('./units.js'); }")
     yield p
-    ctx.close()
+    close_context(ctx)
     srv.stop()
     assert not logs, f"browser errors: {logs}"
 
@@ -208,7 +209,7 @@ def test_a_bad_settings_file_shows_one_warning(browser, tmp_path):
         assert "isn't imperial or metric; using imperial units" in p.text_content(".notice-warn")
         assert p.evaluate("import('./units.js').then((m) => m.units.system)") == "imperial"
     finally:
-        ctx.close()
+        close_context(ctx)
         srv.stop()
 
 
@@ -237,7 +238,7 @@ def test_a_failed_first_load_catches_up_on_the_next_poll(browser, tmp_path):
         assert p.evaluate("import('./units.js').then((m) => m.units.fmt(0.1016, 'length'))") == "4 in"
         assert p.locator(".notice-warn").count() == 1
     finally:
-        ctx.close()
+        close_context(ctx)
         srv.stop()
 
 

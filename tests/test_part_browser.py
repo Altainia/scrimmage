@@ -13,7 +13,7 @@ import numpy as np
 
 import pytest
 
-from browser_harness import page_units
+from browser_harness import page_units, close_context
 from test_assembler_browser import Server, browser  # noqa: F401  (fixtures)
 
 pytestmark = pytest.mark.browser
@@ -41,14 +41,14 @@ def _open(browser, tmp_path, monkeypatch, name):
             if m.type == "error" and "status of 4" not in m.text else None)
 
     def close():
-        ctx.close()
+        close_context(ctx)
         srv.stop()
         assert not logs, f"browser errors: {logs}"
     try:
         page.goto(srv.url)
         page.wait_for_function(READY)
     except Exception:
-        ctx.close()
+        close_context(ctx)
         srv.stop()
         raise
     return page, tmp_path / "parts" / (Path(name).stem + ".import.toml"), close
@@ -197,7 +197,7 @@ def test_new_part_from_cad_on_the_start_page(browser, tmp_path, monkeypatch, how
         assert (tmp_path / "parts" / "climber.import.toml").is_file()
         assert (tmp_path / "parts" / "climber.source" / "climber.step").is_file() == (how == "upload")
     finally:
-        ctx.close()
+        close_context(ctx)
         srv.stop()
 
 
@@ -632,7 +632,7 @@ def test_plugin_part_shows_and_clears_what_was_changed_here(browser, tmp_path, m
         assert tomllib.loads(overlay.read_text()) == {"body": {"roller": {"joint": {"damping": 0.01}}}}
         page.wait_for_function("document.querySelector('#part-inspector [data-field=\"kg\"]').dataset.from === 'plugin'")
     finally:
-        ctx.close()
+        close_context(ctx)
         srv.stop()
     assert not logs, f"browser errors: {logs}"
 
@@ -674,7 +674,7 @@ def test_stops_picker_stiffens_a_joints_range(browser, tmp_path, monkeypatch):
         _edit(page, lambda: page.select_option("#part-stops", "normal"))
         assert "limit_solref" not in tomllib.loads(overlay.read_text())["body"]["roller"]["joint"]
     finally:
-        ctx.close()
+        close_context(ctx)
         srv.stop()
     assert not logs, f"browser errors: {logs}"
 
@@ -694,7 +694,7 @@ def _start_page(browser, tmp_path, monkeypatch):
     page.on("pageerror", lambda e: logs.append(f"pageerror: {e}"))
 
     def close():
-        ctx.close()
+        close_context(ctx)
         srv.stop()
         assert not logs, f"browser errors: {logs}"
     page.goto(srv.url)
