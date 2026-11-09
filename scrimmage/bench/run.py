@@ -250,6 +250,35 @@ class _Shafts:
 
 # ------------------------------------------------------------------------------------------------------- run
 
+def spread_stiffness(m: mujoco.MjModel, d: mujoco.MjData, geom_piece: np.ndarray, n_pieces: int, soft: np.ndarray,
+                     tc1: np.ndarray) -> None:
+    """Each soft geom's stiffness spread over the points it makes: a rigid piece is many solids, and one face
+    against a wheel is 8 MuJoCo contact points on the 2024 NOTE, each of which would otherwise carry the whole
+    stiffness (8 times the squeeze). tread_solref's time constant for n points is sqrt(n) times its one-point one
+    (`tc1`, BenchLayout.contact_tc). n is d.contact's count, the last step's (this step's are not found yet): for a
+    shape (whose solref a piece contact takes, by priority) its most with any one piece, for a piece's geoms their
+    most with any one other piece (MuJoCo averages the two sides' solref there). A geom touching nothing goes back
+    to one point. `geom_piece` is each geom's pool piece, -1 for the rest."""
+    n = np.ones(m.ngeom)
+    g = d.contact.geom[:d.ncon]
+    p = geom_piece[g]
+    shape_rows = (p[:, 0] >= 0) != (p[:, 1] >= 0)
+    if shape_rows.any():
+        gp, pp = g[shape_rows], p[shape_rows]
+        shape = np.where(pp[:, 0] >= 0, gp[:, 1], gp[:, 0])
+        keys, counts = np.unique(np.stack([shape, pp.max(axis=1)], axis=1), axis=0, return_counts=True)
+        np.maximum.at(n, keys[:, 0], counts)
+    piece_rows = (p[:, 0] >= 0) & (p[:, 1] >= 0)
+    if piece_rows.any():
+        pairs, counts = np.unique(np.sort(p[piece_rows], axis=1), axis=0, return_counts=True)
+        most = np.ones(n_pieces)
+        np.maximum.at(most, pairs[:, 0], counts)
+        np.maximum.at(most, pairs[:, 1], counts)
+        in_piece = geom_piece >= 0
+        n[in_piece] = most[geom_piece[in_piece]]
+    m.geom_solref[soft, 0] = np.maximum(tc1 * np.sqrt(n[soft]), 2.0 * m.opt.timestep)
+
+
 class _Run:
     def __init__(self, bench: Bench, trace_hz: float):
         self.bench = bench
@@ -272,6 +301,8 @@ class _Run:
         for i, geoms in enumerate(lay.piece_geom_sets):
             self.geom_piece[list(geoms)] = i
         self.reach = lay.piece_reach
+        self.soft = np.array(sorted(lay.contact_tc), dtype=int)
+        self.soft_tc1 = np.array([lay.contact_tc[g] for g in self.soft])
         self.shaft_of_body = {int(m.body(f"shaft:{s}").id): s for s in bench.shafts}
         self.shaft_of_shape = {w.name: w.shaft for w in bench.wheels}
         self.shaft_of_shape |= {n: w.shaft for n, w in lay.cad_wheels.items()}
@@ -423,6 +454,10 @@ class _Run:
                 self.touch(i, self.lay.shape_of_geom.get(other), float(self._f6[0]), p, t, forces, shape_force,
                            shape_best)
 
+    def soften(self) -> None:
+        if self.soft.size:
+            spread_stiffness(self.m, self.d, self.geom_piece, len(self.pieces), self.soft, self.soft_tc1)
+
     # ---------------------------------------------------------------------------------------------- loop
 
     def _blew_up(self, t: float, what: str) -> BenchRunError:
@@ -505,6 +540,7 @@ class _Run:
                     self.shaft_energy[name] -= float(reaction[k] * d.qvel[sh.dofs[k]]) * self.dt
                 for tc in self.squishy.touches:
                     self.touch(tc.piece, tc.shape, tc.normal, tc.point, t, forces, shape_force, shape_best)
+            self.soften()
             before = self.check_inputs(t)
             mujoco.mj_step(m, d)
             t1 = d.time

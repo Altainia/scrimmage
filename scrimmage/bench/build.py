@@ -69,6 +69,9 @@ class BenchLayout:
     inlet_margin: float = 0.0
     cad_wheels: dict[str, CadWheel] = field(default_factory=dict)  # a part's wheel shapes (also in wheel_geoms)
     cad_material: dict[str, str] = field(default_factory=dict)     # every other CAD shape -> its material
+    # every soft geom (a rigid piece's, or a shape a rigid piece touches) -> its solref time constant at one contact
+    # point, unclamped; the runner scales it by sqrt(contacts) each step (BenchRun.soften)
+    contact_tc: dict[int, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -146,12 +149,14 @@ def _series(*ks: float | None) -> float | None:
 
 
 def _contact(k: float | None, solver_mass: float, dt: float) -> dict:
-    """A geom's solref and solimp for a contact of stiffness k (tread_solref: a load F sinks F / k, one contact
-    point assumed). A hard contact (k None) keeps MuJoCo's default."""
+    """A geom's solref and solimp for a contact of stiffness k (tread_solref: a load F sinks F / k), at one contact
+    point; the runner rescales the time constant for the points it actually makes. A hard contact (k None) keeps
+    MuJoCo's default."""
     if k is None:
         return {}
     return {"solref": list(tread_solref(k, TREAD_DAMPING, solver_mass, 1, dt)),
-            "solimp": [TREAD_IMPEDANCE, TREAD_IMPEDANCE, 0.001, 0.5, 2.0]}
+            "solimp": [TREAD_IMPEDANCE, TREAD_IMPEDANCE, 0.001, 0.5, 2.0],
+            "tc1": tread_solref(k, TREAD_DAMPING, solver_mass, 1, 0.0)[0]}
 
 
 class _Shapes:
@@ -161,6 +166,7 @@ class _Shapes:
         self.dt, self.piece = dt, bench.piece
         self.names: dict[str, str] = {}  # geom name -> shape name
         self.k: dict[str, float | None] = {}  # geom name -> the shape's own stiffness (a tread's), None when hard
+        self.tc1: dict[str, float] = {}  # soft geom name -> its time constant at one contact point (BenchLayout)
 
     def add(self, body, gname: str, shape: str, gtype, size, pos, quat, friction: float,
             k_shape: float | None = None, **extra):
@@ -178,14 +184,19 @@ class _Shapes:
         iw_piece = m.body_invweight0[m.body("piece:0").id, 0]
         for gname, k_shape in self.k.items():
             iw_shape = m.body_invweight0[m.geom_bodyid[m.geom(gname).id], 0]
-            for key, v in _contact(_series(k_shape, self.piece.stiffness), 1.0 / (iw_piece + iw_shape),
-                                   self.dt).items():
-                setattr(spec.geom(gname), key, v)
+            self._set(spec, [gname], _contact(_series(k_shape, self.piece.stiffness), 1.0 / (iw_piece + iw_shape),
+                                              self.dt))
         for i in range(n_pool):
-            for key, v in _contact(_series(self.piece.stiffness, self.piece.stiffness), 1.0 / (2 * iw_piece),
-                                   self.dt).items():
-                for gname in _piece_geom_names(i, self.piece):
-                    setattr(spec.geom(gname), key, v)
+            self._set(spec, _piece_geom_names(i, self.piece),
+                      _contact(_series(self.piece.stiffness, self.piece.stiffness), 1.0 / (2 * iw_piece), self.dt))
+
+    def _set(self, spec: mujoco.MjSpec, gnames: list[str], contact: dict) -> None:
+        tc1 = contact.pop("tc1", None)
+        for gname in gnames:
+            for key, v in contact.items():
+                setattr(spec.geom(gname), key, v)
+            if tc1 is not None:
+                self.tc1[gname] = tc1
 
 
 def _check_names(bench: Bench) -> None:
@@ -404,6 +415,7 @@ def build_bench(bench: Bench) -> Built:
         lay.piece_qpos.append(int(j.qposadr[0]))
         lay.piece_qvel.append(int(j.dofadr[0]))
     lay.inlet_probes = {i.name: m.geom(f"inlet:{i.name}").id for i in bench.inlets}
+    lay.contact_tc = {m.geom(g).id: tc for g, tc in shapes.tc1.items()}
     return Built(model=m, layout=lay)
 
 
