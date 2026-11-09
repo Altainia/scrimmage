@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import dataclasses
 import math
+import re
 
 import mujoco
 import numpy as np
 import pytest
 
+from scrimmage import units
 from scrimmage.launcher.inputs import Shaft
 from scrimmage.launcher.pinch import (PinchConfigError, PinchLauncher, PinchSetup, channel_turn, check_setup,
                                       piece_of, single_shot, status_words)
@@ -104,7 +106,8 @@ def test_a_gap_no_narrower_than_the_piece_does_not_grip():
     out = shot(s)
     assert out.status == "no_contact" and math.isnan(out.speed)
     words = status_words(out, s)
-    assert "can't grip" in words and "gap (0.05715)" in words and "thickness (0.0508)" in words
+    assert "can't grip" in words and f"gap ({units.fmt(0.05715, 'length')})" in words
+    assert f"thickness ({units.fmt(0.0508, 'length')})" in words
 
 
 def test_a_hard_piece_squeezed_too_tight_jams():
@@ -118,7 +121,11 @@ def test_a_hard_piece_squeezed_too_tight_jams():
 
 
 def test_the_setup_is_checked_in_words():
-    with pytest.raises(PinchConfigError, match=r"wheel_x = 0.15 puts the piece between the wheels .* at least 0.20"):
+    s = setup()
+    need = s.piece.length / 2.0 + max(s.reach(s.bottom_diameter), s.reach(s.top_diameter))   # 0.2074 m
+    with pytest.raises(PinchConfigError, match=r"wheel_x = 0.15 puts the piece between the wheels .* at least "
+                       + re.escape(units.fmt(need, "length")) + r" \(half the piece's length, "
+                       + re.escape(units.fmt(s.piece.length / 2.0, "length"))):
         check_setup(setup(wheel_x=0.15))
     with pytest.raises(PinchConfigError, match="gap must be positive"):
         check_setup(setup(gap=0.0))
@@ -242,3 +249,12 @@ def test_exit_speed_against_the_bench(tmp_path):
     res = run_bench(_bench(tmp_path))
     bench = res.pieces[0].speed
     assert shot().speed == pytest.approx(bench, rel=0.15)
+
+
+
+def test_the_bench_warns_that_it_squeezes_a_ring_too_hard(tmp_path):
+    """Until the bench's per-contact squeeze is fixed (the xfail above), a many-solid rigid piece with its own
+    stiffness between wheels gets a warning that its exit speed reads low."""
+    from scrimmage.testrange.pieces import TUBE_SLICES
+    bench = _bench(tmp_path)
+    assert any("exit speed reads low" in w and f"{TUBE_SLICES} solids" in w for w in bench.warnings), bench.warnings

@@ -461,8 +461,7 @@ def _finish(r: _Reader, name: str, shape: str, solids: list[Solid], mass: float,
         raise r.err(i18n.t("has no volume: its shapes are flat or broken"))
     com = np.asarray(parts.com, dtype=float)
     tensor = parts.tensor * (mass / parts.mass)
-    lo = np.min([_lo_hi(s)[0] for s in solids], axis=0)
-    hi = np.max([_lo_hi(s)[1] for s in solids], axis=0)
+    lo, hi = _bounds(solids)
     sides = hi - lo
     extent = float(sides.max())
     if extent > MAX_EXTENT:
@@ -514,6 +513,15 @@ def _size_warnings(r: _Reader, extent: float, density: float, shape: str) -> tup
                                       "(lighter than air, or denser than tungsten): check mass (kg) and the sizes",
                                       where=where, density=_plain(density), lo=f"{lo:g}", hi=f"{hi:g}")),)
     return ()
+
+
+def piece_bounds(kind: PieceKind) -> tuple[np.ndarray, np.ndarray]:
+    """A rigid kind's bounding box in its body frame, (lo, hi): the lowest and highest x, y and z of its solids (m)."""
+    return _bounds(kind.solids)
+
+
+def _bounds(solids) -> tuple[np.ndarray, np.ndarray]:
+    return (np.min([_lo_hi(s)[0] for s in solids], axis=0), np.max([_lo_hi(s)[1] for s in solids], axis=0))
 
 
 def _lo_hi(s: Solid) -> tuple[np.ndarray, np.ndarray]:

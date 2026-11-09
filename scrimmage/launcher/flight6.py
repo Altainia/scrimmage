@@ -79,6 +79,45 @@ def matrix_from_quat(q: np.ndarray) -> np.ndarray:
     ])
 
 
+def quat_from_matrix(rot: np.ndarray) -> np.ndarray:
+    """The unit quaternion (w, x, y, z), w >= 0, of a rotation matrix (Shepperd's method: the largest diagonal)."""
+    m = np.asarray(rot, dtype=float)
+    trace = m[0, 0] + m[1, 1] + m[2, 2]
+    if trace > 0:
+        s = 2 * math.sqrt(1 + trace)
+        q = np.array([s / 4, (m[2, 1] - m[1, 2]) / s, (m[0, 2] - m[2, 0]) / s, (m[1, 0] - m[0, 1]) / s])
+    else:
+        i = int(np.argmax(np.diag(m)))
+        j, k = (i + 1) % 3, (i + 2) % 3
+        s = 2 * math.sqrt(1 + m[i, i] - m[j, j] - m[k, k])
+        q = np.zeros(4)
+        q[0] = (m[k, j] - m[j, k]) / s
+        q[1 + i] = s / 4
+        q[1 + j] = (m[j, i] + m[i, j]) / s
+        q[1 + k] = (m[k, i] + m[i, k]) / s
+    q /= np.linalg.norm(q)
+    return q if q[0] >= 0 else -q
+
+
+def quat_mul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """The quaternion product a (x) b, each (w, x, y, z): `a` one (4,), `b` one (4,) or many (n, 4)."""
+    aw, ax, ay, az = a
+    b = np.asarray(b, dtype=float)
+    bw, bx, by, bz = b[..., 0], b[..., 1], b[..., 2], b[..., 3]
+    return np.stack([aw * bw - ax * bx - ay * by - az * bz, aw * bx + ax * bw + ay * bz - az * by,
+                     aw * by - ax * bz + ay * bw + az * bx, aw * bz + ax * by - ay * bx + az * bw], axis=-1)
+
+
+def matrices_from_quats(quats: np.ndarray) -> np.ndarray:
+    """matrix_from_quat for many: (n, 3, 3) rotation matrices of (n, 4) unit quaternions (w, x, y, z)."""
+    w, x, y, z = (quats[:, k] for k in range(4))
+    return np.stack([
+        np.stack([1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)], axis=-1),
+        np.stack([2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)], axis=-1),
+        np.stack([2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)], axis=-1),
+    ], axis=1)
+
+
 def _quat_rate(q: np.ndarray, w: np.ndarray) -> np.ndarray:
     """1/2 q (x) (0, w), w in the body frame."""
     qw, qx, qy, qz = q

@@ -43,8 +43,9 @@ distance  wheel_rps  hood_deg  flight_s  apex  status
 ```
 
 `hood_deg` is the channel's tilt. The distance is from the robot's center to the SPEAKER opening's center; against
-the SUBWOOFER it is 1.17 m. It takes about a minute (21 tilts). The numbers are UNCALIBRATED: the NOTE's stiffness
-and the tread's friction are estimates, and the pinch model's exit speed isn't yet checked against the bench
+the SUBWOOFER it is 1.17 m. It takes about a minute (21 tilts). The numbers are UNCALIBRATED: the NOTE's stiffness,
+the tread's friction and the NOTE's drag coefficient are estimates, lift isn't modeled, and the pinch model's exit
+speed isn't yet checked against the bench
 ([docs/launcher.md](../../../docs/launcher.md#a-face-pinch-shooter-for-a-flat-piece)).
 
 Every row peaks at least 0.10 m above the opening's center (2.05 m up), so the NOTE is still rising as it goes

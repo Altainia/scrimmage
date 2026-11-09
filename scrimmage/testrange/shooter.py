@@ -31,7 +31,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
-from .. import i18n
+from .. import i18n, units
 from ..disc import inputs as disc_inputs
 from ..disc.launcher import DiscLauncher, ExitedDisc
 from ..launcher.inputs import (LauncherConfigError, Setup, Shaft, _build_section, apply_measured, check_lane,
@@ -1099,7 +1099,8 @@ def _parse_piece(sec: dict, built) -> PieceShooterConfig:
     if p["gap"] >= piece.thickness:
         raise _err(i18n.t("part {name}: gap {gap} is no narrower than the piece {piece}'s thickness {thickness}, so "
                           "the wheels can't grip it; make the gap smaller than the thickness", name=repr(name),
-                          gap=f"{p['gap']:g}", piece=repr(kind.name), thickness=f"{piece.thickness:.4g}"))
+                          gap=units.fmt(p["gap"], "length"), piece=repr(kind.name),
+                          thickness=units.fmt(piece.thickness, "length")))
     durometer, friction = _pinch_wheels(sec, name)
     try:
         air = _build_section("air", sec.get("air", {}))

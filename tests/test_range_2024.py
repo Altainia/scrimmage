@@ -94,7 +94,8 @@ def test_the_example_scores_from_the_subwoofer():
 
 
 def test_a_missed_note_says_pieces(tmp_path):
-    """A failed scored check on a NOTE field says "pieces" (a ball field keeps "balls": tests/test_blocks_shooting.py)."""
+    """A failed scored check on a NOTE field says "pieces" (a ball field keeps "balls":
+    tests/test_blocks_shooting.py)."""
     (tmp_path / "miss.test.toml").write_text(f"""[test]
 robot = "{ROBOT.as_posix()}"
 

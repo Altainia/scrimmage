@@ -1,5 +1,6 @@
 """Every piece kind in the world: rigid pieces (a hollow coral, as slices) as free bodies beside balls, in the one
-ledger; a goal counts the kind it names (by default the first ball or disc kind), the shooter and its ball path take only their own kind."""
+ledger; a goal counts the kind it names (by default the first ball or disc kind), the shooter and its ball path take
+only their own kind."""
 
 from __future__ import annotations
 

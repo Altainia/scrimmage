@@ -72,7 +72,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from .. import i18n
+from .. import i18n, units
 from ..disc.inputs import DEFAULT_AERO, AeroSet, Disc, DiscConfigError, aero_set, disc_preset
 from ..disc.inputs import PRESETS as DISC_PRESETS
 from ..launcher.inputs import PRESETS, Ball, LauncherConfigError, _build_section
@@ -224,7 +224,8 @@ class Goal:
     body: Body | None
     plates: tuple[Plate, ...] = ()
     slot: Slot | None = None        # a rect goal's frame and box (None: a rim of bars)
-    kind: str | None = None         # the kind it counts (None: the field's first ball or disc kind, else its first kind)
+    # the kind it counts (None: the field's first ball or disc kind, else its first kind)
+    kind: str | None = None
 
     def rotation(self) -> np.ndarray:
         """Goal frame to world: heading about z, after the tilt (about y, entry normal +z toward -x)."""
@@ -435,7 +436,7 @@ def kind_named(path: Path, where: str, name: str, kinds: dict[str, PieceKind]) -
     return kinds[name]
 
 
-def _counted(path: Path, where: str, name: str | None, kinds: dict[str, PieceKind], default: str) -> PieceKind:
+def _counted(path: Path, where: str, name: str | None, kinds: dict[str, PieceKind]) -> PieceKind:
     """The kind a goal counts: the one it names, else the field's first ball or disc kind, else its first kind."""
     if name is not None:
         return kind_named(path, where, name, kinds)
@@ -444,17 +445,17 @@ def _counted(path: Path, where: str, name: str | None, kinds: dict[str, PieceKin
 
 def piece_box(kind: PieceKind) -> tuple[float, float, float]:
     """A rigid kind's bounding box in its body frame: its sides along body x, y and z (m)."""
-    from .pieces import _lo_hi  # pieces.py imports this module
+    from .pieces import piece_bounds  # pieces.py imports this module
 
-    lo = np.min([_lo_hi(s)[0] for s in kind.solids], axis=0)
-    hi = np.max([_lo_hi(s)[1] for s in kind.solids], axis=0)
+    lo, hi = piece_bounds(kind)
     return tuple(float(x) for x in hi - lo)
 
 
 def piece_sides(kind: PieceKind) -> tuple[float, ...]:
     """The sides of a kind's bounding box in its body frame, smallest first (a ball or disc: its diameter)."""
     if kind.form != "rigid" or not kind.solids:
-        d = kind.ball.diameter if kind.ball is not None else kind.disc.diameter if kind.disc is not None else kind.extent
+        d = (kind.ball.diameter if kind.ball is not None else kind.disc.diameter if kind.disc is not None
+             else kind.extent)
         return (float(d),)
     return tuple(sorted(piece_box(kind)))
 
@@ -465,13 +466,12 @@ def passing_width(kind: PieceKind) -> float:
     return piece_sides(kind)[0]
 
 
-def _goal(path: Path, table, i: int, kinds: dict[str, PieceKind], default: str,
-          warnings: list[str] | None = None) -> Goal:
+def _goal(path: Path, table, i: int, kinds: dict[str, PieceKind], warnings: list[str] | None = None) -> Goal:
     r = _Reader(path, f"[[goal]] #{i + 1}", table, _GOAL)
     name = r.text("name")
     r.where = f"[[goal]] '{name}'"
     kind_name = r.text("kind") if r.has("kind") else None
-    counted = _counted(path, r.where, kind_name, kinds, default)
+    counted = _counted(path, r.where, kind_name, kinds)
     opening = _opening(r)
     rect = isinstance(opening, RectOpening)
     if rect and (r.has("funnel") or r.has("body")):
@@ -518,24 +518,19 @@ def _goal(path: Path, table, i: int, kinds: dict[str, PieceKind], default: str,
              body=body, plates=tuple(plates), slot=slot, kind=kind_name)
     throat = g.throat_across_flats()
     width = passing_width(counted)
-    if throat is not None and throat <= width and counted.form == "rigid":
-        raise RangeError(
-            i18n.t("{path}: {goal_table} '{name}' funnel: the throat is {throat} m across the flats, no wider than "
-                   "the piece's thinnest side ({diameter} m); make the funnel shallower or its walls steeper",
-                   path=path, name=name, throat=f"{throat:.4g}", diameter=f"{width:.4g}", goal_table="[[goal]]")
-        )
     if throat is not None and throat <= width:
+        what = i18n.t("the piece's thinnest side") if counted.form == "rigid" else i18n.t("the ball")
         raise RangeError(
-            i18n.t("{path}: {goal_table} '{name}' funnel: the throat is {throat} m across the flats, no wider than "
-                   "the ball ({diameter} m); make the funnel shallower or its walls steeper", path=path, name=name,
-                   throat=f"{throat:.4g}", diameter=width, goal_table="[[goal]]")
-        )
+            i18n.t("{path}: {goal_table} '{name}' funnel: the throat is {throat} across the flats, no wider than "
+                   "{what} ({diameter}); make the funnel shallower or its walls steeper", path=path, name=name,
+                   throat=units.fmt(throat, "length"), what=what, diameter=units.fmt(width, "length"),
+                   goal_table="[[goal]]"))
     sides = piece_sides(counted)
     if throat is not None and warnings is not None and len(sides) > 1 and throat <= sides[1]:
         warnings.append(
-            i18n.t("{path}: {goal_table} '{name}' funnel: the throat is {throat} m across the flats, narrower than "
-                   "the piece's middle side ({side} m); it may pass only on edge", path=path, name=name,
-                   throat=f"{throat:.4g}", side=f"{sides[1]:.4g}", goal_table="[[goal]]"))
+            i18n.t("{path}: {goal_table} '{name}' funnel: the throat is {throat} across the flats, narrower than "
+                   "the piece's middle side ({side}); it may pass only on edge", path=path, name=name,
+                   throat=units.fmt(throat, "length"), side=units.fmt(sides[1], "length"), goal_table="[[goal]]"))
     return g
 
 
@@ -866,7 +861,7 @@ def parse_range(raw: dict, path: Path) -> Range:
     goals = []
     goal_warnings: list[str] = []
     for i, t in enumerate(goals_raw):
-        g = _goal(path, t, i, kinds, default, goal_warnings)
+        g = _goal(path, t, i, kinds, goal_warnings)
         if any(g.name == other.name for other in goals):
             raise RangeError(i18n.t("{path}: two goals named '{name}'; goal names must be unique",
                                     path=path, name=g.name))

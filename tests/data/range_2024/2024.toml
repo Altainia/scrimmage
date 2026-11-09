@@ -25,7 +25,7 @@ size = [0.1, 1.0509, 1.9894]      # M 5.6: as wide as the opening, 3 ft 5 3/8 in
 [[obstacle]]
 name = "speaker_blue_hood"
 pos = [0.2293, 5.5446, 2.3148]   # estimate: the hood roof from the opening's front lip (6328 corner, 18.055 in out, 83.091 in up)
-size = [0.5761, 1.0509, 0.03]   # ... up to the wall at about 98 in (CAD-ONLY; not measured); M 5.6: 3 ft 5 3/8 in wide
+size = [0.5761, 1.0509, 0.03]   # estimate: lip to wall at about 98 in (CAD-ONLY). source: M 5.6: its width
 rpy_deg = [0.0, 37.25, 0.0]
 
 [[goal]]

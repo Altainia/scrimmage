@@ -368,6 +368,10 @@ The piece decides how every contact it has is worked out.
   the same mass, size, inertia and solids as on the range. A ring's hole is open (a rod passes through it), because
   it is built from 24 slices, as on the range. `shape = "ring"` with `size = [diameter, inner_diameter, length]` and a
   `mass` builds your own ring the same way. The 2024 NOTE is a rigid stand-in: the real one is soft foam and squashes.
+  It brings its own contact `stiffness` (2000 N/m, an estimate), as on the range. **Between wheels the bench squeezes
+  it too hard:** until a fix lands, the bench applies a rigid piece's stiffness at each contact point, and a ring
+  touches a wheel at many, so the NOTE is squeezed harder than its `stiffness` says and its exit speed reads low.
+  Take the bench's exit speed for it as a low estimate; `bench check` warns about this.
 
 Discs (the 2013 Frisbee and an Ultra-Star preset, with their own flight) come in a later step, once the disc launcher
 model is merged. A custom rigid `shape = "disc"` (a short cylinder) works now.
@@ -414,7 +418,7 @@ it, the rest is the preset's), or a custom piece.
 | `size` | sphere `[diameter]`; box `[x, y, z]`; cylinder or disc `[diameter, length]`; ring `[diameter, inner_diameter, length]` (axis along z) | the preset's |
 | `mass` | kg | the preset's, else required |
 | `inertia` | `[Ixx, Iyy, Izz]` about its own axes, kg m² | from the shape (required for a mesh) |
-| `stiffness` | rigid only: its own contact stiffness, N/m, in series with the tread | none: hard |
+| `stiffness` | rigid only: its own contact stiffness, N/m, in series with the tread | a piece preset's own (the 2024 NOTE's 2000), else none: hard |
 | `drag_coefficient`, `spin_damping` | rigid only, in `[flight]`: the drag coefficient on its shadow, and how fast the air slows its spin, N m s/rad (0 or more) | 1.17 (an estimate), 0; a piece preset's own |
 | `stiffness_n`, `stiffness_exponent`, `restitution`, `inertia_factor` | squishy only: the launcher model's ball numbers | the preset's, or the nearest preset's |
 | `mesh`, `units` | `shape = "mesh"`: an STL or OBJ file (relative to the bench file) and its units, `m`, `mm` or `in`; it collides as its convex hull | none |
@@ -610,7 +614,7 @@ comes up short here: the drag numbers are estimates, and the result is UNCALIBRA
 | `outlet` | which outlet's pieces fly | required |
 | `height` | the bench origin's height above the floor, m | 0 |
 | `target_distance`, `target_height` | the target, forward of the origin and above the floor, m | required, unless there is a `goal` |
-| `ring_diameter` | a ring at the target: shots through it count | none |
+| `ring_diameter` | a ring at the target: shots through it count (a rigid piece's: all of its bounding box's corners inside the ring as it comes down through it, the rule a `goal` uses) | none |
 | `air` | an air preset | `default` |
 | `goal` | rigid pieces: `{ range = "<range file>", name = "<goal>" }`, a goal from a range file (relative to the bench file, or a built-in range's name) | none |
 | `at` | with `goal`: where the bench origin stands on that field, `[x, y, height]`, m (its height replaces `height`) | required with `goal` |

@@ -38,7 +38,9 @@ from dataclasses import dataclass
 import numpy as np
 
 from ..launcher import flight6
-from ..launcher.flight6 import DT, GRAVITY, MAX_TIME, OMEGA, POS, QUAT, VEL, T, matrix_from_quat  # noqa: F401
+# the quaternion helpers live in flight6; disc/run.py and the tests take them from here too
+from ..launcher.flight6 import (DT, GRAVITY, MAX_TIME, OMEGA, POS, QUAT, VEL, T,  # noqa: F401
+                                matrix_from_quat, quat_from_matrix)
 from ..testrange.spec import Surface
 from . import aero as aero_module
 from .inputs import AeroSet, Disc
@@ -62,26 +64,6 @@ class DiscFlight:
     crossing: tuple[str, float, np.ndarray] | None  # (goal name, t, center) at the first goal crossing
     apex: float  # highest center height (m)
     flight_time: float  # s from launch to landing (or max_time)
-
-
-def quat_from_matrix(rot: np.ndarray) -> np.ndarray:
-    """The unit quaternion (w, x, y, z), w >= 0, of a rotation matrix (Shepperd's method: the largest diagonal)."""
-    m = np.asarray(rot, dtype=float)
-    trace = m[0, 0] + m[1, 1] + m[2, 2]
-    if trace > 0:
-        s = 2 * math.sqrt(1 + trace)
-        q = np.array([s / 4, (m[2, 1] - m[1, 2]) / s, (m[0, 2] - m[2, 0]) / s, (m[1, 0] - m[0, 1]) / s])
-    else:
-        i = int(np.argmax(np.diag(m)))
-        j, k = (i + 1) % 3, (i + 2) % 3
-        s = 2 * math.sqrt(1 + m[i, i] - m[j, j] - m[k, k])
-        q = np.zeros(4)
-        q[0] = (m[k, j] - m[j, k]) / s
-        q[1 + i] = s / 4
-        q[1 + j] = (m[j, i] + m[i, j]) / s
-        q[1 + k] = (m[k, i] + m[i, k]) / s
-    q /= np.linalg.norm(q)
-    return q if q[0] >= 0 else -q
 
 
 def state_from_hummel(x, y, z, vx, vy, vz, phi, theta, gamma, phidot, thetadot, gammadot) -> DiscState:

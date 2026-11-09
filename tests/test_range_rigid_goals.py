@@ -3,12 +3,14 @@ counts its first kind, and a throat narrower than a rigid piece's middle side wa
 
 from __future__ import annotations
 
+import re
 import tomllib
 from pathlib import Path
 
 import pytest
 
 from range_fixtures import range_cfg
+from scrimmage import units
 from scrimmage.protocol import HalState
 from scrimmage.testrange.balls import BallState
 from scrimmage.testrange.build import BALL_BITS
@@ -117,5 +119,5 @@ def test_a_throat_thinner_than_the_piece_is_still_an_error(tmp_path):
 
 def test_a_ball_throat_is_unchanged(tmp_path):
     ball = '[range]\nname = "b"\nball = "2025-algae"\n'
-    with pytest.raises(RangeError, match=r"no wider than the ball \(0\.4064 m\)"):
+    with pytest.raises(RangeError, match=r"no wider than the ball \(" + re.escape(units.fmt(0.4064, "length")) + r"\)"):
         parse(tmp_path, ball + GOAL.format(extra="funnel = { depth = 0.2, slope_deg = 60.0, throat = 0.4 }"))

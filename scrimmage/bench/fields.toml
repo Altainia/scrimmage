@@ -57,7 +57,7 @@ help = "foam ball: how its mass is spread, for how hard it is to spin"
 
 [piece.stiffness]
 unit = "N/m"
-help = "rigid only: how stiff its own surface is (higher is harder); left out, it is hard"
+help = "rigid only: how stiff its own surface is (higher is harder); left out, a piece preset's own, else it is hard"
 
 [piece.drag_coefficient]
 help = "rigid only, in [flight]: the drag coefficient on its shadow (0 or more); left out, 1.17, an estimate"
@@ -393,7 +393,7 @@ help = "how high the target is above the floor"
 
 [flight.ring_diameter]
 unit = "m"
-help = "a ring at the target; shots through it count"
+help = "a ring at the target; shots through it count (a rigid piece only if all its corners are inside it)"
 
 [flight.air]
 help = "which air to fly through"

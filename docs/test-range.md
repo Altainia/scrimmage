@@ -328,12 +328,22 @@ On a range whose piece is a flat rigid piece, such as the 2024 NOTE, `[shooter] 
 a top and a bottom wheel squeeze the piece's two faces and drive it out. `piece` names the range's kind it shoots.
 
 ```toml
+# defaults: 4 in. top and bottom wheels, 14 in. wide, a 1.25 in. gap, a fixed 45 degree channel
 [[part]]
 name = "shooter"
-stock = "pinch_shooter"       # defaults: 4 in. top and bottom wheels, 14 in. wide, a 1.25 in. gap, a fixed 45 degree
-attach = "drive.top"          # channel
+stock = "pinch_shooter"
+attach = "drive.top"
 pos = [-0.1, 0.0, 0.3]
 ids = { bottom = "PWM:2", top = "PWM:3" }
+
+# the loader: a roller behind the shooter that pushes the held NOTE into the wheels
+[[part]]
+name = "loader"
+stock = "roller"
+attach = "drive.top"
+pos = [-0.35, 0.0, 0.2]
+gearing = 10.0
+ids = { spin = "PWM:5" }
 
 [shooter]
 kind = "piece"
@@ -1131,8 +1141,8 @@ unobstructed (the rim and funnel are not modeled), so it is an estimate and is m
 fixed-size set of rows `{distance, wheel_rps, hood_deg, flight_s, apex}`.
 
 - **Unreachable distances** are marked: a CSV row with `status` = `unreachable` and no values, a comment in the Java
-  table (the row is left out), and a warning (for a level goal, with the reachable range). If none of the requested distances is
-  reachable the command is an error. Ask for 1 to 6 m and you get the reachable part.
+  table (the row is left out), and a warning (for a level goal, with the reachable range). If none of the requested
+  distances is reachable the command is an error. Ask for 1 to 6 m and you get the reachable part.
 - **Rows follow the previous row.** Several wheel speeds and hood angles can reach one distance. The first row takes
   the steepest solution; each later row takes the solution **closest to the row before it** (wheel speed and hood angle
   together), so the table is smooth to interpolate between.
@@ -1167,9 +1177,10 @@ flies) and nothing touches an obstacle first. At a goal entered going up, a piec
 rising as it crosses: flown again in the world, rows that crossed flat at their apex caught the SPEAKER's front lip,
 and most missed with the wheels 2% off their speed, while every row with the margin scored at 2% either side. It
 costs the flattest, slowest shots and the farthest distances (the example robot's table stops at 2.37 m with it,
-and reached 2.57 m without it). A ball's rows keep the rule above. Its line names the piece's stiffness and the
-tread's friction as the estimates. A level goal (the hub) is refused for it. It takes longer than a ball's: about
-15 s for 3 SPEAKER distances with 7 tilts, 35 s for 5 with 16, and about a minute for the example's 8 with 21.
+and reached 2.57 m without it). A ball's rows keep the rule above (they aren't flown again in the world). Its
+UNCALIBRATED line names the piece's stiffness, the tread's friction and the drag coefficient as the estimates, and
+says lift isn't modeled. A level goal (the hub) is refused for it. It takes longer than a ball's: about 15 s for 3
+SPEAKER distances with 7 tilts, 35 s for 5 with 16, and about a minute for the example's 8 with 21.
 
 Robot code should **hold fire beyond the table's reach** rather than clamp to its last row; the sample does.
 

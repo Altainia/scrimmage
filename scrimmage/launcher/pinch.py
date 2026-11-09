@@ -55,7 +55,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .. import i18n
+from .. import i18n, units
 from ..motors import Battery
 from .contact import FRICTION_SLIP_SPEED, friction_force, wheel_stiffness
 from .inputs import BatteryIn, LauncherConfigError, Shaft, Wheels
@@ -146,7 +146,7 @@ def check_setup(setup: PinchSetup) -> None:
         raise PinchConfigError(i18n.t("pinch shooter: {wheel_x_setting} puts the piece between the wheels before it "
                                       "is fed; it must be at least {need} (half the piece's length, {half}, plus how "
                                       "far the wheels reach along it)", wheel_x_setting=f"wheel_x = {setup.wheel_x:g}",
-                                      need=f"{need:.4g}", half=f"{p.length / 2.0:.4g}"))
+                                      need=units.fmt(need, "length"), half=units.fmt(p.length / 2.0, "length")))
 
 
 @dataclass(frozen=True)
@@ -188,8 +188,8 @@ def status_words(shot: ExitedPiece, setup: PinchSetup) -> str:
     """What happened to a piece that didn't leave, in words ("" for a launched one)."""
     if shot.status == "no_contact":
         return i18n.t("the wheels can't grip the piece: the gap ({gap}) is no narrower than its thickness "
-                      "({thickness}); close the gap so the wheels squeeze it", gap=f"{setup.gap:g}",
-                      thickness=f"{setup.piece.thickness:g}")
+                      "({thickness}); close the gap so the wheels squeeze it", gap=units.fmt(setup.gap, "length"),
+                      thickness=units.fmt(setup.piece.thickness, "length"))
     if shot.status == "jammed":
         return i18n.t("the piece jammed: it stopped moving between the wheels (too tight a gap for the wheels' "
                       "grip, or the wheels too slow to pull it through)")

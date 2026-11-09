@@ -49,7 +49,6 @@ import numpy as np
 
 from .. import i18n
 from ..config import load_config
-from ..disc.flight import quat_from_matrix
 from ..launcher import flight6, rigid_aero
 from ..launcher.flight import Landing, fly, fly_path, launch_state
 from ..launcher.inputs import Setup
@@ -67,7 +66,10 @@ RPS_TOLERANCE = 0.01    # the wheel speed is solved to this (rps)
 HIT_TOLERANCE = 0.02    # m: the solved shot must cross the goal height this close to the goal center
 ROW_FIELDS = ("distance", "wheel_rps", "hood_deg", "flight_s", "apex")
 UNREACHABLE = "unreachable"
-GRID_RPS = 10.0         # rps between a surface aim's coarse grid of wheel speeds, the brackets regula falsi starts from
+# rps between a surface aim's coarse grid of wheel speeds, the brackets regula falsi starts from. On a pinch
+# shooter's grip plateau (wheel speeds where the piece leaves at about the same speed) the offset curve is nearly
+# flat, so two roots closer than this can fall in one grid step and both be missed.
+GRID_RPS = 10.0  # estimate: coarse enough to be quick, fine enough for the 2024 SPEAKER rows (tests/test_range_2024.py)
 OFFSET_TOLERANCE = 0.002    # m: a surface aim's regula falsi stops this close to the target distance
 APEX_TOLERANCE = 1e-4       # m: and this close to the apex that just reaches the surface center's height
 NORMAL_SPEED_TOLERANCE = 1e-3   # m/s: and this close to a crossing along the surface (no speed along its normal)
@@ -128,11 +130,13 @@ class AimModel:
 
 def calibration(model: AimModel) -> str:
     """The table's UNCALIBRATED line: what its setup measured (the range's ball, the shooter's setup file); a pinch
-    shooter's rests on the piece's stiffness and the tread's friction, estimates."""
+    shooter's rests on the piece's stiffness and the tread's friction, estimates, and on its drag coefficient (no
+    lift), as the bench's line says."""
     from ..launcher import report
     if model.piece is not None:
         from ..measure import labels
-        return labels.line({}, labels.RIGID_BENCH) + "."
+        return i18n.t("{line}. The drag coefficient ({cd}) is an estimate unless you measured it, and lift isn't "
+                      "modeled.", line=labels.line({}, labels.RIGID_BENCH), cd=f"{model.piece.kind.drag_coefficient:g}")
     return report.calibration([model.setup])
 
 
@@ -317,6 +321,13 @@ def aim_table(config_path: Path, goal: str, distances: list[float], *, hood_step
                          "{far} m", distances=", ".join(f"{d:g}" for d in missed), low=f"{rps_range[0]:g}",
                          high=f"{rps_range[1]:g}", lowest=f"{model.hood_angles[0]:g}",
                          highest=f"{model.hood_angles[-1]:g}", goal=goal, near=f"{near:.2f}", far=f"{far:.2f}")
+        elif model.piece is not None:     # a pinch shooter turns its channel, not a hood
+            msg = i18n.t("{distances} m can't be scored with wheels at {low}..{high} rps and channel tilts "
+                         "{lowest}..{highest} deg: no shot found crosses the center of the {goal} opening from the "
+                         "side it is entered without touching something first",
+                         distances=", ".join(f"{d:g}" for d in missed), low=f"{rps_range[0]:g}",
+                         high=f"{rps_range[1]:g}", lowest=f"{model.hood_angles[0]:g}",
+                         highest=f"{model.hood_angles[-1]:g}", goal=goal)
         else:
             msg = i18n.t("{distances} m can't be scored with wheels at {low}..{high} rps and hood angles "
                          "{lowest}..{highest} deg: no shot found crosses the center of the {goal} opening from the "
@@ -552,7 +563,7 @@ class _PieceAim(_SurfaceAim):
         body = chan @ pc.turn
         pos = np.array([0.0, 0.0, pc.height]) + shot.exit_x * chan[:, 0]
         omega = body.T @ (-shot.spin * chan[:, 1])          # backspin about the channel's -y, in the body frame
-        return pos, shot.speed * chan[:, 0], quat_from_matrix(body), omega
+        return pos, shot.speed * chan[:, 0], flight6.quat_from_matrix(body), omega
 
     def apex_margin(self) -> float:
         return UPWARD_APEX_MARGIN
@@ -580,7 +591,7 @@ class _PieceAim(_SurfaceAim):
         """goal_fit.fit on the flight up to the crossing, on the field, its corners turned as the piece flies."""
         n = k + 2
         frame = np.column_stack([self.forward_axis, self.left, [0.0, 0.0, 1.0]])
-        quats = _quat_mul(quat_from_matrix(frame), p[:n, 7:11])
+        quats = flight6.quat_mul(flight6.quat_from_matrix(frame), p[:n, 7:11])
         samples = np.zeros((n, 14))
         samples[:, flight6.T], samples[:, flight6.POS], samples[:, flight6.QUAT] = p[:n, 0], pts[:n], quats
         samples[:, flight6.VEL] = p[:n, 4:7] @ frame.T
@@ -588,14 +599,6 @@ class _PieceAim(_SurfaceAim):
                                     stopped="until", apex=float(p[:, 3].max()), flight_time=float(p[n - 1, 0]))
         return goal_fit.fit(res, self.surface, self.model.goal.name, self.model.boxes,
                             goal_fit.kind_corners(self.model.piece.kind)).scored
-
-
-def _quat_mul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """The quaternion product a (x) b, a one (4,) and b (n, 4), each (w, x, y, z)."""
-    aw, ax, ay, az = a
-    bw, bx, by, bz = b[:, 0], b[:, 1], b[:, 2], b[:, 3]
-    return np.column_stack([aw * bw - ax * bx - ay * by - az * bz, aw * bx + ax * bw + ay * bz - az * by,
-                            aw * by - ax * bz + ay * bw + az * bx, aw * bz + ax * by - ay * bx + az * bw])
 
 
 def surface_aim(model: AimModel) -> _SurfaceAim:
@@ -618,8 +621,8 @@ def piece_flight(model: AimModel, row: AimRow) -> flight6.Flight6Result:
     g = model.goal
     frame = np.column_stack([aim.forward_axis, aim.left, [0.0, 0.0, 1.0]])
     origin = np.array([g.pos[0], g.pos[1], 0.0]) + (row.distance - model.forward) * aim.toward
-    return aim.fly(origin + frame @ pos, frame @ vel, quat_from_matrix(frame @ flight6.matrix_from_quat(quat)), omega,
-                   floor=0.0, goals=((g.name, aim.surface),))
+    turned = flight6.quat_from_matrix(frame @ flight6.matrix_from_quat(quat))
+    return aim.fly(origin + frame @ pos, frame @ vel, turned, omega, floor=0.0, goals=((g.name, aim.surface),))
 
 
 def surface_path(model: AimModel, row: AimRow) -> np.ndarray:

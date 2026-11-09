@@ -73,6 +73,11 @@ def test_note_preset_is_the_ranges_note():
     assert piece.kind == "rigid" and piece.shape == "ring" and piece.ball is None
     assert piece.mass == note.mass == kind_preset("2024-note").mass
     assert piece.size == pytest.approx(piece_box(note))
+    # its contact stiffness too (the bench's wheels squeeze the same NOTE the range's pinch shooter does), unless the
+    # [piece] gives its own
+    assert note.stiffness is not None and piece.stiffness == note.stiffness
+    assert _parse(_bench(piece='preset = "2024-note"\nstiffness = 5000')).piece.stiffness == 5000.0
+    assert not bench.warnings   # thrown by hand: no wheels squeeze it (tests/test_pinch_launcher.py's warning)
     built = build_bench(bench)
     m, lay = built.model, built.layout
     body = lay.piece_bodies[0]
@@ -302,6 +307,26 @@ def test_first_hit_is_the_earliest_box_any_point_enters():
 def test_a_goal_takes_a_whole_target_or_none(target, words):
     with pytest.raises(BenchError, match=words):
         _parse(_bench(flight=f"{GOAL}\nat = [2.5, 5.5446, 0.5]\nheading_deg = 180.0\n{target}"))
+
+
+def test_a_rigid_piece_is_in_the_ring_only_if_all_its_corners_are():
+    """`ring_diameter` judges a rigid piece by its bounding box's corners at the ring's height, as a goal does: a 14 in
+    NOTE with its center 7 in off a 16 in ring hangs half over the rim, so it isn't in."""
+    inch = 0.0254
+    corners = goal_fit.kind_corners(kind_preset("2024-note"))
+    flat = np.array([1.0, 0.0, 0.0, 0.0])
+    on_edge = np.array([math.cos(math.pi / 4), math.sin(math.pi / 4), 0.0, 0.0])   # turned 90 degrees about x
+    ring, target = 16 * inch, 3.0
+
+    def in_ring(q, off_in: float) -> bool:
+        return report.in_ring((target + off_in * inch, 0.0), goal_fit.turned_corners(q, q, 0.0, corners), target, ring)
+
+    assert not in_ring(flat, 7.0) and not in_ring(on_edge, 7.0)
+    assert not in_ring(flat, 5.0)
+    assert in_ring(on_edge, 0.0)   # centered, its box is 14 by 2 in from above: inside the 16 in circle
+    # flat, its box's corners are 9.9 in from its center, so a centered flat NOTE needs a ring over 19.8 in across
+    assert not in_ring(flat, 0.0)
+    assert report.in_ring((target, 0.0), goal_fit.turned_corners(flat, flat, 0.0, corners), target, 20 * inch)
 
 
 def test_a_goal_with_a_whole_target_reports_both():

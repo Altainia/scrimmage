@@ -454,7 +454,7 @@ class Balls:
             done.append(i)
         if done:
             self._xfrc[done] = rows
-            self._forced = np.array(done, dtype=int)
+            self._forced = np.union1d(self._forced, done) if len(self._forced) else np.array(done, dtype=int)
 
     def _rigid_forces(self, f: np.ndarray) -> None:
         """rigid_aero.forces on every flying rigid piece of the in-play pieces `f` (see the module docstring): the

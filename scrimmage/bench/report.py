@@ -319,6 +319,15 @@ def _rot_z(deg: float) -> np.ndarray:
     return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
 
 
+def in_ring(center, offsets: np.ndarray, target_distance: float, ring_diameter: float) -> bool:
+    """Whether a rigid piece goes through `[flight] ring_diameter`'s ring: seen from above, all of its bounding box's
+    corners (`offsets` (8, 3) from its center at `center`, (x, y) in the floor frame, as it is turned at the ring's
+    height) fall inside the ring's circle, `target_distance` straight ahead. The same rule as a goal's (goal_fit.py):
+    the box is a little bigger than a round piece, so this is strict for a ring."""
+    xy = np.asarray(center, float)[:2] + np.asarray(offsets, float)[:, :2]
+    return bool(np.all(np.hypot(xy[:, 0] - target_distance, xy[:, 1]) <= ring_diameter / 2.0))
+
+
 def _rigid_landings(result: BenchResult) -> list[tuple[PieceOutcome, Landing]]:
     """Rigid pieces through `[flight] outlet`, each flown by flight6 from its exit state: the center, the velocity,
     the orientation of its last pose and its spin (in its body frame). With a goal, the bench stands at `at` facing
@@ -345,12 +354,12 @@ def _rigid_landings(result: BenchResult) -> list[tuple[PieceOutcome, Landing]]:
         q = np.asarray(p.poses[-1][1][3:7], dtype=float)
         rot = flight6.matrix_from_quat(q / np.linalg.norm(q))
         omega = rot.T @ np.asarray(p.spin, dtype=float)
-        w0, v0 = q_turn[0], q_turn[1:]  # the bench's turn on the field, then the piece's own: q_turn (x) q
-        q_field = np.r_[w0 * q[0] - v0 @ q[1:], w0 * q[1:] + q[0] * v0 + np.cross(v0, q[1:])]
+        q_field = flight6.quat_mul(q_turn, q)   # the bench's turn on the field, then the piece's own
         res = flight6.fly(origin + turn @ np.array([x, y, z + fl.height]), turn @ v, q_field, omega,
                           result.bench.piece.mass, inertia, force, floor=width / 2.0, goals=goals)
         path = (res.samples[:, flight6.POS] - origin) @ turn  # the floor frame: turn.T @ (P - origin), row by row
         at_goal = goal_time = None
+        scored = False
         if fl.target_height is not None:
             zs = path[:, 2]
             down = np.flatnonzero((zs[:-1] > fl.target_height) & (zs[1:] <= fl.target_height))
@@ -360,9 +369,10 @@ def _rigid_landings(result: BenchResult) -> list[tuple[PieceOutcome, Landing]]:
                 at_goal = tuple(float(c) for c in path[k, :2] + f * (path[k + 1, :2] - path[k, :2]))
                 ts = res.samples[:, flight6.T]
                 goal_time = float(ts[k] + f * (ts[k + 1] - ts[k]))
-        scored = False
-        if at_goal is not None and fl.ring_diameter is not None:
-            scored = math.hypot(at_goal[0] - fl.target_distance, at_goal[1]) <= (fl.ring_diameter - width) / 2.0
+                if fl.ring_diameter is not None:   # the corners as the piece is then, in the floor frame
+                    offsets = goal_fit.turned_corners(res.samples[k, flight6.QUAT], res.samples[k + 1, flight6.QUAT],
+                                                      f, corners) @ turn
+                    scored = in_ring(at_goal, offsets, fl.target_distance, fl.ring_diameter)
         verdict = blocked = caught = None
         if g is not None:
             fit = goal_fit.fit(res, surface, g.name, g.boxes, corners)

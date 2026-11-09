@@ -563,10 +563,11 @@ _PRESET_KEYS = ("preset", "name", "kind", "shape", "stiffness", "drag_coefficien
 
 def _kind_piece(t: _Table, name: str, kind, size: tuple) -> Piece:
     """A rigid bench piece that is a range kind: its mass, inertia (the full tensor's diagonal; the off-diagonal
-    moments go to the builder through the kind) and solids are the kind's."""
+    moments go to the builder through the kind), solids and contact stiffness (a piece preset's own, such as the 2024
+    NOTE's; a `stiffness` key overrides it) are the kind's."""
     return Piece(name=name, kind="rigid", shape=kind.shape, size=size, mass=kind.mass,
-                 inertia=tuple(kind.inertia[:3]), ball=None, stiffness=t.num("stiffness", None, positive=True),
-                 mesh=None, units=None, rigid_kind=kind)
+                 inertia=tuple(kind.inertia[:3]), ball=None,
+                 stiffness=t.num("stiffness", kind.stiffness, positive=True), mesh=None, units=None, rigid_kind=kind)
 
 
 def _preset_piece(t: _Table, preset: str) -> Piece:
@@ -1092,6 +1093,14 @@ def parse_bench(raw: dict, base_dir: Path, problems: list[Problem] | None = None
     run = attempt(_parse_run, raw.get("run", {}), key="run")
     if len(errors) > start:
         return None
+    kind = None if piece is None or piece.stiffness is None else piece.rigid_kind
+    if parsed["wheel"] and kind is not None and len(kind.solids) > 1:
+        # until the bench's per-contact squeeze is fixed (launcher.md, tests/test_pinch_launcher.py's xfail)
+        warned.append(i18n.t("{piece_table} is built from {n} solids, and the bench applies its {stiffness_setting} "
+                             "at each of their contact points, so between wheels it is squeezed harder than that and "
+                             "its exit speed reads low; take the bench's exit speed as a low estimate (a fix is "
+                             "queued)", piece_table="[piece]", n=len(kind.solids),
+                             stiffness_setting=f"stiffness = {piece.stiffness:g}"))
     return Bench(
         name=fields[0], author=fields[1], idea=fields[2], notes=fields[3],
         piece=piece, shafts=shafts, wheels=parsed["wheel"], plates=parsed["plate"], bars=parsed["bar"],

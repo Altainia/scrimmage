@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import copy
 import math
+import re
 import time
 from pathlib import Path
 
@@ -15,6 +16,7 @@ import pytest
 import tomlkit
 
 from range_fixtures import KITBOT, range_cfg, shooter_cfg
+from scrimmage import units
 from scrimmage.launcher import flight6
 from scrimmage.launcher.pinch import single_shot
 from scrimmage.parts.stock import build_stock
@@ -125,6 +127,34 @@ def test_a_note_leaves_at_the_models_speed_in_the_channels_direction(note_dir):
     assert apex > z0 + 0.5 and balls.state[launched] != BallState.STUCK
 
 
+@pytest.mark.parametrize("bottom, top, sign", [(0.9, 0.6, 1.0), (0.6, 0.9, -1.0)])
+def test_unequal_wheels_spin_the_note_the_models_way_in_the_world(note_dir, bottom, top, sign):
+    """Unequal wheels pin the spin sign end to end (pinch.py's spin, launch.exit_state_piece, balls.place): with the
+    bottom wheel (PWM 2) faster than the top (PWM 3), the launched NOTE spins backward, about the channel's -y (its
+    top face turning back toward the robot); with the top faster, forward. The model's spin is small here (about
+    0.0075 rad/s at 90 and 60 rps), so this pins its sign and its handoff to the world, not its size."""
+    w = World(note_cfg(), note_dir)
+    balls = w.test_range.balls
+    for _ in range(1000):
+        w.step(pwm_hal(p2=bottom, p3=top))
+    launched = None
+    for _ in range(2000):
+        w.step(pwm_hal(p2=bottom, p3=top, p5=1.0))
+        if np.any(balls.field):
+            launched = int(np.flatnonzero(balls.field)[0])
+            break
+    assert launched is not None and balls.log[launched].launcher_status == "launched"
+    m, d = w.model, w.data
+    chan = d.xmat[m.body("shooter.channel").id].reshape(3, 3)
+    body = d.xmat[balls.bodies[launched]].reshape(3, 3)
+    omega = body @ balls._qvel[launched, 3:6]           # rad/s; a free joint's angular velocity is in its body frame
+    spin = balls.log[launched].spin_rpm * 2 * math.pi / 60.0    # rad/s, positive for backspin
+    assert sign * spin > 0.0
+    assert sign * (omega @ -chan[:, 1]) > 0.0
+    assert omega @ -chan[:, 1] == pytest.approx(spin, rel=0.05)
+    assert abs(omega @ chan[:, 0]) < 1e-9 and abs(omega @ chan[:, 2]) < 1e-9   # rad/s: pitch spin only
+
+
 # ------------------------------------------------------------------------------------------------ refusals
 
 def test_kind_piece_needs_a_pinch_shooter_part(note_dir):
@@ -167,8 +197,9 @@ def test_a_ball_piece_is_refused(note_dir):
 
 
 def test_a_gap_the_note_slips_through_is_refused(note_dir):
-    with pytest.raises(ValueError, match=r"gap 0.06 is no narrower than the piece 'note''s thickness 0.0508, so the "
-                                         r"wheels can't grip it"):
+    words = (f"gap {units.fmt(0.06, 'length')} is no narrower than the piece 'note''s thickness "
+             f"{units.fmt(0.0508, 'length')}, so the wheels can't grip it")
+    with pytest.raises(ValueError, match=re.escape(words)):
         World(note_cfg(part={"gap": 0.06}), note_dir)
     with pytest.raises(ValueError, match=r"wheel_x = 0.15 puts the piece between the wheels"):
         World(note_cfg(part={"wheel_x": 0.15}), note_dir)

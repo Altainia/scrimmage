@@ -33,7 +33,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from ..launcher import flight6
-from .pieces import PieceKind, _lo_hi
+from .pieces import PieceKind, piece_bounds
 from .spec import Range, Surface
 
 
@@ -72,19 +72,14 @@ def box_corners(lo, hi) -> np.ndarray:
 
 def kind_corners(kind: PieceKind) -> np.ndarray:
     """A rigid kind's bounding box corners (8, 3) in its body frame: the box spec.piece_box measures."""
-    lo = np.min([_lo_hi(s)[0] for s in kind.solids], axis=0)
-    hi = np.max([_lo_hi(s)[1] for s in kind.solids], axis=0)
-    return box_corners(lo, hi)
+    return box_corners(*piece_bounds(kind))
 
 
-def matrices(quats: np.ndarray) -> np.ndarray:
-    """(n, 3, 3) rotation matrices of (n, 4) unit quaternions (w, x, y, z)."""
-    w, x, y, z = (quats[:, k] for k in range(4))
-    return np.stack([
-        np.stack([1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)], axis=-1),
-        np.stack([2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)], axis=-1),
-        np.stack([2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)], axis=-1),
-    ], axis=1)
+def turned_corners(q0: np.ndarray, q1: np.ndarray, f: float, corners: np.ndarray) -> np.ndarray:
+    """`corners` ((8, 3), body frame) turned as the piece is a fraction `f` of the way from orientation `q0` to `q1`
+    (unit quaternions (w, x, y, z), interpolated the shorter way): their offsets from its center (8, 3)."""
+    q = (1 - f) * q0 + f * (q1 if q0 @ q1 >= 0 else -q1)
+    return corners @ flight6.matrix_from_quat(q / np.linalg.norm(q)).T
 
 
 def first_hit(points: np.ndarray, boxes) -> tuple[int, str] | None:
@@ -142,8 +137,8 @@ def fit(res: flight6.Flight6Result, surface: Surface, goal: str, boxes, corners:
     ts = res.samples[:, flight6.T]
     before = res.samples[ts < t_cross]
     centers = before[:, flight6.POS][:, None, :]
-    pts = np.concatenate([centers, centers + np.einsum("nij,kj->nki", matrices(before[:, flight6.QUAT]), corners)],
-                         axis=1)
+    turned = np.einsum("nij,kj->nki", flight6.matrices_from_quats(before[:, flight6.QUAT]), corners)
+    pts = np.concatenate([centers, centers + turned], axis=1)
     own = f"{goal}."
     others = [b for b in boxes if not b[0].startswith(own)]
     mine = [b for b in boxes if b[0].startswith(own)]
@@ -153,9 +148,8 @@ def fit(res: flight6.Flight6Result, surface: Surface, goal: str, boxes, corners:
     k = max(len(before) - 1, 0)
     span = ts[k + 1] - ts[k] if k + 1 < len(ts) else 0.0
     f = (t_cross - ts[k]) / span if span > 0 else 0.0
-    q0, q1 = res.samples[k, flight6.QUAT], res.samples[min(k + 1, len(ts) - 1), flight6.QUAT]
-    q = (1 - f) * q0 + f * (q1 if q0 @ q1 >= 0 else -q1)
-    at = center + corners @ flight6.matrix_from_quat(q / np.linalg.norm(q)).T
+    at = center + turned_corners(res.samples[k, flight6.QUAT], res.samples[min(k + 1, len(ts) - 1), flight6.QUAT],
+                                 f, corners)
     edge = outside_edge(surface, at)
     if edge is None:
         return Fit(True)

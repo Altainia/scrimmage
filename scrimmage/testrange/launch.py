@@ -43,9 +43,9 @@ import numpy as np
 
 from ..disc.launcher import ExitedDisc
 from ..disc.run import channel_exit
+from ..launcher.flight6 import quat_from_matrix
 from ..launcher.model import ExitedBall
 from ..launcher.pinch import ExitedPiece
-from ..disc.flight import quat_from_matrix
 
 LAUNCH_CLEAR_S = 0.15   # s of flight a launched ball ignores the robot for (LAUNCHED_BITS), then BALL_BITS
 
