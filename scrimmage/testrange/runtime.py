@@ -40,8 +40,8 @@ from .ballpath import BallPath
 from .balls import BallState, Balls, log_dict
 from .build import BALL_BITS, LAUNCHED_BITS
 from .feeder import Feeder
-from .launch import LAUNCH_CLEAR_S, exit_state, exit_state_disc
-from .shooter import DiscShooter, Shooter, parse_shooter
+from .launch import LAUNCH_CLEAR_S, exit_state, exit_state_disc, exit_state_piece
+from .shooter import DiscShooter, PieceShooter, Shooter, parse_shooter
 from .station import DEFAULT_SEED, check_seed
 
 
@@ -61,21 +61,24 @@ class RangeRuntime:
         m.tree_sleep_policy[ball_trees] = int(mujoco.mjtSleepPolicy.mjSLEEP_ALLOWED)
         config = parse_shooter(cfg, built, cfg_dir) if "shooter" in cfg else None
         if config is not None:
-            air = config.setup.air
+            air = config.air if config.kind == "piece" else config.setup.air
         elif self.range.disc is not None:
             air = DiscAir()             # a disc range without a shooter: the disc model's sea-level air
         else:
             air = _build_section("air", {"preset": "default"})
         self.balls = Balls(m, world.data, self.layout, self.range, air)
         self.disc = config is not None and config.kind == "disc"
+        self.piece = config is not None and config.kind == "piece"     # a pinch shooter's rigid piece
         if config is None:
             self.shooter = None
         else:
-            self.shooter = DiscShooter(world, config) if self.disc else Shooter(world, config)
+            self.shooter = (DiscShooter(world, config) if self.disc else PieceShooter(world, config) if self.piece
+                            else Shooter(world, config))
         self.ball_path = BallPath(config, self.balls, self.shooter) if config is not None else None
         if config is not None:
-            # the frame the launcher model works in: the launcher's base (on its shaft), the disc shooter's channel
-            self._base = m.body(f"{config.part}.{'channel' if self.disc else 'base'}").id
+            # the frame the launcher model works in: the launcher's base (on its shaft), the disc or pinch shooter's
+            # channel
+            self._base = m.body(f"{config.part}.{'channel' if self.disc or self.piece else 'base'}").id
         # the stations' feeder, None on a range without stations
         self.feeder = Feeder(self.balls, self.layout, self.range, self._config["seed"]) if self.range.stations else None
         self._prev = np.zeros((self.balls.n, 3))
@@ -215,9 +218,14 @@ class RangeRuntime:
         """A launched ball (or disc) into the world at the exit point, ignoring the robot for LAUNCH_CLEAR_S. A disc
         is turned to lie in the channel's plane and spins about its axis (launch.exit_state_disc); its log's
         exit_slip is left unset (the disc launcher reports slip energy, not a slip speed) and its spin_rpm is signed,
-        positive counter-clockwise seen from above the channel."""
+        positive counter-clockwise seen from above the channel. A rigid piece from a pinch shooter leaves face-parallel
+        to the channel with its pitch spin (launch.exit_state_piece); its spin_rpm is backspin, as a ball's."""
         balls = self.balls
-        if self.disc:
+        if self.piece:
+            pos, vel, quat, ang_vel = exit_state_piece(shot, motion["base_pos"], motion["base_mat"],
+                                                       motion["base_vel"], t0, self.shooter.config.turn)
+            balls.place(i, pos, vel, ang_vel, LAUNCHED_BITS, full_bits_after=LAUNCH_CLEAR_S, quat=quat)
+        elif self.disc:
             pos, vel, quat, ang_vel = exit_state_disc(shot, motion["base_pos"], motion["base_mat"],
                                                       motion["base_vel"], t0)
             balls.place(i, pos, vel, ang_vel, LAUNCHED_BITS, full_bits_after=LAUNCH_CLEAR_S, quat=quat)

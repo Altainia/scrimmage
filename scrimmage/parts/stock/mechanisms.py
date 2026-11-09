@@ -1,7 +1,7 @@
-"""Stock mechanisms: elevator, arm, flywheel, roller, turret, cylinder, launcher and disc shooter. They carry mass,
-inertia, joints and motor/encoder slots. Their geoms touch nothing unless the part sets collide = true; then all but
-the drawing-only ones (the launcher's hood arc, the disc shooter's guide plates, a push cylinder's barrel) touch the
-field, game pieces and a partner robot, never the robot's own parts."""
+"""Stock mechanisms: elevator, arm, flywheel, roller, turret, cylinder, launcher, disc shooter and pinch shooter. They
+carry mass, inertia, joints and motor/encoder slots. Their geoms touch nothing unless the part sets collide = true;
+then all but the drawing-only ones (the launcher's hood arc, the disc shooter's guide plates, a push cylinder's barrel)
+touch the field, game pieces and a partner robot, never the robot's own parts."""
 
 from __future__ import annotations
 
@@ -578,4 +578,96 @@ register(Stock(
          "world the {shooter_table} section's disc launcher model runs the wheel shafts and the spin joints mirror "
          "them."),
     doc_keys=(("shooter_table", "[shooter]"), ("kind_setting", 'kind = "disc"')),
+    note_keys=(("shooter_table", "[shooter]"),)))
+
+
+# ---------------------------------------------------------------- pinch shooter
+
+PINCH_FRAME_MASS = 1.0              # kg, the base: the frame the channel hangs from
+PINCH_PLATE = 0.006                 # m, the side plates' drawn thickness
+
+
+def pinch_wheel_z(p: dict, wheel: str) -> float:
+    """A pinch shooter's wheel axle across the channel (z, toward the top wheel): the wheel's radius plus half the
+    gap, below the center line for the bottom wheel, above it for the top (launcher/pinch.py)."""
+    if wheel == "bottom":
+        return -(p["bottom_diameter"] / 2 + p["gap"] / 2)
+    return p["top_diameter"] / 2 + p["gap"] / 2
+
+
+def _pinch_shooter(p: dict) -> dict:
+    lo, hi = p["tilt_range"]
+    articulated = p["tilt"] == "articulated"
+    tilt0 = lo if articulated else p["tilt_angle"]
+    w, x = p["wheel_width"], p["wheel_x"]
+    # the side plates either side of the wheels, over their whole height
+    top = pinch_wheel_z(p, "top") + p["top_diameter"] / 2
+    bottom = pinch_wheel_z(p, "bottom") - p["bottom_diameter"] / 2
+    reach = max(p["top_diameter"], p["bottom_diameter"])
+    plates = [{"box": [reach, PINCH_PLATE, top - bottom], "pos": [x, s * (w + PINCH_PLATE) / 2, (top + bottom) / 2],
+               "color": STEEL, "collide": p["collide"]} for s in (1, -1)]
+    channel = {"name": "channel", "parent": "base", "mass": p["channel_mass"], "rot": [0, -tilt0, 0],
+               "geom": plates}
+    if articulated:
+        # hinge -y at the channel's entry, as the disc shooter's tilt: positive raises the exit end. 0 at the low stop.
+        channel["joint"] = {"name": "tilt", "hinge": [0, -1, 0], "range": [0.0, hi - lo]}
+    bodies = [{"name": "base", "mass": PINCH_FRAME_MASS,
+               "geom": [{"box": [0.05, 0.05, 0.05], "color": STEEL, "collide": p["collide"]}]}, channel]
+    moi = p["wheel_moi"]
+    motors = []
+    # spin0 the bottom wheel, turning about +y (its top moves downrange), spin1 the top, about -y (its bottom does)
+    for g, (wheel, axis) in enumerate((("bottom", [0, 1, 0]), ("top", [0, -1, 0]))):
+        r = p[f"{wheel}_diameter"] / 2
+        bodies.append({"name": f"{wheel}_wheel", "parent": "channel", "mass": 2 * moi / (r * r),
+                       "pos": [x, 0, pinch_wheel_z(p, wheel)], "joint": {"name": f"spin{g}", "hinge": axis},
+                       "com": [0, 0, 0], "inertia": [moi / 2, moi, moi / 2],
+                       "geom": [{"cylinder": [r, w], "axis": "y", "color": ORANGE, "collide": p["collide"]}]})
+        motors.append({"slot": wheel, "joint": f"spin{g}", "motor": p["motor"], "count": p["count"],
+                       "gearing": p["gearing"]})
+    out = {"part": {"name": "pinch_shooter", "format": 1}, "body": bodies, "motor": motors,
+           "mount": [{"name": "base", "body": "base"}]}
+    if articulated:
+        motors.append({"slot": "tilt", "joint": "tilt", "motor": p["tilt_motor"], "count": p["tilt_count"],
+                       "gearing": p["tilt_gearing"]})
+        out["encoder"] = [{"slot": "tilt_encoder", "joint": "tilt", "ratio": 1.0}]
+    return out
+
+
+register(Stock(
+    "pinch_shooter", N_("face-pinch shooter for a flat piece (the 2024 NOTE): a top and a bottom wheel, each on its "
+    "own shaft, squeeze the piece's faces and drive it out, the channel tilted to the exit angle, fixed or on a "
+    "motor; the test range's {shooter_table} {kind_setting} runs it with the pinch model"),
+    (Param("bottom_diameter", "m", 0.1016, N_("the bottom wheel's diameter"), positive=True),
+     Param("top_diameter", "m", 0.1016, N_("the top wheel's diameter"), positive=True),
+     Param("wheel_width", "m", 0.3556, N_("the wheels' width along their axles (the contact patch is the narrower of "
+           "it and the piece)"), positive=True),
+     Param("gap", "m", 0.03175, N_("the gap between the two wheels' surfaces; the piece is squeezed by its thickness "
+           "less this"), positive=True),
+     Param("wheel_x", "m", 0.25, N_("how far downrange of the fed piece's middle the wheels' axles stand: at least "
+           "half the piece's length plus the wheels' reach along it"), positive=True),
+     Param("wheel_moi", "kg*m^2", 0.001, N_("each wheel's (with its hub and shaft) moment of inertia about its axle"),
+           positive=True),
+     Param("added_moi", "kg*m^2", 0.0, N_("a flywheel on each wheel's shaft"), min=0.0),
+     _motor_param("wheel motor model"),
+     _count_param("motors driving each wheel", 1),
+     Param("gearing", "", 1.0, N_("motor turns per wheel turn"), positive=True),
+     Param("channel_mass", "kg", 1.0, N_("the channel's mass (its plates and the wheels' frame)"), positive=True),
+     Param("tilt", "", "fixed", N_("fixed: the channel stays at tilt_angle; articulated: it pivots at its entry on a "
+           "motor (joint tilt)"), kind="str", choices=("fixed", "articulated")),
+     Param("tilt_angle", "deg", 45.0, N_("the fixed channel's exit angle above horizontal"), min=-80.0, max=80.0),
+     Param("tilt_range", "deg", [20.0, 60.0], N_("the articulated channel's exit angles at its low and high hard "
+           "stops"), kind="pair"),
+     Param("tilt_motor", "", "KrakenX60", N_("tilt motor model"), kind="str", choices=_MOTOR_NAMES),
+     Param("tilt_count", "", 1, N_("motors driving the tilt"), kind="int", min=1),
+     Param("tilt_gearing", "", 100.0, N_("tilt motor turns per channel turn"), positive=True),
+     COLLIDE),
+    _pinch_shooter, slots=("bottom", "top"),
+    mounts=("base",),
+    note=N_("Slots: bottom and top (motors on joints spin0 and spin1, one per wheel), and tilt (motor) and "
+         "tilt_encoder (channel turns) with an articulated tilt. The channel body's origin is where the fed piece's "
+         "middle starts: x downrange, z pointing at the top wheel (the piece's faces lie across it), y along the "
+         "wheels' axles; it is the base's frame pitched up by the exit angle about y. The tilt joint reads 0 at the "
+         "low stop: exit angle = tilt_range[0] + the joint's angle. In the world the {shooter_table} section's pinch "
+         "model runs the wheel shafts and the spin joints mirror them."),
+    doc_keys=(("shooter_table", "[shooter]"), ("kind_setting", 'kind = "piece"')),
     note_keys=(("shooter_table", "[shooter]"),)))

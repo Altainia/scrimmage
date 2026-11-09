@@ -363,6 +363,15 @@ The piece decides how every contact it has is worked out.
 - **Rigid** pieces (toy cars, cubes, cones, discs, hard balls) use MuJoCo's own contacts. Wheel treads are compliant
   (the stock wheels' tread stiffness), and a rigid piece may carry its own contact `stiffness` (N/m) in series with
   the tread, so a pinch squeezes both: a soft plastic body at 3000 N/m takes most of the squeeze.
+- **A range's piece** (`preset = "2024-note"`, or any `[piece.*]` preset in `scrimmage/launcher/presets.toml`: the
+  2025 CORAL, the 2019 HATCH PANEL...) is rigid, and the bench builds it with the test range's own piece builder:
+  the same mass, size, inertia and solids as on the range. A ring's hole is open (a rod passes through it), because
+  it is built from 24 slices, as on the range. `shape = "ring"` with `size = [diameter, inner_diameter, length]` and a
+  `mass` builds your own ring the same way. The 2024 NOTE is a rigid stand-in: the real one is soft foam and squashes.
+  It brings its own contact `stiffness` (2000 N/m, an estimate), as on the range. **Between wheels the bench squeezes
+  it too hard:** until a fix lands, the bench applies a rigid piece's stiffness at each contact point, and a ring
+  touches a wheel at many, so the NOTE is squeezed harder than its `stiffness` says and its exit speed reads low.
+  Take the bench's exit speed for it as a low estimate; `bench check` warns about this.
 
 Discs (the 2013 Frisbee and an Ultra-Star preset, with their own flight) come in a later step, once the disc launcher
 model is merged. A custom rigid `shape = "disc"` (a short cylinder) works now.
@@ -396,18 +405,21 @@ stiffness N/m, voltage V, current A, time s.
 
 ### `[piece]`
 
-Either `preset = "<ball>"` (a squishy ball; any key below overrides the preset's), or a custom piece.
+Either `preset = "<ball>"` (a squishy ball; any key below overrides the preset's), `preset = "<piece preset>"` (a
+range's rigid piece, such as `2024-note`; only `name`, `stiffness`, `drag_coefficient` and `spin_damping` go with
+it, the rest is the preset's), or a custom piece.
 
 | Key | Meaning | Default |
 |---|---|---|
-| `preset` | `2020-power-cell`, `2022-cargo`, `2026-fuel`, `2016-boulder`, `2017-fuel`, `2019-cargo`, `2025-algae`, `2014-ball`, `2010-soccer-ball` or `2012-basketball` | none |
+| `preset` | a ball: `2020-power-cell`, `2022-cargo`, `2026-fuel`, `2016-boulder`, `2017-fuel`, `2019-cargo`, `2025-algae`, `2014-ball`, `2010-soccer-ball` or `2012-basketball`; a range's piece: `2025-coral`, `2023-cone`, `2023-cube`, `2017-gear`, `2019-hatch-panel`, `2015-tote` or `2024-note` | none |
 | `name` | the piece's name | the preset, or `piece` |
 | `kind` | `squishy` or `rigid` | `squishy` with a preset, else `rigid` |
-| `shape` | `sphere`, `box`, `cylinder`, `disc` (a cylinder) or `mesh` | `sphere` with a preset, else required |
-| `size` | sphere `[diameter]`; box `[x, y, z]`; cylinder or disc `[diameter, length]` (axis along z) | the preset's diameter |
+| `shape` | `sphere`, `box`, `cylinder`, `disc` (a cylinder), `ring` (hollow, built as the range builds it) or `mesh` | `sphere` with a ball preset, a piece preset's own, else required |
+| `size` | sphere `[diameter]`; box `[x, y, z]`; cylinder or disc `[diameter, length]`; ring `[diameter, inner_diameter, length]` (axis along z) | the preset's |
 | `mass` | kg | the preset's, else required |
 | `inertia` | `[Ixx, Iyy, Izz]` about its own axes, kg m² | from the shape (required for a mesh) |
-| `stiffness` | rigid only: its own contact stiffness, N/m, in series with the tread | none: hard |
+| `stiffness` | rigid only: its own contact stiffness, N/m, in series with the tread | a piece preset's own (the 2024 NOTE's 2000), else none: hard |
+| `drag_coefficient`, `spin_damping` | rigid only, in `[flight]`: the drag coefficient on its shadow, and how fast the air slows its spin, N m s/rad (0 or more) | 1.17 (an estimate), 0; a piece preset's own |
 | `stiffness_n`, `stiffness_exponent`, `restitution`, `inertia_factor` | squishy only: the launcher model's ball numbers | the preset's, or the nearest preset's |
 | `mesh`, `units` | `shape = "mesh"`: an STL or OBJ file (relative to the bench file) and its units, `m`, `mm` or `in`; it collides as its convex hull | none |
 
@@ -589,19 +601,67 @@ A piece waits while another still overlaps its spawn point. At most 200 pieces i
 |---|---|---|
 | `name`, `center`, `size` | a box; a piece whose center enters it is out there, and removed | required |
 
-### `[flight]` (optional, balls only)
+### `[flight]` (optional)
 
-Flies each piece out through `outlet` with the launcher model's ball flight (drag and spin lift), from where and how
-it left, so the results say where shots land. A rigid piece's flight isn't modeled yet: with a non-ball `[piece]`, `bench check` warns
-that the run will have no landings (the run still measures how the piece leaves).
+Flies each piece out through `outlet` from where and how it left, so the results say where shots land. A ball flies
+with the launcher model's ball flight (drag and spin lift). A rigid piece (a NOTE, a box...) flies with its drag only:
+the drag of its shadow as it faces the air, turning as it tumbles, from its orientation and spin as it left
+(`scrimmage/launcher/rigid_aero.py`). There is no lift for a rigid piece, so a flat, backspun NOTE that really glides
+comes up short here: the drag numbers are estimates, and the result is UNCALIBRATED.
 
 | Key | Meaning | Default |
 |---|---|---|
 | `outlet` | which outlet's pieces fly | required |
 | `height` | the bench origin's height above the floor, m | 0 |
-| `target_distance`, `target_height` | the target, forward of the origin and above the floor, m | required |
-| `ring_diameter` | a ring at the target: shots through it count | none |
+| `target_distance`, `target_height` | the target, forward of the origin and above the floor, m | required, unless there is a `goal` |
+| `ring_diameter` | a ring at the target: shots through it count (a rigid piece's: all of its outline inside the ring as it comes down through it, the rule a `goal` uses) | none |
 | `air` | an air preset | `default` |
+| `goal` | rigid pieces: `{ range = "<range file>", name = "<goal>" }`, a goal from a range file (relative to the bench file, or a built-in range's name) | none |
+| `at` | with `goal`: where the bench origin stands on that field, `[x, y, height]`, m (its height replaces `height`) | required with `goal` |
+| `heading_deg` | with `goal`: which way the bench's +x faces on that field, from the field's +x | required with `goal` |
+
+With a `goal`, the bench stands on the range's field and each shot says `scored` or `missed` (a `goal` column in the
+landings table, and a headline like ``1 of 1 shots score in `speaker_blue` ``). A shot scores when all of the piece
+fits through: its center goes through the goal's opening from the side a scoring piece comes from, and the points of
+the piece's outline (the corners of its solids' hull, at most 64 of them: a NOTE's rim), turned as the piece is then,
+all fall inside the opening. On the way in, neither the center nor any outline point may touch one of the range's
+obstacles or elements or a goal's plates. A shot through the SPEAKER's hood, or a NOTE overlapping the opening's
+edge, doesn't count, and the headline names what it hit (a rim plate, or `<goal>.edge_<k>`). The points are checked
+every 1 ms of the flight, not swept between, and a ring's hole isn't checked. The positions in the landings table are still the bench's own: forward of the
+bench origin and above the floor.
+
+The built-in `2024` range (the FRC 2024 CRESCENDO field, `scrimmage/testrange/ranges/2024.toml`) has both SPEAKERS
+(`speaker_blue`, `speaker_red`) and both AMPS (`amp_blue`, `amp_red`), so `range = "2024"` needs no file of your own:
+
+<!-- bench -->
+```toml
+[bench]
+name = "note lob"
+author = "Sam"
+idea = "lob a NOTE into the blue SPEAKER from 2.5 m out"
+notes = "the NOTE is thrown by hand (an inlet's velocity); a shooter goes where the hand is"
+
+[piece]
+preset = "2024-note"
+
+[[inlet]]
+name = "hand"
+center = [0.0, 0.0, 0.0]
+size = [0.001, 0.001, 0.001]
+count = 1
+velocity = [5.281, 0.0, 6.075]   # 8.05 m/s at 49 degrees up
+
+[[outlet]]
+name = "shot"
+center = [0.45, 0.0, 0.0]
+size = [0.1, 1.0, 3.0]
+
+[flight]
+outlet = "shot"
+goal = { range = "2024", name = "speaker_blue" }   # the built-in 2024 range, or your own range file
+at = [2.5, 5.5446, 0.5]          # 2.5 m out from the blue alliance wall, in line with the SPEAKER, 0.5 m up
+heading_deg = 180.0              # facing the wall
+```
 
 ### `[run]`
 
@@ -852,8 +912,9 @@ development machine; `hooded.toml` with ten balls runs in about 3 s, with its pi
 faster.
 
 **What is not modeled.** Parts are rigid (no bending, no breaking); the bench reports loads only. Squishy pieces are
-balls only. Air drag inside the bench is ignored (it matters only in `[flight]`). Ball, tread and material numbers are
-estimates: **UNCALIBRATED**. Measure the ball's stiffness (a squeeze test) and bounce (a drop test) first, then the
+balls only. Air drag inside the bench is ignored (it matters only in `[flight]`), and a rigid piece in `[flight]` has
+drag but no lift. Ball, tread and material numbers are estimates: **UNCALIBRATED**. Measure the ball's stiffness (a
+squeeze test) and bounce (a drop test) first, then the
 tread's friction (a sled pull): [measuring.md](measuring.md) has each test. The bench doesn't take a measurement file
 yet: type a measured `stiffness_n` or `restitution` into the `[piece]` (the averages `scrimmage measure` prints). Its
 last line still says UNCALIBRATED, since it can't tell a typed number from an estimate.

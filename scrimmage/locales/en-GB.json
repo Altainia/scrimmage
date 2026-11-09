@@ -1,5 +1,6 @@
 {
   "_language": "English (UK)",
+  "{line} In {flight_table}, the drag coefficient ({cd}) is an estimate unless you measured it, and lift isn't modeled.": "{line} In {flight_table}, the drag coefficient ({cd}) is an estimate unless you measured it, and lift isn't modelled.",
   "the start must be [x, y, heading]: meters from the blue corner, and degrees": "the start must be [x, y, heading]: metres from the blue corner, and degrees",
   "The robot's center of gravity at its start pose, from the floor at the frame's center": "The robot's centre of gravity at its start pose, from the floor at the frame's centre",
   "millimeters": "millimetres",
@@ -28,8 +29,6 @@
   "Show or hide the robot's center of gravity": "Show or hide the robot's centre of gravity",
   "{what} is on shaft '{shaft}' but not on its axis (the line through {first} along {axis}); wheels on one shaft turn on one axis, so give it the same axis and a center on that line": "{what} is on shaft '{shaft}' but not on its axis (the line through {first} along {axis}); wheels on one shaft turn on one axis, so give it the same axis and a centre on that line",
   "{count} ideas, made {date} with scrimmage bench gallery. Paths: green left through an outlet, red jammed, orange escaped, gray still inside or never got in.": "{count} ideas, made {date} with scrimmage bench gallery. Paths: green left through an outlet, red jammed, orange escaped, grey still inside or never got in.",
-  "{flight_table} flies balls only; a rigid piece's flight is not modeled yet, so there are no landings.": "{flight_table} flies balls only; a rigid piece's flight is not modelled yet, so there are no landings.",
-  "{flight_table} flies balls only; a rigid piece's flight is not modeled yet, so a run will have no landings": "{flight_table} flies balls only; a rigid piece's flight is not modelled yet, so a run will have no landings",
   "expected the robot in {zone}, but its center was at {at}": "expected the robot in {zone}, but its centre was at {at}",
   "expected the robot out of {zone}, but its center was at {at}": "expected the robot out of {zone}, but its centre was at {at}",
   "The robot's center, seen from above, is in (or out of) one of the field's zones: an area marked on the carpet, such as a starting zone or a wing.": "The robot's centre, seen from above, is in (or out of) one of the field's zones: an area marked on the carpet, such as a starting zone or a wing.",
@@ -87,5 +86,8 @@
   "on the center line": "on the centre line",
   "signal {signal}: {sensor} isn't a color sensor, so it sees no color": "signal {signal}: {sensor} isn't a colour sensor, so it sees no colour",
   "signal {signal}: {color} isn't a named color; the colors: {colors}": "signal {signal}: {color} isn't a named colour; the colours: {colors}",
-  "{sees_setting} must be a named color, not {value}": "{sees_setting} must be a named colour, not {value}"
+  "{sees_setting} must be a named color, not {value}": "{sees_setting} must be a named colour, not {value}",
+  "{distances} m can't be scored with wheels at {low}..{high} rps and hood angles {lowest}..{highest} deg: no shot found crosses the center of the {goal} opening from the side it is entered without touching something first": "{distances} m can't be scored with wheels at {low}..{high} rps and hood angles {lowest}..{highest} deg: no shot found crosses the centre of the {goal} opening from the side it is entered without touching something first",
+  "{line}. The drag coefficient ({cd}) is an estimate unless you measured it, and lift isn't modeled.": "{line}. The drag coefficient ({cd}) is an estimate unless you measured it, and lift isn't modelled.",
+  "{distances} m can't be scored with wheels at {low}..{high} rps and channel tilts {lowest}..{highest} deg: no shot found crosses the center of the {goal} opening from the side it is entered without touching something first": "{distances} m can't be scored with wheels at {low}..{high} rps and channel tilts {lowest}..{highest} deg: no shot found crosses the centre of the {goal} opening from the side it is entered without touching something first"
 }

@@ -28,12 +28,16 @@ A field of several kinds (Range.kinds) has them all in the one ledger: each slot
 `ball_form`, `disc_form` and `rolls`), its own bounding `radius` and rest height (`rest_z_of`). The per-step work
 filters the in-play balls by form first, so a ball-only range does the same arithmetic as before (pinned by
 tests/test_range_ledger_golden.py):
-- Flight: drag and lift on balls only, the disc aerodynamics on discs only; a rigid piece flies by gravity alone.
+- Flight: drag and lift on balls only, the disc aerodynamics on discs only, and on a rigid piece touching nothing
+  scrimmage/launcher/rigid_aero.py's drag (its shadow's area facing the air) and spin damping, the same
+  function flight6 flies it with (the bench's `[flight]`, `launcher aim`): the force and the world-frame torque into
+  xfrc_applied, R from the qpos quaternion as for a disc. A rigid piece touching anything (lying on the carpet,
+  leaning on a goal) feels no air.
 - Rolling resistance: on every `rolls` slot on the carpet (its center below r + ON_CARPET): a ball, and a rigid tube,
   ring or cylinder lying on its side (standing or leaning, its center is too high), each with its own r (a tube's
   outer radius), torque C m g r and inertia about the contact (I about its axis + m r^2).
-- Scoring: a goal counts only its kind (`counted_by`: Goal.kind, else the field's first ball or disc kind), so a coral
-  through an opening doesn't score. Leaving the field is the same for every kind.
+- Scoring: a goal counts only its kind (`counted_by`: Goal.kind, else the field's first ball or disc kind, else its
+  first kind), so a coral through a ball's goal doesn't score. Leaving the field is the same for every kind.
 `r` and `rest_z` are Range.piece's kind's (the shooter's and the ball path's).
 """
 
@@ -49,6 +53,7 @@ import numpy as np
 
 from ..disc import aero as disc_aero
 from ..disc.inputs import DEFAULT_AERO, Disc, aero_set
+from ..launcher import rigid_aero
 from ..launcher.inputs import Air, Ball
 from .build import BALL_BITS, PARK_Z, PARKED_BITS, RangeLayout, kind_piece, rest_pose
 from .pieces import PieceKind
@@ -126,7 +131,7 @@ class Balls:
         kinds = list(layout.kinds) if len(layout.kinds) == n else [self.shooter_kind] * n
         self.kind = np.array(kinds, dtype=object)               # each slot's kind's name
         forms = np.array([rng.kinds[k].form if k in rng.kinds else "ball" for k in kinds], dtype=object)
-        self.ball_form, self.disc_form = forms == "ball", forms == "disc"
+        self.ball_form, self.disc_form, self.rigid_form = forms == "ball", forms == "disc", forms == "rigid"
         self.of_shooter = self.kind == self.shooter_kind        # the slots the shooter and its ball path take
         self._slots(rng, layout)
         self.bodies = np.array([m.body(name).id for name in layout.ball_names], dtype=int)
@@ -161,7 +166,7 @@ class Balls:
                     self._geom_names[k] = self.piece_name(i)
         self.surfaces = [(g.name, g.scoring_surface()) for g in rng.goals]
         # goal name -> the slots it counts: those of its kind (Goal.kind, else the field's first ball or disc kind)
-        first = next((k.name for k in rng.kinds.values() if k.form != "rigid"), self.shooter_kind)
+        first = next((k.name for k in rng.kinds.values() if k.form != "rigid"), next(iter(rng.kinds)))
         self.counted_by = {g.name: self.kind == (g.kind if g.kind is not None else first) for g in rng.goals}
         self._counted = [self.counted_by[name] for name, _ in self.surfaces]
         # each scoring surface's reach: no point of its polygon is further than this from its center
@@ -189,6 +194,7 @@ class Balls:
         self._quat: list[list[float] | None] = [None] * n      # its orientation set down (None: unturned)
         self._r = np.zeros(n)                                   # a ball's radius, its flight's and its roll's
         self._disc_of: list = [None] * n                        # a disc's (Disc, AeroSet)
+        self._air_of: list = [None] * n                         # a rigid piece's (shadow areas, Cd, spin damping)
         self.rolls = np.zeros(n, dtype=bool)                    # rolls on the carpet: a ball, a tube on its side
         self._roll_torque, self._roll_inertia = np.zeros(n), np.zeros(n)
         self._numbers = np.zeros(n, dtype=int)                  # its number among its kind's pieces, from 1
@@ -212,6 +218,7 @@ class Balls:
                 self._disc_of[i] = (piece, aero)
             else:
                 self.radius[i] = kind.radius
+                self._air_of[i] = (rigid_aero.areas(kind), kind.drag_coefficient, kind.spin_damping)
                 if kind.shape in ROLLING_SHAPES:                # a tube, ring or cylinder rolls on its side
                     r = kind.reach(kind.orient(90.0, 0.0))      # its outer radius
                     a = np.asarray(kind.axis, dtype=float)
@@ -225,6 +232,7 @@ class Balls:
                     self._r[i] = kind.radius
         self._rolling = bool((self._roll_torque[self.rolls] > 0.0).any())
         self._any_ball, self._any_disc = bool(self.ball_form.any()), bool(self.disc_form.any())
+        self._any_rigid = bool(self.rigid_form.any())
         # the per-step loops read these as Python floats
         self._r_list, self._torque_list = self._r.tolist(), self._roll_torque.tolist()
         self._inertia_list = self._roll_inertia.tolist()
@@ -374,11 +382,11 @@ class Balls:
         return np.flatnonzero(self.field)
 
     def apply_flight_forces(self) -> None:
-        """Drag and spin lift (launcher/flight.py's law) on every flying ball; every other ball's applied force
-        zero. Only ball bodies' rows of xfrc_applied are touched: the rows this and apply_rolling_resistance wrote
-        last step are zeroed (park() zeroes a ball's own), not all 376 (the cost of a range's step is its balls').
-        The few flying balls are worked out one by one in Python floats: numpy's per-call cost on arrays this small
-        was most of the step's."""
+        """Drag and spin lift (launcher/flight.py's law) on every flying ball, the disc's and the rigid piece's own
+        air on theirs (see the module docstring); every other ball's applied force zero. Only ball bodies' rows of
+        xfrc_applied are touched: the rows this and apply_rolling_resistance wrote last step are zeroed (park()
+        zeroes a ball's own), not all 376 (the cost of a range's step is its balls'). The few flying balls are worked
+        out one by one in Python floats: numpy's per-call cost on arrays this small was most of the step's."""
         xfrc = self._xfrc
         if len(self._forced):
             xfrc[self._forced] = 0.0
@@ -388,6 +396,8 @@ class Balls:
             return
         if self._any_disc:
             self._disc_forces(f[self.disc_form[f]])
+        if self._any_rigid:
+            self._rigid_forces(f[self.rigid_form[f]])
         if not self._any_ball:
             return
         f = f[self.ball_form[f]]                       # only balls feel drag and spin lift
@@ -444,7 +454,35 @@ class Balls:
             done.append(i)
         if done:
             self._xfrc[done] = rows
-            self._forced = np.array(done, dtype=int)
+            self._forced = np.union1d(self._forced, done) if len(self._forced) else np.array(done, dtype=int)
+
+    def _rigid_forces(self, f: np.ndarray) -> None:
+        """rigid_aero.forces on every flying rigid piece of the in-play pieces `f` (see the module docstring): the
+        force and the world-frame torque into xfrc_applied. The rows written are zeroed next step
+        (apply_flight_forces)."""
+        if not len(f):
+            return
+        d = self.data
+        if d.ncon:          # touching anything (the carpet, a goal, the robot): not flying
+            touching = np.zeros(self.n, dtype=bool)
+            ball = self._geom_ball[d.contact.geom[:d.ncon]].ravel()
+            touching[ball[ball >= 0]] = True
+            f = f[~touching[f]]
+        rho, rot = self.air.density, np.zeros(9)
+        done, rows = [], []
+        for i in f.tolist():
+            h, cd, damping = self._air_of[i]
+            vel, w_body = self._qvel[i, :3], self._qvel[i, 3:]
+            mujoco.mju_quat2Mat(rot, self._qpos[i, 3:7])
+            r = rot.reshape(3, 3)
+            force, torque = rigid_aero.forces(h, cd, damping, rho, vel, r, r @ w_body)
+            if not (force.any() or torque.any()):
+                continue
+            rows.append(np.concatenate([force, torque]))
+            done.append(i)
+        if done:
+            self._xfrc[done] = rows
+            self._forced = np.union1d(self._forced, done) if len(self._forced) else np.array(done, dtype=int)
 
     def apply_rolling_resistance(self) -> None:
         """The carpet's rolling resistance (Range.rolling_resistance, C): a torque C m g r against the roll of every

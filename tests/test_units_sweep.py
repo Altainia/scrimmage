@@ -21,7 +21,7 @@ STATIC = ROOT / "scrimmage" / "assembler" / "static"
 PY = ["blocks/conditions.py", "blocks/placed.py", "blocks/run.py", "blocks/run_words.py", "blocks/run_setup.py",
       "blocks/run_notes.py", "blocks/spread.py", "blocks/sweep.py",
       "checks.py", "scenario_runner.py", "bench/report.py", "bench/gallery.py", "bench/pictures.py",
-      "bench/compare.py", "launcher/report.py", "measure/cli.py", "measure/fit_launcher.py",
+      "bench/compare.py", "launcher/report.py", "launcher/pinch.py", "measure/cli.py", "measure/fit_launcher.py",
       "measure/fit_cylinder.py", "parts/partner.py", "assembler/server.py", "assembler/runs.py",
       "assembler/server_common.py", "assembler/http_handler.py", "assembler/app_files.py",
       "assembler/app_attach.py", "assembler/app_robot.py", "assembler/app_code.py",

@@ -97,15 +97,12 @@ def test_range_piece_names_a_piece_or_a_ball_preset(tmp_path):
         parse(tmp_path, '[range]\nname = "p"\npiece = "rock"\n')
 
 
-def test_a_goal_counts_a_named_ball_and_refuses_coral(tmp_path):
+def test_a_goal_counts_a_named_ball_or_a_rigid_kind(tmp_path):
     rng = parse(tmp_path, MIXED + GOAL + 'kind = "2025-algae"\n')
     assert rng.goals[0].kind == "2025-algae"
     assert parse(tmp_path, MIXED + GOAL).goals[0].kind is None
-    with pytest.raises(RangeError, match=r"r\.toml: \[\[goal\]\] 'reef': goals count balls and discs; 'coral' is a"
-                                         " rigid piece"):
-        parse(tmp_path, MIXED + GOAL + 'kind = "coral"\n')
-    with pytest.raises(RangeError, match=r"\[\[goal\]\] 'reef': goals count balls and discs; 'coral' is a rigid"):
-        parse(tmp_path, CORAL_ONLY + GOAL)
+    assert parse(tmp_path, MIXED + GOAL + 'kind = "coral"\n').goals[0].kind == "coral"
+    assert parse(tmp_path, CORAL_ONLY + GOAL).goals[0].kind is None        # counts the field's first kind, the coral
 
 
 def test_floor_pieces_are_spaced_by_their_reach(tmp_path):
@@ -211,7 +208,7 @@ def test_a_piece_override_keeps_the_color_of_the_table_it_replaces(tmp_path):
 
 def test_every_builtin_range_is_unchanged():
     for name in BUILTIN_RANGES:
-        if name == "reef":      # new with pieces beyond balls: a coral range from the start
+        if name in ("reef", "2024"):    # new with pieces beyond balls: a coral range and a NOTE range from the start
             continue
         r = load_range(name, ROOT)
         assert len(r.kinds) == 1 and all(g.kind is None for g in r.goals)

@@ -14,7 +14,8 @@ from scrimmage.parts.assemble import NO_BITS, ROBOT_BITS, assemble
 from scrimmage.testrange.build import BALL_BITS
 from scrimmage.world import World
 
-MECHANISMS = ("elevator", "arm", "flywheel", "roller", "launcher", "disc_shooter", "turret", "cylinder")
+MECHANISMS = ("elevator", "arm", "flywheel", "roller", "launcher", "disc_shooter", "pinch_shooter", "turret",
+              "cylinder")
 
 
 def _bits(m, body: str) -> list[tuple[int, int]]:
@@ -61,6 +62,8 @@ def test_collide_on_elevator():
     # the frame, the fence, the spinning wheel and the 3 still ones drawn on the channel collide; the two guide
     # plates above and below the disc don't
     ("disc_shooter", {}, {"p.base": 1, "p.channel": 4, "p.wheel0": 1}, ("p.channel",)),
+    # the frame, the side plates and both wheels collide; nothing is drawn only
+    ("pinch_shooter", {}, {"p.base": 1, "p.channel": 2, "p.bottom_wheel": 1, "p.top_wheel": 1}, ()),
     ("cylinder", {}, {"p.barrel": 1, "p.rod": 1}, ()),
     # a push cylinder's barrel is drawn only
     ("cylinder", {"push": "arm.arm", "push_pos": [0.2, 0.0, 0.0]}, {}, ("p.barrel",)),

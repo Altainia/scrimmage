@@ -16,11 +16,13 @@ hood and the ball's squeeze are that model, and the range adds a world around it
 - [`[shooter]`](#shooter)
 - [The launcher part](#the-launcher-part)
 - [A disc shooter](#a-disc-shooter)
+- [A piece shooter (a NOTE)](#a-piece-shooter-a-note)
 - [Lanes, stages, the hopper and the intake](#lanes-stages-the-hopper-and-the-intake)
 - [Beam breaks](#beam-breaks)
 - [Balls in the world](#balls-in-the-world)
 - [Pieces that aren't balls](#pieces-that-arent-balls)
 - [The trench field](#the-trench-field)
+- [The 2024 field](#the-2024-field)
 - [The range file](#the-range-file)
 - [Scenarios: signals, `by_time`, `[range]`, `robot_env`](#scenarios-signals-by_time-range-robot_env)
 - [The report, the viewer and NetworkTables](#the-report-the-viewer-and-networktables)
@@ -33,6 +35,8 @@ hood and the ball's squeeze are that model, and the range adds a world around it
 - Goals with a real opening, tilt and funnel. A ball **scores** when its path crosses the scoring surface going
   in. The 2026 range ships with both hubs, the four bumps and the 360 FUEL in the neutral zone, all measured from the
   field CAD. Robots drive over the bumps; see [docs/terrain.md](terrain.md) for elements and the terrain signals.
+  The 2024 range ships with both SPEAKERS and AMPS, scored by a NOTE from a pinch shooter
+  ([The 2024 field](#the-2024-field)).
 - Balls as MuJoCo bodies: they roll, bounce off the carpet, the hub and your robot, get pushed by your bumper and
   fly with drag and spin lift.
 - A robot with a hooded shooter, a hopper, one or more feeder stages and an intake. Your robot program drives their
@@ -166,7 +170,7 @@ fast-mode sample's shooter.
 
 | key | unit | default | meaning |
 |---|---|---|---|
-| `file` | | required | a built-in range (`"2026"`, `"2013"`, `"2026-bump"`, `"2023-charge-station"`, `"terrain-library"`, `"2022-hangar"`, `"2020-switch"`, `"2013-pyramid"`, `"ladder"`, `"ladder-square"`, `"intake"` (one ball on the carpet in front of `[start.facing_ball]`, to try an intake on), `"station"` (a human player station at the blue alliance wall that feeds balls down a short chute, `[start.at_station]` against it, to try a hopper or an intake on), `"2026-trench"` (one 2026 TRENCH, its arm 22.25 in above the carpet, `[start.approach]` before it, to drive under), `"2016-defenses"` (the 2016 portcullis, sally port, drawbridge and cheval de frise, each with a start before it; [docs/terrain.md](terrain.md)) or `"reef"` (one pipe of the 2025 reef with its L2, L3 and L4 branches, a coral on the carpet in front of `[start.facing_coral]` and a coral station with `[start.at_coral_station]` against it, to try a grabber on)) or a path to a [range file](#the-range-file), relative to the config. For 2013, `"2013"` is the disc range (shooting discs at the slot goals, the pyramid an obstacle) and `"2013-pyramid"` the climbing range (the pyramid to climb, no goals) |
+| `file` | | required | a built-in range (`"2026"`, `"2013"`, `"2026-bump"`, `"2023-charge-station"`, `"terrain-library"`, `"2022-hangar"`, `"2020-switch"`, `"2013-pyramid"`, `"ladder"`, `"ladder-square"`, `"intake"` (one ball on the carpet in front of `[start.facing_ball]`, to try an intake on), `"station"` (a human player station at the blue alliance wall that feeds balls down a short chute, `[start.at_station]` against it, to try a hopper or an intake on), `"2026-trench"` (one 2026 TRENCH, its arm 22.25 in above the carpet, `[start.approach]` before it, to drive under), `"2016-defenses"` (the 2016 portcullis, sally port, drawbridge and cheval de frise, each with a start before it; [docs/terrain.md](terrain.md)), `"2024"` (the 2024 CRESCENDO field: both SPEAKERS and AMPS, which a NOTE scores in, the SUBWOOFERS, the STAGES, the SOURCES and the 11 staged NOTES, on its own 16.541 by 8.211 m field; [The 2024 field](#the-2024-field)) or `"reef"` (one pipe of the 2025 reef with its L2, L3 and L4 branches, a coral on the carpet in front of `[start.facing_coral]` and a coral station with `[start.at_coral_station]` against it, to try a grabber on)) or a path to a [range file](#the-range-file), relative to the config. For 2013, `"2013"` is the disc range (shooting discs at the slot goals, the pyramid an obstacle) and `"2013-pyramid"` the climbing range (the pyramid to climb, no goals) |
 | `start` | | none | a named start from the range file. The robot starts there. Give either `start` or `[robot] start_pose`, not both |
 | `preload` | balls | 0 | balls already in the hopper at the start of a run. More than the robot holds (the hopper capacity) is an error |
 | `floor_balls` | | `true` | `false`: no floor balls (the range's `[[floor_balls]]` are left out of the world entirely, so the world can't put them out later). Faster runs, and the right choice when the auto never touches them |
@@ -314,7 +318,77 @@ diameter: it must be the range's disc's). The range gives the disc and its aerod
   (counter-clockwise from above for wheels on the right), plus the robot's motion; it ignores its robot for 0.15 s
   as a ball does. Its log's `hood_deg` is the tilt and `spin_rpm` is signed. The same voltages give the standalone
   model's exit speed and spin (`tests/test_range_disc_shooter.py`).
-- `scrimmage launcher aim` makes tables for ball launchers only; for a disc shooter use `scrimmage disc table`.
+- `scrimmage launcher aim` makes tables for ball launchers and piece shooters; for a disc shooter use
+  `scrimmage disc table`.
+
+## A piece shooter (a NOTE)
+
+On a range whose piece is a flat rigid piece, such as the 2024 NOTE, `[shooter] kind = "piece"` runs a stock
+`pinch_shooter` part with the pinch model of [docs/launcher.md](launcher.md#a-face-pinch-shooter-for-a-flat-piece):
+a top and a bottom wheel squeeze the piece's two faces and drive it out. `piece` names the range's kind it shoots.
+
+```toml
+# defaults: 4 in. top and bottom wheels, 14 in. wide, a 1.25 in. gap, a fixed 45 degree channel
+[[part]]
+name = "shooter"
+stock = "pinch_shooter"
+attach = "drive.top"
+pos = [-0.1, 0.0, 0.3]
+ids = { bottom = "PWM:2", top = "PWM:3" }
+
+# the loader: a roller behind the shooter that pushes the held NOTE into the wheels
+[[part]]
+name = "loader"
+stock = "roller"
+attach = "drive.top"
+pos = [-0.35, 0.0, 0.2]
+gearing = 10.0
+ids = { spin = "PWM:5" }
+
+[shooter]
+kind = "piece"
+part = "shooter"
+piece = "note"                # the range's [piece.note]
+wheels = { preset = "60A" }   # the tread: a [wheels.*] preset, or durometer and friction
+[[shooter.stage]]             # at least one stage pushes the piece in
+name = "loader"
+part = "loader"
+path_length = 0.30
+```
+
+`[shooter]` for a piece shooter takes `part`, `piece`, `[wheels]` (`preset`, `durometer`, `friction`), `[air]` (the
+launcher's, for the flight) and the same `[hopper]`, `[[stage]]`, `[intake]` and `[[beam_break]]` as a ball shooter.
+There are no `lanes` and no `setup` file. The part gives the wheels (`bottom_diameter`, `top_diameter`,
+`wheel_width`, the `gap` between their surfaces, `wheel_x`: how far downrange of the fed piece's middle their axles
+stand), each wheel's shaft (slots `bottom` and `top`, each with `wheel_moi`, a flywheel `added_moi`, `motor`, `count`
+and `gearing`) and the channel's `tilt` (as the disc shooter's: `tilt_angle`, or `tilt_range` on a motor). The range
+gives the piece: its thinnest side is the thickness the wheels squeeze, its next side its length along the path, and
+its own `stiffness` (N/m, at one contact; the 2024 NOTE preset's 2000 is an estimate) is in series with the tread.
+
+These are refused, each in words: `kind = "piece"` in a part that isn't a `pinch_shooter`; a `piece` the range
+doesn't have, or one that is a ball or a disc (they have their own shooters); a piece the robot can't hold (on a
+range with a ball, the robot holds the ball); a `gap` no narrower than the piece's thickness (the wheels can't grip
+it); and a `wheel_x` that puts the piece between the wheels before it is fed.
+
+- **The hopper.** A robot holds 1 piece unless `[hopper] capacity` says otherwise (an estimate: the pinch holds one,
+  and the 2024 game lets a robot control one NOTE at a time). The piece takes the disc's one-lane path, spaced by its
+  bounding sphere's diameter, and is pushed into the pinch when it is clear, at the stage's surface speed.
+- **In the world.** Each wheel's shaft is run by the model on the shared battery, as the disc shooter's groups, and
+  its `spin0` (bottom) or `spin1` (top) joint mirrors it. A launched piece leaves from its center's exit point along
+  the channel's x, at the model's exit speed, lying face-parallel to the channel (its faces across the gap, as it
+  lay between the wheels), with its pitch spin as backspin about the channel's -y (none for equal wheels at equal
+  speeds), plus the robot's motion; it ignores its robot for 0.15 s and flies with its drag
+  (*A rigid piece in the air*, below). Its log's `hood_deg` is the tilt, `spin_rpm` its backspin
+  and `exit_slip` the wheels' slip under it as it left (`tests/test_range_piece_shooter.py`).
+- **Aiming.** `scrimmage launcher aim` aims a piece shooter at a goal that isn't level (a SPEAKER, an AMP), with the
+  tilt in place of the hood angle and both wheels at the row's wheel speed: its exit is the pinch model's, its flight
+  the rigid piece's, and a row scores only if all of the piece fits through the opening without touching anything
+  first, and at a goal entered going up it must peak at least 0.10 m above the opening's center
+  ([Aiming tables](#aiming-tables-scrimmage-launcher-aim)). A level goal is refused (its table is a ball
+  launcher's). It is slower than a ball's table: about 15 s for 3 SPEAKER distances at 7 tilts, 35 s for 5 at 16.
+- **A worked example** is [`examples/blocks/speaker`](../examples/blocks/speaker/README.md), on the built-in
+  [2024 field](#the-2024-field): a NOTE from the SUBWOOFER into the blue SPEAKER, the SPEAKER table, its rows flown
+  again in the world, and why the example takes a higher arc than the table's first row.
 
 ## Lanes, stages, the hopper and the intake
 
@@ -539,6 +613,19 @@ a shape with a key it doesn't use, no mass, or no surface is an error that names
 Every kind also takes `mass` (kg, required), `material` or `friction`, `inertia = [Ixx, Iyy, Izz]` (kg m², left out:
 worked out from the shape at the same density throughout), `label` and `color`.
 
+**A rigid piece in the air.** A flying rigid piece (a shape or a piece preset, not a ball or a disc) feels air drag
+against its velocity: ½ρ·Cd·A·v². A is the area of the piece's shadow as the air sees it, turned as it is now: its
+shadow seen along each of its three axes, worked out from its shape, each counted by how squarely the air meets it.
+A NOTE flying flat in its own plane shows its 0.018 m² edge; face first, its 0.049 m² face (the ring, its hole
+open), 2.7 times more. Two keys set it, each a number that can't be negative:
+- `drag_coefficient` (default 1.17, a flat plate's, an estimate used at every angle; 0 is no drag);
+- `spin_damping` (N·m·s/rad, default 0: the piece keeps its spin, as a ball does).
+
+There is no lift, so a flat, backspun piece that really glides comes up short, and the air through a ring's hole is
+taken to cost nothing. Results that rest on these numbers are uncalibrated until someone measures. A piece touching
+anything (lying on the carpet, leaning on a goal) feels no air. A preset kind takes the two keys too:
+`preset = "2024-note"` with `drag_coefficient = 0.9`.
+
 **A kind's color.** `color` is one of the named colors (`"red"`, `"blue"`, `"yellow"`, `"orange"`, `"green"`,
 `"purple"`, `"white"`, `"gray"`) or `[r, g, b]`, each 0 to 1. The piece is drawn in it, and a
 [color sensor](sensors.md#piece-colors) reads it. A preset kind takes it too, so a 2022 field can have red and blue
@@ -620,10 +707,13 @@ default kind (a goal's, the first ball or disc kind).
   Each fed piece is set down just clear of the chute's floor (or at the release point if there is no chute), whatever
   way it was drawn to lie, so a long piece doesn't start inside the floor. A chute with no `width` is 1.3 times the
   piece's largest side wide, and its side walls are as tall as that side.
-- **`[[goal]]`** counts balls and discs only. A goal that names a non-ball kind is an error, and on a field with
-  several kinds a goal counts only the ball or disc kind it names. Shooting stays ball and disc only too: the
-  `[shooter]` ball path and its launcher never take a non-ball piece. Pieces that aren't balls are moved only by contact
-  with the student's mechanism.
+- **`[[goal]]`** counts any piece kind: the one it names with `kind`, else the field's first ball or disc kind, else
+  (a field of rigid pieces only) its first kind. A piece scores when its center crosses the scoring surface, as a ball
+  does, so a ring can count with its rim over the edge of the opening; the rim bars collide, so this is rare. A funnel
+  throat no wider than a rigid piece's thinnest side is an error; one narrower than its middle side is a warning, as
+  the piece may pass only on edge. The `[shooter]` shoots balls, discs and, with a `pinch_shooter`, a flat rigid piece
+  such as the NOTE ([a piece shooter](#a-piece-shooter-a-note)); other pieces are moved only by contact with the
+  student's mechanism.
 
 **Words for how a piece lies.** The Test tab and the floor spread's results name how a piece lies from its tip and
 turn. Tipped up 80 degrees or more: "standing on end" (for a flat kind, "lying flat"). Tipped up 10 or less: "lying
@@ -710,6 +800,32 @@ the arm with its elevator down and its arm stowed, and by how much? It has no hu
   [*robot clears*](test-tab.md#clearance-to-a-field-element) check measures how close the robot comes.
 - The worked example is [`examples/blocks/trench`](../examples/blocks/trench/README.md): a stand-in robot with an
   elevator and an arm that clears the arm by 2.9 in stowed, and hits it with the arm raised.
+
+## The 2024 field
+
+The built-in `2024` field is the FRC 2024 CRESCENDO field, written on a kickoff dry run from the game manual, the
+field drawings, the WPILib 2024 AprilTag layout and Team 6328's field constants
+([`scrimmage/testrange/ranges/2024.toml`](../scrimmage/testrange/ranges/2024.toml); every number cites its source on
+its line, or says it is an estimate or our choice).
+
+- **The field** is 2024's own, 16.541 by 8.211 m, so WPILib coordinates and AprilTag positions agree with it.
+- **The piece** is `note`, the `2024-note` preset: a rigid stand-in for the foam ring (it doesn't squash). The 11
+  staged NOTES lie on their marks (`floor_balls = false` leaves them out), and the two SOURCES (`source_blue`,
+  `source_red`) feed NOTES down their chutes.
+- **The goals** count NOTES. `speaker_blue` and `speaker_red` are the SPEAKER openings, entered going up under the
+  hood; the hood and the wall under the opening are `[[obstacle]]` boxes (`speaker_blue_hood`, `speaker_blue_wall`),
+  not plates of the goal, so a NOTE's corners can't pass through the hood on the way in. `amp_blue` and `amp_red` are
+  the AMP pockets, entered sideways.
+- **The elements.** The SUBWOOFERS (a box under each SPEAKER and its two angled sides), the SOURCE walls, and the
+  STAGES: a core box, three legs and three CHAINS as rigid bars (`[climb]` scores a robot off the carpet touching a
+  chain, as ONSTAGE). HARMONY, the TRAP and the MICROPHONES aren't modeled.
+- **The zones** `blue_start`, `blue_wing`, `red_start` and `red_wing` are drawn as tape.
+- **The starts.** `blue_subwoofer` (against the blue SUBWOOFER, facing the SPEAKER), `blue_amp` (1 m back from the
+  blue AMP, facing it), `blue_amp_side`, `blue_source_side`, `blue_wing_note` and `at_blue_source`.
+- **What isn't there.** The rest of the AMP and the SPEAKER's inside (a NOTE counts when it crosses the opening; where
+  it goes after isn't modeled), the AMPLIFICATION and the game's points.
+- The worked example is [`examples/blocks/speaker`](../examples/blocks/speaker/README.md): a stand-in robot with a
+  pinch shooter scores a NOTE in the blue SPEAKER from the SUBWOOFER, with a shot `launcher aim` finds there.
 
 ## The range file
 
@@ -1025,8 +1141,8 @@ unobstructed (the rim and funnel are not modeled), so it is an estimate and is m
 fixed-size set of rows `{distance, wheel_rps, hood_deg, flight_s, apex}`.
 
 - **Unreachable distances** are marked: a CSV row with `status` = `unreachable` and no values, a comment in the Java
-  table (the row is left out), and a warning that gives the reachable range. If none of the requested distances is
-  reachable the command is an error. Ask for 1 to 6 m and you get the reachable part.
+  table (the row is left out), and a warning (for a level goal, with the reachable range). If none of the requested
+  distances is reachable the command is an error. Ask for 1 to 6 m and you get the reachable part.
 - **Rows follow the previous row.** Several wheel speeds and hood angles can reach one distance. The first row takes
   the steepest solution; each later row takes the solution **closest to the row before it** (wheel speed and hood angle
   together), so the table is smooth to interpolate between.
@@ -1035,6 +1151,36 @@ fixed-size set of rows `{distance, wheel_rps, hood_deg, flight_s, apex}`.
   A turret near the robot's middle moves the launcher only a little as it turns, which is small next to the shot's
   distance.
 - A table takes several minutes for a long list of distances.
+
+**A goal that isn't level** (its `tilt_deg` isn't 0: the 2024 SPEAKER, entered going up under its hood; a slot in a
+wall) is aimed at its **scoring surface** instead. A level goal such as the hub is aimed as above, unchanged.
+
+- The robot stands on the goal's **approach line**: back from the goal's center along the level part of the scoring
+  surface's normal (the side a piece comes from), facing the goal. `--distances` is measured along it.
+- A row's ball crosses the opening's center **from the side it is entered**, at least its radius inside the opening,
+  and touches none of the range's `[[obstacle]]` boxes, elements or other goals' plates (nor, with its center, the
+  goal's own plates) on the way in. A shot that would go through a hood roof, or clip its front edge, isn't offered.
+- The first row of a goal entered going up takes the **lowest apex** that scores (the steepest, as for the hub, would
+  go up into a roof). Later rows follow the row before, as above. These flattest shots peak at the opening, so some
+  are just past their apex, still moving up through a tilted opening.
+- `flight_s` is the time to that crossing; `apex` is the flight's highest point as if nothing stopped it.
+- A table of 5 distances takes about 10 s: a path doesn't depend on the distance, so each hood angle's paths are
+  flown once, on a coarse wheel-speed grid, and only until they're back down past the opening's height.
+- The ball still flies unobstructed after it crosses: what it hits inside the goal isn't modeled.
+
+**A piece shooter** (`[shooter] kind = "piece"`, [above](#a-piece-shooter-a-note)) is aimed the same way at a goal
+that isn't level, its channel's tilt in place of the hood angle (`--hood-step` steps the tilt) and both wheels at
+`wheel_rps`. Its shot is the pinch model's exit, flown as a rigid piece with its drag and its orientation, and a row
+scores only if all of the piece fits through the opening at the crossing (its outline's points, turned as it
+flies) and nothing touches an obstacle first. At a goal entered going up, a piece's row must also **peak at least
+0.10 m above the opening's center** (`UPWARD_APEX_MARGIN` in `scrimmage/testrange/aim.py`), so the piece is still
+rising as it crosses: flown again in the world, rows that crossed flat at their apex caught the SPEAKER's front lip
+(17 of their 24 shots missed: all 16 at the row's speed or 2% above it, and one of the 8 at 2% below), while every
+row with the margin scored at 2% either side (21 of 21). It costs the flattest, slowest shots and the farthest
+distances (the example robot's table stops at 2.37 m with it, and reached 2.57 m without it). A ball's rows keep the rule above (they aren't flown again in the world). Its
+UNCALIBRATED line names the piece's stiffness, the tread's friction and the drag coefficient as the estimates, and
+says lift isn't modeled. A level goal (the hub) is refused for it. It takes longer than a ball's: about 15 s for 3
+SPEAKER distances with 7 tilts, 35 s for 5 with 16, and about a minute for the example's 8 with 21.
 
 Robot code should **hold fire beyond the table's reach** rather than clamp to its last row; the sample does.
 
@@ -1060,9 +1206,8 @@ by `SCRIMMAGE_AUTO`; they run on `configs/fastmode_range.toml` (fast mode) and `
 - **Ball-to-ball compression.** Balls are rigid spheres with a soft contact; a ball does not squash in the hopper.
 - **Squishy pieces.** The 2023 cube, the 2024 note and other soft pieces (inflated tubes, foam) are rigid stand-ins of
   the right size and weight: they don't squash or grip back. Soft pieces are a later project (survey project 5).
-- **Shooting pieces that aren't balls.** The `[shooter]`, the launcher model and goals that count pieces passing an
-  opening stay ball and disc only. A coral, a cone or a tote moves only by contact with the mechanism you test, and a
-  goal that names one is an error.
+- **Shooting pieces that aren't balls.** The `[shooter]` shoots balls, discs and flat rigid pieces (a pinch shooter,
+  the 2024 NOTE). A coral, a cone or a tote moves only by contact with the mechanism you test.
 - **Calibration.** Nothing here is calibrated: the ball's stiffness, the wheel's friction, a piece's surface and a pad's grip, and the carpet's rolling
   resistance are estimates until you measure your own. See [measuring.md](measuring.md) for the ball, the wheel, a
   piece's surface and a pad (the carpet's rolling resistance has no test there yet).

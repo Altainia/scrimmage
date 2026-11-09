@@ -426,10 +426,18 @@ def _slot_body(spec: mujoco.MjSpec, rng: Range, name: str, first: str, timestep:
                 "contact": ball_contact(piece, timestep),
                 "geom": {"type": mujoco.mjtGeom.mjGEOM_SPHERE, "size": [r, 0, 0], "rgba": rgba}}
     kind = rng.kinds[name]
+    return {"round": False, "mass": kind.mass, "inertia": list(kind.inertia), "contact": rigid_contact(kind),
+            "geoms": kind_geoms(spec, kind, first), "rgba": rgba}
+
+
+def kind_geoms(spec: mujoco.MjSpec, kind: PieceKind, prefix: str) -> list[dict]:
+    """A rigid kind's solids as MuJoCo geom keywords in its body frame (the center of mass at the origin): spheres,
+    boxes and convex meshes, each mesh added to `spec` once as `<prefix>.mesh.<k>`. The range's slots and the
+    bench's pieces are built from this, so the two collide as the same solids."""
     geoms = []
     for k, s in enumerate(kind.solids):
         if s.kind == "mesh":
-            mesh = f"{first}.mesh.{k}"
+            mesh = f"{prefix}.mesh.{k}"
             spec.add_mesh(name=mesh, uservert=[float(c) for c in np.asarray(s.vertices, dtype=float).ravel()])
             geoms.append({"type": mujoco.mjtGeom.mjGEOM_MESH, "meshname": mesh})
         elif s.kind == "sphere":
@@ -437,20 +445,20 @@ def _slot_body(spec: mujoco.MjSpec, rng: Range, name: str, first: str, timestep:
         else:
             geoms.append({"type": mujoco.mjtGeom.mjGEOM_BOX, "size": list(s.size), "pos": list(s.pos),
                           "quat": list(s.quat)})
-    return {"round": False, "mass": kind.mass, "inertia": list(kind.inertia), "contact": rigid_contact(kind),
-            "geoms": geoms, "rgba": rgba}
+    return geoms
 
 
 def _capacity(cfg: dict) -> int | None:
-    """[shooter] hopper capacity (the balls the whole robot holds; a disc shooter's default is DISC_CAPACITY), or None
-    without a [shooter]."""
+    """[shooter] hopper capacity (the balls the whole robot holds; a disc shooter's default is DISC_CAPACITY, a piece
+    shooter's PIECE_CAPACITY), or None without a [shooter]."""
     from ..parts.model import PartError
     shooter = cfg.get("shooter")
     if shooter is None:
         return None
-    from .ballpath import DISC_CAPACITY
+    from .ballpath import DISC_CAPACITY, PIECE_CAPACITY
     hopper = shooter.get("hopper", {}) if isinstance(shooter, dict) else None
-    default = DISC_CAPACITY if isinstance(shooter, dict) and shooter.get("kind") == "disc" else 0
+    kind = shooter.get("kind") if isinstance(shooter, dict) else None
+    default = DISC_CAPACITY if kind == "disc" else PIECE_CAPACITY if kind == "piece" else 0
     cap = hopper.get("capacity", default) if isinstance(hopper, dict) else None
     if isinstance(cap, bool) or not isinstance(cap, int) or cap < 0:
         raise PartError(i18n.t("{shooter_table} hopper capacity must be a whole number of balls, not {cap}",

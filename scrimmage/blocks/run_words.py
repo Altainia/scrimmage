@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from .. import i18n, units
 from .aim import aim_error, aim_target
 from .clearance import NEVER_WITHIN_IN
-from .conditions import IN, _amount, describe, turret_words
+from .conditions import IN, _amount, describe, scores_balls, turret_words
 from .grip_watch import SET_DOWN, default_word
 from .palette import ANY_GOAL, ANY_HOOK, ANY_PIECE, NEXT_BAR
 from .placed import KNOCK_OFF_SHARE, seated_words
@@ -181,6 +181,14 @@ class _FailureWords:
                            n, want=a["at_most"])
         if k == "scored":
             n = watch.scored_count(a["goal"])
+            if not scores_balls(watch.kinds):
+                if a["goal"] == ANY_GOAL:
+                    return i18n.tn("expected {want} or more pieces scored in any goal, but {count} was",
+                                   "expected {want} or more pieces scored in any goal, but {count} were", n,
+                                   want=a["at_least"])
+                return i18n.tn("expected {want} or more pieces scored in {goal}, but {count} was",
+                               "expected {want} or more pieces scored in {goal}, but {count} were", n,
+                               want=a["at_least"], goal=a["goal"])
             if a["goal"] == ANY_GOAL:
                 return i18n.tn("expected {want} or more balls scored in any goal, but {count} was",
                                "expected {want} or more balls scored in any goal, but {count} were", n,

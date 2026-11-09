@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from scrimmage import units
 from scrimmage.launcher.inputs import PRESETS
 from scrimmage.testrange.spec import (
     BUILTIN_RANGES, Funnel, Goal, Opening, RangeError, load_range,
@@ -170,7 +171,8 @@ def test_throat_narrower_than_ball_rejected(tmp_path):
     text = MINIMAL + "funnel = { depth = 0.45, slope_deg = 60.0 }\n"  # 1.0 - 2 * 0.45 / tan 60 = 0.48: fits
     assert load_text(tmp_path, text).goals[0].throat_across_flats() == pytest.approx(0.4804, abs=1e-3)
     text = MINIMAL + "funnel = { depth = 0.8, slope_deg = 60.0 }\n"  # 1.0 - 0.924 = 0.076 < 0.1501
-    with pytest.raises(RangeError, match=r"r\.toml.*funnel.*throat.*0\.1501"):
+    ball = re.escape(units.fmt(0.1501, "length"))   # the message's length, in the Units setting
+    with pytest.raises(RangeError, match=r"r\.toml.*funnel.*throat.*the ball \(" + ball):
         load_text(tmp_path, text)
 
 

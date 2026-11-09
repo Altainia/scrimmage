@@ -227,3 +227,4 @@ inner_diameter_in = 10.0  # source: same page, 10 in. ID
 length_in = 2.0         # source: same page, 2 in. thick
 mass = 0.235            # source: same page, "8.3 oz. +/- 0.2 oz."; 8.3 oz = 0.2353 kg
 material = "foam"       # source: same page, "coated foam"; its friction is the estimate in [surface.foam]
+stiffness = 2000.0      # estimate: N/m at one contact, in series with a wheel's tread (launcher/pinch.py): the kickoff dry run's guess for its bench file note_shooter.toml (a 2 in foam ring squeezed 0.75 in between 4 in wheels, about 19 N a wheel, a firm squeeze by hand); not measured, no source gives one. A guess until a soft NOTE model (K5) or a squeeze test checks it

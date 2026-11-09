@@ -70,7 +70,7 @@ class _Frame:
             pts += [np.array(q[1:]) for q in p.path]
         pts = np.array(pts) if pts else np.zeros((2, 3))
         lo, hi = pts.min(axis=0), pts.max(axis=0)
-        r = result.built.model.geom_rbound[lay.piece_geoms[0]] if lay.piece_geoms else 0.0
+        r = lay.piece_reach
         lo, hi = lo - r, hi + r  # paths are centers: leave room for the piece
         span = np.maximum(hi - lo, 0.05)
         band = height - top - bottom
@@ -109,7 +109,7 @@ class _Painter:
         bars = {m.geom(f"bar:{b.name}").id for b in result.bench.bars}
         for g in lay.shape_of_geom:
             m.geom_rgba[g] = SHAPE_RGBA["wheel" if g in wheels else "bar" if g in bars else "other"]
-        for g in lay.piece_geoms:
+        for g in (g for gs in lay.piece_geom_sets for g in gs):
             m.geom_rgba[g] = PIECE_RGBA
             m.geom_group[g] = HIDDEN_GROUP
         self.data = mujoco.MjData(m)
@@ -127,8 +127,8 @@ class _Painter:
         m, d, lay = self.model, self.data, self.result.built.layout
         d.qpos[:] = m.qpos0 if qpos is None else qpos
         mujoco.mj_forward(m, d)
-        for i, g in enumerate(lay.piece_geoms):
-            m.geom_group[g] = 0 if i in show else HIDDEN_GROUP
+        for i, gs in enumerate(lay.piece_geom_sets):
+            m.geom_group[list(gs)] = 0 if i in show else HIDDEN_GROUP
         m.vis.global_.fovy = frame.fovy
         key = (frame.w, frame.h)
         if key not in self._rs:
@@ -144,7 +144,8 @@ class _Painter:
             r.disable_segmentation_rendering()
         rgb[seg[..., 0] < 0] = BACKGROUND
         if pieces is not None:
-            pieces.append((seg[..., 1] == int(mujoco.mjtObj.mjOBJ_GEOM)) & np.isin(seg[..., 0], lay.piece_geoms))
+            geoms = [g for gs in lay.piece_geom_sets for g in gs]
+            pieces.append((seg[..., 1] == int(mujoco.mjtObj.mjOBJ_GEOM)) & np.isin(seg[..., 0], geoms))
         return rgb
 
 
@@ -237,33 +238,36 @@ def _convex_hull(pts: np.ndarray) -> list[tuple[float, float]]:
 
 def _piece_outline(result: BenchResult, frame: _Frame, qpos) -> tuple[str, object]:
     """The piece's true-size outline at a pose (x y z qw qx qy qz) on the picture: ("circle", (x, y, r)) for a ball,
-    else ("polygon", points), the hull of its corners (box), rims (cylinder) or vertices (mesh)."""
-    m, g = result.built.model, result.built.layout.piece_geoms[0]
+    else ("polygon", points), the hull of its corners (box), rims (cylinder) or vertices (mesh), over all its geoms
+    (a ring's slices: its outer edge)."""
+    m, lay = result.built.model, result.built.layout
     R = np.zeros(9)
     mujoco.mju_quat2Mat(R, np.asarray(qpos[3:7], dtype=float))
     R = R.reshape(3, 3)
-    Rg = np.zeros(9)
-    mujoco.mju_quat2Mat(Rg, m.geom_quat[g])
-    Rw = R @ Rg.reshape(3, 3)
-    c = np.asarray(qpos[:3], dtype=float) + R @ m.geom_pos[g]
-    size, kind = m.geom_size[g], m.geom_type[g]
-    if kind == mujoco.mjtGeom.mjGEOM_SPHERE:
-        x, y = frame.px(c)
-        return "circle", (x, y, size[0] * frame.scale)
-    if kind == mujoco.mjtGeom.mjGEOM_BOX:
-        local = np.array([[sx, sy, sz] for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)]) * size[:3]
-    elif kind == mujoco.mjtGeom.mjGEOM_CYLINDER:
-        a = np.linspace(0.0, 2 * math.pi, 32, endpoint=False)
-        rim = np.c_[size[0] * np.cos(a), size[0] * np.sin(a)]
-        local = np.r_[np.c_[rim, np.full(32, -size[1])], np.c_[rim, np.full(32, size[1])]]
-    elif kind == mujoco.mjtGeom.mjGEOM_MESH:
-        k = m.geom_dataid[g]
-        local = m.mesh_vert[m.mesh_vertadr[k]:m.mesh_vertadr[k] + m.mesh_vertnum[k]]
-    else:  # anything else: its bounding box
-        local = (np.array([[sx, sy, sz] for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)])
-                 * m.geom_aabb[g, 3:] + m.geom_aabb[g, :3])
-    world = c + local @ Rw.T
-    return "polygon", _convex_hull(np.array([frame.px(p) for p in world]))
+    world = []
+    for g in lay.piece_geom_sets[0]:
+        Rg = np.zeros(9)
+        mujoco.mju_quat2Mat(Rg, m.geom_quat[g])
+        Rw = R @ Rg.reshape(3, 3)
+        c = np.asarray(qpos[:3], dtype=float) + R @ m.geom_pos[g]
+        size, kind = m.geom_size[g], m.geom_type[g]
+        if kind == mujoco.mjtGeom.mjGEOM_SPHERE and len(lay.piece_geom_sets[0]) == 1:
+            x, y = frame.px(c)
+            return "circle", (x, y, size[0] * frame.scale)
+        if kind == mujoco.mjtGeom.mjGEOM_BOX:
+            local = np.array([[sx, sy, sz] for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)]) * size[:3]
+        elif kind == mujoco.mjtGeom.mjGEOM_CYLINDER:
+            a = np.linspace(0.0, 2 * math.pi, 32, endpoint=False)
+            rim = np.c_[size[0] * np.cos(a), size[0] * np.sin(a)]
+            local = np.r_[np.c_[rim, np.full(32, -size[1])], np.c_[rim, np.full(32, size[1])]]
+        elif kind == mujoco.mjtGeom.mjGEOM_MESH:
+            k = m.geom_dataid[g]
+            local = m.mesh_vert[m.mesh_vertadr[k]:m.mesh_vertadr[k] + m.mesh_vertnum[k]]
+        else:  # anything else (a sphere among other solids): its bounding box
+            local = (np.array([[sx, sy, sz] for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)])
+                     * m.geom_aabb[g, 3:] + m.geom_aabb[g, :3])
+        world.append(c + local @ Rw.T)
+    return "polygon", _convex_hull(np.array([frame.px(p) for p in np.concatenate(world)]))
 
 
 def _draw_outlines(draw: ImageDraw.ImageDraw, result: BenchResult, frame: _Frame, u: float) -> None:
@@ -271,7 +275,7 @@ def _draw_outlines(draw: ImageDraw.ImageDraw, result: BenchResult, frame: _Frame
     ended (skipping one that would sit on a later one): a path is only the center, so this shows what touched."""
     if not result.built.layout.piece_geoms:
         return
-    reach = float(result.built.model.geom_rbound[result.built.layout.piece_geoms[0]])
+    reach = result.built.layout.piece_reach
     width = max(2, int(3 * u))
     for status in PATH_ORDER + ("stuck_at_inlet",):
         for p in result.pieces:

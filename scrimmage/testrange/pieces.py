@@ -57,6 +57,7 @@ from ..disc.inputs import AeroSet, Disc, DiscConfigError, aero_set, disc_preset
 from ..launcher import inputs as launcher_inputs
 from ..i18n import N_
 from ..launcher.inputs import PRESETS, Ball, LauncherConfigError, _build_section
+from ..launcher.rigid_aero import DRAG_COEFFICIENT, SPIN_DAMPING
 from ..measure.file import MeasureError
 from ..measure.use import apply_ball, friction_value, is_measurement
 from .elements import IN, _length
@@ -86,7 +87,12 @@ _STAND_DEG = 80.0  # a tip at or above this is standing (flat kinds: lying flat)
 _LIE_DEG = 10.0  # a tip at or below this is lying (flat kinds: standing on edge)
 
 _KIND = ("preset", "ball", "disc", "aero", "shape", "diameter", "inner_diameter", "tip_diameter", "length",
-         "size", "mass", "material", "friction", "axis", "inertia", "shapes", "cad", "units", "hole", "scale")
+         "size", "mass", "material", "friction", "axis", "inertia", "shapes", "cad", "units", "hole", "scale",
+         "drag_coefficient", "spin_damping", "stiffness")
+_AIR = ("drag_coefficient", "spin_damping")  # a rigid kind's air (launcher/rigid_aero.py), shape or piece preset
+# a rigid kind's own contact stiffness (N/m at one contact, in series with a tread: launcher/pinch.py), shape or
+# piece preset
+_RIGID_OWN = _AIR + ("stiffness",)
 _LENGTHS = ("diameter", "inner_diameter", "tip_diameter", "length", "size")
 _KIND_ALL = _KIND + tuple(k + "_in" for k in _LENGTHS) + ("label", "color")
 # The keys each shape takes beyond shape, mass, material, friction, inertia, label and color (lengths also as
@@ -337,6 +343,13 @@ class PieceKind:
     # what is accepted but likely a mistake: a piece far smaller than a game piece, or far too heavy or light for its
     # size (checks.Said: its words when shown). A range's are its own (spec.Range.warnings)
     warnings: tuple[str, ...] = ()
+    # a rigid piece's air (launcher/rigid_aero.py): its drag coefficient on its shadow's projected area, and
+    # its spin damping (N m s/rad); a ball's and a disc's air are their own
+    drag_coefficient: float = DRAG_COEFFICIENT
+    spin_damping: float = SPIN_DAMPING
+    # a rigid piece's own contact stiffness, N/m at one contact in series with a wheel's tread (launcher/pinch.py, the
+    # bench's rigid `stiffness`); None: hard
+    stiffness: float | None = None
 
     def __post_init__(self):
         if not self.label:
@@ -347,6 +360,11 @@ class PieceKind:
         """Every box corner and mesh vertex, in the kind's frame."""
         pts = [_box_corners(s) if s.kind == "box" else s.vertices for s in self.solids if s.kind != "sphere"]
         return np.concatenate(pts) if pts else np.zeros((0, 3))
+
+    @cached_property
+    def outline(self) -> np.ndarray:
+        """outline_points of its solids: the points goal_fit judges whether it fits through an opening by."""
+        return outline_points(self.solids)
 
     @cached_property
     def _spheres(self) -> tuple[np.ndarray, np.ndarray]:
@@ -407,6 +425,13 @@ class PieceKind:
         sc, radii = self._spheres
         return centers @ m.T, axes @ m.T, halves.copy(), sc @ m.T, radii.copy()
 
+    @cached_property
+    def shadow_areas(self) -> tuple[float, float, float]:
+        """The piece's shadow along each body axis (m^2): the area of the union of its solids' projections onto the
+        plane across x, y and z (shadow_area). A ring's face shows its annulus, hole and all; launcher/rigid_aero.py
+        reads its drag area from these."""
+        return tuple(shadow_area(self.solids, k) for k in range(3))
+
     def reach(self, quat) -> float:
         """The largest horizontal distance of a point of the kind from its center, turned by `quat`."""
         m = _matrix(quat)
@@ -441,8 +466,7 @@ def _finish(r: _Reader, name: str, shape: str, solids: list[Solid], mass: float,
         raise r.err(i18n.t("has no volume: its shapes are flat or broken"))
     com = np.asarray(parts.com, dtype=float)
     tensor = parts.tensor * (mass / parts.mass)
-    lo = np.min([_lo_hi(s)[0] for s in solids], axis=0)
-    hi = np.max([_lo_hi(s)[1] for s in solids], axis=0)
+    lo, hi = _bounds(solids)
     sides = hi - lo
     extent = float(sides.max())
     if extent > MAX_EXTENT:
@@ -496,12 +520,140 @@ def _size_warnings(r: _Reader, extent: float, density: float, shape: str) -> tup
     return ()
 
 
+# source: our choice: goal_fit checks a piece by at most this many points, so a flight's per-sample cost stays bounded.
+# What the cap costs is outline_error: for the shipped piece presets at most 3 mm (the 2019 HATCH PANEL; the 2024
+# NOTE 2.1 mm), pinned by tests/test_bench_rigid_flight.py.
+OUTLINE_POINTS = 64
+
+
+def _directions(n: int = 2048) -> np.ndarray:
+    """n unit directions spread evenly over the sphere (a Fibonacci lattice), the same every call."""
+    k = np.arange(n) + 0.5
+    z = 1.0 - 2.0 * k / n
+    phi = k * np.pi * (3.0 - np.sqrt(5.0))
+    r = np.sqrt(1.0 - z * z)
+    return np.column_stack([r * np.cos(phi), r * np.sin(phi), z])
+
+
+def _solid_points(solids) -> np.ndarray:
+    """Every box corner and mesh vertex of `solids`, and 14 points on each sphere (its 6 poles and 8 diagonal
+    points), deduplicated."""
+    pts = []
+    diag = np.array([(x, y, z) for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)], dtype=float) / np.sqrt(3.0)
+    for s in solids:
+        if s.kind == "sphere":
+            c, r = np.asarray(s.pos, dtype=float), float(s.size[0])
+            pts.append(c + r * np.concatenate([np.eye(3), -np.eye(3), diag]))
+        else:
+            pts.append(_box_corners(s) if s.kind == "box" else np.asarray(s.vertices, dtype=float))
+    return np.unique(np.round(np.concatenate(pts), 12), axis=0) if pts else np.zeros((0, 3))
+
+
+def outline_points(solids, cap: int = OUTLINE_POINTS) -> np.ndarray:
+    """The points (n <= cap, 3) that stand for convex `solids`' outline in their frame: the corners of their convex
+    hull (each box's corners, each mesh's vertices and 14 points on each sphere, keeping those that are furthest out
+    in one of 2048 directions; points inside, such as the edge of a ring's hole, are left out). More than `cap` are
+    sampled down: first the lowest and highest along x, y and z, then, one at a time, the corner farthest from those
+    kept (farthest-point sampling). A box-shaped piece keeps its 8 corners. outline_error says what the cap costs."""
+    p = _solid_points(solids)
+    if len(p) == 0:
+        return p
+    p = p[np.unique(np.argmax(_directions() @ p.T, axis=1))]
+    if len(p) <= cap:
+        return p
+    keep = list(dict.fromkeys(int(i) for k in range(3) for i in (np.argmin(p[:, k]), np.argmax(p[:, k]))))[:cap]
+    gap = np.min(np.linalg.norm(p[:, None, :] - p[None, keep, :], axis=-1), axis=1)
+    while len(keep) < cap:
+        i = int(np.argmax(gap))
+        keep.append(i)
+        gap = np.minimum(gap, np.linalg.norm(p - p[i], axis=1))
+    return p[keep]
+
+
+def outline_error(solids, cap: int = OUTLINE_POINTS) -> float:
+    """How far (m) the outline_points' hull falls inside the solids' own, in the worst of 2048 directions: how much
+    of the piece an opening's check can miss (a sphere's 14 points miss up to 0.18 of its radius more)."""
+    d = _directions()
+    return float(np.max((d @ _solid_points(solids).T).max(axis=1) - (d @ outline_points(solids, cap).T).max(axis=1)))
+
+
+def piece_bounds(kind: PieceKind) -> tuple[np.ndarray, np.ndarray]:
+    """A rigid kind's bounding box in its body frame, (lo, hi): the lowest and highest x, y and z of its solids (m)."""
+    return _bounds(kind.solids)
+
+
+def _bounds(solids) -> tuple[np.ndarray, np.ndarray]:
+    return (np.min([_lo_hi(s)[0] for s in solids], axis=0), np.max([_lo_hi(s)[1] for s in solids], axis=0))
+
+
 def _lo_hi(s: Solid) -> tuple[np.ndarray, np.ndarray]:
     if s.kind == "sphere":
         c = np.asarray(s.pos, dtype=float)
         return c - s.size[0], c + s.size[0]
     pts = _box_corners(s) if s.kind == "box" else s.vertices
     return pts.min(axis=0), pts.max(axis=0)
+
+
+SHADOW_CELLS = 600  # a shadow is rasterized on cells this many to its longest side: a NOTE's annulus to 0.2 %
+
+
+def _hull(pts: np.ndarray) -> np.ndarray:
+    """The convex hull of 2-D points, counterclockwise (Andrew's monotone chain)."""
+    p = np.unique(np.round(pts, 12), axis=0)
+    if len(p) < 3:
+        return p
+    p = p[np.lexsort((p[:, 1], p[:, 0]))]
+
+    def half(points):
+        out = []
+        for q in points:
+            while len(out) >= 2 and ((out[-1][0] - out[-2][0]) * (q[1] - out[-2][1])
+                                     - (out[-1][1] - out[-2][1]) * (q[0] - out[-2][0])) <= 0:
+                out.pop()
+            out.append(q)
+        return out
+
+    lower, upper = half(p), half(p[::-1])
+    return np.array(lower[:-1] + upper[:-1])
+
+
+def shadow_area(solids, axis: int) -> float:
+    """The area (m^2) of the union of the solids' projections onto the plane across body `axis` (0 x, 1 y, 2 z):
+    each convex solid's projection is the hull of its points (a sphere's a disc), and the union is counted on a grid
+    of SHADOW_CELLS cells across its longest side, each cell in when its center is in a projection."""
+    keep = [i for i in range(3) if i != axis]
+    shapes = []
+    for sol in solids:
+        if sol.kind == "sphere":
+            shapes.append(("disc", np.asarray(sol.pos, dtype=float)[keep], float(sol.size[0])))
+        else:
+            pts = (_box_corners(sol) if sol.kind == "box" else sol.vertices)[:, keep]
+            shapes.append(("hull", _hull(pts), 0.0))
+    lo = np.min([c - r if k == "disc" else c.min(axis=0) for k, c, r in shapes], axis=0)
+    hi = np.max([c + r if k == "disc" else c.max(axis=0) for k, c, r in shapes], axis=0)
+    cell = float((hi - lo).max()) / SHADOW_CELLS
+    if not cell > 0:
+        return 0.0
+    nx, ny = (int(math.ceil(float(x) / cell)) + 1 for x in hi - lo)
+    xs, ys = lo[0] + (np.arange(nx) + 0.5) * cell, lo[1] + (np.arange(ny) + 0.5) * cell
+    mask = np.zeros((nx, ny), dtype=bool)
+    for k, c, r in shapes:
+        b_lo, b_hi = (c - r, c + r) if k == "disc" else (c.min(axis=0), c.max(axis=0))
+        i0, i1 = np.searchsorted(xs, b_lo[0]), np.searchsorted(xs, b_hi[0], side="right")
+        j0, j1 = np.searchsorted(ys, b_lo[1]), np.searchsorted(ys, b_hi[1], side="right")
+        if i1 <= i0 or j1 <= j0:
+            continue
+        gx, gy = np.meshgrid(xs[i0:i1], ys[j0:j1], indexing="ij")
+        if k == "disc":
+            inside = (gx - c[0]) ** 2 + (gy - c[1]) ** 2 <= r * r
+        elif len(c) < 3:
+            continue        # a flat solid casts no shadow
+        else:
+            inside = np.ones(gx.shape, dtype=bool)
+            for a, b in zip(c, np.roll(c, -1, axis=0)):
+                inside &= (b[0] - a[0]) * (gy - a[1]) - (b[1] - a[1]) * (gx - a[0]) >= 0
+        mask[i0:i1, j0:j1] |= inside
+    return float(mask.sum()) * cell * cell
 
 
 # ---------------------------------------------------------------------------------------------------- reading
@@ -700,8 +852,16 @@ def _parse_kind(path: Path, name: str, r: _KindReader, base_dir: Path) -> PieceK
     source = given[0]
     if r.has("aero") and source != "disc":
         raise r.err(i18n.t("aero is a disc's aerodynamics; only a disc kind takes it"))
+    if source in ("ball", "disc"):
+        air = [k for k in _AIR if r.has(k)]
+        if air:
+            raise r.err(i18n.t("{key} is a rigid piece's air drag; a ball flies with the {air_table} drag and a disc "
+                               "with its aero set", key=air[0], air_table="[air]"))
+        if r.has("stiffness"):
+            raise r.err(i18n.t("{key} is a rigid piece's contact stiffness; a ball's is its {ball_key} and a disc's "
+                               "its {disc_key}", key="stiffness", ball_key="stiffness_n", disc_key="rim_stiffness"))
     if source != "shape":
-        extra = [k for k in r.t if k not in (source, "aero", "label", "color")]
+        extra = [k for k in r.t if k not in (source, "aero", "label", "color") + _RIGID_OWN]
         if extra:
             raise r.err(i18n.t("{extra} doesn't go with {source} = {raw}: a preset kind is its preset",
                                extra=extra[0], source=source, raw=repr(r.raw(source))))
@@ -717,6 +877,7 @@ def _parse_kind(path: Path, name: str, r: _KindReader, base_dir: Path) -> PieceK
                 kind = replace(kind_preset(r.text("preset")), name=name, label="")
         except RangeError as e:
             raise r.err(str(e)) from None
+        kind = _air(r, kind)
         return replace(kind, label=label) if label else kind
     shape = _shape_name(r, SHAPES)
     _check_shape_keys(r, shape)
@@ -752,10 +913,25 @@ def _parse_kind(path: Path, name: str, r: _KindReader, base_dir: Path) -> PieceK
         solids, own, notes = _cad(r, base_dir)
     else:
         solids, hole, axis = _simple(r, shape)
-    kind = _finish(r, name, shape, solids, mass, friction, axis, hole, inertia, own, label)
+    kind = _air(r, _finish(r, name, shape, solids, mass, friction, axis, hole, inertia, own, label))
     if shape == "cad" and notes:
         kind = replace(kind, warnings=tuple(notes) + kind.warnings)
     return replace(kind, provenance={"friction": measured}) if measured is not None else kind
+
+
+def _air(r: _KindReader, kind: PieceKind) -> PieceKind:
+    """The kind with its own `drag_coefficient` and `spin_damping`, where the table gives them (each a number, not
+    negative: 0 is no drag, or no damping), and its own contact `stiffness` (a positive number, N/m)."""
+    given = air_given(r)
+    if r.has("stiffness"):
+        given["stiffness"] = r.num("stiffness", positive=True)
+    return replace(kind, **given) if given else kind
+
+
+def air_given(r: _Reader) -> dict[str, float]:
+    """The table's `drag_coefficient` and `spin_damping` (launcher/rigid_aero.py), those it gives, each a number,
+    not negative. The bench's [piece] reads them with this too."""
+    return {k: r.num(k, nonnegative=True) for k in _AIR if r.has(k)}
 
 
 def _default_aero() -> str:

@@ -569,6 +569,7 @@ Which geoms collide with `collide = true`:
 | `flywheel`, `roller` | the frame and the wheel | |
 | `launcher` | the side plates and the wheel | the hood's arc: the launcher model, not contact, carries the ball round it |
 | `disc_shooter` | the frame, the wheels and the fence | the guide plates above and below the disc |
+| `pinch_shooter` | the frame, the side plates and both wheels | |
 
 Things to know:
 
@@ -601,6 +602,7 @@ disc_shooter         planar disc shooter: wheels driving a flat disc along a cha
 elevator             linear lift of 1-4 stages driven by a spool; the carriage is the last stage
 flywheel             spinning wheel on a horizontal axle (shooter wheel)
 launcher             hooded shooter: a wheel on a horizontal shaft and a hood around it, articulated or fixed; the test range's [shooter] runs it with sub-project 8's launcher model
+pinch_shooter        face-pinch shooter for a flat piece (the 2024 NOTE): a top and a bottom wheel, each on its own shaft, squeeze the piece's faces and drive it out, the channel tilted to the exit angle, fixed or on a motor; the test range's [shooter] kind = "piece" runs it with the pinch model
 roller               spinning roller on a horizontal axle (intake or indexer)
 swerve/MAXSwerve     REV MAXSwerve module, 3 in wheel, NEO drive and NEO 550 steer
 swerve/MK4i          SDS MK4i swerve module (inverted steer motor), 4 in wheel
@@ -783,6 +785,37 @@ parameters:
   collide = false: its geoms touch the field, game pieces and a partner robot (never the robot's own parts). Drawing-only geoms never collide: the launcher's hood arc, a disc shooter's guide plates, and a push cylinder's barrel (a push cylinder touches nothing even with collide on)
 
 slots: spin
+mounts: base
+```
+
+### pinch_shooter
+
+```
+pinch_shooter: face-pinch shooter for a flat piece (the 2024 NOTE): a top and a bottom wheel, each on its own shaft, squeeze the piece's faces and drive it out, the channel tilted to the exit angle, fixed or on a motor; the test range's [shooter] kind = "piece" runs it with the pinch model
+
+Slots: bottom and top (motors on joints spin0 and spin1, one per wheel), and tilt (motor) and tilt_encoder (channel turns) with an articulated tilt. The channel body's origin is where the fed piece's middle starts: x downrange, z pointing at the top wheel (the piece's faces lie across it), y along the wheels' axles; it is the base's frame pitched up by the exit angle about y. The tilt joint reads 0 at the low stop: exit angle = tilt_range[0] + the joint's angle. In the world the [shooter] section's pinch model runs the wheel shafts and the spin joints mirror them.
+
+parameters:
+  bottom_diameter = 0.1016 m (greater than 0): the bottom wheel's diameter
+  top_diameter = 0.1016 m (greater than 0): the top wheel's diameter
+  wheel_width = 0.3556 m (greater than 0): the wheels' width along their axles (the contact patch is the narrower of it and the piece)
+  gap = 0.03175 m (greater than 0): the gap between the two wheels' surfaces; the piece is squeezed by its thickness less this
+  wheel_x = 0.25 m (greater than 0): how far downrange of the fed piece's middle the wheels' axles stand: at least half the piece's length plus the wheels' reach along it
+  wheel_moi = 0.001 kg*m^2 (greater than 0): each wheel's (with its hub and shaft) moment of inertia about its axle
+  added_moi = 0.0 kg*m^2 (at least 0.0): a flywheel on each wheel's shaft
+  motor = "KrakenX60" (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): wheel motor model
+  count = 1 (a whole number, at least 1): motors driving each wheel
+  gearing = 1.0 (greater than 0): motor turns per wheel turn
+  channel_mass = 1.0 kg (greater than 0): the channel's mass (its plates and the wheels' frame)
+  tilt = "fixed" (one of fixed, articulated): fixed: the channel stays at tilt_angle; articulated: it pivots at its entry on a motor (joint tilt)
+  tilt_angle = 45.0 deg (at least -80.0, at most 80.0): the fixed channel's exit angle above horizontal
+  tilt_range = [20.0, 60.0] deg ([min, max] with min < max): the articulated channel's exit angles at its low and high hard stops
+  tilt_motor = "KrakenX60" (one of Bag, CIM, Falcon500, Falcon500FOC, KrakenX60, KrakenX60FOC, MiniCIM, NEO, NEO550, NeoVortex, Vex775Pro): tilt motor model
+  tilt_count = 1 (a whole number, at least 1): motors driving the tilt
+  tilt_gearing = 100.0 (greater than 0): tilt motor turns per channel turn
+  collide = false: its geoms touch the field, game pieces and a partner robot (never the robot's own parts). Drawing-only geoms never collide: the launcher's hood arc, a disc shooter's guide plates, and a push cylinder's barrel (a push cylinder touches nothing even with collide on)
+
+slots: bottom, top
 mounts: base
 ```
 

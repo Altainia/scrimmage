@@ -21,18 +21,18 @@ default = ""
 help = "the piece's name"
 
 [piece.preset]
-help = "a ready-made ball; any key below overrides its numbers"
+help = "a ready-made ball (any key below overrides its numbers) or a range's piece, such as 2024-note (it is its preset)"
 choices = "pieces"
 
 [piece.kind]
 help = "squishy is a foam ball; rigid is anything hard"
 
 [piece.shape]
-help = "sphere, box, cylinder, disc (a short cylinder) or mesh (from a file)"
+help = "sphere, box, cylinder, disc (a short cylinder), ring (a hollow round, the range's) or mesh (from a file)"
 
 [piece.size]
 unit = "m"
-help = "sphere [diameter]; box [x, y, z]; cylinder or disc [diameter, length]"
+help = "sphere [diameter]; box [x, y, z]; cylinder or disc [diameter, length]; ring [diameter, inner diameter, length]"
 
 [piece.mass]
 unit = "kg"
@@ -57,7 +57,16 @@ help = "foam ball: how its mass is spread, for how hard it is to spin"
 
 [piece.stiffness]
 unit = "N/m"
-help = "rigid only: how stiff its own surface is (higher is harder); left out, it is hard"
+help = "rigid only: how stiff its own surface is (higher is harder); left out, a piece preset's own, else it is hard"
+
+[piece.drag_coefficient]
+help = "rigid only, in [flight]: the drag coefficient on its shadow (0 or more); left out, 1.17, an estimate"
+default = 1.17          # estimate: rigid_aero.DRAG_COEFFICIENT, Hoerner's broadside flat plate (an estimate for a whole piece)
+
+[piece.spin_damping]
+unit = "N m s/rad"
+help = "rigid only, in [flight]: how fast the air slows its spin (0 or more)"
+default = 0.0
 
 [piece.mesh]
 help = "mesh shape: an STL or OBJ file, next to the bench file"
@@ -384,11 +393,21 @@ help = "how high the target is above the floor"
 
 [flight.ring_diameter]
 unit = "m"
-help = "a ring at the target; shots through it count"
+help = "a ring at the target; shots through it count (a rigid piece only if all its outline is inside it)"
 
 [flight.air]
 help = "which air to fly through"
 default = "default"
+
+[flight.goal]
+help = "a goal from a range file, { range = \"<file>\", name = \"<goal>\" }: each shot says scored or missed (rigid pieces)"
+
+[flight.at]
+unit = "m"
+help = "with a goal: where the bench origin stands on that field, [x, y, height]"
+
+[flight.heading_deg]
+help = "with a goal: which way the bench's +x faces on that field, in degrees from the field's +x"
 
 [run.duration]
 unit = "s"

@@ -269,8 +269,9 @@ class _Run:
         self.vadr = np.array([[v + k for k in range(6)] for v in lay.piece_qvel], dtype=int).reshape(n, 6)
         self.parked_q = np.array([np.r_[p, 1.0, 0.0, 0.0, 0.0] for p in lay.parked]).reshape(n, 7)
         self.geom_piece = np.full(m.ngeom, -1, dtype=int)
-        self.geom_piece[lay.piece_geoms] = np.arange(n)
-        self.reach = float(m.geom_rbound[lay.piece_geoms[0]]) if n else 0.0
+        for i, geoms in enumerate(lay.piece_geom_sets):
+            self.geom_piece[list(geoms)] = i
+        self.reach = lay.piece_reach
         self.shaft_of_body = {int(m.body(f"shaft:{s}").id): s for s in bench.shafts}
         self.shaft_of_shape = {w.name: w.shaft for w in bench.wheels}
         self.shaft_of_shape |= {n: w.shaft for n, w in lay.cad_wheels.items()}

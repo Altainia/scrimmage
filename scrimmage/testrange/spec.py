@@ -33,7 +33,7 @@ ball preset>"`, `disc = "<disc preset>"` (scrimmage/disc/presets.toml, with `aer
 aerodynamics in flight, default pc-long) or `piece = "<ball or piece preset>"`, named after its preset; left out, it
 is the first `[piece.<name>]` table. Each `[piece.<name>]` adds a kind (a preset, a ball, a disc or a shape), in file
 order after the default. `[[floor_balls]]`, `[[station]]` and `[[goal]]` take `kind = "<name>"` (left out: the
-default kind; a goal's, the first ball or disc kind). Goals count balls and discs only.
+default kind; a goal's, the first ball or disc kind). Goals count any piece kind.
 
 A kind's `color` (in its `[piece.<name>]`, or `[range] color` for the [range] ball, disc or piece) is a named color
 (scrimmage/sensors/colors.py: red, blue, yellow, orange, green, purple, white, gray) or [r, g, b], each 0 to 1. The
@@ -72,7 +72,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from .. import i18n
+from .. import i18n, units
 from ..disc.inputs import DEFAULT_AERO, AeroSet, Disc, DiscConfigError, aero_set, disc_preset
 from ..disc.inputs import PRESETS as DISC_PRESETS
 from ..launcher.inputs import PRESETS, Ball, LauncherConfigError, _build_section
@@ -91,7 +91,7 @@ FIELD_LIMITS = (2.0, 40.0)  # m: a field's length and width must be in this (a t
 BUILTIN_RANGES = {name: Path(__file__).with_name("ranges") / f"{name}.toml"
                   for name in ("2026", "2013", "2026-bump", "2023-charge-station", "terrain-library", "2022-hangar",
                                "2020-switch", "2013-pyramid", "ladder", "ladder-square", "intake", "station", "reef",
-                               "2026-trench", "2016-defenses")}
+                               "2026-trench", "2016-defenses", "2024")}
 BALL_CHOICE_RANGES = ("intake", "station")   # the ranges whose ball a test's Setup can change (a stand-in's, not a game's)
 # estimate: no published figure for an FRC foam ball on FRC carpet. Chosen so a 2026 FUEL (k = 0.4) slows at
 # 0.07 * 9.81 / 1.4 = 0.49 m/s^2, stopping from 1 m/s in about 2 s and 1 m: about a golf ball on a putting green
@@ -224,7 +224,8 @@ class Goal:
     body: Body | None
     plates: tuple[Plate, ...] = ()
     slot: Slot | None = None        # a rect goal's frame and box (None: a rim of bars)
-    kind: str | None = None         # the ball or disc kind it counts (None: the field's first ball or disc kind)
+    # the kind it counts (None: the field's first ball or disc kind, else its first kind)
+    kind: str | None = None
 
     def rotation(self) -> np.ndarray:
         """Goal frame to world: heading about z, after the tilt (about y, entry normal +z toward -x)."""
@@ -343,14 +344,17 @@ class _Reader:
             raise self.err(i18n.t("{key} must be text, not {value}", key=key, value=repr(v)))
         return v
 
-    def num(self, key: str, default: float | None = None, *, positive: bool = False) -> float:
+    def num(self, key: str, default: float | None = None, *, positive: bool = False,
+            nonnegative: bool = False) -> float:
         if default is not None and key not in self.t:
             return default
         v = self.raw(key)
-        if isinstance(v, bool) or not isinstance(v, (int, float)):
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or (nonnegative and not math.isfinite(v)):
             raise self.err(i18n.t("{key} must be a number, not {value}", key=key, value=repr(v)))
         if positive and not v > 0:
             raise self.err(i18n.t("{key} must be positive, not {value}", key=key, value=repr(v)))
+        if nonnegative and v < 0:
+            raise self.err(i18n.t("{key} can't be negative, not {value}", key=key, value=repr(v)))
         return float(v)
 
     def whole(self, key: str) -> int:
@@ -432,26 +436,42 @@ def kind_named(path: Path, where: str, name: str, kinds: dict[str, PieceKind]) -
     return kinds[name]
 
 
-def _counted(path: Path, where: str, name: str | None, kinds: dict[str, PieceKind], default: str) -> PieceKind:
-    """The kind a goal counts: the one it names, else the field's first ball or disc kind. Goals count balls and
-    discs only."""
+def _counted(path: Path, where: str, name: str | None, kinds: dict[str, PieceKind]) -> PieceKind:
+    """The kind a goal counts: the one it names, else the field's first ball or disc kind, else its first kind."""
     if name is not None:
-        kind = kind_named(path, where, name, kinds)
-    else:
-        kind = next((k for k in kinds.values() if k.form != "rigid"), kinds[default])
-    if kind.form == "rigid":
-        raise RangeError(i18n.t("{path}: {where}: goals count balls and discs; {name} is a rigid piece",
-                                path=path, where=where, name=repr(kind.name)))
-    return kind
+        return kind_named(path, where, name, kinds)
+    return next((k for k in kinds.values() if k.form != "rigid"), next(iter(kinds.values())))
 
 
-def _goal(path: Path, table, i: int, kinds: dict[str, PieceKind], default: str) -> Goal:
+def piece_box(kind: PieceKind) -> tuple[float, float, float]:
+    """A rigid kind's bounding box in its body frame: its sides along body x, y and z (m)."""
+    from .pieces import piece_bounds  # pieces.py imports this module
+
+    lo, hi = piece_bounds(kind)
+    return tuple(float(x) for x in hi - lo)
+
+
+def piece_sides(kind: PieceKind) -> tuple[float, ...]:
+    """The sides of a kind's bounding box in its body frame, smallest first (a ball or disc: its diameter)."""
+    if kind.form != "rigid" or not kind.solids:
+        d = (kind.ball.diameter if kind.ball is not None else kind.disc.diameter if kind.disc is not None
+             else kind.extent)
+        return (float(d),)
+    return tuple(sorted(piece_box(kind)))
+
+
+def passing_width(kind: PieceKind) -> float:
+    """The narrowest opening a piece can pass, in m: a ball's or disc's diameter, a rigid piece's smallest
+    bounding-box side."""
+    return piece_sides(kind)[0]
+
+
+def _goal(path: Path, table, i: int, kinds: dict[str, PieceKind], warnings: list[str] | None = None) -> Goal:
     r = _Reader(path, f"[[goal]] #{i + 1}", table, _GOAL)
     name = r.text("name")
     r.where = f"[[goal]] '{name}'"
     kind_name = r.text("kind") if r.has("kind") else None
-    counted = _counted(path, r.where, kind_name, kinds, default)
-    piece = counted.ball if counted.ball is not None else counted.disc
+    counted = _counted(path, r.where, kind_name, kinds)
     opening = _opening(r)
     rect = isinstance(opening, RectOpening)
     if rect and (r.has("funnel") or r.has("body")):
@@ -497,12 +517,20 @@ def _goal(path: Path, table, i: int, kinds: dict[str, PieceKind], default: str) 
              rim_height=r.num("rim_height", positive=True), tilt_deg=tilt, opening=opening, funnel=funnel,
              body=body, plates=tuple(plates), slot=slot, kind=kind_name)
     throat = g.throat_across_flats()
-    if throat is not None and throat <= piece.diameter:
+    width = passing_width(counted)
+    if throat is not None and throat <= width:
+        what = i18n.t("the piece's thinnest side") if counted.form == "rigid" else i18n.t("the ball")
         raise RangeError(
-            i18n.t("{path}: {goal_table} '{name}' funnel: the throat is {throat} m across the flats, no wider than "
-                   "the ball ({diameter} m); make the funnel shallower or its walls steeper", path=path, name=name,
-                   throat=f"{throat:.4g}", diameter=piece.diameter, goal_table="[[goal]]")
-        )
+            i18n.t("{path}: {goal_table} '{name}' funnel: the throat is {throat} across the flats, no wider than "
+                   "{what} ({diameter}); make the funnel shallower or its walls steeper", path=path, name=name,
+                   throat=units.fmt(throat, "length"), what=what, diameter=units.fmt(width, "length"),
+                   goal_table="[[goal]]"))
+    sides = piece_sides(counted)
+    if throat is not None and warnings is not None and len(sides) > 1 and throat <= sides[1]:
+        warnings.append(
+            i18n.t("{path}: {goal_table} '{name}' funnel: the throat is {throat} across the flats, narrower than "
+                   "the piece's middle side ({side}); it may pass only on edge", path=path, name=name,
+                   throat=units.fmt(throat, "length"), side=units.fmt(sides[1], "length"), goal_table="[[goal]]"))
     return g
 
 
@@ -831,8 +859,9 @@ def parse_range(raw: dict, path: Path) -> Range:
         raise RangeError(i18n.t("{path}: goal must be an array of tables ({goal_table})", path=path,
                                 goal_table="[[goal]]"))
     goals = []
+    goal_warnings: list[str] = []
     for i, t in enumerate(goals_raw):
-        g = _goal(path, t, i, kinds, default)
+        g = _goal(path, t, i, kinds, goal_warnings)
         if any(g.name == other.name for other in goals):
             raise RangeError(i18n.t("{path}: two goals named '{name}'; goal names must be unique",
                                     path=path, name=g.name))
@@ -884,7 +913,8 @@ def parse_range(raw: dict, path: Path) -> Range:
                   floor_kinds=tuple(floor_kinds), floor_turns=floor_turns, floor_heights=heights, zones=zones,
                   field_length=size[0],
                   field_width=size[1],
-                  warnings=tuple(w for k in kinds.values() for w in k.warnings) + _outside_warnings(goals, size))
+                  warnings=tuple(w for k in kinds.values() for w in k.warnings) + _outside_warnings(goals, size)
+                           + tuple(goal_warnings))
     staged = _unsupported(built, names)
     if staged:
         built = replace(built, warnings=built.warnings + staged)

@@ -434,7 +434,8 @@ def _aim(args) -> None:
             command = (f"scrimmage launcher aim CONFIG --goal {args.goal} --distances {args.distances}"
                        f"{'' if args.hood_step == 2.0 else f' --hood-step {args.hood_step:g}'} "
                        f"--java FILE --java-class {args.java_class}")
-            args.java.write_text(aim.to_java(rows, args.java_class, command, label), encoding="utf-8")
+            args.java.write_text(aim.to_java(rows, args.java_class, command, label, surface=not model.level),
+                                 encoding="utf-8")
             print(f"wrote {args.java}")
     except (ValueError, OSError) as e:    # AimError, ConfigError and PartError are ValueErrors
         print(f"scrimmage: {e}", file=sys.stderr)
