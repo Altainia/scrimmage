@@ -620,10 +620,12 @@ default kind (a goal's, the first ball or disc kind).
   Each fed piece is set down just clear of the chute's floor (or at the release point if there is no chute), whatever
   way it was drawn to lie, so a long piece doesn't start inside the floor. A chute with no `width` is 1.3 times the
   piece's largest side wide, and its side walls are as tall as that side.
-- **`[[goal]]`** counts balls and discs only. A goal that names a non-ball kind is an error, and on a field with
-  several kinds a goal counts only the ball or disc kind it names. Shooting stays ball and disc only too: the
-  `[shooter]` ball path and its launcher never take a non-ball piece. Pieces that aren't balls are moved only by contact
-  with the student's mechanism.
+- **`[[goal]]`** counts any piece kind: the one it names with `kind`, else the field's first ball or disc kind, else
+  (a field of rigid pieces only) its first kind. A piece scores when its center crosses the scoring surface, as a ball
+  does, so a ring can count with its rim over the edge of the opening; the rim bars collide, so this is rare. A funnel
+  throat no wider than a rigid piece's thinnest side is an error; one narrower than its middle side is a warning, as
+  the piece may pass only on edge. Shooting stays ball and disc only: the `[shooter]` ball path and its launcher never
+  take a non-ball piece. Pieces that aren't balls are moved only by contact with the student's mechanism.
 
 **Words for how a piece lies.** The Test tab and the floor spread's results name how a piece lies from its tip and
 turn. Tipped up 80 degrees or more: "standing on end" (for a flat kind, "lying flat"). Tipped up 10 or less: "lying

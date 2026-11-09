@@ -32,8 +32,8 @@ tests/test_range_ledger_golden.py):
 - Rolling resistance: on every `rolls` slot on the carpet (its center below r + ON_CARPET): a ball, and a rigid tube,
   ring or cylinder lying on its side (standing or leaning, its center is too high), each with its own r (a tube's
   outer radius), torque C m g r and inertia about the contact (I about its axis + m r^2).
-- Scoring: a goal counts only its kind (`counted_by`: Goal.kind, else the field's first ball or disc kind), so a coral
-  through an opening doesn't score. Leaving the field is the same for every kind.
+- Scoring: a goal counts only its kind (`counted_by`: Goal.kind, else the field's first ball or disc kind, else its
+  first kind), so a coral through a ball's goal doesn't score. Leaving the field is the same for every kind.
 `r` and `rest_z` are Range.piece's kind's (the shooter's and the ball path's).
 """
 
@@ -161,7 +161,7 @@ class Balls:
                     self._geom_names[k] = self.piece_name(i)
         self.surfaces = [(g.name, g.scoring_surface()) for g in rng.goals]
         # goal name -> the slots it counts: those of its kind (Goal.kind, else the field's first ball or disc kind)
-        first = next((k.name for k in rng.kinds.values() if k.form != "rigid"), self.shooter_kind)
+        first = next((k.name for k in rng.kinds.values() if k.form != "rigid"), next(iter(rng.kinds)))
         self.counted_by = {g.name: self.kind == (g.kind if g.kind is not None else first) for g in rng.goals}
         self._counted = [self.counted_by[name] for name, _ in self.surfaces]
         # each scoring surface's reach: no point of its polygon is further than this from its center
