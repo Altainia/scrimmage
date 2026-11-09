@@ -526,10 +526,11 @@ command or setup file.
   checked against the bench (below), so a shot's wheel speed is an estimate.
 - **Against the bench.** The bench's MuJoCo contact on the same geometry (the kickoff dry run's `note_shooter.toml`:
   4 in. wheels, a 1.25 in. gap, 60 rps, the NOTE at 2000 N/m) doesn't agree yet: the model gives 9.6 m/s, the bench
-  4.6 m/s with the ring NOTE and 12.8 m/s with a solid disc in its place. The bench counts a rigid piece's stiffness
-  at each MuJoCo contact point, and makes 8 per wheel on the ring (2 on the disc), so it squeezes harder than its
-  `stiffness` says; held still, each of its contact points carries the model's force. Until a squeeze test of a real
-  NOTE settles it, treat both as estimates (`tests/test_pinch_launcher.py`).
+  7.1 m/s. Held still, the bench squeezes the NOTE as hard as the model does (its stiffness spread over its contact
+  points). The gap is in the pass: the bench's ring is 24 flat-sided slices, and their edges strike the wheels as it
+  goes in, with brief loads of several hundred newtons against the model's 19 N, and the NOTE rocks up and down
+  about 25 mm; the wheels slow 46% against the model's 4%. Until a squeeze test of a real NOTE settles it, treat
+  both as estimates (`tests/test_pinch_launcher.py`).
 
 ## In the world: the test range
 

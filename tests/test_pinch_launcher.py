@@ -204,13 +204,18 @@ def _bench(tmp_path, stiffness: float = 2000.0, count: int = 1, duration: float 
     return load_bench(path)
 
 
-def test_the_benchs_squeeze_at_one_contact_is_the_models(tmp_path):
-    """The NOTE held still in the bench's pinch (wheels locked, no gravity): each of MuJoCo's contact points between a
-    wheel and the ring carries the model's k c / 2, the same squeeze per contact. But MuJoCo makes 8 of them per wheel
-    on the ring's slices, so the bench's ring is squeezed 8 times as hard as its stiffness says (the gap
-    test_exit_speed_against_the_bench records)."""
+def test_the_benchs_squeeze_is_the_models(tmp_path):
+    """The NOTE held still in the bench's pinch (wheels locked, no gravity): MuJoCo makes 8 contact points between a
+    wheel and the ring's slices, and the bench spreads the piece's stiffness over them, so together they carry the
+    model's k c / 2, not 8 times it."""
     from scrimmage.bench.build import build_bench
-    m = build_bench(_bench(tmp_path)).model
+    from scrimmage.bench.run import spread_stiffness
+    built = build_bench(_bench(tmp_path))
+    m, lay = built.model, built.layout
+    geom_piece = np.full(m.ngeom, -1)
+    geom_piece[list(lay.piece_geom_sets[0])] = 0
+    soft = np.array(sorted(lay.contact_tc))
+    tc1 = np.array([lay.contact_tc[g] for g in soft])
     m.opt.gravity[:] = 0.0
     d = mujoco.MjData(m)
     piece = m.body("piece:0").id
@@ -221,6 +226,7 @@ def test_the_benchs_squeeze_at_one_contact_is_the_models(tmp_path):
     d.qpos[qadr:qadr + 7] = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
     for _ in range(3000):
         d.qvel[vadr:vadr + 6] *= 0.9
+        spread_stiffness(m, d, geom_piece, 1, soft, tc1)
         mujoco.mj_step(m, d)
     per_wheel: dict[str, list[float]] = {}
     for i in range(d.ncon):
@@ -236,25 +242,16 @@ def test_the_benchs_squeeze_at_one_contact_is_the_models(tmp_path):
     assert sorted(per_wheel) == ["shaft:bottom", "shaft:top"]
     for forces in per_wheel.values():
         assert len(forces) == 8
-        assert sum(forces) / len(forces) == pytest.approx(model_n, rel=0.02)
+        assert sum(forces) == pytest.approx(model_n, rel=0.02)
 
 
-@pytest.mark.xfail(strict=True, reason="the bench's ring NOTE leaves at 4.6 m/s, the model's at 9.6 m/s: the bench "
-                   "counts the piece's stiffness once per MuJoCo contact point and makes 8 per wheel on the ring, so "
-                   "it squeezes 8 times as hard and stalls the wheels (97% droop); see "
-                   "test_the_benchs_squeeze_at_one_contact_is_the_models and task 5's report")
+@pytest.mark.xfail(strict=True, reason="the bench's ring NOTE leaves at 7.1 m/s, the model's at 9.6 m/s: held "
+                   "still they squeeze alike (test_the_benchs_squeeze_is_the_models), but the bench's flat-sided ring "
+                   "slices strike the wheels going in (several hundred N against the model's 19 N) and the NOTE "
+                   "rocks about 25 mm, so its wheels slow 46% against the model's 4%")
 def test_exit_speed_against_the_bench(tmp_path):
     """The model's exit speed within 15% of the bench's (MuJoCo contact) on note_shooter.toml's geometry."""
     from scrimmage.bench.run import run_bench
     res = run_bench(_bench(tmp_path))
     bench = res.pieces[0].speed
     assert shot().speed == pytest.approx(bench, rel=0.15)
-
-
-
-def test_the_bench_warns_that_it_squeezes_a_ring_too_hard(tmp_path):
-    """Until the bench's per-contact squeeze is fixed (the xfail above), a many-solid rigid piece with its own
-    stiffness between wheels gets a warning that its exit speed reads low."""
-    from scrimmage.testrange.pieces import TUBE_SLICES
-    bench = _bench(tmp_path)
-    assert any("exit speed reads low" in w and f"{TUBE_SLICES} solids" in w for w in bench.warnings), bench.warnings

@@ -368,10 +368,9 @@ The piece decides how every contact it has is worked out.
   the same mass, size, inertia and solids as on the range. A ring's hole is open (a rod passes through it), because
   it is built from 24 slices, as on the range. `shape = "ring"` with `size = [diameter, inner_diameter, length]` and a
   `mass` builds your own ring the same way. The 2024 NOTE is a rigid stand-in: the real one is soft foam and squashes.
-  It brings its own contact `stiffness` (2000 N/m, an estimate), as on the range. **Between wheels the bench squeezes
-  it too hard:** until a fix lands, the bench applies a rigid piece's stiffness at each contact point, and a ring
-  touches a wheel at many, so the NOTE is squeezed harder than its `stiffness` says and its exit speed reads low.
-  Take the bench's exit speed for it as a low estimate; `bench check` warns about this.
+  It brings its own contact `stiffness` (2000 N/m, an estimate), as on the range. A ring touches a wheel at many
+  MuJoCo contact points (8 per wheel for the NOTE's face), and the bench spreads the stiffness over them, so held
+  between wheels the NOTE is squeezed as hard as its `stiffness` says, no harder.
 
 Discs (the 2013 Frisbee and an Ultra-Star preset, with their own flight) come in a later step, once the disc launcher
 model is merged. A custom rigid `shape = "disc"` (a short cylinder) works now.
