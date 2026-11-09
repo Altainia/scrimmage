@@ -7,6 +7,7 @@ import pytest
 
 from test_assembler_browser import Server, browser  # noqa: F401  (fixtures)
 from test_live import config_copy
+from browser_harness import close_context
 
 pytestmark = pytest.mark.browser
 
@@ -23,7 +24,7 @@ def live_page(browser, tmp_path):
     page.goto(srv.url)
     page.wait_for_function("window.__scrimmage && __scrimmage.state && __scrimmage.store.view3d")
     yield page
-    ctx.close()
+    close_context(ctx)
     srv.stop()
     assert not logs, f"browser errors: {logs}"
 

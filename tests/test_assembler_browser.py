@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from browser_harness import GL_ARGS, _unavailable, browser, page_units  # noqa: F401  (the fixture; see there)
+from browser_harness import GL_ARGS, _unavailable, browser, close_context, page_units  # noqa: F401  (the fixture; see there)
 
 pytestmark = pytest.mark.browser
 
@@ -81,7 +81,7 @@ def make_page(browser, tmp_path):
 
     yield make
     for c in contexts:
-        c.close()
+        close_context(c)
     for s in servers:
         s.stop()
     assert not logs, f"browser errors: {logs}"
@@ -516,7 +516,7 @@ def scenario_page(browser, tmp_path):
 
     yield make
     for c in contexts:
-        c.close()
+        close_context(c)
     for s in servers:
         s.stop()
     assert not logs, f"browser errors: {logs}"
@@ -1000,7 +1000,7 @@ def test_every_screen_meets_wcag_aa(browser, tmp_path, monkeypatch, screen, sche
         if screen == "drive":
             page.evaluate("fetch('/api/live/stop', {method: 'POST', headers: {'X-Scrimmage-Token': new URLSearchParams(location.hash.slice(1)).get('token'), 'Content-Type': 'application/json'}, body: '{}'})")
     finally:
-        ctx.close()
+        close_context(ctx)
         srv.stop()
 
 

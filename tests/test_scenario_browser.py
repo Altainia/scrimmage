@@ -14,6 +14,7 @@ import time
 import pytest
 
 from test_assembler_browser import REPO, Server, _run, browser, scenario_page  # noqa: F401  (fixtures)
+from browser_harness import close_context
 
 pytestmark = pytest.mark.browser
 
@@ -129,7 +130,7 @@ def test_first_robot_edit_refreshes_the_signal_picker(browser, tmp_path):
         opts = page.eval_on_selector_all("#ck-1-1-signal-pick option", "os => os.map(o => o.value)")
         assert "motor.base.left.current" in opts and not any(o.startswith("motor.dt.") for o in opts), opts
     finally:
-        ctx.close()
+        close_context(ctx)
         srv.stop()
     assert not logs, logs
 
@@ -225,7 +226,7 @@ def test_report_shows_ball_table(browser, tmp_path):
         assert (f"Not listed: {parked + 1} spare balls (unused slots, or floor balls turned off)."
                 in page.inner_text("#rp-balls .rp-not-listed"))
     finally:
-        ctx.close()
+        close_context(ctx)
         srv.stop()
     assert not logs, logs
 

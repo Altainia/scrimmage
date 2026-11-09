@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from browser_harness import page_units
+from browser_harness import page_units, close_context
 from scrimmage.bench import session
 from test_assembler_browser import REPO, Server, browser  # noqa: F401  (fixtures)
 
@@ -65,7 +65,7 @@ def make_bench_page(browser, tmp_path):
 
     yield make
     for c in contexts:
-        c.close()
+        close_context(c)
     for s in servers:
         s.stop()
     assert not logs, f"browser errors: {logs}"

@@ -7,6 +7,7 @@ import shutil
 import pytest
 
 from test_assembler_browser import REPO, Server, browser  # noqa: F401  (fixtures)
+from browser_harness import close_context
 
 pytestmark = pytest.mark.browser
 
@@ -31,7 +32,7 @@ def make_start_page(browser, tmp_path):
 
     yield make
     for c in contexts:
-        c.close()
+        close_context(c)
     for s in servers:
         s.stop()
     assert not logs, f"browser errors: {logs}"
