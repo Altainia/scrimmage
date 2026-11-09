@@ -39,10 +39,11 @@ from ..blocks import store
 from ..blocks.palette import ANY_PIECE, hints, palette, problems
 from ..blocks.program import (Block, Cond, TestFileError, block_defaults, block_json, dumps, from_json, load,
                               to_json)
-from ..blocks.run import TestRun, air_lines, clearance_lines, goal_lines, world_for
+from ..blocks.run import TestRun, air_lines, clearance_lines, goal_lines, points_lines, world_for
 from ..blocks.spread import inside_robot, no_ball, no_spread, run_spread
 from ..blocks.sweep import MAX_SWEEP, _kind as sweep_kind, run_sweep
 from ..cad.settings import replace_file
+from ..climb.run import SETTLE_S
 from ..parts.model import PartError
 from ..testrange.spec import BALL_CHOICE_RANGES, BUILTIN_RANGES, load_range
 from .bench_session import SessionError
@@ -673,8 +674,11 @@ class TestSession:
         last = error = None
         clock = [time.monotonic()]
         try:
+            world = world_for(program)
             limit = program.time_limit
-            result = TestRun(world_for(program), program).run(
+            if program.match and world.parts is not None and world.parts.range.game is not None:
+                limit = SETTLE_S + world.parts.range.game.match_s      # a match runs for the game's length
+            result = TestRun(world, program).run(
                 on_sample=lambda t, row: self._progress(t / limit, clock), cancel=cancel)
             folder = store.save_run(result, program, self.runs_dir)
             last = {"kind": "run", "id": folder.name}
@@ -764,13 +768,15 @@ class TestSession:
 
     def run_result(self, run_id: str) -> dict:
         """A kept run's result.json fields plus id, signals and `lines`: its goal counts and air in the sentences
-        `scrimmage test` prints (run_notes.py goal_lines, air_lines and clearance_lines; none for a run without them)."""
+        `scrimmage test` prints (run_notes.py goal_lines, points_lines, air_lines and clearance_lines; none for a run
+        without them). A match's points line comes first."""
         try:
             out = store.load_result(self.runs_dir, run_id)
         except FileNotFoundError:
             raise SessionError(404, i18n.t("no run {run_id} is kept for this test", run_id=run_id)) from None
-        kept = SimpleNamespace(goals=out.get("goals"), air=out.get("air"), clearance=out.get("clearance"))
-        out["lines"] = goal_lines(kept) + air_lines(kept) + clearance_lines(kept)
+        kept = SimpleNamespace(goals=out.get("goals"), air=out.get("air"), clearance=out.get("clearance"),
+                               points=out.get("points"), match=out.get("match"))
+        out["lines"] = points_lines(kept) + goal_lines(kept) + air_lines(kept) + clearance_lines(kept)
         return out
 
     def close(self) -> None:

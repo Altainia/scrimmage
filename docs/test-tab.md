@@ -625,7 +625,8 @@ In the test file:
   a distance after 10 s. The run then ends with a sentence that names the block, such as `waiting for a hook to touch
   rung2 timed out at 12.1 s (block 2 inside block 3)`.
 - **A repeat until has a max, default 20.** After that many rounds the run ends, saying which repeat gave up.
-- **Each test has a time limit, default 60 s.** The run ends there with "ran out of time".
+- **Each test has a time limit, default 60 s.** The run ends there with "ran out of time". A match
+  ([Playing a match](#playing-a-match)) has none: the game's phases set its length.
 - **"Walked off" ends a climb run.** If the robot has hung from a bar, then lets go of every bar while a hook was
   carrying it, and then drops, the run ends with "a hook walked off". A robot that hung and then touches the floor
   with no hook letting go ends it too.
@@ -647,6 +648,44 @@ An empty box is the default (the file leaves the key out). They are the file's `
 the block, saved like any other change (Undo doesn't take one back: set it again). The whole test's `time_limit` is
 in the `[test]` table: edit it in a text editor, and the tab keeps it when it saves. The 3 s settle after the blocks
 is fixed, and the file can't change it.
+
+## Playing a match
+
+A range with a `[game]` (see [the test range](test-range.md)) knows a match's phases and what each goal is worth. Put
+`match = true` in the test's `[test]` table and the Test tab plays the blocks as a match:
+
+```toml
+[test]
+robot = "my_robot.toml"
+match = true
+```
+
+- **The clock.** The match starts with the first block, after the 0.3 s settle, which isn't match time. **Auto** runs
+  for the game's `auto_seconds`, then the **pause**, then **teleop**. The run ends when teleop does, even if blocks are
+  left (the outcome says so), and even if the blocks finished early: the robot just sits, motors as they were, to the
+  match's end. The 3 s settle after the match lets pieces in the air land, but a piece that scores then is after the
+  match and doesn't count.
+- **The pause disables the robot.** Every motor goes to neutral and the air is held, as a real robot held disabled
+  would. Blocks keep running: a **drive** for 6 s that starts in auto counts the pause in its 6 s and starts the motors
+  again when teleop begins.
+- **The length is the game's.** `time_limit` can't be given with `match = true`: the test file is refused.
+- **The phase check.** **match is in** *auto*, *pause* or *teleop* works in **wait until** (to wait for teleop) and in
+  **expect**. In a file: `{ match = { phase = "teleop" } }`.
+- **The points check.** **points in** *auto*, *teleop*, *endgame* or *total* **at least** *N* reads the points so far.
+  In a file: `{ points = { phase = "auto", at_least = 7 } }` (`phase` is `"total"` when left out). LEAVE counts once
+  auto has ended: the robot's center was in the leave zone when the match started and is outside it when auto ends.
+  The endgame counts once the match has ended: the climb level the robot holds then (a range with a `[climb]`; none
+  otherwise).
+- **Problems.** `match = true` on a field with no `[game]` is listed under the fix-these-first problems, and so is a
+  **match** or **points** check in a test that isn't a match.
+- **The result** gains a points line first: `26 points: 26 in auto, 0 in teleop, 0 in endgame`, then a line for each
+  item (`8 scored in hub_blue in auto: 24 points`, `left the starting zone: 2 points`). A piece scored in the pause
+  scores nothing, and its line says so. `result.json` keeps `match` (the phases' run times, whether LEAVE was earned
+  and the climb level held), `points` and `rules` (always empty for now), and only for a match. The replay's mark strip
+  has a mark at each phase change. A test that isn't a match has none of these.
+
+One block list plays both phases: use `wait until match is in teleop` where the auto part ends and the teleop part
+begins.
 
 ## Setup
 

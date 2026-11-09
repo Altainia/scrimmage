@@ -16,7 +16,10 @@
                              None without cylinders: RunResult.air), clearance (each element the test measures:
                              its smallest clearance in inches and when, both None when never within 0.5 m; None
                              when it measures none: RunResult.clearance) and hopper (whether the test names where a
-                             piece should end up); and, for a run made inside machine text (a sweep's, a spread's,
+                             piece should end up); for a match (`match = true`) only: match (the phases' run times,
+                             whether LEAVE was earned and the climb level held at the end), points (auto, teleop,
+                             endgame, total and the items: RunResult.points) and rules (the breaches; [] for now);
+                             and, for a run made inside machine text (a sweep's, a spread's,
                              MCP test_run's: its words above are machine text), words: the outcome, the checks'
                              words, the marks' text, seated and notes in every Language and Units setting
                              (RunResult.words), which the Test tab shows in the viewer's
@@ -276,6 +279,8 @@ def save_run(result, program: Program, base, sweep: dict | None = None) -> Path:
             "goals": getattr(result, "goals", None), "air": getattr(result, "air", None),
             "clearance": getattr(result, "clearance", None), "hopper": bool(program.hopper),
             "pieces": getattr(result, "pieces", []),
+            **({"match": result.match, "points": result.points, "rules": result.rules}
+               if getattr(result, "match", None) is not None else {}),
             **({"words": result.words} if getattr(result, "words", None) else {})})
         _write_signals(tmp / "signals.csv", result.signals)
         _write_json(tmp / "view.json", result.view)

@@ -93,6 +93,45 @@ def goal_lines(result: RunResult) -> list[str]:
     return [i18n.t("scored {count} in {goal}", count=n, goal=name) for name, n in (result.goals or {}).items() if n]
 
 
+def points_lines(result: RunResult) -> list[str]:
+    """A match's points as lines (none for a run that isn't a match): "12 points: 7 in auto, 5 in teleop, 0 in
+    endgame", then one line per item ("3 scored in hub_blue in auto: 15 points", "left the starting zone: 2 points",
+    "climbed to ONSTAGE: 3 points", a pause piece "1 scored in hub_blue in the pause: 0 points")."""
+    pts = result.points
+    if not pts:
+        return []
+
+    def n(x: float) -> str:
+        return f"{x:g}"
+
+    lines = [i18n.tn("{total} point: {auto} in auto, {teleop} in teleop, {endgame} in endgame",
+                     "{total} points: {auto} in auto, {teleop} in teleop, {endgame} in endgame", pts["total"],
+                     total=n(pts["total"]), auto=n(pts["auto"]), teleop=n(pts["teleop"]), endgame=n(pts["endgame"]))]
+    for item in pts["items"]:
+        p = {"count": item["count"], "source": item["source"], "points": n(item["points"])}
+        if item["source"] == "leave":
+            lines.append(i18n.tn("left the starting zone: {points} point", "left the starting zone: {points} points",
+                                 item["points"], points=p["points"]))
+        elif item["source"] == "climb":
+            lines.append(i18n.tn("climbed to {level}: {points} point", "climbed to {level}: {points} points",
+                                 item["points"], level=_climb_level(result), points=p["points"]))
+        elif item["phase"] == "pause":
+            lines.append(i18n.tn("{count} scored in {source} in the pause: {points} point",
+                                 "{count} scored in {source} in the pause: {points} points", item["points"], **p))
+        elif item["phase"] == "teleop":
+            lines.append(i18n.tn("{count} scored in {source} in teleop: {points} point",
+                                 "{count} scored in {source} in teleop: {points} points", item["points"], **p))
+        else:
+            lines.append(i18n.tn("{count} scored in {source} in auto: {points} point",
+                                 "{count} scored in {source} in auto: {points} points", item["points"], **p))
+    return lines
+
+
+def _climb_level(result: RunResult) -> str:
+    """The climb level a match ended on (its item doesn't carry the name)."""
+    return (result.match or {}).get("level") or ""
+
+
 def piece_log(tr) -> list[dict]:
     """Each game piece that took part in the run on range runtime `tr` (testrange/balls.py took_part: a preload, a fed
     piece, a floor piece that moved): its ball log (log_dict: SI, None for unset), its kind, and its last position as

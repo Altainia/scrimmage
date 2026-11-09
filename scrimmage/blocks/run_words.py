@@ -273,6 +273,16 @@ class _FailureWords:
                      else _amount(self.world.partner.moved(), 'in', fewer=2))
             return t("expected the partner to move at least {limit}, but it moved {moved}",
                      limit=_amount(a["at_least_in"], "in"), moved=moved)
+        if k == "match":
+            now = self.match.phase if self.match is not None else None
+            return t("expected the match to be in {phase}, but it was in {now}", phase=a["phase"],
+                     now=now or t("no phase"))
+        if k == "points":
+            got = f"{watch.points_so_far(a['phase']):g}"
+            if a["phase"] == "total":
+                return t("expected {want} or more points, but there were {got}", want=f"{a['at_least']:g}", got=got)
+            return t("expected {want} or more points in {phase}, but there were {got}", want=f"{a['at_least']:g}",
+                     phase=a["phase"], got=got)
         if k == "station_empty":
             left = self.feeder.left(a["station"]) if self.feeder is not None else None
             if left:

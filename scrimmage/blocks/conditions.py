@@ -51,6 +51,11 @@ step, and the plain words that name them in a run's outcome.
   a color sensor while a piece is within its range. With `sees`, a color sensor is on only while the piece it sees
   is nearest that named color (colors.nearest_color); `is = "off"` with `sees` holds while it doesn't see that color
   (nothing in range, or a piece of another color).
+- `match`: a test with `match = true` is in this phase (auto, the pause or teleop) of the range's `[game]` now
+  (match.py's MatchState, set by the runner).
+- `points`: the points scored so far in auto, teleop, the endgame or all of them (`total`) are at least N: the game's
+  score on the ball log at this moment (testrange/game.py's score with `at`; LEAVE counts once auto has ended, the
+  endgame once the match has ended).
 
 The words name pieces as a student knows them: any piece by the field's kind ("a coral"; "a ball" on a field of one
 ball or disc kind, as always; "a piece" on a mixed field or when the kinds aren't known), and a named piece by its
@@ -129,6 +134,7 @@ class Watch:
         self.round = np.array([tr.range.kinds[str(k)].form != "rigid" for k in tr.balls.kind], bool) \
             if tr is not None and self._balls else np.zeros(len(self._balls), bool)
         self.outcomes = None                                # the runner's piece tracker (made_it_in reads it)
+        self.match = None                                   # the runner's MatchState in a match (match, points read it)
         self._sides: dict[str, set[int]] = {}
         self._boxes: dict[str, tuple[int, np.ndarray, np.ndarray]] = {}
 
@@ -352,6 +358,13 @@ class Watch:
         goals = tr.counts()["goals"] if tr is not None else {}
         return sum(goals.values()) if goal == ANY_GOAL else int(goals.get(goal, 0))
 
+    def points_so_far(self, phase: str) -> float:
+        """The match's points now in `phase` ("auto", "teleop", "endgame" or "total"); 0 outside a match."""
+        if self.match is None:
+            return 0.0
+        pts = self.match.points(self.world.test_range.ball_log(), at=float(self.data.time))
+        return float(getattr(pts, phase))
+
     def element_value(self, name: str) -> float:
         """Moving element `name`'s signal now: degrees for a hinged one, inches for a sliding one, 0 at rest."""
         return moving_value(float(self.data.qpos[self._moving[name]]), self.units[name])
@@ -440,6 +453,10 @@ class Watch:
         if k == "level":
             rank = int(self.climb.get("climb.level", 0))
             return 0 < rank <= len(self._levels) and self._levels[rank - 1] == a["level"]
+        if k == "match":
+            return self.match is not None and self.match.phase == a["phase"]
+        if k == "points":
+            return self.points_so_far(a["phase"]) >= a["at_least"]
         raise ValueError(f"unknown condition {k!r}")
 
 
@@ -666,6 +683,19 @@ def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names
         p = {"limit": _amount(a["at_least_in"], "in")}
         return say(t("the partner moved at least {limit}", **p), t("the partner having moved at least {limit}", **p),
                    t("the partner to have moved at least {limit}", **p))
+    if k == "match":
+        p = {"phase": a["phase"]}
+        return say(t("the match is in {phase}", **p), t("the match being in {phase}", **p),
+                   t("the match to be in {phase}", **p))
+    if k == "points":
+        if a["phase"] == "total":
+            p = {"count": f"{a['at_least']:g}"}
+            return say(t("{count} or more points are scored", **p), t("{count} or more points being scored", **p),
+                       t("{count} or more points to be scored", **p))
+        p = {"count": f"{a['at_least']:g}", "phase": a["phase"]}
+        return say(t("{count} or more points are scored in {phase}", **p),
+                   t("{count} or more points being scored in {phase}", **p),
+                   t("{count} or more points to be scored in {phase}", **p))
     if k == "station_empty":
         p = {"station": a["station"]}
         return say(t("{station} is empty", **p), t("{station} being empty", **p), t("{station} to be empty", **p))
