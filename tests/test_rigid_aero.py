@@ -19,8 +19,9 @@ from scrimmage.testrange.spec import RangeError, piece_box, piece_sides
 from scrimmage.world import World
 
 IN = 0.0254
-SIDE, THICK = 14 * IN, 2 * IN                       # a NOTE's bounding box: 0.3556 x 0.3556 x 0.0508 m
-NOTE_BOX = (SIDE / 2, SIDE / 2, THICK / 2)          # half sizes, the ring's axis along body z
+SIDE, THICK = 14 * IN, 2 * IN                       # a NOTE's outside: 14 in across, 2 in thick
+ANNULUS = math.pi * ((7 * IN) ** 2 - (5 * IN) ** 2)  # its face with the 10 in hole open: 0.0486 m^2
+NOTE_AREAS = (SIDE * THICK, SIDE * THICK, ANNULUS)  # shadows along body x, y, z: the ring's axis along body z
 RHO = 1.2
 P = Path("r.toml")
 CORAL = {"shape": "tube", "diameter_in": 4.5, "length_in": 11.875, "mass": 0.7, "friction": 0.4}
@@ -39,38 +40,55 @@ def quat_of(rot: np.ndarray) -> np.ndarray:
 
 # --------------------------------------------------------------------------------------------- the projected area
 
-def test_note_box_is_piece_box():
-    """The world's half sizes are spec.piece_box's (piece_sides sorted): the NOTE's ring axis is body z."""
+def test_note_shadows_are_its_annulus_and_its_edge():
+    """Face on, a ring's shadow is its annulus, hole open; edge on, its outside's rectangle: each to 2 %."""
     note = kind_preset("2024-note")
-    np.testing.assert_allclose(piece_box(note), (SIDE, SIDE, THICK), atol=1e-9)
+    np.testing.assert_allclose(piece_box(note), (SIDE, SIDE, THICK), atol=1e-9)    # its axis along body z
     assert piece_sides(note) == tuple(sorted(piece_box(note)))
-    np.testing.assert_allclose(rigid_aero.half_extents(note), NOTE_BOX, atol=1e-9)
+    ax, ay, az = rigid_aero.areas(note)
+    assert az == pytest.approx(ANNULUS, rel=0.02)
+    assert ax == pytest.approx(SIDE * THICK, rel=0.02) and ay == pytest.approx(SIDE * THICK, rel=0.02)
+    assert rigid_aero.areas(note) is note.shadow_areas      # worked out once per kind
+
+
+def test_a_solid_cylinders_face_is_pi_r_squared_and_a_box_is_its_faces():
+    r, length = 0.1, 0.3
+    cyl = parse_kind(P, "c", {"shape": "cylinder", "diameter": 2 * r, "length": length, "mass": 1.0,
+                              "friction": 0.4}, Path("."))
+    ax, ay, az = cyl.shadow_areas
+    assert az == pytest.approx(math.pi * r * r, rel=0.01)
+    assert ax == pytest.approx(2 * r * length, rel=0.01) and ay == pytest.approx(2 * r * length, rel=0.01)
+    box = parse_kind(P, "b", {"shape": "box", "size": [0.1, 0.2, 0.3], "mass": 1.0, "friction": 0.4}, Path("."))
+    np.testing.assert_allclose(box.shadow_areas, (0.2 * 0.3, 0.1 * 0.3, 0.1 * 0.2), rtol=1e-9)
+    np.testing.assert_allclose(rigid_aero.box_areas((0.05, 0.1, 0.15)), box.shadow_areas, rtol=1e-9)
+    sphere = parse_kind(P, "s", {"shape": "sphere", "diameter": 0.2, "mass": 1.0, "friction": 0.4}, Path("."))
+    np.testing.assert_allclose(sphere.shadow_areas, [math.pi * 0.01] * 3, rtol=0.01)
 
 
 def test_projected_area_face_on_edge_on_and_at_45():
-    face = rigid_aero.projected_area(NOTE_BOX, (0.0, 0.0, 3.0))
-    assert face == pytest.approx(SIDE * SIDE, rel=1e-12)
-    for edge_dir in ((1.0, 0.0, 0.0), (0.0, -2.0, 0.0)):
-        assert rigid_aero.projected_area(NOTE_BOX, edge_dir) == pytest.approx(SIDE * THICK, rel=1e-12)
+    face = rigid_aero.projected_area(NOTE_AREAS, (0.0, 0.0, 3.0))
+    assert face == pytest.approx(ANNULUS, rel=1e-12)
     edge = SIDE * THICK
+    for edge_dir in ((1.0, 0.0, 0.0), (0.0, -2.0, 0.0)):
+        assert rigid_aero.projected_area(NOTE_AREAS, edge_dir) == pytest.approx(edge, rel=1e-12)
     s = math.sqrt(0.5)
-    at45 = rigid_aero.projected_area(NOTE_BOX, (s, 0.0, s))     # tipped 45 deg from face-on toward an edge
+    at45 = rigid_aero.projected_area(NOTE_AREAS, (s, 0.0, s))     # tipped 45 deg from face-on toward an edge
     assert edge < at45 < face
     assert at45 == pytest.approx(face * s + edge * s, rel=1e-12)   # the |n . v_hat| sum
     v = np.array([0.3, -0.5, 0.8])
     v_hat = v / np.linalg.norm(v)
-    want = SIDE * THICK * abs(v_hat[0]) + SIDE * THICK * abs(v_hat[1]) + SIDE * SIDE * abs(v_hat[2])
-    assert rigid_aero.projected_area(NOTE_BOX, v) == pytest.approx(want, rel=1e-12)
-    assert rigid_aero.projected_area(NOTE_BOX, (0.0, 0.0, 0.0)) == 0.0
+    want = edge * abs(v_hat[0]) + edge * abs(v_hat[1]) + ANNULUS * abs(v_hat[2])
+    assert rigid_aero.projected_area(NOTE_AREAS, v) == pytest.approx(want, rel=1e-12)
+    assert rigid_aero.projected_area(NOTE_AREAS, (0.0, 0.0, 0.0)) == 0.0
 
 
 def test_projected_area_turns_with_the_piece():
     """forces() reads the area in the body frame: a NOTE tipped 90 deg about x flies edge-on along world z."""
     rot = axis_angle((1, 0, 0), math.pi / 2)
-    f, _ = rigid_aero.forces(NOTE_BOX, 1.0, 0.0, 2.0, (0.0, 0.0, 1.0), rot, np.zeros(3))
+    f, _ = rigid_aero.forces(NOTE_AREAS, 1.0, 0.0, 2.0, (0.0, 0.0, 1.0), rot, np.zeros(3))
     assert -f[2] == pytest.approx(0.5 * 2.0 * SIDE * THICK, rel=1e-12)
-    f, _ = rigid_aero.forces(NOTE_BOX, 1.0, 0.0, 2.0, (0.0, 0.0, 1.0), np.eye(3), np.zeros(3))
-    assert -f[2] == pytest.approx(0.5 * 2.0 * SIDE * SIDE, rel=1e-12)
+    f, _ = rigid_aero.forces(NOTE_AREAS, 1.0, 0.0, 2.0, (0.0, 0.0, 1.0), np.eye(3), np.zeros(3))
+    assert -f[2] == pytest.approx(0.5 * 2.0 * ANNULUS, rel=1e-12)
 
 
 # -------------------------------------------------------------------------------------------------- the force
@@ -81,13 +99,13 @@ def test_drag_opposes_the_velocity_with_half_rho_cd_a_v_squared():
         rot = axis_angle(rng.normal(size=3), rng.uniform(0, math.pi))
         v = rng.normal(size=3) * 8.0
         cd = rng.uniform(0.5, 1.5)
-        f, tau = rigid_aero.forces(NOTE_BOX, cd, 0.0, RHO, v, rot, rng.normal(size=3))
+        f, tau = rigid_aero.forces(NOTE_AREAS, cd, 0.0, RHO, v, rot, rng.normal(size=3))
         speed = np.linalg.norm(v)
-        a = rigid_aero.projected_area(NOTE_BOX, rot.T @ v)
+        a = rigid_aero.projected_area(NOTE_AREAS, rot.T @ v)
         assert np.linalg.norm(f) == pytest.approx(0.5 * RHO * cd * a * speed ** 2, rel=1e-12)
         np.testing.assert_allclose(f / np.linalg.norm(f), -v / speed, atol=1e-12)
         assert not tau.any()
-    f, tau = rigid_aero.forces(NOTE_BOX, 1.17, 0.0, RHO, np.zeros(3), np.eye(3), np.zeros(3))
+    f, tau = rigid_aero.forces(NOTE_AREAS, 1.17, 0.0, RHO, np.zeros(3), np.eye(3), np.zeros(3))
     assert not f.any() and not tau.any()
 
 
@@ -95,11 +113,11 @@ def test_spin_damping_is_zero_by_default_and_minus_c_omega_when_set():
     note = kind_preset("2024-note")
     assert note.spin_damping == 0.0 and rigid_aero.SPIN_DAMPING == 0.0
     w = np.array([1.0, -20.0, 3.0])
-    _, tau = rigid_aero.forces(NOTE_BOX, note.drag_coefficient, note.spin_damping, RHO, (5.0, 0, 0), np.eye(3), w)
+    _, tau = rigid_aero.forces(NOTE_AREAS, note.drag_coefficient, note.spin_damping, RHO, (5.0, 0, 0), np.eye(3), w)
     assert not tau.any()
-    _, tau = rigid_aero.forces(NOTE_BOX, 1.17, 0.002, RHO, (5.0, 0, 0), np.eye(3), w)
+    _, tau = rigid_aero.forces(NOTE_AREAS, 1.17, 0.002, RHO, (5.0, 0, 0), np.eye(3), w)
     np.testing.assert_allclose(tau, -0.002 * w, rtol=1e-12)
-    _, tau = rigid_aero.forces(NOTE_BOX, 1.17, 0.002, RHO, np.zeros(3), np.eye(3), w)   # at rest too
+    _, tau = rigid_aero.forces(NOTE_AREAS, 1.17, 0.002, RHO, np.zeros(3), np.eye(3), w)   # at rest too
     np.testing.assert_allclose(tau, -0.002 * w, rtol=1e-12)
 
 
@@ -110,7 +128,7 @@ def test_force_fn_works_in_the_body_frame():
     rot = axis_angle((0.2, 1.0, 0.4), 0.9)
     w_body, v = np.array([0.5, 2.0, -30.0]), np.array([6.0, 1.0, 3.0])
     f, tau_body = fn(v, rot, w_body)
-    f_w, tau_w = rigid_aero.forces(NOTE_BOX, 1.17, 0.01, RHO, v, rot, rot @ w_body)
+    f_w, tau_w = rigid_aero.forces(kind.shadow_areas, 1.17, 0.01, RHO, v, rot, rot @ w_body)
     np.testing.assert_allclose(f, f_w, rtol=1e-9)
     np.testing.assert_allclose(tau_body, -0.01 * w_body, rtol=1e-9)
 
@@ -246,20 +264,20 @@ def gravity_only_x() -> float:
 
 def test_a_thrown_note_lands_short_of_gravity_alone(note_world):
     flat = throw(note_world, pitched(math.radians(UP_DEG)))
-    assert flat < gravity_only_x() - 1.0        # measured: 7.4 m against 11.6 m
+    assert flat < gravity_only_x() - 1.0        # measured: 8.6 m against 11.9 m
 
 
 def test_a_note_flying_in_its_own_plane_goes_further_than_face_first(note_world):
-    """Flat and moving in its own plane, the air meets its 0.018 m^2 edge; face first, its 0.126 m^2 face."""
+    """Flat and moving in its own plane, the air meets its 0.018 m^2 edge; face first, its 0.049 m^2 face."""
     flat = throw(note_world, pitched(math.radians(UP_DEG)))
     face = throw(note_world, pitched(math.radians(UP_DEG) - math.pi / 2))
-    assert flat > face + 1.0                    # measured: 7.4 m against 5.5 m
+    assert flat > face + 0.5                    # measured: 8.6 m against 7.5 m
 
 
 @pytest.mark.parametrize("extra", [0.0, -math.pi / 2, -math.pi / 4])
 def test_the_world_and_flight6_agree(note_world, extra):
     """The same throw in MuJoCo (implicitfast, the drag held over each 1 ms step) and in flight6 (RK4): within
-    3 cm. Measured: 7 mm flat, 12 mm face first."""
+    3 cm. Measured: 8 mm flat, 10 mm face first."""
     q = pitched(math.radians(UP_DEG) + extra)
     world = throw(note_world, q)
     note = note_world.test_range.balls.kinds["note"]

@@ -340,7 +340,7 @@ class PieceKind:
     # what is accepted but likely a mistake: a piece far smaller than a game piece, or far too heavy or light for its
     # size (checks.Said: its words when shown). A range's are its own (spec.Range.warnings)
     warnings: tuple[str, ...] = ()
-    # a rigid piece's air (launcher/rigid_aero.py): its drag coefficient on its bounding box's projected area, and
+    # a rigid piece's air (launcher/rigid_aero.py): its drag coefficient on its shadow's projected area, and
     # its spin damping (N m s/rad); a ball's and a disc's air are their own
     drag_coefficient: float = DRAG_COEFFICIENT
     spin_damping: float = SPIN_DAMPING
@@ -413,6 +413,13 @@ class PieceKind:
         centers, axes, halves = self._boxes
         sc, radii = self._spheres
         return centers @ m.T, axes @ m.T, halves.copy(), sc @ m.T, radii.copy()
+
+    @cached_property
+    def shadow_areas(self) -> tuple[float, float, float]:
+        """The piece's shadow along each body axis (m^2): the area of the union of its solids' projections onto the
+        plane across x, y and z (shadow_area). A ring's face shows its annulus, hole and all; launcher/rigid_aero.py
+        reads its drag area from these."""
+        return tuple(shadow_area(self.solids, k) for k in range(3))
 
     def reach(self, quat) -> float:
         """The largest horizontal distance of a point of the kind from its center, turned by `quat`."""
@@ -509,6 +516,68 @@ def _lo_hi(s: Solid) -> tuple[np.ndarray, np.ndarray]:
         return c - s.size[0], c + s.size[0]
     pts = _box_corners(s) if s.kind == "box" else s.vertices
     return pts.min(axis=0), pts.max(axis=0)
+
+
+SHADOW_CELLS = 600  # a shadow is rasterized on cells this many to its longest side: a NOTE's annulus to 0.2 %
+
+
+def _hull(pts: np.ndarray) -> np.ndarray:
+    """The convex hull of 2-D points, counterclockwise (Andrew's monotone chain)."""
+    p = np.unique(np.round(pts, 12), axis=0)
+    if len(p) < 3:
+        return p
+    p = p[np.lexsort((p[:, 1], p[:, 0]))]
+
+    def half(points):
+        out = []
+        for q in points:
+            while len(out) >= 2 and ((out[-1][0] - out[-2][0]) * (q[1] - out[-2][1])
+                                     - (out[-1][1] - out[-2][1]) * (q[0] - out[-2][0])) <= 0:
+                out.pop()
+            out.append(q)
+        return out
+
+    lower, upper = half(p), half(p[::-1])
+    return np.array(lower[:-1] + upper[:-1])
+
+
+def shadow_area(solids, axis: int) -> float:
+    """The area (m^2) of the union of the solids' projections onto the plane across body `axis` (0 x, 1 y, 2 z):
+    each convex solid's projection is the hull of its points (a sphere's a disc), and the union is counted on a grid
+    of SHADOW_CELLS cells across its longest side, each cell in when its center is in a projection."""
+    keep = [i for i in range(3) if i != axis]
+    shapes = []
+    for sol in solids:
+        if sol.kind == "sphere":
+            shapes.append(("disc", np.asarray(sol.pos, dtype=float)[keep], float(sol.size[0])))
+        else:
+            pts = (_box_corners(sol) if sol.kind == "box" else sol.vertices)[:, keep]
+            shapes.append(("hull", _hull(pts), 0.0))
+    lo = np.min([c - r if k == "disc" else c.min(axis=0) for k, c, r in shapes], axis=0)
+    hi = np.max([c + r if k == "disc" else c.max(axis=0) for k, c, r in shapes], axis=0)
+    cell = float((hi - lo).max()) / SHADOW_CELLS
+    if not cell > 0:
+        return 0.0
+    nx, ny = (int(math.ceil(float(x) / cell)) + 1 for x in hi - lo)
+    xs, ys = lo[0] + (np.arange(nx) + 0.5) * cell, lo[1] + (np.arange(ny) + 0.5) * cell
+    mask = np.zeros((nx, ny), dtype=bool)
+    for k, c, r in shapes:
+        b_lo, b_hi = (c - r, c + r) if k == "disc" else (c.min(axis=0), c.max(axis=0))
+        i0, i1 = np.searchsorted(xs, b_lo[0]), np.searchsorted(xs, b_hi[0], side="right")
+        j0, j1 = np.searchsorted(ys, b_lo[1]), np.searchsorted(ys, b_hi[1], side="right")
+        if i1 <= i0 or j1 <= j0:
+            continue
+        gx, gy = np.meshgrid(xs[i0:i1], ys[j0:j1], indexing="ij")
+        if k == "disc":
+            inside = (gx - c[0]) ** 2 + (gy - c[1]) ** 2 <= r * r
+        elif len(c) < 3:
+            continue        # a flat solid casts no shadow
+        else:
+            inside = np.ones(gx.shape, dtype=bool)
+            for a, b in zip(c, np.roll(c, -1, axis=0)):
+                inside &= (b[0] - a[0]) * (gy - a[1]) - (b[1] - a[1]) * (gx - a[0]) >= 0
+        mask[i0:i1, j0:j1] |= inside
+    return float(mask.sum()) * cell * cell
 
 
 # ---------------------------------------------------------------------------------------------------- reading

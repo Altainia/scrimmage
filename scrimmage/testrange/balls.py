@@ -29,7 +29,7 @@ A field of several kinds (Range.kinds) has them all in the one ledger: each slot
 filters the in-play balls by form first, so a ball-only range does the same arithmetic as before (pinned by
 tests/test_range_ledger_golden.py):
 - Flight: drag and lift on balls only, the disc aerodynamics on discs only, and on a rigid piece touching nothing
-  scrimmage/launcher/rigid_aero.py's drag (its bounding box's area facing the air) and spin damping, the same
+  scrimmage/launcher/rigid_aero.py's drag (its shadow's area facing the air) and spin damping, the same
   function flight6 flies it with (the bench's `[flight]`, `launcher aim`): the force and the world-frame torque into
   xfrc_applied, R from the qpos quaternion as for a disc. A rigid piece touching anything (lying on the carpet,
   leaning on a goal) feels no air.
@@ -194,7 +194,7 @@ class Balls:
         self._quat: list[list[float] | None] = [None] * n      # its orientation set down (None: unturned)
         self._r = np.zeros(n)                                   # a ball's radius, its flight's and its roll's
         self._disc_of: list = [None] * n                        # a disc's (Disc, AeroSet)
-        self._air_of: list = [None] * n                         # a rigid piece's (half sizes, Cd, spin damping)
+        self._air_of: list = [None] * n                         # a rigid piece's (shadow areas, Cd, spin damping)
         self.rolls = np.zeros(n, dtype=bool)                    # rolls on the carpet: a ball, a tube on its side
         self._roll_torque, self._roll_inertia = np.zeros(n), np.zeros(n)
         self._numbers = np.zeros(n, dtype=int)                  # its number among its kind's pieces, from 1
@@ -218,7 +218,7 @@ class Balls:
                 self._disc_of[i] = (piece, aero)
             else:
                 self.radius[i] = kind.radius
-                self._air_of[i] = (rigid_aero.half_extents(kind), kind.drag_coefficient, kind.spin_damping)
+                self._air_of[i] = (rigid_aero.areas(kind), kind.drag_coefficient, kind.spin_damping)
                 if kind.shape in ROLLING_SHAPES:                # a tube, ring or cylinder rolls on its side
                     r = kind.reach(kind.orient(90.0, 0.0))      # its outer radius
                     a = np.asarray(kind.axis, dtype=float)
