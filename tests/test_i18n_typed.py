@@ -28,7 +28,7 @@ ALLOWED = {
     ("scrimmage/bench/report.py", '"Measure these first"'): "a heading of docs/launcher.md, translated with the docs",
     ("scrimmage/assembler/static/app.js", "token=…"): "what the printed link carries (#token=…), shown, never typed",
     ("scrimmage/assembler/static/index.html", "direction = heading"): FORMULA,
-    ("scrimmage/bench/spec.py", "name = shaft"): FORMULA + " (slot name = shaft name)",
+    ("scrimmage/bench/spec_shapes.py", "name = shaft"): FORMULA + " (slot name = shaft name)",
     ("scrimmage/testrange/elements.py", "name = points"): FORMULA + " (level name = points)",
     ("scrimmage/disc/inputs.py", "fence_radius = R_wheel"): FORMULA + " (fence_radius = R_wheel + D - compression)",
     ("scrimmage/parts/model.py", "b = ratio"): FORMULA + " (b = ratio * a)",
