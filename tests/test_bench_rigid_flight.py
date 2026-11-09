@@ -188,7 +188,8 @@ size = [0.05, 2.0, 3.0]
 
 
 def test_the_sample_throws_either_side_of_the_band_hit_the_rim():
-    """8.05 m/s at 49 degrees is the middle of the scoring band (8.0 to 8.1 m/s): a little faster and the NOTE's
+    """8.05 m/s at 49 degrees is in the middle of the scoring band (7.99 to 8.14 m/s, in 0.01 m/s steps, measured
+    2026-11-09 with goal_fit's outline points; the bounding box gave the same): a little faster and the NOTE's
     upper side overlaps the opening's top edge, so it doesn't all fit through. That isn't a hit on the way."""
     result, lands = _lands(_bench(8.2, 49.0))
     assert [(land.goal, land.blocked_by, land.caught) for _, land in lands] == [("missed", None, "speaker_blue.rim_1")]
@@ -208,7 +209,7 @@ def _straight_in(surface, goal: str, boxes, u: float, v: float, pitch_deg: float
     res = flight6.fly(surface.center + 0.3 * surface.normal + u * surface.axes[0] + v * surface.axes[1],
                       -10.0 * surface.normal, q, np.zeros(3), 0.235, np.eye(3) * 1e-3,
                       lambda vel, rot, w: (np.zeros(3), np.zeros(3)), goals=((goal, surface),), floor=-10.0)
-    return goal_fit.fit(res, surface, goal, boxes, goal_fit.kind_corners(kind_preset("2024-note")))
+    return goal_fit.fit(res, surface, goal, boxes, goal_fit.kind_points(kind_preset("2024-note")))
 
 
 def _speaker():
@@ -242,9 +243,9 @@ def test_a_center_just_inside_the_edge_misses_on_the_rim():
     assert not fit.scored and fit.caught.startswith("speaker_blue.edge_")
 
 
-def test_a_corner_that_clips_a_roof_plate_is_blocked():
-    """A thin roof 15 cm to the side of the NOTE's path: its center passes clear, its box's corners (8.9 cm further
-    out) don't."""
+def test_a_rim_that_clips_a_roof_plate_is_blocked():
+    """A thin roof 15 cm to the side of the NOTE's path: its center passes clear, its rim (17.8 cm out) doesn't; 20 cm
+    to the side the rim passes too."""
     surface, goal, boxes = _speaker()
     rot = np.column_stack([surface.axes[0], surface.axes[1], surface.normal])
     roof = ("low_roof", surface.center + 0.15 * surface.normal + 0.65 * surface.axes[1], rot,
@@ -309,24 +310,40 @@ def test_a_goal_takes_a_whole_target_or_none(target, words):
         _parse(_bench(flight=f"{GOAL}\nat = [2.5, 5.5446, 0.5]\nheading_deg = 180.0\n{target}"))
 
 
-def test_a_rigid_piece_is_in_the_ring_only_if_all_its_corners_are():
-    """`ring_diameter` judges a rigid piece by its bounding box's corners at the ring's height, as a goal does: a 14 in
-    NOTE with its center 7 in off a 16 in ring hangs half over the rim, so it isn't in."""
+def test_a_rigid_piece_is_in_the_ring_only_if_all_its_outline_is():
+    """`ring_diameter` judges a rigid piece by its outline at the ring's height, as a goal does: a flat 14 in NOTE (its
+    rim 7 in from its center) fits a 16 in ring centered, and up to 1 in off; 5 in off its rim reaches 12 in out, and
+    7 in off 14 in, so it isn't in."""
     inch = 0.0254
-    corners = goal_fit.kind_corners(kind_preset("2024-note"))
+    points = goal_fit.kind_points(kind_preset("2024-note"))
     flat = np.array([1.0, 0.0, 0.0, 0.0])
     on_edge = np.array([math.cos(math.pi / 4), math.sin(math.pi / 4), 0.0, 0.0])   # turned 90 degrees about x
     ring, target = 16 * inch, 3.0
 
     def in_ring(q, off_in: float) -> bool:
-        return report.in_ring((target + off_in * inch, 0.0), goal_fit.turned_corners(q, q, 0.0, corners), target, ring)
+        return report.in_ring((target + off_in * inch, 0.0), goal_fit.turned_corners(q, q, 0.0, points), target, ring)
 
-    assert not in_ring(flat, 7.0) and not in_ring(on_edge, 7.0)
-    assert not in_ring(flat, 5.0)
-    assert in_ring(on_edge, 0.0)   # centered, its box is 14 by 2 in from above: inside the 16 in circle
-    # flat, its box's corners are 9.9 in from its center, so a centered flat NOTE needs a ring over 19.8 in across
-    assert not in_ring(flat, 0.0)
-    assert report.in_ring((target, 0.0), goal_fit.turned_corners(flat, flat, 0.0, corners), target, 20 * inch)
+    assert in_ring(flat, 0.0)                       # 7 in out against the ring's 8 in
+    assert in_ring(flat, 0.9) and not in_ring(flat, 1.2)   # the rim reaches 7.9 in, then past 8 in
+    assert not in_ring(flat, 5.0) and not in_ring(flat, 7.0) and not in_ring(on_edge, 7.0)
+    assert in_ring(on_edge, 0.0)   # from above it is 14 by 2 in: its corners 7.07 in out
+
+
+def test_a_kinds_outline_is_its_hull_capped():
+    """goal_fit.kind_points: a box-shaped kind's 8 corners; the NOTE's rim (7 in out, 1 in either side of its middle),
+    capped at OUTLINE_POINTS and within 3 mm of every shipped piece preset's real hull (outline_error)."""
+    from scrimmage.launcher.inputs import PRESETS
+    from scrimmage.testrange.pieces import OUTLINE_POINTS, outline_error
+    cube = kind_preset("2023-cube")
+    assert len(goal_fit.kind_points(cube)) == 8
+    assert {tuple(np.round(np.abs(p), 9)) for p in goal_fit.kind_points(cube)} == \
+           {tuple(np.round(np.array(piece_box(cube)) / 2, 9))}
+    note = goal_fit.kind_points(kind_preset("2024-note"))
+    assert len(note) <= OUTLINE_POINTS
+    assert np.linalg.norm(note[:, :2], axis=1).max() == pytest.approx(7 * 0.0254, abs=1e-6)
+    assert np.abs(note[:, 2]).max() == pytest.approx(0.0254, abs=1e-6)
+    for name in PRESETS["piece"]:
+        assert outline_error(kind_preset(name).solids) < 0.003, name     # m
 
 
 def test_a_goal_with_a_whole_target_reports_both():

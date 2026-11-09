@@ -393,7 +393,7 @@ help = "how high the target is above the floor"
 
 [flight.ring_diameter]
 unit = "m"
-help = "a ring at the target; shots through it count (a rigid piece only if all its corners are inside it)"
+help = "a ring at the target; shots through it count (a rigid piece only if all its outline is inside it)"
 
 [flight.air]
 help = "which air to fly through"

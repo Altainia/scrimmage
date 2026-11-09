@@ -31,7 +31,7 @@ from ..launcher.flight import Landing, fly_state
 from ..launcher.inputs import PRESETS, Air, Goal
 from ..measure import labels
 from ..testrange import goal_fit
-from ..testrange.pieces import Solid, _round, shadow_area
+from ..testrange.pieces import Solid, _round, outline_points, shadow_area
 from ..testrange.spec import Surface, passing_width
 from .run import BenchResult, PieceOutcome
 
@@ -295,23 +295,24 @@ def _model_solids(result: BenchResult) -> list[Solid]:
 
 def _rigid_air(result: BenchResult) -> tuple[_Air, np.ndarray, float, np.ndarray]:
     """A rigid piece's air (its shadows, drag coefficient and spin damping), its body-frame inertia (3x3), its
-    passing width (the smallest side of its bounding box) and that box's 8 corners in its body frame. A ring or piece
-    preset is its kind's (the range's own numbers: piece_box's box); any other shape's shadows and box come from its
-    solids as built, with the [piece]'s drag and damping."""
+    passing width (the smallest side of its bounding box) and its outline's points in its body frame
+    (pieces.outline_points). A ring or piece preset is its kind's (the range's own numbers: piece_box's box,
+    goal_fit.kind_points); any other shape's shadows, box and outline come from its solids as built, with the
+    [piece]'s drag and damping."""
     piece = result.bench.piece
     kind = piece.rigid_kind
     if kind is not None:
         xx, yy, zz, xy, xz, yz = kind.inertia
         inertia = np.array([[xx, xy, xz], [xy, yy, yz], [xz, yz, zz]])
         return (_Air(kind.shadow_areas, kind.drag_coefficient, kind.spin_damping), inertia, passing_width(kind),
-                goal_fit.kind_corners(kind))
+                goal_fit.kind_points(kind))
     solids = _model_solids(result)
     pts = np.concatenate([s.vertices if s.kind == "mesh" else np.array([np.array(s.pos) - s.size[0],
                                                                          np.array(s.pos) + s.size[0]])
                           for s in solids])
     lo, hi = pts.min(axis=0), pts.max(axis=0)
     air = _Air(tuple(shadow_area(solids, k) for k in range(3)), piece.drag_coefficient, piece.spin_damping)
-    return air, np.diag(piece.inertia), float((hi - lo).min()), goal_fit.box_corners(lo, hi)
+    return air, np.diag(piece.inertia), float((hi - lo).min()), outline_points(solids)
 
 
 def _rot_z(deg: float) -> np.ndarray:
@@ -320,10 +321,9 @@ def _rot_z(deg: float) -> np.ndarray:
 
 
 def in_ring(center, offsets: np.ndarray, target_distance: float, ring_diameter: float) -> bool:
-    """Whether a rigid piece goes through `[flight] ring_diameter`'s ring: seen from above, all of its bounding box's
-    corners (`offsets` (8, 3) from its center at `center`, (x, y) in the floor frame, as it is turned at the ring's
-    height) fall inside the ring's circle, `target_distance` straight ahead. The same rule as a goal's (goal_fit.py):
-    the box is a little bigger than a round piece, so this is strict for a ring."""
+    """Whether a rigid piece goes through `[flight] ring_diameter`'s ring: seen from above, all of its outline's points
+    (`offsets` (n, 3) from its center at `center`, (x, y) in the floor frame, as it is turned at the ring's height)
+    fall inside the ring's circle, `target_distance` straight ahead. The same rule as a goal's (goal_fit.py)."""
     xy = np.asarray(center, float)[:2] + np.asarray(offsets, float)[:, :2]
     return bool(np.all(np.hypot(xy[:, 0] - target_distance, xy[:, 1]) <= ring_diameter / 2.0))
 
@@ -369,7 +369,7 @@ def _rigid_landings(result: BenchResult) -> list[tuple[PieceOutcome, Landing]]:
                 at_goal = tuple(float(c) for c in path[k, :2] + f * (path[k + 1, :2] - path[k, :2]))
                 ts = res.samples[:, flight6.T]
                 goal_time = float(ts[k] + f * (ts[k + 1] - ts[k]))
-                if fl.ring_diameter is not None:   # the corners as the piece is then, in the floor frame
+                if fl.ring_diameter is not None:   # its outline as the piece is then, in the floor frame
                     offsets = goal_fit.turned_corners(res.samples[k, flight6.QUAT], res.samples[k + 1, flight6.QUAT],
                                                       f, corners) @ turn
                     scored = in_ring(at_goal, offsets, fl.target_distance, fl.ring_diameter)

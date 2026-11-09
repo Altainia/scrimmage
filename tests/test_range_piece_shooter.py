@@ -242,7 +242,7 @@ def test_note_aim_scores_through_the_speaker(note_aim):
         res = aim.piece_flight(model, row)
         assert isinstance(res, flight6.Flight6Result) and res.crossing is not None
         assert res.crossing[1] == pytest.approx(row.flight_s, abs=2e-3)
-        assert goal_fit.fit(res, s, "speaker_blue", model.boxes, goal_fit.kind_corners(kind)).scored, row
+        assert goal_fit.fit(res, s, "speaker_blue", model.boxes, goal_fit.kind_points(kind)).scored, row
         assert model.hood_angles[0] <= row.hood_deg <= model.hood_angles[-1]
 
 

@@ -362,6 +362,11 @@ class PieceKind:
         return np.concatenate(pts) if pts else np.zeros((0, 3))
 
     @cached_property
+    def outline(self) -> np.ndarray:
+        """outline_points of its solids: the points goal_fit judges whether it fits through an opening by."""
+        return outline_points(self.solids)
+
+    @cached_property
     def _spheres(self) -> tuple[np.ndarray, np.ndarray]:
         sph = [s for s in self.solids if s.kind == "sphere"]
         return (np.array([s.pos for s in sph], dtype=float).reshape(-1, 3),
@@ -513,6 +518,63 @@ def _size_warnings(r: _Reader, extent: float, density: float, shape: str) -> tup
                                       "(lighter than air, or denser than tungsten): check mass (kg) and the sizes",
                                       where=where, density=_plain(density), lo=f"{lo:g}", hi=f"{hi:g}")),)
     return ()
+
+
+# source: our choice: goal_fit checks a piece by at most this many points, so a flight's per-sample cost stays bounded.
+# What the cap costs is outline_error: for the shipped piece presets at most 3 mm (the 2019 HATCH PANEL; the 2024
+# NOTE 2.1 mm), pinned by tests/test_bench_rigid_flight.py.
+OUTLINE_POINTS = 64
+
+
+def _directions(n: int = 2048) -> np.ndarray:
+    """n unit directions spread evenly over the sphere (a Fibonacci lattice), the same every call."""
+    k = np.arange(n) + 0.5
+    z = 1.0 - 2.0 * k / n
+    phi = k * np.pi * (3.0 - np.sqrt(5.0))
+    r = np.sqrt(1.0 - z * z)
+    return np.column_stack([r * np.cos(phi), r * np.sin(phi), z])
+
+
+def _solid_points(solids) -> np.ndarray:
+    """Every box corner and mesh vertex of `solids`, and 14 points on each sphere (its 6 poles and 8 diagonal
+    points), deduplicated."""
+    pts = []
+    diag = np.array([(x, y, z) for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)], dtype=float) / np.sqrt(3.0)
+    for s in solids:
+        if s.kind == "sphere":
+            c, r = np.asarray(s.pos, dtype=float), float(s.size[0])
+            pts.append(c + r * np.concatenate([np.eye(3), -np.eye(3), diag]))
+        else:
+            pts.append(_box_corners(s) if s.kind == "box" else np.asarray(s.vertices, dtype=float))
+    return np.unique(np.round(np.concatenate(pts), 12), axis=0) if pts else np.zeros((0, 3))
+
+
+def outline_points(solids, cap: int = OUTLINE_POINTS) -> np.ndarray:
+    """The points (n <= cap, 3) that stand for convex `solids`' outline in their frame: the corners of their convex
+    hull (each box's corners, each mesh's vertices and 14 points on each sphere, keeping those that are furthest out
+    in one of 2048 directions; points inside, such as the edge of a ring's hole, are left out). More than `cap` are
+    sampled down: first the lowest and highest along x, y and z, then, one at a time, the corner farthest from those
+    kept (farthest-point sampling). A box-shaped piece keeps its 8 corners. outline_error says what the cap costs."""
+    p = _solid_points(solids)
+    if len(p) == 0:
+        return p
+    p = p[np.unique(np.argmax(_directions() @ p.T, axis=1))]
+    if len(p) <= cap:
+        return p
+    keep = list(dict.fromkeys(int(i) for k in range(3) for i in (np.argmin(p[:, k]), np.argmax(p[:, k]))))[:cap]
+    gap = np.min(np.linalg.norm(p[:, None, :] - p[None, keep, :], axis=-1), axis=1)
+    while len(keep) < cap:
+        i = int(np.argmax(gap))
+        keep.append(i)
+        gap = np.minimum(gap, np.linalg.norm(p - p[i], axis=1))
+    return p[keep]
+
+
+def outline_error(solids, cap: int = OUTLINE_POINTS) -> float:
+    """How far (m) the outline_points' hull falls inside the solids' own, in the worst of 2048 directions: how much
+    of the piece an opening's check can miss (a sphere's 14 points miss up to 0.18 of its radius more)."""
+    d = _directions()
+    return float(np.max((d @ _solid_points(solids).T).max(axis=1) - (d @ outline_points(solids, cap).T).max(axis=1)))
 
 
 def piece_bounds(kind: PieceKind) -> tuple[np.ndarray, np.ndarray]:

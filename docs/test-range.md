@@ -1171,13 +1171,13 @@ wall) is aimed at its **scoring surface** instead. A level goal such as the hub 
 **A piece shooter** (`[shooter] kind = "piece"`, [above](#a-piece-shooter-a-note)) is aimed the same way at a goal
 that isn't level, its channel's tilt in place of the hood angle (`--hood-step` steps the tilt) and both wheels at
 `wheel_rps`. Its shot is the pinch model's exit, flown as a rigid piece with its drag and its orientation, and a row
-scores only if all of the piece fits through the opening at the crossing (its bounding box's corners, turned as it
+scores only if all of the piece fits through the opening at the crossing (its outline's points, turned as it
 flies) and nothing touches an obstacle first. At a goal entered going up, a piece's row must also **peak at least
 0.10 m above the opening's center** (`UPWARD_APEX_MARGIN` in `scrimmage/testrange/aim.py`), so the piece is still
-rising as it crosses: flown again in the world, rows that crossed flat at their apex caught the SPEAKER's front lip,
-and most missed with the wheels 2% off their speed, while every row with the margin scored at 2% either side. It
-costs the flattest, slowest shots and the farthest distances (the example robot's table stops at 2.37 m with it,
-and reached 2.57 m without it). A ball's rows keep the rule above (they aren't flown again in the world). Its
+rising as it crosses: flown again in the world, rows that crossed flat at their apex caught the SPEAKER's front lip
+(17 of their 24 shots missed: all 16 at the row's speed or 2% above it, and one of the 8 at 2% below), while every
+row with the margin scored at 2% either side (21 of 21). It costs the flattest, slowest shots and the farthest
+distances (the example robot's table stops at 2.37 m with it, and reached 2.57 m without it). A ball's rows keep the rule above (they aren't flown again in the world). Its
 UNCALIBRATED line names the piece's stiffness, the tread's friction and the drag coefficient as the estimates, and
 says lift isn't modeled. A level goal (the hub) is refused for it. It takes longer than a ball's: about 15 s for 3
 SPEAKER distances with 7 tilts, 35 s for 5 with 16, and about a minute for the example's 8 with 21.

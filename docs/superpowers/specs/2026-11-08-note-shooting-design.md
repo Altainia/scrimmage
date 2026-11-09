@@ -62,9 +62,10 @@ Each one gives what was decided, why, and its cost if wrong.
   - The robot stands on the goal's approach line: back from the goal center along the horizontal part of the scoring
     surface's normal. For a horizontal surface (the hub), that is the goal's heading, exactly as now.
   - A shot scores when it crosses the surface in the entry direction, inside the opening (a ball's center at least
-    its radius inside; a rigid piece's bounding-box corners all inside, as T3 ruled), without first hitting an
+    its radius inside; a rigid piece's outline points all inside: T3 ruled all corners, and the final review's
+    wave 2 made them the outline's, not the bounding box's), without first hitting an
     `[[obstacle]]` or one of the goal's plates. The obstacle check is sampled, not swept: at each of the flight's
-    1 ms samples, a ball's sphere (or a rigid piece's center and turned corners) against each oriented box.
+    1 ms samples, a ball's sphere (or a rigid piece's center and turned outline points) against each oriented box.
   - Upward goals take the lowest apex that scores; downward goals keep today's highest-apex rule.
   - Speed: an angle's crossing curve doesn't depend on distance, so it's computed once per angle. The flight stops
     at the crossing or the floor. The goal is 5 SPEAKER distances in under 15 s, down from 144 s.

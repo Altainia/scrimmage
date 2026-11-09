@@ -614,7 +614,7 @@ comes up short here: the drag numbers are estimates, and the result is UNCALIBRA
 | `outlet` | which outlet's pieces fly | required |
 | `height` | the bench origin's height above the floor, m | 0 |
 | `target_distance`, `target_height` | the target, forward of the origin and above the floor, m | required, unless there is a `goal` |
-| `ring_diameter` | a ring at the target: shots through it count (a rigid piece's: all of its bounding box's corners inside the ring as it comes down through it, the rule a `goal` uses) | none |
+| `ring_diameter` | a ring at the target: shots through it count (a rigid piece's: all of its outline inside the ring as it comes down through it, the rule a `goal` uses) | none |
 | `air` | an air preset | `default` |
 | `goal` | rigid pieces: `{ range = "<range file>", name = "<goal>" }`, a goal from a range file (relative to the bench file, or a built-in range's name) | none |
 | `at` | with `goal`: where the bench origin stands on that field, `[x, y, height]`, m (its height replaces `height`) | required with `goal` |
@@ -622,12 +622,12 @@ comes up short here: the drag numbers are estimates, and the result is UNCALIBRA
 
 With a `goal`, the bench stands on the range's field and each shot says `scored` or `missed` (a `goal` column in the
 landings table, and a headline like ``1 of 1 shots score in `speaker_blue` ``). A shot scores when all of the piece
-fits through: its center goes through the goal's opening from the side a scoring piece comes from, and the 8 corners
-of the piece's box, turned as the piece is then, all fall inside the opening. On the way in, neither the center nor
-any corner may touch one of the range's obstacles or elements or a goal's plates. A shot through the SPEAKER's hood,
-or a NOTE overlapping the opening's edge, doesn't count, and the headline names what it hit (a rim plate, or
-`<goal>.edge_<k>`). The box is a little bigger than a ring (its corners stick out past the round), so this is strict
-for a NOTE turned in the opening. The positions in the landings table are still the bench's own: forward of the
+fits through: its center goes through the goal's opening from the side a scoring piece comes from, and the points of
+the piece's outline (the corners of its solids' hull, at most 64 of them: a NOTE's rim), turned as the piece is then,
+all fall inside the opening. On the way in, neither the center nor any outline point may touch one of the range's
+obstacles or elements or a goal's plates. A shot through the SPEAKER's hood, or a NOTE overlapping the opening's
+edge, doesn't count, and the headline names what it hit (a rim plate, or `<goal>.edge_<k>`). The points are checked
+every 1 ms of the flight, not swept between, and a ring's hole isn't checked. The positions in the landings table are still the bench's own: forward of the
 bench origin and above the floor.
 
 The built-in `2024` range (the FRC 2024 CRESCENDO field, `scrimmage/testrange/ranges/2024.toml`) has both SPEAKERS

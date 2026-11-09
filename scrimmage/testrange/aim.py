@@ -30,7 +30,7 @@ the channel's tilt in place of the hood angle and both wheels at the row's wheel
   velocity loop, the piece fed at the pinch's entry speed) flown by launcher/flight6.py with its drag
   (launcher/rigid_aero.py), leaving face-parallel to the channel, the frame's origin on the floor below the channel
   body's origin;
-- its verdict is goal_fit.fit on the flight, its bounding box's corners turned as it flies (goal_fit.kind_corners);
+- its verdict is goal_fit.fit on the flight, its outline's points turned as it flies (goal_fit.kind_points);
 - at a goal entered going up, its rows peak at least UPWARD_APEX_MARGIN above the opening's center, so it is still
   rising as it crosses (a flat crossing at its apex catches the opening's front lip in the world).
 A level goal (the hub, entered going down) is refused for it: that path is the ball launcher's own.
@@ -75,10 +75,12 @@ APEX_TOLERANCE = 1e-4       # m: and this close to the apex that just reaches th
 NORMAL_SPEED_TOLERANCE = 1e-3   # m/s: and this close to a crossing along the surface (no speed along its normal)
 # estimate: a rigid piece aimed at a goal entered going up (a NOTE at the 2024 SPEAKER) takes a row only if its apex
 # is at least this far above the opening's center, so the piece is still rising as it crosses. Flown again in the
-# world (the 2024 range, a pinch shooter's NOTE, 2026-11-09), every row that peaked within about 0.05 m of the center
-# caught the opening's front lip, at its wheel speed or 2% off it, and every row 0.105 m or more above it scored at
-# -2%, 0 and +2%. The cost: the flattest shots, the slowest wheels and the longest distances are no longer offered
-# (examples/blocks/speaker's table reached 2.57 m without it, 2.37 m with it). A ball's rows are unchanged (not flown
+# world (the 2024 range, a pinch shooter's NOTE, 2026-11-09; measured again with goal_fit's outline points, the same
+# numbers), every row that peaked within about 0.05 m of the center caught the opening's front lip at its wheel speed
+# and 2% above it (examples/blocks/speaker's 8 rows without the margin: 7 of 24 shots scored, all of them 2% slow),
+# and every row 0.105 m or more above it scored at -2%, 0 and +2% (21 of 21). The cost: the flattest shots, the
+# slowest wheels and the longest distances are no longer offered (examples/blocks/speaker's table reached 2.57 m
+# without it, 2.37 m with it). A ball's rows are unchanged (not flown
 # in the world; the margin would cost tests/test_aim_upward.py's ball launcher its 2.5 and 3 m rows).
 UPWARD_APEX_MARGIN = 0.10
 
@@ -588,7 +590,7 @@ class _PieceAim(_SurfaceAim):
         return self._paths[key]
 
     def fits(self, p: np.ndarray, pts: np.ndarray, k: int, t: float, at: np.ndarray) -> bool:
-        """goal_fit.fit on the flight up to the crossing, on the field, its corners turned as the piece flies."""
+        """goal_fit.fit on the flight up to the crossing, on the field, its outline turned as the piece flies."""
         n = k + 2
         frame = np.column_stack([self.forward_axis, self.left, [0.0, 0.0, 1.0]])
         quats = flight6.quat_mul(flight6.quat_from_matrix(frame), p[:n, 7:11])
@@ -598,7 +600,7 @@ class _PieceAim(_SurfaceAim):
         res = flight6.Flight6Result(samples=samples, landing=None, crossing=(self.model.goal.name, t, at),
                                     stopped="until", apex=float(p[:, 3].max()), flight_time=float(p[n - 1, 0]))
         return goal_fit.fit(res, self.surface, self.model.goal.name, self.model.boxes,
-                            goal_fit.kind_corners(self.model.piece.kind)).scored
+                            goal_fit.kind_points(self.model.piece.kind)).scored
 
 
 def surface_aim(model: AimModel) -> _SurfaceAim:

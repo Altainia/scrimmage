@@ -52,7 +52,7 @@ Every row peaks at least 0.10 m above the opening's center (2.05 m up), so the N
 through. Each row was flown again in the world, with the robot at its distance and the wheels held at the row's speed
 and 2% either side of it: all 21 shots scored. Without that margin, the table took the lowest shot that just reaches
 the opening, which crosses it flat at the top of its arc. Those rows caught the opening's front lip
-(`speaker_blue.rim_1`) or its back edge, and only 9 of their 24 shots scored. `tests/test_range_2024.py` flies a
+(`speaker_blue.rim_1`) or its back edge, and only 7 of their 24 shots scored. `tests/test_range_2024.py` flies a
 4-row table's rows again on every run.
 
 ## Why the example doesn't use the table's first row

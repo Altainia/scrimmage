@@ -269,7 +269,8 @@ Severity: **B** = blocker, **W** = workaround exists, **N** = nice-to-have. Size
       - a ball's 5 SPEAKER distances take about 10 s (it was 2 min 24 s);
       - a pinch shooter's NOTE table is checked with all of the NOTE through the opening and nothing hit first. Its
         rows must peak at least 0.10 m above the opening's center (`UPWARD_APEX_MARGIN`). Flown again in the world
-        with the wheels 2% off, 21 of 21 shots scored with the margin, and 9 of 24 without it: the lowest arcs
+        with the wheels 2% off, 21 of 21 shots scored with the margin, and 7 of 24 without it (9 of 24 when first
+        measured; 7 when measured again on 2026-11-09, with the bounding box and with the outline alike): the lowest arcs
         crossed flat and caught the front lip. The cost: the slowest shots and the farthest distance (2.57 m) are gone.
     - What doesn't work yet:
       - a NOTE table takes about a minute (21 tilts, 8 distances);
