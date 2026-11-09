@@ -1040,7 +1040,7 @@ unobstructed (the rim and funnel are not modeled), so it is an estimate and is m
 fixed-size set of rows `{distance, wheel_rps, hood_deg, flight_s, apex}`.
 
 - **Unreachable distances** are marked: a CSV row with `status` = `unreachable` and no values, a comment in the Java
-  table (the row is left out), and a warning that gives the reachable range. If none of the requested distances is
+  table (the row is left out), and a warning (for a level goal, with the reachable range). If none of the requested distances is
   reachable the command is an error. Ask for 1 to 6 m and you get the reachable part.
 - **Rows follow the previous row.** Several wheel speeds and hood angles can reach one distance. The first row takes
   the steepest solution; each later row takes the solution **closest to the row before it** (wheel speed and hood angle
@@ -1050,6 +1050,22 @@ fixed-size set of rows `{distance, wheel_rps, hood_deg, flight_s, apex}`.
   A turret near the robot's middle moves the launcher only a little as it turns, which is small next to the shot's
   distance.
 - A table takes several minutes for a long list of distances.
+
+**A goal that isn't level** (its `tilt_deg` isn't 0: the 2024 SPEAKER, entered going up under its hood; a slot in a
+wall) is aimed at its **scoring surface** instead. A level goal such as the hub is aimed as above, unchanged.
+
+- The robot stands on the goal's **approach line**: back from the goal's center along the level part of the scoring
+  surface's normal (the side a piece comes from), facing the goal. `--distances` is measured along it.
+- A row's ball crosses the opening's center **from the side it is entered**, at least its radius inside the opening,
+  and touches none of the range's `[[obstacle]]` boxes, elements or other goals' plates (nor, with its center, the
+  goal's own plates) on the way in. A shot that would go through a hood roof, or clip its front edge, isn't offered.
+- The first row of a goal entered going up takes the **lowest apex** that scores (the steepest, as for the hub, would
+  go up into a roof). Later rows follow the row before, as above. These flattest shots peak at the opening, so some
+  are just past their apex, still moving up through a tilted opening.
+- `flight_s` is the time to that crossing; `apex` is the flight's highest point as if nothing stopped it.
+- A table of 5 distances takes about 10 s: a path doesn't depend on the distance, so each hood angle's paths are
+  flown once, on a coarse wheel-speed grid, and only until they're back down past the opening's height.
+- The ball still flies unobstructed after it crosses: what it hits inside the goal isn't modeled.
 
 Robot code should **hold fire beyond the table's reach** rather than clamp to its last row; the sample does.
 

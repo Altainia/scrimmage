@@ -31,6 +31,11 @@ class Landing:
 
 
 def fly(shot: ExitedBall, setup: Setup, ball: Ball) -> Landing:
+    return fly_state(*launch_state(shot, setup), shot.spin, ball, setup.air, setup.goal)
+
+
+def launch_state(shot: ExitedBall, setup: Setup) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """A launched ball's center, velocity and backspin axis at the exit (the robot frame at launch, above)."""
     if shot.status != "launched":
         raise ValueError(f"cannot fly a ball whose status is {shot.status!r}")
     phi = math.radians(setup.hood.exit_angle_deg + 90.0)
@@ -44,7 +49,7 @@ def fly(shot: ExitedBall, setup: Setup, ball: Ball) -> Landing:
 
     # Spin axis for backspin: -y rotated by the yaw about z.
     axis = np.array([math.sin(yaw), -math.cos(yaw), 0.0])
-    return fly_state(pos, vel, axis, shot.spin, ball, setup.air, setup.goal)
+    return pos, vel, axis
 
 
 def fly_state(pos, vel, spin_axis, spin: float, ball: Ball, air: Air, goal: Goal) -> Landing:
@@ -105,3 +110,50 @@ def fly_state(pos, vel, spin_axis, spin: float, ball: Ball, air: Air, goal: Goal
         scored = math.hypot(at_goal[0] - goal.distance, at_goal[1]) <= reach
     return Landing(scored=scored, at_goal=at_goal, floor=floor, apex=float(apex), flight_time=t,
                    goal_time=goal_time)
+
+
+def fly_path(pos, vel, spin_axis, spin: float, ball: Ball, air: Air,
+             stop=None, max_time: float = MAX_TIME) -> np.ndarray:
+    """fly_state's flight (the same forces and RK4 step, without its goal) in plain floats, recording the path: rows
+    of (t, x, y, z, vx, vy, vz), one per step from the start, until the center falls to the floor (its height the
+    ball's radius, the last row the step that got there), `stop(row)` is true for a row, or `max_time`. For many
+    short flights (launcher aim's): it skips the numpy calls fly_state makes per step, about 5 times faster."""
+    r = ball.diameter / 2.0
+    k = 0.5 * air.density * math.pi * r * r / ball.mass         # 1/2 rho A / m
+    cd, slope, lmax = air.drag_coefficient, air.lift_slope, air.lift_max
+    ax, ay, az = (float(a) for a in spin_axis)
+    if spin < 0:
+        ax, ay, az = -ax, -ay, -az
+    w = abs(spin)
+
+    def accel(vx, vy, vz):
+        speed = math.sqrt(vx * vx + vy * vy + vz * vz)
+        if speed < 1e-9:
+            return 0.0, 0.0, -GRAVITY
+        drag = k * cd * speed
+        lift = k * min(slope * r * w / speed, lmax) * speed
+        return (-drag * vx + lift * (ay * vz - az * vy),
+                -drag * vy + lift * (az * vx - ax * vz),
+                -GRAVITY - drag * vz + lift * (ax * vy - ay * vx))
+
+    x, y, z = (float(c) for c in pos)
+    vx, vy, vz = (float(c) for c in vel)
+    t, h = 0.0, DT
+    rows = [(t, x, y, z, vx, vy, vz)]
+    while z > r and t < max_time:
+        a1 = accel(vx, vy, vz)
+        a2 = accel(vx + 0.5 * h * a1[0], vy + 0.5 * h * a1[1], vz + 0.5 * h * a1[2])
+        a3 = accel(vx + 0.5 * h * a2[0], vy + 0.5 * h * a2[1], vz + 0.5 * h * a2[2])
+        a4 = accel(vx + h * a3[0], vy + h * a3[1], vz + h * a3[2])
+        x += h / 6.0 * (vx + 2 * (vx + 0.5 * h * a1[0]) + 2 * (vx + 0.5 * h * a2[0]) + vx + h * a3[0])
+        y += h / 6.0 * (vy + 2 * (vy + 0.5 * h * a1[1]) + 2 * (vy + 0.5 * h * a2[1]) + vy + h * a3[1])
+        z += h / 6.0 * (vz + 2 * (vz + 0.5 * h * a1[2]) + 2 * (vz + 0.5 * h * a2[2]) + vz + h * a3[2])
+        vx += h / 6.0 * (a1[0] + 2 * a2[0] + 2 * a3[0] + a4[0])
+        vy += h / 6.0 * (a1[1] + 2 * a2[1] + 2 * a3[1] + a4[1])
+        vz += h / 6.0 * (a1[2] + 2 * a2[2] + 2 * a3[2] + a4[2])
+        t += h
+        row = (t, x, y, z, vx, vy, vz)
+        rows.append(row)
+        if stop is not None and stop(row):
+            break
+    return np.array(rows)

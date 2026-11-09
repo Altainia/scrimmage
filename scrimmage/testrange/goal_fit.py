@@ -18,6 +18,10 @@ The rule, since there is no rim for a flight to collide with (the box does the r
   either side), seen along the surface's normal, all fall inside the opening. If one doesn't, the piece didn't fit
   through and caught the rim plate on that edge, `<goal>.rim_<k>`, or `<goal>.edge_<k>` when the goal has none there.
 
+A ball (`launcher aim` at a goal that isn't level) is judged the same way by `fit_ball`, from its center's path:
+its ball (the center and radius) must touch nothing before the crossing (its center the goal's own plates), and at
+the crossing its center must be a radius inside the opening.
+
 The box is a little bigger than a round piece (a ring's corners stick out past its round), so this is strict for a
 turned ring. The points are checked at the flight's samples (1 ms: 1 cm at 10 m/s), not swept between them.
 """
@@ -96,17 +100,37 @@ def first_hit(points: np.ndarray, boxes) -> tuple[int, str] | None:
     return best
 
 
-def outside_edge(surface: Surface, points: np.ndarray) -> int | None:
+def first_touch(centers: np.ndarray, radius: float, boxes) -> tuple[int, str] | None:
+    """first_hit for a ball: the first of `centers` ((n, 3) on the field) whose ball of `radius` overlaps one of
+    `boxes`, as (sample index, the box's name); None when it touches none."""
+    best = None
+    for name, center, axes, half in boxes:
+        local = (centers - center) @ axes
+        gap = np.linalg.norm(np.maximum(np.abs(local) - half, 0.0), axis=-1)    # 0 inside the box
+        hit = np.flatnonzero(gap <= radius)
+        if len(hit) and (best is None or hit[0] < best[0]):
+            best = (int(hit[0]), name)
+    return best
+
+
+def outside_edge(surface: Surface, points: np.ndarray, margin: float = 0.0) -> int | None:
     """Seen along the surface's normal, the edge of its outline (index k: from corner k to k + 1) that `points`
-    ((m, 3), on the field) stick out of furthest; None when all are inside."""
+    ((m, 3), on the field) stick out of furthest, or come within `margin` of from inside (a ball's radius); None
+    when all are inside, that far from every edge."""
     q = (np.asarray(points, float) - surface.center) @ surface.axes.T  # (m, 2) in the plane
     a = surface.polygon
     edge = np.roll(a, -1, axis=0) - a
     rel = q[:, None, :] - a[None, :, :]
     out = -(edge[None, :, 0] * rel[:, :, 1] - edge[None, :, 1] * rel[:, :, 0]) / np.linalg.norm(edge, axis=1)
-    if np.all(out <= 1e-9):
+    if np.all(out <= 1e-9 - margin):
         return None
     return int(np.unravel_index(np.argmax(out), out.shape)[1])
+
+
+def _caught(goal: str, edge: int, boxes) -> Fit:
+    """The verdict on a piece sticking out of `edge`: caught on its rim plate, or on the edge when it has none."""
+    rim = f"{goal}.rim_{edge}"
+    return Fit(False, caught=rim if any(b[0] == rim for b in boxes) else f"{goal}.edge_{edge}")
 
 
 def fit(res: flight6.Flight6Result, surface: Surface, goal: str, boxes, corners: np.ndarray) -> Fit:
@@ -135,5 +159,22 @@ def fit(res: flight6.Flight6Result, surface: Surface, goal: str, boxes, corners:
     edge = outside_edge(surface, at)
     if edge is None:
         return Fit(True)
-    rim = f"{goal}.rim_{edge}"
-    return Fit(False, caught=rim if any(b[0] == rim for b in boxes) else f"{goal}.edge_{edge}")
+    return _caught(goal, edge, boxes)
+
+
+def fit_ball(before: np.ndarray, at: np.ndarray, surface: Surface, goal: str, boxes, radius: float) -> Fit:
+    """fit's verdict for a ball of `radius`, from its center's path: `before` ((n, 3), the samples before the center
+    crossed the surface) and `at` (the crossing point). Before the crossing the ball must touch no obstacle, element or
+    other goal's plates, and its center stay out of the goal's own plates (as fit's rule); at the crossing its center
+    must be at least `radius` inside the opening, else it caught that edge's rim plate (or edge)."""
+    own = f"{goal}."
+    others = [b for b in boxes if not b[0].startswith(own)]
+    mine = [b for b in boxes if b[0].startswith(own)]
+    before = np.asarray(before, float).reshape(-1, 3)
+    hits = [h for h in (first_touch(before, radius, others), first_hit(before[:, None, :], mine)) if h is not None]
+    if hits:
+        return Fit(False, hit=min(hits)[1])
+    edge = outside_edge(surface, np.asarray(at, float)[None, :], margin=radius)
+    if edge is None:
+        return Fit(True)
+    return _caught(goal, edge, boxes)

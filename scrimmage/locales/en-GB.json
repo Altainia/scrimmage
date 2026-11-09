@@ -86,5 +86,6 @@
   "on the center line": "on the centre line",
   "signal {signal}: {sensor} isn't a color sensor, so it sees no color": "signal {signal}: {sensor} isn't a colour sensor, so it sees no colour",
   "signal {signal}: {color} isn't a named color; the colors: {colors}": "signal {signal}: {color} isn't a named colour; the colours: {colors}",
-  "{sees_setting} must be a named color, not {value}": "{sees_setting} must be a named colour, not {value}"
+  "{sees_setting} must be a named color, not {value}": "{sees_setting} must be a named colour, not {value}",
+  "{distances} m can't be scored with wheels at {low}..{high} rps and hood angles {lowest}..{highest} deg: no shot found crosses the center of the {goal} opening from the side it is entered without touching something first": "{distances} m can't be scored with wheels at {low}..{high} rps and hood angles {lowest}..{highest} deg: no shot found crosses the centre of the {goal} opening from the side it is entered without touching something first"
 }
