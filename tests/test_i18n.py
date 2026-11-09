@@ -407,6 +407,18 @@ def test_template_finds_calls_through_the_module_however_it_is_imported(tree):
     assert "pkg/dotted.py:10: t() needs a literal string first, not name" in errors
 
 
+def test_template_finds_calls_through_a_local_alias(tree):
+    """`t = i18n.t` inside a function (the blocks' sentence builders), or an alias of an imported t."""
+    (tree / "alias.py").write_text(
+        "from scrimmage import i18n\nfrom scrimmage.i18n import tn\n\n\ndef f():\n    t = i18n.t\n    n = tn\n"
+        "    return t(\"Through an alias\"), n(\"{count} cone\", \"{count} cones\", 2), t(name)\n")
+    found, errors = i18n_tool.scan(tree)
+    where = {s.key: s.where for s in found}
+    assert where["Through an alias"] == ["pkg/alias.py:8"]
+    assert where["{count} cone|{count} cones"] == ["pkg/alias.py:8"]
+    assert "pkg/alias.py:8: t() needs a literal string first, not name" in errors
+
+
 def test_a_python_file_that_doesnt_parse_is_an_error_not_a_crash(tree):
     (tree / "broken.py").write_text("from scrimmage.i18n import t\n\ndef f(:\n    t('Never seen')\n")
     found, errors = i18n_tool.scan(tree)
