@@ -9,7 +9,7 @@ elements do. List sections (`[[wheel]]`, `[[plate]]`, ...) and `[shaft.<name>]` 
 import copy
 import math
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
@@ -17,8 +17,9 @@ import numpy as np
 from .. import i18n
 from ..launcher.inputs import PRESETS, Ball
 from ..motors import MOTORS
-from ..testrange.pieces import PieceKind, kind_preset, parse_kind
-from ..testrange.spec import BUILTIN_RANGES, Goal, RangeError, load_range, piece_box
+from ..launcher.rigid_aero import DRAG_COEFFICIENT, SPIN_DAMPING
+from ..testrange.pieces import _AIR, PieceKind, air_given, kind_preset, parse_kind
+from ..testrange.spec import BUILTIN_RANGES, Goal, RangeError, _Reader, load_range, piece_box
 from .problems import Problem
 
 IN = 0.0254  # m per inch
@@ -70,6 +71,9 @@ class Piece:
     # a piece preset's or a ring's kind, built by the range's piece builder (testrange/pieces.py): the bench builds
     # its solids and flies it with its drag, so the bench and the range have one NOTE. None for the other shapes.
     rigid_kind: PieceKind | None = field(default=None, repr=False, compare=False)
+    # a rigid piece's air in [flight] (launcher/rigid_aero.py): its drag coefficient on its shadow and spin damping
+    drag_coefficient: float = DRAG_COEFFICIENT
+    spin_damping: float = SPIN_DAMPING
 
 
 @dataclass(**_frozen)
@@ -246,7 +250,8 @@ MATERIALS = _load_materials()
 _SECTIONS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "bench": (("name", "author", "idea", "notes"), ()),
     "piece": (("name", "preset", "kind", "shape", "size", "mass", "inertia", "stiffness_n", "stiffness_exponent",
-               "restitution", "inertia_factor", "stiffness", "mesh", "units"), ("size",)),
+               "restitution", "inertia_factor", "stiffness", "mesh", "units", "drag_coefficient", "spin_damping"),
+              ("size",)),
     "shaft": (("motor", "count", "gearing", "wheel_inertia", "added_inertia", "control", "target_rps", "voltage",
                "kP", "kS", "kV", "stator_limit", "supply_limit", "coupled_to", "ratio"), ()),
     "wheel": (("name", "shaft", "center", "axis", "diameter", "width", "tread"), ("center", "diameter", "width")),
@@ -437,8 +442,37 @@ _BALL_KEYS = ("stiffness_n", "stiffness_exponent", "restitution", "inertia_facto
 _SHAPE_SIZES = {"sphere": 1, "box": 3, "cylinder": 2}
 
 
+class _AirReader(_Reader):
+    """The range's reader for a bench [piece]'s air keys: its messages read "[piece]: <what>", as a [piece.*]
+    kind's do after its file name."""
+
+    def err(self, msg: str) -> RangeError:
+        return RangeError(f"{self.where}: {msg}")
+
+
 def _parse_piece(raw, base_dir: Path, warned: list[str]) -> Piece:
     """The [piece]; a warning that doesn't stop the run (a borrowed ball preset) is appended to `warned`."""
+    piece = _parse_piece_shape(raw, base_dir, warned)
+    t = _Table("piece", "[piece]", raw)
+    air = {k: t.t[k] for k in _AIR if k in t.t}
+    if not air:
+        return piece
+    if piece.kind != "rigid":
+        key = next(iter(air))
+        raise t.err(i18n.t("{key} is a rigid piece's air drag; a ball flies with the {air_table} drag and a disc "
+                           "with its aero set", key=key, air_table="[air]"), key)
+    given = {}
+    for key, value in air.items():  # one at a time, so the error names its key
+        try:
+            given |= air_given(_AirReader(Path("."), "[piece]", {key: value}, _AIR))
+        except RangeError as e:
+            raise t.err(str(e), key) from None
+    kind = piece.rigid_kind
+    return replace(piece, **given, rigid_kind=None if kind is None else replace(kind, **given))
+
+
+def _parse_piece_shape(raw, base_dir: Path, warned: list[str]) -> Piece:
+    """The [piece] but for its air keys (`_parse_piece`)."""
     t = _Table("piece", "[piece]", raw)
     preset = t.text("preset", None)
     base: dict = {}
@@ -524,7 +558,7 @@ def _parse_piece(raw, base_dir: Path, warned: list[str]) -> Piece:
 
 
 # the keys a piece preset takes beside `preset`: the rest are the preset's own
-_PRESET_KEYS = ("preset", "name", "kind", "shape", "stiffness")
+_PRESET_KEYS = ("preset", "name", "kind", "shape", "stiffness", "drag_coefficient", "spin_damping")
 
 
 def _kind_piece(t: _Table, name: str, kind, size: tuple) -> Piece:
@@ -560,7 +594,7 @@ def _ring_piece(t: _Table, name: str, kind: str) -> Piece:
     if kind != "rigid":  # pragma: no cover - squishy non-spheres are refused before
         raise t.err(i18n.t("{table} is a ring, so it is rigid", table=t.label), "kind")
     for key in ("mesh", "units", "inertia"):
-        if key in t.t:
+        if key in t.t:  # (a ring's air keys are read by _parse_piece)
             raise t.err(i18n.t("{table} is a ring and takes no {key}: its inertia comes from its shape",
                                table=t.label, key=key), key)
     size = t.vec("size", 3, positive=True, length=True)

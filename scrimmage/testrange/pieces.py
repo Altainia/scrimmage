@@ -843,8 +843,14 @@ def _parse_kind(path: Path, name: str, r: _KindReader, base_dir: Path) -> PieceK
 def _air(r: _KindReader, kind: PieceKind) -> PieceKind:
     """The kind with its own `drag_coefficient` and `spin_damping`, where the table gives them (each a number, not
     negative: 0 is no drag, or no damping)."""
-    given = {k: r.num(k, nonnegative=True) for k in _AIR if r.has(k)}
+    given = air_given(r)
     return replace(kind, **given) if given else kind
+
+
+def air_given(r: _Reader) -> dict[str, float]:
+    """The table's `drag_coefficient` and `spin_damping` (launcher/rigid_aero.py), those it gives, each a number,
+    not negative. The bench's [piece] reads them with this too."""
+    return {k: r.num(k, nonnegative=True) for k in _AIR if r.has(k)}
 
 
 def _default_aero() -> str:

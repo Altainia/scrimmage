@@ -59,6 +59,15 @@ help = "foam ball: how its mass is spread, for how hard it is to spin"
 unit = "N/m"
 help = "rigid only: how stiff its own surface is (higher is harder); left out, it is hard"
 
+[piece.drag_coefficient]
+help = "rigid only, in [flight]: the drag coefficient on its shadow (0 or more); left out, 1.17, an estimate"
+default = 1.17
+
+[piece.spin_damping]
+unit = "N m s/rad"
+help = "rigid only, in [flight]: how fast the air slows its spin (0 or more)"
+default = 0.0
+
 [piece.mesh]
 help = "mesh shape: an STL or OBJ file, next to the bench file"
 

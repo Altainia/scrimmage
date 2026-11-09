@@ -1,5 +1,6 @@
 {
   "_language": "English (UK)",
+  "{line} In {flight_table}, the drag coefficient ({cd}) is an estimate unless you measured it, and lift isn't modeled.": "{line} In {flight_table}, the drag coefficient ({cd}) is an estimate unless you measured it, and lift isn't modelled.",
   "the start must be [x, y, heading]: meters from the blue corner, and degrees": "the start must be [x, y, heading]: metres from the blue corner, and degrees",
   "The robot's center of gravity at its start pose, from the floor at the frame's center": "The robot's centre of gravity at its start pose, from the floor at the frame's centre",
   "millimeters": "millimetres",

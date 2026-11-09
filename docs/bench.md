@@ -402,8 +402,8 @@ stiffness N/m, voltage V, current A, time s.
 ### `[piece]`
 
 Either `preset = "<ball>"` (a squishy ball; any key below overrides the preset's), `preset = "<piece preset>"` (a
-range's rigid piece, such as `2024-note`; only `name` and `stiffness` go with it, the rest is the preset's), or a
-custom piece.
+range's rigid piece, such as `2024-note`; only `name`, `stiffness`, `drag_coefficient` and `spin_damping` go with
+it, the rest is the preset's), or a custom piece.
 
 | Key | Meaning | Default |
 |---|---|---|
@@ -415,6 +415,7 @@ custom piece.
 | `mass` | kg | the preset's, else required |
 | `inertia` | `[Ixx, Iyy, Izz]` about its own axes, kg m² | from the shape (required for a mesh) |
 | `stiffness` | rigid only: its own contact stiffness, N/m, in series with the tread | none: hard |
+| `drag_coefficient`, `spin_damping` | rigid only, in `[flight]`: the drag coefficient on its shadow, and how fast the air slows its spin, N m s/rad (0 or more) | 1.17 (an estimate), 0; a piece preset's own |
 | `stiffness_n`, `stiffness_exponent`, `restitution`, `inertia_factor` | squishy only: the launcher model's ball numbers | the preset's, or the nearest preset's |
 | `mesh`, `units` | `shape = "mesh"`: an STL or OBJ file (relative to the bench file) and its units, `m`, `mm` or `in`; it collides as its convex hull | none |
 
@@ -616,11 +617,14 @@ comes up short here: the drag numbers are estimates, and the result is UNCALIBRA
 | `heading_deg` | with `goal`: which way the bench's +x faces on that field, from the field's +x | required with `goal` |
 
 With a `goal`, the bench stands on the range's field and each shot says `scored` or `missed` (a `goal` column in the
-landings table, and a headline like ``1 of 1 shots score in `speaker_blue` ``). A shot scores when its center goes
-through the goal's opening from the side a scoring piece comes from, at least half the piece's thinnest size inside
-the edge, without first coming that close to one of the range's obstacles or elements or a goal's plates (a shot
-through the SPEAKER's hood doesn't count; the headline names what it hit). The positions in the landings table are
-still the bench's own: forward of the bench origin and above the floor.
+landings table, and a headline like ``1 of 1 shots score in `speaker_blue` ``). A shot scores when all of the piece
+fits through: its center goes through the goal's opening from the side a scoring piece comes from, and the 8 corners
+of the piece's box, turned as the piece is then, all fall inside the opening. On the way in, neither the center nor
+any corner may touch one of the range's obstacles or elements or a goal's plates. A shot through the SPEAKER's hood,
+or a NOTE overlapping the opening's edge, doesn't count, and the headline names what it hit (a rim plate, or
+`<goal>.edge_<k>`). The box is a little bigger than a ring (its corners stick out past the round), so this is strict
+for a NOTE turned in the opening. The positions in the landings table are still the bench's own: forward of the
+bench origin and above the floor.
 
 ```toml
 [bench]
@@ -637,7 +641,7 @@ name = "hand"
 center = [0.0, 0.0, 0.0]
 size = [0.001, 0.001, 0.001]
 count = 1
-velocity = [5.14, 0.0, 6.13]    # 8 m/s at 50 degrees up
+velocity = [5.281, 0.0, 6.075]   # 8.05 m/s at 49 degrees up
 
 [[outlet]]
 name = "shot"

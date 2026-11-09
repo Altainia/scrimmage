@@ -21,7 +21,7 @@ RANGE_DIR = Path(__file__).resolve().parent / "data" / "range_2024"
 GOAL = 'goal = { range = "2024.toml", name = "speaker_blue" }'
 
 
-def _bench(speed: float = 8.0, elevation_deg: float = 50.0, flight: str | None = None,
+def _bench(speed: float = 8.05, elevation_deg: float = 49.0, flight: str | None = None,
            piece: str = 'preset = "2024-note"') -> str:
     """A NOTE thrown by hand (an inlet's velocity) straight out through an outlet: the bench measures how it leaves and
     [flight] flies it. The default flight stands the bench 2.5 m out from the blue alliance wall, facing the blue
@@ -153,7 +153,7 @@ def _write(tmp_path: Path, text: str) -> Path:
 # ------------------------------------------------------------------------------------------------- the goal
 
 def test_a_shot_into_the_speaker_scores_and_a_short_one_misses(tmp_path):
-    result, lands = _lands(_bench(8.0, 50.0))
+    result, lands = _lands(_bench(8.05, 49.0))
     assert [land.goal for _, land in lands] == ["scored"]
     assert report.headlines(result, lands)[0].startswith("1 of 1 left")
     assert "1 of 1 shots score in `speaker_blue`" in report.headlines(result, lands)
@@ -175,27 +175,105 @@ name = "practice_net"
 pos = [1.3, 5.5446, 1.5]
 size = [0.05, 2.0, 3.0]
 ''', encoding="utf-8")
-    result, lands = _lands(_bench(8.0, 50.0), tmp_path)
+    result, lands = _lands(_bench(8.05, 49.0), tmp_path)
     assert [(land.goal, land.blocked_by) for _, land in lands] == [("missed", "practice_net")]
     assert "0 of 1 shots score in `speaker_blue` (1 hit `practice_net` on the way)" in report.headlines(result, lands)
 
 
-def test_the_opening_is_shrunk_by_half_the_passing_width():
-    surface = load_range("2024.toml", RANGE_DIR).goals[0].scoring_surface()
-    inset = report._inset(surface, 0.0254)
-    assert inset.polygon == pytest.approx(np.array([[-0.2117, -0.49595], [0.2117, -0.49595], [0.2117, 0.49595],
-                                                    [-0.2117, 0.49595]]))
-    assert report._inset(surface, 0.3) is None
+def test_the_sample_throws_either_side_of_the_band_hit_the_rim():
+    """8.05 m/s at 49 degrees is the middle of the scoring band (8.0 to 8.1 m/s): a little faster and the NOTE's
+    upper side overlaps the opening's top edge, so it doesn't all fit through."""
+    _, lands = _lands(_bench(8.2, 49.0))
+    assert [(land.goal, land.blocked_by) for _, land in lands] == [("missed", "speaker_blue.rim_1")]
 
 
-def test_first_hit_is_the_earliest_box():
+def _straight_in(goal, u: float, v: float, extra_boxes=()):
+    """A NOTE lying flat in the opening's plane, flown 10 m/s straight along the opening's normal from 0.3 m out to
+    cross it at (u, v) in the opening's axes: the verdict and what stopped it."""
+    from dataclasses import replace
+
+    from scrimmage.launcher import flight6
+    from scrimmage.testrange.pieces import _quat
+
+    s = goal.goal.scoring_surface()
+    q = _quat(np.column_stack([s.axes[0], s.axes[1], s.normal]))
+    res = flight6.fly(s.center + 0.3 * s.normal + u * s.axes[0] + v * s.axes[1], -10.0 * s.normal, q, np.zeros(3),
+                      0.235, np.eye(3) * 1e-3, lambda vel, rot, w: (np.zeros(3), np.zeros(3)),
+                      goals=((goal.name, s),), floor=0.0)
+    note = kind_preset("2024-note")
+    lo = np.min([report._lo_hi(x)[0] for x in note.solids], axis=0)
+    hi = np.max([report._lo_hi(x)[1] for x in note.solids], axis=0)
+    return report._goal_verdict(res, replace(goal, boxes=goal.boxes + tuple(extra_boxes)), report._corners(lo, hi))
+
+
+def test_a_flat_note_with_room_to_spare_scores():
+    """The SPEAKER's opening is 41 in by 18.7 in; a NOTE's box is 14 in square: through the middle, it fits with 2.3
+    in to spare top and bottom and 13.5 in each side, and still does 5 cm off center."""
+    goal = _parse(_bench()).flight.goal
+    assert _straight_in(goal, 0.0, 0.0) == ("scored", None)
+    assert _straight_in(goal, 0.05, 0.0) == ("scored", None)
+
+
+def test_a_center_just_inside_the_edge_misses_on_the_rim():
+    """The center crosses 2 cm inside the opening's side, but the NOTE overlaps the side's rim bar."""
+    goal = _parse(_bench()).flight.goal
+    verdict, what = _straight_in(goal, 0.0, 0.50)
+    assert verdict == "missed" and what.startswith("speaker_blue.rim_")
+    # with no rim plate to name, the edge is named instead
+    from dataclasses import replace
+    bare = replace(goal, boxes=tuple(b for b in goal.boxes if ".rim_" not in b[0]))
+    verdict, what = _straight_in(bare, 0.0, 0.50)
+    assert verdict == "missed" and what.startswith("speaker_blue.edge_")
+
+
+def test_a_corner_that_clips_a_roof_plate_is_blocked():
+    """A thin roof 15 cm to the side of the NOTE's path: its center passes clear, its box's corners (8.9 cm further
+    out) don't."""
+    goal = _parse(_bench()).flight.goal
+    s = goal.goal.scoring_surface()
+    rot = np.column_stack([s.axes[0], s.axes[1], s.normal])
+    roof = ("low_roof", s.center + 0.15 * s.normal + 0.65 * s.axes[1], rot, np.array([0.2, 0.5, 0.01]))
+    assert _straight_in(goal, 0.0, 0.0, [roof]) == ("missed", "low_roof")
+    clear = ("low_roof", roof[1] + 0.05 * s.axes[1], rot, roof[3])
+    assert _straight_in(goal, 0.0, 0.0, [clear]) == ("scored", None)
+
+
+def test_first_hit_is_the_earliest_box_any_point_enters():
     eye = np.eye(3)
     boxes = [("far", np.array([3.0, 0.0, 0.0]), eye, np.full(3, 0.1)),
              ("near", np.array([1.0, 0.0, 0.0]), eye, np.full(3, 0.1))]
-    path = np.column_stack([np.linspace(0.0, 4.0, 41), np.zeros(41), np.zeros(41)])
-    assert report._first_hit(path, boxes, 0.0) == (8, "near")  # 0.8 to 0.9 touches the face at 0.9
-    assert report._first_hit(path + [0.0, 0.15, 0.0], boxes, 0.0) is None
-    assert report._first_hit(path + [0.0, 0.15, 0.0], boxes, 0.06)[1] == "near"
+    center = np.column_stack([np.linspace(0.0, 4.0, 41), np.zeros(41), np.zeros(41)])[:, None, :]
+    assert report._first_hit(center, boxes) == (9, "near")
+    assert report._first_hit(center + [0.0, 0.15, 0.0], boxes) is None
+    side = np.concatenate([center + [0.0, 0.15, 0.0], center + [0.0, 0.05, 0.0]], axis=1)   # a corner closer in
+    assert report._first_hit(side, boxes) == (9, "near")
+
+
+def test_a_rigid_piece_takes_its_own_drag():
+    flight = 'height = 0.5\ntarget_distance = 3.0\ntarget_height = 1.0'
+    box = 'shape = "box"\nsize = [0.2, 0.2, 0.05]\nmass = 0.3'
+    bench = _parse(_bench(piece=box + "\ndrag_coefficient = 0.0\nspin_damping = 0.002", flight=flight))
+    assert (bench.piece.drag_coefficient, bench.piece.spin_damping) == (0.0, 0.002)
+    note = _parse(_bench(piece='preset = "2024-note"\ndrag_coefficient = 0.8', flight=flight)).piece
+    assert note.drag_coefficient == note.rigid_kind.drag_coefficient == 0.8
+    # no drag flies further than the default 1.17
+    far = report.landings(run_bench(bench))[0][1].floor[0]
+    near = report.landings(run_bench(_parse(_bench(piece=box, flight=flight))))[0][1].floor[0]
+    assert far > near + 0.2
+    for piece, words in [(box + "\ndrag_coefficient = -0.5", r"\[piece\]: drag_coefficient can't be negative, not -0\.5"),
+                         (box + '\nspin_damping = "x"', r"\[piece\]: spin_damping must be a number, not 'x'"),
+                         ('preset = "2016-boulder"\ndrag_coefficient = 0.5', "a ball flies with the \\[air\\] drag")]:
+        with pytest.raises(BenchError, match=words):
+            _parse(_bench(piece=piece, flight=flight))
+
+
+def test_the_uncalibrated_line_names_the_flights_drag_and_no_lift():
+    flight = 'height = 0.5\ntarget_distance = 3.0\ntarget_height = 1.0'
+    line = report.bench_uncalibrated(_parse(_bench(flight=flight)))
+    assert "In [flight], the drag coefficient (1.17) is an estimate unless you measured it, and lift isn't modeled." \
+        in line
+    assert "drag coefficient" not in report.bench_uncalibrated(_parse(_bench(piece='preset = "2016-boulder"',
+                                                                              flight=flight)))
 
 
 @pytest.mark.parametrize("flight, words", [
