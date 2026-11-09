@@ -81,6 +81,7 @@ from ..teamfolders import TeamFolderError, expand
 
 if TYPE_CHECKING:
     from .elements import ClimbRule, Element
+    from .game import Game
     from .pieces import PieceKind
     from .station import Station
 
@@ -284,6 +285,7 @@ class Range:
     field_length: float = FIELD_LENGTH  # [range] field: m, the alliance walls' inner faces
     field_width: float = FIELD_WIDTH    # m, the guardrails' inner faces
     zones: tuple = ()                   # [[zone]]: floor areas marked with tape (testrange/zones.py)
+    game: Game | None = None            # [game]: the match's phases, points and rules (testrange/game.py)
     spread_warnings: tuple[str, ...] = ()   # those of warnings that are the stations' spreads' (redone by overrides)
     warnings: tuple[str, ...] = ()      # what is accepted but likely a mistake (checks.Said: its words when shown)
 
@@ -379,7 +381,7 @@ class _Reader:
 
 
 _TOP = ("range", "goal", "floor_balls", "start", "carpet", "obstacle", "element", "climb", "station", "piece",
-        "zone")
+        "zone", "game")
 _RANGE = ("name", "ball", "disc", "aero", "piece", "color", "field")
 _FIELD = ("length", "width")
 _GOAL = ("name", "pos", "heading_deg", "rim_height", "tilt_deg", "opening", "funnel", "body", "plate", "slot",
@@ -904,13 +906,15 @@ def parse_range(raw: dict, path: Path) -> Range:
     stations = parse_stations(path, raw.get("station", []), kinds, default, taken, size)
     from .zones import parse_zones
     zones = parse_zones(path, raw.get("zone", []), size)
+    from .game import parse_game
+    game = parse_game(path, raw["game"], tuple(goals), zones, climb) if "game" in raw else None
     built = Range(name=rng.text("name"), ball_preset=first_ball.preset if first_ball else None,
                   ball=first_ball.ball if first_ball else None, goals=tuple(goals),
                   floor_balls=floor_balls, starts=starts, path=path, rolling_resistance=rolling,
                   disc_preset=first_disc.preset if first_disc else None, disc=first_disc.disc if first_disc else None,
                   aero=first_disc.aero if first_disc else None, obstacles=tuple(obstacles),
                   elements=elements, climb=climb, stations=stations, kinds=kinds, default_kind=default,
-                  floor_kinds=tuple(floor_kinds), floor_turns=floor_turns, floor_heights=heights, zones=zones,
+                  floor_kinds=tuple(floor_kinds), floor_turns=floor_turns, floor_heights=heights, zones=zones, game=game,
                   field_length=size[0],
                   field_width=size[1],
                   warnings=tuple(w for k in kinds.values() for w in k.warnings) + _outside_warnings(goals, size)

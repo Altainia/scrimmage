@@ -739,6 +739,42 @@ condition reads it: the robot's center, seen from above, inside or outside the z
 enough for "did it leave the starting zone" (2024's LEAVE) and "is it in the wing"; a rule about the whole robot or
 its bumpers (2024's PARK) isn't modeled yet.
 
+### The game: points, the match and its rules
+
+A range can say what game it is: how long the match is, what a piece in each goal is worth, and the rules a robot is
+held to. It goes in a `[game]` table in the range file, since the game is a fact of the field:
+
+```toml
+[game]
+name = "2024 CRESCENDO"
+auto_seconds = 15              # source: the 2024 manual, AUTO
+pause_seconds = 3              # source: the 2024 manual, the pause between AUTO and TELEOP
+teleop_seconds = 135           # source: the 2024 manual, TELEOP
+points = { speaker_blue = { auto = 5, teleop = 2 }, amp_blue = { auto = 2, teleop = 1 } }   # source: M Table 6-2
+leave = { zone = "blue_start", points = 2 }   # source: M Table 6-2: LEAVE
+[game.rules]
+possession = 1                 # source: G403 (one NOTE)
+extension_in = 12              # source: R105
+height_in = 48                 # source: the 2024 manual's 4 ft height limit
+```
+
+- The three phase lengths are the only required keys. The pause may be 0 s; the other two must be above 0.
+- `points` names goals (a name that isn't a goal is an error). A goal's value is one number, the same in both phases,
+  or `{ auto, teleop }`. Points can be fractions, and can't be negative. A goal you leave out still counts pieces,
+  for 0 points.
+- `leave` names a zone (see Floor zones above). LEAVE scores when the robot's center starts the match inside the zone
+  and is outside it when auto ends.
+- Endgame points stay in `[climb]`: the points of the `levels` entry for the level the robot holds when the match
+  ends.
+- `[game.rules]` has three optional limits: `possession` (pieces held at once, a whole number from 1), and
+  `extension_in` and `height_in`, in inches.
+- A piece scored in the pause scores nothing, and a piece scored after teleop ends doesn't count.
+
+The range's phase lengths are the ones the Test tab uses. A scenario's `[match] auto_seconds` is the Driver Station's
+timer, and its steps set the phases there; the two can disagree, and then the scenario's steps win in that scenario.
+A range with no `[game]` behaves as it always has. `scrimmage range check` lists the game's name, its phase lengths and
+how many goals score points.
+
 ### Rods
 
 A rod is a field element: a straight round or square rod fixed to the field, such as a peg, a pole, or a coral branch.

@@ -86,6 +86,14 @@ def summary(ref: str, rng: Range) -> list[str]:
         n = len(rng.obstacles)
         parts.append(i18n.tn("{count} obstacle ({names})", "{count} obstacles ({names})", n, count=n,
                              names=_names(x.name for x in rng.obstacles)))
+    if rng.game is not None:
+        g = rng.game
+        scoring = sum(1 for p in g.points.values() if p.auto or p.teleop)
+        parts.append(i18n.tn(
+            "game {name} ({auto} s auto, {pause} s pause, {teleop} s teleop, {count} goal scores points)",
+            "game {name} ({auto} s auto, {pause} s pause, {teleop} s teleop, {count} goals score points)",
+            scoring, name=repr(g.name), auto=f"{g.auto_s:g}", pause=f"{g.pause_s:g}", teleop=f"{g.teleop_s:g}",
+            count=scoring))
     if rng.starts:
         parts.append(i18n.tn("{count} start ({names})", "{count} starts ({names})", len(rng.starts),
                              count=len(rng.starts), names=_names(rng.starts)))
