@@ -61,7 +61,7 @@ help = "rigid only: how stiff its own surface is (higher is harder); left out, i
 
 [piece.drag_coefficient]
 help = "rigid only, in [flight]: the drag coefficient on its shadow (0 or more); left out, 1.17, an estimate"
-default = 1.17
+default = 1.17          # estimate: rigid_aero.DRAG_COEFFICIENT, Hoerner's broadside flat plate (an estimate for a whole piece)
 
 [piece.spin_damping]
 unit = "N m s/rad"

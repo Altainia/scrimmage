@@ -799,6 +799,16 @@ def _parse_flight(raw, known: list[str], base_dir: Path) -> Flight:
                 raise t.err(i18n.t("{table} {key} places the bench on a range's field for a goal; give {goal_setting} "
                                    "too, or leave {key} out", table=t.label, key=key,
                                    goal_setting="goal = { range = \"<range file>\", name = \"<goal>\" }"), key)
+    if goal is not None:  # the target is optional with a goal, but whole: both of its keys, and a ring only with them
+        given = [k for k in ("target_distance", "target_height") if t.has(k)]
+        if len(given) == 1:
+            other = "target_height" if given[0] == "target_distance" else "target_distance"
+            raise t.err(i18n.t("{table} has {key} but not {other}; a target needs both (or, with a goal, neither)",
+                               table=t.label, key=given[0], other=other), other)
+        if not given and t.has("ring_diameter"):
+            raise t.err(i18n.t("{table} has {key} but no target; a ring sits at the target, so give "
+                               "{distance_key} and {height_key} too", table=t.label, key="ring_diameter",
+                               distance_key="target_distance", height_key="target_height"), "ring_diameter")
     target = _REQ if goal is None else None
     return Flight(outlet=outlet, height=t.num("height", 0.0, nonneg=True, length=True) if goal is None else goal.at[2],
                   target_distance=t.num("target_distance", target, positive=True, length=True),
@@ -844,16 +854,9 @@ def _flight_goal(t: _Table, base_dir: Path) -> FlightGoal:
     if name not in goals:
         raise t.err(i18n.t("{table} goal {name} is not a goal in {range}; its goals: {goals}", table=t.label,
                            name=repr(name), range=repr(ref), goals=", ".join(goals) or i18n.t("(none)")), "goal")
-    from ..testrange.build import _plates          # pulls in mujoco
-    from ..testrange.station import _element_boxes
-    boxes = [(o.name, np.array(o.pos, float), o.rotation(), np.array(o.size, float) / 2.0) for o in rng.obstacles]
-    boxes += [(e.name, np.asarray(c, float), np.asarray(r, float), np.asarray(h, float))
-              for e in rng.elements for c, r, h in _element_boxes(e)]
-    for x in rng.goals:
-        rot = x.rotation()
-        boxes += [(f"{x.name}.{n}", x.to_world(c), rot @ local, np.array(half, float))
-                  for n, c, local, half, _ in _plates(x)]
-    return FlightGoal(range=path, name=name, goal=goals[name], at=at, heading_deg=heading, boxes=tuple(boxes))
+    from ..testrange.goal_fit import field_boxes    # pulls in mujoco
+    boxes = field_boxes(rng)
+    return FlightGoal(range=path, name=name, goal=goals[name], at=at, heading_deg=heading, boxes=boxes)
 
 
 def _parse_run(raw) -> RunSettings:
