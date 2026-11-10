@@ -9,6 +9,7 @@ import pytest
 
 from scrimmage.cad import CadError, missing_extra
 from scrimmage.cad.mass import is_closed, mesh_inertial
+from cad_helpers import FIELD_STEP
 from scrimmage.cad.source import UNITS, guess_units, load_source
 
 DATA = Path(__file__).parent / "data" / "cad"
@@ -263,3 +264,49 @@ def test_what_it_can_t_read_right_is_a_broken_file(tmp_path, monkeypatch, prim):
     v, f = _box([0, 0, 0], [0.1, 0.1, 0.1])
     with pytest.raises(CadError, match="p.step.*re-export"):
         _load_prims(tmp_path, monkeypatch, [{"v": v, "f": f, **prim}])
+
+
+def test_solidworks_instance_labels_get_product_names():
+    a, b = load_source(DATA / "climber.step"), load_source(DATA / "climber_nauo.step")
+    assert [p.key for p in b.pieces] == [p.key for p in a.pieces]
+    assert b.groups == a.groups
+    assert "Climber/hook_assy#2/hook" in [p.key for p in b.pieces] and "Climber/bolt#6" in [p.key for p in b.pieces]
+    assert [p.name for p in b.pieces] == [p.name for p in a.pieces]
+
+
+def test_a_named_label_is_kept(monkeypatch):
+    from scrimmage.cad import source
+
+    def boom(raw):
+        raise AssertionError("_instance_names should not be called")
+    monkeypatch.setattr(source, "_instance_names", boom)
+    load_source(DATA / "climber.step")
+
+
+def test_instance_names_reads_the_specified_source_formation():
+    from scrimmage.cad.source import _instance_names
+    text = b"""DATA;
+#1 = NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO1',' ',' ',#9,#2,$);
+#2 = PRODUCT_DEFINITION('design','',#3,#6);
+#3 = PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE('ANY','',#4,.NOT_KNOWN.);
+#4 = PRODUCT('Boost Area End','Boost Area End','',(#5));
+#5 = PRODUCT_CONTEXT('',#7,'mechanical');
+#6 = PRODUCT_DEFINITION_CONTEXT('part definition',#7,'design');
+#7 = APPLICATION_CONTEXT('x');
+#8 = PRODUCT_DEFINITION_SHAPE('','',#2);
+#10 = NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO2',' ',' ',#9,#11,$);
+#11 = PRODUCT_DEFINITION('design','',#12,#6);
+#12 = PRODUCT_DEFINITION_FORMATION('','',#13);
+#13 = PRODUCT('part_id','','',(#5));
+ENDSEC;
+"""
+    assert _instance_names(text) == {"NAUO1": "Boost Area End", "NAUO2": "part_id"}
+
+
+@pytest.mark.skipif(not FIELD_STEP.is_file(), reason="FIRST's field CAD isn't committed")
+def test_the_field_step_has_product_names():
+    from scrimmage.cad.source import NAUO_NAME
+    s = load_source(FIELD_STEP)
+    assert not any(NAUO_NAME.match(seg) for p in s.pieces for seg in p.key.split("/"))
+    assert any(p.name == "Boost Area End" for p in s.pieces)
+    assert len(s.pieces) == 5507
