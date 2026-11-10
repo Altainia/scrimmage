@@ -59,7 +59,7 @@ Each one gives what was decided, why, and what it costs if wrong.
   name = "stage_blue"
   kind = "mesh"
   file = "cad/FE-2024.STEP"          # or .stl / .obj / .glb; relative to the range file
-  select = ["TE-24200*"]             # piece names (globs), from `scrimmage cad list`; all pieces when left out
+  select = ["*GE-24200_Blue*"]       # piece names or keys (globs), from `scrimmage cad list`; all when left out
   units = "in"                       # only when the file can't say (STL/OBJ); a STEP carries its own
   scale = 1.0
   pos = [0, 0, 0]                    # where the file's origin goes on the field (m); default: as the file has it
