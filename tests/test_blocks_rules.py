@@ -51,6 +51,16 @@ def test_more_than_the_limit_for_3_1_s_is_a_breach_and_for_2_9_s_is_not():
     assert rw.breaches["possession"] == {"rule": "possession", "t": 1.0, "value": 2.0, "limit": 1.0}
 
 
+def test_exactly_3_s_over_the_limit_is_not_a_breach():
+    """G403 says more than MOMENTARY: a stretch of exactly the grace isn't a breach."""
+    rw = stub()
+    rw._see("possession", 1.0, 2.0, 1.0, POSSESSION_GRACE_S)
+    rw._see("possession", 1.0 + POSSESSION_GRACE_S, 2.0, 1.0, POSSESSION_GRACE_S)
+    assert rw.breaches == {}
+    rw._see("possession", 1.0 + POSSESSION_GRACE_S + 0.005, 2.0, 1.0, POSSESSION_GRACE_S)
+    assert rw.breaches["possession"]["t"] == 1.0
+
+
 def test_a_short_stretch_over_does_not_add_up():
     rw = stub()
     for start in (1.0, 5.0, 9.0):           # three 2 s stretches apart: the grace starts again each time

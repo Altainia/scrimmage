@@ -279,8 +279,10 @@ class ClimbRun:
         level_times: dict[str, float] = {}
         level_swings: dict[str, float] = {}
         ruled = self.script.from_rules(rng_rules(self.world))     # limits that came from the range's game
-        g107 = _Breach("G107", self.limits.extension, i18n.t("the extension limit") if "extension" in ruled else None)
-        g106 = _Breach("G106", self.limits.height, i18n.t("the height limit") if "height" in ruled else None)
+        # The labels are machine text, like every event below: the timeline CSV and summary.md read the same in any
+        # Language.
+        g107 = _Breach("G107", self.limits.extension, "the extension limit" if "extension" in ruled else None)
+        g106 = _Breach("G106", self.limits.height, "the height limit" if "height" in ruled else None)
         state = {"t": 0.0, "level": 0, "swing": 0.0, "load": 0.0, "row_load": 0.0}
         peak = {"load": 0.0, "load_t": 0.0, "swing": 0.0, "swing_t": 0.0, "ext": 0.0, "height": 0.0}
         swings: list[tuple[float, float]] = []
