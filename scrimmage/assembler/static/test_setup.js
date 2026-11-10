@@ -325,7 +325,7 @@ export function renderSetup({ keepTyping = false } = {}) {
     // a match takes the range's [game] phases for the run's length, so a time limit goes when it is ticked
     parts.push(h("fieldset", { class: "test-setup-match" },
       h("legend", { text: t("Match") }),
-      h("p", { class: "hint", text: t("Play the field's game as a match: auto, a pause with the robot disabled, then teleop. The match sets how long the run lasts, so a time limit isn't kept.") }),
+      h("p", { class: "hint", text: t("Play the field's game as a match: auto, a pause with the robot disabled, then teleop. The match sets how long the run lasts. Ticking this box removes the test's time limit, and unticking it won't bring the time limit back.") }),
       h("label", { class: "row" },
         h("input", { type: "checkbox", id: "test-match", checked: !!head.match, onchange: (e) =>
           setTest(e.target.checked ? { match: true, time_limit: undefined } : { match: undefined }) }),

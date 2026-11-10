@@ -506,8 +506,9 @@ def _amount(x: float, unit: str, fewer: int = 0) -> str:
 
 def phase_word(phase: str) -> str:
     """A match phase or points phase as a sentence says it (the words the phase marks use)."""
-    return {"auto": i18n.t("auto"), "pause": i18n.t("pause"), "teleop": i18n.t("teleop"),
-            "endgame": i18n.t("endgame")}[phase]
+    return {"auto": i18n.t("auto", context="match"), "pause": i18n.t("pause", context="match"),
+            "teleop": i18n.t("teleop", context="match"),
+            "endgame": i18n.t("endgame", context="match")}[phase]
 
 
 def a_piece(kinds: dict | None) -> str:

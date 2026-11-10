@@ -6,7 +6,7 @@ import { units } from "./units.js";
 import { theme } from "./theme.js";
 import { t } from "./i18n.js";
 import { setTime } from "./test_run.js";
-import { CHART_H, PAD_L, PAD_R, PAD_T, TICKS_H, rp, runName, statusWord, outcomeText, end, start } from "./test_run_state.js";
+import { shownResult, CHART_H, PAD_L, PAD_R, PAD_T, TICKS_H, rp, runName, statusWord, outcomeText, end, start } from "./test_run_state.js";
 
 // -- the chart -----------------------------------------------------------------------------------------------------
 function available() {
@@ -200,7 +200,7 @@ function plot(canvas, name, cmp, tEnd, tk) {
     ctx.fillText(`${+s.toFixed(1)} s`, X(s), H - TICKS_H + 3);
   }
   // a match's phases: the pause shaded, and each phase named where it starts
-  const phases = (rp.run.result.marks || []).filter((m) => m.kind === "phase");
+  const phases = (shownResult(rp.run.result).marks || []).filter((m) => m.kind === "phase");
   phases.forEach((m, k) => {
     const x0 = X(m.t), x1 = k + 1 < phases.length ? X(phases[k + 1].t) : W - PAD_R;
     if (m.phase === "pause") { ctx.save(); ctx.globalAlpha = 0.5; ctx.fillStyle = tk.grid; ctx.fillRect(x0, PAD_T, x1 - x0, plotH); ctx.restore(); }

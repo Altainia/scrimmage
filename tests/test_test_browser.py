@@ -2579,3 +2579,24 @@ def test_a_match_run_shows_its_points_lines_and_phase_marks(test_page, tmp_path)
     before = page.evaluate("__scrimmageTest.replay.time")
     marks.nth(2).click()
     page.wait_for_function(f"__scrimmageTest.replay.time > {before} + 1")
+
+
+def test_the_chart_draws_the_phase_bands_and_names_them_in_the_viewers_words(test_page, tmp_path):
+    from test_i18n_pages_browser import catalog
+    page, _ = test_page(path=_match_test(tmp_path, MATCH_BLOCKS[:MATCH_BLOCKS.index('[[block]]\ndo = "wait_until"\nuntil = { points')]))
+    _run(page, "001")
+    page.wait_for_selector("#test-chart canvas")
+    page.evaluate("""() => {
+      window.__texts = []; window.__bands = 0;
+      const P = CanvasRenderingContext2D.prototype, text = P.fillText, rect = P.fillRect;
+      P.fillText = function (s, ...a) { window.__texts.push(String(s)); return text.call(this, s, ...a); };
+      P.fillRect = function (...a) { if (this.globalAlpha === 0.5) window.__bands++; return rect.call(this, ...a); };
+    }""")
+    # the run's words in another setting: the chart's labels follow them (marks are the auto, pause and teleop changes)
+    page.evaluate("""() => Promise.all([import('./test_run_state.js'), import('./units.js')]).then(([m, u]) => {
+      m.rp.run.result.words = { ['en-GB|' + u.units.system]: { marks: ['Auto GB', 'Pause GB', 'Teleop GB'] } };
+    })""")
+    catalog(page, {"x": "x"})
+    page.wait_for_function("window.__texts.includes('Pause GB') && window.__texts.includes('Teleop GB')")
+    assert page.evaluate("window.__bands") >= 1                      # the pause is shaded
+    expect(page.locator("#test-slip-marks .test-phase-mark").nth(1)).to_have_attribute("aria-label", "Pause GB")
