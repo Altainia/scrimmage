@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import tomllib
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -18,7 +20,8 @@ import scrimmage.session as session_mod
 from range_fixtures import drive, shooter_cfg, spares_world
 from scrimmage.checks import ScenarioError, resolve_signal
 from scrimmage.scenario import load_scenario_text
-from scrimmage.scenario_points import ScenarioMatch
+from scrimmage.protocol import HalState
+from scrimmage.scenario_points import ScenarioMatch, points_lines
 from scrimmage.scenario_runner import run_scenario
 from scrimmage.session import Session, SessionError
 from scrimmage.testrange.balls import BallState
@@ -170,6 +173,51 @@ def test_leave_counts_in_an_at_end_read_of_the_auto_step(game_range):
     m.begin("auto", w.time, 3.0)
     drive(w, 3.0, p0=1.0, p1=-1.0)
     assert auto.read(Sess(w)) == 2.0                 # the step's own end, before finish()
+
+
+# ------------------------------------------------------------------------------------------------ 2024: endgame and the Score line
+
+def match_2024(n_steps: int):
+    """The 2024 world (the speaker example's robot, on the built-in range with its [game] and ONSTAGE level), and a
+    ScenarioMatch whose ball log and held climb level are set by hand: the cheapest honest test of the endgame and
+    of a Score line with points, with no robot code and no climb."""
+    cfg = tomllib.loads((ROOT / "examples" / "blocks" / "speaker" / "note-shooter-standin.toml").read_text(encoding="utf-8"))
+    w = World(cfg, ROOT / "examples" / "blocks" / "speaker")
+    m = w.scenario_match = ScenarioMatch(w, n_steps)
+    w.climb = SimpleNamespace(sample=lambda: {"climb.level": 1}, after_physics=lambda: None)        # holding the first level: ONSTAGE
+    return w, m
+
+
+def hold(w, seconds: float) -> None:
+    for _ in range(int(seconds / w.model.opt.timestep)):
+        w.step(HalState())
+
+
+def test_a_2024_scenario_scores_the_endgame_when_it_ends_and_says_it_in_the_score_lines():
+    w, m = match_2024(2)
+    m.begin("auto", w.time, 0.2)
+    hold(w, 0.2)
+    m.finish(w.time)
+    t_auto = w.time - 0.1
+    m.begin("teleop", w.time, 0.2)
+    hold(w, 0.1)
+    t_teleop = w.time
+    hold(w, 0.1)
+    m.finish(w.time)
+    m.log = lambda: [{"goal": "speaker_blue", "scored_t": t_auto}, {"goal": "amp_blue", "scored_t": t_teleop}]
+    mid = m.points(at=t_teleop)
+    assert mid.endgame == 0.0                           # the match isn't over yet: the climb isn't scored
+    m.close()
+    p = m.points()
+    assert (p.auto, p.teleop, p.endgame, p.total) == (5.0, 1.0, 3.0, 9.0)      # SPEAKER 5 in auto, AMP 1 in teleop, ONSTAGE 3
+    assert [(i.source, i.phase, i.points) for i in p.items] == [
+        ("speaker_blue", "auto", 5.0), ("amp_blue", "teleop", 1.0), ("climb", "endgame", 3.0)]
+    rep = m.report()
+    assert rep["level"] == "ONSTAGE"
+    assert points_lines(rep) == ["9 points: 5 in auto, 1 in teleop, 3 in endgame",
+                                 "1 scored in speaker_blue in auto: 5 points",
+                                 "1 scored in amp_blue in teleop: 1 point",
+                                 "climbed to ONSTAGE: 3 points"]
 
 
 # ------------------------------------------------------------------------------------------------ the errors

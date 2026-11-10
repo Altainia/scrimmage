@@ -1,0 +1,51 @@
+[test]
+robot = "../speaker/note-shooter-standin.toml"
+match = true
+chart = ["shooter.spin0", "shooter.spin1", "shooter.tilt"]
+
+[[block]]
+do = "move"
+joint = "shooter.tilt"
+to = 28.0
+unit = "deg"
+
+[[block]]
+do = "spin"
+motor = "shooter.spin0"
+volts = 3.05
+
+[[block]]
+do = "spin"
+motor = "shooter.spin1"
+volts = 3.05
+
+[[block]]
+do = "wait"
+seconds = 1.0
+
+[[block]]
+do = "spin"
+motor = "loader.spin"
+volts = 8.0
+
+[[block]]
+do = "wait"
+seconds = 1.5
+
+[[block]]
+do = "stop"
+motor = "all"
+
+[[block]]
+do = "drive"
+distance = 1.2
+direction = "back"
+volts = 6.0
+
+[[block]]
+do = "wait_until"
+until = { match = { phase = "teleop" } }
+
+[[block]]
+do = "expect"
+that = { points = { phase = "auto", at_least = 7.0 } }

@@ -298,6 +298,21 @@ level = "ONSTAGE"
 rule = "lowest-rung"           # nearest available: a robot touching a chain and not the carpet scores; HARMONY/SPOTLIT not expressible
 levels = { ONSTAGE = 3 }       # source: M Table 6-2
 
+# ------------------------------------------------------------------------------------------------ the game
+# The match and its points (M Table 6-2). Not modeled: AMPLIFICATION, Coopertition, MELODY, ENSEMBLE, the HARMONY,
+# SPOTLIT and TRAP points, and fouls. LEAVE is judged for the blue alliance, since the range's starts are blue.
+[game]
+name = "2024 CRESCENDO"           # source: the 2024 game's name, manual title page
+auto_seconds = 15              # source: the 2024 manual, AUTO
+pause_seconds = 3              # source: the 2024 manual, the pause between AUTO and TELEOP
+teleop_seconds = 135           # source: the 2024 manual, TELEOP
+points = { speaker_blue = { auto = 5, teleop = 2 }, speaker_red = { auto = 5, teleop = 2 }, amp_blue = { auto = 2, teleop = 1 }, amp_red = { auto = 2, teleop = 1 } }   # source: M Table 6-2
+leave = { zone = "blue_start", points = 2 }   # source: M Table 6-2: LEAVE
+[game.rules]
+possession = 1                 # source: G403 (one NOTE)
+extension_in = 12              # source: R105
+height_in = 48                 # source: the 2024 manual's 4 ft height limit
+
 # ------------------------------------------------------------------------------------------------ zones and starts
 # M 5.3: the starting line 76.1 in from the wall; the WING line 231.2 in (estimates from the LMD).
 [[zone]]

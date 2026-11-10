@@ -49,6 +49,21 @@ def test_the_range_checks_clean():
     assert all(not g.plates for g in rng.goals)
 
 
+def test_the_range_has_the_2024_game():
+    """The `[game]`: 15 s auto, a 3 s pause, 135 s teleop, SPEAKER 5/2 and AMP 2/1 for both alliances, LEAVE 2 from
+    blue_start, the rules, and ONSTAGE's 3 from [climb]; `range check` shows it."""
+    rng = check.load("2024")
+    g = rng.game
+    assert (g.name, g.auto_s, g.pause_s, g.teleop_s) == ("2024 CRESCENDO", 15.0, 3.0, 135.0)
+    assert {k: (v.auto, v.teleop) for k, v in g.points.items()} == {
+        "speaker_blue": (5.0, 2.0), "speaker_red": (5.0, 2.0), "amp_blue": (2.0, 1.0), "amp_red": (2.0, 1.0)}
+    assert (g.leave.zone, g.leave.points) == ("blue_start", 2.0)
+    assert (g.rules.possession, g.rules.extension, g.rules.height) == (1, pytest.approx(12 * 0.0254), pytest.approx(48 * 0.0254))
+    assert g.climb_points == {"ONSTAGE": 3.0}
+    assert "game '2024 CRESCENDO' (15 s auto, 3 s pause, 135 s teleop, 4 goals score points)" in \
+        check.summary("2024", rng)[0]
+
+
 def test_the_blue_speaker_is_the_bench_fixtures():
     """The tests' trimmed copy (tests/data/range_2024) has the same blue SPEAKER, hood, wall and AMP as the built-in
     range, so the bench's goal tests on it stand for the built-in range."""
@@ -249,3 +264,18 @@ def test_the_bench_docs_note_lob_scores_in_the_builtin_range(tmp_path):
     lands = report.landings(result)
     assert [land.goal for _, land in lands] == ["scored"]
     assert "1 of 1 shots score in `speaker_blue`" in report.headlines(result, lands)
+
+
+def test_the_match_example_scores_7_points_in_auto():
+    """examples/blocks/match/auto.test.toml: the speaker example's robot plays the whole 2024 match (15 s auto, 3 s
+    pause, 135 s teleop). In auto it shoots the preloaded NOTE into the SPEAKER (5) and drives out of blue_start
+    (LEAVE, 2); it waits for teleop and expects 7 points in auto. A full match: about 40 s of wall time."""
+    program = load(ROOT / "examples" / "blocks" / "match" / "auto.test.toml")
+    world = world_for(program)
+    assert problems(program, world) == []
+    r = TestRun(world, program).run()
+    assert r.status == "finished", r.outcome
+    assert [c["passed"] for c in r.checks] == [True]
+    assert r.checks[0]["text"] == "7 or more points are scored in auto"
+    assert (r.points["auto"], r.points["teleop"], r.points["endgame"]) == (7.0, 0.0, 0.0)
+    assert [(i["source"], i["points"]) for i in r.points["items"]] == [("speaker_blue", 5.0), ("leave", 2.0)]

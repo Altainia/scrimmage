@@ -858,8 +858,20 @@ its line, or says it is an estimate or our choice).
 - **The zones** `blue_start`, `blue_wing`, `red_start` and `red_wing` are drawn as tape.
 - **The starts.** `blue_subwoofer` (against the blue SUBWOOFER, facing the SPEAKER), `blue_amp` (1 m back from the
   blue AMP, facing it), `blue_amp_side`, `blue_source_side`, `blue_wing_note` and `at_blue_source`.
+- **The game.** The range has a `[game]` (see [the game](#the-game-points-the-match-and-its-rules)): a match of 15 s
+  auto, a 3 s pause and 135 s teleop. A NOTE in a SPEAKER is worth 5 points in auto and 2 in teleop, in an AMP 2 and 1
+  (both alliances' goals); LEAVE is 2 points for a robot that starts in `blue_start` and is out of it when auto ends
+  (judged for blue, since the starts are blue); ONSTAGE is 3 points (from `[climb]`). The rules are one NOTE held,
+  12 in of reach past the frame and 48 in of height. Each number cites its source on its line.
 - **What isn't there.** The rest of the AMP and the SPEAKER's inside (a NOTE counts when it crosses the opening; where
-  it goes after isn't modeled), the AMPLIFICATION and the game's points.
+  it goes after isn't modeled). The game's scoring also leaves out:
+  - AMPLIFICATION;
+  - Coopertition;
+  - MELODY and ENSEMBLE;
+  - the HARMONY, SPOTLIT and TRAP points;
+  - fouls.
+- The match example is [`examples/blocks/match`](../examples/blocks/match/README.md): the same robot plays a whole
+  match in the Test tab, shoots a NOTE and leaves the starting zone in auto, and expects 7 points.
 - The worked example is [`examples/blocks/speaker`](../examples/blocks/speaker/README.md): a stand-in robot with a
   pinch shooter scores a NOTE in the blue SPEAKER from the SUBWOOFER, with a shot `launcher aim` finds there.
 
