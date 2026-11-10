@@ -180,7 +180,8 @@ def test_leave_counts_in_an_at_end_read_of_the_auto_step(game_range):
 def match_2024(n_steps: int):
     """The 2024 world (the speaker example's robot, on the built-in range with its [game] and ONSTAGE level), and a
     ScenarioMatch whose ball log and held climb level are set by hand: the cheapest honest test of the endgame and
-    of a Score line with points, with no robot code and no climb."""
+    of a Score line with points, with no robot code and no climb. Real ball logging is the scenario runs' above, not
+    these."""
     cfg = tomllib.loads((ROOT / "examples" / "blocks" / "speaker" / "note-shooter-standin.toml").read_text(encoding="utf-8"))
     w = World(cfg, ROOT / "examples" / "blocks" / "speaker")
     m = w.scenario_match = ScenarioMatch(w, n_steps)

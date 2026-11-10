@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import math
 import re
+import threading
 import tomllib
 from pathlib import Path
 
@@ -267,15 +268,17 @@ def test_the_bench_docs_note_lob_scores_in_the_builtin_range(tmp_path):
 
 
 def test_the_match_example_scores_7_points_in_auto():
-    """examples/blocks/match/auto.test.toml: the speaker example's robot plays the whole 2024 match (15 s auto, 3 s
-    pause, 135 s teleop). In auto it shoots the preloaded NOTE into the SPEAKER (5) and drives out of blue_start
-    (LEAVE, 2); it waits for teleop and expects 7 points in auto. A full match: about 40 s of wall time."""
+    """examples/blocks/match/auto.test.toml: the speaker example's robot plays the 2024 match (15 s auto, 3 s pause,
+    135 s teleop). In auto it shoots the preloaded NOTE into the SPEAKER (5) and drives out of blue_start (LEAVE, 2);
+    it waits for teleop and expects 7 points in auto. The run stops a second into teleop (at 19 s), once LEAVE is
+    judged and the expect has run: the whole match is about 40 s of wall time, and the match tests cover its end."""
     program = load(ROOT / "examples" / "blocks" / "match" / "auto.test.toml")
     world = world_for(program)
     assert problems(program, world) == []
-    r = TestRun(world, program).run()
-    assert r.status == "finished", r.outcome
+    stop = threading.Event()
+    r = TestRun(world, program).run(on_sample=lambda t, row: stop.set() if t >= 19 else None, cancel=stop)
+    assert r.status == "cancelled", r.outcome
     assert [c["passed"] for c in r.checks] == [True]
     assert r.checks[0]["text"] == "7 or more points are scored in auto"
-    assert (r.points["auto"], r.points["teleop"], r.points["endgame"]) == (7.0, 0.0, 0.0)
+    assert r.points["auto"] == 7.0
     assert [(i["source"], i["points"]) for i in r.points["items"]] == [("speaker_blue", 5.0), ("leave", 2.0)]

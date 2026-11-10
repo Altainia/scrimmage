@@ -311,7 +311,7 @@ leave = { zone = "blue_start", points = 2 }   # source: M Table 6-2: LEAVE
 [game.rules]
 possession = 1                 # source: G403 (one NOTE)
 extension_in = 12              # source: R105
-height_in = 48                 # source: the 2024 manual's 4 ft height limit
+height_in = 48                 # source: the 2024 manual's 4 ft height limit (rule number not checked)
 
 # ------------------------------------------------------------------------------------------------ zones and starts
 # M 5.3: the starting line 76.1 in from the wall; the WING line 231.2 in (estimates from the LMD).
