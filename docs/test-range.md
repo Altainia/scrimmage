@@ -24,6 +24,7 @@ hood and the ball's squeeze are that model, and the range adds a world around it
 - [The trench field](#the-trench-field)
 - [The 2024 field](#the-2024-field)
 - [The range file](#the-range-file)
+- [`scrimmage cad list`](#scrimmage-cad-list)
 - [Scenarios: signals, `by_time`, `[range]`, `robot_env`](#scenarios-signals-by_time-range-robot_env)
 - [The report, the viewer and NetworkTables](#the-report-the-viewer-and-networktables)
 - [Aiming tables: `scrimmage launcher aim`](#aiming-tables-scrimmage-launcher-aim)
@@ -1099,6 +1100,30 @@ Every number in `2026.toml` cites its source on its line, or says it is our choi
 - **Carpet rolling resistance** is an estimate (above).
 
 To make a range for another field, measure its CAD or its manual the same way and cite each number on its line.
+
+## `scrimmage cad list`
+
+`scrimmage cad list FILE` lists the pieces of a STEP file (or an STL/OBJ file or folder), so you can find the names and
+places a range's CAD elements need, with no script of your own:
+
+```
+scrimmage cad list field.step --match "GE-2420*"
+scrimmage cad list field.step --near 1.5,2,0.3 --within 0.5 --units mm
+scrimmage cad list field.step --json > pieces.json
+```
+
+| option | meaning |
+|---|---|
+| `--match GLOB` | only pieces whose name or whole key (`Assembly/sub/piece`) fits the glob (`*`, `?`, `[]`; capital letters count). A glob that fits nothing exits 1 and names up to five close piece names. |
+| `--near X,Y,Z --within R` | only pieces whose bounding-box center is within R meters of the point. Give both or neither. |
+| `--units m\|mm\|in` | the units of the first group of numbers (default: the file's own) |
+| `--json` | the full table for scripts, one entry per piece (not grouped) |
+
+Each line holds a piece's name, `×N` when N pieces share the name, the center and size of its bounding box in the
+file's units and then in meters, and its triangle count. Positions are in the file's own axes, in meters: nothing is
+rotated, so a file drawn Y-up shows its height in the second number. The JSON has `file`, `units` and `pieces`, each with
+`key`, `name`, `center_m`, `size_m`, `center_file`, `size_file` and `triangles`. Wrong options and unreadable files
+exit 2 with `scrimmage: <message>`.
 
 ## Scenarios: signals, `by_time`, `[range]`, `robot_env`
 

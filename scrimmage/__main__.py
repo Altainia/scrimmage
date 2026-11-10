@@ -241,6 +241,21 @@ def main(argv: list[str] | None = None) -> None:
                                                              "viewer")
     gv.add_argument("-v", "--verbose", action="store_true")
 
+    cp = sub.add_parser("cad", help="CAD files: list a file's pieces")
+    csub = cp.add_subparsers(dest="cad_command", required=True)
+    cl = csub.add_parser("list", help="list a STEP file's (or an STL/OBJ folder's) pieces: name, bounding-box center "
+                                      "and size in the file's units and in meters, triangles (exit 1 when --match "
+                                      "finds nothing, 2 when the file or an option is wrong)")
+    cl.add_argument("file", metavar="FILE", type=Path, help="a STEP file, an STL/OBJ file, or a folder of them")
+    cl.add_argument("--match", metavar="GLOB", help="only pieces whose name or key fits this glob")
+    cl.add_argument("--near", metavar="X,Y,Z", help="only pieces whose center is within --within meters of this "
+                                                    "point (meters, the file's axes)")
+    cl.add_argument("--within", type=float, metavar="R", help="the distance for --near, in meters")
+    cl.add_argument("--units", dest="cad_units", choices=("m", "mm", "in"),
+                    help="show the file's numbers in these units (default: the file's own)")
+    cl.add_argument("--json", action="store_true", help="write the full table as JSON")
+    cl.add_argument("-v", "--verbose", action="store_true")
+
     pp = sub.add_parser("parts", help="list the stock parts, or describe one")
     pp.add_argument("name", nargs="?", help="a stock part name")
     pp.add_argument("-v", "--verbose", action="store_true")
@@ -355,6 +370,8 @@ def _command(args, rp) -> int | None:
         _parts(args)
     elif args.command == "range":
         _range(args)
+    elif args.command == "cad":
+        _cad(args)
     elif args.command == "i18n":
         from . import i18n_tool
         return i18n_tool.main(args)
@@ -868,6 +885,52 @@ def _range(args) -> None:
     except (OSError, ValueError) as e:
         print(f"scrimmage: {e}", file=sys.stderr)
         sys.exit(2)
+
+
+def _cad(args) -> None:
+    import json
+    from . import i18n
+    from .cad import CadError, listing
+    from .cad.source import load_source
+
+    def fail(message: str, code: int = 2) -> None:
+        print(f"scrimmage: {message}", file=sys.stderr)
+        sys.exit(code)
+
+    if (args.near is None) != (args.within is None):
+        fail(i18n.t("Give --near and --within together: --near sets the point and --within the distance in meters."))
+    point = None
+    if args.near is not None:
+        try:
+            point = tuple(float(x) for x in args.near.split(","))
+        except ValueError:
+            point = ()
+        if len(point) != 3 or not all(math.isfinite(x) for x in point):
+            fail(i18n.t("--near takes three numbers, like --near 1.5,2,0.3 (meters)."))
+        if not args.within >= 0:
+            fail(i18n.t("--within is a distance in meters, 0 or more."))
+    try:
+        src = load_source(args.file)
+    except CadError as e:
+        fail(str(e))
+    found = listing.rows(src)
+    if args.match is not None:
+        kept = [r for r in found if listing.matches(r, args.match)]
+        if not kept:
+            close = listing.close_names(found, args.match)
+            if close:
+                fail(i18n.t("No piece matches '{glob}'. Close names: {names}.", glob=args.match,
+                            names=", ".join(close)), 1)
+            fail(i18n.t("No piece matches '{glob}'. Run the command without --match to see every name.",
+                        glob=args.match), 1)
+        found = kept
+    if point is not None:
+        found = listing.near(found, point, args.within)
+    units = args.cad_units or listing.file_units(src)
+    if args.json:
+        print(json.dumps(listing.to_json(found, units, str(args.file)), indent=2))
+    else:
+        print("\n".join(listing.table_lines(listing.grouped(found), units)))
 
 
 def _parts(args) -> None:
