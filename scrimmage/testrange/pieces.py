@@ -772,12 +772,11 @@ def _compound(r: _Reader, path: Path, name: str) -> list[Solid]:
     return out
 
 
-def _cad(r: _Reader, base_dir: Path) -> tuple[list[Solid], Inertial, tuple[str, ...]]:
-    from ..bench.spec import BenchError
-    from ..cad import CadError
-    from ..cad.fit import convex_split
-    from ..cad.source import load_source
-
+def cad_factor(r: _Reader, path: Path) -> tuple[float, str | None, list[str]]:
+    """What a CAD key set's `units` and `scale` come to for the file at `path`: (the factor its numbers (as
+    `load_source` gives them) are multiplied by, the `units` to give `load_source` (None for a STEP, which carries its
+    own), the notes (a STEP whose own unit can't be told ignores `units`)). Shared by the `cad` piece and the mesh
+    element."""
     from ..cad import source
     from ..cad.source import STEP_SUFFIXES, STEP_UNITS
 
@@ -791,8 +790,6 @@ def _cad(r: _Reader, base_dir: Path) -> tuple[list[Solid], Inertial, tuple[str, 
     if scale > MAX_SCALE:
         raise r.err(i18n.t("scale must be from above 0 to {most}, not {scale}", most=f"{MAX_SCALE:g}",
                            scale=repr(scale)))
-    file = Path(r.text("cad"))
-    path = file if file.is_absolute() else Path(base_dir) / file
     factor = scale
     step = path.suffix.lower() in STEP_SUFFIXES
     notes: list[str] = []
@@ -803,11 +800,23 @@ def _cad(r: _Reader, base_dir: Path) -> tuple[list[Solid], Inertial, tuple[str, 
             where = f"{r.path}: {r.where}"
             notes.append(worded(lambda: i18n.t(
                 "{where}: can't tell which units {file} is in, so {units_setting} is ignored and the file's own are "
-                "used", where=where, file=file.name, units_setting=f"units = \"{units}\"")))
+                "used", where=where, file=path.name, units_setting=f"units = \"{units}\"")))
         else:
             factor *= STEP_UNITS[units] / STEP_UNITS[declared]
+    return factor, None if step else units, notes
+
+
+def _cad(r: _Reader, base_dir: Path) -> tuple[list[Solid], Inertial, tuple[str, ...]]:
+    from ..bench.spec import BenchError
+    from ..cad import CadError
+    from ..cad.fit import convex_split
+    from ..cad.source import load_source
+
+    file = Path(r.text("cad"))
+    path = file if file.is_absolute() else Path(base_dir) / file
+    factor, load_units, notes = cad_factor(r, path)
     try:
-        src = load_source(path, None if step else units)
+        src = load_source(path, load_units)
     except CadError as e:
         raise r.err(str(e)) from None
     if factor != 1.0:

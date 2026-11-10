@@ -894,7 +894,7 @@ def parse_range(raw: dict, path: Path) -> Range:
     from .elements import check_clear, parse_climb, parse_elements  # elements.py imports this module
     from .station import check_release_clear, parse_stations
 
-    elements = parse_elements(path, raw.get("element", []))
+    elements = parse_elements(path, raw.get("element", []), size)
     climb, elements = parse_climb(path, raw.get("climb"), elements)
     floor_balls, floor_kinds, floor_turns, reaches, names, heights = _floor_balls(path, raw.get("floor_balls", []),
                                                                                  kinds, default, size)
@@ -918,7 +918,9 @@ def parse_range(raw: dict, path: Path) -> Range:
                   game=game,
                   field_length=size[0],
                   field_width=size[1],
-                  warnings=tuple(w for k in kinds.values() for w in k.warnings) + _outside_warnings(goals, size)
+                  warnings=tuple(w for k in kinds.values() for w in k.warnings)
+                           + tuple(w for e in elements for w in getattr(e, "warnings", ()))
+                           + _outside_warnings(goals, size)
                            + tuple(goal_warnings))
     staged = _unsupported(built, names)
     if staged:

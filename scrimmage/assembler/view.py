@@ -154,8 +154,8 @@ def _world_geoms(world, d, root: int, ms, meshes: list[dict], remap: dict[int, i
         if kind is None:        # hfields and the like have no simple drawing
             continue
         idx = None
-        if kind == "mesh":      # a range piece's (the robot's are model_view's own); the field's are left out
-            if not (mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, b) or "").startswith("ball."):
+        if kind == "mesh":      # a range piece's or a mesh element's (the robot's are model_view's own); no others
+            if not (mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, b) or "").startswith(("ball.", "element.")):
                 continue
             did = int(m.geom_dataid[g])
             if did not in remap:

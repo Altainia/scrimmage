@@ -12,6 +12,7 @@ safely: the "bump speed limit" a team puts in its auto.
 > before the absolute numbers (2 m/s).
 
 - [Field elements in range files](#field-elements-in-range-files)
+- [Mesh elements from CAD](#mesh-elements-from-cad)
 - [Moving elements: hinged and sliding](#moving-elements-hinged-and-sliding)
 - [The 2016 defenses](#the-2016-defenses)
 - [The terrain signals](#the-terrain-signals)
@@ -38,6 +39,7 @@ has an inch form, `<key>_in` (give one of the two). `friction` (default 0.6) is 
 | `switch` | a bar hanging below a hinge about its own y, which tilts under a hanging robot (2020's GENERATOR SWITCH) | `hinge_height`, `bar_length`, `bar_drop` (hinge to the bar's axis), `diameter` (default 1.66 in), `mass`, `com_drop` (its CoM below the hinge), `stop_deg`, `damping`, `level_deg` |
 | `hinged` | a panel (a box, or a disc) on a hinge along one of its edges or through its center, with stops, a spring, damping and a breakaway: a door, a flap, a drawbridge, a spinning wheel | see [Moving elements](#moving-elements-hinged-and-sliding) |
 | `sliding` | a box on a straight slide, with stops, a spring, damping and a breakaway: a portcullis, a touchpad, a spring peg | see [Moving elements](#moving-elements-hinged-and-sliding) |
+| `mesh` | a static shape from a CAD file: a wall, the STAGE's frame, a SUBWOOFER, a bump as it really is | `file`, `select`, `units`, `scale`, `pos`, `rpy_deg`, `ground`, `friction`. No `center` or `yaw_deg`: `pos` and `rpy_deg` place it. See [Mesh elements](#mesh-elements-from-cad) |
 
 A rod's round free end is rounded and reaches exactly to `tip`. Bars, rods, switches and boxes that aren't ground are structure, not floor: they are drawn and collide, but the terrain
 signals don't count them as the ground (geom group 1, not the ground's 2), so a robot parked under a bar reads the
@@ -69,6 +71,44 @@ The built-in ranges with elements:
 Everything is built from boxes and capsules (the bars), and a moving disc from a cylinder: the live view and the
 renderer draw them with no meshes. A platform is two hinged bodies (the real double hinge: level, the deck rests on
 both axes; tilted, it turns about the low one), its stops the joints' limits at `max_tilt_deg`.
+
+### Mesh elements from CAD
+
+```toml
+[[element]]
+name = "stage_blue"
+kind = "mesh"
+file = "cad/FE-2024.STEP"          # a .step, .stl or .obj file, or a folder of .stl/.obj files; relative to the range file
+select = ["*GE-24200_Blue/GE-24210/*"]   # piece names or keys (globs); all pieces when left out
+rpy_deg = [90, 0, 0]               # this file is drawn Y-up
+pos = [0, 0, 0]
+```
+
+`scrimmage cad list <file>` shows the pieces' names, keys and sizes. `select` takes globs (`*?[]`, case-sensitive) on a
+piece's name or its full key, and a glob on an assembly's key takes every piece inside it. A glob that matches nothing
+is an error that names the closest piece names. `units` is only for a file that can't say (an STL or OBJ); a STEP
+carries its own. `scale` multiplies the file's numbers. `ground = true` makes the shape floor for the
+[terrain signals](#the-terrain-signals), as a box's does; without it the shape is structure. `friction` is the
+surface's, as for the other kinds.
+
+**Frames.** `scrimmage cad list` shows positions in the file's own axes, in meters. The element turns the file by
+`rpy_deg` (roll about x, then pitch about y, then yaw about z, fixed axes, as a plate's) and then puts the file's
+origin at `pos`; left out, the file's origin is the field's. A file drawn Y-up (its tallest direction is y, and the
+sizes `cad list` shows are tall in y, not z) needs `rpy_deg = [90, 0, 0]`. The element's footprint for the start and
+floor-ball checks is its bounding box in the field, and a mesh whose lowest point is above 1/2 in leaves a start
+clear beneath it, as a raised box does.
+
+**The shape.** Each selected piece is split into convex parts by itself (coacd, the same split a `cad` piece uses), and
+the parts are one welded body, `element.<name>`, with a geom `element.<name>.<k>` each. The read of the CAD file and the
+split are cached under the temporary folder (keyed by the file's bytes, `select`, `units` and `scale`), so only the first
+build pays for them (an 88 MB STEP takes about 20 s to read), and moving the element (`pos`, `rpy_deg`) reads nothing.
+Splitting rounds concave detail, which is coacd's known limit: check the shape in the viewer. A piece that isn't a
+closed solid (a sheet body, a flat piece) can't be split: it is left out, with one warning that counts and names them.
+
+**Errors.** A selection larger than the field, or with more than 200 000 triangles, is an error that says to select
+fewer pieces. (The whole 2024 STAGE assembly is over a million triangles, most of it bolts and three trusses, so select
+its frame and what matters, not all of it.) The file is FIRST's, not scrimmage's: the built-in ranges have no mesh
+elements.
 
 ## Moving elements: hinged and sliding
 

@@ -307,7 +307,15 @@ def _element_boxes(e) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
     it tilts (_tilted)."""
     from .build_elements import bump_parts, panel_parts, platform_parts, ramp_parts, rod_parts
     from .elements import Bar, Box, Bump, Hinged, Platform, Ramp, Rod, Sliding
+    from .mesh import Mesh, placed
 
+    if isinstance(e, Mesh):     # each convex part's axis-aligned box in the field
+        boxes = []
+        for v, _ in e.parts:
+            w = placed(v, e.pos, e.rpy_deg)
+            lo, hi = w.min(axis=0), w.max(axis=0)
+            boxes.append(((lo + hi) / 2.0, np.eye(3), (hi - lo) / 2.0))
+        return boxes
     if isinstance(e, Box):
         sx, sy, sz = e.size
         return _world_boxes(e.center, e.yaw_deg, [((0, 0, e.base_height + sz / 2.0), np.eye(3),
