@@ -70,6 +70,9 @@ Each one gives what was decided, why, and what it costs if wrong.
   - **Errors:**
     - a `select` glob that matches nothing names the closest piece names;
     - a selection larger than the field, or with more than `MAX_MESH_TRIANGLES` (choice: 200 000) triangles, says to select fewer pieces.
+  - **Frames:** `cad list` shows positions in the file's own axes, in meters. A mesh element places the file's
+    origin at `pos` after rotating it by `rpy_deg`. A file drawn Y-up needs `rpy_deg = [90, 0, 0]`. The how-to says
+    how to tell a Y-up file from the list's sizes.
   - **Footprint:** the element's footprint for the range checks is its transformed bounding box.
   - *Why:* "import field elements from the official CAD" was the dry run's top ask for building a range. A static mesh covers walls, the STAGE frame, the SUBWOOFER and bumps as they really are.
   - *Cost:*
@@ -84,6 +87,9 @@ Each one gives what was decided, why, and what it costs if wrong.
   - **The key:** `[range] apriltags = "2024-crescendo"`, a layout scrimmage ships, or a path to a WPILib `AprilTagFieldLayout` JSON file.
   - **Built-in layouts:** each is copied from WPILib at a pinned tag, with the source and WPILib's BSD license note beside it in `scrimmage/testrange/apriltags/`. 2024 ships, and 2026 ships if WPILib has its layout at that tag.
   - **Checks:** the layout's field length and width must match the range's field within 5 cm, or it is an error that names both. Every tag's center must lie inside the field, or slightly outside it, within 0.3 m (a wall-mounted tag).
+  - **Frames:** the layout is used as it is. scrimmage's field frame is WPILib's: the origin at the blue alliance
+    wall's right corner, x toward red, z up, with the season's real field size. Each tag's Pose3d puts its outward
+    normal along the tag's +x. A test pins tag 7 against the SPEAKER's position in `2024.toml`.
   - **Tag size:** `apriltag_size_in` (default 6.5, the 2024 and later 36h11 tags). It sets how big the tags are drawn and the camera's view check.
   - **Drawing:** tags are visual-only geoms, a black square with a white border facing along the tag's +x, and the viewer labels each one with its ID. The real tag36h11 pattern isn't drawn.
   - **Reporting:** `range check` lists the tag count.
@@ -108,10 +114,18 @@ Each one gives what was decided, why, and what it costs if wrong.
     - it is within `max_range`.
     - its face points toward the camera within `max_angle_deg`.
     - a ray from the camera to 2 cm short of the tag's center hits nothing, ignoring the robot's own geoms. That makes the STAGE legs, pieces and other robots block the view.
+  - **What blocks the view:** the same ray filter the beam and distance sensors use, which ignores the robot's own
+    geoms. The ray also ignores the field's perimeter walls, which are where tags are mounted: 2024's SPEAKER tags sit
+    at x = -0.038 m, behind the wall's face. Every other solid blocks it: elements, obstacles, goal plates, pieces and
+    other robots. `range check` warns when a tag's center is inside a solid other than a perimeter wall, since a
+    camera could never see that tag.
   - **Signals:**
     - `sensor.<name>.tags`: how many tags it sees;
     - `sensor.<name>.sees_tag.<id>`: 0 or 1;
-    - `sensor.<name>.tag_distance.<id>`: m, NaN when not seen.
+    - `sensor.<name>.tag_distance.<id>`: m. When the tag isn't seen it reads what the distance sensor reads with
+      nothing in range.
+    - These extend the existing sensor signal parser in `checks.py`. An ID that isn't in the range's layout is an
+      error that lists the layout's IDs.
   - **Test tab:** the new condition is **camera <name> sees tag N / any tag**. The replay draws the camera's view cone and lines to the tags it sees.
   - **NetworkTables:** the visible IDs are published at `/MuJoCo/Camera/<name>/TagIds` as an int array.
   - **Cost of the work:** the camera runs only when the robot has a camera and the range has tags. It costs one ray per tag in view per frame, and nothing otherwise.
