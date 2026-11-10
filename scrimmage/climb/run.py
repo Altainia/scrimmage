@@ -78,6 +78,7 @@ class Note:
     peak: float               # m over the limit, the most
     peak_t: float
     over_s: float             # s spent over in all
+    label: str = ""           # how the notes name the limit: the rule code, or "the extension limit" for a game's
 
 
 @dataclass(frozen=True)
@@ -102,8 +103,8 @@ class ClimbResult:
 
 
 class _Breach:
-    def __init__(self, rule: str, limit: float):
-        self.rule, self.limit = rule, limit
+    def __init__(self, rule: str, limit: float, label: str | None = None):
+        self.rule, self.limit, self.label = rule, limit, label or rule
         self.first: float | None = None
         self.peak = self.peak_t = self.over_s = 0.0
 
@@ -120,7 +121,7 @@ class _Breach:
     def note(self) -> Note | None:
         if self.first is None:
             return None
-        return Note(self.rule, self.limit, self.first, self.peak, self.peak_t, self.over_s)
+        return Note(self.rule, self.limit, self.first, self.peak, self.peak_t, self.over_s, self.label)
 
 
 class _Phase:
@@ -192,12 +193,17 @@ class WalkOff:
         return ""
 
 
+def rng_rules(world):
+    """The range's `[game.rules]`, or None."""
+    rng = world.parts.range if world.parts is not None else None
+    return rng.game.rules if rng is not None and rng.game is not None else None
+
+
 class ClimbRun:
     def __init__(self, world, script: Script):
         self.world, self.script = world, script
-        rng = world.parts.range if world.parts is not None else None
         # the range's game rules stand in for the [limits] the script leaves out (a script's own keys win)
-        self.limits = script.limits_in(rng.game.rules if rng is not None and rng.game is not None else None)
+        self.limits = script.limits_in(rng_rules(world))
         m = world.model
         self.mon = world.climb_monitor()
         self.mon.track_extent()
@@ -272,8 +278,9 @@ class ClimbRun:
         steps: list[StepTime] = []
         level_times: dict[str, float] = {}
         level_swings: dict[str, float] = {}
-        g107 = _Breach("G107", self.limits.extension)
-        g106 = _Breach("G106", self.limits.height)
+        ruled = self.script.from_rules(rng_rules(self.world))     # limits that came from the range's game
+        g107 = _Breach("G107", self.limits.extension, i18n.t("the extension limit") if "extension" in ruled else None)
+        g106 = _Breach("G106", self.limits.height, i18n.t("the height limit") if "height" in ruled else None)
         state = {"t": 0.0, "level": 0, "swing": 0.0, "load": 0.0, "row_load": 0.0}
         peak = {"load": 0.0, "load_t": 0.0, "swing": 0.0, "swing_t": 0.0, "ext": 0.0, "height": 0.0}
         swings: list[tuple[float, float]] = []
@@ -327,7 +334,7 @@ class ClimbRun:
                 was = b.first
                 b.see(t, value, dt)
                 if was is None and b.first is not None:
-                    event(f"{b.rule}: over {b.limit / 0.0254:g} in")
+                    event(f"{b.label}: over {b.limit / 0.0254:g} in")
             on_ground, touched, _, others = mon.contact_state()
             # the level: held LEVEL_STABLE_S before it counts (a hook bouncing on a bar flickers it)
             if rank != level_seen[0]:
@@ -482,7 +489,7 @@ def format_markdown(result: ClimbResult, config: str, script: str) -> str:
     if r.notes:
         lines.append("Notes:")
         for n in r.notes:
-            lines.append(f"- {n.rule}: over its {n.limit / 0.0254:g} in limit from t = {n.first:.2f} s, by up to "
+            lines.append(f"- {n.label or n.rule}: over its {n.limit / 0.0254:g} in limit from t = {n.first:.2f} s, by up to "
                          f"{n.peak / 0.0254:.1f} in at {n.peak_t:.2f} s ({n.over_s:.2f} s over in all).")
         lines.append("")
     return "\n".join(lines)

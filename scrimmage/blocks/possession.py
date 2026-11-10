@@ -76,7 +76,7 @@ class RuleWatch:
         self._episode[rule] = (first, peak)
         if record is not None:
             record["value"] = max(record["value"], value)
-        elif t - first >= grace - 1e-9:
+        elif t - first > grace + 1e-9 or (grace == 0.0 and t - first >= 0.0):
             self.breaches[rule] = {"rule": rule, "t": first, "value": peak, "limit": limit}
 
     def result(self) -> list[dict]:

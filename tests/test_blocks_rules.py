@@ -297,3 +297,19 @@ def test_climb_run_keeps_the_2022_constants_without_rules(tmp_path):
     assert (lim.extension, lim.height) == (G107_EXTENSION, G106_HEIGHT)      # rules without a length: the fallback
     w = build_world(load_config(ROOT / "configs" / "climber_robot.toml"))   # a range with no game at all
     assert ClimbRun(w, parse_script(STEP, "s")).limits.extension == G107_EXTENSION
+
+
+def test_a_breach_of_a_game_limit_is_not_named_for_a_2022_rule(tmp_path):
+    from scrimmage.climb.run import format_markdown
+    w = climb_world(tmp_path, "[game.rules]\nextension_in = 1\nheight_in = 2\n")
+    r = ClimbRun(w, parse_script({"step": [{"drive": {"joint": "high.pivot", "to_deg": 30.0},
+                                            "wait": {"time": 1.0}}]}, "s")).run()
+    assert {n.rule for n in r.notes} == {"G107", "G106"}                 # the machine field is stable
+    assert {n.label for n in r.notes} == {"the extension limit", "the height limit"}
+    text = format_markdown(r, "c", "s") + " ".join(row.event for row in r.rows)
+    assert "G107" not in text and "G106" not in text and "the extension limit: over 1 in" in text
+    # the script's own limit keeps the rule's name
+    w = climb_world(tmp_path, "[game.rules]\nextension_in = 1\n")
+    script = parse_script({"limits": {"extension_in": 1}, "step": [{"drive": {"joint": "high.pivot", "to_deg": 30.0},
+                                                                    "wait": {"time": 1.0}}]}, "s")
+    assert [n.label for n in ClimbRun(w, script).run().notes if n.rule == "G107"] == ["G107"]
