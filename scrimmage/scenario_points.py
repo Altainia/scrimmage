@@ -98,7 +98,8 @@ class ScenarioMatch:
             return None
         a0, a1 = self.phases.auto
         inside = self._inside_auto
-        if inside is None and a1 != INF and now >= a1 - self.world.model.opt.timestep:    # auto's last step is at its end (within a physics step): read it now
+        # auto's last step is at its end (within a physics step): read it now
+        if inside is None and a1 != INF and now >= a1 - self.world.model.opt.timestep:
             inside = self._inside()
         if inside is None:
             return None

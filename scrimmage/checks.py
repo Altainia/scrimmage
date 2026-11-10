@@ -25,9 +25,9 @@ SIGNALS_HELP = ("battery, speed, motor.<name>.current|command, joint.<name>.posi
                 "robot.ground_gap|wheels_down|air_time|pitch|roll|tilt|z|stranded|tipped, "
                 "climb.hanging|level|points|swing|hook_load|extension|height, climb.hook.<hook>.load, "
                 "hal:<type>/<device>/<key>, nt:<topic>, and on a test range score, score.<goal>, fired, held, on_field, "
-                "with a [game] points, points.auto|teleop|endgame, element.<platform>.angle, element.<hinged or sliding element>, with a [partner] partner.height|"
-                "tilt|moved, and with [[sensor]]s sensor.<name>, sensor.<name>.distance|color, "
-                "sensor.<name>.sees.<color>")
+                "with a [game] points, points.auto|teleop|endgame, element.<platform>.angle, "
+                "element.<hinged or sliding element>, with a [partner] partner.height|tilt|moved, "
+                "and with [[sensor]]s sensor.<name>, sensor.<name>.distance|color, sensor.<name>.sees.<color>")
 RANGE_SIGNALS = ("score", "fired", "held", "on_field")   # and score.<goal>: read from the range's counts()
 
 
