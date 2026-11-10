@@ -54,8 +54,8 @@ step, and the plain words that name them in a run's outcome.
 - `match`: a test with `match = true` is in this phase (auto, the pause or teleop) of the range's `[game]` now
   (match.py's MatchState, set by the runner).
 - `points`: the points scored so far in auto, teleop, the endgame or all of them (`total`) are at least N: the game's
-  score on the ball log at this moment (testrange/game.py's score with `at`; LEAVE counts once auto has ended, the
-  endgame once the match has ended).
+  score on the ball log at this moment (testrange/game.py's score with `at`; LEAVE counts once auto has ended, and
+  the endgame is the climb level held now: the score if the match ended now).
 
 The words name pieces as a student knows them: any piece by the field's kind ("a coral"; "a ball" on a field of one
 ball or disc kind, as always; "a piece" on a mixed field or when the kinds aren't known), and a named piece by its
@@ -359,10 +359,11 @@ class Watch:
         return sum(goals.values()) if goal == ANY_GOAL else int(goals.get(goal, 0))
 
     def points_so_far(self, phase: str) -> float:
-        """The match's points now in `phase` ("auto", "teleop", "endgame" or "total"); 0 outside a match."""
+        """The match's points now in `phase` ("auto", "teleop", "endgame" or "total"); 0 outside a match. The endgame
+        is the climb level held now, the score if the match ended now (the run's result scores it at the end)."""
         if self.match is None:
             return 0.0
-        pts = self.match.points(self.world.test_range.ball_log(), at=float(self.data.time))
+        pts = self.match.points(self.world.test_range.ball_log(), at=float(self.data.time), held=True)
         return float(getattr(pts, phase))
 
     def element_value(self, name: str) -> float:

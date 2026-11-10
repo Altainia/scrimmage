@@ -662,9 +662,11 @@ match = true
 
 - **The clock.** The match starts with the first block, after the 0.3 s settle, which isn't match time. **Auto** runs
   for the game's `auto_seconds`, then the **pause**, then **teleop**. The run ends when teleop does, even if blocks are
-  left (the outcome says so; every **expect** among them fails, "the match ended before this check ran"), and even if the blocks finished early: the robot just sits, motors as they were, to the
-  match's end. The 3 s settle after the match lets pieces in the air land, but a piece that scores then is after the
-  match and doesn't count.
+  left (the outcome says so; every **expect** among them fails, "the match ended before this check ran"), and even
+  if the blocks finished early: the robot just sits, motors as they were, to the match's end.
+- **The buzzer disables the robot.** The 3 s settle after the match runs with the robot disabled, as the field does at
+  the buzzer. Pieces in the air land, but a piece that scores then is after the match and scores no points (it still
+  counts as in the goal). FRC counts a piece released before the buzzer; this isn't modeled.
 - **The pause disables the robot.** Every motor goes to neutral and the air is held, as a real robot held disabled
   would. Blocks keep running: a **drive** for 6 s that starts in auto counts the pause in its 6 s and starts the motors
   again when teleop begins.
@@ -675,13 +677,16 @@ match = true
 - **The points check.** **points in** *auto*, *teleop*, *endgame* or *total* **at least** *N* reads the points so far.
   In a file: `{ points = { phase = "auto", at_least = 7 } }` (`phase` is `"total"` when left out). LEAVE counts once
   auto has ended: the robot's center was in the leave zone when the match started and is outside it when auto ends.
-  The endgame counts once the match has ended: the climb level the robot holds then (a range with a `[climb]`; none
-  otherwise).
+  An auto or total check that fails before auto ends says so. The endgame reads the climb level the robot holds now,
+  the points it would score if the match ended now (a range with a `[climb]`; none otherwise). So **expect points in
+  endgame at least 3** passes while the robot holds ONSTAGE, even if it falls later. The result's points are scored
+  at the match's end, with the level held then.
 - **Problems.** `match = true` on a field with no `[game]` is listed under the fix-these-first problems, and so is a
   **match** or **points** check in a test that isn't a match.
-- **The result** gains a points line first: `26 points: 26 in auto, 0 in teleop, 0 in endgame`, then a line for each
-  item (`8 scored in hub_blue in auto: 24 points`, `left the starting zone: 2 points`). A piece scored in the pause
-  scores nothing, and its line says so. `result.json` keeps `match` (the phases' run times, whether LEAVE was earned
+- **The result** gains a points line first, then a line for each item. The 2024 match example
+  ([`examples/blocks/match`](../examples/blocks/match/README.md)) gives `7 points: 7 in auto, 0 in teleop, 0 in
+  endgame`, `1 scored in speaker_blue in auto: 5 points` and `left the starting zone: 2 points`. A piece scored in
+  the pause scores nothing, and its line says so. `result.json` keeps `match` (the phases' run times, whether LEAVE was earned
   and the climb level held), `points` and `rules` (the rules broken, empty for none), and only for a match. The
   replay's mark strip has a mark at each phase change. A test that isn't a match has none of these.
 - **Rules.** A game with a `[game.rules]` table (the test range page lists its keys) is checked every step of the

@@ -24,6 +24,7 @@ from scrimmage.blocks.run import TestRun, world_for
 from scrimmage.motors import get_motor
 from scrimmage.protocol import HalState
 from scrimmage.testrange import aim, check
+from scrimmage.testrange.game import score
 from scrimmage.testrange.spec import BUILTIN_RANGES, load_range
 from scrimmage.world import World
 
@@ -51,17 +52,21 @@ def test_the_range_checks_clean():
 
 
 def test_the_range_has_the_2024_game():
-    """The `[game]`: 15 s auto, a 3 s pause, 135 s teleop, SPEAKER 5/2 and AMP 2/1 for both alliances, LEAVE 2 from
-    blue_start, the rules, and ONSTAGE's 3 from [climb]; `range check` shows it."""
+    """The `[game]`: 15 s auto, a 3 s pause, 135 s teleop, SPEAKER 5/2 and AMP 2/1 for the blue goals only (the red
+    ones count pieces, for 0 points), LEAVE 2 from blue_start, the rules, and ONSTAGE's 3 from [climb]; `range check`
+    shows it."""
     rng = check.load("2024")
     g = rng.game
     assert (g.name, g.auto_s, g.pause_s, g.teleop_s) == ("2024 CRESCENDO", 15.0, 3.0, 135.0)
     assert {k: (v.auto, v.teleop) for k, v in g.points.items()} == {
-        "speaker_blue": (5.0, 2.0), "speaker_red": (5.0, 2.0), "amp_blue": (2.0, 1.0), "amp_red": (2.0, 1.0)}
+        "speaker_blue": (5.0, 2.0), "amp_blue": (2.0, 1.0)}
     assert (g.leave.zone, g.leave.points) == ("blue_start", 2.0)
-    assert (g.rules.possession, g.rules.extension, g.rules.height) == (1, pytest.approx(12 * 0.0254), pytest.approx(48 * 0.0254))
+    assert (g.rules.possession, g.rules.extension, g.rules.height) == (
+        1, pytest.approx(12 * 0.0254), pytest.approx(48 * 0.0254))
     assert g.climb_points == {"ONSTAGE": 3.0}
-    assert "game '2024 CRESCENDO' (15 s auto, 3 s pause, 135 s teleop, 4 goals score points)" in \
+    red = score(g, [{"goal": "speaker_red", "scored_t": 1.0}], g.phases(0.0), None, None)    # a blue robot's shot
+    assert red.total == 0.0 and [(i.source, i.count, i.points) for i in red.items] == [("speaker_red", 1, 0.0)]
+    assert "game '2024 CRESCENDO' (15 s auto, 3 s pause, 135 s teleop, 2 goals score points)" in \
         check.summary("2024", rng)[0]
 
 

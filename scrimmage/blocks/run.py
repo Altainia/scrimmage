@@ -102,8 +102,10 @@ A match (`match = true` in `[test]`, on a range with a `[game]`; match.py): the 
 time (after the settle) and the run ends at its end, `auto_s + pause_s + teleop_s` later, with status "finished" even
 when blocks are left (the outcome says so) or finished early (the robot sits, motors as they were); `time_limit` does
 not apply. During the pause every step's HalState gets a DriverStation frame with `>enabled` false, so World.step
-neutralizes the motors and holds the pneumatics; the blocks play on, and a drive's seconds count the pause. A mark
-(kind "phase") goes into `marks` at each phase change. The result gains `match`, `points` (the score at the run's end)
+neutralizes the motors and holds the pneumatics; the blocks play on, and a drive's seconds count the pause. The
+settle after the match's end runs with the same frame (the robot is disabled at the buzzer); a piece that lands then
+is a goal piece but scores no points. A mark (kind "phase") goes into `marks` at each phase change. The result gains
+`match`, `points` (the score at the match's end; a points condition reads the endgame as the climb level held now)
 and `rules` (the rules broken, possession.py: [] for none).
 
 A run ends with one status: "finished" (every block played), "check failed", "timed out" (a wait until, a move, a
@@ -285,6 +287,7 @@ class TestRun(_FailureWords):
         self.world, self.program = world, program
         self.match: MatchState | None = None        # the match's state, made when the run starts (match = true)
         self._blocks_done = False                   # a match: every block has been played, the match goes on
+        self._over = False                          # a match: it has ended, the robot is disabled for the settle
         self.rule_watch: RuleWatch | None = None    # a match on a game with [game.rules]: the rules checked each step
         m = world.model
         self.motors = driven_joints(world)
@@ -337,6 +340,7 @@ class TestRun(_FailureWords):
         dt = float(m.opt.timestep)
         w.external = None
         w.reset()
+        self._over = False
         self.air = None
         if w.pneumatics is not None:
             self.air = _Air(w.pneumatics, float(d.time))
@@ -446,6 +450,7 @@ class TestRun(_FailureWords):
             result.status, ending = e.status, e.ending
         if result.status == "finished":
             t0 = t
+            self._over = self.match is not None     # the buzzer: the settle after a match runs disabled
             try:
                 t = self._settle(t, sample, cancel)
             except _End as e:
@@ -500,8 +505,10 @@ class TestRun(_FailureWords):
             result.air = dict(self.air.out)
         result.clearance = watch.closest.result()
         if self.match is not None:      # the points so far at the run's end (a pause or teleop piece after it is out)
+            # a run that reached the match's end is scored at the end: a last step a float error short still counts it
+            at = max(t, self.match.end) if t >= self.match.end - EPS else t
             result.match = self.match.to_dict()
-            result.points = self.match.points(tr.ball_log(), at=t).to_dict()
+            result.points = self.match.points(tr.ball_log(), at=at).to_dict()
             result.rules = self.rule_watch.result() if self.rule_watch is not None else []
         _keep_words(result)
         return result
@@ -531,7 +538,8 @@ class TestRun(_FailureWords):
                 "failure": _w(lambda: i18n.t("the match ended before this check ran"))})
 
     def _see_match(self, t: float) -> None:
-        """After a physics step (or at the start) at run time t: the match's state, and a mark when its phase changed."""
+        """After a physics step (or at the start) at run time t: the match's state, and a mark when its phase
+        changed."""
         w = self.world
         x, y = (float(c) for c in w.data.xpos[w.robot_body][:2])
         phase = self.match.see(t, x, y, int(self.watch.climb.get("climb.level", 0)))
@@ -590,7 +598,8 @@ class TestRun(_FailureWords):
 
     def _settle(self, t: float, sample, cancel) -> float:
         """After the blocks finish: the stations stopped, step until every piece has settled, or for SETTLE_MAX_S
-        (motors as they were); the time it ends. Setting `cancel` ends it, and the run, at the next step."""
+        (motors as they were; after a match, disabled); the time it ends. Setting `cancel` ends it, and the run, at
+        the next step."""
         if self.feeder is not None:
             self.feeder.stop_all()
         d = self.world.data
@@ -609,7 +618,7 @@ class TestRun(_FailureWords):
         """One physics step with the motor commands as they stand."""
         w, d = self.world, self.world.data
         hal = HalState()
-        if self.match is not None and self.match.phase == "pause":
+        if self.match is not None and (self.match.phase == "pause" or self._over):
             hal.apply(DISABLED)         # held disabled: World.step neutralizes the motors and holds the pneumatics
         bus = w.vbatt
         for joint, (turret, goal) in self.aims.items():

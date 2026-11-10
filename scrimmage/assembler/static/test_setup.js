@@ -243,7 +243,8 @@ export function renderSetup({ keepTyping = false } = {}) {
   const key = canon([pal.bodies || [], [...mine], [...counted], [...hopper], drawn,
     floorKey(fs || {}) === T.floorFor ? null : fs, i18n.lang, pal.station_settings || {},
     pal.ball || null, pal.balls || [], !!pal.ball_choice, !!pal.floor_piece, s.station_starter, feeding, !!s.running,
-    !!pal.game, !!head.match, pal.piece || null, pal.piece_presets || null, pal.kinds || {}, pal.floor_kinds || {}, pal.station_kinds || {},
+    !!pal.game, !!head.match, pal.piece || null, pal.piece_presets || null, pal.kinds || {}, pal.floor_kinds || {},
+    pal.station_kinds || {},
     pal.floor_ball || null, !!pal.robot_partner, pal.grips || {}, pal.grip_materials || [], [...T.gripOwn], [...T.gripSent],
     (s.fields || []).length, T.robot ? [T.robot.version, T.robot.parts, ro] : null, !!T.stock, T.setupError, units.system]);
   if (key === T.setupKey) return;

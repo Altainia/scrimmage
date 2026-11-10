@@ -503,7 +503,8 @@ const CONDS = {
     json: (b) => ({ match: { phase: b.getFieldValue("PHASE") } }),
   },
   points: {
-    def: () => ({ message0: t("points: %1 at least %2"), args0: [dd("PHASE", POINTS_PHASES), num("POINTS", 1, { min: 0 })],
+    def: () => ({ message0: t("points: %1 at least %2"),
+      args0: [dd("PHASE", POINTS_PHASES), num("POINTS", 1, { min: 0 })],
       tooltip: t("The points scored so far, in one phase or in total, are at least this many. Only in a test with the match box ticked in Setup.") }),
     fields: (a) => ({ PHASE: a.phase || "total", POINTS: a.at_least }),
     json: (b) => ({ points: { phase: b.getFieldValue("PHASE"), at_least: b.getFieldValue("POINTS") } }),

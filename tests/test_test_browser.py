@@ -2547,7 +2547,8 @@ def test_the_match_and_points_blocks_round_trip_exactly(test_page, tmp_path):
     assert page.evaluate("__scrimmageTest.toJSON()") == st
     types = page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).map(b => b.type)")
     assert types.count("cond_match") == 2 and types.count("cond_points") == 2
-    assert page.evaluate("__scrimmageTest.state.test.blocks[3].until") == {"points": {"phase": "total", "at_least": 3.0}}
+    assert page.evaluate("__scrimmageTest.state.test.blocks[3].until") == {
+        "points": {"phase": "total", "at_least": 3.0}}
     page.locator("#test-blockly").click(position={"x": 5, "y": 5})     # a save with nothing changed keeps the file
     assert 'phase = "teleop"' in path.read_text(encoding="utf-8")
 
@@ -2566,7 +2567,8 @@ def test_the_match_checkbox_writes_match_and_drops_the_time_limit(test_page, tmp
 
 
 def test_a_match_run_shows_its_points_lines_and_phase_marks(test_page, tmp_path):
-    page, _ = test_page(path=_match_test(tmp_path, MATCH_BLOCKS[:MATCH_BLOCKS.index("[[block]]\ndo = \"wait_until\"\nuntil = { points")]))
+    blocks = MATCH_BLOCKS[:MATCH_BLOCKS.index('[[block]]\ndo = "wait_until"\nuntil = { points')]
+    page, _ = test_page(path=_match_test(tmp_path, blocks))
     run = _run(page, "001")
     assert run["status"] == "finished", run
     expect(page.locator("#test-totals")).to_be_visible()
@@ -2583,7 +2585,8 @@ def test_a_match_run_shows_its_points_lines_and_phase_marks(test_page, tmp_path)
 
 def test_the_chart_draws_the_phase_bands_and_names_them_in_the_viewers_words(test_page, tmp_path):
     from test_i18n_pages_browser import catalog
-    page, _ = test_page(path=_match_test(tmp_path, MATCH_BLOCKS[:MATCH_BLOCKS.index('[[block]]\ndo = "wait_until"\nuntil = { points')]))
+    blocks = MATCH_BLOCKS[:MATCH_BLOCKS.index('[[block]]\ndo = "wait_until"\nuntil = { points')]
+    page, _ = test_page(path=_match_test(tmp_path, blocks))
     _run(page, "001")
     page.wait_for_selector("#test-chart canvas")
     page.evaluate("""() => {

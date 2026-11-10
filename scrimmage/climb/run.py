@@ -491,7 +491,7 @@ def format_markdown(result: ClimbResult, config: str, script: str) -> str:
     if r.notes:
         lines.append("Notes:")
         for n in r.notes:
-            lines.append(f"- {n.label or n.rule}: over its {n.limit / 0.0254:g} in limit from t = {n.first:.2f} s, by up to "
-                         f"{n.peak / 0.0254:.1f} in at {n.peak_t:.2f} s ({n.over_s:.2f} s over in all).")
+            lines.append(f"- {n.label or n.rule}: over its {n.limit / 0.0254:g} in limit from t = {n.first:.2f} s, "
+                         f"by up to {n.peak / 0.0254:.1f} in at {n.peak_t:.2f} s ({n.over_s:.2f} s over in all).")
         lines.append("")
     return "\n".join(lines)

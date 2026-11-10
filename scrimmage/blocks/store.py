@@ -18,7 +18,7 @@
                              when it measures none: RunResult.clearance) and hopper (whether the test names where a
                              piece should end up); for a match (`match = true`) only: match (the phases' run times,
                              whether LEAVE was earned and the climb level held at the end), points (auto, teleop,
-                             endgame, total and the items: RunResult.points) and rules (the breaches; [] for now);
+                             endgame, total and the items: RunResult.points) and rules (the breaches; [] for none);
                              and, for a run made inside machine text (a sweep's, a spread's,
                              MCP test_run's: its words above are machine text), words: the outcome, the checks'
                              words, the marks' text, seated and notes in every Language and Units setting

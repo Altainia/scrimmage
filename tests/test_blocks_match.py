@@ -75,15 +75,23 @@ volts = 6.0
 """
 
 
+CLIMB = '''
+[climb]
+rule = "lowest-point"
+levels = { TOP = 4 }
+'''
+
+
 def make(tmp: Path, blocks: str, test: str = "match = true\n", name: str = "m.test.toml", ranged: bool = True,
-         game: tuple = (AUTO, PAUSE, TELEOP)):
-    """The robot (configs/fastmode_range.toml with its robot program dropped, on the match range) and the test."""
+         game: tuple = (AUTO, PAUSE, TELEOP), extra: str = ""):
+    """The robot (configs/fastmode_range.toml with its robot program dropped, on the match range, with `extra` added
+    to the range file) and the test."""
     text = (ROOT / "configs" / "fastmode_range.toml").read_text(encoding="utf-8")
     text, n = re.subn(r"\n\[robot_program\]\n.*?(?=\n# ---- Drive)", "\n", text, flags=re.S)
     assert n == 1
     if ranged:
         text = text.replace('file = "2026"', 'file = "match_range.toml"')
-        (tmp / "match_range.toml").write_text(BASE + GAME.format(auto=game[0], pause=game[1], teleop=game[2]),
+        (tmp / "match_range.toml").write_text(BASE + GAME.format(auto=game[0], pause=game[1], teleop=game[2]) + extra,
                                               encoding="utf-8")
     (tmp / "shooter.toml").write_text(text, encoding="utf-8")
     return loads('[test]\nrobot = "shooter.toml"\n' + test + blocks, tmp / name)
@@ -159,6 +167,94 @@ def test_points_are_scored_from_the_log(played):
     assert checks[len(played["program"].blocks) - 3]["passed"]      # points in auto at least 5 (LEAVE + a shot)
 
 
+def holding_top(monkeypatch) -> None:
+    """The robot holds the range's one climb level (TOP, 4 points) from the first step on: a stubbed climb watch, as
+    tests/test_scenario_points.py's 2024 test does, with no climber and no bars."""
+    from scrimmage.blocks.conditions import Watch
+    update = Watch.update
+
+    def held(self) -> None:
+        update(self)
+        self.climb = {"climb.level": 1}
+    monkeypatch.setattr(Watch, "update", held)
+
+
+def test_a_level_held_at_the_end_scores_the_endgame_even_when_the_last_step_is_short_of_it(tmp_path, monkeypatch):
+    # 0.3 s + a 12 s game at dt 0.001: d.time's float error puts the last step a hair short of the end, and nothing
+    # is in the air, so the settle takes no steps; the run is still scored at the match's end
+    holding_top(monkeypatch)
+    program = make(tmp_path, '[[block]]\ndo = "wait"\nseconds = 1.0\n', extra=CLIMB)
+    r = TestRun(world_for(program), program).run()
+    assert r.status == "finished", r.outcome
+    end = r.match["teleop"][1]
+    assert r.settle_s == 0.0 and r.t_end == pytest.approx(end, abs=1e-6) and r.t_end < end    # the case it pins
+    assert r.match["level"] == "TOP"
+    assert r.points["endgame"] == 4.0 and r.points["total"] == 4.0
+    assert {"source": "climb", "phase": "endgame", "count": 1, "points": 4.0} in r.points["items"]
+    assert "climbed to TOP: 4 points" in points_lines(r)
+
+
+def test_an_endgame_points_check_passes_while_the_level_is_held(tmp_path, monkeypatch):
+    # the score if the match ended now: the level held now (the result is still scored at the end)
+    holding_top(monkeypatch)
+    blocks = """
+[[block]]
+do = "wait"
+seconds = 1.0
+
+[[block]]
+do = "expect"
+that = { points = { phase = "endgame", at_least = 4 } }
+
+[[block]]
+do = "expect"
+that = { points = { at_least = 4 } }
+"""
+    program = make(tmp_path, blocks, extra=CLIMB)
+    r = TestRun(world_for(program), program).run()
+    assert r.passed and r.status == "finished", (r.outcome, [c["line"] for c in r.checks])
+    assert [c["passed"] for c in r.checks] == [True, True]
+    assert all(c["t"] < r.match["auto"][1] for c in r.checks)      # read in auto, long before the match's end
+    assert r.points["endgame"] == 4.0
+
+
+def test_an_auto_points_check_before_auto_ends_says_leave_is_judged_then(tmp_path):
+    blocks = '[[block]]\ndo = "expect"\nthat = { points = { phase = "auto", at_least = 1 } }\n'
+    program = make(tmp_path, blocks)
+    with units.machine_text():
+        r = TestRun(world_for(program), program).run()
+    assert r.status == "check failed", r.outcome
+    hint = "(LEAVE counts once auto ends: wait until the match is in the pause or teleop)"
+    assert r.checks[0]["failure"] == f"expected 1 or more points in auto, but there were 0 {hint}"
+    assert len({tuple(c["failure"] for c in w["checks"]) for w in r.words.values()}) == 1     # the same everywhere
+
+
+def test_the_settle_after_the_match_runs_with_the_robot_disabled(tmp_path, monkeypatch):
+    # the motors spin to the match's end; a piece still in play keeps the settle going (here: 0.2 s, stubbed, since
+    # only a fed piece is tracked), and the settle steps disabled, as at the buzzer
+    from scrimmage.blocks.feeds import Outcomes
+    blocks = '[[block]]\ndo = "wait"\nseconds = 10.8\n' + SHOOT
+    program = make(tmp_path, blocks)
+    world = world_for(program)
+    end = 0.3 + AUTO + PAUSE + TELEOP
+    monkeypatch.setattr(Outcomes, "settled", lambda self: float(world.data.time) >= end + 0.2)
+    seen: list[tuple[float, object]] = []
+    step = world.step
+
+    def spy(hal, *a, **k):
+        seen.append((float(world.data.time), hal.get("DriverStation", "", ">enabled")))
+        return step(hal, *a, **k)
+    world.step = spy
+    r = TestRun(world, program).run()
+    assert r.status == "finished", r.outcome
+    assert r.match["teleop"][1] == pytest.approx(end)
+    assert r.settle_s == pytest.approx(0.2, abs=0.002)
+    after = [enabled for t, enabled in seen if t >= end - 1e-6]
+    assert after and all(enabled is False for enabled in after)
+    teleop = [enabled for t, enabled in seen if r.match["teleop"][0] + 0.01 < t < end - 0.01]
+    assert teleop and all(enabled is None for enabled in teleop)     # enabled in teleop: the frame isn't sent
+
+
 def test_a_points_check_passes_or_fails_on_them(played, tmp_path):
     r = played["result"]
     need = int(r.points["auto"]) + 1
@@ -175,6 +271,7 @@ that = {{ points = {{ phase = "auto", at_least = {need} }} }}
     r2 = TestRun(world_for(program), program).run()
     assert r2.status == "check failed", r2.outcome
     assert f"expected {need} or more points in auto, but there were {int(r.points['auto'])}" in r2.outcome
+    assert "LEAVE counts" not in r2.outcome                         # checked in the pause: LEAVE is judged
     assert r2.points["auto"] == r.points["auto"]                    # the same run: the points the run had so far
 
 
@@ -199,7 +296,7 @@ volts = 4.0
         return max(abs(r.signals[n][i]) for n in drive for i, x in enumerate(t) if lo <= x < hi)
 
     assert peak(start + 1.0, pause0) > 1.0                          # driving in auto
-    assert peak(pause0 + 0.5, pause1) < 0.01                        # the pause: neutral (the current dies away in 0.3 s)
+    assert peak(pause0 + 0.5, pause1) < 0.01                        # the pause: neutral (the current dies in 0.3 s)
     assert peak(pause1 + 0.5, pause1 + TELEOP) > 1.0                # and again in teleop
     assert peak(start + 9.0 + 0.5, pause1 + TELEOP) < 0.01          # the drive's 9 s counted the pause: over by 9.5 s
     # the drive block's seconds counted match time, the pause included: 9 s is over at the match's end

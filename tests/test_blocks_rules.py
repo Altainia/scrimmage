@@ -242,7 +242,7 @@ def test_height_is_the_robots_own_height(tmp_path):
     assert r.rules == []
 
 
-# ---- the lines, in the viewer's units -----------------------------------------------------------------------------------
+# ---- the lines, in the viewer's units ---------------------------------------------------------------------------
 
 
 def test_the_rules_lines_read_in_the_viewers_units():

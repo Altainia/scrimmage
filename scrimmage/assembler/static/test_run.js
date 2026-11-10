@@ -358,8 +358,9 @@ function renderMarks() {
     for (const b of $("#test-feed-marks").children) b.classList.remove("test-feed-mark-on");
   };
   row.replaceChildren(
-    ...phases.map((m, k) => h("button", { type: "button", class: "test-phase-mark", "data-phase": m.phase, "data-mark": `phase${k}`,
-      title: m.text, "aria-label": m.text, style: left(m), onclick: (e) => { on(e); showPiece(null, m.t); } })),
+    ...phases.map((m, k) => h("button", { type: "button", class: "test-phase-mark", "data-phase": m.phase,
+      "data-mark": `phase${k}`, title: m.text, "aria-label": m.text, style: left(m),
+      onclick: (e) => { on(e); showPiece(null, m.t); } })),
     ...slips.map((m, k) => h("button", { type: "button", class: "test-slip-mark", "data-mark": String(k),
       title: m.text, "aria-label": m.text, style: left(m), onclick: (e) => { on(e); showPiece(m.ball, m.t); } })));
 }

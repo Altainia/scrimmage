@@ -8,7 +8,7 @@ testrange/game.py's `score`, which reads the ball log and never writes to it.
 
 from __future__ import annotations
 
-from ..testrange.game import Game, Points, score
+from ..testrange.game import Game, Points, leave_zone, level_name, score
 
 
 class MatchState:
@@ -17,7 +17,7 @@ class MatchState:
         self.start = start
         self.phases = game.phases(start)
         self.end = self.phases.teleop[1]
-        self._zone = next((z for z in zones if game.leave is not None and z.name == game.leave.zone), None)
+        self._zone = leave_zone(game, zones)
         self._levels = levels
         self.phase: str | None = None       # the phase at the last step; None before the first
         self.left: bool | None = None       # LEAVE: None until auto ends, then fixed
@@ -35,7 +35,7 @@ class MatchState:
             if self.left is None and t >= self.phases.auto[1]:
                 self.left = bool(self._inside0 and not inside)
         if not self._ended:
-            self.level = self._levels[rank - 1] if 0 < rank <= len(self._levels) else None
+            self.level = level_name(self._levels, rank)
             self._ended = t >= self.end
         phase = self.phases.of(t)
         changed = phase if phase is not None and phase != self.phase else None
@@ -43,9 +43,10 @@ class MatchState:
             self.phase = phase
         return changed
 
-    def points(self, log: list[dict], at: float | None = None) -> Points:
-        """The points so far (with `at`, the run time) or of the whole run, read from the ball log."""
-        return score(self.game, log, self.phases, self.left, self.level, at)
+    def points(self, log: list[dict], at: float | None = None, held: bool = False) -> Points:
+        """The points so far (with `at`, the run time) or of the whole run, read from the ball log. With `held`, the
+        endgame is the climb level held now: the score if the match ended now (what a points condition reads)."""
+        return score(self.game, log, self.phases, self.left, self.level, at, held)
 
     def to_dict(self) -> dict:
         """The phase times, for result.json: run time (s), each phase's [start, end]."""

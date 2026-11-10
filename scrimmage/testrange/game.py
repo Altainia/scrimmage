@@ -103,7 +103,12 @@ def parse_game(path, table, goals, zones, climb) -> Game:
     points: dict[str, GoalPoints] = {}
     if r.has("points"):
         raw = r.raw("points")
-        p = _Reader(path, "[game] points", raw, tuple(g.name for g in goals))
+        p = _Reader(path, "[game] points", raw, tuple(raw))
+        names = [g.name for g in goals]
+        for goal in raw:
+            if goal not in names:
+                raise p.err(i18n.t("'{goal}' is not a goal of the range; goals: {goals}", goal=goal,
+                                   goals=", ".join(names) or i18n.t("none")))
         for goal, value in raw.items():
             if isinstance(value, dict):
                 q = _Reader(path, f"[game] points {goal}", value, _POINTS)
@@ -121,7 +126,7 @@ def parse_game(path, table, goals, zones, climb) -> Game:
         leave = Leave(zone, _points(q, q.raw("points"), "points"))
     rules = None
     if r.has("rules"):
-        q = r.sub("rules", _RULES)
+        q = _Reader(path, "[game.rules]", r.raw("rules"), _RULES)
         possession = extension = height = None
         if q.has("possession"):
             possession = q.whole("possession")
@@ -136,6 +141,16 @@ def parse_game(path, table, goals, zones, climb) -> Game:
     return Game(name=name, auto_s=auto_s, pause_s=pause_s, teleop_s=teleop_s, points=ordered, leave=leave,
                 rules=rules, climb_points=dict(climb.levels) if climb is not None else {},
                 goals=tuple(g.name for g in goals))
+
+
+def leave_zone(game: Game, zones):
+    """The range zone `game`'s LEAVE names, or None without a `leave`."""
+    return next((z for z in zones if game.leave is not None and z.name == game.leave.zone), None)
+
+
+def level_name(levels: list[str], rank: int) -> str | None:
+    """The climb level a climb monitor's rank names (1: the first of `levels`); None for 0 or out of range."""
+    return levels[rank - 1] if 0 < rank <= len(levels) else None
 
 
 @dataclass(frozen=True)
@@ -181,11 +196,13 @@ class Points:
 
 
 def score(game: Game, log: list[dict], phases: Phases, left: bool | None, level: str | None,
-          at: float | None = None) -> Points:
+          at: float | None = None, held: bool = False) -> Points:
     """The points of a run, read from `ball_log()`'s rows (never written to). A piece scored in the pause scores
     nothing (its item says so); one scored outside the match isn't counted. `left` is whether LEAVE was earned and
     `level` the climb level held when the match ended (None: not earned or not decided, 0 points). With `at`, only
-    pieces with `scored_t <= at` count, LEAVE once auto has ended by `at`, and the endgame once the match has ended by `at`."""
+    pieces with `scored_t <= at` count, LEAVE once auto has ended by `at`, and the endgame once the match has ended
+    by `at`; with `held` too, the endgame is `level`'s points whenever it is read (the score if the match ended
+    then)."""
     counts: dict[tuple[str, str], int] = {}
     for row in log:
         goal, t = row.get("goal"), row.get("scored_t")
@@ -210,7 +227,7 @@ def score(game: Game, log: list[dict], phases: Phases, left: bool | None, level:
     if left and game.leave is not None and (at is None or at >= phases.auto[1]):
         items.append(PointsItem("leave", "auto", 1, game.leave.points))
         auto += game.leave.points
-    if level is not None and (at is None or at >= phases.teleop[1]):
+    if level is not None and (at is None or held or at >= phases.teleop[1]):
         pts = game.climb_points.get(level, 0.0)
         items.append(PointsItem("climb", "endgame", 1, pts))
         endgame += pts

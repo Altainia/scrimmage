@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from .testrange.game import Points, score
+from .testrange.game import Points, leave_zone, level_name, score
 
 INF = float("inf")
 _PHASE = {"auto": "auto", "disabled": "pause", "teleop": "teleop"}
@@ -56,8 +56,7 @@ class ScenarioMatch:
         rng = world.test_range
         self.world, self.n_steps = world, n_steps
         self.game = rng.range.game
-        leave = self.game.leave
-        self._zone = next((z for z in rng.range.zones if leave is not None and z.name == leave.zone), None)
+        self._zone = leave_zone(self.game, rng.range.zones)
         climb = rng.range.climb
         self._levels = list(climb.levels) if climb is not None else []
         if self._levels:
@@ -96,7 +95,7 @@ class ScenarioMatch:
     def _left(self, now: float) -> bool | None:
         if self._zone is None or self._inside0 is None:
             return None
-        a0, a1 = self.phases.auto
+        a1 = self.phases.auto[1]
         inside = self._inside_auto
         # auto's last step is at its end (within a physics step): read it now
         if inside is None and a1 != INF and now >= a1 - self.world.model.opt.timestep:
@@ -109,7 +108,7 @@ class ScenarioMatch:
         if not self._levels:
             return None
         rank = int(self.world.climb_monitor().sample()["climb.level"])
-        return self._levels[rank - 1] if 0 < rank <= len(self._levels) else None
+        return level_name(self._levels, rank)
 
     def points(self, at: float | None = None) -> Points:
         """The points at run time `at`, or of the whole scenario."""

@@ -85,7 +85,7 @@ def _game(body):
 
 
 @pytest.mark.parametrize("game, match", [
-    (_game('points = { nowhere = 1 }'), r"r\.toml: unknown key 'nowhere' in \[game\] points"),
+    (_game('points = { nowhere = 1 }'), r"r\.toml: \[game\] points 'nowhere' is not a goal of the range; goals: \w"),
     (_game('leave = { zone = "wing", points = 2 }'), r"\[game\] leave zone 'wing' is not a zone"),
     ("[game]\npause_seconds = 3\nteleop_seconds = 135\n", r"\[game\] is missing required key 'auto_seconds'"),
     ("[game]\nauto_seconds = 15\nteleop_seconds = 135\n", r"\[game\] is missing required key 'pause_seconds'"),
@@ -94,12 +94,13 @@ def _game(body):
     ("[game]\nauto_seconds = 15\npause_seconds = -1\nteleop_seconds = 135\n", r"pause_seconds can't be negative"),
     ("[game]\nauto_seconds = 15\npause_seconds = 3\nteleop_seconds = -5\n", r"teleop_seconds must be positive"),
     (_game('points = { speaker_blue = -1 }'), r"\[game\] points speaker_blue can't be negative"),
-    (_game('points = { speaker_blue = { auto = 1, teleop = -2 } }'), r"\[game\] points speaker_blue teleop can't be negative"),
+    (_game('points = { speaker_blue = { auto = 1, teleop = -2 } }'),
+     r"\[game\] points speaker_blue teleop can't be negative"),
     (_game('leave = { zone = "blue_start", points = -2 }'), r"\[game\] leave points can't be negative"),
-    (_game('[game.rules]\npossession = 0'), r"\[game\] rules possession must be 1 or more"),
-    (_game('[game.rules]\npossession = 1.5'), r"\[game\] rules possession must be a whole number"),
+    (_game('[game.rules]\npossession = 0'), r"\[game\.rules\] possession must be 1 or more"),
+    (_game('[game.rules]\npossession = 1.5'), r"\[game\.rules\] possession must be a whole number"),
     (_game('bonus = 3'), r"unknown key 'bonus' in \[game\]"),
-    (_game('[game.rules]\nspeed = 3'), r"unknown key 'speed' in \[game\] rules"),
+    (_game('[game.rules]\nspeed = 3'), r"unknown key 'speed' in \[game\.rules\]"),
     ("[game]\nauto_seconds = inf\npause_seconds = 3\nteleop_seconds = 135\n", r"auto_seconds must be a finite"),
     (_game('points = { speaker_blue = inf }'), r"\[game\] points speaker_blue must be a finite number"),
     (_game('points = { speaker_blue = { auto = 5 } }'), r"speaker_blue"),
