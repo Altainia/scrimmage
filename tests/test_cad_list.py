@@ -92,6 +92,50 @@ def test_list_an_stl_folder(capsys):
     assert "arm_A" in out and "hook" in out
 
 
+def test_header_counts_pieces_not_lines(capsys):
+    _, out, _ = run(capsys, CLIMBER)
+    assert out.splitlines()[0].startswith("11 pieces in 5 lines")
+
+
+def test_default_order_is_largest_first(capsys):
+    _, out, _ = run(capsys, CLIMBER)
+    names = [ln.split()[0] for ln in out.splitlines()[1:]]
+    assert names[0] == "arm_A" or names[0] == "arm_B" or names[0] == "base_plate"
+    assert names.index("bolt") > names.index("hook")        # bolts are the smallest
+    _, out, _ = run(capsys, CLIMBER, "--sort", "name")
+    names = [ln.split()[0] for ln in out.splitlines()[1:]]
+    assert names == sorted(names)
+    _, out, _ = run(capsys, CLIMBER, "--sort", "file")
+    assert out.splitlines()[1].startswith("base_plate")
+
+
+def test_a_guessed_unit_says_so(capsys):
+    _, out, _ = run(capsys, DATA / "stl")
+    assert "mm (guessed)" in out.splitlines()[0]
+    _, out, _ = run(capsys, DATA / "stl", "--units", "mm")
+    assert "guessed" not in out.splitlines()[0]
+    _, out, _ = run(capsys, CLIMBER)
+    assert "guessed" not in out.splitlines()[0]
+
+
+def test_json_has_no_float32_noise(capsys):
+    _, out, _ = run(capsys, CLIMBER, "--json")
+    plate = next(p for p in json.loads(out)["pieces"] if p["name"] == "base_plate")
+    assert plate["center_m"][0] == 0.15 and plate["size_file"] == [300.0, 200.0, 10.0]
+
+
+def test_units_takes_every_step_unit(capsys):
+    code, out, _ = run(capsys, CLIMBER, "--units", "cm")
+    assert code == 0 and "30 x 20 x 1" in out
+
+
+def test_a_glob_on_an_assembly_matches_its_descendants():
+    src = load_source(CLIMBER)
+    hooks = [r for r in listing.rows(src) if listing.matches(r, "*hook_assy*/*")]
+    assert [r.name for r in hooks] == ["hook", "hook"]
+    assert len([r for r in listing.rows(src) if listing.matches(r, "Climber/*")]) == 11
+
+
 def test_list_units_flag(capsys):
     _, out, _ = run(capsys, CLIMBER, "--units", "in")
     assert "in" in out.splitlines()[0]

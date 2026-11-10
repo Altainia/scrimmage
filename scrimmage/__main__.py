@@ -251,8 +251,11 @@ def main(argv: list[str] | None = None) -> None:
     cl.add_argument("--near", metavar="X,Y,Z", help="only pieces whose center is within --within meters of this "
                                                     "point (meters, the file's axes)")
     cl.add_argument("--within", type=float, metavar="R", help="the distance for --near, in meters")
-    cl.add_argument("--units", dest="cad_units", choices=("m", "mm", "in"),
+    cl.add_argument("--units", dest="cad_units", choices=("m", "mm", "cm", "in", "ft"),
                     help="show the file's numbers in these units (default: the file's own)")
+    cl.add_argument("--sort", choices=("size", "name", "file"), default="size",
+                    help="order of the lines: largest first by bounding-box volume (default), by name, or as the "
+                         "file has them")
     cl.add_argument("--json", action="store_true", help="write the full table as JSON")
     cl.add_argument("-v", "--verbose", action="store_true")
 
@@ -928,9 +931,10 @@ def _cad(args) -> None:
         found = listing.near(found, point, args.within)
     units = args.cad_units or listing.file_units(src)
     if args.json:
-        print(json.dumps(listing.to_json(found, units, str(args.file)), indent=2))
+        print(json.dumps(listing.to_json(listing.sort_rows(found, args.sort), units, str(args.file)), indent=2))
     else:
-        print("\n".join(listing.table_lines(listing.grouped(found), units)))
+        guessed = src.kind == "mesh" and args.cad_units is None     # an STL/OBJ doesn't carry its unit
+        print("\n".join(listing.table_lines(listing.sort_rows(listing.grouped(found), args.sort), units, guessed)))
 
 
 def _parts(args) -> None:

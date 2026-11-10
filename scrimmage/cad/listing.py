@@ -66,6 +66,15 @@ def near(rows: list[Row], point: Vec, within: float) -> list[Row]:
     return [r for r in rows if math.dist(r.center_m, point) <= within]
 
 
+def sort_rows(rows: list[Row], order: str) -> list[Row]:
+    """`order` is "size" (largest bounding-box volume first, ties in file order), "name", or "file" (as read)."""
+    if order == "size":
+        return sorted(rows, key=lambda r: -(r.size_m[0] * r.size_m[1] * r.size_m[2]))
+    if order == "name":
+        return sorted(rows, key=lambda r: r.name)
+    return list(rows)
+
+
 def close_names(rows: list[Row], glob: str) -> list[str]:
     """Up to 5 piece names near a glob that matched nothing."""
     bare = glob.translate({ord(c): None for c in "*?[]"})
@@ -80,10 +89,13 @@ def _xyz(v: Vec, scale: float) -> str:
     return " x ".join(_num(x / scale) for x in v)
 
 
-def table_lines(rows: list[Row], units: str) -> list[str]:
-    scale = {**STEP_UNITS, **UNITS}[units]
-    lines = [i18n.t("{count} pieces. Center and size in {units}, then in m (the file's own axes).",
-                    count=len(rows), units=units)]
+def table_lines(rows: list[Row], units: str, guessed: bool = False) -> list[str]:
+    """A header, then a line per row. A row with a count covers all its pieces together. `guessed` says the file's
+    unit was guessed from its size (an STL or OBJ doesn't carry one)."""
+    scale = STEP_UNITS[units]
+    shown = i18n.t("{units} (guessed)", units=units) if guessed else units
+    lines = [i18n.t("{pieces} pieces in {lines} lines. Center and size in {units}, then in m (the file's own axes).",
+                    pieces=sum(r.count for r in rows), lines=len(rows), units=shown)]
     for r in rows:
         name = r.name if r.count == 1 else f"{r.name} {i18n.t('×{count}', count=r.count)}"
         lines.append(i18n.t("{name}  center {center} | {center_m}  size {size} | {size_m}  triangles {triangles}",
@@ -92,9 +104,14 @@ def table_lines(rows: list[Row], units: str) -> list[str]:
     return lines
 
 
+def _r(x: float) -> float:
+    return float(f"{x:.7g}")      # 7 digits, a float32 mesh's precision: 0.15000000596 reads 0.15
+
+
 def to_json(rows: list[Row], units: str, file: str = "") -> dict:
-    scale = {**STEP_UNITS, **UNITS}[units]
+    scale = STEP_UNITS[units]
     return {"file": file, "units": units, "pieces": [
-        {"key": r.key, "name": r.name, "center_m": list(r.center_m), "size_m": list(r.size_m),
-         "center_file": [x / scale for x in r.center_m], "size_file": [x / scale for x in r.size_m],
+        {"key": r.key, "name": r.name, "center_m": [_r(x) for x in r.center_m],
+         "size_m": [_r(x) for x in r.size_m], "center_file": [_r(x / scale) for x in r.center_m],
+         "size_file": [_r(x / scale) for x in r.size_m],
          "triangles": r.triangles} for r in rows]}

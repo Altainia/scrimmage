@@ -1116,11 +1116,13 @@ scrimmage cad list field.step --json > pieces.json
 |---|---|
 | `--match GLOB` | only pieces whose name or whole key (`Assembly/sub/piece`) fits the glob (`*`, `?`, `[]`; capital letters count). A glob that fits nothing exits 1 and names up to five close piece names. |
 | `--near X,Y,Z --within R` | only pieces whose bounding-box center is within R meters of the point. Give both or neither. |
-| `--units m\|mm\|in` | the units of the first group of numbers (default: the file's own) |
+| `--units m\|mm\|cm\|in\|ft` | the units of the first group of numbers (default: the file's own; an STL/OBJ's is guessed from its size, and the header says `(guessed)`) |
+| `--sort size\|name\|file` | the order of the lines: `size` (the default) puts the largest bounding box first, so the big structures come first and ties keep file order; `name` is alphabetical; `file` is the order the file has them |
 | `--json` | the full table for scripts, one entry per piece (not grouped) |
 
 Each line holds a piece's name, `×N` when N pieces share the name, the center and size of its bounding box in the
-file's units and then in meters, and its triangle count. Positions are in the file's own axes, in meters: nothing is
+file's units and then in meters, and its triangle count. On a `×N` line the center and size cover all N pieces
+together; `--json` gives each piece's own place. The header counts pieces, not lines. Positions are in the file's own axes, in meters: nothing is
 rotated, so a file drawn Y-up shows its height in the second number. The JSON has `file`, `units` and `pieces`, each with
 `key`, `name`, `center_m`, `size_m`, `center_file`, `size_file` and `triangles`. Wrong options and unreadable files
 exit 2 with `scrimmage: <message>`.
