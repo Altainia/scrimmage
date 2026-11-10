@@ -1,7 +1,7 @@
 """`scrimmage i18n template` and `scrimmage i18n check`: the source strings the code wraps, and each catalog against them.
 
 The sources are found by reading the code, not by running it: every t()/tn() call whose function came from i18n
-(Python: `from .i18n import t`, `i18n.t(...)`; JavaScript: `import { t } from "./i18n.js"`, `i18n.t(...)`) must
+(Python: `from .i18n import t`, `i18n.t(...)`, a local `t = i18n.t`; JavaScript: `import { t } from "./i18n.js"`, `i18n.t(...)`) must
 pass literal strings first. An HTML page's static text is its data-i18n, data-i18n-title, -placeholder and
 -aria-label attributes (with data-i18n-context), which static/i18n.js fills in. A variable, an f-string, a template with ${...} or text joined with + is an error here,
 since a translator could never see the whole sentence; its dynamic parts are {placeholders} instead.
@@ -93,6 +93,13 @@ def _python_calls(text: str):
                 modules.update(a.asname or a.name for a in node.names if a.name == "i18n")
         elif isinstance(node, ast.Import):
             modules.update(a.asname or a.name for a in node.names if a.name.split(".")[-1] == "i18n")
+    for node in ast.walk(tree):     # a local alias, `t = i18n.t` (or of an imported t)
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            v = node.value
+            if isinstance(v, ast.Attribute) and v.attr in ("t", "tn", "N_") and _dotted(v.value) in modules:
+                funcs[node.targets[0].id] = v.attr
+            elif isinstance(v, ast.Name) and v.id in funcs:
+                funcs[node.targets[0].id] = funcs[v.id]
     calls = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
