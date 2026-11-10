@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import foreign_writes as fwn
-from . import i18n, units
+from . import i18n, scenario_points, units
 from .bindings import binds_rev
 from .bridge import REALTIME_REASON
 from .devicecheck import check_devices, device_notes
@@ -22,6 +22,7 @@ from .checks import (CRASH_PATTERN, Check, CheckResult, ConsoleCheck, Said, buil
 from .i18n import N_, t, tn, translated
 from .config import ConfigError, build_world, load_config
 from .render import contact_sheet, to_png
+from .scenario_points import ScenarioMatch
 from .scenario import Scenario, ScenarioError, config_for, match_for, no_range_message, range_file, validate
 from .session import Session, SessionError
 from .testrange.balls import took_part  # here before; the Test tab's runs (blocks/run_notes.py) use it too
@@ -167,6 +168,7 @@ class Report:
     balls: list[dict] = field(default_factory=list)   # ball_log() of the balls that took part (took_part)
     ball_states: list[str] = field(default_factory=list)   # every ball's outcome, by ball id
     ball_summary: dict | None = None    # the balls not in `balls`: {"untouched": floor balls, "spare": spares}
+    points: dict | None = None   # a range with a [game]: {"points": Points.to_dict(), "level": the climb level held}
 
     @property
     def passed(self) -> bool:
@@ -187,6 +189,8 @@ class Report:
              "console_tail": self.console_tail, "files": self.files}
         if self.range is not None:      # a run on a test range; other reports keep their keys
             d.update(range=self.range, balls=self.balls, ball_states=self.ball_states, ball_summary=self.ball_summary)
+            if self.points is not None:
+                d["points"] = self.points["points"]
         return d
 
     def summary(self) -> str:
@@ -239,7 +243,7 @@ class Report:
             md += ["- " + t("skipped: {what}", what=_shown(x)) for x in s.skipped]
             md += [""] + [f"![{p}]({p})" for p in s.screenshots] + [""]
         if self.range is not None:
-            md += _score_md(self.range) + _balls_md(self.balls, self.ball_summary or {})
+            md += _score_md(self.range, self.points) + _balls_md(self.balls, self.ball_summary or {})
         bad = [c for c in self.implicit if not c.passed]
         if bad:
             md += ["## " + t("Robot program"), ""] + [f"- ❌ {c.shown()}" for c in bad] + [""]
@@ -260,10 +264,11 @@ def _fu(v, kind: str, fmt: str = ".2f") -> str:
     return _f(None if v is None else units.to_display(v, kind), fmt)
 
 
-def _score_md(c: dict) -> list[str]:
+def _score_md(c: dict, points: dict | None = None) -> list[str]:
     goals = ", ".join(f"{g} {n}" for g, n in c["goals"].items())
+    lines = ["- " + line for line in scenario_points.points_lines(points)] if points is not None else []
     return ["## " + t("Score"), "", "- " + t("score: {score} ({goals})", score=c["score"], goals=goals),
-            "- " + t("fired: {count}", count=c["fired"]), "- " + t("held: {count}", count=c["held"]),
+            *lines, "- " + t("fired: {count}", count=c["fired"]), "- " + t("held: {count}", count=c["held"]),
             "- " + t("on the field: {count}", count=c["on_field"]), ""]
 
 
@@ -568,6 +573,11 @@ def _capture_range(session: Session, report: Report, own: bool) -> None:
     if rng is None:
         return
     report.range = rng.counts()
+    match = getattr(session.world, "scenario_match", None)
+    if match is not None:
+        match.close()
+        report.points = match.report()
+        session.world.scenario_match = None
     logs = rng.ball_log()
     starts, r = rng.range.floor_balls, rng.balls.radius      # each piece's own radius
     lift = rng.range.floor_heights if len(rng.range.floor_heights) == len(starts) else [0.0] * len(starts)
@@ -660,9 +670,15 @@ async def _run_steps(session: Session, scenario: Scenario, report: Report, out_d
                             words)
         return
     noted: dict = {}
+    rng = session.world.test_range
+    # a range with a [game]: the scenario's points (none of this without one)
+    match = session.world.scenario_match = (
+        ScenarioMatch(session.world, len(scenario.steps)) if rng is not None and rng.range.game is not None else None)
     for i, step in enumerate(scenario.steps, 1):
         rep = StepReport(step.name, step.mode, round(session.t, 4))
         report.steps.append(rep)
+        if match is not None:
+            match.begin(step.mode, session.t, step.duration)
         try:
             hooks.check()
             hooks.emit({"type": "step_start", "index": i - 1, "name": step.name, "mode": step.mode,
@@ -683,6 +699,8 @@ async def _run_steps(session: Session, scenario: Scenario, report: Report, out_d
             rep.interrupted = _interrupted(session.t)
             raise
         finally:    # on every exit of the step: a robot that tipped and then lost its program is still noted
+            if match is not None:
+                match.finish(session.t)
             report.notes.extend(terrain_notes(session.world, noted))
     report.notes.extend(session.world.warnings)
     if session.bridge.clock_freed:

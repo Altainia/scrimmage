@@ -739,6 +739,42 @@ condition reads it: the robot's center, seen from above, inside or outside the z
 enough for "did it leave the starting zone" (2024's LEAVE) and "is it in the wing"; a rule about the whole robot or
 its bumpers (2024's PARK) isn't modeled yet.
 
+### The game: points, the match and its rules
+
+A range can say what game it is: how long the match is, what a piece in each goal is worth, and the rules a robot is
+held to. It goes in a `[game]` table in the range file, since the game is a fact of the field:
+
+```toml
+[game]
+name = "2024 CRESCENDO"
+auto_seconds = 15              # source: the 2024 manual, AUTO
+pause_seconds = 3              # source: the 2024 manual, the pause between AUTO and TELEOP
+teleop_seconds = 135           # source: the 2024 manual, TELEOP
+points = { speaker_blue = { auto = 5, teleop = 2 }, amp_blue = { auto = 2, teleop = 1 } }   # source: M Table 6-2
+leave = { zone = "blue_start", points = 2 }   # source: M Table 6-2: LEAVE
+[game.rules]
+possession = 1                 # source: G403 (one NOTE)
+extension_in = 12              # source: R105
+height_in = 48                 # source: the 2024 manual's 4 ft height limit
+```
+
+- The three phase lengths are the only required keys. The pause may be 0 s; the other two must be above 0.
+- `points` names goals (a name that isn't a goal is an error). A goal's value is one number, the same in both phases,
+  or `{ auto, teleop }`. Points can be fractions, and can't be negative. A goal you leave out still counts pieces,
+  for 0 points.
+- `leave` names a zone (see Floor zones above). LEAVE scores when the robot's center starts the match inside the zone
+  and is outside it when auto ends.
+- Endgame points stay in `[climb]`: the points of the `levels` entry for the level the robot holds when the match
+  ends.
+- `[game.rules]` has three optional limits: `possession` (pieces held at once, a whole number from 1), and
+  `extension_in` and `height_in`, in inches.
+- A piece scored in the pause scores nothing, and a piece scored after teleop ends doesn't count.
+
+The range's phase lengths are the ones the Test tab uses. A scenario's `[match] auto_seconds` is the Driver Station's
+timer, and its steps set the phases there; the two can disagree, and then the scenario's steps win in that scenario.
+A range with no `[game]` behaves as it always has. `scrimmage range check` lists the game's name, its phase lengths and
+how many goals score points.
+
 ### Rods
 
 A rod is a field element: a straight round or square rod fixed to the field, such as a peg, a pole, or a coral branch.
@@ -822,8 +858,23 @@ its line, or says it is an estimate or our choice).
 - **The zones** `blue_start`, `blue_wing`, `red_start` and `red_wing` are drawn as tape.
 - **The starts.** `blue_subwoofer` (against the blue SUBWOOFER, facing the SPEAKER), `blue_amp` (1 m back from the
   blue AMP, facing it), `blue_amp_side`, `blue_source_side`, `blue_wing_note` and `at_blue_source`.
+- **The game.** The range has a `[game]` (see [the game](#the-game-points-the-match-and-its-rules)): a match of 15 s
+  auto, a 3 s pause and 135 s teleop. The robot is blue, since the starts are blue. A NOTE in the blue SPEAKER is
+  worth 5 points in auto and 2 in teleop, in the blue AMP 2 and 1. A NOTE in a red goal would score for red, so it
+  counts as a goal piece for 0 points. LEAVE is 2 points for a robot that starts in `blue_start` and is out of it when
+  auto ends. ONSTAGE is 3 points (from `[climb]`). The rules are one NOTE held,
+  12 in of reach past the frame and 48 in of height. Each number cites its source on its line.
 - **What isn't there.** The rest of the AMP and the SPEAKER's inside (a NOTE counts when it crosses the opening; where
-  it goes after isn't modeled), the AMPLIFICATION and the game's points.
+  it goes after isn't modeled). The game's scoring also leaves out:
+  - AMPLIFICATION;
+  - Coopertition;
+  - MELODY and ENSEMBLE;
+  - the HARMONY, SPOTLIT and TRAP points;
+  - fouls;
+  - a piece released before the buzzer that lands after it: FRC counts it, but here it scores no points (the robot
+    is disabled at the match's end, and the pieces settle after it).
+- The match example is [`examples/blocks/match`](../examples/blocks/match/README.md): the same robot plays a whole
+  match in the Test tab, shoots a NOTE and leaves the starting zone in auto, and expects 7 points.
 - The worked example is [`examples/blocks/speaker`](../examples/blocks/speaker/README.md): a stand-in robot with a
   pinch shooter scores a NOTE in the blue SPEAKER from the SUBWOOFER, with a shot `launcher aim` finds there.
 
@@ -1060,6 +1111,16 @@ On a range, scenario checks (`at_end`, `always`, `by_time`, ...) can read these 
 | `fired` | balls the launcher has launched |
 | `held` | balls in the robot |
 | `on_field` | balls in play |
+| `points`, `points.auto`, `points.teleop`, `points.endgame` | the points so far at the check's time (the total, or one phase), on a range with a `[game]`; without one they are an error that says the range needs a `[game]` table |
+
+The points use the scenario's steps as the match's phases. A piece scored during a step in mode `auto` is an auto piece,
+in `teleop` a teleop piece, and in a `disabled` step the pause (it scores nothing); a `test` step is none of them. The
+steps can repeat. LEAVE scores if the robot's center is inside the `leave` zone when the scenario starts and outside it
+when the last `auto` step ends: with auto steps on both sides of a teleop step, `points.auto` drops LEAVE again
+while the later auto step runs, and it comes back when that step ends. The endgame is the climb level the robot holds when the scenario ends, so
+`points.endgame` is 0 until the last step's end. The range's phase lengths aren't used: an auto step longer than the
+game's auto still counts its pieces as auto. When the range has a `[game]`, the report's Score section also lists the
+points, and `report.json` has a `points` key with the same numbers the Test tab keeps.
 
 Without a `[range]` on the config these signals are an error that says so.
 

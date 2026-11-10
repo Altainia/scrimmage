@@ -246,6 +246,7 @@ def palette(world, hooks: list[str], setup: dict | None = None) -> dict:
         "robot_partner": robot_partner,     # the world's own partner: the Test tab's is the robot config's [partner]
         "goals": sorted(g.name for g in rng.goals) if rng is not None else [],
         "zones": [z.name for z in rng.zones] if rng is not None else [],     # [[zone]]s, for in_zone
+        "game": rng is not None and rng.game is not None,     # the range has a [game]: a test can be a match
         "turrets": turrets(world),          # stock turrets' instances: each turns `<inst>.turn`
         "cylinders": cyls,                  # pneumatic cylinders: {name, double}
         "sensors": sens,                    # the robot's [[sensor]]s: {name, kind}
@@ -311,6 +312,7 @@ class _Names:
         self.field = set(world.contact_names()) | set(p["elements"]) | self.bars
         self.stations = set(p["stations"])
         self.hopper = list(program.hopper or []) if program is not None else []
+        self.match = program is not None and program.match      # the test plays the range's [game] as a match
         self.stock = {}                     # station -> its stock after the test's setup (None: no stock)
         if rng is not None:
             # only the field's own stations: a name it doesn't have is reported by problems() and leaves the others'
@@ -465,6 +467,9 @@ def _cond_problems(n: _Names, c) -> list[str]:
             return [i18n.t("this field has no zones; a range file marks them with {zone_table}",
                            zone_table="[[zone]]")]
         return [i18n.t("no zone '{zone}' on this field; its zones: {names}", zone=a["zone"], names=', '.join(n.zones))]
+    if c.kind in ("match", "points") and not n.match:
+        return [i18n.t("a {kind} condition only works in a match; put {match_setting} in the test's {test_table}",
+                       kind=c.kind, match_setting="match = true", test_table="[test]")]
     if c.kind in ("partner_lifted", "partner_moved") and not n.partner:
         return [i18n.t("there's no partner robot; add one in Setup")]
     if c.kind == "station_empty":
@@ -583,6 +588,10 @@ def problems(program, world) -> list[dict]:
                                             body=h)}
             for h in program.hopper or [] if h not in n.bodies]
     out += [{"place": [], "message": msg} for msg in _setup_level_problems(program, world, n)]
+    rng = world.parts.range if world.parts is not None else None
+    if program.match and (rng is None or rng.game is None):
+        out.append({"place": [], "message": i18n.t("a match needs a field with a {game_table}; this field has none",
+                                                   game_table="[game]")})
 
     def walk(blocks, trail):
         for i, b in enumerate(blocks):

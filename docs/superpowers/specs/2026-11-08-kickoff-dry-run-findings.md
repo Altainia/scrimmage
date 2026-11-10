@@ -214,6 +214,11 @@ Severity: **B** = blocker, **W** = workaround exists, **N** = nice-to-have. Size
      - a `[game]` points table per goal/zone/climb level and phase
      - a `match` block or Test-tab "match mode"
      - LEAVE and zone signals
+   - **K3 status:** done for the points and the match. A range's `[game]` sets the phase lengths, the points per goal
+     and phase, LEAVE and the rules. The Test tab plays a whole match (`[test] match = true`) and scenarios read the
+     `points` signals and show a Score section. The built-in 2024 range has its game (SPEAKER 5/2, AMP 2/1, LEAVE 2,
+     ONSTAGE 3, 15 s / 3 s / 135 s), and `examples/blocks/match` plays an auto that scores 7 points. Still not
+     modeled: AMPLIFICATION, Coopertition, MELODY, ENSEMBLE, the HARMONY, SPOTLIT and TRAP points, and fouls.
 
 5. **Field CAD can't be turned into a range, and piece names are lost.** — **W** (manual numbers), M
    - Needed: "import field elements from the official CAD", as 2026.toml did privately in FreeCAD.
@@ -306,6 +311,9 @@ Severity: **B** = blocker, **W** = workaround exists, **N** = nice-to-have. Size
       - per-season `[rules]`: extension and height limits used everywhere, not only climb scripts
       - a `controlled` count signal (pieces touching or supported by the robot for > 3 s)
       - zone polygons with "robot in zone" signals
+    - **K3 status:** the checks work now. `[game.rules]` holds the limits (2024: one NOTE held, 12 in of extension,
+      48 in of height), a match test reports each breach, and a zone's LEAVE is a points item. Still not modeled:
+      fouls and penalties (zone fouls, pinning, contact), so a breach is reported but costs no points.
 
 18. **HIGH NOTEs and AMP-top staging can't be placed.** — **N**, S
     - The AMP is off the field (gap 7). Floor pieces must rest on the carpet; there's no "on top of element" placement.

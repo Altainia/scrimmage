@@ -345,19 +345,24 @@ function showPiece(ball, time) {
 
 // -- the moments the replay marks (a slip) ---------------------------------------------------------------------------
 const marksOf = (r) => (r && Array.isArray(r.marks) ? shownResult(r).marks : []);
-const slipsOf = (r) => marksOf(r).filter((m) => m.kind === "slip");     // the kinds drawn: a slip, as a cross
+const slipsOf = (r) => marksOf(r).filter((m) => m.kind === "slip");     // a slip, as a cross
+const phasesOf = (r) => marksOf(r).filter((m) => m.kind === "phase");   // a match's phase change, as a tick
 
 function renderMarks() {
-  const marks = slipsOf(rp.run.result), row = $("#test-slip-marks");
-  row.hidden = !marks.length;
+  const slips = slipsOf(rp.run.result), phases = phasesOf(rp.run.result), row = $("#test-slip-marks");
+  row.hidden = !slips.length && !phases.length;
   const t0 = start(), span = Math.max(1e-9, end() - t0);
-  row.replaceChildren(...marks.map((m, k) => h("button", { type: "button", class: "test-slip-mark", "data-mark": String(k),
-    title: m.text, "aria-label": m.text, style: `left: ${(100 * Math.max(0, Math.min(1, (m.t - t0) / span))).toFixed(3)}%`,
-    onclick: (e) => {
-      for (const b of row.children) b.classList.toggle("test-slip-mark-on", b === e.currentTarget);
-      for (const b of $("#test-feed-marks").children) b.classList.remove("test-feed-mark-on");
-      showPiece(m.ball, m.t);
-    } })));
+  const left = (m) => `left: ${(100 * Math.max(0, Math.min(1, (m.t - t0) / span))).toFixed(3)}%`;
+  const on = (e) => {
+    for (const b of row.children) b.classList.toggle("test-slip-mark-on", b === e.currentTarget);
+    for (const b of $("#test-feed-marks").children) b.classList.remove("test-feed-mark-on");
+  };
+  row.replaceChildren(
+    ...phases.map((m, k) => h("button", { type: "button", class: "test-phase-mark", "data-phase": m.phase,
+      "data-mark": `phase${k}`, title: m.text, "aria-label": m.text, style: left(m),
+      onclick: (e) => { on(e); showPiece(null, m.t); } })),
+    ...slips.map((m, k) => h("button", { type: "button", class: "test-slip-mark", "data-mark": String(k),
+      title: m.text, "aria-label": m.text, style: left(m), onclick: (e) => { on(e); showPiece(m.ball, m.t); } })));
 }
 
 function markColors() {

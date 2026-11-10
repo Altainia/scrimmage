@@ -6,6 +6,8 @@
     hopper = ["feeder.hopper"]          # optional: robot bodies that hold balls (counted by in_hopper); [] is
                                         # kept: no hopper, and Setup preselects none
     time_limit = 60.0                   # optional, s
+    match = true                        # optional: play the range's [game] as a match (phases, the pause, points);
+                                        # the match sets the run's length, so time_limit can't be given with it
     chart = ["tilt", "climber.crank"]   # optional: signals shown by default
 
     [[block]]
@@ -64,7 +66,9 @@ DO_KINDS = ("spin", "move", "drive", "stop", "wait", "wait_until", "repeat", "ex
             "start_feeding", "stop_feeding", "feed_one", "turn", "aim", "set_cylinder")
 COND_KINDS = ("joint", "touch", "tilt", "piece_in", "hanging_from", "level", "in_hopper", "station_empty",
               "made_it_in", "held", "rests_on", "seated", "scored", "aimed", "cylinder", "pressure",
-              "element", "clears", "partner_lifted", "partner_moved", "sensor", "in_zone")
+              "element", "clears", "partner_lifted", "partner_moved", "sensor", "in_zone", "match", "points")
+MATCH_PHASES = ("auto", "pause", "teleop")
+POINTS_PHASES = ("auto", "teleop", "endgame", "total")
 ZONE_IS = ("in", "out")
 DRIVE_DIRECTIONS = ("forward", "back", "left", "right")
 _OPPOSITE = {"back": "forward", "left": "right", "right": "left"}     # where a minus distance goes instead
@@ -108,6 +112,7 @@ class Program:
     setup: dict = field(default_factory=dict)
     hopper: list | None = None      # None: the file names none; []: the student cleared it (kept, so Setup
                                     # doesn't preselect one again)
+    match: bool = False             # play the range's [game] as a match: the match's length is the run's
 
 
 def found_setup(program: Program) -> dict:
@@ -175,6 +180,14 @@ def _text(v, where: str, what: str) -> str:
     if not isinstance(v, str) or not v:
         raise _fail(where, i18n.t("{what} must be a name in quotes", what=what))
     return v
+
+
+def _points(v, where: str) -> float:
+    """A number of points to reach (0 or more)."""
+    n = _num(v, where, "at_least")
+    if n < 0:
+        raise _fail(where, i18n.t("at_least can't be negative"))
+    return n
 
 
 def _whole(v, where: str, what: str, hi: int) -> int:
@@ -311,6 +324,19 @@ def _cond(v, where: str) -> Cond:
             raise _fail(where, i18n.t("is must be \"{in_}\" or \"{out}\", not {value}", value=repr(is_), in_="in",
                                       out="out"))
         return Cond(kind, {"zone": _text(t.get("zone"), where, "zone"), "is": is_})
+    if kind == "match":         # the match is in this phase now
+        _keys(t, ("phase",), where)
+        if t.get("phase") not in MATCH_PHASES:
+            raise _fail(where, i18n.t("phase must be one of {names}, not {value}", names=', '.join(MATCH_PHASES),
+                                      value=repr(t.get("phase"))))
+        return Cond(kind, {"phase": t["phase"]})
+    if kind == "points":        # the points so far, in a phase or in all of them, are at least N
+        _keys(t, ("phase", "at_least"), where)
+        phase = t.get("phase", "total")
+        if phase not in POINTS_PHASES:
+            raise _fail(where, i18n.t("phase must be one of {names}, not {value}", names=', '.join(POINTS_PHASES),
+                                      value=repr(phase)))
+        return Cond(kind, {"phase": phase, "at_least": _points(t.get("at_least"), where)})
     if kind == "partner_moved":
         _keys(t, ("at_least_in",), where)
         at = _num(t.get("at_least_in"), where, "at_least_in")
@@ -588,7 +614,7 @@ def _program(data: dict, path: Path, head: str = "[test]") -> Program:
                                    test_table="[test]", robot_setting="robot = \"<robot file>.toml\"")
                             if head == "[test]" else i18n.t("the test needs a robot file, which says which robot to "
                                                             "test"))
-    _keys(test, ("robot", "hooks", "hopper", "time_limit", "chart"), head)
+    _keys(test, ("robot", "hooks", "hopper", "time_limit", "chart", "match"), head)
     robot = test["robot"]
     if not isinstance(robot, str) or not robot:
         raise TestFileError(i18n.t("{head} robot must be the robot file's name in quotes, like \"{my_robot_toml}\"",
@@ -596,6 +622,12 @@ def _program(data: dict, path: Path, head: str = "[test]") -> Program:
     hooks = _strings(test.get("hooks", []), head, "hooks")
     hopper = _strings(test["hopper"], head, "hopper") if "hopper" in test else None
     chart = _strings(test["chart"], head, "chart") if "chart" in test else None
+    match = test.get("match", False)
+    if not isinstance(match, bool):
+        raise TestFileError(i18n.t("{head}: match must be true or false, not {value}", head=head, value=repr(match)))
+    if match and "time_limit" in test:
+        raise TestFileError(i18n.t("{head}: a match sets the run's length (the game's phases), so time_limit can't "
+                                   "be given with match", head=head))
     limit = _time(test.get("time_limit", TIME_LIMIT), head, "time_limit")
     if limit <= SETTLE_S:
         raise TestFileError(i18n.t("{head}: the time limit must be longer than {settle} s (the robot settles that "
@@ -607,7 +639,7 @@ def _program(data: dict, path: Path, head: str = "[test]") -> Program:
     if not isinstance(setup, dict):
         raise TestFileError(i18n.t("{setup_table} must be a table", setup_table="[setup]"))
     return Program(Path(path), Path(robot), hooks, limit, chart,
-                   [_block(b, (i,)) for i, b in enumerate(raw, 1)], _setup(setup), hopper)
+                   [_block(b, (i,)) for i, b in enumerate(raw, 1)], _setup(setup), hopper, match)
 
 
 def loads(text: str, path: Path) -> Program:
@@ -652,19 +684,23 @@ def block_defaults() -> dict:
 
 
 def to_json(p: Program) -> dict:
-    return {"robot": p.robot.as_posix(), "hooks": list(p.hooks),
-            "hopper": None if p.hopper is None else list(p.hopper), "time_limit": p.time_limit,
-            "chart": None if p.chart is None else list(p.chart), "setup": dict(p.setup),
-            "blocks": [block_json(b) for b in p.blocks]}
+    out = {"robot": p.robot.as_posix(), "hooks": list(p.hooks),
+           "hopper": None if p.hopper is None else list(p.hopper),
+           "time_limit": None if p.match else p.time_limit,      # a match sets the run's length
+           "chart": None if p.chart is None else list(p.chart), "setup": dict(p.setup),
+           "blocks": [block_json(b) for b in p.blocks]}
+    if p.match:
+        out["match"] = True
+    return out
 
 
 def from_json(d: dict, path: Path) -> Program:
     if not isinstance(d, dict):
         raise TestFileError(i18n.t("the test is a table"))
-    extra = [k for k in d if k not in ("robot", "hooks", "hopper", "time_limit", "chart", "setup", "blocks")]
+    extra = [k for k in d if k not in ("robot", "hooks", "hopper", "time_limit", "chart", "setup", "blocks", "match")]
     if extra:
         raise TestFileError(i18n.t("the test has something it doesn't use: {value}", value=repr(extra[0])))
-    test = {k: d[k] for k in ("robot", "hooks", "hopper", "time_limit", "chart") if d.get(k) is not None}
+    test = {k: d[k] for k in ("robot", "hooks", "hopper", "time_limit", "chart", "match") if d.get(k) is not None}
     data = {"test": test, "block": d.get("blocks", []), "setup": d.get("setup") or {}}
     return _program(data, Path(path), "the test")
 
@@ -711,7 +747,9 @@ def dumps(p: Program) -> str:
         out.append(f"hooks = {_value(p.hooks)}")
     if p.hopper is not None:
         out.append(f"hopper = {_value(p.hopper)}")
-    if p.time_limit != TIME_LIMIT:
+    if p.match:
+        out.append("match = true")
+    elif p.time_limit != TIME_LIMIT:
         out.append(f"time_limit = {_value(p.time_limit)}")
     if p.chart is not None:
         out.append(f"chart = {_value(p.chart)}")

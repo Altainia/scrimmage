@@ -44,6 +44,8 @@ def signals(world) -> dict[str, list[str]]:
         out["range"] = ["score", *(f"score.{g.name}" for g in rng.range.goals), "fired", "held", "on_field",
                         *(f"element.{e.name}.angle" for e in rng.range.elements if isinstance(e, Platform)),
                         *(f"element.{n}" for n in moving_units(rng.range.elements))]
+        if rng.range.game is not None:
+            out["range"] += ["points", "points.auto", "points.teleop", "points.endgame"]
         if holds:
             out["range"] += ["climb.hanging", "climb.level", "climb.points", "climb.swing"]
     return out

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from .. import i18n, units
 from .aim import aim_error, aim_target
 from .clearance import NEVER_WITHIN_IN
-from .conditions import IN, _amount, describe, scores_balls, turret_words
+from .conditions import IN, _amount, describe, phase_word, scores_balls, turret_words
 from .grip_watch import SET_DOWN, default_word
 from .palette import ANY_GOAL, ANY_HOOK, ANY_PIECE, NEXT_BAR
 from .placed import KNOCK_OFF_SHARE, seated_words
@@ -273,6 +273,23 @@ class _FailureWords:
                      else _amount(self.world.partner.moved(), 'in', fewer=2))
             return t("expected the partner to move at least {limit}, but it moved {moved}",
                      limit=_amount(a["at_least_in"], "in"), moved=moved)
+        if k == "match":
+            now = self.match.phase if self.match is not None else None
+            return t("expected the match to be in {phase}, but it was in {now}", phase=phase_word(a["phase"]),
+                     now=phase_word(now) if now else t("no phase"))
+        if k == "points":
+            got = f"{watch.points_so_far(a['phase']):g}"
+            if a["phase"] == "total":
+                said = t("expected {want} or more points, but there were {got}", want=f"{a['at_least']:g}", got=got)
+            else:
+                said = t("expected {want} or more points in {phase}, but there were {got}",
+                         want=f"{a['at_least']:g}", phase=phase_word(a["phase"]), got=got)
+            m = self.match
+            if (a["phase"] in ("auto", "total") and m is not None and m.game.leave is not None
+                    and float(self.world.data.time) < m.phases.auto[1]):     # LEAVE isn't judged yet
+                return i18n.t("{failure} (LEAVE counts once auto ends: wait until the match is in the pause or "
+                              "teleop)", failure=said)
+            return said
         if k == "station_empty":
             left = self.feeder.left(a["station"]) if self.feeder is not None else None
             if left:

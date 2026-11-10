@@ -4,11 +4,13 @@ The fixtures (Chromium lookup, the Server helper) live in tests/test_assembler_b
 box with the stock arm (motor and joint arm.pivot), as in tests/test_test_server.py.
 """
 import json
+import re
 import shutil
 import tomllib
 from pathlib import Path
 
 import pytest
+from playwright.sync_api import expect
 
 from scrimmage.assembler.templates import new_config
 from browser_harness import page_units, close_context
@@ -2497,3 +2499,107 @@ def test_block_settings_defaults_come_from_the_runs_constants(test_page):
     })()""")
     assert out[:2] == [f"{pg.DRIVE_VOLTS:g}", f"{pg.DRIVE_TIMEOUT:g}"]
     assert "Turn at up to: type a number from 0 to 12" in out[2]
+
+
+# -- a match: its blocks, its checkbox, its points and phase marks (K3, Task 5) ----------------------------------------
+MATCH_BLOCKS = """
+[[block]]
+do = "wait_until"
+until = { match = { phase = "teleop" } }
+
+[[block]]
+do = "expect"
+that = { match = { phase = "teleop" } }
+
+[[block]]
+do = "expect"
+that = { points = { phase = "auto", at_least = 0.0 } }
+
+[[block]]
+do = "wait_until"
+until = { points = { phase = "total", at_least = 3.0 } }
+timeout = 1.0
+"""
+MATCH_KINDS = ("cond_match", "cond_points")
+
+
+def _match_test(tmp_path, blocks, head="match = true\n", game=(2.0, 1.0, 2.0), ranged=True):
+    from test_blocks_match import make
+    make(tmp_path, blocks, head, game=game, ranged=ranged)
+    path = tmp_path / "m.test.toml"
+    path.write_text('[test]\nrobot = "shooter.toml"\n' + head + blocks, encoding="utf-8")
+    return path
+
+
+def test_the_match_and_points_blocks_show_on_a_field_with_a_game_only(test_page, tmp_path):
+    page, _ = test_page()
+    assert not set(MATCH_KINDS) & set(_flyout_types(page))
+    page2, _ = test_page(path=_match_test(tmp_path, SPIN, head="", ranged=True))
+    page2.wait_for_function("__scrimmageTest.state?.palette?.game === true")
+    assert set(MATCH_KINDS) <= set(_flyout_types(page2)), _flyout_types(page2)
+
+
+def test_the_match_and_points_blocks_round_trip_exactly(test_page, tmp_path):
+    page, path = test_page(path=_match_test(tmp_path, MATCH_BLOCKS))
+    st = page.evaluate("__scrimmageTest.state.test")
+    assert [b["do"] for b in st["blocks"]] == ["wait_until", "expect", "expect", "wait_until"]
+    assert st["match"] is True
+    assert page.evaluate("__scrimmageTest.toJSON()") == st
+    types = page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).map(b => b.type)")
+    assert types.count("cond_match") == 2 and types.count("cond_points") == 2
+    assert page.evaluate("__scrimmageTest.state.test.blocks[3].until") == {
+        "points": {"phase": "total", "at_least": 3.0}}
+    page.locator("#test-blockly").click(position={"x": 5, "y": 5})     # a save with nothing changed keeps the file
+    assert 'phase = "teleop"' in path.read_text(encoding="utf-8")
+
+
+def test_the_match_checkbox_writes_match_and_drops_the_time_limit(test_page, tmp_path):
+    path = _match_test(tmp_path, SPIN, head="time_limit = 30.0\n")
+    page, _ = test_page(path=path)
+    _open_setup(page)
+    box = page.locator("#test-match")
+    expect(box).not_to_be_checked()
+    box.check()
+    _wait_file(lambda: "match = true" in path.read_text(encoding="utf-8"), path)
+    assert "time_limit" not in path.read_text(encoding="utf-8")
+    box.uncheck()
+    _wait_file(lambda: "match" not in path.read_text(encoding="utf-8"), path)
+
+
+def test_a_match_run_shows_its_points_lines_and_phase_marks(test_page, tmp_path):
+    blocks = MATCH_BLOCKS[:MATCH_BLOCKS.index('[[block]]\ndo = "wait_until"\nuntil = { points')]
+    page, _ = test_page(path=_match_test(tmp_path, blocks))
+    run = _run(page, "001")
+    assert run["status"] == "finished", run
+    expect(page.locator("#test-totals")).to_be_visible()
+    expect(page.locator("#test-totals")).to_contain_text("points")
+    assert page.get_attribute("#test-totals", "aria-label") == "Points, goals and air"
+    marks = page.locator("#test-slip-marks .test-phase-mark")
+    expect(marks).to_have_count(3)
+    expect(marks.nth(0)).to_have_attribute("aria-label", re.compile(r"auto", re.I))
+    expect(marks.nth(2)).to_have_attribute("aria-label", re.compile(r"teleop", re.I))
+    before = page.evaluate("__scrimmageTest.replay.time")
+    marks.nth(2).click()
+    page.wait_for_function(f"__scrimmageTest.replay.time > {before} + 1")
+
+
+def test_the_chart_draws_the_phase_bands_and_names_them_in_the_viewers_words(test_page, tmp_path):
+    from test_i18n_pages_browser import catalog
+    blocks = MATCH_BLOCKS[:MATCH_BLOCKS.index('[[block]]\ndo = "wait_until"\nuntil = { points')]
+    page, _ = test_page(path=_match_test(tmp_path, blocks))
+    _run(page, "001")
+    page.wait_for_selector("#test-chart canvas")
+    page.evaluate("""() => {
+      window.__texts = []; window.__bands = 0;
+      const P = CanvasRenderingContext2D.prototype, text = P.fillText, rect = P.fillRect;
+      P.fillText = function (s, ...a) { window.__texts.push(String(s)); return text.call(this, s, ...a); };
+      P.fillRect = function (...a) { if (this.globalAlpha === 0.5) window.__bands++; return rect.call(this, ...a); };
+    }""")
+    # the run's words in another setting: the chart's labels follow them (marks are the auto, pause and teleop changes)
+    page.evaluate("""() => Promise.all([import('./test_run_state.js'), import('./units.js')]).then(([m, u]) => {
+      m.rp.run.result.words = { ['en-GB|' + u.units.system]: { marks: ['Auto GB', 'Pause GB', 'Teleop GB'] } };
+    })""")
+    catalog(page, {"x": "x"})
+    page.wait_for_function("window.__texts.includes('Pause GB') && window.__texts.includes('Teleop GB')")
+    assert page.evaluate("window.__bands") >= 1                      # the pause is shaded
+    expect(page.locator("#test-slip-marks .test-phase-mark").nth(1)).to_have_attribute("aria-label", "Pause GB")

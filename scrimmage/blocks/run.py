@@ -98,6 +98,16 @@ its chart measures the robot's clearance to it after every step (Watch.closest),
 smallest clearance and when (clearance_lines words it: "closest to trench: 0.82 in at 3.1 s", "trench: never within
 20 in"). A failed `clears` check says the clearance then ("but it was 0.42 in").
 
+A match (`match = true` in `[test]`, on a range with a `[game]`; match.py): the match starts at the first block's run
+time (after the settle) and the run ends at its end, `auto_s + pause_s + teleop_s` later, with status "finished" even
+when blocks are left (the outcome says so) or finished early (the robot sits, motors as they were); `time_limit` does
+not apply. During the pause every step's HalState gets a DriverStation frame with `>enabled` false, so World.step
+neutralizes the motors and holds the pneumatics; the blocks play on, and a drive's seconds count the pause. The
+settle after the match's end runs with the same frame (the robot is disabled at the buzzer); a piece that lands then
+is a goal piece but scores no points. A mark (kind "phase") goes into `marks` at each phase change. The result gains
+`match`, `points` (the score at the match's end; a points condition reads the endgame as the climb level held now)
+and `rules` (the rules broken, possession.py: [] for none).
+
 A run ends with one status: "finished" (every block played), "check failed", "timed out" (a wait until, a move, a
 drive or a turn), "tipped over" (the robot body's up axis more than TIP_DEG from vertical), "walked off" (the climb
 runner's "hook walked off" rule, scrimmage/climb/run.py's WalkOff), "time limit", "repeat limit" (a repeat until
@@ -120,22 +130,24 @@ from ..climb.run import SETTLE_S, WalkOff
 from ..hal_drive import driven_joints, joint_drives, position_volts
 from ..movers import mover_poses, movers
 from ..parts.partner import SIGNALS as PARTNER_SIGNALS
-from ..protocol import HalState
+from ..protocol import HalState, frame
 from ..testrange.build import BALL_BITS
 from .aim import TURN, aim_error, aim_target
 from .clearance import PREFIX, inches, named
-from .conditions import IN, Watch, _amount, _conds
+from .conditions import IN, Watch, _amount, _conds, phase_word
 from .drive import STEER_TIMEOUT, drivetrain
 from .feeds import SETTLE_MAX_S, Outcomes, counts, is_standin, made_it_in, sentence
 from .grip_watch import SLIP_LOOKBACK_S
+from .match import MatchState
 from .palette import ALL_MOTORS, palette, problems
 from .placed import ON_PIECE, seated_words
+from .possession import RuleWatch
 from .program import DRIVE_TIMEOUT, DRIVE_VOLTS, MOVE_TIMEOUT, REPEAT_MAX, WAIT_TIMEOUT, Program, TestFileError
 # run_notes', run_setup's and run_words' names, used here and re-exported (other modules and the tests import them
 # from here)
 from .run_notes import (DEFAULT_GRIP_NOTE, GRIP_CONDITIONS, PNEUMATIC_ESTIMATES, air_lines,  # noqa: F401
                         clearance_lines, default_grip_note, goal_lines, piece_lines, piece_log, piece_notes,
-                        pneumatic_note, run_notes)
+                        pneumatic_note, points_lines, rules_lines, run_notes)
 from .run_setup import (COLOR_NAMES, partner_overlap, sensor_value, setup_config, setup_partner,  # noqa: F401
                         setup_partner_words, world_for)
 from .run_words import _FailureWords, _keep_words, _recast, _v, _w, _where, _ws  # noqa: F401
@@ -155,6 +167,7 @@ TURN_MIN_VOLTS = 1.0      # V: a turn short of its angle pushes at least this ha
 EPS = 1e-9
 MOVING_DEG_S = 5.0        # a joint turning faster than this (a hinge), our call, was moving at a slip
 MOVING_IN_S = 0.5         # ... or sliding faster than this (a slide), our call
+DISABLED = frame("DriverStation", "", {">enabled": False})     # the pause's frame: the robot is disabled
 MOVING_SPEED = 0.1        # m/s: the robot going across the floor faster than this was driving at a slip, our call
 
 
@@ -193,6 +206,11 @@ class RunResult:
     # setting, {"en-GB|metric": {outcome, checks, marks, seated, notes}} (_keep_words), which the Test tab shows in
     # the viewer's; None for any other run (its words are in the setting it was made in)
     words: dict | None = None
+    # a match (`match = true`; None for any other run): the phase times in run time (match.py's to_dict), the points
+    # (game.py's Points.to_dict) at the end or where the run stopped, and the rules broken (possession.py)
+    match: dict | None = None
+    points: dict | None = None
+    rules: list | None = None
 
     @property
     def passed(self) -> bool:
@@ -267,6 +285,10 @@ class TestRun(_FailureWords):
         (spread.placements)."""
         check_problems(program, world)
         self.world, self.program = world, program
+        self.match: MatchState | None = None        # the match's state, made when the run starts (match = true)
+        self._blocks_done = False                   # a match: every block has been played, the match goes on
+        self._over = False                          # a match: it has ended, the robot is disabled for the settle
+        self.rule_watch: RuleWatch | None = None    # a match on a game with [game.rules]: the rules checked each step
         m = world.model
         self.motors = driven_joints(world)
         self._drive = joint_drives(world, self.motors)     # every motor on each joint
@@ -318,6 +340,7 @@ class TestRun(_FailureWords):
         dt = float(m.opt.timestep)
         w.external = None
         w.reset()
+        self._over = False
         self.air = None
         if w.pneumatics is not None:
             self.air = _Air(w.pneumatics, float(d.time))
@@ -357,6 +380,12 @@ class TestRun(_FailureWords):
         #                                                     (seen at the update that ended it)
         self.throughout: list[tuple[dict, object]] = []
         t = float(d.time)
+        if self.program.match:             # the match starts with the first block, on the run's clock
+            rng = w.parts.range
+            self.match = watch.match = MatchState(rng.game, rng.zones, watch._levels, t)
+            self._see_match(t)
+            if rng.game.rules is not None:
+                self.rule_watch = RuleWatch(w, watch, rng.game.rules)
         next_signal = next_motion = t
 
         def sample(t: float) -> None:
@@ -380,7 +409,13 @@ class TestRun(_FailureWords):
                 self._advance(t)
                 if cancel is not None and cancel.is_set():
                     raise _End("cancelled", _w(lambda: i18n.t("you stopped the run at {t} s", t=f"{t:.1f}")))
-                if t >= self.program.time_limit - EPS:
+                if self.match is not None:
+                    if t >= self.match.end - EPS:       # the match plays to its end, whatever the blocks did
+                        if not self._blocks_done:
+                            self._unreached(t)
+                        raise _End("finished", "finished" if self._blocks_done else _w(lambda: i18n.t(
+                            "the match ended before the last block")))
+                elif t >= self.program.time_limit - EPS:
                     raise _End("time limit", _w(lambda: i18n.t(
                         "ran out of time ({limit} s){under_way}", limit=f"{self.program.time_limit:g}",
                         under_way=self._under_way())))
@@ -388,6 +423,10 @@ class TestRun(_FailureWords):
                 t = float(d.time)
                 watch.update()
                 self._track(t)
+                if self.match is not None:
+                    self._see_match(t)
+                    if self.rule_watch is not None and t <= self.match.end + EPS:
+                        self.rule_watch.see(t)
                 sample(t)
                 for check, cond in list(self.throughout):
                     if not watch.holds(cond):
@@ -411,6 +450,7 @@ class TestRun(_FailureWords):
             result.status, ending = e.status, e.ending
         if result.status == "finished":
             t0 = t
+            self._over = self.match is not None     # the buzzer: the settle after a match runs disabled
             try:
                 t = self._settle(t, sample, cancel)
             except _End as e:
@@ -464,8 +504,47 @@ class TestRun(_FailureWords):
         if self.air is not None:
             result.air = dict(self.air.out)
         result.clearance = watch.closest.result()
+        if self.match is not None:      # the points so far at the run's end (a pause or teleop piece after it is out)
+            # a run that reached the match's end is scored at the end: a last step a float error short still counts it
+            at = max(t, self.match.end) if t >= self.match.end - EPS else t
+            result.match = self.match.to_dict()
+            result.points = self.match.points(tr.ball_log(), at=at).to_dict()
+            result.rules = self.rule_watch.result() if self.rule_watch is not None else []
         _keep_words(result)
         return result
+
+    def _unreached(self, t: float) -> None:
+        """The match ended with blocks left: each `expect` that never ran fails ("the match ended before it"). That is
+        the current block (unless it is under way), the rest of every open block list, and the bodies of the repeats
+        among them."""
+        left: list[tuple[tuple, object]] = []
+
+        def walk(blocks, trail, start) -> None:
+            for i in range(start, len(blocks)):
+                b = blocks[i]
+                if b.do == "expect":
+                    left.append((trail + (i,), b))
+                walk(b.body, trail + (i,), 0)
+
+        last = len(self.frames) - 1
+        for k, f in enumerate(self.frames):
+            # the innermost list's current block is under way when `active`; an outer list's is the open repeat
+            walk(f.blocks, f.trail, f.index + (1 if k < last or self.active is not None else 0))
+        for place, b in sorted(left, key=lambda x: x[0]):
+            cond = b.args["that"]
+            self.checks.append({
+                "place": list(place), "text": _w(lambda: self._describe(cond)),
+                "throughout": bool(b.args.get("throughout", False)), "passed": False, "t": t, "timed": True,
+                "failure": _w(lambda: i18n.t("the match ended before this check ran"))})
+
+    def _see_match(self, t: float) -> None:
+        """After a physics step (or at the start) at run time t: the match's state, and a mark when its phase
+        changed."""
+        w = self.world
+        x, y = (float(c) for c in w.data.xpos[w.robot_body][:2])
+        phase = self.match.see(t, x, y, int(self.watch.climb.get("climb.level", 0)))
+        if phase is not None:
+            self.marks.append({"t": t, "kind": "phase", "phase": phase, "text": _w(lambda: phase_word(phase))})
 
     def _see_air(self) -> None:
         if self.air is not None:
@@ -519,7 +598,8 @@ class TestRun(_FailureWords):
 
     def _settle(self, t: float, sample, cancel) -> float:
         """After the blocks finish: the stations stopped, step until every piece has settled, or for SETTLE_MAX_S
-        (motors as they were); the time it ends. Setting `cancel` ends it, and the run, at the next step."""
+        (motors as they were; after a match, disabled); the time it ends. Setting `cancel` ends it, and the run, at
+        the next step."""
         if self.feeder is not None:
             self.feeder.stop_all()
         d = self.world.data
@@ -538,6 +618,8 @@ class TestRun(_FailureWords):
         """One physics step with the motor commands as they stand."""
         w, d = self.world, self.world.data
         hal = HalState()
+        if self.match is not None and (self.match.phase == "pause" or self._over):
+            hal.apply(DISABLED)         # held disabled: World.step neutralizes the motors and holds the pneumatics
         bus = w.vbatt
         for joint, (turret, goal) in self.aims.items():
             self.drives[joint] = ("to", aim_target(w, turret, goal)[0])
@@ -594,6 +676,9 @@ class TestRun(_FailureWords):
                 f.round_t = t
             if f.index >= len(f.blocks):
                 if len(self.frames) == 1:
+                    if self.match is not None:      # a match plays to its end even when the blocks are done
+                        self._blocks_done = True
+                        return
                     raise _End("finished", "finished")
                 parent = self.frames[-2]
                 rep = parent.blocks[parent.index]
@@ -749,7 +834,10 @@ class TestRun(_FailureWords):
         if b.do == "wait_until":
             if watch.holds(a["until"]):
                 return True
-            if elapsed >= a.get("timeout", WAIT_TIMEOUT) - EPS:
+            timeout = a.get("timeout", WAIT_TIMEOUT)
+            if self.match is not None and "timeout" not in a and a["until"].kind == "match":
+                timeout = self.match.end - self.active["t0"] + 2 * EPS     # a wait for a phase lasts to the match's end
+            if elapsed >= timeout - EPS:
                 raise _End("timed out", _w(lambda: i18n.t("waiting for {what} timed out at {t} s ({where})",
                                                           what=self._describe(a["until"], "waiting"), t=f"{t:.1f}",
                                                           where=_where(place))))

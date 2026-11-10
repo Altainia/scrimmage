@@ -1189,6 +1189,11 @@ dialog.start-dialog { width: auto; max-width: 96vw; }
   height: 13px; background: var(--slip-mark); transform: translate(-50%, -50%) rotate(45deg); }
 .test-slip-mark::after { transform: translate(-50%, -50%) rotate(-45deg); }
 .test-slip-mark-on { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--text); }
+/* a match's phase change: a tall tick in the text color (not a cross, so it reads apart from a slip) */
+.test-phase-mark { position: absolute; top: 0; width: 13px; height: 13px; padding: 0; border: 0; background: none;
+  border-radius: var(--radius-sm); transform: translateX(-50%); cursor: pointer; }
+.test-phase-mark::before { content: ""; position: absolute; left: 50%; top: 0; width: 3px; height: 13px;
+  background: var(--text); transform: translateX(-50%); }
 .test-seated { margin: 0; font-size: 13px; }
 .test-totals { margin: 0; padding: 0; list-style: none; font-size: 13px; }
 .test-run-notes { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--warn-text); }

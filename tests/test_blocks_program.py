@@ -1,5 +1,6 @@
 """The blocks test file format (scrimmage/blocks/program.py)."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -314,3 +315,37 @@ def test_setup_piece_is_a_ball_or_piece_preset():
 def test_setup_piece_and_ball_together_are_refused():
     with pytest.raises(P.TestFileError, match="give ball or piece, not both"):
         P.loads(HEAD + '[setup]\nball = "2014-ball"\npiece = "2025-coral"', PATH)
+
+
+def test_match_and_points_round_trip():
+    blocks = """
+[[block]]
+do = "wait_until"
+until = { match = { phase = "pause" } }
+
+[[block]]
+do = "expect"
+that = { points = { phase = "endgame", at_least = 3.5 } }
+
+[[block]]
+do = "expect"
+that = { points = { at_least = 7 } }
+"""
+    p = P.loads('[test]\nrobot = "r.toml"\nmatch = true\n' + blocks, PATH)
+    assert p.match and [b.args[k].kind for b, k in zip(p.blocks, ("until", "that", "that"))] == \
+        ["match", "points", "points"]
+    assert p.blocks[2].args["that"].args == {"phase": "total", "at_least": 7.0}
+    again = P.loads(P.dumps(p), PATH)
+    assert again.match and again.blocks == p.blocks and "time_limit" not in P.dumps(p)
+    js = P.to_json(p)
+    assert js["match"] is True and js["time_limit"] is None
+    back = P.from_json(json.loads(json.dumps(js)), PATH)
+    assert back.match and back.blocks == p.blocks
+    assert "match" not in P.to_json(P.loads('[test]\nrobot = "r.toml"\n', PATH))     # a plain test has no match key
+    for bad in ('{ phase = "later" }', '{}', '{ phase = "auto", extra = 1 }'):
+        with pytest.raises(P.TestFileError):
+            P.loads('[test]\nrobot = "r.toml"\n[[block]]\ndo = "expect"\nthat = { match = ' + bad + ' }\n', PATH)
+    for bad in ('{ at_least = -1 }', '{ phase = "later", at_least = 1 }', '{ phase = "auto" }',
+                '{ at_least = 1, extra = 1 }'):
+        with pytest.raises(P.TestFileError):
+            P.loads('[test]\nrobot = "r.toml"\n[[block]]\ndo = "expect"\nthat = { points = ' + bad + ' }\n', PATH)

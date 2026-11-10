@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import math
 import re
+import threading
 import tomllib
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from scrimmage.blocks.run import TestRun, world_for
 from scrimmage.motors import get_motor
 from scrimmage.protocol import HalState
 from scrimmage.testrange import aim, check
+from scrimmage.testrange.game import score
 from scrimmage.testrange.spec import BUILTIN_RANGES, load_range
 from scrimmage.world import World
 
@@ -47,6 +49,25 @@ def test_the_range_checks_clean():
     # the SPEAKER's hood is an obstacle (a NOTE's corners can't clip it), not a plate of the goal
     assert {"speaker_blue_hood", "speaker_red_hood"} <= {o.name for o in rng.obstacles}
     assert all(not g.plates for g in rng.goals)
+
+
+def test_the_range_has_the_2024_game():
+    """The `[game]`: 15 s auto, a 3 s pause, 135 s teleop, SPEAKER 5/2 and AMP 2/1 for the blue goals only (the red
+    ones count pieces, for 0 points), LEAVE 2 from blue_start, the rules, and ONSTAGE's 3 from [climb]; `range check`
+    shows it."""
+    rng = check.load("2024")
+    g = rng.game
+    assert (g.name, g.auto_s, g.pause_s, g.teleop_s) == ("2024 CRESCENDO", 15.0, 3.0, 135.0)
+    assert {k: (v.auto, v.teleop) for k, v in g.points.items()} == {
+        "speaker_blue": (5.0, 2.0), "amp_blue": (2.0, 1.0)}
+    assert (g.leave.zone, g.leave.points) == ("blue_start", 2.0)
+    assert (g.rules.possession, g.rules.extension, g.rules.height) == (
+        1, pytest.approx(12 * 0.0254), pytest.approx(48 * 0.0254))
+    assert g.climb_points == {"ONSTAGE": 3.0}
+    red = score(g, [{"goal": "speaker_red", "scored_t": 1.0}], g.phases(0.0), None, None)    # a blue robot's shot
+    assert red.total == 0.0 and [(i.source, i.count, i.points) for i in red.items] == [("speaker_red", 1, 0.0)]
+    assert "game '2024 CRESCENDO' (15 s auto, 3 s pause, 135 s teleop, 2 goals score points)" in \
+        check.summary("2024", rng)[0]
 
 
 def test_the_blue_speaker_is_the_bench_fixtures():
@@ -249,3 +270,20 @@ def test_the_bench_docs_note_lob_scores_in_the_builtin_range(tmp_path):
     lands = report.landings(result)
     assert [land.goal for _, land in lands] == ["scored"]
     assert "1 of 1 shots score in `speaker_blue`" in report.headlines(result, lands)
+
+
+def test_the_match_example_scores_7_points_in_auto():
+    """examples/blocks/match/auto.test.toml: the speaker example's robot plays the 2024 match (15 s auto, 3 s pause,
+    135 s teleop). In auto it shoots the preloaded NOTE into the SPEAKER (5) and drives out of blue_start (LEAVE, 2);
+    it waits for teleop and expects 7 points in auto. The run stops a second into teleop (at 19 s), once LEAVE is
+    judged and the expect has run: the whole match is about 40 s of wall time, and the match tests cover its end."""
+    program = load(ROOT / "examples" / "blocks" / "match" / "auto.test.toml")
+    world = world_for(program)
+    assert problems(program, world) == []
+    stop = threading.Event()
+    r = TestRun(world, program).run(on_sample=lambda t, row: stop.set() if t >= 19 else None, cancel=stop)
+    assert r.status == "cancelled", r.outcome
+    assert [c["passed"] for c in r.checks] == [True]
+    assert r.checks[0]["text"] == "7 or more points are scored in auto"
+    assert r.points["auto"] == 7.0
+    assert [(i["source"], i["points"]) for i in r.points["items"]] == [("speaker_blue", 5.0), ("leave", 2.0)]

@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import math
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from .. import i18n
@@ -99,6 +99,26 @@ class Script:
     goal: str | None = None
     limits: Limits = field(default_factory=Limits)
     path: str = ""
+    given: frozenset = frozenset()   # the [limits] keys the script sets ("extension", "height"): rules don't replace
+
+    def from_rules(self, rules) -> set:
+        """Which of "extension" and "height" limits_in takes from `rules`."""
+        if rules is None:
+            return set()
+        return {k for k, v in (("extension", rules.extension), ("height", rules.height))
+                if v is not None and k not in self.given}
+
+    def limits_in(self, rules) -> Limits:
+        """The limits for a run on a range whose game has `rules` (testrange/game.py's Rules, or None): the range's
+        extension and height stand in for the ones the script leaves out; the 2022 constants stay the fallback."""
+        if rules is None:
+            return self.limits
+        ext, hgt = self.limits.extension, self.limits.height
+        if rules.extension is not None and "extension" not in self.given:
+            ext = rules.extension
+        if rules.height is not None and "height" not in self.given:
+            hgt = rules.height
+        return replace(self.limits, extension=ext, height=hgt)
 
 
 def _num(v, where: str, what: str) -> float:
@@ -262,12 +282,13 @@ def parse_script(raw: dict, path: str = "<script>") -> Script:
         if value <= 0:
             raise ScriptError(i18n.t("{path} {limits_table}: {key} must be above 0", path=path, key=key,
                                      limits_table="[limits]"))
+    given = frozenset(k for k, key in (("extension", "extension_in"), ("height", "height_in")) if key in lim)
     steps = raw.get("step")
     if not isinstance(steps, list) or not steps:
         raise ScriptError(i18n.t("{path}: a climb script needs at least one {step_table}", path=path,
                                  step_table="[[step]]"))
     return Script(tuple(_step(i, s, i18n.t("{path} step {number}", path=path, number=i))
-                        for i, s in enumerate(steps, start=1)), goal, limits, path)
+                        for i, s in enumerate(steps, start=1)), goal, limits, path, given)
 
 
 def load_script(path) -> Script:

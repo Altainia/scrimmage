@@ -197,6 +197,12 @@ Each step sets its drives, then waits for one condition:
   - no wait: the step ends at once.
 - `timeout` (default 10 s).
 
+The two length limits' defaults come from the range: when its `[game.rules]` gives `extension_in` or `height_in`
+(see [the test range](test-range.md)), those stand in for the 2022 defaults (G107's 16 in and G106's 66 in), and the
+notes name them "the extension limit" and "the height limit", not G107 and G106. A script's own `[limits]` key still
+wins, key by key, so a script that sets only `height_in` takes the range's `extension_in`. A script on a range with no
+`[game.rules]`, or rules without that length, keeps the 2022 numbers and names.
+
 There is no state machine: the waits are the simple conditions a driver or an auto-climb watches. The step table in
 `summary.md` records when each fired, which is how a timed setpoint script (the fake robot's `--climb` mode) gets its
 times.

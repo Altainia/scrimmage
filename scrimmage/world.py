@@ -187,6 +187,7 @@ class World:
         # The climb signals (scrimmage/terrain/climb.py): read every physics step on a range with a bar or a switch,
         # or once a scenario asks for one (climb_monitor()); otherwise None, and stepping costs nothing extra.
         self.climb = None
+        self.scenario_match = None      # a scenario's points on a range with a [game] (scenario_points.py)
         layout = self.parts.layout if self.parts is not None else None
         if layout is not None and (layout.bars or layout.switches):
             self.climb_monitor()

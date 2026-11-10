@@ -144,6 +144,10 @@ const AIR_SIDES = () => [[t("stored"), "stored"], [t("working"), "working"]];
 // words a list's options share ("is", "seeing") out into labels of their own, which wouldn't hide with the picker.
 const SENSOR_IS = () => [[t("is on"), "on"], [t("is off"), "off"]];
 const ZONE_IS = () => [[t("in", { context: "zone" }), "in"], [t("out of", { context: "zone" }), "out"]];
+const MATCH_PHASES = () => [[t("auto", { context: "match" }), "auto"], [t("pause", { context: "match" }), "pause"],
+  [t("teleop", { context: "match" }), "teleop"]];
+const POINTS_PHASES = () => [[t("auto", { context: "match" }), "auto"], [t("teleop", { context: "match" }), "teleop"],
+  [t("endgame", { context: "match" }), "endgame"], [t("total", { context: "match" }), "total"]];
 const SENSOR_SEEING = () => [[t("is seeing"), "on"], [t("isn't seeing"), "off"]];
 
 // A joint picker's validator: picking a joint that slides (or turns) switches a unit that doesn't fit it.
@@ -492,6 +496,19 @@ const CONDS = {
     fields: (a) => ({ IS: a.is || "in", ZONE: a.zone }),
     json: (b) => ({ in_zone: { zone: b.getFieldValue("ZONE"), is: b.getFieldValue("IS") } }),
   },
+  match: {
+    def: () => ({ message0: t("match is in %1"), args0: [dd("PHASE", MATCH_PHASES)],
+      tooltip: t("The match is in this phase now: auto, the pause (the robot is disabled), or teleop. Only in a test with the match box ticked in Setup.") }),
+    fields: (a) => ({ PHASE: a.phase }),
+    json: (b) => ({ match: { phase: b.getFieldValue("PHASE") } }),
+  },
+  points: {
+    def: () => ({ message0: t("points: %1 at least %2"),
+      args0: [dd("PHASE", POINTS_PHASES), num("POINTS", 1, { min: 0 })],
+      tooltip: t("The points scored so far, in one phase or in total, are at least this many. Only in a test with the match box ticked in Setup.") }),
+    fields: (a) => ({ PHASE: a.phase || "total", POINTS: a.at_least }),
+    json: (b) => ({ points: { phase: b.getFieldValue("PHASE"), at_least: b.getFieldValue("POINTS") } }),
+  },
   scored: {
     def: () => ({ message0: t("%1 scored in %2"), args0: [num("COUNT", 1, { min: 1, max: 1000, precision: 1 }), dd("GOAL", OPTIONS.scoredGoal)],
       tooltip: t("At least this many balls have gone into the goal (or into the goals together, for any goal).") }),
@@ -692,6 +709,7 @@ export function toolbox(p) {
   if (has(p.stations)) out.push(item(condType("station_empty")));
   if (has(p.goals)) out.push(item(condType("scored")));
   if (has(p.zones)) out.push(item(condType("in_zone")));
+  if (p.game) out.push(item(condType("match")), item(condType("points")));
   if (aimOk) out.push(item(condType("aimed")));
   if (cylinders) out.push(item(condType("cylinder")), item(condType("pressure")));
   if (has(p.moving_elements)) out.push(item(condType("element")));

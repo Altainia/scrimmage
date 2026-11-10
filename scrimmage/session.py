@@ -229,8 +229,10 @@ class Session:
             log.warning(unused)
         if not attach and self.config.robot_program is None:
             raise SessionError(t("{config} has no {robot_program_table} section: add one (see configs/kitbot.toml), "
-                                 "or attach to a robot program you start yourself", config=self.config.path,
-                                 robot_program_table="[robot_program]"))
+                                 "or attach to a robot program you start yourself. A match without robot code is a "
+                                 "Test-tab test with {test_table} {match_setting}", config=self.config.path,
+                                 robot_program_table="[robot_program]", test_table="[test]",
+                                 match_setting="match = true"))
         self.real_ds = self.config.real_ds if real_ds is None else bool(real_ds)
         rp = self.config.robot_program
         if self.real_ds and rp is not None and not attach:
