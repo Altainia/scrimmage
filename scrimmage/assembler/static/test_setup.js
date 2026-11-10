@@ -243,7 +243,7 @@ export function renderSetup({ keepTyping = false } = {}) {
   const key = canon([pal.bodies || [], [...mine], [...counted], [...hopper], drawn,
     floorKey(fs || {}) === T.floorFor ? null : fs, i18n.lang, pal.station_settings || {},
     pal.ball || null, pal.balls || [], !!pal.ball_choice, !!pal.floor_piece, s.station_starter, feeding, !!s.running,
-    pal.piece || null, pal.piece_presets || null, pal.kinds || {}, pal.floor_kinds || {}, pal.station_kinds || {},
+    !!pal.game, !!head.match, pal.piece || null, pal.piece_presets || null, pal.kinds || {}, pal.floor_kinds || {}, pal.station_kinds || {},
     pal.floor_ball || null, !!pal.robot_partner, pal.grips || {}, pal.grip_materials || [], [...T.gripOwn], [...T.gripSent],
     (s.fields || []).length, T.robot ? [T.robot.version, T.robot.parts, ro] : null, !!T.stock, T.setupError, units.system]);
   if (key === T.setupKey) return;
@@ -320,6 +320,16 @@ export function renderSetup({ keepTyping = false } = {}) {
       h("p", { class: "hint", text: t("What the pads are made of. Friction values are estimates (UNCALIBRATED); docs/test-tab.md says how to measure yours.") }),
       h("div", { class: "test-setup-grid" }, ...grips.flatMap((b, i) => gripRow(pal, b, i, !!s.running,
         !grips.slice(0, i).some((x) => x.split(".")[0] === b.split(".")[0]))))));
+  }
+  if (pal.game || head.match) {
+    // a match takes the range's [game] phases for the run's length, so a time limit goes when it is ticked
+    parts.push(h("fieldset", { class: "test-setup-match" },
+      h("legend", { text: t("Match") }),
+      h("p", { class: "hint", text: t("Play the field's game as a match: auto, a pause with the robot disabled, then teleop. The match sets how long the run lasts, so a time limit isn't kept.") }),
+      h("label", { class: "row" },
+        h("input", { type: "checkbox", id: "test-match", checked: !!head.match, onchange: (e) =>
+          setTest(e.target.checked ? { match: true, time_limit: undefined } : { match: undefined }) }),
+        t("This test is a match"))));
   }
   parts.push(h("fieldset", { class: "test-setup-hooks" },
     h("legend", { text: t("Hooks") }),

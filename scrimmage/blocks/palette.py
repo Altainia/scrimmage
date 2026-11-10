@@ -246,6 +246,7 @@ def palette(world, hooks: list[str], setup: dict | None = None) -> dict:
         "robot_partner": robot_partner,     # the world's own partner: the Test tab's is the robot config's [partner]
         "goals": sorted(g.name for g in rng.goals) if rng is not None else [],
         "zones": [z.name for z in rng.zones] if rng is not None else [],     # [[zone]]s, for in_zone
+        "game": rng is not None and rng.game is not None,     # the range has a [game]: a test can be a match
         "turrets": turrets(world),          # stock turrets' instances: each turns `<inst>.turn`
         "cylinders": cyls,                  # pneumatic cylinders: {name, double}
         "sensors": sens,                    # the robot's [[sensor]]s: {name, kind}
