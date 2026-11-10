@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from phoenix_runs import machine_too_slow
 
 
@@ -22,6 +24,21 @@ BEHIND = ["the robot program fell 0.66 s behind real time (silent, ...)"]
 SKIPPED = ["physics on this computer kept up with only 0.9x real time: physics fell behind real time and skipped "
            "ahead 1.04 s (3 times), ..."]
 LATE, SHORT = ["by_time fired >= 8 by t=8"], ["at_end fired >= 8"]
+
+
+@pytest.fixture(autouse=True)
+def not_ci(monkeypatch):
+    monkeypatch.delenv("CI", raising=False)
+
+
+def test_on_ci_timing_failures_are_skipped_without_a_slow_note_and_nothing_else_is(monkeypatch):
+    monkeypatch.setenv("CI", "true")
+    assert "on CI" in machine_too_slow(report(LATE + SHORT, []), fired)
+    assert machine_too_slow(report([], []), fired) is None                           # passed
+    assert machine_too_slow(report(LATE + ["at_end score.hub_blue >= 2"], []), fired) is None
+    assert machine_too_slow(report(LATE, [], ["no foreign sim writes"]), fired) is None
+    assert machine_too_slow(report(LATE, [], interrupted="step interrupted at t=3.0"), fired) is None
+    assert machine_too_slow(report(LATE, [], error="the robot program exited"), fired) is None
 
 
 def test_only_a_short_fired_count_on_a_slow_machine_is_skipped():
