@@ -25,7 +25,7 @@ SIGNALS_HELP = ("battery, speed, motor.<name>.current|command, joint.<name>.posi
                 "robot.ground_gap|wheels_down|air_time|pitch|roll|tilt|z|stranded|tipped, "
                 "climb.hanging|level|points|swing|hook_load|extension|height, climb.hook.<hook>.load, "
                 "hal:<type>/<device>/<key>, nt:<topic>, and on a test range score, score.<goal>, fired, held, on_field, "
-                "element.<platform>.angle, element.<hinged or sliding element>, with a [partner] partner.height|"
+                "with a [game] points, points.auto|teleop|endgame, element.<platform>.angle, element.<hinged or sliding element>, with a [partner] partner.height|"
                 "tilt|moved, and with [[sensor]]s sensor.<name>, sensor.<name>.distance|color, "
                 "sensor.<name>.sees.<color>")
 RANGE_SIGNALS = ("score", "fired", "held", "on_field")   # and score.<goal>: read from the range's counts()
@@ -107,6 +107,31 @@ def _range_signal(name: str, world) -> Signal:
                                   range=repr(rng.range.name)))
         return Signal(name, lambda s: s.world.test_range.counts()["goals"][goal])
     return Signal(name, lambda s: s.world.test_range.counts()[name])
+
+
+POINTS_FIELDS = ("auto", "teleop", "endgame")
+
+
+def _points_signal(name: str, world) -> Signal:
+    """points, points.auto, points.teleop, points.endgame: the points so far, as the Test tab's points condition reads
+    them (scrimmage/scenario_points.py: the scenario's steps are the phases)."""
+    rng = getattr(world, "test_range", None)
+    if rng is None:
+        raise ScenarioError(t("{signal} needs a robot on a test range: add {range_table} to the config (see "
+                              "docs/test-range.md)", signal=name, range_table="[range]"))
+    field = name[len("points"):].lstrip(".") if name == "points" or name.startswith("points.") else None
+    if field not in ("", *POINTS_FIELDS):
+        raise ScenarioError(t("unknown signal {signal}: the points signals are {signals}", signal=repr(name),
+                              signals=", ".join(("points", *("points." + f for f in POINTS_FIELDS)))))
+    if rng.range.game is None:
+        raise ScenarioError(t("{signal} needs a {game_table} table in the range file: it says what the pieces are "
+                              "worth (see docs/test-range.md)", signal=name, game_table="[game]"))
+    which = field or "total"
+
+    def read(s) -> float:
+        m = getattr(s.world, "scenario_match", None)
+        return 0.0 if m is None else float(getattr(m.points(float(s.world.time)), which))
+    return Signal(name, read)
 
 
 def _robot_signal(name: str, world) -> Signal:
@@ -246,6 +271,8 @@ def resolve_signal(name: str, world) -> Signal:
         return _sensor_signal(name, world)
     if name in RANGE_SIGNALS or name.startswith("score."):
         return _range_signal(name, world)
+    if name == "points" or name.startswith("points."):
+        return _points_signal(name, world)
     if name.startswith("robot."):
         return _robot_signal(name, world)
     if name.startswith("element."):

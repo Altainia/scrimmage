@@ -1096,6 +1096,15 @@ On a range, scenario checks (`at_end`, `always`, `by_time`, ...) can read these 
 | `fired` | balls the launcher has launched |
 | `held` | balls in the robot |
 | `on_field` | balls in play |
+| `points`, `points.auto`, `points.teleop`, `points.endgame` | the points so far at the check's time (the total, or one phase), on a range with a `[game]`; without one they are an error that says the range needs a `[game]` table |
+
+The points use the scenario's steps as the match's phases. A piece scored during a step in mode `auto` is an auto piece,
+in `teleop` a teleop piece, and in a `disabled` step the pause (it scores nothing); a `test` step is none of them. The
+steps can repeat. LEAVE scores if the robot's center is inside the `leave` zone when the scenario starts and outside it
+when the last `auto` step ends. The endgame is the climb level the robot holds when the scenario ends, so
+`points.endgame` is 0 until the last step's end. The range's phase lengths aren't used: an auto step longer than the
+game's auto still counts its pieces as auto. When the range has a `[game]`, the report's Score section also lists the
+points, and `report.json` has a `points` key with the same numbers the Test tab keeps.
 
 Without a `[range]` on the config these signals are an error that says so.
 
