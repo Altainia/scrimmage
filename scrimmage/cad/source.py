@@ -113,7 +113,7 @@ def _instance_names(raw: bytes) -> dict[str, str]:
         elif kind == b"PRODUCT":
             p = _PRODUCT.match(body, at)
             if p:
-                products[int(m.group(1))] = (p.group(2) or p.group(1)).decode("latin-1").replace("''", "'")
+                products[int(m.group(1))] = ((p.group(2) or b"").strip() or p.group(1)).decode("latin-1").replace("''", "'")
     names = {}
     for label, definition in usages.items():
         product = products.get(formations.get(definitions.get(definition), -1))

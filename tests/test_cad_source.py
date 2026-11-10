@@ -7,9 +7,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from cad_helpers import FIELD_STEP
 from scrimmage.cad import CadError, missing_extra
 from scrimmage.cad.mass import is_closed, mesh_inertial
-from cad_helpers import FIELD_STEP
 from scrimmage.cad.source import UNITS, guess_units, load_source
 
 DATA = Path(__file__).parent / "data" / "cad"
@@ -298,9 +298,18 @@ def test_instance_names_reads_the_specified_source_formation():
 #11 = PRODUCT_DEFINITION('design','',#12,#6);
 #12 = PRODUCT_DEFINITION_FORMATION('','',#13);
 #13 = PRODUCT('part_id','','',(#5));
+#20 = NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO3',' ',' ',#9,#21,$);
+#21 = PRODUCT_DEFINITION('design','',#22,#6);
+#22 = PRODUCT_DEFINITION_FORMATION('','',#23);
+#23 = PRODUCT('id3','It''s a bar','',(#5));
+#30 = NEXT_ASSEMBLY_USAGE_OCCURRENCE('NAUO4',' ',' ',#9,#31,$);
+#31 = PRODUCT_DEFINITION('design','',#32,#6);
+#32 = PRODUCT_DEFINITION_FORMATION('','',#33);
+#33 = PRODUCT('id4',' ','',(#5));
 ENDSEC;
 """
-    assert _instance_names(text) == {"NAUO1": "Boost Area End", "NAUO2": "part_id"}
+    assert _instance_names(text) == {"NAUO1": "Boost Area End", "NAUO2": "part_id", "NAUO3": "It's a bar",
+                                     "NAUO4": "id4"}      # a quote doubled in the name; a blank name: the id
 
 
 @pytest.mark.skipif(not FIELD_STEP.is_file(), reason="FIRST's field CAD isn't committed")
