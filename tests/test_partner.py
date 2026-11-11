@@ -5,7 +5,9 @@ conditions, and its start check (Review Focus 3)."""
 from __future__ import annotations
 
 import math
+import shutil
 import tomllib
+from pathlib import Path
 from types import SimpleNamespace
 
 import mujoco
@@ -169,8 +171,8 @@ mass = 1
     _world(tmp_path, on_range + "\n[partner]\nstart = [5.0, 6.0, 0]\n")     # under a raised panel: allowed
 
     for bad, msg in (("start = [4, 4, 0]\nmass_kg = 50", "unknown key 'mass_kg'; allowed: length, width, mass, "
-                      "bumper_clearance, brake, start"),
-                     ("mass = 50", r"\[partner\] needs start = \[x, y, heading_deg\]"),
+                      "bumper_clearance, brake, start, hang"),
+                     ("mass = 50", r"\[partner\] needs start or hang: start = \[x, y, heading_deg\]"),
                      ("start = [4, 4]", "start must be"),
                      ("start = [4, 4, 0]\nwidth = 0.2", "width must be at least 0.4 m"),
                      ("start = [4, 4, 0]\nmass = 2", "mass must be more than its drive's 2.5 kg"),
@@ -369,3 +371,118 @@ def test_setup_partner_words_fall_back_to_the_configs_meters(units):
     except ConfigError as e:
         assert partner_overlap(e) is overlap
     assert partner_overlap(ConfigError("[partner] starts inside the robot (their outlines overlap by 0.20 m)")) is None
+
+
+# ---- a partner hanging on a chain (K5 D6, R9) -----------------------------------------------------------------------
+
+CHAIN = Path(__file__).resolve().parent / "data" / "chain"
+CHAIN_HANG = '\n[partner]\nhang = { hold = "chain_blue_center", along = 0.9 }\n'
+
+
+def _chain_robot(folder, partner: str = "") -> Path:
+    """tests/data/chain in `folder`, its robot config with `partner` added."""
+    folder.mkdir(parents=True, exist_ok=True)
+    for f in CHAIN.iterdir():
+        shutil.copy(f, folder)
+    path = folder / "robot.toml"
+    path.write_text(path.read_text(encoding="utf-8") + partner, encoding="utf-8")
+    return path
+
+
+def _chain_world(folder, partner: str):
+    from scrimmage.config import build_world, load_config
+    return build_world(load_config(_chain_robot(folder, partner)))
+
+
+def test_hang_errors(tmp_path):
+    """Review Focus 5: each mistake in `[partner] hang` is refused, naming [partner]."""
+    from scrimmage.config import ConfigError
+    for i, (bad, words) in enumerate((
+            ('start = [8, 2, 0]\nhang = { hold = "chain_blue_center", along = 0.9 }', "has both start and hang"),
+            ('hang = { hold = "nope", along = 0.9 }', "isn't an element of the range; its chains: chain_blue_center"),
+            ('hang = { hold = "chain_blue_left", along = 0.9 }', "needs a chain; the range's chains: "
+             "chain_blue_center"),
+            ('hang = { hold = "chain_blue_center", along = 1.3 }', "along must be at most 1.144 m"),
+            ('hang = { hold = "chain_blue_center", along = -1.3 }', "along must be at most 1.144 m"),
+            ('hang = { hold = "chain_blue_center", side = 1 }', "unknown key 'side'"))):
+        with pytest.raises(ConfigError) as e:
+            _chain_world(tmp_path / str(i), f"\n[partner]\n{bad}\n")
+        assert "[partner]" in str(e.value) and words in str(e.value), str(e.value)
+    # 1.21 - one link (0.066 m) is the last place a link inside the chain is nearest: allowed
+    _chain_world(tmp_path / "edge", '\n[partner]\nhang = { hold = "chain_blue_center", along = 1.14 }\n')
+    with pytest.raises(PartError) as e:            # the plain field has no chain
+        _world(tmp_path, '\n[partner]\nhang = { hold = "chain_blue_center", along = 0.9 }\n')
+    assert "[partner] hang needs a chain to hang from, and the range has none" in str(e.value)
+
+
+def test_a_hanging_partner_over_the_robot_is_refused(tmp_path):
+    """Review Focus 5: a partner hanging over the robot's start is refused as one standing there would be; only the
+    robot's outline is checked (it is off the carpet). Setup's words it in Setup's way."""
+    from scrimmage.blocks.run import partner_overlap, setup_partner_words
+    from scrimmage.config import ConfigError
+    with pytest.raises(ConfigError) as e:
+        _chain_world(tmp_path / "config", '\n[partner]\nhang = { hold = "chain_blue_center", along = 0.0 }\n')
+    overlap = partner_overlap(e.value)
+    assert overlap is not None and overlap.what == "the robot"
+    assert "[partner] starts inside the robot (their outlines overlap by 0.57 m)" in str(e.value)
+    folder = tmp_path / "setup"
+    _chain_robot(folder)
+    test = folder / "t.test.toml"
+    test.write_text('[test]\nrobot = "robot.toml"\n\n[setup]\npartner = { hang = "chain_blue_center", along_in = 0 }\n',
+                    encoding="utf-8")
+    with pytest.raises(TestFileError) as e:
+        world_for(loads(test.read_text(encoding="utf-8"), test))
+    assert str(e.value) == setup_partner_words(overlap)
+    assert str(e.value) == "the partner robot (Setup) starts inside the robot (their outlines overlap by 22.6 in)"
+
+
+def test_a_hanging_partner_ignores_the_floor_checks(tmp_path):
+    """A hanging partner is over the floor: its outline isn't checked against floor pieces, elements on the carpet or
+    a floor spread's placements, only against the robot's start."""
+    from scrimmage.blocks.spread import on_partner
+    w = _chain_world(tmp_path, CHAIN_HANG)
+    assert w.parts.partner.hang is not None
+    assert on_partner(w, {"offset_in": [0.0, 30.0]}) is None
+
+
+def test_setup_partner_hangs(tmp_path):
+    from scrimmage.blocks.run import setup_partner
+    path = _chain_robot(tmp_path)
+    raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    out = setup_partner(raw, {"hang": "chain_blue_center", "along_in": 35.4}, tmp_path)
+    assert set(out["partner"]) == {"hang"}
+    assert out["partner"]["hang"]["hold"] == "chain_blue_center"
+    assert out["partner"]["hang"]["along"] == pytest.approx(0.89916, abs=1e-12)
+    # over the config's own standing partner: its start goes, its other settings stay
+    own = {**raw, **tomllib.loads("[partner]\nstart = [8, 2, 0]\nmass = 50\n")}
+    out = setup_partner(own, {"hang": "chain_blue_center", "along_in": 35.4, "brake": False}, tmp_path)
+    assert "start" not in out["partner"] and out["partner"]["mass"] == 50 and out["partner"]["brake"] is False
+    w = World(out, tmp_path)
+    assert w.parts.partner.hang.along == pytest.approx(0.89916)
+    # the test file: hang and along_in, round-tripped; never with ahead_in or heading_deg
+    (tmp_path / "p").mkdir()
+    program = _program(tmp_path / "p", 'partner = { hang = "chain_blue_center", along_in = 35.4 }')
+    assert program.setup["partner"] == {"hang": "chain_blue_center", "along_in": 35.4}
+    assert loads(dumps(program), program.path) == program
+    for bad, msg in (('partner = { hang = "chain_blue_center", ahead_in = 60 }', "has ahead_in and hang"),
+                     ('partner = { hang = "chain_blue_center", heading_deg = 90 }', "has heading_deg and hang"),
+                     ("partner = { hang = 3 }", "hang must be the name of a chain"),
+                     ("partner = { along_in = 3 }", "has along_in but no hang"),
+                     ('partner = { hang = "chain_blue_center", along_in = "x" }', "along_in must be a number")):
+        with pytest.raises(TestFileError, match=msg):
+            _program(tmp_path / "p", bad)
+
+
+def test_a_hanging_partner_shows_in_the_palette(tmp_path):
+    """Setup's Hangs on lists the field's chains; an off-carpet range charts climb.harmony and each chain's robots."""
+    path = _chain_robot(tmp_path)
+    rng = (tmp_path / "range.toml").read_text(encoding="utf-8")
+    pal = palette(_chain_world(tmp_path / "lowest", ""), [])
+    assert pal["chains"] == ["chain_blue_center"]
+    assert "climb.harmony" not in pal["signals"]            # lowest-rung: no HARMONY
+    (tmp_path / "range.toml").write_text(rng.replace('rule = "lowest-rung"', 'rule = "off-carpet"\nharmony = 2'),
+                                         encoding="utf-8")
+    from scrimmage.config import build_world, load_config
+    pal = palette(build_world(load_config(path)), [])
+    assert {"climb.harmony", "climb.hold.chain_blue_center.robots"} <= set(pal["signals"])
+    assert palette(_world(tmp_path / "plain"), [])["chains"] == []

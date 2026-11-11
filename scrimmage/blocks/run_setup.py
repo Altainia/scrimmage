@@ -48,9 +48,18 @@ def setup_config(raw: dict, setup: dict, cfg_dir: Path | None = None) -> dict:
 def setup_partner(raw: dict, partner, cfg_dir: Path | None) -> dict:
     """A copy of the config dict with Setup's partner: false drops the config's `[partner]`; a table puts the
     partner's center `ahead_in` ahead of the robot's start along its heading, turned `heading_deg` from it, its brake
-    as given (the config's `[partner]` keeps its other settings)."""
+    as given (the config's `[partner]` keeps its other settings); a table with `hang` hangs it from that chain
+    `along_in` inches from its low point instead, as `[partner] hang = { hold, along }` (m), dropping the config's
+    `start`."""
     if partner is False:
         return {k: v for k, v in raw.items() if k != "partner"}
+    if "hang" in partner:
+        have = raw.get("partner")
+        out = {k: v for k, v in (have if isinstance(have, dict) else {}).items() if k not in ("start", "hang")}
+        out["hang"] = {"hold": partner["hang"], "along": partner.get("along_in", 0.0) * IN}
+        if "brake" in partner:
+            out["brake"] = partner["brake"]
+        return {**raw, "partner": out}
     from ..parts.assemble import robot_start
     try:
         x, y, heading = robot_start(raw, cfg_dir)

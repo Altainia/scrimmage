@@ -3,7 +3,8 @@
 A scenario has no match clock. Its phases come from its steps: a piece scored during a step in mode `auto` is an auto
 piece, in `teleop` a teleop one, and in a `disabled` step the pause (it scores nothing). A step in any other mode (test)
 is neither. LEAVE is judged from the robot's center at the scenario's start and at the end of the last auto step; the
-endgame is the climb level held when the scenario ends. Scoring is testrange/game.py's `score`, reading the ball log.
+endgame is the climb level held when the scenario ends, and the HARMONY points with it. Scoring is testrange/game.py's
+`score`, reading the ball log.
 
 The runner makes one ScenarioMatch per run on a range with a `[game]`, and calls `begin` and `finish` around each step
 (per step, not per physics step). The points signals and the report's Score section read it.
@@ -105,10 +106,14 @@ class ScenarioMatch:
         return bool(self._inside0 and not inside)
 
     def _level(self) -> str | None:
+        return self._climb()[0]
+
+    def _climb(self) -> tuple[str | None, float]:
+        """The climb level held now (None: none) and the HARMONY points with it (climb.harmony), from one sample."""
         if not self._levels:
-            return None
-        rank = int(self.world.climb_monitor().sample()["climb.level"])
-        return level_name(self._levels, rank)
+            return None, 0.0
+        v = self.world.climb_monitor().sample()
+        return level_name(self._levels, int(v["climb.level"])), float(v.get("climb.harmony", 0.0))
 
     def points(self, at: float | None = None) -> Points:
         """The points at run time `at`, or of the whole scenario."""
@@ -117,7 +122,8 @@ class ScenarioMatch:
             dt = self.world.model.opt.timestep
             at = next((b for b in (self.phases.auto[1], self.phases.teleop[1]) if b - dt <= at < b), at)
             now = at
-        return score(self.game, self.log(), self.phases, self._left(now), self._level(), at)
+        level, harmony = self._climb()
+        return score(self.game, self.log(), self.phases, self._left(now), level, at, harmony=harmony)
 
     def report(self) -> dict:
         """What the report keeps: the points, and the climb level for the "climbed to" line."""

@@ -18,8 +18,8 @@
 An optional `[setup]` table sets the field up for the test: ball or piece (the field's game piece: a ball preset, or
 any piece or ball preset), seed, station (a human player's settings by name), floor_spread (several placements of
 the robot on the floor) and partner (a passive partner robot: `{ ahead_in = 60, heading_deg = 0, brake = true }`, its
-center that far ahead of the robot's start along the robot's heading, turned heading_deg from it; or false for none,
-even when the robot config has a [partner]).
+center that far ahead of the robot's start along the robot's heading, turned heading_deg from it; or hanging from a
+chain, `{ hang = "chain_blue_center", along_in = 35 }`; or false for none, even when the robot config has a [partner]).
 
 A `repeat` block holds its blocks as `[[block.body]]` tables (`[[block.body.body]]` one level in). Only the file's
 shape is checked here (kinds, types, ranges); names are checked against the robot elsewhere.
@@ -75,7 +75,7 @@ DRIVE_DIRECTIONS = ("forward", "back", "left", "right")
 _OPPOSITE = {"back": "forward", "left": "right", "right": "left"}     # where a minus distance goes instead
 SPREAD_AXES = ("offset_in", "distance_in", "angle_deg", "rotation_deg", "tip_deg")
 SETUP_KEYS = ("ball", "piece", "seed", "station", "floor_spread", "partner")
-PARTNER_SETUP_KEYS = ("ahead_in", "heading_deg", "brake")
+PARTNER_SETUP_KEYS = ("ahead_in", "heading_deg", "brake", "hang", "along_in")
 _STATION_LISTS = ("spread_position", "spread_rotation_deg")
 
 
@@ -542,7 +542,9 @@ def _setup(raw: dict) -> dict:
 
 
 def _partner_setup(t) -> dict | bool:
-    """`[setup] partner`: {ahead_in, heading_deg (0: facing the robot's way), brake (true)}, or false for none."""
+    """`[setup] partner`: {ahead_in, heading_deg (0: facing the robot's way), brake (true)}; or hanging from a chain,
+    {hang (the chain's name), along_in (inches from its low point along its yaw, default 0), brake}, with no ahead_in or
+    heading_deg (a hanging partner's place and heading are its chain's, R9); or false for none."""
     where = "[setup] partner"
     if t is False:
         return False
@@ -550,6 +552,23 @@ def _partner_setup(t) -> dict | bool:
         raise TestFileError(i18n.t("{where} must be a table like {partner_setting}, or false for none", where=where,
                                    partner_setting="partner = { ahead_in = 60 }"))
     _keys(t, PARTNER_SETUP_KEYS, where)
+    if "hang" in t:
+        if not isinstance(t["hang"], str) or not t["hang"]:
+            raise _fail(where, i18n.t("hang must be the name of a chain to hang the partner from"))
+        placed = [k for k in ("ahead_in", "heading_deg") if k in t]
+        if placed:
+            raise _fail(where, i18n.t("has {key} and hang: a hanging partner hangs where its chain is, so drop {key}",
+                                      key=placed[0]))
+        out = {"hang": t["hang"]}
+        if "along_in" in t:
+            out["along_in"] = _num(t["along_in"], where, "along_in")
+        if "brake" in t:
+            if not isinstance(t["brake"], bool):
+                raise _fail(where, i18n.t("brake must be true or false"))
+            out["brake"] = t["brake"]
+        return out
+    if "along_in" in t:
+        raise _fail(where, i18n.t("has along_in but no hang: along_in is where a hanging partner hangs on its chain"))
     if "ahead_in" not in t:
         raise _fail(where, i18n.t("needs ahead_in, how far ahead of the robot's start the partner's center is"))
     out: dict = {"ahead_in": _num(t["ahead_in"], where, "ahead_in")}

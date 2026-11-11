@@ -37,7 +37,10 @@ and `robot.stranded` doesn't fire for it. A range's `[climb]` table scores the c
 - `rule = "hang"` (2020): hanging from the named `switch` scores the first level, plus `level_bonus` while the
   switch is within its `level_deg` of level;
 - `rule = "lowest-point"` (2013): one level above the highest level whose bars are all below the robot's lowest
-  point. The manual's sequential-climb rule (a robot must climb level by level) isn't checked.
+  point. The manual's sequential-climb rule (a robot must climb level by level) isn't checked;
+- `rule = "off-carpet"` (2024): the level of the hold (a bar, a chain or a switch) the robot hangs from, while no part
+  of it touches the carpet. Touching two leveled holds, it scores the higher level. It also takes `harmony`: see
+  [ONSTAGE and HARMONY](#onstage-and-harmony).
 
 Library ranges:
 
@@ -78,16 +81,44 @@ How the hooks behave, measured (tests/test_climb_physics.py):
 - **Open a latch while hanging:** a latch the bar presses on, or one whose swing the bar is in, won't turn. Hang
   from the crown first (the bar clear of the latch), then run the release motor.
 
+## ONSTAGE and HARMONY
+
+2024's ONSTAGE scores a robot hanging from a CHAIN with no part of it on the carpet, and HARMONY scores 2 more points
+for each extra robot on the same chain (M Table 6-2). A range scores both with:
+
+```toml
+[climb]
+rule = "off-carpet"
+levels = { ONSTAGE = 3 }
+harmony = 2                   # points for each robot beyond the first on one hold, all off the carpet
+```
+
+`harmony` is for `"off-carpet"` only, and can't be negative. The only other robot is a partner hanging on the chain
+(`[partner] hang = { hold = "chain_blue_center", along = 0.9 }` in the robot config, or **Hangs on** in the Test
+tab's Setup): see the [README](../README.md#a-partner-robot). `climb.hold.<hold>.robots` counts it, and
+`climb.harmony` is then 2 while your robot hangs on the same chain. A match ([Test tab](test-tab.md#playing-a-match))
+or a scenario adds the HARMONY points held at its end to the endgame, after ONSTAGE's: "HARMONY with 1 other robot:
+2 points".
+
+A partner on the chain changes your climb. Its weight takes up the chain's slack, so the chain at your hooks is
+higher and tauter: in tests/test_climb_harmony.py, with a partner 0.9 m from the low point, the chain there rises
+from 0.72 m to about 0.99 m, and the test's climber, sized for the unloaded chain, no longer gets its hooks over it.
+Hanging, your robot sits about 4 cm higher than it does alone. The hooks stay where they catch (see
+[terrain.md](terrain.md#chains)), so the two robots don't slide together at the low point.
+
 ## The climb signals
 
-Read every physics step on a range with a bar or a switch (scrimmage/terrain/climb.py); scenario checks see them
-like the terrain signals:
+Read every physics step on a range with a bar, a chain or a switch (scrimmage/terrain/climb.py); scenario checks see
+them like the terrain signals:
 
 | signal | meaning |
 |---|---|
 | `climb.hanging` | 1 while some robot geom touches a bar or switch and none touches the ground |
 | `climb.level` | the scoring level's **rank** in the range's `[climb] levels`: 1 for the first (lowest) level, 0 for none |
 | `climb.points` | that level's points (0 while not hanging) |
+| `climb.hold` | which hold (bar, chain or switch) the robot hangs from, as a number: its place among the range's holds in element order, 1 for the first; 0 while not hanging |
+| `climb.hold.<hold>.robots` | how many robots are on that hold and off the carpet: your robot while it hangs touching it, plus a partner hanging on it (`[partner] hang`) while the partner touches no ground |
+| `climb.harmony` | HARMONY points: the range's `[climb] harmony` times the robots on your robot's hold less one, while it hangs; 0 otherwise |
 | `climb.swing` | deg: the robot's CoM from straight under the bar it swings from, positive toward the bar's local x × up (for a 2022 rung, field +x) |
 | `climb.hook_load` | N: the largest whole hook's contact force (every geom of `<inst>.hook<i>`, the latch too), peak-held between checks |
 | `climb.hook.<inst>.hook<i>.load` | N: one hook's |

@@ -46,8 +46,9 @@ has an inch form, `<key>_in` (give one of the two). `friction` (default 0.6) is 
 A rod's round free end is rounded and reaches exactly to `tip`. Bars, chains, rods, switches and boxes that aren't ground are structure, not floor: they are drawn and collide, but the terrain
 signals don't count them as the ground (geom group 1, not the ground's 2), so a robot parked under a bar reads the
 carpet, not the bar. A range with climbing elements scores them by its `[climb]` table: `rule` (`"lowest-rung"`,
-`"hang"` or `"lowest-point"`), `levels` (each level's points, lowest first, like `{ LOW = 4, MID = 6 }`), and for
-`"hang"` the `switch` and its `level_bonus`.
+`"hang"`, `"lowest-point"` or `"off-carpet"`), `levels` (each level's points, lowest first, like `{ LOW = 4, MID = 6 }`),
+for `"hang"` the `switch` and its `level_bonus`, and for `"off-carpet"` an optional `harmony` (see
+[climbing.md](climbing.md#onstage-and-harmony)).
 
 A bump's `depth` must agree with its profile (crest, then each ramp down at `ramp_deg` to the lip, then the lip to
 the toe) within 1 cm, so a typo in one number is caught. A start whose robot outline (0.9 m square) overlaps an
@@ -106,6 +107,10 @@ Model, with its estimates and choices:
   Against a bumper, the chain slides with no friction.
 - A hook stays at the link where it hooks and doesn't slide toward the low point, as a real chain on a hook partly
   would.
+- A partner robot can hang from a chain (`[partner] hang`, see the [README](../README.md#a-partner-robot)). The chain
+  doesn't touch a hanging partner: its weld is its hook. Its 60 kg pulls the chain's slack into a taut V, so the
+  chain beside it rises: on 2024's center chain, a partner 0.9 m from the low point lifts the chain at the low point
+  from 0.72 m to about 0.99 m (measured), beyond what a climber sized for the unloaded chain reaches.
 
 The checks, each naming the element:
 

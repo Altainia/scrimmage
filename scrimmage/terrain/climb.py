@@ -14,6 +14,8 @@ the geoms in ELEMENT_GROUP, as the TerrainMonitor's; a truss (a box that isn't g
     points.
   - "hang": while the robot touches the rule's switch, the first level (its points), plus `level_bonus` while the
     switch is within its `level_deg` of level.
+  - "off-carpet" (2024): the highest level among the holds the robot touches (a robot on two leveled holds scores
+    the higher, R8).
   - "lowest-point" (2013): one level above the highest level whose bars are all the way below the robot: 1 plus the
     largest rank among the leveled bars whose top (pipe axis plus radius, where it is now) is below the robot's
     lowest point, capped at the last level; 1 when none is (held off the carpet below the first rung). Chains don't
@@ -21,6 +23,13 @@ the geoms in ELEMENT_GROUP, as the TerrainMonitor's; a truss (a box that isn't g
     robot above them is LEVEL2.
     The robot's lowest point is the lowest of its colliding geoms' bounding boxes (MuJoCo's geom_aabb, turned with
     the geom). The manual's sequential-climb rule isn't checked.
+- `climb.hold`: while hanging, which hold the robot hangs from (the swing's bar, below), as its number: its rank among
+  the range's holds (bars, switches and chains) in element order, 1 for the first; 0 while not hanging (R7).
+- `climb.hold.<hold>.robots`: how many robots are on that hold and off the carpet: the robot while it hangs touching
+  the hold, plus a partner hanging on it ([partner] hang, parts/partner.py) while none of the partner's geoms touches
+  the ground. The partner's contacts are read only when it hangs; a standing partner is never on a hold.
+- `climb.harmony`: while hanging, the range's `[climb] harmony` (the "off-carpet" rule's) times the robots on the
+  robot's hold (climb.hold's) less one; 0 otherwise (R8).
 - `climb.swing` (deg): while hanging, the angle of the robot's CoM (its subtree COM) from straight under the axis of
   the swing's bar, in the plane across that axis; 0 otherwise. Positive when the CoM is on the side of axis x up from
   the axis, where axis is the pipe's own z (a bar's local x): for a bar at yaw 90 (along +y), toward +x. The swing's
@@ -51,7 +60,8 @@ signal; any other world has none and pays nothing.
 
 Scenario checks tick every lockstep step, several physics steps apart, so `sample()` peak-holds since the last
 `consume()`: the largest hook loads, extension and height, and the swing of largest magnitude (sign kept). hanging,
-level and points are the last physics step's: what the robot scores at the check.
+level, points, hold, harmony and each hold's robots are the last physics step's: what the robot scores at the
+check.
 """
 
 from __future__ import annotations
@@ -66,7 +76,7 @@ from .. import i18n
 from ..flexcontact import contact_ids, flex_id, n_ids
 from ..parts.field import ELEMENT_GROUP
 
-CLIMB_SIGNALS = ("hanging", "level", "points", "swing", "hook_load", "extension", "height")
+CLIMB_SIGNALS = ("hanging", "level", "points", "hold", "harmony", "swing", "hook_load", "extension", "height")
 EXTENT_SIGNALS = ("extension", "height")      # these need the robot's geoms' extent every step
 HOOK = re.compile(r"^(.+\.hook\d+)\.[^.]+$")  # `<inst>.hook<i>.<piece>`: the stock climber's hook geoms
 BRACKET = re.compile(r"^.+\.bracket$")  # `<inst>.bracket`: the plate carrying a climber's hooks
@@ -128,6 +138,24 @@ class ClimbMonitor:
                 a, b = c.ends
                 self._chains[len(self.holds) - 1] = (c.flex, (b - a) / float(np.linalg.norm(b - a)))
         self._levels = levels
+        # climb.hold's numbers (R7): each hold's rank among the holds in the range's element order, 1 and up.
+        order = [e.name for e in (rng.elements if rng is not None else ()) if e.name in {h[0] for h in self.holds}]
+        self._number = [order.index(h[0]) + 1 if h[0] in order else k + 1 for k, h in enumerate(self.holds)]
+        self._robots_keys = [f"climb.hold.{h[0]}.robots" for h in self.holds]
+        self._last_keys = ("climb.hanging", "climb.level", "climb.points", "climb.hold", "climb.harmony",
+                           *self._robots_keys)      # the last step's: what scores at the check
+        self.harmony = self.rule.harmony if self.rule is not None else 0.0
+        # A partner hanging on a hold ([partner] hang): (its hold's index, per contact id: the partner's geom). A
+        # standing partner (or none) is None, and its contacts are never read.
+        self._partner: tuple[int, list[bool]] | None = None
+        info = parts.partner if parts is not None else None
+        hang = getattr(info, "hang", None)
+        if hang is not None:
+            k = next(i for i, h in enumerate(self.holds) if h[0] == hang.hold)
+            proot = m.body_rootid[m.body(info.body).id]
+            mine = (m.body_rootid[m.geom_bodyid] == proot).tolist() + flexes
+            self._partner = (k, mine)
+            self._ground_l = [g and not p for g, p in zip(self._ground_l, mine)]
         self._switch = None             # "hang": (hold index, qpos address, level_deg)
         if self.rule is not None and self.rule.rule == "hang":
             k = next(i for i, h in enumerate(self.holds) if h[0] == self.rule.switch)
@@ -220,7 +248,7 @@ class ClimbMonitor:
         if p is None:
             self._peak = v
             return
-        for k in ("climb.hanging", "climb.level", "climb.points"):     # the last step's: what scores at the check
+        for k in self._last_keys:
             p[k] = v[k]
         if abs(v["climb.swing"]) > abs(p["climb.swing"]):
             p["climb.swing"] = v["climb.swing"]
@@ -237,7 +265,12 @@ class ClimbMonitor:
         on_ground = False
         on_hooks = []                   # (contact, hook, the hook is geom1)
         on_chain: dict[int, set[int]] = {}   # a chain's hold -> the hooks touching it
+        partner = self._partner[1] if self._partner is not None else None
+        partner_down = False            # a hanging partner touches the ground
         for i, (g1, g2) in enumerate(contact_ids(m, d).tolist()):    # plain Python: a handful of contacts
+            if partner is not None and not partner_down and (
+                    (partner[g1] and ground[g2]) or (partner[g2] and ground[g1])):
+                partner_down = True
             r1 = robot[g1]
             if r1 == robot[g2]:
                 continue
@@ -266,8 +299,18 @@ class ClimbMonitor:
         if update and hanging:
             self._last = bar
         level, points = self._score(touched) if hanging and self.rule is not None else (0, 0.0)
+        robots = [0] * len(self.holds)  # per hold: the robots on it, off the carpet
+        if hanging:
+            for h in touched:
+                robots[h] += 1
+        if self._partner is not None and not partner_down:
+            robots[self._partner[0]] += 1
         v = {"climb.hanging": int(hanging), "climb.level": level, "climb.points": points,
+             "climb.hold": self._number[bar] if hanging else 0,
+             "climb.harmony": self.harmony * (robots[bar] - 1) if hanging and self.harmony else 0.0,
              "climb.swing": self._swing(bar, on_chain.get(bar, ())) if hanging else 0.0}
+        for key, n in zip(self._robots_keys, robots):
+            v[key] = n
         loads = [[0.0, 0.0, 0.0] for _ in self.hooks]
         if on_hooks:
             frames, f6 = d.contact.frame, self._f6
@@ -297,6 +340,8 @@ class ClimbMonitor:
         if rule == "lowest-rung":
             ranks = [self.holds[h][2] for h in touched if self.holds[h][2] > 0]
             rank = min(ranks) if ranks else 0
+        elif rule == "off-carpet":      # hanging is off the carpet: the highest level touched (R8)
+            rank = max((self.holds[h][2] for h in touched), default=0)
         elif rule == "hang":
             k, adr, level = self._switch
             if k not in touched:

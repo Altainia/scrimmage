@@ -96,7 +96,8 @@ def goal_lines(result: RunResult) -> list[str]:
 def points_lines(result: RunResult) -> list[str]:
     """A match's points as lines (none for a run that isn't a match): "12 points: 7 in auto, 5 in teleop, 0 in
     endgame", then one line per item ("3 scored in hub_blue in auto: 15 points", "left the starting zone: 2 points",
-    "climbed to ONSTAGE: 3 points", a pause piece "1 scored in hub_blue in the pause: 0 points")."""
+    "climbed to ONSTAGE: 3 points", "HARMONY with 1 other robot: 2 points", a pause piece "1 scored in hub_blue in
+    the pause: 0 points")."""
     pts = result.points
     if not pts:
         return []
@@ -115,6 +116,10 @@ def points_lines(result: RunResult) -> list[str]:
         elif item["source"] == "climb":
             lines.append(i18n.tn("climbed to {level}: {points} point", "climbed to {level}: {points} points",
                                  item["points"], level=_climb_level(result), points=p["points"]))
+        elif item["source"] == "harmony":
+            robots = i18n.tn("{count} other robot", "{count} other robots", item["count"])
+            lines.append(i18n.tn("HARMONY with {robots}: {points} point", "HARMONY with {robots}: {points} points",
+                                 item["points"], robots=robots, points=p["points"]))
         elif item["phase"] == "pause":
             lines.append(i18n.tn("{count} scored in {source} in the pause: {points} point",
                                  "{count} scored in {source} in the pause: {points} points", item["points"], **p))

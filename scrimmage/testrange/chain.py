@@ -12,7 +12,9 @@ at rest.
 - each interior vertex is a body `element.<name>.v<i>` on three slides (`_x`, `_y`, `_z`), a point mass of one link's
   weight (CHAIN_MASS_PER_M);
 - the flex `element.<name>` (dim 1, its edges capsules of the chain's radius, its two end vertices on the world body)
-  collides as the field does (FIELD_BITS, structure: NON_GROUND_GROUP) with its own contact (CHAIN_CONTACT): the hook's
+  collides by CHAIN_BITS (structure: NON_GROUND_GROUP): the robot, game pieces and a standing partner, as the field's
+  elements do, but not a partner hanging from a chain (parts/partner.py HANGING_BITS: its weld is its hook, R9), with
+  its own contact (CHAIN_CONTACT): the hook's
   priority, a solmix that makes its stiffer solref and solimp win, and friction 0 so the hook's material sets mu
   (MuJoCo takes the larger at equal priority). Against a bumper (priority 0) the chain is frictionless;
 - the flex equality `element.<name>.edges` holds the links' lengths, stiff (EDGE_SOLREF, EDGE_SOLIMP). There is no
@@ -52,6 +54,9 @@ CHAIN_CONTACT = {"priority": 1, "solmix": 1e6, "solref": (0.002, 1.0), "solimp":
 EDGE_SOLREF = (0.002, 1.0)  # source: chain spike
 EDGE_SOLIMP = (0.999, 0.9999, 0.001, 0.5, 2.0)  # source: chain spike
 VERTEX_INERTIA = 1e-6  # choice: a point mass
+# choice: the field's contype, with no conaffinity: it touches what has conaffinity bit 1 (the robot, pieces, a standing
+# partner), as FIELD_BITS does, never the field, and never a hanging partner (contype 2, conaffinity 6)
+CHAIN_BITS = {"contype": 1, "conaffinity": 0}
 PROBE_GROUP = 5  # choice: a group MuJoCo's renderer doesn't draw by default; the probe touches nothing
 C_BRACKET = (1e-6, 1e3)  # choice: R3's bracket for the catenary's c, bisected on a log scale
 BISECTIONS = 200  # choice: the log bracket shrinks to double precision well before this
@@ -125,7 +130,6 @@ def edge_boxes(e: Chain) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
 
 def add_chain(spec: mujoco.MjSpec, e: Chain) -> None:
     """The chain's vertex bodies, flex, edge equality and beads into `spec` (see the module docstring)."""
-    from ..parts.field import FIELD_BITS
     from .build_elements import BAR_RGBA, NON_GROUND_GROUP   # build_elements imports this module
 
     p = chain_points(e)
@@ -159,7 +163,7 @@ def add_chain(spec: mujoco.MjSpec, e: Chain) -> None:
     f.vertbody = bodies
     f.vert = verts
     f.elem = [k for i in range(n) for k in (i, i + 1)]
-    f.contype, f.conaffinity = FIELD_BITS["contype"], FIELD_BITS["conaffinity"]
+    f.contype, f.conaffinity = CHAIN_BITS["contype"], CHAIN_BITS["conaffinity"]
     f.group = NON_GROUND_GROUP
     f.selfcollide = mujoco.mjtFlexSelf.mjFLEXSELF_NONE
     f.rgba = list(BAR_RGBA)

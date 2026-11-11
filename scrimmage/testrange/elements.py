@@ -45,7 +45,8 @@ to its low point `low` at `center`: a 1D flex of 40 links in the catenary those 
 material sets it). `level` as a bar's. Its ends must lie inside the field.
 
 `[climb]` picks a scoring rule (CLIMB_RULES) and lists the levels lowest first, each with its points:
-`levels = { LOW = 4, MID = 6 }`. The "hang" rule also takes `level_bonus` and the `switch` it applies to.
+`levels = { LOW = 4, MID = 6 }`. The "hang" rule also takes `level_bonus` and the `switch` it applies to, and the
+"off-carpet" rule (2024) `harmony`: the points for each robot beyond the first on one hold, all off the carpet.
 """
 
 from __future__ import annotations
@@ -78,7 +79,7 @@ DEFAULT_SWITCH_DIAMETER = 1.66 * IN
 # A ground box no taller than this may lie under a start: a robot starts on a floor protector, settling the
 # difference (the 2022 HANGAR's is 3/8 in, manual 5.4.3).
 START_STEP = 0.5 * IN  # m
-CLIMB_RULES = ("lowest-rung", "hang", "lowest-point")
+CLIMB_RULES = ("lowest-rung", "hang", "lowest-point", "off-carpet")
 # A start's robot may not lie under a rod whose low end is lower than this (it would begin inside the rod); higher
 # rods (reef branches, overhead) are allowed over a start.
 ROD_START_CLEARANCE = 0.5  # m
@@ -353,6 +354,7 @@ class ClimbRule:
     levels: dict[str, float] = field(default_factory=dict)  # level name -> points, lowest level first
     level_bonus: float = 0.0  # "hang": added while `switch` is within its level_deg
     switch: str | None = None  # "hang": the switch element
+    harmony: float = 0.0  # "off-carpet": points for each robot beyond the first on the robot's hold (R8)
 
 
 Element = Bump | Ramp | Platform | Bar | Box | Switch | Rod | Hinged | Sliding | Mesh | Chain
@@ -724,7 +726,7 @@ def parse_climb(path, table, elements: tuple[Element, ...]) -> tuple[ClimbRule |
                                     "add {climb_table} with rule and levels, or drop the bar's level", path=path,
                                     name=leveled[0].name, level=leveled[0].level, climb_table="[climb]"))
         return None, elements
-    r = _Reader(path, "[climb]", table, ("rule", "levels", "level_bonus", "switch"))
+    r = _Reader(path, "[climb]", table, ("rule", "levels", "level_bonus", "switch", "harmony"))
     rule = r.text("rule")
     if rule not in CLIMB_RULES:
         raise r.err(i18n.t("has unknown rule '{rule}'; rules: {rules}",
@@ -739,6 +741,9 @@ def parse_climb(path, table, elements: tuple[Element, ...]) -> tuple[ClimbRule |
     if any(p < 0.0 for p in points) or any(b <= a for a, b in zip(points, points[1:])):
         raise r.err(i18n.t("levels must be listed lowest first, each worth more points than the one before (and "
                            "none below 0), not {levels}", levels=levels))
+    if r.has("harmony") and rule != "off-carpet":
+        raise r.err(i18n.t("has harmony, which only the \"{off_carpet}\" rule takes; drop it or use {rule_setting}",
+                           off_carpet="off-carpet", rule_setting="rule = \"off-carpet\""))
     if rule == "hang":
         name = r.text("switch")
         if not any(e.name == name for e in elements):
@@ -756,7 +761,11 @@ def parse_climb(path, table, elements: tuple[Element, ...]) -> tuple[ClimbRule |
         if extra:
             raise r.err(i18n.t("has {extra}, which only the \"{hang}\" rule takes; drop it or use {rule_setting}",
                                extra=extra[0], hang="hang", rule_setting="rule = \"hang\""))
-        climb = ClimbRule(rule=rule, levels=levels)
+        harmony = r.num("harmony") if r.has("harmony") else 0.0
+        if not 0.0 <= harmony < math.inf:
+            raise r.err(i18n.t("harmony must be 0 or more, not {harmony}: the \"{off_carpet}\" rule's points for "
+                               "each robot beyond the first on a hold", harmony=repr(harmony), off_carpet="off-carpet"))
+        climb = ClimbRule(rule=rule, levels=levels, harmony=harmony)
     for e in leveled:
         if e.level not in levels:
             raise RangeError(i18n.t("{path}: bar '{name}' has level '{level}', which isn't one of the {climb_table} "

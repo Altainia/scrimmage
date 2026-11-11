@@ -85,7 +85,10 @@ sliding one's travel (in), 0 at rest; the `element` condition reads it.
 
 A robot with a partner robot (the config's `[partner]`, or Setup's partner: setup_config) has the signals
 `partner.height` (in), `partner.tilt` (deg) and `partner.moved` (in), read from where the partner settled
-(parts/partner.py); the `partner_lifted` and `partner_moved` conditions read them.
+(parts/partner.py); the `partner_lifted` and `partner_moved` conditions read them. On an "off-carpet" range (2024's
+ONSTAGE) the run has `climb.harmony` (HARMONY points) and `climb.hold.<chain>.robots` for each chain (how many robots
+hang on it, a hanging partner counted), from the climb monitor (terrain/climb.py), and a match scores the HARMONY
+points held at its end.
 
 A robot with [[sensor]]s has each one's `sensor.<name>` signal: 0 or 1 for a beam break (1 while broken), the
 distance in inches for a distance sensor (its max_range with nothing in range), and for a color sensor the index in
@@ -553,7 +556,8 @@ class TestRun(_FailureWords):
         changed."""
         w = self.world
         x, y = (float(c) for c in w.data.xpos[w.robot_body][:2])
-        phase = self.match.see(t, x, y, int(self.watch.climb.get("climb.level", 0)))
+        climb = self.watch.climb
+        phase = self.match.see(t, x, y, int(climb.get("climb.level", 0)), float(climb.get("climb.harmony", 0.0)))
         if phase is not None:
             self.marks.append({"t": t, "kind": "phase", "phase": phase, "text": _w(lambda: phase_word(phase))})
 
@@ -650,6 +654,8 @@ class TestRun(_FailureWords):
                 row[name] = watch.tilt
             elif name == "hook_load":
                 row[name] = float(watch.climb.get("climb.hook_load", 0.0))
+            elif name.startswith("climb."):             # climb.harmony (points), climb.hold.<chain>.robots
+                row[name] = float(watch.climb.get(name, 0.0))
             elif name in self._seated:                  # inches; NaN while no piece is on the rod
                 got = watch.placed.seated(self._seated[name])
                 row[name] = got[0] / IN if got is not None else math.nan

@@ -602,8 +602,9 @@ def assemble(cfg: dict, cfg_dir: Path) -> Built:
             raise PartError(t("{where}: the part name 'partner' is the {partner_table} robot's; rename the part",
                               where=at, partner_table="[partner]"),
                             where=at, field="name")
-        partner = add_partner(spec, cfg)
-        check_start(partner, pose, section.range.elements if section is not None else (),
+        elements = section.range.elements if section is not None else ()
+        partner = add_partner(spec, cfg, elements)
+        check_start(partner, pose, elements,
                     floor_pieces(section.range) if section is not None and section.floor_balls else ())
     try:
         model = spec.compile()
