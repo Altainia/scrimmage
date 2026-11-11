@@ -59,11 +59,11 @@ Each one gives what was decided, why, and what it costs if wrong.
   name = "stage_blue"
   kind = "mesh"
   file = "cad/FE-2024.STEP"          # or .stl / .obj / .glb; relative to the range file
-  select = ["*GE-24200_Blue*"]       # piece names or keys (globs), from `scrimmage cad list`; all when left out
+  select = ["*GE-24200_Blue/GE-24210/*"]   # piece names or keys (globs), from `scrimmage cad list`; all when left out
   units = "in"                       # only when the file can't say (STL/OBJ); a STEP carries its own
   scale = 1.0
   pos = [0, 0, 0]                    # where the file's origin goes on the field (m); default: as the file has it
-  rpy_deg = [0, 0, 0]
+  rpy_deg = [90, 0, 0]               # the field STEP is drawn Y-up
   ```
   - **The shape.** The selected pieces are merged, transformed, and split into convex parts by the existing `convex_split` (coacd, content-hashed cache). They become MESH geoms on one welded body, `element.<name>`, with the field's collision bits.
   - **The cache.** The merged selection is cached under `SHAPED_CACHE`, keyed by the file's sha256 plus `select`, `units` and `scale`. Only the first build pays the 22 s load of an 88 MB STEP.
