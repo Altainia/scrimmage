@@ -144,6 +144,16 @@ def test_camera_tag_ids_topic(tmp_path):
         assert link.topics("/MuJoCo/Camera/") == [{"name": "/MuJoCo/Camera/front_cam/TagIds", "type": "int[]"}]
         link.publish_camera_tags("front_cam", [])
         wait_for(lambda: list(sub.get()) == [])
+        # the same IDs again aren't sent
+        sent = []
+        real, link._cameras["front_cam"] = link._cameras["front_cam"], type("P", (), {
+            "set": lambda self, v: sent.append(v)})()
+        link.publish_camera_tags("front_cam", [])
+        assert sent == []
+        link.publish_camera_tags("front_cam", [3])
+        link.publish_camera_tags("front_cam", [3])
+        assert sent == [[3]]
+        link._cameras["front_cam"] = real
     finally:
         if link is not None:
             link.close()

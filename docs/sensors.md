@@ -208,9 +208,10 @@ these hold:
 Exactly at a limit counts as seen. A tag mounted a little inside the solid it hangs on (2024's SPEAKER tags are 3.8 cm
 inside the speaker wall) is seen at its face, in front of that solid ([test-range.md](test-range.md)).
 
-**What blocks the view:** everything but the robot's own parts, the tags' squares and the field's four perimeter walls
-(which are where tags are mounted). The field's elements, obstacles, goals, game pieces and other robots all block it:
-a STAGE leg, a piece in the way or a partner robot hides a tag.
+**What blocks the view:** every solid but the robot's own parts and the field's four perimeter walls (which are where
+tags are mounted). The field's elements, obstacles, goals, game pieces and other robots all block it: a STAGE leg, a
+piece in the way or a partner robot hides a tag. Something that touches nothing (the tags' squares, zone tape, any
+part drawn only for looks) isn't a solid, and never blocks it.
 
 **After a poke**, `set_pose` or `move_body`, the camera looks again at once, so the reading is of the new pose.
 
@@ -368,8 +369,10 @@ pose and the same layout JSON the range uses (`scrimmage/testrange/apriltags/202
 copy it into your project's `deploy` folder).
 
 **This snippet isn't run in this repo's tests**: PhotonLib is a vendordep from the network, so nothing here checks it
-against PhotonLib's API. A test pins the topic's name and type. Check the class and method names against PhotonLib's
-docs for your season.
+against PhotonLib's API. A test pins the topic's name and type. The snippets match **PhotonLib v2026.3.4**, checked by
+reading its sources (2026-11-10). PhotonLib 2027 changes `addAprilTags`: it takes a WPILib `Field`, not an
+`AprilTagFieldLayout` (and WPILib's Java packages move to `org.wpilib.*`), so check the names against PhotonLib's docs
+for your season.
 
 Java (in `Robot.java`):
 
@@ -398,10 +401,12 @@ public void simulationInit() {
     throw new RuntimeException(e);
   }
   SimCameraProperties props = new SimCameraProperties();
-  props.setCalibration(1280, 800, Rotation2d.fromDegrees(80));   // the diagonal field of view: 70 x 50 deg
+  props.setCalibration(1280, 800, Rotation2d.fromDegrees(80));   // 80 deg diagonal: about 71 x 48 deg at 1280x800
   props.setFPS(30);
+  PhotonCameraSim cameraSim = new PhotonCameraSim(camera, props);
+  cameraSim.setMaxSightRange(5.0);   // the [[sensor]]'s max_range (m): PhotonLib has no range limit without it
   // where the camera is on the robot: the [[sensor]]'s at, and its toward pitched up 10 deg (a negative pitch)
-  visionSim.addCamera(new PhotonCameraSim(camera, props),
+  visionSim.addCamera(cameraSim,
       new Transform3d(new Translation3d(0.30, 0.0, 0.25), new Rotation3d(0, Math.toRadians(-10), 0)));
 }
 
@@ -435,18 +440,28 @@ class MyRobot(wpilib.TimedRobot):
         deploy = wpilib.getDeployDirectory()
         self.vision_sim.addAprilTags(AprilTagFieldLayout(f"{deploy}/2024-crescendo.json"))
         props = SimCameraProperties()
-        props.setCalibrationFromFOV(1280, 800, Rotation2d.fromDegrees(80))   # the diagonal field of view
+        props.setCalibrationFromFOV(1280, 800, Rotation2d.fromDegrees(80))   # 80 deg diagonal: about 71 x 48 deg
         props.setFPS(30)
-        self.vision_sim.addCamera(PhotonCameraSim(self.camera, props),
+        camera_sim = PhotonCameraSim(self.camera, props)
+        camera_sim.setMaxSightRange(5.0)     # the [[sensor]]'s max_range (m)
+        self.vision_sim.addCamera(camera_sim,
                                   Transform3d(Translation3d(0.30, 0.0, 0.25), Rotation3d(0, math.radians(-10), 0)))
 
     def _simulationPeriodic(self):
         self.vision_sim.update(self.true_pose.get())
 ```
 
-Keep the camera's place on the robot (`Transform3d`) and its fields of view the same as the `[[sensor]]`'s, so the
-Test tab's camera check and your robot code's vision agree on what the camera sees. A team on a Limelight gets no
-detections in robot code this way: only the Test tab's camera.
+Keep the camera's place on the robot (`Transform3d`), its fields of view and its range the same as the `[[sensor]]`'s,
+so the Test tab's camera check and your robot code's vision see about the same tags. They don't agree exactly:
+
+- **The defaults differ.** PhotonLib's `SimCameraProperties` has defaults of its own, not scrimmage's 70 x 50 deg, so
+  set its calibration as above. PhotonLib takes one diagonal field of view and square pixels: 80 deg at 1280x800 is
+  about 71 x 48 deg, not exactly the `[[sensor]]`'s 70 x 50.
+- **PhotonLib has no edge-on limit** (`max_angle_deg`): it drops a tag by how small it looks in the image instead.
+- **PhotonLib has no range limit** unless you call `setMaxSightRange`, as the snippets do with the same `max_range`.
+  For tags smaller than 6.5 in (`apriltag_size_in`), scale it as scrimmage does: `max_range` times the size over 6.5.
+
+A team on a Limelight gets no detections in robot code this way: only the Test tab's camera.
 
 ## In the Test tab
 

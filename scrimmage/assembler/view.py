@@ -118,8 +118,9 @@ def _sensors(world, d, body_mover: dict[int, int]) -> list[dict]:
     distance sensor's threshold_in (it is on closer than that). A beam break's line runs from its `from` to its `to`; a
     distance or color sensor's from `at` along `toward`, max_range long. a and b are pins as _cylinders' are: [mover,
     pos], pos in that mover's frame; or, on a body that never moves (mover -1), its fixed world position. A camera's
-    entry adds hfov_deg, vfov_deg and max_range, and `corners`: the four far corners of its view (pins, max_range out
-    along each edge of its fields of view; up is the body's z), which the replay draws as its view cone."""
+    entry adds hfov_deg, vfov_deg, max_range, reach (how far it sees the range's tags: camera_reach) and `corners`:
+    the four far corners of its view (pins, reach out along each edge of its fields of view; up is the body's z), which
+    the replay draws as its view cone."""
     if getattr(world, "sensors", None) is None:
         return []
     m = world.model
@@ -137,10 +138,20 @@ def _sensors(world, d, body_mover: dict[int, int]) -> list[dict]:
         if s.kind == "distance":
             entry["threshold_in"] = s.threshold / IN
         if s.kind == "camera":
-            entry.update(hfov_deg=s.hfov_deg, vfov_deg=s.vfov_deg, max_range=s.length,
-                         corners=[pin(start + s.length * edge) for edge in _view_edges(s)])
+            reach = camera_reach(world, s)
+            entry.update(hfov_deg=s.hfov_deg, vfov_deg=s.vfov_deg, max_range=s.length, reach=reach,
+                         corners=[pin(start + reach * edge) for edge in _view_edges(s)])
         out.append(entry)
     return out
+
+
+def camera_reach(world, s) -> float:
+    """How far camera `s` sees the range's tags (m): max_range, scaled by the layout's tag size (R7: max_range is for
+    6.5 in tags); max_range itself on a range with no tags."""
+    from ..sensors.camera import reach
+    rng = world.parts.range if getattr(world, "parts", None) is not None else None
+    layout = rng.apriltags if rng is not None else None
+    return s.length if layout is None else reach(s, layout.size)
 
 
 def _view_edges(s) -> list[np.ndarray]:

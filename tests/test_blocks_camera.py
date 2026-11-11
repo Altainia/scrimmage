@@ -42,12 +42,14 @@ TAGS = {"field": {"length": 16.54, "width": 8.07},
         "tags": [{"ID": 7, "pose": _pose(6.0, 4.0, 0.5, 180.0)}, {"ID": 8, "pose": _pose(2.0, 6.5, 0.5, -90.0)}]}
 
 
-def tagged_robot(tmp: Path, sensors: str = CAMERA, tags: bool = True) -> Path:
-    """The intake stand-in with `sensors`, on a copy of the intake field (with the two tags, unless not `tags`)."""
+def tagged_robot(tmp: Path, sensors: str = CAMERA, tags: bool = True, size_in: float | None = None) -> Path:
+    """The intake stand-in with `sensors`, on a copy of the intake field (with the two tags, unless not `tags`; of
+    side `size_in` when given)."""
     field = (ROOT / "scrimmage" / "testrange" / "ranges" / "intake.toml").read_text(encoding="utf-8")
     if tags:
         (tmp / "tags.json").write_text(json.dumps(TAGS), encoding="utf-8")
-        field = field.replace("\n[range]\n", '\n[range]\napriltags = "tags.json"\n', 1)
+        size = f"apriltag_size_in = {size_in}\n" if size_in is not None else ""
+        field = field.replace("\n[range]\n", '\n[range]\napriltags = "tags.json"\n' + size, 1)
         assert "apriltags" in field
     (tmp / "tags.toml").write_text(field, encoding="utf-8")
     robot = _robot(tmp, sensors)
@@ -169,6 +171,16 @@ def test_the_palette_offers_the_camera_and_the_tags(tmp_path):
         assert abs(math.degrees(math.atan2(edge[2], math.hypot(edge[0], edge[1])))) < 25.0
     p = _program(tmp_path, SEES_ANY, MOUTH, tags=False)
     assert palette(world_for(p), [])["tags"] == []
+
+
+def test_the_view_cone_is_drawn_as_far_as_the_camera_sees_the_tags(tmp_path):
+    """R7: with 3.25 in tags the camera sees half as far, and its cone is drawn that long; max_range stays as set."""
+    tagged_robot(tmp_path, size_in=3.25)
+    p = loads('[test]\nrobot = "robot.toml"\n' + SEES_ANY, tmp_path / "cam.test.toml")
+    cam, = model_view(world_for(p))["sensors"]
+    assert cam["max_range"] == 5.0 and cam["reach"] == pytest.approx(2.5)
+    a = np.array(cam["a"][1])
+    assert all(np.linalg.norm(np.array(c) - a) == pytest.approx(2.5) for _, c in cam["corners"])
 
 
 def test_the_run_keeps_camera_changes(tmp_path):

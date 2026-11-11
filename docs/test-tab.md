@@ -504,7 +504,7 @@ sees.
 
 **The replay** draws each sensor as a thin line: a beam break from end to end, a distance or color sensor from where
 it looks out to its `max_range`. The line is lit while the sensor is on. A camera is drawn as its view cone (four
-lines out to its `max_range`, lit while it sees a tag), with a green line from the camera to each tag it sees at the
+lines out as far as it sees the field's tags: its `max_range`, scaled by the tags' size, lit while it sees a tag), with a green line from the camera to each tag it sees at the
 moment shown. The Drive tab's live view draws the same lines and cones, never lit.
 
 **A blink too short to see.** The chart and the replay take each sensor 50 times a second (every 20 ms), but a wait

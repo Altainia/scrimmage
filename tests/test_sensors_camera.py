@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from range_fixtures import range_2024_with_tags, range_cfg  # noqa: E402
 from scrimmage.checks import ScenarioError, resolve_signal  # noqa: E402
 from scrimmage.protocol import HalState  # noqa: E402
+from scrimmage.sensors import camera as camera_mod  # noqa: E402
 from scrimmage.sensors.camera import in_view  # noqa: E402
 from scrimmage.sensors.spec import SensorError, parse_sensors  # noqa: E402
 from scrimmage.testrange.apriltags import TAG_36H11_SIZE_IN, Tag  # noqa: E402
@@ -205,6 +206,13 @@ def test_what_blocks_a_camera(tmp_path):
     w = tag_world(tmp_path)
     w.set_robot_pose(3.0, 4.0, 180.0)           # the box stands between the camera and tag 1 (tag 2 is clear)
     assert w.sensors.reading("front_cam").tags == (2,)
+    # the same box made visual only (it touches nothing) isn't a solid: the camera sees past it
+    box = w.model.geom("element.block.box").id
+    bits = int(w.model.geom_contype[box]), int(w.model.geom_conaffinity[box])
+    w.model.geom_contype[box] = w.model.geom_conaffinity[box] = 0
+    w._read_sensors()
+    assert w.sensors.reading("front_cam").tags == (1, 2)
+    w.model.geom_contype[box], w.model.geom_conaffinity[box] = bits
     w.set_robot_pose(3.0, 5.0, 180.0)
     assert w.sensors.reading("front_cam").tags == (1,)
     # a floor ball halfway along the line to tag 1
@@ -260,8 +268,11 @@ def test_a_poke_reads_the_camera_again(tmp_path):
     assert w.sensors.reading("front_cam").tags == (1,)
 
 
-def test_a_camera_runs_at_its_fps(tmp_path):
-    w = tag_world(tmp_path, camera(fps=10))
+@pytest.mark.parametrize("fps", [10, 30, 60, 90])
+def test_a_camera_runs_at_its_fps(tmp_path, fps):
+    """Its frames keep an ideal schedule (k/fps), so 1/fps that isn't a whole number of steps still gives fps frames a
+    second; a poke's frame in between leaves the schedule alone."""
+    w = tag_world(tmp_path, camera(fps=fps))
     w.set_robot_pose(3.0, 5.0, 180.0)
     cams = w.sensors.cameras
     frames, last = 0, cams.casts
@@ -269,8 +280,88 @@ def test_a_camera_runs_at_its_fps(tmp_path):
         step(w)
         if cams.casts != last:
             frames, last = frames + 1, cams.casts
-    assert abs(frames - 10) <= 1, frames
+    assert abs(frames - fps) <= 1, frames
     assert w.sensors.reading("front_cam").tags == (1,)
+    due = list(cams._due)
+    w._read_sensors()                           # a forced frame
+    assert cams._due == due
+
+
+def test_a_camera_that_runs_out_of_casts_warns_once(tmp_path, monkeypatch):
+    """As a beam or distance sensor does: one warning naming it, in the world's warnings."""
+    monkeypatch.setattr(camera_mod, "MAX_CASTS", 1)
+    back = camera(name="back_cam", body="dt.rails", at=[0.0, 0.0, 0.05], toward=[-1, 0, 0.3])
+    w = tag_world(tmp_path, back)
+    w.set_robot_pose(3.0, 5.0, 0.0)             # its ray meets the robot's rear bumper first
+    w._read_sensors()
+    assert w.sensors.reading("back_cam").tags == ()
+    said = [x for x in w.warnings if '"back_cam"' in str(x)]
+    assert len(said) == 1 and "the most a camera looks past" in str(said[0]), said
+
+
+def test_up_is_the_bodys_z(tmp_path, monkeypatch):
+    """A rolled robot's camera measures its vertical field of view against the body's z, not the world's."""
+    seen = []
+    real = camera_mod.in_view
+
+    def spy(cam, forward, up, spec, tag, size):
+        seen.append((forward.copy(), up.copy()))
+        return real(cam, forward, up, spec, tag, size)
+    monkeypatch.setattr(camera_mod, "in_view", spy)
+    w = tag_world(tmp_path, camera(toward=[1, 0, 0]))
+    w.set_robot_pose(3.0, 5.0, 180.0)
+    q = w.free_qadr
+    roll = math.radians(30.0) / 2.0             # 30 deg about the robot's forward (world -x, heading 180)
+    heading = np.array([0.0, 0.0, 0.0, 1.0])
+    turn = np.array([math.cos(roll), math.sin(roll), 0.0, 0.0])
+    quat = np.zeros(4)
+    mujoco.mju_mulQuat(quat, heading, turn)
+    w.data.qpos[q + 3:q + 7] = quat
+    w.data.qpos[q + 2] = 0.5
+    mujoco.mj_forward(w.model, w.data)
+    seen.clear()
+    w._read_sensors()
+    forward, up = seen[-1]
+    z = w.data.xmat[w.model.body("drive.chassis").id].reshape(3, 3)[:, 2]
+    assert forward == pytest.approx([-1.0, 0.0, 0.0], abs=1e-9)
+    assert up == pytest.approx(z, abs=1e-9)
+    assert abs(up[2] - math.cos(math.radians(30.0))) < 1e-9          # tilted: not the world's z
+
+
+class _Link:
+    """A NetworkTablesLink stand-in that keeps what is published."""
+
+    def __init__(self):
+        self.tags = []
+
+    def publish_truth(self, *a):
+        pass
+
+    def publish_balls(self, poses):
+        pass
+
+    def publish_camera_tags(self, name, ids):
+        self.tags.append((name, ids))
+
+    def odometry(self):
+        return None
+
+
+def _log_row(w) -> list:
+    from scrimmage.bridge import Bridge
+    link = _Link()
+    Bridge._log_row(SimpleNamespace(world=w, nt_link=link, recorder=SimpleNamespace(sample=lambda *a: None),
+                                    _writer=None), 0.0, "auto")
+    return link.tags
+
+
+def test_the_bridge_publishes_tag_ids_only_with_tags_and_a_camera(tmp_path):
+    w = tag_world(tmp_path)
+    w.set_robot_pose(3.0, 5.0, 180.0)
+    assert _log_row(w) == [("front_cam", [1])]
+    assert _log_row(tag_world(tmp_path, tags=False)) == []
+    beam = {"name": "mouth", "kind": "beam", "body": "drive.chassis", "from": [0.3, 0.2, 0.05], "to": [0.3, -0.2, 0.05]}
+    assert _log_row(tag_world(tmp_path, beam)) == []
 
 
 def test_no_camera_no_cost(tmp_path):

@@ -25,6 +25,7 @@ class NetworkTablesLink:
         self.inst = ntcore.NetworkTableInstance.create()
         self._all = self._odo = self._truth = self._Pose2d = self._geometry = self._balls = self._last_balls = None
         self._cameras: dict = {}    # a camera's name -> its TagIds publisher (publish_camera_tags)
+        self._last_tags: dict[str, list[int]] = {}      # a camera's name -> the IDs it last sent
         try:
             self.inst.addConnectionListener(False, self._on_connection)   # a new server gets the balls again
             self.inst.startClient4("scrimmage")
@@ -52,8 +53,9 @@ class NetworkTablesLink:
             self._truth.set(self._Pose2d(x, y, yaw))
 
     def reset_balls(self) -> None:
-        """Send the next ball poses even if they equal the last (a new or reconnected NT server)."""
+        """Send the next ball poses and camera tags even if they equal the last (a new or reconnected NT server)."""
         self._last_balls = None
+        self._last_tags = {}
 
     def _on_connection(self, event) -> None:
         if event.is_(self._ntcore.EventFlags.kConnected):
@@ -77,11 +79,16 @@ class NetworkTablesLink:
 
     def publish_camera_tags(self, name: str, ids: list[int]) -> None:
         """The IDs of the AprilTags camera [[sensor]] `name` sees, as an IntegerArray on /MuJoCo/Camera/<name>/TagIds.
-        The topic appears with the first call, so a robot without a camera never has it."""
+        The topic appears with the first call, so a robot without a camera never has it. IDs equal to the last ones
+        aren't sent again."""
+        ids = list(ids)
+        if self._last_tags.get(name) == ids:
+            return
         pub = self._cameras.get(name)
         if pub is None:
             pub = self._cameras[name] = self.inst.getIntegerArrayTopic(f"/MuJoCo/Camera/{name}/TagIds").publish()
-        pub.set(list(ids))
+        self._last_tags[name] = ids
+        pub.set(ids)
 
     def odometry(self) -> tuple[float, float, float] | None:
         if self._odo is None:

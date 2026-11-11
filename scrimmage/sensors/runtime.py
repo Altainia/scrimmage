@@ -175,6 +175,8 @@ class SensorRuntime:
         return self._readings[name]
 
     def reset(self) -> None:
+        if self.cameras is not None:
+            self.cameras.reset()
         self.update(self.world.data, force=True)
 
     def state(self) -> dict:
