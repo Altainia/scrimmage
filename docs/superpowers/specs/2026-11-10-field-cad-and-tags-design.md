@@ -62,8 +62,8 @@ Each one gives what was decided, why, and what it costs if wrong.
   select = ["*GE-24200_Blue/GE-24210/*"]   # piece names or keys (globs), from `scrimmage cad list`; all when left out
   units = "in"                       # only when the file can't say (STL/OBJ); a STEP carries its own
   scale = 1.0
-  pos = [0, 0, 0]                    # where the file's origin goes on the field (m); default: as the file has it
-  rpy_deg = [90, 0, 0]               # the field STEP is drawn Y-up
+  pos = [8.2705, 4.1055, 0]          # where the file's origin goes on the field (m): FE-2024's is the field's middle
+  rpy_deg = [90, 0, 180]             # the field STEP is drawn Y-up, with its +x toward red
   ```
   - **The shape.** The selected pieces are merged, transformed, and split into convex parts by the existing `convex_split` (coacd, content-hashed cache). They become MESH geoms on one welded body, `element.<name>`, with the field's collision bits.
   - **The cache.** The merged selection is cached under `SHAPED_CACHE`, keyed by the file's sha256 plus `select`, `units` and `scale`. Only the first build pays the 22 s load of an 88 MB STEP.
@@ -71,8 +71,9 @@ Each one gives what was decided, why, and what it costs if wrong.
     - a `select` glob that matches nothing names the closest piece names;
     - a selection larger than the field, or with more than `MAX_MESH_TRIANGLES` (choice: 200 000) triangles, says to select fewer pieces.
   - **Frames:** `cad list` shows positions in the file's own axes, in meters. A mesh element places the file's
-    origin at `pos` after rotating it by `rpy_deg`. A file drawn Y-up needs `rpy_deg = [90, 0, 0]`. The how-to says
-    how to tell a Y-up file from the list's sizes.
+    origin at `pos` after rotating it by `rpy_deg`. A file drawn Y-up needs a 90° roll; FE-2024 also has its origin at the field's middle and
+    its +x toward red, so it needs `rpy_deg = [90, 0, 180]` and `pos = [8.2705, 4.1055, 0]` (measured in task 7). The
+    how-to says how to find a file's up axis, origin and +x from the list.
   - **Footprint:** the element's footprint for the range checks is its transformed bounding box.
   - *Why:* "import field elements from the official CAD" was the dry run's top ask for building a range. A static mesh covers walls, the STAGE frame, the SUBWOOFER and bumps as they really are.
   - *Cost:*
