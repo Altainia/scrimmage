@@ -27,6 +27,7 @@ import numpy as np
 
 from .. import i18n
 from ..config import build_world, load_config
+from ..flexcontact import contact_ids, id_body, n_ids
 from ..protocol import HalState
 from ..testrange.elements import Ramp, footprint
 from .drive import StraightDriver
@@ -172,13 +173,13 @@ def _run(world, driver: StraightDriver, course: _Course, speed: float, holds: di
     mon = world.terrain_monitor()
     mon.reset()
     root = int(m.body_rootid[world.robot_body])
-    robot = (m.body_rootid[m.geom_bodyid] == root).tolist()
-    balls = np.zeros(m.ngeom, dtype=bool)
+    robot = (m.body_rootid[id_body(m)] == root).tolist()       # per contact id (flexcontact)
+    balls = np.zeros(n_ids(m), dtype=bool)
     layout = world.parts.layout
     for name in (layout.ball_names if layout is not None else []):
         b = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, name)
         if b >= 0:
-            balls[m.geom_bodyid == b] = True
+            balls[:m.ngeom][m.geom_bodyid == b] = True
     balls = balls.tolist()
 
     gap = air = pitch = roll = tilt = 0.0
@@ -211,7 +212,7 @@ def _run(world, driver: StraightDriver, course: _Course, speed: float, holds: di
                 longest, landing = flight, s - course.crest
             flight = 0.0
         if not on_balls and t - last_air <= BALL_LANDING_S and d.ncon:
-            on_balls = _ball_beneath(d, balls, robot)
+            on_balls = _ball_beneath(m, d, balls, robot)
         if t_far is None and s > course.far:
             t_far = t
         if t >= RUN_S - 1e-9 or (t_far is not None and t - t_far >= AFTER_S - 1e-9):
@@ -221,11 +222,11 @@ def _run(world, driver: StraightDriver, course: _Course, speed: float, holds: di
                peak_tilt=tilt, tipped=tipped, stranded=stranded, landed_on_balls=on_balls, crossed=t_far is not None)
 
 
-def _ball_beneath(d, balls: list[bool], robot: list[bool]) -> bool:
+def _ball_beneath(m, d, balls: list[bool], robot: list[bool]) -> bool:
     """A ball touches the robot from below: the contact's normal, ball to robot, within BALL_UNDER_DEG of up. A ball
     the bumper pushes along the carpet touches it side-on, and doesn't count."""
     n = d.contact.frame[:d.ncon, 2].tolist()            # the normal's z, from geom1 to geom2
-    for k, (g1, g2) in enumerate(d.contact.geom[:d.ncon].tolist()):
+    for k, (g1, g2) in enumerate(contact_ids(m, d).tolist()):
         if balls[g1] and robot[g2] and n[k] >= BALL_UNDER_COS:
             return True
         if balls[g2] and robot[g1] and -n[k] >= BALL_UNDER_COS:

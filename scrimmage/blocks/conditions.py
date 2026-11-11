@@ -78,6 +78,7 @@ import mujoco
 import numpy as np
 
 from .. import i18n, units
+from ..flexcontact import contact_ids, id_body
 from ..terrain.climb import hold_geoms, robot_hooks
 from ..testrange.elements import moving_units, moving_value
 from ..testrange.spec import _one_round_kind as one_round_kind
@@ -110,7 +111,9 @@ class Watch:
         self.weight = float(m.body_subtreemass[self.body]) * float(np.linalg.norm(m.opt.gravity))
         parts = world.parts
         layout = parts.layout if parts is not None else None
-        self._holds = hold_geoms(m, layout)                 # hold name -> geom ids
+        self._holds = hold_geoms(m, layout)                 # hold name -> contact ids (a chain's: its flex)
+        self._chain_flex = {name: c.flex for name, c in layout.chains.items()} if layout is not None else {}
+        self._id_body = id_body(m)                          # per contact id, its body: a flex's is the world
         self.mon = None                                     # the climb signals: on a range with holds, or with hooks
         if program.hooks or self._holds:
             self.mon = world.climb_monitor(list(program.hooks))
@@ -149,7 +152,7 @@ class Watch:
         self._hold_of = {g: name for name, gs in self._holds.items() for g in gs}
         self._all_hooks = set().union(*self._hook_geoms.values()) if self._hook_geoms else set()
         self._f6 = np.zeros(6)
-        self._pairs: set[tuple[int, int]] = set()           # (robot geom, field geom) touching at the last update
+        self._pairs: set[tuple[int, int]] = set()           # (robot geom, field contact id) touching now
         self.held = HeldTracker(world, self)                # the pieces held, by each part a held condition names
         for c in _conds(program.blocks, "held"):
             self.held.track(c.args["by"])
@@ -212,8 +215,8 @@ class Watch:
         root, hold_of, hooks = self._robot_root, self._hold_of, self._all_hooks
         pairs: set[tuple[int, int]] = set()
         up = {name: 0.0 for name in self._held}
-        bodies = m.geom_bodyid
-        for i, (g1, g2) in enumerate(d.contact.geom[:d.ncon].tolist()):
+        bodies = self._id_body
+        for i, (g1, g2) in enumerate(contact_ids(m, d).tolist()):
             r1 = m.body_rootid[bodies[g1]] == root
             if r1 == (m.body_rootid[bodies[g2]] == root):
                 continue
@@ -249,8 +252,13 @@ class Watch:
     # ---- the bars ---------------------------------------------------------------------------------------------------
 
     def _top(self, name: str) -> float:
-        """A hold's top now: the highest point of its geoms' bounding boxes."""
+        """A hold's top now: the highest point of its geoms' bounding boxes; a chain's is its lowest vertex's height
+        plus its radius (R6)."""
         d, m = self.data, self.model
+        if name in self._chain_flex:
+            from ..testrange.chain import lowest_vertex
+            f = self._chain_flex[name]
+            return float(lowest_vertex(m, d, f)[2]) + float(m.flex_radius[f])
         top = -math.inf
         for g in self._holds[name]:
             r = d.geom_xmat[g].reshape(3, 3)

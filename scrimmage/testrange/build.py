@@ -129,8 +129,11 @@ class RangeLayout:
     station_slots: dict[str, range] = field(default_factory=dict)
     # platform name -> the qpos addresses of its two hinges (build_elements.platform_joints); the tilt is their sum
     platforms: dict[str, tuple[int, int]] = field(default_factory=dict)
-    # bar name -> its pipe's geom names (not its posts): what a robot hangs from
+    # bar name -> its pipe's geom names (not its posts): what a robot hangs from. A chain is listed too, with no geom
+    # names (R6): it is a hold as a bar is, and `chains` has its flex
     bars: dict[str, list[str]] = field(default_factory=dict)
+    # chain name -> its testrange.chain.ChainLayout (its flex, vertex bodies, ends and link)
+    chains: dict = field(default_factory=dict)
     # switch name -> the qpos address of its hinge (build_elements.switch_joint)
     switches: dict[str, int] = field(default_factory=dict)
     # hinged or sliding element name -> the qpos address of its joint (build_elements.moving_joint), 0 at rest

@@ -53,6 +53,7 @@ import numpy as np
 
 from ..disc import aero as disc_aero
 from ..disc.inputs import DEFAULT_AERO, Disc, aero_set
+from ..flexcontact import contact_ids, id_name, n_ids
 from ..launcher import rigid_aero
 from ..launcher.inputs import Air, Ball
 from .build import BALL_BITS, PARK_Z, PARKED_BITS, RangeLayout, kind_piece, rest_pose
@@ -154,12 +155,11 @@ class Balls:
         self._park[:, :2] = m.qpos0[self._q[:, :2]]
         self._park[:, 2] = PARK_Z
         self._park[:, 3] = 1.0
-        self._geom_ball = np.full(m.ngeom, -1, dtype=int)       # geom id -> ball index, -1 for other geoms
+        # contact id (flexcontact: the geoms, then each flex) -> ball index, -1 for the others
+        self._geom_ball = np.full(n_ids(m), -1, dtype=int)
         for i, g in enumerate(self._slot_geoms):
             self._geom_ball[g] = i
-        self._geom_names = [mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g)
-                            or mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, int(m.geom_bodyid[g])) or f"geom {g}"
-                            for g in range(m.ngeom)]
+        self._geom_names = [id_name(m, g) for g in range(n_ids(m))]
         if not one_round_kind(rng.kinds):       # a piece is named by its kind and number ("coral 1"), not its body
             for i, g in enumerate(self._slot_geoms):
                 for k in g.tolist():
@@ -319,7 +319,8 @@ class Balls:
         return self._qvel[i, :3]
 
     def ball_of_geom(self, geom) -> np.ndarray:
-        """The ball index of each geom id in `geom` (any shape), -1 for a geom that isn't a ball."""
+        """The ball index of each contact id in `geom` (any shape; flexcontact.contact_ids), -1 for one that isn't a
+        ball."""
         return self._geom_ball[geom]
 
     def park(self, i: int) -> None:
@@ -437,7 +438,7 @@ class Balls:
             d = self.data
             touching = np.zeros(self.n, dtype=bool)
             if d.ncon:
-                ball = self._geom_ball[d.contact.geom[:d.ncon]].ravel()
+                ball = self._geom_ball[contact_ids(self.model, d)].ravel()
                 touching[ball[ball >= 0]] = True
             f = f[~(low & touching[f])]
         rho, rot = self.air.density, np.zeros(9)
@@ -465,7 +466,7 @@ class Balls:
         d = self.data
         if d.ncon:          # touching anything (the carpet, a goal, the robot): not flying
             touching = np.zeros(self.n, dtype=bool)
-            ball = self._geom_ball[d.contact.geom[:d.ncon]].ravel()
+            ball = self._geom_ball[contact_ids(self.model, d)].ravel()
             touching[ball[ball >= 0]] = True
             f = f[~touching[f]]
         rho, rot = self.air.density, np.zeros(9)
@@ -604,7 +605,7 @@ class Balls:
             want[i] = self.log[int(i)].first_hit is None
         if not want.any() or d.ncon == 0:
             return
-        geom = d.contact.geom[:d.ncon]                  # (ncon, 2)
+        geom = contact_ids(self.model, d)               # (ncon, 2)
         ball = self._geom_ball[geom]                    # ball index per side, -1 if not a ball
         for side in (0, 1):
             b = ball[:, side]

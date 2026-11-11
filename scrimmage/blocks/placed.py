@@ -36,6 +36,7 @@ import mujoco
 import numpy as np
 
 from .. import i18n, units
+from ..flexcontact import contact_ids, id_body, n_ids
 from ..testrange.balls import AT_REST_SPEED
 
 REST_SHARE = 0.5        # of the piece's weight, carried by the element (spec)
@@ -99,10 +100,11 @@ class Placed:
         self.rods = dict(layout.rods) if layout is not None else {}
         self.rests = rests and self.balls is not None
         root = m.body_rootid[world.robot_body] if world.robot_body is not None else -1
-        self._robot = m.body_rootid[m.geom_bodyid] == root     # geom id -> on the robot
-        self._element: list[str | None] = []                   # geom id -> the element it belongs to
-        for g in range(m.ngeom):
-            name = m.geom(g).name
+        self._robot = m.body_rootid[id_body(m)] == root        # contact id (flexcontact) -> on the robot
+        self._element: list[str | None] = []                   # contact id -> the element it belongs to
+        for g in range(n_ids(m)):                              # a chain's flex is `element.<name>`
+            name = (m.geom(g).name if g < m.ngeom
+                    else mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_FLEX, g - m.ngeom) or "")
             self._element.append(name.split(".")[1] if name.startswith("element.") else None)
         self._g = float(np.linalg.norm(m.opt.gravity))
         self._f6 = np.zeros(6)
@@ -125,7 +127,7 @@ class Placed:
         robot: set[int] = set()
         n = d.ncon
         if n:
-            geoms = d.contact.geom[:n]
+            geoms = contact_ids(m, d)
             owner = balls.ball_of_geom(geoms)
             for k in np.flatnonzero((owner >= 0).any(axis=1)).tolist():
                 g1, g2 = int(geoms[k, 0]), int(geoms[k, 1])

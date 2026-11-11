@@ -12,6 +12,7 @@ safely: the "bump speed limit" a team puts in its auto.
 > before the absolute numbers (2 m/s).
 
 - [Field elements in range files](#field-elements-in-range-files)
+- [Chains](#chains)
 - [Mesh elements from CAD](#mesh-elements-from-cad)
 - [Moving elements: hinged and sliding](#moving-elements-hinged-and-sliding)
 - [The 2016 defenses](#the-2016-defenses)
@@ -39,9 +40,10 @@ has an inch form, `<key>_in` (give one of the two). `friction` (default 0.6) is 
 | `switch` | a bar hanging below a hinge about its own y, which tilts under a hanging robot (2020's GENERATOR SWITCH) | `hinge_height`, `bar_length`, `bar_drop` (hinge to the bar's axis), `diameter` (default 1.66 in), `mass`, `com_drop` (its CoM below the hinge), `stop_deg`, `damping`, `level_deg` |
 | `hinged` | a panel (a box, or a disc) on a hinge along one of its edges or through its center, with stops, a spring, damping and a breakaway: a door, a flap, a drawbridge, a spinning wheel | see [Moving elements](#moving-elements-hinged-and-sliding) |
 | `sliding` | a box on a straight slide, with stops, a spring, damping and a breakaway: a portcullis, a touchpad, a spring peg | see [Moving elements](#moving-elements-hinged-and-sliding) |
+| `chain` | a chain hung between two fixed ends, sagging to a low point (2024's STAGE CHAINS): a hold to climb, as a bar is, that sags and swings under a robot | `center` (its low point), `yaw_deg` (along the chain), `span` (end to end), `top` (the ends' height), `low` (the low point's height, unloaded), `diameter` (across the links), `level` (a `[climb]` level). All but `level` are required. No `friction`: see [Chains](#chains) |
 | `mesh` | a static shape from a CAD file: a wall, the STAGE's frame, a SUBWOOFER, a bump as it really is | `file`, `select`, `units`, `scale`, `pos`, `rpy_deg`, `ground`, `friction`. No `center` or `yaw_deg`: `pos` and `rpy_deg` place it. See [Mesh elements](#mesh-elements-from-cad) |
 
-A rod's round free end is rounded and reaches exactly to `tip`. Bars, rods, switches and boxes that aren't ground are structure, not floor: they are drawn and collide, but the terrain
+A rod's round free end is rounded and reaches exactly to `tip`. Bars, chains, rods, switches and boxes that aren't ground are structure, not floor: they are drawn and collide, but the terrain
 signals don't count them as the ground (geom group 1, not the ground's 2), so a robot parked under a bar reads the
 carpet, not the bar. A range with climbing elements scores them by its `[climb]` table: `rule` (`"lowest-rung"`,
 `"hang"` or `"lowest-point"`), `levels` (each level's points, lowest first, like `{ LOW = 4, MID = 6 }`), and for
@@ -50,7 +52,7 @@ carpet, not the bar. A range with climbing elements scores them by its `[climb]`
 A bump's `depth` must agree with its profile (crest, then each ramp down at `ramp_deg` to the lip, then the lip to
 the toe) within 1 cm, so a typo in one number is caught. A start whose robot outline (0.9 m square) overlaps an
 element standing on the carpet, or a floor ball resting inside one, is rejected; a start may lie under a bar, a
-switch or a raised box, and on a ground box no taller than 1/2 in (a floor protector).
+chain, a switch or a raised box, and on a ground box no taller than 1/2 in (a floor protector).
 
 The built-in ranges with elements:
 
@@ -69,8 +71,59 @@ The built-in ranges with elements:
 | `2013-pyramid` | the 2013 PYRAMID's twelve rungs at 30, 60 and 90 in (`l1_s` to `l3_e`; its legs aren't built) and floor protection, `[start.approach]`  (for climbing; the built-in `2013` is the disc range, its pyramid only obstacles) |
 
 Everything is built from boxes and capsules (the bars), and a moving disc from a cylinder: the live view and the
-renderer draw them with no meshes. A platform is two hinged bodies (the real double hinge: level, the deck rests on
+renderer draw them with no meshes. A chain is a MuJoCo flex, drawn as a bead on each of its joints. A platform is two hinged bodies (the real double hinge: level, the deck rests on
 both axes; tilted, it turns about the low one), its stops the joints' limits at `max_tilt_deg`.
+
+### Chains
+
+A chain is 40 equal links that hang in the catenary its `span`, `top` and `low` give: both ends at `top`, `span`
+apart along `yaw_deg`, and the middle joint, the lowest, at `low` above `center`. Its length comes from those three
+numbers (2.64 m for 2024's 2.42 m, 1.18 m and 0.7176 m). It is built at rest in that shape, so it doesn't settle at the
+start. Under a robot it sags (about 5 cm under a 60 kg robot) and swings.
+
+```toml
+[[element]]
+name = "chain_blue_center"
+kind = "chain"
+center = [5.7441, 4.1051]     # the low point, in the field
+yaw_deg = 90.0                # along the chain
+span = 2.42                   # m between its two ends
+top = 1.18                    # m: the ends' height
+low = 0.7176                  # m: the low point's height, unloaded
+diameter_in = 0.5
+level = "ONSTAGE"
+```
+
+Model, with its estimates and choices:
+
+- Each joint between links is a point mass on three slides, one link's weight at 0.744 kg/m (an estimate: #35 roller
+  chain, 0.50 lb/ft). The two ends are pinned to the field.
+- The links are a MuJoCo 1D flex. A stiff edge equality keeps each link's length, and the chain doesn't resist
+  bending. 40 links is our choice from the chain spike: 80 stretch about 28 cm under two robots, and 20 bend
+  coarsely.
+- The chain's contact has a hook's priority and its own stiff contact softness, so a hook on these light links
+  holds. Its friction is 0, so the hook's material sets the friction (MuJoCo takes the larger at equal priority).
+  Against a bumper, the chain slides with no friction.
+- A hook stays at the link where it hooks and doesn't slide toward the low point, as a real chain on a hook partly
+  would.
+
+The checks, each naming the element:
+
+- `low` must be below `top`, and more than the chain's radius above the carpet.
+- `span` must be more than 0.
+- A catenary must fit: the sag (`top` - `low`) over `span` must lie within what 40 links can hang, from about
+  0.000005 to about 2016 times the span.
+- Both ends must be inside the field.
+- The number of links is fixed at 40, and not a key.
+
+A chain is a hold for the climb signals, `climb run`'s `hook_contact` and the Test tab's "any bar" and "next bar", as a
+bar is. Its swing (`climb.swing`) is measured about its end-to-end line. Its top, for "next bar", is its lowest joint's
+height plus its radius. A start may lie under it, and for the station and AprilTag checks it is its 40 links at rest.
+The Test tab's clearance doesn't measure a chain yet, since it has no geoms of its own: `clearance.<chain>` reads
+"never within 20 in".
+
+A chain costs more than a bar: on the 2024 field, six chains take a simulated second from about 80 ms of wall time to
+about 230 ms (measured 2026-11-11), still several times faster than real time. A `bar` stays the cheap stand-in.
 
 ### Mesh elements from CAD
 
