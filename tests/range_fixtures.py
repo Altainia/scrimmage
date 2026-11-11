@@ -80,11 +80,6 @@ def drive(w, seconds, **pwm):
 
 
 def range_2024_with_tags(tmp_path) -> Path:
-    """A copy of the built-in 2024 range (in tmp_path) with `apriltags = "2024-crescendo"` in its [range] table: the
-    built-in gets its tags only in K4's task 7, so the camera tests load "2024 with tags" through this."""
+    """The built-in 2024 range, which has `apriltags = "2024-crescendo"` (K4); `tmp_path` is unused, kept for callers."""
     from scrimmage.testrange.spec import BUILTIN_RANGES
-    text = BUILTIN_RANGES["2024"].read_text(encoding="utf-8")
-    assert text.count("\n[range]\n") == 1
-    out = Path(tmp_path) / "2024-tags.toml"
-    out.write_text(text.replace("\n[range]\n", '\n[range]\napriltags = "2024-crescendo"\n'), encoding="utf-8")
-    return out
+    return Path(BUILTIN_RANGES["2024"])

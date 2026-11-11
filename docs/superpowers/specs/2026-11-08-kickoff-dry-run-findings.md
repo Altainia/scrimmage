@@ -228,11 +228,13 @@ Severity: **B** = blocker, **W** = workaround exists, **N** = nice-to-have. Size
      - (b) a `kind = "mesh"` static element (STEP/STL plus a transform, coacd-split): M
      - (c) document the FreeCAD measuring workflow that 2026.toml used: S
    - Docs: missing. test-range.md says "measure its CAD" with no how-to.
+   - **K4 status (2026-11-10).** Done: (a) STEP product names are kept (the field STEP's pieces are named, not `NAUO<n>`); `scrimmage cad list` lists them with `--match`, `--near` and `--sort`; (b) `kind = "mesh"` elements, each piece split on its own and cached; (c) docs/test-range.md has a "From the field's CAD to a range" how-to, with the FreeCAD route. FIRST's CAD still isn't shipped, so the built-in ranges have no mesh elements.
 
 6. **Official STAGE team-element STEP fails to load.** — **W** (none in scrimmage), S
    - Happened: `Could not read TE-24200.STEP as a STEP file: re-export it from CAD and try again.`
    - Cause: `_meshes()` count check, 81 glTF meshes vs 84 trimesh geometries.
    - Fix: map geometries by glTF mesh index instead of by count. The message also blames the file wrongly.
+   - **K4 status (2026-11-10).** Fixed by the cleanup batch (K1): geometries map by glTF mesh index, and the message no longer blames the file.
 
 7. **Field size is fixed at 16.54 × 8.07 m; 2024 is 16.541 × 8.211 m.** — **W**, S–M
    - Happened: with WPILib y kept, the AMP wall (y = 8.204) lies behind scrimmage's guardrail.
@@ -245,6 +247,7 @@ Severity: **B** = blocker, **W** = workaround exists, **N** = nice-to-have. Size
 8. **No AprilTags or vision.** — **N** on day 1, **B** for auto-alignment work, M
    - sensors.md: "Cameras and vision ... AprilTags are not part of Scrimmage".
    - Fix: `[[apriltag]]` in ranges, or load a WPILib layout JSON, drawn on the field and published as targets.
+   - **K4 status (2026-11-10).** Done. A range takes `apriltags = "<built-in or WPILib JSON>"`, drawn on the field. 2024 ships WPILib's 16 tags. A `kind = "camera"` sensor reports which tags it sees by geometry, the Test tab has a `sees_tag` check, and `examples/blocks/camera` shows it from the SUBWOOFER. Robot code gets the layout and the true pose for PhotonLib. Not done: a real detector (blur, noise, pose ambiguity).
 
 9. **Chain is a rigid bar; HARMONY and TRAP can't be expressed.** — **W** (ONSTAGE ≈ lowest-rung), L
    - climbing.md: "Chain and rope aren't modeled (2024's chain ...)".
@@ -296,6 +299,7 @@ Severity: **B** = blocker, **W** = workaround exists, **N** = nice-to-have. Size
       - add `scale`
       - say in the docs that STEP carries its own units
     - The only "official" NOTE CAD was the 1:40 3D-print file.
+    - **K4 status (2026-11-10).** The cleanup batch (K1) added `scale` and the docs say a STEP carries its own units. K4 adds the rest: the tessellation tolerance is measured and pinned (it was already in millimeters, so no code changed, R2), and CAD pieces get a density check against the range's water, 100 to 10 000 kg/m³, with a hint to try `scale` (R3).
 
 15. **No soft-contact or stiffness key for range pieces.** — **N**, S (until gap 3)
     - The bench has a rigid `stiffness`; `[piece.*]` does not. Add it so the Test tab and bench agree.

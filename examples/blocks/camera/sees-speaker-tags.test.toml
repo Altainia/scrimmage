@@ -1,0 +1,14 @@
+[test]
+robot = "note-shooter-standin.toml"
+
+[[block]]
+do = "wait"
+seconds = 0.5
+
+[[block]]
+do = "expect"
+that = { sees_tag = { camera = "front_cam", tag = 7 } }
+
+[[block]]
+do = "expect"
+that = { sees_tag = { camera = "front_cam", tag = 8 } }

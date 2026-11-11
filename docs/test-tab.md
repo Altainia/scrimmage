@@ -870,7 +870,7 @@ absolute path. **`test_spread`** runs the floor spread. The agent writes the `.t
 
 ## The examples
 
-Ten worked examples are in `examples/blocks/`. Each has a README with the story, the blocks and how to change them.
+Eleven worked examples are in `examples/blocks/`. Each has a README with the story, the blocks and how to change them.
 
 - **`examples/blocks/intake`**, a roller and bin that take a ball off the carpet. Run it and it finishes at 3.3 s
   with the ball in the bin. The README has a sweep of the roller's voltage.
@@ -913,6 +913,9 @@ Ten worked examples are in `examples/blocks/`. Each has a README with the story,
   the blue SUBWOOFER with one NOTE. It tilts the channel to 58°, spins both wheels at 3.05 V (about 21.7 rps, a
   shot `launcher aim` finds there with more room than the table's lowest-arc row) and feeds the NOTE, which scores in
   `speaker_blue`. The README shows the aim table, how much room the shot has and the AMP shot.
+- **`examples/blocks/camera`**, the speaker example's robot with a camera on its chassis, 0.90 m up, on the built-in
+  `2024` field's AprilTags. From against the blue SUBWOOFER it checks the camera sees tags 7 and 8, the blue SPEAKER's.
+  The README says why the camera is mounted high: at 0.25 m the SUBWOOFER hides both tags.
 - **`examples/blocks/partner`**, a stand-in robot pushing a partner robot set in Setup. It drives into it at 6 V for
   2 s and checks the partner moved at least 60 in: a braked partner moves 63 in, a coasting one 112 in. The README
   tries other voltages and a partner turned sideways, which hardly moves.

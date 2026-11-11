@@ -909,6 +909,10 @@ its line, or says it is an estimate or our choice).
 - **The elements.** The SUBWOOFERS (a box under each SPEAKER and its two angled sides), the SOURCE walls, and the
   STAGES: a core box, three legs and three CHAINS as rigid bars (`[climb]` scores a robot off the carpet touching a
   chain, as ONSTAGE). HARMONY, the TRAP and the MICROPHONES aren't modeled.
+- **The AprilTags.** The range has WPILib's 2024 layout (`apriltags = "2024-crescendo"`): 16 tags, drawn on the
+  walls and the STAGES, and seen by a [camera sensor](sensors.md#a-camera). `range check` lists them. They add no
+  contacts and change no other number. The worked camera example is
+  [`examples/blocks/camera`](../examples/blocks/camera/README.md).
 - **The zones** `blue_start`, `blue_wing`, `red_start` and `red_wing` are drawn as tape.
 - **The starts.** `blue_subwoofer` (against the blue SUBWOOFER, facing the SPEAKER), `blue_amp` (1 m back from the
   blue AMP, facing it), `blue_amp_side`, `blue_source_side`, `blue_wing_note` and `at_blue_source`.
@@ -1179,6 +1183,84 @@ together; `--json` gives each piece's own place. The header counts pieces, not l
 rotated, so a file drawn Y-up shows its height in the second number. The JSON has `file`, `units` and `pieces`, each with
 `key`, `name`, `center_m`, `size_m`, `center_file`, `size_file` and `triangles`. Wrong options and unreadable files
 exit 2 with `scrimmage: <message>`.
+
+## From the field's CAD to a range
+
+FIRST gives teams the field's CAD, but the file is FIRST's, so scrimmage doesn't ship it and the built-in ranges have
+no mesh elements. This is how to make a range from your own copy. The examples use the 2024 field's STEP, `FE-2024.STEP`
+(88 MB); its piece names are real, and yours will match if you have the same file.
+
+**1. List the pieces.** The first run reads the whole file and takes about 20 seconds.
+
+```bash
+scrimmage cad list FE-2024.STEP --units in | head
+```
+
+The header says `5507 pieces`. The list is sorted with the biggest bounding box first, and the biggest are bolts
+and rivets spread all over the field, which isn't useful. Narrow it.
+
+**2. Find a piece with `--match` or `--near`.** If you know part of a name, match it. A STAGE is an assembly named
+`GE-24200_Blue` (red is `GE-24200_Red`):
+
+```bash
+scrimmage cad list FE-2024.STEP --match "*GE-24200_Blue*" --units in
+```
+
+The 754 pieces in it include `GE-24210` (the frame, 176 604 triangles), three `GE-24205_hanging` pieces (the hanging
+plates, 131 196 triangles each), the tag mounts `GE-24220_GE-24220 Tag14` to `Tag16`, and a lot of nuts, washers and
+rivets. If you only know where a piece is, point at the place, in meters:
+
+```bash
+scrimmage cad list FE-2024.STEP --near 8.3,0.9,4.1 --within 1.5 --units in
+```
+
+That finds the pieces within 1.5 m of that point (98 of them, such as `FE-00004-04` and `FE-00012`). A `×N` after a name means N pieces share it, and the numbers on that line cover all of them.
+`--json` gives each piece's own place and its full key, such as
+`FE-2024/GE-24200_Blue/GE-24210/...`. A glob can match a key or a name.
+
+**3. Tell a Y-up file from a Z-up file.** Use the sizes in meters (the second group of numbers). Pieces that lie
+along the field, such as `FE-00018-03`, are 16.5 m long and 8.3 m wide but only 0.5 m in the middle number. The field's
+width is in the third number and its height in the second, so the file is Y-up and the element needs
+`rpy_deg = [90, 0, 0]`. The whole blue STAGE is 2.6 x 2.0 x 3.0 m: its 2.0 m height is the second number too. In a Z-up
+file the height is the third number, and you leave `rpy_deg` out.
+
+**4. Write the element.**
+
+```toml
+[[element]]
+name = "stage_blue_frame"
+kind = "mesh"
+file = "cad/FE-2024.STEP"                    # relative to the range file
+select = ["*GE-24200_Blue/GE-24210/*"]        # the STAGE's frame, not its hardware
+rpy_deg = [90, 0, 0]                          # the file is Y-up
+pos = [0, 0, 0]                               # where the file's origin goes on the field
+```
+
+Pieces are the ones `select` names, and the whole STAGE is over the 200 000-triangle limit, so split it into
+several elements, each with its own `select` (the frame, then each `GE-24205` hanging plate:
+`*GE-24200_Blue/GE-24205/*`, `*GE-24200_Blue/GE-24205#2/*`, `*GE-24200_Blue/GE-24205#3/*`). Leave out
+nuts, washers and rivets: they cost triangles and add nothing a robot can touch. Add `ground = true` only to a piece a
+robot drives over. [The mesh element's keys](terrain.md#field-elements-in-range-files) are in terrain.md. The file
+says how big it is, so `units` is only for an STL or OBJ.
+
+**5. Check it in the viewer.**
+
+```bash
+scrimmage range check my-range.toml
+scrimmage range view my-range.toml
+scrimmage range view my-range.toml --out top.png
+```
+
+The first build is slow because scrimmage splits each piece into convex parts. After that it's cached, and moving the
+element (`pos`, `rpy_deg`) uses the cache. Splitting rounds off concave detail, so look at the shape, and compare it
+with the piece in your CAD program. `range check` warns about pieces it left out because they aren't solid, and about
+a density that looks wrong (a hint to try `scale`).
+
+**Numbers the CAD file can't give you directly.** A goal's opening is a clear gap between pieces, not a piece. For
+those, `2026.toml` measured the CAD in FreeCAD: open the STEP, select two faces or edges, and use the Measurement tool
+to read the distance (the file is in millimeters, so convert). Then write the number in the range file and cite it on
+its line, as in [Where the 2026 numbers come from](#where-the-2026-numbers-come-from). A gap measured in CAD is
+better than one read from a drawing.
 
 ## Scenarios: signals, `by_time`, `[range]`, `robot_env`
 
