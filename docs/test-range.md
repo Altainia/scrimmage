@@ -767,7 +767,9 @@ apriltag_size_in = 6.5         # the tags' side in inches; default 6.5, the 2024
 - **Mounted tags:** a wall-mounted tag's center can lie a little inside the solid it hangs on: 2024's SPEAKER tags are
   3.8 cm inside the SPEAKER wall obstacle, and the STAGE tags about 7 cm inside the estimated stage cores. The tag is
   drawn, and a camera sees it, at its face: its center pushed out along its normal past any solid it lies at most
-  0.10 m inside. `range check` warns about a tag deeper than that in a solid, since it would be hidden.
+  0.10 m inside. `range check` warns about a tag deeper than that in a solid, since it would be hidden. A box or
+  obstacle counts as its box, and a [mesh element](terrain.md#mesh-elements-from-cad) as its convex parts' own faces,
+  so a tag flush on a turned CAD face stays on it.
 - **Drawing:** each tag is a black square with a white border (the real tag36h11 pattern isn't drawn) that touches
   nothing and changes no sensor reading. The live view labels each with its ID; a MuJoCo picture (`range view --out`)
   shows the squares only.
@@ -1190,7 +1192,8 @@ FIRST gives teams the field's CAD, but the file is FIRST's, so scrimmage doesn't
 no mesh elements. This is how to make a range from your own copy. The examples use the 2024 field's STEP, `FE-2024.STEP`
 (88 MB); its piece names are real, and yours will match if you have the same file.
 
-**1. List the pieces.** The first run reads the whole file and takes about 20 seconds.
+**1. List the pieces.** Every `cad list` run reads the whole file, so each one takes about 20 seconds (nothing is
+kept between runs).
 
 ```bash
 scrimmage cad list FE-2024.STEP --units in | head
@@ -1206,15 +1209,15 @@ and rivets spread all over the field, which isn't useful. Narrow it.
 scrimmage cad list FE-2024.STEP --match "*GE-24200_Blue*" --units in
 ```
 
-The 754 pieces in it include `GE-24210` (the frame, 176 604 triangles), three `GE-24205_hanging` pieces (the hanging
-plates, 131 196 triangles each), the tag mounts `GE-24220_GE-24220 Tag14` to `Tag16`, and a lot of nuts, washers and
+The 754 pieces in it include `GE-24210` (the frame, 176 604 triangles), three `GE-24205_hanging` pieces (the STAGE's
+three CHAINS, 125 164 triangles each), the tag mounts `GE-24220_GE-24220 Tag14` to `Tag16`, and a lot of nuts, washers and
 rivets. If you only know where a piece is, point at the place, in meters:
 
 ```bash
 scrimmage cad list FE-2024.STEP --near 8.3,0.9,4.1 --within 1.5 --units in
 ```
 
-That finds the pieces within 1.5 m of that point (98 of them, such as `FE-00004-04` and `FE-00012`). A `×N` after a name means N pieces share it, and the numbers on that line cover all of them.
+That finds the pieces within 1.5 m of that point (95 of them, such as `FE-00004-04` and `FE-00012`). A `×N` after a name means N pieces share it, and the numbers on that line cover all of them.
 `--json` gives each piece's own place and its full key, such as
 `FE-2024/GE-24200_Blue/GE-24210/...`. A glob can match a key or a name.
 
@@ -1261,7 +1264,9 @@ pos = [8.2705, 4.1055, 0]                    # the file's origin is the field's 
 Use the full key, with the assembly's name before the piece, so a glob on a name like `FE-01003-01` can't also take
 the red STAGE's piece of the same name. (`cad list` says `×N` when pieces share a name.) The 30 pieces are 63 000
 triangles. The whole STAGE is more than the limit of 200 000 triangles, so it needs to be split into several elements anyway.
-Add the hanging plates with their own elements (`*GE-24200_Blue/GE-24205/*`, then `GE-24205#2` and `GE-24205#3`).
+The CHAINS are optional. The range's own `chain_*` bars and its `[climb]` are what a robot climbs on, so a CHAIN from
+the CAD is only a rigid look-alike that overlaps them. If you want one anyway, give each its own element
+(`*GE-24200_Blue/GE-24205/*`, then `GE-24205#2` and `GE-24205#3`).
 Add `ground = true` only to a piece a robot drives over. [The mesh element's keys](terrain.md#field-elements-in-range-files)
 are in terrain.md. The file says how big it is, so `units` is only for an STL or OBJ.
 
@@ -1280,7 +1285,9 @@ scrimmage range view my-range.toml --out top.png
 The first build is slow because scrimmage splits each piece into convex parts. After that it's cached, and moving the
 element (`pos`, `rpy_deg`) uses the cache. Splitting rounds off concave detail, so look at the shape, and compare it
 with the piece in your CAD program. `range check` warns about pieces it left out because they aren't solid, and about
-a density that looks wrong (a hint to try `scale`).
+an element that reaches more than 0.5 m outside the field (check `pos` and `rpy_deg`). A mesh element has no mass,
+so there is no density check: a wrong `scale` shows as a selection "larger than the field", or as a piece that looks
+the wrong size in the viewer.
 
 **Numbers the CAD file can't give you directly.** A goal's opening is a clear gap between pieces, not a piece. For
 those, `2026.toml` measured the CAD in FreeCAD: open the STEP, select two faces or edges, and use the Measurement tool

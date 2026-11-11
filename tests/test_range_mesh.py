@@ -219,8 +219,14 @@ def test_ground_picks_the_geom_group(tmp_path):
 
 
 def test_its_footprint_blocks_a_start(tmp_path):
-    with pytest.raises(RangeError, match="start 'in' .*overlaps element 'm'"):
+    """The whole bounding box is the footprint (spec D3): the refusal names the mesh element, its box, and the split."""
+    with pytest.raises(RangeError, match=r"start 'in' .*overlaps mesh element 'm', whose footprint is its whole "
+                                         r"bounding box \(x 3 to 3.5 m, y 3 to 3.5 m\).*split the element"):
         load_range(str(block_range(tmp_path, start="\n[start.in]\npose = [3.25, 3.25, 0.0]\n")), tmp_path)
+    path = block_range(tmp_path)
+    path.write_text(path.read_text().replace("at = [[1.0, 1.0]]", "at = [[3.25, 3.25]]"))
+    with pytest.raises(RangeError, match=r"ball 0 at \(3.25, 3.25\) lies on mesh element 'm', whose footprint"):
+        load_range(str(path), tmp_path)
 
 
 def test_a_raised_mesh_leaves_a_start_clear(tmp_path):
@@ -246,14 +252,20 @@ def test_station_boxes_hold_each_part(tmp_path):
 
 @pytest.mark.skipif(not FIELD_STEP.is_file(), reason="FIRST's field CAD isn't here")
 def test_the_field_stage_is_a_mesh_element(tmp_path):
+    import re
     import time
-    # The whole of GE-24200_Blue is 1.17 million triangles (three 125 000-triangle trusses and 750 bolts), over
-    # MAX_MESH_TRIANGLES; its frame, GE-24210, is 177 000. The file is Y-up.
-    body = f'file = "{FIELD_STEP.as_posix()}"\nselect = ["*GE-24200_Blue/GE-24210/*"]\nrpy_deg = [90, 0, 0]\n'
-    (tmp_path / "r.toml").write_text(HEAD + '[[element]]\nname = "stage_blue"\nkind = "mesh"\n' + body)
+    # The whole of GE-24200_Blue is 1.17 million triangles (three 125 000-triangle CHAINS and 750 bolts), over
+    # MAX_MESH_TRIANGLES. The element is the how-to's (docs/test-range.md, step 4): the frame's 30 structure pieces,
+    # placed as the how-to works out (the file is Y-up, its origin the field's middle, its +x toward blue).
+    doc = (Path(__file__).parent.parent / "docs" / "test-range.md").read_text(encoding="utf-8")
+    howto = re.search(r'```toml\n(\[\[element\]\]\nname = "stage_blue_frame".*?)```', doc, re.S).group(1)
+    body = howto.replace('file = "cad/FE-2024.STEP"', f'file = "{FIELD_STEP.as_posix()}"')
+    (tmp_path / "r.toml").write_text(HEAD + 'field = { length = 16.541, width = 8.211 }\n\n' + body)
     rng = load_range("r.toml", tmp_path)
     e = rng.elements[0]
     assert all(2.0 <= x <= 6.0 for x in (e.hi - e.lo)[:2]), e.hi - e.lo
+    assert np.hypot(e.center[0] - 4.549, e.center[1] - 4.106) <= 0.15, e.center    # the blue STAGE, not mirrored
+    assert not [w for w in rng.warnings if "outside" in w]
     World(range_cfg(range={"file": str(tmp_path / "r.toml"), "floor_balls": False}), None)
     start = time.monotonic()
     load_range("r.toml", tmp_path)
@@ -276,3 +288,109 @@ def test_an_over_cap_selection_is_not_cached(tmp_path, monkeypatch):
     with pytest.raises(RangeError):
         load(tmp_path, CLIMBER)
     assert not list((tmp_path / "mesh-cache").glob("*"))
+
+
+def _tagged(tmp_path, body: str, tags) -> object:
+    """The test range with a mesh element and a layout of `tags` as (id, x, y, z, yaw_deg)."""
+    import json
+    import math
+
+    def pose(x, y, z, yaw):
+        h = math.radians(yaw) / 2.0
+        return {"translation": {"x": x, "y": y, "z": z},
+                "rotation": {"quaternion": {"W": math.cos(h), "X": 0.0, "Y": 0.0, "Z": math.sin(h)}}}
+    (tmp_path / "tags.json").write_text(json.dumps({"field": {"length": 16.54, "width": 8.07},
+                                                    "tags": [{"ID": t[0], "pose": pose(*t[1:])} for t in tags]}))
+    (tmp_path / "r.toml").write_text(element(body).replace("[range]\n", '[range]\napriltags = "tags.json"\n', 1))
+    return load_range("r.toml", tmp_path)
+
+
+def _plate(tmp_path) -> None:
+    """A 2 cm x 0.9 m x 0.5 m plate, its +x face's center at its origin."""
+    v = np.array([(x, y, z) for x in (-0.02, 0.0) for y in (-0.45, 0.45) for z in (-0.25, 0.25)], dtype=float)
+    write_stl(tmp_path / "plate.stl", v, CUBE_F)
+
+
+def test_a_tag_flush_on_a_turned_mesh_face_is_seen(tmp_path):
+    """A tag flush on a mesh plate turned 60 degrees: no warning, and it is drawn on the face, not in front of the
+    part's bounding box (0.27 m out)."""
+    import math
+    from scrimmage.checks import shown
+    _plate(tmp_path)
+    rng = _tagged(tmp_path, 'file = "plate.stl"\nunits = "m"\npos = [5, 4, 1]\nrpy_deg = [0, 0, 60]\n',
+                  [(1, 5.0, 4.0, 1.0, 60.0)])
+    assert [w for w in map(shown, rng.warnings) if "tag" in w] == []
+    t = rng.apriltags.tag(1)
+    n = np.array([math.cos(math.radians(60)), math.sin(math.radians(60)), 0.0])
+    out = (np.array(t.face) - [5.0, 4.0, 1.0]) @ n
+    assert 0.0 <= out <= 0.002 and np.linalg.norm(np.array(t.face) - [5.0, 4.0, 1.0]) <= 0.002
+
+
+def test_a_tag_deep_in_a_mesh_part_is_warned_about(tmp_path):
+    """0.2 m inside a convex mesh part (a 0.5 m cube), facing out of its +x face: warned about, and left in place."""
+    from scrimmage.checks import shown
+    write_stl(tmp_path / "block.stl", *cube(0.5))
+    rng = _tagged(tmp_path, 'file = "block.stl"\nunits = "m"\npos = [5, 4, 0.75]\n', [(1, 5.3, 4.25, 1.0, 0.0)])
+    warned = [w for w in map(shown, rng.warnings) if "tag" in w]
+    assert len(warned) == 1 and "tag 1" in warned[0] and "'m'" in warned[0]
+    assert rng.apriltags.tag(1).face == pytest.approx((5.3, 4.25, 1.0))
+    (tmp_path / "shallow").mkdir()
+    write_stl(tmp_path / "shallow" / "block.stl", *cube(0.5))
+    rng = _tagged(tmp_path / "shallow", 'file = "block.stl"\nunits = "m"\npos = [5, 4, 0.75]\n',
+                  [(1, 5.45, 4.25, 1.0, 0.0)])
+    assert [w for w in map(shown, rng.warnings) if "tag" in w] == []
+    assert rng.apriltags.tag(1).face == pytest.approx((5.501, 4.25, 1.0), abs=1e-6)
+
+
+def test_a_mesh_note_is_worded_in_the_language(tmp_path, monkeypatch):
+    """cad_factor's note (a STEP whose unit can't be told ignores `units`) is cached by its kind, not its words: read
+    from the file or from the cache, it is shown in the Language and its machine text stays the source's English."""
+    import json
+    import scrimmage.cad.source as source
+    from scrimmage import i18n
+    from scrimmage.checks import shown
+    source_text = ("{where}: can't tell which units {file} is in, so {units_setting} is ignored and the file's own are "
+                   "used")
+    folder = tmp_path / "locales"
+    folder.mkdir()
+    (folder / "en-GB.json").write_text(json.dumps({source_text: "{where}: {file}'s units are a mystery, so "
+                                                                "{units_setting} is ignored"}))
+    shipped = i18n.LOCALES
+    monkeypatch.setattr(i18n, "LOCALES", folder)
+    i18n.reload()
+    try:
+        monkeypatch.setattr(source, "step_length_unit", lambda path: None)
+        for _ in range(2):      # the read, then the cache
+            notes = [w for w in mesh_of(tmp_path, CLIMBER + 'select = ["Climber/arm_*"]\nunits = "mm"\n').warnings
+                     if "units" in w]
+            assert len(notes) == 1 and "can't tell which units climber.step" in notes[0]
+            with i18n.fixed("en-GB"):
+                assert "climber.step's units are a mystery, so units = \"mm\" is ignored" in shown(notes[0])
+    finally:
+        monkeypatch.setattr(i18n, "LOCALES", shipped)
+        i18n.reload()
+
+
+def test_a_perimeter_sized_piece_is_not_a_units_mistake(tmp_path):
+    """A piece up to 1 m larger than the field (the 2024 CAD's guardrails are 16.637 m) loads; 2 m larger is refused."""
+    v = np.array([(x, y, z) for x in (0, 17.4) for y in (0, 0.05) for z in (0, 0.5)], dtype=float)
+    write_stl(tmp_path / "rail.stl", v, CUBE_F)
+    e = mesh_of(tmp_path, 'file = "rail.stl"\nunits = "m"\npos = [-0.4, -0.05, 0]\n')
+    assert e.hi[0] - e.lo[0] == pytest.approx(17.4)
+    assert not [w for w in e.warnings if "outside" in w]
+    v[4:, 0] = 18.6
+    write_stl(tmp_path / "rail.stl", v, CUBE_F)
+    with pytest.raises(RangeError, match="larger than the 16.54 by 8.07 m field"):
+        mesh_of(tmp_path, 'file = "rail.stl"\nunits = "m"\n')
+
+
+def test_an_element_far_outside_the_field_is_warned_about(tmp_path):
+    """More than 0.5 m outside the field (a wrong pos or rpy_deg): a warning naming the element and the two keys."""
+    from scrimmage.checks import shown
+    write_stl(tmp_path / "block.stl", *cube(0.5))
+    near = load(tmp_path, 'file = "block.stl"\nunits = "m"\npos = [-0.4, 3, 0]\n')
+    assert not [w for w in near.warnings if "outside" in w]
+    far = load(tmp_path, 'file = "block.stl"\nunits = "m"\npos = [3, -1.5, 0]\n')
+    warned = [shown(w) for w in far.warnings if "outside" in w]
+    assert len(warned) == 1 and "element 'm'" in warned[0] and "reaches 1.5 m outside" in warned[0]
+    assert "check pos and rpy_deg" in warned[0]

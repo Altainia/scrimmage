@@ -365,8 +365,13 @@ the next section.
 scrimmage publishes the robot's true pose as `/MuJoCo/GroundTruthPose`, a `Pose2d` struct on NetworkTables. PhotonLib's
 own simulation, `VisionSystemSim`, takes a robot pose and a tag layout and simulates each camera, its noise and its
 latency inside your robot program, so your pose estimator gets results as on the real robot. Feed it scrimmage's true
-pose and the same layout JSON the range uses (`scrimmage/testrange/apriltags/2024-crescendo.json`, or your own file:
-copy it into your project's `deploy` folder).
+pose and the same tag layout the range uses. For a layout scrimmage ships, WPILib ships the same file:
+`2024-crescendo` is the JSON of WPILib's `AprilTagFields.k2024Crescendo` byte for byte, so load it with
+`AprilTagFieldLayout.loadField(AprilTagFields.k2024Crescendo)` in Java or
+`AprilTagFieldLayout.loadField(AprilTagField.k2024Crescendo)` in Python (`robotpy_apriltag`), as the snippets do, and
+your robot code doesn't point into scrimmage's files. For your own layout JSON, copy the file into your project's
+`deploy` folder and give its path there to `AprilTagFieldLayout`'s constructor (the folder is
+`Filesystem.getDeployDirectory()` in Java, `wpilib.getDeployDirectory()` in Python).
 
 **This snippet isn't run in this repo's tests**: PhotonLib is a vendordep from the network, so nothing here checks it
 against PhotonLib's API. A test pins the topic's name and type. The snippets match **PhotonLib v2026.3.4**, checked by
@@ -378,10 +383,10 @@ Java (in `Robot.java`):
 
 ```java
 import edu.wpi.first.apriltag.AprilTagFieldLayout;
+import edu.wpi.first.apriltag.AprilTagFields;
 import edu.wpi.first.math.geometry.*;
 import edu.wpi.first.networktables.NetworkTableInstance;
 import edu.wpi.first.networktables.StructSubscriber;
-import edu.wpi.first.wpilibj.Filesystem;
 import org.photonvision.PhotonCamera;
 import org.photonvision.simulation.PhotonCameraSim;
 import org.photonvision.simulation.SimCameraProperties;
@@ -394,12 +399,7 @@ StructSubscriber<Pose2d> truePose = NetworkTableInstance.getDefault()
 
 @Override
 public void simulationInit() {
-  try {
-    visionSim.addAprilTags(new AprilTagFieldLayout(
-        Filesystem.getDeployDirectory().toPath().resolve("2024-crescendo.json")));
-  } catch (java.io.IOException e) {
-    throw new RuntimeException(e);
-  }
+  visionSim.addAprilTags(AprilTagFieldLayout.loadField(AprilTagFields.k2024Crescendo));   // the range's 2024-crescendo
   SimCameraProperties props = new SimCameraProperties();
   props.setCalibration(1280, 800, Rotation2d.fromDegrees(80));   // 80 deg diagonal: about 71 x 48 deg at 1280x800
   props.setFPS(30);
@@ -425,7 +425,7 @@ import ntcore
 import wpilib
 from photonlibpy import PhotonCamera
 from photonlibpy.simulation import PhotonCameraSim, SimCameraProperties, VisionSystemSim
-from robotpy_apriltag import AprilTagFieldLayout
+from robotpy_apriltag import AprilTagField, AprilTagFieldLayout
 from wpimath.geometry import Pose2d, Rotation2d, Rotation3d, Transform3d, Translation3d
 
 
@@ -437,8 +437,7 @@ class MyRobot(wpilib.TimedRobot):
 
     def _simulationInit(self):
         self.vision_sim = VisionSystemSim("main")
-        deploy = wpilib.getDeployDirectory()
-        self.vision_sim.addAprilTags(AprilTagFieldLayout(f"{deploy}/2024-crescendo.json"))
+        self.vision_sim.addAprilTags(AprilTagFieldLayout.loadField(AprilTagField.k2024Crescendo))   # 2024-crescendo
         props = SimCameraProperties()
         props.setCalibrationFromFOV(1280, 800, Rotation2d.fromDegrees(80))   # 80 deg diagonal: about 71 x 48 deg
         props.setFPS(30)

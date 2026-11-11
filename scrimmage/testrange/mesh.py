@@ -32,8 +32,12 @@ from .spec import RangeError, _Reader
 
 MAX_MESH_TRIANGLES = 200_000    # choice: a few STAGE-sized assemblies; the 2024 field's STAGE is well under it, and a
                                 # whole field (millions) would take minutes to split and a model of that many geoms
+FIELD_MARGIN = 1.0      # choice: m a selection may be larger than the field before it's a units mistake (the 2024
+                        # CAD's guardrail and carpet pieces are up to 0.1 m longer than the field)
+OUTSIDE_WARN = 0.5      # choice: m an element may reach outside the field before range check warns (a wrong pos or
+                        # rpy_deg puts a STAGE through the guardrail)
 MESH_CACHE = SHAPED_CACHE / "mesh-elements"
-CACHE_VERSION = 1       # in the cache key: raise it when what is stored changes
+CACHE_VERSION = 2       # in the cache key: raise it when what is stored changes (2: notes by kind)
 
 
 @dataclass(frozen=True, eq=False)
@@ -124,7 +128,8 @@ def _cap(items, r: _Reader) -> int:
 
 
 def _load(path: Path, select: tuple[str, ...], units: str | None, scale: float, r: _Reader):
-    """(the selection as (key, v, f) in m, the file's axes; the notes for the warnings, text), and the cache key."""
+    """(the selection as (key, v, f) in m, the file's axes; the kinds of cad_factor's notes, which cad_note words),
+    and the cache key."""
     if not path.exists():
         raise r.err(i18n.t("file {file} not found; give a path relative to the range file", file=str(path)))
     digest = _digest(path, json.dumps([list(select), units, scale, CACHE_VERSION]))
@@ -153,7 +158,6 @@ def _load(path: Path, select: tuple[str, ...], units: str | None, scale: float, 
                                    names=", ".join(close) if close else i18n.t("none")))
             chosen += [p for p in found if not any(p is c for c in chosen)]
     items = [(p.key, np.ascontiguousarray(p.v * factor), np.asarray(p.f, dtype=np.int32)) for p in chosen]
-    notes = [str(n) for n in notes]
     _cap(items, r)              # before the write: an over-cap selection isn't cached
     arrays = {}
     for i, (_, v, f) in enumerate(items):
@@ -208,6 +212,7 @@ def parse_mesh(r: _Reader, name: str, base_dir: Path, size: tuple[float, float])
     """A mesh element from its table, with every mistake a RangeError naming the file and the element."""
     from ..checks import worded
     from .elements import DEFAULT_FRICTION, _bool
+    from .pieces import cad_note
 
     file = Path(r.text("file"))
     path = file if file.is_absolute() else Path(base_dir) / file
@@ -221,8 +226,9 @@ def parse_mesh(r: _Reader, name: str, base_dir: Path, size: tuple[float, float])
     items, notes, digest = _load(path, select, units, scale, r)
     triangles = _cap(items, r)
     every = np.concatenate([placed(v, pos, rpy_deg) for _, v, _ in items])
-    across = every.max(axis=0) - every.min(axis=0)
-    if across[0] > size[0] or across[1] > size[1]:
+    low, high = every.min(axis=0), every.max(axis=0)
+    across = high - low
+    if across[0] > size[0] + FIELD_MARGIN or across[1] > size[1] + FIELD_MARGIN:
         raise r.err(i18n.t("selects pieces {x} by {y} m across, larger than the {length} by {width} m field; select "
                            "fewer pieces, or check units (m, mm or in) and scale", x=f"{across[0]:.4g}",
                            y=f"{across[1]:.4g}", length=f"{size[0]:.4g}", width=f"{size[1]:.4g}"))
@@ -230,7 +236,14 @@ def parse_mesh(r: _Reader, name: str, base_dir: Path, size: tuple[float, float])
     if not parts:
         raise r.err(i18n.t("has no closed solid among its {count} selected pieces; export closed solids, not "
                            "surfaces", count=len(items)))
-    warnings = [worded(lambda n=n: n) for n in notes]       # already English (cad_factor's)
+    warnings = [cad_note(kind, r, path) for kind in notes]      # worded again in each Language
+    reach = max(-low[0], -low[1], high[0] - size[0], high[1] - size[1])
+    if reach > OUTSIDE_WARN:
+        warnings.append(worded(lambda: i18n.t(
+            "{path}: {where}: reaches {reach} m outside the {length} by {width} m field (x {x0} to {x1} m, y {y0} to "
+            "{y1} m); check {pos_key} and {rpy_key}", path=r.path, where=r.where, reach=f"{reach:.2g}",
+            length=f"{size[0]:.4g}", width=f"{size[1]:.4g}", x0=f"{low[0]:.3g}", x1=f"{high[0]:.3g}",
+            y0=f"{low[1]:.3g}", y1=f"{high[1]:.3g}", pos_key="pos", rpy_key="rpy_deg")))
     if left_out:
         warnings.append(worded(lambda: i18n.t(
             "{path}: {where}: left out {count} of {total} selected pieces, which can't be made into a solid (not "

@@ -43,7 +43,9 @@ Other things to try:
 
 - Raise it to 1.1 m. It still sees both.
 - Narrow the view with `hfov_deg = 40`. Tag 8 sits to one side of the SPEAKER, so it drops out and only tag 7 is seen.
-- Start from another place, such as `blue_amp_side`, to see which tags show up.
+- Start from `blue_amp` (set `start = "blue_amp"` in the robot file's `[range]`) and expect any tag. The robot faces
+  the AMP there, and the camera sees the AMP's tag 6. From `blue_amp_side` it sees none: the robot faces the
+  SPEAKER wall, but tags 7 and 8 are more than 35 degrees off to the side, outside the camera's 70 degree view.
 
 The camera's keys are in [docs/sensors.md](../../../docs/sensors.md#a-camera).
 

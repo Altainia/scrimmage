@@ -821,13 +821,14 @@ def _outside_warnings(goals, size: tuple[float, float]) -> tuple[str, ...]:
     return tuple(out)
 
 
-def solid_boxes(rng: Range) -> list[tuple[str, np.ndarray, np.ndarray, np.ndarray]]:
+def solid_boxes(rng: Range, meshes: bool = True) -> list[tuple[str, np.ndarray, np.ndarray, np.ndarray]]:
     """The range's solids as boxes, (name, center, rotation (columns: the box's axes), half sizes) in the field: each
-    element's (a mesh element's by its parts' bounding boxes, a platform's also as it tilts), each obstacle, and each
-    goal's walls, funnel, rim and plates, as build.py builds them."""
+    element's (a mesh element's by its parts' bounding boxes, left out when not `meshes`; a platform's also as it
+    tilts), each obstacle, and each goal's walls, funnel, rim and plates, as build.py builds them."""
+    from .mesh import Mesh
     from .station import _element_boxes
 
-    boxes = [(e.name, *b) for e in rng.elements for b in _element_boxes(e)]
+    boxes = [(e.name, *b) for e in rng.elements if meshes or not isinstance(e, Mesh) for b in _element_boxes(e)]
     boxes += [(o.name, np.array(o.pos, float), o.rotation(), np.array(o.size) / 2.0) for o in rng.obstacles]
     from .build import _plates      # build.py imports this module
     for g in rng.goals:             # a goal's walls, funnel, rim and plates, as built
@@ -835,6 +836,15 @@ def solid_boxes(rng: Range) -> list[tuple[str, np.ndarray, np.ndarray, np.ndarra
         boxes += [(f"{g.name}.{name}", g.to_world(center), rot @ local, np.array(half, float))
                   for name, center, local, half, _ in _plates(g)]
     return boxes
+
+
+def mesh_hulls(rng: Range) -> list:
+    """Each mesh element's convex parts in the field, as apriltags.Hulls: a tag is tested against their own faces."""
+    from .apriltags import Hulls
+    from .mesh import Mesh, placed
+
+    return [Hulls(e.name, [(placed(v, e.pos, e.rpy_deg), f) for v, f in e.parts])
+            for e in rng.elements if isinstance(e, Mesh)]
 
 
 PERIMETER_WALLS = ("wall_blue", "wall_red", "wall_right", "wall_left")    # parts/field.py's names
@@ -955,8 +965,9 @@ def parse_range(raw: dict, path: Path) -> Range:
         built = replace(built, warnings=built.warnings + staged)
     if rng.has("apriltags") or rng.has("apriltag_size_in"):
         from .apriltags import parse_apriltags
-        layout, tag_warnings = parse_apriltags(rng, path.parent, size, solid_boxes(built) + perimeter_boxes(size),
-                                               PERIMETER_WALLS)
+        layout, tag_warnings = parse_apriltags(rng, path.parent, size,
+                                               solid_boxes(built, meshes=False) + perimeter_boxes(size),
+                                               PERIMETER_WALLS, mesh_hulls(built))
         built = replace(built, apriltags=layout, warnings=built.warnings + tag_warnings)
     spread = check_release_clear(path, built)
     return replace(built, warnings=built.warnings + spread, spread_warnings=spread) if spread else built

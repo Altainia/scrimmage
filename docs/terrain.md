@@ -76,13 +76,23 @@ both axes; tilted, it turns about the low one), its stops the joints' limits at 
 
 ```toml
 [[element]]
-name = "stage_blue"
+name = "stage_blue_frame"
 kind = "mesh"
 file = "cad/FE-2024.STEP"          # a .step, .stl or .obj file, or a folder of .stl/.obj files; relative to the range file
-select = ["*GE-24200_Blue/GE-24210/*"]   # piece names or keys (globs); all pieces when left out
-rpy_deg = [90, 0, 0]               # this file is drawn Y-up
-pos = [0, 0, 0]
+select = [                         # piece names or keys (globs); all pieces when left out
+  "*GE-24200_Blue/GE-24210/FE-01003*/FE-01003-01*",
+  "*GE-24200_Blue/GE-24210/FE-01002*/FE-01002-01*",
+  "*GE-24200_Blue/GE-24210/FE-01012*/FE-01012-01*",
+  "*GE-24200_Blue/GE-24210/FE-01021*/FE-01020/FE-01020-0*",
+  "*GE-24200_Blue/GE-24210/GE-24211/*",
+]
+rpy_deg = [90, 0, 180]             # this file is drawn Y-up, and its +x points toward the blue wall
+pos = [8.2705, 4.1055, 0]          # its origin is the field's middle
 ```
+
+This is the blue STAGE's frame from the 2024 field's STEP, without its bolts, washers, nuts and rivets.
+[From the field's CAD to a range](test-range.md#from-the-fields-cad-to-a-range) shows how to find the pieces and
+work out `rpy_deg` and `pos` for your own file.
 
 `scrimmage cad list <file>` shows the pieces' names, keys and sizes. `select` takes globs (`*?[]`, case-sensitive) on a
 piece's name or its full key, and a glob on an assembly's key takes every piece inside it. A glob that matches nothing
@@ -94,9 +104,15 @@ surface's, as for the other kinds.
 **Frames.** `scrimmage cad list` shows positions in the file's own axes, in meters. The element turns the file by
 `rpy_deg` (roll about x, then pitch about y, then yaw about z, fixed axes, as a plate's) and then puts the file's
 origin at `pos`; left out, the file's origin is the field's. A file drawn Y-up (its tallest direction is y, and the
-sizes `cad list` shows are tall in y, not z) needs `rpy_deg = [90, 0, 0]`. The element's footprint for the start and
-floor-ball checks is its bounding box in the field, and a mesh whose lowest point is above 1/2 in leaves a start
-clear beneath it, as a raised box does.
+sizes `cad list` shows are tall in y, not z) needs `rpy_deg = [90, 0, 0]`. `range check` warns when an element
+reaches more than 0.5 m outside the field, which is usually a wrong `pos` or `rpy_deg`.
+
+**The footprint.** The element's footprint for the start and floor-ball checks is its whole bounding box in the field,
+and a mesh whose lowest point is above 1/2 in leaves a start clear beneath it, as a raised box does. A frame on legs,
+such as a STAGE, touches the carpet, so its footprint is the whole box between and around the legs: a `[start.*]` or
+a floor piece under the STAGE is refused, with an error that names the element. To start a robot there, split the
+element: each leg as an element of its own, and the raised part as another (raised off the carpet, it leaves the space
+under it clear). Or build the legs from obstacles and use the CAD for the raised part only.
 
 **The shape.** Each selected piece is split into convex parts by itself (coacd, the same split a `cad` piece uses), and
 the parts are one welded body, `element.<name>`, with a geom `element.<name>.<k>` each. The read of the CAD file and the
@@ -104,10 +120,26 @@ split are cached under the temporary folder (keyed by the file's bytes, `select`
 build pays for them (an 88 MB STEP takes about 20 s to read), and moving the element (`pos`, `rpy_deg`) reads nothing.
 Splitting rounds concave detail, which is coacd's known limit: check the shape in the viewer. A piece that can't be made into a solid (not closed, or flat: a sheet body) is left out, with one warning that counts and names them.
 
-**Errors.** A selection larger than the field, or with more than 200 000 triangles, is an error that says to select
-fewer pieces and lists the five biggest pieces. The whole 2024 STAGE assembly is over a million triangles (three trusses
-of 125 000 each, and hundreds of bolts), so select the frame and each truss as separate elements, not all of it at once.
-The 2024 field STEP is Y-up, so it needs `rpy_deg = [90, 0, 0]`. The first build of a big selection takes minutes (the
+**The cost.** Each convex part is a geom and a mesh, so a big selection is a big model. Measured on 2026-11-11 with
+the 2024 range plus the blue STAGE frame of the how-to (30 pieces, split into 3996 convex parts):
+
+| | the 2024 range | plus the CAD STAGE frame |
+|---|---|---|
+| reading the range file (`range check`), cached | under 0.1 s | about 1.2 s |
+| the live view's first model (sent to the browser) | 1.3 MB | 11.8 MB |
+| physics, 2000 steps with the NOTEs on the field | 0.28 s | 0.45 s (60% slower) |
+
+Each further STAGE-sized element adds about as much again. When a student only needs a rough shape, such as legs to
+drive around or a wall to bounce off, a hand-made box obstacle or element is much cheaper, and a CAD element is worth
+it for the shape a mechanism really touches.
+
+**Errors.** A selection more than 1 m larger than the field (so the field's own perimeter pieces fit), or with more
+than 200 000 triangles, is an error that says to select fewer pieces (or check `units` and `scale`), and the
+triangle error lists the five biggest pieces. The whole 2024 STAGE assembly is over a million triangles (its three
+CHAINS of 125 000 each, and hundreds of bolts), so select the frame and each CHAIN as separate elements, not all of it
+at once. The 2024 field STEP is Y-up, has its origin at the field's middle and has its +x toward the blue wall, so it
+needs `rpy_deg = [90, 0, 180]` and `pos = [8.2705, 4.1055, 0]`
+([step 3 of the how-to](test-range.md#from-the-fields-cad-to-a-range) works this out). The first build of a big selection takes minutes (the
 STAGE frame takes about 6.5 minutes) and is cached after that. The file is FIRST's, not scrimmage's: the built-in ranges
 have no mesh elements.
 

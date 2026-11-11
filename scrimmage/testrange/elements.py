@@ -783,6 +783,13 @@ def check_clear(path, elements, starts: dict, floor_balls: np.ndarray, reaches, 
         outline = _rect((x, y), heading, ROBOT_OUTLINE, ROBOT_OUTLINE)
         for e in elements:
             if any(not _separated(outline, f) for f in _on_floor(e, start=True)):
+                if isinstance(e, Mesh):
+                    raise RangeError(i18n.t(
+                        "{path}: start '{start}' at ({x}, {y}) overlaps mesh element '{name}', whose footprint is "
+                        "its whole bounding box ({box}); move the start clear of it, or split the element so the "
+                        "pieces that stand on the carpet are elements of their own (a {robot_outline} m square robot "
+                        "outline is assumed)", path=path, start=sname, x=f"{x:.4g}", y=f"{y:.4g}", name=e.name,
+                        box=_plan_box(e), robot_outline=ROBOT_OUTLINE))
                 raise RangeError(
                     i18n.t("{path}: start '{start}' at ({x}, {y}) overlaps element '{name}'; move the start "
                            "clear of it (a {robot_outline} m square robot outline is assumed)", path=path,
@@ -794,11 +801,23 @@ def check_clear(path, elements, starts: dict, floor_balls: np.ndarray, reaches, 
                 if _gap(f, (x, y)) < reaches[k]:
                     what = names[k] if names is not None else i18n.t("ball {number}", number=k)
                     piece = pieces[k] if pieces is not None else i18n.t("ball")
+                    if isinstance(e, Mesh):
+                        raise RangeError(i18n.t(
+                            "{path}: floor_balls: {what} at ({x}, {y}) lies on mesh element '{name}', whose "
+                            "footprint is its whole bounding box ({box}); move the {piece} off it, or split the "
+                            "element so the pieces that stand on the carpet are elements of their own", path=path,
+                            what=what, x=f"{x:.4g}", y=f"{y:.4g}", name=e.name, box=_plan_box(e), piece=piece))
                     raise RangeError(
                         i18n.t("{path}: floor_balls: {what} at ({x}, {y}) lies on element '{name}'; move the "
                                "{piece} off it", path=path, what=what, x=f"{x:.4g}", y=f"{y:.4g}", name=e.name,
                                piece=piece)
                     )
+
+
+def _plan_box(e: Mesh) -> str:
+    """A mesh element's footprint as a student reads it: x and y from and to, in m."""
+    return i18n.t("x {x0} to {x1} m, y {y0} to {y1} m", x0=f"{e.lo[0]:.3g}", x1=f"{e.hi[0]:.3g}",
+                  y0=f"{e.lo[1]:.3g}", y1=f"{e.hi[1]:.3g}")
 
 
 def _gap(rect: np.ndarray, p) -> float:

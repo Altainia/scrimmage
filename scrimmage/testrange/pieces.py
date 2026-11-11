@@ -783,11 +783,24 @@ def _compound(r: _Reader, path: Path, name: str) -> list[Solid]:
     return out
 
 
+UNITS_IGNORED = "units_ignored"     # a cad_factor note: a STEP whose own unit can't be told ignores `units`
+
+
+def cad_note(kind: str, r: _Reader, path: Path):
+    """A cad_factor note (its kind, as UNITS_IGNORED) as the warning a student reads, worded in the Language when
+    shown."""
+    from ..checks import worded
+    where, units = f"{r.path}: {r.where}", r.text("units")
+    return worded(lambda: i18n.t(
+        "{where}: can't tell which units {file} is in, so {units_setting} is ignored and the file's own are "
+        "used", where=where, file=path.name, units_setting=f"units = \"{units}\""))
+
+
 def cad_factor(r: _Reader, path: Path) -> tuple[float, str | None, list[str]]:
     """What a CAD key set's `units` and `scale` come to for the file at `path`: (the factor its numbers (as
     `load_source` gives them) are multiplied by, the `units` to give `load_source` (None for a STEP, which carries its
-    own), the notes (a STEP whose own unit can't be told ignores `units`)). Shared by the `cad` piece and the mesh
-    element."""
+    own), the kinds of the notes, for cad_note (UNITS_IGNORED: a STEP whose own unit can't be told ignores `units`)).
+    Shared by the `cad` piece and the mesh element."""
     from ..cad import source
     from ..cad.source import STEP_SUFFIXES, STEP_UNITS
 
@@ -807,11 +820,7 @@ def cad_factor(r: _Reader, path: Path) -> tuple[float, str | None, list[str]]:
     if step and units is not None:       # a STEP is read in its own units; `units` reads its numbers in these
         declared = source.step_length_unit(path)
         if declared is None:            # ignored, as it always was before K1: such a file still loads, with a warning
-            from ..checks import worded
-            where = f"{r.path}: {r.where}"
-            notes.append(worded(lambda: i18n.t(
-                "{where}: can't tell which units {file} is in, so {units_setting} is ignored and the file's own are "
-                "used", where=where, file=path.name, units_setting=f"units = \"{units}\"")))
+            notes.append(UNITS_IGNORED)
         else:
             factor *= STEP_UNITS[units] / STEP_UNITS[declared]
     return factor, None if step else units, notes
@@ -849,7 +858,8 @@ def _cad(r: _Reader, base_dir: Path) -> tuple[list[Solid], Inertial, tuple[str, 
             raise r.err(str(e)) from None
         solids += [Solid("mesh", (), (0.0, 0.0, 0.0), _IDENTITY, np.asarray(v, dtype=float), np.asarray(f))
                    for v, f in pieces]
-    return solids, combine([mesh_inertial(p.v, p.f, 1.0) for p in src.pieces]), tuple(notes)
+    return (solids, combine([mesh_inertial(p.v, p.f, 1.0) for p in src.pieces]),
+            tuple(cad_note(n, r, path) for n in notes))
 
 
 def piece_color(kind: PieceKind) -> tuple[float, float, float]:

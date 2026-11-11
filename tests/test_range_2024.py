@@ -307,6 +307,20 @@ def test_the_camera_example_sees_tags_7_and_8():
     assert r.cameras["front_cam"][-1][1] == [7, 8]
 
 
+def test_the_camera_readmes_other_starts(tmp_path):
+    """The README's "try this": from blue_amp the camera sees the AMP's tag 6; from blue_amp_side, none."""
+    robot = (CAMERA_EXAMPLE / "note-shooter-standin.toml").read_text(encoding="utf-8")
+    seen = {}
+    for start in ("blue_amp", "blue_amp_side"):
+        (tmp_path / f"{start}.toml").write_text(robot.replace('start = "blue_subwoofer"', f'start = "{start}"'),
+                                                encoding="utf-8")
+        (tmp_path / f"{start}.test.toml").write_text(
+            f'[test]\nrobot = "{start}.toml"\n\n[[block]]\ndo = "wait"\nseconds = 0.5\n', encoding="utf-8")
+        program = load(tmp_path / f"{start}.test.toml")
+        seen[start] = TestRun(world_for(program), program).run().cameras["front_cam"][-1][1]
+    assert seen == {"blue_amp": [6], "blue_amp_side": []}
+
+
 def test_a_low_camera_is_blocked_by_the_subwoofer(tmp_path):
     """Review Focus 3: the same robot with its camera at z = 0.25 m looks into the SUBWOOFER's face and sees neither
     tag; the example mounts it high for that reason."""

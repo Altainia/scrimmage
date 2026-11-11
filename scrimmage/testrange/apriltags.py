@@ -9,7 +9,8 @@ pose's +x.
 lies in the field or at most OUTSIDE_REACH outside it) and sets each tag's face point (R6): a wall-mounted tag's
 center can sit a little inside the solid it hangs on (2024's SPEAKER tags are 3.8 cm inside the wall obstacle), so the
 tag is drawn, and seen by a camera, at its center pushed out along its normal past any solid it lies at most
-MOUNT_DEPTH inside. A tag deeper in a solid than that is warned about.
+MOUNT_DEPTH inside. A tag deeper in a solid than that is warned about. A box or obstacle is tested as its box; a mesh
+element as its convex parts, by their own faces (Hulls).
 
 `add_apriltags` draws each tag as a black square with a white border: visual-only geoms that touch nothing.
 """
@@ -153,12 +154,52 @@ def _depth(local_p: np.ndarray, local_n: np.ndarray, half: np.ndarray) -> float:
     return best
 
 
-def _face_point(tag: Tag, boxes) -> tuple[float, float, float]:
-    """The tag's center pushed out along its normal past each box it lies at most MOUNT_DEPTH inside (a box it lies
-    deeper in is left alone), plus FACE_CLEARANCE each."""
+class Hulls:
+    """A mesh element's convex parts in the field, for the tag tests: a part's own faces, not its axis-aligned box
+    (which, for a turned face, reaches well in front of it). The parts' boxes pick the few near a tag; only those get
+    their face planes (a·x <= d, outward), made once."""
+
+    def __init__(self, name: str, parts):
+        self.name = name
+        self.parts = [(np.asarray(v, float), np.asarray(f, int)) for v, f in parts]
+        self.lo = np.array([v.min(axis=0) for v, _ in self.parts]).reshape(-1, 3)
+        self.hi = np.array([v.max(axis=0) for v, _ in self.parts]).reshape(-1, 3)
+        self._planes: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+
+    def near(self, p: np.ndarray) -> np.ndarray:
+        """The parts whose boxes hold p."""
+        return np.flatnonzero(np.all((self.lo - 1e-9 <= p) & (p <= self.hi + 1e-9), axis=1))
+
+    def _faces(self, i: int) -> tuple[np.ndarray, np.ndarray]:
+        if i not in self._planes:
+            v, f = self.parts[i]
+            a = np.cross(v[f[:, 1]] - v[f[:, 0]], v[f[:, 2]] - v[f[:, 0]])
+            length = np.linalg.norm(a, axis=1)
+            keep = length > 1e-9 * max(float(np.ptp(v, axis=0).max()), 1e-6) ** 2    # not a sliver
+            a = a[keep] / length[keep, None]
+            d = np.einsum("ij,ij->i", a, v[f[keep, 0]])
+            inward = a @ v.mean(axis=0) > d     # a convex part holds its vertices' mean: turn each plane outward
+            a[inward], d[inward] = -a[inward], -d[inward]
+            self._planes[i] = (a, d)
+        return self._planes[i]
+
+    def depth(self, i: int, p: np.ndarray, n: np.ndarray) -> float | None:
+        """How far along n the point p is from leaving part i, or None when p isn't inside it."""
+        a, d = self._faces(i)
+        gap = d - a @ p
+        if np.any(gap < -1e-9):
+            return None
+        along = a @ n
+        out = along > 1e-9
+        return float(np.min(gap[out] / along[out])) if out.any() else math.inf
+
+
+def _face_point(tag: Tag, boxes, hulls=()) -> tuple[float, float, float]:
+    """The tag's center pushed out along its normal past each box or mesh part it lies at most MOUNT_DEPTH inside (one
+    it lies deeper in is left alone), plus FACE_CLEARANCE each."""
     n = tag.normal
     p = np.array(tag.pos, float)
-    for _ in range(len(boxes) + 1):     # a push can land in the next box
+    for _ in range(len(boxes) + sum(len(h.parts) for h in hulls) + 1):     # a push can land in the next solid
         moved = False
         for _, c, rot, half in boxes:
             local = rot.T @ (p - c)
@@ -167,27 +208,40 @@ def _face_point(tag: Tag, boxes) -> tuple[float, float, float]:
                 if d <= MOUNT_DEPTH:
                     p = p + (d + FACE_CLEARANCE) * n
                     moved = True
+        for h in hulls:
+            for i in h.near(p):
+                d = h.depth(i, p, n)
+                if d is not None and d <= MOUNT_DEPTH:
+                    p = p + (d + FACE_CLEARANCE) * n
+                    moved = True
         if not moved:
             break
     return float(p[0]), float(p[1]), float(p[2])
 
 
-def _too_deep(tag: Tag, boxes) -> str | None:
-    """The name of the first box the tag's center lies in deeper (along its normal) than MOUNT_DEPTH, else None."""
+def _too_deep(tag: Tag, boxes, hulls=()) -> str | None:
+    """The name of the first box or mesh element the tag's center lies in deeper (along its normal) than MOUNT_DEPTH,
+    else None."""
     n, p = tag.normal, np.array(tag.pos, float)
     for name, c, rot, half in boxes:
         local = rot.T @ (p - c)
         if np.all(np.abs(local) <= half + 1e-9) and _depth(local, rot.T @ n, half) > MOUNT_DEPTH:
             return name
+    for h in hulls:
+        for i in h.near(p):
+            d = h.depth(i, p, n)
+            if d is not None and d > MOUNT_DEPTH:
+                return h.name
     return None
 
 
-def parse_apriltags(r, base_dir: Path, field: tuple[float, float], boxes, perimeter=()) -> tuple[
+def parse_apriltags(r, base_dir: Path, field: tuple[float, float], boxes, perimeter=(), hulls=()) -> tuple[
         AprilTagLayout | None, tuple[str, ...]]:
     """The range's AprilTag layout from its `[range]` reader `r` (keys `apriltags`, `apriltag_size_in`), checked
     against the range's `field` (length, width), and the warnings about it. `boxes` are the field's solids as
-    (name, center, rotation, half sizes), the perimeter walls among them (their names in `perimeter`): a tag is pushed
-    out of any of them it lies at most MOUNT_DEPTH inside, and is warned about when it lies deeper in any other.
+    (name, center, rotation, half sizes), the perimeter walls among them (their names in `perimeter`), and `hulls` the
+    mesh elements' convex parts (Hulls): a tag is pushed out of any of them it lies at most MOUNT_DEPTH inside, and is
+    warned about when it lies deeper in any other.
     No layout (None, ()) when the range gives no `apriltags`."""
     from ..checks import worded
 
@@ -215,8 +269,8 @@ def parse_apriltags(r, base_dir: Path, field: tuple[float, float], boxes, perime
     placed, warnings = [], []
     solid = [b for b in boxes if b[0] not in perimeter]
     for t in tags:
-        placed.append(Tag(t.id, t.pos, t.quat, _face_point(t, boxes)))
-        deep = _too_deep(t, solid)
+        placed.append(Tag(t.id, t.pos, t.quat, _face_point(t, boxes, hulls)))
+        deep = _too_deep(t, solid, hulls)
         if deep is not None:
             warnings.append(worded(lambda t=t, deep=deep, ref=ref: i18n.t(
                 "apriltags '{ref}': tag {id} is more than {depth} m inside '{solid}', so it is drawn inside it and "
