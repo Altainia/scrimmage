@@ -52,3 +52,15 @@ def test_docs_names_match_the_code():
         assert f'"{name}"' in text
     for word in ("rolling_resistance", "LAUNCH_CLEAR_S", "/MuJoCo/Balls", "by_time", "robot_env", "launcher aim"):
         assert word in text
+
+
+def test_docs_name_a_pieces_squeeze_keys_and_how_to_measure_them():
+    """The `[piece.<name>]` table's `stiffness`, `restitution` and `soft`, and measuring.md's two NOTE tests."""
+    text = DOC.read_text(encoding="utf-8")
+    for key in ("`stiffness` (N/m)", "`restitution` (above 0", "`soft = true`"):
+        assert key in text
+    measuring = (ROOT / "docs" / "measuring.md").read_text(encoding="utf-8")
+    for heading, key in (("## NOTE squeeze", "stiffness"), ("## NOTE drop", "restitution")):
+        assert heading in measuring
+        section = measuring.split(heading, 1)[1].split("\n## ", 1)[0]
+        assert f"[piece.note] {key}" in section

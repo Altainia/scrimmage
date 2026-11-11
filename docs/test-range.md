@@ -627,6 +627,17 @@ taken to cost nothing. Results that rest on these numbers are uncalibrated until
 anything (lying on the carpet, leaning on a goal) feels no air. A preset kind takes the two keys too:
 `preset = "2024-note"` with `drag_coefficient = 0.9`.
 
+**A rigid piece's squeeze and bounce.** Two more keys describe a piece that squashes (the 2024 NOTE's foam). Both are
+estimates until someone measures them, and a soft kind needs both:
+- `stiffness` (N/m): how hard the piece pushes back per meter of squeeze, taken at 25 % of its thickness. A 2 in
+  NOTE squeezed 0.5 in total pushes back with `stiffness` × 0.25 in ÷ 2 on each side (the 2024 NOTE preset's 2000 is
+  12.7 N a side). Measure it with [NOTE squeeze](measuring.md#note-squeeze).
+- `restitution` (above 0, below 1): its bounce off the carpet. A drop from 1 m comes back up `restitution`² × 1 m
+  (the preset's 0.3 is about 9 cm). Measure it with [NOTE drop](measuring.md#note-drop). It is read only for a soft
+  kind; a rigid piece keeps the contact it always had.
+- `soft = true` marks a `shape = "ring"` kind (or a ring piece preset) as squashable. Its `stiffness` must be 1000 to
+  20000 N/m. A ball or a disc is refused all three keys: its stiffness and bounce are its preset's.
+
 **A kind's color.** `color` is one of the named colors (`"red"`, `"blue"`, `"yellow"`, `"orange"`, `"green"`,
 `"purple"`, `"white"`, `"gray"`) or `[r, g, b]`, each 0 to 1. The piece is drawn in it, and a
 [color sensor](sensors.md#piece-colors) reads it. A preset kind takes it too, so a 2022 field can have red and blue

@@ -10,7 +10,7 @@ good enough) stops saying UNCALIBRATED and says "Calibrated from measurements" i
 > a range of values that fit your trials as well as they can tell. Scrimmage prints both, and calls an estimate an
 > estimate wherever one is left.
 
-Contents: [The six tests](#the-six-tests), [How it goes](#how-it-goes), [The forms](#the-forms),
+Contents: [The six tests](#the-six-tests) (and two by hand for a NOTE), [How it goes](#how-it-goes), [The forms](#the-forms),
 [The Measure tab](#the-measure-tab), [A measurement file](#a-measurement-file),
 [Reading a file: `scrimmage measure`](#reading-a-file-scrimmage-measure), [Ball size and mass](#ball-size-and-mass),
 [Ball squeeze](#ball-squeeze), [Ball drop](#ball-drop), [Sled pull](#sled-pull), [Launcher shot](#launcher-shot),
@@ -36,6 +36,10 @@ launcher's shots, a cylinder's strokes, and two launcher setups that use them.
 The first four work out their number from each trial by a formula you can do by hand. The last two can't: no
 formula turns a filmed shot into a ball's stiffness. For those, Scrimmage runs its own model (the same one a run
 uses) many times and finds the number that makes the model match your trials. That is a **fit**.
+
+Two more tests are done by hand, with no form or file: [NOTE squeeze](#note-squeeze) and [NOTE drop](#note-drop).
+They give a foam ring's `[piece.note] stiffness` and `restitution` (the 2024 NOTE's are estimates) for a range or
+bench file, so the count is six tests for `scrimmage measure` and two by hand.
 
 ## How it goes
 
@@ -270,6 +274,37 @@ drop: gives restitution, the bounce
 **Feeds** a ball's `restitution`.
 
 Form: `scrimmage measure form drop -o drop-form.html`.
+
+## NOTE squeeze
+
+**Gives** `[piece.note] stiffness` (N/m): how hard a foam ring pushes back per meter of squeeze, at 25 % of its
+thickness. It is for a [soft piece](test-range.md#piecename-a-kind-of-piece) such as the 2024 NOTE. Done by hand;
+there is no form.
+
+1. Lay the NOTE flat on a hard, level table with a flat board under it. Put a second flat board on top.
+2. Add a known weight on the top board, centered: start with about 1.3 kg (12.7 N), and weigh the board too.
+3. Wait 5 seconds, then measure the gap between the boards at both sides with calipers or a ruler, and average.
+4. The squash is the NOTE's thickness (2 in, with nothing on it) minus that gap. Aim for about a quarter of the
+   thickness (0.5 in); add or remove weight and repeat until you are near it.
+
+Each side of the NOTE carries the whole weight W (boards and weight, in newtons: kg × 9.81), and the two sides share
+the squash, so stiffness = W ÷ (squash ÷ 2). A 12.7 N weight that squashes 0.5 in (0.0127 m) gives 12.7 ÷ 0.00635
+= 2000 N/m, the preset's estimate. Write the result as `stiffness` in `[piece.note]`, with the range 1000 to 20000
+N/m. A foam that creeps (keeps sinking) is read at 5 seconds.
+
+## NOTE drop
+
+**Gives** `[piece.note] restitution`: its bounce off the carpet.
+
+1. Tape a ruler upright against a wall, its zero on the **carpet** the NOTE will meet.
+2. Set the phone square-on to the ruler, level with where the top of the bounce will be (a few inches up), and start
+   filming in slow motion.
+3. Hold the NOTE **flat** with its bottom at **1 m** (39.4 in), then let go without pushing it.
+4. In the video, find the top of the first bounce and read the ruler at the bottom of the NOTE: that is the rebound.
+
+Each trial's restitution is √(rebound ÷ 1 m), both measured to the bottom of the NOTE. A dead foam thud of 9 cm gives
+√0.09 = 0.3, the preset's estimate. Average several trials, and write the result as `restitution` in `[piece.note]`
+(above 0, below 1).
 
 ## Sled pull
 

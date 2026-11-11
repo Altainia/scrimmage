@@ -89,11 +89,14 @@ _LIE_DEG = 10.0  # a tip at or below this is lying (flat kinds: standing on edge
 
 _KIND = ("preset", "ball", "disc", "aero", "shape", "diameter", "inner_diameter", "tip_diameter", "length",
          "size", "mass", "material", "friction", "axis", "inertia", "shapes", "cad", "units", "hole", "scale",
-         "drag_coefficient", "spin_damping", "stiffness")
+         "drag_coefficient", "spin_damping", "stiffness", "restitution", "soft")
 _AIR = ("drag_coefficient", "spin_damping")  # a rigid kind's air (launcher/rigid_aero.py), shape or piece preset
 # a rigid kind's own contact stiffness (N/m at one contact, in series with a tread: launcher/pinch.py), shape or
 # piece preset
-_RIGID_OWN = _AIR + ("stiffness",)
+# `restitution` is its bounce, read only for a soft kind; `soft` turns its NOTE into a squashable ring near a robot
+_RIGID_OWN = _AIR + ("stiffness", "restitution", "soft")
+# A soft kind's `stiffness` (N/m) must lie in this range.
+SOFT_STIFFNESS_RANGE = (1000.0, 20000.0)  # choice: half to 10x the 2024-note preset's, both ends tested stable at 1 ms
 _LENGTHS = ("diameter", "inner_diameter", "tip_diameter", "length", "size")
 _KIND_ALL = _KIND + tuple(k + "_in" for k in _LENGTHS) + ("label", "color")
 # The keys each shape takes beyond shape, mass, material, friction, inertia, label and color (lengths also as
@@ -348,9 +351,14 @@ class PieceKind:
     # its spin damping (N m s/rad); a ball's and a disc's air are their own
     drag_coefficient: float = DRAG_COEFFICIENT
     spin_damping: float = SPIN_DAMPING
-    # a rigid piece's own contact stiffness, N/m at one contact in series with a wheel's tread (launcher/pinch.py, the
-    # bench's rigid `stiffness`); None: hard
+    # a rigid piece's own contact stiffness: how hard it pushes back per meter of squeeze at 25 % of its thickness,
+    # N/m at one contact (a pair of 4 in rollers each take stiffness x squeeze / 2), in series with a wheel's tread
+    # (launcher/pinch.py, the bench's rigid `stiffness`); None: hard
     stiffness: float | None = None
+    # a rigid piece's bounce off the carpet (0 < e < 1), read only for a soft kind (D7: a 1 m drop's rebound is
+    # e^2 m); None: not given
+    restitution: float | None = None
+    soft: bool = False  # a ring kind that turns into a squashable ring near a robot (needs stiffness and restitution)
 
     def __post_init__(self):
         if not self.label:
@@ -908,6 +916,11 @@ def _parse_kind(path: Path, name: str, r: _KindReader, base_dir: Path) -> PieceK
         if r.has("stiffness"):
             raise r.err(i18n.t("{key} is a rigid piece's contact stiffness; a ball's is its {ball_key} and a disc's "
                                "its {disc_key}", key="stiffness", ball_key="stiffness_n", disc_key="rim_stiffness"))
+        if r.has("restitution"):
+            raise r.err(i18n.t("a ball's or a disc's restitution is its preset's; {key} is for a rigid piece",
+                               key="restitution"))
+        if r.has("soft"):
+            raise r.err(i18n.t("{key} is for a rigid ring piece; a ball or a disc has its own contact", key="soft"))
     if source != "shape":
         extra = [k for k in r.t if k not in (source, "aero", "label", "color") + _RIGID_OWN]
         if extra:
@@ -973,7 +986,37 @@ def _air(r: _KindReader, kind: PieceKind) -> PieceKind:
     given = air_given(r)
     if r.has("stiffness"):
         given["stiffness"] = r.num("stiffness", positive=True)
-    return replace(kind, **given) if given else kind
+    if r.has("restitution"):
+        e = r.num("restitution")
+        if not 0 < e < 1:
+            raise r.err(i18n.t("{key} must be between 0 and 1 (neither end), not {value}", key="restitution",
+                               value=repr(e)))
+        given["restitution"] = e
+    if r.has("soft"):
+        v = r.raw("soft")
+        if not isinstance(v, bool):
+            raise r.err(i18n.t("{key} must be true or false, not {value}", key="soft", value=repr(v)))
+        given["soft"] = v
+    out = replace(kind, **given) if given else kind
+    if out.soft:
+        _check_soft(r, out)
+    return out
+
+
+def _check_soft(r: _KindReader, kind: PieceKind) -> None:
+    """A soft kind is a ring with a `stiffness` in SOFT_STIFFNESS_RANGE and a `restitution` (both its own or its
+    preset's)."""
+    if kind.shape != "ring":
+        raise r.err(i18n.t("soft = true is for a ring piece (shape = \"ring\"); this one is {shape}",
+                           shape=repr(kind.shape)))
+    for key in ("stiffness", "restitution"):
+        if getattr(kind, key) is None:
+            raise r.err(i18n.t("a soft piece needs {key}: give {key} in {table}", key=key,
+                               table=f"[piece.{kind.name}]"))
+    lo, hi = SOFT_STIFFNESS_RANGE
+    if not lo <= kind.stiffness <= hi:
+        raise r.err(i18n.t("a soft piece's stiffness must be between {lo} and {hi} N/m, not {value}",
+                           lo=f"{lo:g}", hi=f"{hi:g}", value=f"{kind.stiffness:g}"))
 
 
 def air_given(r: _Reader) -> dict[str, float]:

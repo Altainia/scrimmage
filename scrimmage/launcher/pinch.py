@@ -87,7 +87,8 @@ class PinchConfigError(LauncherConfigError):
 class PinchPiece:
     """The piece as the pinch sees it: a slab `thickness` across the gap, `length` along the path and `width` across
     the wheels (m), its mass (kg), its moment of inertia about the axis across the wheels (kg m^2) and its own
-    contact stiffness (N/m at one contact; None: hard)."""
+    contact stiffness (how hard it pushes back per meter of squeeze at 25 % of its thickness, N/m at one contact;
+    None: hard)."""
 
     thickness: float
     length: float
