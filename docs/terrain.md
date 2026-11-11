@@ -102,13 +102,14 @@ clear beneath it, as a raised box does.
 the parts are one welded body, `element.<name>`, with a geom `element.<name>.<k>` each. The read of the CAD file and the
 split are cached under the temporary folder (keyed by the file's bytes, `select`, `units` and `scale`), so only the first
 build pays for them (an 88 MB STEP takes about 20 s to read), and moving the element (`pos`, `rpy_deg`) reads nothing.
-Splitting rounds concave detail, which is coacd's known limit: check the shape in the viewer. A piece that isn't a
-closed solid (a sheet body, a flat piece) can't be split: it is left out, with one warning that counts and names them.
+Splitting rounds concave detail, which is coacd's known limit: check the shape in the viewer. A piece that can't be made into a solid (not closed, or flat: a sheet body) is left out, with one warning that counts and names them.
 
 **Errors.** A selection larger than the field, or with more than 200 000 triangles, is an error that says to select
-fewer pieces. (The whole 2024 STAGE assembly is over a million triangles, most of it bolts and three trusses, so select
-its frame and what matters, not all of it.) The file is FIRST's, not scrimmage's: the built-in ranges have no mesh
-elements.
+fewer pieces and lists the five biggest pieces. The whole 2024 STAGE assembly is over a million triangles (three trusses
+of 125 000 each, and hundreds of bolts), so select the frame and each truss as separate elements, not all of it at once.
+The 2024 field STEP is Y-up, so it needs `rpy_deg = [90, 0, 0]`. The first build of a big selection takes minutes (the
+STAGE frame takes about 6.5 minutes) and is cached after that. The file is FIRST's, not scrimmage's: the built-in ranges
+have no mesh elements.
 
 ## Moving elements: hinged and sliding
 

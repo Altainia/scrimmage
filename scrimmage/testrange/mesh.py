@@ -20,13 +20,14 @@ import hashlib
 import json
 import os
 import uuid
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
 from .. import i18n
-from ..cad.fit import SHAPED_CACHE
+from ..cad.fit import CONVEX_SPLIT_VERSION, SHAPED_CACHE
 from .spec import RangeError, _Reader
 
 MAX_MESH_TRIANGLES = 200_000    # choice: a few STAGE-sized assemblies; the 2024 field's STAGE is well under it, and a
@@ -94,12 +95,32 @@ def _write(path: Path, meta: dict, arrays: dict) -> None:
         tmp.unlink(missing_ok=True)        # a cache that can't be written is only a slower next time
 
 
-def _read(path: Path):
+def _read(path: Path, count_key: str):
+    """(meta, arrays) of a cache file, or None (a miss) when it is missing, cut short, damaged, or doesn't hold what
+    its meta says: `count_key` is "keys" (a selection) or "count" (convex parts), the list or number of v/f pairs."""
     try:
         with np.load(path, allow_pickle=False) as z:
-            return json.loads(str(z["meta"])), {k: z[k] for k in z.files if k != "meta"}
-    except (OSError, ValueError, KeyError):
+            meta = json.loads(str(z["meta"]))
+            arrays = {k: z[k] for k in z.files if k != "meta"}
+        n = meta[count_key]
+        n = len(n) if isinstance(n, list) else int(n)
+        if not all(f"v{i}" in arrays and f"f{i}" in arrays for i in range(n)):
+            return None
+        return meta, arrays
+    except (OSError, ValueError, KeyError, TypeError, EOFError, zipfile.BadZipFile):
         return None
+
+
+def _cap(items, r: _Reader) -> int:
+    """The selection's triangles; an error that names the biggest pieces when it is over MAX_MESH_TRIANGLES."""
+    triangles = sum(len(f) for _, _, f in items)
+    if triangles > MAX_MESH_TRIANGLES:
+        big = sorted(items, key=lambda it: -len(it[2]))[:5]
+        raise r.err(i18n.t("selects {triangles} triangles, more than the {most} one element may have; select fewer "
+                           "pieces (a narrower select, or several elements). Largest: {largest}",
+                           triangles=triangles, most=MAX_MESH_TRIANGLES,
+                           largest=", ".join(i18n.t("{key} ({n} triangles)", key=k, n=len(f)) for k, _, f in big)))
+    return triangles
 
 
 def _load(path: Path, select: tuple[str, ...], units: str | None, scale: float, r: _Reader):
@@ -107,7 +128,7 @@ def _load(path: Path, select: tuple[str, ...], units: str | None, scale: float, 
     if not path.exists():
         raise r.err(i18n.t("file {file} not found; give a path relative to the range file", file=str(path)))
     digest = _digest(path, json.dumps([list(select), units, scale, CACHE_VERSION]))
-    cached = _read(MESH_CACHE / f"{digest}.npz")
+    cached = _read(MESH_CACHE / f"{digest}.npz", "keys")
     if cached is not None:
         meta, arrays = cached
         return [(k, arrays[f"v{i}"], arrays[f"f{i}"]) for i, k in enumerate(meta["keys"])], meta["notes"], digest
@@ -133,6 +154,7 @@ def _load(path: Path, select: tuple[str, ...], units: str | None, scale: float, 
             chosen += [p for p in found if not any(p is c for c in chosen)]
     items = [(p.key, np.ascontiguousarray(p.v * factor), np.asarray(p.f, dtype=np.int32)) for p in chosen]
     notes = [str(n) for n in notes]
+    _cap(items, r)              # before the write: an over-cap selection isn't cached
     arrays = {}
     for i, (_, v, f) in enumerate(items):
         arrays[f"v{i}"], arrays[f"f{i}"] = v, f
@@ -149,7 +171,8 @@ def selection(path: Path, select: tuple[str, ...], units: str | None, scale: flo
 
 def _split(items, digest: str, r: _Reader):
     """(the convex parts, the keys of the pieces left out), per piece; cached beside the selection."""
-    cached = _read(MESH_CACHE / f"{digest}.parts.npz")
+    name = f"{digest}.s{CONVEX_SPLIT_VERSION}.parts.npz"     # the split's identity is in the name
+    cached = _read(MESH_CACHE / name, "count")
     if cached is not None:
         meta, arrays = cached
         return [(arrays[f"v{i}"], arrays[f"f{i}"]) for i in range(meta["count"])], meta["left_out"]
@@ -168,7 +191,7 @@ def _split(items, digest: str, r: _Reader):
     arrays = {}
     for i, (v, f) in enumerate(parts):
         arrays[f"v{i}"], arrays[f"f{i}"] = np.asarray(v, dtype=float), np.asarray(f, dtype=np.int32)
-    _write(MESH_CACHE / f"{digest}.parts.npz", {"count": len(parts), "left_out": left_out}, arrays)
+    _write(MESH_CACHE / name, {"count": len(parts), "left_out": left_out}, arrays)
     return parts, left_out
 
 
@@ -196,10 +219,7 @@ def parse_mesh(r: _Reader, name: str, base_dir: Path, size: tuple[float, float])
     friction = r.num("friction", DEFAULT_FRICTION, positive=True)
     ground = _bool(r, "ground", False)
     items, notes, digest = _load(path, select, units, scale, r)
-    triangles = sum(len(f) for _, _, f in items)
-    if triangles > MAX_MESH_TRIANGLES:
-        raise r.err(i18n.t("selects {triangles} triangles, more than the {most} one element may have; select fewer "
-                           "pieces", triangles=triangles, most=MAX_MESH_TRIANGLES))
+    triangles = _cap(items, r)
     every = np.concatenate([placed(v, pos, rpy_deg) for _, v, _ in items])
     across = every.max(axis=0) - every.min(axis=0)
     if across[0] > size[0] or across[1] > size[1]:
@@ -212,11 +232,13 @@ def parse_mesh(r: _Reader, name: str, base_dir: Path, size: tuple[float, float])
                            "surfaces", count=len(items)))
     warnings = [worded(lambda n=n: n) for n in notes]       # already English (cad_factor's)
     if left_out:
-        shown = ", ".join(left_out[:5]) + (f", and {len(left_out) - 5} more" if len(left_out) > 5 else "")
         warnings.append(worded(lambda: i18n.t(
-            "{path}: {where}: left out {count} of {total} selected pieces, which aren't closed solids (sheet bodies "
-            "or flat pieces): {names}", path=r.path, where=r.where, count=len(left_out), total=len(items),
-            names=shown)))
+            "{path}: {where}: left out {count} of {total} selected pieces, which can't be made into a solid (not "
+            "closed, or flat): {names}", path=r.path, where=r.where, count=len(left_out), total=len(items),
+            names=", ".join(left_out[:5])) if len(left_out) <= 5 else i18n.t(
+            "{path}: {where}: left out {count} of {total} selected pieces, which can't be made into a solid (not "
+            "closed, or flat): {names}, and {more} more", path=r.path, where=r.where, count=len(left_out),
+            total=len(items), names=", ".join(left_out[:5]), more=len(left_out) - 5)))
     placed_parts = [placed(v, pos, rpy_deg) for v, _ in parts]
     lo = np.min([p.min(axis=0) for p in placed_parts], axis=0)
     hi = np.max([p.max(axis=0) for p in placed_parts], axis=0)

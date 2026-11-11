@@ -114,7 +114,7 @@ def test_too_big_or_too_many_triangles_says_select_fewer(tmp_path, monkeypatch):
     with pytest.raises(RangeError, match=r"element 'm'.*larger than.*select fewer pieces"):
         load(tmp_path, CLIMBER + "scale = 100\n")
     monkeypatch.setattr(mesh_module, "MAX_MESH_TRIANGLES", 10)
-    with pytest.raises(RangeError, match=r"element 'm'.*select fewer pieces"):
+    with pytest.raises(RangeError, match=r"element 'm'.*select fewer pieces.*Climber/hook_assy/hook \(100 triangles\)"):
         load(tmp_path, CLIMBER)
     assert MAX_MESH_TRIANGLES == 200_000
 
@@ -186,7 +186,7 @@ def test_an_open_piece_is_left_out_with_a_warning(tmp_path):
     e = rng.elements[0]
     assert e.pieces == ("block", "sheet") and e.hi - e.lo == pytest.approx([0.5] * 3, abs=1e-6)
     ours = [w for w in rng.warnings if "sheet" in w]
-    assert len(ours) == 1 and "aren't closed solids" in ours[0] and "block" not in ours[0]
+    assert len(ours) == 1 and "can't be made into a solid" in ours[0] and "block" not in ours[0]
     World(range_cfg(range={"file": str(tmp_path / "r.toml"), "floor_balls": False}), None)
 
 
@@ -258,3 +258,21 @@ def test_the_field_stage_is_a_mesh_element(tmp_path):
     start = time.monotonic()
     load_range("r.toml", tmp_path)
     assert time.monotonic() - start < 2.0
+
+
+def test_a_damaged_cache_file_is_a_miss(tmp_path):
+    body = CLIMBER + 'select = ["Climber/arm_*"]\n'
+    first = mesh_of(tmp_path, body)
+    files = list((tmp_path / "mesh-cache").glob("*.npz"))
+    assert len(files) == 2 and all(".s" in f.name or ".parts" not in f.name for f in files)
+    for f in files:
+        f.write_bytes(f.read_bytes()[:200])         # cut short
+    again = mesh_of(tmp_path, body)
+    assert again.pieces == first.pieces and len(again.parts) == len(first.parts)
+
+
+def test_an_over_cap_selection_is_not_cached(tmp_path, monkeypatch):
+    monkeypatch.setattr(mesh_module, "MAX_MESH_TRIANGLES", 10)
+    with pytest.raises(RangeError):
+        load(tmp_path, CLIMBER)
+    assert not list((tmp_path / "mesh-cache").glob("*"))
