@@ -194,13 +194,13 @@ function partnerBox() {
     const grid = [];
     if (chains.length) {        // a field with chains: the partner can hang from one
       const hang = h("select", { id: "test-partner-hang", onchange: (e) => setPartnerHang(e.target.value) },
-        h("option", { value: "", text: t("no", { context: "partner hangs on" }) }),
+        h("option", { value: "", text: t("no", { context: "partner" }) }),
         ...chains.map((c) => h("option", { value: c, text: c })));
       hang.value = hanging && chains.includes(p.hang) ? p.hang : "";
       grid.push(h("label", { for: "test-partner-hang", text: t("Hangs on") }), hang);
     }
     if (hanging) {
-      grid.push(h("label", { for: "test-partner-along", text: t("along", { context: "partner hangs on" }) }),
+      grid.push(h("label", { for: "test-partner-along", text: t("along", { context: "partner" }) }),
         h("div", { class: "row" }, measureBox("test-partner-along", (p.along_in ?? 0) * IN, "length",
           t("Partner robot: along the chain from its low point ({unit})", { unit: units.name("length") }), (v) => setPartner("along_in", v), (si) => si / IN),
         h("span", { text: units.name("length") })));

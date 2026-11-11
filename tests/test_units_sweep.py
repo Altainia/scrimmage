@@ -133,6 +133,8 @@ ALLOWED = [
      "checks the partner's file numbers (meters), named by key"),
     ("parts/partner.py", "mass must be more than its drive's {drive_mass} kg,",
      "checks the partner's file numbers (kg), named by key"),
+    ("parts/partner.py", "along must be at most {limit} m either way",
+     "checks the partner's file numbers (hang along, meters), named by key"),
     ("parts/partner.py", "(their outlines overlap by {depth} m)",
      "a robot config's [partner] start, in meters as written (machine text); the Test tab words Setup's own"),
     ("assembler/edits.py", "is off the field ({length} m by {width} m)",
