@@ -1218,30 +1218,56 @@ That finds the pieces within 1.5 m of that point (98 of them, such as `FE-00004-
 `--json` gives each piece's own place and its full key, such as
 `FE-2024/GE-24200_Blue/GE-24210/...`. A glob can match a key or a name.
 
-**3. Tell a Y-up file from a Z-up file.** Use the sizes in meters (the second group of numbers). Pieces that lie
-along the field, such as `FE-00018-03`, are 16.5 m long and 8.3 m wide but only 0.5 m in the middle number. The field's
-width is in the third number and its height in the second, so the file is Y-up and the element needs
-`rpy_deg = [90, 0, 0]`. The whole blue STAGE is 2.6 x 2.0 x 3.0 m: its 2.0 m height is the second number too. In a Z-up
-file the height is the third number, and you leave `rpy_deg` out.
+**3. Find the file's axes and origin.** The numbers in the list are in the file's own axes, so look at three things.
 
-**4. Write the element.**
+- *Which axis is up.* Use the sizes in meters (the second group of numbers). Pieces that lie along the field, such as
+  `FE-00018-03`, are 16.5 m long and 8.3 m wide but only 0.5 m in the middle number. So the middle number (y) is
+  height, the file is Y-up, and the element needs `rpy_deg = [90, 0, 0]` to stand it up. The whole blue STAGE is
+  2.6 x 2.0 x 3.0 m: its 2.0 m height is the middle number too. In a Z-up file the height is the third number, and you
+  leave that turn out.
+- *Where the origin is.* Add `--sort size` and look at the biggest structures, or take the whole file's extent from
+  the pieces' centers. FE-2024.STEP runs from -11.28 to 11.28 in x and from -6.25 to 5.18 in z, and the two STAGES sit
+  at x = +3.7 and x = -3.7 with z = 0. The origin is the middle of the field, between them. The field's middle is
+  at x = 16.541 / 2 = 8.2705 and y = 8.211 / 2 = 4.1055, so `pos = [8.2705, 4.1055, 0]`.
+- *Which way +x points.* WPILib puts the blue alliance wall at x = 0. The blue STAGE is the one near the blue wall, and the
+  file has it at +x (`GE-24200_Blue` is centered at x = +3.72). So the file's +x points toward the blue wall, the opposite of
+  WPILib's, and the file needs a half turn. That is a yaw of 180 degrees, after the Y-up turn:
+  `rpy_deg = [90, 0, 180]`.
+
+You can check the answer with a tag or a part you know. Blue tags 15 and 16 are on the STAGE side nearer the blue
+wall, at x = 4.64, and their mounts (`GE-24220_GE-24220 Tag15`) are at x = 3.62 in the file: 8.27 - 3.62 = 4.65.
+
+**4. Write the element.** The STAGE's frame (`GE-24210`) holds 282 pieces. Most of them are washers, bolts, nuts and
+rivets, and they make up 113 000 of its 176 600 triangles. A `select` is a list of globs and has no way to leave a piece out,
+so you pick the pieces you want by name instead. In `--json` or `cad list --match "*GE-24210*"`, the structure is the
+tubes and plates `FE-01003-01`, `FE-01002-01`, `FE-01012-01`, the `FE-01020` brackets and the `GE-24211` pieces:
 
 ```toml
 [[element]]
 name = "stage_blue_frame"
 kind = "mesh"
 file = "cad/FE-2024.STEP"                    # relative to the range file
-select = ["*GE-24200_Blue/GE-24210/*"]        # the STAGE's frame, not its hardware
-rpy_deg = [90, 0, 0]                          # the file is Y-up
-pos = [0, 0, 0]                               # where the file's origin goes on the field
+select = [                                   # the frame's structure, no bolts, washers, nuts or rivets (30 pieces)
+  "*GE-24200_Blue/GE-24210/FE-01003*/FE-01003-01*",
+  "*GE-24200_Blue/GE-24210/FE-01002*/FE-01002-01*",
+  "*GE-24200_Blue/GE-24210/FE-01012*/FE-01012-01*",
+  "*GE-24200_Blue/GE-24210/FE-01021*/FE-01020/FE-01020-0*",
+  "*GE-24200_Blue/GE-24210/GE-24211/*",
+]
+rpy_deg = [90, 0, 180]                       # Y-up file, and its +x is toward the blue wall
+pos = [8.2705, 4.1055, 0]                    # the file's origin is the field's middle
 ```
 
-Pieces are the ones `select` names, and the whole STAGE is over the 200 000-triangle limit, so split it into
-several elements, each with its own `select` (the frame, then each `GE-24205` hanging plate:
-`*GE-24200_Blue/GE-24205/*`, `*GE-24200_Blue/GE-24205#2/*`, `*GE-24200_Blue/GE-24205#3/*`). Leave out
-nuts, washers and rivets: they cost triangles and add nothing a robot can touch. Add `ground = true` only to a piece a
-robot drives over. [The mesh element's keys](terrain.md#field-elements-in-range-files) are in terrain.md. The file
-says how big it is, so `units` is only for an STL or OBJ.
+Use the full key, with the assembly's name before the piece, so a glob on a name like `FE-01003-01` can't also take
+the red STAGE's piece of the same name. (`cad list` says `×N` when pieces share a name.) The 30 pieces are 63 000
+triangles. The whole STAGE is more than the limit of 200 000 triangles, so it needs to be split into several elements anyway.
+Add the hanging plates with their own elements (`*GE-24200_Blue/GE-24205/*`, then `GE-24205#2` and `GE-24205#3`).
+Add `ground = true` only to a piece a robot drives over. [The mesh element's keys](terrain.md#field-elements-in-range-files)
+are in terrain.md. The file says how big it is, so `units` is only for an STL or OBJ.
+
+On the real file this element covers x 3.07 to 6.02 m, y 2.40 to 5.81 m and up to 1.89 m high, centered at (4.55, 4.11).
+The built-in `2024` range's STAGE legs reach x 3.07 at their feet, so the CAD lands within a centimeter of where the
+legs' feet are.
 
 **5. Check it in the viewer.**
 

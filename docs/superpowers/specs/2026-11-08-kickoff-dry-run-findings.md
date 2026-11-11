@@ -234,7 +234,7 @@ Severity: **B** = blocker, **W** = workaround exists, **N** = nice-to-have. Size
    - Happened: `Could not read TE-24200.STEP as a STEP file: re-export it from CAD and try again.`
    - Cause: `_meshes()` count check, 81 glTF meshes vs 84 trimesh geometries.
    - Fix: map geometries by glTF mesh index instead of by count. The message also blames the file wrongly.
-   - **K4 status (2026-11-10).** Fixed by the cleanup batch (K1): geometries map by glTF mesh index, and the message no longer blames the file.
+   - **K4 status (2026-11-10).** Fixed by the cleanup batch (K1, b79b1f8): a STEP's meshes are read by glTF mesh index, so the 81-mesh, 84-primitive STAGE STEP loads. The "re-export it from CAD" message remains, now only for a file the reader really can't read.
 
 7. **Field size is fixed at 16.54 × 8.07 m; 2024 is 16.541 × 8.211 m.** — **W**, S–M
    - Happened: with WPILib y kept, the AMP wall (y = 8.204) lies behind scrimmage's guardrail.
@@ -299,7 +299,7 @@ Severity: **B** = blocker, **W** = workaround exists, **N** = nice-to-have. Size
       - add `scale`
       - say in the docs that STEP carries its own units
     - The only "official" NOTE CAD was the 1:40 3D-print file.
-    - **K4 status (2026-11-10).** The cleanup batch (K1) added `scale` and the docs say a STEP carries its own units. K4 adds the rest: the tessellation tolerance is measured and pinned (it was already in millimeters, so no code changed, R2), and CAD pieces get a density check against the range's water, 100 to 10 000 kg/m³, with a hint to try `scale` (R3).
+    - **K4 status (2026-11-10).** The cleanup batch (K1, b3b520a) made a STEP's own units count, added `scale`, and added a warning for a piece under 2 cm or with a density lighter than air or denser than tungsten (the docs say a STEP carries its own units). K4 adds the rest: the tessellation tolerance is measured and pinned (it was already in millimeters, so no code changed, R2), and CAD pieces get a tighter density check, 100 to 10 000 kg/m³ (10 times either side of water), with a hint to try `scale` (R3).
 
 15. **No soft-contact or stiffness key for range pieces.** — **N**, S (until gap 3)
     - The bench has a rigid `stiffness`; `[piece.*]` does not. Add it so the Test tab and bench agree.
