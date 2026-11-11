@@ -98,6 +98,7 @@ Each one gives what was decided, why, and its cost if wrong.
   - *Why:* `kind = "bar"` stays the cheap fallback for a chain, and a thin bar is a fair student input.
   - *Cost:* none, if found. If no fix keeps the 2022 goldens, a thin bar under 1 in gets a range-check warning that
     names the problem, and this is recorded as a ruling.
+    Superseded: the owner chose the rotor-inertia fix (R16).
 
 - **D3. The climb monitor reads flex contacts and a chain's own line.**
   - A contact with a flex has no geom id on the flex side, so it is read by flex id.

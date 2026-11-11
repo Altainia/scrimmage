@@ -242,9 +242,10 @@ takes high.toml's 1.5 V wheel drive and "clear of MID" step. As built, **it stil
 "hit a bar" at step 21** (t = 17.1 s): the robot reaches HIGH (8.2 s), the mid climber hooks HIGH beside the high
 hooks, the high hooks let go of HIGH, and as the high arm swings forward under HIGH, the mid climber's tube hits HIGH
 (1.0 kN). Before the telescopes carried their motors' rotor inertia it got further: "hook walked off" at step 25
-(about 21.5 s), with the high hooks touching TRAVERSAL at the forward end of a swing (step 23) but not seating. Timing a catch on a swing of about 30–34° (34° at its largest) (the robot hangs from HIGH, so TRAVERSAL
-moves against the arm as it swings) is the hard part, as it was for teams; damping the swing first, or a robot built
-for the traversal (a taller rotating arm, a reaction arm against the truss), are the next things to try.
+(about 21.5 s), with the high hooks touching TRAVERSAL at the forward end of a swing (step 23) but not seating.
+Timing a catch on a swing of about 30–34° (34° at its largest; the robot hangs from HIGH, so TRAVERSAL moves against
+the arm as it swings) is the hard part, as it was for teams; damping the swing first, or a robot built for the
+traversal (a taller rotating arm, a reaction arm against the truss), are the next things to try.
 
 **`examples/blocks/ladder_climber/`** is a CAD climber tested with blocks, no robot program: a crank turning two
 arms that rise and fall in turn (like a steam train's wheel rods), with spring hooks that fold past a rung and catch

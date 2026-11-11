@@ -268,6 +268,7 @@ A diagnosis. The cause isn't known: the spike saw a 0.5 in bar wedge "between cr
   default params equal their values before the fix. Read them from the code before you change it and paste them in as
   literals.
 - [ ] **Step 4, only if no fix keeps the 2022 tests: the fallback.**
+  - Superseded: the owner chose the rotor-inertia fix (R16).
   - Drop Step 1's test.
   - `testrange/elements.py`: a bar with diameter < `THIN_BAR = 1.0 * IN  # source: spec D2` adds a range warning:
     "bar '{name}' is {diameter} across: a stock climber's hook slips off a bar under 1 in (K5); hang a chain
