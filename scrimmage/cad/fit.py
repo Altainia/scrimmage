@@ -21,6 +21,9 @@ from .mass import principal, rpy_deg
 WHEEL_FRICTION = 1.2
 WHEEL_CONDIM = 4
 SHAPED_CACHE = Path(tempfile.gettempdir()) / "scrimmage-cad-shaped"
+# The mesh element's cached splits (testrange/mesh.py) carry this in their name. Bump it when `convex_split`'s output
+# changes for the same mesh (and when bench.cad's SPLIT or SPLIT_VERSION changes), so old splits aren't reused.
+CONVEX_SPLIT_VERSION = 1
 MIN_SIZE = 1e-4     # m: a box side, cylinder radius or length is at least this (part.toml needs sizes above 0)
 
 

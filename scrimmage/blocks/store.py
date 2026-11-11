@@ -19,6 +19,8 @@
                              piece should end up); for a match (`match = true`) only: match (the phases' run times,
                              whether LEAVE was earned and the climb level held at the end), points (auto, teleop,
                              endgame, total and the items: RunResult.points) and rules (the breaches; [] for none);
+                             cameras (each camera [[sensor]]'s [t, [tag IDs]] whenever what it sees changed; {}
+                             without cameras: RunResult.cameras);
                              and, for a run made inside machine text (a sweep's, a spread's,
                              MCP test_run's: its words above are machine text), words: the outcome, the checks'
                              words, the marks' text, seated and notes in every Language and Units setting
@@ -278,7 +280,7 @@ def save_run(result, program: Program, base, sweep: dict | None = None) -> Path:
             "notes": getattr(result, "notes", []), "seated": getattr(result, "seated", {}),
             "goals": getattr(result, "goals", None), "air": getattr(result, "air", None),
             "clearance": getattr(result, "clearance", None), "hopper": bool(program.hopper),
-            "pieces": getattr(result, "pieces", []),
+            "pieces": getattr(result, "pieces", []), "cameras": getattr(result, "cameras", {}),
             **({"match": result.match, "points": result.points, "rules": result.rules}
                if getattr(result, "match", None) is not None else {}),
             **({"words": result.words} if getattr(result, "words", None) else {})})
@@ -337,6 +339,7 @@ def load_result(base, run_id: str) -> dict:
     folder = run_folder(base, run_id)
     out = json.loads((folder / "result.json").read_text(encoding="utf-8"))
     out["id"] = run_id
+    out.setdefault("cameras", {})       # a run kept before cameras
     out["signals"] = _read_signals(folder / "signals.csv")
     return out
 

@@ -9,8 +9,10 @@
 // diameter) the rest of the way, placed again with every frame. cylinderShapes() gives each one's drawn lengths.
 //
 // A sensor (view.sensors, assembler/view.py: a beam break, distance or color sensor) is a thin line between its two
-// pins, placed again with every frame, drawn faint and lit (bright) while lightSensors() says it is on.
-// sensorShapes() gives each one's ends in the world and whether it is lit.
+// pins, placed again with every frame, drawn faint and lit (bright) while lightSensors() says it is on. A camera is
+// drawn as its view cone instead: four lines from its `a` to its `corners` (its view's far corners, max_range out),
+// lit while it sees a tag; showCameraTags(name, ids) draws a line from the camera to each listed tag's face
+// (view.apriltags). sensorShapes() gives each one's ends in the world and whether it is lit, and a camera's `tags`.
 //
 // A mover below PARK_Z_HIDE (a parked ball sits at z = -20) is hidden. outline(i) draws mover i (a piece the Test
 // tab's replay points at) with a colored rim, a larger back-faced copy of its geoms; outline(-1) takes it off.
@@ -22,9 +24,10 @@
 // on demand. The follow camera tracks view.root_mover (-1: it looks at the floor center instead).
 // Where WebGL is software (SwiftShader, llvmpipe: no GPU acceleration) the view draws at half resolution without
 // antialiasing and at most every SOFTWARE_MS, so drawing doesn't starve the page.
-// For tests: window.__scrimmage.live3d = {groups, lastSeq, camera, root, follow, software, background (#rrggbb:
+// For tests: window.__scrimmage.live3d = {groups, lastSeq, camera, root, follow, software, tagLabels, background (#rrggbb:
 // --watch-bg in the page's theme)} of the newest live view not yet
-// disposed (the Drive tab's, or the Scenario run panel's Watch view while it is shown).
+// disposed (the Drive tab's, or the Scenario run panel's Watch view while it is shown). tagLabels is how many AprilTag
+// ID labels (sprites, one per view.apriltags entry, 3 cm out from the tag's face) the view draws.
 
 import * as THREE from "three";
 import { OrbitControls } from "./vendor/OrbitControls.js";
@@ -42,6 +45,7 @@ const BARREL_RGBA = [0.55, 0.55, 0.6, 1], ROD_RGBA = [0.8, 0.7, 0.35, 1];   // t
 const UP = new THREE.Vector3(0, 1, 0);   // three's cylinders run along y
 const SENSOR_RADIUS = 0.003;   // m: a sensor's drawn line
 const SENSOR_OFF = 0x9aa4ad, SENSOR_ON = 0xff2d2d, SENSOR_OFF_OPACITY = 0.6;   // a faint gray line; a bright red one
+const TAG_LINE = 0x2f9e44;   // a camera's line to a tag it sees: green
 
 // Is WebGL drawn in software here? Asked once, from a throwaway context, before the real renderer picks antialiasing.
 let softwareGL = null;
@@ -71,8 +75,20 @@ function hook() {
   Object.defineProperty(window.__scrimmage, "live3d", {
     configurable: true, enumerable: true,
     get: () => ({ groups: v.groups.length, lastSeq: v.lastSeq, camera: v.mode, root: v.rootMover, follow: v.followTarget.toArray(),
-                  software: v.software, background: `#${v.scene.background.getHexString()}` }),
+                  software: v.software, tagLabels: v.tagLabels.length, background: `#${v.scene.background.getHexString()}` }),
   });
+}
+
+const TAG_LABEL_OUT = 0.03, TAG_LABEL_SIZE = 0.2;   // m: a tag label's distance from its tag's face, and its side
+
+function paintLabel(canvas, id) {   // the ID in the page's text color on a clear background
+  const c = canvas.getContext("2d");
+  c.clearRect(0, 0, canvas.width, canvas.height);
+  c.fillStyle = theme.color("--text");
+  c.font = "bold 40px sans-serif";
+  c.textAlign = "center";
+  c.textBaseline = "middle";
+  c.fillText(String(id), canvas.width / 2, canvas.height / 2);
 }
 
 const yawOf = (q) => Math.atan2(2 * (q[0] * q[3] + q[1] * q[2]), 1 - 2 * (q[2] * q[2] + q[3] * q[3]));   // q = w, x, y, z
@@ -93,6 +109,8 @@ export class LiveView {
     this.scene.background = new THREE.Color(theme.color("--watch-bg"));   // the page's theme (app.css)
     this.offTheme = theme.onChange(() => {
       this.scene.background.set(theme.color("--watch-bg"));
+      for (const l of this.tagLabels) paintLabel(l.canvas, l.id);
+      for (const l of this.tagLabels) l.texture.needsUpdate = true;
       this.requestRender();
     });
     const hemi = new THREE.HemisphereLight(0xffffff, 0x8a8f96, 2.0);
@@ -114,7 +132,10 @@ export class LiveView {
     this.outlines = [];       // the outline(i) rim's meshes (their geometries are the mover's own)
     this.outlined = -1;
     this.cylinders = [];      // {spec (the view's), barrel, rod (meshes), lengths: [barrel, rod] as drawn}
-    this.sensors = [];        // {spec (the view's), mesh, lit, ends: [a, b] in the world as drawn}
+    this.sensors = [];        // {spec (the view's), meshes (1 line, or a camera's 4 edges), lit, ends: [a, b] in the
+    //                           world as drawn, and a camera's tags (the IDs shown) and tagLines (their meshes)}
+    this.tagFaces = new Map();   // an AprilTag's ID -> its face point (view.apriltags), where a camera's line ends
+    this.tagLabels = [];      // {id, canvas, texture}: an AprilTag's ID label (a sprite in the model)
     this.floorInfo = { pos: [8, 4, 0], size: [8, 4] };
     this.rootMover = 0;
     this.mode = "follow";
@@ -147,6 +168,27 @@ export class LiveView {
     this.groups = [];
     this.cylinders = [];
     this.sensors = [];
+    this.tagLabels = [];
+    this.tagFaces = new Map();
+    this.tagMat = null;   // disposed with the rest
+  }
+
+  // An AprilTag's ID as a sprite 3 cm out from the tag's face (along its normal, +x of its quaternion w, x, y, z).
+  addTagLabel(parent, tag) {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 64;
+    paintLabel(canvas, tag.id);
+    const texture = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
+    this.disposables.push(texture, mat);
+    const sprite = new THREE.Sprite(mat);
+    const [w, x, y, z] = tag.quat;
+    const normal = new THREE.Vector3(1, 0, 0).applyQuaternion(new THREE.Quaternion(x, y, z, w));
+    sprite.position.set(...tag.face).addScaledVector(normal, TAG_LABEL_OUT);
+    sprite.scale.set(TAG_LABEL_SIZE, TAG_LABEL_SIZE, 1);
+    sprite.renderOrder = 1;
+    parent.add(sprite);
+    this.tagLabels.push({ id: tag.id, canvas, texture });
   }
 
   setModel(view) {
@@ -193,6 +235,8 @@ export class LiveView {
     };
     for (const gd of view.geoms || []) add(gd);
     for (const gd of view.world_geoms || []) add(gd);
+    for (const tag of view.apriltags || []) this.addTagLabel(stat, tag);
+    for (const tag of view.apriltags || []) this.tagFaces.set(tag.id, tag.face);
     const tube = (radius, rgba) => {
       const geo = new THREE.CylinderGeometry(radius, radius, 1, 24), mat = geomMaterial(rgba);
       this.disposables.push(geo, mat);
@@ -202,13 +246,18 @@ export class LiveView {
     };
     this.cylinders = (view.cylinders || []).map((c) => ({ spec: c, barrel: tube(c.bore / 2, BARREL_RGBA),
       rod: tube(c.rod / 2, ROD_RGBA), lengths: [0, 0] }));
+    this.lineGeo = new THREE.CylinderGeometry(SENSOR_RADIUS, SENSOR_RADIUS, 1, 8);   // shared by every line
+    this.disposables.push(this.lineGeo);
+    this.stat = stat;
     this.sensors = (view.sensors || []).map((sp) => {
-      const geo = new THREE.CylinderGeometry(SENSOR_RADIUS, SENSOR_RADIUS, 1, 8);
       const mat = new THREE.MeshBasicMaterial({ color: SENSOR_OFF, transparent: true, opacity: SENSOR_OFF_OPACITY });
-      this.disposables.push(geo, mat);
-      const mesh = new THREE.Mesh(geo, mat);
-      stat.add(mesh);
-      return { spec: sp, mesh, lit: false, ends: [[0, 0, 0], [0, 0, 0]] };
+      this.disposables.push(mat);
+      const meshes = (sp.kind === "camera" ? sp.corners : [sp.b]).map(() => {
+        const mesh = new THREE.Mesh(this.lineGeo, mat);
+        stat.add(mesh);
+        return mesh;
+      });
+      return { spec: sp, meshes, lit: false, ends: [[0, 0, 0], [0, 0, 0]], tags: [], tagLines: [] };
     });
     this.placeCylinders();
     this.rootMover = Number.isInteger(view.root_mover) ? view.root_mover : -1;   // -1: follow falls back to the floor
@@ -256,11 +305,16 @@ export class LiveView {
       place(c.rod, a, along, barrel, rod);
       c.lengths = [barrel, rod];
     }
-    for (const sn of this.sensors) {
-      const a = pin(sn.spec.a), b = pin(sn.spec.b), along = b.clone().sub(a);
-      const length = along.length();
+    const line = (mesh, a, b) => {
+      const along = b.clone().sub(a), length = along.length();
       if (length < 1e-9) along.set(1, 0, 0); else along.divideScalar(length);
-      place(sn.mesh, a, along, 0, length);
+      place(mesh, a, along, 0, length);
+    };
+    for (const sn of this.sensors) {
+      const a = pin(sn.spec.a), b = pin(sn.spec.b);
+      const far = sn.spec.kind === "camera" ? sn.spec.corners : [sn.spec.b];
+      sn.meshes.forEach((mesh, i) => line(mesh, a, pin(far[i])));
+      sn.tagLines.forEach((mesh, i) => line(mesh, a, new THREE.Vector3(...this.tagFaces.get(sn.tags[i]))));
       sn.ends = [a.toArray(), b.toArray()];
     }
   }
@@ -271,14 +325,38 @@ export class LiveView {
       const lit = !!on(sn.spec);
       if (lit === sn.lit) continue;
       sn.lit = lit;
-      sn.mesh.material.color.setHex(lit ? SENSOR_ON : SENSOR_OFF);
-      sn.mesh.material.opacity = lit ? 1 : SENSOR_OFF_OPACITY;
+      const mat = sn.meshes[0].material;   // a sensor's lines share one material
+      mat.color.setHex(lit ? SENSOR_ON : SENSOR_OFF);
+      mat.opacity = lit ? 1 : SENSOR_OFF_OPACITY;
       this.requestRender();
     }
   }
 
+  // Camera `name`'s lines to the tags `ids` (the ones it sees at the frame shown); a tag the view doesn't draw is
+  // left out.
+  showCameraTags(name, ids) {
+    const sn = this.sensors.find((x) => x.spec.name === name && x.spec.kind === "camera");
+    if (!sn) return;
+    const tags = (ids || []).filter((id) => this.tagFaces.has(id));
+    if (tags.length === sn.tags.length && tags.every((id, i) => id === sn.tags[i])) return;
+    sn.tags = tags;
+    while (sn.tagLines.length < tags.length) {
+      if (!this.tagMat) {
+        this.tagMat = new THREE.MeshBasicMaterial({ color: TAG_LINE });
+        this.disposables.push(this.tagMat);
+      }
+      const mesh = new THREE.Mesh(this.lineGeo, this.tagMat);
+      this.stat.add(mesh);
+      sn.tagLines.push(mesh);
+    }
+    while (sn.tagLines.length > tags.length) sn.tagLines.pop().removeFromParent();
+    this.placeCylinders();
+    this.requestRender();
+  }
+
   sensorShapes() {
-    return this.sensors.map((sn) => ({ name: sn.spec.name, lit: sn.lit, a: sn.ends[0], b: sn.ends[1] }));
+    return this.sensors.map((sn) => ({ name: sn.spec.name, lit: sn.lit, a: sn.ends[0], b: sn.ends[1],
+      ...(sn.spec.kind === "camera" ? { tags: [...sn.tags] } : {}) }));
   }
 
   cylinderShapes() {

@@ -43,6 +43,7 @@ def test_the_range_checks_clean():
     lines = check.summary("2024", rng)
     assert lines[0].startswith("2024: ok, range 'FRC 2024 CRESCENDO': field 16.541 x 8.211 m; 4 goals "
                                "(speaker_blue, speaker_red, amp_blue, amp_red); 11 floor pieces; 2 stations")
+    assert "; 16 AprilTags (2024-crescendo); " in lines[0]
     assert len(lines) == 1 and rng.warnings == ()           # no warnings
     assert "2024" in BUILTIN_RANGES and list(rng.kinds) == ["note"]
     assert {g.kind for g in rng.goals} == {"note"}
@@ -287,3 +288,49 @@ def test_the_match_example_scores_7_points_in_auto():
     assert r.checks[0]["text"] == "7 or more points are scored in auto"
     assert r.points["auto"] == 7.0
     assert [(i["source"], i["points"]) for i in r.points["items"]] == [("speaker_blue", 5.0), ("leave", 2.0)]
+
+
+# ------------------------------------------------------------------------------------------------ the camera example
+
+CAMERA_EXAMPLE = ROOT / "examples" / "blocks" / "camera"
+
+
+def test_the_camera_example_sees_tags_7_and_8():
+    """examples/blocks/camera: a camera 0.90 m up on the speaker example's robot sees the blue SPEAKER's tags 7 and 8
+    from the blue SUBWOOFER, over the SUBWOOFER's top."""
+    program = load(CAMERA_EXAMPLE / "sees-speaker-tags.test.toml")
+    world = world_for(program)
+    assert problems(program, world) == []
+    r = TestRun(world, program).run()
+    assert r.status == "finished", r.outcome
+    assert [c["passed"] for c in r.checks] == [True, True]
+    assert r.cameras["front_cam"][-1][1] == [7, 8]
+
+
+def test_the_camera_readmes_other_starts(tmp_path):
+    """The README's "try this": from blue_amp the camera sees the AMP's tag 6; from blue_amp_side, none."""
+    robot = (CAMERA_EXAMPLE / "note-shooter-standin.toml").read_text(encoding="utf-8")
+    seen = {}
+    for start in ("blue_amp", "blue_amp_side"):
+        (tmp_path / f"{start}.toml").write_text(robot.replace('start = "blue_subwoofer"', f'start = "{start}"'),
+                                                encoding="utf-8")
+        (tmp_path / f"{start}.test.toml").write_text(
+            f'[test]\nrobot = "{start}.toml"\n\n[[block]]\ndo = "wait"\nseconds = 0.5\n', encoding="utf-8")
+        program = load(tmp_path / f"{start}.test.toml")
+        seen[start] = TestRun(world_for(program), program).run().cameras["front_cam"][-1][1]
+    assert seen == {"blue_amp": [6], "blue_amp_side": []}
+
+
+def test_a_low_camera_is_blocked_by_the_subwoofer(tmp_path):
+    """Review Focus 3: the same robot with its camera at z = 0.25 m looks into the SUBWOOFER's face and sees neither
+    tag; the example mounts it high for that reason."""
+    robot = (CAMERA_EXAMPLE / "note-shooter-standin.toml").read_text(encoding="utf-8")
+    assert "at = [0.25, 0.0, 0.90]" in robot
+    (tmp_path / "low.toml").write_text(robot.replace("at = [0.25, 0.0, 0.90]", "at = [0.25, 0.0, 0.25]"),
+                                       encoding="utf-8")
+    text = (CAMERA_EXAMPLE / "sees-speaker-tags.test.toml").read_text(encoding="utf-8")
+    (tmp_path / "low.test.toml").write_text(text.replace("note-shooter-standin.toml", "low.toml"), encoding="utf-8")
+    program = load(tmp_path / "low.test.toml")
+    r = TestRun(world_for(program), program).run()
+    assert r.status == "check failed" and [c["passed"] for c in r.checks] == [False], r.checks
+    assert r.cameras["front_cam"][-1][1] == []

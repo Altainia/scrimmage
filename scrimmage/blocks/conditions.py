@@ -50,7 +50,9 @@ step, and the plain words that name them in a run's outcome.
   (sensors/runtime.py, spec C6): a beam break is on while broken, a distance sensor while closer than its threshold,
   a color sensor while a piece is within its range. With `sees`, a color sensor is on only while the piece it sees
   is nearest that named color (colors.nearest_color); `is = "off"` with `sees` holds while it doesn't see that color
-  (nothing in range, or a piece of another color).
+  (nothing in range, or a piece of another color). A camera is on while it sees any tag.
+- `sees_tag`: a camera [[sensor]] sees AprilTag `tag` of the range's layout, or any tag with no `tag`, as its last
+  frame read it (sensors/camera.py).
 - `match`: a test with `match = true` is in this phase (auto, the pause or teleop) of the range's `[game]` now
   (match.py's MatchState, set by the runner).
 - `points`: the points scored so far in auto, teleop, the endgame or all of them (`total`) are at least N: the game's
@@ -423,6 +425,9 @@ class Watch:
             return self.closest.now[a["element"]] >= a["at_least_in"] * IN
         if k == "sensor":
             return sensor_on(self.world, a["sensor"], a.get("sees")) == (a["is"] == "on")
+        if k == "sees_tag":
+            tags = self.world.sensors.reading(a["camera"]).tags
+            return bool(tags) if a.get("tag") is None else a["tag"] in tags
         if k == "partner_lifted":
             p = self.world.partner
             level = a.get("level_within_deg")
@@ -669,6 +674,13 @@ def describe(cond, next_bar: str | None = None, kinds: dict | None = None, names
         if a["is"] == "on":
             return say(t("{sensor} is on", **p), t("{sensor} being on", **p), t("{sensor} to be on", **p))
         return say(t("{sensor} is off", **p), t("{sensor} being off", **p), t("{sensor} to be off", **p))
+    if k == "sees_tag":
+        if a.get("tag") is None:
+            p = {"camera": a["camera"]}
+            return say(t("{camera} sees a tag", **p), t("{camera} seeing a tag", **p), t("{camera} to see a tag", **p))
+        p = {"camera": a["camera"], "tag": a["tag"]}
+        return say(t("{camera} sees tag {tag}", **p), t("{camera} seeing tag {tag}", **p),
+                   t("{camera} to see tag {tag}", **p))
     if k == "partner_lifted":
         level = a.get("level_within_deg")
         lift = _amount(a["at_least_in"], "in")

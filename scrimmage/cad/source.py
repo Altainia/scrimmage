@@ -21,7 +21,8 @@ from .. import i18n
 from . import CadError, missing_extra
 
 UNITS = {"m": 1.0, "mm": 0.001, "in": 0.0254}
-TOL_LINEAR = 0.2        # tessellation, in the STEP file's own units
+TOL_LINEAR = 0.2        # tessellation, in mm whatever the file's unit: OpenCASCADE meshes in its session unit
+#                         (measured 2026-11-10: a 3 m bolt in a meter STEP at 0.2 has a 0.1 mm chord error)
 TOL_ANGULAR = 0.5       # radians
 MESH_SUFFIXES = (".stl", ".obj")
 STEP_SUFFIXES = (".step", ".stp")
@@ -77,6 +78,49 @@ def step_length_unit(path: Path) -> str | None:
                 return None             # a length unit it doesn't know
             found.add(unit)
     return found.pop() if len(found) == 1 else None
+
+
+NAUO_NAME = re.compile(r"NAUO\d+$")    # the label SolidWorks gives an instance, which cascadio keeps as its node name
+_STR = rb"'((?:[^']|'')*)'"
+_HEAD = re.compile(rb"([A-Z_0-9]+)\s*\(")
+_NAUO = re.compile(rb"\(\s*" + _STR + rb"\s*,\s*(?:'(?:[^']|'')*'|\$)\s*,\s*(?:'(?:[^']|'')*'|\$)\s*,\s*#\d+\s*,\s*#(\d+)")
+_LINK = re.compile(rb"\(\s*(?:'(?:[^']|'')*'|\$)\s*,\s*(?:'(?:[^']|'')*'|\$)\s*,\s*#(\d+)")     # (id, desc, #next)
+_PRODUCT = re.compile(rb"\(\s*" + _STR + rb"\s*,\s*(?:" + _STR + rb"|\$)")
+_FORMATIONS = (b"PRODUCT_DEFINITION_FORMATION", b"PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE")
+
+
+def _instance_names(raw: bytes) -> dict[str, str]:
+    """Each NEXT_ASSEMBLY_USAGE_OCCURRENCE's id label mapped to its child's PRODUCT name (its id when the name is
+    blank): NAUO -> related PRODUCT_DEFINITION -> its formation -> PRODUCT. SolidWorks labels its instances NAUO<n>,
+    and cascadio keeps the label, so the part's own name is read here. One pass with `_ENTITY`, as step_length_unit."""
+    usages, definitions, formations, products = {}, {}, {}, {}
+    for m in _ENTITY.finditer(raw):
+        head = _HEAD.match(m.group(2))
+        if head is None:
+            continue
+        kind, body, at = head.group(1), m.group(2), head.end() - 1
+        if kind == b"NEXT_ASSEMBLY_USAGE_OCCURRENCE":
+            u = _NAUO.match(body, at)
+            if u:
+                usages[u.group(1).decode("latin-1")] = int(u.group(2))
+        elif kind == b"PRODUCT_DEFINITION":
+            d = _LINK.match(body, at)
+            if d:
+                definitions[int(m.group(1))] = int(d.group(1))
+        elif kind in _FORMATIONS:
+            f = _LINK.match(body, at)
+            if f:
+                formations[int(m.group(1))] = int(f.group(1))
+        elif kind == b"PRODUCT":
+            p = _PRODUCT.match(body, at)
+            if p:
+                products[int(m.group(1))] = ((p.group(2) or b"").strip() or p.group(1)).decode("latin-1").replace("''", "'")
+    names = {}
+    for label, definition in usages.items():
+        product = products.get(formations.get(definitions.get(definition), -1))
+        if product:
+            names[label] = product
+    return names
 
 
 def guess_units(extent_max: float) -> str:
@@ -166,11 +210,19 @@ def _load_step(path: Path) -> Source:
     pieces: list[Piece] = []
     groups: list[str] = []
     nodes = doc.get("nodes", [])
+    names: dict[str, str] = {}
+    if any(NAUO_NAME.match(str(n.get("name") or "")) for n in nodes):
+        try:
+            names = _instance_names(path.read_bytes())
+        except OSError:
+            pass
     roots = (doc.get("scenes") or [{"nodes": range(len(nodes))}])[doc.get("scene", 0)].get("nodes", [])
 
     def walk(idx: int, parent_key: str, parent_group: tuple[str, ...], parent_world: np.ndarray, seen: dict):
         node = nodes[idx]
         name = str(node.get("name") or f"node{idx}")
+        if NAUO_NAME.match(name):
+            name = names.get(name, name)
         key = _numbered(f"{parent_key}/{name}" if parent_key else name, seen)
         world = parent_world @ _local(node)
         if "mesh" in node and len(meshes[node["mesh"]][1]):     # a mesh of only points or lines has no surface

@@ -12,8 +12,9 @@ tanks), `air.working_psi` (the regulator's output) and each cylinder's `<name>.e
 partner robot, `partner: true`, `partner.height` and `partner.moved` in inches and `partner.tilt` in degrees: the
 world's own partner (`robot_partner`), unless the test's [setup] partner, given, says otherwise; and
 `sensor.<name>` for each of the robot's [[sensor]]s, `sensors` ({name, kind}): 0 or 1 for a beam break (1 broken),
-inches for a distance sensor, and for a color sensor the index in `sensor_colors` (the named colors a `sees` can
-pick) of the color it sees, NaN while it sees none). A
+inches for a distance sensor, for a color sensor the index in `sensor_colors` (the named colors a `sees` can
+pick) of the color it sees, NaN while it sees none, and for a camera how many tags it sees; and `tags`, the IDs of the
+range's AprilTags, which a camera's sees_tag can pick ([] on a range without them). A
 chart can also show `clearance.<element>` (in) for any of `elements`; it isn't in `signals`, as a run measures it
 only when the test names it (clearance.py).
 The field's pieces: `piece` (its default kind's preset), `own_pieces` (whether the field has game pieces of its own:
@@ -107,7 +108,7 @@ def _targets(world, named: set[str]) -> list[str]:
     skip = set(named) | set(layout.ball_names if layout is not None else ())
     out = {m.body(b).name for b in range(1, m.nbody) if m.body_rootid[b] != root and m.body(b).name}
     out |= {m.geom(g).name for g in range(m.ngeom) if int(m.geom_bodyid[g]) == 0 and m.geom(g).name}
-    return sorted(n for n in out if n not in skip and not n.startswith("element."))
+    return sorted(n for n in out if n not in skip and not n.startswith(("element.", "apriltag.")))
 
 
 def _station_settings(st) -> dict:
@@ -189,7 +190,7 @@ def cylinders(world) -> list[dict]:
 
 
 def sensors(world) -> list[dict]:
-    """The robot's [[sensor]]s, sorted by name: {"name", "kind"} ("beam", "distance" or "color")."""
+    """The robot's [[sensor]]s, sorted by name: {"name", "kind"} ("beam", "distance", "color" or "camera")."""
     if getattr(world, "sensors", None) is None:
         return []
     return sorted(({"name": s.name, "kind": s.kind} for s in world.sensors.specs), key=lambda s: s["name"])
@@ -228,7 +229,7 @@ def palette(world, hooks: list[str], setup: dict | None = None) -> dict:
     if partner:
         signals += list(PARTNER_SIGNALS)                           # in, deg, in: from where it settled
     sens = sensors(world)
-    signals += [f"sensor.{s['name']}" for s in sens]               # 0/1 (beam), in (distance), a color's index
+    signals += [f"sensor.{s['name']}" for s in sens]       # 0/1 (beam), in (distance), a color's index, tags seen
     dt = drivetrain(world, driven)
     stations = sorted(rng.stations, key=lambda st: st.name) if rng is not None else []
     ball = floor_ball(world)
@@ -251,6 +252,7 @@ def palette(world, hooks: list[str], setup: dict | None = None) -> dict:
         "cylinders": cyls,                  # pneumatic cylinders: {name, double}
         "sensors": sens,                    # the robot's [[sensor]]s: {name, kind}
         "sensor_colors": list(NAMED_COLORS),    # what a color sensor's sees can name; sensor.<name>'s index into it
+        "tags": rng.apriltags.ids if rng is not None and rng.apriltags is not None else [],     # for sees_tag
         "rods": rods,                       # the field's rods (a reef's branches)
         "pieces": pieces,
         "targets": _targets(world, bar_set | set(elements) | set(pieces)),
@@ -306,6 +308,7 @@ class _Names:
         self.turrets = list(p["turrets"])
         self.cylinders = [c["name"] for c in p["cylinders"]]
         self.sensors = {s["name"]: s["kind"] for s in p["sensors"]}
+        self.tags = list(p["tags"])
         self.partner = p["partner"]
         rng = world.parts.range if world.parts is not None else None
         self.hollow = rng is not None and any(k.hole is not None for k in rng.kinds.values())
@@ -396,8 +399,31 @@ def _sensor_problems(n: _Names, name: str, sees: str | None) -> list[str]:
         if n.sensors[name] == "beam":
             return [i18n.t("{name} is a beam break, which can't see colors; only a color sensor can see {sees}",
                            name=name, sees=sees)]
+        if n.sensors[name] == "camera":
+            return [i18n.t("{name} is a camera, which sees AprilTags, not colors; only a color sensor can see {sees}",
+                           name=name, sees=sees)]
         return [i18n.t("{name} is a distance sensor, which can't see colors; only a color sensor can see {sees}",
                        name=name, sees=sees)]
+    return []
+
+
+def _sees_tag_problems(n: _Names, name: str, tag: int | None) -> list[str]:
+    """A sees_tag condition's camera: one of the robot's camera [[sensor]]s, on a range with AprilTags; and its tag
+    one of the range's."""
+    if name not in n.sensors:
+        cams = [s for s, kind in n.sensors.items() if kind == "camera"]
+        if not cams:
+            return [i18n.t("this robot has no camera; add a {sensor_table} with {kind_setting} to its config",
+                           sensor_table="[[sensor]]", kind_setting='kind = "camera"')]
+        return [i18n.t("{name} isn't a camera; the robot's cameras: {names}", name=name, names=", ".join(cams))]
+    if n.sensors[name] != "camera":
+        return [i18n.t("{name} isn't a camera, so it sees no AprilTags; only a sensor with {kind_setting} does",
+                       name=name, kind_setting='kind = "camera"')]
+    if not n.tags:
+        return [i18n.t("this field has no AprilTags; a range file gives them with {apriltags_key}",
+                       apriltags_key="[range] apriltags")]
+    if tag is not None and tag not in n.tags:
+        return [i18n.t("this field has no tag {tag}; its tags: {ids}", tag=tag, ids=", ".join(map(str, n.tags)))]
     return []
 
 
@@ -462,6 +488,8 @@ def _cond_problems(n: _Names, c) -> list[str]:
         return [i18n.t('no element "{element}" on this field', element=a['element'])]
     if c.kind == "sensor":
         return _sensor_problems(n, a["sensor"], a.get("sees"))
+    if c.kind == "sees_tag":
+        return _sees_tag_problems(n, a["camera"], a.get("tag"))
     if c.kind == "in_zone" and a["zone"] not in n.zones:
         if not n.zones:
             return [i18n.t("this field has no zones; a range file marks them with {zone_table}",

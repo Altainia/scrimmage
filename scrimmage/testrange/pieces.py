@@ -70,6 +70,7 @@ MAX_EXTENT = 3.0  # m: a piece bigger than this is refused as a units mistake
 MIN_EXTENT = 0.02  # m: a piece smaller than this is warned about (a scale model, or a units mistake); our call
 DENSITY_RANGE = (1.0, 20000.0)  # kg/m^3: a mass and size outside this (lighter than air, denser than tungsten) is
 #                                 warned about; an inflated 2023 cube as a solid box is about 5
+CAD_DENSITY_RANGE = (100.0, 10000.0)  # choice: 10x either way of water (spec D4)
 MAX_SCALE = 1000.0  # a CAD piece's scale at most
 MIN_CAD_EXTENT = 0.0005  # m: a CAD piece smaller than this is refused as a units mistake (too small to split)
 
@@ -499,7 +500,8 @@ def _plain(v: float) -> str:
 
 def _size_warnings(r: _Reader, extent: float, density: float, shape: str) -> tuple[str, ...]:
     """A warning for a piece far from a game piece's size (smaller than MIN_EXTENT: a scale model, a units mistake),
-    else for a mass that makes it far too heavy or light for its size (outside DENSITY_RANGE)."""
+    else for a mass that makes it far too heavy or light for its size (outside DENSITY_RANGE, or CAD_DENSITY_RANGE for
+    a CAD piece)."""
     from ..checks import worded
 
     where = f"{r.path}: {r.where}"
@@ -512,6 +514,15 @@ def _size_warnings(r: _Reader, extent: float, density: float, shape: str) -> tup
         return (worded(lambda: i18n.t("{where}: the piece is only {size} m across, smaller than {least} m: check its "
                                       "sizes (in m, or the _in keys for inches)", where=where, size=_plain(extent),
                                       least=f"{MIN_EXTENT:g}")),)
+    if shape == "cad":
+        lo, hi = CAD_DENSITY_RANGE
+        if not lo <= density <= hi:
+            return (worded(lambda: i18n.t(
+                "{where}: its mass makes it {density} kg/m³ for its size, outside {lo} to {hi} (10 times lighter or "
+                "heavier than water): is its CAD a scale model ({scale_setting} for a 1:40 print) or in other units, "
+                "or is the mass wrong? Check scale and mass (kg)", where=where, density=_plain(density),
+                lo=f"{lo:g}", hi=f"{hi:g}", scale_setting="scale = 40")),)
+        return ()
     lo, hi = DENSITY_RANGE
     if not lo <= density <= hi:
         return (worded(lambda: i18n.t("{where}: its mass makes it {density} kg/m³ for its size, outside {lo} to {hi} "
@@ -772,12 +783,24 @@ def _compound(r: _Reader, path: Path, name: str) -> list[Solid]:
     return out
 
 
-def _cad(r: _Reader, base_dir: Path) -> tuple[list[Solid], Inertial, tuple[str, ...]]:
-    from ..bench.spec import BenchError
-    from ..cad import CadError
-    from ..cad.fit import convex_split
-    from ..cad.source import load_source
+UNITS_IGNORED = "units_ignored"     # a cad_factor note: a STEP whose own unit can't be told ignores `units`
 
+
+def cad_note(kind: str, r: _Reader, path: Path):
+    """A cad_factor note (its kind, as UNITS_IGNORED) as the warning a student reads, worded in the Language when
+    shown."""
+    from ..checks import worded
+    where, units = f"{r.path}: {r.where}", r.text("units")
+    return worded(lambda: i18n.t(
+        "{where}: can't tell which units {file} is in, so {units_setting} is ignored and the file's own are "
+        "used", where=where, file=path.name, units_setting=f"units = \"{units}\""))
+
+
+def cad_factor(r: _Reader, path: Path) -> tuple[float, str | None, list[str]]:
+    """What a CAD key set's `units` and `scale` come to for the file at `path`: (the factor its numbers (as
+    `load_source` gives them) are multiplied by, the `units` to give `load_source` (None for a STEP, which carries its
+    own), the kinds of the notes, for cad_note (UNITS_IGNORED: a STEP whose own unit can't be told ignores `units`)).
+    Shared by the `cad` piece and the mesh element."""
     from ..cad import source
     from ..cad.source import STEP_SUFFIXES, STEP_UNITS
 
@@ -791,23 +814,29 @@ def _cad(r: _Reader, base_dir: Path) -> tuple[list[Solid], Inertial, tuple[str, 
     if scale > MAX_SCALE:
         raise r.err(i18n.t("scale must be from above 0 to {most}, not {scale}", most=f"{MAX_SCALE:g}",
                            scale=repr(scale)))
-    file = Path(r.text("cad"))
-    path = file if file.is_absolute() else Path(base_dir) / file
     factor = scale
     step = path.suffix.lower() in STEP_SUFFIXES
     notes: list[str] = []
     if step and units is not None:       # a STEP is read in its own units; `units` reads its numbers in these
         declared = source.step_length_unit(path)
         if declared is None:            # ignored, as it always was before K1: such a file still loads, with a warning
-            from ..checks import worded
-            where = f"{r.path}: {r.where}"
-            notes.append(worded(lambda: i18n.t(
-                "{where}: can't tell which units {file} is in, so {units_setting} is ignored and the file's own are "
-                "used", where=where, file=file.name, units_setting=f"units = \"{units}\"")))
+            notes.append(UNITS_IGNORED)
         else:
             factor *= STEP_UNITS[units] / STEP_UNITS[declared]
+    return factor, None if step else units, notes
+
+
+def _cad(r: _Reader, base_dir: Path) -> tuple[list[Solid], Inertial, tuple[str, ...]]:
+    from ..bench.spec import BenchError
+    from ..cad import CadError
+    from ..cad.fit import convex_split
+    from ..cad.source import load_source
+
+    file = Path(r.text("cad"))
+    path = file if file.is_absolute() else Path(base_dir) / file
+    factor, load_units, notes = cad_factor(r, path)
     try:
-        src = load_source(path, None if step else units)
+        src = load_source(path, load_units)
     except CadError as e:
         raise r.err(str(e)) from None
     if factor != 1.0:
@@ -829,7 +858,8 @@ def _cad(r: _Reader, base_dir: Path) -> tuple[list[Solid], Inertial, tuple[str, 
             raise r.err(str(e)) from None
         solids += [Solid("mesh", (), (0.0, 0.0, 0.0), _IDENTITY, np.asarray(v, dtype=float), np.asarray(f))
                    for v, f in pieces]
-    return solids, combine([mesh_inertial(p.v, p.f, 1.0) for p in src.pieces]), tuple(notes)
+    return (solids, combine([mesh_inertial(p.v, p.f, 1.0) for p in src.pieces]),
+            tuple(cad_note(n, r, path) for n in notes))
 
 
 def piece_color(kind: PieceKind) -> tuple[float, float, float]:

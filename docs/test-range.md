@@ -24,6 +24,7 @@ hood and the ball's squeeze are that model, and the range adds a world around it
 - [The trench field](#the-trench-field)
 - [The 2024 field](#the-2024-field)
 - [The range file](#the-range-file)
+- [`scrimmage cad list`](#scrimmage-cad-list)
 - [Scenarios: signals, `by_time`, `[range]`, `robot_env`](#scenarios-signals-by_time-range-robot_env)
 - [The report, the viewer and NetworkTables](#the-report-the-viewer-and-networktables)
 - [Aiming tables: `scrimmage launcher aim`](#aiming-tables-scrimmage-launcher-aim)
@@ -662,6 +663,8 @@ across; check units (m, mm or in)", the usual sign of millimeters read as meters
 - **A warning for a piece far from its expected size.** A piece (CAD or not) smaller than 2 cm across, or whose
   `mass` makes it lighter than air or denser than tungsten for its size, is accepted with a warning: `scrimmage range
   check` prints it, and a test run's notes say it. It is usually a scale model, a units mistake, or a mass in pounds.
+  A CAD piece has a narrower density range, 100 to 10 000 kg/m³ (10 times lighter or heavier than water), and its
+  warning suggests `scale` and `mass`. The volume is the CAD file's own.
 
 **The long axis, and flat pieces.** Each kind has a long axis: a tube's, ring's, cylinder's or cone's own, a box's
 longest edge, and for a compound or CAD piece `axis = "x"`, `"y"` or `"z"` (default `"z"`). A kind is **flat** when it
@@ -738,6 +741,59 @@ name. It is drawn as 2 in tape along its edges, which touches nothing. The Test 
 condition reads it: the robot's center, seen from above, inside or outside the zone (an edge counts as inside). That is
 enough for "did it leave the starting zone" (2024's LEAVE) and "is it in the wing"; a rule about the whole robot or
 its bumpers (2024's PARK) isn't modeled yet.
+
+### AprilTags
+
+A range can carry the field's AprilTags, in the file teams already have: WPILib's `AprilTagFieldLayout` JSON.
+
+```toml
+[range]
+apriltags = "2024-crescendo"   # a layout scrimmage ships, or a path to a JSON file (relative to this range file)
+apriltag_size_in = 6.5         # the tags' side in inches; default 6.5, the 2024 and later 36h11 tags
+```
+
+- **Built-in layouts:** `2024-crescendo`, `2026-rebuilt-welded` and `2026-rebuilt-andymark`, copied from WPILib
+  v2026.2.2 (the source, commit and license are in `scrimmage/testrange/apriltags/`). Any other value is a path to a
+  JSON file in WPILib's format.
+- **Frames:** the layout is used as it is. scrimmage's field frame is WPILib's: the origin at the blue alliance wall's
+  right corner, x toward red, y toward the left guardrail, z up. A tag's pose puts its outward normal along the tag's
+  +x, so a tag on the blue wall facing the field has no rotation, and tag 7 of 2024 (the blue SPEAKER's) is at
+  y = 5.55 m, in line with the SPEAKER.
+- **Checks:** `range check` stops with an error when the layout's field length and width differ from the range's by
+  more than 5 cm (the message names both sizes), when two tags share an ID, when a tag's center is more than 0.3 m
+  outside the field (a wall-mounted tag may sit just outside), or when the file is missing, isn't JSON, or lacks a
+  `tags` list, a `field`, or a tag's `ID` or `pose`. It lists the tag count with the layout's name ("16 AprilTags
+  (2024-crescendo)").
+- **Mounted tags:** a wall-mounted tag's center can lie a little inside the solid it hangs on: 2024's SPEAKER tags are
+  3.8 cm inside the SPEAKER wall obstacle, and the STAGE tags about 7 cm inside the estimated stage cores. The tag is
+  drawn, and a camera sees it, at its face: its center pushed out along its normal past any solid it lies at most
+  0.10 m inside. `range check` warns about a tag deeper than that in a solid, since it would be hidden. A box or
+  obstacle counts as its box, and a [mesh element](terrain.md#mesh-elements-from-cad) as its convex parts' own faces,
+  so a tag flush on a turned CAD face stays on it.
+- **Drawing:** each tag is a black square with a white border (the real tag36h11 pattern isn't drawn) that touches
+  nothing and changes no sensor reading. The live view labels each with its ID; a MuJoCo picture (`range view --out`)
+  shows the squares only.
+- **Size:** `apriltag_size_in` (it needs `apriltags`, or it only draws a warning) sets how big the squares are drawn and, for a camera, how far away it can see them.
+
+A hand-made practice field needs a small JSON file of its own (`practice-tags.json`, next to the range file), with
+the range's field size:
+
+```json
+{
+  "field": { "length": 16.54, "width": 8.07 },
+  "tags": [
+    { "ID": 1,
+      "pose": { "translation": { "x": 0.0, "y": 4.0, "z": 1.2 },
+                "rotation": { "quaternion": { "W": 1.0, "X": 0.0, "Y": 0.0, "Z": 0.0 } } } },
+    { "ID": 2,
+      "pose": { "translation": { "x": 16.54, "y": 4.0, "z": 1.2 },
+                "rotation": { "quaternion": { "W": 0.0, "X": 0.0, "Y": 0.0, "Z": 1.0 } } } }
+  ]
+}
+```
+
+Tag 1 is on the blue wall, facing +x (into the field). Tag 2 is on the red wall, turned half a turn about z so its
+normal points to -x.
 
 ### The game: points, the match and its rules
 
@@ -855,6 +911,10 @@ its line, or says it is an estimate or our choice).
 - **The elements.** The SUBWOOFERS (a box under each SPEAKER and its two angled sides), the SOURCE walls, and the
   STAGES: a core box, three legs and three CHAINS as rigid bars (`[climb]` scores a robot off the carpet touching a
   chain, as ONSTAGE). HARMONY, the TRAP and the MICROPHONES aren't modeled.
+- **The AprilTags.** The range has WPILib's 2024 layout (`apriltags = "2024-crescendo"`): 16 tags, drawn on the
+  walls and the STAGES, and seen by a [camera sensor](sensors.md#a-camera). `range check` lists them. They add no
+  contacts and change no other number. The worked camera example is
+  [`examples/blocks/camera`](../examples/blocks/camera/README.md).
 - **The zones** `blue_start`, `blue_wing`, `red_start` and `red_wing` are drawn as tape.
 - **The starts.** `blue_subwoofer` (against the blue SUBWOOFER, facing the SPEAKER), `blue_amp` (1 m back from the
   blue AMP, facing it), `blue_amp_side`, `blue_source_side`, `blue_wing_note` and `at_blue_source`.
@@ -1099,6 +1159,141 @@ Every number in `2026.toml` cites its source on its line, or says it is our choi
 - **Carpet rolling resistance** is an estimate (above).
 
 To make a range for another field, measure its CAD or its manual the same way and cite each number on its line.
+
+## `scrimmage cad list`
+
+`scrimmage cad list FILE` lists the pieces of a STEP file (or an STL/OBJ file or folder), so you can find the names and
+places a range's CAD elements need, with no script of your own:
+
+```
+scrimmage cad list field.step --match "GE-2420*"
+scrimmage cad list field.step --near 1.5,2,0.3 --within 0.5 --units mm
+scrimmage cad list field.step --json > pieces.json
+```
+
+| option | meaning |
+|---|---|
+| `--match GLOB` | only pieces whose name or whole key (`Assembly/sub/piece`) fits the glob (`*`, `?`, `[]`; capital letters count). A glob that fits nothing exits 1 and names up to five close piece names. |
+| `--near X,Y,Z --within R` | only pieces whose bounding-box center is within R meters of the point. Give both or neither. |
+| `--units m\|mm\|cm\|in\|ft` | the units of the first group of numbers (default: the file's own; an STL/OBJ's is guessed from its size, and the header says `(guessed)`) |
+| `--sort size\|name\|file` | the order of the lines: `size` (the default) puts the largest bounding box first, so the big structures come first and ties keep file order; `name` is alphabetical; `file` is the order the file has them |
+| `--json` | the full table for scripts, one entry per piece (not grouped) |
+
+Each line holds a piece's name, `×N` when N pieces share the name, the center and size of its bounding box in the
+file's units and then in meters, and its triangle count. On a `×N` line the center and size cover all N pieces
+together; `--json` gives each piece's own place. The header counts pieces, not lines. Positions are in the file's own axes, in meters: nothing is
+rotated, so a file drawn Y-up shows its height in the second number. The JSON has `file`, `units` and `pieces`, each with
+`key`, `name`, `center_m`, `size_m`, `center_file`, `size_file` and `triangles`. Wrong options and unreadable files
+exit 2 with `scrimmage: <message>`.
+
+## From the field's CAD to a range
+
+FIRST gives teams the field's CAD, but the file is FIRST's, so scrimmage doesn't ship it and the built-in ranges have
+no mesh elements. This is how to make a range from your own copy. The examples use the 2024 field's STEP, `FE-2024.STEP`
+(88 MB); its piece names are real, and yours will match if you have the same file.
+
+**1. List the pieces.** Every `cad list` run reads the whole file, so each one takes about 20 seconds (nothing is
+kept between runs).
+
+```bash
+scrimmage cad list FE-2024.STEP --units in | head
+```
+
+The header says `5507 pieces`. The list is sorted with the biggest bounding box first, and the biggest are bolts
+and rivets spread all over the field, which isn't useful. Narrow it.
+
+**2. Find a piece with `--match` or `--near`.** If you know part of a name, match it. A STAGE is an assembly named
+`GE-24200_Blue` (red is `GE-24200_Red`):
+
+```bash
+scrimmage cad list FE-2024.STEP --match "*GE-24200_Blue*" --units in
+```
+
+The 754 pieces in it include `GE-24210` (the frame, 176 604 triangles), three `GE-24205_hanging` pieces (the STAGE's
+three CHAINS, 125 164 triangles each), the tag mounts `GE-24220_GE-24220 Tag14` to `Tag16`, and a lot of nuts, washers and
+rivets. If you only know where a piece is, point at the place, in meters:
+
+```bash
+scrimmage cad list FE-2024.STEP --near 8.3,0.9,4.1 --within 1.5 --units in
+```
+
+That finds the pieces within 1.5 m of that point (95 of them, such as `FE-00004-04` and `FE-00012`). A `×N` after a name means N pieces share it, and the numbers on that line cover all of them.
+`--json` gives each piece's own place and its full key, such as
+`FE-2024/GE-24200_Blue/GE-24210/...`. A glob can match a key or a name.
+
+**3. Find the file's axes and origin.** The numbers in the list are in the file's own axes, so look at three things.
+
+- *Which axis is up.* Use the sizes in meters (the second group of numbers). Pieces that lie along the field, such as
+  `FE-00018-03`, are 16.5 m long and 8.3 m wide but only 0.5 m in the middle number. So the middle number (y) is
+  height, the file is Y-up, and the element needs `rpy_deg = [90, 0, 0]` to stand it up. The whole blue STAGE is
+  2.6 x 2.0 x 3.0 m: its 2.0 m height is the middle number too. In a Z-up file the height is the third number, and you
+  leave that turn out.
+- *Where the origin is.* Add `--sort size` and look at the biggest structures, or take the whole file's extent from
+  the pieces' centers. FE-2024.STEP runs from -11.28 to 11.28 in x and from -6.25 to 5.18 in z, and the two STAGES sit
+  at x = +3.7 and x = -3.7 with z = 0. The origin is the middle of the field, between them. The field's middle is
+  at x = 16.541 / 2 = 8.2705 and y = 8.211 / 2 = 4.1055, so `pos = [8.2705, 4.1055, 0]`.
+- *Which way +x points.* WPILib puts the blue alliance wall at x = 0. The blue STAGE is the one near the blue wall, and the
+  file has it at +x (`GE-24200_Blue` is centered at x = +3.72). So the file's +x points toward the blue wall, the opposite of
+  WPILib's, and the file needs a half turn. That is a yaw of 180 degrees, after the Y-up turn:
+  `rpy_deg = [90, 0, 180]`.
+
+You can check the answer with a tag or a part you know. Blue tags 15 and 16 are on the STAGE side nearer the blue
+wall, at x = 4.64, and their mounts (`GE-24220_GE-24220 Tag15`) are at x = 3.62 in the file: 8.27 - 3.62 = 4.65.
+
+**4. Write the element.** The STAGE's frame (`GE-24210`) holds 282 pieces. Most of them are washers, bolts, nuts and
+rivets, and they make up 113 000 of its 176 600 triangles. A `select` is a list of globs and has no way to leave a piece out,
+so you pick the pieces you want by name instead. In `--json` or `cad list --match "*GE-24210*"`, the structure is the
+tubes and plates `FE-01003-01`, `FE-01002-01`, `FE-01012-01`, the `FE-01020` brackets and the `GE-24211` pieces:
+
+```toml
+[[element]]
+name = "stage_blue_frame"
+kind = "mesh"
+file = "cad/FE-2024.STEP"                    # relative to the range file
+select = [                                   # the frame's structure, no bolts, washers, nuts or rivets (30 pieces)
+  "*GE-24200_Blue/GE-24210/FE-01003*/FE-01003-01*",
+  "*GE-24200_Blue/GE-24210/FE-01002*/FE-01002-01*",
+  "*GE-24200_Blue/GE-24210/FE-01012*/FE-01012-01*",
+  "*GE-24200_Blue/GE-24210/FE-01021*/FE-01020/FE-01020-0*",
+  "*GE-24200_Blue/GE-24210/GE-24211/*",
+]
+rpy_deg = [90, 0, 180]                       # Y-up file, and its +x is toward the blue wall
+pos = [8.2705, 4.1055, 0]                    # the file's origin is the field's middle
+```
+
+Use the full key, with the assembly's name before the piece, so a glob on a name like `FE-01003-01` can't also take
+the red STAGE's piece of the same name. (`cad list` says `×N` when pieces share a name.) The 30 pieces are 63 000
+triangles. The whole STAGE is more than the limit of 200 000 triangles, so it needs to be split into several elements anyway.
+The CHAINS are optional. The range's own `chain_*` bars and its `[climb]` are what a robot climbs on, so a CHAIN from
+the CAD is only a rigid look-alike that overlaps them. If you want one anyway, give each its own element
+(`*GE-24200_Blue/GE-24205/*`, then `GE-24205#2` and `GE-24205#3`).
+Add `ground = true` only to a piece a robot drives over. [The mesh element's keys](terrain.md#field-elements-in-range-files)
+are in terrain.md. The file says how big it is, so `units` is only for an STL or OBJ.
+
+On the real file this element covers x 3.07 to 6.02 m, y 2.40 to 5.81 m and up to 1.89 m high, centered at (4.55, 4.11).
+The built-in `2024` range's STAGE legs reach x 3.07 at their feet, so the CAD lands within a centimeter of where the
+legs' feet are.
+
+**5. Check it in the viewer.**
+
+```bash
+scrimmage range check my-range.toml
+scrimmage range view my-range.toml
+scrimmage range view my-range.toml --out top.png
+```
+
+The first build is slow because scrimmage splits each piece into convex parts. After that it's cached, and moving the
+element (`pos`, `rpy_deg`) uses the cache. Splitting rounds off concave detail, so look at the shape, and compare it
+with the piece in your CAD program. `range check` warns about pieces it left out because they aren't solid, and about
+an element that reaches more than 0.5 m outside the field (check `pos` and `rpy_deg`). A mesh element has no mass,
+so there is no density check: a wrong `scale` shows as a selection "larger than the field", or as a piece that looks
+the wrong size in the viewer.
+
+**Numbers the CAD file can't give you directly.** A goal's opening is a clear gap between pieces, not a piece. For
+those, `2026.toml` measured the CAD in FreeCAD: open the STEP, select two faces or edges, and use the Measurement tool
+to read the distance (the file is in millimeters, so convert). Then write the number in the range file and cite it on
+its line, as in [Where the 2026 numbers come from](#where-the-2026-numbers-come-from). A gap measured in CAD is
+better than one read from a drawing.
 
 ## Scenarios: signals, `by_time`, `[range]`, `robot_env`
 

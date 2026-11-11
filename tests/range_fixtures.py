@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from pathlib import Path
 
 from scrimmage.protocol import HalState
 
@@ -76,3 +77,9 @@ def drive(w, seconds, **pwm):
         hal.devices[("PWM", port.removeprefix("p"))] = {"<init": True, "<speed": speed}
     for _ in range(int(seconds / w.model.opt.timestep)):
         w.step(hal)
+
+
+def range_2024_with_tags(tmp_path) -> Path:
+    """The built-in 2024 range, which has `apriltags = "2024-crescendo"` (K4); `tmp_path` is unused, kept for callers."""
+    from scrimmage.testrange.spec import BUILTIN_RANGES
+    return Path(BUILTIN_RANGES["2024"])

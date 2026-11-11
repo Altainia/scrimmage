@@ -20,14 +20,16 @@ COLOR_NAMES = list(NAMED_COLORS)     # a color sensor's signal is its color's in
 
 
 def sensor_value(world, name: str) -> float:
-    """Sensor `name`'s chart signal now: 0 or 1 for a beam break (1 broken), inches for a distance sensor, and for a
-    color sensor the index in NAMED_COLORS of the color it sees (NaN: none)."""
+    """Sensor `name`'s chart signal now: 0 or 1 for a beam break (1 broken), inches for a distance sensor, for a
+    color sensor the index in NAMED_COLORS of the color it sees (NaN: none), and for a camera how many tags it sees."""
     kind = next(s.kind for s in world.sensors.specs if s.name == name)
     r = world.sensors.reading(name)
     if kind == "beam":
         return 1.0 if r.on else 0.0
     if kind == "distance":
         return r.distance / IN
+    if kind == "camera":
+        return float(len(r.tags))
     return float(COLOR_NAMES.index(r.color_name)) if r.on else math.nan
 
 

@@ -103,8 +103,8 @@ def test_climb_script_errors_follow_the_language(gb):
 def test_sensor_errors_follow_the_language(gb):
     from scrimmage.sensors.spec import SensorError, parse_sensor
     assert _both(lambda: parse_sensor({"name": "a"}, 1), SensorError) == (
-        '[[sensor]] "a": wants kind = "beam", "distance" or else "color"',
-        '[[sensor]] "a": needs kind = "beam", "distance" or "color"')
+        '[[sensor]] "a": wants kind = "beam", "distance", "color" or else "camera"',
+        '[[sensor]] "a": needs kind = "beam", "distance", "color" or "camera"')
 
 
 def test_binding_errors_follow_the_language_and_its_list_separator(gb):

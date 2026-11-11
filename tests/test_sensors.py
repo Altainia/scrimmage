@@ -370,8 +370,8 @@ def test_a_sensor_on_a_body_the_robot_doesnt_have_lists_the_robots_bodies():
 
 @pytest.mark.parametrize("table, words", [
     ({"kind": "beam", "body": "a.b", "from": [0, 0, 0], "to": [1, 0, 0]}, "needs a name"),
-    ({"name": "x", "kind": "laser", "body": "a.b"}, 'kind must be "beam", "distance" or "color", not "laser"'),
-    ({"name": "x", "body": "a.b"}, 'needs kind = "beam", "distance" or "color"'),
+    ({"name": "x", "kind": "laser", "body": "a.b"}, 'kind must be "beam", "distance", "color" or "camera", not "laser"'),
+    ({"name": "x", "body": "a.b"}, 'needs kind = "beam", "distance", "color" or "camera"'),
     ({"name": "x", "kind": "beam", "body": "a.b", "to": [1, 0, 0]}, "needs from"),
     ({"name": "x", "kind": "beam", "body": "a.b", "from": [0, 0], "to": [1, 0, 0]},
      "from must be [x, y, z], 3 numbers, not [0, 0]"),

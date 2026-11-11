@@ -38,6 +38,8 @@ CONDITIONS = [
     Cond("sensor", {"sensor": "eye", "is": "off", "sees": "red"}),
     Cond("sensor", {"sensor": "beam", "is": "on"}),
     Cond("sensor", {"sensor": "beam", "is": "off"}),
+    Cond("sees_tag", {"camera": "front_cam", "tag": 7}),
+    Cond("sees_tag", {"camera": "front_cam", "tag": None}),
     Cond("partner_lifted", {"at_least_in": 4.0, "level_within_deg": 5.0}),
     Cond("partner_lifted", {"at_least_in": 4.0}),
     Cond("partner_moved", {"at_least_in": 2.0}),

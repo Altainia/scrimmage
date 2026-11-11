@@ -10,15 +10,19 @@ import math
 import os
 import shutil
 
-import FreeCAD as App
-import Import
-import Part
+try:
+    import FreeCAD as App
+    import Import
+    import Part
+except ImportError:    # the NAUO fixture below is made without FreeCAD
+    App = None
 
 OUT = os.path.expanduser("~/snap/freecad/common/cadfix")
 DEST = os.path.join(os.getcwd(), "tests", "data", "cad")
-os.makedirs(OUT, exist_ok=True)
-# FreeCAD renames repeated labels (bolt001...) unless told not to; the repeated-name tests need identical names
-App.ParamGet("User parameter:BaseApp/Preferences/Document").SetBool("DuplicateLabels", True)
+if App is not None:
+    os.makedirs(OUT, exist_ok=True)
+    # FreeCAD renames repeated labels (bolt001...) unless told not to; the repeated-name tests need identical names
+    App.ParamGet("User parameter:BaseApp/Preferences/Document").SetBool("DuplicateLabels", True)
 
 
 def V(*a):
@@ -168,18 +172,38 @@ def build_crank_climber():
     return doc, top
 
 
-doc, top = build_crank_climber()
-export(doc, top, "crank_climber.step")
-doc, top = build()
-export(doc, top, "climber.step")
-doc, top = build(arm_b_len=900, bolts=5, right_name="hook_assy_right")
-export(doc, top, "climber_v2.step")
-doc, top = build()
-export(doc, top, "climber_yup.step", rot=App.Placement(V(0, 0, 0), App.Rotation(V(1, 0, 0), -90)))
+if App is not None:
+    doc, top = build_crank_climber()
+    export(doc, top, "crank_climber.step")
+    doc, top = build()
+    export(doc, top, "climber.step")
+    doc, top = build(arm_b_len=900, bolts=5, right_name="hook_assy_right")
+    export(doc, top, "climber_v2.step")
+    doc, top = build()
+    export(doc, top, "climber_yup.step", rot=App.Placement(V(0, 0, 0), App.Rotation(V(1, 0, 0), -90)))
 
-os.makedirs(os.path.join(DEST, "stl"), exist_ok=True)
-for name, shape in (("base_plate", Part.makeBox(300, 200, 10)),
-                    ("arm_A", Part.makeBox(20, 20, 800, V(50, 90, 10))),
-                    ("hook", Part.makeCylinder(8, 60, V(0, 0, 0), V(1, 0, 0)))):
-    stl(os.path.join(DEST, "stl", name + ".stl"), shape)
-stl(os.path.join(DEST, "stl", "hook_inside_out.stl"), Part.makeCylinder(8, 60, V(0, 0, 0), V(1, 0, 0)), flip=True)
+    os.makedirs(os.path.join(DEST, "stl"), exist_ok=True)
+    for name, shape in (("base_plate", Part.makeBox(300, 200, 10)),
+                        ("arm_A", Part.makeBox(20, 20, 800, V(50, 90, 10))),
+                        ("hook", Part.makeCylinder(8, 60, V(0, 0, 0), V(1, 0, 0)))):
+        stl(os.path.join(DEST, "stl", name + ".stl"), shape)
+    stl(os.path.join(DEST, "stl", "hook_inside_out.stl"), Part.makeCylinder(8, 60, V(0, 0, 0), V(1, 0, 0)), flip=True)
+
+
+def make_nauo_fixture(src=None, dst=None):
+    """climber_nauo.step: climber.step with every NEXT_ASSEMBLY_USAGE_OCCURRENCE('<id>','<name>',... rewritten, in
+    file order, to ('NAUO<n>',' ',' ',..., as SolidWorks writes it. Needs no FreeCAD:
+
+        python tests/make_cad_fixtures.py
+    """
+    import re
+    src = src or os.path.join(DEST, "climber.step")
+    dst = dst or os.path.join(DEST, "climber_nauo.step")
+    count = iter(range(1, 10 ** 6))
+    text = re.sub(r"(NEXT_ASSEMBLY_USAGE_OCCURRENCE\()'[^']*','[^']*','[^']*'",
+                  lambda m: f"{m.group(1)}'NAUO{next(count)}',' ',' '", open(src, encoding="utf-8").read())
+    open(dst, "w", encoding="utf-8").write(text)
+
+
+if __name__ == "__main__" or App is not None:    # freecad.cmd runs this file under another __name__
+    make_nauo_fixture()

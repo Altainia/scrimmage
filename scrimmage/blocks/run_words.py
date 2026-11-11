@@ -31,7 +31,8 @@ _VERBS = {"passes": ("passing", "to pass"), "goes": ("going", "to go"), "tilts":
           "is held": ("being held", "to be held"), "rests": ("resting", "to rest"),
           "clears": ("clearing", "to clear"), "moved": ("having moved", "to have moved"),
           # a color sensor's check: "without eye seeing red", "waiting for eye not to see red"
-          "is seeing": ("seeing", "to see"), "isn't seeing": ("losing sight of", "not to see")}
+          "is seeing": ("seeing", "to see"), "isn't seeing": ("losing sight of", "not to see"),
+          "sees": ("seeing", "to see")}     # a camera's: "without front_cam seeing tag 7"
 
 
 class _Words(str):
@@ -126,6 +127,13 @@ def _recast(text: str, form: int) -> str:
             words[i] = _VERBS[w][form]
             break
     return " ".join(words)
+
+
+def _tags_seen(tags: tuple[int, ...]) -> str:
+    """What a camera saw, in words: "it saw tags 7, 8", "it saw tag 7", "it saw no tags"."""
+    if not tags:
+        return i18n.t("it saw no tags")
+    return i18n.tn("it saw tag {ids}", "it saw tags {ids}", len(tags), ids=", ".join(str(i) for i in tags))
 
 
 class _FailureWords:
@@ -249,6 +257,11 @@ class _FailureWords:
                      element=a["element"], limit=_amount(a["at_least_in"], "in"), now=now)
         if k == "sensor":
             return self._sensor_failure(a)
+        if k == "sees_tag":
+            saw = _tags_seen(self.world.sensors.reading(a["camera"]).tags)
+            if a.get("tag") is None:
+                return t("expected {camera} to see a tag, but {saw}", camera=a["camera"], saw=saw)
+            return t("expected {camera} to see tag {tag}, but {saw}", camera=a["camera"], tag=a["tag"], saw=saw)
         if k == "partner_lifted":
             p, level = self.world.partner, a.get("level_within_deg")
             want = (t("at least {lift} (level within {level})", lift=_amount(a["at_least_in"], "in"),
@@ -313,8 +326,10 @@ class _FailureWords:
         name, want = a["sensor"], a["is"]
         spec = next(s for s in self.world.sensors.specs if s.name == name)
         r = self.world.sensors.reading(name)
-        if spec.kind in ("beam", "distance"):
+        if spec.kind in ("beam", "distance", "camera"):
             wanted = t("on", context="sensor") if want == "on" else t("off", context="sensor")
+        if spec.kind == "camera":
+            return t("expected {sensor} {want}, but {saw}", sensor=name, want=wanted, saw=_tags_seen(r.tags))
         if spec.kind == "beam":
             return t("expected {sensor} {want}, but it was {reading}", sensor=name, want=wanted,
                      reading=t("on (broken)") if r.on else t("off (clear)"))

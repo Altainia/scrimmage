@@ -243,6 +243,7 @@ A check is a round-ended block that plugs into **wait until**, **repeat until** 
 | **partner is lifted at least** *n* **in**, optionally **level within** *n* **°** | The partner robot's lowest frame corner is that high above where it rested (and it tilts no more than that). See [A partner robot](#a-partner-robot). |
 | **partner moved at least** *n* **in** | The partner robot's center has gone that far across the floor. See [A partner robot](#a-partner-robot). |
 | **sensor** *sensor* **is on / off**, or **is seeing / isn't seeing** *color* | One of the robot's `[[sensor]]`s: a beam break is on while broken, a distance sensor while something is closer than its threshold, a color sensor while it sees a piece (of that color). See [Sensors](#sensors). |
+| **camera** *camera* **sees** *tag N* / *any tag* | One of the robot's cameras (`kind = "camera"`) sees that AprilTag of the field, or any. Offered on a field with AprilTags. See [Sensors](#sensors). |
 
 **What "touches" can name.** On the robot side: **any hook**, one of the hooks, a part, or a body. On the field side:
 
@@ -466,8 +467,9 @@ In the test file:
 
 ## Sensors
 
-A robot with `[[sensor]]` tables in its config (beam breaks, distance sensors and color sensors; see
-[sensors.md](sensors.md)) has a **sensor** check for them. It needs no robot code and no channel: the Test tab reads
+A robot with `[[sensor]]` tables in its config (beam breaks, distance sensors, color sensors and cameras; see
+[sensors.md](sensors.md)) has a **sensor** check for them, and a camera on a field with AprilTags has a **camera**
+check too. It needs no robot code and no channel: the Test tab reads
 the sensor itself.
 
 - **sensor** *mouth* **is on** (or **is off**), for a beam break or a distance sensor. A beam break is on while a piece
@@ -477,23 +479,33 @@ the sensor itself.
   or one of the named colors (red, blue, yellow, orange, green, purple, white, gray). A color sensor sees a piece
   within its `max_range` (10 cm at most), and **is seeing red** is true while the piece it sees is nearest red of those
   colors. **isn't seeing red** is true with nothing in front, or a piece of another color.
+- **camera** *front_cam* **sees** *tag 7* (or **any tag**), for a camera on a field whose range file gives
+  `[range] apriltags`. It is true while the camera sees that tag: in its view, close enough, not too edge-on and with
+  nothing in the way ([sensors.md](sensors.md#a-camera) says exactly when). The tag picker lists the field's tags by
+  ID. A **sensor** check on a camera is on while it sees any tag.
 - **Wait for it.** **wait until sensor bin is on**, then **stop** the intake's roller, is what robot code does with a
   beam break. `examples/blocks/beam` does just that.
 - **A failed check says what the sensor read:** `expected bin on, but it was off (clear)`, `expected range on, but it
   read 78.7 in (it is on closer than 39.4 in)`, `expected eye to see red, but it saw a blue piece`, or `expected eye to
-  see a piece, but it saw no piece`.
+  see a piece, but it saw no piece`. A camera's says what it saw: `expected front_cam to see tag 7, but it saw tags 3,
+  4`, or `expected front_cam to see a tag, but it saw no tags`.
 - **Problems** before a run: a robot with no sensors (`this robot has no sensors; add a [[sensor]] to its config`), a
   name the robot doesn't have (`hopper isn't a sensor; the robot's sensors: bin, eye`), or a color on a sensor that
-  can't see one (`bin is a beam break, which can't see colors; only a color sensor can see red`).
+  can't see one (`bin is a beam break, which can't see colors; only a color sensor can see red`). A camera check has
+  its own: a robot with no camera, a sensor that isn't a camera, a field with no AprilTags (`this field has no
+  AprilTags; a range file gives them with [range] apriltags`), or a tag the field doesn't have (`this field has no tag
+  99; its tags: 1, 2, ...`).
 
 **The chart** gets `sensor.<name>` for each sensor, drawn at first (unless the test's `chart` line names others): 0
 or 1 for a beam break (1 while broken), inches for a distance sensor (its `max_range` with nothing in range), and for
 a color sensor the number of the color it sees, with a gap while it sees none. The chart's key says which number is
-which color: 0 red, 1 blue, 2 yellow, 3 orange, 4 green, 5 purple, 6 white, 7 gray.
+which color: 0 red, 1 blue, 2 yellow, 3 orange, 4 green, 5 purple, 6 white, 7 gray. A camera's is how many tags it
+sees.
 
 **The replay** draws each sensor as a thin line: a beam break from end to end, a distance or color sensor from where
-it looks out to its `max_range`. The line is lit while the sensor is on. The Drive tab's live view draws the same
-lines, never lit.
+it looks out to its `max_range`. The line is lit while the sensor is on. A camera is drawn as its view cone (four
+lines out as far as it sees the field's tags: its `max_range`, scaled by the tags' size, lit while it sees a tag), with a green line from the camera to each tag it sees at the
+moment shown. The Drive tab's live view draws the same lines and cones, never lit.
 
 **A blink too short to see.** The chart and the replay take each sensor 50 times a second (every 20 ms), but a wait
 or a check reads it every physics step (1 ms at the default step). So a beam broken for less than 20 ms, by a fast
@@ -505,6 +517,7 @@ In the test file:
 |---|---|
 | `{ sensor = { sensor = "bin", is = "on" } }` | `sensor`: one of the robot's `[[sensor]]` names. `is`: `"on"` or `"off"`. |
 | `{ sensor = { sensor = "eye", is = "on", sees = "red" } }` | `sees`, a color sensor only: `"red"`, `"blue"`, `"yellow"`, `"orange"`, `"green"`, `"purple"`, `"white"` or `"gray"`. Left out, any piece. `is = "off"` with `sees` is "isn't seeing" that color. |
+| `{ sees_tag = { camera = "front_cam", tag = 7 } }` | `camera`: one of the robot's camera `[[sensor]]`s. `tag`: a tag's ID (a whole number) in the field's layout. Left out, any tag. |
 
 ## Moving field elements
 
@@ -857,7 +870,7 @@ absolute path. **`test_spread`** runs the floor spread. The agent writes the `.t
 
 ## The examples
 
-Ten worked examples are in `examples/blocks/`. Each has a README with the story, the blocks and how to change them.
+Eleven worked examples are in `examples/blocks/`. Each has a README with the story, the blocks and how to change them.
 
 - **`examples/blocks/intake`**, a roller and bin that take a ball off the carpet. Run it and it finishes at 3.3 s
   with the ball in the bin. The README has a sweep of the roller's voltage.
@@ -900,6 +913,9 @@ Ten worked examples are in `examples/blocks/`. Each has a README with the story,
   the blue SUBWOOFER with one NOTE. It tilts the channel to 58°, spins both wheels at 3.05 V (about 21.7 rps, a
   shot `launcher aim` finds there with more room than the table's lowest-arc row) and feeds the NOTE, which scores in
   `speaker_blue`. The README shows the aim table, how much room the shot has and the AMP shot.
+- **`examples/blocks/camera`**, the speaker example's robot with a camera on its chassis, 0.90 m up, on the built-in
+  `2024` field's AprilTags. From against the blue SUBWOOFER it checks the camera sees tags 7 and 8, the blue SPEAKER's.
+  The README says why the camera is mounted high: at 0.25 m the SUBWOOFER hides both tags.
 - **`examples/blocks/partner`**, a stand-in robot pushing a partner robot set in Setup. It drives into it at 6 V for
   2 s and checks the partner moved at least 60 in: a braked partner moves 63 in, a coasting one 112 in. The README
   tries other voltages and a partner turned sideways, which hardly moves.

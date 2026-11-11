@@ -81,6 +81,7 @@ from ..teamfolders import TeamFolderError, expand
 
 if TYPE_CHECKING:
     from .elements import ClimbRule, Element
+    from .apriltags import AprilTagLayout
     from .game import Game
     from .pieces import PieceKind
     from .station import Station
@@ -285,6 +286,7 @@ class Range:
     field_length: float = FIELD_LENGTH  # [range] field: m, the alliance walls' inner faces
     field_width: float = FIELD_WIDTH    # m, the guardrails' inner faces
     zones: tuple = ()                   # [[zone]]: floor areas marked with tape (testrange/zones.py)
+    apriltags: AprilTagLayout | None = None     # [range] apriltags: the field's AprilTags (testrange/apriltags.py)
     game: Game | None = None            # [game]: the match's phases, points and rules (testrange/game.py)
     spread_warnings: tuple[str, ...] = ()   # those of warnings that are the stations' spreads' (redone by overrides)
     warnings: tuple[str, ...] = ()      # what is accepted but likely a mistake (checks.Said: its words when shown)
@@ -382,7 +384,7 @@ class _Reader:
 
 _TOP = ("range", "goal", "floor_balls", "start", "carpet", "obstacle", "element", "climb", "station", "piece",
         "zone", "game")
-_RANGE = ("name", "ball", "disc", "aero", "piece", "color", "field")
+_RANGE = ("name", "ball", "disc", "aero", "piece", "color", "field", "apriltags", "apriltag_size_in")
 _FIELD = ("length", "width")
 _GOAL = ("name", "pos", "heading_deg", "rim_height", "tilt_deg", "opening", "funnel", "body", "plate", "slot",
          "kind")
@@ -819,21 +821,57 @@ def _outside_warnings(goals, size: tuple[float, float]) -> tuple[str, ...]:
     return tuple(out)
 
 
+def solid_boxes(rng: Range, meshes: bool = True) -> list[tuple[str, np.ndarray, np.ndarray, np.ndarray]]:
+    """The range's solids as boxes, (name, center, rotation (columns: the box's axes), half sizes) in the field: each
+    element's (a mesh element's by its parts' bounding boxes, left out when not `meshes`; a platform's also as it
+    tilts), each obstacle, and each goal's walls, funnel, rim and plates, as build.py builds them."""
+    from .mesh import Mesh
+    from .station import _element_boxes
+
+    boxes = [(e.name, *b) for e in rng.elements if meshes or not isinstance(e, Mesh) for b in _element_boxes(e)]
+    boxes += [(o.name, np.array(o.pos, float), o.rotation(), np.array(o.size) / 2.0) for o in rng.obstacles]
+    from .build import _plates      # build.py imports this module
+    for g in rng.goals:             # a goal's walls, funnel, rim and plates, as built
+        rot = g.rotation()
+        boxes += [(f"{g.name}.{name}", g.to_world(center), rot @ local, np.array(half, float))
+                  for name, center, local, half, _ in _plates(g)]
+    return boxes
+
+
+def mesh_hulls(rng: Range) -> list:
+    """Each mesh element's convex parts in the field, as apriltags.Hulls: a tag is tested against their own faces."""
+    from .apriltags import Hulls
+    from .mesh import Mesh, placed
+
+    return [Hulls(e.name, [(placed(v, e.pos, e.rpy_deg), f) for v, f in e.parts])
+            for e in rng.elements if isinstance(e, Mesh)]
+
+
+PERIMETER_WALLS = ("wall_blue", "wall_red", "wall_right", "wall_left")    # parts/field.py's names
+
+
+def perimeter_boxes(size: tuple[float, float]) -> list[tuple[str, np.ndarray, np.ndarray, np.ndarray]]:
+    """The four perimeter walls for a field of `size` (length, width), as parts/field.py builds them: (name, center,
+    rotation, half sizes). Each is 0.1 m thick and reaches past the corners by its own thickness."""
+    hx, hy = size[0] / 2.0, size[1] / 2.0
+    t = 0.05    # parts/field.py: half the walls' thickness
+    eye = np.eye(3)
+    walls = (("wall_blue", [-t, hy, 0.25], [t, hy + 2 * t, 0.25]),
+             ("wall_red", [size[0] + t, hy, 0.25], [t, hy + 2 * t, 0.25]),
+             ("wall_right", [hx, -t, 0.25], [hx + 2 * t, t, 0.25]),
+             ("wall_left", [hx, size[1] + t, 0.25], [hx + 2 * t, t, 0.25]))
+    return [(name, np.array(pos, float), eye, np.array(half, float)) for name, pos, half in walls]
+
+
 def _unsupported(rng: Range, names: list[str]) -> tuple[str, ...]:
     """A warning for each staged floor piece (height above 0) with no element's, obstacle's or goal's top (a goal
     body's wall, its funnel, rim or plates, as build.py builds them) under its center within STAGED_TOL: it would
     fall."""
     from ..checks import worded
-    from .station import _element_boxes
 
     if not len(rng.floor_heights) or not rng.floor_heights.any():
         return ()
-    boxes = [b for e in rng.elements for b in _element_boxes(e)]
-    boxes += [(np.array(o.pos, float), o.rotation(), np.array(o.size) / 2.0) for o in rng.obstacles]
-    from .build import _plates      # build.py imports this module
-    for g in rng.goals:             # a goal's walls, funnel, rim and plates, as built
-        rot = g.rotation()
-        boxes += [(g.to_world(center), rot @ local, np.array(half, float)) for _, center, local, half, _ in _plates(g)]
+    boxes = [b[1:] for b in solid_boxes(rng)]
     out = []
     for k, ((x, y), h) in enumerate(zip(rng.floor_balls, rng.floor_heights)):
         if h <= 0.0:
@@ -894,7 +932,7 @@ def parse_range(raw: dict, path: Path) -> Range:
     from .elements import check_clear, parse_climb, parse_elements  # elements.py imports this module
     from .station import check_release_clear, parse_stations
 
-    elements = parse_elements(path, raw.get("element", []))
+    elements = parse_elements(path, raw.get("element", []), size)
     climb, elements = parse_climb(path, raw.get("climb"), elements)
     floor_balls, floor_kinds, floor_turns, reaches, names, heights = _floor_balls(path, raw.get("floor_balls", []),
                                                                                  kinds, default, size)
@@ -918,11 +956,19 @@ def parse_range(raw: dict, path: Path) -> Range:
                   game=game,
                   field_length=size[0],
                   field_width=size[1],
-                  warnings=tuple(w for k in kinds.values() for w in k.warnings) + _outside_warnings(goals, size)
+                  warnings=tuple(w for k in kinds.values() for w in k.warnings)
+                           + tuple(w for e in elements for w in getattr(e, "warnings", ()))
+                           + _outside_warnings(goals, size)
                            + tuple(goal_warnings))
     staged = _unsupported(built, names)
     if staged:
         built = replace(built, warnings=built.warnings + staged)
+    if rng.has("apriltags") or rng.has("apriltag_size_in"):
+        from .apriltags import parse_apriltags
+        layout, tag_warnings = parse_apriltags(rng, path.parent, size,
+                                               solid_boxes(built, meshes=False) + perimeter_boxes(size),
+                                               PERIMETER_WALLS, mesh_hulls(built))
+        built = replace(built, apriltags=layout, warnings=built.warnings + tag_warnings)
     spread = check_release_clear(path, built)
     return replace(built, warnings=built.warnings + spread, spread_warnings=spread) if spread else built
 

@@ -320,7 +320,7 @@ class World:
         """Read the sensors again after a poke moved the robot or a piece (mj_forward has run): a reading is otherwise
         taken only after a physics step, so it would describe the pose before the poke until the next step."""
         if getattr(self, "sensors", None) is not None:
-            self.sensors.update(self.data)
+            self.sensors.update(self.data, force=True)     # a camera too, between its frames
 
     def set_robot_force(self, fx: float, fy: float) -> None:
         """A horizontal force (N, world frame) on the robot body, applied until changed."""

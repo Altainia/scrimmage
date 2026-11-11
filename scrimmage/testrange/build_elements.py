@@ -44,6 +44,10 @@ A rod is a welded body `element.<name>` holding one geom, `element.<name>.rod`: 
 rounded ends reaching the base and tip) or, for a square section, a box, its axis from base to tip (rod_parts). It is
 structure, not ground.
 
+A mesh element (testrange/mesh.py) is a welded body `element.<name>` at its `pos`, turned by `rpy_deg`, with one mesh
+asset and geom `element.<name>.<k>` per convex part of the CAD shape: in ELEMENT_GROUP with `ground`, else
+NON_GROUND_GROUP, with the element's friction. Static, so it is ground or structure and never moves.
+
 A switch is body `element.<name>` on one hinge about its local y, `element.<name>.tilt` (positive when its +x end
 goes down), `hinge_height` up, and its bar, `element.<name>.bar`, `bar_drop` below the hinge. It reuses a
 platform's stops (+-`stop_deg`, PLATFORM_STOP_TC, critically damped) and its file's damping. Its CoM is `com_drop`
@@ -82,7 +86,7 @@ import numpy as np
 from ..parts.field import ELEMENT_GROUP, FIELD_BITS
 from .build import FUNNEL_RGBA, PLATE_FRICTION, RangeLayout, _quat, _rpy
 from .elements import (IN, POST, Bar, Box, Bump, Element, Hinged, Platform, Ramp, Rod, Sliding, Switch, hinge_axis,
-                       panel_center, panel_inertia, panel_size)
+                       Mesh, panel_center, panel_inertia, panel_size)
 from .spec import _rot_z
 from .station import CHUTE_PLATE, CHUTE_WALL_BALLS, Station
 
@@ -390,8 +394,24 @@ def _moving(spec: mujoco.MjSpec, e: Hinged | Sliding, pos, quat) -> None:
                   **shape, **FIELD_BITS)
 
 
+def _mesh(spec: mujoco.MjSpec, e: Mesh) -> None:
+    """Body `element.<name>`, welded at `pos` and turned by `rpy_deg`, with a mesh asset and a geom `element.<name>.<k>`
+    for each convex part."""
+    from .mesh import mesh_rotation
+    body = spec.worldbody.add_body(name=f"element.{e.name}", pos=list(e.pos), quat=_quat(mesh_rotation(e)))
+    for k, (v, _) in enumerate(e.parts):
+        name = f"element.{e.name}.{k}"
+        spec.add_mesh(name=name, uservert=[float(c) for c in np.asarray(v, dtype=float).ravel()])
+        body.add_geom(name=name, type=mujoco.mjtGeom.mjGEOM_MESH, meshname=name, rgba=list(STRUCTURE_RGBA),
+                      friction=[e.friction, 0.005, 0.0001], group=ELEMENT_GROUP if e.ground else NON_GROUND_GROUP,
+                      **FIELD_BITS)
+
+
 def add_element(spec: mujoco.MjSpec, e: Element) -> None:
     """The element's bodies and geoms into `spec` (see the module docstring)."""
+    if isinstance(e, Mesh):
+        _mesh(spec, e)
+        return
     pos = np.array([e.center[0], e.center[1], 0.0])
     quat = _quat(_rpy((0.0, 0.0, e.yaw_deg)))
     if isinstance(e, Platform):

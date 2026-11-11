@@ -66,7 +66,8 @@ DO_KINDS = ("spin", "move", "drive", "stop", "wait", "wait_until", "repeat", "ex
             "start_feeding", "stop_feeding", "feed_one", "turn", "aim", "set_cylinder")
 COND_KINDS = ("joint", "touch", "tilt", "piece_in", "hanging_from", "level", "in_hopper", "station_empty",
               "made_it_in", "held", "rests_on", "seated", "scored", "aimed", "cylinder", "pressure",
-              "element", "clears", "partner_lifted", "partner_moved", "sensor", "in_zone", "match", "points")
+              "element", "clears", "partner_lifted", "partner_moved", "sensor", "sees_tag", "in_zone", "match",
+              "points")
 MATCH_PHASES = ("auto", "pause", "teleop")
 POINTS_PHASES = ("auto", "teleop", "endgame", "total")
 ZONE_IS = ("in", "out")
@@ -306,6 +307,13 @@ def _cond(v, where: str) -> Cond:
             raise _fail(where, i18n.t("sees must be one of the colors {names}, not {sees}",
                                       names=', '.join(NAMED_COLORS), sees=repr(sees)))
         return Cond(kind, {"sensor": _text(t.get("sensor"), where, "sensor"), "is": t["is"], "sees": sees})
+    if kind == "sees_tag":      # a camera [[sensor]] sees this AprilTag (any tag, with no tag)
+        _keys(t, ("camera", "tag"), where)
+        tag = t.get("tag")
+        if tag is not None and (isinstance(tag, bool) or not isinstance(tag, int) or tag < 0):
+            raise _fail(where, i18n.t("tag must be a tag's ID, a whole number of 0 or more, not {value}",
+                                      value=repr(tag)))
+        return Cond(kind, {"camera": _text(t.get("camera"), where, "camera"), "tag": tag})
     if kind == "partner_lifted":
         _keys(t, ("at_least_in", "level_within_deg"), where)
         a = {"at_least_in": _num(t.get("at_least_in"), where, "at_least_in")}
@@ -660,7 +668,7 @@ def load(path) -> Program:
 def _cond_json(c: Cond):
     if c.kind in ("hanging_from", "level", "station_empty"):
         return {c.kind: next(iter(c.args.values()))}
-    # partner_lifted's level and sensor's sees are optional
+    # partner_lifted's level, sensor's sees and sees_tag's tag are optional
     return {c.kind: {k: v for k, v in c.args.items() if v is not None}}
 
 

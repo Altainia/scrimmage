@@ -89,8 +89,10 @@ A robot with a partner robot (the config's `[partner]`, or Setup's partner: setu
 
 A robot with [[sensor]]s has each one's `sensor.<name>` signal: 0 or 1 for a beam break (1 while broken), the
 distance in inches for a distance sensor (its max_range with nothing in range), and for a color sensor the index in
-NAMED_COLORS of the color it sees (NaN while it sees none). The `sensor` condition reads the same readings, and the
-replay lights each sensor's line from its signal.
+NAMED_COLORS of the color it sees (NaN while it sees none), and for a camera how many tags it sees. The `sensor`
+condition reads the same readings, and the replay lights each sensor's line from its signal. A camera's tags are kept
+in the run's `cameras`: each camera's [t, [IDs it sees]], from the start and then each time the set changes, which
+the replay draws as lines from the camera to those tags.
 
 Clearance (clearance.py): a test that names a field element in a `clears` condition or as `clearance.<element>` in
 its chart measures the robot's clearance to it after every step (Watch.closest), and only then. The chart's
@@ -211,6 +213,8 @@ class RunResult:
     match: dict | None = None
     points: dict | None = None
     rules: list | None = None
+    # each camera [[sensor]]'s tags: [t, [IDs]] at the start and whenever the set it sees changes; {} without cameras
+    cameras: dict[str, list[list]] = field(default_factory=dict)
 
     @property
     def passed(self) -> bool:
@@ -388,8 +392,15 @@ class TestRun(_FailureWords):
                 self.rule_watch = RuleWatch(w, watch, rng.game.rules)
         next_signal = next_motion = t
 
+        cams = [s.name for s in w.sensors.specs if s.kind == "camera"] if w.sensors is not None else []
+        result.cameras = {c: [] for c in cams}
+
         def sample(t: float) -> None:
             nonlocal next_signal, next_motion
+            for c in cams:          # after every step: only a change is kept
+                seen, kept = list(w.sensors.reading(c).tags), result.cameras[c]
+                if not kept or kept[-1][1] != seen:
+                    kept.append([t, seen])
             if t >= next_signal - EPS:
                 row = self._row(watch)
                 result.signals["t"].append(t)

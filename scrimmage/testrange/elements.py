@@ -37,6 +37,9 @@ N/m, breakaway N, damping N s/m (the same default). Each takes `mass`, all of it
 on a hinge, N on a slide; or `preload_in_lb`, `preload_lb`) winds the spring up against the stop the rest is on (the
 rest at one end of the range, and a stiffness), so it takes that much push to start the element moving.
 
+A mesh element (testrange/mesh.py) is a static shape from a CAD file (K4): `file`, `select`, `units`, `scale`, `pos`,
+`rpy_deg` and `ground`. It has no `center` or `yaw_deg`; its footprint is its bounding box in the field.
+
 `[climb]` picks a scoring rule (CLIMB_RULES) and lists the levels lowest first, each with its points:
 `levels = { LOW = 4, MID = 6 }`. The "hang" rule also takes `level_bonus` and the `switch` it applies to.
 """
@@ -45,11 +48,14 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 
 import numpy as np
 
 from .. import i18n
+from ..parts.field import FIELD_LENGTH, FIELD_WIDTH
 from ..units import LBF
+from .mesh import Mesh, parse_mesh
 from .spec import RangeError, _Reader
 
 IN = 0.0254  # m per inch
@@ -330,7 +336,7 @@ class ClimbRule:
     switch: str | None = None  # "hang": the switch element
 
 
-Element = Bump | Ramp | Platform | Bar | Box | Switch | Rod | Hinged | Sliding
+Element = Bump | Ramp | Platform | Bar | Box | Switch | Rod | Hinged | Sliding | Mesh
 
 _COMMON = ("name", "kind", "center", "center_in", "yaw_deg", "friction")
 _LENGTHS = {
@@ -343,6 +349,7 @@ _LENGTHS = {
     "rod": ("diameter",),
     "hinged": ("base_height", "diameter", "thickness"),
     "sliding": ("base_height", "rest"),
+    "mesh": (),
 }
 _OTHER = {
     "bump": ("ramp_deg",),
@@ -356,12 +363,13 @@ _OTHER = {
                "breakaway", "preload", "preload_in_lb", "mass", "ground"),
     "sliding": ("size", "size_in", "axis", "range", "range_in", "stiffness", "damping", "breakaway", "preload",
                 "preload_lb", "mass", "ground"),
+    "mesh": ("file", "select", "units", "scale", "pos", "rpy_deg", "ground"),
 }
 _ALL = tuple(dict.fromkeys(
     _COMMON + tuple(k + s for v in _LENGTHS.values() for k in v for s in ("", "_in"))
     + tuple(k for v in _OTHER.values() for k in v)))
 _CLASSES = {"bump": Bump, "ramp": Ramp, "platform": Platform, "bar": Bar, "box": Box, "switch": Switch, "rod": Rod,
-            "hinged": Hinged, "sliding": Sliding}
+            "hinged": Hinged, "sliding": Sliding, "mesh": Mesh}
 # Length keys that may be 0 or left out, with their defaults.
 _LENGTH_DEFAULTS = {"crest": DEFAULT_CREST, "lip": DEFAULT_LIP, "base_height": 0.0}
 
@@ -575,7 +583,7 @@ def _rod(r: _Reader, name: str) -> Rod:
     return e
 
 
-def _element(path, table, i: int) -> Element:
+def _element(path, table, i: int, base_dir: Path, size: tuple[float, float]) -> Element:
     where = f"[[element]] #{i + 1}"
     name = _Reader(path, where, table, _ALL).text("name")
     where = f"element '{name}'"
@@ -584,11 +592,13 @@ def _element(path, table, i: int) -> Element:
         raise RangeError(i18n.t("{path}: {where} has unknown kind '{kind}'; kinds: {kinds}",
                                 path=path, where=where, kind=kind, kinds=', '.join(_CLASSES)))
     valid = _COMMON + tuple(k + s for k in _LENGTHS[kind] for s in ("", "_in")) + _OTHER[kind]
-    if kind == "rod":    # its ends place it
+    if kind in ("rod", "mesh"):    # a rod's ends place it; a mesh's `pos` and `rpy_deg` do
         valid = tuple(k for k in valid if k not in ("center", "center_in", "yaw_deg"))
     r = _Reader(path, where, table, valid)
     if kind == "rod":
         return _rod(r, name)
+    if kind == "mesh":
+        return parse_mesh(r, name, base_dir, size)
     kw: dict = dict(name=name, center=_center(r), yaw_deg=r.num("yaw_deg", 0.0),
                     friction=r.num("friction", DEFAULT_FRICTION, positive=True))
     if kind in ("hinged", "sliding"):
@@ -625,14 +635,15 @@ def _check_bump(r: _Reader, e: Bump) -> None:
                            depth=f"{e.depth:.4g}", profile=f"{profile:.4g}"))
 
 
-def parse_elements(path, tables) -> tuple[Element, ...]:
-    """Read the `[[element]]` tables; the names must be unique."""
+def parse_elements(path, tables, size: tuple[float, float] = (FIELD_LENGTH, FIELD_WIDTH)) -> tuple[Element, ...]:
+    """Read the `[[element]]` tables; the names must be unique. A mesh element's file is relative to the range file;
+    `size` is the field (a mesh larger than it is refused)."""
     if not isinstance(tables, list):
         raise RangeError(i18n.t("{path}: element must be an array of tables ({element_table})", path=path,
                                 element_table="[[element]]"))
     out: list[Element] = []
     for i, t in enumerate(tables):
-        e = _element(path, t, i)
+        e = _element(path, t, i, Path(path).parent, size)
         if any(e.name == o.name for o in out):
             raise RangeError(i18n.t("{path}: two elements named '{name}'; element names must be unique",
                                     path=path, name=e.name))
@@ -705,6 +716,8 @@ def _extent(e: Element) -> tuple[float, float]:
         return sx, sy
     if isinstance(e, Rod):   # its plan, with the rod's thickness added at both ends (a box of the rod's own width)
         return math.hypot(e.tip[0] - e.base[0], e.tip[1] - e.base[1]) + e.diameter, e.diameter
+    if isinstance(e, Mesh):     # its bounding box in the field (yaw_deg is 0: the box is axis-aligned)
+        return float(e.hi[0] - e.lo[0]), float(e.hi[1] - e.lo[1])
     if isinstance(e, Ramp):
         run = e.height / math.tan(math.radians(e.ramp_deg))
         return e.deck + run * (2 if e.two_sided else 1), e.width
@@ -741,6 +754,8 @@ def _on_floor(e: Element, start: bool) -> list[np.ndarray]:
     on a thin ground box (a floor protector, START_STEP), a ball may not."""
     if isinstance(e, Switch):
         return []
+    if isinstance(e, Mesh):     # raised off the carpet it can be driven or rested under
+        return [] if e.lo[2] > START_STEP else [footprint(e)]
     if isinstance(e, Rod):   # a ball only rests against a rod that reaches the carpet (a peg); a start also may not
         low = min(e.base[2], e.tip[2]) - e.diameter / 2.0       # lie under any part of a rod lower than the robot
         return [footprint(e)] if low <= (ROD_START_CLEARANCE if start else 0.0) + 1e-9 else []
@@ -768,6 +783,13 @@ def check_clear(path, elements, starts: dict, floor_balls: np.ndarray, reaches, 
         outline = _rect((x, y), heading, ROBOT_OUTLINE, ROBOT_OUTLINE)
         for e in elements:
             if any(not _separated(outline, f) for f in _on_floor(e, start=True)):
+                if isinstance(e, Mesh):
+                    raise RangeError(i18n.t(
+                        "{path}: start '{start}' at ({x}, {y}) overlaps mesh element '{name}', whose footprint is "
+                        "its whole bounding box ({box}); move the start clear of it, or split the element so the "
+                        "pieces that stand on the carpet are elements of their own (a {robot_outline} m square robot "
+                        "outline is assumed)", path=path, start=sname, x=f"{x:.4g}", y=f"{y:.4g}", name=e.name,
+                        box=_plan_box(e), robot_outline=ROBOT_OUTLINE))
                 raise RangeError(
                     i18n.t("{path}: start '{start}' at ({x}, {y}) overlaps element '{name}'; move the start "
                            "clear of it (a {robot_outline} m square robot outline is assumed)", path=path,
@@ -779,11 +801,23 @@ def check_clear(path, elements, starts: dict, floor_balls: np.ndarray, reaches, 
                 if _gap(f, (x, y)) < reaches[k]:
                     what = names[k] if names is not None else i18n.t("ball {number}", number=k)
                     piece = pieces[k] if pieces is not None else i18n.t("ball")
+                    if isinstance(e, Mesh):
+                        raise RangeError(i18n.t(
+                            "{path}: floor_balls: {what} at ({x}, {y}) lies on mesh element '{name}', whose "
+                            "footprint is its whole bounding box ({box}); move the {piece} off it, or split the "
+                            "element so the pieces that stand on the carpet are elements of their own", path=path,
+                            what=what, x=f"{x:.4g}", y=f"{y:.4g}", name=e.name, box=_plan_box(e), piece=piece))
                     raise RangeError(
                         i18n.t("{path}: floor_balls: {what} at ({x}, {y}) lies on element '{name}'; move the "
                                "{piece} off it", path=path, what=what, x=f"{x:.4g}", y=f"{y:.4g}", name=e.name,
                                piece=piece)
                     )
+
+
+def _plan_box(e: Mesh) -> str:
+    """A mesh element's footprint as a student reads it: x and y from and to, in m."""
+    return i18n.t("x {x0} to {x1} m, y {y0} to {y1} m", x0=f"{e.lo[0]:.3g}", x1=f"{e.hi[0]:.3g}",
+                  y0=f"{e.lo[1]:.3g}", y1=f"{e.hi[1]:.3g}")
 
 
 def _gap(rect: np.ndarray, p) -> float:
