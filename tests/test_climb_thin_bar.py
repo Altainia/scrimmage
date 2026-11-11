@@ -1,60 +1,76 @@
-"""K5 D2: a thin rigid bar and the stock climber (tests/data/thin_bar: the 2024 blue STAGE's 1/2 in CHAIN bars, the
-spike's robot and script). The stock climber can't climb it, and the fix that lets it would change two 2022 climb
-tests, so a bar under 1 in is warned about instead (ruling R16).
+"""K5 D2: the stock climber climbs a thin rigid bar (tests/data/thin_bar: the 2024 blue STAGE's 1/2 in CHAIN bars, the
+spike's robot and script), and a rigid 1.66 in one, and hangs from it without bouncing.
 
-What happens (contact trace at 1 ms, the bar's center in the tip body's frame, x toward the tip, z up):
-- The hook lands on the bar at 0.78 m/s (3.082 s). The load is on crown1 and crown2 alone. crown2's normal is
-  (-0.38, -0.92) throughout; crown1's turns from (+0.41, -0.91) to (+1.00, 0.00) as the bar sinks past its end.
-- The bar's center goes up into the crown, 4 mm toward the tip from its middle (x 0.0634-0.0641, crown center
-  0.0595), not sideways and not out through the mouth. z rises from 0.4213 at first touch to 0.4339, past the seat
-  (0.4227) at 0.6 mm per ms: 20 ms after touching, the tip still closes at 0.39 m/s.
-- The penetration passes HOOK_RADIUS (5 mm) at 3.090 s and the bar's radius (6.35 mm) at 3.092 s. At 3.102 s it
-  reaches 11.2 mm, the bar's radius plus the hook's (11.35 mm), so the bar's axis crosses crown2's. crown2's normal
-  flips to (+0.38, +0.92), and its force drops from 1313 N to 0 in one step. That is the one jump, at the capsule's
-  axis, not at a crown vertex. The bar leaves through the top of the hook (z 0.44 to 0.60), and the robot pitches
-  about -3.6 deg and drops back to the carpet: "not hanging".
-- On the same robot and script, a 1.66 in rigid bar at the same height sinks 11.3 mm too (crown0 to crown3, up to
-  2.3 kN), short of its 26.1 mm. It holds, but the robot then bounces on its hooks for good: 15 mm, about 8 Hz, hanging
-  a third of the time, and the run ends "not hanging" too. The 2022 MID rung sinks 7.9 mm in examples/climb/high.toml.
-  With the 2022 rungs' 160 kN/m spring, both reach ONSTAGE: the 1/2 in bar hangs steadily, and the 1.66 in one
-  hangs 99 % of the time.
+Before the fix (the trace at 1 ms, the bar's center in the tip body's frame, x toward the tip, z up):
+- The hook landed on the bar at 0.78 m/s (3.082 s), on crown1 and crown2 alone. crown2's normal stayed
+  (-0.38, -0.92); crown1's turned from (+0.41, -0.91) to (+1.00, 0.00).
+- The bar's center went up into the crown, 4 mm toward the tip from its middle (x 0.0634-0.0641; crown center
+  0.0595), not sideways and not out through the mouth. z rose from 0.4213 to 0.4339, past the seat (0.4227), at
+  0.6 mm per ms: 20 ms after touching, the tip still closed at 0.39 m/s.
+- The penetration passed HOOK_RADIUS (5 mm) at 3.090 s and the bar's radius (6.35 mm) at 3.092 s. At 3.102 s it reached
+  11.2 mm, the bar's radius plus the hook's (11.35 mm). There the bar's axis crossed crown2's, crown2's normal flipped
+  and its force fell from 1313 N to 0 in one step: the one jump, at the capsule's axis, not at a crown vertex. The bar
+  left through the top of the hook, and the robot dropped back to the carpet: "not hanging".
+- A rigid 1.66 in bar sank 11.3 mm too, short of its 26.1 mm, and held. But the robot bounced on its hooks for good
+  (15 mm, about 8 Hz, hanging a third of the time) and ended "not hanging" as well. The 2022 rungs' 160 kN/m spring
+  hid that.
 
-The cause is the telescope, not the hook's shape. The extend motor's back-EMF damping (57 kN s/m for two Krakens at
-1600 rad/m) is MuJoCo implicit dof damping on stages of 0.6 and 0.8 kg (b dt / m = 61 and 26 at 1 ms), with no
-armature. The constraint solver sees that damping as an explicit force (bindings._coupled_dofs), so it counts on
-braking that the step doesn't deliver, and the hook's contact pushes too little. When the robot lands, the sink
-outgrows a thin bar. When it hangs, a rigid bar gives a self-excited bounce. The bounce goes on with the position
-loop's voltage held fixed, stops when the damping is cut to a tenth after hanging, and stops with 2 kg or more of
-armature on each stage.
+The cause was the telescope, not the hook's shape. The extend motor's back-EMF damping (57 kN s/m for two Krakens at
+1600 rad/m) was implicit dof damping on stages of 0.6 and 0.8 kg (b dt / m = 61 and 26 at 1 ms), with no armature.
+MuJoCo's constraint solver sees that damping as an explicit force (bindings._coupled_dofs), so the hook's contact
+pushed too little. The bounce went on with the position loop's voltage held fixed, and stopped with the damping cut
+to a tenth or with 2 kg of armature a stage.
 
-The fix would be an armature of b dt on the telescope (the motors' rotors seen through the rope). It climbs this
-bar and a rigid 1.66 in one, but it ends the bounce that tests/test_climb_run.py::
-test_hooks_bouncing_while_let_down_is_no_failure needs (gaps >= 5 becomes 0), and it moves the climb's step times
-off examples/climb/high_timed.toml (tests/test_climb_scenario.py::test_the_timed_climb_comes_from_the_climb_run).
-Both tests fail at every armature tried, from 2 to 29 kg a stage, and 1 kg doesn't climb this bar. A backing
-behind crown1 and crown2 doesn't do it either: it stops the bar going through, but the bounce stays. Stiffer hook
-contacts (HOOK_SOLREF 0.005 or 0.002 s) change every 2022 hook contact, and 0.002 s still ends "not hanging" on the
-chatter.
+The fix: the telescope carries its motors' rotor inertia, count x ROTOR_MOI x (motor rad per m)^2 (climber.py,
+telescope_armature): 512 kg on the stock climber, 256 kg a stage. b dt / M is then 0.11.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from scrimmage.testrange import check
-from scrimmage.testrange.elements import THIN_BAR
+import pytest
+
+from scrimmage.climb.run import ClimbRun
+from scrimmage.climb.script import load_script
+from scrimmage.config import build_world, load_config
 
 THIN = Path(__file__).resolve().parent / "data" / "thin_bar"
+HANG_S = 3.0              # s: the last part of the hang that must have no gap
 
 
-def test_a_thin_bar_is_warned_about():
-    rng = check.load(str(THIN / "range.toml"))
-    names = ("chain_blue_center", "chain_blue_left", "chain_blue_right")
-    assert list(rng.warnings) == [
-        f"bar '{n}' is 0.5 in across: a stock climber's hook slips off a bar under 1 in (K5); hang a chain "
-        f"(kind = \"chain\") or make the bar at least 1 in" for n in names]
-    lines = check.summary("thin_bar", rng)
-    assert len(lines) == 4 and all(n in line for n, line in zip(names, lines[1:]))   # `range check` shows them
-    hangar = check.load("2022-hangar")
-    assert hangar.warnings == ()
-    assert min(e.diameter for e in hangar.elements if hasattr(e, "diameter")) >= THIN_BAR
+def climb(folder: Path):
+    """The fixture's climb on `folder`'s robot and range; the result and how many times the robot lost every bar for
+    a moment (climb.hanging 1 to 0) over the last HANG_S."""
+    w = build_world(load_config(folder / "robot.toml"))
+    run = ClimbRun(w, load_script(THIN / "climb.toml"))
+    gaps, prev = [], [False]
+
+    def watch(t, v):
+        hanging = bool(v["climb.hanging"])
+        if prev[0] and not hanging:
+            gaps.append(t)
+        prev[0] = hanging
+    run.on_step = watch
+    r = run.run()
+    return r, len([t for t in gaps if t > r.duration - HANG_S])
+
+
+@pytest.mark.parametrize("diameter_in", [0.5, 1.66])
+def test_the_stock_climber_climbs_a_rigid_bar(diameter_in, tmp_path):
+    """The fixture's 1/2 in bar, and the same bars at 1.66 in (the 2022 rungs' OD, still rigid): both climbed, and
+    the robot hangs with no gap at the end."""
+    folder = THIN
+    if diameter_in != 0.5:
+        folder = tmp_path
+        for f in ("robot.toml", "range.toml"):
+            (tmp_path / f).write_text((THIN / f).read_text())
+        rng = (THIN / "range.toml").read_text()
+        assert rng.count("diameter_in = 0.5 ") == 3
+        (tmp_path / "range.toml").write_text(rng.replace("diameter_in = 0.5 ", f"diameter_in = {diameter_in} "))
+    r, gaps = climb(folder)
+    assert r.status == "reached ONSTAGE", [(row.t, row.event) for row in r.rows if row.event]
+    assert r.reached_goal
+    assert r.peak_hook_load < 4000.0                # research notes 4.4: a sane hook peak, as test_climb_run's
+    assert not any("walked off" in row.event or "fell" in row.event for row in r.rows)
+    assert gaps == 0

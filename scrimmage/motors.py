@@ -78,6 +78,10 @@ MOTORS: dict[str, DCMotor] = {
     "KrakenX60FOC": _m(12, 9.37, 483, 2, 5800),
 }
 # Add your own with: MOTORS["MyMotor"] = _m(volts, stall_Nm, stall_A, free_A, free_rpm)
+# A motor's rotor inertia, the same for every model here: DCMotor has none (WPILib's DCMotor doesn't either). A
+# mechanism's joint carries it as armature, ROTOR_MOI * (motor radians per joint unit)^2 a motor: the stock swerve's
+# steer and drive joints and the climber's telescope.
+ROTOR_MOI = 1.0e-4          # kg m^2: a Kraken-class rotor; matches the hand-tuned armature in the old swerve.xml
 
 
 def get_motor(name: str, count: int = 1) -> DCMotor:

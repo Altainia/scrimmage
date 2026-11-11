@@ -219,11 +219,11 @@ G106 and G107, on `2022-hangar`, starting under MID:
 | | |
 |---|---|
 | status | reached HIGH |
-| MID held | 4.2 s (carpet, under MID, to hanging) |
-| HIGH held | 7.8 s |
-| peak hook load | 1.08 kN (the robot's weight moving onto the high hooks) |
+| MID held | 3.4 s (carpet, under MID, to hanging) |
+| HIGH held | 8.2 s |
+| peak hook load | 1.06 kN (pulling up onto MID) |
 | largest swing on HIGH | 32° (it decays about 2° a cycle on steel hooks) |
-| reach / height | 13.7 in beyond the frame, 65.6 in tall: within G107 and G106 |
+| reach / height | 13.9 in beyond the frame, 65.6 in tall: within G107 and G106 |
 
 The sequence: drive forward so the mid hooks pass MID, reach above it, back over it (the rung passes just under the hooks' tips and stops against the stems and the hook bracket) and pull up; raise the high arm
 beside HIGH, lean it slowly so the hooks' tips lead over the rung, retract to hook it; extend the mid climber, which
@@ -232,14 +232,17 @@ the climb taught (and a script shows): a fast lean swings the robot and runs the
 hand-over the mid climber's hooks catch MID on the back swing unless the high arm's pivot tips them forward, away.
 Two more came from timing the climb for a robot program (below): drive the wheels gently (1.5 V; at 3 V they slip as
 the loop stops them, and the hooks can land beside MID), and keep extending the mid climber 0.2 s after HIGH is held
-(retracting the moment it is, the hooks can catch MID again).
+(retracting the moment it is, the hooks can catch MID again). And one from the telescopes' rotor inertia
+([Estimates](#estimates)): a telescope that carries its motors' rotors starts moving later, so the script seats on HIGH
+for 0.8 s before lifting the mid hooks off MID. Lifted after 0.5 s, they were still low enough to catch MID again on
+the back swing, and the robot hung from both rungs.
 
 **`examples/climb/traversal.toml`** is the stretch: HIGH, then a hand-over to TRAVERSAL (not gated by a test). It
 takes high.toml's 1.5 V wheel drive and "clear of MID" step. As built, **it still does not reach TRAVERSAL: it ends
-"hook walked off" at step 25** (t = about 21.5 s): the robot reaches HIGH (about 7.9 s), the mid climber hooks HIGH
-beside the high hooks (2.42 kN, the run's peak), the high hooks let go of HIGH, swing forward under it and, extended
-at the forward end of a swing, touch TRAVERSAL (step 23, about 20.4 s); but they don't seat and take the robot, so when
-the mid hooks lift off HIGH the robot drops. Timing a catch on a swing of about 30–34° (34° at its largest) (the robot hangs from HIGH, so TRAVERSAL
+"hit a bar" at step 21** (t = 17.1 s): the robot reaches HIGH (8.2 s), the mid climber hooks HIGH beside the high
+hooks, the high hooks let go of HIGH, and as the high arm swings forward under HIGH, the mid climber's tube hits HIGH
+(1.0 kN). Before the telescopes carried their motors' rotor inertia it got further: "hook walked off" at step 25
+(about 21.5 s), with the high hooks touching TRAVERSAL at the forward end of a swing (step 23) but not seating. Timing a catch on a swing of about 30–34° (34° at its largest) (the robot hangs from HIGH, so TRAVERSAL
 moves against the arm as it swings) is the hard part, as it was for teams; damping the swing first, or a robot built
 for the traversal (a taller rotating arm, a reaction arm against the truss), are the next things to try.
 
@@ -267,9 +270,9 @@ to it or the setpoint's `max_voltage`), once a robot loop (5 ms). The scenario h
 then enables **teleop** for 11 s (the climb is an endgame action); the timed file's t = 0 is the first robot loop
 enabled in teleop. The config sets `[telemetry] nt = false`: the fake robot serves no NetworkTables, so the run
 doesn't wait 5 s for it. Checks:
-- `by_time climb.points >= 10 by t = 9` (HIGH is first touched 7.26 s into teleop);
+- `by_time climb.points >= 10 by t = 9` (HIGH is first touched about 7.2 s into teleop);
 - `at_end climb.points >= 10`: still hanging from HIGH, not a moment's touch;
-- `always climb.hook_load max 4000` (it peaks at 1.08 kN).
+- `always climb.hook_load max 4000` (it peaks at 1.07 kN).
 
 **Where the timed file comes from.** tests/climb_timed.py runs `examples/climb/high.toml` with `climb run` and writes
 each step's drives as `[[setpoint]]`s at the time the step started (when the previous step's wait fired), plus a
@@ -297,6 +300,7 @@ hand-over (see [The examples](#the-examples)); high.toml now has margin at both.
 | Rung give | 160 kN/m, damping 250 N s/m | `stiffness`, `damping` in ranges/2022-hangar.toml | Hang a known weight at mid-span and measure the deflection with a dial indicator (truss, U-bolts and pipe together); the research's bending estimate is 80–320 kN/m. |
 | Hook contact softness | solref 0.01 s (a 60 kg hang sinks 0.6–0.7 mm) | `HOOK_SOLREF` | Not a physical property: chosen so a hang sinks under 2 mm. |
 | Latch spring | 0.3 N m/rad, 15° preload | `latch_spring`, `LATCH_PRELOAD_DEG` | Measure the torsion spring's torque at two angles. |
+| Telescope rotor inertia | 512 kg on the stock climber (256 kg a stage): two rotors at 1600 rad/m | `ROTOR_MOI` (1e-4 kg m², scrimmage/motors.py, shared with the stock swerve), `telescope_armature` (climber.py): count × ROTOR_MOI × (motor rad per m)², split equally over the moving stages | An estimate: no published Kraken rotor inertia. It also keeps the hook contacts right: without it a hook sank through a 1/2 in bar, and a hang on a rigid bar bounced (tests/test_climb_thin_bar.py). |
 | Latch inertia and stop | armature 2e-4 kg m², stop solref 4 ms | `LATCH_ARMATURE`, `LATCH_STOP_SOLREF` | The armature stands in for the release gearbox; time the latch shutting on video (the model: 34 ms coast). |
 | Telescope stops | solref 3 ms, damping ratio 2 | `TELESCOPE_STOP_SOLREF` | Not a physical property: stiff enough that 60 kg sags 1.3 mm; overdamped because a critically damped 4 ms stop kept a 12 mm bounce going against the rung's spring (measured). |
 | Hit force | 200 N | `HIT_FORCE` (scrimmage/climb/script.py) | A judgment: about a third of a 60 kg robot's weight. Raise it in `[limits]` for a design that rests a tube on a rung. |
@@ -309,7 +313,7 @@ From the research notes (Chief Delphi threads, team binders and the 2022 manual;
 
 | anchor | value | the model |
 |---|---|---|
-| Mid-tier full climb (elevator + static hooks) | 11 s (1918), 12–16 s; "to HIGH in 8 s" (one team) | the example holds HIGH at 7.8 s from under MID |
+| Mid-tier full climb (elevator + static hooks) | 11 s (1918), 12–16 s; "to HIGH in 8 s" (one team) | the example holds HIGH at 8.2 s from under MID |
 | Elite carpet → TRAVERSAL | 4.8 s (254), 5.1 s (1678) | the example's traversal doesn't reach it |
 | Swing period | 1.6–2.1 s (predicted) | the compound pendulum within 5 % (tests/test_climb_physics.py) |
 | Swing decay | 2.5–6° a cycle (Coulomb, μ 0.42–1.0) | within 1.5× of 4 μ r / d (tests); the example loses about 2° a cycle on steel |

@@ -4,7 +4,7 @@
 # times its steps started in `climb run`. Regenerate it after a change to the climb, the robot or the physics:
 #   .venv/bin/python tests/climb_timed.py configs/climber_robot.toml examples/climb/high.toml examples/climb/high_timed.toml
 #
-# The climb run ended "reached HIGH" at 10.57 s; MID held at 4.20 s, HIGH held at 7.77 s; peak hook load 1077 N.
+# The climb run ended "reached HIGH" at 10.98 s; MID held at 3.38 s, HIGH held at 8.18 s; peak hook load 1061 N.
 
 loop = 0.005          # s: the robot loop (the config's [lockstep] step)
 
@@ -56,75 +56,75 @@ joint = "dt.right_2"
 to = 1.4
 max_voltage = 1.5
 
-# step 2: reach above MID (ended by mid.stage1 at 0.41 +- 0.003 at 2.108 s)
+# step 2: reach above MID (ended by mid.stage1 at 0.41 +- 0.003 at 2.101 s)
 [[setpoint]]
 t = 1.000
 joint = "mid.stage1"
 to = 0.41
 
-# step 3: back the hooks over MID (ended by time 1 s at 3.108 s)
+# step 3: back the hooks over MID (ended by time 1 s at 3.101 s)
 [[setpoint]]
-t = 2.108
+t = 2.101
 joint = "dt.left_2"
 to = 0
 max_voltage = 1.5
 [[setpoint]]
-t = 2.108
+t = 2.101
 joint = "dt.right_2"
 to = 0
 max_voltage = 1.5
 
-# step 4: pull up onto MID (ended by mid.stage1 at 0 +- 0.01 at 4.218 s)
+# step 4: pull up onto MID (ended by mid.stage1 at 0 +- 0.01 at 4.219 s)
 [[setpoint]]
-t = 3.108
+t = 3.101
 joint = "mid.stage1"
 to = 0
 
-# step 6: raise the high climber (ended by high.stage1 at 0.3 +- 0.005 at 6.023 s)
+# step 6: raise the high climber (ended by high.stage1 at 0.3 +- 0.005 at 6.020 s)
 [[setpoint]]
-t = 5.218
+t = 5.219
 joint = "high.pivot"
 to = 0.139626
 [[setpoint]]
-t = 5.218
+t = 5.219
 joint = "high.stage1"
 to = 0.3
 
-# step 7: lean over HIGH (ended by time 1 s at 7.023 s)
+# step 7: lean over HIGH (ended by time 1 s at 7.020 s)
 [[setpoint]]
-t = 6.023
+t = 6.020
 joint = "high.pivot"
 to = 0.261799
 max_voltage = 3
 
-# step 8: hook HIGH (ended by hook contact high at 7.113 s)
+# step 8: hook HIGH (ended by hook contact high at 7.203 s)
 [[setpoint]]
-t = 7.023
+t = 7.020
 joint = "high.stage1"
 to = 0.2
 
-# step 9: seat on HIGH (ended by time 0.5 s at 7.613 s)
+# step 9: seat on HIGH (ended by time 0.8 s at 8.003 s)
 [[setpoint]]
-t = 7.113
+t = 7.203
 joint = "high.stage1"
 to = 0.21
 [[setpoint]]
-t = 7.113
+t = 7.203
 joint = "high.pivot"
 to = 0.261799
 
-# step 10: lift the mid hooks off MID (ended by level HIGH at 7.868 s)
+# step 10: lift the mid hooks off MID (ended by level HIGH at 8.283 s)
 [[setpoint]]
-t = 7.613
+t = 8.003
 joint = "mid.stage1"
 to = 0.16
 
-# step 12: retract mid, stand the high arm up (ended by time 0.5 s at 8.568 s)
+# step 12: retract mid, stand the high arm up (ended by time 0.5 s at 8.983 s)
 [[setpoint]]
-t = 8.068
+t = 8.483
 joint = "mid.stage1"
 to = 0
 [[setpoint]]
-t = 8.068
+t = 8.483
 joint = "high.pivot"
 to = -0.0872665

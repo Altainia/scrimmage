@@ -929,7 +929,7 @@ def parse_range(raw: dict, path: Path) -> Range:
                                     "obstacle; names must be unique", path=path, name=o.name,
                                     obstacle_table="[[obstacle]]"))
         obstacles.append(o)
-    from .elements import check_clear, parse_climb, parse_elements, thin_bar_warnings  # elements.py imports this module
+    from .elements import check_clear, parse_climb, parse_elements  # elements.py imports this module
     from .station import check_release_clear, parse_stations
 
     elements = parse_elements(path, raw.get("element", []), size)
@@ -958,7 +958,6 @@ def parse_range(raw: dict, path: Path) -> Range:
                   field_width=size[1],
                   warnings=tuple(w for k in kinds.values() for w in k.warnings)
                            + tuple(w for e in elements for w in getattr(e, "warnings", ()))
-                           + thin_bar_warnings(elements)
                            + _outside_warnings(goals, size)
                            + tuple(goal_warnings))
     staged = _unsupported(built, names)

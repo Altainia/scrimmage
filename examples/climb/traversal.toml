@@ -57,9 +57,10 @@ wait = { hook_contact = "high" }
 
 [[step]]
 name = "seat on HIGH"
-# the pivot back on full voltage, so the arm holds its lean while the robot's weight moves onto it
+# the pivot back on full voltage, so the arm holds its lean while the robot's weight moves onto it. 0.8 s, as in
+# high.toml: the telescopes carry their motors' rotor inertia, so the mid climber starts extending later
 drive = [{ joint = "high.stage1", to = 0.21 }, { joint = "high.pivot", to_deg = 15.0 }]
-wait = { time = 0.5 }
+wait = { time = 0.8 }
 
 [[step]]
 name = "lift the mid hooks off MID"

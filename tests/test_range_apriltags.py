@@ -83,8 +83,7 @@ def test_2024_mounted_tags_face_the_field(tmp_path):
         out = np.array(t.face) - np.array(t.pos)
         assert 0.07 < out @ t.normal <= apriltags.MOUNT_DEPTH, i
         assert np.allclose(out, (out @ t.normal) * t.normal)
-    # only the six CHAINS' thin-bar warnings (R16, until K5 Task 9 hangs them as chains): no tag warnings
-    assert len(rng.warnings) == 6 and all("a stock climber's hook slips off" in w for w in rng.warnings)
+    assert rng.warnings == ()
 
 
 def _error(tmp_path, **kw) -> str:
