@@ -75,7 +75,7 @@ DRIVE_DIRECTIONS = ("forward", "back", "left", "right")
 _OPPOSITE = {"back": "forward", "left": "right", "right": "left"}     # where a minus distance goes instead
 SPREAD_AXES = ("offset_in", "distance_in", "angle_deg", "rotation_deg", "tip_deg")
 SETUP_KEYS = ("ball", "piece", "seed", "station", "floor_spread", "partner")
-PARTNER_SETUP_KEYS = ("ahead_in", "heading_deg", "brake", "hang", "along_in")
+PARTNER_SETUP_KEYS = ("ahead_in", "heading_deg", "brake", "hang", "along_in", "across_in")
 _STATION_LISTS = ("spread_position", "spread_rotation_deg")
 
 
@@ -543,7 +543,8 @@ def _setup(raw: dict) -> dict:
 
 def _partner_setup(t) -> dict | bool:
     """`[setup] partner`: {ahead_in, heading_deg (0: facing the robot's way), brake (true)}; or hanging from a chain,
-    {hang (the chain's name), along_in (inches from its low point along its yaw, default 0), brake}, with no ahead_in or
+    {hang (the chain's name), along_in (inches from its low point along its yaw, default 0), across_in (inches to the
+    yaw's left, default 0), brake}, with no ahead_in or
     heading_deg (a hanging partner's place and heading are its chain's, R9); or false for none."""
     where = "[setup] partner"
     if t is False:
@@ -560,15 +561,18 @@ def _partner_setup(t) -> dict | bool:
             raise _fail(where, i18n.t("has {key} and hang: a hanging partner hangs where its chain is, so drop {key}",
                                       key=placed[0]))
         out = {"hang": t["hang"]}
-        if "along_in" in t:
-            out["along_in"] = _num(t["along_in"], where, "along_in")
+        for key in ("along_in", "across_in"):
+            if key in t:
+                out[key] = _num(t[key], where, key)
         if "brake" in t:
             if not isinstance(t["brake"], bool):
                 raise _fail(where, i18n.t("brake must be true or false"))
             out["brake"] = t["brake"]
         return out
-    if "along_in" in t:
-        raise _fail(where, i18n.t("has along_in but no hang: along_in is where a hanging partner hangs on its chain"))
+    for key in ("along_in", "across_in"):
+        if key in t:
+            raise _fail(where, i18n.t("has {key} but no hang: {key} is where a hanging partner hangs on its chain",
+                                      key=key))
     if "ahead_in" not in t:
         raise _fail(where, i18n.t("needs ahead_in, how far ahead of the robot's start the partner's center is"))
     out: dict = {"ahead_in": _num(t["ahead_in"], where, "ahead_in")}

@@ -48,6 +48,7 @@ from .. import i18n
 from ..hal_drive import driven_joints
 from ..launcher.inputs import PRESETS
 from ..parts.grip import GRIP_MATERIALS
+from ..parts.partner import IN
 from ..parts.partner import SIGNALS as PARTNER_SIGNALS
 from ..sensors.colors import NAMED_COLORS
 from ..terrain.climb import robot_hooks
@@ -227,6 +228,7 @@ def palette(world, hooks: list[str], setup: dict | None = None) -> dict:
     moving = moving_units(rng.elements) if rng is not None else {}
     signals += [f"element.{n}" for n in moving]                    # deg (hinged) or in (sliding), 0 at rest
     robot_partner = getattr(world, "partner", None) is not None
+    own_hang = world.parts.partner.hang if robot_partner and world.parts is not None else None
     partner = setup["partner"] is not False if setup and "partner" in setup else robot_partner
     if partner:
         signals += list(PARTNER_SIGNALS)                           # in, deg, in: from where it settled
@@ -251,6 +253,10 @@ def palette(world, hooks: list[str], setup: dict | None = None) -> dict:
         "moving_elements": [{"name": n, "unit": u} for n, u in moving.items()],     # hinged ("deg"), sliding ("in")
         "partner": partner,                 # a partner robot ([partner], or Setup's partner)
         "robot_partner": robot_partner,     # the world's own partner: the Test tab's is the robot config's [partner]
+        # the robot config's own partner's hang, as Setup writes one (in), or None: it stands, or there's none
+        "robot_partner_hang": None if own_hang is None else {
+            "hang": own_hang.hold, "along_in": round(own_hang.along / IN, 6),
+            **({"across_in": round(own_hang.across / IN, 6)} if own_hang.across else {})},
         "goals": sorted(g.name for g in rng.goals) if rng is not None else [],
         "zones": [z.name for z in rng.zones] if rng is not None else [],     # [[zone]]s, for in_zone
         "game": rng is not None and rng.game is not None,     # the range has a [game]: a test can be a match

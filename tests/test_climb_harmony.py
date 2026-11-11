@@ -3,11 +3,12 @@
 
 Every world here is a tmp copy of tests/data/chain with `[climb] rule = "off-carpet"`, `harmony = 2` and a short
 `[game]` (1 s auto, 7 s teleop, so the match ends while the robot hangs), and without `stage_blue_leg2`: that truss
-leg's estimated line passes through a partner hanging 0.9 m along chain_blue_center, which would then rest on the leg
-instead of the chain (a placement problem of that spot, not of the chain).
+leg's estimated line passes through a partner hanging 0.9 m along chain_blue_center, which check_hanging refuses (and
+which would otherwise rest on the leg). The partner hangs ACROSS to the chain's right: under the chain, the stock
+partner reaches 3 mm into the STAGE's core, on the chain's left.
 
 The robot and partner are 60 kg each. A partner alone pulls the chain's 0.22 m of slack into a taut V, so the chain at
-the robot's hooks rises from 0.72 m to about 0.99 m, out of the fixture climber's reach. The HARMONY climbs therefore
+the robot's hooks rises from 0.72 m to about 0.97 m, out of the fixture climber's reach. The HARMONY climbs therefore
 use a three-stage climber (travel 0.6 m) whose first reach puts its hooks over the taut chain; the climb they compare
 with uses the same robot.
 """
@@ -37,13 +38,14 @@ CHAIN = Path(__file__).resolve().parent / "data" / "chain"
 NAME = "chain_blue_center"
 LOW = 0.7176  # source: M 5.5: the chain's low point at rest, 2 ft 4 1/4 in (the fixture's)
 ALONG = 0.9  # choice: R9's example: the partner one outline from the robot's hooks (m from the low point)
-HANG = f'\n[partner]\nhang = {{ hold = "{NAME}", along = {ALONG} }}\n'
+ACROSS = -0.05  # choice: 5 cm to the chain's right, clear of the STAGE's core (m)
+HANG = f'\n[partner]\nhang = {{ hold = "{NAME}", along = {ALONG}, across = {ACROSS} }}\n'
 GAME = "\n[game]\nauto_seconds = 1\npause_seconds = 0\nteleop_seconds = 7\n"  # choice: it ends while the robot hangs
-THREE = 0.17  # choice: the three-stage climber's first reach (m), its hooks over the taut chain
+THREE = 0.19  # choice: the three-stage climber's first reach (m), mid-way in the 0.18-0.20 that hook the taut chain
 THREE_PLAIN = 0.0933  # choice: its reach (m) over the chain at rest: the fixture's 0.14 m times 2/3 stages
 
 
-def fixture(folder: Path, partner: bool = False, three: float | None = None) -> Path:
+def fixture(folder: Path, partner: bool = False, three: float | None = None, extra: str = "") -> Path:
     """The chain fixture in `folder`, made off-carpet (see the module), with a hanging partner and a three-stage
     climber reaching `three` if asked; its robot config's path."""
     folder.mkdir(parents=True, exist_ok=True)
@@ -52,7 +54,7 @@ def fixture(folder: Path, partner: bool = False, three: float | None = None) -> 
     rng = (folder / "range.toml").read_text(encoding="utf-8")
     rng = re.sub(r'\[\[obstacle\]\]\nname = "stage_blue_leg2".*?\n\n', "", rng, flags=re.S)
     assert "stage_blue_leg2" not in rng
-    rng = rng.replace('rule = "lowest-rung"', 'rule = "off-carpet"\nharmony = 2') + GAME
+    rng = rng.replace('rule = "lowest-rung"', 'rule = "off-carpet"\nharmony = 2') + GAME + extra
     (folder / "range.toml").write_text(rng, encoding="utf-8")
     robot = (folder / "robot.toml").read_text(encoding="utf-8")
     if three is not None:
@@ -142,7 +144,11 @@ def test_the_hold_signals_resolve_and_unknown_holds_are_listed(plain):
 @pytest.fixture(scope="module")
 def hung(tmp_path_factory):
     """The robot standing at its start and the partner hanging at ALONG: at t = 0, then after 2 s."""
-    w = build_world(load_config(fixture(tmp_path_factory.mktemp("hung"), partner=True)))
+    return hang_for(fixture(tmp_path_factory.mktemp("hung"), partner=True))
+
+
+def hang_for(path: Path) -> dict:
+    w = build_world(load_config(path))
     m, d = w.model, w.data
     info = w.parts.partner
     e = next(e for e in w.parts.range.elements if e.name == NAME)
@@ -160,6 +166,7 @@ def hung(tmp_path_factory):
         return max(float((d.geom_xpos[g][2] + (m.geom_aabb[g][:3] + signs * m.geom_aabb[g][3:])
                           @ d.geom_xmat[g].reshape(3, 3)[2]).max()) for g in mine)
     start = {"top": top(), "vertex": pts[near].copy(), "z": float(d.xpos[body][2]),
+             "xy": tuple(float(c) for c in d.xpos[body][:2]),
              "heading": math.degrees(math.atan2(d.xmat[body][3], d.xmat[body][0])) % 360.0}
     flex = w.parts.layout.chains[NAME].flex
     fid = m.ngeom + flex
@@ -168,7 +175,8 @@ def hung(tmp_path_factory):
         w.step(HalState())
         touches.append((float(d.time), any((a == fid and b in mine) or (b == fid and a in mine)
                                            for a, b in contact_ids(m, d).tolist())))
-    return {"world": w, "start": start, "near": near, "flex": flex, "body": body, "touches": touches}
+    return {"world": w, "start": start, "near": near, "flex": flex, "body": body, "touches": touches,
+            "low_at_s0": float(vertices(m, d, flex)[20, 2])}
 
 
 def test_a_hanging_partner_hangs(hung):
@@ -176,14 +184,17 @@ def test_a_hanging_partner_hangs(hung):
     m, d = w.model, w.data
     info = w.parts.partner
     assert info.hang is not None and info.hang.hold == NAME and info.hang.along == ALONG
-    # at t = 0: its top HANG_GAP under the nearest interior vertex, its x across the chain (yaw 90 + 90)
+    # at t = 0: its top HANG_GAP under the nearest interior vertex, ACROSS to its side, facing along the chain (yaw 90)
     assert start["vertex"][2] - start["top"] == pytest.approx(HANG_GAP, abs=0.002)
-    assert start["heading"] == pytest.approx(180.0, abs=1e-6)
+    assert start["xy"] == pytest.approx((start["vertex"][0] - ACROSS, start["vertex"][1]), abs=1e-9)
+    assert start["heading"] == pytest.approx(90.0, abs=1e-6)
     # after 2 s: level, its weight carried by the chain, pulled into a V at its vertex (the low point rises: the
     # chain's slack is taken up), and its lift read from where it would stand on its wheels
     assert w.partner.tilt() < 0.5
     v = vertices(m, d, hung["flex"])
     assert int(np.argmin(v[:, 2])) == hung["near"]
+    assert float(v[20, 2]) > LOW + 0.2      # where the low point was (the robot's hooks): measured 0.97 m, the docs'
+    assert hung["low_at_s0"] == pytest.approx(0.97, abs=0.02)
     assert float(lowest_vertex(m, d, hung["flex"])[2]) > LOW + 0.05
     assert float(d.xpos[hung["body"]][2]) < start["z"] - 0.05
     r = d.xmat[hung["body"]].reshape(3, 3)
@@ -209,7 +220,7 @@ def test_harmony_counts_the_robot_and_its_partner(harmony, alone):
     assert alone["world"].climb.sample()["climb.harmony"] == 0.0
     # the partner took up the chain's slack: the robot hangs higher than it does alone (spec D4: it stays where it
     # hooked, so it doesn't slide down to the partner)
-    assert seat_at_end(harmony) >= seat_at_end(alone) + 0.01
+    assert 0.01 <= seat_at_end(harmony) - seat_at_end(alone) <= 0.08      # measured 4.4 cm: the docs' "a few cm"
 
 
 def test_the_match_scores_onstage_and_harmony(harmony):
@@ -233,3 +244,14 @@ def test_the_docs_climb_example_parses():
     (block,) = [b for b in re.findall(r"```toml\n(.*?)```", text, re.S) if 'rule = "off-carpet"' in b]
     rule, _ = parse_climb(Path("r.toml"), tomllib.loads(block)["climb"], ())
     assert (rule.rule, rule.levels, rule.harmony) == ("off-carpet", {"ONSTAGE": 3.0}, 2.0)
+
+
+
+def test_a_hanging_partner_on_the_ground_is_off_its_hold(tmp_path):
+    """M2: a hanging partner counts on its hold only while none of its geoms touches the ground: here its V drops it
+    onto a floor block (a ground box under it, clear of it at the start), and its chain's robots read 0."""
+    block = ('\n[[element]]\nname = "block"\nkind = "box"\ncenter = [5.79, 5.05]\nsize = [0.5, 0.5, 0.72]\n'
+             "ground = true\n")     # choice: its top 0.72 m, under the partner's wheels once the chain takes its weight
+    h = hang_for(fixture(tmp_path, partner=True, extra=block))
+    s = h["world"].climb.sample()
+    assert s[f"climb.hold.{NAME}.robots"] == 0 and s["climb.hanging"] == 0

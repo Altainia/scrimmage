@@ -109,15 +109,26 @@ What the spec leaves open, decided here so each task can cite it. Each gives the
 - **R9, the hanging partner (D6).**
   - Chains only: a bar or a switch gives an error listing the chains.
   - `start` and `hang` are exclusive, and Setup's hanging partner drops `start`.
-  - The partner's heading is the chain's `yaw_deg` + 90, so its x runs across the chain, as a robot that drove up
-    to it.
+  - The partner's heading is the chain's `yaw_deg`, so its length runs along the chain (controller ruling, Task 3
+    review I4). An optional `across` (m, signed, + to the yaw's left, default 0 `# choice`) offsets it sideways, at
+    most half its width; Setup's is `across_in`.
   - Its top center sits `HANG_GAP = 0.02 m  # choice` below the nearest interior vertex, welded to that vertex's body
     with the qpos0 relative pose, so it never touches the chain. Since a vertex body has no rotation, the partner
     stays level (`partner.tilt` reads 0).
   - It counts on its hold while none of its geoms touches the ground.
   - `along` must leave the nearest vertex interior: |along| ≤ span/2 − one link.
   - `partner.height` is measured from its standing height: the lowest bottom corner it would have on its wheels.
-  - `check_start` checks only the robot's start outline for a hanging partner, since it is off the floor.
+  - `check_start` checks only the robot's start outline for a hanging partner, since it is off the floor. After
+    compile, `check_hanging` measures it in 3D at qpos0 (`mj_geomDistance`) against every geom it touches and refuses
+    an overlap deeper than 1 mm as a PartnerOverlap naming the element or obstacle (review I1).
+  - The chain doesn't touch it (CHAIN_BITS (1, 0), HANGING_BITS (2, 6)): with contact on, the start transient pushed
+    the chain out under the partner and never resolved. The weld's data is set explicitly (MjSpec's default anchor
+    is (0, 1, 0)).
+  - Measured (Task 3): one 60 kg partner takes up the chain's 0.22 m of slack and pulls it into a taut V with its
+    apex at the partner's vertex. At along 0.9 the apex is at 0.84 m, the low point rises from 0.72 to about 0.97 m,
+    and a robot hooking there hangs about 4 cm higher than it does alone. A climber sized for the unloaded chain
+    can't get its hooks over it. Near the 2024 STAGE, a stock partner under the center chain reaches 3 mm into the
+    core (across 0 is refused, across −0.05 clears), and from about 0.5 m along it overlaps a truss leg.
 
   *Cost:* it can't hang on a 2022 rung, it never swings, and the robot must hook at least one partner outline away
   (spike case 3 ghost: 0.5 m apart, here 0.9 m in the example).

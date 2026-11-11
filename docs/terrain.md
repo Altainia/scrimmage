@@ -108,9 +108,10 @@ Model, with its estimates and choices:
 - A hook stays at the link where it hooks and doesn't slide toward the low point, as a real chain on a hook partly
   would.
 - A partner robot can hang from a chain (`[partner] hang`, see the [README](../README.md#a-partner-robot)). The chain
-  doesn't touch a hanging partner: its weld is its hook. Its 60 kg pulls the chain's slack into a taut V, so the
-  chain beside it rises: on 2024's center chain, a partner 0.9 m from the low point lifts the chain at the low point
-  from 0.72 m to about 0.99 m (measured), beyond what a climber sized for the unloaded chain reaches.
+  doesn't touch a hanging partner: its weld is its hook. Its 60 kg pulls the chain's slack into a taut V with its
+  lowest point at the partner, so the rest of the chain rises: with a partner 0.9 m from the low point, the chain where
+  the low point was (at a climbing robot's hooks) rises from 0.72 m to about 0.97 m (measured), beyond what a climber
+  sized for the unloaded chain reaches.
 
 The checks, each naming the element:
 

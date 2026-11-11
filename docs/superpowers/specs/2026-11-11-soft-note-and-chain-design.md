@@ -134,7 +134,12 @@ Each one gives what was decided, why, and its cost if wrong.
   - `[partner] hang = { hold = "chain_blue_center", along = 0.5 }` puts the partner robot hanging from that chain
     at `along` meters from the low point (signed, along the chain's yaw). Its frame is level and off the carpet, and
     it is held by a weld to the nearest chain vertex at the partner's top center.
-  - In Setup, the Partner robot box gains **Hangs on** (a hold list and "no") and **along**.
+  - In Setup, the Partner robot box gains **Hangs on** (a hold list and "no"), **along** and **across** (an optional
+    sideways offset, `across` in the file). It faces along its chain.
+  - Measured: its weight pulls the chain's slack into a taut V at its vertex, so the rest of the chain rises (from
+    0.72 m to about 0.97 m at the low point, with a partner 0.9 m along). The other robot's hooks meet a higher,
+    tauter chain and it hangs about 4 cm higher. A partner starting inside the field (a STAGE leg, the core) is
+    refused.
   - Its mass is the partner's own (the stock partner's, about 60 kg).
   - The partner signals stay. `partner.height` reads its lift from where it hangs.
   - *Why:* the kickoff question is "does my climb still work with a partner on our chain, and do we tip?". That

@@ -155,6 +155,7 @@ class ClimbMonitor:
             proot = m.body_rootid[m.body(info.body).id]
             mine = (m.body_rootid[m.geom_bodyid] == proot).tolist() + flexes
             self._partner = (k, mine)
+            # a guard, not a change: part geoms are group 0, never ELEMENT_GROUP, so no partner geom is ground
             self._ground_l = [g and not p for g, p in zip(self._ground_l, mine)]
         self._switch = None             # "hang": (hold index, qpos address, level_deg)
         if self.rule is not None and self.rule.rule == "hang":

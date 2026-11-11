@@ -588,10 +588,14 @@ drive on the stock chassis, and it collides with your robot, the field and game 
 | **Drive: brakes on** | on | on: its drive is in brake mode; off: its wheels coast |
 | **Hangs on** | no | on a field with chains only: **no**, or a chain to hang the partner from. Hanging, it shows **along** in place of the three boxes above |
 | **along** | 36 in | how far from the chain's low point it hangs, along the chain (signed) |
+| **across** | 0 in | how far to the side of the chain its center hangs, to the left of the chain's direction (signed) |
 
-A hanging partner faces across its chain and is held level under the chain's joint nearest **along** (see the
-[README](../README.md#a-partner-robot)). It counts for HARMONY on an `"off-carpet"` field, and the chart then offers
-`climb.harmony` and `climb.hold.<chain>.robots` ([climbing.md](climbing.md#onstage-and-harmony)).
+A hanging partner faces along its chain and is held level under the chain's joint nearest **along** (see the
+[README](../README.md#a-partner-robot)). One placed overlapping the field (a STAGE leg, the core) is refused before the
+run: `the partner robot (Setup) starts inside obstacle stage_blue_leg2 (their outlines overlap by 10.2 in)`. One past
+its limits says so: `the partner robot (Setup) hangs 50 in from the chain's low point; at most 45.04 in either way`.
+It counts for HARMONY on an `"off-carpet"` field, and the chart's picker then offers `climb.harmony` and
+`climb.hold.<chain>.robots` ([climbing.md](climbing.md#onstage-and-harmony)); they aren't in the default chart.
 
 If the robot file has its own `[partner]` ([README](../README.md#a-partner-robot)), Setup shows it ticked, where the
 robot file puts it, until you change it here. Unticking it then keeps the robot file's partner out of this test.
@@ -631,7 +635,7 @@ In the test file:
 | Form | Keys |
 |---|---|
 | `[setup]` `partner = { ahead_in = 50, heading_deg = 0, brake = true }` | `ahead_in`: inches, required. `heading_deg`: degrees, turned from your robot's heading, default 0. `brake`: `true` (the default) or `false`. Or `partner = false` for no partner, even when the robot file has one. |
-| `[setup]` `partner = { hang = "chain_blue_center", along_in = 35.4 }` | `hang`: a chain of the field. `along_in`: inches from its low point along the chain, signed, default 0. No `ahead_in` or `heading_deg`: the chain places it. |
+| `[setup]` `partner = { hang = "chain_blue_center", along_in = 35.4, across_in = -2 }` | `hang`: a chain of the field. `along_in`: inches from its low point along the chain, signed, default 0. `across_in`: inches to the side, signed, default 0. No `ahead_in` or `heading_deg`: the chain places it. |
 | `{ partner_lifted = { at_least_in = 2, level_within_deg = 5 } }` | `at_least_in`: inches, more than 0. `level_within_deg`: degrees, more than 0, optional. |
 | `{ partner_moved = { at_least_in = 60 } }` | `at_least_in`: inches, more than 0. |
 

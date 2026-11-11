@@ -544,7 +544,8 @@ A stock elevator, arm, turret, cylinder, flywheel, roller, launcher or disc shoo
 it has mass and joints, but its geoms touch nothing, so it passes through a TRENCH arm or a bar. Set `collide = true`
 on the part to make it touch the field, game pieces and a [partner robot](test-tab.md#a-partner-robot), like a folder
 part's geoms. It still never touches the robot's own parts. In the Robot tab it is a checkbox in the part's stock
-form.
+form. A partner hanging from a chain ([README](../README.md#a-partner-robot), `[partner] hang = { hold, along,
+across }`) is touched the same way; the chain itself never touches it.
 
 ```toml
 [[part]]

@@ -153,8 +153,8 @@ from .program import DRIVE_TIMEOUT, DRIVE_VOLTS, MOVE_TIMEOUT, REPEAT_MAX, WAIT_
 from .run_notes import (DEFAULT_GRIP_NOTE, GRIP_CONDITIONS, PNEUMATIC_ESTIMATES, air_lines,  # noqa: F401
                         clearance_lines, default_grip_note, goal_lines, piece_lines, piece_log, piece_notes,
                         pneumatic_note, points_lines, rules_lines, run_notes)
-from .run_setup import (COLOR_NAMES, partner_overlap, sensor_value, setup_config, setup_partner,  # noqa: F401
-                        setup_partner_words, world_for)
+from .run_setup import (COLOR_NAMES, hang_words, partner_overlap, sensor_value, setup_config,  # noqa: F401
+                        setup_partner, setup_partner_words, world_for)
 from .run_words import _FailureWords, _keep_words, _recast, _v, _w, _where, _ws  # noqa: F401
 from .spread import no_ball, rest_of, spread_ball, start_pose
 

@@ -153,6 +153,11 @@ const PARTNER = { ahead_in: 60, heading_deg: 0, brake: true };      // a new par
 // (ahead_in is inches in the file, whatever the Units setting: a typed 101.6 mm writes 4)
 const PARTNER_ALONG_IN = 36;    // choice: a new hanging partner's place, 36 in from the chain's low point (inches)
 const ownPartner = () => !!(T.state && T.state.palette && T.state.palette.robot_partner);
+// the robot file's own partner's hang ({hang, along_in, across_in}), or null: it stands, or there's none
+const ownHang = () => (T.state && T.state.palette && T.state.palette.robot_partner_hang) || null;
+// what Setup's partner is now: Setup's own table, else the robot file's hang when it hangs
+const partnerNow = (s) => (s.partner && typeof s.partner === "object" ? s.partner
+  : s.partner === undefined && ownPartner() && ownHang() ? { ...ownHang() } : {});
 function partnerOn() {
   const p = (headOf(T.ws).setup || {}).partner;
   return p === undefined ? ownPartner() : p !== false;
@@ -166,22 +171,23 @@ function setPartnerOn(on) {
 }
 function setPartner(key, v) {
   const s = setupOf();
-  const was = s.partner && typeof s.partner === "object" ? s.partner : {};
+  const was = partnerNow(s);
   s.partner = was.hang ? { ...was, [key]: v } : { ...PARTNER, ...was, [key]: v };     // a hanging one has no ahead_in
   setTest({ setup: s });
 }
 // Hangs on: a chain hangs the partner from it (its place and heading are the chain's); "" stands it ahead of the robot
 function setPartnerHang(hold) {
   const s = setupOf();
-  const was = s.partner && typeof s.partner === "object" ? s.partner : {};
-  s.partner = hold ? { hang: hold, along_in: was.along_in ?? PARTNER_ALONG_IN } : { ...PARTNER };
+  const was = partnerNow(s);
+  s.partner = hold ? { hang: hold, along_in: was.along_in ?? PARTNER_ALONG_IN, ...(was.across_in ? { across_in: was.across_in } : {}) }
+    : { ...PARTNER };
   setTest({ setup: s });
 }
 
 function partnerBox() {
   const on = partnerOn();
-  const p = { ...PARTNER, ...((headOf(T.ws).setup || {}).partner || {}) };
   const own = ownPartner() && !((headOf(T.ws).setup || {}).partner);     // the config's, placed where it says
+  const p = { ...PARTNER, ...((headOf(T.ws).setup || {}).partner || {}), ...(own ? ownHang() || {} : {}) };
   const parts = [h("legend", { text: t("Partner robot") }),
     h("p", { class: "hint", text: t("A second robot with no program of its own, to push, lift or drive around. It starts ahead of your robot, along the way your robot faces.") }),
     h("label", { class: "test-hook", for: "test-partner" },
@@ -203,6 +209,10 @@ function partnerBox() {
       grid.push(h("label", { for: "test-partner-along", text: t("along", { context: "partner" }) }),
         h("div", { class: "row" }, measureBox("test-partner-along", (p.along_in ?? 0) * IN, "length",
           t("Partner robot: along the chain from its low point ({unit})", { unit: units.name("length") }), (v) => setPartner("along_in", v), (si) => si / IN),
+        h("span", { text: units.name("length") })),
+        h("label", { for: "test-partner-across", text: t("across", { context: "partner" }) }),
+        h("div", { class: "row" }, measureBox("test-partner-across", (p.across_in ?? 0) * IN, "length",
+          t("Partner robot: to the side of the chain ({unit})", { unit: units.name("length") }), (v) => setPartner("across_in", v), (si) => si / IN),
         h("span", { text: units.name("length") })));
       parts.push(h("div", { class: "test-setup-grid" }, ...grid));
       return h("fieldset", { class: "test-setup-partner" }, ...parts);

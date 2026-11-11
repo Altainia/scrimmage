@@ -23,7 +23,8 @@ function defaultSignals() {
   if (listed.length) return listed;
   const pal = rp.state && rp.state.palette;
   const wheels = new Set(((pal && pal.joints) || []).filter((j) => j.kind === "wheel").map((j) => j.name));
-  return have.filter((s) => !s.endsWith(".current") && s !== "hook_load" && !wheels.has(s));
+  // counts and points (climb.harmony, climb.hold.<chain>.robots) stay in the picker, out of the default chart
+  return have.filter((s) => !s.endsWith(".current") && s !== "hook_load" && !s.startsWith("climb.") && !wheels.has(s));
 }
 
 // The names in the test's chart this run has no signal for, but a clearance the next run measures (the picker offers

@@ -94,16 +94,17 @@ harmony = 2                   # points for each robot beyond the first on one ho
 ```
 
 `harmony` is for `"off-carpet"` only, and can't be negative. The only other robot is a partner hanging on the chain
-(`[partner] hang = { hold = "chain_blue_center", along = 0.9 }` in the robot config, or **Hangs on** in the Test
+(`[partner] hang = { hold = "chain_blue_center", along = 0.9, across = -0.05 }` in the robot config, or **Hangs on** in the Test
 tab's Setup): see the [README](../README.md#a-partner-robot). `climb.hold.<hold>.robots` counts it, and
 `climb.harmony` is then 2 while your robot hangs on the same chain. A match ([Test tab](test-tab.md#playing-a-match))
 or a scenario adds the HARMONY points held at its end to the endgame, after ONSTAGE's: "HARMONY with 1 other robot:
 2 points".
 
 A partner on the chain changes your climb. Its weight takes up the chain's slack, so the chain at your hooks is
-higher and tauter: in tests/test_climb_harmony.py, with a partner 0.9 m from the low point, the chain there rises
-from 0.72 m to about 0.99 m, and the test's climber, sized for the unloaded chain, no longer gets its hooks over it.
-Hanging, your robot sits about 4 cm higher than it does alone. The hooks stay where they catch (see
+higher and tauter: in tests/test_climb_harmony.py, with a partner 0.9 m from the low point, the chain where the low
+point was (at your robot's hooks) rises from 0.72 m to about 0.97 m, and the test's climber, sized for the unloaded
+chain, no longer gets its hooks over it. Hanging, your robot sits a few centimeters higher than it does alone (4.4 cm
+there). The hooks stay where they catch (see
 [terrain.md](terrain.md#chains)), so the two robots don't slide together at the low point.
 
 ## The climb signals
@@ -113,7 +114,7 @@ them like the terrain signals:
 
 | signal | meaning |
 |---|---|
-| `climb.hanging` | 1 while some robot geom touches a bar or switch and none touches the ground |
+| `climb.hanging` | 1 while some robot geom touches a hold (a bar, a chain or a switch) and none touches the ground |
 | `climb.level` | the scoring level's **rank** in the range's `[climb] levels`: 1 for the first (lowest) level, 0 for none |
 | `climb.points` | that level's points (0 while not hanging) |
 | `climb.hold` | which hold (bar, chain or switch) the robot hangs from, as a number: its place among the range's holds in element order, 1 for the first; 0 while not hanging |

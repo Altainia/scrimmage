@@ -10,21 +10,26 @@
 
 or, in place of `start`, hanging from a chain of the range (K5 spec D6, R9):
 
-    hang = { hold = "chain_blue_center", along = 0.9 }     # a chain element; m from its low point along its yaw
+    hang = { hold = "chain_blue_center", along = 0.9, across = -0.05 }
+    # a chain element; along: m from its low point along its yaw; across: m to the yaw's left (default 0)
 
-A hanging partner faces the chain's `yaw_deg` + 90, so its x runs across the chain, as a robot that drove up to it.
-Its top center (its highest colliding geom's top) sits HANG_GAP below the chain's interior vertex nearest `along`, and
-a weld holds its chassis to that vertex's body at their pose at the start. A vertex body has no rotation, so the
-partner stays level. `along` must leave that vertex interior: |along| at most the span / 2 less one link. It starts off
-the carpet (check_start checks only the robot's outline against it), and while none of its geoms touches the ground it
-counts on its chain for climb.hold.<chain>.robots and HARMONY (terrain/climb.py). At the start the chain can pass
-through its roof until its weight pulls the chain into a V (F12).
+A hanging partner faces along the chain (`yaw_deg`), its length along the chain and its narrow side toward the chain's
+neighbors. Its top center (its highest colliding geom's top) sits HANG_GAP below the chain's interior vertex nearest
+`along`, `across` to the side of it, and a weld holds its chassis to that vertex's body at their pose at the start. A
+vertex body has no rotation, so the partner stays level. `along` must leave that vertex interior (|along| at most the
+span / 2 less one link) and `across` keep it over the roof (|across| at most half the width); past either is a
+HangTooFar. Its 60 kg pulls the chain's slack into a taut V at its vertex, raising the rest of the chain. The chain
+doesn't touch it (HANGING_BITS): its weld is its hook. It starts off the carpet: check_start checks only the robot's
+outline against it, and check_hanging, once the model is built, refuses it overlapping any field geom it touches
+(an element, an obstacle, a floor piece). While none of its geoms touches the ground it counts on its chain for
+climb.hold.<chain>.robots and HARMONY (terrain/climb.py).
 
 It is the stock chassis with the stock differential (6-wheel tank) drive under it, every name prefixed `partner.`
 (spec C7): bodies `partner.chassis`, `partner.rails`, `partner.left_1` ..., and a free joint `partner.free`. It is not
 the robot: it isn't in Built.instances, its treads aren't in Built.tread_geoms, and it has no motors or bindings, so
 the robot's drivetrain, contacts and checks never see it (each finds the robot by its root body). Its geoms touch the
-robot, the field and game pieces (contype 3, conaffinity 3); its own bodies are excluded from touching each other.
+robot, the field and game pieces (contype 3, conaffinity 3; a hanging partner's HANGING_BITS (2, 6) leave out the
+chain); its own bodies are excluded from touching each other.
 Its start is built into the model like the robot's, its wheels on the carpet, so World.reset puts it back there.
 
 Its signals (PartnerMonitor), in inches and degrees: `partner.height`, the lowest of the frame's four bottom corners
@@ -47,7 +52,7 @@ from .. import i18n
 from .model import PartError, quat_from_rpy
 
 PARTNER_KEYS = ("length", "width", "mass", "bumper_clearance", "brake", "start", "hang")
-HANG_KEYS = ("hold", "along")
+HANG_KEYS = ("hold", "along", "across")
 PREFIX = "partner."
 PARTNER_BITS = {"contype": 3, "conaffinity": 3}     # touches the robot (2, 1), the field (1, 2) and balls (4, 7)
 # choice: a hanging partner touches the robot, the field, balls and launched balls (4, 5), but not its chain
@@ -65,6 +70,8 @@ WHEELBASE_INSET = 0.18          # m: frame length minus wheelbase
 IN = 0.0254                     # m per inch
 HANG_GAP = 0.02  # choice: R9: a hanging partner's top this far below its chain vertex, so it doesn't touch the chain
 DEFAULT_ALONG = 0.0  # choice: a hanging partner with no `along` hangs at the chain's low point
+DEFAULT_ACROSS = 0.0  # choice: with no `across`, its center is under the chain
+HANG_OVERLAP_TOL = 1e-3  # choice: mj_geomDistance's convex-hull slack (m); a deeper overlap at the start is refused
 
 
 def brake_damping(drive_params: dict) -> float:
@@ -84,6 +91,7 @@ class Hang:
     """`[partner] hang`: the chain element it hangs from, and where along it."""
     hold: str
     along: float                            # m, signed along the chain's yaw from its low point
+    across: float = DEFAULT_ACROSS          # m, signed across the chain, horizontal: + to the left of its yaw
 
 
 @dataclass(frozen=True)
@@ -144,8 +152,6 @@ def parse_partner(cfg: dict, elements=()) -> PartnerSpec | None:
             raise PartError(i18n.t("{partner_table} start must be [x, y, heading_deg], 3 finite numbers, not {start}",
                                    start=repr(start), partner_table="[partner]"))
         kw["start"] = tuple(float(v) for v in start)
-    else:
-        kw["hang"] = _hang(sec["hang"], elements)
     for key in ("length", "width"):
         if key in sec:
             kw[key] = _number(sec[key], key)
@@ -164,11 +170,32 @@ def parse_partner(cfg: dict, elements=()) -> PartnerSpec | None:
             raise PartError(i18n.t("{partner_table} brake must be true (its wheels braked) or false (coasting), not "
                                    "{brake}", brake=repr(sec['brake']), partner_table="[partner]"))
         kw["brake"] = sec["brake"]
+    if start is None:
+        kw["hang"] = _hang(sec["hang"], elements, kw.get("length", DEFAULT_LENGTH), kw.get("width", DEFAULT_WIDTH))
     return PartnerSpec(**kw)
 
 
-def _hang(h, elements) -> Hang:
-    """`[partner] hang`, checked against the range's chains (R9)."""
+class HangTooFar(PartError):
+    """`[partner] hang` along or across past its limit, in meters as the robot config writes them. It keeps `key`
+    ("along" or "across"), `value` and `limit` (m), so the Test tab words Setup's partner in the Units setting
+    (blocks/run_setup.py hang_words) by finding this exception, not its words."""
+
+    def __init__(self, key: str, value: float, limit: float):
+        if key == "along":
+            text = i18n.t("{where} along must be at most {limit} m either way from the chain's low point (half its "
+                          "span less one link, so the partner hangs from a link inside the chain), not {along}",
+                          where="[partner] hang", limit=f"{limit:.3f}", along=f"{value:g}")
+        else:
+            text = i18n.t("{where} across must be at most {limit} m either way from the chain (half the partner's "
+                          "frame, so the chain stays over its roof), not {across}", where="[partner] hang",
+                          limit=f"{limit:.3f}", across=f"{value:g}")
+        super().__init__(text)
+        self.key, self.value, self.limit = key, value, limit
+
+
+def _hang(h, elements, length: float, width: float) -> Hang:
+    """`[partner] hang`, checked against the range's chains (R9) and the partner's frame (`length` along the chain,
+    `width` across it)."""
     from ..testrange.chain import rest_shape
     from ..testrange.elements import Chain
     where = "[partner] hang"
@@ -198,10 +225,11 @@ def _hang(h, elements) -> Hang:
     _, link = rest_shape(e.span, e.top, e.low)
     limit = e.span / 2.0 - link
     if abs(along) > limit:
-        raise PartError(i18n.t("{where} along must be at most {limit} m either way from the chain's low point (half "
-                               "its span less one link, so the partner hangs from a link inside the chain), not "
-                               "{along}", where=where, limit=f"{limit:.3f}", along=f"{along:g}"))
-    return Hang(hold, along)
+        raise HangTooFar("along", along, limit)
+    across = _number(h["across"], "hang across") if "across" in h else DEFAULT_ACROSS
+    if abs(across) > width / 2.0:
+        raise HangTooFar("across", across, width / 2.0)
+    return Hang(hold, along, across)
 
 
 def _parts(p: PartnerSpec) -> tuple:
@@ -283,7 +311,9 @@ def add_partner(spec: mujoco.MjSpec, cfg: dict, elements=()) -> PartnerInfo | No
         s = rest_shape(e.span, e.top, e.low)[0][:, 0]
         i = 1 + int(np.argmin(np.abs(s[1:-1] - p.hang.along)))      # the nearest interior vertex
         x, y, vz = (float(c) for c in chain_points(e)[i])
-        heading = e.yaw_deg + 90.0
+        heading = e.yaw_deg                  # its length along the chain (the controller's I4 ruling)
+        a = math.radians(e.yaw_deg)
+        x, y = x - p.hang.across * math.sin(a), y + p.hang.across * math.cos(a)     # across: + to the yaw's left
         z = vz - HANG_GAP - top
         vertex = f"element.{e.name}.v{i}"
     body = _attach(spec, chassis, drive, (x, y, z), heading)
@@ -393,6 +423,49 @@ def check_start(info: PartnerInfo, robot_start: tuple[float, float, float], elem
         depth = _circle_overlap(mine, np.array([x, y]), r)
         if depth > 1e-9:
             raise PartnerOverlap(i18n.t("a floor piece ({piece})", piece=label), depth)
+
+
+def check_hanging(model: mujoco.MjModel, info: PartnerInfo, rng=None, robot_body: str | None = None) -> None:
+    """A hanging partner, at the start (qpos0), may not overlap any geom it touches: an element, an obstacle, a floor
+    piece or the robot (its chain it doesn't touch). Each pair whose bounding spheres meet is measured with
+    mj_geomDistance; one deeper than HANG_OVERLAP_TOL is a PartnerOverlap naming what it overlaps (I1)."""
+    m = model
+    d = mujoco.MjData(m)
+    mujoco.mj_kinematics(m, d)
+    root = m.body_rootid[m.body(info.body).id]
+    roots = m.body_rootid[m.geom_bodyid]
+    live = (m.geom_contype != 0) | (m.geom_conaffinity != 0)
+    mine = [g for g in range(m.ngeom) if live[g] and roots[g] == root]
+    flat = (mujoco.mjtGeom.mjGEOM_PLANE, mujoco.mjtGeom.mjGEOM_HFIELD)
+    others = [g for g in range(m.ngeom) if live[g] and roots[g] != root and m.geom_type[g] not in flat]
+    robot = m.body_rootid[m.body(robot_body).id] if robot_body is not None else -1
+    for h in mine:
+        ct, ca = int(m.geom_contype[h]), int(m.geom_conaffinity[h])
+        for g in others:
+            if not ((int(m.geom_contype[g]) & ca) or (ct & int(m.geom_conaffinity[g]))):
+                continue
+            if float(np.linalg.norm(d.geom_xpos[g] - d.geom_xpos[h])) > m.geom_rbound[g] + m.geom_rbound[h]:
+                continue
+            dist = mujoco.mj_geomDistance(m, d, h, g, 0.0, None)
+            if dist < -HANG_OVERLAP_TOL:
+                raise PartnerOverlap(i18n.t("the robot") if roots[g] == robot else _what(m, g, rng), -float(dist))
+
+
+def _what(m: mujoco.MjModel, g: int, rng) -> str:
+    """What a student calls field geom `g` in a start refusal: "element <name>", "obstacle <name>", "a floor piece
+    (...)", else its body's (or its own) name."""
+    name = m.geom(g).name
+    if name.startswith("element."):
+        return i18n.t("element {name}", name=name.split(".")[1])
+    if name.startswith("ball."):
+        pieces = floor_pieces(rng) if rng is not None else []
+        i = int(name.split(".")[1]) if name.split(".")[1].isdigit() else -1
+        label = pieces[i][3] if 0 <= i < len(pieces) else name
+        return i18n.t("a floor piece ({piece})", piece=label)
+    body = m.body(m.geom_bodyid[g]).name
+    if rng is not None and any(o.name == body for o in getattr(rng, "obstacles", ())):
+        return i18n.t("obstacle {name}", name=body)
+    return body if body and body != "world" else name
 
 
 # ---- its signals ----------------------------------------------------------------------------------------------------

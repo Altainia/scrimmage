@@ -613,6 +613,10 @@ def assemble(cfg: dict, cfg_dir: Path) -> Built:
     if layout is not None:     # qpos addresses exist only once compiled
         from ..testrange.build_elements import fill_layout
         fill_layout(layout, model, section.range.elements)
+    if partner is not None and partner.hang is not None:     # in the air: checked in 3D, at the start (I1)
+        from .partner import check_hanging
+        check_hanging(model, partner, section.range if section is not None else None,
+                      f"{root.name}.{root.part.bodies[0].name}")
     rb = root.part.bodies[0]   # the free joint sits on the root body, so set_robot_pose needs its own pos/rot too
     rq = np.array(quat_from_rpy(root.rot))
     built = Built(model, spec, f"{root.name}.{rb.name}", insts,
