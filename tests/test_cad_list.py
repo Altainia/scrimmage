@@ -8,7 +8,7 @@ import pytest
 from scrimmage.__main__ import main
 from scrimmage.cad import listing
 from scrimmage.cad.source import load_source
-from tests.cad_helpers import FIELD_STEP
+from cad_helpers import FIELD_STEP
 
 DATA = Path(__file__).parent / "data" / "cad"
 CLIMBER = DATA / "climber.step"
