@@ -771,7 +771,7 @@ apriltag_size_in = 6.5         # the tags' side in inches; default 6.5, the 2024
 - **Drawing:** each tag is a black square with a white border (the real tag36h11 pattern isn't drawn) that touches
   nothing and changes no sensor reading. The live view labels each with its ID; a MuJoCo picture (`range view --out`)
   shows the squares only.
-- **Size:** `apriltag_size_in` sets how big the squares are drawn and, for a camera, how far away it can see them.
+- **Size:** `apriltag_size_in` (it needs `apriltags`, or it only draws a warning) sets how big the squares are drawn and, for a camera, how far away it can see them.
 
 A hand-made practice field needs a small JSON file of its own (`practice-tags.json`, next to the range file), with
 the range's field size:

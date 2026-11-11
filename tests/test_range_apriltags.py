@@ -5,6 +5,7 @@ view."""
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -27,10 +28,13 @@ RANGE_2026 = BUILTIN_RANGES["2026"]
 
 
 def tag_json(tags, length=16.54, width=8.07) -> str:
-    return json.dumps({"field": {"length": length, "width": width}, "tags": [
-        {"ID": i, "pose": {"translation": {"x": x, "y": y, "z": z},
-                           "rotation": {"quaternion": {"W": 1.0, "X": 0.0, "Y": 0.0, "Z": 0.0}}}}
-        for i, x, y, z in tags]})
+    """Tags as (id, x, y, z) or (id, x, y, z, yaw_deg)."""
+    def pose(x, y, z, yaw=0.0):
+        h = math.radians(yaw) / 2.0
+        return {"translation": {"x": x, "y": y, "z": z},
+                "rotation": {"quaternion": {"W": math.cos(h), "X": 0.0, "Y": 0.0, "Z": math.sin(h)}}}
+    return json.dumps({"field": {"length": length, "width": width},
+                       "tags": [{"ID": t[0], "pose": pose(*t[1:])} for t in tags]})
 
 
 def range_with(tmp_path, tags=((1, 8.0, 4.0, 1.0), (2, 9.0, 4.0, 1.0)), *, layout=None, size=None, extra="",
@@ -105,6 +109,8 @@ def test_the_layout_checks(tmp_path):
     assert all(name in msg for name in apriltags.BUILTIN_LAYOUTS)
     (tmp_path / "e").mkdir()
     assert "apriltag_size_in" in _error(tmp_path / "e", size=0)
+    (tmp_path / "e2").mkdir()
+    assert "apriltag_size_in" in _error(tmp_path / "e2", size="inf")
     (tmp_path / "f").mkdir()
     (tmp_path / "f" / "bad.json").write_text("{not json", encoding="utf-8")
     assert "bad.json" in _error(tmp_path / "f", layout="bad.json")
@@ -186,3 +192,52 @@ def test_the_docs_two_tag_example_loads(tmp_path):
     assert rng.apriltags.ids == [1, 2]
     assert rng.apriltags.tag(1).normal == pytest.approx([1, 0, 0]) and rng.apriltags.tag(2).normal == pytest.approx([-1, 0, 0])
     assert rng.apriltags.tag(1).face == pytest.approx(rng.apriltags.tag(1).pos)    # above the 0.5 m wall: not inside it
+
+
+def _with_crate(tmp_path, tags, rpy="[0.0, 0.0, 0.0]"):
+    path = range_with(tmp_path, tags=tags)
+    path.write_text(path.read_text(encoding="utf-8") + f'\n[[obstacle]]\nname = "crate"\npos = [5.0, 4.0, 0.5]\n'
+                    f"size = [1.0, 1.0, 1.0]\nrpy_deg = {rpy}\n", encoding="utf-8")
+    return load(path)
+
+
+def _tag_warnings(rng):
+    from scrimmage.checks import shown
+    return [shown(w) for w in rng.warnings if "tag" in shown(w)]
+
+
+def test_a_tag_in_a_yawed_box_is_pushed_out_of_its_face(tmp_path):
+    """The depth is measured in the box's own frame: a crate turned 30 degrees, a tag 5 cm inside its +x face."""
+    n = np.array([math.cos(math.radians(30)), math.sin(math.radians(30)), 0.0])
+    center = np.array([5.0, 4.0, 0.5])
+    p = center + n * 0.45
+    rng = _with_crate(tmp_path, [(1, *p, 30.0)], rpy="[0.0, 0.0, 30.0]")
+    t = rng.apriltags.tag(1)
+    assert t.normal == pytest.approx(n)
+    assert (np.array(t.face) - center) @ n == pytest.approx(0.501)
+    assert _tag_warnings(rng) == []
+
+
+def test_the_mount_depth_boundary(tmp_path):
+    """0.09 m inside a solid: pushed out, no warning. 0.11 m inside: left where it is, and warned about."""
+    rng = _with_crate(tmp_path, [(1, 5.41, 4.0, 0.5)])
+    assert rng.apriltags.tag(1).face[0] == pytest.approx(5.501) and _tag_warnings(rng) == []
+    (tmp_path / "deep").mkdir()
+    rng = _with_crate(tmp_path / "deep", [(1, 5.39, 4.0, 0.5)])
+    assert rng.apriltags.tag(1).face == pytest.approx((5.39, 4.0, 0.5))
+    assert len(_tag_warnings(rng)) == 1
+
+
+def test_a_tag_behind_a_perimeter_wall_is_not_warned_about(tmp_path):
+    """Tag 1 faces +y from inside the blue wall, farther in (along its normal) than MOUNT_DEPTH: no warning."""
+    rng = load(range_with(tmp_path, tags=[(1, -0.05, 4.0, 0.2, 90.0)]))
+    assert _tag_warnings(rng) == []
+
+
+def test_a_size_without_a_layout_is_warned_about(tmp_path):
+    path = range_with(tmp_path, layout="x.json", size=5)
+    path.write_text(path.read_text(encoding="utf-8").replace('apriltags = "x.json"\n', ""), encoding="utf-8")
+    rng = load(path)
+    assert rng.apriltags is None
+    from scrimmage.checks import shown
+    assert [w for w in map(shown, rng.warnings) if "apriltag_size_in" in w and "[range]" in w]

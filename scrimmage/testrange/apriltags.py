@@ -114,8 +114,8 @@ def _read_tags(r, path: Path) -> tuple[tuple[Tag, ...], float, float]:
     field = raw.get("field")
     if not isinstance(field, dict):
         raise r.err(i18n.t("apriltags file {path} has no '{key}' with its length and width", path=path, key="field"))
-    length = _number(r, path, "field", field, "length")
-    width = _number(r, path, "field", field, "width")
+    length = _number(r, path, i18n.t("the field"), field, "length")
+    width = _number(r, path, i18n.t("the field"), field, "width")
     tags, seen = [], set()
     for i, t in enumerate(raw["tags"]):
         if not isinstance(t, dict) or isinstance(t.get("ID"), bool) or not isinstance(t.get("ID"), int):
@@ -191,8 +191,12 @@ def parse_apriltags(r, base_dir: Path, field: tuple[float, float], boxes, perime
     No layout (None, ()) when the range gives no `apriltags`."""
     from ..checks import worded
 
-    size_in = r.num("apriltag_size_in", TAG_36H11_SIZE_IN, positive=True)
+    size_in = r.num("apriltag_size_in", TAG_36H11_SIZE_IN, positive=True, nonnegative=True)    # nonnegative: finite
     if not r.has("apriltags"):
+        if r.has("apriltag_size_in"):
+            return None, (worded(lambda: i18n.t(
+                "{where}: {size_key} is set but {layout_key} is not, so no tags are drawn; add {layout_key} or "
+                "remove {size_key}", where=r.where, size_key="apriltag_size_in", layout_key="apriltags")),)
         return None, ()
     ref = r.text("apriltags")
     path = _layout_path(r, ref, base_dir)

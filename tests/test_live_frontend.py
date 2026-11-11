@@ -232,20 +232,23 @@ def test_ball_result_compares_a_misses_apex_with_the_rim(live_page):
 
 
 def test_the_live_view_labels_each_apriltag(live_page):
-    # setModel is synchronous, so the hook counts the labels at once (no waiting)
-    live_page.evaluate("""async () => {
-      const { LiveView } = await import('./live3d.js');
-      const host = document.createElement('div');
-      host.id = 'tag-host';
-      host.style.cssText = 'width:400px;height:300px';
-      document.body.append(host);
-      const lv = new LiveView(host);
-      window.__tagView = lv;
-      lv.setModel({ movers: [], geoms: [], apriltags: [
-        { id: 7, face: [0.001, 5.5, 1.45], quat: [1, 0, 0, 0], size: 0.1651 },
-        { id: 8, face: [0.001, 4.9, 1.45], quat: [1, 0, 0, 0], size: 0.1651 }] });
-    }""")
-    assert live_page.evaluate("__scrimmage.live3d.tagLabels") == 2
-    live_page.evaluate("__tagView.setModel({ movers: [], geoms: [] })")
-    assert live_page.evaluate("__scrimmage.live3d.tagLabels") == 0
-    live_page.evaluate("__tagView.dispose()")
+    # No expect(): the labels are sprites in a WebGL scene, not DOM, and setModel is synchronous, so the hook's
+    # count is final when evaluate returns.
+    try:
+        live_page.evaluate("""async () => {
+          const { LiveView } = await import('./live3d.js');
+          const host = document.createElement('div');
+          host.id = 'tag-host';
+          host.style.cssText = 'width:400px;height:300px';
+          document.body.append(host);
+          const lv = new LiveView(host);
+          window.__tagView = lv;
+          lv.setModel({ movers: [], geoms: [], apriltags: [
+            { id: 7, face: [0.001, 5.5, 1.45], quat: [1, 0, 0, 0], size: 0.1651 },
+            { id: 8, face: [0.001, 4.9, 1.45], quat: [1, 0, 0, 0], size: 0.1651 }] });
+        }""")
+        assert live_page.evaluate("__scrimmage.live3d.tagLabels") == 2
+        live_page.evaluate("__tagView.setModel({ movers: [], geoms: [] })")
+        assert live_page.evaluate("__scrimmage.live3d.tagLabels") == 0
+    finally:
+        live_page.evaluate("() => { if (window.__tagView) __tagView.dispose(); document.getElementById('tag-host')?.remove(); }")
