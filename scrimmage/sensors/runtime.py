@@ -139,9 +139,14 @@ class SensorRuntime:
         self._rays = [s for s in self.specs if s.kind != "camera"]     # the sensors this runtime casts for
         self._bodies = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, s.body) for s in self._rays]
         self._robot = (m.body_rootid[m.geom_bodyid] == root).tolist()      # per geom: part of the robot
-        # per geom: an AprilTag's square (visual only: a ray steps past it as it does past the robot's own geoms)
+        # per geom: an AprilTag's square, or a chain's bead or clearance probe (visual only: a ray steps past it as it
+        # does past the robot's own geoms; a ray doesn't hit a chain's links, so it doesn't hit their beads either)
         self._tag = [(mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g) or "").startswith("apriltag.")
                      for g in range(m.ngeom)]
+        layout = world.parts.layout if getattr(world, "parts", None) is not None else None
+        for c in (layout.chains.values() if layout is not None else ()):
+            for g in [c.probe, *c.beads]:
+                self._tag[g] = True
         # Per geom: the piece (ball index) it belongs to, -1 for every other geom; and each piece's color.
         rng = world.test_range
         if rng is not None:

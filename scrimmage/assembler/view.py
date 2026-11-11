@@ -183,9 +183,11 @@ def _world_geoms(world, d, root: int, ms, meshes: list[dict], remap: dict[int, i
     m = world.model
     body_mover = {mv.id: i for i, mv in enumerate(ms) if mv.kind == "body"}
     geom_mover = {mv.id: i for i, mv in enumerate(ms) if mv.kind == "geom"}
+    layout = world.parts.layout if world.parts is not None else None
+    probes = {c.probe for c in layout.chains.values()} if layout is not None else set()   # a chain's: never drawn
     out = []
     for g in range(m.ngeom):
-        if int(m.body_rootid[m.geom_bodyid[g]]) == root:
+        if int(m.body_rootid[m.geom_bodyid[g]]) == root or g in probes:
             continue
         kind = _TYPES.get(int(m.geom_type[g]))
         b = int(m.geom_bodyid[g])

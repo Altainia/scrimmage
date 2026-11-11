@@ -21,13 +21,20 @@ at rest.
 **Drawn:** a flex has no geoms, and the live view, the Test tab and replays draw geoms. So each vertex carries a bead,
 `element.<name>.bead<i>`: a sphere of the chain's diameter that touches nothing (contype and conaffinity 0, group 1).
 The interior beads ride their vertex bodies and show the sag. The two end beads are on a body welded to the world,
-`element.<name>`, as every other element's static geoms are, so they are not a movable object.
+`element.<name>`, as every other element's static geoms are, so they are not a movable object. The beads are drawing
+only: the sensors' rays and the camera's view pass through them, so a chain blocks neither (a ray doesn't hit a flex's
+edges in MuJoCo 4.0.0, so without that a sensor would see the chain only at its beads).
+
+**Measured:** a flex isn't a geom, so `mj_geomDistance` can't measure it. The same welded body carries
+`element.<name>.probe`, a capsule of the chain's radius that touches nothing, isn't drawn (PROBE_GROUP, left out of the
+view) and is never hit by a ray. Clearance (blocks/clearance.py) poses it on each edge in turn, from the flex's vertices
+now, and measures to it.
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import mujoco
@@ -45,6 +52,7 @@ CHAIN_CONTACT = {"priority": 1, "solmix": 1e6, "solref": (0.002, 1.0), "solimp":
 EDGE_SOLREF = (0.002, 1.0)  # source: chain spike
 EDGE_SOLIMP = (0.999, 0.9999, 0.001, 0.5, 2.0)  # source: chain spike
 VERTEX_INERTIA = 1e-6  # choice: a point mass
+PROBE_GROUP = 5  # choice: a group MuJoCo's renderer doesn't draw by default; the probe touches nothing
 C_BRACKET = (1e-6, 1e3)  # choice: R3's bracket for the catenary's c, bisected on a log scale
 BISECTIONS = 200  # choice: the log bracket shrinks to double precision well before this
 
@@ -141,6 +149,9 @@ def add_chain(spec: mujoco.MjSpec, e: Chain) -> None:
         b.add_geom(name=f"element.{e.name}.bead{i}", **bead)
         bodies.append(b.name)
         verts += [0.0, 0.0, 0.0]
+    ends.add_geom(name=f"element.{e.name}.probe", type=mujoco.mjtGeom.mjGEOM_CAPSULE, size=[r, 0.0, 0.0],
+                  fromto=[float(c) for c in (*p[n // 2 - 1], *p[n // 2])],    # at rest: the edge into the low point
+                  contype=0, conaffinity=0, group=PROBE_GROUP, rgba=[0.0, 0.0, 0.0, 0.0])
     f = spec.add_flex()
     f.name = f"element.{e.name}"
     f.dim = 1
@@ -166,11 +177,13 @@ def add_chain(spec: mujoco.MjSpec, e: Chain) -> None:
 @dataclass
 class ChainLayout:
     """A built chain: its flex id, each vertex's body id (-1 for the two ends, on the world), the two ends in the
-    field, and the link length."""
+    field, the link length, and its drawing-only geoms: the clearance probe and the beads (bead i on vertex i)."""
     flex: int
     vertex_bodies: list[int]
     ends: tuple[np.ndarray, np.ndarray]
     link: float
+    probe: int = -1
+    beads: list[int] = field(default_factory=list)
 
 
 def chain_layout(model: mujoco.MjModel, e: Chain) -> ChainLayout:
@@ -179,7 +192,9 @@ def chain_layout(model: mujoco.MjModel, e: Chain) -> ChainLayout:
     _, link = rest_shape(e.span, e.top, e.low)
     return ChainLayout(flex=mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_FLEX, f"element.{e.name}"),
                        vertex_bodies=[-1] + [model.body(f"element.{e.name}.v{i}").id for i in range(1, n)] + [-1],
-                       ends=(p[0].copy(), p[n].copy()), link=link)
+                       ends=(p[0].copy(), p[n].copy()), link=link,
+                       probe=model.geom(f"element.{e.name}.probe").id,
+                       beads=[model.geom(f"element.{e.name}.bead{i}").id for i in range(n + 1)])
 
 
 def vertices(model: mujoco.MjModel, data: mujoco.MjData, flex: int) -> np.ndarray:

@@ -564,6 +564,8 @@ what a real one adds).
   lighting, no pixel noise and no pose ambiguity (a tag seen far away or nearly edge-on is as good as one up close).
   And it publishes no PhotonVision or Limelight results on NetworkTables: robot code simulates its own vision from the
   true pose ([Vision in robot code](#vision-in-robot-code)).
+- **A chain.** A beam, a distance or color sensor and a camera all see through a range's
+  [chain](terrain.md#chains): a chain doesn't block a distance sensor or a camera.
 - **A screen for placing sensors.** Sensors live in the config's `[[sensor]]` tables, written by hand; there's no
   picker for them in the Robot tab or the Part tab yet.
 

@@ -119,8 +119,8 @@ The checks, each naming the element:
 A chain is a hold for the climb signals, `climb run`'s `hook_contact` and the Test tab's "any bar" and "next bar", as a
 bar is. Its swing (`climb.swing`) is measured about its end-to-end line. Its top, for "next bar", is its lowest joint's
 height plus its radius. A start may lie under it, and for the station and AprilTag checks it is its 40 links at rest.
-The Test tab's clearance doesn't measure a chain yet, since it has no geoms of its own: `clearance.<chain>` reads
-"never within 20 in".
+The Test tab's clearance (`clears`, `clearance.<chain>`) measures to its links where they are now, sagging or swinging.
+A chain doesn't block a distance sensor or a camera: rays pass through it.
 
 A chain costs more than a bar: on the 2024 field, six chains take a simulated second from about 80 ms of wall time to
 about 230 ms (measured 2026-11-11), still several times faster than real time. A `bar` stays the cheap stand-in.

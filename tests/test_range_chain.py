@@ -20,6 +20,7 @@ import pytest
 
 from range_fixtures import range_cfg
 from scrimmage.assembler.view import model_view
+from scrimmage.blocks.clearance import Closest, clearance
 from scrimmage.blocks.conditions import Watch
 from scrimmage.blocks.palette import ANY_BAR, ANY_HOOK
 from scrimmage.blocks.program import Cond, Program
@@ -29,8 +30,8 @@ from scrimmage.config import build_world, load_config
 from scrimmage.flexcontact import contact_ids, flex_id, id_body, n_ids
 from scrimmage.movers import mover_poses, movers
 from scrimmage.protocol import HalState
-from scrimmage.testrange.chain import (CHAIN_EDGES, MAX_SAG_RATIO, MIN_SAG_RATIO, chain_points, lowest_vertex,
-                                       rest_shape)
+from scrimmage.testrange.chain import (CHAIN_EDGES, MAX_SAG_RATIO, MIN_SAG_RATIO, PROBE_GROUP, chain_points,
+                                       lowest_vertex, rest_shape)
 from scrimmage.testrange.elements import Chain, parse_climb, parse_elements
 from scrimmage.testrange.spec import BUILTIN_RANGES, RangeError
 from scrimmage.world import World
@@ -106,7 +107,7 @@ def test_the_rest_shape():
     assert 40 * link == pytest.approx(2.642, rel=0.01)      # the continuous catenary through 2.42, 1.18 and 0.7176
 
 
-# ---- the world ---------------------------------------------------------------------------------------------------------
+# ---- the world -------------------------------------------------------------------------------------------------------
 
 def chain_world() -> World:
     return build_world(load_config(CHAIN / "robot.toml"))
@@ -207,26 +208,61 @@ def test_the_watch_and_terrain_monitor_read_the_chain(climbed):
     assert top < LOW - 0.03
 
 
-def test_a_bumper_on_the_chain_is_read_as_the_chain(tmp_path):
-    """Review Focus 1. The fixture's chain is out of reach of a robot with its hooks down (their tops are at 0.57 m,
-    the chain's bottom at 0.71), so this copy hangs it to the bumpers' height (its low point 9 cm up) and starts the
-    robot 0.35 m further back. The robot drives its front bumper into it at 3 V."""
+LOW_CHAIN_LOW = 0.09    # m: the lowered copy's low point, at the front bumper's height
+LOW_CHAIN_START = 6.4   # m: the lowered copy's start x, 0.35 m further back than the fixture's
+SENSOR = """
+[[sensor]]
+name = "range"
+kind = "distance"
+body = "drive.chassis"
+at = [0.38, 0.0, 0.09]            # inside the front bumper, at the lowered chain's low point (bead 20)
+toward = [1, 0, 0]
+max_range = 2.0
+sees = "anything"                 # the field too: a chain in the way would read
+analog = 0
+"""
+
+
+def lowered(tmp_path: Path, sensor: bool = False) -> World:
+    """The fixture's chain is out of reach of a robot with its hooks down (their tops are at 0.57 m, the chain's
+    bottom at 0.71), so this copy hangs it to the bumpers' height (its low point 9 cm up) and starts the robot 0.35 m
+    further back. With `sensor`, a distance sensor looks ahead from the front bumper straight at bead 20."""
     for f in ("robot.toml", "climb.toml", "range.toml"):
         shutil.copy(CHAIN / f, tmp_path / f)
     rng = (tmp_path / "range.toml").read_text()
-    rng, n = re.subn(r"(?m)^low = 0\.7176 .*$", "low = 0.09", rng)
-    rng, k = re.subn(r"(?m)^pose = \[6\.05, ", "pose = [6.4, ", rng)
+    rng, n = re.subn(r"(?m)^low = 0\.7176 .*$", f"low = {LOW_CHAIN_LOW}", rng)
+    rng, k = re.subn(r"(?m)^pose = \[6\.05, ", f"pose = [{LOW_CHAIN_START}, ", rng)
     assert n == k == 1
     (tmp_path / "range.toml").write_text(rng)
-    w = build_world(load_config(tmp_path / "robot.toml"))
+    if sensor:
+        (tmp_path / "robot.toml").write_text((tmp_path / "robot.toml").read_text() + SENSOR)
+    return build_world(load_config(tmp_path / "robot.toml"))
+
+
+def forward(volts: float) -> HalState:
+    hal = HalState()
+    hal.devices[("PWM", "0")] = {"<init": True, "<speed": volts / 12.5}
+    hal.devices[("PWM", "1")] = {"<init": True, "<speed": -volts / 12.5}     # the right side is mirrored
+    return hal
+
+
+def front_face(w: World) -> float:
+    """The world x of the robot's front bumper face (the robot faces -x): the smallest x of its box geoms."""
+    m, d = w.model, w.data
+    root = m.body_rootid[w.robot_body]
+    boxes = [g for g in range(m.ngeom) if m.body_rootid[m.geom_bodyid[g]] == root
+             and m.geom_type[g] == mujoco.mjtGeom.mjGEOM_BOX and m.geom_contype[g]]
+    return min(float(d.geom_xpos[g][0] - np.abs(d.geom_xmat[g].reshape(3, 3))[0] @ m.geom_size[g]) for g in boxes)
+
+
+def test_a_bumper_on_the_chain_is_read_as_the_chain(tmp_path):
+    """Review Focus 1, on the lowered copy (lowered()). The robot drives its front bumper into the chain at 3 V."""
+    w = lowered(tmp_path)
     m, d = w.model, w.data
     assert m.geom(m.ngeom - 1).name == "ball.0"     # what geom -1 would read
     assert w.test_range.balls.ball_of_geom(m.ngeom - 1) == 0
     fid = flex_id(m, flex_of(w))
-    hal = HalState()
-    volts = 3.0 / 12.5
-    hal.devices[("PWM", "0")] = {"<init": True, "<speed": volts}
-    hal.devices[("PWM", "1")] = {"<init": True, "<speed": -volts}     # the right side is mirrored
+    hal = forward(3.0)
     mon = w.terrain_monitor()
     seen = 0
     for _ in range(1000):           # 1 s
@@ -252,7 +288,80 @@ def test_a_bumper_on_the_chain_is_read_as_the_chain(tmp_path):
     assert seen > 0
 
 
-# ---- the cost -----------------------------------------------------------------------------------------------------------
+# ---- clearance, rays and the probe -----------------------------------------------------------------------------------
+
+def test_clearance_to_a_chain_is_the_distance_to_its_links(tmp_path):
+    """Review finding 1. At the start of the lowered copy the chain's low point is at the front bumper's height, so the
+    nearest robot geom is that face, and the distance is the face to the chain's axis (x 5.7441) less its radius."""
+    w = lowered(tmp_path)
+    m, d = w.model, w.data
+    mujoco.mj_forward(m, d)
+    probe = w.parts.layout.chains[NAME].probe
+    pose = (d.geom_xpos[probe].copy(), d.geom_xmat[probe].copy(), m.geom_size[probe].copy())
+    want = front_face(w) - 5.7441 - 0.0127 / 2.0
+    assert 0.2 < want < 0.3
+    assert clearance(w, NAME) == pytest.approx(want, abs=1e-6)
+    assert np.array_equal(d.geom_xpos[probe], pose[0]) and np.array_equal(d.geom_xmat[probe], pose[1])
+    assert np.array_equal(m.geom_size[probe], pose[2])
+
+
+def test_a_clears_condition_fails_when_the_robot_touches_the_chain(tmp_path):
+    """Review finding 1: `clears chain_blue_center by 1 in` holds at the start (about 9 in away) and fails once the
+    bumper touches the chain (clearance 0)."""
+    w = lowered(tmp_path)
+    m, d = w.model, w.data
+    watch = Watch(w, Program(Path("/tmp/x.test.toml"), Path("r.toml"), []))
+    watch.closest = Closest(w, [NAME])
+    clears = Cond("clears", {"element": NAME, "at_least_in": 1.0})
+    mujoco.mj_forward(m, d)
+    watch.closest.update(0.0)
+    assert watch.holds(clears)
+    fid = flex_id(m, flex_of(w))
+    hal = forward(3.0)
+    for _ in range(1000):
+        w.step(hal)
+        if (contact_ids(m, d) == fid).any():
+            break
+    else:
+        pytest.fail("the bumper never touched the chain")
+    watch.closest.update(float(d.time))
+    assert watch.closest.now[NAME] == 0.0
+    assert not watch.holds(clears)
+
+
+def test_a_distance_sensor_sees_through_a_chain(tmp_path):
+    """Review finding 4: a ray doesn't hit a flex's links, so it doesn't hit their beads either: the sensor looking
+    straight at bead 20 reads nothing. A chain blocks no sensor, camera or ray (docs/terrain.md)."""
+    w = lowered(tmp_path, sensor=True)
+    m, d = w.model, w.data
+    c = w.parts.layout.chains[NAME]
+    mujoco.mj_forward(m, d)
+    gid = np.zeros(1, np.int32)
+    b = m.body("drive.chassis").id
+    start = d.xpos[b] + d.xmat[b].reshape(3, 3) @ np.array([0.38, 0.0, 0.09])
+    assert mujoco.mj_ray(m, d, start, np.array([-1.0, 0.0, 0.0]), None, 1, b, gid) > 0
+    assert int(gid[0]) == c.beads[20]               # the bead is in the beam's way
+    w.step(HalState())
+    r = w.sensors.reading("range")
+    assert r.distance > 0.5         # past the chain (0.27 m away): it reads the field beyond, or nothing
+
+
+def test_the_probe_changes_nothing_else():
+    """The probe touches nothing, isn't drawn, isn't a mover or a movable object, and adds one geom (no body)."""
+    w = chain_world()
+    m = w.model
+    c = w.parts.layout.chains[NAME]
+    p = c.probe
+    assert m.geom(p).name == f"element.{NAME}.probe" and m.geom_bodyid[p] == m.body(f"element.{NAME}").id
+    assert m.geom_contype[p] == 0 and m.geom_conaffinity[p] == 0 and m.geom_group[p] == PROBE_GROUP
+    assert m.geom_rgba[p][3] == 0.0
+    view = model_view(w, include_world=True)
+    assert not any(g["name"] == f"element.{NAME}.probe" for g in view["world_geoms"])
+    assert all(mv.id != p for mv in movers(w) if mv.kind == "geom")
+    assert f"element.{NAME}.probe" not in w.movable_objects()
+
+
+# ---- the cost --------------------------------------------------------------------------------------------------------
 
 def ranges_2024(tmp_path: Path) -> tuple[Path, Path]:
     """The speaker example's robot on the 2024 range as is, and on a copy with its six chain_* bars as chains with D1's
@@ -312,12 +421,30 @@ def test_six_chains_cost_at_most_6x_six_bars(tmp_path):
 
 # ---- every contact reader goes through flexcontact -------------------------------------------------------------------
 
+# Any direct read of a contact's geoms: `contact.geom` (with or without an index), `.geom1` / `.geom2`, a contact by
+# index, or a loop over the contacts (review finding 2).
+BAD = re.compile(r"contact\.geom\b|\.geom[12]\b|\.contact\[|\bin\s+\w+\.contact\b")
+
+
+def test_the_contact_pattern_catches_each_form():
+    """The pattern can't silently weaken: it matches every form a contact's geoms have been read in, including
+    World.robot_contacts' before this task and the bench's."""
+    for text in ("for c in d.contact[:d.ncon]:\n    b1 = m.geom_bodyid[c.geom1]",
+                 "g = d.contact.geom[:d.ncon]", "geom = d.contact.geom", "con = d.contact[k]; g = con.geom1",
+                 "x = c.geom2", "for c in data.contact:"):
+        assert BAD.search(text), text
+    for text in ("ids = contact_ids(m, d)", "m.geom_bodyid[g]", "d.geom_xpos[g]", "d.contact.frame[i]"):
+        assert not BAD.search(text), text
+
+
 def test_no_world_module_reads_contact_geom_directly():
-    """R5: outside flexcontact.py (and the bench, which builds its own worlds), no module indexes contact.geom."""
+    """R5: outside flexcontact.py, no module reads a contact's geoms (BAD). The bench is exempt, as the brief says:
+    it builds its own worlds, which have no flex until Tasks 7 and 8 put a flex NOTE on it; Task 8 routes
+    bench/run.py's readers through contact_ids and drops this exemption."""
     pkg = REPO / "scrimmage"
-    bad = [str(p.relative_to(pkg)) for p in pkg.rglob("*.py")
-           if p.name != "flexcontact.py" and "bench" not in p.relative_to(pkg).parts[:1]
-           and "contact.geom[" in p.read_text(encoding="utf-8")]
+    bad = [f"{p.relative_to(pkg)}:{k}" for p in pkg.rglob("*.py")
+           if p.name != "flexcontact.py" and p.relative_to(pkg).parts[0] != "bench"
+           for k, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1) if BAD.search(line)]
     assert bad == []
 
 

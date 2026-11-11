@@ -666,10 +666,11 @@ def _chain(r: _Reader, name: str, size: tuple[float, float]) -> Chain:
     try:
         rest_shape(e.span, e.top, e.low)
     except ValueError:
-        raise r.err(i18n.t("no catenary fits: a sag of {sag} m over a span of {span} m is {ratio} times the span, "
-                           "and a chain of {edges} links hangs between {least} and {most} times; change span, top or low",
-                           edges=CHAIN_EDGES, sag=f"{e.top - e.low:.4g}", span=f"{e.span:.4g}", ratio=f"{(e.top - e.low) / e.span:.4g}",
-                           least=f"{MIN_SAG_RATIO:.2g}", most=f"{MAX_SAG_RATIO:.4g}")) from None
+        raise r.err(i18n.t("no catenary fits: a sag of {sag} m over a span of {span} m is {ratio} times the "
+                           "span, and a chain of {edges} links hangs between {least} and {most} times; change "
+                           "span, top or low", edges=CHAIN_EDGES, sag=_plain(e.top - e.low), span=_plain(e.span),
+                           ratio=_plain((e.top - e.low) / e.span), least=_plain(MIN_SAG_RATIO, 1),
+                           most=_plain(MAX_SAG_RATIO))) from None
     c, s = math.cos(math.radians(e.yaw_deg)), math.sin(math.radians(e.yaw_deg))
     for k in (-1.0, 1.0):
         x, y = e.center[0] + k * e.span / 2.0 * c, e.center[1] + k * e.span / 2.0 * s
@@ -678,6 +679,11 @@ def _chain(r: _Reader, name: str, size: tuple[float, float]) -> Chain:
                                "chain or shorten its span", x=f"{x:.4g}", y=f"{y:.4g}", length=f"{size[0]:g}",
                                width=f"{size[1]:g}"))
     return e
+
+
+def _plain(x: float, digits: int = 4) -> str:
+    """`x` to `digits` significant digits in plain digits, never an exponent: 0.000005, not 5e-06."""
+    return np.format_float_positional(x, precision=digits, unique=False, fractional=False, trim="-")
 
 
 def _check_bump(r: _Reader, e: Bump) -> None:
