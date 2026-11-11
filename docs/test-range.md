@@ -663,6 +663,8 @@ across; check units (m, mm or in)", the usual sign of millimeters read as meters
 - **A warning for a piece far from its expected size.** A piece (CAD or not) smaller than 2 cm across, or whose
   `mass` makes it lighter than air or denser than tungsten for its size, is accepted with a warning: `scrimmage range
   check` prints it, and a test run's notes say it. It is usually a scale model, a units mistake, or a mass in pounds.
+  A CAD piece has a narrower density range, 100 to 10 000 kg/m³ (10 times lighter or heavier than water), and its
+  warning suggests `scale` and `mass`. The volume is the CAD file's own.
 
 **The long axis, and flat pieces.** Each kind has a long axis: a tube's, ring's, cylinder's or cone's own, a box's
 longest edge, and for a compound or CAD piece `axis = "x"`, `"y"` or `"z"` (default `"z"`). A kind is **flat** when it

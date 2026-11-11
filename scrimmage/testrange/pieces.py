@@ -70,6 +70,7 @@ MAX_EXTENT = 3.0  # m: a piece bigger than this is refused as a units mistake
 MIN_EXTENT = 0.02  # m: a piece smaller than this is warned about (a scale model, or a units mistake); our call
 DENSITY_RANGE = (1.0, 20000.0)  # kg/m^3: a mass and size outside this (lighter than air, denser than tungsten) is
 #                                 warned about; an inflated 2023 cube as a solid box is about 5
+CAD_DENSITY_RANGE = (100.0, 10000.0)  # choice: 10x either way of water (spec D4)
 MAX_SCALE = 1000.0  # a CAD piece's scale at most
 MIN_CAD_EXTENT = 0.0005  # m: a CAD piece smaller than this is refused as a units mistake (too small to split)
 
@@ -499,7 +500,8 @@ def _plain(v: float) -> str:
 
 def _size_warnings(r: _Reader, extent: float, density: float, shape: str) -> tuple[str, ...]:
     """A warning for a piece far from a game piece's size (smaller than MIN_EXTENT: a scale model, a units mistake),
-    else for a mass that makes it far too heavy or light for its size (outside DENSITY_RANGE)."""
+    else for a mass that makes it far too heavy or light for its size (outside DENSITY_RANGE, or CAD_DENSITY_RANGE for
+    a CAD piece)."""
     from ..checks import worded
 
     where = f"{r.path}: {r.where}"
@@ -512,6 +514,15 @@ def _size_warnings(r: _Reader, extent: float, density: float, shape: str) -> tup
         return (worded(lambda: i18n.t("{where}: the piece is only {size} m across, smaller than {least} m: check its "
                                       "sizes (in m, or the _in keys for inches)", where=where, size=_plain(extent),
                                       least=f"{MIN_EXTENT:g}")),)
+    if shape == "cad":
+        lo, hi = CAD_DENSITY_RANGE
+        if not lo <= density <= hi:
+            return (worded(lambda: i18n.t(
+                "{where}: its mass makes it {density} kg/m³ for its size, outside {lo} to {hi} (10 times lighter or "
+                "heavier than water): is its CAD a scale model ({scale_setting} for a 1:40 print) or in other units, "
+                "or is the mass wrong? Check scale and mass (kg)", where=where, density=_plain(density),
+                lo=f"{lo:g}", hi=f"{hi:g}", scale_setting="scale = 40")),)
+        return ()
     lo, hi = DENSITY_RANGE
     if not lo <= density <= hi:
         return (worded(lambda: i18n.t("{where}: its mass makes it {density} kg/m³ for its size, outside {lo} to {hi} "

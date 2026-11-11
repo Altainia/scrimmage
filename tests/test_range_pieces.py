@@ -297,6 +297,19 @@ def test_a_piece_heavy_for_its_size_is_warned_about(tmp_path):
     assert kind_preset("2024-note").warnings == () and ball_kind("b", "2026-fuel").warnings == ()
 
 
+def test_a_cad_piece_far_from_waters_density_is_warned_about(tmp_path):
+    write_stl(tmp_path / "c.stl", *cube(0.05))
+    for mass, density in ((1.5, "12000"), (0.01, "80")):
+        k = parse_kind(P, "c", {"shape": "cad", "cad": "c.stl", "units": "m", "mass": mass, "friction": 0.4}, tmp_path)
+        assert len(k.warnings) == 1
+        w = k.warnings[0]
+        assert f"{density} kg/m³" in w and "100" in w and "10000" in w and "scale" in w
+    ok = parse_kind(P, "c", {"shape": "cad", "cad": "c.stl", "units": "m", "mass": 0.2, "friction": 0.4}, tmp_path)
+    assert ok.warnings == ()
+    box = parse_kind(P, "b", {"shape": "box", "size": [0.05, 0.05, 0.05], "mass": 1.5, "friction": 0.4}, tmp_path)
+    assert box.warnings == ()
+
+
 def test_a_ranges_piece_warnings_are_the_ranges(tmp_path):
     from scrimmage.testrange.spec import load_range
     write_stl(tmp_path / "note.stl", *cube(0.0088))

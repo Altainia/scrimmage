@@ -1,5 +1,6 @@
 """Reading CAD sources: STEP assemblies (names, nesting, positions) and STL/OBJ folders (units)."""
 
+import math
 import shutil
 import sys
 from pathlib import Path
@@ -319,3 +320,22 @@ def test_the_field_step_has_product_names():
     assert not any(NAUO_NAME.match(seg) for p in s.pieces for seg in p.key.split("/"))
     assert any(p.name == "Boost Area End" for p in s.pieces)
     assert len(s.pieces) == 5507
+
+
+def test_tessellation_tolerance_is_millimeters_in_any_unit(tmp_path):
+    # OpenCASCADE meshes in its session unit (mm), so TOL_LINEAR = 0.2 means 0.2 mm whatever the file's unit
+    # (measured 2026-11-10; R2)
+    def chord_error(path):
+        v = piece(load_source(path), "Climber/bolt").v
+        c = (v[:, :2].min(axis=0) + v[:, :2].max(axis=0)) / 2
+        d = v[:, :2] - c
+        r = float(np.hypot(d[:, 0], d[:, 1]).max())
+        n = len(np.unique(np.round(np.arctan2(d[:, 1], d[:, 0]), 4)))
+        return r * (1 - math.cos(math.pi / n))
+
+    text = (DATA / "climber.step").read_text()
+    assert "SI_UNIT(.MILLI.,.METRE.)" in text
+    meter = tmp_path / "climber_m.step"
+    meter.write_text(text.replace("SI_UNIT(.MILLI.,.METRE.)", "SI_UNIT($,.METRE.)"))
+    assert chord_error(DATA / "climber.step") <= 2e-4
+    assert 2e-5 < chord_error(meter) <= 2e-4
