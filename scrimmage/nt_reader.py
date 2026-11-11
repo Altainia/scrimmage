@@ -24,6 +24,7 @@ class NetworkTablesLink:
         self._ntcore = ntcore
         self.inst = ntcore.NetworkTableInstance.create()
         self._all = self._odo = self._truth = self._Pose2d = self._geometry = self._balls = self._last_balls = None
+        self._cameras: dict = {}    # a camera's name -> its TagIds publisher (publish_camera_tags)
         try:
             self.inst.addConnectionListener(False, self._on_connection)   # a new server gets the balls again
             self.inst.startClient4("scrimmage")
@@ -74,6 +75,14 @@ class NetworkTablesLink:
         self._balls.set([g.Pose3d(g.Translation3d(p[0], p[1], p[2]), g.Rotation3d(g.Quaternion(p[3], p[4], p[5], p[6])))
                          for p in poses.tolist()])
 
+    def publish_camera_tags(self, name: str, ids: list[int]) -> None:
+        """The IDs of the AprilTags camera [[sensor]] `name` sees, as an IntegerArray on /MuJoCo/Camera/<name>/TagIds.
+        The topic appears with the first call, so a robot without a camera never has it."""
+        pub = self._cameras.get(name)
+        if pub is None:
+            pub = self._cameras[name] = self.inst.getIntegerArrayTopic(f"/MuJoCo/Camera/{name}/TagIds").publish()
+        pub.set(list(ids))
+
     def odometry(self) -> tuple[float, float, float] | None:
         if self._odo is None:
             return None
@@ -98,9 +107,10 @@ class NetworkTablesLink:
         # number and handles, so a handle object left to the garbage collector would, when it is finally freed,
         # unpublish or unsubscribe whatever now has the same handle: another session's link, or a server in
         # this process (the tests' stand-in robot program lost its topics that way).
-        for handle in (self._all, self._odo, self._truth, self._balls):
+        for handle in (self._all, self._odo, self._truth, self._balls, *self._cameras.values()):
             if handle is not None:
                 handle.close()
         self._all = self._odo = self._truth = self._balls = None
+        self._cameras = {}
         self.inst.stopClient()
         self._ntcore.NetworkTableInstance.destroy(self.inst)  # otherwise NT threads keep the process alive

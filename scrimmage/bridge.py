@@ -718,6 +718,9 @@ class Bridge:
             self.nt_link.publish_truth(x, y, yaw)
             if w.test_range is not None:
                 self.nt_link.publish_balls(w.test_range.ball_poses())
+            if w.sensors is not None and w.sensors.cameras is not None:
+                for s in w.sensors.cameras.specs:
+                    self.nt_link.publish_camera_tags(s.name, list(w.sensors.reading(s.name).tags))
             odo = self.nt_link.odometry()
         self.recorder.sample(now, x, y, odo)
         if self._writer:

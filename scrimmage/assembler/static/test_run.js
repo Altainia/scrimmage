@@ -39,7 +39,8 @@
 //
 // When a new run is kept (a run ends), it is shown. Test hook: window.__scrimmageTest.replay (test.js) is replay():
 // {time, playing, runId, view (the LiveView or null), cylinders (LiveView.cylinderShapes(): [{name, barrel, rod}]
-// drawn lengths in m, or null), sensors (LiveView.sensorShapes(): [{name, lit, a, b}], or null), chart: {signals,
+// drawn lengths in m, or null), sensors (LiveView.sensorShapes(): [{name, lit, a, b, and a camera's tags (the
+// IDs it sees at the time shown, drawn as lines to them)}], or null), chart: {signals,
 // runs: [shown, compared or null]}, feeds (the shown run's), marks (the shown run's), outlined (the ball index of
 // the piece outlined, or null), feedColors: {in, placed, stuck, missed, bg}, markColors: {slip, bg}},
 // window.__scrimmageTest.sweep is sweepShown(): {id, rows, y, points: [[value, y], ...]} or null, and
@@ -433,6 +434,9 @@ export function setTime(time) {
   const { n, poses } = rp.run.motion;
   if (rp.view && k >= 0) rp.view.applyFrame({ poses: poses.subarray(k * n * 7, (k + 1) * n * 7), n, seq: k });
   if (rp.view) rp.view.lightSensors((spec) => sensorOn(spec, signalAt(`sensor.${spec.name}`, rp.time)));
+  if (rp.view) {
+    for (const [name, kept] of Object.entries(rp.run.result.cameras || {})) rp.view.showCameraTags(name, tagsAt(kept, rp.time));
+  }
   renderPlayer();
   drawChart();
 }
@@ -449,12 +453,25 @@ function signalAt(name, time) {
   return vs[lo];
 }
 
+// A camera's tags at `time`: its kept [t, [IDs]] changes (scrimmage/blocks/run.py RunResult.cameras), the last at or
+// before it; none before the first.
+function tagsAt(kept, time) {
+  let ids = [];
+  for (const [t, seen] of kept) {
+    if (t > time + 1e-9) break;
+    ids = seen;
+  }
+  return ids;
+}
+
 // A sensor is on from its signal (scrimmage/blocks/run_setup.py sensor_value): a beam broken (1), a distance sensor closer
-// than its threshold, a color sensor seeing a piece (a color's index; null while it sees none).
+// than its threshold, a color sensor seeing a piece (a color's index; null while it sees none), a camera seeing a tag
+// (how many it sees).
 function sensorOn(spec, v) {
   if (v == null) return false;
   if (spec.kind === "beam") return v >= 0.5;
   if (spec.kind === "distance") return v < spec.threshold_in;
+  if (spec.kind === "camera") return v >= 1;   // how many tags it sees
   return true;
 }
 

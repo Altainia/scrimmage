@@ -83,3 +83,26 @@ def test_the_test_tab_and_the_readme_name_the_sensors():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert '`[[sensor]] kind = "beam"`' in readme and "docs/sensors.md" in readme
     assert "sensors.md" in (ROOT / "docs" / "parts.md").read_text(encoding="utf-8")
+
+
+def test_vision_in_robot_code_names_the_topic_and_says_it_isnt_run_here():
+    """Spec D7: the section feeds PhotonLib's VisionSystemSim the true pose's Pose2d topic (tests/test_nt_and_recorder.py
+    pins its name and type), and says the snippet isn't checked here."""
+    doc = text()
+    section = doc.split("## Vision in robot code", 1)[1].split("\n## ", 1)[0]
+    for name in ("/MuJoCo/GroundTruthPose", "Pose2d", "VisionSystemSim", "```java", "```python"):
+        assert name in section, name
+    assert "isn't run in this repo's tests" in section
+    assert "[Vision in robot code](#vision-in-robot-code)" in doc
+
+
+def test_the_camera_keys_and_estimates_are_in_the_doc():
+    from scrimmage.sensors.spec import DEFAULT_FPS, DEFAULT_HFOV_DEG, DEFAULT_MAX_ANGLE_DEG, DEFAULT_VFOV_DEG
+    have = table_keys(text())
+    assert set(KEYS["camera"]) <= have
+    doc = text()
+    for key, value in (("hfov_deg", DEFAULT_HFOV_DEG), ("vfov_deg", DEFAULT_VFOV_DEG),
+                       ("max_angle_deg", DEFAULT_MAX_ANGLE_DEG), ("fps", DEFAULT_FPS)):
+        assert f"| `{key}` | {value} |" in doc, key
+    assert f"| {DEFAULT_MAX_RANGE['camera']:.1f} m |" in doc
+    assert "Cameras and vision" not in doc and "/MuJoCo/Camera/<name>/TagIds" in doc

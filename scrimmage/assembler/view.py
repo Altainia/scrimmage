@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import math
 
 import mujoco
 import numpy as np
@@ -116,7 +117,9 @@ def _sensors(world, d, body_mover: dict[int, int]) -> list[dict]:
     """Each [[sensor]] (sensors/spec.py) for the replay to draw as a line, lit while on: {name, kind, a, b}, and a
     distance sensor's threshold_in (it is on closer than that). A beam break's line runs from its `from` to its `to`; a
     distance or color sensor's from `at` along `toward`, max_range long. a and b are pins as _cylinders' are: [mover,
-    pos], pos in that mover's frame; or, on a body that never moves (mover -1), its fixed world position."""
+    pos], pos in that mover's frame; or, on a body that never moves (mover -1), its fixed world position. A camera's
+    entry adds hfov_deg, vfov_deg and max_range, and `corners`: the four far corners of its view (pins, max_range out
+    along each edge of its fields of view; up is the body's z), which the replay draws as its view cone."""
     if getattr(world, "sensors", None) is None:
         return []
     m = world.model
@@ -125,14 +128,34 @@ def _sensors(world, d, body_mover: dict[int, int]) -> list[dict]:
         b = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, s.body)
         mover = body_mover.get(b, -1)
         start = np.asarray(s.start, float)
-        pins = []
-        for local in (start, start + s.length * np.asarray(s.direction, float)):
+
+        def pin(local):
             pos = local if mover >= 0 else d.xpos[b] + d.xmat[b].reshape(3, 3) @ local
-            pins.append([mover, [float(v) for v in pos]])
+            return [mover, [float(v) for v in pos]]
+        pins = [pin(local) for local in (start, start + s.length * np.asarray(s.direction, float))]
         entry = {"name": s.name, "kind": s.kind, "a": pins[0], "b": pins[1]}
         if s.kind == "distance":
             entry["threshold_in"] = s.threshold / IN
+        if s.kind == "camera":
+            entry.update(hfov_deg=s.hfov_deg, vfov_deg=s.vfov_deg, max_range=s.length,
+                         corners=[pin(start + s.length * edge) for edge in _view_edges(s)])
         out.append(entry)
+    return out
+
+
+def _view_edges(s) -> list[np.ndarray]:
+    """A camera's four view edges, unit vectors in its body's frame: forward turned by half of each field of view
+    (left and up, left and down, right and down, right and up), up being the body's z made square to forward."""
+    f = np.asarray(s.direction, float)
+    z = np.array([0.0, 0.0, 1.0])
+    up = z - (z @ f) * f
+    up /= np.linalg.norm(up)
+    left = np.cross(up, f)
+    h, v = math.tan(math.radians(s.hfov_deg / 2.0)), math.tan(math.radians(s.vfov_deg / 2.0))
+    out = []
+    for sl, su in ((1, 1), (1, -1), (-1, -1), (-1, 1)):
+        e = f + sl * h * left + su * v * up
+        out.append(e / np.linalg.norm(e))
     return out
 
 

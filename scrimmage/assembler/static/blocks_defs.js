@@ -10,7 +10,8 @@
 //                                  pickers has something to pick: aim needs a turret and a goal, scored a goal, the
 //                                  cylinder blocks and the air pressure check a cylinder, the element check a hinged
 //                                  or sliding field element, clears a field element, the partner checks a partner
-//                                  robot, the sensor check one of the robot's [[sensor]]s)
+//                                  robot, the sensor check one of the robot's [[sensor]]s, the sees_tag check a
+//                                  camera on a field with AprilTags)
 //   testToWorkspace(test, ws)      replaces the workspace's blocks with the test's (one stack, top to bottom)
 //   appendBlocks(ws, blocks)       joins blocks (the test JSON's) below the test's last block
 //   workspaceToTest(ws)            the test JSON of the workspace: the test is the stack that holds the test's first
@@ -51,8 +52,8 @@ const COND = "Condition";
 // Names the tests use that the palette may not have (a joint renamed on Import again): a picker keeps offering them
 // so the block keeps its value (and shows the problem) instead of quietly picking another name. Rebuilt by setUsed.
 const KINDS_OF_NAME = { motor: "robot", joint: "robot", robot: "robot", body: "robot", turret: "robot", cylinder: "robot",
-  sensor: "robot", color: "robot",
-  field: "field", piece: "field", bar: "field", level: "field", station: "field", element: "field", rod: "field",
+  sensor: "robot", color: "robot", camera: "robot",
+  field: "field", tag: "field", piece: "field", bar: "field", level: "field", station: "field", element: "field", rod: "field",
   goal: "field", moving: "field", cleared: "field", zone: "field" };
 let used = {};
 const resetUsed = () => {
@@ -93,6 +94,7 @@ const has = (xs) => (xs || []).length > 0;
 const cylinderNames = () => (pal().cylinders || []).map((c) => c.name);
 const movingNames = () => (pal().moving_elements || []).map((e) => e.name);
 const sensorNames = () => (pal().sensors || []).map((s) => s.name);
+const cameraNames = () => (pal().sensors || []).filter((s) => s.kind === "camera").map((s) => s.name);
 const ANY_GOAL = () => [[t("any goal"), "any"]];   // a scored check's goal: every goal together (palette.py ANY_GOAL)
 
 // A floor piece as a student reads it ("ball 10", "coral 2"): the palette's `piece_labels`, the names every sentence uses
@@ -124,6 +126,10 @@ const OPTIONS = {
   sensor: () => choices(sensorNames(), "sensor"),
   // a color sensor's check: a piece of any color (no sees in the file), or one of the palette's named colors
   sees: () => choices(pal().sensor_colors || [], "color", [[t("a piece"), "any"]]),
+  camera: () => choices(cameraNames(), "camera"),
+  // a camera's check: any tag (no tag in the file), or one of the field's AprilTags by its ID (a dropdown's value is
+  // text: the test JSON's tag is the number)
+  tag: () => choices((pal().tags || []).map(String), "tag", [[t("any tag"), "any"]], (id) => t("tag {id}", { id })),
   cleared: () => choices(pal().elements || [], "cleared"),
   zone: () => choices(pal().zones || [], "zone"),
   // left and right only on a swerve robot (or when the test already has one)
@@ -607,6 +613,13 @@ const CONDS = {
       showSees(b, b.getFieldValue("SENSOR"), b.getFieldValue("SEES"));
     },
   },
+  sees_tag: {
+    def: () => ({ message0: t("camera %1 sees %2"), args0: [dd("CAMERA", OPTIONS.camera), dd("TAG", OPTIONS.tag)],
+      tooltip: t("One of the robot's cameras sees this AprilTag (or any tag): it is in the camera's view, close enough, not too edge-on, and nothing is in the way.") }),
+    fields: (a) => ({ CAMERA: a.camera, TAG: a.tag == null ? "any" : String(a.tag) }),
+    json: (b) => ({ sees_tag: { camera: b.getFieldValue("CAMERA"),
+      ...(b.getFieldValue("TAG") === "any" ? {} : { tag: Number(b.getFieldValue("TAG")) }) } }),
+  },
   station_empty: {
     def: () => ({ message0: t("%1 is empty"), args0: [dd("STATION", OPTIONS.station)],
       tooltip: t("The station has no pieces left to feed.") }),
@@ -716,6 +729,7 @@ export function toolbox(p) {
   if (has(p.elements)) out.push(item(condType("clears")));
   if (p.partner) out.push(item(condType("partner_lifted")), item(condType("partner_moved")));
   if (has(p.sensors)) out.push(item(condType("sensor")));
+  if ((p.sensors || []).some((s) => s.kind === "camera") && has(p.tags)) out.push(item(condType("sees_tag")));
   out.push(item(condType("in_hopper")), item(condType("made_it_in")));
   return { kind: "flyoutToolbox", contents: out };
 }
@@ -753,6 +767,7 @@ function rememberNames(blocks) {
       if (kind === "clears") remember("cleared", a.element);
       if (kind === "in_zone") remember("zone", a.zone);
       if (kind === "sensor") { remember("sensor", a.sensor); remember("color", a.sees); }
+      if (kind === "sees_tag") { remember("camera", a.camera); if (a.tag != null) remember("tag", String(a.tag)); }
     }
     rememberNames(b.body);
   }

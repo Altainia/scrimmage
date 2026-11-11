@@ -27,7 +27,8 @@ SIGNALS_HELP = ("battery, speed, motor.<name>.current|command, joint.<name>.posi
                 "hal:<type>/<device>/<key>, nt:<topic>, and on a test range score, score.<goal>, fired, held, on_field, "
                 "element.<platform>.angle, element.<hinged or sliding element>, "
                 "with a [game] points, points.auto|teleop|endgame, with a [partner] partner.height|tilt|moved, "
-                "and with [[sensor]]s sensor.<name>, sensor.<name>.distance|color, sensor.<name>.sees.<color>")
+                "and with [[sensor]]s sensor.<name>, sensor.<name>.distance|color, sensor.<name>.sees.<color>, "
+                "and for a camera sensor.<name>.tags|sees_tag.<id>|tag_distance.<id>")
 RANGE_SIGNALS = ("score", "fired", "held", "on_field")   # and score.<goal>: read from the range's counts()
 
 
@@ -230,7 +231,9 @@ def _sensor_signal(name: str, world) -> Signal:
     sensor seeing a piece), as the Test tab's sensor condition reads it; sensor.<name>.distance (m: a distance sensor's,
     max_range with nothing in range; a color sensor's to the piece it sees; no value otherwise); sensor.<name>.color
     (the named color a color sensor sees, no value while it sees none); sensor.<name>.sees.<color> (true while it is on
-    and sees that named color)."""
+    and sees that named color). A camera's sensor.<name> is true while it sees any tag; sensor.<name>.tags is how
+    many it sees, sensor.<name>.sees_tag.<id> 0 or 1 and sensor.<name>.tag_distance.<id> the tag's distance (m; its
+    max_range while it isn't seen)."""
     from .sensors.colors import NAMED_COLORS
     runtime = getattr(world, "sensors", None)
     if runtime is None:
@@ -238,13 +241,20 @@ def _sensor_signal(name: str, world) -> Signal:
                               signal=name, sensor_table="[[sensor]]"))
     kinds = {sp.name: sp.kind for sp in runtime.specs}
     sensor, _, field = name[len("sensor."):].partition(".")     # a sensor's name has no dot (sensors/spec.py)
-    if sensor not in kinds or field not in ("", "distance", "color") and not field.startswith("sees."):
+    if sensor not in kinds or field not in ("", "distance", "color", "tags") and not field.startswith(
+            ("sees.", "sees_tag.", "tag_distance.")):
         raise ScenarioError(t("unknown signal {signal}: use one of {sensor_signals}; the robot's sensors: {sensors}",
                               signal=repr(name), sensors=", ".join(kinds),
                               sensor_signals="sensor.<name>, sensor.<name>.distance, sensor.<name>.color, "
-                                             "sensor.<name>.sees.<color>"))
+                                             "sensor.<name>.sees.<color>, sensor.<name>.tags, "
+                                             "sensor.<name>.sees_tag.<id>, sensor.<name>.tag_distance.<id>"))
+    if kinds[sensor] == "camera":
+        return _camera_signal(name, world, sensor, field)
     if field == "":
         return Signal(name, lambda s: s.world.sensors.reading(sensor).on)
+    if field == "tags" or field.startswith(("sees_tag.", "tag_distance.")):
+        raise ScenarioError(t("signal {signal}: {sensor} isn't a camera, so it sees no AprilTags", signal=repr(name),
+                              sensor=sensor))
     if field == "distance":
         if kinds[sensor] == "beam":
             raise ScenarioError(t("signal {signal}: {sensor} is a beam break, which reads no distance; read it as "
@@ -264,6 +274,38 @@ def _sensor_signal(name: str, world) -> Signal:
         r = s.world.sensors.reading(sensor)
         return bool(r.on and r.color_name == color)
     return Signal(name, sees)
+
+
+def _camera_signal(name: str, world, sensor: str, field: str) -> Signal:
+    """A camera's sensor.<name>, .tags, .sees_tag.<id> and .tag_distance.<id> (_sensor_signal's)."""
+    rng = world.parts.range if getattr(world, "parts", None) is not None else None
+    layout = rng.apriltags if rng is not None else None
+    if layout is None:
+        raise ScenarioError(t("signal {signal}: {sensor} is a camera, but the range has no AprilTags to see; give "
+                              "the range file {apriltags_key}", signal=repr(name), sensor=sensor,
+                              apriltags_key="[range] apriltags"))
+    if field == "":
+        return Signal(name, lambda s: s.world.sensors.reading(sensor).on)
+    if field == "tags":
+        return Signal(name, lambda s: len(s.world.sensors.reading(sensor).tags))
+    if field in ("distance", "color") or field.startswith("sees."):
+        raise ScenarioError(t("signal {signal}: {sensor} is a camera: read {tags_signal}, {sees_signal} or "
+                              "{distance_signal}", signal=repr(name), sensor=sensor,
+                              tags_signal=f"sensor.{sensor}.tags", sees_signal=f"sensor.{sensor}.sees_tag.<id>",
+                              distance_signal=f"sensor.{sensor}.tag_distance.<id>"))
+    what, _, raw = field.partition(".")
+    tag = int(raw) if raw.isdigit() else None
+    if tag not in layout.ids:
+        raise ScenarioError(t("signal {signal}: {tag} isn't a tag of the range's layout; its tags: {ids}",
+                              signal=repr(name), tag=repr(raw), ids=", ".join(str(i) for i in layout.ids)))
+    if what == "sees_tag":
+        return Signal(name, lambda s: int(tag in s.world.sensors.reading(sensor).tags))
+    reach = next(sp.length for sp in world.sensors.specs if sp.name == sensor)
+
+    def distance(s) -> float:
+        r = s.world.sensors.reading(sensor)
+        return r.tag_distances[r.tags.index(tag)] if tag in r.tags else reach
+    return Signal(name, distance)
 
 
 def resolve_signal(name: str, world) -> Signal:

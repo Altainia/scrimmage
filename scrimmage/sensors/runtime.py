@@ -15,6 +15,10 @@ distance sensor its max_range).
 An AprilTag's squares (geoms named `apriltag.<id>`, visual only) are stepped past like the robot's own, so tags
 change no reading.
 
+A camera (`kind = "camera"`) casts no ray of its own here: SensorRuntime hands the cameras to a CameraRuntime
+(sensors/camera.py: which tags each one sees, at its own fps), made only when the robot has a camera, and its
+readings come through `reading` and `state` as the others' do.
+
 Pieces are the range's `ball.<i>` bodies: balls, discs and rigid pieces alike. A sensor never sees its own robot (the
 robot body's whole tree).
 
@@ -87,6 +91,8 @@ class Reading:
                                                     # color sensor's to what it sees (None: nothing); None for a beam
     color: tuple[float, float, float] | None = None     # the piece's color (r, g, b, 0 to 1) a color sensor sees
     color_name: str | None = None                   # its nearest named color (colors.NAMED_COLORS)
+    tags: tuple[int, ...] = ()                      # a camera's: the IDs of the tags it sees, in order
+    tag_distances: tuple[float, ...] = ()           # m: how far each of those tags is, in the same order
 
 
 def brightness(distance: float | None) -> float:
@@ -118,14 +124,20 @@ class SensorRuntime:
         root = int(m.body_rootid[world.robot_body])
         robot = [b for b in range(m.nbody) if int(m.body_rootid[b]) == root]
         names = [mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, b) for b in robot]
-        self._bodies = []
         for s in self.specs:
-            b = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, s.body)
-            if b not in robot:
+            if mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, s.body) not in robot:
                 raise SensorError(i18n.t("{sensor_table} \"{name}\": body \"{body}\" isn't one of the robot's "
                                          "bodies; its bodies: {bodies}", name=s.name, body=s.body,
                                          bodies=', '.join(n for n in names if n), sensor_table="[[sensor]]"))
-            self._bodies.append(b)
+        # The cameras: a CameraRuntime of their own, only when the robot has one (None otherwise).
+        cams = [s for s in self.specs if s.kind == "camera"]
+        self.cameras = None
+        if cams:
+            from .camera import CameraRuntime
+            rng = world.parts.range if getattr(world, "parts", None) is not None else None
+            self.cameras = CameraRuntime(world, cams, rng.apriltags if rng is not None else None)
+        self._rays = [s for s in self.specs if s.kind != "camera"]     # the sensors this runtime casts for
+        self._bodies = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, s.body) for s in self._rays]
         self._robot = (m.body_rootid[m.geom_bodyid] == root).tolist()      # per geom: part of the robot
         # per geom: an AprilTag's square (visual only: a ray steps past it as it does past the robot's own geoms)
         self._tag = [(mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g) or "").startswith("apriltag.")
@@ -140,44 +152,51 @@ class SensorRuntime:
         else:
             self._piece, self._colors = [-1] * m.ngeom, []
         self._start = [np.asarray(s.start, dtype=float) - (END_SLOP * np.asarray(s.direction) if s.kind == "beam"
-                                                           else 0.0) for s in self.specs]
-        self._dir = [np.asarray(s.direction, dtype=float) for s in self.specs]
-        self._reach = [s.length + (2 * END_SLOP if s.kind == "beam" else 0.0) for s in self.specs]
+                                                           else 0.0) for s in self._rays]
+        self._dir = [np.asarray(s.direction, dtype=float) for s in self._rays]
+        self._reach = [s.length + (2 * END_SLOP if s.kind == "beam" else 0.0) for s in self._rays]
         self._gid = np.zeros(1, dtype=np.int32)
         self._pnt = np.zeros(3)
         self.casts = 0                                  # mj_ray calls so far (a cost check)
         self._out_of_casts: set[str] = set()            # the sensors already warned about running out of casts
         # Nothing seen until the first reading: World.reset reads them (data has no kinematics before mj_forward).
-        self._readings = {s.name: self._read(s, None) for s in self.specs}
+        self._readings = {s.name: self._read(s, None) for s in self._rays}
 
     @property
     def names(self) -> list[str]:
         return [s.name for s in self.specs]
 
     def reading(self, name: str) -> Reading:
+        if self.cameras is not None and name in self.cameras.names:
+            return self.cameras.reading(name)
         if name not in self._readings:
             raise SensorError(i18n.t("the robot has no sensor \"{name}\"; its sensors: {names}",
                                      name=name, names=", ".join(self.names)))
         return self._readings[name]
 
     def reset(self) -> None:
-        self.update(self.world.data)
+        self.update(self.world.data, force=True)
 
     def state(self) -> dict:
         """Each sensor's reading now, in SI, for MCP get_state: {name: {kind, on, distance_m (a distance sensor's, or
         a color sensor's to what it sees; None for a beam and while a color sensor sees nothing), color (the named
-        color a color sensor sees, else None)}}."""
+        color a color sensor sees, else None)}}; a camera's also has tags (the IDs it sees, in order)."""
         out = {}
         for s in self.specs:
-            r = self._readings[s.name]
+            r = self.reading(s.name)
             out[s.name] = {"kind": s.kind, "on": r.on,
                            "distance_m": None if r.distance is None else round(float(r.distance), 4),
                            "color": r.color_name}
+            if s.kind == "camera":
+                out[s.name]["tags"] = list(r.tags)
         return out
 
-    def update(self, data: mujoco.MjData) -> None:
-        """Read every sensor from `data`'s kinematics (after mj_step: the state the step began from)."""
-        for s, b, start, direction, reach in zip(self.specs, self._bodies, self._start, self._dir, self._reach):
+    def update(self, data: mujoco.MjData, force: bool = False) -> None:
+        """Read every sensor from `data`'s kinematics (after mj_step: the state the step began from). A camera reads
+        at its own fps, or now with `force` (after a poke or a reset)."""
+        if self.cameras is not None:
+            self.cameras.update(data, force)
+        for s, b, start, direction, reach in zip(self._rays, self._bodies, self._start, self._dir, self._reach):
             rot = data.xmat[b].reshape(3, 3)
             pnt = data.xpos[b] + rot @ start
             vec = rot @ direction
@@ -238,7 +257,7 @@ class SensorRuntime:
         or a distance closer than its threshold), an AnalogInput per `analog` (volts_per_m times the distance, 0 to
         5 V) and a REV Color Sensor V3's SimDevice per `i2c` (color_values)."""
         ups: list[Update] = []
-        for s in self.specs:
+        for s in self._rays:        # a camera gives the robot program nothing (spec D7)
             got = self._readings[s.name]
             if s.analog is not None:
                 ups.append(("AI", str(s.analog), {">voltage": min(MAX_VOLTS, max(0.0, s.volts_per_m * got.distance))}))

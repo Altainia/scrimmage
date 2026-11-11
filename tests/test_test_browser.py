@@ -2255,6 +2255,67 @@ def test_the_replay_draws_the_beam_lit_once_it_broke(test_page, tmp_path):
     assert eye[0] is None and eye[-1] == 2
 
 
+# ---- a camera (K4, spec D6) -----------------------------------------------------------------------------------------
+CAMERA_CHECKS = """
+[[block]]
+do = "expect"
+that = { sees_tag = { camera = "front_cam", tag = 7 } }
+
+[[block]]
+do = "expect"
+that = { sees_tag = { camera = "front_cam" } }
+"""
+
+
+def _camera_test(tmp_path, blocks, tags=True):
+    from test_blocks_camera import tagged_robot
+    tagged_robot(tmp_path, tags=tags)
+    path = tmp_path / "t.test.toml"
+    path.write_text(f'[test]\nrobot = "robot.toml"\n{blocks}', encoding="utf-8")
+    return path
+
+
+def test_the_camera_check_shows_only_for_a_camera_on_a_tagged_field_and_round_trips(test_page, tmp_path):
+    (tmp_path / "beam").mkdir()
+    page, _ = test_page(path=_sensor_test(tmp_path / "beam", SPIN.replace("arm.pivot", "intake.roller")))
+    assert "cond_sensor" in _flyout_types(page) and "cond_sees_tag" not in _flyout_types(page)    # no camera
+    (tmp_path / "untagged").mkdir()
+    page, _ = test_page(path=_camera_test(tmp_path / "untagged", '[[block]]\ndo = "wait"\nseconds = 0.1\n',
+                                          tags=False))
+    assert "cond_sees_tag" not in _flyout_types(page)                                              # no tags
+    (tmp_path / "tagged").mkdir()
+    page, _ = test_page(path=_camera_test(tmp_path / "tagged", CAMERA_CHECKS))
+    assert "cond_sees_tag" in _flyout_types(page)
+    options = page.evaluate("__scrimmageTest.workspace.getFlyout().getWorkspace().getTopBlocks(true)"
+                            ".find(b => b.type === 'cond_sees_tag').getField('TAG').getOptions(false)")
+    assert options == [["any tag", "any"], ["tag 7", "7"], ["tag 8", "8"]]
+    st = page.evaluate("__scrimmageTest.state.test")
+    assert [b["that"] for b in st["blocks"]] == [{"sees_tag": {"camera": "front_cam", "tag": 7}},
+                                                 {"sees_tag": {"camera": "front_cam"}}]
+    assert page.evaluate("__scrimmageTest.toJSON()") == st
+    texts = page.evaluate("__scrimmageTest.workspace.getAllBlocks(false).filter(b => b.type === 'cond_sees_tag')"
+                          ".map(b => b.toString())")
+    assert texts == ["camera front_cam sees tag 7", "camera front_cam sees any tag"], texts
+
+
+def test_the_replay_draws_the_cameras_lines_to_the_tags_it_saw(test_page, tmp_path):
+    page, _ = test_page(path=_camera_test(tmp_path, '[[block]]\ndo = "turn"\ndegrees = 90.0\n'))
+    run = _run(page, "001")
+    assert run["status"] == "finished", run
+    kept = _result(page, "001")["cameras"]["front_cam"]
+    assert kept[0][1] == [7] and kept[-1][1] == [8], kept
+    page.wait_for_function("__scrimmageTest.replay.sensors.find(s => s.name === 'front_cam').tags.join() === '7'")
+    cam = next(s for s in page.evaluate("__scrimmageTest.replay.sensors") if s["name"] == "front_cam")
+    assert cam["lit"]
+    box = page.locator("#test-scrub").bounding_box()
+    y = box["y"] + box["height"] / 2
+    page.mouse.move(box["x"] + 4, y)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] + 20, y, steps=5)
+    page.mouse.up()
+    page.wait_for_function("__scrimmageTest.replay.sensors.find(s => s.name === 'front_cam').tags.join() === '8'")
+
+
 # ---- display units (sub-project 20a): the blocks, Setup and the chart in the Units setting ---------------------------
 UNIT_BLOCKS = """
 [[block]]

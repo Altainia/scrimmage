@@ -1,4 +1,4 @@
-"""A robot config's `[[sensor]]` tables, checked: beam breaks, distance sensors and color sensors.
+"""A robot config's `[[sensor]]` tables, checked: beam breaks, distance sensors, color sensors and cameras.
 
     [[sensor]]
     name = "mouth"                  # required, unique, letters, digits and _: what the Test tab and messages call it
@@ -28,6 +28,18 @@
     toward = [0, 0, -1]
     i2c = "mxp"                     # a REV Color Sensor V3 on the "onboard" or "mxp" I2C port
 
+    [[sensor]]
+    name = "front_cam"
+    kind = "camera"                 # which of the range's AprilTags it sees (sensors/camera.py)
+    body = "drive.chassis"
+    at = [0.30, 0.0, 0.25]
+    toward = [1, 0, 0.17]           # pitched up about 10 deg; not straight up or down (up is the body's z)
+    hfov_deg = 70                   # its fields of view (degrees, each more than 0 and less than 180)
+    vfov_deg = 50
+    max_range = 5.0                 # m (or max_range_in): for 6.5 in tags; a range's apriltag_size_in scales it
+    max_angle_deg = 60              # a tag seen more edge-on than this isn't detected (more than 0, at most 90)
+    fps = 30                        # how often it looks, in frames per second of sim time (more than 0, at most 1000)
+
 Each mistake is a SensorError naming the sensor and the key. The body is checked against the robot's bodies when the
 world is built (sensors/runtime.py), since only the model knows them.
 """
@@ -41,12 +53,19 @@ from dataclasses import dataclass
 from .. import i18n
 
 NAME_RE = re.compile(r"[A-Za-z0-9_]+$")     # as a part's name: it names the chart's sensor.<name> signal
-KINDS = ("beam", "distance", "color")
+KINDS = ("beam", "distance", "color", "camera")
 SEES = ("pieces", "anything")
 I2C_PORTS = ("onboard", "mxp")
 I2C_PORT_NUMBERS = {"onboard": 0, "mxp": 1}     # WPILib's I2C.Port: kOnboard 0, kMXP 1
 IN = 0.0254                     # m per inch
-DEFAULT_MAX_RANGE = {"distance": 2.0, "color": 0.10}    # m (spec C3; a REV Color Sensor V3 sees about 10 cm)
+DEFAULT_MAX_RANGE = {"distance": 2.0, "color": 0.10,    # m (spec C3; a REV Color Sensor V3 sees about 10 cm)
+                     "camera": 5.0}  # estimate: 6.5 in tags at 1280x800
+DEFAULT_HFOV_DEG = 70           # estimate: an OV9281 with its stock lens
+DEFAULT_VFOV_DEG = 50           # estimate
+DEFAULT_MAX_ANGLE_DEG = 60      # choice: tags seen more edge-on than this aren't detected
+DEFAULT_FPS = 30                # choice: how often a camera checks
+MAX_FPS = 1000                  # choice: a camera looks at most once a physics step (1 ms)
+STRAIGHT_UP_DEG = 1.0           # choice: a camera's toward this close to the body's z has no up to measure from
 COLOR_MAX_RANGE = 0.10          # m: a color sensor's longest range (spec C5: nothing past 10 cm)
 DEFAULT_VOLTS_PER_M = 0.977     # V/m: a MaxBotix MB1013's 5 V over 5.12 m (spec C3, an estimate)
 _COMMON = ("name", "kind", "body")
@@ -55,6 +74,8 @@ KEYS = {
     "beam": _COMMON + ("from", "from_in", "to", "to_in", "dio", "active_low"),
     "distance": _COMMON + _LOOK + ("dio", "active_low", "threshold", "threshold_in", "analog", "volts_per_m"),
     "color": _COMMON + _LOOK + ("i2c",),
+    "camera": _COMMON + ("at", "at_in", "toward", "hfov_deg", "vfov_deg", "max_range", "max_range_in",
+                         "max_angle_deg", "fps"),
 }
 
 
@@ -71,7 +92,7 @@ class SensorError(ValueError):
 @dataclass(frozen=True)
 class SensorSpec:
     name: str
-    kind: str                               # "beam", "distance" or "color"
+    kind: str                               # "beam", "distance", "color" or "camera"
     body: str                               # the robot body, "<instance>.<body>"
     start: tuple[float, float, float]       # m, body frame: a beam's `from`, else `at`
     direction: tuple[float, float, float]   # unit, body frame: from `from` to `to`, else `toward`
@@ -83,6 +104,10 @@ class SensorSpec:
     active_low: bool = True
     volts_per_m: float = DEFAULT_VOLTS_PER_M
     threshold: float | None = None          # m: a distance sensor's on distance (default length / 2); None otherwise
+    hfov_deg: float | None = None           # a camera's: its fields of view (degrees), the most edge-on it detects a
+    vfov_deg: float | None = None           #   tag at (degrees off the tag's normal) and its frames per second; None
+    max_angle_deg: float | None = None      #   for every other kind
+    fps: float | None = None
 
 
 class _Table:
@@ -163,6 +188,18 @@ def _unit(v, t: _Table, key: str) -> tuple[float, float, float]:
     return tuple(c / n for c in v)
 
 
+def _angle(t: _Table, key: str, default: float, most: float, most_too: bool) -> float:
+    """A camera's angle `key` (degrees): more than 0 and less than `most` (at most `most`, with `most_too`)."""
+    v = t.t.get(key, default)
+    if not _finite(v) or v <= 0 or v > most or (v == most and not most_too):
+        if most_too:
+            raise t.err(i18n.t("{key} must be an angle more than 0 and at most {most} degrees, not {value}", key=key,
+                               most=f"{most:g}", value=plain(v)))
+        raise t.err(i18n.t("{key} must be an angle more than 0 and less than {most} degrees, not {value}", key=key,
+                           most=f"{most:g}", value=plain(v)))
+    return float(v)
+
+
 def parse_sensor(table, index: int) -> SensorSpec:
     """One [[sensor]] table (`index` counting from 1, for a sensor with no name yet)."""
     if not isinstance(table, dict):
@@ -216,7 +253,22 @@ def parse_sensor(table, index: int) -> SensorSpec:
         if kind == "color" and reach > COLOR_MAX_RANGE + 1e-12:
             raise t.err(i18n.t("max_range is {reach} m: a color sensor sees 10 cm at most ({max_range_setting})",
                                reach=f"{reach:g}", max_range_setting="max_range = 0.10"))
-        kw.update(start=at, direction=_unit(toward, t, "toward"), length=reach, sees=t.choice("sees", SEES, "pieces"))
+        direction = _unit(toward, t, "toward")
+        if kind == "camera":
+            if abs(direction[2]) > math.cos(math.radians(STRAIGHT_UP_DEG)):
+                raise t.err(i18n.t("{key} is {value}: a camera can't look straight up or down: up is the body's z",
+                                   key="toward", value=plain(toward)))
+            kw.update(hfov_deg=_angle(t, "hfov_deg", DEFAULT_HFOV_DEG, 180.0, False),
+                      vfov_deg=_angle(t, "vfov_deg", DEFAULT_VFOV_DEG, 180.0, False),
+                      max_angle_deg=_angle(t, "max_angle_deg", DEFAULT_MAX_ANGLE_DEG, 90.0, True))
+            fps = table.get("fps", DEFAULT_FPS)
+            if not _finite(fps) or not 0 < fps <= MAX_FPS:
+                raise t.err(i18n.t("fps must be a number more than 0 and at most {most}, not {value}", most=MAX_FPS,
+                                   value=plain(fps)))
+            kw["fps"] = float(fps)
+        kw.update(start=at, direction=direction, length=reach)
+        if kind != "camera":
+            kw["sees"] = t.choice("sees", SEES, "pieces")
     kw["dio"] = t.channel("dio")
     if "active_low" in table:
         if not isinstance(table["active_low"], bool):

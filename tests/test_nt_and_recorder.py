@@ -103,6 +103,56 @@ def test_nt_publishes_ball_poses(tmp_path):
         ntcore.NetworkTableInstance.destroy(srv)
 
 
+def test_ground_truth_pose_topic_is_a_pose2d_struct(tmp_path):
+    """Spec D7: robot code (PhotonLib's VisionSystemSim, docs/sensors.md's "Vision in robot code") reads the true pose
+    from /MuJoCo/GroundTruthPose as a Pose2d struct."""
+    geometry = pytest.importorskip("wpimath.geometry")
+    srv = ntcore.NetworkTableInstance.create()
+    srv.startServer(str(tmp_path / "nt.json"), "", 0, PORT + 5)
+    link = sub = None
+    try:
+        sub = srv.getStructTopic("/MuJoCo/GroundTruthPose", geometry.Pose2d).subscribe(geometry.Pose2d())
+        link = NetworkTablesLink(None, port=PORT + 5)
+        wait_for(lambda: link.connected)
+        link.publish_truth(1.5, 2.25, 0.5)
+        wait_for(lambda: sub.get().X() == 1.5)
+        got = sub.get()
+        assert (got.X(), got.Y(), got.rotation().radians()) == pytest.approx((1.5, 2.25, 0.5))
+        topic = next(t for t in srv.getTopics() if t.getName() == "/MuJoCo/GroundTruthPose")
+        assert topic.getTypeString() == "struct:Pose2d"
+    finally:
+        if link is not None:
+            link.close()
+        if sub is not None:
+            sub.close()
+        srv.stopServer()
+        ntcore.NetworkTableInstance.destroy(srv)
+
+
+def test_camera_tag_ids_topic(tmp_path):
+    """/MuJoCo/Camera/<name>/TagIds: the IDs a camera [[sensor]] sees, an int array; no camera, no topic."""
+    srv = ntcore.NetworkTableInstance.create()
+    srv.startServer(str(tmp_path / "nt.json"), "", 0, PORT + 6)
+    link = sub = None
+    try:
+        sub = srv.getIntegerArrayTopic("/MuJoCo/Camera/front_cam/TagIds").subscribe([])
+        link = NetworkTablesLink(None, port=PORT + 6)
+        wait_for(lambda: link.connected)
+        assert link.topics("/MuJoCo/Camera/") == []          # no call, no topic
+        link.publish_camera_tags("front_cam", [7, 8])
+        wait_for(lambda: list(sub.get()) == [7, 8])
+        assert link.topics("/MuJoCo/Camera/") == [{"name": "/MuJoCo/Camera/front_cam/TagIds", "type": "int[]"}]
+        link.publish_camera_tags("front_cam", [])
+        wait_for(lambda: list(sub.get()) == [])
+    finally:
+        if link is not None:
+            link.close()
+        if sub is not None:
+            sub.close()
+        srv.stopServer()
+        ntcore.NetworkTableInstance.destroy(srv)
+
+
 def test_a_closed_link_freed_later_leaves_new_instances_alone(tmp_path):
     """ntcore reuses a destroyed instance's number and handles, so a closed link's publishers and subscribers, freed
     later by the garbage collector (a session's Bridge sits in reference cycles), would unpublish what now has their

@@ -1,10 +1,14 @@
-# Sensors: beam breaks, distance sensors and color sensors
+# Sensors: beam breaks, distance sensors, color sensors and cameras
 
 A robot config's `[[sensor]]` tables put sensors on the robot that see game pieces: a **beam break** that reads broken
 while a piece crosses it, a **distance sensor** that reads how far away the first piece (or anything) is, and a **REV
 Color Sensor V3** that reads the color of the piece in front of it. Your robot code reads them through the devices
 teams already use (`DigitalInput`, `AnalogInput` and REVLib's `ColorSensorV3`), and the Test tab can wait for them,
 check them and chart them with no robot code at all.
+
+A **camera** reports which of the field's AprilTags it can see, by geometry, with no image: enough to answer "where
+must the camera go to see the tags from where we shoot?". [A camera](#a-camera) says how, and
+[Vision in robot code](#vision-in-robot-code) shows how robot code simulates its own vision from scrimmage's true pose.
 
 **The readings are ideal.** There is no noise, no mounting tolerance and no delay beyond one physics step. Sensors see
 balls, discs and rigid pieces alike, and never the robot's own parts. The color sensor's numbers are estimates, and
@@ -13,7 +17,8 @@ Java's color sensor hasn't been run yet: [Estimated or not yet checked](#estimat
 `examples/blocks/beam` is a worked example: an intake that stops when its beam break sees a ball in the bin.
 
 Contents: [Adding a sensor](#adding-a-sensor), [The keys](#the-keys), [What the readings are](#what-the-readings-are),
-[Piece colors](#piece-colors), [Robot code](#robot-code), [In the Test tab](#in-the-test-tab),
+[A camera](#a-camera), [Piece colors](#piece-colors), [Robot code](#robot-code),
+[Vision in robot code](#vision-in-robot-code), [In the Test tab](#in-the-test-tab),
 [In scenarios and MCP](#in-scenarios-and-mcp), [Estimated or not yet checked](#estimated-or-not-yet-checked),
 [What isn't simulated](#what-isnt-simulated), [Errors](#errors).
 
@@ -105,6 +110,18 @@ A color sensor (`kind = "color"`):
 | `sees` | `"pieces"` | as for a distance sensor. With `"anything"`, something that isn't a piece gives an IR and a proximity reading but no color |
 | `i2c` | none | `"onboard"` or `"mxp"`: the I2C port the robot code gives `ColorSensorV3` |
 
+A camera (`kind = "camera"`):
+
+| key | default | meaning |
+|---|---|---|
+| `at` (or `at_in`) | required | where the lens is: `[x, y, z]` in the body's frame |
+| `toward` | required | which way it looks, a direction in the body's frame. Not straight up or down (within 1° of the body's z): its up is the body's z |
+| `hfov_deg` | 70 | its horizontal field of view, degrees (more than 0, less than 180). An estimate: an OV9281 with its stock lens |
+| `vfov_deg` | 50 | its vertical field of view, degrees (more than 0, less than 180). An estimate |
+| `max_range` (or `max_range_in`) | 5.0 m | the farthest it detects a 6.5 in tag. An estimate: 6.5 in tags at 1280x800 |
+| `max_angle_deg` | 60 | the most edge-on it detects a tag: degrees between the tag's face direction and the camera (more than 0, at most 90). Our choice |
+| `fps` | 30 | how often it looks, frames per second of sim time (more than 0, at most 1000). Our choice |
+
 A key a sensor's kind doesn't take is an error that lists the kind's keys. Give a length or a point in meters or in
 inches, not both (`at` and `at_in` together is an error).
 
@@ -157,6 +174,58 @@ proximity reading for how close it is.
 each count by the sum of the three, so it reads the same whatever the scale: the red piece above reads (0.818, 0.091,
 0.091). `ColorMatch` works on `getColor()`, so it works unchanged. Robot code that compares `getRawColor()` or
 `getIR()` with fixed numbers from a real sensor needs its own numbers here; compare `getColor()` instead.
+
+## A camera
+
+A camera reports which AprilTags of the field it sees. The field needs a layout: the range file's
+`[range] apriltags` ([test-range.md](test-range.md)). On a range with no tags, a camera sees nothing and costs nothing.
+
+```toml
+[[sensor]]
+name = "front_cam"
+kind = "camera"
+body = "drive.chassis"
+at = [0.30, 0.0, 0.25]
+toward = [1, 0, 0.17]            # pitched up about 10 deg
+hfov_deg = 70                    # estimate: an OV9281 with its stock lens
+vfov_deg = 50                    # estimate
+max_range = 5.0                  # m; estimate: 6.5 in tags at 1280x800
+max_angle_deg = 60               # choice: tags seen more edge-on than this aren't detected
+fps = 30                         # how often it checks (choice)
+```
+
+**When a tag counts as seen.** At each camera frame (`fps` times a second of sim time), a tag is seen when all of
+these hold:
+
+- its center is inside both fields of view, measured in the camera's frame: forward is `toward`, and up is the body's
+  z, square to forward. A tag behind the camera isn't seen;
+- it is within `max_range`. `max_range` is for 6.5 in tags: with the range's `apriltag_size_in` set, the camera sees
+  out to `max_range` times that size over 6.5, since a tag's size in pixels goes with its size;
+- its face points toward the camera within `max_angle_deg`. A camera behind the tag, or seeing it more edge-on than
+  that, sees nothing, even in range and in view;
+- a ray from the camera to 2 cm short of the tag's face hits nothing that blocks the view.
+
+Exactly at a limit counts as seen. A tag mounted a little inside the solid it hangs on (2024's SPEAKER tags are 3.8 cm
+inside the speaker wall) is seen at its face, in front of that solid ([test-range.md](test-range.md)).
+
+**What blocks the view:** everything but the robot's own parts, the tags' squares and the field's four perimeter walls
+(which are where tags are mounted). The field's elements, obstacles, goals, game pieces and other robots all block it:
+a STAGE leg, a piece in the way or a partner robot hides a tag.
+
+**After a poke**, `set_pose` or `move_body`, the camera looks again at once, so the reading is of the new pose.
+
+**The estimates, and setting them from your own camera.** The defaults are for one common camera, an OV9281
+(Arducam, as many PhotonVision coprocessors use) with its stock lens:
+
+- **`hfov_deg` and `vfov_deg`**: from your lens's datasheet, or PhotonVision's calibration (it reports the camera's
+  fields of view). A wide-angle lens is 90 or more.
+- **`max_range`**: test it at the shop. Mount a 6.5 in tag at its field height, back the robot away until your
+  pipeline stops detecting it, and use that distance (in your lighting, at your resolution and exposure).
+- **`max_angle_deg`**: the same test, turning the robot (or the tag) instead of backing away.
+- **`fps`**: what your pipeline runs at. A camera looks at most once a physics step.
+
+**Cost:** a camera casts one ray per tag in view per frame, and nothing on a range with no tags or a robot with no
+camera.
 
 ## Piece colors
 
@@ -286,12 +355,116 @@ public void robotPeriodic() {
 Check `getProximity()` (or that `ColorMatch` found a match) before trusting the color: with nothing in front,
 `getColor()` reads the carpet's gray, and the closest match is still one of your colors.
 
+A camera gives robot code nothing directly: scrimmage publishes no PhotonVision or Limelight results. Its IDs are on
+NetworkTables at `/MuJoCo/Camera/<name>/TagIds` (an int array) for dashboards and logs; for vision in robot code, see
+the next section.
+
+## Vision in robot code
+
+scrimmage publishes the robot's true pose as `/MuJoCo/GroundTruthPose`, a `Pose2d` struct on NetworkTables. PhotonLib's
+own simulation, `VisionSystemSim`, takes a robot pose and a tag layout and simulates each camera, its noise and its
+latency inside your robot program, so your pose estimator gets results as on the real robot. Feed it scrimmage's true
+pose and the same layout JSON the range uses (`scrimmage/testrange/apriltags/2024-crescendo.json`, or your own file:
+copy it into your project's `deploy` folder).
+
+**This snippet isn't run in this repo's tests**: PhotonLib is a vendordep from the network, so nothing here checks it
+against PhotonLib's API. A test pins the topic's name and type. Check the class and method names against PhotonLib's
+docs for your season.
+
+Java (in `Robot.java`):
+
+```java
+import edu.wpi.first.apriltag.AprilTagFieldLayout;
+import edu.wpi.first.math.geometry.*;
+import edu.wpi.first.networktables.NetworkTableInstance;
+import edu.wpi.first.networktables.StructSubscriber;
+import edu.wpi.first.wpilibj.Filesystem;
+import org.photonvision.PhotonCamera;
+import org.photonvision.simulation.PhotonCameraSim;
+import org.photonvision.simulation.SimCameraProperties;
+import org.photonvision.simulation.VisionSystemSim;
+
+PhotonCamera camera = new PhotonCamera("front_cam");     // the name your robot code reads results from
+VisionSystemSim visionSim = new VisionSystemSim("main");
+StructSubscriber<Pose2d> truePose = NetworkTableInstance.getDefault()
+    .getStructTopic("/MuJoCo/GroundTruthPose", Pose2d.struct).subscribe(new Pose2d());
+
+@Override
+public void simulationInit() {
+  try {
+    visionSim.addAprilTags(new AprilTagFieldLayout(
+        Filesystem.getDeployDirectory().toPath().resolve("2024-crescendo.json")));
+  } catch (java.io.IOException e) {
+    throw new RuntimeException(e);
+  }
+  SimCameraProperties props = new SimCameraProperties();
+  props.setCalibration(1280, 800, Rotation2d.fromDegrees(80));   // the diagonal field of view: 70 x 50 deg
+  props.setFPS(30);
+  // where the camera is on the robot: the [[sensor]]'s at, and its toward pitched up 10 deg (a negative pitch)
+  visionSim.addCamera(new PhotonCameraSim(camera, props),
+      new Transform3d(new Translation3d(0.30, 0.0, 0.25), new Rotation3d(0, Math.toRadians(-10), 0)));
+}
+
+@Override
+public void simulationPeriodic() {
+  visionSim.update(truePose.get());
+}
+```
+
+Python (in `robot.py`, with `photonlibpy`):
+
+```python
+import math
+
+import ntcore
+import wpilib
+from photonlibpy import PhotonCamera
+from photonlibpy.simulation import PhotonCameraSim, SimCameraProperties, VisionSystemSim
+from robotpy_apriltag import AprilTagFieldLayout
+from wpimath.geometry import Pose2d, Rotation2d, Rotation3d, Transform3d, Translation3d
+
+
+class MyRobot(wpilib.TimedRobot):
+    def robotInit(self):
+        self.camera = PhotonCamera("front_cam")
+        self.true_pose = ntcore.NetworkTableInstance.getDefault().getStructTopic(
+            "/MuJoCo/GroundTruthPose", Pose2d).subscribe(Pose2d())
+
+    def _simulationInit(self):
+        self.vision_sim = VisionSystemSim("main")
+        deploy = wpilib.getDeployDirectory()
+        self.vision_sim.addAprilTags(AprilTagFieldLayout(f"{deploy}/2024-crescendo.json"))
+        props = SimCameraProperties()
+        props.setCalibrationFromFOV(1280, 800, Rotation2d.fromDegrees(80))   # the diagonal field of view
+        props.setFPS(30)
+        self.vision_sim.addCamera(PhotonCameraSim(self.camera, props),
+                                  Transform3d(Translation3d(0.30, 0.0, 0.25), Rotation3d(0, math.radians(-10), 0)))
+
+    def _simulationPeriodic(self):
+        self.vision_sim.update(self.true_pose.get())
+```
+
+Keep the camera's place on the robot (`Transform3d`) and its fields of view the same as the `[[sensor]]`'s, so the
+Test tab's camera check and your robot code's vision agree on what the camera sees. A team on a Limelight gets no
+detections in robot code this way: only the Test tab's camera.
+
 ## In the Test tab
 
 The Test tab's **sensor** check is on or off: a beam break is on while broken, a distance sensor while something is
-closer than its `threshold`, and a color sensor while it sees a piece (optionally, **is seeing** one color). Each
-sensor's `sensor.<name>` signal is on the chart, and the replay draws each sensor as a line, lit while it is on.
-Details are in [test-tab.md](test-tab.md#sensors).
+closer than its `threshold`, a color sensor while it sees a piece (optionally, **is seeing** one color), and a camera
+while it sees any tag. Each sensor's `sensor.<name>` signal is on the chart, and the replay draws each sensor as a
+line, lit while it is on.
+
+A camera has its own check too: **camera** *front_cam* **sees** *tag 7* (or **any tag**), offered on a field with
+AprilTags. Its chart signal is how many tags it sees. The replay draws it as its view cone, with a line to each tag it
+sees at the moment shown. Details are in [test-tab.md](test-tab.md#sensors).
+
+| what | the camera's |
+|---|---|
+| the check | **camera** *name* **sees** *tag N* or **any tag**; in the file `{ sees_tag = { camera = "front_cam", tag = 7 } }` (no `tag`: any) |
+| the chart | `sensor.<name>`: how many tags it sees |
+| the replay | its view cone, lit while it sees a tag, and a line to each tag it sees |
+| a failed check | `expected front_cam to see tag 7, but it saw tags 3, 4` (or `it saw no tags`) |
 
 ## In scenarios and MCP
 
@@ -321,16 +494,32 @@ The signals, for `at_end`, `always` and `by_time` too:
 - `sensor.<name>.color`: the named color a color sensor sees (no value while it sees none);
 - `sensor.<name>.sees.<color>`: true while a color sensor is on and sees that named color.
 
+And a camera's:
+
+| signal | what it is |
+|---|---|
+| `sensor.<name>` | true while it sees any tag |
+| `sensor.<name>.tags` | how many tags it sees |
+| `sensor.<name>.sees_tag.<id>` | 1 while it sees tag `<id>`, else 0 |
+| `sensor.<name>.tag_distance.<id>` | meters to tag `<id>`'s center while it sees it, else its `max_range` |
+
+An ID that isn't in the range's layout is an error that lists the layout's IDs, and a camera signal on a range with no
+tags is an error that names `[range] apriltags`.
+
 The Scenario tab shows a `sensor` check as one it can't edit yet: change it in a text editor.
 
 The MCP tool `get_state` has a `sensors` block on a robot with `[[sensor]]`s: each sensor's `kind`, `on`,
 `distance_m` (meters; `null` for a beam break and while a color sensor sees nothing) and `color` (the named color a
-color sensor sees, else `null`). `set_pose` and `move_body` read the sensors again at once, so the reading they
-return is of the new pose; at any other time a reading is taken after each physics step.
+color sensor sees, else `null`); a camera's also has `tags`, the IDs it sees. `set_pose` and `move_body` read the
+sensors again at once, a camera too, so the reading they return is of the new pose; at any other time a reading is
+taken after each physics step (a camera's at its `fps`).
+
+On NetworkTables, each camera's IDs are at `/MuJoCo/Camera/<name>/TagIds`, an int array, beside
+`/MuJoCo/GroundTruthPose`.
 
 ## Estimated or not yet checked
 
-Two things here rest on our own numbers or on reading code, not on a real sensor or a real run:
+Three things here rest on our own numbers or on reading code, not on a real sensor or a real run:
 
 - **Estimated: every number the color sensor gives.** The brightness (full up to 2 cm, half at 6 cm, nothing past
   10 cm), the 2047 counts at full brightness for red, green, blue and IR, the IR of something that isn't a piece (0.3
@@ -343,6 +532,10 @@ Two things here rest on our own numbers or on reading code, not on a real sensor
   run one in Scrimmage yet. Only RobotPy has been checked running. If a Java robot's color sensor reads nothing,
   this is the first thing to suspect.
 
+- **Estimated: a camera's defaults.** The 70 x 50 degree fields of view (an OV9281 with its stock lens) and the 5.0 m
+  range for 6.5 in tags at 1280x800 are estimates; the 60 degree most edge-on angle and 30 frames a second are our
+  choices. [A camera](#a-camera) says how to set each from your own camera.
+
 The beam break and the distance sensor are exact lines: they have no numbers of their own to estimate (see below for
 what a real one adds).
 
@@ -353,7 +546,10 @@ what a real one adds).
   gain. Allow for them on the real robot.
 - **Other vendors' sensors.** The CTRE CANrange, Playing With Fusion's time-of-flight sensor and the LaserCAN each
   need their own vendor binding; none is here yet. A distance sensor on an `analog` or `dio` input is the stand-in.
-- **Cameras and vision** (Limelight-style targeting, AprilTags) are not part of Scrimmage.
+- **A camera's image.** A camera is a yes-or-no rule per tag, not a real detector: no image, no motion blur, no
+  lighting, no pixel noise and no pose ambiguity (a tag seen far away or nearly edge-on is as good as one up close).
+  And it publishes no PhotonVision or Limelight results on NetworkTables: robot code simulates its own vision from the
+  true pose ([Vision in robot code](#vision-in-robot-code)).
 - **A screen for placing sensors.** Sensors live in the config's `[[sensor]]` tables, written by hand; there's no
   picker for them in the Robot tab or the Part tab yet.
 
@@ -365,6 +561,7 @@ Each mistake names the sensor and the key, for example:
 - `[[sensor]] "bin": body "intake.base" isn't one of the robot's bodies; its bodies: drive.chassis, dt.rails, ...`
 - `[[sensor]] "eye": max_range is 0.2 m: a color sensor sees 10 cm at most (max_range = 0.10)`
 - `[[sensor]] "range": threshold (3 m) is past max_range (2 m); make it shorter`
+- `[[sensor]] "front_cam": toward is [0, 0, 1]: a camera can't look straight up or down: up is the body's z`
 - `[[sensor]] 2: name must be letters, digits and _ (like a part's name), not "front beam"`
 - `[[sensor]] "bin": unknown key 'sees' for a beam sensor; its keys: name, kind, body, from, from_in, to, to_in, dio, active_low`
 - `REV Color Sensor V3[1,82] is bound by [[sensor]] "eye" and [[sensor]] "eye2": give each device one binding`

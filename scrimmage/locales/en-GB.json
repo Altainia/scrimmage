@@ -94,5 +94,6 @@
   "--near takes three numbers, like --near 1.5,2,0.3 (meters).": "--near takes three numbers, like --near 1.5,2,0.3 (metres).",
   "--within is a distance in meters, 0 or more.": "--within is a distance in metres, 0 or more.",
   "{name}  center {center} | {center_m}  size {size} | {size_m}  triangles {triangles}": "{name}  centre {center} | {center_m}  size {size} | {size_m}  triangles {triangles}",
-  "{pieces} pieces in {lines} lines. Center and size in {units}, then in m (the file's own axes).": "{pieces} pieces in {lines} lines. Centre and size in {units}, then in m (the file's own axes)."
+  "{pieces} pieces in {lines} lines. Center and size in {units}, then in m (the file's own axes).": "{pieces} pieces in {lines} lines. Centre and size in {units}, then in m (the file's own axes).",
+  "{name} is a camera, which sees AprilTags, not colors; only a color sensor can see {sees}": "{name} is a camera, which sees AprilTags, not colours; only a colour sensor can see {sees}"
 }
