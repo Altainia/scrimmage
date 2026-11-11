@@ -52,6 +52,10 @@ the toe) within 1 cm, so a typo in one number is caught. A start whose robot out
 element standing on the carpet, or a floor ball resting inside one, is rejected; a start may lie under a bar, a
 switch or a raised box, and on a ground box no taller than 1/2 in (a floor protector).
 
+A `bar` under 1 in across gets a warning in `range check`: the stock climber can't climb it. Its hook sinks through
+a bar that thin as it lands, and a robot hanging from any rigid bar bounces on its hooks (a 2022 rung's `stiffness`
+hides that). Hang a chain, or make the bar at least 1 in.
+
 The built-in ranges with elements:
 
 | range | elements |

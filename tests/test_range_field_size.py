@@ -41,7 +41,9 @@ def test_builtin_ranges_keep_their_field_and_have_no_warnings(name):
     rng = load_range(name, Path("."))
     field = (16.541, 8.211) if name == "2024" else (FIELD_LENGTH, FIELD_WIDTH)
     assert (rng.field_length, rng.field_width) == field
-    assert rng.warnings == ()
+    # 2024's six CHAINS are 1/2 in bars until K5 Task 9 hangs them as chains: each is warned about (R16)
+    chains = 6 if name == "2024" else 0
+    assert len(rng.warnings) == chains and all("a stock climber's hook slips off" in w for w in rng.warnings)
 
 
 def test_2024_field_size_lets_pieces_lie_by_the_far_wall(tmp_path):

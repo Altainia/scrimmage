@@ -44,7 +44,12 @@ def test_the_range_checks_clean():
     assert lines[0].startswith("2024: ok, range 'FRC 2024 CRESCENDO': field 16.541 x 8.211 m; 4 goals "
                                "(speaker_blue, speaker_red, amp_blue, amp_red); 11 floor pieces; 2 stations")
     assert "; 16 AprilTags (2024-crescendo); " in lines[0]
-    assert len(lines) == 1 and rng.warnings == ()           # no warnings
+    # the six CHAINS are 1/2 in bars until K5 Task 9 hangs them as chains: each is warned about (R16)
+    chains = [f"chain_{a}_{s}" for a in ("blue", "red") for s in ("center", "left", "right")]
+    assert len(lines) == 7 and len(rng.warnings) == 6
+    assert sorted(rng.warnings) == sorted(
+        f"bar '{c}' is 0.5 in across: a stock climber's hook slips off a bar under 1 in (K5); hang a chain "
+        f"(kind = \"chain\") or make the bar at least 1 in" for c in chains)
     assert "2024" in BUILTIN_RANGES and list(rng.kinds) == ["note"]
     assert {g.kind for g in rng.goals} == {"note"}
     # the SPEAKER's hood is an obstacle (a NOTE's corners can't clip it), not a plate of the goal

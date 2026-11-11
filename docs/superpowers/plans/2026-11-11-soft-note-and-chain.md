@@ -164,6 +164,24 @@ What the spec leaves open, decided here so each task can cite it. Each gives the
   - The golden flex shot is pinned to 2 % (`# choice:` platforms differ in the last digits).
 
   *Cost:* a first fit for new numbers takes about a minute, and the docs say so.
+- **R16, a bar under 1 in is warned about (Task 1's fallback, spec D2).** A bar with diameter below
+  `THIN_BAR = 1.0 * IN` adds a range warning that `range check` shows: "bar '<name>' is <diameter> across: a stock
+  climber's hook slips off a bar under 1 in (K5); hang a chain (kind = "chain") or make the bar at least 1 in".
+  - *Cause:* the climber's telescope. The extend motor's back-EMF damping (57 kN s/m for the stock two Krakens at
+    1600 rad/m) is implicit dof damping on stages of 0.6 and 0.8 kg with no armature (b dt / m = 61 and 26). The
+    constraint solver sees it as an explicit force, so the hook's contact pushes too little. Landing at 0.8 m/s,
+    the hook sinks 11.2 mm into the bar and passes through a 1/2 in bar (bar plus hook radius 11.35 mm). Hanging
+    from any rigid bar, the robot bounces on its hooks for good: a rigid 1.66 in bar with the same robot and script
+    ends "not hanging" too. A 2022 rung's spring hides it.
+  - *The fix that works, and why it isn't taken:* an armature of b dt on the stages (the motors' rotors seen through
+    the rope) climbs the 1/2 in bar and the rigid 1.66 in one. But it ends the bounce that
+    `test_climb_run.py::test_hooks_bouncing_while_let_down_is_no_failure` needs, and it moves the step times off
+    `examples/climb/high_timed.toml` (`test_climb_scenario.py::test_the_timed_climb_comes_from_the_climb_run`).
+    Both tests fail at every armature tried, from 2 to 29 kg a stage. A backing behind the seat's capsules stops the
+    sink-through but not the bounce. A stiffer HOOK_SOLREF changes every 2022 hook contact.
+  - *Cost:* a rigid `bar` under 1 in isn't climbable by the stock climber, and a rigid bar of any size bounces a
+    hanging robot. The 2024 chains get the warning until Task 9 hangs them as chains. Making the armature fix means
+    re-deciding those two 2022 tests: the owner's call, recorded in Task 1's report.
 
 ## Review Focus
 

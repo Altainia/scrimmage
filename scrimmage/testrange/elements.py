@@ -75,6 +75,9 @@ DEFAULT_SWITCH_DIAMETER = 1.66 * IN
 # difference (the 2022 HANGAR's is 3/8 in, manual 5.4.3).
 START_STEP = 0.5 * IN  # m
 CLIMB_RULES = ("lowest-rung", "hang", "lowest-point")
+# A bar thinner than this is warned about (K5 ruling R16, tests/test_climb_thin_bar.py): on a rigid one, the stock
+# climber's hook sinks through a 1/2 in bar as it lands, and on any rigid bar the hanging robot bounces on its hooks.
+THIN_BAR = 1.0 * IN  # source: spec D2
 # A start's robot may not lie under a rod whose low end is lower than this (it would begin inside the rod); higher
 # rods (reef branches, overhead) are allowed over a start.
 ROD_START_CLEARANCE = 0.5  # m
@@ -648,6 +651,24 @@ def parse_elements(path, tables, size: tuple[float, float] = (FIELD_LENGTH, FIEL
             raise RangeError(i18n.t("{path}: two elements named '{name}'; element names must be unique",
                                     path=path, name=e.name))
         out.append(e)
+    return tuple(out)
+
+
+def thin_bar_warnings(elements: tuple[Element, ...]) -> tuple[str, ...]:
+    """A warning for each bar thinner than THIN_BAR: a stock climber can't climb it (R16). Its machine text is in
+    the machine units, its shown text in the Units and Language settings."""
+    from .. import units
+    from ..checks import Said
+
+    out = []
+    for e in elements:
+        if isinstance(e, Bar) and e.diameter < THIN_BAR:
+            def words(e=e) -> str:
+                return i18n.t("bar '{name}' is {diameter} across: a stock climber's hook slips off a bar under 1 in "
+                              "(K5); hang a chain ({chain_kind}) or make the bar at least 1 in", name=e.name,
+                              diameter=units.fmt(e.diameter, "length"), chain_kind='kind = "chain"')
+            with units.fixed(units.MACHINE):
+                out.append(Said(words(), words))
     return tuple(out)
 
 
