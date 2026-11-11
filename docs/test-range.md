@@ -742,6 +742,57 @@ condition reads it: the robot's center, seen from above, inside or outside the z
 enough for "did it leave the starting zone" (2024's LEAVE) and "is it in the wing"; a rule about the whole robot or
 its bumpers (2024's PARK) isn't modeled yet.
 
+### AprilTags
+
+A range can carry the field's AprilTags, in the file teams already have: WPILib's `AprilTagFieldLayout` JSON.
+
+```toml
+[range]
+apriltags = "2024-crescendo"   # a layout scrimmage ships, or a path to a JSON file (relative to this range file)
+apriltag_size_in = 6.5         # the tags' side in inches; default 6.5, the 2024 and later 36h11 tags
+```
+
+- **Built-in layouts:** `2024-crescendo`, `2026-rebuilt-welded` and `2026-rebuilt-andymark`, copied from WPILib
+  v2026.2.2 (the source, commit and license are in `scrimmage/testrange/apriltags/`). Any other value is a path to a
+  JSON file in WPILib's format.
+- **Frames:** the layout is used as it is. scrimmage's field frame is WPILib's: the origin at the blue alliance wall's
+  right corner, x toward red, y toward the left guardrail, z up. A tag's pose puts its outward normal along the tag's
+  +x, so a tag on the blue wall facing the field has no rotation, and tag 7 of 2024 (the blue SPEAKER's) is at
+  y = 5.55 m, in line with the SPEAKER.
+- **Checks:** `range check` stops with an error when the layout's field length and width differ from the range's by
+  more than 5 cm (the message names both sizes), when two tags share an ID, when a tag's center is more than 0.3 m
+  outside the field (a wall-mounted tag may sit just outside), or when the file is missing, isn't JSON, or lacks a
+  `tags` list, a `field`, or a tag's `ID` or `pose`. It lists the tag count with the layout's name ("16 AprilTags
+  (2024-crescendo)").
+- **Mounted tags:** a wall-mounted tag's center can lie a little inside the solid it hangs on: 2024's SPEAKER tags are
+  3.8 cm inside the SPEAKER wall obstacle, and the STAGE tags about 7 cm inside the estimated stage cores. The tag is
+  drawn, and a camera sees it, at its face: its center pushed out along its normal past any solid it lies at most
+  0.10 m inside. `range check` warns about a tag deeper than that in a solid, since it would be hidden.
+- **Drawing:** each tag is a black square with a white border (the real tag36h11 pattern isn't drawn) that touches
+  nothing and changes no sensor reading. The live view labels each with its ID; a MuJoCo picture (`range view --out`)
+  shows the squares only.
+- **Size:** `apriltag_size_in` sets how big the squares are drawn and, for a camera, how far away it can see them.
+
+A hand-made practice field needs a small JSON file of its own (`practice-tags.json`, next to the range file), with
+the range's field size:
+
+```json
+{
+  "field": { "length": 16.54, "width": 8.07 },
+  "tags": [
+    { "ID": 1,
+      "pose": { "translation": { "x": 0.0, "y": 4.0, "z": 1.2 },
+                "rotation": { "quaternion": { "W": 1.0, "X": 0.0, "Y": 0.0, "Z": 0.0 } } } },
+    { "ID": 2,
+      "pose": { "translation": { "x": 16.54, "y": 4.0, "z": 1.2 },
+                "rotation": { "quaternion": { "W": 0.0, "X": 0.0, "Y": 0.0, "Z": 1.0 } } } }
+  ]
+}
+```
+
+Tag 1 is on the blue wall, facing +x (into the field). Tag 2 is on the red wall, turned half a turn about z so its
+normal points to -x.
+
 ### The game: points, the match and its rules
 
 A range can say what game it is: how long the match is, what a piece in each goal is worth, and the rules a robot is

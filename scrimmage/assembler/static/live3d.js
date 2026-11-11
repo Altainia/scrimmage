@@ -22,9 +22,10 @@
 // on demand. The follow camera tracks view.root_mover (-1: it looks at the floor center instead).
 // Where WebGL is software (SwiftShader, llvmpipe: no GPU acceleration) the view draws at half resolution without
 // antialiasing and at most every SOFTWARE_MS, so drawing doesn't starve the page.
-// For tests: window.__scrimmage.live3d = {groups, lastSeq, camera, root, follow, software, background (#rrggbb:
+// For tests: window.__scrimmage.live3d = {groups, lastSeq, camera, root, follow, software, tagLabels, background (#rrggbb:
 // --watch-bg in the page's theme)} of the newest live view not yet
-// disposed (the Drive tab's, or the Scenario run panel's Watch view while it is shown).
+// disposed (the Drive tab's, or the Scenario run panel's Watch view while it is shown). tagLabels is how many AprilTag
+// ID labels (sprites, one per view.apriltags entry, 3 cm out from the tag's face) the view draws.
 
 import * as THREE from "three";
 import { OrbitControls } from "./vendor/OrbitControls.js";
@@ -71,8 +72,20 @@ function hook() {
   Object.defineProperty(window.__scrimmage, "live3d", {
     configurable: true, enumerable: true,
     get: () => ({ groups: v.groups.length, lastSeq: v.lastSeq, camera: v.mode, root: v.rootMover, follow: v.followTarget.toArray(),
-                  software: v.software, background: `#${v.scene.background.getHexString()}` }),
+                  software: v.software, tagLabels: v.tagLabels.length, background: `#${v.scene.background.getHexString()}` }),
   });
+}
+
+const TAG_LABEL_OUT = 0.03, TAG_LABEL_SIZE = 0.2;   // m: a tag label's distance from its tag's face, and its side
+
+function paintLabel(canvas, id) {   // the ID in the page's text color on a clear background
+  const c = canvas.getContext("2d");
+  c.clearRect(0, 0, canvas.width, canvas.height);
+  c.fillStyle = theme.color("--text");
+  c.font = "bold 40px sans-serif";
+  c.textAlign = "center";
+  c.textBaseline = "middle";
+  c.fillText(String(id), canvas.width / 2, canvas.height / 2);
 }
 
 const yawOf = (q) => Math.atan2(2 * (q[0] * q[3] + q[1] * q[2]), 1 - 2 * (q[2] * q[2] + q[3] * q[3]));   // q = w, x, y, z
@@ -93,6 +106,8 @@ export class LiveView {
     this.scene.background = new THREE.Color(theme.color("--watch-bg"));   // the page's theme (app.css)
     this.offTheme = theme.onChange(() => {
       this.scene.background.set(theme.color("--watch-bg"));
+      for (const l of this.tagLabels) paintLabel(l.canvas, l.id);
+      for (const l of this.tagLabels) l.texture.needsUpdate = true;
       this.requestRender();
     });
     const hemi = new THREE.HemisphereLight(0xffffff, 0x8a8f96, 2.0);
@@ -115,6 +130,7 @@ export class LiveView {
     this.outlined = -1;
     this.cylinders = [];      // {spec (the view's), barrel, rod (meshes), lengths: [barrel, rod] as drawn}
     this.sensors = [];        // {spec (the view's), mesh, lit, ends: [a, b] in the world as drawn}
+    this.tagLabels = [];      // {id, canvas, texture}: an AprilTag's ID label (a sprite in the model)
     this.floorInfo = { pos: [8, 4, 0], size: [8, 4] };
     this.rootMover = 0;
     this.mode = "follow";
@@ -147,6 +163,25 @@ export class LiveView {
     this.groups = [];
     this.cylinders = [];
     this.sensors = [];
+    this.tagLabels = [];
+  }
+
+  // An AprilTag's ID as a sprite 3 cm out from the tag's face (along its normal, +x of its quaternion w, x, y, z).
+  addTagLabel(parent, tag) {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 64;
+    paintLabel(canvas, tag.id);
+    const texture = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
+    this.disposables.push(texture, mat);
+    const sprite = new THREE.Sprite(mat);
+    const [w, x, y, z] = tag.quat;
+    const normal = new THREE.Vector3(1, 0, 0).applyQuaternion(new THREE.Quaternion(x, y, z, w));
+    sprite.position.set(...tag.face).addScaledVector(normal, TAG_LABEL_OUT);
+    sprite.scale.set(TAG_LABEL_SIZE, TAG_LABEL_SIZE, 1);
+    sprite.renderOrder = 1;
+    parent.add(sprite);
+    this.tagLabels.push({ id: tag.id, canvas, texture });
   }
 
   setModel(view) {
@@ -193,6 +228,7 @@ export class LiveView {
     };
     for (const gd of view.geoms || []) add(gd);
     for (const gd of view.world_geoms || []) add(gd);
+    for (const tag of view.apriltags || []) this.addTagLabel(stat, tag);
     const tube = (radius, rgba) => {
       const geo = new THREE.CylinderGeometry(radius, radius, 1, 24), mat = geomMaterial(rgba);
       this.disposables.push(geo, mat);

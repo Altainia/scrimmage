@@ -36,7 +36,7 @@ packages = ["scrimmage", "scrimmage.parts", "scrimmage.parts.stock", "scrimmage.
             "scrimmage.pneumatics", "scrimmage.measure", "scrimmage.sensors"]
 
 [tool.setuptools.package-data]
-scrimmage = ["java/**/*", "assembler/static/**/*", "launcher/*.toml", "disc/*.toml", "testrange/ranges/*.toml",
+scrimmage = ["java/**/*", "assembler/static/**/*", "launcher/*.toml", "disc/*.toml", "testrange/ranges/*.toml", "testrange/apriltags/*",
               "bench/*.toml", "measure/img/*.svg", "locales/*.json"]
 
 [tool.pytest.ini_options]

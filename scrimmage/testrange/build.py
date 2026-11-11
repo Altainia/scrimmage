@@ -329,6 +329,9 @@ def add_range(spec: mujoco.MjSpec, rng: Range, n_slots: int, *, floor_balls: boo
             add_chute(spec, st, st.kind_of(rng))
     from .zones import add_zones
     add_zones(spec, rng.zones)       # tape on the carpet, touching nothing
+    if rng.apriltags is not None:
+        from .apriltags import add_apriltags
+        add_apriltags(spec, rng.apriltags)      # visual only, before the balls
     timestep = spec.option.timestep
     # each slot's kind, in ball order: the floor pieces, the robot's slots (Range.piece's kind), the stations' pools
     n_floor = len(rng.floor_balls) if floor_balls else 0

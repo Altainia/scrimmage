@@ -94,6 +94,10 @@ def summary(ref: str, rng: Range) -> list[str]:
             "game {name} ({auto} s auto, {pause} s pause, {teleop} s teleop, {count} goals score points)",
             scoring, name=repr(g.name), auto=f"{g.auto_s:g}", pause=f"{g.pause_s:g}", teleop=f"{g.teleop_s:g}",
             count=scoring))
+    if rng.apriltags is not None:
+        n = len(rng.apriltags.tags)
+        parts.append(i18n.tn("{count} AprilTag ({layout})", "{count} AprilTags ({layout})", n, count=n,
+                             layout=rng.apriltags.name))
     if rng.starts:
         parts.append(i18n.tn("{count} start ({names})", "{count} starts ({names})", len(rng.starts),
                              count=len(rng.starts), names=_names(rng.starts)))

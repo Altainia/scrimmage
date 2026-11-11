@@ -84,6 +84,10 @@ def model_view(world, include_world: bool = False) -> dict:
            "com": [float(v) for v in d.subtree_com[world.robot_body]],   # the robot's CG in the world (the CG marker)
            "cylinders": _cylinders(world, d, body_mover),
            "sensors": _sensors(world, d, body_mover)}
+    rng = world.test_range.range if world.test_range is not None else None
+    layout = rng.apriltags if rng is not None else None
+    out["apriltags"] = [] if layout is None else [
+        {"id": t.id, "face": list(t.face), "quat": list(t.quat), "size": layout.size} for t in layout.tags]
     if include_world:
         out["world_geoms"] = _world_geoms(world, d, root, ms, meshes, remap)
         out["movable"] = world.movable_objects()

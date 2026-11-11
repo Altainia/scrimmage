@@ -12,6 +12,9 @@ Either way the field blocks it: a wall, a goal, an obstacle, a field element or 
 it, as it would from a real beam. A pieces-only sensor that hits the field first reads nothing (a beam clear, a
 distance sensor its max_range).
 
+An AprilTag's squares (geoms named `apriltag.<id>`, visual only) are stepped past like the robot's own, so tags
+change no reading.
+
 Pieces are the range's `ball.<i>` bodies: balls, discs and rigid pieces alike. A sensor never sees its own robot (the
 robot body's whole tree).
 
@@ -124,6 +127,9 @@ class SensorRuntime:
                                          bodies=', '.join(n for n in names if n), sensor_table="[[sensor]]"))
             self._bodies.append(b)
         self._robot = (m.body_rootid[m.geom_bodyid] == root).tolist()      # per geom: part of the robot
+        # per geom: an AprilTag's square (visual only: a ray steps past it as it does past the robot's own geoms)
+        self._tag = [(mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g) or "").startswith("apriltag.")
+                     for g in range(m.ngeom)]
         # Per geom: the piece (ball index) it belongs to, -1 for every other geom; and each piece's color.
         rng = world.test_range
         if rng is not None:
@@ -196,7 +202,7 @@ class SensorRuntime:
               name: str) -> tuple[float, int] | None:
         """The first thing the ray from `pnt` along unit `vec` hits within `reach` that the sensor sees: (distance,
         the piece's index or -1 for a non-piece), or None. See the module's note on recasting."""
-        m, gid, robot, piece = self.model, self._gid, self._robot, self._piece
+        m, gid, robot, piece, tag = self.model, self._gid, self._robot, self._piece, self._tag
         start, gone = self._pnt, 0.0
         start[:] = pnt
         for _ in range(MAX_CASTS):
@@ -208,7 +214,7 @@ class SensorRuntime:
             g = int(gid[0])
             if piece[g] >= 0:
                 return gone, piece[g]
-            if not robot[g]:        # the field: it blocks the view; only a sensor that sees anything reads it
+            if not (robot[g] or tag[g]):    # the field: it blocks the view; only a sensor that sees anything reads it
                 return None if pieces_only else (gone, -1)
             gone += SKIP
             start[:] = pnt + gone * vec

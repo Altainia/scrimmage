@@ -107,7 +107,7 @@ def _targets(world, named: set[str]) -> list[str]:
     skip = set(named) | set(layout.ball_names if layout is not None else ())
     out = {m.body(b).name for b in range(1, m.nbody) if m.body_rootid[b] != root and m.body(b).name}
     out |= {m.geom(g).name for g in range(m.ngeom) if int(m.geom_bodyid[g]) == 0 and m.geom(g).name}
-    return sorted(n for n in out if n not in skip and not n.startswith("element."))
+    return sorted(n for n in out if n not in skip and not n.startswith(("element.", "apriltag.")))
 
 
 def _station_settings(st) -> dict:
