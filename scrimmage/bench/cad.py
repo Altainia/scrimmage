@@ -33,7 +33,7 @@ import numpy as np
 from .. import i18n
 from ..parts.assemble import AXIS_TURN, TREAD_STIFFNESS
 from ..parts.model import Body, Part, PartError, load_part, quat_from_rpy
-from .spec import UNITS, Bench, BenchError, Cad
+from .spec import UNITS, Bench, BenchError, Cad, Piece
 
 CONCAVE = 0.02  # a mesh whose hull is more than 2% bigger than itself is concave
 TEMP_CACHE = Path(tempfile.gettempdir()) / "scrimmage-convex"
@@ -260,6 +260,29 @@ def _conj(q) -> np.ndarray:
     return np.array([q[0], -q[1], -q[2], -q[3]], dtype=float)
 
 
+WHEEL_SIDES = 64  # a wheel collides as this many-sided prism (sagitta r (1 - cos(pi / 64)) = 0.12% of r)
+
+
+def prism_wheels(piece: Piece) -> bool:
+    """A rigid, non-ball piece meets prism wheels: MuJoCo's convex collider makes its contacts with them. A ball's
+    sphere-cylinder contact is MuJoCo's analytic one, a squishy ball's is squishy.py's (it reads the cylinder), and a
+    flex piece's is flexcontact's, so those keep the cylinder."""
+    return piece.kind == "rigid" and not piece.flex and piece.shape != "sphere"
+
+
+def wheel_prism(r: float, half: float) -> list[float]:
+    """A wheel's collision solid: a WHEEL_SIDES-gon prism along z, its faces' midlines on the radius r. MuJoCo 4.0.1's
+    cylinder makes one contact point where a piece's edge meets its tread side (a line contact), so a piece fed
+    edge-first gets a single, wandering point and no roll stiffness; a convex mesh makes the line's two ends."""
+    rv = r / math.cos(math.pi / WHEEL_SIDES)
+    v = []
+    for z in (-half, half):
+        for k in range(WHEEL_SIDES):
+            a = 2 * math.pi * (k + 0.5) / WHEEL_SIDES
+            v += [rv * math.cos(a), rv * math.sin(a), z]
+    return v
+
+
 @dataclass
 class CadWheel:
     """A part's wheel cylinder on a bench shaft."""
@@ -421,6 +444,9 @@ def add_cad(spec: mujoco.MjSpec, pl: Placement, bench: Bench, shapes) -> tuple[d
                 if file is not None:
                     kw["meshname"] = _add_mesh(spec, gname, file, 1.0)
                 gtype, size = kw.pop("type"), kw.pop("size", ())
+                if wheel and prism_wheels(bench.piece):  # as a [[wheel]] is (see wheel_prism)
+                    spec.add_mesh(name=gname, uservert=wheel_prism(g.size[0], g.size[1] / 2))
+                    gtype, kw["meshname"] = mujoco.mjtGeom.mjGEOM_MESH, gname
                 if wheel:
                     shapes.add(body, gname, name, gtype, size, lp, lq, mats[c.tread].rigid_friction,
                                k_shape=TREAD_STIFFNESS, **kw)

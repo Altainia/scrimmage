@@ -324,8 +324,13 @@ slots = { roller_motor = "intake" }
     assert np.allclose(d.xaxis[j], [0.0, 1.0, 0.0])
     wheel = lay.wheel_geoms["box.roller"]
     assert m.geom_bodyid[wheel] == m.jnt_bodyid[j]
-    assert m.geom_type[wheel] == mujoco.mjtGeom.mjGEOM_CYLINDER
-    assert np.allclose(m.geom_size[wheel][:2], [0.05, 0.05])
+    # a rigid box meets the roller as a 64-sided prism (cad.wheel_prism), as it would a [[wheel]]: r 0.05 on the
+    # faces' midlines, 0.1 wide along the hinge axis
+    assert m.geom_type[wheel] == mujoco.mjtGeom.mjGEOM_MESH
+    rim = _world_verts(m, d, wheel) - [1.0, 0.0, 0.55]
+    assert len(rim) == 2 * cad.WHEEL_SIDES
+    assert np.allclose(np.hypot(rim[:, 0], rim[:, 2]), 0.05 / math.cos(math.pi / cad.WHEEL_SIDES))
+    assert np.allclose(sorted(set(np.round(rim[:, 1], 9))), [-0.05, 0.05])
     assert np.allclose(d.geom_xpos[wheel], [1.0, 0.0, 0.55])
     assert lay.cad_wheels["box.roller"].shaft == "intake"
     assert lay.cad_wheels["box.roller"].tread == "45A"
@@ -338,6 +343,30 @@ slots = { roller_motor = "intake" }
             assert m.body_weldid[m.geom_bodyid[g]] == 0, s
     assert m.njnt == 1 + len(lay.piece_qpos)  # the shaft's hinge and the pieces' free joints only
     assert lay.cad_material["box.frame"] == "aluminum"
+
+
+def _world_verts(m: mujoco.MjModel, d: mujoco.MjData, g: int) -> np.ndarray:
+    k = m.geom_dataid[g]
+    v = m.mesh_vert[m.mesh_vertadr[k]:m.mesh_vertadr[k] + m.mesh_vertnum[k]]
+    return d.geom_xpos[g] + v @ d.geom_xmat[g].reshape(3, 3).T
+
+
+def test_part_folder_roller_stays_a_cylinder_for_a_ball(tmp_path):
+    """A ball meets the CAD roller as the part's cylinder (MuJoCo's analytic sphere-cylinder contact), not the prism
+    a rigid box meets."""
+    part_folder(tmp_path)
+    raw = tomllib.loads(HEAD.replace(HEAD[HEAD.index("[piece]"):], '[piece]\npreset = "2026-fuel"\n') + SHAFT + """
+[[cad]]
+name = "box"
+part = "parts/roller_box"
+slots = { roller_motor = "intake" }
+""")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        built = build_bench(parse_bench(raw, tmp_path))
+    m, wheel = built.model, built.layout.wheel_geoms["box.roller"]
+    assert m.geom_type[wheel] == mujoco.mjtGeom.mjGEOM_CYLINDER
+    assert np.allclose(m.geom_size[wheel][:2], [0.05, 0.05])
 
 
 def test_part_folder_runs_a_ball_through_the_roller(tmp_path):

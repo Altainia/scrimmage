@@ -262,8 +262,8 @@ class _Shafts:
 def spread_stiffness(m: mujoco.MjModel, d: mujoco.MjData, geom_piece: np.ndarray, n_pieces: int, soft: np.ndarray,
                      tc1: np.ndarray) -> None:
     """Each soft geom's stiffness spread over the points it makes: a rigid piece is many solids, and one face
-    against a wheel is 8 MuJoCo contact points on the 2024 NOTE, each of which would otherwise carry the whole
-    stiffness (8 times the squeeze). tread_solref's time constant for n points is sqrt(n) times its one-point one
+    against a wheel is 16 MuJoCo contact points on the 2024 NOTE, each of which would otherwise carry the whole
+    stiffness (16 times the squeeze). tread_solref's time constant for n points is sqrt(n) times its one-point one
     (`tc1`, BenchLayout.contact_tc). n is d.contact's count, the last step's (this step's are not found yet): for a
     shape (whose solref a piece contact takes, by priority) its most with any one piece, for a piece's geoms their
     most with any one other piece (MuJoCo averages the two sides' solref there). A geom touching nothing goes back

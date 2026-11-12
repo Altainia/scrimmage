@@ -206,9 +206,10 @@ def _bench(tmp_path, stiffness: float = 2000.0, count: int = 1, duration: float 
 
 
 def test_the_benchs_squeeze_is_the_models(tmp_path):
-    """The NOTE held still in the bench's pinch (wheels locked, no gravity): MuJoCo makes 8 contact points between a
-    wheel and the ring's slices, and the bench spreads the piece's stiffness over them, so together they carry the
-    model's k c / 2, not 8 times it."""
+    """The NOTE held still in the bench's pinch (wheels locked, no gravity): MuJoCo makes 16 contact points between a
+    wheel and the ring's slices (the corners of a prism face's patch on each of the 4 slices under it), and the bench
+    spreads the piece's stiffness over them, so together they carry the model's k c / 2, not 16 times it. The feed
+    floor only grazes the ring (its top is the ring's bottom), so only the wheels' contacts are counted."""
     from scrimmage.bench.build import build_bench
     from scrimmage.bench.run import spread_stiffness
     built = build_bench(_bench(tmp_path))
@@ -233,7 +234,7 @@ def test_the_benchs_squeeze_is_the_models(tmp_path):
     for i in range(d.ncon):
         c = d.contact[i]
         bodies = {int(m.geom_bodyid[c.geom1]), int(m.geom_bodyid[c.geom2])}
-        if piece in bodies:
+        if piece in bodies and any(m.body(b).name.startswith("shaft:") for b in bodies):
             f = np.zeros(6)
             mujoco.mj_contactForce(m, d, i, f)
             per_wheel.setdefault(m.body((bodies - {piece}).pop()).name, []).append(float(f[0]))
@@ -242,7 +243,7 @@ def test_the_benchs_squeeze_is_the_models(tmp_path):
     assert model_n == pytest.approx(19.05, abs=0.05)
     assert sorted(per_wheel) == ["shaft:bottom", "shaft:top"]
     for forces in per_wheel.values():
-        assert len(forces) == 8
+        assert len(forces) == 16
         assert sum(forces) == pytest.approx(model_n, rel=0.02)
 
 
