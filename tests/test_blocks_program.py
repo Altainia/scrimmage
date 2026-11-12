@@ -246,10 +246,19 @@ def test_feed_blocks_conditions_and_setup_round_trip():
 
 
 def test_old_test_files_load_unchanged():
+    """Every example test file is exactly what the Test tab would write for it, its top comments included."""
     files = sorted(Path(__file__).parent.parent.glob("examples/blocks/*/*.test.toml"))
     assert files
     for f in files:
-        assert P.dumps(P.load(f)) == f.read_text(encoding="utf-8")
+        text = f.read_text(encoding="utf-8")
+        assert P.dumps(P.load(f), P.preamble(text)) == text
+
+
+def test_the_preamble_is_the_top_comments():
+    text = "# what this tests\n#\n# and why\n\n[test]\n# not this one\nrobot = \"r.toml\"\n"
+    assert P.preamble(text) == "# what this tests\n#\n# and why\n"
+    assert P.preamble('[test]\nrobot = "r.toml"\n') == ""
+    assert P.dumps(P.loads(text, PATH), P.preamble(text)).startswith("# what this tests\n#\n# and why\n[test]\n")
 
 
 @pytest.mark.parametrize("bad, words", [

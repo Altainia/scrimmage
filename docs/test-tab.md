@@ -65,6 +65,8 @@ The bottom bar says whether the test is saved and how many blocks it has.
   says "Not saved yet: a block needs a check plugged in". Plug one in from **Check**.
 - **If the file is changed somewhere else** (you edited it in a text editor), the tab reloads it and says so. A file it
   can't read shows the error and keeps the last good version on screen.
+- **Comments at the top of the file are kept.** Describe the test in `#` lines above `[test]` and a save keeps them.
+  The tab writes the rest of the file itself, so comments further down are dropped when it saves.
 
 ## The blocks
 

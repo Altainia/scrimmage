@@ -42,10 +42,16 @@ SQUEEZE_STIFFNESSES = (1000.0, 2000.0, 6000.0, 20000.0)  # source: K6-R1's table
 SQUEEZE_DEPTH = 0.25 * IN  # source: soft_scenes.SQUEEZE_GAP: each side of the 2 in NOTE squeezed 0.25 in at 1.5 in
 CALIBRATION_TOL = 0.02  # choice: K6-R11
 
-# today's failing cases and the K6 task that fixes each. Task 5 (K6-R2's pairs) owns every priority-1 case: the
-# scene calls soft.pair_rings, which Task 5 adds. Task 3 (K6-R1's ramp) owns the rest: each one passes with the K6
-# spike's patch at 1.0 r except where the task-2 report says otherwise.
+# today's failing cases and the K6 task that fixes each (the value is the xfail's reason). Task 5 (K6-R2's pairs) owns
+# every priority-1 case: the scene calls soft.pair_rings, which Task 5 adds. Task 3 (K6-R1's ramp) owns the rest, and
+# the 8 m/s energy gain at 20000 N/m at either priority. Each one passes with the K6 spike's patch at 1.0 r, except
+# the energy gain and 200 N dragged at 1000 N/m (20.3 mm there: Task 3 takes the spec's 0.9 r fallback if its ramp
+# still leaves 20 mm).
 TASK3, TASK5 = "K6 Task 3", "K6 Task 5"
+TASK3_PRESS = ("K6 Task 3: 20.3 mm at the spike's 1.0 r patch; the spec's 0.9 r fallback if Task 3's ramp still "
+               "leaves 20 mm")
+TASK3_GAIN = ("K6 Task 3: a 6.8 % energy gain on the first step after the launch, from the carpet contact; the same "
+              "with no wall, gone at 7 m/s or at a 0.5 ms step")
 FIXED_BY: dict[str, str] = {
     **{f"{t * 1000:g}mm-{v}mps-prio1-{s:g}": TASK5 for t in WALLS for v in SPEEDS for s in STIFFNESSES},
     **{f"prio1-{pull}N-{s:g}": TASK5 for pull in PULLS for s in STIFFNESSES},
@@ -59,6 +65,9 @@ FIXED_BY: dict[str, str] = {
         "6mps-prio0-1000", "8mps-prio0-1000", "8mps-prio0-2000")], TASK3),
     # taco and slab
     **dict.fromkeys(["60mm-1N-1000", "60mm-1N-2000", "prio0-10N-1000"], TASK3),
+    **dict.fromkeys(["3.175mm-200N-dragged-1000", "6mm-200N-dragged-1000"], TASK3_PRESS),
+    # the launch's energy gain at 20000 N/m, against any wall and at either priority (overrides Task 5's entries)
+    **{f"{t * 1000:g}mm-8mps-prio{p}-20000": TASK3_GAIN for t in WALLS for p in (0, 1)},
 }
 
 
