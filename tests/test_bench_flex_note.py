@@ -113,3 +113,71 @@ def test_a_bounce_out_of_reach_is_an_error_not_a_cache(note, tmp_path, monkeypat
         fn.fit_flex(kind)
     assert e.value.code == "flex_fit" and "'2024-note'" in str(e.value) and "0.95" in str(e.value)
     assert not list(tmp_path.rglob("*.json"))
+
+
+def _stand_ins(monkeypatch, calls):
+    """Cheap monotone scenes: force rises as E^0.8, e falls as beta rises."""
+    monkeypatch.setattr(fn, "squeeze_force", lambda k, fit: (calls.append("squeeze"), fn.target_force(k)
+                                                             * (fit.E / 12235.0) ** 0.8)[1])
+    monkeypatch.setattr(fn, "drop_restitution", lambda k, fit: (calls.append("drop"), k.restitution
+                                                                * (0.0025 / fit.beta) ** 0.3)[1])
+
+
+@pytest.mark.parametrize("bad", ['{"E": -1, "beta": NaN}', '{"E": Infinity, "beta": 0.002}',
+                                 '{"E": 12000.0, "beta": 0}'])
+def test_a_bad_cache_entry_is_fitted_again(note, tmp_path, monkeypatch, bad):
+    monkeypatch.setattr(cad_fit, "SHAPED_CACHE", tmp_path)
+    kind = replace(note, stiffness=4000.0)
+    path = fn.cache_path(kind)
+    path.parent.mkdir(parents=True)
+    path.write_text(bad)
+    calls = []
+    _stand_ins(monkeypatch, calls)
+    fit = fn.fit_flex(kind)
+    assert calls and fit.E > 0 and fit.beta > 0 and math.isfinite(fit.E)
+    assert json.loads(path.read_text())["E"] == fit.E
+
+
+def test_the_shipped_table_is_read_exactly(note, tmp_path, monkeypatch):
+    """A bad shipped entry, a near miss of the preset's numbers, or a table for another mesh or timestep is not
+    used: each is fitted."""
+    monkeypatch.setattr(cad_fit, "SHAPED_CACHE", tmp_path / "cache")
+    table = json.loads(fn.SHIPPED_FITS.read_text())
+    assert "2000.0_0.3" in table
+    calls = []
+    _stand_ins(monkeypatch, calls)
+    assert fn.fit_flex(replace(note, stiffness=2000.00001)) and calls
+    for change in ({"2000.0_0.3": {"E": float("nan"), "beta": 0.0025}}, {"mesh": [24, 8]}, {"timestep": 0.001}):
+        shipped = tmp_path / f"fits{len(calls)}.json"
+        shipped.write_text(json.dumps({**table, **change}))
+        monkeypatch.setattr(fn, "SHIPPED_FITS", shipped)
+        calls.clear()
+        for f in (tmp_path / "cache").rglob("*.json"):
+            f.unlink()
+        assert fn.fit_flex(note) and calls, change
+
+
+def test_a_mujoco_warning_is_a_fit_error_with_no_log_file(note, tmp_path, monkeypatch):
+    """At a huge E MuJoCo warns that the flex is ill-conditioned (the spike's warning). The scene raises `flex_fit`
+    with MuJoCo's words, MuJoCo's own handler (which writes MUJOCO_LOG.TXT into the working directory) is kept off
+    during it and put back after."""
+    monkeypatch.chdir(tmp_path)
+    before = mujoco.get_mju_user_warning()
+    with pytest.raises(BenchError) as e:
+        fn.squeeze_force(note, fn.FlexFit(E=1e14, beta=0.0025))
+    assert e.value.code == "flex_fit" and "ill-conditioned" in str(e.value)
+    assert mujoco.get_mju_user_warning() is before
+    assert not (tmp_path / "MUJOCO_LOG.TXT").exists()
+
+
+def test_a_real_fit_converges(note, tmp_path, monkeypatch):
+    """A new pair through the real scenes: a secant step and a few bisection steps (about 6 s), from a scratch
+    working directory that is left with no MUJOCO_LOG.TXT."""
+    monkeypatch.setattr(cad_fit, "SHAPED_CACHE", tmp_path / "cache")
+    monkeypatch.chdir(tmp_path)
+    kind = replace(note, stiffness=1200.0, restitution=0.3)
+    fit = fn.fit_flex(kind)
+    assert fn.cache_path(kind).is_file()
+    assert fn.squeeze_force(kind, fit) == pytest.approx(fn.target_force(kind), rel=0.02)
+    assert abs(fn.drop_restitution(kind, fit) - 0.3) <= 0.02
+    assert not (tmp_path / "MUJOCO_LOG.TXT").exists()

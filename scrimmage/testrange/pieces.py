@@ -1036,6 +1036,17 @@ def ring_diameters(kind: PieceKind) -> tuple[float, float | None]:
     return outer, (kind.hole.diameter if kind.hole is not None else None)
 
 
+def ring_basis(axis) -> np.ndarray:
+    """Columns u, v, a: a right-handed frame whose a is a ring kind's axis (u = x, v = y for axis z), the frame its
+    soft ring (testrange/soft.py) and its bench flex (bench/flex_note.py) are built in."""
+    a = np.asarray(axis, dtype=float)
+    a = a / np.linalg.norm(a)
+    ref = np.array([1.0, 0.0, 0.0]) if abs(a[0]) < 0.9 else np.array([0.0, 0.0, 1.0])
+    u = ref - (ref @ a) * a
+    u /= np.linalg.norm(u)
+    return np.column_stack([u, np.cross(a, u), a])
+
+
 def _check_soft(r: _KindReader, kind: PieceKind, from_preset: bool = False) -> None:
     """A soft kind is a ring with a hole of more than SOFT_MIN_HOLE of its diameter, a `stiffness` in
     SOFT_STIFFNESS_RANGE and a `restitution` (each its own or its preset's; a bounce outside SOFT_RESTITUTION_RANGE is

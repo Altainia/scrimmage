@@ -27,6 +27,7 @@ import json
 import math
 import os
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,8 +39,7 @@ from ..cad import fit as cad_fit
 from ..flexcontact import contact_ids
 from ..launcher import soft_scenes as sc
 from ..testrange.build import RIGID_SOLMIX
-from ..testrange.pieces import PieceKind, ring_diameters
-from ..testrange.soft import _basis
+from ..testrange.pieces import PieceKind, ring_basis, ring_diameters
 from .spec import BenchError
 
 MESH = (16, 6)  # source: soft-note spike: 16x6 pinches within 2 % of 24x8 once E is refit
@@ -47,7 +47,9 @@ FLEX_RADIUS = 0.0005  # source: spike
 POISSON = 0.3  # source: spike
 FLEX_TIMESTEP = 5e-4  # source: spec D9
 FLEX_CONTACT = {"condim": 3, "solref": (0.002, 1.0), "solmix": RIGID_SOLMIX}  # source: spike
-FIT_VERSION = 1  # choice: raised when the model or its scenes change, so old cache files and the shipped fit go unused
+# Raised when the model or its scenes change beyond MESH and FLEX_TIMESTEP (the cache key and the shipped table carry
+# those two themselves), so old cache files and the shipped fit go unused.
+FIT_VERSION = 1  # choice: the first fit
 SPIN_FRICTION = (0.005, 0.0001)  # source: spike: the flex's torsional and rolling friction (build.BALL_FRICTION's)
 VERTEX_INERTIA_BOX = 0.005  # source: MuJoCo flexcomp's default `inertiabox` (m): each vertex body's inertia box
 
@@ -136,7 +138,7 @@ def add_flex_note(spec: mujoco.MjSpec, name: str, pos, kind: PieceKind, fit: Fle
     `<flexcomp type="direct" dim="3" dof="full">` with these options (the spike's)."""
     big_r, r = ring_radii(kind)
     verts, tets = torus_tets(MESH[0], MESH[1], FLEX_RADIUS, big_r, r)
-    world = np.asarray(pos, dtype=float) + verts @ _basis(kind.axis).T
+    world = np.asarray(pos, dtype=float) + verts @ ring_basis(kind.axis).T
     m = kind.mass / len(verts)
     inertia = m * 2.0 * VERTEX_INERTIA_BOX ** 2 / 3.0      # a box of half-side VERTEX_INERTIA_BOX, as flexcomp's
     bodies = []
@@ -187,10 +189,42 @@ def _finite(data: mujoco.MjData) -> bool:
     return bool(np.isfinite(data.qpos).all() and np.isfinite(data.qvel).all())
 
 
+@contextmanager
+def _warnings_caught():
+    """MuJoCo's warnings while a scene runs, as a list of their texts. MuJoCo's own handler would print each one and
+    write MUJOCO_LOG.TXT into the working directory; this one only keeps them (scene_warned turns them into an error).
+    The handler is MuJoCo's, so process-wide: the previous one is put back after."""
+    caught: list[str] = []
+    before = mujoco.get_mju_user_warning()
+    mujoco.set_mju_user_warning(lambda msg: caught.append(str(msg).strip()))
+    try:
+        yield caught
+    finally:
+        mujoco.set_mju_user_warning(before)
+
+
+def _warned(data: mujoco.MjData) -> str | None:
+    """The first MuJoCo warning this run raised, by its mjtWarning name; None with none."""
+    for i, w in enumerate(data.warning):
+        if w.number:
+            return mujoco.mjtWarning(i).name
+    return None
+
+
+def _check_warnings(kind: PieceKind, data: mujoco.MjData, caught: list[str]) -> None:
+    """A scene that made MuJoCo warn (an unstable or ill-conditioned flex) gives no number: BenchError `flex_fit`."""
+    name = _warned(data)
+    if name is None and not caught:
+        return
+    raise BenchError(i18n.t("piece {name}: MuJoCo warned while fitting the flex model ({warning}); try numbers "
+                            "nearer the 2024-note preset's", name=repr(kind.name),
+                            warning=caught[0] if caught else name), code="flex_fit")
+
+
 def squeeze_force(kind: PieceKind, fit: FlexFit) -> float:
     """The flex flat, no gravity, between two mocap rollers on a line across its middle, closing from
     SQUEEZE_START_GAP to SQUEEZE_GAP and held: the top roller's normal force (N), averaged over the last
-    SQUEEZE_READ_S (NaN if the model blew up)."""
+    SQUEEZE_READ_S (NaN if the model blew up). A MuJoCo warning raises BenchError `flex_fit`."""
     spec = _spec(gravity=False)
     r = sc.ROLLER_DIAMETER / 2.0
     for name, sign in (("top", 1.0), ("bot", -1.0)):
@@ -203,27 +237,30 @@ def squeeze_force(kind: PieceKind, fit: FlexFit) -> float:
     top = m.geom("top").id
     total = sc.SQUEEZE_CLOSE_S + sc.SQUEEZE_HOLD_S
     forces, f6 = [], np.zeros(6)
-    for _ in range(int(round(total / FLEX_TIMESTEP))):
-        t = d.time
-        gap = sc.SQUEEZE_START_GAP + (sc.SQUEEZE_GAP - sc.SQUEEZE_START_GAP) * min(t / sc.SQUEEZE_CLOSE_S, 1.0)
-        d.mocap_pos[0] = [0.0, 0.0, gap / 2.0 + r]
-        d.mocap_pos[1] = [0.0, 0.0, -(gap / 2.0 + r)]
-        mujoco.mj_step(m, d)
-        if not _finite(d):
-            return math.nan
-        if t > total - sc.SQUEEZE_READ_S:
-            ids = contact_ids(m, d)
-            f = 0.0
-            for i in np.flatnonzero((ids == top).any(axis=1)):
-                mujoco.mj_contactForce(m, d, int(i), f6)
-                f += f6[0]
-            forces.append(f)
+    with _warnings_caught() as caught:
+        for _ in range(int(round(total / FLEX_TIMESTEP))):
+            t = d.time
+            gap = sc.SQUEEZE_START_GAP + (sc.SQUEEZE_GAP - sc.SQUEEZE_START_GAP) * min(t / sc.SQUEEZE_CLOSE_S, 1.0)
+            d.mocap_pos[0] = [0.0, 0.0, gap / 2.0 + r]
+            d.mocap_pos[1] = [0.0, 0.0, -(gap / 2.0 + r)]
+            mujoco.mj_step(m, d)
+            _check_warnings(kind, d, caught)
+            if not _finite(d):
+                return math.nan
+            if t > total - sc.SQUEEZE_READ_S:
+                ids = contact_ids(m, d)
+                f = 0.0
+                for i in np.flatnonzero((ids == top).any(axis=1)):
+                    mujoco.mj_contactForce(m, d, int(i), f6)
+                    f += f6[0]
+                forces.append(f)
     return float(np.mean(forces))
 
 
 def drop_restitution(kind: PieceKind, fit: FlexFit) -> float:
     """The flex flat, its bottom DROP_HEIGHT above a carpet plane, for DROP_TIME_S: e = sqrt(its center of mass's
-    rebound apex above where it ends / DROP_HEIGHT); 0 with no rebound, NaN if the model blew up."""
+    rebound apex above where it ends / DROP_HEIGHT); 0 with no rebound, NaN if the model blew up. A MuJoCo warning
+    raises BenchError `flex_fit`."""
     spec = _spec(gravity=True)
     spec.worldbody.add_geom(name="carpet", type=mujoco.mjtGeom.mjGEOM_PLANE, size=[20.0, 20.0, 0.1],
                             friction=list(sc.CARPET_FRICTION))
@@ -235,20 +272,22 @@ def drop_restitution(kind: PieceKind, fit: FlexFit) -> float:
     f = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_FLEX, "n")
     a, n = int(m.flex_vertadr[f]), int(m.flex_vertnum[f])
     apex, phase, touched = -1.0, "fall", False
-    for _ in range(int(round(sc.DROP_TIME_S / FLEX_TIMESTEP))):
-        mujoco.mj_step(m, d)
-        if not _finite(d):
-            return math.nan
-        z = float(d.flexvert_xpos[a:a + n, 2].mean())        # equal masses: the mean is the center of mass
-        vz = float(d.qvel[dofs[:, 2]].mean())
-        touched = touched or d.ncon > 0
-        if touched:
-            if phase == "fall" and vz > 0:
-                phase = "rise"
-            if phase == "rise":
-                apex = max(apex, z)
-                if vz < 0:
-                    phase = "done"
+    with _warnings_caught() as caught:
+        for _ in range(int(round(sc.DROP_TIME_S / FLEX_TIMESTEP))):
+            mujoco.mj_step(m, d)
+            _check_warnings(kind, d, caught)
+            if not _finite(d):
+                return math.nan
+            z = float(d.flexvert_xpos[a:a + n, 2].mean())        # equal masses: the mean is the center of mass
+            vz = float(d.qvel[dofs[:, 2]].mean())
+            touched = touched or d.ncon > 0
+            if touched:
+                if phase == "fall" and vz > 0:
+                    phase = "rise"
+                if phase == "rise":
+                    apex = max(apex, z)
+                    if vz < 0:
+                        phase = "done"
     rest = float(d.flexvert_xpos[a:a + n, 2].mean())
     return math.sqrt(max(apex - rest, 0.0) / sc.DROP_HEIGHT) if apex > 0 else 0.0
 
@@ -262,7 +301,8 @@ def target_force(kind: PieceKind) -> float:
 # --- the fit -------------------------------------------------------------------------------------------------------
 
 def _shipped_key(kind: PieceKind) -> str:
-    return f"{kind.stiffness:g}_{kind.restitution:g}"
+    """The shipped table's key: the two numbers exactly, as repr gives them ("2000.0_0.3")."""
+    return f"{float(kind.stiffness)!r}_{float(kind.restitution)!r}"
 
 
 def cache_path(kind: PieceKind) -> Path:
@@ -272,10 +312,15 @@ def cache_path(kind: PieceKind) -> Path:
 
 
 def _read(entry) -> FlexFit | None:
+    """A cached or shipped entry's fit; None (so it is fitted again) unless E and beta are finite and positive: JSON
+    reads NaN, Infinity and negatives, and the cache lives in the shared temp folder."""
     try:
-        return FlexFit(E=float(entry["E"]), beta=float(entry["beta"]))
+        E, beta = float(entry["E"]), float(entry["beta"])
     except (KeyError, TypeError, ValueError):
         return None
+    if not (math.isfinite(E) and math.isfinite(beta) and E > 0 and beta > 0):
+        return None
+    return FlexFit(E=E, beta=beta)
 
 
 def _shipped(kind: PieceKind) -> FlexFit | None:
@@ -283,7 +328,8 @@ def _shipped(kind: PieceKind) -> FlexFit | None:
         table = json.loads(SHIPPED_FITS.read_text())
     except (OSError, ValueError):
         return None
-    if table.get("fit_version") != FIT_VERSION:
+    if not isinstance(table, dict) or (table.get("fit_version"), table.get("mesh"), table.get("timestep")) != (
+            FIT_VERSION, list(MESH), FLEX_TIMESTEP):
         return None
     entry = table.get(_shipped_key(kind))
     return _read(entry) if entry is not None else None

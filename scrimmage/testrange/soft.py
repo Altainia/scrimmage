@@ -42,7 +42,7 @@ import numpy as np
 
 from .. import i18n
 from .build import BALL_BITS, BALL_FRICTION, PARKED_BITS, RIGID_SOLMIX
-from .pieces import SOFT_SEGMENTS, PieceKind, piece_color, ring_diameters
+from .pieces import SOFT_SEGMENTS, PieceKind, piece_color, ring_basis, ring_diameters
 
 RING_SEGMENTS = SOFT_SEGMENTS  # source: soft-note spike, candidate (b)
 POOL_SIZE = 2  # choice: spec D8
@@ -118,16 +118,6 @@ def ring_params(kind: PieceKind) -> RingParams:
                       joint_k=kj, joint_b=2.0 * JOINT_ZETA * math.sqrt(kj * i_joint))
 
 
-def _basis(axis) -> np.ndarray:
-    """Columns u, v, a: a right-handed frame whose a is the kind's axis (u = x, v = y for axis z)."""
-    a = np.asarray(axis, dtype=float)
-    a = a / np.linalg.norm(a)
-    ref = np.array([1.0, 0.0, 0.0]) if abs(a[0]) < 0.9 else np.array([0.0, 0.0, 1.0])
-    u = ref - (ref @ a) * a
-    u /= np.linalg.norm(u)
-    return np.column_stack([u, np.cross(a, u), a])
-
-
 def _quat_of(rot: np.ndarray) -> np.ndarray:
     q = np.zeros(4)
     mujoco.mju_mat2Quat(q, np.ascontiguousarray(rot, dtype=float).ravel())
@@ -143,7 +133,7 @@ def add_ring(spec: mujoco.MjSpec, name: str, kind: PieceKind, pos, bits: dict) -
     """A soft ring of kind `kind` into `spec`, its center at `pos`, unturned (see the module docstring); `bits` its
     geoms' contype and conaffinity."""
     n, d, p = RING_SEGMENTS, _dims(kind), ring_params(kind)
-    frame = _basis(kind.axis)
+    frame = ring_basis(kind.axis)
     dth = 2.0 * math.pi / n
     th = dth / 2.0
     radius_c = d.big_r * math.cos(math.pi / n)      # each capsule's middle lies on the chord
