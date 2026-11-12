@@ -64,3 +64,20 @@ def test_docs_name_a_pieces_squeeze_keys_and_how_to_measure_them():
         assert heading in measuring
         section = measuring.split(heading, 1)[1].split("\n## ", 1)[0]
         assert f"[piece.note] {key}" in section
+
+
+def test_climbing_docs_name_the_chain_and_harmony():
+    """docs/climbing.md (K5 D11): the chain element, the off-carpet rule, HARMONY and the hanging partner; rope stays
+    not modeled, a chain is."""
+    text = (ROOT / "docs" / "climbing.md").read_text(encoding="utf-8")
+    for word in ('kind = "chain"', "off-carpet", "harmony", "hang"):
+        assert word in text, word
+    assert "Chain and rope aren't modeled" not in text
+    assert "Rope isn't modeled" in text
+
+
+def test_the_2024_field_docs_say_the_note_turns_soft():
+    """K5: docs/test-range.md no longer calls the 2024 NOTE only a rigid stand-in, and has its soft pieces section."""
+    text = DOC.read_text(encoding="utf-8")
+    assert "a rigid stand-in for the foam ring" not in text
+    assert "### Soft pieces" in text and "The pool of 2" in text

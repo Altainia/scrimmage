@@ -1034,10 +1034,10 @@ nearest `along`, `across` to the side, held there by a weld that keeps it level:
 weld, not a hook. `along` must leave that joint inside the chain: at most half the span less one link (1.14 m on
 2024's chains); `across` at most half the partner's width, so the chain stays over its roof. The chain doesn't touch
 a hanging partner. It is refused if it starts overlapping your robot's start or anything it would touch, measured in
-3D at the start: `[partner] starts inside obstacle stage_blue_leg2 (their outlines overlap by 0.26 m)`. Near the
+3D at the start: `[partner] starts inside obstacle stage_blue_leg2 (their outlines overlap by 0.15 m)`. Near the
 2024 STAGE that matters: a stock partner under the center chain reaches into the STAGE's core unless it hangs a
-little away from it (`across = -0.05` there; the core is on the chain's left), and 0.5 m or more from the low point
-it overlaps a truss leg. Its `partner.height` reads from where it would stand on its wheels. It counts for HARMONY
+little away from it (`across = -0.05` there; the core is on the chain's left), and from about 0.65 m from the low
+point it overlaps a leg (the legs are FIRST's field CAD's). Its `partner.height` reads from where it would stand on its wheels. It counts for HARMONY
 ([docs/climbing.md](docs/climbing.md#onstage-and-harmony)). A bar or a switch can't take a hanging partner:
 `[partner] hang hold 'chain_blue_left' isn't a chain: a hanging partner robot needs a chain; the range's chains:
 chain_blue_center`.

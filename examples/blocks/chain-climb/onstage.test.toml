@@ -1,0 +1,40 @@
+[test]
+robot = "climber-standin.toml"
+chart = ["c.stage1", "hook_load", "tilt"]
+
+# Reach up: the hooks' tips about 3 cm over the chain's low point.
+[[block]]
+do = "move"
+joint = "c.stage1"
+to = 0.14
+unit = "m"
+
+# Drive forward gently, the chain into the hooks' throats.
+[[block]]
+do = "drive"
+distance = 0.31
+volts = 1.5
+
+# Pull down: the hooks catch the chain and lift the robot.
+[[block]]
+do = "move"
+joint = "c.stage1"
+to = 0.0
+unit = "m"
+
+[[block]]
+do = "wait_until"
+until = { touch = { robot = "hook", field = "chain_blue_center" } }
+
+# Hang there for 5 s.
+[[block]]
+do = "wait"
+seconds = 5.0
+
+[[block]]
+do = "expect"
+that = { level = "ONSTAGE" }
+
+[[block]]
+do = "expect"
+that = { hanging_from = "chain_blue_center" }

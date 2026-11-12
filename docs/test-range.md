@@ -918,6 +918,29 @@ that replay, NetworkTables and older tests keep working). The world knows each s
 skip the rest: flight, the carpet's rolling resistance, scoring, the launcher's pickup and preload. A piece's body
 origin is its center of mass, so its position is where it balances.
 
+### Soft pieces
+
+A `[piece.<name>]` with `soft = true` is a ring that squashes near a robot. Its keys are on the kind
+([`[piece.<name>]`](#piecename-a-kind-of-piece)):
+
+- `soft = true`, on a `shape = "ring"` kind only (the `2024-note` preset sets it; `soft = false` keeps it rigid);
+- `stiffness`, 1000 to 20000 N/m: how hard it pushes back when squeezed;
+- `restitution`, above 0 and below 1: how high it bounces off the carpet.
+
+How it works in the world ([The soft NOTE](#the-soft-note)):
+
+- **The reach.** It is rigid until its center comes within 0.25 m of a part of the robot that collides (or would
+  within the next step). Then a soft ring of 16 segments takes its place, with its pose and speed.
+- **The linger.** Once it has been more than 0.25 m from the robot for 0.25 s, it turns rigid again, resting on the
+  carpet.
+- **The pool of 2.** The world holds two soft rings for each soft kind, parked under the floor. A third NOTE that comes
+  near while both are in use stays rigid, and the run's notes say so once.
+- **One NOTE drawn.** The ring and the rigid NOTE it stands in for are one piece, with one name and one count. The
+  live view, the Test tab and replays draw one NOTE, the one that bends.
+- **What it is good for.** Whether the robot takes the NOTE and where it goes, not the forces on it: the ring's squash
+  is a soft contact. Its stiffness and bounce are uncalibrated until you measure them
+  ([measuring.md](measuring.md#note-squeeze)).
+
 ## The trench field
 
 The built-in `2026-trench` field is one 2026 REBUILT TRENCH, to find out whether a robot fits under it: does it clear
@@ -946,38 +969,48 @@ field drawings, the WPILib 2024 AprilTag layout and Team 6328's field constants
 its line, or says it is an estimate or our choice).
 
 - **The field** is 2024's own, 16.541 by 8.211 m, so WPILib coordinates and AprilTag positions agree with it.
-- **The piece** is `note`, the `2024-note` preset: a rigid stand-in for the foam ring (it doesn't squash). The 11
-  staged NOTES lie on their marks (`floor_balls = false` leaves them out), and the two SOURCES (`source_blue`,
+- **The piece** is `note`, the `2024-note` preset: rigid on the floor and in flight, and a soft ring that bends and
+  squashes within 0.25 m of a robot ([Soft pieces](#soft-pieces)). Its stiffness and bounce are uncalibrated
+  estimates. The 11 staged NOTES lie on their marks (`floor_balls = false` leaves them out), and the two SOURCES (`source_blue`,
   `source_red`) feed NOTES down their chutes.
 - **The goals** count NOTES. `speaker_blue` and `speaker_red` are the SPEAKER openings, entered going up under the
   hood; the hood and the wall under the opening are `[[obstacle]]` boxes (`speaker_blue_hood`, `speaker_blue_wall`),
   not plates of the goal, so a NOTE's corners can't pass through the hood on the way in. `amp_blue` and `amp_red` are
   the AMP pockets, entered sideways.
 - **The elements.** The SUBWOOFERS (a box under each SPEAKER and its two angled sides), the SOURCE walls, and the
-  STAGES: a core box, three legs and three CHAINS as rigid bars (`[climb]` scores a robot off the carpet touching a
-  chain, as ONSTAGE). HARMONY, the TRAP and the MICROPHONES aren't modeled.
+  STAGES: a core box, three legs, the trusses from the legs' tops to the core, and three CHAINS. The legs and trusses
+  are measured on FIRST's field CAD (below): each leg is an upright 12 in post. The CHAINS are `kind = "chain"`
+  ([docs/terrain.md](terrain.md#chains)): they hang from 1.18 m, 2.42 m apart, down to 28.25 in, and sag and swing
+  under a robot. `[climb]` is `rule = "off-carpet"`: a robot touching a CHAIN and not the carpet scores ONSTAGE, and
+  each robot beyond the first on the same CHAIN scores HARMONY ([docs/climbing.md](climbing.md#onstage-and-harmony)).
+  A hook stays at the link where it catches: robots don't slide along a CHAIN. The TRAP and the MICROPHONES aren't
+  modeled.
 - **The AprilTags.** The range has WPILib's 2024 layout (`apriltags = "2024-crescendo"`): 16 tags, drawn on the
   walls and the STAGES, and seen by a [camera sensor](sensors.md#a-camera). `range check` lists them. They add no
   contacts and change no other number. The worked camera example is
   [`examples/blocks/camera`](../examples/blocks/camera/README.md).
 - **The zones** `blue_start`, `blue_wing`, `red_start` and `red_wing` are drawn as tape.
 - **The starts.** `blue_subwoofer` (against the blue SUBWOOFER, facing the SPEAKER), `blue_amp` (1 m back from the
-  blue AMP, facing it), `blue_amp_side`, `blue_source_side`, `blue_wing_note` and `at_blue_source`.
+  blue AMP, facing it), `blue_amp_side`, `blue_source_side`, `blue_wing_note`, `at_blue_source` and
+  `blue_chain_center` (0.31 m in front of `chain_blue_center`'s low point, facing it: the chain-climb example's).
 - **The game.** The range has a `[game]` (see [the game](#the-game-points-the-match-and-its-rules)): a match of 15 s
   auto, a 3 s pause and 135 s teleop. The robot is blue, since the starts are blue. A NOTE in the blue SPEAKER is
   worth 5 points in auto and 2 in teleop, in the blue AMP 2 and 1. A NOTE in a red goal would score for red, so it
   counts as a goal piece for 0 points. LEAVE is 2 points for a robot that starts in `blue_start` and is out of it when
-  auto ends. ONSTAGE is 3 points (from `[climb]`). The rules are one NOTE held,
+  auto ends. ONSTAGE is 3 points and HARMONY 2 for each other robot on the CHAIN (from `[climb]`). The rules are one NOTE held,
   12 in of reach past the frame and 48 in of height. Each number cites its source on its line.
 - **What isn't there.** The rest of the AMP and the SPEAKER's inside (a NOTE counts when it crosses the opening; where
   it goes after isn't modeled). The game's scoring also leaves out:
   - AMPLIFICATION;
   - Coopertition;
   - MELODY and ENSEMBLE;
-  - the HARMONY, SPOTLIT and TRAP points;
+  - the SPOTLIT and TRAP points;
   - fouls;
   - a piece released before the buzzer that lands after it: FRC counts it, but here it scores no points (the robot
     is disabled at the match's end, and the pieces settle after it).
+- The chain-climb example is [`examples/blocks/chain-climb`](../examples/blocks/chain-climb/README.md): a stand-in
+  robot climbs `chain_blue_center` to ONSTAGE, and in a match with a partner hanging on the same CHAIN scores HARMONY
+  too.
 - The match example is [`examples/blocks/match`](../examples/blocks/match/README.md): the same robot plays a whole
   match in the Test tab, shoots a NOTE and leaves the starting zone in auto, and expects 7 points.
 - The worked example is [`examples/blocks/speaker`](../examples/blocks/speaker/README.md): a stand-in robot with a
@@ -1309,15 +1342,15 @@ pos = [8.2705, 4.1055, 0]                    # the file's origin is the field's 
 Use the full key, with the assembly's name before the piece, so a glob on a name like `FE-01003-01` can't also take
 the red STAGE's piece of the same name. (`cad list` says `×N` when pieces share a name.) The 30 pieces are 63 000
 triangles. The whole STAGE is more than the limit of 200 000 triangles, so it needs to be split into several elements anyway.
-The CHAINS are optional. The range's own `chain_*` bars and its `[climb]` are what a robot climbs on, so a CHAIN from
+The CHAINS are optional. The range's own `chain_*` chains and its `[climb]` are what a robot climbs on, so a CHAIN from
 the CAD is only a rigid look-alike that overlaps them. If you want one anyway, give each its own element
 (`*GE-24200_Blue/GE-24205/*`, then `GE-24205#2` and `GE-24205#3`).
 Add `ground = true` only to a piece a robot drives over. [The mesh element's keys](terrain.md#field-elements-in-range-files)
 are in terrain.md. The file says how big it is, so `units` is only for an STL or OBJ.
 
 On the real file this element covers x 3.07 to 6.02 m, y 2.40 to 5.81 m and up to 1.89 m high, centered at (4.55, 4.11).
-The built-in `2024` range's STAGE legs reach x 3.07 at their feet, so the CAD lands within a centimeter of where the
-legs' feet are.
+The built-in `2024` range's STAGE legs and trusses are measured on this file, placed this way: leg 1 is the 12 in post
+from x 3.23 to 3.53 m, and the 3.07 is the edge of its base plate.
 
 **5. Check it in the viewer.**
 
@@ -1508,8 +1541,13 @@ by `SCRIMMAGE_AUTO`; they run on `configs/fastmode_range.toml` (fast mode) and `
   simulation.
 - **Feeder loads on motors.** The rollers turn as if the balls weren't there.
 - **Ball-to-ball compression.** Balls are rigid spheres with a soft contact; a ball does not squash in the hopper.
-- **Squishy pieces.** The 2023 cube, the 2024 note and other soft pieces (inflated tubes, foam) are rigid stand-ins of
-  the right size and weight: they don't squash or grip back. Soft pieces are a later project (survey project 5).
+- **Squishy pieces.** Only a ring can be soft (`soft = true`, the 2024 NOTE), and only near a robot: in flight and
+  on the floor it is rigid. The 2023 cube and other soft pieces (inflated tubes, foam) are rigid stand-ins of the right
+  size and weight: they don't squash or grip back. A soft NOTE's squash is a soft contact, good for where it goes, not
+  for the forces on it ([Soft pieces](#soft-pieces)).
+- **Sliding along a chain.** A hook on a `kind = "chain"` stays at the link where it caught, so two robots on 2024's
+  CHAIN don't slide together at its low point ([docs/climbing.md](climbing.md#known-limits)). Rope (2017) isn't
+  modeled.
 - **Shooting pieces that aren't balls.** The `[shooter]` shoots balls, discs and flat rigid pieces (a pinch shooter,
   the 2024 NOTE). A coral, a cone or a tote moves only by contact with the mechanism you test.
 - **Calibration.** Nothing here is calibrated: the ball's stiffness, the wheel's friction, a piece's surface and a pad's grip, and the carpet's rolling

@@ -2,6 +2,8 @@
 # Marking Diagram FE-2024 Rev A (LMD), the WPILib 2024 AprilTag JSON (WPI) and Team 6328's FieldConstants (6328):
 # both SPEAKERS (the opening as a goal, the wall and the hood as obstacles), both AMPS, the SUBWOOFERS, the STAGES
 # with their CHAINS, the SOURCES feeding NOTES, the 11 staged NOTES and the blue starting zone and WING.
+# The CHAINS hang and sag (`kind = "chain"`): a robot off the carpet touching one scores ONSTAGE, and each robot beyond
+# the first on the same CHAIN scores HARMONY. A robot's hook stays at the link where it caught.
 # Coordinates: WPILib field frame (blue alliance wall x = 0, scoring-table guardrail y = 0, z up), meters.
 #
 # The NOTE is the 2024-note preset: rigid on the floor and in flight, and a soft ring of 16 segments that squashes
@@ -179,7 +181,9 @@ spread_position = [0.0, 0.3, 0.0]   # estimate: K1 gap 16: across the heading, a
 spread_yaw_deg = 5.0           # estimate: a human player's aim
 
 # ------------------------------------------------------------------------------------------------ the STAGES
-# The blue STAGE (M 5.5): core center derived from tags 14, 15, 16 (WPI); legs 70.8 in from it (122.62 in apart, LMD sheet 3).
+# The blue STAGE (M 5.5): core center derived from tags 14, 15, 16 (WPI). Its three legs and the trusses from their tops
+# to the core are measured on FIRST's field CAD (FE-2024.STEP, placed as K4's how-to says: docs/test-range.md): the
+# legs are upright 12 in posts 58.6 in from the core's center, not leaning. The three CHAINS hang between the legs.
 [[element]]
 name = "stage_blue_core"
 kind = "box"
@@ -189,56 +193,74 @@ base_height = 0.7176          # source: M 5.5: aluminum surfaces 2 ft 4 1/4 in a
 
 [[obstacle]]
 name = "stage_blue_leg1"       # choice: the leg toward the alliance wall
-from = [3.0748, 4.1051, 0.15]   # source: derived: the truss foot (LMD sheet 3: near foot 120.5 / 121.0 in from the wall)
-to = [4.3678, 4.1051, 1.85]    # estimate: the truss leans in to the core top; member sizes are CAD-ONLY
-width = 0.25                   # estimate: member sizes are CAD-ONLY
+pos = [3.3782, 4.1055, 0.7842]   # source: field CAD FE-2024 (K4's placement): FE-01003-01, the 12 in square leg; choice: down to the carpet over its base plate
+size = [0.3048, 0.3048, 1.5683]    # source: field CAD FE-2024 (K4's placement): 12 in square, its top 1.568 m up
+rpy_deg = [0.0, 0.0, 0.0]       # source: field CAD FE-2024 (K4's placement): its faces square to its truss
 
 [[obstacle]]
 name = "stage_blue_leg2"       # choice: the leg on the AMP side
-from = [5.7643, 5.6578, 0.15]   # source: derived: the truss foot (LMD sheet 3: near foot 120.5 / 121.0 in from the wall)
-to = [5.1178, 4.5381, 1.85]    # estimate: the truss leans in to the core top; member sizes are CAD-ONLY
-width = 0.25                   # estimate: member sizes are CAD-ONLY
+pos = [5.6122, 5.3953, 0.7842]   # source: field CAD FE-2024 (K4's placement): FE-01003-01, the 12 in square leg; choice: down to the carpet over its base plate
+size = [0.3048, 0.3048, 1.5683]    # source: field CAD FE-2024 (K4's placement): 12 in square, its top 1.568 m up
+rpy_deg = [0.0, 0.0, 60.0]       # source: field CAD FE-2024 (K4's placement): its faces square to its truss
 
 [[obstacle]]
 name = "stage_blue_leg3"       # choice: the leg on the SOURCE side
-from = [5.7643, 2.5524, 0.15]   # source: derived: the truss foot (LMD sheet 3: near foot 120.5 / 121.0 in from the wall)
-to = [5.1178, 3.6721, 1.85]    # estimate: the truss leans in to the core top; member sizes are CAD-ONLY
-width = 0.25                   # estimate: member sizes are CAD-ONLY
+pos = [5.6122, 2.8157, 0.7842]   # source: field CAD FE-2024 (K4's placement): FE-01003-01, the 12 in square leg; choice: down to the carpet over its base plate
+size = [0.3048, 0.3048, 1.5683]    # source: field CAD FE-2024 (K4's placement): 12 in square, its top 1.568 m up
+rpy_deg = [0.0, 0.0, 120.0]       # source: field CAD FE-2024 (K4's placement): its faces square to its truss
+
+[[obstacle]]
+name = "stage_blue_truss1"     # choice: the truss from leg 1 in to the core
+pos = [4.1497, 4.1055, 1.7303]   # source: field CAD FE-2024 (K4's placement): FE-01002-01, from the leg's top in to the core
+size = [1.2192, 0.3048, 0.3048]    # source: field CAD FE-2024 (K4's placement): 48 in long, 12 in square, 1.578 to 1.883 m up
+rpy_deg = [0.0, 0.0, 0.0]       # source: field CAD FE-2024 (K4's placement): from the leg toward the core's center
+
+[[obstacle]]
+name = "stage_blue_truss2"     # choice: the truss from leg 2 in to the core
+pos = [5.2265, 4.7272, 1.7303]   # source: field CAD FE-2024 (K4's placement): FE-01002-01, from the leg's top in to the core
+size = [1.2192, 0.3048, 0.3048]    # source: field CAD FE-2024 (K4's placement): 48 in long, 12 in square, 1.578 to 1.883 m up
+rpy_deg = [0.0, 0.0, 60.0]       # source: field CAD FE-2024 (K4's placement): from the leg toward the core's center
+
+[[obstacle]]
+name = "stage_blue_truss3"     # choice: the truss from leg 3 in to the core
+pos = [5.2265, 3.4838, 1.7303]   # source: field CAD FE-2024 (K4's placement): FE-01002-01, from the leg's top in to the core
+size = [1.2192, 0.3048, 0.3048]    # source: field CAD FE-2024 (K4's placement): 48 in long, 12 in square, 1.578 to 1.883 m up
+rpy_deg = [0.0, 0.0, 120.0]       # source: field CAD FE-2024 (K4's placement): from the leg toward the core's center
 
 [[element]]
 name = "chain_blue_center"
-kind = "bar"
+kind = "chain"
 center = [5.7441, 4.1051]   # source: M 5.5: the chain rests 1 ft 4 5/8 in from the core's face; face direction from the tags
 yaw_deg = 90.0                 # source: along the core's face (WPI tags)
-length = 1.5                   # estimate: the chain's straight-ish middle; really a 1/4 in chain hung from 48 in at the legs
-diameter_in = 0.5              # estimate: 1/4 in chain links, about 1/2 in across
-height = 0.7176                # source: M 5.5: lowest point 2 ft 4 1/4 in; a rigid bar does not sag or swing
-posts = false
+span = 2.42                    # source: field CAD GE-24205, the CHAIN: 2.42 m across
+top = 1.18                     # source: GE-24205: hung from 1.18 m
+low = 0.7176                   # source: M 5.5: lowest point 2 ft 4 1/4 in
+diameter_in = 0.5              # estimate
 level = "ONSTAGE"
 
 [[element]]
 name = "chain_blue_left"
-kind = "bar"
+kind = "chain"
 center = [4.4297, 4.8640]   # source: M 5.5: the chain rests 1 ft 4 5/8 in from the core's face; face direction from the tags
 yaw_deg = 210.0                # source: along the core's face (WPI tags)
-length = 1.5                   # estimate: the chain's straight-ish middle; really a 1/4 in chain hung from 48 in at the legs
-diameter_in = 0.5              # estimate: 1/4 in chain links, about 1/2 in across
-height = 0.7176                # source: M 5.5: lowest point 2 ft 4 1/4 in; a rigid bar does not sag or swing
-posts = false
+span = 2.42                    # source: field CAD GE-24205, the CHAIN: 2.42 m across
+top = 1.18                     # source: GE-24205: hung from 1.18 m
+low = 0.7176                   # source: M 5.5: lowest point 2 ft 4 1/4 in
+diameter_in = 0.5              # estimate
 level = "ONSTAGE"
 
 [[element]]
 name = "chain_blue_right"
-kind = "bar"
+kind = "chain"
 center = [4.4297, 3.3462]   # source: M 5.5: the chain rests 1 ft 4 5/8 in from the core's face; face direction from the tags
 yaw_deg = 330.0                # source: along the core's face (WPI tags)
-length = 1.5                   # estimate: the chain's straight-ish middle; really a 1/4 in chain hung from 48 in at the legs
-diameter_in = 0.5              # estimate: 1/4 in chain links, about 1/2 in across
-height = 0.7176                # source: M 5.5: lowest point 2 ft 4 1/4 in; a rigid bar does not sag or swing
-posts = false
+span = 2.42                    # source: field CAD GE-24205, the CHAIN: 2.42 m across
+top = 1.18                     # source: GE-24205: hung from 1.18 m
+low = 0.7176                   # source: M 5.5: lowest point 2 ft 4 1/4 in
+diameter_in = 0.5              # estimate
 level = "ONSTAGE"
 
-# The red STAGE (M 5.5): core center derived from tags 11, 12, 13 (WPI); legs 70.8 in from it (122.62 in apart, LMD sheet 3).
+# The red STAGE (M 5.5): core center derived from tags 11, 12, 13 (WPI); its legs and trusses are the blue ones mirrored.
 [[element]]
 name = "stage_red_core"
 kind = "box"
@@ -247,63 +269,82 @@ size = [0.91, 0.91, 1.22]     # estimate: the 6-sided core as a box, its faces 0
 base_height = 0.7176          # source: M 5.5: aluminum surfaces 2 ft 4 1/4 in above the carpet
 
 [[obstacle]]
-name = "stage_red_leg1"        # choice: the leg toward the alliance wall
-from = [13.4662, 4.1051, 0.15]   # source: derived: the truss foot (LMD sheet 3: near foot 120.5 / 121.0 in from the wall)
-to = [12.1732, 4.1051, 1.85]    # estimate: the truss leans in to the core top; member sizes are CAD-ONLY
-width = 0.25                    # estimate: member sizes are CAD-ONLY
+name = "stage_red_leg1"       # choice: the leg toward the alliance wall
+pos = [13.1628, 4.1055, 0.7842]   # source: field CAD FE-2024 (K4's placement): FE-01003-01, the 12 in square leg; choice: down to the carpet over its base plate
+size = [0.3048, 0.3048, 1.5683]    # source: field CAD FE-2024 (K4's placement): 12 in square, its top 1.568 m up
+rpy_deg = [0.0, 0.0, 0.0]       # source: field CAD FE-2024 (K4's placement): its faces square to its truss
 
 [[obstacle]]
-name = "stage_red_leg2"        # choice: the leg on the AMP side
-from = [10.7767, 5.6578, 0.15]   # source: derived: the truss foot (LMD sheet 3: near foot 120.5 / 121.0 in from the wall)
-to = [11.4232, 4.5381, 1.85]    # estimate: the truss leans in to the core top; member sizes are CAD-ONLY
-width = 0.25                    # estimate: member sizes are CAD-ONLY
+name = "stage_red_leg2"       # choice: the leg on the AMP side
+pos = [10.9288, 5.3953, 0.7842]   # source: field CAD FE-2024 (K4's placement): FE-01003-01, the 12 in square leg; choice: down to the carpet over its base plate
+size = [0.3048, 0.3048, 1.5683]    # source: field CAD FE-2024 (K4's placement): 12 in square, its top 1.568 m up
+rpy_deg = [0.0, 0.0, 120.0]       # source: field CAD FE-2024 (K4's placement): its faces square to its truss
 
 [[obstacle]]
-name = "stage_red_leg3"        # choice: the leg on the SOURCE side
-from = [10.7767, 2.5524, 0.15]   # source: derived: the truss foot (LMD sheet 3: near foot 120.5 / 121.0 in from the wall)
-to = [11.4232, 3.6721, 1.85]    # estimate: the truss leans in to the core top; member sizes are CAD-ONLY
-width = 0.25                    # estimate: member sizes are CAD-ONLY
+name = "stage_red_leg3"       # choice: the leg on the SOURCE side
+pos = [10.9288, 2.8157, 0.7842]   # source: field CAD FE-2024 (K4's placement): FE-01003-01, the 12 in square leg; choice: down to the carpet over its base plate
+size = [0.3048, 0.3048, 1.5683]    # source: field CAD FE-2024 (K4's placement): 12 in square, its top 1.568 m up
+rpy_deg = [0.0, 0.0, 60.0]       # source: field CAD FE-2024 (K4's placement): its faces square to its truss
+
+[[obstacle]]
+name = "stage_red_truss1"     # choice: the truss from leg 1 in to the core
+pos = [12.3913, 4.1055, 1.7303]   # source: field CAD FE-2024 (K4's placement): FE-01002-01, from the leg's top in to the core
+size = [1.2192, 0.3048, 0.3048]    # source: field CAD FE-2024 (K4's placement): 48 in long, 12 in square, 1.578 to 1.883 m up
+rpy_deg = [0.0, 0.0, 0.0]       # source: field CAD FE-2024 (K4's placement): from the leg toward the core's center
+
+[[obstacle]]
+name = "stage_red_truss2"     # choice: the truss from leg 2 in to the core
+pos = [11.3145, 4.7272, 1.7303]   # source: field CAD FE-2024 (K4's placement): FE-01002-01, from the leg's top in to the core
+size = [1.2192, 0.3048, 0.3048]    # source: field CAD FE-2024 (K4's placement): 48 in long, 12 in square, 1.578 to 1.883 m up
+rpy_deg = [0.0, 0.0, 120.0]       # source: field CAD FE-2024 (K4's placement): from the leg toward the core's center
+
+[[obstacle]]
+name = "stage_red_truss3"     # choice: the truss from leg 3 in to the core
+pos = [11.3145, 3.4838, 1.7303]   # source: field CAD FE-2024 (K4's placement): FE-01002-01, from the leg's top in to the core
+size = [1.2192, 0.3048, 0.3048]    # source: field CAD FE-2024 (K4's placement): 48 in long, 12 in square, 1.578 to 1.883 m up
+rpy_deg = [0.0, 0.0, 60.0]       # source: field CAD FE-2024 (K4's placement): from the leg toward the core's center
 
 [[element]]
 name = "chain_red_center"
-kind = "bar"
+kind = "chain"
 center = [10.7969, 4.1051]   # source: M 5.5: the chain rests 1 ft 4 5/8 in from the core's face; face direction from the tags
 yaw_deg = 270.0                # source: along the core's face (WPI tags)
-length = 1.5                   # estimate: the chain's straight-ish middle; really a 1/4 in chain hung from 48 in at the legs
-diameter_in = 0.5              # estimate: 1/4 in chain links, about 1/2 in across
-height = 0.7176                # source: M 5.5: lowest point 2 ft 4 1/4 in; a rigid bar does not sag or swing
-posts = false
+span = 2.42                    # source: field CAD GE-24205, the CHAIN: 2.42 m across
+top = 1.18                     # source: GE-24205: hung from 1.18 m
+low = 0.7176                   # source: M 5.5: lowest point 2 ft 4 1/4 in
+diameter_in = 0.5              # estimate
 level = "ONSTAGE"
 
 [[element]]
 name = "chain_red_left"
-kind = "bar"
+kind = "chain"
 center = [12.1113, 3.3462]   # source: M 5.5: the chain rests 1 ft 4 5/8 in from the core's face; face direction from the tags
 yaw_deg = 30.0                 # source: along the core's face (WPI tags)
-length = 1.5                   # estimate: the chain's straight-ish middle; really a 1/4 in chain hung from 48 in at the legs
-diameter_in = 0.5              # estimate: 1/4 in chain links, about 1/2 in across
-height = 0.7176                # source: M 5.5: lowest point 2 ft 4 1/4 in; a rigid bar does not sag or swing
-posts = false
+span = 2.42                    # source: field CAD GE-24205, the CHAIN: 2.42 m across
+top = 1.18                     # source: GE-24205: hung from 1.18 m
+low = 0.7176                   # source: M 5.5: lowest point 2 ft 4 1/4 in
+diameter_in = 0.5              # estimate
 level = "ONSTAGE"
 
 [[element]]
 name = "chain_red_right"
-kind = "bar"
+kind = "chain"
 center = [12.1113, 4.8640]   # source: M 5.5: the chain rests 1 ft 4 5/8 in from the core's face; face direction from the tags
 yaw_deg = 150.0                # source: along the core's face (WPI tags)
-length = 1.5                   # estimate: the chain's straight-ish middle; really a 1/4 in chain hung from 48 in at the legs
-diameter_in = 0.5              # estimate: 1/4 in chain links, about 1/2 in across
-height = 0.7176                # source: M 5.5: lowest point 2 ft 4 1/4 in; a rigid bar does not sag or swing
-posts = false
+span = 2.42                    # source: field CAD GE-24205, the CHAIN: 2.42 m across
+top = 1.18                     # source: GE-24205: hung from 1.18 m
+low = 0.7176                   # source: M 5.5: lowest point 2 ft 4 1/4 in
+diameter_in = 0.5              # estimate
 level = "ONSTAGE"
 
 [climb]
-rule = "lowest-rung"           # nearest available: a robot touching a chain and not the carpet scores; HARMONY/SPOTLIT not expressible
+rule = "off-carpet"            # source: spec D5, 2024's rule: ONSTAGE is touching the CHAIN and not the carpet
 levels = { ONSTAGE = 3 }       # source: M Table 6-2
+harmony = 2                    # source: M Table 6-2: HARMONY 2
 
 # ------------------------------------------------------------------------------------------------ the game
-# The match and its points (M Table 6-2). Not modeled: AMPLIFICATION, Coopertition, MELODY, ENSEMBLE, the HARMONY,
-# SPOTLIT and TRAP points, and fouls, and a piece released before the buzzer that lands after it (it scores no
+# The match and its points (M Table 6-2). Not modeled: AMPLIFICATION, Coopertition, MELODY, ENSEMBLE, the SPOTLIT
+# and TRAP points, and fouls, and a piece released before the buzzer that lands after it (it scores no
 # points). The robot is blue, since the range's starts are blue: LEAVE is judged for blue, and only the blue SPEAKER
 # and AMP score points (a NOTE in a red goal would score for red; it still counts as a goal piece, for 0 points).
 [game]
@@ -349,3 +390,5 @@ pose = [1.60, 4.1056, 0.0]     # choice: facing the middle blue WING NOTE, 1.3 m
 pose = [1.8404, 7.2042, 90.0]  # choice: facing the blue AMP, 1 m back from its opening, in line with its center
 [start.at_blue_source]
 pose = [15.10, 1.48, -60.0]    # choice: facing the blue SOURCE, its intake just short of the release point
+[start.blue_chain_center]
+pose = [6.05, 4.1051, 180.0]   # choice: its center 0.31 m short of chain_blue_center, facing it (the chain climb's start)

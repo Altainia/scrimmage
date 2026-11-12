@@ -364,14 +364,15 @@ The piece decides how every contact it has is worked out.
   (the stock wheels' tread stiffness), and a rigid piece may carry its own contact `stiffness` (N/m) in series with
   the tread, so a pinch squeezes both: a soft plastic body at 3000 N/m takes most of the squeeze.
 - **A range's piece** (`preset = "2024-note"`, or any `[piece.*]` preset in `scrimmage/launcher/presets.toml`: the
-  2025 CORAL, the 2019 HATCH PANEL...) is rigid, and the bench builds it with the test range's own piece builder:
-  the same mass, size, inertia and solids as on the range. A ring's hole is open (a rod passes through it), because
-  it is built from 24 slices, as on the range. `shape = "ring"` with `size = [diameter, inner_diameter, length]` and a
-  `mass` builds your own ring the same way. The 2024 NOTE is a rigid stand-in: the real one is soft foam and squashes.
-  It brings its own contact `stiffness` (2000 N/m, an estimate), as on the range. A ring touches a wheel at many
-  MuJoCo contact points (8 per wheel for the NOTE's face), and the bench spreads the stiffness over them, so held
-  between wheels the NOTE is squeezed as hard as its `stiffness` says, no harder. Going through a pinch it still
-  doesn't behave like foam (see [Known limits](#known-limits)); `flex = true` makes it a soft body instead (below).
+  2025 CORAL, the 2019 HATCH PANEL...) is rigid, and the bench builds it with the test range's own piece builder: the
+  same mass, size, inertia and solids as on the range. A ring's hole is open (a rod passes through it), because it is
+  built from 24 slices, as on the range. `shape = "ring"` with `size = [diameter, inner_diameter, length]` and a
+  `mass` builds your own ring the same way. On the bench the 2024 NOTE is a rigid stand-in unless the piece says
+  `flex = true` (below): the real one is soft foam and squashes. It brings its own contact `stiffness` (2000 N/m, an
+  estimate), as on the range. A ring touches a wheel at many MuJoCo contact points (8 per wheel for the NOTE's face),
+  and the bench spreads the stiffness over them, so held between wheels the NOTE is squeezed as hard as its
+  `stiffness` says, no harder. Going through a pinch it still doesn't behave like foam (see [Known
+  limits](#known-limits)); `flex = true` makes it a soft body instead (below).
 
 ### Flex NOTE (experimental)
 

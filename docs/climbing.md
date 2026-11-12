@@ -24,12 +24,18 @@ same physics the whole-robot simulation runs.
 
 ## Elements and ranges
 
-Three `[[element]]` kinds climb; [docs/terrain.md](terrain.md#field-elements-in-range-files) lists their keys:
+Four `[[element]]` kinds climb; [docs/terrain.md](terrain.md#field-elements-in-range-files) lists their keys:
 
 - **`bar`**: a horizontal pipe at a height, optionally on a vertical sprung slide (`stiffness`, `damping`) that
   stands in for the rung's bending, and tagged with the `level` hanging from it scores;
 - **`box`**: a static block, structure (a truss) or, with `ground = true`, floor (floor protection);
-- **`switch`**: a bar hanging below a hinge that tilts under a hanging robot.
+- **`switch`**: a bar hanging below a hinge that tilts under a hanging robot;
+- **`chain`** (`kind = "chain"`): a chain hung between two ends, which sags and swings under a robot. It is given by
+  its low point (`center`, `low`), the way it runs (`yaw_deg`), how far apart its ends are (`span`) and how high they
+  are (`top`), and tagged with a `level` as a bar is ([docs/terrain.md](terrain.md#chains)). 2024's six CHAINS are
+  chains.
+
+The climb code calls whatever a robot hangs from a **hold**: a bar, a switch or a chain.
 
 Bars, switches and boxes that aren't ground aren't floor: a robot hanging from a bar isn't "resting on the floor",
 and `robot.stranded` doesn't fire for it. A range's `[climb]` table scores the climb:
@@ -46,6 +52,7 @@ Library ranges:
 
 | range | what | start |
 |---|---|---|
+| `2024` | the 2024 CRESCENDO field, with the two STAGES' six CHAINS as chains (ONSTAGE 3 points, HARMONY 2), `rule = "off-carpet"` ([docs/test-range.md](test-range.md#the-2024-field)) | `blue_chain_center` |
 | `2022-hangar` | the four 2022 rungs (LOW, MID, HIGH, TRAVERSAL: 4, 6, 10, 15 points), the trusses and the floor protection, from drawing GE-22100 | `under_mid` |
 | `2020-switch` | the 2020 GENERATOR SWITCH: ±14.5°, about 42 kg, LEVEL within 8° | |
 | `2013-pyramid` | the 2013 PYRAMID's rungs at 30, 60 and 90 in, as bars (its legs aren't built) | |
@@ -106,6 +113,13 @@ point was (at your robot's hooks) rises from 0.72 m to about 0.97 m, and the tes
 chain, no longer gets its hooks over it. Hanging, your robot sits a few centimeters higher than it does alone (4.4 cm
 there). The hooks stay where they catch (see
 [terrain.md](terrain.md#chains)), so the two robots don't slide together at the low point.
+
+On the built-in `2024` range the STAGE legs are where FIRST's field CAD has them, upright 12 in posts at the chains'
+ends. A stock partner hanging on `chain_blue_center` fits between them only to about 0.65 m (25.6 in) from the low
+point; at 0.9 m (35.4 in) it starts inside `stage_blue_leg2` and is refused. With your robot at the low point there
+isn't room for both (the start check takes your robot as a 0.9 m square), so the HARMONY example
+(`examples/blocks/chain-climb/harmony.test.toml`) puts the two side by side, 0.45 m either side of the low point, where
+two robots that met at the low point would end up.
 
 ## The climb signals
 
@@ -279,6 +293,13 @@ Timing a catch on a swing of about 30–34° (34° at its largest; the robot han
 the arm as it swings) is the hard part, as it was for teams; damping the swing first, or a robot built for the
 traversal (a taller rotating arm, a reaction arm against the truss), are the next things to try.
 
+**`examples/blocks/chain-climb/`** climbs 2024's `chain_blue_center` with blocks, no robot program, on a 60 kg stand-in
+robot with one stock climber. `onstage.test.toml` reaches 0.14 m, drives 0.31 m into the chain, pulls down and hangs:
+ONSTAGE, hanging from the chain, at 6.9 s (gated by tests/test_range_2024.py). `harmony.test.toml` plays the match
+with a partner hanging 17.7 in along the same chain and scores 5 in the endgame: ONSTAGE's 3 and HARMONY's 2. Its robot
+(`harmony-climber.toml`) has a third climber stage, since the partner pulls the chain up out of the two-stage
+climber's reach. The example's README explains where the partner hangs and why.
+
 **`examples/blocks/ladder_climber/`** is a CAD climber tested with blocks, no robot program: a crank turning two
 arms that rise and fall in turn (like a steam train's wheel rods), with spring hooks that fold past a rung and catch
 it, on the stand-in box robot in front of the `ladder` range. Its test (`climb.test.toml`, gated by
@@ -358,7 +379,14 @@ From the research notes (Chief Delphi threads, team binders and the 2022 manual;
 - **Other mechanisms collide only when they say so.** A stock elevator, arm or launcher is `collide = false` by
   default: it passes through bars and doesn't count for `climb.extension` or `climb.height`. Set `collide = true` on
   the part ([docs/parts.md](parts.md#stock-parts-that-collide)) to count it. The climber part always collides.
-- **Chain and rope aren't modeled** (2024's chain, 2017's rope): they need cable simulation.
+- **Rope isn't modeled** (2017's rope): it needs cable simulation. A chain is (`kind = "chain"`).
+- **A hook on a chain settles at a link and doesn't slide toward the low point.** In the chain spike, moving a 60 kg
+  robot along the chain took about 200–250 N, with more links or less friction alike. A real hook on a roller chain
+  slides some. So two robots that would meet at the low point in a match stay apart in the sim; put a hanging partner
+  where it would end up.
+- **A chain is frictionless against bumpers.** A chain's own friction is 0, so a hook's `hook_material` sets the
+  friction where they touch (the hook and the chain have the same priority, and MuJoCo takes the larger). A bumper has a
+  lower priority than the chain, so there the chain's 0 is used: a chain slides freely across a bumper.
 - **2013's sequential rule isn't checked**: `"lowest-point"` scores where the robot is, not how it got there.
 - **No state machine**: a script waits on simple conditions; an auto-climb that reacts to the swing has to be
   written as a robot program and run in a scenario.

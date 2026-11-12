@@ -364,17 +364,18 @@ def test_the_probe_changes_nothing_else():
 # ---- the cost --------------------------------------------------------------------------------------------------------
 
 def ranges_2024(tmp_path: Path) -> tuple[Path, Path]:
-    """The speaker example's robot on the 2024 range as is, and on a copy with its six chain_* bars as chains with D1's
-    numbers: (bars config, chains config)."""
-    src = Path(BUILTIN_RANGES["2024"]).read_text()
-    blocks = re.findall(r'(?ms)^\[\[element\]\]\nname = "chain_[a-z_]+"\nkind = "bar"\n.*?^level = "ONSTAGE"\n', src)
+    """The speaker example's robot on a copy of the 2024 range with its six chains as the rigid bars it had before K5
+    (1.5 m long at the low point's height, no posts), and on the 2024 range as is: (bars config, chains config)."""
+    chains = Path(BUILTIN_RANGES["2024"]).read_text()
+    blocks = re.findall(r'(?ms)^\[\[element\]\]\nname = "chain_[a-z_]+"\nkind = "chain"\n.*?^level = "ONSTAGE"\n', chains)
     assert len(blocks) == 6
-    chains = src
+    src = chains
     for b in blocks:
         keep = [ln for ln in b.splitlines() if ln.startswith(("[[element]]", "name", "center", "yaw_deg",
                                                                 "diameter_in", "level"))]
-        new = "\n".join(keep[:4] + ['kind = "chain"', "span = 2.42", "top = 1.18", "low = 0.7176"] + keep[4:]) + "\n"
-        chains = chains.replace(b, new)
+        new = "\n".join(keep[:2] + ['kind = "bar"'] + keep[2:4] + ["length = 1.5", "height = 0.7176", "posts = false"]
+                        + keep[4:]) + "\n"
+        src = src.replace(b, new)
     robot = (REPO / "examples/blocks/speaker/note-shooter-standin.toml").read_text()
     assert robot.count('file = "2024"') == 1
     out = []

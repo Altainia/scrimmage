@@ -755,8 +755,9 @@ Open **Setup** over the blocks. Its summary shows the hooks, the weight and the 
   plain problem in Setup and **Run** stays off until you pick another. The test file keeps this as `piece` under
   `[setup]` (older tests with `ball` still work). A measured ball goes in the test file by hand: `ball =
   "fuel.measure.toml"` under `[setup]`, a ball measurement file with a `base` preset, relative to the test file
-  ([measuring.md](measuring.md#using-a-measurement)); its measured numbers replace the preset's. Soft pieces (the
-  cube, the note) are rigid stand-ins: they don't squash.
+  ([measuring.md](measuring.md#using-a-measurement)); its measured numbers replace the preset's. The 2023 cube is a
+  rigid stand-in: it doesn't squash. The 2024 NOTE turns soft near the robot
+  ([test-range.md](test-range.md#soft-pieces)).
 - **Station.** One group of boxes for each station: time between balls, stock, and the spreads (each ± its value).
 - **Shuffle** and **New shuffle**: which draw of the spreads the stations feed.
 - **Floor spread.** Where the floor ball is tried. See [Floor spreads](#floor-spreads).
@@ -881,7 +882,7 @@ absolute path. **`test_spread`** runs the floor spread. The agent writes the `.t
 
 ## The examples
 
-Eleven worked examples are in `examples/blocks/`. Each has a README with the story, the blocks and how to change them.
+Twelve worked examples are in `examples/blocks/`. Each has a README with the story, the blocks and how to change them.
 
 - **`examples/blocks/intake`**, a roller and bin that take a ball off the carpet. Run it and it finishes at 3.3 s
   with the ball in the bin. The README has a sweep of the roller's voltage.
@@ -930,6 +931,12 @@ Eleven worked examples are in `examples/blocks/`. Each has a README with the sto
 - **`examples/blocks/partner`**, a stand-in robot pushing a partner robot set in Setup. It drives into it at 6 V for
   2 s and checks the partner moved at least 60 in: a braked partner moves 63 in, a coasting one 112 in. The README
   tries other voltages and a partner turned sideways, which hardly moves.
+- **`examples/blocks/chain-climb`**, a 60 kg stand-in robot with a stock climber in front of the built-in `2024`
+  field's `chain_blue_center`. `onstage.test.toml` reaches up, drives the chain into the hooks, pulls down and hangs:
+  ONSTAGE at 6.9 s, hanging from the chain. `harmony.test.toml` plays the match with a partner hanging on the same
+  chain (Setup's partner, **Hangs on**) and scores 5 in the endgame: ONSTAGE's 3 and HARMONY's 2. The README says where
+  the partner hangs and why: the STAGE's legs leave room for it only near the low point, and hooks don't slide along
+  a chain.
 
 Open one with `scrimmage edit examples/blocks/intake/intake.test.toml`.
 
