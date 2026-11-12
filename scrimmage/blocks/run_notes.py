@@ -70,7 +70,7 @@ def run_notes(world, program: Program) -> list[str]:
     or seated with no grip anywhere gets default_grip_note, so its grip isn't read as measured either. A field piece
     whose friction is measured gets piece_notes' line. A robot with cylinders gets pneumatic_note. A test that
     measures an element's clearance, on a robot with stock parts whose collide is off, gets clearance.uncounted_note:
-    those parts aren't measured."""
+    those parts aren't measured. A range with a soft NOTE adds its soft pool's notes (RangeRuntime.soft_notes)."""
     from ..parts.grip import grip_notes
     notes = grip_notes(world)
     if not notes and any(_conds(program.blocks, k) for k in GRIP_CONDITIONS):
@@ -84,6 +84,9 @@ def run_notes(world, program: Program) -> list[str]:
     rng = getattr(world, "parts", None) and world.parts.range
     if rng is not None:         # the range's warnings (a goal behind the walls), in the setting being worded
         notes += [str(w) if units.is_machine() else shown(w) for w in rng.warnings]
+    tr = getattr(world, "test_range", None)
+    if hasattr(tr, "soft_notes"):       # a soft NOTE's: a full pool, its uncalibrated numbers
+        notes += tr.soft_notes()
     return notes
 
 
@@ -96,7 +99,8 @@ def goal_lines(result: RunResult) -> list[str]:
 def points_lines(result: RunResult) -> list[str]:
     """A match's points as lines (none for a run that isn't a match): "12 points: 7 in auto, 5 in teleop, 0 in
     endgame", then one line per item ("3 scored in hub_blue in auto: 15 points", "left the starting zone: 2 points",
-    "climbed to ONSTAGE: 3 points", a pause piece "1 scored in hub_blue in the pause: 0 points")."""
+    "climbed to ONSTAGE: 3 points", "HARMONY with 1 other robot: 2 points", a pause piece "1 scored in hub_blue in
+    the pause: 0 points")."""
     pts = result.points
     if not pts:
         return []
@@ -115,6 +119,10 @@ def points_lines(result: RunResult) -> list[str]:
         elif item["source"] == "climb":
             lines.append(i18n.tn("climbed to {level}: {points} point", "climbed to {level}: {points} points",
                                  item["points"], level=_climb_level(result), points=p["points"]))
+        elif item["source"] == "harmony":
+            robots = i18n.tn("{count} other robot", "{count} other robots", item["count"])
+            lines.append(i18n.tn("HARMONY with {robots}: {points} point", "HARMONY with {robots}: {points} points",
+                                 item["points"], robots=robots, points=p["points"]))
         elif item["phase"] == "pause":
             lines.append(i18n.tn("{count} scored in {source} in the pause: {points} point",
                                  "{count} scored in {source} in the pause: {points} points", item["points"], **p))

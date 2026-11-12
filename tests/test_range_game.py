@@ -185,3 +185,52 @@ def test_points_so_far_with_at():
 def test_a_game_with_no_pause(tmp_path):
     rng = load(tmp_path, "[game]\nauto_seconds = 15\npause_seconds = 0\nteleop_seconds = 135\n")
     assert rng.game.pause_s == 0 and rng.game.phases(0.0) == Phases((0.0, 15.0), (15.0, 150.0))
+
+
+# ---------------------------------------------------------------------------------------------- ONSTAGE and HARMONY
+
+OFF_CARPET = CLIMB.replace('rule = "lowest-rung"', 'rule = "off-carpet"\nharmony = 2')
+
+
+def test_off_carpet_and_harmony_parse(tmp_path):
+    """K5 D5, R8: `rule = "off-carpet"` takes `harmony`, the points for each robot beyond the first on a hold; the
+    game copies it. Any other rule refuses it, and so does a negative one."""
+    rng = load(tmp_path, GAME + OFF_CARPET)
+    assert rng.climb.rule == "off-carpet" and rng.climb.harmony == 2.0
+    assert rng.game.harmony == 2.0 and rng.game.climb_points == {"ONSTAGE": 3.0}
+    assert load(tmp_path, GAME + OFF_CARPET.replace("harmony = 2\n", "")).climb.harmony == 0.0
+    for bad in (CLIMB.replace('rule = "lowest-rung"', 'rule = "lowest-rung"\nharmony = 2'),
+                OFF_CARPET.replace("harmony = 2", "harmony = -1")):
+        with pytest.raises(RangeError) as e:
+            load(tmp_path, GAME + bad)
+        assert "[climb]" in str(e.value) and "off-carpet" in str(e.value) and "harmony" in str(e.value)
+
+
+def test_score_adds_harmony():
+    """R8, F4: the HARMONY points held at the end are an endgame item after the climb's, counting the other robots
+    (the points over the game's points per robot); none without them."""
+    from dataclasses import replace
+    game = replace(GAME24, harmony=2.0)
+    log = rows(("speaker_blue", 12.0))
+    p = score(game, log, PH, True, "ONSTAGE", harmony=2.0)
+    assert [(i.source, i.phase, i.count, i.points) for i in p.items][-2:] == [
+        ("climb", "endgame", 1, 3.0), ("harmony", "endgame", 1, 2.0)]
+    assert p.endgame == 5.0 and p.total == 12.0
+    assert score(game, log, PH, True, "ONSTAGE", harmony=4.0).items[-1].count == 2
+    q = score(game, log, PH, True, "ONSTAGE", harmony=0)
+    assert all(i.source != "harmony" for i in q.items) and q.endgame == 3.0
+    assert score(game, log, PH, True, "ONSTAGE", at=15.0, harmony=2.0).endgame == 0.0    # not over yet
+    assert score(game, log, PH, True, "ONSTAGE", at=15.0, held=True, harmony=2.0).endgame == 5.0
+    assert score(GAME24, log, PH, True, "ONSTAGE", harmony=2.0).items[-1].count == 0      # no harmony: guarded
+
+
+def test_points_lines_say_harmony():
+    from types import SimpleNamespace
+    from dataclasses import replace
+    from scrimmage.blocks.run_notes import points_lines
+    p = score(replace(GAME24, harmony=2.0), [], PH, False, "ONSTAGE", harmony=2.0)
+    lines = points_lines(SimpleNamespace(points=p.to_dict(), match={"level": "ONSTAGE"}))
+    assert lines[-2:] == ["climbed to ONSTAGE: 3 points", "HARMONY with 1 other robot: 2 points"]
+    two = score(replace(GAME24, harmony=1.0), [], PH, False, None, harmony=2.0)
+    assert points_lines(SimpleNamespace(points=two.to_dict(), match={"level": None}))[-1] == (
+        "HARMONY with 2 other robots: 2 points")

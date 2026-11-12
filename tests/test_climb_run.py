@@ -133,14 +133,48 @@ def lowered_from_mid(volts: float, seconds: float):
     return r, len([t for t in gaps if t > start])
 
 
-def test_hooks_bouncing_while_let_down_is_no_failure():
-    """Let down slowly (3 V), the hooks rest on MID in bursts, losing it for a few ms at a time with tens of N between:
-    no real drop, so neither a walk-off nor a fall."""
-    r, gaps = lowered_from_mid(3.0, 3.0)
-    assert gaps >= 5
+def jolted_on_mid(volts: float, seconds: float):
+    """Hung from MID, the mid climber is driven at `volts` for `seconds`, then back to 0: its hooks rise off MID
+    faster than the robot falls, and the robot drops onto them. Returns the result, how many times the robot lost
+    every bar for a moment (climb.hanging 1 to 0) from the jolt on, and how far its CoM dropped (m)."""
+    w = build_world(load_config(CONFIG))
+    run = ClimbRun(w, parse_script({"step": high_steps(5) + [
+        {"name": "jolt", "drive": {"joint": "mid.stage1", "voltage": volts}, "wait": {"time": seconds}},
+        {"name": "pull back up", "drive": {"joint": "mid.stage1", "to": 0.0}, "wait": {"time": 2.0}}]}, "test"))
+    gaps, prev, coms = [], [False], []
+
+    def watch(t, v):
+        hanging = bool(v["climb.hanging"])
+        if prev[0] and not hanging:
+            gaps.append(t)
+        prev[0] = hanging
+        coms.append((t, float(w.data.subtree_com[w.robot_body][2])))
+    run.on_step = watch
+    r = run.run()
+    start = r.steps[5].start
+    z = [c for t, c in coms if t >= start]
+    return r, len([t for t in gaps if t > start]), z[0] - min(z)
+
+
+def test_hooks_bouncing_on_the_bar_is_no_failure():
+    """A jolt at full voltage for 50 ms drops the robot a few cm back onto its hooks on MID, and it bounces off them
+    (the hooks lose MID a few times, for a few ms each): no real drop, so neither a walk-off nor a fall. (Before the
+    telescope carried its motors' rotor inertia, a robot let down slowly bounced like this by itself, from the
+    solver; now a hang is steady, so the bounce is made on purpose.)"""
+    r, gaps, drop = jolted_on_mid(12.0, 0.05)
+    assert gaps >= 3
+    assert 0.02 < drop < 0.05                   # m: a few cm, under WALK_OFF_DROP (5 cm)
     assert r.status == "reached MID"
     assert r.rows[-1].event == "end: reached MID"
     assert not any("dropped" in row.event or "ground" in row.event for row in r.rows)
+
+
+def test_a_slow_let_down_hangs_without_bouncing():
+    """Let down slowly (3 V), the hooks stay on MID: the robot never loses the bar (the telescope's rotor inertia;
+    tests/test_climb_thin_bar.py)."""
+    r, gaps = lowered_from_mid(3.0, 3.0)
+    assert gaps == 0
+    assert r.status == "reached MID"
 
 
 def test_let_down_onto_the_carpet_fell():
@@ -238,7 +272,8 @@ def test_angles_in_degrees():
 
 @pytest.mark.parametrize("step, message", [
     ({"drive": {"joint": "high.tip", "to": 0.1}}, r"joint 'high.tip' has no motor .* joints with a motor: .*high.stage1"),
-    ({"wait": {"hook_contact": "nowhere"}}, r"no bar 'nowhere' in the range; its bars and switches: .*high"),
+    ({"wait": {"hook_contact": "nowhere"}}, r"no bar, chain or switch 'nowhere' in the range; its bars, chains and "
+                                          r"switches: .*high"),
     ({"wait": {"level": "TOP"}}, r"no level 'TOP'; the range's levels: LOW, MID, HIGH, TRAVERSAL"),
     ({"release": 0.5}, r"release needs a latch release motor"),
 ])

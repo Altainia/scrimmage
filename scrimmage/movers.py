@@ -32,12 +32,20 @@ def movers(world) -> list[Mover]:
 
 
 def mover_poses(world, ms: list[Mover]) -> np.ndarray:
-    """(n, 7) float32 rows x, y, z, qw, qx, qy, qz in the world frame."""
+    """(n, 7) float32 rows x, y, z, qw, qx, qy, qz in the world frame. A soft NOTE's rigid stand-in, while its ring is
+    in use (testrange/soft.py SoftPool.drawn_parked), is drawn parked: at PARK_Z under where it is, so the view
+    (which hides movers parked under the floor) shows the ring alone."""
     d = world.data
     out = np.zeros((len(ms), 7), dtype=np.float32)
+    pool = getattr(getattr(world, "test_range", None), "soft", None)
+    parked = pool.drawn_parked() if pool is not None else ()
+    if parked:
+        from .testrange.build import PARK_Z
     for i, mv in enumerate(ms):
         if mv.kind == "body":
             out[i, :3], out[i, 3:] = d.xpos[mv.id], d.xquat[mv.id]
+            if mv.id in parked:
+                out[i, 2] = PARK_Z
         else:
             q = np.zeros(4)
             mujoco.mju_mat2Quat(q, d.geom_xmat[mv.id])

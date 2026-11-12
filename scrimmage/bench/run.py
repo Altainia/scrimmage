@@ -33,6 +33,14 @@ themselves; rigid contacts use `mj_contactForce` with the velocities the step st
 work. The check is `e_out <= e_in + work_in + potential_lost + max(1% of e_out, 5 mJ)`.
 
 Loads are normal contact forces (friction is not in them), as `SquishyContacts.apply` reports them.
+
+A flex NOTE (`[piece] flex = true`, spec D9) is a pool of flex bodies (bench/flex_note.py) in place of the rigid pool's
+free bodies, run on MuJoCo's `discrete` integrator: FlexPieces reads and writes it for the runner as RigidPieces does
+the rigid pool. Its center is its vertices' center of mass, its orientation their Kabsch rotation against its rest
+shape, its spin from its angular momentum about the center (as the world's soft ring's swap back takes them), so its
+exit, its poses and its flight in `[flight]` are a rigid NOTE's from that state. Contacts are read by contact id
+(scrimmage/flexcontact.py): a flex's side is past the geoms. A flex takes no stiffness spreading (its stiffness is its
+elasticity).
 """
 
 import math
@@ -45,6 +53,7 @@ from .. import i18n
 from ..launcher.inputs import BatteryIn, Control
 from ..launcher.inputs import Shaft as LauncherShaft
 from ..launcher.shaft import ShaftModel, VelocityController
+from ..flexcontact import contact_ids, n_ids
 from ..motors import Battery
 from .build import Built, build_bench, check_clear
 from .spec import Bench
@@ -258,9 +267,9 @@ def spread_stiffness(m: mujoco.MjModel, d: mujoco.MjData, geom_piece: np.ndarray
     (`tc1`, BenchLayout.contact_tc). n is d.contact's count, the last step's (this step's are not found yet): for a
     shape (whose solref a piece contact takes, by priority) its most with any one piece, for a piece's geoms their
     most with any one other piece (MuJoCo averages the two sides' solref there). A geom touching nothing goes back
-    to one point. `geom_piece` is each geom's pool piece, -1 for the rest."""
-    n = np.ones(m.ngeom)
-    g = d.contact.geom[:d.ncon]
+    to one point. `geom_piece` is each contact id's pool piece (flexcontact: n_ids long), -1 for the rest."""
+    n = np.ones(len(geom_piece))
+    g = contact_ids(m, d)
     p = geom_piece[g]
     shape_rows = (p[:, 0] >= 0) != (p[:, 1] >= 0)
     if shape_rows.any():
@@ -279,6 +288,128 @@ def spread_stiffness(m: mujoco.MjModel, d: mujoco.MjData, geom_piece: np.ndarray
     m.geom_solref[soft, 0] = np.maximum(tc1 * np.sqrt(n[soft]), 2.0 * m.opt.timestep)
 
 
+class RigidPieces:
+    """The rigid pool's free bodies, read and written for the runner: each piece's addresses and where it waits."""
+
+    def __init__(self, m: mujoco.MjModel, lay, n: int):
+        self.m, self.lay = m, lay
+        self.qadr = np.array([[q + k for k in range(7)] for q in lay.piece_qpos], dtype=int).reshape(n, 7)
+        self.vadr = np.array([[v + k for k in range(6)] for v in lay.piece_qvel], dtype=int).reshape(n, 6)
+        self.parked_q = np.array([np.r_[p, 1.0, 0.0, 0.0, 0.0] for p in lay.parked]).reshape(n, 7)
+
+    def hold(self, d: mujoco.MjData, idx: np.ndarray) -> None:
+        d.qpos[self.qadr[idx]] = self.parked_q[idx]
+        d.qvel[self.vadr[idx]] = 0.0
+
+    def state(self, d: mujoco.MjData, i: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        q, v = d.qpos[self.qadr[i]], d.qvel[self.vadr[i]]
+        R = np.zeros(9)
+        mujoco.mju_quat2Mat(R, q[3:7])
+        R = R.reshape(3, 3)
+        return q[:3].copy(), v[:3].copy(), R @ v[3:6], R
+
+    def kinetic(self, d: mujoco.MjData, i: int) -> float:
+        m, b = self.m, self.lay.piece_bodies[i]
+        v = d.qvel[self.vadr[i]]
+        Ri = np.zeros(9)
+        mujoco.mju_quat2Mat(Ri, m.body_iquat[b])
+        w = Ri.reshape(3, 3).T @ v[3:6]  # the body frame's spin in its principal axes
+        return float(0.5 * m.body_mass[b] * (v[:3] @ v[:3]) + 0.5 * (m.body_inertia[b] @ (w * w)))
+
+    def mass(self, i: int) -> float:
+        return float(self.m.body_mass[self.lay.piece_bodies[i]])
+
+    def spawn(self, d: mujoco.MjData, i: int, pos, vel, spin) -> None:
+        d.qpos[self.qadr[i]] = np.r_[pos, 1.0, 0.0, 0.0, 0.0]
+        d.qvel[self.vadr[i]] = np.r_[vel, spin]  # upright, so the body frame's spin is the world's
+
+    def center(self, d: mujoco.MjData, i: int) -> np.ndarray:
+        return d.qpos[self.qadr[i, :3]].copy()
+
+    def speed(self, d: mujoco.MjData, i: int) -> float:
+        return float(np.linalg.norm(d.qvel[self.vadr[i, :3]]))
+
+    def pose(self, d: mujoco.MjData, i: int) -> tuple[float, ...]:
+        """x y z qw qx qy qz."""
+        return tuple(map(float, d.qpos[self.qadr[i]]))
+
+    def forces_finite(self, d: mujoco.MjData, i: int) -> bool:
+        return bool(np.isfinite(d.xfrc_applied[self.lay.piece_bodies[i]]).all()
+                    and np.isfinite(d.qfrc_applied[self.vadr[i]]).all())
+
+
+class FlexPieces:
+    """The flex pool (`flex = true`): each piece's vertices, each a body on three slides at qpos 0 where it waits
+    (BenchLayout.parked). Its center is the vertices' center of mass, its orientation the Kabsch rotation of their
+    offsets against the rest shape's (the kind's frame: the rigid piece's, unturned), its spin the one its angular
+    momentum about the center gives with the vertices' inertia there (a vertex has no spin of its own), all from
+    qpos and qvel (after a step)."""
+
+    def __init__(self, m: mujoco.MjModel, lay):
+        self.m = m
+        qadr, vadr, base, bodies = [], [], [], []
+        for f in lay.flex_pieces:
+            a, n = int(m.flex_vertadr[f]), int(m.flex_vertnum[f])
+            b = m.flex_vertbodyid[a:a + n]
+            jnt = m.body_jntadr[b][:, None] + np.arange(3)       # each vertex's x, y, z slides, in order
+            qadr.append(m.jnt_qposadr[jnt])
+            vadr.append(m.jnt_dofadr[jnt])
+            base.append(m.body_pos[b].copy())                    # where each vertex is at qpos 0 (world children)
+            bodies.append(b.copy())
+        self.qadr, self.vadr = np.array(qadr, dtype=int), np.array(vadr, dtype=int)
+        self.base, self.bodies = np.array(base), np.array(bodies, dtype=int)
+        self.m_v = m.body_mass[self.bodies[0]].copy() if len(bodies) else np.zeros(0)
+        self.total = float(self.m_v.sum())
+        self.rest = (self.base[0] - self.m_v @ self.base[0] / self.total) if len(bodies) else np.zeros((0, 3))
+
+    def hold(self, d: mujoco.MjData, idx: np.ndarray) -> None:
+        d.qpos[self.qadr[idx]] = 0.0
+        d.qvel[self.vadr[idx]] = 0.0
+
+    def _x(self, d: mujoco.MjData, i: int) -> np.ndarray:
+        return self.base[i] + d.qpos[self.qadr[i]]
+
+    def state(self, d: mujoco.MjData, i: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        x, v, mv = self._x(d, i), d.qvel[self.vadr[i]], self.m_v
+        c, vc = mv @ x / self.total, mv @ v / self.total
+        r, u = x - c, v - vc
+        a, _, bt = np.linalg.svd(self.rest.T @ r)              # Kabsch: the rotation taking rest onto r
+        s = np.diag([1.0, 1.0, float(np.sign(np.linalg.det(bt.T @ a.T)))])
+        R = bt.T @ s @ a.T
+        L = mv @ np.cross(r, u)
+        mr = mv[:, None] * r
+        inertia = float((mr * r).sum()) * np.eye(3) - r.T @ mr
+        return c, vc, np.linalg.solve(inertia, L), R
+
+    def kinetic(self, d: mujoco.MjData, i: int) -> float:
+        v = d.qvel[self.vadr[i]]
+        return float(0.5 * self.m_v @ (v * v).sum(axis=1))
+
+    def mass(self, i: int) -> float:
+        return self.total
+
+    def spawn(self, d: mujoco.MjData, i: int, pos, vel, spin) -> None:
+        d.qpos[self.qadr[i]] = np.asarray(pos, dtype=float) + self.rest - self.base[i]
+        d.qvel[self.vadr[i]] = np.asarray(vel, dtype=float) + np.cross(np.asarray(spin, dtype=float), self.rest)
+
+    def center(self, d: mujoco.MjData, i: int) -> np.ndarray:
+        return self.m_v @ self._x(d, i) / self.total
+
+    def speed(self, d: mujoco.MjData, i: int) -> float:
+        return float(np.linalg.norm(self.m_v @ d.qvel[self.vadr[i]] / self.total))
+
+    def pose(self, d: mujoco.MjData, i: int) -> tuple[float, ...]:
+        """x y z qw qx qy qz: the center and the Kabsch rotation, as a rigid piece's qpos."""
+        c, _, _, R = self.state(d, i)
+        q = np.zeros(4)
+        mujoco.mju_mat2Quat(q, R.ravel())
+        return tuple(map(float, np.r_[c, q]))
+
+    def forces_finite(self, d: mujoco.MjData, i: int) -> bool:
+        return bool(np.isfinite(d.xfrc_applied[self.bodies[i]]).all()
+                    and np.isfinite(d.qfrc_applied[self.vadr[i]]).all())
+
+
 class _Run:
     def __init__(self, bench: Bench, trace_hz: float):
         self.bench = bench
@@ -294,12 +425,13 @@ class _Run:
         self.shafts = _Shafts(bench, self.built)
         n = len(self.pieces)
         self.work = np.zeros(n)  # rigid pieces' work in (squishy pieces use SquishyContacts.work_on_piece)
-        self.qadr = np.array([[q + k for k in range(7)] for q in lay.piece_qpos], dtype=int).reshape(n, 7)
-        self.vadr = np.array([[v + k for k in range(6)] for v in lay.piece_qvel], dtype=int).reshape(n, 6)
-        self.parked_q = np.array([np.r_[p, 1.0, 0.0, 0.0, 0.0] for p in lay.parked]).reshape(n, 7)
-        self.geom_piece = np.full(m.ngeom, -1, dtype=int)
+        self.flex = bench.piece.flex
+        self.pool = FlexPieces(m, lay) if self.flex else RigidPieces(m, lay, n)
+        self.geom_piece = np.full(n_ids(m), -1, dtype=int)   # each contact id's pool piece (flexcontact)
         for i, geoms in enumerate(lay.piece_geom_sets):
             self.geom_piece[list(geoms)] = i
+        for i, f in enumerate(lay.flex_pieces):
+            self.geom_piece[m.ngeom + f] = i
         self.reach = lay.piece_reach
         self.soft = np.array(sorted(lay.contact_tc), dtype=int)
         self.soft_tc1 = np.array([lay.contact_tc[g] for g in self.soft])
@@ -329,27 +461,17 @@ class _Run:
 
     def state(self, i: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Piece i's center, velocity, world spin and orientation matrix (from qpos and qvel, after a step)."""
-        q, v = self.d.qpos[self.qadr[i]], self.d.qvel[self.vadr[i]]
-        R = np.zeros(9)
-        mujoco.mju_quat2Mat(R, q[3:7])
-        R = R.reshape(3, 3)
-        return q[:3].copy(), v[:3].copy(), R @ v[3:6], R
+        return self.pool.state(self.d, i)
 
     def kinetic(self, i: int) -> float:
-        m, b = self.m, self.lay.piece_bodies[i]
-        v = self.d.qvel[self.vadr[i]]
-        Ri = np.zeros(9)
-        mujoco.mju_quat2Mat(Ri, m.body_iquat[b])
-        w = Ri.reshape(3, 3).T @ v[3:6]  # the body frame's spin in its principal axes
-        return float(0.5 * m.body_mass[b] * (v[:3] @ v[:3]) + 0.5 * (m.body_inertia[b] @ (w * w)))
+        return self.pool.kinetic(self.d, i)
 
     def work_in(self, i: int) -> float:
         return float(self.squishy.work_on_piece[i] if self.squishy is not None else self.work[i])
 
     def spawn(self, p: _Piece, t: float) -> None:
-        d, i = self.d, p.index
-        d.qpos[self.qadr[i]] = np.r_[p.pos, 1.0, 0.0, 0.0, 0.0]
-        d.qvel[self.vadr[i]] = np.r_[p.vel, p.spin]  # upright, so the body frame's spin is the world's
+        i = p.index
+        self.pool.spawn(self.d, i, p.pos, p.vel, p.spin)  # upright: the body frame's spin is the world's
         self._held[i] = False
         if self.squishy is not None:
             self.squishy.work_on_piece[i] = 0.0
@@ -371,13 +493,13 @@ class _Run:
                       math.degrees(math.atan2(vel[1], vel[0])), tuple(map(float, spin)),
                       math.degrees(math.acos(max(-1.0, min(1.0, R[2, 2])))))
         e_out = self.kinetic(i)
-        lost = float(self.m.body_mass[self.lay.piece_bodies[i]] * (self.gravity @ (pos - p.p_in)))
+        lost = float(self.pool.mass(i) * (self.gravity @ (pos - p.p_in)))
         w_in = self.work_in(i)
         ok = e_out <= p.e_in + w_in + lost + max(ENERGY_REL * e_out, ENERGY_ABS)
         p.energy = EnergyCheck(index=i, e_in=p.e_in, work_in=w_in, potential_lost=lost, e_out=e_out, ok=bool(ok))
         p.status, p.outlet, p.t_out = status, outlet, t
         p.path.append((t, *map(float, pos)))
-        p.poses.append((t, tuple(map(float, self.d.qpos[self.qadr[i]]))))
+        p.poses.append((t, self.pool.pose(self.d, i)))
         self._held[i] = True
 
     def spawn_due(self, t: float) -> None:
@@ -388,7 +510,7 @@ class _Run:
         if not heads:
             return
         active = [q for q in self.pieces if q.status == "active"]
-        centers = np.array([self.d.qpos[self.qadr[q.index, :3]] for q in active]).reshape(-1, 3)
+        centers = np.array([self.pool.center(self.d, q.index) for q in active]).reshape(-1, 3)
         for p in heads.values():
             if t < self.t_ready + p.due - 1e-12:
                 continue
@@ -412,7 +534,7 @@ class _Run:
         run = self.passes.get(key)
         if run is None or t - run[1] > PASS_GAP:
             run = self.passes[key] = [0.0, t]
-            self.pieces[i].poses.append((t, tuple(map(float, self.d.qpos[self.qadr[i]]))))
+            self.pieces[i].poses.append((t, self.pool.pose(self.d, i)))
         run[0] += normal * self.dt
         run[1] = t
         self.peak_impulse[shape] = max(self.peak_impulse[shape], run[0])
@@ -421,41 +543,63 @@ class _Run:
             self.shaft_touch[s].setdefault(i, [t, t])[1] = t
 
     def rigid_contacts(self, t: float, forces, shape_force, shape_best) -> None:
-        """Rigid pieces after a step: d.contact, efc_force and cvel are all the step's start, so each contact's power
-        is its force times the other body's velocity then."""
+        """Rigid and flex pieces after a step: d.contact, efc_force and cvel are all the step's start, so each
+        contact's power is its force times the other body's velocity then. Sides are contact ids (flexcontact)."""
         m, d = self.m, self.d
-        for c in range(d.ncon):
-            con = d.contact[c]
-            g = (int(con.geom1), int(con.geom2))
-            pc = (self.geom_piece[g[0]], self.geom_piece[g[1]])
-            if pc[0] < 0 and pc[1] < 0:
-                continue
+        ids = contact_ids(m, d)
+        pcs = self.geom_piece[ids]
+        for c in np.flatnonzero((pcs >= 0).any(axis=1)):
+            c = int(c)
+            g, pc = (int(ids[c, 0]), int(ids[c, 1])), (int(pcs[c, 0]), int(pcs[c, 1]))
             mujoco.mj_contactForce(m, d, c, self._f6)
             if self._f6[0] <= 0.0:
                 continue
-            frame = con.frame.reshape(3, 3)
-            f2 = frame.T @ self._f6[:3]  # on geom2, from geom1 (the frame's normal points from geom1 to geom2)
-            p = con.pos.copy()
+            frame = d.contact.frame[c].reshape(3, 3)
+            f2 = frame.T @ self._f6[:3]  # on side 2, from side 1 (the frame's normal points from side 1 to side 2)
+            p = d.contact.pos[c].copy()
             for side in (0, 1):
                 i = pc[side]
                 if i < 0:
                     continue
                 f = f2 if side == 1 else -f2
                 other = g[1 - side]
-                body = int(m.geom_bodyid[other])
-                if m.body_weldid[body] != 0:  # a moving body does work on the piece
-                    mujoco.mj_objectVelocity(m, d, mujoco.mjtObj.mjOBJ_BODY, body, self._vel6, 0)
-                    v_o = self._vel6[3:6] + np.cross(self._vel6[0:3], p - d.xipos[body])
-                    power = float(f @ v_o)
-                    self.work[i] += power * self.dt
-                    s = self.shaft_of_body.get(body)
-                    if s is not None:
-                        self.shaft_energy[s] += power * self.dt
+                if other < m.ngeom:
+                    body = int(m.geom_bodyid[other])
+                    if m.body_weldid[body] != 0:  # a moving body does work on the piece
+                        mujoco.mj_objectVelocity(m, d, mujoco.mjtObj.mjOBJ_BODY, body, self._vel6, 0)
+                        v_o = self._vel6[3:6] + np.cross(self._vel6[0:3], p - d.xipos[body])
+                        power = float(f @ v_o)
+                        self.work[i] += power * self.dt
+                        s = self.shaft_of_body.get(body)
+                        if s is not None:
+                            self.shaft_energy[s] += power * self.dt
+                else:  # another flex piece: its vertices' velocity at the contact
+                    self.work[i] += float(f @ self._flex_velocity(c, 1 - side, other - m.ngeom)) * self.dt
                 self.touch(i, self.lay.shape_of_geom.get(other), float(self._f6[0]), p, t, forces, shape_force,
                            shape_best)
 
+    def _flex_velocity(self, c: int, side: int, f: int) -> np.ndarray:
+        """Flex f's velocity at contact c's `side` (at the step's start, from cvel): its vertex's there, else the mean
+        of its element's vertices'."""
+        m, d = self.m, self.d
+        a = int(m.flex_vertadr[f])
+        vert, elem = int(d.contact.vert[c, side]), int(d.contact.elem[c, side])
+        if vert >= 0:
+            verts = [vert]
+        elif elem >= 0:
+            k = int(m.flex_dim[f]) + 1
+            start = int(m.flex_elemdataadr[f]) + elem * k
+            verts = [int(v) for v in m.flex_elem[start:start + k]]
+        else:  # pragma: no cover - a flex contact names one or the other
+            return np.zeros(3)
+        v = np.zeros(3)
+        for b in m.flex_vertbodyid[a + np.array(verts)]:
+            mujoco.mj_objectVelocity(m, d, mujoco.mjtObj.mjOBJ_BODY, int(b), self._vel6, 0)
+            v += self._vel6[3:6]
+        return v / len(verts)
+
     def soften(self) -> None:
-        if self.soft.size:
+        if self.soft.size and not self.flex:   # a flex's stiffness is its elasticity: nothing to spread
             spread_stiffness(self.m, self.d, self.geom_piece, len(self.pieces), self.soft, self.soft_tc1)
 
     # ---------------------------------------------------------------------------------------------- loop
@@ -469,13 +613,11 @@ class _Run:
     def check_inputs(self, t: float) -> list[tuple[float, int]]:
         """Before a step: the forces about to be applied must be finite (a NaN contact force is named here, before
         MuJoCo sees it). Returns the active pieces' (speed, index), to name a piece if the step itself goes bad."""
-        d, lay = self.d, self.lay
-        speeds = [(float(np.linalg.norm(d.qvel[self.vadr[p.index, :3]])), p.index)
-                  for p in self.pieces if p.status == "active"]
+        d = self.d
+        speeds = [(self.pool.speed(d, p.index), p.index) for p in self.pieces if p.status == "active"]
         if not (np.isfinite(d.xfrc_applied).all() and np.isfinite(d.qfrc_applied).all()):
             for _, i in speeds:
-                if not (np.isfinite(d.xfrc_applied[lay.piece_bodies[i]]).all()
-                        and np.isfinite(d.qfrc_applied[self.vadr[i]]).all()):
+                if not self.pool.forces_finite(d, i):
                     raise self._blew_up(t, i18n.t("piece {n} has a non-finite contact force", n=i))
             raise self._blew_up(t, i18n.t("a shaft or bar has a non-finite force (piece {n} was the fastest in the "
                                           "bench)", n=max(speeds)[1]) if speeds else
@@ -487,7 +629,7 @@ class _Run:
         go bad, so a reset is caught by its warning count, and the piece is named from `before`, the step's start."""
         d = self.d
         bad = d.warning[mujoco.mjtWarning.mjWARN_BADQACC].number
-        speeds = [(float(np.linalg.norm(d.qvel[self.vadr[i, :3]])), i) for _, i in before]
+        speeds = [(self.pool.speed(d, i), i) for _, i in before]
         nan = [i for s_, i in speeds if not math.isfinite(s_)]
         fast = [(s_, i) for s_, i in speeds if s_ > BLOWUP_SPEED]
         if bad > self.badqacc:
@@ -523,8 +665,7 @@ class _Run:
                     break
             held_idx = np.flatnonzero(self._held)
             if len(held_idx):
-                d.qpos[self.qadr[held_idx]] = self.parked_q[held_idx]
-                d.qvel[self.vadr[held_idx]] = 0.0
+                self.pool.hold(d, held_idx)
             d.qfrc_applied[:] = 0.0
             d.xfrc_applied[:] = 0.0
             sh.write_torques(d)
@@ -581,7 +722,7 @@ class _Run:
                 continue
             i = p.index
             p.peak_force = max(p.peak_force, float(forces[i]))
-            c = self.d.qpos[self.qadr[i, :3]].copy()
+            c = self.pool.center(self.d, i)
             if sample:
                 p.path.append((t, *map(float, c)))
             outlet = next((n for n, box in lay.outlet_boxes.items() if _inside(c, box)), None)

@@ -327,15 +327,15 @@ class World:
         self.data.xfrc_applied[self.robot_body, :3] = [fx, fy, 0.0]
 
     def movable_objects(self) -> list[str]:
-        """Bodies with a free joint (other than the robot and the range's balls), and named static geoms that aren't
-        planes."""
+        """Bodies with a free joint (other than the robot, the range's balls and its soft pool's rings), and named
+        static geoms that aren't planes."""
         m = self.model
         names = []
         for b in range(1, m.nbody):
             j = m.body_jntadr[b]
             if b != self.robot_body and j >= 0 and int(m.jnt_type[j]) == int(mujoco.mjtJoint.mjJNT_FREE):
                 n = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, b)
-                if n and not n.startswith("ball."):
+                if n and not n.startswith(("ball.", "soft.")):
                     names.append(n)
         for g in range(m.ngeom):
             if m.geom_bodyid[g] == 0 and int(m.geom_type[g]) != int(mujoco.mjtGeom.mjGEOM_PLANE):
@@ -541,16 +541,26 @@ class World:
         return out
 
     def robot_contacts(self) -> set[str]:
-        """Names of geoms (and their bodies) outside the robot that the robot is touching right now."""
+        """Names of geoms (and their bodies) outside the robot that the robot is touching right now; a chain's flex by
+        its name (`element.<name>`). A soft NOTE's ring capsule is named as its NOTE (`ball.<i>` and its geom), never
+        `soft.*` (Balls.ball_of_geom maps a ring in use to its slot)."""
+        from .flexcontact import contact_ids, id_body, id_name
         m, d = self.model, self.data
         root = m.body_rootid[self.robot_body]
+        bodies = id_body(m)
+        balls = self.test_range.balls if self.test_range is not None else None
         out: set[str] = set()
-        for c in d.contact[:d.ncon]:
-            b1, b2 = m.geom_bodyid[c.geom1], m.geom_bodyid[c.geom2]
+        for g1, g2 in contact_ids(m, d).tolist():
+            b1, b2 = bodies[g1], bodies[g2]
             in1, in2 = m.body_rootid[b1] == root, m.body_rootid[b2] == root
             if in1 == in2:
                 continue
-            g, b = (c.geom2, b2) if in1 else (c.geom1, b1)
+            g, b = (g2, b2) if in1 else (g1, b1)
+            if balls is not None and (s := int(balls.ball_of_geom(g))) >= 0 and b != balls.bodies[s]:
+                g, b = int(balls.geoms[s]), int(balls.bodies[s])        # a ring in use: its NOTE's names
+            if g >= m.ngeom:            # a flex: no body of its own
+                out.add(id_name(m, g))
+                continue
             for name in (mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g),
                          mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, b)):
                 if name:
@@ -558,11 +568,14 @@ class World:
         return out
 
     def contact_names(self) -> list[str]:
-        """Geom and body names outside the robot, which contact checks can name."""
+        """Geom and body names outside the robot, and each flex's (a chain's, `element.<name>`), which contact checks
+        can name. The soft pool's rings (`soft.*`) are left out: a ring in use stands for its NOTE, whose contacts are
+        named by its `ball.<i>` (Balls.ball_of_geom), and a parked one touches nothing."""
         m = self.model
         root = m.body_rootid[self.robot_body]
         names = {mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g) for g in range(m.ngeom)
                  if m.body_rootid[m.geom_bodyid[g]] != root}
         names |= {mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, b) for b in range(m.nbody)
                   if m.body_rootid[b] != root}
-        return sorted(n for n in names if n)
+        names |= {mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_FLEX, f) for f in range(m.nflex)}
+        return sorted(n for n in names if n and not n.startswith("soft."))

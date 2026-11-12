@@ -1,0 +1,31 @@
+# K5 thin bar (spec D2): climb the 2024 blue STAGE's center 1/2 in bar (the spike's chain.toml, from
+# examples/climb/high.toml's MID steps).
+# The robot (robot.toml) starts with its center 0.31 m short of the bar, facing it, hooks opening forward.
+goal = "ONSTAGE"
+
+[[step]]
+name = "reach above the chain"
+# the hooks' tips about 3 cm over the chain's top (its low point 28.25 in, 1/2 in across)
+drive = { joint = "c.stage1", to = 0.14 }
+wait = { joint_at = { joint = "c.stage1", value = 0.14, tol = 0.003 } }
+
+[[step]]
+name = "forward, the chain into the throats"
+# 4.05 rad = 0.31 m: the throats' middle at the chain, short of the stems. Gently, as high.toml
+drive = [{ joint = "dt.left_2", to = 4.05, max_voltage = 1.5 }, { joint = "dt.right_2", to = 4.05, max_voltage = 1.5 }]
+wait = { time = 2.5 }
+
+[[step]]
+name = "hook the chain"
+drive = { joint = "c.stage1", to = 0.0 }
+wait = { hook_contact = "chain_blue_center" }
+timeout = 5.0
+
+[[step]]
+name = "pull up"
+wait = { joint_at = { joint = "c.stage1", value = 0.0, tol = 0.01 } }
+timeout = 5.0
+
+[[step]]
+name = "hang"
+wait = { time = 5.0 }

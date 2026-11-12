@@ -145,12 +145,21 @@ function newShuffle() {
   setTest({ setup: s });
 }
 
-// Setup's partner robot, [setup] partner: a table puts one ahead of the robot; false hides the robot config's own
-// [partner] (the palette's robot_partner); with neither key the config decides.
+// Setup's partner robot, [setup] partner: a table puts one ahead of the robot, or with `hang` hangs it from one of the
+// field's chains (the palette's chains) `along_in` from its low point; false hides the robot config's own [partner]
+// (the palette's robot_partner); with neither key the config decides.
 const FACING = () => [[0, t("the same way")], [180, t("toward me")], [90, t("sideways")]];
 const PARTNER = { ahead_in: 60, heading_deg: 0, brake: true };      // a new partner's: 60 in ahead, facing the same way
 // (ahead_in is inches in the file, whatever the Units setting: a typed 101.6 mm writes 4)
+const PARTNER_ALONG_IN = 18;    // choice: a new hanging partner's place, 18 in from the chain's low point (inches): on 2024 a
+// stock partner fits only within about 25.6 in of it, between the STAGE legs
+const PARTNER_ACROSS_IN = -2;   // choice: 2 in to the chain's right: every 2024 chain has its STAGE core on its left
 const ownPartner = () => !!(T.state && T.state.palette && T.state.palette.robot_partner);
+// the robot file's own partner's hang ({hang, along_in, across_in}), or null: it stands, or there's none
+const ownHang = () => (T.state && T.state.palette && T.state.palette.robot_partner_hang) || null;
+// what Setup's partner is now: Setup's own table, else the robot file's hang when it hangs
+const partnerNow = (s) => (s.partner && typeof s.partner === "object" ? s.partner
+  : s.partner === undefined && ownPartner() && ownHang() ? { ...ownHang() } : {});
 function partnerOn() {
   const p = (headOf(T.ws).setup || {}).partner;
   return p === undefined ? ownPartner() : p !== false;
@@ -164,14 +173,23 @@ function setPartnerOn(on) {
 }
 function setPartner(key, v) {
   const s = setupOf();
-  s.partner = { ...PARTNER, ...(s.partner && typeof s.partner === "object" ? s.partner : {}), [key]: v };
+  const was = partnerNow(s);
+  s.partner = was.hang ? { ...was, [key]: v } : { ...PARTNER, ...was, [key]: v };     // a hanging one has no ahead_in
+  setTest({ setup: s });
+}
+// Hangs on: a chain hangs the partner from it (its place and heading are the chain's); "" stands it ahead of the robot
+function setPartnerHang(hold) {
+  const s = setupOf();
+  const was = partnerNow(s);
+  s.partner = hold ? { hang: hold, along_in: was.along_in ?? PARTNER_ALONG_IN, across_in: was.across_in ?? PARTNER_ACROSS_IN }
+    : { ...PARTNER };
   setTest({ setup: s });
 }
 
 function partnerBox() {
   const on = partnerOn();
-  const p = { ...PARTNER, ...((headOf(T.ws).setup || {}).partner || {}) };
   const own = ownPartner() && !((headOf(T.ws).setup || {}).partner);     // the config's, placed where it says
+  const p = { ...PARTNER, ...((headOf(T.ws).setup || {}).partner || {}), ...(own ? ownHang() || {} : {}) };
   const parts = [h("legend", { text: t("Partner robot") }),
     h("p", { class: "hint", text: t("A second robot with no program of its own, to push, lift or drive around. It starts ahead of your robot, along the way your robot faces.") }),
     h("label", { class: "test-hook", for: "test-partner" },
@@ -179,12 +197,34 @@ function partnerBox() {
       h("span", { text: t("A partner robot") }))];
   if (on) {
     if (own) parts.push(h("p", { class: "hint", text: t("Where the robot file's {table} puts it, until you change it here.", { table: "[partner]" }) }));
+    const chains = (T.state && T.state.palette && T.state.palette.chains) || [];
+    const hanging = !!p.hang;
+    const grid = [];
+    if (chains.length) {        // a field with chains: the partner can hang from one
+      const hang = h("select", { id: "test-partner-hang", onchange: (e) => setPartnerHang(e.target.value) },
+        h("option", { value: "", text: t("no", { context: "partner" }) }),
+        ...chains.map((c) => h("option", { value: c, text: c })));
+      hang.value = hanging && chains.includes(p.hang) ? p.hang : "";
+      grid.push(h("label", { for: "test-partner-hang", text: t("Hangs on") }), hang);
+    }
+    if (hanging) {
+      grid.push(h("label", { for: "test-partner-along", text: t("along", { context: "partner" }) }),
+        h("div", { class: "row" }, measureBox("test-partner-along", (p.along_in ?? 0) * IN, "length",
+          t("Partner robot: along the chain from its low point ({unit})", { unit: units.name("length") }), (v) => setPartner("along_in", v), (si) => si / IN),
+        h("span", { text: units.name("length") })),
+        h("label", { for: "test-partner-across", text: t("across", { context: "partner" }) }),
+        h("div", { class: "row" }, measureBox("test-partner-across", (p.across_in ?? 0) * IN, "length",
+          t("Partner robot: to the side of the chain ({unit})", { unit: units.name("length") }), (v) => setPartner("across_in", v), (si) => si / IN),
+        h("span", { text: units.name("length") })));
+      parts.push(h("div", { class: "test-setup-grid" }, ...grid));
+      return h("fieldset", { class: "test-setup-partner" }, ...parts);
+    }
     const facing = FACING().some(([deg]) => deg === p.heading_deg) ? FACING()
       : [...FACING(), [p.heading_deg, t("turned {degrees}°", { degrees: fmt(p.heading_deg) })]];
     const sel = h("select", { id: "test-partner-facing", onchange: (e) => setPartner("heading_deg", Number(e.target.value)) },
       ...facing.map(([deg, text]) => h("option", { value: String(deg), text })));
     sel.value = String(p.heading_deg);
-    parts.push(h("div", { class: "test-setup-grid" },
+    parts.push(h("div", { class: "test-setup-grid" }, ...grid,
       h("label", { for: "test-partner-ahead", text: t("Ahead of my robot by") }),
       h("div", { class: "row" }, measureBox("test-partner-ahead", p.ahead_in * IN, "length",
         t("Partner robot: ahead of my robot by ({unit})", { unit: units.name("length") }), (v) => setPartner("ahead_in", v), (si) => si / IN),

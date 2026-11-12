@@ -1,7 +1,8 @@
 """`bench view`: a run played back in the MuJoCo viewer, slowed down, over and over until the window is closed.
 
 The run is simulated first (as `bench run` does), then its trace is replayed: each sample's qpos is set and
-`mj_forward` puts the bodies there. Parked pool pieces are made invisible so only the pieces in the bench show.
+`mj_forward` puts the bodies there. Parked pool pieces (rigid or flex) are made invisible so only the pieces in the
+bench show.
 """
 
 import copy
@@ -10,6 +11,7 @@ import time
 import mujoco
 import numpy as np
 
+from .build import pool_heights
 from .run import BenchResult
 
 PAUSE = 1.0  # s of wall time between replays
@@ -29,6 +31,7 @@ def play(result: BenchResult, slow: float = 0.25) -> None:
     lay = result.built.layout
     floor = lay.bounds[0][2]
     alpha = [m.geom_rgba[list(gs), 3].copy() for gs in lay.piece_geom_sets]
+    flex_alpha = m.flex_rgba[lay.flex_pieces, 3].copy()
     trace = result.trace
     if not trace:
         return
@@ -46,6 +49,9 @@ def play(result: BenchResult, slow: float = 0.25) -> None:
                     d.qpos[:] = qpos
                     for i, (a, gs) in enumerate(zip(lay.piece_qpos, lay.piece_geom_sets)):
                         m.geom_rgba[list(gs), 3] = alpha[i] if qpos[a + 2] > floor else 0.0
+                    if lay.flex_pieces:
+                        up = pool_heights(m, lay, qpos) > floor
+                        m.flex_rgba[lay.flex_pieces, 3] = np.where(up, flex_alpha, 0.0)
                     mujoco.mj_forward(m, d)
                 viewer.sync()
                 time.sleep(max(0.0, (t - prev) / slow))

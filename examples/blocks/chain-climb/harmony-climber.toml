@@ -1,0 +1,52 @@
+# The HARMONY climb's robot: climber-standin.toml with a third climber stage and a longer reach, starting 0.45 m to
+# the side of chain_blue_center's low point, so a partner can hang 0.45 m to the other side. Edit it with
+# `scrimmage edit {this file}`, or by hand.
+
+[model]
+timestep = 0.001
+
+[robot]
+standin = true   # the stand-in robot: a piece resting on its chassis or drive isn't stuck in your robot
+start_pose = [6.05, 3.6551, 180.0]   # choice: 0.45 m to the SOURCE side of blue_chain_center, facing the chain
+
+[battery]
+nominal_voltage = 12.5
+resistance = 0.02
+
+[lockstep]
+step = 0.005
+
+[range]
+file = "2024"
+floor_balls = false           # no NOTES: this example is only the climb
+
+[[part]]
+name = "drive"
+stock = "chassis"
+length = 0.66              # choice
+width = 0.6                # choice
+mass = 55.5                # choice: the robot weighs 60 kg in all, the climber included
+frame_height = 0.1         # choice
+
+[[part]]
+name = "dt"
+stock = "differential"
+attach = "drive.center"
+ids = { left = "PWM:0", right = "PWM:1" }
+
+[[part]]
+name = "c"
+stock = "climber"
+attach = "drive.top"
+pos = [-0.06, 0.0, 0.0]    # choice: the hooks' seat over the robot's center (its center of mass); they open forward
+stages = 3                 # choice: three stages, to reach a chain the partner pulls up
+base_length = 0.35         # choice
+travel = 0.6               # choice: 0.2 m a stage
+tube = 0.0508              # choice: a 2 in tube
+count = 2                  # choice: two motors
+gearing = 12.0             # choice: 12 to 1
+hook_count = 2             # choice: two hooks
+hook_spacing = 0.2         # choice: 20 cm apart
+hook_depth = 0.08          # choice
+latch = "none"             # choice: it hangs on its motors
+ids = { extend = "PWM:2" }

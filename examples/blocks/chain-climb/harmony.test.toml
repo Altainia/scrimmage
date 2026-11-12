@@ -1,0 +1,36 @@
+[test]
+robot = "harmony-climber.toml"
+match = true
+chart = ["c.stage1", "hook_load", "climb.harmony"]
+
+[setup]
+partner = { hang = "chain_blue_center", along_in = 17.7, across_in = -2.0 }
+
+[[block]]
+do = "move"
+joint = "c.stage1"
+to = 0.19
+unit = "m"
+
+[[block]]
+do = "drive"
+distance = 0.31
+volts = 1.5
+
+[[block]]
+do = "move"
+joint = "c.stage1"
+to = 0.0
+unit = "m"
+
+[[block]]
+do = "wait_until"
+until = { touch = { robot = "hook", field = "chain_blue_center" } }
+
+[[block]]
+do = "wait"
+seconds = 5.0
+
+[[block]]
+do = "expect"
+that = { points = { phase = "endgame", at_least = 5.0 } }

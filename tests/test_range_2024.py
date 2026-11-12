@@ -1,7 +1,8 @@
 """The built-in 2024 range (scrimmage/testrange/ranges/2024.toml) and its worked example (examples/blocks/speaker):
 the range checks clean and builds, a pinch shooter's NOTE from the SUBWOOFER scores in the blue SPEAKER, a SPEAKER
-aim table has rows that still score in the world with the wheels 2% off, the AMP scores a NOTE, and the bench's
-docs example scores against the built-in range."""
+aim table has rows that still score in the world with the wheels 2% off, the AMP scores a NOTE, the bench's docs
+example scores against the built-in range, and the CHAINS (K5): they hang at their low point, the chain-climb example
+scores ONSTAGE, and with a partner hanging on the same CHAIN, HARMONY."""
 
 from __future__ import annotations
 
@@ -19,12 +20,13 @@ from scrimmage.bench import report
 from scrimmage.bench.run import run_bench
 from scrimmage.bench.spec import parse_bench
 from scrimmage.blocks.palette import problems
-from scrimmage.blocks.program import load
+from scrimmage.blocks.program import TestFileError, load
 from scrimmage.blocks.run import TestRun, world_for
 from scrimmage.motors import get_motor
 from scrimmage.protocol import HalState
 from scrimmage.testrange import aim, check
 from scrimmage.testrange.game import score
+from scrimmage.testrange.chain import lowest_vertex
 from scrimmage.testrange.spec import BUILTIN_RANGES, load_range
 from scrimmage.world import World
 
@@ -54,8 +56,8 @@ def test_the_range_checks_clean():
 
 def test_the_range_has_the_2024_game():
     """The `[game]`: 15 s auto, a 3 s pause, 135 s teleop, SPEAKER 5/2 and AMP 2/1 for the blue goals only (the red
-    ones count pieces, for 0 points), LEAVE 2 from blue_start, the rules, and ONSTAGE's 3 from [climb]; `range check`
-    shows it."""
+    ones count pieces, for 0 points), LEAVE 2 from blue_start, the rules, and ONSTAGE's 3 and HARMONY's 2 from [climb];
+    `range check` shows it."""
     rng = check.load("2024")
     g = rng.game
     assert (g.name, g.auto_s, g.pause_s, g.teleop_s) == ("2024 CRESCENDO", 15.0, 3.0, 135.0)
@@ -65,6 +67,7 @@ def test_the_range_has_the_2024_game():
     assert (g.rules.possession, g.rules.extension, g.rules.height) == (
         1, pytest.approx(12 * 0.0254), pytest.approx(48 * 0.0254))
     assert g.climb_points == {"ONSTAGE": 3.0}
+    assert g.harmony == 2.0
     red = score(g, [{"goal": "speaker_red", "scored_t": 1.0}], g.phases(0.0), None, None)    # a blue robot's shot
     assert red.total == 0.0 and [(i.source, i.count, i.points) for i in red.items] == [("speaker_red", 1, 0.0)]
     assert "game '2024 CRESCENDO' (15 s auto, 3 s pause, 135 s teleop, 2 goals score points)" in \
@@ -334,3 +337,81 @@ def test_a_low_camera_is_blocked_by_the_subwoofer(tmp_path):
     r = TestRun(world_for(program), program).run()
     assert r.status == "check failed" and [c["passed"] for c in r.checks] == [False], r.checks
     assert r.cameras["front_cam"][-1][1] == []
+
+
+# ------------------------------------------------------------------------------------------------ the CHAINS (K5)
+
+CHAIN_EXAMPLE = ROOT / "examples" / "blocks" / "chain-climb"
+CHAIN_LOW = 0.7176      # m: M 5.5, a CHAIN's lowest point, 2 ft 4 1/4 in
+TRIM_TELEOP_S = 10.0    # s: choice: the HARMONY test's teleop, long enough to hold the hang past the pause
+
+
+def test_the_chains_hang_at_their_low_point():
+    """The six CHAINS are `kind = "chain"`: after 2 s at rest, each one's lowest vertex is at the manual's 28.25 in
+    (within 1 mm), under its own center."""
+    cfg = tomllib.loads(ROBOT.read_text(encoding="utf-8"))
+    cfg["range"] = {**cfg["range"], "floor_balls": False}
+    w = World(cfg, EXAMPLE)
+    m, d = w.model, w.data
+    chains = w.parts.layout.chains
+    assert sorted(chains) == ["chain_blue_center", "chain_blue_left", "chain_blue_right", "chain_red_center",
+                              "chain_red_left", "chain_red_right"]
+    for _ in range(2000):
+        w.step(HalState())
+    centers = {e.name: e.center for e in w.parts.range.elements if e.name in chains}
+    for name, flex in chains.items():
+        low = lowest_vertex(m, d, flex.flex)
+        assert low[2] == pytest.approx(CHAIN_LOW, abs=0.001), name
+        assert low[:2] == pytest.approx(centers[name], abs=0.01), name
+
+
+def test_the_chain_climb_example_scores_onstage():
+    """examples/blocks/chain-climb/onstage.test.toml: from blue_chain_center, the stock climber reaches 0.14 m, the
+    robot drives 0.31 m, pulls down onto chain_blue_center and hangs 5 s: ONSTAGE, off the carpet, hanging from the
+    chain."""
+    program = load(CHAIN_EXAMPLE / "onstage.test.toml")
+    world = world_for(program)
+    assert problems(program, world) == []
+    r = TestRun(world, program).run()
+    assert r.status == "finished", r.outcome
+    assert [c["passed"] for c in r.checks] == [True, True]
+    assert [c["text"] for c in r.checks] == ["the robot hangs at ONSTAGE", "the robot hangs from chain_blue_center"]
+
+
+def test_the_harmony_example_scores_5_in_the_endgame(tmp_path):
+    """examples/blocks/chain-climb/harmony.test.toml, a match: a partner hangs 17.7 in along chain_blue_center and the
+    robot climbs the same chain 0.45 m the other way. The endgame scores ONSTAGE's 3 and HARMONY's 2 (one other
+    robot), scored at the match's end, so the robot must stay hung through the disabled pause and teleop. Run on a
+    copy of the 2024 range with 10 s of teleop (TRIM_TELEOP_S), not 135: the whole match is about 85 s of wall time,
+    and this one about 15 s; the example itself plays the real match."""
+    for name in ("harmony.test.toml", "harmony-climber.toml"):
+        (tmp_path / name).write_text((CHAIN_EXAMPLE / name).read_text(encoding="utf-8"), encoding="utf-8")
+    rng, n = re.subn(r"(?m)^teleop_seconds = 135 ", f"teleop_seconds = {TRIM_TELEOP_S} ",
+                     Path(BUILTIN_RANGES["2024"]).read_text(encoding="utf-8"))
+    assert n == 1
+    (tmp_path / "range.toml").write_text(rng, encoding="utf-8")
+    robot = tmp_path / "harmony-climber.toml"
+    text = robot.read_text(encoding="utf-8")
+    assert text.count('file = "2024"') == 1
+    robot.write_text(text.replace('file = "2024"', 'file = "range.toml"'), encoding="utf-8")
+    program = load(tmp_path / "harmony.test.toml")
+    world = world_for(program)
+    assert problems(program, world) == []
+    assert world.parts.range.game.teleop_s == TRIM_TELEOP_S
+    r = TestRun(world, program).run()
+    assert [c["passed"] for c in r.checks] == [True], r.outcome
+    assert r.points["endgame"] == 5.0
+    assert [(i["source"], i["points"]) for i in r.points["items"]] == [("climb", 3.0), ("harmony", 2.0)]
+
+
+def test_a_partner_0_9_m_along_the_center_chain_is_in_a_leg(tmp_path):
+    """The STAGE legs are FIRST's field CAD's (upright 12 in posts): a stock partner hanging 0.9 m (35.4 in) along
+    chain_blue_center reaches into stage_blue_leg2, and is refused, so the HARMONY example hangs it 0.45 m along."""
+    text = (CHAIN_EXAMPLE / "harmony.test.toml").read_text(encoding="utf-8")
+    assert "along_in = 17.7, across_in = -2.0" in text
+    (tmp_path / "harmony-climber.toml").write_text((CHAIN_EXAMPLE / "harmony-climber.toml").read_text("utf-8"),
+                                                   encoding="utf-8")
+    (tmp_path / "far.test.toml").write_text(text.replace("along_in = 17.7", "along_in = 35.4"), encoding="utf-8")
+    with pytest.raises(TestFileError) as e:
+        world_for(load(tmp_path / "far.test.toml"))
+    assert "starts inside obstacle stage_blue_leg2" in str(e.value)

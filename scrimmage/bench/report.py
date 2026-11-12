@@ -130,8 +130,11 @@ def _out_line(outlet: str, out: list[PieceOutcome], n: int) -> str:
 
 
 def jam_place(result: BenchResult, piece: PieceOutcome) -> str | None:
-    """The shape nearest where a piece stopped (within JAM_NEAR), or None."""
+    """The shape nearest where a piece stopped (within JAM_NEAR), or None. None for a flex piece: it has no geom to
+    measure from, and it may have stopped squashed out of its shape."""
     m, lay = result.built.model, result.built.layout
+    if lay.flex_pieces:
+        return None
     d = mujoco.MjData(m)
     a = lay.piece_qpos[piece.index]
     d.qpos[a:a + 3] = piece.path[-1][1:]
@@ -215,6 +218,17 @@ def _shaft_line(result: BenchResult) -> str | None:
     elif n > 2:
         line = t("{line} (the worst of {n} shafts)", line=line, n=n)
     return line
+
+
+def flex_line(bench) -> str | None:
+    """A flex piece's line (spec D9): its result is experimental, and its two numbers are estimates (spec D7)."""
+    piece = bench.piece
+    if not getattr(piece, "flex", False):
+        return None
+    return t("experimental (MuJoCo flex): the {piece} is a soft body fitted to its stiffness ({stiffness}) and "
+             "restitution ({restitution}), UNCALIBRATED estimates unless you measured them", piece=_name(piece.name),
+             stiffness=units.fmt(piece.stiffness, "spring"),
+             restitution=f"{piece.restitution:g}")
 
 
 def _time_line(result: BenchResult) -> str | None:
@@ -438,7 +452,8 @@ def _energy_line(result: BenchResult) -> str | None:
 
 def headlines(result: BenchResult, lands: list[tuple[PieceOutcome, Landing]] | None = None) -> list[str]:
     """Three to six lines for a room: a failed energy check first (nothing else can be trusted), then outcomes,
-    UNCALIBRATED last."""
+    UNCALIBRATED last. A flex piece's "experimental" line comes before the outcomes (after a failed energy check), as
+    a seventh line at most: it takes no outcome's place."""
     n = len(result.pieces)
     by_outlet: dict[str, list[PieceOutcome]] = {}
     for p in result.pieces:
@@ -460,7 +475,11 @@ def headlines(result: BenchResult, lands: list[tuple[PieceOutcome, Landing]] | N
     energy = _energy_line(result)
     if energy:
         lines.insert(0, energy)
-    return lines[:MAX_LINES - 1] + [uncalibrated(result)]
+    lines = lines[:MAX_LINES - 1]
+    flex = flex_line(result.bench)   # over and above the six, so it pushes no outcome out; after a failed energy check
+    if flex:
+        lines.insert(1 if energy else 0, flex)
+    return lines + [uncalibrated(result)]
 
 
 # ----------------------------------------------------------------------------------------------------- tables
@@ -496,6 +515,10 @@ def _tables(result: BenchResult, lands) -> dict[str, tuple[list[str], list[list]
     loads = (["shape", "peak_force_n", "peak_impulse_ns", "at_x_m", "at_y_m", "at_z_m"],
              [[ld.shape, ld.peak_force_n, ld.peak_impulse_ns, *(ld.at or (None,) * 3)]
               for ld in sorted(result.loads.values(), key=lambda ld: -ld.peak_force_n)])
+    if getattr(result.bench.piece, "flex", False):   # machine readers see the flex in the table too (spec D9)
+        pieces[0].append("model")
+        for row in pieces[1]:
+            row.append("flex")              # machine text, as the CSV's other values (pieces.csv is SI)
     out = {"pieces": pieces, "shafts": shafts, "loads": loads}
     fl = result.bench.flight
     if lands:
@@ -571,6 +594,8 @@ def write_results(result: BenchResult, out_dir: Path) -> Path:
     # of them is the UNCALIBRATED line, and the energy check
     data = {"title_lines": title_lines, "headlines": len(heads), "uncalibrated": True,
             "energy_failed": energy_failures(result) > 0}
+    if getattr(result.bench.piece, "flex", False):     # a flex run says so; any other keeps the file as it was
+        data["flex"] = True
     (out_dir / SUMMARY_DATA).write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
     return out_dir
 
@@ -596,8 +621,11 @@ def _summary(result: BenchResult, heads: list[str], tables) -> str:
     b = result.bench
     text = _title(b)
     text += ["", *heads, *(t("warning: {warning}", warning=w) for w in b.warnings), ""]
-    titles = {"pieces": t("Pieces"), "shafts": t("Shafts"), "loads": t("Loads (normal contact force on each part)"),
+    flex = getattr(b.piece, "flex", False)
+    titles = {"pieces": t("Pieces: experimental (MuJoCo flex)") if flex else t("Pieces"), "shafts": t("Shafts"),
+              "loads": t("Loads (normal contact force on each part)"),
               "landings": t("Landings (the launcher model's ball flight, from the outlet)") if b.piece.ball is not None
+              else t("Landings (flown as the rigid piece from the flex's exit: drag on its shadow, no lift)") if flex
               else t("Landings (a rigid piece's flight from the outlet: drag on its shadow, no lift)")}
     for name, table in tables.items():
         text += [titles[name], _text_table(*_shown_table(*table)), ""]

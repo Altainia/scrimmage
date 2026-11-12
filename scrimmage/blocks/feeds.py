@@ -39,6 +39,7 @@ from pathlib import Path
 import numpy as np
 
 from .. import i18n
+from ..flexcontact import contact_ids, id_body
 from ..testrange.balls import AT_REST_SPEED, BallState
 
 STUCK_S = 0.5           # s at rest on the robot to be stuck (the spec's number); also how long a piece rests to settle
@@ -109,8 +110,8 @@ class Outcomes:
         counts = robot.copy()
         if standin:
             counts[list(standin_bodies(world))] = False
-        self._robot_geom = robot[m.geom_bodyid]          # geom id -> on the robot
-        self._counting_geom = counts[m.geom_bodyid]      # geom id -> on a robot body that counts
+        self._robot_geom = robot[id_body(m)]             # contact id -> on the robot (flexcontact; a flex isn't)
+        self._counting_geom = counts[id_body(m)]         # contact id -> on a robot body that counts
         j = int(m.body_jntadr[world.robot_body])
         self._robot_q = int(m.jnt_qposadr[j]) if j >= 0 else None
         self._robot_v = int(m.jnt_dofadr[j]) if j >= 0 else None
@@ -144,7 +145,7 @@ class Outcomes:
         on_robot: dict[int, bool] = {}          # ball -> it touches the robot
         support: dict[int, int] = {}            # ball -> a counting robot body it touches
         if d.ncon:
-            geom = d.contact.geom[:d.ncon]
+            geom = contact_ids(self.model, d)
             ball = b.ball_of_geom(geom)
             for side in (0, 1):
                 for c in np.flatnonzero(ball[:, side] >= 0).tolist():

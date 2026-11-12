@@ -1,0 +1,7 @@
+{
+  "README": "source: fitted by bench/flex_note.py fit_flex for the 2024-note preset (stiffness 2000 N/m, restitution 0.3) with no shipped file, MuJoCo 4.0.0, 2026-11-11: the squeeze 12.83 N against 12.70 N (+1.0 %), the drop e = 0.293. Both met their tolerance at the fit's first try, the soft-note spike's 16x6 values. Keys are repr(stiffness)_repr(restitution); the table is used only while fit_version, mesh and timestep equal flex_note's FIT_VERSION, MESH and FLEX_TIMESTEP.",
+  "fit_version": 1,
+  "mesh": [16, 6],
+  "timestep": 0.0005,
+  "2000.0_0.3": {"E": 12235.0, "beta": 0.0025}
+}

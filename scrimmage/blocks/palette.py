@@ -14,7 +14,9 @@ world's own partner (`robot_partner`), unless the test's [setup] partner, given,
 `sensor.<name>` for each of the robot's [[sensor]]s, `sensors` ({name, kind}): 0 or 1 for a beam break (1 broken),
 inches for a distance sensor, for a color sensor the index in `sensor_colors` (the named colors a `sees` can
 pick) of the color it sees, NaN while it sees none, and for a camera how many tags it sees; and `tags`, the IDs of the
-range's AprilTags, which a camera's sees_tag can pick ([] on a range without them). A
+range's AprilTags, which a camera's sees_tag can pick ([] on a range without them); and on an "off-carpet" range
+(2024's ONSTAGE), `climb.harmony` (HARMONY points) and `climb.hold.<chain>.robots` for each of its chains, `chains`,
+which Setup's partner can hang from. A
 chart can also show `clearance.<element>` (in) for any of `elements`; it isn't in `signals`, as a run measures it
 only when the test names it (clearance.py).
 The field's pieces: `piece` (its default kind's preset), `own_pieces` (whether the field has game pieces of its own:
@@ -46,6 +48,7 @@ from .. import i18n
 from ..hal_drive import driven_joints
 from ..launcher.inputs import PRESETS
 from ..parts.grip import GRIP_MATERIALS
+from ..parts.partner import IN
 from ..parts.partner import SIGNALS as PARTNER_SIGNALS
 from ..sensors.colors import NAMED_COLORS
 from ..terrain.climb import robot_hooks
@@ -225,9 +228,13 @@ def palette(world, hooks: list[str], setup: dict | None = None) -> dict:
     moving = moving_units(rng.elements) if rng is not None else {}
     signals += [f"element.{n}" for n in moving]                    # deg (hinged) or in (sliding), 0 at rest
     robot_partner = getattr(world, "partner", None) is not None
+    own_hang = world.parts.partner.hang if robot_partner and world.parts is not None else None
     partner = setup["partner"] is not False if setup and "partner" in setup else robot_partner
     if partner:
         signals += list(PARTNER_SIGNALS)                           # in, deg, in: from where it settled
+    chains = sorted(getattr(layout, "chains", {})) if layout is not None else []
+    if rule is not None and rule.rule == "off-carpet":
+        signals += ["climb.harmony", *(f"climb.hold.{c}.robots" for c in chains)]     # points, robots
     sens = sensors(world)
     signals += [f"sensor.{s['name']}" for s in sens]       # 0/1 (beam), in (distance), a color's index, tags seen
     dt = drivetrain(world, driven)
@@ -241,10 +248,15 @@ def palette(world, hooks: list[str], setup: dict | None = None) -> dict:
         "parts": sorted(i.name for i in parts.instances) if parts is not None else [],
         "hooks": hook_list,
         "bars": bars,
+        "chains": chains,                   # the field's chains, which Setup's partner can hang from
         "elements": elements,
         "moving_elements": [{"name": n, "unit": u} for n, u in moving.items()],     # hinged ("deg"), sliding ("in")
         "partner": partner,                 # a partner robot ([partner], or Setup's partner)
         "robot_partner": robot_partner,     # the world's own partner: the Test tab's is the robot config's [partner]
+        # the robot config's own partner's hang, as Setup writes one (in), or None: it stands, or there's none
+        "robot_partner_hang": None if own_hang is None else {
+            "hang": own_hang.hold, "along_in": round(own_hang.along / IN, 6),
+            **({"across_in": round(own_hang.across / IN, 6)} if own_hang.across else {})},
         "goals": sorted(g.name for g in rng.goals) if rng is not None else [],
         "zones": [z.name for z in rng.zones] if rng is not None else [],     # [[zone]]s, for in_zone
         "game": rng is not None and rng.game is not None,     # the range has a [game]: a test can be a match

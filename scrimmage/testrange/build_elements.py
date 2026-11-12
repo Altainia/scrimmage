@@ -40,6 +40,9 @@ moves all of it (the real rung bends most at mid-span). Its posts, `element.<nam
 A box is a welded body `element.<name>` with one box geom, `element.<name>.box`: in ELEMENT_GROUP when it is ground,
 else NON_GROUND_GROUP.
 
+A chain is a hanging 1D flex `element.<name>` on vertex bodies `element.<name>.v<i>`, with a bead per vertex to draw
+it (testrange/chain.py has its model).
+
 A rod is a welded body `element.<name>` holding one geom, `element.<name>.rod`: a capsule (exact contacts, its
 rounded ends reaching the base and tip) or, for a square section, a box, its axis from base to tip (rod_parts). It is
 structure, not ground.
@@ -85,8 +88,8 @@ import numpy as np
 
 from ..parts.field import ELEMENT_GROUP, FIELD_BITS
 from .build import FUNNEL_RGBA, PLATE_FRICTION, RangeLayout, _quat, _rpy
-from .elements import (IN, POST, Bar, Box, Bump, Element, Hinged, Platform, Ramp, Rod, Sliding, Switch, hinge_axis,
-                       Mesh, panel_center, panel_inertia, panel_size)
+from .elements import (IN, POST, Bar, Box, Bump, Chain, Element, Hinged, Platform, Ramp, Rod, Sliding, Switch,
+                       hinge_axis, Mesh, panel_center, panel_inertia, panel_size)
 from .spec import _rot_z
 from .station import CHUTE_PLATE, CHUTE_WALL_BALLS, Station
 
@@ -412,6 +415,10 @@ def add_element(spec: mujoco.MjSpec, e: Element) -> None:
     if isinstance(e, Mesh):
         _mesh(spec, e)
         return
+    if isinstance(e, Chain):
+        from .chain import add_chain     # chain.py imports this module
+        add_chain(spec, e)
+        return
     pos = np.array([e.center[0], e.center[1], 0.0])
     quat = _quat(_rpy((0.0, 0.0, e.yaw_deg)))
     if isinstance(e, Platform):
@@ -465,9 +472,13 @@ def moving_joint(model: mujoco.MjModel, e: Hinged | Sliding) -> int:
 
 def fill_layout(layout: RangeLayout, model: mujoco.MjModel, elements) -> None:
     """The layout's element records, once the model is compiled: platforms', switches' and moving elements' joint
-    addresses, and each bar's pipe geoms."""
+    addresses, each bar's pipe geoms, and each chain (a hold with no geoms, in `bars` in element order, and its
+    ChainLayout in `chains`)."""
+    from .chain import chain_layout
     layout.platforms = {e.name: platform_joints(model, e.name) for e in elements if isinstance(e, Platform)}
     layout.switches = {e.name: switch_joint(model, e.name) for e in elements if isinstance(e, Switch)}
-    layout.bars = {e.name: [f"element.{e.name}.pipe"] for e in elements if isinstance(e, Bar)}
+    layout.bars = {e.name: [f"element.{e.name}.pipe"] if isinstance(e, Bar) else []
+                   for e in elements if isinstance(e, (Bar, Chain))}
+    layout.chains = {e.name: chain_layout(model, e) for e in elements if isinstance(e, Chain)}
     layout.rods = {e.name: e for e in elements if isinstance(e, Rod)}
     layout.moving = {e.name: moving_joint(model, e) for e in elements if isinstance(e, (Hinged, Sliding))}

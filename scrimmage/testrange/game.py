@@ -13,7 +13,8 @@
     height_in = 48
 
 Every key is optional but the three phase lengths. A goal that `points` doesn't list still counts pieces, for 0
-points. `climb_points` is a copy of the range's `[climb] levels`, so scoring needs only the game.
+points. `climb_points` is a copy of the range's `[climb] levels`, and `harmony` of its `[climb] harmony` (the
+"off-carpet" rule's points for each robot beyond the first on the robot's hold), so scoring needs only the game.
 """
 
 from __future__ import annotations
@@ -59,6 +60,7 @@ class Game:
     leave: Leave | None = None
     rules: Rules | None = None
     climb_points: dict[str, float] = field(default_factory=dict)
+    harmony: float = 0.0            # points for each robot beyond the first on the robot's hold ([climb] harmony)
     goals: tuple[str, ...] = ()     # the range's goal names, in its order: the order a score's items come in
 
     @property
@@ -140,7 +142,7 @@ def parse_game(path, table, goals, zones, climb) -> Game:
     ordered = {g.name: points[g.name] for g in goals if g.name in points}
     return Game(name=name, auto_s=auto_s, pause_s=pause_s, teleop_s=teleop_s, points=ordered, leave=leave,
                 rules=rules, climb_points=dict(climb.levels) if climb is not None else {},
-                goals=tuple(g.name for g in goals))
+                harmony=climb.harmony if climb is not None else 0.0, goals=tuple(g.name for g in goals))
 
 
 def leave_zone(game: Game, zones):
@@ -173,7 +175,7 @@ class Phases:
 
 @dataclass(frozen=True)
 class PointsItem:
-    source: str     # a goal's name, "leave" or "climb"
+    source: str     # a goal's name, "leave", "climb" or "harmony"
     phase: str      # "auto", "teleop", "endgame" or "pause"
     count: int
     points: float
@@ -196,13 +198,15 @@ class Points:
 
 
 def score(game: Game, log: list[dict], phases: Phases, left: bool | None, level: str | None,
-          at: float | None = None, held: bool = False) -> Points:
+          at: float | None = None, held: bool = False, harmony: float = 0.0) -> Points:
     """The points of a run, read from `ball_log()`'s rows (never written to). A piece scored in the pause scores
     nothing (its item says so); one scored outside the match isn't counted. `left` is whether LEAVE was earned and
     `level` the climb level held when the match ended (None: not earned or not decided, 0 points). With `at`, only
     pieces with `scored_t <= at` count, LEAVE once auto has ended by `at`, and the endgame once the match has ended
     by `at`; with `held` too, the endgame is `level`'s points whenever it is read (the score if the match ended
-    then)."""
+    then). `harmony` is the HARMONY points held when the match ended (the climb monitor's climb.harmony), scored as
+    the level is, as an item after the climb's: ("harmony", "endgame", the other robots on the hold, points), the
+    count being `harmony` over the game's points per robot (R8, F4)."""
     counts: dict[tuple[str, str], int] = {}
     for row in log:
         goal, t = row.get("goal"), row.get("scored_t")
@@ -231,4 +235,8 @@ def score(game: Game, log: list[dict], phases: Phases, left: bool | None, level:
         pts = game.climb_points.get(level, 0.0)
         items.append(PointsItem("climb", "endgame", 1, pts))
         endgame += pts
+    if harmony > 0.0 and (at is None or held or at >= phases.teleop[1]):
+        others = round(harmony / game.harmony) if game.harmony > 0.0 else 0
+        items.append(PointsItem("harmony", "endgame", others, harmony))
+        endgame += harmony
     return Points(auto, teleop, endgame, auto + teleop + endgame, tuple(items))

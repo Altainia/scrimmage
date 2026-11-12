@@ -1,0 +1,29 @@
+{
+ "README": "source: examples/bench/note_pinch_flex.toml (3000 rpm) run once on MuJoCo 4.0.0 (K5 Task 8): its exit state as the outlet read it (the center, m; the Kabsch rotation, w x y z; the velocity, m/s; the spin, rad/s, world frame). tests/test_bench_flex_note.py::test_the_flex_shot_golden pins the speed to 2 % (R15), the angles to 0.5 degrees and the spin to 0.5 rad/s: a change in MuJoCo's discrete integrator moves it",
+ "speed_m_s": 7.937757418174821,
+ "elevation_deg": -3.530721161803926,
+ "yaw_deg": 0.29743210900098593,
+ "spin_rad_s": [
+  0.2782783388044405,
+  2.744767086168773,
+  1.1587317052944783
+ ],
+ "exit_pos_m": [
+  0.25447191506616496,
+  0.0013766706093868988,
+  -0.010656108436255524
+ ],
+ "exit_quat": [
+  0.9989190011111425,
+  0.0022501106035870077,
+  0.03776251130063299,
+  0.027014051189303293
+ ],
+ "exit_velocity_m_s": [
+  7.922584181275575,
+  0.04112784762249769,
+  -0.4888365990199336
+ ],
+ "t_out_s": 0.8139999999999658,
+ "tilt_deg": 4.335974751531771
+}

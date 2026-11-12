@@ -2,12 +2,15 @@
 piece preset (the 2024 NOTE), parsed into spec.py's Piece.
 """
 
+import math
 from dataclasses import replace
 from pathlib import Path
 
+import numpy as np
+
 from .. import i18n
 from ..launcher.inputs import PRESETS, Ball
-from ..testrange.pieces import _AIR, air_given, kind_preset, parse_kind
+from ..testrange.pieces import _AIR, air_given, kind_preset, parse_kind, ring_diameters
 from ..testrange.spec import RangeError, _Reader, piece_box
 from .spec import PIECE_FRICTION, _REQ, Piece, Vec, _Table, _resolve_path, _units, _valid_keys
 
@@ -74,6 +77,9 @@ def _parse_piece_shape(raw, base_dir: Path, warned: list[str]) -> Piece:
     shape = t.text("shape", "sphere" if preset else _REQ, one_of=("sphere", "box", "cylinder", "disc", "ring", "mesh"))
     if shape == "disc":  # a disc is a short cylinder
         shape = "cylinder"
+    flex = t.flag("flex")
+    if flex and shape != "ring":
+        raise _not_a_ring(t, shape)
     if preset and shape != "sphere":
         raise t.err(i18n.t("{table} preset {preset} is a ball; its shape is sphere, not {shape}", table=t.label,
                            preset=repr(preset), shape=shape))
@@ -82,7 +88,7 @@ def _parse_piece_shape(raw, base_dir: Path, warned: list[str]) -> Piece:
                            "ball preset); use {kind_setting} as a rigid stand-in (rigid pieces may give their own "
                            "contact `{stiffness}`)", table=t.label, shape=shape, kind_setting="kind = \"rigid\"",
                            stiffness="stiffness"))
-    ball_given = [k for k in _BALL_KEYS if k in t.t]
+    ball_given = [k for k in _BALL_KEYS if k in t.t and not (flex and k == "restitution")]
     if kind == "rigid" and ball_given:
         raise t.err(i18n.t("{table} is rigid, so {key} does not apply (ball numbers are for squishy pieces); a rigid "
                            "piece's own contact stiffness is `{stiffness}` (N/m)", table=t.label, key=ball_given[0],
@@ -143,16 +149,59 @@ def _parse_piece_shape(raw, base_dir: Path, warned: list[str]) -> Piece:
 
 
 # the keys a piece preset takes beside `preset`: the rest are the preset's own
-_PRESET_KEYS = ("preset", "name", "kind", "shape", "stiffness", "drag_coefficient", "spin_damping")
+_PRESET_KEYS = ("preset", "name", "kind", "shape", "stiffness", "drag_coefficient", "spin_damping", "flex",
+                "restitution")
+# a flex is a torus: a ring whose length (along its axis) is its wall's width, (diameter - inner_diameter) / 2
+FLEX_TORUS_TOL = 0.05  # choice: the 2024 NOTE's is exact; a flat ring (the 2019 HATCH PANEL) is far off
+
+
+def _not_a_ring(t: _Table, shape: str):
+    return t.err(i18n.t("{table} has flex, but a flex piece must be a ring, such as the 2024 NOTE, not a "
+                        "{shape}", table=t.label, shape=shape), "flex")
 
 
 def _kind_piece(t: _Table, name: str, kind, size: tuple) -> Piece:
     """A rigid bench piece that is a range kind: its mass, inertia (the full tensor's diagonal; the off-diagonal
     moments go to the builder through the kind), solids and contact stiffness (a piece preset's own, such as the 2024
-    NOTE's; a `stiffness` key overrides it) are the kind's."""
+    NOTE's; a `stiffness` key overrides it) are the kind's. With `flex = true` (a ring only) it is a flex NOTE, and
+    its `restitution` (the kind's own unless given) is read too: a rigid piece has no use for it."""
+    flex = t.flag("flex")
+    if flex and kind.shape != "ring":
+        raise _not_a_ring(t, kind.shape)
+    restitution = None
+    if "restitution" in t.t:
+        if not flex:
+            raise t.err(i18n.t("{table} restitution is read only for a flex piece (add {flex_setting}); a rigid "
+                               "piece's bounce comes from MuJoCo's contact", table=t.label,
+                               flex_setting="flex = true"), "restitution")
+        restitution = t.num("restitution", positive=True)
+        if not restitution < 1.0:
+            raise t.err(i18n.t("{table} restitution must be above 0 and below 1, not {value}", table=t.label,
+                               value=repr(t.t["restitution"])), "restitution")
+    elif flex:
+        restitution = kind.restitution
+    if flex:
+        outer, inner = ring_diameters(kind)
+        a = np.asarray(kind.axis, dtype=float)
+        pts = kind._points @ (a / np.linalg.norm(a))
+        length, wall = float(np.ptp(pts)), (outer - inner) / 2.0 if inner is not None else math.inf
+        if not abs(length - wall) <= FLEX_TORUS_TOL * wall:
+            raise t.err(i18n.t("{table} has flex, but a flex piece is a round tube bent into a ring (as the 2024 "
+                               "NOTE is): its length must equal half the difference of its two diameters ({wall} "
+                               "mm), not {length} mm", table=t.label, wall=f"{wall * 1000:.1f}",
+                               length=f"{length * 1000:.1f}"), "flex")
+    stiffness = t.num("stiffness", kind.stiffness, positive=True)
+    if flex and stiffness is None:
+        raise t.err(i18n.t("{table} has {flex_setting} but no stiffness: add {stiffness_setting} (the 2024 NOTE's "
+                           "estimate is 2000)", table=t.label, flex_setting="flex = true",
+                           stiffness_setting="stiffness = <N/m>"), "stiffness")
+    if flex and restitution is None:
+        raise t.err(i18n.t("{table} has {flex_setting} but no restitution: add {restitution_setting} (the 2024 "
+                           "NOTE's estimate is 0.3)", table=t.label, flex_setting="flex = true",
+                           restitution_setting="restitution = <above 0, below 1>"), "restitution")
     return Piece(name=name, kind="rigid", shape=kind.shape, size=size, mass=kind.mass,
-                 inertia=tuple(kind.inertia[:3]), ball=None,
-                 stiffness=t.num("stiffness", kind.stiffness, positive=True), mesh=None, units=None, rigid_kind=kind)
+                 inertia=tuple(kind.inertia[:3]), ball=None, stiffness=stiffness, mesh=None, units=None,
+                 rigid_kind=kind, flex=flex, restitution=restitution)
 
 
 def _preset_piece(t: _Table, preset: str) -> Piece:

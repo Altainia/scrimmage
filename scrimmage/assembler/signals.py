@@ -13,9 +13,9 @@ def signals(world) -> dict[str, list[str]]:
     they are (score, score.<goal> per goal, fired, held, on_field, element.<platform>.angle per platform,
     element.<name> per hinged or sliding element). The climb signals, for a robot with hooks (a stock climber) or on
     a range with a bar or a switch: climb.extension and climb.height in `fixed`, with climb.hook_load and
-    climb.hook.<hook>.load per hook; climb.hanging, level, points and swing in `range`, with a bar or a switch. (A
-    scenario may use extension and height on any robot.) With a [partner], `fixed` has partner.height, tilt and
-    moved."""
+    climb.hook.<hook>.load per hook; climb.hanging, level, points, hold, harmony and swing in `range`, with a bar, a
+    chain or a switch. (A scenario may use extension and height on any robot.) With a [partner], `fixed` has
+    partner.height, tilt and moved."""
     from ..terrain.climb import robot_hooks
     from ..terrain.monitor import ROBOT_SIGNALS, WHEEL_SIGNALS
     from ..testrange.elements import Platform, moving_units
@@ -47,5 +47,6 @@ def signals(world) -> dict[str, list[str]]:
         if rng.range.game is not None:
             out["range"] += ["points", "points.auto", "points.teleop", "points.endgame"]
         if holds:
-            out["range"] += ["climb.hanging", "climb.level", "climb.points", "climb.swing"]
+            out["range"] += ["climb.hanging", "climb.level", "climb.points", "climb.hold", "climb.harmony",
+                             "climb.swing"]
     return out

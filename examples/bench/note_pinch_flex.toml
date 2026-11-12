@@ -1,0 +1,73 @@
+# A 2024 NOTE fed flat between two 4 in wheels that pinch it through a 1.5 in gap, its 2 in thickness squeezed a
+# quarter: the soft-note spike's pinch shooter (K5, spec D10). With `flex = true` the NOTE is a soft flex body that
+# squashes as it goes through, not the rigid stand-in. Experimental (MuJoCo flex), and about 100 times slower than
+# the rigid NOTE: sweep on the rigid one first, then confirm on this.
+#
+#   scrimmage bench run examples/bench/note_pinch_flex.toml
+
+[bench]
+name = "note pinch flex"
+author = "Jordan"
+idea = "squeeze the NOTE a quarter between two wheels and see how fast the soft foam really leaves"
+notes = "the soft-note spike's pinch; the NOTE's stiffness and bounce are the preset's estimates"
+
+[piece]
+preset = "2024-note"
+flex = true
+
+[shaft.bottom]
+motor = "KrakenX60"
+control = "speed"
+target_rps = 50                  # 3000 rpm
+kP = 0.5
+wheel_inertia = 0.005            # choice: reaches 83 rps in the 2 s spin-up (1.0 doesn't); holds within 1.3 %
+
+[shaft.top]
+motor = "KrakenX60"
+control = "speed"
+target_rps = 50
+kP = 0.5
+wheel_inertia = 0.005            # choice: as the bottom shaft's
+
+# 4 in wheels 1.5 in apart at the nip: their axles 0.75 in + 2 in above and below the NOTE's middle
+[[wheel]]
+name = "bottom"
+shaft = "bottom"
+center_in = [0.0, 0.0, -2.75]
+diameter_in = 4.0
+width_in = 14.0
+tread = "60A"
+
+[[wheel]]
+name = "top"
+shaft = "top"
+center_in = [0.0, 0.0, 2.75]
+axis = [0.0, -1.0, 0.0]          # turned the other way, so both treads drive the NOTE forward
+diameter_in = 4.0
+width_in = 14.0
+tread = "60A"
+
+# A floor under the feed, as a real shooter has: without one the NOTE's tail sags.
+# Its top is level with the NOTE's underside, and it ends 1.5 in before the wheels.
+[[plate]]
+name = "feed_floor"
+center_in = [-9.25, 0.0, -1.25]
+size_in = [15.5, 16.0, 0.5]
+
+# The NOTE starts with its middle 8.5 in before the wheels and its front edge just touching them, pushed at 2 m/s.
+# It starts 0.02 in above the floor, so it doesn't start inside it.
+[[inlet]]
+name = "feed"
+center_in = [-8.5, 0.0, 0.02]
+size = [0.001, 0.001, 0.001]
+count = 1
+velocity = [2.0, 0.0, 0.0]
+
+# the exit is read as the NOTE's middle passes 10 in beyond the axles
+[[outlet]]
+name = "shot"
+center_in = [16.0, 0.0, 0.0]
+size_in = [12.0, 24.0, 24.0]
+
+[run]
+duration = 3.0

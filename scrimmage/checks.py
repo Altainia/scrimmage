@@ -23,7 +23,8 @@ CRASH_PATTERN = re.compile(r"^Traceback \(most recent call last\)|^Exception in 
                            re.MULTILINE)
 SIGNALS_HELP = ("battery, speed, motor.<name>.current|command, joint.<name>.position|velocity, "
                 "robot.ground_gap|wheels_down|air_time|pitch|roll|tilt|z|stranded|tipped, "
-                "climb.hanging|level|points|swing|hook_load|extension|height, climb.hook.<hook>.load, "
+                "climb.hanging|level|points|hold|harmony|swing|hook_load|extension|height, climb.hook.<hook>.load, "
+                "climb.hold.<hold>.robots, "
                 "hal:<type>/<device>/<key>, nt:<topic>, and on a test range score, score.<goal>, fired, held, on_field, "
                 "element.<platform>.angle, element.<hinged or sliding element>, "
                 "with a [game] points, points.auto|teleop|endgame, with a [partner] partner.height|tilt|moved, "
@@ -201,12 +202,21 @@ def _partner_signal(name: str, world) -> Signal:
 
 
 def _climb_signal(name: str, world) -> Signal:
-    """climb.<field> and climb.hook.<hook>.load: the climb signals (scrimmage/terrain/climb.py), peak-held between
-    ticks."""
+    """climb.<field>, climb.hook.<hook>.load and climb.hold.<hold>.robots: the climb signals
+    (scrimmage/terrain/climb.py), peak-held between ticks."""
     from .terrain.climb import CLIMB_SIGNALS, EXTENT_SIGNALS, robot_hooks
     make = getattr(world, "climb_monitor", None)
     field = name[len("climb."):]
-    if field.startswith("hook.") and field.endswith(".load"):
+    if field.startswith("hold.") and field.endswith(".robots"):
+        if make is None:
+            raise ScenarioError(t("{signal} needs a simulated robot", signal=name))
+        hold = field[len("hold."):-len(".robots")]
+        holds = _holds_in_order(world)
+        if hold not in holds:
+            raise ScenarioError(t("unknown signal {signal}: the range's holds are {holds} (its bars, switches and "
+                                  "chains), each read as climb.hold.<hold>.robots", signal=repr(name),
+                                  holds=", ".join(holds) or t("none")))
+    elif field.startswith("hook.") and field.endswith(".load"):
         if make is None:
             raise ScenarioError(t("{signal} needs a simulated robot", signal=name))
         hook = field[len("hook."):-len(".load")]
@@ -216,14 +226,25 @@ def _climb_signal(name: str, world) -> Signal:
                                   "<part>.hook<i>), each read as climb.hook.<hook>.load", signal=repr(name),
                                   hooks=", ".join(hooks) or t("none")))
     elif field not in CLIMB_SIGNALS:
-        raise ScenarioError(t("unknown signal {signal}: the climb signals are {signals} and climb.hook.<hook>.load",
-                              signal=repr(name), signals=", ".join("climb." + f for f in CLIMB_SIGNALS)))
+        raise ScenarioError(t("unknown signal {signal}: the climb signals are {signals}, climb.hook.<hook>.load and "
+                              "climb.hold.<hold>.robots", signal=repr(name),
+                              signals=", ".join("climb." + f for f in CLIMB_SIGNALS)))
     elif make is None:
         raise ScenarioError(t("{signal} needs a simulated robot", signal=name))
     mon = make()
     if field in EXTENT_SIGNALS:
         mon.track_extent()
     return Signal(name, lambda s: s.world.climb.sample()[name])
+
+
+def _holds_in_order(world) -> list[str]:
+    """The range's holds (its bars, switches and chains), in element order: what climb.hold numbers."""
+    from .terrain.climb import hold_geoms
+    parts = getattr(world, "parts", None)
+    if parts is None or parts.layout is None:
+        return []
+    names = set(hold_geoms(world.model, parts.layout))
+    return [e.name for e in parts.range.elements if e.name in names]
 
 
 def _sensor_signal(name: str, world) -> Signal:

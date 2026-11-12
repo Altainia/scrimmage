@@ -139,15 +139,22 @@ class SensorRuntime:
         self._rays = [s for s in self.specs if s.kind != "camera"]     # the sensors this runtime casts for
         self._bodies = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, s.body) for s in self._rays]
         self._robot = (m.body_rootid[m.geom_bodyid] == root).tolist()      # per geom: part of the robot
-        # per geom: an AprilTag's square (visual only: a ray steps past it as it does past the robot's own geoms)
+        # per geom: an AprilTag's square, or a chain's bead or clearance probe (visual only: a ray steps past it as it
+        # does past the robot's own geoms; a ray doesn't hit a chain's links, so it doesn't hit their beads either)
         self._tag = [(mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g) or "").startswith("apriltag.")
                      for g in range(m.ngeom)]
+        layout = world.parts.layout if getattr(world, "parts", None) is not None else None
+        for c in (layout.chains.values() if layout is not None else ()):
+            for g in [c.probe, *c.beads]:
+                self._tag[g] = True
         # Per geom: the piece (ball index) it belongs to, -1 for every other geom; and each piece's color.
         rng = world.test_range
         if rng is not None:
             from ..testrange.pieces import piece_color
             balls = rng.balls
-            self._piece = balls.ball_of_geom(np.arange(m.ngeom)).tolist()
+            # the live array (contact id -> ball), not a copy: a soft NOTE's ring capsules map to its piece while it
+            # is in use (testrange/soft.py SoftPool keeps it), and its hidden stand-in (alpha 0) no ray hits
+            self._piece = balls._geom_ball
             self._colors = [piece_color(balls.kinds[k]) for k in balls.kind]
         else:
             self._piece, self._colors = [-1] * m.ngeom, []
@@ -234,7 +241,7 @@ class SensorRuntime:
             gone += x
             g = int(gid[0])
             if piece[g] >= 0:
-                return gone, piece[g]
+                return gone, int(piece[g])
             if not (robot[g] or tag[g]):    # the field: it blocks the view; only a sensor that sees anything reads it
                 return None if pieces_only else (gone, -1)
             gone += SKIP

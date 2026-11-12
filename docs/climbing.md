@@ -24,12 +24,18 @@ same physics the whole-robot simulation runs.
 
 ## Elements and ranges
 
-Three `[[element]]` kinds climb; [docs/terrain.md](terrain.md#field-elements-in-range-files) lists their keys:
+Four `[[element]]` kinds climb; [docs/terrain.md](terrain.md#field-elements-in-range-files) lists their keys:
 
 - **`bar`**: a horizontal pipe at a height, optionally on a vertical sprung slide (`stiffness`, `damping`) that
   stands in for the rung's bending, and tagged with the `level` hanging from it scores;
 - **`box`**: a static block, structure (a truss) or, with `ground = true`, floor (floor protection);
-- **`switch`**: a bar hanging below a hinge that tilts under a hanging robot.
+- **`switch`**: a bar hanging below a hinge that tilts under a hanging robot;
+- **`chain`** (`kind = "chain"`): a chain hung between two ends, which sags and swings under a robot. It is given by
+  its low point (`center`, `low`), the way it runs (`yaw_deg`), how far apart its ends are (`span`) and how high they
+  are (`top`), and tagged with a `level` as a bar is ([docs/terrain.md](terrain.md#chains)). 2024's six CHAINS are
+  chains.
+
+The climb code calls whatever a robot hangs from a **hold**: a bar, a switch or a chain.
 
 Bars, switches and boxes that aren't ground aren't floor: a robot hanging from a bar isn't "resting on the floor",
 and `robot.stranded` doesn't fire for it. A range's `[climb]` table scores the climb:
@@ -37,12 +43,16 @@ and `robot.stranded` doesn't fire for it. A range's `[climb]` table scores the c
 - `rule = "hang"` (2020): hanging from the named `switch` scores the first level, plus `level_bonus` while the
   switch is within its `level_deg` of level;
 - `rule = "lowest-point"` (2013): one level above the highest level whose bars are all below the robot's lowest
-  point. The manual's sequential-climb rule (a robot must climb level by level) isn't checked.
+  point. The manual's sequential-climb rule (a robot must climb level by level) isn't checked;
+- `rule = "off-carpet"` (2024): the level of the hold (a bar, a chain or a switch) the robot hangs from, while no part
+  of it touches the carpet. Touching two leveled holds, it scores the higher level. It also takes `harmony`: see
+  [ONSTAGE and HARMONY](#onstage-and-harmony).
 
 Library ranges:
 
 | range | what | start |
 |---|---|---|
+| `2024` | the 2024 CRESCENDO field, with the two STAGES' six CHAINS as chains (ONSTAGE 3 points, HARMONY 2), `rule = "off-carpet"` ([docs/test-range.md](test-range.md#the-2024-field)) | `blue_chain_center` |
 | `2022-hangar` | the four 2022 rungs (LOW, MID, HIGH, TRAVERSAL: 4, 6, 10, 15 points), the trusses and the floor protection, from drawing GE-22100 | `under_mid` |
 | `2020-switch` | the 2020 GENERATOR SWITCH: ±14.5°, about 42 kg, LEVEL within 8° | |
 | `2013-pyramid` | the 2013 PYRAMID's rungs at 30, 60 and 90 in, as bars (its legs aren't built) | |
@@ -78,16 +88,52 @@ How the hooks behave, measured (tests/test_climb_physics.py):
 - **Open a latch while hanging:** a latch the bar presses on, or one whose swing the bar is in, won't turn. Hang
   from the crown first (the bar clear of the latch), then run the release motor.
 
+## ONSTAGE and HARMONY
+
+2024's ONSTAGE scores a robot hanging from a CHAIN with no part of it on the carpet, and HARMONY scores 2 more points
+for each extra robot on the same chain (M Table 6-2). A range scores both with:
+
+```toml
+[climb]
+rule = "off-carpet"
+levels = { ONSTAGE = 3 }
+harmony = 2                   # points for each robot beyond the first on one hold, all off the carpet
+```
+
+`harmony` is for `"off-carpet"` only, and can't be negative. The only other robot is a partner hanging on the chain
+(`[partner] hang = { hold = "chain_blue_center", along = 0.45, across = -0.05 }` in the robot config, or **Hangs on** in the Test
+tab's Setup): see the [README](../README.md#a-partner-robot). `climb.hold.<hold>.robots` counts it, and
+`climb.harmony` is then 2 while your robot hangs on the same chain. A match ([Test tab](test-tab.md#playing-a-match))
+or a scenario adds the HARMONY points held at its end to the endgame, after ONSTAGE's: "HARMONY with 1 other robot:
+2 points".
+
+A partner on the chain changes your climb. Its weight takes up the chain's slack, so the chain at your hooks is
+higher and tauter: in tests/test_climb_harmony.py, with a partner 0.9 m from the low point, the chain where the low
+point was (at your robot's hooks) rises from 0.72 m to about 0.97 m, and the test's climber, sized for the unloaded
+chain, no longer gets its hooks over it. Hanging, your robot sits a few centimeters higher than it does alone (4.4 cm
+there). The hooks stay where they catch (see
+[terrain.md](terrain.md#chains)), so the two robots don't slide together at the low point.
+
+On the built-in `2024` range the STAGE legs are where FIRST's field CAD has them, upright 12 in posts at the chains'
+ends. A stock partner hanging on `chain_blue_center` fits between them only to about 0.65 m (25.6 in) from the low
+point; at 0.9 m (35.4 in) it starts inside `stage_blue_leg2` and is refused. With your robot at the low point there
+isn't room for both (the start check takes your robot as a 0.9 m square), so the HARMONY example
+(`examples/blocks/chain-climb/harmony.test.toml`) puts the two side by side, 0.45 m either side of the low point, where
+two robots that met at the low point would end up.
+
 ## The climb signals
 
-Read every physics step on a range with a bar or a switch (scrimmage/terrain/climb.py); scenario checks see them
-like the terrain signals:
+Read every physics step on a range with a bar, a chain or a switch (scrimmage/terrain/climb.py); scenario checks see
+them like the terrain signals:
 
 | signal | meaning |
 |---|---|
-| `climb.hanging` | 1 while some robot geom touches a bar or switch and none touches the ground |
+| `climb.hanging` | 1 while some robot geom touches a hold (a bar, a chain or a switch) and none touches the ground |
 | `climb.level` | the scoring level's **rank** in the range's `[climb] levels`: 1 for the first (lowest) level, 0 for none |
 | `climb.points` | that level's points (0 while not hanging) |
+| `climb.hold` | which hold (bar, chain or switch) the robot hangs from, as a number: its place among the range's holds in element order, 1 for the first; 0 while not hanging |
+| `climb.hold.<hold>.robots` | how many robots are on that hold and off the carpet: your robot while it hangs touching it, plus a partner hanging on it (`[partner] hang`) while the partner touches no ground |
+| `climb.harmony` | HARMONY points: the range's `[climb] harmony` times the robots on your robot's hold less one, while it hangs; 0 otherwise |
 | `climb.swing` | deg: the robot's CoM from straight under the bar it swings from, positive toward the bar's local x × up (for a 2022 rung, field +x) |
 | `climb.hook_load` | N: the largest whole hook's contact force (every geom of `<inst>.hook<i>`, the latch too), peak-held between checks |
 | `climb.hook.<inst>.hook<i>.load` | N: one hook's |
@@ -219,11 +265,11 @@ G106 and G107, on `2022-hangar`, starting under MID:
 | | |
 |---|---|
 | status | reached HIGH |
-| MID held | 4.2 s (carpet, under MID, to hanging) |
-| HIGH held | 7.8 s |
-| peak hook load | 1.08 kN (the robot's weight moving onto the high hooks) |
+| MID held | 3.4 s (carpet, under MID, to hanging) |
+| HIGH held | 8.2 s |
+| peak hook load | 1.06 kN (pulling up onto MID) |
 | largest swing on HIGH | 32° (it decays about 2° a cycle on steel hooks) |
-| reach / height | 13.7 in beyond the frame, 65.6 in tall: within G107 and G106 |
+| reach / height | 13.9 in beyond the frame, 65.6 in tall: within G107 and G106 |
 
 The sequence: drive forward so the mid hooks pass MID, reach above it, back over it (the rung passes just under the hooks' tips and stops against the stems and the hook bracket) and pull up; raise the high arm
 beside HIGH, lean it slowly so the hooks' tips lead over the rung, retract to hook it; extend the mid climber, which
@@ -232,16 +278,27 @@ the climb taught (and a script shows): a fast lean swings the robot and runs the
 hand-over the mid climber's hooks catch MID on the back swing unless the high arm's pivot tips them forward, away.
 Two more came from timing the climb for a robot program (below): drive the wheels gently (1.5 V; at 3 V they slip as
 the loop stops them, and the hooks can land beside MID), and keep extending the mid climber 0.2 s after HIGH is held
-(retracting the moment it is, the hooks can catch MID again).
+(retracting the moment it is, the hooks can catch MID again). And one from the telescopes' rotor inertia
+([Estimates](#estimates)): a telescope that carries its motors' rotors starts moving later, so the script seats on HIGH
+for 0.8 s before lifting the mid hooks off MID. Lifted after 0.5 s, they were still low enough to catch MID again on
+the back swing, and the robot hung from both rungs.
 
 **`examples/climb/traversal.toml`** is the stretch: HIGH, then a hand-over to TRAVERSAL (not gated by a test). It
 takes high.toml's 1.5 V wheel drive and "clear of MID" step. As built, **it still does not reach TRAVERSAL: it ends
-"hook walked off" at step 25** (t = about 21.5 s): the robot reaches HIGH (about 7.9 s), the mid climber hooks HIGH
-beside the high hooks (2.42 kN, the run's peak), the high hooks let go of HIGH, swing forward under it and, extended
-at the forward end of a swing, touch TRAVERSAL (step 23, about 20.4 s); but they don't seat and take the robot, so when
-the mid hooks lift off HIGH the robot drops. Timing a catch on a swing of about 30–34° (34° at its largest) (the robot hangs from HIGH, so TRAVERSAL
-moves against the arm as it swings) is the hard part, as it was for teams; damping the swing first, or a robot built
-for the traversal (a taller rotating arm, a reaction arm against the truss), are the next things to try.
+"hit a bar" at step 21** (t = 17.1 s): the robot reaches HIGH (8.2 s), the mid climber hooks HIGH beside the high
+hooks, the high hooks let go of HIGH, and as the high arm swings forward under HIGH, the mid climber's tube hits HIGH
+(1.0 kN). Before the telescopes carried their motors' rotor inertia it got further: "hook walked off" at step 25
+(about 21.5 s), with the high hooks touching TRAVERSAL at the forward end of a swing (step 23) but not seating.
+Timing a catch on a swing of about 30–34° (34° at its largest; the robot hangs from HIGH, so TRAVERSAL moves against
+the arm as it swings) is the hard part, as it was for teams; damping the swing first, or a robot built for the
+traversal (a taller rotating arm, a reaction arm against the truss), are the next things to try.
+
+**`examples/blocks/chain-climb/`** climbs 2024's `chain_blue_center` with blocks, no robot program, on a 60 kg stand-in
+robot with one stock climber. `onstage.test.toml` reaches 0.14 m, drives 0.31 m into the chain, pulls down and hangs:
+ONSTAGE, hanging from the chain, at 6.9 s (gated by tests/test_range_2024.py). `harmony.test.toml` plays the match
+with a partner hanging 17.7 in along the same chain and scores 5 in the endgame: ONSTAGE's 3 and HARMONY's 2. Its robot
+(`harmony-climber.toml`) has a third climber stage, since the partner pulls the chain up out of the two-stage
+climber's reach. The example's README explains where the partner hangs and why.
 
 **`examples/blocks/ladder_climber/`** is a CAD climber tested with blocks, no robot program: a crank turning two
 arms that rise and fall in turn (like a steam train's wheel rods), with spring hooks that fold past a rung and catch
@@ -267,9 +324,9 @@ to it or the setpoint's `max_voltage`), once a robot loop (5 ms). The scenario h
 then enables **teleop** for 11 s (the climb is an endgame action); the timed file's t = 0 is the first robot loop
 enabled in teleop. The config sets `[telemetry] nt = false`: the fake robot serves no NetworkTables, so the run
 doesn't wait 5 s for it. Checks:
-- `by_time climb.points >= 10 by t = 9` (HIGH is first touched 7.26 s into teleop);
+- `by_time climb.points >= 10 by t = 9` (HIGH is first touched about 7.2 s into teleop);
 - `at_end climb.points >= 10`: still hanging from HIGH, not a moment's touch;
-- `always climb.hook_load max 4000` (it peaks at 1.08 kN).
+- `always climb.hook_load max 4000` (it peaks at 1.07 kN).
 
 **Where the timed file comes from.** tests/climb_timed.py runs `examples/climb/high.toml` with `climb run` and writes
 each step's drives as `[[setpoint]]`s at the time the step started (when the previous step's wait fired), plus a
@@ -297,6 +354,7 @@ hand-over (see [The examples](#the-examples)); high.toml now has margin at both.
 | Rung give | 160 kN/m, damping 250 N s/m | `stiffness`, `damping` in ranges/2022-hangar.toml | Hang a known weight at mid-span and measure the deflection with a dial indicator (truss, U-bolts and pipe together); the research's bending estimate is 80–320 kN/m. |
 | Hook contact softness | solref 0.01 s (a 60 kg hang sinks 0.6–0.7 mm) | `HOOK_SOLREF` | Not a physical property: chosen so a hang sinks under 2 mm. |
 | Latch spring | 0.3 N m/rad, 15° preload | `latch_spring`, `LATCH_PRELOAD_DEG` | Measure the torsion spring's torque at two angles. |
+| Telescope rotor inertia | 512 kg on the stock climber (256 kg a stage): two rotors at 1600 rad/m | `ROTOR_MOI` (1e-4 kg m², scrimmage/motors.py, shared with the stock swerve), `telescope_armature` (climber.py): count × ROTOR_MOI × (motor rad per m)², split equally over the moving stages | An estimate: no published Kraken rotor inertia. It also keeps the hook contacts right: without it a hook sank through a 1/2 in bar, and a hang on a rigid bar bounced (tests/test_climb_thin_bar.py). |
 | Latch inertia and stop | armature 2e-4 kg m², stop solref 4 ms | `LATCH_ARMATURE`, `LATCH_STOP_SOLREF` | The armature stands in for the release gearbox; time the latch shutting on video (the model: 34 ms coast). |
 | Telescope stops | solref 3 ms, damping ratio 2 | `TELESCOPE_STOP_SOLREF` | Not a physical property: stiff enough that 60 kg sags 1.3 mm; overdamped because a critically damped 4 ms stop kept a 12 mm bounce going against the rung's spring (measured). |
 | Hit force | 200 N | `HIT_FORCE` (scrimmage/climb/script.py) | A judgment: about a third of a 60 kg robot's weight. Raise it in `[limits]` for a design that rests a tube on a rung. |
@@ -309,7 +367,7 @@ From the research notes (Chief Delphi threads, team binders and the 2022 manual;
 
 | anchor | value | the model |
 |---|---|---|
-| Mid-tier full climb (elevator + static hooks) | 11 s (1918), 12–16 s; "to HIGH in 8 s" (one team) | the example holds HIGH at 7.8 s from under MID |
+| Mid-tier full climb (elevator + static hooks) | 11 s (1918), 12–16 s; "to HIGH in 8 s" (one team) | the example holds HIGH at 8.2 s from under MID |
 | Elite carpet → TRAVERSAL | 4.8 s (254), 5.1 s (1678) | the example's traversal doesn't reach it |
 | Swing period | 1.6–2.1 s (predicted) | the compound pendulum within 5 % (tests/test_climb_physics.py) |
 | Swing decay | 2.5–6° a cycle (Coulomb, μ 0.42–1.0) | within 1.5× of 4 μ r / d (tests); the example loses about 2° a cycle on steel |
@@ -321,7 +379,13 @@ From the research notes (Chief Delphi threads, team binders and the 2022 manual;
 - **Other mechanisms collide only when they say so.** A stock elevator, arm or launcher is `collide = false` by
   default: it passes through bars and doesn't count for `climb.extension` or `climb.height`. Set `collide = true` on
   the part ([docs/parts.md](parts.md#stock-parts-that-collide)) to count it. The climber part always collides.
-- **Chain and rope aren't modeled** (2024's chain, 2017's rope): they need cable simulation.
+- **Rope isn't modeled** (2017's rope): it needs cable simulation. A chain is (`kind = "chain"`).
+- **A hook on a chain settles at a link and doesn't slide toward the low point.** In the chain spike, moving a 60 kg
+  robot along the chain took about 200–250 N, with more links or less friction alike. A real hook on a roller chain
+  slides some. So two robots that would meet at the low point in a match stay apart in the sim; put a hanging partner
+  where it would end up.
+- **A chain is frictionless against bumpers.** A hook's `hook_material` sets the friction where it touches the chain.
+  A bumper has no say, so a chain slides freely across a bumper.
 - **2013's sequential rule isn't checked**: `"lowest-point"` scores where the robot is, not how it got there.
 - **No state machine**: a script waits on simple conditions; an auto-climb that reacts to the swing has to be
   written as a robot program and run in a scenario.

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import math
 
-from ...motors import MOTORS
+from ...motors import MOTORS, ROTOR_MOI
 from ..model import PartError
 from . import Param, Stock, register
 from .mechanisms import slide_chain
@@ -159,6 +159,19 @@ def _hook(p: dict, i: int, y: float) -> tuple[list[dict], dict | None]:
     return geoms, latch
 
 
+def telescope_armature(count: int, ratio: float) -> float:
+    """The extend motors' rotors seen through the rope (kg, in the first stage's travel): `count` rotors of ROTOR_MOI
+    at `ratio` motor radians per meter of it (slide_chain's gearing: gearing x stages / spool_radius continuous,
+    gearing / spool_radius cascade, the ratio the motor's back-EMF damping uses too).
+
+    Without it the telescope's slides carry only their tubes (0.6 and 0.8 kg) under the back-EMF damping b (57 kN s/m
+    for the stock two Krakens at 1600 rad/m), b dt / m = 26 to 61 a stage at 1 ms. MuJoCo's constraint solver sees
+    that damping as an explicit force while the step applies it implicitly (bindings._coupled_dofs), so a hook's
+    contact pushed too little: a hook landing on a 1/2 in bar sank through it, and a robot hanging from a rigid bar
+    bounced on its hooks for good (tests/test_climb_thin_bar.py). With the rotors' inertia b dt / M is under 1."""
+    return count * ROTOR_MOI * ratio ** 2   # source: a rotor's inertia reflected through a ratio, J ratio^2 per motor
+
+
 def _climber(p: dict) -> dict:
     n, L = p["stages"], p["base_length"]
     if p["tube"] - n * NEST < 0.01:
@@ -185,6 +198,9 @@ def _climber(p: dict) -> dict:
         return out + [bracket] + hooks if i == n else out
 
     chain = slide_chain(p, tubes, "tip", p["tip_mass"], "extend", "extend_encoder", TELESCOPE_STOP_SOLREF)
+    share = telescope_armature(p["count"], chain["motor"][0]["gearing"]) / n
+    for body in chain["body"][1:]:                      # the moving stages, each on its slide, coupled 1:1
+        body["joint"]["armature"] = share
     bodies = chain["body"] + latches
     couplings = chain["coupling"]
     motors, encoders = chain["motor"], chain["encoder"]

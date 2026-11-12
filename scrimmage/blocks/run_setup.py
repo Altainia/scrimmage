@@ -10,7 +10,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from .. import i18n, units
-from ..parts.partner import PartnerOverlap
+from ..parts.partner import HangTooFar, PartnerOverlap
 from ..sensors.colors import NAMED_COLORS
 from .conditions import IN
 from .program import Program, TestFileError, found_setup
@@ -48,9 +48,20 @@ def setup_config(raw: dict, setup: dict, cfg_dir: Path | None = None) -> dict:
 def setup_partner(raw: dict, partner, cfg_dir: Path | None) -> dict:
     """A copy of the config dict with Setup's partner: false drops the config's `[partner]`; a table puts the
     partner's center `ahead_in` ahead of the robot's start along its heading, turned `heading_deg` from it, its brake
-    as given (the config's `[partner]` keeps its other settings)."""
+    as given (the config's `[partner]` keeps its other settings); a table with `hang` hangs it from that chain
+    `along_in` inches from its low point (and `across_in` to its side) instead, as `[partner] hang = { hold, along,
+    across }` (m), dropping the config's `start`."""
     if partner is False:
         return {k: v for k, v in raw.items() if k != "partner"}
+    if "hang" in partner:
+        have = raw.get("partner")
+        out = {k: v for k, v in (have if isinstance(have, dict) else {}).items() if k not in ("start", "hang")}
+        out["hang"] = {"hold": partner["hang"], "along": partner.get("along_in", 0.0) * IN}
+        if "across_in" in partner:
+            out["hang"]["across"] = partner["across_in"] * IN
+        if "brake" in partner:
+            out["brake"] = partner["brake"]
+        return {**raw, "partner": out}
     from ..parts.assemble import robot_start
     try:
         x, y, heading = robot_start(raw, cfg_dir)
@@ -100,22 +111,39 @@ def world_for(program: Program):
     try:
         return build_world(replace(config, raw=setup_config(config.raw, found_setup(program), config.dir)))
     except ConfigError as e:
-        overlap = partner_overlap(e)
-        if not isinstance(program.setup.get("partner"), dict) or overlap is None:
+        if not isinstance(program.setup.get("partner"), dict):
             raise
-        raise TestFileError(setup_partner_words(overlap)) from None
+        overlap = partner_overlap(e)
+        if overlap is not None:
+            raise TestFileError(setup_partner_words(overlap)) from None
+        far = partner_overlap(e, HangTooFar)
+        if far is not None and "hang" in program.setup["partner"]:
+            raise TestFileError(hang_words(far)) from None
+        raise
 
 
-def partner_overlap(e: BaseException) -> PartnerOverlap | None:
-    """The PartnerOverlap a ConfigError came from (build_world re-raises partner.check_start's `from None`, so it is
-    the error's context), found by its type, never by its words (L3); None for any other error."""
+def partner_overlap(e: BaseException, kind: type = PartnerOverlap):
+    """The PartnerOverlap (or `kind`, a HangTooFar) a ConfigError came from (build_world re-raises the partner's
+    refusal `from None`, so it is the error's context), found by its type, never by its words (L3); None for any other
+    error."""
     seen = 0
     cause = e
     while cause is not None and seen < 8:
-        if isinstance(cause, PartnerOverlap):
+        if isinstance(cause, kind):
             return cause
         cause, seen = cause.__cause__ or cause.__context__, seen + 1
     return None
+
+
+def hang_words(far: HangTooFar) -> str:
+    """Setup's hanging partner past its along or across limit, in the Units setting (machine text: meters)."""
+    def show(x: float) -> str:
+        return f"{x:.3f} m" if units.is_machine() else units.fmt(x, "length", fewer=1)
+    if far.key == "along":
+        return i18n.t("the partner robot (Setup) hangs {along} from the chain's low point; at most {limit} either way",
+                      along=show(abs(far.value)), limit=show(far.limit))
+    return i18n.t("the partner robot (Setup) hangs {across} to the side of its chain; at most {limit} either way",
+                  across=show(abs(far.value)), limit=show(far.limit))
 
 
 def setup_partner_words(overlap: PartnerOverlap) -> str:

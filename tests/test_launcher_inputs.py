@@ -257,9 +257,13 @@ def test_new_ball_presets_are_there_with_their_sizes():
         _build_section("ball", {"preset": name})       # complete
 
 
-def test_every_preset_value_is_tagged_source_or_estimate():
+def test_every_preset_value_is_tagged():
+    """A measured or estimated value says `# source:` or `# estimate:`; a behavior the preset turns on (a true or false,
+    such as the NOTE's `soft`) may instead say `# choice:`."""
     text = (Path(inputs.__file__).with_name("presets.toml")).read_text()
     values = [ln for ln in text.splitlines() if "=" in ln and not ln.lstrip().startswith(("#", "["))]
     assert values
     for ln in values:
-        assert "# source:" in ln or "# estimate:" in ln, ln
+        value = ln.split("=", 1)[1].split("#", 1)[0].strip()
+        choice = "# choice:" in ln and value in ("true", "false")
+        assert "# source:" in ln or "# estimate:" in ln or choice, ln

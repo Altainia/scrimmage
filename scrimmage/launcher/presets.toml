@@ -3,7 +3,8 @@
 # The [surface.*] and [piece.*] tables are for the test range's rigid game pieces (docs/test-range.md); lengths are
 # written in inches (`_in`) where the manual gives inches.
 #
-# Every value has a `# source:` comment, or a `# estimate:` comment saying how it was estimated.
+# Every value has a `# source:` comment, or a `# estimate:` comment saying how it was estimated, or a `# choice:`
+# comment for a behavior the preset turns on (not a measurement).
 # Estimates are NOT measurements. Ball stiffness and restitution and wheel friction can all be measured at home
 # (see docs/launcher.md); replace them with your numbers.
 #
@@ -220,11 +221,13 @@ mass = 3.54             # source: same section, "weighs approximately 7.8 lbs"; 
 material = "hdpe"       # estimate: the manual says only "a rigid plastic"; a molded storage tote like the Orbis is usually HDPE, which was not looked up. Its friction is the estimate in [surface.hdpe]
 
 [piece.2024-note]
-# FRC 2024 Crescendo "Note": an orange foam ring. A rigid stand-in for a foam ring (the real one squashes).
+# FRC 2024 Crescendo "Note": an orange foam ring. Rigid at rest and in flight; in a range, near a robot it becomes a soft ring of 16 segments that bends and squashes (soft = true, testrange/soft.py).
 shape = "ring"          # source: AndyMark Crescendo Note page https://andymark.com/products/crescendo-note: OD 14 in, ID 10 in, 2 in thick, coated foam, "rather squishy / flexible"
 diameter_in = 14.0      # source: same page, 14 in. OD
 inner_diameter_in = 10.0  # source: same page, 10 in. ID
 length_in = 2.0         # source: same page, 2 in. thick
 mass = 0.235            # source: same page, "8.3 oz. +/- 0.2 oz."; 8.3 oz = 0.2353 kg
 material = "foam"       # source: same page, "coated foam"; its friction is the estimate in [surface.foam]
-stiffness = 2000.0      # estimate: N/m at one contact, in series with a wheel's tread (launcher/pinch.py): the kickoff dry run's guess for its bench file note_shooter.toml (a 2 in foam ring squeezed 0.75 in between 4 in wheels, about 19 N a wheel, a firm squeeze by hand); not measured, no source gives one. A guess until a soft NOTE model (K5) or a squeeze test checks it
+stiffness = 2000.0      # estimate: the soft-note spike's "soft" foam: how hard it pushes back per meter of squeeze at 25 % of its 2 in thickness, 12.7 N a side between two 4 in rollers; UNCALIBRATED
+restitution = 0.3       # estimate: its bounce off the carpet from a 1 m drop, a dead foam thud (about 9 cm); UNCALIBRATED
+soft = true             # choice: spec D8: rigid at rest and in flight, soft near a robot

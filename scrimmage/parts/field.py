@@ -15,6 +15,7 @@ FIELD_BITS = {"contype": 1, "conaffinity": 2}
 ELEMENT_GROUP = 2
 FIELD_LENGTH = 16.54  # m, the alliance walls' inner faces (2026's)
 FIELD_WIDTH = 8.07  # m, the guardrails' inner faces
+CARPET_FRICTION = (1.0, 0.01, 0.001)  # estimate: the carpet's sliding, torsional and rolling friction, not measured
 WALL = {"friction": [0.3, 0.005, 0.0001], "rgba": [0.75, 0.75, 0.8, 0.35]}
 
 
@@ -42,7 +43,7 @@ def add_field(spec: mujoco.MjSpec, cfg: dict, *, obstacle_default: bool = True,
     w.add_light(pos=[hx, hy, 12], dir=[0, 0, -1], type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL)
     box = mujoco.mjtGeom.mjGEOM_BOX
     w.add_geom(name="carpet", type=mujoco.mjtGeom.mjGEOM_PLANE, pos=[hx, hy, 0], size=[hx, hy, 0.1],
-               material="carpet", friction=[1.0, 0.01, 0.001], group=ELEMENT_GROUP, **FIELD_BITS)
+               material="carpet", friction=list(CARPET_FRICTION), group=ELEMENT_GROUP, **FIELD_BITS)
     t = 0.05    # half the walls' thickness: each reaches past the corners by its own thickness
     for name, pos, half in (("wall_blue", [-t, hy, 0.25], [t, hy + 2 * t, 0.25]),
                             ("wall_red", [size[0] + t, hy, 0.25], [t, hy + 2 * t, 0.25]),

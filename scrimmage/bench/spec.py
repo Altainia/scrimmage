@@ -74,6 +74,10 @@ class Piece:
     # a rigid piece's air in [flight] (launcher/rigid_aero.py): its drag coefficient on its shadow and spin damping
     drag_coefficient: float = DRAG_COEFFICIENT
     spin_damping: float = SPIN_DAMPING
+    # `flex = true` (a ring kind only, spec D9): a soft flex NOTE on MuJoCo's flex (bench/flex_note.py), fitted to the
+    # kind's `stiffness` and `restitution`; `restitution` is read only for a flex (the kind's own unless given)
+    flex: bool = False
+    restitution: float | None = None
 
 
 @dataclass(**_frozen)
@@ -250,8 +254,8 @@ MATERIALS = _load_materials()
 _SECTIONS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "bench": (("name", "author", "idea", "notes"), ()),
     "piece": (("name", "preset", "kind", "shape", "size", "mass", "inertia", "stiffness_n", "stiffness_exponent",
-               "restitution", "inertia_factor", "stiffness", "mesh", "units", "drag_coefficient", "spin_damping"),
-              ("size",)),
+               "restitution", "inertia_factor", "stiffness", "mesh", "units", "drag_coefficient", "spin_damping",
+               "flex"), ("size",)),
     "shaft": (("motor", "count", "gearing", "wheel_inertia", "added_inertia", "control", "target_rps", "voltage",
                "kP", "kS", "kV", "stator_limit", "supply_limit", "coupled_to", "ratio"), ()),
     "wheel": (("name", "shaft", "center", "axis", "diameter", "width", "tread"), ("center", "diameter", "width")),
@@ -368,6 +372,15 @@ class _Table:
             raise self.err(i18n.t("{table} {key} must be positive, not {value}", table=self.label, key=k,
                                   value=repr(v)), k)
         return out
+
+    def flag(self, key, default=False) -> bool:
+        if key not in self.t:
+            return default
+        v = self.t[key]
+        if not isinstance(v, bool):
+            raise self.err(i18n.t("{table} {key} must be true or false, not {value}", table=self.label, key=key,
+                                  value=repr(v)), key)
+        return v
 
     def text(self, key, default=_REQ, *, one_of=None):
         v, k, _ = self._raw(key, default, False)

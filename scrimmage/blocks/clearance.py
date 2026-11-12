@@ -9,6 +9,11 @@ collides and any geom of the element.
   touches nothing can't be hit, so it doesn't count either).
 - **Measure:** mujoco.mj_geomDistance, out to DISTMAX, for each pair whose bounding spheres are within DISTMAX of
   each other (the others are skipped). Nothing within DISTMAX reads math.inf; a touch or an overlap reads 0.0.
+- **A chain** (testrange/chain.py) is a flex, not geoms. Its clearance is measured to its links where they are now:
+  the chain's probe capsule is posed on each link in turn (from the flex's vertices, its half length the link's
+  length now) and measured as any geom is, for each link whose bounding sphere is within DISTMAX of a robot geom's.
+  The probe's pose is put back afterwards. The error is mj_geomDistance's own, and the links are the capsules the
+  chain collides as.
 - **Cost:** the geom lists are worked out once per model. A run measures an element only when its test names it: a
   `clears` condition, or `clearance.<name>` in the test's chart (named()).
 - **Parts it leaves out:** a test that measures an element on a robot with stock parts whose collide is off gets
@@ -61,9 +66,12 @@ def _geoms(world, element: str | None) -> np.ndarray:
 
 
 def clearance(world, element: str) -> float:
-    """m: the smallest distance between a colliding robot geom and a geom of `element`; 0.0 for a touch or an
-    overlap, math.inf when nothing is within DISTMAX."""
+    """m: the smallest distance between a colliding robot geom and a geom of `element` (a chain's links); 0.0 for a
+    touch or an overlap, math.inf when nothing is within DISTMAX."""
     m, d = world.model, world.data
+    layout = world.parts.layout if world.parts is not None else None
+    if layout is not None and element in layout.chains:
+        return _chain_clearance(world, layout.chains[element])
     robot, field = _geoms(world, None), _geoms(world, element)
     if not len(robot) or not len(field):
         return math.inf
@@ -72,6 +80,44 @@ def clearance(world, element: str) -> float:
     best = DISTMAX
     for i, j in zip(*np.nonzero(apart <= DISTMAX)):
         best = min(best, mujoco.mj_geomDistance(m, d, int(robot[i]), int(field[j]), DISTMAX, None))
+    return math.inf if best >= DISTMAX else max(0.0, best)
+
+
+def _chain_clearance(world, chain) -> float:
+    """The chain's clearance: the probe posed on each link near a robot geom (see the module docstring)."""
+    from ..testrange.chain import vertices
+    m, d = world.model, world.data
+    robot = _geoms(world, None)
+    if not len(robot):
+        return math.inf
+    v = vertices(m, d, chain.flex)
+    a, b = v[:-1], v[1:]
+    mid = (a + b) / 2.0
+    half = np.linalg.norm(b - a, axis=1) / 2.0
+    r = float(m.flex_radius[chain.flex])
+    apart = (np.linalg.norm(d.geom_xpos[robot][:, None, :] - mid[None, :, :], axis=2)
+             - m.geom_rbound[robot][:, None] - (half + r)[None, :])
+    near = np.nonzero(apart <= DISTMAX)
+    if not len(near[0]):
+        return math.inf
+    p = chain.probe
+    saved = (d.geom_xpos[p].copy(), d.geom_xmat[p].copy(), float(m.geom_size[p, 1]), float(m.geom_rbound[p]))
+    best, posed = DISTMAX, -1
+    try:
+        for i, j in sorted(zip(*near), key=lambda ij: ij[1]):
+            if j != posed:
+                z = (b[j] - a[j]) / (2.0 * half[j])
+                x = np.cross(z, [1.0, 0.0, 0.0] if abs(z[0]) < 0.9 else [0.0, 1.0, 0.0])
+                x /= np.linalg.norm(x)
+                d.geom_xpos[p] = mid[j]
+                d.geom_xmat[p] = np.column_stack([x, np.cross(z, x), z]).ravel()
+                m.geom_size[p, 1] = half[j]
+                m.geom_rbound[p] = half[j] + r
+                posed = j
+            best = min(best, mujoco.mj_geomDistance(m, d, int(robot[i]), p, DISTMAX, None))
+    finally:
+        d.geom_xpos[p], d.geom_xmat[p] = saved[0], saved[1]
+        m.geom_size[p, 1], m.geom_rbound[p] = saved[2], saved[3]
     return math.inf if best >= DISTMAX else max(0.0, best)
 
 

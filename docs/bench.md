@@ -364,13 +364,80 @@ The piece decides how every contact it has is worked out.
   (the stock wheels' tread stiffness), and a rigid piece may carry its own contact `stiffness` (N/m) in series with
   the tread, so a pinch squeezes both: a soft plastic body at 3000 N/m takes most of the squeeze.
 - **A range's piece** (`preset = "2024-note"`, or any `[piece.*]` preset in `scrimmage/launcher/presets.toml`: the
-  2025 CORAL, the 2019 HATCH PANEL...) is rigid, and the bench builds it with the test range's own piece builder:
-  the same mass, size, inertia and solids as on the range. A ring's hole is open (a rod passes through it), because
-  it is built from 24 slices, as on the range. `shape = "ring"` with `size = [diameter, inner_diameter, length]` and a
-  `mass` builds your own ring the same way. The 2024 NOTE is a rigid stand-in: the real one is soft foam and squashes.
-  It brings its own contact `stiffness` (2000 N/m, an estimate), as on the range. A ring touches a wheel at many
-  MuJoCo contact points (8 per wheel for the NOTE's face), and the bench spreads the stiffness over them, so held
-  between wheels the NOTE is squeezed as hard as its `stiffness` says, no harder.
+  2025 CORAL, the 2019 HATCH PANEL...) is rigid, and the bench builds it with the test range's own piece builder: the
+  same mass, size, inertia and solids as on the range. A ring's hole is open (a rod passes through it), because it is
+  built from 24 slices, as on the range. `shape = "ring"` with `size = [diameter, inner_diameter, length]` and a
+  `mass` builds your own ring the same way. On the bench the 2024 NOTE is a rigid stand-in unless the piece says
+  `flex = true` (below): the real one is soft foam and squashes. It brings its own contact `stiffness` (2000 N/m, an
+  estimate), as on the range. A ring touches a wheel at many MuJoCo contact points (8 per wheel for the NOTE's face),
+  and the bench spreads the stiffness over them, so held between wheels the NOTE is squeezed as hard as its
+  `stiffness` says, no harder. Going through a pinch it still doesn't behave like foam (see [Known
+  limits](#known-limits)); `flex = true` makes it a soft body instead (below).
+
+### Flex NOTE (experimental)
+
+`flex = true` in the `[piece]` makes a ring (the 2024 NOTE, or your own `shape = "ring"`) a soft body that bends and
+squashes: MuJoCo's flex, a ring-shaped mesh of 288 small solid pieces (tetrahedra) joined at 112 points. Results
+say **experimental (MuJoCo flex)** in the headlines and the pieces table.
+
+<!-- bench -->
+```toml
+[bench]
+name = "soft note"
+author = "Jordan"
+idea = "feed the soft NOTE between two wheels"
+
+[piece]
+preset = "2024-note"
+flex = true
+
+[[inlet]]
+name = "feed"
+center = [0.0, 0.0, 0.0]
+size = [0.001, 0.001, 0.001]
+count = 1
+velocity = [2.0, 0.0, 0.0]
+
+[[outlet]]
+name = "out"
+center = [1.0, 0.0, 0.0]
+size = [0.2, 0.8, 0.8]
+```
+
+`examples/bench/note_pinch_flex.toml` is a whole shooter: the NOTE squeezed a quarter between two 4 in wheels.
+
+- **It is opt-in.** Without `flex = true` nothing changes: the NOTE is the rigid stand-in, as fast as before. The
+  test range's own soft NOTE (near a robot) doesn't change the bench.
+- **It is slow: about 100 times a rigid run.** One shot through a pinch takes about half a second of computer time.
+  Sweep and compare on the rigid NOTE first, then confirm the design you picked with `flex = true`: a sweep or
+  compare over a flex file runs every combination at that cost, so 12 combinations take 12 flex runs. A bench holds
+  at most 3 flex pieces (each parked one costs as much as a moving one), so `count` in the inlets adds up to 3 or
+  fewer. Flex NOTEs piled on each other are slower still ([Known limits](#known-limits)).
+- **Feed it on a floor.** A flex NOTE fed through the air sags: in the pinch example with no floor under the feed,
+  its 12 in tail drooped while its front was in the wheels, and it left tilted 28 degrees and spinning at 25 rad/s.
+  A plate under the feed, level with the NOTE's underside and ending just before the wheel, keeps it flat (as
+  `note_pinch_flex.toml` does): it then left tilted 4 degrees, spinning at about 3 rad/s.
+- **Its stiffness and bounce are fitted.** The flex's material numbers are worked out so that it answers the
+  piece's `stiffness` (a squeeze between two rollers, docs/measuring.md) and `restitution` (a 1 m drop) the way the
+  test range's soft NOTE does. The 2024 NOTE's fit ships with scrimmage. Other numbers (your own `stiffness` or
+  `restitution`) are fitted the first time they are used, which takes up to about 20 seconds, and kept in a cache
+  folder after that. Both numbers are estimates for the 2024 NOTE, **UNCALIBRATED** until you measure them.
+- **In `[flight]`** it flies as the rigid NOTE, from the flex's exit: its center, velocity and orientation as it
+  left, and the spin it had, as the test range's shooter hands a NOTE off. The hand-off happens where the NOTE's
+  center crosses into the outlet, so put the outlet past the wheels, more than the NOTE's half-width (7 in) beyond
+  them, or its speed and spin are read while it is still squeezed; `bench check` warns about an outlet that close.
+- **The wheels' treads take the flex's contact.** On a flex bench every shape (a wheel's tread included) meets the
+  NOTE with the flex's own contact settings, the ones its fit was made with, so the tread's own stiffness doesn't
+  apply, and contacts have no rolling or twisting friction. The squeeze is the flex's: its `stiffness` alone.
+- **It runs on a different integrator.** A flex needs MuJoCo's `discrete` integrator (with the Newton solver), at a
+  0.5 ms timestep unless `[run] timestep` says otherwise; the rest of the bench uses `implicitfast`. The flex is
+  fitted at the run's own timestep, since its answer moves a few percent with the step: the shipped fit is for
+  0.5 ms, so another `timestep` fits it again on first use (up to about 20 s at 0.5 ms, longer at a smaller step)
+  and caches that fit too. MuJoCo itself
+  describes `discrete` as new, under active development and subject to change, so a MuJoCo update may move these
+  numbers (a test pins one shot, so a change is caught).
+- On the soft-note spike's pinch (1.5 in gap, 3000 and 5000 rpm), the flex leaves within 4% of the launcher
+  model's pinch (`launcher/pinch.py`) fed the same squeeze.
 
 Discs (the 2013 Frisbee and an Ultra-Star preset, with their own flight) come in a later step, once the disc launcher
 model is merged. A custom rigid `shape = "disc"` (a short cylinder) works now.
@@ -405,8 +472,8 @@ stiffness N/m, voltage V, current A, time s.
 ### `[piece]`
 
 Either `preset = "<ball>"` (a squishy ball; any key below overrides the preset's), `preset = "<piece preset>"` (a
-range's rigid piece, such as `2024-note`; only `name`, `stiffness`, `drag_coefficient` and `spin_damping` go with
-it, the rest is the preset's), or a custom piece.
+range's rigid piece, such as `2024-note`; only `name`, `stiffness`, `drag_coefficient`, `spin_damping`, `flex` and
+(with `flex`) `restitution` go with it, the rest is the preset's), or a custom piece.
 
 | Key | Meaning | Default |
 |---|---|---|
@@ -420,6 +487,8 @@ it, the rest is the preset's), or a custom piece.
 | `stiffness` | rigid only: its own contact stiffness, N/m, in series with the tread | a piece preset's own (the 2024 NOTE's 2000), else none: hard |
 | `drag_coefficient`, `spin_damping` | rigid only, in `[flight]`: the drag coefficient on its shadow, and how fast the air slows its spin, N m s/rad (0 or more) | 1.17 (an estimate), 0; a piece preset's own |
 | `stiffness_n`, `stiffness_exponent`, `restitution`, `inertia_factor` | squishy only: the launcher model's ball numbers | the preset's, or the nearest preset's |
+| `flex` | `true`: a ring is a soft flex body, experimental and about 100 times slower ([Flex NOTE](#flex-note-experimental)); a ring whose length is its wall's width only, as the 2024 NOTE | `false` |
+| `restitution` | with `flex = true`: the ring's bounce off the carpet (above 0, below 1), which its flex is fitted to | a piece preset's own (the 2024 NOTE's 0.3) |
 | `mesh`, `units` | `shape = "mesh"`: an STL or OBJ file (relative to the bench file) and its units, `m`, `mm` or `in`; it collides as its convex hull | none |
 
 ### `[shaft.<name>]`
@@ -667,7 +736,7 @@ heading_deg = 180.0              # facing the wall
 | Key | Meaning | Default |
 |---|---|---|
 | `duration` | the longest the run goes on, spin-up included, s (it ends sooner once every piece is settled) | 5.0 |
-| `timestep` | s | 1e-4 squishy, 2.5e-4 rigid |
+| `timestep` | s; with `flex = true`, the flex is fitted at this step (a step other than 5e-4 fits it again on first use) | 1e-4 squishy, 2.5e-4 rigid, 5e-4 flex |
 | `jam_time`, `jam_distance` | a piece that stays within `jam_distance` (m) of one point for `jam_time` (s) is jammed | 1.0, 0.01 |
 
 ### `include`
@@ -917,6 +986,22 @@ squeeze test) and bounce (a drop test) first, then the
 tread's friction (a sled pull): [measuring.md](measuring.md) has each test. The bench doesn't take a measurement file
 yet: type a measured `stiffness_n` or `restitution` into the `[piece]` (the averages `scrimmage measure` prints). Its
 last line still says UNCALIBRATED, since it can't tell a typed number from an estimate.
+
+### Known limits
+
+- **A rigid piece in a pinch.** A rigid NOTE squeezed between two wheels isn't foam. Held still, it is squeezed as
+  hard as its `stiffness` says: the bench spreads the stiffness over the 8 contact points it makes with each wheel.
+  Going through, though, the flat sides of its 24 slices strike the wheels (several hundred N, where the launcher
+  model's pinch has 19 N) and it rocks about 25 mm, so the wheels slow far more (46% against the model's 4% on the
+  dry run's 1.25 in pinch) and it leaves slower (7.1 m/s against the model's 9.6). Compare rigid-NOTE pinches with
+  each other, not with the launcher model, or use `flex = true` ([Flex NOTE](#flex-note-experimental)), which agrees
+  with the model within 4% on a quarter squeeze. (A test keeps the rigid case as a known failure.)
+- **Flex NOTEs touching each other are slow.** A flex NOTE resting flat on another makes about 900 contacts a step,
+  and the bench reads each one in Python: one simulated second of two stacked NOTEs took about 20 s of computer time
+  on the development machine, where one NOTE landing on another's rim and sliding off took about 3 s. A pinch shot
+  is unaffected (few contacts). Keep `count` low and space the feed out so flex NOTEs don't pile up; the contact
+  reader will be made faster if a flex intake ever needs it.
+- **The flex NOTE is experimental**: fitted to estimates, on an integrator MuJoCo still calls new.
 
 ## CAD
 

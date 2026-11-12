@@ -19,9 +19,10 @@ launcher finishes with (launched, or stuck) leaves the ball path and takes its n
 ledger and the ball path's held() always agree.
 
 Sleeping: a range world turns on MuJoCo's sleeping (mjENBL_SLEEP, MuJoCo 3.4 and later), so the balls resting on the
-carpet cost almost nothing until something touches them. Only ball trees may sleep (the robot and anything else
-never do). A sleeping ball wakes when an awake body touches it, when a force is applied to it, and when its qpos or
-qvel is written (parking, placing); checked on MuJoCo 3.4.0 and 3.17.0, and two runs stay bit-identical.
+carpet cost almost nothing until something touches them. Only ball trees and the soft pool's rings may sleep (the
+robot and anything else never do). A sleeping ball wakes when an awake body touches it, when a force is applied to
+it, and when its qpos or qvel is written (parking, placing); checked on MuJoCo 3.4.0 and 3.17.0, and two runs stay
+bit-identical.
 """
 
 from __future__ import annotations
@@ -69,6 +70,14 @@ class RangeRuntime:
         else:
             air = _build_section("air", {"preset": "default"})
         self.balls = Balls(m, world.data, self.layout, self.range, air)
+        # the soft pool (testrange/soft.py): a soft kind's NOTE swapped for a ring near the robot; None without one
+        self.soft = None
+        self.parked_rings = None        # its rings, held under the floor while free
+        if self.layout.soft:
+            from .soft import SoftPool
+            self.soft = SoftPool(m, world.data, self.balls, self.layout, int(m.body_rootid[world.robot_body]))
+            self.parked_rings = self.soft.parked
+            m.tree_sleep_policy[self.parked_rings.trees] = int(mujoco.mjtSleepPolicy.mjSLEEP_ALLOWED)
         self.disc = config is not None and config.kind == "disc"
         self.piece = config is not None and config.kind == "piece"     # a pinch shooter's rigid piece
         if config is None:
@@ -124,6 +133,8 @@ class RangeRuntime:
         self._overrides.update(new)
         s = self.settings()
         balls = self.balls
+        if self.soft is not None:       # every ring parked, every NOTE rigid, before the balls go back
+            self.soft.reset()
         balls.clear()
         if s["floor_balls"]:
             lift = self.range.floor_heights if len(self.range.floor_heights) == len(self.range.floor_balls) \
@@ -250,11 +261,21 @@ class RangeRuntime:
         self._log_exit(i, shot, motion)
 
     def after_physics(self) -> None:
+        """After mj_step: a soft NOTE's slot takes its ring's state first (so scoring and leaving the field read it),
+        then the ledger's work, the free rings held, the intake, and last the soft swaps (so a NOTE the intake took
+        releases its ring in the same step)."""
         if self.shooter is not None:
             self.shooter.mirror()
+        soft = self.soft
+        if soft is not None:
+            soft.shadow()
         self.events = self.balls.after_step(self._prev)
+        if soft is not None:
+            soft.parked.hold()
         if self.ball_path is not None:
             self.ball_path.collect()
+        if soft is not None:
+            soft.update()
 
     def sensor_updates(self, hal: HalState) -> list[Update]:
         return self.ball_path.beam_updates() if self.ball_path is not None else []
@@ -271,6 +292,11 @@ class RangeRuntime:
         goals = dict(self.balls.goal_counts)
         return {"score": sum(goals.values()), "goals": goals, "fired": self.balls.fired, "held": ledger["robot"],
                 "on_field": ledger["field"], "ledger": ledger}
+
+    def soft_notes(self, lang: str | None = None) -> list[str]:
+        """The soft pool's notes (SoftPool.notes): a full pool, and each soft kind's uncalibrated numbers once one of
+        its NOTEs has turned soft. Empty without a pool."""
+        return self.soft.notes(lang) if self.soft is not None else []
 
     def ball_log(self) -> list[dict]:
         """Every ball's log (None for unset values), the in-play balls' last position and rest brought up to date."""

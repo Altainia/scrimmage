@@ -243,13 +243,13 @@ def on_partner(world, spread: dict) -> str | None:
     placement 6 in left puts the ball under the partner robot: ..."), or None (no partner, or none does). The piece is
     a circle of its kind's radius (a ball's own; any other piece's bounding sphere's) where the placement puts its
     center, against the partner's outline (frame plus bumpers), as partner.check_start judges the field's own floor
-    pieces."""
+    pieces. A partner hanging from a chain is over the floor, not on it: never."""
     from ..parts.partner import _circle_overlap
     from ..testrange.elements import _rect
     info = world.parts.partner if world.parts is not None else None
     found = spread_ball(world)
     pose = start_pose(world)
-    if info is None or found is None or pose is None:
+    if info is None or info.hang is not None or found is None or pose is None:    # a hanging partner is off the floor
         return None
     i = found[0]
     kind = spread_kind(world, i)

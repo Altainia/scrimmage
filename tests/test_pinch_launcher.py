@@ -8,6 +8,7 @@ from __future__ import annotations
 import dataclasses
 import math
 import re
+from pathlib import Path
 
 import mujoco
 import numpy as np
@@ -245,13 +246,44 @@ def test_the_benchs_squeeze_is_the_models(tmp_path):
         assert sum(forces) == pytest.approx(model_n, rel=0.02)
 
 
-@pytest.mark.xfail(strict=True, reason="the bench's ring NOTE leaves at 7.1 m/s, the model's at 9.6 m/s: held "
-                   "still they squeeze alike (test_the_benchs_squeeze_is_the_models), but the bench's flat-sided ring "
-                   "slices strike the wheels going in (several hundred N against the model's 19 N) and the NOTE "
-                   "rocks about 25 mm, so its wheels slow 46% against the model's 4%")
+@pytest.mark.xfail(strict=True, reason="a rigid NOTE on the bench is a rigid-piece limit (docs/bench.md, Known "
+                   "limits): it leaves at 7.1 m/s, the model's at 9.6 m/s. Held still they squeeze alike "
+                   "(test_the_benchs_squeeze_is_the_models: the bench spreads `stiffness` over its 8 contact points "
+                   "per wheel), but the rigid ring's flat-sided slices strike the wheels going in (several hundred N "
+                   "against the model's 19 N) and the NOTE rocks about 25 mm, so its wheels slow 46% against the "
+                   "model's 4%. The flex NOTE is checked against the model on the spike's geometry in "
+                   "test_flex_note_matches_pinch_py")
 def test_exit_speed_against_the_bench(tmp_path):
     """The model's exit speed within 15% of the bench's (MuJoCo contact) on note_shooter.toml's geometry."""
     from scrimmage.bench.run import run_bench
     res = run_bench(_bench(tmp_path))
     bench = res.pieces[0].speed
     assert shot().speed == pytest.approx(bench, rel=0.15)
+
+
+# ------------------------------------------------------------------------------------- the flex NOTE (spec D10)
+
+FLEX_EXAMPLE = Path(__file__).resolve().parent.parent / "examples" / "bench" / "note_pinch_flex.toml"
+SPIKE_SHAFT = Shaft(wheel_inertia=1.0, motor="KrakenX60", motor_count=1, gearing=1.0)  # source: the spike: held at speed
+
+
+@pytest.mark.parametrize("rps", [50.0, 83.333], ids=["3000rpm", "5000rpm"])
+def test_flex_note_matches_pinch_py(tmp_path, rps):
+    """K2's pinch check, on the soft-note spike's geometry (note_pinch_flex.toml): the bench's flex NOTE leaves within
+    15 % (spec D10's choice; the spike measured 4-13 %) of pinch.py fed the same squeeze, at 3000 and 5000 rpm. The
+    model gives 7.95 m/s at both, the spike's flex 8.38 and 8.53."""
+    from scrimmage.bench.run import run_bench
+    from scrimmage.bench.spec import load_bench
+    text = re.sub(r"(?m)^target_rps = 50\b", f"target_rps = {rps}", FLEX_EXAMPLE.read_text(encoding="utf-8"))
+    assert text.count(f"target_rps = {rps}") == 2
+    path = tmp_path / "note_pinch_flex.toml"
+    path.write_text(text, encoding="utf-8")
+    res = run_bench(load_bench(path))
+    p = res.pieces[0]
+    assert p.status == "out" and res.energy[0].ok
+    model = single_shot(PinchSetup(piece=piece_of(piece_box(NOTE), NOTE.mass, NOTE.inertia, 2000.0),
+                                   bottom_diameter=4 * IN, top_diameter=4 * IN, gap=1.5 * IN, wheel_x=0.25,
+                                   wheel_width=14 * IN, durometer=60.0, friction=0.7,
+                                   shafts=(SPIKE_SHAFT, SPIKE_SHAFT), entry_speed=2.0), (rps, rps))
+    assert model.speed == pytest.approx(7.95, abs=0.01)
+    assert p.speed == pytest.approx(model.speed, rel=0.15)

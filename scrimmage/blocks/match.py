@@ -1,5 +1,5 @@
 """A match in the Test tab: where the run is in the range's `[game]` (auto, the pause, teleop), whether the robot left
-the start zone, the climb level it ended on, and the points so far.
+the start zone, the climb level it ended on (and its HARMONY points), and the points so far.
 
 The runner makes one MatchState when the test has `match = true`, with the run time the first block starts at, and
 calls `see` after every physics step; the Watch reads it for the `match` and `points` conditions. Scoring is
@@ -22,12 +22,13 @@ class MatchState:
         self.phase: str | None = None       # the phase at the last step; None before the first
         self.left: bool | None = None       # LEAVE: None until auto ends, then fixed
         self.level: str | None = None       # the climb level held now, fixed once the match has ended
+        self.harmony = 0.0                  # the HARMONY points held now (climb.harmony), fixed with the level
         self._inside0: bool | None = None   # whether the robot's center was in the leave zone at the start
         self._ended = False
 
-    def see(self, t: float, x: float, y: float, rank: int) -> str | None:
-        """The state after a physics step at run time `t`: the robot's center (x, y) and the climb monitor's level
-        rank (0: none). Returns the new phase when it changed."""
+    def see(self, t: float, x: float, y: float, rank: int, harmony: float = 0.0) -> str | None:
+        """The state after a physics step at run time `t`: the robot's center (x, y), the climb monitor's level
+        rank (0: none) and its HARMONY points (climb.harmony). Returns the new phase when it changed."""
         if self._zone is not None:
             inside = self._zone.contains(x, y)
             if self._inside0 is None:
@@ -36,6 +37,7 @@ class MatchState:
                 self.left = bool(self._inside0 and not inside)
         if not self._ended:
             self.level = level_name(self._levels, rank)
+            self.harmony = float(harmony)
             self._ended = t >= self.end
         phase = self.phases.of(t)
         changed = phase if phase is not None and phase != self.phase else None
@@ -46,7 +48,7 @@ class MatchState:
     def points(self, log: list[dict], at: float | None = None, held: bool = False) -> Points:
         """The points so far (with `at`, the run time) or of the whole run, read from the ball log. With `held`, the
         endgame is the climb level held now: the score if the match ended now (what a points condition reads)."""
-        return score(self.game, log, self.phases, self.left, self.level, at, held)
+        return score(self.game, log, self.phases, self.left, self.level, at, held, self.harmony)
 
     def to_dict(self) -> dict:
         """The phase times, for result.json: run time (s), each phase's [start, end]."""

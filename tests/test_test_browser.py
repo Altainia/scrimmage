@@ -2116,6 +2116,71 @@ def test_setups_partner_robot_off_writes_false_over_the_configs_own(test_page, t
     _wait_file(lambda: "partner" not in _toml(path).get("setup", {}), path)       # the config's own again
 
 
+def test_setup_hangs_the_partner_on_a_chain(test_page, tmp_path):
+    """K5 D6: on a field with a chain, the partner box's Hangs on lists "no" and the chains; picking one and typing
+    along writes `[setup] partner = { hang, along_in }`, and hides the boxes a hanging partner has no use for."""
+    chain = Path(__file__).resolve().parent / "data" / "chain"
+    for f in chain.iterdir():
+        shutil.copy(f, tmp_path)
+    path = tmp_path / "t.test.toml"
+    path.write_text('[test]\nrobot = "robot.toml"\n' + SPIN, encoding="utf-8")
+    page, path = test_page(path=path)
+    _open_setup(page)
+    page.check("#test-partner")
+    _wait_file(lambda: _partner_setup(path) == {"ahead_in": 60.0, "heading_deg": 0.0, "brake": True}, path)
+    hang = page.locator("#test-partner-hang")
+    expect(hang).to_be_visible()
+    assert hang.locator("option").all_text_contents() == ["no", "chain_blue_center"]
+    page.select_option("#test-partner-hang", "chain_blue_center")
+    expect(page.locator("#test-partner-along")).to_be_visible()
+    expect(page.locator("#test-partner-ahead")).to_be_hidden()
+    expect(page.locator("#test-partner-facing")).to_be_hidden()
+    expect(page.locator("#test-partner-brake")).to_be_hidden()
+    expect(page.locator("#test-partner-along")).to_have_value("18")      # the default, inside the STAGE legs
+    expect(page.locator("#test-partner-across")).to_have_value("-2")     # clear of the STAGE core, on the chain's left
+    page.fill("#test-partner-along", "17.7")
+    page.press("#test-partner-along", "Enter")
+    _wait_file(lambda: _partner_setup(path) == {"hang": "chain_blue_center", "along_in": 17.7, "across_in": -2}, path)
+    page.select_option("#test-partner-hang", "")
+    expect(page.locator("#test-partner-ahead")).to_be_visible()
+    expect(page.locator("#test-partner-along")).to_be_hidden()
+    _wait_file(lambda: _partner_setup(path) == {"ahead_in": 60.0, "heading_deg": 0.0, "brake": True}, path)
+
+
+def test_setup_shows_the_robot_files_hanging_partner(test_page, tmp_path):
+    """I2: the robot file's own `[partner] hang` shows in Setup as it is (the chain, along and across), and a first
+    edit writes Setup's own hanging partner from it."""
+    chain = Path(__file__).resolve().parent / "data" / "chain"
+    for f in chain.iterdir():
+        shutil.copy(f, tmp_path)
+    rng = tmp_path / "range.toml"
+    rng.write_text(re.sub(r'\[\[obstacle\]\]\nname = "stage_blue_leg2".*?\n\n', "", rng.read_text(encoding="utf-8"),
+                          flags=re.S), encoding="utf-8")       # the leg passes through a partner 0.9 m along
+    robot = tmp_path / "robot.toml"
+    hang = '\n[partner]\nhang = { hold = "chain_blue_center", along = 0.9, across = -0.05 }\n'
+    robot.write_text(robot.read_text(encoding="utf-8") + hang, encoding="utf-8")
+    path = tmp_path / "t.test.toml"
+    path.write_text('[test]\nrobot = "robot.toml"\n' + SPIN, encoding="utf-8")
+    page, path = test_page(path=path)
+    _open_setup(page)
+    expect(page.locator("#test-partner")).to_be_checked()
+    expect(page.locator("#test-partner-hang")).to_have_value("chain_blue_center")
+    expect(page.locator("#test-partner-along")).to_have_value(re.compile(r"^35\.433"))       # 0.9 m
+    expect(page.locator("#test-partner-across")).to_have_value(re.compile(r"^-1\.968"))     # -0.05 m
+    expect(page.locator("#test-partner-ahead")).to_be_hidden()
+    page.fill("#test-partner-along", "30")
+    page.press("#test-partner-along", "Enter")
+    _wait_file(lambda: _partner_setup(path) == {"hang": "chain_blue_center", "along_in": 30, "across_in": -1.968504},
+               path)
+
+
+def test_setup_has_no_hangs_on_without_a_chain(test_page, tmp_path):
+    page, _ = test_page()
+    _open_setup(page)
+    page.check("#test-partner")
+    expect(page.locator("#test-partner-ahead")).to_be_visible()
+    expect(page.locator("#test-partner-hang")).to_have_count(0)
+
 CLEARS_PORTCULLIS = """
 [[block]]
 do = "wait"

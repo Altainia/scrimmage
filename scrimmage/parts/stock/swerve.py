@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ...motors import MOTORS
+from ...motors import MOTORS, ROTOR_MOI
 from . import TREAD_PARAMS, Param, Stock, register
 from ...i18n import N_
 
-ROTOR_MOI = 1.0e-4          # kg m^2: a Kraken-class rotor; matches the hand-tuned armature in the old swerve.xml
 DARK = [0.3, 0.3, 0.33, 1.0]
 TIRE = [0.15, 0.15, 0.15, 1.0]
 

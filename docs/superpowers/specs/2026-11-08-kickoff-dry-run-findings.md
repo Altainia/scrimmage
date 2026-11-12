@@ -190,6 +190,16 @@ Severity: **B** = blocker, **W** = workaround exists, **N** = nice-to-have. Size
        fix is queued after K2, and a strict xfail (`tests/test_pinch_launcher.py::test_exit_speed_against_the_bench`)
        pins it;
      - a field with both balls and NOTEs can't shoot NOTEs (the robot holds the ball).
+   - **K5 status (2026-11-12).** The pinch exit-speed check is done, on the bench's flex NOTE
+     (`examples/bench/note_pinch_flex.toml`, `tests/test_pinch_launcher.py::test_flex_note_matches_pinch_py`): fed the
+     spike's geometry (a 1.5 in gap, wheels held at speed, a feed plate), the flex NOTE leaves at 7.94 m/s at 3000 rpm
+     and 8.20 at 5000, against pinch.py's 7.95 (−0.1 % and +3.1 %, inside the 15 % bound). What doesn't work:
+     - the old strict xfail stays, with its measured cause: a rigid NOTE on the bench leaves at 7.1 m/s against the
+       model's 9.6, since its flat-sided slices strike the wheels going in and its wheels slow 46 %. That is a
+       rigid-piece limit (docs/bench.md, Known limits);
+     - the flex NOTE's foam numbers (stiffness 2000 N/m, restitution 0.3) are uncalibrated estimates;
+     - flex NOTEs stacked on each other are slow (about 900 contacts a step read in Python: a 1 s stack took 20 s of
+       wall time). A pinch shot is unaffected.
 
 2. **Goals can only score downward entries (tilt 0–90).** — **B** (W with a hack), S
    - Needed: the SPEAKER opening, entered going up (M 5.6, 14° plane).
@@ -206,6 +216,24 @@ Severity: **B** = blocker, **W** = workaround exists, **N** = nice-to-have. Size
    - The rigid disc and rigid torus-hull stand-ins gave **opposite** intake results (picked up vs escaped).
    - Fix: a soft-ring model, for example a ring of capsule segments joined by springs, or MuJoCo flex. Already noted as "survey project 5".
    - Docs: OK. The limitation is stated.
+   - **K5 status (2026-11-12).** What works now:
+     - in the world, a `soft = true` ring kind (the `2024-note` preset sets it) is rigid on the floor and in flight,
+       and turns into a ring of 16 capsule segments within 0.25 m of the robot, the same piece with the same name and
+       counts (docs/test-range.md, "Soft pieces");
+     - on the bench, `flex = true` gives a tetrahedral flex NOTE (experimental), checked against the pinch model.
+   - What doesn't work yet:
+     - **no floor intake in the world was shown to pick a soft NOTE up off the carpet.** A NOTE dragged on the carpet
+       under an open-bottom intake isn't "in" (gap 13's carpet rule, rightly): with that intake's roller off, the
+       robot drives over the NOTE and it reaches the back stop anyway, soft or rigid. A lift onto a floor was tried
+       at the AMP-side WING NOTE, clear of the STAGE, in 25 runs over two designs (a round lip and a floor behind the
+       roller; a second roller 8 in behind pushing it up a ramp): each passed or failed with 1 cm of lip position, 0.25
+       in of axle height or 1.5 V on the rollers. So the result still flips, now at the lift instead of the pull-in,
+       and the planned soft-NOTE intake example wasn't shipped. (About 65 earlier runs at the middle WING NOTE are
+       left out: from `blue_wing_note`, an intake reaching 20 in past the bumper hits the STAGE's leg 1 just as the
+       NOTE reaches its back stop.);
+     - the foam numbers are uncalibrated (stiffness 2000 N/m, restitution 0.3; docs/measuring.md has the two tests);
+     - soft is for rings only. The 2023 cube and other squashy pieces stay rigid stand-ins;
+     - the soft ring's squash is a soft contact, good for where the NOTE goes, not for the forces on it.
 
 4. **No match or game-scoring model; scenarios need robot code.** — **B** for "check it scored X points in auto", M–L
    - Needed: the 15 s / 3 s / 135 s match with points, LEAVE, amplification and endgame.
@@ -253,6 +281,23 @@ Severity: **B** = blocker, **W** = workaround exists, **N** = nice-to-have. Size
    - climbing.md: "Chain and rope aren't modeled (2024's chain ...)".
    - My chain bars hang at the low point and don't sag or swing. HARMONY needs per-chain multi-robot scoring. TRAP needs a NOTE goal (gap 1).
    - Fix: a sagging chain as a chain of capsules, or a `catenary` element, plus a `[climb] rule = "off-carpet"` with per-element counts.
+   - **K5 status (2026-11-12).** What works now:
+     - `kind = "chain"`: a hanging 1D flex of 40 links, sagging and swinging under a robot. 2024's six CHAINS are
+       chains (span 2.42 m, ends 1.18 m up, low point 28.25 in), and the stock climber climbs one to ONSTAGE
+       (`examples/blocks/chain-climb/onstage.test.toml`). A rigid bar under 1 in is climbable too: the climber's
+       telescope now carries its motors' rotor inertia;
+     - `[climb] rule = "off-carpet"` and `harmony = 2`, with the signals `climb.hold`, `climb.hold.<hold>.robots` and
+       `climb.harmony`. A partner can hang on a chain (`[partner] hang`, Setup's **Hangs on**), and a match scores
+       HARMONY: `harmony.test.toml` gets ONSTAGE's 3 and HARMONY's 2 in the endgame;
+     - the 2024 STAGE legs are now FIRST's field CAD's: upright 12 in posts with trusses to the core. The old leaning
+       lines were up to 30 cm off at the feet.
+   - What doesn't work yet:
+     - robots don't slide along a chain: a hook stays at the link where it caught (about 200–250 N to move a 60 kg
+       robot in the spike). Two robots that would meet at the low point stay apart, so a HARMONY test places the
+       partner where it would end up. On 2024 a stock partner fits only within about 0.65 m of the low point;
+     - the hanging partner is welded, not hooked, and doesn't swing;
+     - the 4-stage elevator is near the bounce threshold the telescope fix found (b·dt/M about 8); unchecked;
+     - TRAP, SPOTLIT and the MICROPHONE aren't modeled; rope (2017) isn't either.
 
 10. **No range viewer or validator; `scrimmage edit 2024.toml` treats a range as a robot config.**
     - **W**, S–M
@@ -303,6 +348,10 @@ Severity: **B** = blocker, **W** = workaround exists, **N** = nice-to-have. Size
 
 15. **No soft-contact or stiffness key for range pieces.** — **N**, S (until gap 3)
     - The bench has a rigid `stiffness`; `[piece.*]` does not. Add it so the Test tab and bench agree.
+    - **K5 status (2026-11-12).** Done: `[piece.*]` takes `stiffness` (N/m, at 25 % squeeze, the number pinch.py and the
+      bench use), `restitution` (a 1 m drop's bounce) and `soft`. The `2024-note` preset has 2000 N/m and 0.3, both
+      labeled uncalibrated; docs/measuring.md has a squeeze test and a drop test. Not done: the numbers aren't
+      measured, and `soft` is for rings only.
 
 16. **Station spread is along the field axes only and isn't checked for overlap.** — **W**, S
     - Happened: `spread_position = [0.3, 0.3, 0]` at a 30° SOURCE wall sometimes spawned the NOTE in the wall, and it shot out at about 13 m/s. No error.

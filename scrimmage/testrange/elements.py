@@ -40,8 +40,13 @@ rest at one end of the range, and a stiffness), so it takes that much push to st
 A mesh element (testrange/mesh.py) is a static shape from a CAD file (K4): `file`, `select`, `units`, `scale`, `pos`,
 `rpy_deg` and `ground`. It has no `center` or `yaw_deg`; its footprint is its bounding box in the field.
 
+A chain (testrange/chain.py) hangs from two ends `top` above the carpet, `span` apart along the element's local x,
+to its low point `low` at `center`: a 1D flex of 40 links in the catenary those three give (no friction key: a hook's
+material sets it). `level` as a bar's. Its ends must lie inside the field.
+
 `[climb]` picks a scoring rule (CLIMB_RULES) and lists the levels lowest first, each with its points:
-`levels = { LOW = 4, MID = 6 }`. The "hang" rule also takes `level_bonus` and the `switch` it applies to.
+`levels = { LOW = 4, MID = 6 }`. The "hang" rule also takes `level_bonus` and the `switch` it applies to, and the
+"off-carpet" rule (2024) `harmony`: the points for each robot beyond the first on one hold, all off the carpet.
 """
 
 from __future__ import annotations
@@ -74,7 +79,7 @@ DEFAULT_SWITCH_DIAMETER = 1.66 * IN
 # A ground box no taller than this may lie under a start: a robot starts on a floor protector, settling the
 # difference (the 2022 HANGAR's is 3/8 in, manual 5.4.3).
 START_STEP = 0.5 * IN  # m
-CLIMB_RULES = ("lowest-rung", "hang", "lowest-point")
+CLIMB_RULES = ("lowest-rung", "hang", "lowest-point", "off-carpet")
 # A start's robot may not lie under a rod whose low end is lower than this (it would begin inside the rod); higher
 # rods (reef branches, overhead) are allowed over a start.
 ROD_START_CLEARANCE = 0.5  # m
@@ -142,6 +147,21 @@ class Bar:
     level: str | None = None  # a [climb] level's name
     points: float | None = None  # from [climb] levels, for the level
     section: str = "round"  # "round" (a pipe) or "square" (a box of side `diameter`)
+
+
+@dataclass(frozen=True)
+class Chain:
+    """A chain hung between two ends `top` above the carpet, `span` apart along local x, its low point `low` at
+    `center` (testrange/chain.py builds it)."""
+    name: str
+    center: tuple[float, float]  # the low point, in the field
+    yaw_deg: float  # along the chain
+    span: float  # between its two ends
+    top: float  # the ends' height
+    low: float  # the low point's height, unloaded
+    diameter: float  # across the links
+    level: str | None = None  # a [climb] level's name
+    points: float | None = None  # from [climb] levels, for the level
 
 
 @dataclass(frozen=True)
@@ -334,9 +354,10 @@ class ClimbRule:
     levels: dict[str, float] = field(default_factory=dict)  # level name -> points, lowest level first
     level_bonus: float = 0.0  # "hang": added while `switch` is within its level_deg
     switch: str | None = None  # "hang": the switch element
+    harmony: float = 0.0  # "off-carpet": points for each robot beyond the first on the robot's hold (R8)
 
 
-Element = Bump | Ramp | Platform | Bar | Box | Switch | Rod | Hinged | Sliding | Mesh
+Element = Bump | Ramp | Platform | Bar | Box | Switch | Rod | Hinged | Sliding | Mesh | Chain
 
 _COMMON = ("name", "kind", "center", "center_in", "yaw_deg", "friction")
 _LENGTHS = {
@@ -350,6 +371,7 @@ _LENGTHS = {
     "hinged": ("base_height", "diameter", "thickness"),
     "sliding": ("base_height", "rest"),
     "mesh": (),
+    "chain": ("span", "top", "low", "diameter"),
 }
 _OTHER = {
     "bump": ("ramp_deg",),
@@ -364,12 +386,10 @@ _OTHER = {
     "sliding": ("size", "size_in", "axis", "range", "range_in", "stiffness", "damping", "breakaway", "preload",
                 "preload_lb", "mass", "ground"),
     "mesh": ("file", "select", "units", "scale", "pos", "rpy_deg", "ground"),
+    "chain": ("level",),
 }
-_ALL = tuple(dict.fromkeys(
-    _COMMON + tuple(k + s for v in _LENGTHS.values() for k in v for s in ("", "_in"))
-    + tuple(k for v in _OTHER.values() for k in v)))
 _CLASSES = {"bump": Bump, "ramp": Ramp, "platform": Platform, "bar": Bar, "box": Box, "switch": Switch, "rod": Rod,
-            "hinged": Hinged, "sliding": Sliding, "mesh": Mesh}
+            "hinged": Hinged, "sliding": Sliding, "mesh": Mesh, "chain": Chain}
 # Length keys that may be 0 or left out, with their defaults.
 _LENGTH_DEFAULTS = {"crest": DEFAULT_CREST, "lip": DEFAULT_LIP, "base_height": 0.0}
 
@@ -585,20 +605,25 @@ def _rod(r: _Reader, name: str) -> Rod:
 
 def _element(path, table, i: int, base_dir: Path, size: tuple[float, float]) -> Element:
     where = f"[[element]] #{i + 1}"
-    name = _Reader(path, where, table, _ALL).text("name")
+    keys = tuple(table) if isinstance(table, dict) else ()    # every key is checked once the kind is known
+    name = _Reader(path, where, table, keys).text("name")
     where = f"element '{name}'"
-    kind = _Reader(path, where, table, _ALL).text("kind")
+    kind = _Reader(path, where, table, keys).text("kind")
     if kind not in _CLASSES:
         raise RangeError(i18n.t("{path}: {where} has unknown kind '{kind}'; kinds: {kinds}",
                                 path=path, where=where, kind=kind, kinds=', '.join(_CLASSES)))
     valid = _COMMON + tuple(k + s for k in _LENGTHS[kind] for s in ("", "_in")) + _OTHER[kind]
     if kind in ("rod", "mesh"):    # a rod's ends place it; a mesh's `pos` and `rpy_deg` do
         valid = tuple(k for k in valid if k not in ("center", "center_in", "yaw_deg"))
+    if kind == "chain":     # a hook's material sets a chain's friction (R4)
+        valid = tuple(k for k in valid if k != "friction")
     r = _Reader(path, where, table, valid)
     if kind == "rod":
         return _rod(r, name)
     if kind == "mesh":
         return parse_mesh(r, name, base_dir, size)
+    if kind == "chain":
+        return _chain(r, name, size)
     kw: dict = dict(name=name, center=_center(r), yaw_deg=r.num("yaw_deg", 0.0),
                     friction=r.num("friction", DEFAULT_FRICTION, positive=True))
     if kind in ("hinged", "sliding"):
@@ -620,6 +645,47 @@ def _element(path, table, i: int, base_dir: Path, size: tuple[float, float]) -> 
     if isinstance(e, Bump):
         _check_bump(r, e)
     return e
+
+
+def _chain(r: _Reader, name: str, size: tuple[float, float]) -> Chain:
+    """A chain (R4): center, yaw_deg, span, top, low and diameter, and an optional level. The low point is below the
+    ends and above the carpet by more than the chain's radius, a catenary fits the three, and both ends are inside the
+    field."""
+    from .chain import CHAIN_EDGES, MAX_SAG_RATIO, MIN_SAG_RATIO, rest_shape
+
+    if not r.has("yaw_deg"):
+        raise r.err(i18n.t("needs {key}: the direction along the chain, in degrees", key="yaw_deg"))
+    kw = dict(name=name, center=_center(r), yaw_deg=r.num("yaw_deg"),
+              **{key: _length(r, key) for key in _LENGTHS["chain"]})
+    kw["level"] = r.text("level") if r.has("level") else None
+    e = Chain(**kw)
+    if not e.low < e.top:
+        raise r.err(i18n.t("low {low} m must be below top {top} m: the low point hangs below the ends",
+                           low=f"{e.low:.4g}", top=f"{e.top:.4g}"))
+    if not e.low > e.diameter / 2.0:
+        raise r.err(i18n.t("low {low} m must keep the chain above the carpet: more than its radius, {radius} m",
+                           low=f"{e.low:.4g}", radius=f"{e.diameter / 2.0:.4g}"))
+    try:
+        rest_shape(e.span, e.top, e.low)
+    except ValueError:
+        raise r.err(i18n.t("no catenary fits: a sag of {sag} m over a span of {span} m is {ratio} times the "
+                           "span, and a chain of {edges} links hangs between {least} and {most} times; change "
+                           "span, top or low", edges=CHAIN_EDGES, sag=_plain(e.top - e.low), span=_plain(e.span),
+                           ratio=_plain((e.top - e.low) / e.span), least=_plain(MIN_SAG_RATIO, 1),
+                           most=_plain(MAX_SAG_RATIO))) from None
+    c, s = math.cos(math.radians(e.yaw_deg)), math.sin(math.radians(e.yaw_deg))
+    for k in (-1.0, 1.0):
+        x, y = e.center[0] + k * e.span / 2.0 * c, e.center[1] + k * e.span / 2.0 * s
+        if not (-1e-9 <= x <= size[0] + 1e-9 and -1e-9 <= y <= size[1] + 1e-9):    # choice: 1e-9 m for rounding
+            raise r.err(i18n.t("an end at ({x}, {y}) is outside the field (0..{length} x 0..{width} m); move the "
+                               "chain or shorten its span", x=f"{x:.4g}", y=f"{y:.4g}", length=f"{size[0]:g}",
+                               width=f"{size[1]:g}"))
+    return e
+
+
+def _plain(x: float, digits: int = 4) -> str:
+    """`x` to `digits` significant digits in plain digits, never an exponent: 0.000005, not 5e-06."""
+    return np.format_float_positional(x, precision=digits, unique=False, fractional=False, trim="-")
 
 
 def _check_bump(r: _Reader, e: Bump) -> None:
@@ -653,14 +719,15 @@ def parse_elements(path, tables, size: tuple[float, float] = (FIELD_LENGTH, FIEL
 
 def parse_climb(path, table, elements: tuple[Element, ...]) -> tuple[ClimbRule | None, tuple[Element, ...]]:
     """`[climb]` (None without one), and the elements with each bar's points filled in from its level."""
-    leveled = [e for e in elements if isinstance(e, Bar) and e.level is not None]
+    leveled = [e for e in elements if isinstance(e, (Bar, Chain)) and e.level is not None]
     if table is None:
         if leveled:
-            raise RangeError(i18n.t("{path}: bar '{name}' has level '{level}' but the range has no {climb_table}; "
-                                    "add {climb_table} with rule and levels, or drop the bar's level", path=path,
+            raise RangeError(i18n.t("{path}: element '{name}' has level '{level}' but the range has no "
+                                    "{climb_table}; add {climb_table} with rule and levels, or drop the element's "
+                                    "level", path=path,
                                     name=leveled[0].name, level=leveled[0].level, climb_table="[climb]"))
         return None, elements
-    r = _Reader(path, "[climb]", table, ("rule", "levels", "level_bonus", "switch"))
+    r = _Reader(path, "[climb]", table, ("rule", "levels", "level_bonus", "switch", "harmony"))
     rule = r.text("rule")
     if rule not in CLIMB_RULES:
         raise r.err(i18n.t("has unknown rule '{rule}'; rules: {rules}",
@@ -675,6 +742,9 @@ def parse_climb(path, table, elements: tuple[Element, ...]) -> tuple[ClimbRule |
     if any(p < 0.0 for p in points) or any(b <= a for a, b in zip(points, points[1:])):
         raise r.err(i18n.t("levels must be listed lowest first, each worth more points than the one before (and "
                            "none below 0), not {levels}", levels=levels))
+    if r.has("harmony") and rule != "off-carpet":
+        raise r.err(i18n.t("has harmony, which only the \"{off_carpet}\" rule takes; drop it or use {rule_setting}",
+                           off_carpet="off-carpet", rule_setting="rule = \"off-carpet\""))
     if rule == "hang":
         name = r.text("switch")
         if not any(e.name == name for e in elements):
@@ -692,11 +762,15 @@ def parse_climb(path, table, elements: tuple[Element, ...]) -> tuple[ClimbRule |
         if extra:
             raise r.err(i18n.t("has {extra}, which only the \"{hang}\" rule takes; drop it or use {rule_setting}",
                                extra=extra[0], hang="hang", rule_setting="rule = \"hang\""))
-        climb = ClimbRule(rule=rule, levels=levels)
+        harmony = r.num("harmony") if r.has("harmony") else 0.0
+        if not 0.0 <= harmony < math.inf:
+            raise r.err(i18n.t("harmony must be 0 or more, not {harmony}: the \"{off_carpet}\" rule's points for "
+                               "each robot beyond the first on a hold", harmony=repr(harmony), off_carpet="off-carpet"))
+        climb = ClimbRule(rule=rule, levels=levels, harmony=harmony)
     for e in leveled:
         if e.level not in levels:
-            raise RangeError(i18n.t("{path}: bar '{name}' has level '{level}', which isn't one of the {climb_table} "
-                                    "levels: {levels}", path=path, name=e.name, level=e.level,
+            raise RangeError(i18n.t("{path}: element '{name}' has level '{level}', which isn't one of the "
+                                    "{climb_table} levels: {levels}", path=path, name=e.name, level=e.level,
                                     levels=', '.join(levels), climb_table="[climb]"))
     return climb, tuple(replace(e, points=levels[e.level]) if e in leveled else e for e in elements)
 
@@ -718,6 +792,8 @@ def _extent(e: Element) -> tuple[float, float]:
         return math.hypot(e.tip[0] - e.base[0], e.tip[1] - e.base[1]) + e.diameter, e.diameter
     if isinstance(e, Mesh):     # its bounding box in the field (yaw_deg is 0: the box is axis-aligned)
         return float(e.hi[0] - e.lo[0]), float(e.hi[1] - e.lo[1])
+    if isinstance(e, Chain):
+        return e.span, e.diameter
     if isinstance(e, Ramp):
         run = e.height / math.tan(math.radians(e.ramp_deg))
         return e.deck + run * (2 if e.two_sided else 1), e.width
@@ -749,10 +825,10 @@ def _separated(a: np.ndarray, b: np.ndarray) -> bool:
 
 def _on_floor(e: Element, start: bool) -> list[np.ndarray]:
     """The footprints of the parts of `e` that stand on the carpet, which a start's robot outline (`start`) or a
-    floor ball may not overlap. A bar's pipe and a switch hang overhead (a robot may start under them), as do a box
-    and a hinged or sliding panel raised off the carpet (a panel as described, at angle or travel 0); a start may lie
-    on a thin ground box (a floor protector, START_STEP), a ball may not."""
-    if isinstance(e, Switch):
+    floor ball may not overlap. A bar's pipe, a switch and a chain hang overhead (a robot may start under them), as
+    do a box and a hinged or sliding panel raised off the carpet (a panel as described, at angle or travel 0); a start
+    may lie on a thin ground box (a floor protector, START_STEP), a ball may not."""
+    if isinstance(e, (Switch, Chain)):
         return []
     if isinstance(e, Mesh):     # raised off the carpet it can be driven or rested under
         return [] if e.lo[2] > START_STEP else [footprint(e)]

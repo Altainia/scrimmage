@@ -304,9 +304,10 @@ def _world_boxes(center, yaw_deg: float, parts) -> list[tuple[np.ndarray, np.nda
 
 def _element_boxes(e) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """The boxes an element is built from, in the field: level (a moving panel at rest), and a platform's also as
-    it tilts (_tilted)."""
+    it tilts (_tilted); a chain's edges at rest (R6)."""
     from .build_elements import bump_parts, panel_parts, platform_parts, ramp_parts, rod_parts
-    from .elements import Bar, Box, Bump, Hinged, Platform, Ramp, Rod, Sliding
+    from .chain import edge_boxes
+    from .elements import Bar, Box, Bump, Chain, Hinged, Platform, Ramp, Rod, Sliding
     from .mesh import Mesh, placed
 
     if isinstance(e, Mesh):     # each convex part's axis-aligned box in the field
@@ -322,6 +323,8 @@ def _element_boxes(e) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
                                                   (sx / 2.0, sy / 2.0, sz / 2.0))])
     if isinstance(e, Rod):
         return [rod_parts(e)]
+    if isinstance(e, Chain):
+        return edge_boxes(e)
     if isinstance(e, (Hinged, Sliding)):    # at rest
         return _world_boxes(e.center, e.yaw_deg, [panel_parts(e)])
     if isinstance(e, Bar):

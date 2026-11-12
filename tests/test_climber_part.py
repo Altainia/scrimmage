@@ -110,6 +110,23 @@ def qadr(m, joint: str) -> int:
 ONE = {"stages": 1, "base_length": 0.6, "travel": 0.4, "hook_count": 1}
 
 
+@pytest.mark.parametrize("params, per_stage", [
+    # count x ROTOR_MOI (1e-4 kg m^2) x (motor rad per m of the first stage)^2, split equally over the moving stages
+    ({"stages": 2, "gearing": 12.0, "count": 2}, 256.0),               # the stock K5 / 2022 climber: 12 x 2 / 0.015
+    # = 1600 rad/m, 2e-4 x 1600^2 = 512 kg in all
+    ({"stages": 1, "travel": 0.4, "gearing": 12.0, "count": 2}, 128.0),   # 800 rad/m: 128 kg, all on the tip
+    ({"stages": 2, "gearing": 12.0, "count": 2, "rigging": "cascade"}, 64.0),   # 12 / 0.015 = 800 rad/m: a quarter
+    ({"stages": 2, "gearing": 25.0, "count": 1}, 1e-4 * (25 * 2 / 0.015) ** 2 / 2),   # 3333 rad/m: 555.6 kg a stage
+])
+def test_the_telescope_carries_its_motors_rotor_inertia(params, per_stage):
+    part = build_stock("climber", {"latch": "passive", "spool_radius": 0.015, **params}, "t")
+    moving = [b for b in part.bodies if b.joint is not None and b.joint.name.startswith(("stage", "tip"))]
+    assert len(moving) == params["stages"]
+    assert [b.joint.armature for b in moving] == pytest.approx([per_stage] * params["stages"], rel=1e-9)
+    latches = [b for b in part.bodies if b.name.startswith("latch")]
+    assert latches and all(b.joint.armature == pytest.approx(2e-4) for b in latches)   # LATCH_ARMATURE, unchanged
+
+
 def latch_world(latch: str):
     """A rigid rung across the hook's plane (along y), placed so the hook seats on it with the slide at SEAT_Q;
     the slide starts at START_Q, the hook's mouth above the rung."""

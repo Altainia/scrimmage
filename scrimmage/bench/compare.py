@@ -23,7 +23,7 @@ from ..launcher.report import check_charts, label
 from ..launcher.sweep import combinations
 from .build import build_bench, check_clear
 from .problems import Problem, collect_problems
-from .report import bench_uncalibrated
+from .report import bench_uncalibrated, flex_line
 from .run import BenchResult, run_bench
 from .spec import Bench, BenchError, _absolute_paths, load_bench, parse_bench, with_overrides
 
@@ -196,7 +196,8 @@ def format_table(rows: list[tuple[dict, "Row"]], bench: Bench) -> str:
     """The launcher model's table of BENCH_METRICS, headed by the bench's UNCALIBRATED line (not the launcher's): SHOWN
     in the Units setting, as the charts are."""
     table = launcher_report.format_table(rows, BENCH_METRICS, shown=SHOWN).split("\n", 1)[1]
-    return f"{bench_uncalibrated(bench)}\n{table}"
+    flex = flex_line(bench)     # a flex sweep is experimental: said first, as its runs' headlines do
+    return (f"{flex}\n" if flex else "") + f"{bench_uncalibrated(bench)}\n{table}"
 
 
 @dataclass

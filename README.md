@@ -1015,7 +1015,8 @@ brake = true
 
 | key | unit | default | meaning |
 |---|---|---|---|
-| `start` | m, m, deg | required | where its center starts and which way it faces, like `[robot] start_pose` |
+| `start` | m, m, deg | `start` or `hang` | where its center starts and which way it faces, like `[robot] start_pose` |
+| `hang` | | `start` or `hang` | `{ hold = "<chain>", along = <m>, across = <m> }`: it hangs from that chain of the range instead (below) |
 | `length`, `width` | m | 0.7, 0.7 | its frame without bumpers, at least 0.4 m each (its wheels fit inside) |
 | `mass` | kg | 60 | the whole partner, bumpers and battery included (an estimate of a full robot). It must be more than its drive's 2.5 kg |
 | `bumper_clearance` | m | 0.02 | its bumpers' bottom above the carpet |
@@ -1024,6 +1025,23 @@ brake = true
 **Brake mode is not a lock.** A braked drive resists being pushed through its motors' back-EMF, and so does the
 partner: two CIMs a side through 10.71 to 1 give each wheel 0.29 N·m·s/rad of damping (an estimate, from the motor
 model the robot's own motors use). A shoved braked partner still rolls, only slower.
+
+**A partner hanging on a chain.** `hang = { hold = "chain_blue_center", along = 0.45, across = -0.05 }` in place of
+`start` hangs the partner from a `kind = "chain"` element ([docs/terrain.md](docs/terrain.md#chains)), `along` meters
+from its low point along its `yaw_deg` and `across` meters to the side (to the left of `yaw_deg`), both signed and
+default 0. It faces along the chain, its length along it. Its top sits 2 cm (a choice) under the chain's joint
+nearest `along`, `across` to the side, held there by a weld that keeps it level: it doesn't swing, and its hook is a
+weld, not a hook. `along` must leave that joint inside the chain: at most half the span less one link (1.14 m on
+2024's chains); `across` at most half the partner's width, so the chain stays over its roof. The chain doesn't touch
+a hanging partner. It is refused if it starts overlapping your robot's start or anything it would touch, measured in
+3D at the start: `[partner] starts inside obstacle stage_blue_leg2 (their outlines overlap by 0.15 m)`. Near the
+2024 STAGE that matters: a stock partner under the center chain reaches into the STAGE's core unless it hangs a
+little away from it (`across = -0.05` there; the core is on the chain's left), and from about 0.65 m from the low
+point it overlaps a leg (the legs are FIRST's field CAD's). Its `partner.height` reads from where it would stand on its wheels. It counts for HARMONY
+([docs/climbing.md](docs/climbing.md#onstage-and-harmony)). A bar, a switch or any other element can't take a hanging partner.
+On the 2024 range: `[partner] hang hold 'stage_blue_core' isn't a chain: a hanging partner robot needs a chain; the
+range's chains: chain_blue_center, chain_blue_left, chain_blue_right, chain_red_center, chain_red_left,
+chain_red_right`.
 
 Its signals (above) read from where it rested 0.3 s after a reset. A partner whose outline (frame plus bumpers)
 overlaps the robot's start or a field element on the carpet is an error: `[partner] starts inside the robot (their

@@ -32,6 +32,7 @@ import mujoco
 import numpy as np
 
 from ..bindings import pigeon_angles
+from ..flexcontact import contact_ids, id_body, id_name, n_ids
 from ..parts.field import ELEMENT_GROUP
 from .climb import hold_geoms
 
@@ -55,11 +56,12 @@ class TerrainMonitor:
         self.world, self.model, self.data = world, m, world.data
         self.body = world.robot_body
         root = m.body_rootid[world.robot_body]
-        self._robot = m.body_rootid[m.geom_bodyid] == root          # per geom: part of the robot
-        self._ground = (m.geom_group == ELEMENT_GROUP) & ~self._robot
+        # per contact id (flexcontact: the geoms, then each flex): part of the robot; the ground (a flex is neither)
+        self._robot = m.body_rootid[id_body(m)] == root
+        self._ground = np.concatenate([m.geom_group == ELEMENT_GROUP, np.zeros(m.nflex, bool)]) & ~self._robot
         names = list(world.parts.tread_geoms) if world.parts is not None else []
         self.treads = np.array([m.geom(n).id for n in names], dtype=np.int64)
-        self._tread_index = np.full(m.ngeom, -1, dtype=np.int64)
+        self._tread_index = np.full(n_ids(m), -1, dtype=np.int64)
         self._tread_index[self.treads] = np.arange(len(self.treads))
         self._wheels = [(int(g), int(m.geom_type[g]), m.geom_size[g].tolist(), float(m.geom_rbound[g]))
                         for g in self.treads]
@@ -76,11 +78,12 @@ class TerrainMonitor:
                 adr = int(m.jnt_qposadr[j])
                 self._joints.append((name, adr, float(m.qpos0[adr])))
         self._platform_qpos = dict(layout.platforms) if layout is not None else {}    # name -> (tilt_plus, tilt_minus)
-        # Per geom: a bar or switch the robot can hang from; None on a range without one, which pays nothing.
+        # Per contact id: a bar, chain or switch the robot can hang from; None on a range without one, which pays
+        # nothing.
         holds = [g for geoms in hold_geoms(m, layout).values() for g in geoms]
         self._hold_l = None
         if holds:
-            self._hold_l = [False] * m.ngeom
+            self._hold_l = [False] * n_ids(m)
             for g in holds:
                 self._hold_l[g] = True
         self.platforms: list[str] = sorted(self._platform_qpos)
@@ -162,7 +165,7 @@ class TerrainMonitor:
                 p["robot.wheels_down"] = v["robot.wheels_down"]
 
     def _hanging(self, other: list[int]) -> bool:
-        """Whether the robot hangs: touching a bar or switch (geoms `other` it touches) and no ground."""
+        """Whether the robot hangs: touching a bar, chain or switch (contact ids `other` it touches) and no ground."""
         held = self._hold_l
         if held is None or not any(held[o] for o in other):
             return False
@@ -177,11 +180,11 @@ class TerrainMonitor:
 
     def _read(self) -> tuple[dict, bool, tuple]:
         """This step's instantaneous values, whether the robot touches anything outside itself, and the contacts
-        between the robot and the rest as (robot geoms, other geoms)."""
+        between the robot and the rest as (robot geoms, other contact ids)."""
         d = self.data
         robot = self._robot_l
         mine, other = [], []
-        for g1, g2 in d.contact.geom[:d.ncon].tolist():     # plain Python: a handful of contacts, cheaper than numpy
+        for g1, g2 in contact_ids(self.model, d).tolist():   # plain Python: a handful of contacts, cheaper than numpy
             r1 = robot[g1]
             if r1 != robot[g2]:
                 mine.append(g1 if r1 else g2)
@@ -246,6 +249,11 @@ class TerrainMonitor:
         if not pick:
             return "nothing"
         g = int(pick[0])
+        tr = getattr(self.world, "test_range", None)
+        if tr is not None and (i := int(tr.balls.ball_of_geom(g))) >= 0:
+            g = int(tr.balls.geoms[i])      # a soft NOTE's ring stands for its NOTE (`ball.<i>`), never `soft.*`
+        if g >= m.ngeom:        # a flex (a chain)
+            return id_name(m, g)
         b = int(m.geom_bodyid[g])
         name = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, b) if b != 0 else None
         return name or mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g) or f"geom {g}"

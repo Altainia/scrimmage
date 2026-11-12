@@ -390,3 +390,56 @@ def test_a_rigid_kind_takes_its_own_contact_stiffness():
         parse_kind(P, "t", {**CORAL, "stiffness": 0}, ROOT)
     with pytest.raises(RangeError, match="stiffness is a rigid piece's contact stiffness; a ball's is its stiffness_n"):
         parse_kind(P, "b", {"ball": "2026-fuel", "stiffness": 1000}, ROOT)
+
+
+RING = {"shape": "ring", "diameter_in": 14.0, "inner_diameter_in": 10.0, "length_in": 2.0, "mass": 0.235,
+        "friction": 0.8}
+
+
+def test_restitution_is_a_rigid_kinds_key():
+    """`restitution` (0 < e < 1, D7) on a ring kind; a ball or a disc has its preset's."""
+    assert parse_kind(P, "r", {**RING, "restitution": 0.4}, ROOT).restitution == 0.4
+    assert parse_kind(P, "r", RING, ROOT).restitution is None
+    for bad in (0, 1, -0.1):
+        with pytest.raises(RangeError, match="restitution must be between 0 and 1"):
+            parse_kind(P, "r", {**RING, "restitution": bad}, ROOT)
+    with pytest.raises(RangeError, match="restitution is its preset's"):
+        parse_kind(P, "b", {"ball": "2026-fuel", "restitution": 0.5}, ROOT)
+    note = kind_preset("2024-note")
+    assert (note.stiffness, note.restitution) == (2000.0, 0.3)
+    assert note.soft     # spec D8 (Task 5)
+
+
+def test_rigid_kinds_keep_their_numbers():
+    """Rigid pieces keep every number: restitution is read only for a soft piece."""
+    from scrimmage.testrange.build import rigid_contact
+    plain = parse_kind(P, "r", RING, ROOT)
+    with_e = parse_kind(P, "r", {**RING, "restitution": 0.4}, ROOT)
+    assert rigid_contact(with_e) == rigid_contact(plain)
+    assert rigid_contact(kind_preset("2024-note")) == rigid_contact(parse_kind(
+        P, "n", {"preset": "2024-note", "stiffness": 2000.0}, ROOT))
+
+
+def test_a_soft_kind_needs_stiffness_and_restitution():
+    """F11: `soft = true` needs both keys (a preset's count), names `[piece.<name>]` and the missing key, is for a
+    ring, and keeps stiffness in SOFT_STIFFNESS_RANGE."""
+    from scrimmage.testrange.pieces import SOFT_STIFFNESS_RANGE
+    ok = parse_kind(P, "s", {**RING, "soft": True, "stiffness": 2000, "restitution": 0.3}, ROOT)
+    assert ok.soft
+    assert parse_kind(P, "n", {"preset": "2024-note", "soft": True}, ROOT).soft
+    with pytest.raises(RangeError, match=r"needs restitution: give restitution in \[piece\.s\]"):
+        parse_kind(P, "s", {**RING, "soft": True, "stiffness": 2000}, ROOT)
+    with pytest.raises(RangeError, match=r"needs stiffness: give stiffness in \[piece\.s\]"):
+        parse_kind(P, "s", {**RING, "soft": True, "restitution": 0.3}, ROOT)
+    lo, hi = SOFT_STIFFNESS_RANGE
+    for bad in (lo - 1, hi + 1):
+        with pytest.raises(RangeError, match="stiffness must be between 1000 and 20000"):
+            parse_kind(P, "s", {**RING, "soft": True, "stiffness": bad, "restitution": 0.3}, ROOT)
+    for good in (lo, hi):
+        assert parse_kind(P, "s", {**RING, "soft": True, "stiffness": good, "restitution": 0.3}, ROOT).soft
+    with pytest.raises(RangeError, match="soft = true is for a ring piece"):
+        parse_kind(P, "t", {**CORAL, "soft": True, "stiffness": 2000, "restitution": 0.3}, ROOT)
+    with pytest.raises(RangeError, match="soft must be true or false"):
+        parse_kind(P, "s", {**RING, "soft": "yes"}, ROOT)
+    with pytest.raises(RangeError, match="soft is for a rigid ring piece"):
+        parse_kind(P, "b", {"ball": "2026-fuel", "soft": True}, ROOT)

@@ -586,6 +586,17 @@ drive on the stock chassis, and it collides with your robot, the field and game 
 | **Ahead of my robot by** | 60 in | how far its center is ahead of your robot's start, along the way your robot faces |
 | **Facing** | the same way | **the same way**, **toward me** (turned 180°) or **sideways** (turned 90°) |
 | **Drive: brakes on** | on | on: its drive is in brake mode; off: its wheels coast |
+| **Hangs on** | no | on a field with chains only: **no**, or a chain to hang the partner from. Hanging, it shows **along** in place of the three boxes above |
+| **along** | 18 in | how far from the chain's low point it hangs, along the chain (signed) |
+| **across** | -2 in | how far to the side of the chain its center hangs, to the left of the chain's direction (signed) |
+
+A hanging partner faces along its chain and is held level under the chain's joint nearest **along** (see the
+[README](../README.md#a-partner-robot)). One placed overlapping the field (a STAGE leg, the core) is refused before the
+run: `the partner robot (Setup) starts inside obstacle stage_blue_leg2 (their outlines overlap by 5.91 in)` (at
+**along** 35.4 in, **across** -2 in). One past its limits says so: `the partner robot (Setup) hangs 50 in from the
+chain's low point; at most 45.04 in either way`. It counts for HARMONY on an `"off-carpet"` field, and the chart's
+picker then offers `climb.harmony` and `climb.hold.<chain>.robots` ([climbing.md](climbing.md#onstage-and-harmony));
+they aren't in the default chart.
 
 If the robot file has its own `[partner]` ([README](../README.md#a-partner-robot)), Setup shows it ticked, where the
 robot file puts it, until you change it here. Unticking it then keeps the robot file's partner out of this test.
@@ -625,6 +636,7 @@ In the test file:
 | Form | Keys |
 |---|---|
 | `[setup]` `partner = { ahead_in = 50, heading_deg = 0, brake = true }` | `ahead_in`: inches, required. `heading_deg`: degrees, turned from your robot's heading, default 0. `brake`: `true` (the default) or `false`. Or `partner = false` for no partner, even when the robot file has one. |
+| `[setup]` `partner = { hang = "chain_blue_center", along_in = 17.7, across_in = -2 }` | `hang`: a chain of the field. `along_in`: inches from its low point along the chain, signed, default 0. `across_in`: inches to the side, signed, default 0. No `ahead_in` or `heading_deg`: the chain places it. |
 | `{ partner_lifted = { at_least_in = 2, level_within_deg = 5 } }` | `at_least_in`: inches, more than 0. `level_within_deg`: degrees, more than 0, optional. |
 | `{ partner_moved = { at_least_in = 60 } }` | `at_least_in`: inches, more than 0. |
 
@@ -744,8 +756,9 @@ Open **Setup** over the blocks. Its summary shows the hooks, the weight and the 
   plain problem in Setup and **Run** stays off until you pick another. The test file keeps this as `piece` under
   `[setup]` (older tests with `ball` still work). A measured ball goes in the test file by hand: `ball =
   "fuel.measure.toml"` under `[setup]`, a ball measurement file with a `base` preset, relative to the test file
-  ([measuring.md](measuring.md#using-a-measurement)); its measured numbers replace the preset's. Soft pieces (the
-  cube, the note) are rigid stand-ins: they don't squash.
+  ([measuring.md](measuring.md#using-a-measurement)); its measured numbers replace the preset's. The 2023 cube is a
+  rigid stand-in: it doesn't squash. The 2024 NOTE turns soft near the robot
+  ([test-range.md](test-range.md#soft-pieces)).
 - **Station.** One group of boxes for each station: time between balls, stock, and the spreads (each ± its value).
 - **Shuffle** and **New shuffle**: which draw of the spreads the stations feed.
 - **Floor spread.** Where the floor ball is tried. See [Floor spreads](#floor-spreads).
@@ -870,7 +883,7 @@ absolute path. **`test_spread`** runs the floor spread. The agent writes the `.t
 
 ## The examples
 
-Eleven worked examples are in `examples/blocks/`. Each has a README with the story, the blocks and how to change them.
+Thirteen worked examples are in `examples/blocks/`. Each has a README with the story, the blocks and how to change them.
 
 - **`examples/blocks/intake`**, a roller and bin that take a ball off the carpet. Run it and it finishes at 3.3 s
   with the ball in the bin. The README has a sweep of the roller's voltage.
@@ -919,6 +932,15 @@ Eleven worked examples are in `examples/blocks/`. Each has a README with the sto
 - **`examples/blocks/partner`**, a stand-in robot pushing a partner robot set in Setup. It drives into it at 6 V for
   2 s and checks the partner moved at least 60 in: a braked partner moves 63 in, a coasting one 112 in. The README
   tries other voltages and a partner turned sideways, which hardly moves.
+- **`examples/blocks/match`**, the speaker example's robot playing a whole 2024 match (`match = true`). In auto it
+  shoots the preloaded NOTE into the SPEAKER and drives out of the starting zone, then expects 7 points in auto: 5 for
+  the NOTE and 2 for LEAVE. The README walks through the phases and the points.
+- **`examples/blocks/chain-climb`**, a 60 kg stand-in robot with a stock climber in front of the built-in `2024`
+  field's `chain_blue_center`. `onstage.test.toml` reaches up, drives the chain into the hooks, pulls down and hangs:
+  ONSTAGE at 6.9 s, hanging from the chain. `harmony.test.toml` plays the match with a partner hanging on the same
+  chain (Setup's partner, **Hangs on**) and scores 5 in the endgame: ONSTAGE's 3 and HARMONY's 2. The README says where
+  the partner hangs and why: the STAGE's legs leave room for it only near the low point, and hooks don't slide along
+  a chain.
 
 Open one with `scrimmage edit examples/blocks/intake/intake.test.toml`.
 

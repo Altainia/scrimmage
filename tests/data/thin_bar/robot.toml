@@ -1,0 +1,46 @@
+# K5 thin bar (spec D2): a 60 kg robot with one stock climber, in front of the 2024 blue STAGE's center 1/2 in bar.
+[model]
+timestep = 0.001
+
+[battery]
+nominal_voltage = 12.5
+resistance = 0.02
+
+[lockstep]
+step = 0.005
+
+[range]
+file = "range.toml"
+start = "chain_center"
+floor_balls = false
+
+[[part]]
+name = "drive"
+stock = "chassis"
+length = 0.66
+width = 0.6
+mass = 55.5                # choice: the robot weighs 60 kg in all (the spike's robot)
+frame_height = 0.1
+
+[[part]]
+name = "dt"
+stock = "differential"
+attach = "drive.center"
+ids = { left = "PWM:0", right = "PWM:1" }
+
+[[part]]
+name = "c"
+stock = "climber"
+attach = "drive.top"
+pos = [-0.06, 0.0, 0.0]    # the hooks' seat over the robot's center (its CoM): they open forward, toward the STAGE
+stages = 2
+base_length = 0.35
+travel = 0.45
+tube = 0.0508
+count = 2
+gearing = 12.0
+hook_count = 2
+hook_spacing = 0.2
+hook_depth = 0.08
+latch = "none"
+ids = { extend = "PWM:2" }
