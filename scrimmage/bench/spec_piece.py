@@ -192,11 +192,13 @@ def _kind_piece(t: _Table, name: str, kind, size: tuple) -> Piece:
                                length=f"{length * 1000:.1f}"), "flex")
     stiffness = t.num("stiffness", kind.stiffness, positive=True)
     if flex and stiffness is None:
-        raise t.err(i18n.t("{table} has flex = true but no stiffness: add stiffness = <N/m> (the 2024 NOTE's estimate "
-                           "is 2000)", table=t.label), "stiffness")
+        raise t.err(i18n.t("{table} has {flex_setting} but no stiffness: add {stiffness_setting} (the 2024 NOTE's "
+                           "estimate is 2000)", table=t.label, flex_setting="flex = true",
+                           stiffness_setting="stiffness = <N/m>"), "stiffness")
     if flex and restitution is None:
-        raise t.err(i18n.t("{table} has flex = true but no restitution: add restitution = <above 0, below 1> (the "
-                           "2024 NOTE's estimate is 0.3)", table=t.label), "restitution")
+        raise t.err(i18n.t("{table} has {flex_setting} but no restitution: add {restitution_setting} (the 2024 "
+                           "NOTE's estimate is 0.3)", table=t.label, flex_setting="flex = true",
+                           restitution_setting="restitution = <above 0, below 1>"), "restitution")
     return Piece(name=name, kind="rigid", shape=kind.shape, size=size, mass=kind.mass,
                  inertia=tuple(kind.inertia[:3]), ball=None, stiffness=stiffness, mesh=None, units=None,
                  rigid_kind=kind, flex=flex, restitution=restitution)
