@@ -990,7 +990,7 @@ last line still says UNCALIBRATED, since it can't tell a typed number from an es
 ### Known limits
 
 - **A rigid piece in a pinch.** A rigid NOTE squeezed between two wheels isn't foam. Held still, it is squeezed as
-  hard as its `stiffness` says: the bench spreads the stiffness over the 8 contact points it makes with each wheel.
+  hard as its `stiffness` says: the bench spreads the stiffness over the 16 contact points it makes with each wheel.
   Going through, though, the flat sides of its 24 slices strike the wheels (several hundred N, where the launcher
   model's pinch has 19 N) and it rocks about 25 mm, so the wheels slow far more (46% against the model's 4% on the
   dry run's 1.25 in pinch) and it leaves slower (7.1 m/s against the model's 9.6). Compare rigid-NOTE pinches with
@@ -1002,6 +1002,10 @@ last line still says UNCALIBRATED, since it can't tell a typed number from an es
   is unaffected (few contacts). Keep `count` low and space the feed out so flex NOTEs don't pile up; the contact
   reader will be made faster if a flex intake ever needs it.
 - **The flex NOTE is experimental**: fitted to estimates, on an integrator MuJoCo still calls new.
+- **Wheels are drawn with flat sides.** With a rigid piece other than a ball, each wheel (and each CAD wheel on a
+  shaft) touches it as a 64-sided prism, not a round cylinder, so the picture shows the flats. MuJoCo 4.0.1 gives a
+  piece's edge only one contact on a round wheel's tread, off center, which tips the piece; the prism gives the two
+  the edge should have. The flats change a shot's speed by about half a percent. Balls still meet round wheels.
 
 ## CAD
 
