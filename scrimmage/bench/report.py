@@ -130,8 +130,11 @@ def _out_line(outlet: str, out: list[PieceOutcome], n: int) -> str:
 
 
 def jam_place(result: BenchResult, piece: PieceOutcome) -> str | None:
-    """The shape nearest where a piece stopped (within JAM_NEAR), or None."""
+    """The shape nearest where a piece stopped (within JAM_NEAR), or None. None for a flex piece: it has no geom to
+    measure from, and it may have stopped squashed out of its shape."""
     m, lay = result.built.model, result.built.layout
+    if lay.flex_pieces:
+        return None
     d = mujoco.MjData(m)
     a = lay.piece_qpos[piece.index]
     d.qpos[a:a + 3] = piece.path[-1][1:]
@@ -215,6 +218,17 @@ def _shaft_line(result: BenchResult) -> str | None:
     elif n > 2:
         line = t("{line} (the worst of {n} shafts)", line=line, n=n)
     return line
+
+
+def flex_line(bench) -> str | None:
+    """A flex piece's line (spec D9): its result is experimental, and its two numbers are estimates (spec D7)."""
+    piece = bench.piece
+    if not getattr(piece, "flex", False):
+        return None
+    return t("experimental (MuJoCo flex): the {piece} is a soft body fitted to its stiffness ({stiffness}) and "
+             "restitution ({restitution}), UNCALIBRATED estimates unless you measured them", piece=_name(piece.name),
+             stiffness=units.fmt(piece.stiffness, "spring"),
+             restitution=f"{piece.restitution:g}")
 
 
 def _time_line(result: BenchResult) -> str | None:
@@ -437,8 +451,8 @@ def _energy_line(result: BenchResult) -> str | None:
 
 
 def headlines(result: BenchResult, lands: list[tuple[PieceOutcome, Landing]] | None = None) -> list[str]:
-    """Three to six lines for a room: a failed energy check first (nothing else can be trusted), then outcomes,
-    UNCALIBRATED last."""
+    """Three to six lines for a room: a failed energy check first (nothing else can be trusted), then a flex piece's
+    "experimental" line, then outcomes, UNCALIBRATED last."""
     n = len(result.pieces)
     by_outlet: dict[str, list[PieceOutcome]] = {}
     for p in result.pieces:
@@ -453,6 +467,9 @@ def headlines(result: BenchResult, lands: list[tuple[PieceOutcome, Landing]] | N
     rest = _not_out_line(result, n)
     if rest:
         lines.append(rest)
+    flex = flex_line(result.bench)
+    if flex:
+        lines.insert(0, flex)
     lands = landings(result) if lands is None else lands
     extra = [_goal_line(result, lands), _flight_line(result, lands), _load_line(result), _shaft_line(result),
              _time_line(result)]
@@ -596,8 +613,11 @@ def _summary(result: BenchResult, heads: list[str], tables) -> str:
     b = result.bench
     text = _title(b)
     text += ["", *heads, *(t("warning: {warning}", warning=w) for w in b.warnings), ""]
-    titles = {"pieces": t("Pieces"), "shafts": t("Shafts"), "loads": t("Loads (normal contact force on each part)"),
+    flex = getattr(b.piece, "flex", False)
+    titles = {"pieces": t("Pieces: experimental (MuJoCo flex)") if flex else t("Pieces"), "shafts": t("Shafts"),
+              "loads": t("Loads (normal contact force on each part)"),
               "landings": t("Landings (the launcher model's ball flight, from the outlet)") if b.piece.ball is not None
+              else t("Landings (flown as the rigid piece from the flex's exit: drag on its shadow, no lift)") if flex
               else t("Landings (a rigid piece's flight from the outlet: drag on its shadow, no lift)")}
     for name, table in tables.items():
         text += [titles[name], _text_table(*_shown_table(*table)), ""]

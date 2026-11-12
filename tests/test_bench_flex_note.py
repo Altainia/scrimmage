@@ -1,20 +1,28 @@
-"""The bench's flex NOTE (spec D9, R15): its mesh, its build against MuJoCo's flexcomp, and its fit to `stiffness` and
-`restitution`, shipped and cached."""
+"""The bench's flex NOTE (spec D9, R15): its mesh, its build against MuJoCo's flexcomp, its fit to `stiffness` and
+`restitution`, shipped and cached, and on the bench with `flex = true`: opt-in, its errors, the golden shot and the
+report's "experimental" marking and [flight] hand-off."""
 
 from __future__ import annotations
 
 import json
 import math
+import tomllib
 from dataclasses import replace
+from pathlib import Path
 
 import mujoco
 import numpy as np
 import pytest
 
+from scrimmage import units
 from scrimmage.bench import flex_note as fn
-from scrimmage.bench.spec import BenchError
+from scrimmage.bench import report
+from scrimmage.bench.build import PIECE_BITS, TIMESTEP, build_bench
+from scrimmage.bench.run import FlexPieces, run_bench
+from scrimmage.bench.spec import BenchError, load_bench, parse_bench
 from scrimmage.cad import fit as cad_fit
 from scrimmage.testrange.pieces import kind_preset
+from scrimmage.testrange.spec import piece_box
 
 IN = 0.0254
 
@@ -181,3 +189,124 @@ def test_a_real_fit_converges(note, tmp_path, monkeypatch):
     assert fn.squeeze_force(kind, fit) == pytest.approx(fn.target_force(kind), rel=0.02)
     assert abs(fn.drop_restitution(kind, fit) - 0.3) <= 0.02
     assert not (tmp_path / "MUJOCO_LOG.TXT").exists()
+
+
+# ---- on the bench: `flex = true` (spec D9, Task 8) ------------------------------------------------------------------
+
+REPO = Path(__file__).resolve().parent.parent
+EXAMPLE = REPO / "examples" / "bench" / "note_pinch_flex.toml"
+GOLDEN = Path(__file__).resolve().parent / "data" / "bench_flex_golden.json"
+RANGE_DIR = Path(__file__).resolve().parent / "data" / "range_2024"
+
+
+def _raw(**overrides) -> dict:
+    """note_pinch_flex.toml's tables, with dotted-key overrides (None drops a key)."""
+    raw = tomllib.loads(EXAMPLE.read_text(encoding="utf-8"))
+    for key, value in overrides.items():
+        *path, last = key.split(".")
+        table = raw
+        for k in path:
+            table = table[k] if isinstance(table, dict) else next(e for e in table if e["name"] == k)
+        if value is None:
+            table.pop(last, None)
+        else:
+            table[last] = value
+    return raw
+
+
+def test_flex_is_opt_in():
+    """Without `flex`, note_pinch_flex.toml is the rigid NOTE on `implicitfast`, with no flex in the model; every
+    other example builds with none."""
+    rigid = build_bench(parse_bench(_raw(**{"piece.flex": None}), EXAMPLE.parent))
+    assert rigid.model.nflex == 0 and rigid.layout.flex_pieces == []
+    assert rigid.model.opt.integrator == mujoco.mjtIntegrator.mjINT_IMPLICITFAST
+    assert rigid.model.opt.timestep == TIMESTEP["rigid"] and len(rigid.layout.piece_bodies) == 1
+    others = [p for p in sorted(EXAMPLE.parent.rglob("*.toml")) if p != EXAMPLE]
+    assert len(others) >= 7
+    for path in others:
+        assert build_bench(load_bench(path)).model.nflex == 0, path
+
+
+def test_the_flex_takes_the_rigid_pieces_place():
+    """With `flex = true`: `discrete` with Newton at FLEX_TIMESTEP, one flex per piece with the rigid piece's
+    collision bits, parked below the bounds, and spawned as the rigid piece is (its rest shape in the kind's frame,
+    unturned): read back, it is at the spawn point, moving with the spawn's velocity and spin, unturned."""
+    built = build_bench(parse_bench(_raw(), EXAMPLE.parent))
+    m, lay = built.model, built.layout
+    assert m.opt.integrator == mujoco.mjtIntegrator.mjINT_DISCRETE and m.opt.solver == mujoco.mjtSolver.mjSOL_NEWTON
+    assert m.opt.timestep == fn.FLEX_TIMESTEP and m.nflex == 1 and lay.flex_pieces == [0]
+    assert lay.piece_bodies == [] and lay.contact_tc == {}
+    assert (m.flex_contype[0], m.flex_conaffinity[0]) == (PIECE_BITS["rigid"]["contype"],
+                                                         PIECE_BITS["rigid"]["conaffinity"])
+    pool = FlexPieces(m, lay)
+    d = mujoco.MjData(m)
+    mujoco.mj_kinematics(m, d)
+    assert d.xpos[pool.bodies[0], 2].max() < lay.bounds[0][2]          # parked
+    pos, vel, spin = np.array([0.1, 0.02, 0.3]), np.array([2.0, 0.0, 0.5]), np.array([0.0, 0.0, 3.0])
+    pool.spawn(d, 0, pos, vel, spin)
+    c, v, w, rot = pool.state(d, 0)
+    np.testing.assert_allclose(c, pos, atol=1e-12)
+    np.testing.assert_allclose(v, vel, atol=1e-12)
+    np.testing.assert_allclose(w, spin, atol=1e-9)
+    np.testing.assert_allclose(rot, np.eye(3), atol=1e-9)
+    # the rest shape spans the rigid NOTE's own box, in the same frame
+    kind = kind_preset("2024-note")
+    x = pool.base[0] + d.qpos[pool.qadr[0]] - pos
+    lo, hi = x.min(axis=0) - fn.FLEX_RADIUS, x.max(axis=0) + fn.FLEX_RADIUS
+    np.testing.assert_allclose(hi - lo, piece_box(kind), rtol=0.03)
+
+
+def test_flex_errors(tmp_path):
+    """`flex = true` on a sphere names "ring"; 4 flex pieces in the inlets name the most, 3."""
+    raw = _raw(**{"piece.preset": "2022-cargo"})
+    with pytest.raises(BenchError, match="ring") as e:
+        parse_bench(raw, EXAMPLE.parent)
+    assert e.value.key == "piece.flex" and "flex" in str(e.value)
+    with pytest.raises(BenchError, match=r"\b4\b.*at most 3\b") as e:
+        build_bench(parse_bench(_raw(**{"inlet.feed.count": 4}), EXAMPLE.parent))
+    assert e.value.code == "flex_pool"
+
+
+def _shot(result):
+    p = result.pieces[0]
+    assert p.status == "out" and result.energy[0].ok, (p.status, result.energy)
+    return p
+
+
+def test_the_flex_shot_golden():
+    """note_pinch_flex.toml's shot against bench_flex_golden.json (recorded once, R15): speed and angle within 2 %,
+    spin within 0.5 rad/s. A change in MuJoCo's `discrete` integrator shows here."""
+    want = json.loads(GOLDEN.read_text(encoding="utf-8"))
+    p = _shot(run_bench(load_bench(EXAMPLE)))
+    assert p.speed == pytest.approx(want["speed_m_s"], rel=0.02)
+    assert p.elevation_deg == pytest.approx(want["elevation_deg"], rel=0.02)
+    np.testing.assert_allclose(p.spin, want["spin_rad_s"], atol=0.5)
+
+
+def test_the_report_marks_flex_experimental(tmp_path):
+    """The headlines and the pieces table say "experimental (MuJoCo flex)", the flex line says UNCALIBRATED; in
+    `[flight]` to the 2024 SPEAKER the shot is the rigid NOTE's flight from the flex's exit state."""
+    raw = _raw()
+    raw["flight"] = {"outlet": "shot", "goal": {"range": "2024.toml", "name": "speaker_blue"},
+                     "at": [2.5, 5.5446, 0.5], "heading_deg": 180.0}
+    result = run_bench(parse_bench(raw, RANGE_DIR))
+    p = _shot(result)
+    lands = report.landings(result)
+    with units.fixed("metric"):
+        heads = report.headlines(result, lands)
+    flex = [h for h in heads if "experimental (MuJoCo flex)" in h]
+    assert len(flex) == 1 and "UNCALIBRATED" in flex[0] and "(2000 N/m)" in flex[0] and "(0.3)" in flex[0]
+    out = report.write_results(result, tmp_path / "out")
+    summary = (out / "summary.txt").read_text(encoding="utf-8")
+    assert "Pieces: experimental (MuJoCo flex)" in summary and "flown as the rigid piece" in summary
+    # the hand-off: the exit pose is the flex's center and Kabsch rotation (turned: its tail sagged in the pinch),
+    # and the flight is the rigid NOTE's from that state, to 1e-9
+    q = np.array(p.poses[-1][1][3:7])
+    assert np.allclose(p.poses[-1][1][:3], p.path[-1][1:]) and abs(q[0]) < 0.999
+    assert math.degrees(2 * math.acos(min(1.0, abs(q[0])))) == pytest.approx(p.tilt_deg, abs=0.5)
+    rigid = replace(result, bench=replace(result.bench, piece=replace(result.bench.piece, flex=False)))
+    (p1, flown), = lands
+    (p2, want), = report.landings(rigid)
+    assert p1 is p2 and flown.goal == want.goal in ("scored", "missed")
+    for a, b in ((flown.floor, want.floor), ((flown.apex, flown.flight_time), (want.apex, want.flight_time))):
+        np.testing.assert_allclose(a, b, rtol=0, atol=1e-9)

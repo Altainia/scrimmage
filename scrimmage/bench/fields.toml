@@ -50,7 +50,7 @@ help = "foam ball: the force to squeeze it by a quarter of its width"
 help = "foam ball: how fast it gets stiffer as it squeezes"
 
 [piece.restitution]
-help = "foam ball: how bouncy, above 0 and up to 1"
+help = "foam ball, or a flex ring: how bouncy, above 0 and up to 1 (below 1 for a flex)"
 
 [piece.inertia_factor]
 help = "foam ball: how its mass is spread, for how hard it is to spin"
@@ -67,6 +67,9 @@ default = 1.17          # estimate: rigid_aero.DRAG_COEFFICIENT, Hoerner's broad
 unit = "N m s/rad"
 help = "rigid only, in [flight]: how fast the air slows its spin (0 or more)"
 default = 0.0
+
+[piece.flex]
+help = "true: a ring is a soft flex body, experimental and about 100 times slower; left out, false"
 
 [piece.mesh]
 help = "mesh shape: an STL or OBJ file, next to the bench file"

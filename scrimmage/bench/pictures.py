@@ -18,6 +18,7 @@ from .. import i18n, units
 from ..render import new_renderer
 from ..i18n import t
 from ..measure.labels import marked
+from .build import pool_heights
 from .report import ESTIMATES, STATUS_COLORS, bench_estimates, status_words
 from .run import BenchResult
 
@@ -112,6 +113,9 @@ class _Painter:
         for g in (g for gs in lay.piece_geom_sets for g in gs):
             m.geom_rgba[g] = PIECE_RGBA
             m.geom_group[g] = HIDDEN_GROUP
+        for f in lay.flex_pieces:
+            m.flex_rgba[f] = PIECE_RGBA
+            m.flex_group[f] = HIDDEN_GROUP
         self.data = mujoco.MjData(m)
         self._rs: dict[tuple[int, int], mujoco.Renderer] = {}
 
@@ -129,6 +133,8 @@ class _Painter:
         mujoco.mj_forward(m, d)
         for i, gs in enumerate(lay.piece_geom_sets):
             m.geom_group[list(gs)] = 0 if i in show else HIDDEN_GROUP
+        for i, f in enumerate(lay.flex_pieces):
+            m.flex_group[f] = 0 if i in show else HIDDEN_GROUP
         m.vis.global_.fovy = frame.fovy
         key = (frame.w, frame.h)
         if key not in self._rs:
@@ -145,7 +151,10 @@ class _Painter:
         rgb[seg[..., 0] < 0] = BACKGROUND
         if pieces is not None:
             geoms = [g for gs in lay.piece_geom_sets for g in gs]
-            pieces.append((seg[..., 1] == int(mujoco.mjtObj.mjOBJ_GEOM)) & np.isin(seg[..., 0], geoms))
+            mask = (seg[..., 1] == int(mujoco.mjtObj.mjOBJ_GEOM)) & np.isin(seg[..., 0], geoms)
+            if lay.flex_pieces:
+                mask |= (seg[..., 1] == int(mujoco.mjtObj.mjOBJ_FLEX)) & np.isin(seg[..., 0], lay.flex_pieces)
+            pieces.append(mask)
         return rgb
 
 
@@ -475,7 +484,7 @@ def pass_frames(result: BenchResult, frames: int = 8, width: int = 640,
     try:
         for k in pick:
             t, qpos = result.trace[k]
-            show = tuple(i for i, a in enumerate(lay.piece_qpos) if qpos[a + 2] > floor)
+            show = tuple(i for i, z in enumerate(pool_heights(result.built.model, lay, qpos)) if z > floor)
             mask: list = []
             rgb = painter.render(frame, qpos, show, mask)
             im = Image.fromarray(rgb)

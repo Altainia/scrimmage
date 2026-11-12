@@ -1,0 +1,68 @@
+# A 2024 NOTE fed flat between two 4 in wheels that pinch it through a 1.5 in gap, its 2 in thickness squeezed a
+# quarter: the soft-note spike's pinch shooter (K5, spec D10). With `flex = true` the NOTE is a soft flex body that
+# squashes as it goes through, not the rigid stand-in. Experimental (MuJoCo flex), and about 100 times slower than
+# the rigid NOTE: sweep on the rigid one first, then confirm on this.
+#
+#   scrimmage bench run examples/bench/note_pinch_flex.toml
+
+[bench]
+name = "note pinch flex"
+author = "Jordan"
+idea = "squeeze the NOTE a quarter between two wheels and see how fast the soft foam really leaves"
+notes = "the soft-note spike's pinch; the NOTE's stiffness and bounce are the preset's estimates"
+
+[piece]
+preset = "2024-note"
+flex = true
+
+[shaft.bottom]
+motor = "KrakenX60"
+control = "speed"
+target_rps = 50                  # 3000 rpm
+kP = 0.5
+# choice: a light flywheel. The shafts start at rest, and a heavier one would not reach 83 rps (5000 rpm) within the bench's
+# 2 s spin-up; the wheels still hold their speed within about 1% through the shot (pinch.py's exit speed is the same
+# at 1.0 kg m^2)
+wheel_inertia = 0.005
+
+[shaft.top]
+motor = "KrakenX60"
+control = "speed"
+target_rps = 50
+kP = 0.5
+wheel_inertia = 0.005
+
+# 4 in wheels 1.5 in apart at the nip: their axles 0.75 in + 2 in above and below the NOTE's middle
+[[wheel]]
+name = "bottom"
+shaft = "bottom"
+center_in = [0.0, 0.0, -2.75]
+diameter_in = 4.0
+width_in = 14.0
+tread = "60A"
+
+[[wheel]]
+name = "top"
+shaft = "top"
+center_in = [0.0, 0.0, 2.75]
+axis = [0.0, -1.0, 0.0]          # turned the other way, so both treads drive the NOTE forward
+diameter_in = 4.0
+width_in = 14.0
+tread = "60A"
+
+# the NOTE's middle 8.5 in before the axles, its front edge just reaching the wheels, fed at 2 m/s
+[[inlet]]
+name = "feed"
+center_in = [-8.5, 0.0, 0.0]
+size = [0.001, 0.001, 0.001]
+count = 1
+velocity = [2.0, 0.0, 0.0]
+
+# the exit is read as the NOTE's middle passes 10 in beyond the axles
+[[outlet]]
+name = "shot"
+center_in = [16.0, 0.0, 0.0]
+size_in = [12.0, 24.0, 24.0]
+
+[run]
+duration = 3.0

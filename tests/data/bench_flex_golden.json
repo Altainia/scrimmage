@@ -1,0 +1,11 @@
+{
+ "README": "source: examples/bench/note_pinch_flex.toml (3000 rpm) run once on MuJoCo 4.0.0 (K5 Task 8); tests/test_bench_flex_note.py::test_the_flex_shot_golden pins it to 2 % (R15): a change in MuJoCo's discrete integrator moves it",
+ "speed_m_s": 7.667691097906407,
+ "elevation_deg": 4.038218783168556,
+ "yaw_deg": 0.36644263322683324,
+ "spin_rad_s": [
+  -1.6975229888539467,
+  24.90454943516418,
+  0.801599575001418
+ ]
+}

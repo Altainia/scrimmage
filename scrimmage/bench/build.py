@@ -12,7 +12,7 @@ piece the inlets will send (at most POOL_MAX), parked below the bench's bounds u
 """
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import mujoco
 import numpy as np
@@ -21,12 +21,16 @@ from .. import i18n
 from ..parts.assemble import TREAD_DAMPING, TREAD_IMPEDANCE, TREAD_STIFFNESS, tread_solref
 from ..parts.model import quat_from_rpy
 from . import cad as cadmod
+from . import flex_note
 from .cad import CadWheel
 from ..testrange.build import kind_geoms
+from ..testrange.pieces import ring_basis
 from .problems import Problem
+from .flex_note import FLEX_TIMESTEP
 from .spec import PIECE_FRICTION, UNITS, Bench, BenchError, Curve, Piece
 
 POOL_MAX = 200
+FLEX_POOL_MAX = 3  # choice: R15: a parked flex costs as much as a live one
 BOUNDS_MARGIN = 0.5  # m: how far outside everything a piece must go to count as escaped
 PARK_DROP = 1.0      # m below the bounds where the pool waits
 PARK_GAP = 0.05      # m between parked pieces' bounding spheres
@@ -72,6 +76,9 @@ class BenchLayout:
     # every soft geom (a rigid piece's, or a shape a rigid piece touches) -> its solref time constant at one contact
     # point, unclamped; the runner scales it by sqrt(contacts) each step (BenchRun.soften)
     contact_tc: dict[int, float] = field(default_factory=dict)
+    # `flex = true`: each pool piece's flex id (bench/flex_note.py's flex NOTE, `piece:<i>`), in place of the rigid
+    # pool's bodies (piece_bodies to piece_qvel are then empty); its vertices wait at `parked`, their qpos0
+    flex_pieces: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -179,7 +186,7 @@ class _Shapes:
         """A rigid piece's contacts: each shape's stiffness in series with the piece's, and piece on piece two of the
         piece's in series. tread_solref's solver mass is what MuJoCo's solver regularizes with, 1 / body_invweight0
         of the two bodies together (a compiled model's, so this runs between the two compiles)."""
-        if self.piece.kind != "rigid" or not n_pool:
+        if self.piece.kind != "rigid" or self.piece.flex or not n_pool:
             return
         iw_piece = m.body_invweight0[m.body("piece:0").id, 0]
         for gname, k_shape in self.k.items():
@@ -305,6 +312,11 @@ def _add_piece(body, piece: Piece, kind_meshes: list[dict] | None = None) -> Non
     body.add_geom(**kw)
 
 
+def flex_kind(piece: Piece):
+    """A flex piece's kind with the [piece]'s own `stiffness` and `restitution`: what its flex is fitted to."""
+    return replace(piece.rigid_kind, stiffness=piece.stiffness, restitution=piece.restitution)
+
+
 def build_bench(bench: Bench) -> Built:
     _check_names(bench)
     piece = bench.piece
@@ -312,12 +324,24 @@ def build_bench(bench: Bench) -> Built:
     if n_pool > POOL_MAX:
         raise BenchError(i18n.t("the inlets send {n} pieces in all; a bench holds at most {most} (lower an "
                                 "{inlet_table} count)", n=n_pool, most=POOL_MAX, inlet_table="[[inlet]]"))
-    dt = bench.run.timestep if bench.run.timestep is not None else TIMESTEP[piece.kind]
+    if piece.flex and n_pool > FLEX_POOL_MAX:
+        raise BenchError(i18n.t("the inlets send {n} flex pieces in all; a bench holds at most {most} of them, "
+                                "since each costs as much as a whole rigid run (lower an {inlet_table} count, or "
+                                "sweep on the rigid piece first)", n=n_pool, most=FLEX_POOL_MAX,
+                                inlet_table="[[inlet]]"), code="flex_pool")
+    if piece.flex:
+        dt = bench.run.timestep if bench.run.timestep is not None else FLEX_TIMESTEP
+    else:
+        dt = bench.run.timestep if bench.run.timestep is not None else TIMESTEP[piece.kind]
 
     spec = mujoco.MjSpec()
     spec.compiler.degree = False
     spec.option.timestep = dt
-    spec.option.integrator = mujoco.mjtIntegrator.mjINT_IMPLICITFAST
+    if piece.flex:  # flex elasticity needs MuJoCo's `discrete` integrator, with Newton (flex_note.py's scenes')
+        spec.option.integrator = mujoco.mjtIntegrator.mjINT_DISCRETE
+        spec.option.solver = mujoco.mjtSolver.mjSOL_NEWTON
+    else:
+        spec.option.integrator = mujoco.mjtIntegrator.mjINT_IMPLICITFAST
     spec.option.cone = mujoco.mjtCone.mjCONE_ELLIPTIC
     spec.option.impratio = 10
     shapes = _Shapes(bench, dt)
@@ -336,8 +360,10 @@ def build_bench(bench: Bench) -> Built:
     if piece.shape == "mesh":
         spec.add_mesh(name="piece_mesh", file=str(piece.mesh), scale=[UNITS[piece.units]] * 3)
     kind = piece.rigid_kind
-    kind_meshes = kind_geoms(spec, kind, "piece") if kind is not None and n_pool else None
-    for i in range(n_pool):
+    flex_fit = flex_note.fit_flex(flex_kind(piece)) if piece.flex and n_pool else None
+    n_rigid = 0 if piece.flex else n_pool      # the flex pieces are added once the bounds are known
+    kind_meshes = kind_geoms(spec, kind, "piece") if kind is not None and n_rigid else None
+    for i in range(n_rigid):
         body = spec.worldbody.add_body(name=f"piece:{i}")
         body.add_freejoint(name=f"piece:{i}")
         if kind is None:
@@ -371,7 +397,9 @@ def build_bench(bench: Bench) -> Built:
     parked = []
     shapes.set_stiffness(spec, m, n_pool)
     piece_reach = 0.0
-    if n_pool:
+    if piece.flex and n_pool:
+        piece_reach, parked = _add_flex_pool(spec, bench, shapes, lo, n_pool, flex_fit)
+    elif n_pool:
         pgs = [m.geom(g).id for g in _piece_geom_names(0, piece)]
         gpos = {g: m.geom_pos[g].copy() for g in pgs}
         if piece.shape == "mesh":
@@ -407,7 +435,7 @@ def build_bench(bench: Bench) -> Built:
     lay.cad_wheels, lay.cad_material = cad_wheels, cad_material
     lay.shaft_dof = {s: int(m.joint(f"shaft:{s}").dofadr[0]) for s in bench.shafts}
     lay.bar_dof = {b.name: int(m.joint(f"bar:{b.name}").dofadr[0]) for b in bench.bars if b.spring is not None}
-    for i in range(n_pool):
+    for i in range(n_rigid):
         j = m.joint(f"piece:{i}")
         lay.piece_bodies.append(m.body(f"piece:{i}").id)
         lay.piece_geoms.append(m.geom(f"piece:{i}:geom").id)
@@ -416,7 +444,48 @@ def build_bench(bench: Bench) -> Built:
         lay.piece_qvel.append(int(j.dofadr[0]))
     lay.inlet_probes = {i.name: m.geom(f"inlet:{i.name}").id for i in bench.inlets}
     lay.contact_tc = {m.geom(g).id: tc for g, tc in shapes.tc1.items()}
+    if piece.flex:
+        lay.flex_pieces = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_FLEX, f"piece:{i}") for i in range(n_pool)]
     return Built(model=m, layout=lay)
+
+
+def pool_heights(m: mujoco.MjModel, lay: BenchLayout, qpos: np.ndarray) -> np.ndarray:
+    """Each pool piece's height in a qpos (a trace's): a rigid piece's body origin's, a flex piece's first vertex's
+    (a parked piece is below the bounds either way)."""
+    if lay.flex_pieces:
+        b = m.flex_vertbodyid[m.flex_vertadr[lay.flex_pieces]]
+        return m.body_pos[b, 2] + qpos[m.jnt_qposadr[m.body_jntadr[b] + 2]]
+    return np.array([qpos[a + 2] for a in lay.piece_qpos])
+
+
+def _add_flex_pool(spec: mujoco.MjSpec, bench: Bench, shapes: _Shapes, lo: np.ndarray, n_pool: int,
+                   fit: flex_note.FlexFit) -> tuple[float, list[np.ndarray]]:
+    """`flex = true`: the pool as flex NOTEs `piece:<i>` (flex_note.add_flex_note), parked below the bounds as the
+    rigid pool is, with the rigid piece's collision bits, unturned (the rigid piece's starting rotation: its body
+    frame is the kind's, and so is the flex's rest shape). Every shape's contact takes the flex's own solref, as the
+    fit's rollers did (by solmix there; by the shapes' priority here), so the flex answers its `stiffness` on the
+    bench as it did in the fit. The inlets' probes grow by the flex's rest extent. Returns its reach (the bounding
+    sphere about its center) and where each piece waits."""
+    kind = flex_kind(bench.piece)
+    big_r, r = flex_note.ring_radii(kind)
+    verts, _ = flex_note.torus_tets(*flex_note.MESH, flex_note.FLEX_RADIUS, big_r, r)
+    rest = verts @ ring_basis(kind.axis).T
+    reach = np.abs(rest).max(axis=0) + flex_note.FLEX_RADIUS
+    for inlet in bench.inlets:
+        spec.geom(f"inlet:{inlet.name}").size = list(np.array(inlet.size) / 2 + reach)
+    piece_reach = float(np.linalg.norm(rest, axis=1).max()) + flex_note.FLEX_RADIUS
+    for gname in shapes.names:
+        spec.geom(gname).solref = list(flex_note.FLEX_CONTACT["solref"])
+    step = 2 * piece_reach + PARK_GAP
+    cols = math.ceil(math.sqrt(n_pool))
+    parked = []
+    for i in range(n_pool):
+        p = np.array([lo[0] + step * (i % cols), lo[1] + step * (i // cols), lo[2] - PARK_DROP])
+        flex_note.add_flex_note(spec, f"piece:{i}", p, kind, fit)
+        f = spec.flex(f"piece:{i}")
+        f.contype, f.conaffinity = PIECE_BITS["rigid"]["contype"], PIECE_BITS["rigid"]["conaffinity"]
+        parked.append(p)
+    return piece_reach, parked
 
 
 def check_clear(built: Built) -> None:

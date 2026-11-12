@@ -370,7 +370,59 @@ The piece decides how every contact it has is worked out.
   `mass` builds your own ring the same way. The 2024 NOTE is a rigid stand-in: the real one is soft foam and squashes.
   It brings its own contact `stiffness` (2000 N/m, an estimate), as on the range. A ring touches a wheel at many
   MuJoCo contact points (8 per wheel for the NOTE's face), and the bench spreads the stiffness over them, so held
-  between wheels the NOTE is squeezed as hard as its `stiffness` says, no harder.
+  between wheels the NOTE is squeezed as hard as its `stiffness` says, no harder. Going through a pinch it still
+  doesn't behave like foam (see [Known limits](#known-limits)); `flex = true` makes it a soft body instead (below).
+
+### Flex NOTE (experimental)
+
+`flex = true` in the `[piece]` makes a ring (the 2024 NOTE, or your own `shape = "ring"`) a soft body that bends and
+squashes: MuJoCo's flex, a ring-shaped mesh of 288 small solid pieces (tetrahedra) joined at 112 points. Results
+say **experimental (MuJoCo flex)** in the headlines and the pieces table.
+
+<!-- bench -->
+```toml
+[bench]
+name = "soft note"
+author = "Jordan"
+idea = "feed the soft NOTE between two wheels"
+
+[piece]
+preset = "2024-note"
+flex = true
+
+[[inlet]]
+name = "feed"
+center = [0.0, 0.0, 0.0]
+size = [0.001, 0.001, 0.001]
+count = 1
+velocity = [2.0, 0.0, 0.0]
+
+[[outlet]]
+name = "out"
+center = [1.0, 0.0, 0.0]
+size = [0.2, 0.8, 0.8]
+```
+
+`examples/bench/note_pinch_flex.toml` is a whole shooter: the NOTE squeezed a quarter between two 4 in wheels.
+
+- **It is opt-in.** Without `flex = true` nothing changes: the NOTE is the rigid stand-in, as fast as before. The
+  test range's own soft NOTE (near a robot) doesn't change the bench.
+- **It is slow: about 100 times a rigid run.** One shot through a pinch takes about half a second of computer time.
+  Sweep and compare on the rigid NOTE first, then confirm the design you picked with `flex = true`. A bench holds at
+  most 3 flex pieces (each parked one costs as much as a moving one), so `count` in the inlets adds up to 3 or fewer.
+- **Its stiffness and bounce are fitted.** The flex's material numbers are worked out so that it answers the
+  piece's `stiffness` (a squeeze between two rollers, docs/measuring.md) and `restitution` (a 1 m drop) the way the
+  test range's soft NOTE does. The 2024 NOTE's fit ships with scrimmage. Other numbers (your own `stiffness` or
+  `restitution`) are fitted the first time they are used, which takes up to about 20 seconds, and kept in a cache
+  folder after that. Both numbers are estimates for the 2024 NOTE, **UNCALIBRATED** until you measure them.
+- **In `[flight]`** it flies as the rigid NOTE, from the flex's exit: its center, velocity and orientation as it
+  left, and the spin it had, as the test range's shooter hands a NOTE off.
+- **It runs on a different integrator.** A flex needs MuJoCo's `discrete` integrator (with the Newton solver), at a
+  0.5 ms timestep unless `[run] timestep` says otherwise; the rest of the bench uses `implicitfast`. MuJoCo itself
+  describes `discrete` as new, under active development and subject to change, so a MuJoCo update may move these
+  numbers (a test pins one shot, so a change is caught).
+- On the soft-note spike's pinch (1.5 in gap, 3000 and 5000 rpm), the flex leaves within 4 to 9% of the launcher
+  model's pinch (`launcher/pinch.py`) fed the same squeeze.
 
 Discs (the 2013 Frisbee and an Ultra-Star preset, with their own flight) come in a later step, once the disc launcher
 model is merged. A custom rigid `shape = "disc"` (a short cylinder) works now.
@@ -405,8 +457,8 @@ stiffness N/m, voltage V, current A, time s.
 ### `[piece]`
 
 Either `preset = "<ball>"` (a squishy ball; any key below overrides the preset's), `preset = "<piece preset>"` (a
-range's rigid piece, such as `2024-note`; only `name`, `stiffness`, `drag_coefficient` and `spin_damping` go with
-it, the rest is the preset's), or a custom piece.
+range's rigid piece, such as `2024-note`; only `name`, `stiffness`, `drag_coefficient`, `spin_damping`, `flex` and
+(with `flex`) `restitution` go with it, the rest is the preset's), or a custom piece.
 
 | Key | Meaning | Default |
 |---|---|---|
@@ -420,6 +472,8 @@ it, the rest is the preset's), or a custom piece.
 | `stiffness` | rigid only: its own contact stiffness, N/m, in series with the tread | a piece preset's own (the 2024 NOTE's 2000), else none: hard |
 | `drag_coefficient`, `spin_damping` | rigid only, in `[flight]`: the drag coefficient on its shadow, and how fast the air slows its spin, N m s/rad (0 or more) | 1.17 (an estimate), 0; a piece preset's own |
 | `stiffness_n`, `stiffness_exponent`, `restitution`, `inertia_factor` | squishy only: the launcher model's ball numbers | the preset's, or the nearest preset's |
+| `flex` | `true`: a ring is a soft flex body, experimental and about 100 times slower ([Flex NOTE](#flex-note-experimental)); a ring whose length is its wall's width only, as the 2024 NOTE | `false` |
+| `restitution` | with `flex = true`: the ring's bounce off the carpet (above 0, below 1), which its flex is fitted to | a piece preset's own (the 2024 NOTE's 0.3) |
 | `mesh`, `units` | `shape = "mesh"`: an STL or OBJ file (relative to the bench file) and its units, `m`, `mm` or `in`; it collides as its convex hull | none |
 
 ### `[shaft.<name>]`
@@ -909,6 +963,17 @@ cut, which is why squishy pieces use the launcher model's laws with contacts mer
 **Speed.** A foam ball takes about 0.3 s of computer time per ball (0.1 s of it the contact itself) on the
 development machine; `hooded.toml` with ten balls runs in about 3 s, with its pictures in about 4. Rigid pieces are
 faster.
+
+### Known limits
+
+- **A rigid piece in a pinch.** A rigid NOTE squeezed between two wheels isn't foam. Held still, it is squeezed as
+  hard as its `stiffness` says: the bench spreads the stiffness over the 8 contact points it makes with each wheel.
+  Going through, though, the flat sides of its 24 slices strike the wheels (several hundred N, where the launcher
+  model's pinch has 19 N) and it rocks about 25 mm, so the wheels slow far more (46% against the model's 4% on the
+  dry run's 1.25 in pinch) and it leaves slower (7.1 m/s against the model's 9.6). Compare rigid-NOTE pinches with
+  each other, not with the launcher model, or use `flex = true` ([Flex NOTE](#flex-note-experimental)), which agrees
+  with the model within 4 to 9% on a quarter squeeze. (A test keeps the rigid case as a known failure.)
+- **The flex NOTE is experimental**: fitted to estimates, on an integrator MuJoCo still calls new.
 
 **What is not modeled.** Parts are rigid (no bending, no breaking); the bench reports loads only. Squishy pieces are
 balls only. Air drag inside the bench is ignored (it matters only in `[flight]`), and a rigid piece in `[flight]` has

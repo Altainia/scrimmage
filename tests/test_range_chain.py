@@ -438,12 +438,12 @@ def test_the_contact_pattern_catches_each_form():
 
 
 def test_no_world_module_reads_contact_geom_directly():
-    """R5: outside flexcontact.py, no module reads a contact's geoms (BAD). The bench is exempt, as the brief says:
-    it builds its own worlds, which have no flex until Tasks 7 and 8 put a flex NOTE on it; Task 8 routes
-    bench/run.py's readers through contact_ids and drops this exemption."""
+    """R5: outside flexcontact.py, no module reads a contact's geoms (BAD), the bench's included: a bench with
+    `flex = true` has a flex NOTE on it (Task 8)."""
     pkg = REPO / "scrimmage"
-    bad = [f"{p.relative_to(pkg)}:{k}" for p in pkg.rglob("*.py")
-           if p.name != "flexcontact.py" and p.relative_to(pkg).parts[0] != "bench"
+    files = [p for p in pkg.rglob("*.py") if p.name != "flexcontact.py"]
+    assert any(p.relative_to(pkg).parts[0] == "bench" for p in files)
+    bad = [f"{p.relative_to(pkg)}:{k}" for p in files
            for k, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1) if BAD.search(line)]
     assert bad == []
 
