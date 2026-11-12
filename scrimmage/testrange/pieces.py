@@ -1007,8 +1007,8 @@ def _check_soft(r: _KindReader, kind: PieceKind) -> None:
     """A soft kind is a ring with a `stiffness` in SOFT_STIFFNESS_RANGE and a `restitution` (both its own or its
     preset's)."""
     if kind.shape != "ring":
-        raise r.err(i18n.t("soft = true is for a ring piece (shape = \"ring\"); this one is {shape}",
-                           shape=repr(kind.shape)))
+        raise r.err(i18n.t("{setting} is for a ring piece ({ring_setting}); this one is {shape}",
+                           setting="soft = true", ring_setting="shape = \"ring\"", shape=repr(kind.shape)))
     for key in ("stiffness", "restitution"):
         if getattr(kind, key) is None:
             raise r.err(i18n.t("a soft piece needs {key}: give {key} in {table}", key=key,
