@@ -343,6 +343,7 @@ def test_a_low_camera_is_blocked_by_the_subwoofer(tmp_path):
 
 CHAIN_EXAMPLE = ROOT / "examples" / "blocks" / "chain-climb"
 CHAIN_LOW = 0.7176      # m: M 5.5, a CHAIN's lowest point, 2 ft 4 1/4 in
+TRIM_TELEOP_S = 10.0    # s: choice: the HARMONY test's teleop, long enough to hold the hang past the pause
 
 
 def test_the_chains_hang_at_their_low_point():
@@ -377,13 +378,26 @@ def test_the_chain_climb_example_scores_onstage():
     assert [c["text"] for c in r.checks] == ["the robot hangs at ONSTAGE", "the robot hangs from chain_blue_center"]
 
 
-def test_the_harmony_example_scores_5_in_the_endgame():
+def test_the_harmony_example_scores_5_in_the_endgame(tmp_path):
     """examples/blocks/chain-climb/harmony.test.toml, a match: a partner hangs 17.7 in along chain_blue_center and the
     robot climbs the same chain 0.45 m the other way. The endgame scores ONSTAGE's 3 and HARMONY's 2 (one other
-    robot). The whole match runs, about 85 s of wall time."""
-    program = load(CHAIN_EXAMPLE / "harmony.test.toml")
+    robot), scored at the match's end, so the robot must stay hung through the disabled pause and teleop. Run on a
+    copy of the 2024 range with 10 s of teleop (TRIM_TELEOP_S), not 135: the whole match is about 85 s of wall time,
+    and this one about 15 s; the example itself plays the real match."""
+    for name in ("harmony.test.toml", "harmony-climber.toml"):
+        (tmp_path / name).write_text((CHAIN_EXAMPLE / name).read_text(encoding="utf-8"), encoding="utf-8")
+    rng, n = re.subn(r"(?m)^teleop_seconds = 135 ", f"teleop_seconds = {TRIM_TELEOP_S} ",
+                     Path(BUILTIN_RANGES["2024"]).read_text(encoding="utf-8"))
+    assert n == 1
+    (tmp_path / "range.toml").write_text(rng, encoding="utf-8")
+    robot = tmp_path / "harmony-climber.toml"
+    text = robot.read_text(encoding="utf-8")
+    assert text.count('file = "2024"') == 1
+    robot.write_text(text.replace('file = "2024"', 'file = "range.toml"'), encoding="utf-8")
+    program = load(tmp_path / "harmony.test.toml")
     world = world_for(program)
     assert problems(program, world) == []
+    assert world.parts.range.game.teleop_s == TRIM_TELEOP_S
     r = TestRun(world, program).run()
     assert [c["passed"] for c in r.checks] == [True], r.outcome
     assert r.points["endgame"] == 5.0

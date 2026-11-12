@@ -1026,7 +1026,7 @@ brake = true
 partner: two CIMs a side through 10.71 to 1 give each wheel 0.29 N·m·s/rad of damping (an estimate, from the motor
 model the robot's own motors use). A shoved braked partner still rolls, only slower.
 
-**A partner hanging on a chain.** `hang = { hold = "chain_blue_center", along = 0.9, across = -0.05 }` in place of
+**A partner hanging on a chain.** `hang = { hold = "chain_blue_center", along = 0.45, across = -0.05 }` in place of
 `start` hangs the partner from a `kind = "chain"` element ([docs/terrain.md](docs/terrain.md#chains)), `along` meters
 from its low point along its `yaw_deg` and `across` meters to the side (to the left of `yaw_deg`), both signed and
 default 0. It faces along the chain, its length along it. Its top sits 2 cm (a choice) under the chain's joint

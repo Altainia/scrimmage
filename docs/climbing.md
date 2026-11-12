@@ -101,7 +101,7 @@ harmony = 2                   # points for each robot beyond the first on one ho
 ```
 
 `harmony` is for `"off-carpet"` only, and can't be negative. The only other robot is a partner hanging on the chain
-(`[partner] hang = { hold = "chain_blue_center", along = 0.9, across = -0.05 }` in the robot config, or **Hangs on** in the Test
+(`[partner] hang = { hold = "chain_blue_center", along = 0.45, across = -0.05 }` in the robot config, or **Hangs on** in the Test
 tab's Setup): see the [README](../README.md#a-partner-robot). `climb.hold.<hold>.robots` counts it, and
 `climb.harmony` is then 2 while your robot hangs on the same chain. A match ([Test tab](test-tab.md#playing-a-match))
 or a scenario adds the HARMONY points held at its end to the endgame, after ONSTAGE's: "HARMONY with 1 other robot:
@@ -384,9 +384,8 @@ From the research notes (Chief Delphi threads, team binders and the 2022 manual;
   robot along the chain took about 200–250 N, with more links or less friction alike. A real hook on a roller chain
   slides some. So two robots that would meet at the low point in a match stay apart in the sim; put a hanging partner
   where it would end up.
-- **A chain is frictionless against bumpers.** A chain's own friction is 0, so a hook's `hook_material` sets the
-  friction where they touch (the hook and the chain have the same priority, and MuJoCo takes the larger). A bumper has a
-  lower priority than the chain, so there the chain's 0 is used: a chain slides freely across a bumper.
+- **A chain is frictionless against bumpers.** A hook's `hook_material` sets the friction where it touches the chain.
+  A bumper has no say, so a chain slides freely across a bumper.
 - **2013's sequential rule isn't checked**: `"lowest-point"` scores where the robot is, not how it got there.
 - **No state machine**: a script waits on simple conditions; an auto-climb that reacts to the swing has to be
   written as a robot program and run in a scenario.

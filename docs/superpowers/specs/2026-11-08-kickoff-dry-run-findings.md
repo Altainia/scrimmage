@@ -219,9 +219,7 @@ Severity: **B** = blocker, **W** = workaround exists, **N** = nice-to-have. Size
    - **K5 status (2026-11-12).** What works now:
      - in the world, a `soft = true` ring kind (the `2024-note` preset sets it) is rigid on the floor and in flight,
        and turns into a ring of 16 capsule segments within 0.25 m of the robot, the same piece with the same name and
-       counts (docs/test-range.md, "Soft pieces"). Under the soft-note spike's floor intake (a 2 in roller, a ceiling
-       1.25 in over its axle, a back stop 20 in behind) it bends and reaches the back stop at axle heights of 2.5,
-       2.75 and 3.0 in;
+       counts (docs/test-range.md, "Soft pieces");
      - on the bench, `flex = true` gives a tetrahedral flex NOTE (experimental), checked against the pinch model.
    - What doesn't work yet:
      - **no floor intake in the world was shown to pick a soft NOTE up off the carpet.** A NOTE dragged on the carpet

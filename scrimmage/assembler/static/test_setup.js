@@ -151,7 +151,9 @@ function newShuffle() {
 const FACING = () => [[0, t("the same way")], [180, t("toward me")], [90, t("sideways")]];
 const PARTNER = { ahead_in: 60, heading_deg: 0, brake: true };      // a new partner's: 60 in ahead, facing the same way
 // (ahead_in is inches in the file, whatever the Units setting: a typed 101.6 mm writes 4)
-const PARTNER_ALONG_IN = 36;    // choice: a new hanging partner's place, 36 in from the chain's low point (inches)
+const PARTNER_ALONG_IN = 18;    // choice: a new hanging partner's place, 18 in from the chain's low point (inches): on 2024 a
+// stock partner fits only within about 25.6 in of it, between the STAGE legs
+const PARTNER_ACROSS_IN = -2;   // choice: 2 in to the chain's right: every 2024 chain has its STAGE core on its left
 const ownPartner = () => !!(T.state && T.state.palette && T.state.palette.robot_partner);
 // the robot file's own partner's hang ({hang, along_in, across_in}), or null: it stands, or there's none
 const ownHang = () => (T.state && T.state.palette && T.state.palette.robot_partner_hang) || null;
@@ -179,7 +181,7 @@ function setPartner(key, v) {
 function setPartnerHang(hold) {
   const s = setupOf();
   const was = partnerNow(s);
-  s.partner = hold ? { hang: hold, along_in: was.along_in ?? PARTNER_ALONG_IN, ...(was.across_in ? { across_in: was.across_in } : {}) }
+  s.partner = hold ? { hang: hold, along_in: was.along_in ?? PARTNER_ALONG_IN, across_in: was.across_in ?? PARTNER_ACROSS_IN }
     : { ...PARTNER };
   setTest({ setup: s });
 }

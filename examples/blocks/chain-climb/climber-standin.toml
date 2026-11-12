@@ -1,5 +1,5 @@
-# A 60 kg stand-in robot with one stock climber, in front of the 2024 blue STAGE's center CHAIN (the robot from K5's
-# thin-bar and chain tests). Edit it with `scrimmage edit {this file}`, or by hand.
+# A 60 kg stand-in robot with one stock climber, in front of the 2024 blue STAGE's center CHAIN (the robot from
+# scrimmage's own chain tests). Edit it with `scrimmage edit {this file}`, or by hand.
 
 [model]
 timestep = 0.001
@@ -22,10 +22,10 @@ floor_balls = false           # no NOTES: this example is only the climb
 [[part]]
 name = "drive"
 stock = "chassis"
-length = 0.66
-width = 0.6
+length = 0.66              # choice
+width = 0.6                # choice
 mass = 55.5                # choice: the robot weighs 60 kg in all, the climber included
-frame_height = 0.1
+frame_height = 0.1         # choice
 
 [[part]]
 name = "dt"

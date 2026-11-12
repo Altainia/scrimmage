@@ -10,7 +10,7 @@
 
 or, in place of `start`, hanging from a chain of the range (K5 spec D6, R9):
 
-    hang = { hold = "chain_blue_center", along = 0.9, across = -0.05 }
+    hang = { hold = "chain_blue_center", along = 0.45, across = -0.05 }
     # a chain element; along: m from its low point along its yaw; across: m to the yaw's left (default 0)
 
 A hanging partner faces along the chain (`yaw_deg`), its length along the chain and its narrow side toward the chain's

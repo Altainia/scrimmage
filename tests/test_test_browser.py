@@ -2136,9 +2136,11 @@ def test_setup_hangs_the_partner_on_a_chain(test_page, tmp_path):
     expect(page.locator("#test-partner-ahead")).to_be_hidden()
     expect(page.locator("#test-partner-facing")).to_be_hidden()
     expect(page.locator("#test-partner-brake")).to_be_hidden()
-    page.fill("#test-partner-along", "35.4")
+    expect(page.locator("#test-partner-along")).to_have_value("18")      # the default, inside the STAGE legs
+    expect(page.locator("#test-partner-across")).to_have_value("-2")     # clear of the STAGE core, on the chain's left
+    page.fill("#test-partner-along", "17.7")
     page.press("#test-partner-along", "Enter")
-    _wait_file(lambda: _partner_setup(path) == {"hang": "chain_blue_center", "along_in": 35.4}, path)
+    _wait_file(lambda: _partner_setup(path) == {"hang": "chain_blue_center", "along_in": 17.7, "across_in": -2}, path)
     page.select_option("#test-partner-hang", "")
     expect(page.locator("#test-partner-ahead")).to_be_visible()
     expect(page.locator("#test-partner-along")).to_be_hidden()

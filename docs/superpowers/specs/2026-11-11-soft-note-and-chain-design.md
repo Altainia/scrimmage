@@ -250,7 +250,7 @@ Each one gives what was decided, why, and its cost if wrong.
   - docs/bench.md: the flex NOTE.
   - docs/measuring.md: the squeeze and drop tests.
   - `examples/blocks/` gains `chain-climb` (ONSTAGE on `chain_blue_center`, and with a hanging partner, HARMONY)
-    and an intake example on a soft NOTE.
+    and an intake example on a soft NOTE (dropped 2026-11-12: see the findings, gap 3's K5 status).
   - `examples/bench/` gains a flex NOTE shot.
   - The findings get a "**K5 status**" note under gaps 3, 9 and 15, and under K2's pinch item.
 
