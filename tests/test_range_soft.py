@@ -67,22 +67,25 @@ def _soft_off(monkeypatch) -> None:
 # ------------------------------------------------------------------------------------------------ the rule
 
 def test_the_rule_scales_from_the_fit():
-    """R10: the contact and joint stiffness in proportion to `stiffness`, the contact damping DAMPING_SCALE x the
-    closed form for `restitution`."""
+    """R10: the contact and joint stiffness in proportion to `stiffness`, the contact damping damping_scale(stiffness)
+    x the closed form for `restitution`."""
     assert soft.damping_ratio_for(0.3) == pytest.approx(0.358, abs=0.001)
     base, triple = soft.ring_params(_at(2000.0)), soft.ring_params(_at(6000.0))
     assert base.contact_k == pytest.approx(11211.4)
     assert triple.contact_k == pytest.approx(3 * 11211.4)
     assert base.joint_k == pytest.approx(0.10276) and triple.joint_k == pytest.approx(3 * 0.10276)
-    for p in (base, triple):
-        assert p.contact_b == pytest.approx(0.85 * 2 * soft.damping_ratio_for(0.3) * math.sqrt(p.contact_k))
-    # the spike's own fitted damping (64.5 soft, 113 firm) within 2 %
-    assert base.contact_b == pytest.approx(64.45, rel=0.02) and triple.contact_b == pytest.approx(113.0, rel=0.02)
+    for p, s in ((base, 2000.0), (triple, 6000.0)):
+        assert p.contact_b == pytest.approx(soft.damping_scale(s) * 2 * soft.damping_ratio_for(0.3)
+                                            * math.sqrt(p.contact_k))
+    # the spike's own fitted damping (64.5 soft, 113 firm): within 2 % at the soft foam; the firm one's table row is
+    # this ring's own fit (its joint damping is R10's, not the spike's), 7 % above the spike's
+    assert base.contact_b == pytest.approx(64.45, rel=0.02) and triple.contact_b == pytest.approx(113.0, rel=0.10)
     # the contact stiffness is per unit mass in MuJoCo, so it is scaled by FIT_MASS / mass; the joints aren't
     heavy = soft.ring_params(replace(_at(2000.0), mass=2 * NOTE.mass))
     assert soft.FIT_MASS == 0.235 and heavy.contact_k == pytest.approx(11211.4 / 2)
     assert heavy.joint_k == pytest.approx(base.joint_k)
-    assert heavy.contact_b == pytest.approx(0.85 * 2 * soft.damping_ratio_for(0.3) * math.sqrt(heavy.contact_k))
+    assert heavy.contact_b == pytest.approx(soft.damping_scale(2000.0) * 2 * soft.damping_ratio_for(0.3)
+                                            * math.sqrt(heavy.contact_k))
 
 
 def test_a_heavier_note_squeezes_as_its_stiffness_says():
@@ -106,13 +109,13 @@ def test_the_rule_reproduces_both_fitted_foams(stiffness):
 def test_soft_limits_are_checked():
     """R14 (Review Focus 4): a soft kind's stiffness lies in SOFT_STIFFNESS_RANGE and its restitution in
     SOFT_RESTITUTION_RANGE, only a ring is soft, and its hole is wide enough that its segments don't overlap."""
-    assert SOFT_STIFFNESS_RANGE == (1000.0, 20000.0) and SOFT_RESTITUTION_RANGE == (0.25, 0.55)
+    assert SOFT_STIFFNESS_RANGE == (1000.0, 20000.0) and SOFT_RESTITUTION_RANGE == (0.27, 0.45)
     for bad in (50000, 500):
         with pytest.raises(RangeError) as e:
             parse_kind(P, "s", {**RING, "stiffness": bad}, ROOT)
         assert "stiffness" in str(e.value) and "1000" in str(e.value) and "20000" in str(e.value)
-    for bad in (0.2, 0.6):
-        with pytest.raises(RangeError, match="restitution must be between 0.25 and 0.55, not"):
+    for bad in (0.25, 0.5):
+        with pytest.raises(RangeError, match="restitution must be between 0.27 and 0.45, not"):
             parse_kind(P, "s", {**RING, "stiffness": 2000, "restitution": bad}, ROOT)
     with pytest.raises(RangeError, match="ring"):
         parse_kind(P, "b", {"shape": "box", "size_in": [4, 4, 4], "mass": 0.5, "friction": 0.6, "soft": True,
@@ -142,11 +145,32 @@ def test_a_presets_soft_says_how_to_stay_rigid():
     assert "soft = false" not in str(e.value)
 
 
-@pytest.mark.parametrize("e", SOFT_RESTITUTION_RANGE)
-def test_the_rule_bounces_within_10_percent_at_both_ends(e):
-    """M11: at each end of SOFT_RESTITUTION_RANGE, at the preset's 2000 N/m, the drop's e is within 10 % of the
-    asked one (measured: 0.25 gives 0.265, 0.55 gives 0.496)."""
-    assert soft_helpers.drop(_at(2000.0, e))["e"] == pytest.approx(e, rel=0.10)
+SOFT_CORNERS = [(s, e) for s in SOFT_STIFFNESS_RANGE for e in SOFT_RESTITUTION_RANGE] + [
+    (math.sqrt(SOFT_STIFFNESS_RANGE[0] * SOFT_STIFFNESS_RANGE[1]), sum(SOFT_RESTITUTION_RANGE) / 2)]
+
+
+@pytest.mark.parametrize(("stiffness", "e"), SOFT_CORNERS)
+def test_the_rule_bounces_within_10_percent_across_the_range(stiffness, e):
+    """At each corner of SOFT_STIFFNESS_RANGE x SOFT_RESTITUTION_RANGE and at its middle (log stiffness), the 1 m
+    drop's e is within 10 % of the asked one (fix round 2: the damping scale follows the stiffness)."""
+    assert soft_helpers.drop(_at(stiffness, e))["e"] == pytest.approx(e, rel=0.10)
+
+
+def test_the_damping_scale_table():
+    """DAMPING_SCALES: linear in log(stiffness) between its rows, held at its ends."""
+    rows = soft.DAMPING_SCALES
+    assert [s for s, _ in rows] == [1000.0, 2000.0, 6000.0, 20000.0]
+    assert soft.damping_scale(500.0) == rows[0][1] and soft.damping_scale(50000.0) == rows[-1][1]
+    mid = math.sqrt(2000.0 * 6000.0)
+    assert soft.damping_scale(mid) == pytest.approx((rows[1][1] + rows[2][1]) / 2)
+
+
+def test_the_shipped_damping_scales_are_the_fit():
+    """tests/fit_soft_damping.py refits each row (about 11 s): within 0.5 % of the shipped table, so a change to
+    the ring or its contact that moves the fit fails here until the table is refit."""
+    import fit_soft_damping
+    for stiffness, shipped in soft.DAMPING_SCALES:
+        assert fit_soft_damping.fit(stiffness) == pytest.approx(shipped, rel=0.005), stiffness
 
 
 @pytest.mark.parametrize("stiffness", SOFT_STIFFNESS_RANGE)

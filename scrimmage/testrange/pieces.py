@@ -98,8 +98,9 @@ _RIGID_OWN = _AIR + ("stiffness", "restitution", "soft")
 # A soft kind's `stiffness` (N/m) must lie in this range.
 SOFT_STIFFNESS_RANGE = (1000.0, 20000.0)  # choice: half to 10x the 2024-note preset's, both ends tested stable at 1 ms
 # ... and its `restitution` in this one: where the soft ring's rule (testrange/soft.py) gives a 1 m drop within 10 % of
-# it at the preset's 2000 N/m (0.25 gives 0.265, 0.55 gives 0.496; 0.2 gives +15 %, 0.6 -15 %)
-SOFT_RESTITUTION_RANGE = (0.25, 0.55)  # choice: measured, task 5 review (tests/test_range_soft.py checks both ends)
+# it across the whole stiffness range (measured at 1000-20000 N/m: the worst is -9.6 % at 12000 N/m and 0.45; 0.25 is
+# +12.6 % at 20000 N/m and 0.55 is -11 % at 11000 N/m)
+SOFT_RESTITUTION_RANGE = (0.27, 0.45)  # choice: measured, task 5 review round 2 (tests/test_range_soft.py samples it)
 SOFT_SEGMENTS = 16  # source: soft-note spike, candidate (b): a soft ring's segments (soft.py RING_SEGMENTS)
 # A soft ring's inner diameter must be more than this share of its outer one, so that its segments clear each other
 # at rest: a segment's capsule and the one two along touch unless the chord 2 R sin(pi/16) exceeds the tube's 2 r,

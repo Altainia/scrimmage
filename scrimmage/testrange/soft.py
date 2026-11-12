@@ -17,7 +17,9 @@ and restitution 0.3 (FIT_CONTACT_K, FIT_JOINT_K). The world scales from there:
 - the contact stiffness and the joint stiffness are in proportion to the kind's `stiffness`. The contact
   stiffness is also scaled by FIT_MASS / the kind's mass: MuJoCo's negative solref is per unit of the contact's
   effective mass, so without it a NOTE twice as heavy would squeeze twice as hard (R10, extended in task 5's review);
-- the contact damping is DAMPING_SCALE x the closed form 2 zeta(e) sqrt(k), zeta(e) = -ln e / sqrt(pi^2 + ln^2 e);
+- the contact damping is damping_scale(stiffness) x the closed form 2 zeta(e) sqrt(k), zeta(e) = -ln e /
+  sqrt(pi^2 + ln^2 e). The scale is a shipped table over stiffness (DAMPING_SCALES), fitted offline once
+  (tests/fit_soft_damping.py), never at build time;
 - the joint damping gives one segment swinging about its joint a damping ratio of JOINT_ZETA.
 
 MuJoCo's soft contact is not a plain spring: with impedance d a static load sees d / (1 - d) times the stiffness an
@@ -51,7 +53,10 @@ FIT_CONTACT_K = 11211.4  # source: soft-note spike, chain soft fit
 FIT_JOINT_K = 0.10276  # source: soft-note spike, chain soft fit
 FIT_MASS = 0.235  # source: soft-note spike: the fit's NOTE mass (the 2024-note preset's)
 JOINT_ZETA = 0.3  # source: spike
-DAMPING_SCALE = 0.85  # source: derived, R10: the spike's two fits, b / (2 zeta(0.3) sqrt k) = 0.849 soft, 0.860 firm
+# The contact damping's scale on the closed form, by stiffness (N/m): what makes a 1 m drop at e = 0.3 come back at
+# 0.3, interpolated in log(stiffness) and held at the ends (damping_scale). Refit with tests/fit_soft_damping.py.
+DAMPING_SCALES = (  # source: fitted offline by tests/fit_soft_damping.py, 2026-11-11
+    (1000.0, 0.8241), (2000.0, 0.8536), (6000.0, 0.9110), (20000.0, 1.0749))
 CLOSE_SOLREF = (0.004, 1.0)  # source: spike's closing connect
 POOL_PREFIX = "soft"  # the pool's rings are soft.0, soft.1, ...
 
@@ -60,6 +65,12 @@ def damping_ratio_for(e: float) -> float:
     """A damped spring's damping ratio for restitution e (0 < e < 1): -ln e / sqrt(pi^2 + ln^2 e)."""
     le = math.log(e)
     return -le / math.sqrt(math.pi ** 2 + le * le)
+
+
+def damping_scale(stiffness: float) -> float:
+    """DAMPING_SCALES at `stiffness` (N/m): linear in log(stiffness) between its rows, held at its ends."""
+    xs = [math.log(s) for s, _ in DAMPING_SCALES]
+    return float(np.interp(math.log(stiffness), xs, [v for _, v in DAMPING_SCALES]))
 
 
 @dataclass(frozen=True)
@@ -101,7 +112,8 @@ def ring_params(kind: PieceKind) -> RingParams:
     kj = FIT_JOINT_K * scale
     d = _dims(kind)
     i_joint = d.inertia[1] + d.m * d.half * d.half      # a segment about its joint: I_seg + m (l/2)^2
-    return RingParams(contact_k=k, contact_b=DAMPING_SCALE * 2.0 * damping_ratio_for(kind.restitution) * math.sqrt(k),
+    b = damping_scale(kind.stiffness) * 2.0 * damping_ratio_for(kind.restitution) * math.sqrt(k)
+    return RingParams(contact_k=k, contact_b=b,
                       joint_k=kj, joint_b=2.0 * JOINT_ZETA * math.sqrt(kj * i_joint))
 
 

@@ -640,15 +640,18 @@ estimates until someone measures them, and a soft kind needs both:
   - an `inner_diameter` more than 0.68 of its `diameter`, so the 16 segments of its soft ring don't overlap (the
     NOTE's is 10 in of 14, 0.71);
   - a `stiffness` of 1000 to 20000 N/m;
-  - a `restitution` of 0.25 to 0.55. The soft ring's bounce comes from a rule fitted at 0.3. Dropped from 1 m at
-    the preset's 2000 N/m, it lands within 10 % of the asked restitution only in that range:
+  - a `restitution` of 0.27 to 0.45. The soft ring's bounce comes from a rule, not a fit when the world is built.
+    Its damping scale is a table over stiffness, fitted once so that 0.3 comes back as 0.3 at 1000, 2000, 6000 and
+    20000 N/m. Dropped from 1 m, the ring lands within 10 % of the asked restitution only in that range. The error
+    in percent:
 
-    | restitution asked | 0.1 | 0.2 | 0.25 | 0.3 | 0.4 | 0.5 | 0.55 | 0.6 |
-    |---|---|---|---|---|---|---|---|---|
-    | measured, 2000 N/m | 0.16 | 0.23 | 0.27 | 0.30 | 0.38 | 0.46 | 0.50 | 0.51 |
-    | measured, 20000 N/m | 0.24 | 0.30 | 0.34 | 0.38 | 0.44 | 0.53 | 0.55 | 0.53 |
-
-    A stiffer ring bounces higher than asked at low restitution: at 20000 N/m, 0.3 comes back as 0.38.
+    | stiffness, N/m | 0.25 | 0.27 | 0.3 | 0.35 | 0.45 | 0.5 | 0.55 |
+    |---|---|---|---|---|---|---|---|
+    | 1000 | +5.3 | +2.8 | 0.0 | −3.5 | −7.1 | −7.6 | −7.8 |
+    | 2000 | +5.6 | +2.9 | 0.0 | −3.6 | −7.3 | −8.4 | −10.0 |
+    | 6000 | +6.7 | +3.6 | 0.0 | −3.3 | −7.8 | −8.5 | −9.9 |
+    | 12000 | | +1.8 | | −5.4 | −9.6 | | |
+    | 20000 | +12.6 | +7.2 | 0.0 | −2.7 | −7.8 | −10.5 | −9.9 |
 
   A ball or a disc is refused all three keys: its stiffness and bounce are its preset's.
 

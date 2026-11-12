@@ -144,9 +144,19 @@ What the spec leaves open, decided here so each task can cite it. Each gives the
   DAMPING_SCALE = 0.85 (`# source: derived: the spike's two fits, b/(2 ζ(0.3) √k) = 0.849 soft and 0.860 firm`).
   *Why:* the spec's closed form alone gives ζ = 0.358 at e = 0.3, where both fits needed 0.304–0.308. MuJoCo's
   impedance d = 0.2 shifts the effective damping, and the scale is one number measured twice. *Cost:* at other e the
-  scale is an extrapolation. The test at both fitted foams is the arbiter. Measured at 2000 N/m (task 5 review): e
-  asked 0.1, 0.2, 0.25, 0.4, 0.55 and 0.6 gives 0.16, 0.23, 0.27, 0.38, 0.50 and 0.51; at 20000 N/m, 0.3 gives 0.38
-  (R14 bounds e).
+  scale is an extrapolation. The test at both fitted foams is the arbiter.
+
+  **Task 5 fix round 2.** One scale for all stiffnesses missed the drop: 0.3 came back as 0.38 at 20000 N/m. So
+  DAMPING_SCALE became `DAMPING_SCALES`, a shipped table. Each row is the scale that makes a 1 m drop at e = 0.3 come
+  back at 0.3, and the table is read linearly in log(stiffness) and held at its ends:
+
+  | stiffness, N/m | 1000 | 2000 | 6000 | 20000 |
+  |---|---|---|---|---|
+  | scale | 0.8241 | 0.8536 | 0.9110 | 1.0749 |
+
+  The rows were fitted offline by tests/fit_soft_damping.py on 2026-11-11, and
+  `test_the_shipped_damping_scales_are_the_fit` reruns that fit. Building the world never fits anything. R14 bounds
+  e to where the drop lands within 10 %.
 - **R11, the stand-in shadows its ring (D8).**
   - While a NOTE is soft, its rigid slot stays `field` with PARKED_BITS and feels no ledger forces. After every
     physics step it takes its ring's best-fit pose and velocity, so possession, goals, the hopper, the ball log and
@@ -170,15 +180,19 @@ What the spec leaves open, decided here so each task can cite it. Each gives the
   `SOFT_STIFFNESS_RANGE = (1000.0, 20000.0)  # choice: half to 10x the preset, both ends tested stable at 1 ms`.
   `restitution` must lie in (0, 1). It is refused on a ball or disc kind, whose restitution is its preset's.
   Added in task 5's review:
-  - On a soft kind, `restitution` must lie in `SOFT_RESTITUTION_RANGE = (0.25, 0.55)  # choice`. That is where the
-    rule's 1 m drop lands within 10 % of it at 2000 N/m.
+  - On a soft kind, `restitution` must lie in `SOFT_RESTITUTION_RANGE = (0.27, 0.45)  # choice`.
+    - This is where the rule's 1 m drop lands within 10 % of it across the whole range of 1000–20000 N/m, with
+      R10's damping table. The worst case is −9.6 %, at 12000 N/m and 0.45.
+    - It is narrower than the first round's (0.25, 0.55): 0.25 gives +12.6 % at 20000 N/m, and 0.55 gives −11 % at
+      11000 N/m.
+    - The test samples the four corners and the middle.
   - The kind needs an `inner_diameter` of more than `SOFT_MIN_HOLE = 0.68` of its diameter. Below
     (1 − sin π/16)/(1 + sin π/16) = 0.674, a segment's capsule overlaps the one two along.
   - When the `soft` came from the preset, an out-of-range override says so, and says that `soft = false` keeps the
     piece rigid.
 
-  *Cost:* a measured NOTE outside the ranges needs a range widened, with a test. At the stiff end the drop overshoots
-  a low e (20000 N/m: 0.3 gives 0.38).
+  *Cost:* a measured NOTE outside the ranges needs a range widened, with a test. A real NOTE that bounces under 0.27
+  or over 0.45 can't be entered as it is.
 - **R15, the bench flex.**
   - The fit runs at the bench's flex timestep, 0.5 ms: squeeze by a secant on log E within 2 %, drop by a log
     bisection of β, 7 steps.
