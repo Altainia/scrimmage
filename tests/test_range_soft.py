@@ -286,6 +286,25 @@ def test_the_ring_is_built_as_its_kind():
     assert np.abs(d.efc_pos[:d.ne]).max() < 1e-12      # the loop closes at rest
 
 
+def test_segment_speeds_are_the_rings_own():
+    """Ring.speeds is each segment's center speed from the ring's own kinematics: a ring moving as one rigid body at
+    v and spinning at w has |v + w x (com_j - c)| at segment j (K6-R8)."""
+    spec = mujoco.MjSpec()
+    soft.add_ring(spec, "n", NOTE, (0.0, 0.0, 0.0), PARKED_BITS)
+    m = spec.compile()
+    d = mujoco.MjData(m)
+    ring = soft.ring_view(m, "n")
+    c0, q = [0.3, -0.2, 0.5], [math.cos(0.3), 0.0, math.sin(0.3), 0.0]
+    soft.write_rigid(m, d, "n", c0, q, vel=[1.0, 0, 0], ang_vel=[0, 0, 10.0])
+    mujoco.mj_forward(m, d)
+    com, _, _, _ = ring._segments(d.qpos[ring.q], None)
+    c = ring.m @ com / ring.mass
+    want = np.linalg.norm(np.array([1.0, 0, 0]) + np.cross([0, 0, 10.0], com - c), axis=1)
+    got = ring.speeds(d)
+    assert got.shape == (16,)
+    assert np.abs(got - want).max() < 1e-9
+
+
 # ------------------------------------------------------------------------------------------------ the pool
 
 def test_a_soft_kind_builds_a_parked_pool():

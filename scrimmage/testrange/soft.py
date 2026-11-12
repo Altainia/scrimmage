@@ -300,6 +300,12 @@ class Ring:
         c, quat, vc, ang, _ = self._state(data, True)
         return c, quat, vc, ang
 
+    def speeds(self, data: mujoco.MjData) -> np.ndarray:
+        """Each segment's center speed (m/s), shape (16,), from the ring's own kinematics. MuJoCo's cvel is taken
+        about the tree's center of mass, so its linear part overstates a spinning segment's speed (K6-R8)."""
+        _, _, v, _ = self._segments(data.qpos[self.q], data.qvel[self.v])
+        return np.sqrt((v * v).sum(1))
+
     def write(self, data: mujoco.MjData, pos, quat, vel, ang_vel) -> None:
         """write_rigid, for this ring."""
         rq = _mats(np.asarray(quat, dtype=float)[None])[0]

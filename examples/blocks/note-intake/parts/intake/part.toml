@@ -1,0 +1,101 @@
+# An over-under floor intake for the 2024 NOTE, written by hand (the intake spike's chosen design, 2026-11-12).
+# A 2 in top roller out front grabs the NOTE's top and drags it back into a 2 in bottom roller 3 mm over the carpet,
+# whose top moves into the robot: it lifts the NOTE's edge into the nip between the two (1.4 in apart, the 2 in NOTE
+# squeezed 0.6 in) and onto a floor level with its top, 2 in up. One more top roller over the floor carries it in.
+# Every roller is on one NEO at 3 to 1 (couplings), the same surface speed.
+# Coordinates: x forward, y left, z up, m; the origin is on the carpet at the front bumper's face.
+#
+# Simulator rules this design follows (docs: the spike's RESULTS.md):
+# - every surface the NOTE can be pushed into is thick (5 cm, or the 5 cm floor slab): the soft NOTE's squash is a
+#   soft contact that sinks 2 to 4 cm into a part under a hard push, which goes through a 1/8 in plate;
+# - a ceiling 2.1 in over the floor runs from the back stop forward over every roller (the rollers poke through it:
+#   a robot's own parts don't touch each other), so the NOTE's tail can't buckle up between the rollers.
+
+[part]
+name = "intake"
+format = 1
+
+[[body]]
+name = "frame"
+mass = 0.6                    # choice: side plates and brackets (drawn only)
+geom = [{ box = [0.05, 0.05, 0.05], pos = [0.1, 0.0, 0.3], collide = false }]
+
+# The bin the NOTE ends in: a 5 cm floor slab whose top is 2.04 in up, a back stop, side walls 16 in apart, and a lid
+# 2.1 in over the floor. Its box (the piece_in check's) is behind the bottom roller only.
+[[body]]
+name = "hopper"
+parent = "frame"
+mass = 1.0                    # choice
+geom = [
+  { box = [0.05, 0.5064, 0.12], pos = [-0.0123, 0.0, 0.064], friction = 0.4, priority = 1, color = [0.75, 0.8, 0.85, 0.6] },   # back stop
+  { box = [0.4589, 0.4064, 0.0498], pos = [0.24215, 0.0, 0.0269], friction = 0.4, priority = 1, color = [0.75, 0.8, 0.85, 0.6] },   # floor slab, 2 mm over the carpet to 2.04 in up
+  { box = [0.4716, 0.05, 0.12], pos = [0.2358, 0.2282, 0.064], friction = 0.4, priority = 1, color = [0.75, 0.8, 0.85, 0.6] },   # side walls, 16 in apart inside
+  { box = [0.4716, 0.05, 0.12], pos = [0.2358, -0.2282, 0.064], friction = 0.4, priority = 1, color = [0.75, 0.8, 0.85, 0.6] },
+  { box = [0.4716, 0.5064, 0.05], pos = [0.2358, 0.0, 0.13014], friction = 0.4, priority = 1, color = [0.75, 0.8, 0.85, 0.6] },   # lid, 2.1 in over the floor
+]
+
+# Side guides round the rollers and the ceiling over them, the lid carried forward to just past the front roller.
+[[body]]
+name = "guide"
+parent = "frame"
+mass = 0.5                    # choice
+geom = [
+  { box = [0.16, 0.05, 0.13], pos = [0.53, 0.2282, 0.075], friction = 0.4, priority = 1, color = [0.75, 0.8, 0.85, 0.6] },
+  { box = [0.16, 0.05, 0.13], pos = [0.53, -0.2282, 0.075], friction = 0.4, priority = 1, color = [0.75, 0.8, 0.85, 0.6] },
+  { box = [0.140271, 0.5064, 0.05], pos = [0.541736, 0.0, 0.13014], friction = 0.4, priority = 1, color = [0.75, 0.8, 0.85, 0.6] },
+]
+
+# The front top roller: its bottom 1.6 in over the carpet, 3.06 in ahead of the bottom roller (centers 3.4 in apart:
+# a 1.4 in nip). High over the bottom roller, so moving the lip changes the nip less (the K6 retune: 0.4 in higher
+# than the spike's, which jammed the stiffening NOTE at the grids' tightest nips). Positive volts turn it so its
+# bottom moves back into the robot.
+[[body]]
+name = "roller"
+parent = "frame"
+pos = [0.577721, 0.0, 0.06604]   # choice: K6-P3 (b), the spike's place moved up 10.16 mm and back 4.15 mm
+mass = 0.25                   # choice: a 2 in roller with a grippy sleeve
+com = [0.0, 0.0, 0.0]
+inertia = [0.003374, 8.1e-05, 0.003374]   # derived: 1/2 m r^2 about the axle
+joint = { name = "roller", hinge = "y" }
+geom = [{ cylinder = [0.0254, 0.4], axis = "y", color = [0.95, 0.5, 0.1, 1.0], friction = 1.0 }]
+
+# The bottom roller: its bottom 3 mm over the carpet, its top (2.08 in up) moving back into the robot.
+[[body]]
+name = "bottom"
+parent = "frame"
+pos = [0.5, 0.0, 0.0284]
+mass = 0.25
+com = [0.0, 0.0, 0.0]
+inertia = [0.003374, 8.1e-05, 0.003374]
+joint = { name = "bottom", hinge = "y" }
+geom = [{ cylinder = [0.0254, 0.4], axis = "y", color = [0.95, 0.5, 0.1, 1.0], friction = 1.0 }]
+
+# Over the floor's front: its bottom 1.4 in over the floor.
+[[body]]
+name = "top0"
+parent = "frame"
+pos = [0.48, 0.0, 0.11276]
+mass = 0.25
+com = [0.0, 0.0, 0.0]
+inertia = [0.003374, 8.1e-05, 0.003374]
+joint = { name = "top0", hinge = "y" }
+geom = [{ cylinder = [0.0254, 0.4], axis = "y", color = [0.95, 0.5, 0.1, 1.0], friction = 1.0 }]
+
+# One motor for all three, the bottom roller turning the other way (a belt crossed, or a gear)
+[[coupling]]
+joints = ["roller", "bottom"]
+ratio = -1.0
+
+[[coupling]]
+joints = ["roller", "top0"]
+ratio = 1.0
+
+[[motor]]
+slot = "roller"
+joint = "roller"
+motor = "NEO"
+gearing = 3.0                 # choice: 3 to 1, about 20 rps at 8 V (2 in rollers: 3.4 m/s at the surface)
+
+[[mount]]
+name = "base"
+body = "frame"

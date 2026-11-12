@@ -686,15 +686,41 @@ its cost.
 
 ## Task 1's record (filled in by Task 1)
 
-- Fix off, corners, on the example's files: _ of 16, failing: _ (the spike's: 14, the two 11 V corners).
-- Fix on at 1.0 r, the nominal geometry:
+Run with the spike's in-process patch (`$SPIKE/k6/patch.py`) through `tests/intake_grid.py` on the example's files.
+"Fastest segment" is the fastest `Ring.speeds` of any in-use ring at any step of any case in the grid.
+
+- **The lip setting is the spike generator's, not a lip body (narrows K6-P2).** With K6-P2's `lip` body, the fix-off
+  corners came out 15 of 16 (`[-0.5, +1, 11 V, 0.5 m/s, -15°]` passed). The rollers matched `designs.nip` exactly; the
+  bin did not. The lip block overlapped the main floor slab by 3 cm at nominal and 5.6 cm at lip -1 in, and a NOTE on
+  two overlapping boxes gets two contacts, right under the nip. A rigid lip body can't avoid that (at +1 in it leaves
+  an overlap or a hole). So the part file is `$SPIKE/winner/parts/intake/part.toml` verbatim (no `lip` body), and the
+  lip setting moves `bottom` forward and keeps the floor's, walls' and lid's front ends and the ceiling's back end at
+  the moved front, as `designs.nip` did. At all 72 axle and lip settings the variant's geoms match `designs.nip`'s to
+  under 1 micron. The clearance setting stays K6-P2's mount raise, with the front roller's 3.4 in spacing read from
+  the saved file.
+- Fix off, corners, on the example's files: 14 of 16, failing: `[-0.5, +1, 11 V, 0.5 m/s, -15°]` and
+  `[-0.5, +1, 11 V, 2.0 m/s, 0°]` (the spike's: 14, the two 11 V corners). Every case's pass and fastest segment match
+  `$SPIKE/k6/off_corners.jsonl` to its rounding (16.33 against 16.3 m/s).
+- Fix on at 1.0 r, the nominal geometry (misses the target: 13 of 16 corners):
 
   | Grid | Passed | Failing cases | Fastest segment (m/s) |
   |---|---|---|---|
-  | One setting at a time (44 + the 0 V control) | | | |
-  | 16 corners | | | |
-  | 40 random draws (seed 7) | | | |
+  | One setting at a time (44 + the 0 V control) | 44 of 45 | the 0 V control only | 5.0 |
+  | 16 corners | 13 of 16 | `[-0.5, -1, 5, 2.0, 0]`, `[-0.5, +1, 5, 0.5, 0]`, `[-0.5, +1, 5, 2.0, +15]` | 16.3 (at `[-0.5, +1, 11, 0.5, -15]`, which passed) |
+  | 40 random draws (seed 7) | 38 of 40 | `[-0.399, -0.273, 5.15, 1.81, 3.4, -2.8]`, `[-0.303, -0.591, 8.74, 1.85, 10.2, -0.2]` | 5.8 |
 
-- Retune candidates run (K6-P3), each with the same table: _
-- The geometry that ships: _
-- K6-P13, written only on a shortfall: _
+- Retune candidates run (K6-P3), each from the nominal file. All five were run at once, so (c) and its stiffness
+  steps were measured even though (b) met the target first:
+
+  | Candidate | One setting at a time | 16 corners | 40 random draws | Fastest segment (m/s) | Target |
+  |---|---|---|---|---|---|
+  | (a) 1.6 in nip | 43 of 45: the control and offset -6 in | 15 of 16: `[-0.5, -1, 5, 2.0, 0]` | 35 of 40 | 4.0 / 6.0 / 9.8 | no |
+  | (b) front roller 0.4 in higher | 44 of 45: the control only | 14 of 16: `[-0.5, +1, 5, 0.5, 0]`, `[-0.5, +1, 5, 2.0, +15]` | 40 of 40 | 3.2 / 6.0 / 4.4 | **yes** |
+  | (c) sprung arm, 14.0 N·m/rad | 44 of 45: the control only | 16 of 16 | 39 of 40: `[-0.399, -0.273, 5.15, 1.81, 3.4, -2.8]` | 4.5 / 5.3 / 5.2 | yes |
+  | (c) at 7.0 | 44 of 45: the control only | 16 of 16 | 39 of 40: `[-0.303, -0.591, 8.74, 1.85, 10.2, -0.2]` | 3.4 / 6.9 / 4.7 | yes |
+  | (c) at 28.0 | 44 of 45: the control only | 16 of 16 | 38 of 40 | 4.5 / 4.8 / 16.1 | yes |
+
+  The fastest-segment column is OAT / corners / random.
+- The geometry that ships: (b), the first that meets the target. `roller` at `[0.577721, 0.0, 0.06604]` (its bottom
+  1.6 in over the carpet, centers still 3.4 in apart: a 1.4 in nip). Everything else is the spike's winner.
+- K6-P13, written only on a shortfall: none (no shortfall).
