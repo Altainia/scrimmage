@@ -151,8 +151,8 @@ def variant(case: Case, into: Path, example: Path = EXAMPLE) -> Path:
     part = tomlkit.parse((into / PART).read_text(encoding="utf-8"))
     robot = tomlkit.parse((into / ROBOT).read_text(encoding="utf-8"))
     mount = next(p for p in robot["part"] if p["name"] == MOUNT)
-    # the front roller's center from the bottom one's, as saved: 3.4 in apart, a 1.4 in nip (the spike's designs.nip),
-    # and 0.03764 m over it since the K6 retune (the spike's place was 0.02748 m over)
+    # the front roller's center from the bottom one's, as saved (through the arm it hangs on): 0.08636 m apart and
+    # 0.02748 m over it, the spike's designs.nip (3.4 in between centers, a 1.4 in nip)
     front, back = _placed(part, "roller"), _placed(part, "bottom")
     h0 = front[2] - back[2]
     cd = math.hypot(front[0] - back[0], h0)

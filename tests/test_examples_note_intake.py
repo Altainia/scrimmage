@@ -116,14 +116,15 @@ def test_a_variant_moves_the_settings_bodies(tmp_path):
     part0, robot0, part, robot = _moved(Case("t", "clear", 10, clear_mm=10.0), tmp_path / "clear")
     assert _mount(robot)["pos"][2] - _mount(robot0)["pos"][2] == pytest.approx(0.007, abs=1e-9)
     assert _body(part, "roller")["pos"][2] - _body(part0, "roller")["pos"][2] == pytest.approx(-0.007, abs=1e-9)
-    # the front roller kept 3.4 in from the bottom one (K6-P2's formula, on the saved roller: 0.03764 m over the
-    # bottom roller since the K6 retune, so +3.02 mm; the spike's place, 0.02748 m over, gave +2.03 mm)
-    front, back = _body(part0, "roller")["pos"], _body(part0, "bottom")["pos"]
+    # the front roller kept 3.4 in from the bottom one (K6-P2's formula, +2.03 mm). It hangs on the arm, so its place
+    # in the part is the arm's pos plus its own
+    arm, back = _body(part0, "arm")["pos"], _body(part0, "bottom")["pos"]
+    front = [a + b for a, b in zip(arm, _body(part0, "roller")["pos"])]
     h0 = front[2] - back[2]
     cd = math.hypot(front[0] - back[0], h0)
-    assert cd == pytest.approx(0.08636, abs=1e-5) and h0 == pytest.approx(0.03764, abs=1e-6)
+    assert cd == pytest.approx(0.08636, abs=1e-5) and h0 == pytest.approx(0.02748, abs=1e-6)
     dx = math.sqrt(cd ** 2 - (h0 - 0.007) ** 2) - math.sqrt(cd ** 2 - h0 ** 2)
-    assert dx == pytest.approx(0.00302, abs=1e-5)
+    assert dx == pytest.approx(0.00203, abs=1e-5)
     assert _body(part, "roller")["pos"][0] - _body(part0, "roller")["pos"][0] == pytest.approx(dx, abs=1e-6)
     for i in (0, 2):
         _undo(_body(part0, "roller"), _body(part, "roller"), "pos", i)

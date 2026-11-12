@@ -69,6 +69,8 @@ its cost.
 - **K6-P2, each grid setting is one body move in the example's files.** The spike varied its geometry through a
   generator, which doesn't ship (K6-R15). The example's `part.toml` is the spike's `winner/parts/intake/part.toml`
   with one change: the floor's front is a separate body, so that moving the lip is one `pos` edit.
+  **Narrowed by Task 1 (see its record):** there is no `lip` body. The lip setting moves `bottom` and the bin's front
+  ends as the spike's generator did, and the front roller hangs on a sprung `arm` (K6-P3 (c)).
   - The body `lip` (parent `frame`, pos 0) holds the front floor block: `box = [0.0608, 0.4064, 0.0498]` at
     `[0.4412, 0.0, 0.0269]`, friction 0.4, priority 1. It spans 0.4108–0.4716 m, which is 2 in plus 1 cm.
     `# derived:` it still meets the main slab with the lip at +1 in.
@@ -618,7 +620,8 @@ its cost.
   thin-part rule; the thick parts stay as good practice.
 - Create: `examples/blocks/note-intake/README.md`, in the chain-climb example's shape: the robot, the field, the
   question, the blocks, the files, what the grids found (Step 3's tables), and the design rules (thick parts the
-  NOTE is pushed into, a ceiling, an over-under nip).
+  NOTE is pushed into, a ceiling, an over-under nip whose front roller is on a sprung arm: Task 1's record says why
+  the arm ships and what the grids gave without it).
 - Modify: `tests/test_examples_note_intake.py`.
 - Modify: `tests/intake_grid.py`: rows gain `soft_resets`.
 - Modify: `.github/workflows/ci.yml`: a new `intake-grid` job.
@@ -654,7 +657,8 @@ its cost.
     that differs is reported with its row.
   - `test_the_intake_grids` asserts the shipped numbers.
 - [ ] **Step 3: write the README**, with Step 2's tables in the spec's format: the grid, the count, the failing
-  cases, and the fastest segment. Update the part's comment.
+  cases, and the fastest segment. Update the part's "simulator rules" comment. The `arm` body's comments (the
+  hinge, the stop, the spring's preload) stay as Task 1 wrote them.
 - [ ] **Step 4: add the CI job.**
   - `intake-grid` runs on ubuntu-latest with Python 3.13.
   - It installs `pip install -e ".[dev]"` and OSMesa, as the `test` job does.
@@ -669,6 +673,8 @@ its cost.
     - an `idea` line naming the example.
   - If Task 8 refused `surface_speed` with `flex = true`, the file keeps the inlet's velocity at 1.5 m/s, and its
     comment says why.
+  - Its nip stays nip_flex.toml's fixed front roller. The example's sprung arm (Task 1) isn't modeled on the bench,
+    and the file's comment says so: the bench shows the nip at its nominal gap, not how the arm opens.
   - Add `test_the_bench_flex_intake_passes`: `run_bench(load_bench(path))` reports 1 of 1 through `bin`.
 - [ ] **Step 6: write the docs:**
   - docs/test-range.md: the ramp (K6-R1's tables), the pairs and their cost, the guard and its notes, the new
@@ -721,6 +727,25 @@ Run with the spike's in-process patch (`$SPIKE/k6/patch.py`) through `tests/inta
   | (c) at 28.0 | 44 of 45: the control only | 16 of 16 | 38 of 40 | 4.5 / 4.8 / 16.1 | yes |
 
   The fastest-segment column is OAT / corners / random.
-- The geometry that ships: (b), the first that meets the target. `roller` at `[0.577721, 0.0, 0.06604]` (its bottom
-  1.6 in over the carpet, centers still 3.4 in apart: a 1.4 in nip). Everything else is the spike's winner.
+- The geometry that ships: **(c), the sprung arm at 14.0 N·m/rad**, by the coordinator's ruling in Task 1's
+  review. Ladder order (K6-R10 step 3) would have shipped (b), the first candidate to meet the target. But (b) sits
+  exactly on the 14 of 16 corner target, and these cases flip near the margin (the bin's geom split alone flipped a
+  corner, above). Task 9's rerun on the shipped code could then miss the target by chance. (c) passes all 16 corners
+  and holds from 7 to 28 N·m/rad.
+  - The part: an `arm` body (parent `frame`, at `[0.505671, 0, 0.09088]`, the roller's center + (−0.0762, 0, +0.035)
+    m, mass 0.1), `joint = { name = "arm", hinge = [0, -1, 0], range = [0, 25], spring = { stiffness = 14.0,
+    rest = -5 } }`, a drawn-only box. `roller` hangs under it at `[0.0762, 0, -0.035]`, which is the spike's place
+    `[0.581871, 0, 0.05588]` while the arm is on its stop. Everything else is the spike's winner.
+  - `tests/intake_grid.py` applies the settings to it unchanged. Axle and clearance edit `roller`'s pos in the arm's
+    frame (at the stop that is the part's frame), and the clearance formula reads the roller's place through the arm.
+  - The rerun on the shipped files at 1.0 r matches the (c) row above case for case (pass and fastest segment):
+
+    | Grid | Passed | Failing cases | Fastest segment (m/s) |
+    |---|---|---|---|
+    | One setting at a time (44 + the 0 V control) | 44 of 45 | the 0 V control only | 4.5 |
+    | 16 corners | 16 of 16 | none | 5.3 |
+    | 40 random draws (seed 7) | 39 of 40 | `[-0.399, -0.273, 5.15, 1.81, 3.4, -2.8]` (missed: still moving at the end) | 5.2 |
+
+  - Fix off (ramp and pairs off) on the shipped files: corners 16 of 16, fastest segment 5.3 m/s. No segment in any
+    of these runs went over 10 m/s.
 - K6-P13, written only on a shortfall: none (no shortfall).

@@ -45,14 +45,28 @@ geom = [
   { box = [0.140271, 0.5064, 0.05], pos = [0.541736, 0.0, 0.13014], friction = 0.4, priority = 1, color = [0.75, 0.8, 0.85, 0.6] },
 ]
 
-# The front top roller: its bottom 1.6 in over the carpet, 3.06 in ahead of the bottom roller (centers 3.4 in apart:
-# a 1.4 in nip). High over the bottom roller, so moving the lip changes the nip less (the K6 retune: 0.4 in higher
-# than the spike's, which jammed the stiffening NOTE at the grids' tightest nips). Positive volts turn it so its
-# bottom moves back into the robot.
+# The front roller's arm: it pivots on a hinge behind and above the roller (3 in back, 1.4 in up from its center),
+# and a spring holds it down on a stop, with the roller in its place below. A NOTE pushed into a tight nip lifts the
+# roller up to 25 degrees instead of jamming, as real over-under intakes have. The arm itself is drawn only.
+[[body]]
+name = "arm"
+parent = "frame"
+pos = [0.505671, 0.0, 0.09088]   # derived: the roller's center + (-0.0762, 0, +0.035) m
+mass = 0.1                    # choice: a pair of light side plates
+# hinge = [0, -1, 0]: positive angles lift the roller. The stop at 0 is where the roller sits; it swings up to 25.
+# choice: the spring pulls toward -5 degrees, so it presses the arm on its stop with about 15 N at the roller
+# (14 N*m/rad x 5 degrees over the 0.084 m arm), the force that squeezes a NOTE 30 %, so the nominal nip still grips.
+# The grids pass the same from 7 to 28 N*m/rad.
+joint = { name = "arm", hinge = [0, -1, 0], range = [0, 25], spring = { stiffness = 14.0, rest = -5 } }
+geom = [{ box = [0.0839, 0.4, 0.006], pos = [0.0381, 0.0, -0.0175], collide = false }]
+
+# The front top roller, on the arm: its bottom 1.2 in over the carpet, 3.2 in ahead of the bottom roller (centers
+# 3.4 in apart: a 1.4 in nip) while the arm is on its stop. Positive volts turn it so its bottom moves back into the
+# robot.
 [[body]]
 name = "roller"
-parent = "frame"
-pos = [0.577721, 0.0, 0.06604]   # choice: K6-P3 (b), the spike's place moved up 10.16 mm and back 4.15 mm
+parent = "arm"
+pos = [0.0762, 0.0, -0.035]      # derived: at [0.581871, 0, 0.05588] in the part, the spike's place
 mass = 0.25                   # choice: a 2 in roller with a grippy sleeve
 com = [0.0, 0.0, 0.0]
 inertia = [0.003374, 8.1e-05, 0.003374]   # derived: 1/2 m r^2 about the axle
