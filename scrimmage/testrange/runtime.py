@@ -19,9 +19,10 @@ launcher finishes with (launched, or stuck) leaves the ball path and takes its n
 ledger and the ball path's held() always agree.
 
 Sleeping: a range world turns on MuJoCo's sleeping (mjENBL_SLEEP, MuJoCo 3.4 and later), so the balls resting on the
-carpet cost almost nothing until something touches them. Only ball trees may sleep (the robot and anything else
-never do). A sleeping ball wakes when an awake body touches it, when a force is applied to it, and when its qpos or
-qvel is written (parking, placing); checked on MuJoCo 3.4.0 and 3.17.0, and two runs stay bit-identical.
+carpet cost almost nothing until something touches them. Only ball trees and the soft pool's rings may sleep (the
+robot and anything else never do). A sleeping ball wakes when an awake body touches it, when a force is applied to
+it, and when its qpos or qvel is written (parking, placing); checked on MuJoCo 3.4.0 and 3.17.0, and two runs stay
+bit-identical.
 """
 
 from __future__ import annotations
@@ -61,6 +62,11 @@ class RangeRuntime:
         m.tree_sleep_policy[:] = int(mujoco.mjtSleepPolicy.mjSLEEP_NEVER)
         ball_trees = m.body_treeid[[m.body(name).id for name in self.layout.ball_names]]
         m.tree_sleep_policy[ball_trees] = int(mujoco.mjtSleepPolicy.mjSLEEP_ALLOWED)
+        self.parked_rings = None        # the soft pool's rings, held under the floor (testrange/soft.py)
+        if self.layout.soft:
+            from .soft import ParkedRings
+            self.parked_rings = ParkedRings(m, world.data, self.layout.soft)
+            m.tree_sleep_policy[self.parked_rings.trees] = int(mujoco.mjtSleepPolicy.mjSLEEP_ALLOWED)
         config = parse_shooter(cfg, built, cfg_dir) if "shooter" in cfg else None
         if config is not None:
             air = config.air if config.kind == "piece" else config.setup.air
@@ -253,6 +259,8 @@ class RangeRuntime:
         if self.shooter is not None:
             self.shooter.mirror()
         self.events = self.balls.after_step(self._prev)
+        if self.parked_rings is not None:
+            self.parked_rings.hold()
         if self.ball_path is not None:
             self.ball_path.collect()
 

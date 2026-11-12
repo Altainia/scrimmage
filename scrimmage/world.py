@@ -327,15 +327,15 @@ class World:
         self.data.xfrc_applied[self.robot_body, :3] = [fx, fy, 0.0]
 
     def movable_objects(self) -> list[str]:
-        """Bodies with a free joint (other than the robot and the range's balls), and named static geoms that aren't
-        planes."""
+        """Bodies with a free joint (other than the robot, the range's balls and its soft pool's rings), and named
+        static geoms that aren't planes."""
         m = self.model
         names = []
         for b in range(1, m.nbody):
             j = m.body_jntadr[b]
             if b != self.robot_body and j >= 0 and int(m.jnt_type[j]) == int(mujoco.mjtJoint.mjJNT_FREE):
                 n = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, b)
-                if n and not n.startswith("ball."):
+                if n and not n.startswith(("ball.", "soft.")):
                     names.append(n)
         for g in range(m.ngeom):
             if m.geom_bodyid[g] == 0 and int(m.geom_type[g]) != int(mujoco.mjtGeom.mjGEOM_PLANE):

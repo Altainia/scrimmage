@@ -6,7 +6,8 @@ world. Balls are `ball.<i>`: the range's floor balls first, in file order, then 
 can hold, then each [[station]]'s pool (Station.pool() slots, in file order), all parked. A station's chute is body
 `element.<station>.chute` (build_elements.add_chute). The ball count is fixed when the model is built (the live view
 drops frames whose body count changes), so a ball out of play is parked: PARK_Z under its own (x, y), with
-PARKED_BITS (it touches nothing).
+PARKED_BITS (it touches nothing). A range with a soft kind then adds its soft pool, rings `soft.<k>` parked the same
+way (testrange/soft.py); one without builds none.
 
 Ball contact: MuJoCo's soft contact is a damped spring, solref = (time constant T, damping ratio zeta), solimp =
 (dmin, dmax, width, mid, power) its impedance d, which grows from dmin to dmax as the penetration grows to `width`.
@@ -141,6 +142,9 @@ class RangeLayout:
     # rod name -> the Rod (what a piece's seated depth along it is measured against)
     rods: dict = field(default_factory=dict)
     kinds: list[str] = field(default_factory=list)     # each ball.<i>'s piece kind (Range.kinds)
+    # the soft pool's rings (testrange/soft.py), soft.0 ...: POOL_SIZE per soft kind, after the balls; empty without one
+    soft: list[str] = field(default_factory=list)
+    soft_kinds: list[str] = field(default_factory=list)     # each ring's piece kind
 
 
 @dataclass(frozen=True, eq=False)
@@ -374,8 +378,28 @@ def add_range(spec: mujoco.MjSpec, rng: Range, n_slots: int, *, floor_balls: boo
     for st in rng.stations:
         station_slots[st.name] = range(start, start + st.pool())
         start += st.pool()
+    soft_names, soft_kinds = _add_soft_pool(spec, rng, kinds, len(kinds) - n_floor)
     return RangeLayout(ball_names=names, n_floor=n_floor, goal_bodies=[g.name for g in rng.goals],
-                       robot_slots=range(n_floor, n_floor + n_slots), station_slots=station_slots, kinds=kinds)
+                       robot_slots=range(n_floor, n_floor + n_slots), station_slots=station_slots, kinds=kinds,
+                       soft=soft_names, soft_kinds=soft_kinds)
+
+
+def _add_soft_pool(spec: mujoco.MjSpec, rng: Range, kinds: list[str], n_parked: int) -> tuple[list[str], list[str]]:
+    """The soft pool, after the balls (so the balls' bodies stay consecutive): POOL_SIZE rings for each soft kind
+    that has a slot, parked with PARKED_BITS at PARK_Z under the slots after the parked balls' (testrange/soft.py,
+    imported only when there is one). Their names and kinds."""
+    soft_kinds = [k for k in dict.fromkeys(kinds) if k in rng.kinds and rng.kinds[k].soft]
+    if not soft_kinds:
+        return [], []
+    from .soft import POOL_PREFIX, POOL_SIZE, add_ring
+    names, of = [], []
+    for kind in soft_kinds:
+        for _ in range(POOL_SIZE):
+            k = len(names)
+            names.append(f"{POOL_PREFIX}.{k}")
+            of.append(kind)
+            add_ring(spec, names[-1], rng.kinds[kind], (*slot_xy(n_parked + k), PARK_Z), PARKED_BITS)
+    return names, of
 
 
 def kind_piece(rng: Range, name: str) -> Ball | Disc | None:

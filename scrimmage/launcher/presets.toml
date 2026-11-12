@@ -220,7 +220,7 @@ mass = 3.54             # source: same section, "weighs approximately 7.8 lbs"; 
 material = "hdpe"       # estimate: the manual says only "a rigid plastic"; a molded storage tote like the Orbis is usually HDPE, which was not looked up. Its friction is the estimate in [surface.hdpe]
 
 [piece.2024-note]
-# FRC 2024 Crescendo "Note": an orange foam ring. A rigid stand-in for a foam ring (the real one squashes).
+# FRC 2024 Crescendo "Note": an orange foam ring. Rigid at rest and in flight; in a range, near a robot it becomes a soft ring of 16 segments that bends and squashes (soft = true, testrange/soft.py).
 shape = "ring"          # source: AndyMark Crescendo Note page https://andymark.com/products/crescendo-note: OD 14 in, ID 10 in, 2 in thick, coated foam, "rather squishy / flexible"
 diameter_in = 14.0      # source: same page, 14 in. OD
 inner_diameter_in = 10.0  # source: same page, 10 in. ID
@@ -229,3 +229,4 @@ mass = 0.235            # source: same page, "8.3 oz. +/- 0.2 oz."; 8.3 oz = 0.2
 material = "foam"       # source: same page, "coated foam"; its friction is the estimate in [surface.foam]
 stiffness = 2000.0      # estimate: the soft-note spike's "soft" foam: how hard it pushes back per meter of squeeze at 25 % of its 2 in thickness, 12.7 N a side between two 4 in rollers; UNCALIBRATED
 restitution = 0.3       # estimate: its bounce off the carpet from a 1 m drop, a dead foam thud (about 9 cm); UNCALIBRATED
+soft = true             # source: spec D8 (a design choice, not a measurement): rigid at rest and in flight, soft near a robot

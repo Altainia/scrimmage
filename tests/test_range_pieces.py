@@ -407,7 +407,7 @@ def test_restitution_is_a_rigid_kinds_key():
         parse_kind(P, "b", {"ball": "2026-fuel", "restitution": 0.5}, ROOT)
     note = kind_preset("2024-note")
     assert (note.stiffness, note.restitution) == (2000.0, 0.3)
-    assert not note.soft
+    assert note.soft     # spec D8 (Task 5)
 
 
 def test_rigid_kinds_keep_their_numbers():
