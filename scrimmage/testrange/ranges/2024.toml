@@ -235,7 +235,7 @@ yaw_deg = 90.0                 # source: along the core's face (WPI tags)
 span = 2.42                    # source: field CAD GE-24205, the CHAIN: 2.42 m across
 top = 1.18                     # source: GE-24205: hung from 1.18 m
 low = 0.7176                   # source: M 5.5: lowest point 2 ft 4 1/4 in
-diameter_in = 0.5              # estimate
+diameter_in = 0.5              # estimate: 1/4 in chain links, about 1/2 in across
 level = "ONSTAGE"
 
 [[element]]
@@ -246,7 +246,7 @@ yaw_deg = 210.0                # source: along the core's face (WPI tags)
 span = 2.42                    # source: field CAD GE-24205, the CHAIN: 2.42 m across
 top = 1.18                     # source: GE-24205: hung from 1.18 m
 low = 0.7176                   # source: M 5.5: lowest point 2 ft 4 1/4 in
-diameter_in = 0.5              # estimate
+diameter_in = 0.5              # estimate: 1/4 in chain links, about 1/2 in across
 level = "ONSTAGE"
 
 [[element]]
@@ -257,7 +257,7 @@ yaw_deg = 330.0                # source: along the core's face (WPI tags)
 span = 2.42                    # source: field CAD GE-24205, the CHAIN: 2.42 m across
 top = 1.18                     # source: GE-24205: hung from 1.18 m
 low = 0.7176                   # source: M 5.5: lowest point 2 ft 4 1/4 in
-diameter_in = 0.5              # estimate
+diameter_in = 0.5              # estimate: 1/4 in chain links, about 1/2 in across
 level = "ONSTAGE"
 
 # The red STAGE (M 5.5): core center derived from tags 11, 12, 13 (WPI); its legs and trusses are the blue ones mirrored.
@@ -312,7 +312,7 @@ yaw_deg = 270.0                # source: along the core's face (WPI tags)
 span = 2.42                    # source: field CAD GE-24205, the CHAIN: 2.42 m across
 top = 1.18                     # source: GE-24205: hung from 1.18 m
 low = 0.7176                   # source: M 5.5: lowest point 2 ft 4 1/4 in
-diameter_in = 0.5              # estimate
+diameter_in = 0.5              # estimate: 1/4 in chain links, about 1/2 in across
 level = "ONSTAGE"
 
 [[element]]
@@ -323,7 +323,7 @@ yaw_deg = 30.0                 # source: along the core's face (WPI tags)
 span = 2.42                    # source: field CAD GE-24205, the CHAIN: 2.42 m across
 top = 1.18                     # source: GE-24205: hung from 1.18 m
 low = 0.7176                   # source: M 5.5: lowest point 2 ft 4 1/4 in
-diameter_in = 0.5              # estimate
+diameter_in = 0.5              # estimate: 1/4 in chain links, about 1/2 in across
 level = "ONSTAGE"
 
 [[element]]
@@ -334,7 +334,7 @@ yaw_deg = 150.0                # source: along the core's face (WPI tags)
 span = 2.42                    # source: field CAD GE-24205, the CHAIN: 2.42 m across
 top = 1.18                     # source: GE-24205: hung from 1.18 m
 low = 0.7176                   # source: M 5.5: lowest point 2 ft 4 1/4 in
-diameter_in = 0.5              # estimate
+diameter_in = 0.5              # estimate: 1/4 in chain links, about 1/2 in across
 level = "ONSTAGE"
 
 [climb]

@@ -368,10 +368,15 @@ VOLTS = 12.5                        # the example's nominal battery: a PWM's spe
 def wing_cfg(tmp_path: Path, notes=(WING_NOTE,), preload: int = 0, timestep: float | None = None,
              sensors: list | None = None) -> dict:
     """The speaker example's robot at blue_wing_note on the 2024 range written to tmp_path with `notes` its only floor
-    NOTEs, facing them; optionally at another [model] timestep, with [[sensor]]s."""
+    NOTEs, facing them; optionally at another [model] timestep, with [[sensor]]s. Without stage_blue_leg1: since Task 9
+    it is FIRST's CAD leg, an upright post from the carpet 0.15 m past the wing NOTE, where the robot pushes it (the
+    old estimated leg leaned from 0.15 m up, so the NOTE went under it). These tests are about the swap, not the
+    STAGE."""
     text = RANGE_2024.read_text(encoding="utf-8")
     text = re.sub(r'\[\[floor_balls\]\]\nkind = "note"\nat = \[\[.*\n', "", text)
     assert "[[floor_balls]]" not in text
+    text, n = re.subn(r'\[\[obstacle\]\]\nname = "stage_blue_leg1".*?\n\n', "", text, flags=re.S)
+    assert n == 1
     text += '\n[[floor_balls]]\nkind = "note"\nat = [' + ", ".join(f"[{x}, {y}]" for x, y in notes) + "]\n"
     tmp_path.mkdir(parents=True, exist_ok=True)
     (tmp_path / "range.toml").write_text(text, encoding="utf-8")
