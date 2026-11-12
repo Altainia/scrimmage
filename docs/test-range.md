@@ -640,10 +640,11 @@ estimates until someone measures them, and a soft kind needs both:
   - an `inner_diameter` more than 0.68 of its `diameter`, so the 16 segments of its soft ring don't overlap (the
     NOTE's is 10 in of 14, 0.71);
   - a `stiffness` of 1000 to 20000 N/m;
-  - a `restitution` of 0.27 to 0.45. The soft ring's bounce comes from a rule, not a fit when the world is built.
-    Its damping scale is a table over stiffness, fitted once so that 0.3 comes back as 0.3 at 1000, 2000, 6000 and
-    20000 N/m. Dropped from 1 m, the ring lands within 10 % of the asked restitution only in that range. The error
-    in percent:
+  - a `restitution` (above 0, below 1): any bounce you measured is accepted. The soft ring's bounce comes from a
+    rule, not a fit when the world is built. Its damping scale is a table over stiffness, fitted once so that 0.3
+    comes back as 0.3 at 1000, 2000, 6000 and 20000 N/m. Dropped from 1 m, the ring lands within 10 % of the asked
+    restitution from 0.27 to 0.45 at every stiffness. Outside that, `range check` warns that the simulated bounce may
+    be off by more. The weakest stretch is between table rows, near 11000 N/m. The error in percent:
 
     | stiffness, N/m | 0.25 | 0.27 | 0.3 | 0.35 | 0.45 | 0.5 | 0.55 |
     |---|---|---|---|---|---|---|---|

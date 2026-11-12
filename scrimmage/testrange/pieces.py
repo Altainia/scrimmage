@@ -97,10 +97,11 @@ _AIR = ("drag_coefficient", "spin_damping")  # a rigid kind's air (launcher/rigi
 _RIGID_OWN = _AIR + ("stiffness", "restitution", "soft")
 # A soft kind's `stiffness` (N/m) must lie in this range.
 SOFT_STIFFNESS_RANGE = (1000.0, 20000.0)  # choice: half to 10x the 2024-note preset's, both ends tested stable at 1 ms
-# ... and its `restitution` in this one: where the soft ring's rule (testrange/soft.py) gives a 1 m drop within 10 % of
-# it across the whole stiffness range (measured at 1000-20000 N/m: the worst is -9.6 % at 12000 N/m and 0.45; 0.25 is
+# A soft kind's `restitution` is accurate within 10 % in this range: the soft ring's rule (testrange/soft.py) gives a
+# 1 m drop within 10 % of it across the whole stiffness range. Any 0 < e < 1 is accepted; outside this range the check
+# warns (_soft_warnings) (measured at 1000-20000 N/m: the worst is -9.6 % at 12000 N/m and 0.45; 0.25 is
 # +12.6 % at 20000 N/m and 0.55 is -11 % at 11000 N/m)
-SOFT_RESTITUTION_RANGE = (0.27, 0.45)  # choice: measured, task 5 review round 2 (tests/test_range_soft.py samples it)
+SOFT_RESTITUTION_RANGE = (0.27, 0.45)  # choice: accurate within 10 %, measured (tests/test_range_soft.py samples it)
 SOFT_SEGMENTS = 16  # source: soft-note spike, candidate (b): a soft ring's segments (soft.py RING_SEGMENTS)
 # A soft ring's inner diameter must be more than this share of its outer one, so that its segments clear each other
 # at rest: a segment's capsule and the one two along touch unless the chord 2 R sin(pi/16) exceeds the tube's 2 r,
@@ -1009,7 +1010,21 @@ def _air(r: _KindReader, kind: PieceKind) -> PieceKind:
     out = replace(kind, **given) if given else kind
     if out.soft:
         _check_soft(r, out, from_preset=not r.has("soft"))
+        out = replace(out, warnings=out.warnings + _soft_warnings(r, out))
     return out
+
+
+def _soft_warnings(r: _Reader, kind: PieceKind) -> tuple[str, ...]:
+    """A soft kind's bounce outside SOFT_RESTITUTION_RANGE, where the soft NOTE's drop is accurate within 10 %."""
+    from ..checks import worded
+
+    lo, hi = SOFT_RESTITUTION_RANGE
+    if lo <= kind.restitution <= hi:
+        return ()
+    where = f"{r.path}: {r.where}"
+    return (worded(lambda: i18n.t("{where}: its bounce of {e} is outside {lo} to {hi}, where the soft NOTE's drop is "
+                                  "within 10%; the simulated bounce may be off by more", where=where,
+                                  e=f"{kind.restitution:g}", lo=f"{lo:g}", hi=f"{hi:g}")),)
 
 
 def ring_diameters(kind: PieceKind) -> tuple[float, float | None]:
@@ -1023,7 +1038,8 @@ def ring_diameters(kind: PieceKind) -> tuple[float, float | None]:
 
 def _check_soft(r: _KindReader, kind: PieceKind, from_preset: bool = False) -> None:
     """A soft kind is a ring with a hole of more than SOFT_MIN_HOLE of its diameter, a `stiffness` in
-    SOFT_STIFFNESS_RANGE and a `restitution` in SOFT_RESTITUTION_RANGE (each its own or its preset's).
+    SOFT_STIFFNESS_RANGE and a `restitution` (each its own or its preset's; a bounce outside SOFT_RESTITUTION_RANGE is
+    warned about, _soft_warnings).
     `from_preset`: the preset set `soft = true`, not the table, so a refusal says how to keep the piece rigid."""
     if kind.shape != "ring":
         raise r.err(i18n.t("{setting} is for a ring piece ({ring_setting}); this one is {shape}",
@@ -1040,8 +1056,7 @@ def _check_soft(r: _KindReader, kind: PieceKind, from_preset: bool = False) -> N
         if getattr(kind, key) is None:
             raise r.err(i18n.t("a soft piece needs {key}: give {key} in {table}", key=key,
                                table=f"[piece.{kind.name}]"))
-    for key, (lo, hi), unit in (("stiffness", SOFT_STIFFNESS_RANGE, " N/m"), ("restitution", SOFT_RESTITUTION_RANGE,
-                                                                             "")):
+    for key, (lo, hi), unit in (("stiffness", SOFT_STIFFNESS_RANGE, " N/m"),):
         value = getattr(kind, key)
         if lo <= value <= hi:
             continue

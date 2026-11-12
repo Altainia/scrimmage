@@ -108,15 +108,21 @@ def test_the_rule_reproduces_both_fitted_foams(stiffness):
 
 def test_soft_limits_are_checked():
     """R14 (Review Focus 4): a soft kind's stiffness lies in SOFT_STIFFNESS_RANGE and its restitution in
-    SOFT_RESTITUTION_RANGE, only a ring is soft, and its hole is wide enough that its segments don't overlap."""
+    a bounce outside SOFT_RESTITUTION_RANGE is warned about, only a ring is soft, and its hole is wide enough that its segments don't overlap."""
     assert SOFT_STIFFNESS_RANGE == (1000.0, 20000.0) and SOFT_RESTITUTION_RANGE == (0.27, 0.45)
     for bad in (50000, 500):
         with pytest.raises(RangeError) as e:
             parse_kind(P, "s", {**RING, "stiffness": bad}, ROOT)
         assert "stiffness" in str(e.value) and "1000" in str(e.value) and "20000" in str(e.value)
-    for bad in (0.25, 0.5):
-        with pytest.raises(RangeError, match="restitution must be between 0.27 and 0.45, not"):
-            parse_kind(P, "s", {**RING, "stiffness": 2000, "restitution": bad}, ROOT)
+    # a measured bounce outside the accurate range is accepted, with a warning; inside it, none
+    for outside in (0.25, 0.5):
+        kind = parse_kind(P, "s", {**RING, "stiffness": 2000, "restitution": outside}, ROOT)
+        assert kind.soft and kind.restitution == outside
+        assert [str(w) for w in kind.warnings] == [
+            f"range.toml: [piece.s]: its bounce of {outside:g} is outside 0.27 to 0.45, where the soft NOTE's drop is "
+            "within 10%; the simulated bounce may be off by more"]
+    assert parse_kind(P, "s", {**RING, "stiffness": 2000, "restitution": 0.3}, ROOT).warnings == ()
+    assert kind_preset("2024-note").warnings == ()
     with pytest.raises(RangeError, match="ring"):
         parse_kind(P, "b", {"shape": "box", "size_in": [4, 4, 4], "mass": 0.5, "friction": 0.6, "soft": True,
                             "stiffness": 2000, "restitution": 0.3}, ROOT)

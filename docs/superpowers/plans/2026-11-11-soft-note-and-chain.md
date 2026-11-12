@@ -180,19 +180,22 @@ What the spec leaves open, decided here so each task can cite it. Each gives the
   `SOFT_STIFFNESS_RANGE = (1000.0, 20000.0)  # choice: half to 10x the preset, both ends tested stable at 1 ms`.
   `restitution` must lie in (0, 1). It is refused on a ball or disc kind, whose restitution is its preset's.
   Added in task 5's review:
-  - On a soft kind, `restitution` must lie in `SOFT_RESTITUTION_RANGE = (0.27, 0.45)  # choice`.
-    - This is where the rule's 1 m drop lands within 10 % of it across the whole range of 1000–20000 N/m, with
-      R10's damping table. The worst case is −9.6 %, at 12000 N/m and 0.45.
+  - On a soft kind, `SOFT_RESTITUTION_RANGE = (0.27, 0.45)  # choice` is where `restitution` is accurate within
+    10 %. Fix round 3: any 0 < e < 1 is accepted, so a student can enter the bounce they measured. Outside the range,
+    `range check` warns that the simulated bounce may be off by more.
+    - This is where the rule's 1 m drop lands within 10 % of e across the whole range of 1000–20000 N/m, with R10's
+      damping table. The worst case is −9.6 %, at 12000 N/m and 0.45.
     - It is narrower than the first round's (0.25, 0.55): 0.25 gives +12.6 % at 20000 N/m, and 0.55 gives −11 % at
       11000 N/m.
+    - The weakest stretch is between table rows, near 11000 N/m. No fifth row was added.
     - The test samples the four corners and the middle.
   - The kind needs an `inner_diameter` of more than `SOFT_MIN_HOLE = 0.68` of its diameter. Below
     (1 − sin π/16)/(1 + sin π/16) = 0.674, a segment's capsule overlaps the one two along.
   - When the `soft` came from the preset, an out-of-range override says so, and says that `soft = false` keeps the
     piece rigid.
 
-  *Cost:* a measured NOTE outside the ranges needs a range widened, with a test. A real NOTE that bounces under 0.27
-  or over 0.45 can't be entered as it is.
+  *Cost:* a measured NOTE outside the stiffness range needs the range widened, with a test. A bounce under 0.27 or
+  over 0.45 runs with a warning, and its simulated bounce may be off by more than 10 %.
 - **R15, the bench flex.**
   - The fit runs at the bench's flex timestep, 0.5 ms: squeeze by a secant on log E within 2 %, drop by a log
     bisection of β, 7 steps.
