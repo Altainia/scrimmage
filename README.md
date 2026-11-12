@@ -1038,9 +1038,10 @@ a hanging partner. It is refused if it starts overlapping your robot's start or 
 2024 STAGE that matters: a stock partner under the center chain reaches into the STAGE's core unless it hangs a
 little away from it (`across = -0.05` there; the core is on the chain's left), and from about 0.65 m from the low
 point it overlaps a leg (the legs are FIRST's field CAD's). Its `partner.height` reads from where it would stand on its wheels. It counts for HARMONY
-([docs/climbing.md](docs/climbing.md#onstage-and-harmony)). A bar or a switch can't take a hanging partner:
-`[partner] hang hold 'chain_blue_left' isn't a chain: a hanging partner robot needs a chain; the range's chains:
-chain_blue_center`.
+([docs/climbing.md](docs/climbing.md#onstage-and-harmony)). A bar, a switch or any other element can't take a hanging partner.
+On the 2024 range: `[partner] hang hold 'stage_blue_core' isn't a chain: a hanging partner robot needs a chain; the
+range's chains: chain_blue_center, chain_blue_left, chain_blue_right, chain_red_center, chain_red_left,
+chain_red_right`.
 
 Its signals (above) read from where it rested 0.3 s after a reset. A partner whose outline (frame plus bumpers)
 overlaps the robot's start or a field element on the carpet is an error: `[partner] starts inside the robot (their

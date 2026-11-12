@@ -2173,6 +2173,7 @@ def test_setup_shows_the_robot_files_hanging_partner(test_page, tmp_path):
     _wait_file(lambda: _partner_setup(path) == {"hang": "chain_blue_center", "along_in": 30, "across_in": -1.968504},
                path)
 
+
 def test_setup_has_no_hangs_on_without_a_chain(test_page, tmp_path):
     page, _ = test_page()
     _open_setup(page)

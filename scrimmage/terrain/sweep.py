@@ -181,6 +181,9 @@ def _run(world, driver: StraightDriver, course: _Course, speed: float, holds: di
         if b >= 0:
             balls[:m.ngeom][m.geom_bodyid == b] = True
     balls = balls.tolist()
+    # a soft NOTE's ring in use counts as its NOTE: the live contact id -> slot map (Balls.ball_of_geom's array)
+    tr = getattr(world, "test_range", None)
+    live = tr.balls._geom_ball if tr is not None else None
 
     gap = air = pitch = roll = tilt = 0.0
     tipped = stranded = on_balls = False
@@ -212,7 +215,7 @@ def _run(world, driver: StraightDriver, course: _Course, speed: float, holds: di
                 longest, landing = flight, s - course.crest
             flight = 0.0
         if not on_balls and t - last_air <= BALL_LANDING_S and d.ncon:
-            on_balls = _ball_beneath(m, d, balls, robot)
+            on_balls = _ball_beneath(m, d, balls, robot, live)
         if t_far is None and s > course.far:
             t_far = t
         if t >= RUN_S - 1e-9 or (t_far is not None and t - t_far >= AFTER_S - 1e-9):
@@ -222,14 +225,17 @@ def _run(world, driver: StraightDriver, course: _Course, speed: float, holds: di
                peak_tilt=tilt, tipped=tipped, stranded=stranded, landed_on_balls=on_balls, crossed=t_far is not None)
 
 
-def _ball_beneath(m, d, balls: list[bool], robot: list[bool]) -> bool:
+def _ball_beneath(m, d, balls: list[bool], robot: list[bool], live=None) -> bool:
     """A ball touches the robot from below: the contact's normal, ball to robot, within BALL_UNDER_DEG of up. A ball
-    the bumper pushes along the carpet touches it side-on, and doesn't count."""
+    the bumper pushes along the carpet touches it side-on, and doesn't count. `live`, the test range's contact id ->
+    slot map, adds a soft NOTE's ring in use."""
     n = d.contact.frame[:d.ncon, 2].tolist()            # the normal's z, from geom1 to geom2
     for k, (g1, g2) in enumerate(contact_ids(m, d).tolist()):
-        if balls[g1] and robot[g2] and n[k] >= BALL_UNDER_COS:
+        b1 = balls[g1] or (live is not None and live[g1] >= 0)
+        b2 = balls[g2] or (live is not None and live[g2] >= 0)
+        if b1 and robot[g2] and n[k] >= BALL_UNDER_COS:
             return True
-        if balls[g2] and robot[g1] and -n[k] >= BALL_UNDER_COS:
+        if b2 and robot[g1] and -n[k] >= BALL_UNDER_COS:
             return True
     return False
 

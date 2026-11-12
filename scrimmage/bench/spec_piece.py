@@ -190,10 +190,16 @@ def _kind_piece(t: _Table, name: str, kind, size: tuple) -> Piece:
                                "NOTE is): its length must equal half the difference of its two diameters ({wall} "
                                "mm), not {length} mm", table=t.label, wall=f"{wall * 1000:.1f}",
                                length=f"{length * 1000:.1f}"), "flex")
+    stiffness = t.num("stiffness", kind.stiffness, positive=True)
+    if flex and stiffness is None:
+        raise t.err(i18n.t("{table} has flex = true but no stiffness: add stiffness = <N/m> (the 2024 NOTE's estimate "
+                           "is 2000)", table=t.label), "stiffness")
+    if flex and restitution is None:
+        raise t.err(i18n.t("{table} has flex = true but no restitution: add restitution = <above 0, below 1> (the "
+                           "2024 NOTE's estimate is 0.3)", table=t.label), "restitution")
     return Piece(name=name, kind="rigid", shape=kind.shape, size=size, mass=kind.mass,
-                 inertia=tuple(kind.inertia[:3]), ball=None,
-                 stiffness=t.num("stiffness", kind.stiffness, positive=True), mesh=None, units=None, rigid_kind=kind,
-                 flex=flex, restitution=restitution)
+                 inertia=tuple(kind.inertia[:3]), ball=None, stiffness=stiffness, mesh=None, units=None,
+                 rigid_kind=kind, flex=flex, restitution=restitution)
 
 
 def _preset_piece(t: _Table, preset: str) -> Piece:

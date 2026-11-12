@@ -272,7 +272,8 @@ def test_angles_in_degrees():
 
 @pytest.mark.parametrize("step, message", [
     ({"drive": {"joint": "high.tip", "to": 0.1}}, r"joint 'high.tip' has no motor .* joints with a motor: .*high.stage1"),
-    ({"wait": {"hook_contact": "nowhere"}}, r"no bar 'nowhere' in the range; its bars and switches: .*high"),
+    ({"wait": {"hook_contact": "nowhere"}}, r"no bar, chain or switch 'nowhere' in the range; its bars, chains and "
+                                          r"switches: .*high"),
     ({"wait": {"level": "TOP"}}, r"no level 'TOP'; the range's levels: LOW, MID, HIGH, TRAVERSAL"),
     ({"release": 0.5}, r"release needs a latch release motor"),
 ])

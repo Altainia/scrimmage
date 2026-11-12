@@ -722,8 +722,9 @@ def parse_climb(path, table, elements: tuple[Element, ...]) -> tuple[ClimbRule |
     leveled = [e for e in elements if isinstance(e, (Bar, Chain)) and e.level is not None]
     if table is None:
         if leveled:
-            raise RangeError(i18n.t("{path}: bar '{name}' has level '{level}' but the range has no {climb_table}; "
-                                    "add {climb_table} with rule and levels, or drop the bar's level", path=path,
+            raise RangeError(i18n.t("{path}: element '{name}' has level '{level}' but the range has no "
+                                    "{climb_table}; add {climb_table} with rule and levels, or drop the element's "
+                                    "level", path=path,
                                     name=leveled[0].name, level=leveled[0].level, climb_table="[climb]"))
         return None, elements
     r = _Reader(path, "[climb]", table, ("rule", "levels", "level_bonus", "switch", "harmony"))
@@ -768,8 +769,8 @@ def parse_climb(path, table, elements: tuple[Element, ...]) -> tuple[ClimbRule |
         climb = ClimbRule(rule=rule, levels=levels, harmony=harmony)
     for e in leveled:
         if e.level not in levels:
-            raise RangeError(i18n.t("{path}: bar '{name}' has level '{level}', which isn't one of the {climb_table} "
-                                    "levels: {levels}", path=path, name=e.name, level=e.level,
+            raise RangeError(i18n.t("{path}: element '{name}' has level '{level}', which isn't one of the "
+                                    "{climb_table} levels: {levels}", path=path, name=e.name, level=e.level,
                                     levels=', '.join(levels), climb_table="[climb]"))
     return climb, tuple(replace(e, points=levels[e.level]) if e in leveled else e for e in elements)
 

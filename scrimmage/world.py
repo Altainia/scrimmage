@@ -542,11 +542,13 @@ class World:
 
     def robot_contacts(self) -> set[str]:
         """Names of geoms (and their bodies) outside the robot that the robot is touching right now; a chain's flex by
-        its name (`element.<name>`)."""
+        its name (`element.<name>`). A soft NOTE's ring capsule is named as its NOTE (`ball.<i>` and its geom), never
+        `soft.*` (Balls.ball_of_geom maps a ring in use to its slot)."""
         from .flexcontact import contact_ids, id_body, id_name
         m, d = self.model, self.data
         root = m.body_rootid[self.robot_body]
         bodies = id_body(m)
+        balls = self.test_range.balls if self.test_range is not None else None
         out: set[str] = set()
         for g1, g2 in contact_ids(m, d).tolist():
             b1, b2 = bodies[g1], bodies[g2]
@@ -554,6 +556,8 @@ class World:
             if in1 == in2:
                 continue
             g, b = (g2, b2) if in1 else (g1, b1)
+            if balls is not None and (s := int(balls.ball_of_geom(g))) >= 0 and b != balls.bodies[s]:
+                g, b = int(balls.geoms[s]), int(balls.bodies[s])        # a ring in use: its NOTE's names
             if g >= m.ngeom:            # a flex: no body of its own
                 out.add(id_name(m, g))
                 continue

@@ -249,6 +249,9 @@ class TerrainMonitor:
         if not pick:
             return "nothing"
         g = int(pick[0])
+        tr = getattr(self.world, "test_range", None)
+        if tr is not None and (i := int(tr.balls.ball_of_geom(g))) >= 0:
+            g = int(tr.balls.geoms[i])      # a soft NOTE's ring stands for its NOTE (`ball.<i>`), never `soft.*`
         if g >= m.ngeom:        # a flex (a chain)
             return id_name(m, g)
         b = int(m.geom_bodyid[g])

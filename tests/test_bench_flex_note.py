@@ -290,6 +290,21 @@ def test_flex_parse_errors(overrides, key, words):
     assert e.value.key == key
 
 
+@pytest.mark.parametrize("given, key, words", [
+    ({}, "piece.stiffness", r"\[piece\] has flex = true but no stiffness: add stiffness = <N/m> \(.*2000\)"),
+    ({"stiffness": 2000.0}, "piece.restitution", r"\[piece\] has flex = true but no restitution: add restitution"),
+], ids=["no-stiffness", "no-restitution"])
+def test_a_custom_flex_ring_without_its_numbers_says_where_they_go(given, key, words):
+    """Final review Minor 1: a custom `shape = "ring"` piece with `flex = true` and no stiffness (or no restitution) is
+    refused when the bench file is read, on the [piece] key it lacks, saying what to add."""
+    raw = _raw()
+    raw["piece"] = {"name": "my ring", "shape": "ring", "size": [0.3556, 0.254, 0.0508], "mass": 0.235, "flex": True,
+                    **given}
+    with pytest.raises(BenchError, match=words) as e:
+        parse_bench(raw, EXAMPLE.parent)
+    assert e.value.key == key
+
+
 def test_the_flex_is_fitted_at_the_runs_timestep(tmp_path, monkeypatch):
     """`[run] timestep` on a flex bench: the flex is fitted at that step (R15: the fit runs at the run's own step) and
     cached under it, not given the shipped fit made at 0.5 ms. The default step reads the shipped fit, and a rigid

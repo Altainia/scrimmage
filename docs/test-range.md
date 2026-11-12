@@ -646,8 +646,8 @@ anything (lying on the carpet, leaning on a goal) feels no air. A preset kind ta
 **A rigid piece's squeeze and bounce.** Two more keys describe a piece that squashes (the 2024 NOTE's foam). Both are
 estimates until someone measures them, and a soft kind needs both:
 - `stiffness` (N/m): how hard the piece pushes back per meter of squeeze, taken at 25 % of its thickness. A 2 in
-  NOTE squeezed 0.5 in total pushes back with `stiffness` × 0.25 in ÷ 2 on each side (the 2024 NOTE preset's 2000 is
-  12.7 N a side). Measure it with [NOTE squeeze](measuring.md#note-squeeze).
+  NOTE squeezed 0.5 in in all between two 4 in rollers laid across its middle pushes on each roller with
+  `stiffness` × 0.5 in ÷ 2 (the 2024 NOTE preset's 2000 is 12.7 N a roller). Measure it with [NOTE squeeze](measuring.md#note-squeeze).
 - `restitution` (above 0, below 1): its bounce off the carpet. A drop from 1 m comes back up `restitution`² × 1 m
   (the preset's 0.3 is about 9 cm). Measure it with [NOTE drop](measuring.md#note-drop). It is read only for a soft
   kind; a rigid piece keeps the contact it always had.

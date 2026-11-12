@@ -167,8 +167,6 @@ def add_ring(spec: mujoco.MjSpec, name: str, kind: PieceKind, pos, bits: dict) -
     spec.add_exclude(bodyname1=f"{name}.s{n - 1}", bodyname2=f"{name}.s0")
 
 
-
-
 # ------------------------------------------------------------------------------------------- the ring's state
 
 def _mats(q: np.ndarray) -> np.ndarray:
@@ -416,7 +414,11 @@ class SoftPool:
       rigid shape would reach below the carpet there, it is raised to rest on it and its vertical velocity clipped to
       0 or more. If it would then overlap any other colliding geom (a wall, a field element, another piece) by more
       than OVERLAP_TOL (mj_geomDistance), it stays soft until it is clear. A slot that leaves play (picked up, scored,
-      out) releases its ring at once.
+      out) releases its ring at once. That overlap check sees geoms only, not a CHAIN's flex, so a NOTE swapped back
+      while it touches a chain could start inside its links. Accepted for now (final review Minor 5): the chains hang
+      0.72 m up or higher, and a swap back happens only SOFT_REACH clear of the robot, so a NOTE pinned against a
+      chain by a robot stays soft. The fix, if it is needed, is to pose the chain's probe on its links near the NOTE
+      (blocks/clearance.py).
     - A full pool: a NOTE that comes near while every ring of its kind is in use stays rigid, noted once per reset.
     """
 

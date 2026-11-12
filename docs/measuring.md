@@ -281,16 +281,29 @@ Form: `scrimmage measure form drop -o drop-form.html`.
 thickness. It is for a [soft piece](test-range.md#piecename-a-kind-of-piece) such as the 2024 NOTE. Done by hand;
 there is no form.
 
-1. Lay the NOTE flat on a hard, level table with a flat board under it. Put a second flat board on top.
-2. Add a known weight on the top board, centered: start with about 1.3 kg (12.7 N), and weigh the board too.
-3. Wait 5 seconds, then measure the gap between the boards at both sides with calipers or a ruler, and average.
-4. The squash is the NOTE's thickness (2 in, with nothing on it) minus that gap. Aim for about a quarter of the
+The simulator's `stiffness` means the push of a 4 in roller laid across the NOTE's middle, the way a shooter wheel
+presses it, so the test squeezes it between two round bars, not two flat boards.
+
+1. Find two round bars about 4 in across and longer than the NOTE is wide (14 in): two pieces of 4 in PVC pipe, or
+   two shooter wheels on an axle. Lay one bar on a hard, level table and stop it rolling (tape, or a book on each
+   side).
+2. Lay the NOTE flat on that bar, centered, so the bar runs across its middle and touches the ring in two places.
+   It will want to tip: a helper steadies its edges with a fingertip, without pressing down.
+3. Lay the second bar on top of the NOTE, right over the first one and parallel to it. Then add a known weight to
+   the middle of the top bar: a bag of sand or rice works. Weigh the top bar and the weight together: start with
+   about 1.3 kg (12.7 N) in all.
+4. Wait 5 seconds, then measure the gap between the two bars, right next to the ring, on both sides, with calipers or
+   a ruler, and average.
+5. The squash is the NOTE's thickness (2 in, with nothing on it) minus that gap. Aim for about a quarter of the
    thickness (0.5 in); add or remove weight and repeat until you are near it.
 
-Each side of the NOTE carries the whole weight W (boards and weight, in newtons: kg × 9.81), and the two sides share
-the squash, so stiffness = W ÷ (squash ÷ 2). A 12.7 N weight that squashes 0.5 in (0.0127 m) gives 12.7 ÷ 0.00635
+Each bar carries the whole weight W (top bar and weight, in newtons: kg × 9.81), and the top and bottom of the ring
+share the squash, so stiffness = W ÷ (squash ÷ 2). A 12.7 N load that squashes 0.5 in (0.0127 m) gives 12.7 ÷ 0.00635
 = 2000 N/m, the preset's estimate. Write the result as `stiffness` in `[piece.note]`, with the range 1000 to 20000
 N/m. A foam that creeps (keeps sinking) is read at 5 seconds.
+
+Don't use flat boards in place of the bars. Boards press on the whole ring at once, so the same squash takes several
+times the weight, and the number would come out several times too stiff.
 
 ## NOTE drop
 

@@ -553,6 +553,36 @@ def test_the_soft_note_is_the_same_piece(tmp_path):
     assert seen["soft"] > 500 and seen["touch"] > 100, seen
 
 
+def test_a_scenario_contact_check_sees_the_soft_note(tmp_path):
+    """Final review I1: driving into the wing NOTE, which turns soft before the robot reaches it, a scenario's
+    must_touch on its `ball.<i>` passes and never_touch on it fails, and the first touch is while it is soft (only its
+    ring touches the robot then). robot_contacts names the ring's capsules by their NOTE, never `soft.*`."""
+    from types import SimpleNamespace
+
+    from scrimmage.checks import ContactCheck
+
+    w = wing_world(tmp_path)
+    balls = w.test_range.balls
+    slot = int(np.flatnonzero(balls.field)[0])
+    target = mujoco.mj_id2name(w.model, mujoco.mjtObj.mjOBJ_BODY, int(balls.bodies[slot]))
+    must, never = (ContactCheck(target, flag, w, "[[check]]") for flag in (True, False))
+    session = SimpleNamespace(world=w)
+    for c in (must, never):
+        c.begin(session)
+    seen = {"soft_at_first": None, "soft_names": set()}
+
+    def on_step(w):
+        for c in (must, never):
+            c.tick(session, w.time)
+        names = w.robot_contacts()
+        seen["soft_names"] |= {n for n in names if n.startswith("soft.")}
+        if seen["soft_at_first"] is None and must.first_t is not None:
+            seen["soft_at_first"] = slot in w.test_range.soft.in_use()
+    swap_run(w, on_step=on_step)
+    assert must.end(session).passed and not never.end(session).passed
+    assert seen["soft_at_first"] is True and not seen["soft_names"], seen
+
+
 def test_a_held_or_launched_note_stays_rigid(tmp_path):
     """R12, a stated deviation from spec D8, which says a soft NOTE "is swapped back when it has been more than
     SOFT_REACH from the robot for 0.25 s (choice), or when the shooter launches it". Here a NOTE in the robot (the ball
@@ -896,11 +926,12 @@ duration = 0.3
     assert sum("UNCALIBRATED" in n and "soft NOTE" in n for n in notes) == 1, notes
 
 
-@pytest.mark.skipif(bool(os.environ.get("CI")), reason="timing is only meaningful on a quiet machine")
+@pytest.mark.skipif(os.environ.get("SCRIMMAGE_TIMING") != "1", reason="timed locally only: set SCRIMMAGE_TIMING=1")
 def test_what_a_soft_note_costs(tmp_path):
     """Review finding 3: wall seconds per simulated second on the wing world with two NOTEs, idle and pushed at 2 V,
     with 0, 1 and 2 soft (the least of 3 runs of 1 s). Printed, not a gate (F13): the numbers in spec D8's cost and
-    docs/test-range.md. Skipped on CI."""
+    docs/test-range.md. Opt-in, as test_bench_reference.py's test_turnaround is (final review Minor 7): run it with
+    SCRIMMAGE_TIMING=1 and -s to record the numbers."""
     x, y = WING_NOTE
     out = {}
     for volts, label in ((0.0, "idle"), (2.0, "pushed")):

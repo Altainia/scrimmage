@@ -239,7 +239,8 @@ class ClimbRun:
                 raise ScriptError(i18n.t("{where}: no joint {joint} to wait on; the robot's joints: {names}",
                                          where=where, joint=repr(w.joint), names=', '.join(sorted(names))))
             if w.kind == "hook_contact" and w.name not in holds:
-                raise ScriptError(i18n.t("{where}: no bar {name} in the range; its bars and switches: {holds}",
+                raise ScriptError(i18n.t("{where}: no bar, chain or switch {name} in the range; its bars, chains and "
+                                         "switches: {holds}",
                                          where=where, name=repr(w.name),
                                          holds=', '.join(sorted(holds)) or i18n.t("none")))
             if w.kind == "hook_contact" and not self.mon.hooks:

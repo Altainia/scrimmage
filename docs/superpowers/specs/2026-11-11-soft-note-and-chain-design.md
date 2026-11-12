@@ -85,7 +85,8 @@ Each one gives what was decided, why, and its cost if wrong.
     one tree cost the cube of their depth, and links at N = 40 blew up in the world.
   - *Cost:*
     - Physics on the full 2024 field idles at 315 ms per simulated second instead of 149 (the spike's 6-chain
-      number). That is still about 3× faster than real time.
+      number). That is still about 3× faster than real time. Measured on the branch: 80 to 230 ms (docs/terrain.md;
+      another machine and run).
     - The chain's mass and contact softness are estimates.
     - The 2024 world's numbers that involve the chains change. Nothing in the goldens climbs a 2024 chain today.
 
@@ -159,8 +160,9 @@ Each one gives what was decided, why, and its cost if wrong.
     - `restitution = 0.3  # estimate`.
 
     Both are labeled uncalibrated.
-  - `docs/measuring.md` gains a squeeze test (a known weight on a NOTE between two boards, and the squash measured)
-    and a drop test (filmed against a ruler).
+  - `docs/measuring.md` gains a squeeze test (a known weight on a NOTE between two 4 in round bars laid across its
+    middle, one above and one below, as the code's rollers are, and the squash measured) and a drop test (filmed
+    against a ruler).
   - *Why:* soft against firm foam (3×) moves the exit speed 50–75%. That number has to be the student's, and visible.
   - *Cost:* none until measured. Results that rest on it are labeled uncalibrated.
 
