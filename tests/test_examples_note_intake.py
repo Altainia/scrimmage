@@ -8,6 +8,7 @@ import sys
 import tomllib
 from pathlib import Path
 
+import mujoco
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -137,6 +138,32 @@ def test_a_variant_moves_the_settings_bodies(tmp_path):
     assert (part, robot) == (part0, robot0)
 
 
-def test_the_example_passes_as_saved():
+ARM_LIFT_DEG = 2.0  # choice: well off the stop; the saved run lifts it 7.3 degrees
+
+
+def test_the_arm_is_a_sprung_hinge():
+    """The front roller's arm, as shipped (Task 1's round 1): a hinge about -y (positive lifts the roller) limited to
+    0..25 degrees, its spring at 14 N*m/rad pulling toward -5 degrees, so it rests on its stop at 0."""
     prog = load(TEST)
-    assert TestRun(world_for(prog), prog).run().passed
+    m = world_for(prog).model
+    j = m.joint("intake.arm")
+    assert j.type[0] == mujoco.mjtJoint.mjJNT_HINGE
+    assert list(m.jnt_axis[j.id]) == pytest.approx([0.0, -1.0, 0.0])
+    assert bool(m.jnt_limited[j.id]) and list(m.jnt_range[j.id]) == pytest.approx([0.0, math.radians(25.0)])
+    assert m.jnt_stiffness[j.id] == pytest.approx(14.0)
+    assert m.qpos_spring[m.jnt_qposadr[j.id]] == pytest.approx(math.radians(-5.0))
+    assert m.body(m.body_parentid[m.body("intake.roller").id]).name == "intake.arm"
+
+
+def test_the_example_passes_as_saved():
+    """It passes, and the NOTE lifts the front roller's arm off its stop on the way in."""
+    prog = load(TEST)
+    world = world_for(prog)
+    q = world.model.jnt_qposadr[world.model.joint("intake.arm").id]
+    lift = [0.0]
+
+    def each(t, row):
+        lift[0] = max(lift[0], float(world.data.qpos[q]))
+
+    assert TestRun(world, prog).run(on_sample=each).passed
+    assert math.degrees(lift[0]) > ARM_LIFT_DEG
