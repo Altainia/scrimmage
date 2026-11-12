@@ -8,6 +8,7 @@ import json
 import math
 import tomllib
 from dataclasses import replace
+from types import SimpleNamespace
 from pathlib import Path
 
 import mujoco
@@ -18,12 +19,15 @@ from scrimmage import units
 from scrimmage.bench import flex_note as fn
 from scrimmage.bench import report
 from scrimmage.bench.build import PIECE_BITS, TIMESTEP, build_bench
+from scrimmage.bench.problems import collect_problems
 from scrimmage.bench import run as run_mod
 from scrimmage.bench.run import FlexPieces, run_bench
 from scrimmage.bench.spec import BenchError, load_bench, parse_bench
 from scrimmage.cad import fit as cad_fit
 from scrimmage.testrange.pieces import kind_preset
-from scrimmage.testrange.spec import piece_box
+from scrimmage.testrange.spec import passing_width, piece_box
+from scrimmage.launcher import flight6, rigid_aero
+from scrimmage.launcher.inputs import PRESETS, Air
 
 IN = 0.0254
 
@@ -87,11 +91,11 @@ def test_a_new_pair_is_fitted_once_and_cached(note, tmp_path, monkeypatch):
     kind = replace(note, stiffness=4000.0, restitution=0.4)
     calls = []
 
-    def squeeze(k, fit):        # stand-ins: force rises as E^0.8, e falls as beta rises
+    def squeeze(k, fit, **_):        # stand-ins: force rises as E^0.8, e falls as beta rises
         calls.append("squeeze")
         return 12.7 * (fit.E / 12235.0) ** 0.8
 
-    def drop(k, fit):
+    def drop(k, fit, **_):
         calls.append("drop")
         return 0.3 * (0.0025 / fit.beta) ** 0.3
 
@@ -116,8 +120,8 @@ def test_a_new_pair_is_fitted_once_and_cached(note, tmp_path, monkeypatch):
 def test_a_bounce_out_of_reach_is_an_error_not_a_cache(note, tmp_path, monkeypatch):
     monkeypatch.setattr(cad_fit, "SHAPED_CACHE", tmp_path)
     kind = replace(note, stiffness=4000.0, restitution=0.95)
-    monkeypatch.setattr(fn, "squeeze_force", lambda k, fit: fn.target_force(k))
-    monkeypatch.setattr(fn, "drop_restitution", lambda k, fit: 0.5)       # no beta in the bracket bounces 0.95
+    monkeypatch.setattr(fn, "squeeze_force", lambda k, fit, **_: fn.target_force(k))
+    monkeypatch.setattr(fn, "drop_restitution", lambda k, fit, **_: 0.5)       # no beta in the bracket bounces 0.95
     with pytest.raises(BenchError) as e:
         fn.fit_flex(kind)
     assert e.value.code == "flex_fit" and "'2024-note'" in str(e.value) and "0.95" in str(e.value)
@@ -126,9 +130,9 @@ def test_a_bounce_out_of_reach_is_an_error_not_a_cache(note, tmp_path, monkeypat
 
 def _stand_ins(monkeypatch, calls):
     """Cheap monotone scenes: force rises as E^0.8, e falls as beta rises."""
-    monkeypatch.setattr(fn, "squeeze_force", lambda k, fit: (calls.append("squeeze"), fn.target_force(k)
+    monkeypatch.setattr(fn, "squeeze_force", lambda k, fit, **_: (calls.append("squeeze"), fn.target_force(k)
                                                              * (fit.E / 12235.0) ** 0.8)[1])
-    monkeypatch.setattr(fn, "drop_restitution", lambda k, fit: (calls.append("drop"), k.restitution
+    monkeypatch.setattr(fn, "drop_restitution", lambda k, fit, **_: (calls.append("drop"), k.restitution
                                                                 * (0.0025 / fit.beta) ** 0.3)[1])
 
 
@@ -271,6 +275,56 @@ def test_flex_errors(tmp_path):
     assert e.value.code == "flex_pool"
 
 
+@pytest.mark.parametrize("overrides, key, words", [
+    ({"piece.preset": "2019-hatch-panel"}, "piece.flex", r"round tube bent into a ring .*\(165\.1 mm\), not 4\.8 mm"),
+    ({"piece.flex": None, "piece.restitution": 0.5}, "piece.restitution", "read only for a flex piece"),
+    ({"piece.restitution": 1.0}, "piece.restitution", "above 0 and below 1"),
+    ({"piece.restitution": 0.0}, "piece.restitution", "must be positive"),
+    ({"piece.flex": "yes"}, "piece.flex", "must be true or false"),
+], ids=["hatch-panel", "restitution-without-flex", "restitution-1", "restitution-0", "flex-not-a-bool"])
+def test_flex_parse_errors(overrides, key, words):
+    """The flex keys' other refusals: a ring that isn't a round tube (the 2019 HATCH PANEL), `restitution` without
+    `flex`, a restitution of 1 or 0, and a `flex` that isn't true or false. Each names its key."""
+    with pytest.raises(BenchError, match=words) as e:
+        parse_bench(_raw(**overrides), EXAMPLE.parent)
+    assert e.value.key == key
+
+
+def test_the_flex_is_fitted_at_the_runs_timestep(tmp_path, monkeypatch):
+    """`[run] timestep` on a flex bench: the flex is fitted at that step (R15: the fit runs at the run's own step) and
+    cached under it, not given the shipped fit made at 0.5 ms. The default step reads the shipped fit, and a rigid
+    build after a flex one is still `implicitfast` (the two paths keep nothing between them)."""
+    monkeypatch.setattr(cad_fit, "SHAPED_CACHE", tmp_path)
+    steps = []
+
+    def squeeze(k, fit, timestep):
+        steps.append(timestep)
+        return fn.target_force(k) * (fit.E / 12235.0) ** 0.8
+
+    monkeypatch.setattr(fn, "squeeze_force", squeeze)
+    monkeypatch.setattr(fn, "drop_restitution", lambda k, fit, timestep: k.restitution * (0.0025 / fit.beta) ** 0.3)
+    built = build_bench(parse_bench(_raw(**{"run.timestep": 2.5e-4}), EXAMPLE.parent))
+    assert built.model.opt.timestep == 2.5e-4 and steps and set(steps) == {2.5e-4}
+    kind = replace(kind_preset("2024-note"), stiffness=2000.0, restitution=0.3)
+    assert fn.cache_path(kind, 2.5e-4).is_file() and not fn.cache_path(kind).exists()
+    steps.clear()
+    assert build_bench(parse_bench(_raw(), EXAMPLE.parent)).model.opt.timestep == fn.FLEX_TIMESTEP and not steps
+    rigid = build_bench(parse_bench(_raw(**{"piece.flex": None}), EXAMPLE.parent)).model
+    assert rigid.opt.integrator == mujoco.mjtIntegrator.mjINT_IMPLICITFAST and rigid.nflex == 0
+
+
+def test_an_outlet_within_the_flexs_reach_is_warned_about(tmp_path):
+    """The exit is read as the flex's center enters the outlet: an outlet within its reach of a wheel would read it
+    still squeezed, so `bench check` warns. The example's outlet, 10 in past the axles, is clear."""
+    assert not [p for p in collect_problems(EXAMPLE)[1] if p.key == "outlet.shot"]
+    text = EXAMPLE.read_text(encoding="utf-8").replace("center_in = [16.0, 0.0, 0.0]", "center_in = [8.0, 0.0, 0.0]")
+    text = text.replace("size_in = [12.0, 24.0, 24.0]", "size_in = [4.0, 24.0, 24.0]")
+    bench, problems = collect_problems(EXAMPLE, text)
+    warned = [p for p in problems if p.key == "outlet.shot"]
+    assert bench is not None and len(warned) == 1 and warned[0].level == "warning"
+    assert "closer than the flex piece's reach" in warned[0].message
+
+
 def _shot(result):
     p = result.pieces[0]
     assert p.status == "out" and result.energy[0].ok, (p.status, result.energy)
@@ -279,17 +333,18 @@ def _shot(result):
 
 def test_the_flex_shot_golden():
     """note_pinch_flex.toml's shot against bench_flex_golden.json (recorded once, R15): speed within 2 %, the exit
-    angle within GOLDEN_ANGLE_DEG, spin within GOLDEN_SPIN. A change in MuJoCo's `discrete` integrator shows here.
+    angles (elevation and yaw) within GOLDEN_ANGLE_DEG, spin within GOLDEN_SPIN. A change in MuJoCo's `discrete` integrator shows here.
     Measured when recorded: a 1e-7 m/s change in the feed moves nothing; 1e-5 m/s moves the speed 0.3 %, the angle
     0.04 degrees and the spin 0.3 rad/s, so platforms' last digits sit well inside these."""
     want = json.loads(GOLDEN.read_text(encoding="utf-8"))
     p = _shot(run_bench(load_bench(EXAMPLE)))
     assert p.speed == pytest.approx(want["speed_m_s"], rel=GOLDEN_SPEED)
     assert p.elevation_deg == pytest.approx(want["elevation_deg"], abs=GOLDEN_ANGLE_DEG)
+    assert p.yaw_deg == pytest.approx(want["yaw_deg"], abs=GOLDEN_ANGLE_DEG)
     np.testing.assert_allclose(p.spin, want["spin_rad_s"], atol=GOLDEN_SPIN)
 
 
-def test_the_report_marks_flex_experimental(tmp_path):
+def test_the_report_marks_flex_experimental(tmp_path, monkeypatch):
     """The headlines and the pieces table say "experimental (MuJoCo flex)", the flex line says UNCALIBRATED; in
     `[flight]` to the 2024 SPEAKER the shot is the rigid NOTE's flight from the flex's exit state."""
     raw = _raw()
@@ -302,9 +357,22 @@ def test_the_report_marks_flex_experimental(tmp_path):
         heads = report.headlines(result, lands)
     flex = [h for h in heads if "experimental (MuJoCo flex)" in h]
     assert len(flex) == 1 and "UNCALIBRATED" in flex[0] and "(2000 N/m)" in flex[0] and "(0.3)" in flex[0]
+    # the flex line comes first and takes no outcome's place (M6): the rest are the rigid-labelled report's own six
+    # lines, made a full report here by standing in a load line (out, goal, load, shaft, time, UNCALIBRATED)
+    rigid = replace(result, bench=replace(result.bench, piece=replace(result.bench.piece, flex=False)))
+    with monkeypatch.context() as mp, units.fixed("metric"):
+        mp.setattr(report, "_load_line", lambda r: "the `top` takes the hardest hits")
+        plain = report.headlines(rigid, lands)
+        full = report.headlines(result, lands)
+    assert len(plain) == report.MAX_LINES and full == flex + plain and plain[-2].startswith("a piece takes")
+    assert any("shots score in `speaker_blue`" in h for h in heads)
     out = report.write_results(result, tmp_path / "out")
     summary = (out / "summary.txt").read_text(encoding="utf-8")
     assert "Pieces: experimental (MuJoCo flex)" in summary and "flown as the rigid piece" in summary
+    data = json.loads((out / "summary.json").read_text(encoding="utf-8"))
+    assert data["flex"] is True and data["headlines"] == len(heads)
+    rows = (out / "pieces.csv").read_text(encoding="utf-8").splitlines()
+    assert rows[0].split(",")[-1] == "model" and rows[1].split(",")[-1] == "flex"
     # the hand-off: the exit pose is the flex's center and Kabsch rotation (a few degrees off level as it leaves),
     # and the flight is the rigid NOTE's from that state, to 1e-9
     q = np.array(p.poses[-1][1][3:7])
@@ -312,12 +380,41 @@ def test_the_report_marks_flex_experimental(tmp_path):
     rot = np.zeros(9)
     mujoco.mju_quat2Mat(rot, q / np.linalg.norm(q))
     assert math.degrees(math.acos(rot[8])) == pytest.approx(p.tilt_deg, abs=1e-6)
-    rigid = replace(result, bench=replace(result.bench, piece=replace(result.bench.piece, flex=False)))
-    (p1, flown), = lands
-    (p2, want), = report.landings(rigid)
-    assert p1 is p2 and flown.goal == want.goal in ("scored", "missed")
-    for a, b in ((flown.floor, want.floor), ((flown.apex, flown.flight_time), (want.apex, want.flight_time))):
-        np.testing.assert_allclose(a, b, rtol=0, atol=1e-9)
+    # the golden's recorded exit state, as the outcome of this run, lands where the rigid NOTE flown directly from
+    # that state (flight6, the kind's own air) lands, to 1e-9
+    want = json.loads(GOLDEN.read_text(encoding="utf-8"))
+    pos, quat, vel, spin = (np.array(want[k]) for k in ("exit_pos_m", "exit_quat", "exit_velocity_m_s", "spin_rad_s"))
+    t_out = want["t_out_s"]
+    recorded = replace(p, path=[*p.path[:-1], (t_out, *pos)], speed=want["speed_m_s"],
+                       elevation_deg=want["elevation_deg"], yaw_deg=want["yaw_deg"], spin=tuple(spin),
+                       poses=[(t_out, (*pos, *quat))])
+    (_, flown), = report.landings(replace(result, pieces=[recorded]))
+    floor, apex, flight_time = _fly(result.bench, pos, quat, vel, spin)
+    assert flown.goal in ("scored", "missed")
+    np.testing.assert_allclose(flown.floor, floor, rtol=0, atol=1e-9)
+    np.testing.assert_allclose((flown.apex, flown.flight_time), (apex, flight_time), rtol=0, atol=1e-9)
+
+
+def _fly(bench, pos, quat, vel, spin):
+    """The rigid NOTE flown from an exit state with flight6 and the kind's own air, the bench standing at the goal's
+    `at`, facing `heading_deg`: (where it lands on the floor, its apex, its flight time), in the bench's floor frame."""
+    fl, kind = bench.flight, bench.piece.rigid_kind
+    xx, yy, zz, xy, xz, yz = kind.inertia
+    inertia = np.array([[xx, xy, xz], [xy, yy, yz], [xz, yz, zz]])
+    air = SimpleNamespace(shadow_areas=kind.shadow_areas, drag_coefficient=kind.drag_coefficient,
+                          spin_damping=kind.spin_damping)
+    force = rigid_aero.force_fn(air, Air(**PRESETS["air"][fl.air]).density)
+    h = math.radians(fl.goal.heading_deg)
+    turn = np.array([[math.cos(h), -math.sin(h), 0.0], [math.sin(h), math.cos(h), 0.0], [0.0, 0.0, 1.0]])
+    origin = np.array([fl.goal.at[0], fl.goal.at[1], 0.0])
+    q = quat / np.linalg.norm(quat)
+    rot = flight6.matrix_from_quat(q)
+    q_field = flight6.quat_mul(np.array([math.cos(h / 2), 0.0, 0.0, math.sin(h / 2)]), q)
+    res = flight6.fly(origin + turn @ (pos + [0.0, 0.0, fl.height]), turn @ vel, q_field, rot.T @ spin, kind.mass,
+                      inertia, force, floor=passing_width(kind) / 2.0,
+                      goals=((fl.goal.name, fl.goal.goal.scoring_surface()),))
+    path = (res.samples[:, flight6.POS] - origin) @ turn
+    return tuple(path[-1, :2]), float(path[:, 2].max()), res.flight_time
 
 
 TWO = """

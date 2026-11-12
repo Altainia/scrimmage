@@ -47,15 +47,15 @@ diameter_in = 4.0
 width_in = 14.0
 tread = "60A"
 
-# a real shooter feeds the NOTE on a floor; without one the tail sags. Its top is the NOTE's underside, 1 in below
-# the gap's middle (0.25 in under the lower wheel's top, so the squeeze stays even), and it stops short of the wheel
+# A floor under the feed, as a real shooter has: without one the NOTE's tail sags.
+# Its top is level with the NOTE's underside, and it ends 1.5 in before the wheels.
 [[plate]]
 name = "feed_floor"
 center_in = [-9.25, 0.0, -1.25]
 size_in = [15.5, 16.0, 0.5]
 
-# the NOTE's middle 8.5 in before the axles, its front edge just reaching the wheels, fed at 2 m/s; 0.02 in up, so
-# the inlet clears the floor
+# The NOTE starts with its middle 8.5 in before the wheels and its front edge just touching them, pushed at 2 m/s.
+# It starts 0.02 in above the floor, so it doesn't start inside it.
 [[inlet]]
 name = "feed"
 center_in = [-8.5, 0.0, 0.02]

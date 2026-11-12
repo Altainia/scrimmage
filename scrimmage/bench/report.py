@@ -451,8 +451,9 @@ def _energy_line(result: BenchResult) -> str | None:
 
 
 def headlines(result: BenchResult, lands: list[tuple[PieceOutcome, Landing]] | None = None) -> list[str]:
-    """Three to six lines for a room: a failed energy check first (nothing else can be trusted), then a flex piece's
-    "experimental" line, then outcomes, UNCALIBRATED last."""
+    """Three to six lines for a room: a failed energy check first (nothing else can be trusted), then outcomes,
+    UNCALIBRATED last. A flex piece's "experimental" line comes before the outcomes (after a failed energy check), as
+    a seventh line at most: it takes no outcome's place."""
     n = len(result.pieces)
     by_outlet: dict[str, list[PieceOutcome]] = {}
     for p in result.pieces:
@@ -467,9 +468,6 @@ def headlines(result: BenchResult, lands: list[tuple[PieceOutcome, Landing]] | N
     rest = _not_out_line(result, n)
     if rest:
         lines.append(rest)
-    flex = flex_line(result.bench)
-    if flex:
-        lines.insert(0, flex)
     lands = landings(result) if lands is None else lands
     extra = [_goal_line(result, lands), _flight_line(result, lands), _load_line(result), _shaft_line(result),
              _time_line(result)]
@@ -477,7 +475,11 @@ def headlines(result: BenchResult, lands: list[tuple[PieceOutcome, Landing]] | N
     energy = _energy_line(result)
     if energy:
         lines.insert(0, energy)
-    return lines[:MAX_LINES - 1] + [uncalibrated(result)]
+    lines = lines[:MAX_LINES - 1]
+    flex = flex_line(result.bench)   # over and above the six, so it pushes no outcome out; after a failed energy check
+    if flex:
+        lines.insert(1 if energy else 0, flex)
+    return lines + [uncalibrated(result)]
 
 
 # ----------------------------------------------------------------------------------------------------- tables
@@ -513,6 +515,10 @@ def _tables(result: BenchResult, lands) -> dict[str, tuple[list[str], list[list]
     loads = (["shape", "peak_force_n", "peak_impulse_ns", "at_x_m", "at_y_m", "at_z_m"],
              [[ld.shape, ld.peak_force_n, ld.peak_impulse_ns, *(ld.at or (None,) * 3)]
               for ld in sorted(result.loads.values(), key=lambda ld: -ld.peak_force_n)])
+    if getattr(result.bench.piece, "flex", False):   # machine readers see the flex in the table too (spec D9)
+        pieces[0].append("model")
+        for row in pieces[1]:
+            row.append("flex")              # machine text, as the CSV's other values (pieces.csv is SI)
     out = {"pieces": pieces, "shafts": shafts, "loads": loads}
     fl = result.bench.flight
     if lands:
@@ -588,6 +594,8 @@ def write_results(result: BenchResult, out_dir: Path) -> Path:
     # of them is the UNCALIBRATED line, and the energy check
     data = {"title_lines": title_lines, "headlines": len(heads), "uncalibrated": True,
             "energy_failed": energy_failures(result) > 0}
+    if getattr(result.bench.piece, "flex", False):     # a flex run says so; any other keeps the file as it was
+        data["flex"] = True
     (out_dir / SUMMARY_DATA).write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
     return out_dir
 

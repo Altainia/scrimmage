@@ -22,7 +22,7 @@ class Problem:
 def collect_problems(path: Path, text: str | None = None):
     """(the bench or None, every problem). The bench is None when there is any error. With `text`, that text is
     checked as if it were the file at `path` (includes and mesh paths read from its folder)."""
-    from .build import build_bench, check_clear, overlap_warnings
+    from .build import build_bench, check_clear, flex_outlet_warnings, overlap_warnings
     from .spec import BenchError, _read_toml, _resolve_includes, parse_bench
 
     path = Path(path)
@@ -49,4 +49,5 @@ def collect_problems(path: Path, text: str | None = None):
         return None, [Problem("error", e.key, str(e))]
     problems += [Problem("warning", "piece", w) for w in bench.warnings]
     problems += overlap_warnings(built, bench)
+    problems += flex_outlet_warnings(built, bench)
     return bench, problems

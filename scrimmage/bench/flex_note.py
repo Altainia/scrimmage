@@ -166,10 +166,10 @@ def add_flex_note(spec: mujoco.MjSpec, name: str, pos, kind: PieceKind, fit: Fle
 
 # --- the two scenes, on `discrete` with Newton at FLEX_TIMESTEP ---------------------------------------------------
 
-def _spec(gravity: bool) -> mujoco.MjSpec:
+def _spec(gravity: bool, timestep: float) -> mujoco.MjSpec:
     spec = mujoco.MjSpec()
     o = spec.option
-    o.timestep, o.integrator = FLEX_TIMESTEP, mujoco.mjtIntegrator.mjINT_DISCRETE
+    o.timestep, o.integrator = timestep, mujoco.mjtIntegrator.mjINT_DISCRETE
     o.solver = mujoco.mjtSolver.mjSOL_NEWTON
     o.cone, o.impratio = mujoco.mjtCone.mjCONE_ELLIPTIC, 10  # source: the bench's own (bench/build.py)
     if not gravity:
@@ -221,11 +221,11 @@ def _check_warnings(kind: PieceKind, data: mujoco.MjData, caught: list[str]) -> 
                             warning=caught[0] if caught else name), code="flex_fit")
 
 
-def squeeze_force(kind: PieceKind, fit: FlexFit) -> float:
+def squeeze_force(kind: PieceKind, fit: FlexFit, timestep: float = FLEX_TIMESTEP) -> float:
     """The flex flat, no gravity, between two mocap rollers on a line across its middle, closing from
     SQUEEZE_START_GAP to SQUEEZE_GAP and held: the top roller's normal force (N), averaged over the last
     SQUEEZE_READ_S (NaN if the model blew up). A MuJoCo warning raises BenchError `flex_fit`."""
-    spec = _spec(gravity=False)
+    spec = _spec(gravity=False, timestep=timestep)
     r = sc.ROLLER_DIAMETER / 2.0
     for name, sign in (("top", 1.0), ("bot", -1.0)):
         b = spec.worldbody.add_body(name=name, mocap=True, pos=[0.0, 0.0, sign * (sc.SQUEEZE_START_GAP / 2.0 + r)])
@@ -238,7 +238,7 @@ def squeeze_force(kind: PieceKind, fit: FlexFit) -> float:
     total = sc.SQUEEZE_CLOSE_S + sc.SQUEEZE_HOLD_S
     forces, f6 = [], np.zeros(6)
     with _warnings_caught() as caught:
-        for _ in range(int(round(total / FLEX_TIMESTEP))):
+        for _ in range(int(round(total / timestep))):
             t = d.time
             gap = sc.SQUEEZE_START_GAP + (sc.SQUEEZE_GAP - sc.SQUEEZE_START_GAP) * min(t / sc.SQUEEZE_CLOSE_S, 1.0)
             d.mocap_pos[0] = [0.0, 0.0, gap / 2.0 + r]
@@ -257,11 +257,11 @@ def squeeze_force(kind: PieceKind, fit: FlexFit) -> float:
     return float(np.mean(forces))
 
 
-def drop_restitution(kind: PieceKind, fit: FlexFit) -> float:
+def drop_restitution(kind: PieceKind, fit: FlexFit, timestep: float = FLEX_TIMESTEP) -> float:
     """The flex flat, its bottom DROP_HEIGHT above a carpet plane, for DROP_TIME_S: e = sqrt(its center of mass's
     rebound apex above where it ends / DROP_HEIGHT); 0 with no rebound, NaN if the model blew up. A MuJoCo warning
     raises BenchError `flex_fit`."""
-    spec = _spec(gravity=True)
+    spec = _spec(gravity=True, timestep=timestep)
     spec.worldbody.add_geom(name="carpet", type=mujoco.mjtGeom.mjGEOM_PLANE, size=[20.0, 20.0, 0.1],
                             friction=list(sc.CARPET_FRICTION))
     _, r = ring_radii(kind)
@@ -273,7 +273,7 @@ def drop_restitution(kind: PieceKind, fit: FlexFit) -> float:
     a, n = int(m.flex_vertadr[f]), int(m.flex_vertnum[f])
     apex, phase, touched = -1.0, "fall", False
     with _warnings_caught() as caught:
-        for _ in range(int(round(sc.DROP_TIME_S / FLEX_TIMESTEP))):
+        for _ in range(int(round(sc.DROP_TIME_S / timestep))):
             mujoco.mj_step(m, d)
             _check_warnings(kind, d, caught)
             if not _finite(d):
@@ -305,9 +305,9 @@ def _shipped_key(kind: PieceKind) -> str:
     return f"{float(kind.stiffness)!r}_{float(kind.restitution)!r}"
 
 
-def cache_path(kind: PieceKind) -> Path:
+def cache_path(kind: PieceKind, timestep: float = FLEX_TIMESTEP) -> Path:
     """The cache file for the kind's two numbers on this mesh, timestep and fit version (R15)."""
-    key = repr((float(kind.stiffness), float(kind.restitution), MESH, FLEX_TIMESTEP, FIT_VERSION))
+    key = repr((float(kind.stiffness), float(kind.restitution), MESH, float(timestep), FIT_VERSION))
     return cad_fit.SHAPED_CACHE / CACHE_DIR / f"{hashlib.sha256(key.encode()).hexdigest()}.json"
 
 
@@ -323,31 +323,31 @@ def _read(entry) -> FlexFit | None:
     return FlexFit(E=E, beta=beta)
 
 
-def _shipped(kind: PieceKind) -> FlexFit | None:
+def _shipped(kind: PieceKind, timestep: float) -> FlexFit | None:
     try:
         table = json.loads(SHIPPED_FITS.read_text())
     except (OSError, ValueError):
         return None
     if not isinstance(table, dict) or (table.get("fit_version"), table.get("mesh"), table.get("timestep")) != (
-            FIT_VERSION, list(MESH), FLEX_TIMESTEP):
+            FIT_VERSION, list(MESH), timestep):
         return None
     entry = table.get(_shipped_key(kind))
     return _read(entry) if entry is not None else None
 
 
-def _cached(kind: PieceKind) -> FlexFit | None:
+def _cached(kind: PieceKind, timestep: float) -> FlexFit | None:
     try:
-        return _read(json.loads(cache_path(kind).read_text()))
+        return _read(json.loads(cache_path(kind, timestep).read_text()))
     except (OSError, ValueError):
         return None
 
 
-def _write_cache(kind: PieceKind, fit: FlexFit) -> None:
-    path = cache_path(kind)
+def _write_cache(kind: PieceKind, fit: FlexFit, timestep: float) -> None:
+    path = cache_path(kind, timestep)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}")
     tmp.write_text(json.dumps({"E": fit.E, "beta": fit.beta, "stiffness": kind.stiffness,
-                               "restitution": kind.restitution, "mesh": list(MESH), "timestep": FLEX_TIMESTEP,
+                               "restitution": kind.restitution, "mesh": list(MESH), "timestep": timestep,
                                "fit_version": FIT_VERSION}))
     os.replace(tmp, path)
 
@@ -359,18 +359,18 @@ def _fit_error(kind: PieceKind, what: str) -> BenchError:
                              restitution=f"{kind.restitution:g}"), code="flex_fit")
 
 
-def _fit_E(kind: PieceKind, beta: float) -> float:
+def _fit_E(kind: PieceKind, beta: float, timestep: float) -> float:
     """A secant on log force against log E from FIT_E0 until the squeeze is within FIT_FORCE_TOL of target_force."""
     target = target_force(kind)
     xa = FIT_E0
-    fa = squeeze_force(kind, FlexFit(xa, beta))
+    fa = squeeze_force(kind, FlexFit(xa, beta), timestep=timestep)
     if not (fa > 0):
         raise _fit_error(kind, i18n.t("squeeze"))
     if abs(fa - target) <= FIT_FORCE_TOL * target:
         return xa
     xb = xa * target / fa
     for _ in range(FIT_E_STEPS):
-        fb = squeeze_force(kind, FlexFit(xb, beta))
+        fb = squeeze_force(kind, FlexFit(xb, beta), timestep=timestep)
         if not (fb > 0):
             raise _fit_error(kind, i18n.t("squeeze"))
         if abs(fb - target) <= FIT_FORCE_TOL * target:
@@ -382,13 +382,13 @@ def _fit_E(kind: PieceKind, beta: float) -> float:
     raise _fit_error(kind, i18n.t("squeeze"))
 
 
-def _fit_beta(kind: PieceKind, E: float) -> float:
+def _fit_beta(kind: PieceKind, E: float, timestep: float) -> float:
     """A bisection on log beta in FIT_BETA for the drop's e within FIT_E_TOL of `restitution` (e falls as beta
     rises; a blown-up run counts as too little damping), at most FIT_BETA_STEPS runs."""
     lo, hi = FIT_BETA
     for _ in range(FIT_BETA_STEPS):
         mid = math.sqrt(lo * hi)
-        e = drop_restitution(kind, FlexFit(E, mid))
+        e = drop_restitution(kind, FlexFit(E, mid), timestep=timestep)
         if math.isfinite(e) and abs(e - kind.restitution) <= FIT_E_TOL:
             return mid
         if not math.isfinite(e) or e > kind.restitution:
@@ -398,17 +398,20 @@ def _fit_beta(kind: PieceKind, E: float) -> float:
     raise _fit_error(kind, i18n.t("bounce"))
 
 
-def fit_flex(kind: PieceKind) -> FlexFit:
-    """The flex's E and beta for the kind's `stiffness` and `restitution`: the shipped fit, else the cached one, else
-    fitted now (E by the squeeze, then beta by the drop at that E) and cached (R15). Raises BenchError when no E or
-    beta in range matches."""
+def fit_flex(kind: PieceKind, timestep: float = FLEX_TIMESTEP) -> FlexFit:
+    """The flex's E and beta for the kind's `stiffness` and `restitution` at `timestep` (the bench run's: R15, the
+    fit runs at the run's own step, and a flex's answer moves a few percent with the step): the shipped fit (the
+    preset's, at FLEX_TIMESTEP), else the cached one (keyed by the timestep too), else fitted now (E by the squeeze,
+    then beta by the drop at that E) and cached. Raises BenchError when no E or beta in range matches."""
     if kind.stiffness is None or kind.restitution is None:
         raise BenchError(i18n.t("piece {name}: a flex piece needs a stiffness and a restitution",
                                 name=repr(kind.name)), code="flex_needs_numbers")
-    fit = _shipped(kind) or _cached(kind)
+    timestep = float(timestep)
+    fit = _shipped(kind, timestep) or _cached(kind, timestep)
     if fit is not None:
         return fit
-    E = _fit_E(kind, math.sqrt(FIT_BETA[0] * FIT_BETA[1]))   # the squeeze is held still, so beta barely matters
-    fit = FlexFit(E=E, beta=_fit_beta(kind, E))
-    _write_cache(kind, fit)
+    beta0 = math.sqrt(FIT_BETA[0] * FIT_BETA[1])   # the squeeze is held still, so beta barely matters
+    E = _fit_E(kind, beta0, timestep)
+    fit = FlexFit(E=E, beta=_fit_beta(kind, E, timestep))
+    _write_cache(kind, fit, timestep)
     return fit

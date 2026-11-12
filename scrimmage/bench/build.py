@@ -360,7 +360,7 @@ def build_bench(bench: Bench) -> Built:
     if piece.shape == "mesh":
         spec.add_mesh(name="piece_mesh", file=str(piece.mesh), scale=[UNITS[piece.units]] * 3)
     kind = piece.rigid_kind
-    flex_fit = flex_note.fit_flex(flex_kind(piece)) if piece.flex and n_pool else None
+    flex_fit = flex_note.fit_flex(flex_kind(piece), dt) if piece.flex and n_pool else None   # at the run's step
     n_rigid = 0 if piece.flex else n_pool      # the flex pieces are added once the bounds are known
     kind_meshes = kind_geoms(spec, kind, "piece") if kind is not None and n_rigid else None
     for i in range(n_rigid):
@@ -545,4 +545,28 @@ def overlap_warnings(built: Built, bench: Bench) -> list[Problem]:
                 out.append(Problem("warning", f"{k1}.{n1}",
                                    i18n.t("{kind} '{name}' and {other_kind} '{other}' overlap by {depth} mm", kind=k1,
                                           name=n1, other_kind=k2, other=n2, depth=f"{-dist * 1000:.0f}")))
+    return out
+
+
+def flex_outlet_warnings(built: Built, bench: Bench) -> list[Problem]:
+    """With `flex = true`: a warning for each outlet that comes within the flex piece's reach (its bounding sphere,
+    unsquashed) of a wheel. The exit, and with it the hand-off to `[flight]`, is read as the piece's center enters
+    the outlet, so there it would be read while the piece is still squeezed against the wheel."""
+    if not bench.piece.flex:
+        return []
+    m, lay = built.model, built.layout
+    d = mujoco.MjData(m)
+    mujoco.mj_kinematics(m, d)
+    out = []
+    for name, (lo, hi) in lay.outlet_boxes.items():
+        for wheel, g in lay.wheel_geoms.items():
+            c = d.geom_xpos[g]
+            gap = float(np.linalg.norm(c - np.clip(c, lo, hi))) - float(m.geom_size[g, 0])
+            if gap < lay.piece_reach:
+                out.append(Problem("warning", f"outlet.{name}", i18n.t(
+                    "outlet '{outlet}' is {gap} mm from wheel '{wheel}', closer than the flex piece's reach ({reach} "
+                    "mm): its exit is read as its middle enters the outlet, so it would be read while the piece still "
+                    "touches the wheel; move the outlet further past the wheels", outlet=name, wheel=wheel,
+                    gap=f"{max(gap, 0.0) * 1000:.0f}", reach=f"{lay.piece_reach * 1000:.0f}")))
+                break
     return out
