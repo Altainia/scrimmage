@@ -22,7 +22,8 @@ from range_fixtures import shooter_cfg  # noqa: E402
 from scrimmage.protocol import HalState  # noqa: E402
 from scrimmage.testrange import pieces, soft  # noqa: E402
 from scrimmage.testrange.build import PARK_Z, PARKED_BITS  # noqa: E402
-from scrimmage.testrange.pieces import SOFT_STIFFNESS_RANGE, kind_preset, parse_kind  # noqa: E402
+from scrimmage.testrange.pieces import (SOFT_MIN_HOLE, SOFT_RESTITUTION_RANGE, SOFT_STIFFNESS_RANGE,  # noqa: E402
+                                        kind_preset, parse_kind)
 from scrimmage.testrange.spec import RangeError  # noqa: E402
 from scrimmage.world import World  # noqa: E402
 
@@ -77,6 +78,19 @@ def test_the_rule_scales_from_the_fit():
         assert p.contact_b == pytest.approx(0.85 * 2 * soft.damping_ratio_for(0.3) * math.sqrt(p.contact_k))
     # the spike's own fitted damping (64.5 soft, 113 firm) within 2 %
     assert base.contact_b == pytest.approx(64.45, rel=0.02) and triple.contact_b == pytest.approx(113.0, rel=0.02)
+    # the contact stiffness is per unit mass in MuJoCo, so it is scaled by FIT_MASS / mass; the joints aren't
+    heavy = soft.ring_params(replace(_at(2000.0), mass=2 * NOTE.mass))
+    assert soft.FIT_MASS == 0.235 and heavy.contact_k == pytest.approx(11211.4 / 2)
+    assert heavy.joint_k == pytest.approx(base.joint_k)
+    assert heavy.contact_b == pytest.approx(0.85 * 2 * soft.damping_ratio_for(0.3) * math.sqrt(heavy.contact_k))
+
+
+def test_a_heavier_note_squeezes_as_its_stiffness_says():
+    """Task 5 review, finding 2: a NOTE of twice the mass still pushes back 12.7 N in the squeeze at 2000 N/m, and
+    bounces near its restitution."""
+    heavy = replace(_at(2000.0), mass=2 * NOTE.mass)
+    assert soft_helpers.squeeze(heavy) == pytest.approx(12.70, rel=0.10)
+    assert soft_helpers.drop(heavy)["e"] == pytest.approx(0.3, rel=0.10)
 
 
 @pytest.mark.parametrize("stiffness", sorted(FITTED))
@@ -90,15 +104,49 @@ def test_the_rule_reproduces_both_fitted_foams(stiffness):
 
 
 def test_soft_limits_are_checked():
-    """R14 (Review Focus 4): a soft kind's stiffness lies in SOFT_STIFFNESS_RANGE, and only a ring is soft."""
-    assert SOFT_STIFFNESS_RANGE == (1000.0, 20000.0)
+    """R14 (Review Focus 4): a soft kind's stiffness lies in SOFT_STIFFNESS_RANGE and its restitution in
+    SOFT_RESTITUTION_RANGE, only a ring is soft, and its hole is wide enough that its segments don't overlap."""
+    assert SOFT_STIFFNESS_RANGE == (1000.0, 20000.0) and SOFT_RESTITUTION_RANGE == (0.25, 0.55)
     for bad in (50000, 500):
         with pytest.raises(RangeError) as e:
             parse_kind(P, "s", {**RING, "stiffness": bad}, ROOT)
         assert "stiffness" in str(e.value) and "1000" in str(e.value) and "20000" in str(e.value)
+    for bad in (0.2, 0.6):
+        with pytest.raises(RangeError, match="restitution must be between 0.25 and 0.55, not"):
+            parse_kind(P, "s", {**RING, "stiffness": 2000, "restitution": bad}, ROOT)
     with pytest.raises(RangeError, match="ring"):
         parse_kind(P, "b", {"shape": "box", "size_in": [4, 4, 4], "mass": 0.5, "friction": 0.6, "soft": True,
                             "stiffness": 2000, "restitution": 0.3}, ROOT)
+    # no hole: the existing message for a missing key
+    solid = {k: v for k, v in RING.items() if k != "inner_diameter_in"}
+    with pytest.raises(RangeError, match=r"needs inner_diameter: give inner_diameter in \[piece\.s\]"):
+        parse_kind(P, "s", {**solid, "stiffness": 2000}, ROOT)
+    # the limit is the geometry's: segments j and j + 2 clear only when 2 R sin(pi/16) > 2 r
+    sn = math.sin(math.pi / 16)
+    assert (1 - sn) / (1 + sn) == pytest.approx(0.674, abs=0.001) and (1 - sn) / (1 + sn) < SOFT_MIN_HOLE
+    with pytest.raises(RangeError, match=r"inner_diameter must be more than 0.68 of its diameter, so its 16 segments "
+                                         r"don't overlap; this one's is 0.643"):
+        parse_kind(P, "s", {**RING, "stiffness": 2000, "inner_diameter_in": 9.0}, ROOT)
+    assert parse_kind(P, "s", {**RING, "stiffness": 2000, "inner_diameter_in": 9.6}, ROOT).soft     # 0.686
+
+
+def test_a_presets_soft_says_how_to_stay_rigid():
+    """Task 5 review, finding 5: the preset sets soft = true, so an out-of-range override says so and how to keep the
+    piece rigid; with soft = false the override is a rigid NOTE's, as before."""
+    with pytest.raises(RangeError, match="its preset sets soft = true, and soft = false keeps it rigid"):
+        parse_kind(P, "n", {"preset": "2024-note", "stiffness": 30000}, ROOT)
+    rigid = parse_kind(P, "n", {"preset": "2024-note", "stiffness": 30000, "soft": False}, ROOT)
+    assert not rigid.soft and rigid.stiffness == 30000
+    with pytest.raises(RangeError) as e:        # the table's own soft = true: no hint
+        parse_kind(P, "s", {**RING, "stiffness": 30000}, ROOT)
+    assert "soft = false" not in str(e.value)
+
+
+@pytest.mark.parametrize("e", SOFT_RESTITUTION_RANGE)
+def test_the_rule_bounces_within_10_percent_at_both_ends(e):
+    """M11: at each end of SOFT_RESTITUTION_RANGE, at the preset's 2000 N/m, the drop's e is within 10 % of the
+    asked one (measured: 0.25 gives 0.265, 0.55 gives 0.496)."""
+    assert soft_helpers.drop(_at(2000.0, e))["e"] == pytest.approx(e, rel=0.10)
 
 
 @pytest.mark.parametrize("stiffness", SOFT_STIFFNESS_RANGE)
@@ -137,7 +185,46 @@ def test_a_rigid_pose_round_trips():
     # ring_rest: the segments' centers about the center of mass, in the NOTE's plane (its axis z)
     rest = soft.ring_rest(m, "n")
     assert rest.shape == (soft.RING_SEGMENTS, 3)
+    _, _, _, none = soft.read_rigid(m, d, "n", spin=False)
+    assert none is None
     assert np.abs(rest.mean(axis=0)).max() < 1e-12 and np.abs(rest[:, 2]).max() < 1e-12
+
+
+def test_the_rings_kinematics_are_mujocos():
+    """Task 5 review, finding 4: on a bent, moving ring, the ring's own kinematics are MuJoCo's: each segment's center
+    and velocity, and read_rigid's center, momentum and angular momentum against the subtree's."""
+    spec = mujoco.MjSpec()
+    soft.add_ring(spec, "n", NOTE, (0.4, -0.3, 0.8), PARKED_BITS)
+    m = spec.compile()
+    d = mujoco.MjData(m)
+    rng = np.random.default_rng(5)
+    ring = soft.ring_view(m, "n")
+    q = rng.normal(size=4)
+    d.qpos[3:7] = q / np.linalg.norm(q)
+    for j in range(1, m.njnt):
+        a = m.jnt_qposadr[j]
+        q = np.r_[1.0, rng.normal(0.0, 0.15, 3)]
+        d.qpos[a:a + 4] = q / np.linalg.norm(q)
+    d.qvel[:] = rng.normal(size=m.nv)
+    mujoco.mj_forward(m, d)
+    mujoco.mj_subtreeVel(m, d)
+    com, rot, v, w = ring._segments(d.qpos[ring.q], d.qvel[ring.v])
+    assert np.abs(com - d.xipos[ring.bodies]).max() < 1e-12
+    assert np.abs(rot.reshape(-1, 9) - d.xmat[ring.bodies]).max() < 1e-12
+    out = np.zeros(6)
+    for k, b in enumerate(ring.bodies):
+        mujoco.mj_objectVelocity(m, d, mujoco.mjtObj.mjOBJ_BODY, int(b), out, 0)     # at the body's center of mass
+        assert np.abs(out[:3] - w[k]).max() < 1e-12 and np.abs(out[3:] - v[k]).max() < 1e-12
+    s0 = int(ring.bodies[0])
+    c, _, vc, spin = soft.read_rigid(m, d, "n")
+    assert np.abs(c - d.subtree_com[s0]).max() < 1e-12
+    assert np.abs(vc - d.subtree_linvel[s0]).max() < 1e-12
+    # the angular momentum about the center: the summed inertia there times the spin
+    r = com - c
+    frame = rot @ ring._iframe
+    inertia = np.einsum("nij,nj,nkj->ik", frame, ring._idiag, frame) + sum(
+        ring.m[k] * (r[k] @ r[k] * np.eye(3) - np.outer(r[k], r[k])) for k in range(len(r)))
+    assert np.abs(inertia @ spin - d.subtree_angmom[s0]).max() < 1e-12
 
 
 def test_the_ring_is_built_as_its_kind():
@@ -174,12 +261,12 @@ def test_a_soft_kind_builds_a_parked_pool():
     for b in bodies:
         g = m.body_geomadr[b]
         assert (m.geom_contype[g], m.geom_conaffinity[g]) == (PARKED_BITS["contype"], PARKED_BITS["conaffinity"])
-    rows = np.concatenate([np.arange(m.nq)[soft._chain(m, ring).q] for ring in lay.soft])
+    rows = np.concatenate([np.arange(m.nq)[soft.ring_view(m, ring).q] for ring in lay.soft])
     q0 = d.qpos[rows].copy()
     hal = HalState()
     for _ in range(300):
         w.step(hal)
-    assert np.abs(d.qpos[rows] - q0).max() < 1e-3
+    assert np.array_equal(d.qpos[rows], q0)     # written back exactly, then asleep
     mujoco.mj_forward(m, d)
     assert np.allclose(d.xpos[bodies][:, 2], PARK_Z, atol=0.03)
 
@@ -224,6 +311,9 @@ def test_the_parked_pool_costs_little(monkeypatch):
     assert best["pool"] / best["none"] <= 1.3, best
 
 
-def test_rings_arent_movable_objects():
-    names = _world_2024().movable_objects()
-    assert not [n for n in names if n.startswith("soft.")]
+def test_rings_arent_movable_objects_or_contact_names():
+    """No parked ring reaches a student: not movable, and not a contact check's target (Task 5 review, finding 6)."""
+    w = _world_2024()
+    assert not [n for n in w.movable_objects() if n.startswith("soft.")]
+    names = w.contact_names()
+    assert not [n for n in names if n.startswith("soft.")] and "ball.0" in names

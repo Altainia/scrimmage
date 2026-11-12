@@ -635,8 +635,22 @@ estimates until someone measures them, and a soft kind needs both:
 - `restitution` (above 0, below 1): its bounce off the carpet. A drop from 1 m comes back up `restitution`² × 1 m
   (the preset's 0.3 is about 9 cm). Measure it with [NOTE drop](measuring.md#note-drop). It is read only for a soft
   kind; a rigid piece keeps the contact it always had.
-- `soft = true` marks a `shape = "ring"` kind (or a ring piece preset) as squashable. Its `stiffness` must be 1000 to
-  20000 N/m. A ball or a disc is refused all three keys: its stiffness and bounce are its preset's.
+- `soft = true` marks a `shape = "ring"` kind (or a ring piece preset) as squashable. The 2024-note preset sets it;
+  `soft = false` keeps a NOTE rigid. A soft ring needs:
+  - an `inner_diameter` more than 0.68 of its `diameter`, so the 16 segments of its soft ring don't overlap (the
+    NOTE's is 10 in of 14, 0.71);
+  - a `stiffness` of 1000 to 20000 N/m;
+  - a `restitution` of 0.25 to 0.55. The soft ring's bounce comes from a rule fitted at 0.3. Dropped from 1 m at
+    the preset's 2000 N/m, it lands within 10 % of the asked restitution only in that range:
+
+    | restitution asked | 0.1 | 0.2 | 0.25 | 0.3 | 0.4 | 0.5 | 0.55 | 0.6 |
+    |---|---|---|---|---|---|---|---|---|
+    | measured, 2000 N/m | 0.16 | 0.23 | 0.27 | 0.30 | 0.38 | 0.46 | 0.50 | 0.51 |
+    | measured, 20000 N/m | 0.24 | 0.30 | 0.34 | 0.38 | 0.44 | 0.53 | 0.55 | 0.53 |
+
+    A stiffer ring bounces higher than asked at low restitution: at 20000 N/m, 0.3 comes back as 0.38.
+
+  A ball or a disc is refused all three keys: its stiffness and bounce are its preset's.
 
 **A kind's color.** `color` is one of the named colors (`"red"`, `"blue"`, `"yellow"`, `"orange"`, `"green"`,
 `"purple"`, `"white"`, `"gray"`) or `[r, g, b]`, each 0 to 1. The piece is drawn in it, and a

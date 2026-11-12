@@ -565,7 +565,8 @@ class World:
 
     def contact_names(self) -> list[str]:
         """Geom and body names outside the robot, and each flex's (a chain's, `element.<name>`), which contact checks
-        can name."""
+        can name. The soft pool's rings (`soft.*`) are left out: a ring in use stands for its NOTE, whose contacts are
+        named by its `ball.<i>` (Balls.ball_of_geom), and a parked one touches nothing."""
         m = self.model
         root = m.body_rootid[self.robot_body]
         names = {mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g) for g in range(m.ngeom)
@@ -573,4 +574,4 @@ class World:
         names |= {mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, b) for b in range(m.nbody)
                   if m.body_rootid[b] != root}
         names |= {mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_FLEX, f) for f in range(m.nflex)}
-        return sorted(n for n in names if n)
+        return sorted(n for n in names if n and not n.startswith("soft."))

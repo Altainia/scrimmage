@@ -12,6 +12,8 @@ these same scenes, so their numbers live here once (docs/measuring.md describes 
 
 from __future__ import annotations
 
+from ..parts.field import CARPET_FRICTION  # noqa: F401  (the drop's carpet is the field's own)
+
 IN = 0.0254
 
 SQUEEZE_START_GAP = 2.3 * IN     # source: soft-note spike (scenes.squeeze): just clear of the 2 in NOTE
@@ -25,4 +27,3 @@ ROLLER_FRICTION = (0.7, 0.005, 0.0001)  # source: soft-note spike: [wheels.60A]'
 
 DROP_HEIGHT = 1.0                # source: soft-note spike (scenes.drop): 1 m, the NOTE's bottom above the carpet
 DROP_TIME_S = 1.2                # source: soft-note spike (calibrate.fit_damping): long enough to rebound and settle
-CARPET_FRICTION = (1.0, 0.01, 0.001)    # source: parts/field.py's carpet

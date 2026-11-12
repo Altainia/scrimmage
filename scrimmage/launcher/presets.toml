@@ -3,7 +3,8 @@
 # The [surface.*] and [piece.*] tables are for the test range's rigid game pieces (docs/test-range.md); lengths are
 # written in inches (`_in`) where the manual gives inches.
 #
-# Every value has a `# source:` comment, or a `# estimate:` comment saying how it was estimated.
+# Every value has a `# source:` comment, or a `# estimate:` comment saying how it was estimated, or a `# choice:`
+# comment for a behavior the preset turns on (not a measurement).
 # Estimates are NOT measurements. Ball stiffness and restitution and wheel friction can all be measured at home
 # (see docs/launcher.md); replace them with your numbers.
 #
@@ -229,4 +230,4 @@ mass = 0.235            # source: same page, "8.3 oz. +/- 0.2 oz."; 8.3 oz = 0.2
 material = "foam"       # source: same page, "coated foam"; its friction is the estimate in [surface.foam]
 stiffness = 2000.0      # estimate: the soft-note spike's "soft" foam: how hard it pushes back per meter of squeeze at 25 % of its 2 in thickness, 12.7 N a side between two 4 in rollers; UNCALIBRATED
 restitution = 0.3       # estimate: its bounce off the carpet from a 1 m drop, a dead foam thud (about 9 cm); UNCALIBRATED
-soft = true             # source: spec D8 (a design choice, not a measurement): rigid at rest and in flight, soft near a robot
+soft = true             # choice: spec D8: rigid at rest and in flight, soft near a robot

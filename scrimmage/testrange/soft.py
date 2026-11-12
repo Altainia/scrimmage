@@ -9,12 +9,14 @@ The ring:
   excluded from contact.
 - The ring lies in the plane across the kind's axis through the kind's body origin (its center of mass), so a rigid
   slot's pose maps onto it: a ring built at `pos` is the rigid NOTE at `pos`, unturned.
-- Its squash across the tube is MuJoCo's soft contact: a negative solref (stiffness k, damping b, mass-independent
-  units) with impedance SOFT_SOLIMP. Its bending is the ball joints' springs.
+- Its squash across the tube is MuJoCo's soft contact: a negative solref (stiffness k, damping b, per unit of the
+  contact's effective mass) with impedance SOFT_SOLIMP. Its bending is the ball joints' springs.
 
 Its numbers follow a rule, not a fit at build time (R10). The spike fitted the ring once, at `stiffness` FIT_STIFFNESS
 and restitution 0.3 (FIT_CONTACT_K, FIT_JOINT_K). The world scales from there:
-- the contact stiffness and the joint stiffness are in proportion to the kind's `stiffness`;
+- the contact stiffness and the joint stiffness are in proportion to the kind's `stiffness`. The contact
+  stiffness is also scaled by FIT_MASS / the kind's mass: MuJoCo's negative solref is per unit of the contact's
+  effective mass, so without it a NOTE twice as heavy would squeeze twice as hard (R10, extended in task 5's review);
 - the contact damping is DAMPING_SCALE x the closed form 2 zeta(e) sqrt(k), zeta(e) = -ln e / sqrt(pi^2 + ln^2 e);
 - the joint damping gives one segment swinging about its joint a damping ratio of JOINT_ZETA.
 
@@ -30,15 +32,16 @@ A range with a soft kind builds POOL_SIZE rings per soft kind, `soft.<k>`, parke
 from __future__ import annotations
 
 import math
+import weakref
 from dataclasses import dataclass
 
 import mujoco
 import numpy as np
 
 from .build import BALL_FRICTION, RIGID_SOLMIX
-from .pieces import PieceKind, piece_color
+from .pieces import SOFT_SEGMENTS, PieceKind, piece_color, ring_diameters
 
-RING_SEGMENTS = 16  # source: soft-note spike, candidate (b)
+RING_SEGMENTS = SOFT_SEGMENTS  # source: soft-note spike, candidate (b)
 POOL_SIZE = 2  # choice: spec D8
 SOFT_REACH = 0.25  # choice: spec D8
 SOFT_LINGER = 0.25  # choice: spec D8
@@ -46,6 +49,7 @@ SOFT_SOLIMP = (0.2, 0.2, 0.001, 0.5, 2.0)  # source: spike: d = 0.2 keeps a stat
 FIT_STIFFNESS = 2000.0  # source: soft-note spike, chain soft fit
 FIT_CONTACT_K = 11211.4  # source: soft-note spike, chain soft fit
 FIT_JOINT_K = 0.10276  # source: soft-note spike, chain soft fit
+FIT_MASS = 0.235  # source: soft-note spike: the fit's NOTE mass (the 2024-note preset's)
 JOINT_ZETA = 0.3  # source: spike
 DAMPING_SCALE = 0.85  # source: derived, R10: the spike's two fits, b / (2 zeta(0.3) sqrt k) = 0.849 soft, 0.860 firm
 CLOSE_SOLREF = (0.004, 1.0)  # source: spike's closing connect
@@ -76,13 +80,9 @@ class _Dims:
 
 
 def _dims(kind: PieceKind) -> _Dims:
-    """The ring's sizes from the kind: its outer diameter is its solids' widest reach from the axis, its inner the
-    hole's (none: a solid ring, inner 0)."""
-    a = np.asarray(kind.axis, dtype=float)
-    pts = kind._points
-    radial = pts - np.outer(pts @ a, a)
-    outer = 2.0 * float(np.linalg.norm(radial, axis=1).max())
-    inner = kind.hole.diameter if kind.hole is not None else 0.0
+    """The ring's sizes from the kind (pieces.ring_diameters; a soft kind always has a hole, pieces._check_soft)."""
+    outer, inner = ring_diameters(kind)
+    assert inner is not None, "a soft ring needs a hole"
     big_r, r = (outer + inner) / 4.0, (outer - inner) / 4.0
     n = RING_SEGMENTS
     half = big_r * math.sin(math.pi / n)
@@ -97,7 +97,7 @@ def _dims(kind: PieceKind) -> _Dims:
 def ring_params(kind: PieceKind) -> RingParams:
     """The ring's contact and joint numbers for the kind's `stiffness` and `restitution` (R10)."""
     scale = kind.stiffness / FIT_STIFFNESS
-    k = FIT_CONTACT_K * scale
+    k = FIT_CONTACT_K * scale * (FIT_MASS / kind.mass)
     kj = FIT_JOINT_K * scale
     d = _dims(kind)
     i_joint = d.inertia[1] + d.m * d.half * d.half      # a segment about its joint: I_seg + m (l/2)^2
@@ -161,133 +161,163 @@ def add_ring(spec: mujoco.MjSpec, name: str, kind: PieceKind, pos, bits: dict) -
     spec.add_exclude(bodyname1=f"{name}.s{n - 1}", bodyname2=f"{name}.s0")
 
 
+
+
 # ------------------------------------------------------------------------------------------- the ring's state
 
-def _mat(q) -> np.ndarray:
-    m = np.zeros(9)
-    mujoco.mju_quat2Mat(m, np.asarray(q, dtype=float))
-    return m.reshape(3, 3)
+def _mats(q: np.ndarray) -> np.ndarray:
+    """(n, 4) quaternions (w x y z) as (n, 3, 3) rotation matrices (MuJoCo's own, one call each: cheaper than numpy
+    on a few rows)."""
+    out = np.empty((len(q), 9))
+    for k in range(len(q)):
+        mujoco.mju_quat2Mat(out[k], q[k])
+    return out.reshape(-1, 3, 3)
 
 
-@dataclass(frozen=True)
-class _Chain:
-    """A ring's addresses in a compiled model: its bodies (s0 first, consecutive), its free joint's qpos and dof
-    addresses, and its ball joints' (in segment order)."""
-
-    bodies: np.ndarray
-    free_q: int
-    free_v: int
-    ball_q: np.ndarray
-    ball_v: np.ndarray
-
-    @property
-    def q(self) -> slice:
-        """The ring's qpos rows (its joints' are consecutive: 7 + 4 per ball joint)."""
-        return slice(self.free_q, self.free_q + 7 + 4 * len(self.ball_q))
-
-    @property
-    def v(self) -> slice:
-        return slice(self.free_v, self.free_v + 6 + 3 * len(self.ball_v))
+_P1, _P2 = [1, 2, 0], [2, 0, 1]
 
 
-def _chain(model: mujoco.MjModel, ring: str) -> _Chain:
-    b0 = model.body(f"{ring}.s0").id
-    bodies = b0 + np.arange(RING_SEGMENTS)
-    jnt = model.body_jntadr[bodies]
-    return _Chain(bodies, int(model.jnt_qposadr[jnt[0]]), int(model.jnt_dofadr[jnt[0]]),
-                  model.jnt_qposadr[jnt[1:]].astype(int), model.jnt_dofadr[jnt[1:]].astype(int))
+def _cross(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Row-wise cross products of (n, 3) arrays (np.cross costs several times more on a few rows)."""
+    return a[:, _P1] * b[:, _P2] - a[:, _P2] * b[:, _P1]
 
 
-def _segments(model: mujoco.MjModel, ch: _Chain, qpos: np.ndarray, qvel: np.ndarray | None = None):
-    """Each segment's center of mass (n, 3), rotation (n, 3, 3), and, with qvel, its center's velocity (n, 3) and
-    its angular velocity (n, 3), all in the world frame: the ring's own forward kinematics, from qpos and qvel
-    alone (MuJoCo's xipos after mj_step are the step's start)."""
-    n = len(ch.bodies)
-    x, rot = np.zeros((n, 3)), np.zeros((n, 3, 3))
-    v, w = np.zeros((n, 3)), np.zeros((n, 3))
-    f = ch.free_q
-    x[0], rot[0] = qpos[f:f + 3], _mat(qpos[f + 3:f + 7])
-    if qvel is not None:
-        v[0] = qvel[ch.free_v:ch.free_v + 3]                    # the free joint's linear velocity: world frame
-        w[0] = rot[0] @ qvel[ch.free_v + 3:ch.free_v + 6]       # its angular velocity: the body's own frame
-    for k in range(1, n):
-        b, j = ch.bodies[k], model.body_jntadr[ch.bodies[k]]
-        pre = rot[k - 1] @ _mat(model.body_quat[b])
-        anchor = x[k - 1] + rot[k - 1] @ model.body_pos[b] + pre @ model.jnt_pos[j]
-        qa = ch.ball_q[k - 1]
-        rot[k] = pre @ _mat(qpos[qa:qa + 4])
-        x[k] = anchor - rot[k] @ model.jnt_pos[j]
-        if qvel is not None:
-            va = v[k - 1] + np.cross(w[k - 1], anchor - x[k - 1])
-            da = ch.ball_v[k - 1]
-            w[k] = w[k - 1] + rot[k] @ qvel[da:da + 3]          # a ball joint's angular velocity: the child's frame
-            v[k] = va + np.cross(w[k], x[k] - anchor)
-    com = x + np.einsum("nij,nj->ni", rot, model.body_ipos[ch.bodies])
-    if qvel is not None:
-        v = v + np.cross(w, com - x)
-    return com, rot, v, w
+def _apply(rot: np.ndarray, v: np.ndarray) -> np.ndarray:
+    """(n, 3, 3) @ (n, 3), row by row."""
+    return (rot @ v[:, :, None])[:, :, 0]
 
 
-def _rest(model: mujoco.MjModel, ch: _Chain) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """The ring as built (unturned: the NOTE's own frame is the world's): each segment's center of mass about the
-    ring's (n, 3), and s0's origin about it and its quaternion."""
-    com, _, _, _ = _segments(model, ch, model.qpos0)
-    m = model.body_mass[ch.bodies]
-    c = (m[:, None] * com).sum(0) / m.sum()
-    f = ch.free_q
-    return com - c, model.qpos0[f:f + 3] - c, model.qpos0[f + 3:f + 7].copy()
+class Ring:
+    """One ring's addresses and constants in a compiled model, worked out once (ring_view caches it): its bodies (s0
+    first, consecutive), its joints' qpos and dof rows (consecutive: 7 + 4 per ball joint, 6 + 3), each segment's
+    fixed transform from the one before, and its rest shape."""
+
+    def __init__(self, model: mujoco.MjModel, ring: str):
+        b0 = model.body(f"{ring}.s0").id
+        self.bodies = b0 + np.arange(RING_SEGMENTS)
+        jnt = model.body_jntadr[self.bodies]
+        self.free_q, self.free_v = int(model.jnt_qposadr[jnt[0]]), int(model.jnt_dofadr[jnt[0]])
+        self.q = slice(self.free_q, self.free_q + 7 + 4 * (RING_SEGMENTS - 1))
+        self.v = slice(self.free_v, self.free_v + 6 + 3 * (RING_SEGMENTS - 1))
+        self.tree = int(model.body_treeid[b0])
+        self.m = model.body_mass[self.bodies].copy()
+        self.mass = float(self.m.sum())
+        self._ipos = model.body_ipos[self.bodies].copy()
+        self._iframe = _mats(model.body_iquat[self.bodies])
+        self._idiag = model.body_inertia[self.bodies].copy()
+        # a later segment's frame before its joint turns: the previous one's turned by B and moved by p; its joint
+        # sits at a in its own frame. Segment k = R_{k-1} (B_k Q_k), at x_{k-1} + R_{k-1} (p_k + B_k a_k - B_k Q_k a_k)
+        b = self.bodies[1:]
+        self._bmat = _mats(model.body_quat[b])
+        self._a = model.jnt_pos[jnt[1:]].copy()
+        self._c = model.body_pos[b] + np.einsum("nij,nj->ni", self._bmat, self._a)   # each anchor in the parent
+        self._local = np.zeros((RING_SEGMENTS - 1, 4, 4))      # scratch: each later segment's local transform
+        self._local[:, 3, 3] = 1.0
+        self.qpos0 = model.qpos0[self.q].copy()
+        com, _, _, _ = self._segments(self.qpos0, None)
+        c = (self.m[:, None] * com).sum(0) / self.mass
+        self.rest = com - c                                     # each segment's center about the ring's
+        self.p0 = self.qpos0[:3] - c                            # s0's origin about it, and its quaternion
+        self.q0 = self.qpos0[3:7].copy()
+
+    def _segments(self, qpos: np.ndarray, qvel: np.ndarray | None):
+        """From the ring's own qpos (and qvel) rows: each segment's center of mass (n, 3), rotation (n, 3, 3), and
+        with qvel its center's velocity and its angular velocity (n, 3), world frame. The ring's own forward
+        kinematics: after mj_step MuJoCo's xipos describe the step's start."""
+        n = RING_SEGMENTS
+        # each segment's pose as a 4x4 transform: s0's from the free joint, each later one the one before's times its
+        # own local transform (B_k Q_k, moved so its joint's anchor stays put)
+        t = np.zeros((n, 4, 4))
+        t[:, 3, 3] = 1.0
+        t[0, :3, :3] = _mats(qpos[None, 3:7])[0]
+        t[0, :3, 3] = qpos[:3]
+        local = self._local
+        local[:, :3, :3] = self._bmat @ _mats(qpos[7:].reshape(-1, 4))     # B_k Q_k
+        local[:, :3, 3] = self._c - _apply(local[:, :3, :3], self._a)
+        for k in range(1, n):
+            np.matmul(t[k - 1], local[k - 1], out=t[k])
+        rot, x = t[:, :3, :3], t[:, :3, 3]
+        com = x + _apply(rot, self._ipos)
+        if qvel is None:
+            return com, rot, None, None
+        # angular velocity: s0's from the free joint (its own frame), each ball joint's in its child's frame
+        rel = np.empty((n, 3))
+        rel[0] = rot[0] @ qvel[3:6]
+        rel[1:] = _apply(rot[1:], qvel[6:].reshape(-1, 3))
+        w = np.cumsum(rel, axis=0)
+        # each joint's anchor (s0's origin for s0), and its velocity, carried along the chain
+        anchor = np.empty((n, 3))
+        anchor[0] = x[0]
+        anchor[1:] = x[:-1] + _apply(rot[:-1], self._c)
+        step = np.zeros((n, 3))
+        step[1:] = _cross(w[:-1], anchor[1:] - anchor[:-1])
+        va = qvel[:3] + np.cumsum(step, axis=0)
+        return com, rot, va + _cross(w, com - anchor), w
+
+    def read(self, data: mujoco.MjData, spin: bool = True):
+        """read_rigid, for this ring; the spin only when `spin` (None otherwise)."""
+        com, rot, v, w = self._segments(data.qpos[self.q], data.qvel[self.v])
+        c = self.m @ com / self.mass
+        vc = self.m @ v / self.mass
+        r = com - c
+        u, _, vt = np.linalg.svd(self.rest.T @ r)              # Kabsch: the rotation taking rest onto r
+        s = np.diag([1.0, 1.0, float(np.sign(np.linalg.det(vt.T @ u.T)))])
+        quat = _quat_of(vt.T @ s @ u.T)
+        if not spin:
+            return c, quat, vc, None
+        frame = rot @ self._iframe
+        inertia = (frame * self._idiag[:, None, :]) @ frame.transpose(0, 2, 1)     # each segment's, world frame
+        ang = self.m @ _cross(r, v - vc) + _apply(inertia, w).sum(0)
+        mr = self.m[:, None] * r
+        total = inertia.sum(0) + float((mr * r).sum()) * np.eye(3) - r.T @ mr       # parallel axes, summed
+        return c, quat, vc, np.linalg.solve(total, ang)
+
+    def write(self, data: mujoco.MjData, pos, quat, vel, ang_vel) -> None:
+        """write_rigid, for this ring."""
+        rq = _mats(np.asarray(quat, dtype=float)[None])[0]
+        arm = rq @ self.p0
+        q_s0 = np.zeros(4)
+        mujoco.mju_mulQuat(q_s0, np.asarray(quat, dtype=float), self.q0)
+        qpos, qvel = np.zeros(self.q.stop - self.q.start), np.zeros(self.v.stop - self.v.start)
+        qpos[:3] = np.asarray(pos, dtype=float) + arm
+        qpos[3:7] = q_s0
+        qpos[7::4] = 1.0                                        # the ball joints at rest
+        ang_vel = np.asarray(ang_vel, dtype=float)
+        qvel[:3] = np.asarray(vel, dtype=float) + np.cross(ang_vel, arm)
+        qvel[3:6] = _mats(q_s0[None])[0].T @ ang_vel             # the free joint's spin: s0's own frame
+        data.qpos[self.q] = qpos
+        data.qvel[self.v] = qvel
+
+
+_RINGS: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()     # model -> {ring name: Ring}
+
+
+def ring_view(model: mujoco.MjModel, ring: str) -> Ring:
+    """Ring `ring` of `model`, worked out once per model."""
+    rings = _RINGS.setdefault(model, {})
+    if ring not in rings:
+        rings[ring] = Ring(model, ring)
+    return rings[ring]
 
 
 def ring_rest(model: mujoco.MjModel, ring: str) -> np.ndarray:
     """(RING_SEGMENTS, 3): each segment's center of mass in the NOTE's own frame (its origin the ring's center of
-    mass)."""
-    return _rest(model, _chain(model, ring))[0]
+    mass). The ring is built unturned, so the NOTE's frame is the world's turned by nothing."""
+    return ring_view(model, ring).rest
 
 
 def write_rigid(model: mujoco.MjModel, data: mujoco.MjData, ring: str, pos, quat, vel, ang_vel) -> None:
     """Put the ring at the rigid NOTE's pose (its center of mass at `pos`, turned by `quat`, w x y z), moving with
     its velocity field (`vel` at the center, spin `ang_vel`, world frame), its ball joints at rest."""
-    ch = _chain(model, ring)
-    _, p0, q0 = _rest(model, ch)
-    rq = _mat(quat)
-    arm = rq @ p0
-    q_s0 = np.zeros(4)
-    mujoco.mju_mulQuat(q_s0, np.asarray(quat, dtype=float), q0)
-    f, dv = ch.free_q, ch.free_v
-    data.qpos[f:f + 3] = np.asarray(pos, dtype=float) + arm
-    data.qpos[f + 3:f + 7] = q_s0
-    data.qvel[dv:dv + 3] = np.asarray(vel, dtype=float) + np.cross(ang_vel, arm)
-    data.qvel[dv + 3:dv + 6] = _mat(q_s0).T @ np.asarray(ang_vel, dtype=float)
-    for qa, da in zip(ch.ball_q, ch.ball_v):
-        data.qpos[qa:qa + 4] = (1.0, 0.0, 0.0, 0.0)
-        data.qvel[da:da + 3] = 0.0
+    ring_view(model, ring).write(data, pos, quat, vel, ang_vel)
 
 
-def read_rigid(model: mujoco.MjModel, data: mujoco.MjData, ring: str) -> tuple[np.ndarray, np.ndarray, np.ndarray,
-                                                                                np.ndarray]:
-    """The rigid NOTE that best stands for the ring now: its center of mass, the Kabsch rotation of the segments'
+def read_rigid(model: mujoco.MjModel, data: mujoco.MjData, ring: str, spin: bool = True):
+    """The rigid NOTE that best stands for the ring now: (center of mass, the Kabsch rotation of the segments'
     centers against ring_rest (w x y z), its momentum over its mass, and its spin from its angular momentum about
-    the center (the segments' summed inertia there)."""
-    ch = _chain(model, ring)
-    rest = _rest(model, ch)[0]
-    com, rot, v, w = _segments(model, ch, data.qpos, data.qvel)
-    m = model.body_mass[ch.bodies]
-    mass = float(m.sum())
-    c = (m[:, None] * com).sum(0) / mass
-    vc = (m[:, None] * v).sum(0) / mass
-    r = com - c
-    # Kabsch: the rotation taking rest onto r, least squares
-    u, _, vt = np.linalg.svd(rest.T @ r)
-    s = np.diag([1.0, 1.0, float(np.sign(np.linalg.det(vt.T @ u.T)))])
-    best = vt.T @ s @ u.T
-    ang = (m[:, None] * np.cross(r, v - vc)).sum(0)
-    inertia = np.zeros((3, 3))
-    for k, b in enumerate(ch.bodies):
-        world = rot[k] @ _mat(model.body_iquat[b])
-        ib = world @ np.diag(model.body_inertia[b]) @ world.T
-        ang += ib @ w[k]
-        inertia += ib + m[k] * (float(r[k] @ r[k]) * np.eye(3) - np.outer(r[k], r[k]))
-    return c, _quat_of(best), vc, np.linalg.solve(inertia, ang)
+    the center with the segments' summed inertia there). The spin, a 3x3 solve, is worked out only when `spin`
+    (it is None otherwise): a per-step shadow needs only the pose and velocity, a swap back the spin too."""
+    return ring_view(model, ring).read(data, spin)
 
 
 class ParkedRings:
@@ -297,14 +327,12 @@ class ParkedRings:
 
     def __init__(self, model: mujoco.MjModel, data: mujoco.MjData, rings: list[str]):
         self.data = data
-        chains = [_chain(model, r) for r in rings]
-        self.trees = np.array([model.body_treeid[c.bodies[0]] for c in chains], dtype=int)
-        self._q = [c.q for c in chains]
-        self._v = [c.v for c in chains]
-        self._q0 = [model.qpos0[c.q].copy() for c in chains]
+        self.rings = [ring_view(model, r) for r in rings]
+        self.trees = np.array([r.tree for r in self.rings], dtype=int)
 
     def hold(self) -> None:
         d = self.data
         for k in np.flatnonzero(d.tree_asleep[self.trees] < 0):
-            d.qpos[self._q[k]] = self._q0[k]
-            d.qvel[self._v[k]] = 0.0
+            ring = self.rings[k]
+            d.qpos[ring.q] = ring.qpos0
+            d.qvel[ring.v] = 0.0

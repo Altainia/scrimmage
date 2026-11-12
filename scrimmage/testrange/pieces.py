@@ -97,6 +97,14 @@ _AIR = ("drag_coefficient", "spin_damping")  # a rigid kind's air (launcher/rigi
 _RIGID_OWN = _AIR + ("stiffness", "restitution", "soft")
 # A soft kind's `stiffness` (N/m) must lie in this range.
 SOFT_STIFFNESS_RANGE = (1000.0, 20000.0)  # choice: half to 10x the 2024-note preset's, both ends tested stable at 1 ms
+# ... and its `restitution` in this one: where the soft ring's rule (testrange/soft.py) gives a 1 m drop within 10 % of
+# it at the preset's 2000 N/m (0.25 gives 0.265, 0.55 gives 0.496; 0.2 gives +15 %, 0.6 -15 %)
+SOFT_RESTITUTION_RANGE = (0.25, 0.55)  # choice: measured, task 5 review (tests/test_range_soft.py checks both ends)
+SOFT_SEGMENTS = 16  # source: soft-note spike, candidate (b): a soft ring's segments (soft.py RING_SEGMENTS)
+# A soft ring's inner diameter must be more than this share of its outer one, so that its segments clear each other
+# at rest: a segment's capsule and the one two along touch unless the chord 2 R sin(pi/16) exceeds the tube's 2 r,
+# that is inner/outer > (1 - sin(pi/16)) / (1 + sin(pi/16)) = 0.674
+SOFT_MIN_HOLE = 0.68  # source: derived: (1 - sin(pi/16)) / (1 + sin(pi/16)) = 0.674, rounded up
 _LENGTHS = ("diameter", "inner_diameter", "tip_diameter", "length", "size")
 _KIND_ALL = _KIND + tuple(k + "_in" for k in _LENGTHS) + ("label", "color")
 # The keys each shape takes beyond shape, mass, material, friction, inertia, label and color (lengths also as
@@ -999,24 +1007,49 @@ def _air(r: _KindReader, kind: PieceKind) -> PieceKind:
         given["soft"] = v
     out = replace(kind, **given) if given else kind
     if out.soft:
-        _check_soft(r, out)
+        _check_soft(r, out, from_preset=not r.has("soft"))
     return out
 
 
-def _check_soft(r: _KindReader, kind: PieceKind) -> None:
-    """A soft kind is a ring with a `stiffness` in SOFT_STIFFNESS_RANGE and a `restitution` (both its own or its
-    preset's)."""
+def ring_diameters(kind: PieceKind) -> tuple[float, float | None]:
+    """A ring kind's outer diameter (its solids' widest reach from its axis) and inner one (its hole's; None when
+    solid)."""
+    a = np.asarray(kind.axis, dtype=float)
+    pts = kind._points
+    outer = 2.0 * float(np.linalg.norm(pts - np.outer(pts @ a, a), axis=1).max())
+    return outer, (kind.hole.diameter if kind.hole is not None else None)
+
+
+def _check_soft(r: _KindReader, kind: PieceKind, from_preset: bool = False) -> None:
+    """A soft kind is a ring with a hole of more than SOFT_MIN_HOLE of its diameter, a `stiffness` in
+    SOFT_STIFFNESS_RANGE and a `restitution` in SOFT_RESTITUTION_RANGE (each its own or its preset's).
+    `from_preset`: the preset set `soft = true`, not the table, so a refusal says how to keep the piece rigid."""
     if kind.shape != "ring":
         raise r.err(i18n.t("{setting} is for a ring piece ({ring_setting}); this one is {shape}",
                            setting="soft = true", ring_setting="shape = \"ring\"", shape=repr(kind.shape)))
+    if kind.hole is None:
+        raise r.err(i18n.t("a soft piece needs {key}: give {key} in {table}", key="inner_diameter",
+                           table=f"[piece.{kind.name}]"))
+    outer, inner = ring_diameters(kind)
+    if inner / outer <= SOFT_MIN_HOLE:
+        raise r.err(i18n.t("a soft ring's inner_diameter must be more than {ratio} of its diameter, so its {n} "
+                           "segments don't overlap; this one's is {value}", ratio=f"{SOFT_MIN_HOLE:g}",
+                           n=SOFT_SEGMENTS, value=f"{inner / outer:.3f}"))
     for key in ("stiffness", "restitution"):
         if getattr(kind, key) is None:
             raise r.err(i18n.t("a soft piece needs {key}: give {key} in {table}", key=key,
                                table=f"[piece.{kind.name}]"))
-    lo, hi = SOFT_STIFFNESS_RANGE
-    if not lo <= kind.stiffness <= hi:
-        raise r.err(i18n.t("a soft piece's stiffness must be between {lo} and {hi} N/m, not {value}",
-                           lo=f"{lo:g}", hi=f"{hi:g}", value=f"{kind.stiffness:g}"))
+    for key, (lo, hi), unit in (("stiffness", SOFT_STIFFNESS_RANGE, " N/m"), ("restitution", SOFT_RESTITUTION_RANGE,
+                                                                             "")):
+        value = getattr(kind, key)
+        if lo <= value <= hi:
+            continue
+        words = dict(key=key, lo=f"{lo:g}", hi=f"{hi:g}", unit=unit, value=f"{value:g}")
+        if from_preset:
+            raise r.err(i18n.t("a soft piece's {key} must be between {lo} and {hi}{unit}, not {value}; its preset "
+                               "sets {setting}, and {rigid_setting} keeps it rigid", setting="soft = true",
+                               rigid_setting="soft = false", **words))
+        raise r.err(i18n.t("a soft piece's {key} must be between {lo} and {hi}{unit}, not {value}", **words))
 
 
 def air_given(r: _Reader) -> dict[str, float]:
