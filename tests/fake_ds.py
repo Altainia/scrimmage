@@ -7,7 +7,11 @@ It follows allwpilib simulation/halsim_ds_socket DSCommPacket.cpp (2026 branch):
   - Header: the sequence number (2 bytes, big-endian), the version 0x01, the control byte, the request byte and the
     station (0-5: red1, red2, red3, blue1, blue2, blue3; the extension adds 1 for the HAL's station IDs).
   - Control byte: the mode in the low bits (0 teleop, 0x01 test, 0x02 auto), 0x04 enabled, 0x08 FMS attached,
-    0x80 E-stop. Request byte: 0.
+    0x80 E-stop.
+  - Request byte: 0x80 ("normal") once a reply from the robot has come, 0 before, as the DS app does (LibDS:
+    cRequestNormal, cRequestUnconnected). The extension sets DsAttached from it (request & 0xF0) and the HAL sets
+    DsAttached true again as it takes the packet, so for a 0 the robot reports >ds false, then >ds true: a fake DS
+    that always sent 0 made the robot flip >ds every packet, and scrimmage briefly saw no DS (Bridge._ds_reported).
   - Tags: [size][id][data], where size counts the id and the data (not itself).
   - The joystick tag (id 0x0C): [axis count][one signed byte per axis: v * 127 when positive, v * 128 when
     negative][button count][the buttons as a big-endian bitmask, (count + 7) // 8 bytes, button 1 in bit 0]
@@ -26,6 +30,7 @@ import threading
 import time
 
 UDP_ROBOT, UDP_DS, TCP_ROBOT = 1110, 1150, 1740
+REQUEST_UNCONNECTED, REQUEST_NORMAL = 0x00, 0x80
 PERIOD = 0.02
 MODE_BITS = {"teleop": 0x00, "test": 0x01, "auto": 0x02}
 ENABLED, FMS, ESTOP = 0x04, 0x08, 0x80
@@ -119,7 +124,8 @@ class FakeDS:
 
     def _packet(self, seq: int) -> bytes:
         with self._lock:
-            out = struct.pack(">HBBBB", seq, 0x01, self._control, 0, self._station)
+            request = REQUEST_NORMAL if self._replies else REQUEST_UNCONNECTED
+            out = struct.pack(">HBBBB", seq, 0x01, self._control, request, self._station)
             top = max(self._sticks, default=-1)
             for port in range(top + 1):
                 stick = self._sticks.get(port)

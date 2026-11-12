@@ -285,6 +285,9 @@ class _Ticks:
         self.refresh = self.ds = self.log = -math.inf
 
 
+DS_KEY: DeviceKey = ("DriverStation", "")
+
+
 class Bridge:
     def __init__(self, world: World, host: str = "localhost", port: int = 3300, *,
                  log_path: Path | None = None, viewer: bool = False, nt: bool = True,
@@ -319,6 +322,7 @@ class Bridge:
         self.nt_link: NetworkTablesLink | None = None
         self.hal = HalState()
         self._ds_heard: float | None = None     # wall time of the robot's last DriverStation report (ds_quiet)
+        self._ds_reset_held = False      # a >ds false held back until the next DriverStation report (_ds_reported)
         self.cache = OutboundCache()
         self.phoenix = False             # a Phoenix 6 device appeared on the current connection
         self.clock_freed = False         # Phoenix 6 or the real DS made scrimmage free the robot's clock: this
@@ -378,6 +382,7 @@ class Bridge:
         self.disconnected.clear()
         self.hal = HalState()
         self._ds_heard = None
+        self._ds_reset_held = False
         self.sim_values_seen: set[tuple[str, str, str]] = set()  # distinct SimDevice values heard of (connection)
         self.phoenix = self.clock_freed = False
         self._initial = {}
@@ -390,11 +395,14 @@ class Bridge:
             self._log_mark = self._logf.tell()
         try:
             async for raw in ws:
+                ds_before = self.hal.devices.get(DS_KEY, {}).get(">ds")
                 got = self.hal.apply(raw)
                 if got is None:
                     continue
-                if got[0] == ("DriverStation", ""):
+                if got[0] == DS_KEY:
                     self._ds_heard = time.monotonic()
+                    if self.real_ds:
+                        self._ds_reported(got[1], ds_before)
                 if from_sim_device(got[0]):
                     before = len(self.sim_values_seen)
                     self.sim_values_seen.update((*got[0], k) for k in got[1])
@@ -638,6 +646,23 @@ class Bridge:
                 await ws.send(f)
         except websockets.ConnectionClosed:
             pass
+
+    def _ds_reported(self, delta: dict[str, Any], before: Any) -> None:
+        """Keep >ds true across the DS socket extension's reset of it. For each packet the extension sets DsAttached
+        from the packet's request byte (DSCommPacket::SetControl: request & 0xF0, the DS's "normal" bits) and the HAL
+        sets it true again as it takes the packet, so a DS packet with no normal bit (a real DS before it hears the
+        robot, or a DS app that leaves the byte 0) makes the robot report >ds false, then >ds true in the next frame.
+        Read between the two, the merged state would say no DS is attached. So a >ds false after a true is held
+        back until the next DriverStation report: if that report doesn't set >ds again, the false stands."""
+        d = self.hal.devices[DS_KEY]
+        if self._ds_reset_held:
+            self._ds_reset_held = False
+            if ">ds" not in delta:
+                d[">ds"] = False                    # nothing took it back
+            return
+        if delta.get(">ds") is False and before is True:
+            d[">ds"] = True
+            self._ds_reset_held = True
 
     def ds_quiet(self) -> float | None:
         """Wall seconds since the robot program's last ("DriverStation", "") report on this connection, None before
