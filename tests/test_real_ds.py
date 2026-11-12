@@ -114,6 +114,39 @@ def test_a_robot_that_disconnected_doesnt_make_the_ds_silent():
     assert b.ds_quiet() > 4.0
 
 
+def test_the_report_stays_connected_across_the_extensions_per_packet_reset():
+    """The flake in test_scrimmage_shows_the_real_ds_and_sends_no_ds_frames: for a DS packet whose request byte has
+    no "normal" bit, the robot's DS socket extension reports >ds false, then >ds true in the next frame (seen with
+    RobotPy 2026.2.2). Read between the two, scrimmage said "waiting". The bridge holds the false back until the
+    next DriverStation report, and lets it stand if that report doesn't set >ds again."""
+    from fake_robot import FakeRobot, make_bridge, next_port, running
+    from scrimmage.protocol import frame
+
+    async def main():
+        port = next_port()
+        bridge = make_bridge(port, real_ds=True)
+        async with running(bridge):
+            async with FakeRobot(port) as robot:
+                marks = 0
+
+                async def report(data: dict) -> dict:
+                    nonlocal marks     # a frame after it, so the bridge has taken the report when the mark is in
+                    marks += 1
+                    await robot.ws.send(frame("DriverStation", "", data))
+                    await robot.ws.send(frame("DIO", "9", {"<>value": marks}))
+                    await wait_until(lambda: bridge.hal.get("DIO", "9", "<>value") == marks)
+                    return real_ds_report(bridge.hal)
+                assert (await report({**SPIKE, ">ds": False}))["connected"] is False
+                assert (await report({">ds": True}))["connected"] is True
+                assert (await report({">ds": False}))["connected"] is True     # the reset, held back
+                assert (await report({">ds": True}))["connected"] is True
+                assert (await report({">new_data": True}))["connected"] is True
+                assert (await report({">ds": False}))["connected"] is True
+                assert (await report({">new_data": True}))["connected"] is False   # not taken back: it stands
+                assert bridge.hal.get("DriverStation", "", ">ds") is False
+                assert (await report({">ds": True}))["connected"] is True
+    asyncio.run(main())
+
 def test_the_log_line_says_what_the_real_ds_is_doing():
     assert real_ds_line(real_ds_report(HalState())) == REAL_DS_WAITING
     assert real_ds_line(real_ds_report(hal(**SPIKE))) == "Driver Station: teleop enabled"
